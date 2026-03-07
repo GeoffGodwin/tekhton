@@ -328,7 +328,7 @@ count_human_actions() {
         return
     fi
     local count
-    count=$(grep -c "^- \[ \]" "$action_file" 2>/dev/null || echo "0")
+    count=$(grep -c "^- \[ \]" "$action_file" 2>/dev/null) || count="0"
     count=$(echo "$count" | tr -d '[:space:]')
     echo "$count"
 }

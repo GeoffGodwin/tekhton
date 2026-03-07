@@ -129,4 +129,8 @@ ARCHITECT_MAX_TURNS=25
 # CLAUDE_ARCHITECT_MODEL=""
 
 # Dependency constraint manifest (empty = skip). See P5 for format.
-# DEPENDENCY_CONSTRAINTS_FILE=""
+DEPENDENCY_CONSTRAINTS_FILE=""
+
+# --- Seed contracts ----------------------------------------------------------
+# Enable inline contract seeding (adds assertion comments to source)
+SEED_CONTRACTS_ENABLED=false
