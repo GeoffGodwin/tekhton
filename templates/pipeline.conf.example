@@ -116,3 +116,17 @@ DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
 # --- Human notes configuration ----------------------------------------------
 # Valid categories for --notes-filter (pipe-separated for case matching)
 NOTES_FILTER_CATEGORIES="BUG|FEAT|POLISH"
+
+# --- Architect agent ---------------------------------------------------------
+# Role file for the architect audit agent (relative to repo root)
+ARCHITECT_ROLE_FILE=".claude/agents/architect.md"
+
+# Turn limits for architect audit
+ARCHITECT_MAX_TURNS=25
+# MILESTONE_ARCHITECT_MAX_TURNS=50
+
+# Model for architect agent (empty = use CLAUDE_STANDARD_MODEL)
+# CLAUDE_ARCHITECT_MODEL=""
+
+# Dependency constraint manifest (empty = skip). See P5 for format.
+# DEPENDENCY_CONSTRAINTS_FILE=""

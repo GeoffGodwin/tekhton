@@ -20,6 +20,8 @@
 #   --start-at test       Skip coder + reviewer; requires REVIEWER_REPORT.md
 #   --notes-filter X      Inject only [X] notes (BUG, FEAT, POLISH)
 #   --init-notes          Create blank HUMAN_NOTES.md template
+#   --skip-audit          Skip architect audit even if threshold is reached
+#   --force-audit         Force architect audit regardless of threshold
 #
 # Requirements:
 #   - claude CLI authenticated and on PATH
@@ -43,6 +45,8 @@ export PROJECT_DIR
 
 NOTES_FILTER=""
 MILESTONE_MODE=false
+SKIP_AUDIT=false
+FORCE_AUDIT=false
 TOTAL_TURNS=0
 TOTAL_TIME=0
 STAGE_SUMMARY=""
@@ -72,7 +76,7 @@ if [ "${1:-}" = "--init" ]; then
     success "Created ${CONF_FILE}"
 
     # Install agent role templates (only if they don't already exist)
-    for role in coder reviewer tester jr-coder; do
+    for role in coder reviewer tester jr-coder architect; do
         TARGET="${CONF_DIR}/agents/${role}.md"
         if [ ! -f "$TARGET" ] && [ -f "${TEKHTON_HOME}/templates/${role}.md" ]; then
             cp "${TEKHTON_HOME}/templates/${role}.md" "$TARGET"
@@ -130,6 +134,7 @@ source "${TEKHTON_HOME}/lib/hooks.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 
 # Stage implementations
+source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
 source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
@@ -155,6 +160,8 @@ usage() {
     echo "  --notes-filter POLISH     Inject only [POLISH] notes this run"
     echo "  --init-notes              Create a blank HUMAN_NOTES.md template and exit"
     echo "  --seed-contracts          Seed inline system contracts in lib/ source files"
+    echo "  --skip-audit              Skip architect audit even if threshold is reached"
+    echo "  --force-audit             Force architect audit regardless of threshold"
     echo ""
     echo "Examples:"
     echo "  tekhton --init                           # First-time setup"
@@ -308,6 +315,8 @@ EOF
             exit 0
             ;;
         --help|-h) usage ;;
+        --skip-audit) SKIP_AUDIT=true; shift ;;
+        --force-audit) FORCE_AUDIT=true; shift ;;
         --) shift; break ;;
         -*) error "Unknown flag: $1"; usage ;;
         *) break ;;
@@ -410,9 +419,11 @@ if should_trigger_audit 2>/dev/null; then
     runs_count=$(get_runs_since_audit)
     echo
     warn "╔══════════════════════════════════════════════════════════════╗"
-    warn "║  DRIFT THRESHOLD REACHED                                    ║"
+    warn "║  DRIFT THRESHOLD REACHED — ARCHITECT AUDIT WILL RUN        ║"
     warn "║  Observations: ${obs_count} (threshold: ${DRIFT_OBSERVATION_THRESHOLD})  Runs since audit: ${runs_count} (threshold: ${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD})"
-    warn "║  Consider running an architect audit before continuing.      ║"
+    if [ "$SKIP_AUDIT" = true ]; then
+    warn "║  --skip-audit: audit will be SKIPPED this run               ║"
+    fi
     warn "╚══════════════════════════════════════════════════════════════╝"
     echo
 fi
@@ -453,6 +464,14 @@ elif [ "$START_AT" = "tester" ]; then
     grep "^- \[ \]" TESTER_REPORT.md || log "(none found — may already be complete)"
 else
     log "Resuming at ${START_AT} — prior reports preserved for agent context"
+fi
+
+# --- Stage 0: Architect Audit (conditional) ----------------------------------
+
+if [ "$START_AT" = "coder" ] && [ "$SKIP_AUDIT" = false ]; then
+    if [ "$FORCE_AUDIT" = true ] || should_trigger_audit 2>/dev/null; then
+        run_stage_architect
+    fi
 fi
 
 # --- Stage 1: Coder ----------------------------------------------------------

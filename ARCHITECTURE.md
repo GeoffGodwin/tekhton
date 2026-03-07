@@ -16,6 +16,18 @@ Tekhton is structured as a three-layer shell pipeline with a shared library core
 ### Layer 2: Stages (`stages/*.sh`)
 Each stage is a single function sourced by `tekhton.sh`:
 
+- **`stages/architect.sh`** → `run_stage_architect()`
+  - Conditional Stage 0: runs before the main task when drift thresholds are exceeded or `--force-audit` is passed
+  - Loads drift log, architecture log, and architecture doc into prompt context
+  - Invokes architect agent to produce `ARCHITECT_PLAN.md`
+  - Parses plan sections and routes: Simplification → senior coder, Staleness/Dead Code/Naming → jr coder
+  - Runs build gate after remediation coders
+  - Runs expedited single-pass review (no rework loop)
+  - Marks addressed observations as RESOLVED in drift log
+  - Surfaces Design Doc Observations to `HUMAN_ACTION_REQUIRED.md`
+  - Resets runs-since-audit counter
+  - Skipped entirely when `--skip-audit` is passed
+
 - **`stages/coder.sh`** → `run_stage_coder()`
   - Runs scout agent if HUMAN_NOTES.md has unchecked items
   - Injects architecture, glossary, milestone, prior context into coder prompt
@@ -67,6 +79,17 @@ tekhton.sh (entry)
   │
   ├─ Pre-flight: should_trigger_audit() → drift threshold warning
   │
+  ├─ Stage 0: run_stage_architect()  [conditional — threshold or --force-audit]
+  │    ├─ render_prompt("architect") → run_agent("Architect")
+  │    ├─ parse ARCHITECT_PLAN.md sections
+  │    ├─ [if Simplification] → render_prompt("architect_sr_rework") → run_agent("Coder")
+  │    ├─ [if Staleness/Dead Code/Naming] → render_prompt("architect_jr_rework") → run_agent("Jr Coder")
+  │    ├─ run_build_gate()
+  │    ├─ render_prompt("architect_review") → run_agent("Reviewer expedited")
+  │    ├─ resolve_drift_observations() → DRIFT_LOG.md
+  │    ├─ append_human_action() → HUMAN_ACTION_REQUIRED.md
+  │    └─ reset_runs_since_audit()
+  │
   ├─ Stage 1: run_stage_coder()
   │    ├─ render_prompt("scout") → run_agent("Scout")
   │    ├─ render_prompt("coder") → run_agent("Coder")
@@ -113,6 +136,7 @@ tekhton.sh (entry)
 | `REVIEWER_REPORT.md` | PROJECT_DIR | Reviewer output (per-run) |
 | `TESTER_REPORT.md` | PROJECT_DIR | Tester output (per-run) |
 | `JR_CODER_SUMMARY.md` | PROJECT_DIR | Jr coder output (per-run) |
+| `ARCHITECT_PLAN.md` | PROJECT_DIR | Architect audit output (per-audit) |
 | `HUMAN_NOTES.md` | PROJECT_DIR | Human-written notes for next run |
 | `ARCHITECTURE_LOG.md` | PROJECT_DIR | Architecture Decision Log (accepted ACPs across runs) |
 | `DRIFT_LOG.md` | PROJECT_DIR | Drift observations accumulated across runs |
