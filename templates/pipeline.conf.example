@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pipeline.conf — Project-specific configuration for the Tekhton pipeline
+#
+# This is the ONLY file you need to edit to adapt the pipeline to a new project.
+# All values below are read by Tekhton's lib/config.sh at startup.
+#
+# Place this file at:  <your-project>/.claude/pipeline.conf
+#
+# Lines starting with # are comments. Empty lines are ignored.
+# Format: KEY=value (no spaces around =, quote strings with spaces)
+# =============================================================================
+
+# --- Project identity --------------------------------------------------------
+
+# Display name used in terminal output and branding
+PROJECT_NAME="My Project"
+
+# One-line description shown in --help
+PROJECT_DESCRIPTION="multi-agent development pipeline"
+
+# --- Required CLI tools ------------------------------------------------------
+# Space-separated list of commands that must be on PATH before the pipeline runs
+REQUIRED_TOOLS="claude git"
+
+# --- Agent models ------------------------------------------------------------
+# Claude model IDs for each agent role. Adjust based on your budget/speed needs.
+#   - Coder (senior): best reasoning model for implementation
+#   - Jr Coder: fast model for simple fixes
+#   - Standard: review + test planning
+#   - Tester: test writing (can upgrade in milestone mode)
+CLAUDE_CODER_MODEL="claude-opus-4-6"
+CLAUDE_JR_CODER_MODEL="claude-haiku-4-5"
+CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
+CLAUDE_TESTER_MODEL="claude-haiku-4-5"
+
+# --- Turn limits (normal mode) ----------------------------------------------
+CODER_MAX_TURNS=35
+JR_CODER_MAX_TURNS=15
+REVIEWER_MAX_TURNS=10
+TESTER_MAX_TURNS=30
+SCOUT_MAX_TURNS=8
+SEED_CONTRACTS_MAX_TURNS=20
+
+# --- Turn limits (milestone mode overrides) ----------------------------------
+# These override normal limits when --milestone is passed.
+# Defaults: 2× normal turns, upgraded tester model.
+# Uncomment and customize if the defaults don't suit your project.
+# MILESTONE_MAX_REVIEW_CYCLES=4
+# MILESTONE_CODER_MAX_TURNS=70
+# MILESTONE_JR_CODER_MAX_TURNS=30
+# MILESTONE_REVIEWER_MAX_TURNS=15
+# MILESTONE_TESTER_MAX_TURNS=60
+# MILESTONE_TESTER_MODEL="claude-sonnet-4-6"
+
+# --- Review loop -------------------------------------------------------------
+MAX_REVIEW_CYCLES=2
+
+# --- Build / test / analyze commands -----------------------------------------
+# These commands are run by the pipeline directly and injected into prompts.
+# Adapt for your tech stack (e.g., cargo, npm, go, pytest, make).
+
+# Static analysis command — must exit 0 on clean, nonzero on issues
+ANALYZE_CMD="echo 'No analyze command configured — set ANALYZE_CMD in pipeline.conf'"
+
+# Test runner command
+TEST_CMD="echo 'No test command configured — set TEST_CMD in pipeline.conf'"
+
+# Compile check command(s) — a quick "does it build?" gate.
+# Use || to chain fallbacks. Set to "" to skip compile check.
+BUILD_CHECK_CMD=""
+
+# Pattern to detect errors in analyze output (grep -E pattern)
+ANALYZE_ERROR_PATTERN="error"
+
+# Pattern to detect errors in compile output (grep pattern)
+BUILD_ERROR_PATTERN="ERROR"
+
+# --- Pipeline file paths -----------------------------------------------------
+PIPELINE_STATE_FILE=".claude/PIPELINE_STATE.md"
+LOG_DIR=".claude/logs"
+
+# --- Agent role files (relative to repo root) --------------------------------
+# These markdown files define each agent's persona, rules, and constraints.
+# The pipeline checks these exist at startup and injects them into prompts.
+CODER_ROLE_FILE=".claude/agents/coder.md"
+REVIEWER_ROLE_FILE=".claude/agents/reviewer.md"
+TESTER_ROLE_FILE=".claude/agents/tester.md"
+JR_CODER_ROLE_FILE=".claude/agents/jr-coder.md"
+
+# --- Context files (optional — set to "" to skip) ---------------------------
+# These files are injected into agent prompts when they exist.
+ARCHITECTURE_FILE="ARCHITECTURE.md"
+GLOSSARY_FILE=""
+PROJECT_RULES_FILE="CLAUDE.md"
+
+# --- Design document (optional — used by drift detection in future versions) -
+DESIGN_FILE=""
+
+# --- Human notes configuration ----------------------------------------------
+# Valid categories for --notes-filter (pipe-separated for case matching)
+NOTES_FILTER_CATEGORIES="BUG|FEAT|POLISH"
