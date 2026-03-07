@@ -24,10 +24,15 @@ tekhton/
 │   ├── state.sh            # Pipeline state persistence + resume
 │   └── drift.sh            # Drift log, ADL, human action management
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
+│   ├── architect.sh        # Stage 0: Architect audit (conditional)
 │   ├── coder.sh            # Stage 1: Scout + Coder + build gate
 │   ├── review.sh           # Stage 2: Review loop + rework routing
 │   └── tester.sh           # Stage 3: Test writing + validation
 ├── prompts/                # Prompt templates with {{VAR}} substitution
+│   ├── architect.prompt.md
+│   ├── architect_sr_rework.prompt.md
+│   ├── architect_jr_rework.prompt.md
+│   ├── architect_review.prompt.md
 │   ├── coder.prompt.md
 │   ├── coder_rework.prompt.md
 │   ├── jr_coder.prompt.md
@@ -44,7 +49,8 @@ tekhton/
 │   ├── coder.md
 │   ├── reviewer.md
 │   ├── tester.md
-│   └── jr-coder.md
+│   ├── jr-coder.md
+│   └── architect.md
 ├── tests/                  # Self-tests
 └── examples/               # Example project configs
 ```
@@ -102,6 +108,13 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `HUMAN_ACTION_FILE` | pipeline.conf (default: HUMAN_ACTION_REQUIRED.md) |
 | `DRIFT_OBSERVATION_THRESHOLD` | pipeline.conf (default: 8) |
 | `DRIFT_RUNS_SINCE_AUDIT_THRESHOLD` | pipeline.conf (default: 5) |
+| `ARCHITECT_ROLE_FILE` | pipeline.conf (default: .claude/agents/architect.md) |
+| `ARCHITECT_MAX_TURNS` | pipeline.conf (default: 25) |
+| `CLAUDE_ARCHITECT_MODEL` | pipeline.conf (default: CLAUDE_STANDARD_MODEL) |
+| `ARCHITECTURE_LOG_CONTENT` | File contents of ARCHITECTURE_LOG_FILE |
+| `DRIFT_LOG_CONTENT` | File contents of DRIFT_LOG_FILE |
+| `DRIFT_OBSERVATION_COUNT` | Count of unresolved observations |
+| `DEPENDENCY_CONSTRAINTS_CONTENT` | File contents of dependency constraints (optional) |
 
 ## Testing
 

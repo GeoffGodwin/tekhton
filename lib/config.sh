@@ -71,6 +71,13 @@ load_config() {
     : "${DRIFT_OBSERVATION_THRESHOLD:=8}"
     : "${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD:=5}"
 
+    # --- Architect agent defaults ---
+    : "${ARCHITECT_ROLE_FILE:=.claude/agents/architect.md}"
+    : "${ARCHITECT_MAX_TURNS:=25}"
+    : "${MILESTONE_ARCHITECT_MAX_TURNS:=$(( ARCHITECT_MAX_TURNS * 2 ))}"
+    : "${CLAUDE_ARCHITECT_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+    : "${DEPENDENCY_CONSTRAINTS_FILE:=}"
+
     # Milestone overrides — defaults to 2x normal if not specified
     : "${MILESTONE_MAX_REVIEW_CYCLES:=$(( MAX_REVIEW_CYCLES * 2 ))}"
     : "${MILESTONE_CODER_MAX_TURNS:=$(( CODER_MAX_TURNS * 2 ))}"
