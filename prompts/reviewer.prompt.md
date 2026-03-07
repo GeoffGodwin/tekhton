@@ -61,4 +61,47 @@ The pipeline parses these exact headings. 'None' must be the literal word None o
 when a section is empty — do not use 'No complex blockers found' or similar phrases.
 Do not use bold text, numbered lists, or alternative headings for the blocker sections.
 
+## Architecture Change Proposal Evaluation
+
+If CODER_SUMMARY.md contains an `## Architecture Change Proposals` section,
+you MUST evaluate each proposal:
+
+For each ACP, write one of:
+- **ACCEPT** — The change is legitimate and well-implemented
+- **REJECT** — Unnecessary; describe how to solve within existing architecture.
+  This becomes a Complex Blocker.
+- **MODIFY** — Change is needed but approach should differ. Complex Blocker with guidance.
+
+Write your evaluations in REVIEWER_REPORT.md as an additional section:
+
+### `## ACP Verdicts`
+- ACP: [name] — ACCEPT / REJECT / MODIFY — [one-line rationale]
+
+ACPs that are REJECT or MODIFY count as Complex Blockers (code must be reworked).
+ACPs that are ACCEPT do not block — note them so the architecture doc can be updated.
+
+If there is no `## Architecture Change Proposals` section in CODER_SUMMARY.md,
+omit the `## ACP Verdicts` section entirely.
+
+## Drift Observations
+
+While reviewing the changed files, note any cross-cutting concerns that aren't
+blockers for THIS commit but suggest systemic issues. Examples:
+- Same concept called different names in different files
+- Function that appears to duplicate logic elsewhere
+- Import that crosses a layer boundary defined in the architecture doc
+- Config value that exists in JSON but isn't used by any code path you reviewed
+- Dead code (unreachable methods, unused parameters)
+- Test that tests outdated behavior
+
+Write observations in REVIEWER_REPORT.md under:
+
+### `## Drift Observations`
+- [file:line or general area] — description of the observation
+
+Or 'None' if nothing observed.
+
+These are NOT blockers. They accumulate in a log across runs and trigger a
+dedicated audit when enough have built up.
+
 Write `REVIEWER_REPORT.md`.

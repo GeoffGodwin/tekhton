@@ -59,6 +59,18 @@ run_stage_review() {
         fi
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
 
+        # --- Parse ACP verdicts (if present) ---------------------------------
+        # Extract accepted ACPs for downstream processing (P3 drift log will consume)
+        ACCEPTED_ACPS=""
+        if grep -q "^## ACP Verdicts" REVIEWER_REPORT.md 2>/dev/null; then
+            ACCEPTED_ACPS=$(awk '/^## ACP Verdicts/{found=1; next} found && /^##/{exit} found && /ACCEPT/{print}' \
+                REVIEWER_REPORT.md 2>/dev/null || true)
+            if [ -n "$ACCEPTED_ACPS" ]; then
+                log "Accepted ACPs found:"
+                echo "$ACCEPTED_ACPS" | sed 's/^/  /'
+            fi
+        fi
+
         if [ "$VERDICT" = "CHANGES_REQUIRED" ]; then
             # --- Count blockers ----------------------------------------------
             TMPDIR_BLOCKS=$(mktemp -d)

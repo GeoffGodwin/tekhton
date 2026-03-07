@@ -50,3 +50,23 @@ APPROVED | APPROVED_WITH_NOTES | CHANGES_REQUIRED
 
 The pipeline parses these exact headings. Use the literal word `None` when a
 section has no items.
+
+## Architecture Change Proposal Evaluation
+
+If CODER_SUMMARY.md contains an `## Architecture Change Proposals` section,
+evaluate each proposal:
+
+- **ACCEPT** — Legitimate and well-implemented
+- **REJECT** — Unnecessary; explain how to solve within existing architecture (Complex Blocker)
+- **MODIFY** — Change needed but approach should differ (Complex Blocker with guidance)
+
+Write in REVIEWER_REPORT.md under `## ACP Verdicts`. Omit if no ACPs present.
+
+## Drift Observations
+
+While reviewing, note cross-cutting concerns that aren’t blockers but suggest
+systemic issues (naming inconsistencies, duplicated logic, layer boundary
+violations, dead code, tests testing outdated behavior).
+
+Write in REVIEWER_REPORT.md under `## Drift Observations` (or ‘None’ if nothing
+observed). These accumulate across runs for periodic audit.

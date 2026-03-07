@@ -33,5 +33,25 @@ When finished, write or update `CODER_SUMMARY.md` with:
 - `## What Was Implemented`: bullet list of changes
 - `## Files Created or Modified`: paths and brief descriptions
 - `## Remaining Work`: anything unfinished (only if IN PROGRESS)
+- `## Architecture Change Proposals`: (if applicable, see below)
 
 Do NOT set COMPLETE if any planned work is unfinished.
+
+## Architecture Change Proposals
+
+If your implementation requires a structural change not described in the architecture
+documentation — a new dependency between systems, a different layer boundary, a changed
+interface contract — declare it in CODER_SUMMARY.md under a new section:
+
+### `## Architecture Change Proposals`
+For each proposed change:
+- **Current constraint**: What the architecture doc says or implies
+- **What triggered this**: Why the current constraint doesn’t work
+- **Proposed change**: What you changed and why it’s the right approach
+- **Backward compatible**: Yes/No — does existing code still work without this?
+- **ARCHITECTURE.md update needed**: Yes/No — specify which section
+
+Do NOT stop working to wait for approval. Implement the best solution, declare
+the change, and make it defensible. The reviewer will evaluate your proposal.
+
+If no architecture changes were needed, omit this section entirely.

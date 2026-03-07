@@ -95,6 +95,12 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `INLINE_CONTRACT_PATTERN` | pipeline.conf (optional) |
 | `BUILD_ERRORS_CONTENT` | Contents of BUILD_ERRORS.md |
 | `ANALYZE_ISSUES` | Output of ANALYZE_CMD |
+| `DESIGN_FILE` | pipeline.conf (optional — design doc path) |
+| `ARCHITECTURE_LOG_FILE` | pipeline.conf (default: ARCHITECTURE_LOG.md) |
+| `DRIFT_LOG_FILE` | pipeline.conf (default: DRIFT_LOG.md) |
+| `HUMAN_ACTION_FILE` | pipeline.conf (default: HUMAN_ACTION_REQUIRED.md) |
+| `DRIFT_OBSERVATION_THRESHOLD` | pipeline.conf (default: 8) |
+| `DRIFT_RUNS_SINCE_AUDIT_THRESHOLD` | pipeline.conf (default: 5) |
 
 ## Testing
 

@@ -58,6 +58,39 @@ Use system names from {{ARCHITECTURE_FILE}}.
 This enables `grep -r 'System:'` to find all files in a system instantly.
 {{ENDIF:INLINE_CONTRACT_PATTERN}}
 
+## Architecture Change Proposals
+
+If your implementation requires a structural change not described in the architecture
+documentation — a new dependency between systems, a different layer boundary, a changed
+interface contract — you MUST declare it in CODER_SUMMARY.md under a new section:
+
+### `## Architecture Change Proposals`
+For each proposed change:
+- **Current constraint**: What the architecture doc says or implies
+- **What triggered this**: Why the current constraint doesn't work
+- **Proposed change**: What you changed and why it's the right approach
+- **Backward compatible**: Yes/No — does existing code still work without this?
+- **ARCHITECTURE.md update needed**: Yes/No — specify which section
+
+Do NOT stop working to wait for approval. Implement the best solution, declare
+the change, and make it defensible. The reviewer will evaluate your proposal.
+
+If no architecture changes were needed, omit this section entirely.
+{{IF:DESIGN_FILE}}
+
+## Design Observations
+
+If you encounter anything in the design document ({{DESIGN_FILE}}) that contradicts
+what was decided in a prior Architecture Change Proposal, or that conflicts with
+current implementation reality, note it in CODER_SUMMARY.md:
+
+### `## Design Observations`
+- Brief description of the contradiction and which document sections are affected
+
+These are informational — the human decides whether to update the design doc.
+Do not block your work on design contradictions.
+{{ENDIF:DESIGN_FILE}}
+
 ## Required Output
 When finished, update CODER_SUMMARY.md with:
 - '## Status' set to either 'COMPLETE' or 'IN PROGRESS'

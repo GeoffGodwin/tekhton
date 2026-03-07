@@ -94,8 +94,24 @@ ARCHITECTURE_FILE="ARCHITECTURE.md"
 GLOSSARY_FILE=""
 PROJECT_RULES_FILE="CLAUDE.md"
 
-# --- Design document (optional — used by drift detection in future versions) -
+# --- Design document (optional — enables design cross-referencing) -----------
 DESIGN_FILE=""
+
+# --- Architecture drift configuration ----------------------------------------
+# Path to the architecture decision log (records accepted ACPs)
+ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
+
+# Path to the drift observation log (accumulated across runs)
+DRIFT_LOG_FILE="DRIFT_LOG.md"
+
+# Path to the human action required file (design doc changes needed)
+HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+
+# Trigger architect audit after this many unresolved drift observations
+DRIFT_OBSERVATION_THRESHOLD=8
+
+# Trigger architect audit after this many pipeline runs since last audit
+DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
 
 # --- Human notes configuration ----------------------------------------------
 # Valid categories for --notes-filter (pipe-separated for case matching)

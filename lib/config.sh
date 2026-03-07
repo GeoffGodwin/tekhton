@@ -64,6 +64,13 @@ load_config() {
     : "${SEED_CONTRACTS_ENABLED:=false}"
     : "${DESIGN_FILE:=}"
 
+    # --- Drift detection defaults ---
+    : "${ARCHITECTURE_LOG_FILE:=ARCHITECTURE_LOG.md}"
+    : "${DRIFT_LOG_FILE:=DRIFT_LOG.md}"
+    : "${HUMAN_ACTION_FILE:=HUMAN_ACTION_REQUIRED.md}"
+    : "${DRIFT_OBSERVATION_THRESHOLD:=8}"
+    : "${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD:=5}"
+
     # Milestone overrides — defaults to 2x normal if not specified
     : "${MILESTONE_MAX_REVIEW_CYCLES:=$(( MAX_REVIEW_CYCLES * 2 ))}"
     : "${MILESTONE_CODER_MAX_TURNS:=$(( CODER_MAX_TURNS * 2 ))}"

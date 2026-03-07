@@ -104,6 +104,9 @@ tekhton.sh (entry)
 | `TESTER_REPORT.md` | PROJECT_DIR | Tester output (per-run) |
 | `JR_CODER_SUMMARY.md` | PROJECT_DIR | Jr coder output (per-run) |
 | `HUMAN_NOTES.md` | PROJECT_DIR | Human-written notes for next run |
+| `ARCHITECTURE_LOG.md` | PROJECT_DIR | Architecture Decision Log (accepted ACPs across runs) |
+| `DRIFT_LOG.md` | PROJECT_DIR | Drift observations accumulated across runs |
+| `HUMAN_ACTION_REQUIRED.md` | PROJECT_DIR | Items needing human attention (design doc updates) |
 
 ## Extension Points
 
