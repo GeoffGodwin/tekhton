@@ -127,6 +127,7 @@ source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/hooks.sh"
+source "${TEKHTON_HOME}/lib/drift.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/coder.sh"
@@ -403,6 +404,19 @@ if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
 fi
 echo
 
+# Pre-flight drift threshold check
+if should_trigger_audit 2>/dev/null; then
+    obs_count=$(count_drift_observations)
+    runs_count=$(get_runs_since_audit)
+    echo
+    warn "╔══════════════════════════════════════════════════════════════╗"
+    warn "║  DRIFT THRESHOLD REACHED                                    ║"
+    warn "║  Observations: ${obs_count} (threshold: ${DRIFT_OBSERVATION_THRESHOLD})  Runs since audit: ${runs_count} (threshold: ${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD})"
+    warn "║  Consider running an architect audit before continuing.      ║"
+    warn "╚══════════════════════════════════════════════════════════════╝"
+    echo
+fi
+
 if ! git diff --quiet; then
     warn "Uncommitted changes detected. The coder will work on top of these."
 fi
@@ -479,6 +493,10 @@ fi
 
 run_final_checks "$LOG_FILE"
 
+# --- Drift artifact processing -----------------------------------------------
+
+process_drift_artifacts
+
 # --- Archive reports ---------------------------------------------------------
 
 archive_reports "$LOG_DIR" "$TIMESTAMP"
@@ -499,6 +517,19 @@ echo
 if [ -f "TESTER_REPORT.md" ] && grep -q "^- " TESTER_REPORT.md 2>/dev/null; then
     warn "Tester found bugs — review TESTER_REPORT.md before committing."
     echo
+fi
+
+# --- Human Action Required banner --------------------------------------------
+
+if has_human_actions 2>/dev/null; then
+    action_count=$(count_human_actions)
+    echo -e "${YELLOW}"
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║  HUMAN ACTION REQUIRED                                      ║"
+    echo "║  The pipeline identified ${action_count} item(s) needing your attention.  ║"
+    echo "║  Review: ${HUMAN_ACTION_FILE}$(printf '%*s' $((34 - ${#HUMAN_ACTION_FILE})) '')║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
 fi
 
 log "Suggested commit message:"

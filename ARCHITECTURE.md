@@ -45,6 +45,7 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/agent.sh`** — `run_agent(name, model, turns, prompt, logfile)` wraps claude CLI invocation with JSON output parsing, turn counting, timing. `print_run_summary()` formats cumulative metrics.
 - **`lib/gates.sh`** — `run_build_gate(label)` runs `BUILD_CHECK_CMD`, captures errors to `BUILD_ERRORS.md`. `run_completion_gate()` runs `ANALYZE_CMD`, invokes cleanup agent on issues.
 - **`lib/hooks.sh`** — `archive_reports(dir, timestamp)`, `generate_commit_message(task)`, `run_final_checks(logfile)`.
+- **`lib/drift.sh`** — Drift log, Architecture Decision Log, and Human Action management. `append_drift_observations()` reads reviewer report and accumulates to `DRIFT_LOG.md`. `append_architecture_decision()` records accepted ACPs to `ARCHITECTURE_LOG.md` with sequential ADL-NNN IDs. `append_human_action(source, desc)` adds items to `HUMAN_ACTION_REQUIRED.md`. `process_drift_artifacts()` is the main post-pipeline integration point. `should_trigger_audit()` checks thresholds. Counter management via `increment_runs_since_audit()` / `reset_runs_since_audit()`.
 - **`lib/notes.sh`** — `count_human_notes()`, `extract_human_notes()`, `archive_human_notes()`. Respects `NOTES_FILTER` global.
 - **`lib/prompts.sh`** — `render_prompt(template_name)` reads `TEKHTON_HOME/prompts/<name>.prompt.md`, substitutes `{{VAR}}` from shell globals, strips `{{IF:VAR}}...{{ENDIF:VAR}}` blocks when VAR is empty.
 - **`lib/state.sh`** — `write_pipeline_state(stage, reason, resume_flag, task, detail)`, `clear_pipeline_state()`. Persists to `PIPELINE_STATE_FILE` for resume.
@@ -64,6 +65,8 @@ tekhton.sh (entry)
   │
   ├─ load_config() ← PROJECT_DIR/.claude/pipeline.conf
   │
+  ├─ Pre-flight: should_trigger_audit() → drift threshold warning
+  │
   ├─ Stage 1: run_stage_coder()
   │    ├─ render_prompt("scout") → run_agent("Scout")
   │    ├─ render_prompt("coder") → run_agent("Coder")
@@ -72,6 +75,7 @@ tekhton.sh (entry)
   │
   ├─ Stage 2: run_stage_review()  [loops up to MAX_REVIEW_CYCLES]
   │    ├─ render_prompt("reviewer") → run_agent("Reviewer")
+  │    ├─ [parse ACP Verdicts → ACCEPTED_ACPS]
   │    ├─ [if CHANGES_REQUIRED + complex] → render_prompt("coder_rework") → run_agent("Coder rework")
   │    ├─ [if CHANGES_REQUIRED + simple]  → render_prompt("jr_coder") → run_agent("Jr Coder")
   │    └─ run_build_gate()
@@ -79,11 +83,17 @@ tekhton.sh (entry)
   ├─ Stage 3: run_stage_tester()
   │    └─ render_prompt("tester"|"tester_resume") → run_agent("Tester")
   │
-  └─ Finalize
-       ├─ run_final_checks()
-       ├─ archive_reports()
-       ├─ generate_commit_message()
-       └─ interactive commit prompt
+  ├─ Finalize
+  │    ├─ run_final_checks()
+  │    ├─ process_drift_artifacts()
+  │    │    ├─ append_drift_observations() → DRIFT_LOG.md
+  │    │    ├─ append_architecture_decision() → ARCHITECTURE_LOG.md
+  │    │    ├─ _process_design_observations() → HUMAN_ACTION_REQUIRED.md
+  │    │    └─ increment_runs_since_audit()
+  │    ├─ archive_reports()
+  │    ├─ generate_commit_message()
+  │    ├─ human action banner (if items pending)
+  │    └─ interactive commit prompt
 ```
 
 ## File Ownership

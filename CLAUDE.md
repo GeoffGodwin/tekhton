@@ -21,7 +21,8 @@ tekhton/
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── notes.sh            # Human notes management
 │   ├── prompts.sh          # Template engine for .prompt.md files
-│   └── state.sh            # Pipeline state persistence + resume
+│   ├── state.sh            # Pipeline state persistence + resume
+│   └── drift.sh            # Drift log, ADL, human action management
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── coder.sh            # Stage 1: Scout + Coder + build gate
 │   ├── review.sh           # Stage 2: Review loop + rework routing
