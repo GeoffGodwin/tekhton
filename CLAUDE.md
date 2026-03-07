@@ -52,7 +52,11 @@ tekhton/
 │   ├── jr-coder.md
 │   └── architect.md
 ├── tests/                  # Self-tests
-└── examples/               # Example project configs
+└── examples/               # Sample dependency constraint validation scripts
+    ├── architecture_constraints.yaml  # Sample constraint manifest
+    ├── check_imports_dart.sh          # Dart/Flutter import validator
+    ├── check_imports_python.sh        # Python import validator
+    └── check_imports_typescript.sh    # TypeScript/JS import validator
 ```
 
 ## How It Works

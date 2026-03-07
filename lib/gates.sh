@@ -63,6 +63,38 @@ EOF
         fi
     fi  # end BUILD_CHECK_CMD guard
 
+    # --- Dependency constraint validation (P5) ---
+    # Runs the validation_command from the constraint manifest, if configured.
+    # This is deterministic enforcement — no LLM judgment needed.
+    if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE}" ]; then
+        local validation_cmd
+        validation_cmd=$(grep "^validation_command:" "${DEPENDENCY_CONSTRAINTS_FILE}" \
+            | sed 's/^validation_command: *//' | tr -d '"'"'" 2>/dev/null || true)
+
+        if [ -n "$validation_cmd" ]; then
+            log "Running dependency constraint validation: ${validation_cmd}"
+            local constraint_output=""
+            local constraint_exit=0
+            constraint_output=$(eval "$validation_cmd" 2>&1) || constraint_exit=$?
+
+            if [ "$constraint_exit" -ne 0 ]; then
+                warn "Build gate FAILED (${stage_label}) — dependency constraint violations:"
+                echo "$constraint_output"
+
+                # Append or create BUILD_ERRORS.md
+                cat >> BUILD_ERRORS.md << EOF
+
+## Dependency Constraint Violations
+\`\`\`
+${constraint_output}
+\`\`\`
+EOF
+                return 1
+            fi
+            log "Dependency constraints passed."
+        fi
+    fi
+
     log "Build gate PASSED (${stage_label})"
     [ -f BUILD_ERRORS.md ] && rm BUILD_ERRORS.md
     return 0

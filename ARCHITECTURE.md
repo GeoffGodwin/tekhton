@@ -55,7 +55,7 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/common.sh`** — Colors, `log()`, `warn()`, `error()`, `success()`, `header()`, `require_cmd()`
 - **`lib/config.sh`** — `load_config()` reads `PROJECT_DIR/.claude/pipeline.conf`, validates required fields, applies milestone overrides via `apply_milestone_overrides()`
 - **`lib/agent.sh`** — `run_agent(name, model, turns, prompt, logfile)` wraps claude CLI invocation with JSON output parsing, turn counting, timing. `print_run_summary()` formats cumulative metrics.
-- **`lib/gates.sh`** — `run_build_gate(label)` runs `BUILD_CHECK_CMD`, captures errors to `BUILD_ERRORS.md`. `run_completion_gate()` runs `ANALYZE_CMD`, invokes cleanup agent on issues.
+- **`lib/gates.sh`** — `run_build_gate(label)` runs `ANALYZE_CMD`, `BUILD_CHECK_CMD`, and optionally a dependency constraint `validation_command` from the configured `architecture_constraints.yaml`. Captures all errors to `BUILD_ERRORS.md`. `run_completion_gate()` checks coder self-reported status from `CODER_SUMMARY.md`.
 - **`lib/hooks.sh`** — `archive_reports(dir, timestamp)`, `generate_commit_message(task)`, `run_final_checks(logfile)`.
 - **`lib/drift.sh`** — Drift log, Architecture Decision Log, and Human Action management. `append_drift_observations()` reads reviewer report and accumulates to `DRIFT_LOG.md`. `append_architecture_decision()` records accepted ACPs to `ARCHITECTURE_LOG.md` with sequential ADL-NNN IDs. `append_human_action(source, desc)` adds items to `HUMAN_ACTION_REQUIRED.md`. `process_drift_artifacts()` is the main post-pipeline integration point. `should_trigger_audit()` checks thresholds. Counter management via `increment_runs_since_audit()` / `reset_runs_since_audit()`.
 - **`lib/notes.sh`** — `count_human_notes()`, `extract_human_notes()`, `archive_human_notes()`. Respects `NOTES_FILTER` global.
@@ -141,6 +141,18 @@ tekhton.sh (entry)
 | `ARCHITECTURE_LOG.md` | PROJECT_DIR | Architecture Decision Log (accepted ACPs across runs) |
 | `DRIFT_LOG.md` | PROJECT_DIR | Drift observations accumulated across runs |
 | `HUMAN_ACTION_REQUIRED.md` | PROJECT_DIR | Items needing human attention (design doc updates) |
+| `architecture_constraints.yaml` | PROJECT_DIR | Optional dependency constraint manifest (layer rules + validation command) |
+
+## Dependency Constraint System (P5)
+
+Optional, language-agnostic enforcement of layer boundaries. When configured:
+
+1. **Constraint manifest** (`architecture_constraints.yaml`) defines layer rules and a `validation_command`
+2. **Build gate** runs the `validation_command` after analyze + compile checks. Nonzero exit = build failure.
+3. **Architect agent** reads the manifest during audits to verify drift observations against declared rules
+4. **Sample scripts** in `examples/` provide starting points for Dart, Python, and TypeScript projects
+
+The system is fully opt-in: when `DEPENDENCY_CONSTRAINTS_FILE` is empty (default), build gate skips validation and architect operates without layer context.
 
 ## Extension Points
 

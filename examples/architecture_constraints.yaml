@@ -1,0 +1,86 @@
+# architecture_constraints.yaml — Tekhton Dependency Constraint Manifest
+#
+# Declarative dependency rules for your project. Two purposes:
+# 1. The validation_command runs deterministically in the build gate
+# 2. The architect agent reads the layer definitions during audits
+#
+# Copy this to your project root and customize for your architecture.
+
+# Command that validates import/dependency constraints.
+# Must exit 0 if all constraints pass, nonzero otherwise.
+# Pipeline calls this as part of the build gate.
+# Set to "" or omit to skip deterministic enforcement (constraints are still
+# used by the architect agent for reasoning).
+validation_command: ".claude/scripts/check_imports.sh"
+
+# Layer definitions — used by the architect agent to understand your
+# architecture when auditing drift observations. Also serves as
+# documentation for the validation script's rules.
+layers:
+  - name: "engine/rules"
+    description: "Game rule evaluation — pure functions, no state mutation"
+    may_depend_on:
+      - "engine/state"
+      - "core/config"
+    must_not_depend_on:
+      - "features"
+      - "persistence"
+
+  - name: "engine/state"
+    description: "Immutable game state models"
+    may_depend_on:
+      - "core/config"
+      - "models"
+    must_not_depend_on:
+      - "features"
+      - "persistence"
+      - "engine/rules"
+      - "engine/actions"
+
+  - name: "engine/actions"
+    description: "State transitions — the only code that mutates state"
+    may_depend_on:
+      - "engine/state"
+      - "engine/rules"
+      - "core/config"
+    must_not_depend_on:
+      - "features"
+      - "persistence"
+
+  - name: "models"
+    description: "Domain models shared across features"
+    may_depend_on:
+      - "core/config"
+    must_not_depend_on:
+      - "features"
+      - "persistence"
+      - "engine"
+
+  - name: "core"
+    description: "Config, theme, utilities — no business logic"
+    may_depend_on: []
+    must_not_depend_on:
+      - "features"
+      - "persistence"
+      - "engine"
+      - "models"
+
+  - name: "features/*/providers"
+    description: "State management providers — bridge between engine and UI"
+    may_depend_on:
+      - "engine"
+      - "models"
+      - "core"
+      - "persistence"
+    must_not_depend_on: []
+
+  - name: "features/*/widgets"
+    description: "UI components"
+    may_depend_on:
+      - "features/*/providers"
+      - "core/theme"
+      - "models"
+    must_not_depend_on:
+      - "engine/rules"
+      - "engine/actions"
+      - "persistence"
