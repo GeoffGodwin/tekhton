@@ -131,6 +131,25 @@ ARCHITECT_MAX_TURNS=25
 # Dependency constraint manifest (empty = skip). See P5 for format.
 DEPENDENCY_CONSTRAINTS_FILE=""
 
+# --- Agent exit detection ----------------------------------------------------
+# When an agent uses ≤ this many turns AND exits non-zero, it's flagged as a
+# "null run" (died during discovery without doing productive work).
+# AGENT_NULL_RUN_THRESHOLD=2
+
+# --- Dynamic turn limits ----------------------------------------------------
+# When enabled, the scout estimates task complexity and adjusts turn limits
+# for coder, reviewer, and tester stages. Recommended values are clamped to
+# [MIN, MAX_CAP] bounds. Set to false to always use the static limits above.
+DYNAMIC_TURNS_ENABLED=true
+
+# Bounds for dynamic turn adjustment (only used when DYNAMIC_TURNS_ENABLED=true)
+# CODER_MIN_TURNS=15
+# CODER_MAX_TURNS_CAP=200
+# REVIEWER_MIN_TURNS=5
+# REVIEWER_MAX_TURNS_CAP=30
+# TESTER_MIN_TURNS=10
+# TESTER_MAX_TURNS_CAP=100
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds assertion comments to source)
 SEED_CONTRACTS_ENABLED=false

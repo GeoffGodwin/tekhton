@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# agent.sh — Agent invocation wrapper with metrics tracking
+# agent.sh — Agent invocation wrapper with metrics tracking + exit detection
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: TOTAL_TURNS, TOTAL_TIME, STAGE_SUMMARY (set by caller)
@@ -12,6 +12,14 @@
 : "${TOTAL_TURNS:=0}"
 : "${TOTAL_TIME:=0}"
 : "${STAGE_SUMMARY:=}"
+
+# --- Agent exit detection globals --------------------------------------------
+# Set after every run_agent() call. Callers inspect these to decide next steps.
+
+LAST_AGENT_TURNS=0         # Turns the agent actually used
+LAST_AGENT_EXIT_CODE=0     # claude CLI exit code
+LAST_AGENT_ELAPSED=0       # Wall-clock seconds
+LAST_AGENT_NULL_RUN=false  # true if agent likely died without doing work
 
 # --- Run summary -------------------------------------------------------------
 
@@ -104,4 +112,78 @@ run_agent() {
     # Store per-stage for summary
     STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label}: ${turns_display} turns, ${mins}m${secs}s"
 
+    # --- Agent exit detection ------------------------------------------------
+    # Populate LAST_AGENT_* globals so callers can check for null runs.
+
+    LAST_AGENT_TURNS="$turns_used"
+    LAST_AGENT_EXIT_CODE="$agent_exit"
+    LAST_AGENT_ELAPSED="$elapsed"
+    LAST_AGENT_NULL_RUN=false
+
+    # Null run heuristic: agent used very few turns (≤2) OR exited non-zero
+    # with zero turns. This typically means it died during discovery/search.
+    local null_threshold="${AGENT_NULL_RUN_THRESHOLD:-2}"
+    if [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
+        LAST_AGENT_NULL_RUN=true
+        warn "[$label] NULL RUN DETECTED — agent used ${turns_used} turn(s) and exited ${agent_exit}."
+        warn "[$label] The agent likely died during initial discovery/file search."
+    elif [ "$turns_used" -eq 0 ]; then
+        LAST_AGENT_NULL_RUN=true
+        warn "[$label] NULL RUN DETECTED — agent used 0 turns."
+    fi
+}
+
+# =============================================================================
+# NULL RUN DETECTION HELPERS
+# Call these after run_agent() to check if the agent accomplished anything.
+# =============================================================================
+
+# was_null_run — returns 0 (true) if the last agent invocation was a null run.
+# A null run is one where the agent died before accomplishing meaningful work.
+was_null_run() {
+    [ "$LAST_AGENT_NULL_RUN" = true ]
+}
+
+# check_agent_output — verifies an agent produced its expected output file and
+# made git changes. Returns 0 if the agent produced meaningful work.
+#
+# Usage:  check_agent_output "CODER_SUMMARY.md" "Coder"
+# Returns: 0 if output file exists AND (git has changes OR output file has content)
+#          1 if null run or no meaningful output
+check_agent_output() {
+    local expected_file="$1"
+    local label="$2"
+
+    # If the agent was already flagged as a null run, fail immediately
+    if was_null_run; then
+        warn "[$label] Agent was a null run — no output expected."
+        return 1
+    fi
+
+    # Check for expected output file
+    if [ ! -f "$expected_file" ]; then
+        warn "[$label] Expected output file '${expected_file}' not found."
+        return 1
+    fi
+
+    # Check if the file has meaningful content (more than just a header)
+    local line_count
+    line_count=$(wc -l < "$expected_file" | tr -d '[:space:]')
+    if [ "$line_count" -lt 3 ]; then
+        warn "[$label] Output file '${expected_file}' has only ${line_count} line(s) — likely a stub."
+        return 1
+    fi
+
+    # Check for git changes (the agent might have produced a report but changed no code)
+    local has_changes=false
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+        has_changes=true
+    fi
+
+    if [ "$has_changes" = false ] && [ "$line_count" -lt 5 ]; then
+        warn "[$label] No git changes and minimal output — agent may not have accomplished anything."
+        return 1
+    fi
+
+    return 0
 }

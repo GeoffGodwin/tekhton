@@ -30,12 +30,24 @@ run_stage_coder() {
         if echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
             SHOULD_SCOUT=true
         fi
+    elif [ "${DYNAMIC_TURNS_ENABLED}" = "true" ]; then
+        # Scout for complexity estimation even without human notes
+        SHOULD_SCOUT=true
     fi
 
     if [ "$SHOULD_SCOUT" = true ]; then
-        log "Running scout agent to locate relevant files before coder invocation..."
+        log "Running scout agent to locate relevant files and estimate complexity..."
 
         HUMAN_NOTES_CONTENT=$(extract_human_notes)
+
+        # Build architecture block for scout if available
+        ARCHITECTURE_BLOCK=""
+        if [ -f "${ARCHITECTURE_FILE}" ]; then
+            ARCHITECTURE_BLOCK="
+## Architecture Map (use this to find files — do NOT explore blindly)
+$(cat "${ARCHITECTURE_FILE}")"
+        fi
+
         SCOUT_PROMPT=$(render_prompt "scout")
 
         run_agent \
@@ -48,6 +60,10 @@ run_stage_coder() {
         if [ -f "SCOUT_REPORT.md" ]; then
             print_run_summary
             success "Scout agent finished. Relevant files located."
+
+            # Parse complexity estimate before archiving the report
+            apply_scout_turn_limits "SCOUT_REPORT.md"
+
             BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
 $(cat SCOUT_REPORT.md)
@@ -55,6 +71,9 @@ $(cat SCOUT_REPORT.md)
             # Archive scout report with the run
             cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
             rm "SCOUT_REPORT.md"
+        elif was_null_run; then
+            print_run_summary
+            warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
         else
             warn "Scout agent did not produce SCOUT_REPORT.md — coder will explore independently."
         fi
@@ -175,6 +194,30 @@ $(cat TESTER_REPORT.md)"
         "$LOG_FILE"
     print_run_summary
     success "Coder agent finished."
+
+    # --- Null run detection ---------------------------------------------------
+
+    if was_null_run; then
+        error "Coder agent was a null run — it died before doing meaningful work."
+        error "This usually means the agent couldn't find files, hit a permission error,"
+        error "or the prompt was too complex for initial discovery."
+
+        # Reset claimed notes — coder didn't produce any work
+        if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+            resolve_human_notes
+        fi
+
+        write_pipeline_state \
+            "coder" \
+            "null_run" \
+            "--start-at coder" \
+            "$TASK" \
+            "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a SCOUT_REPORT.md manually, or checking agent logs."
+
+        error "State saved with exit reason 'null_run'. Check the log: ${LOG_FILE}"
+        error "Re-run with a more specific task description or add context files."
+        exit 1
+    fi
 
     # --- Post-coder validation -----------------------------------------------
 

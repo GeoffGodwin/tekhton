@@ -25,14 +25,29 @@ run_stage_tester() {
         TESTER_PROMPT=$(render_prompt "tester")
     fi
 
-    log "Invoking tester agent (max ${TESTER_MAX_TURNS} turns)..."
+    log "Invoking tester agent (max ${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS} turns)..."
     run_agent \
         "Tester" \
         "$CLAUDE_TESTER_MODEL" \
-        "$TESTER_MAX_TURNS" \
+        "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
         "$TESTER_PROMPT" \
         "$LOG_FILE"
     TESTER_EXIT=$?
+
+    # --- Null run detection ---------------------------------------------------
+
+    if was_null_run; then
+        warn "Tester was a null run (${LAST_AGENT_TURNS} turns, exit ${LAST_AGENT_EXIT_CODE})."
+        warn "The tester agent died before writing any tests."
+        write_pipeline_state \
+            "tester" \
+            "null_run" \
+            "--start-at test" \
+            "${TASK}" \
+            "Tester agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during discovery. Check logs: ${LOG_FILE}"
+        warn "State saved — re-run with: $0 --start-at test \"${TASK}\""
+        return
+    fi
 
     # --- Post-tester validation ----------------------------------------------
 

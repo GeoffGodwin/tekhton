@@ -19,6 +19,9 @@
 run_stage_review() {
     header "Stage 2 / 3 — Reviewer"
 
+    # Estimate review/tester turns from coder output if scout didn't already set them
+    estimate_post_coder_turns
+
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"
 
@@ -38,11 +41,27 @@ run_stage_review() {
         run_agent \
             "Reviewer (cycle ${REVIEW_CYCLE})" \
             "$CLAUDE_STANDARD_MODEL" \
-            "$REVIEWER_MAX_TURNS" \
+            "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
             "$REVIEWER_PROMPT" \
             "$LOG_FILE"
         print_run_summary
         success "Reviewer finished."
+
+        # Check for null run before parsing output
+        if was_null_run; then
+            warn "Reviewer was a null run (${LAST_AGENT_TURNS} turns, exit ${LAST_AGENT_EXIT_CODE})."
+            warn "Skipping review parse — will retry on next cycle or fail at max cycles."
+            VERDICT="CHANGES_REQUIRED"
+            if [ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]; then
+                error "Reviewer null run at max review cycles — cannot proceed."
+                write_pipeline_state "review" "null_run" \
+                    "${MILESTONE_MODE:+--milestone }--start-at review" \
+                    "$TASK" \
+                    "Reviewer agent died without producing output (${LAST_AGENT_TURNS} turns). Check logs."
+                exit 1
+            fi
+            continue
+        fi
 
         if [ ! -f "REVIEWER_REPORT.md" ]; then
             error "Reviewer did not produce REVIEWER_REPORT.md. Check the log: ${LOG_FILE}"

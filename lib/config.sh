@@ -78,6 +78,20 @@ load_config() {
     : "${CLAUDE_ARCHITECT_MODEL:=${CLAUDE_STANDARD_MODEL}}"
     : "${DEPENDENCY_CONSTRAINTS_FILE:=}"
 
+    # --- Agent exit detection defaults ---
+    : "${AGENT_NULL_RUN_THRESHOLD:=2}"       # Turns ≤ this + non-zero exit = null run
+
+    # --- Dynamic turn limit defaults ---
+    # Bounds for scout-recommended turn adjustments. The scout suggests a value;
+    # the pipeline clamps it to [min, max]. Set to 0 to disable dynamic limits.
+    : "${DYNAMIC_TURNS_ENABLED:=true}"
+    : "${CODER_MIN_TURNS:=15}"
+    : "${CODER_MAX_TURNS_CAP:=200}"
+    : "${REVIEWER_MIN_TURNS:=5}"
+    : "${REVIEWER_MAX_TURNS_CAP:=30}"
+    : "${TESTER_MIN_TURNS:=10}"
+    : "${TESTER_MAX_TURNS_CAP:=100}"
+
     # Milestone overrides — defaults to 2x normal if not specified
     : "${MILESTONE_MAX_REVIEW_CYCLES:=$(( MAX_REVIEW_CYCLES * 2 ))}"
     : "${MILESTONE_CODER_MAX_TURNS:=$(( CODER_MAX_TURNS * 2 ))}"
