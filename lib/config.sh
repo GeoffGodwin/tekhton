@@ -70,6 +70,8 @@ load_config() {
     : "${HUMAN_ACTION_FILE:=HUMAN_ACTION_REQUIRED.md}"
     : "${DRIFT_OBSERVATION_THRESHOLD:=8}"
     : "${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD:=5}"
+    : "${NON_BLOCKING_LOG_FILE:=NON_BLOCKING_LOG.md}"
+    : "${NON_BLOCKING_INJECTION_THRESHOLD:=8}"
 
     # --- Architect agent defaults ---
     : "${ARCHITECT_ROLE_FILE:=.claude/agents/architect.md}"

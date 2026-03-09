@@ -176,6 +176,24 @@ doing anything else. Do not re-implement anything already working.
 $(cat TESTER_REPORT.md)"
     fi
 
+    # Accumulated non-blocking notes (injected when above threshold)
+    NON_BLOCKING_CONTEXT=""
+    local nb_count
+    nb_count=$(count_open_nonblocking_notes)
+    local nb_threshold="${NON_BLOCKING_INJECTION_THRESHOLD:-8}"
+    if [ "$nb_count" -gt "$nb_threshold" ]; then
+        local nb_notes
+        nb_notes=$(get_open_nonblocking_notes)
+        NON_BLOCKING_CONTEXT="
+## Accumulated Tech Debt (${nb_count} items — address what you can)
+These are non-blocking reviewer notes that have accumulated over multiple runs.
+Address as many as your remaining turns allow. For each item you address,
+note the file and what you changed. Items you cannot reach are fine to skip.
+
+${nb_notes}"
+        warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
+    fi
+
     # --- Invoke coder agent --------------------------------------------------
 
     # Mark human notes as in-progress before coder runs

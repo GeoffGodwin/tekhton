@@ -35,9 +35,11 @@ set -euo pipefail
 # Catch unexpected exits (from set -e, pipefail, or unset variables) and print
 # a diagnostic message pointing to the source. Fires on EXIT so it catches
 # everything, but only prints when exit code is non-zero.
+_TEKHTON_CLEAN_EXIT=false  # set to true for expected non-zero exits (usage, abort)
+
 _tekhton_cleanup() {
     local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
+    if [ $exit_code -ne 0 ] && [ "$_TEKHTON_CLEAN_EXIT" != true ]; then
         echo >&2
         echo -e "\033[0;31m[✗] ══════════════════════════════════════\033[0m" >&2
         echo -e "\033[0;31m[✗]   PIPELINE CRASHED (exit code: ${exit_code})\033[0m" >&2
@@ -209,6 +211,7 @@ usage() {
     echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
     echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
     echo "  tekhton --milestone \"Feat: payment system\""
+    _TEKHTON_CLEAN_EXIT=true
     exit 1
 }
 
@@ -365,11 +368,22 @@ EOF
 done
 
 if [ $# -eq 0 ]; then
-    error "Task description is required."
-    usage
+    # No task argument — try to pull from saved pipeline state
+    if [ "$START_AT" != "coder" ] && [ -f "$PIPELINE_STATE_FILE" ]; then
+        TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+        if [ -n "$TASK" ]; then
+            log "Task pulled from saved pipeline state: ${TASK}"
+        else
+            error "Pipeline state exists but has no task. Provide a task description."
+            usage
+        fi
+    else
+        error "Task description is required."
+        usage
+    fi
+else
+    TASK="$1"
 fi
-
-TASK="$1"
 
 # Warn on vague task descriptions
 if echo "$TASK" | grep -qiE "^(continue|do|run|execute|process|handle|fix|update|improve)\s+(the\s+)?(human_notes|notes|things|stuff|features|bugs|tasks)\s*$"; then

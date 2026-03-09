@@ -356,7 +356,13 @@ process_drift_artifacts() {
     # 3. Extract design observations from coder summary → human action items
     _process_design_observations
 
-    # 4. Increment the runs-since-audit counter
+    # 4. Accumulate non-blocking notes from reviewer report
+    append_nonblocking_notes
+
+    # 5. Mark addressed non-blocking notes from coder summary
+    _resolve_addressed_nonblocking_notes
+
+    # 6. Increment the runs-since-audit counter
     increment_runs_since_audit
 }
 
@@ -382,4 +388,167 @@ _process_design_observations() {
         [ -z "$line" ] && continue
         append_human_action "coder" "$line"
     done <<< "$observations"
+}
+
+# =============================================================================
+# NON-BLOCKING NOTES ACCUMULATION
+# Tracks reviewer Non-Blocking Notes across runs. When they exceed a threshold,
+# they are injected into the coder prompt so they get addressed.
+# =============================================================================
+
+# _ensure_nonblocking_log — Creates NON_BLOCKING_LOG.md if missing.
+_ensure_nonblocking_log() {
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    if [ ! -f "$nb_file" ]; then
+        cat > "$nb_file" << 'EOF'
+# Non-Blocking Notes Log
+
+Accumulated reviewer notes that were not blocking but should be addressed.
+Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
+The coder is prompted to address these when the count exceeds the threshold.
+
+## Open
+<!-- Items added here by the pipeline. Mark [x] when addressed. -->
+
+## Resolved
+EOF
+    fi
+}
+
+# append_nonblocking_notes — Reads Non-Blocking Notes from REVIEWER_REPORT.md
+# and appends new items to NON_BLOCKING_LOG.md under ## Open.
+append_nonblocking_notes() {
+    local reviewer_report="${PROJECT_DIR}/REVIEWER_REPORT.md"
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+
+    if [ ! -f "$reviewer_report" ]; then
+        return 0
+    fi
+
+    local notes
+    notes=$(awk '/^## Non-Blocking Notes/{found=1; next} found && /^##/{exit} found{print}' \
+        "$reviewer_report" 2>/dev/null || true)
+
+    # Skip if empty or only "None"
+    if [ -z "$notes" ] || echo "$notes" | grep -qiE '^\s*-?\s*None\s*$'; then
+        return 0
+    fi
+
+    _ensure_nonblocking_log
+
+    local date_tag
+    date_tag=$(date +%Y-%m-%d)
+    local task_desc="${TASK:-unknown}"
+
+    local tmpfile
+    tmpfile=$(mktemp)
+
+    awk -v date="$date_tag" -v task="$task_desc" -v notes="$notes" '
+    /^## Open/ {
+        print
+        n = split(notes, lines, "\n")
+        for (i = 1; i <= n; i++) {
+            line = lines[i]
+            # Strip leading "- " if present, skip empty lines
+            gsub(/^[[:space:]]*-[[:space:]]*/, "", line)
+            gsub(/^[[:space:]]+/, "", line)
+            gsub(/[[:space:]]+$/, "", line)
+            if (length(line) > 0 && tolower(line) != "none") {
+                printf "- [ ] [%s | \"%s\"] %s\n", date, task, line
+            }
+        }
+        next
+    }
+    { print }
+    ' "$nb_file" > "$tmpfile"
+
+    mv "$tmpfile" "$nb_file"
+}
+
+# count_open_nonblocking_notes — Returns count of open (unchecked) notes.
+count_open_nonblocking_notes() {
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    if [ ! -f "$nb_file" ]; then
+        echo "0"
+        return
+    fi
+    local count
+    count=$(awk '/^## Open/{found=1; next} found && /^##/{exit} found && /^- \[ \]/{count++} END{print count+0}' \
+        "$nb_file" 2>/dev/null)
+    echo "$count"
+}
+
+# get_open_nonblocking_notes — Returns the text of all open notes.
+get_open_nonblocking_notes() {
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    if [ ! -f "$nb_file" ]; then
+        return
+    fi
+    awk '/^## Open/{found=1; next} found && /^##/{exit} found && /^- \[ \]/{print}' \
+        "$nb_file" 2>/dev/null || true
+}
+
+# _resolve_addressed_nonblocking_notes — After a coder run, check if any open
+# notes were addressed (file/line referenced in CODER_SUMMARY.md). Simple
+# heuristic: if the coder's modified files list includes a file mentioned in
+# an open note, mark it [x].
+_resolve_addressed_nonblocking_notes() {
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    local summary="${PROJECT_DIR}/CODER_SUMMARY.md"
+
+    if [ ! -f "$nb_file" ] || [ ! -f "$summary" ]; then
+        return 0
+    fi
+
+    # Extract file paths from coder summary's modified/created sections
+    local modified_files
+    modified_files=$(awk '/^## Files (Created|Modified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{print}' \
+        "$summary" 2>/dev/null | sed 's/^[-*][[:space:]]*//' | sed 's/ .*//' | sort -u || true)
+
+    if [ -z "$modified_files" ]; then
+        return 0
+    fi
+
+    # For each open note, check if any referenced file was modified
+    local tmpfile
+    tmpfile=$(mktemp)
+    local resolved=0
+    local in_open=false
+
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "^## Open"; then
+            in_open=true
+            echo "$line" >> "$tmpfile"
+            continue
+        elif echo "$line" | grep -q "^## " && [ "$in_open" = true ]; then
+            in_open=false
+        fi
+
+        if [ "$in_open" = true ] && echo "$line" | grep -q "^- \[ \]"; then
+            local matched=false
+            while IFS= read -r mod_file; do
+                [ -z "$mod_file" ] && continue
+                local basename_mod
+                basename_mod=$(basename "$mod_file" 2>/dev/null || echo "$mod_file")
+                if echo "$line" | grep -q "$basename_mod"; then
+                    echo "$line" | sed 's/^- \[ \]/- [x]/' >> "$tmpfile"
+                    matched=true
+                    resolved=$((resolved + 1))
+                    break
+                fi
+            done <<< "$modified_files"
+            if [ "$matched" = false ]; then
+                echo "$line" >> "$tmpfile"
+            fi
+        else
+            echo "$line" >> "$tmpfile"
+        fi
+    done < "$nb_file"
+
+    if [ "$resolved" -gt 0 ]; then
+        mv "$tmpfile" "$nb_file"
+        log "Resolved ${resolved} non-blocking note(s) based on modified files."
+    else
+        rm "$tmpfile"
+    fi
 }
