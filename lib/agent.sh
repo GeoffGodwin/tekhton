@@ -126,7 +126,15 @@ run_agent() {
     if [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
         LAST_AGENT_NULL_RUN=true
         warn "[$label] NULL RUN DETECTED — agent used ${turns_used} turn(s) and exited ${agent_exit}."
-        warn "[$label] The agent likely died during initial discovery/file search."
+        # Provide specific guidance based on exit code
+        if [ "$agent_exit" -eq 137 ]; then
+            warn "[$label] Exit 137 = SIGKILL (signal 9). The process was killed externally."
+            warn "[$label] Common cause: OOM killer in WSL2, or the prompt was too large for available memory."
+        elif [ "$agent_exit" -eq 139 ]; then
+            warn "[$label] Exit 139 = SIGSEGV. The process crashed."
+        else
+            warn "[$label] The agent likely died during initial discovery/file search."
+        fi
     elif [ "$turns_used" -eq 0 ]; then
         LAST_AGENT_NULL_RUN=true
         warn "[$label] NULL RUN DETECTED — agent used 0 turns."

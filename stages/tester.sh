@@ -46,6 +46,9 @@ run_stage_tester() {
             "${TASK}" \
             "Tester agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during discovery. Check logs: ${LOG_FILE}"
         warn "State saved — re-run with: $0 --start-at test \"${TASK}\""
+        # Signal to pipeline to skip final checks — no point running cleanup
+        # agents or test suites when the tester itself couldn't even start.
+        SKIP_FINAL_CHECKS=true
         return
     fi
 

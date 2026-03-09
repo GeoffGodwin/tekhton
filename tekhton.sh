@@ -86,6 +86,7 @@ NOTES_FILTER=""
 MILESTONE_MODE=false
 SKIP_AUDIT=false
 FORCE_AUDIT=false
+SKIP_FINAL_CHECKS=false
 TOTAL_TURNS=0
 TOTAL_TIME=0
 STAGE_SUMMARY=""
@@ -551,12 +552,18 @@ fi
 # --- Final checks ------------------------------------------------------------
 # run_final_checks returns non-zero when analyze/tests fail — capture it so
 # set -e doesn't kill the pipeline before we archive reports and commit.
+# Skip entirely if a stage null-ran (no point burning tokens on cleanup agents).
 
 FINAL_CHECK_RESULT=0
-run_final_checks "$LOG_FILE" || FINAL_CHECK_RESULT=$?
+if [ "${SKIP_FINAL_CHECKS:-false}" = true ]; then
+    warn "Skipping final checks — a stage had a null run (agent died without doing work)."
+    warn "Fix the underlying issue and re-run before running analyze/test."
+else
+    run_final_checks "$LOG_FILE" || FINAL_CHECK_RESULT=$?
 
-if [ "$FINAL_CHECK_RESULT" -ne 0 ]; then
-    warn "Final checks had failures (exit ${FINAL_CHECK_RESULT}). Pipeline will continue to archiving and commit prompt."
+    if [ "$FINAL_CHECK_RESULT" -ne 0 ]; then
+        warn "Final checks had failures (exit ${FINAL_CHECK_RESULT}). Pipeline will continue to archiving and commit prompt."
+    fi
 fi
 
 # --- Drift artifact processing -----------------------------------------------
@@ -569,7 +576,7 @@ archive_reports "$LOG_DIR" "$TIMESTAMP"
 
 # --- Generate commit message -------------------------------------------------
 
-COMMIT_MSG=$(generate_commit_message "$TASK")
+COMMIT_MSG=$(generate_commit_message "$TASK" || echo "feat: ${TASK}")
 
 # --- Done --------------------------------------------------------------------
 

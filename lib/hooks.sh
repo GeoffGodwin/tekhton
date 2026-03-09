@@ -28,29 +28,39 @@ archive_reports() {
 generate_commit_message() {
     local task="$1"
 
-    local what
-    what=$(awk '/^## What was implemented/{found=1; next} found && /^##/{exit} found && NF{print; exit}' CODER_SUMMARY.md 2>/dev/null | head -c 120)
+    # All commands in this function must be guarded against pipefail — awk | head
+    # can cause SIGPIPE, and grep -q returns non-zero on no match.
+    local what=""
+    if [ -f "CODER_SUMMARY.md" ]; then
+        what=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found && NF{print; exit}' CODER_SUMMARY.md 2>/dev/null || true)
+        what=$(echo "$what" | head -c 120)
+    fi
 
-    local file_count
-    file_count=$(awk '/^## Files created or modified/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' CODER_SUMMARY.md 2>/dev/null)
+    local file_count=0
+    if [ -f "CODER_SUMMARY.md" ]; then
+        file_count=$(awk '/^## Files ([Cc]reated|[Mm]odified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' CODER_SUMMARY.md 2>/dev/null || echo "0")
+    fi
 
     local prefix="feat"
-    echo "$task" | grep -qi "^fix" && prefix="fix"
-    echo "$task" | grep -qi "^refactor" && prefix="refactor"
-    echo "$task" | grep -qi "^test" && prefix="test"
-    echo "$task" | grep -qi "^chore" && prefix="chore"
-    echo "$task" | grep -qi "^docs" && prefix="docs"
+    if echo "$task" | grep -qi "^fix"; then prefix="fix"
+    elif echo "$task" | grep -qi "^refactor"; then prefix="refactor"
+    elif echo "$task" | grep -qi "^test"; then prefix="test"
+    elif echo "$task" | grep -qi "^chore"; then prefix="chore"
+    elif echo "$task" | grep -qi "^docs"; then prefix="docs"
+    fi
 
     local subject="${prefix}: $(echo "$task" | sed "s/^[Ff]ix: //;s/^[Ff]eat: //;s/^[Rr]efactor: //" | cut -c1-72)"
     local body=""
     if [ -n "$what" ]; then
-        body=$(awk '/^## What was implemented/{found=1; next} found && /^##/{exit} found{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 | sed 's/^[-*] /- /')
+        body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 | sed 's/^[-*] /- /' || true)
     fi
-    [ -n "$file_count" ] && [ "$file_count" -gt 0 ] && body="${body}
+    if [ -n "$file_count" ] && [ "$file_count" -gt 0 ] 2>/dev/null; then
+        body="${body}
 - ${file_count} files created or modified"
+    fi
 
     echo "$subject"
-    [ -n "$body" ] && echo "" && echo "$body"
+    if [ -n "$body" ]; then echo "" && echo "$body"; fi
 }
 
 # --- Final checks (analyze + test) -------------------------------------------
