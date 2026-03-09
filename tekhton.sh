@@ -475,10 +475,11 @@ if should_trigger_audit 2>/dev/null; then
     runs_count=$(get_runs_since_audit)
     echo
     warn "╔══════════════════════════════════════════════════════════════╗"
-    warn "║  DRIFT THRESHOLD REACHED — ARCHITECT AUDIT WILL RUN        ║"
-    warn "║  Observations: ${obs_count} (threshold: ${DRIFT_OBSERVATION_THRESHOLD})  Runs since audit: ${runs_count} (threshold: ${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD})"
+    warn "║  DRIFT THRESHOLD REACHED — ARCHITECT AUDIT WILL RUN          ║"
+    warn "║  Observations: ${obs_count} (threshold: ${DRIFT_OBSERVATION_THRESHOLD}) ║"
+    warn "║  Runs since audit: ${runs_count} (threshold: ${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD}) ║"
     if [ "$SKIP_AUDIT" = true ]; then
-    warn "║  --skip-audit: audit will be SKIPPED this run               ║"
+    warn "║  --skip-audit: audit will be SKIPPED this run                ║"
     fi
     warn "╚══════════════════════════════════════════════════════════════╝"
     echo
