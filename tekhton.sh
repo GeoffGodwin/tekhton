@@ -549,8 +549,15 @@ if [ ! -f "TESTER_REPORT.md" ]; then
 fi
 
 # --- Final checks ------------------------------------------------------------
+# run_final_checks returns non-zero when analyze/tests fail — capture it so
+# set -e doesn't kill the pipeline before we archive reports and commit.
 
-run_final_checks "$LOG_FILE"
+FINAL_CHECK_RESULT=0
+run_final_checks "$LOG_FILE" || FINAL_CHECK_RESULT=$?
+
+if [ "$FINAL_CHECK_RESULT" -ne 0 ]; then
+    warn "Final checks had failures (exit ${FINAL_CHECK_RESULT}). Pipeline will continue to archiving and commit prompt."
+fi
 
 # --- Drift artifact processing -----------------------------------------------
 
