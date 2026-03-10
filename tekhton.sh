@@ -515,7 +515,7 @@ if [ "$START_AT" = "coder" ]; then
         if [ -f "$f" ]; then
             ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_${f}"
             mkdir -p "${LOG_DIR}/archive"
-            cp "$f" "$ARCHIVE_NAME"
+            mv "$f" "$ARCHIVE_NAME"
             log "Archived previous ${f}"
         fi
     done
