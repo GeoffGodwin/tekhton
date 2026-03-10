@@ -5,6 +5,13 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [x] [2026-03-10 | "Implement Milestone 4: CLAUDE.md Generation Agent"] `lib/plan.sh` is at 291 lines. Milestone 6 will add state save/restore and config
+- [ ] [2026-03-10 | "Implement Milestone 4: CLAUDE.md Generation Agent"] defaults, which will push it over the 300-line limit. A split (e.g. extract
+- [ ] [2026-03-10 | "Implement Milestone 4: CLAUDE.md Generation Agent"] `check_design_completeness` and helpers into `lib/plan_completeness.sh`) should
+- [ ] [2026-03-10 | "Implement Milestone 4: CLAUDE.md Generation Agent"] be planned before Milestone 6 begins.
+- [ ] [2026-03-10 | "Implement Milestone 4: CLAUDE.md Generation Agent"] `ARCHITECTURE.md` needs a Layer 1 update noting that `--plan` now sources
+- [ ] [2026-03-10 | "Implement Milestone 4: CLAUDE.md Generation Agent"] `agent.sh` in addition to the previous four libraries. The ACP flags this; it is
+- [ ] [2026-03-10 | "Implement Milestone 4: CLAUDE.md Generation Agent"] Milestone 7 scope but worth tracking.
 - [x] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] `lib/plan.sh` and `stages/plan_interview.sh` still lack `set -euo pipefail` at
 - [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] the file top. Pre-existing from Milestones 1/2 (not introduced here); settings
 - [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] are inherited from the sourcing script and test harness. Fix in a dedicated
@@ -19,9 +26,9 @@ The coder is prompted to address these when the count exceeds the threshold.
 - [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] system `$TMPDIR` environment variable used by many programs. Rename to
 - [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] `TEST_TMPDIR` (or similar) to avoid unintended side effects. Carry-over from
 - [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] cycle 1 — not a regression.
-- [ ] [2026-03-10 | "Fix the bugs found in the TESTER_REPORT.md"] The coder's explanation for omitting `set -euo pipefail` from sourced files is accepted. The codebase-wide pattern is confirmed: no sourced `lib/*.sh` or `stages/*.sh` file carries the header — they inherit it from `tekhton.sh`. The previous cycle's non-blocking note is resolved.
+- [x] [2026-03-10 | "Fix the bugs found in the TESTER_REPORT.md"] The coder's explanation for omitting `set -euo pipefail` from sourced files is accepted. The codebase-wide pattern is confirmed: no sourced `lib/*.sh` or `stages/*.sh` file carries the header — they inherit it from `tekhton.sh`. The previous cycle's non-blocking note is resolved.
 - [ ] [2026-03-10 | "Fix the bugs found in the TESTER_REPORT.md"] `tr -d ' '` removes all space characters rather than just leading whitespace. For `wc -l` output this is correct and safe — the only non-digit characters in `wc -l` output are spaces and the trailing newline (which command substitution strips). Current code is correct.
-- [ ] [2026-03-10 | "Fix the bugs found in the TESTER_REPORT.md"] The coder's explanation for omitting `set -euo pipefail` from sourced files is accepted. The codebase-wide pattern is confirmed: no sourced `lib/*.sh` or `stages/*.sh` file carries the header — they inherit it from `tekhton.sh`. The previous cycle's non-blocking note is resolved.
+- [x] [2026-03-10 | "Fix the bugs found in the TESTER_REPORT.md"] The coder's explanation for omitting `set -euo pipefail` from sourced files is accepted. The codebase-wide pattern is confirmed: no sourced `lib/*.sh` or `stages/*.sh` file carries the header — they inherit it from `tekhton.sh`. The previous cycle's non-blocking note is resolved.
 - [x] [2026-03-10 | "implement Milestone 2: Interactive Interview Agent"] **Cycle 1 blocker — VERIFIED FIXED.** `tekhton.sh` line 175 is now `run_plan || true`. The crash diagnostic no longer fires on Ctrl+C or interrupted planning sessions.
 - [x] [2026-03-10 | "implement Milestone 2: Interactive Interview Agent"] `stages/plan_interview.sh` and `lib/plan.sh` both lack a `set -euo pipefail` header. These files are sourced by `tekhton.sh` (which has `set -euo pipefail`), so the options are inherited at runtime and the omission is not a correctness issue today. However, CLAUDE.md rule #2 requires all scripts to carry the header explicitly, and running either file standalone (e.g., during testing) would silently skip the safety net. Add the header to both files for consistency. (Not a regression — was present in cycle 1; flagged here for Milestone 7 cleanup.)
 - [x] [2026-03-10 | "implement Milestone 2: Interactive Interview Agent"] `stages/plan_interview.sh` lines 91 and 102: `wc -l < "$file"` can produce leading whitespace on some platforms. `$(wc -l < "$file" | tr -d ' ')` is strictly portable. Low-priority cosmetic (carried from cycle 1 non-blocking note).

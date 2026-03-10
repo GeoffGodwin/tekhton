@@ -16,6 +16,8 @@ PLAN_TEMPLATES_DIR="${TEKHTON_HOME}/templates/plans"
 
 export PLAN_INTERVIEW_MODEL="${CLAUDE_PLAN_MODEL:-sonnet}"
 export PLAN_INTERVIEW_MAX_TURNS="${PLAN_INTERVIEW_MAX_TURNS:-50}"
+export PLAN_GENERATION_MODEL="${CLAUDE_PLAN_MODEL:-sonnet}"
+export PLAN_GENERATION_MAX_TURNS="${PLAN_GENERATION_MAX_TURNS:-30}"
 
 # Project types — order matches the menu display
 PLAN_PROJECT_TYPES=(
@@ -279,7 +281,10 @@ run_plan() {
     echo
     run_plan_completeness_loop || return 1
 
+    # Step 4: CLAUDE.md generation
+    echo
+    run_plan_generate || return 1
+
     # Future milestones will add:
-    # Step 4: CLAUDE.md generation (Milestone 4)
     # Step 5: Milestone review + file output (Milestone 5)
 }

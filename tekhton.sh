@@ -170,8 +170,14 @@ fi
 if [ "${1:-}" = "--plan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
+    source "${TEKHTON_HOME}/lib/agent.sh"
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/stages/plan_interview.sh"
+    source "${TEKHTON_HOME}/stages/plan_generate.sh"
+    # PROJECT_NAME is needed by run_agent() for temp file naming;
+    # in --plan mode config is not loaded, so derive from directory name.
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
     run_plan || true
     exit 0
 fi
