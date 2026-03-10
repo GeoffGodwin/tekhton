@@ -5,6 +5,20 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [x] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] `lib/plan.sh` and `stages/plan_interview.sh` still lack `set -euo pipefail` at
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] the file top. Pre-existing from Milestones 1/2 (not introduced here); settings
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] are inherited from the sourcing script and test harness. Fix in a dedicated
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] cleanup pass.
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] `run_plan_completeness_loop`: the invalid-choice handler decrements `pass_num`
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] then falls through to the next loop iteration, which re-increments and re-runs
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] `check_design_completeness`, printing a second "Completeness Check — Pass N"
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] header for the same logical pass. A small inner re-prompt loop for just the
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] `[f/s]` choice would eliminate the redundant check and duplicate header.
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] Carry-over from cycle 1 — not a regression.
+- [x] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] `tests/test_plan_completeness.sh` line 14: `TMPDIR=$(mktemp -d)` shadows the
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] system `$TMPDIR` environment variable used by many programs. Rename to
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] `TEST_TMPDIR` (or similar) to avoid unintended side effects. Carry-over from
+- [ ] [2026-03-10 | "Implement Milestone 3: Completeness Check + Follow-Up"] cycle 1 — not a regression.
 - [ ] [2026-03-10 | "Fix the bugs found in the TESTER_REPORT.md"] The coder's explanation for omitting `set -euo pipefail` from sourced files is accepted. The codebase-wide pattern is confirmed: no sourced `lib/*.sh` or `stages/*.sh` file carries the header — they inherit it from `tekhton.sh`. The previous cycle's non-blocking note is resolved.
 - [ ] [2026-03-10 | "Fix the bugs found in the TESTER_REPORT.md"] `tr -d ' '` removes all space characters rather than just leading whitespace. For `wc -l` output this is correct and safe — the only non-digit characters in `wc -l` output are spaces and the trailing newline (which command substitution strips). Current code is correct.
 - [ ] [2026-03-10 | "Fix the bugs found in the TESTER_REPORT.md"] The coder's explanation for omitting `set -euo pipefail` from sourced files is accepted. The codebase-wide pattern is confirmed: no sourced `lib/*.sh` or `stages/*.sh` file carries the header — they inherit it from `tekhton.sh`. The previous cycle's non-blocking note is resolved.
