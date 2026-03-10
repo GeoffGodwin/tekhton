@@ -623,7 +623,8 @@ echo -e "  Verdict:   ${GREEN}${BOLD}${VERDICT}${NC}"
 echo -e "  Log:       ${LOG_FILE}"
 echo
 
-if [ -f "TESTER_REPORT.md" ] && grep -q "^- " TESTER_REPORT.md 2>/dev/null; then
+if [ -f "TESTER_REPORT.md" ] && \
+   awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
     warn "Tester found bugs — review TESTER_REPORT.md before committing."
     echo
 fi
