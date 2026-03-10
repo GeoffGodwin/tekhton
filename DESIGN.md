@@ -81,6 +81,7 @@ New files (planning phase only):
   │   └── plan_generate.prompt.md  # CLAUDE.md generation prompt
   └── templates/plans/             # Design doc templates by project type
       ├── web-app.md
+      ├── web-game.md
       ├── cli-tool.md
       ├── api-service.md
       ├── mobile-app.md
@@ -258,7 +259,7 @@ them unless they want to customize the planning experience.
 
 ### In scope for v1.0
 - `tekhton --plan` interactive flow
-- 6 project type templates (web-app, cli-tool, api-service, mobile-app, library, custom)
+- 7 project type templates (web-app, web-game, cli-tool, api-service, mobile-app, library, custom)
 - Interactive interview with one-question-at-a-time flow
 - Structural completeness checking
 - CLAUDE.md generation with milestone plan
