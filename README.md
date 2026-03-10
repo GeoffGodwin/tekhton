@@ -75,6 +75,20 @@ tekhton "Implement feature X"
 - **Git** — used for commit integration
 - **Your project's build/test tools** — configured via `ANALYZE_CMD`, `TEST_CMD`, `BUILD_CHECK_CMD` in `pipeline.conf`
 
+### Contributing to Tekhton
+
+If you're working on Tekhton itself (not just using it), you also need:
+
+- **shellcheck** — used by Tekhton's own `ANALYZE_CMD` to lint all `.sh` files
+
+  ```bash
+  # Debian/Ubuntu/WSL2
+  sudo apt-get install -y shellcheck
+
+  # macOS
+  brew install shellcheck
+  ```
+
 ## Project Structure After `--init`
 
 ```
