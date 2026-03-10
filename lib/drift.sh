@@ -126,15 +126,12 @@ resolve_drift_observations() {
 
     # Process file: move matching unresolved lines to resolved section
     local in_unresolved=0
-    local in_resolved=0
     while IFS= read -r line; do
         if echo "$line" | grep -q "^## Unresolved Observations"; then
             in_unresolved=1
-            in_resolved=0
             echo "$line" >> "$tmpfile"
         elif echo "$line" | grep -q "^## Resolved"; then
             in_unresolved=0
-            in_resolved=1
             echo "$line" >> "$tmpfile"
             # Append newly resolved lines here
             if [ -n "$resolved_lines" ]; then
@@ -143,6 +140,7 @@ resolve_drift_observations() {
         elif [ "$in_unresolved" -eq 1 ] && echo "$line" | grep -qE "$combined_pattern"; then
             # This line matches — save for resolved section
             local stripped
+            # shellcheck disable=SC2001
             stripped=$(echo "$line" | sed 's/^- \[[^]]*\] //')
             resolved_lines="${resolved_lines}
 - [RESOLVED ${date_tag}] ${stripped}"
@@ -535,6 +533,7 @@ _resolve_addressed_nonblocking_notes() {
                 local basename_mod
                 basename_mod=$(basename "$mod_file" 2>/dev/null || echo "$mod_file")
                 if echo "$line" | grep -q "$basename_mod"; then
+                    # shellcheck disable=SC2001
                     echo "$line" | sed 's/^- \[ \]/- [x]/' >> "$tmpfile"
                     matched=true
                     resolved=$((resolved + 1))

@@ -21,6 +21,7 @@ run_stage_tester() {
     if [ "$START_AT" = "tester" ]; then
         TESTER_PROMPT=$(render_prompt "tester_resume")
     else
+        export ARCHITECTURE_CONTENT
         ARCHITECTURE_CONTENT=$([ -f "${ARCHITECTURE_FILE}" ] && cat "${ARCHITECTURE_FILE}" || echo "(${ARCHITECTURE_FILE} not found)")
         TESTER_PROMPT=$(render_prompt "tester")
     fi
@@ -32,7 +33,7 @@ run_stage_tester() {
         "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
         "$TESTER_PROMPT" \
         "$LOG_FILE"
-    TESTER_EXIT=$?
+    export TESTER_EXIT=$?
 
     # --- SIGKILL retry --------------------------------------------------------
     # Exit 137 (SIGKILL) is typically OOM in WSL2. Retry once after a cooldown
@@ -47,7 +48,7 @@ run_stage_tester() {
             "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
             "$TESTER_PROMPT" \
             "$LOG_FILE"
-        TESTER_EXIT=$?
+        TESTER_EXIT=$?  # exported above
     fi
 
     # --- Null run detection ---------------------------------------------------
@@ -67,7 +68,7 @@ run_stage_tester() {
         warn "State saved — re-run with: $0 ${resume_flag} \"${TASK}\""
         # Signal to pipeline to skip final checks — no point running cleanup
         # agents or test suites when the tester itself couldn't even start.
-        SKIP_FINAL_CHECKS=true
+        export SKIP_FINAL_CHECKS=true
         return
     fi
 

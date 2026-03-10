@@ -25,14 +25,15 @@ run_stage_review() {
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"
 
-    while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ $REVIEW_CYCLE -lt $MAX_REVIEW_CYCLES ]; do
+    while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; do
         REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
         log "Review cycle ${REVIEW_CYCLE} / ${MAX_REVIEW_CYCLES}..."
 
         # --- Invoke reviewer -------------------------------------------------
 
+        export ARCHITECTURE_CONTENT
         ARCHITECTURE_CONTENT=$([ -f "${ARCHITECTURE_FILE}" ] && cat "${ARCHITECTURE_FILE}" || echo "(${ARCHITECTURE_FILE} not found)")
-        PRIOR_BLOCKERS_BLOCK=""
+        export PRIOR_BLOCKERS_BLOCK=""
         if [ "$REVIEW_CYCLE" -gt 1 ]; then
             PRIOR_BLOCKERS_BLOCK="yes"
         fi
@@ -86,6 +87,7 @@ run_stage_review() {
                 REVIEWER_REPORT.md 2>/dev/null || true)
             if [ -n "$ACCEPTED_ACPS" ]; then
                 log "Accepted ACPs found:"
+                # shellcheck disable=SC2001
                 echo "$ACCEPTED_ACPS" | sed 's/^/  /'
             fi
         fi
@@ -149,7 +151,7 @@ run_stage_review() {
                 elif [ "$HAS_SIMPLE" -gt 0 ]; then
                     warn "Only simple blockers found. Invoking jr coder..."
 
-                    JR_AFTER_SENIOR=""
+                    export JR_AFTER_SENIOR=""
                     JR_REWORK_PROMPT=$(render_prompt "jr_coder")
 
                     run_agent \

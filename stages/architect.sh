@@ -27,17 +27,17 @@ run_stage_architect() {
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
     local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}"
 
-    DRIFT_LOG_CONTENT="(No drift log found)"
+    export DRIFT_LOG_CONTENT="(No drift log found)"
     if [ -f "$drift_file" ]; then
         DRIFT_LOG_CONTENT=$(cat "$drift_file")
     fi
 
-    ARCHITECTURE_LOG_CONTENT="(No architecture decision log found)"
+    export ARCHITECTURE_LOG_CONTENT="(No architecture decision log found)"
     if [ -f "$adl_file" ]; then
         ARCHITECTURE_LOG_CONTENT=$(cat "$adl_file")
     fi
 
-    ARCHITECTURE_CONTENT="(No architecture file found)"
+    export ARCHITECTURE_CONTENT="(No architecture file found)"
     if [ -f "${ARCHITECTURE_FILE}" ]; then
         ARCHITECTURE_CONTENT=$(cat "${ARCHITECTURE_FILE}")
     fi
@@ -45,7 +45,7 @@ run_stage_architect() {
     DRIFT_OBSERVATION_COUNT=$(count_drift_observations)
 
     # Dependency constraints (P5 — optional, may not exist yet)
-    DEPENDENCY_CONSTRAINTS_CONTENT=""
+    export DEPENDENCY_CONSTRAINTS_CONTENT=""
     if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE}" ]; then
         DEPENDENCY_CONSTRAINTS_CONTENT=$(cat "${DEPENDENCY_CONSTRAINTS_FILE}")
     fi
@@ -167,8 +167,9 @@ run_stage_architect() {
 
         log "Running expedited review of architect remediation..."
 
+        export ARCHITECTURE_CONTENT
         ARCHITECTURE_CONTENT=$([ -f "${ARCHITECTURE_FILE}" ] && cat "${ARCHITECTURE_FILE}" || echo "(not found)")
-        PRIOR_BLOCKERS_BLOCK=""
+        export PRIOR_BLOCKERS_BLOCK=""
         ARCHITECT_REVIEW_PROMPT=$(render_prompt "architect_review")
 
         run_agent \
@@ -200,6 +201,7 @@ run_stage_architect() {
             echo "$line" | grep -qE '^\s*-+\s*$' && continue
             # Escape regex special characters for safe grep matching
             local escaped
+            # shellcheck disable=SC2016
             escaped=$(printf '%s' "$line" | sed 's/[.[\*^$()+?{|]/\\&/g')
             resolve_patterns+=("$escaped")
         done <<< "$resolve_section"

@@ -107,6 +107,7 @@ EOF
 # Returns: 0 if CODER_SUMMARY.md shows COMPLETE, 1 otherwise
 run_completion_gate() {
     CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+    export CODER_REMAINING
     CODER_REMAINING=$(grep "^## Remaining Work" -A5 CODER_SUMMARY.md 2>/dev/null || echo "")
 
     if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then

@@ -49,7 +49,8 @@ generate_commit_message() {
     elif echo "$task" | grep -qi "^docs"; then prefix="docs"
     fi
 
-    local subject="${prefix}: $(echo "$task" | sed "s/^[Ff]ix: //;s/^[Ff]eat: //;s/^[Rr]efactor: //" | cut -c1-72)"
+    local subject
+    subject="${prefix}: $(echo "$task" | sed "s/^[Ff]ix: //;s/^[Ff]eat: //;s/^[Rr]efactor: //" | cut -c1-72)"
     local body=""
     if [ -n "$what" ]; then
         body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 | sed 's/^[-*] /- /' || true)
@@ -106,6 +107,7 @@ run_final_checks() {
 
         warn "Running analyze cleanup pass (${CLEANUP_MODEL})..."
 
+        export ANALYZE_ISSUES
         ANALYZE_ISSUES=$(echo "$ANALYZE_OUTPUT" | grep -E "^  (error|warning|info)" || true)
         CLEANUP_PROMPT=$(render_prompt "analyze_cleanup")
 

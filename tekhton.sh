@@ -9,9 +9,11 @@
 #   tekhton --start-at review "Fix: edge case in module Y"
 #   tekhton --start-at test "Fix: edge case in module Y"
 #   tekhton --init                    # First-time setup in a new project
+#   tekhton --plan                    # Interactive planning phase
 #
 # Flags:
 #   --init                Scaffold pipeline config + agent roles for a new project
+#   --plan                Interactive planning: build DESIGN.md + CLAUDE.md from scratch
 #   --status              Print saved pipeline state and exit
 #   --milestone           Milestone mode: higher turn limits, more review cycles
 #   --start-at coder      Full pipeline from scratch (default)
@@ -163,6 +165,15 @@ RULES_EOF
     exit 0
 fi
 
+# --- Early --plan check (runs before config exists) -------------------------
+
+if [ "${1:-}" = "--plan" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/plan.sh"
+    run_plan
+    exit 0
+fi
+
 # --- Library sources ---------------------------------------------------------
 
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -191,6 +202,7 @@ usage() {
     echo "Usage: tekhton [flags] \"<task description>\""
     echo ""
     echo "  --init                    Scaffold pipeline config + agent roles for a new project"
+    echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
     echo "  --status                  Print saved pipeline state and exit (no run)"
     echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
     echo "                            upgraded tester model"
@@ -208,6 +220,7 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  tekhton --init                           # First-time setup"
+    echo "  tekhton --plan                           # Interactive planning phase"
     echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
     echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
     echo "  tekhton --milestone \"Feat: payment system\""
@@ -244,7 +257,7 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
 
     case "$RESUME_CHOICE" in
         y|Y)
-            exec "$0" $SAVED_RESUME_FLAG "$SAVED_TASK"
+            exec "$0" "$SAVED_RESUME_FLAG" "$SAVED_TASK"
             ;;
         fresh)
             clear_pipeline_state
@@ -343,7 +356,9 @@ EOF
                 exit 1
             fi
 
+            export ARCHITECTURE_SYSTEMS
             ARCHITECTURE_SYSTEMS=$(grep -E "^### " "${ARCHITECTURE_FILE}" | sed 's/^### /- /')
+            export ARCHITECTURE_CONTENT
             ARCHITECTURE_CONTENT=$(cat "${ARCHITECTURE_FILE}")
             SEED_PROMPT=$(render_prompt "seed_contracts")
 
@@ -508,12 +523,10 @@ elif [ "$START_AT" = "review" ]; then
     done
     log "Resuming with existing CODER_SUMMARY.md"
 elif [ "$START_AT" = "test" ]; then
-    for f in TESTER_REPORT.md; do
-        if [ -f "$f" ]; then
-            mv "$f" "${LOG_DIR}/${TIMESTAMP}_prev_${f}"
-            log "Archived previous $f"
-        fi
-    done
+    if [ -f "TESTER_REPORT.md" ]; then
+        mv "TESTER_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_prev_TESTER_REPORT.md"
+        log "Archived previous TESTER_REPORT.md"
+    fi
     log "Resuming with existing CODER_SUMMARY.md and REVIEWER_REPORT.md"
 elif [ "$START_AT" = "tester" ]; then
     log "Resuming tester from existing TESTER_REPORT.md"

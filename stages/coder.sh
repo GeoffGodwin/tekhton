@@ -38,6 +38,7 @@ run_stage_coder() {
     if [ "$SHOULD_SCOUT" = true ]; then
         log "Running scout agent to locate relevant files and estimate complexity..."
 
+        export HUMAN_NOTES_CONTENT
         HUMAN_NOTES_CONTENT=$(extract_human_notes)
 
         # Build architecture block for scout if available
@@ -100,6 +101,7 @@ $(cat SCOUT_REPORT.md)
                 ;;
         esac
 
+        export HUMAN_NOTES_BLOCK
         HUMAN_NOTES_BLOCK="
 ## Human Notes [${NOTES_FILTER:-ALL}]
 ${NOTE_GUIDANCE}
@@ -109,21 +111,21 @@ ${BUG_SCOUT_CONTEXT}"
     fi
 
     # Architecture context
-    ARCHITECTURE_BLOCK=""
+    export ARCHITECTURE_BLOCK=""
     if [ -f "${ARCHITECTURE_FILE}" ]; then
         ARCHITECTURE_BLOCK="
 ## Architecture Map (read FIRST — saves you 10+ turns of exploration)
 $(cat "${ARCHITECTURE_FILE}")"
     fi
 
-    GLOSSARY_BLOCK=""
+    export GLOSSARY_BLOCK=""
     if [ -n "${GLOSSARY_FILE}" ] && [ -f "${GLOSSARY_FILE}" ]; then
         GLOSSARY_BLOCK="
 ## Glossary (use these terms precisely — do not invent synonyms)
 $(cat "${GLOSSARY_FILE}")"
     fi
 
-    MILESTONE_BLOCK=""
+    export MILESTONE_BLOCK=""
     if [ "$MILESTONE_MODE" = true ]; then
         MILESTONE_BLOCK="
 ## Milestone Mode
@@ -136,7 +138,7 @@ This is a milestone-sized task. Before writing any code:
     fi
 
     # Prior reviewer context (unresolved blockers from a previous run)
-    PRIOR_REVIEWER_CONTEXT=""
+    export PRIOR_REVIEWER_CONTEXT=""
     if [ -f "REVIEWER_REPORT.md" ] && [ "$START_AT" = "coder" ]; then
         PRIOR_REVIEWER_CONTEXT="
 ## Prior Reviewer Report (unresolved blockers from last run)
@@ -148,7 +150,7 @@ $(cat REVIEWER_REPORT.md)"
     fi
 
     # Prior progress context (partial git diff from turn-limit resume)
-    PRIOR_PROGRESS_CONTEXT=""
+    export PRIOR_PROGRESS_CONTEXT=""
     if [ -f "$PIPELINE_STATE_FILE" ]; then
         PRIOR_EXIT_REASON=$(grep "^## Exit Reason" -A1 "$PIPELINE_STATE_FILE" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         if [ "$PRIOR_EXIT_REASON" = "turn_limit" ]; then
@@ -166,7 +168,7 @@ Pick up from where the previous run left off — read the modified files first t
     fi
 
     # Prior tester bugs
-    PRIOR_TESTER_CONTEXT=""
+    export PRIOR_TESTER_CONTEXT=""
     if [ -f "TESTER_REPORT.md" ] && grep -q "^### Bugs Found\|^## Bugs\|BUG-" TESTER_REPORT.md 2>/dev/null; then
         PRIOR_TESTER_CONTEXT="
 ## Bugs Found by Tester (must fix)
@@ -177,7 +179,7 @@ $(cat TESTER_REPORT.md)"
     fi
 
     # Accumulated non-blocking notes (injected when above threshold)
-    NON_BLOCKING_CONTEXT=""
+    export NON_BLOCKING_CONTEXT=""
     local nb_count
     nb_count=$(count_open_nonblocking_notes)
     local nb_threshold="${NON_BLOCKING_INJECTION_THRESHOLD:-8}"
@@ -330,6 +332,7 @@ ${GIT_DIFF_STAT}
         if [ "$BUILD_GATE_RETRY" -lt 1 ]; then
             BUILD_GATE_RETRY=1
             warn "Invoking coder to fix build errors (1 retry allowed)..."
+            export BUILD_ERRORS_CONTENT
             BUILD_ERRORS_CONTENT=$(cat BUILD_ERRORS.md)
             BUILD_FIX_PROMPT=$(render_prompt "build_fix")
 

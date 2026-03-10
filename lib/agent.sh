@@ -118,9 +118,9 @@ run_agent() {
     # --- Agent exit detection ------------------------------------------------
     # Populate LAST_AGENT_* globals so callers can check for null runs.
 
-    LAST_AGENT_TURNS="$turns_used"
-    LAST_AGENT_EXIT_CODE="$agent_exit"
-    LAST_AGENT_ELAPSED="$elapsed"
+    export LAST_AGENT_TURNS="$turns_used"
+    export LAST_AGENT_EXIT_CODE="$agent_exit"
+    export LAST_AGENT_ELAPSED="$elapsed"
     LAST_AGENT_NULL_RUN=false
 
     # Null run heuristic: agent used very few turns (≤2) OR exited non-zero

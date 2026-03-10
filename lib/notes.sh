@@ -97,9 +97,11 @@ resolve_human_notes() {
                 local note_text=""
                 local action=""
                 if echo "$line" | grep -qi "^- COMPLETED:"; then
+                    # shellcheck disable=SC2001
                     note_text=$(echo "$line" | sed 's/^- COMPLETED:[[:space:]]*//')
                     action="complete"
                 elif echo "$line" | grep -qi "^- NOT_ADDRESSED:"; then
+                    # shellcheck disable=SC2001
                     note_text=$(echo "$line" | sed 's/^- NOT_ADDRESSED:[[:space:]]*//')
                     action="reset"
                 else
@@ -108,6 +110,7 @@ resolve_human_notes() {
 
                 # Escape the note text for sed matching (handle regex special chars)
                 local escaped_text
+                # shellcheck disable=SC2016
                 escaped_text=$(printf '%s' "$note_text" | sed 's/[.[\*^$()+?{|/]/\\&/g')
 
                 if [ "$action" = "complete" ]; then
