@@ -247,6 +247,9 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
     SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_REASON=$(awk '/^## Exit Reason$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    # Split the saved flag string into an array so multi-word flags
+    # (e.g. "--milestone --start-at tester") are passed as separate arguments
+    read -ra SAVED_RESUME_FLAGS <<< "$SAVED_RESUME_FLAG"
 
     warn "Exit reason: ${SAVED_REASON}"
     warn "Will resume with: $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
@@ -259,7 +262,7 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
 
     case "$RESUME_CHOICE" in
         y|Y)
-            exec "$0" "$SAVED_RESUME_FLAG" "$SAVED_TASK"
+            exec "$0" "${SAVED_RESUME_FLAGS[@]}" "$SAVED_TASK"
             ;;
         fresh)
             clear_pipeline_state

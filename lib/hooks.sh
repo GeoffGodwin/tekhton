@@ -137,7 +137,7 @@ run_final_checks() {
         success "${TEST_CMD}: all passing"
     else
         print_run_summary
-        error "${TEST_CMD}: failures detected. Review TESTER_REPORT.md."
+        error "${TEST_CMD}: failures detected (see output above)."
         final_result=1
     fi
 
