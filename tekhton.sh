@@ -628,23 +628,57 @@ echo -e "  Verdict:   ${GREEN}${BOLD}${VERDICT}${NC}"
 echo -e "  Log:       ${LOG_FILE}"
 echo
 
+# --- Action Items summary ----------------------------------------------------
+# Consolidated block showing everything the human should review before moving on.
+
+ACTION_ITEMS=()
+
+# Check for tester bugs
 if [ -f "TESTER_REPORT.md" ] && \
    awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
-    warn "Tester found bugs — review TESTER_REPORT.md before committing."
-    echo
+    _bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^- /{c++} END{print c+0}' TESTER_REPORT.md)
+    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ TESTER_REPORT.md — ${_bug_count} bug(s) found (see ## Bugs Found)${NC}")")
 fi
 
-# --- Human Action Required banner --------------------------------------------
+# Check for test failures from final checks
+if [ "$FINAL_CHECK_RESULT" -ne 0 ]; then
+    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ Test suite — final checks failed (see output above)${NC}")")
+fi
 
+# Check for human action items
 if has_human_actions 2>/dev/null; then
-    action_count=$(count_human_actions)
-    echo -e "${YELLOW}"
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║  HUMAN ACTION REQUIRED                                      ║"
-    echo "║  The pipeline identified ${action_count} item(s) needing your attention.  ║"
-    echo "║  Review: ${HUMAN_ACTION_FILE}$(printf '%*s' $((34 - ${#HUMAN_ACTION_FILE})) '')║"
-    echo "╚══════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
+    _ha_count=$(count_human_actions)
+    ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ ${HUMAN_ACTION_FILE} — ${_ha_count} item(s) needing manual work${NC}")")
+fi
+
+# Check for non-blocking notes (info only)
+if [ -f "${NON_BLOCKING_LOG_FILE:-}" ] && [ -s "${NON_BLOCKING_LOG_FILE:-}" ]; then
+    _nb_count=$(count_open_nonblocking_notes 2>/dev/null || echo 0)
+    if [ "$_nb_count" -gt 0 ]; then
+        ACTION_ITEMS+=("$(echo -e "${CYAN}  ℹ ${NON_BLOCKING_LOG_FILE} — ${_nb_count} accumulated observation(s)${NC}")")
+    fi
+fi
+
+# Check for drift observations (info only)
+if [ -f "${DRIFT_LOG_FILE:-}" ] && [ -s "${DRIFT_LOG_FILE:-}" ]; then
+    _drift_count=$(count_drift_observations 2>/dev/null || echo 0)
+    if [ "$_drift_count" -gt 0 ]; then
+        ACTION_ITEMS+=("$(echo -e "${CYAN}  ℹ ${DRIFT_LOG_FILE} — ${_drift_count} unresolved drift observation(s)${NC}")")
+    fi
+fi
+
+if [ ${#ACTION_ITEMS[@]} -gt 0 ]; then
+    echo -e "${BOLD}══════════════════════════════════════${NC}"
+    echo -e "${BOLD}  Action Items${NC}"
+    echo -e "${BOLD}══════════════════════════════════════${NC}"
+    for item in "${ACTION_ITEMS[@]}"; do
+        echo -e "$item"
+    done
+    echo -e "${BOLD}══════════════════════════════════════${NC}"
+    echo
+else
+    success "No action items — clean run."
+    echo
 fi
 
 log "Suggested commit message:"
