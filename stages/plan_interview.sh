@@ -88,7 +88,7 @@ run_plan_interview() {
         echo "Exit code: ${exit_code}"
         echo "Date: $(date)"
         if [ -f "${PROJECT_DIR}/DESIGN.md" ]; then
-            echo "DESIGN.md: exists ($(wc -l < "${PROJECT_DIR}/DESIGN.md") lines)"
+            echo "DESIGN.md: exists ($(wc -l < "${PROJECT_DIR}/DESIGN.md" | tr -d ' ') lines)"
         else
             echo "DESIGN.md: not created"
         fi
@@ -99,7 +99,7 @@ run_plan_interview() {
     # Report results
     if [ -f "${PROJECT_DIR}/DESIGN.md" ]; then
         local line_count
-        line_count=$(wc -l < "${PROJECT_DIR}/DESIGN.md")
+        line_count=$(wc -l < "${PROJECT_DIR}/DESIGN.md" | tr -d ' ')
 
         if [ "$exit_code" -ne 0 ]; then
             warn "Interview session ended early (exit code: ${exit_code})."
