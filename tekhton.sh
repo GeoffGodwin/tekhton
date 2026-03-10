@@ -634,9 +634,11 @@ echo
 ACTION_ITEMS=()
 
 # Check for tester bugs
+# "None" at the start of the section (with optional period/whitespace) means no bugs,
+# even if the tester added explanatory bullet points after it.
 if [ -f "TESTER_REPORT.md" ] && \
-   awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
-    _bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^- /{c++} END{print c+0}' TESTER_REPORT.md)
+   awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
+    _bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' TESTER_REPORT.md)
     ACTION_ITEMS+=("$(echo -e "${YELLOW}  ⚠ TESTER_REPORT.md — ${_bug_count} bug(s) found (see ## Bugs Found)${NC}")")
 fi
 
