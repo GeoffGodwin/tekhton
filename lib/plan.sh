@@ -3,8 +3,8 @@
 # plan.sh — Planning phase orchestration
 #
 # Provides the interactive planning flow: project type selection, template
-# resolution, and (in later milestones) interview, completeness check,
-# CLAUDE.md generation, and milestone review.
+# resolution, interactive interview, and (in later milestones) completeness
+# check, CLAUDE.md generation, and milestone review.
 #
 # Sourced by tekhton.sh when --plan is passed. Do not run directly.
 # =============================================================================
@@ -12,6 +12,13 @@
 # --- Constants ---------------------------------------------------------------
 
 PLAN_TEMPLATES_DIR="${TEKHTON_HOME}/templates/plans"
+
+# --- Planning config defaults ------------------------------------------------
+# These can be overridden via environment variables or (in Milestone 6)
+# via pipeline.conf keys.
+
+export PLAN_INTERVIEW_MODEL="${CLAUDE_PLAN_MODEL:-sonnet}"
+export PLAN_INTERVIEW_MAX_TURNS="${PLAN_INTERVIEW_MAX_TURNS:-50}"
 
 # Project types — order matches the menu display
 PLAN_PROJECT_TYPES=(
@@ -89,15 +96,12 @@ run_plan() {
     # Step 1: Project type selection
     select_project_type || return 1
 
+    # Step 2: Interactive interview
+    echo
+    run_plan_interview || return 1
+
     # Future milestones will add:
-    # Step 2: Interactive interview (Milestone 2)
     # Step 3: Completeness check (Milestone 3)
     # Step 4: CLAUDE.md generation (Milestone 4)
     # Step 5: Milestone review + file output (Milestone 5)
-
-    echo
-    success "Project type '${PLAN_PROJECT_TYPE}' selected."
-    log "Template resolved: ${PLAN_TEMPLATE_FILE}"
-    echo
-    log "Next milestone will add the interactive interview stage."
 }

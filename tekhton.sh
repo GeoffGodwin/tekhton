@@ -169,8 +169,10 @@ fi
 
 if [ "${1:-}" = "--plan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/prompts.sh"
     source "${TEKHTON_HOME}/lib/plan.sh"
-    run_plan
+    source "${TEKHTON_HOME}/stages/plan_interview.sh"
+    run_plan || true
     exit 0
 fi
 

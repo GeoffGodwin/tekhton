@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# Test: plan_interview.prompt.md — template variables, required content, rendering
+set -euo pipefail
+
+TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROMPT_FILE="${TEKHTON_HOME}/prompts/plan_interview.prompt.md"
+
+TMPDIR_BASE=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_BASE"' EXIT
+
+PROJECT_DIR="$TMPDIR_BASE"
+export TEKHTON_HOME PROJECT_DIR
+
+source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/prompts.sh"
+
+PASS=0
+FAIL=0
+
+pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
+fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
+
+echo "=== Prompt File Existence ==="
+
+if [ -f "$PROMPT_FILE" ]; then
+    pass "plan_interview.prompt.md exists"
+else
+    fail "plan_interview.prompt.md missing at ${PROMPT_FILE}"
+fi
+
+echo
+echo "=== Required Template Variables ==="
+
+# Must contain {{TEMPLATE_CONTENT}} placeholder
+if grep -q '{{TEMPLATE_CONTENT}}' "$PROMPT_FILE"; then
+    pass "contains {{TEMPLATE_CONTENT}} placeholder"
+else
+    fail "missing {{TEMPLATE_CONTENT}} placeholder"
+fi
+
+# Must contain {{PROJECT_TYPE}} placeholder
+if grep -q '{{PROJECT_TYPE}}' "$PROMPT_FILE"; then
+    pass "contains {{PROJECT_TYPE}} placeholder"
+else
+    fail "missing {{PROJECT_TYPE}} placeholder"
+fi
+
+echo
+echo "=== Interview Rule Content ==="
+
+# Must instruct agent to write DESIGN.md
+if grep -q 'DESIGN.md' "$PROMPT_FILE"; then
+    pass "mentions DESIGN.md (output file)"
+else
+    fail "does not mention DESIGN.md"
+fi
+
+# Must mention REQUIRED sections
+if grep -q 'REQUIRED' "$PROMPT_FILE"; then
+    pass "mentions REQUIRED sections"
+else
+    fail "does not mention REQUIRED sections"
+fi
+
+# Must instruct one-question-at-a-time behavior
+if grep -qi 'one question' "$PROMPT_FILE"; then
+    pass "instructs one-question-at-a-time behavior"
+else
+    fail "does not instruct one-question-at-a-time"
+fi
+
+# Must mention progressive writing (complete file each time)
+if grep -qi 'progressive\|complete.*file\|COMPLETE' "$PROMPT_FILE"; then
+    pass "instructs progressive/complete DESIGN.md writes"
+else
+    fail "does not instruct progressive DESIGN.md writes"
+fi
+
+# Must mention removing guidance comments
+if grep -qi 'comment\|<!--' "$PROMPT_FILE"; then
+    pass "mentions removing guidance comments"
+else
+    fail "does not mention guidance comments cleanup"
+fi
+
+echo
+echo "=== Prompt Rendering ==="
+
+# Render the prompt with mock variables — verify substitution works
+export TEMPLATE_CONTENT="## Project Overview
+<!-- REQUIRED -->
+Describe your project."
+export PROJECT_TYPE="web-app"
+
+rendered=$(render_prompt "plan_interview")
+
+# PROJECT_TYPE should be substituted in the output
+if echo "$rendered" | grep -q 'web-app'; then
+    pass "{{PROJECT_TYPE}} rendered correctly"
+else
+    fail "{{PROJECT_TYPE}} not substituted in rendered output"
+fi
+
+# TEMPLATE_CONTENT should be substituted (check for a unique string from it)
+if echo "$rendered" | grep -q 'Project Overview'; then
+    pass "{{TEMPLATE_CONTENT}} rendered correctly"
+else
+    fail "{{TEMPLATE_CONTENT}} not substituted in rendered output"
+fi
+
+# The raw placeholder must not appear in the output
+if echo "$rendered" | grep -q '{{TEMPLATE_CONTENT}}'; then
+    fail "{{TEMPLATE_CONTENT}} placeholder not replaced in output"
+else
+    pass "{{TEMPLATE_CONTENT}} placeholder fully replaced"
+fi
+
+if echo "$rendered" | grep -q '{{PROJECT_TYPE}}'; then
+    fail "{{PROJECT_TYPE}} placeholder not replaced in output"
+else
+    pass "{{PROJECT_TYPE}} placeholder fully replaced"
+fi
+
+echo
+echo "=== Summary ==="
+echo "  Passed: ${PASS}  Failed: ${FAIL}"
+
+if [ "$FAIL" -gt 0 ]; then
+    exit 1
+fi
