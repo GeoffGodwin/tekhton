@@ -48,7 +48,7 @@ MOCK
 
     # Run in subprocess with mocked PATH and required exports
     bash -c "
-        export PATH='${mock_bin}:\${PATH}'
+        export PATH=\"${mock_bin}:\${PATH}\"
         export TEKHTON_HOME='${TEKHTON_HOME}'
         export PROJECT_DIR='${project_dir}'
         export PLAN_TEMPLATE_FILE='${TEKHTON_HOME}/templates/plans/web-app.md'
