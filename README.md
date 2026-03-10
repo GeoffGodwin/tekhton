@@ -1,16 +1,20 @@
-# Tekhton
+<div align="center">
+  <img src="assets/tekhton-logo.svg" alt="Tekhton" width="120" />
 
-**One intent. Many hands.**
+  <h1>Tekhton</h1>
 
-Tekhton is a multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
+  <p><strong>One intent. Many hands.</strong></p>
+</div>
+
+Tekhton is a standalone, project-agnostic multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
 Give it a task description and it orchestrates a Coder → Reviewer → Tester cycle
-with automatic rework routing, build gates, and resume support.
+with automatic rework routing, build gates, state persistence, and resume support.
 
 ## Quick Start
 
 ```bash
 # Clone Tekhton
-git clone https://github.com/youruser/tekhton.git
+git clone https://github.com/geoffgodwin/tekhton.git
 cd tekhton && chmod +x tekhton.sh
 
 # Initialize a project
@@ -52,24 +56,24 @@ tekhton "Implement feature X"
 
 ## Features
 
-- **Three-agent pipeline**: Coder, Reviewer, Tester — each with distinct models and turn limits
-- **Automatic rework routing**: Complex blockers → senior coder, simple → jr coder
-- **Build gates**: Compile check after coding and after each rework pass
-- **Resume support**: Pipeline state saved on interruption, resume with no args
-- **Milestone mode**: `--milestone` for longer turns and more review cycles
-- **Human notes**: Write `HUMAN_NOTES.md` between runs to inject bug reports/features
-- **Architecture drift prevention**: Automatic detection, logging, and remediation of architectural drift
-- **Architect audit agent**: Conditional Stage 0 that reviews accumulated drift and routes fixes
-- **Dependency constraints**: Optional deterministic layer-boundary enforcement in build gate
-- **Config-driven**: All models, turn limits, commands, and paths in `pipeline.conf`
-- **Template engine**: Prompt templates with `{{VAR}}` substitution and `{{IF:VAR}}` conditionals
+- **Three-agent pipeline** — Coder, Reviewer, Tester, each with distinct models and turn limits
+- **Automatic rework routing** — Complex blockers → senior coder, simple fixes → jr coder
+- **Build gates** — Compile check after coding and after each rework pass
+- **Resume support** — Pipeline state saved on interruption; re-run with no args to continue
+- **Milestone mode** — `--milestone` for higher turn limits and more review cycles
+- **Human notes** — Write `HUMAN_NOTES.md` between runs to inject bug reports and features
+- **Architecture drift prevention** — Automatic detection, logging, and audited remediation
+- **Architect audit agent** — Conditional Stage 0 that reviews accumulated drift and routes fixes
+- **Dependency constraints** — Optional deterministic layer-boundary enforcement in the build gate
+- **Config-driven** — All models, turn limits, commands, and paths in `pipeline.conf`
+- **Template engine** — Prompt templates with `{{VAR}}` substitution and `{{IF:VAR}}` conditionals
 
 ## Requirements
 
-- **Bash 4+** (Linux, macOS, WSL2)
-- **Claude CLI** authenticated and on PATH
-- **Git** for commit integration
-- Your project's build/test tools (configured in `pipeline.conf`)
+- **Bash 4+** — Linux, macOS, or WSL2
+- **Claude CLI** — authenticated and on `PATH` (`claude --version` should work)
+- **Git** — used for commit integration
+- **Your project's build/test tools** — configured via `ANALYZE_CMD`, `TEST_CMD`, `BUILD_CHECK_CMD` in `pipeline.conf`
 
 ## Project Structure After `--init`
 
@@ -270,6 +274,10 @@ All configuration lives in `.claude/pipeline.conf`. See [templates/pipeline.conf
 | `DEPENDENCY_CONSTRAINTS_FILE` | `""` | Constraint manifest (empty = skip) |
 | `NOTES_FILTER_CATEGORIES` | `"BUG\|FEAT\|POLISH"` | Valid `--notes-filter` tags |
 | `SEED_CONTRACTS_ENABLED` | `false` | Enable inline contract seeding |
+
+## Contributing
+
+Bug reports and pull requests welcome. All `.sh` files must pass `shellcheck` with zero warnings. Test coverage lives in `tests/` — run with `bash tests/run_tests.sh`.
 
 ## License
 
