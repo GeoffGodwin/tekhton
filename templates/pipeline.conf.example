@@ -24,14 +24,22 @@ PROJECT_DESCRIPTION="multi-agent development pipeline"
 REQUIRED_TOOLS="claude git"
 
 # --- Agent models ------------------------------------------------------------
-# Claude model IDs for each agent role. Adjust based on your budget/speed needs.
-#   - Coder (senior): best reasoning model for implementation
-#   - Jr Coder: fast model for simple fixes
-#   - Standard: review + test planning
-#   - Tester: test writing (can upgrade in milestone mode)
+# Every agent has its own model variable. Share models across agents to save
+# cost, or promote individual agents as quality demands.
+#
+#   Agent            Variable                  Default usage
+#   ───────────────  ────────────────────────  ─────────────────────────────────
+#   Senior Coder     CLAUDE_CODER_MODEL        Complex implementation
+#   Jr Coder         CLAUDE_JR_CODER_MODEL     Simple fixes, build-gate rework
+#   Scout            CLAUDE_SCOUT_MODEL        File discovery, complexity est.
+#   Reviewer         CLAUDE_STANDARD_MODEL     Code review + verdict
+#   Architect        CLAUDE_ARCHITECT_MODEL    Drift audit, remediation planning
+#   Tester           CLAUDE_TESTER_MODEL       Test authoring (upgradeable in --milestone)
 CLAUDE_CODER_MODEL="claude-opus-4-6"
 CLAUDE_JR_CODER_MODEL="claude-haiku-4-5"
+CLAUDE_SCOUT_MODEL="claude-haiku-4-5"
 CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
+CLAUDE_ARCHITECT_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-haiku-4-5"
 
 # --- Turn limits (normal mode) ----------------------------------------------
@@ -39,7 +47,7 @@ CODER_MAX_TURNS=35
 JR_CODER_MAX_TURNS=15
 REVIEWER_MAX_TURNS=10
 TESTER_MAX_TURNS=30
-SCOUT_MAX_TURNS=8
+SCOUT_MAX_TURNS=20
 SEED_CONTRACTS_MAX_TURNS=20
 
 # --- Turn limits (milestone mode overrides) ----------------------------------
@@ -131,10 +139,9 @@ ARCHITECT_ROLE_FILE=".claude/agents/architect.md"
 ARCHITECT_MAX_TURNS=25
 # MILESTONE_ARCHITECT_MAX_TURNS=50
 
-# Model for architect agent (empty = use CLAUDE_STANDARD_MODEL)
-# CLAUDE_ARCHITECT_MODEL=""
+# Model is set in the Agent models section above (CLAUDE_ARCHITECT_MODEL).
 
-# Dependency constraint manifest (empty = skip). See P5 for format.
+# Dependency constraint manifest (empty = skip). See examples/ for format.
 DEPENDENCY_CONSTRAINTS_FILE=""
 
 # --- Agent exit detection ----------------------------------------------------
@@ -157,5 +164,13 @@ DYNAMIC_TURNS_ENABLED=true
 # TESTER_MAX_TURNS_CAP=100
 
 # --- Seed contracts ----------------------------------------------------------
-# Enable inline contract seeding (adds assertion comments to source)
+# Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false
+
+# Required when SEED_CONTRACTS_ENABLED=true:
+#   INLINE_CONTRACT_PATTERN    — keyword the seeder and reviewer look for
+#                                (e.g. "System:" for Dart, "Contract:" for TypeScript)
+#   INLINE_CONTRACT_SEARCH_CMD — shell command to find all public declarations
+#                                to annotate (e.g. grep -rn "^class\|^  void" lib/)
+# INLINE_CONTRACT_PATTERN=""
+# INLINE_CONTRACT_SEARCH_CMD=""

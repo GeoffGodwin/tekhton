@@ -52,8 +52,8 @@ $(cat "${ARCHITECTURE_FILE}")"
 
         run_agent \
             "Scout" \
-            "$CLAUDE_JR_CODER_MODEL" \
-            "8" \
+            "$CLAUDE_SCOUT_MODEL" \
+            "${SCOUT_MAX_TURNS}" \
             "$SCOUT_PROMPT" \
             "$LOG_FILE"
 

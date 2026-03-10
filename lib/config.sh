@@ -51,7 +51,8 @@ load_config() {
 
     # --- Set defaults for optional keys ---
     : "${PROJECT_DESCRIPTION:=multi-agent development pipeline}"
-    : "${SCOUT_MAX_TURNS:=8}"
+    : "${SCOUT_MAX_TURNS:=20}"
+    : "${CLAUDE_SCOUT_MODEL:=${CLAUDE_JR_CODER_MODEL}}"
     : "${SEED_CONTRACTS_MAX_TURNS:=20}"
     : "${BUILD_CHECK_CMD:=}"
     : "${ANALYZE_ERROR_PATTERN:=error}"

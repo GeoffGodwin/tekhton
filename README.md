@@ -222,8 +222,8 @@ tekhton --force-audit "Implement feature X"
 ```bash
 ARCHITECT_ROLE_FILE=".claude/agents/architect.md"
 ARCHITECT_MAX_TURNS=25
+CLAUDE_ARCHITECT_MODEL="claude-sonnet-4-6"  # see Agent models section
 # MILESTONE_ARCHITECT_MAX_TURNS=50
-# CLAUDE_ARCHITECT_MODEL=""        # Defaults to CLAUDE_STANDARD_MODEL
 ```
 
 ## Configuration Reference
@@ -238,7 +238,7 @@ All configuration lives in `.claude/pipeline.conf`. See [templates/pipeline.conf
 | `REQUIRED_TOOLS` | CLI tools that must be on PATH |
 | `CLAUDE_CODER_MODEL` | Model for senior coder |
 | `CLAUDE_JR_CODER_MODEL` | Model for jr coder |
-| `CLAUDE_STANDARD_MODEL` | Model for reviewer/tester |
+| `CLAUDE_STANDARD_MODEL` | Model for reviewer |
 | `CLAUDE_TESTER_MODEL` | Model for tester |
 | `CODER_MAX_TURNS` | Senior coder turn limit |
 | `JR_CODER_MAX_TURNS` | Jr coder turn limit |
@@ -260,6 +260,9 @@ All configuration lives in `.claude/pipeline.conf`. See [templates/pipeline.conf
 | Key | Default | Purpose |
 |-----|---------|---------|
 | `PROJECT_DESCRIPTION` | `"multi-agent development pipeline"` | One-line description |
+| `CLAUDE_SCOUT_MODEL` | `CLAUDE_JR_CODER_MODEL` | Model for scout agent |
+| `CLAUDE_ARCHITECT_MODEL` | `CLAUDE_STANDARD_MODEL` | Model for architect audit agent |
+| `SCOUT_MAX_TURNS` | `20` | Scout agent turn limit |
 | `BUILD_CHECK_CMD` | `""` | Compile check (empty = skip) |
 | `ARCHITECTURE_FILE` | `""` | Architecture doc path |
 | `GLOSSARY_FILE` | `""` | Glossary doc path |
@@ -274,6 +277,8 @@ All configuration lives in `.claude/pipeline.conf`. See [templates/pipeline.conf
 | `DEPENDENCY_CONSTRAINTS_FILE` | `""` | Constraint manifest (empty = skip) |
 | `NOTES_FILTER_CATEGORIES` | `"BUG\|FEAT\|POLISH"` | Valid `--notes-filter` tags |
 | `SEED_CONTRACTS_ENABLED` | `false` | Enable inline contract seeding |
+| `INLINE_CONTRACT_PATTERN` | `""` | Contract keyword pattern (requires `SEED_CONTRACTS_ENABLED=true`) |
+| `INLINE_CONTRACT_SEARCH_CMD` | `""` | Command to find declarations to annotate |
 
 ## Contributing
 
