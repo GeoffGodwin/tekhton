@@ -139,3 +139,160 @@ cd /path/to/your/project
 # Edit .claude/agents/*.md
 /path/to/tekhton/tekhton.sh "Your first task"
 ```
+
+## Current Initiative: Planning Phase (`--plan`)
+
+The execution pipeline is feature-complete. We are now implementing the planning
+phase, which takes a developer from "I want to build X" to a production-ready
+CLAUDE.md and DESIGN.md. See `DESIGN.md` for the full specification.
+
+### Key Constraints for This Initiative
+
+- **Zero execution pipeline changes.** All new code goes in `lib/plan.sh`,
+  `stages/plan_interview.sh`, `stages/plan_generate.sh`, new prompt templates
+  under `prompts/`, and new templates under `templates/plans/`. Do NOT modify
+  existing stage files, lib files, or prompt templates.
+- **The `--plan` flag** is handled as an early-exit command in `tekhton.sh`
+  (same pattern as `--init`), before config is loaded. It sources only the
+  libraries it needs.
+- **Interactive interview** uses Claude in conversational mode (not `-p` batch).
+  This is an intentional departure from the execution pipeline's batch-mode agents.
+- **Structural completeness** is checked programmatically (grep/awk) — not by
+  asking the LLM if it thinks the doc is done.
+- All new `.sh` files must follow `set -euo pipefail` and pass shellcheck.
+- Templates in `templates/plans/` are static markdown — no shell logic.
+
+### Milestone Plan
+
+#### Milestone 1: Foundation — CLI Flag, Library Skeleton, Project Type Selection
+Create the `--plan` entry point in `tekhton.sh`, the `lib/plan.sh` orchestration
+library, and the project type selection menu. At the end of this milestone, running
+`tekhton --plan` displays.a project type menu, the user picks one, and the selected
+template path is resolved. No interview yet — just the skeleton and the first
+interactive step.
+
+Files to create or modify:
+- `tekhton.sh` — add `--plan` early-exit block (same pattern as `--init`)
+- `lib/plan.sh` — planning phase orchestration: `run_plan()`, project type menu,
+  template resolution
+- `templates/plans/` — all 7 design doc templates (web-app.md, web-game.md,
+  cli-tool.md, api-service.md, mobile-app.md, library.md, custom.md)
+
+Acceptance criteria:
+- `tekhton --plan` shows project type menu with 7 options
+- User selects a type and the correct template path is resolved
+- Selecting an invalid option shows an error and re-prompts
+- Templates exist with proper section headings and guidance comments
+- All new shell code passes `bash -n` syntax check
+
+#### Milestone 2: Interactive Interview Agent
+Implement the interview stage that walks the user through the selected template
+section-by-section. Claude asks questions, the user answers, Claude fills in
+DESIGN.md. The interview must run in conversational mode (not batch `-p` mode).
+
+Files to create or modify:
+- `stages/plan_interview.sh` — `run_plan_interview()` function
+- `prompts/plan_interview.prompt.md` — system prompt for the interview agent
+- `lib/plan.sh` — wire interview into the `run_plan()` flow after type selection
+
+Acceptance criteria:
+- Interview agent receives the template content as context
+- Agent asks one question at a time, covering each template section
+- Agent writes DESIGN.md progressively as sections are filled
+- Conversation is logged to `.claude/logs/`
+- Interview can be interrupted (Ctrl+C) without losing progress — partial
+  DESIGN.md is preserved on disk
+
+#### Milestone 3: Completeness Check + Follow-Up
+Implement the structural completeness checker that validates DESIGN.md after the
+interview, and a follow-up loop for incomplete sections.
+
+Files to create or modify:
+- `lib/plan.sh` — `check_design_completeness()` function: grep/awk-based
+  section validation
+- `stages/plan_interview.sh` — follow-up loop for incomplete sections
+- Templates may need `<!-- REQUIRED -->` markers added to distinguish
+  required vs optional sections
+
+Acceptance criteria:
+- Completeness check identifies sections that are empty, still contain
+  guidance comments, or have placeholder-only content
+- Incomplete sections are reported to the user with clear descriptions
+- A follow-up interview pass targets only the incomplete sections
+- When all required sections pass, the phase advances to generation
+- The check is deterministic — same DESIGN.md always produces same result
+
+#### Milestone 4: CLAUDE.md Generation Agent
+Implement the second agent pass that reads the completed DESIGN.md and generates
+a full CLAUDE.md with project rules, milestone plan, architecture guidelines,
+and testing strategy.
+
+Files to create or modify:
+- `stages/plan_generate.sh` — `run_plan_generate()` function
+- `prompts/plan_generate.prompt.md` — generation agent prompt template
+- `lib/plan.sh` — wire generation into `run_plan()` flow after completeness check
+
+Acceptance criteria:
+- Generation agent reads DESIGN.md as input context
+- Output CLAUDE.md contains: project identity, non-negotiable rules,
+  ordered milestone plan, architecture guidelines, testing strategy
+- Milestones are numbered and have clear acceptance criteria
+- Each milestone description works as a standalone task argument for
+  `tekhton --milestone "Implement Milestone N: <description>"`
+- Generation is logged to `.claude/logs/`
+
+#### Milestone 5: Milestone Review UI + File Output
+Implement the milestone review/approval step and the final file writing.
+The user sees the plan, can approve, edit, or re-generate before files are
+committed to disk.
+
+Files to create or modify:
+- `lib/plan.sh` — milestone display, approval prompt, editor integration,
+  file writing logic
+- `stages/plan_generate.sh` — re-generation support
+
+Acceptance criteria:
+- Milestone summary displays in a clear numbered format after generation
+- `[y]` writes DESIGN.md and CLAUDE.md to the project directory
+- `[e]` opens CLAUDE.md in `$EDITOR` for manual edits before writing
+- `[r]` re-runs the generation agent with the same DESIGN.md
+- `[n]` aborts without writing files
+- After writing, prints next-steps instructions (`tekhton --init`)
+
+#### Milestone 6: Planning State Persistence + Config Integration
+Add resume support for interrupted planning sessions and integrate planning
+config keys into `pipeline.conf`.
+
+Files to create or modify:
+- `lib/plan.sh` — state save/restore for planning phase
+- `lib/config.sh` — add planning config defaults (models, turn limits)
+- `templates/pipeline.conf.example` — add planning config section
+- `tekhton.sh` — detect and resume interrupted `--plan` sessions
+
+Acceptance criteria:
+- Interrupting during interview preserves partial DESIGN.md and the
+  current section index
+- Re-running `tekhton --plan` detects the partial state and offers to resume
+- Planning config keys (`CLAUDE_PLAN_MODEL`, `PLAN_INTERVIEW_MAX_TURNS`, etc.)
+  are documented in `pipeline.conf.example` with sensible defaults
+- `--init` auto-sets `DESIGN_FILE="DESIGN.md"` in pipeline.conf when
+  DESIGN.md exists in the project root
+
+#### Milestone 7: Tests + Documentation
+Write self-tests for the planning phase and update README, CLAUDE.md, and
+ARCHITECTURE.md to reflect the new feature.
+
+Files to create or modify:
+- `tests/test_plan_*.sh` — test files covering template loading, completeness
+  checking, type selection, and config defaults
+- `README.md` — add Planning Phase section with usage examples
+- `CLAUDE.md` — update repository layout and template variables
+- `ARCHITECTURE.md` — add planning phase to system map
+
+Acceptance criteria:
+- All new tests pass via `bash tests/run_tests.sh`
+- README documents `tekhton --plan` with a quick-start example
+- CLAUDE.md layout tree includes all new files
+- ARCHITECTURE.md describes lib/plan.sh, stages/plan_*.sh, and the
+  planning data flow
+- All `.sh` files pass `bash -n` syntax check
