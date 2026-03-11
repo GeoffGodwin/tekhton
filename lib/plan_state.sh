@@ -30,6 +30,8 @@ write_plan_state() {
     local tmp_state
     tmp_state="$(mktemp "${state_dir}/plan_state.XXXXXX" 2>/dev/null || mktemp /tmp/plan_state.XXXXXX)"
 
+    # Unquoted heredoc — ${PROJECT_DIR} and subshells are expanded by the
+    # outer shell at write time, not written literally into the state file.
     cat > "$tmp_state" << EOF
 # Planning State — $(date '+%Y-%m-%d %H:%M:%S')
 ## Stage

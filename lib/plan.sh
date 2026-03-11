@@ -21,8 +21,10 @@ PLAN_STATE_FILE="${PROJECT_DIR}/.claude/PLAN_STATE.md"
 load_plan_config() {
     local conf_file="${PROJECT_DIR}/.claude/pipeline.conf"
     if [[ -f "$conf_file" ]]; then
-        # Source only planning-related keys (safe — config.sh validates
-        # required keys only for the execution pipeline, not here).
+        # Intentionally sources the entire pipeline.conf, which imports all
+        # pipeline keys (ANALYZE_CMD, BUILD_CHECK_CMD, etc.) into the planning
+        # environment. This is harmless — all planning keys have safe defaults
+        # and execution-only keys are unused during --plan.
         # shellcheck source=/dev/null
         source <(sed 's/\r$//' "$conf_file")
     fi
@@ -165,6 +167,8 @@ run_plan() {
     fi
 
     # Step 5: Milestone review + file output
+    # No skip_to guard — review is always the final step after generation,
+    # so we always run it regardless of resume state.
     echo
     run_plan_review || return 1
 
