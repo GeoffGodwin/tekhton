@@ -28,20 +28,22 @@ set -euo pipefail
 #   $3  input_fd     — File descriptor path for reading user input
 #
 # Prints the collected answer to stdout.
+# All prompt/guidance display goes to stderr so it remains visible even when
+# this function is called inside a command substitution: answer=$(...)
 _read_section_answer() {
     local guidance="$1"
     local is_required="$2"
     local input_fd="$3"
 
-    echo
+    echo >&2
     if [[ -n "$guidance" ]]; then
-        echo "  ${guidance}"
+        echo "  ${guidance}" >&2
     fi
     if [[ "$is_required" != "true" ]]; then
-        echo "  (optional — type 'skip' to skip)"
+        echo "  (optional — type 'skip' to skip)" >&2
     fi
-    echo
-    printf "  >>> "
+    echo >&2
+    printf "  >>> " >&2
 
     local lines=() line=""
     while IFS= read -r line <"$input_fd"; do
@@ -49,7 +51,7 @@ _read_section_answer() {
             [[ "${#lines[@]}" -gt 0 ]] && break
         else
             lines+=("$line")
-            printf "  >>> "
+            printf "  >>> " >&2
         fi
     done
 
