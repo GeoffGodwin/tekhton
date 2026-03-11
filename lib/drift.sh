@@ -61,17 +61,34 @@ append_drift_observations() {
     awk -v date="$date_tag" -v task="$task_desc" -v obs="$observations" '
     /^## Unresolved Observations/ {
         print
-        # Split observations into lines and format each
+        # Split observations into lines and join continuation lines into single entries
         n = split(obs, lines, "\n")
+        note = ""
         for (i = 1; i <= n; i++) {
             line = lines[i]
-            # Strip leading "- " if present, skip empty lines
-            gsub(/^[[:space:]]*-[[:space:]]*/, "", line)
-            gsub(/^[[:space:]]+/, "", line)
             gsub(/[[:space:]]+$/, "", line)
-            if (length(line) > 0 && line != "None") {
-                printf "- [%s | \"%s\"] %s\n", date, task, line
+            if (length(line) == 0) continue
+            if (match(line, /^[[:space:]]*-[[:space:]]*/)) {
+                # New bullet: emit the accumulated note, then start fresh
+                if (length(note) > 0 && tolower(note) != "none") {
+                    printf "- [%s | \"%s\"] %s\n", date, task, note
+                }
+                sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+                gsub(/^[[:space:]]+/, "", line)
+                note = line
+            } else {
+                # Continuation line: join to current note with a space
+                gsub(/^[[:space:]]+/, "", line)
+                if (length(note) > 0) {
+                    note = note " " line
+                } else {
+                    note = line
+                }
             }
+        }
+        # Emit the final note
+        if (length(note) > 0 && tolower(note) != "none") {
+            printf "- [%s | \"%s\"] %s\n", date, task, note
         }
         next
     }

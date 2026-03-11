@@ -120,36 +120,21 @@ run_plan() {
 
 # --- Milestone Review UI ----------------------------------------------------
 
-# _extract_project_name — Pull project name from CLAUDE.md first heading or
-# fall back to the directory name.
-_extract_project_name() {
-    local claude_file="$1"
-    local name
-    # Try first markdown heading
-    name=$(grep -m 1 '^# ' "$claude_file" 2>/dev/null | sed 's/^# //')
-    if [[ -z "$name" ]]; then
-        name=$(basename "$PROJECT_DIR")
-    fi
-    echo "$name"
-}
-
-# _extract_milestones — Parse "## Milestone N:" or "### Milestone N:" lines
-# from CLAUDE.md and print them as a numbered list.
-_extract_milestones() {
-    local claude_file="$1"
-    grep -E '^#{2,3} Milestone [0-9]+' "$claude_file" 2>/dev/null \
-        | sed 's/^#* //' \
-        || true
-}
-
 # _display_milestone_summary — Show the milestone review screen.
+# Reads the file once and extracts both project name and milestones.
 _display_milestone_summary() {
     local claude_file="$1"
+    local file_content
+    file_content=$(cat "$claude_file" 2>/dev/null || true)
+
     local project_name
-    project_name=$(_extract_project_name "$claude_file")
+    project_name=$(echo "$file_content" | grep -m 1 '^# ' | sed 's/^# //')
+    if [[ -z "$project_name" ]]; then
+        project_name=$(basename "$PROJECT_DIR")
+    fi
 
     local milestones
-    milestones=$(_extract_milestones "$claude_file")
+    milestones=$(echo "$file_content" | grep -E '^#{2,3} Milestone [0-9]+' | sed 's/^#* //' || true)
     local milestone_count
     milestone_count=$(echo "$milestones" | grep -c '.' || true)
 
@@ -221,7 +206,7 @@ run_plan_review() {
 
         case "$choice" in
             y|Y)
-                success "Files written to ${PROJECT_DIR}:"
+                success "Files confirmed at ${PROJECT_DIR}:"
                 log "  DESIGN.md"
                 log "  CLAUDE.md"
                 _print_next_steps
@@ -229,7 +214,7 @@ run_plan_review() {
                 ;;
             e|E)
                 log "Opening CLAUDE.md in editor..."
-                ${EDITOR:-nano} "$claude_file"
+                "${EDITOR:-nano}" "$claude_file" || warn "Editor exited with non-zero status"
                 log "Editor closed. Refreshing milestone summary..."
                 ;;
             r|R)

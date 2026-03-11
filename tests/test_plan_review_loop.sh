@@ -99,7 +99,7 @@ else
     fail "[y] choice: expected exit code 0, got $exit_code"
 fi
 
-if echo "$output" | grep -q "Files written to"; then
+if echo "$output" | grep -q "Files confirmed at"; then
     pass "[y] choice prints success message"
 else
     fail "[y] choice missing success message"

@@ -88,6 +88,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 
 | Variable | Source |
 |----------|--------|
+| `PROJECT_DIR` | `pwd` at tekhton.sh startup |
 | `PROJECT_NAME` | pipeline.conf |
 | `TASK` | CLI argument |
 | `CODER_ROLE_FILE` | pipeline.conf |
