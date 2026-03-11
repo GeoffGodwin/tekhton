@@ -14,8 +14,8 @@ Below is the completed design document. Read it carefully — every detail matte
 
 ## Your Task
 
-Generate a complete `CLAUDE.md` file and write it to disk at `{{PROJECT_DIR}}/CLAUDE.md`. This file will be used by AI coding agents (and human developers) as
-the authoritative reference for the project.
+Generate a complete `CLAUDE.md` file. This file will be used by AI coding agents
+(and human developers) as the authoritative reference for the project.
 
 ## Required Sections in CLAUDE.md
 
@@ -70,7 +70,9 @@ Your output MUST contain all of the following sections, in this order:
 
 ## Output Rules
 
-1. **Write CLAUDE.md to disk.** Use the Write tool to create the file at the path `{{PROJECT_DIR}}/CLAUDE.md`. Do NOT just print the content — write the file.
+1. **Output CLAUDE.md content directly to stdout.** Do NOT use any tools to
+   write files. Start directly with `# [ProjectName]` title. Do not wrap the
+   output in code fences.
 
 2. **Markdown format.** Use clean, well-structured markdown with `#` for the
    title, `##` for major sections, and `###` for subsections.

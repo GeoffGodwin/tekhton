@@ -4,20 +4,21 @@
 #
 # Reads the completed DESIGN.md and generates a full CLAUDE.md with project
 # rules, milestone plan, architecture guidelines, and testing strategy.
-# Uses batch mode (run_agent) — not conversational.
+# Uses _call_planning_batch() — no --dangerously-skip-permissions.
+# The shell writes CLAUDE.md to disk.
 #
 # Sourced by tekhton.sh when --plan is passed. Do not run directly.
 # Expects: PLAN_GENERATION_MODEL, PLAN_GENERATION_MAX_TURNS, PROJECT_DIR,
 #          TEKHTON_HOME
-# Expects: log(), success(), warn(), header() from common.sh
-# Expects: render_prompt() from prompts.sh
-# Expects: run_agent() from agent.sh
+# Expects: log(), success(), warn(), error(), header() from common.sh
+# Expects: render_prompt(), _call_planning_batch() from lib/plan.sh
 # =============================================================================
 
-# run_plan_generate — Generate CLAUDE.md from DESIGN.md using a batch agent.
+# run_plan_generate — Generate CLAUDE.md from DESIGN.md using a batch call.
 #
-# Reads DESIGN.md, renders the generation prompt, invokes run_agent() in batch
-# mode, and reports results. The agent writes CLAUDE.md to the project directory.
+# Reads DESIGN.md, renders the generation prompt, calls _call_planning_batch()
+# to get the CLAUDE.md content as text output, and writes it to disk.
+# No --dangerously-skip-permissions is used.
 #
 # Returns 0 if CLAUDE.md was produced, 1 otherwise.
 run_plan_generate() {
@@ -62,31 +63,38 @@ run_plan_generate() {
         echo "=== Session Start ==="
     } > "$log_file"
 
-    # Run the generation agent in batch mode
-    run_agent "Plan Generate" "$PLAN_GENERATION_MODEL" "$PLAN_GENERATION_MAX_TURNS" \
-        "$prompt" "$log_file"
+    # Call claude in batch mode — shell captures output and writes CLAUDE.md.
+    # No --dangerously-skip-permissions: claude outputs text only, shell writes the file.
+    local claude_md_content=""
+    local batch_exit=0
+    claude_md_content=$(_call_planning_batch \
+        "$PLAN_GENERATION_MODEL" \
+        "$PLAN_GENERATION_MAX_TURNS" \
+        "$prompt" \
+        "$log_file") || batch_exit=$?
 
-    # Log session end
     {
         echo "=== Session End ==="
-        echo "Exit code: ${LAST_AGENT_EXIT_CODE}"
-        echo "Turns used: ${LAST_AGENT_TURNS}"
+        echo "Exit code: ${batch_exit}"
+        echo "Turns used: 1"
         echo "Date: $(date)"
     } >> "$log_file"
 
     echo
 
-    # Report results
-    local claude_md="${PROJECT_DIR}/CLAUDE.md"
-    if [[ -f "$claude_md" ]]; then
+    if [[ -n "$claude_md_content" ]]; then
+        local claude_md="${PROJECT_DIR}/CLAUDE.md"
+        printf '%s\n' "$claude_md_content" > "$claude_md"
         local line_count
         line_count=$(wc -l < "$claude_md" | tr -d ' ')
         success "CLAUDE.md generated (${line_count} lines)."
         log "Log saved: ${log_file}"
         return 0
     else
-        warn "Generation agent completed but CLAUDE.md was not created."
+        warn "Generation produced no output — CLAUDE.md was not created."
+        [[ "$batch_exit" -ne 0 ]] && warn "Claude exited with code ${batch_exit}."
         log "Log saved: ${log_file}"
         return 1
     fi
 }
+

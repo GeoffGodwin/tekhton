@@ -35,15 +35,15 @@ run_generate() {
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
+source "${TEKHTON_HOME}/lib/plan.sh"
 
-# Mock run_agent — no real claude invocation needed
-run_agent() {
-    export LAST_AGENT_EXIT_CODE=0
-    export LAST_AGENT_TURNS=5
-    export LAST_AGENT_ELAPSED=1
+# Mock _call_planning_batch — no real claude invocation needed.
+# Prints CLAUDE.md content to stdout when CREATE_CLAUDE=yes.
+_call_planning_batch() {
     if [ "${CREATE_CLAUDE}" = "yes" ]; then
-        printf '# Project CLAUDE.md\n\nGenerated content.\n' > "${PROJECT_DIR}/CLAUDE.md"
+        printf '# Project CLAUDE.md\n\nGenerated content.\n'
     fi
+    return 0
 }
 
 source "${TEKHTON_HOME}/stages/plan_generate.sh"

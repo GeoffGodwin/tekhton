@@ -62,11 +62,11 @@ else
     fail "does not mention REQUIRED sections"
 fi
 
-# Must instruct one-question-at-a-time behavior
-if grep -qi 'one question' "$PROMPT_FILE"; then
-    pass "instructs one-question-at-a-time behavior"
+# Must contain {{INTERVIEW_ANSWERS_BLOCK}} placeholder (synthesis approach)
+if grep -q 'INTERVIEW_ANSWERS_BLOCK' "$PROMPT_FILE"; then
+    pass "contains {{INTERVIEW_ANSWERS_BLOCK}} for synthesis answers"
 else
-    fail "does not instruct one-question-at-a-time"
+    fail "does not reference interview answers (INTERVIEW_ANSWERS_BLOCK)"
 fi
 
 # Must mention progressive writing (complete file each time)

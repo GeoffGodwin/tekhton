@@ -12,14 +12,14 @@
 PLAN_TEMPLATES_DIR="${TEKHTON_HOME}/templates/plans"
 # Used by lib/plan_state.sh (sourced separately)
 # shellcheck disable=SC2034
-PLAN_STATE_FILE="${PROJECT_DIR}/.claude/PLAN_STATE.md"
+PLAN_STATE_FILE="${PROJECT_DIR:-}/.claude/PLAN_STATE.md"
 
 # --- Planning config loader --------------------------------------------------
 # Reads planning-specific keys from pipeline.conf if it exists. Called before
 # applying defaults so pipeline.conf values take precedence over env vars.
 
 load_plan_config() {
-    local conf_file="${PROJECT_DIR}/.claude/pipeline.conf"
+    local conf_file="${PROJECT_DIR:-}/.claude/pipeline.conf"
     if [[ -f "$conf_file" ]]; then
         # Intentionally sources the entire pipeline.conf, which imports all
         # pipeline keys (ANALYZE_CMD, BUILD_CHECK_CMD, etc.) into the planning
@@ -115,6 +115,103 @@ select_project_type() {
 
 # --- Planning State Persistence ----------------------------------------------
 # Extracted to lib/plan_state.sh — sourced separately by tekhton.sh.
+
+# --- Batch Planning Call Helper ----------------------------------------------
+
+# _call_planning_batch — Call claude in batch mode and print text content to stdout.
+#
+# Runs `claude -p` with --output-format json. Does NOT use
+# --dangerously-skip-permissions — planning agents generate text only; the
+# caller (shell) is responsible for writing any files.
+#
+# Usage:
+#   output=$(_call_planning_batch model max_turns prompt log_file)
+#   rc=$?   # claude's exit code
+#
+# Prints the full text response to stdout. Returns claude's exit code.
+_call_planning_batch() {
+    local model="$1"
+    local max_turns="$2"
+    local prompt="$3"
+    local log_file="$4"
+
+    set +o pipefail
+    claude \
+        --model "$model" \
+        --max-turns "$max_turns" \
+        --output-format json \
+        -p "$prompt" \
+        < /dev/null \
+        2>>"$log_file" | python3 -c "
+import sys, json
+chunks = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)
+        if d.get('type') == 'text':
+            chunks.append(d.get('text', ''))
+    except Exception:
+        pass
+sys.stdout.write(''.join(chunks))
+" 2>/dev/null
+    local -a _pst=("${PIPESTATUS[@]}")
+    set -o pipefail
+    return "${_pst[0]}"
+}
+
+# _extract_template_sections — Parse a template file and print section data.
+#
+# Output format (one line per section):   NAME|REQUIRED|GUIDANCE
+#   NAME     — section heading (without "## " prefix)
+#   REQUIRED — "true" or "false"
+#   GUIDANCE — single-line concatenation of <!-- ... --> guidance comments
+#
+# Usage:
+#   while IFS='|' read -r name required guidance; do
+#       ...
+#   done < <(_extract_template_sections "$template_file")
+_extract_template_sections() {
+    local template="$1"
+    awk '
+    BEGIN { section = ""; required = "false"; guidance = "" }
+    /^## / {
+        if (section != "") {
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", guidance)
+            print section "|" required "|" guidance
+        }
+        section = $0
+        sub(/^## /, "", section)
+        required = "false"
+        guidance = ""
+        if (section ~ /<!-- REQUIRED -->/) {
+            required = "true"
+            gsub(/[[:space:]]*<!-- REQUIRED -->[[:space:]]*/, "", section)
+        }
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", section)
+        next
+    }
+    section != "" && /^<!-- REQUIRED -->/ { required = "true"; next }
+    section != "" && /^<!--/ {
+        line = $0
+        gsub(/^<!--[[:space:]]*/, "", line)
+        gsub(/[[:space:]]*-->$/, "", line)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+        if (length(line) > 0 && line != "REQUIRED") {
+            guidance = (guidance == "") ? line : guidance " " line
+        }
+        next
+    }
+    END {
+        if (section != "") {
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", guidance)
+            print section "|" required "|" guidance
+        }
+    }
+    ' "$template"
+}
 
 # --- Main Entry Point --------------------------------------------------------
 

@@ -16,59 +16,56 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 # Helper: run run_plan_interview() in an isolated subprocess.
 #
 # Arguments:
-#   $1  mock_exit_code  — exit code the fake claude should return
-#   $2  create_design   — "yes" to have mock claude create DESIGN.md, "no" otherwise
+#   $1  mock_exit_code  — exit code the mock _call_planning_batch returns
+#   $2  create_design   — "yes" to have mock produce DESIGN.md content, "no" otherwise
 #   $3  project_dir     — temp directory to use as PROJECT_DIR
 #
-# Prints the function's exit code to stdout.
+# Prints "0" or "1" (the function's exit code) to stdout.
 # ---------------------------------------------------------------------------
 run_interview() {
     local mock_exit="$1"
     local create_design="$2"
     local project_dir="$3"
 
-    local mock_bin="${TMPDIR_BASE}/bin_$$"
-    mkdir -p "$mock_bin"
+    local script_file
+    script_file=$(mktemp "${TMPDIR_BASE}/run_interview_XXXXXX.sh")
 
-    # Write mock claude script
-    if [ "$create_design" = "yes" ]; then
-        cat > "${mock_bin}/claude" << MOCK
+    # Single-quoted heredoc — no outer-shell expansion inside;
+    # values passed via environment variables.
+    cat > "$script_file" << 'INNERSCRIPT'
 #!/usr/bin/env bash
-echo "# DESIGN.md" > "${project_dir}/DESIGN.md"
-echo "Mock content." >> "${project_dir}/DESIGN.md"
-exit ${mock_exit}
-MOCK
-    else
-        cat > "${mock_bin}/claude" << MOCK
-#!/usr/bin/env bash
-exit ${mock_exit}
-MOCK
+# No set -euo pipefail — we need to capture non-zero exit codes
+
+source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/prompts.sh"
+source "${TEKHTON_HOME}/lib/plan_state.sh"
+source "${TEKHTON_HOME}/lib/plan.sh"
+
+# Mock _call_planning_batch — avoids real claude invocation.
+# Prints DESIGN.md content to stdout when CREATE_DESIGN=yes.
+_call_planning_batch() {
+    if [ "${CREATE_DESIGN}" = "yes" ]; then
+        printf '# DESIGN.md\n\nMock content.\n'
     fi
-    chmod +x "${mock_bin}/claude"
+    return "${MOCK_EXIT:-0}"
+}
 
-    # Run in subprocess with mocked PATH and required exports
-    bash -c "
-        export PATH=\"${mock_bin}:\${PATH}\"
-        export TEKHTON_HOME='${TEKHTON_HOME}'
-        export PROJECT_DIR='${project_dir}'
-        export PLAN_TEMPLATE_FILE='${TEKHTON_HOME}/templates/plans/web-app.md'
-        export PLAN_PROJECT_TYPE='web-app'
-        export PLAN_INTERVIEW_MODEL='test-model'
-        export PLAN_INTERVIEW_MAX_TURNS='5'
-        export TEMPLATE_CONTENT='## Overview'
-        export PROJECT_TYPE='web-app'
+source "${TEKHTON_HOME}/stages/plan_interview.sh"
 
-        export PLAN_STATE_FILE='${project_dir}/.claude/PLAN_STATE.md'
+run_plan_interview > /dev/null 2>&1 && echo 0 || echo 1
+INNERSCRIPT
 
-        source '${TEKHTON_HOME}/lib/common.sh'
-        source '${TEKHTON_HOME}/lib/prompts.sh'
-        source '${TEKHTON_HOME}/lib/plan_state.sh'
-        source '${TEKHTON_HOME}/stages/plan_interview.sh'
-
-        set +e
-        run_plan_interview > /dev/null 2>&1
-        echo \$?
-    " 2>/dev/null
+    TEKHTON_HOME="$TEKHTON_HOME" \
+    PROJECT_DIR="$project_dir" \
+    PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
+    PLAN_PROJECT_TYPE="web-app" \
+    PLAN_INTERVIEW_MODEL="test-model" \
+    PLAN_INTERVIEW_MAX_TURNS="5" \
+    PROJECT_TYPE="web-app" \
+    TEKHTON_TEST_MODE=1 \
+    CREATE_DESIGN="$create_design" \
+    MOCK_EXIT="$mock_exit" \
+    bash "$script_file" 2>/dev/null < /dev/null
 }
 
 # ---------------------------------------------------------------------------
