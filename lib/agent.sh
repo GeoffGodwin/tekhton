@@ -190,7 +190,7 @@ run_agent() {
             exec 3>>"$log_file"
             _last_activity=$(date +%s)
             _last_line=""
-            _read_interval=30
+            _read_interval="${AGENT_ACTIVITY_POLL:-30}"
             [ "$_activity_timeout" -le 0 ] 2>/dev/null && _read_interval=0
 
             while true; do
