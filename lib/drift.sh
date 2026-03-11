@@ -8,6 +8,49 @@
 #          DRIFT_RUNS_SINCE_AUDIT_THRESHOLD, TASK (set by caller/config)
 # =============================================================================
 
+# --- Shared AWK helper -------------------------------------------------------
+
+# _awk_join_bullets — AWK program that parses markdown bullet lists, joins
+# continuation lines, and inserts formatted entries after a target section header.
+# Args: $1 = section_regex  $2 = printf_format (for date, task, note)
+# Returns the AWK program text. Caller passes -v date=... -v task=... -v input=...
+_awk_join_bullets() {
+    local section_regex="$1"
+    local line_format="$2"
+    cat <<AWKEOF
+${section_regex} {
+    print
+    n = split(input, lines, "\\n")
+    note = ""
+    for (i = 1; i <= n; i++) {
+        line = lines[i]
+        gsub(/[[:space:]]+\$/, "", line)
+        if (length(line) == 0) continue
+        if (match(line, /^[[:space:]]*-[[:space:]]*/)) {
+            if (length(note) > 0 && tolower(note) != "none") {
+                printf "${line_format}\\n", date, task, note
+            }
+            sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+            gsub(/^[[:space:]]+/, "", line)
+            note = line
+        } else {
+            gsub(/^[[:space:]]+/, "", line)
+            if (length(note) > 0) {
+                note = note " " line
+            } else {
+                note = line
+            }
+        }
+    }
+    if (length(note) > 0 && tolower(note) != "none") {
+        printf "${line_format}\\n", date, task, note
+    }
+    next
+}
+{ print }
+AWKEOF
+}
+
 # --- Drift Log ---------------------------------------------------------------
 
 # _ensure_drift_log — Creates DRIFT_LOG.md with initial structure if missing.
@@ -58,42 +101,13 @@ append_drift_observations() {
     local tmpfile
     tmpfile=$(mktemp)
 
-    awk -v date="$date_tag" -v task="$task_desc" -v obs="$observations" '
-    /^## Unresolved Observations/ {
-        print
-        # Split observations into lines and join continuation lines into single entries
-        n = split(obs, lines, "\n")
-        note = ""
-        for (i = 1; i <= n; i++) {
-            line = lines[i]
-            gsub(/[[:space:]]+$/, "", line)
-            if (length(line) == 0) continue
-            if (match(line, /^[[:space:]]*-[[:space:]]*/)) {
-                # New bullet: emit the accumulated note, then start fresh
-                if (length(note) > 0 && tolower(note) != "none") {
-                    printf "- [%s | \"%s\"] %s\n", date, task, note
-                }
-                sub(/^[[:space:]]*-[[:space:]]*/, "", line)
-                gsub(/^[[:space:]]+/, "", line)
-                note = line
-            } else {
-                # Continuation line: join to current note with a space
-                gsub(/^[[:space:]]+/, "", line)
-                if (length(note) > 0) {
-                    note = note " " line
-                } else {
-                    note = line
-                }
-            }
-        }
-        # Emit the final note
-        if (length(note) > 0 && tolower(note) != "none") {
-            printf "- [%s | \"%s\"] %s\n", date, task, note
-        }
-        next
-    }
-    { print }
-    ' "$drift_file" > "$tmpfile"
+    local awk_prog
+    awk_prog=$(_awk_join_bullets \
+        '/^## Unresolved Observations/' \
+        '- [%s | \"%s\"] %s')
+
+    awk -v date="$date_tag" -v task="$task_desc" -v input="$observations" \
+        "$awk_prog" "$drift_file" > "$tmpfile"
 
     mv "$tmpfile" "$drift_file"
 }
@@ -462,41 +476,13 @@ append_nonblocking_notes() {
     local tmpfile
     tmpfile=$(mktemp)
 
-    awk -v date="$date_tag" -v task="$task_desc" -v notes="$notes" '
-    /^## Open/ {
-        print
-        n = split(notes, lines, "\n")
-        note = ""
-        for (i = 1; i <= n; i++) {
-            line = lines[i]
-            gsub(/[[:space:]]+$/, "", line)
-            if (length(line) == 0) continue
-            if (match(line, /^[[:space:]]*-[[:space:]]*/)) {
-                # New bullet: emit the accumulated note, then start fresh
-                if (length(note) > 0 && tolower(note) != "none") {
-                    printf "- [ ] [%s | \"%s\"] %s\n", date, task, note
-                }
-                sub(/^[[:space:]]*-[[:space:]]*/, "", line)
-                gsub(/^[[:space:]]+/, "", line)
-                note = line
-            } else {
-                # Continuation line: join to current note with a space
-                gsub(/^[[:space:]]+/, "", line)
-                if (length(note) > 0) {
-                    note = note " " line
-                } else {
-                    note = line
-                }
-            }
-        }
-        # Emit the final note
-        if (length(note) > 0 && tolower(note) != "none") {
-            printf "- [ ] [%s | \"%s\"] %s\n", date, task, note
-        }
-        next
-    }
-    { print }
-    ' "$nb_file" > "$tmpfile"
+    local awk_prog
+    awk_prog=$(_awk_join_bullets \
+        '/^## Open/' \
+        '- [ ] [%s | \"%s\"] %s')
+
+    awk -v date="$date_tag" -v task="$task_desc" -v input="$notes" \
+        "$awk_prog" "$nb_file" > "$tmpfile"
 
     mv "$tmpfile" "$nb_file"
 }
