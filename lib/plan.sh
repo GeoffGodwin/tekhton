@@ -120,9 +120,12 @@ select_project_type() {
 
 # _call_planning_batch — Call claude in batch mode and print text content to stdout.
 #
-# Runs `claude -p` with --output-format json. Does NOT use
-# --dangerously-skip-permissions — planning agents generate text only; the
-# caller (shell) is responsible for writing any files.
+# Uses --output-format text so the response is plain text with no JSON parsing.
+# Does NOT use --dangerously-skip-permissions — planning agents generate text
+# only; the caller (shell) is responsible for writing any files.
+#
+# The response is tee'd to the log file and also passed through to stdout so
+# the caller can capture it with output=$(_call_planning_batch ...).
 #
 # Usage:
 #   output=$(_call_planning_batch model max_turns prompt log_file)
@@ -139,24 +142,10 @@ _call_planning_batch() {
     claude \
         --model "$model" \
         --max-turns "$max_turns" \
-        --output-format json \
+        --output-format text \
         -p "$prompt" \
         < /dev/null \
-        2>>"$log_file" | python3 -c "
-import sys, json
-chunks = []
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    try:
-        d = json.loads(line)
-        if d.get('type') == 'text':
-            chunks.append(d.get('text', ''))
-    except Exception:
-        pass
-sys.stdout.write(''.join(chunks))
-" 2>/dev/null
+        2>>"$log_file" | tee -a "$log_file"
     local -a _pst=("${PIPESTATUS[@]}")
     set -o pipefail
     return "${_pst[0]}"
