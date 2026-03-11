@@ -13,13 +13,13 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 # Expected types → minimum required section count (from CODER_SUMMARY.md)
 declare -A EXPECTED_REQUIRED
-EXPECTED_REQUIRED["web-app"]=6
-EXPECTED_REQUIRED["web-game"]=6
-EXPECTED_REQUIRED["cli-tool"]=6
-EXPECTED_REQUIRED["api-service"]=6
-EXPECTED_REQUIRED["mobile-app"]=6
-EXPECTED_REQUIRED["library"]=5
-EXPECTED_REQUIRED["custom"]=4
+EXPECTED_REQUIRED["web-app"]=9
+EXPECTED_REQUIRED["web-game"]=10
+EXPECTED_REQUIRED["cli-tool"]=10
+EXPECTED_REQUIRED["api-service"]=9
+EXPECTED_REQUIRED["mobile-app"]=9
+EXPECTED_REQUIRED["library"]=8
+EXPECTED_REQUIRED["custom"]=8
 
 echo "=== Template Existence ==="
 
@@ -68,6 +68,20 @@ for type in "${!EXPECTED_REQUIRED[@]}"; do
         pass "${type}.md: has Tech Stack section"
     else
         fail "${type}.md: missing Tech Stack section"
+    fi
+
+    # Every template must have a "Developer Philosophy & Constraints" section by exact name
+    if grep -q '^## Developer Philosophy & Constraints$' "$tmpl"; then
+        pass "${type}.md: has 'Developer Philosophy & Constraints' section"
+    else
+        fail "${type}.md: missing '## Developer Philosophy & Constraints' section"
+    fi
+
+    # Every template must have a "Config Architecture" section by exact name
+    if grep -q '^## Config Architecture$' "$tmpl"; then
+        pass "${type}.md: has 'Config Architecture' section"
+    else
+        fail "${type}.md: missing '## Config Architecture' section"
     fi
 
     # Sections that have REQUIRED markers must be ## headings directly above the marker

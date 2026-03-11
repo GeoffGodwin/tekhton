@@ -36,9 +36,9 @@ load_plan_config
 # --- Planning config defaults ------------------------------------------------
 # Overridable via environment variables or pipeline.conf.
 
-export PLAN_INTERVIEW_MODEL="${PLAN_INTERVIEW_MODEL:-${CLAUDE_PLAN_MODEL:-sonnet}}"
+export PLAN_INTERVIEW_MODEL="${PLAN_INTERVIEW_MODEL:-${CLAUDE_PLAN_MODEL:-opus}}"
 export PLAN_INTERVIEW_MAX_TURNS="${PLAN_INTERVIEW_MAX_TURNS:-50}"
-export PLAN_GENERATION_MODEL="${PLAN_GENERATION_MODEL:-${CLAUDE_PLAN_MODEL:-sonnet}}"
+export PLAN_GENERATION_MODEL="${PLAN_GENERATION_MODEL:-${CLAUDE_PLAN_MODEL:-opus}}"
 export PLAN_GENERATION_MAX_TURNS="${PLAN_GENERATION_MAX_TURNS:-30}"
 
 # Project types — order matches the menu display
@@ -145,7 +145,7 @@ _call_planning_batch() {
         --output-format text \
         -p "$prompt" \
         < /dev/null \
-        2>>"$log_file" | tee -a "$log_file"
+        2>&1 | tee -a "$log_file"
     local -a _pst=("${PIPESTATUS[@]}")
     set -o pipefail
     return "${_pst[0]}"
