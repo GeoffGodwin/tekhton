@@ -4,6 +4,7 @@
 
 ## Developer Philosophy & Constraints
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What are your non-negotiable architectural rules? Examples: -->
 <!-- - Server-side first: prefer SSR/SSG over client-side rendering where possible -->
 <!-- - Type safety end-to-end: shared types between API and frontend, no `any` -->
@@ -14,6 +15,7 @@
 
 ## Project Overview
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What does this application do? Who is it for? What problem does it solve? -->
 <!-- Is this a greenfield build or a rewrite/migration? -->
 <!-- What is the business model? (SaaS, internal tool, marketplace, content platform) -->
@@ -22,6 +24,7 @@
 
 ## Tech Stack
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- Frontend framework: React, Next.js, Vue, Nuxt, Svelte, Angular? Why? -->
 <!-- Backend framework: Express, Fastify, Django, Rails, .NET, Go? Why? -->
 <!-- Database: PostgreSQL, MySQL, MongoDB, SQLite? Why? -->
@@ -33,6 +36,7 @@
 
 ## User Roles & Permissions
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- Who uses this system? List each role. -->
 <!-- For each role: what can they see? What can they create/edit/delete? -->
 <!-- How are roles assigned? (self-registration, admin invitation, org-based) -->
@@ -43,6 +47,7 @@
 
 ## Data Model & Entities
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- List each major entity as a ### sub-section. For each entity: -->
 <!-- - Key fields with types (string, integer, enum, UUID, timestamp) -->
 <!-- - Relationships to other entities (one-to-many, many-to-many, belongs-to) -->
@@ -54,6 +59,7 @@
 
 ## Core Features
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- List each major feature as a ### sub-section. For each feature: -->
 <!-- - User story: "As a [role], I want to [action] so that [benefit]" -->
 <!-- - Behavior: step-by-step description of what happens -->
@@ -63,6 +69,7 @@
 
 ## Key User Flows
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- Walk through 3-5 critical paths step by step. For each flow: -->
 <!-- - Starting state: what does the user see? -->
 <!-- - Actions: what does the user click/type/do? -->
@@ -72,6 +79,7 @@
 <!-- Example: "Search for item → add to cart → checkout → payment → confirmation" -->
 
 ## Pages, Routes & Navigation
+<!-- PHASE:2 -->
 <!-- List every page/route in the application. Group by area: -->
 <!-- - Public pages (landing, pricing, docs, login, signup) -->
 <!-- - Authenticated pages (dashboard, settings, profile) -->
@@ -81,6 +89,7 @@
 <!-- How does the URL structure support deep linking and bookmarking? -->
 
 ## Authentication & Session Management
+<!-- PHASE:2 -->
 <!-- How do users log in? (email/password, OAuth providers, magic link, SSO, passkeys) -->
 <!-- Session strategy: JWT, server-side sessions, or hybrid? -->
 <!-- Token storage: httpOnly cookie, localStorage, or in-memory? -->
@@ -90,6 +99,7 @@
 <!-- MFA: is it supported? Required for certain roles? -->
 
 ## API Design
+<!-- PHASE:2 -->
 <!-- API style: REST, GraphQL, tRPC, or hybrid? -->
 <!-- Naming conventions: `/api/v1/users`, camelCase vs snake_case in payloads -->
 <!-- Pagination: cursor-based, offset-based, or keyset? Default page size? -->
@@ -99,6 +109,7 @@
 <!-- Error response format: standard structure with error codes? -->
 
 ## State Management
+<!-- PHASE:2 -->
 <!-- Frontend state strategy: server state (React Query, SWR) vs client state (Zustand, Redux) -->
 <!-- What data is cached client-side? Cache invalidation strategy? -->
 <!-- Optimistic updates: which actions use them? Rollback on failure? -->
@@ -106,6 +117,7 @@
 <!-- Form state: controlled vs uncontrolled? Validation library? (Zod, Yup, native) -->
 
 ## Error Handling & Resilience
+<!-- PHASE:2 -->
 <!-- Frontend error handling: error boundaries, toast notifications, inline errors -->
 <!-- Backend error handling: structured error responses, error codes, logging -->
 <!-- What happens when the API is down? Retry strategy? Offline support? -->
@@ -114,6 +126,7 @@
 <!-- Monitoring: how are errors tracked? (Sentry, LogRocket, CloudWatch) -->
 
 ## External Integrations
+<!-- PHASE:2 -->
 <!-- Third-party APIs: payment (Stripe, PayPal), email (SendGrid, Resend), -->
 <!-- storage (S3, Cloudflare R2), auth (Auth0, Clerk), analytics (PostHog, Mixpanel) -->
 <!-- For each integration: what it does, API key management, failure behavior -->
@@ -121,6 +134,7 @@
 <!-- What happens if a third-party service is down? Graceful degradation? -->
 
 ## Background Jobs & Async Processing
+<!-- PHASE:2 -->
 <!-- What work happens outside the request/response cycle? -->
 <!-- Job queue: BullMQ, Celery, SQS, or cron-based? -->
 <!-- Examples: email sending, report generation, data imports, cleanup tasks -->
@@ -128,6 +142,7 @@
 <!-- Scheduled jobs: what runs on a schedule? (daily reports, expired session cleanup) -->
 
 ## Observability & Monitoring
+<!-- PHASE:2 -->
 <!-- Logging: structured (JSON) or plain text? Log levels? What gets logged? -->
 <!-- Metrics: request latency, error rate, active users, queue depth -->
 <!-- Alerting: what triggers an alert? Who gets notified? (PagerDuty, Slack, email) -->
@@ -135,6 +150,7 @@
 <!-- Tracing: distributed tracing for request flow? (OpenTelemetry, Datadog) -->
 
 ## Deployment & Infrastructure
+<!-- PHASE:2 -->
 <!-- Deployment target: Vercel, AWS, GCP, Railway, Docker, Kubernetes? -->
 <!-- CI/CD: GitHub Actions, GitLab CI, CircleCI? Pipeline stages? -->
 <!-- Environments: local, staging, production? How do they differ? -->
@@ -144,6 +160,7 @@
 
 ## Config Architecture
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What values MUST live in config/environment rather than hardcoded? -->
 <!-- Config sources: .env files, environment variables, config service, feature flags -->
 <!-- Show example config structures with actual keys and default values. Example: -->
@@ -160,6 +177,7 @@
 <!-- What config changes require a restart vs. are hot-reloaded? -->
 
 ## Testing Strategy
+<!-- PHASE:3 -->
 <!-- Unit tests: what gets unit tested? (business logic, utilities, validators) -->
 <!-- Integration tests: API endpoint tests, database tests? -->
 <!-- E2E tests: which user flows have automated browser tests? -->
@@ -168,6 +186,7 @@
 <!-- CI integration: do tests run on every PR? What blocks merge? -->
 
 ## Non-Functional Requirements
+<!-- PHASE:3 -->
 <!-- Performance: page load time targets, API response time targets -->
 <!-- Accessibility: WCAG level (A, AA, AAA)? Audit plan? -->
 <!-- Internationalization: multi-language support? RTL? Number/date formatting? -->
@@ -176,6 +195,7 @@
 <!-- Data privacy: GDPR, CCPA, data retention policy, data export -->
 
 ## Naming Conventions
+<!-- PHASE:3 -->
 <!-- Code naming: camelCase, PascalCase, snake_case — per language convention -->
 <!-- File naming: kebab-case for files, PascalCase for components? -->
 <!-- Database naming: snake_case tables and columns? Plural or singular table names? -->
@@ -185,6 +205,7 @@
 
 ## Open Design Questions
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What decisions are you deliberately deferring? Why? -->
 <!-- What needs user testing or data before you can decide? -->
 <!-- What trade-offs have you identified but not resolved? -->
@@ -193,6 +214,7 @@
 <!-- List each open question with the information needed to resolve it. -->
 
 ## What Not to Build Yet
+<!-- PHASE:3 -->
 <!-- What features are explicitly deferred to avoid scope creep? -->
 <!-- For each deferred feature: what it is, why it's deferred, what milestone might add it -->
 <!-- Example: "Admin analytics dashboard — deferred until we have real usage data" -->

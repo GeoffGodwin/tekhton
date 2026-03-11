@@ -182,6 +182,7 @@ if [ "${1:-}" = "--plan" ]; then
     source "${TEKHTON_HOME}/lib/plan_state.sh"
     source "${TEKHTON_HOME}/lib/plan_completeness.sh"
     source "${TEKHTON_HOME}/stages/plan_interview.sh"
+    source "${TEKHTON_HOME}/stages/plan_followup_interview.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
     # PROJECT_NAME is needed by run_agent() for temp file naming;
     # in --plan mode config is not loaded, so derive from directory name.

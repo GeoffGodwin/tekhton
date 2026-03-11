@@ -39,9 +39,15 @@ Produce the updated, complete DESIGN.md in markdown format. Follow these rules:
 2. **Keep existing sections verbatim.** Sections NOT listed in "Incomplete
    Sections" above must be copied to the output unchanged, word for word.
 
-3. **Update only the listed sections.** Replace their content with the
-   developer's follow-up answers synthesized into design prose (2–6 sentences
-   per section). Strip all `<!-- ... -->` guidance comments.
+3. **Expand the listed sections with depth.** Replace their content with the
+   developer's follow-up answers synthesized into professional design prose:
+   - **Sub-sections** (`### Heading`) for distinct topics within a section
+   - **Tables** for structured data (entity fields, config values, endpoints)
+   - **Config examples** in fenced code blocks with actual keys and values
+   - **Edge case documentation** — what happens at boundaries, failure modes
+   - **Interaction notes** — how this system connects to other systems
+   Strip all `<!-- ... -->` guidance comments. Do NOT limit yourself to
+   "2-6 sentences" — expand to the depth the content warrants.
 
 4. **Required sections must have content.** If the follow-up answer is still
    vague or another skip, write a single-line placeholder:

@@ -4,6 +4,7 @@
 
 ## Developer Philosophy & Constraints
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What are your non-negotiable architectural rules? Examples: -->
 <!-- - Zero runtime dependencies: the library ships nothing consumers didn't ask for -->
 <!-- - Type-safe public API: every function has precise types, no `any` or `interface{}` -->
@@ -15,6 +16,7 @@
 
 ## Project Overview
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What does this library do in one sentence? -->
 <!-- What problem does it solve for its consumers? -->
 <!-- What existing library does it replace or improve? Why is a new library needed? -->
@@ -24,6 +26,7 @@
 
 ## Tech Stack
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- Language: TypeScript, Python, Rust, Go, Java, or other? -->
 <!-- Build tool: tsc, Rollup, esbuild, cargo, setuptools, Gradle? -->
 <!-- Package registry: npm, PyPI, crates.io, Maven Central, NuGet? -->
@@ -35,6 +38,7 @@
 
 ## Public API Surface
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- List every public function, class, type, or module as a ### sub-section. For each: -->
 <!-- - Signature: name, parameters with types, return type -->
 <!-- - Description: what it does, when to use it -->
@@ -48,6 +52,7 @@
 
 ## Core Algorithms & Data Structures
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- What does the library do internally? For each algorithm or processing pipeline: -->
 <!-- - Input: what data enters? Format? -->
 <!-- - Processing: step-by-step description of the algorithm -->
@@ -59,6 +64,7 @@
 
 ## Configuration & Options
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- What can consumers configure? For each option: -->
 <!-- - Option name, type, default value, description -->
 <!-- - Valid range or enum of values -->
@@ -76,6 +82,7 @@
 <!-- Immutability: can config be changed after construction? -->
 
 ## Error Handling Strategy
+<!-- PHASE:2 -->
 <!-- How does the library report errors to consumers? -->
 <!-- Error types: custom error classes, error codes, Result types, or language exceptions? -->
 <!-- For each error type: name, when it occurs, what information it carries -->
@@ -85,6 +92,7 @@
 <!-- What happens on programmer error vs runtime error? (panic vs return error) -->
 
 ## Type System & Generics
+<!-- PHASE:2 -->
 <!-- How does the library use the type system? -->
 <!-- Generic types: what functions or classes are generic? What constraints? -->
 <!-- Type exports: what types are exported for consumers? -->
@@ -93,6 +101,7 @@
 <!-- Strictness: does the library work under strict mode (strictNullChecks, strict Rust)? -->
 
 ## Dependencies & Peer Dependencies
+<!-- PHASE:2 -->
 <!-- Runtime dependencies: list each with purpose and size impact -->
 <!-- Peer dependencies: what must the consumer provide? (e.g., react >= 18) -->
 <!-- Dev dependencies: testing, building, linting tools -->
@@ -101,6 +110,7 @@
 <!-- Vendoring: is any dependency code vendored/inlined? Why? -->
 
 ## Compatibility & Platform Support
+<!-- PHASE:2 -->
 <!-- Supported runtime versions: Node 18+, Python 3.10+, Rust MSRV 1.70? -->
 <!-- Browser support: Chrome, Firefox, Safari, Edge? Minimum versions? -->
 <!-- Environment: Node.js, Deno, Bun, browser, workers, edge runtime? -->
@@ -109,6 +119,7 @@
 <!-- Does the library use any native/FFI bindings? -->
 
 ## Bundle Size & Tree-Shaking
+<!-- PHASE:2 -->
 <!-- Target bundle size: minified + gzipped size budget -->
 <!-- Tree-shaking: is every export independently importable? -->
 <!-- Side effects: does the package.json declare sideEffects: false? -->
@@ -117,6 +128,7 @@
 <!-- Bundle analysis: how is bundle size tracked in CI? -->
 
 ## Performance Characteristics
+<!-- PHASE:2 -->
 <!-- Benchmarks: what operations are benchmarked? Target numbers? -->
 <!-- Memory usage: allocation patterns, streaming vs buffering -->
 <!-- Concurrency: is the library thread-safe? Async-safe? -->
@@ -125,6 +137,7 @@
 <!-- Comparison: how does performance compare to alternatives? -->
 
 ## Versioning & Release Strategy
+<!-- PHASE:2 -->
 <!-- Versioning: strict semver? What constitutes major, minor, patch? -->
 <!-- Deprecation policy: how long are deprecated APIs supported? -->
 <!-- Changelog: auto-generated from commits? Conventional commits? -->
@@ -133,6 +146,7 @@
 <!-- Breaking change process: RFC, migration guide, codemods? -->
 
 ## Documentation Strategy
+<!-- PHASE:2 -->
 <!-- API reference: auto-generated from source (TypeDoc, Sphinx, rustdoc)? -->
 <!-- Guide/tutorial: getting started, common patterns, migration guides -->
 <!-- Examples: standalone example projects or inline code examples? -->
@@ -141,6 +155,7 @@
 
 ## Config Architecture
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What values MUST live in config rather than hardcoded? -->
 <!-- Show the complete default configuration object: -->
 <!-- ```typescript -->
@@ -155,6 +170,7 @@
 <!-- Can config be changed at runtime? What effect does it have? -->
 
 ## Testing Strategy
+<!-- PHASE:3 -->
 <!-- Unit tests: what logic is tested? Coverage target? -->
 <!-- Property-based tests: any fuzz or property tests? -->
 <!-- Integration tests: tests against real dependencies (if any) -->
@@ -163,6 +179,7 @@
 <!-- Consumer tests: do you test against real consumer projects? -->
 
 ## Naming Conventions
+<!-- PHASE:3 -->
 <!-- Code naming: per-language conventions -->
 <!-- Public API naming: what naming rules apply to exported symbols? -->
 <!-- File structure: one module per file? Grouped by feature or layer? -->
@@ -171,6 +188,7 @@
 
 ## Open Design Questions
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What decisions are you deliberately deferring? -->
 <!-- What needs usage data or community feedback before you can decide? -->
 <!-- Example: "Unsure if streaming API is needed — start with batch, add streaming if demand" -->
@@ -178,6 +196,7 @@
 <!-- List each open question with the information needed to resolve it. -->
 
 ## What Not to Build Yet
+<!-- PHASE:3 -->
 <!-- What features are explicitly deferred? -->
 <!-- For each: what it is, why it's deferred, what milestone might add it -->
 <!-- Example: "CLI wrapper — library first, CLI if consumers request it" -->

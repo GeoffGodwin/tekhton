@@ -21,19 +21,40 @@ if command -v timeout &>/dev/null && timeout --help 2>&1 | grep -q 'kill-after';
     _TIMEOUT_KILL_AFTER_FLAG="--kill-after=60"
 fi
 
-# --- Claude binary type warning (WSL + Windows claude = signal issues) -------
-# A Windows-native claude.exe run through WSL interop does NOT receive Linux
-# signals (SIGINT, SIGTERM, SIGKILL). This means Ctrl+C will NOT kill it and
-# the timeout SIGTERM will be ignored, causing the pipeline to hang indefinitely.
-# Detect and warn once at source time.
+# --- Windows-native claude detection (for taskkill cleanup) ------------------
+# A Windows-native claude.exe does NOT receive POSIX signals properly from
+# MSYS2/MinGW (Git Bash) or WSL interop. When detected, the abort handler
+# uses taskkill.exe to forcefully terminate the process.
+_AGENT_WINDOWS_CLAUDE=false
+_claude_path="$(command -v claude 2>/dev/null || true)"
+
 if grep -qiE 'microsoft|WSL' /proc/version 2>/dev/null; then
-    _claude_path="$(command -v claude 2>/dev/null || true)"
     if echo "${_claude_path:-}" | grep -qiE '(/mnt/c/|\.exe$|AppData|Program)'; then
+        _AGENT_WINDOWS_CLAUDE=true
         warn "[agent] WARNING: claude appears to be a Windows binary running via WSL interop."
-        warn "[agent] Windows processes do not receive Linux signals — Ctrl+C and timeout may not kill it."
         warn "[agent] To fix: install claude natively in WSL (npm install -g @anthropic-ai/claude-code)."
     fi
+elif uname -s 2>/dev/null | grep -qiE 'MINGW|MSYS'; then
+    if [ -n "${_claude_path:-}" ]; then
+        _AGENT_WINDOWS_CLAUDE=true
+    fi
 fi
+
+# --- Windows process kill helper ---------------------------------------------
+# taskkill.exe reliably terminates Windows-native processes that ignore POSIX
+# signals. Used by the abort handler when _AGENT_WINDOWS_CLAUDE is true.
+_kill_agent_windows() {
+    if [ "$_AGENT_WINDOWS_CLAUDE" != true ]; then
+        return
+    fi
+    # Kill by image name — catches the claude process even if PID tracking fails.
+    # //F = force, //T = kill process tree, //IM = by image name.
+    if command -v taskkill.exe &>/dev/null; then
+        taskkill.exe //F //IM claude.exe //T 2>/dev/null || true
+    elif command -v taskkill &>/dev/null; then
+        taskkill //F //IM claude.exe //T 2>/dev/null || true
+    fi
+}
 
 # --- Agent exit detection globals --------------------------------------------
 # Set after every run_agent() call. Callers inspect these to decide next steps.
@@ -78,64 +99,222 @@ run_agent() {
     # Temporarily disable pipefail — claude can exit non-zero on turn limits
     # and we don't want that to kill the entire tekhton pipeline
     set +o pipefail
-    # Redirect stdin to /dev/null so piped input (e.g. yes | tekhton) doesn't
-    # leak into the claude process or accumulate in the buffer after it exits.
+
     # AGENT_TIMEOUT (seconds) guards against a hung claude process. Defaults to
     # 7200 (2 hours). Set to 0 in pipeline.conf to disable.
     local _timeout="${AGENT_TIMEOUT:-7200}"
     local _invoke
     if [ "$_timeout" -gt 0 ] 2>/dev/null && command -v timeout &>/dev/null; then
-        # Use --kill-after if available: sends SIGKILL after 60s if SIGTERM is ignored.
-        # Critical for Windows claude.exe via WSL interop, which ignores SIGTERM.
         _invoke="timeout ${_TIMEOUT_KILL_AFTER_FLAG} $_timeout"
     else
         _invoke=""
     fi
 
-    # Trap INT/TERM so Ctrl+C or an external kill cleans up the entire pipeline.
-    # The handler clears itself first to prevent re-entrancy, then kills the
-    # process group (claude + tee + subshell). Sets CLEAN_EXIT so the crash
-    # diagnostic does not fire on a user-initiated abort.
-    _run_agent_abort() {
-        trap - INT TERM
-        _TEKHTON_CLEAN_EXIT=true
-        kill 0 2>/dev/null || true
-    }
-    trap '_run_agent_abort' INT TERM
+    # AGENT_ACTIVITY_TIMEOUT (seconds) kills the agent if it produces no output
+    # for this duration. Catches hung API connections, stuck retries, and silent
+    # failures that the total AGENT_TIMEOUT would take hours to detect.
+    # Default: 600 (10 minutes). Set to 0 in pipeline.conf to disable.
+    local _activity_timeout="${AGENT_ACTIVITY_TIMEOUT:-600}"
 
-    $_invoke claude \
-        --model "$model" \
-        --dangerously-skip-permissions \
-        --max-turns "$max_turns" \
-        --output-format json \
-        -p "$prompt" \
-        < /dev/null \
-        2>&1 | tee -a "$log_file" | (
-            # Stream JSON lines — print text content live, capture final stats
-            local turns=0
-            local last_line=""
-            while IFS= read -r line; do
-                # Print assistant text content live
-                if echo "$line" | grep -q '"type":"text"'; then
-                    echo "$line" | python3 -c \
-                        "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
-                        2>/dev/null || true
+    # Temp files for inter-process communication
+    local _project_slug="${PROJECT_NAME// /_}"
+    local _turns_file="/tmp/tekhton_${_project_slug}_last_turns"
+    local _exit_file="/tmp/tekhton_${_project_slug}_agent_exit"
+    rm -f "$_exit_file" "$_turns_file"
+
+    # =========================================================================
+    # FIFO-ISOLATED INVOCATION
+    # =========================================================================
+    # Claude runs in a BACKGROUND subshell writing to a named pipe (FIFO).
+    # The foreground reads from the FIFO. This architecture solves two problems:
+    #
+    # 1. CTRL+C WORKS RELIABLY — Bash defers trap handlers until foreground
+    #    commands complete. In a direct pipeline (claude | tee | subshell),
+    #    bash can't run the INT trap until claude exits. If claude is hung,
+    #    Ctrl+C is permanently blocked. With the FIFO, the foreground is just
+    #    a bash read loop — it exits immediately on signal, and the trap fires.
+    #
+    # 2. ACTIVITY TIMEOUT — The read loop uses `read -t` to detect silence.
+    #    If claude produces no output for AGENT_ACTIVITY_TIMEOUT seconds, the
+    #    reader kills the background process. This catches hung API connections,
+    #    stuck retries, and other silent failures within minutes instead of
+    #    waiting for the 2-hour AGENT_TIMEOUT.
+    #
+    # 3. WINDOWS COMPATIBILITY — On MSYS2/Git Bash, Windows claude.exe ignores
+    #    POSIX signals entirely. The FIFO keeps it out of the foreground process
+    #    group, and taskkill.exe cleans it up in the abort handler.
+    # =========================================================================
+
+    # Track whether the timeout was activity-based (for messaging)
+    local _was_activity_timeout=false
+
+    if command -v mkfifo &>/dev/null; then
+        local _fifo="/tmp/tekhton_agent_fifo_$$"
+        rm -f "$_fifo"
+        mkfifo "$_fifo"
+
+        # Background subshell: run claude, write output to FIFO.
+        # stdin is /dev/null so piped input doesn't leak into claude.
+        (
+            $_invoke claude \
+                --model "$model" \
+                --dangerously-skip-permissions \
+                --max-turns "$max_turns" \
+                --output-format json \
+                -p "$prompt" \
+                < /dev/null \
+                > "$_fifo" 2>&1
+            echo "$?" > "$_exit_file"
+        ) &
+        _TEKHTON_AGENT_PID=$!
+
+        # Trap: kill background subshell + Windows claude if applicable.
+        # The foreground read loop sees EOF when the FIFO write-end closes
+        # (background subshell dies → fd closes → reader unblocks).
+        _run_agent_abort() {
+            trap - INT TERM
+            _TEKHTON_CLEAN_EXIT=true
+            if [ -n "${_TEKHTON_AGENT_PID:-}" ]; then
+                kill "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+                kill -9 "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+            fi
+            _kill_agent_windows
+            rm -f "${_fifo:-}" 2>/dev/null || true
+        }
+        trap '_run_agent_abort' INT TERM
+
+        # Foreground: read FIFO, log each line, parse JSON, detect silence.
+        # No tee — logging is done here to avoid pipe buffering issues.
+        # Uses fd 3 for efficient append-mode logging (one open, many writes).
+        (
+            exec 3>>"$log_file"
+            _last_activity=$(date +%s)
+            _last_line=""
+            _read_interval=30
+            [ "$_activity_timeout" -le 0 ] 2>/dev/null && _read_interval=0
+
+            while true; do
+                if [ "$_read_interval" -gt 0 ]; then
+                    if IFS= read -r -t "$_read_interval" line; then
+                        _last_activity=$(date +%s)
+                        echo "$line" >&3
+                        _last_line="$line"
+                        if echo "$line" | grep -q '"type":"text"'; then
+                            echo "$line" | python3 -c \
+                                "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
+                                2>/dev/null || true
+                        fi
+                    else
+                        _rc=$?
+                        if [ "$_rc" -le 128 ]; then
+                            break  # EOF — claude exited
+                        fi
+                        # read timed out — check for silence
+                        _now=$(date +%s)
+                        _idle=$(( _now - _last_activity ))
+                        if [ "$_idle" -ge "$_activity_timeout" ]; then
+                            echo "[tekhton] ACTIVITY TIMEOUT — no output for ${_idle}s. Killing agent." >&3
+                            echo "ACTIVITY_TIMEOUT" > "$_exit_file"
+                            kill "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+                            sleep 2
+                            kill -9 "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+                            _kill_agent_windows
+                            break
+                        fi
+                    fi
+                else
+                    # Activity timeout disabled — blocking read
+                    if IFS= read -r line; then
+                        echo "$line" >&3
+                        _last_line="$line"
+                        if echo "$line" | grep -q '"type":"text"'; then
+                            echo "$line" | python3 -c \
+                                "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
+                                2>/dev/null || true
+                        fi
+                    else
+                        break  # EOF
+                    fi
                 fi
-                last_line="$line"
             done
+
             # Extract turn count from final result object
-            turns=$(echo "$last_line" | python3 -c \
+            _turns=$(echo "$_last_line" | python3 -c \
                 "import sys,json; d=json.load(sys.stdin); print(d.get('num_turns', 0))" \
                 2>/dev/null || echo "0")
-            echo "$turns" > "/tmp/tekhton_${PROJECT_NAME// /_}_last_turns"
-        )
-    local agent_exit=${PIPESTATUS[0]}
+            echo "$_turns" > "$_turns_file"
+            exec 3>&-
+        ) < "$_fifo"
+
+        # Wait for background subshell to fully exit
+        wait "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+        rm -f "$_fifo"
+
+        # Read exit code from background subshell
+        local agent_exit
+        if [ -f "$_exit_file" ]; then
+            agent_exit=$(cat "$_exit_file")
+            if [ "$agent_exit" = "ACTIVITY_TIMEOUT" ]; then
+                agent_exit=124
+                _was_activity_timeout=true
+            fi
+            [[ "$agent_exit" =~ ^[0-9]+$ ]] || agent_exit=1
+            rm -f "$_exit_file"
+        else
+            agent_exit=1
+        fi
+    else
+        # =================================================================
+        # FALLBACK: direct pipeline (mkfifo not available — extremely rare)
+        # =================================================================
+        # WARNING: Ctrl+C may not work if claude hangs, and there is no
+        # activity timeout. This path exists only for exotic environments
+        # without mkfifo (no known modern system lacks it).
+        _run_agent_abort() {
+            trap - INT TERM
+            _TEKHTON_CLEAN_EXIT=true
+            kill 0 2>/dev/null || true
+        }
+        trap '_run_agent_abort' INT TERM
+
+        $_invoke claude \
+            --model "$model" \
+            --dangerously-skip-permissions \
+            --max-turns "$max_turns" \
+            --output-format json \
+            -p "$prompt" \
+            < /dev/null \
+            2>&1 | tee -a "$log_file" | (
+                local turns=0
+                local last_line=""
+                while IFS= read -r line; do
+                    if echo "$line" | grep -q '"type":"text"'; then
+                        echo "$line" | python3 -c \
+                            "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
+                            2>/dev/null || true
+                    fi
+                    last_line="$line"
+                done
+                turns=$(echo "$last_line" | python3 -c \
+                    "import sys,json; d=json.load(sys.stdin); print(d.get('num_turns', 0))" \
+                    2>/dev/null || echo "0")
+                echo "$turns" > "$_turns_file"
+            )
+        local agent_exit=${PIPESTATUS[0]}
+    fi
+
     trap - INT TERM
     set -o pipefail
 
     if [ "$agent_exit" -ne 0 ]; then
         if [ "$agent_exit" -eq 124 ]; then
-            warn "[$label] TIMEOUT — agent did not complete within ${_timeout}s. Set AGENT_TIMEOUT in pipeline.conf to change."
+            if [ "$_was_activity_timeout" = true ]; then
+                warn "[$label] ACTIVITY TIMEOUT — agent produced no output for ${_activity_timeout}s."
+                warn "[$label] This usually means claude hung on an API call or entered a retry loop."
+                warn "[$label] Set AGENT_ACTIVITY_TIMEOUT in pipeline.conf to change (0 = disable)."
+            else
+                warn "[$label] TIMEOUT — agent did not complete within ${_timeout}s. Set AGENT_TIMEOUT in pipeline.conf to change."
+            fi
         else
             warn "[$label] claude exited with code ${agent_exit} (may indicate turn limit or error)"
         fi
@@ -147,7 +326,7 @@ run_agent() {
     local mins=$(( elapsed / 60 ))
     local secs=$(( elapsed % 60 ))
     local turns_used
-    turns_used=$(cat "/tmp/tekhton_${PROJECT_NAME// /_}_last_turns" 2>/dev/null || echo "0")
+    turns_used=$(cat "$_turns_file" 2>/dev/null || echo "0")
     [[ "$turns_used" =~ ^[0-9]+$ ]] || turns_used=0
 
     # Detect overshoot — Claude CLI's --max-turns is a soft cap
