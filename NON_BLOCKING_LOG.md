@@ -5,6 +5,12 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-11 | "Implement Milestone 6: Planning State Persistence + Config Integration"] `load_plan_config()` (lib/plan.sh) sources the entire `pipeline.conf`, importing all pipeline keys (ANALYZE_CMD, BUILD_CHECK_CMD, etc.) into the planning environment. Functionally harmless since all planning keys have safe defaults. A brief comment clarifying intentional scope would prevent future confusion.
+- [ ] [2026-03-11 | "Implement Milestone 6: Planning State Persistence + Config Integration"] `run_plan()` step 5 (`run_plan_review`) runs unconditionally with no `skip_to` guard, unlike steps 2–4. Functionally correct since review is always the final step after generation. A short comment explaining the intentional absence of the guard would prevent future confusion.
+- [x] [2026-03-11 | "Implement Milestone 6: Planning State Persistence + Config Integration"] ARCHITECTURE.md needs updating to add `lib/plan_state.sh` to the System Map and File Ownership table, and to update the `--plan` source list in the Layer 1 description. Acceptable to defer to Milestone 7.
+- [ ] [2026-03-11 | "Implement Milestone 6: Planning State Persistence + Config Integration"] `load_plan_config()` (lib/plan.sh) sources the entire `pipeline.conf`, importing all pipeline keys (ANALYZE_CMD, BUILD_CHECK_CMD, etc.) into the planning environment. Functionally harmless since all planning keys have safe defaults. A brief comment clarifying intentional scope would prevent future confusion.
+- [ ] [2026-03-11 | "Implement Milestone 6: Planning State Persistence + Config Integration"] `run_plan()` step 5 (`run_plan_review`) runs unconditionally with no `skip_to` guard, unlike steps 2–4. Functionally correct since review is always the final step after generation. A short comment explaining the intentional absence of the guard would prevent future confusion.
+- [x] [2026-03-11 | "Implement Milestone 6: Planning State Persistence + Config Integration"] ARCHITECTURE.md needs updating to add `lib/plan_state.sh` to the System Map and File Ownership table, and to update the `--plan` source list in the Layer 1 description. Acceptable to defer to Milestone 7.
 <!-- Items added here by the pipeline. Mark [x] when addressed. -->
 
 ## Resolved

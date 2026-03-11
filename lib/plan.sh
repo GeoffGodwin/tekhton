@@ -10,13 +10,33 @@
 # --- Constants ---------------------------------------------------------------
 
 PLAN_TEMPLATES_DIR="${TEKHTON_HOME}/templates/plans"
+# Used by lib/plan_state.sh (sourced separately)
+# shellcheck disable=SC2034
+PLAN_STATE_FILE="${PROJECT_DIR}/.claude/PLAN_STATE.md"
+
+# --- Planning config loader --------------------------------------------------
+# Reads planning-specific keys from pipeline.conf if it exists. Called before
+# applying defaults so pipeline.conf values take precedence over env vars.
+
+load_plan_config() {
+    local conf_file="${PROJECT_DIR}/.claude/pipeline.conf"
+    if [[ -f "$conf_file" ]]; then
+        # Source only planning-related keys (safe — config.sh validates
+        # required keys only for the execution pipeline, not here).
+        # shellcheck source=/dev/null
+        source <(sed 's/\r$//' "$conf_file")
+    fi
+}
+
+# Load config if available, then apply defaults for anything not set.
+load_plan_config
 
 # --- Planning config defaults ------------------------------------------------
-# Overridable via environment variables or pipeline.conf (Milestone 6).
+# Overridable via environment variables or pipeline.conf.
 
-export PLAN_INTERVIEW_MODEL="${CLAUDE_PLAN_MODEL:-sonnet}"
+export PLAN_INTERVIEW_MODEL="${PLAN_INTERVIEW_MODEL:-${CLAUDE_PLAN_MODEL:-sonnet}}"
 export PLAN_INTERVIEW_MAX_TURNS="${PLAN_INTERVIEW_MAX_TURNS:-50}"
-export PLAN_GENERATION_MODEL="${CLAUDE_PLAN_MODEL:-sonnet}"
+export PLAN_GENERATION_MODEL="${PLAN_GENERATION_MODEL:-${CLAUDE_PLAN_MODEL:-sonnet}}"
 export PLAN_GENERATION_MAX_TURNS="${PLAN_GENERATION_MAX_TURNS:-30}"
 
 # Project types — order matches the menu display
@@ -90,32 +110,66 @@ select_project_type() {
 }
 # --- Completeness Check ------------------------------------------------------
 # Extracted to lib/plan_completeness.sh — sourced separately by tekhton.sh.
+
+# --- Planning State Persistence ----------------------------------------------
+# Extracted to lib/plan_state.sh — sourced separately by tekhton.sh.
+
 # --- Main Entry Point --------------------------------------------------------
 
 # run_plan — Top-level planning phase orchestrator.
+# Supports resume from interrupted sessions via PLAN_STATE_FILE.
 run_plan() {
     header "Tekhton — Planning Phase"
     log "This will guide you through creating DESIGN.md and CLAUDE.md for your project."
     echo
 
-    # Step 1: Project type selection
-    select_project_type || return 1
+    # Check for interrupted session and offer resume
+    local resume_rc=0
+    _offer_plan_resume || resume_rc=$?
 
-    # Step 2: Interactive interview
-    echo
-    run_plan_interview || return 1
+    if [[ "$resume_rc" -eq 2 ]]; then
+        # User aborted
+        return 1
+    fi
+
+    local skip_to="${PLAN_RESUME_STAGE:-}"
+
+    # Step 1: Project type selection (skip if resuming past this stage)
+    if [[ -z "$skip_to" ]]; then
+        select_project_type || return 1
+        write_plan_state "interview" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
+    fi
+
+    # Step 2: Interactive interview (skip if resuming past this stage)
+    if [[ -z "$skip_to" ]] || [[ "$skip_to" == "interview" ]]; then
+        echo
+        run_plan_interview || return 1
+        write_plan_state "completeness" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
+        skip_to=""
+    fi
 
     # Step 3: Completeness check + follow-up loop
-    echo
-    run_plan_completeness_loop || return 1
+    if [[ -z "$skip_to" ]] || [[ "$skip_to" == "completeness" ]]; then
+        echo
+        run_plan_completeness_loop || return 1
+        write_plan_state "generation" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
+        skip_to=""
+    fi
 
     # Step 4: CLAUDE.md generation
-    echo
-    run_plan_generate || return 1
+    if [[ -z "$skip_to" ]] || [[ "$skip_to" == "generation" ]]; then
+        echo
+        run_plan_generate || return 1
+        write_plan_state "review" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
+        skip_to=""
+    fi
 
     # Step 5: Milestone review + file output
     echo
     run_plan_review || return 1
+
+    # Success — clear state
+    clear_plan_state
 }
 
 # --- Milestone Review UI ----------------------------------------------------

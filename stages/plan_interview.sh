@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # stages/plan_interview.sh — Planning phase: interactive interview
 #
@@ -63,6 +64,9 @@ run_plan_interview() {
         echo "$system_prompt"
         echo "=== Session Start ==="
     } > "$log_file"
+
+    # Save state before interview so Ctrl+C preserves resume info
+    write_plan_state "interview" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
 
     # Trap INT to prevent bash from exiting before we print cleanup info.
     # Claude receives SIGINT independently and shuts down; we just need
@@ -169,6 +173,9 @@ run_plan_followup_interview() {
         echo "$system_prompt"
         echo "=== Session Start ==="
     } > "$log_file"
+
+    # Save state before follow-up so Ctrl+C preserves resume info
+    write_plan_state "completeness" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
 
     trap 'true' INT
 

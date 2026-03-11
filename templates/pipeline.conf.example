@@ -163,6 +163,25 @@ DYNAMIC_TURNS_ENABLED=true
 # TESTER_MIN_TURNS=10
 # TESTER_MAX_TURNS_CAP=100
 
+# --- Planning phase (--plan) -------------------------------------------------
+# These keys configure the interactive planning phase. They are optional —
+# sensible defaults are applied when not set.
+
+# Model for the interview agent (conversational, needs good reasoning)
+# PLAN_INTERVIEW_MODEL="sonnet"
+
+# Model for the CLAUDE.md generation agent (needs strong structure)
+# PLAN_GENERATION_MODEL="sonnet"
+
+# Override both interview and generation models at once
+# CLAUDE_PLAN_MODEL="sonnet"
+
+# Max turns for the interview conversation
+# PLAN_INTERVIEW_MAX_TURNS=50
+
+# Max turns for CLAUDE.md generation
+# PLAN_GENERATION_MAX_TURNS=30
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false

@@ -117,7 +117,14 @@ if [ "${1:-}" = "--init" ]; then
 
     # Copy config template
     cp "${TEKHTON_HOME}/templates/pipeline.conf.example" "$CONF_FILE"
-    success "Created ${CONF_FILE}"
+
+    # Auto-set DESIGN_FILE if DESIGN.md exists (e.g., from a prior --plan run)
+    if [[ -f "${PROJECT_DIR}/DESIGN.md" ]]; then
+        sed -i 's/^DESIGN_FILE=""$/DESIGN_FILE="DESIGN.md"/' "$CONF_FILE"
+        success "Created ${CONF_FILE} (DESIGN_FILE set to DESIGN.md)"
+    else
+        success "Created ${CONF_FILE}"
+    fi
 
     # Install agent role templates (only if they don't already exist)
     for role in coder reviewer tester jr-coder architect; do
@@ -172,6 +179,7 @@ if [ "${1:-}" = "--plan" ]; then
     source "${TEKHTON_HOME}/lib/prompts.sh"
     source "${TEKHTON_HOME}/lib/agent.sh"
     source "${TEKHTON_HOME}/lib/plan.sh"
+    source "${TEKHTON_HOME}/lib/plan_state.sh"
     source "${TEKHTON_HOME}/lib/plan_completeness.sh"
     source "${TEKHTON_HOME}/stages/plan_interview.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
