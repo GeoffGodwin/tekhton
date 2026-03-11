@@ -28,6 +28,7 @@ run_plan_followup_interview() {
 
 TEST_TMPDIR=$(mktemp -d)
 PROJECT_DIR="$TEST_TMPDIR"
+export TEKHTON_TEST_MODE=1
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
 # Source plan.sh (defines _is_section_incomplete, check_design_completeness,
@@ -181,8 +182,8 @@ echo "=== run_plan_completeness_loop — invalid input then skip ==="
 make_incomplete_design
 FOLLOWUP_CALL_COUNT=0
 result=0
-# Pass 1: invalid choice 'x' decrements pass_num; loop continues
-# Pass 1 (repeat): user enters 's' → returns 0
+# Invalid choice 'x' triggers inner re-prompt loop without re-running completeness check
+# Inner loop re-prompts: user enters 's' → returns 0
 run_plan_completeness_loop < <(printf "x\ns\n") > /dev/null 2>&1 || result=$?
 if [ "$result" -eq 0 ]; then
     pass "Invalid-input path: returns 0 after invalid choice then skip"
