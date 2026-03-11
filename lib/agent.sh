@@ -13,6 +13,28 @@
 : "${TOTAL_TIME:=0}"
 : "${STAGE_SUMMARY:=}"
 
+# --- Timeout --kill-after support detection ----------------------------------
+# GNU coreutils timeout supports --kill-after; macOS/BSD timeout does not.
+# Detect once at source time so every run_agent() call can use it.
+_TIMEOUT_KILL_AFTER_FLAG=""
+if command -v timeout &>/dev/null && timeout --help 2>&1 | grep -q 'kill-after'; then
+    _TIMEOUT_KILL_AFTER_FLAG="--kill-after=60"
+fi
+
+# --- Claude binary type warning (WSL + Windows claude = signal issues) -------
+# A Windows-native claude.exe run through WSL interop does NOT receive Linux
+# signals (SIGINT, SIGTERM, SIGKILL). This means Ctrl+C will NOT kill it and
+# the timeout SIGTERM will be ignored, causing the pipeline to hang indefinitely.
+# Detect and warn once at source time.
+if grep -qiE 'microsoft|WSL' /proc/version 2>/dev/null; then
+    _claude_path="$(command -v claude 2>/dev/null || true)"
+    if echo "${_claude_path:-}" | grep -qiE '(/mnt/c/|\.exe$|AppData|Program)'; then
+        warn "[agent] WARNING: claude appears to be a Windows binary running via WSL interop."
+        warn "[agent] Windows processes do not receive Linux signals — Ctrl+C and timeout may not kill it."
+        warn "[agent] To fix: install claude natively in WSL (npm install -g @anthropic-ai/claude-code)."
+    fi
+fi
+
 # --- Agent exit detection globals --------------------------------------------
 # Set after every run_agent() call. Callers inspect these to decide next steps.
 
@@ -63,10 +85,24 @@ run_agent() {
     local _timeout="${AGENT_TIMEOUT:-7200}"
     local _invoke
     if [ "$_timeout" -gt 0 ] 2>/dev/null && command -v timeout &>/dev/null; then
-        _invoke="timeout $_timeout"
+        # Use --kill-after if available: sends SIGKILL after 60s if SIGTERM is ignored.
+        # Critical for Windows claude.exe via WSL interop, which ignores SIGTERM.
+        _invoke="timeout ${_TIMEOUT_KILL_AFTER_FLAG} $_timeout"
     else
         _invoke=""
     fi
+
+    # Trap INT/TERM so Ctrl+C or an external kill cleans up the entire pipeline.
+    # The handler clears itself first to prevent re-entrancy, then kills the
+    # process group (claude + tee + subshell). Sets CLEAN_EXIT so the crash
+    # diagnostic does not fire on a user-initiated abort.
+    _run_agent_abort() {
+        trap - INT TERM
+        _TEKHTON_CLEAN_EXIT=true
+        kill 0 2>/dev/null || true
+    }
+    trap '_run_agent_abort' INT TERM
+
     $_invoke claude \
         --model "$model" \
         --dangerously-skip-permissions \
@@ -94,6 +130,7 @@ run_agent() {
             echo "$turns" > "/tmp/tekhton_${PROJECT_NAME// /_}_last_turns"
         )
     local agent_exit=${PIPESTATUS[0]}
+    trap - INT TERM
     set -o pipefail
 
     if [ "$agent_exit" -ne 0 ]; then

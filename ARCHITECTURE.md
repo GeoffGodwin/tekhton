@@ -7,7 +7,7 @@ Tekhton is structured as a three-layer shell pipeline with a shared library core
 ### Layer 1: Entry Point (`tekhton.sh`)
 - Resolves `TEKHTON_HOME` and `PROJECT_DIR`
 - Handles `--init`, `--status`, `--init-notes`, `--seed-contracts` early-exit commands
-- Handles `--plan` as an early-exit command — sources `common.sh`, `prompts.sh`, `agent.sh`, `plan.sh`, `plan_interview.sh`, and `plan_generate.sh` (bypasses config loading)
+- Handles `--plan` as an early-exit command — sources `common.sh`, `prompts.sh`, `agent.sh`, `plan.sh`, `plan_completeness.sh`, `plan_interview.sh`, and `plan_generate.sh` (bypasses config loading)
 - Sources all libraries and stage files (for execution pipeline)
 - Loads config via `load_config()`
 - Parses arguments, validates prerequisites, drives the three-stage pipeline
@@ -60,6 +60,7 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/hooks.sh`** — `archive_reports(dir, timestamp)`, `generate_commit_message(task)`, `run_final_checks(logfile)`.
 - **`lib/drift.sh`** — Drift log, Architecture Decision Log, and Human Action management. `append_drift_observations()` reads reviewer report and accumulates to `DRIFT_LOG.md`. `append_architecture_decision()` records accepted ACPs to `ARCHITECTURE_LOG.md` with sequential ADL-NNN IDs. `append_human_action(source, desc)` adds items to `HUMAN_ACTION_REQUIRED.md`. `process_drift_artifacts()` is the main post-pipeline integration point. `should_trigger_audit()` checks thresholds. Counter management via `increment_runs_since_audit()` / `reset_runs_since_audit()`.
 - **`lib/notes.sh`** — Three-state human notes tracking (`[ ]` → `[~]` → `[x]`). `count_human_notes()` and `extract_human_notes()` read unchecked items. `claim_human_notes()` marks filtered items `[~]` before coder runs. `resolve_human_notes()` parses CODER_SUMMARY.md structured reporting to selectively mark `[x]` or reset `[ ]`. Respects `NOTES_FILTER` global. `[~]` is transient — never persists between runs.
+- **`lib/plan_completeness.sh`** — Design document structural validation. `_extract_required_sections()` parses `<!-- REQUIRED -->` markers from templates. `_is_section_incomplete()` detects empty/placeholder/comment-only content. `check_design_completeness()` validates DESIGN.md against required sections. `run_plan_completeness_loop()` orchestrates multi-pass follow-up interviews for incomplete sections.
 - **`lib/prompts.sh`** — `render_prompt(template_name)` reads `TEKHTON_HOME/prompts/<name>.prompt.md`, substitutes `{{VAR}}` from shell globals, strips `{{IF:VAR}}...{{ENDIF:VAR}}` blocks when VAR is empty.
 - **`lib/state.sh`** — `write_pipeline_state(stage, reason, resume_flag, task, detail)`, `clear_pipeline_state()`. Persists to `PIPELINE_STATE_FILE` for resume.
 

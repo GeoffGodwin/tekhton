@@ -51,7 +51,7 @@ APPROVED | APPROVED_WITH_NOTES | CHANGES_REQUIRED
 - item (or 'None')
 
 ## Non-Blocking Notes
-- item (or 'None')
+- item (or 'None')  ← single line per note, no multi-line wrapping
 
 ## Coverage Gaps
 - item (or 'None')

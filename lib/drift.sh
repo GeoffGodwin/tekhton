@@ -449,15 +449,32 @@ append_nonblocking_notes() {
     /^## Open/ {
         print
         n = split(notes, lines, "\n")
+        note = ""
         for (i = 1; i <= n; i++) {
             line = lines[i]
-            # Strip leading "- " if present, skip empty lines
-            gsub(/^[[:space:]]*-[[:space:]]*/, "", line)
-            gsub(/^[[:space:]]+/, "", line)
             gsub(/[[:space:]]+$/, "", line)
-            if (length(line) > 0 && tolower(line) != "none") {
-                printf "- [ ] [%s | \"%s\"] %s\n", date, task, line
+            if (length(line) == 0) continue
+            if (match(line, /^[[:space:]]*-[[:space:]]*/)) {
+                # New bullet: emit the accumulated note, then start fresh
+                if (length(note) > 0 && tolower(note) != "none") {
+                    printf "- [ ] [%s | \"%s\"] %s\n", date, task, note
+                }
+                sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+                gsub(/^[[:space:]]+/, "", line)
+                note = line
+            } else {
+                # Continuation line: join to current note with a space
+                gsub(/^[[:space:]]+/, "", line)
+                if (length(note) > 0) {
+                    note = note " " line
+                } else {
+                    note = line
+                }
             }
+        }
+        # Emit the final note
+        if (length(note) > 0 && tolower(note) != "none") {
+            printf "- [ ] [%s | \"%s\"] %s\n", date, task, note
         }
         next
     }

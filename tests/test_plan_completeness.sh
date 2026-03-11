@@ -22,9 +22,11 @@ warn()    { :; }
 error()   { :; }
 header()  { :; }
 
-# Source plan.sh (contains _extract_required_sections, _is_section_incomplete, etc.)
+# Source plan.sh (constants and config defaults) and plan_completeness.sh (check functions)
 # shellcheck source=../lib/plan.sh
 source "${TEKHTON_HOME}/lib/plan.sh"
+# shellcheck source=../lib/plan_completeness.sh
+source "${TEKHTON_HOME}/lib/plan_completeness.sh"
 
 # --- Test template with REQUIRED markers ---
 PLAN_TEMPLATE_FILE="${TEST_TMPDIR}/template.md"

@@ -34,6 +34,8 @@ trap 'rm -rf "$TEST_TMPDIR"' EXIT
 # run_plan_completeness_loop, etc.)
 # shellcheck source=../lib/plan.sh
 source "${TEKHTON_HOME}/lib/plan.sh"
+# shellcheck source=../lib/plan_completeness.sh
+source "${TEKHTON_HOME}/lib/plan_completeness.sh"
 
 # Re-declare mock after sourcing (plan.sh does not define this function, but
 # guard against future changes)
