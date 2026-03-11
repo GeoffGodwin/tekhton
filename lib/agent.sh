@@ -58,7 +58,16 @@ run_agent() {
     set +o pipefail
     # Redirect stdin to /dev/null so piped input (e.g. yes | tekhton) doesn't
     # leak into the claude process or accumulate in the buffer after it exits.
-    claude \
+    # AGENT_TIMEOUT (seconds) guards against a hung claude process. Defaults to
+    # 7200 (2 hours). Set to 0 in pipeline.conf to disable.
+    local _timeout="${AGENT_TIMEOUT:-7200}"
+    local _invoke
+    if [ "$_timeout" -gt 0 ] 2>/dev/null && command -v timeout &>/dev/null; then
+        _invoke="timeout $_timeout"
+    else
+        _invoke=""
+    fi
+    $_invoke claude \
         --model "$model" \
         --dangerously-skip-permissions \
         --max-turns "$max_turns" \
@@ -88,7 +97,11 @@ run_agent() {
     set -o pipefail
 
     if [ "$agent_exit" -ne 0 ]; then
-        warn "[$label] claude exited with code ${agent_exit} (may indicate turn limit or error)"
+        if [ "$agent_exit" -eq 124 ]; then
+            warn "[$label] TIMEOUT — agent did not complete within ${_timeout}s. Set AGENT_TIMEOUT in pipeline.conf to change."
+        else
+            warn "[$label] claude exited with code ${agent_exit} (may indicate turn limit or error)"
+        fi
     fi
 
     local end_time
@@ -125,8 +138,12 @@ run_agent() {
 
     # Null run heuristic: agent used very few turns (≤2) OR exited non-zero
     # with zero turns. This typically means it died during discovery/search.
+    # Exit 124 = timeout — always a null run regardless of turn count.
     local null_threshold="${AGENT_NULL_RUN_THRESHOLD:-2}"
-    if [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
+    if [ "$agent_exit" -eq 124 ]; then
+        LAST_AGENT_NULL_RUN=true
+        warn "[$label] NULL RUN DETECTED — agent timed out after ${_timeout}s."
+    elif [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
         LAST_AGENT_NULL_RUN=true
         warn "[$label] NULL RUN DETECTED — agent used ${turns_used} turn(s) and exited ${agent_exit}."
         # Provide specific guidance based on exit code

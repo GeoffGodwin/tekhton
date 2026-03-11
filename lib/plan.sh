@@ -239,27 +239,28 @@ run_plan_completeness_loop() {
             return 0
         fi
 
-        printf "  [f] Follow-up interview on incomplete sections\n"
-        printf "  [s] Skip — continue with current DESIGN.md\n"
-        printf "  Select [f/s]: "
         local choice
-        read -r choice
+        while true; do
+            printf "  [f] Follow-up interview on incomplete sections\n"
+            printf "  [s] Skip — continue with current DESIGN.md\n"
+            printf "  Select [f/s]: "
+            read -r choice
 
-        case "$choice" in
-            f|F)
-                echo
-                run_plan_followup_interview || true
-                ;;
-            s|S)
-                log "Skipping follow-up. Continuing with current DESIGN.md."
-                return 0
-                ;;
-            *)
-                warn "Invalid choice. Please enter 'f' or 's'."
-                # Re-prompt by continuing loop without re-running interview
-                pass_num=$((pass_num - 1))
-                ;;
-        esac
+            case "$choice" in
+                f|F)
+                    echo
+                    run_plan_followup_interview || true
+                    break
+                    ;;
+                s|S)
+                    log "Skipping follow-up. Continuing with current DESIGN.md."
+                    return 0
+                    ;;
+                *)
+                    warn "Invalid choice. Please enter 'f' or 's'."
+                    ;;
+            esac
+        done
     done
 }
 # --- Main Entry Point --------------------------------------------------------

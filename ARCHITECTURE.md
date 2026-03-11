@@ -7,7 +7,8 @@ Tekhton is structured as a three-layer shell pipeline with a shared library core
 ### Layer 1: Entry Point (`tekhton.sh`)
 - Resolves `TEKHTON_HOME` and `PROJECT_DIR`
 - Handles `--init`, `--status`, `--init-notes`, `--seed-contracts` early-exit commands
-- Sources all libraries and stage files
+- Handles `--plan` as an early-exit command — sources `common.sh`, `prompts.sh`, `agent.sh`, `plan.sh`, `plan_interview.sh`, and `plan_generate.sh` (bypasses config loading)
+- Sources all libraries and stage files (for execution pipeline)
 - Loads config via `load_config()`
 - Parses arguments, validates prerequisites, drives the three-stage pipeline
 - Handles resume detection when invoked with no arguments

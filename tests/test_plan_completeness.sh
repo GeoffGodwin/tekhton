@@ -11,9 +11,9 @@ pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 # Create a temporary project dir
-TMPDIR=$(mktemp -d)
-PROJECT_DIR="$TMPDIR"
-trap 'rm -rf "$TMPDIR"' EXIT
+TEST_TMPDIR=$(mktemp -d)
+PROJECT_DIR="$TEST_TMPDIR"
+trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
 # Source the required libraries (stubs for logging)
 log()     { :; }
@@ -27,7 +27,7 @@ header()  { :; }
 source "${TEKHTON_HOME}/lib/plan.sh"
 
 # --- Test template with REQUIRED markers ---
-PLAN_TEMPLATE_FILE="${TMPDIR}/template.md"
+PLAN_TEMPLATE_FILE="${TEST_TMPDIR}/template.md"
 cat > "$PLAN_TEMPLATE_FILE" << 'EOF'
 # Design Document — Test
 
@@ -139,7 +139,7 @@ echo
 echo "=== check_design_completeness ==="
 
 # --- Complete DESIGN.md ---
-cat > "${TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -164,7 +164,7 @@ else
 fi
 
 # --- Incomplete DESIGN.md (empty section) ---
-cat > "${TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -189,7 +189,7 @@ else
 fi
 
 # --- Missing section entirely ---
-cat > "${TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -212,7 +212,7 @@ else
 fi
 
 # --- Section with only guidance comments ---
-cat > "${TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
@@ -232,7 +232,7 @@ else
 fi
 
 # --- Section with TBD placeholder ---
-cat > "${TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
 # Design Document — Test
 
 ## Project Overview

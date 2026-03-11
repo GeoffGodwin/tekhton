@@ -45,6 +45,7 @@ run_plan_interview() {
     log "Max turns: ${PLAN_INTERVIEW_MAX_TURNS}"
     log "Log: ${log_file}"
     echo
+    warn "Note: interview agent has write access to your project directory to create DESIGN.md."
     log "Claude will interview you about your project."
     log "Answer each question. Type 'skip' to skip optional sections."
     log "Press Ctrl+C to interrupt — partial DESIGN.md will be preserved."
@@ -148,6 +149,7 @@ run_plan_followup_interview() {
     system_prompt=$(render_prompt "plan_interview_followup")
 
     header "Follow-Up Interview — Incomplete Sections"
+    warn "Note: interview agent has write access to your project directory to update DESIGN.md."
     log "Targeting ${INCOMPLETE_SECTIONS//$'\n'/, }"
     log "Model: ${PLAN_INTERVIEW_MODEL}"
     log "Log: ${log_file}"
