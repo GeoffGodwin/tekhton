@@ -20,6 +20,7 @@ run_selection() {
     result=$(printf '%s\n' "$input" | bash -c '
         TEKHTON_HOME="'"${TEKHTON_HOME}"'"
         export TEKHTON_HOME
+        export TEKHTON_TEST_MODE=1
         source "${TEKHTON_HOME}/lib/common.sh"
         source "${TEKHTON_HOME}/lib/plan.sh"
         select_project_type >/dev/null 2>&1

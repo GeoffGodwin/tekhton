@@ -171,9 +171,10 @@ run_plan_completeness_loop() {
             return 0
         fi
 
-        # Use /dev/tty when stdin is not a terminal (e.g., piped input in tests)
+        # Use /dev/tty when stdin is not a terminal (e.g., piped input from scripts).
+        # TEKHTON_TEST_MODE disables this so tests can pipe input via stdin.
         local input_fd="/dev/stdin"
-        if [[ ! -t 0 ]] && [[ -e /dev/tty ]]; then
+        if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
             input_fd="/dev/tty"
         fi
 

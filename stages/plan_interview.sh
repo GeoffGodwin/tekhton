@@ -73,6 +73,9 @@ run_plan_interview() {
     # NOT using -p (batch mode) — the user types answers directly.
     # --dangerously-skip-permissions lets the agent write DESIGN.md
     # without prompting for approval on each file write.
+    # NOTE: The prompt instructs the agent to write DESIGN.md in the current
+    # working directory. If Milestone 6 state-resume logic changes CWD,
+    # this coupling must be addressed (e.g., explicit cd or absolute path).
     local exit_code=0
     claude \
         --model "$PLAN_INTERVIEW_MODEL" \
