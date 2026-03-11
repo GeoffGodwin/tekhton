@@ -113,6 +113,139 @@ run_plan() {
     echo
     run_plan_generate || return 1
 
-    # Future milestones will add:
-    # Step 5: Milestone review + file output (Milestone 5)
+    # Step 5: Milestone review + file output
+    echo
+    run_plan_review || return 1
+}
+
+# --- Milestone Review UI ----------------------------------------------------
+
+# _extract_project_name — Pull project name from CLAUDE.md first heading or
+# fall back to the directory name.
+_extract_project_name() {
+    local claude_file="$1"
+    local name
+    # Try first markdown heading
+    name=$(grep -m 1 '^# ' "$claude_file" 2>/dev/null | sed 's/^# //')
+    if [[ -z "$name" ]]; then
+        name=$(basename "$PROJECT_DIR")
+    fi
+    echo "$name"
+}
+
+# _extract_milestones — Parse "## Milestone N:" or "### Milestone N:" lines
+# from CLAUDE.md and print them as a numbered list.
+_extract_milestones() {
+    local claude_file="$1"
+    grep -E '^#{2,3} Milestone [0-9]+' "$claude_file" 2>/dev/null \
+        | sed 's/^#* //' \
+        || true
+}
+
+# _display_milestone_summary — Show the milestone review screen.
+_display_milestone_summary() {
+    local claude_file="$1"
+    local project_name
+    project_name=$(_extract_project_name "$claude_file")
+
+    local milestones
+    milestones=$(_extract_milestones "$claude_file")
+    local milestone_count
+    milestone_count=$(echo "$milestones" | grep -c '.' || true)
+
+    header "Tekhton Plan — Milestone Summary"
+    echo "  Project: ${project_name}"
+    echo "  Milestones: ${milestone_count}"
+    echo
+
+    if [[ -n "$milestones" ]]; then
+        echo "$milestones" | while IFS= read -r line; do
+            echo "  ${line}"
+        done
+    else
+        warn "  No milestone headings found in CLAUDE.md."
+        warn "  The file may use a different heading format."
+    fi
+
+    echo
+    echo "  [y] Accept and write files"
+    echo "  [e] Edit CLAUDE.md in \${EDITOR:-nano}"
+    echo "  [r] Re-generate with same DESIGN.md"
+    echo "  [n] Abort without writing files"
+    echo
+}
+
+# _print_next_steps — Instructions printed after successful file write.
+_print_next_steps() {
+    echo
+    success "Planning phase complete!"
+    echo
+    log "Your files:"
+    log "  DESIGN.md  — project design document"
+    log "  CLAUDE.md  — project rules and milestone plan"
+    echo
+    log "Next steps:"
+    log "  1. Review the generated files and make any manual edits"
+    log "  2. Run: tekhton --init    (scaffold pipeline config)"
+    log "  3. Run: tekhton \"Implement Milestone 1: <title>\""
+    echo
+}
+
+# run_plan_review — Interactive milestone review loop.
+#
+# Displays the milestone summary and prompts the user to accept, edit,
+# re-generate, or abort. Loops until the user accepts or aborts.
+#
+# Returns 0 on accept, 1 on abort.
+run_plan_review() {
+    local claude_file="${PROJECT_DIR}/CLAUDE.md"
+    local design_file="${PROJECT_DIR}/DESIGN.md"
+
+    if [[ ! -f "$claude_file" ]]; then
+        error "CLAUDE.md not found — nothing to review."
+        return 1
+    fi
+
+    # Use /dev/tty for interactive input when stdin is not a terminal,
+    # unless running in test mode.
+    local input_fd="/dev/stdin"
+    if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
+        input_fd="/dev/tty"
+    fi
+
+    local choice
+    while true; do
+        _display_milestone_summary "$claude_file"
+        printf "  Select [y/e/r/n]: "
+        read -r choice < "$input_fd"
+
+        case "$choice" in
+            y|Y)
+                success "Files written to ${PROJECT_DIR}:"
+                log "  DESIGN.md"
+                log "  CLAUDE.md"
+                _print_next_steps
+                return 0
+                ;;
+            e|E)
+                log "Opening CLAUDE.md in editor..."
+                ${EDITOR:-nano} "$claude_file"
+                log "Editor closed. Refreshing milestone summary..."
+                ;;
+            r|R)
+                log "Re-generating CLAUDE.md from DESIGN.md..."
+                echo
+                run_plan_generate || return 1
+                ;;
+            n|N)
+                warn "Aborted. DESIGN.md is preserved at: ${design_file}"
+                warn "CLAUDE.md is preserved at: ${claude_file}"
+                log "Re-run 'tekhton --plan' to try again."
+                return 1
+                ;;
+            *)
+                warn "Invalid choice '${choice}'. Please enter y, e, r, or n."
+                ;;
+        esac
+    done
 }

@@ -5,6 +5,9 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-11 | "Implement Milestone 5: Milestone Review UI + File Output"] `run_plan_review()` prints `success "Files written to ${PROJECT_DIR}"` on `[y]` accept, but no file writing actually occurs — DESIGN.md and CLAUDE.md were already written by the generation agent in Step 4. The message is factually incorrect and could confuse users. Consider changing to "Files are ready at ${PROJECT_DIR}" or "Files confirmed."
+- [ ] [2026-03-11 | "Implement Milestone 5: Milestone Review UI + File Output"] The `[e]` editor branch (`${EDITOR:-nano} "$claude_file"`) does not guard against non-zero editor exit codes. If the editor exits non-zero (e.g., user kills the terminal), `set -euo pipefail` will abort `run_plan_review()` unexpectedly. Adding `|| true` or `|| warn "Editor exited with non-zero status"` would prevent silent abort.
+- [ ] [2026-03-11 | "Implement Milestone 5: Milestone Review UI + File Output"] `_display_milestone_summary()` reads the claude_file twice (once in `_extract_project_name`, once in `_extract_milestones`). Not a correctness issue, but could be refactored to a single read in a future cleanup pass.
 - [x] [2026-03-11 | "Complete more of the items in the NON_BLOCKING_LOG.md file."] `tests/test_plan_completeness_loop.sh` lines 185-186: comment says "Pass 1: invalid choice 'x' decrements pass_num" — this describes the old behavior before the inner re-prompt loop was added. The comment is stale and misleading; update it to describe the actual inner-loop behavior (invalid choice triggers a re-prompt without incrementing pass_num or re-running the completeness check).
 <!-- Items added here by the pipeline. Mark [x] when addressed. -->
 
