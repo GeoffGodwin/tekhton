@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-11 | "Implement Milestone 7: Tests + Documentation"] CLAUDE.md still contains "Current Initiative: Planning Phase (`--plan`)" with all 7 milestone descriptions marked as future work. Since all milestones are now complete, this section is stale. Consider replacing it with a "Completed: Planning Phase" summary or removing the milestone plan entirely in a future pass.
 <!-- Items added here by the pipeline. Mark [x] when addressed. -->
 
 ## Resolved

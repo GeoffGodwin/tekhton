@@ -51,6 +51,19 @@ Each stage is a single function sourced by `tekhton.sh`:
   - Detects compilation failures in log, resets affected items in report
   - Saves state on partial completion for turn-limit resume
 
+- **`stages/plan_interview.sh`** → `run_plan_interview()`
+  - Planning phase only (sourced via `--plan`, not the execution pipeline)
+  - Runs Claude in conversational mode (not batch `-p` mode)
+  - Walks user through design doc template section-by-section
+  - Writes DESIGN.md progressively as sections are filled
+  - Logs conversation to `.claude/logs/`
+
+- **`stages/plan_generate.sh`** → `run_plan_generate()`
+  - Planning phase only (sourced via `--plan`)
+  - Reads completed DESIGN.md and generates CLAUDE.md
+  - Output contains: project identity, non-negotiable rules, milestone plan, architecture guidelines, testing strategy
+  - Supports re-generation when user selects `[r]` in review UI
+
 ### Layer 3: Libraries (`lib/*.sh`)
 
 - **`lib/common.sh`** — Colors, `log()`, `warn()`, `error()`, `success()`, `header()`, `require_cmd()`
@@ -60,7 +73,9 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/hooks.sh`** — `archive_reports(dir, timestamp)`, `generate_commit_message(task)`, `run_final_checks(logfile)`.
 - **`lib/drift.sh`** — Drift log, Architecture Decision Log, and Human Action management. `append_drift_observations()` reads reviewer report and accumulates to `DRIFT_LOG.md`. `append_architecture_decision()` records accepted ACPs to `ARCHITECTURE_LOG.md` with sequential ADL-NNN IDs. `append_human_action(source, desc)` adds items to `HUMAN_ACTION_REQUIRED.md`. `process_drift_artifacts()` is the main post-pipeline integration point. `should_trigger_audit()` checks thresholds. Counter management via `increment_runs_since_audit()` / `reset_runs_since_audit()`.
 - **`lib/notes.sh`** — Three-state human notes tracking (`[ ]` → `[~]` → `[x]`). `count_human_notes()` and `extract_human_notes()` read unchecked items. `claim_human_notes()` marks filtered items `[~]` before coder runs. `resolve_human_notes()` parses CODER_SUMMARY.md structured reporting to selectively mark `[x]` or reset `[ ]`. Respects `NOTES_FILTER` global. `[~]` is transient — never persists between runs.
+- **`lib/plan.sh`** — Planning phase orchestration. `run_plan()` drives the full `--plan` flow: project type selection menu, template resolution, interview, completeness check, generation, milestone review, and file output. `select_project_type()` presents the 7-option menu. `load_plan_config()` reads planning keys from `pipeline.conf`. Config defaults: `PLAN_INTERVIEW_MODEL`, `PLAN_INTERVIEW_MAX_TURNS`, `PLAN_GENERATION_MODEL`, `PLAN_GENERATION_MAX_TURNS`.
 - **`lib/plan_completeness.sh`** — Design document structural validation. `_extract_required_sections()` parses `<!-- REQUIRED -->` markers from templates. `_is_section_incomplete()` detects empty/placeholder/comment-only content. `check_design_completeness()` validates DESIGN.md against required sections. `run_plan_completeness_loop()` orchestrates multi-pass follow-up interviews for incomplete sections.
+- **`lib/plan_state.sh`** — Planning state persistence for resume support. `write_plan_state(stage, project_type, template_file)` saves session state to `PLAN_STATE_FILE`. `read_plan_state()` restores state variables. `clear_plan_state()` removes the state file. `offer_plan_resume()` detects interrupted sessions and prompts the user to resume or start fresh.
 - **`lib/prompts.sh`** — `render_prompt(template_name)` reads `TEKHTON_HOME/prompts/<name>.prompt.md`, substitutes `{{VAR}}` from shell globals, strips `{{IF:VAR}}...{{ENDIF:VAR}}` blocks when VAR is empty.
 - **`lib/state.sh`** — `write_pipeline_state(stage, reason, resume_flag, task, detail)`, `clear_pipeline_state()`. Persists to `PIPELINE_STATE_FILE` for resume.
 
@@ -121,6 +136,43 @@ tekhton.sh (entry)
   │    └─ interactive commit prompt
 ```
 
+### Planning Phase Data Flow (`--plan`)
+
+```
+tekhton.sh --plan (early exit — bypasses config loading)
+  │
+  ├─ Source: common.sh, prompts.sh, agent.sh, plan.sh,
+  │          plan_completeness.sh, plan_state.sh,
+  │          plan_interview.sh, plan_generate.sh
+  │
+  ├─ offer_plan_resume()  [if PLAN_STATE.md exists]
+  │    └─ Resume or start fresh
+  │
+  ├─ select_project_type()
+  │    └─ User picks from 7 project types → resolves template path
+  │
+  ├─ run_plan_interview()  [conversational mode]
+  │    ├─ Claude walks through template sections one at a time
+  │    ├─ Writes DESIGN.md progressively
+  │    └─ write_plan_state("interview") on interruption
+  │
+  ├─ run_plan_completeness_loop()
+  │    ├─ check_design_completeness() — grep/awk structural validation
+  │    └─ [if incomplete] → follow-up interview for missing sections
+  │
+  ├─ run_plan_generate()  [batch mode]
+  │    ├─ Reads DESIGN.md → generates CLAUDE.md
+  │    └─ write_plan_state("generate") on interruption
+  │
+  ├─ Milestone Review UI
+  │    ├─ [y] Write DESIGN.md + CLAUDE.md to project directory
+  │    ├─ [e] Open CLAUDE.md in $EDITOR before writing
+  │    ├─ [r] Re-run generation agent
+  │    └─ [n] Abort
+  │
+  └─ clear_plan_state() + print next-steps
+```
+
 ## File Ownership
 
 | File | Lives in | Purpose |
@@ -144,6 +196,9 @@ tekhton.sh (entry)
 | `DRIFT_LOG.md` | PROJECT_DIR | Drift observations accumulated across runs |
 | `HUMAN_ACTION_REQUIRED.md` | PROJECT_DIR | Items needing human attention (design doc updates) |
 | `architecture_constraints.yaml` | PROJECT_DIR | Optional dependency constraint manifest (layer rules + validation command) |
+| `templates/plans/*.md` | TEKHTON_HOME | Design doc templates by project type |
+| `DESIGN.md` | PROJECT_DIR | Design document (output of `--plan` interview) |
+| `.claude/PLAN_STATE.md` | PROJECT_DIR | Planning session resume state |
 
 ## Dependency Constraint System (P5)
 

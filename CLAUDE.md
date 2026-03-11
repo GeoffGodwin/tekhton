@@ -22,12 +22,17 @@ tekhton/
 │   ├── notes.sh            # Human notes management
 │   ├── prompts.sh          # Template engine for .prompt.md files
 │   ├── state.sh            # Pipeline state persistence + resume
-│   └── drift.sh            # Drift log, ADL, human action management
+│   ├── drift.sh            # Drift log, ADL, human action management
+│   ├── plan.sh             # Planning phase orchestration + config
+│   ├── plan_completeness.sh # Design doc structural validation
+│   └── plan_state.sh       # Planning state persistence + resume
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Stage 0: Architect audit (conditional)
 │   ├── coder.sh            # Stage 1: Scout + Coder + build gate
 │   ├── review.sh           # Stage 2: Review loop + rework routing
-│   └── tester.sh           # Stage 3: Test writing + validation
+│   ├── tester.sh           # Stage 3: Test writing + validation
+│   ├── plan_interview.sh   # Planning: interactive interview agent
+│   └── plan_generate.sh    # Planning: CLAUDE.md generation agent
 ├── prompts/                # Prompt templates with {{VAR}} substitution
 │   ├── architect.prompt.md
 │   ├── architect_sr_rework.prompt.md
@@ -43,7 +48,10 @@ tekhton/
 │   ├── build_fix.prompt.md
 │   ├── build_fix_minimal.prompt.md
 │   ├── analyze_cleanup.prompt.md
-│   └── seed_contracts.prompt.md
+│   ├── seed_contracts.prompt.md
+│   ├── plan_interview.prompt.md          # Planning interview system prompt
+│   ├── plan_interview_followup.prompt.md # Planning follow-up interview prompt
+│   └── plan_generate.prompt.md           # CLAUDE.md generation prompt
 ├── templates/              # Templates copied into target projects by --init
 │   ├── pipeline.conf.example
 │   ├── coder.md
@@ -51,6 +59,14 @@ tekhton/
 │   ├── tester.md
 │   ├── jr-coder.md
 │   └── architect.md
+├── templates/plans/        # Design doc templates by project type
+│   ├── web-app.md
+│   ├── web-game.md
+│   ├── cli-tool.md
+│   ├── api-service.md
+│   ├── mobile-app.md
+│   ├── library.md
+│   └── custom.md
 ├── tests/                  # Self-tests
 └── examples/               # Sample dependency constraint validation scripts
     ├── architecture_constraints.yaml  # Sample constraint manifest
@@ -120,6 +136,13 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `DRIFT_LOG_CONTENT` | File contents of DRIFT_LOG_FILE |
 | `DRIFT_OBSERVATION_COUNT` | Count of unresolved observations |
 | `DEPENDENCY_CONSTRAINTS_CONTENT` | File contents of dependency constraints (optional) |
+| `PLAN_TEMPLATE_CONTENT` | Contents of selected design doc template (planning) |
+| `PLAN_DESIGN_CONTENT` | Contents of DESIGN.md during generation (planning) |
+| `PLAN_INCOMPLETE_SECTIONS` | List of incomplete sections for follow-up (planning) |
+| `PLAN_INTERVIEW_MODEL` | Model for interview agent (default: sonnet) |
+| `PLAN_INTERVIEW_MAX_TURNS` | Turn limit for interview (default: 50) |
+| `PLAN_GENERATION_MODEL` | Model for generation agent (default: sonnet) |
+| `PLAN_GENERATION_MAX_TURNS` | Turn limit for generation (default: 30) |
 
 ## Testing
 

@@ -54,8 +54,33 @@ tekhton "Implement feature X"
         └─ Commit prompt with auto-generated message
 ```
 
+## Planning Phase (`--plan`)
+
+Don't have a CLAUDE.md or DESIGN.md yet? The planning phase takes you from "I want
+to build X" to a production-ready CLAUDE.md and DESIGN.md that the execution pipeline
+can consume immediately.
+
+```bash
+# Start the planning phase
+tekhton --plan
+
+# 1. Pick a project type (web-app, cli-tool, api-service, etc.)
+# 2. Answer interview questions — Claude fills in DESIGN.md section by section
+# 3. Completeness check ensures all required sections are filled
+# 4. Claude generates CLAUDE.md with milestones, rules, and architecture
+# 5. Review the milestone plan, then approve to write files
+
+# Then initialize and start building
+tekhton --init
+tekhton --milestone "Implement Milestone 1: Project scaffold"
+```
+
+The interview is conversational — Claude asks one question at a time in plain language.
+If interrupted (Ctrl+C), re-running `tekhton --plan` offers to resume where you left off.
+
 ## Features
 
+- **Planning phase** — Interactive `--plan` mode generates DESIGN.md and CLAUDE.md from scratch
 - **Three-agent pipeline** — Coder, Reviewer, Tester, each with distinct models and turn limits
 - **Automatic rework routing** — Complex blockers → senior coder, simple fixes → jr coder
 - **Build gates** — Compile check after coding and after each rework pass
@@ -111,6 +136,7 @@ your-project/
 
 | Flag | Purpose |
 |------|---------|
+| `--plan` | Interactive planning — generates DESIGN.md and CLAUDE.md |
 | `--init` | First-time project setup |
 | `--milestone` | Higher turn limits, more review cycles |
 | `--start-at review` | Skip coder, start at reviewer |
