@@ -58,10 +58,14 @@ MOCK
         export TEMPLATE_CONTENT='## Overview'
         export PROJECT_TYPE='web-app'
 
+        export PLAN_STATE_FILE='${project_dir}/.claude/PLAN_STATE.md'
+
         source '${TEKHTON_HOME}/lib/common.sh'
         source '${TEKHTON_HOME}/lib/prompts.sh'
+        source '${TEKHTON_HOME}/lib/plan_state.sh'
         source '${TEKHTON_HOME}/stages/plan_interview.sh'
 
+        set +e
         run_plan_interview > /dev/null 2>&1
         echo \$?
     " 2>/dev/null
@@ -242,6 +246,83 @@ if grep -q 'System Prompt' "$log_i"; then
     pass "system prompt written to log file"
 else
     fail "system prompt not found in log file"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "=== PLAN_STATE.md File Creation (Milestone 6) ==="
+
+project_j="${TMPDIR_BASE}/proj_j"
+mkdir -p "$project_j"/.claude
+run_interview 0 yes "$project_j" > /dev/null 2>&1 || true
+
+if [ -f "${project_j}/.claude/PLAN_STATE.md" ]; then
+    pass "PLAN_STATE.md created after successful interview"
+else
+    fail "PLAN_STATE.md not created: ${project_j}/.claude/PLAN_STATE.md"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "=== PLAN_STATE.md Content Validation ==="
+
+project_k="${TMPDIR_BASE}/proj_k"
+mkdir -p "$project_k"/.claude
+run_interview 0 yes "$project_k" > /dev/null 2>&1 || true
+
+state_file="${project_k}/.claude/PLAN_STATE.md"
+if [ -f "$state_file" ]; then
+    if grep -q '## Stage' "$state_file"; then
+        pass "PLAN_STATE.md contains '## Stage' section"
+    else
+        fail "PLAN_STATE.md missing '## Stage' section"
+    fi
+
+    if grep -q '## Project Type' "$state_file"; then
+        pass "PLAN_STATE.md contains '## Project Type' section"
+    else
+        fail "PLAN_STATE.md missing '## Project Type' section"
+    fi
+
+    if grep -q '## Template File' "$state_file"; then
+        pass "PLAN_STATE.md contains '## Template File' section"
+    else
+        fail "PLAN_STATE.md missing '## Template File' section"
+    fi
+
+    if grep -q '## Files Present' "$state_file"; then
+        pass "PLAN_STATE.md contains '## Files Present' section"
+    else
+        fail "PLAN_STATE.md missing '## Files Present' section"
+    fi
+
+    if grep -q 'interview' "$state_file"; then
+        pass "PLAN_STATE.md records correct stage (interview)"
+    else
+        fail "PLAN_STATE.md does not record interview stage"
+    fi
+
+    if grep -q 'web-app' "$state_file"; then
+        pass "PLAN_STATE.md records correct project type (web-app)"
+    else
+        fail "PLAN_STATE.md does not record web-app project type"
+    fi
+else
+    fail "Could not read PLAN_STATE.md for content validation"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "=== PLAN_STATE.md Created on Interrupted Session ==="
+
+project_l="${TMPDIR_BASE}/proj_l"
+mkdir -p "$project_l"/.claude
+run_interview 1 yes "$project_l" > /dev/null 2>&1 || true
+
+if [ -f "${project_l}/.claude/PLAN_STATE.md" ]; then
+    pass "PLAN_STATE.md created even when interview is interrupted (exit 1)"
+else
+    fail "PLAN_STATE.md not created on interrupted session"
 fi
 
 # ---------------------------------------------------------------------------
