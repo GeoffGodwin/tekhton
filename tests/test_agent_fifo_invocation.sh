@@ -14,18 +14,22 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+TEST_TMP=$(mktemp -d)
+trap 'rm -rf "$TEST_TMP"' EXIT
 
 # --- Minimal pipeline globals ------------------------------------------------
-export PROJECT_DIR="$TMPDIR"
+export PROJECT_DIR="$TEST_TMP"
 export PROJECT_NAME="test-project"
-LOG_DIR="${TMPDIR}/logs"
+LOG_DIR="${TEST_TMP}/logs"
 mkdir -p "$LOG_DIR"
 
 # Create a mock bin directory for fake claude
-MOCK_BIN="${TMPDIR}/mock_bin"
+MOCK_BIN="${TEST_TMP}/mock_bin"
 mkdir -p "$MOCK_BIN"
+
+# Prepend mock bin to PATH once — run_agent is a shell function, so
+# VAR=value func does NOT create a temporary environment (it persists).
+export PATH="${MOCK_BIN}:${PATH}"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 
@@ -33,7 +37,7 @@ source "${TEKHTON_HOME}/lib/common.sh"
 # agent.sh sets it at source time. We source agent.sh, then override.
 source "${TEKHTON_HOME}/lib/agent.sh"
 
-cd "$TMPDIR"
+cd "$TEST_TMP"
 git init -q .
 
 FAIL=0
@@ -122,7 +126,7 @@ AGENT_ACTIVITY_TIMEOUT=10
 LOG_FILE="${LOG_DIR}/test_fifo_normal.log"
 
 # Put mock claude first on PATH
-PATH="${MOCK_BIN}:${PATH}" run_agent "TestFIFO" "test-model" "10" "test prompt" "$LOG_FILE" 2>/dev/null
+run_agent "TestFIFO" "test-model" "10" "test prompt" "$LOG_FILE" 2>/dev/null
 
 assert_eq "4.1a LAST_AGENT_EXIT_CODE is 0" "0" "$LAST_AGENT_EXIT_CODE"
 assert_eq "4.1b LAST_AGENT_TURNS is 5" "5" "$LAST_AGENT_TURNS"
@@ -152,7 +156,7 @@ MOCK_EOF
 chmod +x "${MOCK_BIN}/claude"
 
 LOG_FILE="${LOG_DIR}/test_fifo_error.log"
-PATH="${MOCK_BIN}:${PATH}" run_agent "TestError" "test-model" "10" "test prompt" "$LOG_FILE" 2>/dev/null
+run_agent "TestError" "test-model" "10" "test prompt" "$LOG_FILE" 2>/dev/null
 
 assert_eq "5.1 LAST_AGENT_EXIT_CODE is 1" "1" "$LAST_AGENT_EXIT_CODE"
 assert_eq "5.2 LAST_AGENT_TURNS is 1" "1" "$LAST_AGENT_TURNS"
@@ -182,7 +186,7 @@ AGENT_ACTIVITY_TIMEOUT=2
 AGENT_ACTIVITY_POLL=1
 AGENT_TIMEOUT=0
 
-PATH="${MOCK_BIN}:${PATH}" run_agent "TestTimeout" "test-model" "10" "test prompt" "$LOG_FILE" 2>/dev/null
+run_agent "TestTimeout" "test-model" "10" "test prompt" "$LOG_FILE" 2>/dev/null
 
 assert_eq "6.1 LAST_AGENT_EXIT_CODE is 124 (timeout)" "124" "$LAST_AGENT_EXIT_CODE"
 assert_eq "6.2 LAST_AGENT_NULL_RUN is true on timeout" "true" "$LAST_AGENT_NULL_RUN"
@@ -214,7 +218,7 @@ chmod +x "${MOCK_BIN}/claude"
 LOG_FILE="${LOG_DIR}/test_fifo_zero_turns.log"
 AGENT_ACTIVITY_TIMEOUT=10
 
-PATH="${MOCK_BIN}:${PATH}" run_agent "TestZeroTurns" "test-model" "10" "test prompt" "$LOG_FILE" 2>/dev/null
+run_agent "TestZeroTurns" "test-model" "10" "test prompt" "$LOG_FILE" 2>/dev/null
 
 assert_eq "7.1 LAST_AGENT_TURNS is 0 when num_turns missing" "0" "$LAST_AGENT_TURNS"
 assert_eq "7.2 LAST_AGENT_NULL_RUN is true for 0 turns" "true" "$LAST_AGENT_NULL_RUN"
@@ -235,10 +239,10 @@ MOCK_EOF
 chmod +x "${MOCK_BIN}/claude"
 
 LOG_FILE="${LOG_DIR}/test_accum_1.log"
-PATH="${MOCK_BIN}:${PATH}" run_agent "Accum1" "test-model" "10" "prompt1" "$LOG_FILE" 2>/dev/null
+run_agent "Accum1" "test-model" "10" "prompt1" "$LOG_FILE" 2>/dev/null
 
 LOG_FILE="${LOG_DIR}/test_accum_2.log"
-PATH="${MOCK_BIN}:${PATH}" run_agent "Accum2" "test-model" "10" "prompt2" "$LOG_FILE" 2>/dev/null
+run_agent "Accum2" "test-model" "10" "prompt2" "$LOG_FILE" 2>/dev/null
 
 assert_eq "8.1 TOTAL_TURNS accumulated from 2 runs" "6" "$TOTAL_TURNS"
 assert_ge "8.2 TOTAL_TIME >= 0 after 2 runs" "0" "$TOTAL_TIME"

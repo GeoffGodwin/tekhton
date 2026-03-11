@@ -358,7 +358,11 @@ run_agent() {
     local null_threshold="${AGENT_NULL_RUN_THRESHOLD:-2}"
     if [ "$agent_exit" -eq 124 ]; then
         LAST_AGENT_NULL_RUN=true
-        warn "[$label] NULL RUN DETECTED — agent timed out after ${_timeout}s."
+        if [ "$_was_activity_timeout" = true ]; then
+            warn "[$label] NULL RUN DETECTED — agent activity-timed out after ${_activity_timeout}s of silence."
+        else
+            warn "[$label] NULL RUN DETECTED — agent timed out after ${_timeout}s."
+        fi
     elif [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
         LAST_AGENT_NULL_RUN=true
         warn "[$label] NULL RUN DETECTED — agent used ${turns_used} turn(s) and exited ${agent_exit}."
