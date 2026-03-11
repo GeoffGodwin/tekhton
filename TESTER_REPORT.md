@@ -1,18 +1,25 @@
-# Tester Report — Milestone 2: Multi-Phase Interview with Deep Probing
-
-## Planned Test Files
-
-- [x] `tests/test_plan_phase_context.sh` — Direct unit tests for `_build_phase_context()`
-- [x] `tests/test_plan_phase_transitions.sh` — Phase-transition flow: headers fire at correct sections, context block appears at Phase 2+ transitions
-
-## Test Run Results
-
-After `test_plan_phase_context.sh`: 16 passed, 0 failed
-After `test_plan_phase_transitions.sh`: 10 passed, 0 failed
-**Full suite (36 tests): 36 passed, 0 failed**
+# Tester Report — Fix Milestone 2 Test Bug
 
 ## Bugs Found
 
-None. One non-obvious implementation detail discovered during test design:
+### Single-bracket conditional in test_agent_fifo_invocation.sh ✓ FIXED
+- **Location:** `tests/test_agent_fifo_invocation.sh` line 260
+- **Issue:** Used `if [ "$FAIL" -ne 0 ]` instead of `if [[ "$FAIL" -ne 0 ]]`
+- **Impact:** Violated project's bash style requirement (double-bracket conditionals); flagged as "Simple Blocker" in reviewer report
+- **Fix Applied:** Replaced single-bracket `[` with double-bracket `[[` on line 260
 
-`_read_section_answer()` uses `while IFS= read -r line <"$input_fd"` which re-opens `$input_fd` on each loop iteration. On Linux, this re-open of `/dev/stdin` shares the pipe's read position when fd 0 is a pipe, but resets to position 0 when fd 0 is a regular file. Tests feeding section answers via stdin must use process substitution (`< <(printf '...')`) rather than file redirection (`< file`). This is not a bug in production code — it only affects test harness design.
+## Test Run Results
+
+**After fix:** All 37 tests passed, 0 failed
+- `test_agent_fifo_invocation.sh`: PASS ✓
+
+## Files Modified
+
+- [x] `tests/test_agent_fifo_invocation.sh` line 260 (fixed and verified)
+
+## Verification
+
+✓ All 37 tests pass after fix
+✓ Shellcheck passes with `-x` flag
+✓ Bug resolved: single-bracket conditional replaced with double-bracket form
+✓ Complies with project bash style requirements
