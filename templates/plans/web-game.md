@@ -4,6 +4,7 @@
 
 ## Developer Philosophy & Constraints
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What are your non-negotiable architectural rules for this game? Examples: -->
 <!-- - Config-driven: all tunable values (speeds, costs, timers) live in config, never hardcoded -->
 <!-- - Composition over inheritance: game objects built from composable behaviors, not deep class trees -->
@@ -14,6 +15,7 @@
 
 ## Project Overview
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What is this game? What genre (roguelike, puzzle, platformer, RTS, idle, etc.)? -->
 <!-- What is the core gameplay loop in one sentence? -->
 <!-- What is the target audience (casual, hardcore, kids, etc.)? -->
@@ -22,6 +24,7 @@
 
 ## Tech Stack
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- Rendering engine: Canvas 2D, WebGL, Three.js, Phaser, PixiJS, Babylon.js, or custom? -->
 <!-- Language: TypeScript, JavaScript, or other? Why? -->
 <!-- Bundler: Vite, Webpack, esbuild, Rollup? -->
@@ -32,6 +35,7 @@
 
 ## Game Concept & Pillars
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- Describe the game in 2-3 paragraphs: setting, theme, and what makes it fun. -->
 <!-- What is the "hook" — the thing that makes players want one more round? -->
 <!-- List 3-5 design pillars (core values that guide every design decision). -->
@@ -41,6 +45,7 @@
 
 ## Player Resources & Economy
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- What resources does the player earn, spend, and manage? -->
 <!-- For each resource: name, how earned, how spent, upper/lower bounds, display format -->
 <!-- Example: "Gold — earned from enemy drops (1-5 per kill), spent at shops, cap 9999, shown as integer" -->
@@ -51,6 +56,7 @@
 
 ## Core Mechanics
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- List EACH gameplay mechanic as a ### sub-section. For each mechanic: -->
 <!-- - Clear description of how it works from the player's perspective -->
 <!-- - Inputs: what player action triggers this mechanic? -->
@@ -63,6 +69,7 @@
 
 ## Game State Architecture
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- What data defines the complete state of the game at any moment? -->
 <!-- Organize into categories: player state, world state, UI state, session state -->
 <!-- For each state object: key fields, types, default values, serialization notes -->
@@ -73,6 +80,7 @@
 
 ## Player Input & Controls
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- How does the player interact? Keyboard, mouse, touch, gamepad? All of the above? -->
 <!-- Map SPECIFIC inputs to SPECIFIC actions: -->
 <!-- Example: "WASD/Arrow keys → move character, Space → jump, Left click → attack" -->
@@ -83,6 +91,7 @@
 <!-- What accessibility options exist? (one-handed mode, hold-vs-toggle, input sensitivity) -->
 
 ## Entity & Object System
+<!-- PHASE:2 -->
 <!-- How are game entities structured? (ECS, OOP hierarchy, data-oriented, hybrid) -->
 <!-- What are the base entity types? (player, enemy, projectile, pickup, tile, UI element) -->
 <!-- For each entity type: components/properties, creation rules, lifecycle (spawn → active → destroy) -->
@@ -91,6 +100,7 @@
 <!-- What is the entity pooling/recycling strategy for performance? -->
 
 ## Levels, Worlds & Progression
+<!-- PHASE:2 -->
 <!-- How does difficulty increase? Discrete levels, continuous scaling, procedural generation? -->
 <!-- What defines a "level"? (tile map, wave list, parameter set, seed) -->
 <!-- How is level data stored? (JSON files, procedural algorithm, editor-generated) -->
@@ -100,6 +110,7 @@
 <!-- What configurable values control difficulty? (enemy count, spawn rate, damage multipliers) -->
 
 ## AI & Enemy Behavior
+<!-- PHASE:2 -->
 <!-- What types of AI-controlled entities exist? -->
 <!-- For each enemy/NPC type: behavior pattern, detection range, attack pattern, weaknesses -->
 <!-- What AI model is used? (finite state machine, behavior tree, utility AI, scripted) -->
@@ -108,6 +119,7 @@
 <!-- Are AI parameters configurable? What are the tuning knobs? -->
 
 ## Collision & Physics
+<!-- PHASE:2 -->
 <!-- What collision detection method? (AABB, circle, pixel-perfect, tilemap-based) -->
 <!-- What physics model? (arcade, realistic, none — pure logic) -->
 <!-- Collision layers/groups: what collides with what? -->
@@ -116,6 +128,7 @@
 <!-- What physics values are configurable? (gravity, friction, restitution) -->
 
 ## Scoring, Win/Loss & Achievements
+<!-- PHASE:2 -->
 <!-- How does the player score points? What actions award points? -->
 <!-- Score multipliers, combos, or bonus conditions? -->
 <!-- What ends a game session? (death, timer, objective completion) -->
@@ -125,6 +138,7 @@
 <!-- Achievement/unlock system? List categories and examples. -->
 
 ## UI Layout & HUD
+<!-- PHASE:2 -->
 <!-- What does the player see on screen during gameplay? -->
 <!-- HUD elements: health bar, score, timer, minimap, inventory, etc. -->
 <!-- Menu structure: main menu → options → play → pause → game over -->
@@ -134,6 +148,7 @@
 <!-- Accessibility: font sizes, color-blind modes, screen reader support? -->
 
 ## Art & Visual Direction
+<!-- PHASE:2 -->
 <!-- Visual style: pixel art, flat/vector, hand-drawn, 3D, realistic? -->
 <!-- Art pipeline: who creates assets? What format? What tools? -->
 <!-- Sprite/asset organization: naming conventions, directory structure, atlas strategy -->
@@ -143,6 +158,7 @@
 <!-- Color palette: defined palette or freeform? Color-blind considerations? -->
 
 ## Audio Design
+<!-- PHASE:2 -->
 <!-- Sound effects: what actions have sounds? (jump, hit, pickup, UI click, ambient) -->
 <!-- Music: adaptive/interactive or static tracks? How many tracks? -->
 <!-- Audio library choice and initialization pattern -->
@@ -152,6 +168,7 @@
 <!-- Audio is often the most neglected system — what is the minimum viable audio plan? -->
 
 ## Save System & Persistence
+<!-- PHASE:2 -->
 <!-- Does progress save? What exactly is saved? (high scores, unlocks, mid-run state) -->
 <!-- Storage: localStorage, IndexedDB, server-side, or cloud save? -->
 <!-- Save format: JSON structure with version number? -->
@@ -160,6 +177,7 @@
 <!-- Auto-save frequency and triggers (on level complete, on pause, on exit) -->
 
 ## Networking & Multiplayer
+<!-- PHASE:2 -->
 <!-- Is this single-player only, or is multiplayer planned? -->
 <!-- If multiplayer: client-server, peer-to-peer, or relay? -->
 <!-- Network protocol: WebSocket, WebRTC, HTTP polling? -->
@@ -167,6 +185,7 @@
 <!-- If single-player: any online features? (leaderboards, daily challenges, analytics) -->
 
 ## Performance & Optimization
+<!-- PHASE:2 -->
 <!-- Target frame rate: 30fps, 60fps, or unlocked? -->
 <!-- Supported browsers: Chrome, Firefox, Safari, Edge? Minimum versions? -->
 <!-- Mobile support: yes/no? Touch controls? Responsive canvas? -->
@@ -177,6 +196,7 @@
 
 ## Config Architecture
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What values MUST live in config files rather than hardcoded? -->
 <!-- Config format: JSON, YAML, TypeScript const, .env? -->
 <!-- Config loading: when and how is config loaded? Hot-reload in dev? -->
@@ -192,6 +212,7 @@
 <!-- How do designers change values without touching code? -->
 
 ## Developer & Debug Tools
+<!-- PHASE:3 -->
 <!-- What debug/dev tools are built into the game? -->
 <!-- Examples: FPS counter, hitbox visualizer, state inspector, level skip, god mode -->
 <!-- How are debug tools enabled/disabled? (URL param, key combo, build flag) -->
@@ -200,6 +221,7 @@
 <!-- How do you reproduce a bug? (state snapshots, replay system, seed logging) -->
 
 ## Naming Conventions
+<!-- PHASE:3 -->
 <!-- What code names map to what domain/lore concepts? -->
 <!-- This is critical when lore/branding names are not finalized. -->
 <!-- Example: "Orb" in lore = "currency_primary" in code, "The Void" in lore = "endless_mode" in code -->
@@ -209,6 +231,7 @@
 
 ## Open Design Questions
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What decisions are you deliberately deferring? Why? -->
 <!-- What needs playtesting before you can decide? -->
 <!-- What trade-offs have you identified but not resolved? -->
@@ -217,6 +240,7 @@
 <!-- List each open question with the information needed to resolve it. -->
 
 ## What Not to Build Yet
+<!-- PHASE:3 -->
 <!-- What features are explicitly deferred to avoid scope creep? -->
 <!-- For each deferred feature: what it is, why it's deferred, what milestone might add it -->
 <!-- Example: "Level editor — deferred until core loop is proven fun (Milestone 8+)" -->

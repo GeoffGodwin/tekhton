@@ -4,6 +4,7 @@
 
 ## Developer Philosophy & Constraints
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What are your non-negotiable architectural rules? Examples: -->
 <!-- - Contract-first: OpenAPI/protobuf spec is written before implementation -->
 <!-- - Idempotency by default: every mutating endpoint must be safely retryable -->
@@ -14,6 +15,7 @@
 
 ## Project Overview
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What does this service do? What system or product does it support? -->
 <!-- Is this a standalone service or part of a larger architecture? -->
 <!-- What is the expected request volume? (requests/second at launch, at scale) -->
@@ -22,6 +24,7 @@
 
 ## Tech Stack
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- Language: Node.js/TypeScript, Python, Go, Rust, Java, C#? Why? -->
 <!-- Framework: Express, Fastify, Django REST, Flask, Gin, Actix, Spring Boot? -->
 <!-- Database: PostgreSQL, MySQL, MongoDB, DynamoDB, Redis? Why? -->
@@ -33,6 +36,7 @@
 
 ## API Style & Conventions
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- Style: REST, GraphQL, gRPC, or hybrid? Why? -->
 <!-- Naming: URL path conventions (/api/v1/users, kebab-case vs camelCase) -->
 <!-- Payload format: JSON, Protocol Buffers, or both? -->
@@ -43,6 +47,7 @@
 
 ## Endpoints & Operations
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- List each endpoint/resource as a ### sub-section. For each: -->
 <!-- - Method and path: GET /api/v1/users -->
 <!-- - Description: what it does -->
@@ -56,6 +61,7 @@
 
 ## Data Model & Schema
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- List each entity as a ### sub-section. For each: -->
 <!-- - Table/collection name -->
 <!-- - Fields: name, type, constraints (NOT NULL, UNIQUE, DEFAULT, CHECK) -->
@@ -68,6 +74,7 @@
 
 ## Authentication & Authorization
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- Authentication methods: API key, JWT, OAuth2, mTLS, or combination? -->
 <!-- Token format: JWT claims, API key format, session ID structure -->
 <!-- Token lifecycle: issuance, validation, refresh, revocation -->
@@ -78,6 +85,7 @@
 <!-- Audit trail: are auth decisions logged? What is captured? -->
 
 ## Error Handling & Response Format
+<!-- PHASE:2 -->
 <!-- Standard error response structure: -->
 <!-- ```json -->
 <!-- { "error": { "code": "VALIDATION_ERROR", "message": "...", "details": [...] } } -->
@@ -89,6 +97,7 @@
 <!-- Error monitoring: how are errors aggregated and alerted on? -->
 
 ## Rate Limiting & Throttling
+<!-- PHASE:2 -->
 <!-- Rate limit strategy: fixed window, sliding window, token bucket, or leaky bucket? -->
 <!-- Limits: per client, per IP, per endpoint, or global? Default limits? -->
 <!-- Headers: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset -->
@@ -97,6 +106,7 @@
 <!-- Different tiers: free vs paid API keys with different limits? -->
 
 ## Pagination, Filtering & Sorting
+<!-- PHASE:2 -->
 <!-- Pagination style: cursor-based, offset-based, or keyset? Why? -->
 <!-- Default and maximum page sizes -->
 <!-- Cursor format: opaque token, or structured (e.g., base64-encoded ID)? -->
@@ -105,6 +115,7 @@
 <!-- What happens with invalid filter/sort values? -->
 
 ## Background Jobs & Async Processing
+<!-- PHASE:2 -->
 <!-- What work happens outside the request/response cycle? -->
 <!-- Job queue: BullMQ, Celery, SQS, Sidekiq, or custom? -->
 <!-- Job types: list each background job with trigger, frequency, and timeout -->
@@ -113,6 +124,7 @@
 <!-- How are long-running requests handled? (webhooks, polling, SSE) -->
 
 ## Caching Strategy
+<!-- PHASE:2 -->
 <!-- What data is cached? At what layer? (application, CDN, database query cache) -->
 <!-- Cache keys: naming pattern, versioning, TTL per key type -->
 <!-- Invalidation: event-driven, TTL-based, or manual purge? -->
@@ -121,6 +133,7 @@
 <!-- Cache storage: Redis, Memcached, in-memory (per-instance), or CDN? -->
 
 ## External Dependencies & Integrations
+<!-- PHASE:2 -->
 <!-- Other services this API calls: list each with purpose, latency expectation, failure behavior -->
 <!-- Third-party APIs: payment, email, SMS, storage, auth providers -->
 <!-- Circuit breaker: which calls use circuit breakers? Thresholds? -->
@@ -129,6 +142,7 @@
 <!-- Webhook delivery: outbound webhooks? Retry policy, signature verification? -->
 
 ## Observability & Monitoring
+<!-- PHASE:2 -->
 <!-- Logging: structured (JSON), log levels, what gets logged per request -->
 <!-- Metrics: latency histograms, error rate, throughput, queue depth, DB pool usage -->
 <!-- Tracing: distributed tracing (OpenTelemetry)? Trace ID propagation? -->
@@ -137,6 +151,7 @@
 <!-- Dashboards: what does the primary operational dashboard show? -->
 
 ## Deployment & Infrastructure
+<!-- PHASE:2 -->
 <!-- Deployment: Docker, Kubernetes, serverless, or VM-based? -->
 <!-- CI/CD pipeline: build → test → lint → deploy stages -->
 <!-- Environments: local, staging, production — how do they differ? -->
@@ -146,6 +161,7 @@
 <!-- Infrastructure as code: Terraform, Pulumi, CDK, or manual? -->
 
 ## Security
+<!-- PHASE:2 -->
 <!-- Input validation: where and how? (schema validation, parameterized queries) -->
 <!-- CORS policy: allowed origins, methods, headers -->
 <!-- Content Security Policy: applicable headers for API responses -->
@@ -156,6 +172,7 @@
 
 ## Config Architecture
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What values MUST live in config/environment rather than hardcoded? -->
 <!-- Config format: environment variables, .env files, config service? -->
 <!-- Show example config with actual keys and default values: -->
@@ -172,6 +189,7 @@
 <!-- What config changes require a restart vs are hot-reloaded? -->
 
 ## Testing Strategy
+<!-- PHASE:3 -->
 <!-- Unit tests: business logic, validators, utility functions -->
 <!-- Integration tests: database operations, API endpoints end-to-end -->
 <!-- Contract tests: consumer-driven contracts (Pact) or schema validation? -->
@@ -180,6 +198,7 @@
 <!-- CI integration: test matrix, parallelization, what blocks deploy? -->
 
 ## Naming Conventions
+<!-- PHASE:3 -->
 <!-- Code naming: per-language conventions -->
 <!-- API naming: endpoint paths, query params, response fields -->
 <!-- Database naming: table and column naming (snake_case, plural?) -->
@@ -189,6 +208,7 @@
 
 ## Open Design Questions
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What decisions are you deliberately deferring? -->
 <!-- What needs load testing or user data before you can decide? -->
 <!-- Example: "Unsure if we need event sourcing or simple CRUD is sufficient" -->
@@ -196,6 +216,7 @@
 <!-- List each open question with the information needed to resolve it. -->
 
 ## What Not to Build Yet
+<!-- PHASE:3 -->
 <!-- What features are explicitly deferred? -->
 <!-- For each: what it is, why it's deferred, what milestone might add it -->
 <!-- Example: "GraphQL API — REST first, evaluate GraphQL need based on client patterns" -->

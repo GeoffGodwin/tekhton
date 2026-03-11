@@ -4,6 +4,7 @@
 
 ## Developer Philosophy & Constraints
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What are your non-negotiable architectural rules? Examples: -->
 <!-- - Offline-first: every screen must render meaningful content without network -->
 <!-- - Platform-native feel: animations, gestures, and navigation must match OS conventions -->
@@ -14,6 +15,7 @@
 
 ## Project Overview
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- What does this app do? Who is it for? What problem does it solve? -->
 <!-- Is this a consumer app, B2B tool, or internal enterprise app? -->
 <!-- What existing app or workflow does this replace? -->
@@ -22,6 +24,7 @@
 
 ## Tech Stack
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- Platform approach: native iOS (Swift/UIKit/SwiftUI), native Android (Kotlin/Compose), -->
 <!-- cross-platform (React Native, Flutter, Kotlin Multiplatform, .NET MAUI)? Why? -->
 <!-- State management: Redux, MobX, Riverpod, Provider, SwiftUI @Observable, Compose State? -->
@@ -34,6 +37,7 @@
 
 ## Target Platforms & Requirements
 <!-- REQUIRED -->
+<!-- PHASE:1 -->
 <!-- iOS minimum version: iOS 16? iOS 17? Why? -->
 <!-- Android minimum API level: API 26 (8.0)? API 28 (9.0)? Why? -->
 <!-- Tablet support: required, adaptive layout, or phone-only? -->
@@ -44,6 +48,7 @@
 
 ## Screens & Navigation
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- List every screen as a ### sub-section. For each screen: -->
 <!-- - Purpose: what does the user accomplish here? -->
 <!-- - Data displayed: what information is shown? Source? -->
@@ -58,6 +63,7 @@
 
 ## Core Features
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- List each major feature as a ### sub-section. For each: -->
 <!-- - User story: "As a [role], I want to [action] so that [benefit]" -->
 <!-- - Behavior: step-by-step from user action to result -->
@@ -68,6 +74,7 @@
 
 ## Data Model & Local Storage
 <!-- REQUIRED -->
+<!-- PHASE:2 -->
 <!-- What data does the app store locally? For each entity: -->
 <!-- - Fields, types, and relationships -->
 <!-- - Source: API response, user input, or computed? -->
@@ -78,6 +85,7 @@
 <!-- Maximum local storage budget? (e.g., "app should use less than 50MB on device") -->
 
 ## API & Networking
+<!-- PHASE:2 -->
 <!-- Backend API: REST, GraphQL, gRPC, or other? Base URL pattern? -->
 <!-- Authentication: how does the app authenticate API calls? Token refresh flow? -->
 <!-- Request/response patterns: what serialization format? Error response structure? -->
@@ -88,6 +96,7 @@
 <!-- Certificate pinning: is it used? How is the pin managed? -->
 
 ## Authentication & User Management
+<!-- PHASE:2 -->
 <!-- Sign-in methods: email/password, social auth (Google, Apple, Facebook), SSO, biometrics? -->
 <!-- Session management: token storage (Keychain/Keystore), refresh flow, expiry handling -->
 <!-- Account creation: what is the sign-up flow? Required fields? Verification? -->
@@ -97,6 +106,7 @@
 <!-- Guest mode: can the app be used without an account? What is limited? -->
 
 ## Offline Behavior & Sync
+<!-- PHASE:2 -->
 <!-- What features work offline? What is degraded? What is unavailable? -->
 <!-- How does the app detect connectivity changes? -->
 <!-- Offline data: what data is available offline? How much is pre-fetched? -->
@@ -106,6 +116,7 @@
 <!-- Background sync: does the app sync data when backgrounded? -->
 
 ## Push Notifications
+<!-- PHASE:2 -->
 <!-- What events trigger push notifications? List each notification type. -->
 <!-- For each type: trigger, title template, body template, action on tap -->
 <!-- Notification channels (Android): what categories? User-configurable? -->
@@ -115,6 +126,7 @@
 <!-- Local notifications: any scheduled or triggered locally? -->
 
 ## Permissions & System Access
+<!-- PHASE:2 -->
 <!-- List every system permission the app requests: -->
 <!-- - Camera, photo library, microphone, location, contacts, notifications, etc. -->
 <!-- For each: when requested, why needed, what happens if denied -->
@@ -123,6 +135,7 @@
 <!-- Platform differences: iOS permission strings vs Android manifest permissions -->
 
 ## UI/UX Design System
+<!-- PHASE:2 -->
 <!-- Design system: custom, Material Design, Human Interface Guidelines, or hybrid? -->
 <!-- Component library: built-in widgets, custom design system, or third-party? -->
 <!-- Typography: font family, scale, dynamic type support -->
@@ -132,6 +145,7 @@
 <!-- Haptic feedback: what actions trigger haptics? Intensity? -->
 
 ## App Lifecycle & Background
+<!-- PHASE:2 -->
 <!-- What happens when the app is backgrounded? Foregrounded? Killed? -->
 <!-- Background tasks: what work continues in the background? (sync, uploads, location) -->
 <!-- State preservation: is the screen state restored on relaunch? -->
@@ -140,6 +154,7 @@
 <!-- Shortcut actions: 3D Touch / long-press shortcuts from the app icon? -->
 
 ## Performance & Optimization
+<!-- PHASE:2 -->
 <!-- App launch time target: cold start under Xs, warm start under Ys -->
 <!-- Memory budget: maximum memory usage (e.g., under 150MB) -->
 <!-- App size budget: download size and installed size targets -->
@@ -150,6 +165,7 @@
 
 ## Config Architecture
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What values MUST live in config rather than hardcoded? -->
 <!-- Local config: build variants, plist/gradle config, .env files? -->
 <!-- Remote config: Firebase Remote Config, custom endpoint, or similar? -->
@@ -168,6 +184,7 @@
 <!-- How quickly do remote config changes take effect? -->
 
 ## Testing Strategy
+<!-- PHASE:3 -->
 <!-- Unit tests: what logic is unit tested? View models, services, utilities? -->
 <!-- Widget/UI tests: which components have UI tests? -->
 <!-- Integration tests: which user flows have full integration tests? -->
@@ -177,6 +194,7 @@
 <!-- CI integration: tests run on every PR? What blocks merge? -->
 
 ## App Store & Distribution
+<!-- PHASE:3 -->
 <!-- App Store Connect / Google Play Console setup -->
 <!-- App review: what might reviewers flag? How to handle rejections? -->
 <!-- Beta distribution: TestFlight, Firebase App Distribution, internal tracks? -->
@@ -185,6 +203,7 @@
 <!-- Update strategy: force update for breaking changes? In-app update prompts? -->
 
 ## Naming Conventions
+<!-- PHASE:3 -->
 <!-- Code naming: per-platform conventions (Swift camelCase, Kotlin camelCase, Dart camelCase) -->
 <!-- File naming: per-platform conventions -->
 <!-- Asset naming: image assets, color assets, localization keys -->
@@ -194,6 +213,7 @@
 
 ## Open Design Questions
 <!-- REQUIRED -->
+<!-- PHASE:3 -->
 <!-- What decisions are you deliberately deferring? -->
 <!-- What needs user testing before you can decide? -->
 <!-- Example: "Unsure if tab bar or drawer navigation is better — A/B test after launch" -->
@@ -201,6 +221,7 @@
 <!-- List each open question with the information needed to resolve it. -->
 
 ## What Not to Build Yet
+<!-- PHASE:3 -->
 <!-- What features are explicitly deferred? -->
 <!-- For each: what it is, why it's deferred, what milestone might add it -->
 <!-- Example: "Wearable companion app — phone app must be stable first" -->
