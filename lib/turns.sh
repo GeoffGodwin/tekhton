@@ -58,13 +58,20 @@ parse_scout_complexity() {
         return 1
     fi
 
-    # Parse each field — extract the numeric value after the colon
-    SCOUT_FILES_TO_MODIFY=$(echo "$section" | grep -i "^Files to modify:" | sed 's/.*: *//' | tr -dc '0-9' || echo "0")
-    SCOUT_LINES_OF_CHANGE=$(echo "$section" | grep -i "^Estimated lines" | sed 's/.*: *//' | tr -dc '0-9' || echo "0")
+    # Strip markdown formatting that breaks field matching:
+    # - **bold** field names (e.g. "**Files to modify:** 5")
+    # - Leading bullets ("- Files to modify: 5")
+    # This ensures grep ^Field anchors work regardless of LLM formatting.
+    section=$(echo "$section" | sed 's/^[[:space:]]*[-*]*[[:space:]]*//' | sed 's/\*\*//g')
+
+    # Parse each field — extract the numeric value after the colon.
+    # For range values like "25-30", take the first number only.
+    SCOUT_FILES_TO_MODIFY=$(echo "$section" | grep -i "^Files to modify:" | sed 's/.*: *//' | grep -oE '[0-9]+' | head -1 || echo "0")
+    SCOUT_LINES_OF_CHANGE=$(echo "$section" | grep -i "^Estimated lines" | sed 's/.*: *//' | grep -oE '[0-9]+' | head -1 || echo "0")
     SCOUT_INTERCONNECTED=$(echo "$section" | grep -i "^Interconnected" | sed 's/.*: *//' | tr -d '[:space:]' || echo "unknown")
-    SCOUT_REC_CODER_TURNS=$(echo "$section" | grep -i "^Recommended coder" | sed 's/.*: *//' | tr -dc '0-9' || echo "0")
-    SCOUT_REC_REVIEWER_TURNS=$(echo "$section" | grep -i "^Recommended reviewer" | sed 's/.*: *//' | tr -dc '0-9' || echo "0")
-    SCOUT_REC_TESTER_TURNS=$(echo "$section" | grep -i "^Recommended tester" | sed 's/.*: *//' | tr -dc '0-9' || echo "0")
+    SCOUT_REC_CODER_TURNS=$(echo "$section" | grep -i "^Recommended coder" | sed 's/.*: *//' | grep -oE '[0-9]+' | head -1 || echo "0")
+    SCOUT_REC_REVIEWER_TURNS=$(echo "$section" | grep -i "^Recommended reviewer" | sed 's/.*: *//' | grep -oE '[0-9]+' | head -1 || echo "0")
+    SCOUT_REC_TESTER_TURNS=$(echo "$section" | grep -i "^Recommended tester" | sed 's/.*: *//' | grep -oE '[0-9]+' | head -1 || echo "0")
 
     # Validate — at least coder turns must be non-zero
     [ "${SCOUT_REC_CODER_TURNS:-0}" -gt 0 ] 2>/dev/null

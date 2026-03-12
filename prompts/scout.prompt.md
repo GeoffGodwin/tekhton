@@ -16,7 +16,12 @@ Use `find`, `grep`, and `ls` to locate files by name and keyword. Read only the 
 {{ENDIF:ARCHITECTURE_BLOCK}}
 
 ## Output
-Write a file called `SCOUT_REPORT.md` in this exact format:
+Write a file called `SCOUT_REPORT.md` in this exact format.
+The pipeline machine-parses the `## Complexity Estimate` section — field names
+must match EXACTLY as shown below. Do NOT use bold, bullets, tables, or any
+other formatting in the Complexity Estimate fields. Each value must be a single
+integer (not a range like "25-30").
+
 ```
 ## Relevant Files
 - path/to/file — why it is relevant
