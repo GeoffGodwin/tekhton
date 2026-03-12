@@ -25,10 +25,10 @@ model=$(
     echo "$PLAN_INTERVIEW_MODEL"
 )
 
-if [ "$model" = "sonnet" ]; then
-    pass "default PLAN_INTERVIEW_MODEL is 'sonnet'"
+if [ "$model" = "opus" ]; then
+    pass "default PLAN_INTERVIEW_MODEL is 'opus'"
 else
-    fail "expected PLAN_INTERVIEW_MODEL='sonnet', got '${model}'"
+    fail "expected PLAN_INTERVIEW_MODEL='opus', got '${model}'"
 fi
 
 max_turns=$(
@@ -127,10 +127,10 @@ gen_model=$(
     echo "$PLAN_GENERATION_MODEL"
 )
 
-if [ "$gen_model" = "sonnet" ]; then
-    pass "default PLAN_GENERATION_MODEL is 'sonnet'"
+if [ "$gen_model" = "opus" ]; then
+    pass "default PLAN_GENERATION_MODEL is 'opus'"
 else
-    fail "expected PLAN_GENERATION_MODEL='sonnet', got '${gen_model}'"
+    fail "expected PLAN_GENERATION_MODEL='opus', got '${gen_model}'"
 fi
 
 gen_turns=$(
@@ -143,10 +143,10 @@ gen_turns=$(
     echo "$PLAN_GENERATION_MAX_TURNS"
 )
 
-if [ "$gen_turns" = "30" ]; then
-    pass "default PLAN_GENERATION_MAX_TURNS is 30"
+if [ "$gen_turns" = "50" ]; then
+    pass "default PLAN_GENERATION_MAX_TURNS is 50"
 else
-    fail "expected PLAN_GENERATION_MAX_TURNS='30', got '${gen_turns}'"
+    fail "expected PLAN_GENERATION_MAX_TURNS='50', got '${gen_turns}'"
 fi
 
 gen_model_override=$(

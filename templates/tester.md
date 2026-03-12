@@ -22,7 +22,27 @@ Read in order:
 
 ## Required Output
 
-Write `TESTER_REPORT.md` with:
-- A checkbox list of planned test files (`- [ ]` / `- [x]`)
-- `## Test Run Results` with pass/fail counts after each file
-- `## Bugs Found` if any tests reveal implementation bugs
+Write `TESTER_REPORT.md` using this EXACT structure (the pipeline machine-parses it):
+
+```
+## Planned Tests
+- [ ] `path/to/test_file.ext` — one-line description
+- [x] `path/to/done_test.ext` — one-line description
+
+## Test Run Results
+Passed: N  Failed: N
+
+## Bugs Found
+None
+
+## Files Modified
+- [x] `path/to/test_file.ext`
+```
+
+### Bugs Found format rules
+- If no bugs: the word `None` alone on the line. No other phrasing.
+- If bugs exist: one bullet per bug, single line:
+  `- BUG: [file:line] brief description of incorrect behavior`
+- Report only bugs you FOUND. Never report fixed bugs or describe fixes.
+- Never use sub-headings, bold, numbered lists, or multi-line descriptions.
+- You do not fix implementation code. You only document what is broken.

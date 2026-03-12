@@ -137,12 +137,12 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `DRIFT_OBSERVATION_COUNT` | Count of unresolved observations |
 | `DEPENDENCY_CONSTRAINTS_CONTENT` | File contents of dependency constraints (optional) |
 | `PLAN_TEMPLATE_CONTENT` | Contents of selected design doc template (planning) |
-| `PLAN_DESIGN_CONTENT` | Contents of DESIGN.md during generation (planning) |
+| `DESIGN_CONTENT` | Contents of DESIGN.md during generation (planning) |
 | `PLAN_INCOMPLETE_SECTIONS` | List of incomplete sections for follow-up (planning) |
-| `PLAN_INTERVIEW_MODEL` | Model for interview agent (default: sonnet) |
+| `PLAN_INTERVIEW_MODEL` | Model for interview agent (default: opus) |
 | `PLAN_INTERVIEW_MAX_TURNS` | Turn limit for interview (default: 50) |
-| `PLAN_GENERATION_MODEL` | Model for generation agent (default: sonnet) |
-| `PLAN_GENERATION_MAX_TURNS` | Turn limit for generation (default: 30) |
+| `PLAN_GENERATION_MODEL` | Model for generation agent (default: opus) |
+| `PLAN_GENERATION_MAX_TURNS` | Turn limit for generation (default: 50) |
 
 ## Testing
 
@@ -164,159 +164,253 @@ cd /path/to/your/project
 /path/to/tekhton/tekhton.sh "Your first task"
 ```
 
-## Current Initiative: Planning Phase (`--plan`)
+## Completed Initiative: Planning Phase Quality Overhaul
 
-The execution pipeline is feature-complete. We are now implementing the planning
-phase, which takes a developer from "I want to build X" to a production-ready
-CLAUDE.md and DESIGN.md. See `DESIGN.md` for the full specification.
+The `--plan` pipeline was overhauled to produce deep, interconnected output. The
+DESIGN.md and CLAUDE.md it generates now match the depth of professional design
+documents (multi-phase interview, depth-scored completeness checks, 12-section
+CLAUDE.md generation). All milestones below are complete.
 
-### Key Constraints for This Initiative
+### Reference: What "Good" Looks Like
 
-- **Zero execution pipeline changes.** All new code goes in `lib/plan.sh`,
-  `stages/plan_interview.sh`, `stages/plan_generate.sh`, new prompt templates
-  under `prompts/`, and new templates under `templates/plans/`. Do NOT modify
-  existing stage files, lib files, or prompt templates.
-- **The `--plan` flag** is handled as an early-exit command in `tekhton.sh`
-  (same pattern as `--init`), before config is loaded. It sources only the
-  libraries it needs.
-- **Interactive interview** uses Claude in conversational mode (not `-p` batch).
-  This is an intentional departure from the execution pipeline's batch-mode agents.
-- **Structural completeness** is checked programmatically (grep/awk) — not by
-  asking the LLM if it thinks the doc is done.
-- All new `.sh` files must follow `set -euo pipefail` and pass shellcheck.
-- Templates in `templates/plans/` are static markdown — no shell logic.
+The gold standard is `loenn/docs/GDD_Loenn.md` and `loenn/CLAUDE.md`. Key qualities:
+
+**DESIGN.md (GDD) qualities:**
+- Opens with a Developer Philosophy section establishing non-negotiable architectural
+  constraints before any feature content
+- Each game system gets its own deep section with sub-sections, tables, config examples,
+  edge cases, balance warnings, and explicit interaction rules with other systems
+- Configurable values are called out specifically with defaults and rationale
+- Open design questions are tracked explicitly rather than glossed over
+- Naming conventions section maps lore names to code names
+- ~1,600 lines for a complex project
+
+**CLAUDE.md qualities:**
+- Architecture Philosophy section with concrete patterns (composition over inheritance,
+  interface-first, config-driven)
+- Full project structure tree with every directory and key file annotated
+- Key Design Decisions section resolving ambiguities with canonical rulings
+- Config Architecture section with example config structures and key values
+- Milestones with: scope, file paths, acceptance criteria, `Tests:` block,
+  `Watch For:` block, `Seeds Forward:` block explaining what future milestones depend on
+- Critical Game Rules section — behavioral invariants the engine must enforce
+- "What Not to Build Yet" section — explicitly deferred features
+- Code Conventions section (naming, git workflow, testing requirements, state management pattern)
+- ~970 lines for a complex project
+
+### Key Constraints
+
+- **No `--dangerously-skip-permissions`.** The shell drives all file I/O. Claude
+  generates text only via `_call_planning_batch()`.
+- **Zero execution pipeline changes.** Modify only: `lib/plan.sh`, `stages/plan_interview.sh`,
+  `stages/plan_generate.sh`, `prompts/plan_*.prompt.md`, `templates/plans/*.md`, and tests.
+- **Default model: Opus.** Planning is a one-time cost per project. Use the best model.
+- **All new `.sh` files must pass `bash -n` syntax check.**
+- **All existing tests must continue to pass** (`bash tests/run_tests.sh`).
 
 ### Milestone Plan
 
-#### Milestone 1: Foundation — CLI Flag, Library Skeleton, Project Type Selection
-Create the `--plan` entry point in `tekhton.sh`, the `lib/plan.sh` orchestration
-library, and the project type selection menu. At the end of this milestone, running
-`tekhton --plan` displays.a project type menu, the user picks one, and the selected
-template path is resolved. No interview yet — just the skeleton and the first
-interactive step.
+#### [DONE] Milestone 1: Model Default + Template Depth Overhaul
+Change the default planning model from sonnet to opus, and completely rewrite all 7
+design doc templates to match the depth and structure of the Lönn GDD. Templates are
+the skeleton that determines interview quality — shallow templates produce shallow output.
 
-Files to create or modify:
-- `tekhton.sh` — add `--plan` early-exit block (same pattern as `--init`)
-- `lib/plan.sh` — planning phase orchestration: `run_plan()`, project type menu,
-  template resolution
-- `templates/plans/` — all 7 design doc templates (web-app.md, web-game.md,
-  cli-tool.md, api-service.md, mobile-app.md, library.md, custom.md)
+Files to modify:
+- `lib/plan.sh` — change default model from `sonnet` to `opus` on lines 39 and 41
+- `templates/plans/web-app.md` — full rewrite
+- `templates/plans/web-game.md` — full rewrite
+- `templates/plans/cli-tool.md` — full rewrite
+- `templates/plans/api-service.md` — full rewrite
+- `templates/plans/mobile-app.md` — full rewrite
+- `templates/plans/library.md` — full rewrite
+- `templates/plans/custom.md` — full rewrite
+- `CLAUDE.md` — update default model references in Template Variables table
 
-Acceptance criteria:
-- `tekhton --plan` shows project type menu with 7 options
-- User selects a type and the correct template path is resolved
-- Selecting an invalid option shows an error and re-prompts
-- Templates exist with proper section headings and guidance comments
-- All new shell code passes `bash -n` syntax check
+Template rewrite requirements (using web-game.md as the exemplar):
 
-#### Milestone 2: Interactive Interview Agent
-Implement the interview stage that walks the user through the selected template
-section-by-section. Claude asks questions, the user answers, Claude fills in
-DESIGN.md. The interview must run in conversational mode (not batch `-p` mode).
+Each template must have these structural qualities:
+1. **Developer Philosophy / Constraints section** (REQUIRED) — before any feature content.
+   Guidance: "What are your non-negotiable architectural rules? Config-driven? Interface-first?
+   Composition over inheritance? What patterns must be followed from day one?"
+2. **Table of Contents placeholder** — `<!-- Generated from sections below -->`
+3. **Deep system sections** — each major system gets its own `## Section` with sub-sections
+   (`### Sub-Section`). Guidance comments should ask probing follow-up questions:
+   - "What are the edge cases?"
+   - "What interactions does this system have with other systems?"
+   - "What values should be configurable vs hardcoded?"
+   - "What are the failure modes?"
+4. **Config Architecture section** (REQUIRED) — "What values must live in config? What format?
+   Show example config structures with keys and default values."
+5. **Open Design Questions section** — "What decisions are you deliberately deferring?
+   What needs playtesting/user-testing before you can decide?"
+6. **Naming Conventions section** — "What code names map to what domain concepts?
+   Especially important when lore/branding is not finalized."
+7. **At least 15–25 sections** depending on project type, each with `<!-- REQUIRED -->`
+   or optional markers and multi-line guidance comments that explain what depth is expected.
 
-Files to create or modify:
-- `stages/plan_interview.sh` — `run_plan_interview()` function
-- `prompts/plan_interview.prompt.md` — system prompt for the interview agent
-- `lib/plan.sh` — wire interview into the `run_plan()` flow after type selection
-
-Acceptance criteria:
-- Interview agent receives the template content as context
-- Agent asks one question at a time, covering each template section
-- Agent writes DESIGN.md progressively as sections are filled
-- Conversation is logged to `.claude/logs/`
-- Interview can be interrupted (Ctrl+C) without losing progress — partial
-  DESIGN.md is preserved on disk
-
-#### Milestone 3: Completeness Check + Follow-Up
-Implement the structural completeness checker that validates DESIGN.md after the
-interview, and a follow-up loop for incomplete sections.
-
-Files to create or modify:
-- `lib/plan.sh` — `check_design_completeness()` function: grep/awk-based
-  section validation
-- `stages/plan_interview.sh` — follow-up loop for incomplete sections
-- Templates may need `<!-- REQUIRED -->` markers added to distinguish
-  required vs optional sections
-
-Acceptance criteria:
-- Completeness check identifies sections that are empty, still contain
-  guidance comments, or have placeholder-only content
-- Incomplete sections are reported to the user with clear descriptions
-- A follow-up interview pass targets only the incomplete sections
-- When all required sections pass, the phase advances to generation
-- The check is deterministic — same DESIGN.md always produces same result
-
-#### Milestone 4: CLAUDE.md Generation Agent
-Implement the second agent pass that reads the completed DESIGN.md and generates
-a full CLAUDE.md with project rules, milestone plan, architecture guidelines,
-and testing strategy.
-
-Files to create or modify:
-- `stages/plan_generate.sh` — `run_plan_generate()` function
-- `prompts/plan_generate.prompt.md` — generation agent prompt template
-- `lib/plan.sh` — wire generation into `run_plan()` flow after completeness check
+Template section counts by type (approximate):
+- `web-game.md`: 20–25 sections (concept, pillars, player resources, each game system,
+  UI layout, developer reference, debug tools, open questions)
+- `web-app.md`: 18–22 sections (overview, auth, data model per entity, API design,
+  state management, error handling, deployment, observability)
+- `cli-tool.md`: 15–18 sections (command taxonomy, argument parsing, output formatting,
+  config, error codes, shell completion, packaging)
+- `api-service.md`: 18–22 sections (endpoints, auth, rate limiting, data model,
+  error responses, versioning, deployment, monitoring)
+- `mobile-app.md`: 18–22 sections (screens, navigation, offline support, push notifications,
+  platform differences, app lifecycle, deep linking)
+- `library.md`: 15–18 sections (public API surface, type safety, error handling,
+  versioning strategy, bundling, tree-shaking, documentation)
+- `custom.md`: 12–15 sections (generic but deep — overview, architecture, data model,
+  key systems, config, constraints, open questions)
 
 Acceptance criteria:
-- Generation agent reads DESIGN.md as input context
-- Output CLAUDE.md contains: project identity, non-negotiable rules,
-  ordered milestone plan, architecture guidelines, testing strategy
-- Milestones are numbered and have clear acceptance criteria
-- Each milestone description works as a standalone task argument for
-  `tekhton --milestone "Implement Milestone N: <description>"`
-- Generation is logged to `.claude/logs/`
+- Default model in `lib/plan.sh` is `opus` (both interview and generation)
+- Every template has a Developer Philosophy section marked REQUIRED
+- Every template has a Config Architecture section marked REQUIRED
+- Every template has an Open Design Questions section
+- `web-game.md` has at least 20 sections with guidance comments
+- All other templates have at least 15 sections with guidance comments
+- Guidance comments ask probing, specific questions — not just "describe X"
+- All tests pass (`bash tests/run_tests.sh`)
+- `CLAUDE.md` Template Variables table updated to show `opus` default
 
-#### Milestone 5: Milestone Review UI + File Output
-Implement the milestone review/approval step and the final file writing.
-The user sees the plan, can approve, edit, or re-generate before files are
-committed to disk.
+#### [DONE] Milestone 2: Multi-Phase Interview with Deep Probing
+Rewrite the interview flow to use a three-phase approach instead of a single pass.
+The shell collects progressively deeper information, and the synthesis call produces
+a document with the depth of the Lönn GDD.
 
-Files to create or modify:
-- `lib/plan.sh` — milestone display, approval prompt, editor integration,
-  file writing logic
-- `stages/plan_generate.sh` — re-generation support
+Phase 1 — **Concept Capture** (sections marked with a new `<!-- PHASE:1 -->` marker):
+High-level questions only. Project overview, tech stack, core concept, developer
+philosophy. Quick answers, broad strokes.
 
-Acceptance criteria:
-- Milestone summary displays in a clear numbered format after generation
-- `[y]` writes DESIGN.md and CLAUDE.md to the project directory
-- `[e]` opens CLAUDE.md in `$EDITOR` for manual edits before writing
-- `[r]` re-runs the generation agent with the same DESIGN.md
-- `[n]` aborts without writing files
-- After writing, prints next-steps instructions (`tekhton --init`)
+Phase 2 — **System Deep-Dive** (sections marked `<!-- PHASE:2 -->`):
+Each system/feature section. The shell presents the user's Phase 1 answers as
+context before each Phase 2 question, so they can reference what they already said.
 
-#### Milestone 6: Planning State Persistence + Config Integration
-Add resume support for interrupted planning sessions and integrate planning
-config keys into `pipeline.conf`.
+Phase 3 — **Architecture & Constraints** (`<!-- PHASE:3 -->`):
+Config architecture, naming conventions, open questions, what NOT to build.
+These sections benefit from the user having just articulated all their systems.
 
-Files to create or modify:
-- `lib/plan.sh` — state save/restore for planning phase
-- `lib/config.sh` — add planning config defaults (models, turn limits)
-- `templates/pipeline.conf.example` — add planning config section
-- `tekhton.sh` — detect and resume interrupted `--plan` sessions
-
-Acceptance criteria:
-- Interrupting during interview preserves partial DESIGN.md and the
-  current section index
-- Re-running `tekhton --plan` detects the partial state and offers to resume
-- Planning config keys (`CLAUDE_PLAN_MODEL`, `PLAN_INTERVIEW_MAX_TURNS`, etc.)
-  are documented in `pipeline.conf.example` with sensible defaults
-- `--init` auto-sets `DESIGN_FILE="DESIGN.md"` in pipeline.conf when
-  DESIGN.md exists in the project root
-
-#### Milestone 7: Tests + Documentation
-Write self-tests for the planning phase and update README, CLAUDE.md, and
-ARCHITECTURE.md to reflect the new feature.
-
-Files to create or modify:
-- `tests/test_plan_*.sh` — test files covering template loading, completeness
-  checking, type selection, and config defaults
-- `README.md` — add Planning Phase section with usage examples
-- `CLAUDE.md` — update repository layout and template variables
-- `ARCHITECTURE.md` — add planning phase to system map
+Files to modify:
+- `templates/plans/*.md` — add `<!-- PHASE:N -->` markers to each section
+- `stages/plan_interview.sh` — restructure `run_plan_interview()` to loop in
+  three phases, displaying a phase header and accumulated context between phases
+- `lib/plan.sh` — update `_extract_template_sections()` to parse `<!-- PHASE:N -->`
+  marker into a fourth field (default: 1 if not specified)
+- `prompts/plan_interview.prompt.md` — add instruction to expand each answer into
+  deep, multi-paragraph design prose with sub-sections, tables, config examples,
+  and edge case documentation. Replace the "2–6 sentences" guidance with "match the
+  depth of a professional game design document or software architecture document."
 
 Acceptance criteria:
-- All new tests pass via `bash tests/run_tests.sh`
-- README documents `tekhton --plan` with a quick-start example
-- CLAUDE.md layout tree includes all new files
-- ARCHITECTURE.md describes lib/plan.sh, stages/plan_*.sh, and the
-  planning data flow
-- All `.sh` files pass `bash -n` syntax check
+- `_extract_template_sections()` outputs `NAME|REQUIRED|GUIDANCE|PHASE` format
+- Interview displays phase headers: "Phase 1: Concept", "Phase 2: Deep Dive",
+  "Phase 3: Architecture"
+- Phase 2 questions show a summary of Phase 1 answers as context
+- Synthesis prompt instructs Claude to produce sub-sections, tables, and config
+  examples — not just prose paragraphs
+- Interrupting mid-Phase 2 preserves all Phase 1 answers and produces a partial
+  but valid DESIGN.md from what was collected
+- All tests pass (`bash tests/run_tests.sh`)
+
+#### [DONE] Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md
+Rewrite the CLAUDE.md generation prompt to produce output matching the Lönn CLAUDE.md
+structure. The current prompt produces 6 generic sections. The gold standard has ~15
+sections with config examples, behavioral rules, milestone details, and code conventions.
+
+Files to modify:
+- `prompts/plan_generate.prompt.md` — full rewrite with expanded required sections
+- `stages/plan_generate.sh` — increase `PLAN_GENERATION_MAX_TURNS` default from 30
+  to 50 (opus needs more turns for deep output)
+- `lib/plan.sh` — update default `PLAN_GENERATION_MAX_TURNS` to 50
+
+New required sections in CLAUDE.md (generation prompt must mandate all of these):
+
+1. **Project Identity** — name, description, tech stack, platform, monetization model
+2. **Architecture Philosophy** — concrete patterns and principles derived from the
+   Developer Philosophy section of DESIGN.md. Not generic platitudes — specific to
+   this project's tech stack and constraints.
+3. **Repository Layout** — full tree with every directory and key file annotated.
+   Inferred from tech stack and architecture decisions.
+4. **Key Design Decisions** — resolved ambiguities from DESIGN.md. Each as a titled
+   subsection with a canonical ruling and rationale.
+5. **Config Architecture** — config format, loading strategy, example structures
+   with actual keys and default values from DESIGN.md.
+6. **Non-Negotiable Rules** — 10–20 behavioral invariants the system must enforce.
+   Derived from constraints, edge cases, and interaction rules in DESIGN.md. Each
+   rule is specific and testable, not generic.
+7. **Implementation Milestones** — 6–12 milestones, each containing:
+   - Title and scope paragraph
+   - Bullet list of specific deliverables
+   - `Files to create or modify:` with concrete paths from Repository Layout
+   - `Tests:` block — what to test and how
+   - `Watch For:` block — gotchas, edge cases, integration risks
+   - `Seeds Forward:` block — what later milestones depend on from this one
+   - Each milestone must work as a standalone task for `tekhton "Implement Milestone N"`
+8. **Code Conventions** — naming, file organization, testing requirements, git workflow,
+   state management pattern. Specific to this project's language and framework.
+9. **Critical System Rules** — numbered list of invariants the implementation must
+   enforce. Violating any is a bug.
+10. **What Not to Build Yet** — explicitly deferred features with rationale.
+11. **Testing Strategy** — frameworks, coverage targets, test categories, commands.
+12. **Development Environment** — expected setup, dependencies, build commands.
+
+Acceptance criteria:
+- Generation prompt mandates all 12 sections in the specified order
+- Milestone format in the prompt includes Seeds Forward and Watch For blocks
+- Default `PLAN_GENERATION_MAX_TURNS` is 50 in `lib/plan.sh`
+- Prompt instructs Claude to produce config examples with actual keys from DESIGN.md
+- Prompt instructs Claude to derive 10–20 non-negotiable rules, not 5–10
+- Prompt instructs Claude to number milestones and include file paths
+- All tests pass (`bash tests/run_tests.sh`)
+
+#### [DONE] Milestone 4: Follow-Up Interview Depth + Completeness Checker Upgrade
+Upgrade the completeness checker to enforce depth thresholds — not just "is the
+section non-empty" but "does the section have enough content to drive implementation?"
+Upgrade the follow-up interview to probe for missing depth.
+
+Files to modify:
+- `lib/plan_completeness.sh` — add depth scoring: count lines, sub-headings, tables,
+  and config blocks per section. A required section with fewer than N lines (configurable,
+  default: 5) or zero sub-sections for system-type sections is flagged as shallow.
+- `prompts/plan_interview_followup.prompt.md` — rewrite to instruct Claude to focus on
+  expanding shallow sections: add sub-sections, edge cases, config examples, interaction
+  notes, and balance/design warnings.
+- `stages/plan_interview.sh` — update `run_plan_followup_interview()` to present the
+  current section content to the user as context, so they can see what was already written
+  and add what's missing rather than starting from scratch.
+
+Acceptance criteria:
+- Completeness checker flags required sections with fewer than 5 lines as `SHALLOW`
+- Completeness checker flags system sections lacking any `###` sub-headings as `SHALLOW`
+- Follow-up interview shows existing section content before asking for additions
+- Follow-up synthesis prompt instructs Claude to expand (not replace) existing content
+- A section that passes the depth check on re-run is not re-prompted
+- All tests pass (`bash tests/run_tests.sh`)
+
+#### [DONE] Milestone 5: Tests + Documentation Update
+Write tests covering the new multi-phase interview, deep templates, expanded
+completeness checking, and generation prompt changes. Update project documentation.
+
+Files to create or modify:
+- `tests/test_plan_templates.sh` — add checks for section count minimums (20+ for
+  web-game, 15+ for others), Developer Philosophy presence, Config Architecture presence,
+  PHASE marker parsing
+- `tests/test_plan_completeness.sh` — add depth-scoring tests: shallow sections flagged,
+  deep sections pass, line-count thresholds respected
+- `tests/test_plan_interview_stage.sh` — add phase-header assertions, multi-phase
+  flow test, context display between phases
+- `tests/test_plan_interview_prompt.sh` — update assertions for new prompt content
+  (sub-sections, tables, config examples instructions)
+- `tests/test_plan_generate_stage.sh` — verify increased max turns default
+- `CLAUDE.md` — update Template Variables table defaults (opus, max turns)
+- `README.md` — update `--plan` documentation with examples of expected output depth
+
+Acceptance criteria:
+- Template depth tests verify section counts per template type
+- Completeness depth tests verify shallow-section detection
+- Phase-marker parsing tests verify `_extract_template_sections()` fourth field
+- All 34+ existing tests continue to pass
+- New tests pass via `bash tests/run_tests.sh`
+- `bash -n` passes on all modified `.sh` files

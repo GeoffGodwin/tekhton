@@ -109,6 +109,75 @@ else
     FAIL=1
 fi
 
+# 2b: Report with bold-formatted fields (common LLM format drift)
+cat > "${TMPDIR}/BOLD_SCOUT.md" << 'EOF'
+## Relevant Files
+- lib/foo.dart — some file
+
+## Complexity Estimate
+
+**Files to modify:** 4
+**Estimated lines of change:** 250
+**Interconnected systems:** medium
+**Recommended coder turns:** 45
+**Recommended reviewer turns:** 10
+**Recommended tester turns:** 35
+EOF
+
+if parse_scout_complexity "${TMPDIR}/BOLD_SCOUT.md"; then
+    assert_eq "2b.1 bold files_to_modify" "4" "$SCOUT_FILES_TO_MODIFY"
+    assert_eq "2b.2 bold lines_of_change" "250" "$SCOUT_LINES_OF_CHANGE"
+    assert_eq "2b.3 bold interconnected" "medium" "$SCOUT_INTERCONNECTED"
+    assert_eq "2b.4 bold rec_coder_turns" "45" "$SCOUT_REC_CODER_TURNS"
+    assert_eq "2b.5 bold rec_reviewer_turns" "10" "$SCOUT_REC_REVIEWER_TURNS"
+    assert_eq "2b.6 bold rec_tester_turns" "35" "$SCOUT_REC_TESTER_TURNS"
+else
+    echo "FAIL: 2b.0 parse_scout_complexity should handle bold formatting"
+    FAIL=1
+fi
+
+# 2c: Report with range values (e.g. "25-30")
+cat > "${TMPDIR}/RANGE_SCOUT.md" << 'EOF'
+## Complexity Estimate
+**Files to modify:** 4
+**Estimated lines of change:** 200-270
+**Interconnected systems:** medium
+**Recommended coder turns:** 25-30
+**Recommended reviewer turns:** 5-8
+**Recommended tester turns:** 15-20
+EOF
+
+if parse_scout_complexity "${TMPDIR}/RANGE_SCOUT.md"; then
+    assert_eq "2c.1 range files_to_modify" "4" "$SCOUT_FILES_TO_MODIFY"
+    assert_eq "2c.2 range lines first number" "200" "$SCOUT_LINES_OF_CHANGE"
+    assert_eq "2c.3 range interconnected" "medium" "$SCOUT_INTERCONNECTED"
+    assert_eq "2c.4 range rec_coder_turns first" "25" "$SCOUT_REC_CODER_TURNS"
+    assert_eq "2c.5 range rec_reviewer_turns first" "5" "$SCOUT_REC_REVIEWER_TURNS"
+    assert_eq "2c.6 range rec_tester_turns first" "15" "$SCOUT_REC_TESTER_TURNS"
+else
+    echo "FAIL: 2c.0 parse_scout_complexity should handle range values"
+    FAIL=1
+fi
+
+# 2d: Report with bullet-prefixed fields
+cat > "${TMPDIR}/BULLET_SCOUT.md" << 'EOF'
+## Complexity Estimate
+- Files to modify: 6
+- Estimated lines of change: 300
+- Interconnected systems: high
+- Recommended coder turns: 60
+- Recommended reviewer turns: 12
+- Recommended tester turns: 40
+EOF
+
+if parse_scout_complexity "${TMPDIR}/BULLET_SCOUT.md"; then
+    assert_eq "2d.1 bullet files_to_modify" "6" "$SCOUT_FILES_TO_MODIFY"
+    assert_eq "2d.2 bullet rec_coder_turns" "60" "$SCOUT_REC_CODER_TURNS"
+else
+    echo "FAIL: 2d.0 parse_scout_complexity should handle bullet prefixes"
+    FAIL=1
+fi
+
 # =============================================================================
 # Phase 3: parse_scout_complexity — missing/invalid reports
 # =============================================================================

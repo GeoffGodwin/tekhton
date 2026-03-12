@@ -82,6 +82,69 @@ _is_section_incomplete() {
     return 1
 }
 
+# --- Depth Scoring ----------------------------------------------------------
+
+# Minimum non-blank line count for a required section to be considered deep.
+# Overridable via environment variable.
+PLAN_SECTION_MIN_LINES="${PLAN_SECTION_MIN_LINES:-5}"
+
+# _score_section_depth — Score section content for structural depth.
+#
+# Returns a score from 0–5 based on:
+#   +1  if content has >= PLAN_SECTION_MIN_LINES non-blank lines
+#   +2  if content contains ### sub-headings
+#   +1  if content contains markdown table rows (|...|)
+#   +1  if content contains fenced code blocks (```)
+#
+# Arguments:
+#   $1  content  — the raw section content (between ## headings)
+#
+# Prints the integer score to stdout.
+_score_section_depth() {
+    local content="$1"
+    local score=0
+
+    # Count non-blank lines
+    local line_count
+    line_count=$(echo "$content" | grep -c '[^[:space:]]' || true)
+    if [[ "$line_count" -ge "$PLAN_SECTION_MIN_LINES" ]]; then
+        score=$((score + 1))
+    fi
+
+    # Sub-headings (### or deeper)
+    if echo "$content" | grep -q '^###'; then
+        score=$((score + 2))
+    fi
+
+    # Markdown tables (lines containing |...|)
+    if echo "$content" | grep -qE '^\|.*\|'; then
+        score=$((score + 1))
+    fi
+
+    # Fenced code blocks
+    if echo "$content" | grep -q '^```'; then
+        score=$((score + 1))
+    fi
+
+    echo "$score"
+}
+
+# _is_section_shallow — Check if a non-empty section lacks structural depth.
+#
+# A section is shallow if its depth score is less than 2. This means it has
+# content but lacks sub-sections AND (is short OR lacks tables/code examples).
+#
+# Arguments:
+#   $1  content  — the raw section content
+#
+# Returns 0 (true) if shallow, 1 (false) if deep enough.
+_is_section_shallow() {
+    local content="$1"
+    local score
+    score=$(_score_section_depth "$content")
+    [[ "$score" -lt 2 ]]
+}
+
 # check_design_completeness — Validate DESIGN.md against required sections.
 # Sets PLAN_INCOMPLETE_SECTIONS and returns 0 if all complete, 1 otherwise.
 check_design_completeness() {
@@ -119,7 +182,11 @@ check_design_completeness() {
 
         if _is_section_incomplete "$content"; then
             warn "Incomplete section: ${section_name}"
-            PLAN_INCOMPLETE_SECTIONS="${PLAN_INCOMPLETE_SECTIONS}${section_name}"$'\n'
+            PLAN_INCOMPLETE_SECTIONS="${PLAN_INCOMPLETE_SECTIONS}[MISSING] ${section_name}"$'\n'
+            incomplete_count=$((incomplete_count + 1))
+        elif _is_section_shallow "$content"; then
+            warn "Shallow section: ${section_name}"
+            PLAN_INCOMPLETE_SECTIONS="${PLAN_INCOMPLETE_SECTIONS}[SHALLOW] ${section_name}"$'\n'
             incomplete_count=$((incomplete_count + 1))
         else
             log "Complete: ${section_name}"
@@ -152,7 +219,7 @@ run_plan_completeness_loop() {
         header "Completeness Check — Pass ${pass_num}"
 
         if check_design_completeness; then
-            success "All required sections are complete."
+            success "All required sections are complete and have sufficient depth."
             return 0
         fi
 

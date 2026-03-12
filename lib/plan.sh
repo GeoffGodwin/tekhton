@@ -36,10 +36,10 @@ load_plan_config
 # --- Planning config defaults ------------------------------------------------
 # Overridable via environment variables or pipeline.conf.
 
-export PLAN_INTERVIEW_MODEL="${PLAN_INTERVIEW_MODEL:-${CLAUDE_PLAN_MODEL:-sonnet}}"
+export PLAN_INTERVIEW_MODEL="${PLAN_INTERVIEW_MODEL:-${CLAUDE_PLAN_MODEL:-opus}}"
 export PLAN_INTERVIEW_MAX_TURNS="${PLAN_INTERVIEW_MAX_TURNS:-50}"
-export PLAN_GENERATION_MODEL="${PLAN_GENERATION_MODEL:-${CLAUDE_PLAN_MODEL:-sonnet}}"
-export PLAN_GENERATION_MAX_TURNS="${PLAN_GENERATION_MAX_TURNS:-30}"
+export PLAN_GENERATION_MODEL="${PLAN_GENERATION_MODEL:-${CLAUDE_PLAN_MODEL:-opus}}"
+export PLAN_GENERATION_MAX_TURNS="${PLAN_GENERATION_MAX_TURNS:-50}"
 
 # Project types — order matches the menu display
 PLAN_PROJECT_TYPES=(
@@ -145,7 +145,7 @@ _call_planning_batch() {
         --output-format text \
         -p "$prompt" \
         < /dev/null \
-        2>>"$log_file" | tee -a "$log_file"
+        2>&1 | tee -a "$log_file"
     local -a _pst=("${PIPESTATUS[@]}")
     set -o pipefail
     return "${_pst[0]}"
@@ -153,28 +153,30 @@ _call_planning_batch() {
 
 # _extract_template_sections — Parse a template file and print section data.
 #
-# Output format (one line per section):   NAME|REQUIRED|GUIDANCE
+# Output format (one line per section):   NAME|REQUIRED|GUIDANCE|PHASE
 #   NAME     — section heading (without "## " prefix)
 #   REQUIRED — "true" or "false"
 #   GUIDANCE — single-line concatenation of <!-- ... --> guidance comments
+#   PHASE    — integer (1, 2, or 3) from <!-- PHASE:N --> marker; default 1
 #
 # Usage:
-#   while IFS='|' read -r name required guidance; do
+#   while IFS='|' read -r name required guidance phase; do
 #       ...
 #   done < <(_extract_template_sections "$template_file")
 _extract_template_sections() {
     local template="$1"
     awk '
-    BEGIN { section = ""; required = "false"; guidance = "" }
+    BEGIN { section = ""; required = "false"; guidance = ""; phase = "1" }
     /^## / {
         if (section != "") {
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", guidance)
-            print section "|" required "|" guidance
+            print section "|" required "|" guidance "|" phase
         }
         section = $0
         sub(/^## /, "", section)
         required = "false"
         guidance = ""
+        phase = "1"
         if (section ~ /<!-- REQUIRED -->/) {
             required = "true"
             gsub(/[[:space:]]*<!-- REQUIRED -->[[:space:]]*/, "", section)
@@ -183,6 +185,13 @@ _extract_template_sections() {
         next
     }
     section != "" && /^<!-- REQUIRED -->/ { required = "true"; next }
+    section != "" && /^<!-- PHASE:[0-9]+ -->/ {
+        line = $0
+        gsub(/^<!-- PHASE:/, "", line)
+        gsub(/[[:space:]]*-->.*/, "", line)
+        phase = line
+        next
+    }
     section != "" && /^<!--/ {
         line = $0
         gsub(/^<!--[[:space:]]*/, "", line)
@@ -196,7 +205,7 @@ _extract_template_sections() {
     END {
         if (section != "") {
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", guidance)
-            print section "|" required "|" guidance
+            print section "|" required "|" guidance "|" phase
         }
     }
     ' "$template"

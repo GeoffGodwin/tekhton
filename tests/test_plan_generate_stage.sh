@@ -234,6 +234,81 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
+echo "=== Milestone 3: Default Max Turns = 50 ==="
+
+# Verify PLAN_GENERATION_MAX_TURNS defaults to 50 in lib/plan.sh
+gen_turns_default=$(
+    unset CLAUDE_PLAN_MODEL 2>/dev/null || true
+    unset PLAN_GENERATION_MAX_TURNS 2>/dev/null || true
+    # shellcheck source=/dev/null
+    source "${TEKHTON_HOME}/lib/common.sh"
+    # shellcheck source=/dev/null
+    source "${TEKHTON_HOME}/lib/plan.sh"
+    echo "$PLAN_GENERATION_MAX_TURNS"
+)
+
+if [ "$gen_turns_default" = "50" ]; then
+    pass "default PLAN_GENERATION_MAX_TURNS is 50 (Milestone 3 requirement)"
+else
+    fail "expected PLAN_GENERATION_MAX_TURNS='50', got '${gen_turns_default}'"
+fi
+
+# Verify PLAN_GENERATION_MODEL defaults to opus
+gen_model_default=$(
+    unset CLAUDE_PLAN_MODEL 2>/dev/null || true
+    unset PLAN_GENERATION_MODEL 2>/dev/null || true
+    # shellcheck source=/dev/null
+    source "${TEKHTON_HOME}/lib/common.sh"
+    # shellcheck source=/dev/null
+    source "${TEKHTON_HOME}/lib/plan.sh"
+    echo "$PLAN_GENERATION_MODEL"
+)
+
+if [ "$gen_model_default" = "opus" ]; then
+    pass "default PLAN_GENERATION_MODEL is 'opus' (Milestone 1 requirement)"
+else
+    fail "expected PLAN_GENERATION_MODEL='opus', got '${gen_model_default}'"
+fi
+
+echo
+echo "=== Generation Prompt: 12 Required Sections ==="
+
+GEN_PROMPT="${TEKHTON_HOME}/prompts/plan_generate.prompt.md"
+
+# The generation prompt must mandate all 12 CLAUDE.md sections
+for section in "Project Identity" "Architecture Philosophy" "Repository Layout" \
+               "Key Design Decisions" "Config Architecture" "Non-Negotiable Rules" \
+               "Implementation Milestones" "Code Conventions" "Critical System Rules" \
+               "What Not to Build Yet" "Testing Strategy" "Development Environment"; do
+    if grep -q "$section" "$GEN_PROMPT"; then
+        pass "generation prompt mandates '${section}' section"
+    else
+        fail "generation prompt missing '${section}' section"
+    fi
+done
+
+# Must instruct Seeds Forward and Watch For in milestones
+if grep -q 'Seeds Forward' "$GEN_PROMPT"; then
+    pass "generation prompt includes 'Seeds Forward' in milestone format"
+else
+    fail "generation prompt missing 'Seeds Forward' block"
+fi
+
+if grep -q 'Watch For' "$GEN_PROMPT"; then
+    pass "generation prompt includes 'Watch For' in milestone format"
+else
+    fail "generation prompt missing 'Watch For' block"
+fi
+
+# Must instruct 10-20 non-negotiable rules
+if grep -q '10.*20' "$GEN_PROMPT"; then
+    pass "generation prompt specifies 10-20 non-negotiable rules"
+else
+    fail "generation prompt does not specify 10-20 rules range"
+fi
+
+# ---------------------------------------------------------------------------
+echo
 echo "=== Summary ==="
 echo "  Passed: ${PASS}  Failed: ${FAIL}"
 
