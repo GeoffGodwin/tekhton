@@ -75,8 +75,33 @@ tekhton --init
 tekhton --milestone "Implement Milestone 1: Project scaffold"
 ```
 
-The interview is conversational — Claude asks one question at a time in plain language.
+The interview runs in three phases:
+1. **Concept Capture** — high-level overview, tech stack, developer philosophy
+2. **System Deep-Dive** — each system/feature section, with Phase 1 context visible
+3. **Architecture & Constraints** — config architecture, naming conventions, open questions
+
 If interrupted (Ctrl+C), re-running `tekhton --plan` offers to resume where you left off.
+
+### What the Planning Phase Produces
+
+**DESIGN.md** — A professional-grade design document with deep, interconnected sections:
+- Developer Philosophy section establishing non-negotiable architectural constraints
+- Each system gets its own section with sub-sections, tables, config examples, edge cases
+- Config Architecture section with example structures, keys, and default values
+- Open Design Questions section tracking deferred decisions
+- Typically 500–1600+ lines depending on project complexity
+
+**CLAUDE.md** — An authoritative development rulebook containing 12 sections:
+- Project Identity, Architecture Philosophy, Repository Layout
+- Key Design Decisions, Config Architecture, Non-Negotiable Rules (10–20 specific rules)
+- Implementation Milestones (6–12), each with:
+  - Scope, deliverables, file paths, acceptance criteria
+  - `Tests:` block, `Watch For:` block, `Seeds Forward:` block
+- Code Conventions, Critical System Rules, What Not to Build Yet
+- Testing Strategy, Development Environment
+- Typically 500–1500 lines depending on project complexity
+
+Each milestone in CLAUDE.md is designed as a standalone task: `tekhton "Implement Milestone 1: Project scaffold"`
 
 ## Features
 

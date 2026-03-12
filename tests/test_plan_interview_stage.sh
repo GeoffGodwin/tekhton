@@ -324,6 +324,63 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
+echo "=== Multi-Phase Interview Flow (Milestone 2 requirements) ==="
+
+# Verify that the interview stage sources plan_interview.sh which defines
+# the phase labels array
+project_m="${TMPDIR_BASE}/proj_m"
+mkdir -p "$project_m"
+
+# Check that the stage file contains phase label definitions
+if grep -q '_PHASE_LABELS' "${TEKHTON_HOME}/stages/plan_interview.sh"; then
+    pass "plan_interview.sh defines _PHASE_LABELS array"
+else
+    fail "plan_interview.sh missing _PHASE_LABELS array"
+fi
+
+# Check that all three phase labels exist in the stage file
+if grep -q 'Phase 1: Concept' "${TEKHTON_HOME}/stages/plan_interview.sh"; then
+    pass "plan_interview.sh has 'Phase 1: Concept' label"
+else
+    fail "plan_interview.sh missing 'Phase 1: Concept' label"
+fi
+
+if grep -q 'Phase 2: System Deep-Dive' "${TEKHTON_HOME}/stages/plan_interview.sh"; then
+    pass "plan_interview.sh has 'Phase 2: System Deep-Dive' label"
+else
+    fail "plan_interview.sh missing 'Phase 2: System Deep-Dive' label"
+fi
+
+if grep -q 'Phase 3: Architecture' "${TEKHTON_HOME}/stages/plan_interview.sh"; then
+    pass "plan_interview.sh has 'Phase 3: Architecture' label"
+else
+    fail "plan_interview.sh missing 'Phase 3: Architecture' label"
+fi
+
+# Verify the interview uses _extract_template_sections (4-field format with phase)
+if grep -q '_extract_template_sections' "${TEKHTON_HOME}/stages/plan_interview.sh"; then
+    pass "interview stage uses _extract_template_sections for 4-field parsing"
+else
+    fail "interview stage does not use _extract_template_sections"
+fi
+
+# Verify the interview calls _build_phase_context for Phase 2+ context display
+if grep -q '_build_phase_context' "${TEKHTON_HOME}/stages/plan_interview.sh"; then
+    pass "interview stage calls _build_phase_context for prior-phase context"
+else
+    fail "interview stage does not call _build_phase_context"
+fi
+
+# Verify the test fixture has all three phases
+fixture="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md"
+if grep -q 'PHASE:1' "$fixture" && grep -q 'PHASE:2' "$fixture" && grep -q 'PHASE:3' "$fixture"; then
+    pass "test fixture plan_test_template.md has PHASE:1, PHASE:2, and PHASE:3 markers"
+else
+    fail "test fixture missing one or more PHASE markers"
+fi
+
+# ---------------------------------------------------------------------------
+echo
 echo "=== Summary ==="
 echo "  Passed: ${PASS}  Failed: ${FAIL}"
 
