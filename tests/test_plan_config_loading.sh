@@ -20,7 +20,7 @@ source "${TEKHTON_HOME}/lib/plan.sh"
 [ "$PLAN_INTERVIEW_MODEL" = "opus" ] || { echo "FAIL: PLAN_INTERVIEW_MODEL default should be 'opus', got '$PLAN_INTERVIEW_MODEL'"; exit 1; }
 [ "$PLAN_INTERVIEW_MAX_TURNS" = "50" ] || { echo "FAIL: PLAN_INTERVIEW_MAX_TURNS default should be '50', got '$PLAN_INTERVIEW_MAX_TURNS'"; exit 1; }
 [ "$PLAN_GENERATION_MODEL" = "opus" ] || { echo "FAIL: PLAN_GENERATION_MODEL default should be 'opus', got '$PLAN_GENERATION_MODEL'"; exit 1; }
-[ "$PLAN_GENERATION_MAX_TURNS" = "30" ] || { echo "FAIL: PLAN_GENERATION_MAX_TURNS default should be '30', got '$PLAN_GENERATION_MAX_TURNS'"; exit 1; }
+[ "$PLAN_GENERATION_MAX_TURNS" = "50" ] || { echo "FAIL: PLAN_GENERATION_MAX_TURNS default should be '50', got '$PLAN_GENERATION_MAX_TURNS'"; exit 1; }
 
 # Test 2: Load config from pipeline.conf
 # Create a new temp dir to avoid polluting previous test
@@ -88,6 +88,6 @@ source "${TEKHTON_HOME}/lib/plan.sh"
 [ "$PLAN_INTERVIEW_MODEL" = "opus" ] || { echo "FAIL: PLAN_INTERVIEW_MODEL should be 'opus' from config, got '$PLAN_INTERVIEW_MODEL'"; exit 1; }
 [ "$PLAN_INTERVIEW_MAX_TURNS" = "50" ] || { echo "FAIL: PLAN_INTERVIEW_MAX_TURNS should default to '50', got '$PLAN_INTERVIEW_MAX_TURNS'"; exit 1; }
 [ "$PLAN_GENERATION_MODEL" = "opus" ] || { echo "FAIL: PLAN_GENERATION_MODEL should default to 'opus', got '$PLAN_GENERATION_MODEL'"; exit 1; }
-[ "$PLAN_GENERATION_MAX_TURNS" = "30" ] || { echo "FAIL: PLAN_GENERATION_MAX_TURNS should default to '30', got '$PLAN_GENERATION_MAX_TURNS'"; exit 1; }
+[ "$PLAN_GENERATION_MAX_TURNS" = "50" ] || { echo "FAIL: PLAN_GENERATION_MAX_TURNS should default to '50', got '$PLAN_GENERATION_MAX_TURNS'"; exit 1; }
 
 echo "PASS: Planning config loading tests passed"
