@@ -164,14 +164,12 @@ cd /path/to/your/project
 /path/to/tekhton/tekhton.sh "Your first task"
 ```
 
-## Current Initiative: Planning Phase Quality Overhaul
+## Completed Initiative: Planning Phase Quality Overhaul
 
-The `--plan` pipeline runs end-to-end but produces shallow output. The DESIGN.md
-and CLAUDE.md it generates lack the depth, interconnection, and specificity needed
-to drive successful execution pipeline runs. This initiative upgrades the entire
-planning phase to produce output comparable to the Lönn project's GDD (1,600+ lines,
-23 deep sections) and CLAUDE.md (970 lines, 11 milestones with seeds-forward notes,
-watch-for blocks, and config architecture).
+The `--plan` pipeline was overhauled to produce deep, interconnected output. The
+DESIGN.md and CLAUDE.md it generates now match the depth of professional design
+documents (multi-phase interview, depth-scored completeness checks, 12-section
+CLAUDE.md generation). All milestones below are complete.
 
 ### Reference: What "Good" Looks Like
 
@@ -316,7 +314,7 @@ Acceptance criteria:
   but valid DESIGN.md from what was collected
 - All tests pass (`bash tests/run_tests.sh`)
 
-#### [IN PROGRESS] Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md
+#### [DONE] Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md
 Rewrite the CLAUDE.md generation prompt to produce output matching the Lönn CLAUDE.md
 structure. The current prompt produces 6 generic sections. The gold standard has ~15
 sections with config examples, behavioral rules, milestone details, and code conventions.
@@ -367,7 +365,7 @@ Acceptance criteria:
 - Prompt instructs Claude to number milestones and include file paths
 - All tests pass (`bash tests/run_tests.sh`)
 
-#### Milestone 4: Follow-Up Interview Depth + Completeness Checker Upgrade
+#### [DONE] Milestone 4: Follow-Up Interview Depth + Completeness Checker Upgrade
 Upgrade the completeness checker to enforce depth thresholds — not just "is the
 section non-empty" but "does the section have enough content to drive implementation?"
 Upgrade the follow-up interview to probe for missing depth.
@@ -391,7 +389,7 @@ Acceptance criteria:
 - A section that passes the depth check on re-run is not re-prompted
 - All tests pass (`bash tests/run_tests.sh`)
 
-#### Milestone 5: Tests + Documentation Update
+#### [DONE] Milestone 5: Tests + Documentation Update
 Write tests covering the new multi-phase interview, deep templates, expanded
 completeness checking, and generation prompt changes. Update project documentation.
 
