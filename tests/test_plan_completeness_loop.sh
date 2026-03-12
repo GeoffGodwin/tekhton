@@ -27,7 +27,7 @@ run_plan_followup_interview() {
 }
 
 TEST_TMPDIR=$(mktemp -d)
-PROJECT_DIR="$TEST_TMPDIR"
+export PROJECT_DIR="$TEST_TMPDIR"
 export TEKHTON_TEST_MODE=1
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
@@ -62,16 +62,25 @@ cat > "$PLAN_TEMPLATE_FILE" << 'EOF'
 <!-- Not required -->
 EOF
 
-# Helper: write a DESIGN.md where all required sections are filled
+# Helper: write a DESIGN.md where all required sections are filled (deep content)
 make_complete_design() {
     cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
 # Design Document
 
 ## Overview
 A task management web application for small teams.
+Built for agile workflows with real-time collaboration.
+Targets teams of 5-20 people in software development.
+Key differentiator is AI-powered task prioritization.
+### Target Users
+Product managers, developers, and team leads.
 
 ## Tech Stack
-React, Node.js, PostgreSQL.
+### Frontend
+React 18 with TypeScript and Tailwind CSS.
+### Backend
+Node.js with Express and PostgreSQL.
+Deployed on AWS using ECS Fargate.
 
 ## Optional Section
 Skipped intentionally.
@@ -236,6 +245,81 @@ if [ "$FOLLOWUP_CALL_COUNT" -eq 0 ]; then
     pass "Missing DESIGN.md: no follow-up interview launched"
 else
     fail "Missing DESIGN.md: follow-up should not be called"
+fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "=== run_plan_completeness_loop — shallow section passes depth on pass 2, not re-prompted ==="
+
+# A section is SHALLOW (non-empty but score < 2) in pass 1.
+# The mock follow-up interview upgrades the content to deep.
+# Pass 2 must exit cleanly without calling the follow-up again.
+
+# Write shallow DESIGN.md: 3 lines, no sub-headings, no tables, no code blocks → score 0
+cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+# Design Document
+
+## Overview
+A task management application.
+Supports agile workflows.
+Targets small teams.
+
+## Tech Stack
+Node.js and PostgreSQL.
+Deployed on AWS.
+Simple REST API backend.
+EOF
+
+# This mock upgrades DESIGN.md to deep content on its first call
+_shallow_to_deep_followup() {
+    FOLLOWUP_CALL_COUNT=$((FOLLOWUP_CALL_COUNT + 1))
+    # Overwrite DESIGN.md with deep content that will pass depth check
+    cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF2'
+# Design Document
+
+## Overview
+A task management web application for small teams.
+Built for agile workflows with real-time collaboration.
+Targets teams of 5-20 people in software development.
+Key differentiator is AI-powered task prioritization.
+### Target Users
+Product managers, developers, and team leads who need visibility.
+### Core Value Proposition
+Reduces meeting overhead by surfacing blockers automatically.
+
+## Tech Stack
+### Frontend
+React 18 with TypeScript and Tailwind CSS.
+### Backend
+Node.js with Express and PostgreSQL.
+Deployed on AWS using ECS Fargate containers.
+### Tooling
+Vite for bundling, Vitest for unit tests, Playwright for E2E.
+
+EOF2
+}
+
+FOLLOWUP_CALL_COUNT=0
+# Temporarily override the mock with the upgrading version
+run_plan_followup_interview() { _shallow_to_deep_followup; }
+result=0
+# User selects 'f' for follow-up; after the mock upgrades content, pass 2 should pass
+run_plan_completeness_loop < <(printf "f\n") > /dev/null 2>&1 || result=$?
+# Restore original mock for subsequent tests
+run_plan_followup_interview() {
+    FOLLOWUP_CALL_COUNT=$((FOLLOWUP_CALL_COUNT + 1))
+    return 0
+}
+
+if [ "$result" -eq 0 ]; then
+    pass "Shallow-to-deep: loop exits 0 after section passes depth check on pass 2"
+else
+    fail "Shallow-to-deep: expected exit 0, got ${result}"
+fi
+if [ "$FOLLOWUP_CALL_COUNT" -eq 1 ]; then
+    pass "Shallow-to-deep: follow-up called exactly once (pass 1 only, not re-prompted on pass 2)"
+else
+    fail "Shallow-to-deep: expected 1 follow-up call, got ${FOLLOWUP_CALL_COUNT}"
 fi
 
 # ---------------------------------------------------------------------------
