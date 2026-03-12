@@ -52,3 +52,20 @@
 ────────────────────────────────────────
   Passed: [0;32m38[0m  Failed: [0;31m0[0m
 ────────────────────────────────────────
+[feature/PlanningEnhancements bf97aba] feat: Implement  Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md
+ 21 files changed, 702 insertions(+), 141 deletions(-)
+ create mode 100644 .claude/logs/20260312_082942_ARCHITECT_PLAN.md
+ create mode 100644 .claude/logs/20260312_082942_CODER_SUMMARY.md
+ create mode 100644 .claude/logs/20260312_082942_JR_CODER_SUMMARY.md
+ create mode 100644 .claude/logs/20260312_082942_REVIEWER_REPORT.md
+ create mode 100644 .claude/logs/20260312_082942_SCOUT_REPORT.md
+ create mode 100644 .claude/logs/20260312_082942_TESTER_REPORT.md
+ create mode 100644 .claude/logs/20260312_082942_implement-milestone-3-generation-prompt-overhaul-f.log
+ copy CODER_SUMMARY.md => .claude/logs/archive/20260312_082943_CODER_SUMMARY.md (100%)
+ copy REVIEWER_REPORT.md => .claude/logs/archive/20260312_082943_REVIEWER_REPORT.md (100%)
+ rewrite CODER_SUMMARY.md (93%)
+ create mode 100644 JR_CODER_SUMMARY.md
+ rewrite REVIEWER_REPORT.md (79%)
+ create mode 100644 TESTER_REPORT.md
+ rewrite prompts/plan_generate.prompt.md (63%)
+ create mode 100644 tests/test_plan_generate_prompt.sh
