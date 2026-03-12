@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-12
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
 - [2026-03-12 | "Implement  Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md"] `CLAUDE.md` Template Variables table calls the design content variable `PLAN_DESIGN_CONTENT`, but `stages/plan_generate.sh` exports it as `DESIGN_CONTENT` and `prompts/plan_generate.prompt.md` uses `{{DESIGN_CONTENT}}`. The stage and prompt are consistent with each other and the feature works correctly, but the table documentation is stale. Pre-existing mismatch, not introduced by this change.

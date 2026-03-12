@@ -84,6 +84,51 @@ else
 fi
 
 echo
+echo "=== Depth Instructions (Milestone 2+3 requirements) ==="
+
+# Must instruct agent to create sub-sections (### headings)
+if grep -qi 'sub.section\|### ' "$PROMPT_FILE"; then
+    pass "instructs creation of sub-sections (### headings)"
+else
+    fail "does not instruct creation of sub-sections"
+fi
+
+# Must instruct agent to include tables
+if grep -qi 'table' "$PROMPT_FILE"; then
+    pass "instructs inclusion of tables"
+else
+    fail "does not instruct inclusion of tables"
+fi
+
+# Must instruct agent to include config examples
+if grep -qi 'config.*example\|example.*config\|fenced code' "$PROMPT_FILE"; then
+    pass "instructs inclusion of config examples"
+else
+    fail "does not instruct config examples"
+fi
+
+# Must instruct agent to document edge cases
+if grep -qi 'edge.case' "$PROMPT_FILE"; then
+    pass "instructs edge case documentation"
+else
+    fail "does not instruct edge case documentation"
+fi
+
+# Must instruct deep prose (not just 2-6 sentences)
+if grep -qi 'multi.paragraph\|20.50 lines\|not.*2.6 sentences\|as much.*detail' "$PROMPT_FILE"; then
+    pass "instructs deep multi-paragraph prose"
+else
+    fail "does not instruct deep multi-paragraph prose"
+fi
+
+# Must mention the three interview phases
+if grep -qi 'phase 1\|phase 2\|phase 3' "$PROMPT_FILE"; then
+    pass "references three interview phases"
+else
+    fail "does not reference interview phases"
+fi
+
+echo
 echo "=== Prompt Rendering ==="
 
 # Render the prompt with mock variables — verify substitution works
