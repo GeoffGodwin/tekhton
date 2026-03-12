@@ -37,10 +37,21 @@ run_plan_followup_interview() {
 
     mkdir -p "$log_dir"
 
-    # Parse the list of incomplete section names
+    # Parse the list of incomplete sections, preserving [SHALLOW]/[MISSING] tags
     local -a incomplete_list=()
+    local -a section_tags=()
     while IFS= read -r s; do
-        [[ -n "$s" ]] && incomplete_list+=("$s")
+        [[ -z "$s" ]] && continue
+        local tag="MISSING"
+        local name="$s"
+        if [[ "$s" == "[SHALLOW] "* ]]; then
+            tag="SHALLOW"
+            name="${s#\[SHALLOW\] }"
+        elif [[ "$s" == "[MISSING] "* ]]; then
+            name="${s#\[MISSING\] }"
+        fi
+        incomplete_list+=("$name")
+        section_tags+=("$tag")
     done <<< "$PLAN_INCOMPLETE_SECTIONS"
 
     local total="${#incomplete_list[@]}"
@@ -81,26 +92,37 @@ run_plan_followup_interview() {
 
     # Collect answers for the incomplete sections
     local answers_block=""
-    local i=0
-    for section_name in "${incomplete_list[@]}"; do
-        i=$((i + 1))
+    local idx
+    for idx in "${!incomplete_list[@]}"; do
+        local section_name="${incomplete_list[$idx]}"
+        local tag="${section_tags[$idx]}"
         local guide="${section_guidance_map[$section_name]:-}"
         local req="${section_required_map[$section_name]:-true}"
+        local num=$((idx + 1))
 
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "  [${i}/${total}] ${section_name}  *required"
+        echo "  [${num}/${total}] ${section_name}  [${tag}]  *required"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-        # Show existing section content as context
+        # Show existing section content as context (especially for SHALLOW sections)
         if [[ -f "$design_file" ]]; then
             local existing_content
             existing_content=$(_get_section_content "$design_file" "$section_name")
             if [[ -n "$existing_content" ]]; then
                 echo
-                log "  Current content:"
-                echo "$existing_content" | head -10 | while IFS= read -r eline; do
+                if [[ "$tag" == "SHALLOW" ]]; then
+                    log "  Current content (needs more depth — add sub-sections, tables, examples):"
+                else
+                    log "  Current content:"
+                fi
+                echo "$existing_content" | head -15 | while IFS= read -r eline; do
                     echo "    ${eline}"
                 done
+                local total_lines
+                total_lines=$(echo "$existing_content" | wc -l | tr -d ' ')
+                if [[ "$total_lines" -gt 15 ]]; then
+                    echo "    ... (${total_lines} lines total, showing first 15)"
+                fi
             fi
         fi
 
@@ -108,10 +130,10 @@ run_plan_followup_interview() {
         answer=$(_read_section_answer "$guide" "$req" "$input_fd")
 
         if [[ "$answer" == "skip" || "$answer" == "s" ]]; then
-            warn "  Skipping required section — will remain TBD."
-            answers_block+="**${section_name}** [REQUIRED]: (user skipped — leave as TBD)"$'\n\n'
+            warn "  Skipping required section — will remain as-is."
+            answers_block+="**${section_name}** [${tag}]: (user skipped — leave as-is)"$'\n\n'
         else
-            answers_block+="**${section_name}** [REQUIRED]: ${answer}"$'\n\n'
+            answers_block+="**${section_name}** [${tag}]: ${answer}"$'\n\n'
         fi
         echo
     done

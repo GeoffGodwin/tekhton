@@ -12,7 +12,7 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 # Create a temporary project dir
 TEST_TMPDIR=$(mktemp -d)
-PROJECT_DIR="$TEST_TMPDIR"
+export PROJECT_DIR="$TEST_TMPDIR"
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
 # Source the required libraries (stubs for logging)
@@ -140,23 +140,36 @@ fi
 echo
 echo "=== check_design_completeness ==="
 
-# --- Complete DESIGN.md ---
+# --- Complete DESIGN.md (deep content with sub-headings) ---
 cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
 # Design Document — Test
 
 ## Project Overview
 A task management web application for small teams.
+Built for agile workflows with real-time collaboration.
+Targets teams of 5-20 people in software development.
+Key differentiator is AI-powered task prioritization.
+### Target Users
+Product managers, developers, and team leads.
 
 ## Tech Stack
-React, Node.js, PostgreSQL, deployed on AWS.
+### Frontend
+React 18 with TypeScript and Tailwind CSS.
+### Backend
+Node.js with Express and PostgreSQL.
+Deployed on AWS using ECS Fargate.
 
 ## Optional Section
 Skipped.
 
 ## Core Features
-- Create and assign tasks
-- Due date tracking
-- Team dashboard
+### Task Management
+- Create and assign tasks with priority levels
+- Due date tracking with calendar integration
+- Drag-and-drop kanban board
+### Team Dashboard
+- Real-time activity feed
+- Sprint burndown charts
 EOF
 
 if check_design_completeness; then
@@ -251,6 +264,145 @@ if check_design_completeness; then
     fail "DESIGN.md with TBD Tech Stack should fail"
 else
     pass "DESIGN.md with TBD section fails check"
+fi
+
+# --- Shallow section detection ---
+echo
+echo "=== _score_section_depth + _is_section_shallow ==="
+
+# Single line — score 0 (shallow)
+shallow_content="A task management web application."
+score=$(_score_section_depth "$shallow_content")
+if [ "$score" -eq 0 ]; then
+    pass "Single line scores 0"
+else
+    fail "Single line should score 0, got ${score}"
+fi
+
+if _is_section_shallow "$shallow_content"; then
+    pass "Single line is shallow"
+else
+    fail "Single line should be shallow"
+fi
+
+# 5+ lines but no sub-headings — score 1 (still shallow)
+five_lines="Line one
+Line two
+Line three
+Line four
+Line five"
+score=$(_score_section_depth "$five_lines")
+if [ "$score" -eq 1 ]; then
+    pass "5 lines without structure scores 1"
+else
+    fail "5 lines without structure should score 1, got ${score}"
+fi
+
+if _is_section_shallow "$five_lines"; then
+    pass "5 lines without structure is shallow"
+else
+    fail "5 lines without structure should be shallow"
+fi
+
+# Content with sub-headings — score >= 2 (not shallow)
+deep_content="Overview paragraph with context.
+Another line of detail.
+### Sub-heading
+Details about sub-topic.
+More details here."
+score=$(_score_section_depth "$deep_content")
+if [ "$score" -ge 2 ]; then
+    pass "Content with sub-headings scores >= 2 (got ${score})"
+else
+    fail "Content with sub-headings should score >= 2, got ${score}"
+fi
+
+if _is_section_shallow "$deep_content"; then
+    fail "Content with sub-headings should not be shallow"
+else
+    pass "Content with sub-headings is not shallow"
+fi
+
+# Content with tables — score includes table bonus
+table_content="Overview paragraph.
+Another line.
+Three.
+Four.
+Five lines total.
+| Column A | Column B |
+| -------- | -------- |
+| Value 1  | Value 2  |"
+score=$(_score_section_depth "$table_content")
+if [ "$score" -ge 2 ]; then
+    pass "Content with tables scores >= 2 (got ${score})"
+else
+    fail "Content with tables should score >= 2, got ${score}"
+fi
+
+# Content with code blocks
+code_content="Description of config.
+Another line.
+Three.
+Four.
+Five lines.
+\`\`\`yaml
+key: value
+\`\`\`"
+score=$(_score_section_depth "$code_content")
+if [ "$score" -ge 2 ]; then
+    pass "Content with code blocks scores >= 2 (got ${score})"
+else
+    fail "Content with code blocks should score >= 2, got ${score}"
+fi
+
+# Deep content with everything — max score
+rich_content="A comprehensive section.
+Line two.
+Line three.
+Line four.
+Line five.
+### Sub-section One
+Details here.
+| Col1 | Col2 |
+| ---- | ---- |
+| A    | B    |
+\`\`\`json
+{\"key\": \"val\"}
+\`\`\`"
+score=$(_score_section_depth "$rich_content")
+if [ "$score" -eq 5 ]; then
+    pass "Rich content scores 5 (max)"
+else
+    fail "Rich content should score 5, got ${score}"
+fi
+
+echo
+echo "=== check_design_completeness — shallow detection ==="
+
+# DESIGN.md with short content (passes incomplete check but fails shallow check)
+cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+# Design Document — Test
+
+## Project Overview
+A task management web application.
+
+## Tech Stack
+React and Node.js.
+
+## Core Features
+- Create tasks
+EOF
+
+if check_design_completeness; then
+    fail "DESIGN.md with shallow sections should fail"
+else
+    pass "DESIGN.md with shallow sections fails check"
+fi
+
+if echo "$PLAN_INCOMPLETE_SECTIONS" | grep -q '\[SHALLOW\]'; then
+    pass "Shallow sections marked with [SHALLOW] prefix"
+else
+    fail "Shallow sections should be marked with [SHALLOW] prefix"
 fi
 
 # --- Determinism: same input always same result ---
