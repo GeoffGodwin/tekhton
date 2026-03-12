@@ -137,7 +137,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `DRIFT_OBSERVATION_COUNT` | Count of unresolved observations |
 | `DEPENDENCY_CONSTRAINTS_CONTENT` | File contents of dependency constraints (optional) |
 | `PLAN_TEMPLATE_CONTENT` | Contents of selected design doc template (planning) |
-| `PLAN_DESIGN_CONTENT` | Contents of DESIGN.md during generation (planning) |
+| `DESIGN_CONTENT` | Contents of DESIGN.md during generation (planning) |
 | `PLAN_INCOMPLETE_SECTIONS` | List of incomplete sections for follow-up (planning) |
 | `PLAN_INTERVIEW_MODEL` | Model for interview agent (default: opus) |
 | `PLAN_INTERVIEW_MAX_TURNS` | Turn limit for interview (default: 50) |
