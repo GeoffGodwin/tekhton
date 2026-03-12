@@ -7,8 +7,17 @@
 </div>
 
 Tekhton is a standalone, project-agnostic multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
-Give it a task description and it orchestrates a Coder → Reviewer → Tester cycle
-with automatic rework routing, build gates, state persistence, and resume support.
+Give it a task description and it orchestrates a **Scout → Coder → Reviewer → Tester** cycle
+with automatic rework routing, build gates, dynamic turn limits, architecture drift
+prevention, state persistence, and resume support.
+
+## Requirements
+
+- **Bash 4+** — Linux, macOS, or WSL2 (Git Bash also supported)
+- **Claude CLI** — authenticated and on `PATH` (`claude --version` should work)
+- **Git** — used for commit integration
+- **Python 3** — used for JSON parsing of agent output
+- **Your project's build/test tools** — configured via `ANALYZE_CMD`, `TEST_CMD`, `BUILD_CHECK_CMD`
 
 ## Quick Start
 
@@ -17,7 +26,7 @@ with automatic rework routing, build gates, state persistence, and resume suppor
 git clone https://github.com/geoffgodwin/tekhton.git
 cd tekhton && chmod +x tekhton.sh
 
-# Initialize a project
+# Initialize your project
 cd /path/to/your/project
 /path/to/tekhton/tekhton.sh --init
 
@@ -33,113 +42,7 @@ alias tekhton='/path/to/tekhton/tekhton.sh'
 tekhton "Fix: login redirect loop"
 ```
 
-## What Happens When You Run It
-
-```
-tekhton "Implement feature X"
-        │
-        ├─ Scout (if HUMAN_NOTES.md has items)
-        ├─ Coder → writes code + CODER_SUMMARY.md
-        │    └─ Build gate → auto-fix on failure
-        │
-        ├─ Reviewer → REVIEWER_REPORT.md
-        │    ├─ Complex blockers → Senior coder rework
-        │    ├─ Simple blockers → Jr coder fix
-        │    └─ Build gate after fixes
-        │    (repeats up to MAX_REVIEW_CYCLES)
-        │
-        ├─ Tester → TESTER_REPORT.md
-        │    └─ Writes tests for coverage gaps
-        │
-        └─ Commit prompt with auto-generated message
-```
-
-## Planning Phase (`--plan`)
-
-Don't have a CLAUDE.md or DESIGN.md yet? The planning phase takes you from "I want
-to build X" to a production-ready CLAUDE.md and DESIGN.md that the execution pipeline
-can consume immediately.
-
-```bash
-# Start the planning phase
-tekhton --plan
-
-# 1. Pick a project type (web-app, cli-tool, api-service, etc.)
-# 2. Answer interview questions — Claude fills in DESIGN.md section by section
-# 3. Completeness check ensures all required sections are filled
-# 4. Claude generates CLAUDE.md with milestones, rules, and architecture
-# 5. Review the milestone plan, then approve to write files
-
-# Then initialize and start building
-tekhton --init
-tekhton --milestone "Implement Milestone 1: Project scaffold"
-```
-
-The interview runs in three phases:
-1. **Concept Capture** — high-level overview, tech stack, developer philosophy
-2. **System Deep-Dive** — each system/feature section, with Phase 1 context visible
-3. **Architecture & Constraints** — config architecture, naming conventions, open questions
-
-If interrupted (Ctrl+C), re-running `tekhton --plan` offers to resume where you left off.
-
-### What the Planning Phase Produces
-
-**DESIGN.md** — A professional-grade design document with deep, interconnected sections:
-- Developer Philosophy section establishing non-negotiable architectural constraints
-- Each system gets its own section with sub-sections, tables, config examples, edge cases
-- Config Architecture section with example structures, keys, and default values
-- Open Design Questions section tracking deferred decisions
-- Typically 500–1600+ lines depending on project complexity
-
-**CLAUDE.md** — An authoritative development rulebook containing 12 sections:
-- Project Identity, Architecture Philosophy, Repository Layout
-- Key Design Decisions, Config Architecture, Non-Negotiable Rules (10–20 specific rules)
-- Implementation Milestones (6–12), each with:
-  - Scope, deliverables, file paths, acceptance criteria
-  - `Tests:` block, `Watch For:` block, `Seeds Forward:` block
-- Code Conventions, Critical System Rules, What Not to Build Yet
-- Testing Strategy, Development Environment
-- Typically 500–1500 lines depending on project complexity
-
-Each milestone in CLAUDE.md is designed as a standalone task: `tekhton "Implement Milestone 1: Project scaffold"`
-
-## Features
-
-- **Planning phase** — Interactive `--plan` mode generates DESIGN.md and CLAUDE.md from scratch
-- **Three-agent pipeline** — Coder, Reviewer, Tester, each with distinct models and turn limits
-- **Automatic rework routing** — Complex blockers → senior coder, simple fixes → jr coder
-- **Build gates** — Compile check after coding and after each rework pass
-- **Resume support** — Pipeline state saved on interruption; re-run with no args to continue
-- **Milestone mode** — `--milestone` for higher turn limits and more review cycles
-- **Human notes** — Write `HUMAN_NOTES.md` between runs to inject bug reports and features
-- **Architecture drift prevention** — Automatic detection, logging, and audited remediation
-- **Architect audit agent** — Conditional Stage 0 that reviews accumulated drift and routes fixes
-- **Dependency constraints** — Optional deterministic layer-boundary enforcement in the build gate
-- **Config-driven** — All models, turn limits, commands, and paths in `pipeline.conf`
-- **Template engine** — Prompt templates with `{{VAR}}` substitution and `{{IF:VAR}}` conditionals
-
-## Requirements
-
-- **Bash 4+** — Linux, macOS, or WSL2
-- **Claude CLI** — authenticated and on `PATH` (`claude --version` should work)
-- **Git** — used for commit integration
-- **Your project's build/test tools** — configured via `ANALYZE_CMD`, `TEST_CMD`, `BUILD_CHECK_CMD` in `pipeline.conf`
-
-### Contributing to Tekhton
-
-If you're working on Tekhton itself (not just using it), you also need:
-
-- **shellcheck** — used by Tekhton's own `ANALYZE_CMD` to lint all `.sh` files
-
-  ```bash
-  # Debian/Ubuntu/WSL2
-  sudo apt-get install -y shellcheck
-
-  # macOS
-  brew install shellcheck
-  ```
-
-## Project Structure After `--init`
+After `--init`, your project will contain:
 
 ```
 your-project/
@@ -149,7 +52,8 @@ your-project/
 │   │   ├── coder.md           # Coder role definition
 │   │   ├── reviewer.md        # Reviewer role definition
 │   │   ├── tester.md          # Tester role definition
-│   │   └── jr-coder.md        # Jr coder role definition
+│   │   ├── jr-coder.md        # Jr coder role definition
+│   │   └── architect.md       # Architect role definition
 │   └── logs/                  # Run logs (gitignored)
 ├── CLAUDE.md                  # Project rules (read by all agents)
 ├── CODER_SUMMARY.md           # (generated per-run)
@@ -157,197 +61,219 @@ your-project/
 └── TESTER_REPORT.md           # (generated per-run)
 ```
 
-## Key Flags
+## How the Pipeline Works
+
+```
+tekhton "Implement feature X"
+        │
+        ├─ Stage 0: Architect audit (conditional — drift thresholds)
+        │
+        ├─ Stage 1: Scout + Coder
+        │    ├─ Scout → estimates complexity, adjusts turn limits
+        │    ├─ Coder → writes code + CODER_SUMMARY.md
+        │    └─ Build gate → auto-fix on failure (Jr → Sr escalation)
+        │
+        ├─ Stage 2: Reviewer
+        │    ├─ Reviewer → REVIEWER_REPORT.md
+        │    ├─ Complex blockers → Senior coder rework
+        │    ├─ Simple blockers → Jr coder fix
+        │    └─ Build gate after fixes
+        │    (repeats up to MAX_REVIEW_CYCLES)
+        │
+        ├─ Stage 3: Tester
+        │    └─ Writes tests for coverage gaps → TESTER_REPORT.md
+        │
+        ├─ Drift processing (observations, ACPs, non-blocking notes)
+        └─ Commit prompt with auto-generated message
+```
+
+### Agent Models
+
+Each agent runs on its own configurable model. Defaults:
+
+| Agent | Default Model | Purpose |
+|-------|--------------|---------|
+| Coder | Opus | Primary implementation |
+| Jr Coder | Haiku | Simple fixes, build repairs |
+| Scout | Haiku | File discovery, complexity estimation |
+| Reviewer | Sonnet | Code review, drift observation |
+| Architect | Sonnet | Drift audit, remediation planning |
+| Tester | Haiku (Sonnet in `--milestone`) | Test writing and validation |
+
+### Dynamic Turn Limits
+
+When `DYNAMIC_TURNS_ENABLED=true` (the default), the Scout agent estimates task
+complexity before the Coder runs. The pipeline parses the estimate and adjusts
+turn limits for Coder, Reviewer, and Tester — clamped to configured min/max bounds.
+
+A simple bug fix might get 15 coder turns. A cross-cutting milestone might get 120.
+This prevents wasting tokens on trivial tasks and running out of turns on large ones.
+
+### Resume Support
+
+Pipeline state is saved automatically on interruption. Running `tekhton` with no
+arguments detects saved state and offers to resume, start fresh, or abort.
+`--start-at` lets you jump to a specific stage if reports from earlier stages exist.
+
+## Planning Phase (`--plan`)
+
+Don't have a CLAUDE.md or DESIGN.md yet? The planning phase takes you from "I want
+to build X" to production-ready documents that the execution pipeline can consume.
+
+```bash
+tekhton --plan
+
+# 1. Pick a project type (web-app, cli-tool, api-service, web-game, mobile-app, library, custom)
+# 2. Three-phase interview fills in DESIGN.md section by section
+# 3. Completeness check flags shallow sections for follow-up
+# 4. Claude generates CLAUDE.md with milestones, rules, and architecture
+# 5. Review the milestone plan, then approve to write files
+
+# Then initialize and build
+tekhton --init
+tekhton --milestone "Implement Milestone 1: Project scaffold"
+```
+
+**Interview phases:**
+1. **Concept Capture** — high-level overview, tech stack, developer philosophy
+2. **System Deep-Dive** — each feature/system section, with Phase 1 context visible
+3. **Architecture & Constraints** — config architecture, naming conventions, open questions
+
+If interrupted, re-running `tekhton --plan` offers to resume where you left off.
+
+**DESIGN.md** — Professional-grade design document (500–1600+ lines):
+developer philosophy, deep system sections with sub-sections and tables,
+config architecture, open design questions.
+
+**CLAUDE.md** — Authoritative development rulebook with 12 sections (500–1500 lines):
+project identity, architecture philosophy, repository layout, key design decisions,
+non-negotiable rules, implementation milestones (each with scope, file paths,
+tests, watch-fors, and seeds-forward), code conventions, and more.
+
+Each milestone is a standalone task: `tekhton "Implement Milestone 1: Project scaffold"`
+
+## Human Notes
+
+Write `HUMAN_NOTES.md` between runs to inject bug reports, feature requests, or polish
+items into the next pipeline run. Use `--init-notes` to create a blank template.
+
+```markdown
+## Bugs
+- [ ] [BUG] Login page crashes when email field is empty
+- [ ] [BUG] Dark mode toggle doesn't persist
+
+## Features
+- [ ] [FEAT] Add CSV export to the reports page
+```
+
+Notes are categorized with `[BUG]`, `[FEAT]`, `[POLISH]` tags. Use `--notes-filter BUG`
+to inject only bugs on a given run. Completed items are automatically archived.
+
+## Architecture Drift Prevention
+
+The pipeline automatically detects and manages architectural drift across runs.
+
+1. **Reviewer observes drift** — naming inconsistencies, layer violations, dead code, or stale patterns noted in `REVIEWER_REPORT.md`
+2. **Observations accumulate** — collected in `DRIFT_LOG.md` with timestamps and task context
+3. **Architect triggers** — when observations exceed threshold (default: 8) or runs since last audit exceed threshold (default: 5)
+4. **Architect remediates** — produces `ARCHITECT_PLAN.md`, routing fixes to senior or jr coder by category
+5. **Observations resolve** — addressed items marked RESOLVED in the drift log
+
+**Architecture Change Proposals (ACPs)**: When the coder makes structural changes,
+they propose an ACP in `CODER_SUMMARY.md`. The reviewer evaluates it. Accepted ACPs
+are recorded in `ARCHITECTURE_LOG.md` with sequential ADL-NNN IDs — institutional
+memory of *why* the architecture evolved.
+
+**Human Action Required**: When the pipeline detects contradictions between design
+docs and code, it creates `HUMAN_ACTION_REQUIRED.md`. A banner displays at every
+pipeline completion until resolved.
+
+**Non-Blocking Notes**: Low-priority reviewer observations accumulate in
+`NON_BLOCKING_LOG.md`. When they exceed `NON_BLOCKING_INJECTION_THRESHOLD` (default: 8),
+they're injected into the coder prompt on the next run for batch cleanup.
+
+### Dependency Constraints (Optional)
+
+Deterministic layer-boundary enforcement — no LLM judgment needed. Create an
+`architecture_constraints.yaml` defining import rules, point it at a validation
+script (see `examples/` for Dart, Python, TypeScript starters), and enable it
+in `pipeline.conf`. The build gate runs the validator automatically. See
+[examples/architecture_constraints.yaml](examples/architecture_constraints.yaml)
+for the format.
+
+## Agent Resilience
+
+Tekhton uses FIFO-isolated agent invocation to ensure reliable operation:
+
+- **Interrupt handling** — Ctrl+C works immediately, even if the agent is hung. Claude runs in a background subshell writing to a named pipe; the foreground read loop exits on signal.
+- **Activity timeout** — If an agent produces no output for 10 minutes (`AGENT_ACTIVITY_TIMEOUT`), it's killed automatically. Catches hung API connections and stuck retry loops.
+- **Total timeout** — Hard wall-clock limit of 2 hours (`AGENT_TIMEOUT`) as a backstop.
+- **Null-run detection** — Agents that die during discovery (≤2 turns, non-zero exit) are flagged. The pipeline handles the failure gracefully instead of continuing with no work done.
+- **Windows compatibility** — Detects Windows-native `claude.exe` running via WSL interop or Git Bash and uses `taskkill.exe` for cleanup (Windows processes ignore POSIX signals).
+
+## CLI Reference
 
 | Flag | Purpose |
 |------|---------|
 | `--plan` | Interactive planning — generates DESIGN.md and CLAUDE.md |
-| `--init` | First-time project setup |
-| `--milestone` | Higher turn limits, more review cycles |
-| `--start-at review` | Skip coder, start at reviewer |
-| `--start-at test` | Skip coder + reviewer, start at tester |
-| `--start-at tester` | Resume incomplete tester run |
-| `--notes-filter BUG` | Only inject `[BUG]` tagged notes |
-| `--status` | Print saved pipeline state |
-| `--seed-contracts` | Seed inline system contracts in source |
+| `--init` | Scaffold pipeline config and agent roles for a new project |
+| `--init-notes` | Create blank HUMAN_NOTES.md template |
+| `--milestone` | Milestone mode — 2× turn limits, more review cycles, Sonnet tester |
+| `--start-at coder` | Full pipeline (default) |
+| `--start-at review` | Skip coder, start at reviewer (requires CODER_SUMMARY.md) |
+| `--start-at test` | Skip to tester (requires REVIEWER_REPORT.md) |
+| `--start-at tester` | Resume incomplete tester from TESTER_REPORT.md |
+| `--notes-filter BUG` | Only inject `[BUG]` tagged human notes |
+| `--force-audit` | Run architect audit regardless of thresholds |
+| `--skip-audit` | Skip architect audit even if thresholds exceeded |
+| `--seed-contracts` | Seed inline system contracts in source files |
+| `--status` | Print saved pipeline state and exit |
+| `--help` | Show usage information |
+
+Running `tekhton` with no arguments checks for saved pipeline state and offers to resume.
 
 ## Configuration
 
-Edit `.claude/pipeline.conf` in your project:
+Edit `.claude/pipeline.conf` in your project. A minimal config:
 
 ```bash
 PROJECT_NAME="My App"
 ANALYZE_CMD="cargo clippy -- -D warnings"
 TEST_CMD="cargo test"
 BUILD_CHECK_CMD="cargo check"
-CLAUDE_CODER_MODEL="claude-opus-4-6"
-MAX_REVIEW_CYCLES=2
 ```
 
-See [templates/pipeline.conf.example](templates/pipeline.conf.example) for all options.
+Key configuration areas:
 
-## Architecture Drift Prevention
+| Category | Key Examples | Notes |
+|----------|-------------|-------|
+| **Models** | `CLAUDE_CODER_MODEL`, `CLAUDE_STANDARD_MODEL`, etc. | One model per agent role |
+| **Turn limits** | `CODER_MAX_TURNS=35`, `REVIEWER_MAX_TURNS=10` | Per-stage limits |
+| **Dynamic turns** | `DYNAMIC_TURNS_ENABLED=true` | Scout adjusts limits based on complexity |
+| **Turn bounds** | `CODER_MIN_TURNS=15`, `CODER_MAX_TURNS_CAP=200` | Clamp scout recommendations |
+| **Milestone overrides** | `MILESTONE_CODER_MAX_TURNS=100` | Custom limits for `--milestone` |
+| **Build & analysis** | `BUILD_CHECK_CMD`, `ANALYZE_CMD`, `TEST_CMD` | Your project's toolchain |
+| **Drift thresholds** | `DRIFT_OBSERVATION_THRESHOLD=8` | When to trigger architect audit |
+| **Agent resilience** | `AGENT_ACTIVITY_TIMEOUT=600`, `AGENT_TIMEOUT=7200` | Timeout controls |
+| **Role files** | `CODER_ROLE_FILE=".claude/agents/coder.md"` | Agent persona definitions |
+| **Planning** | `PLAN_INTERVIEW_MODEL="opus"` | Planning phase model/turn config |
 
-Tekhton automatically detects and manages architectural drift across pipeline runs.
-
-### How It Works
-
-1. **Reviewer observes drift**: During code review, the reviewer notes naming inconsistencies, layer violations, dead code, or stale patterns in a `## Drift Observations` section of `REVIEWER_REPORT.md`.
-
-2. **Observations accumulate**: After each run, `DRIFT_LOG.md` collects unresolved observations with timestamps and task context.
-
-3. **Audit triggers**: When unresolved observations exceed `DRIFT_OBSERVATION_THRESHOLD` (default: 8) or runs since last audit exceed `DRIFT_RUNS_SINCE_AUDIT_THRESHOLD` (default: 5), the Architect agent activates.
-
-4. **Architect remediates**: The Architect reads the drift log, architecture doc, and decision log, then produces `ARCHITECT_PLAN.md` with categorized remediation items — routing Simplification tasks to the senior coder and Staleness/Dead Code/Naming tasks to the jr coder.
-
-5. **Observations resolve**: After successful remediation, addressed observations are marked RESOLVED in the drift log.
-
-### Architecture Change Proposals (ACPs)
-
-When the coder needs to make a structural change, they propose an ACP in `CODER_SUMMARY.md`. The reviewer evaluates it and marks ACCEPT or REJECT. Accepted ACPs are recorded in `ARCHITECTURE_LOG.md` with sequential ADL-NNN IDs, creating an institutional memory of *why* the architecture evolved.
-
-### Human Action Required
-
-When the pipeline detects contradictions between the design document and the code, it creates `HUMAN_ACTION_REQUIRED.md` with actionable items. A banner displays at every pipeline completion until all items are resolved. This file is for design doc updates that the pipeline cannot make autonomously.
-
-### Drift Configuration
-
-```bash
-# In pipeline.conf:
-DRIFT_LOG_FILE="DRIFT_LOG.md"                  # Observation accumulation
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"    # Accepted ACP records
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"   # Items for human attention
-DRIFT_OBSERVATION_THRESHOLD=8                  # Trigger audit at N observations
-DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5             # Trigger audit after N runs
-DESIGN_FILE=""                                 # Design doc path (enables cross-referencing)
-```
-
-## Dependency Constraints
-
-Optional deterministic enforcement of layer boundaries — no LLM judgment needed.
-
-### Setup
-
-1. Create an `architecture_constraints.yaml` in your project root defining layer rules and a `validation_command`:
-
-```yaml
-validation_command: ".claude/scripts/check_imports.sh"
-
-layers:
-  - name: "engine/rules"
-    description: "Pure rule evaluation"
-    may_depend_on: ["engine/state", "core/config"]
-    must_not_depend_on: ["features", "persistence"]
-```
-
-2. Create a validation script (see `examples/` for Dart, Python, TypeScript starters):
-
-```bash
-cp /path/to/tekhton/examples/check_imports_dart.sh .claude/scripts/check_imports.sh
-chmod +x .claude/scripts/check_imports.sh
-# Edit RULES array for your project's layers
-```
-
-3. Enable in `pipeline.conf`:
-
-```bash
-DEPENDENCY_CONSTRAINTS_FILE="architecture_constraints.yaml"
-```
-
-The build gate will now run your validation script after analyze and compile checks. Nonzero exit = build failure. The architect agent also reads the constraint file during audits to verify observations against declared rules.
-
-## Architect Agent
-
-The Architect is a conditional Stage 0 that runs *before* the main task when drift thresholds are exceeded (or when `--force-audit` is passed).
-
-```
-tekhton --force-audit "Implement feature X"
-        │
-        ├─ Stage 0: Architect audit
-        │    ├─ Read drift log + architecture doc + decision log
-        │    ├─ Produce ARCHITECT_PLAN.md
-        │    ├─ Route Simplification → senior coder
-        │    ├─ Route Staleness/Dead Code/Naming → jr coder
-        │    ├─ Build gate
-        │    ├─ Expedited review (single pass)
-        │    └─ Resolve drift observations
-        │
-        ├─ Stage 1–3: Normal pipeline continues...
-```
-
-### Architect Flags
-
-| Flag | Purpose |
-|------|---------|
-| `--force-audit` | Run architect audit regardless of thresholds |
-| `--skip-audit` | Skip architect audit even if thresholds exceeded |
-
-### Architect Configuration
-
-```bash
-ARCHITECT_ROLE_FILE=".claude/agents/architect.md"
-ARCHITECT_MAX_TURNS=25
-CLAUDE_ARCHITECT_MODEL="claude-sonnet-4-6"  # see Agent models section
-# MILESTONE_ARCHITECT_MAX_TURNS=50
-```
-
-## Configuration Reference
-
-All configuration lives in `.claude/pipeline.conf`. See [templates/pipeline.conf.example](templates/pipeline.conf.example) for the full annotated reference.
-
-### Required Keys
-
-| Key | Purpose |
-|-----|---------|
-| `PROJECT_NAME` | Display name |
-| `REQUIRED_TOOLS` | CLI tools that must be on PATH |
-| `CLAUDE_CODER_MODEL` | Model for senior coder |
-| `CLAUDE_JR_CODER_MODEL` | Model for jr coder |
-| `CLAUDE_STANDARD_MODEL` | Model for reviewer |
-| `CLAUDE_TESTER_MODEL` | Model for tester |
-| `CODER_MAX_TURNS` | Senior coder turn limit |
-| `JR_CODER_MAX_TURNS` | Jr coder turn limit |
-| `REVIEWER_MAX_TURNS` | Reviewer turn limit |
-| `TESTER_MAX_TURNS` | Tester turn limit |
-| `MAX_REVIEW_CYCLES` | Review loop iterations |
-| `ANALYZE_CMD` | Static analysis command |
-| `TEST_CMD` | Test runner command |
-| `PIPELINE_STATE_FILE` | Resume state path |
-| `LOG_DIR` | Run log directory |
-| `CODER_ROLE_FILE` | Coder role definition |
-| `REVIEWER_ROLE_FILE` | Reviewer role definition |
-| `TESTER_ROLE_FILE` | Tester role definition |
-| `JR_CODER_ROLE_FILE` | Jr coder role definition |
-| `PROJECT_RULES_FILE` | Project rules file (e.g. CLAUDE.md) |
-
-### Optional Keys
-
-| Key | Default | Purpose |
-|-----|---------|---------|
-| `PROJECT_DESCRIPTION` | `"multi-agent development pipeline"` | One-line description |
-| `CLAUDE_SCOUT_MODEL` | `CLAUDE_JR_CODER_MODEL` | Model for scout agent |
-| `CLAUDE_ARCHITECT_MODEL` | `CLAUDE_STANDARD_MODEL` | Model for architect audit agent |
-| `SCOUT_MAX_TURNS` | `20` | Scout agent turn limit |
-| `BUILD_CHECK_CMD` | `""` | Compile check (empty = skip) |
-| `ARCHITECTURE_FILE` | `""` | Architecture doc path |
-| `GLOSSARY_FILE` | `""` | Glossary doc path |
-| `DESIGN_FILE` | `""` | Design doc (enables drift cross-referencing) |
-| `DRIFT_LOG_FILE` | `"DRIFT_LOG.md"` | Drift observation log |
-| `ARCHITECTURE_LOG_FILE` | `"ARCHITECTURE_LOG.md"` | Architecture decision log |
-| `HUMAN_ACTION_FILE` | `"HUMAN_ACTION_REQUIRED.md"` | Human action items |
-| `DRIFT_OBSERVATION_THRESHOLD` | `8` | Trigger audit at N observations |
-| `DRIFT_RUNS_SINCE_AUDIT_THRESHOLD` | `5` | Trigger audit after N runs |
-| `ARCHITECT_ROLE_FILE` | `".claude/agents/architect.md"` | Architect role |
-| `ARCHITECT_MAX_TURNS` | `25` | Architect turn limit |
-| `DEPENDENCY_CONSTRAINTS_FILE` | `""` | Constraint manifest (empty = skip) |
-| `NOTES_FILTER_CATEGORIES` | `"BUG\|FEAT\|POLISH"` | Valid `--notes-filter` tags |
-| `SEED_CONTRACTS_ENABLED` | `false` | Enable inline contract seeding |
-| `INLINE_CONTRACT_PATTERN` | `""` | Contract keyword pattern (requires `SEED_CONTRACTS_ENABLED=true`) |
-| `INLINE_CONTRACT_SEARCH_CMD` | `""` | Command to find declarations to annotate |
+See [templates/pipeline.conf.example](templates/pipeline.conf.example) for the full annotated reference with all options and defaults.
 
 ## Contributing
 
-Bug reports and pull requests welcome. All `.sh` files must pass `shellcheck` with zero warnings. Test coverage lives in `tests/` — run with `bash tests/run_tests.sh`.
+Bug reports and pull requests welcome. All `.sh` files must pass `shellcheck` with
+zero warnings. Run self-tests with `bash tests/run_tests.sh`.
+
+If you're working on Tekhton itself, you'll need **shellcheck** installed:
+
+```bash
+# Debian/Ubuntu/WSL2
+sudo apt-get install -y shellcheck
+
+# macOS
+brew install shellcheck
+```
 
 ## License
 
