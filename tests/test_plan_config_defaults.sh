@@ -143,10 +143,10 @@ gen_turns=$(
     echo "$PLAN_GENERATION_MAX_TURNS"
 )
 
-if [ "$gen_turns" = "30" ]; then
-    pass "default PLAN_GENERATION_MAX_TURNS is 30"
+if [ "$gen_turns" = "50" ]; then
+    pass "default PLAN_GENERATION_MAX_TURNS is 50"
 else
-    fail "expected PLAN_GENERATION_MAX_TURNS='30', got '${gen_turns}'"
+    fail "expected PLAN_GENERATION_MAX_TURNS='50', got '${gen_turns}'"
 fi
 
 gen_model_override=$(

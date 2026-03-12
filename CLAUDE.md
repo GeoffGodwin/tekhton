@@ -142,7 +142,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PLAN_INTERVIEW_MODEL` | Model for interview agent (default: opus) |
 | `PLAN_INTERVIEW_MAX_TURNS` | Turn limit for interview (default: 50) |
 | `PLAN_GENERATION_MODEL` | Model for generation agent (default: opus) |
-| `PLAN_GENERATION_MAX_TURNS` | Turn limit for generation (default: 30) |
+| `PLAN_GENERATION_MAX_TURNS` | Turn limit for generation (default: 50) |
 
 ## Testing
 
@@ -212,7 +212,7 @@ The gold standard is `loenn/docs/GDD_Loenn.md` and `loenn/CLAUDE.md`. Key qualit
 
 ### Milestone Plan
 
-#### Milestone 1: Model Default + Template Depth Overhaul
+#### [DONE] Milestone 1: Model Default + Template Depth Overhaul
 Change the default planning model from sonnet to opus, and completely rewrite all 7
 design doc templates to match the depth and structure of the Lönn GDD. Templates are
 the skeleton that determines interview quality — shallow templates produce shallow output.
@@ -277,7 +277,7 @@ Acceptance criteria:
 - All tests pass (`bash tests/run_tests.sh`)
 - `CLAUDE.md` Template Variables table updated to show `opus` default
 
-#### Milestone 2: Multi-Phase Interview with Deep Probing
+#### [DONE] Milestone 2: Multi-Phase Interview with Deep Probing
 Rewrite the interview flow to use a three-phase approach instead of a single pass.
 The shell collects progressively deeper information, and the synthesis call produces
 a document with the depth of the Lönn GDD.
@@ -316,7 +316,7 @@ Acceptance criteria:
   but valid DESIGN.md from what was collected
 - All tests pass (`bash tests/run_tests.sh`)
 
-#### Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md
+#### [IN PROGRESS] Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md
 Rewrite the CLAUDE.md generation prompt to produce output matching the Lönn CLAUDE.md
 structure. The current prompt produces 6 generic sections. The gold standard has ~15
 sections with config examples, behavioral rules, milestone details, and code conventions.
