@@ -101,7 +101,11 @@ run_plan_followup_interview() {
         local num=$((idx + 1))
 
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "  [${num}/${total}] ${section_name}  [${tag}]  *required"
+        if [[ "$req" == "true" ]]; then
+            echo "  [${num}/${total}] ${section_name}  [${tag}]  *required"
+        else
+            echo "  [${num}/${total}] ${section_name}  [${tag}]  (optional)"
+        fi
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
         # Show existing section content as context (especially for SHALLOW sections)

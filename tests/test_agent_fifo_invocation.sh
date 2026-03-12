@@ -199,8 +199,9 @@ else
     FAIL=1
 fi
 
-# Reset poll interval for remaining tests
+# Reset timeouts for remaining tests so each phase is self-contained
 unset AGENT_ACTIVITY_POLL
+AGENT_TIMEOUT=30
 
 # =============================================================================
 # Phase 7: Zero-turn mock — null run detection through FIFO

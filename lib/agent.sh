@@ -361,7 +361,11 @@ run_agent() {
         if [ "$_was_activity_timeout" = true ]; then
             warn "[$label] NULL RUN DETECTED — agent activity-timed out after ${_activity_timeout}s of silence."
         else
-            warn "[$label] NULL RUN DETECTED — agent timed out after ${_timeout}s."
+            if [ "$_timeout" -gt 0 ] 2>/dev/null; then
+                warn "[$label] NULL RUN DETECTED — agent timed out after ${_timeout}s."
+            else
+                warn "[$label] NULL RUN DETECTED — agent timed out (outer timeout disabled)."
+            fi
         fi
     elif [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
         LAST_AGENT_NULL_RUN=true
