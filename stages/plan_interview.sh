@@ -28,14 +28,19 @@ _PHASE_LABELS=("" "Phase 1: Concept Capture" "Phase 2: System Deep-Dive" "Phase 
 #
 # If VISUAL or EDITOR is set, opens the editor with a temp file containing
 # guidance as comments. The user writes their answer, saves, and exits.
-# Otherwise, reads lines from $input_fd until a blank line.
+# Otherwise, reads lines from the given fd until a blank line.
 # Returns "skip" (with rc=0) if no content entered or EOF.
 # When TEKHTON_TEST_MODE is set, uses the line-by-line fallback via stdin.
 #
 # Arguments:
 #   $1  guidance     — Guidance text to display above the prompt
 #   $2  is_required  — "true" or "false"
-#   $3  input_fd     — File descriptor path for reading user input (fallback)
+#   $3  input_fd     — Numeric file descriptor to read from (e.g., 3)
+#
+# Callers must open their input source on this fd before calling.
+# Using fd numbers (read -u N) instead of path re-opening (< /dev/stdin)
+# guarantees correct position sharing across subshell calls ($()),
+# regardless of whether the input is a pipe or regular file.
 #
 # Prints the collected answer to stdout.
 # All prompt/guidance display goes to stderr so it remains visible even when
@@ -53,7 +58,7 @@ _read_section_answer() {
         return $?
     fi
 
-    # Fallback: line-by-line read
+    # Fallback: line-by-line read from the given fd
     echo >&2
     if [[ -n "$guidance" ]]; then
         echo "  ${guidance}" >&2
@@ -65,7 +70,8 @@ _read_section_answer() {
     printf "  >>> " >&2
 
     local lines=() line=""
-    while IFS= read -r line <"$input_fd"; do
+    while IFS= read -r -u "$input_fd" line; do
+        line="${line//$'\r'/}"
         if [[ -z "$line" ]]; then
             [[ "${#lines[@]}" -gt 0 ]] && break
         else
@@ -205,11 +211,15 @@ run_plan_interview() {
     # Save resume state before starting
     write_plan_state "interview" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
 
-    # Determine input source: /dev/tty for interactive use, stdin for tests
-    local input_fd="/dev/stdin"
+    # Open input source on a dedicated fd for reliable position sharing
+    # across subshell calls ($()). Using fd duplication (<&0) instead of
+    # re-opening /dev/stdin avoids WSL/regular-file position-reset issues.
     if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
-        input_fd="/dev/tty"
+        exec 3< /dev/tty
+    else
+        exec 3<&0
     fi
+    local input_fd=3
 
     # Parse template sections into parallel arrays (4-field format)
     local -a section_names=() section_required=() section_guidance=() section_phases=()
@@ -223,6 +233,7 @@ run_plan_interview() {
     local total="${#section_names[@]}"
     if [[ "$total" -eq 0 ]]; then
         warn "No sections found in template: ${PLAN_TEMPLATE_FILE}"
+        exec 3<&-
         return 1
     fi
 
@@ -357,11 +368,13 @@ run_plan_interview() {
     if [[ -n "$design_content" ]]; then
         success "DESIGN.md written (${design_status})."
         log "Log saved: ${log_file}"
+        exec 3<&-
         return 0
     else
         warn "Synthesis produced no output — DESIGN.md was not created."
         [[ "$batch_exit" -ne 0 ]] && warn "Claude exited with code ${batch_exit}."
         log "Log saved: ${log_file}"
+        exec 3<&-
         return 1
     fi
 }

@@ -25,12 +25,18 @@ tekhton/
 │   ├── drift.sh            # Drift log, ADL, human action management
 │   ├── plan.sh             # Planning phase orchestration + config
 │   ├── plan_completeness.sh # Design doc structural validation
-│   └── plan_state.sh       # Planning state persistence + resume
+│   ├── plan_state.sh       # Planning state persistence + resume
+│   ├── context.sh          # [2.0] Token accounting + context compiler
+│   ├── milestones.sh       # [2.0] Milestone state machine + acceptance checking
+│   ├── clarify.sh          # [2.0] Clarification protocol + replan trigger
+│   ├── specialists.sh      # [2.0] Specialist review framework
+│   └── metrics.sh          # [2.0] Run metrics collection + adaptive calibration
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Stage 0: Architect audit (conditional)
 │   ├── coder.sh            # Stage 1: Scout + Coder + build gate
 │   ├── review.sh           # Stage 2: Review loop + rework routing
 │   ├── tester.sh           # Stage 3: Test writing + validation
+│   ├── cleanup.sh          # [2.0] Post-success debt sweep stage
 │   ├── plan_interview.sh   # Planning: interactive interview agent
 │   └── plan_generate.sh    # Planning: CLAUDE.md generation agent
 ├── prompts/                # Prompt templates with {{VAR}} substitution
@@ -51,7 +57,13 @@ tekhton/
 │   ├── seed_contracts.prompt.md
 │   ├── plan_interview.prompt.md          # Planning interview system prompt
 │   ├── plan_interview_followup.prompt.md # Planning follow-up interview prompt
-│   └── plan_generate.prompt.md           # CLAUDE.md generation prompt
+│   ├── plan_generate.prompt.md           # CLAUDE.md generation prompt
+│   ├── cleanup.prompt.md                 # [2.0] Debt sweep agent prompt
+│   ├── replan.prompt.md                  # [2.0] Brownfield replan prompt
+│   ├── clarification.prompt.md           # [2.0] Clarification integration prompt
+│   ├── specialist_security.prompt.md     # [2.0] Security review prompt
+│   ├── specialist_performance.prompt.md  # [2.0] Performance review prompt
+│   └── specialist_api.prompt.md          # [2.0] API contract review prompt
 ├── templates/              # Templates copied into target projects by --init
 │   ├── pipeline.conf.example
 │   ├── coder.md
@@ -143,6 +155,29 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PLAN_INTERVIEW_MAX_TURNS` | Turn limit for interview (default: 50) |
 | `PLAN_GENERATION_MODEL` | Model for generation agent (default: opus) |
 | `PLAN_GENERATION_MAX_TURNS` | Turn limit for generation (default: 50) |
+| `CONTEXT_BUDGET_PCT` | Max % of context window for prompt (default: 50) |
+| `CONTEXT_BUDGET_ENABLED` | Toggle context budgeting (default: true) |
+| `CHARS_PER_TOKEN` | Conservative char-to-token ratio (default: 4) |
+| `CONTEXT_COMPILER_ENABLED` | Toggle task-scoped context assembly (default: false) |
+| `AUTO_ADVANCE_ENABLED` | Require --auto-advance flag (default: false) |
+| `AUTO_ADVANCE_LIMIT` | Max milestones per invocation (default: 3) |
+| `AUTO_ADVANCE_CONFIRM` | Prompt between milestones (default: true) |
+| `CLARIFICATION_ENABLED` | Allow agents to pause for questions (default: true) |
+| `CLARIFICATIONS_CONTENT` | Human answers from CLARIFICATIONS.md |
+| `REPLAN_ENABLED` | Allow mid-run replan triggers (default: true) |
+| `CLEANUP_ENABLED` | Enable autonomous debt sweeps (default: false) |
+| `CLEANUP_BATCH_SIZE` | Max items per sweep (default: 5) |
+| `CLEANUP_MAX_TURNS` | Turn budget for cleanup agent (default: 15) |
+| `CLEANUP_TRIGGER_THRESHOLD` | Min items before triggering (default: 5) |
+| `REPLAN_MODEL` | Model for --replan (default: PLAN_GENERATION_MODEL) |
+| `REPLAN_MAX_TURNS` | Turn limit for --replan (default: PLAN_GENERATION_MAX_TURNS) |
+| `CODEBASE_SUMMARY` | Directory tree + git log for --replan |
+| `SPECIALIST_*_ENABLED` | Toggle per specialist (default: false each) |
+| `SPECIALIST_*_MODEL` | Model per specialist (default: CLAUDE_STANDARD_MODEL) |
+| `SPECIALIST_*_MAX_TURNS` | Turn limit per specialist (default: 8) |
+| `METRICS_ENABLED` | Enable run metrics collection (default: true) |
+| `METRICS_MIN_RUNS` | Min runs before adaptive calibration (default: 5) |
+| `METRICS_ADAPTIVE_TURNS` | Use history for turn calibration (default: true) |
 
 ## Testing
 
@@ -414,3 +449,460 @@ Acceptance criteria:
 - All 34+ existing tests continue to pass
 - New tests pass via `bash tests/run_tests.sh`
 - `bash -n` passes on all modified `.sh` files
+
+---
+
+## Current Initiative: Adaptive Pipeline 2.0
+
+Tekhton 2.0 makes the pipeline **adaptive**: aware of its own context economics,
+capable of milestone-to-milestone progression, able to interrupt itself when
+assumptions break, and able to improve from run history. All features are additive
+or opt-in. Existing 1.0 workflows remain unchanged.
+
+Full design document: `DESIGN_v2.md`.
+
+### Key Constraints
+
+- **Backward compatible.** Users who don't enable 2.0 features see identical 1.0
+  behavior. All new features are opt-in or default-off.
+- **Shell controls flow.** Agents advise; the shell decides. No agent autonomously
+  modifies pipeline control flow.
+- **Measure first.** Token accounting and context measurement in Milestone 1 before
+  any compression or pruning in Milestone 2. Data before optimization.
+- **Self-applicable.** Each milestone is scoped for a single `tekhton --milestone`
+  run. The pipeline implements its own improvements.
+- **All existing tests must pass** (`bash tests/run_tests.sh`) at every milestone.
+- **All new `.sh` files must pass `bash -n` and `shellcheck`.**
+
+### Milestone Plan
+
+#### Milestone 1: Token And Context Accounting
+Add measurement infrastructure so the pipeline knows how much context it's injecting
+into each agent call — character counts, estimated token counts, and percentage of
+model context window consumed. This is logging and measurement only; no behavioral
+changes. Data gathered here informs every subsequent milestone.
+
+Files to create:
+- `lib/context.sh` — `measure_context_size()`, `log_context_report()`,
+  `check_context_budget()` functions. Model window lookup table (opus/sonnet/haiku).
+  Character-to-token ratio configurable via `CHARS_PER_TOKEN` (default: 4).
+
+Files to modify:
+- `tekhton.sh` — source `lib/context.sh`
+- `lib/config.sh` — add defaults: `CONTEXT_BUDGET_PCT=50`, `CHARS_PER_TOKEN=4`,
+  `CONTEXT_BUDGET_ENABLED=true`
+- `lib/agent.sh` — add context size line to `print_run_summary()`:
+  `Context: ~NNk tokens (NN% of window)`
+- `stages/coder.sh` — call `log_context_report()` after assembling context blocks
+  but before `render_prompt()`, passing each named block and its size
+- `stages/review.sh` — same context reporting before reviewer invocation
+- `stages/tester.sh` — same context reporting before tester invocation
+- `templates/pipeline.conf.example` — add `CONTEXT_BUDGET_PCT`, `CHARS_PER_TOKEN`,
+  `CONTEXT_BUDGET_ENABLED` with comments
+
+Acceptance criteria:
+- `measure_context_size "hello world"` returns character count and estimated tokens
+- `log_context_report` writes a structured breakdown to the run log showing each
+  context component name and size (chars, est. tokens, % of budget)
+- `check_context_budget` returns 0 under budget, 1 over budget
+- Run summary includes a `Context:` line with k-tokens and window percentage
+- Context reports appear in the run log for coder, reviewer, and tester stages
+- All existing tests pass
+- `bash -n lib/context.sh` passes
+- `shellcheck lib/context.sh` passes
+
+Watch For:
+- Model window sizes will change — keep the lookup table easily updatable
+- `CHARS_PER_TOKEN=4` is deliberately conservative; do not over-engineer tokenization
+- Do not add compression logic yet — this milestone is measurement only
+
+Seeds Forward:
+- Milestone 2 (Context Compiler) depends on `check_context_budget()` to know when
+  compression is needed
+- Milestone 8 (Workflow Learning) depends on context size data for metrics records
+
+#### Milestone 2: Context Compiler
+Add task-scoped context assembly so agents receive only the sections of large
+artifacts relevant to their current task, instead of full-file injection.
+Uses the budget infrastructure from Milestone 1 to trigger compression when
+context exceeds the budget threshold.
+
+Files to create:
+- No new files — all logic goes in `lib/context.sh` (extending Milestone 1)
+
+Files to modify:
+- `lib/context.sh` — add `extract_relevant_sections(file, keywords[])`,
+  `build_context_packet(stage, task, prior_artifacts)`,
+  `compress_context(component, strategy)` (strategies: truncate, summarize_headings,
+  omit). Add keyword extraction from task string and scout report file paths.
+- `lib/config.sh` — add default: `CONTEXT_COMPILER_ENABLED=false`
+- `stages/coder.sh` — when `CONTEXT_COMPILER_ENABLED=true`, replace raw block
+  concatenation with `build_context_packet()` call. Architecture block stays full
+  for coder. Fallback to 1.0 behavior if keyword extraction yields zero matches.
+- `stages/review.sh` — when enabled, filter ARCHITECTURE.md to sections referencing
+  files in CODER_SUMMARY.md
+- `stages/tester.sh` — when enabled, filter context to relevant sections
+- `templates/pipeline.conf.example` — add `CONTEXT_COMPILER_ENABLED` with comment
+
+Acceptance criteria:
+- `extract_relevant_sections` given a markdown file and keywords returns only sections
+  whose headings or body match at least one keyword
+- When keywords yield zero matches, full artifact is used (fallback to 1.0)
+- Architecture block is always injected in full for coder stage
+- When context is over budget, `compress_context` applies truncation to the largest
+  non-essential component first (priority order: prior tester context, non-blocking
+  notes, prior progress context)
+- A prompt note is injected when compression occurs: `[Context compressed: <component>
+  reduced from N to M lines]`
+- Feature is off by default (`CONTEXT_COMPILER_ENABLED=false`)
+- All existing tests pass
+- New tests verify keyword extraction, section filtering, compression strategies,
+  and fallback behavior
+
+Watch For:
+- Section extraction is awk on markdown headings — keep it simple, do not parse
+  nested markdown. Each `##` heading starts a section, content until next `##`.
+- Compression priority order matters: never compress architecture or task
+- Fallback to full injection is critical — a broken keyword extractor must not
+  starve an agent of context
+
+Seeds Forward:
+- Milestone 4 (Clarifications) may need to inject clarification answers into
+  the context packet
+- Milestone 7 (Specialists) will use `build_context_packet()` for specialist prompts
+
+#### Milestone 3: Milestone State Machine And Auto-Advance
+Add milestone tracking so the pipeline can parse acceptance criteria from CLAUDE.md,
+check them after each run, and optionally auto-advance to the next milestone. This
+is the foundation for multi-milestone autonomous operation.
+
+Files to create:
+- `lib/milestones.sh` — `parse_milestones(claude_md)`, `get_current_milestone()`,
+  `check_milestone_acceptance(milestone_num)`, `advance_milestone(from, to)`,
+  `write_milestone_disposition(disposition)`. Disposition vocabulary:
+  `COMPLETE_AND_CONTINUE`, `COMPLETE_AND_WAIT`, `INCOMPLETE_REWORK`, `REPLAN_REQUIRED`.
+
+Files to modify:
+- `tekhton.sh` — add `--auto-advance` flag parsing. Source `lib/milestones.sh`.
+  After tester stage, call `check_milestone_acceptance()`. In auto-advance mode,
+  loop back to coder stage with next milestone if disposition is `COMPLETE_AND_CONTINUE`.
+  Enforce `AUTO_ADVANCE_LIMIT` (default: 3). Save state on Ctrl+C.
+- `lib/config.sh` — add defaults: `AUTO_ADVANCE_ENABLED=false`,
+  `AUTO_ADVANCE_LIMIT=3`, `AUTO_ADVANCE_CONFIRM=true`
+- `lib/state.sh` — extend state persistence to include current milestone number
+  and auto-advance progress
+- `templates/pipeline.conf.example` — add auto-advance config keys
+
+State file: `.claude/MILESTONE_STATE.md` tracks current milestone, status, and
+transition history with timestamps.
+
+Acceptance criteria:
+- `parse_milestones` extracts milestone list from a CLAUDE.md with numbered
+  `#### Milestone N:` headings, returning number, title, and acceptance criteria
+- `check_milestone_acceptance` runs automatable criteria (`$TEST_CMD` passes,
+  files exist, build gate passes) and marks non-automatable criteria as `MANUAL`
+- `advance_milestone` updates MILESTONE_STATE.md and prints a transition banner
+- Without `--auto-advance`, behavior is identical to 1.0 (single run, exit)
+- With `--auto-advance`, pipeline loops through milestones until limit, failure,
+  or replan
+- `AUTO_ADVANCE_CONFIRM=true` prompts between milestones; `false` proceeds silently
+- Ctrl+C during auto-advance saves state for resume
+- All existing tests pass
+
+Watch For:
+- Acceptance criteria parsing must be lenient — CLAUDE.md is human-authored and may
+  use varied formatting. Match on keywords, not exact syntax.
+- The `MANUAL` skip for non-automatable criteria is essential — do not try to
+  LLM-evaluate subjective criteria
+- Auto-advance limit of 3 prevents runaway loops in case of false-positive acceptance
+
+Seeds Forward:
+- Milestone 4 (Clarifications) adds `REPLAN_REQUIRED` as a disposition trigger
+- Milestone 6 (Brownfield Replan) uses milestone state to know what's been completed
+- Milestone 8 (Metrics) records milestone progression data
+
+#### Milestone 4: Mid-Run Clarification And Replanning
+Add a structured protocol for agents to surface blocking questions to the human
+and for the pipeline to pause, collect an answer, and resume. Add single-milestone
+replanning when scope breaks.
+
+Files to create:
+- `lib/clarify.sh` — `detect_clarifications(report_file)`,
+  `handle_clarifications(items[])`, `trigger_replan(rationale)`.
+  Clarification format: `## Clarification Required` section with `[BLOCKING]`
+  and `[NON_BLOCKING]` tagged items.
+- `prompts/clarification.prompt.md` — integration prompt for feeding human answers
+  back into subsequent agent calls
+
+Files to modify:
+- `tekhton.sh` — source `lib/clarify.sh`
+- `lib/config.sh` — add defaults: `CLARIFICATION_ENABLED=true`,
+  `REPLAN_ENABLED=true`
+- `stages/coder.sh` — after coder completes, call `detect_clarifications()` on
+  CODER_SUMMARY.md. If blocking clarifications found, call `handle_clarifications()`
+  which pauses for human input, writes answers to `CLARIFICATIONS.md`, then resumes
+  (re-runs coder with clarification context if needed)
+- `stages/review.sh` — detect `REPLAN_REQUIRED` verdict from reviewer. If found
+  and `REPLAN_ENABLED=true`, call `trigger_replan()` which displays rationale and
+  offers menu: `[r] Replan  [s] Split  [c] Continue  [a] Abort`
+- `prompts/coder.prompt.md` — add `## Clarification Required` output format
+  instructions and `{{IF:CLARIFICATIONS_CONTENT}}` block
+- `prompts/reviewer.prompt.md` — add `REPLAN_REQUIRED` as a valid verdict option
+  with trigger conditions: "when the task is fundamentally mis-scoped or
+  contradicts the architecture"
+- `templates/pipeline.conf.example` — add clarification and replan config keys
+
+Acceptance criteria:
+- `detect_clarifications` parses `[BLOCKING]` and `[NON_BLOCKING]` items from a
+  markdown file's `## Clarification Required` section
+- Blocking clarifications pause the pipeline and read from `/dev/tty`
+- Human answers are written to `CLARIFICATIONS.md` and injected into subsequent
+  agent prompts via template variable
+- Non-blocking clarifications are logged but do not pause the pipeline
+- `REPLAN_REQUIRED` reviewer verdict triggers the replan menu
+- Replan calls `_call_planning_batch()` with current DESIGN.md, CLAUDE.md, and
+  rationale to produce an updated milestone definition
+- Scope: single-milestone replan only, not full-project
+- All existing tests pass
+
+Watch For:
+- `/dev/tty` interaction must work on both Linux and Windows (Git Bash). Test both.
+- Replan re-invokes `_call_planning_batch()` which uses batch mode without
+  `--dangerously-skip-permissions` — the shell writes the result, not Claude
+- Non-blocking clarifications should NOT pause the pipeline — agents state their
+  assumption and proceed
+
+Seeds Forward:
+- Milestone 6 (Brownfield Replan) extends single-milestone replan to project-wide
+- Clarification answers become part of context for all subsequent agent calls,
+  handled by the context compiler from Milestone 2
+
+#### Milestone 5: Autonomous Debt Sweeps
+Add a post-pipeline cleanup stage that addresses non-blocking technical debt items
+automatically after successful milestone completion, using the jr coder model to
+keep costs low.
+
+Files to create:
+- `stages/cleanup.sh` — `run_stage_cleanup()`: selects up to `CLEANUP_BATCH_SIZE`
+  items from `NON_BLOCKING_LOG.md`, invokes jr coder with cleanup prompt, runs
+  build gate, marks resolved items
+- `prompts/cleanup.prompt.md` — cleanup-specific agent prompt. Instructs agent to
+  address each item individually. If an item requires architectural changes or is
+  unsafe to fix in isolation, mark it `[DEFERRED]` and skip.
+
+Files to modify:
+- `tekhton.sh` — source `stages/cleanup.sh`. After successful tester stage (or
+  review if tester skipped), check cleanup trigger conditions and run if met.
+- `lib/config.sh` — add defaults: `CLEANUP_ENABLED=false`, `CLEANUP_BATCH_SIZE=5`,
+  `CLEANUP_MAX_TURNS=15`, `CLEANUP_TRIGGER_THRESHOLD=5`
+- `lib/notes.sh` — add `count_unresolved_notes()`, `select_cleanup_batch(n)` with
+  prioritization: recurring patterns first, then files modified this run, then FIFO.
+  Add `mark_note_resolved(item_id)` and `mark_note_deferred(item_id)`.
+- `templates/pipeline.conf.example` — add cleanup config keys with comments
+
+Trigger conditions (all must be true):
+1. Primary pipeline completed successfully
+2. Unresolved non-blocking count exceeds `CLEANUP_TRIGGER_THRESHOLD`
+3. `CLEANUP_ENABLED=true`
+
+Acceptance criteria:
+- `select_cleanup_batch` returns up to N items prioritized by: recurrence count,
+  overlap with this run's modified files, then age (oldest first)
+- Cleanup stage invokes jr coder model with low turn budget
+- Build gate runs after cleanup (cleanup must not break the build)
+- Items successfully addressed are marked `[x]` in NON_BLOCKING_LOG.md
+- Items the agent marks as requiring architectural change are tagged `[DEFERRED]`
+  and not re-selected in future sweeps until manually un-deferred
+- Cleanup only runs after successful primary pipeline (never during rework)
+- Feature is off by default (`CLEANUP_ENABLED=false`)
+- All existing tests pass
+
+Watch For:
+- Cleanup must NEVER run during a rework cycle — only after final success
+- The jr coder model is deliberately chosen for cost. Do not upgrade to opus.
+- `[DEFERRED]` items must not re-enter the selection pool. This prevents the
+  system from repeatedly attempting items it can't safely fix.
+- Build gate failure in cleanup should log a warning but not fail the overall run
+
+Seeds Forward:
+- Milestone 8 (Metrics) tracks cleanup sweep results (items resolved, deferred)
+- The prioritization logic (recurrence, file overlap) improves as more runs
+  generate non-blocking notes
+
+#### Milestone 6: Brownfield Replan
+Add `--replan` command that updates DESIGN.md and CLAUDE.md for existing projects
+based on accumulated drift, completed milestones, and codebase evolution. This is
+delta-based (not a full re-interview) to preserve human edits.
+
+Files to create:
+- `prompts/replan.prompt.md` — replan prompt template with variables:
+  `{{DESIGN_CONTENT}}`, `{{CLAUDE_CONTENT}}`, `{{DRIFT_LOG_CONTENT}}`,
+  `{{ARCHITECTURE_LOG_CONTENT}}`, `{{HUMAN_ACTION_CONTENT}}`,
+  `{{CODEBASE_SUMMARY}}`. Instructions: identify sections that contradict
+  current code, propose updated milestones, preserve completed history,
+  flag decisions needing human review.
+
+Files to modify:
+- `tekhton.sh` — add `--replan` early-exit path (same pattern as `--plan`).
+  Validate that DESIGN.md and CLAUDE.md exist. Generate codebase summary
+  (directory tree + last 20 git log entries). Call `_call_planning_batch()`
+  with replan prompt. Write output to `DESIGN_DELTA.md`. Display delta and
+  offer menu: `[a] Apply  [e] Edit  [n] Reject`. If apply: merge into
+  DESIGN.md and regenerate CLAUDE.md milestones.
+- `lib/plan.sh` — add `run_replan()` orchestration function. Add
+  `_generate_codebase_summary()` helper (tree output + git log, capped at
+  reasonable size).
+- `lib/config.sh` — add defaults: `REPLAN_MODEL="${PLAN_GENERATION_MODEL}"`,
+  `REPLAN_MAX_TURNS="${PLAN_GENERATION_MAX_TURNS}"`
+- `templates/pipeline.conf.example` — add replan config keys
+
+Acceptance criteria:
+- `--replan` requires existing DESIGN.md and CLAUDE.md (errors if not found)
+- Codebase summary includes directory tree (depth-limited) and recent git commits
+- Replan prompt includes all accumulated drift observations and architecture decisions
+- Output is a delta document showing: additions, modifications, and removals with
+  rationale for each change
+- User sees the delta and must explicitly approve before changes are applied
+- Completed milestones in CLAUDE.md are preserved in their `[DONE]` state
+- Applying the delta updates DESIGN.md in-place and triggers CLAUDE.md regeneration
+- All existing tests pass
+
+Watch For:
+- The delta MUST be human-readable and reviewable. Do not auto-apply.
+- `_generate_codebase_summary()` output must be size-bounded — large monorepos will
+  produce enormous trees. Cap at ~200 lines of tree output.
+- Replan reuses `_call_planning_batch()` — no `--dangerously-skip-permissions`
+- Git log may not exist if the project doesn't use git. Handle gracefully.
+
+Seeds Forward:
+- Future 3.0 work may add multi-milestone replanning (full DESIGN.md rewrite with
+  interview), but 2.0 is delta-only
+- Milestone 8 (Metrics) benefits from replan — metrics before and after replan show
+  whether the updated milestones are better-scoped
+
+#### Milestone 7: Specialist Reviewers
+Add an opt-in specialist review framework that runs focused review passes
+(security, performance, API contract) after the main reviewer approves. Findings
+route to the existing rework loop or non-blocking log.
+
+Files to create:
+- `lib/specialists.sh` — `run_specialist_reviews()`: iterates over enabled
+  specialists, invokes each as a low-turn review pass, collects findings into
+  `SPECIALIST_REPORT.md`. Findings tagged `[BLOCKER]` re-enter rework loop;
+  `[NOTE]` items go to NON_BLOCKING_LOG.md.
+- `prompts/specialist_security.prompt.md` — security review prompt: injection
+  risks, auth bypass, secrets exposure, input validation, dependency vulnerabilities
+- `prompts/specialist_performance.prompt.md` — performance review prompt: N+1
+  queries, unbounded loops, memory leaks, missing pagination, expensive operations
+- `prompts/specialist_api.prompt.md` — API contract review prompt: schema
+  consistency, error format compliance, versioning, backward compatibility
+
+Files to modify:
+- `tekhton.sh` — source `lib/specialists.sh`
+- `lib/config.sh` — add defaults for each built-in specialist:
+  `SPECIALIST_SECURITY_ENABLED=false`, `SPECIALIST_SECURITY_MODEL`,
+  `SPECIALIST_SECURITY_MAX_TURNS=8`, and similarly for performance and API
+- `stages/review.sh` — after main reviewer verdict is APPROVED or
+  APPROVED_WITH_NOTES, call `run_specialist_reviews()`. If any blocker findings,
+  route to rework (same as reviewer blockers). If only notes, log and proceed.
+- `templates/pipeline.conf.example` — add specialist config section with comments
+  explaining custom specialist creation
+
+Custom specialists: Users create a prompt template and add config entries:
+```bash
+SPECIALIST_CUSTOM_MYCHECK_ENABLED=true
+SPECIALIST_CUSTOM_MYCHECK_PROMPT="specialist_mycheck"
+SPECIALIST_CUSTOM_MYCHECK_MODEL="${CLAUDE_STANDARD_MODEL}"
+SPECIALIST_CUSTOM_MYCHECK_MAX_TURNS=8
+```
+
+Acceptance criteria:
+- `run_specialist_reviews()` iterates over all `SPECIALIST_*_ENABLED=true` config keys
+- Each specialist runs as a separate `run_agent()` call with its own prompt and model
+- `[BLOCKER]` findings trigger rework routing (same path as reviewer blockers)
+- `[NOTE]` findings are appended to NON_BLOCKING_LOG.md
+- Specialists only run after the main reviewer approves (not during rework)
+- All specialists are disabled by default
+- Custom specialist support via `SPECIALIST_CUSTOM_*` naming convention
+- All existing tests pass
+
+Watch For:
+- Specialists must see the SAME code the reviewer approved. If specialist findings
+  trigger rework and re-review, the next specialist pass must see the updated code.
+- Keep specialist turn budgets LOW (8–12) — they're focused checks, not full reviews
+- Custom specialist prompt templates are user-created in the target project's
+  `.claude/prompts/` directory, not in Tekhton
+
+Seeds Forward:
+- Specialist findings feed into Milestone 5 (Cleanup) if tagged as `[NOTE]`
+- Milestone 8 (Metrics) tracks specialist findings per run
+- Future 3.0 work may parallelize specialist reviews
+
+#### Milestone 8: Workflow Learning
+Add run metrics collection, adaptive turn calibration based on project history,
+and a human-readable metrics dashboard. This closes the feedback loop: the pipeline
+learns from its own runs to produce better estimates and identify recurring patterns.
+
+Files to create:
+- `lib/metrics.sh` — `record_run_metrics()`: appends a structured JSONL record to
+  `.claude/logs/metrics.jsonl` with: timestamp, task, task type, milestone mode,
+  per-stage turns/elapsed/status, context sizes, scout estimate vs actual, outcome.
+  `summarize_metrics(n)`: reads last N runs, computes averages by task type and
+  scout accuracy. `calibrate_turn_estimate(recommendation, stage)`: adjusts scout
+  recommendation based on historical accuracy (multiplier, clamped to existing bounds).
+
+Files to modify:
+- `tekhton.sh` — source `lib/metrics.sh`. Add `--metrics` flag early-exit path
+  that calls `summarize_metrics()` and prints dashboard. After final stage, call
+  `record_run_metrics()`.
+- `lib/config.sh` — add defaults: `METRICS_ENABLED=true`, `METRICS_MIN_RUNS=5`,
+  `METRICS_ADAPTIVE_TURNS=true`
+- `lib/turns.sh` — in `apply_scout_turn_limits()`, call
+  `calibrate_turn_estimate()` when `METRICS_ADAPTIVE_TURNS=true` and at least
+  `METRICS_MIN_RUNS` records exist. Calibration is a multiplier on the scout's
+  recommendation (e.g., if scout underestimates coder turns by 40% on average,
+  multiply by 1.4), still clamped to `[MIN_TURNS, MAX_TURNS_CAP]`.
+- `lib/hooks.sh` — call `record_run_metrics()` in the finalization hook so metrics
+  are captured even on early exits
+- `templates/pipeline.conf.example` — add metrics config keys
+
+Dashboard output (`tekhton --metrics`):
+```
+Tekhton Metrics — last 20 runs
+────────────────────────────────
+Bug fixes:     12 runs, avg 22 coder turns, 92% success
+Features:       6 runs, avg 45 coder turns, 83% success
+Milestones:     2 runs, avg 85 coder turns, 100% success
+────────────────────────────────
+Scout accuracy: coder ±8 turns, reviewer ±2, tester ±5
+Common blocker: "Missing test coverage" (4 occurrences)
+Cleanup sweep:  15 items resolved, 3 deferred
+```
+
+Acceptance criteria:
+- `record_run_metrics` writes a valid JSONL line with all specified fields
+- `.claude/logs/` directory is created if it does not exist
+- `summarize_metrics` produces per-task-type averages and scout accuracy
+- `calibrate_turn_estimate` returns adjusted turns only after `METRICS_MIN_RUNS`
+  runs; before that, returns the original estimate unchanged
+- Calibration multiplier is clamped between 0.5 and 2.0 (no extreme adjustments)
+- `--metrics` prints the dashboard to stdout and exits
+- Metrics collection is on by default; adaptive calibration is on by default but
+  has no effect until enough runs accumulate
+- All existing tests pass
+
+Watch For:
+- JSONL is append-only. Never read-modify-write the file — only append.
+- Categorizing task type (bug/feature/milestone) from the task string is heuristic.
+  Keep it simple: check for keywords like "fix", "bug" → bug; "milestone" → milestone;
+  default → feature. Do not over-engineer classification.
+- Calibration multiplier must be clamped aggressively. A bad sample of 5 runs should
+  not produce a 10× multiplier.
+- Metrics file can grow indefinitely — `summarize_metrics` should read only the
+  last N records (configurable, default: 50)
+
+Seeds Forward:
+- Future 3.0 may add cost tracking (dollar amounts from API billing)
+- Future 3.0 may add cross-project metric aggregation
+- Adaptive calibration data improves with every run — the more the pipeline is used,
+  the better its estimates become
