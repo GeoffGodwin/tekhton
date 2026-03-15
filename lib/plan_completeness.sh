@@ -257,7 +257,8 @@ run_plan_completeness_loop() {
             printf "  [f] Follow-up interview on incomplete sections\n"
             printf "  [s] Skip — continue with current DESIGN.md\n"
             printf "  Select [f/s]: "
-            read -r choice < "$input_fd"
+            read -r choice < "$input_fd" || { log "End of input — skipping follow-up."; return 0; }
+            choice="${choice//$'\r'/}"
 
             case "$choice" in
                 f|F)

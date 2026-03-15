@@ -56,13 +56,9 @@ INNERSCRIPT
 # ---------------------------------------------------------------------------
 # run_interview_with_input — Run run_plan_interview() and capture stdout.
 #
-# IMPORTANT: _read_section_answer() uses:
-#     while IFS= read -r line <"$input_fd"
-# where $input_fd is /dev/stdin.  On Linux, each "< /dev/stdin" re-open of
-# /dev/stdin yields the SAME position only when fd 0 is a pipe (proc fs
-# dup semantics).  A regular file would reset to position 0 each iteration,
-# causing the read loop to hang.  We must feed input via a pipe — process
-# substitution < <(...) satisfies this requirement.
+# _read_section_answer() reads from a dedicated fd (fd 3) opened by
+# run_plan_interview via exec 3<&0.  Fd inheritance across fork() guarantees
+# correct position sharing regardless of whether stdin is a pipe or file.
 #
 # Arguments:
 #   $1  project_dir    — isolated PROJECT_DIR for this run
@@ -78,8 +74,7 @@ run_interview_with_input() {
     script_file=$(mktemp "${TMPDIR_BASE}/interview_XXXXXX.sh")
     build_interview_script "$script_file"
 
-    # Process substitution creates a pipe; each < /dev/stdin re-open inside
-    # _read_section_answer() then correctly advances through the stream.
+    # Feed input via process substitution (pipe).
     TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$project_dir" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \

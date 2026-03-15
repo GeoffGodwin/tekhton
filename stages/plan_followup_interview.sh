@@ -77,10 +77,13 @@ run_plan_followup_interview() {
     # Save resume state
     write_plan_state "completeness" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
 
-    local input_fd="/dev/stdin"
+    # Open input source on a dedicated fd for reliable position sharing.
     if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
-        input_fd="/dev/tty"
+        exec 3< /dev/tty
+    else
+        exec 3<&0
     fi
+    local input_fd=3
 
     # Build a guidance map from the template (handles 4-field format)
     declare -A section_guidance_map=()
@@ -190,11 +193,13 @@ run_plan_followup_interview() {
     if [[ -n "$updated_content" ]]; then
         success "DESIGN.md updated (${design_status})."
         log "Log saved: ${log_file}"
+        exec 3<&-
         return 0
     else
         warn "Update produced no output — DESIGN.md was not changed."
         [[ "$batch_exit" -ne 0 ]] && warn "Claude exited with code ${batch_exit}."
         log "Log saved: ${log_file}"
+        exec 3<&-
         return 1
     fi
 }

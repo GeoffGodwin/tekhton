@@ -87,7 +87,8 @@ select_project_type() {
     local choice
     while true; do
         printf "  Select [1-%d]: " "${#PLAN_PROJECT_TYPES[@]}"
-        read -r choice < "$input_fd"
+        read -r choice < "$input_fd" || { error "Unexpected end of input."; return 1; }
+        choice="${choice//$'\r'/}"
 
         # Validate: must be a number in range
         if [[ "$choice" =~ ^[0-9]+$ ]] && \
@@ -391,7 +392,8 @@ run_plan_review() {
     while true; do
         _display_milestone_summary "$claude_file"
         printf "  Select [y/e/r/n]: "
-        read -r choice < "$input_fd"
+        read -r choice < "$input_fd" || { warn "End of input — accepting files."; choice="y"; }
+        choice="${choice//$'\r'/}"
 
         case "$choice" in
             y|Y)
