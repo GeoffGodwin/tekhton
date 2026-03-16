@@ -1,12 +1,52 @@
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+
+# Secrets & credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.jks
+id_rsa
+id_ed25519
+*.pub
+
+# SSH & GPG
+.ssh/
+.gnupg/
+
+# Cloud credentials
+.aws/
+.azure/
+credentials.json
+service-account*.json
+*-credentials.json
 
 # Test artifacts
 /tmp/
+
+# Logs (pipeline logs are tracked in .claude/logs/)
+*.log
+
+# Backup files
+*.bak
+*.orig
+*.save
+
+# Archives
+*.tar.gz
+*.zip
+*.7z
