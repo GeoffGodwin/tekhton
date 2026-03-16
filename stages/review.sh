@@ -42,6 +42,9 @@ run_stage_review() {
             PRIOR_BLOCKERS_BLOCK="yes"
         fi
 
+        # --- Context compiler (task-scoped filtering) ------------------------
+        build_context_packet "review" "$TASK" "$CLAUDE_STANDARD_MODEL"
+
         # --- Context budget reporting ----------------------------------------
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
         log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_STANDARD_MODEL"

@@ -28,6 +28,9 @@ run_stage_tester() {
             ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
         fi
 
+        # --- Context compiler (task-scoped filtering) ------------------------
+        build_context_packet "tester" "$TASK" "$CLAUDE_TESTER_MODEL"
+
         # --- Context budget reporting ----------------------------------------
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
         log_context_report "tester" "$CLAUDE_TESTER_MODEL"

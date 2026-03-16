@@ -788,7 +788,6 @@ _do_git_commit() {
     git add -A > /dev/null 2>&1
     local git_output
     git_output=$(git commit -m "$msg" 2>&1) || true
-    echo "$git_output" >> "$LOG_FILE"
     # Show only the summary line (e.g. "[branch abc1234] feat: message")
     local summary
     summary=$(echo "$git_output" | head -1)
