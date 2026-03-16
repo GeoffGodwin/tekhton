@@ -12,7 +12,8 @@ write_pipeline_state() {
     local exit_reason="$2"
     local resume_flag="$3"
     local resume_task="$4"
-    local extra_notes="$5"
+    local extra_notes="${5:-}"
+    local milestone_num="${6:-}"
 
     # Strip any surrounding quotes from task — they break heredoc and awk reads
     resume_task="${resume_task#\"}"
@@ -53,6 +54,9 @@ ${resume_task}
 
 ## Notes
 ${extra_notes}
+
+## Milestone
+${milestone_num:-none}
 
 ## Files Present
 $(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md; do

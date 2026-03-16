@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 4
+- Runs since audit: 0
 
 ## Unresolved Observations
 - [2026-03-16 | "Implement Milestone 1: Token And Context Accounting"] `reviewer.md` architecture boundary check ("No modifications to existing execution pipeline files") conflicts with the 2.0 milestone series, which explicitly authorizes modifications to `stages/*.sh` and `lib/*.sh`. The reviewer role file should clarify that 2.0 feature additions to execution pipeline files are authorized when the CLAUDE.md milestone spec explicitly calls them out. Carry-over from prior cycle.

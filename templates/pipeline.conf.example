@@ -216,6 +216,18 @@ CHARS_PER_TOKEN=4
 # Falls back to full injection when keyword extraction yields zero matches.
 # Off by default — enable after verifying context budget reports show oversized prompts.
 CONTEXT_COMPILER_ENABLED=false
+# --- Auto-advance (--auto-advance) -------------------------------------------
+# When enabled via --auto-advance flag, the pipeline will loop through
+# milestones automatically after each passes acceptance criteria.
+
+# Enable auto-advance (also activated by --auto-advance CLI flag)
+# AUTO_ADVANCE_ENABLED=false
+
+# Maximum milestones to complete per invocation (prevents runaway loops)
+# AUTO_ADVANCE_LIMIT=3
+
+# Prompt user for confirmation between milestones (true = interactive)
+# AUTO_ADVANCE_CONFIRM=true
 
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)

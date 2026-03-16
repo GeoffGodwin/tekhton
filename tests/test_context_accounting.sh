@@ -243,13 +243,8 @@ else
 fi
 
 # =============================================================================
-# log_context_report — tested in a subshell to isolate pipefail behavior
+# log_context_report — tested in a subshell to isolate from global state
 # =============================================================================
-# NOTE: log_context_report uses `echo -e ... | while ... done`. The while loop
-# processes the trailing empty line from _CONTEXT_REPORT with `[ -n "" ] && log`
-# which returns non-zero. Under `set -euo pipefail`, this causes the pipeline
-# to exit non-zero. Tests below use subshells to isolate this behavior and
-# verify the function's observable outputs despite the return code issue.
 
 echo
 echo "=== log_context_report ==="

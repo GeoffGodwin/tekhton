@@ -23,6 +23,7 @@
 #   --notes-filter X      Inject only [X] notes (BUG, FEAT, POLISH)
 #   --init-notes          Create blank HUMAN_NOTES.md template
 #   --skip-audit          Skip architect audit even if threshold is reached
+#   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
 #
 # Requirements:
@@ -131,6 +132,7 @@ _check_pipeline_lock() {
 
 NOTES_FILTER=""
 MILESTONE_MODE=false
+AUTO_ADVANCE=false
 SKIP_AUDIT=false
 FORCE_AUDIT=false
 SKIP_FINAL_CHECKS=false
@@ -258,6 +260,7 @@ source "${TEKHTON_HOME}/lib/hooks.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
 source "${TEKHTON_HOME}/lib/context.sh"
+source "${TEKHTON_HOME}/lib/milestones.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"
@@ -281,6 +284,7 @@ usage() {
     echo "  --help, -h                Show this help and exit"
     echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
     echo "                            upgraded tester model"
+    echo "  --auto-advance            Auto-advance through milestones after acceptance"
     echo "  --start-at coder          Full pipeline from scratch (default)"
     echo "  --start-at review         Skip coder; requires CODER_SUMMARY.md"
     echo "  --start-at tester         Resume tester from existing TESTER_REPORT.md"
@@ -399,6 +403,12 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --milestone)
+            MILESTONE_MODE=true
+            apply_milestone_overrides
+            shift
+            ;;
+        --auto-advance)
+            AUTO_ADVANCE=true
             MILESTONE_MODE=true
             apply_milestone_overrides
             shift
@@ -549,6 +559,10 @@ if [ "$MILESTONE_MODE" = true ]; then
     warn "MILESTONE MODE — Review cycles: ${MAX_REVIEW_CYCLES}, Coder turns: ${CODER_MAX_TURNS}, Tester turns: ${TESTER_MAX_TURNS}"
 fi
 
+if [ "$AUTO_ADVANCE" = true ]; then
+    warn "AUTO-ADVANCE — Will advance through milestones (limit: ${AUTO_ADVANCE_LIMIT}, confirm: ${AUTO_ADVANCE_CONFIRM})"
+fi
+
 # Pre-flight: show only the notes that will actually be injected
 HUMAN_NOTE_COUNT=$(count_human_notes)
 if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
@@ -619,46 +633,180 @@ else
     log "Resuming at ${START_AT} — prior reports preserved for agent context"
 fi
 
-# --- Stage 0: Architect Audit (conditional) ----------------------------------
+# --- Auto-advance: initialize milestone state if needed ----------------------
 
-if [ "$START_AT" = "coder" ] && [ "$SKIP_AUDIT" = false ]; then
-    if [ "$FORCE_AUDIT" = true ] || should_trigger_audit 2>/dev/null; then
-        run_stage_architect
+_CURRENT_MILESTONE=""
+if [ "$AUTO_ADVANCE" = true ]; then
+    # Parse milestone number from task if it matches "Implement Milestone N" pattern
+    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+) ]]; then
+        _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
+    fi
+
+    if [ -n "$_CURRENT_MILESTONE" ]; then
+        _total_milestones=$(get_milestone_count "CLAUDE.md")
+        init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
+        log "Auto-advance starting at milestone ${_CURRENT_MILESTONE} of ${_total_milestones}"
+    else
+        warn "Auto-advance enabled but task does not reference a milestone number."
+        warn "Expected task like: 'Implement Milestone 3: ...'"
+        warn "Falling back to single-run mode."
+        AUTO_ADVANCE=false
     fi
 fi
 
-# --- Stage 1: Coder ----------------------------------------------------------
+# --- Ctrl+C handler for auto-advance state preservation ---------------------
 
-if [ "$START_AT" = "coder" ]; then
-    run_stage_coder
-else
-    header "Stage 1 / 3 — Coder (skipped)"
-    log "Using existing CODER_SUMMARY.md"
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        warn "HUMAN_NOTES.md has unchecked items but coder stage was skipped."
-        warn "Notes will NOT be injected this run. Include them in your next full run."
+_tekhton_sigint_handler() {
+    echo
+    warn "Interrupted (Ctrl+C)"
+    if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
+        write_pipeline_state \
+            "${START_AT}" \
+            "interrupted_during_milestone_${_CURRENT_MILESTONE}" \
+            "--auto-advance --start-at ${START_AT}" \
+            "$TASK" \
+            "Auto-advance interrupted at milestone ${_CURRENT_MILESTONE}" \
+            "$_CURRENT_MILESTONE"
+        log "Milestone state preserved. Resume with: $0 --auto-advance \"${TASK}\""
     fi
-fi
+    _TEKHTON_CLEAN_EXIT=true
+    exit 130
+}
+trap _tekhton_sigint_handler INT
 
-# --- Stage 2: Review loop ----------------------------------------------------
+# --- Pipeline execution (with auto-advance loop) ----------------------------
 
-if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ]; then
-    run_stage_review
-else
-    header "Stage 2 / 3 — Reviewer (skipped)"
-    log "Using existing REVIEWER_REPORT.md"
-    VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
-    log "Existing verdict: ${VERDICT}"
-fi
+_run_pipeline_stages() {
+    # Stage 0: Architect Audit (conditional)
+    if [ "$START_AT" = "coder" ] && [ "$SKIP_AUDIT" = false ]; then
+        if [ "$FORCE_AUDIT" = true ] || should_trigger_audit 2>/dev/null; then
+            run_stage_architect
+        fi
+    fi
 
-# --- Stage 3: Tester ---------------------------------------------------------
+    # Stage 1: Coder
+    if [ "$START_AT" = "coder" ]; then
+        run_stage_coder
+    else
+        header "Stage 1 / 3 — Coder (skipped)"
+        log "Using existing CODER_SUMMARY.md"
+        if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+            warn "HUMAN_NOTES.md has unchecked items but coder stage was skipped."
+            warn "Notes will NOT be injected this run. Include them in your next full run."
+        fi
+    fi
 
-if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ] || [ "$START_AT" = "test" ] || [ "$START_AT" = "tester" ]; then
-    run_stage_tester
-fi
+    # Stage 2: Review loop
+    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ]; then
+        run_stage_review
+    else
+        header "Stage 2 / 3 — Reviewer (skipped)"
+        log "Using existing REVIEWER_REPORT.md"
+        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+        log "Existing verdict: ${VERDICT}"
+    fi
 
-if [ ! -f "TESTER_REPORT.md" ]; then
-    warn "Tester did not produce TESTER_REPORT.md. Tests may have been written but report is missing."
+    # Stage 3: Tester
+    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ] || [ "$START_AT" = "test" ] || [ "$START_AT" = "tester" ]; then
+        run_stage_tester
+    fi
+
+    if [ ! -f "TESTER_REPORT.md" ]; then
+        warn "Tester did not produce TESTER_REPORT.md. Tests may have been written but report is missing."
+    fi
+}
+
+# Run the pipeline stages (first pass)
+_run_pipeline_stages
+
+# --- Auto-advance loop -------------------------------------------------------
+
+if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
+    # Check acceptance for current milestone
+    _acceptance_pass=true
+    check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
+
+    if [ "$_acceptance_pass" = true ]; then
+        # Find next milestone
+        _next_milestone=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
+
+        if [ -n "$_next_milestone" ]; then
+            write_milestone_disposition "COMPLETE_AND_CONTINUE"
+
+            # Auto-advance loop
+            while should_auto_advance; do
+                _next_milestone=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
+                if [ -z "$_next_milestone" ]; then
+                    log "No more milestones to advance to."
+                    write_milestone_disposition "COMPLETE_AND_WAIT"
+                    break
+                fi
+
+                _next_title=$(get_milestone_title "$_next_milestone")
+
+                # Confirm if configured
+                if [ "${AUTO_ADVANCE_CONFIRM}" = "true" ]; then
+                    if ! prompt_auto_advance_confirm "$_next_milestone" "$_next_title"; then
+                        log "Auto-advance declined by user."
+                        write_milestone_disposition "COMPLETE_AND_WAIT"
+                        break
+                    fi
+                fi
+
+                advance_milestone "$_CURRENT_MILESTONE" "$_next_milestone"
+                _CURRENT_MILESTONE="$_next_milestone"
+
+                # Update task for the new milestone
+                TASK="Implement Milestone ${_CURRENT_MILESTONE}: ${_next_title}"
+                log "Task updated: ${TASK}"
+
+                # Reset START_AT to coder for subsequent milestones
+                START_AT="coder"
+
+                # Archive reports from previous milestone
+                for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+                    if [ -f "$f" ]; then
+                        ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_milestone${_CURRENT_MILESTONE}_${f}"
+                        mkdir -p "${LOG_DIR}/archive"
+                        mv "$f" "$ARCHIVE_NAME"
+                    fi
+                done
+
+                # Update log file for new milestone
+                TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+                TASK_SLUG=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
+                LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
+
+                # Run pipeline stages for new milestone
+                _run_pipeline_stages
+
+                # Check acceptance for new milestone
+                _acceptance_pass=true
+                check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
+
+                if [ "$_acceptance_pass" = true ]; then
+                    _next_check=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
+                    if [ -n "$_next_check" ]; then
+                        write_milestone_disposition "COMPLETE_AND_CONTINUE"
+                    else
+                        write_milestone_disposition "COMPLETE_AND_WAIT"
+                        log "All milestones complete."
+                        break
+                    fi
+                else
+                    write_milestone_disposition "INCOMPLETE_REWORK"
+                    warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Stopping auto-advance."
+                    break
+                fi
+            done
+        else
+            write_milestone_disposition "COMPLETE_AND_WAIT"
+            log "No more milestones — this was the last one."
+        fi
+    else
+        write_milestone_disposition "INCOMPLETE_REWORK"
+        warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Fix issues and re-run."
+    fi
 fi
 
 # --- Final checks ------------------------------------------------------------

@@ -1,0 +1,283 @@
+#!/usr/bin/env bash
+# Test: Milestone state machine — parsing, state, acceptance, and advance
+set -euo pipefail
+
+TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+PROJECT_DIR="$TMPDIR"
+export TEKHTON_HOME PROJECT_DIR
+
+source "${TEKHTON_HOME}/lib/common.sh"
+
+# Provide stubs for config values needed by milestones.sh
+PIPELINE_STATE_FILE="${TMPDIR}/.claude/PIPELINE_STATE.md"
+TEST_CMD=""
+ANALYZE_CMD=""
+LOG_DIR="${TMPDIR}/.claude/logs"
+mkdir -p "${TMPDIR}/.claude" "${LOG_DIR}"
+
+# Override MILESTONE_STATE_FILE before sourcing
+MILESTONE_STATE_FILE="${TMPDIR}/.claude/MILESTONE_STATE.md"
+
+source "${TEKHTON_HOME}/lib/state.sh"
+
+# Stub run_build_gate so we don't need the full gates.sh
+run_build_gate() { return 0; }
+
+source "${TEKHTON_HOME}/lib/milestones.sh"
+
+# cd to TMPDIR so relative CLAUDE.md paths resolve correctly (matches production behavior)
+cd "$TMPDIR"
+
+PASS=0
+FAIL=0
+
+assert() {
+    local desc="$1"
+    local result="$2"
+    if [ "$result" = "0" ]; then
+        echo "  PASS: $desc"
+        PASS=$((PASS + 1))
+    else
+        echo "  FAIL: $desc"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# --- Create a sample CLAUDE.md with milestones --------------------------------
+
+cat > "${TMPDIR}/CLAUDE.md" << 'CLAUDE_EOF'
+# Project Rules
+
+## Implementation Milestones
+
+#### Milestone 1: Token And Context Accounting
+Add measurement infrastructure.
+
+Acceptance criteria:
+- `measure_context_size "hello world"` returns character count and estimated tokens
+- `log_context_report` writes a structured breakdown
+- All existing tests pass
+- `bash -n lib/context.sh` passes
+
+#### [DONE] Milestone 2: Context Compiler
+Add task-scoped context assembly.
+
+Acceptance criteria:
+- `extract_relevant_sections` given a markdown file and keywords returns sections
+- Feature is off by default
+
+#### Milestone 3: Milestone State Machine And Auto-Advance
+Add milestone tracking.
+
+Acceptance criteria:
+- `parse_milestones` extracts milestone list from CLAUDE.md
+- `check_milestone_acceptance` runs automatable criteria
+- Without `--auto-advance`, behavior is identical to 1.0
+- All existing tests pass
+
+#### Milestone 4: Mid-Run Clarification
+Add structured protocol for questions.
+
+Acceptance criteria:
+- `detect_clarifications` parses items
+- Blocking clarifications pause the pipeline
+CLAUDE_EOF
+
+# --- Test: parse_milestones extracts correct number of milestones -------------
+
+echo "=== parse_milestones ==="
+
+milestone_count=$(parse_milestones "${TMPDIR}/CLAUDE.md" | wc -l)
+assert "parse_milestones finds 4 milestones" "$([ "$milestone_count" -eq 4 ] && echo 0 || echo 1)"
+
+# Test individual milestone parsing
+m1_title=$(parse_milestones "${TMPDIR}/CLAUDE.md" | awk -F'|' '$1 == 1 {print $2}')
+assert "Milestone 1 title is correct" "$([ "$m1_title" = "Token And Context Accounting" ] && echo 0 || echo 1)"
+
+m3_title=$(parse_milestones "${TMPDIR}/CLAUDE.md" | awk -F'|' '$1 == 3 {print $2}')
+assert "Milestone 3 title is correct" "$([ "$m3_title" = "Milestone State Machine And Auto-Advance" ] && echo 0 || echo 1)"
+
+# Test acceptance criteria extraction
+m1_criteria=$(parse_milestones "${TMPDIR}/CLAUDE.md" | awk -F'|' '$1 == 1 {print $3}')
+assert "Milestone 1 has acceptance criteria" "$([ -n "$m1_criteria" ] && echo 0 || echo 1)"
+assert "Milestone 1 criteria contain test reference" "$(echo "$m1_criteria" | grep -q "tests pass" && echo 0 || echo 1)"
+
+# --- Test: get_milestone_count ------------------------------------------------
+
+echo "=== get_milestone_count ==="
+
+count=$(get_milestone_count "${TMPDIR}/CLAUDE.md")
+assert "get_milestone_count returns 4" "$([ "$count" -eq 4 ] && echo 0 || echo 1)"
+
+# --- Test: get_milestone_title ------------------------------------------------
+
+echo "=== get_milestone_title ==="
+
+title=$(get_milestone_title 4 "${TMPDIR}/CLAUDE.md")
+assert "get_milestone_title 4 returns correct title" "$([ "$title" = "Mid-Run Clarification" ] && echo 0 || echo 1)"
+
+# --- Test: is_milestone_done --------------------------------------------------
+
+echo "=== is_milestone_done ==="
+
+assert "Milestone 2 is marked done" "$(is_milestone_done 2 "${TMPDIR}/CLAUDE.md" && echo 0 || echo 1)"
+assert "Milestone 1 is not done" "$(! is_milestone_done 1 "${TMPDIR}/CLAUDE.md" && echo 0 || echo 1)"
+assert "Milestone 3 is not done" "$(! is_milestone_done 3 "${TMPDIR}/CLAUDE.md" && echo 0 || echo 1)"
+
+# --- Test: init_milestone_state -----------------------------------------------
+
+echo "=== init_milestone_state ==="
+
+init_milestone_state 3 4
+assert "State file created" "$([ -f "$MILESTONE_STATE_FILE" ] && echo 0 || echo 1)"
+
+current=$(get_current_milestone)
+assert "Current milestone is 3" "$([ "$current" = "3" ] && echo 0 || echo 1)"
+
+disposition=$(get_milestone_disposition)
+assert "Initial disposition is NONE" "$([ "$disposition" = "NONE" ] && echo 0 || echo 1)"
+
+completed=$(get_milestones_completed_this_session)
+assert "Initial session count is 0" "$([ "$completed" = "0" ] && echo 0 || echo 1)"
+
+# --- Test: write_milestone_disposition ----------------------------------------
+
+echo "=== write_milestone_disposition ==="
+
+write_milestone_disposition "COMPLETE_AND_CONTINUE"
+disposition=$(get_milestone_disposition)
+assert "Disposition updated to COMPLETE_AND_CONTINUE" "$([ "$disposition" = "COMPLETE_AND_CONTINUE" ] && echo 0 || echo 1)"
+
+write_milestone_disposition "INCOMPLETE_REWORK"
+disposition=$(get_milestone_disposition)
+assert "Disposition updated to INCOMPLETE_REWORK" "$([ "$disposition" = "INCOMPLETE_REWORK" ] && echo 0 || echo 1)"
+
+# Test invalid disposition
+invalid_result=0
+write_milestone_disposition "INVALID_THING" 2>/dev/null || invalid_result=$?
+assert "Invalid disposition rejected" "$([ "$invalid_result" -ne 0 ] && echo 0 || echo 1)"
+
+# --- Test: advance_milestone --------------------------------------------------
+
+echo "=== advance_milestone ==="
+
+init_milestone_state 1 4
+write_milestone_disposition "COMPLETE_AND_CONTINUE"
+advance_milestone 1 2
+
+current=$(get_current_milestone)
+assert "Current milestone advanced to 2" "$([ "$current" = "2" ] && echo 0 || echo 1)"
+
+completed=$(get_milestones_completed_this_session)
+assert "Session count incremented to 1" "$([ "$completed" = "1" ] && echo 0 || echo 1)"
+
+# Advance again
+write_milestone_disposition "COMPLETE_AND_CONTINUE"
+advance_milestone 2 3
+
+completed=$(get_milestones_completed_this_session)
+assert "Session count incremented to 2" "$([ "$completed" = "2" ] && echo 0 || echo 1)"
+
+# --- Test: find_next_milestone ------------------------------------------------
+
+echo "=== find_next_milestone ==="
+
+# Milestone 2 is [DONE], so next after 1 should be 3
+next=$(find_next_milestone 1 "${TMPDIR}/CLAUDE.md")
+assert "Next milestone after 1 skips done M2, returns 3" "$([ "$next" = "3" ] && echo 0 || echo 1)"
+
+next=$(find_next_milestone 3 "${TMPDIR}/CLAUDE.md")
+assert "Next milestone after 3 is 4" "$([ "$next" = "4" ] && echo 0 || echo 1)"
+
+next=$(find_next_milestone 4 "${TMPDIR}/CLAUDE.md")
+assert "No milestone after 4 (last)" "$([ -z "$next" ] && echo 0 || echo 1)"
+
+# --- Test: should_auto_advance ------------------------------------------------
+
+echo "=== should_auto_advance ==="
+
+AUTO_ADVANCE_ENABLED=false
+AUTO_ADVANCE_LIMIT=3
+assert "Auto-advance disabled returns false" "$(! should_auto_advance && echo 0 || echo 1)"
+
+AUTO_ADVANCE_ENABLED=true
+init_milestone_state 1 4
+write_milestone_disposition "COMPLETE_AND_CONTINUE"
+should_auto_advance > /dev/null 2>&1; _sa_rc=$?
+assert "Auto-advance with COMPLETE_AND_CONTINUE returns true" "$_sa_rc"
+
+write_milestone_disposition "INCOMPLETE_REWORK"
+should_auto_advance > /dev/null 2>&1 && _sa_rc=0 || _sa_rc=$?
+assert "Auto-advance with INCOMPLETE_REWORK returns false" "$([ "$_sa_rc" -ne 0 ] && echo 0 || echo 1)"
+
+# Test limit enforcement
+AUTO_ADVANCE_LIMIT=2
+init_milestone_state 1 4
+write_milestone_disposition "COMPLETE_AND_CONTINUE"
+advance_milestone 1 2
+write_milestone_disposition "COMPLETE_AND_CONTINUE"
+advance_milestone 2 3
+write_milestone_disposition "COMPLETE_AND_CONTINUE"
+should_auto_advance > /dev/null 2>&1 && _sa_rc=0 || _sa_rc=$?
+assert "Auto-advance at limit returns false" "$([ "$_sa_rc" -ne 0 ] && echo 0 || echo 1)"
+
+# --- Test: clear_milestone_state ----------------------------------------------
+
+echo "=== clear_milestone_state ==="
+
+init_milestone_state 1 4
+assert "State file exists before clear" "$([ -f "$MILESTONE_STATE_FILE" ] && echo 0 || echo 1)"
+clear_milestone_state
+assert "State file removed after clear" "$([ ! -f "$MILESTONE_STATE_FILE" ] && echo 0 || echo 1)"
+
+# --- Test: state.sh milestone field -------------------------------------------
+
+echo "=== state.sh milestone field ==="
+
+write_pipeline_state "coder" "interrupted" "--auto-advance" "Implement Milestone 3" "auto-advance" "3"
+assert "Pipeline state includes milestone field" "$(grep -q '## Milestone' "$PIPELINE_STATE_FILE" && echo 0 || echo 1)"
+saved_milestone=$(awk '/^## Milestone$/{getline; gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit}' "$PIPELINE_STATE_FILE")
+assert "Pipeline state milestone is 3" "$([ "$saved_milestone" = "3" ] && echo 0 || echo 1)"
+
+# --- Test: parse varied heading formats ---------------------------------------
+
+echo "=== parse varied heading formats ==="
+
+cat > "${TMPDIR}/varied.md" << 'VARIED_EOF'
+# Project
+
+#### Milestone 1: Basic Setup
+Setup stuff.
+
+Acceptance criteria:
+- Files created
+- Tests pass
+
+### Milestone 2 — Advanced Features
+Advanced stuff.
+
+Acceptance criteria:
+- Feature works
+
+#### Milestone 3. Final Polish
+Polish stuff.
+
+Acceptance criteria:
+- Looks good
+VARIED_EOF
+
+varied_count=$(parse_milestones "${TMPDIR}/varied.md" | wc -l)
+assert "Parses varied heading formats (colon, dash, period)" "$([ "$varied_count" -eq 3 ] && echo 0 || echo 1)"
+
+# --- Summary ------------------------------------------------------------------
+
+echo
+echo "════════════════════════════════════════"
+echo "  Milestone tests: ${PASS} passed, ${FAIL} failed"
+echo "════════════════════════════════════════"
+
+[ "$FAIL" -eq 0 ] || exit 1
+echo "All milestone tests passed"

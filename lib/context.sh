@@ -105,9 +105,11 @@ log_context_report() {
     fi
 
     log "[context] ${stage} context breakdown:"
-    echo -e "${_CONTEXT_REPORT}" | while IFS= read -r line; do
-        [ -n "$line" ] && log "$line"
-    done
+    if [ -n "${_CONTEXT_REPORT}" ]; then
+        echo -e "${_CONTEXT_REPORT}" | while IFS= read -r line; do
+            if [ -n "$line" ]; then log "$line"; fi
+        done
+    fi
     log "  Total: ${_CONTEXT_TOTAL_CHARS} chars (~${_CONTEXT_TOTAL_TOKENS} tokens, ${pct_used}% of ${window} window)"
 
     if [ "$_CONTEXT_TOTAL_TOKENS" -gt "$budget_tokens" ]; then

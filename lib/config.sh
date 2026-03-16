@@ -194,6 +194,11 @@ load_config() {
     : "${TESTER_MIN_TURNS:=10}"
     : "${TESTER_MAX_TURNS_CAP:=100}"
 
+    # --- Auto-advance defaults ---
+    : "${AUTO_ADVANCE_ENABLED:=false}"
+    : "${AUTO_ADVANCE_LIMIT:=3}"
+    : "${AUTO_ADVANCE_CONFIRM:=true}"
+
     # Milestone overrides — defaults to 2x normal if not specified
     : "${MILESTONE_MAX_REVIEW_CYCLES:=$(( MAX_REVIEW_CYCLES * 2 ))}"
     : "${MILESTONE_CODER_MAX_TURNS:=$(( CODER_MAX_TURNS * 2 ))}"
