@@ -917,6 +917,12 @@ echo "$COMMIT_MSG"
 echo "────────────────────────────────────────"
 echo
 
+# Remove lock file BEFORE commit so it isn't staged by git add -A and then
+# deleted by the EXIT trap, leaving an uncommitted deletion in the working tree.
+if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
+    rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
+fi
+
 log "Commit with suggested message? [y/e/n]"
 echo "  y = commit now with this message"
 echo "  e = open message in \$EDITOR first"

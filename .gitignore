@@ -35,6 +35,9 @@ credentials.json
 service-account*.json
 *-credentials.json
 
+# Pipeline runtime artifacts
+.claude/PIPELINE.lock
+
 # Test artifacts
 /tmp/
 
