@@ -46,7 +46,7 @@ load_plan_config() {
                 elif [[ "$_val" =~ ^\'(.*)\'$ ]]; then
                     _val="${BASH_REMATCH[1]}"
                 fi
-                if [[ "$_val" == *'$('* ]] || [[ "$_val" == *'`'* ]]; then
+                if [[ "$_val" == *"\$("* ]] || [[ "$_val" == *"\`"* ]]; then
                     echo "[✗] pipeline.conf:${_line_num}: REJECTED — value for '${_key}' contains command substitution." >&2
                     exit 1
                 fi

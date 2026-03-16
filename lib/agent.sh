@@ -38,32 +38,32 @@
 # The Claude CLI does not support path-scoped write restrictions, so the scout
 # technically has write access to any file. This is a known least-privilege gap —
 # the scout prompt restricts it to writing only SCOUT_REPORT.md.
-AGENT_TOOLS_SCOUT="Read Glob Grep Bash(find:*) Bash(head:*) Bash(wc:*) Bash(cat:*) Bash(ls:*) Bash(tail:*) Bash(file:*) Write"
+export AGENT_TOOLS_SCOUT="Read Glob Grep Bash(find:*) Bash(head:*) Bash(wc:*) Bash(cat:*) Bash(ls:*) Bash(tail:*) Bash(file:*) Write"
 
 # CODER: full implementation agent. Reads, writes, edits code, runs analyze/test.
 # Bash access is broad but blocks destructive operations via disallowed tools.
-AGENT_TOOLS_CODER="Read Write Edit Glob Grep Bash"
+export AGENT_TOOLS_CODER="Read Write Edit Glob Grep Bash"
 
 # JR_CODER: same as coder but for simpler tasks. Same tool access.
-AGENT_TOOLS_JR_CODER="Read Write Edit Glob Grep Bash"
+export AGENT_TOOLS_JR_CODER="Read Write Edit Glob Grep Bash"
 
 # REVIEWER: reads code and writes a report. No code edits, no bash.
-AGENT_TOOLS_REVIEWER="Read Glob Grep Write"
+export AGENT_TOOLS_REVIEWER="Read Glob Grep Write"
 
 # TESTER: writes test files, runs test commands. Needs bash for $TEST_CMD.
-AGENT_TOOLS_TESTER="Read Write Edit Glob Grep Bash"
+export AGENT_TOOLS_TESTER="Read Write Edit Glob Grep Bash"
 
 # ARCHITECT: reads drift logs and source, writes a plan. No code edits, no bash.
-AGENT_TOOLS_ARCHITECT="Read Glob Grep Write"
+export AGENT_TOOLS_ARCHITECT="Read Glob Grep Write"
 
 # BUILD_FIX: targeted code fixes + build verification. Needs bash for build check.
-AGENT_TOOLS_BUILD_FIX="Read Write Edit Glob Grep Bash"
+export AGENT_TOOLS_BUILD_FIX="Read Write Edit Glob Grep Bash"
 
 # SEED_CONTRACTS: adds doc comments to source files, runs analyze.
-AGENT_TOOLS_SEED="Read Write Edit Glob Grep Bash"
+export AGENT_TOOLS_SEED="Read Write Edit Glob Grep Bash"
 
 # CLEANUP: analyze cleanup pass — fix lint warnings, runs analyze.
-AGENT_TOOLS_CLEANUP="Read Write Edit Glob Grep Bash"
+export AGENT_TOOLS_CLEANUP="Read Write Edit Glob Grep Bash"
 
 # Disallowed tools for ALL agents — destructive operations that must never happen.
 # Applied as --disallowedTools alongside --allowedTools for any agent with Bash.
@@ -195,6 +195,13 @@ run_agent() {
     local _exit_file="${_session_dir}/agent_exit"
     rm -f "$_exit_file" "$_turns_file"
 
+    # Pre-run marker for file-change detection (Milestone 0.5).
+    # Created before the agent starts so we can detect files modified DURING
+    # the run (not pre-existing changes). Used by null-run detection and
+    # the activity timeout file-change check.
+    local _prerun_marker="${_session_dir}/prerun_marker"
+    touch "$_prerun_marker"
+
     # --- Build permission flags -----------------------------------------------
     # Default: use --allowedTools + --disallowedTools for least-privilege.
     # Override: set AGENT_SKIP_PERMISSIONS=true in pipeline.conf for the old
@@ -279,12 +286,23 @@ run_agent() {
         # Foreground: read FIFO, log each line, parse JSON, detect silence.
         # No tee — logging is done here to avoid pipe buffering issues.
         # Uses fd 3 for efficient append-mode logging (one open, many writes).
+        #
+        # File-change activity detection (Milestone 0.5): When the FIFO read
+        # times out (no streaming output), we check for file-system changes
+        # before declaring an activity timeout. JSON output mode produces no
+        # streaming output, so the agent may be actively modifying files while
+        # the FIFO is silent. A timestamp marker file is used for fast
+        # find-based change detection instead of slow `git status`.
         (
             exec 3>>"$log_file"
             _last_activity=$(date +%s)
             _last_line=""
             _read_interval="${AGENT_ACTIVITY_POLL:-30}"
             [ "$_activity_timeout" -le 0 ] 2>/dev/null && _read_interval=0
+
+            # Create activity marker for file-change detection
+            _activity_marker="${_session_dir}/activity_marker"
+            touch "$_activity_marker"
 
             while true; do
                 if [ "$_read_interval" -gt 0 ]; then
@@ -306,13 +324,38 @@ run_agent() {
                         _now=$(date +%s)
                         _idle=$(( _now - _last_activity ))
                         if [ "$_idle" -ge "$_activity_timeout" ]; then
-                            echo "[tekhton] ACTIVITY TIMEOUT — no output for ${_idle}s. Killing agent." >&3
-                            echo "ACTIVITY_TIMEOUT" > "$_exit_file"
-                            kill "$_TEKHTON_AGENT_PID" 2>/dev/null || true
-                            sleep 2
-                            kill -9 "$_TEKHTON_AGENT_PID" 2>/dev/null || true
-                            _kill_agent_windows
-                            break
+                            # Before killing: check if files changed since last marker.
+                            # JSON output mode produces no FIFO output, but the agent
+                            # may be actively writing files. If so, reset the timer.
+                            _files_changed=false
+                            if [ -f "$_activity_marker" ]; then
+                                _changed_file=$(find "${PROJECT_DIR:-.}" -maxdepth 4 \
+                                    -newer "$_activity_marker" \
+                                    -not -path '*/.git/*' \
+                                    -not -path '*/.git' \
+                                    -not -path "${_session_dir}/*" \
+                                    -not -path "${LOG_DIR:-${PROJECT_DIR:-.}/.claude/logs}/*" \
+                                    -type f 2>/dev/null | head -1)
+                                if [ -n "$_changed_file" ]; then
+                                    _files_changed=true
+                                fi
+                            fi
+
+                            if [ "$_files_changed" = true ]; then
+                                # Files changed — agent is actively working despite
+                                # no FIFO output. Reset the activity timer.
+                                echo "[tekhton] Activity timeout reached but files changed — resetting timer." >&3
+                                _last_activity=$(date +%s)
+                                touch "$_activity_marker"
+                            else
+                                echo "[tekhton] ACTIVITY TIMEOUT — no output or file changes for ${_idle}s. Killing agent." >&3
+                                echo "ACTIVITY_TIMEOUT" > "$_exit_file"
+                                kill "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+                                sleep 2
+                                kill -9 "$_TEKHTON_AGENT_PID" 2>/dev/null || true
+                                _kill_agent_windows
+                                break
+                            fi
                         fi
                     fi
                 else
@@ -439,43 +482,143 @@ run_agent() {
 
     # --- Agent exit detection ------------------------------------------------
     # Populate LAST_AGENT_* globals so callers can check for null runs.
+    #
+    # Milestone 0.5: Before declaring a null run, check for file-system changes
+    # and CODER_SUMMARY.md existence. JSON output mode agents may complete work
+    # silently (no FIFO output, no extractable turn count) but still modify
+    # files successfully. File changes override the null-run heuristic.
 
     export LAST_AGENT_TURNS="$turns_used"
     export LAST_AGENT_EXIT_CODE="$agent_exit"
     export LAST_AGENT_ELAPSED="$elapsed"
     LAST_AGENT_NULL_RUN=false
 
+    # Check for file-system changes SINCE THE AGENT STARTED as a secondary
+    # productivity signal. Uses the pre-run marker so we only detect changes
+    # made during this agent run, not pre-existing uncommitted changes.
+    local _has_file_changes=false
+    if [ -f "$_prerun_marker" ] && _detect_file_changes "$_prerun_marker"; then
+        _has_file_changes=true
+    fi
+
+    # Check for CODER_SUMMARY.md as a completion signal — if the agent wrote
+    # its summary file during this run, it completed meaningful work regardless
+    # of turn count. Only counts if the file is newer than the pre-run marker.
+    local _has_summary=false
+    local _summary_path="${PROJECT_DIR:-.}/CODER_SUMMARY.md"
+    if [ -f "$_summary_path" ] && [ -f "$_prerun_marker" ]; then
+        if [ "$_summary_path" -nt "$_prerun_marker" ]; then
+            local _summary_lines
+            _summary_lines=$(wc -l < "$_summary_path" 2>/dev/null | tr -d '[:space:]')
+            if [ "${_summary_lines:-0}" -ge 3 ]; then
+                _has_summary=true
+            fi
+        fi
+    fi
+
     # Null run heuristic: agent used very few turns (≤2) OR exited non-zero
     # with zero turns. This typically means it died during discovery/search.
-    # Exit 124 = timeout — always a null run regardless of turn count.
+    # Exit 124 = timeout — always a null run regardless of turn count,
+    # UNLESS files were modified (indicating the agent did productive work).
     local null_threshold="${AGENT_NULL_RUN_THRESHOLD:-2}"
+    local _changed_count="0"
+    if [ "$_has_file_changes" = true ]; then
+        _changed_count=$(_count_changed_files_since "$_prerun_marker")
+    fi
     if [ "$agent_exit" -eq 124 ]; then
-        LAST_AGENT_NULL_RUN=true
-        if [ "$_was_activity_timeout" = true ]; then
-            warn "[$label] NULL RUN DETECTED — agent activity-timed out after ${_activity_timeout}s of silence."
-        else
-            if [ "$_timeout" -gt 0 ] 2>/dev/null; then
-                warn "[$label] NULL RUN DETECTED — agent timed out after ${_timeout}s."
+        if [ "$_has_file_changes" = true ] || [ "$_has_summary" = true ]; then
+            # Agent timed out but produced file changes — NOT a null run.
+            if [ "$_was_activity_timeout" = true ]; then
+                warn "[$label] Activity timeout fired but agent modified ${_changed_count} file(s) — classifying as productive run."
             else
-                warn "[$label] NULL RUN DETECTED — agent timed out (outer timeout disabled)."
+                warn "[$label] Timeout fired but agent modified ${_changed_count} file(s) — classifying as productive run."
+            fi
+        else
+            LAST_AGENT_NULL_RUN=true
+            if [ "$_was_activity_timeout" = true ]; then
+                warn "[$label] NULL RUN DETECTED — agent activity-timed out after ${_activity_timeout}s of silence."
+            else
+                if [ "$_timeout" -gt 0 ] 2>/dev/null; then
+                    warn "[$label] NULL RUN DETECTED — agent timed out after ${_timeout}s."
+                else
+                    warn "[$label] NULL RUN DETECTED — agent timed out (outer timeout disabled)."
+                fi
             fi
         fi
     elif [ "$turns_used" -le "$null_threshold" ] && [ "$agent_exit" -ne 0 ]; then
-        LAST_AGENT_NULL_RUN=true
-        warn "[$label] NULL RUN DETECTED — agent used ${turns_used} turn(s) and exited ${agent_exit}."
-        # Provide specific guidance based on exit code
-        if [ "$agent_exit" -eq 137 ]; then
-            warn "[$label] Exit 137 = SIGKILL (signal 9). The process was killed externally."
-            warn "[$label] Common cause: OOM killer in WSL2, or the prompt was too large for available memory."
-        elif [ "$agent_exit" -eq 139 ]; then
-            warn "[$label] Exit 139 = SIGSEGV. The process crashed."
+        if [ "$_has_file_changes" = true ] || [ "$_has_summary" = true ]; then
+            warn "[$label] Low turn count (${turns_used}) with exit ${agent_exit}, but agent modified ${_changed_count} file(s) — NOT a null run."
         else
-            warn "[$label] The agent likely died during initial discovery/file search."
+            LAST_AGENT_NULL_RUN=true
+            warn "[$label] NULL RUN DETECTED — agent used ${turns_used} turn(s) and exited ${agent_exit}."
+            # Provide specific guidance based on exit code
+            if [ "$agent_exit" -eq 137 ]; then
+                warn "[$label] Exit 137 = SIGKILL (signal 9). The process was killed externally."
+                warn "[$label] Common cause: OOM killer in WSL2, or the prompt was too large for available memory."
+            elif [ "$agent_exit" -eq 139 ]; then
+                warn "[$label] Exit 139 = SIGSEGV. The process crashed."
+            else
+                warn "[$label] The agent likely died during initial discovery/file search."
+            fi
         fi
     elif [ "$turns_used" -eq 0 ]; then
-        LAST_AGENT_NULL_RUN=true
-        warn "[$label] NULL RUN DETECTED — agent used 0 turns."
+        if [ "$_has_file_changes" = true ] || [ "$_has_summary" = true ]; then
+            warn "[$label] 0 turns reported but agent modified ${_changed_count} file(s) — NOT a null run."
+        else
+            LAST_AGENT_NULL_RUN=true
+            warn "[$label] NULL RUN DETECTED — agent used 0 turns."
+        fi
     fi
+}
+
+# =============================================================================
+# FILE-CHANGE DETECTION HELPERS
+# Used by the FIFO monitoring loop and null-run detection to check whether
+# the agent is actively modifying files, even when producing no FIFO output
+# (e.g., --output-format json which is non-streaming).
+# =============================================================================
+
+# _detect_file_changes — checks if any tracked or untracked files changed since
+# the marker was last touched. Uses `find -newer` on PROJECT_DIR for speed
+# (avoids full `git status` which can be slow in large repos).
+# Returns 0 if changes detected, 1 if no changes.
+_detect_file_changes() {
+    local marker="$1"
+    local project_dir="${PROJECT_DIR:-.}"
+    local log_dir="${LOG_DIR:-${project_dir}/.claude/logs}"
+
+    # Check for any file newer than the marker in the project directory.
+    # Exclude .git, session temp dir, and pipeline log directory (logs are
+    # written by the FIFO reader, not the agent — they're not agent work).
+    # Limit to 1 match — we only need to know if ANY file changed.
+    local changed
+    changed=$(find "$project_dir" -maxdepth 4 -newer "$marker" \
+        -not -path '*/.git/*' \
+        -not -path '*/.git' \
+        -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
+        -not -path "${log_dir}/*" \
+        -type f 2>/dev/null | head -1)
+
+    if [ -n "$changed" ]; then
+        return 0
+    fi
+    return 1
+}
+
+# _count_changed_files_since — returns the count of files modified since a
+# marker file's timestamp. Uses `find -newer` for speed.
+_count_changed_files_since() {
+    local marker="$1"
+    local project_dir="${PROJECT_DIR:-.}"
+    local log_dir="${LOG_DIR:-${project_dir}/.claude/logs}"
+    local count
+    count=$(find "$project_dir" -maxdepth 4 -newer "$marker" \
+        -not -path '*/.git/*' \
+        -not -path '*/.git' \
+        -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
+        -not -path "${log_dir}/*" \
+        -type f 2>/dev/null | wc -l | tr -d '[:space:]')
+    echo "${count:-0}"
 }
 
 # =============================================================================

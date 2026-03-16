@@ -59,7 +59,7 @@ _parse_config_file() {
         fi
 
         # Reject command substitution universally (never legitimate in config values)
-        if [[ "$raw_value" == *'$('* ]] || [[ "$raw_value" == *'`'* ]]; then
+        if [[ "$raw_value" == *"\$("* ]] || [[ "$raw_value" == *"\`"* ]]; then
             echo "[✗] pipeline.conf:${line_num}: REJECTED — value for '${key}' contains command substitution." >&2
             echo "    Dangerous patterns: \$( \`" >&2
             echo "    Line: ${line}" >&2
