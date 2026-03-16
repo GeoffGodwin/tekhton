@@ -209,6 +209,17 @@ CONTEXT_BUDGET_PCT=50
 # Real tokenizers typically produce ~3.5 chars/token; 4 is a safe approximation.
 CHARS_PER_TOKEN=4
 
+# --- Clarification protocol ---------------------------------------------------
+# When enabled, agents can surface blocking questions to the human. The pipeline
+# pauses, collects answers, and resumes with the answers injected into context.
+
+# Master toggle for clarification protocol (true/false)
+# CLARIFICATION_ENABLED=true
+
+# Master toggle for mid-run replanning (true/false)
+# When enabled, reviewers can issue REPLAN_REQUIRED verdict to trigger a replan menu.
+# REPLAN_ENABLED=true
+
 # --- Context compiler (task-scoped context assembly) -------------------------
 # When enabled, agents receive only the sections of large artifacts relevant
 # to their current task, instead of full-file injection. Uses keyword extraction

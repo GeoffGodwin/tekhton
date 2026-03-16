@@ -18,3 +18,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-11
 - **Rationale**: Pattern is consistent with `lib/config.sh`, all planning keys have safe defaults when absent, and the `[[ -f "$conf_file" ]]` guard makes it safe for fresh projects with no conf yet.
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-4: lib/clarify.sh sourced in execution pipeline (Task: "Implement Milestone 4: Mid-Run Clarification And Replanning")
+- **Date**: 2026-03-16
+- **Rationale**: - ACP: lib/clarify.sh sourced in execution pipeline — **ACCEPT** — Milestone 4 is part of v2.0 Adaptive Pipeline, not the planning initiative. Backward compatible: zero behavioral change when no a
+- **Source**: Accepted ACP from pipeline run

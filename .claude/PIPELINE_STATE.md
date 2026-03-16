@@ -1,21 +1,24 @@
-# Pipeline State — 2026-03-16 15:21:22
+# Pipeline State — 2026-03-16 17:24:49
 ## Exit Stage
-coder
+tester
 
 ## Exit Reason
-null_run
+partial_tests
 
 ## Resume Command
---start-at coder
+--milestone --start-at tester
 
 ## Task
-Implement Milestone 3: Milestone State Machine And Auto-Advance
+Implement Milestone 4: Mid-Run Clarification And Replanning
 
 ## Notes
-Agent used 0 turn(s) and exited 124. Likely died during initial file discovery. Consider: narrower task description, adding a SCOUT_REPORT.md manually, or checking agent logs.
+8 test(s) remaining — TESTER_REPORT.md has the checklist
+
+## Milestone
+none
 
 ## Files Present
-- CODER_SUMMARY.md (8 lines)
-- REVIEWER_REPORT.md (missing)
-- TESTER_REPORT.md (missing)
-- JR_CODER_SUMMARY.md (missing)
+- CODER_SUMMARY.md (missing)
+- REVIEWER_REPORT.md (34 lines)
+- TESTER_REPORT.md (17 lines)
+- JR_CODER_SUMMARY.md (29 lines)

@@ -449,7 +449,7 @@ find_next_milestone() {
     local next=""
     local all_ms
     all_ms=$(parse_milestones "$claude_md" 2>/dev/null) || true
-    while IFS='|' read -r num title _criteria; do
+    while IFS='|' read -r num _title _criteria; do
         if [[ -n "$num" ]] && [[ "$num" -gt "$current" ]]; then
             if ! is_milestone_done "$num" "$claude_md"; then
                 next="$num"

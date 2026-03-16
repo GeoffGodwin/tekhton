@@ -205,6 +205,11 @@ ${nb_notes}"
         warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
     fi
 
+    # --- Clarification context (from prior pause) ----------------------------
+
+    load_clarifications_content
+    export CLARIFICATIONS_CONTENT
+
     # --- Context compiler (task-scoped filtering) ----------------------------
 
     build_context_packet "coder" "$TASK" "$CLAUDE_CODER_MODEL"
@@ -220,6 +225,7 @@ ${nb_notes}"
     _add_context_component "Prior Tester" "$PRIOR_TESTER_CONTEXT"
     _add_context_component "Non-Blocking Notes" "$NON_BLOCKING_CONTEXT"
     _add_context_component "Scout Report" "$BUG_SCOUT_CONTEXT"
+    _add_context_component "Clarifications" "$CLARIFICATIONS_CONTENT"
     log_context_report "coder" "$CLAUDE_CODER_MODEL"
 
     # --- Invoke coder agent --------------------------------------------------
@@ -279,6 +285,64 @@ ${nb_notes}"
     # Resolve human notes based on coder's structured reporting
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
         resolve_human_notes
+    fi
+
+    # --- Post-coder clarification detection ------------------------------------
+
+    if detect_clarifications "CODER_SUMMARY.md"; then
+        if ! handle_clarifications; then
+            # User aborted — save state for resume
+            write_pipeline_state \
+                "coder" \
+                "clarification_abort" \
+                "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                "$TASK" \
+                "Clarification collection aborted by user. Partial answers in CLARIFICATIONS.md."
+            error "Pipeline paused for clarification. Re-run to resume."
+            exit 1
+        fi
+
+        # Re-run coder with clarification answers if blocking items were answered
+        local blocking_file="${TEKHTON_SESSION_DIR}/clarify_blocking.txt"
+        if [[ -s "$blocking_file" ]]; then
+            log "Re-running coder with clarification answers..."
+
+            # Reload clarifications into context
+            load_clarifications_content
+            export CLARIFICATIONS_CONTENT
+
+            CODER_PROMPT=$(render_prompt "coder")
+
+            run_agent \
+                "Coder (post-clarification)" \
+                "$CLAUDE_CODER_MODEL" \
+                "${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}" \
+                "$CODER_PROMPT" \
+                "$LOG_FILE" \
+                "$AGENT_TOOLS_CODER"
+            print_run_summary
+            success "Post-clarification coder finished."
+
+            # --- Null run detection for post-clarification run ---
+            if was_null_run; then
+                error "Post-clarification coder was a null run — produced no meaningful work."
+                write_pipeline_state \
+                    "coder" \
+                    "null_run_post_clarification" \
+                    "--start-at coder" \
+                    "$TASK" \
+                    "Post-clarification coder used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Consider: clarification answers may be incomplete, or agent couldn't translate them into code changes."
+
+                error "State saved with exit reason 'null_run_post_clarification'. Re-run to retry."
+                exit 1
+            fi
+
+            # Re-check for CODER_SUMMARY.md
+            if [[ ! -f "CODER_SUMMARY.md" ]]; then
+                error "Post-clarification coder did not produce CODER_SUMMARY.md."
+                exit 1
+            fi
+        fi
     fi
 
     # Check if coder left status as IN PROGRESS (hit turn limit mid-work)

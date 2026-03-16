@@ -261,6 +261,8 @@ source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
 source "${TEKHTON_HOME}/lib/context.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
+source "${TEKHTON_HOME}/lib/clarify.sh"
+source "${TEKHTON_HOME}/lib/replan.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"

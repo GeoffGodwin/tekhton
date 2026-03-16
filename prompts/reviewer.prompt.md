@@ -50,7 +50,7 @@ Your REVIEWER_REPORT.md MUST contain these exact section headings (even if a sec
 
 ```
 ## Verdict
-APPROVED | APPROVED_WITH_NOTES | CHANGES_REQUIRED
+APPROVED | APPROVED_WITH_NOTES | CHANGES_REQUIRED | REPLAN_REQUIRED
 
 ## Complex Blockers (senior coder)
 - item (or 'None')
@@ -68,6 +68,18 @@ APPROVED | APPROVED_WITH_NOTES | CHANGES_REQUIRED
 The pipeline parses these exact headings. 'None' must be the literal word None on its own line
 when a section is empty — do not use 'No complex blockers found' or similar phrases.
 Do not use bold text, numbered lists, or alternative headings for the blocker sections.
+
+### REPLAN_REQUIRED Verdict
+Use `REPLAN_REQUIRED` ONLY when the task is fundamentally mis-scoped or contradicts the
+architecture in a way that cannot be fixed by rework. This triggers a replan menu for
+the human operator. Conditions that warrant REPLAN_REQUIRED:
+- The task contradicts the architecture document in a way that requires a design change
+- The task scope is too large or too small for a single milestone
+- The implementation reveals that prerequisites from prior milestones are missing
+- The acceptance criteria are impossible to satisfy given the current codebase state
+
+Do NOT use REPLAN_REQUIRED for normal code quality issues — those are CHANGES_REQUIRED.
+Include a rationale paragraph after the verdict explaining WHY a replan is needed.
 
 ## Architecture Change Proposal Evaluation
 

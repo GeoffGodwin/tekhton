@@ -88,9 +88,21 @@ run_stage_review() {
         VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         # Also catch inline verdict formats like "Verdict: APPROVED" or "**Verdict: CHANGES_REQUIRED**"
         if [ -z "$VERDICT" ] || [ "$VERDICT" = "##Verdict" ]; then
-            VERDICT=$(grep -oi "APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
+            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
         fi
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
+
+        # --- Replan detection ------------------------------------------------
+        if detect_replan_required "REVIEWER_REPORT.md"; then
+            warn "Reviewer recommends REPLAN_REQUIRED."
+            if ! trigger_replan "REVIEWER_REPORT.md"; then
+                # User aborted or chose split — exit saved by trigger_replan
+                exit 1
+            fi
+            # User chose continue or replan was applied — proceed to tester
+            VERDICT="APPROVED_WITH_NOTES"
+            log "Proceeding after replan decision (verdict overridden to APPROVED_WITH_NOTES)."
+        fi
 
         # --- Parse ACP verdicts (if present) ---------------------------------
         # Extract accepted ACPs for downstream processing (P3 drift log will consume)

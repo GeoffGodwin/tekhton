@@ -194,6 +194,10 @@ load_config() {
     : "${TESTER_MIN_TURNS:=10}"
     : "${TESTER_MAX_TURNS_CAP:=100}"
 
+    # --- Clarification and replan defaults ---
+    : "${CLARIFICATION_ENABLED:=true}"     # Allow agents to pause for questions
+    : "${REPLAN_ENABLED:=true}"            # Allow mid-run replan triggers
+
     # --- Auto-advance defaults ---
     : "${AUTO_ADVANCE_ENABLED:=false}"
     : "${AUTO_ADVANCE_LIMIT:=3}"

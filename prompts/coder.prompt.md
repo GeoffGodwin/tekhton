@@ -29,6 +29,18 @@ contradict this directive.
 {{NON_BLOCKING_CONTEXT}}
 {{ENDIF:NON_BLOCKING_CONTEXT}}
 
+{{IF:CLARIFICATIONS_CONTENT}}
+
+## Human Clarifications
+The pipeline paused to collect answers to blocking questions from a previous agent run.
+These answers from the human override any assumptions you made. Integrate them into
+your implementation — they are authoritative.
+
+--- BEGIN FILE CONTENT: CLARIFICATIONS ---
+{{CLARIFICATIONS_CONTENT}}
+--- END FILE CONTENT: CLARIFICATIONS ---
+{{ENDIF:CLARIFICATIONS_CONTENT}}
+
 ## Your Task
 {{TASK}}
 
@@ -101,6 +113,24 @@ current implementation reality, note it in CODER_SUMMARY.md:
 These are informational — the human decides whether to update the design doc.
 Do not block your work on design contradictions.
 {{ENDIF:DESIGN_FILE}}
+
+## Clarification Protocol
+If you encounter a blocking ambiguity that prevents correct implementation — where
+guessing wrong would require significant rework — you may request clarification.
+Add a section to CODER_SUMMARY.md:
+
+```
+## Clarification Required
+- [BLOCKING] Your specific question here (explain what depends on the answer)
+- [NON_BLOCKING] Optional question (state your assumption and proceed)
+```
+
+Rules:
+- Use `[BLOCKING]` only for questions where the wrong assumption wastes significant work
+- Use `[NON_BLOCKING]` for questions where you can proceed with a reasonable assumption
+- For non-blocking items, state your assumption in the question text and proceed
+- Do NOT use this to ask about things you can determine by reading the codebase
+- Maximum 3 blocking questions per run — if you have more, narrow your scope
 
 ## Required Output
 When finished, update CODER_SUMMARY.md with:
