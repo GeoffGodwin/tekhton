@@ -1,0 +1,327 @@
+.TH TEKHTON 1 "March 2026" "Tekhton v1" "User Commands"
+.SH NAME
+tekhton \- multi-agent development pipeline
+.SH SYNOPSIS
+.B tekhton
+[\fIFLAGS\fR] \fI"task description"\fR
+.br
+.B tekhton
+.B \-\-init
+.br
+.B tekhton
+.B \-\-plan
+.br
+.B tekhton
+.B \-\-version
+.SH DESCRIPTION
+Tekhton is a standalone, project-agnostic multi-agent development pipeline built on
+the Claude CLI.
+It orchestrates a
+.BR Coder " \(-> " Reviewer " \(-> " Tester
+cycle with automatic rework routing, build gates, state persistence, and resume support.
+.PP
+.I "One intent. Many hands."
+.PP
+Tekhton reads its configuration from
+.I .claude/pipeline.conf
+in the target project directory and agent role definitions from
+.IR .claude/agents/*.md .
+All pipeline logic lives in the Tekhton installation directory.
+Nothing is copied into target projects except config and agent role files.
+.SH OPTIONS
+.SS "Core Flags"
+.TP
+.B \-\-init
+Scaffold
+.IR .claude/pipeline.conf " and " .claude/agents/*.md
+role files for a new project.
+Also creates a stub
+.I CLAUDE.md
+if one does not already exist.
+Run this once from the project root before the first pipeline invocation.
+.TP
+.B \-\-plan
+Launch the interactive planning phase.
+Runs a multi-phase interview and generates a
+.I DESIGN.md
+(design document) and
+.I CLAUDE.md
+(project rules and milestones).
+Does not require
+.I pipeline.conf
+to exist.
+.TP
+.B \-\-status
+Print the saved pipeline state and exit without running.
+Shows the stage, task, and resume command from the last interrupted run.
+.TP
+.B \-\-version
+Print the version string and exit.
+.TP
+.BR \-\-help ", " \-h
+Print a short usage summary and exit.
+.SS "Pipeline Mode Flags"
+.TP
+.B \-\-milestone
+Milestone mode.
+Applies higher turn limits, increases the maximum review cycle count, and optionally
+upgrades the tester model.
+Use this for large, well-scoped tasks such as implementing a full CLAUDE.md milestone.
+.TP
+\fB\-\-start\-at\fR \fISTAGE\fR
+Resume or start the pipeline at a specific stage.
+Valid values:
+.RS
+.TP
+.B coder
+Full pipeline from scratch (default).
+.TP
+.B review
+Skip the coder stage; requires an existing
+.IR CODER_SUMMARY.md .
+.TP
+.B tester
+Resume tester from an existing
+.IR TESTER_REPORT.md .
+.TP
+.B test
+Skip coder and reviewer; requires an existing
+.IR REVIEWER_REPORT.md .
+.RE
+.TP
+\fB\-\-notes\-filter\fR \fICATEGORY\fR
+Restrict which human notes are injected into this run.
+Valid categories:
+.BR BUG ", " FEAT ", " POLISH .
+Untagged notes are always injected.
+.TP
+.B \-\-init\-notes
+Create a blank
+.I HUMAN_NOTES.md
+template and exit.
+Has no effect if the file already exists.
+.SS "Audit Flags"
+.TP
+.B \-\-skip\-audit
+Skip the architect audit stage even if the configured observation threshold is reached.
+.TP
+.B \-\-force\-audit
+Force an architect audit regardless of whether the threshold has been reached.
+.SS "Advanced Flags"
+.TP
+.B \-\-seed\-contracts
+Run an inline contract seeding pass.
+Invokes the jr\-coder model to embed system contracts into source files.
+Requires
+.I ARCHITECTURE.md
+to exist in the project root.
+.SH ENVIRONMENT
+Tekhton uses two directory roots, resolved automatically at startup:
+.TP
+.B TEKHTON_HOME
+The directory containing
+.IR tekhton.sh " (and " lib/ ", " stages/ ", " prompts/ ).
+Set from
+.IR "${BASH_SOURCE[0]}" .
+.TP
+.B PROJECT_DIR
+The target project \(em the caller's current working directory.
+.PP
+All agent work happens inside
+.BR PROJECT_DIR .
+Pipeline logic is always read from
+.BR TEKHTON_HOME .
+These two directories can be (and in production should be) different paths,
+so the pipeline never edits its own running code.
+.SH FILES
+.TP
+.I .claude/pipeline.conf
+Project-specific configuration: model selection, turn limits, commands, file paths.
+Created by
+.BR \-\-init .
+.TP
+.I .claude/agents/*.md
+Agent role definitions.
+Separate files for
+.BR coder ", " reviewer ", " tester ", " jr\-coder ", " architect .
+.TP
+.I CLAUDE.md
+Project rules, architecture constraints, and implementation milestones.
+Read by all agents on every run.
+.TP
+.I DESIGN.md
+Design document produced by
+.BR \-\-plan .
+Contains system descriptions, config architecture, and open design questions.
+.TP
+.I CODER_SUMMARY.md
+Written by the coder stage.
+Consumed by the reviewer and tester stages.
+.TP
+.I REVIEWER_REPORT.md
+Written by the reviewer stage.
+Consumed by the tester stage.
+.TP
+.I TESTER_REPORT.md
+Written by the tester stage.
+Consumed by resume logic.
+.TP
+.I HUMAN_NOTES.md
+Optional file for human observations.
+Unchecked items are injected into the next coder run.
+.TP
+.I NON_BLOCKING_LOG.md
+Accumulates non-blocking reviewer and tester notes across runs.
+.TP
+.I ARCHITECTURE.md
+Optional architecture reference document.
+Injected into agent prompts when present.
+.TP
+.I ARCHITECTURE_LOG.md
+Running log of architectural decisions.
+Maintained by the architect audit stage.
+.TP
+.I DRIFT_LOG.md
+Running log of drift observations between codebase reality and design intent.
+.TP
+.I .claude/logs/
+Per-run log files.
+Each agent invocation produces a timestamped log.
+.SH EXIT STATUS
+.TP
+.B 0
+Success (pipeline completed, or informational flag such as
+.BR \-\-version ", " \-\-help ", " \-\-status ).
+.TP
+.B 1
+Error: invalid arguments, missing configuration, build gate failure, or pipeline crash.
+.SH EXAMPLES
+First-time project setup:
+.PP
+.RS 4
+.nf
+cd /path/to/myproject
+/path/to/tekhton/tekhton.sh \-\-init
+.fi
+.RE
+.PP
+Plan a new project from scratch:
+.PP
+.RS 4
+.nf
+tekhton \-\-plan
+.fi
+.RE
+.PP
+Run the full pipeline on a task:
+.PP
+.RS 4
+.nf
+tekhton "Implement user authentication with JWT"
+.fi
+.RE
+.PP
+Run in milestone mode for a large scoped task:
+.PP
+.RS 4
+.nf
+tekhton \-\-milestone "Implement Milestone 3: Milestone State Machine"
+.fi
+.RE
+.PP
+Resume from the review stage (coder output already exists):
+.PP
+.RS 4
+.nf
+tekhton \-\-start\-at review "Fix: edge case in payment module"
+.fi
+.RE
+.PP
+Inject only bug notes this run:
+.PP
+.RS 4
+.nf
+tekhton \-\-notes\-filter BUG "Fix reported bugs"
+.fi
+.RE
+.PP
+Use a frozen v1 to build v2 (the two-directory model):
+.PP
+.RS 4
+.nf
+cd /path/to/tekhton          # PROJECT_DIR \(em editable
+/path/to/tekhton\-v1/tekhton.sh \-\-milestone "Implement Milestone 1"
+.fi
+.RE
+.SH INSTALLATION
+Tekhton does not require system installation.
+Run it directly with an absolute or relative path to
+.IR tekhton.sh .
+.PP
+To make
+.B tekhton
+available as a command, add its directory to
+.BR PATH :
+.PP
+.RS 4
+.nf
+export PATH="/path/to/tekhton:$PATH"
+.fi
+.RE
+.PP
+To install this man page system-wide:
+.PP
+.RS 4
+.nf
+sudo cp /path/to/tekhton/man/man1/tekhton.1 /usr/local/share/man/man1/
+sudo mandb
+.fi
+.RE
+.PP
+To read this man page from the source directory without installing:
+.PP
+.RS 4
+.nf
+man \-M /path/to/tekhton/man tekhton
+.fi
+.RE
+.PP
+To always have
+.B man tekhton
+resolve to the local copy, add to your shell profile:
+.PP
+.RS 4
+.nf
+export MANPATH="/path/to/tekhton/man:$MANPATH"
+.fi
+.RE
+.SH REQUIREMENTS
+.TP
+.B claude
+The Anthropic Claude CLI, authenticated and on
+.BR PATH .
+.TP
+.B git
+Git, available on
+.BR PATH .
+Used for commit hooks and drift tracking.
+.TP
+.B bash
+Bash 4 or later.
+.SH SEE ALSO
+Project documentation:
+.I README.md
+.br
+Architecture documentation:
+.I ARCHITECTURE.md
+.br
+Design document:
+.I DESIGN.md
+.br
+Pipeline configuration reference:
+.I .claude/pipeline.conf
+.br
+Upstream repository:
+.I https://github.com/geoffgodwin/tekhton
+.SH AUTHOR
+Geoff Godwin

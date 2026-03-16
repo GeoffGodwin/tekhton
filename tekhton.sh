@@ -74,6 +74,10 @@ _tekhton_cleanup() {
 }
 trap _tekhton_cleanup EXIT
 
+# --- Version -----------------------------------------------------------------
+TEKHTON_VERSION="v1"
+export TEKHTON_VERSION
+
 # --- Path resolution ---------------------------------------------------------
 # TEKHTON_HOME: where this script (and lib/, stages/, prompts/) lives.
 # PROJECT_DIR:  the target project — always the caller's working directory.
@@ -94,6 +98,13 @@ SKIP_FINAL_CHECKS=false
 TOTAL_TURNS=0
 TOTAL_TIME=0
 STAGE_SUMMARY=""
+
+# --- Early --version check (runs before config exists) ----------------------
+
+if [ "${1:-}" = "--version" ]; then
+    echo "Tekhton ${TEKHTON_VERSION}"
+    exit 0
+fi
 
 # --- Early --init check (runs before config exists) --------------------------
 
@@ -215,13 +226,16 @@ source "${TEKHTON_HOME}/stages/tester.sh"
 load_config
 
 usage() {
-    echo "Tekhton — One intent. Many hands."
+    local exit_code="${1:-0}"
+    echo "Tekhton ${TEKHTON_VERSION} — One intent. Many hands."
     echo ""
     echo "Usage: tekhton [flags] \"<task description>\""
     echo ""
     echo "  --init                    Scaffold pipeline config + agent roles for a new project"
     echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
     echo "  --status                  Print saved pipeline state and exit (no run)"
+    echo "  --version                 Print version and exit"
+    echo "  --help, -h                Show this help and exit"
     echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
     echo "                            upgraded tester model"
     echo "  --start-at coder          Full pipeline from scratch (default)"
@@ -242,8 +256,12 @@ usage() {
     echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
     echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
     echo "  tekhton --milestone \"Feat: payment system\""
+    echo ""
+    echo "Documentation:"
+    echo "  man tekhton                              # Full man page (if installed)"
+    echo "  man -M \"${TEKHTON_HOME}/man\" tekhton   # Man page from source directory"
     _TEKHTON_CLEAN_EXIT=true
-    exit 1
+    exit "$exit_code"
 }
 
 # --- Resume detection (no-argument invocation) -------------------------------
@@ -251,7 +269,7 @@ usage() {
 if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
     if [ ! -f "$PIPELINE_STATE_FILE" ]; then
         error "No task given and no saved pipeline state found."
-        usage
+        usage 1
     fi
 
     echo
@@ -323,7 +341,7 @@ while [[ $# -gt 0 ]]; do
             shift
             case "$1" in
                 coder|review|tester|test) START_AT="$1" ;;
-                *) error "Invalid --start-at value: '$1'. Must be coder, review, tester, or test."; usage ;;
+                *) error "Invalid --start-at value: '$1'. Must be coder, review, tester, or test."; usage 1 ;;
             esac
             shift
             ;;
@@ -333,7 +351,7 @@ while [[ $# -gt 0 ]]; do
                 NOTES_FILTER="$1"
             else
                 error "Invalid --notes-filter value: '$1'. Must be one of: ${NOTES_FILTER_CATEGORIES//|/, }."
-                usage
+                usage 1
             fi
             shift
             ;;
@@ -394,11 +412,11 @@ EOF
             success "Contract seeding complete. Review with: grep -rn 'System:' lib/"
             exit 0
             ;;
-        --help|-h) usage ;;
+        --help|-h) usage 0 ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --) shift; break ;;
-        -*) error "Unknown flag: $1"; usage ;;
+        -*) error "Unknown flag: $1"; usage 1 ;;
         *) break ;;
     esac
 done
@@ -411,11 +429,11 @@ if [ $# -eq 0 ]; then
             log "Task pulled from saved pipeline state: ${TASK}"
         else
             error "Pipeline state exists but has no task. Provide a task description."
-            usage
+            usage 1
         fi
     else
         error "Task description is required."
-        usage
+        usage 1
     fi
 else
     TASK="$1"
