@@ -209,6 +209,14 @@ CONTEXT_BUDGET_PCT=50
 # Real tokenizers typically produce ~3.5 chars/token; 4 is a safe approximation.
 CHARS_PER_TOKEN=4
 
+# --- Context compiler (task-scoped context assembly) -------------------------
+# When enabled, agents receive only the sections of large artifacts relevant
+# to their current task, instead of full-file injection. Uses keyword extraction
+# from the task string and scout/coder reports to filter context blocks.
+# Falls back to full injection when keyword extraction yields zero matches.
+# Off by default — enable after verifying context budget reports show oversized prompts.
+CONTEXT_COMPILER_ENABLED=false
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false
