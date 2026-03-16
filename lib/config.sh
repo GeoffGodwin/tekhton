@@ -102,15 +102,33 @@ load_config() {
     # Rejects values containing dangerous shell metacharacters: $( ` ; | & > <
     _parse_config_file "$_CONF_FILE"
 
+    # --- Context budget defaults (set early — used by planning + execution) ---
+    : "${CONTEXT_BUDGET_PCT:=50}"            # Max % of context window for prompt
+    : "${CHARS_PER_TOKEN:=4}"                # Conservative char-to-token ratio
+    : "${CONTEXT_BUDGET_ENABLED:=true}"      # Toggle context budgeting
+
+    # --- Execution pipeline defaults (derivable from CLAUDE_STANDARD_MODEL) ---
+    : "${REQUIRED_TOOLS:=git claude}"
+    : "${CLAUDE_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+    : "${CLAUDE_JR_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+    : "${CLAUDE_TESTER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+    : "${CODER_MAX_TURNS:=50}"
+    : "${JR_CODER_MAX_TURNS:=25}"
+    : "${REVIEWER_MAX_TURNS:=15}"
+    : "${TESTER_MAX_TURNS:=30}"
+    : "${MAX_REVIEW_CYCLES:=3}"
+    : "${TEST_CMD:=true}"
+    : "${PIPELINE_STATE_FILE:=.claude/PIPELINE_STATE.md}"
+    : "${LOG_DIR:=.claude/logs}"
+    : "${CODER_ROLE_FILE:=.claude/agents/coder.md}"
+    : "${REVIEWER_ROLE_FILE:=.claude/agents/reviewer.md}"
+    : "${TESTER_ROLE_FILE:=.claude/agents/tester.md}"
+    : "${JR_CODER_ROLE_FILE:=.claude/agents/jr-coder.md}"
+    : "${PROJECT_RULES_FILE:=CLAUDE.md}"
+
     # --- Validate required keys ---
     local missing=()
-    for key in PROJECT_NAME REQUIRED_TOOLS \
-               CLAUDE_CODER_MODEL CLAUDE_JR_CODER_MODEL CLAUDE_STANDARD_MODEL CLAUDE_TESTER_MODEL \
-               CODER_MAX_TURNS JR_CODER_MAX_TURNS REVIEWER_MAX_TURNS TESTER_MAX_TURNS \
-               MAX_REVIEW_CYCLES ANALYZE_CMD TEST_CMD \
-               PIPELINE_STATE_FILE LOG_DIR \
-               CODER_ROLE_FILE REVIEWER_ROLE_FILE TESTER_ROLE_FILE JR_CODER_ROLE_FILE \
-               PROJECT_RULES_FILE; do
+    for key in PROJECT_NAME CLAUDE_STANDARD_MODEL ANALYZE_CMD; do
         if [ -z "${!key:-}" ]; then
             missing+=("$key")
         fi
@@ -155,11 +173,6 @@ load_config() {
     : "${MILESTONE_ARCHITECT_MAX_TURNS:=$(( ARCHITECT_MAX_TURNS * 2 ))}"
     : "${CLAUDE_ARCHITECT_MODEL:=${CLAUDE_STANDARD_MODEL}}"
     : "${DEPENDENCY_CONSTRAINTS_FILE:=}"
-
-    # --- Context budget defaults ---
-    : "${CONTEXT_BUDGET_PCT:=50}"            # Max % of context window for prompt
-    : "${CHARS_PER_TOKEN:=4}"                # Conservative char-to-token ratio
-    : "${CONTEXT_BUDGET_ENABLED:=true}"      # Toggle context budgeting
 
     # --- Agent exit detection defaults ---
     : "${AGENT_NULL_RUN_THRESHOLD:=2}"       # Turns ≤ this + non-zero exit = null run
