@@ -193,6 +193,22 @@ DYNAMIC_TURNS_ENABLED=true
 # Max turns for CLAUDE.md generation
 # PLAN_GENERATION_MAX_TURNS=30
 
+# --- Context budget (token accounting) ----------------------------------------
+# Controls context size measurement and budget warnings for agent prompts.
+# The pipeline measures how much of the model's context window is consumed
+# by injected context blocks (architecture, notes, prior reports, etc.).
+
+# Enable context budget measurement and warnings (true/false)
+CONTEXT_BUDGET_ENABLED=true
+
+# Maximum percentage of the model's context window to use for injected context.
+# When exceeded, a warning is logged. Default: 50 (leaves room for agent output).
+CONTEXT_BUDGET_PCT=50
+
+# Character-to-token ratio for estimation. Lower = more conservative estimates.
+# Real tokenizers typically produce ~3.5 chars/token; 4 is a safe approximation.
+CHARS_PER_TOKEN=4
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false

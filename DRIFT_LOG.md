@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-03-16 | "Implement Milestone 1: Token And Context Accounting"] `reviewer.md` architecture boundary check ("No modifications to existing execution pipeline files") conflicts with the 2.0 milestone series, which explicitly authorizes modifications to `stages/*.sh` and `lib/*.sh`. The reviewer role file should clarify that 2.0 feature additions to execution pipeline files are authorized when the CLAUDE.md milestone spec explicitly calls them out. Carry-over from prior cycle.
+- [2026-03-16 | "Implement Milestone 1: Token And Context Accounting"] -- **Prior Blocker Verification:** 1. `lib/context.sh` missing `set -euo pipefail` — **FIXED.** Line 2 now reads `set -euo pipefail`. ✓ 2. Token format in `print_run_summary()` — **FIXED.** Lines 152–153 of `lib/agent.sh` now compute `ctx_k=$(( LAST_CONTEXT_TOKENS / 1000 ))` and display `~${ctx_k}k tokens (${LAST_CONTEXT_PCT:-0}% of window)`. ✓
 - [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] `lib/agent.sh:1` — file is now 678 lines (down from 711 after dead-code removal), still more than double the 300-line ceiling in the Code Quality checklist. Pre-existing condition; flagging again for a future refactor pass to split helper sections into a companion file (e.g., `lib/agent_monitor.sh`).
 - [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] --
 

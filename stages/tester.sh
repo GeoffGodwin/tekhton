@@ -27,6 +27,11 @@ run_stage_tester() {
         else
             ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
         fi
+
+        # --- Context budget reporting ----------------------------------------
+        _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
+        log_context_report "tester" "$CLAUDE_TESTER_MODEL"
+
         TESTER_PROMPT=$(render_prompt "tester")
     fi
 

@@ -41,6 +41,11 @@ run_stage_review() {
         if [ "$REVIEW_CYCLE" -gt 1 ]; then
             PRIOR_BLOCKERS_BLOCK="yes"
         fi
+
+        # --- Context budget reporting ----------------------------------------
+        _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
+        log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_STANDARD_MODEL"
+
         REVIEWER_PROMPT=$(render_prompt "reviewer")
 
         run_agent \

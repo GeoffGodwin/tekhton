@@ -257,6 +257,7 @@ source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/hooks.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
+source "${TEKHTON_HOME}/lib/context.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"

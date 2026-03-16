@@ -156,6 +156,11 @@ load_config() {
     : "${CLAUDE_ARCHITECT_MODEL:=${CLAUDE_STANDARD_MODEL}}"
     : "${DEPENDENCY_CONSTRAINTS_FILE:=}"
 
+    # --- Context budget defaults ---
+    : "${CONTEXT_BUDGET_PCT:=50}"            # Max % of context window for prompt
+    : "${CHARS_PER_TOKEN:=4}"                # Conservative char-to-token ratio
+    : "${CONTEXT_BUDGET_ENABLED:=true}"      # Toggle context budgeting
+
     # --- Agent exit detection defaults ---
     : "${AGENT_NULL_RUN_THRESHOLD:=2}"       # Turns ≤ this + non-zero exit = null run
 

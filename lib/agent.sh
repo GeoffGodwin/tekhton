@@ -148,6 +148,10 @@ print_run_summary() {
     echo "  ──────────────────────────────────"
     echo "  Total turns: ${TOTAL_TURNS}"
     echo "  Total time:  ${total_mins}m${total_secs}s"
+    if [ -n "${LAST_CONTEXT_TOKENS:-}" ] && [ "${LAST_CONTEXT_TOKENS:-0}" -gt 0 ]; then
+        local ctx_k=$(( LAST_CONTEXT_TOKENS / 1000 ))
+        echo "  Context:     ~${ctx_k}k tokens (${LAST_CONTEXT_PCT:-0}% of window)"
+    fi
     echo "══════════════════════════════════════"
     echo
 }

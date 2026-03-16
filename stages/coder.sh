@@ -205,6 +205,19 @@ ${nb_notes}"
         warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
     fi
 
+    # --- Context budget reporting --------------------------------------------
+
+    _add_context_component "Architecture" "$ARCHITECTURE_BLOCK"
+    _add_context_component "Glossary" "$GLOSSARY_BLOCK"
+    _add_context_component "Milestone" "$MILESTONE_BLOCK"
+    _add_context_component "Human Notes" "$HUMAN_NOTES_BLOCK"
+    _add_context_component "Prior Reviewer" "$PRIOR_REVIEWER_CONTEXT"
+    _add_context_component "Prior Progress" "$PRIOR_PROGRESS_CONTEXT"
+    _add_context_component "Prior Tester" "$PRIOR_TESTER_CONTEXT"
+    _add_context_component "Non-Blocking Notes" "$NON_BLOCKING_CONTEXT"
+    _add_context_component "Scout Report" "$BUG_SCOUT_CONTEXT"
+    log_context_report "coder" "$CLAUDE_CODER_MODEL"
+
     # --- Invoke coder agent --------------------------------------------------
 
     # Mark human notes as in-progress before coder runs
