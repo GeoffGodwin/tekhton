@@ -406,7 +406,8 @@ EOF
                 "$CLAUDE_JR_CODER_MODEL" \
                 "20" \
                 "$SEED_PROMPT" \
-                "${LOG_DIR}/$(date +%Y%m%d_%H%M%S)_seed-contracts.log"
+                "${LOG_DIR}/$(date +%Y%m%d_%H%M%S)_seed-contracts.log" \
+                "$AGENT_TOOLS_SEED"
 
             print_run_summary
             success "Contract seeding complete. Review with: grep -rn 'System:' lib/"

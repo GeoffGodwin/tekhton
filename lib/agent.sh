@@ -13,6 +13,58 @@
 : "${TOTAL_TIME:=0}"
 : "${STAGE_SUMMARY:=}"
 
+# --- Agent Tool Profiles (least-privilege allowlists) ------------------------
+#
+# Each profile grants only the Claude CLI tools the agent role actually needs.
+# This replaces --dangerously-skip-permissions with --allowedTools to prevent
+# agents from performing destructive operations (rm -rf, git push --force,
+# arbitrary network access, etc.).
+#
+# Tool reference (Claude CLI):
+#   Read    — read file contents          Edit    — string replace in files
+#   Write   — create/overwrite files       Bash   — execute shell commands
+#   Glob    — find files by pattern        Grep   — search file contents
+#   Agent   — launch subagents             WebFetch/WebSearch — network access
+#
+# Bash sub-patterns: Bash(command:*) restricts to commands matching the glob.
+# Example: "Bash(grep:*) Bash(find:*)" allows only grep and find.
+#
+# Override with AGENT_SKIP_PERMISSIONS=true in pipeline.conf to restore the
+# old --dangerously-skip-permissions behavior (NOT recommended).
+# -----------------------------------------------------------------------------
+
+# SCOUT: read-only discovery. Finds relevant files, reads headers. No writes.
+AGENT_TOOLS_SCOUT="Read Glob Grep Bash(find:*) Bash(head:*) Bash(wc:*) Bash(cat:*) Bash(ls:*) Bash(tail:*) Bash(file:*) Write"
+
+# CODER: full implementation agent. Reads, writes, edits code, runs analyze/test.
+# Bash access is broad but blocks destructive operations via disallowed tools.
+AGENT_TOOLS_CODER="Read Write Edit Glob Grep Bash"
+
+# JR_CODER: same as coder but for simpler tasks. Same tool access.
+AGENT_TOOLS_JR_CODER="Read Write Edit Glob Grep Bash"
+
+# REVIEWER: reads code and writes a report. No code edits, no bash.
+AGENT_TOOLS_REVIEWER="Read Glob Grep Write"
+
+# TESTER: writes test files, runs test commands. Needs bash for $TEST_CMD.
+AGENT_TOOLS_TESTER="Read Write Edit Glob Grep Bash"
+
+# ARCHITECT: reads drift logs and source, writes a plan. No code edits, no bash.
+AGENT_TOOLS_ARCHITECT="Read Glob Grep Write"
+
+# BUILD_FIX: targeted code fixes + build verification. Needs bash for build check.
+AGENT_TOOLS_BUILD_FIX="Read Write Edit Glob Grep Bash"
+
+# SEED_CONTRACTS: adds doc comments to source files, runs analyze.
+AGENT_TOOLS_SEED="Read Write Edit Glob Grep Bash"
+
+# CLEANUP: analyze cleanup pass — fix lint warnings, runs analyze.
+AGENT_TOOLS_CLEANUP="Read Write Edit Glob Grep Bash"
+
+# Disallowed tools for ALL agents — destructive operations that must never happen.
+# Applied as --disallowedTools alongside --allowedTools for any agent with Bash.
+AGENT_DISALLOWED_TOOLS="WebFetch WebSearch Bash(git push:*) Bash(git remote:*) Bash(rm -rf /:*) Bash(rm -rf ~:*) Bash(rm -rf .:*) Bash(rm -rf ..:*) Bash(curl:*) Bash(wget:*)"
+
 # --- Timeout --kill-after support detection ----------------------------------
 # GNU coreutils timeout supports --kill-after; macOS/BSD timeout does not.
 # Detect once at source time so every run_agent() call can use it.
@@ -92,6 +144,7 @@ run_agent() {
     local max_turns="$3"
     local prompt="$4"
     local log_file="$5"
+    local allowed_tools="${6:-$AGENT_TOOLS_CODER}"  # default: coder-level access
 
     local start_time
     start_time=$(date +%s)
@@ -121,6 +174,26 @@ run_agent() {
     local _turns_file="/tmp/tekhton_${_project_slug}_last_turns"
     local _exit_file="/tmp/tekhton_${_project_slug}_agent_exit"
     rm -f "$_exit_file" "$_turns_file"
+
+    # --- Build permission flags -----------------------------------------------
+    # Default: use --allowedTools + --disallowedTools for least-privilege.
+    # Override: set AGENT_SKIP_PERMISSIONS=true in pipeline.conf for the old
+    # --dangerously-skip-permissions behavior (NOT recommended).
+    local -a _perm_flags=()
+    if [ "${AGENT_SKIP_PERMISSIONS:-false}" = true ]; then
+        _perm_flags=(--dangerously-skip-permissions)
+        if [ "${_AGENT_PERM_WARNED:-}" != true ]; then
+            warn "[agent] AGENT_SKIP_PERMISSIONS=true — agents have unrestricted access."
+            warn "[agent] This is NOT recommended. Set to false in pipeline.conf."
+            _AGENT_PERM_WARNED=true
+        fi
+    else
+        _perm_flags=(--allowedTools "$allowed_tools")
+        # Apply disallowed tools for agents with Bash access
+        if echo "$allowed_tools" | grep -q 'Bash'; then
+            _perm_flags+=(--disallowedTools "$AGENT_DISALLOWED_TOOLS")
+        fi
+    fi
 
     # =========================================================================
     # FIFO-ISOLATED INVOCATION
@@ -158,7 +231,7 @@ run_agent() {
         (
             $_invoke claude \
                 --model "$model" \
-                --dangerously-skip-permissions \
+                "${_perm_flags[@]}" \
                 --max-turns "$max_turns" \
                 --output-format json \
                 -p "$prompt" \
@@ -279,7 +352,7 @@ run_agent() {
 
         $_invoke claude \
             --model "$model" \
-            --dangerously-skip-permissions \
+            "${_perm_flags[@]}" \
             --max-turns "$max_turns" \
             --output-format json \
             -p "$prompt" \

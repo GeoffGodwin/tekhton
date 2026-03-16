@@ -56,7 +56,8 @@ $(cat "${ARCHITECTURE_FILE}")"
             "$CLAUDE_SCOUT_MODEL" \
             "${SCOUT_MAX_TURNS}" \
             "$SCOUT_PROMPT" \
-            "$LOG_FILE"
+            "$LOG_FILE" \
+            "$AGENT_TOOLS_SCOUT"
 
         if [ -f "SCOUT_REPORT.md" ]; then
             print_run_summary
@@ -211,7 +212,8 @@ ${nb_notes}"
         "$CLAUDE_CODER_MODEL" \
         "${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}" \
         "$CODER_PROMPT" \
-        "$LOG_FILE"
+        "$LOG_FILE" \
+        "$AGENT_TOOLS_CODER"
     print_run_summary
     success "Coder agent finished."
 
@@ -341,7 +343,8 @@ ${GIT_DIFF_STAT}
                 "$CLAUDE_CODER_MODEL" \
                 "$((CODER_MAX_TURNS / 3))" \
                 "$BUILD_FIX_PROMPT" \
-                "$LOG_FILE"
+                "$LOG_FILE" \
+                "$AGENT_TOOLS_BUILD_FIX"
             log "Build fix coder finished."
 
             if ! run_build_gate "post-coder-fix"; then

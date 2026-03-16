@@ -44,7 +44,8 @@ run_stage_review() {
             "$CLAUDE_STANDARD_MODEL" \
             "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
             "$REVIEWER_PROMPT" \
-            "$LOG_FILE"
+            "$LOG_FILE" \
+            "$AGENT_TOOLS_REVIEWER"
         print_run_summary
         success "Reviewer finished."
 
@@ -127,7 +128,8 @@ run_stage_review() {
                         "$CLAUDE_CODER_MODEL" \
                         "$CODER_MAX_TURNS" \
                         "$REWORK_PROMPT" \
-                        "$LOG_FILE"
+                        "$LOG_FILE" \
+                        "$AGENT_TOOLS_CODER"
                     print_run_summary
                     success "Senior coder rework finished."
 
@@ -143,7 +145,8 @@ run_stage_review() {
                             "$CLAUDE_JR_CODER_MODEL" \
                             "$JR_CODER_MAX_TURNS" \
                             "$JR_REWORK_PROMPT" \
-                            "$LOG_FILE"
+                            "$LOG_FILE" \
+                            "$AGENT_TOOLS_JR_CODER"
                         print_run_summary
                         success "Jr coder cleanup finished."
                     fi
@@ -159,7 +162,8 @@ run_stage_review() {
                         "$CLAUDE_JR_CODER_MODEL" \
                         "$JR_CODER_MAX_TURNS" \
                         "$JR_REWORK_PROMPT" \
-                        "$LOG_FILE"
+                        "$LOG_FILE" \
+                        "$AGENT_TOOLS_JR_CODER"
                     print_run_summary
                     success "Jr coder cleanup finished."
                 fi
@@ -173,7 +177,8 @@ run_stage_review() {
                         "$CLAUDE_CODER_MODEL" \
                         "$((CODER_MAX_TURNS / 3))" \
                         "$BUILD_FIX_PROMPT" \
-                        "$LOG_FILE"
+                        "$LOG_FILE" \
+                        "$AGENT_TOOLS_BUILD_FIX"
                     if ! run_build_gate "post-fix-pass-retry"; then
                         error "Build gate failed again. See BUILD_ERRORS.md."
                         write_pipeline_state "review" "build_failure" \

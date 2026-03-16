@@ -66,7 +66,8 @@ run_stage_architect() {
         "$architect_model" \
         "$architect_turns" \
         "$ARCHITECT_PROMPT" \
-        "$LOG_FILE"
+        "$LOG_FILE" \
+        "$AGENT_TOOLS_ARCHITECT"
     print_run_summary
     success "Architect agent finished."
 
@@ -116,7 +117,8 @@ run_stage_architect() {
             "$CLAUDE_CODER_MODEL" \
             "$CODER_MAX_TURNS" \
             "$ARCHITECT_SR_PROMPT" \
-            "$LOG_FILE"
+            "$LOG_FILE" \
+            "$AGENT_TOOLS_CODER"
         print_run_summary
         success "Senior coder remediation finished."
     else
@@ -133,7 +135,8 @@ run_stage_architect() {
             "$CLAUDE_JR_CODER_MODEL" \
             "$JR_CODER_MAX_TURNS" \
             "$ARCHITECT_JR_PROMPT" \
-            "$LOG_FILE"
+            "$LOG_FILE" \
+            "$AGENT_TOOLS_JR_CODER"
         print_run_summary
         success "Jr coder remediation finished."
     else
@@ -153,7 +156,8 @@ run_stage_architect() {
                 "$CLAUDE_CODER_MODEL" \
                 "$((CODER_MAX_TURNS / 3))" \
                 "$BUILD_FIX_PROMPT" \
-                "$LOG_FILE"
+                "$LOG_FILE" \
+                "$AGENT_TOOLS_BUILD_FIX"
 
             if ! run_build_gate "post-architect-remediation-retry"; then
                 warn "Build still broken after architect remediation. Skipping review."
@@ -177,7 +181,8 @@ run_stage_architect() {
             "$CLAUDE_STANDARD_MODEL" \
             "$REVIEWER_MAX_TURNS" \
             "$ARCHITECT_REVIEW_PROMPT" \
-            "$LOG_FILE"
+            "$LOG_FILE" \
+            "$AGENT_TOOLS_REVIEWER"
         print_run_summary
         success "Expedited review finished."
     fi

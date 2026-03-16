@@ -116,7 +116,8 @@ run_final_checks() {
             "$CLEANUP_MODEL" \
             "$CLEANUP_TURNS" \
             "$CLEANUP_PROMPT" \
-            "$log_file"
+            "$log_file" \
+            "$AGENT_TOOLS_CLEANUP"
 
         # Re-run analyze to confirm cleanup worked
         log "Re-running ${ANALYZE_CMD} after cleanup..."

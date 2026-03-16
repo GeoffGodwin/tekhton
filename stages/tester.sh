@@ -32,7 +32,8 @@ run_stage_tester() {
         "$CLAUDE_TESTER_MODEL" \
         "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
         "$TESTER_PROMPT" \
-        "$LOG_FILE"
+        "$LOG_FILE" \
+        "$AGENT_TOOLS_TESTER"
     export TESTER_EXIT=$?
 
     # --- SIGKILL retry --------------------------------------------------------
@@ -47,7 +48,8 @@ run_stage_tester() {
             "$CLAUDE_TESTER_MODEL" \
             "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
             "$TESTER_PROMPT" \
-            "$LOG_FILE"
+            "$LOG_FILE" \
+            "$AGENT_TOOLS_TESTER"
         TESTER_EXIT=$?  # exported above
     fi
 

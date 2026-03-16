@@ -42,6 +42,16 @@ CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 CLAUDE_ARCHITECT_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-haiku-4-5"
 
+# --- Agent permissions -------------------------------------------------------
+# By default, agents use --allowedTools with least-privilege profiles.
+# Each agent role gets only the Claude CLI tools it needs (e.g., reviewers
+# can read and write reports but cannot run bash or edit code).
+# Destructive operations (git push, rm -rf, curl, wget) are always blocked.
+#
+# Set AGENT_SKIP_PERMISSIONS=true to restore the old --dangerously-skip-permissions
+# behavior. NOT recommended — agents will have unrestricted filesystem and bash access.
+# AGENT_SKIP_PERMISSIONS=false
+
 # --- Turn limits (normal mode) ----------------------------------------------
 CODER_MAX_TURNS=35
 JR_CODER_MAX_TURNS=15

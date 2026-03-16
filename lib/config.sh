@@ -84,6 +84,11 @@ load_config() {
     # --- Agent exit detection defaults ---
     : "${AGENT_NULL_RUN_THRESHOLD:=2}"       # Turns ≤ this + non-zero exit = null run
 
+    # --- Agent permission defaults ---
+    # Set to true to use --dangerously-skip-permissions (NOT recommended).
+    # When false (default), agents use --allowedTools with least-privilege profiles.
+    : "${AGENT_SKIP_PERMISSIONS:=false}"
+
     # --- Dynamic turn limit defaults ---
     # Bounds for scout-recommended turn adjustments. The scout suggests a value;
     # the pipeline clamps it to [min, max]. Set to 0 to disable dynamic limits.
