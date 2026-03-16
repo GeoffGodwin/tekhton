@@ -49,3 +49,19 @@
 ────────────────────────────────────────
   Passed: [0;32m40[0m  Failed: [0;31m0[0m
 ────────────────────────────────────────
+[feature/Milestone1 09ca7cd] feat: The last pipeline run failed per /mnt/c/Users/Geoff/workspace/geoffgodwi
+ 19 files changed, 303 insertions(+), 117 deletions(-)
+ delete mode 100644 .claude/PIPELINE_STATE.md
+ create mode 100644 .claude/logs/20260316_133234_SCOUT_REPORT.md
+ create mode 100644 .claude/logs/20260316_133234_last-run-completed-with-a-failed-test-check-the-mn.log
+ create mode 100644 .claude/logs/20260316_134213_CODER_SUMMARY.md
+ create mode 100644 .claude/logs/20260316_134213_REVIEWER_REPORT.md
+ create mode 100644 .claude/logs/20260316_134213_TESTER_REPORT.md
+ create mode 100644 .claude/logs/20260316_134213_the-last-pipeline-run-failed-per-mnt-c-users-geoff.log
+ copy CODER_SUMMARY.md => .claude/logs/archive/20260316_133236_CODER_SUMMARY.md (100%)
+ rename JR_CODER_SUMMARY.md => .claude/logs/archive/20260316_133236_JR_CODER_SUMMARY.md (100%)
+ copy REVIEWER_REPORT.md => .claude/logs/archive/20260316_133236_REVIEWER_REPORT.md (100%)
+ create mode 100644 .claude/logs/archive/20260316_133236_TESTER_REPORT.md
+ rewrite CODER_SUMMARY.md (97%)
+ rewrite REVIEWER_REPORT.md (91%)
+ create mode 100644 tests/test_config_validation_failures.sh

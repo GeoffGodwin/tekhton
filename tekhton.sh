@@ -793,6 +793,10 @@ _do_git_commit() {
     local summary
     summary=$(echo "$git_output" | head -1)
     log "$summary"
+    # Amend the commit to include the final log file state (the git output
+    # we just appended). Without this, the log file is left dirty post-commit.
+    git add -- "$LOG_FILE" > /dev/null 2>&1 || true
+    git commit --amend --no-edit > /dev/null 2>&1 || true
 }
 
 case "$COMMIT_CHOICE" in
