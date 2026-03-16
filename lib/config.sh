@@ -106,6 +106,7 @@ load_config() {
     : "${CONTEXT_BUDGET_PCT:=50}"            # Max % of context window for prompt
     : "${CHARS_PER_TOKEN:=4}"                # Conservative char-to-token ratio
     : "${CONTEXT_BUDGET_ENABLED:=true}"      # Toggle context budgeting
+    : "${CONTEXT_COMPILER_ENABLED:=false}"   # Toggle task-scoped context assembly
 
     # --- Execution pipeline defaults (derivable from CLAUDE_STANDARD_MODEL) ---
     : "${REQUIRED_TOOLS:=git claude}"

@@ -205,6 +205,10 @@ ${nb_notes}"
         warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
     fi
 
+    # --- Context compiler (task-scoped filtering) ----------------------------
+
+    build_context_packet "coder" "$TASK" "$CLAUDE_CODER_MODEL"
+
     # --- Context budget reporting --------------------------------------------
 
     _add_context_component "Architecture" "$ARCHITECTURE_BLOCK"
