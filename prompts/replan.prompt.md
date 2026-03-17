@@ -131,3 +131,9 @@ For milestone updates specifically:
    rather than a delta update. Mark these as `**Action**: NEEDS_REINTERVIEW`.
 6. **Preserve style.** Match the existing formatting, heading levels, and
    conventions used in the target documents.
+7. **Consolidation awareness.** Each replan cycle appends a delta to DESIGN.md,
+   causing the file to grow over time. If prior replan deltas exist (look for
+   `## Replan Delta` sections), consolidate overlapping changes rather than
+   duplicating them. Recommend a `**Action**: CONSOLIDATE` for sections that
+   have accumulated multiple incremental deltas and should be rewritten as a
+   single coherent section.

@@ -16,8 +16,9 @@ export TASK="Implement Milestone 4"
 export MILESTONE_MODE=""
 export PIPELINE_STATE_FILE="${TMPDIR}/.claude/PIPELINE_STATE.md"
 export LOG_DIR="${TMPDIR}/.claude/logs"
-export DRIFT_LOG_FILE="${TMPDIR}/DRIFT_LOG.md"
-export ARCHITECTURE_LOG_FILE="${TMPDIR}/ARCHITECTURE_LOG.md"
+# Bare filenames — mid-run code prepends ${PROJECT_DIR}/ (consistent with lib/drift.sh)
+export DRIFT_LOG_FILE="DRIFT_LOG.md"
+export ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
 export REPLAN_MODEL="opus"
 export REPLAN_MAX_TURNS="5"
 

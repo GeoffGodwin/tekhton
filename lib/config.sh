@@ -112,6 +112,7 @@ load_config() {
     : "${REQUIRED_TOOLS:=git claude}"
     : "${CLAUDE_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
     : "${CLAUDE_JR_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+    : "${CLAUDE_REVIEWER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
     : "${CLAUDE_TESTER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
     : "${CODER_MAX_TURNS:=50}"
     : "${JR_CODER_MAX_TURNS:=25}"

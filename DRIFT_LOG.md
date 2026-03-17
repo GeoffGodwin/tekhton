@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-03-17 | "Implement Milestone 6: Brownfield Replan"] lib/plan.sh vs lib/replan.sh: The architecture document designates `lib/replan.sh` for "Brownfield replan orchestration (Milestone 6)" but all new replan functions reside in `lib/plan.sh`. `lib/replan.sh` holds mid-run replan (reviewer verdict path). The two files now serve distinct concerns without a naming convention that signals the distinction to future contributors.

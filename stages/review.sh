@@ -43,17 +43,17 @@ run_stage_review() {
         fi
 
         # --- Context compiler (task-scoped filtering) ------------------------
-        build_context_packet "review" "$TASK" "$CLAUDE_STANDARD_MODEL"
+        build_context_packet "review" "$TASK" "$CLAUDE_REVIEWER_MODEL"
 
         # --- Context budget reporting ----------------------------------------
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
-        log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_STANDARD_MODEL"
+        log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_REVIEWER_MODEL"
 
         REVIEWER_PROMPT=$(render_prompt "reviewer")
 
         run_agent \
             "Reviewer (cycle ${REVIEW_CYCLE})" \
-            "$CLAUDE_STANDARD_MODEL" \
+            "$CLAUDE_REVIEWER_MODEL" \
             "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
             "$REVIEWER_PROMPT" \
             "$LOG_FILE" \
