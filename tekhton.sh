@@ -894,9 +894,18 @@ record_run_metrics
 
 archive_reports "$LOG_DIR" "$TIMESTAMP"
 
+# --- Milestone disposition for commit signatures -----------------------------
+
+_MS_COMMIT_NUM=""
+_MS_COMMIT_DISPOSITION=""
+if [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
+    _MS_COMMIT_NUM="$_CURRENT_MILESTONE"
+    _MS_COMMIT_DISPOSITION=$(get_milestone_disposition 2>/dev/null || echo "")
+fi
+
 # --- Generate commit message -------------------------------------------------
 
-COMMIT_MSG=$(generate_commit_message "$TASK" || echo "feat: ${TASK}")
+COMMIT_MSG=$(generate_commit_message "$TASK" "$_MS_COMMIT_NUM" "$_MS_COMMIT_DISPOSITION" || echo "feat: ${TASK}")
 
 # --- Done --------------------------------------------------------------------
 
@@ -905,6 +914,15 @@ echo -e "  Task:      ${BOLD}${TASK}${NC}"
 echo -e "  Started:   ${BOLD}${START_AT}${NC}"
 echo -e "  Verdict:   ${GREEN}${BOLD}${VERDICT}${NC}"
 echo -e "  Log:       ${LOG_FILE}"
+
+# Show milestone completion status in the final banner
+if [ -n "$_MS_COMMIT_NUM" ]; then
+    if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
+        echo -e "  Milestone: ${GREEN}${BOLD}${_MS_COMMIT_NUM} — COMPLETE${NC}"
+    else
+        echo -e "  Milestone: ${YELLOW}${BOLD}${_MS_COMMIT_NUM} — PARTIAL${NC}"
+    fi
+fi
 echo
 
 # --- Action Items summary ----------------------------------------------------
@@ -1004,6 +1022,12 @@ _do_git_commit() {
 case "$COMMIT_CHOICE" in
     y|Y)
         _do_git_commit "$COMMIT_MSG"
+        # Tag milestone completion after successful commit
+        if [ -n "$_MS_COMMIT_NUM" ]; then
+            if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
+                tag_milestone_complete "$_MS_COMMIT_NUM"
+            fi
+        fi
         print_run_summary
         success "Committed. Open a PR and squash-merge to main when ready."
         ;;
@@ -1014,6 +1038,12 @@ case "$COMMIT_CHOICE" in
         EDITED_MSG=$(cat "$TMPFILE")
         rm "$TMPFILE"
         _do_git_commit "$EDITED_MSG"
+        # Tag milestone completion after successful commit
+        if [ -n "$_MS_COMMIT_NUM" ]; then
+            if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
+                tag_milestone_complete "$_MS_COMMIT_NUM"
+            fi
+        fi
         print_run_summary
         success "Committed. Open a PR and squash-merge to main when ready."
         ;;

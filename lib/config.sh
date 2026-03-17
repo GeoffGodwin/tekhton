@@ -210,6 +210,9 @@ load_config() {
     : "${AUTO_ADVANCE_LIMIT:=3}"
     : "${AUTO_ADVANCE_CONFIRM:=true}"
 
+    # --- Milestone commit signatures ---
+    : "${MILESTONE_TAG_ON_COMPLETE:=false}"  # Create git tag on milestone completion
+
     # --- Cleanup (autonomous debt sweep) defaults ---
     : "${CLEANUP_ENABLED:=false}"           # Off by default — opt-in
     : "${CLEANUP_BATCH_SIZE:=5}"            # Max items per sweep

@@ -411,6 +411,78 @@ check_milestone_acceptance() {
     fi
 }
 
+# --- Milestone commit signatures ---------------------------------------------
+
+# get_milestone_commit_prefix MILESTONE_NUM DISPOSITION
+# Returns the appropriate commit message prefix based on milestone disposition.
+# Returns empty string if not in milestone mode.
+get_milestone_commit_prefix() {
+    local milestone_num="$1"
+    local disposition="$2"
+
+    if [[ -z "$milestone_num" ]]; then
+        return
+    fi
+
+    case "$disposition" in
+        COMPLETE_AND_CONTINUE|COMPLETE_AND_WAIT)
+            echo "[MILESTONE ${milestone_num} ✓]"
+            ;;
+        INCOMPLETE_REWORK|REPLAN_REQUIRED|NONE|"")
+            echo "[MILESTONE ${milestone_num} — partial]"
+            ;;
+    esac
+}
+
+# get_milestone_commit_body MILESTONE_NUM DISPOSITION [CLAUDE_MD_PATH]
+# Returns a milestone status line for the commit body.
+get_milestone_commit_body() {
+    local milestone_num="$1"
+    local disposition="$2"
+    local claude_md="${3:-CLAUDE.md}"
+
+    if [[ -z "$milestone_num" ]]; then
+        return
+    fi
+
+    local title
+    title=$(get_milestone_title "$milestone_num" "$claude_md" 2>/dev/null) || true
+
+    case "$disposition" in
+        COMPLETE_AND_CONTINUE|COMPLETE_AND_WAIT)
+            echo "Milestone ${milestone_num}: ${title} — COMPLETE"
+            ;;
+        INCOMPLETE_REWORK)
+            echo "Milestone ${milestone_num}: ${title} — PARTIAL (rework needed)"
+            ;;
+        REPLAN_REQUIRED)
+            echo "Milestone ${milestone_num}: ${title} — PARTIAL (replan required)"
+            ;;
+        *)
+            echo "Milestone ${milestone_num}: ${title} — PARTIAL"
+            ;;
+    esac
+}
+
+# tag_milestone_complete MILESTONE_NUM
+# Creates a git tag for a completed milestone if MILESTONE_TAG_ON_COMPLETE=true.
+# Handles gracefully if tag already exists (warn and continue).
+tag_milestone_complete() {
+    local milestone_num="$1"
+
+    if [[ "${MILESTONE_TAG_ON_COMPLETE:-false}" != "true" ]]; then
+        return 0
+    fi
+
+    local tag_name="milestone-${milestone_num}-complete"
+
+    if git tag "$tag_name" 2>/dev/null; then
+        success "Created git tag: ${tag_name}"
+    else
+        warn "Git tag '${tag_name}' already exists or could not be created. Continuing."
+    fi
+}
+
 # --- Auto-advance orchestration helpers --------------------------------------
 
 # should_auto_advance

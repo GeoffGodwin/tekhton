@@ -272,6 +272,119 @@ VARIED_EOF
 varied_count=$(parse_milestones "${TMPDIR}/varied.md" | wc -l)
 assert "Parses varied heading formats (colon, dash, period)" "$([ "$varied_count" -eq 3 ] && echo 0 || echo 1)"
 
+# --- Test: get_milestone_commit_prefix ----------------------------------------
+
+echo "=== get_milestone_commit_prefix ==="
+
+prefix=$(get_milestone_commit_prefix "5" "COMPLETE_AND_CONTINUE")
+assert "Complete+continue prefix has checkmark" "$([ "$prefix" = "[MILESTONE 5 ✓]" ] && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "3" "COMPLETE_AND_WAIT")
+assert "Complete+wait prefix has checkmark" "$([ "$prefix" = "[MILESTONE 3 ✓]" ] && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "7" "INCOMPLETE_REWORK")
+assert "Incomplete prefix says partial" "$(echo "$prefix" | grep -q "partial" && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "2" "REPLAN_REQUIRED")
+assert "Replan prefix says partial" "$(echo "$prefix" | grep -q "partial" && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "1" "NONE")
+assert "NONE disposition says partial" "$(echo "$prefix" | grep -q "partial" && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "" "COMPLETE_AND_WAIT")
+assert "Empty milestone returns empty prefix" "$([ -z "$prefix" ] && echo 0 || echo 1)"
+
+# --- Test: get_milestone_commit_body ------------------------------------------
+
+echo "=== get_milestone_commit_body ==="
+
+body=$(get_milestone_commit_body "1" "COMPLETE_AND_CONTINUE" "${TMPDIR}/CLAUDE.md")
+assert "Complete body says COMPLETE" "$(echo "$body" | grep -q "COMPLETE" && echo 0 || echo 1)"
+assert "Complete body includes milestone title" "$(echo "$body" | grep -q "Token And Context Accounting" && echo 0 || echo 1)"
+
+body=$(get_milestone_commit_body "3" "INCOMPLETE_REWORK" "${TMPDIR}/CLAUDE.md")
+assert "Rework body says PARTIAL" "$(echo "$body" | grep -q "PARTIAL" && echo 0 || echo 1)"
+
+body=$(get_milestone_commit_body "" "COMPLETE_AND_WAIT")
+assert "Empty milestone returns empty body" "$([ -z "$body" ] && echo 0 || echo 1)"
+
+# --- Test: tag_milestone_complete (without git) --------------------------------
+
+echo "=== tag_milestone_complete ==="
+
+# Test that tagging is skipped when disabled (default)
+MILESTONE_TAG_ON_COMPLETE=false
+tag_result=0
+tag_milestone_complete 1 || tag_result=$?
+assert "Tagging skipped when MILESTONE_TAG_ON_COMPLETE=false" "$([ "$tag_result" -eq 0 ] && echo 0 || echo 1)"
+
+# --- Test: tag_milestone_complete (with git repo fixture) ----------------------
+
+echo "=== tag_milestone_complete (with git) ==="
+
+GIT_REPO_DIR=$(mktemp -d)
+trap 'rm -rf "$GIT_REPO_DIR"' EXIT
+
+# Initialize a minimal git repo with one commit so tagging works
+git -C "$GIT_REPO_DIR" init -q
+git -C "$GIT_REPO_DIR" config user.email "test@example.com"
+git -C "$GIT_REPO_DIR" config user.name "Test"
+touch "$GIT_REPO_DIR/dummy.txt"
+git -C "$GIT_REPO_DIR" add dummy.txt
+git -C "$GIT_REPO_DIR" commit -q -m "init"
+
+# Run tag_milestone_complete from inside the git repo so git tag works
+(
+    cd "$GIT_REPO_DIR"
+    MILESTONE_TAG_ON_COMPLETE=true
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/milestones.sh" 2>/dev/null || true
+    tag_milestone_complete 7
+)
+tag_exists=$(git -C "$GIT_REPO_DIR" tag -l "milestone-7-complete")
+assert "tag_milestone_complete creates tag when enabled" "$([ "$tag_exists" = "milestone-7-complete" ] && echo 0 || echo 1)"
+
+# Test idempotent: calling again with an existing tag warns but does not fail
+(
+    cd "$GIT_REPO_DIR"
+    MILESTONE_TAG_ON_COMPLETE=true
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/milestones.sh" 2>/dev/null || true
+    tag_milestone_complete 7
+) 2>/dev/null
+assert "tag_milestone_complete handles duplicate tag gracefully (no error)" "$([ $? -eq 0 ] && echo 0 || echo 1)"
+
+# --- Test: generate_commit_message with milestone info -------------------------
+
+echo "=== generate_commit_message with milestone ==="
+
+# Source hooks.sh for commit message generation
+source "${TEKHTON_HOME}/lib/hooks.sh"
+
+# Create a minimal CODER_SUMMARY.md
+cat > "${TMPDIR}/CODER_SUMMARY.md" << 'SUMMARY_EOF'
+# Coder Summary
+## Status: COMPLETE
+## What Was Implemented
+Added milestone commit signatures
+## Files Modified
+- lib/hooks.sh
+- lib/milestones.sh
+SUMMARY_EOF
+
+cd "$TMPDIR"
+
+msg=$(generate_commit_message "Implement Milestone 5: Widget System" "5" "COMPLETE_AND_CONTINUE")
+assert "Milestone-complete commit has checkmark prefix" "$(echo "$msg" | head -1 | grep -q '\[MILESTONE 5 ✓\]' && echo 0 || echo 1)"
+assert "Milestone-complete commit has COMPLETE in body" "$(echo "$msg" | grep -q "COMPLETE" && echo 0 || echo 1)"
+
+msg=$(generate_commit_message "Implement Milestone 3: Foo" "3" "INCOMPLETE_REWORK")
+assert "Partial commit has partial prefix" "$(echo "$msg" | head -1 | grep -q 'partial' && echo 0 || echo 1)"
+
+msg=$(generate_commit_message "Fix: some bug" "" "")
+first_line=$(echo "$msg" | head -1)
+assert "Non-milestone commit has no prefix" "$(echo "$first_line" | grep -qv 'MILESTONE' && echo 0 || echo 1)"
+
 # --- Summary ------------------------------------------------------------------
 
 echo
