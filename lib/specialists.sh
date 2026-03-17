@@ -236,12 +236,15 @@ _append_specialist_notes() {
         insert_block="${insert_block}- [ ] [${date_tag} | specialist:${spec_name}] ${text}"$'\n'
     done <<< "$notes"
 
-    # Insert the block after "## Open" using awk with ENVIRON to avoid escape interpretation.
-    # awk -v interprets C-style escapes (\n, \U, etc.) — ENVIRON passes the value literally.
-    export _SPECIALIST_INSERT_BLOCK="$insert_block"
-    awk '/^## Open$/{print; printf "%s", ENVIRON["_SPECIALIST_INSERT_BLOCK"]; next} {print}' \
-        "$nb_file" > "$tmpfile"
-    unset _SPECIALIST_INSERT_BLOCK
+    # Insert the block after "## Open" using awk.
+    # Reads the insert block from a temp file to avoid export/ENVIRON leak risk
+    # and awk -v C-style escape interpretation (\n, \U, etc.).
+    local insert_file
+    insert_file=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/specialist_ins_XXXXXXXX")
+    printf '%s' "$insert_block" > "$insert_file"
+    awk '/^## Open$/{print; while ((getline line < insfile) > 0) print line; next} {print}' \
+        insfile="$insert_file" "$nb_file" > "$tmpfile"
+    rm -f "$insert_file"
 
     mv "$tmpfile" "$nb_file"
     local note_count

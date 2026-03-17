@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-17
-- Runs since audit: 5
+- Runs since audit: 1
 
 ## Unresolved Observations
+- [2026-03-17 | "Continue working your way through the NON_BLOCKING_LOG.md file and implement the last item."] `lib/specialists.sh:251` — `note_count=$(echo "$notes" | grep -c "[NOTE]" || echo "0")`: the `|| echo "0"` guard is unreachable because `$notes` is guaranteed non-empty at this point (the empty-check guard at line 214 returns early). Harmless but slightly misleading.
 (none)
 
 ## Resolved
