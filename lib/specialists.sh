@@ -248,7 +248,7 @@ _append_specialist_notes() {
 
     mv "$tmpfile" "$nb_file"
     local note_count
-    note_count=$(echo "$notes" | grep -c "\[NOTE\]" || echo "0")
+    note_count=$(echo "$notes" | grep -c "\[NOTE\]")
     log "[Specialist ${spec_name}] ${note_count} note(s) appended to ${NON_BLOCKING_LOG_FILE}."
 }
 

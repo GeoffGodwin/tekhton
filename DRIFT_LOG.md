@@ -2,13 +2,13 @@
 
 ## Metadata
 - Last audit: 2026-03-17
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
-- [2026-03-17 | "Continue working your way through the NON_BLOCKING_LOG.md file and implement the last item."] `lib/specialists.sh:251` — `note_count=$(echo "$notes" | grep -c "[NOTE]" || echo "0")`: the `|| echo "0"` guard is unreachable because `$notes` is guaranteed non-empty at this point (the empty-check guard at line 214 returns early). Harmless but slightly misleading.
 (none)
 
 ## Resolved
+- [RESOLVED 2026-03-17] [2026-03-17 | "Continue working your way through the NON_BLOCKING_LOG.md file and implement the last item."] `lib/specialists.sh:251` — `note_count=$(echo "$notes" | grep -c "[NOTE]" || echo "0")`: the `|| echo "0"` guard is unreachable because `$notes` is guaranteed non-empty at this point (the empty-check guard at line 214 returns early). **Resolved: Removed the unreachable `|| echo "0"` guard. Since `$notes` is guaranteed non-empty (line 214 early return) and contains only `[NOTE]` lines, `grep -c` will always return ≥ 1.**
 - [RESOLVED 2026-03-17] [2026-03-17 | "Implement Milestone 6: Brownfield Replan"] lib/plan.sh vs lib/replan.sh naming distinction — Brownfield replan functions extracted to `lib/replan_brownfield.sh`; mid-run replan in `lib/replan_midrun.sh`; `lib/replan.sh` is a thin shim. ARCHITECTURE.md lines 97–99 reflect the three-file structure. Naming convention (midrun/brownfield suffixes) is in place.
 - [RESOLVED 2026-03-16] [2026-03-16 | "Continue working your way through the NON_BLOCKING_LOG.md file and implement the last item. Also repair the single item in the DRIFT_LOG.md."] `stages/cleanup.sh:272` — `_resolve_cleanup_by_file_changes` grep -q vs grep -qF inconsistency. The function was moved from `lib/notes.sh` to `stages/cleanup.sh` in a prior refactoring, and the grep call was not updated to use -qF like the three other grep calls in the same file. **Resolved: Changed `grep -q` to `grep -qF` for literal string matching, consistent with lines 128, 221, and 241.**
 - [RESOLVED 2026-03-16] [2026-03-16 | "Ensure that Milestone 5 has been completely implemented. If anything is incomplete, finish implementing it."] `stages/cleanup.sh:86` — `pre_cleanup_files=$(git diff --name-only 2>/dev/null || true)` captures unstaged changes at the point cleanup starts. If the primary pipeline left uncommitted changes, those would be in this snapshot and would be protected from revert. This is correct behavior but undocumented in the function comment — a one-line note would help future readers understand why pre-cleanup state is snapshotted. **Resolved: Added two-line comment documenting that uncommitted primary pipeline changes are captured in the snapshot and protected from cleanup revert logic.**
