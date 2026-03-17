@@ -112,6 +112,7 @@ load_config() {
     : "${REQUIRED_TOOLS:=git claude}"
     : "${CLAUDE_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
     : "${CLAUDE_JR_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+    : "${CLAUDE_REVIEWER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
     : "${CLAUDE_TESTER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
     : "${CODER_MAX_TURNS:=50}"
     : "${JR_CODER_MAX_TURNS:=25}"
@@ -199,6 +200,10 @@ load_config() {
     # --- Clarification and replan defaults ---
     : "${CLARIFICATION_ENABLED:=true}"     # Allow agents to pause for questions
     : "${REPLAN_ENABLED:=true}"            # Allow mid-run replan triggers
+
+    # --- Brownfield replan defaults (--replan command) ---
+    : "${REPLAN_MODEL:=${PLAN_GENERATION_MODEL:-${CLAUDE_PLAN_MODEL:-opus}}}"
+    : "${REPLAN_MAX_TURNS:=${PLAN_GENERATION_MAX_TURNS:-50}}"
 
     # --- Auto-advance defaults ---
     : "${AUTO_ADVANCE_ENABLED:=false}"

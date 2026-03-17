@@ -19,6 +19,19 @@ invariants. You will need all of them.
 
 ---
 
+{{IF:COMPLETED_MILESTONES}}
+## Completed Milestones (MUST preserve)
+
+The following milestones have already been completed in a previous CLAUDE.md.
+You MUST include them verbatim in the Implementation Milestones section, exactly
+as shown below, preserving their `[DONE]` tag and all content. Place them in
+their original numbered order before any new or remaining milestones.
+
+--- BEGIN COMPLETED MILESTONES ---
+{{COMPLETED_MILESTONES}}
+--- END COMPLETED MILESTONES ---
+{{ENDIF:COMPLETED_MILESTONES}}
+
 ## Your Task
 
 Generate a complete `CLAUDE.md` file containing all 12 required sections below,

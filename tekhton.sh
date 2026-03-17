@@ -14,6 +14,7 @@
 # Flags:
 #   --init                Scaffold pipeline config + agent roles for a new project
 #   --plan                Interactive planning: build DESIGN.md + CLAUDE.md from scratch
+#   --replan              Delta-based update to existing DESIGN.md + CLAUDE.md
 #   --status              Print saved pipeline state and exit
 #   --milestone           Milestone mode: higher turn limits, more review cycles
 #   --start-at coder      Full pipeline from scratch (default)
@@ -244,6 +245,23 @@ if [ "${1:-}" = "--plan" ]; then
     exit 0
 fi
 
+# --- Early --replan check (runs before execution pipeline) -------------------
+
+if [ "${1:-}" = "--replan" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/prompts.sh"
+    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh
+    source "${TEKHTON_HOME}/lib/plan.sh"
+    source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
+    source "${TEKHTON_HOME}/stages/plan_generate.sh"
+    # PROJECT_NAME is needed by run_agent() for temp file naming;
+    # in --replan mode config is not loaded, so derive from directory name.
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    run_replan || true
+    exit 0
+fi
+
 # --- Acquire pipeline lock (execution pipeline only) -------------------------
 _check_pipeline_lock
 
@@ -283,6 +301,7 @@ usage() {
     echo ""
     echo "  --init                    Scaffold pipeline config + agent roles for a new project"
     echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
+    echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
     echo "  --status                  Print saved pipeline state and exit (no run)"
     echo "  --version                 Print version and exit"
     echo "  --help, -h                Show this help and exit"
@@ -304,6 +323,7 @@ usage() {
     echo "Examples:"
     echo "  tekhton --init                           # First-time setup"
     echo "  tekhton --plan                           # Interactive planning phase"
+    echo "  tekhton --replan                         # Update existing plan from drift/changes"
     echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
     echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
     echo "  tekhton --milestone \"Feat: payment system\""

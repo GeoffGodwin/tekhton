@@ -180,6 +180,13 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `METRICS_MIN_RUNS` | Min runs before adaptive calibration (default: 5) |
 | `METRICS_ADAPTIVE_TURNS` | Use history for turn calibration (default: true) |
 | `MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER` | Multiplier for AGENT_ACTIVITY_TIMEOUT in milestone mode (default: 3) |
+| `MILESTONE_TAG_ON_COMPLETE` | Create git tag on milestone completion (default: false) |
+| `MILESTONE_SPLIT_ENABLED` | Enable pre-flight milestone splitting (default: true) |
+| `MILESTONE_SPLIT_MODEL` | Model for splitting agent (default: CLAUDE_CODER_MODEL) |
+| `MILESTONE_SPLIT_MAX_TURNS` | Turn limit for splitting agent (default: 15) |
+| `MILESTONE_SPLIT_THRESHOLD_PCT` | Split when scout estimate exceeds cap by this % (default: 120) |
+| `MILESTONE_AUTO_RETRY` | Auto-split and retry on null-run (default: true) |
+| `MILESTONE_MAX_SPLIT_DEPTH` | Max recursive split depth (default: 3) |
 
 ## Testing
 
@@ -1068,3 +1075,269 @@ Seeds Forward:
 - Future 3.0 may add cross-project metric aggregation
 - Adaptive calibration data improves with every run — the more the pipeline is used,
   the better its estimates become
+
+#### Milestone 9: Post-Coder Turn Recalibration
+Replace the scout's pre-coder reviewer/tester turn estimates with a deterministic
+formula-based recalibration that runs after the coder completes. The scout estimates
+reviewer and tester turns before any code exists — a fundamentally unreliable guess.
+By the time the coder finishes, the pipeline has concrete data: actual coder turns
+used, files modified count, diff line count, and CODER_SUMMARY.md content. Use this
+data to compute reviewer and tester turn limits with a simple formula, overriding
+the scout's pre-coder guesses unconditionally.
+
+Files to modify:
+- `lib/turns.sh` — rewrite `estimate_post_coder_turns()` to always run (remove the
+  `SCOUT_REC_REVIEWER_TURNS > 0` early return). New formula:
+  `reviewer_turns = max(REVIEWER_MIN_TURNS, coder_actual_turns * 0.35 + files_modified * 1.5)`
+  `tester_turns = max(TESTER_MIN_TURNS, coder_actual_turns * 0.5 + files_modified * 2.0)`
+  Both clamped to their respective `*_MAX_TURNS_CAP`. Accept `actual_coder_turns` as
+  a parameter (read from agent exit metadata or FIFO turn count). Keep the existing
+  heuristic tiers as a fallback when actual coder turns are unavailable (e.g.,
+  `--start-at review`).
+- `stages/review.sh` — pass actual coder turns to `estimate_post_coder_turns()`.
+  Log the recalibration: "Post-coder recalibration: reviewer N→M, tester N→M
+  (coder used X turns, Y files, ~Z diff lines)".
+- `stages/coder.sh` — export `ACTUAL_CODER_TURNS` after coder completion so
+  `review.sh` can read it. Extract from the agent's exit metadata (already
+  captured in `run_agent()`'s turn-count parsing).
+- `tests/test_dynamic_turn_limits.sh` — update existing Phase 6 tests. Add new
+  tests: formula produces expected values for known inputs, clamping works at
+  both bounds, fallback heuristic still works when actual turns are unavailable.
+
+Acceptance criteria:
+- After coder completion, reviewer and tester turn limits are recalculated using
+  actual coder turns + files modified + diff lines — not the scout's pre-coder guess
+- Formula is deterministic: same inputs always produce the same output
+- Recalibration runs regardless of whether the scout set values
+- If `actual_coder_turns` is unavailable (null run, `--start-at review`), the
+  existing file-count/diff-line heuristic is used as fallback
+- Reviewer turn limit never drops below `REVIEWER_MIN_TURNS`
+- Tester turn limit never drops below `TESTER_MIN_TURNS`
+- Both are clamped to `*_MAX_TURNS_CAP`
+- Log output clearly shows the before/after recalibration with the data used
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on modified files
+
+Watch For:
+- The existing `estimate_post_coder_turns` skips when `SCOUT_REC_REVIEWER_TURNS > 0`.
+  This guard must be removed — the whole point is to override the scout.
+- `ACTUAL_CODER_TURNS` must come from the agent's exit metadata, not from
+  `ADJUSTED_CODER_TURNS` (which is the *limit*, not the *actual*).
+- The formula coefficients (0.35, 1.5, 0.5, 2.0) are initial values. Milestone 8's
+  adaptive calibration will eventually tune these per-project, but the formula
+  structure is the stable interface.
+- Don't add an LLM call here. This is arithmetic — a few lines of shell. The
+  value of this milestone is its speed and determinism.
+
+What NOT To Do:
+- Do NOT add a post-coder scout or mini-scout LLM call. This is a formula, not a
+  prompt. The pipeline has all the data it needs in shell variables.
+- Do NOT change the scout's pre-coder estimation logic. The scout still estimates
+  coder turns (which are useful). It's the reviewer/tester estimates that get
+  overridden post-coder.
+- Do NOT remove the scout's reviewer/tester fields from `SCOUT_REPORT.md` or
+  `parse_scout_complexity()`. They remain as a signal for logging and metrics
+  comparison (scout-predicted vs formula-recalibrated vs actual).
+- Do NOT make the recalibration optional via config. This is a correctness fix —
+  post-coder data is always better than pre-coder guesses. There is no scenario
+  where the old behavior is preferable.
+
+Seeds Forward:
+- Milestone 8 (Metrics) records both scout estimates AND recalibrated values,
+  enabling the adaptive calibration to tune the formula coefficients over time
+- Milestone 11 (Pre-Flight Sizing) uses the scout's coder estimate for its
+  pre-flight gate; reviewer/tester are no longer relevant at that stage since
+  they'll be recalibrated anyway
+
+#### Milestone 10: Milestone Commit Signatures And Completion Signaling
+Add structured milestone completion signaling to commit messages and pipeline
+output so that milestone boundaries are unambiguous in git history. When
+`check_milestone_acceptance()` passes, the commit message and pipeline output
+must clearly indicate that the milestone is signed off. When a run ends in a
+partial state, the commit message must indicate continuation is expected.
+
+Files to modify:
+- `lib/hooks.sh` — modify `generate_commit_message()` to accept milestone state
+  as input. When milestone mode is active:
+  - Acceptance passed: prefix commit with `[MILESTONE N ✓] ` and append
+    `\n\nMilestone N: <title> — COMPLETE` to the commit body
+  - Acceptance failed or partial: prefix with `[MILESTONE N — partial] `
+  - No milestone mode: unchanged from current behavior
+- `lib/milestones.sh` — add `get_milestone_commit_prefix(milestone_num, disposition)`
+  that returns the appropriate prefix string based on disposition. Add optional
+  `tag_milestone_complete(milestone_num)` that runs `git tag milestone-N-complete`
+  if `MILESTONE_TAG_ON_COMPLETE=true`.
+- `tekhton.sh` — after `check_milestone_acceptance()` and before commit prompt,
+  pass milestone number and disposition to `generate_commit_message()`. After
+  successful commit with `COMPLETE_AND_WAIT` or `COMPLETE_AND_CONTINUE` disposition,
+  call `tag_milestone_complete()` if tagging is enabled.
+- `lib/config.sh` — add default: `MILESTONE_TAG_ON_COMPLETE=false`
+- `templates/pipeline.conf.example` — add `MILESTONE_TAG_ON_COMPLETE` with comment
+  explaining the worktree/branch merge workflow it enables
+
+Acceptance criteria:
+- Milestone-complete commits are prefixed with `[MILESTONE N ✓]`
+- Partial-completion commits are prefixed with `[MILESTONE N — partial]`
+- Non-milestone runs produce unchanged commit messages
+- When `MILESTONE_TAG_ON_COMPLETE=true`, a `milestone-N-complete` git tag is
+  created after the commit
+- Tagging is off by default
+- Pipeline final output banner distinguishes complete vs partial milestone state
+- `git log --oneline` shows clear milestone boundaries
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on modified files
+
+Watch For:
+- The commit prefix must be derived from `write_milestone_disposition()` output,
+  not from the reviewer verdict. Milestone acceptance ≠ reviewer approval — the
+  tester stage and acceptance criteria checks happen after review.
+- `git tag` can fail if the tag already exists (re-run on same milestone). Handle
+  gracefully: warn and continue, don't fail the pipeline.
+- The `[MILESTONE N ✓]` prefix must survive the user's "edit commit message" flow
+  (`e` option at the commit prompt). Place it as the first line so editing the body
+  doesn't accidentally remove it.
+
+What NOT To Do:
+- Do NOT change the commit message format for non-milestone runs. This is additive.
+- Do NOT auto-push tags. Tags are local signals. The human decides when to push.
+- Do NOT add milestone state to the commit body as a structured block (YAML, JSON).
+  Keep it human-readable — a single line is enough.
+- Do NOT gate committing on milestone acceptance. The pipeline always offers to
+  commit, even on partial completion. The prefix tells the human the state.
+
+Seeds Forward:
+- Milestone 11 (Pre-Flight Sizing) benefits from clear git history: the splitter
+  can inspect `git log` for `[MILESTONE N ✓]` to know what's already complete
+- Worktree-based parallel milestone development uses the tag as a merge-readiness
+  signal
+
+#### Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split
+Add two interlocking capabilities: (1) a pre-flight sizing check that detects
+oversized milestones before execution and splits them proactively, and (2) a
+null-run recovery path that splits a milestone after a failed attempt and
+automatically retries. Together these guarantee forward progress: every failed
+run makes the next attempt easier (scope regression), preventing infinite loops.
+
+This milestone is deliberately large but structured for resume: Phase 1 and
+Phase 2 are independently testable. If the pipeline hits turn limits, Phase 1
+is a valid stopping point.
+
+**Phase 1 — Pre-Flight Sizing Gate:**
+
+Files to modify:
+- `lib/milestones.sh` — add `check_milestone_size(milestone_num, scout_estimate)`
+  that compares the scout's coder turn estimate against `CODER_MAX_TURNS_CAP`
+  (or `ADJUSTED_CODER_TURNS` in milestone mode). If the estimate exceeds the
+  cap by more than 20%, return 1 (oversized). Add `split_milestone(milestone_num,
+  claude_md)` that invokes an opus-class model to decompose the milestone
+  definition into 2–4 sub-milestones (N.1, N.2, ...), each scoped to fit within
+  turn limits.
+- `stages/coder.sh` — after scout runs and `apply_scout_turn_limits()`, call
+  `check_milestone_size()`. If oversized:
+  1. Log warning: "Milestone N estimated at X turns (cap: Y). Splitting."
+  2. Call `split_milestone()` to produce sub-milestone definitions
+  3. Update CLAUDE.md with sub-milestones (Milestone N becomes N.1–N.K)
+  4. Update `MILESTONE_STATE.md` to target N.1
+  5. Reset TASK to "Implement Milestone N.1: <title>"
+  6. Re-run scout with the narrower scope
+- `lib/config.sh` — add defaults: `MILESTONE_SPLIT_ENABLED=true`,
+  `MILESTONE_SPLIT_MODEL="${CLAUDE_CODER_MODEL}"` (opus-class),
+  `MILESTONE_SPLIT_MAX_TURNS=15`, `MILESTONE_SPLIT_THRESHOLD_PCT=120`
+  (split when estimate exceeds cap by 20%+)
+- `prompts/milestone_split.prompt.md` — prompt for the splitting model. Inputs:
+  `{{MILESTONE_DEFINITION}}` (full milestone text from CLAUDE.md),
+  `{{SCOUT_ESTIMATE}}` (turn estimate), `{{TURN_CAP}}` (configured limit),
+  `{{PRIOR_RUN_HISTORY}}` (from metrics.jsonl for this milestone, if any).
+  Constraints: each sub-milestone must be smaller than the original, each must
+  have its own acceptance criteria, file lists, and Watch For sections. Output
+  format must match CLAUDE.md milestone structure exactly.
+- `templates/pipeline.conf.example` — add milestone split config keys
+
+**Phase 2 — Null-Run Auto-Split And Retry:**
+
+Files to modify:
+- `tekhton.sh` — in the post-coder null-run / turn-limit handling path: instead
+  of saving state and recommending "re-run", check if the coder produced
+  substantive work:
+  - If `git diff --stat` shows changes AND `CODER_SUMMARY.md` exists with >20
+    lines: classify as "partial progress" — save state normally, recommend resume
+  - If minimal/no output: classify as "scope failure" — automatically invoke
+    `split_milestone()`, update CLAUDE.md with sub-milestones, reset to N.1,
+    and re-execute the pipeline from the scout stage (no human intervention)
+- `lib/milestones.sh` — add `record_milestone_attempt(milestone_num, outcome,
+  turns_used)` that appends to a lightweight log for the splitter to reference.
+  Add `get_milestone_attempts(milestone_num)` for reading prior attempts.
+- `lib/agent.sh` or `stages/coder.sh` — after detecting coder null-run or turn
+  limit with minimal output, call the auto-split path instead of writing the
+  "retry recommended" state file.
+- `lib/config.sh` — add defaults: `MILESTONE_AUTO_RETRY=true`,
+  `MILESTONE_MAX_SPLIT_DEPTH=3` (prevent infinite splitting: N → N.1 → N.1.1
+  but no further).
+
+**Phase 2 safety bounds:**
+- `MILESTONE_MAX_SPLIT_DEPTH=3`: if a sub-milestone itself needs splitting, it
+  can split once more (N.1 → N.1.1), but N.1.1 cannot split further. At that
+  point the pipeline saves state and reports to the human.
+- The splitter prompt explicitly states: "Each sub-milestone MUST be smaller in
+  scope than the input milestone. If you cannot decompose further, output the
+  milestone unchanged with a `[CANNOT_SPLIT]` tag."
+- If `[CANNOT_SPLIT]` is returned, the pipeline saves state and exits with a
+  clear message: the milestone is irreducible at this granularity.
+
+Acceptance criteria:
+- Pre-flight: scout estimate exceeding cap by 20%+ triggers automatic split
+- Split produces 2–4 sub-milestones that replace the original in CLAUDE.md
+- Each sub-milestone has acceptance criteria, file lists, Watch For, Seeds Forward
+- After split, pipeline re-runs scout + coder targeting sub-milestone N.1
+- Null-run with no substantive output triggers auto-split (no human prompt)
+- Null-run with substantive partial output saves state for resume (no split)
+- `MILESTONE_MAX_SPLIT_DEPTH=3` prevents infinite recursion
+- `[CANNOT_SPLIT]` result saves state and exits with a clear human-facing message
+- Prior run attempts for a milestone are recorded and passed to the splitter
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+Watch For:
+- The split model MUST see the full milestone definition from CLAUDE.md, not just
+  the title. File lists, acceptance criteria, and Watch For sections contain the
+  information needed to split intelligently.
+- Sub-milestone numbering (N.1, N.2) must not collide with existing milestone
+  numbers. If CLAUDE.md has Milestones 1–8, splitting Milestone 5 produces 5.1,
+  5.2, etc. — not new top-level numbers.
+- The "substantive output" threshold for distinguishing partial-progress from
+  scope-failure must be conservative. Err on the side of keeping partial work
+  rather than discarding it.
+- The split prompt must receive prior run history so it doesn't produce the same
+  oversized split that already failed.
+- `_call_planning_batch()` semantics apply: the shell writes the updated CLAUDE.md,
+  not the splitting agent. The agent produces text; the shell applies it.
+
+What NOT To Do:
+- Do NOT prompt the human for confirmation before splitting. The regression property
+  (each split makes the next attempt easier) guarantees convergence. Human approval
+  adds latency to what should be an automatic recovery.
+- Do NOT discard partial coder work when the output is substantive. Check
+  `git diff --stat` and `CODER_SUMMARY.md` line count before deciding to split.
+  If real work was done, preserve it and resume — don't reset.
+- Do NOT allow the splitter to produce sub-milestones larger than the original.
+  The prompt must explicitly constrain this, and the shell should validate that
+  the sub-milestone count is ≥ 2 (a "split" into 1 item is not a split).
+- Do NOT split non-milestone runs. This feature only applies when `MILESTONE_MODE`
+  is active. Normal runs that exhaust turns should save state and exit as they
+  do today.
+- Do NOT recurse past `MILESTONE_MAX_SPLIT_DEPTH`. At depth 3, the milestone is
+  likely irreducible by decomposition and needs human attention (architectural
+  rethinking, not finer slicing).
+- Do NOT modify completed milestone history. Splitting Milestone 5 into 5.1–5.3
+  must never touch Milestones 1–4's `[DONE]` status or content.
+
+Seeds Forward:
+- The regression property (failed run → simpler scope → guaranteed progress)
+  establishes the foundation for fully autonomous multi-milestone execution
+  where the pipeline can be given DESIGN.md + CLAUDE.md and build an entire
+  project with minimal human intervention
+- Milestone 8 (Metrics) benefits from richer data: split events, per-attempt
+  turn counts, and scope-regression depth are valuable signals for adaptive
+  calibration
+- Future 3.0 parallel milestone execution can use sub-milestones as natural
+  parallelization boundaries

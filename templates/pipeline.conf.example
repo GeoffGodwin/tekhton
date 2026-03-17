@@ -32,13 +32,17 @@ REQUIRED_TOOLS="claude git"
 #   Senior Coder     CLAUDE_CODER_MODEL        Complex implementation
 #   Jr Coder         CLAUDE_JR_CODER_MODEL     Simple fixes, build-gate rework
 #   Scout            CLAUDE_SCOUT_MODEL        File discovery, complexity est.
-#   Reviewer         CLAUDE_STANDARD_MODEL     Code review + verdict
+#   Reviewer         CLAUDE_REVIEWER_MODEL     Code review + verdict
 #   Architect        CLAUDE_ARCHITECT_MODEL    Drift audit, remediation planning
 #   Tester           CLAUDE_TESTER_MODEL       Test authoring (upgradeable in --milestone)
+# Base model — all agent-specific variables default to this in lib/config.sh
+CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
+
+# Agent-specific overrides (comment out any line to fall back to CLAUDE_STANDARD_MODEL)
 CLAUDE_CODER_MODEL="claude-opus-4-6"
 CLAUDE_JR_CODER_MODEL="claude-haiku-4-5"
 CLAUDE_SCOUT_MODEL="claude-haiku-4-5"
-CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
+CLAUDE_REVIEWER_MODEL="claude-sonnet-4-6"
 CLAUDE_ARCHITECT_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-haiku-4-5"
 
@@ -224,6 +228,17 @@ CHARS_PER_TOKEN=4
 # When enabled, reviewers can issue REPLAN_REQUIRED verdict to trigger a replan menu.
 # REPLAN_ENABLED=true
 
+# --- Brownfield replan (--replan) ---------------------------------------------
+# The --replan command updates existing DESIGN.md and CLAUDE.md based on
+# accumulated drift observations, architecture decisions, and codebase changes.
+# It produces a delta document for human review before applying changes.
+
+# Model for the replan agent (defaults to PLAN_GENERATION_MODEL)
+# REPLAN_MODEL="opus"
+
+# Max turns for the replan agent (defaults to PLAN_GENERATION_MAX_TURNS)
+# REPLAN_MAX_TURNS=50
+
 # --- Context compiler (task-scoped context assembly) -------------------------
 # When enabled, agents receive only the sections of large artifacts relevant
 # to their current task, instead of full-file injection. Uses keyword extraction
@@ -231,6 +246,7 @@ CHARS_PER_TOKEN=4
 # Falls back to full injection when keyword extraction yields zero matches.
 # Off by default — enable after verifying context budget reports show oversized prompts.
 CONTEXT_COMPILER_ENABLED=false
+
 # --- Auto-advance (--auto-advance) -------------------------------------------
 # When enabled via --auto-advance flag, the pipeline will loop through
 # milestones automatically after each passes acceptance criteria.

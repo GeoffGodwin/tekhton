@@ -94,7 +94,9 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/context_compiler.sh`** — Task-scoped context assembly (Milestone 2). `extract_relevant_sections()`, `build_context_packet()`, `compress_context()` enable keyword-based section filtering and budget-driven compression. Depends on `check_context_budget()` from `context.sh`.
 - **`lib/milestones.sh`** — Milestone state machine and auto-advance (Milestone 3). `parse_milestones()`, `check_milestone_acceptance()`, `advance_milestone()`, `write_milestone_disposition()` orchestrate multi-milestone progression with acceptance checking.
 - **`lib/clarify.sh`** — Clarification protocol and replan trigger (Milestone 4). `detect_clarifications()`, `handle_clarifications()`, `trigger_replan()` enable mid-run pauses for blocking questions and scope corrections.
-- **`lib/replan.sh`** — Brownfield replan orchestration (Milestone 6). Supports `--replan` command for delta-based updates to DESIGN.md and CLAUDE.md based on accumulated drift and codebase evolution.
+- **`lib/replan.sh`** — Thin shim that sources `replan_midrun.sh` and `replan_brownfield.sh`. Holds shared config defaults (`REPLAN_MODEL`, `REPLAN_MAX_TURNS`).
+- **`lib/replan_midrun.sh`** — Mid-run replanning triggered by reviewer `REPLAN_REQUIRED` verdict. `detect_replan_required()`, `trigger_replan()`, `_run_midrun_replan()`, `_apply_midrun_delta()`.
+- **`lib/replan_brownfield.sh`** — Brownfield replan orchestration (`--replan` CLI command). `run_replan()`, `_generate_codebase_summary()`, `_brownfield_approval_menu()`, `_apply_brownfield_delta()`, `_archive_replan_delta()`.
 - **`lib/prompts.sh`** — `render_prompt(template_name)` reads `TEKHTON_HOME/prompts/<name>.prompt.md`, substitutes `{{VAR}}` from shell globals, strips `{{IF:VAR}}...{{ENDIF:VAR}}` blocks when VAR is empty.
 - **`lib/state.sh`** — `write_pipeline_state(stage, reason, resume_flag, task, detail)`, `clear_pipeline_state()`. Persists to `PIPELINE_STATE_FILE` for resume.
 

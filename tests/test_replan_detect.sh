@@ -16,8 +16,9 @@ export TASK="Implement Milestone 4"
 export MILESTONE_MODE=""
 export PIPELINE_STATE_FILE="${TMPDIR}/.claude/PIPELINE_STATE.md"
 export LOG_DIR="${TMPDIR}/.claude/logs"
-export DRIFT_LOG_FILE="${TMPDIR}/DRIFT_LOG.md"
-export ARCHITECTURE_LOG_FILE="${TMPDIR}/ARCHITECTURE_LOG.md"
+# Bare filenames — mid-run code prepends ${PROJECT_DIR}/ (consistent with lib/drift.sh)
+export DRIFT_LOG_FILE="DRIFT_LOG.md"
+export ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
 export REPLAN_MODEL="opus"
 export REPLAN_MAX_TURNS="5"
 
@@ -245,9 +246,9 @@ else
 fi
 
 # ============================================================
-# _apply_replan_delta — appends to CLAUDE.md
+# _apply_midrun_delta — appends to CLAUDE.md
 # ============================================================
-echo "=== _apply_replan_delta — appends to CLAUDE.md ==="
+echo "=== _apply_midrun_delta — appends to CLAUDE.md ==="
 
 CLAUDE_FILE="${TMPDIR}/CLAUDE.md"
 DELTA_FILE="${TMPDIR}/REPLAN_DELTA.md"
@@ -268,7 +269,7 @@ cat > "$DELTA_FILE" << 'EOF'
 - Remove database migration from scope
 EOF
 
-_apply_replan_delta "$DELTA_FILE" 2>/dev/null
+_apply_midrun_delta "$DELTA_FILE" 2>/dev/null
 
 if grep -q "## Replan Note" "$CLAUDE_FILE"; then
     pass "CLAUDE.md gains '## Replan Note' section after apply"
@@ -305,14 +306,14 @@ else
 fi
 
 # ============================================================
-# _apply_replan_delta — missing delta file warns and returns 1
+# _apply_midrun_delta — missing delta file warns and returns 1
 # ============================================================
-echo "=== _apply_replan_delta — missing delta file ==="
+echo "=== _apply_midrun_delta — missing delta file ==="
 
 WARN_COUNT=0
 warn() { WARN_COUNT=$((WARN_COUNT + 1)); }
 
-if ! _apply_replan_delta "${TMPDIR}/nonexistent_delta.md" 2>/dev/null; then
+if ! _apply_midrun_delta "${TMPDIR}/nonexistent_delta.md" 2>/dev/null; then
     pass "Returns 1 when delta file not found"
 else
     fail "Should return 1 for missing delta file"
@@ -327,9 +328,9 @@ fi
 warn() { :; }
 
 # ============================================================
-# _apply_replan_delta — missing CLAUDE.md warns and returns 1
+# _apply_midrun_delta — missing CLAUDE.md warns and returns 1
 # ============================================================
-echo "=== _apply_replan_delta — missing CLAUDE.md ==="
+echo "=== _apply_midrun_delta — missing CLAUDE.md ==="
 
 DELTA_FILE2="${TMPDIR}/delta2.md"
 echo "Some delta" > "$DELTA_FILE2"
@@ -339,7 +340,7 @@ warn() { WARN_COUNT=$((WARN_COUNT + 1)); }
 
 # Temporarily rename CLAUDE.md
 mv "$CLAUDE_FILE" "${CLAUDE_FILE}.bak"
-if ! _apply_replan_delta "$DELTA_FILE2" 2>/dev/null; then
+if ! _apply_midrun_delta "$DELTA_FILE2" 2>/dev/null; then
     pass "Returns 1 when CLAUDE.md not found"
 else
     fail "Should return 1 when CLAUDE.md missing"

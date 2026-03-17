@@ -274,6 +274,9 @@ _extract_template_sections() {
     ' "$template"
 }
 
+# --- Brownfield Replan --------------------------------------------------------
+# Extracted to lib/replan.sh — sourced separately by tekhton.sh.
+
 # --- Main Entry Point --------------------------------------------------------
 
 # run_plan — Top-level planning phase orchestrator.
