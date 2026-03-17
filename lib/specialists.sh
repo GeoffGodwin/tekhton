@@ -6,20 +6,20 @@ set -euo pipefail
 # Sourced by tekhton.sh — do not run directly.
 # Expects all pipeline globals to be set (TASK, LOG_FILE, etc.)
 # Expects: run_agent(), render_prompt(), log(), warn(), success() from libs
-# Expects: _ensure_nonblocking_log(), append_specialist_notes() from drift.sh
+# Expects: _ensure_nonblocking_log() from drift.sh; _append_specialist_notes() defined locally
 #
 # Runs opt-in specialist review passes (security, performance, API contract)
 # AFTER the main reviewer approves. Findings tagged [BLOCKER] re-enter the
 # rework loop; [NOTE] items go to NON_BLOCKING_LOG.md.
 # =============================================================================
 
-# --- Tool profile for specialist agents (read + report only) -----------------
-export AGENT_TOOLS_SPECIALIST="${AGENT_TOOLS_REVIEWER:-Read Glob Grep Write}"
-
 # run_specialist_reviews — Iterates over all enabled specialists.
 # Returns 0 if no blockers found, 1 if any specialist reported [BLOCKER] items.
 # Sets SPECIALIST_BLOCKERS (global) with blocker text for rework routing.
 run_specialist_reviews() {
+    # Resolve tool profile at call time so AGENT_TOOLS_REVIEWER changes after
+    # sourcing are picked up (avoids frozen-at-source-time fragility).
+    export AGENT_TOOLS_SPECIALIST="${AGENT_TOOLS_REVIEWER:-Read Glob Grep Write}"
     local has_blockers=false
     SPECIALIST_BLOCKERS=""
 

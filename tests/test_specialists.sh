@@ -288,6 +288,48 @@ rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${PROJECT_DIR}/SPECIALIS
 run_agent() { :; }
 
 # =============================================================================
+# Test 11: AGENT_TOOLS_SPECIALIST resolves at call time, not source time
+# Verifies the fix: variable is set inside run_specialist_reviews() so changes
+# to AGENT_TOOLS_REVIEWER after sourcing are picked up.
+# =============================================================================
+SPECIALIST_SECURITY_ENABLED=true
+_captured_tools=""
+
+run_agent() {
+    local label="$1"
+    if [[ "$label" == *"Specialist"* ]]; then
+        # Capture the AGENT_TOOLS_SPECIALIST that was set by run_specialist_reviews
+        _captured_tools="$AGENT_TOOLS_SPECIALIST"
+        cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'SEOF'
+# Security Review Findings
+## Blockers
+None
+## Notes
+None
+SEOF
+    fi
+}
+
+# Change AGENT_TOOLS_REVIEWER AFTER sourcing specialists.sh
+# The old source-time freeze would still return the original value;
+# the call-time fix must pick up this new value.
+AGENT_TOOLS_REVIEWER="Read Glob Grep Write Edit"
+
+result_t11=0
+run_specialist_reviews || result_t11=$?
+assert_eq "Call-time resolution: no blockers" "0" "$result_t11"
+assert_eq "Call-time resolution: picks up updated AGENT_TOOLS_REVIEWER" \
+    "Read Glob Grep Write Edit" "$_captured_tools"
+
+# Reset
+SPECIALIST_SECURITY_ENABLED=false
+AGENT_TOOLS_REVIEWER="Read Glob Grep Write"
+rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+
+# Restore original stub
+run_agent() { :; }
+
+# =============================================================================
 # Results
 # =============================================================================
 echo
