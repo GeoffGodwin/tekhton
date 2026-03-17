@@ -7,7 +7,7 @@
 run_stage_review() {
     header "Stage 2 / 3 — Reviewer"
 
-    estimate_post_coder_turns
+    estimate_post_coder_turns "${ACTUAL_CODER_TURNS:-0}"
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"
 

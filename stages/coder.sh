@@ -248,6 +248,9 @@ ${nb_notes}"
     print_run_summary
     success "Coder agent finished."
 
+    # Export actual coder turns for post-coder recalibration (Milestone 9)
+    export ACTUAL_CODER_TURNS="${LAST_AGENT_TURNS:-0}"
+
     # --- Null run detection ---------------------------------------------------
 
     if was_null_run; then
@@ -322,6 +325,10 @@ ${nb_notes}"
                 "$AGENT_TOOLS_CODER"
             print_run_summary
             success "Post-clarification coder finished."
+
+            # Update actual coder turns to reflect post-clarification run
+            # so reviewer/tester recalibration uses the most recent data
+            export ACTUAL_CODER_TURNS="${LAST_AGENT_TURNS:-0}"
 
             # --- Null run detection for post-clarification run ---
             if was_null_run; then

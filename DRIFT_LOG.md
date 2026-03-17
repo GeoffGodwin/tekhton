@@ -2,12 +2,13 @@
 
 ## Metadata
 - Last audit: 2026-03-17
-- Runs since audit: 3
+- Runs since audit: 2
 
 ## Unresolved Observations
 (none)
 
 ## Resolved
+- [RESOLVED 2026-03-17] [2026-03-17 | "Implement Milestone 9: Post-Coder Turn Recalibration"] `lib/turns.sh`: File lacks `set -euo pipefail` at the top. **Resolved: `set -euo pipefail` is already present on line 2 of `lib/turns.sh`. The observation was inaccurate — the file had the directive when inspected. Marking resolved.**
 - [RESOLVED 2026-03-17] [2026-03-17 | "Continue working your way through the NON_BLOCKING_LOG.md file and implement the last item."] `lib/specialists.sh:251` — `note_count=$(echo "$notes" | grep -c "[NOTE]" || echo "0")`: the `|| echo "0"` guard is unreachable because `$notes` is guaranteed non-empty at this point (the empty-check guard at line 214 returns early). **Resolved: Removed the unreachable `|| echo "0"` guard. Since `$notes` is guaranteed non-empty (line 214 early return) and contains only `[NOTE]` lines, `grep -c` will always return ≥ 1.**
 - [RESOLVED 2026-03-17] [2026-03-17 | "Implement Milestone 6: Brownfield Replan"] lib/plan.sh vs lib/replan.sh naming distinction — Brownfield replan functions extracted to `lib/replan_brownfield.sh`; mid-run replan in `lib/replan_midrun.sh`; `lib/replan.sh` is a thin shim. ARCHITECTURE.md lines 97–99 reflect the three-file structure. Naming convention (midrun/brownfield suffixes) is in place.
 - [RESOLVED 2026-03-16] [2026-03-16 | "Continue working your way through the NON_BLOCKING_LOG.md file and implement the last item. Also repair the single item in the DRIFT_LOG.md."] `stages/cleanup.sh:272` — `_resolve_cleanup_by_file_changes` grep -q vs grep -qF inconsistency. The function was moved from `lib/notes.sh` to `stages/cleanup.sh` in a prior refactoring, and the grep call was not updated to use -qF like the three other grep calls in the same file. **Resolved: Changed `grep -q` to `grep -qF` for literal string matching, consistent with lines 128, 221, and 241.**

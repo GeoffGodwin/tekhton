@@ -291,11 +291,11 @@ assert_eq "5.3 disabled: tester uses default" "$TESTER_MAX_TURNS" "$ADJUSTED_TES
 DYNAMIC_TURNS_ENABLED=true
 
 # =============================================================================
-# Phase 6: estimate_post_coder_turns — heuristic from files/diff
+# Phase 6: estimate_post_coder_turns — formula + fallback heuristic
 # =============================================================================
 
-# 6.1: Small change — few files, small diff
-SCOUT_REC_REVIEWER_TURNS=0  # Reset so estimate_post_coder_turns runs its heuristic
+# 6.1: Fallback heuristic — small change, no actual turns (e.g., --start-at review)
+SCOUT_REC_REVIEWER_TURNS=0
 
 cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
 # Coder Summary
@@ -310,19 +310,89 @@ EOF
 # Create a small diff
 echo "small change" >> "${TMPDIR}/init.txt"
 
-estimate_post_coder_turns 2>/dev/null
+# No actual_coder_turns → falls back to heuristic
+estimate_post_coder_turns 0 2>/dev/null
 
-# Should be the small-change estimate (reviewer ~8, tester ~20)
-assert_eq "6.1 small change reviewer" "8" "$ADJUSTED_REVIEWER_TURNS"
-assert_eq "6.2 small change tester" "20" "$ADJUSTED_TESTER_TURNS"
+# Should be the small-change heuristic (reviewer ~8, tester ~20)
+assert_eq "6.1 fallback small reviewer" "8" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.2 fallback small tester" "20" "$ADJUSTED_TESTER_TURNS"
 
-# 6.3: When scout already set values, don't override
+# 6.3: Formula with actual_coder_turns=50, files=2
+# reviewer = max(5, 50*0.35 + 2*1.5) = max(5, 17+3) = 20
+# tester   = max(10, 50*0.5 + 2*2.0) = max(10, 25+4) = 29
+estimate_post_coder_turns 50 2>/dev/null
+assert_eq "6.3 formula reviewer (50 turns, 2 files)" "20" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.4 formula tester (50 turns, 2 files)" "29" "$ADJUSTED_TESTER_TURNS"
+
+# 6.5: Formula overrides scout values (the whole point of Milestone 9)
 SCOUT_REC_REVIEWER_TURNS=15
-estimate_post_coder_turns 2>/dev/null
-assert_eq "6.3 scout values preserved" "8" "$ADJUSTED_REVIEWER_TURNS"
-
-# Reset for future tests
+estimate_post_coder_turns 50 2>/dev/null
+assert_eq "6.5 formula overrides scout reviewer" "20" "$ADJUSTED_REVIEWER_TURNS"
 SCOUT_REC_REVIEWER_TURNS=0
+
+# 6.6: Formula with large turns — clamped to max
+# reviewer = 300*0.35 + 2*1.5 = 105+3 = 108 → clamped to 30
+# tester   = 300*0.5  + 2*2.0 = 150+4 = 154 → clamped to 100
+estimate_post_coder_turns 300 2>/dev/null
+assert_eq "6.6 formula clamped reviewer max" "30" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.7 formula clamped tester max" "100" "$ADJUSTED_TESTER_TURNS"
+
+# 6.8: Formula with small turns — clamped to min
+# reviewer = 5*0.35 + 2*1.5 = 1+3 = 4 → clamped to REVIEWER_MIN_TURNS=5
+# tester   = 5*0.5  + 2*2.0 = 2+4 = 6 → clamped to TESTER_MIN_TURNS=10
+estimate_post_coder_turns 5 2>/dev/null
+assert_eq "6.8 formula clamped reviewer min" "5" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.9 formula clamped tester min" "10" "$ADJUSTED_TESTER_TURNS"
+
+# 6.10: Formula with many files
+cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
+# Coder Summary
+## Status: COMPLETE
+## Files Modified
+- lib/a.dart
+- lib/b.dart
+- lib/c.dart
+- lib/d.dart
+- lib/e.dart
+- lib/f.dart
+- lib/g.dart
+- lib/h.dart
+- lib/i.dart
+- lib/j.dart
+EOF
+
+# reviewer = 40*0.35 + 10*1.5 = 14+15 = 29
+# tester   = 40*0.5  + 10*2.0 = 20+20 = 40
+estimate_post_coder_turns 40 2>/dev/null
+assert_eq "6.10 formula many files reviewer" "29" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.11 formula many files tester" "40" "$ADJUSTED_TESTER_TURNS"
+
+# 6.12: Dynamic turns disabled — uses defaults regardless
+DYNAMIC_TURNS_ENABLED=false
+# Clear adjusted values so the disabled path falls through to defaults
+unset ADJUSTED_REVIEWER_TURNS ADJUSTED_TESTER_TURNS
+estimate_post_coder_turns 50 2>/dev/null
+assert_eq "6.12 disabled reviewer uses default" "$REVIEWER_MAX_TURNS" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.13 disabled tester uses default" "$TESTER_MAX_TURNS" "$ADJUSTED_TESTER_TURNS"
+DYNAMIC_TURNS_ENABLED=true
+
+# 6.14: Absent CODER_SUMMARY.md — files_modified defaults to 0 in formula path
+# reviewer = max(5, 50*35/100 + 0*15/10) = max(5, 17+0) = 17
+# tester   = max(10, 50*50/100 + 0*20/10) = max(10, 25+0) = 25
+DYNAMIC_TURNS_ENABLED=true
+rm -f "${TMPDIR}/CODER_SUMMARY.md"
+estimate_post_coder_turns 50 2>/dev/null
+assert_eq "6.14 absent summary: reviewer with files=0" "17" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.15 absent summary: tester with files=0" "25" "$ADJUSTED_TESTER_TURNS"
+
+# Restore small coder summary for remaining tests
+cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
+# Coder Summary
+## Status: COMPLETE
+## Files Modified
+- lib/foo.dart
+- lib/bar.dart
+EOF
 
 # =============================================================================
 # Phase 7: apply_scout_turn_limits — no scout report falls back to defaults

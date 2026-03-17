@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # turns.sh — Dynamic turn limit estimation
 #
@@ -127,19 +128,24 @@ apply_scout_turn_limits() {
     fi
 }
 
-# --- Estimate turns from coder output ----------------------------------------
+# --- Post-coder turn recalibration -------------------------------------------
 
-# When no scout ran (e.g., --start-at review), estimate reviewer/tester turns
-# based on the size of coder output. This is a rough heuristic.
+# Recalibrate reviewer/tester turn limits using actual coder data.
+# Formula-based: uses actual_coder_turns + files_modified + diff_lines to compute
+# reviewer and tester limits deterministically. Always overrides scout pre-coder
+# guesses when actual_coder_turns is available.
+#
+# Arguments:
+#   $1 — actual coder turns used (optional; falls back to heuristic if empty/0)
+#
+# Falls back to file-count/diff-line heuristic when actual turns unavailable
+# (e.g., --start-at review).
 estimate_post_coder_turns() {
+    local actual_coder_turns="${1:-0}"
+
     if [ "${DYNAMIC_TURNS_ENABLED}" != "true" ]; then
         ADJUSTED_REVIEWER_TURNS="${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}"
         ADJUSTED_TESTER_TURNS="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
-        return
-    fi
-
-    # If scout already set these, don't override
-    if [ "${SCOUT_REC_REVIEWER_TURNS:-0}" -gt 0 ] 2>/dev/null; then
         return
     fi
 
@@ -147,12 +153,17 @@ estimate_post_coder_turns() {
     local diff_lines=0
 
     # Count files modified from CODER_SUMMARY.md
+    # Note: ERE alternation (|) in awk /pattern/ is gawk/mawk-compatible but not
+    # strictly POSIX. Acceptable for this project's Linux/WSL target environment.
     if [ -f "CODER_SUMMARY.md" ]; then
         files_modified=$(awk '/^## Files (Modified|created or modified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' \
             CODER_SUMMARY.md 2>/dev/null || echo "0")
     fi
 
-    # Count git diff stat lines
+    # Count git diff stat lines (insertions + deletions)
+    # Note: when grep finds no match (no insertions/deletions), the pipeline fails
+    # and the || echo "0" fallback fires correctly. When grep matches, tr strips
+    # non-digits to extract the number. The ${var:-0} in arithmetic handles empty strings.
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
         diff_lines=$(git diff --stat HEAD 2>/dev/null | tail -1 | grep -o '[0-9]* insertion' | tr -dc '0-9' || echo "0")
         local del_lines
@@ -160,22 +171,45 @@ estimate_post_coder_turns() {
         diff_lines=$(( ${diff_lines:-0} + ${del_lines:-0} ))
     fi
 
-    # Heuristic: more files/lines → more review/test turns needed
+    local prior_reviewer="${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}"
+    local prior_tester="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
     local estimated_reviewer estimated_tester
-    if [ "$files_modified" -le 3 ] && [ "$diff_lines" -le 100 ]; then
-        estimated_reviewer=8
-        estimated_tester=20
-    elif [ "$files_modified" -le 8 ] && [ "$diff_lines" -le 500 ]; then
-        estimated_reviewer=12
-        estimated_tester=35
+
+    # Use formula when actual coder turns are available
+    if [ "${actual_coder_turns:-0}" -gt 0 ] 2>/dev/null; then
+        # Formula: reviewer = coder_actual * 0.35 + files * 1.5
+        #          tester   = coder_actual * 0.5  + files * 2.0
+        # Shell integer arithmetic: multiply first, divide to simulate decimals
+        local coder_reviewer_part=$(( actual_coder_turns * 35 / 100 ))
+        local files_reviewer_part=$(( files_modified * 15 / 10 ))
+        estimated_reviewer=$(( coder_reviewer_part + files_reviewer_part ))
+
+        local coder_tester_part=$(( actual_coder_turns * 50 / 100 ))
+        local files_tester_part=$(( files_modified * 20 / 10 ))
+        estimated_tester=$(( coder_tester_part + files_tester_part ))
+
+        ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$estimated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
+        ADJUSTED_TESTER_TURNS=$(clamp_turns "$estimated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
+
+        log "Post-coder recalibration: reviewer ${prior_reviewer}→${ADJUSTED_REVIEWER_TURNS}, tester ${prior_tester}→${ADJUSTED_TESTER_TURNS}"
+        log "  (coder used ${actual_coder_turns} turns, ${files_modified} files, ~${diff_lines} diff lines)"
     else
-        estimated_reviewer=18
-        estimated_tester=50
+        # Fallback heuristic when actual turns unavailable (e.g., --start-at review)
+        if [ "$files_modified" -le 3 ] && [ "$diff_lines" -le 100 ]; then
+            estimated_reviewer=8
+            estimated_tester=20
+        elif [ "$files_modified" -le 8 ] && [ "$diff_lines" -le 500 ]; then
+            estimated_reviewer=12
+            estimated_tester=35
+        else
+            estimated_reviewer=18
+            estimated_tester=50
+        fi
+
+        ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$estimated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
+        ADJUSTED_TESTER_TURNS=$(clamp_turns "$estimated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
+
+        log "Post-coder turn estimate — fallback heuristic (${files_modified} files, ~${diff_lines} diff lines):"
+        log "  Reviewer: ${ADJUSTED_REVIEWER_TURNS}, Tester: ${ADJUSTED_TESTER_TURNS}"
     fi
-
-    ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$estimated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
-    ADJUSTED_TESTER_TURNS=$(clamp_turns "$estimated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
-
-    log "Post-coder turn estimate (${files_modified} files, ~${diff_lines} diff lines):"
-    log "  Reviewer: ${ADJUSTED_REVIEWER_TURNS}, Tester: ${ADJUSTED_TESTER_TURNS}"
 }
