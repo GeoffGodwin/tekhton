@@ -2,12 +2,14 @@
 
 ## Metadata
 - Last audit: 2026-03-16
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
-- [2026-03-16 | "Ensure that Milestone 5 has been completely implemented. If anything is incomplete, finish implementing it."] `stages/cleanup.sh:86` — `pre_cleanup_files=$(git diff --name-only 2>/dev/null || true)` captures unstaged changes at the point cleanup starts. If the primary pipeline left uncommitted changes, those would be in this snapshot and would be protected from revert. This is correct behavior but undocumented in the function comment — a one-line note would help future readers understand why pre-cleanup state is snapshotted.
+- [2026-03-16 | "Continue working your way through the NON_BLOCKING_LOG.md file and implement the last item. Also repair the single item in the DRIFT_LOG.md."] `stages/cleanup.sh:272` — `_resolve_cleanup_by_file_changes` was moved from `lib/notes.sh` to `stages/cleanup.sh` in a prior refactoring. The NON_BLOCKING_LOG item (lib/notes.sh:270) correctly identified the `grep -q` vs `grep -qF` issue and was correctly closed since `lib/notes.sh` no longer contains it. But the same pattern persists at the new location. The three other `grep -q` calls in the same file (lines 128, 221, 241) all correctly use `-qF` or `-qxF`. Consistency suggests this one should be fixed too.
+(none)
 
 ## Resolved
+- [RESOLVED 2026-03-16] [2026-03-16 | "Ensure that Milestone 5 has been completely implemented. If anything is incomplete, finish implementing it."] `stages/cleanup.sh:86` — `pre_cleanup_files=$(git diff --name-only 2>/dev/null || true)` captures unstaged changes at the point cleanup starts. If the primary pipeline left uncommitted changes, those would be in this snapshot and would be protected from revert. This is correct behavior but undocumented in the function comment — a one-line note would help future readers understand why pre-cleanup state is snapshotted. **Resolved: Added two-line comment documenting that uncommitted primary pipeline changes are captured in the snapshot and protected from cleanup revert logic.**
 - [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] `lib/agent.sh:1` — file is now 678 lines (down from 711 after dead-code removal), still more than double the 300-line ceiling in the Code Quality checklist. Pre-existing condition; flagging again for a future refactor pass to split helper sections into a companion file (e.g., `lib/agent_monitor.sh`). **Resolved: lib/agent.sh was split into lib/agent.sh (276 lines) + lib/agent_monitor.sh (309 lines), both under the 300-line ceiling.**
 - [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 0.5: Agent Output Monitoring And Null-Run Detection"] Empty placeholder entry (`--`) — removed as no actionable content.
 - [RESOLVED 2026-03-16] [2026-03-16 | "Implement Milestone 5: Autonomous Debt Sweeps"] `stages/cleanup.sh` and `stages/coder.sh`/`stages/tester.sh` all use the `wc -l | tr -d '[:space:]'` idiom for line counting — already resolved: all stage files now use the shared `count_lines` helper from `lib/common.sh`. No inline `wc -l` usage remains in any stage file.

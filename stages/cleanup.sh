@@ -82,6 +82,8 @@ run_stage_cleanup() {
 
     # Snapshot files modified by the primary pipeline BEFORE cleanup runs.
     # On build-gate failure we revert only cleanup-introduced changes, not these.
+    # If the primary pipeline left uncommitted changes, they appear in this snapshot
+    # and are thus protected from the cleanup revert logic.
     local pre_cleanup_files
     pre_cleanup_files=$(git diff --name-only 2>/dev/null || true)
 
