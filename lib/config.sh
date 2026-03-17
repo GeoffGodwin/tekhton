@@ -216,6 +216,17 @@ load_config() {
     : "${CLEANUP_MAX_TURNS:=15}"            # Turn budget for cleanup agent
     : "${CLEANUP_TRIGGER_THRESHOLD:=5}"     # Min unresolved items before triggering
 
+    # --- Specialist reviewer defaults ---
+    : "${SPECIALIST_SECURITY_ENABLED:=false}"
+    : "${SPECIALIST_SECURITY_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+    : "${SPECIALIST_SECURITY_MAX_TURNS:=8}"
+    : "${SPECIALIST_PERFORMANCE_ENABLED:=false}"
+    : "${SPECIALIST_PERFORMANCE_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+    : "${SPECIALIST_PERFORMANCE_MAX_TURNS:=8}"
+    : "${SPECIALIST_API_ENABLED:=false}"
+    : "${SPECIALIST_API_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+    : "${SPECIALIST_API_MAX_TURNS:=8}"
+
     # Milestone overrides — defaults to 2x normal if not specified
     : "${MILESTONE_MAX_REVIEW_CYCLES:=$(( MAX_REVIEW_CYCLES * 2 ))}"
     : "${MILESTONE_CODER_MAX_TURNS:=$(( CODER_MAX_TURNS * 2 ))}"
@@ -258,6 +269,9 @@ load_config() {
     _clamp_config_value CLEANUP_BATCH_SIZE 50
     _clamp_config_value CLEANUP_MAX_TURNS 500
     _clamp_config_value CLEANUP_TRIGGER_THRESHOLD 100
+    _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
+    _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
+    _clamp_config_value SPECIALIST_API_MAX_TURNS 50
 
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     [[ "$PIPELINE_STATE_FILE" != /* ]] && PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"

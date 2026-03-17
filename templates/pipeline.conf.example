@@ -278,6 +278,33 @@ CONTEXT_COMPILER_ENABLED=false
 # Minimum unresolved non-blocking notes before a sweep triggers
 # CLEANUP_TRIGGER_THRESHOLD=5
 
+# --- Specialist reviewers (opt-in focused review passes) ---------------------
+# After the main reviewer approves, enabled specialists run focused review passes.
+# Findings tagged [BLOCKER] re-enter the rework loop. [NOTE] items go to
+# NON_BLOCKING_LOG.md. All specialists are disabled by default.
+
+# Security specialist — injection risks, auth bypass, secrets exposure
+# SPECIALIST_SECURITY_ENABLED=false
+# SPECIALIST_SECURITY_MODEL="claude-sonnet-4-6"
+# SPECIALIST_SECURITY_MAX_TURNS=8
+
+# Performance specialist — N+1 queries, unbounded loops, memory leaks
+# SPECIALIST_PERFORMANCE_ENABLED=false
+# SPECIALIST_PERFORMANCE_MODEL="claude-sonnet-4-6"
+# SPECIALIST_PERFORMANCE_MAX_TURNS=8
+
+# API contract specialist — schema consistency, backward compatibility
+# SPECIALIST_API_ENABLED=false
+# SPECIALIST_API_MODEL="claude-sonnet-4-6"
+# SPECIALIST_API_MAX_TURNS=8
+
+# Custom specialists: create a prompt template in your project's prompts/
+# directory and add config entries following this naming convention:
+# SPECIALIST_CUSTOM_MYCHECK_ENABLED=true
+# SPECIALIST_CUSTOM_MYCHECK_PROMPT="specialist_mycheck"
+# SPECIALIST_CUSTOM_MYCHECK_MODEL="claude-sonnet-4-6"
+# SPECIALIST_CUSTOM_MYCHECK_MAX_TURNS=8
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false

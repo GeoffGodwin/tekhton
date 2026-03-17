@@ -282,6 +282,7 @@ source "${TEKHTON_HOME}/lib/context_compiler.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
+source "${TEKHTON_HOME}/lib/specialists.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"
