@@ -330,6 +330,49 @@ rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${PROJECT_DIR}/SPECIALIS
 run_agent() { :; }
 
 # =============================================================================
+# Test 12: _append_specialist_notes — backslash sequences are not interpreted
+# Regression test for the awk fix: sed -i would corrupt \n, \t in note text.
+# =============================================================================
+cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'EOF'
+# Security Review Findings
+
+## Notes
+- [NOTE] lib/agent.sh:42 — Use \n instead of \\n for newlines; path is C:\Users\foo
+EOF
+
+# Remove any existing log so we start fresh
+rm -f "${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+
+_append_specialist_notes "security"
+
+nb_content=$(cat "${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}")
+# The literal backslash sequences must survive unchanged
+assert_contains "Backslash-n literal preserved" 'Use \n instead of' "$nb_content"
+assert_contains "Windows path backslashes preserved" 'C:\Users\foo' "$nb_content"
+
+rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md"
+
+# =============================================================================
+# Test 13: _append_specialist_notes — note text with special chars (brackets, pipes)
+# =============================================================================
+cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'EOF'
+# Security Review Findings
+
+## Notes
+- [NOTE] lib/agent.sh:10 — Check input [user|admin] values & escape pipes
+EOF
+
+rm -f "${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+
+_append_specialist_notes "security"
+
+nb_content=$(cat "${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}")
+assert_contains "Brackets preserved" '[user|admin]' "$nb_content"
+assert_contains "Ampersand preserved" '& escape pipes' "$nb_content"
+
+rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md"
+
+# =============================================================================
 # Results
 # =============================================================================
 echo

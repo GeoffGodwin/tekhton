@@ -221,19 +221,24 @@ _append_specialist_notes() {
     local date_tag
     date_tag=$(date +%Y-%m-%d)
 
-    # Append each [NOTE] item as an open non-blocking note
+    # Append each [NOTE] item as an open non-blocking note.
+    # Uses awk to insert after "## Open" header — avoids sed -i which interprets
+    # escape sequences (\n, \t) in the replacement text, corrupting entries.
     local tmpfile
     tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/specialist_nb_XXXXXXXX")
-    cp "$nb_file" "$tmpfile"
 
+    # Build the block of new entries to insert
+    local insert_block=""
     while IFS= read -r note_line; do
-        [ -z "$note_line" ] && continue
+        [[ -z "$note_line" ]] && continue
         # Strip leading "- " if present
-        local text
-        text="${note_line#- }"
-        # Insert under ## Open section
-        sed -i "/^## Open$/a\\- [ ] [${date_tag} | specialist:${spec_name}] ${text}" "$tmpfile"
+        local text="${note_line#- }"
+        insert_block="${insert_block}- [ ] [${date_tag} | specialist:${spec_name}] ${text}"$'\n'
     done <<< "$notes"
+
+    # Insert the block after "## Open" using awk (literal text, no escape interpretation)
+    awk -v block="$insert_block" '/^## Open$/{print; printf "%s", block; next} {print}' \
+        "$nb_file" > "$tmpfile"
 
     mv "$tmpfile" "$nb_file"
     local note_count

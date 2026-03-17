@@ -1,35 +1,19 @@
 #!/usr/bin/env bash
-# =============================================================================
 # stages/review.sh — Stage 2: Review loop (review → rework → build gate)
-#
-# Sourced by tekhton.sh — do not run directly.
-# Expects all pipeline globals to be set (TASK, LOG_FILE, etc.)
-# Sets: VERDICT (global, read by later stages and the final summary)
-# =============================================================================
+# Sourced by tekhton.sh. Sets: VERDICT (global).
 
-# run_stage_review — Runs the review loop:
-#   1. Invoke reviewer agent
-#   2. Parse verdict and blocker counts
-#   3. Route complex blockers → senior coder, simple → jr coder
-#   4. Post-fix build gate
-#   5. Repeat up to MAX_REVIEW_CYCLES
-#
-# On success, sets VERDICT to the final reviewer verdict.
-# Exits the pipeline (exit 1) if max cycles reached with unresolved blockers.
+# run_stage_review — Review loop: invoke reviewer, parse verdict, route rework,
+# build gate, repeat up to MAX_REVIEW_CYCLES. Exits on max-cycle exhaustion.
 run_stage_review() {
     header "Stage 2 / 3 — Reviewer"
 
-    # Estimate review/tester turns from coder output if scout didn't already set them
     estimate_post_coder_turns
-
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"
 
     while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; do
         REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
         log "Review cycle ${REVIEW_CYCLE} / ${MAX_REVIEW_CYCLES}..."
-
-        # --- Invoke reviewer -------------------------------------------------
 
         export ARCHITECTURE_CONTENT
         if [ -f "${ARCHITECTURE_FILE}" ]; then
@@ -42,10 +26,7 @@ run_stage_review() {
             PRIOR_BLOCKERS_BLOCK="yes"
         fi
 
-        # --- Context compiler (task-scoped filtering) ------------------------
         build_context_packet "review" "$TASK" "$CLAUDE_REVIEWER_MODEL"
-
-        # --- Context budget reporting ----------------------------------------
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
         log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_REVIEWER_MODEL"
 
@@ -61,7 +42,6 @@ run_stage_review() {
         print_run_summary
         success "Reviewer finished."
 
-        # Check for null run before parsing output
         if was_null_run; then
             warn "Reviewer was a null run (${LAST_AGENT_TURNS} turns, exit ${LAST_AGENT_EXIT_CODE})."
             warn "Skipping review parse — will retry on next cycle or fail at max cycles."
@@ -83,8 +63,6 @@ run_stage_review() {
             exit 1
         fi
 
-        # --- Parse verdict ---------------------------------------------------
-
         VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         # Also catch inline verdict formats like "Verdict: APPROVED" or "**Verdict: CHANGES_REQUIRED**"
         if [ -z "$VERDICT" ] || [ "$VERDICT" = "##Verdict" ]; then
@@ -92,7 +70,6 @@ run_stage_review() {
         fi
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
 
-        # --- Replan detection ------------------------------------------------
         if detect_replan_required "REVIEWER_REPORT.md"; then
             warn "Reviewer recommends REPLAN_REQUIRED."
             if ! trigger_replan "REVIEWER_REPORT.md"; then
@@ -104,8 +81,6 @@ run_stage_review() {
             log "Proceeding after replan decision (verdict overridden to APPROVED_WITH_NOTES)."
         fi
 
-        # --- Parse ACP verdicts (if present) ---------------------------------
-        # Extract accepted ACPs for downstream processing (P3 drift log will consume)
         ACCEPTED_ACPS=""
         if grep -q "^## ACP Verdicts" REVIEWER_REPORT.md 2>/dev/null; then
             ACCEPTED_ACPS=$(awk '/^## ACP Verdicts/{found=1; next} found && /^##/{exit} found && /ACCEPT/{print}' \
@@ -118,14 +93,12 @@ run_stage_review() {
         fi
 
         if [ "$VERDICT" = "CHANGES_REQUIRED" ]; then
-            # --- Count blockers ----------------------------------------------
             TMPDIR_BLOCKS=$(mktemp -d "${TEKHTON_SESSION_DIR:-/tmp}/blocks_XXXXXXXX")
             awk '/^## Complex Blockers/{found=1; next} found && /^##/{exit} found{print}' \
                 REVIEWER_REPORT.md > "${TMPDIR_BLOCKS}/complex.txt" 2>/dev/null || true
             awk '/^## Simple Blockers/{found=1; next} found && /^##/{exit} found{print}' \
                 REVIEWER_REPORT.md > "${TMPDIR_BLOCKS}/simple.txt" 2>/dev/null || true
 
-            # A section containing only "None" (or "- None") counts as zero
             HAS_COMPLEX=0
             HAS_SIMPLE=0
             if ! grep -qE "^\-?\s*None\s*$" "${TMPDIR_BLOCKS}/complex.txt" 2>/dev/null; then
@@ -139,8 +112,6 @@ run_stage_review() {
             rm -rf "$TMPDIR_BLOCKS"
 
             log "Complex blockers: ${HAS_COMPLEX}, Simple blockers: ${HAS_SIMPLE}"
-
-            # --- Route rework ------------------------------------------------
             if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
                 if [ "$HAS_COMPLEX" -gt 0 ]; then
                     warn "Complex blockers found. Re-invoking senior coder..."
@@ -156,7 +127,6 @@ run_stage_review() {
                         "$AGENT_TOOLS_CODER"
                     print_run_summary
                     success "Senior coder rework finished."
-
                     if [ "$HAS_SIMPLE" -gt 0 ]; then
                         log "Simple blockers remain. Invoking jr coder..."
 
@@ -191,8 +161,6 @@ run_stage_review() {
                     print_run_summary
                     success "Jr coder cleanup finished."
                 fi
-
-                # --- Post-fix build gate -------------------------------------
                 if ! run_build_gate "post-fix-pass"; then
                     error "Build gate failed after fix pass — escalating to senior coder."
                     BUILD_FIX_PROMPT=$(render_prompt "build_fix_minimal")
@@ -213,7 +181,6 @@ run_stage_review() {
                 fi
 
             else
-                # --- Max cycles reached --------------------------------------
                 error "Max review cycles (${MAX_REVIEW_CYCLES}) reached with unresolved blockers."
 
                 BLOCKER_SUMMARY="Complex: ${HAS_COMPLEX}, Simple: ${HAS_SIMPLE} — see REVIEWER_REPORT.md"
@@ -236,87 +203,86 @@ run_stage_review() {
         fi
     done
 
-    # --- Specialist reviews (after main reviewer approves) --------------------
-    if [ "$VERDICT" = "APPROVED" ] || [ "$VERDICT" = "APPROVED_WITH_NOTES" ]; then
+    if [[ "$VERDICT" = "APPROVED" || "$VERDICT" = "APPROVED_WITH_NOTES" ]]; then
         if ! run_specialist_reviews; then
-            # Specialist(s) found blockers — route to rework
-            warn "Specialist blocker(s) detected. Routing to senior coder rework."
-
-            # Write specialist blockers into REVIEWER_REPORT.md so the rework
-            # coder can see them in the same place it reads reviewer blockers.
-            if has_specialist_blockers; then
-                {
-                    echo ""
-                    echo "## Specialist Blockers"
-                    echo "$SPECIALIST_BLOCKERS"
-                } >> "REVIEWER_REPORT.md"
-            fi
-
-            VERDICT="CHANGES_REQUIRED"
-
-            # Re-enter the review loop if we have cycles remaining
-            if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
-                REWORK_PROMPT=$(render_prompt "coder_rework")
-                run_agent \
-                    "Coder (specialist rework)" \
-                    "$CLAUDE_CODER_MODEL" \
-                    "$CODER_MAX_TURNS" \
-                    "$REWORK_PROMPT" \
-                    "$LOG_FILE" \
-                    "$AGENT_TOOLS_CODER"
-                print_run_summary
-                success "Specialist rework finished."
-
-                if ! run_build_gate "post-specialist-rework"; then
-                    error "Build gate failed after specialist rework."
-                    BUILD_FIX_PROMPT=$(render_prompt "build_fix_minimal")
-                    run_agent \
-                        "Coder (post-specialist build fix)" \
-                        "$CLAUDE_CODER_MODEL" \
-                        "$((CODER_MAX_TURNS / 3))" \
-                        "$BUILD_FIX_PROMPT" \
-                        "$LOG_FILE" \
-                        "$AGENT_TOOLS_BUILD_FIX"
-                    if ! run_build_gate "post-specialist-retry"; then
-                        error "Build gate failed again after specialist rework."
-                        write_pipeline_state "review" "specialist_build_failure" \
-                            "${MILESTONE_MODE:+--milestone }--start-at review" \
-                            "$TASK" "Build broken after specialist rework. See BUILD_ERRORS.md."
-                        exit 1
-                    fi
-                fi
-
-                # Re-run main reviewer to verify specialist fixes
-                REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
-                log "Re-running reviewer to verify specialist fixes (cycle ${REVIEW_CYCLE})..."
-
-                REVIEWER_PROMPT=$(render_prompt "reviewer")
-                run_agent \
-                    "Reviewer (post-specialist cycle ${REVIEW_CYCLE})" \
-                    "$CLAUDE_REVIEWER_MODEL" \
-                    "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
-                    "$REVIEWER_PROMPT" \
-                    "$LOG_FILE" \
-                    "$AGENT_TOOLS_REVIEWER"
-                print_run_summary
-
-                if [ -f "REVIEWER_REPORT.md" ]; then
-                    VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
-                    if [ -z "$VERDICT" ] || [ "$VERDICT" = "##Verdict" ]; then
-                        VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
-                    fi
-                    log "Post-specialist reviewer verdict: ${BOLD}${VERDICT}${NC}"
-                fi
-            else
-                error "Specialist blockers found but no review cycles remain."
-                write_pipeline_state "review" "specialist_blockers" \
-                    "${MILESTONE_MODE:+--milestone }--start-at review" \
-                    "$TASK" "Specialist reviewers found blockers. See SPECIALIST_REPORT.md."
-                exit 1
-            fi
+            _route_specialist_rework
         fi
     fi
 
     print_run_summary
     success "Review passed (verdict: ${VERDICT})."
+}
+
+# _route_specialist_rework — Handles specialist blocker rework and re-review.
+_route_specialist_rework() {
+    warn "Specialist blocker(s) detected. Routing to senior coder rework."
+
+    if has_specialist_blockers; then
+        {
+            echo ""
+            echo "## Specialist Blockers"
+            echo "$SPECIALIST_BLOCKERS"
+        } >> "REVIEWER_REPORT.md"
+    fi
+
+    VERDICT="CHANGES_REQUIRED"
+
+    if [[ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]]; then
+        error "Specialist blockers found but no review cycles remain."
+        write_pipeline_state "review" "specialist_blockers" \
+            "${MILESTONE_MODE:+--milestone }--start-at review" \
+            "$TASK" "Specialist reviewers found blockers. See SPECIALIST_REPORT.md."
+        exit 1
+    fi
+
+    REWORK_PROMPT=$(render_prompt "coder_rework")
+    run_agent \
+        "Coder (specialist rework)" \
+        "$CLAUDE_CODER_MODEL" \
+        "$CODER_MAX_TURNS" \
+        "$REWORK_PROMPT" \
+        "$LOG_FILE" \
+        "$AGENT_TOOLS_CODER"
+    print_run_summary
+    success "Specialist rework finished."
+
+    if ! run_build_gate "post-specialist-rework"; then
+        error "Build gate failed after specialist rework."
+        BUILD_FIX_PROMPT=$(render_prompt "build_fix_minimal")
+        run_agent \
+            "Coder (post-specialist build fix)" \
+            "$CLAUDE_CODER_MODEL" \
+            "$((CODER_MAX_TURNS / 3))" \
+            "$BUILD_FIX_PROMPT" \
+            "$LOG_FILE" \
+            "$AGENT_TOOLS_BUILD_FIX"
+        if ! run_build_gate "post-specialist-retry"; then
+            error "Build gate failed again after specialist rework."
+            write_pipeline_state "review" "specialist_build_failure" \
+                "${MILESTONE_MODE:+--milestone }--start-at review" \
+                "$TASK" "Build broken after specialist rework. See BUILD_ERRORS.md."
+            exit 1
+        fi
+    fi
+
+    REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
+    log "Re-running reviewer to verify specialist fixes (cycle ${REVIEW_CYCLE})..."
+
+    REVIEWER_PROMPT=$(render_prompt "reviewer")
+    run_agent \
+        "Reviewer (post-specialist cycle ${REVIEW_CYCLE})" \
+        "$CLAUDE_REVIEWER_MODEL" \
+        "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
+        "$REVIEWER_PROMPT" \
+        "$LOG_FILE" \
+        "$AGENT_TOOLS_REVIEWER"
+    print_run_summary
+
+    if [[ -f "REVIEWER_REPORT.md" ]]; then
+        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+        if [[ -z "$VERDICT" || "$VERDICT" = "##Verdict" ]]; then
+            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
+        fi
+        log "Post-specialist reviewer verdict: ${BOLD}${VERDICT}${NC}"
+    fi
 }
