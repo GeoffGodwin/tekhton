@@ -35,11 +35,14 @@ REQUIRED_TOOLS="claude git"
 #   Reviewer         CLAUDE_REVIEWER_MODEL     Code review + verdict
 #   Architect        CLAUDE_ARCHITECT_MODEL    Drift audit, remediation planning
 #   Tester           CLAUDE_TESTER_MODEL       Test authoring (upgradeable in --milestone)
+# Base model — all agent-specific variables default to this in lib/config.sh
+CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
+
+# Agent-specific overrides (comment out any line to fall back to CLAUDE_STANDARD_MODEL)
 CLAUDE_CODER_MODEL="claude-opus-4-6"
 CLAUDE_JR_CODER_MODEL="claude-haiku-4-5"
 CLAUDE_SCOUT_MODEL="claude-haiku-4-5"
 CLAUDE_REVIEWER_MODEL="claude-sonnet-4-6"
-CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 CLAUDE_ARCHITECT_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-haiku-4-5"
 
