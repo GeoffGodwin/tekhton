@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: lib/plan.sh — _generate_codebase_summary tree/find paths and size-bounding
+# Test: lib/replan.sh — _generate_codebase_summary tree/find paths and size-bounding
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,7 +17,11 @@ export TEKHTON_TEST_MODE=1
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/prompts.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/plan.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/replan.sh"
 
 # Helper: create a project dir with a few files
 make_project_dir() {

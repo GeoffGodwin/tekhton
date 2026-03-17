@@ -242,6 +242,7 @@ CHARS_PER_TOKEN=4
 # Falls back to full injection when keyword extraction yields zero matches.
 # Off by default — enable after verifying context budget reports show oversized prompts.
 CONTEXT_COMPILER_ENABLED=false
+
 # --- Auto-advance (--auto-advance) -------------------------------------------
 # When enabled via --auto-advance flag, the pipeline will loop through
 # milestones automatically after each passes acceptance criteria.

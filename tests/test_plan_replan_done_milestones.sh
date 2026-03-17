@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test: lib/plan.sh — _apply_brownfield_delta preserves [DONE] milestones
+# Test: lib/replan.sh — _apply_brownfield_delta preserves [DONE] milestones
 # Feeds a CLAUDE.md with [DONE] milestones through _apply_brownfield_delta and
 # asserts that COMPLETED_MILESTONES captures the correct content.
 set -euo pipefail
@@ -22,7 +22,11 @@ export TEKHTON_TEST_MODE=1
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/prompts.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/plan.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/replan.sh"
 
 # Define mock run_plan_generate so _apply_brownfield_delta doesn't invoke claude.
 # The function just writes a minimal CLAUDE.md from DESIGN_CONTENT.

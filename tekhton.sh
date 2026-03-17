@@ -252,6 +252,7 @@ if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/prompts.sh"
     source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
+    source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
     # PROJECT_NAME is needed by run_agent() for temp file naming;
     # in --replan mode config is not loaded, so derive from directory name.

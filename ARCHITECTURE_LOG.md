@@ -28,3 +28,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-16
 - **Rationale**: - ACP: Split `lib/context.sh` into `context.sh` + `context_compiler.sh` — **ACCEPT** — The 300-line Non-Negotiable Rule supersedes the historical Milestone 2 "no new files" note. The split is clea
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-6: Mid-run replan function renaming (Task: "Continue working your way through the NON_BLOCKING_LOG.md file and implement the next 2 items.")
+- **Date**: 2026-03-17
+- **Rationale**: Renaming `_run_replan` → `_run_midrun_replan` and `_apply_replan_delta` → `_apply_midrun_delta` is necessary to avoid collision with the brownfield `run_replan()` and `_apply_brownfield_delta()` n
+- **Source**: Accepted ACP from pipeline run
