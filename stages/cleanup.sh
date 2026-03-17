@@ -24,7 +24,7 @@ should_run_cleanup() {
     unresolved=$(count_unresolved_notes)
     local threshold="${CLEANUP_TRIGGER_THRESHOLD:-5}"
 
-    if [ "$unresolved" -le "$threshold" ] 2>/dev/null; then
+    if [ "$unresolved" -le "$threshold" ]; then
         return 1
     fi
 
@@ -82,6 +82,8 @@ run_stage_cleanup() {
 
     # Snapshot files modified by the primary pipeline BEFORE cleanup runs.
     # On build-gate failure we revert only cleanup-introduced changes, not these.
+    # If the primary pipeline left uncommitted changes, they appear in this snapshot
+    # and are thus protected from the cleanup revert logic.
     local pre_cleanup_files
     pre_cleanup_files=$(git diff --name-only 2>/dev/null || true)
 
@@ -267,7 +269,7 @@ _resolve_cleanup_by_file_changes() {
             [ -z "$mod_file" ] && continue
             local basename_mod
             basename_mod=$(basename "$mod_file" 2>/dev/null || echo "$mod_file")
-            if echo "$note_line" | grep -q "$basename_mod" 2>/dev/null; then
+            if echo "$note_line" | grep -qF "$basename_mod" 2>/dev/null; then
                 # Extract enough text to match in the log file
                 local match_text
                 # shellcheck disable=SC2001

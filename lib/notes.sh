@@ -107,11 +107,13 @@ resolve_human_notes() {
                 if [ "$action" = "complete" ]; then
                     # Find the [~] line containing this text and mark [x]
                     if grep -q "^- \[~\].*${escaped_text}" HUMAN_NOTES.md 2>/dev/null; then
+                        # GNU sed 0, address: first-match-only range (not portable to BSD sed/macOS)
                         sed -i "0,/^- \[~\]\(.*${escaped_text}\)/s//- [x]\1/" HUMAN_NOTES.md
                         completed=$((completed + 1))
                     fi
                 elif [ "$action" = "reset" ]; then
                     if grep -q "^- \[~\].*${escaped_text}" HUMAN_NOTES.md 2>/dev/null; then
+                        # GNU sed 0, address: first-match-only range (not portable to BSD sed/macOS)
                         sed -i "0,/^- \[~\]\(.*${escaped_text}\)/s//- [ ]\1/" HUMAN_NOTES.md
                         reset=$((reset + 1))
                     fi
@@ -261,6 +263,7 @@ mark_note_resolved() {
     escaped=$(printf '%s' "$match_text" | sed 's/[.[\*^$()+?{|/]/\\&/g')
 
     if grep -q "^- \[ \].*${escaped}" "$nb_file" 2>/dev/null; then
+        # GNU sed 0, address: first-match-only range (not portable to BSD sed/macOS)
         sed -i "0,/^- \[ \]\(.*${escaped}\)/s//- [x]\1/" "$nb_file"
         return 0
     fi
@@ -284,6 +287,7 @@ mark_note_deferred() {
     escaped=$(printf '%s' "$match_text" | sed 's/[.[\*^$()+?{|/]/\\&/g')
 
     if grep -q "^- \[ \].*${escaped}" "$nb_file" 2>/dev/null; then
+        # GNU sed 0, address: first-match-only range (not portable to BSD sed/macOS)
         sed -i "0,/^- \[ \]\(.*${escaped}\)/s//- [DEFERRED]\1/" "$nb_file"
         return 0
     fi
