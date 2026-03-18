@@ -195,6 +195,70 @@ assert "Next milestone after 3 is 4" "$([ "$next" = "4" ] && echo 0 || echo 1)"
 next=$(find_next_milestone 4 "${TMPDIR}/CLAUDE.md")
 assert "No milestone after 4 (last)" "$([ -z "$next" ] && echo 0 || echo 1)"
 
+# --- Test: find_next_milestone with decimal milestones (regression) -----------
+
+echo "=== find_next_milestone decimal regression ==="
+
+cat > "${TMPDIR}/decimal.md" << 'DECIMAL_EOF'
+# Project Rules
+
+## Current Initiative: Adaptive Pipeline 2.0
+
+#### [DONE] Milestone 0: Security Hardening
+Phase 1 complete.
+
+Acceptance criteria:
+- Config injection eliminated
+
+#### [DONE] Milestone 0.5: Agent Output Monitoring And Null-Run Detection
+Phase 2 complete.
+
+Acceptance criteria:
+- JSON output mode does not trigger false null-run
+
+#### Milestone 1: Token And Context Accounting
+Measurement infrastructure.
+
+Acceptance criteria:
+- measure_context_size returns character count
+
+#### Milestone 2: Context Compiler
+Task-scoped context assembly.
+
+Acceptance criteria:
+- extract_relevant_sections returns matching sections
+DECIMAL_EOF
+
+# Primary regression: advancing from 0.5 → next undone milestone is 1
+next=$(find_next_milestone "0.5" "${TMPDIR}/decimal.md")
+assert "find_next_milestone 0.5 → 1 (decimal advance path)" "$([ "$next" = "1" ] && echo 0 || echo 1)"
+
+# Verify milestone 0 and 0.5 are correctly identified as done
+assert "Milestone 0 is_milestone_done" "$(is_milestone_done 0 "${TMPDIR}/decimal.md" && echo 0 || echo 1)"
+assert "Milestone 0.5 is_milestone_done" "$(is_milestone_done 0.5 "${TMPDIR}/decimal.md" && echo 0 || echo 1)"
+assert "Milestone 1 is NOT done" "$(! is_milestone_done 1 "${TMPDIR}/decimal.md" && echo 0 || echo 1)"
+
+# Verify parse_milestones captures 0.5 as its own milestone number (not 0)
+m05_title=$(parse_milestones "${TMPDIR}/decimal.md" | awk -F'|' '$1 == "0.5" {print $2}')
+assert "parse_milestones captures 0.5 as a distinct milestone number" "$([ -n "$m05_title" ] && echo 0 || echo 1)"
+
+# Verify 0 is not misidentified as 0.5
+m0_title=$(parse_milestones "${TMPDIR}/decimal.md" | awk -F'|' '$1 == "0" {print $2}')
+m05_title_distinct=$(parse_milestones "${TMPDIR}/decimal.md" | awk -F'|' '$1 == "0.5" {print $2}')
+assert "Milestone 0 and 0.5 are parsed as distinct entries" "$([ "$m0_title" != "$m05_title_distinct" ] && echo 0 || echo 1)"
+
+# Advance path: from 0 should find 1 (skipping done 0.5)
+next=$(find_next_milestone "0" "${TMPDIR}/decimal.md")
+assert "find_next_milestone 0 → 1 (skips done 0.5)" "$([ "$next" = "1" ] && echo 0 || echo 1)"
+
+# Advance path: from 1 → 2
+next=$(find_next_milestone "1" "${TMPDIR}/decimal.md")
+assert "find_next_milestone 1 → 2" "$([ "$next" = "2" ] && echo 0 || echo 1)"
+
+# No milestone after 2
+next=$(find_next_milestone "2" "${TMPDIR}/decimal.md")
+assert "find_next_milestone 2 → empty (no more milestones)" "$([ -z "$next" ] && echo 0 || echo 1)"
+
 # --- Test: should_auto_advance ------------------------------------------------
 
 echo "=== should_auto_advance ==="
@@ -271,6 +335,119 @@ VARIED_EOF
 
 varied_count=$(parse_milestones "${TMPDIR}/varied.md" | wc -l)
 assert "Parses varied heading formats (colon, dash, period)" "$([ "$varied_count" -eq 3 ] && echo 0 || echo 1)"
+
+# --- Test: get_milestone_commit_prefix ----------------------------------------
+
+echo "=== get_milestone_commit_prefix ==="
+
+prefix=$(get_milestone_commit_prefix "5" "COMPLETE_AND_CONTINUE")
+assert "Complete+continue prefix has checkmark" "$([ "$prefix" = "[MILESTONE 5 ✓]" ] && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "3" "COMPLETE_AND_WAIT")
+assert "Complete+wait prefix has checkmark" "$([ "$prefix" = "[MILESTONE 3 ✓]" ] && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "7" "INCOMPLETE_REWORK")
+assert "Incomplete prefix says partial" "$(echo "$prefix" | grep -q "partial" && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "2" "REPLAN_REQUIRED")
+assert "Replan prefix says partial" "$(echo "$prefix" | grep -q "partial" && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "1" "NONE")
+assert "NONE disposition says partial" "$(echo "$prefix" | grep -q "partial" && echo 0 || echo 1)"
+
+prefix=$(get_milestone_commit_prefix "" "COMPLETE_AND_WAIT")
+assert "Empty milestone returns empty prefix" "$([ -z "$prefix" ] && echo 0 || echo 1)"
+
+# --- Test: get_milestone_commit_body ------------------------------------------
+
+echo "=== get_milestone_commit_body ==="
+
+body=$(get_milestone_commit_body "1" "COMPLETE_AND_CONTINUE" "${TMPDIR}/CLAUDE.md")
+assert "Complete body says COMPLETE" "$(echo "$body" | grep -q "COMPLETE" && echo 0 || echo 1)"
+assert "Complete body includes milestone title" "$(echo "$body" | grep -q "Token And Context Accounting" && echo 0 || echo 1)"
+
+body=$(get_milestone_commit_body "3" "INCOMPLETE_REWORK" "${TMPDIR}/CLAUDE.md")
+assert "Rework body says PARTIAL" "$(echo "$body" | grep -q "PARTIAL" && echo 0 || echo 1)"
+
+body=$(get_milestone_commit_body "" "COMPLETE_AND_WAIT")
+assert "Empty milestone returns empty body" "$([ -z "$body" ] && echo 0 || echo 1)"
+
+# --- Test: tag_milestone_complete (without git) --------------------------------
+
+echo "=== tag_milestone_complete ==="
+
+# Test that tagging is skipped when disabled (default)
+MILESTONE_TAG_ON_COMPLETE=false
+tag_result=0
+tag_milestone_complete 1 || tag_result=$?
+assert "Tagging skipped when MILESTONE_TAG_ON_COMPLETE=false" "$([ "$tag_result" -eq 0 ] && echo 0 || echo 1)"
+
+# --- Test: tag_milestone_complete (with git repo fixture) ----------------------
+
+echo "=== tag_milestone_complete (with git) ==="
+
+GIT_REPO_DIR=$(mktemp -d)
+trap 'rm -rf "$GIT_REPO_DIR"' EXIT
+
+# Initialize a minimal git repo with one commit so tagging works
+git -C "$GIT_REPO_DIR" init -q
+git -C "$GIT_REPO_DIR" config user.email "test@example.com"
+git -C "$GIT_REPO_DIR" config user.name "Test"
+touch "$GIT_REPO_DIR/dummy.txt"
+git -C "$GIT_REPO_DIR" add dummy.txt
+git -C "$GIT_REPO_DIR" commit -q -m "init"
+
+# Run tag_milestone_complete from inside the git repo so git tag works
+(
+    cd "$GIT_REPO_DIR"
+    MILESTONE_TAG_ON_COMPLETE=true
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/milestones.sh" 2>/dev/null || true
+    tag_milestone_complete 7
+)
+tag_exists=$(git -C "$GIT_REPO_DIR" tag -l "milestone-7-complete")
+assert "tag_milestone_complete creates tag when enabled" "$([ "$tag_exists" = "milestone-7-complete" ] && echo 0 || echo 1)"
+
+# Test idempotent: calling again with an existing tag warns but does not fail
+(
+    cd "$GIT_REPO_DIR"
+    MILESTONE_TAG_ON_COMPLETE=true
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/milestones.sh" 2>/dev/null || true
+    tag_milestone_complete 7
+) 2>/dev/null
+assert "tag_milestone_complete handles duplicate tag gracefully (no error)" "$([ $? -eq 0 ] && echo 0 || echo 1)"
+
+# --- Test: generate_commit_message with milestone info -------------------------
+
+echo "=== generate_commit_message with milestone ==="
+
+# Source hooks.sh for commit message generation
+source "${TEKHTON_HOME}/lib/hooks.sh"
+
+# Create a minimal CODER_SUMMARY.md
+cat > "${TMPDIR}/CODER_SUMMARY.md" << 'SUMMARY_EOF'
+# Coder Summary
+## Status: COMPLETE
+## What Was Implemented
+Added milestone commit signatures
+## Files Modified
+- lib/hooks.sh
+- lib/milestones.sh
+SUMMARY_EOF
+
+cd "$TMPDIR"
+
+msg=$(generate_commit_message "Implement Milestone 5: Widget System" "5" "COMPLETE_AND_CONTINUE")
+assert "Milestone-complete commit has checkmark prefix" "$(echo "$msg" | head -1 | grep -q '\[MILESTONE 5 ✓\]' && echo 0 || echo 1)"
+assert "Milestone-complete commit has COMPLETE in body" "$(echo "$msg" | grep -q "COMPLETE" && echo 0 || echo 1)"
+
+msg=$(generate_commit_message "Implement Milestone 3: Foo" "3" "INCOMPLETE_REWORK")
+assert "Partial commit has partial prefix" "$(echo "$msg" | head -1 | grep -q 'partial' && echo 0 || echo 1)"
+
+msg=$(generate_commit_message "Fix: some bug" "" "")
+first_line=$(echo "$msg" | head -1)
+assert "Non-milestone commit has no prefix" "$(echo "$first_line" | grep -qv 'MILESTONE' && echo 0 || echo 1)"
 
 # --- Summary ------------------------------------------------------------------
 

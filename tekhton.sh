@@ -281,6 +281,7 @@ source "${TEKHTON_HOME}/lib/turns.sh"
 source "${TEKHTON_HOME}/lib/context.sh"
 source "${TEKHTON_HOME}/lib/context_compiler.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
+source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
@@ -668,15 +669,20 @@ else
     log "Resuming at ${START_AT} — prior reports preserved for agent context"
 fi
 
-# --- Auto-advance: initialize milestone state if needed ----------------------
+# --- Milestone number parsing ------------------------------------------------
+# Parse milestone number from task for both --milestone and --auto-advance modes.
+# This enables commit signatures in single-run --milestone mode, not just auto-advance.
 
 _CURRENT_MILESTONE=""
-if [ "$AUTO_ADVANCE" = true ]; then
-    # Parse milestone number from task if it matches "Implement Milestone N" pattern
-    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+) ]]; then
+if [ "$MILESTONE_MODE" = true ]; then
+    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)?) ]]; then
         _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
     fi
+fi
 
+# --- Auto-advance: initialize milestone state if needed ----------------------
+
+if [ "$AUTO_ADVANCE" = true ]; then
     if [ -n "$_CURRENT_MILESTONE" ]; then
         _total_milestones=$(get_milestone_count "CLAUDE.md")
         init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
@@ -687,6 +693,20 @@ if [ "$AUTO_ADVANCE" = true ]; then
         warn "Falling back to single-run mode."
         AUTO_ADVANCE=false
     fi
+elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
+    # Single-run milestone mode: initialize state for commit signatures
+    # and acceptance checking (no auto-advance loop)
+    _total_milestones=$(get_milestone_count "CLAUDE.md")
+    init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
+    log "Milestone mode: targeting milestone ${_CURRENT_MILESTONE}"
+fi
+
+# --- Startup archival: clean up completed milestones from previous runs ------
+# Archive [DONE] milestones that still have full definitions in CLAUDE.md.
+# This handles cases where the previous run completed a milestone but crashed
+# before archival, or where milestones were manually marked [DONE].
+if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
+    archive_all_completed_milestones "CLAUDE.md"
 fi
 
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
@@ -894,9 +914,18 @@ record_run_metrics
 
 archive_reports "$LOG_DIR" "$TIMESTAMP"
 
+# --- Milestone disposition for commit signatures -----------------------------
+
+_MS_COMMIT_NUM=""
+_MS_COMMIT_DISPOSITION=""
+if [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
+    _MS_COMMIT_NUM="$_CURRENT_MILESTONE"
+    _MS_COMMIT_DISPOSITION=$(get_milestone_disposition 2>/dev/null || echo "")
+fi
+
 # --- Generate commit message -------------------------------------------------
 
-COMMIT_MSG=$(generate_commit_message "$TASK" || echo "feat: ${TASK}")
+COMMIT_MSG=$(generate_commit_message "$TASK" "$_MS_COMMIT_NUM" "$_MS_COMMIT_DISPOSITION" || echo "feat: ${TASK}")
 
 # --- Done --------------------------------------------------------------------
 
@@ -905,6 +934,15 @@ echo -e "  Task:      ${BOLD}${TASK}${NC}"
 echo -e "  Started:   ${BOLD}${START_AT}${NC}"
 echo -e "  Verdict:   ${GREEN}${BOLD}${VERDICT}${NC}"
 echo -e "  Log:       ${LOG_FILE}"
+
+# Show milestone completion status in the final banner
+if [ -n "$_MS_COMMIT_NUM" ]; then
+    if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
+        echo -e "  Milestone: ${GREEN}${BOLD}${_MS_COMMIT_NUM} — COMPLETE${NC}"
+    else
+        echo -e "  Milestone: ${YELLOW}${BOLD}${_MS_COMMIT_NUM} — PARTIAL${NC}"
+    fi
+fi
 echo
 
 # --- Action Items summary ----------------------------------------------------
@@ -1004,6 +1042,13 @@ _do_git_commit() {
 case "$COMMIT_CHOICE" in
     y|Y)
         _do_git_commit "$COMMIT_MSG"
+        # Tag milestone completion and archive after successful commit
+        if [ -n "$_MS_COMMIT_NUM" ]; then
+            if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
+                tag_milestone_complete "$_MS_COMMIT_NUM"
+                archive_completed_milestone "$_MS_COMMIT_NUM" "CLAUDE.md" || true
+            fi
+        fi
         print_run_summary
         success "Committed. Open a PR and squash-merge to main when ready."
         ;;
@@ -1014,6 +1059,13 @@ case "$COMMIT_CHOICE" in
         EDITED_MSG=$(cat "$TMPFILE")
         rm "$TMPFILE"
         _do_git_commit "$EDITED_MSG"
+        # Tag milestone completion and archive after successful commit
+        if [ -n "$_MS_COMMIT_NUM" ]; then
+            if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
+                tag_milestone_complete "$_MS_COMMIT_NUM"
+                archive_completed_milestone "$_MS_COMMIT_NUM" "CLAUDE.md" || true
+            fi
+        fi
         print_run_summary
         success "Committed. Open a PR and squash-merge to main when ready."
         ;;

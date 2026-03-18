@@ -88,7 +88,7 @@ extract_relevant_sections() {
     local lc_pattern
     lc_pattern=$(echo "$pattern" | tr '[:upper:]' '[:lower:]')
 
-    filtered=$(echo "$content" | awk -v pat="$lc_pattern" '
+    filtered=$(echo "$content" | LC_ALL=C awk -v pat="$lc_pattern" '
     BEGIN {
         section = ""
         header = ""

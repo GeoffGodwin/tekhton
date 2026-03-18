@@ -1,11 +1,11 @@
 ## Planned Tests
-(none — no implementation code was changed)
+- [x] Full suite regression — verify all 57 existing tests pass after the two implementation changes
 
 ## Test Run Results
-Passed: 0  Failed: 0
+Passed: 57  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-(none)
+- [x] `TESTER_REPORT.md`

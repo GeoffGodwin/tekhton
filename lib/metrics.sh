@@ -385,9 +385,5 @@ calibrate_turn_estimate() {
         adjusted=1
     fi
 
-    if [[ "$adjusted" -ne "$recommendation" ]]; then
-        log "[metrics] Adaptive calibration: ${stage} ${recommendation} → ${adjusted} (multiplier: ${centimult}%)"
-    fi
-
     echo "$adjusted"
 }

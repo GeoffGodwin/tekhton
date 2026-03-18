@@ -18,6 +18,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
+TEKHTON_SESSION_DIR="$TMPDIR"
 
 # Config — use low thresholds to make the test cycle short
 DRIFT_LOG_FILE="DRIFT_LOG.md"

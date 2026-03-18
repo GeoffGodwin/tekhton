@@ -18,10 +18,14 @@ _CONF_FILE="${PROJECT_DIR}/.claude/pipeline.conf"
 # Reads key=value lines from a config file without executing arbitrary code.
 # Handles: bare values, double-quoted, single-quoted, values with = signs, spaces.
 # Rejects values containing dangerous shell metacharacters.
+# Populates _CONF_KEYS_SET (space-separated list of keys parsed from the file).
+
+_CONF_KEYS_SET=""
 
 _parse_config_file() {
     local conf_file="$1"
     local line_num=0
+    _CONF_KEYS_SET=""
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         line_num=$((line_num + 1))
@@ -86,7 +90,21 @@ _parse_config_file() {
 
         # Safe assignment via declare -gx (global + export)
         declare -gx "$key=$raw_value"
+        _CONF_KEYS_SET="${_CONF_KEYS_SET} ${key}"
     done < "$conf_file"
+}
+
+# --- Hard upper bounds (defense-in-depth) ------------------------------------
+# Prevent runaway loops or excessive API costs from misconfigured values.
+# Defined at module scope so load_config() can call it without nesting.
+
+_clamp_config_value() {
+    local key="$1" max="$2"
+    local val="${!key:-0}"
+    if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -gt "$max" ] 2>/dev/null; then
+        warn "[config] ${key}=${val} exceeds hard cap (${max}). Clamped to ${max}."
+        declare -gx "$key=$max"
+    fi
 }
 
 # --- Loader ------------------------------------------------------------------
@@ -131,9 +149,11 @@ load_config() {
     : "${PROJECT_RULES_FILE:=CLAUDE.md}"
 
     # --- Validate required keys ---
+    # Check against keys actually parsed from pipeline.conf, not shell variables.
+    # Environment-inherited values must not satisfy this check.
     local missing=()
     for key in PROJECT_NAME CLAUDE_STANDARD_MODEL ANALYZE_CMD; do
-        if [ -z "${!key:-}" ]; then
+        if [[ " ${_CONF_KEYS_SET} " != *" ${key} "* ]]; then
             missing+=("$key")
         fi
     done
@@ -210,6 +230,10 @@ load_config() {
     : "${AUTO_ADVANCE_LIMIT:=3}"
     : "${AUTO_ADVANCE_CONFIRM:=true}"
 
+    # --- Milestone commit signatures ---
+    : "${MILESTONE_TAG_ON_COMPLETE:=false}"  # Create git tag on milestone completion
+    : "${MILESTONE_ARCHIVE_FILE:=MILESTONE_ARCHIVE.md}"  # Archive file for completed milestones
+
     # --- Cleanup (autonomous debt sweep) defaults ---
     : "${CLEANUP_ENABLED:=false}"           # Off by default — opt-in
     : "${CLEANUP_BATCH_SIZE:=5}"            # Max items per sweep
@@ -245,16 +269,7 @@ load_config() {
     # (especially with --output-format json which produces no streaming output).
     : "${MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER:=3}"
 
-    # --- Hard upper bounds (defense-in-depth) ---
-    # Prevent runaway loops or excessive API costs from misconfigured values.
-    _clamp_config_value() {
-        local key="$1" max="$2"
-        local val="${!key:-0}"
-        if [[ "$val" =~ ^[0-9]+$ ]] && [ "$val" -gt "$max" ] 2>/dev/null; then
-            warn "[config] ${key}=${val} exceeds hard cap (${max}). Clamped to ${max}."
-            declare -gx "$key=$max"
-        fi
-    }
+    # --- Clamp values to hard upper bounds ---
     _clamp_config_value MAX_REVIEW_CYCLES 20
     _clamp_config_value CODER_MAX_TURNS 500
     _clamp_config_value JR_CODER_MAX_TURNS 500
@@ -280,8 +295,15 @@ load_config() {
     _clamp_config_value METRICS_MIN_RUNS 100
 
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
-    [[ "$PIPELINE_STATE_FILE" != /* ]] && PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"
-    [[ "$LOG_DIR" != /* ]] && LOG_DIR="${PROJECT_DIR}/${LOG_DIR}"
+    if [[ "$PIPELINE_STATE_FILE" != /* ]]; then
+        PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"
+    fi
+    if [[ "$LOG_DIR" != /* ]]; then
+        LOG_DIR="${PROJECT_DIR}/${LOG_DIR}"
+    fi
+    if [[ "$MILESTONE_ARCHIVE_FILE" != /* ]]; then
+        MILESTONE_ARCHIVE_FILE="${PROJECT_DIR}/${MILESTONE_ARCHIVE_FILE}"
+    fi
 }
 
 # --- Milestone mode overrides ------------------------------------------------

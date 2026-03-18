@@ -31,7 +31,8 @@ tekhton/
 │   ├── milestones.sh       # [2.0] Milestone state machine + acceptance checking
 │   ├── clarify.sh          # [2.0] Clarification protocol + replan trigger
 │   ├── specialists.sh      # [2.0] Specialist review framework
-│   └── metrics.sh          # [2.0] Run metrics collection + adaptive calibration
+│   ├── metrics.sh          # [2.0] Run metrics collection + adaptive calibration
+│   └── errors.sh           # [2.0] Error taxonomy, classification + reporting
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Stage 0: Architect audit (conditional)
 │   ├── coder.sh            # Stage 1: Scout + Coder + build gate
@@ -181,6 +182,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `METRICS_ADAPTIVE_TURNS` | Use history for turn calibration (default: true) |
 | `MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER` | Multiplier for AGENT_ACTIVITY_TIMEOUT in milestone mode (default: 3) |
 | `MILESTONE_TAG_ON_COMPLETE` | Create git tag on milestone completion (default: false) |
+| `MILESTONE_ARCHIVE_FILE` | Path to milestone archive (default: MILESTONE_ARCHIVE.md) |
 | `MILESTONE_SPLIT_ENABLED` | Enable pre-flight milestone splitting (default: true) |
 | `MILESTONE_SPLIT_MODEL` | Model for splitting agent (default: CLAUDE_CODER_MODEL) |
 | `MILESTONE_SPLIT_MAX_TURNS` | Turn limit for splitting agent (default: 15) |
@@ -1149,12 +1151,23 @@ Seeds Forward:
   pre-flight gate; reviewer/tester are no longer relevant at that stage since
   they'll be recalibrated anyway
 
-#### Milestone 10: Milestone Commit Signatures And Completion Signaling
+#### Milestone 10: Milestone Commit Signatures, Completion Signaling, And Archival
 Add structured milestone completion signaling to commit messages and pipeline
 output so that milestone boundaries are unambiguous in git history. When
 `check_milestone_acceptance()` passes, the commit message and pipeline output
 must clearly indicate that the milestone is signed off. When a run ends in a
 partial state, the commit message must indicate continuation is expected.
+
+Additionally, archive completed milestone definitions out of CLAUDE.md into a
+separate `MILESTONE_ARCHIVE.md` file to prevent CLAUDE.md from growing beyond
+its ~40K character context limit. Each completed milestone is replaced in
+CLAUDE.md with a one-line summary (`#### [DONE] Milestone N: Title`) while the
+full definition (description, files, acceptance criteria, Watch For, Seeds
+Forward) is appended to the archive. This is essential for long-running projects
+where the rolling design process continuously adds new milestones — without
+archival, CLAUDE.md bloats until agents can no longer read the full file.
+
+**Phase 1 — Commit Signatures:**
 
 Files to modify:
 - `lib/hooks.sh` — modify `generate_commit_message()` to accept milestone state
@@ -1175,6 +1188,66 @@ Files to modify:
 - `templates/pipeline.conf.example` — add `MILESTONE_TAG_ON_COMPLETE` with comment
   explaining the worktree/branch merge workflow it enables
 
+**Phase 2 — Milestone Archival:**
+
+Files to modify:
+- `lib/milestones.sh` — add `archive_completed_milestone(milestone_num, claude_md_path)`:
+  1. Extract the full milestone definition block from CLAUDE.md (from
+     `#### Milestone N:` or `#### [DONE] Milestone N:` heading to the next
+     milestone heading or end of milestones section)
+  2. Append the extracted block to `MILESTONE_ARCHIVE.md` with a timestamp
+     header: `## Archived: YYYY-MM-DD` and the initiative name
+  3. Replace the full block in CLAUDE.md with a single summary line:
+     `#### [DONE] Milestone N: <title>` (no body — just the heading)
+  4. Return 0 on success, 1 if the milestone was not found or already archived
+     (one-line summary = already archived)
+- `lib/milestones.sh` — add `archive_all_completed_milestones(claude_md_path)`:
+  Iterates all `[DONE]` milestones in CLAUDE.md and archives any that still
+  have full definitions (more than one line). Called at pipeline startup to
+  retroactively archive milestones completed in previous runs.
+- `tekhton.sh` — after sourcing `lib/milestones.sh` and before the main pipeline
+  loop, call `archive_all_completed_milestones()` if CLAUDE.md exists and
+  milestone mode is active. This ensures stale completed milestones from
+  previous sessions are cleaned up even if the previous run didn't archive
+  (crash, manual completion, etc.).
+- `lib/hooks.sh` — in the post-commit finalization path, after
+  `tag_milestone_complete()`, call `archive_completed_milestone()` for the
+  just-completed milestone. The archive happens after commit so the full
+  milestone definition is part of the commit that completed it.
+
+`MILESTONE_ARCHIVE.md` format:
+```markdown
+# Milestone Archive
+
+Completed milestone definitions archived from CLAUDE.md.
+See git history for the commit that completed each milestone.
+
+---
+
+## Archived: 2026-03-15 — Adaptive Pipeline 2.0
+
+#### Milestone 0: Security Hardening
+[full original milestone definition preserved verbatim]
+
+---
+
+## Archived: 2026-03-17 — Adaptive Pipeline 2.0
+
+#### Milestone 9: Post-Coder Turn Recalibration
+[full original milestone definition preserved verbatim]
+```
+
+After archival, the milestone plan section of CLAUDE.md for completed work
+looks like:
+```markdown
+#### [DONE] Milestone 0: Security Hardening
+#### [DONE] Milestone 0.5: Agent Output Monitoring And Null-Run Detection
+#### [DONE] Milestone 1: Token And Context Accounting
+...
+#### Milestone 10: Milestone Commit Signatures, Completion Signaling, And Archival
+[full definition — this is the current milestone]
+```
+
 Acceptance criteria:
 - Milestone-complete commits are prefixed with `[MILESTONE N ✓]`
 - Partial-completion commits are prefixed with `[MILESTONE N — partial]`
@@ -1184,6 +1257,15 @@ Acceptance criteria:
 - Tagging is off by default
 - Pipeline final output banner distinguishes complete vs partial milestone state
 - `git log --oneline` shows clear milestone boundaries
+- After milestone completion and commit, the full milestone definition is moved
+  from CLAUDE.md to `MILESTONE_ARCHIVE.md`
+- CLAUDE.md retains only `#### [DONE] Milestone N: <title>` for archived milestones
+- `MILESTONE_ARCHIVE.md` preserves the full definition verbatim with a timestamp
+- `archive_all_completed_milestones()` at startup retroactively archives any
+  completed milestones that still have full definitions in CLAUDE.md
+- Archival is idempotent: running it twice on the same milestone produces no
+  duplicate entries in the archive
+- CLAUDE.md size decreases measurably after archiving completed milestones
 - All existing tests pass
 - `bash -n` and `shellcheck` pass on modified files
 
@@ -1196,6 +1278,27 @@ Watch For:
 - The `[MILESTONE N ✓]` prefix must survive the user's "edit commit message" flow
   (`e` option at the commit prompt). Place it as the first line so editing the body
   doesn't accidentally remove it.
+- Milestone extraction must handle varied heading formats: `#### Milestone N:`,
+  `#### [DONE] Milestone N:`, `#### Milestone N.1:` (sub-milestones from
+  splitting). Use a regex that matches on the `#### ` prefix + `Milestone` keyword.
+- The "next milestone heading" boundary detection must handle both same-level
+  (`####`) and parent-level (`###`, `##`) headings as terminators. Do not
+  accidentally include the next milestone's content in the extracted block.
+- Archive AFTER commit, not before. The commit should contain the full milestone
+  definition so `git show` on that commit shows what was completed. The archival
+  is a cleanup step for the next run.
+- `MILESTONE_ARCHIVE.md` should be committed in the NEXT run's commit (or a
+  separate housekeeping commit), not retroactively amended into the completion
+  commit.
+- The startup `archive_all_completed_milestones()` call handles the gap: if the
+  pipeline crashed or the user committed manually, stale [DONE] milestones are
+  still cleaned up on next invocation.
+- Idempotency is critical. The archive function must detect whether a milestone
+  is already archived (single summary line in CLAUDE.md, entry already exists
+  in MILESTONE_ARCHIVE.md) and skip silently.
+- The Planning initiative's [DONE] milestones (1–5) should also be archivable.
+  The function must handle milestones from any initiative section, not just
+  the current one.
 
 What NOT To Do:
 - Do NOT change the commit message format for non-milestone runs. This is additive.
@@ -1204,12 +1307,30 @@ What NOT To Do:
   Keep it human-readable — a single line is enough.
 - Do NOT gate committing on milestone acceptance. The pipeline always offers to
   commit, even on partial completion. The prefix tells the human the state.
+- Do NOT delete completed milestones without archiving. The full definition has
+  historical value — it records what was planned, what the acceptance criteria
+  were, and what the implementation constraints were.
+- Do NOT archive milestones that are not marked `[DONE]`. Only completed milestones
+  are eligible. Partial or in-progress milestones stay in CLAUDE.md in full.
+- Do NOT modify the archived content. The archive is append-only and verbatim.
+  No summarization, no reformatting, no selective omission.
+- Do NOT archive into `.claude/logs/` or the timestamped log directory. The
+  archive is a project-level document (like DRIFT_LOG.md or ARCHITECTURE_LOG.md),
+  not a per-run artifact.
 
 Seeds Forward:
 - Milestone 11 (Pre-Flight Sizing) benefits from clear git history: the splitter
   can inspect `git log` for `[MILESTONE N ✓]` to know what's already complete
 - Worktree-based parallel milestone development uses the tag as a merge-readiness
   signal
+- Archival keeps CLAUDE.md under the context window limit, enabling the rolling
+  design process: new milestones can be added via `--replan` (Milestone 6) or
+  milestone splitting (Milestone 11) without worrying about file size
+- The `MILESTONE_ARCHIVE.md` file becomes a valuable input for `--replan`:
+  the replan prompt can reference archived milestones to understand what was
+  already built and what constraints were established
+- Future 3.0 metric dashboards can cross-reference archived milestone definitions
+  with metrics.jsonl to show planning accuracy (estimated scope vs actual effort)
 
 #### Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split
 Add two interlocking capabilities: (1) a pre-flight sizing check that detects
@@ -1341,3 +1462,273 @@ Seeds Forward:
   calibration
 - Future 3.0 parallel milestone execution can use sub-milestones as natural
   parallelization boundaries
+
+#### Milestone 12: Observability & Error Attribution
+Add structured error categorization, clear attribution, and actionable diagnostic
+output so that users can immediately distinguish upstream API failures from Tekhton
+bugs from agent scope issues. When a run fails, the user should know in under 10
+seconds: (1) what category of failure it was, (2) whether it's transient or
+permanent, (3) what to do next. This is the diagnostic foundation for a
+self-sustaining pipeline — auto-advance and autonomous recovery depend on the
+pipeline itself understanding failure categories, not just humans reading logs.
+
+Currently, the pipeline treats all agent failures as generic events. An Anthropic
+HTTP 500 (transient, retry-safe) looks identical to a null run (scope issue,
+needs splitting) which looks identical to a disk-full condition (environment,
+needs human intervention). The user must grep through raw FIFO log dumps to
+diagnose what happened. This milestone replaces guesswork with structured
+classification at every failure point.
+
+**Phase 1 — Error Taxonomy & Classification Engine:**
+
+Files to create:
+- `lib/errors.sh` — Canonical error taxonomy with classification functions:
+  - `classify_error(exit_code, stderr_file, last_output_file)` — returns a
+    structured error record: `CATEGORY|SUBCATEGORY|TRANSIENT|MESSAGE`
+  - Categories:
+    - `UPSTREAM` — API provider failures. Subcategories: `api_500` (HTTP 500/502/503),
+      `api_rate_limit` (HTTP 429), `api_overloaded` (HTTP 529), `api_auth`
+      (authentication_error), `api_timeout` (connection timeout), `api_unknown`
+    - `ENVIRONMENT` — local system issues. Subcategories: `disk_full`, `network`
+      (DNS/connection failures), `missing_dep` (claude CLI not found, python not
+      found), `permissions`, `oom` (signal 9 / 137 with no prior errors), `env_unknown`
+    - `AGENT_SCOPE` — expected agent-level failures. Subcategories: `null_run`
+      (died before meaningful work), `max_turns` (exhausted turn budget),
+      `activity_timeout` (no output or file changes for timeout period),
+      `no_summary` (completed but no CODER_SUMMARY.md), `scope_unknown`
+    - `PIPELINE` — Tekhton internal errors. Subcategories: `state_corrupt`
+      (invalid PIPELINE_STATE.md), `config_error` (pipeline.conf parse failure),
+      `missing_file` (required artifact not found), `template_error` (prompt
+      render failure), `internal` (unexpected shell error)
+  - `is_transient(category, subcategory)` — returns 0 if transient, 1 if permanent.
+    All `UPSTREAM` errors are transient. `ENVIRONMENT/network` is transient.
+    `ENVIRONMENT/oom` is transient (may succeed on retry with fewer context).
+    All `AGENT_SCOPE` and `PIPELINE` errors are permanent (require action).
+  - `suggest_recovery(category, subcategory, context)` — returns a human-readable
+    recovery string. Examples:
+    - `UPSTREAM/api_500` → "Transient API error. Wait 60s and re-run the same command."
+    - `UPSTREAM/api_rate_limit` → "Rate limited. Wait 5 minutes or check billing."
+    - `AGENT_SCOPE/null_run` → "Agent couldn't make progress. Try splitting the
+      milestone or rephrasing the task."
+    - `AGENT_SCOPE/max_turns` → "Turn budget exhausted. Re-run with --start-at
+      <stage> to continue, or increase *_MAX_TURNS in pipeline.conf."
+    - `ENVIRONMENT/oom` → "Process killed (likely OOM). Reduce context size or
+      increase system memory."
+    - `PIPELINE/config_error` → "Invalid pipeline.conf. Run shellcheck on the
+      config or check for syntax errors."
+
+**Phase 2 — Agent Exit Analysis:**
+
+Files to modify:
+- `lib/agent_monitor.sh` — In the FIFO reader loop, maintain a ring buffer of the
+  last 50 lines of raw agent output (fixed-size array with modular index). On
+  agent exit, write ring buffer to `$SESSION_TMP/agent_last_output.txt`. While
+  reading the stream, detect API error JSON patterns in real-time:
+  `"type":"error"`, `"error":{"type":"server_error"`, `"error":{"type":"rate_limit_error"`,
+  `"error":{"type":"overloaded_error"`, HTTP status codes 429/500/502/503/529.
+  Set `API_ERROR_DETECTED=true` and `API_ERROR_TYPE=<subcategory>` flags so the
+  agent exit handler has immediate context without re-parsing.
+- `lib/agent.sh` — After agent process exits, before the existing null-run
+  detection logic:
+  1. Redirect agent stderr to `$SESSION_TMP/agent_stderr.txt` (if not already)
+  2. Call `classify_error "$exit_code" "$SESSION_TMP/agent_stderr.txt"
+     "$SESSION_TMP/agent_last_output.txt"`
+  3. Store result in `AGENT_ERROR_CATEGORY`, `AGENT_ERROR_SUBCATEGORY`,
+     `AGENT_ERROR_TRANSIENT`, `AGENT_ERROR_MESSAGE`
+  4. If `AGENT_ERROR_CATEGORY=UPSTREAM`, skip null-run classification entirely —
+     the failure is external, not a scope or agent quality issue
+  Known API error signatures to match in agent output:
+  - `"error":{"type":"server_error"` → `UPSTREAM|api_500`
+  - `"error":{"type":"rate_limit_error"` or `HTTP 429` → `UPSTREAM|api_rate_limit`
+  - `"error":{"type":"overloaded_error"` or `HTTP 529` → `UPSTREAM|api_overloaded`
+  - `"error":{"type":"authentication_error"` → `UPSTREAM|api_auth`
+  - `Connection refused` / `Could not resolve host` → `ENVIRONMENT|network`
+  - Exit 137 with no API errors → `ENVIRONMENT|oom`
+  - Exit 139 → `ENVIRONMENT|env_unknown` (segfault)
+
+**Phase 3 — Structured Error Reporting:**
+
+Files to modify:
+- `lib/common.sh` — Add `report_error(category, subcategory, transient, message,
+  recovery)` function that formats a structured, boxed error block to stderr:
+  ```
+  ╔═══════════════════════════════════════════════════╗
+  ║ UPSTREAM API FAILURE (transient)                  ║
+  ╠═══════════════════════════════════════════════════╣
+  ║ Category:  UPSTREAM / api_500                     ║
+  ║ Source:    Anthropic API                          ║
+  ║ Message:   HTTP 500 Internal Server Error         ║
+  ║            Request ID: req_011CZ9DVb...           ║
+  ║                                                   ║
+  ║ Recovery:  Transient error. Wait 60s and re-run.  ║
+  ║            State saved: --start-at coder          ║
+  ╚═══════════════════════════════════════════════════╝
+  ```
+  Falls back to ASCII box characters (`+`, `-`, `|`) when the terminal does not
+  support Unicode (check `LANG`/`LC_ALL` for UTF-8). This replaces the generic
+  `[✗] Coder agent was a null run` message for classified errors. Unclassified
+  errors still produce the existing generic messages — no regression.
+- `stages/coder.sh`, `stages/review.sh`, `stages/tester.sh`, `stages/architect.sh`
+  — After agent completion, check for `AGENT_ERROR_CATEGORY`. If set and not
+  `AGENT_SCOPE` (which already has descriptive messages), call `report_error()`
+  with the full classification. Include the error category in the saved pipeline
+  state. For `UPSTREAM` errors, replace the null-run exit path with a
+  transient-error exit path that saves state identically but with different
+  messaging: "This was an API failure, not a scope issue. Re-run the same command."
+- `lib/state.sh` — Extend `PIPELINE_STATE.md` with an `## Error Classification`
+  section containing: category, subcategory, transient flag, recovery suggestion,
+  and the last 10 lines of agent output (redacted — see Phase 5). The resume
+  logic reads this on next invocation to display: "Previous run failed due to:
+  UPSTREAM/api_500 (transient). Resuming should work."
+
+**Phase 4 — Metrics Integration:**
+
+Files to modify:
+- `lib/metrics.sh` — Add fields to the JSONL record: `error_category` (string or
+  null), `error_subcategory` (string or null), `error_transient` (boolean or null).
+  Only populated on non-success outcomes. Null fields omitted from JSON output
+  (keep records compact).
+- `lib/metrics.sh` — In `summarize_metrics()`, add an error breakdown section to
+  the `--metrics` dashboard output:
+  ```
+  Error breakdown (last 50 runs):
+    Upstream API errors:    3 (all transient — would auto-resolve on retry)
+    Agent scope failures:   2 (null_run: 1, max_turns: 1)
+    Environment issues:     0
+    Pipeline errors:        0
+  ```
+  Group by top-level category. Show count and whether transient. If all errors in
+  a category are transient, note that auto-retry would resolve them.
+- `lib/hooks.sh` — Ensure `record_run_metrics()` is called on ALL exit paths, not
+  just success. Pass error classification when available. Currently, metrics may
+  not be recorded on early exits — verify and fix.
+
+**Phase 5 — Log Structure & Redaction:**
+
+Files to modify:
+- `lib/agent.sh` — At the end of each agent run (success or failure), append a
+  structured summary block to the log file:
+  ```
+  ═══ Agent Run Summary ═══
+  Agent:     coder (claude-sonnet-4-20250514)
+  Turns:     25 / 50
+  Duration:  12m 34s
+  Exit Code: 0
+  Class:     SUCCESS
+  Files:     8 modified, 2 created
+  ═════════════════════════
+  ```
+  On failure, the block includes the error classification:
+  ```
+  ═══ Agent Run Summary ═══
+  Agent:     coder (claude-sonnet-4-20250514)
+  Turns:     0 / 50
+  Duration:  0m 12s
+  Exit Code: 1
+  Class:     UPSTREAM / api_500 (transient)
+  Message:   HTTP 500 Internal Server Error
+  Recovery:  Wait 60s and re-run: tekhton --start-at coder "task"
+  Files:     0 modified
+  ═════════════════════════
+  ```
+  This block appears at the END of the log file, so `tail -20 <logfile>` is always
+  sufficient to diagnose a failure.
+- `lib/errors.sh` — Add `redact_sensitive(text)` function that strips patterns
+  matching: `x-api-key: *`, `Authorization: *`, `sk-ant-*`, `ANTHROPIC_API_KEY=*`,
+  and any string matching common API key formats. Called on all agent output before
+  it's written to error reports, state files, or log summaries. Raw FIFO logs are
+  NOT redacted (they may be needed for deep debugging), but all user-facing
+  summaries are.
+
+Acceptance criteria:
+- `classify_error` given exit code 1 + output containing `"type":"server_error"`
+  returns `UPSTREAM|api_500|true|HTTP 500...`
+- `classify_error` given exit code 137 + no API errors returns
+  `ENVIRONMENT|oom|true|Process killed (signal 9)...`
+- `classify_error` given exit code 0 + turns=0 + no file changes returns
+  `AGENT_SCOPE|null_run|false|Agent completed without meaningful work`
+- `report_error` produces a boxed, structured error block with category, message,
+  and actionable recovery suggestion
+- API error patterns (500, 429, 529, auth errors) are detected from the agent's
+  JSON output stream in real-time during monitoring
+- `UPSTREAM` errors bypass null-run classification entirely — an API 500 is never
+  misreported as a "null run"
+- PIPELINE_STATE.md includes error classification section on failure, and the
+  resume prompt displays it on next invocation
+- metrics.jsonl records `error_category` and `error_subcategory` on failures
+- `--metrics` dashboard shows error breakdown by category with transient/permanent
+  distinction
+- Log files end with a structured agent summary block (tail-friendly)
+- Sensitive values (API keys, auth tokens) are redacted in all user-facing output
+  (error reports, state files, log summaries) but preserved in raw FIFO logs
+- Unclassified errors produce the existing generic error messages (no regression)
+- ASCII fallback for box-drawing characters when terminal lacks Unicode support
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified/created files
+
+Watch For:
+- Claude CLI error output format is not formally documented — the classification
+  must be pattern-based on observed output. Start with the known patterns (HTTP
+  status codes in JSON error objects, connection error strings) and always fall
+  back to `UNKNOWN` subcategories for unrecognized errors. The taxonomy must be
+  extensible without code changes (add new grep patterns to a lookup table).
+- The ring buffer for capturing last N lines of FIFO output must not leak memory
+  on long-running agents (hundreds of turns). Use a fixed-size bash array with
+  modular index (`buffer[i % 50]`), not an unbounded append.
+- `stderr` capture from the claude process requires redirecting stderr to a file
+  before the FIFO tee. This must not break the existing FIFO monitoring pipeline.
+  Test that activity detection, turn counting, and null-run detection all still
+  work after adding stderr redirection.
+- On Windows (Git Bash / MSYS2), stderr redirection and process signal detection
+  may differ from Linux/macOS. Exit code 137 may not map to signal 9 on all
+  platforms. Test both paths.
+- The structured error box uses Unicode box-drawing characters — verify they
+  render correctly in Git Bash / Windows Terminal / PowerShell / cmd.exe. The
+  ASCII fallback must be tested independently.
+- API rate limit errors (429) sometimes include `retry-after` values in the error
+  output. If available, include the wait duration in the recovery suggestion.
+- Redaction must be conservative — better to over-redact than leak a key. But do
+  NOT redact the Anthropic request ID (e.g., `req_011CZ9DVb...`) — that is
+  essential for support tickets.
+- The `UPSTREAM` bypass of null-run classification is critical. Without it, an
+  API 500 that produces 0 turns and 0 file changes gets classified as a null run
+  (scope issue), leading to incorrect split/rework suggestions.
+
+What NOT To Do:
+- Do NOT add automatic retry logic in this milestone. This milestone is about
+  *diagnosis and reporting*. Auto-retry for transient errors is a natural
+  follow-on but depends on accurate classification being proven first. Future
+  work may add `--auto-retry` with configurable back-off.
+- Do NOT change how the pipeline decides to save state vs exit. The existing
+  state-save logic in each stage is correct. This milestone adds *attribution*
+  to those decisions, not different decisions.
+- Do NOT attempt to parse Anthropic API responses beyond pattern matching. The
+  pipeline sees claude CLI output (JSON objects on the FIFO), not raw HTTP
+  responses. Match on known error JSON patterns and HTTP status strings.
+- Do NOT make error classification slow. It runs after the agent exits — a few
+  grep calls on the captured output buffer. Never invoke an LLM to classify
+  errors. This is string matching, not AI.
+- Do NOT log sensitive information (API keys, auth tokens) in error reports or
+  state files. The `redact_sensitive()` function must be called on all
+  user-facing output paths.
+- Do NOT remove or change the existing `log()`, `warn()`, `error()` functions in
+  `lib/common.sh`. `report_error()` is a new function that layers on top for
+  classified errors. The existing functions remain for unclassified situations.
+- Do NOT add error classification to the scout stage. Scout failures are already
+  non-fatal and advisory. Over-diagnosing a scout null run adds noise.
+
+Seeds Forward:
+- Future `--auto-retry` flag can use `is_transient()` to automatically retry
+  `UPSTREAM` errors after a configurable delay, without human intervention.
+  Combined with Milestone 3 (Auto-Advance), the pipeline could survive transient
+  API outages and resume milestone progression autonomously.
+- Milestone 3 (Auto-Advance) benefits directly: the auto-advance loop can
+  distinguish "retry this milestone" (transient API error) from "split this
+  milestone" (scope failure) from "stop and report" (permanent environment issue)
+  based on error classification, enabling smarter autonomous decisions.
+- Milestone 8 (Metrics) historical data gains error categories, enabling the
+  adaptive calibration to factor in failure patterns per project — e.g., a
+  project that consistently hits rate limits may need longer delays between stages.
+- The quorum-based decision model (3.0 vision) needs structured error data to
+  inform voting — a judge evaluating a failure needs to know what kind of failure
+  occurred before recommending retry vs replan vs escalate to human.

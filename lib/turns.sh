@@ -110,21 +110,33 @@ apply_scout_turn_limits() {
         local calibrated_coder
         calibrated_coder=$(calibrate_turn_estimate "$SCOUT_REC_CODER_TURNS" "coder")
         ADJUSTED_CODER_TURNS=$(clamp_turns "$calibrated_coder" "$CODER_MIN_TURNS" "$CODER_MAX_TURNS_CAP")
-        log "Coder turns: ${CODER_MAX_TURNS} (configured) → ${ADJUSTED_CODER_TURNS} (scout-adjusted)"
+        if [ "$calibrated_coder" != "$SCOUT_REC_CODER_TURNS" ]; then
+            log "[metrics] Adaptive calibration: coder ${SCOUT_REC_CODER_TURNS} → ${calibrated_coder} (adjusted), clamped → ${ADJUSTED_CODER_TURNS}"
+        else
+            log "Coder turns: ${CODER_MAX_TURNS} (configured) → ${ADJUSTED_CODER_TURNS} (scout-adjusted)"
+        fi
     fi
 
     if [ "${SCOUT_REC_REVIEWER_TURNS:-0}" -gt 0 ] 2>/dev/null; then
         local calibrated_reviewer
         calibrated_reviewer=$(calibrate_turn_estimate "$SCOUT_REC_REVIEWER_TURNS" "reviewer")
         ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$calibrated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
-        log "Reviewer turns: ${REVIEWER_MAX_TURNS} (configured) → ${ADJUSTED_REVIEWER_TURNS} (scout-adjusted)"
+        if [ "$calibrated_reviewer" != "$SCOUT_REC_REVIEWER_TURNS" ]; then
+            log "[metrics] Adaptive calibration: reviewer ${SCOUT_REC_REVIEWER_TURNS} → ${calibrated_reviewer} (adjusted), clamped → ${ADJUSTED_REVIEWER_TURNS}"
+        else
+            log "Reviewer turns: ${REVIEWER_MAX_TURNS} (configured) → ${ADJUSTED_REVIEWER_TURNS} (scout-adjusted)"
+        fi
     fi
 
     if [ "${SCOUT_REC_TESTER_TURNS:-0}" -gt 0 ] 2>/dev/null; then
         local calibrated_tester
         calibrated_tester=$(calibrate_turn_estimate "$SCOUT_REC_TESTER_TURNS" "tester")
         ADJUSTED_TESTER_TURNS=$(clamp_turns "$calibrated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
-        log "Tester turns: ${TESTER_MAX_TURNS} (configured) → ${ADJUSTED_TESTER_TURNS} (scout-adjusted)"
+        if [ "$calibrated_tester" != "$SCOUT_REC_TESTER_TURNS" ]; then
+            log "[metrics] Adaptive calibration: tester ${SCOUT_REC_TESTER_TURNS} → ${calibrated_tester} (adjusted), clamped → ${ADJUSTED_TESTER_TURNS}"
+        else
+            log "Tester turns: ${TESTER_MAX_TURNS} (configured) → ${ADJUSTED_TESTER_TURNS} (scout-adjusted)"
+        fi
     fi
 }
 

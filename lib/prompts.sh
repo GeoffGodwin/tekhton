@@ -133,7 +133,7 @@ ${value}
         # Use awk for replacement to avoid sed delimiter issues with complex content.
         # ENVIRON avoids awk -v escape-sequence interpretation (\n, \t, \| etc.)
         export __RENDER_REP="$value"
-        content=$(echo "$content" | awk -v pat="{{${var_name}}}" '{
+        content=$(echo "$content" | LC_ALL=C awk -v pat="{{${var_name}}}" '{
             rep = ENVIRON["__RENDER_REP"]
             idx = index($0, pat)
             while (idx > 0) {

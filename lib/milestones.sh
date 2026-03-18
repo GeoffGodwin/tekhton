@@ -14,6 +14,9 @@
 #   advance_milestone        — update state and print transition banner
 #   write_milestone_disposition — record disposition to state file
 #   init_milestone_state     — create initial MILESTONE_STATE.md
+#
+# Archival functions (archive_completed_milestone, archive_all_completed_milestones)
+# live in lib/milestone_archival.sh.
 # =============================================================================
 
 # --- Constants ---------------------------------------------------------------
@@ -45,14 +48,14 @@ parse_milestones() {
         # Match milestone headings: #### Milestone N: Title
         # Also handles: #### Milestone N — Title, #### Milestone N. Title
         # And [DONE] markers: #### [DONE] Milestone N: Title
-        if [[ "$line" =~ ^[[:space:]]*#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+([0-9]+)[[:space:]]*[:.\—\-][[:space:]]*(.*) ]]; then
+        if [[ "$line" =~ ^[[:space:]]*#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+([0-9]+([.][0-9]+)?)[[:space:]]*[:.\—\-][[:space:]]*(.*) ]]; then
             # Flush previous milestone if any
             if [[ -n "$current_num" ]]; then
                 echo "${current_num}|${current_title}|${acceptance_lines}"
                 found=1
             fi
             current_num="${BASH_REMATCH[3]}"
-            current_title="${BASH_REMATCH[4]}"
+            current_title="${BASH_REMATCH[5]}"
             # Trim trailing whitespace
             current_title="${current_title%"${current_title##*[![:space:]]}"}"
             in_acceptance=false
@@ -143,7 +146,9 @@ is_milestone_done() {
     local num="$1"
     local claude_md="${2:-CLAUDE.md}"
 
-    grep -qiE "^#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+${num}[[:space:]]*[:.\—\-]" "$claude_md" 2>/dev/null
+    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
+    local num_pattern="${num//./\\.}"
+    grep -qiE "^#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-]" "$claude_md" 2>/dev/null
 }
 
 # --- Milestone state file management ----------------------------------------
@@ -411,6 +416,78 @@ check_milestone_acceptance() {
     fi
 }
 
+# --- Milestone commit signatures ---------------------------------------------
+
+# get_milestone_commit_prefix MILESTONE_NUM DISPOSITION
+# Returns the appropriate commit message prefix based on milestone disposition.
+# Returns empty string if not in milestone mode.
+get_milestone_commit_prefix() {
+    local milestone_num="$1"
+    local disposition="$2"
+
+    if [[ -z "$milestone_num" ]]; then
+        return
+    fi
+
+    case "$disposition" in
+        COMPLETE_AND_CONTINUE|COMPLETE_AND_WAIT)
+            echo "[MILESTONE ${milestone_num} ✓]"
+            ;;
+        INCOMPLETE_REWORK|REPLAN_REQUIRED|NONE|"")
+            echo "[MILESTONE ${milestone_num} — partial]"
+            ;;
+    esac
+}
+
+# get_milestone_commit_body MILESTONE_NUM DISPOSITION [CLAUDE_MD_PATH]
+# Returns a milestone status line for the commit body.
+get_milestone_commit_body() {
+    local milestone_num="$1"
+    local disposition="$2"
+    local claude_md="${3:-CLAUDE.md}"
+
+    if [[ -z "$milestone_num" ]]; then
+        return
+    fi
+
+    local title
+    title=$(get_milestone_title "$milestone_num" "$claude_md" 2>/dev/null) || true
+
+    case "$disposition" in
+        COMPLETE_AND_CONTINUE|COMPLETE_AND_WAIT)
+            echo "Milestone ${milestone_num}: ${title} — COMPLETE"
+            ;;
+        INCOMPLETE_REWORK)
+            echo "Milestone ${milestone_num}: ${title} — PARTIAL (rework needed)"
+            ;;
+        REPLAN_REQUIRED)
+            echo "Milestone ${milestone_num}: ${title} — PARTIAL (replan required)"
+            ;;
+        *)
+            echo "Milestone ${milestone_num}: ${title} — PARTIAL"
+            ;;
+    esac
+}
+
+# tag_milestone_complete MILESTONE_NUM
+# Creates a git tag for a completed milestone if MILESTONE_TAG_ON_COMPLETE=true.
+# Handles gracefully if tag already exists (warn and continue).
+tag_milestone_complete() {
+    local milestone_num="$1"
+
+    if [[ "${MILESTONE_TAG_ON_COMPLETE:-false}" != "true" ]]; then
+        return 0
+    fi
+
+    local tag_name="milestone-${milestone_num}-complete"
+
+    if git tag "$tag_name" 2>/dev/null; then
+        success "Created git tag: ${tag_name}"
+    else
+        warn "Git tag '${tag_name}' already exists or could not be created. Continuing."
+    fi
+}
+
 # --- Auto-advance orchestration helpers --------------------------------------
 
 # should_auto_advance
@@ -450,12 +527,13 @@ find_next_milestone() {
     local all_ms
     all_ms=$(parse_milestones "$claude_md" 2>/dev/null) || true
     while IFS='|' read -r num _title _criteria; do
-        if [[ -n "$num" ]] && [[ "$num" -gt "$current" ]]; then
+        if [[ -n "$num" ]] && awk -v n="$num" -v c="$current" 'BEGIN {exit !(n > c)}'; then
             if ! is_milestone_done "$num" "$claude_md"; then
                 next="$num"
                 break
             fi
         fi
+    # sort -n handles decimals (e.g., 0.5 sorts before 1) on both GNU and BSD sort
     done < <(echo "$all_ms" | sort -t'|' -k1 -n)
 
     echo "$next"
@@ -492,3 +570,4 @@ clear_milestone_state() {
         log "Milestone state cleared"
     fi
 }
+

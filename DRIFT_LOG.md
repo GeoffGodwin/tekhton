@@ -5,6 +5,8 @@
 - Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `lib/milestones.sh` — The file now contains three distinct areas of responsibility: (1) milestone state machine, (2) auto-advance orchestration, (3) archival. The 300-line limit exists to prevent exactly this multi-concern growth. Flagging for eventual split.
+- [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `tekhton.sh:1073` — The commit-skip path echoes `${COMMIT_MSG%%$' '*}` (first line of commit msg) for the manual git command. When a milestone prefix like `[MILESTONE 10 ✓]` is present, this is fine. But the `%%` strip on a multi-line string may behave differently across bash versions — worth watching if users report truncated suggestions.
 (none)
 
 ## Resolved

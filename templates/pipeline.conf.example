@@ -260,6 +260,16 @@ CONTEXT_COMPILER_ENABLED=false
 # Prompt user for confirmation between milestones (true = interactive)
 # AUTO_ADVANCE_CONFIRM=true
 
+# Create a git tag (milestone-N-complete) on milestone completion.
+# Useful for worktree-based parallel development as a merge-readiness signal.
+# Tags are local — push manually when ready.
+# MILESTONE_TAG_ON_COMPLETE=false
+
+# Archive file for completed milestone definitions. When a milestone is completed,
+# its full definition is moved from CLAUDE.md to this file, keeping CLAUDE.md
+# under context window limits for long-running projects.
+# MILESTONE_ARCHIVE_FILE=MILESTONE_ARCHIVE.md
+
 # --- Autonomous debt sweep (cleanup) -----------------------------------------
 # After a successful pipeline run, if accumulated non-blocking notes exceed the
 # threshold, a low-cost jr coder agent sweeps through a batch of items.

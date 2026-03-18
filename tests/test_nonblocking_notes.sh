@@ -7,6 +7,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
+TEKHTON_SESSION_DIR="$TMPDIR"
 
 # Set config defaults
 DRIFT_LOG_FILE="DRIFT_LOG.md"

@@ -30,6 +30,7 @@ mkdir -p "$MOCK_BIN"
 # Prepend mock bin to PATH once — run_agent is a shell function, so
 # VAR=value func does NOT create a temporary environment (it persists).
 export PATH="${MOCK_BIN}:${PATH}"
+export TEKHTON_SESSION_DIR="$TEST_TMP"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 

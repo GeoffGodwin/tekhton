@@ -56,10 +56,15 @@ _sanitize_for_commit() {
 
 # --- Commit message generation -----------------------------------------------
 #
-# Usage:  generate_commit_message "task description"
+# Usage:  generate_commit_message "task description" [milestone_num] [disposition]
 # Reads CODER_SUMMARY.md and produces a conventional-commit-style message on stdout.
+# When milestone_num is provided, the commit message is prefixed with a milestone
+# signature and a status line is appended to the body.
 generate_commit_message() {
     local task="$1"
+    local milestone_num="${2:-}"
+    local disposition="${3:-}"
+
     # Sanitize task string to prevent commit message injection
     task=$(_sanitize_for_commit "$task")
 
@@ -86,6 +91,16 @@ generate_commit_message() {
 
     local subject
     subject="${prefix}: $(echo "$task" | sed "s/^[Ff]ix: //;s/^[Ff]eat: //;s/^[Rr]efactor: //" | cut -c1-72)"
+
+    # Prepend milestone prefix if in milestone mode
+    if [ -n "$milestone_num" ]; then
+        local ms_prefix
+        ms_prefix=$(get_milestone_commit_prefix "$milestone_num" "$disposition")
+        if [ -n "$ms_prefix" ]; then
+            subject="${ms_prefix} ${subject}"
+        fi
+    fi
+
     local body=""
     if [ -n "$what" ]; then
         body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 | sed 's/^[-*] /- /' || true)
@@ -93,6 +108,21 @@ generate_commit_message() {
     if [ -n "$file_count" ] && [ "$file_count" -gt 0 ] 2>/dev/null; then
         body="${body}
 - ${file_count} files created or modified"
+    fi
+
+    # Append milestone status line to the body
+    if [ -n "$milestone_num" ]; then
+        local ms_body
+        ms_body=$(get_milestone_commit_body "$milestone_num" "$disposition")
+        if [ -n "$ms_body" ]; then
+            if [ -n "$body" ]; then
+                body="${body}
+
+${ms_body}"
+            else
+                body="${ms_body}"
+            fi
+        fi
     fi
 
     echo "$subject"
