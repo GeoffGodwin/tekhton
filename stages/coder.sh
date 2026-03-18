@@ -318,10 +318,26 @@ ${nb_notes}"
         "$LOG_FILE" \
         "$AGENT_TOOLS_CODER"
     print_run_summary
-    success "Coder agent finished."
 
     # Export actual coder turns for post-coder recalibration (Milestone 9)
     export ACTUAL_CODER_TURNS="${LAST_AGENT_TURNS:-0}"
+
+    # --- UPSTREAM error detection (12.2) — API failures are not scope issues ---
+
+    if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+        error "Coder agent hit an API error: ${AGENT_ERROR_MESSAGE}"
+        write_pipeline_state \
+            "coder" \
+            "upstream_error" \
+            "${MILESTONE_MODE:+--milestone }--start-at coder" \
+            "$TASK" \
+            "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. This is transient — re-run the same command."
+
+        error "State saved. This was an API failure, not a scope issue. Re-run the same command."
+        exit 1
+    fi
+
+    success "Coder agent finished."
 
     # --- Null run detection ---------------------------------------------------
 

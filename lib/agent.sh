@@ -11,6 +11,10 @@
 # shellcheck source=lib/agent_monitor.sh
 source "${TEKHTON_HOME}/lib/agent_monitor.sh"
 
+# Source helper functions (run summary, output validation, null-run helpers)
+# shellcheck source=lib/agent_helpers.sh
+source "${TEKHTON_HOME}/lib/agent_helpers.sh"
+
 # --- Metrics accumulators (initialize if not already set) --------------------
 
 : "${TOTAL_TURNS:=0}"
@@ -37,32 +41,11 @@ LAST_AGENT_EXIT_CODE=0     # claude CLI exit code
 LAST_AGENT_ELAPSED=0       # Wall-clock seconds
 LAST_AGENT_NULL_RUN=false  # true if agent likely died without doing work
 
-# --- Run summary -------------------------------------------------------------
-
-print_run_summary() {
-    local total_mins=$(( TOTAL_TIME / 60 ))
-    local total_secs=$(( TOTAL_TIME % 60 ))
-    echo
-    echo "══════════════════════════════════════"
-    echo "  Run Summary"
-    echo "══════════════════════════════════════"
-    echo -e "$STAGE_SUMMARY"
-    echo "  ──────────────────────────────────"
-    echo "  Total turns: ${TOTAL_TURNS}"
-    echo "  Total time:  ${total_mins}m${total_secs}s"
-    # LAST_CONTEXT_TOKENS reflects the most recently completed stage only (by design).
-    # Each stage calls log_context_report() which resets and re-exports LAST_CONTEXT_TOKENS.
-    # The final summary therefore shows the tester's context, not the coder's (typically
-    # largest). Per-stage context breakdowns are logged individually during each stage.
-    # This is intentional: the run summary is a snapshot, not an aggregate. Detailed
-    # per-stage context data is available in the run log output.
-    if [[ -n "${LAST_CONTEXT_TOKENS:-}" ]] && [[ "${LAST_CONTEXT_TOKENS:-0}" -gt 0 ]]; then
-        local ctx_k=$(( LAST_CONTEXT_TOKENS / 1000 ))
-        echo "  Context:     ~${ctx_k}k tokens (${LAST_CONTEXT_PCT:-0}% of window)"
-    fi
-    echo "══════════════════════════════════════"
-    echo
-}
+# --- Error classification globals (12.2 — set after classify_error()) --------
+AGENT_ERROR_CATEGORY=""
+AGENT_ERROR_SUBCATEGORY=""
+AGENT_ERROR_TRANSIENT=""
+AGENT_ERROR_MESSAGE=""
 
 # --- Agent invocation wrapper — tracks turns and wall-clock time per stage ----
 run_agent() {
@@ -171,11 +154,60 @@ run_agent() {
     TOTAL_TIME=$(( TOTAL_TIME + elapsed ))
     STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label}: ${turns_display} turns, ${mins}m${secs}s"
 
+    # --- Error classification (12.2) ------------------------------------------
+    # Classify the agent exit using the error taxonomy. UPSTREAM errors bypass
+    # null-run classification entirely — an API 500 is never a "null run".
+    AGENT_ERROR_CATEGORY=""
+    AGENT_ERROR_SUBCATEGORY=""
+    AGENT_ERROR_TRANSIENT=""
+    AGENT_ERROR_MESSAGE=""
+
+    if [[ "$agent_exit" -ne 0 ]] || [[ "$_API_ERROR_DETECTED" = true ]]; then
+        # classify_error is from lib/errors.sh — guard for tests that source agent.sh directly
+        if command -v classify_error &>/dev/null; then
+            local _stderr_file="${_session_dir}/agent_stderr.txt"
+            local _last_output_file="${_session_dir}/agent_last_output.txt"
+            local _fc=0
+            if [[ -f "$_prerun_marker" ]] && _detect_file_changes "$_prerun_marker"; then
+                _fc=$(_count_changed_files_since "$_prerun_marker")
+            fi
+
+            # If API error was detected in stream, create a synthetic stderr hint
+            if [[ "$_API_ERROR_DETECTED" = true ]] && [[ ! -s "$_stderr_file" ]]; then
+                echo "API error detected in stream: ${_API_ERROR_TYPE}" > "$_stderr_file"
+            fi
+
+            local _error_record
+            _error_record=$(classify_error "$agent_exit" "$_stderr_file" "$_last_output_file" "$_fc" "$turns_used")
+
+            AGENT_ERROR_CATEGORY=$(echo "$_error_record" | cut -d'|' -f1)
+            AGENT_ERROR_SUBCATEGORY=$(echo "$_error_record" | cut -d'|' -f2)
+            AGENT_ERROR_TRANSIENT=$(echo "$_error_record" | cut -d'|' -f3)
+            AGENT_ERROR_MESSAGE=$(echo "$_error_record" | cut -d'|' -f4-)
+        fi
+    fi
+
     # --- Null run detection (file changes override FIFO-based heuristic) ------
     export LAST_AGENT_TURNS="$turns_used"
     export LAST_AGENT_EXIT_CODE="$agent_exit"
     export LAST_AGENT_ELAPSED="$elapsed"
     LAST_AGENT_NULL_RUN=false
+
+    # UPSTREAM errors bypass null-run classification — API failures are not scope issues
+    if [[ "$AGENT_ERROR_CATEGORY" = "UPSTREAM" ]]; then
+        warn "[$label] API error detected (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
+        if command -v suggest_recovery &>/dev/null; then
+            local _recovery
+            _recovery=$(suggest_recovery "$AGENT_ERROR_CATEGORY" "$AGENT_ERROR_SUBCATEGORY")
+            warn "[$label] Recovery: ${_recovery}"
+            if command -v report_error &>/dev/null; then
+                report_error "$AGENT_ERROR_CATEGORY" "$AGENT_ERROR_SUBCATEGORY" \
+                    "$AGENT_ERROR_TRANSIENT" "$AGENT_ERROR_MESSAGE" "$_recovery"
+            fi
+        fi
+        # Do NOT classify as null run — this was an API failure, not a scope issue
+        return
+    fi
 
     # Check for file changes since agent start (secondary productivity signal)
     local _has_file_changes=false
@@ -246,46 +278,9 @@ run_agent() {
             warn "[$label] NULL RUN DETECTED — agent used 0 turns."
         fi
     fi
-}
 
-# --- Null run detection helpers (call after run_agent()) --------------------
-
-# was_null_run — true if last agent died before accomplishing meaningful work.
-was_null_run() {
-    [ "$LAST_AGENT_NULL_RUN" = true ]
-}
-
-# check_agent_output FILE LABEL — returns 0 if agent produced meaningful work.
-check_agent_output() {
-    local expected_file="$1"
-    local label="$2"
-
-    if was_null_run; then
-        warn "[$label] Agent was a null run — no output expected."
-        return 1
-    fi
-
-    if [ ! -f "$expected_file" ]; then
-        warn "[$label] Expected output file '${expected_file}' not found."
-        return 1
-    fi
-
-    local line_count
-    line_count=$(count_lines < "$expected_file")
-    if [ "$line_count" -lt 3 ]; then
-        warn "[$label] Output file '${expected_file}' has only ${line_count} line(s) — likely a stub."
-        return 1
-    fi
-
-    local has_changes=false
-    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-        has_changes=true
-    fi
-
-    if [ "$has_changes" = false ] && [ "$line_count" -lt 5 ]; then
-        warn "[$label] No git changes and minimal output — agent may not have accomplished anything."
-        return 1
-    fi
-
-    return 0
+    # --- Structured agent run summary block (12.3) ----------------------------
+    # Appended to the end of the log file so `tail -20 <logfile>` diagnoses failures.
+    _append_agent_summary "$label" "$model" "$turns_used" "$max_turns" \
+        "$mins" "$secs" "$agent_exit" "$_changed_count" "$log_file"
 }

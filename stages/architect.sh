@@ -71,6 +71,14 @@ run_stage_architect() {
     print_run_summary
     success "Architect agent finished."
 
+    # --- UPSTREAM error detection (12.2) ----------------------------------------
+
+    if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+        warn "Architect hit an API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
+        warn "Drift observations remain unresolved — will retry next audit cycle."
+        return 0
+    fi
+
     # --- Validate output -----------------------------------------------------
 
     if [ ! -f "ARCHITECT_PLAN.md" ]; then

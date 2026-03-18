@@ -1260,25 +1260,14 @@ Seeds Forward:
 - Future 3.0 parallel milestone execution can use sub-milestones as natural
   parallelization boundaries
 
-#### Milestone 12: Observability & Error Attribution
-Add structured error categorization, clear attribution, and actionable diagnostic
-output so that users can immediately distinguish upstream API failures from Tekhton
-bugs from agent scope issues. When a run fails, the user should know in under 10
-seconds: (1) what category of failure it was, (2) whether it's transient or
-permanent, (3) what to do next. This is the diagnostic foundation for a
-self-sustaining pipeline — auto-advance and autonomous recovery depend on the
-pipeline itself understanding failure categories, not just humans reading logs.
+#### Milestone 12.1: Error Taxonomy, Classification Engine & Redaction
 
-Currently, the pipeline treats all agent failures as generic events. An Anthropic
-HTTP 500 (transient, retry-safe) looks identical to a null run (scope issue,
-needs splitting) which looks identical to a disk-full condition (environment,
-needs human intervention). The user must grep through raw FIFO log dumps to
-diagnose what happened. This milestone replaces guesswork with structured
-classification at every failure point.
+Create the foundational `lib/errors.sh` library with the complete error taxonomy,
+classification functions, transience detection, recovery suggestions, and sensitive
+data redaction. This is a pure library file with no integration into the pipeline —
+all functions are independently testable.
 
-**Phase 1 — Error Taxonomy & Classification Engine:**
-
-Files to create:
+**Files to create:**
 - `lib/errors.sh` — Canonical error taxonomy with classification functions:
   - `classify_error(exit_code, stderr_file, last_output_file)` — returns a
     structured error record: `CATEGORY|SUBCATEGORY|TRANSIENT|MESSAGE`
@@ -1299,110 +1288,138 @@ Files to create:
       render failure), `internal` (unexpected shell error)
   - `is_transient(category, subcategory)` — returns 0 if transient, 1 if permanent.
     All `UPSTREAM` errors are transient. `ENVIRONMENT/network` is transient.
-    `ENVIRONMENT/oom` is transient (may succeed on retry with fewer context).
-    All `AGENT_SCOPE` and `PIPELINE` errors are permanent (require action).
+    `ENVIRONMENT/oom` is transient. All `AGENT_SCOPE` and `PIPELINE` errors are permanent.
   - `suggest_recovery(category, subcategory, context)` — returns a human-readable
-    recovery string. Examples:
-    - `UPSTREAM/api_500` → "Transient API error. Wait 60s and re-run the same command."
-    - `UPSTREAM/api_rate_limit` → "Rate limited. Wait 5 minutes or check billing."
-    - `AGENT_SCOPE/null_run` → "Agent couldn't make progress. Try splitting the
-      milestone or rephrasing the task."
-    - `AGENT_SCOPE/max_turns` → "Turn budget exhausted. Re-run with --start-at
-      <stage> to continue, or increase *_MAX_TURNS in pipeline.conf."
-    - `ENVIRONMENT/oom` → "Process killed (likely OOM). Reduce context size or
-      increase system memory."
-    - `PIPELINE/config_error` → "Invalid pipeline.conf. Run shellcheck on the
-      config or check for syntax errors."
+    recovery string for each category/subcategory combination.
+  - `redact_sensitive(text)` — strips patterns matching: `x-api-key: *`,
+    `Authorization: *`, `sk-ant-*`, `ANTHROPIC_API_KEY=*`, and common API key
+    formats. Preserves Anthropic request IDs (`req_*`).
 
-**Phase 2 — Agent Exit Analysis:**
+**Files to modify:**
+- `tekhton.sh` — source `lib/errors.sh`
 
-Files to modify:
+**Acceptance criteria:**
+- `classify_error` given exit code 1 + output containing `"type":"server_error"`
+  returns `UPSTREAM|api_500|true|HTTP 500...`
+- `classify_error` given exit code 137 + no API errors returns
+  `ENVIRONMENT|oom|true|Process killed (signal 9)...`
+- `classify_error` given exit code 0 + turns=0 + no file changes returns
+  `AGENT_SCOPE|null_run|false|Agent completed without meaningful work`
+- `is_transient` returns 0 for all `UPSTREAM` errors and `ENVIRONMENT/network`,
+  `ENVIRONMENT/oom`; returns 1 for all `AGENT_SCOPE` and `PIPELINE` errors
+- `suggest_recovery` returns actionable recovery text for every known subcategory
+- `redact_sensitive` strips API keys and auth tokens but preserves Anthropic
+  request IDs (`req_011CZ9DVb...`)
+- Unrecognized error patterns fall back to `*_unknown` subcategories
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/errors.sh`
+
+**Watch For:**
+- Claude CLI error output format is not formally documented — classification is
+  pattern-based. Always fall back to `*_unknown` subcategories for unrecognized
+  errors. The taxonomy must be extensible by adding new grep patterns.
+- Exit code 137 may not map to signal 9 on all platforms (Windows/Git Bash).
+- Redaction must be conservative — better to over-redact than leak a key. But do
+  NOT redact the Anthropic request ID.
+- `classify_error` must accept optional parameters for file change count and turn
+  count (needed for `AGENT_SCOPE/null_run` classification). Default to 0 if not
+  provided.
+
+**Seeds Forward:**
+- Milestone 12.2 integrates these functions into the agent monitoring and exit
+  handling path
+- Milestone 12.3 uses `redact_sensitive()` for log summaries and error categories
+  for metrics records
+
+#### Milestone 12.2: Agent Exit Analysis, Real-Time Detection & Structured Reporting
+
+Integrate the error classification engine into the agent monitoring loop and exit
+handling. Add real-time API error detection in the FIFO reader, a ring buffer for
+capturing last output, stderr redirection, and the structured error reporting box
+in `lib/common.sh`. Wire classification into all stage exit paths and extend
+pipeline state with error attribution.
+
+**Files to modify:**
 - `lib/agent_monitor.sh` — In the FIFO reader loop, maintain a ring buffer of the
-  last 50 lines of raw agent output (fixed-size array with modular index). On
-  agent exit, write ring buffer to `$SESSION_TMP/agent_last_output.txt`. While
-  reading the stream, detect API error JSON patterns in real-time:
-  `"type":"error"`, `"error":{"type":"server_error"`, `"error":{"type":"rate_limit_error"`,
-  `"error":{"type":"overloaded_error"`, HTTP status codes 429/500/502/503/529.
-  Set `API_ERROR_DETECTED=true` and `API_ERROR_TYPE=<subcategory>` flags so the
-  agent exit handler has immediate context without re-parsing.
-- `lib/agent.sh` — After agent process exits, before the existing null-run
-  detection logic:
-  1. Redirect agent stderr to `$SESSION_TMP/agent_stderr.txt` (if not already)
-  2. Call `classify_error "$exit_code" "$SESSION_TMP/agent_stderr.txt"
-     "$SESSION_TMP/agent_last_output.txt"`
+  last 50 lines of raw agent output (fixed-size bash array with modular index
+  `buffer[i % 50]`). On agent exit, write ring buffer to
+  `$SESSION_TMP/agent_last_output.txt`. While reading the stream, detect API error
+  JSON patterns in real-time: `"type":"error"`, `"error":{"type":"server_error"`,
+  `"error":{"type":"rate_limit_error"`, `"error":{"type":"overloaded_error"`,
+  HTTP status codes 429/500/502/503/529. Set `API_ERROR_DETECTED=true` and
+  `API_ERROR_TYPE=<subcategory>` flags.
+- `lib/agent.sh` — After agent process exits, before existing null-run detection:
+  1. Redirect agent stderr to `$SESSION_TMP/agent_stderr.txt`
+  2. Call `classify_error` with exit code, stderr file, and last output file
   3. Store result in `AGENT_ERROR_CATEGORY`, `AGENT_ERROR_SUBCATEGORY`,
      `AGENT_ERROR_TRANSIENT`, `AGENT_ERROR_MESSAGE`
-  4. If `AGENT_ERROR_CATEGORY=UPSTREAM`, skip null-run classification entirely —
-     the failure is external, not a scope or agent quality issue
-  Known API error signatures to match in agent output:
-  - `"error":{"type":"server_error"` → `UPSTREAM|api_500`
-  - `"error":{"type":"rate_limit_error"` or `HTTP 429` → `UPSTREAM|api_rate_limit`
-  - `"error":{"type":"overloaded_error"` or `HTTP 529` → `UPSTREAM|api_overloaded`
-  - `"error":{"type":"authentication_error"` → `UPSTREAM|api_auth`
-  - `Connection refused` / `Could not resolve host` → `ENVIRONMENT|network`
-  - Exit 137 with no API errors → `ENVIRONMENT|oom`
-  - Exit 139 → `ENVIRONMENT|env_unknown` (segfault)
-
-**Phase 3 — Structured Error Reporting:**
-
-Files to modify:
+  4. If `AGENT_ERROR_CATEGORY=UPSTREAM`, skip null-run classification entirely
 - `lib/common.sh` — Add `report_error(category, subcategory, transient, message,
-  recovery)` function that formats a structured, boxed error block to stderr:
-  ```
-  ╔═══════════════════════════════════════════════════╗
-  ║ UPSTREAM API FAILURE (transient)                  ║
-  ╠═══════════════════════════════════════════════════╣
-  ║ Category:  UPSTREAM / api_500                     ║
-  ║ Source:    Anthropic API                          ║
-  ║ Message:   HTTP 500 Internal Server Error         ║
-  ║            Request ID: req_011CZ9DVb...           ║
-  ║                                                   ║
-  ║ Recovery:  Transient error. Wait 60s and re-run.  ║
-  ║            State saved: --start-at coder          ║
-  ╚═══════════════════════════════════════════════════╝
-  ```
-  Falls back to ASCII box characters (`+`, `-`, `|`) when the terminal does not
-  support Unicode (check `LANG`/`LC_ALL` for UTF-8). This replaces the generic
-  `[✗] Coder agent was a null run` message for classified errors. Unclassified
-  errors still produce the existing generic messages — no regression.
+  recovery)` that formats a structured, boxed error block to stderr using Unicode
+  box-drawing characters. Falls back to ASCII (`+`, `-`, `|`) when terminal does
+  not support Unicode (check `LANG`/`LC_ALL` for UTF-8). Does NOT replace existing
+  `log()`, `warn()`, `error()` functions.
 - `stages/coder.sh`, `stages/review.sh`, `stages/tester.sh`, `stages/architect.sh`
   — After agent completion, check for `AGENT_ERROR_CATEGORY`. If set and not
-  `AGENT_SCOPE` (which already has descriptive messages), call `report_error()`
-  with the full classification. Include the error category in the saved pipeline
-  state. For `UPSTREAM` errors, replace the null-run exit path with a
-  transient-error exit path that saves state identically but with different
-  messaging: "This was an API failure, not a scope issue. Re-run the same command."
-- `lib/state.sh` — Extend `PIPELINE_STATE.md` with an `## Error Classification`
+  `AGENT_SCOPE`, call `report_error()`. For `UPSTREAM` errors, replace the null-run
+  exit path with a transient-error exit path: "This was an API failure, not a scope
+  issue. Re-run the same command."
+- `lib/state.sh` — Extend `PIPELINE_STATE.md` with `## Error Classification`
   section containing: category, subcategory, transient flag, recovery suggestion,
-  and the last 10 lines of agent output (redacted — see Phase 5). The resume
-  logic reads this on next invocation to display: "Previous run failed due to:
-  UPSTREAM/api_500 (transient). Resuming should work."
+  and the last 10 lines of agent output (redacted via `redact_sensitive()`). Resume
+  logic reads this on next invocation to display previous failure context.
 
-**Phase 4 — Metrics Integration:**
+**Acceptance criteria:**
+- API error patterns (500, 429, 529, auth errors) are detected from the agent's
+  JSON output stream in real-time during monitoring
+- Ring buffer captures last 50 lines without memory leaks on long-running agents
+- `UPSTREAM` errors bypass null-run classification entirely — an API 500 is never
+  misreported as a "null run"
+- `report_error` produces a boxed, structured error block with category, message,
+  and actionable recovery suggestion
+- ASCII fallback for box-drawing characters when terminal lacks Unicode support
+- `PIPELINE_STATE.md` includes error classification section on failure
+- Resume prompt displays previous failure context on next invocation
+- Unclassified errors produce the existing generic error messages (no regression)
+- Sensitive values are redacted in state files and error reports
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
 
-Files to modify:
+**Watch For:**
+- The ring buffer must use a fixed-size bash array with modular index
+  (`buffer[i % 50]`), not an unbounded append. Memory safety on long runs.
+- `stderr` capture requires redirecting stderr to a file before the FIFO tee.
+  Must not break existing FIFO monitoring, activity detection, turn counting,
+  or null-run detection.
+- The `UPSTREAM` bypass of null-run classification is critical. Without it, an
+  API 500 that produces 0 turns and 0 file changes gets misclassified as a null
+  run, leading to incorrect split/rework suggestions.
+- Do NOT add error classification to the scout stage. Scout failures are already
+  non-fatal and advisory.
+- Do NOT change how the pipeline decides to save state vs exit. Only add
+  attribution to those decisions.
+
+**Seeds Forward:**
+- Milestone 12.3 adds metrics integration and log structure that depend on the
+  `AGENT_ERROR_*` variables and `report_error()` function established here
+
+#### Milestone 12.3: Metrics Integration & Structured Log Summaries
+
+Add error category fields to metrics JSONL records, error breakdown to the
+`--metrics` dashboard, ensure metrics are recorded on all exit paths, and append
+structured agent run summary blocks to log files for tail-friendly diagnostics.
+
+**Files to modify:**
 - `lib/metrics.sh` — Add fields to the JSONL record: `error_category` (string or
   null), `error_subcategory` (string or null), `error_transient` (boolean or null).
-  Only populated on non-success outcomes. Null fields omitted from JSON output
-  (keep records compact).
-- `lib/metrics.sh` — In `summarize_metrics()`, add an error breakdown section to
-  the `--metrics` dashboard output:
-  ```
-  Error breakdown (last 50 runs):
-    Upstream API errors:    3 (all transient — would auto-resolve on retry)
-    Agent scope failures:   2 (null_run: 1, max_turns: 1)
-    Environment issues:     0
-    Pipeline errors:        0
-  ```
-  Group by top-level category. Show count and whether transient. If all errors in
-  a category are transient, note that auto-retry would resolve them.
+  Only populated on non-success outcomes. Null fields omitted from JSON output.
+  In `summarize_metrics()`, add an error breakdown section to the `--metrics`
+  dashboard output grouped by top-level category with count and transient/permanent
+  distinction. If all errors in a category are transient, note that auto-retry
+  would resolve them.
 - `lib/hooks.sh` — Ensure `record_run_metrics()` is called on ALL exit paths, not
-  just success. Pass error classification when available. Currently, metrics may
-  not be recorded on early exits — verify and fix.
-
-**Phase 5 — Log Structure & Redaction:**
-
-Files to modify:
+  just success. Pass error classification when available. Verify and fix any early
+  exit paths that skip metrics recording.
 - `lib/agent.sh` — At the end of each agent run (success or failure), append a
   structured summary block to the log file:
   ```
@@ -1415,117 +1432,38 @@ Files to modify:
   Files:     8 modified, 2 created
   ═════════════════════════
   ```
-  On failure, the block includes the error classification:
-  ```
-  ═══ Agent Run Summary ═══
-  Agent:     coder (claude-sonnet-4-20250514)
-  Turns:     0 / 50
-  Duration:  0m 12s
-  Exit Code: 1
-  Class:     UPSTREAM / api_500 (transient)
-  Message:   HTTP 500 Internal Server Error
-  Recovery:  Wait 60s and re-run: tekhton --start-at coder "task"
-  Files:     0 modified
-  ═════════════════════════
-  ```
-  This block appears at the END of the log file, so `tail -20 <logfile>` is always
-  sufficient to diagnose a failure.
-- `lib/errors.sh` — Add `redact_sensitive(text)` function that strips patterns
-  matching: `x-api-key: *`, `Authorization: *`, `sk-ant-*`, `ANTHROPIC_API_KEY=*`,
-  and any string matching common API key formats. Called on all agent output before
-  it's written to error reports, state files, or log summaries. Raw FIFO logs are
-  NOT redacted (they may be needed for deep debugging), but all user-facing
-  summaries are.
+  On failure, include error classification, message, and recovery suggestion.
+  This block appears at the END of the log file so `tail -20 <logfile>` is
+  always sufficient to diagnose a failure.
 
-Acceptance criteria:
-- `classify_error` given exit code 1 + output containing `"type":"server_error"`
-  returns `UPSTREAM|api_500|true|HTTP 500...`
-- `classify_error` given exit code 137 + no API errors returns
-  `ENVIRONMENT|oom|true|Process killed (signal 9)...`
-- `classify_error` given exit code 0 + turns=0 + no file changes returns
-  `AGENT_SCOPE|null_run|false|Agent completed without meaningful work`
-- `report_error` produces a boxed, structured error block with category, message,
-  and actionable recovery suggestion
-- API error patterns (500, 429, 529, auth errors) are detected from the agent's
-  JSON output stream in real-time during monitoring
-- `UPSTREAM` errors bypass null-run classification entirely — an API 500 is never
-  misreported as a "null run"
-- PIPELINE_STATE.md includes error classification section on failure, and the
-  resume prompt displays it on next invocation
-- metrics.jsonl records `error_category` and `error_subcategory` on failures
+**Acceptance criteria:**
+- `metrics.jsonl` records `error_category` and `error_subcategory` on failures
 - `--metrics` dashboard shows error breakdown by category with transient/permanent
   distinction
+- `record_run_metrics()` is called on all exit paths including early exits and
+  signal traps
 - Log files end with a structured agent summary block (tail-friendly)
-- Sensitive values (API keys, auth tokens) are redacted in all user-facing output
-  (error reports, state files, log summaries) but preserved in raw FIFO logs
-- Unclassified errors produce the existing generic error messages (no regression)
-- ASCII fallback for box-drawing characters when terminal lacks Unicode support
+- Success runs show `Class: SUCCESS` in log summary; failures show the full
+  error classification with recovery suggestion
+- Sensitive values are redacted in log summaries (via `redact_sensitive()`)
+- Raw FIFO logs are NOT redacted (preserved for deep debugging)
 - All existing tests pass
-- `bash -n` and `shellcheck` pass on all modified/created files
+- `bash -n` and `shellcheck` pass on all modified files
 
-Watch For:
-- Claude CLI error output format is not formally documented — the classification
-  must be pattern-based on observed output. Start with the known patterns (HTTP
-  status codes in JSON error objects, connection error strings) and always fall
-  back to `UNKNOWN` subcategories for unrecognized errors. The taxonomy must be
-  extensible without code changes (add new grep patterns to a lookup table).
-- The ring buffer for capturing last N lines of FIFO output must not leak memory
-  on long-running agents (hundreds of turns). Use a fixed-size bash array with
-  modular index (`buffer[i % 50]`), not an unbounded append.
-- `stderr` capture from the claude process requires redirecting stderr to a file
-  before the FIFO tee. This must not break the existing FIFO monitoring pipeline.
-  Test that activity detection, turn counting, and null-run detection all still
-  work after adding stderr redirection.
-- On Windows (Git Bash / MSYS2), stderr redirection and process signal detection
-  may differ from Linux/macOS. Exit code 137 may not map to signal 9 on all
-  platforms. Test both paths.
-- The structured error box uses Unicode box-drawing characters — verify they
-  render correctly in Git Bash / Windows Terminal / PowerShell / cmd.exe. The
-  ASCII fallback must be tested independently.
-- API rate limit errors (429) sometimes include `retry-after` values in the error
-  output. If available, include the wait duration in the recovery suggestion.
-- Redaction must be conservative — better to over-redact than leak a key. But do
-  NOT redact the Anthropic request ID (e.g., `req_011CZ9DVb...`) — that is
-  essential for support tickets.
-- The `UPSTREAM` bypass of null-run classification is critical. Without it, an
-  API 500 that produces 0 turns and 0 file changes gets classified as a null run
-  (scope issue), leading to incorrect split/rework suggestions.
+**Watch For:**
+- JSONL is append-only. Never read-modify-write the metrics file — only append.
+- The log summary block must use the same Unicode/ASCII detection as `report_error()`
+  for consistent rendering.
+- Early exit paths (Ctrl+C, signal traps, config errors) may bypass the normal
+  finalization flow. Verify that the EXIT trap in `tekhton.sh` calls
+  `record_run_metrics()`.
+- Do NOT make error classification slow. The log summary is a few string
+  concatenations, not an LLM call.
 
-What NOT To Do:
-- Do NOT add automatic retry logic in this milestone. This milestone is about
-  *diagnosis and reporting*. Auto-retry for transient errors is a natural
-  follow-on but depends on accurate classification being proven first. Future
-  work may add `--auto-retry` with configurable back-off.
-- Do NOT change how the pipeline decides to save state vs exit. The existing
-  state-save logic in each stage is correct. This milestone adds *attribution*
-  to those decisions, not different decisions.
-- Do NOT attempt to parse Anthropic API responses beyond pattern matching. The
-  pipeline sees claude CLI output (JSON objects on the FIFO), not raw HTTP
-  responses. Match on known error JSON patterns and HTTP status strings.
-- Do NOT make error classification slow. It runs after the agent exits — a few
-  grep calls on the captured output buffer. Never invoke an LLM to classify
-  errors. This is string matching, not AI.
-- Do NOT log sensitive information (API keys, auth tokens) in error reports or
-  state files. The `redact_sensitive()` function must be called on all
-  user-facing output paths.
-- Do NOT remove or change the existing `log()`, `warn()`, `error()` functions in
-  `lib/common.sh`. `report_error()` is a new function that layers on top for
-  classified errors. The existing functions remain for unclassified situations.
-- Do NOT add error classification to the scout stage. Scout failures are already
-  non-fatal and advisory. Over-diagnosing a scout null run adds noise.
-
-Seeds Forward:
-- Future `--auto-retry` flag can use `is_transient()` to automatically retry
-  `UPSTREAM` errors after a configurable delay, without human intervention.
-  Combined with Milestone 3 (Auto-Advance), the pipeline could survive transient
-  API outages and resume milestone progression autonomously.
-- Milestone 3 (Auto-Advance) benefits directly: the auto-advance loop can
-  distinguish "retry this milestone" (transient API error) from "split this
-  milestone" (scope failure) from "stop and report" (permanent environment issue)
-  based on error classification, enabling smarter autonomous decisions.
-- Milestone 8 (Metrics) historical data gains error categories, enabling the
-  adaptive calibration to factor in failure patterns per project — e.g., a
-  project that consistently hits rate limits may need longer delays between stages.
-- The quorum-based decision model (3.0 vision) needs structured error data to
-  inform voting — a judge evaluating a failure needs to know what kind of failure
-  occurred before recommending retry vs replan vs escalate to human.
+**Seeds Forward:**
+- Future `--auto-retry` flag can use `is_transient()` from 12.1 + metrics data
+  from this milestone to automatically retry `UPSTREAM` errors
+- Milestone 3 (Auto-Advance) can use error categories in metrics to distinguish
+  retry vs split vs stop decisions
+- Milestone 8 (Metrics) historical data gains error categories for adaptive
+  calibration of failure patterns per project

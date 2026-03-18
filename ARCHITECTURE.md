@@ -80,8 +80,9 @@ Each stage is a single function sourced by `tekhton.sh`:
 
 - **`lib/common.sh`** — Colors, `log()`, `warn()`, `error()`, `success()`, `header()`, `require_cmd()`
 - **`lib/config.sh`** — `load_config()` reads `PROJECT_DIR/.claude/pipeline.conf`, validates required fields, applies milestone overrides via `apply_milestone_overrides()`
-- **`lib/agent.sh`** — `run_agent(name, model, turns, prompt, logfile)` wraps claude CLI invocation with JSON output parsing, turn counting, timing. `print_run_summary()` formats cumulative metrics.
+- **`lib/agent.sh`** — `run_agent(name, model, turns, prompt, logfile)` wraps claude CLI invocation with JSON output parsing, turn counting, timing, and error classification. Sources `agent_monitor.sh` and `agent_helpers.sh`.
 - **`lib/agent_monitor.sh`** — Agent monitoring, FIFO-based and polling-based activity detection, process management. `_invoke_and_monitor()` handles agent process lifecycle and timeout management.
+- **`lib/agent_helpers.sh`** — `print_run_summary()`, `_append_agent_summary()`, `was_null_run()`, `check_agent_output()`. Extracted from `agent.sh` to keep it under the 300-line ceiling.
 - **`lib/gates.sh`** — `run_build_gate(label)` runs `ANALYZE_CMD`, `BUILD_CHECK_CMD`, and optionally a dependency constraint `validation_command` from the configured `architecture_constraints.yaml`. Captures all errors to `BUILD_ERRORS.md`. `run_completion_gate()` checks coder self-reported status from `CODER_SUMMARY.md`.
 - **`lib/hooks.sh`** — `archive_reports(dir, timestamp)`, `generate_commit_message(task)`, `run_final_checks(logfile)`.
 - **`lib/drift.sh`** — Drift log, Architecture Decision Log, and Human Action management. `append_drift_observations()` reads reviewer report and accumulates to `DRIFT_LOG.md`. `append_architecture_decision()` records accepted ACPs to `ARCHITECTURE_LOG.md` with sequential ADL-NNN IDs. `append_human_action(source, desc)` adds items to `HUMAN_ACTION_REQUIRED.md`. `process_drift_artifacts()` is the main post-pipeline integration point. `should_trigger_audit()` checks thresholds. Counter management via `increment_runs_since_audit()` / `reset_runs_since_audit()`.

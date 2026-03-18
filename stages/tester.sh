@@ -65,10 +65,25 @@ run_stage_tester() {
         TESTER_EXIT=$?  # exported above
     fi
 
-    # --- Null run detection ---------------------------------------------------
+    # --- UPSTREAM error detection (12.2) ----------------------------------------
 
     local resume_flag="--start-at test"
     [ "$MILESTONE_MODE" = true ] && resume_flag="--milestone --start-at test"
+
+    if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+        warn "Tester hit an API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
+        write_pipeline_state \
+            "tester" \
+            "upstream_error" \
+            "$resume_flag" \
+            "${TASK}" \
+            "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. Re-run the same command."
+        warn "State saved — this was an API failure, not a scope issue. Re-run."
+        export SKIP_FINAL_CHECKS=true
+        return
+    fi
+
+    # --- Null run detection ---------------------------------------------------
 
     if was_null_run; then
         warn "Tester was a null run (${LAST_AGENT_TURNS} turns, exit ${LAST_AGENT_EXIT_CODE})."

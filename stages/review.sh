@@ -42,6 +42,21 @@ run_stage_review() {
         print_run_summary
         success "Reviewer finished."
 
+        # UPSTREAM error detection (12.2)
+        if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+            warn "Reviewer hit an API error (${AGENT_ERROR_SUBCATEGORY}). Will retry on next cycle."
+            VERDICT="CHANGES_REQUIRED"
+            if [ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]; then
+                error "Reviewer API error at max review cycles — cannot proceed."
+                write_pipeline_state "review" "upstream_error" \
+                    "${MILESTONE_MODE:+--milestone }--start-at review" \
+                    "$TASK" \
+                    "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. Re-run the same command."
+                exit 1
+            fi
+            continue
+        fi
+
         if was_null_run; then
             warn "Reviewer was a null run (${LAST_AGENT_TURNS} turns, exit ${LAST_AGENT_EXIT_CODE})."
             warn "Skipping review parse — will retry on next cycle or fail at max cycles."

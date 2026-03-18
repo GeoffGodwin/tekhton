@@ -52,6 +52,12 @@ _kill_agent_windows() {
     $_tk //F //IM claude.exe //T 2>/dev/null || true
 }
 
+# --- Real-time API error detection flags (12.2) ------------------------------
+# API error detection occurs inline in the FIFO reader subshell (lines 220–238).
+# Variables are managed within the subshell and cannot be exported to the parent.
+_API_ERROR_DETECTED=false
+_API_ERROR_TYPE=""
+
 # FIFO-monitored claude invocation. Sets _MONITOR_EXIT_CODE. Caller sets _IM_PERM_FLAGS.
 _invoke_and_monitor() {
     local _invoke="$1"
@@ -66,6 +72,10 @@ _invoke_and_monitor() {
 
     _MONITOR_EXIT_CODE=1
     _MONITOR_WAS_ACTIVITY_TIMEOUT=false
+
+    # Reset API error flags for this invocation
+    _API_ERROR_DETECTED=false
+    _API_ERROR_TYPE=""
 
     # FIFO: claude in bg subshell → pipe → foreground reader (ctrl+c, activity timeout)
     if command -v mkfifo &>/dev/null; then
@@ -111,12 +121,43 @@ _invoke_and_monitor() {
             _activity_marker="${_session_dir}/activity_marker"
             touch "$_activity_marker"
 
+            # Ring buffer for last 50 lines (12.2)
+            declare -a _rb=()
+            _rb_idx=0
+            _rb_size=50
+            # API error detection in the stream (12.2)
+            _stream_api_error=false
+            _stream_api_type=""
+
             while true; do
                 if [ "$_read_interval" -gt 0 ]; then
                     if IFS= read -r -t "$_read_interval" line; then
                         _last_activity=$(date +%s)
                         echo "$line" >&3
                         _last_line="$line"
+                        # Ring buffer: store line
+                        _rb[$(( _rb_idx % _rb_size ))]="$line"
+                        _rb_idx=$(( _rb_idx + 1 ))
+                        # Real-time API error detection
+                        case "$line" in
+                            *'"type":"error"'*|*'"status":'*429*|*'"status":'*500*|*'"status":'*502*|*'"status":'*503*|*'"status":'*529*|*server_error*|*rate_limit*|*overloaded*|*authentication_error*)
+                                if echo "$line" | grep -qE '"type"[[:space:]]*:[[:space:]]*"error"' 2>/dev/null; then
+                                    _stream_api_error=true
+                                    if echo "$line" | grep -qi 'rate_limit' 2>/dev/null; then
+                                        _stream_api_type="api_rate_limit"
+                                    elif echo "$line" | grep -qi 'overloaded' 2>/dev/null; then
+                                        _stream_api_type="api_overloaded"
+                                    elif echo "$line" | grep -qi 'server_error' 2>/dev/null; then
+                                        _stream_api_type="api_500"
+                                    elif echo "$line" | grep -qi 'authentication_error' 2>/dev/null; then
+                                        _stream_api_type="api_auth"
+                                    fi
+                                elif echo "$line" | grep -qE '"status"[[:space:]]*:[[:space:]]*(429|500|502|503|529)' 2>/dev/null; then
+                                    _stream_api_error=true
+                                    _stream_api_type="api_500"
+                                fi
+                                ;;
+                        esac
                         if echo "$line" | grep -q '"type":"text"'; then
                             echo "$line" | python3 -c \
                                 "import sys,json; d=json.load(sys.stdin); print(d.get('text',''))" \
@@ -186,12 +227,47 @@ _invoke_and_monitor() {
                 "import sys,json; d=json.load(sys.stdin); print(d.get('num_turns', 0))" \
                 2>/dev/null || echo "0")
             echo "$_turns" > "$_turns_file"
+
+            # Dump ring buffer to file for post-exit error classification (12.2).
+            # Uses a compound group {…} instead of a function because this runs
+            # inside a subshell where _rb[] and _rb_idx are local variables —
+            # a function call would require passing the array, and bash doesn't
+            # support passing arrays to functions by reference portably in bash 4.
+            # Plain assignments (not `local`) because `local` is invalid outside
+            # a function — and these are already subshell-scoped by the (...).
+            {
+                _rb_total=${#_rb[@]}
+                if [[ "$_rb_total" -gt 0 ]]; then
+                    _rb_start=0
+                    if [[ "$_rb_idx" -ge "$_rb_size" ]]; then
+                        _rb_start=$(( _rb_idx % _rb_size ))
+                    fi
+                    _j=0
+                    while [[ "$_j" -lt "$_rb_total" ]]; do
+                        echo "${_rb[$(( (_rb_start + _j) % _rb_size ))]}"
+                        _j=$(( _j + 1 ))
+                    done
+                fi
+            } > "${_session_dir}/agent_last_output.txt" 2>/dev/null || true
+
+            # Write API error detection flags for parent process (12.2)
+            if [[ "$_stream_api_error" = true ]]; then
+                echo "$_stream_api_type" > "${_session_dir}/agent_api_error.txt"
+            fi
+
             exec 3>&-
         ) < "$_fifo"
 
         # Wait for background subshell to fully exit
         wait "$_TEKHTON_AGENT_PID" 2>/dev/null || true
         rm -f "$_fifo"
+
+        # Read API error detection from FIFO reader subshell (12.2)
+        if [[ -f "${_session_dir}/agent_api_error.txt" ]]; then
+            _API_ERROR_DETECTED=true
+            _API_ERROR_TYPE=$(cat "${_session_dir}/agent_api_error.txt" 2>/dev/null || echo "api_unknown")
+            rm -f "${_session_dir}/agent_api_error.txt"
+        fi
 
         # Read exit code from background subshell
         if [ -f "$_exit_file" ]; then

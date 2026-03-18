@@ -61,6 +61,13 @@ _tekhton_cleanup() {
         echo -e "\033[0;31m[✗] matches, unset variable, or a pipeline component failed.\033[0m" >&2
         echo >&2
 
+        # --- Record metrics on crash (12.3) -----------------------------------
+        # Ensure metrics are captured even on unexpected crashes.
+        if command -v record_run_metrics &>/dev/null 2>&1; then
+            VERDICT="${VERDICT:-crashed}"
+            record_run_metrics 2>/dev/null || true
+        fi
+
         # --- Crash cleanup: archive transient artifacts -----------------------
         # ARCHITECT_PLAN.md is a single-run artifact — archive it if it exists
         if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ] && [ -f "ARCHITECT_PLAN.md" ]; then
@@ -231,7 +238,7 @@ fi
 if [ "${1:-}" = "--plan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
-    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh
+    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh, agent_helpers.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/plan_state.sh"
     source "${TEKHTON_HOME}/lib/plan_completeness.sh"
@@ -251,7 +258,7 @@ fi
 if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
-    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh
+    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh, agent_helpers.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
@@ -288,6 +295,7 @@ source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
+source "${TEKHTON_HOME}/lib/errors.sh"
 
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"

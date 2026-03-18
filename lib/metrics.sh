@@ -118,13 +118,18 @@ record_run_metrics() {
         *) outcome="$verdict" ;;
     esac
 
+    # Error classification fields (12.3 — only populated on non-success)
+    local error_category="${AGENT_ERROR_CATEGORY:-}"
+    local error_subcategory="${AGENT_ERROR_SUBCATEGORY:-}"
+    local error_transient="${AGENT_ERROR_TRANSIENT:-}"
+
     # Escape task string for JSON (replace backslash, double-quote, newlines)
     local safe_task
     safe_task=$(printf '%s' "${TASK:-}" | tr '\n\r' '  ' | sed 's/\\/\\\\/g; s/"/\\"/g')
 
     # Build JSONL record (single line, no jq dependency)
     local record
-    record=$(printf '{"timestamp":"%s","task":"%s","task_type":"%s","milestone_mode":%s,"total_turns":%d,"total_time_s":%d,"coder_turns":%d,"reviewer_turns":%d,"tester_turns":%d,"scout_turns":%d,"scout_est_coder":%d,"scout_est_reviewer":%d,"scout_est_tester":%d,"adjusted_coder":%d,"adjusted_reviewer":%d,"adjusted_tester":%d,"context_tokens":%d,"verdict":"%s","outcome":"%s"}' \
+    record=$(printf '{"timestamp":"%s","task":"%s","task_type":"%s","milestone_mode":%s,"total_turns":%d,"total_time_s":%d,"coder_turns":%d,"reviewer_turns":%d,"tester_turns":%d,"scout_turns":%d,"scout_est_coder":%d,"scout_est_reviewer":%d,"scout_est_tester":%d,"adjusted_coder":%d,"adjusted_reviewer":%d,"adjusted_tester":%d,"context_tokens":%d,"verdict":"%s","outcome":"%s"' \
         "$timestamp" \
         "$safe_task" \
         "$task_type" \
@@ -144,6 +149,13 @@ record_run_metrics() {
         "$context_tokens" \
         "$verdict" \
         "$outcome")
+
+    # Append error fields only when populated (12.3)
+    if [[ -n "$error_category" ]]; then
+        record="${record},\"error_category\":\"${error_category}\",\"error_subcategory\":\"${error_subcategory}\",\"error_transient\":${error_transient:-false}"
+    fi
+
+    record="${record}}"
 
     echo "$record" >> "$_METRICS_FILE"
 }
@@ -235,6 +247,39 @@ summarize_metrics() {
 
     echo "────────────────────────────────────────"
     echo "Scout accuracy: coder ±${scout_coder_acc} turns, reviewer ±${scout_reviewer_acc}, tester ±${scout_tester_acc}"
+
+    # Error breakdown by category (12.3)
+    local has_errors=false
+    local upstream_count env_count agent_count pipeline_count
+    upstream_count=$(echo "$records" | grep -c '"error_category":"UPSTREAM"' || echo "0")
+    env_count=$(echo "$records" | grep -c '"error_category":"ENVIRONMENT"' || echo "0")
+    agent_count=$(echo "$records" | grep -c '"error_category":"AGENT_SCOPE"' || echo "0")
+    pipeline_count=$(echo "$records" | grep -c '"error_category":"PIPELINE"' || echo "0")
+
+    if [[ "$upstream_count" -gt 0 ]] || [[ "$env_count" -gt 0 ]] || \
+       [[ "$agent_count" -gt 0 ]] || [[ "$pipeline_count" -gt 0 ]]; then
+        has_errors=true
+    fi
+
+    if [[ "$has_errors" = true ]]; then
+        echo "────────────────────────────────────────"
+        echo "Error breakdown:"
+        if [[ "$upstream_count" -gt 0 ]]; then
+            echo "  UPSTREAM:     ${upstream_count} (all transient — auto-retry would resolve)"
+        fi
+        if [[ "$env_count" -gt 0 ]]; then
+            local env_transient
+            env_transient=$(echo "$records" | grep '"error_category":"ENVIRONMENT"' | grep -c '"error_transient":true' || echo "0")
+            echo "  ENVIRONMENT:  ${env_count} (${env_transient} transient)"
+        fi
+        if [[ "$agent_count" -gt 0 ]]; then
+            echo "  AGENT_SCOPE:  ${agent_count} (permanent — scope or turn issues)"
+        fi
+        if [[ "$pipeline_count" -gt 0 ]]; then
+            echo "  PIPELINE:     ${pipeline_count} (permanent — internal errors)"
+        fi
+    fi
+
     echo "────────────────────────────────────────"
 }
 
