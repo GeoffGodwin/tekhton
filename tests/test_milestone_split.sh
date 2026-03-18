@@ -479,6 +479,289 @@ assert "tekhton.sh sources lib/milestone_split.sh" \
     "$(grep -q 'milestone_split.sh' "${TEKHTON_HOME}/tekhton.sh" && echo 0 || echo 1)"
 
 # ============================================================================
+# Integration: coder stage milestone-split wiring
+#
+# These tests verify that run_stage_coder calls the milestone split functions
+# at the right points. Each test runs in a subshell with heavy stubbing.
+# ============================================================================
+
+echo "=== coder stage integration — pre-flight sizing gate ==="
+
+# Helper: define all stubs needed by run_stage_coder
+_define_coder_stubs() {
+    # Call tracking
+    CALL_LOG_FILE="${TMPDIR}/call_log.txt"
+    : > "$CALL_LOG_FILE"
+    _track() { echo "$1" >> "$CALL_LOG_FILE"; }
+
+    # Silence output
+    header() { :; }
+    log() { :; }
+    warn() { :; }
+    error() { :; }
+    success() { :; }
+
+    # Notes stubs
+    extract_human_notes() { echo ""; }
+    claim_human_notes() { :; }
+    resolve_human_notes() { :; }
+    count_open_nonblocking_notes() { echo "0"; }
+    get_open_nonblocking_notes() { echo ""; }
+
+    # Context stubs
+    _safe_read_file() { echo "mock content"; }
+    _wrap_file_content() { echo "$2"; }
+    _add_context_component() { :; }
+    log_context_report() { :; }
+    build_context_packet() { :; }
+    load_clarifications_content() { CLARIFICATIONS_CONTENT=""; }
+    detect_clarifications() { return 1; }
+
+    # Agent stubs
+    LAST_AGENT_TURNS=10
+    LAST_AGENT_EXIT_CODE=0
+    LAST_AGENT_NULL_RUN=false
+    run_agent() { _track "run_agent:$1"; }
+    print_run_summary() { :; }
+    was_null_run() { return 1; }
+
+    # Turn stubs
+    apply_scout_turn_limits() { :; }
+    SCOUT_REC_CODER_TURNS=50
+
+    # Prompt/gate stubs
+    render_prompt() { echo "mock prompt"; }
+    run_build_gate() { return 0; }
+    run_completion_gate() { return 0; }
+
+    # State stubs
+    write_pipeline_state() { :; }
+
+    # Global vars expected by run_stage_coder
+    NOTES_FILTER="FEAT"
+    HUMAN_NOTE_COUNT=0
+    DYNAMIC_TURNS_ENABLED=true
+    MILESTONE_MODE=false
+    _CURRENT_MILESTONE=""
+    LOG_FILE="${TMPDIR}/test.log"
+    LOG_DIR="${TMPDIR}/.claude/logs"
+    TIMESTAMP="20260318_000000"
+    START_AT=""
+    ARCHITECTURE_FILE=""
+    GLOSSARY_FILE=""
+    PROJECT_RULES_FILE="CLAUDE.md"
+    CLAUDE_CODER_MODEL="test-model"
+    CLAUDE_SCOUT_MODEL="test-scout"
+    CODER_MAX_TURNS=50
+    SCOUT_MAX_TURNS=20
+    ADJUSTED_CODER_TURNS=50
+    AGENT_TOOLS_CODER="Read,Write,Bash"
+    AGENT_TOOLS_SCOUT="Read,Glob,Grep"
+    PIPELINE_STATE_FILE="${TMPDIR}/.claude/PIPELINE_STATE.md"
+    MILESTONE_SPLIT_ENABLED=true
+    MILESTONE_SPLIT_THRESHOLD_PCT=120
+    MILESTONE_AUTO_RETRY=true
+    MILESTONE_MAX_SPLIT_DEPTH=3
+    NON_BLOCKING_INJECTION_THRESHOLD=999
+    TASK="Test task"
+
+    mkdir -p "${LOG_DIR}"
+}
+
+# Test 1: Pre-flight gate triggers split_milestone and re-scout
+_test_result=0
+(
+    _define_coder_stubs
+
+    # Enable milestone mode
+    MILESTONE_MODE=true
+    _CURRENT_MILESTONE="5"
+
+    # Scout creates SCOUT_REPORT.md
+    run_agent() {
+        _track "run_agent:$1"
+        echo "## Scout Report" > SCOUT_REPORT.md
+        echo "Files: foo.sh" >> SCOUT_REPORT.md
+    }
+
+    # check_milestone_size returns 1 (oversized) on first call, 0 on second
+    _size_check_count=0
+    check_milestone_size() {
+        _size_check_count=$(( _size_check_count + 1 ))
+        _track "check_milestone_size:$1:call${_size_check_count}"
+        if [[ "$_size_check_count" -eq 1 ]]; then return 1; fi
+        return 0
+    }
+
+    split_milestone() {
+        _track "split_milestone:$1"
+        return 0
+    }
+
+    get_milestone_title() { echo "Sub Task"; }
+    get_milestone_count() { echo "3"; }
+    init_milestone_state() { _track "init_milestone_state:$1"; }
+
+    # After split + re-scout, coder runs and creates summary
+    _agent_call_count=0
+    run_agent() {
+        _agent_call_count=$(( _agent_call_count + 1 ))
+        _track "run_agent:$1"
+        if [[ "$_agent_call_count" -le 2 ]]; then
+            # Scout calls (original + post-split)
+            echo "## Scout Report" > SCOUT_REPORT.md
+        else
+            # Coder call — create CODER_SUMMARY.md
+            cat > CODER_SUMMARY.md << 'EOF'
+# Coder Summary
+## Status: COMPLETE
+## What Was Implemented
+- stuff
+- more stuff
+- even more
+- final
+EOF
+        fi
+    }
+
+    source "${TEKHTON_HOME}/stages/coder.sh"
+    run_stage_coder
+
+    # Verify call sequence
+    grep -q "split_milestone:5"       "$CALL_LOG_FILE" || exit 10
+    grep -q "init_milestone_state:5.1" "$CALL_LOG_FILE" || exit 11
+    # Should have Scout, Scout (post-split), and Coder calls
+    scout_calls=$(grep -c "run_agent:Scout" "$CALL_LOG_FILE" || echo 0)
+    [[ "$scout_calls" -ge 2 ]] || exit 12
+    grep -q "run_agent:Coder" "$CALL_LOG_FILE" || exit 13
+) || _test_result=$?
+assert "Pre-flight gate: split_milestone called and re-scout runs" "$([ "$_test_result" -eq 0 ] && echo 0 || echo 1)"
+
+echo "=== coder stage integration — null-run auto-split ==="
+
+# Test 2: Null-run triggers handle_null_run_split and recursive coder
+_test_result=0
+(
+    _define_coder_stubs
+
+    MILESTONE_MODE=true
+    _CURRENT_MILESTONE="7"
+
+    # No scout (DYNAMIC_TURNS_ENABLED=false, HUMAN_NOTE_COUNT=0)
+    DYNAMIC_TURNS_ENABLED=false
+    HUMAN_NOTE_COUNT=0
+
+    # Track recursion to prevent infinite loop
+    _coder_invocation=0
+    _original_run_stage_coder=""
+
+    # Coder: first call = null run, second call = success
+    _agent_call_count=0
+    run_agent() {
+        _agent_call_count=$(( _agent_call_count + 1 ))
+        _track "run_agent:$1"
+        if [[ "$_agent_call_count" -eq 1 ]]; then
+            # First coder run: null run — don't create summary
+            LAST_AGENT_NULL_RUN=true
+            LAST_AGENT_TURNS=0
+        else
+            # Second coder run (after split): success
+            LAST_AGENT_NULL_RUN=false
+            LAST_AGENT_TURNS=10
+            cat > CODER_SUMMARY.md << 'EOF'
+# Coder Summary
+## Status: COMPLETE
+## What Was Implemented
+- stuff
+- more stuff
+- even more
+- final
+EOF
+        fi
+    }
+
+    was_null_run() { [ "$LAST_AGENT_NULL_RUN" = true ]; }
+
+    handle_null_run_split() {
+        _track "handle_null_run_split:$1"
+        LAST_AGENT_NULL_RUN=false  # Reset for retry
+        return 0
+    }
+
+    get_milestone_title() { echo "Sub Task"; }
+    get_milestone_count() { echo "4"; }
+    init_milestone_state() { _track "init_milestone_state:$1"; }
+    get_split_depth() { echo "1"; }
+
+    source "${TEKHTON_HOME}/stages/coder.sh"
+    run_stage_coder
+
+    grep -q "handle_null_run_split:7" "$CALL_LOG_FILE" || exit 10
+    grep -q "init_milestone_state:7.1" "$CALL_LOG_FILE" || exit 11
+    # Should see at least 2 Coder agent calls (original null-run + retry)
+    coder_calls=$(grep -c "run_agent:Coder" "$CALL_LOG_FILE" || echo 0)
+    [[ "$coder_calls" -ge 2 ]] || exit 12
+) || _test_result=$?
+assert "Null-run: handle_null_run_split called and coder retries" "$([ "$_test_result" -eq 0 ] && echo 0 || echo 1)"
+
+echo "=== coder stage integration — turn-limit minimal-output auto-split ==="
+
+# Test 3: Turn limit with minimal output triggers handle_null_run_split
+_test_result=0
+(
+    _define_coder_stubs
+
+    MILESTONE_MODE=true
+    _CURRENT_MILESTONE="9"
+    DYNAMIC_TURNS_ENABLED=false
+    HUMAN_NOTE_COUNT=0
+
+    # Track recursion
+    _agent_call_count=0
+    run_agent() {
+        _agent_call_count=$(( _agent_call_count + 1 ))
+        _track "run_agent:$1"
+        if [[ "$_agent_call_count" -eq 1 ]]; then
+            # First coder: IN PROGRESS with minimal output (≤3 summary lines)
+            cat > CODER_SUMMARY.md << 'EOF'
+# Coder Summary
+## Status: IN PROGRESS
+## What Was Implemented
+- one thing
+EOF
+        else
+            # Post-split coder: success
+            cat > CODER_SUMMARY.md << 'EOF'
+# Coder Summary
+## Status: COMPLETE
+## What Was Implemented
+- stuff
+- more stuff
+- even more
+- final
+EOF
+        fi
+    }
+
+    handle_null_run_split() {
+        _track "handle_null_run_split:$1"
+        return 0
+    }
+
+    get_milestone_title() { echo "Sub Task"; }
+    get_milestone_count() { echo "3"; }
+    init_milestone_state() { _track "init_milestone_state:$1"; }
+    get_split_depth() { echo "1"; }
+
+    source "${TEKHTON_HOME}/stages/coder.sh"
+    run_stage_coder
+
+    grep -q "handle_null_run_split:9" "$CALL_LOG_FILE" || exit 10
+    grep -q "init_milestone_state:9.1" "$CALL_LOG_FILE" || exit 11
+) || _test_result=$?
+assert "Turn-limit minimal output: handle_null_run_split called" "$([ "$_test_result" -eq 0 ] && echo 0 || echo 1)"
+
+# ============================================================================
 # Summary
 # ============================================================================
 
