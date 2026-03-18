@@ -283,6 +283,7 @@ source "${TEKHTON_HOME}/lib/context_compiler.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
+source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
@@ -865,6 +866,16 @@ if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
     else
         write_milestone_disposition "INCOMPLETE_REWORK"
         warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Fix issues and re-run."
+    fi
+elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ] && [ "${SKIP_FINAL_CHECKS:-false}" != true ]; then
+    # Non-auto-advance milestone run: check acceptance and set disposition
+    _acceptance_pass=true
+    check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
+
+    if [ "$_acceptance_pass" = true ]; then
+        write_milestone_disposition "COMPLETE_AND_WAIT"
+    else
+        write_milestone_disposition "INCOMPLETE_REWORK"
     fi
 fi
 

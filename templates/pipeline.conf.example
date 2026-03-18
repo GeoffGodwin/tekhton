@@ -270,6 +270,31 @@ CONTEXT_COMPILER_ENABLED=false
 # under context window limits for long-running projects.
 # MILESTONE_ARCHIVE_FILE=MILESTONE_ARCHIVE.md
 
+# --- Milestone pre-flight sizing and auto-split --------------------------------
+# When enabled, the pipeline checks if a milestone's scout estimate exceeds the
+# turn cap. If it does, the milestone is automatically split into 2-4 sub-milestones.
+# On null-run detection, the pipeline can auto-split and retry without human intervention.
+
+# Enable pre-flight milestone sizing gate (default: true)
+# MILESTONE_SPLIT_ENABLED=true
+
+# Model for the splitting agent (defaults to CLAUDE_CODER_MODEL / opus-class)
+# MILESTONE_SPLIT_MODEL="claude-opus-4-6"
+
+# Turn limit for the splitting agent (short — decomposition, not implementation)
+# Hard cap: 50 (values above 50 are clamped automatically)
+# MILESTONE_SPLIT_MAX_TURNS=15
+
+# Split when scout estimate exceeds cap by this percentage (default: 120 = 20% over)
+# MILESTONE_SPLIT_THRESHOLD_PCT=120
+
+# Auto-split and retry when coder produces a null-run on a milestone (default: true)
+# MILESTONE_AUTO_RETRY=true
+
+# Maximum recursive split depth. Prevents infinite splitting:
+# N → N.1 → N.1.1 but N.1.1 cannot split further at depth 3.
+# MILESTONE_MAX_SPLIT_DEPTH=3
+
 # --- Autonomous debt sweep (cleanup) -----------------------------------------
 # After a successful pipeline run, if accumulated non-blocking notes exceed the
 # threshold, a low-cost jr coder agent sweeps through a batch of items.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # milestone_ops.sh — Milestone acceptance checking, commit signatures,
 #                     auto-advance orchestration

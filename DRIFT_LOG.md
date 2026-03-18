@@ -1,16 +1,19 @@
 # Drift Log
 
 ## Metadata
-- Last audit: 2026-03-17
+- Last audit: 2026-03-18
 - Runs since audit: 1
 
 ## Unresolved Observations
-- [2026-03-17 | "Implement fixes for the next two items in the NON_BLOCKING_LOG.md"] NON_BLOCKING_LOG.md now contains three separate entries (lines 12, 16, 19) that all describe the same issue: milestones.sh exceeding the 300-line guideline. Having duplicate open items for the same concern will cause repeated selection in future cleanup passes. A consolidation pass on the log would improve hygiene.
-- [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `lib/milestones.sh` — The file now contains three distinct areas of responsibility: (1) milestone state machine, (2) auto-advance orchestration, (3) archival. The 300-line limit exists to prevent exactly this multi-concern growth. Flagging for eventual split.
+- [2026-03-18 | "Continue Implementing Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split"] `lib/milestone_split.sh:42` — `local threshold=$((...))` uses arithmetic expansion inside a `local` declaration. SC2155 applies technically; shellcheck may or may not flag depending on version. Low risk given constant arithmetic with defaults, but inconsistent with the defensive style the rest of the file uses.
 - [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `tekhton.sh:1073` — The commit-skip path echoes `${COMMIT_MSG%%$' '*}` (first line of commit msg) for the manual git command. When a milestone prefix like `[MILESTONE 10 ✓]` is present, this is fine. But the `%%` strip on a multi-line string may behave differently across bash versions — worth watching if users report truncated suggestions.
 (none)
 
 ## Resolved
+- [RESOLVED 2026-03-18] [2026-03-18 | "Continue Implementing Milestone 11"] `stages/coder.sh` `_first_sub` duplication across three auto-split paths. **Resolved: Extracted `_switch_to_sub_milestone()` helper function that encapsulates the repeated pattern (compute `.1` sub-milestone, fetch title, update state). All three call sites now use the helper.**
+- [RESOLVED 2026-03-18] [2026-03-18 | "Continue Implementing Milestone 11"] `lib/milestone_split.sh` and `lib/milestone_archival.sh` missing `set -euo pipefail`. **Resolved: Both files now have `set -euo pipefail` on line 2, immediately after the shebang. This is defense-in-depth — they still inherit it from `tekhton.sh` when sourced, but are now safe if sourced independently (e.g., from test harnesses).**
+- [RESOLVED 2026-03-18] [2026-03-17 | "Implement fixes for the next two items in the NON_BLOCKING_LOG.md"] NON_BLOCKING_LOG.md duplicate milestones.sh entries. **Resolved: The three duplicate entries were already consolidated into a single resolved entry in NON_BLOCKING_LOG.md (see Resolved section). No open duplicates remain.**
+- [RESOLVED 2026-03-18] [2026-03-17 | "Implement Milestone 10"] `lib/milestones.sh` multi-concern growth (state machine + auto-advance + archival). **Resolved: Archival functions extracted to `lib/milestone_archival.sh` and split functions to `lib/milestone_split.sh`. `milestones.sh` is now focused on the state machine and auto-advance.**
 - [RESOLVED 2026-03-17] [2026-03-17 | "Implement Milestone 9: Post-Coder Turn Recalibration"] `lib/turns.sh`: File lacks `set -euo pipefail` at the top. **Resolved: `set -euo pipefail` is already present on line 2 of `lib/turns.sh`. The observation was inaccurate — the file had the directive when inspected. Marking resolved.**
 - [RESOLVED 2026-03-17] [2026-03-17 | "Continue working your way through the NON_BLOCKING_LOG.md file and implement the last item."] `lib/specialists.sh:251` — `note_count=$(echo "$notes" | grep -c "[NOTE]" || echo "0")`: the `|| echo "0"` guard is unreachable because `$notes` is guaranteed non-empty at this point (the empty-check guard at line 214 returns early). **Resolved: Removed the unreachable `|| echo "0"` guard. Since `$notes` is guaranteed non-empty (line 214 early return) and contains only `[NOTE]` lines, `grep -c` will always return ≥ 1.**
 - [RESOLVED 2026-03-17] [2026-03-17 | "Implement Milestone 6: Brownfield Replan"] lib/plan.sh vs lib/replan.sh naming distinction — Brownfield replan functions extracted to `lib/replan_brownfield.sh`; mid-run replan in `lib/replan_midrun.sh`; `lib/replan.sh` is a thin shim. ARCHITECTURE.md lines 97–99 reflect the three-file structure. Naming convention (midrun/brownfield suffixes) is in place.

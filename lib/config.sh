@@ -234,6 +234,14 @@ load_config() {
     : "${MILESTONE_TAG_ON_COMPLETE:=false}"  # Create git tag on milestone completion
     : "${MILESTONE_ARCHIVE_FILE:=MILESTONE_ARCHIVE.md}"  # Archive file for completed milestones
 
+    # --- Milestone pre-flight sizing and auto-split ---
+    : "${MILESTONE_SPLIT_ENABLED:=true}"            # Enable pre-flight milestone splitting
+    : "${MILESTONE_SPLIT_MODEL:=${CLAUDE_CODER_MODEL}}"  # Model for splitting agent
+    : "${MILESTONE_SPLIT_MAX_TURNS:=15}"            # Turn limit for splitting agent
+    : "${MILESTONE_SPLIT_THRESHOLD_PCT:=120}"       # Split when estimate exceeds cap by this %
+    : "${MILESTONE_AUTO_RETRY:=true}"               # Auto-split and retry on null-run
+    : "${MILESTONE_MAX_SPLIT_DEPTH:=3}"             # Max recursive split depth
+
     # --- Cleanup (autonomous debt sweep) defaults ---
     : "${CLEANUP_ENABLED:=false}"           # Off by default — opt-in
     : "${CLEANUP_BATCH_SIZE:=5}"            # Max items per sweep
@@ -286,6 +294,9 @@ load_config() {
     _clamp_config_value MILESTONE_REVIEWER_MAX_TURNS 500
     _clamp_config_value MILESTONE_TESTER_MAX_TURNS 500
     _clamp_config_value MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER 10
+    _clamp_config_value MILESTONE_SPLIT_MAX_TURNS 50
+    _clamp_config_value MILESTONE_SPLIT_THRESHOLD_PCT 500
+    _clamp_config_value MILESTONE_MAX_SPLIT_DEPTH 5
     _clamp_config_value CLEANUP_BATCH_SIZE 50
     _clamp_config_value CLEANUP_MAX_TURNS 500
     _clamp_config_value CLEANUP_TRIGGER_THRESHOLD 100

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # milestone_archival.sh — Milestone archival (CLAUDE.md → MILESTONE_ARCHIVE.md)
 #
@@ -24,18 +25,14 @@ _extract_milestone_block() {
         return 1
     fi
 
-    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
     local num_pattern="${num//./\\.}"
-
     local block=""
     local in_block=false
     local heading_level=0
     local line_count=0
 
     while IFS= read -r line; do
-        # Match the target milestone heading (with or without [DONE] marker)
-        # Handles: #### Milestone N:, #### [DONE] Milestone N:, #### Milestone N.5:
-        if [[ "$in_block" = false ]] && [[ "$line" =~ ^(#{1,5})[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-] ]]; then
+        if [[ "$in_block" = false ]] && [[ "$line" =~ ^(#{1,5})[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*([:.\ -]|—) ]]; then
             heading_level=${#BASH_REMATCH[1]}
             in_block=true
             block="${line}"
@@ -44,11 +41,9 @@ _extract_milestone_block() {
         fi
 
         if [[ "$in_block" = true ]]; then
-            # Check for a sibling or parent heading that ends the block
             if [[ "$line" =~ ^(#{1,5})[[:space:]] ]]; then
                 local this_level=${#BASH_REMATCH[1]}
                 if [[ "$this_level" -le "$heading_level" ]]; then
-                    # End of block — don't include this line
                     break
                 fi
             fi
@@ -61,7 +56,6 @@ _extract_milestone_block() {
         return 1
     fi
 
-    # If the block is a single line (already archived to summary), skip
     if [[ "$line_count" -le 1 ]]; then
         return 1
     fi
@@ -72,24 +66,18 @@ _extract_milestone_block() {
 
 # _get_initiative_name CLAUDE_MD_PATH MILESTONE_NUM
 # Finds the initiative name (## heading) that contains the given milestone.
-# Falls back to "Unknown Initiative" if not found.
 _get_initiative_name() {
     local claude_md="$1"
     local num="$2"
     local current_initiative=""
-
-    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
     local num_pattern="${num//./\\.}"
 
     while IFS= read -r line; do
-        # Track initiative headings
         if [[ "$line" =~ ^##[[:space:]]+(Completed|Current)[[:space:]]+Initiative:[[:space:]]*(.*) ]]; then
             current_initiative="${BASH_REMATCH[2]}"
-            # Trim trailing whitespace
             current_initiative="${current_initiative%"${current_initiative##*[![:space:]]}"}"
         fi
-        # When we find the milestone, return current initiative
-        if [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-] ]]; then
+        if [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*([:.\ -]|—) ]]; then
             echo "${current_initiative:-Unknown Initiative}"
             return 0
         fi
@@ -108,9 +96,9 @@ _milestone_in_archive() {
         return 1
     fi
 
-    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
     local num_pattern="${num//./\\.}"
-    grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-]" "$archive_file" 2>/dev/null
+    # Match milestone heading with portable delimiter pattern (avoids em-dash in char class)
+    grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*([:.\-]|—)" "$archive_file" 2>/dev/null
 }
 
 # archive_completed_milestone MILESTONE_NUM CLAUDE_MD_PATH
@@ -124,29 +112,23 @@ archive_completed_milestone() {
     local claude_md="${2:-CLAUDE.md}"
     local archive_file="${MILESTONE_ARCHIVE_FILE:-MILESTONE_ARCHIVE.md}"
 
-    # Only archive milestones marked [DONE]
     if ! is_milestone_done "$num" "$claude_md"; then
         return 1
     fi
 
-    # Check idempotency — already in archive?
     if _milestone_in_archive "$num" "$archive_file"; then
         return 1
     fi
 
-    # Extract the full block
     local block
     block=$(_extract_milestone_block "$num" "$claude_md") || return 1
 
-    # Get the milestone title for the summary line
     local title
     title=$(get_milestone_title "$num" "$claude_md" 2>/dev/null) || true
 
-    # Get the initiative name for the archive header
     local initiative
     initiative=$(_get_initiative_name "$claude_md" "$num")
 
-    # --- Append to archive file ---
     if [[ ! -f "$archive_file" ]]; then
         cat > "$archive_file" << 'ARCHIVE_HEADER'
 # Milestone Archive
@@ -165,14 +147,9 @@ ARCHIVE_HEADER
         echo "$block"
     } >> "$archive_file"
 
-    # --- Replace block in CLAUDE.md with one-line summary ---
-    # Build the summary line
     local summary_line="#### [DONE] Milestone ${num}: ${title}"
 
-    # Use awk to replace the block in CLAUDE.md
     local tmp_file
-    # Use session temp dir if available, else fall back to the directory containing CLAUDE.md.
-    # If session dir fails (e.g., cleaned up), retry with CLAUDE.md's directory.
     local tmp_dir="${TEKHTON_SESSION_DIR:-$(dirname "$claude_md")}"
     tmp_file="$(mktemp "${tmp_dir}/archival_XXXXXX" 2>/dev/null)" \
         || tmp_file="$(mktemp "$(dirname "$claude_md")/archival_XXXXXX")"
@@ -180,15 +157,10 @@ ARCHIVE_HEADER
     awk -v num="$num" -v summary="$summary_line" '
     BEGIN { in_block = 0; heading_level = 0 }
     {
-        # Escape dots in num for regex safety (e.g., 0.5 → 0\.5)
         safe_num = num
         gsub(/\./, "\\.", safe_num)
 
-        # Match the target milestone heading
-        if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[:.—-]") {
-            # RLENGTH here counts only '#' chars (no trailing space in the regex).
-            # Compare with this_level below, which uses /^#{1,5}[[:space:]]/ and
-            # subtracts 1 to strip the matched space — yielding the same metric.
+        if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*([:. -]|—)") {
             heading_level = RLENGTH
             in_block = 1
             print summary
@@ -196,16 +168,14 @@ ARCHIVE_HEADER
         }
 
         if (in_block) {
-            # Check for sibling or parent heading
             if (match($0, /^#{1,5}[[:space:]]/)) {
-                this_level = RLENGTH - 1  # subtract the trailing space
+                this_level = RLENGTH - 1
                 if (this_level <= heading_level) {
                     in_block = 0
                     print
                     next
                 }
             }
-            # Skip lines inside the block
             next
         }
 
@@ -216,6 +186,77 @@ ARCHIVE_HEADER
     mv -f "$tmp_file" "$claude_md"
 
     log "Archived milestone ${num} to ${archive_file}"
+    return 0
+}
+
+# _replace_milestone_block MILESTONE_NUM CLAUDE_MD_PATH REPLACEMENT_TEXT
+# Replaces the full milestone block in CLAUDE.md with the given text.
+# Used by both archival and splitting operations. Returns 0 on success, 1 on failure.
+_replace_milestone_block() {
+    local num="$1"
+    local claude_md="$2"
+    local replacement="$3"
+
+    if [[ ! -f "$claude_md" ]]; then
+        return 1
+    fi
+
+    # Escape dots in milestone number for regex
+    local num_pattern="${num//./\\.}"
+
+    # Write replacement to a temp file for awk to read
+    local tmp_dir="${TEKHTON_SESSION_DIR:-$(dirname "$claude_md")}"
+    local rep_file
+    rep_file="$(mktemp "${tmp_dir}/rep_XXXXXX" 2>/dev/null)" \
+        || rep_file="$(mktemp "$(dirname "$claude_md")/rep_XXXXXX")"
+    echo "$replacement" > "$rep_file"
+
+    local tmp_file
+    tmp_file="$(mktemp "${tmp_dir}/out_XXXXXX" 2>/dev/null)" \
+        || tmp_file="$(mktemp "$(dirname "$claude_md")/out_XXXXXX")"
+
+    awk -v num="$num" -v repfile="$rep_file" '
+    BEGIN {
+        in_block = 0; heading_level = 0; matched = 0
+        safe_num = num
+        gsub(/\./, "\\.", safe_num)
+    }
+    {
+        if (!in_block && match($0, /^#{1,5}/) && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*([:. -]|—)") {
+            heading_level = RLENGTH
+            in_block = 1
+            matched = 1
+            while ((getline line < repfile) > 0) {
+                print line
+            }
+            close(repfile)
+            next
+        }
+
+        if (in_block) {
+            if (match($0, /^#{1,5}[[:space:]]/)) {
+                this_level = RLENGTH - 1
+                if (this_level <= heading_level) {
+                    in_block = 0
+                    print
+                    next
+                }
+            }
+            next
+        }
+
+        print
+    }
+    END { exit (matched ? 0 : 1) }
+    ' "$claude_md" > "$tmp_file" || {
+        # awk exits 1 when the heading was not matched (END { exit (matched ? 0 : 1) }).
+        # Clean up temp files before propagating the error.
+        rm -f "$tmp_file" "$rep_file"
+        return 1
+    }
+
+    mv -f "$tmp_file" "$claude_md"
+    rm -f "$rep_file"
     return 0
 }
 

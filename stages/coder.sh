@@ -6,6 +6,30 @@
 # Expects all pipeline globals to be set (TASK, LOG_FILE, TIMESTAMP, etc.)
 # =============================================================================
 
+# _switch_to_sub_milestone — After a milestone split, update state to target
+# the first sub-milestone (N.1). Sets _CURRENT_MILESTONE, TASK, and milestone
+# state. Must be called in the same scope (not a subshell) so variable
+# assignments propagate to the caller.
+#
+# Arguments:
+#   $1 — current milestone number (the one that was just split)
+#   $2 — path to CLAUDE.md
+_switch_to_sub_milestone() {
+    local _ms_num="$1"
+    local _claude_md="$2"
+    local _first_sub="${_ms_num}.1"
+    # Title may be empty if the split agent used a heading format that
+    # get_milestone_title doesn't match — task still proceeds with the number alone.
+    local _first_title
+    _first_title=$(get_milestone_title "$_first_sub" "$_claude_md" 2>/dev/null) || true
+
+    _CURRENT_MILESTONE="$_first_sub"
+    TASK="Implement Milestone ${_first_sub}: ${_first_title}"
+    log "Task updated: ${TASK}"
+
+    init_milestone_state "$_first_sub" "$(get_milestone_count "$_claude_md")"
+}
+
 # run_stage_coder — Runs the full coder stage including:
 #   1. Optional scout sub-agent (for BUG/FEAT notes)
 #   2. Context block construction (architecture, glossary, milestone, prior reports)
@@ -72,9 +96,56 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
 $(cat SCOUT_REPORT.md)
 "
+            # --- Pre-flight milestone sizing gate ---------------------------------
+            # After scout estimates complexity, check if the milestone is oversized.
+            # If so, split it into sub-milestones and re-scout the first one.
+            if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
+                if ! check_milestone_size "$_CURRENT_MILESTONE" "${SCOUT_REC_CODER_TURNS:-0}"; then
+                    log "Milestone ${_CURRENT_MILESTONE} exceeds sizing threshold. Splitting..."
+
+                    if split_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                        # Update to target the first sub-milestone
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+
+                        # Archive original scout report and re-scout narrower scope
+                        cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
+                        rm "SCOUT_REPORT.md"
+
+                        log "Re-running scout for narrower sub-milestone ${_CURRENT_MILESTONE}..."
+
+                        SCOUT_PROMPT=$(render_prompt "scout")
+                        run_agent \
+                            "Scout (post-split)" \
+                            "$CLAUDE_SCOUT_MODEL" \
+                            "${SCOUT_MAX_TURNS}" \
+                            "$SCOUT_PROMPT" \
+                            "$LOG_FILE" \
+                            "$AGENT_TOOLS_SCOUT"
+
+                        if [ -f "SCOUT_REPORT.md" ]; then
+                            print_run_summary
+                            success "Post-split scout finished."
+                            apply_scout_turn_limits "SCOUT_REPORT.md"
+                            BUG_SCOUT_CONTEXT="
+## Scout Report (pre-located relevant files — read THESE files, not the whole project)
+$(cat SCOUT_REPORT.md)
+"
+                            cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+                            rm "SCOUT_REPORT.md"
+                        else
+                            warn "Post-split scout did not produce SCOUT_REPORT.md — coder will explore independently."
+                        fi
+                    else
+                        warn "Milestone split failed — proceeding with original scope."
+                    fi
+                fi
+            fi
+
             # Archive scout report with the run
-            cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
-            rm "SCOUT_REPORT.md"
+            if [ -f "SCOUT_REPORT.md" ]; then
+                cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+                rm "SCOUT_REPORT.md"
+            fi
         elif was_null_run; then
             print_run_summary
             warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
@@ -264,6 +335,24 @@ ${nb_notes}"
             resolve_human_notes
         fi
 
+        # --- Null-run auto-split for milestone mode ---
+        # Instead of saving state and exiting, try to split the milestone
+        # and re-run from scout stage with the narrower sub-milestone.
+        if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
+            if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                # Split succeeded — update state and re-run from scout
+                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+
+                # Recursive call to run_stage_coder creates nested call frames up to
+                # MILESTONE_MAX_SPLIT_DEPTH deep. With default of 3, this is safe.
+                local _depth
+                _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                run_stage_coder
+                return
+            fi
+        fi
+
         write_pipeline_state \
             "coder" \
             "null_run" \
@@ -372,6 +461,20 @@ ${nb_notes}"
             RESUME_FLAG="--milestone --start-at coder"
             RESUME_NOTE="Coder hit turn limit mid-implementation (${IMPLEMENTED_LINES} summary lines). Git diff shows partial work — coder should CONTINUE, not restart."
         else
+            # Minimal output with turn limit exhausted — scope failure candidate
+            # Try auto-split in milestone mode before falling back to save-and-exit
+            if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
+                if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+
+                    local _depth
+                    _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                    warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                    run_stage_coder
+                    return
+                fi
+            fi
+
             RESUME_FLAG="--milestone"
             RESUME_NOTE="Coder hit turn limit with minimal summary output — retry from scratch recommended. Consider either a higher cycle limit or a more specific task description. If the coder struggled to get started, try adding more implementation guidance to the task or breaking it into smaller pieces."
         fi
