@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # errors.sh — Error taxonomy, classification engine, and sensitive data redaction
 #
@@ -228,14 +229,9 @@ classify_error() {
         return 0
     fi
 
-    # Null run: low turns + non-zero exit + no file changes
-    if [[ "$turns" -le 2 ]] && [[ "$exit_code" -ne 0 ]] && [[ "$file_changes" -eq 0 ]]; then
-        echo "AGENT_SCOPE|null_run|false|Agent completed without meaningful work"
-        return 0
-    fi
-
-    # Zero turns with zero file changes (even if exit 0)
-    if [[ "$turns" -eq 0 ]] && [[ "$file_changes" -eq 0 ]]; then
+    # Null run: low turns + no file changes (non-zero exit, or zero turns regardless)
+    if [[ "$turns" -le 2 ]] && [[ "$file_changes" -eq 0 ]] \
+        && { [[ "$exit_code" -ne 0 ]] || [[ "$turns" -eq 0 ]]; }; then
         echo "AGENT_SCOPE|null_run|false|Agent completed without meaningful work"
         return 0
     fi
