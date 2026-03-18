@@ -150,7 +150,7 @@ split_milestone() {
     local split_prompt
     split_prompt=$(render_prompt "milestone_split")
 
-    local split_model="${MILESTONE_SPLIT_MODEL:-${CLAUDE_CODER_MODEL}}"
+    local split_model="${MILESTONE_SPLIT_MODEL:-${CLAUDE_CODER_MODEL:-claude-sonnet-4-20250514}}"
     local split_turns="${MILESTONE_SPLIT_MAX_TURNS:-15}"
 
     local log_dir="${LOG_DIR:-.claude/logs}"
