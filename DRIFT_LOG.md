@@ -2,14 +2,15 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
-- [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent.sh:319` and `lib/common.sh:50` — Unicode/ASCII terminal detection (`grep -qi 'utf-?8'` against `LANG/LC_ALL`) is duplicated between `_append_agent_summary` and `report_error`. A shared `_is_utf8_terminal()` helper in `lib/common.sh` would guarantee visual consistency. (carry-forward from cycle 1)
-- [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent_monitor.sh` — Comment exists at lines 55–60 explaining the subshell variable isolation (API error flags written to file for parent to read), but there is no equivalent comment near the ring buffer dump block (lines 232–245) explaining why the dump uses a `{...}` compound group rather than a function call. Future contributors may wonder why `_ring_buffer_add`-style functions were not used. A brief inline comment would close the gap.
+- [2026-03-18 | "Correct the next 2 items in the DRIFT_LOG.md file."] `lib/agent_monitor.sh:237` — `local _rb_total=...` inside a `{...}` compound group (not a function) is invalid bash; as noted above, this likely silently disables the ring buffer dump on every run. The comment accurately describes the design intent but the implementation has a latent correctness bug.
 (none)
 
 ## Resolved
+- [RESOLVED 2026-03-18] [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent.sh:319` and `lib/common.sh:50` — Unicode/ASCII terminal detection duplicated between `_append_agent_summary` and `report_error`. **Resolved: Extracted `_is_utf8_terminal()` helper in `lib/common.sh`. Both `report_error` and `_append_agent_summary` now call the shared helper instead of inline `grep -qi 'utf-\?8'`.**
+- [RESOLVED 2026-03-18] [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent_monitor.sh` — Ring buffer dump block (lines 232–245) lacked a comment explaining why it uses a `{...}` compound group rather than a function call. **Resolved: Added inline comment explaining the compound group is necessary because `_rb[]` and `_rb_idx` are local subshell variables that cannot be portably passed to a function by reference in bash 4.**
 - [RESOLVED 2026-03-18] [2026-03-18 | "Continue Implementing Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split"] `lib/milestone_split.sh:42` — SC2155 observation was inaccurate. The `local threshold` declaration (line 42) is separate from the arithmetic assignment (line 43). SC2155 does not apply.
 - [RESOLVED 2026-03-18] [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `tekhton.sh:1087` — The pattern is `%%$'\n'*` (strip from first newline), not `%%$' '*` (strip from first space) as the drift observation described. The newline-strip correctly extracts the first line of the commit message. The drift observation described a pattern that does not exist in the code.
 - [RESOLVED 2026-03-18] [2026-03-18 | "Continue Implementing Milestone 11"] `stages/coder.sh` `_first_sub` duplication across three auto-split paths. **Resolved: Extracted `_switch_to_sub_milestone()` helper function that encapsulates the repeated pattern (compute `.1` sub-milestone, fetch title, update state). All three call sites now use the helper.**

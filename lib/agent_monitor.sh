@@ -228,7 +228,11 @@ _invoke_and_monitor() {
                 2>/dev/null || echo "0")
             echo "$_turns" > "$_turns_file"
 
-            # Dump ring buffer to file for post-exit error classification (12.2)
+            # Dump ring buffer to file for post-exit error classification (12.2).
+            # Uses a compound group {…} instead of a function because this runs
+            # inside a subshell where _rb[] and _rb_idx are local variables —
+            # a function call would require passing the array, and bash doesn't
+            # support passing arrays to functions by reference portably in bash 4.
             {
                 local _rb_total=${#_rb[@]}
                 if [[ "$_rb_total" -gt 0 ]]; then

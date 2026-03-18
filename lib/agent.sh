@@ -316,7 +316,7 @@ _append_agent_summary() {
 
     # Detect Unicode for consistent rendering with report_error
     local _sep="═══"
-    if ! echo "${LANG:-}${LC_ALL:-}" | grep -qi 'utf-\?8' 2>/dev/null; then
+    if ! _is_utf8_terminal; then
         _sep="==="
     fi
 

@@ -31,6 +31,13 @@ count_lines() {
     wc -l | tr -d '[:space:]'
 }
 
+# --- UTF-8 terminal detection (shared by report_error + agent summary) --------
+
+# _is_utf8_terminal — returns 0 if LANG or LC_ALL indicates UTF-8 support.
+_is_utf8_terminal() {
+    echo "${LANG:-}${LC_ALL:-}" | grep -qi 'utf-\?8' 2>/dev/null
+}
+
 # --- Structured error reporting (12.2) ----------------------------------------
 # Prints a boxed error block to stderr with category, message, and recovery.
 # Falls back to ASCII when terminal lacks UTF-8 support.
@@ -47,7 +54,7 @@ report_error() {
     # Detect Unicode support for box-drawing characters
     local _box_tl="+" _box_tr="+" _box_bl="+" _box_br="+"
     local _box_h="-" _box_v="|" _box_w=60
-    if echo "${LANG:-}${LC_ALL:-}" | grep -qi 'utf-\?8' 2>/dev/null; then
+    if _is_utf8_terminal; then
         _box_tl="╔" _box_tr="╗" _box_bl="╚" _box_br="╝"
         _box_h="═" _box_v="║"
     fi
