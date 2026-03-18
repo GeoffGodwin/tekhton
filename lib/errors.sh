@@ -43,6 +43,16 @@
 #     template_error prompt render failure
 #     internal       unexpected shell error
 
+# --- _match_pattern ---------------------------------------------------------
+# Case-insensitive grep against a string. Returns 0 if matched.
+# Uses grep -qiE for extended regex support.
+
+_match_pattern() {
+    local text="$1"
+    local pattern="$2"
+    echo "$text" | grep -qiE "$pattern" 2>/dev/null
+}
+
 # --- classify_error ---------------------------------------------------------
 # Analyzes exit code, stderr content, and last output to produce a structured
 # error record.
@@ -126,7 +136,7 @@ classify_error() {
     fi
 
     # Connection timeout
-    if _match_pattern "$combined" 'connection.*timed?\s*out' \
+    if _match_pattern "$combined" 'connection.*timed?[[:space:]]*out' \
         || _match_pattern "$combined" 'ETIMEDOUT' \
         || _match_pattern "$combined" 'ECONNRESET' \
         || _match_pattern "$combined" 'request.*timeout'; then
@@ -263,16 +273,6 @@ classify_error() {
     # Exit 0 with no issues — should not typically call classify_error for success
     echo "AGENT_SCOPE|scope_unknown|false|No error detected (exit 0)"
     return 0
-}
-
-# --- _match_pattern ---------------------------------------------------------
-# Case-insensitive grep against a string. Returns 0 if matched.
-# Uses grep -qiE for extended regex support.
-
-_match_pattern() {
-    local text="$1"
-    local pattern="$2"
-    echo "$text" | grep -qiE "$pattern" 2>/dev/null
 }
 
 # --- is_transient -----------------------------------------------------------

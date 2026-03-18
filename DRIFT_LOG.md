@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
 - [2026-03-18 | "Implement Milestone 12: Observability & Error Attribution Fix the currently failed test as well."] `lib/agent.sh:319` and `lib/common.sh:50` — Unicode/ASCII terminal detection (`grep -qi 'utf-?8'` against `LANG/LC_ALL`) is duplicated between `_append_agent_summary` and `report_error`. A shared `_is_utf8_terminal()` helper in `lib/common.sh` would guarantee visual consistency. (carry-forward from cycle 1)
