@@ -195,6 +195,70 @@ assert "Next milestone after 3 is 4" "$([ "$next" = "4" ] && echo 0 || echo 1)"
 next=$(find_next_milestone 4 "${TMPDIR}/CLAUDE.md")
 assert "No milestone after 4 (last)" "$([ -z "$next" ] && echo 0 || echo 1)"
 
+# --- Test: find_next_milestone with decimal milestones (regression) -----------
+
+echo "=== find_next_milestone decimal regression ==="
+
+cat > "${TMPDIR}/decimal.md" << 'DECIMAL_EOF'
+# Project Rules
+
+## Current Initiative: Adaptive Pipeline 2.0
+
+#### [DONE] Milestone 0: Security Hardening
+Phase 1 complete.
+
+Acceptance criteria:
+- Config injection eliminated
+
+#### [DONE] Milestone 0.5: Agent Output Monitoring And Null-Run Detection
+Phase 2 complete.
+
+Acceptance criteria:
+- JSON output mode does not trigger false null-run
+
+#### Milestone 1: Token And Context Accounting
+Measurement infrastructure.
+
+Acceptance criteria:
+- measure_context_size returns character count
+
+#### Milestone 2: Context Compiler
+Task-scoped context assembly.
+
+Acceptance criteria:
+- extract_relevant_sections returns matching sections
+DECIMAL_EOF
+
+# Primary regression: advancing from 0.5 → next undone milestone is 1
+next=$(find_next_milestone "0.5" "${TMPDIR}/decimal.md")
+assert "find_next_milestone 0.5 → 1 (decimal advance path)" "$([ "$next" = "1" ] && echo 0 || echo 1)"
+
+# Verify milestone 0 and 0.5 are correctly identified as done
+assert "Milestone 0 is_milestone_done" "$(is_milestone_done 0 "${TMPDIR}/decimal.md" && echo 0 || echo 1)"
+assert "Milestone 0.5 is_milestone_done" "$(is_milestone_done 0.5 "${TMPDIR}/decimal.md" && echo 0 || echo 1)"
+assert "Milestone 1 is NOT done" "$(! is_milestone_done 1 "${TMPDIR}/decimal.md" && echo 0 || echo 1)"
+
+# Verify parse_milestones captures 0.5 as its own milestone number (not 0)
+m05_title=$(parse_milestones "${TMPDIR}/decimal.md" | awk -F'|' '$1 == "0.5" {print $2}')
+assert "parse_milestones captures 0.5 as a distinct milestone number" "$([ -n "$m05_title" ] && echo 0 || echo 1)"
+
+# Verify 0 is not misidentified as 0.5
+m0_title=$(parse_milestones "${TMPDIR}/decimal.md" | awk -F'|' '$1 == "0" {print $2}')
+m05_title_distinct=$(parse_milestones "${TMPDIR}/decimal.md" | awk -F'|' '$1 == "0.5" {print $2}')
+assert "Milestone 0 and 0.5 are parsed as distinct entries" "$([ "$m0_title" != "$m05_title_distinct" ] && echo 0 || echo 1)"
+
+# Advance path: from 0 should find 1 (skipping done 0.5)
+next=$(find_next_milestone "0" "${TMPDIR}/decimal.md")
+assert "find_next_milestone 0 → 1 (skips done 0.5)" "$([ "$next" = "1" ] && echo 0 || echo 1)"
+
+# Advance path: from 1 → 2
+next=$(find_next_milestone "1" "${TMPDIR}/decimal.md")
+assert "find_next_milestone 1 → 2" "$([ "$next" = "2" ] && echo 0 || echo 1)"
+
+# No milestone after 2
+next=$(find_next_milestone "2" "${TMPDIR}/decimal.md")
+assert "find_next_milestone 2 → empty (no more milestones)" "$([ -z "$next" ] && echo 0 || echo 1)"
+
 # --- Test: should_auto_advance ------------------------------------------------
 
 echo "=== should_auto_advance ==="

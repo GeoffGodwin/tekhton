@@ -284,8 +284,15 @@ load_config() {
     _clamp_config_value METRICS_MIN_RUNS 100
 
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
-    [[ "$PIPELINE_STATE_FILE" != /* ]] && PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"
-    [[ "$LOG_DIR" != /* ]] && LOG_DIR="${PROJECT_DIR}/${LOG_DIR}"
+    if [[ "$PIPELINE_STATE_FILE" != /* ]]; then
+        PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"
+    fi
+    if [[ "$LOG_DIR" != /* ]]; then
+        LOG_DIR="${PROJECT_DIR}/${LOG_DIR}"
+    fi
+    if [[ "$MILESTONE_ARCHIVE_FILE" != /* ]]; then
+        MILESTONE_ARCHIVE_FILE="${PROJECT_DIR}/${MILESTONE_ARCHIVE_FILE}"
+    fi
 }
 
 # --- Milestone mode overrides ------------------------------------------------

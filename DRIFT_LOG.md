@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-17
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `lib/milestones.sh` — The file now contains three distinct areas of responsibility: (1) milestone state machine, (2) auto-advance orchestration, (3) archival. The 300-line limit exists to prevent exactly this multi-concern growth. Flagging for eventual split.

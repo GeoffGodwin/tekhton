@@ -45,14 +45,14 @@ parse_milestones() {
         # Match milestone headings: #### Milestone N: Title
         # Also handles: #### Milestone N — Title, #### Milestone N. Title
         # And [DONE] markers: #### [DONE] Milestone N: Title
-        if [[ "$line" =~ ^[[:space:]]*#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+([0-9]+)[[:space:]]*[:.\—\-][[:space:]]*(.*) ]]; then
+        if [[ "$line" =~ ^[[:space:]]*#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+([0-9]+([.][0-9]+)?)[[:space:]]*[:.\—\-][[:space:]]*(.*) ]]; then
             # Flush previous milestone if any
             if [[ -n "$current_num" ]]; then
                 echo "${current_num}|${current_title}|${acceptance_lines}"
                 found=1
             fi
             current_num="${BASH_REMATCH[3]}"
-            current_title="${BASH_REMATCH[4]}"
+            current_title="${BASH_REMATCH[5]}"
             # Trim trailing whitespace
             current_title="${current_title%"${current_title##*[![:space:]]}"}"
             in_acceptance=false
@@ -143,7 +143,9 @@ is_milestone_done() {
     local num="$1"
     local claude_md="${2:-CLAUDE.md}"
 
-    grep -qiE "^#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+${num}[[:space:]]*[:.\—\-]" "$claude_md" 2>/dev/null
+    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
+    local num_pattern="${num//./\\.}"
+    grep -qiE "^#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-]" "$claude_md" 2>/dev/null
 }
 
 # --- Milestone state file management ----------------------------------------
@@ -522,7 +524,7 @@ find_next_milestone() {
     local all_ms
     all_ms=$(parse_milestones "$claude_md" 2>/dev/null) || true
     while IFS='|' read -r num _title _criteria; do
-        if [[ -n "$num" ]] && [[ "$num" -gt "$current" ]]; then
+        if [[ -n "$num" ]] && awk -v n="$num" -v c="$current" 'BEGIN {exit !(n > c)}'; then
             if ! is_milestone_done "$num" "$claude_md"; then
                 next="$num"
                 break
@@ -579,6 +581,9 @@ _extract_milestone_block() {
         return 1
     fi
 
+    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
+    local num_pattern="${num//./\\.}"
+
     local block=""
     local in_block=false
     local heading_level=0
@@ -587,7 +592,7 @@ _extract_milestone_block() {
     while IFS= read -r line; do
         # Match the target milestone heading (with or without [DONE] marker)
         # Handles: #### Milestone N:, #### [DONE] Milestone N:, #### Milestone N.5:
-        if [[ "$in_block" = false ]] && [[ "$line" =~ ^(#{1,5})[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num}[[:space:]]*[:.\—\-] ]]; then
+        if [[ "$in_block" = false ]] && [[ "$line" =~ ^(#{1,5})[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-] ]]; then
             heading_level=${#BASH_REMATCH[1]}
             in_block=true
             block="${line}"
@@ -630,6 +635,9 @@ _get_initiative_name() {
     local num="$2"
     local current_initiative=""
 
+    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
+    local num_pattern="${num//./\\.}"
+
     while IFS= read -r line; do
         # Track initiative headings
         if [[ "$line" =~ ^##[[:space:]]+(Completed|Current)[[:space:]]+Initiative:[[:space:]]*(.*) ]]; then
@@ -638,7 +646,7 @@ _get_initiative_name() {
             current_initiative="${current_initiative%"${current_initiative##*[![:space:]]}"}"
         fi
         # When we find the milestone, return current initiative
-        if [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num}[[:space:]]*[:.\—\-] ]]; then
+        if [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-] ]]; then
             echo "${current_initiative:-Unknown Initiative}"
             return 0
         fi
@@ -657,7 +665,9 @@ _milestone_in_archive() {
         return 1
     fi
 
-    grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num}[[:space:]]*[:.\—\-]" "$archive_file" 2>/dev/null
+    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
+    local num_pattern="${num//./\\.}"
+    grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-]" "$archive_file" 2>/dev/null
 }
 
 # archive_completed_milestone MILESTONE_NUM CLAUDE_MD_PATH
@@ -723,8 +733,12 @@ ARCHIVE_HEADER
     awk -v num="$num" -v summary="$summary_line" '
     BEGIN { in_block = 0; heading_level = 0 }
     {
+        # Escape dots in num for regex safety (e.g., 0.5 → 0\.5)
+        safe_num = num
+        gsub(/\./, "\\.", safe_num)
+
         # Match the target milestone heading
-        if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" num "[[:space:]]*[:.—-]") {
+        if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[:.—-]") {
             heading_level = RLENGTH
             in_block = 1
             print summary
