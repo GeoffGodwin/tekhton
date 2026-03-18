@@ -18,10 +18,14 @@ _CONF_FILE="${PROJECT_DIR}/.claude/pipeline.conf"
 # Reads key=value lines from a config file without executing arbitrary code.
 # Handles: bare values, double-quoted, single-quoted, values with = signs, spaces.
 # Rejects values containing dangerous shell metacharacters.
+# Populates _CONF_KEYS_SET (space-separated list of keys parsed from the file).
+
+_CONF_KEYS_SET=""
 
 _parse_config_file() {
     local conf_file="$1"
     local line_num=0
+    _CONF_KEYS_SET=""
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         line_num=$((line_num + 1))
@@ -86,6 +90,7 @@ _parse_config_file() {
 
         # Safe assignment via declare -gx (global + export)
         declare -gx "$key=$raw_value"
+        _CONF_KEYS_SET="${_CONF_KEYS_SET} ${key}"
     done < "$conf_file"
 }
 
@@ -131,9 +136,11 @@ load_config() {
     : "${PROJECT_RULES_FILE:=CLAUDE.md}"
 
     # --- Validate required keys ---
+    # Check against keys actually parsed from pipeline.conf, not shell variables.
+    # Environment-inherited values must not satisfy this check.
     local missing=()
     for key in PROJECT_NAME CLAUDE_STANDARD_MODEL ANALYZE_CMD; do
-        if [ -z "${!key:-}" ]; then
+        if [[ " ${_CONF_KEYS_SET} " != *" ${key} "* ]]; then
             missing+=("$key")
         fi
     done

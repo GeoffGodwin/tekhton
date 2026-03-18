@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_milestones.sh` — regression test: find_next_milestone with current=0.5 returns next=1
+- [x] `tests/test_config_validation_failures.sh` — verify environment-inherited values are rejected by required-key validation
 
 ## Test Run Results
-Passed: 56  Failed: 1
+Passed: 57  Failed: 0
 
 ## Bugs Found
-- BUG: [lib/config.sh:135] load_config() required-key validation uses `${!key:-}` which accepts environment-inherited values — if PROJECT_NAME/CLAUDE_STANDARD_MODEL/ANALYZE_CMD are exported in the parent shell, validation passes even when keys are absent from pipeline.conf; this caused test_config_validation_failures.sh to regress when the coder fixed the set -e `[[ ]] && assignment` bug (the old code was accidentally exiting with code 1 via PIPELINE_STATE_FILE absolute-path short-circuit, masking the validation flaw)
+None
 
 ## Files Modified
-- [x] `tests/test_milestones.sh`
+- [x] `tests/test_config_validation_failures.sh`
