@@ -350,6 +350,128 @@ else
 fi
 
 # =============================================================================
+# record_run_metrics — error classification fields (12.3)
+# =============================================================================
+
+echo
+echo "=== record_run_metrics — error classification fields ==="
+
+_METRICS_FILE=""
+rm -f "${LOG_DIR}/metrics.jsonl"
+
+# Record a run with error classification
+TASK="Fix: api crash"
+MILESTONE_MODE=false
+TOTAL_TURNS=2
+TOTAL_TIME=15
+STAGE_SUMMARY="\n  Coder: 2/50 turns, 0m15s"
+VERDICT="UPSTREAM/api_500"
+AGENT_ERROR_CATEGORY="UPSTREAM"
+AGENT_ERROR_SUBCATEGORY="api_500"
+AGENT_ERROR_TRANSIENT="true"
+METRICS_ENABLED=true
+
+record_run_metrics
+
+line=$(cat "${LOG_DIR}/metrics.jsonl")
+
+if echo "$line" | grep -q '"error_category":"UPSTREAM"'; then
+    pass "metrics record includes error_category on failure"
+else
+    fail "expected error_category:UPSTREAM in record: ${line}"
+fi
+
+if echo "$line" | grep -q '"error_subcategory":"api_500"'; then
+    pass "metrics record includes error_subcategory on failure"
+else
+    fail "expected error_subcategory:api_500 in record: ${line}"
+fi
+
+if echo "$line" | grep -q '"error_transient":true'; then
+    pass "metrics record includes error_transient on failure"
+else
+    fail "expected error_transient:true in record: ${line}"
+fi
+
+# Record a success run — error fields should be absent
+_METRICS_FILE=""
+rm -f "${LOG_DIR}/metrics.jsonl"
+TASK="Add feature"
+VERDICT="APPROVED"
+AGENT_ERROR_CATEGORY=""
+AGENT_ERROR_SUBCATEGORY=""
+AGENT_ERROR_TRANSIENT=""
+
+record_run_metrics
+
+line=$(cat "${LOG_DIR}/metrics.jsonl")
+
+if echo "$line" | grep -q '"error_category"'; then
+    fail "success record should not include error_category: ${line}"
+else
+    pass "success record omits error fields"
+fi
+
+# Clean up error globals
+AGENT_ERROR_CATEGORY=""
+AGENT_ERROR_SUBCATEGORY=""
+AGENT_ERROR_TRANSIENT=""
+
+# =============================================================================
+# summarize_metrics — error breakdown (12.3)
+# =============================================================================
+
+echo
+echo "=== summarize_metrics — error breakdown ==="
+
+_METRICS_FILE=""
+rm -f "${LOG_DIR}/metrics.jsonl"
+
+# Write records with various error categories
+echo '{"timestamp":"2026-03-18T10:00:00Z","task":"Fix: api","task_type":"bug","milestone_mode":false,"total_turns":2,"total_time_s":15,"coder_turns":2,"reviewer_turns":0,"tester_turns":0,"scout_turns":0,"scout_est_coder":0,"scout_est_reviewer":0,"scout_est_tester":0,"adjusted_coder":0,"adjusted_reviewer":0,"adjusted_tester":0,"context_tokens":0,"verdict":"UPSTREAM/api_500","outcome":"UPSTREAM/api_500","error_category":"UPSTREAM","error_subcategory":"api_500","error_transient":true}' >> "${LOG_DIR}/metrics.jsonl"
+echo '{"timestamp":"2026-03-18T10:01:00Z","task":"Fix: oom","task_type":"bug","milestone_mode":false,"total_turns":0,"total_time_s":5,"coder_turns":0,"reviewer_turns":0,"tester_turns":0,"scout_turns":0,"scout_est_coder":0,"scout_est_reviewer":0,"scout_est_tester":0,"adjusted_coder":0,"adjusted_reviewer":0,"adjusted_tester":0,"context_tokens":0,"verdict":"ENVIRONMENT/oom","outcome":"ENVIRONMENT/oom","error_category":"ENVIRONMENT","error_subcategory":"oom","error_transient":true}' >> "${LOG_DIR}/metrics.jsonl"
+echo '{"timestamp":"2026-03-18T10:02:00Z","task":"Add auth","task_type":"feature","milestone_mode":false,"total_turns":50,"total_time_s":300,"coder_turns":40,"reviewer_turns":10,"tester_turns":0,"scout_turns":5,"scout_est_coder":30,"scout_est_reviewer":8,"scout_est_tester":0,"adjusted_coder":30,"adjusted_reviewer":8,"adjusted_tester":0,"context_tokens":5000,"verdict":"APPROVED","outcome":"success"}' >> "${LOG_DIR}/metrics.jsonl"
+echo '{"timestamp":"2026-03-18T10:03:00Z","task":"Milestone 1","task_type":"milestone","milestone_mode":true,"total_turns":0,"total_time_s":10,"coder_turns":0,"reviewer_turns":0,"tester_turns":0,"scout_turns":0,"scout_est_coder":0,"scout_est_reviewer":0,"scout_est_tester":0,"adjusted_coder":0,"adjusted_reviewer":0,"adjusted_tester":0,"context_tokens":0,"verdict":"null_run","outcome":"null_run","error_category":"AGENT_SCOPE","error_subcategory":"null_run","error_transient":false}' >> "${LOG_DIR}/metrics.jsonl"
+
+output=$(summarize_metrics 50)
+
+if echo "$output" | grep -q "Error breakdown:"; then
+    pass "summarize_metrics shows error breakdown section"
+else
+    fail "missing 'Error breakdown:' in output: ${output}"
+fi
+
+if echo "$output" | grep -q "UPSTREAM:.*1.*transient.*auto-retry"; then
+    pass "summarize_metrics shows UPSTREAM errors with auto-retry note"
+else
+    fail "missing UPSTREAM error line in output: ${output}"
+fi
+
+if echo "$output" | grep -q "ENVIRONMENT:.*1"; then
+    pass "summarize_metrics shows ENVIRONMENT errors"
+else
+    fail "missing ENVIRONMENT error line in output: ${output}"
+fi
+
+if echo "$output" | grep -q "AGENT_SCOPE:.*1.*permanent"; then
+    pass "summarize_metrics shows AGENT_SCOPE errors as permanent"
+else
+    fail "missing AGENT_SCOPE error line in output: ${output}"
+fi
+
+# No error records → no error breakdown section
+_METRICS_FILE=""
+rm -f "${LOG_DIR}/metrics.jsonl"
+echo '{"timestamp":"2026-03-18T10:00:00Z","task":"Add auth","task_type":"feature","milestone_mode":false,"total_turns":50,"total_time_s":300,"coder_turns":40,"reviewer_turns":10,"tester_turns":0,"scout_turns":5,"scout_est_coder":30,"scout_est_reviewer":8,"scout_est_tester":0,"adjusted_coder":30,"adjusted_reviewer":8,"adjusted_tester":0,"context_tokens":5000,"verdict":"APPROVED","outcome":"success"}' >> "${LOG_DIR}/metrics.jsonl"
+
+output=$(summarize_metrics 50)
+if echo "$output" | grep -q "Error breakdown:"; then
+    fail "summarize_metrics should not show error breakdown when no errors exist"
+else
+    pass "summarize_metrics omits error breakdown when no errors"
+fi
+
+# =============================================================================
 # Config defaults
 # =============================================================================
 

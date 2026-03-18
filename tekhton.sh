@@ -63,8 +63,14 @@ _tekhton_cleanup() {
 
         # --- Record metrics on crash (12.3) -----------------------------------
         # Ensure metrics are captured even on unexpected crashes.
+        # Use error classification for VERDICT when available — avoids labeling
+        # intentional state-save exits (upstream error, null-run) as "crashed".
         if command -v record_run_metrics &>/dev/null 2>&1; then
-            VERDICT="${VERDICT:-crashed}"
+            if [[ -z "${VERDICT:-}" ]] && [[ -n "${AGENT_ERROR_CATEGORY:-}" ]]; then
+                VERDICT="${AGENT_ERROR_CATEGORY}/${AGENT_ERROR_SUBCATEGORY:-unknown}"
+            else
+                VERDICT="${VERDICT:-crashed}"
+            fi
             record_run_metrics 2>/dev/null || true
         fi
 
