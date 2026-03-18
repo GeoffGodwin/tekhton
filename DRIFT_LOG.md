@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
 - [2026-03-18 | "Correct the next 2 items in the DRIFT_LOG.md file."] `lib/agent_monitor.sh:237` — `local _rb_total=...` inside a `{...}` compound group (not a function) is invalid bash; as noted above, this likely silently disables the ring buffer dump on every run. The comment accurately describes the design intent but the implementation has a latent correctness bug.

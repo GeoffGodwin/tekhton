@@ -81,8 +81,10 @@ AGENTSUMMARY
 
     # Add error details on failure
     if [[ "$_class" != "SUCCESS" ]] && [[ -n "$AGENT_ERROR_CATEGORY" ]]; then
-        local _recovery
-        _recovery=$(suggest_recovery "$AGENT_ERROR_CATEGORY" "$AGENT_ERROR_SUBCATEGORY")
+        local _recovery=""
+        if command -v suggest_recovery &>/dev/null; then
+            _recovery=$(suggest_recovery "$AGENT_ERROR_CATEGORY" "$AGENT_ERROR_SUBCATEGORY")
+        fi
         _summary_block="${_summary_block}
 Error:     ${AGENT_ERROR_MESSAGE}
 Recovery:  ${_recovery}"
