@@ -233,14 +233,16 @@ _invoke_and_monitor() {
             # inside a subshell where _rb[] and _rb_idx are local variables —
             # a function call would require passing the array, and bash doesn't
             # support passing arrays to functions by reference portably in bash 4.
+            # Plain assignments (not `local`) because `local` is invalid outside
+            # a function — and these are already subshell-scoped by the (...).
             {
-                local _rb_total=${#_rb[@]}
+                _rb_total=${#_rb[@]}
                 if [[ "$_rb_total" -gt 0 ]]; then
-                    local _rb_start=0
+                    _rb_start=0
                     if [[ "$_rb_idx" -ge "$_rb_size" ]]; then
                         _rb_start=$(( _rb_idx % _rb_size ))
                     fi
-                    local _j=0
+                    _j=0
                     while [[ "$_j" -lt "$_rb_total" ]]; do
                         echo "${_rb[$(( (_rb_start + _j) % _rb_size ))]}"
                         _j=$(( _j + 1 ))

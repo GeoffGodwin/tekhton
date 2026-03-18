@@ -238,7 +238,7 @@ fi
 if [ "${1:-}" = "--plan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
-    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh
+    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh, agent_helpers.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/plan_state.sh"
     source "${TEKHTON_HOME}/lib/plan_completeness.sh"
@@ -258,7 +258,7 @@ fi
 if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
-    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh
+    source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh, agent_helpers.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
