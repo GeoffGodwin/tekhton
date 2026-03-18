@@ -1,5 +1,5 @@
 ## Planned Tests
-- [x] `tests/test_milestone_archival.sh` — extend with mktemp fallback test when TEKHTON_SESSION_DIR is missing
+- [x] Spot-check verification of 8 "already resolved" claims from coder audit
 
 ## Test Run Results
 Passed: 57  Failed: 0
@@ -8,4 +8,4 @@ Passed: 57  Failed: 0
 None
 
 ## Files Modified
-- [x] `tests/test_milestone_archival.sh`
+- [x] (spot-check only — no new test files required)

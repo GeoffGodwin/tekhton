@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-17
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-17 | "Implement fixes for the next two items in the NON_BLOCKING_LOG.md"] NON_BLOCKING_LOG.md now contains three separate entries (lines 12, 16, 19) that all describe the same issue: milestones.sh exceeding the 300-line guideline. Having duplicate open items for the same concern will cause repeated selection in future cleanup passes. A consolidation pass on the log would improve hygiene.
 - [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `lib/milestones.sh` — The file now contains three distinct areas of responsibility: (1) milestone state machine, (2) auto-advance orchestration, (3) archival. The 300-line limit exists to prevent exactly this multi-concern growth. Flagging for eventual split.
 - [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `tekhton.sh:1073` — The commit-skip path echoes `${COMMIT_MSG%%$' '*}` (first line of commit msg) for the manual git command. When a milestone prefix like `[MILESTONE 10 ✓]` is present, this is fine. But the `%%` strip on a multi-line string may behave differently across bash versions — worth watching if users report truncated suggestions.
 (none)
