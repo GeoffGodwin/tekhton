@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-17
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
+- [2026-03-18 | "Continue Implementing Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split"] `lib/milestone_split.sh` and `lib/milestone_archival.sh` both begin with `#!/usr/bin/env bash` without `set -euo pipefail`. As sourced libraries they inherit it from `tekhton.sh`, which is the established project convention, but it diverges from CLAUDE.md Rule 2 ("All scripts use `set -euo pipefail`"). If these files are ever sourced in a context without that preamble (e.g., a test harness that forgets to set it), silent failures could result. The test file does set it; all existing library files appear to follow the same pattern, so this is a systemic observation rather than a new issue.
 - [2026-03-17 | "Implement fixes for the next two items in the NON_BLOCKING_LOG.md"] NON_BLOCKING_LOG.md now contains three separate entries (lines 12, 16, 19) that all describe the same issue: milestones.sh exceeding the 300-line guideline. Having duplicate open items for the same concern will cause repeated selection in future cleanup passes. A consolidation pass on the log would improve hygiene.
 - [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `lib/milestones.sh` — The file now contains three distinct areas of responsibility: (1) milestone state machine, (2) auto-advance orchestration, (3) archival. The 300-line limit exists to prevent exactly this multi-concern growth. Flagging for eventual split.
 - [2026-03-17 | "Implement Milestone 10: Milestone Commit Signatures And Completion Signaling"] `tekhton.sh:1073` — The commit-skip path echoes `${COMMIT_MSG%%$' '*}` (first line of commit msg) for the manual git command. When a milestone prefix like `[MILESTONE 10 ✓]` is present, this is fine. But the `%%` strip on a multi-line string may behave differently across bash versions — worth watching if users report truncated suggestions.
