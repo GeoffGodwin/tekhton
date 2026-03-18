@@ -126,7 +126,10 @@ split_milestone() {
     local turn_cap="${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS_CAP:-200}}"
     local scout_est="${SCOUT_REC_CODER_TURNS:-0}"
 
-    # Ensure _call_planning_batch is available
+    # Lazy-source plan.sh for _call_planning_batch. In the normal execution pipeline,
+    # plan.sh is NOT sourced (it's only loaded for --plan/--replan early-exit paths).
+    # We source it here on demand rather than eagerly in tekhton.sh to avoid loading
+    # planning functions into every pipeline run.
     if ! declare -f _call_planning_batch &>/dev/null; then
         if [[ -f "${TEKHTON_HOME}/lib/plan.sh" ]]; then
             # shellcheck source=lib/plan.sh
@@ -226,7 +229,10 @@ handle_null_run_split() {
         return 1
     fi
 
-    # Check for substantive partial work
+    # Check for substantive partial work.
+    # We use `git diff --quiet` (unstaged) and `git diff --cached --quiet` (staged)
+    # as the activation condition, then `git diff --stat HEAD` to measure scope.
+    # `git diff HEAD` captures both staged and unstaged changes correctly.
     local has_substantive_work=false
     local diff_stat=""
     local summary_lines=0

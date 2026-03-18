@@ -215,7 +215,7 @@ _replace_milestone_block() {
 
     awk -v num="$num" -v repfile="$rep_file" '
     BEGIN {
-        in_block = 0; heading_level = 0
+        in_block = 0; heading_level = 0; matched = 0
         safe_num = num
         gsub(/\./, "\\.", safe_num)
     }
@@ -223,6 +223,7 @@ _replace_milestone_block() {
         if (!in_block && match($0, /^#{1,5}/) && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[:.—-]") {
             heading_level = RLENGTH
             in_block = 1
+            matched = 1
             while ((getline line < repfile) > 0) {
                 print line
             }
@@ -244,11 +245,13 @@ _replace_milestone_block() {
 
         print
     }
+    END { exit (matched ? 0 : 1) }
     ' "$claude_md" > "$tmp_file"
+    local awk_rc=$?
 
     mv -f "$tmp_file" "$claude_md"
     rm -f "$rep_file"
-    return 0
+    return "$awk_rc"
 }
 
 # archive_all_completed_milestones CLAUDE_MD_PATH

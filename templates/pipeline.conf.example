@@ -282,6 +282,7 @@ CONTEXT_COMPILER_ENABLED=false
 # MILESTONE_SPLIT_MODEL="claude-opus-4-6"
 
 # Turn limit for the splitting agent (short — decomposition, not implementation)
+# Hard cap: 50 (values above 50 are clamped automatically)
 # MILESTONE_SPLIT_MAX_TURNS=15
 
 # Split when scout estimate exceeds cap by this percentage (default: 120 = 20% over)

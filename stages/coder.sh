@@ -328,6 +328,9 @@ ${nb_notes}"
                 # Split succeeded — update state and re-run from scout
                 local _first_sub="${_CURRENT_MILESTONE}.1"
                 local _first_title
+                # get_milestone_title may return empty if the splitting agent's heading
+                # format doesn't exactly match parse_milestones' regex. The task still
+                # proceeds correctly with an empty title — it's cosmetic only.
                 _first_title=$(get_milestone_title "$_first_sub" "CLAUDE.md" 2>/dev/null) || true
 
                 _CURRENT_MILESTONE="$_first_sub"
@@ -337,8 +340,11 @@ ${nb_notes}"
                 # Update milestone state
                 init_milestone_state "$_first_sub" "$(get_milestone_count "CLAUDE.md")"
 
-                # Re-run the entire coder stage with the narrower scope
-                warn "Auto-split complete — re-running coder stage for milestone ${_first_sub}..."
+                # Recursive call to run_stage_coder creates nested call frames up to
+                # MILESTONE_MAX_SPLIT_DEPTH deep. With default of 3, this is safe.
+                local _depth
+                _depth=$(get_split_depth "$_first_sub")
+                warn "Auto-split complete — re-running coder stage for milestone ${_first_sub} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
                 run_stage_coder
                 return
             fi
@@ -465,7 +471,9 @@ ${nb_notes}"
                     log "Task updated after auto-split: ${TASK}"
                     init_milestone_state "$_first_sub" "$(get_milestone_count "CLAUDE.md")"
 
-                    warn "Auto-split complete — re-running coder stage for milestone ${_first_sub}..."
+                    local _depth
+                    _depth=$(get_split_depth "$_first_sub")
+                    warn "Auto-split complete — re-running coder stage for milestone ${_first_sub} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
                     run_stage_coder
                     return
                 fi
