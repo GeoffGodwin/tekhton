@@ -142,11 +142,16 @@ split_milestone() {
         fi
     fi
 
-    # Set template variables for the prompt
-    export MILESTONE_DEFINITION="$milestone_def"
-    export SCOUT_ESTIMATE="$scout_est"
-    export TURN_CAP="$turn_cap"
-    export PRIOR_RUN_HISTORY="${prior_history:-No prior attempts.}"
+    # Set template variables for the prompt (shell scope — render_prompt reads
+    # via indirect expansion, no need to export to process environment)
+    # shellcheck disable=SC2034  # used by render_prompt() via ${!var_name} indirect expansion
+    MILESTONE_DEFINITION="$milestone_def"
+    # shellcheck disable=SC2034
+    SCOUT_ESTIMATE="$scout_est"
+    # shellcheck disable=SC2034
+    TURN_CAP="$turn_cap"
+    # shellcheck disable=SC2034
+    PRIOR_RUN_HISTORY="${prior_history:-No prior attempts.}"
 
     local split_prompt
     split_prompt=$(render_prompt "milestone_split")

@@ -577,13 +577,6 @@ _test_result=0
     MILESTONE_MODE=true
     _CURRENT_MILESTONE="5"
 
-    # Scout creates SCOUT_REPORT.md
-    run_agent() {
-        _track "run_agent:$1"
-        echo "## Scout Report" > SCOUT_REPORT.md
-        echo "Files: foo.sh" >> SCOUT_REPORT.md
-    }
-
     # check_milestone_size returns 1 (oversized) on first call, 0 on second
     _size_check_count=0
     check_milestone_size() {
@@ -760,6 +753,130 @@ EOF
     grep -q "init_milestone_state:9.1" "$CALL_LOG_FILE" || exit 11
 ) || _test_result=$?
 assert "Turn-limit minimal output: handle_null_run_split called" "$([ "$_test_result" -eq 0 ] && echo 0 || echo 1)"
+
+echo "=== coder stage integration — real check_milestone_size logic ==="
+
+# Test 4: Uses real check_milestone_size (not a stub) to verify the pre-flight
+# sizing gate fires based on actual threshold comparison logic.
+_test_result=0
+(
+    _define_coder_stubs
+
+    MILESTONE_MODE=true
+    _CURRENT_MILESTONE="6"
+
+    # Source the real milestone_split.sh to get the actual check_milestone_size
+    source "${TEKHTON_HOME}/lib/milestone_split.sh"
+
+    # Configure thresholds: cap=50, threshold_pct=120 → threshold=60
+    ADJUSTED_CODER_TURNS=50
+    MILESTONE_SPLIT_THRESHOLD_PCT=120
+    MILESTONE_SPLIT_ENABLED=true
+
+    # Make apply_scout_turn_limits set SCOUT_REC_CODER_TURNS above threshold (70 > 60)
+    apply_scout_turn_limits() {
+        SCOUT_REC_CODER_TURNS=70
+    }
+
+    # Force scout to run via DYNAMIC_TURNS_ENABLED (not via HUMAN_NOTE_COUNT,
+    # which enters the FEAT branch and requires TASK to match grep keywords)
+    DYNAMIC_TURNS_ENABLED=true
+    HUMAN_NOTE_COUNT=0
+
+    _agent_call_count=0
+    run_agent() {
+        _agent_call_count=$(( _agent_call_count + 1 ))
+        _track "run_agent:$1"
+        if [[ "$1" = "Scout" ]]; then
+            echo "## Scout Report" > SCOUT_REPORT.md
+            echo "Files: foo.sh" >> SCOUT_REPORT.md
+        else
+            # Coder call — create CODER_SUMMARY.md
+            cat > CODER_SUMMARY.md << 'INNEREOF'
+# Coder Summary
+## Status: COMPLETE
+## What Was Implemented
+- stuff
+- more stuff
+- even more
+- final
+INNEREOF
+        fi
+    }
+
+    # split_milestone still stubbed (it invokes an LLM) but check_milestone_size is real
+    split_milestone() {
+        _track "split_milestone:$1"
+        return 0
+    }
+
+    get_milestone_title() { echo "Sub Task"; }
+    get_milestone_count() { echo "3"; }
+    init_milestone_state() { _track "init_milestone_state:$1"; }
+
+    source "${TEKHTON_HOME}/stages/coder.sh"
+    run_stage_coder
+
+    # Verify that the real check_milestone_size triggered the split path
+    grep -q "split_milestone:6" "$CALL_LOG_FILE" || exit 10
+) || _test_result=$?
+assert "Real check_milestone_size: oversized estimate triggers split" "$([ "$_test_result" -eq 0 ] && echo 0 || echo 1)"
+
+# Test 5: Real check_milestone_size does NOT trigger split when under threshold
+_test_result=0
+(
+    _define_coder_stubs
+
+    MILESTONE_MODE=true
+    _CURRENT_MILESTONE="6"
+
+    # Source the real milestone_split.sh
+    source "${TEKHTON_HOME}/lib/milestone_split.sh"
+
+    # Configure thresholds: cap=50, threshold_pct=120 → threshold=60
+    ADJUSTED_CODER_TURNS=50
+    MILESTONE_SPLIT_THRESHOLD_PCT=120
+    MILESTONE_SPLIT_ENABLED=true
+
+    # Scout estimate UNDER threshold (40 < 60) — should NOT split
+    apply_scout_turn_limits() {
+        SCOUT_REC_CODER_TURNS=40
+    }
+
+    DYNAMIC_TURNS_ENABLED=true
+    HUMAN_NOTE_COUNT=0
+
+    run_agent() {
+        _track "run_agent:$1"
+        if [[ "$1" = "Scout" ]]; then
+            echo "## Scout Report" > SCOUT_REPORT.md
+        else
+            cat > CODER_SUMMARY.md << 'INNEREOF'
+# Coder Summary
+## Status: COMPLETE
+## What Was Implemented
+- stuff
+- more stuff
+- even more
+- final
+INNEREOF
+        fi
+    }
+
+    split_milestone() {
+        _track "split_milestone:$1"
+        return 0
+    }
+
+    source "${TEKHTON_HOME}/stages/coder.sh"
+    run_stage_coder
+
+    # Verify that split was NOT called (estimate was under threshold)
+    if grep -q "split_milestone" "$CALL_LOG_FILE" 2>/dev/null; then
+        exit 10  # split_milestone should not have been called
+    fi
+) || _test_result=$?
+assert "Real check_milestone_size: under-threshold estimate skips split" "$([ "$_test_result" -eq 0 ] && echo 0 || echo 1)"
 
 # ============================================================================
 # Summary

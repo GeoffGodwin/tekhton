@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-03-18 | "Continue Implementing Milestone 11: Pre-Flight Milestone Sizing And Null-Run Auto-Split"] `lib/milestone_split.sh:42` — `local threshold=$((...))` uses arithmetic expansion inside a `local` declaration. SC2155 applies technically; shellcheck may or may not flag depending on version. Low risk given constant arithmetic with defaults, but inconsistent with the defensive style the rest of the file uses.
