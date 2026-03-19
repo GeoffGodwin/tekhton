@@ -115,17 +115,90 @@ run_stage_tester() {
         elif [ "$REMAINING" -gt 0 ]; then
             warn "Tester completed partial run — ${REMAINING} planned test(s) not yet written."
 
-            local resume_tester_flag="--start-at tester"
-            [ "$MILESTONE_MODE" = true ] && resume_tester_flag="--milestone --start-at tester"
+            # --- Turn exhaustion continuation for tester (Milestone 14) ---
+            local _tester_continued=false
+            if [[ "${CONTINUATION_ENABLED:-true}" = "true" ]]; then
+                # Check if substantive test files were created
+                local _test_files_created=0
+                if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+                    _test_files_created=$(git diff --stat HEAD 2>/dev/null | grep -c '|' || echo "0")
+                    _test_files_created=$(echo "$_test_files_created" | tr -d '[:space:]')
+                fi
 
-            write_pipeline_state \
-                "tester" \
-                "partial_tests" \
-                "$resume_tester_flag" \
-                "${TASK}" \
-                "${REMAINING} test(s) remaining — TESTER_REPORT.md has the checklist"
+                if [[ "$_test_files_created" -ge 1 ]]; then
+                    local _tcont_attempt=0
+                    local _tcont_max="${MAX_CONTINUATION_ATTEMPTS:-3}"
+                    local _tcumulative_turns="${LAST_AGENT_TURNS:-0}"
 
-            warn "State saved — re-run with no arguments to resume."
+                    while [[ "$_tcont_attempt" -lt "$_tcont_max" ]] && [[ "$REMAINING" -gt 0 ]]; do
+                        _tcont_attempt=$((_tcont_attempt + 1))
+                        log "Tester hit turn limit with ${REMAINING} tests remaining (attempt ${_tcont_attempt}/${_tcont_max}). Continuing..."
+
+                        local _tnext_budget="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
+                        export CONTINUATION_CONTEXT
+                        CONTINUATION_CONTEXT=$(build_continuation_context "tester" "$_tcont_attempt" "$_tcont_max" "$_tcumulative_turns" "$_tnext_budget")
+
+                        TESTER_PROMPT=$(render_prompt "tester_resume")
+
+                        run_agent \
+                            "Tester (continuation ${_tcont_attempt})" \
+                            "$CLAUDE_TESTER_MODEL" \
+                            "$_tnext_budget" \
+                            "$TESTER_PROMPT" \
+                            "$LOG_FILE" \
+                            "$AGENT_TOOLS_TESTER"
+
+                        _tcumulative_turns=$((_tcumulative_turns + ${LAST_AGENT_TURNS:-0}))
+
+                        # Check for API errors
+                        if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+                            warn "Tester continuation hit API error. Saving state."
+                            export CONTINUATION_ATTEMPTS="${_tcont_attempt}"
+                            export CONTINUATION_CONTEXT=""
+                            write_pipeline_state \
+                                "tester" \
+                                "upstream_error" \
+                                "$resume_flag" \
+                                "${TASK}" \
+                                "API error during tester continuation ${_tcont_attempt}."
+                            export SKIP_FINAL_CHECKS=true
+                            return
+                        fi
+
+                        # Re-check remaining tests
+                        if [[ -f "TESTER_REPORT.md" ]]; then
+                            REMAINING=$(grep -c "^- \[ \]" TESTER_REPORT.md || true)
+                            REMAINING=$(echo "$REMAINING" | tr -d '[:space:]')
+                        fi
+                    done
+
+                    export CONTINUATION_ATTEMPTS="${_tcont_attempt}"
+                    export CONTINUATION_CONTEXT=""
+
+                    if [[ "$REMAINING" -eq 0 ]]; then
+                        _tester_continued=true
+                        print_run_summary
+                        success "Tester completed after ${_tcont_attempt} continuation(s) — all planned tests written."
+                        clear_pipeline_state
+                    else
+                        warn "Tester still has ${REMAINING} test(s) remaining after ${_tcont_attempt} continuation(s)."
+                    fi
+                fi
+            fi
+
+            if [[ "$_tester_continued" = false ]]; then
+                local resume_tester_flag="--start-at tester"
+                [ "$MILESTONE_MODE" = true ] && resume_tester_flag="--milestone --start-at tester"
+
+                write_pipeline_state \
+                    "tester" \
+                    "partial_tests" \
+                    "$resume_tester_flag" \
+                    "${TASK}" \
+                    "${REMAINING} test(s) remaining — TESTER_REPORT.md has the checklist"
+
+                warn "State saved — re-run with no arguments to resume."
+            fi
         else
             print_run_summary
             success "Tester agent finished — all planned tests written and passing."

@@ -4,7 +4,8 @@
 #
 # Extracted from agent_monitor.sh. Provides file-change detection and monitoring
 # state reset. Sourced by agent.sh after agent_monitor.sh (depends on
-# _kill_agent_windows and _TEKHTON_AGENT_PID from agent_monitor.sh).
+# _kill_agent_windows from agent_monitor_platform.sh and _TEKHTON_AGENT_PID
+# from agent_monitor.sh).
 # =============================================================================
 set -euo pipefail
 

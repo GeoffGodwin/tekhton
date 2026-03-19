@@ -97,6 +97,9 @@ record_run_metrics() {
     # Retry count (13.2.2)
     local retry_count="${LAST_AGENT_RETRY_COUNT:-0}"
 
+    # Continuation attempts (14)
+    local continuation_attempts="${CONTINUATION_ATTEMPTS:-0}"
+
     # Sanitize all numeric fields — strip any non-numeric content that may leak
     # from log() output captured via $() subshells
     total_turns=$(echo "$total_turns" | grep -oE '[0-9]+' | tail -1); total_turns="${total_turns:-0}"
@@ -113,6 +116,7 @@ record_run_metrics() {
     adjusted_tester=$(echo "$adjusted_tester" | grep -oE '[0-9]+' | tail -1); adjusted_tester="${adjusted_tester:-0}"
     context_tokens=$(echo "$context_tokens" | grep -oE '[0-9]+' | tail -1); context_tokens="${context_tokens:-0}"
     retry_count=$(echo "$retry_count" | grep -oE '[0-9]+' | tail -1); retry_count="${retry_count:-0}"
+    continuation_attempts=$(echo "$continuation_attempts" | grep -oE '[0-9]+' | tail -1); continuation_attempts="${continuation_attempts:-0}"
 
     # Outcome
     local outcome="unknown"
@@ -133,7 +137,7 @@ record_run_metrics() {
 
     # Build JSONL record (single line, no jq dependency)
     local record
-    record=$(printf '{"timestamp":"%s","task":"%s","task_type":"%s","milestone_mode":%s,"total_turns":%d,"total_time_s":%d,"coder_turns":%d,"reviewer_turns":%d,"tester_turns":%d,"scout_turns":%d,"scout_est_coder":%d,"scout_est_reviewer":%d,"scout_est_tester":%d,"adjusted_coder":%d,"adjusted_reviewer":%d,"adjusted_tester":%d,"context_tokens":%d,"retry_count":%d,"verdict":"%s","outcome":"%s"' \
+    record=$(printf '{"timestamp":"%s","task":"%s","task_type":"%s","milestone_mode":%s,"total_turns":%d,"total_time_s":%d,"coder_turns":%d,"reviewer_turns":%d,"tester_turns":%d,"scout_turns":%d,"scout_est_coder":%d,"scout_est_reviewer":%d,"scout_est_tester":%d,"adjusted_coder":%d,"adjusted_reviewer":%d,"adjusted_tester":%d,"context_tokens":%d,"retry_count":%d,"continuation_attempts":%d,"verdict":"%s","outcome":"%s"' \
         "$timestamp" \
         "$safe_task" \
         "$task_type" \
@@ -152,6 +156,7 @@ record_run_metrics() {
         "$adjusted_tester" \
         "$context_tokens" \
         "$retry_count" \
+        "$continuation_attempts" \
         "$verdict" \
         "$outcome")
 

@@ -340,6 +340,18 @@ CONTEXT_COMPILER_ENABLED=false
 # SPECIALIST_CUSTOM_MYCHECK_MODEL="claude-sonnet-4-6"
 # SPECIALIST_CUSTOM_MYCHECK_MAX_TURNS=8
 
+# --- Turn exhaustion continuation (auto-continue on turn limit) ---------------
+# When an agent hits its turn limit but made substantive progress (modified files,
+# meaningful summary), the pipeline automatically re-invokes it with fresh turns
+# and prior-progress context. Eliminates the most common human-in-the-loop scenario.
+
+# Master toggle for turn exhaustion continuation (default: true)
+# CONTINUATION_ENABLED=true
+
+# Maximum continuation attempts per stage before escalating to split or exit
+# (default: 3, hard cap: 10)
+# MAX_CONTINUATION_ATTEMPTS=3
+
 # --- Transient error retry ---------------------------------------------------
 # When an agent call fails due to a transient error (API 500, rate limit, OOM),
 # the pipeline automatically retries with exponential backoff before giving up.

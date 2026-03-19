@@ -1,0 +1,285 @@
+#!/usr/bin/env bash
+# =============================================================================
+# test_continuation_context.sh — Tests for build_continuation_context()
+#
+# Tests:
+#   1. Unknown stage returns empty string
+#   2. Coder stage: output contains attempt/max/turns header
+#   3. Coder stage: includes prior CODER_SUMMARY.md content
+#   4. Coder stage: includes coder-specific instructions
+#   5. Tester stage: includes TESTER_REPORT.md content
+#   6. Tester stage: includes tester-specific instructions
+#   7. No summary file present: summary section is empty
+#   8. Context includes "do NOT redo completed work" instruction
+# =============================================================================
+set -euo pipefail
+
+TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMPDIR_TEST=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_TEST"' EXIT
+
+# Change to the temp directory so relative file reads (CODER_SUMMARY.md etc.) work
+cd "$TMPDIR_TEST"
+
+# agent_helpers.sh expects these globals
+LAST_AGENT_NULL_RUN=false
+AGENT_ERROR_CATEGORY=""
+AGENT_ERROR_SUBCATEGORY=""
+AGENT_ERROR_TRANSIENT=""
+AGENT_ERROR_MESSAGE=""
+
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/common.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/agent_helpers.sh"
+
+PASS=0
+FAIL=0
+
+pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
+fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
+
+# =============================================================================
+# Test 1: Unknown stage returns empty string
+# =============================================================================
+echo "=== Test 1: Unknown stage returns empty ==="
+
+result=$(build_continuation_context "invalid_stage" "1" "3" "50" "30")
+
+if [[ -z "$result" ]]; then
+    pass "1.1: Unknown stage returns empty string"
+else
+    fail "1.1: Unknown stage should return empty string, got: '$result'"
+fi
+
+# =============================================================================
+# Test 2: Coder stage output contains attempt/max/turns header
+# =============================================================================
+echo "=== Test 2: Coder stage header ==="
+
+result=$(build_continuation_context "coder" "2" "3" "75" "50")
+
+if echo "$result" | grep -q "Continuation Context (attempt 2/3)"; then
+    pass "2.1: Header contains attempt 2/3"
+else
+    fail "2.1: Missing 'Continuation Context (attempt 2/3)'"
+fi
+
+if echo "$result" | grep -q "75 turns total"; then
+    pass "2.2: Cumulative turns (75) in header"
+else
+    fail "2.2: Missing cumulative turns '75 turns total'"
+fi
+
+if echo "$result" | grep -q "50 turns"; then
+    pass "2.3: Next budget (50) in header"
+else
+    fail "2.3: Missing next budget '50 turns'"
+fi
+
+if echo "$result" | grep -q "Coder run that hit the turn limit"; then
+    pass "2.4: Mentions Coder and turn limit"
+else
+    fail "2.4: Should mention 'Coder run that hit the turn limit'"
+fi
+
+# =============================================================================
+# Test 3: Coder stage includes prior CODER_SUMMARY.md content
+# =============================================================================
+echo "=== Test 3: Coder stage includes summary file content ==="
+
+cat > CODER_SUMMARY.md << 'EOF'
+## Status: IN PROGRESS
+
+## What Was Implemented
+- Implemented feature A
+- Implemented feature B
+
+## Remaining
+- Feature C still needs work
+EOF
+
+result=$(build_continuation_context "coder" "1" "3" "40" "50")
+
+if echo "$result" | grep -q "Implemented feature A"; then
+    pass "3.1: CODER_SUMMARY.md content included"
+else
+    fail "3.1: CODER_SUMMARY.md content should be included"
+fi
+
+if echo "$result" | grep -q "Feature C still needs work"; then
+    pass "3.2: Remaining items from summary included"
+else
+    fail "3.2: Remaining items should be included"
+fi
+
+rm -f CODER_SUMMARY.md
+
+# =============================================================================
+# Test 4: Coder stage includes coder-specific instructions
+# =============================================================================
+echo "=== Test 4: Coder stage has coder-specific instructions ==="
+
+result=$(build_continuation_context "coder" "1" "3" "50" "50")
+
+if echo "$result" | grep -q "Read CODER_SUMMARY.md first"; then
+    pass "4.1: Coder instruction to read CODER_SUMMARY.md"
+else
+    fail "4.1: Should instruct to read CODER_SUMMARY.md"
+fi
+
+if echo "$result" | grep -q "REMAINING items"; then
+    pass "4.2: Coder instruction about remaining items"
+else
+    fail "4.2: Should instruct to continue REMAINING items"
+fi
+
+if echo "$result" | grep -q "Update CODER_SUMMARY.md"; then
+    pass "4.3: Coder instruction to update CODER_SUMMARY.md"
+else
+    fail "4.3: Should instruct to update CODER_SUMMARY.md"
+fi
+
+if echo "$result" | grep -q "Status to COMPLETE"; then
+    pass "4.4: Coder instruction about setting Status to COMPLETE"
+else
+    fail "4.4: Should instruct to set Status to COMPLETE"
+fi
+
+# =============================================================================
+# Test 5: Tester stage includes TESTER_REPORT.md content
+# =============================================================================
+echo "=== Test 5: Tester stage includes report file content ==="
+
+cat > TESTER_REPORT.md << 'EOF'
+## Planned Tests
+- [x] `tests/test_foo.sh` — test foo
+- [ ] `tests/test_bar.sh` — test bar still needed
+
+## Test Run Results
+Passed: 1  Failed: 0
+EOF
+
+result=$(build_continuation_context "tester" "1" "3" "30" "30")
+
+if echo "$result" | grep -q "test_bar.sh"; then
+    pass "5.1: TESTER_REPORT.md content included"
+else
+    fail "5.1: TESTER_REPORT.md content should be included"
+fi
+
+if echo "$result" | grep -q "test_foo.sh"; then
+    pass "5.2: Already-completed test shown in context"
+else
+    fail "5.2: Already-completed test should be visible in context"
+fi
+
+rm -f TESTER_REPORT.md
+
+# =============================================================================
+# Test 6: Tester stage includes tester-specific instructions
+# =============================================================================
+echo "=== Test 6: Tester stage has tester-specific instructions ==="
+
+result=$(build_continuation_context "tester" "1" "3" "30" "30")
+
+if echo "$result" | grep -q "Read TESTER_REPORT.md first"; then
+    pass "6.1: Tester instruction to read TESTER_REPORT.md"
+else
+    fail "6.1: Should instruct to read TESTER_REPORT.md"
+fi
+
+if echo "$result" | grep -q "remaining unchecked test items"; then
+    pass "6.2: Tester instruction about unchecked items"
+else
+    fail "6.2: Should mention 'remaining unchecked test items'"
+fi
+
+if echo "$result" | grep -q "Update TESTER_REPORT.md"; then
+    pass "6.3: Tester instruction to update TESTER_REPORT.md"
+else
+    fail "6.3: Should instruct to update TESTER_REPORT.md"
+fi
+
+# =============================================================================
+# Test 7: No summary file present — section has empty summary
+# =============================================================================
+echo "=== Test 7: No summary file present ==="
+
+rm -f CODER_SUMMARY.md
+
+result=$(build_continuation_context "coder" "1" "3" "50" "50")
+
+# Should still produce output with the header and instructions
+if echo "$result" | grep -q "Continuation Context"; then
+    pass "7.1: Context block still generated when no summary file"
+else
+    fail "7.1: Context block should still be generated without summary file"
+fi
+
+if echo "$result" | grep -q "Prior Coder Summary"; then
+    pass "7.2: Prior summary section present (empty content)"
+else
+    fail "7.2: Prior summary section header should always be present"
+fi
+
+# =============================================================================
+# Test 8: Context contains "do NOT redo completed work"
+# =============================================================================
+echo "=== Test 8: Context warns against redoing work ==="
+
+result=$(build_continuation_context "coder" "1" "3" "50" "50")
+
+if echo "$result" | grep -q "Do NOT redo completed work"; then
+    pass "8.1: Coder context warns against redoing work"
+else
+    fail "8.1: Should warn 'Do NOT redo completed work'"
+fi
+
+result=$(build_continuation_context "tester" "1" "3" "30" "30")
+
+# The tester context should also mention "read" before continuing
+if echo "$result" | grep -q "Read TESTER_REPORT.md first"; then
+    pass "8.2: Tester context starts with read-first instruction"
+else
+    fail "8.2: Tester context should start with read-first instruction"
+fi
+
+# =============================================================================
+# Test 9: Different attempt numbers render correctly
+# =============================================================================
+echo "=== Test 9: Attempt numbers render correctly ==="
+
+result1=$(build_continuation_context "coder" "1" "3" "50" "50")
+result2=$(build_continuation_context "coder" "3" "3" "150" "50")
+
+if echo "$result1" | grep -q "attempt 1/3"; then
+    pass "9.1: Attempt 1/3 renders correctly"
+else
+    fail "9.1: Should show 'attempt 1/3'"
+fi
+
+if echo "$result2" | grep -q "attempt 3/3"; then
+    pass "9.2: Attempt 3/3 renders correctly"
+else
+    fail "9.2: Should show 'attempt 3/3'"
+fi
+
+if echo "$result2" | grep -q "150 turns total"; then
+    pass "9.3: Cumulative turns (150) renders correctly"
+else
+    fail "9.3: Should show '150 turns total'"
+fi
+
+# =============================================================================
+# Summary
+# =============================================================================
+echo ""
+echo "────────────────────────────────────────"
+echo "Test Results: $PASS passed, $FAIL failed"
+
+if [ $FAIL -gt 0 ]; then
+    exit 1
+fi
+
+echo "PASS"

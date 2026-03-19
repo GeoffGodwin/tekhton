@@ -463,59 +463,150 @@ ${nb_notes}"
     if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
         warn "Coder summary shows IN PROGRESS — coder hit turn limit before finishing."
 
-        # Determine if enough was done to proceed to review
-        IMPLEMENTED_LINES=$(grep -c "^- " CODER_SUMMARY.md 2>/dev/null || echo "0")
-        IMPLEMENTED_LINES=$(echo "$IMPLEMENTED_LINES" | tr -d '[:space:]')
+        # --- Turn exhaustion continuation loop (Milestone 14) ---
+        if [[ "${CONTINUATION_ENABLED:-true}" = "true" ]] && is_substantive_work; then
+            local _cont_attempt=0
+            local _cont_max="${MAX_CONTINUATION_ATTEMPTS:-3}"
+            local _cumulative_turns="${ACTUAL_CODER_TURNS:-0}"
 
-        # Capture git diff context for resume
-        GIT_DIFF_STAT=""
-        if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-            GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20)
+            while [[ "$_cont_attempt" -lt "$_cont_max" ]]; do
+                _cont_attempt=$((_cont_attempt + 1))
+                log "Coder hit turn limit with progress (attempt ${_cont_attempt}/${_cont_max}). Continuing..."
+
+                # Build continuation context and inject into prompt
+                local _next_budget="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+                export CONTINUATION_CONTEXT
+                CONTINUATION_CONTEXT=$(build_continuation_context "coder" "$_cont_attempt" "$_cont_max" "$_cumulative_turns" "$_next_budget")
+
+                CODER_PROMPT=$(render_prompt "coder")
+
+                run_agent \
+                    "Coder (continuation ${_cont_attempt})" \
+                    "$CLAUDE_CODER_MODEL" \
+                    "$_next_budget" \
+                    "$CODER_PROMPT" \
+                    "$LOG_FILE" \
+                    "$AGENT_TOOLS_CODER"
+                print_run_summary
+
+                _cumulative_turns=$((_cumulative_turns + ${LAST_AGENT_TURNS:-0}))
+                export ACTUAL_CODER_TURNS="$_cumulative_turns"
+
+                # Check for UPSTREAM errors in continuation
+                if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+                    error "Continuation coder hit an API error: ${AGENT_ERROR_MESSAGE}"
+                    write_pipeline_state \
+                        "coder" \
+                        "upstream_error" \
+                        "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                        "$TASK" \
+                        "API error during continuation attempt ${_cont_attempt}: ${AGENT_ERROR_MESSAGE}."
+                    error "State saved. Re-run the same command."
+                    exit 1
+                fi
+
+                # Check if continuation completed
+                if [[ ! -f "CODER_SUMMARY.md" ]]; then
+                    warn "Continuation ${_cont_attempt} did not produce CODER_SUMMARY.md."
+                    break
+                fi
+
+                CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+                if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
+                    success "Coder completed after ${_cont_attempt} continuation(s) (${_cumulative_turns} total turns)."
+                    # Export for metrics
+                    export CONTINUATION_ATTEMPTS="$_cont_attempt"
+                    # Clear continuation context so it doesn't leak into downstream prompts
+                    export CONTINUATION_CONTEXT=""
+                    break 2  # Break out of both continuation while and the outer if
+                fi
+
+                # Check if continuation made substantive progress worth continuing further
+                if ! is_substantive_work; then
+                    warn "Continuation ${_cont_attempt} did not produce substantive additional work."
+                    break
+                fi
+            done
+
+            # Export continuation attempts for metrics regardless of outcome
+            export CONTINUATION_ATTEMPTS="${_cont_attempt}"
+            # Clear continuation context
+            export CONTINUATION_CONTEXT=""
+
+            # Re-check status after continuation loop
+            CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+            if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
+                # Continuation succeeded — fall through to completion gate
+                :
+            elif [[ "$_cont_attempt" -ge "$_cont_max" ]]; then
+                warn "Coder exhausted all ${_cont_max} continuation attempts."
+                # Escalate: milestone mode -> try auto-split, otherwise save state
+                if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                    if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        local _depth
+                        _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                        warn "Auto-split after continuation exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                        run_stage_coder
+                        return
+                    fi
+                fi
+                # Fall through to save-state-and-exit below
+            fi
         fi
 
-        if [ "$IMPLEMENTED_LINES" -gt 3 ]; then
-            RESUME_FLAG="--milestone --start-at coder"
-            RESUME_NOTE="Coder hit turn limit mid-implementation (${IMPLEMENTED_LINES} summary lines). Git diff shows partial work — coder should CONTINUE, not restart."
-        else
-            # Minimal output with turn limit exhausted — scope failure candidate
-            # Try auto-split in milestone mode before falling back to save-and-exit
-            if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
-                if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+        # If we reach here and status is still IN PROGRESS, save state and exit
+        CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+        if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
+            IMPLEMENTED_LINES=$(grep -c "^- " CODER_SUMMARY.md 2>/dev/null || echo "0")
+            IMPLEMENTED_LINES=$(echo "$IMPLEMENTED_LINES" | tr -d '[:space:]')
 
-                    local _depth
-                    _depth=$(get_split_depth "$_CURRENT_MILESTONE")
-                    warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
-                    run_stage_coder
-                    return
-                fi
+            GIT_DIFF_STAT=""
+            if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+                GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20)
             fi
 
-            RESUME_FLAG="--milestone"
-            RESUME_NOTE="Coder hit turn limit with minimal summary output — retry from scratch recommended. Consider either a higher cycle limit or a more specific task description. If the coder struggled to get started, try adding more implementation guidance to the task or breaking it into smaller pieces."
-        fi
+            if [[ "$IMPLEMENTED_LINES" -gt 3 ]]; then
+                RESUME_FLAG="--milestone --start-at coder"
+                RESUME_NOTE="Coder hit turn limit mid-implementation (${IMPLEMENTED_LINES} summary lines). Git diff shows partial work — coder should CONTINUE, not restart."
+            else
+                # Minimal output — try auto-split in milestone mode
+                if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                    if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        local _depth
+                        _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                        warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                        run_stage_coder
+                        return
+                    fi
+                fi
 
-        # Write state with git diff context so resume knows exactly where coder left off
-        local _state_notes="${RESUME_NOTE}"
-        if [ -n "$GIT_DIFF_STAT" ]; then
-            _state_notes="${_state_notes}
+                RESUME_FLAG="--milestone"
+                RESUME_NOTE="Coder hit turn limit with minimal summary output — retry from scratch recommended."
+            fi
+
+            local _state_notes="${RESUME_NOTE}"
+            if [[ -n "$GIT_DIFF_STAT" ]]; then
+                _state_notes="${_state_notes}
 
 ## Partial Git Changes (files touched before turn limit)
 \`\`\`
 ${GIT_DIFF_STAT}
 \`\`\`"
+            fi
+
+            write_pipeline_state \
+                "coder" \
+                "turn_limit" \
+                "$RESUME_FLAG" \
+                "$TASK" \
+                "$_state_notes"
+
+            warn "Check the log: ${LOG_FILE}"
+            warn "State saved — re-run with no arguments to resume."
+            exit 1
         fi
-
-        write_pipeline_state \
-            "coder" \
-            "turn_limit" \
-            "$RESUME_FLAG" \
-            "$TASK" \
-            "$_state_notes"
-
-        warn "Check the log: ${LOG_FILE}"
-        warn "State saved — re-run with no arguments to resume."
-        exit 1
     fi
 
     # --- Completion gate -----------------------------------------------------

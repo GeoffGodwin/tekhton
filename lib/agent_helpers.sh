@@ -144,3 +144,134 @@ check_agent_output() {
 
     return 0
 }
+
+# =============================================================================
+# build_continuation_context — Assemble context for a turn-exhaustion continuation
+#
+# Reads the prior summary file and git diff stat, then builds a prompt context
+# block that tells the continuation agent what was already done and what remains.
+#
+# Arguments:
+#   $1 — stage name ("coder" or "tester")
+#   $2 — attempt number (1-based)
+#   $3 — max attempts
+#   $4 — cumulative turns used so far (across all continuations)
+#   $5 — max turns for the upcoming continuation
+#
+# Outputs the context string to stdout.
+# =============================================================================
+
+build_continuation_context() {
+    local stage="$1"
+    local attempt_num="$2"
+    local max_attempts="$3"
+    local cumulative_turns="$4"
+    local next_turn_budget="$5"
+
+    local summary_file=""
+    local stage_label=""
+    case "$stage" in
+        coder)
+            summary_file="CODER_SUMMARY.md"
+            stage_label="Coder"
+            ;;
+        tester)
+            summary_file="TESTER_REPORT.md"
+            stage_label="Tester"
+            ;;
+        *)
+            echo ""
+            return
+            ;;
+    esac
+
+    local prior_summary=""
+    if [[ -f "$summary_file" ]]; then
+        prior_summary=$(cat "$summary_file")
+    fi
+
+    local git_diff_stat=""
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+        git_diff_stat=$(git diff --stat HEAD 2>/dev/null | tail -30)
+    fi
+
+    local context=""
+    context="## Continuation Context (attempt ${attempt_num}/${max_attempts})
+You are continuing from a previous ${stage_label} run that hit the turn limit.
+Previous attempts used ${cumulative_turns} turns total. You have ${next_turn_budget} turns.
+Focus on completing the remaining items efficiently.
+
+### Prior ${stage_label} Summary
+Read the modified files to understand current state. Do NOT redo completed work.
+
+\`\`\`
+${prior_summary}
+\`\`\`
+"
+
+    if [[ -n "$git_diff_stat" ]]; then
+        context="${context}
+### Files Modified So Far
+\`\`\`
+${git_diff_stat}
+\`\`\`
+"
+    fi
+
+    if [[ "$stage" = "coder" ]]; then
+        context="${context}
+### Instructions
+1. Read CODER_SUMMARY.md first to see what was already implemented
+2. Read the modified files listed above to understand current state
+3. Continue implementing only the REMAINING items
+4. Update CODER_SUMMARY.md with your additional progress
+5. Set Status to COMPLETE when all work is done, or IN PROGRESS if more remains"
+    elif [[ "$stage" = "tester" ]]; then
+        context="${context}
+### Instructions
+1. Read TESTER_REPORT.md first to see which tests are already written
+2. Continue writing the remaining unchecked test items
+3. Update TESTER_REPORT.md as you complete each test
+4. Run the test suite to verify all tests pass"
+    fi
+
+    echo "$context"
+}
+
+# =============================================================================
+# is_substantive_work — Check if agent did meaningful work worth continuing
+#
+# Returns 0 (true) if substantive work was detected, 1 (false) otherwise.
+# Heuristic: (files_modified >= 1) AND (summary_lines >= 20 OR git_diff_lines >= 50)
+# =============================================================================
+
+is_substantive_work() {
+    local files_modified=0
+    local summary_lines=0
+    local diff_lines=0
+
+    # Count modified files
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+        files_modified=$(git diff --stat HEAD 2>/dev/null | grep -c '|' || echo "0")
+        files_modified=$(echo "$files_modified" | tr -d '[:space:]')
+    fi
+
+    if [[ "$files_modified" -lt 1 ]]; then
+        return 1
+    fi
+
+    # Check summary file lines
+    if [[ -f "CODER_SUMMARY.md" ]]; then
+        summary_lines=$(wc -l < "CODER_SUMMARY.md" 2>/dev/null | tr -d '[:space:]')
+    fi
+
+    # Check git diff size
+    diff_lines=$(git diff HEAD 2>/dev/null | wc -l | tr -d '[:space:]')
+    diff_lines="${diff_lines:-0}"
+
+    if [[ "$summary_lines" -ge 20 ]] || [[ "$diff_lines" -ge 50 ]]; then
+        return 0
+    fi
+
+    return 1
+}

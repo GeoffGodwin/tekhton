@@ -11,6 +11,10 @@ contradict this directive.
 ## Architecture Map (use to find test directories and source files)
 {{ARCHITECTURE_CONTENT}}
 
+{{IF:CONTINUATION_CONTEXT}}
+{{CONTINUATION_CONTEXT}}
+{{ENDIF:CONTINUATION_CONTEXT}}
+
 ## Context
 Task implemented: {{TASK}}
 

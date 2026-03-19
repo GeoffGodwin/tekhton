@@ -7,6 +7,10 @@
 # Expects: log(), success(), warn(), error() from common.sh
 # =============================================================================
 
+# Source platform detection (Windows/WSL interop, timeout flags, _kill_agent_windows)
+# shellcheck source=lib/agent_monitor_platform.sh
+source "${TEKHTON_HOME}/lib/agent_monitor_platform.sh"
+
 # Source monitoring infrastructure (FIFO loop, activity detection, process mgmt)
 # shellcheck source=lib/agent_monitor.sh
 source "${TEKHTON_HOME}/lib/agent_monitor.sh"

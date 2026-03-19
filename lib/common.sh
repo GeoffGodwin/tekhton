@@ -62,7 +62,7 @@ _print_box_line() {
             echo "${_bv}  ${_content}  ${_bv}"
     else
         printf '%s%-*s%s\n' "$_bv" "$_bw" "" "$_bv" 2>/dev/null || \
-            echo "${_bv}                                                            ${_bv}"
+            echo "${_bv}                                                            ${_bv}"  # ~60 spaces — assumes default _BOX_W=60
     fi
 }
 

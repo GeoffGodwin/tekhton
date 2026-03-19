@@ -113,6 +113,10 @@ set -euo pipefail
 : "${CLEANUP_MAX_TURNS:=15}"
 : "${CLEANUP_TRIGGER_THRESHOLD:=5}"
 
+# --- Turn exhaustion continuation defaults ---
+: "${CONTINUATION_ENABLED:=true}"
+: "${MAX_CONTINUATION_ATTEMPTS:=3}"
+
 # --- Transient error retry defaults ---
 : "${TRANSIENT_RETRY_ENABLED:=true}"
 : "${MAX_TRANSIENT_RETRIES:=3}"
@@ -173,6 +177,7 @@ _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
 _clamp_config_value METRICS_MIN_RUNS 100
+_clamp_config_value MAX_CONTINUATION_ATTEMPTS 10
 _clamp_config_value MAX_TRANSIENT_RETRIES 10
 _clamp_config_value TRANSIENT_RETRY_BASE_DELAY 300
 _clamp_config_value TRANSIENT_RETRY_MAX_DELAY 600

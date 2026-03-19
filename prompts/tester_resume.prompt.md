@@ -13,6 +13,10 @@ checkbox format, or the Bugs Found structure. Specifically:
   Do NOT list fixed bugs, use multi-line entries, bold, or sub-headings.
 - Only report bugs you FOUND in implementation code. Never fix implementation code.
 
+{{IF:CONTINUATION_CONTEXT}}
+{{CONTINUATION_CONTEXT}}
+{{ENDIF:CONTINUATION_CONTEXT}}
+
 ## Your Job
 1. Read `TESTER_REPORT.md` — find every line starting with `- [ ]`. Those are your remaining work items.
 2. For each unchecked item:

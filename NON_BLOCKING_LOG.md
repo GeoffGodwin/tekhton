@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-19 | "Implement Milestone 14: Turn Exhaustion Continuation Loop"] `ARCHITECTURE.md` line 83: `lib/agent.sh` description still reads "Sources `agent_monitor.sh` and `agent_helpers.sh`" — `agent_monitor_platform.sh` is not listed. The new file has its own correct entry on line 84, so the gap is minor, but the agent.sh blurb is mildly stale.
 - [ ] [2026-03-19 | "Implement Milestone 13.2.1: "] `metrics.sh` is 477 lines — well over the 300-line ceiling. This is a pre-existing issue from prior milestones; this milestone added ~25 lines. The file should be split (e.g., extract `calibrate_turn_estimate()` + helpers into `lib/metrics_calibration.sh`) in a future cleanup pass.
 - [ ] [2026-03-19 | "Implement Milestone 13.2.1: "] `_pct()` is defined as a nested function inside `summarize_metrics()`. Bash does not scope inner functions — `_pct` becomes a global after first call. Not a bug here (it's only called within `summarize_metrics`), but it pollutes the global namespace. Consider inlining the arithmetic or hoisting it to a top-level helper.
 - [ ] [2026-03-18 | "Implement Milestone 13.2.1: Core Retry Envelope in run_agent()"] CODER_SUMMARY.md states "No files modified" but git status shows `M lib/agent_helpers.sh` and `?? lib/agent_retry.sh`. The summary is factually incorrect — changes were made. Future coders: the summary must accurately report what was changed.

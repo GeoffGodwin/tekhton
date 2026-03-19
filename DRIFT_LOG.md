@@ -5,6 +5,8 @@
 - Runs since audit: 1
 
 ## Unresolved Observations
+- [2026-03-19 | "Implement Milestone 14: Turn Exhaustion Continuation Loop"] Both the Sr Coder and Jr Coder touched the `agent_monitor.sh` header (lines 3-4). Sr Coder updated it as part of the extraction; Jr Coder confirmed it was already correct. No double-write conflict occurred — final state is correct. This is expected coordination when Simplification and Staleness items touch the same file, not a process concern.
+- [2026-03-19 | "Implement Milestone 14: Turn Exhaustion Continuation Loop"] --
 - [2026-03-19 | "Implement Milestone 13.2.1: "] `stages/tester.sh:101` — the pipeline `grep ... | tee -a "$LOG_FILE"` appends grep output to the log. If `$LOG_FILE` is the same file already being written by `run_agent`, this can produce duplicate entries. Not introduced by this milestone but worth flagging for the audit log.
 - [2026-03-18 | "Finish implementing Milestone 13.2.1: Core Retry Envelope in run_agent()"] `lib/config.sh` is 342 lines — exceeds the 300-line ceiling. Pre-existing issue, no changes to scope in this rework. Candidate for a future `lib/config_defaults.sh` extraction.
 - [2026-03-18 | "Finish implementing Milestone 13.2.1: Core Retry Envelope in run_agent()"] --
