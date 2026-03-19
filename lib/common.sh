@@ -62,7 +62,7 @@ _print_box_line() {
             echo "${_bv}  ${_content}  ${_bv}"
     else
         printf '%s%-*s%s\n' "$_bv" "$_bw" "" "$_bv" 2>/dev/null || \
-            echo "${_bv}                                                            ${_bv}"  # ~60 spaces — assumes default _BOX_W=60
+            echo "${_bv}$(_build_box_hline "$_bw" " ")${_bv}"
     fi
 }
 
@@ -80,6 +80,24 @@ _setup_box_chars() {
     _HLINE=$(_build_box_hline "$_BOX_W" "$_BOX_H")
 }
 
+# --- Box frame renderer (shared by report_error + report_retry) ---------------
+# _print_box_frame — renders a boxed message block to stderr.
+# Pass content lines as positional arguments. Empty string "" inserts a blank separator.
+# Usage: _print_box_frame "line1" "" "line2" ...
+_print_box_frame() {
+    _setup_box_chars 60
+    {
+        echo
+        echo "${_BOX_TL}${_HLINE}${_BOX_TR}"
+        local _line
+        for _line in "$@"; do
+            _print_box_line "$_BOX_V" "$_BOX_W" "$_line"
+        done
+        echo "${_BOX_BL}${_HLINE}${_BOX_BR}"
+        echo
+    } >&2
+}
+
 # --- Structured error reporting (12.2) ----------------------------------------
 # Prints a boxed error block to stderr with category, message, and recovery.
 # Falls back to ASCII when terminal lacks UTF-8 support.
@@ -93,27 +111,16 @@ report_error() {
     local message="$4"
     local recovery="${5:-}"
 
-    _setup_box_chars 60
-
     local _transient_label="PERMANENT"
     if [[ "$transient" = "true" ]]; then
         _transient_label="TRANSIENT (safe to retry)"
     fi
 
-    {
-        echo
-        echo "${_BOX_TL}${_HLINE}${_BOX_TR}"
-        _print_box_line "$_BOX_V" "$_BOX_W" "ERROR: ${category}/${subcategory}"
-        _print_box_line "$_BOX_V" "$_BOX_W" "$_transient_label"
-        _print_box_line "$_BOX_V" "$_BOX_W" ""
-        _print_box_line "$_BOX_V" "$_BOX_W" "${message}"
-        if [[ -n "$recovery" ]]; then
-            _print_box_line "$_BOX_V" "$_BOX_W" ""
-            _print_box_line "$_BOX_V" "$_BOX_W" "Recovery: ${recovery}"
-        fi
-        echo "${_BOX_BL}${_HLINE}${_BOX_BR}"
-        echo
-    } >&2
+    local _lines=("ERROR: ${category}/${subcategory}" "$_transient_label" "" "${message}")
+    if [[ -n "$recovery" ]]; then
+        _lines+=("" "Recovery: ${recovery}")
+    fi
+    _print_box_frame "${_lines[@]}"
 }
 
 # --- Structured retry reporting (13.1) ----------------------------------------
@@ -128,16 +135,12 @@ report_retry() {
     local category="$3"
     local delay="$4"
 
-    _setup_box_chars 60
+    local _dash="--"
+    if _is_utf8_terminal; then _dash="—"; fi
 
-    {
-        echo
-        echo "${_BOX_TL}${_HLINE}${_BOX_TR}"
-        _print_box_line "$_BOX_V" "$_BOX_W" "RETRY: Transient error (${category})"
-        _print_box_line "$_BOX_V" "$_BOX_W" "Attempt ${attempt}/${max} — retrying in ${delay}s..."
-        echo "${_BOX_BL}${_HLINE}${_BOX_BR}"
-        echo
-    } >&2
+    _print_box_frame \
+        "RETRY: Transient error (${category})" \
+        "Attempt ${attempt}/${max} ${_dash} retrying in ${delay}s..."
 }
 
 # --- Prerequisite check ------------------------------------------------------
