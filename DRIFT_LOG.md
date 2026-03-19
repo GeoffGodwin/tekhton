@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 5
+- Runs since audit: 1
 
 ## Unresolved Observations
 - [2026-03-18 | "Address the next 2 items in the NON_BLOCKING_LOG.md"] `lib/drift.sh` still contains `process_drift_artifacts()` (line 382) which calls `append_nonblocking_notes` and `_resolve_addressed_nonblocking_notes` — functions that now live in drift_cleanup.sh. The cross-file dependency is implicit and not documented in either file's header comment. Adding a note to drift.sh's header that it depends on drift_cleanup.sh being sourced afterward would aid future readers.
