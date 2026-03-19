@@ -436,6 +436,20 @@ ${nb_notes}"
     # Resolve human notes based on coder's structured reporting
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
         resolve_human_notes
+
+        # If notes were injected but none were properly addressed, downgrade
+        # COMPLETE → IN PROGRESS so the continuation loop gives the coder
+        # another chance. This prevents the coder from ignoring human notes
+        # and claiming COMPLETE.
+        if [[ "${HUMAN_NOTES_ALL_ADDRESSED:-true}" = "false" ]]; then
+            local _coder_status_check
+            _coder_status_check=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+            if [[ "$_coder_status_check" == *"COMPLETE"* ]]; then
+                warn "Coder reported COMPLETE but human notes were not properly addressed."
+                warn "Downgrading status to IN PROGRESS to trigger continuation."
+                sed -i 's/^## Status.*COMPLETE.*/## Status: IN PROGRESS/' CODER_SUMMARY.md
+            fi
+        fi
     fi
 
     # --- Post-coder clarification detection ------------------------------------
