@@ -179,6 +179,11 @@ resolve_human_notes() {
         sed -i 's/^- \[~\] /- [x] /' HUMAN_NOTES.md
         log "HUMAN_NOTES.md — all [~] items marked [x] (coder status: COMPLETE, no structured report)."
         warn "Coder did not produce structured ## Human Notes Status section."
+    elif [[ -n "${_PIPELINE_EXIT_CODE:-}" ]] && [[ "${_PIPELINE_EXIT_CODE}" -eq 0 ]]; then
+        # Pipeline succeeded (exit 0) but CODER_SUMMARY.md is missing or incomplete.
+        # Features were implemented and committed — treat as success rather than resetting.
+        sed -i 's/^- \[~\] /- [x] /' HUMAN_NOTES.md
+        log "HUMAN_NOTES.md — all [~] items marked [x] (pipeline succeeded, no structured report)."
     else
         # Coder didn't finish or no summary — reset everything
         sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md

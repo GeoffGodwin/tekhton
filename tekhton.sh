@@ -984,6 +984,18 @@ else
     fi
 fi
 
+# --- Final human notes resolution --------------------------------------------
+# If any [~] items remain (coder was IN PROGRESS or didn't produce structured
+# reporting), resolve them now based on pipeline outcome. Reaching this point
+# means the pipeline succeeded (failures exit earlier), so mark [~] → [x].
+_PIPELINE_EXIT_CODE=0
+if [ -f "HUMAN_NOTES.md" ]; then
+    _remaining_claimed=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
+    if [ "$_remaining_claimed" -gt 0 ]; then
+        resolve_human_notes
+    fi
+fi
+
 # --- Drift artifact processing -----------------------------------------------
 
 process_drift_artifacts
@@ -1135,6 +1147,7 @@ case "$COMMIT_CHOICE" in
             if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
                 tag_milestone_complete "$_MS_COMMIT_NUM"
                 archive_completed_milestone "$_MS_COMMIT_NUM" "CLAUDE.md" || true
+                clear_milestone_state
             fi
         fi
         print_run_summary
@@ -1152,6 +1165,7 @@ case "$COMMIT_CHOICE" in
             if [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_CONTINUE ]] || [[ "$_MS_COMMIT_DISPOSITION" == COMPLETE_AND_WAIT ]]; then
                 tag_milestone_complete "$_MS_COMMIT_NUM"
                 archive_completed_milestone "$_MS_COMMIT_NUM" "CLAUDE.md" || true
+                clear_milestone_state
             fi
         fi
         print_run_summary

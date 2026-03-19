@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-19 | "Fix the two bugs in the HUMAN_NOTES.md"] `tests/test_human_notes_lifecycle.sh` header comment (lines 8–13) lists 7 test groups but Phases 10 and 11 are not reflected in the summary — update to include exit-code awareness tests for completeness.
 - [ ] [2026-03-19 | "Implement the items in the HUMAN_NOTES.md"] `lib/hooks.sh:110,113` — `grep -qi "fix|bug"` and `grep -qi "^n/a|^none|^(fill"` use BRE `|` alternation (GNU grep extension, not portable to macOS BSD grep). Use `-Eqi` with unescaped `|` for POSIX ERE portability.
 - [ ] [2026-03-19 | "Implement the items in the HUMAN_NOTES.md"] `tests/test_auto_commit_conditional_default.sh:102-104` — The `reload_defaults` call at line 103 is dead: the comment "Should NOT override since AUTO_COMMIT is already set" is incorrect because `reload_defaults` unsets `AUTO_COMMIT` first (as the next comment acknowledges). Remove the dead `reload_defaults` line; the `AUTO_COMMIT=false` + `source config_defaults.sh` sequence that follows is the correct test.
 - [ ] [2026-03-19 | "Fix the items in the NON_BLOCKING_LOG.md"] `lib/notes.sh:26` — `HUMAN_NOTES` literal in pattern `'human.?notes|HUMAN_NOTES'` is redundant with `-i` (case-insensitive) since `human.?notes` already matches `HUMAN_NOTES`. Not a bug, but slightly noisy pattern.

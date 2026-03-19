@@ -448,17 +448,24 @@ finalization sequence.
   2. `process_drift_artifacts()` (existing — from drift_artifacts.sh)
   3. `record_run_metrics()` (existing — from metrics.sh)
   4. `clear_resolved_nonblocking_notes()` (from 15.1 — only if pipeline succeeded)
-  5. `archive_reports "$LOG_DIR" "$TIMESTAMP"` (existing)
-  6. `mark_milestone_done "$CURRENT_MILESTONE"` (from 15.2 — only if milestone
+  5. `resolve_human_notes_with_exit_code $pipeline_exit_code` — if
+     CODER_SUMMARY.md is missing but pipeline succeeded (exit 0), mark
+     all [~] → [x] instead of resetting to [ ]. Fixes the bug where
+     features are implemented and committed but HUMAN_NOTES shows undone.
+  6. `archive_reports "$LOG_DIR" "$TIMESTAMP"` (existing)
+  7. `mark_milestone_done "$CURRENT_MILESTONE"` (from 15.2 — only if milestone
      mode AND acceptance passed)
-  7. Auto-commit: if `AUTO_COMMIT=true` (now defaulting to true in milestone mode
+  8. Auto-commit: if `AUTO_COMMIT=true` (now defaulting to true in milestone mode
      per 15.1), run `_do_git_commit()` without interactive prompt. If
      `AUTO_COMMIT=false`, call the existing interactive prompt (reading from
      `/dev/tty`).
-  8. `archive_completed_milestone()` (from 15.2 — only after commit, only if
+  9. `archive_completed_milestone()` (from 15.2 — only after commit, only if
      milestone was marked [DONE])
-  The function accepts a `pipeline_exit_code` parameter. Steps 4, 6, 7, 8 only
-  run if `pipeline_exit_code=0`.
+  10. `clear_milestone_state()` (existing but unwired — only after successful
+      milestone archival, prevents stale MILESTONE_STATE.md from leaking into
+      subsequent non-milestone runs)
+  The function accepts a `pipeline_exit_code` parameter. Steps 4-5, 7, 8, 9, 10
+  only run if `pipeline_exit_code=0`.
 - `tekhton.sh` — Replace the scattered post-pipeline section (lines ~940-1149)
   with a single call to `finalize_run $pipeline_exit_code`. Remove all inline
   commit prompt logic, inline `archive_completed_milestone()` calls, and
@@ -469,23 +476,30 @@ finalization sequence.
 - `finalize_run()` is the ONLY place post-pipeline bookkeeping happens — no
   straggler calls in `tekhton.sh`
 - Post-pipeline bookkeeping runs in deterministic order as specified above
-- `finalize_run 0` (success) runs all 8 steps including cleanup and archival
-- `finalize_run 1` (failure) runs steps 1-3 and 5 only (metrics recorded,
+- `finalize_run 0` (success) runs all 10 steps including cleanup, notes
+  resolution, commit, and archival
+- `finalize_run 1` (failure) runs steps 1-3 and 6 only (metrics recorded,
   reports archived, but no cleanup/commit/archival)
 - Pipeline runs in milestone mode auto-commit without interactive prompt
 - Non-milestone mode with `AUTO_COMMIT=false` still shows interactive prompt
 - Commit includes the milestone's code changes (archival happens AFTER commit)
 - Metrics are recorded BEFORE resolved-item cleanup (counts are captured)
 - `generate_commit_message()` is called within `finalize_run()` before commit
+- `resolve_human_notes` marks [~] → [x] when CODER_SUMMARY.md is missing but
+  pipeline exit code is 0 (success), instead of resetting to [ ]
+- `clear_milestone_state()` is called after milestone archival, leaving no
+  stale MILESTONE_STATE.md for subsequent runs
 - All existing tests pass
 - `bash -n` and `shellcheck` pass on all modified files
 
 **Watch For:**
 - The `finalize_run()` ordering is load-bearing:
   - Metrics BEFORE cleanup (so resolved counts are captured)
+  - Notes resolution BEFORE archive (so [x] marks are in the archived snapshot)
   - Commit BEFORE archival (so the commit includes milestone code changes)
   - `mark_milestone_done` BEFORE commit (so the commit message can reference
     the milestone status)
+  - `clear_milestone_state()` AFTER archival (state file no longer needed)
 - `finalize_run()` must handle the case where `run_final_checks()` fails.
   The function should still run metrics/reports/cleanup even if final checks
   fail — but should NOT commit or archive on failure.
@@ -495,6 +509,11 @@ finalization sequence.
 - The interactive commit prompt (`read` from `/dev/tty`) must remain available
   for non-milestone, non-auto-commit runs. Don't remove it entirely — just
   move it into `finalize_run()`.
+- `resolve_human_notes_with_exit_code` must still call the existing
+  `resolve_human_notes()` when CODER_SUMMARY.md IS present — the new
+  exit-code-aware path is only the fallback when the summary is missing.
+- `clear_milestone_state()` must only run in milestone mode. In non-milestone
+  runs there is no state file to clear and calling it is harmless but noisy.
 
 **Seeds Forward:**
 - Milestone 16 (Outer Loop) calls `finalize_run()` as its single post-iteration
