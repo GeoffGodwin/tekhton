@@ -179,7 +179,10 @@ check_usage_threshold() {
         return 0
     fi
 
-    # Extract percentage from usage output (look for a line with N% or N.N%)
+    # Extract percentage from usage output (look for a line with N% or N.N%).
+    # Expected format from `claude usage`: one or more lines containing "N%" or "N.N%"
+    # (e.g., "Session usage: 45.2%"). If the format changes and no percentage is found,
+    # the function warns and returns 0 (allow) to avoid blocking the pipeline silently.
     local pct
     pct=$(echo "$usage_output" | grep -oE '[0-9]+(\.[0-9]+)?%' | head -1 | tr -d '%' || true)
 

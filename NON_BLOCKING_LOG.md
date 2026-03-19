@@ -5,9 +5,10 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-03-19 | "Implement the next 2 items in the NON_BLOCKING_LOG.md file."] `lib/hooks.sh:121` uses `head -n -1` (GNU-specific: all lines except the last). Works on Linux/WSL2 but will silently break on macOS. Carried over from prior cycle — consider replacing with `awk 'NR>1{print prev} {prev=$0}'` for portability.
-- [ ] [2026-03-19 | "Implement the next 2 items in the NON_BLOCKING_LOG.md file."] `check_usage_threshold()` at `lib/common.sh:184` — the `grep -oE '[0-9]+(.[0-9]+)?%'` pattern silently falls back to 0 if `claude usage` output format changes. A brief comment noting the expected output format (e.g., "expects a line containing 'N%' from `claude usage`") would help future maintainers diagnose silent fallback behavior.
+
 ## Resolved
+- [x] [2026-03-19] `lib/hooks.sh:121` — replaced GNU-specific `head -n -1` with portable `awk 'NR>1{print prev} {prev=$0}'` for macOS/BSD compatibility.
+- [x] [2026-03-19] `check_usage_threshold()` at `lib/common.sh:184` — added documentation comment explaining expected `claude usage` output format and silent fallback behavior.
 - [x] [2026-03-19] `_print_box_frame --width` parameter implemented at `lib/common.sh:88-105`. The helper now accepts `--width N` (defaults to 60), allowing variable-width boxes. Both current callers use the default width of 60, so behavior is unchanged.
 - [x] [2026-03-19] `lib/agent_monitor.sh` split already completed — `_reset_monitoring_state`, `_detect_file_changes`, and `_count_changed_files_since` live in `lib/agent_monitor_helpers.sh` (84 lines). `agent_monitor.sh` is now 287 lines, under the 300-line ceiling. (Item 2 resolved.)
 - [x] [2026-03-19] `_reset_monitoring_state()` now clears `_TEKHTON_AGENT_PID=""` at `lib/agent_monitor_helpers.sh:26` after killing the process. Multiple calls in succession now safely handle stale PIDs. (Item 3 resolved.)

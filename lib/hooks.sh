@@ -118,7 +118,7 @@ generate_commit_message() {
         diff_summary=$(echo "$diff_stat" | tail -1 | sed 's/^ *//')
         # File lines are everything except the summary
         local diff_files
-        diff_files=$(echo "$diff_stat" | head -n -1 | sed 's/^ *//' | head -15)
+        diff_files=$(echo "$diff_stat" | awk 'NR>1{print prev} {prev=$0}' | sed 's/^ *//' | head -15)
         if [ -n "$diff_summary" ]; then
             body="${body:+${body}
 }
