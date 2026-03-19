@@ -8,7 +8,7 @@
 #   3. retry_attempt >= MAX_TRANSIENT_RETRIES → no retry, no sleep
 #   4. Exponential backoff: attempt 0→30s, 1→60s, 2→120s
 #   5. TRANSIENT_RETRY_MAX_DELAY cap
-#   6. OOM subcategory forces 15s delay
+#   6. OOM subcategory uses exponential backoff with 15s floor
 #   7. api_rate_limit enforces 60s minimum
 #   8. api_overloaded enforces 60s minimum
 #   9. retry-after header overrides delay when larger
@@ -193,27 +193,27 @@ assert_eq "5.2 delay capped at TRANSIENT_RETRY_MAX_DELAY (60)" "60" "$SLEEP_ARG"
 TRANSIENT_RETRY_MAX_DELAY=120
 
 # =============================================================================
-# Test 6: OOM subcategory forces 15s regardless of calculated delay
+# Test 6: OOM subcategory uses exponential backoff with 15s floor
 # =============================================================================
 
 AGENT_ERROR_SUBCATEGORY=oom
 TRANSIENT_RETRY_BASE_DELAY=30
 TRANSIENT_RETRY_MAX_DELAY=120
 
-# attempt 0 → calculated 30, OOM overrides to 15
+# attempt 0 → calculated 30, OOM floor 15 → 30 (already above floor)
 reset_state
 _should_retry_transient "label" 0 "$SESSION_DIR" "$EXIT_FILE" "$TURNS_FILE"
-assert_eq "6.1 OOM forces 15s at attempt 0 (would be 30)" "15" "$SLEEP_ARG"
+assert_eq "6.1 OOM at attempt 0: backoff 30s (above 15s floor)" "30" "$SLEEP_ARG"
 
-# attempt 1 → calculated 60, OOM overrides to 15
+# attempt 1 → calculated 60, OOM floor 15 → 60
 reset_state
 _should_retry_transient "label" 1 "$SESSION_DIR" "$EXIT_FILE" "$TURNS_FILE"
-assert_eq "6.2 OOM forces 15s at attempt 1 (would be 60)" "15" "$SLEEP_ARG"
+assert_eq "6.2 OOM at attempt 1: backoff 60s (above 15s floor)" "60" "$SLEEP_ARG"
 
-# attempt 2 → calculated 120, OOM overrides to 15
+# attempt 2 → calculated 120, OOM floor 15 → 120
 reset_state
 _should_retry_transient "label" 2 "$SESSION_DIR" "$EXIT_FILE" "$TURNS_FILE"
-assert_eq "6.3 OOM forces 15s at attempt 2 (would be 120)" "15" "$SLEEP_ARG"
+assert_eq "6.3 OOM at attempt 2: backoff 120s (above 15s floor)" "120" "$SLEEP_ARG"
 
 # =============================================================================
 # Test 7: api_rate_limit enforces 60s minimum

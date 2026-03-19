@@ -123,6 +123,10 @@ set -euo pipefail
 : "${TRANSIENT_RETRY_BASE_DELAY:=30}"
 : "${TRANSIENT_RETRY_MAX_DELAY:=120}"
 
+# --- Usage threshold defaults ---
+: "${USAGE_THRESHOLD_PCT:=0}"              # 0 = disabled; set to e.g. 90 to pause at 90%
+: "${AUTO_COMMIT:=false}"                  # Auto-commit on pipeline success (skip prompt)
+
 # --- Metrics defaults ---
 : "${METRICS_ENABLED:=true}"
 : "${METRICS_MIN_RUNS:=5}"

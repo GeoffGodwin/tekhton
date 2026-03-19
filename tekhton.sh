@@ -303,6 +303,7 @@ source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
+source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 
 # Stage implementations
@@ -761,9 +762,24 @@ trap _tekhton_sigint_handler INT
 
 _run_pipeline_stages() {
     # Stage 0: Architect Audit (conditional)
+    # Architect audit runs on its own turn/time budget. Save and restore
+    # the pipeline accumulators so architect turns do not inflate coder
+    # metrics or affect adaptive calibration.
     if [ "$START_AT" = "coder" ] && [ "$SKIP_AUDIT" = false ]; then
         if [ "$FORCE_AUDIT" = true ] || should_trigger_audit 2>/dev/null; then
+            local _pre_audit_turns="$TOTAL_TURNS"
+            local _pre_audit_time="$TOTAL_TIME"
+            local _pre_audit_summary="$STAGE_SUMMARY"
+
             run_stage_architect
+
+            # Record architect totals separately, then restore pipeline accumulators
+            export ARCHITECT_AUDIT_TURNS=$(( TOTAL_TURNS - _pre_audit_turns ))
+            export ARCHITECT_AUDIT_TIME=$(( TOTAL_TIME - _pre_audit_time ))
+            TOTAL_TURNS="$_pre_audit_turns"
+            TOTAL_TIME="$_pre_audit_time"
+            STAGE_SUMMARY="$_pre_audit_summary"
+            log "Architect audit used ${ARCHITECT_AUDIT_TURNS} turns (${ARCHITECT_AUDIT_TIME}s) — not counted against coder budget."
         fi
     fi
 
@@ -798,6 +814,14 @@ _run_pipeline_stages() {
         warn "Tester did not produce TESTER_REPORT.md. Tests may have been written but report is missing."
     fi
 }
+
+# --- Usage threshold check (before pipeline execution) ----------------------
+if ! check_usage_threshold; then
+    warn "Pipeline paused — session usage exceeds USAGE_THRESHOLD_PCT (${USAGE_THRESHOLD_PCT}%)."
+    warn "Wait for the usage window to reset, or raise the threshold in pipeline.conf."
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
 
 # Run the pipeline stages (first pass)
 _run_pipeline_stages
@@ -854,6 +878,13 @@ if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
                         mv "$f" "$ARCHIVE_NAME"
                     fi
                 done
+
+                # Check usage threshold before starting next milestone
+                if ! check_usage_threshold; then
+                    warn "Usage threshold reached before milestone ${_CURRENT_MILESTONE}. Pausing auto-advance."
+                    write_milestone_disposition "COMPLETE_AND_WAIT"
+                    break
+                fi
 
                 # Update log file for new milestone
                 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -1047,18 +1078,24 @@ if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
     rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
 fi
 
-log "Commit with suggested message? [y/e/n]"
-echo "  y = commit now with this message"
-echo "  e = open message in \$EDITOR first"
-echo "  n = skip (commit manually later)"
-
-# Read from /dev/tty when stdin is piped, so `yes | tekhton` doesn't
-# silently auto-answer the commit prompt after consuming the resume prompt.
-if [ -t 0 ]; then
-    read -r COMMIT_CHOICE
+# Auto-commit when configured — skip interactive prompt entirely
+if [ "${AUTO_COMMIT:-false}" = "true" ]; then
+    log "AUTO_COMMIT enabled — committing automatically."
+    COMMIT_CHOICE="y"
 else
-    read -r COMMIT_CHOICE < /dev/tty 2>/dev/null || COMMIT_CHOICE="y"
-    log "(read from /dev/tty — stdin was piped)"
+    log "Commit with suggested message? [y/e/n]"
+    echo "  y = commit now with this message"
+    echo "  e = open message in \$EDITOR first"
+    echo "  n = skip (commit manually later)"
+
+    # Read from /dev/tty when stdin is piped, so `yes | tekhton` doesn't
+    # silently auto-answer the commit prompt after consuming the resume prompt.
+    if [ -t 0 ]; then
+        read -r COMMIT_CHOICE
+    else
+        read -r COMMIT_CHOICE < /dev/tty 2>/dev/null || COMMIT_CHOICE="y"
+        log "(read from /dev/tty — stdin was piped)"
+    fi
 fi
 
 # Helper: stage, commit, and log output without printing verbose git details

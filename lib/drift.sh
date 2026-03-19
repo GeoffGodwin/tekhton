@@ -31,7 +31,7 @@ ${section_regex} {
         gsub(/[[:space:]]+\$/, "", line)
         if (length(line) == 0) continue
         if (match(line, /^[[:space:]]*-[[:space:]]*/)) {
-            if (length(note) > 0 && tolower(note) != "none") {
+            if (length(note) > 0 && tolower(note) != "none" && !match(note, /^-+$/)) {
                 printf "${line_format}\\n", date, task, note
             }
             sub(/^[[:space:]]*-[[:space:]]*/, "", line)
@@ -46,7 +46,7 @@ ${section_regex} {
             }
         }
     }
-    if (length(note) > 0 && tolower(note) != "none") {
+    if (length(note) > 0 && tolower(note) != "none" && !match(note, /^-+$/)) {
         printf "${line_format}\\n", date, task, note
     }
     next
@@ -181,6 +181,75 @@ resolve_drift_observations() {
 - [RESOLVED ${date_tag}] ${stripped}"
         else
             echo "$line" >> "$tmpfile"
+        fi
+    done < "$drift_file"
+
+    mv "$tmpfile" "$drift_file"
+}
+
+# resolve_all_drift_observations — Moves ALL unresolved observations to Resolved.
+# Used after architect audit completes: the architect reviewed every observation,
+# so all are considered addressed. Out of Scope items get re-added separately.
+resolve_all_drift_observations() {
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
+    if [ ! -f "$drift_file" ]; then
+        return 0
+    fi
+
+    local date_tag
+    date_tag=$(date +%Y-%m-%d)
+
+    local tmpfile
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
+    local resolved_lines=""
+
+    local in_unresolved=false
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "^## Unresolved Observations"; then
+            in_unresolved=true
+            echo "$line" >> "$tmpfile"
+        elif echo "$line" | grep -q "^## Resolved"; then
+            in_unresolved=false
+            echo "$line" >> "$tmpfile"
+            # Insert newly resolved lines at top of Resolved section
+            if [ -n "$resolved_lines" ]; then
+                printf '%s\n' "$resolved_lines" >> "$tmpfile"
+            fi
+        elif [[ "$in_unresolved" = true ]] && echo "$line" | grep -q "^- \["; then
+            # Move this observation to resolved
+            local stripped
+            # shellcheck disable=SC2001
+            stripped=$(echo "$line" | sed 's/^- \[[^]]*\] //')
+            resolved_lines="${resolved_lines:+${resolved_lines}
+}- [RESOLVED ${date_tag}] ${stripped}"
+        else
+            echo "$line" >> "$tmpfile"
+        fi
+    done < "$drift_file"
+
+    mv "$tmpfile" "$drift_file"
+}
+
+# append_drift_entries — Adds raw text entries to the Unresolved section.
+# Used to re-add Out of Scope items after bulk resolution.
+# Usage: append_drift_entries "entry1" "entry2" ...
+append_drift_entries() {
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
+    _ensure_drift_log
+
+    local date_tag
+    date_tag=$(date +%Y-%m-%d)
+    local task_desc="architect audit"
+
+    local tmpfile
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
+
+    while IFS= read -r line; do
+        echo "$line" >> "$tmpfile"
+        if echo "$line" | grep -q "^## Unresolved Observations"; then
+            for entry in "$@"; do
+                echo "- [${date_tag} | \"${task_desc}\"] ${entry}" >> "$tmpfile"
+            done
         fi
     done < "$drift_file"
 

@@ -62,7 +62,7 @@ _print_box_line() {
             echo "${_bv}  ${_content}  ${_bv}"
     else
         printf '%s%-*s%s\n' "$_bv" "$_bw" "" "$_bv" 2>/dev/null || \
-            echo "${_bv}                                                            ${_bv}"  # ~60 spaces — assumes default _BOX_W=60
+            echo "${_bv}$(_build_box_hline "$_bw" " ")${_bv}"
     fi
 }
 
@@ -80,6 +80,30 @@ _setup_box_chars() {
     _HLINE=$(_build_box_hline "$_BOX_W" "$_BOX_H")
 }
 
+# --- Box frame renderer (shared by report_error + report_retry) ---------------
+# _print_box_frame — renders a boxed message block to stderr.
+# Pass content lines as positional arguments. Empty string "" inserts a blank separator.
+# Usage: _print_box_frame "line1" "" "line2" ...
+#        _print_box_frame --width 80 "line1" "" "line2" ...
+_print_box_frame() {
+    local _width=60
+    if [[ "${1:-}" = "--width" ]]; then
+        _width="${2:-60}"
+        shift 2
+    fi
+    _setup_box_chars "$_width"
+    {
+        echo
+        echo "${_BOX_TL}${_HLINE}${_BOX_TR}"
+        local _line
+        for _line in "$@"; do
+            _print_box_line "$_BOX_V" "$_BOX_W" "$_line"
+        done
+        echo "${_BOX_BL}${_HLINE}${_BOX_BR}"
+        echo
+    } >&2
+}
+
 # --- Structured error reporting (12.2) ----------------------------------------
 # Prints a boxed error block to stderr with category, message, and recovery.
 # Falls back to ASCII when terminal lacks UTF-8 support.
@@ -93,27 +117,16 @@ report_error() {
     local message="$4"
     local recovery="${5:-}"
 
-    _setup_box_chars 60
-
     local _transient_label="PERMANENT"
     if [[ "$transient" = "true" ]]; then
         _transient_label="TRANSIENT (safe to retry)"
     fi
 
-    {
-        echo
-        echo "${_BOX_TL}${_HLINE}${_BOX_TR}"
-        _print_box_line "$_BOX_V" "$_BOX_W" "ERROR: ${category}/${subcategory}"
-        _print_box_line "$_BOX_V" "$_BOX_W" "$_transient_label"
-        _print_box_line "$_BOX_V" "$_BOX_W" ""
-        _print_box_line "$_BOX_V" "$_BOX_W" "${message}"
-        if [[ -n "$recovery" ]]; then
-            _print_box_line "$_BOX_V" "$_BOX_W" ""
-            _print_box_line "$_BOX_V" "$_BOX_W" "Recovery: ${recovery}"
-        fi
-        echo "${_BOX_BL}${_HLINE}${_BOX_BR}"
-        echo
-    } >&2
+    local _lines=("ERROR: ${category}/${subcategory}" "$_transient_label" "" "${message}")
+    if [[ -n "$recovery" ]]; then
+        _lines+=("" "Recovery: ${recovery}")
+    fi
+    _print_box_frame "${_lines[@]}"
 }
 
 # --- Structured retry reporting (13.1) ----------------------------------------
@@ -128,20 +141,66 @@ report_retry() {
     local category="$3"
     local delay="$4"
 
-    _setup_box_chars 60
+    local _dash="--"
+    if _is_utf8_terminal; then _dash="—"; fi
 
-    {
-        echo
-        echo "${_BOX_TL}${_HLINE}${_BOX_TR}"
-        _print_box_line "$_BOX_V" "$_BOX_W" "RETRY: Transient error (${category})"
-        _print_box_line "$_BOX_V" "$_BOX_W" "Attempt ${attempt}/${max} — retrying in ${delay}s..."
-        echo "${_BOX_BL}${_HLINE}${_BOX_BR}"
-        echo
-    } >&2
+    _print_box_frame \
+        "RETRY: Transient error (${category})" \
+        "Attempt ${attempt}/${max} ${_dash} retrying in ${delay}s..."
 }
 
 # --- Prerequisite check ------------------------------------------------------
 
 require_cmd() {
     command -v "$1" >/dev/null 2>&1 || { error "Required command not found: $1"; exit 1; }
+}
+
+# --- Usage threshold check ---------------------------------------------------
+# Checks if Claude CLI session usage exceeds the configured threshold.
+# Returns 0 if under threshold (safe to continue), 1 if over (should pause).
+# When USAGE_THRESHOLD_PCT=0, always returns 0 (disabled).
+#
+# Usage: check_usage_threshold || { log "Usage threshold reached"; exit 0; }
+
+check_usage_threshold() {
+    local threshold="${USAGE_THRESHOLD_PCT:-0}"
+
+    # Disabled when threshold is 0 or non-numeric
+    if ! [[ "$threshold" =~ ^[0-9]+$ ]] || [ "$threshold" -eq 0 ]; then
+        return 0
+    fi
+
+    # Parse claude /usage output for the current cost percentage
+    local usage_output
+    usage_output=$(claude usage 2>/dev/null || true)
+
+    if [ -z "$usage_output" ]; then
+        warn "[usage] Could not read claude usage — skipping threshold check."
+        return 0
+    fi
+
+    # Extract percentage from usage output (look for a line with N% or N.N%).
+    # Expected format from `claude usage`: one or more lines containing "N%" or "N.N%"
+    # (e.g., "Session usage: 45.2%"). If the format changes and no percentage is found,
+    # the function warns and returns 0 (allow) to avoid blocking the pipeline silently.
+    local pct
+    pct=$(echo "$usage_output" | grep -oE '[0-9]+(\.[0-9]+)?%' | head -1 | tr -d '%' || true)
+
+    if [ -z "$pct" ]; then
+        warn "[usage] Could not parse usage percentage — skipping threshold check."
+        return 0
+    fi
+
+    # Compare integer parts (bash can't do float comparison)
+    local pct_int
+    pct_int=$(echo "$pct" | cut -d. -f1)
+
+    if [ "$pct_int" -ge "$threshold" ]; then
+        warn "[usage] Session usage is ${pct}% — exceeds threshold of ${threshold}%."
+        warn "[usage] Pausing to avoid exceeding rate limits."
+        return 1
+    fi
+
+    log "[usage] Session usage: ${pct}% (threshold: ${threshold}%)"
+    return 0
 }

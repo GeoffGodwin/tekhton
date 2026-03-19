@@ -30,6 +30,41 @@ _switch_to_sub_milestone() {
     init_milestone_state "$_first_sub" "$(get_milestone_count "$_claude_md")"
 }
 
+# _reconstruct_coder_summary — Synthesize a minimal CODER_SUMMARY.md from git state.
+# Called when the coder agent did substantive work but failed to produce or
+# maintain the summary file. This allows the pipeline to proceed to review
+# instead of crashing. The reviewer will assess actual file changes.
+_reconstruct_coder_summary() {
+    local _files_changed=""
+    local _diff_stat=""
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+        _files_changed=$(git diff --name-only HEAD 2>/dev/null | head -30)
+        _diff_stat=$(git diff --stat HEAD 2>/dev/null | tail -5)
+    fi
+
+    cat > CODER_SUMMARY.md <<RECON_EOF
+## Status: IN PROGRESS
+
+## Summary
+CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
+failed to produce or maintain it. The following files were modified based
+on git diff. The reviewer should assess actual changes directly.
+
+## Files Modified
+$(while IFS= read -r _f; do [ -n "$_f" ] && echo "- $_f"; done <<< "$_files_changed")
+
+## Git Diff Summary
+\`\`\`
+${_diff_stat}
+\`\`\`
+
+## Remaining Work
+Unable to determine — coder did not report remaining items.
+Review the task description against actual changes to identify gaps.
+RECON_EOF
+    warn "Reconstructed CODER_SUMMARY.md ($(wc -l < CODER_SUMMARY.md) lines) from git state."
+}
+
 # run_stage_coder — Runs the full coder stage including:
 #   1. Optional scout sub-agent (for BUG/FEAT notes)
 #   2. Context block construction (architecture, glossary, milestone, prior reports)
@@ -384,16 +419,37 @@ ${nb_notes}"
     # --- Post-coder validation -----------------------------------------------
 
     if [ ! -f "CODER_SUMMARY.md" ]; then
-        error "Coder did not produce CODER_SUMMARY.md. Check the log: ${LOG_FILE}"
-        error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
-        # Reset claimed notes — coder didn't produce any work
-        resolve_human_notes
-        exit 1
+        # If substantive work was done, reconstruct summary and continue
+        if is_substantive_work; then
+            warn "Coder did not produce CODER_SUMMARY.md but substantive work detected."
+            _reconstruct_coder_summary
+        else
+            error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
+            error "Check the log: ${LOG_FILE}"
+            error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
+            # Reset claimed notes — coder didn't produce any work
+            resolve_human_notes
+            exit 1
+        fi
     fi
 
     # Resolve human notes based on coder's structured reporting
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
         resolve_human_notes
+
+        # If notes were injected but none were properly addressed, downgrade
+        # COMPLETE → IN PROGRESS so the continuation loop gives the coder
+        # another chance. This prevents the coder from ignoring human notes
+        # and claiming COMPLETE.
+        if [[ "${HUMAN_NOTES_ALL_ADDRESSED:-true}" = "false" ]]; then
+            local _coder_status_check
+            _coder_status_check=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
+            if [[ "$_coder_status_check" == *"COMPLETE"* ]]; then
+                warn "Coder reported COMPLETE but human notes were not properly addressed."
+                warn "Downgrading status to IN PROGRESS to trigger continuation."
+                sed -i 's/^## Status.*COMPLETE.*/## Status: IN PROGRESS/' CODER_SUMMARY.md
+            fi
+        fi
     fi
 
     # --- Post-coder clarification detection ------------------------------------
@@ -508,7 +564,14 @@ ${nb_notes}"
                 # Check if continuation completed
                 if [[ ! -f "CODER_SUMMARY.md" ]]; then
                     warn "Continuation ${_cont_attempt} did not produce CODER_SUMMARY.md."
-                    break
+                    # Recover: if substantive work exists, synthesize a minimal summary
+                    # so the pipeline can proceed to review instead of crashing.
+                    if is_substantive_work; then
+                        warn "Substantive work detected — reconstructing CODER_SUMMARY.md from git state."
+                        _reconstruct_coder_summary
+                    else
+                        break
+                    fi
                 fi
 
                 CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
@@ -555,7 +618,8 @@ ${nb_notes}"
             fi
         fi
 
-        # If we reach here and status is still IN PROGRESS, save state and exit
+        # If we reach here and status is still IN PROGRESS, check if we have
+        # enough work to proceed to review instead of halting.
         CODER_STATUS=$(grep "^## Status" CODER_SUMMARY.md 2>/dev/null | head -1 || echo "")
         if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
             IMPLEMENTED_LINES=$(grep -c "^- " CODER_SUMMARY.md 2>/dev/null || echo "0")
@@ -566,9 +630,37 @@ ${nb_notes}"
                 GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20)
             fi
 
-            if [[ "$IMPLEMENTED_LINES" -gt 3 ]]; then
+            # If continuations were exhausted and substantive work exists,
+            # proceed to review instead of halting. The reviewer catches gaps.
+            if [[ "${_cont_attempt:-0}" -ge "${_cont_max:-3}" ]] && is_substantive_work; then
+                warn "Continuations exhausted with IN PROGRESS status but substantive work exists."
+                warn "Proceeding to review — reviewer will identify remaining gaps."
+                # Skip the state-save-and-exit — fall through to completion gate
+                :
+            elif [[ "$IMPLEMENTED_LINES" -gt 3 ]]; then
                 RESUME_FLAG="--milestone --start-at coder"
                 RESUME_NOTE="Coder hit turn limit mid-implementation (${IMPLEMENTED_LINES} summary lines). Git diff shows partial work — coder should CONTINUE, not restart."
+
+                local _state_notes="${RESUME_NOTE}"
+                if [[ -n "$GIT_DIFF_STAT" ]]; then
+                    _state_notes="${_state_notes}
+
+## Partial Git Changes (files touched before turn limit)
+\`\`\`
+${GIT_DIFF_STAT}
+\`\`\`"
+                fi
+
+                write_pipeline_state \
+                    "coder" \
+                    "turn_limit" \
+                    "$RESUME_FLAG" \
+                    "$TASK" \
+                    "$_state_notes"
+
+                warn "Check the log: ${LOG_FILE}"
+                warn "State saved — re-run with no arguments to resume."
+                exit 1
             else
                 # Minimal output — try auto-split in milestone mode
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
@@ -584,54 +676,67 @@ ${nb_notes}"
 
                 RESUME_FLAG="--milestone"
                 RESUME_NOTE="Coder hit turn limit with minimal summary output — retry from scratch recommended."
-            fi
 
-            local _state_notes="${RESUME_NOTE}"
-            if [[ -n "$GIT_DIFF_STAT" ]]; then
-                _state_notes="${_state_notes}
+                local _state_notes="${RESUME_NOTE}"
+                if [[ -n "$GIT_DIFF_STAT" ]]; then
+                    _state_notes="${_state_notes}
 
 ## Partial Git Changes (files touched before turn limit)
 \`\`\`
 ${GIT_DIFF_STAT}
 \`\`\`"
+                fi
+
+                write_pipeline_state \
+                    "coder" \
+                    "turn_limit" \
+                    "$RESUME_FLAG" \
+                    "$TASK" \
+                    "$_state_notes"
+
+                warn "Check the log: ${LOG_FILE}"
+                warn "State saved — re-run with no arguments to resume."
+                exit 1
             fi
-
-            write_pipeline_state \
-                "coder" \
-                "turn_limit" \
-                "$RESUME_FLAG" \
-                "$TASK" \
-                "$_state_notes"
-
-            warn "Check the log: ${LOG_FILE}"
-            warn "State saved — re-run with no arguments to resume."
-            exit 1
         fi
     fi
 
     # --- Completion gate -----------------------------------------------------
 
     if ! run_completion_gate; then
-        warn "Coder did not complete — blocking reviewer and tester."
-
-        GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20 || echo "no changes")
-
-        if [ "$MILESTONE_MODE" = true ]; then
-            RESUME_FLAG="--milestone --start-at coder"
+        # If substantive work exists (files modified, meaningful diff), proceed
+        # to review anyway. The reviewer will assess actual changes. This prevents
+        # the pipeline from halting when the coder did real work but failed to
+        # set the Status field correctly.
+        if is_substantive_work; then
+            warn "Completion gate failed but substantive work detected."
+            warn "Proceeding to review — reviewer will assess actual changes."
+            # Ensure CODER_SUMMARY.md exists for downstream stages
+            if [[ ! -f "CODER_SUMMARY.md" ]]; then
+                _reconstruct_coder_summary
+            fi
         else
-            RESUME_FLAG="--start-at coder"
+            warn "Coder did not complete — blocking reviewer and tester."
+
+            GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20 || echo "no changes")
+
+            if [ "$MILESTONE_MODE" = true ]; then
+                RESUME_FLAG="--milestone --start-at coder"
+            else
+                RESUME_FLAG="--start-at coder"
+            fi
+
+            write_pipeline_state \
+                "coder" \
+                "incomplete" \
+                "$RESUME_FLAG" \
+                "$TASK" \
+                "Coder hit turn limit mid-implementation. Reviewer and tester were NOT run. Resume will continue coder work before proceeding."
+
+            error "Pipeline halted at completion gate."
+            error "State saved — re-run with no arguments to resume."
+            exit 1
         fi
-
-        write_pipeline_state \
-            "coder" \
-            "incomplete" \
-            "$RESUME_FLAG" \
-            "$TASK" \
-            "Coder hit turn limit mid-implementation. Reviewer and tester were NOT run. Resume will continue coder work before proceeding."
-
-        error "Pipeline halted at completion gate."
-        error "State saved — re-run with no arguments to resume."
-        exit 1
     fi
 
     # --- Build gate (with one retry) -----------------------------------------

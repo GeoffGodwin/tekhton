@@ -73,9 +73,34 @@ run_stage_review() {
         fi
 
         if [ ! -f "REVIEWER_REPORT.md" ]; then
-            error "Reviewer did not produce REVIEWER_REPORT.md. Check the log: ${LOG_FILE}"
-            error "To resume at test stage: $0 --start-at test \"${TASK}\""
-            exit 1
+            warn "Reviewer did not produce REVIEWER_REPORT.md."
+            if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
+                warn "Will retry on next review cycle."
+                VERDICT="CHANGES_REQUIRED"
+                continue
+            fi
+            # Last cycle — synthesize a minimal report so pipeline can proceed
+            warn "Synthesizing minimal REVIEWER_REPORT.md — tester will validate."
+            cat > REVIEWER_REPORT.md <<REVIEW_EOF
+## Verdict
+APPROVED_WITH_NOTES
+
+## Summary
+REVIEWER_REPORT.md was synthesized by the pipeline after the reviewer agent
+failed to produce it. The reviewer may have encountered issues reading or
+writing the report file. The tester should validate all changes thoroughly.
+
+## Complex Blockers
+- None (reviewer did not report)
+
+## Simple Blockers
+- None (reviewer did not report)
+
+## Non-Blocking Notes
+- Reviewer agent did not produce a report — extra tester scrutiny recommended.
+REVIEW_EOF
+            VERDICT="APPROVED_WITH_NOTES"
+            log "Synthesized REVIEWER_REPORT.md with APPROVED_WITH_NOTES verdict."
         fi
 
         VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)

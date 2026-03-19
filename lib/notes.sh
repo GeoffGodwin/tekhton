@@ -60,6 +60,9 @@ claim_human_notes() {
 # If CODER_SUMMARY.md lacks a "Human Notes Status" section, falls back to
 # marking all [~] items based on the coder's overall status.
 resolve_human_notes() {
+    # Reset tracking global
+    export HUMAN_NOTES_ALL_ADDRESSED=true
+
     if [ ! -f "HUMAN_NOTES.md" ]; then
         return
     fi
@@ -127,7 +130,14 @@ resolve_human_notes() {
             remaining=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
             if [ "$remaining" -gt 0 ]; then
                 sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md
-                log "HUMAN_NOTES.md — ${remaining} unmentioned [~] item(s) reset to [ ]."
+                warn "HUMAN_NOTES.md — ${remaining} unmentioned [~] item(s) reset to [ ]."
+                export HUMAN_NOTES_ALL_ADDRESSED=false
+            fi
+
+            # If nothing was completed or explicitly addressed, notes were ignored
+            if [ "$completed" -eq 0 ] && [ "$reset" -eq 0 ]; then
+                warn "Coder wrote ## Human Notes Status section but did not address any notes."
+                export HUMAN_NOTES_ALL_ADDRESSED=false
             fi
             return
         fi
@@ -141,12 +151,15 @@ resolve_human_notes() {
 
     if [[ "$coder_status" == *"COMPLETE"* ]]; then
         # Coder finished but didn't use structured reporting — mark all claimed as done
+        # NOTE: Without structured reporting we can't verify, but trust COMPLETE status
         sed -i 's/^- \[~\] /- [x] /' HUMAN_NOTES.md
         log "HUMAN_NOTES.md — all [~] items marked [x] (coder status: COMPLETE, no structured report)."
+        warn "Coder did not produce structured ## Human Notes Status section."
     else
         # Coder didn't finish or no summary — reset everything
         sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md
         log "HUMAN_NOTES.md — all [~] items reset to [ ] (coder incomplete or missing summary)."
+        export HUMAN_NOTES_ALL_ADDRESSED=false
     fi
 }
 

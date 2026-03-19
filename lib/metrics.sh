@@ -5,7 +5,8 @@
 # Sourced by tekhton.sh — do not run directly.
 # Expects: log(), warn(), success() from common.sh
 # Expects: LOG_DIR, PROJECT_DIR from caller
-# Provides: record_run_metrics(), summarize_metrics(), calibrate_turn_estimate()
+# Provides: record_run_metrics(), summarize_metrics()
+# Note: calibrate_turn_estimate() has been extracted to lib/metrics_calibration.sh
 # =============================================================================
 
 # --- Metrics file location ---------------------------------------------------
@@ -180,7 +181,7 @@ _extract_stage_turns() {
     # Match "Label:" or "Label (suffix):" patterns
     local turns
     turns=$(echo -e "$summary" | grep -i "${stage_label}" | head -1 | \
-        grep -oE '[0-9]+/' | head -1 | tr -d '/' || echo "0")
+        grep -oE '[0-9]+/' | head -1 | tr -d '/' || true)
     echo "${turns:-0}"
 }
 
@@ -210,15 +211,15 @@ summarize_metrics() {
 
     # Count by task type
     local bug_count feature_count milestone_count
-    bug_count=$(echo "$records" | grep -c '"task_type":"bug"' || echo "0")
-    feature_count=$(echo "$records" | grep -c '"task_type":"feature"' || echo "0")
-    milestone_count=$(echo "$records" | grep -c '"task_type":"milestone"' || echo "0")
+    bug_count=$(echo "$records" | grep -c '"task_type":"bug"' || true)
+    feature_count=$(echo "$records" | grep -c '"task_type":"feature"' || true)
+    milestone_count=$(echo "$records" | grep -c '"task_type":"milestone"' || true)
 
     # Count successes by type
     local bug_success feature_success milestone_success
-    bug_success=$(echo "$records" | grep '"task_type":"bug"' | grep -c '"outcome":"success"' || echo "0")
-    feature_success=$(echo "$records" | grep '"task_type":"feature"' | grep -c '"outcome":"success"' || echo "0")
-    milestone_success=$(echo "$records" | grep '"task_type":"milestone"' | grep -c '"outcome":"success"' || echo "0")
+    bug_success=$(echo "$records" | grep '"task_type":"bug"' | grep -c '"outcome":"success"' || true)
+    feature_success=$(echo "$records" | grep '"task_type":"feature"' | grep -c '"outcome":"success"' || true)
+    milestone_success=$(echo "$records" | grep '"task_type":"milestone"' | grep -c '"outcome":"success"' || true)
 
     # Average coder turns by type
     local bug_avg_turns feature_avg_turns milestone_avg_turns
@@ -232,27 +233,29 @@ summarize_metrics() {
     scout_reviewer_acc=$(_scout_accuracy "$records" "scout_est_reviewer" "reviewer_turns")
     scout_tester_acc=$(_scout_accuracy "$records" "scout_est_tester" "tester_turns")
 
-    # Success rate calculation helper
-    _pct() {
-        local success="$1" total="$2"
-        if [[ "$total" -eq 0 ]]; then
-            echo "N/A"
-        else
-            echo "$(( success * 100 / total ))%"
-        fi
-    }
+    # Success rate calculation (inlined to avoid polluting global namespace)
+    local bug_pct="N/A" feature_pct="N/A" milestone_pct="N/A"
+    if [[ "$bug_count" -gt 0 ]]; then
+        bug_pct="$(( bug_success * 100 / bug_count ))%"
+    fi
+    if [[ "$feature_count" -gt 0 ]]; then
+        feature_pct="$(( feature_success * 100 / feature_count ))%"
+    fi
+    if [[ "$milestone_count" -gt 0 ]]; then
+        milestone_pct="$(( milestone_success * 100 / milestone_count ))%"
+    fi
 
     echo "Tekhton Metrics — last ${max_records} runs (${total_lines} total)"
     echo "────────────────────────────────────────"
 
     if [[ "$bug_count" -gt 0 ]]; then
-        echo "Bug fixes:     ${bug_count} runs, avg ${bug_avg_turns} coder turns, $(_pct "$bug_success" "$bug_count") success"
+        echo "Bug fixes:     ${bug_count} runs, avg ${bug_avg_turns} coder turns, ${bug_pct} success"
     fi
     if [[ "$feature_count" -gt 0 ]]; then
-        echo "Features:      ${feature_count} runs, avg ${feature_avg_turns} coder turns, $(_pct "$feature_success" "$feature_count") success"
+        echo "Features:      ${feature_count} runs, avg ${feature_avg_turns} coder turns, ${feature_pct} success"
     fi
     if [[ "$milestone_count" -gt 0 ]]; then
-        echo "Milestones:    ${milestone_count} runs, avg ${milestone_avg_turns} coder turns, $(_pct "$milestone_success" "$milestone_count") success"
+        echo "Milestones:    ${milestone_count} runs, avg ${milestone_avg_turns} coder turns, ${milestone_pct} success"
     fi
 
     echo "────────────────────────────────────────"
@@ -282,10 +285,10 @@ summarize_metrics() {
     # Error breakdown by category (12.3)
     local has_errors=false
     local upstream_count env_count agent_count pipeline_count
-    upstream_count=$(echo "$records" | grep -c '"error_category":"UPSTREAM"' || echo "0")
-    env_count=$(echo "$records" | grep -c '"error_category":"ENVIRONMENT"' || echo "0")
-    agent_count=$(echo "$records" | grep -c '"error_category":"AGENT_SCOPE"' || echo "0")
-    pipeline_count=$(echo "$records" | grep -c '"error_category":"PIPELINE"' || echo "0")
+    upstream_count=$(echo "$records" | grep -c '"error_category":"UPSTREAM"' || true)
+    env_count=$(echo "$records" | grep -c '"error_category":"ENVIRONMENT"' || true)
+    agent_count=$(echo "$records" | grep -c '"error_category":"AGENT_SCOPE"' || true)
+    pipeline_count=$(echo "$records" | grep -c '"error_category":"PIPELINE"' || true)
 
     if [[ "$upstream_count" -gt 0 ]] || [[ "$env_count" -gt 0 ]] || \
        [[ "$agent_count" -gt 0 ]] || [[ "$pipeline_count" -gt 0 ]]; then
@@ -300,7 +303,7 @@ summarize_metrics() {
         fi
         if [[ "$env_count" -gt 0 ]]; then
             local env_transient
-            env_transient=$(echo "$records" | grep '"error_category":"ENVIRONMENT"' | grep -c '"error_transient":true' || echo "0")
+            env_transient=$(echo "$records" | grep '"error_category":"ENVIRONMENT"' | grep -c '"error_transient":true' || true)
             echo "  ENVIRONMENT:  ${env_count} (${env_transient} transient)"
         fi
         if [[ "$agent_count" -gt 0 ]]; then
@@ -334,7 +337,7 @@ _avg_field() {
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local val
-        val=$(echo "$line" | grep -oE "\"${field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
+        val=$(echo "$line" | grep -oE "\"${field}\":[0-9]+" | grep -oE '[0-9]+$' || true)
         sum=$(( sum + val ))
         count=$(( count + 1 ))
     done <<< "$type_records"
@@ -358,8 +361,8 @@ _scout_accuracy() {
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
         local est actual
-        est=$(echo "$line" | grep -oE "\"${est_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
-        actual=$(echo "$line" | grep -oE "\"${actual_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
+        est=$(echo "$line" | grep -oE "\"${est_field}\":[0-9]+" | grep -oE '[0-9]+$' || true)
+        actual=$(echo "$line" | grep -oE "\"${actual_field}\":[0-9]+" | grep -oE '[0-9]+$' || true)
         # Skip records where scout didn't estimate (est=0)
         if [[ "$est" -gt 0 ]]; then
             local diff=$(( est - actual ))
@@ -379,103 +382,3 @@ _scout_accuracy() {
     fi
 }
 
-# =============================================================================
-# calibrate_turn_estimate — Adjusts turn estimate based on historical accuracy
-#
-# Usage: calibrate_turn_estimate RECOMMENDATION STAGE
-#   RECOMMENDATION: scout's recommended turns (integer)
-#   STAGE: "coder", "reviewer", or "tester"
-# Returns: adjusted turn count on stdout
-#
-# Only applies calibration when METRICS_ADAPTIVE_TURNS=true and at least
-# METRICS_MIN_RUNS records exist. Returns the original estimate unchanged
-# when insufficient data is available.
-#
-# Calibration multiplier = actual_avg / estimate_avg, clamped to [0.5, 2.0].
-# =============================================================================
-
-calibrate_turn_estimate() {
-    local recommendation="$1"
-    local stage="$2"
-
-    # Short-circuit if adaptive calibration is disabled
-    if [[ "${METRICS_ADAPTIVE_TURNS:-true}" != "true" ]]; then
-        echo "$recommendation"
-        return
-    fi
-
-    _ensure_metrics_file
-
-    if [[ ! -f "$_METRICS_FILE" ]] || [[ ! -s "$_METRICS_FILE" ]]; then
-        echo "$recommendation"
-        return
-    fi
-
-    local min_runs="${METRICS_MIN_RUNS:-5}"
-    local total_lines
-    total_lines=$(wc -l < "$_METRICS_FILE" | tr -d '[:space:]')
-
-    if [[ "$total_lines" -lt "$min_runs" ]]; then
-        echo "$recommendation"
-        return
-    fi
-
-    # Determine field names based on stage
-    local est_field actual_field
-    case "$stage" in
-        coder)    est_field="scout_est_coder";    actual_field="coder_turns" ;;
-        reviewer) est_field="scout_est_reviewer";  actual_field="reviewer_turns" ;;
-        tester)   est_field="scout_est_tester";    actual_field="tester_turns" ;;
-        *)
-            echo "$recommendation"
-            return
-            ;;
-    esac
-
-    # Read last 50 records
-    local records
-    records=$(tail -n 50 "$_METRICS_FILE")
-
-    # Compute average estimate and average actual for records where est > 0
-    local est_sum=0 actual_sum=0 count=0
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        local est actual
-        est=$(echo "$line" | grep -oE "\"${est_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
-        actual=$(echo "$line" | grep -oE "\"${actual_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
-        if [[ "$est" -gt 0 ]] && [[ "$actual" -gt 0 ]]; then
-            est_sum=$(( est_sum + est ))
-            actual_sum=$(( actual_sum + actual ))
-            count=$(( count + 1 ))
-        fi
-    done <<< "$records"
-
-    # Need enough data points with scout estimates
-    if [[ "$count" -lt "$min_runs" ]]; then
-        echo "$recommendation"
-        return
-    fi
-
-    # Calculate multiplier: actual_avg / estimate_avg
-    # Using integer arithmetic: (actual_sum * 100) / est_sum gives centimultiplier
-    local centimult
-    centimult=$(( actual_sum * 100 / est_sum ))
-
-    # Clamp to [50, 200] (representing 0.5x to 2.0x)
-    if [[ "$centimult" -lt 50 ]]; then
-        centimult=50
-    elif [[ "$centimult" -gt 200 ]]; then
-        centimult=200
-    fi
-
-    # Apply multiplier: (recommendation * centimult + 50) / 100 (rounded)
-    local adjusted
-    adjusted=$(( (recommendation * centimult + 50) / 100 ))
-
-    # Never go below 1
-    if [[ "$adjusted" -lt 1 ]]; then
-        adjusted=1
-    fi
-
-    echo "$adjusted"
-}

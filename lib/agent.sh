@@ -214,6 +214,9 @@ run_agent() {
             fi
         fi
         # Do NOT classify as null run — this was an API failure, not a scope issue
+        # Still emit structured summary so `tail -20 <logfile>` diagnoses failures
+        _append_agent_summary "$label" "$model" "$turns_used" "$max_turns" \
+            "$mins" "$secs" "$agent_exit" "0" "$log_file"
         return
     fi
 

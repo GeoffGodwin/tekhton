@@ -88,8 +88,30 @@ run_stage_tester() {
 
     if [ ! -f "TESTER_REPORT.md" ]; then
         warn "Tester did not produce TESTER_REPORT.md."
-        warn "Check the log: ${LOG_FILE}"
-        warn "Re-run with: $0 --start-at test \"${TASK}\""
+        # Check if test files were created despite missing report
+        local _test_file_count=0
+        if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+            _test_file_count=$(git diff --name-only HEAD 2>/dev/null | grep -ciE 'test|spec' || echo "0")
+        fi
+        if [[ "$_test_file_count" -gt 0 ]]; then
+            warn "Tester created ${_test_file_count} test file(s) but no report — synthesizing minimal TESTER_REPORT.md."
+            local _test_files
+            _test_files=$(git diff --name-only HEAD 2>/dev/null | grep -iE 'test|spec' | head -20 || true)
+            cat > TESTER_REPORT.md <<TESTER_EOF
+## Test Summary
+TESTER_REPORT.md was synthesized by the pipeline. The tester agent created
+test files but did not produce a report. Review the test files directly.
+
+## Test Files Created
+$(echo "$_test_files" | sed 's/^/- [x] `/' | sed 's/$/`/')
+
+## Bugs Found
+- None reported (tester did not produce a structured report)
+TESTER_EOF
+        else
+            warn "Check the log: ${LOG_FILE}"
+            warn "Re-run with: $0 --start-at test \"${TASK}\""
+        fi
     else
         REMAINING=$(grep -c "^- \[ \]" TESTER_REPORT.md || true)
         REMAINING=$(echo "$REMAINING" | tr -d '[:space:]')

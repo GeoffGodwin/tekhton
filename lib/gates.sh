@@ -103,6 +103,31 @@ EOF
     return 0
 }
 
+# --- Summary accuracy check ---------------------------------------------------
+# Cross-checks CODER_SUMMARY.md "Files Modified" section against actual git diff.
+# Logs a warning when the summary underreports changes. Non-blocking — informational only.
+_warn_summary_drift() {
+    [[ -f "CODER_SUMMARY.md" ]] || return 0
+
+    # Count files actually changed (tracked modifications + staged)
+    local actual_count=0
+    if command -v git &>/dev/null; then
+        actual_count=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]')
+        actual_count="${actual_count:-0}"
+    fi
+    [[ "$actual_count" -gt 0 ]] || return 0
+
+    # Check if summary mentions files or claims none modified
+    local files_section=""
+    files_section=$(sed -n '/^## Files Modified/,/^## /p' CODER_SUMMARY.md 2>/dev/null \
+        | head -20 || true)
+
+    if [[ -z "$files_section" ]] || echo "$files_section" | grep -qi "no files\|none\|N/A"; then
+        warn "CODER_SUMMARY.md reports no files modified but git shows ${actual_count} changed file(s)."
+        warn "Summary accuracy drift detected — review CODER_SUMMARY.md before committing."
+    fi
+}
+
 # COMPLETION GATE — runs after coder, before build gate
 # Blocks pipeline progression if coder did not self-report completion
 #
@@ -125,10 +150,18 @@ run_completion_gate() {
 
     if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
         log "Completion gate PASSED — coder self-reported COMPLETE."
+        _warn_summary_drift
         return 0
     fi
 
-    # Status is missing or ambiguous — treat as incomplete
+    # Status is missing or ambiguous — check if substantive work exists.
+    # If files were modified, treat as IN PROGRESS rather than hard-failing.
+    if command -v is_substantive_work &>/dev/null && is_substantive_work; then
+        warn "Completion gate — Status field missing but substantive work detected."
+        warn "Treating as IN PROGRESS. Reviewer will assess actual changes."
+        return 1
+    fi
+
     warn "Completion gate FAILED — CODER_SUMMARY.md has no clear Status field."
     warn "Expected '## Status' line with COMPLETE or IN PROGRESS."
     return 1

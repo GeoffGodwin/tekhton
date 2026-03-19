@@ -105,7 +105,28 @@ generate_commit_message() {
     if [ -n "$what" ]; then
         body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 | sed 's/^[-*] /- /' || true)
     fi
-    if [ -n "$file_count" ] && [ "$file_count" -gt 0 ] 2>/dev/null; then
+
+    # Append git diff --stat for a concrete file list and change summary
+    local diff_stat=""
+    diff_stat=$(git diff --cached --stat 2>/dev/null || git diff HEAD --stat 2>/dev/null || true)
+    if [ -z "$diff_stat" ]; then
+        diff_stat=$(git diff --stat 2>/dev/null || true)
+    fi
+    if [ -n "$diff_stat" ]; then
+        # Last line of diff --stat is the summary (e.g., "7 files changed, 73 insertions(+), 54 deletions(-)")
+        local diff_summary
+        diff_summary=$(echo "$diff_stat" | tail -1 | sed 's/^ *//')
+        # File lines are everything except the summary
+        local diff_files
+        diff_files=$(echo "$diff_stat" | awk 'NR>1{print prev} {prev=$0}' | sed 's/^ *//' | head -15)
+        if [ -n "$diff_summary" ]; then
+            body="${body:+${body}
+}
+Files changed:
+${diff_files}
+${diff_summary}"
+        fi
+    elif [ -n "$file_count" ] && [ "$file_count" -gt 0 ] 2>/dev/null; then
         body="${body}
 - ${file_count} files created or modified"
     fi

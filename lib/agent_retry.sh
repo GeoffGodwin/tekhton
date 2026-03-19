@@ -182,7 +182,8 @@ _should_retry_transient() {
             [[ "$_delay" -lt 60 ]] && _delay=60
             ;;
         oom)
-            _delay=15
+            # Use exponential backoff with 15s floor (instead of flat 15s)
+            [[ "$_delay" -lt 15 ]] && _delay=15
             ;;
     esac
 
