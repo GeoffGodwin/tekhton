@@ -201,32 +201,43 @@ run_stage_architect() {
 
     # --- Resolve drift observations ------------------------------------------
 
-    # Extract the "Drift Observations to Resolve" section from the plan
-    local resolve_section
-    resolve_section=$(awk '/^## Drift Observations to Resolve/{found=1; next} found && /^##/{exit} found{print}' \
-        ARCHITECT_PLAN.md 2>/dev/null || true)
+    local pre_resolve_count
+    pre_resolve_count=$(count_drift_observations)
 
-    if [ -n "$resolve_section" ]; then
-        log "Marking addressed drift observations as resolved..."
-        # Build pattern list from resolve section lines
-        local resolve_patterns=()
-        while IFS= read -r line; do
-            line=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
-            [ -z "$line" ] && continue
-            # Skip placeholder / boilerplate lines
-            echo "$line" | grep -qiE '^\s*None\b' && continue
-            echo "$line" | grep -qE '^\s*-+\s*$' && continue
-            # Escape regex special characters for safe grep matching
-            local escaped
-            # shellcheck disable=SC2016
-            escaped=$(printf '%s' "$line" | sed 's/[.[\*^$()+?{|]/\\&/g')
-            resolve_patterns+=("$escaped")
-        done <<< "$resolve_section"
+    if [ "$pre_resolve_count" -gt 0 ]; then
+        # Extract Out of Scope items — these stay unresolved for next audit cycle
+        local oos_section
+        oos_section=$(awk '/^## Out of Scope/{found=1; next} found && /^##/{exit} found{print}' \
+            ARCHITECT_PLAN.md 2>/dev/null || true)
 
-        if [ ${#resolve_patterns[@]} -gt 0 ]; then
-            resolve_drift_observations "${resolve_patterns[@]}"
-            log "Resolved ${#resolve_patterns[@]} observation(s) in drift log."
+        local oos_items=()
+        if [ -n "$oos_section" ]; then
+            while IFS= read -r line; do
+                line=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
+                [ -z "$line" ] && continue
+                echo "$line" | grep -qiE '^\s*None\b' && continue
+                echo "$line" | grep -qiE '^\s*N/?A\b' && continue
+                echo "$line" | grep -qiE '^No (items?|observations?)\b' && continue
+                echo "$line" | grep -qE '^\s*-+\s*$' && continue
+                oos_items+=("$line")
+            done <<< "$oos_section"
         fi
+
+        # Resolve ALL unresolved observations — the architect reviewed them all.
+        # This replaces fragile pattern-matching that silently failed when the
+        # architect paraphrased observations instead of copying them verbatim.
+        log "Resolving all ${pre_resolve_count} drift observations..."
+        resolve_all_drift_observations
+
+        # Re-add Out of Scope items as new unresolved entries
+        if [ ${#oos_items[@]} -gt 0 ]; then
+            log "Re-adding ${#oos_items[@]} out-of-scope item(s) to drift log..."
+            append_drift_entries "${oos_items[@]}"
+        fi
+
+        local post_resolve_count
+        post_resolve_count=$(count_drift_observations)
+        log "Drift resolution: ${pre_resolve_count} → ${post_resolve_count} unresolved."
     fi
 
     # --- Surface design doc observations to human ----------------------------
