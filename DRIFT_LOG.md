@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-18
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
+- [2026-03-19 | "Implement Milestone 13.2.1: "] `stages/tester.sh:101` — the pipeline `grep ... | tee -a "$LOG_FILE"` appends grep output to the log. If `$LOG_FILE` is the same file already being written by `run_agent`, this can produce duplicate entries. Not introduced by this milestone but worth flagging for the audit log.
 - [2026-03-18 | "Finish implementing Milestone 13.2.1: Core Retry Envelope in run_agent()"] `lib/config.sh` is 342 lines — exceeds the 300-line ceiling. Pre-existing issue, no changes to scope in this rework. Candidate for a future `lib/config_defaults.sh` extraction.
 - [2026-03-18 | "Finish implementing Milestone 13.2.1: Core Retry Envelope in run_agent()"] --
 - [2026-03-18 | "Implement Milestone 13.2.1: Core Retry Envelope in run_agent()"] `lib/agent_monitor.sh` remains well over 300 lines. Pre-existing, noted in prior review. Warrants a future split.

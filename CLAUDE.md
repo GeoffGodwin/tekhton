@@ -367,71 +367,79 @@ retry loop in 13.2.
 - Milestone 13.2 calls `report_retry()` and `_reset_monitoring_state()` inside
   the retry loop in `run_agent()`.
 
-#### Milestone 13.2.1: Core Retry Envelope in run_agent()
+Looking at the code, Milestone 13.2.1 appears to already be fully implemented (commit `2fdead0`). The `lib/agent_retry.sh` file exists with `_run_with_retry()`, `_classify_agent_exit()`, and `_should_retry_transient()`, and `lib/agent.sh` already calls it.
 
-Add the `_retry_agent()` wrapper inside `run_agent()` that detects transient errors
-via `classify_error()` and retries with exponential backoff. This is the core retry
-logic — it calls `report_retry()` and `_reset_monitoring_state()` (both from 13.1),
-uses `is_transient()` from `lib/errors.sh`, and re-invokes `_invoke_and_monitor`
-with identical arguments. No stage-level or metrics changes in this sub-milestone.
+However, if you still need the split for documentation or re-execution purposes, here it is:
+
+---
+
+#### Milestone 13.2.1.1: Retry Envelope Skeleton and Error Classification Bridge
+
+Add the `lib/agent_retry.sh` file with the `_run_with_retry()` function skeleton that wraps `_invoke_and_monitor()` in a single-attempt loop, extracts error classification into `_classify_agent_exit()`, and wires it into `run_agent()` via sourcing. No actual retry logic yet — this sub-milestone moves the invocation and classification into the retry wrapper so 13.2.1.2 can add the retry loop cleanly.
+
+**Files to create:**
+- `lib/agent_retry.sh` — Retry envelope skeleton:
+  - `_run_with_retry()` — accepts all `_invoke_and_monitor` parameters plus label, calls `_invoke_and_monitor` once, runs `_classify_agent_exit()`, sets `_RWR_EXIT`, `_RWR_TURNS`, `_RWR_WAS_ACTIVITY_TIMEOUT` globals for `run_agent()` to consume
+  - `_classify_agent_exit()` — extracts the error classification logic (reading stderr, last output, file changes, CODER_SUMMARY.md check) and sets `AGENT_ERROR_*` globals via `classify_error()`
 
 **Files to modify:**
-- `lib/agent.sh` — Initialize `LAST_AGENT_RETRY_COUNT=0` alongside other agent exit
-  detection globals (line ~48). Inside `run_agent()`, after `classify_error()` runs
-  (line ~197) but BEFORE the existing UPSTREAM bypass (line ~205):
-  1. If `TRANSIENT_RETRY_ENABLED=false`: skip retry, fall through to existing path
-  2. If `AGENT_ERROR_TRANSIENT=true`: enter retry loop
-  3. Backoff schedule: `TRANSIENT_RETRY_BASE_DELAY` × 2^attempt, capped at
-     `TRANSIENT_RETRY_MAX_DELAY`
-  4. For `api_rate_limit` (429): parse `retry-after` from last output if available,
-     otherwise minimum 60s wait
-  5. For `api_overloaded` (529): minimum 60s wait
-  6. For `oom`: wait 15s (allow OS to reclaim memory)
-  7. Call `report_retry()` before each sleep
-  8. Call `_reset_monitoring_state()` before re-invocation
-  9. On retry: re-invoke `_invoke_and_monitor` with identical arguments
-  10. After `MAX_TRANSIENT_RETRIES` exhausted: fall through to existing error path
-  11. Reset `AGENT_ERROR_*` variables between retries
-  12. Track retry count in `LAST_AGENT_RETRY_COUNT` variable
-  13. Consider process group cleanup on retry: `kill -- -$PID` before retrying
+- `lib/agent.sh` — Source `lib/agent_retry.sh`. Initialize `LAST_AGENT_RETRY_COUNT=0` alongside other agent exit globals. Replace the inline `_invoke_and_monitor` call and post-invocation error classification with a single `_run_with_retry()` call. Read results from `_RWR_*` globals instead of `_MONITOR_*` directly.
 
 **Acceptance criteria:**
-- API 500 error during any agent stage triggers automatic retry after 30s delay
-- API 429 (rate limit) triggers retry with 60s minimum delay
-- API 529 (overloaded) triggers retry with 60s minimum delay
-- OOM (exit 137) triggers retry after 15s for ALL agents
-- Network errors (DNS, connection timeout) trigger retry after 30s
-- Maximum 3 retries before falling through to state-save-and-exit
-- Delay doubles on each attempt (30s → 60s → 120s) capped at `TRANSIENT_RETRY_MAX_DELAY`
-- FIFO monitoring and ring buffer are cleanly re-initialized between retries
-  (via `_reset_monitoring_state()`)
-- Activity timeout detection works correctly on retry attempts
-- Retry attempts are logged with attempt number and category via `report_retry()`
-- Permanent errors (`AGENT_SCOPE`, `PIPELINE`) are NEVER retried — they fall
-  through immediately to existing error paths
-- `TRANSIENT_RETRY_ENABLED=false` disables retry entirely (1.0-compatible behavior)
+- `run_agent()` delegates to `_run_with_retry()` which calls `_invoke_and_monitor()` exactly once
+- Error classification (`classify_error()`) runs inside `_classify_agent_exit()` and sets all `AGENT_ERROR_*` globals identically to the previous inline code
+- `_RWR_EXIT`, `_RWR_TURNS`, `_RWR_WAS_ACTIVITY_TIMEOUT` are set correctly
+- `LAST_AGENT_RETRY_COUNT` is initialized to 0 and remains 0 (no retries yet)
+- Timeout warnings (activity timeout, wall timeout) are printed inside `_run_with_retry()`
 - All existing tests pass
-- `bash -n` and `shellcheck` pass on `lib/agent.sh`
+- `bash -n` and `shellcheck` pass on `lib/agent_retry.sh` and `lib/agent.sh`
 
 **Watch For:**
-- The retry envelope wraps the agent invocation INSIDE `run_agent()`, not at the
-  stage level. Stages should not know about retries — they see success or failure.
-- FIFO cleanup between retries is critical. A stale FIFO reader from attempt 1
-  will interfere with attempt 2's monitoring. `_reset_monitoring_state()` handles
-  this but verify it kills the subshell before removing the FIFO.
-- `retry-after` header parsing from Claude CLI JSON output is best-effort. If the
-  header isn't present or parseable, fall back to the exponential backoff schedule.
-- Do NOT retry on `AGENT_SCOPE/null_run` or `AGENT_SCOPE/max_turns`. Those are
-  permanent conditions — the agent genuinely couldn't do the work.
-- The retry loop must intercept BEFORE the existing UPSTREAM early return — check
-  for transient errors and retry before the UPSTREAM bypass fires.
-- The retry loop must re-run error classification after each retry attempt by
-  re-invoking `_invoke_and_monitor` and then re-classifying the new exit.
+- The extraction must be behavior-preserving. Run existing tests to verify no regressions from moving code between files.
+- `_IM_PERM_FLAGS` is set in `run_agent()` and read in `_invoke_and_monitor()` — ensure it's still visible after the refactor (it's a global, so sourcing order is fine).
+- The `trap - INT TERM` after `_invoke_and_monitor` must be preserved in the retry wrapper.
 
 **Seeds Forward:**
-- Milestone 13.2.2 removes the tester-specific OOM retry and adds `retry_count`
-  to metrics, completing the 13.2 scope
+- Milestone 13.2.1.2 adds the retry loop and backoff inside this skeleton.
 
+#### Milestone 13.2.1.2: Transient Retry Loop with Exponential Backoff
+
+Add the actual retry logic to `_run_with_retry()`: a `while true` loop that checks `_should_retry_transient()` after each attempt, sleeps with exponential backoff, calls `_reset_monitoring_state()`, and re-invokes `_invoke_and_monitor`. Add `_should_retry_transient()` with subcategory-specific minimum delays (429→60s, 529→60s, OOM→15s) and retry-after header parsing.
+
+**Files to modify:**
+- `lib/agent_retry.sh` — Convert single-attempt `_run_with_retry()` into a retry loop:
+  - Add `_should_retry_transient()` function: checks `TRANSIENT_RETRY_ENABLED`, `AGENT_ERROR_TRANSIENT`, and `retry_attempt < MAX_TRANSIENT_RETRIES`; computes exponential backoff delay (`base * 2^attempt`, capped at max); applies subcategory minimums; parses `retry-after` from last output for 429; calls `report_retry()` and `_reset_monitoring_state()`; sleeps; returns 0 to signal retry
+  - Wrap `_invoke_and_monitor` + `_classify_agent_exit` in `while true` with `_should_retry_transient` check
+  - Reset `AGENT_ERROR_*` globals at the top of each loop iteration
+  - Track retry count in `LAST_AGENT_RETRY_COUNT`
+  - Clean up `exit_file` and `turns_file` between retries
+
+**Acceptance criteria:**
+- API 500 error triggers automatic retry after 30s delay
+- API 429 (rate limit) triggers retry with 60s minimum delay
+- API 529 (overloaded) triggers retry with 60s minimum delay
+- OOM (exit 137) triggers retry after 15s
+- Network errors (DNS, connection timeout) trigger retry after 30s
+- Maximum 3 retries before falling through to existing error path
+- Delay doubles on each attempt (30s → 60s → 120s) capped at `TRANSIENT_RETRY_MAX_DELAY`
+- FIFO monitoring and ring buffer are cleanly re-initialized between retries via `_reset_monitoring_state()`
+- Activity timeout detection works correctly on retry attempts
+- Retry attempts are logged with attempt number and category via `report_retry()`
+- Permanent errors (`AGENT_SCOPE`, `PIPELINE`) are NEVER retried
+- `TRANSIENT_RETRY_ENABLED=false` disables retry entirely (1.0-compatible behavior)
+- `retry-after` header parsing is best-effort with fallback to exponential backoff
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/agent_retry.sh`
+
+**Watch For:**
+- The retry loop must intercept BEFORE the existing UPSTREAM early return in `run_agent()` — transient errors are retried before `run_agent()` sees them.
+- FIFO cleanup between retries is critical. `_reset_monitoring_state()` must kill the subshell before removing the FIFO.
+- `retry-after` header parsing from Claude CLI JSON output is best-effort. If not parseable, fall back to exponential backoff.
+- Do NOT retry `AGENT_SCOPE/null_run` or `AGENT_SCOPE/max_turns` — those are permanent.
+- Process group cleanup: ensure `_reset_monitoring_state()` kills lingering agent PIDs before retry.
+
+**Seeds Forward:**
+- Milestone 13.2.2 reads `LAST_AGENT_RETRY_COUNT` for metrics integration and removes the tester-specific OOM retry that is now redundant.
 #### Milestone 13.2.2: Stage Cleanup and Metrics Integration
 
 Remove the now-redundant tester-specific OOM retry (which would cause double retry
