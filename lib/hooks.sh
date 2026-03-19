@@ -118,9 +118,14 @@ ${root_cause}"
         fi
     fi
 
-    # Append git diff --stat for a concrete file list and change summary
+    # Append git diff --stat for a concrete file list and change summary.
+    # Prefer --cached (staged changes) since tekhton.sh pre-stages before calling
+    # this function. Fall back to HEAD comparison for unstaged working tree changes.
     local diff_stat=""
-    diff_stat=$(git diff --cached --stat 2>/dev/null || git diff HEAD --stat 2>/dev/null || true)
+    diff_stat=$(git diff --cached --stat 2>/dev/null || true)
+    if [ -z "$diff_stat" ]; then
+        diff_stat=$(git diff HEAD --stat 2>/dev/null || true)
+    fi
     if [ -z "$diff_stat" ]; then
         diff_stat=$(git diff --stat 2>/dev/null || true)
     fi

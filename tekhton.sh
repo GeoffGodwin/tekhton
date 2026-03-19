@@ -1017,7 +1017,16 @@ if [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
     _MS_COMMIT_DISPOSITION=$(get_milestone_disposition 2>/dev/null || echo "")
 fi
 
-# --- Generate commit message -------------------------------------------------
+# --- Pre-stage and generate commit message -----------------------------------
+# Stage all changes BEFORE generating the commit message so that
+# generate_commit_message() can use `git diff --cached --stat` to produce an
+# accurate file list and change summary (including previously untracked files).
+# Remove the lock file first so it isn't included in the staged changes.
+if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
+    rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
+fi
+_check_gitignore_safety
+git add -A > /dev/null 2>&1
 
 COMMIT_MSG=$(generate_commit_message "$TASK" "$_MS_COMMIT_NUM" "$_MS_COMMIT_DISPOSITION" || echo "feat: ${TASK}")
 
@@ -1099,12 +1108,6 @@ echo "────────────────────────�
 echo "$COMMIT_MSG"
 echo "────────────────────────────────────────"
 echo
-
-# Remove lock file BEFORE commit so it isn't staged by git add -A and then
-# deleted by the EXIT trap, leaving an uncommitted deletion in the working tree.
-if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
-    rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
-fi
 
 # Auto-commit when configured — skip interactive prompt entirely
 if [ "${AUTO_COMMIT:-false}" = "true" ]; then
