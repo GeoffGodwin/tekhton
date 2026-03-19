@@ -815,6 +815,14 @@ _run_pipeline_stages() {
     fi
 }
 
+# --- Usage threshold check (before pipeline execution) ----------------------
+if ! check_usage_threshold; then
+    warn "Pipeline paused — session usage exceeds USAGE_THRESHOLD_PCT (${USAGE_THRESHOLD_PCT}%)."
+    warn "Wait for the usage window to reset, or raise the threshold in pipeline.conf."
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # Run the pipeline stages (first pass)
 _run_pipeline_stages
 
@@ -870,6 +878,13 @@ if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
                         mv "$f" "$ARCHIVE_NAME"
                     fi
                 done
+
+                # Check usage threshold before starting next milestone
+                if ! check_usage_threshold; then
+                    warn "Usage threshold reached before milestone ${_CURRENT_MILESTONE}. Pausing auto-advance."
+                    write_milestone_disposition "COMPLETE_AND_WAIT"
+                    break
+                fi
 
                 # Update log file for new milestone
                 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -1063,18 +1078,24 @@ if [ -n "${_TEKHTON_LOCK_FILE:-}" ] && [ -f "${_TEKHTON_LOCK_FILE}" ]; then
     rm -f "${_TEKHTON_LOCK_FILE}" 2>/dev/null || true
 fi
 
-log "Commit with suggested message? [y/e/n]"
-echo "  y = commit now with this message"
-echo "  e = open message in \$EDITOR first"
-echo "  n = skip (commit manually later)"
-
-# Read from /dev/tty when stdin is piped, so `yes | tekhton` doesn't
-# silently auto-answer the commit prompt after consuming the resume prompt.
-if [ -t 0 ]; then
-    read -r COMMIT_CHOICE
+# Auto-commit when configured — skip interactive prompt entirely
+if [ "${AUTO_COMMIT:-false}" = "true" ]; then
+    log "AUTO_COMMIT enabled — committing automatically."
+    COMMIT_CHOICE="y"
 else
-    read -r COMMIT_CHOICE < /dev/tty 2>/dev/null || COMMIT_CHOICE="y"
-    log "(read from /dev/tty — stdin was piped)"
+    log "Commit with suggested message? [y/e/n]"
+    echo "  y = commit now with this message"
+    echo "  e = open message in \$EDITOR first"
+    echo "  n = skip (commit manually later)"
+
+    # Read from /dev/tty when stdin is piped, so `yes | tekhton` doesn't
+    # silently auto-answer the commit prompt after consuming the resume prompt.
+    if [ -t 0 ]; then
+        read -r COMMIT_CHOICE
+    else
+        read -r COMMIT_CHOICE < /dev/tty 2>/dev/null || COMMIT_CHOICE="y"
+        log "(read from /dev/tty — stdin was piped)"
+    fi
 fi
 
 # Helper: stage, commit, and log output without printing verbose git details

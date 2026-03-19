@@ -84,8 +84,14 @@ _setup_box_chars() {
 # _print_box_frame — renders a boxed message block to stderr.
 # Pass content lines as positional arguments. Empty string "" inserts a blank separator.
 # Usage: _print_box_frame "line1" "" "line2" ...
+#        _print_box_frame --width 80 "line1" "" "line2" ...
 _print_box_frame() {
-    _setup_box_chars 60
+    local _width=60
+    if [[ "${1:-}" = "--width" ]]; then
+        _width="${2:-60}"
+        shift 2
+    fi
+    _setup_box_chars "$_width"
     {
         echo
         echo "${_BOX_TL}${_HLINE}${_BOX_TR}"
@@ -147,4 +153,51 @@ report_retry() {
 
 require_cmd() {
     command -v "$1" >/dev/null 2>&1 || { error "Required command not found: $1"; exit 1; }
+}
+
+# --- Usage threshold check ---------------------------------------------------
+# Checks if Claude CLI session usage exceeds the configured threshold.
+# Returns 0 if under threshold (safe to continue), 1 if over (should pause).
+# When USAGE_THRESHOLD_PCT=0, always returns 0 (disabled).
+#
+# Usage: check_usage_threshold || { log "Usage threshold reached"; exit 0; }
+
+check_usage_threshold() {
+    local threshold="${USAGE_THRESHOLD_PCT:-0}"
+
+    # Disabled when threshold is 0 or non-numeric
+    if ! [[ "$threshold" =~ ^[0-9]+$ ]] || [ "$threshold" -eq 0 ]; then
+        return 0
+    fi
+
+    # Parse claude /usage output for the current cost percentage
+    local usage_output
+    usage_output=$(claude usage 2>/dev/null || true)
+
+    if [ -z "$usage_output" ]; then
+        warn "[usage] Could not read claude usage — skipping threshold check."
+        return 0
+    fi
+
+    # Extract percentage from usage output (look for a line with N% or N.N%)
+    local pct
+    pct=$(echo "$usage_output" | grep -oE '[0-9]+(\.[0-9]+)?%' | head -1 | tr -d '%' || true)
+
+    if [ -z "$pct" ]; then
+        warn "[usage] Could not parse usage percentage — skipping threshold check."
+        return 0
+    fi
+
+    # Compare integer parts (bash can't do float comparison)
+    local pct_int
+    pct_int=$(echo "$pct" | cut -d. -f1)
+
+    if [ "$pct_int" -ge "$threshold" ]; then
+        warn "[usage] Session usage is ${pct}% — exceeds threshold of ${threshold}%."
+        warn "[usage] Pausing to avoid exceeding rate limits."
+        return 1
+    fi
+
+    log "[usage] Session usage: ${pct}% (threshold: ${threshold}%)"
+    return 0
 }

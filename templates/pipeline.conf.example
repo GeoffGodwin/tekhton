@@ -142,6 +142,17 @@ NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
 # Inject accumulated non-blocking notes into coder prompt when count exceeds this
 NON_BLOCKING_INJECTION_THRESHOLD=8
 
+# --- Usage tracking and commit behavior-------------------------------------
+# Usage threshold: pause before running the next pipeline stage if Claude API
+# usage has exceeded this percentage. Set to 0 (default) to disable.
+# Example: 90 pauses if "claude usage" output shows ≥90% consumed.
+# USAGE_THRESHOLD_PCT=0
+
+# Auto-commit: when true, automatically commits successful pipeline runs without
+# prompting the user. The commit message includes a summary, file list, and
+# change statistics. Set to false (default) to prompt before each commit.
+# AUTO_COMMIT=false
+
 # --- Human notes configuration ----------------------------------------------
 # Valid categories for --notes-filter (pipe-separated for case matching)
 NOTES_FILTER_CATEGORIES="BUG|FEAT|POLISH"

@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-19
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
 - [2026-03-19 | "Implement Milestone 14: Turn Exhaustion Continuation Loop"] Both the Sr Coder and Jr Coder touched the `agent_monitor.sh` header (lines 3-4). Sr Coder updated it as part of the extraction; Jr Coder confirmed it was already correct. No double-write conflict occurred — final state is correct. This is expected coordination when Simplification and Staleness items touch the same file, not a process concern.
