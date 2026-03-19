@@ -340,6 +340,7 @@ _reset_monitoring_state() {
         kill "$_TEKHTON_AGENT_PID" 2>/dev/null || true
         kill -9 "$_TEKHTON_AGENT_PID" 2>/dev/null || true
         _kill_agent_windows
+        _TEKHTON_AGENT_PID=""
     fi
 
     # Remove stale FIFO and temp files (guard with existence checks)
