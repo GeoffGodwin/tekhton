@@ -82,6 +82,8 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/config.sh`** — `load_config()` reads `PROJECT_DIR/.claude/pipeline.conf`, validates required fields, applies milestone overrides via `apply_milestone_overrides()`
 - **`lib/agent.sh`** — `run_agent(name, model, turns, prompt, logfile)` wraps claude CLI invocation with JSON output parsing, turn counting, timing, and error classification. Sources `agent_monitor.sh` and `agent_helpers.sh`.
 - **`lib/agent_monitor.sh`** — Agent monitoring, FIFO-based and polling-based activity detection, process management. `_invoke_and_monitor()` handles agent process lifecycle and timeout management.
+- **`lib/agent_monitor_helpers.sh`** — Post-invocation monitoring helpers: `_reset_monitoring_state()`, `_detect_file_changes()`, `_count_changed_files_since()`. Sourced by `agent.sh` after `agent_monitor.sh`.
+- **`lib/config_defaults.sh`** — Default values and hard upper-bound clamps for all pipeline config keys. Sourced by `config.sh` at the end of `load_config()`.
 - **`lib/agent_helpers.sh`** — `print_run_summary()`, `_append_agent_summary()`, `was_null_run()`, `check_agent_output()`. Extracted from `agent.sh` to keep it under the 300-line ceiling.
 - **`lib/gates.sh`** — `run_build_gate(label)` runs `ANALYZE_CMD`, `BUILD_CHECK_CMD`, and optionally a dependency constraint `validation_command` from the configured `architecture_constraints.yaml`. Captures all errors to `BUILD_ERRORS.md`. `run_completion_gate()` checks coder self-reported status from `CODER_SUMMARY.md`.
 - **`lib/hooks.sh`** — `archive_reports(dir, timestamp)`, `generate_commit_message(task)`, `run_final_checks(logfile)`.

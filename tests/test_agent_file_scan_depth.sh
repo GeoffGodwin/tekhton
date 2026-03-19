@@ -28,6 +28,7 @@ mkdir -p "$LOG_DIR"
 # Source required libs
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/agent_monitor.sh"
+source "${TEKHTON_HOME}/lib/agent_monitor_helpers.sh"
 
 FAIL=0
 

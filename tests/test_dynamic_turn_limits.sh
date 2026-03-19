@@ -29,7 +29,7 @@ REVIEWER_MAX_TURNS=10
 TESTER_MAX_TURNS=30
 CODER_MIN_TURNS=15
 CODER_MAX_TURNS_CAP=200
-REVIEWER_MIN_TURNS=5
+REVIEWER_MIN_TURNS=10
 REVIEWER_MAX_TURNS_CAP=30
 TESTER_MIN_TURNS=10
 TESTER_MAX_TURNS_CAP=100
@@ -257,7 +257,7 @@ EOF
 apply_scout_turn_limits "${TMPDIR}/SCOUT_REPORT.md" 2>/dev/null
 
 assert_eq "4.4 coder clamped to min" "15" "$ADJUSTED_CODER_TURNS"
-assert_eq "4.5 reviewer clamped to min" "5" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "4.5 reviewer clamped to min" "10" "$ADJUSTED_REVIEWER_TURNS"
 assert_eq "4.6 tester clamped to min" "10" "$ADJUSTED_TESTER_TURNS"
 
 # 4.7: Recommendation above maximum
@@ -314,11 +314,11 @@ echo "small change" >> "${TMPDIR}/init.txt"
 estimate_post_coder_turns 0 2>/dev/null
 
 # Should be the small-change heuristic (reviewer ~8, tester ~20)
-assert_eq "6.1 fallback small reviewer" "8" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.1 fallback small reviewer" "10" "$ADJUSTED_REVIEWER_TURNS"
 assert_eq "6.2 fallback small tester" "20" "$ADJUSTED_TESTER_TURNS"
 
 # 6.3: Formula with actual_coder_turns=50, files=2
-# reviewer = max(5, 50*0.35 + 2*1.5) = max(5, 17+3) = 20
+# reviewer = max(10, 50*0.35 + 2*1.5) = max(10, 17+3) = 20
 # tester   = max(10, 50*0.5 + 2*2.0) = max(10, 25+4) = 29
 estimate_post_coder_turns 50 2>/dev/null
 assert_eq "6.3 formula reviewer (50 turns, 2 files)" "20" "$ADJUSTED_REVIEWER_TURNS"
@@ -338,10 +338,10 @@ assert_eq "6.6 formula clamped reviewer max" "30" "$ADJUSTED_REVIEWER_TURNS"
 assert_eq "6.7 formula clamped tester max" "100" "$ADJUSTED_TESTER_TURNS"
 
 # 6.8: Formula with small turns — clamped to min
-# reviewer = 5*0.35 + 2*1.5 = 1+3 = 4 → clamped to REVIEWER_MIN_TURNS=5
+# reviewer = 5*0.35 + 2*1.5 = 1+3 = 4 → clamped to REVIEWER_MIN_TURNS=10
 # tester   = 5*0.5  + 2*2.0 = 2+4 = 6 → clamped to TESTER_MIN_TURNS=10
 estimate_post_coder_turns 5 2>/dev/null
-assert_eq "6.8 formula clamped reviewer min" "5" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.8 formula clamped reviewer min" "10" "$ADJUSTED_REVIEWER_TURNS"
 assert_eq "6.9 formula clamped tester min" "10" "$ADJUSTED_TESTER_TURNS"
 
 # 6.10: Formula with many files
@@ -377,7 +377,7 @@ assert_eq "6.13 disabled tester uses default" "$TESTER_MAX_TURNS" "$ADJUSTED_TES
 DYNAMIC_TURNS_ENABLED=true
 
 # 6.14: Absent CODER_SUMMARY.md — files_modified defaults to 0 in formula path
-# reviewer = max(5, 50*35/100 + 0*15/10) = max(5, 17+0) = 17
+# reviewer = max(10, 50*35/100 + 0*15/10) = max(10, 17+0) = 17
 # tester   = max(10, 50*50/100 + 0*20/10) = max(10, 25+0) = 25
 DYNAMIC_TURNS_ENABLED=true
 rm -f "${TMPDIR}/CODER_SUMMARY.md"

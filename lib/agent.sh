@@ -11,6 +11,14 @@
 # shellcheck source=lib/agent_monitor.sh
 source "${TEKHTON_HOME}/lib/agent_monitor.sh"
 
+# Source post-invocation monitoring helpers (file-change detection, state reset)
+# shellcheck source=lib/agent_monitor_helpers.sh
+source "${TEKHTON_HOME}/lib/agent_monitor_helpers.sh"
+
+# Source transient error retry envelope (13.2.1)
+# shellcheck source=lib/agent_retry.sh
+source "${TEKHTON_HOME}/lib/agent_retry.sh"
+
 # Source helper functions (run summary, output validation, null-run helpers)
 # shellcheck source=lib/agent_helpers.sh
 source "${TEKHTON_HOME}/lib/agent_helpers.sh"
@@ -40,6 +48,7 @@ LAST_AGENT_TURNS=0         # Turns the agent actually used
 LAST_AGENT_EXIT_CODE=0     # claude CLI exit code
 LAST_AGENT_ELAPSED=0       # Wall-clock seconds
 LAST_AGENT_NULL_RUN=false  # true if agent likely died without doing work
+LAST_AGENT_RETRY_COUNT=0   # Transient error retries used in last run_agent() call
 
 # --- Error classification globals (12.2 — set after classify_error()) --------
 AGENT_ERROR_CATEGORY=""
@@ -111,90 +120,76 @@ run_agent() {
     fi
 
     _IM_PERM_FLAGS=("${_perm_flags[@]}")  # Pass to monitor
-    _invoke_and_monitor "$_invoke" "$model" "$max_turns" "$prompt" \
-        "$log_file" "$_activity_timeout" "$_session_dir" "$_exit_file" "$_turns_file"
 
-    local agent_exit="$_MONITOR_EXIT_CODE"
-    local _was_activity_timeout="$_MONITOR_WAS_ACTIVITY_TIMEOUT"
-
-    trap - INT TERM
-    set -o pipefail
-
-    if [ "$agent_exit" -ne 0 ]; then
-        if [ "$agent_exit" -eq 124 ]; then
-            if [ "$_was_activity_timeout" = true ]; then
-                warn "[$label] ACTIVITY TIMEOUT — agent produced no output for ${_activity_timeout}s."
-                warn "[$label] This usually means claude hung on an API call or entered a retry loop."
-                warn "[$label] Set AGENT_ACTIVITY_TIMEOUT in pipeline.conf to change (0 = disable)."
-            else
-                warn "[$label] TIMEOUT — agent did not complete within ${_timeout}s. Set AGENT_TIMEOUT in pipeline.conf to change."
-            fi
-        else
-            warn "[$label] claude exited with code ${agent_exit} (may indicate turn limit or error)"
-        fi
+    # --- CLI activity indicator (spinner) — shows which agent is working --------
+    local _spinner_pid=""
+    if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
+        (
+            trap 'exit 0' INT TERM
+            chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+            start_ts=$(date +%s)
+            i=0
+            while true; do
+                now=$(date +%s)
+                elapsed=$(( now - start_ts ))
+                mins=$(( elapsed / 60 ))
+                secs=$(( elapsed % 60 ))
+                printf '\r\033[0;36m[tekhton]\033[0m %s %s is generating... %dm%02ds ' \
+                    "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" > /dev/tty
+                i=$(( i + 1 ))
+                sleep 0.2
+            done
+        ) &
+        _spinner_pid=$!
     fi
 
+    # --- Transient error retry envelope (13.2.1) --------------------------------
+    # Delegates invocation + classification + retry to _run_with_retry() in
+    # agent_retry.sh. Stages do not know about retries — they see success or
+    # final failure. Results come back via globals: AGENT_ERROR_*, LAST_AGENT_RETRY_COUNT,
+    # _RWR_EXIT, _RWR_TURNS, _RWR_WAS_ACTIVITY_TIMEOUT.
+    _run_with_retry "$label" "$_invoke" "$model" "$max_turns" "$prompt" \
+        "$log_file" "$_activity_timeout" "$_session_dir" "$_exit_file" "$_turns_file" \
+        "$_prerun_marker" "$_timeout"
+
+    # Stop spinner
+    if [[ -n "${_spinner_pid:-}" ]]; then
+        kill "$_spinner_pid" 2>/dev/null || true
+        wait "$_spinner_pid" 2>/dev/null || true
+        printf '\r\033[K' > /dev/tty 2>/dev/null || true
+    fi
+
+    local agent_exit="$_RWR_EXIT"
+    local _was_activity_timeout="$_RWR_WAS_ACTIVITY_TIMEOUT"
+    local turns_used="$_RWR_TURNS"
+
+    set -o pipefail
+
+    # --- Timing and turn accounting (after retry loop) -------------------------
     local end_time
     end_time=$(date +%s)
     local elapsed=$(( end_time - start_time ))
     local mins=$(( elapsed / 60 ))
     local secs=$(( elapsed % 60 ))
-    local turns_used
-    turns_used=$(cat "$_turns_file" 2>/dev/null || echo "0")
-    [[ "$turns_used" =~ ^[0-9]+$ ]] || turns_used=0
 
     local turns_display="${turns_used}/${max_turns}"  # --max-turns is a soft cap
     if [ "$turns_used" -gt "$max_turns" ] 2>/dev/null; then
         turns_display="${turns_used}/${max_turns} (overshot by $(( turns_used - max_turns )))"
     fi
 
-    log "[$label] Turns: ${turns_display} | Time: ${mins}m${secs}s"
+    local _retry_suffix=""
+    if [[ "$LAST_AGENT_RETRY_COUNT" -gt 0 ]]; then
+        local _retry_word="retry"
+        if [[ "$LAST_AGENT_RETRY_COUNT" -ne 1 ]]; then
+            _retry_word="retries"
+        fi
+        _retry_suffix=" (after ${LAST_AGENT_RETRY_COUNT} ${_retry_word})"
+    fi
+    log "[$label] Turns: ${turns_display} | Time: ${mins}m${secs}s${_retry_suffix}"
 
     TOTAL_TURNS=$(( TOTAL_TURNS + turns_used ))
     TOTAL_TIME=$(( TOTAL_TIME + elapsed ))
-    STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label}: ${turns_display} turns, ${mins}m${secs}s"
-
-    # --- Error classification (12.2) ------------------------------------------
-    # Classify the agent exit using the error taxonomy. UPSTREAM errors bypass
-    # null-run classification entirely — an API 500 is never a "null run".
-    AGENT_ERROR_CATEGORY=""
-    AGENT_ERROR_SUBCATEGORY=""
-    AGENT_ERROR_TRANSIENT=""
-    AGENT_ERROR_MESSAGE=""
-
-    if [[ "$agent_exit" -ne 0 ]] || [[ "$_API_ERROR_DETECTED" = true ]]; then
-        # classify_error is from lib/errors.sh — guard for tests that source agent.sh directly
-        if command -v classify_error &>/dev/null; then
-            local _stderr_file="${_session_dir}/agent_stderr.txt"
-            local _last_output_file="${_session_dir}/agent_last_output.txt"
-            local _fc=0
-            if [[ -f "$_prerun_marker" ]] && _detect_file_changes "$_prerun_marker"; then
-                _fc=$(_count_changed_files_since "$_prerun_marker")
-            fi
-
-            # If API error was detected in stream but stderr file is still empty
-            # (e.g., mkfifo fallback path), create a synthetic hint for classification
-            if [[ "$_API_ERROR_DETECTED" = true ]] && [[ ! -s "$_stderr_file" ]]; then
-                echo "API error detected in stream: ${_API_ERROR_TYPE}" > "$_stderr_file"
-            fi
-
-            # Check for CODER_SUMMARY.md presence (used by no_summary classification)
-            local _has_summary_flag=0
-            local _summary_check_path="${PROJECT_DIR:-.}/CODER_SUMMARY.md"
-            if [[ -f "$_summary_check_path" ]] && [[ -f "$_prerun_marker" ]] \
-                && [[ "$_summary_check_path" -nt "$_prerun_marker" ]]; then
-                _has_summary_flag=1
-            fi
-
-            local _error_record
-            _error_record=$(classify_error "$agent_exit" "$_stderr_file" "$_last_output_file" "$_fc" "$turns_used" "$_has_summary_flag")
-
-            AGENT_ERROR_CATEGORY=$(echo "$_error_record" | cut -d'|' -f1)
-            AGENT_ERROR_SUBCATEGORY=$(echo "$_error_record" | cut -d'|' -f2)
-            AGENT_ERROR_TRANSIENT=$(echo "$_error_record" | cut -d'|' -f3)
-            AGENT_ERROR_MESSAGE=$(echo "$_error_record" | cut -d'|' -f4-)
-        fi
-    fi
+    STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label}: ${turns_display} turns, ${mins}m${secs}s${_retry_suffix}"
 
     # --- Null run detection (file changes override FIFO-based heuristic) ------
     export LAST_AGENT_TURNS="$turns_used"

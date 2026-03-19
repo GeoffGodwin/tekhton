@@ -6,6 +6,8 @@
 # Expects: TOTAL_TURNS, TOTAL_TIME, STAGE_SUMMARY (set by caller)
 # Expects: log(), success(), warn(), error() from common.sh
 # Expects: AGENT_ERROR_* globals from agent.sh
+#
+# Note: Transient retry envelope functions are in lib/agent_retry.sh
 # =============================================================================
 
 # --- Run summary -------------------------------------------------------------

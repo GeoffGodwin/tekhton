@@ -48,23 +48,6 @@ run_stage_tester() {
         "$AGENT_TOOLS_TESTER"
     export TESTER_EXIT=$?
 
-    # --- SIGKILL retry --------------------------------------------------------
-    # Exit 137 (SIGKILL) is typically OOM in WSL2. Retry once after a cooldown
-    # to give the system time to reclaim memory.
-
-    if was_null_run && [ "$LAST_AGENT_EXIT_CODE" -eq 137 ]; then
-        warn "SIGKILL detected — retrying tester in 15 seconds..."
-        sleep 15
-        run_agent \
-            "Tester (retry)" \
-            "$CLAUDE_TESTER_MODEL" \
-            "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
-            "$TESTER_PROMPT" \
-            "$LOG_FILE" \
-            "$AGENT_TOOLS_TESTER"
-        TESTER_EXIT=$?  # exported above
-    fi
-
     # --- UPSTREAM error detection (12.2) ----------------------------------------
 
     local resume_flag="--start-at test"
@@ -115,7 +98,8 @@ run_stage_tester() {
         if grep -q "Compilation failed" "$LOG_FILE" || grep -q "Failed to load" "$LOG_FILE"; then
             error "One or more test files failed to compile. The tester report may be inaccurate."
             error "Compilation errors detected in:"
-            grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=/  /' | sed 's/:.*//' | sort -u | tee -a "$LOG_FILE"
+            _failed_paths=$(grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=/  /' | sed 's/:.*//' | sort -u)
+            echo "$_failed_paths"
             warn "Fix the failing test files, then resume with: $0 --start-at tester \"${TASK}\""
             # Mark affected test files as unchecked in TESTER_REPORT.md so resume picks them up
             FAILED_FILES=$(grep "Compilation failed for testPath=" "$LOG_FILE" | sed 's/.*testPath=//' | sed 's/:.*//' | sort -u)

@@ -236,14 +236,19 @@ run_stage_architect() {
         ARCHITECT_PLAN.md 2>/dev/null || true)
 
     if [ -n "$design_section" ]; then
-        # Filter out non-actionable lines: section subtitles, separators, "None"
+        # Filter out non-actionable lines: section subtitles, separators, "None",
+        # and common no-action phrases the agent may produce.
         local filtered_lines=""
         while IFS= read -r line; do
             local cleaned
             cleaned=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
             [ -z "$cleaned" ] && continue
-            # Skip placeholder / boilerplate lines
-            echo "$cleaned" | grep -qiE '^\s*-?\s*None\.?\s*$' && continue
+            # Skip placeholder / boilerplate / no-action lines
+            echo "$cleaned" | grep -qiE '^None\b' && continue
+            echo "$cleaned" | grep -qiE '^N/?A\b' && continue
+            echo "$cleaned" | grep -qiE '^No (design|doc|observations?|issues?|action|items?)\b' && continue
+            echo "$cleaned" | grep -qiE '^(All|No) (drift |design )?(observations?|items?) (are|have been|were)\b' && continue
+            echo "$cleaned" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
             echo "$cleaned" | grep -qE '^\s*-+\s*$' && continue
             echo "$cleaned" | grep -qiE '^\*?\(route to human' && continue
             filtered_lines+="${cleaned}"$'\n'

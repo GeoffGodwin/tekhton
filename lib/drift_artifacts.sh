@@ -179,10 +179,16 @@ _process_design_observations() {
         return 0
     fi
 
-    # Each observation line becomes a human action item
+    # Each observation line becomes a human action item (filter non-actionable)
     while IFS= read -r line; do
         line=$(echo "$line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/^[[:space:]]*//')
         [[ -z "$line" ]] && continue
+        # Skip placeholder / no-action lines
+        echo "$line" | grep -qiE '^None\b' && continue
+        echo "$line" | grep -qiE '^N/?A\b' && continue
+        echo "$line" | grep -qiE '^No (design|doc|observations?|issues?|action|items?)\b' && continue
+        echo "$line" | grep -qiE '^(All|No) (drift |design )?(observations?|items?) (are|have been|were)\b' && continue
+        echo "$line" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
         append_human_action "coder" "$line"
     done <<< "$observations"
 }

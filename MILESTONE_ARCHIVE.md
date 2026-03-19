@@ -1216,3 +1216,381 @@ Seeds Forward:
   calibration
 - Future 3.0 parallel milestone execution can use sub-milestones as natural
   parallelization boundaries
+
+---
+
+## Archived from V2 — Milestone 12 (Error Taxonomy & Observability)
+
+#### Milestone 12.1: Error Taxonomy, Classification Engine & Redaction
+
+Create the foundational `lib/errors.sh` library with the complete error taxonomy,
+classification functions, transience detection, recovery suggestions, and sensitive
+data redaction. This is a pure library file with no integration into the pipeline —
+all functions are independently testable.
+
+**Files to create:**
+- `lib/errors.sh` — Canonical error taxonomy with classification functions:
+  - `classify_error(exit_code, stderr_file, last_output_file)` — returns a
+    structured error record: `CATEGORY|SUBCATEGORY|TRANSIENT|MESSAGE`
+  - Categories:
+    - `UPSTREAM` — API provider failures. Subcategories: `api_500` (HTTP 500/502/503),
+      `api_rate_limit` (HTTP 429), `api_overloaded` (HTTP 529), `api_auth`
+      (authentication_error), `api_timeout` (connection timeout), `api_unknown`
+    - `ENVIRONMENT` — local system issues. Subcategories: `disk_full`, `network`
+      (DNS/connection failures), `missing_dep` (claude CLI not found, python not
+      found), `permissions`, `oom` (signal 9 / 137 with no prior errors), `env_unknown`
+    - `AGENT_SCOPE` — expected agent-level failures. Subcategories: `null_run`
+      (died before meaningful work), `max_turns` (exhausted turn budget),
+      `activity_timeout` (no output or file changes for timeout period),
+      `no_summary` (completed but no CODER_SUMMARY.md), `scope_unknown`
+    - `PIPELINE` — Tekhton internal errors. Subcategories: `state_corrupt`
+      (invalid PIPELINE_STATE.md), `config_error` (pipeline.conf parse failure),
+      `missing_file` (required artifact not found), `template_error` (prompt
+      render failure), `internal` (unexpected shell error)
+  - `is_transient(category, subcategory)` — returns 0 if transient, 1 if permanent.
+    All `UPSTREAM` errors are transient. `ENVIRONMENT/network` is transient.
+    `ENVIRONMENT/oom` is transient. All `AGENT_SCOPE` and `PIPELINE` errors are permanent.
+  - `suggest_recovery(category, subcategory, context)` — returns a human-readable
+    recovery string for each category/subcategory combination.
+  - `redact_sensitive(text)` — strips patterns matching: `x-api-key: *`,
+    `Authorization: *`, `sk-ant-*`, `ANTHROPIC_API_KEY=*`, and common API key
+    formats. Preserves Anthropic request IDs (`req_*`).
+
+**Files to modify:**
+- `tekhton.sh` — source `lib/errors.sh`
+
+**Acceptance criteria:**
+- `classify_error` given exit code 1 + output containing `"type":"server_error"`
+  returns `UPSTREAM|api_500|true|HTTP 500...`
+- `classify_error` given exit code 137 + no API errors returns
+  `ENVIRONMENT|oom|true|Process killed (signal 9)...`
+- `classify_error` given exit code 0 + turns=0 + no file changes returns
+  `AGENT_SCOPE|null_run|false|Agent completed without meaningful work`
+- `is_transient` returns 0 for all `UPSTREAM` errors and `ENVIRONMENT/network`,
+  `ENVIRONMENT/oom`; returns 1 for all `AGENT_SCOPE` and `PIPELINE` errors
+- `suggest_recovery` returns actionable recovery text for every known subcategory
+- `redact_sensitive` strips API keys and auth tokens but preserves Anthropic
+  request IDs (`req_011CZ9DVb...`)
+- Unrecognized error patterns fall back to `*_unknown` subcategories
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/errors.sh`
+
+**Watch For:**
+- Claude CLI error output format is not formally documented — classification is
+  pattern-based. Always fall back to `*_unknown` subcategories for unrecognized
+  errors. The taxonomy must be extensible by adding new grep patterns.
+- Exit code 137 may not map to signal 9 on all platforms (Windows/Git Bash).
+- Redaction must be conservative — better to over-redact than leak a key. But do
+  NOT redact the Anthropic request ID.
+- `classify_error` must accept optional parameters for file change count and turn
+  count (needed for `AGENT_SCOPE/null_run` classification). Default to 0 if not
+  provided.
+
+**Seeds Forward:**
+- Milestone 12.2 integrates these functions into the agent monitoring and exit
+  handling path
+- Milestone 12.3 uses `redact_sensitive()` for log summaries and error categories
+  for metrics records
+
+#### Milestone 12.2: Agent Exit Analysis, Real-Time Detection & Structured Reporting
+
+Integrate the error classification engine into the agent monitoring loop and exit
+handling. Add real-time API error detection in the FIFO reader, a ring buffer for
+capturing last output, stderr redirection, and the structured error reporting box
+in `lib/common.sh`. Wire classification into all stage exit paths and extend
+pipeline state with error attribution.
+
+**Files to modify:**
+- `lib/agent_monitor.sh` — In the FIFO reader loop, maintain a ring buffer of the
+  last 50 lines of raw agent output (fixed-size bash array with modular index
+  `buffer[i % 50]`). On agent exit, write ring buffer to
+  `$SESSION_TMP/agent_last_output.txt`. While reading the stream, detect API error
+  JSON patterns in real-time: `"type":"error"`, `"error":{"type":"server_error"`,
+  `"error":{"type":"rate_limit_error"`, `"error":{"type":"overloaded_error"`,
+  HTTP status codes 429/500/502/503/529. Set `API_ERROR_DETECTED=true` and
+  `API_ERROR_TYPE=<subcategory>` flags.
+- `lib/agent.sh` — After agent process exits, before existing null-run detection:
+  1. Redirect agent stderr to `$SESSION_TMP/agent_stderr.txt`
+  2. Call `classify_error` with exit code, stderr file, and last output file
+  3. Store result in `AGENT_ERROR_CATEGORY`, `AGENT_ERROR_SUBCATEGORY`,
+     `AGENT_ERROR_TRANSIENT`, `AGENT_ERROR_MESSAGE`
+  4. If `AGENT_ERROR_CATEGORY=UPSTREAM`, skip null-run classification entirely
+- `lib/common.sh` — Add `report_error(category, subcategory, transient, message,
+  recovery)` that formats a structured, boxed error block to stderr using Unicode
+  box-drawing characters. Falls back to ASCII (`+`, `-`, `|`) when terminal does
+  not support Unicode (check `LANG`/`LC_ALL` for UTF-8). Does NOT replace existing
+  `log()`, `warn()`, `error()` functions.
+- `stages/coder.sh`, `stages/review.sh`, `stages/tester.sh`, `stages/architect.sh`
+  — After agent completion, check for `AGENT_ERROR_CATEGORY`. If set and not
+  `AGENT_SCOPE`, call `report_error()`. For `UPSTREAM` errors, replace the null-run
+  exit path with a transient-error exit path: "This was an API failure, not a scope
+  issue. Re-run the same command."
+- `lib/state.sh` — Extend `PIPELINE_STATE.md` with `## Error Classification`
+  section containing: category, subcategory, transient flag, recovery suggestion,
+  and the last 10 lines of agent output (redacted via `redact_sensitive()`). Resume
+  logic reads this on next invocation to display previous failure context.
+
+**Acceptance criteria:**
+- API error patterns (500, 429, 529, auth errors) are detected from the agent's
+  JSON output stream in real-time during monitoring
+- Ring buffer captures last 50 lines without memory leaks on long-running agents
+- `UPSTREAM` errors bypass null-run classification entirely — an API 500 is never
+  misreported as a "null run"
+- `report_error` produces a boxed, structured error block with category, message,
+  and actionable recovery suggestion
+- ASCII fallback for box-drawing characters when terminal lacks Unicode support
+- `PIPELINE_STATE.md` includes error classification section on failure
+- Resume prompt displays previous failure context on next invocation
+- Unclassified errors produce the existing generic error messages (no regression)
+- Sensitive values are redacted in state files and error reports
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- The ring buffer must use a fixed-size bash array with modular index
+  (`buffer[i % 50]`), not an unbounded append. Memory safety on long runs.
+- `stderr` capture requires redirecting stderr to a file before the FIFO tee.
+  Must not break existing FIFO monitoring, activity detection, turn counting,
+  or null-run detection.
+- The `UPSTREAM` bypass of null-run classification is critical. Without it, an
+  API 500 that produces 0 turns and 0 file changes gets misclassified as a null
+  run, leading to incorrect split/rework suggestions.
+- Do NOT add error classification to the scout stage. Scout failures are already
+  non-fatal and advisory.
+- Do NOT change how the pipeline decides to save state vs exit. Only add
+  attribution to those decisions.
+
+**Seeds Forward:**
+- Milestone 12.3 adds metrics integration and log structure that depend on the
+  `AGENT_ERROR_*` variables and `report_error()` function established here
+
+#### Milestone 12.3: Metrics Integration & Structured Log Summaries
+
+Add error category fields to metrics JSONL records, error breakdown to the
+`--metrics` dashboard, ensure metrics are recorded on all exit paths, and append
+structured agent run summary blocks to log files for tail-friendly diagnostics.
+
+**Files to modify:**
+- `lib/metrics.sh` — Add fields to the JSONL record: `error_category` (string or
+  null), `error_subcategory` (string or null), `error_transient` (boolean or null).
+  Only populated on non-success outcomes. Null fields omitted from JSON output.
+  In `summarize_metrics()`, add an error breakdown section to the `--metrics`
+  dashboard output grouped by top-level category with count and transient/permanent
+  distinction. If all errors in a category are transient, note that auto-retry
+  would resolve them.
+- `lib/hooks.sh` — Ensure `record_run_metrics()` is called on ALL exit paths, not
+  just success. Pass error classification when available. Verify and fix any early
+  exit paths that skip metrics recording.
+- `lib/agent.sh` — At the end of each agent run (success or failure), append a
+  structured summary block to the log file:
+  ```
+  ═══ Agent Run Summary ═══
+  Agent:     coder (claude-sonnet-4-20250514)
+  Turns:     25 / 50
+  Duration:  12m 34s
+  Exit Code: 0
+  Class:     SUCCESS
+  Files:     8 modified, 2 created
+  ═════════════════════════
+  ```
+  On failure, include error classification, message, and recovery suggestion.
+  This block appears at the END of the log file so `tail -20 <logfile>` is
+  always sufficient to diagnose a failure.
+
+**Acceptance criteria:**
+- `metrics.jsonl` records `error_category` and `error_subcategory` on failures
+- `--metrics` dashboard shows error breakdown by category with transient/permanent
+  distinction
+- `record_run_metrics()` is called on all exit paths including early exits and
+  signal traps
+- Log files end with a structured agent summary block (tail-friendly)
+- Success runs show `Class: SUCCESS` in log summary; failures show the full
+  error classification with recovery suggestion
+- Sensitive values are redacted in log summaries (via `redact_sensitive()`)
+- Raw FIFO logs are NOT redacted (preserved for deep debugging)
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- JSONL is append-only. Never read-modify-write the metrics file — only append.
+- The log summary block must use the same Unicode/ASCII detection as `report_error()`
+  for consistent rendering.
+- Early exit paths (Ctrl+C, signal traps, config errors) may bypass the normal
+  finalization flow. Verify that the EXIT trap in `tekhton.sh` calls
+  `record_run_metrics()`.
+- Do NOT make error classification slow. The log summary is a few string
+  concatenations, not an LLM call.
+
+**Seeds Forward:**
+- Milestone 13 uses `is_transient()` from 12.1 + error categories from this
+  milestone to automatically retry `UPSTREAM` errors
+- Milestone 14 uses `AGENT_ERROR_*` variables to distinguish turn exhaustion
+  (continuable) from real failures (not continuable)
+- Milestone 15 uses all error infrastructure to make retry/continue/split/stop
+  decisions in the outer orchestration loop
+
+---
+
+### Archived from V2 Initiative — Milestone 13 (Transient Error Retry)
+
+#### Milestone 13.1: Retry Infrastructure — Config, Reporting, and Monitoring Reset
+
+Add the foundational pieces needed by the retry envelope: configuration defaults,
+the `report_retry()` formatted output function, and the `_reset_monitoring_state()`
+helper that ensures clean FIFO/ring-buffer re-initialization between retry attempts.
+These are independently testable and have no behavioral impact until wired into the
+retry loop in 13.2.
+
+**Files to modify:**
+- `lib/config.sh` — Add defaults: `MAX_TRANSIENT_RETRIES=3`,
+  `TRANSIENT_RETRY_BASE_DELAY=30`, `TRANSIENT_RETRY_MAX_DELAY=120`,
+  `TRANSIENT_RETRY_ENABLED=true`. Add clamp calls:
+  `_clamp_config_value MAX_TRANSIENT_RETRIES 10`,
+  `_clamp_config_value TRANSIENT_RETRY_BASE_DELAY 300`,
+  `_clamp_config_value TRANSIENT_RETRY_MAX_DELAY 600`.
+- `lib/common.sh` — Add `report_retry(attempt, max, category, delay)` that prints
+  a clearly formatted retry notice: "Transient error (API 500). Retrying in 30s
+  (attempt 1/3)..." Uses the same `_is_utf8_terminal` detection as `report_error()`
+  for consistent Unicode/ASCII box rendering.
+- `lib/agent_monitor.sh` — Add `_reset_monitoring_state()` helper that: (1) kills
+  any lingering FIFO reader subshell via `_TEKHTON_AGENT_PID`, (2) removes stale
+  FIFO file and temp files (`agent_stderr.txt`, `agent_last_output.txt`,
+  `agent_api_error.txt`, `agent_exit`, `agent_last_turns`), (3) resets
+  `_API_ERROR_DETECTED=false` and `_API_ERROR_TYPE=""`, (4) resets activity
+  timestamps. Must NOT break any existing monitoring flow — only called between
+  retry attempts.
+- `templates/pipeline.conf.example` — Add retry config keys with comments in a new
+  `# --- Transient error retry` section.
+
+**Acceptance criteria:**
+- `MAX_TRANSIENT_RETRIES`, `TRANSIENT_RETRY_BASE_DELAY`, `TRANSIENT_RETRY_MAX_DELAY`,
+  and `TRANSIENT_RETRY_ENABLED` are set with defaults in `load_config()` and clamped
+  to hard upper bounds
+- `report_retry 1 3 "api_500" 30` prints a formatted retry notice to stderr with
+  attempt number, category, and delay
+- `report_retry` uses ASCII fallback when terminal lacks UTF-8 support
+- `_reset_monitoring_state` cleans up FIFO, temp files, and resets API error flags
+  without affecting the current monitoring flow when called between agent runs
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- `_reset_monitoring_state()` must be safe to call even when no prior monitoring
+  state exists (first run, or monitoring never started). Guard all cleanup with
+  existence checks.
+- `report_retry` should write to stderr (like `report_error`) so it doesn't
+  interfere with stdout-based data flow.
+- Config clamp values should be generous enough for legitimate use but prevent
+  runaway waits (e.g., max delay capped at 600s = 10 minutes).
+
+**Seeds Forward:**
+- Milestone 13.2 calls `report_retry()` and `_reset_monitoring_state()` inside
+  the retry loop in `run_agent()`.
+
+#### Milestone 13.2.1.1: Retry Envelope Skeleton and Error Classification Bridge
+
+Add the `lib/agent_retry.sh` file with the `_run_with_retry()` function skeleton that wraps `_invoke_and_monitor()` in a single-attempt loop, extracts error classification into `_classify_agent_exit()`, and wires it into `run_agent()` via sourcing. No actual retry logic yet — this sub-milestone moves the invocation and classification into the retry wrapper so 13.2.1.2 can add the retry loop cleanly.
+
+**Files to create:**
+- `lib/agent_retry.sh` — Retry envelope skeleton:
+  - `_run_with_retry()` — accepts all `_invoke_and_monitor` parameters plus label, calls `_invoke_and_monitor` once, runs `_classify_agent_exit()`, sets `_RWR_EXIT`, `_RWR_TURNS`, `_RWR_WAS_ACTIVITY_TIMEOUT` globals for `run_agent()` to consume
+  - `_classify_agent_exit()` — extracts the error classification logic (reading stderr, last output, file changes, CODER_SUMMARY.md check) and sets `AGENT_ERROR_*` globals via `classify_error()`
+
+**Files to modify:**
+- `lib/agent.sh` — Source `lib/agent_retry.sh`. Initialize `LAST_AGENT_RETRY_COUNT=0` alongside other agent exit globals. Replace the inline `_invoke_and_monitor` call and post-invocation error classification with a single `_run_with_retry()` call. Read results from `_RWR_*` globals instead of `_MONITOR_*` directly.
+
+**Acceptance criteria:**
+- `run_agent()` delegates to `_run_with_retry()` which calls `_invoke_and_monitor()` exactly once
+- Error classification (`classify_error()`) runs inside `_classify_agent_exit()` and sets all `AGENT_ERROR_*` globals identically to the previous inline code
+- `_RWR_EXIT`, `_RWR_TURNS`, `_RWR_WAS_ACTIVITY_TIMEOUT` are set correctly
+- `LAST_AGENT_RETRY_COUNT` is initialized to 0 and remains 0 (no retries yet)
+- Timeout warnings (activity timeout, wall timeout) are printed inside `_run_with_retry()`
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/agent_retry.sh` and `lib/agent.sh`
+
+**Watch For:**
+- The extraction must be behavior-preserving. Run existing tests to verify no regressions from moving code between files.
+- `_IM_PERM_FLAGS` is set in `run_agent()` and read in `_invoke_and_monitor()` — ensure it's still visible after the refactor (it's a global, so sourcing order is fine).
+- The `trap - INT TERM` after `_invoke_and_monitor` must be preserved in the retry wrapper.
+
+**Seeds Forward:**
+- Milestone 13.2.1.2 adds the retry loop and backoff inside this skeleton.
+
+#### Milestone 13.2.1.2: Transient Retry Loop with Exponential Backoff
+
+Add the actual retry logic to `_run_with_retry()`: a `while true` loop that checks `_should_retry_transient()` after each attempt, sleeps with exponential backoff, calls `_reset_monitoring_state()`, and re-invokes `_invoke_and_monitor`. Add `_should_retry_transient()` with subcategory-specific minimum delays (429→60s, 529→60s, OOM→15s) and retry-after header parsing.
+
+**Files to modify:**
+- `lib/agent_retry.sh` — Convert single-attempt `_run_with_retry()` into a retry loop:
+  - Add `_should_retry_transient()` function: checks `TRANSIENT_RETRY_ENABLED`, `AGENT_ERROR_TRANSIENT`, and `retry_attempt < MAX_TRANSIENT_RETRIES`; computes exponential backoff delay (`base * 2^attempt`, capped at max); applies subcategory minimums; parses `retry-after` from last output for 429; calls `report_retry()` and `_reset_monitoring_state()`; sleeps; returns 0 to signal retry
+  - Wrap `_invoke_and_monitor` + `_classify_agent_exit` in `while true` with `_should_retry_transient` check
+  - Reset `AGENT_ERROR_*` globals at the top of each loop iteration
+  - Track retry count in `LAST_AGENT_RETRY_COUNT`
+  - Clean up `exit_file` and `turns_file` between retries
+
+**Acceptance criteria:**
+- API 500 error triggers automatic retry after 30s delay
+- API 429 (rate limit) triggers retry with 60s minimum delay
+- API 529 (overloaded) triggers retry with 60s minimum delay
+- OOM (exit 137) triggers retry after 15s
+- Network errors (DNS, connection timeout) trigger retry after 30s
+- Maximum 3 retries before falling through to existing error path
+- Delay doubles on each attempt (30s → 60s → 120s) capped at `TRANSIENT_RETRY_MAX_DELAY`
+- FIFO monitoring and ring buffer are cleanly re-initialized between retries via `_reset_monitoring_state()`
+- Activity timeout detection works correctly on retry attempts
+- Retry attempts are logged with attempt number and category via `report_retry()`
+- Permanent errors (`AGENT_SCOPE`, `PIPELINE`) are NEVER retried
+- `TRANSIENT_RETRY_ENABLED=false` disables retry entirely (1.0-compatible behavior)
+- `retry-after` header parsing is best-effort with fallback to exponential backoff
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/agent_retry.sh`
+
+**Watch For:**
+- The retry loop must intercept BEFORE the existing UPSTREAM early return in `run_agent()` — transient errors are retried before `run_agent()` sees them.
+- FIFO cleanup between retries is critical. `_reset_monitoring_state()` must kill the subshell before removing the FIFO.
+- `retry-after` header parsing from Claude CLI JSON output is best-effort. If not parseable, fall back to exponential backoff.
+- Do NOT retry `AGENT_SCOPE/null_run` or `AGENT_SCOPE/max_turns` — those are permanent.
+- Process group cleanup: ensure `_reset_monitoring_state()` kills lingering agent PIDs before retry.
+
+**Seeds Forward:**
+- Milestone 13.2.2 reads `LAST_AGENT_RETRY_COUNT` for metrics integration and removes the tester-specific OOM retry that is now redundant.
+
+#### Milestone 13.2.2: Stage Cleanup and Metrics Integration
+
+Remove the now-redundant tester-specific OOM retry (which would cause double retry
+with the generic envelope from 13.2.1) and add `retry_count` tracking to the
+metrics JSONL record and dashboard output.
+
+**Files to modify:**
+- `stages/tester.sh` — Remove the SIGKILL retry block (lines 51–66 that check
+  `was_null_run && LAST_AGENT_EXIT_CODE -eq 137` and sleep 15). This is now
+  handled generically by the retry envelope in `run_agent()` for ALL agents.
+  The UPSTREAM error handling block (lines 68–84) remains untouched.
+- `lib/metrics.sh` — Add `retry_count` field to the JSONL record in
+  `record_run_metrics()`. Read from `LAST_AGENT_RETRY_COUNT` (default 0).
+  Add retry count to `summarize_metrics()` output in a "Retries" line showing
+  total retry count across recorded runs and average retries per invocation.
+
+**Acceptance criteria:**
+- Tester-specific OOM retry in `stages/tester.sh` is removed (no double retry)
+- OOM during tester stage is handled by the generic retry envelope (verified by
+  the retry envelope from 13.2.1 applying to all agents including tester)
+- `metrics.jsonl` records `retry_count` per agent invocation (0 for no retries)
+- `--metrics` dashboard shows retry statistics in the summary output
+- Existing tester UPSTREAM error handling (save state and exit) is preserved
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- When removing the tester SIGKILL retry block, be careful not to remove the
+  UPSTREAM error handling block that follows it (lines 68–84). Only remove the
+  `if was_null_run && [ "$LAST_AGENT_EXIT_CODE" -eq 137 ]` block.
+- The `LAST_AGENT_RETRY_COUNT` variable is initialized in 13.2.1. This sub-milestone
+  only reads it — do not re-declare or shadow it.
+- `retry_count` in JSONL should be 0 (not omitted) when no retries occurred, for
+  consistent schema. This differs from `error_category` which is omitted on success.
+
+**Seeds Forward:**
+- Milestone 14 (Turn Exhaustion Continuation) depends on reliable transient error
+  handling being solved by the complete 13.2 scope
+- The `retry_count` metric enables future adaptive retry calibration in V3

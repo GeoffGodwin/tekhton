@@ -208,6 +208,7 @@ _invoke_and_monitor() {
                             else
                                 echo "[tekhton] ACTIVITY TIMEOUT — no output or file changes for ${_idle}s. Killing agent." >&3
                                 echo "ACTIVITY_TIMEOUT" > "$_exit_file"
+                                # This subshell cannot reach the outer _run_agent_abort trap — kill directly.
                                 kill "$_TEKHTON_AGENT_PID" 2>/dev/null || true
                                 sleep 2
                                 kill -9 "$_TEKHTON_AGENT_PID" 2>/dev/null || true
@@ -326,40 +327,6 @@ _invoke_and_monitor() {
     fi
 }
 
-# --- File-change detection helpers (FIFO loop + null-run detection) -----------
-
-# _detect_file_changes — 0 if files changed since marker, 1 otherwise.
-_detect_file_changes() {
-    local marker="$1"
-    local project_dir="${PROJECT_DIR:-.}"
-    local log_dir="${LOG_DIR:-${project_dir}/.claude/logs}"
-
-    # Exclude .git, session temp, and log dir. Limit to 1 match.
-    local changed
-    changed=$(find "$project_dir" -maxdepth "$AGENT_FILE_SCAN_DEPTH" -newer "$marker" \
-        -not -path '*/.git/*' \
-        -not -path '*/.git' \
-        -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
-        -not -path "${log_dir}/*" \
-        -type f 2>/dev/null | head -1)
-
-    if [ -n "$changed" ]; then
-        return 0
-    fi
-    return 1
-}
-
-# _count_changed_files_since — count of files modified since marker timestamp.
-_count_changed_files_since() {
-    local marker="$1"
-    local project_dir="${PROJECT_DIR:-.}"
-    local log_dir="${LOG_DIR:-${project_dir}/.claude/logs}"
-    local count
-    count=$(find "$project_dir" -maxdepth "$AGENT_FILE_SCAN_DEPTH" -newer "$marker" \
-        -not -path '*/.git/*' \
-        -not -path '*/.git' \
-        -not -path "${TEKHTON_SESSION_DIR:-/nonexistent}/*" \
-        -not -path "${log_dir}/*" \
-        -type f 2>/dev/null | count_lines)
-    echo "${count:-0}"
-}
+# Post-invocation helpers (_reset_monitoring_state, _detect_file_changes,
+# _count_changed_files_since) live in agent_monitor_helpers.sh — sourced
+# separately by agent.sh after this file.

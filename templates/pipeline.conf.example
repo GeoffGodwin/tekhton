@@ -177,7 +177,7 @@ DYNAMIC_TURNS_ENABLED=true
 # Bounds for dynamic turn adjustment (only used when DYNAMIC_TURNS_ENABLED=true)
 # CODER_MIN_TURNS=15
 # CODER_MAX_TURNS_CAP=200
-# REVIEWER_MIN_TURNS=5
+# REVIEWER_MIN_TURNS=10
 # REVIEWER_MAX_TURNS_CAP=30
 # TESTER_MIN_TURNS=10
 # TESTER_MAX_TURNS_CAP=100
@@ -339,6 +339,23 @@ CONTEXT_COMPILER_ENABLED=false
 # SPECIALIST_CUSTOM_MYCHECK_PROMPT="specialist_mycheck"
 # SPECIALIST_CUSTOM_MYCHECK_MODEL="claude-sonnet-4-6"
 # SPECIALIST_CUSTOM_MYCHECK_MAX_TURNS=8
+
+# --- Transient error retry ---------------------------------------------------
+# When an agent call fails due to a transient error (API 500, rate limit, OOM),
+# the pipeline automatically retries with exponential backoff before giving up.
+# Delay doubles each attempt: BASE_DELAY -> 2x -> 4x, capped at MAX_DELAY.
+
+# Master toggle for transient error retry (default: true)
+# TRANSIENT_RETRY_ENABLED=true
+
+# Maximum retry attempts per agent call (default: 3, hard cap: 10)
+# MAX_TRANSIENT_RETRIES=3
+
+# Initial backoff delay in seconds (default: 30, hard cap: 300)
+# TRANSIENT_RETRY_BASE_DELAY=30
+
+# Maximum backoff delay in seconds (default: 120, hard cap: 600)
+# TRANSIENT_RETRY_MAX_DELAY=120
 
 # --- Run metrics (workflow learning) -----------------------------------------
 # Collects per-run JSONL metrics to .claude/logs/metrics.jsonl. Enables adaptive
