@@ -11,6 +11,10 @@
 # shellcheck source=lib/agent_monitor.sh
 source "${TEKHTON_HOME}/lib/agent_monitor.sh"
 
+# Source transient error retry envelope (13.2.1)
+# shellcheck source=lib/agent_retry.sh
+source "${TEKHTON_HOME}/lib/agent_retry.sh"
+
 # Source helper functions (run summary, output validation, null-run helpers)
 # shellcheck source=lib/agent_helpers.sh
 source "${TEKHTON_HOME}/lib/agent_helpers.sh"
