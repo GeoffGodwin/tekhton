@@ -693,7 +693,7 @@ fi
 
 _CURRENT_MILESTONE=""
 if [ "$MILESTONE_MODE" = true ]; then
-    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)?) ]]; then
+    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]]; then
         _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
     fi
 fi

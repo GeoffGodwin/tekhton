@@ -34,7 +34,8 @@ parse_milestones() {
         # Match milestone headings: #### Milestone N: Title
         # Also handles: #### Milestone N — Title, #### Milestone N. Title
         # And [DONE] markers: #### [DONE] Milestone N: Title
-        if [[ "$line" =~ ^[[:space:]]*#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+([0-9]+([.][0-9]+)?)[[:space:]]*[:.\—\-][[:space:]]*(.*) ]]; then
+        # Supports arbitrary depth: 13, 13.2, 13.2.1, 13.2.1.1, etc.
+        if [[ "$line" =~ ^[[:space:]]*#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+([0-9]+([.][0-9]+)*)[[:space:]]*[:.\.\—\-][[:space:]]*(.*) ]]; then
             # Flush previous milestone if any
             if [[ -n "$current_num" ]]; then
                 echo "${current_num}|${current_title}|${acceptance_lines}"

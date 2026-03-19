@@ -452,6 +452,86 @@ msg=$(generate_commit_message "Fix: some bug" "" "")
 first_line=$(echo "$msg" | head -1)
 assert "Non-milestone commit has no prefix" "$(echo "$first_line" | grep -qv 'MILESTONE' && echo 0 || echo 1)"
 
+# --- Test: Deep dot-notation milestone parsing (depth 3+) --------------------
+
+echo "=== deep milestone parsing ==="
+
+cat > "${TMPDIR}/deep.md" << 'DEEP_EOF'
+# Project Rules
+
+## Current Initiative: V2
+
+#### [DONE] Milestone 13.1: Config Defaults
+Done.
+
+Acceptance criteria:
+- Config loads
+
+#### [DONE] Milestone 13.2.1.1: Retry Envelope Skeleton
+Skeleton done.
+
+Acceptance criteria:
+- Skeleton works
+
+#### [DONE] Milestone 13.2.1.2: Transient Retry Loop
+Loop done.
+
+Acceptance criteria:
+- Loop works
+
+#### Milestone 13.2.2: Stage Cleanup and Metrics
+Next milestone.
+
+Acceptance criteria:
+- Tester OOM retry removed
+- retry_count in metrics
+
+#### Milestone 14: Turn Exhaustion Continuation
+Future milestone.
+
+Acceptance criteria:
+- Continuation works
+DEEP_EOF
+
+# Depth-3 milestones are correctly parsed as distinct entries
+m_13_2_1_1=$(parse_milestones "${TMPDIR}/deep.md" | awk -F'|' '$1 == "13.2.1.1" {print $2}')
+assert "parse_milestones captures 13.2.1.1" "$([ "$m_13_2_1_1" = "Retry Envelope Skeleton" ] && echo 0 || echo 1)"
+
+m_13_2_1_2=$(parse_milestones "${TMPDIR}/deep.md" | awk -F'|' '$1 == "13.2.1.2" {print $2}')
+assert "parse_milestones captures 13.2.1.2" "$([ "$m_13_2_1_2" = "Transient Retry Loop" ] && echo 0 || echo 1)"
+
+m_13_2_2=$(parse_milestones "${TMPDIR}/deep.md" | awk -F'|' '$1 == "13.2.2" {print $2}')
+assert "parse_milestones captures 13.2.2" "$([ "$m_13_2_2" = "Stage Cleanup and Metrics" ] && echo 0 || echo 1)"
+
+# Titles are NOT contaminated with leftover number segments
+assert "13.2.1.1 title does not start with number remnant" "$(echo "$m_13_2_1_1" | grep -qvE '^[0-9]' && echo 0 || echo 1)"
+
+# get_milestone_title works for depth-3+
+title=$(get_milestone_title "13.2.1.1" "${TMPDIR}/deep.md")
+assert "get_milestone_title returns correct title for 13.2.1.1" "$([ "$title" = "Retry Envelope Skeleton" ] && echo 0 || echo 1)"
+
+# is_milestone_done works for depth-3+
+assert "13.2.1.1 is_milestone_done" "$(is_milestone_done "13.2.1.1" "${TMPDIR}/deep.md" && echo 0 || echo 1)"
+assert "13.2.2 is NOT done" "$(! is_milestone_done "13.2.2" "${TMPDIR}/deep.md" && echo 0 || echo 1)"
+
+# find_next_milestone works for depth-3+
+next=$(find_next_milestone "13.2.1.2" "${TMPDIR}/deep.md")
+assert "find_next after 13.2.1.2 is 13.2.2" "$([ "$next" = "13.2.2" ] && echo 0 || echo 1)"
+
+next=$(find_next_milestone "13.2.2" "${TMPDIR}/deep.md")
+assert "find_next after 13.2.2 is 14" "$([ "$next" = "14" ] && echo 0 || echo 1)"
+
+# Commit prefix uses full deep number
+init_milestone_state "13.2.1.1" 4
+write_milestone_disposition "COMPLETE_AND_CONTINUE"
+prefix=$(get_milestone_commit_prefix "13.2.1.1" "COMPLETE_AND_CONTINUE")
+assert "Commit prefix uses full deep number" "$(echo "$prefix" | grep -q '13.2.1.1' && echo 0 || echo 1)"
+
+# Commit body uses full deep number and correct title
+body=$(get_milestone_commit_body "13.2.1.1" "COMPLETE_AND_CONTINUE" "${TMPDIR}/deep.md")
+assert "Commit body has 13.2.1.1" "$(echo "$body" | grep -q '13.2.1.1' && echo 0 || echo 1)"
+assert "Commit body has correct title" "$(echo "$body" | grep -q 'Retry Envelope Skeleton' && echo 0 || echo 1)"
+
 # --- Summary ------------------------------------------------------------------
 
 echo

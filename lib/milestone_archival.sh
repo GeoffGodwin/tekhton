@@ -274,8 +274,8 @@ archive_all_completed_milestones() {
 
     # Find all [DONE] milestone numbers
     local done_nums
-    done_nums=$(grep -oE '^\#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+([0-9]+([.][0-9]+)?)' "$claude_md" 2>/dev/null \
-        | grep -oE '[0-9]+([.][0-9]+)?$' || true)
+    done_nums=$(grep -oE '^\#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+([0-9]+([.][0-9]+)*)' "$claude_md" 2>/dev/null \
+        | grep -oE '[0-9]+([.][0-9]+)*$' || true)
 
     if [[ -z "$done_nums" ]]; then
         return 0
