@@ -125,7 +125,10 @@ ${ms_body}"
         fi
     fi
 
-    # Append completed non-blocking and resolved drift items to the body
+    # Append completed non-blocking and resolved drift items to the body.
+    # Defensive guards: drift_cleanup.sh is always sourced before hooks.sh in the
+    # current pipeline, so these functions always exist. The guards protect against
+    # future refactors that might change sourcing order or make drift_cleanup optional.
     local nb_items=""
     if command -v get_completed_nonblocking_notes >/dev/null 2>&1; then
         nb_items=$(get_completed_nonblocking_notes 2>/dev/null || true)

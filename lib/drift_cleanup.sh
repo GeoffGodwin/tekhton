@@ -129,11 +129,11 @@ _resolve_addressed_nonblocking_notes() {
             in_open=true
             echo "$line" >> "$tmpfile"
             continue
-        elif echo "$line" | grep -q "^## " && [ "$in_open" = true ]; then
+        elif echo "$line" | grep -q "^## " && [[ "$in_open" = true ]]; then
             in_open=false
         fi
 
-        if [ "$in_open" = true ] && echo "$line" | grep -q "^- \[ \]"; then
+        if [[ "$in_open" = true ]] && echo "$line" | grep -q "^- \[ \]"; then
             local matched=false
             while IFS= read -r mod_file; do
                 [ -z "$mod_file" ] && continue
@@ -147,7 +147,7 @@ _resolve_addressed_nonblocking_notes() {
                     break
                 fi
             done <<< "$modified_files"
-            if [ "$matched" = false ]; then
+            if [[ "$matched" = false ]]; then
                 echo "$line" >> "$tmpfile"
             fi
         else
