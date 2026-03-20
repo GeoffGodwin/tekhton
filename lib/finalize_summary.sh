@@ -92,7 +92,7 @@ _hook_emit_run_summary() {
     timestamp_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
     local safe_milestone
-    safe_milestone=$(printf '%s' "${_CURRENT_MILESTONE:-none}" | sed 's/"/\\"/g')
+    safe_milestone=$(printf '%s' "${_CURRENT_MILESTONE:-none}" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
     # Write JSON via printf (proper escaping, no heredoc variable issues)
     printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "timestamp": "%s"\n}\n' \

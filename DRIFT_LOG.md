@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-20
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-03-20 | "Implement Milestone 18: Project Crawler & Index Generator"] `crawler_inventory.sh:173` uses `grep -oE '^[^/]/'` to find top-level test directories, then `grep -c "^${d}"` to count files in them. The `grep -c` pattern is duplicated from similar patterns in `_crawl_test_structure` and the inventory function — a shared `_count_files_in_dir(file_list, prefix)` helper would reduce duplication across future milestone work. (Carry-over from prior review.)

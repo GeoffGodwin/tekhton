@@ -64,7 +64,7 @@ detect_languages() {
         local _csproj_match
         _csproj_match=$(compgen -G "$proj_dir"/*.csproj 2>/dev/null | head -1) || true
         if [[ -n "$_csproj_match" ]]; then
-            lang_manifest[csharp]="$(basename "$_csproj_match")"
+            lang_manifest[csharp]="$(basename "$_csproj_match" 2>/dev/null)"
         else
             lang_manifest[csharp]="*.sln"
         fi
@@ -263,7 +263,7 @@ detect_frameworks() {
 
 # _extract_json_keys — Extracts content between two JSON section markers.
 # This is a best-effort grep-based parser for package.json dependency blocks.
-# Note: Also called by detect_commands.sh (which depends on detect.sh being sourced first).
+# Note: Also called by detect_commands.sh. Callers must source detect.sh before detect_commands.sh.
 # Args: $1 = file, $2... = section names to extract from
 _extract_json_keys() {
     local file="$1"

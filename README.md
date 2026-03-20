@@ -9,7 +9,8 @@
 Tekhton is a standalone, project-agnostic multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
 Give it a task description and it orchestrates a **Scout → Coder → Reviewer → Tester** cycle
 with automatic rework routing, build gates, dynamic turn limits, architecture drift
-prevention, state persistence, and resume support.
+prevention, transient error retry, turn-exhaustion continuation, milestone splitting,
+state persistence, and resume support — or hand it `--complete` and walk away.
 
 ## Requirements
 
@@ -34,12 +35,24 @@ cd /path/to/your/project
 $EDITOR .claude/pipeline.conf    # Set PROJECT_NAME, ANALYZE_CMD, TEST_CMD, etc.
 $EDITOR .claude/agents/coder.md  # Customize agent roles
 
-# Run
+# Run a single task
 /path/to/tekhton/tekhton.sh "Implement user authentication"
 
 # Or create an alias
 alias tekhton='/path/to/tekhton/tekhton.sh'
 tekhton "Fix: login redirect loop"
+
+# Run until completion (autonomous loop)
+tekhton --complete "Resolve all NON_BLOCKING_LOG observations"
+
+# Build an entire milestone
+tekhton --milestone "Implement Milestone 3: API layer"
+
+# Chain milestones autonomously
+tekhton --auto-advance "Start with Milestone 1"
+
+# Process all human notes in batch
+tekhton --human --complete
 ```
 
 After `--init`, your project will contain:
@@ -54,7 +67,7 @@ your-project/
 │   │   ├── tester.md          # Tester role definition
 │   │   ├── jr-coder.md        # Jr coder role definition
 │   │   └── architect.md       # Architect role definition
-│   └── logs/                  # Run logs (gitignored)
+│   └── logs/                  # Run logs, metrics (gitignored)
 ├── CLAUDE.md                  # Project rules (read by all agents)
 ├── CODER_SUMMARY.md           # (generated per-run)
 ├── REVIEWER_REPORT.md         # (generated per-run)
@@ -71,21 +84,30 @@ tekhton "Implement feature X"
         ├─ Stage 1: Scout + Coder
         │    ├─ Scout → estimates complexity, adjusts turn limits
         │    ├─ Coder → writes code + CODER_SUMMARY.md
+        │    ├─ Turn continuation → auto-resume if coder hits turn limit with progress
         │    └─ Build gate → auto-fix on failure (Jr → Sr escalation)
         │
         ├─ Stage 2: Reviewer
         │    ├─ Reviewer → REVIEWER_REPORT.md
         │    ├─ Complex blockers → Senior coder rework
         │    ├─ Simple blockers → Jr coder fix
-        │    └─ Build gate after fixes
-        │    (repeats up to MAX_REVIEW_CYCLES)
+        │    ├─ Build gate after fixes
+        │    ├─ Specialist reviews (security, performance, API — opt-in)
+        │    └─ (repeats up to MAX_REVIEW_CYCLES)
         │
         ├─ Stage 3: Tester
         │    └─ Writes tests for coverage gaps → TESTER_REPORT.md
         │
+        ├─ Stage 4: Cleanup (opt-in — autonomous debt sweep)
+        │
         ├─ Drift processing (observations, ACPs, non-blocking notes)
-        └─ Commit prompt with auto-generated message
+        ├─ Milestone acceptance check (in --milestone / --complete mode)
+        └─ Commit with auto-generated message
 ```
+
+With `--complete`, the entire pipeline loops until acceptance criteria pass or
+resource bounds are exhausted — retrying transient API errors, continuing on
+turn exhaustion, and splitting oversized milestones automatically.
 
 ### Agent Models
 
@@ -94,11 +116,12 @@ Each agent runs on its own configurable model. Defaults:
 | Agent | Default Model | Purpose |
 |-------|--------------|---------|
 | Coder | Opus | Primary implementation |
-| Jr Coder | Haiku | Simple fixes, build repairs |
+| Jr Coder | Haiku | Simple fixes, build repairs, debt sweeps |
 | Scout | Haiku | File discovery, complexity estimation |
 | Reviewer | Sonnet | Code review, drift observation |
 | Architect | Sonnet | Drift audit, remediation planning |
 | Tester | Haiku (Sonnet in `--milestone`) | Test writing and validation |
+| Specialists | Sonnet | Security, performance, API reviews (opt-in) |
 
 ### Dynamic Turn Limits
 
@@ -109,11 +132,76 @@ turn limits for Coder, Reviewer, and Tester — clamped to configured min/max bo
 A simple bug fix might get 15 coder turns. A cross-cutting milestone might get 120.
 This prevents wasting tokens on trivial tasks and running out of turns on large ones.
 
+After the coder completes, reviewer and tester turn limits are **recalibrated** using
+actual coder data (turns used, files modified, diff size) — replacing the scout's
+pre-coder guesses with a deterministic formula.
+
+With `METRICS_ADAPTIVE_TURNS=true` and enough run history, turn estimates are further
+refined by adaptive calibration based on your project's actual performance data.
+
 ### Resume Support
 
 Pipeline state is saved automatically on interruption. Running `tekhton` with no
 arguments detects saved state and offers to resume, start fresh, or abort.
 `--start-at` lets you jump to a specific stage if reports from earlier stages exist.
+
+## Autonomous Modes
+
+### Complete Mode (`--complete`)
+
+Wraps the entire pipeline in an outer loop that re-runs until the task passes
+acceptance or all recovery options are exhausted:
+
+```bash
+tekhton --complete "Resolve all NON_BLOCKING_LOG observations"
+```
+
+Safety bounds prevent runaway execution:
+- `MAX_PIPELINE_ATTEMPTS=5` — max full pipeline cycles
+- `AUTONOMOUS_TIMEOUT=7200` — wall-clock limit (2 hours)
+- `MAX_AUTONOMOUS_AGENT_CALLS=20` — cumulative agent invocations
+- `AUTONOMOUS_PROGRESS_CHECK=true` — detects stuck loops (no diff between iterations)
+
+### Milestone Mode (`--milestone`)
+
+Doubles turn limits, adds an extra review cycle, upgrades the tester model, and
+runs milestone acceptance checking. Implies `--complete` — the pipeline retries
+until acceptance criteria pass.
+
+```bash
+tekhton --milestone "Implement Milestone 3: API layer"
+```
+
+If a milestone is too large for the turn budget, the pipeline automatically splits
+it into sub-milestones (3.1, 3.2, ...) and retries with narrower scope. If a coder
+run produces no output (null run), the milestone is split and retried without human
+intervention.
+
+Completed milestones are automatically archived from CLAUDE.md to
+`MILESTONE_ARCHIVE.md`, keeping CLAUDE.md under context window limits.
+
+### Auto-Advance (`--auto-advance`)
+
+Chains milestone-to-milestone execution. After each milestone passes acceptance, the
+pipeline advances to the next and continues:
+
+```bash
+tekhton --auto-advance "Start with Milestone 1"
+```
+
+- `AUTO_ADVANCE_LIMIT=3` — max milestones per invocation
+- `AUTO_ADVANCE_CONFIRM=true` — prompt between milestones (set `false` for unattended)
+
+### Human Notes Mode (`--human`)
+
+Pick the next unchecked item from `HUMAN_NOTES.md` as the task. Combine with
+`--complete` to process all notes in batch:
+
+```bash
+tekhton --human              # Process next note
+tekhton --human BUG          # Process next [BUG] note
+tekhton --human --complete   # Process all notes until done
+```
 
 ## Planning Phase (`--plan`)
 
@@ -150,7 +238,17 @@ project identity, architecture philosophy, repository layout, key design decisio
 non-negotiable rules, implementation milestones (each with scope, file paths,
 tests, watch-fors, and seeds-forward), code conventions, and more.
 
-Each milestone is a standalone task: `tekhton "Implement Milestone 1: Project scaffold"`
+Each milestone is a standalone task: `tekhton --milestone "Implement Milestone 1: Project scaffold"`
+
+### Brownfield Replanning (`--replan`)
+
+Already have a codebase? `--replan` updates DESIGN.md and CLAUDE.md based on
+accumulated drift, completed milestones, and codebase evolution. It's delta-based —
+human edits are preserved, and you review all changes before they're applied.
+
+```bash
+tekhton --replan
+```
 
 ## Human Notes
 
@@ -167,7 +265,8 @@ items into the next pipeline run. Use `--init-notes` to create a blank template.
 ```
 
 Notes are categorized with `[BUG]`, `[FEAT]`, `[POLISH]` tags. Use `--notes-filter BUG`
-to inject only bugs on a given run. Completed items are automatically archived.
+to inject only bugs on a given run. Use `--human --complete` to process all notes
+automatically. Completed items are automatically archived.
 
 ## Architecture Drift Prevention
 
@@ -203,22 +302,130 @@ for the format.
 
 ## Agent Resilience
 
-Tekhton uses FIFO-isolated agent invocation to ensure reliable operation:
+Tekhton uses FIFO-isolated agent invocation with multiple layers of fault tolerance:
 
 - **Interrupt handling** — Ctrl+C works immediately, even if the agent is hung. Claude runs in a background subshell writing to a named pipe; the foreground read loop exits on signal.
-- **Activity timeout** — If an agent produces no output for 10 minutes (`AGENT_ACTIVITY_TIMEOUT`), it's killed automatically. Catches hung API connections and stuck retry loops.
+- **Activity timeout** — If an agent produces no output or file changes for 10 minutes (`AGENT_ACTIVITY_TIMEOUT`), it's killed automatically. Catches hung API connections and stuck retry loops. File-change detection prevents false kills when agents work silently.
 - **Total timeout** — Hard wall-clock limit of 2 hours (`AGENT_TIMEOUT`) as a backstop.
-- **Null-run detection** — Agents that die during discovery (≤2 turns, non-zero exit) are flagged. The pipeline handles the failure gracefully instead of continuing with no work done.
+- **Transient error retry** — API errors (500, 429, 529), OOM kills, and network failures trigger automatic retry with exponential backoff (30s → 60s → 120s, up to 3 attempts). Rate-limit responses respect `retry-after` headers.
+- **Turn-exhaustion continuation** — When a coder or tester hits its turn limit but made substantive progress (`Status: IN PROGRESS` + file changes), the pipeline automatically re-invokes with full prior-progress context and a fresh turn budget. Up to 3 continuations before escalating to milestone split or exit.
+- **Null-run detection** — Agents that die during discovery (≤2 turns, non-zero exit) are flagged. Combined with file-change detection to distinguish real null runs from silent completions. API failures are never misclassified as null runs.
+- **Error taxonomy** — Structured error classification (UPSTREAM, ENVIRONMENT, AGENT_SCOPE, PIPELINE) with transience detection, recovery suggestions, and sensitive data redaction. Errors are displayed in formatted boxes with actionable next steps.
 - **Windows compatibility** — Detects Windows-native `claude.exe` running via WSL interop or Git Bash and uses `taskkill.exe` for cleanup (Windows processes ignore POSIX signals).
+
+## Specialist Reviews (Opt-In)
+
+After the main reviewer approves, optional specialist agents can run focused review passes:
+
+- **Security** — injection risks, auth bypass, secrets exposure, input validation
+- **Performance** — N+1 queries, unbounded loops, memory leaks, expensive operations
+- **API contracts** — schema consistency, error format compliance, backward compatibility
+
+`[BLOCKER]` findings re-enter the rework loop. `[NOTE]` findings go to `NON_BLOCKING_LOG.md`.
+
+Enable per specialist in `pipeline.conf`:
+```bash
+SPECIALIST_SECURITY_ENABLED=true
+SPECIALIST_PERFORMANCE_ENABLED=true
+SPECIALIST_API_ENABLED=true
+```
+
+Custom specialists are supported via `SPECIALIST_CUSTOM_*` config keys with your own prompt templates.
+
+## Autonomous Debt Sweeps (Opt-In)
+
+After a successful pipeline run, an optional cleanup stage addresses accumulated
+technical debt from `NON_BLOCKING_LOG.md` using the jr coder model (low cost):
+
+```bash
+CLEANUP_ENABLED=true
+CLEANUP_BATCH_SIZE=5          # Items per sweep
+CLEANUP_TRIGGER_THRESHOLD=5   # Min items before triggering
+```
+
+Items requiring architectural changes are tagged `[DEFERRED]` and skipped. Build gate
+failure in cleanup logs a warning but doesn't fail the overall run.
+
+## Metrics Dashboard
+
+Track pipeline performance across runs with `--metrics`:
+
+```bash
+tekhton --metrics
+```
+
+```
+Tekhton Metrics — last 20 runs
+────────────────────────────────
+Bug fixes:     12 runs, avg 22 coder turns, 92% success
+Features:       6 runs, avg 45 coder turns, 83% success
+Milestones:     2 runs, avg 85 coder turns, 100% success
+────────────────────────────────
+Scout accuracy: coder ±8 turns, reviewer ±2, tester ±5
+Common blocker: "Missing test coverage" (4 occurrences)
+Cleanup sweep:  15 items resolved, 3 deferred
+```
+
+Metrics are recorded automatically in `.claude/logs/metrics.jsonl`. When enough
+history accumulates (`METRICS_MIN_RUNS=5`), adaptive calibration uses your project's
+actual data to improve scout turn estimates.
+
+## Context Management
+
+The pipeline tracks how much context is injected into each agent call and enforces
+a configurable budget to prevent context window overflow:
+
+- `CONTEXT_BUDGET_PCT=50` — max percentage of the model's context window to use
+- `CONTEXT_COMPILER_ENABLED=true` — task-scoped context assembly, injecting only
+  relevant sections of large artifacts instead of full files
+
+When context exceeds the budget, compression strategies are applied in priority order:
+prior tester context → non-blocking notes → prior progress context. A note is injected
+when compression occurs so agents are aware of the reduction.
+
+## Clarification Protocol
+
+Agents can surface blocking questions mid-run. The pipeline pauses, prompts you for
+an answer, and resumes with the clarification injected into subsequent agent prompts:
+
+```
+┌─────────────────────────────────────┐
+│ CLARIFICATION REQUIRED              │
+│                                     │
+│ [BLOCKING] Should the API use JWT   │
+│ or session-based auth?              │
+└─────────────────────────────────────┘
+Your answer:
+```
+
+Non-blocking clarifications are logged without pausing. Disable with
+`CLARIFICATION_ENABLED=false`.
+
+## Project Crawling & Tech Stack Detection
+
+Tekhton can index brownfield projects for context-aware operations:
+
+- **Tech stack detection** — automatically identifies languages, frameworks, entry
+  points, and infers build/test/lint commands from manifest files and tooling
+- **Project crawler** — generates `PROJECT_INDEX.md` with file inventory, directory
+  tree, dependency analysis, and sampled key file content, bounded to a configurable
+  token budget
+
+Used by `--init` to auto-populate `pipeline.conf` and by `--replan` to produce
+higher-quality document updates.
 
 ## CLI Reference
 
 | Flag | Purpose |
 |------|---------|
 | `--plan` | Interactive planning — generates DESIGN.md and CLAUDE.md |
+| `--replan` | Delta-based update of DESIGN.md and CLAUDE.md from current codebase |
 | `--init` | Scaffold pipeline config and agent roles for a new project |
 | `--init-notes` | Create blank HUMAN_NOTES.md template |
-| `--milestone` | Milestone mode — 2× turn limits, more review cycles, Sonnet tester |
+| `--complete` | Autonomous loop — retry pipeline until task passes or bounds exhausted |
+| `--milestone` | Milestone mode — 2× turns, extra review, acceptance checking (implies `--complete`) |
+| `--auto-advance` | Chain milestones autonomously (implies `--milestone`) |
+| `--human [TAG]` | Pick next note from HUMAN_NOTES.md as task (optional: BUG, FEAT, POLISH) |
 | `--start-at coder` | Full pipeline (default) |
 | `--start-at review` | Skip coder, start at reviewer (requires CODER_SUMMARY.md) |
 | `--start-at test` | Skip to tester (requires REVIEWER_REPORT.md) |
@@ -227,7 +434,10 @@ Tekhton uses FIFO-isolated agent invocation to ensure reliable operation:
 | `--force-audit` | Run architect audit regardless of thresholds |
 | `--skip-audit` | Skip architect audit even if thresholds exceeded |
 | `--seed-contracts` | Seed inline system contracts in source files |
+| `--no-commit` | Skip auto-commit (prompt instead) |
+| `--metrics` | Print run metrics dashboard and exit |
 | `--status` | Print saved pipeline state and exit |
+| `--version` | Print version and exit |
 | `--help` | Show usage information |
 
 Running `tekhton` with no arguments checks for saved pipeline state and offers to resume.
@@ -252,13 +462,35 @@ Key configuration areas:
 | **Dynamic turns** | `DYNAMIC_TURNS_ENABLED=true` | Scout adjusts limits based on complexity |
 | **Turn bounds** | `CODER_MIN_TURNS=15`, `CODER_MAX_TURNS_CAP=200` | Clamp scout recommendations |
 | **Milestone overrides** | `MILESTONE_CODER_MAX_TURNS=100` | Custom limits for `--milestone` |
+| **Autonomous loop** | `MAX_PIPELINE_ATTEMPTS=5`, `AUTONOMOUS_TIMEOUT=7200` | `--complete` bounds |
+| **Continuation** | `CONTINUATION_ENABLED=true`, `MAX_CONTINUATION_ATTEMPTS=3` | Turn-exhaustion resume |
+| **Transient retry** | `TRANSIENT_RETRY_ENABLED=true`, `MAX_TRANSIENT_RETRIES=3` | API error recovery |
+| **Milestone splitting** | `MILESTONE_SPLIT_ENABLED=true`, `MILESTONE_AUTO_RETRY=true` | Auto-decomposition |
 | **Build & analysis** | `BUILD_CHECK_CMD`, `ANALYZE_CMD`, `TEST_CMD` | Your project's toolchain |
 | **Drift thresholds** | `DRIFT_OBSERVATION_THRESHOLD=8` | When to trigger architect audit |
 | **Agent resilience** | `AGENT_ACTIVITY_TIMEOUT=600`, `AGENT_TIMEOUT=7200` | Timeout controls |
+| **Context** | `CONTEXT_BUDGET_PCT=50`, `CONTEXT_COMPILER_ENABLED=false` | Token budget management |
+| **Specialists** | `SPECIALIST_SECURITY_ENABLED=false`, etc. | Opt-in focused reviews |
+| **Cleanup** | `CLEANUP_ENABLED=false`, `CLEANUP_BATCH_SIZE=5` | Autonomous debt sweeps |
+| **Metrics** | `METRICS_ENABLED=true`, `METRICS_ADAPTIVE_TURNS=true` | Run history & calibration |
+| **Clarifications** | `CLARIFICATION_ENABLED=true` | Mid-run human Q&A |
 | **Role files** | `CODER_ROLE_FILE=".claude/agents/coder.md"` | Agent persona definitions |
 | **Planning** | `PLAN_INTERVIEW_MODEL="opus"` | Planning phase model/turn config |
 
 See [templates/pipeline.conf.example](templates/pipeline.conf.example) for the full annotated reference with all options and defaults.
+
+## Security
+
+Tekhton includes defense-in-depth hardening:
+
+- **Safe config parsing** — `pipeline.conf` values containing `$(`, backticks, `;`, `|`, `&` are rejected (no shell injection via config)
+- **Per-session temp files** — all temp files use `mktemp -d` in a session directory, not predictable paths
+- **Pipeline locking** — only one instance runs per project (PID-validated lock file)
+- **Anti-prompt-injection** — file content in agent prompts is wrapped in explicit delimiters; all agent system prompts include anti-injection directives
+- **Git safety** — warns if `.gitignore` is missing `.env` or key patterns before `git add`
+- **Sensitive data redaction** — API keys, auth tokens, and credentials are stripped from error reports, log summaries, and state files
+- **Agent permissions** — each agent gets only the tools it needs; destructive operations (`git push`, `rm -rf`, `curl`, `wget`) are always blocked
+- **Config bounds** — numeric config values are clamped to hard upper limits to prevent resource exhaustion
 
 ## Contributing
 
