@@ -2,12 +2,12 @@
   "milestone": "17",
   "outcome": "success",
   "attempts": 1,
-  "total_agent_calls": 5,
+  "total_agent_calls": 7,
   "wall_clock_seconds": 0,
-  "files_changed": [".claude/MILESTONE_STATE.md","CLAUDE.md","MILESTONE_ARCHIVE.md"],
+  "files_changed": [".claude/MILESTONE_STATE.md"],
   "error_classes_encountered": [],
-  "recovery_actions_taken": ["continuation"],
+  "recovery_actions_taken": [],
   "rework_cycles": 1,
   "split_depth": 0,
-  "timestamp": "2026-03-20T18:37:20Z"
+  "timestamp": "2026-03-20T19:09:02Z"
 }
