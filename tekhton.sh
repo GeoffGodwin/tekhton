@@ -310,6 +310,7 @@ source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/detect.sh"
 source "${TEKHTON_HOME}/lib/detect_commands.sh"
 source "${TEKHTON_HOME}/lib/detect_report.sh"
+source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"

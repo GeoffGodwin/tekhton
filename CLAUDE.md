@@ -378,7 +378,13 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 
 ### Milestone Plan
 
-#### Milestone 18: Project Crawler & Index Generator
+#### [DONE] Milestone 18: Project Crawler & Index Generator
+<!-- milestone-meta
+id: "18"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
 
 Shell-driven breadth-first crawler that traverses a project directory and produces
 PROJECT_INDEX.md — a structured, token-budgeted manifest of the project's

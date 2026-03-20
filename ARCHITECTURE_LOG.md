@@ -43,3 +43,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-20
 - **Rationale**: - ACP-1: detect_project_type accepts optional pre-computed detection data — **ACCEPT** — Backward compatible, eliminates redundant detection calls in `format_detection_report()`; confirmed clean i
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-9: Crawler Companion File Architecture (Task: "Implement Milestone 18: Project Crawler & Index Generator")
+- **Date**: 2026-03-20
+- **Rationale**: adding `lib/crawler.sh`, `lib/crawler_inventory.sh`, `lib/crawler_content.sh`, `lib/crawler_deps.sh` to ARCHITECTURE.md Layer 3 is a purely additive and accurate documentation update. No code changes 
+- **Source**: Accepted ACP from pipeline run
