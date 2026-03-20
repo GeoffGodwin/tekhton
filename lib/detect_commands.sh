@@ -146,7 +146,7 @@ detect_entry_points() {
     local -a candidates=(
         "main.py" "app.py" "manage.py"
         "index.ts" "index.js" "src/index.ts" "src/index.js" "src/main.ts" "src/main.js"
-        "src/main.rs" "src/lib.rs"
+        "src/main.rs"
         "cmd/main.go" "main.go"
         "lib/main.dart"
         "Program.cs"

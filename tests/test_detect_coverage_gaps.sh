@@ -36,10 +36,6 @@ make_proj() {
 
 # =============================================================================
 # detect_project_type — Cargo.toml [lib] library detection (lines 246-249)
-# NOTE: detect_entry_points lists "src/lib.rs" as a candidate (detect_commands.sh:149),
-# so a real Rust library with src/lib.rs has non-empty entry_points and the library
-# detection path at lines 246-249 is unreachable in that case (see BUG below).
-# This test exercises the detection path directly by omitting src/lib.rs.
 # =============================================================================
 echo "=== detect_project_type: Rust library via [lib] in Cargo.toml (manifest only) ==="
 
@@ -57,8 +53,6 @@ crate-type = ["cdylib"]
 [dependencies]
 serde = "1.0"
 EOF
-# Intentionally do NOT create src/lib.rs — see NOTE above for why.
-# The detection path requires entry_points to be empty.
 
 lib_type=$(detect_project_type "$LIB_DIR")
 if [[ "$lib_type" == "library" ]]; then
@@ -67,9 +61,10 @@ else
     fail "Expected library for Cargo.toml [lib] project (manifest only), got: $lib_type"
 fi
 
-# Also test that a typical Rust library WITH src/lib.rs returns non-library
-# (documenting the behavior, not asserting it's correct — see BUG below)
-echo "=== detect_project_type: Rust library WITH src/lib.rs (entry point collision) ==="
+# Test that a typical Rust library WITH src/lib.rs is correctly classified as library
+# (Bug fixed: src/lib.rs was previously listed as an entry point candidate, blocking
+# the library detection path. It has been removed from detect_entry_points candidates.)
+echo "=== detect_project_type: Rust library WITH src/lib.rs (fixed: returns library) ==="
 
 LIB_WITH_SRC_DIR=$(make_proj "rust_lib_with_src")
 cat > "$LIB_WITH_SRC_DIR/Cargo.toml" << 'EOF'
@@ -84,11 +79,10 @@ mkdir -p "$LIB_WITH_SRC_DIR/src"
 touch "$LIB_WITH_SRC_DIR/src/lib.rs"
 
 lib_with_src_type=$(detect_project_type "$LIB_WITH_SRC_DIR")
-# Document actual behavior: src/lib.rs in entry points list causes library detection to be skipped
-if [[ "$lib_with_src_type" != "library" ]]; then
-    pass "Documented: Cargo.toml [lib] + src/lib.rs returns $lib_with_src_type (library path unreachable — see BUG)"
+if [[ "$lib_with_src_type" == "library" ]]; then
+    pass "Cargo.toml [lib] + src/lib.rs correctly classified as library (bug fix verified)"
 else
-    pass "Rust library with src/lib.rs unexpectedly classified as library (entry point detection changed)"
+    fail "Expected library for Cargo.toml [lib] + src/lib.rs, got: $lib_with_src_type"
 fi
 
 # =============================================================================

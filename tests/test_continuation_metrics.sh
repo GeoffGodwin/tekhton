@@ -25,6 +25,8 @@ export PROJECT_DIR LOG_DIR
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/metrics.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
 
 PASS=0
 FAIL=0

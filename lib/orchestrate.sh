@@ -162,7 +162,10 @@ run_complete_loop() {
                 check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || acceptance_pass=false
             else
                 # Non-milestone: acceptance = build gate passes (already checked by pipeline)
-                # If we got exit 0, the pipeline passed. But check SKIP_FINAL_CHECKS.
+                # Invariant: A null run from a stage already sets non-zero exit before reaching
+                # here, so this check is normally unreachable on exit 0. However, API-error
+                # paths in tester.sh return (not exit), which can theoretically reach this
+                # code with SKIP_FINAL_CHECKS=true. This guard is a safety net for that edge case.
                 if [[ "${SKIP_FINAL_CHECKS:-false}" = true ]]; then
                     acceptance_pass=false
                 fi
