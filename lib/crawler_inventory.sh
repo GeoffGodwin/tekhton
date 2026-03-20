@@ -8,6 +8,15 @@ set -euo pipefail
 #             _list_tracked_files)
 # =============================================================================
 
+# --- Helpers -----------------------------------------------------------------
+
+# _count_files_in_dir — Count files in file_list matching a directory prefix.
+# Args: $1 = newline-delimited file list, $2 = directory prefix
+# Returns: integer count (0 if no matches)
+_count_files_in_dir() {
+    echo "$1" | grep -c "^${2}" || echo "0"
+}
+
 # --- File inventory -----------------------------------------------------------
 
 # _crawl_file_inventory — Catalogues tracked files with size and grouping.
@@ -178,7 +187,7 @@ _crawl_test_structure() {
         while IFS= read -r d; do
             [[ -z "$d" ]] && continue
             local count
-            count=$(echo "$file_list" | grep -c "^${d}" || echo "0")
+            count=$(_count_files_in_dir "$file_list" "$d")
             output+="- \`${d}\` (${count} files)"$'\n'
         done <<< "$test_dirs"
     else

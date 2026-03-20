@@ -19,7 +19,7 @@ set -euo pipefail
 # Prints a report of checked criteria.
 check_milestone_acceptance() {
     local milestone_num="$1"
-    local claude_md="${2:-CLAUDE.md}"
+    local claude_md="${2:-${PROJECT_RULES_FILE:-CLAUDE.md}}"
 
     header "Checking acceptance criteria — Milestone ${milestone_num}"
 

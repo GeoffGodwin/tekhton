@@ -149,8 +149,8 @@ NOTES_FILTER=""
 MILESTONE_MODE=false
 AUTO_ADVANCE=false
 WITH_NOTES=false
-HUMAN_MODE=false
-HUMAN_NOTES_TAG=""
+export HUMAN_MODE=false
+export HUMAN_NOTES_TAG=""
 COMPLETE_MODE=false
 CURRENT_NOTE_LINE=""
 SKIP_AUDIT=false
@@ -290,6 +290,8 @@ _check_pipeline_lock
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/config.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
+source "${TEKHTON_HOME}/lib/notes_single.sh"
+source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
@@ -310,7 +312,7 @@ source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/detect.sh"
 source "${TEKHTON_HOME}/lib/detect_commands.sh"
 source "${TEKHTON_HOME}/lib/detect_report.sh"
-source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh
+source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_deps.sh (via crawler_content.sh)
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"

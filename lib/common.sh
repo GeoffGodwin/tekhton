@@ -222,6 +222,9 @@ report_orchestration_status() {
     echo -e "${BOLD}${CYAN}── Orchestration Loop ──────────────────${NC}"
     echo -e "  Attempt:     ${BOLD}${attempt}${NC} / ${max}"
     echo -e "  Elapsed:     ${elapsed_min}m ${elapsed_sec}s"
+    # MAX_AUTONOMOUS_AGENT_CALLS is read as a global here (set by config/orchestrate.sh)
+    # rather than passed as a parameter, since this function's signature matches the
+    # four values tracked by the orchestration loop itself (attempt, max, elapsed, calls).
     echo -e "  Agent calls: ${agent_calls} / ${MAX_AUTONOMOUS_AGENT_CALLS:-20}"
     echo -e "${BOLD}${CYAN}────────────────────────────────────────${NC}"
     echo

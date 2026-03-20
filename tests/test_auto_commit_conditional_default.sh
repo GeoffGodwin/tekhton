@@ -107,8 +107,10 @@ assert_eq "4.1 explicit true in pipeline.conf works in non-milestone" "true" "$A
 MILESTONE_MODE=true
 _CONF_KEYS_SET=""
 _AUTO_COMMIT_EXPLICIT=true
-reload_defaults
-# Simulate --no-commit: sets AUTO_COMMIT=false
+# Reset AUTO_COMMIT so config_defaults.sh can set it fresh
+unset AUTO_COMMIT
+source "${TEKHTON_HOME}/lib/config_defaults.sh"
+# Simulate --no-commit: sets AUTO_COMMIT=false after defaults are loaded
 AUTO_COMMIT=false
 apply_milestone_auto_commit
 assert_eq "5.1 --no-commit overrides milestone default" "false" "$AUTO_COMMIT"

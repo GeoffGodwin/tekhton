@@ -10,6 +10,9 @@
 #   5. resolve fallback (no summary) → all reset to [ ]
 #   6. [~] never persists after resolve
 #   7. Notes filter respects tags
+#   8-9. Structured resolve edge cases (partial mentions, already [x])
+#  10. Pipeline exit code awareness — missing summary, pipeline succeeded → [x]
+#  11. Pipeline exit code awareness — missing summary, pipeline failed → [ ]
 # =============================================================================
 set -euo pipefail
 

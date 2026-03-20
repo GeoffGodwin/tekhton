@@ -6,6 +6,8 @@ set -euo pipefail
 # Sourced by crawler.sh — do not run directly.
 # Depends on: common.sh (log, warn), crawler.sh (_list_tracked_files)
 # Also sources: crawler_deps.sh (dependency graph extraction)
+#
+# Note: Uses `local -n` (nameref) which requires Bash 4.3+.
 # =============================================================================
 
 # Source dependency parser
@@ -94,8 +96,10 @@ _add_candidate() {
 # Uses null-byte check in first 512 bytes for portability.
 _is_binary_file() {
     local file="$1"
-    # Check first 512 bytes for null bytes
-    if head -c 512 "$file" 2>/dev/null | tr -d '[:print:][:space:]' | grep -qP '\x00' 2>/dev/null; then
+    # Check first 512 bytes for null bytes via PCRE.
+    # 2>/dev/null handles systems without PCRE (e.g., macOS BSD grep);
+    # the extension-check fallback below catches binary files on those systems.
+    if head -c 512 "$file" 2>/dev/null | grep -qP '\x00' 2>/dev/null; then
         return 0
     fi
     # Fallback: check file extension

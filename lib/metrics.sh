@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # metrics.sh — Run metrics collection, adaptive turn calibration, dashboard
 #

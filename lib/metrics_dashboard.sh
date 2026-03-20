@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # metrics_dashboard.sh — Metrics dashboard and summary helpers
 #
@@ -160,7 +161,7 @@ _avg_field() {
         [[ -z "$line" ]] && continue
         local val
         val=$(echo "$line" | grep -oE "\"${field}\":[0-9]+" | grep -oE '[0-9]+$' || true)
-        sum=$(( sum + val ))
+        sum=$(( sum + ${val:-0} ))
         count=$(( count + 1 ))
     done <<< "$type_records"
 
@@ -187,7 +188,7 @@ _scout_accuracy() {
         actual=$(echo "$line" | grep -oE "\"${actual_field}\":[0-9]+" | grep -oE '[0-9]+$' || true)
         # Skip records where scout didn't estimate (est=0)
         if [[ "$est" -gt 0 ]]; then
-            local diff=$(( est - actual ))
+            local diff=$(( ${est:-0} - ${actual:-0} ))
             # Absolute value
             if [[ "$diff" -lt 0 ]]; then
                 diff=$(( -diff ))

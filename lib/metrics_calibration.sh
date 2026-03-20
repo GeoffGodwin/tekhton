@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # metrics_calibration.sh — Adaptive turn calibration from historical metrics
 #

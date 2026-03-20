@@ -24,6 +24,7 @@ TIMESTAMP=""
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
+source "${TEKHTON_HOME}/lib/notes_single.sh"
 
 FAIL=0
 TESTS_RUN=0

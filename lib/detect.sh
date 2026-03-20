@@ -10,7 +10,7 @@ set -euo pipefail
 
 # --- Exclusion list (matches _generate_codebase_summary in replan_brownfield.sh) ---
 
-_DETECT_EXCLUDE_DIRS="node_modules|.git|__pycache__|.dart_tool|build|dist|.next|vendor|third_party|.bundle|.gradle|target|.build|Pods|.pub-cache|.cargo"
+_DETECT_EXCLUDE_DIRS="node_modules|\\.git|__pycache__|\\.dart_tool|build|dist|\\.next|vendor|third_party|\\.bundle|\\.gradle|target|\\.build|Pods|\\.pub-cache|\\.cargo"
 
 # --- Language detection -------------------------------------------------------
 
@@ -64,7 +64,7 @@ detect_languages() {
         local _csproj_match
         _csproj_match=$(compgen -G "$proj_dir"/*.csproj 2>/dev/null | head -1) || true
         if [[ -n "$_csproj_match" ]]; then
-            lang_manifest[csharp]="$(basename "$_csproj_match")"
+            lang_manifest[csharp]="$(basename "$_csproj_match" 2>/dev/null)"
         else
             lang_manifest[csharp]="*.sln"
         fi
@@ -123,7 +123,8 @@ _has_source_files() {
 _find_source_files() {
     local dir="$1"
     if git -C "$dir" rev-parse --git-dir &>/dev/null; then
-        git -C "$dir" ls-files 2>/dev/null | grep -Ev "(^|/)(${_DETECT_EXCLUDE_DIRS})/" || true
+        # Limit to top 2 directory levels (matching non-git fallback's -maxdepth 2)
+        git -C "$dir" ls-files 2>/dev/null | { grep -Ev "(^|/)(${_DETECT_EXCLUDE_DIRS})/" || true; } | awk -F/ 'NF<=2'
     else
         find "$dir" -maxdepth 2 -type f \
             -not -path '*/.git/*' \
@@ -188,13 +189,13 @@ detect_frameworks() {
         local deps
         deps=$(_extract_json_keys "$proj_dir/package.json" '"dependencies"' '"devDependencies"')
 
-        _check_dep "$deps" '"next"'       && echo "next.js|typescript|\"next\" in package.json dependencies"
-        _check_dep "$deps" '"react"'      && ! _check_dep "$deps" '"next"' && echo "react|typescript|\"react\" in package.json dependencies"
-        _check_dep "$deps" '"vue"'        && echo "vue|typescript|\"vue\" in package.json dependencies"
-        _check_dep "$deps" '"@angular/core"' && echo "angular|typescript|\"@angular/core\" in package.json dependencies"
-        _check_dep "$deps" '"svelte"'     && echo "svelte|typescript|\"svelte\" in package.json dependencies"
-        _check_dep "$deps" '"express"'    && echo "express|javascript|\"express\" in package.json dependencies"
-        _check_dep "$deps" '"fastify"'    && echo "fastify|javascript|\"fastify\" in package.json dependencies"
+        _check_dep "$deps" '"next"'       && echo "next.js|node|\"next\" in package.json dependencies"
+        _check_dep "$deps" '"react"'      && ! _check_dep "$deps" '"next"' && echo "react|node|\"react\" in package.json dependencies"
+        _check_dep "$deps" '"vue"'        && echo "vue|node|\"vue\" in package.json dependencies"
+        _check_dep "$deps" '"@angular/core"' && echo "angular|node|\"@angular/core\" in package.json dependencies"
+        _check_dep "$deps" '"svelte"'     && echo "svelte|node|\"svelte\" in package.json dependencies"
+        _check_dep "$deps" '"express"'    && echo "express|node|\"express\" in package.json dependencies"
+        _check_dep "$deps" '"fastify"'    && echo "fastify|node|\"fastify\" in package.json dependencies"
     fi
 
     # Python frameworks
@@ -262,6 +263,7 @@ detect_frameworks() {
 
 # _extract_json_keys — Extracts content between two JSON section markers.
 # This is a best-effort grep-based parser for package.json dependency blocks.
+# Note: Also called by detect_commands.sh. Callers must source detect.sh before detect_commands.sh.
 # Args: $1 = file, $2... = section names to extract from
 _extract_json_keys() {
     local file="$1"

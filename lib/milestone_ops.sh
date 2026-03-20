@@ -4,8 +4,8 @@ set -euo pipefail
 # milestone_ops.sh — Milestone commit signatures, auto-advance orchestration
 #
 # Sourced by tekhton.sh — do not run directly.
-# Sources: milestone_acceptance.sh
-# Expects: milestones.sh to be sourced first
+# Sources: milestone_acceptance.sh (sourced below, line 26)
+# Expects: milestones.sh to be sourced first by the caller
 # Expects: PROJECT_DIR, TEST_CMD, ANALYZE_CMD (from config)
 # Expects: log(), warn(), success(), header() from common.sh
 # Expects: run_build_gate() from gates.sh
@@ -53,7 +53,7 @@ get_milestone_commit_prefix() {
 get_milestone_commit_body() {
     local milestone_num="$1"
     local disposition="$2"
-    local claude_md="${3:-CLAUDE.md}"
+    local claude_md="${3:-${PROJECT_RULES_FILE:-CLAUDE.md}}"
 
     if [[ -z "$milestone_num" ]]; then
         return

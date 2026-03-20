@@ -107,10 +107,10 @@ generate_commit_message() {
     fi
 
     # Include root cause for bug fixes
-    if [ -f "CODER_SUMMARY.md" ] && echo "$task" | grep -qi "fix\|bug"; then
+    if [ -f "CODER_SUMMARY.md" ] && echo "$task" | grep -Eqi "fix|bug"; then
         local root_cause
         root_cause=$(awk '/^## Root [Cc]ause/{found=1; next} found && /^##/{exit} found && NF{print}' CODER_SUMMARY.md 2>/dev/null | sed '/^$/d' | head -5 || true)
-        if [ -n "$root_cause" ] && ! echo "$root_cause" | grep -qi "^n/a\|^none\|^(fill"; then
+        if [ -n "$root_cause" ] && ! echo "$root_cause" | grep -Eqi "^n/a|^none|^\(fill"; then
             body="${body:+${body}
 }
 Root cause:

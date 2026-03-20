@@ -318,6 +318,8 @@ ${nb_notes}"
     export CLARIFICATIONS_CONTENT
 
     # --- Context compiler (task-scoped filtering) ----------------------------
+    # NOTE: build_context_packet is called before should_claim_notes intentionally.
+    # It takes explicit args (not HUMAN_NOTES_BLOCK global), so the ordering is safe.
 
     build_context_packet "coder" "$TASK" "$CLAUDE_CODER_MODEL"
 

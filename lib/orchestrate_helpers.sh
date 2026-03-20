@@ -40,7 +40,10 @@ _run_auto_advance_chain() {
 
         emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
 
-        # Re-enter the complete loop for the new milestone
+        # Re-enter the complete loop for the new milestone.
+        # Recursion depth is bounded by AUTO_ADVANCE_LIMIT (default 3) — the
+        # should_auto_advance() guard at the top of this while loop exits once
+        # the session count reaches the limit.
         run_complete_loop
         return $?
     done

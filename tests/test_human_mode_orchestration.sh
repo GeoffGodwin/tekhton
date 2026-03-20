@@ -19,6 +19,7 @@ FAIL=0
 # Source just the libraries we need for testing
 source "${TEKHTON_HOME}/lib/common.sh" 2>/dev/null || true
 source "${TEKHTON_HOME}/lib/notes.sh"
+source "${TEKHTON_HOME}/lib/notes_single.sh"
 
 # --- Helpers ----------------------------------------------------------------
 

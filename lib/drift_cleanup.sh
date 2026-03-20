@@ -253,6 +253,9 @@ clear_resolved_nonblocking_notes() {
         elif [[ "$in_resolved" = true ]] && echo "$line" | grep -q "^- "; then
             # Skip resolved items
             :
+        elif [[ "$in_resolved" = true ]] && [[ -z "${line// /}" ]]; then
+            # Skip blank lines between resolved items to keep section clean
+            :
         else
             echo "$line" >> "$tmpfile"
         fi

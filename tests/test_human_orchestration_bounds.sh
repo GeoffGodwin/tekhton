@@ -16,6 +16,7 @@ FAIL=0
 
 source "${TEKHTON_HOME}/lib/common.sh" 2>/dev/null || true
 source "${TEKHTON_HOME}/lib/notes.sh"
+source "${TEKHTON_HOME}/lib/notes_single.sh"
 
 assert_eq() {
     local name="$1" expected="$2" actual="$3"

@@ -17,6 +17,7 @@ TASK="test task"
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
+source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
 
 FAIL=0
 
