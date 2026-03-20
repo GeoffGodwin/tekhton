@@ -390,31 +390,24 @@ COMPLETE→IN PROGRESS downgrade. Add `--human [TAG]` flag parsing to tekhton.sh
 - Milestone 15.3 depends on `should_claim_notes` being flag-only for reliable
   `finalize_run()` behavior.
 
-#### Milestone 15.1.2: Resolved Cleanup Function and AUTO_COMMIT Conditional Default
+This milestone has two cleanly independent pieces that can be split into sub-milestones. Here's the split:
+
+#### Milestone 15.1.2.1: Resolved Cleanup Function for NON_BLOCKING_LOG.md
 
 Add `clear_resolved_nonblocking_notes()` to lib/drift_cleanup.sh that empties the
 `## Resolved` section of NON_BLOCKING_LOG.md on successful pipeline completion.
-Change `AUTO_COMMIT` default in lib/config_defaults.sh to be conditional: `true`
-when `MILESTONE_MODE=true`, `false` otherwise.
+The function prints cleared items to stdout for metrics capture, then removes them
+while preserving the section heading.
 
 **Files to modify:**
 - `lib/drift_cleanup.sh` — Add `clear_resolved_nonblocking_notes()` function
-  after the existing `clear_completed_nonblocking_notes()` (line ~184). The
+  after the existing `clear_completed_nonblocking_notes()` (line ~207). The
   function reads all items from the `## Resolved` section of NON_BLOCKING_LOG.md,
   prints them to stdout (for metrics capture by the caller), then removes the
-  items while preserving the `## Resolved` heading. Follow the same AWK pattern
-  used by `clear_completed_nonblocking_notes()` for consistency. Return 0 on
-  success or if no resolved items exist.
-- `lib/config_defaults.sh` — Change the `AUTO_COMMIT` default (line 128-129)
-  to be conditional on `MILESTONE_MODE`. When `MILESTONE_MODE=true`, default
-  to `true`. When `MILESTONE_MODE` is false or unset, default to `false`.
-  The existing `: "${AUTO_COMMIT:=true}"` syntax means explicit user config
-  in pipeline.conf still overrides (it's set before defaults are loaded).
-  The conditional must check `MILESTONE_MODE` which is set during flag parsing
-  in tekhton.sh before `config_defaults.sh` is sourced.
-- `tests/test_auto_commit_conditional_default.sh` — Update the existing test
-  file (if it exists) or verify it covers: milestone mode defaults to true,
-  non-milestone defaults to false, explicit override works in both modes.
+  items while preserving the `## Resolved` heading. Follow the same while-read
+  pattern used by `clear_completed_nonblocking_notes()` for consistency. Return 0
+  on success or if no resolved items exist. Return 0 if NON_BLOCKING_LOG.md
+  doesn't exist.
 
 **Acceptance criteria:**
 - `clear_resolved_nonblocking_notes()` empties `## Resolved` section items and
@@ -423,17 +416,50 @@ when `MILESTONE_MODE=true`, `false` otherwise.
 - `clear_resolved_nonblocking_notes()` returns 0 when no resolved items exist
 - `clear_resolved_nonblocking_notes()` returns 0 when NON_BLOCKING_LOG.md doesn't
   exist
-- `AUTO_COMMIT` defaults to `true` in milestone mode
-- `AUTO_COMMIT` defaults to `false` in non-milestone mode
-- Explicit `AUTO_COMMIT=false` in pipeline.conf overrides the milestone default
-- Explicit `AUTO_COMMIT=true` in pipeline.conf overrides the non-milestone default
 - All existing tests pass
-- `bash -n` and `shellcheck` pass on all modified files
+- `bash -n` and `shellcheck` pass on `lib/drift_cleanup.sh`
 
 **Watch For:**
 - `clear_resolved_nonblocking_notes()` must preserve the `## Resolved` heading
   itself — only clear the items underneath it. Don't delete blank lines between
   the heading and the first item.
+- Follow the same pattern as `clear_completed_nonblocking_notes()` which uses
+  a while-read loop with a tmpfile, not AWK for the actual rewrite. The AWK
+  is only used for counting.
+- Items in the Resolved section use `- [x]` checkbox format. Match that pattern
+  when counting and filtering.
+
+**Seeds Forward:**
+- Milestone 15.3 calls `clear_resolved_nonblocking_notes()` from `finalize_run()`.
+- This sub-milestone is independent of 15.1.2.2 and can run in parallel.
+
+#### Milestone 15.1.2.2: AUTO_COMMIT Conditional Default
+
+Change `AUTO_COMMIT` default in lib/config_defaults.sh to be conditional: `true`
+when `MILESTONE_MODE=true`, `false` otherwise. Update the existing test file to
+verify the conditional behavior.
+
+**Files to modify:**
+- `lib/config_defaults.sh` — Change the `AUTO_COMMIT` default (lines 128-129)
+  to be conditional on `MILESTONE_MODE`. Replace the unconditional
+  `: "${AUTO_COMMIT:=true}"` with a conditional block: if `MILESTONE_MODE=true`,
+  default to `true`; otherwise default to `false`. The existing `:=` syntax
+  means explicit user config in pipeline.conf still overrides (it's set before
+  defaults are loaded). The conditional must check `MILESTONE_MODE` which is set
+  during flag parsing in tekhton.sh before `config_defaults.sh` is sourced.
+- `tests/test_auto_commit_conditional_default.sh` — Read the existing test file
+  first. Update or verify it covers: milestone mode defaults to true,
+  non-milestone defaults to false, explicit override works in both modes.
+
+**Acceptance criteria:**
+- `AUTO_COMMIT` defaults to `true` in milestone mode
+- `AUTO_COMMIT` defaults to `false` in non-milestone mode
+- Explicit `AUTO_COMMIT=false` in pipeline.conf overrides the milestone default
+- Explicit `AUTO_COMMIT=true` in pipeline.conf overrides the non-milestone default
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/config_defaults.sh`
+
+**Watch For:**
 - The `AUTO_COMMIT` conditional default must be set AFTER `MILESTONE_MODE` is
   determined in the config loading sequence. Verify the sourcing order in
   tekhton.sh: flag parsing → config load → config_defaults.sh. If
@@ -441,14 +467,14 @@ when `MILESTONE_MODE=true`, `false` otherwise.
   work and the assignment must move to a later point.
 - The existing test file `tests/test_auto_commit_conditional_default.sh` already
   exists — read it first to understand what's already covered before modifying.
-- `AUTO_COMMIT` was previously defaulting to `true` unconditionally (line 128-129).
-  The CLAUDE.md says it should default to `false` in non-milestone mode. This is
-  a behavior change for non-milestone users who relied on the `true` default.
+- `AUTO_COMMIT` was previously defaulting to `true` unconditionally. The change
+  to default `false` in non-milestone mode is a behavior change for users who
+  relied on the `true` default. The comment in config_defaults.sh should note this.
 
 **Seeds Forward:**
 - Milestone 15.2 depends on the `AUTO_COMMIT` conditional default for
   auto-commit integration in `finalize_run()`.
-- Milestone 15.3 calls `clear_resolved_nonblocking_notes()` from `finalize_run()`.
+- This sub-milestone is independent of 15.1.2.1 and can run in parallel.
 #### Milestone 15.2: Milestone Marking, Archival Cleanup, and [DONE] Migration
 
 Fix the milestone [DONE] chicken-and-egg problem and the [DONE] line accumulation.

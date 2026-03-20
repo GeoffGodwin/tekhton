@@ -63,6 +63,11 @@ assert_eq "AUTO_ADVANCE_ENABLED exported to subshell" "true" "$result"
 # Test 4: should_auto_advance() in milestone_ops.sh uses AUTO_ADVANCE_ENABLED
 # Source the library and verify the function returns the expected exit code.
 # ---------------------------------------------------------------------------
+# Set up PROJECT_DIR so MILESTONE_STATE_FILE resolves correctly
+PROJECT_DIR="$TMPDIR"
+export PROJECT_DIR
+mkdir -p "${TMPDIR}/.claude"
+
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
@@ -80,10 +85,32 @@ if should_auto_advance 2>/dev/null; then
 fi
 
 # With AUTO_ADVANCE_ENABLED=true, should_auto_advance returns zero
-# (assuming advance count is within limit)
+# (assuming advance count is within limit and disposition is COMPLETE_AND_CONTINUE)
 AUTO_ADVANCE_ENABLED=true
 export AUTO_ADVANCE_ENABLED
 _ADVANCE_COUNT=0
+
+# Create a milestone state file with the expected disposition
+cat > "${TMPDIR}/.claude/MILESTONE_STATE.md" <<'STATE_EOF'
+# Milestone State
+## Current Milestone
+1
+
+## Total Milestones
+5
+
+## Status
+ACCEPTED
+
+## Disposition
+COMPLETE_AND_CONTINUE
+
+## Milestones Completed This Session
+0
+
+## Transition History
+- test
+STATE_EOF
 
 if ! should_auto_advance 2>/dev/null; then
     echo "FAIL: should_auto_advance should return true when AUTO_ADVANCE_ENABLED=true and count within limit"
