@@ -16,23 +16,52 @@ tekhton/
 ├── lib/                    # Shared libraries (sourced by tekhton.sh)
 │   ├── common.sh           # Colors, logging, prerequisite checks
 │   ├── config.sh           # Config loader + validation
+│   ├── config_defaults.sh  # Default values for all config keys
 │   ├── agent.sh            # Agent wrapper, metrics, run_agent()
+│   ├── agent_helpers.sh    # Agent invocation helpers
 │   ├── agent_monitor.sh    # Agent monitoring, activity detection, process management
+│   ├── agent_monitor_helpers.sh  # Monitor support functions
+│   ├── agent_monitor_platform.sh # Platform-specific monitor code
+│   ├── agent_retry.sh      # Transient error retry logic
 │   ├── gates.sh            # Build gate + completion gate
 │   ├── hooks.sh            # Archive, commit message, final checks
+│   ├── finalize.sh         # Hook-based finalization sequence
+│   ├── finalize_display.sh # Completion banner + action items
+│   ├── finalize_summary.sh # RUN_SUMMARY.json emitter
 │   ├── notes.sh            # Human notes management
 │   ├── prompts.sh          # Template engine for .prompt.md files
 │   ├── state.sh            # Pipeline state persistence + resume
+│   ├── turns.sh            # Turn-exhaustion continuation logic
 │   ├── drift.sh            # Drift log, ADL, human action management
+│   ├── drift_artifacts.sh  # Drift artifact processing
+│   ├── drift_cleanup.sh    # Non-blocking log cleanup
+│   ├── detect.sh           # Tech stack detection engine
+│   ├── detect_commands.sh  # Build/test/lint command detection
+│   ├── detect_report.sh    # Detection report formatter
 │   ├── plan.sh             # Planning phase orchestration + config
 │   ├── plan_completeness.sh # Design doc structural validation
 │   ├── plan_state.sh       # Planning state persistence + resume
+│   ├── replan.sh           # Replan orchestration
+│   ├── replan_brownfield.sh # Brownfield replan with codebase summary
+│   ├── replan_midrun.sh    # Mid-run replan trigger
 │   ├── context.sh          # [2.0] Token accounting + context compiler
+│   ├── context_budget.sh   # Context budget checking
+│   ├── context_compiler.sh # Task-scoped context assembly
 │   ├── milestones.sh       # [2.0] Milestone state machine + acceptance checking
+│   ├── milestone_ops.sh    # Milestone marking + disposition
+│   ├── milestone_acceptance.sh # Milestone acceptance criteria checking
+│   ├── milestone_archival.sh   # Milestone archival to MILESTONE_ARCHIVE.md
+│   ├── milestone_metadata.sh   # Milestone metadata HTML comments
+│   ├── milestone_split.sh  # Pre-flight milestone splitting
+│   ├── orchestrate.sh      # [2.0] Outer orchestration loop (--complete)
+│   ├── orchestrate_helpers.sh  # Orchestration support functions
+│   ├── orchestrate_recovery.sh # Failure classification + recovery
 │   ├── clarify.sh          # [2.0] Clarification protocol + replan trigger
 │   ├── specialists.sh      # [2.0] Specialist review framework
 │   ├── metrics.sh          # [2.0] Run metrics collection + adaptive calibration
-│   └── errors.sh           # [2.0] Error taxonomy, classification + reporting
+│   ├── metrics_calibration.sh  # Adaptive turn calibration
+│   ├── errors.sh           # [2.0] Error taxonomy, classification + reporting
+│   └── errors_helpers.sh   # Error classification helpers
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Stage 0: Architect audit (conditional)
 │   ├── coder.sh            # Stage 1: Scout + Coder + build gate
@@ -40,6 +69,7 @@ tekhton/
 │   ├── tester.sh           # Stage 3: Test writing + validation
 │   ├── cleanup.sh          # [2.0] Post-success debt sweep stage
 │   ├── plan_interview.sh   # Planning: interactive interview agent
+│   ├── plan_followup_interview.sh # Planning: follow-up interview agent
 │   └── plan_generate.sh    # Planning: CLAUDE.md generation agent
 ├── prompts/                # Prompt templates with {{VAR}} substitution
 │   ├── architect.prompt.md
@@ -57,6 +87,7 @@ tekhton/
 │   ├── build_fix_minimal.prompt.md
 │   ├── analyze_cleanup.prompt.md
 │   ├── seed_contracts.prompt.md
+│   ├── milestone_split.prompt.md         # Milestone splitting prompt
 │   ├── plan_interview.prompt.md          # Planning interview system prompt
 │   ├── plan_interview_followup.prompt.md # Planning follow-up interview prompt
 │   ├── plan_generate.prompt.md           # CLAUDE.md generation prompt
@@ -294,8 +325,6 @@ Full design document: `DESIGN_v2.md`.
 - **All new `.sh` files must pass `bash -n` and `shellcheck`.**
 
 ### Milestone Plan
-<!-- See MILESTONE_ARCHIVE.md for completed milestones -->
-
 <!-- See MILESTONE_ARCHIVE.md for completed milestones -->
 
 #### Milestone 15.1.1: Notes Gating — Flag-Only Claiming, Coder Cleanup, and --human Flag
@@ -725,8 +754,6 @@ finalization sequence.
   hooks.sh is sourced — no modification to the core hook sequence required.
   Dashboard generation, lane completion signaling, and milestone graph updates
   each register as additional hooks.
-
-Now I have a clear picture. Here's the split:
 
 #### Milestone 15.4.1: Single-Note Utility Functions in lib/notes.sh
 

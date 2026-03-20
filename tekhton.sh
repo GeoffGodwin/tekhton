@@ -307,6 +307,9 @@ source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
+source "${TEKHTON_HOME}/lib/detect.sh"
+source "${TEKHTON_HOME}/lib/detect_commands.sh"
+source "${TEKHTON_HOME}/lib/detect_report.sh"
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
@@ -575,6 +578,13 @@ if [ "$MILESTONE_MODE" = true ] \
    && [[ " ${_CONF_KEYS_SET:-} " != *" AUTO_COMMIT "* ]] \
    && [ "${_AUTO_COMMIT_EXPLICIT:-false}" != true ]; then
     AUTO_COMMIT=true
+fi
+
+# Milestone mode implies --complete: retry on acceptance failure instead of
+# exiting with "Fix issues and re-run". COMPLETE_MODE_ENABLED in pipeline.conf
+# still allows opt-out.
+if [ "$MILESTONE_MODE" = true ] && [ "$COMPLETE_MODE" != true ]; then
+    COMPLETE_MODE=true
 fi
 
 # --- Human mode: flag validation and note derivation --------------------------

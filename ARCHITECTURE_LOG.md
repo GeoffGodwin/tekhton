@@ -33,3 +33,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-17
 - **Rationale**: Renaming `_run_replan` → `_run_midrun_replan` and `_apply_replan_delta` → `_apply_midrun_delta` is necessary to avoid collision with the brownfield `run_replan()` and `_apply_brownfield_delta()` n
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-7: Add lib/detect.sh, lib/detect_commands.sh, and lib/detect_report.sh to ARCHITECT (Task: "Implement Milestone 17: Tech Stack Detection Engine")
+- **Date**: 2026-03-20
+- **Rationale**: - ACP: Add lib/detect.sh, lib/detect_commands.sh, and lib/detect_report.sh to ARCHITECTURE.md Layer 3 — **ACCEPT** — Legitimate documentation update. Three new library entries should be added with
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-8: - ACP-1: detect_project_type accepts optional pre-computed detection data (Task: "Implement Milestone 17: Tech Stack Detection Engine")
+- **Date**: 2026-03-20
+- **Rationale**: - ACP-1: detect_project_type accepts optional pre-computed detection data — **ACCEPT** — Backward compatible, eliminates redundant detection calls in `format_detection_report()`; confirmed clean i
+- **Source**: Accepted ACP from pipeline run

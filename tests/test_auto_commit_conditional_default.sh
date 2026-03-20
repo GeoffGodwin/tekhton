@@ -49,6 +49,8 @@ apply_milestone_auto_commit() {
 
 reload_defaults() {
     unset AUTO_COMMIT 2>/dev/null || true
+    # config_defaults.sh references CLAUDE_STANDARD_MODEL; stub it for test isolation
+    : "${CLAUDE_STANDARD_MODEL:=sonnet}"
     source "${TEKHTON_HOME}/lib/config_defaults.sh"
 }
 
