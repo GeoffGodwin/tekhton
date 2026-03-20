@@ -1959,3 +1959,98 @@ After _run_pipeline_stages returns non-zero:
 - The `register_finalize_hook` pattern (from M15.3) allows V3 to add dashboard
   generation, lane completion signaling, and graph rebalancing hooks without
   modifying M16's outer loop code.
+
+---
+
+## Archived: 2026-03-20 — Adaptive Pipeline 2.0
+
+#### [DONE] Milestone 17: Tech Stack Detection Engine
+<!-- milestone-meta
+id: "17"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
+
+Pure shell library that detects project language(s), framework(s), package manager,
+build system, and infers ANALYZE_CMD / TEST_CMD / BUILD_CHECK_CMD. No agent calls.
+Returns structured detection results that `--init` and the crawler consume.
+
+**Files to create:**
+- `lib/detect.sh` — Tech stack detection library:
+  - `detect_languages()` — scans file extensions, shebangs, and manifest files.
+    Returns ranked list: `LANG|CONFIDENCE|MANIFEST`. Example:
+    `typescript|high|package.json`, `python|medium|requirements.txt`.
+    Confidence levels: `high` (manifest + source files), `medium` (manifest OR
+    source files), `low` (only a few source files, possible vendored code).
+    Languages detected: JavaScript/TypeScript, Python, Rust, Go, Java/Kotlin,
+    C/C++, Ruby, PHP, Dart/Flutter, Swift, C#/.NET, Elixir, Haskell, Lua, Shell.
+  - `detect_frameworks()` — reads manifest files for framework signatures.
+    Returns: `FRAMEWORK|LANG|EVIDENCE`. Example:
+    `next.js|typescript|"next" in package.json dependencies`,
+    `flask|python|"flask" in requirements.txt`.
+    Frameworks detected (non-exhaustive — extensible via pattern file):
+    React, Next.js, Vue, Angular, Svelte, Express, Fastify, Django, Flask,
+    FastAPI, Rails, Spring Boot, ASP.NET, Flutter, SwiftUI, Gin, Actix, Axum.
+  - `detect_commands()` — infers build, test, and lint commands from manifest
+    files and common conventions. Returns:
+    `CMD_TYPE|COMMAND|SOURCE|CONFIDENCE`. Example:
+    `test|npm test|package.json scripts.test|high`,
+    `analyze|eslint .|node_modules/.bin/eslint exists|medium`,
+    `build|cargo build|Cargo.toml present|high`.
+    Detection order: explicit manifest scripts → well-known tool binaries →
+    conventional Makefile targets → fallback suggestions.
+  - `detect_entry_points()` — identifies likely application entry points:
+    `main.py`, `index.ts`, `src/main.rs`, `cmd/*/main.go`, `lib/main.dart`,
+    `Program.cs`, `App.java`, `Makefile`, `docker-compose.yml`. Returns
+    file paths that exist.
+  - `detect_project_type()` — classifies the project into one of the `--plan`
+    template categories: `web-app`, `api-service`, `cli-tool`, `library`,
+    `mobile-app`, or `custom`. Uses language, framework, and entry point signals.
+  - `format_detection_report()` — renders all detection results as a structured
+    markdown block for inclusion in PROJECT_INDEX.md and agent prompts.
+
+**Files to modify:**
+- `tekhton.sh` — source `lib/detect.sh`
+
+**Acceptance criteria:**
+- `detect_languages` correctly identifies TypeScript from `package.json` +
+  `tsconfig.json` + `.ts` files with `high` confidence
+- `detect_languages` correctly identifies Python from `pyproject.toml` +
+  `.py` files with `high` confidence
+- `detect_commands` extracts `npm test` from `package.json` `scripts.test`
+- `detect_commands` extracts `pytest` from `pyproject.toml` `[tool.pytest]`
+- `detect_commands` extracts `cargo test` from `Cargo.toml` presence
+- `detect_frameworks` identifies Next.js from `"next"` in package.json deps
+- `detect_project_type` classifies a project with `package.json` + React +
+  `src/pages/` as `web-app`
+- `detect_entry_points` finds `src/main.rs` in a Rust project
+- All detection functions are safe on empty directories, non-git directories,
+  and directories with only binary files
+- Does not execute any project code, read `.env` files, or follow symlinks
+  outside the project
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/detect.sh`
+
+**Watch For:**
+- Monorepos may have multiple manifests at different levels. `detect_languages`
+  should scan the top 2 directory levels, not just the root.
+- Vendored code (e.g., `vendor/`, `third_party/`) should be excluded from
+  language detection to avoid skewing results. Use the same exclusion list as
+  `_generate_codebase_summary()`.
+- `detect_commands` should prefer explicit manifest scripts over inferred
+  commands. A `package.json` with `"test": "jest --coverage"` is more reliable
+  than guessing `npx jest`.
+- Some projects use Makefiles as the universal entry point. If a `Makefile`
+  exists with `test:` and `lint:` targets, those should be high-confidence
+  detections regardless of language.
+- Confidence levels matter for `--init` UX: high-confidence detections get
+  auto-set in pipeline.conf, medium-confidence get set with a `# VERIFY:`
+  comment, low-confidence get commented out with a suggestion.
+
+**Seeds Forward:**
+- Milestone 18 (crawler) uses `detect_languages()` and `detect_entry_points()`
+  to decide which files to sample
+- Milestone 19 (smart init) uses `detect_commands()` to auto-populate
+  pipeline.conf and `detect_project_type()` to select the plan template
+- Milestone 21 (synthesis) uses `format_detection_report()` as input context
