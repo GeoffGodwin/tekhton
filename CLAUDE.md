@@ -475,62 +475,115 @@ verify the conditional behavior.
 - Milestone 15.2 depends on the `AUTO_COMMIT` conditional default for
   auto-commit integration in `finalize_run()`.
 - This sub-milestone is independent of 15.1.2.1 and can run in parallel.
-#### Milestone 15.2: Milestone Marking, Archival Cleanup, and [DONE] Migration
+Now I have the full picture. Here's the split:
 
-Fix the milestone [DONE] chicken-and-egg problem and the [DONE] line accumulation.
-Add `mark_milestone_done()` to programmatically mark milestones, change archival
-to fully remove [DONE] lines from CLAUDE.md, and perform a one-time migration of
-existing [DONE] one-liners.
+---
+
+#### Milestone 15.2.1: mark_milestone_done() Function
+
+Add `mark_milestone_done(milestone_num)` to `lib/milestone_ops.sh` that programmatically
+marks a milestone heading as `[DONE]` in CLAUDE.md. This is the foundational function
+that archival cleanup (15.2.2) and finalize_run (15.3) depend on.
 
 **Files to modify:**
-- `lib/milestone_ops.sh` — Add `mark_milestone_done(milestone_num)` that:
-  1. Reads CLAUDE.md
-  2. Finds the line matching `^#### Milestone ${milestone_num}:` (without [DONE])
-  3. Prepends `[DONE] ` to make it `#### [DONE] Milestone N: Title`
-  4. Is idempotent — if the line already contains `[DONE]`, returns 0 without
-     modification
-  5. Returns 1 if the milestone heading is not found
-- `lib/milestone_archival.sh` — Change `archive_completed_milestone()` to:
-  1. After archiving the milestone block to MILESTONE_ARCHIVE.md, REMOVE the
-     `#### [DONE] Milestone N: Title` one-liner from CLAUDE.md entirely
-     (currently it leaves it behind)
-  2. After removal, if no `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->`
-     comment exists in the milestone plan section, add one at the top of the
-     milestone list
-  3. Clean up any blank lines left by the removal
-- `CLAUDE.md` — One-time migration: remove all existing `#### [DONE] Milestone N: Title`
-  one-liner lines (there are ~24 of them across two initiative sections). These
-  milestones are already in MILESTONE_ARCHIVE.md. Add the
-  `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` comment.
+- `lib/milestone_ops.sh` — Add `mark_milestone_done(milestone_num)` after the existing
+  `clear_milestone_state()` function (line ~285). The function:
+  1. Reads the project's CLAUDE.md (path from `PROJECT_RULES_FILE` or default
+     `"$PROJECT_DIR/CLAUDE.md"`)
+  2. Finds the line matching `^#### Milestone ${milestone_num}:` (without `[DONE]`)
+     using grep. The regex must handle dotted numbers like `13.2.1.1` — escape dots
+     in the pattern: `^#### Milestone ${milestone_num//./\\.}:`
+  3. If found, uses sed to prepend `[DONE] ` making it `#### [DONE] Milestone N: Title`
+  4. Is idempotent — if the line already contains `#### [DONE] Milestone ${milestone_num}:`,
+     returns 0 without modification
+  5. Returns 1 if neither the plain nor [DONE] heading is found
+  6. Uses a tmpfile + mv pattern (consistent with other file-modifying functions in
+     the codebase) rather than sed -i for portability
 
 **Acceptance criteria:**
-- `mark_milestone_done 15` changes `#### Milestone 15:` to `#### [DONE] Milestone 15:`
-  in CLAUDE.md
+- `mark_milestone_done 15` changes `#### Milestone 15:` to `#### [DONE] Milestone 15:` in CLAUDE.md
 - `mark_milestone_done 15` on an already-marked milestone is a no-op (returns 0)
 - `mark_milestone_done 999` returns 1 (milestone not found)
-- `archive_completed_milestone()` removes the [DONE] one-liner from CLAUDE.md
-  after archiving — zero `[DONE]` lines remain for archived milestones
-- The `<!-- See MILESTONE_ARCHIVE.md -->` comment is added once and not duplicated
-- CLAUDE.md has zero `#### [DONE]` one-liner lines after the one-time migration
-- The MILESTONE_ARCHIVE.md still contains all previously archived milestone content
+- `mark_milestone_done 13.2.1.1` correctly handles dotted sub-milestone numbers
+- The function does not modify any other lines in CLAUDE.md
 - All existing tests pass
-- `bash -n` and `shellcheck` pass on all modified files
+- `bash -n` and `shellcheck` pass on `lib/milestone_ops.sh`
 
 **Watch For:**
-- `mark_milestone_done()` must handle milestone numbers with dots (e.g., 13.2.1.1)
-  for sub-milestones. The regex must match the exact milestone number format.
-- The one-time migration must not remove milestone blocks that are still active —
-  only the `#### [DONE] Milestone N: Title` one-liner summaries (single lines
-  with no content block following them).
-- The `<!-- See MILESTONE_ARCHIVE.md -->` comment should go in the `### Milestone Plan`
-  section, not at the top of the file.
-- After removing [DONE] lines, there may be consecutive blank lines. Collapse them
-  to single blank lines.
+- The milestone number may contain dots (e.g., `13.2.1.1`). Dots must be escaped in
+  the grep/sed regex so `13.2` doesn't match `13X2`.
+- `PROJECT_RULES_FILE` is the canonical path to CLAUDE.md in the target project. Check
+  how other functions in milestone_ops.sh locate CLAUDE.md and follow the same pattern.
+- The function must handle CLAUDE.md files where the milestone heading has trailing
+  content on subsequent lines (full block) OR is a one-liner (just the heading).
+  `mark_milestone_done` only modifies the heading line itself.
 
 **Seeds Forward:**
-- Milestone 15.3 integrates `mark_milestone_done()` and `archive_completed_milestone()`
-  into the `finalize_run()` call sequence.
+- Milestone 15.2.2 depends on `mark_milestone_done()` being available for the archival
+  flow and uses the `[DONE]` marker as the trigger for removal.
+- Milestone 15.3 calls `mark_milestone_done()` from `finalize_run()`.
 
+#### Milestone 15.2.2: Archival Removal of [DONE] Lines and One-Time CLAUDE.md Migration
+
+Change `archive_completed_milestone()` to fully remove `[DONE]` one-liner lines from
+CLAUDE.md after archival (instead of leaving them behind), add the archive pointer
+comment, and perform a one-time migration of the 26 existing `[DONE]` one-liners
+accumulated from prior archival runs.
+
+**Files to modify:**
+- `lib/milestone_archival.sh` — Modify `archive_completed_milestone()` (lines 110-190):
+  1. After the existing archival to MILESTONE_ARCHIVE.md completes (line ~148), change
+     the AWK block (lines 150-186) that currently replaces the block with a one-liner
+     summary. Instead, the AWK should REMOVE the `#### [DONE] Milestone N: Title`
+     line entirely (output nothing for that line)
+  2. After removal, check if `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->`
+     exists in the `### Milestone Plan` section. If not, insert it. Use grep to check
+     existence first to avoid duplicates
+  3. After the AWK rewrite, collapse consecutive blank lines (3+ blank lines → 2) to
+     clean up gaps left by removal. Use a sed or awk pass on the tmpfile
+- `CLAUDE.md` — One-time migration:
+  1. Remove all 26 existing `#### [DONE] Milestone N: Title` one-liner lines (lines
+     272-276 under Planning initiative, lines 301-323 under Adaptive Pipeline 2.0).
+     These are single-line summaries with no content block — the full blocks are
+     already in MILESTONE_ARCHIVE.md
+  2. Add `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` comment in each
+     `### Milestone Plan` section where [DONE] lines were removed
+  3. Collapse any resulting consecutive blank lines
+
+**Acceptance criteria:**
+- `archive_completed_milestone()` removes the `[DONE]` one-liner from CLAUDE.md after
+  archiving — zero `[DONE]` lines remain for archived milestones
+- The `<!-- See MILESTONE_ARCHIVE.md for completed milestones -->` comment is added once
+  per initiative section and not duplicated on subsequent archival calls
+- CLAUDE.md has zero `#### [DONE]` one-liner lines after the one-time migration
+- The MILESTONE_ARCHIVE.md still contains all previously archived milestone content
+  (verify with a before/after diff)
+- Active milestone blocks (those with content below the heading) are NOT removed by the
+  migration — only orphaned one-liner headings
+- No consecutive triple-blank-lines remain after removal
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on `lib/milestone_archival.sh`
+
+**Watch For:**
+- The one-time migration must distinguish between one-liner summaries (just `#### [DONE]
+  Milestone N: Title` with no content block) and active milestones that happen to be
+  marked [DONE] (heading followed by description, files, acceptance criteria). Only
+  one-liners should be removed. A safe heuristic: if the next non-blank line starts
+  with `####` or `###` or is EOF, it's a one-liner.
+- The AWK in `archive_completed_milestone()` currently does block detection (tracking
+  `in_block` state). The modification must preserve the block-detection logic for the
+  archival step while changing the replacement behavior from "insert one-liner" to
+  "insert nothing."
+- The `<!-- See MILESTONE_ARCHIVE.md -->` comment should go immediately after the
+  `### Milestone Plan` heading, not at the very top of CLAUDE.md or inside a milestone
+  block.
+- After removing 26 [DONE] lines, the two initiative sections in CLAUDE.md will look
+  different. Verify the remaining active milestones (15.x, 16, 17-21) are intact.
+
+**Seeds Forward:**
+- Milestone 15.3 integrates `archive_completed_milestone()` (with the new removal
+  behavior) into the `finalize_run()` call sequence.
+- Future archival calls will leave CLAUDE.md clean — no more [DONE] line accumulation.
 #### Milestone 15.3: finalize_run() Consolidation
 
 Consolidate all scattered post-pipeline bookkeeping in `tekhton.sh` into a single

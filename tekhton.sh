@@ -153,6 +153,7 @@ HUMAN_MODE=false
 HUMAN_NOTES_TAG=""
 SKIP_AUDIT=false
 FORCE_AUDIT=false
+_AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
 TOTAL_TURNS=0
 TOTAL_TIME=0
@@ -545,7 +546,7 @@ EOF
             USAGE_THRESHOLD_PCT="$1"
             shift
             ;;
-        --no-commit) AUTO_COMMIT=false; shift ;;
+        --no-commit) AUTO_COMMIT=false; _AUTO_COMMIT_EXPLICIT=true; shift ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --) shift; break ;;
@@ -553,6 +554,16 @@ EOF
         *) break ;;
     esac
 done
+
+# AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
+# config_defaults.sh sets the non-milestone default (false). Here we override
+# to true for milestone mode, but only if the user didn't explicitly set it
+# in pipeline.conf (tracked by _CONF_KEYS_SET) or via --no-commit flag.
+if [ "$MILESTONE_MODE" = true ] \
+   && [[ " ${_CONF_KEYS_SET:-} " != *" AUTO_COMMIT "* ]] \
+   && [ "${_AUTO_COMMIT_EXPLICIT:-false}" != true ]; then
+    AUTO_COMMIT=true
+fi
 
 if [ $# -eq 0 ]; then
     # No task argument — try to pull from saved pipeline state

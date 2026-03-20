@@ -125,8 +125,12 @@ set -euo pipefail
 
 # --- Usage threshold defaults ---
 : "${USAGE_THRESHOLD_PCT:=0}"              # 0 = disabled; set to e.g. 90 to pause at 90% of session usage
-# AUTO_COMMIT defaults to true. Set to false in pipeline.conf to always prompt.
-: "${AUTO_COMMIT:=true}"
+# AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
+# The conditional is applied AFTER flag parsing in tekhton.sh (MILESTONE_MODE
+# is not yet known when config_defaults.sh is sourced). This line sets the
+# fallback for non-milestone mode; tekhton.sh overrides for milestone mode.
+# Explicit AUTO_COMMIT in pipeline.conf always takes precedence via :=.
+: "${AUTO_COMMIT:=false}"
 
 # --- Metrics defaults ---
 : "${METRICS_ENABLED:=true}"
