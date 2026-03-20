@@ -1699,3 +1699,263 @@ should go to the split path, not the continuation path.
 - The `continuation_attempts` metric enables future adaptive turn budgeting:
   if a project consistently needs 2 continuations, increase the default turn cap
 - The substantive-work heuristic can be refined using metrics data from Milestone 8
+
+---
+
+## Archived: 2026-03-20 — Adaptive Pipeline 2.0
+
+#### [DONE] Milestone 16: Outer Orchestration Loop (Milestone-to-Completion)
+
+Add a `--complete` flag that wraps the entire pipeline in an outer orchestration
+loop with a clear contract: **run this milestone until it passes acceptance or all
+recovery options are exhausted.** This is the capstone of V2 — combining transient
+retry (M13), turn continuation (M14), milestone splitting (M11), and error
+classification (M12) into a single autonomous loop that eliminates the human
+re-run cycle.
+
+**Files to modify:**
+- `tekhton.sh` — Add `--complete` flag parsing. When active, wrap
+  `_run_pipeline_stages()` in an outer loop:
+  ```
+  PIPELINE_ATTEMPT=0
+  while true; do
+      PIPELINE_ATTEMPT=$((PIPELINE_ATTEMPT + 1))
+      
+      _run_pipeline_stages  # coder → review → tester
+      
+      if check_milestone_acceptance; then
+          break  # SUCCESS — commit, archive, done
+      fi
+      
+      # Acceptance failed — diagnose and recover
+      if [ $PIPELINE_ATTEMPT -ge $MAX_PIPELINE_ATTEMPTS ]; then
+          save state, exit with full diagnostic
+          break
+      fi
+      
+      # Check for progress between attempts
+      if no_progress_since_last_attempt; then
+          # Degenerate loop detected
+          save state, exit with "stuck" diagnostic
+          break
+      fi
+      
+      log "Acceptance not met. Re-running pipeline (attempt $PIPELINE_ATTEMPT/$MAX_PIPELINE_ATTEMPTS)..."
+      # Loop back — coder gets prior progress context automatically
+  done
+  ```
+- `tekhton.sh` — Add safety bounds enforced in the outer loop:
+  1. `MAX_PIPELINE_ATTEMPTS=5` — hard cap on full pipeline cycles
+  2. `AUTONOMOUS_TIMEOUT=7200` (2 hours) — wall-clock kill switch checked at
+     the top of each loop iteration
+  3. `MAX_AUTONOMOUS_AGENT_CALLS=20` — cumulative agent invocations across all
+     loop iterations (prevents runaway in pathological rework cycles)
+  4. Progress detection: compare `git diff --stat` between loop iterations. If
+     the diff is identical, the pipeline is stuck. Exit after 2 no-progress
+     iterations.
+- `lib/config.sh` — Add defaults: `COMPLETE_MODE_ENABLED=true`,
+  `MAX_PIPELINE_ATTEMPTS=5`, `AUTONOMOUS_TIMEOUT=7200`,
+  `MAX_AUTONOMOUS_AGENT_CALLS=20`, `AUTONOMOUS_PROGRESS_CHECK=true`
+- `lib/state.sh` — Extend `write_pipeline_state()` with `## Orchestration Context`
+  section: pipeline attempt number, cumulative agent calls, cumulative turns used,
+  wall-clock elapsed, and outcome of each prior attempt (one-line summary). On
+  resume, this context is available to diagnose why the loop stopped.
+- `lib/hooks.sh` — In the outer loop's post-acceptance path: run the existing
+  commit flow, then call `archive_completed_milestone()`. If `--auto-advance` is
+  also set, advance to next milestone and continue the outer loop for the next
+  milestone (combining `--complete` with `--auto-advance` chains milestone
+  completion).
+- `lib/milestones.sh` — Add `record_pipeline_attempt(milestone_num, attempt,
+  outcome, turns_used, files_changed)` that logs attempt metadata for the
+  progress detector and metrics. Add `emit_milestone_metadata(milestone_num,
+  depends_on, seeds_forward)` that writes an HTML comment block into CLAUDE.md
+  immediately after the milestone heading. Format:
+  ```
+  <!-- milestone-meta
+  id: "16"
+  depends_on: ["15.3", "15.4"]
+  seeds_forward: ["17", "18"]
+  estimated_complexity: "large"
+  status: "in_progress"
+  -->
+  ```
+  This comment is invisible to agents (they ignore HTML comments) but parseable
+  by the V3 milestone graph builder. `mark_milestone_done()` updates the
+  `status` field to `"done"` when marking a milestone complete. The metadata
+  block is idempotent — if already present, it is updated in-place rather than
+  duplicated. Complexity is inferred from the milestone's acceptance criteria
+  count and file-list length: ≤3 criteria + ≤2 files = "small", ≤8 criteria +
+  ≤5 files = "medium", else "large".
+- `lib/common.sh` — Add `report_orchestration_status(attempt, max, elapsed,
+  agent_calls)` that prints a banner at the start of each loop iteration showing
+  the autonomous loop state.
+- `lib/metrics.sh` — Add `pipeline_attempts` and `total_agent_calls` fields to
+  JSONL record.
+- `lib/hooks.sh` — Add `_hook_emit_run_summary` registered as a finalize hook
+  (via `register_finalize_hook` from M15.3). This hook writes
+  `RUN_SUMMARY.json` to `$LOG_DIR` at the end of each pipeline run (success
+  or failure). Contents:
+  ```json
+  {
+    "milestone": "16",
+    "outcome": "success|failure|timeout|stuck",
+    "attempts": 2,
+    "total_agent_calls": 8,
+    "wall_clock_seconds": 1847,
+    "files_changed": ["lib/hooks.sh", "tekhton.sh"],
+    "error_classes_encountered": ["turn_exhaustion"],
+    "recovery_actions_taken": ["continuation"],
+    "rework_cycles": 1,
+    "split_depth": 0,
+    "timestamp": "2026-03-19T14:30:00Z"
+  }
+  ```
+  The hook collects data from variables already tracked by the outer loop
+  (PIPELINE_ATTEMPT, cumulative agent calls, wall clock, exit stage) and
+  from `git diff --name-only` for files_changed. This structured output is
+  consumed by V3's milestone steward for adaptive scheduling: turn budget
+  calibration, parallelization decisions, and file-overlap conflict prediction.
+- `templates/pipeline.conf.example` — Add `--complete` config keys with comments
+
+**Recovery decision tree inside the loop:**
+```
+After _run_pipeline_stages returns non-zero:
+├── Was it a transient error? → Already retried by M13. If still failing,
+│   save state and exit (sustained outage — human should check API status)
+├── Was it turn exhaustion? → Already continued by M14. If still exhausting
+│   after MAX_CONTINUATION_ATTEMPTS, trigger split (existing M11)
+├── Was it a null run? → Already split by M11. If split depth exhausted,
+│   save state and exit (milestone irreducible)
+├── Was it a review cycle max? → Bump MAX_REVIEW_CYCLES by 2 (one time only),
+│   re-run from review stage. If still failing, save state and exit.
+├── Was it a build gate failure after rework? → Re-run from coder stage with
+│   BUILD_ERRORS_CONTENT injected (one retry). If still failing, save state
+│   and exit.
+└── Was it an unclassified error? → Save state and exit immediately.
+    Never retry an unknown error.
+```
+
+**Acceptance criteria:**
+- `--complete` runs the pipeline in a loop until milestone acceptance passes
+- `MAX_PIPELINE_ATTEMPTS=5` prevents infinite loops
+- `AUTONOMOUS_TIMEOUT=7200` (2 hours) is a hard wall-clock kill switch
+- `MAX_AUTONOMOUS_AGENT_CALLS=20` caps total agent invocations across all attempts
+- Progress detection exits the loop if `git diff --stat` is unchanged between
+  iterations (stuck detection after 2 no-progress attempts)
+- Recovery decisions follow the documented decision tree — transient, turn
+  exhaustion, null run, review max, build failure, and unclassified each have
+  distinct handling
+- Review cycle max gets ONE bump of +2 cycles before giving up
+- Build failure after rework gets ONE coder re-run before giving up
+- Unclassified errors are NEVER retried
+- `--complete` combined with `--auto-advance` chains milestone completions
+- Orchestration state is persisted in `PIPELINE_STATE.md` on interruption
+- Resume from `PIPELINE_STATE.md` restores attempt counter and cumulative metrics
+- Each loop iteration prints a status banner showing attempt, elapsed time, and
+  agent call count
+- `metrics.jsonl` records pipeline attempts and total agent calls
+- `RUN_SUMMARY.json` is written to `$LOG_DIR` on every pipeline completion
+  (success and failure) with structured outcome data
+- `RUN_SUMMARY.json` includes: milestone, outcome, attempts, total_agent_calls,
+  wall_clock_seconds, files_changed, error_classes_encountered,
+  recovery_actions_taken, rework_cycles, split_depth, timestamp
+- Milestone metadata HTML comments (`<!-- milestone-meta ... -->`) are written
+  to CLAUDE.md when milestone state changes (start, complete)
+- Metadata comments are idempotent — updating an existing comment replaces it
+  rather than duplicating
+- Metadata comments do not affect agent behavior (invisible in prompt rendering)
+- Without `--complete`, behavior is identical to current (single attempt, exit on
+  failure)
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+**Watch For:**
+- The outer loop DOES NOT re-run stages that already succeeded in the same
+  iteration. If coder + review succeeded but tester failed, the next iteration
+  should `--start-at tester`, not re-run coder. Use `EXIT_STAGE` from the state
+  file to determine the restart point.
+- Progress detection must compare MEANINGFUL state, not just diff output. A
+  rework cycle that reverts and re-applies the same changes looks like "progress"
+  in terms of diff but is actually stuck. Compare diff CONTENT hashes, not just
+  line counts.
+- The cumulative agent call counter must account for retries (M13) and
+  continuations (M14). A single "coder" stage might invoke 3 retries × 2
+  continuations = 6 agent calls. All count toward the cap.
+- Wall-clock timeout should be checked at the TOP of each loop iteration, not
+  inside stages. This ensures clean state persistence before timeout exit.
+- `--complete` without `--milestone` should work for non-milestone tasks too: run
+  the pipeline, check if build/test pass, retry if not. The acceptance check
+  falls back to "build gate passes" when no milestone criteria exist.
+- Do NOT attempt to automatically resolve REPLAN_REQUIRED verdicts. If the
+  reviewer says the milestone is mis-scoped, the outer loop should save state
+  and exit with a clear message. Replanning requires human judgment.
+- Do NOT allow the outer loop to run cleanup sweeps between attempts. Cleanup
+  only runs after final success. Running cleanup mid-loop risks introducing
+  new failures from debt resolution.
+- The `--complete` + `--auto-advance` combination is the closest V2 gets to
+  fully autonomous operation. It chains: complete milestone N → advance to
+  N+1 → complete N+1 → ... up to `AUTO_ADVANCE_LIMIT`. This is deliberately
+  capped. V3 removes the cap.
+- `RUN_SUMMARY.json` must be written via the finalize hook registry (M15.3's
+  `register_finalize_hook`), NOT as inline code in the outer loop. This ensures
+  it runs in the correct sequence relative to other hooks and is extensible.
+- The milestone metadata HTML comment must use `<!-- milestone-meta ... -->`
+  delimiters exactly — no variations. The V3 graph parser will match this
+  literal prefix. The comment must be on lines immediately following the
+  `#### Milestone N:` heading, before any prose content.
+- `emit_milestone_metadata()` must handle CLAUDE.md files that already have
+  metadata comments (update in-place) AND files that don't (insert after
+  heading). Use a sed block that matches the heading line and checks whether
+  the next line starts with `<!-- milestone-meta`. If yes, replace the block.
+  If no, insert after the heading.
+- `RUN_SUMMARY.json` must be valid JSON. Use `printf` with proper escaping
+  for string values, not heredoc with unescaped variables. File paths in
+  `files_changed` may contain special characters.
+- **Test stdin safety:** `run_tests.sh` redirects stdin from `/dev/null`.
+  Tests that call `finalize_run()` must still set `AUTO_COMMIT=true` OR
+  `SKIP_FINAL_CHECKS=true` to prevent `_hook_commit` from attempting
+  interactive reads. Every test suite that calls `finalize_run` must reset
+  ALL relevant state variables (`SKIP_FINAL_CHECKS`, `AUTO_COMMIT`,
+  `MILESTONE_MODE`, `_CURRENT_MILESTONE`, `FINAL_CHECK_RESULT`,
+  `_COMMIT_SUCCEEDED`) — do not rely on state inherited from prior suites.
+- The `_hook_emit_run_summary` hook should run on BOTH success and failure
+  paths (unlike hooks d-j in M15.3 which are success-only). The `outcome`
+  field distinguishes the cases. V3's steward needs failure data as much as
+  success data for scheduling decisions.
+
+**What NOT To Do:**
+- Do NOT add a `--build-project` flag. That's V3 scope. `--complete` operates on
+  one milestone (or a limited chain with `--auto-advance`).
+- Do NOT add cost budgeting. V3 scope. V2 uses invocation counts and wall-clock
+  time as proxy limits.
+- Do NOT add scheduled execution or daemon mode. V3 scope.
+- Do NOT modify the inner pipeline stages. The outer loop wraps them; it does not
+  change their behavior. Stages see a single invocation — they don't know they're
+  inside a loop.
+- Do NOT retry REPLAN_REQUIRED verdicts. The reviewer is saying the task is wrong.
+  Retrying the same wrong task is wasteful.
+- Do NOT override user config inside the loop. If `MAX_REVIEW_CYCLES=3` and the
+  one-time bump makes it 5, that's the maximum. The loop cannot keep bumping.
+
+**Seeds Forward:**
+- V3 `--build-project` extends the outer loop to span ALL milestones without the
+  `AUTO_ADVANCE_LIMIT` cap
+- V3 cost budgeting adds dollar-amount tracking alongside the invocation cap
+- V3 adaptive strategy selection replaces the fixed decision tree with a
+  metrics-informed classifier that learns which recovery strategy works best
+  for each project
+- The orchestration state (attempt count, cumulative metrics, per-attempt outcomes)
+  becomes the foundation for V3's project-level progress reporting
+- V3 milestone graph builder parses `<!-- milestone-meta -->` comments from
+  CLAUDE.md to construct the DAG representation (`MILESTONE_GRAPH.yaml`). The
+  structured metadata eliminates the need for NLP-based dependency extraction
+  from prose `Seeds Forward` blocks — dependencies are already declared as
+  `depends_on` and `seeds_forward` arrays in the metadata comments.
+- V3 milestone steward reads `RUN_SUMMARY.json` history to calibrate scheduling:
+  turn budgets are adjusted based on historical agent call counts per milestone,
+  parallelization decisions use `files_changed` overlap analysis across past
+  milestones, and error pattern detection uses `error_classes_encountered` to
+  predict which milestones are likely to need retry infrastructure.
+- The `register_finalize_hook` pattern (from M15.3) allows V3 to add dashboard
+  generation, lane completion signaling, and graph rebalancing hooks without
+  modifying M16's outer loop code.
