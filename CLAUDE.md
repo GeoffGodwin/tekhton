@@ -378,7 +378,13 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 
 ### Milestone Plan
 
-#### Milestone 21: Agent-Assisted Project Synthesis
+#### [DONE] Milestone 21: Agent-Assisted Project Synthesis
+<!-- milestone-meta
+id: "21"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
 
 The capstone milestone. Uses PROJECT_INDEX.md from the crawler (M18) plus tech
 stack detection (M17) as input to an agent-assisted synthesis pipeline that

@@ -15,7 +15,9 @@ set -euo pipefail
 
 # Source companion files
 _INIT_DIR="${BASH_SOURCE[0]%/*}"
+# shellcheck source=lib/init_config.sh
 source "${_INIT_DIR}/init_config.sh"
+# shellcheck source=lib/prompts_interactive.sh
 source "${_INIT_DIR}/prompts_interactive.sh"
 
 # --- Main entry point ---------------------------------------------------------
