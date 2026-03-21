@@ -9,7 +9,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 cd "$TMPDIR"
 
 # Run --init
-bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
+TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
 
 # Verify pipeline.conf was created
 [ -f ".claude/pipeline.conf" ] || { echo "pipeline.conf not created"; exit 1; }

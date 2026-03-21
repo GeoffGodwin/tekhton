@@ -1,15 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_init_smart_config.sh` — _generate_smart_config() output for Node.js, Rust, Python; confidence annotations; model scaling by file count
-- [x] `tests/test_prompt_helpers.sh` — non-interactive fallbacks for prompt_confirm, prompt_choice, prompt_input
-- [x] `tests/test_init_smart_init.sh` — run_smart_init() integration: Node.js/Rust/Python project detection produces correct config values
+- [x] `tests/test_init_addenda_dedup.sh` — _append_addenda: same-filename addendum not appended twice when two languages resolve to the same addendum file
 
 ## Test Run Results
-Passed: 114  Failed: 0
+Passed: 4  Failed: 1
 
 ## Bugs Found
-None
+- BUG: [lib/init.sh:238-244] _append_addenda has no deduplication: when the same language name appears twice in the languages list, its addendum file is appended twice to the target role file
 
 ## Files Modified
-- [x] `tests/test_init_smart_config.sh`
-- [x] `tests/test_prompt_helpers.sh`
-- [x] `tests/test_init_smart_init.sh`
+- [x] `tests/test_init_addenda_dedup.sh`
