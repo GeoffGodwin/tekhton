@@ -17,8 +17,7 @@ _generate_codebase_summary() {
     # Prefer PROJECT_INDEX.md when available and reasonably current
     if [[ -f "$index_file" ]]; then
         local index_commit
-        index_commit=$(grep '<!-- Scan-Commit:' "$index_file" 2>/dev/null | \
-            sed 's/.*<!-- Scan-Commit: *\(.*\) *-->.*/\1/' | tr -d '[:space:]' || true)
+        index_commit=$(_extract_scan_metadata "$index_file" "Scan-Commit")
 
         local is_current=false
         if [[ -n "$index_commit" ]] && [[ "$index_commit" != "non-git" ]]; then

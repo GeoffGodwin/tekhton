@@ -10,6 +10,7 @@
 # Uses: append_drift_observations(), increment_runs_since_audit() from drift.sh
 # Uses: append_nonblocking_notes(), _resolve_addressed_nonblocking_notes()
 #       from drift_cleanup.sh
+# Also provides: clear_resolved_drift_observations(), get_resolved_drift_observations()
 # =============================================================================
 
 set -euo pipefail
@@ -191,4 +192,56 @@ _process_design_observations() {
         echo "$line" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
         append_human_action "coder" "$line"
     done <<< "$observations"
+}
+
+# --- Drift observation cleanup -----------------------------------------------
+
+# clear_resolved_drift_observations — Removes items from the ## Resolved section.
+# Called at the start of each run so only the current run's resolutions are visible.
+clear_resolved_drift_observations() {
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
+    if [ ! -f "$drift_file" ]; then
+        return 0
+    fi
+
+    # Count resolved items first — skip file rewrite if none exist
+    local resolved_count
+    resolved_count=$(awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- \[RESOLVED/{c++} END{print c+0}' \
+        "$drift_file" 2>/dev/null)
+    if [ "$resolved_count" -eq 0 ] 2>/dev/null; then
+        return 0
+    fi
+
+    local tmpfile
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
+    local in_resolved=false
+
+    while IFS= read -r line; do
+        if echo "$line" | grep -q "^## Resolved"; then
+            in_resolved=true
+            echo "$line" >> "$tmpfile"
+        elif echo "$line" | grep -q "^## " && [[ "$in_resolved" = true ]]; then
+            in_resolved=false
+            echo "$line" >> "$tmpfile"
+        elif [[ "$in_resolved" = true ]] && echo "$line" | grep -q "^- \[RESOLVED"; then
+            # Skip resolved items
+            :
+        else
+            echo "$line" >> "$tmpfile"
+        fi
+    done < "$drift_file"
+
+    mv "$tmpfile" "$drift_file"
+    log "Cleared ${resolved_count} resolved item(s) from DRIFT_LOG.md."
+}
+
+# get_resolved_drift_observations — Returns text of [RESOLVED ...] items from ## Resolved.
+# Used to include resolved drift items in the commit message.
+get_resolved_drift_observations() {
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
+    if [ ! -f "$drift_file" ]; then
+        return
+    fi
+    awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- \[RESOLVED/{print}' \
+        "$drift_file" 2>/dev/null || true
 }

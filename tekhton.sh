@@ -215,6 +215,7 @@ if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh, agent_helpers.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
+    source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # _extract_scan_metadata for replan_brownfield
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
     # PROJECT_NAME is needed by run_agent() for temp file naming;
     # in --replan mode config is not loaded, so derive from directory name.
@@ -274,7 +275,7 @@ source "${TEKHTON_HOME}/lib/detect.sh"
 source "${TEKHTON_HOME}/lib/detect_commands.sh"
 source "${TEKHTON_HOME}/lib/detect_report.sh"
 source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_deps.sh (via crawler_content.sh)
-source "${TEKHTON_HOME}/lib/rescan.sh"
+source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # helpers only; full rescan.sh sourced in --rescan block
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
