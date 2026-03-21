@@ -9,7 +9,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 cd "$TMPDIR"
 
 # Run --init
-bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
+TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
 
 # Verify pipeline.conf was created
 [ -f ".claude/pipeline.conf" ] || { echo "pipeline.conf not created"; exit 1; }
@@ -32,7 +32,7 @@ bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
 [ ! -d ".claude/pipeline/prompts" ] || { echo "prompts/ should NOT be copied to project"; exit 1; }
 
 # Verify re-running --init warns and exits
-if bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1; then
+if TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1; then
     echo "Re-init should have exited with error"
     exit 1
 fi

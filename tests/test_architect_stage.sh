@@ -70,7 +70,7 @@ assert_eq "dependency constraints default" "" "$DEPENDENCY_CONSTRAINTS_FILE"
 # Test 2: --init copies architect.md to agents directory
 # =============================================================================
 cd "$TMPDIR"
-bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
+TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init > /dev/null 2>&1
 [ -f ".claude/agents/architect.md" ] || { echo "FAIL: architect.md not created by --init"; FAIL=1; }
 assert_file_contains "architect role content" ".claude/agents/architect.md" "architecture audit agent"
 cd - > /dev/null

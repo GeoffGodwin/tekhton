@@ -16,7 +16,7 @@ touch "${PROJECT_DIR}/DESIGN.md"
 
 # Run --init
 cd "$PROJECT_DIR"
-bash "${TEKHTON_HOME}/tekhton.sh" --init >/dev/null 2>&1 || true
+TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init >/dev/null 2>&1 || true
 
 # Check that pipeline.conf was created
 [ -f "${PROJECT_DIR}/.claude/pipeline.conf" ] || { echo "FAIL: pipeline.conf not created"; exit 1; }
@@ -35,7 +35,7 @@ export PROJECT_DIR
 # Do NOT create DESIGN.md
 
 cd "$PROJECT_DIR"
-bash "${TEKHTON_HOME}/tekhton.sh" --init >/dev/null 2>&1 || true
+TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init >/dev/null 2>&1 || true
 
 # Check that pipeline.conf was created
 [ -f "${PROJECT_DIR}/.claude/pipeline.conf" ] || { echo "FAIL: pipeline.conf not created"; exit 1; }

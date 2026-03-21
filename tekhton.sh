@@ -168,80 +168,20 @@ if [ "${1:-}" = "--version" ]; then
     exit 0
 fi
 
-# --- Early --init check (runs before config exists) --------------------------
+# --- Early --init / --reinit check (runs before config exists) ----------------
 
-if [ "${1:-}" = "--init" ]; then
+if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/detect.sh"
+    source "${TEKHTON_HOME}/lib/detect_commands.sh"
+    source "${TEKHTON_HOME}/lib/detect_report.sh"
+    source "${TEKHTON_HOME}/lib/crawler.sh"
+    source "${TEKHTON_HOME}/lib/init.sh"
 
-    CONF_DIR="${PROJECT_DIR}/.claude"
-    CONF_FILE="${CONF_DIR}/pipeline.conf"
+    local_reinit=""
+    [ "${1:-}" = "--reinit" ] && local_reinit="reinit"
 
-    if [ -f "$CONF_FILE" ]; then
-        warn "pipeline.conf already exists at ${CONF_FILE}"
-        warn "To reinitialize, delete it first."
-        exit 1
-    fi
-
-    header "Tekhton Init — Scaffolding project structure"
-
-    # Create directories — only what the project needs
-    mkdir -p "${CONF_DIR}/agents"
-    mkdir -p "${CONF_DIR}/logs/archive"
-
-    # Copy config template
-    cp "${TEKHTON_HOME}/templates/pipeline.conf.example" "$CONF_FILE"
-
-    # Auto-set DESIGN_FILE if DESIGN.md exists (e.g., from a prior --plan run)
-    if [[ -f "${PROJECT_DIR}/DESIGN.md" ]]; then
-        sed -i 's/^DESIGN_FILE=""$/DESIGN_FILE="DESIGN.md"/' "$CONF_FILE"
-        success "Created ${CONF_FILE} (DESIGN_FILE set to DESIGN.md)"
-    else
-        success "Created ${CONF_FILE}"
-    fi
-
-    # Install agent role templates (only if they don't already exist)
-    for role in coder reviewer tester jr-coder architect; do
-        TARGET="${CONF_DIR}/agents/${role}.md"
-        if [ ! -f "$TARGET" ] && [ -f "${TEKHTON_HOME}/templates/${role}.md" ]; then
-            cp "${TEKHTON_HOME}/templates/${role}.md" "$TARGET"
-            success "Created agent role file: .claude/agents/${role}.md"
-        else
-            log "Skipped .claude/agents/${role}.md (already exists)"
-        fi
-    done
-
-    # Create stub CLAUDE.md if it doesn't exist
-    if [ ! -f "${PROJECT_DIR}/CLAUDE.md" ]; then
-        cat > "${PROJECT_DIR}/CLAUDE.md" << 'RULES_EOF'
-# Project Rules
-
-This file contains the non-negotiable rules for this project.
-All agents read this file. Keep it authoritative and concise.
-
-## Architecture Rules
-<!-- Add your architecture rules here -->
-
-## Code Style
-<!-- Add your code style rules here -->
-
-## Testing Requirements
-<!-- Add your testing requirements here -->
-RULES_EOF
-        success "Created CLAUDE.md (project rules stub)"
-    fi
-
-    echo
-    header "Init Complete"
-    echo "  Tekhton home: ${TEKHTON_HOME}"
-    echo "  Project:      ${PROJECT_DIR}"
-    echo
-    echo "  Next steps:"
-    echo "  1. Edit .claude/pipeline.conf — set PROJECT_NAME, REQUIRED_TOOLS,"
-    echo "     ANALYZE_CMD, TEST_CMD, and model preferences"
-    echo "  2. Edit .claude/agents/*.md — customize agent role definitions"
-    echo "  3. Edit CLAUDE.md — add your project's non-negotiable rules"
-    echo "  4. Run: tekhton \"Your first task description\""
-    echo
+    run_smart_init "$PROJECT_DIR" "$TEKHTON_HOME" "$local_reinit"
     exit 0
 fi
 
@@ -338,7 +278,8 @@ usage() {
     echo ""
     echo "Usage: tekhton [flags] \"<task description>\""
     echo ""
-    echo "  --init                    Scaffold pipeline config + agent roles for a new project"
+    echo "  --init                    Smart init: detect stack, generate config + agent roles"
+    echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
     echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
     echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
     echo "  --status                  Print saved pipeline state and exit (no run)"
