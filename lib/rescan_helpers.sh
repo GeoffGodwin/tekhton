@@ -114,9 +114,9 @@ _replace_section() {
     local heading="$2"
     local new_body="$3"
 
-    echo "$content" | \
+    printf '%s\n' "$content" | \
         REPLACE_BODY="$new_body" awk -v heading="$heading" '
-        BEGIN { in_section = 0; printed = 0; body = ENVIRON["REPLACE_BODY"] }
+        BEGIN { in_section = 0; body = ENVIRON["REPLACE_BODY"] }
         /^## / {
             if ($0 == "## " heading) {
                 in_section = 1
@@ -124,7 +124,6 @@ _replace_section() {
                 print ""
                 print body
                 print ""
-                printed = 1
                 next
             } else if (in_section) {
                 in_section = 0
