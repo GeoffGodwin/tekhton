@@ -14,7 +14,9 @@ set -euo pipefail
 
 # Source companion files
 _CRAWLER_DIR="${BASH_SOURCE[0]%/*}"
+# shellcheck source=lib/crawler_inventory.sh
 source "${_CRAWLER_DIR}/crawler_inventory.sh"
+# shellcheck source=lib/crawler_content.sh
 source "${_CRAWLER_DIR}/crawler_content.sh"
 
 # --- Exclusion list (consistent with detect.sh and replan_brownfield.sh) ------

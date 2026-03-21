@@ -12,6 +12,7 @@ set -euo pipefail
 
 # Source dependency parser
 _CRAWLER_CONTENT_DIR="${BASH_SOURCE[0]%/*}"
+# shellcheck source=lib/crawler_deps.sh
 source "${_CRAWLER_CONTENT_DIR}/crawler_deps.sh"
 
 # --- File sampling ------------------------------------------------------------

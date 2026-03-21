@@ -53,3 +53,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-21
 - **Rationale**: Follows the exact same minimal-source pattern as the existing `--init` and `--replan` early-exit blocks. Backward compatible; no existing behavior changed. ARCHITECTURE.md update note is correct.
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-11: `--plan-from-index` as early-exit command (Task: "Implement Milestone 21: Agent-Assisted Project Synthesis")
+- **Date**: 2026-03-21
+- **Rationale**: Follows the established `--plan` / `--replan` / `--rescan` pattern exactly. Backward-compatible new flag. ARCHITECTURE.md update is needed (noted by coder).
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-12: `--init --full` chaining (Task: "Implement Milestone 21: Agent-Assisted Project Synthesis")
+- **Date**: 2026-03-21
+- **Rationale**: Clean, backward-compatible extension; `--init` alone is unchanged. ARCHITECTURE.md update is needed (noted by coder).
+- **Source**: Accepted ACP from pipeline run

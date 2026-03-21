@@ -21,8 +21,10 @@
 #   --start-at review     Skip coder; requires CODER_SUMMARY.md
 #   --start-at tester     Resume tester from existing TESTER_REPORT.md
 #   --start-at test       Skip coder + reviewer; requires REVIEWER_REPORT.md
+#   --plan-from-index     Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md
 #   --rescan              Incrementally update PROJECT_INDEX.md from git changes
 #   --rescan --full       Force full re-crawl regardless of change volume
+#   --init --full         Run init + synthesis in one command
 #   --metrics             Print run metrics dashboard and exit
 #   --notes-filter X      Inject only [X] notes (BUG, FEAT, POLISH)
 #   --init-notes          Create blank HUMAN_NOTES.md template
@@ -184,6 +186,20 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     [ "${1:-}" = "--reinit" ] && local_reinit="reinit"
 
     run_smart_init "$PROJECT_DIR" "$TEKHTON_HOME" "$local_reinit"
+
+    # --init --full chains: init → synthesize in one invocation
+    if [ "${2:-}" = "--full" ]; then
+        source "${TEKHTON_HOME}/lib/prompts.sh"
+        source "${TEKHTON_HOME}/lib/agent.sh"
+        source "${TEKHTON_HOME}/lib/plan.sh"
+        source "${TEKHTON_HOME}/lib/plan_completeness.sh"
+        source "${TEKHTON_HOME}/lib/context.sh"
+        source "${TEKHTON_HOME}/lib/context_compiler.sh"
+        source "${TEKHTON_HOME}/stages/init_synthesize.sh"
+        : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+        export PROJECT_NAME
+        run_project_synthesis "$PROJECT_DIR" || true
+    fi
     exit 0
 fi
 
@@ -241,6 +257,28 @@ if [ "${1:-}" = "--rescan" ]; then
     fi
 
     rescan_project "$PROJECT_DIR" 120000 "$local_full"
+    exit 0
+fi
+
+# --- Early --plan-from-index check (runs before execution pipeline) ----------
+
+if [ "${1:-}" = "--plan-from-index" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/detect.sh"
+    source "${TEKHTON_HOME}/lib/detect_commands.sh"
+    source "${TEKHTON_HOME}/lib/detect_report.sh"
+    source "${TEKHTON_HOME}/lib/prompts.sh"
+    source "${TEKHTON_HOME}/lib/agent.sh"
+    source "${TEKHTON_HOME}/lib/plan.sh"
+    source "${TEKHTON_HOME}/lib/plan_completeness.sh"
+    source "${TEKHTON_HOME}/lib/context.sh"
+    source "${TEKHTON_HOME}/lib/context_compiler.sh"
+    source "${TEKHTON_HOME}/stages/init_synthesize.sh"
+    # PROJECT_NAME is needed by run_agent() for temp file naming;
+    # in --plan-from-index mode config is not loaded, so derive from directory name.
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    run_project_synthesis "$PROJECT_DIR" || true
     exit 0
 fi
 
@@ -305,8 +343,10 @@ usage() {
     echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
     echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
     echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
+    echo "  --plan-from-index         Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md"
     echo "  --rescan                  Incrementally update PROJECT_INDEX.md from git changes"
     echo "  --rescan --full           Force full re-crawl regardless of change volume"
+    echo "  --init --full             Run init + synthesis in one command"
     echo "  --status                  Print saved pipeline state and exit (no run)"
     echo "  --metrics                 Print run metrics dashboard and exit"
     echo "  --version                 Print version and exit"
@@ -336,6 +376,8 @@ usage() {
     echo "  tekhton --init                           # First-time setup"
     echo "  tekhton --plan                           # Interactive planning phase"
     echo "  tekhton --replan                         # Update existing plan from drift/changes"
+    echo "  tekhton --plan-from-index                # Synthesize docs from project index"
+    echo "  tekhton --init --full                    # Init + crawl + synthesize in one step"
     echo "  tekhton --rescan                         # Update PROJECT_INDEX.md incrementally"
     echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
     echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
