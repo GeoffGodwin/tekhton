@@ -48,7 +48,7 @@ rescan_project() {
     fi
 
     # Check if this is a git repo
-    if ! git -C "$project_dir" rev-parse --git-dir &>/dev/null 2>&1; then
+    if ! git -C "$project_dir" rev-parse --git-dir &>/dev/null; then
         warn "Not a git repository — falling back to full crawl."
         crawl_project "$project_dir" "$budget_chars"
         return $?
@@ -65,7 +65,7 @@ rescan_project() {
     fi
 
     # Validate that the recorded commit still exists (may have been rebased away)
-    if ! git -C "$project_dir" rev-parse --verify "${last_scan_commit}^{commit}" &>/dev/null 2>&1; then
+    if ! git -C "$project_dir" rev-parse --verify "${last_scan_commit}^{commit}" &>/dev/null; then
         warn "Recorded scan commit ${last_scan_commit} no longer exists (rebased?)."
         log "Falling back to full crawl..."
         crawl_project "$project_dir" "$budget_chars"

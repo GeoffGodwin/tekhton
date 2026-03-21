@@ -114,8 +114,9 @@ _replace_section() {
     local heading="$2"
     local new_body="$3"
 
-    echo "$content" | awk -v heading="$heading" -v body="$new_body" '
-        BEGIN { in_section = 0; printed = 0 }
+    echo "$content" | \
+        REPLACE_BODY="$new_body" awk -v heading="$heading" '
+        BEGIN { in_section = 0; printed = 0; body = ENVIRON["REPLACE_BODY"] }
         /^## / {
             if ($0 == "## " heading) {
                 in_section = 1
@@ -158,7 +159,7 @@ _record_scan_metadata() {
     local new_commit new_date file_count total_lines
     new_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
-    if git -C "$project_dir" rev-parse --git-dir &>/dev/null 2>&1; then
+    if git -C "$project_dir" rev-parse --git-dir &>/dev/null; then
         new_commit=$(git -C "$project_dir" rev-parse --short HEAD 2>/dev/null || echo "unknown")
     else
         new_commit="non-git"

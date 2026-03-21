@@ -185,7 +185,7 @@ _annotate_directories() {
 # Args: $1 = project directory
 _list_tracked_files() {
     local project_dir="$1"
-    if git -C "$project_dir" rev-parse --git-dir &>/dev/null 2>&1; then
+    if git -C "$project_dir" rev-parse --git-dir &>/dev/null; then
         git -C "$project_dir" ls-files 2>/dev/null || true
     else
         local exclude_args=()
@@ -230,7 +230,7 @@ _build_index_header() {
     scan_date=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
     project_name=$(basename "$project_dir")
 
-    if git -C "$project_dir" rev-parse --git-dir &>/dev/null 2>&1; then
+    if git -C "$project_dir" rev-parse --git-dir &>/dev/null; then
         scan_commit=$(git -C "$project_dir" rev-parse --short HEAD 2>/dev/null || echo "unknown")
     else
         scan_commit="non-git"
