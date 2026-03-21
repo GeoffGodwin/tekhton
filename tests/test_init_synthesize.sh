@@ -338,19 +338,29 @@ proj_good_design="${TMPDIR_BASE}/good_design"
 mkdir -p "$proj_good_design"
 cat > "${proj_good_design}/DESIGN.md" << 'EOF'
 ## Overview
-Line 1. Line 2. Line 3. Line 4.
+Line 1 of overview.
+Line 2 of overview.
+Line 3 of overview.
 
 ## Architecture
-Line 1. Line 2. Line 3. Line 4.
+Line 1 of architecture.
+Line 2 of architecture.
+Line 3 of architecture.
 
 ## Data Model
-Line 1. Line 2. Line 3. Line 4.
+Line 1 of data model.
+Line 2 of data model.
+Line 3 of data model.
 
 ## Configuration
-Line 1. Line 2. Line 3. Line 4.
+Line 1 of configuration.
+Line 2 of configuration.
+Line 3 of configuration.
 
 ## Conventions
-Line 1. Line 2. Line 3. Line 4.
+Line 1 of conventions.
+Line 2 of conventions.
+Line 3 of conventions.
 EOF
 
 result=$(run_synthesize_subshell "$proj_good_design" '

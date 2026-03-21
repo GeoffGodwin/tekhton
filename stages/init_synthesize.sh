@@ -246,38 +246,36 @@ _check_synthesis_completeness() {
 
     if [[ "$section_count" -lt 5 ]]; then
         warn "DESIGN.md has only ${section_count} sections — running re-synthesis pass"
+    fi
 
-        # Set PLAN_INCOMPLETE_SECTIONS for the prompt (if check_design_completeness is available)
-        # For synthesis, we use a simpler check since we don't have a template with REQUIRED markers
-        local thin_sections=""
-        local section_name section_content line_count
-        while IFS= read -r section_name; do
-            [[ -z "$section_name" ]] && continue
-            section_name="${section_name#\#\# }"
-            section_content=$(_get_section_content_simple "$design_file" "$section_name")
-            line_count=$(echo "$section_content" | grep -c '[^[:space:]]' || true)
-            if [[ "$line_count" -lt 3 ]]; then
-                thin_sections="${thin_sections}${section_name}"$'\n'
-            fi
-        done < <(grep '^## ' "$design_file" | sed 's/^## //')
-
-        if [[ -n "$thin_sections" ]]; then
-            warn "Thin sections found:"
-            echo "$thin_sections" | while IFS= read -r s; do
-                [[ -n "$s" ]] && warn "  - ${s}"
-            done
-
-            # Set PLAN_INCOMPLETE_SECTIONS so the prompt can target these sections
-            export PLAN_INCOMPLETE_SECTIONS
-            PLAN_INCOMPLETE_SECTIONS=$(echo "$thin_sections" | sed '/^$/d' | sed 's/^/- /')
-
-            # Re-synthesize with thin sections flagged
-            log "Running second synthesis pass for thin sections..."
-            _synthesize_design "$project_dir" || true
-
-            # Clear after use
-            unset PLAN_INCOMPLETE_SECTIONS
+    # Check individual section depth regardless of total section count
+    local thin_sections=""
+    local section_name section_content line_count
+    while IFS= read -r section_name; do
+        [[ -z "$section_name" ]] && continue
+        section_content=$(_get_section_content_simple "$design_file" "$section_name")
+        line_count=$(echo "$section_content" | grep -c '[^[:space:]]' || true)
+        if [[ "$line_count" -lt 3 ]]; then
+            thin_sections="${thin_sections}${section_name}"$'\n'
         fi
+    done < <(grep '^## ' "$design_file" | sed 's/^## //')
+
+    if [[ -n "$thin_sections" ]]; then
+        warn "Thin sections found:"
+        echo "$thin_sections" | while IFS= read -r s; do
+            [[ -n "$s" ]] && warn "  - ${s}"
+        done
+
+        # Set PLAN_INCOMPLETE_SECTIONS so the prompt can target these sections
+        export PLAN_INCOMPLETE_SECTIONS
+        PLAN_INCOMPLETE_SECTIONS=$(echo "$thin_sections" | sed '/^$/d' | sed 's/^/- /')
+
+        # Re-synthesize with thin sections flagged
+        log "Running second synthesis pass for thin sections..."
+        _synthesize_design "$project_dir" || true
+
+        # Clear after use
+        unset PLAN_INCOMPLETE_SECTIONS
     else
         success "DESIGN.md has ${section_count} sections — completeness OK."
     fi
