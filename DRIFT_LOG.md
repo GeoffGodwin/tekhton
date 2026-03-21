@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-20
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
 - [2026-03-20 | "architect audit"] **`crawler_deps.sh` implicit runtime dependency on `_extract_json_keys`**

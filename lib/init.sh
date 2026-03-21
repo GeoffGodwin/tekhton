@@ -234,8 +234,13 @@ _append_addenda() {
 
     [[ -z "$languages" ]] && return 0
 
+    local -A _appended_langs=()
     local lang
     while IFS='|' read -r lang _conf _manifest; do
+        # Deduplicate: skip if this language was already appended
+        [[ -n "${_appended_langs[$lang]+x}" ]] && continue
+        _appended_langs[$lang]=1
+
         local addendum="${tekhton_home}/templates/agents/addenda/${lang}.md"
         if [[ -f "$addendum" ]]; then
             printf '\n' >> "$target"
