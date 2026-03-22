@@ -22,13 +22,10 @@ set -euo pipefail
 source "${TEKHTON_HOME:-.}/lib/milestone_archival_helpers.sh"
 
 # archive_completed_milestone MILESTONE_NUM CLAUDE_MD_PATH
-# Moves a completed milestone definition from CLAUDE.md to MILESTONE_ARCHIVE.md.
-# 1. Extracts the full block from CLAUDE.md
-# 2. Appends to MILESTONE_ARCHIVE.md with timestamp and initiative name
-# 3. Removes the [DONE] heading and body entirely from CLAUDE.md
-# 4. Inserts archive pointer comment under the Milestone Plan heading (if missing)
-# 5. Collapses 3+ consecutive blank lines down to 2
-# Returns 0 on success, 1 if not found, already archived, or not [DONE].
+# Moves a completed milestone definition to MILESTONE_ARCHIVE.md.
+# In DAG mode: reads the milestone file directly via dag_get_file().
+# In inline mode: extracts from CLAUDE.md (original behavior).
+# Returns 0 on success, 1 if not found, already archived, or not done.
 archive_completed_milestone() {
     local num="$1"
     local claude_md="${2:-CLAUDE.md}"
@@ -42,11 +39,35 @@ archive_completed_milestone() {
         return 1
     fi
 
-    local block
-    block=$(_extract_milestone_block "$num" "$claude_md") || return 1
+    local block=""
+    local initiative="Milestone DAG"
 
-    local initiative
-    initiative=$(_get_initiative_name "$claude_md" "$num")
+    # DAG path: read milestone file directly
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && declare -f has_milestone_manifest &>/dev/null \
+       && has_milestone_manifest; then
+        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
+            load_manifest 2>/dev/null || true
+        fi
+        local id
+        id=$(dag_number_to_id "$num")
+        local file
+        file=$(dag_get_file "$id" 2>/dev/null) || true
+        if [[ -n "$file" ]]; then
+            local milestone_dir
+            milestone_dir=$(_dag_milestone_dir)
+            if [[ -f "${milestone_dir}/${file}" ]]; then
+                block=$(cat "${milestone_dir}/${file}")
+            fi
+        fi
+        if [[ -z "$block" ]]; then
+            return 1
+        fi
+    else
+        # Inline path: extract from CLAUDE.md
+        block=$(_extract_milestone_block "$num" "$claude_md") || return 1
+        initiative=$(_get_initiative_name "$claude_md" "$num")
+    fi
 
     if [[ ! -f "$archive_file" ]]; then
         cat > "$archive_file" << 'ARCHIVE_HEADER'
@@ -66,48 +87,49 @@ ARCHIVE_HEADER
         echo "$block"
     } >> "$archive_file"
 
-    # --- Pass 1: Remove the [DONE] milestone block entirely from CLAUDE.md ---
-    local tmp_file
-    local tmp_dir="${TEKHTON_SESSION_DIR:-$(dirname "$claude_md")}"
-    tmp_file="$(mktemp "${tmp_dir}/archival_XXXXXX" 2>/dev/null)" \
-        || tmp_file="$(mktemp "$(dirname "$claude_md")/archival_XXXXXX")"
+    # In inline mode, also remove the block from CLAUDE.md
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" != "true" ]] \
+       || ! declare -f has_milestone_manifest &>/dev/null \
+       || ! has_milestone_manifest; then
+        local tmp_file
+        local tmp_dir="${TEKHTON_SESSION_DIR:-$(dirname "$claude_md")}"
+        tmp_file="$(mktemp "${tmp_dir}/archival_XXXXXX" 2>/dev/null)" \
+            || tmp_file="$(mktemp "$(dirname "$claude_md")/archival_XXXXXX")"
 
-    awk -v num="$num" '
-    BEGIN {
-        in_block = 0; heading_level = 0
-        safe_num = num
-        gsub(/\./, "\\.", safe_num)
-    }
-    {
-        if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[^[:alnum:]]") {
-            heading_level = RLENGTH
-            in_block = 1
-            next
+        awk -v num="$num" '
+        BEGIN {
+            in_block = 0; heading_level = 0
+            safe_num = num
+            gsub(/\./, "\\.", safe_num)
         }
-
-        if (in_block) {
-            if (match($0, /^#{1,5}[[:space:]]/)) {
-                this_level = RLENGTH - 1
-                if (this_level <= heading_level) {
-                    in_block = 0
-                    print
-                    next
-                }
+        {
+            if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[^[:alnum:]]") {
+                heading_level = RLENGTH
+                in_block = 1
+                next
             }
-            next
+
+            if (in_block) {
+                if (match($0, /^#{1,5}[[:space:]]/)) {
+                    this_level = RLENGTH - 1
+                    if (this_level <= heading_level) {
+                        in_block = 0
+                        print
+                        next
+                    }
+                }
+                next
+            }
+
+            print
         }
+        ' "$claude_md" > "$tmp_file"
 
-        print
-    }
-    ' "$claude_md" > "$tmp_file"
+        mv -f "$tmp_file" "$claude_md"
 
-    mv -f "$tmp_file" "$claude_md"
-
-    # --- Pass 2: Insert archive pointer comment if not already present ---
-    _insert_archive_pointer "$claude_md" "$initiative"
-
-    # --- Pass 3: Collapse 3+ consecutive blank lines down to 2 ---
-    _collapse_blank_lines "$claude_md"
+        _insert_archive_pointer "$claude_md" "$initiative"
+        _collapse_blank_lines "$claude_md"
+    fi
 
     log "Archived milestone ${num} to ${archive_file}"
     return 0

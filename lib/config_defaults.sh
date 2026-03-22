@@ -99,6 +99,14 @@ set -euo pipefail
 : "${MILESTONE_TAG_ON_COMPLETE:=false}"
 : "${MILESTONE_ARCHIVE_FILE:=MILESTONE_ARCHIVE.md}"
 
+# --- Milestone DAG (file-based milestones with dependency tracking) ---
+: "${MILESTONE_DAG_ENABLED:=true}"
+: "${MILESTONE_DIR:=.claude/milestones}"
+: "${MILESTONE_MANIFEST:=MANIFEST.cfg}"
+: "${MILESTONE_AUTO_MIGRATE:=true}"
+: "${MILESTONE_WINDOW_PCT:=30}"
+: "${MILESTONE_WINDOW_MAX_CHARS:=20000}"
+
 # --- Milestone pre-flight sizing and auto-split ---
 : "${MILESTONE_SPLIT_ENABLED:=true}"
 : "${MILESTONE_SPLIT_MODEL:=${CLAUDE_CODER_MODEL}}"
@@ -200,3 +208,5 @@ _clamp_config_value MAX_CONTINUATION_ATTEMPTS 10
 _clamp_config_value MAX_TRANSIENT_RETRIES 10
 _clamp_config_value TRANSIENT_RETRY_BASE_DELAY 300
 _clamp_config_value TRANSIENT_RETRY_MAX_DELAY 600
+_clamp_config_value MILESTONE_WINDOW_PCT 80
+_clamp_config_value MILESTONE_WINDOW_MAX_CHARS 100000

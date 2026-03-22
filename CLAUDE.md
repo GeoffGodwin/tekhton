@@ -428,8 +428,6 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 
 ### Milestone Plan
 
----
-
 ## Initiative: Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
 
 Tekhton 3.0 makes the pipeline **context-aware** at two levels. First, a
@@ -503,7 +501,7 @@ Pipeline Stage Flow (v3):
 
 ### Milestone Plan
 
-#### Milestone 1: Milestone DAG Infrastructure
+#### [DONE] Milestone 1: Milestone DAG Infrastructure
 Add the DAG-based milestone storage system: a pipe-delimited manifest tracking
 dependencies and status, individual `.md` files per milestone, DAG query functions
 (frontier detection, cycle validation), and auto-migration from inline CLAUDE.md

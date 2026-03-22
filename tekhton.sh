@@ -310,6 +310,8 @@ source "${TEKHTON_HOME}/lib/turns.sh"
 source "${TEKHTON_HOME}/lib/context.sh"
 source "${TEKHTON_HOME}/lib/context_compiler.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
@@ -845,6 +847,26 @@ elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
     _total_milestones=$(get_milestone_count "CLAUDE.md")
     init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
     log "Milestone mode: targeting milestone ${_CURRENT_MILESTONE}"
+fi
+
+# --- DAG auto-migration: convert inline milestones to file-based DAG --------
+# If MILESTONE_DAG_ENABLED and MILESTONE_AUTO_MIGRATE, and no manifest exists
+# but inline milestones are detected, run migration automatically.
+if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && [[ "${MILESTONE_AUTO_MIGRATE:-true}" == "true" ]] \
+       && ! has_milestone_manifest; then
+        # Check if there are inline milestones to migrate
+        if parse_milestones "CLAUDE.md" >/dev/null 2>&1; then
+            log "Auto-migrating inline milestones to DAG file format..."
+            migrate_inline_milestones "CLAUDE.md" || warn "Milestone migration failed — continuing with inline mode"
+        fi
+    fi
+
+    # Load manifest if it exists (either from migration or pre-existing)
+    if has_milestone_manifest; then
+        load_manifest "$(_dag_manifest_path)" || warn "Failed to load milestone manifest"
+    fi
 fi
 
 # --- Startup archival: clean up completed milestones from previous runs ------
