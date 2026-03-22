@@ -443,6 +443,57 @@ CONTEXT_COMPILER_ENABLED=false
 # Enable stuck-detection: exit loop if git diff is identical between iterations
 # AUTONOMOUS_PROGRESS_CHECK=true
 
+# --- Repo map / Indexer (tree-sitter code intelligence) ---------------------
+# When enabled, the pipeline generates a ranked repo map of file signatures
+# using tree-sitter parsing and PageRank-based relevance scoring. Agents
+# receive only the most task-relevant code signatures instead of the full
+# ARCHITECTURE.md dump.
+#
+# Prerequisites: run `tekhton --setup-indexer` to install Python dependencies.
+
+# Master toggle for repo map generation (default: false — opt-in)
+# REPO_MAP_ENABLED=false
+
+# Maximum tokens for repo map output. Higher = more context, more cost.
+# REPO_MAP_TOKEN_BUDGET=2048
+
+# Cache directory for tag index and repo map artifacts (relative to project root)
+# REPO_MAP_CACHE_DIR=".claude/index"
+
+# Languages to index. "auto" detects from file extensions. Otherwise,
+# comma-separated list: "python,javascript,typescript,go"
+# REPO_MAP_LANGUAGES="auto"
+
+# Virtualenv directory for indexer dependencies (relative to project root).
+# Created by `tekhton --setup-indexer`. Must be in .gitignore.
+# REPO_MAP_VENV_DIR=".claude/indexer-venv"
+
+# Track task→file associations for personalized ranking across runs
+# REPO_MAP_HISTORY_ENABLED=true
+
+# Maximum history entries before pruning oldest records
+# REPO_MAP_HISTORY_MAX_RECORDS=200
+
+# --- Serena LSP / MCP (optional live symbol queries) -------------------------
+# When enabled alongside repo map, agents gain find_symbol and
+# find_referencing_symbols tools via Serena MCP for live cross-references.
+# Requires separate setup: tekhton --setup-indexer --with-lsp (future)
+
+# Master toggle for Serena LSP integration (default: false — opt-in)
+# SERENA_ENABLED=false
+
+# Serena installation directory (relative to project root)
+# SERENA_PATH=".claude/serena"
+
+# Language servers to use. "auto" detects from project type.
+# SERENA_LANGUAGE_SERVERS="auto"
+
+# Seconds to wait for Serena startup before falling back
+# SERENA_STARTUP_TIMEOUT=30
+
+# Retry attempts for Serena health check on startup
+# SERENA_MAX_RETRIES=2
+
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false

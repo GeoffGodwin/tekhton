@@ -73,3 +73,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-22
 - **Rationale**: Original extraction triggered the MODIFY verdict due to the 342-line helpers file. That concern is now resolved: `init_synthesize_helpers.sh` is 242 lines and `init_synthesize_ui.sh` is 121 lines, bot
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-15: REPO_MAP_VENV_DIR as configurable path (Task: "Implement Indexer Infrastructure & Setup Command then carry on to future milestones.")
+- **Date**: 2026-03-22
+- **Rationale**: Reasonable extension; custom venv location is a valid operational need.
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-16: Per-grammar installation (not bundle) (Task: "Implement Indexer Infrastructure & Setup Command then carry on to future milestones.")
+- **Date**: 2026-03-22
+- **Rationale**: Graceful degradation on platform failures is preferable to all-or-nothing.
+- **Source**: Accepted ACP from pipeline run
