@@ -136,18 +136,42 @@ ARCHIVE_HEADER
 }
 
 # archive_all_completed_milestones CLAUDE_MD_PATH
-# Archives all [DONE] milestones that still have full definitions in CLAUDE.md.
+# Archives all completed milestones that haven't been archived yet.
+# In DAG mode: iterates manifest for status=done milestones.
+# In inline mode: greps CLAUDE.md for [DONE] headings.
 # Idempotent — skips milestones already archived or already summarized.
 archive_all_completed_milestones() {
     local claude_md="${1:-CLAUDE.md}"
+    local archived_count=0
 
+    # DAG path: iterate manifest for done milestones
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && declare -f has_milestone_manifest &>/dev/null \
+       && has_milestone_manifest; then
+        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
+            load_manifest 2>/dev/null || true
+        fi
+        local i
+        for (( i = 0; i < ${#_DAG_IDS[@]}; i++ )); do
+            if [[ "${_DAG_STATUSES[$i]}" == "done" ]]; then
+                local num
+                num=$(dag_id_to_number "${_DAG_IDS[$i]}")
+                if archive_completed_milestone "$num" "$claude_md"; then
+                    archived_count=$((archived_count + 1))
+                fi
+            fi
+        done
+        if [[ "$archived_count" -gt 0 ]]; then
+            log "Archived ${archived_count} completed milestone(s) from manifest"
+        fi
+        return 0
+    fi
+
+    # Inline path: grep CLAUDE.md for [DONE] headings
     if [[ ! -f "$claude_md" ]]; then
         return 0
     fi
 
-    local archived_count=0
-
-    # Find all [DONE] milestone numbers
     local done_nums
     done_nums=$(grep -oE '^\#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+([0-9]+([.][0-9]+)*)' "$claude_md" 2>/dev/null \
         | grep -oE '[0-9]+([.][0-9]+)*$' || true)
@@ -157,9 +181,7 @@ archive_all_completed_milestones() {
     fi
 
     while IFS= read -r num; do
-        if [[ -z "$num" ]]; then
-            continue
-        fi
+        [[ -z "$num" ]] && continue
         if archive_completed_milestone "$num" "$claude_md"; then
             archived_count=$((archived_count + 1))
         fi

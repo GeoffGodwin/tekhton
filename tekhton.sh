@@ -218,6 +218,11 @@ if [ "${1:-}" = "--plan" ]; then
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/plan_state.sh"
     source "${TEKHTON_HOME}/lib/plan_completeness.sh"
+    source "${TEKHTON_HOME}/lib/milestones.sh"
+    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
     source "${TEKHTON_HOME}/stages/plan_interview.sh"
     source "${TEKHTON_HOME}/stages/plan_followup_interview.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
@@ -238,6 +243,11 @@ if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
     source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # _extract_scan_metadata for replan_brownfield
+    source "${TEKHTON_HOME}/lib/milestones.sh"
+    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
     # PROJECT_NAME is needed by run_agent() for temp file naming;
     # in --replan mode config is not loaded, so derive from directory name.
@@ -312,9 +322,11 @@ source "${TEKHTON_HOME}/lib/context_compiler.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"  # DAG-aware wrappers (extracted from milestones.sh)
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
+source "${TEKHTON_HOME}/lib/milestone_window.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/detect.sh"
@@ -859,7 +871,13 @@ if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
         # Check if there are inline milestones to migrate
         if parse_milestones "CLAUDE.md" >/dev/null 2>&1; then
             log "Auto-migrating inline milestones to DAG file format..."
-            migrate_inline_milestones "CLAUDE.md" || warn "Milestone migration failed — continuing with inline mode"
+            milestone_dir="$(_dag_milestone_dir)"
+            if migrate_inline_milestones "CLAUDE.md" "$milestone_dir"; then
+                # Insert pointer comment in CLAUDE.md after successful migration
+                _insert_milestone_pointer "CLAUDE.md" "$milestone_dir"
+            else
+                warn "Milestone migration failed — continuing with inline mode"
+            fi
         fi
     fi
 
