@@ -594,7 +594,13 @@ Seeds Forward:
 - The `parallel_group` field and dependency edges enable future parallel execution
 - `dag_get_frontier()` is directly reusable by future parallel execution logic
 
-#### Milestone 2: Sliding Window & Plan Generation Integration
+#### [DONE] Milestone 2: Sliding Window & Plan Generation Integration
+<!-- milestone-meta
+id: "2"
+estimated_complexity: "large"
+status: "in_progress"
+-->
+
 Wire the DAG into the prompt engine with a character-budgeted sliding window that
 injects only relevant milestones into agent context. Update plan generation to emit
 milestone files instead of inline CLAUDE.md sections. Add auto-migration at startup

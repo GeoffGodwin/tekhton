@@ -182,3 +182,78 @@ migrate_inline_milestones() {
     success "Migrated ${count} milestone(s) to ${milestone_dir}/"
     return 0
 }
+
+# _insert_milestone_pointer CLAUDE_MD MILESTONE_DIR
+# After milestone extraction, replace full milestone blocks in CLAUDE.md with
+# a short pointer comment. Preserves all non-milestone content exactly.
+_insert_milestone_pointer() {
+    local claude_md="$1"
+    local milestone_dir="$2"
+
+    if [[ ! -f "$claude_md" ]]; then
+        return
+    fi
+
+    # Check if pointer already exists
+    if grep -q "Milestones are managed as individual files" "$claude_md" 2>/dev/null; then
+        return
+    fi
+
+    # Find the milestone plan section and replace milestone blocks with pointer
+    local tmpfile
+    tmpfile="$(mktemp "${claude_md}.XXXXXX")"
+
+    local in_milestone=false
+    local milestone_heading_level=0
+    local found_any_milestone=false
+
+    while IFS= read -r line; do
+        # Detect milestone headings: #### Milestone N: Title or #### [DONE] Milestone N: Title
+        if [[ "$line" =~ ^(#{1,5})[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+[0-9] ]]; then
+            local heading_hashes="${BASH_REMATCH[1]}"
+            local level=${#heading_hashes}
+
+            if [[ "$found_any_milestone" == false ]]; then
+                found_any_milestone=true
+                milestone_heading_level=$level
+                # Insert the pointer before first milestone
+                {
+                    echo "<!-- Milestones are managed as individual files in ${MILESTONE_DIR:-.claude/milestones}/."
+                    echo "     See MANIFEST.cfg for ordering and dependencies. -->"
+                    echo ""
+                } >> "$tmpfile"
+            fi
+            in_milestone=true
+            continue
+        fi
+
+        # If we're inside a milestone block, skip lines until we hit a heading
+        # at the same or higher level
+        if [[ "$in_milestone" == true ]]; then
+            if [[ "$line" =~ ^(#{1,5})[[:space:]] ]]; then
+                local hashes="${BASH_REMATCH[1]}"
+                local this_level=${#hashes}
+                # Check if this is a sub-heading within the milestone
+                if [[ "$this_level" -le "$milestone_heading_level" ]]; then
+                    # Not a milestone heading — end of milestone block
+                    if [[ ! "$line" =~ (M|m)ilestone[[:space:]]+[0-9] ]]; then
+                        in_milestone=false
+                        echo "$line" >> "$tmpfile"
+                    fi
+                    # If it IS a milestone heading at same level, skip it too
+                fi
+            fi
+            # Skip all content within milestone blocks
+            continue
+        fi
+
+        echo "$line" >> "$tmpfile"
+    done < "$claude_md"
+
+    if [[ "$found_any_milestone" == true ]]; then
+        mv -f "$tmpfile" "$claude_md"
+        log "Replaced inline milestone blocks with pointer comment"
+    else
+        rm -f "$tmpfile"
+    fi
+}

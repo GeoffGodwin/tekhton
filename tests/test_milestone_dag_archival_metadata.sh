@@ -34,6 +34,7 @@ run_build_gate() { return 0; }
 
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"

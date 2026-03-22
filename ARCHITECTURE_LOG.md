@@ -63,3 +63,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-21
 - **Rationale**: Clean, backward-compatible extension; `--init` alone is unchanged. ARCHITECTURE.md update is needed (noted by coder).
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-13: Extract DAG helpers from milestones.sh (Task: "Implement Milestone 2: Sliding Window & Plan Generation Integration")
+- **Date**: 2026-03-22
+- **Rationale**: Previously accepted; no new concerns.
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-14: Extract init_synthesize helpers (Task: "Implement Milestone 2: Sliding Window & Plan Generation Integration")
+- **Date**: 2026-03-22
+- **Rationale**: Original extraction triggered the MODIFY verdict due to the 342-line helpers file. That concern is now resolved: `init_synthesize_helpers.sh` is 242 lines and `init_synthesize_ui.sh` is 121 lines, bot
+- **Source**: Accepted ACP from pipeline run

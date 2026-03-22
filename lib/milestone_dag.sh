@@ -52,7 +52,7 @@ declare -A _DAG_IDX=()
 _DAG_LOADED=false
 
 # --- I/O (sourced from milestone_dag_io.sh) ---------------------------------
-# shellcheck source=milestone_dag_io.sh
+# shellcheck source=milestone_dag_io.sh disable=SC1091
 source "${TEKHTON_HOME}/lib/milestone_dag_io.sh"
 
 # --- DAG queries ------------------------------------------------------------
@@ -247,5 +247,5 @@ dag_number_to_id() {
 }
 
 # --- Validation (sourced from milestone_dag_validate.sh) --------------------
-# shellcheck source=milestone_dag_validate.sh
+# shellcheck source=milestone_dag_validate.sh disable=SC1091
 source "${TEKHTON_HOME}/lib/milestone_dag_validate.sh"

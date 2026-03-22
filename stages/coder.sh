@@ -238,7 +238,16 @@ $(cat "${GLOSSARY_FILE}")"
 
     export MILESTONE_BLOCK=""
     if [ "$MILESTONE_MODE" = true ]; then
-        MILESTONE_BLOCK="
+        # DAG path: use character-budgeted sliding window when manifest exists
+        if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+           && declare -f build_milestone_window &>/dev/null \
+           && has_milestone_manifest 2>/dev/null; then
+            build_milestone_window "$CLAUDE_CODER_MODEL" || true
+        fi
+
+        # Fallback: static block when no DAG or window build failed
+        if [[ -z "$MILESTONE_BLOCK" ]]; then
+            MILESTONE_BLOCK="
 ## Milestone Mode
 This is a milestone-sized task. Before writing any code:
 1. Read the relevant Milestone section in ${PROJECT_RULES_FILE} in full
@@ -246,6 +255,7 @@ This is a milestone-sized task. Before writing any code:
    that must be made now to avoid rework later
 3. Note any 'Watch for' annotations and design those extension points into your implementation
 4. Document your architectural decisions in CODER_SUMMARY.md under '## Architecture Decisions'"
+        fi
     fi
 
     # Prior reviewer context (unresolved blockers from a previous run)
