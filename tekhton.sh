@@ -896,11 +896,27 @@ fi
 # --- Milestone number parsing ------------------------------------------------
 # Parse milestone number from task for both --milestone and --auto-advance modes.
 # This enables commit signatures in single-run --milestone mode, not just auto-advance.
+#
+# First tries regex extraction from the task string (e.g. "Milestone 3: ...").
+# If that fails and a DAG manifest exists, falls back to the DAG frontier —
+# the first pending milestone whose dependencies are all satisfied.
 
 _CURRENT_MILESTONE=""
 if [ "$MILESTONE_MODE" = true ]; then
     if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]]; then
         _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
+    fi
+
+    # DAG fallback: if task string didn't contain a milestone number,
+    # load the manifest and resolve the next actionable milestone.
+    if [ -z "$_CURRENT_MILESTONE" ] && has_milestone_manifest; then
+        load_manifest "$(_dag_manifest_path)" || true
+        _dag_next_id=$(dag_find_next "") || true
+        if [ -n "${_dag_next_id:-}" ]; then
+            _CURRENT_MILESTONE=$(dag_id_to_number "$_dag_next_id")
+            log "Resolved milestone ${_CURRENT_MILESTONE} from DAG frontier (${_dag_next_id})"
+        fi
+        unset _dag_next_id
     fi
 fi
 
@@ -919,6 +935,7 @@ if [ "$AUTO_ADVANCE" = true ]; then
     else
         warn "Auto-advance enabled but task does not reference a milestone number."
         warn "Expected task like: 'Implement Milestone 3: ...'"
+        warn "Or ensure a DAG manifest exists with pending milestones."
         warn "Falling back to single-run mode."
         AUTO_ADVANCE=false
     fi
