@@ -31,6 +31,7 @@
 #   --skip-audit          Skip architect audit even if threshold is reached
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
+#   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
 #   --version, -v         Print version and exit
 #
 # Requirements:
@@ -162,6 +163,7 @@ WITH_NOTES=false
 export HUMAN_MODE=false
 export HUMAN_NOTES_TAG=""
 COMPLETE_MODE=false
+MIGRATE_DAG=false
 CURRENT_NOTE_LINE=""
 SKIP_AUDIT=false
 FORCE_AUDIT=false
@@ -391,6 +393,7 @@ usage() {
     echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
     echo "  --skip-audit              Skip architect audit even if threshold is reached"
     echo "  --force-audit             Force architect audit regardless of threshold"
+    echo "  --migrate-dag             Convert inline CLAUDE.md milestones to DAG file format"
     echo ""
     echo "Examples:"
     echo "  tekhton --init                           # First-time setup"
@@ -597,11 +600,45 @@ EOF
         --no-commit) AUTO_COMMIT=false; _AUTO_COMMIT_EXPLICIT=true; shift ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
+        --migrate-dag) MIGRATE_DAG=true; shift ;;
         --) shift; break ;;
         -*) error "Unknown flag: $1"; usage 1 ;;
         *) break ;;
     esac
 done
+
+# --- Early --migrate-dag: convert inline milestones to DAG format and exit ----
+if [ "$MIGRATE_DAG" = true ]; then
+    if ! [ -f "CLAUDE.md" ]; then
+        error "CLAUDE.md not found in the current directory."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if has_milestone_manifest; then
+        warn "Milestone manifest already exists at $(_dag_manifest_path)"
+        warn "Remove it first if you want to re-migrate."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+    if ! parse_milestones "CLAUDE.md" >/dev/null 2>&1; then
+        error "No inline milestones found in CLAUDE.md."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    log "Migrating inline milestones to DAG file format..."
+    milestone_dir="$(_dag_milestone_dir)"
+    if migrate_inline_milestones "CLAUDE.md" "$milestone_dir"; then
+        _insert_milestone_pointer "CLAUDE.md" "$milestone_dir"
+        success "Migration complete. Milestones written to ${milestone_dir}/"
+        success "Manifest: $(_dag_manifest_path)"
+    else
+        error "Migration failed."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
 
 # AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
 # config_defaults.sh sets the non-milestone default (false). Here we override
