@@ -62,6 +62,9 @@ tekhton/
 │   ├── metrics_calibration.sh  # Adaptive turn calibration
 │   ├── errors.sh           # [2.0] Error taxonomy, classification + reporting
 │   ├── errors_helpers.sh   # Error classification helpers
+│   ├── milestone_dag.sh    # [3.0] Milestone DAG infrastructure + manifest parser
+│   ├── milestone_dag_migrate.sh # [3.0] Inline→file milestone migration
+│   ├── milestone_window.sh # [3.0] Character-budgeted milestone sliding window
 │   ├── indexer.sh          # [3.0] Repo map orchestration + Python tool invocation
 │   └── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
@@ -260,6 +263,12 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `AUTONOMOUS_PROGRESS_CHECK` | Enable stuck-detection between loop iterations (default: true) |
 | `HUMAN_MODE` | Set by `--human` flag (default: false) |
 | `HUMAN_NOTES_TAG` | Optional tag filter for `--human` (BUG, FEAT, POLISH) |
+| `MILESTONE_DAG_ENABLED` | Use manifest+files vs inline CLAUDE.md (default: true) |
+| `MILESTONE_DIR` | Directory for milestone files (default: .claude/milestones) |
+| `MILESTONE_MANIFEST` | Manifest filename within MILESTONE_DIR (default: MANIFEST.cfg) |
+| `MILESTONE_WINDOW_PCT` | % of context budget allocated to milestones (default: 30) |
+| `MILESTONE_WINDOW_MAX_CHARS` | Hard cap on milestone window chars (default: 20000) |
+| `MILESTONE_AUTO_MIGRATE` | Auto-extract inline milestones on first run (default: true) |
 | `REPO_MAP_ENABLED` | Enable tree-sitter repo map generation (default: false) |
 | `REPO_MAP_TOKEN_BUDGET` | Max tokens for repo map output (default: 2048) |
 | `REPO_MAP_CACHE_DIR` | Index cache directory (default: .claude/index) |
@@ -421,21 +430,26 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 
 ---
 
-## Initiative: Tekhton 3.0 — Intelligent Indexing & Cost Reduction
+## Initiative: Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
 
-Tekhton 3.0 makes the pipeline **context-aware**: instead of injecting entire
-architecture files and blind grep discovery, agents receive a ranked, token-budgeted
-repo map built from static analysis (tree-sitter) and optionally enriched with
-live symbol resolution (Serena LSP via MCP). This dramatically reduces token
-consumption per run — often 60-80% — making Tekhton viable for users on Claude
-subscription plans with usage limits.
+Tekhton 3.0 makes the pipeline **context-aware** at two levels. First, a
+**Milestone DAG** with a sliding context window replaces inline milestone storage
+in CLAUDE.md — milestones live as individual files with dependency tracking, and
+only the relevant frontier is injected into agent prompts. This eliminates context
+waste from future milestones and enables future parallel execution. Second,
+**intelligent indexing** via tree-sitter repo maps (optionally enriched with Serena
+LSP via MCP) replaces blind architecture injection — agents receive ranked,
+token-budgeted file signatures relevant to their task.
 
 Full design document: `DESIGN_v3.md`.
 
 ### Key Constraints
 
-- **Backward compatible.** Users who don't enable indexing see identical 2.0
-  behavior. All new features are opt-in or default-off until proven stable.
+- **Backward compatible.** Users who don't enable new features see identical 2.0
+  behavior. DAG features auto-detect (manifest exists → use it). Indexer features
+  are opt-in via `REPO_MAP_ENABLED`. All new features default-off until proven stable.
+- **No new shell dependencies for DAG.** The milestone DAG uses only bash 4+ builtins
+  (associative arrays, parameter expansion). No jq, no Python for DAG operations.
 - **Python is optional.** The repo map generator requires Python 3.8+ and
   tree-sitter, but Tekhton must remain functional without them. Shell detects
   availability and falls back gracefully to 2.0 context injection.
@@ -443,9 +457,12 @@ Full design document: `DESIGN_v3.md`.
   structured output (JSON/text). No Python process holds state across stages.
 - **Bash 4+ for all .sh files.** The indexer orchestration is bash; the analysis
   tool is Python. Both must be independently testable.
-- **Token budget is king.** The repo map output must fit within
-  `REPO_MAP_TOKEN_BUDGET` (configurable). Ranking determines what gets included,
-  not truncation.
+- **Character budget is king.** The milestone window and repo map output both fit
+  within configurable character budgets. Ranking and priority determine what gets
+  included, not truncation.
+- **Parallel-ready data model.** DAG edges, parallel groups, and dependency
+  tracking exist from day one. The data structures support future parallel
+  execution without modification.
 - **All existing tests must pass** (`bash tests/run_tests.sh`) at every milestone.
 - **All new `.sh` files must pass `bash -n` and `shellcheck`.**
 
@@ -456,32 +473,206 @@ Pipeline Stage Flow (v3):
 
   tekhton.sh startup
        │
-       ▼
-  ┌─────────────────┐    ┌──────────────────────┐
-  │  lib/indexer.sh  │───▶│  tools/repo_map.py   │
-  │  (orchestrator)  │    │  (tree-sitter parse  │
-  │                  │◀───│   + PageRank + emit)  │
-  └─────────────────┘    └──────────────────────┘
+       ├──▶ Milestone DAG Layer
+       │    ┌──────────────────────┐
+       │    │  lib/milestone_dag   │ ← MANIFEST.cfg + .md files
+       │    │  lib/milestone_win   │ → MILESTONE_BLOCK (budgeted)
+       │    └──────────────────────┘
+       │
+       ├──▶ Indexer Layer (opt-in)
+       │    ┌─────────────────┐    ┌──────────────────────┐
+       │    │  lib/indexer.sh  │───▶│  tools/repo_map.py   │
+       │    │  (orchestrator)  │    │  (tree-sitter parse  │
+       │    │                  │◀───│   + PageRank + emit)  │
+       │    └─────────────────┘    └──────────────────────┘
+       │         │
+       │         ▼
+       │    REPO_MAP.md (ranked signatures, token-budgeted)
        │
        ▼
-  REPO_MAP.md (ranked signatures, token-budgeted)
-       │
+  Agent Stages (with budgeted context)
        ├──▶ Scout    (full map for discovery)
-       ├──▶ Coder    (task-relevant slice)
+       ├──▶ Coder    (task-relevant slice + active milestone)
        ├──▶ Reviewer (changed-file slice)
        └──▶ Tester   (test-relevant slice)
 
   Optional: Serena MCP (live symbol queries)
-       │
        └──▶ Agents use find_symbol / references
             tools alongside static repo map
 ```
 
 ### Milestone Plan
 
-#### Milestone 1: Indexer Infrastructure & Setup Command
+#### Milestone 1: Milestone DAG Infrastructure
+Add the DAG-based milestone storage system: a pipe-delimited manifest tracking
+dependencies and status, individual `.md` files per milestone, DAG query functions
+(frontier detection, cycle validation), and auto-migration from inline CLAUDE.md
+milestones. This milestone replaces the sequential-only milestone model with a
+dependency-aware DAG that enables future parallel execution.
+
+Files to create:
+- `lib/milestone_dag.sh` — manifest parser (`load_manifest()`, `save_manifest()`
+  using atomic tmpfile+mv), DAG query functions (`dag_get_frontier()`,
+  `dag_deps_satisfied()`, `dag_find_next()`, `dag_get_active()`), validation
+  (`validate_manifest()` with cycle detection via DFS), ID↔number conversion
+  (`dag_id_to_number()`, `dag_number_to_id()`). Data structures: parallel bash
+  arrays (`_DAG_IDS[]`, `_DAG_TITLES[]`, `_DAG_STATUSES[]`, `_DAG_DEPS[]`,
+  `_DAG_FILES[]`, `_DAG_GROUPS[]`) with associative index `_DAG_IDX[id]=index`.
+- `lib/milestone_dag_migrate.sh` — `migrate_inline_milestones(claude_md, milestone_dir)`
+  extracts all inline milestones from CLAUDE.md into individual files in
+  `.claude/milestones/`, generates `MANIFEST.cfg`. Uses existing
+  `_extract_milestone_block()` for block extraction. File naming:
+  `m{NN}-{slugified-title}.md`. Dependencies inferred from sequential order
+  (each depends on previous) unless explicit "depends on Milestone N" references
+  found in text.
+
+Files to modify:
+- `lib/milestones.sh` — add `parse_milestones_auto()` dual-path wrapper: if
+  manifest exists, returns milestone data from it in the same
+  `NUMBER|TITLE|ACCEPTANCE_CRITERIA` format as `parse_milestones()`. All
+  downstream consumers work unchanged.
+- `lib/milestone_ops.sh` — `find_next_milestone()` gains DAG-aware path calling
+  `dag_find_next()`. `mark_milestone_done()` gains DAG path calling
+  `dag_set_status(id, "done")` + `save_manifest()`.
+- `lib/milestone_archival.sh` — adapt for file-based milestones: read milestone
+  file directly via `dag_get_file()`, append to archive, no CLAUDE.md block
+  extraction needed.
+- `lib/milestone_split.sh` — adapt for file-based milestones: write sub-milestone
+  files + insert manifest rows instead of replacing CLAUDE.md blocks.
+- `lib/milestone_metadata.sh` — write metadata into milestone files instead of
+  CLAUDE.md headings.
+- `lib/config_defaults.sh` — add defaults: `MILESTONE_DAG_ENABLED=true`,
+  `MILESTONE_DIR=".claude/milestones"`, `MILESTONE_MANIFEST="MANIFEST.cfg"`,
+  `MILESTONE_AUTO_MIGRATE=true`, `MILESTONE_WINDOW_PCT=30`,
+  `MILESTONE_WINDOW_MAX_CHARS=20000`. Add clamps for PCT (80) and MAX_CHARS (100000).
+- `tekhton.sh` — source new modules, add DAG-aware milestone initialization,
+  add auto-migration at startup (if manifest missing but inline milestones found).
+- `templates/pipeline.conf.example` — add milestone DAG config section with
+  explanatory comments.
+
+Manifest format (`.claude/milestones/MANIFEST.cfg`):
+```
+# Tekhton Milestone Manifest v1
+# id|title|status|depends_on|file|parallel_group
+m01|DAG Infrastructure|pending||m01-dag-infra.md|foundation
+m02|Sliding Window|pending|m01|m02-sliding-window.md|foundation
+```
+
+Acceptance criteria:
+- `has_milestone_manifest()` returns 0 when MANIFEST.cfg exists, 1 otherwise
+- `load_manifest()` correctly parses a multi-line manifest into parallel arrays
+- `dag_deps_satisfied()` returns 0 only when all deps have status=done
+- `dag_get_frontier()` returns only milestones whose deps are all done
+- `validate_manifest()` detects: missing dep references, circular deps, missing files
+- `dag_set_status()` + `save_manifest()` roundtrips correctly (read-modify-write)
+- `migrate_inline_milestones()` extracts all milestones from a CLAUDE.md, creates
+  individual files, generates a valid MANIFEST.cfg
+- `parse_milestones_auto()` returns data from manifest in the same format as inline
+- When no manifest exists, all functions fall back to existing v2 behavior unchanged
+- `find_next_milestone()` respects DAG edges when manifest is present
+- `mark_milestone_done()` updates manifest status when manifest is present
+- `archive_completed_milestone()` and `split_milestone()` work with file-based milestones
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/milestone_dag.sh lib/milestone_dag_migrate.sh` passes
+- `shellcheck lib/milestone_dag.sh lib/milestone_dag_migrate.sh` passes
+- New test file `tests/test_milestone_dag.sh` covers: manifest parsing, DAG queries,
+  frontier detection, cycle detection, migration, status updates
+
+Watch For:
+- `_DAG_IDX` associative array requires `declare -A` (bash 4+ — already enforced).
+- Milestone IDs in the manifest (`m01`) differ from display numbers (`1`) used in
+  task strings and commit messages. The `dag_id_to_number()`/`dag_number_to_id()`
+  conversion must handle both formats seamlessly.
+- Manifest writes must be atomic (tmpfile+mv) — same pattern as milestone_archival.
+- `_extract_milestone_block()` in `milestone_archival_helpers.sh` is reused by
+  migration. The migration function must use the same helper for consistent block
+  boundary detection.
+- Circular dependency detection: DFS with visited set. Report cycle path in error.
+- `.claude/milestones/` directory must be created by migration or plan generation,
+  NOT eagerly at startup if no milestones exist.
+
+Seeds Forward:
+- Milestone 2 consumes the manifest and milestone files to build the sliding window
+- The `parallel_group` field and dependency edges enable future parallel execution
+- `dag_get_frontier()` is directly reusable by future parallel execution logic
+
+#### Milestone 2: Sliding Window & Plan Generation Integration
+Wire the DAG into the prompt engine with a character-budgeted sliding window that
+injects only relevant milestones into agent context. Update plan generation to emit
+milestone files instead of inline CLAUDE.md sections. Add auto-migration at startup
+for existing projects with inline milestones.
+
+Files to create:
+- `lib/milestone_window.sh` — `build_milestone_window(model)` assembles
+  character-budgeted milestone context block from the manifest. Priority:
+  active milestone (full content) → frontier milestones (first paragraph +
+  acceptance criteria) → on-deck milestones (title + one-line description).
+  Fills greedily until budget exhaustion. `_compute_milestone_budget(model)`
+  calculates available chars: `min(available * MILESTONE_WINDOW_PCT/100,
+  MILESTONE_WINDOW_MAX_CHARS)`. `_milestone_priority_list()` returns ordered
+  IDs by priority. Integrates with `_add_context_component()` for accounting.
+
+Files to modify:
+- `stages/coder.sh` — replace static MILESTONE_BLOCK with
+  `build_milestone_window()` call when manifest exists. Falls back to existing
+  behavior when no manifest.
+- `stages/plan_generate.sh` — after agent produces CLAUDE.md content, post-process:
+  extract milestone blocks into individual files in `.claude/milestones/`, generate
+  MANIFEST.cfg, remove milestone blocks from CLAUDE.md and insert pointer comment.
+  Agent prompt and output format are unchanged — shell handles extraction.
+- `lib/orchestrate_helpers.sh` — `_run_auto_advance_chain()` uses DAG-aware
+  milestone ordering via `dag_find_next()`.
+- `lib/config.sh` — add MILESTONE_DIR path resolution (relative → absolute).
+- `tekhton.sh` — add auto-migration trigger at startup: if `MILESTONE_DAG_ENABLED`
+  and `MILESTONE_AUTO_MIGRATE` and no manifest exists but inline milestones
+  detected, run `migrate_inline_milestones()`.
+
+Acceptance criteria:
+- `build_milestone_window()` returns only the active milestone + frontier
+  milestones that fit within the character budget
+- When budget is exhausted, frontier milestones are truncated (first paragraph +
+  acceptance criteria only) rather than omitted entirely
+- On-deck milestones only included if budget remains after all frontier milestones
+- The window integrates with `_add_context_component()` for context accounting
+- Plan generation extracts milestones from agent output into individual files and
+  generates a valid MANIFEST.cfg
+- Auto-migration at startup correctly converts inline CLAUDE.md milestones to
+  files + manifest
+- After migration, CLAUDE.md no longer contains full milestone blocks
+- `_run_auto_advance_chain()` works correctly with DAG-based ordering
+- Window respects `MILESTONE_WINDOW_MAX_CHARS` hard cap
+- When `MILESTONE_DAG_ENABLED=false`, all behavior is identical to v2
+- All existing tests pass
+- `bash -n lib/milestone_window.sh` passes
+- `shellcheck lib/milestone_window.sh` passes
+- New test files: `tests/test_milestone_window.sh` (budget calculation, priority
+  ordering, budget exhaustion), `tests/test_milestone_dag_migrate.sh` (inline
+  extraction, manifest generation, CLAUDE.md cleanup, re-migration idempotency)
+
+Watch For:
+- Plan generation post-processing must handle variable heading depth (####, #####)
+  since agents may vary formatting. Use the same regex as `parse_milestones()`.
+- Auto-migration must be idempotent. If MANIFEST.cfg already exists, skip.
+  If interrupted mid-way, next run should detect partial state and complete.
+- CLAUDE.md trimming after milestone extraction must preserve all non-milestone
+  content exactly. Use existing `_extract_milestone_block()` +
+  `_replace_milestone_block()` pattern.
+- Character budget must account for the instruction header (~300 chars) prepended
+  by `build_milestone_window()`. Subtract before filling with file content.
+- When the active milestone file exceeds the entire budget, truncate it (keep
+  acceptance criteria at minimum) rather than failing. Log a warning.
+
+Seeds Forward:
+- The DAG data model supports future parallel execution: `dag_get_frontier()`
+  returns all parallelizable milestones
+- The sliding window pattern can be extended for repo map integration: pre-compute
+  the repo map slice from the milestone's "Files to create/modify" section
+- Auto-migration creates the `.claude/milestones/` directory structure that future
+  tooling (milestone dashboards, progress tracking) can consume
+
+#### Milestone 3: Indexer Infrastructure & Setup Command
 Add the shell-side orchestration layer, Python dependency detection, setup command,
-and configuration keys. This milestone builds the framework that Milestones 2-6
+and configuration keys. This milestone builds the framework that Milestones 4-8
 plug into. No actual indexing logic yet — just the plumbing.
 
 Files to create:
@@ -527,11 +718,11 @@ Watch For:
   root (1 level deep to stay fast), not walk the entire tree.
 
 Seeds Forward:
-- Milestone 2 implements the Python tool that `run_repo_map()` invokes
-- Milestone 3 wires the repo map output into pipeline stages
-- Milestone 4 extends the setup command with `--with-lsp` for Serena
+- Milestone 4 implements the Python tool that `run_repo_map()` invokes
+- Milestone 5 wires the repo map output into pipeline stages
+- Milestone 6 extends the setup command with `--with-lsp` for Serena
 
-#### Milestone 2: Tree-Sitter Repo Map Generator
+#### Milestone 4: Tree-Sitter Repo Map Generator
 Implement the Python tool that parses source files with tree-sitter, extracts
 definition and reference tags, builds a file-relationship graph, ranks files by
 PageRank relevance to the current task, and emits a token-budgeted repo map
@@ -614,16 +805,16 @@ Watch For:
   and under 5 seconds on cached runs. Profile early.
 
 Seeds Forward:
-- Milestone 3 consumes `REPO_MAP.md` in pipeline stages
-- Milestone 5 extends the cache with cross-run task→file associations
-- The tag extraction format is reused by Milestone 4's Serena integration
+- Milestone 5 consumes `REPO_MAP.md` in pipeline stages
+- Milestone 7 extends the cache with cross-run task→file associations
+- The tag extraction format is reused by Milestone 6's Serena integration
   for cache warming
 
-#### Milestone 3: Pipeline Stage Integration
+#### Milestone 5: Pipeline Stage Integration
 Wire the repo map into all pipeline stages, replacing or supplementing full
 ARCHITECTURE.md injection. Each stage receives a different slice of the map
-optimized for its role. Integrate with v2's context accounting (Milestone 1)
-for budget-aware injection. Graceful degradation to 2.0 when map unavailable.
+optimized for its role. Integrate with v2's context accounting for
+budget-aware injection. Graceful degradation to 2.0 when map unavailable.
 
 Files to modify:
 - `stages/coder.sh` — when `REPO_MAP_ENABLED=true` and `INDEXER_AVAILABLE=true`:
@@ -692,14 +883,14 @@ Watch For:
   highly-connected files. Cap at top 20 callers by PageRank.
 
 Seeds Forward:
-- Milestone 4 (Serena) enhances the repo map with live symbol data, giving
+- Milestone 6 (Serena) enhances the repo map with live symbol data, giving
   agents even more precise context
-- Milestone 5 (Cross-Run Cache) uses task→file history from this milestone
+- Milestone 7 (Cross-Run Cache) uses task→file history from this milestone
   to improve future repo map rankings
 - The prompt template patterns established here (`{{IF:REPO_MAP_CONTENT}}`)
-  are reused by Milestone 4 for LSP tool instructions
+  are reused by Milestone 6 for LSP tool instructions
 
-#### Milestone 4: Serena MCP Integration
+#### Milestone 6: Serena MCP Integration
 Add optional LSP-powered symbol resolution via Serena as an MCP server. When
 enabled, agents gain `find_symbol`, `find_referencing_symbols`, and
 `get_symbol_definition` tools that provide live, accurate cross-reference data.
@@ -755,7 +946,7 @@ Acceptance criteria:
   tools (agents still have the static repo map)
 - Agent CLI invocations include `--mcp-config` when Serena is available
 - Prompt templates conditionally inject Serena tool usage instructions
-- `SERENA_ENABLED=false` (default) produces identical behavior to Milestone 3
+- `SERENA_ENABLED=false` (default) produces identical behavior to Milestone 5
 - Serena process is always cleaned up on exit (no orphaned processes)
 - All existing tests pass
 - `bash -n lib/mcp.sh tools/setup_serena.sh` passes
@@ -775,18 +966,18 @@ Watch For:
   Detect CLI version and fall back gracefully.
 
 Seeds Forward:
-- Milestone 5 can use Serena's type information to enrich the tag cache with
+- Milestone 7 can use Serena's type information to enrich the tag cache with
   parameter types and return types (richer signatures)
-- Future v3+ milestones for parallel agents (DAG execution) will need per-agent
+- Future v3 milestones for parallel agents (DAG execution) will need per-agent
   MCP server instances or a shared server with locking — design the lifecycle
   management with this in mind
 
-#### Milestone 5: Cross-Run Cache & Personalized Ranking
+#### Milestone 7: Cross-Run Cache & Personalized Ranking
 Make the indexer persistent and adaptive across pipeline runs. The tag cache
 survives between runs with mtime-based invalidation. Task→file association
 history improves PageRank personalization over time — files that were relevant
 to similar past tasks rank higher automatically. Integrate with v2's metrics
-system (Milestone 8) for tracking indexer performance.
+system for tracking indexer performance.
 
 Files to modify:
 - `tools/repo_map.py` — add `--history-file <path>` flag. When provided, load
@@ -851,14 +1042,14 @@ Watch For:
   a progress bar or periodic status line.
 
 Seeds Forward:
-- Future v3 milestones (DAG parallelization) can use task→file history to
+- Future v3 milestones (parallel execution) can use task→file history to
   predict which milestones will touch overlapping files and schedule them
   to avoid merge conflicts
 - The metrics integration provides data for future adaptive token budgeting —
   if the indexer consistently saves 70% of tokens, the pipeline can allocate
   the savings to richer prompt content
 
-#### Milestone 6: Indexer Tests & Documentation
+#### Milestone 8: Indexer Tests & Documentation
 Comprehensive test coverage for all indexing functionality: shell orchestration,
 Python tools, pipeline integration, fallback behavior, and Serena lifecycle.
 Update project documentation and repository layout.
