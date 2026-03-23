@@ -352,6 +352,32 @@ CONTEXT_COMPILER_ENABLED=false
 # Minimum unresolved non-blocking notes before a sweep triggers
 # CLEANUP_TRIGGER_THRESHOLD=5
 
+# --- Task intake / PM agent (pre-stage gate) ----------------------------------
+# The intake agent evaluates task/milestone clarity before committing pipeline
+# resources. Well-scoped tasks pass silently. Unclear tasks get tweaked or
+# escalated for human input. Runs once per milestone.
+
+# Master toggle for intake agent (default: true — opt-out)
+# INTAKE_AGENT_ENABLED=true
+
+# Model for the intake agent (judgement call — use best model)
+# CLAUDE_INTAKE_MODEL="opus"
+
+# Turn limit for intake evaluation (short — reading + evaluating, not coding)
+# INTAKE_MAX_TURNS=10
+
+# Confidence score below this → NEEDS_CLARITY (0-100, default: 40)
+# INTAKE_CLARITY_THRESHOLD=40
+
+# Confidence score below this but above clarity threshold → TWEAKED (0-100, default: 70)
+# INTAKE_TWEAK_THRESHOLD=70
+
+# When true, pause for human to review tweaks before proceeding
+# INTAKE_CONFIRM_TWEAKS=false
+
+# When true, auto-add recommended splits without human approval
+# INTAKE_AUTO_SPLIT=false
+
 # --- Specialist reviewers (opt-in focused review passes) ---------------------
 # After the main reviewer approves, enabled specialists run focused review passes.
 # Findings tagged [BLOCKER] re-enter the rework loop. [NOTE] items go to

@@ -33,6 +33,7 @@
 #   --skip-audit          Skip architect audit even if threshold is reached
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
+#   --add-milestone "desc" Create a scoped milestone via intake agent (no run)
 #   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
 #   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
 #   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
@@ -370,7 +371,10 @@ source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
 
-# Stage implementations
+# Stage helpers and implementations
+source "${TEKHTON_HOME}/lib/intake_helpers.sh"
+source "${TEKHTON_HOME}/lib/intake_verdict_handlers.sh"
+source "${TEKHTON_HOME}/stages/intake.sh"
 source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
 source "${TEKHTON_HOME}/stages/security.sh"
@@ -402,6 +406,8 @@ usage() {
     echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
     echo "                            upgraded tester model"
     echo "  --auto-advance            Auto-advance through milestones after acceptance"
+    echo "  --add-milestone \"desc\"     Create a scoped milestone via intake agent (no run)"
+    echo "  --start-at intake         Run from intake gate (re-evaluate clarity)"
     echo "  --start-at coder          Full pipeline from scratch (default)"
     echo "  --start-at security       Skip coder; requires CODER_SUMMARY.md"
     echo "  --start-at review         Skip coder + security; requires CODER_SUMMARY.md"
@@ -529,8 +535,8 @@ while [[ $# -gt 0 ]]; do
         --start-at)
             shift
             case "$1" in
-                coder|security|review|tester|test) START_AT="$1" ;;
-                *) error "Invalid --start-at value: '$1'. Must be coder, security, review, tester, or test."; usage 1 ;;
+                intake|coder|security|review|tester|test) START_AT="$1" ;;
+                *) error "Invalid --start-at value: '$1'. Must be intake, coder, security, review, tester, or test."; usage 1 ;;
             esac
             shift
             ;;
@@ -632,6 +638,16 @@ EOF
         --skip-security) SKIP_SECURITY=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
+        --add-milestone)
+            shift
+            if [[ -z "${1:-}" ]]; then
+                error "--add-milestone requires a description string."
+                usage 1
+            fi
+            run_intake_create "$1"
+            _TEKHTON_CLEAN_EXIT=true
+            exit 0
+            ;;
         --setup-indexer) SETUP_INDEXER=true; shift ;;
         --with-lsp) WITH_LSP=true; shift ;;
         --) shift; break ;;
@@ -923,8 +939,8 @@ if ! git diff --quiet; then
 fi
 
 # Only archive prior reports when starting fresh from the coder stage
-if [ "$START_AT" = "coder" ]; then
-    for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
+    for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md INTAKE_REPORT.md; do
         if [ -f "$f" ]; then
             ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_${f}"
             mkdir -p "${LOG_DIR}/archive"
@@ -1075,7 +1091,18 @@ trap _tekhton_sigint_handler INT
 # --- Pipeline execution (with auto-advance loop) ----------------------------
 
 _run_pipeline_stages() {
-    # Stage 0: Architect Audit (conditional)
+    # Stage 0a: Intake gate (pre-stage clarity evaluation)
+    # Runs once per milestone/task before any other stage. Skipped when
+    # START_AT is past coder (resuming from review/test).
+    if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
+        run_stage_intake
+        # If START_AT was "intake", advance to "coder" for subsequent stages
+        if [ "$START_AT" = "intake" ]; then
+            START_AT="coder"
+        fi
+    fi
+
+    # Stage 0b: Architect Audit (conditional)
     # Architect audit runs on its own turn/time budget. Save and restore
     # the pipeline accumulators so architect turns do not inflate coder
     # metrics or affect adaptive calibration.

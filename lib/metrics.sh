@@ -182,6 +182,24 @@ record_run_metrics() {
         record="${record},\"indexer_gen_time_ms\":${INDEXER_GENERATION_TIME_MS}"
     fi
 
+    # Append intake metrics when populated (M10)
+    if [[ -n "${INTAKE_VERDICT:-}" ]]; then
+        local intake_confidence="${INTAKE_CONFIDENCE:-0}"
+        intake_confidence=$(echo "$intake_confidence" | grep -oE '[0-9]+' | tail -1)
+        intake_confidence="${intake_confidence:-0}"
+        local intake_tweaks_applied="false"
+        if [[ "${INTAKE_VERDICT}" == "TWEAKED" ]]; then
+            intake_tweaks_applied="true"
+        fi
+        local intake_questions=0
+        if [[ "${INTAKE_VERDICT}" == "NEEDS_CLARITY" ]] && [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
+            intake_questions=$(awk '/^## Questions/{found=1; next} found && /^## /{exit} found && /^- /{count++} END{print count+0}' "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" 2>/dev/null || echo "0")
+            intake_questions=$(echo "$intake_questions" | grep -oE '[0-9]+' | tail -1)
+            intake_questions="${intake_questions:-0}"
+        fi
+        record="${record},\"intake_verdict\":\"${INTAKE_VERDICT}\",\"intake_confidence\":${intake_confidence},\"intake_tweaks_applied\":${intake_tweaks_applied},\"intake_questions_asked\":${intake_questions}"
+    fi
+
     # Append error fields only when populated (12.3)
     if [[ -n "$error_category" ]]; then
         record="${record},\"error_category\":\"${error_category}\",\"error_subcategory\":\"${error_subcategory}\",\"error_transient\":${error_transient:-false}"

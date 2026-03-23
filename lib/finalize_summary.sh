@@ -95,6 +95,12 @@ _hook_emit_run_summary() {
     fi
     local security_rework_cycles="${SECURITY_REWORK_CYCLES_DONE:-0}"
 
+    # Intake verdict (M10)
+    local intake_verdict="${INTAKE_VERDICT:-none}"
+    local intake_confidence="${INTAKE_CONFIDENCE:-0}"
+    intake_confidence=$(echo "$intake_confidence" | grep -oE '[0-9]+' | tail -1)
+    intake_confidence="${intake_confidence:-0}"
+
     local timestamp_iso
     timestamp_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -102,7 +108,7 @@ _hook_emit_run_summary() {
     safe_milestone=$(printf '%s' "${_CURRENT_MILESTONE:-none}" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
     # Write JSON via printf (proper escaping, no heredoc variable issues)
-    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "timestamp": "%s"\n}\n' \
+    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "timestamp": "%s"\n}\n' \
         "$safe_milestone" \
         "$outcome" \
         "${_ORCH_ATTEMPT:-1}" \
@@ -115,6 +121,8 @@ _hook_emit_run_summary() {
         "$split_depth" \
         "$security_findings_count" \
         "$security_rework_cycles" \
+        "$intake_verdict" \
+        "$intake_confidence" \
         "$timestamp_iso" \
         > "$summary_file"
 

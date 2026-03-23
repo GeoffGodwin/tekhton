@@ -1,4 +1,9 @@
 #### Milestone 10: Task Intake / PM Agent (Pre-Stage Gate)
+<!-- milestone-meta
+id: "10"
+status: "done"
+-->
+
 A pre-pipeline agent that evaluates task and milestone clarity before committing
 pipeline resources. Silently passes or auto-tweaks milestones that are "good enough."
 Only escalates to the human when the task is genuinely too ambiguous for a reasonable

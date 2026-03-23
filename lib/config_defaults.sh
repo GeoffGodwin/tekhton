@@ -186,6 +186,17 @@ set -euo pipefail
 : "${SECURITY_REPORT_FILE:=SECURITY_REPORT.md}"
 : "${SECURITY_WAIVER_FILE:=}"
 
+# --- Intake agent defaults (PM pre-stage gate) ---
+: "${INTAKE_AGENT_ENABLED:=true}"
+: "${CLAUDE_INTAKE_MODEL:=opus}"
+: "${INTAKE_MAX_TURNS:=10}"
+: "${INTAKE_CLARITY_THRESHOLD:=40}"
+: "${INTAKE_TWEAK_THRESHOLD:=70}"
+: "${INTAKE_CONFIRM_TWEAKS:=false}"
+: "${INTAKE_AUTO_SPLIT:=false}"
+: "${INTAKE_ROLE_FILE:=.claude/agents/intake.md}"
+: "${INTAKE_REPORT_FILE:=INTAKE_REPORT.md}"
+
 # --- Specialist reviewer defaults ---
 : "${SPECIALIST_SECURITY_ENABLED:=false}"
 : "${SPECIALIST_SECURITY_MODEL:=${CLAUDE_STANDARD_MODEL}}"
@@ -236,6 +247,9 @@ _clamp_config_value SECURITY_MIN_TURNS 500
 _clamp_config_value SECURITY_MAX_TURNS_CAP 500
 _clamp_config_value SECURITY_MAX_REWORK_CYCLES 10
 _clamp_config_value MILESTONE_SECURITY_MAX_TURNS 500
+_clamp_config_value INTAKE_MAX_TURNS 50
+_clamp_config_value INTAKE_CLARITY_THRESHOLD 100
+_clamp_config_value INTAKE_TWEAK_THRESHOLD 100
 _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50

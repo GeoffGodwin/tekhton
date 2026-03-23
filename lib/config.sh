@@ -158,6 +158,27 @@ load_config() {
         esac
     fi
 
+    # --- Validate intake agent config ---
+    if [[ -n "${INTAKE_CLARITY_THRESHOLD:-}" ]] && [[ "${INTAKE_CLARITY_THRESHOLD}" =~ ^[0-9]+$ ]]; then
+        if [[ "$INTAKE_CLARITY_THRESHOLD" -gt 100 ]]; then
+            warn "[config] INTAKE_CLARITY_THRESHOLD must be 0-100 (got: ${INTAKE_CLARITY_THRESHOLD}). Using 40."
+            INTAKE_CLARITY_THRESHOLD=40
+        fi
+    fi
+    if [[ -n "${INTAKE_TWEAK_THRESHOLD:-}" ]] && [[ "${INTAKE_TWEAK_THRESHOLD}" =~ ^[0-9]+$ ]]; then
+        if [[ "$INTAKE_TWEAK_THRESHOLD" -gt 100 ]]; then
+            warn "[config] INTAKE_TWEAK_THRESHOLD must be 0-100 (got: ${INTAKE_TWEAK_THRESHOLD}). Using 70."
+            INTAKE_TWEAK_THRESHOLD=70
+        fi
+        if [[ -n "${INTAKE_CLARITY_THRESHOLD:-}" ]] && [[ "${INTAKE_CLARITY_THRESHOLD}" =~ ^[0-9]+$ ]]; then
+            if [[ "$INTAKE_TWEAK_THRESHOLD" -le "$INTAKE_CLARITY_THRESHOLD" ]]; then
+                warn "[config] INTAKE_TWEAK_THRESHOLD (${INTAKE_TWEAK_THRESHOLD}) must be greater than INTAKE_CLARITY_THRESHOLD (${INTAKE_CLARITY_THRESHOLD}). Using defaults."
+                INTAKE_CLARITY_THRESHOLD=40
+                INTAKE_TWEAK_THRESHOLD=70
+            fi
+        fi
+    fi
+
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     if [[ "$PIPELINE_STATE_FILE" != /* ]]; then
         PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"

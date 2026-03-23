@@ -113,3 +113,20 @@ clear_pipeline_state() {
         rm "$PIPELINE_STATE_FILE"
     fi
 }
+
+# load_intake_tweaked_task — On resume, load the tweaked task string from session dir.
+# Returns 0 and sets TASK if a tweaked task file exists, 1 otherwise.
+load_intake_tweaked_task() {
+    local tweaked_file="${TEKHTON_SESSION_DIR}/INTAKE_TWEAKED_TASK.md"
+    if [[ -f "$tweaked_file" ]]; then
+        local tweaked_task
+        tweaked_task=$(cat "$tweaked_file")
+        if [[ -n "$tweaked_task" ]]; then
+            TASK="$tweaked_task"
+            export TASK
+            log "Loaded tweaked task from prior intake evaluation."
+            return 0
+        fi
+    fi
+    return 1
+}

@@ -16,6 +16,12 @@ Use `find`, `grep`, and `ls` to locate files by name and keyword. Read only the 
 ## Human Notes
 {{HUMAN_NOTES_CONTENT}}
 {{ENDIF:HUMAN_NOTES_CONTENT}}
+{{IF:INTAKE_TWEAKS_BLOCK}}
+
+## PM Agent Notes
+The task intake agent made the following scope clarifications:
+{{INTAKE_TWEAKS_BLOCK}}
+{{ENDIF:INTAKE_TWEAKS_BLOCK}}
 {{IF:ARCHITECTURE_BLOCK}}
 {{ARCHITECTURE_BLOCK}}
 {{ENDIF:ARCHITECTURE_BLOCK}}

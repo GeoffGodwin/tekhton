@@ -133,7 +133,7 @@ run_complete_loop() {
 
         # Archive reports from previous iteration (except first)
         if [[ "$_ORCH_ATTEMPT" -gt 1 ]]; then
-            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md INTAKE_REPORT.md; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
                     mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_attempt${_ORCH_ATTEMPT}_${f}"
@@ -153,6 +153,11 @@ run_complete_loop() {
             warn "Usage threshold reached. Pausing orchestration loop."
             _save_orchestration_state "usage_threshold" "Usage threshold exceeded"
             return 1
+        fi
+
+        # --- Intake gate (per-milestone evaluation) ---
+        if declare -f run_stage_intake &>/dev/null; then
+            run_stage_intake || true
         fi
 
         # --- Run the pipeline ---
