@@ -66,6 +66,8 @@ tekhton/
 │   ├── milestone_dag_migrate.sh # [3.0] Inline→file milestone migration
 │   ├── milestone_window.sh # [3.0] Character-budgeted milestone sliding window
 │   ├── indexer.sh          # [3.0] Repo map orchestration + Python tool invocation
+│   ├── indexer_helpers.sh  # [3.0] Language detection, config validation, file extraction
+│   ├── indexer_history.sh  # [3.0] Task→file association tracking (JSONL)
 │   ├── causality.sh        # [3.0] Causal event log infrastructure + query layer
 │   └── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
@@ -130,7 +132,9 @@ tekhton/
 │       ├── conftest.py
 │       ├── test_repo_map.py
 │       ├── test_tag_cache.py
-│       └── test_history.py
+│       ├── test_history.py
+│       ├── test_tree_sitter_languages.py
+│       └── test_extract_tags_integration.py
 ├── tests/                  # Self-tests
 │   └── fixtures/indexer_project/  # [3.0] Multi-language fixture project
 └── examples/               # Sample dependency constraint validation scripts
@@ -162,6 +166,9 @@ agent roles.
 5. **Resumable.** Pipeline state is saved on interruption. Re-running resumes.
 6. **Template engine.** Prompts use `{{VAR}}` substitution and `{{IF:VAR}}...{{ENDIF:VAR}}`
    conditionals. No other templating system.
+7. **Python is optional.** The `tools/` directory requires Python 3.8+ and tree-sitter
+   for intelligent indexing (repo map, tag cache). Tekhton remains fully functional
+   without Python — the pipeline gracefully falls back to v2 context injection.
 
 ## Versioning
 
@@ -274,6 +281,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `REPO_MAP_TOKEN_BUDGET` | Max tokens for repo map output (default: 2048) |
 | `REPO_MAP_CACHE_DIR` | Index cache directory (default: .claude/index) |
 | `REPO_MAP_LANGUAGES` | Languages to index, or "auto" (default: auto) |
+| `REPO_MAP_VENV_DIR` | Indexer virtualenv location (default: .claude/indexer-venv) |
 | `REPO_MAP_CONTENT` | Generated repo map markdown (injected by lib/indexer.sh) |
 | `REPO_MAP_SLICE` | Task-relevant subset of repo map (per-stage) |
 | `REPO_MAP_HISTORY_ENABLED` | Track task→file associations (default: true) |
