@@ -1,4 +1,8 @@
-#### Milestone 3: Indexer Infrastructure & Setup Command
+#### [DONE] Milestone 3: Indexer Infrastructure & Setup Command
+<!-- milestone-meta
+id: "3"
+status: "done"
+-->
 Add the shell-side orchestration layer, Python dependency detection, setup command,
 and configuration keys. This milestone builds the framework that Milestones 4-8
 plug into. No actual indexing logic yet — just the plumbing.

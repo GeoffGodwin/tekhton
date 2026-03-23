@@ -110,6 +110,15 @@ run_stage_coder() {
 $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         fi
 
+        # Generate full repo map for scout (biggest token savings — replaces blind find/grep)
+        export REPO_MAP_CONTENT=""
+        if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+            log "[indexer] Generating repo map for scout..."
+            if run_repo_map "$TASK"; then
+                log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
+            fi
+        fi
+
         SCOUT_PROMPT=$(render_prompt "scout")
 
         run_agent \
@@ -186,6 +195,33 @@ $(cat SCOUT_REPORT.md)
             warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
         else
             warn "Scout agent did not produce SCOUT_REPORT.md — coder will explore independently."
+        fi
+    fi
+
+    # --- Repo map for coder (task-biased or scout-sliced) -------------------
+
+    export REPO_MAP_CONTENT="${REPO_MAP_CONTENT:-}"
+    if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+        # If we already have a full map from scout, try to slice it to scout-identified files
+        if [[ -n "$REPO_MAP_CONTENT" ]] && [[ -n "$BUG_SCOUT_CONTEXT" ]]; then
+            # Extract file paths from the scout report context
+            local _scout_files=""
+            if [[ -f "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md" ]]; then
+                _scout_files=$(extract_files_from_coder_summary "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md")
+            fi
+            if [[ -n "$_scout_files" ]]; then
+                local _slice
+                if _slice=$(get_repo_map_slice "$_scout_files"); then
+                    REPO_MAP_CONTENT="$_slice"
+                    log "[indexer] Repo map sliced to scout-identified files."
+                fi
+            fi
+        elif [[ -z "$REPO_MAP_CONTENT" ]]; then
+            # No map from scout phase — generate a fresh task-biased map
+            log "[indexer] Generating repo map for coder..."
+            if run_repo_map "$TASK"; then
+                log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
+            fi
         fi
     fi
 
@@ -344,6 +380,7 @@ ${nb_notes}"
     fi
 
     _add_context_component "Architecture" "$ARCHITECTURE_BLOCK"
+    _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
     _add_context_component "Glossary" "$GLOSSARY_BLOCK"
     _add_context_component "Milestone" "$MILESTONE_BLOCK"
     _add_context_component "Human Notes" "$HUMAN_NOTES_BLOCK"

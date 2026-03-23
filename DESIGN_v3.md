@@ -1,4 +1,4 @@
-# Tekhton 3.0 — Intelligent Indexing & Milestone DAG Design Document
+# Tekhton 3.0 — Intelligent Indexing, Milestone DAG & Pipeline Quality Design Document
 
 ## Problem Statement
 
@@ -347,13 +347,19 @@ SERENA_MAX_RETRIES=2                # Health check retry attempts
 - Stage-specific repo map slicing
 - Optional Serena LSP integration via MCP
 - Cross-run tag cache and task→file history
+- Security agent with severity-gated rework + escalation policy
+- Task intake / PM agent with clarity evaluation + auto-tweaking
+- AI artifact detection with archive/merge/tidy workflow
+- Brownfield deep analysis (workspaces, services, CI/CD, IaC, doc quality)
+- Watchtower dashboard (static HTML, 4-tab interface, auto-refresh)
+- UI / dashboard for pipeline transparency and milestone progress
 
-### Out of Scope (Future)
+### Out of Scope (Future / V4)
 - Parallel milestone execution (multiple agent teams in worktrees)
-- Dedicated security and tech debt agents
-- UI / dashboard for milestone progress
+- Dedicated tech debt agent (background worker on own git branch)
 - Semantic similarity for task→file matching (vs keyword-based)
-- Multi-project monorepo support
+- Environment awareness (API discovery, MCP detection, container execution)
+- Containerized pipeline execution with permission levels
 
 ### Stretch
 - Repository Layout section compression when repo map is active
@@ -416,3 +422,490 @@ SERENA_MAX_RETRIES=2                # Health check retry attempts
 | Repo map | off | REPO_MAP_ENABLED=true |
 | Serena LSP | off | SERENA_ENABLED=true |
 | Cross-run cache | on when repo map on | REPO_MAP_HISTORY_ENABLED=false |
+| Security agent | **on** | SECURITY_AGENT_ENABLED=false to disable |
+| Task intake/PM | **on** | INTAKE_AGENT_ENABLED=false to disable |
+| AI artifact detection | on | ARTIFACT_DETECTION_ENABLED=false |
+| Workspace detection | on | DETECT_WORKSPACES_ENABLED=false |
+| CI/CD inference | on | DETECT_CI_ENABLED=false |
+| Doc quality assessment | on | DOC_QUALITY_ASSESSMENT_ENABLED=false |
+
+---
+
+## System Design: Security Agent (M09)
+
+### Problem
+
+Tekhton 2.0 has no dedicated security review. The reviewer catches vulnerabilities
+opportunistically, but security is not its focus. Codebases handling auth, PII,
+payments, or infrastructure need a purpose-built security stage. Additionally,
+some vulnerabilities (e.g., a library that became CVE-listed that morning) are
+unfixable in the moment and should not stop the pipeline — they should be escalated
+to a human with appropriate severity context.
+
+### Design
+
+**Pipeline placement (serial, V4-parallel-ready):**
+```
+Scout → Coder → Build Gate → Security Agent → Reviewer → Tester
+                                  ↑
+                     security rework loop (bounded)
+```
+
+The security agent runs after the build gate, before the reviewer. This is serial
+in V3; the data model and report format are designed so that V4 can transition to
+parallel execution alongside the reviewer with merged findings.
+
+**Severity-gated rework loop:**
+
+```
+Security scan → classify findings
+  ├─ CRITICAL/HIGH + fixable=yes → coder rework → build gate → re-scan
+  │                                (max SECURITY_MAX_REWORK_CYCLES)
+  ├─ CRITICAL/HIGH + fixable=no  → SECURITY_UNFIXABLE_POLICY:
+  │                                  escalate → HUMAN_ACTION_REQUIRED.md + continue
+  │                                  halt → pipeline exit
+  │                                  waiver → SECURITY_NOTES.md + continue
+  ├─ MEDIUM/LOW → SECURITY_NOTES.md (reviewer context, never triggers rework)
+  └─ Clean → proceed to reviewer
+```
+
+**Fast-path skip:** Docs-only, config-only, or asset-only changes skip the
+security scan entirely. Determined by parsing CODER_SUMMARY.md file types.
+
+**Knowledge base (dual-mode):**
+- **Offline:** Static rules in the security role file (~200 lines covering OWASP
+  Top 10, injection, auth, secrets, crypto misuse). Always available.
+- **Online:** When SECURITY_ONLINE_SOURCES is configured and connectivity detected,
+  cross-reference CVE databases (Snyk, NVD, GHSA). Graceful fallback to offline.
+- **Waivers:** Optional SECURITY_WAIVER_FILE for pre-approved CVE/pattern exclusions.
+
+**Report format (SECURITY_REPORT.md):**
+Each finding: severity, category (OWASP ID), file:line, description, fixable flag,
+suggested fix. Machine-parseable by the shell for rework routing.
+
+**Downstream injection:**
+- Reviewer sees SECURITY_FINDINGS_BLOCK (unfixed items as context)
+- Tester sees SECURITY_FIXES_BLOCK (applied fixes to test)
+
+### Config Keys
+
+```bash
+SECURITY_AGENT_ENABLED=true              # Opt-out (default ON)
+CLAUDE_SECURITY_MODEL=${CLAUDE_STANDARD_MODEL}
+SECURITY_MAX_TURNS=15
+SECURITY_MIN_TURNS=8
+SECURITY_MAX_TURNS_CAP=30
+MILESTONE_SECURITY_MAX_TURNS=$(( SECURITY_MAX_TURNS * 2 ))
+SECURITY_MAX_REWORK_CYCLES=2
+SECURITY_BLOCK_SEVERITY=HIGH             # Minimum severity triggering rework
+SECURITY_UNFIXABLE_POLICY=escalate       # escalate | halt | waiver
+SECURITY_OFFLINE_MODE=auto               # auto | offline | online
+SECURITY_ONLINE_SOURCES=""               # snyk, nvd, ghsa (optional)
+SECURITY_ROLE_FILE=.claude/agents/security.md
+SECURITY_NOTES_FILE=SECURITY_NOTES.md
+SECURITY_REPORT_FILE=SECURITY_REPORT.md
+SECURITY_WAIVER_FILE=""                  # Pre-approved waivers (optional)
+```
+
+### Why This Design
+
+- Opt-out model ("401k principle"): users who don't know this exists get security
+  by default. Conscious opt-out required to disable.
+- Severity gating prevents the "infinite rejection loop" problem — only fixable
+  CRITICAL/HIGH items trigger rework, and the loop is bounded.
+- The unfixable policy (escalate/halt/waiver) lets users configure their risk
+  tolerance. A startup iterating fast sets `waiver`; a fintech sets `halt`.
+- Dual-mode knowledge base works offline (no internet = no excuse for no security)
+  while benefiting from live data when available.
+- Serial placement in V3 avoids the complexity of parallel execution but the
+  report format is parallel-ready for V4.
+
+---
+
+## System Design: Task Intake / PM Agent (M10)
+
+### Problem
+
+Tekhton 2.0 requires a senior developer who can write precise tasks with acceptance
+criteria, file paths, and clear scope boundaries. This locks out users who have
+ideas and understand what they want but can't express it in the formal structure
+Tekhton expects. Vague tasks lead to wasted pipeline runs, split failures, and
+confused agents.
+
+### Design
+
+**Pipeline placement (pre-stage gate):**
+```
+Intake Gate → [Architect Audit] → Scout → Coder → Security → Reviewer → Tester
+```
+
+The intake agent runs once per milestone before the pipeline commits resources.
+It is NOT a new CLI command — it's a pre-stage in the existing flow.
+
+**Four verdicts:**
+
+| Verdict | Condition | Action |
+|---------|-----------|--------|
+| PASS | Confidence ≥ INTAKE_TWEAK_THRESHOLD | Proceed immediately, no interaction |
+| TWEAKED | Confidence between thresholds | Auto-tweak milestone, annotate with `[PM: ...]`, proceed |
+| SPLIT_RECOMMENDED | Task too large | Present sub-milestones, pause for human approval |
+| NEEDS_CLARITY | Confidence < INTAKE_CLARITY_THRESHOLD | Write questions to CLARIFICATIONS.md, pause |
+
+**Clarity rubric (agent-evaluated):**
+- Is the scope bounded? (Can a developer know when they're done?)
+- Are acceptance criteria testable? (Can they be verified by a machine?)
+- Are there implicit assumptions that need stating?
+- Could two competent developers interpret this differently?
+
+**Calibration philosophy:** The agent defaults to PASS. It is a helpful colleague,
+not a bureaucratic gate. Prompt examples are heavily weighted toward PASS verdicts.
+The thresholds (40/70) are starting points — metrics logging enables data-driven
+calibration over time.
+
+**Skip-on-resume:** The intake agent hashes milestone content (sha256sum) and
+caches results in the session directory. Resumed runs don't re-evaluate unchanged
+milestones.
+
+**Non-milestone mode:** When the user passes a raw task string (no DAG), TWEAKED
+verdicts update the TASK variable and persist the tweaked version to
+`INTAKE_TWEAKED_TASK.md` in the session directory for resume safety.
+
+### Config Keys
+
+```bash
+INTAKE_AGENT_ENABLED=true                # Opt-out (default ON)
+CLAUDE_INTAKE_MODEL=opus                 # Judgement calls need the best model
+INTAKE_MAX_TURNS=10                      # Fast evaluation, not coding
+INTAKE_CLARITY_THRESHOLD=40              # Below → NEEDS_CLARITY
+INTAKE_TWEAK_THRESHOLD=70                # Below (but above clarity) → TWEAKED
+INTAKE_CONFIRM_TWEAKS=false              # Pause for human review of tweaks?
+INTAKE_AUTO_SPLIT=false                  # Auto-add recommended splits to DAG?
+INTAKE_ROLE_FILE=.claude/agents/intake.md
+INTAKE_REPORT_FILE=INTAKE_REPORT.md
+```
+
+### Why This Design
+
+- Pre-stage (not pre-pipeline) means each milestone gets evaluated, including
+  auto-advanced milestones in --complete mode.
+- Four verdicts cover the full spectrum from "this is fine" to "I'm lost."
+- Opus model default is intentional: this is a judgement call where model quality
+  directly impacts user experience, and it runs once per milestone (bounded cost).
+- Two separate thresholds (clarity/tweak) give users fine-grained control over
+  gate aggressiveness without coupling the "I need help" and "this needs polish"
+  decisions.
+- Reusing existing infrastructure (clarification protocol, split_milestone,
+  milestone file format) minimizes new code.
+
+---
+
+## System Design: Brownfield AI Artifact Detection (M11)
+
+### Problem
+
+Modern codebases frequently have AI tool configurations from multiple sources:
+Cursor, Copilot, Aider, Cline, Continue, Windsurf, Roo, or even a prior Tekhton
+installation. When a user runs `tekhton --init`, these existing configurations
+are silently ignored or overwritten. This creates confusion when Tekhton's
+generated config contradicts rules already in place from other tools, and wastes
+valuable project knowledge that was captured in those configurations.
+
+### Design
+
+**Detection engine** (`lib/detect_ai_artifacts.sh`):
+
+Scans for 10+ AI tool patterns at two levels:
+- **Configuration level** (high confidence): `.cursor/`, `.cursorrules`,
+  `.github/copilot/`, `.aider*`, `.cline/`, `.continue/`, `.windsurf/`,
+  `.windsurfrules`, `.roomodes`, `.ai/`, existing `.claude/` + `CLAUDE.md`
+- **Code level** (lower confidence): AI-generated comment patterns, verbose
+  boilerplate JSDoc, agent-style directive language in ARCHITECTURE.md
+
+Output: `TOOL|PATH|TYPE|CONFIDENCE` per artifact.
+
+Special case: `.claude/` is scanned at file-level granularity (not directory-level)
+to distinguish Tekhton artifacts (pipeline.conf, agents/) from Claude Code
+artifacts (settings.json, commands/).
+
+**Handling workflow** (`lib/artifact_handler.sh`):
+
+Interactive menu per artifact group:
+- **(A) Archive** — move to `.claude/archived-ai-config/` with manifest
+- **(M) Merge** — agent-assisted content extraction into MERGE_CONTEXT.md.
+  Conflicts marked with `[CONFLICT: ...]` for synthesis resolution.
+- **(T) Tidy** — remove with confirmation + optional git commit + .gitignore cleanup
+- **(I) Ignore** — leave in place with warning
+
+Prior Tekhton installs get a specialized **Reinit** path preserving pipeline.conf.
+
+Non-interactive mode: `ARTIFACT_HANDLING_DEFAULT=archive|tidy|ignore` for CI/headless.
+
+**Merge pipeline:**
+```
+detect_ai_artifacts() → handle_ai_artifacts()
+                            ├─ archive → move files
+                            ├─ merge → agent → MERGE_CONTEXT.md
+                            │                      ↓
+                            │              synthesis pipeline
+                            │              (consumes alongside PROJECT_INDEX.md)
+                            ├─ tidy → remove + git commit
+                            └─ ignore → warn + continue
+```
+
+### Why This Design
+
+- Detection at two levels (config vs code) avoids false positives while catching
+  the obvious cases with high confidence.
+- Agent-assisted merge (not blind concat) understands both source and target
+  formats, producing clean Tekhton-native output.
+- The four options (A/M/T/I) cover all user preferences without forcing a choice.
+- Granular `.claude/` scanning handles the shared-directory problem between
+  Tekhton and Claude Code.
+
+---
+
+## System Design: Brownfield Deep Analysis (M12)
+
+### Problem
+
+The current `--init` detection heuristics work well for simple, single-project
+repositories but struggle with complex brownfield codebases: monorepos with
+workspaces, multi-service repos, polyglot stacks, and projects where the CI
+pipeline is the authoritative source of truth for build/test commands (not the
+manifest files).
+
+### Design
+
+**Three new detection engines:**
+
+1. **Workspace detection** (`detect_workspaces()`): npm/yarn/pnpm workspaces,
+   lerna, nx, Cargo workspaces, Go workspaces, Gradle multi-project, Maven
+   multi-module. Per-subproject enumeration with configurable cap (default 50).
+
+2. **Service detection** (`detect_services()`): docker-compose services, Procfile
+   process types, Kubernetes manifests. Maps service → directory → tech stack.
+
+3. **CI/CD inference** (`detect_ci_config()`): GitHub Actions, GitLab CI,
+   CircleCI, Jenkinsfile, Bitbucket Pipelines, plus Dockerfiles for language
+   version confirmation. CI-detected commands take highest confidence — they're
+   what actually runs in production.
+
+**Additional detections:**
+- Infrastructure-as-code: Terraform, Pulumi, CDK, CloudFormation, Ansible
+- Test frameworks: pytest, jest, vitest, mocha, etc. (separate from TEST_CMD)
+- Linters and formatters: eslint, ruff, black, clippy, etc.
+- Pre-commit hooks as authoritative lint/format source
+
+**Command priority cascade:**
+```
+1. CI/CD config        (highest confidence — actually runs in prod)
+2. Makefile / Taskfile
+3. Package manager scripts
+4. Convention fallback  (current behavior, lowest confidence)
+```
+
+**Documentation quality assessment** (`_assess_doc_quality()`):
+- Scores 0-100 based on: README presence/depth, CONTRIBUTING.md, API docs,
+  architecture docs, inline doc density
+- Synthesis agent calibrates inference depth from score:
+  - High (>70): trust and preserve existing docs
+  - Low (<30): infer aggressively from code patterns
+
+**Monorepo UX:** When workspaces detected, asks: "Manage root or specific
+subproject?" Lists detected subprojects. Does NOT solve the full monorepo
+problem — seeds forward to V4.
+
+### Why This Design
+
+- CI/CD is the highest-confidence source because it's tested and maintained by
+  the team. Manifest heuristics can be stale.
+- Doc quality scoring lets the synthesis agent adapt its behavior: well-documented
+  projects get preservation, poorly-documented ones get generation.
+- Infrastructure detection feeds directly into the security agent's context —
+  Terraform misconfigs are a major vulnerability class.
+- Test framework detection (separate from TEST_CMD) lets the tester agent write
+  framework-appropriate test code.
+
+---
+
+## System Design: Watchtower Dashboard (M13-M14)
+
+### Problem
+
+Tekhton is a black box. The terminal scrolls colored output but users can't
+answer basic questions: Is it stuck? What did it change? Should I be worried
+about that security finding? How much is left? Is it getting better over time?
+This opacity is acceptable for a senior dev who reads markdown files, but it's
+a dealbreaker for the broader audience V3 targets.
+
+### Design
+
+**Architecture: static HTML + JS data files (no server)**
+
+The pipeline writes `.js` data files that assign to `window.TK_*` globals.
+A static HTML file loads them via `<script>` tags (works on `file://` because
+`<script src>` same-directory is exempt from CORS). Auto-refresh via
+`setTimeout(location.reload)` provides pseudo-polling.
+
+```
+Pipeline (shell)                    Browser
+┌───────────────┐                 ┌──────────────────┐
+│ emit_dashboard │─── writes ───▶ │ data/run_state.js │
+│ _event()      │                 │ data/timeline.js  │
+│ _run_state()  │                 │ data/milestones.js│
+│ _milestones() │                 │ data/security.js  │
+│ _security()   │                 │ data/reports.js   │
+│ _reports()    │                 │ data/metrics.js   │
+│ _metrics()    │                 ├──────────────────┤
+└───────────────┘                 │ index.html        │◀── user opens
+                                  │ app.js (renders)  │
+                                  │ style.css         │
+                                  └──────────────────┘
+```
+
+Zero server. Zero dependencies. Zero build tools. Open `index.html` in a browser.
+
+**Four-tab interface:**
+
+| Tab | Purpose | Data source |
+|-----|---------|-------------|
+| Live Run | What's happening right now | run_state.js, timeline.js |
+| Milestone Map | DAG visualization, plan status | milestones.js |
+| Reports | Stage-by-stage results, findings | reports.js, security.js |
+| Trends | Historical efficiency, patterns | metrics.js |
+
+**Interactivity model (V3):**
+Read-only with helpful hints. When the pipeline is paused for human input
+(NEEDS_CLARITY, security waiver), the dashboard shows the questions and provides
+copy-to-clipboard file paths / commands. True bidirectional interaction (answer
+questions in the browser) requires a server — V4.
+
+**Responsive design:** Three breakpoints (1200px, 768px, <768px). The Live Run
+tab is optimized for glanceability at small sizes (status badge + stage bar +
+timeline). The Milestone Map degrades to a list at small sizes. The Trends tab
+drops charts and shows summary stats only.
+
+**Lifecycle:**
+- Created by `tekhton --init` (DASHBOARD_ENABLED=true by default)
+- Disabled via config: next run cleans up `.claude/dashboard/`
+- Re-enabled via config: next run recreates it
+- Static files (HTML/CSS/JS) are one-time copies from Tekhton templates
+- Data files are regenerated on each meaningful pipeline event
+
+**Verbosity levels** (DASHBOARD_VERBOSITY in config):
+- `minimal`: stage completions + final verdicts only
+- `normal` (default): stage transitions + verdicts + findings + build results
+- `verbose`: all of normal + turn counts, rework events, context budget stats
+
+### Config Keys
+
+```bash
+DASHBOARD_ENABLED=true              # Generate Watchtower dashboard
+DASHBOARD_VERBOSITY=normal          # minimal | normal | verbose
+DASHBOARD_HISTORY_DEPTH=50          # Runs to include in Trends tab
+DASHBOARD_REFRESH_INTERVAL=5        # Seconds between auto-refreshes
+DASHBOARD_DIR=".claude/dashboard"   # Dashboard output directory
+```
+
+### Why This Design
+
+- Static files + JS globals is the simplest architecture that works without a
+  server. The `<script src>` same-directory exemption from CORS makes it
+  possible. No fetch(), no AJAX, no build step.
+- Auto-refresh via page reload is crude but correct for V3. It reloads the data
+  scripts, which is exactly what we need. V4's WebSocket push replaces this.
+- Four tabs prevent clutter while covering the four questions users actually ask:
+  "what's happening?", "what's the plan?", "what did it do?", "is it improving?"
+- CSS-only swimlanes for the DAG avoid a JS graphing dependency. The DAG
+  visualization upgrades to SVG with proper graph layout in V4.
+- Dark theme default because this typically runs on a second monitor while the
+  dev works in their IDE. Light theme available for preference.
+- 50KB size constraint forces discipline. This is a utility, not a web app.
+
+---
+
+## Updated Pipeline Flow (V3 Complete)
+
+```
+tekhton --init
+  ├─ AI artifact detection (M11)    ← NEW
+  ├─ Tech stack detection
+  ├─ Workspace/service/CI detection (M12)  ← NEW
+  ├─ Project crawl → PROJECT_INDEX.md
+  ├─ Config generation (CI-informed)
+  └─ Synthesis → DESIGN.md + CLAUDE.md + milestones/
+
+tekhton "task" or tekhton --milestone
+  ├─ Milestone DAG load (M01-M02)
+  ├─ Intake gate / PM agent (M10)    ← NEW
+  ├─ [Architect audit]
+  ├─ Scout + Coder + Build Gate
+  ├─ Security scan + rework (M09)    ← NEW
+  ├─ Reviewer + rework loop
+  ├─ Tester + validation
+  └─ [Cleanup sweep]
+```
+
+## Updated New Files Summary
+
+**lib/ (shell orchestration):**
+- `milestone_dag.sh` — DAG infrastructure (M01)
+- `milestone_dag_migrate.sh` — inline→file migration (M01)
+- `milestone_window.sh` — sliding window assembly (M02)
+- `indexer.sh` — repo map orchestration (M03)
+- `mcp.sh` — MCP server lifecycle management (M06)
+- `detect_ai_artifacts.sh` — AI tool config detection (M11)
+- `artifact_handler.sh` — artifact archive/merge/tidy workflow (M11)
+- `dashboard.sh` — Watchtower data emission + lifecycle (M13)
+- `dashboard_parsers.sh` — Report parsing for dashboard data (M13)
+
+**stages/ (pipeline stages):**
+- `security.sh` — security scan + rework routing (M09)
+- `intake.sh` — task clarity evaluation + PM gate (M10)
+
+**prompts/ (agent templates):**
+- `security_scan.prompt.md` — security analysis prompt (M09)
+- `security_rework.prompt.md` — security fix rework prompt (M09)
+- `intake_scan.prompt.md` — clarity evaluation prompt (M10)
+- `intake_tweak.prompt.md` — milestone refinement prompt (M10)
+- `artifact_merge.prompt.md` — AI config merge prompt (M11)
+
+**templates/ (copied to target projects):**
+- `security.md` — security agent role definition (M09)
+- `intake.md` — intake/PM agent role definition (M10)
+
+**templates/watchtower/ (static dashboard files):**
+- `index.html` — Dashboard shell with 4-tab navigation (M14)
+- `app.js` — Vanilla JS rendering logic (M14)
+- `style.css` — Responsive dark/light theme styles (M14)
+
+**tools/ (Python, optional dependency):**
+- `repo_map.py` — tree-sitter parser + PageRank ranker (M04)
+- `tag_cache.py` — disk-based tag cache (M04)
+- `tree_sitter_languages.py` — language detection + grammar loading (M04)
+- `requirements.txt` — pinned Python dependencies (M03)
+- `setup_indexer.sh` — indexer virtualenv setup (M03)
+- `setup_serena.sh` — Serena MCP server setup (M06)
+- `serena_config_template.json` — MCP config template (M06)
+
+## V4 Forward Seeds
+
+The following capabilities are explicitly designed for but not built in V3:
+
+- **Parallel milestone execution** — DAG edges + parallel_group field (M01) enable
+  future multi-worktree agent teams. Security agent report format (M09) supports
+  parallel-with-reviewer mode.
+- **Tech debt agent** — SECURITY_NOTES.md + NON_BLOCKING_LOG.md (M09) form the
+  backlog. Parallel execution infrastructure required first.
+- **Environment awareness** — Service detection (M12) + infrastructure detection
+  (M12) provide the inventory. API/MCP discovery and container execution are V4.
+- **Historical learning** — Intake confidence scores (M10) + run metrics (v2)
+  enable threshold calibration. Security waiver patterns (M09) enable policy
+  evolution.
+- **Dashboard evolution** — Watchtower V3 (M13-M14) is static HTML with file
+  polling. V4 replaces this with a localhost server (WebSocket push, bidirectional
+  interaction: answer clarifications, approve waivers, trigger runs). V5 adds
+  cloud-hosted option for team visibility + mobile access.
+- **Metric connectors** — The TK_* data format from Watchtower is designed as
+  the universal schema for metric export. V4/V5 adds connectors for DataDog,
+  NewRelic, Prometheus, and custom webhook targets.

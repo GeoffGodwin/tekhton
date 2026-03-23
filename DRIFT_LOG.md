@@ -2,11 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-22
-- Runs since audit: 1
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-22 | "Implement Indexer Infrastructure & Setup Command then carry on to future milestones."] `lib/indexer_helpers.sh` — The `&&`-chained seen-set pattern is now present in both `indexer.sh` (original) and `indexer_helpers.sh` (extracted copy). Two occurrences of the non-standard pattern — approaching the threshold where a style sweep would be warranted if it spreads further.
+- [2026-03-22 | "Implement Indexer Infrastructure & Setup Command then carry on to future milestones."] `repo_map.py:113` — direct import of `_EXT_TO_LANG` (private module-level dict in `tree_sitter_languages.py`) creates hidden coupling: if the internal data structure ever changes name or format, `repo_map.py` will break with an `ImportError` rather than a clear AttributeError at the call site. Consider exporting a public API function from `tree_sitter_languages.py` for this use.
 
 ## Resolved
-- [RESOLVED 2026-03-22] `lib/milestone_archival.sh:138-171` — `archive_all_completed_milestones` has no DAG path. It discovers done milestones by grepping CLAUDE.md for `#### [DONE] Milestone` markers that do not exist in file-based DAG mode. The per-milestone function `archive_completed_milestone` correctly handles the DAG path; the bulk variant does not. Any caller relying on bulk archival will silently do nothing in DAG mode.
-- [RESOLVED 2026-03-22] `lib/milestones.sh` — File has grown beyond 300 lines. The DAG-aware wrapper variants of `get_milestone_count`, `get_milestone_title`, and `is_milestone_done` added this milestone are the primary contributors. Extraction to `lib/milestone_dag_helpers.sh` would bring the file back under the limit. Track for Milestone 2.
-- [RESOLVED 2026-03-22] `stages/init_synthesize.sh` — file is 533 lines, exceeding the 300-line ceiling defined in reviewer.md. The coder's changes actually removed a line, so this was not introduced here, but it should be tracked for a future split (e.g., extract `_compress_synthesis_context` and `_synthesize_*` helpers into a `lib/init_synthesize_helpers.sh`).

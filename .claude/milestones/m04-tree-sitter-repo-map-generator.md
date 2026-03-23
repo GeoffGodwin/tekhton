@@ -1,4 +1,8 @@
-#### Milestone 4: Tree-Sitter Repo Map Generator
+#### [DONE] Milestone 4: Tree-Sitter Repo Map Generator
+<!-- milestone-meta
+id: "4"
+status: "done"
+-->
 Implement the Python tool that parses source files with tree-sitter, extracts
 definition and reference tags, builds a file-relationship graph, ranks files by
 PageRank relevance to the current task, and emits a token-budgeted repo map

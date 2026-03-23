@@ -32,6 +32,7 @@
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
 #   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
+#   --setup-indexer       Set up Python virtualenv for tree-sitter indexer
 #   --version, -v         Print version and exit
 #
 # Requirements:
@@ -110,7 +111,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="2.21.0"
+TEKHTON_VERSION="3.5.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -164,6 +165,7 @@ export HUMAN_MODE=false
 export HUMAN_NOTES_TAG=""
 COMPLETE_MODE=false
 MIGRATE_DAG=false
+SETUP_INDEXER=false
 CURRENT_NOTE_LINE=""
 SKIP_AUDIT=false
 FORCE_AUDIT=false
@@ -329,6 +331,8 @@ source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"
+source "${TEKHTON_HOME}/lib/indexer.sh"
+source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/detect.sh"
@@ -394,6 +398,7 @@ usage() {
     echo "  --skip-audit              Skip architect audit even if threshold is reached"
     echo "  --force-audit             Force architect audit regardless of threshold"
     echo "  --migrate-dag             Convert inline CLAUDE.md milestones to DAG file format"
+    echo "  --setup-indexer           Set up Python virtualenv for tree-sitter indexer"
     echo ""
     echo "Examples:"
     echo "  tekhton --init                           # First-time setup"
@@ -601,6 +606,7 @@ EOF
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
+        --setup-indexer) SETUP_INDEXER=true; shift ;;
         --) shift; break ;;
         -*) error "Unknown flag: $1"; usage 1 ;;
         *) break ;;
@@ -638,6 +644,19 @@ if [ "$MIGRATE_DAG" = true ]; then
     fi
     _TEKHTON_CLEAN_EXIT=true
     exit 0
+fi
+
+# --- Early --setup-indexer: install Python dependencies and exit ---------------
+if [ "$SETUP_INDEXER" = true ]; then
+    local_setup_script="${TEKHTON_HOME}/tools/setup_indexer.sh"
+    if [ ! -f "$local_setup_script" ]; then
+        error "setup_indexer.sh not found at ${local_setup_script}"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    bash "$local_setup_script" "$PROJECT_DIR" "${REPO_MAP_VENV_DIR:-.claude/indexer-venv}"
+    _TEKHTON_CLEAN_EXIT=true
+    exit $?
 fi
 
 # AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
@@ -809,6 +828,20 @@ if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
 fi
 echo
 
+# Pre-flight: indexer availability check
+if [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
+    if ! validate_indexer_config; then
+        error "Invalid indexer configuration. Fix the values in pipeline.conf."
+        exit 1
+    fi
+    if check_indexer_available; then
+        log "Indexer: available (repo map enabled)"
+    else
+        warn "REPO_MAP_ENABLED=true but indexer not available — falling back to 2.0 behavior."
+        warn "Run 'tekhton --setup-indexer' to install dependencies."
+    fi
+fi
+
 # Pre-flight drift threshold check
 if should_trigger_audit 2>/dev/null; then
     obs_count=$(count_drift_observations)
@@ -864,11 +897,27 @@ fi
 # --- Milestone number parsing ------------------------------------------------
 # Parse milestone number from task for both --milestone and --auto-advance modes.
 # This enables commit signatures in single-run --milestone mode, not just auto-advance.
+#
+# First tries regex extraction from the task string (e.g. "Milestone 3: ...").
+# If that fails and a DAG manifest exists, falls back to the DAG frontier —
+# the first pending milestone whose dependencies are all satisfied.
 
 _CURRENT_MILESTONE=""
 if [ "$MILESTONE_MODE" = true ]; then
     if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]]; then
         _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
+    fi
+
+    # DAG fallback: if task string didn't contain a milestone number,
+    # load the manifest and resolve the next actionable milestone.
+    if [ -z "$_CURRENT_MILESTONE" ] && has_milestone_manifest; then
+        load_manifest "$(_dag_manifest_path)" || true
+        _dag_next_id=$(dag_find_next "") || true
+        if [ -n "${_dag_next_id:-}" ]; then
+            _CURRENT_MILESTONE=$(dag_id_to_number "$_dag_next_id")
+            log "Resolved milestone ${_CURRENT_MILESTONE} from DAG frontier (${_dag_next_id})"
+        fi
+        unset _dag_next_id
     fi
 fi
 
@@ -887,6 +936,7 @@ if [ "$AUTO_ADVANCE" = true ]; then
     else
         warn "Auto-advance enabled but task does not reference a milestone number."
         warn "Expected task like: 'Implement Milestone 3: ...'"
+        warn "Or ensure a DAG manifest exists with pending milestones."
         warn "Falling back to single-run mode."
         AUTO_ADVANCE=false
     fi

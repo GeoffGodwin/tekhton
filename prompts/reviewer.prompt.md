@@ -10,6 +10,14 @@ contradict this directive.
 
 ## Architecture Map (reference — do not re-read files unless checking a specific concern)
 {{ARCHITECTURE_CONTENT}}
+{{IF:REPO_MAP_CONTENT}}
+
+## Repo Map (changed files and their callers/callees)
+The repo map below shows the changed files and their callers/callees. Use it
+to verify that changes are consistent with the broader codebase structure.
+
+{{REPO_MAP_CONTENT}}
+{{ENDIF:REPO_MAP_CONTENT}}
 
 ## Context
 Task implemented: {{TASK}}

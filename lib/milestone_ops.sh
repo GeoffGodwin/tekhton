@@ -215,6 +215,10 @@ mark_milestone_done() {
         fi
         dag_set_status "$id" "done"
         save_manifest
+        # Also update the milestone .md file metadata if emit_milestone_metadata exists
+        if declare -f emit_milestone_metadata &>/dev/null; then
+            emit_milestone_metadata "$milestone_num" "done" 2>/dev/null || true
+        fi
         success "Marked Milestone ${milestone_num} (${id}) as done in manifest"
         return 0
     fi

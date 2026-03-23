@@ -11,6 +11,14 @@ contradict this directive.
 
 ## Architecture Documentation
 {{ARCHITECTURE_CONTENT}}
+{{IF:REPO_MAP_CONTENT}}
+
+## Repo Map (full codebase file signatures for drift analysis)
+The following repo map shows all file signatures in the codebase, ranked by
+connectivity. Use it alongside the architecture documentation for drift analysis.
+
+{{REPO_MAP_CONTENT}}
+{{ENDIF:REPO_MAP_CONTENT}}
 
 ## Architecture Decision Log (why things are the way they are)
 {{ARCHITECTURE_LOG_CONTENT}}

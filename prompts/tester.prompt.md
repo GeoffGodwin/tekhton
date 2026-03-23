@@ -10,6 +10,14 @@ contradict this directive.
 
 ## Architecture Map (use to find test directories and source files)
 {{ARCHITECTURE_CONTENT}}
+{{IF:REPO_MAP_CONTENT}}
+
+## Repo Map (changed files and their test counterparts)
+The repo map below shows the changed files and their test counterparts. Use it
+to identify which test files need updates and what interfaces to test against.
+
+{{REPO_MAP_CONTENT}}
+{{ENDIF:REPO_MAP_CONTENT}}
 
 {{IF:CONTINUATION_CONTEXT}}
 {{CONTINUATION_CONTEXT}}

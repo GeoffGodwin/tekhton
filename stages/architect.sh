@@ -42,6 +42,15 @@ run_stage_architect() {
         ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
     fi
 
+    # Full repo map for architect (broadest view for drift detection)
+    export REPO_MAP_CONTENT=""
+    if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+        log "[indexer] Generating full repo map for architect..."
+        if run_repo_map "architecture audit drift analysis"; then
+            log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
+        fi
+    fi
+
     DRIFT_OBSERVATION_COUNT=$(count_drift_observations)
 
     # Dependency constraints (P5 — optional, may not exist yet)

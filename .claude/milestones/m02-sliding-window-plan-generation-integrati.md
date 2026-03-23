@@ -1,8 +1,7 @@
 #### [DONE] Milestone 2: Sliding Window & Plan Generation Integration
 <!-- milestone-meta
 id: "2"
-estimated_complexity: "large"
-status: "in_progress"
+status: "done"
 -->
 
 Wire the DAG into the prompt engine with a character-budgeted sliding window that

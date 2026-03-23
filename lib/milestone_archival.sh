@@ -35,12 +35,15 @@ archive_completed_milestone() {
         return 1
     fi
 
-    if _milestone_in_archive "$num" "$archive_file"; then
+    # Resolve initiative name early so _milestone_in_archive can scope by it
+    local initiative=""
+    initiative=$(_get_initiative_name "$claude_md" "$num")
+
+    if _milestone_in_archive "$num" "$archive_file" "$initiative"; then
         return 1
     fi
 
     local block=""
-    local initiative="Milestone DAG"
 
     # DAG path: read milestone file directly
     if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
@@ -66,7 +69,6 @@ archive_completed_milestone() {
     else
         # Inline path: extract from CLAUDE.md
         block=$(_extract_milestone_block "$num" "$claude_md") || return 1
-        initiative=$(_get_initiative_name "$claude_md" "$num")
     fi
 
     if [[ ! -f "$archive_file" ]]; then

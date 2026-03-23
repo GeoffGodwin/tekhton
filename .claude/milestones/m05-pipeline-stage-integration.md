@@ -1,4 +1,9 @@
-#### Milestone 5: Pipeline Stage Integration
+#### [DONE] Milestone 5: Pipeline Stage Integration
+<!-- milestone-meta
+id: "5"
+status: "done"
+-->
+
 Wire the repo map into all pipeline stages, replacing or supplementing full
 ARCHITECTURE.md injection. Each stage receives a different slice of the map
 optimized for its role. Integrate with v2's context accounting for
