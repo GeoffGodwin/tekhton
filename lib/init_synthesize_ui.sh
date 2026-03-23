@@ -4,8 +4,8 @@ set -euo pipefail
 # init_synthesize_ui.sh — UI functions for project synthesis review
 #
 # Extracted from lib/init_synthesize_helpers.sh to keep both files under
-# the 300-line ceiling. Sourced by init_synthesize_helpers.sh and
-# stages/init_synthesize.sh — do not run directly.
+# the 300-line ceiling. Sourced by init_synthesize_helpers.sh (which is
+# transitively loaded by stages/init_synthesize.sh) — do not run directly.
 #
 # Expects: log(), warn(), success(), header() from common.sh
 #

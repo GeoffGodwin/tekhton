@@ -19,6 +19,15 @@ modify. Signatures show the public API — read full files before making changes
 
 {{REPO_MAP_CONTENT}}
 {{ENDIF:REPO_MAP_CONTENT}}
+{{IF:SERENA_ACTIVE}}
+
+## LSP Tools (Serena MCP)
+You have access to LSP tools via MCP. Use `find_symbol` to locate definitions,
+`find_referencing_symbols` to find all callers of a function, and
+`get_symbol_definition` to read a symbol's full definition with type info.
+Prefer these over grep for precise symbol lookup. The repo map gives you
+the overview; LSP tools give you precision.
+{{ENDIF:SERENA_ACTIVE}}
 {{IF:GLOSSARY_BLOCK}}
 {{GLOSSARY_BLOCK}}
 {{ENDIF:GLOSSARY_BLOCK}}

@@ -18,6 +18,14 @@ to verify that changes are consistent with the broader codebase structure.
 
 {{REPO_MAP_CONTENT}}
 {{ENDIF:REPO_MAP_CONTENT}}
+{{IF:SERENA_ACTIVE}}
+
+## LSP Tools (Serena MCP)
+You have access to LSP tools via MCP. Use `find_referencing_symbols` to verify
+that changes don't break callers. Use `find_symbol` to check function signatures
+and `get_symbol_definition` to read full definitions with type info. These are
+more precise than grep for cross-reference verification.
+{{ENDIF:SERENA_ACTIVE}}
 
 ## Context
 Task implemented: {{TASK}}

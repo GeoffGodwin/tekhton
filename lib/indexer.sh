@@ -43,6 +43,11 @@ _indexer_find_venv_python() {
     return 1
 }
 
+# --- Serena availability state ------------------------------------------------
+
+SERENA_INSTALL_AVAILABLE=false
+export SERENA_INSTALL_AVAILABLE
+
 # --- Availability check -------------------------------------------------------
 
 # Check if the indexer infrastructure is available and functional.
@@ -75,6 +80,17 @@ check_indexer_available() {
     fi
 
     INDEXER_AVAILABLE=true
+
+    # Also check Serena availability (informational — does not affect return)
+    if command -v check_serena_available &>/dev/null; then
+        if check_serena_available 2>/dev/null; then
+            SERENA_INSTALL_AVAILABLE=true
+            log "[indexer] Serena LSP: installed"
+        else
+            log "[indexer] Serena LSP: not installed (optional — run --setup-indexer --with-lsp)"
+        fi
+    fi
+
     return 0
 }
 

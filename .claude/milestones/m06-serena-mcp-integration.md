@@ -1,4 +1,9 @@
 #### Milestone 6: Serena MCP Integration
+<!-- milestone-meta
+id: "6"
+status: "done"
+-->
+
 Add optional LSP-powered symbol resolution via Serena as an MCP server. When
 enabled, agents gain `find_symbol`, `find_referencing_symbols`, and
 `get_symbol_definition` tools that provide live, accurate cross-reference data.

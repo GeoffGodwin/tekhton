@@ -83,3 +83,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-22
 - **Rationale**: Graceful degradation on platform failures is preferable to all-or-nothing.
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-17: Claude CLI MCP Server Management (Task: "Implement Milestone 6: Serena MCP Integration then continue onto more milestones.")
+- **Date**: 2026-03-22
+- **Rationale**: - ACP: Claude CLI MCP Server Management — **ACCEPT** — Delegating server process lifecycle to Claude CLI via `--mcp-config` is architecturally correct: avoids orphan process risk, is compatible wi
+- **Source**: Accepted ACP from pipeline run

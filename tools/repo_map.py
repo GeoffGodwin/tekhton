@@ -28,7 +28,7 @@ except ImportError:
     pathspec = None  # type: ignore[assignment]
 
 from tag_cache import TagCache
-from tree_sitter_languages import get_parser, supported_extensions, ext_to_language_name
+from tree_sitter_languages import get_parser, supported_extensions, ext_to_language_name, extensions_for_languages
 
 # Characters per token estimate (conservative, matches v2 CHARS_PER_TOKEN)
 CHARS_PER_TOKEN = 4
@@ -110,12 +110,8 @@ def _filter_by_extension(
 
     # If specific languages requested, filter to those extensions only
     if languages and languages != "auto":
-        from tree_sitter_languages import _EXT_TO_LANG
-
         requested = {l.strip() for l in languages.split(",")}
-        exts = {
-            ext for ext, (_, lang) in _EXT_TO_LANG.items() if lang in requested
-        }
+        exts = extensions_for_languages(requested)
 
     result = []
     for f in files:
@@ -256,9 +252,9 @@ def _extract_signature(node: Any, source: bytes, ext: str) -> str:
             return _clean_signature(sig)
         if ch == ":" and ext == ".py" and i > 0:
             # Python: def foo(x): or class Foo:
-            # Check if this colon follows a closing paren or identifier
+            # Accept colon only after closing paren or identifier char (not after comma/operator)
             before = text[:i].rstrip()
-            if before.endswith(")") or (not before.endswith(",")):
+            if before.endswith(")") or (before and before[-1].isalnum()):
                 sig = text[:i].strip()
                 return _clean_signature(sig)
     # Fallback: first line

@@ -192,7 +192,9 @@ assert "migration fails gracefully with missing file" "$result"
 # =============================================================================
 echo "--- Test: _insert_milestone_pointer (plan_generate post-processing) ---"
 
-# Source plan_generate for the helper
+# _insert_milestone_pointer is already available from milestone_dag_migrate.sh
+# (sourced at top of file), but plan_generate.sh is sourced here for
+# completeness as it also provides the helper in production code paths.
 source "${TEKHTON_HOME}/stages/plan_generate.sh"
 
 # Create a fresh CLAUDE.md with milestones

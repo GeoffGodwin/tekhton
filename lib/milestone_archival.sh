@@ -6,6 +6,7 @@ set -euo pipefail
 # Sourced by tekhton.sh — do not run directly.
 # Expects: log(), warn(), success() from common.sh
 # Expects: is_milestone_done(), get_milestone_title() from milestones.sh
+#          (or milestone_dag_helpers.sh when DAG mode is active)
 # Expects: MILESTONE_ARCHIVE_FILE from config.sh
 #
 # Helpers extracted to milestone_archival_helpers.sh:

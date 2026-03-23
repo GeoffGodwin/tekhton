@@ -1,0 +1,229 @@
+#### Milestone 17: Pipeline Diagnostics & Recovery Guidance
+Add a `tekhton --diagnose` command that reads the latest pipeline state, identifies
+what went wrong, and provides actionable recovery suggestions. Also generates a
+structured DIAGNOSIS.md report that both the CLI and Watchtower can consume.
+
+This milestone has immediate value — it solves the "what do I do now?" problem that
+every Tekhton user hits when a pipeline run fails. No agent calls needed — this is
+pure shell logic reading existing state files and applying diagnostic rules.
+
+The diagnose command is self-updating: as new stages land (security M09, intake M10,
+etc.), their failure patterns are added to the diagnostic ruleset. The core
+infrastructure built here supports all future stages.
+
+Files to create:
+- `lib/diagnose.sh` — Diagnostic engine:
+  **State reader** (`_read_diagnostic_context()`):
+  - Read pipeline state from PIPELINE_STATE.md (current stage, attempt count)
+  - Read latest RUN_SUMMARY.json (outcome, per-stage results, error messages)
+  - Read MANIFEST.cfg (milestone status, which is active/stuck)
+  - Read error files: BUILD_ERRORS.md, SECURITY_REPORT.md (when M09 exists),
+    INTAKE_REPORT.md (when M10 exists), HUMAN_ACTION_REQUIRED.md
+  - Read agent log tails (last 20 lines of each stage's agent output)
+  - Compile into a diagnostic context object (associative arrays).
+
+  **Failure classifier** (`classify_failure()`):
+  Applies rules in priority order, returns the FIRST matching diagnosis:
+
+  1. **BUILD_FAILURE** — BUILD_ERRORS.md exists and is non-empty
+     Suggestions:
+     - "Build failed. Errors in BUILD_ERRORS.md."
+     - "Fix the build errors manually, then run: tekhton --start-at coder"
+     - "Or let Tekhton retry: tekhton --milestone (it will attempt build fix)"
+     If build_fix already attempted and failed:
+     - "Automatic build fix was attempted and failed."
+     - "The errors may require manual intervention. See BUILD_ERRORS.md."
+
+  2. **REVIEW_REJECTION_LOOP** — Review stage completed 3+ cycles with no approval
+     Suggestions:
+     - "Reviewer rejected the code N times. The coder may be unable to address
+       the feedback within the turn budget."
+     - "Options: (1) Increase REVIEW_MAX_REWORK_CYCLES in pipeline.conf,
+       (2) Read REVIEWER_REPORT.md and fix the issues manually,
+       (3) Run: tekhton --start-at review to retry review only"
+
+  3. **SECURITY_HALT** — Security stage returned HALT verdict
+     (Available when M09 exists — detect by checking if stages/security.sh sourced)
+     Suggestions:
+     - "Security scan found CRITICAL unfixable vulnerabilities."
+     - "Your SECURITY_UNFIXABLE_POLICY is set to 'halt'."
+     - "Options: (1) Add waivers to SECURITY_WAIVER_FILE for known-accepted risks,
+       (2) Fix the vulnerabilities manually and re-run,
+       (3) Change SECURITY_UNFIXABLE_POLICY to 'escalate' to continue with warnings"
+
+  4. **INTAKE_NEEDS_CLARITY** — Intake paused for human input
+     (Available when M10 exists)
+     Suggestions:
+     - "The PM agent needs clarification on this milestone."
+     - "Questions are in CLARIFICATIONS.md. Answer them and re-run."
+     - "Or lower INTAKE_CLARITY_THRESHOLD if the gate is too aggressive."
+
+  5. **QUOTA_EXHAUSTED** — Pipeline paused due to rate limiting
+     (Available when M16 exists)
+     Suggestions:
+     - "Pipeline paused waiting for quota refresh."
+     - "It will resume automatically. No action needed."
+     - "If you need it sooner, wait for your 5-hour window to refresh."
+
+  6. **STUCK_LOOP** — MAX_PIPELINE_ATTEMPTS reached with no progress
+     Suggestions:
+     - "Pipeline completed N attempts with no forward progress."
+     - "This usually means the task is too complex for automatic resolution."
+     - "Options: (1) Simplify the milestone and re-run,
+       (2) Break it into smaller milestones: tekhton --split-milestone N,
+       (3) Check the scout report for scope issues"
+
+  7. **TURN_EXHAUSTION** — Agent hit max turns without completing
+     Suggestions:
+     - "The [stage] agent exhausted its turn budget ([N] turns)."
+     - "Options: (1) Increase [STAGE]_MAX_TURNS in pipeline.conf,
+       (2) Simplify the task scope,
+       (3) Check if continuation is enabled (CONTINUATION_ENABLED=true)"
+
+  8. **MILESTONE_SPLIT_DEPTH** — Max split depth reached
+     Suggestions:
+     - "Milestone was split N times and still couldn't complete."
+     - "The task may be fundamentally too complex for automated splitting."
+     - "Options: (1) Manually break it into smaller milestones,
+       (2) Increase MILESTONE_MAX_SPLIT_DEPTH (currently N)"
+
+  9. **TRANSIENT_ERROR** — Agent calls failed with server errors
+     Suggestions:
+     - "Claude API returned transient errors (server error, timeout)."
+     - "This is usually temporary. Re-run: tekhton --resume"
+     - "If persistent, check Claude API status: status.anthropic.com"
+
+  10. **UNKNOWN** — No specific pattern matched
+      Suggestions:
+      - "No specific failure pattern identified."
+      - "Check the latest agent output in .claude/runs/latest/"
+      - "Re-run with DASHBOARD_VERBOSITY=verbose for more detail"
+
+  **Report generator** (`generate_diagnosis_report()`):
+  Produces DIAGNOSIS.md with:
+  - Failure classification and confidence
+  - Current pipeline state summary
+  - Specific suggestions (numbered, actionable)
+  - Relevant file paths to inspect
+  - Exact commands to run for each recovery option
+  - History: if this is a recurring failure, note that ("This is the 3rd
+    build failure in a row — consider manual intervention")
+
+  **Quick suggestions** (`print_diagnosis_summary()`):
+  Terminal-friendly colored output:
+  ```
+  ╔══════════════════════════════════════════════════╗
+  ║  DIAGNOSIS: BUILD_FAILURE                        ║
+  ╠══════════════════════════════════════════════════╣
+  ║  Build failed after coder stage.                 ║
+  ║  Errors: 3 compilation errors in src/api/        ║
+  ║                                                  ║
+  ║  Suggestions:                                    ║
+  ║  1. Fix manually → tekhton --start-at coder      ║
+  ║  2. Let Tekhton retry → tekhton --milestone      ║
+  ║  3. See details → cat BUILD_ERRORS.md            ║
+  ║                                                  ║
+  ║  Full report: DIAGNOSIS.md                       ║
+  ╚══════════════════════════════════════════════════╝
+  ```
+
+- `lib/diagnose_rules.sh` — Diagnostic rule definitions:
+  Each rule is a function: `_rule_build_failure()`, `_rule_review_loop()`, etc.
+  Returns 0 if matched (with suggestions in a variable), 1 if not.
+  Rules are registered in a priority-ordered array so new rules can be inserted
+  by future milestones without modifying existing code:
+  ```bash
+  DIAGNOSE_RULES=(
+      "_rule_build_failure"
+      "_rule_review_loop"
+      "_rule_security_halt"     # no-op until M09 exists
+      "_rule_intake_clarity"    # no-op until M10 exists
+      "_rule_quota_exhausted"   # no-op until M16 exists
+      "_rule_stuck_loop"
+      "_rule_turn_exhaustion"
+      "_rule_split_depth"
+      "_rule_transient_error"
+      "_rule_unknown"
+  )
+  ```
+  Rules that reference future stages (security, intake, quota) check for the
+  presence of the relevant state files before matching. If the file doesn't
+  exist (stage not implemented yet), the rule silently returns 1 (no match).
+  This makes --diagnose forward-compatible without code changes when new
+  stages are added.
+
+Files to modify:
+- `tekhton.sh` — Add `--diagnose` flag handling. When set:
+  1. Source lib/diagnose.sh and lib/diagnose_rules.sh
+  2. Call `_read_diagnostic_context()`
+  3. Call `classify_failure()`
+  4. Call `generate_diagnosis_report()` → DIAGNOSIS.md
+  5. Call `print_diagnosis_summary()` → terminal output
+  6. Exit (do not run pipeline)
+  Also: at the end of ANY failed pipeline run, automatically print a one-liner:
+  "Run 'tekhton --diagnose' for recovery suggestions."
+
+- `lib/finalize.sh` — After a failed run, append the diagnose hint to the
+  completion banner. Also write a LAST_FAILURE_CONTEXT.json with the failure
+  classification and stage for --diagnose to consume quickly without re-parsing
+  all state files.
+
+- `lib/finalize_display.sh` — Add diagnose hint to failure banner output.
+
+- `lib/dashboard.sh` — Add `emit_dashboard_diagnosis()`. Reads DIAGNOSIS.md
+  and generates `data/diagnosis.js` with `window.TK_DIAGNOSIS = { ... }`.
+  Watchtower Live Run tab shows diagnosis card when a failure is detected.
+
+- `lib/state.sh` — Add LAST_FAILURE_CONTEXT path to session state management.
+
+Acceptance criteria:
+- `tekhton --diagnose` reads pipeline state and prints recovery suggestions
+- DIAGNOSIS.md generated with failure classification, suggestions, and commands
+- All 10 diagnostic rules correctly identify their failure patterns
+- Rules for future stages (security, intake, quota) are no-ops when those
+  stages don't exist yet — no errors, no false matches
+- Failed pipeline runs print "Run 'tekhton --diagnose' for recovery suggestions"
+- Terminal output is colored and formatted for readability
+- Each suggestion includes an exact command the user can copy-paste
+- Recurring failure detection: if the same failure type occurred in the last
+  3 runs, the diagnosis notes this pattern
+- LAST_FAILURE_CONTEXT.json written on failure for fast --diagnose startup
+- --diagnose works even if no pipeline has ever run (prints "No runs found")
+- --diagnose works on resumed/interrupted pipelines (reads partial state)
+- Dashboard data emitted when Watchtower is enabled
+- All existing tests pass
+- `bash -n lib/diagnose.sh lib/diagnose_rules.sh` passes
+- `shellcheck lib/diagnose.sh lib/diagnose_rules.sh` passes
+- New test file `tests/test_diagnose.sh` covers: each rule against fixture
+  state, rule priority ordering, recurring failure detection, forward-compat
+  with missing stage files, terminal output formatting
+
+Watch For:
+- Rule priority matters. BUILD_FAILURE must be checked before STUCK_LOOP
+  because a stuck loop caused by build failures should give build-specific
+  advice, not generic stuck-loop advice.
+- Agent log tails (last 20 lines) may contain useful error context but could
+  also contain noise. Only include them in the full DIAGNOSIS.md, not in the
+  terminal summary.
+- LAST_FAILURE_CONTEXT.json must be written atomically (tmpfile + mv) and
+  must survive pipeline crashes (write it in a trap handler or early in the
+  finalize sequence).
+- The forward-compat pattern (check for file existence before matching) means
+  --diagnose never needs updating when new stages land. The new stage just
+  needs to write its state files in the expected locations.
+- Don't over-diagnose. If the pipeline succeeded, --diagnose should say
+  "Last run completed successfully. No issues found." Not every run needs
+  recovery suggestions.
+- Recurring failure detection needs a lightweight history scan. Read the last
+  3 LAST_FAILURE_CONTEXT files (timestamped in .claude/runs/), don't scan
+  all historical RUN_SUMMARY.json files.
+
+Seeds Forward:
+- M09 (Security) adds security-specific diagnostic rules automatically
+  (SECURITY_HALT, SECURITY_REWORK_EXHAUSTED)
+- M10 (PM Agent) adds intake-specific rules (INTAKE_NEEDS_CLARITY)
+- M16 (Autonomous Runtime) adds quota-specific rules (QUOTA_EXHAUSTED)
+- Watchtower Live Run tab renders DIAGNOSIS.md content on failure
+- V4 interactive Watchtower could offer "click to run" recovery commands
+- The rule registry pattern enables plugins: users could add custom diagnostic
+  rules via a hook in pipeline.conf

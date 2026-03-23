@@ -30,17 +30,28 @@ detect_repo_languages() {
     while IFS= read -r -d '' file; do
         ext="${file##*.}"
         case "$ext" in
-            py)   [[ -z "${seen[python]:-}" ]]     && languages+=("python")     && seen[python]=1 ;;
-            js)   [[ -z "${seen[javascript]:-}" ]]  && languages+=("javascript") && seen[javascript]=1 ;;
-            ts)   [[ -z "${seen[typescript]:-}" ]]  && languages+=("typescript") && seen[typescript]=1 ;;
-            tsx)  [[ -z "${seen[typescript]:-}" ]]   && languages+=("typescript") && seen[typescript]=1 ;;
-            go)   [[ -z "${seen[go]:-}" ]]          && languages+=("go")         && seen[go]=1 ;;
-            rs)   [[ -z "${seen[rust]:-}" ]]        && languages+=("rust")       && seen[rust]=1 ;;
-            java) [[ -z "${seen[java]:-}" ]]        && languages+=("java")       && seen[java]=1 ;;
-            c)    [[ -z "${seen[c]:-}" ]]           && languages+=("c")          && seen[c]=1 ;;
-            cpp|cc|cxx) [[ -z "${seen[cpp]:-}" ]]   && languages+=("cpp")        && seen[cpp]=1 ;;
-            rb)   [[ -z "${seen[ruby]:-}" ]]        && languages+=("ruby")       && seen[ruby]=1 ;;
-            sh|bash) [[ -z "${seen[bash]:-}" ]]     && languages+=("bash")       && seen[bash]=1 ;;
+            py)
+                if [[ -z "${seen[python]:-}" ]]; then languages+=("python"); seen[python]=1; fi ;;
+            js)
+                if [[ -z "${seen[javascript]:-}" ]]; then languages+=("javascript"); seen[javascript]=1; fi ;;
+            ts)
+                if [[ -z "${seen[typescript]:-}" ]]; then languages+=("typescript"); seen[typescript]=1; fi ;;
+            tsx)
+                if [[ -z "${seen[typescript]:-}" ]]; then languages+=("typescript"); seen[typescript]=1; fi ;;
+            go)
+                if [[ -z "${seen[go]:-}" ]]; then languages+=("go"); seen[go]=1; fi ;;
+            rs)
+                if [[ -z "${seen[rust]:-}" ]]; then languages+=("rust"); seen[rust]=1; fi ;;
+            java)
+                if [[ -z "${seen[java]:-}" ]]; then languages+=("java"); seen[java]=1; fi ;;
+            c)
+                if [[ -z "${seen[c]:-}" ]]; then languages+=("c"); seen[c]=1; fi ;;
+            cpp|cc|cxx)
+                if [[ -z "${seen[cpp]:-}" ]]; then languages+=("cpp"); seen[cpp]=1; fi ;;
+            rb)
+                if [[ -z "${seen[ruby]:-}" ]]; then languages+=("ruby"); seen[ruby]=1; fi ;;
+            sh|bash)
+                if [[ -z "${seen[bash]:-}" ]]; then languages+=("bash"); seen[bash]=1; fi ;;
         esac
     done < <(find "$project_dir" -maxdepth 1 -type f -print0 2>/dev/null)
 

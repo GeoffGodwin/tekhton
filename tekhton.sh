@@ -32,7 +32,8 @@
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
 #   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
-#   --setup-indexer       Set up Python virtualenv for tree-sitter indexer
+#   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
+#   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
 #   --version, -v         Print version and exit
 #
 # Requirements:
@@ -93,6 +94,11 @@ _tekhton_cleanup() {
             sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md 2>/dev/null || true
             echo -e "\033[0;31m[✗] Reset in-progress [~] human notes back to [ ].\033[0m" >&2
         fi
+    fi
+
+    # --- MCP server cleanup: stop Serena if running ----------------------------
+    if command -v stop_mcp_server &>/dev/null; then
+        stop_mcp_server 2>/dev/null || true
     fi
 
     # --- Session cleanup: remove temp directory and lock file -----------------
@@ -166,6 +172,7 @@ export HUMAN_NOTES_TAG=""
 COMPLETE_MODE=false
 MIGRATE_DAG=false
 SETUP_INDEXER=false
+WITH_LSP=false
 CURRENT_NOTE_LINE=""
 SKIP_AUDIT=false
 FORCE_AUDIT=false
@@ -333,6 +340,7 @@ source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+source "${TEKHTON_HOME}/lib/mcp.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/detect.sh"
@@ -399,6 +407,7 @@ usage() {
     echo "  --force-audit             Force architect audit regardless of threshold"
     echo "  --migrate-dag             Convert inline CLAUDE.md milestones to DAG file format"
     echo "  --setup-indexer           Set up Python virtualenv for tree-sitter indexer"
+    echo "  --with-lsp                Also install Serena LSP server (use with --setup-indexer)"
     echo ""
     echo "Examples:"
     echo "  tekhton --init                           # First-time setup"
@@ -607,6 +616,7 @@ EOF
         --force-audit) FORCE_AUDIT=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
         --setup-indexer) SETUP_INDEXER=true; shift ;;
+        --with-lsp) WITH_LSP=true; shift ;;
         --) shift; break ;;
         -*) error "Unknown flag: $1"; usage 1 ;;
         *) break ;;
@@ -655,6 +665,18 @@ if [ "$SETUP_INDEXER" = true ]; then
         exit 1
     fi
     bash "$local_setup_script" "$PROJECT_DIR" "${REPO_MAP_VENV_DIR:-.claude/indexer-venv}"
+
+    # If --with-lsp was also passed, install Serena after the indexer
+    if [ "$WITH_LSP" = true ]; then
+        local_serena_script="${TEKHTON_HOME}/tools/setup_serena.sh"
+        if [ ! -f "$local_serena_script" ]; then
+            error "setup_serena.sh not found at ${local_serena_script}"
+            _TEKHTON_CLEAN_EXIT=true
+            exit 1
+        fi
+        bash "$local_serena_script" "$PROJECT_DIR" "${SERENA_PATH:-.claude/serena}"
+    fi
+
     _TEKHTON_CLEAN_EXIT=true
     exit $?
 fi
@@ -839,6 +861,15 @@ if [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
     else
         warn "REPO_MAP_ENABLED=true but indexer not available — falling back to 2.0 behavior."
         warn "Run 'tekhton --setup-indexer' to install dependencies."
+    fi
+fi
+
+# Pre-flight: Serena MCP server startup (when enabled)
+if [[ "${SERENA_ENABLED:-false}" == "true" ]]; then
+    if start_mcp_server; then
+        log "Serena: MCP integration active"
+    else
+        warn "SERENA_ENABLED=true but Serena not available — continuing without LSP tools."
     fi
 fi
 

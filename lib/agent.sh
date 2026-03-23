@@ -126,6 +126,15 @@ run_agent() {
         fi
     fi
 
+    # Add MCP config flag when Serena is available
+    if [[ "${SERENA_MCP_AVAILABLE:-false}" == "true" ]]; then
+        local _mcp_config
+        _mcp_config=$(get_mcp_config_path)
+        if [[ -n "$_mcp_config" ]] && [ -f "$_mcp_config" ]; then
+            _perm_flags+=(--mcp-config "$_mcp_config")
+        fi
+    fi
+
     _IM_PERM_FLAGS=("${_perm_flags[@]}")  # Pass to monitor
 
     # --- CLI activity indicator (spinner) — shows which agent is working --------

@@ -61,6 +61,8 @@ validate_manifest() {
     done
 
     # 3. Cycle detection via DFS
+    # _visited and _in_stack are declared here and accessed by _dfs_cycle_check
+    # via bash dynamic scoping (nested functions inherit the caller's locals).
     declare -A _visited=()
     declare -A _in_stack=()
 
