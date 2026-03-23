@@ -142,6 +142,22 @@ load_config() {
     # shellcheck source=lib/config_defaults.sh
     source "${TEKHTON_HOME}/lib/config_defaults.sh"
 
+    # --- Validate security agent config ---
+    if [[ -n "${SECURITY_UNFIXABLE_POLICY:-}" ]]; then
+        case "$SECURITY_UNFIXABLE_POLICY" in
+            escalate|halt|waiver) ;;
+            *) warn "[config] SECURITY_UNFIXABLE_POLICY must be escalate|halt|waiver (got: ${SECURITY_UNFIXABLE_POLICY}). Using 'escalate'."
+               SECURITY_UNFIXABLE_POLICY="escalate" ;;
+        esac
+    fi
+    if [[ -n "${SECURITY_BLOCK_SEVERITY:-}" ]]; then
+        case "$SECURITY_BLOCK_SEVERITY" in
+            CRITICAL|HIGH|MEDIUM|LOW) ;;
+            *) warn "[config] SECURITY_BLOCK_SEVERITY must be CRITICAL|HIGH|MEDIUM|LOW (got: ${SECURITY_BLOCK_SEVERITY}). Using 'HIGH'."
+               SECURITY_BLOCK_SEVERITY="HIGH" ;;
+        esac
+    fi
+
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     if [[ "$PIPELINE_STATE_FILE" != /* ]]; then
         PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"

@@ -1,4 +1,9 @@
 #### Milestone 8: Indexer Tests & Documentation
+<!-- milestone-meta
+id: "8"
+status: "done"
+-->
+
 Comprehensive test coverage for all indexing functionality: shell orchestration,
 Python tools, pipeline integration, fallback behavior, and Serena lifecycle.
 Update project documentation and repository layout.

@@ -370,6 +370,7 @@ source "${TEKHTON_HOME}/lib/orchestrate.sh"
 # Stage implementations
 source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
+source "${TEKHTON_HOME}/stages/security.sh"
 source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
 source "${TEKHTON_HOME}/stages/cleanup.sh"
@@ -523,8 +524,8 @@ while [[ $# -gt 0 ]]; do
         --start-at)
             shift
             case "$1" in
-                coder|review|tester|test) START_AT="$1" ;;
-                *) error "Invalid --start-at value: '$1'. Must be coder, review, tester, or test."; usage 1 ;;
+                coder|security|review|tester|test) START_AT="$1" ;;
+                *) error "Invalid --start-at value: '$1'. Must be coder, security, review, tester, or test."; usage 1 ;;
             esac
             shift
             ;;
@@ -623,6 +624,7 @@ EOF
         --complete) COMPLETE_MODE=true; shift ;;
         --no-commit) AUTO_COMMIT=false; _AUTO_COMMIT_EXPLICIT=true; shift ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
+        --skip-security) SKIP_SECURITY=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
         --setup-indexer) SETUP_INDEXER=true; shift ;;
@@ -806,6 +808,12 @@ if [ ! -f "$PROJECT_RULES_FILE" ]; then
 fi
 
 # Validate required files exist when skipping stages
+if [ "$START_AT" = "security" ] && [ ! -f "CODER_SUMMARY.md" ]; then
+    error "--start-at security requires CODER_SUMMARY.md to exist in the repo root."
+    error "Run the full pipeline or ensure the coder has already produced this file."
+    exit 1
+fi
+
 if [ "$START_AT" = "review" ] && [ ! -f "CODER_SUMMARY.md" ]; then
     error "--start-at review requires CODER_SUMMARY.md to exist in the repo root."
     error "Run the full pipeline or ensure the coder has already produced this file."
@@ -1088,7 +1096,7 @@ _run_pipeline_stages() {
     if [ "$START_AT" = "coder" ]; then
         run_stage_coder
     else
-        header "Stage 1 / 3 — Coder (skipped)"
+        header "Stage 1 / 4 — Coder (skipped)"
         log "Using existing CODER_SUMMARY.md"
         if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
             warn "HUMAN_NOTES.md has unchecked items but coder stage was skipped."
@@ -1096,18 +1104,25 @@ _run_pipeline_stages() {
         fi
     fi
 
-    # Stage 2: Review loop
-    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ]; then
+    # Stage 2: Security
+    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ]; then
+        run_stage_security
+    else
+        header "Stage 2 / 4 — Security (skipped)"
+    fi
+
+    # Stage 3: Review loop
+    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ] || [ "$START_AT" = "review" ]; then
         run_stage_review
     else
-        header "Stage 2 / 3 — Reviewer (skipped)"
+        header "Stage 3 / 4 — Reviewer (skipped)"
         log "Using existing REVIEWER_REPORT.md"
         VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         log "Existing verdict: ${VERDICT}"
     fi
 
-    # Stage 3: Tester
-    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ] || [ "$START_AT" = "test" ] || [ "$START_AT" = "tester" ]; then
+    # Stage 4: Tester
+    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ] || [ "$START_AT" = "review" ] || [ "$START_AT" = "test" ] || [ "$START_AT" = "tester" ]; then
         run_stage_tester
     fi
 

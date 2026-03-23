@@ -55,8 +55,51 @@ done
 
 echo
 echo "────────────────────────────────────────"
-echo -e "  Passed: ${GREEN}${PASS}${NC}  Failed: ${RED}${FAIL}${NC}"
+echo -e "  Shell:  Passed: ${GREEN}${PASS}${NC}  Failed: ${RED}${FAIL}${NC}"
 echo "────────────────────────────────────────"
+
+# --- Python tests (conditional) -----------------------------------------------
+PYTHON_PASS=0
+PYTHON_FAIL=0
+PYTHON_TESTS_DIR="${TEKHTON_HOME}/tools/tests"
+
+if [ -d "$PYTHON_TESTS_DIR" ]; then
+    if command -v python3 &>/dev/null; then
+        echo
+        echo "════════════════════════════════════════"
+        echo "  Python Tool Tests"
+        echo "════════════════════════════════════════"
+        echo
+
+        if python3 -m pytest "$PYTHON_TESTS_DIR" --tb=short -q 2>&1; then
+            echo -e "  ${GREEN}Python tests passed${NC}"
+            PYTHON_PASS=1
+        else
+            echo -e "  ${RED}Python tests failed${NC}"
+            PYTHON_FAIL=1
+            FAIL=$((FAIL + 1))
+        fi
+    else
+        echo
+        echo -e "  ${YELLOW}SKIP${NC} Python tests (python3 not found)"
+    fi
+else
+    echo
+    echo -e "  ${YELLOW}SKIP${NC} Python tests (tools/tests/ not found)"
+fi
+
+echo
+echo "════════════════════════════════════════"
+echo "  Final Summary"
+echo "════════════════════════════════════════"
+echo -e "  Shell:  Passed: ${GREEN}${PASS}${NC}  Failed: ${RED}${FAIL}${NC}"
+if [ "$PYTHON_PASS" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
+    if [ "$PYTHON_FAIL" -gt 0 ]; then
+        echo -e "  Python: ${RED}FAILED${NC}"
+    else
+        echo -e "  Python: ${GREEN}PASSED${NC}"
+    fi
+fi
 
 if [ "$FAIL" -gt 0 ]; then
     exit 1

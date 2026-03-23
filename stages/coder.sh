@@ -88,7 +88,7 @@ RECON_EOF
 # Exits the pipeline (exit 1) on unrecoverable failure, saving state for resume.
 # On success, CODER_SUMMARY.md exists and the build passes.
 run_stage_coder() {
-    header "Stage 1 / 3 — Coder"
+    header "Stage 1 / 4 — Coder"
 
     # --- Scout sub-agent (optional) ------------------------------------------
     BUG_SCOUT_CONTEXT=""
