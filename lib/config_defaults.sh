@@ -188,7 +188,7 @@ set -euo pipefail
 
 # --- Intake agent defaults (PM pre-stage gate) ---
 : "${INTAKE_AGENT_ENABLED:=true}"
-: "${CLAUDE_INTAKE_MODEL:=opus}"
+: "${CLAUDE_INTAKE_MODEL:=${CLAUDE_STANDARD_MODEL:-sonnet}}"  # Sonnet for eval; Opus reserved for NEEDS_CLARITY
 : "${INTAKE_MAX_TURNS:=10}"
 : "${INTAKE_CLARITY_THRESHOLD:=40}"
 : "${INTAKE_TWEAK_THRESHOLD:=70}"

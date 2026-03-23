@@ -159,6 +159,12 @@ Migration impact:
 ## Important Rules
 1. **Default to PASS.** If you're unsure between PASS and TWEAKED, choose PASS.
 2. **Be concrete.** Don't flag vague concerns — flag specific gaps with specific fixes.
-3. **Read CLAUDE.md** for project context before evaluating (use the Read tool).
-4. **Check the project** for existing patterns when evaluating feasibility.
-5. Do NOT write code. Do NOT modify source files. Only produce INTAKE_REPORT.md.
+3. **Do NOT read source files.** You have all the context you need in this prompt
+   (milestone content, project index, history). Do NOT use the Read tool to open
+   source files, explore directories, or "check feasibility" by reading code.
+   Your job is to evaluate the TASK DESCRIPTION, not the codebase.
+4. **Do NOT write code.** Do NOT modify source files. Only produce INTAKE_REPORT.md.
+5. **Be fast.** This evaluation should take 3-5 tool calls: read the milestone
+   content provided above, evaluate against the rubric, write INTAKE_REPORT.md.
+   If you find yourself opening files or exploring the project, STOP — you are
+   over-scoping your role.

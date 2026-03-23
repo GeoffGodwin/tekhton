@@ -59,10 +59,12 @@ run_stage_intake() {
     # Prepare template variables
     export INTAKE_MILESTONE_CONTENT="$content"
 
-    # Load PROJECT_INDEX.md if available
+    # Load PROJECT_INDEX.md summary if available (capped to 8KB — intake only needs
+    # the overview, not full file listings). This prevents the intake agent from
+    # processing 500KB+ of project index for a simple clarity evaluation.
     export INTAKE_PROJECT_INDEX=""
     if [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
-        INTAKE_PROJECT_INDEX=$(_safe_read_file "${PROJECT_DIR}/PROJECT_INDEX.md" "PROJECT_INDEX" 524288)
+        INTAKE_PROJECT_INDEX=$(_safe_read_file "${PROJECT_DIR}/PROJECT_INDEX.md" "PROJECT_INDEX" 8192)
     fi
 
     # Load intake history from causal log (when available)
@@ -158,7 +160,7 @@ run_intake_create() {
     export INTAKE_CREATE_MODE="true"
 
     if [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
-        INTAKE_PROJECT_INDEX=$(_safe_read_file "${PROJECT_DIR}/PROJECT_INDEX.md" "PROJECT_INDEX" 524288)
+        INTAKE_PROJECT_INDEX=$(_safe_read_file "${PROJECT_DIR}/PROJECT_INDEX.md" "PROJECT_INDEX" 8192)
     fi
 
     local role_file="${PROJECT_DIR}/${INTAKE_ROLE_FILE}"
@@ -167,6 +169,7 @@ run_intake_create() {
     fi
 
     # Render and run the intake agent in create mode
+    # Create mode uses Opus (needs to generate quality milestone content)
     local intake_prompt
     intake_prompt=$(render_prompt "intake_scan")
 

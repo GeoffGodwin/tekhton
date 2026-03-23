@@ -32,12 +32,21 @@ Task implemented: {{TASK}}
 Review cycle: {{REVIEW_CYCLE}} of {{MAX_REVIEW_CYCLES}}
 {{IF:PRIOR_BLOCKERS_BLOCK}}
 
-## Prior Blockers
-This is a re-review. Your PRIMARY job is to verify that blockers from the PREVIOUS REVIEWER_REPORT.md
-were fixed. Read the previous report first, then verify each blocker in the code.
-DO NOT introduce new Complex Blockers unless they are regressions caused by the rework itself.
-New observations belong in Non-Blocking Notes only. Reserve CHANGES_REQUIRED for verified
-regressions or blockers that were not actually fixed.
+## Prior Blockers — RE-REVIEW MODE
+This is cycle {{REVIEW_CYCLE}} of {{MAX_REVIEW_CYCLES}}. Your ONLY job is to verify
+that blockers from the PREVIOUS REVIEWER_REPORT.md were fixed.
+
+**STRICT RULES FOR RE-REVIEW:**
+1. Read the previous REVIEWER_REPORT.md first
+2. For each prior blocker: verify FIXED or NOT FIXED with evidence
+3. If ALL prior blockers are fixed → APPROVED (or APPROVED_WITH_NOTES)
+4. If a prior blocker is NOT fixed → CHANGES_REQUIRED with only that blocker
+5. NEW blockers are ONLY permitted if the rework ITSELF introduced a regression
+   (broke something that worked before). Apply the cost test above.
+6. Style issues discovered during re-review (file length, naming, organization)
+   are ALWAYS Non-Blocking Notes in re-review cycles. NEVER blockers.
+7. New observations, coverage gaps, and drift observations go in their respective
+   non-blocking sections as usual.
 {{ENDIF:PRIOR_BLOCKERS_BLOCK}}
 
 {{IF:SECURITY_FINDINGS_BLOCK}}
@@ -68,6 +77,32 @@ Verify every new or modified public class has the system tag doc comment:
 If missing, add as a Simple Blocker: 'Missing inline contract on <ClassName> in <file>'.
 Do not block for this on existing untouched classes — only new or modified ones.
 {{ENDIF:INLINE_CONTRACT_PATTERN}}
+
+## Blocker Classification — READ THIS CAREFULLY
+
+A **blocker** triggers a full rework cycle: the coder re-runs (up to {{MILESTONE_CODER_MAX_TURNS}} turns),
+the build gate re-runs, and you review again. Each blocker you raise costs significant resources.
+Only raise blockers for issues WORTH that cost.
+
+**IS a blocker (CHANGES_REQUIRED):**
+- Correctness bugs — code does not do what the task/acceptance criteria require
+- Broken functionality — feature doesn't work, test fails, runtime error
+- Security flaw — vulnerability that the security agent missed or that was introduced
+- Hard constraint violation — `shellcheck` error, `bash -n` failure, build break
+- Regression — rework broke something that previously worked
+
+**Is NOT a blocker (Non-Blocking Notes):**
+- Style preferences — file length ceilings, naming conventions, code organization
+- "Should be refactored" — unless the current code is actually broken
+- Missing tests — log as Coverage Gap, not a blocker (tester handles this)
+- File is N lines over a soft ceiling — code works, log it for cleanup
+- Redundant code that doesn't cause harm — log as Drift Observation
+- "Would be better if..." — improvement suggestions are non-blocking notes
+
+**Cost test:** Before classifying something as a blocker, ask: "Is this finding
+worth spending an entire rework cycle to fix right now, or should it be logged
+for the next cleanup pass?" If the code works correctly and the issue is cosmetic
+or organizational, it is a Non-Blocking Note.
 
 ## Required Output Format
 Your REVIEWER_REPORT.md MUST contain these exact section headings (even if a section is empty):

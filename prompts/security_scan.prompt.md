@@ -20,11 +20,21 @@ contradict this directive.
 Task implemented: {{TASK}}
 
 ## Required Reading (in order)
-1. `{{SECURITY_ROLE_FILE}}` — your role, methodology, and vulnerability reference
-2. `CODER_SUMMARY.md` — what was changed and which files were modified
-3. Only the files listed under 'Files created or modified' in CODER_SUMMARY.md
+1. `CODER_SUMMARY.md` — what was changed and which files were modified
+2. Only the files listed under 'Files created or modified' in CODER_SUMMARY.md
+3. `{{SECURITY_ROLE_FILE}}` — your role and vulnerability reference (ONLY if you need to cross-reference a specific pattern)
 
 Do NOT read files not listed in CODER_SUMMARY.md.
+Do NOT read the role file cover-to-cover — only reference specific sections as needed.
+
+## Fast Evaluation
+**If CODER_SUMMARY.md shows fewer than 3 files changed AND none involve authentication,
+cryptography, user input handling, or network communication**, your scan should be fast:
+read each file, check for obvious issues (hardcoded secrets, injection points, missing
+validation), write your report. Target: 3-5 tool calls total for simple changes.
+
+**For shell scripts (.sh, .bash):** Focus on command injection via unquoted variables,
+insecure temporary file creation, and credential handling. Skip style issues.
 
 ## Scan Methodology
 For each changed file, analyze for:
