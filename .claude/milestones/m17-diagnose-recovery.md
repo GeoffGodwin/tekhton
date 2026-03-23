@@ -182,6 +182,63 @@ Files to create:
   stages are added.
 
 Files to modify:
+- `lib/report.sh` — CLI report summary for successful runs:
+  **`print_run_report()`**: Reads the latest run's report files and prints
+  a structured, one-screen summary:
+  ```
+  Last run: 2024-03-23 10:45 — Milestone 3: User Auth
+    Intake:    PASS (confidence 85)
+    Scout:     12 files identified
+    Coder:     6 files modified, 18 turns
+    Security:  1 MEDIUM finding (logged, not blocking)
+    Reviewer:  APPROVED (cycle 1)
+    Tester:    4 tests written, all passing
+
+    Action items: 1 non-blocking note
+    Full reports: .claude/logs/archive/20240323_104500/
+  ```
+  Reads: INTAKE_REPORT.md, SCOUT_REPORT.md, CODER_SUMMARY.md,
+  SECURITY_REPORT.md, REVIEWER_REPORT.md, TESTER_REPORT.md,
+  RUN_SUMMARY.json. Gracefully handles missing files (stages not run or
+  not yet implemented). Color-coded by outcome.
+
+- `tekhton.sh` — Add `--report` flag handling: call `print_run_report()`
+  and exit. Also add `tekhton report` as a subcommand synonym.
+
+- `tekhton.sh` — Enhance crash handler (the `trap ERR` / crash diagnostic
+  at lines 55-99):
+  **Smart crash first-aid:**
+  Before printing the raw exit code, run a quick check:
+  1. Is the Claude CLI authenticated? (`claude --version` quick check)
+  2. Does BUILD_ERRORS.md exist? (build failure)
+  3. Is PIPELINE_STATE.md present? (resumable)
+  4. Was this a known transient error pattern? (grep agent log tail)
+  Print context-appropriate first-aid advice:
+  - "Looks like a quota issue — the pipeline is paused and will resume
+    when quota refreshes. Or run `tekhton` to resume manually."
+  - "Build failure during security rework — run `tekhton --diagnose`
+    for detailed analysis, or `tekhton --rollback` to undo this run."
+  - "Crash during coder stage — your code is safe (checkpoint saved).
+    Run `tekhton` to resume from where it left off."
+  This is fast (no agent calls, pure shell checks) and runs before the
+  existing crash diagnostic output.
+
+  **Enhanced resume prompt:**
+  When the user runs `tekhton` with no args and saved state exists,
+  the resume prompt is enhanced with context:
+  ```
+  Found saved pipeline state:
+    Task:       Add user authentication
+    Stopped at: Review (cycle 2 of 3)
+    Reason:     API rate limit (transient — safe to retry)
+    Elapsed:    12m before interruption
+    Checkpoint: Available (tekhton --rollback to undo)
+
+  Continue? [y/n/fresh]
+  ```
+  Reads LAST_FAILURE_CONTEXT.json (if exists) and checkpoint metadata
+  to provide the "Reason" and "Checkpoint" lines.
+
 - `tekhton.sh` — Add `--diagnose` flag handling. When set:
   1. Source lib/diagnose.sh and lib/diagnose_rules.sh
   2. Call `_read_diagnostic_context()`
@@ -217,6 +274,21 @@ Acceptance criteria:
   stages don't exist yet — no errors, no false matches
 - Failed pipeline runs print "Run 'tekhton --diagnose' for recovery suggestions"
 - Terminal output is colored and formatted for readability
+**CLI report summary (tekhton report / --report):**
+- `tekhton report` prints a structured one-screen summary of the last run
+- Summary includes: intake verdict, scout file count, coder changes, security
+  findings, reviewer verdict, tester results, action items
+- Gracefully handles missing report files (stages not run, not implemented)
+- Works for both successful and failed runs (failed runs also suggest --diagnose)
+**Smart crash handler:**
+- Crash handler prints context-appropriate first-aid advice before raw error
+- Detects: quota issues, build failures, resumable state, transient errors
+- Each detected condition shows a specific recovery command
+- Fast (no agent calls, pure shell checks)
+**Enhanced resume prompt:**
+- Resume prompt shows: task, stopped-at stage, reason for stop, elapsed time,
+  checkpoint availability
+- Reason populated from LAST_FAILURE_CONTEXT.json when available
 - Terminal summary includes one-line cause chain when causal log available
 - Each suggestion includes an exact command the user can copy-paste
 - Recurring failure detection uses `recurring_pattern()` from causal log when

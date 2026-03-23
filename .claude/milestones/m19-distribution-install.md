@@ -123,15 +123,64 @@ Files to create:
             generate_release_notes: true
   ```
 
+- `completions/tekhton.bash` — Bash completion script:
+  Completes all flags (--init, --plan, --milestone, --start-at, --diagnose, etc.),
+  subcommands (note, report), --start-at values (coder, security, review, test,
+  tester), --notes-filter values (BUG, FEAT, POLISH), --tag values for note
+  subcommand. Generated statically from the flag list (not dynamic).
+- `completions/tekhton.zsh` — Zsh completion with descriptions for each flag.
+- `completions/tekhton.fish` — Fish completion for the three major shells.
+
 Files to modify:
 - `tekhton.sh` — Add flag handling:
   - `--update` → call `perform_update()`
   - `--update --check` → call `check_for_updates()` with forced check
   - `--uninstall` → call install.sh --uninstall
   - `--docs` → open docs URL in browser
+  - `--setup-completion` → copy completion files to appropriate shell config
+    directories (bash: /etc/bash_completion.d/ or ~/.local/share/bash-completion/,
+    zsh: ~/.zfunc/, fish: ~/.config/fish/completions/). Auto-detect shell.
   - At end of every pipeline run (success or failure): call
     `check_for_updates()` (respects 24-hour cooldown and config disable)
   - Source lib/update_check.sh
+  **Grouped help text:** Reorganize the --help output from a flat flag list
+  into grouped sections:
+  ```
+  Tekhton — Multi-agent development pipeline
+
+  Getting Started:
+    --init              Initialize Tekhton in current project
+    --plan "desc"       Start interactive planning session
+    --plan-from-index   Generate plan from PROJECT_INDEX.md
+
+  Running:
+    "task description"  Run pipeline with task
+    --milestone         Run in milestone mode (higher turn budgets)
+    --auto-advance      Auto-advance through milestones
+    --complete          Loop until done or bounds hit
+    --dry-run           Preview without executing
+
+  Inspection:
+    --status            Show pipeline state
+    --metrics           Show run metrics dashboard
+    --diagnose          Diagnose last failure with recovery suggestions
+    --report            Summarize last run's results
+    note                Manage human notes (note --help for subcommands)
+
+  Maintenance:
+    --replan            Update existing plan
+    --rescan            Update project index
+    --migrate           Upgrade project config to current version
+    --rollback          Undo last pipeline run
+    --update            Check for and install updates
+
+  Advanced:
+    --start-at STAGE    Resume from specific stage
+    --skip-security     Bypass security for this run
+    --no-commit         Skip auto-commit
+    ...
+  ```
+  Each section has 3-5 entries max. Full flag list available via --help --all.
 
 - `lib/config_defaults.sh` — Add:
   TEKHTON_UPDATE_CHECK=true (check for updates, set false to disable),
@@ -162,6 +211,20 @@ Acceptance criteria:
 - GitHub Actions creates release with tarball + SHA256SUMS on version tag
 - Tarball extracts cleanly and contains all necessary files
 - Tarball excludes: .git, site/, __pycache__, .claude/
+**Shell completion:**
+- `--setup-completion` installs completion for detected shell (bash/zsh/fish)
+- Completion files cover all flags, subcommands, and value options
+- Tab-completing `--start-at` shows valid stage names
+- Tab-completing `note --tag` shows BUG, FEAT, POLISH
+**Help text:**
+- `--help` prints grouped help (Getting Started, Running, Inspection, etc.)
+- `--help --all` prints full flag list for power users
+- Each group has 3-5 entries max, most common operations first
+**Update notification:**
+- When a new version is available, update notice includes brief changelog
+  summary (pulled from GitHub Release notes, cached with the version check)
+- Format: "Tekhton 3.5.0 available (you have 3.4.0). Highlights: security
+  agent, PM intake, Watchtower dashboard. Run `tekhton --update` to upgrade."
 - All existing tests pass
 - `bash -n install.sh lib/update_check.sh` passes
 - `shellcheck install.sh lib/update_check.sh` passes

@@ -66,6 +66,12 @@ Files to modify:
   `split_milestone()` infrastructure with the agent's recommended splits.
   If NEEDS_CLARITY, enter clarification pause (reuse existing clarification protocol
   from lib/clarify.sh).
+  Add `--add-milestone "description"` flag: invokes the intake agent in
+  "create" mode — evaluates the description, scopes it, writes a milestone
+  file to MILESTONE_DIR, appends a row to MANIFEST.cfg, and exits. No
+  pipeline run. This gives users a CLI path to add milestones to the DAG
+  without running --replan. The intake agent applies the same clarity rubric
+  and may TWEAK or ask for clarity before committing the milestone.
 - `lib/config_defaults.sh` — Add intake agent config defaults:
   INTAKE_AGENT_ENABLED=true (opt-out, like security),
   CLAUDE_INTAKE_MODEL=opus (intake is a judgement call — use best model),
@@ -129,6 +135,8 @@ Acceptance criteria:
   (or pauses if INTAKE_CONFIRM_TWEAKS=true)
 - Verdict SPLIT_RECOMMENDED → recommended sub-milestones presented, pipeline pauses
   for human approval (or auto-splits if INTAKE_AUTO_SPLIT=true)
+- `tekhton --add-milestone "description"` creates a scoped milestone file + manifest
+  entry using the intake agent in create mode, without running the pipeline
 - Verdict NEEDS_CLARITY → specific questions written to CLARIFICATIONS.md, pipeline
   pauses using existing clarification protocol
 - When INTAKE_AGENT_ENABLED=false, stage is cleanly skipped

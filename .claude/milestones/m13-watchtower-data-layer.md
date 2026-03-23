@@ -131,6 +131,17 @@ Files to create:
     Called when DASHBOARD_ENABLED transitions from true to false.
   - `is_dashboard_enabled()` — Check DASHBOARD_ENABLED config. Returns 0/1.
 
+  **CLI progress heartbeat:**
+  The existing spinner in `lib/agent.sh` (elapsed time display) is enhanced
+  to also show turn count and stage context. During agent runs, the spinner
+  line becomes:
+  `[tekhton] Coder (4m12s, 14/25 turns)`
+  `[tekhton] Security (1m03s, 6/15 turns)`
+  This runs in the same spinner PID — no new processes. The heartbeat also
+  triggers `emit_dashboard_run_state()` on a configurable interval
+  (DASHBOARD_REFRESH_INTERVAL, default 10s) so Watchtower picks up mid-stage
+  progress, not just stage boundaries.
+
   **Verbosity levels:**
   - `DASHBOARD_VERBOSITY=normal` (default): stage start/end, verdicts, findings,
     milestone changes, build gate results.
@@ -308,6 +319,12 @@ Acceptance criteria:
   queries, log archival, log pruning, milestone filtering
 - New test file `tests/test_dashboard_data.sh` covers: init, cleanup, JS view
   generation from causal log, state generation, report parsing, config transitions
+**CLI progress heartbeat:**
+- Agent spinner shows stage name, elapsed time, AND turn count (e.g.,
+  "Coder (4m12s, 14/25 turns)")
+- Watchtower run_state.js refreshed during active agent runs at
+  DASHBOARD_REFRESH_INTERVAL (default 10s), not just at stage boundaries
+- Heartbeat refresh uses existing agent_monitor loop (no new background process)
 
 Watch For:
 - JSON generation in pure bash is fragile. Use printf with proper escaping for
