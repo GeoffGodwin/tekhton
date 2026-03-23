@@ -118,6 +118,11 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/replan_brownfield.sh`** — Brownfield replan orchestration (`--replan` CLI command). `run_replan()`, `_generate_codebase_summary()`, `_brownfield_approval_menu()`, `_apply_brownfield_delta()`, `_archive_replan_delta()`.
 - **`lib/prompts.sh`** — `render_prompt(template_name)` reads `TEKHTON_HOME/prompts/<name>.prompt.md`, substitutes `{{VAR}}` from shell globals, strips `{{IF:VAR}}...{{ENDIF:VAR}}` blocks when VAR is empty.
 - **`lib/state.sh`** — `write_pipeline_state(stage, reason, resume_flag, task, detail)`, `clear_pipeline_state()`. Persists to `PIPELINE_STATE_FILE` for resume.
+- **`lib/milestone_dag.sh`** — Milestone DAG infrastructure and manifest parser (v3 Milestone 1). `load_manifest()`, `save_manifest()`, `dag_get_frontier()`, `dag_deps_satisfied()`, `dag_set_status()`. Sources `milestone_dag_validate.sh` and `milestone_dag_migrate.sh`.
+- **`lib/milestone_dag_migrate.sh`** — Inline-to-file milestone migration (v3). `migrate_inline_milestones()` extracts milestones from CLAUDE.md into individual files with a MANIFEST.cfg.
+- **`lib/milestone_window.sh`** — Character-budgeted milestone sliding window (v3 Milestone 2). `build_milestone_window()` selects active + frontier + on-deck milestones within a character budget.
+- **`lib/indexer.sh`** — Repo map orchestration and Python tool invocation (v3). `check_indexer_available()`, `run_repo_map()`, `get_repo_map_slice()`. Gracefully degrades when Python/tree-sitter is unavailable. Sources `indexer_helpers.sh`.
+- **`lib/mcp.sh`** — MCP server lifecycle management for Serena LSP integration (v3 Milestone 6). `start_mcp_server()`, `stop_mcp_server()`, `check_mcp_health()`, `get_mcp_config_path()`. Claude CLI manages the actual server process; this module handles config generation and availability tracking. Consumed by `agent.sh` to add `--mcp-config` flag.
 
 ### Layer 4: Prompt Templates (`prompts/*.prompt.md`)
 Declarative agent instructions with `{{VAR}}` placeholders. Rendered by `lib/prompts.sh`.

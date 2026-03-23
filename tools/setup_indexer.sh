@@ -200,10 +200,10 @@ fi
 # --- Ensure .gitignore covers the venv ---------------------------------------
 
 GITIGNORE_FILE="${PROJECT_DIR}/.gitignore"
-if [ -f "$GITIGNORE_FILE" ]; then
+if [[ -f "$GITIGNORE_FILE" ]]; then
     if ! grep -qF "$VENV_DIR_NAME" "$GITIGNORE_FILE" 2>/dev/null; then
         _warn "${VENV_DIR_NAME}/ is not in .gitignore — consider adding it."
     fi
-elif [ -d "${PROJECT_DIR}/.git" ]; then
+elif [[ -d "${PROJECT_DIR}/.git" ]]; then
     _warn "No .gitignore found. Consider creating one with ${VENV_DIR_NAME}/ in it."
 fi

@@ -19,6 +19,9 @@ set -euo pipefail
 _MCP_SERVER_PID=""
 _MCP_SERVER_RUNNING=false
 _MCP_CONFIG_PATH=""
+_CLI_MCP_CONFIG_SUPPORTED=""
+_SERENA_DIR=""
+_SERENA_PYTHON=""
 
 # Exported for agent.sh to check
 SERENA_MCP_AVAILABLE=false
@@ -31,7 +34,7 @@ export SERENA_ACTIVE
 # --- Config path accessor -----------------------------------------------------
 
 # Returns the path to the generated MCP config file.
-# Used by agent_monitor.sh to add --mcp-config flag.
+# Used by agent.sh to add --mcp-config flag.
 get_mcp_config_path() {
     echo "${_MCP_CONFIG_PATH:-}"
 }
@@ -45,7 +48,9 @@ check_mcp_health() {
         return 1
     fi
 
-    # Verify the process is still alive
+    # Reserved for future per-agent server instances. Currently, Claude CLI
+    # owns the MCP server lifecycle, so _MCP_SERVER_PID is never set and this
+    # branch never executes. Retained for when Tekhton manages its own server.
     if [[ -n "$_MCP_SERVER_PID" ]]; then
         if ! kill -0 "$_MCP_SERVER_PID" 2>/dev/null; then
             _MCP_SERVER_RUNNING=false
@@ -75,15 +80,15 @@ _resolve_serena_paths() {
         serena_path="${PROJECT_DIR}/${serena_path}"
     fi
 
-    if [ ! -d "$serena_path" ]; then
+    if [[ ! -d "$serena_path" ]]; then
         return 1
     fi
 
     # Locate venv Python inside Serena
     local venv_dir="${serena_path}/.venv"
-    if [ -f "${venv_dir}/bin/python" ]; then
+    if [[ -f "${venv_dir}/bin/python" ]]; then
         _SERENA_PYTHON="${venv_dir}/bin/python"
-    elif [ -f "${venv_dir}/Scripts/python.exe" ]; then
+    elif [[ -f "${venv_dir}/Scripts/python.exe" ]]; then
         _SERENA_PYTHON="${venv_dir}/Scripts/python.exe"
     else
         return 1
@@ -99,21 +104,21 @@ _resolve_serena_paths() {
 # Returns: 0 if config found/generated, 1 otherwise
 _resolve_mcp_config() {
     # Check explicit config path first
-    if [[ -n "${SERENA_CONFIG_PATH:-}" ]] && [ -f "$SERENA_CONFIG_PATH" ]; then
+    if [[ -n "${SERENA_CONFIG_PATH:-}" ]] && [[ -f "$SERENA_CONFIG_PATH" ]]; then
         _MCP_CONFIG_PATH="$SERENA_CONFIG_PATH"
         return 0
     fi
 
     # Check default location
     local default_config="${PROJECT_DIR}/.claude/serena_mcp_config.json"
-    if [ -f "$default_config" ]; then
+    if [[ -f "$default_config" ]]; then
         _MCP_CONFIG_PATH="$default_config"
         return 0
     fi
 
     # Generate config from template if possible
     local template="${TEKHTON_HOME}/tools/serena_config_template.json"
-    if [ ! -f "$template" ]; then
+    if [[ ! -f "$template" ]]; then
         return 1
     fi
 
@@ -140,9 +145,18 @@ _resolve_mcp_config() {
 # Check if the installed Claude CLI supports --mcp-config.
 # Returns: 0 if supported, 1 otherwise
 _cli_supports_mcp_config() {
+    # Cache the result — CLI version doesn't change mid-run
+    if [[ "$_CLI_MCP_CONFIG_SUPPORTED" == "1" ]]; then
+        return 0
+    elif [[ "$_CLI_MCP_CONFIG_SUPPORTED" == "0" ]]; then
+        return 1
+    fi
+
     if claude --help 2>/dev/null | grep -q "\-\-mcp-config"; then
+        _CLI_MCP_CONFIG_SUPPORTED="1"
         return 0
     fi
+    _CLI_MCP_CONFIG_SUPPORTED="0"
     return 1
 }
 
@@ -234,7 +248,7 @@ check_serena_available() {
     # Verify Serena module is importable
     if ! "$_SERENA_PYTHON" -c "import serena" 2>/dev/null; then
         # Not all Serena installs expose a top-level module — check for the dir
-        if [ ! -f "${_SERENA_DIR}/pyproject.toml" ] && [ ! -f "${_SERENA_DIR}/setup.py" ]; then
+        if [[ ! -f "${_SERENA_DIR}/pyproject.toml" ]] && [[ ! -f "${_SERENA_DIR}/setup.py" ]]; then
             return 1
         fi
     fi

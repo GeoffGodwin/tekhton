@@ -121,6 +121,13 @@ Acceptance criteria:
 - MERGE_CONTEXT.md consumed by synthesis pipeline when present
 - Non-interactive mode works via ARTIFACT_HANDLING_DEFAULT
 - When no artifacts detected, phase is silently skipped (no noise)
+- **Init completion report:** After all init phases complete, generate
+  INIT_REPORT.md summarizing: artifacts detected and handled, tech stack
+  detected, milestones generated, health baseline (if M15 available),
+  and "next steps" with exact commands. If DASHBOARD_ENABLED, include
+  "Open Watchtower: open .claude/dashboard/index.html". Print a concise
+  colored summary to terminal. Watchtower's first-load should show the
+  init report as its default content when no runs exist yet.
 - All existing tests pass
 - `bash -n lib/detect_ai_artifacts.sh lib/artifact_handler.sh` passes
 - `shellcheck lib/detect_ai_artifacts.sh lib/artifact_handler.sh` passes

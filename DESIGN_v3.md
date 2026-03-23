@@ -433,6 +433,7 @@ SERENA_MAX_RETRIES=2                # Health check retry attempts
 | Quota pause/resume | **on** (Tier 1) | Always active (reactive detection) |
 | Quota proactive | off | CLAUDE_QUOTA_CHECK_CMD to enable |
 | Loop counter reset | **on** | Built into orchestration logic |
+| Pipeline diagnostics | **on** | --diagnose always available |
 
 ---
 
@@ -942,6 +943,62 @@ MILESTONE_MAX_SPLIT_DEPTH=6
 
 ---
 
+## System Design: Pipeline Diagnostics & Recovery (M17)
+
+### Problem
+
+When a pipeline run fails, users are left staring at terminal output with no
+guidance on what went wrong or how to fix it. The knowledge of "build failure →
+fix and restart from coder" vs "review loop → increase cycles or fix manually"
+is tribal knowledge that even the system's creator forgets between milestones.
+
+### Design
+
+**`tekhton --diagnose` command:**
+
+Pure shell logic — no agent calls. Reads pipeline state files and applies a
+priority-ordered ruleset to classify the failure and suggest recovery actions.
+
+**10 diagnostic rules (priority-ordered):**
+
+| Rule | Pattern | Key suggestion |
+|------|---------|----------------|
+| BUILD_FAILURE | BUILD_ERRORS.md non-empty | Fix manually or --start-at coder |
+| REVIEW_REJECTION_LOOP | 3+ review cycles | Increase cycles or fix feedback manually |
+| SECURITY_HALT | Security HALT verdict | Add waivers or change policy to escalate |
+| INTAKE_NEEDS_CLARITY | Intake paused | Answer CLARIFICATIONS.md |
+| QUOTA_EXHAUSTED | Rate limit detected | Wait for refresh (auto-resumes) |
+| STUCK_LOOP | Max attempts, no progress | Simplify task or manual split |
+| TURN_EXHAUSTION | Agent hit max turns | Increase turn budget or simplify scope |
+| SPLIT_DEPTH | Max split depth reached | Manual breakdown needed |
+| TRANSIENT_ERROR | Server errors | Re-run with --resume |
+| UNKNOWN | No pattern matched | Check agent logs |
+
+**Forward-compatible rule registry:** Rules for future stages (security, intake,
+quota) check for the presence of relevant state files. If the stage hasn't been
+implemented yet, the rule silently skips. New stages just need to write their
+state files in expected locations — no --diagnose code changes needed.
+
+**Auto-hint on failure:** Every failed run prints
+"Run 'tekhton --diagnose' for recovery suggestions."
+
+**Recurring failure detection:** If the same failure type occurred in the last
+3 runs, the diagnosis notes the pattern and suggests escalating to manual
+intervention.
+
+**Output:** DIAGNOSIS.md (full report), terminal summary (colored, copy-pasteable
+commands), dashboard data (data/diagnosis.js for Watchtower).
+
+### Why This Design
+
+- Zero agent calls means --diagnose is instant and free. No quota cost.
+- Priority-ordered rules give the most specific diagnosis first (build failure
+  beats generic stuck loop).
+- Forward-compatible design means we never revisit this code when adding stages.
+- Every suggestion includes an exact copy-pasteable command.
+
+---
+
 ## Updated Pipeline Flow (V3 Complete)
 
 ```
@@ -983,6 +1040,8 @@ tekhton "task" or tekhton --milestone
 - `health.sh` — Health scoring engine + assessment lifecycle (M15)
 - `health_checks.sh` — Individual dimension check functions (M15)
 - `quota.sh` — Quota-aware pause/resume + rate limit detection (M16)
+- `diagnose.sh` — Diagnostic engine + report generation (M17)
+- `diagnose_rules.sh` — Forward-compatible diagnostic rule definitions (M17)
 
 **stages/ (pipeline stages):**
 - `security.sh` — security scan + rework routing (M09)

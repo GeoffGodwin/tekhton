@@ -245,6 +245,9 @@ _log "Serena setup complete."
 _log "  Installation: ${SERENA_DIR}"
 _log "  MCP config:   ${CONFIG_OUTPUT}"
 _log "  Language servers: ${detected_servers}"
+if [ "$detected_servers" != "none" ]; then
+    _warn "Language server names are based on PATH binary detection. Verify against Serena's supported server identifiers before use."
+fi
 _log ""
 _log "Enable in your pipeline.conf:"
 _log "  SERENA_ENABLED=true"

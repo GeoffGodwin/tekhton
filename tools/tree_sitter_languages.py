@@ -102,3 +102,8 @@ def ext_to_language_name(ext: str) -> Optional[str]:
     """Return the language name for an extension, or None."""
     info = _EXT_TO_LANG.get(ext)
     return info[1] if info else None
+
+
+def extensions_for_languages(requested: set[str]) -> set[str]:
+    """Return the set of file extensions for the requested language names."""
+    return {ext for ext, (_, lang) in _EXT_TO_LANG.items() if lang in requested}

@@ -218,7 +218,7 @@ _insert_milestone_pointer() {
                 milestone_heading_level=$level
                 # Insert the pointer before first milestone
                 {
-                    echo "<!-- Milestones are managed as individual files in ${MILESTONE_DIR:-.claude/milestones}/."
+                    echo "<!-- Milestones are managed as individual files in .claude/milestones/."
                     echo "     See MANIFEST.cfg for ordering and dependencies. -->"
                     echo ""
                 } >> "$tmpfile"

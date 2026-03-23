@@ -32,8 +32,8 @@
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
 #   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
-#   --setup-indexer       Set up Python virtualenv for tree-sitter indexer
-#   --with-lsp           Also install Serena LSP server (use with --setup-indexer)
+#   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
+#   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
 #   --version, -v         Print version and exit
 #
 # Requirements:
@@ -407,7 +407,7 @@ usage() {
     echo "  --force-audit             Force architect audit regardless of threshold"
     echo "  --migrate-dag             Convert inline CLAUDE.md milestones to DAG file format"
     echo "  --setup-indexer           Set up Python virtualenv for tree-sitter indexer"
-    echo "  --with-lsp               Also install Serena LSP server (use with --setup-indexer)"
+    echo "  --with-lsp                Also install Serena LSP server (use with --setup-indexer)"
     echo ""
     echo "Examples:"
     echo "  tekhton --init                           # First-time setup"
