@@ -196,6 +196,7 @@ _detect_dockerfile_langs() {
 
 # _classify_ci_command — Classifies a CI command as build/test/lint.
 # Args: $1 = CI system name, $2 = command string
+# Output: One line per classification: CI_SYSTEM|BUILD_CMD|TEST_CMD|LINT_CMD|DEPLOY_TARGET|_LANG|CONFIDENCE
 _classify_ci_command() {
     local ci_system="$1"
     local cmd="$2"
@@ -212,7 +213,7 @@ _classify_ci_command() {
         # Skip install/setup commands that happen to contain "test"
         if [[ "$norm_cmd" != *"install"* ]] && [[ "$norm_cmd" != *"setup"* ]] && \
            [[ "$norm_cmd" != *"npm ci"* ]]; then
-            echo "${ci_system}||${cmd}|||high"
+            echo "${ci_system}||${cmd}||||high"
         fi
         return 0
     fi
@@ -224,7 +225,7 @@ _classify_ci_command() {
        [[ "$norm_cmd" == *"rubocop"* ]] || [[ "$norm_cmd" == *"prettier"* ]] || \
        [[ "$norm_cmd" == *"black --check"* ]] || [[ "$norm_cmd" == *"go vet"* ]] || \
        [[ "$norm_cmd" == *"shellcheck"* ]] || [[ "$norm_cmd" == *"analyze"* ]]; then
-        echo "${ci_system}|||${cmd}||high"
+        echo "${ci_system}|||${cmd}|||high"
         return 0
     fi
 
@@ -235,7 +236,7 @@ _classify_ci_command() {
        [[ "$norm_cmd" == *"gradlew build"* ]]; then
         # Skip install/setup
         if [[ "$norm_cmd" != *"install"* ]] && [[ "$norm_cmd" != *"npm ci"* ]]; then
-            echo "${ci_system}|${cmd}||||high"
+            echo "${ci_system}|${cmd}|||||high"
         fi
         return 0
     fi

@@ -2,16 +2,16 @@
   "milestone": "none",
   "outcome": "success",
   "attempts": 1,
-  "total_agent_calls": 6,
+  "total_agent_calls": 11,
   "wall_clock_seconds": 0,
-  "files_changed": [".claude/logs/metrics.jsonl","DRIFT_LOG.md","INTAKE_REPORT.md","NON_BLOCKING_LOG.md","REVIEWER_REPORT.md","SECURITY_NOTES.md","TESTER_REPORT.md","lib/artifact_handler_ops.sh","lib/config_defaults.sh","lib/detect_ci.sh","lib/detect_report.sh","lib/detect_workspaces.sh","lib/indexer.sh","lib/indexer_history.sh","lib/init.sh","prompts/intake_tweak.prompt.md","stages/intake.sh","stages/security.sh","tekhton.sh","tests/test_detect_brownfield_coverage.sh","tests/test_security_stage.sh"],
+  "files_changed": [".claude/logs/metrics.jsonl","DRIFT_LOG.md","INTAKE_REPORT.md","NON_BLOCKING_LOG.md","REVIEWER_REPORT.md","SECURITY_NOTES.md","TESTER_REPORT.md","lib/detect_ai_artifacts.sh","lib/detect_ci.sh"],
   "error_classes_encountered": [],
-  "recovery_actions_taken": [],
+  "recovery_actions_taken": ["continuation"],
   "rework_cycles": 1,
   "split_depth": 0,
   "security_findings_count": 4,
   "security_rework_cycles": 0,
   "intake_verdict": "PASS",
-  "intake_confidence": 80,
-  "timestamp": "2026-03-23T18:22:38Z"
+  "intake_confidence": 82,
+  "timestamp": "2026-03-23T19:05:39Z"
 }

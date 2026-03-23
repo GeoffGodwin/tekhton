@@ -61,7 +61,7 @@ detect_ai_artifacts() {
     local results=""
 
     # --- Known AI directories ---
-    local entry dir_name tool_name
+    local entry dir_name file_name tool_name
     for entry in "${_KNOWN_AI_DIRS[@]}"; do
         IFS='|' read -r dir_name tool_name <<< "$entry"
         if [[ -d "${project_dir}/${dir_name}" ]]; then
@@ -78,9 +78,9 @@ detect_ai_artifacts() {
 
     # --- Known AI files ---
     for entry in "${_KNOWN_AI_FILES[@]}"; do
-        IFS='|' read -r dir_name tool_name <<< "$entry"
-        if [[ -f "${project_dir}/${dir_name}" ]]; then
-            results+="${tool_name}|${dir_name}|rules|high"$'\n'
+        IFS='|' read -r file_name tool_name <<< "$entry"
+        if [[ -f "${project_dir}/${file_name}" ]]; then
+            results+="${tool_name}|${file_name}|rules|high"$'\n'
         fi
     done
 
