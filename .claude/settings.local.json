@@ -19,7 +19,13 @@
       "Bash(do echo:*)",
       "Bash(done)",
       "Bash(ls -la /home/geoff/workspace/geoffgodwin/tekhton/.claude/logs/*REVIEWER*)",
-      "Bash(find /home/geoff/workspace/geoffgodwin/tekhton/.claude/logs -name *REVIEWER* -newer /home/geoff/workspace/geoffgodwin/tekhton/.claude/logs/archive/20260323_100255_REVIEWER_REPORT.md)"
+      "Bash(find /home/geoff/workspace/geoffgodwin/tekhton/.claude/logs -name *REVIEWER* -newer /home/geoff/workspace/geoffgodwin/tekhton/.claude/logs/archive/20260323_100255_REVIEWER_REPORT.md)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "Bash(ls /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/m2*.md)",
+      "Bash(ls /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/*.md)",
+      "Bash(find /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/ -name *.md)"
     ]
   }
 }

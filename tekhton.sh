@@ -392,6 +392,8 @@ source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
+source "${TEKHTON_HOME}/lib/causality.sh"
+source "${TEKHTON_HOME}/lib/dashboard.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
@@ -885,6 +887,32 @@ LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
 
 mkdir -p "$LOG_DIR"
 
+# --- Causal event log + dashboard initialization (Milestone 13) ---------------
+init_causal_log
+
+# Stage tracking arrays for dashboard run_state emission
+declare -A _STAGE_STATUS=()
+declare -A _STAGE_TURNS=()
+declare -A _STAGE_BUDGET=()
+declare -A _STAGE_DURATION=()
+PIPELINE_STATUS="running"
+CURRENT_STAGE="initializing"
+START_AT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
+WAITING_FOR=""
+
+# Dashboard lifecycle: create if enabled + missing, cleanup if disabled + exists
+if is_dashboard_enabled; then
+    local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
+    if [[ ! -d "$local_dash_dir" ]]; then
+        init_dashboard "$PROJECT_DIR"
+    fi
+else
+    local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
+    if [[ -d "$local_dash_dir" ]]; then
+        cleanup_dashboard "$PROJECT_DIR"
+    fi
+fi
+
 # --- Pre-flight --------------------------------------------------------------
 
 header "Tekhton — ${PROJECT_NAME} — Starting at: ${START_AT}"
@@ -1117,11 +1145,24 @@ trap _tekhton_sigint_handler INT
 # --- Pipeline execution (with auto-advance loop) ----------------------------
 
 _run_pipeline_stages() {
+    # Emit pipeline_start event (root event, no caused_by)
+    _PIPELINE_START_EVT=$(emit_event "pipeline_start" "pipeline" "$TASK" "" "" "")
+    _LAST_STAGE_EVT="$_PIPELINE_START_EVT"
+
     # Stage 0a: Intake gate (pre-stage clarity evaluation)
     # Runs once per milestone/task before any other stage. Skipped when
     # START_AT is past coder (resuming from review/test).
     if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
+        CURRENT_STAGE="intake"
+        local _intake_start_evt
+        _intake_start_evt=$(emit_event "stage_start" "intake" "" "$_LAST_STAGE_EVT" "" "")
         run_stage_intake
+        _LAST_STAGE_EVT=$(emit_event "stage_end" "intake" "${INTAKE_VERDICT:-pass}" "$_intake_start_evt" "" \
+            "{\"confidence\":${INTAKE_CONFIDENCE:-0}}")
+        _STAGE_STATUS[intake]="complete"
+        _STAGE_TURNS[intake]="${LAST_AGENT_TURNS:-0}"
+        _STAGE_DURATION[intake]="${LAST_AGENT_ELAPSED:-0}"
+        emit_dashboard_run_state 2>/dev/null || true
         # If START_AT was "intake", advance to "coder" for subsequent stages
         if [ "$START_AT" = "intake" ]; then
             START_AT="coder"
@@ -1152,7 +1193,22 @@ _run_pipeline_stages() {
 
     # Stage 1: Coder
     if [ "$START_AT" = "coder" ]; then
+        CURRENT_STAGE="coder"
+        local _coder_start_evt
+        _coder_start_evt=$(emit_event "stage_start" "coder" "$TASK" "$_LAST_STAGE_EVT" "" "")
+        _STAGE_STATUS[coder]="running"
+        _STAGE_BUDGET[coder]="${CODER_MAX_TURNS:-50}"
+        emit_dashboard_run_state 2>/dev/null || true
         run_stage_coder
+        local _coder_files_changed
+        _coder_files_changed=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]' || echo "0")
+        _LAST_STAGE_EVT=$(emit_event "stage_end" "coder" "${_coder_files_changed} files modified" "$_coder_start_evt" "" \
+            "{\"files_changed\":${_coder_files_changed},\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+        _STAGE_STATUS[coder]="complete"
+        _STAGE_TURNS[coder]="${ACTUAL_CODER_TURNS:-${LAST_AGENT_TURNS:-0}}"
+        _STAGE_DURATION[coder]="${LAST_AGENT_ELAPSED:-0}"
+        emit_dashboard_reports 2>/dev/null || true
+        emit_dashboard_run_state 2>/dev/null || true
     else
         header "Stage 1 / 4 — Coder (skipped)"
         log "Using existing CODER_SUMMARY.md"
@@ -1164,14 +1220,44 @@ _run_pipeline_stages() {
 
     # Stage 2: Security
     if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ]; then
+        CURRENT_STAGE="security"
+        local _sec_start_evt
+        _sec_start_evt=$(emit_event "stage_start" "security" "" "$_LAST_STAGE_EVT" "" "")
+        _STAGE_STATUS[security]="running"
+        _STAGE_BUDGET[security]="${SECURITY_MAX_TURNS:-15}"
+        emit_dashboard_run_state 2>/dev/null || true
         run_stage_security
+        _LAST_STAGE_EVT=$(emit_event "stage_end" "security" "" "$_sec_start_evt" "" \
+            "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+        _STAGE_STATUS[security]="complete"
+        _STAGE_TURNS[security]="${LAST_AGENT_TURNS:-0}"
+        _STAGE_DURATION[security]="${LAST_AGENT_ELAPSED:-0}"
+        emit_dashboard_security 2>/dev/null || true
+        emit_dashboard_run_state 2>/dev/null || true
     else
         header "Stage 2 / 4 — Security (skipped)"
     fi
 
     # Stage 3: Review loop
     if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ] || [ "$START_AT" = "review" ]; then
+        CURRENT_STAGE="reviewer"
+        local _review_start_evt
+        _review_start_evt=$(emit_event "stage_start" "reviewer" "" "$_LAST_STAGE_EVT" "" "")
+        _STAGE_STATUS[reviewer]="running"
+        _STAGE_BUDGET[reviewer]="${REVIEWER_MAX_TURNS:-15}"
+        emit_dashboard_run_state 2>/dev/null || true
         run_stage_review
+        local _review_verdict_json="null"
+        if [[ -n "${VERDICT:-}" ]]; then
+            _review_verdict_json="{\"result\":\"$(_json_escape "${VERDICT}")\"}"
+        fi
+        _LAST_STAGE_EVT=$(emit_event "stage_end" "reviewer" "verdict: ${VERDICT:-unknown}" "$_review_start_evt" \
+            "$_review_verdict_json" "{\"cycles\":${REVIEW_CYCLE:-0}}")
+        _STAGE_STATUS[reviewer]="complete"
+        _STAGE_TURNS[reviewer]="${LAST_AGENT_TURNS:-0}"
+        _STAGE_DURATION[reviewer]="${LAST_AGENT_ELAPSED:-0}"
+        emit_dashboard_reports 2>/dev/null || true
+        emit_dashboard_run_state 2>/dev/null || true
     else
         header "Stage 3 / 4 — Reviewer (skipped)"
         log "Using existing REVIEWER_REPORT.md"
@@ -1181,7 +1267,20 @@ _run_pipeline_stages() {
 
     # Stage 4: Tester
     if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ] || [ "$START_AT" = "review" ] || [ "$START_AT" = "test" ] || [ "$START_AT" = "tester" ]; then
+        CURRENT_STAGE="tester"
+        local _tester_start_evt
+        _tester_start_evt=$(emit_event "stage_start" "tester" "" "$_LAST_STAGE_EVT" "" "")
+        _STAGE_STATUS[tester]="running"
+        _STAGE_BUDGET[tester]="${TESTER_MAX_TURNS:-30}"
+        emit_dashboard_run_state 2>/dev/null || true
         run_stage_tester
+        _LAST_STAGE_EVT=$(emit_event "stage_end" "tester" "" "$_tester_start_evt" "" \
+            "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+        _STAGE_STATUS[tester]="complete"
+        _STAGE_TURNS[tester]="${LAST_AGENT_TURNS:-0}"
+        _STAGE_DURATION[tester]="${LAST_AGENT_ELAPSED:-0}"
+        emit_dashboard_reports 2>/dev/null || true
+        emit_dashboard_run_state 2>/dev/null || true
     fi
 
     if [ ! -f "TESTER_REPORT.md" ]; then

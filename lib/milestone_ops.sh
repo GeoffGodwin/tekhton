@@ -220,6 +220,15 @@ mark_milestone_done() {
             emit_milestone_metadata "$milestone_num" "done" 2>/dev/null || true
         fi
         success "Marked Milestone ${milestone_num} (${id}) as done in manifest"
+        # Emit milestone_advance event (Milestone 13)
+        if command -v emit_event &>/dev/null; then
+            emit_event "milestone_advance" "pipeline" "Milestone ${milestone_num} done" \
+                "${_LAST_STAGE_EVT:-}" "" \
+                "{\"milestone\":\"$(_json_escape "$milestone_num")\"}" 2>/dev/null || true
+        fi
+        if command -v emit_dashboard_milestones &>/dev/null; then
+            emit_dashboard_milestones 2>/dev/null || true
+        fi
         return 0
     fi
 

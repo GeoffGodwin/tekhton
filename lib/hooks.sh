@@ -14,6 +14,8 @@ archive_reports() {
     local log_dir="$1"
     local timestamp="$2"
 
+    # Note: .claude/dashboard/data/ files are NOT archived — they are regenerated
+    # each run from the causal log. CAUSAL_LOG.jsonl IS archived via archive_causal_log().
     for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md SECURITY_REPORT.md SECURITY_NOTES.md INTAKE_REPORT.md; do
         if [ -f "$f" ]; then
             cp "$f" "${log_dir}/${timestamp}_${f}"

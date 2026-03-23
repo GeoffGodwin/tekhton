@@ -214,6 +214,20 @@ set -euo pipefail
 : "${ARTIFACT_MERGE_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
 : "${ARTIFACT_MERGE_MAX_TURNS:=10}"
 
+# --- Causal event log defaults (Milestone 13) ---
+: "${CAUSAL_LOG_ENABLED:=true}"
+: "${CAUSAL_LOG_FILE:=.claude/logs/CAUSAL_LOG.jsonl}"
+: "${CAUSAL_LOG_RETENTION_RUNS:=50}"
+: "${CAUSAL_LOG_MAX_EVENTS:=2000}"
+
+# --- Dashboard / Watchtower defaults (Milestone 13) ---
+: "${DASHBOARD_ENABLED:=true}"
+: "${DASHBOARD_VERBOSITY:=normal}"          # minimal|normal|verbose
+: "${DASHBOARD_HISTORY_DEPTH:=50}"
+: "${DASHBOARD_REFRESH_INTERVAL:=10}"       # seconds between run_state.js refreshes
+: "${DASHBOARD_DIR:=.claude/dashboard}"
+: "${DASHBOARD_MAX_TIMELINE_EVENTS:=500}"
+
 # --- Specialist reviewer defaults ---
 : "${SPECIALIST_SECURITY_ENABLED:=false}"
 : "${SPECIALIST_SECURITY_MODEL:=${CLAUDE_STANDARD_MODEL}}"
@@ -285,3 +299,8 @@ _clamp_config_value REPO_MAP_TOKEN_BUDGET 16384
 _clamp_config_value REPO_MAP_HISTORY_MAX_RECORDS 1000
 _clamp_config_value SERENA_STARTUP_TIMEOUT 120
 _clamp_config_value SERENA_MAX_RETRIES 10
+_clamp_config_value CAUSAL_LOG_RETENTION_RUNS 200
+_clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
+_clamp_config_value DASHBOARD_HISTORY_DEPTH 100
+_clamp_config_value DASHBOARD_REFRESH_INTERVAL 300
+_clamp_config_value DASHBOARD_MAX_TIMELINE_EVENTS 2000

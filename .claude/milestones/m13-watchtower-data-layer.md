@@ -1,4 +1,11 @@
+
 #### Milestone 13: Watchtower Data Layer & Causal Event Log
+<!-- milestone-meta
+id: "13"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-03-23 -->
+
 Pipeline-side event emission system built on a **causal event log** — a structured
 JSONL file where every pipeline event carries a unique ID and causal edges linking
 it to the events that triggered it. The causal log is the primary data store;
@@ -234,6 +241,7 @@ Files to modify:
   local intake_start_evt
   intake_start_evt=$(emit_event "stage_start" "intake" "" "$pipeline_evt" "" "")
   ```
+- `lib/agent.sh` — [PM: added to Files to modify; required for CLI progress heartbeat] Enhance the existing spinner loop to display stage name and turn count alongside elapsed time: `[tekhton] Coder (4m12s, 14/25 turns)`. The spinner already has elapsed-time logic — extend it to accept stage name and turn-budget parameters passed from the call site. Also trigger `emit_dashboard_run_state()` on the DASHBOARD_REFRESH_INTERVAL tick within the existing monitor loop.
 - `stages/coder.sh` — Emit `stage_start` (caused_by previous stage_end),
   `stage_end` with file change context. Capture event IDs for build_gate linkage.
   Emit `emit_dashboard_reports` after coder completes.
@@ -256,12 +264,13 @@ Files to modify:
   DASHBOARD_REFRESH_INTERVAL=5 (seconds, written into generated HTML meta),
   DASHBOARD_DIR=.claude/dashboard,
   CAUSAL_LOG_FILE=.claude/logs/CAUSAL_LOG.jsonl,
-  CAUSAL_LOG_RETENTION_RUNS=50 (archived logs older than this are pruned),
-  CAUSAL_LOG_ENABLED=true (master toggle — when false, emit_event is a no-op
-  that still returns a synthetic event ID for threading).
+  CAUSAL_LOG_RETENTION_RUNS=50,
+  CAUSAL_LOG_ENABLED=true,
+  CAUSAL_LOG_MAX_EVENTS=2000, [PM: added; Watch For references this cap but it was absent from the config_defaults list — needs a default so cap logic has a value to read]
+  DASHBOARD_MAX_TIMELINE_EVENTS=500 [PM: added; Watch For references this cap for timeline JS but it was absent from the config_defaults list]
 - `lib/config.sh` — Validate DASHBOARD_* and CAUSAL_LOG_* keys. DASHBOARD_VERBOSITY
   must be one of minimal|normal|verbose. DASHBOARD_HISTORY_DEPTH must be 1-100.
-  CAUSAL_LOG_RETENTION_RUNS must be 1-200.
+  CAUSAL_LOG_RETENTION_RUNS must be 1-200. [PM: also validate CAUSAL_LOG_MAX_EVENTS (1-10000) and DASHBOARD_MAX_TIMELINE_EVENTS (1-2000)]
 - `lib/hooks.sh` — Add `.claude/dashboard/data/` to archive exclusion list
   (data files are regenerated, not archived). CAUSAL_LOG.jsonl IS archived
   (it's the primary historical record).
@@ -269,6 +278,18 @@ Files to modify:
   `emit_dashboard_run_state()` with final status during finalization. Archive
   the causal log to `.claude/logs/runs/CAUSAL_LOG_${RUN_ID}.jsonl`. Prune
   archived logs beyond CAUSAL_LOG_RETENTION_RUNS.
+
+**Migration Impact:** [PM: added; required for new config keys]
+New keys added to `config_defaults.sh` with safe defaults — no action required
+for existing projects. All new keys are opt-in or default-on with conservative
+defaults (DASHBOARD_ENABLED=true creates `.claude/dashboard/` on next run;
+CAUSAL_LOG_ENABLED=true writes `.claude/logs/CAUSAL_LOG.jsonl`). Projects that
+do not want the dashboard directory created should set DASHBOARD_ENABLED=false
+before upgrading. Recommend adding `.claude/dashboard/data/` to `.gitignore`
+(data files regenerate each run); the static files under `.claude/dashboard/`
+and `CAUSAL_LOG.jsonl` can be committed. `CAUSAL_LOG_MAX_EVENTS` and
+`DASHBOARD_MAX_TIMELINE_EVENTS` are new config keys — existing pipeline.conf
+files will use the defaults silently.
 
 Acceptance criteria:
 **Causal event log (lib/causality.sh):**
@@ -290,6 +311,7 @@ Acceptance criteria:
 - Archived logs are pruned beyond CAUSAL_LOG_RETENTION_RUNS
 - When CAUSAL_LOG_ENABLED=false, emit_event is a no-op returning synthetic IDs
 - Causal log runs independently of DASHBOARD_ENABLED (it's infrastructure, not UI)
+- [PM: added] Causal log is capped at CAUSAL_LOG_MAX_EVENTS per run; oldest events are evicted when cap is reached
 **Dashboard (lib/dashboard.sh):**
 - `init_dashboard()` creates `.claude/dashboard/` with static files + data dir
 - `cleanup_dashboard()` removes `.claude/dashboard/` cleanly
@@ -303,6 +325,7 @@ Acceptance criteria:
 - `emit_dashboard_metrics()` reads up to DASHBOARD_HISTORY_DEPTH RUN_SUMMARY
   files and produces trend data
 - Timeline JS includes causal edges (caused_by arrays) for each event
+- [PM: added] Timeline JS is capped at DASHBOARD_MAX_TIMELINE_EVENTS entries
 - All `.js` data files follow `window.TK_* = { ... };` pattern
 - All data files include generation timestamp in header comment
 - Verbosity levels control event granularity:

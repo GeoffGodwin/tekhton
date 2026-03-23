@@ -138,21 +138,38 @@ run_agent() {
     _IM_PERM_FLAGS=("${_perm_flags[@]}")  # Pass to monitor
 
     # --- CLI activity indicator (spinner) — shows which agent is working --------
+    # Enhanced for Milestone 13: shows turn count and triggers dashboard refresh.
     local _spinner_pid=""
     if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
         (
             trap 'exit 0' INT TERM
             chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
             start_ts=$(date +%s)
+            _last_refresh=0
+            _refresh_interval="${DASHBOARD_REFRESH_INTERVAL:-10}"
             i=0
             while true; do
                 now=$(date +%s)
                 elapsed=$(( now - start_ts ))
                 mins=$(( elapsed / 60 ))
                 secs=$(( elapsed % 60 ))
-                printf '\r\033[0;36m[tekhton]\033[0m %s %s is generating... %dm%02ds ' \
-                    "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" > /dev/tty
+                # Read turns from turns file if available
+                _cur_turns=0
+                if [[ -f "$_turns_file" ]]; then
+                    _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "0")
+                    [[ "$_cur_turns" =~ ^[0-9]+$ ]] || _cur_turns=0
+                fi
+                printf '\r\033[0;36m[tekhton]\033[0m %s %s (%dm%02ds, %s/%s turns) ' \
+                    "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" \
+                    "$_cur_turns" "$max_turns" > /dev/tty
                 i=$(( i + 1 ))
+                # Dashboard heartbeat: refresh run_state.js periodically
+                if (( elapsed - _last_refresh >= _refresh_interval )); then
+                    if command -v emit_dashboard_run_state &>/dev/null; then
+                        emit_dashboard_run_state 2>/dev/null || true
+                    fi
+                    _last_refresh=$elapsed
+                fi
                 sleep 0.2
             done
         ) &

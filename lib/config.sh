@@ -179,6 +179,39 @@ load_config() {
         fi
     fi
 
+    # --- Validate dashboard / causal log config (Milestone 13) ---
+    if [[ -n "${DASHBOARD_VERBOSITY:-}" ]]; then
+        case "$DASHBOARD_VERBOSITY" in
+            minimal|normal|verbose) ;;
+            *) warn "[config] DASHBOARD_VERBOSITY must be minimal|normal|verbose (got: ${DASHBOARD_VERBOSITY}). Using 'normal'."
+               DASHBOARD_VERBOSITY="normal" ;;
+        esac
+    fi
+    if [[ -n "${DASHBOARD_HISTORY_DEPTH:-}" ]] && [[ "${DASHBOARD_HISTORY_DEPTH}" =~ ^[0-9]+$ ]]; then
+        if [[ "$DASHBOARD_HISTORY_DEPTH" -lt 1 ]] || [[ "$DASHBOARD_HISTORY_DEPTH" -gt 100 ]]; then
+            warn "[config] DASHBOARD_HISTORY_DEPTH must be 1-100 (got: ${DASHBOARD_HISTORY_DEPTH}). Using 50."
+            DASHBOARD_HISTORY_DEPTH=50
+        fi
+    fi
+    if [[ -n "${CAUSAL_LOG_RETENTION_RUNS:-}" ]] && [[ "${CAUSAL_LOG_RETENTION_RUNS}" =~ ^[0-9]+$ ]]; then
+        if [[ "$CAUSAL_LOG_RETENTION_RUNS" -lt 1 ]] || [[ "$CAUSAL_LOG_RETENTION_RUNS" -gt 200 ]]; then
+            warn "[config] CAUSAL_LOG_RETENTION_RUNS must be 1-200 (got: ${CAUSAL_LOG_RETENTION_RUNS}). Using 50."
+            CAUSAL_LOG_RETENTION_RUNS=50
+        fi
+    fi
+    if [[ -n "${CAUSAL_LOG_MAX_EVENTS:-}" ]] && [[ "${CAUSAL_LOG_MAX_EVENTS}" =~ ^[0-9]+$ ]]; then
+        if [[ "$CAUSAL_LOG_MAX_EVENTS" -lt 1 ]] || [[ "$CAUSAL_LOG_MAX_EVENTS" -gt 10000 ]]; then
+            warn "[config] CAUSAL_LOG_MAX_EVENTS must be 1-10000 (got: ${CAUSAL_LOG_MAX_EVENTS}). Using 2000."
+            CAUSAL_LOG_MAX_EVENTS=2000
+        fi
+    fi
+    if [[ -n "${DASHBOARD_MAX_TIMELINE_EVENTS:-}" ]] && [[ "${DASHBOARD_MAX_TIMELINE_EVENTS}" =~ ^[0-9]+$ ]]; then
+        if [[ "$DASHBOARD_MAX_TIMELINE_EVENTS" -lt 1 ]] || [[ "$DASHBOARD_MAX_TIMELINE_EVENTS" -gt 2000 ]]; then
+            warn "[config] DASHBOARD_MAX_TIMELINE_EVENTS must be 1-2000 (got: ${DASHBOARD_MAX_TIMELINE_EVENTS}). Using 500."
+            DASHBOARD_MAX_TIMELINE_EVENTS=500
+        fi
+    fi
+
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     if [[ "$PIPELINE_STATE_FILE" != /* ]]; then
         PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"
@@ -191,6 +224,9 @@ load_config() {
     fi
     if [[ "${MILESTONE_DIR:-}" != /* ]] && [[ -n "${MILESTONE_DIR:-}" ]]; then
         MILESTONE_DIR="${PROJECT_DIR}/${MILESTONE_DIR}"
+    fi
+    if [[ "${CAUSAL_LOG_FILE:-}" != /* ]] && [[ -n "${CAUSAL_LOG_FILE:-}" ]]; then
+        CAUSAL_LOG_FILE="${PROJECT_DIR}/${CAUSAL_LOG_FILE}"
     fi
 }
 

@@ -274,6 +274,42 @@ _hook_clear_state() {
     fi
 }
 
+# l. Emit pipeline_end event and archive causal log (Milestone 13)
+_hook_causal_log_finalize() {
+    local exit_code="$1"
+    local status="success"
+    [[ "$exit_code" -ne 0 ]] && status="failed"
+
+    # Emit pipeline_end event
+    if command -v emit_event &>/dev/null; then
+        emit_event "pipeline_end" "pipeline" "exit_code=${exit_code}" \
+            "${_PIPELINE_START_EVT:-}" \
+            "" \
+            "{\"status\":\"${status}\",\"total_turns\":${TOTAL_TURNS:-0},\"total_time\":${TOTAL_TIME:-0}}" \
+            2>/dev/null || true
+    fi
+
+    # Update dashboard with final state
+    if command -v emit_dashboard_run_state &>/dev/null; then
+        # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
+        PIPELINE_STATUS="$status"
+        # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
+        CURRENT_STAGE="complete"
+        emit_dashboard_run_state 2>/dev/null || true
+    fi
+    if command -v emit_dashboard_metrics &>/dev/null; then
+        emit_dashboard_metrics 2>/dev/null || true
+    fi
+    if command -v emit_dashboard_milestones &>/dev/null; then
+        emit_dashboard_milestones 2>/dev/null || true
+    fi
+
+    # Archive causal log
+    if command -v archive_causal_log &>/dev/null; then
+        archive_causal_log 2>/dev/null || true
+    fi
+}
+
 # Source RUN_SUMMARY.json emission hook (M16)
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary.sh"
@@ -285,6 +321,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary.sh"
 register_finalize_hook "_hook_final_checks"
 register_finalize_hook "_hook_drift_artifacts"
 register_finalize_hook "_hook_record_metrics"
+register_finalize_hook "_hook_causal_log_finalize"
 register_finalize_hook "_hook_cleanup_resolved"
 register_finalize_hook "_hook_resolve_notes"
 register_finalize_hook "_hook_archive_reports"
