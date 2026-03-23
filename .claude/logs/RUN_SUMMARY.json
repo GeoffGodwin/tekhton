@@ -1,17 +1,17 @@
 {
-  "milestone": "11",
+  "milestone": "12",
   "outcome": "success",
   "attempts": 1,
-  "total_agent_calls": 11,
+  "total_agent_calls": 6,
   "wall_clock_seconds": 0,
-  "files_changed": [".claude/logs/metrics.jsonl",".claude/milestones/MANIFEST.cfg",".claude/milestones/m11-brownfield-ai-artifact-detection.md","ARCHITECTURE_LOG.md","DRIFT_LOG.md","MILESTONE_ARCHIVE.md","NON_BLOCKING_LOG.md","REVIEWER_REPORT.md","SECURITY_NOTES.md","TESTER_REPORT.md","lib/config_defaults.sh","lib/init.sh","lib/init_synthesize_helpers.sh","lib/prompts_interactive.sh","prompts/init_synthesize_claude.prompt.md","prompts/init_synthesize_design.prompt.md","prompts/plan_generate.prompt.md"],
+  "files_changed": [".claude/logs/metrics.jsonl",".claude/milestones/MANIFEST.cfg",".claude/milestones/m12-brownfield-deep-analysis.md","DRIFT_LOG.md","INTAKE_REPORT.md","JR_CODER_SUMMARY.md","MILESTONE_ARCHIVE.md","NON_BLOCKING_LOG.md","REVIEWER_REPORT.md","SECURITY_NOTES.md","TESTER_REPORT.md","lib/config_defaults.sh","lib/crawler.sh","lib/detect_commands.sh","lib/detect_report.sh","lib/init.sh","lib/init_config.sh","lib/init_synthesize_helpers.sh","tekhton.sh"],
   "error_classes_encountered": [],
   "recovery_actions_taken": [],
-  "rework_cycles": 3,
+  "rework_cycles": 1,
   "split_depth": 0,
   "security_findings_count": 4,
   "security_rework_cycles": 0,
   "intake_verdict": "PASS",
-  "intake_confidence": 92,
-  "timestamp": "2026-03-23T15:47:56Z"
+  "intake_confidence": 82,
+  "timestamp": "2026-03-23T17:54:49Z"
 }

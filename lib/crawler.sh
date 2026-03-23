@@ -76,9 +76,21 @@ crawl_project() {
     config_section=$(_truncate_section "$config_section" "$budget_cfg")
     test_section=$(_truncate_section "$test_section" "$budget_test")
 
-    # Phase 5: Assemble and write index
+    # Phase 5: Doc quality assessment (Milestone 12)
+    local doc_quality_section=""
+    if type -t assess_doc_quality &>/dev/null; then
+        local dq_output
+        dq_output=$(assess_doc_quality "$project_dir" 2>/dev/null || true)
+        if [[ -n "$dq_output" ]]; then
+            local dq_score
+            dq_score=$(echo "$dq_output" | cut -d'|' -f1)
+            doc_quality_section="DOC_QUALITY_SCORE: ${dq_score}"
+        fi
+    fi
+
+    # Phase 6: Assemble and write index
     local header_section
-    header_section=$(_build_index_header "$project_dir" "$file_list")
+    header_section=$(_build_index_header "$project_dir" "$file_list" "$doc_quality_section")
 
     {
         printf '%s\n\n' "$header_section"
@@ -221,6 +233,7 @@ _truncate_section() {
 _build_index_header() {
     local project_dir="$1"
     local file_list="$2"
+    local doc_quality="${3:-}"
     local file_count total_lines scan_commit scan_date project_name
 
     file_count=$(echo "$file_list" | grep -c '.' || echo "0")
@@ -238,13 +251,19 @@ _build_index_header() {
         scan_commit="non-git"
     fi
 
+    local dq_line=""
+    if [[ -n "$doc_quality" ]]; then
+        dq_line="
+<!-- ${doc_quality} -->"
+    fi
+
     cat <<EOF
 # PROJECT_INDEX.md — ${project_name}
 
 <!-- Last-Scan: ${scan_date} -->
 <!-- Scan-Commit: ${scan_commit} -->
 <!-- File-Count: ${file_count} -->
-<!-- Total-Lines: ${total_lines} -->
+<!-- Total-Lines: ${total_lines} -->${dq_line}
 
 **Project:** ${project_name}
 **Scanned:** ${scan_date}

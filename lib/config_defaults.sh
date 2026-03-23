@@ -197,6 +197,13 @@ set -euo pipefail
 : "${INTAKE_ROLE_FILE:=.claude/agents/intake.md}"
 : "${INTAKE_REPORT_FILE:=INTAKE_REPORT.md}"
 
+# --- Brownfield deep analysis defaults (Milestone 12) ---
+: "${DETECT_WORKSPACES_ENABLED:=true}"
+: "${DETECT_SERVICES_ENABLED:=true}"
+: "${DETECT_CI_ENABLED:=true}"
+: "${DOC_QUALITY_ASSESSMENT_ENABLED:=true}"
+: "${PROJECT_STRUCTURE:=single}"
+
 # --- AI artifact detection defaults (Milestone 11) ---
 : "${ARTIFACT_DETECTION_ENABLED:=true}"
 : "${ARTIFACT_HANDLING_DEFAULT:=}"              # Empty = interactive; set archive|tidy|ignore for headless

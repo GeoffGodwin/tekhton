@@ -54,6 +54,38 @@ _generate_smart_config() {
     local design_file=""
     [[ -f "${project_dir}/DESIGN.md" ]] && design_file="DESIGN.md"
 
+    # Milestone 12: Adjust model based on doc quality
+    if [[ -n "${_INIT_DOC_QUALITY:-}" ]]; then
+        local dq_score
+        dq_score=$(echo "${_INIT_DOC_QUALITY}" | cut -d'|' -f1)
+        # Low doc quality + large project → use opus for coder
+        if [[ "${dq_score:-0}" -lt 30 ]] && [[ "$file_count" -gt 100 ]]; then
+            coder_model="claude-opus-4-6"
+        fi
+        # High doc quality → sonnet sufficient
+        if [[ "${dq_score:-0}" -gt 70 ]] && [[ "$coder_model" == "claude-opus-4-6" ]] && [[ "$file_count" -le 200 ]]; then
+            coder_model="claude-sonnet-4-6"
+        fi
+    fi
+
+    # Milestone 12: CI-detected command override
+    if [[ -n "${_INIT_CI_CONFIG:-}" ]]; then
+        local ci_test ci_build ci_lint
+        ci_test=$(_extract_ci_command "${_INIT_CI_CONFIG}" "test")
+        ci_build=$(_extract_ci_command "${_INIT_CI_CONFIG}" "build")
+        ci_lint=$(_extract_ci_command "${_INIT_CI_CONFIG}" "lint")
+        # CI overrides heuristic when heuristic confidence < high
+        if [[ -n "$ci_test" ]] && [[ "$test_conf" != "high" ]]; then
+            test_cmd="$ci_test"; test_conf="high"
+        fi
+        if [[ -n "$ci_build" ]] && [[ "$build_conf" != "high" ]]; then
+            build_cmd="$ci_build"; build_conf="high"
+        fi
+        if [[ -n "$ci_lint" ]] && [[ "$analyze_conf" != "high" ]]; then
+            analyze_cmd="$ci_lint"; analyze_conf="high"
+        fi
+    fi
+
     # Write config file
     {
         _emit_header "$project_name"
@@ -61,8 +93,24 @@ _generate_smart_config() {
         _emit_models "$coder_model"
         _emit_turns "$coder_turns" "$jr_turns" "$reviewer_turns" "$tester_turns" "$scout_turns"
         _emit_commands "$test_cmd" "$test_conf" "$analyze_cmd" "$analyze_conf" "$build_cmd" "$build_conf"
+        _emit_workspace_config
         _emit_paths "$design_file"
     } > "$conf_file"
+}
+
+# _extract_ci_command — Extracts a specific command type from CI detection output.
+_extract_ci_command() {
+    local ci_output="$1"
+    local cmd_type="$2"
+    local ci_sys build_cmd test_cmd lint_cmd
+    while IFS='|' read -r ci_sys build_cmd test_cmd lint_cmd _rest; do
+        [[ -z "$ci_sys" ]] && continue
+        case "$cmd_type" in
+            test)  [[ -n "$test_cmd" ]] && { echo "$test_cmd"; return 0; } ;;
+            build) [[ -n "$build_cmd" ]] && { echo "$build_cmd"; return 0; } ;;
+            lint)  [[ -n "$lint_cmd" ]] && { echo "$lint_cmd"; return 0; } ;;
+        esac
+    done <<< "$ci_output"
 }
 
 # --- Command extraction helpers -----------------------------------------------
@@ -228,6 +276,54 @@ _emit_command_line() {
             echo "${key}=\"${cmd}\""
             ;;
     esac
+}
+
+# _emit_workspace_config — Emits workspace/service/structure config (Milestone 12).
+_emit_workspace_config() {
+    local workspaces="${_INIT_WORKSPACES:-}"
+    local services="${_INIT_SERVICES:-}"
+    local workspace_scope="${_INIT_WORKSPACE_SCOPE:-}"
+
+    # Determine project structure
+    local project_structure="single"
+    if [[ -n "$workspaces" ]]; then
+        project_structure="monorepo"
+    elif [[ -n "$services" ]]; then
+        local svc_count
+        svc_count=$(echo "$services" | grep -c '.' || echo "0")
+        [[ "$svc_count" -gt 1 ]] && project_structure="multi-service"
+    fi
+
+    cat << EOF
+# --- Project structure (Milestone 12) ----------------------------------------
+PROJECT_STRUCTURE="${project_structure}"
+EOF
+
+    if [[ -n "$workspaces" ]]; then
+        local ws_type
+        ws_type=$(echo "$workspaces" | head -1 | cut -d'|' -f1)
+        local ws_subs
+        ws_subs=$(echo "$workspaces" | head -1 | cut -d'|' -f3)
+        cat << EOF
+WORKSPACE_TYPE="${ws_type}"
+# WORKSPACE_SUBPROJECTS="${ws_subs}"
+EOF
+        if [[ -n "$workspace_scope" ]] && [[ "$workspace_scope" != "root" ]]; then
+            cat << EOF
+# Scoped to subproject: ${workspace_scope}
+# WORKSPACE_SCOPE="${workspace_scope}"
+EOF
+        fi
+    fi
+
+    if [[ -n "$services" ]]; then
+        echo "# Detected services:"
+        while IFS='|' read -r name dir tech source; do
+            [[ -z "$name" ]] && continue
+            echo "# SERVICE: ${name} → ${dir} (${tech}, detected from ${source})"
+        done <<< "$services"
+    fi
+    echo ""
 }
 
 _emit_paths() {

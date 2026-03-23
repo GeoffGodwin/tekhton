@@ -76,8 +76,29 @@ run_smart_init() {
     entry_points=$(detect_entry_points "$project_dir")
     project_type=$(detect_project_type "$project_dir" "$languages" "$frameworks" "$entry_points")
 
+    # Milestone 12: Extended detection
+    local workspaces="" services="" ci_config="" doc_quality=""
+    if type -t detect_workspaces &>/dev/null; then
+        workspaces=$(detect_workspaces "$project_dir" 2>/dev/null || true)
+    fi
+    if type -t detect_services &>/dev/null; then
+        services=$(detect_services "$project_dir" 2>/dev/null || true)
+    fi
+    if type -t detect_ci_config &>/dev/null; then
+        ci_config=$(detect_ci_config "$project_dir" 2>/dev/null || true)
+    fi
+    if type -t assess_doc_quality &>/dev/null; then
+        doc_quality=$(assess_doc_quality "$project_dir" 2>/dev/null || true)
+    fi
+
     # Display detection results
     _display_detection_results "$languages" "$frameworks" "$commands" "$entry_points" "$project_type"
+
+    # Milestone 12: Monorepo routing
+    local workspace_scope=""
+    if [[ -n "$workspaces" ]]; then
+        workspace_scope=$(_offer_monorepo_choice "$project_dir" "$workspaces")
+    fi
 
     # Offer interactive correction
     if [[ -n "$languages" ]] && prompt_confirm "Would you like to correct any detections?" "n"; then
@@ -92,6 +113,12 @@ run_smart_init() {
 
     # Phase 4: Config generation
     log "Generating pipeline.conf..."
+    # Export M12 detection results for config generation
+    export _INIT_WORKSPACES="$workspaces"
+    export _INIT_SERVICES="$services"
+    export _INIT_CI_CONFIG="$ci_config"
+    export _INIT_DOC_QUALITY="$doc_quality"
+    export _INIT_WORKSPACE_SCOPE="$workspace_scope"
     _generate_smart_config "$project_dir" "$conf_file" \
         "$languages" "$frameworks" "$commands" "$tracked_file_count"
     success "Created ${conf_file}"
@@ -191,6 +218,69 @@ _display_detection_results() {
         done <<< "$entry_points"
     fi
     echo >&2
+}
+
+# --- Monorepo routing (Milestone 12) ------------------------------------------
+
+_offer_monorepo_choice() {
+    local project_dir="$1"
+    local workspaces="$2"
+
+    # Count total subprojects across all workspace types
+    local total_subs=0
+    local ws_type manifest subs
+    while IFS='|' read -r ws_type manifest subs; do
+        [[ -z "$ws_type" ]] && continue
+        local count
+        count=$(echo "$subs" | tr ',' '\n' | grep -c '.' || echo "0")
+        total_subs=$((total_subs + count))
+    done <<< "$workspaces"
+
+    echo >&2
+    echo -e "${BOLD}${CYAN}  Monorepo Detected${NC}" >&2
+    echo -e "  This project has ${total_subs} subproject(s)." >&2
+    echo >&2
+    echo -e "  Options:" >&2
+    echo -e "    1) Manage the root (all projects)" >&2
+    echo -e "    2) Manage a specific subproject" >&2
+    echo >&2
+
+    local choice
+    read -rp "  Select [1]: " choice 2>&1 </dev/tty || choice="1"
+    choice="${choice:-1}"
+
+    if [[ "$choice" == "2" ]]; then
+        # List subprojects for selection
+        local -a sub_list=()
+        while IFS='|' read -r _ws_type _manifest subs; do
+            [[ -z "$subs" ]] && continue
+            local s
+            while IFS=',' read -ra parts; do
+                for s in "${parts[@]}"; do
+                    s=$(echo "$s" | tr -d '[:space:]')
+                    [[ -z "$s" ]] && continue
+                    [[ "$s" == *"more)"* ]] && continue
+                    sub_list+=("$s")
+                done
+            done <<< "$subs"
+        done <<< "$workspaces"
+
+        local idx=1
+        for s in "${sub_list[@]}"; do
+            echo "    ${idx}) ${s}" >&2
+            idx=$((idx + 1))
+        done
+        echo >&2
+
+        local sub_choice
+        read -rp "  Select subproject [1]: " sub_choice 2>&1 </dev/tty || sub_choice="1"
+        sub_choice="${sub_choice:-1}"
+        if [[ "$sub_choice" -ge 1 ]] && [[ "$sub_choice" -le "${#sub_list[@]}" ]]; then
+            echo "${sub_list[$((sub_choice - 1))]}"
+            return 0
+        fi
+    fi
+    echo "root"
 }
 
 # --- Interactive correction ---------------------------------------------------
