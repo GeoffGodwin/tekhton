@@ -92,6 +92,25 @@ _assemble_synthesis_context() {
         log "Loaded MERGE_CONTEXT.md ($(echo "$MERGE_CONTEXT" | wc -c | tr -d '[:space:]') chars)"
     fi
 
+    # Milestone 12: Doc quality score for synthesis calibration
+    export DOC_QUALITY_SCORE="0"
+    export DOC_QUALITY_GUIDANCE=""
+    if type -t assess_doc_quality &>/dev/null; then
+        local dq_output
+        dq_output=$(assess_doc_quality "$project_dir" 2>/dev/null || true)
+        if [[ -n "$dq_output" ]]; then
+            DOC_QUALITY_SCORE=$(echo "$dq_output" | cut -d'|' -f1)
+            if [[ "${DOC_QUALITY_SCORE:-0}" -gt 70 ]]; then
+                DOC_QUALITY_GUIDANCE="High documentation quality (${DOC_QUALITY_SCORE}/100). Extract and preserve existing architectural decisions rather than inferring new ones."
+            elif [[ "${DOC_QUALITY_SCORE:-0}" -lt 30 ]]; then
+                DOC_QUALITY_GUIDANCE="Low documentation quality (${DOC_QUALITY_SCORE}/100). Infer aggressively from code patterns and generate detailed architecture documentation."
+            else
+                DOC_QUALITY_GUIDANCE="Moderate documentation quality (${DOC_QUALITY_SCORE}/100). Balance between extracting existing docs and inferring from code."
+            fi
+            log "Doc quality score: ${DOC_QUALITY_SCORE}/100"
+        fi
+    fi
+
     # --- Context budget check and compression ---
     _compress_synthesis_context
 

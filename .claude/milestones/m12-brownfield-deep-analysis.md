@@ -1,4 +1,9 @@
 #### Milestone 12: Brownfield Deep Analysis & Inference Quality
+<!-- milestone-meta
+id: "12"
+status: "done"
+-->
+
 Upgrade the detection and crawling heuristics to handle complex project structures:
 monorepos with workspaces, multi-service repositories, CI/CD-informed inference,
 existing documentation quality assessment, and smarter config generation that
