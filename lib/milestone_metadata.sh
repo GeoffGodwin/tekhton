@@ -30,11 +30,79 @@ set -euo pipefail
 
 # emit_milestone_metadata MILESTONE_NUM STATUS [CLAUDE_MD_PATH]
 # STATUS: "pending", "in_progress", "done"
+# In DAG mode, writes metadata into the milestone file instead of CLAUDE.md.
 emit_milestone_metadata() {
     local milestone_num="$1"
     local status="$2"
     local claude_md="${3:-${PROJECT_RULES_FILE:-CLAUDE.md}}"
 
+    # DAG path: write metadata into milestone file
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && declare -f has_milestone_manifest &>/dev/null \
+       && has_milestone_manifest; then
+        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
+            load_manifest 2>/dev/null || true
+        fi
+        local id
+        id=$(dag_number_to_id "$milestone_num")
+        local file
+        file=$(dag_get_file "$id" 2>/dev/null) || true
+        if [[ -z "$file" ]]; then
+            warn "emit_milestone_metadata: no file for milestone ${milestone_num}"
+            return 1
+        fi
+        local milestone_dir
+        milestone_dir=$(_dag_milestone_dir)
+        local filepath="${milestone_dir}/${file}"
+        if [[ ! -f "$filepath" ]]; then
+            warn "emit_milestone_metadata: ${filepath} not found"
+            return 1
+        fi
+
+        # Also update manifest status
+        dag_set_status "$id" "$status"
+        save_manifest
+
+        local meta_block
+        meta_block="<!-- milestone-meta
+id: \"${milestone_num}\"
+status: \"${status}\"
+-->"
+
+        # Check if meta block already exists in the file
+        if grep -q '^<!-- milestone-meta' "$filepath" 2>/dev/null; then
+            # Replace existing meta block
+            local tmpfile
+            tmpfile=$(mktemp)
+            awk -v meta="$meta_block" '
+            /^<!-- milestone-meta/ { in_meta = 1; next }
+            in_meta && /^-->/ { in_meta = 0; print meta; next }
+            in_meta { next }
+            { print }
+            ' "$filepath" > "$tmpfile"
+            mv "$tmpfile" "$filepath"
+        else
+            # Insert after the first heading line
+            local tmpfile
+            tmpfile=$(mktemp)
+            awk -v meta="$meta_block" '
+            !inserted && /^#{1,5}[[:space:]]/ {
+                print
+                print meta
+                print ""
+                inserted = 1
+                next
+            }
+            { print }
+            ' "$filepath" > "$tmpfile"
+            mv "$tmpfile" "$filepath"
+        fi
+
+        log "Milestone ${milestone_num} metadata updated in ${file}: status=${status}"
+        return 0
+    fi
+
+    # Inline path: original CLAUDE.md behavior
     if [[ ! -f "$claude_md" ]]; then
         warn "emit_milestone_metadata: ${claude_md} not found"
         return 1

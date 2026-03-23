@@ -193,7 +193,116 @@ split_milestone() {
 
     log "Split produced ${sub_count} sub-milestones for milestone ${milestone_num}"
 
-    # Replace the original milestone block in CLAUDE.md with the split output
+    # DAG path: write sub-milestone files + update manifest
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && declare -f has_milestone_manifest &>/dev/null \
+       && has_milestone_manifest; then
+        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
+            load_manifest 2>/dev/null || true
+        fi
+
+        local milestone_dir
+        milestone_dir=$(_dag_milestone_dir)
+
+        # Parse sub-milestones from split output and create files + manifest rows
+        local sub_num=""
+        local sub_title=""
+        local sub_block=""
+        local sub_nums=()
+
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^#{1,5}[[:space:]]*[Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*)[[:space:]]*[:.\—\-][[:space:]]*(.*) ]]; then
+                # Flush previous sub-milestone
+                if [[ -n "$sub_num" ]]; then
+                    local sub_main="${sub_num%%.*}"
+                    local sub_suffix="${sub_num#"$sub_main"}"
+                    local sub_id
+                    sub_id=$(printf "m%02d%s" "$sub_main" "$sub_suffix")
+                    local sub_slug
+                    sub_slug=$(_slugify "$sub_title")
+                    local sub_file="${sub_id}-${sub_slug}.md"
+                    echo "$sub_block" > "${milestone_dir}/${sub_file}"
+
+                    # Determine deps: first sub depends on parent's deps, rest depend on previous sub
+                    local sub_deps=""
+                    if [[ ${#sub_nums[@]} -eq 0 ]]; then
+                        local parent_id
+                        parent_id=$(dag_number_to_id "$milestone_num")
+                        sub_deps="${_DAG_DEPS[${_DAG_IDX[$parent_id]}]:-}"
+                    else
+                        local prev_num="${sub_nums[-1]}"
+                        local prev_main="${prev_num%%.*}"
+                        local prev_suf="${prev_num#"$prev_main"}"
+                        sub_deps=$(printf "m%02d%s" "$prev_main" "$prev_suf")
+                    fi
+
+                    # Insert into manifest arrays
+                    _DAG_IDS+=("$sub_id")
+                    _DAG_TITLES+=("$sub_title")
+                    _DAG_STATUSES+=("pending")
+                    _DAG_DEPS+=("$sub_deps")
+                    _DAG_FILES+=("$sub_file")
+                    _DAG_GROUPS+=("")
+                    _DAG_IDX["$sub_id"]=$(( ${#_DAG_IDS[@]} - 1 ))
+
+                    sub_nums+=("$sub_num")
+                fi
+                sub_num="${BASH_REMATCH[1]}"
+                sub_title="${BASH_REMATCH[3]}"
+                sub_title="${sub_title%"${sub_title##*[![:space:]]}"}"
+                sub_block="$line"
+                continue
+            fi
+            if [[ -n "$sub_num" ]]; then
+                sub_block="${sub_block}"$'\n'"${line}"
+            fi
+        done <<< "$split_output"
+
+        # Flush last sub-milestone
+        if [[ -n "$sub_num" ]]; then
+            local sub_main="${sub_num%%.*}"
+            local sub_suffix="${sub_num#"$sub_main"}"
+            local sub_id
+            sub_id=$(printf "m%02d%s" "$sub_main" "$sub_suffix")
+            local sub_slug
+            sub_slug=$(_slugify "$sub_title")
+            local sub_file="${sub_id}-${sub_slug}.md"
+            echo "$sub_block" > "${milestone_dir}/${sub_file}"
+
+            local sub_deps=""
+            if [[ ${#sub_nums[@]} -eq 0 ]]; then
+                local parent_id
+                parent_id=$(dag_number_to_id "$milestone_num")
+                sub_deps="${_DAG_DEPS[${_DAG_IDX[$parent_id]}]:-}"
+            else
+                local prev_num="${sub_nums[-1]}"
+                local prev_main="${prev_num%%.*}"
+                local prev_suf="${prev_num#"$prev_main"}"
+                sub_deps=$(printf "m%02d%s" "$prev_main" "$prev_suf")
+            fi
+
+            _DAG_IDS+=("$sub_id")
+            _DAG_TITLES+=("$sub_title")
+            _DAG_STATUSES+=("pending")
+            _DAG_DEPS+=("$sub_deps")
+            _DAG_FILES+=("$sub_file")
+            _DAG_GROUPS+=("")
+            _DAG_IDX["$sub_id"]=$(( ${#_DAG_IDS[@]} - 1 ))
+
+            sub_nums+=("$sub_num")
+        fi
+
+        # Mark original milestone as "split" in manifest
+        local parent_id
+        parent_id=$(dag_number_to_id "$milestone_num")
+        dag_set_status "$parent_id" "split"
+        save_manifest
+
+        success "Milestone ${milestone_num} split into ${sub_count} sub-milestones (DAG mode)"
+        return 0
+    fi
+
+    # Inline path: replace the original milestone block in CLAUDE.md
     _replace_milestone_block "$milestone_num" "$claude_md" "$split_output"
     local replace_exit=$?
 

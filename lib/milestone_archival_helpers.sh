@@ -69,6 +69,9 @@ _extract_milestone_block() {
 
 # _get_initiative_name CLAUDE_MD_PATH MILESTONE_NUM
 # Finds the initiative name (## heading) that contains the given milestone.
+# For inline milestones: matches the initiative section containing the heading.
+# For DAG milestones: matches the initiative section containing the
+#   milestone pointer comment (<!-- Milestones are managed as individual files).
 _get_initiative_name() {
     local claude_md="$1"
     local num="$2"
@@ -76,11 +79,17 @@ _get_initiative_name() {
     local num_pattern="${num//./\\.}"
 
     while IFS= read -r line; do
-        if [[ "$line" =~ ^##[[:space:]]+(Completed|Current)[[:space:]]+Initiative:[[:space:]]*(.*) ]]; then
-            current_initiative="${BASH_REMATCH[2]}"
+        if [[ "$line" =~ ^##[[:space:]]+((Completed|Current|Future)[[:space:]]+)?Initiative:[[:space:]]*(.*) ]]; then
+            current_initiative="${BASH_REMATCH[3]}"
             current_initiative="${current_initiative%"${current_initiative##*[![:space:]]}"}"
         fi
+        # Inline match: milestone heading directly in CLAUDE.md
         if [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[^[:alnum:]] ]]; then
+            echo "${current_initiative:-Unknown Initiative}"
+            return 0
+        fi
+        # DAG match: milestone pointer comment (milestones live in external files)
+        if [[ "$line" == *"Milestones are managed as individual files"* ]]; then
             echo "${current_initiative:-Unknown Initiative}"
             return 0
         fi
@@ -89,19 +98,48 @@ _get_initiative_name() {
     echo "Unknown Initiative"
 }
 
-# _milestone_in_archive MILESTONE_NUM ARCHIVE_FILE
+# _milestone_in_archive MILESTONE_NUM ARCHIVE_FILE [INITIATIVE]
 # Returns 0 if the milestone is already present in the archive file.
+# When INITIATIVE is provided, only matches milestones within sections
+# for that initiative (prevents cross-version number collisions).
 _milestone_in_archive() {
     local num="$1"
     local archive_file="$2"
+    local initiative="${3:-}"
 
     if [[ ! -f "$archive_file" ]]; then
         return 1
     fi
 
     local num_pattern="${num//./\\.}"
-    # Match milestone heading with portable delimiter pattern
-    grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[^[:alnum:]]" "$archive_file" 2>/dev/null
+
+    # If no initiative specified, fall back to global match (backward compat)
+    if [[ -z "$initiative" ]]; then
+        grep -qE "^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[^[:alnum:]]" "$archive_file" 2>/dev/null
+        return $?
+    fi
+
+    # Initiative-scoped match: only check within sections for this initiative
+    local in_initiative=false
+    while IFS= read -r line; do
+        # Track which initiative section we're in via archive headers
+        if [[ "$line" =~ ^##[[:space:]]+Archived:.*—[[:space:]]*(.*) ]]; then
+            local section_initiative="${BASH_REMATCH[1]}"
+            section_initiative="${section_initiative%"${section_initiative##*[![:space:]]}"}"
+            if [[ "$section_initiative" == "$initiative" ]]; then
+                in_initiative=true
+            else
+                in_initiative=false
+            fi
+            continue
+        fi
+        if [[ "$in_initiative" = true ]] \
+           && [[ "$line" =~ ^#{1,5}[[:space:]]*(\[DONE\][[:space:]]*)?(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[^[:alnum:]] ]]; then
+            return 0
+        fi
+    done < "$archive_file"
+
+    return 1
 }
 
 # _insert_archive_pointer CLAUDE_MD_PATH INITIATIVE_NAME
