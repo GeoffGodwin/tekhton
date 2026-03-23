@@ -21,11 +21,8 @@ _ensure_task_history_file() {
     if [[ -n "$_TASK_HISTORY_FILE" ]]; then
         return
     fi
-    local cache_dir="${REPO_MAP_CACHE_DIR:-.claude/index}"
-    if [[ "$cache_dir" != /* ]]; then
-        cache_dir="${PROJECT_DIR}/${cache_dir}"
-    fi
-    mkdir -p "$cache_dir" 2>/dev/null || true
+    local cache_dir
+    cache_dir=$(_indexer_resolve_cache_dir)
     _TASK_HISTORY_FILE="${cache_dir}/task_history.jsonl"
 }
 
@@ -56,11 +53,8 @@ warm_index_cache() {
         return 1
     fi
 
-    local cache_dir="${REPO_MAP_CACHE_DIR:-.claude/index}"
-    if [[ "$cache_dir" != /* ]]; then
-        cache_dir="${PROJECT_DIR}/${cache_dir}"
-    fi
-    mkdir -p "$cache_dir" 2>/dev/null || true
+    local cache_dir
+    cache_dir=$(_indexer_resolve_cache_dir)
 
     local languages="${REPO_MAP_LANGUAGES:-auto}"
 

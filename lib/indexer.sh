@@ -128,11 +128,8 @@ run_repo_map() {
         return 1
     fi
 
-    local cache_dir="${REPO_MAP_CACHE_DIR:-.claude/index}"
-    if [[ "$cache_dir" != /* ]]; then
-        cache_dir="${PROJECT_DIR}/${cache_dir}"
-    fi
-    mkdir -p "$cache_dir" 2>/dev/null || true
+    local cache_dir
+    cache_dir=$(_indexer_resolve_cache_dir)
 
     local languages="${REPO_MAP_LANGUAGES:-auto}"
 
@@ -269,10 +266,8 @@ get_repo_map_slice() {
 # Remove the indexer cache directory to force a full re-index on next run.
 # Returns: 0 always
 invalidate_repo_map_cache() {
-    local cache_dir="${REPO_MAP_CACHE_DIR:-.claude/index}"
-    if [[ "$cache_dir" != /* ]]; then
-        cache_dir="${PROJECT_DIR}/${cache_dir}"
-    fi
+    local cache_dir
+    cache_dir=$(_indexer_resolve_cache_dir)
 
     if [ -d "$cache_dir" ]; then
         rm -rf "$cache_dir"

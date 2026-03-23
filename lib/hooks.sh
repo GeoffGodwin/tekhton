@@ -14,7 +14,7 @@ archive_reports() {
     local log_dir="$1"
     local timestamp="$2"
 
-    for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md; do
+    for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md SECURITY_REPORT.md SECURITY_NOTES.md; do
         if [ -f "$f" ]; then
             cp "$f" "${log_dir}/${timestamp}_${f}"
         fi

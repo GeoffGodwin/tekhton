@@ -1,4 +1,9 @@
 #### Milestone 9: Security Agent Stage & Finding Classification
+<!-- milestone-meta
+id: "9"
+status: "done"
+-->
+
 Dedicated security review stage that scans coder output for vulnerabilities,
 classifies findings by severity and fixability, and produces a structured
 SECURITY_REPORT.md. Runs after the build gate, before the reviewer. Enabled

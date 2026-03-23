@@ -23,6 +23,13 @@ to identify which test files need updates and what interfaces to test against.
 {{CONTINUATION_CONTEXT}}
 {{ENDIF:CONTINUATION_CONTEXT}}
 
+{{IF:SECURITY_FIXES_BLOCK}}
+## Security Fixes Applied
+The following security issues were fixed during this run. Ensure your tests
+cover the fix behavior (e.g., input validation, auth checks).
+{{SECURITY_FIXES_BLOCK}}
+{{ENDIF:SECURITY_FIXES_BLOCK}}
+
 ## Context
 Task implemented: {{TASK}}
 

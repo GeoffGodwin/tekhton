@@ -15,7 +15,7 @@
 # On success, TESTER_REPORT.md exists with all items checked.
 # Saves state and warns (but does not exit 1) on partial completion.
 run_stage_tester() {
-    header "Stage 3 / 3 — Tester"
+    header "Stage 4 / 4 — Tester"
 
     # Build the tester prompt based on whether we are starting fresh or resuming
     if [ "$START_AT" = "tester" ]; then

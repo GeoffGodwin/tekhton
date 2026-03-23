@@ -365,6 +365,7 @@ run_stage_security() {
         SECURITY_FIXES_BLOCK+="Review SECURITY_REPORT.md for details of findings and fixes."
     fi
 
+    export SECURITY_REWORK_CYCLES_DONE="$security_rework_cycle"
     log "[security] Security stage complete. Rework cycles: ${security_rework_cycle}."
     return 0
 }

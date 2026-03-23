@@ -38,6 +38,10 @@ REPO_MAP_HISTORY_MAX_RECORDS=200
 REPO_MAP_CACHE_DIR=".claude/index"
 export INDEXER_AVAILABLE REPO_MAP_HISTORY_ENABLED REPO_MAP_HISTORY_MAX_RECORDS REPO_MAP_CACHE_DIR
 
+# Source dependencies
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+
 # Source the library under test
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/indexer_history.sh"

@@ -214,7 +214,7 @@ _install_agent_roles() {
     local languages="$3"
     local conf_dir="${project_dir}/.claude"
 
-    for role in coder reviewer tester jr-coder architect; do
+    for role in coder reviewer tester jr-coder architect security; do
         local target="${conf_dir}/agents/${role}.md"
         if [[ ! -f "$target" ]] && [[ -f "${tekhton_home}/templates/${role}.md" ]]; then
             cp "${tekhton_home}/templates/${role}.md" "$target"

@@ -40,6 +40,14 @@ New observations belong in Non-Blocking Notes only. Reserve CHANGES_REQUIRED for
 regressions or blockers that were not actually fixed.
 {{ENDIF:PRIOR_BLOCKERS_BLOCK}}
 
+{{IF:SECURITY_FINDINGS_BLOCK}}
+## Security Findings (from Security Agent)
+The following security findings were identified by the security review agent.
+CRITICAL/HIGH items that could not be auto-fixed need your attention. Do not
+duplicate the security agent's work — focus on code quality and correctness.
+{{SECURITY_FINDINGS_BLOCK}}
+{{ENDIF:SECURITY_FINDINGS_BLOCK}}
+
 ## Required Reading (read in this order, no more)
 1. `{{REVIEWER_ROLE_FILE}}` — your role and checklist
 2. `CODER_SUMMARY.md` — what was built and what files were touched

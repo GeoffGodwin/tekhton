@@ -18,9 +18,11 @@
 #   --status              Print saved pipeline state and exit
 #   --milestone           Milestone mode: higher turn limits, more review cycles
 #   --start-at coder      Full pipeline from scratch (default)
-#   --start-at review     Skip coder; requires CODER_SUMMARY.md
+#   --start-at security   Skip coder; requires CODER_SUMMARY.md
+#   --start-at review     Skip coder + security; requires CODER_SUMMARY.md
 #   --start-at tester     Resume tester from existing TESTER_REPORT.md
-#   --start-at test       Skip coder + reviewer; requires REVIEWER_REPORT.md
+#   --start-at test       Skip coder + security + reviewer; requires REVIEWER_REPORT.md
+#   --skip-security       Bypass security stage for a single run
 #   --plan-from-index     Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md
 #   --rescan              Incrementally update PROJECT_INDEX.md from git changes
 #   --rescan --full       Force full re-crawl regardless of change volume
@@ -175,6 +177,7 @@ SETUP_INDEXER=false
 WITH_LSP=false
 CURRENT_NOTE_LINE=""
 SKIP_AUDIT=false
+SKIP_SECURITY=false
 FORCE_AUDIT=false
 _AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
@@ -400,9 +403,11 @@ usage() {
     echo "                            upgraded tester model"
     echo "  --auto-advance            Auto-advance through milestones after acceptance"
     echo "  --start-at coder          Full pipeline from scratch (default)"
-    echo "  --start-at review         Skip coder; requires CODER_SUMMARY.md"
+    echo "  --start-at security       Skip coder; requires CODER_SUMMARY.md"
+    echo "  --start-at review         Skip coder + security; requires CODER_SUMMARY.md"
     echo "  --start-at tester         Resume tester from existing TESTER_REPORT.md"
-    echo "  --start-at test           Skip coder + reviewer; requires REVIEWER_REPORT.md"
+    echo "  --start-at test           Skip coder + security + reviewer; requires REVIEWER_REPORT.md"
+    echo "  --skip-security           Bypass security stage for a single run"
     echo "  --notes-filter BUG        Inject only [BUG] notes this run"
     echo "  --notes-filter FEAT       Inject only [FEAT] notes this run"
     echo "  --notes-filter POLISH     Inject only [POLISH] notes this run"

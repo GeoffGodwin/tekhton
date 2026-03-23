@@ -428,6 +428,8 @@ SERENA_MAX_RETRIES=2                # Health check retry attempts
 | Workspace detection | on | DETECT_WORKSPACES_ENABLED=false |
 | CI/CD inference | on | DETECT_CI_ENABLED=false |
 | Doc quality assessment | on | DOC_QUALITY_ASSESSMENT_ENABLED=false |
+| Dry-run cache | on | DRY_RUN_CACHE_TTL (default 3600s) |
+| Run checkpoint | **on** | CHECKPOINT_ENABLED=false to disable |
 | Health scoring | **on** | HEALTH_ENABLED=false to disable |
 | Health re-assess | off | HEALTH_REASSESS_ON_COMPLETE=true |
 | Quota pause/resume | **on** (Tier 1) | Always active (reactive detection) |
@@ -1058,6 +1060,19 @@ tekhton "task" or tekhton --milestone
 - `security.md` — security agent role definition (M09)
 - `intake.md` — intake/PM agent role definition (M10)
 
+**lib/ (DevX improvements):**
+- `init_report.sh` — Post-init focused summary + INIT_REPORT.md (M22)
+- `init_config_sections.sh` — Sectioned config file generator (M22)
+- `dry_run.sh` — Dry-run orchestration + cache management (M23)
+- `checkpoint.sh` — Pre-run git checkpoint + rollback (M24)
+- `notes_cli.sh` — CLI note management commands (M25)
+- `report.sh` — CLI run report summary (M17 fold-in)
+
+**completions/ (shell completion):**
+- `tekhton.bash` — Bash completion (M19)
+- `tekhton.zsh` — Zsh completion (M19)
+- `tekhton.fish` — Fish completion (M19)
+
 **templates/watchtower/ (static dashboard files):**
 - `index.html` — Dashboard shell with 4-tab navigation (M14)
 - `app.js` — Vanilla JS rendering logic (M14)
@@ -1071,6 +1086,77 @@ tekhton "task" or tekhton --milestone
 - `setup_indexer.sh` — indexer virtualenv setup (M03)
 - `setup_serena.sh` — Serena MCP server setup (M06)
 - `serena_config_template.json` — MCP config template (M06)
+
+## System Design: Developer Experience Improvements (M22-M25)
+
+### Problem
+
+Tekhton V2 was built by a senior developer for senior developers. V3 needs to
+be accessible to a wider audience — people with ideas who don't know how to write
+acceptance criteria, teams trying out Tekhton for the first time, and users who
+need confidence that the pipeline is trustworthy before letting it loose on their
+codebase. Four specific pain points:
+
+1. **Post-init confusion.** After `--init`, users face an 80+ key config file
+   with no guidance on what matters.
+2. **No preview mode.** Users can't see what the pipeline WOULD do without
+   committing turns. The scout is non-deterministic, so running and re-running
+   may produce different results.
+3. **No rollback.** If the pipeline writes bad code, the only recovery is
+   manual git operations. New users may not be comfortable with this.
+4. **Hidden notes system.** HUMAN_NOTES.md is powerful but undiscoverable.
+   Manual markdown editing is a friction barrier.
+
+### Design
+
+**M22: Init UX Overhaul.** The post-init experience becomes a focused summary
+showing what was detected, what needs attention, and numbered next steps. The
+config file gets clear section headers (Essential → Models → Pipeline → Security
+→ Features → Quotas) with `# VERIFY` markers on low-confidence detections. A
+persistent INIT_REPORT.md feeds both the CLI and Watchtower.
+
+**M23: Dry-Run & Preview.** `tekhton --dry-run` runs scout + intake only, shows
+a preview, and caches results. The cache is keyed on task hash + git HEAD sha +
+TTL (default 1 hour). The next actual run detects the cache and offers to continue
+from it, ensuring the preview matches execution. Cache invalidates automatically
+on code changes or task changes. This builds trust: see what it plans, approve,
+then execute.
+
+**M24: Run Safety Net.** Pre-run git checkpoint (stash uncommitted changes,
+record HEAD sha). `--rollback` cleanly reverts: `git revert` for committed
+changes (non-destructive, preserves history), `git stash pop` for pre-run state
+restoration. Only the most recent run is rollback-able. Safety checks prevent
+rollback when additional commits exist or when uncommitted changes would be lost.
+Never uses `git reset --hard`.
+
+**M25: Human Notes UX.** `tekhton note "Fix the bug" --tag BUG` adds a properly
+formatted entry via CLI. `note --list`, `note --done`, `note --clear` for
+management. Post-run display includes usage tips. Notes summary feeds Watchtower
+and the PM agent.
+
+### Fold-ins to Existing Milestones
+
+In addition to the four new milestones, the DevX audit identified improvements
+that fold naturally into existing planned milestones:
+
+- **M10 (PM Agent):** `--add-milestone` command for adding single milestones
+  to the DAG without running --replan
+- **M13 (Watchtower Data):** Enhanced CLI progress heartbeat showing turn count
+  in the agent spinner (e.g., "Coder (4m12s, 14/25 turns)")
+- **M17 (Diagnostics):** `tekhton report` command for successful run summaries,
+  smart crash handler with first-aid advice, context-rich resume prompt
+- **M19 (Distribution):** Shell completion (bash/zsh/fish), grouped help text,
+  changelog in update notifications
+
+### Why V3, Not V4
+
+These improvements directly address the V3 goal of accessibility. Every hour
+a new user spends confused by config, scared to run the pipeline, or unable to
+undo a bad result is an hour that erodes trust. The safety net and preview mode
+are especially critical for beta users — they need to trust Tekhton before they
+can recommend it.
+
+---
 
 ## V4 Forward Seeds
 

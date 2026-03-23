@@ -4942,3 +4942,745 @@ Seeds Forward:
   (DAG execution, parallel agents, UI plugin) for their own testing
 - The integration test pattern (fixture project → full pipeline) becomes the
   template for end-to-end testing of future features
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 1: Milestone DAG Infrastructure
+Add the DAG-based milestone storage system: a pipe-delimited manifest tracking
+dependencies and status, individual `.md` files per milestone, DAG query functions
+(frontier detection, cycle validation), and auto-migration from inline CLAUDE.md
+milestones. This milestone replaces the sequential-only milestone model with a
+dependency-aware DAG that enables future parallel execution.
+
+Files to create:
+- `lib/milestone_dag.sh` — manifest parser (`load_manifest()`, `save_manifest()`
+  using atomic tmpfile+mv), DAG query functions (`dag_get_frontier()`,
+  `dag_deps_satisfied()`, `dag_find_next()`, `dag_get_active()`), validation
+  (`validate_manifest()` with cycle detection via DFS), ID↔number conversion
+  (`dag_id_to_number()`, `dag_number_to_id()`). Data structures: parallel bash
+  arrays (`_DAG_IDS[]`, `_DAG_TITLES[]`, `_DAG_STATUSES[]`, `_DAG_DEPS[]`,
+  `_DAG_FILES[]`, `_DAG_GROUPS[]`) with associative index `_DAG_IDX[id]=index`.
+- `lib/milestone_dag_migrate.sh` — `migrate_inline_milestones(claude_md, milestone_dir)`
+  extracts all inline milestones from CLAUDE.md into individual files in
+  `.claude/milestones/`, generates `MANIFEST.cfg`. Uses existing
+  `_extract_milestone_block()` for block extraction. File naming:
+  `m{NN}-{slugified-title}.md`. Dependencies inferred from sequential order
+  (each depends on previous) unless explicit "depends on Milestone N" references
+  found in text.
+
+Files to modify:
+- `lib/milestones.sh` — add `parse_milestones_auto()` dual-path wrapper: if
+  manifest exists, returns milestone data from it in the same
+  `NUMBER|TITLE|ACCEPTANCE_CRITERIA` format as `parse_milestones()`. All
+  downstream consumers work unchanged.
+- `lib/milestone_ops.sh` — `find_next_milestone()` gains DAG-aware path calling
+  `dag_find_next()`. `mark_milestone_done()` gains DAG path calling
+  `dag_set_status(id, "done")` + `save_manifest()`.
+- `lib/milestone_archival.sh` — adapt for file-based milestones: read milestone
+  file directly via `dag_get_file()`, append to archive, no CLAUDE.md block
+  extraction needed.
+- `lib/milestone_split.sh` — adapt for file-based milestones: write sub-milestone
+  files + insert manifest rows instead of replacing CLAUDE.md blocks.
+- `lib/milestone_metadata.sh` — write metadata into milestone files instead of
+  CLAUDE.md headings.
+- `lib/config_defaults.sh` — add defaults: `MILESTONE_DAG_ENABLED=true`,
+  `MILESTONE_DIR=".claude/milestones"`, `MILESTONE_MANIFEST="MANIFEST.cfg"`,
+  `MILESTONE_AUTO_MIGRATE=true`, `MILESTONE_WINDOW_PCT=30`,
+  `MILESTONE_WINDOW_MAX_CHARS=20000`. Add clamps for PCT (80) and MAX_CHARS (100000).
+- `tekhton.sh` — source new modules, add DAG-aware milestone initialization,
+  add auto-migration at startup (if manifest missing but inline milestones found).
+- `templates/pipeline.conf.example` — add milestone DAG config section with
+  explanatory comments.
+
+Manifest format (`.claude/milestones/MANIFEST.cfg`):
+```
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 2: Sliding Window & Plan Generation Integration
+<!-- milestone-meta
+id: "2"
+status: "done"
+-->
+
+Wire the DAG into the prompt engine with a character-budgeted sliding window that
+injects only relevant milestones into agent context. Update plan generation to emit
+milestone files instead of inline CLAUDE.md sections. Add auto-migration at startup
+for existing projects with inline milestones.
+
+Files to create:
+- `lib/milestone_window.sh` — `build_milestone_window(model)` assembles
+  character-budgeted milestone context block from the manifest. Priority:
+  active milestone (full content) → frontier milestones (first paragraph +
+  acceptance criteria) → on-deck milestones (title + one-line description).
+  Fills greedily until budget exhaustion. `_compute_milestone_budget(model)`
+  calculates available chars: `min(available * MILESTONE_WINDOW_PCT/100,
+  MILESTONE_WINDOW_MAX_CHARS)`. `_milestone_priority_list()` returns ordered
+  IDs by priority. Integrates with `_add_context_component()` for accounting.
+
+Files to modify:
+- `stages/coder.sh` — replace static MILESTONE_BLOCK with
+  `build_milestone_window()` call when manifest exists. Falls back to existing
+  behavior when no manifest.
+- `stages/plan_generate.sh` — after agent produces CLAUDE.md content, post-process:
+  extract milestone blocks into individual files in `.claude/milestones/`, generate
+  MANIFEST.cfg, remove milestone blocks from CLAUDE.md and insert pointer comment.
+  Agent prompt and output format are unchanged — shell handles extraction.
+- `lib/orchestrate_helpers.sh` — `_run_auto_advance_chain()` uses DAG-aware
+  milestone ordering via `dag_find_next()`.
+- `lib/config.sh` — add MILESTONE_DIR path resolution (relative → absolute).
+- `tekhton.sh` — add auto-migration trigger at startup: if `MILESTONE_DAG_ENABLED`
+  and `MILESTONE_AUTO_MIGRATE` and no manifest exists but inline milestones
+  detected, run `migrate_inline_milestones()`.
+
+Acceptance criteria:
+- `build_milestone_window()` returns only the active milestone + frontier
+  milestones that fit within the character budget
+- When budget is exhausted, frontier milestones are truncated (first paragraph +
+  acceptance criteria only) rather than omitted entirely
+- On-deck milestones only included if budget remains after all frontier milestones
+- The window integrates with `_add_context_component()` for context accounting
+- Plan generation extracts milestones from agent output into individual files and
+  generates a valid MANIFEST.cfg
+- Auto-migration at startup correctly converts inline CLAUDE.md milestones to
+  files + manifest
+- After migration, CLAUDE.md no longer contains full milestone blocks
+- `_run_auto_advance_chain()` works correctly with DAG-based ordering
+- Window respects `MILESTONE_WINDOW_MAX_CHARS` hard cap
+- When `MILESTONE_DAG_ENABLED=false`, all behavior is identical to v2
+- All existing tests pass
+- `bash -n lib/milestone_window.sh` passes
+- `shellcheck lib/milestone_window.sh` passes
+- New test files: `tests/test_milestone_window.sh` (budget calculation, priority
+  ordering, budget exhaustion), `tests/test_milestone_dag_migrate.sh` (inline
+  extraction, manifest generation, CLAUDE.md cleanup, re-migration idempotency)
+
+Watch For:
+- Plan generation post-processing must handle variable heading depth (####, #####)
+  since agents may vary formatting. Use the same regex as `parse_milestones()`.
+- Auto-migration must be idempotent. If MANIFEST.cfg already exists, skip.
+  If interrupted mid-way, next run should detect partial state and complete.
+- CLAUDE.md trimming after milestone extraction must preserve all non-milestone
+  content exactly. Use existing `_extract_milestone_block()` +
+  `_replace_milestone_block()` pattern.
+- Character budget must account for the instruction header (~300 chars) prepended
+  by `build_milestone_window()`. Subtract before filling with file content.
+- When the active milestone file exceeds the entire budget, truncate it (keep
+  acceptance criteria at minimum) rather than failing. Log a warning.
+
+Seeds Forward:
+- The DAG data model supports future parallel execution: `dag_get_frontier()`
+  returns all parallelizable milestones
+- The sliding window pattern can be extended for repo map integration: pre-compute
+  the repo map slice from the milestone's "Files to create/modify" section
+- Auto-migration creates the `.claude/milestones/` directory structure that future
+  tooling (milestone dashboards, progress tracking) can consume
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 3: Indexer Infrastructure & Setup Command
+<!-- milestone-meta
+id: "3"
+status: "done"
+-->
+Add the shell-side orchestration layer, Python dependency detection, setup command,
+and configuration keys. This milestone builds the framework that Milestones 4-8
+plug into. No actual indexing logic yet — just the plumbing.
+
+Files to create:
+- `lib/indexer.sh` — `check_indexer_available()` (returns 0 if Python + tree-sitter
+  found), `run_repo_map(task, token_budget)` (invokes Python tool, captures output),
+  `get_repo_map_slice(file_list)` (extracts entries for specific files from cached
+  map), `invalidate_repo_map_cache()`. All functions are no-ops returning fallback
+  values when Python is unavailable.
+- `tools/setup_indexer.sh` — standalone setup script: checks Python version (≥3.8),
+  creates virtualenv in `.claude/indexer-venv/`, installs `tree-sitter`,
+  `tree-sitter-languages` (or individual grammars), `networkx`. Idempotent — safe
+  to re-run. Prints clear error messages if Python is missing.
+
+Files to modify:
+- `tekhton.sh` — add `--setup-indexer` early-exit path that runs
+  `tools/setup_indexer.sh`. Source `lib/indexer.sh`. Call
+  `check_indexer_available()` at startup and set `INDEXER_AVAILABLE=true/false`.
+- `lib/config.sh` — add defaults: `REPO_MAP_ENABLED=false`,
+  `REPO_MAP_TOKEN_BUDGET=2048`, `REPO_MAP_CACHE_DIR=".claude/index"`,
+  `REPO_MAP_LANGUAGES="auto"` (auto-detect from file extensions),
+  `SERENA_ENABLED=false`, `SERENA_CONFIG_PATH=""`.
+- `templates/pipeline.conf.example` — add indexer config section with explanatory
+  comments
+
+Acceptance criteria:
+- `tekhton --setup-indexer` creates virtualenv and installs dependencies
+- `check_indexer_available` returns 0 when venv + tree-sitter exist, 1 otherwise
+- When `REPO_MAP_ENABLED=true` but Python unavailable, pipeline logs a warning
+  and falls back to 2.0 behavior (no error, no abort)
+- Config keys are validated (token budget must be positive integer, etc.)
+- `.claude/indexer-venv/` is added to the default `.gitignore` warning check
+- All existing tests pass
+- `bash -n lib/indexer.sh tools/setup_indexer.sh` passes
+- `shellcheck lib/indexer.sh tools/setup_indexer.sh` passes
+
+Watch For:
+- virtualenv creation must work on Linux, macOS, and Windows (Git Bash). Use
+  `python3 -m venv` not `virtualenv` command.
+- tree-sitter grammar installation varies by platform. The setup script should
+  handle failures gracefully per-grammar (some languages may fail on some platforms).
+- The `.claude/indexer-venv/` directory can be large. It must never be committed.
+- `REPO_MAP_LANGUAGES="auto"` detection should scan file extensions in the project
+  root (1 level deep to stay fast), not walk the entire tree.
+
+Seeds Forward:
+- Milestone 4 implements the Python tool that `run_repo_map()` invokes
+- Milestone 5 wires the repo map output into pipeline stages
+- Milestone 6 extends the setup command with `--with-lsp` for Serena
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 4: Tree-Sitter Repo Map Generator
+<!-- milestone-meta
+id: "4"
+status: "done"
+-->
+Implement the Python tool that parses source files with tree-sitter, extracts
+definition and reference tags, builds a file-relationship graph, ranks files by
+PageRank relevance to the current task, and emits a token-budgeted repo map
+containing only function/class/method signatures — no implementations.
+
+Files to create:
+- `tools/repo_map.py` — main entry point. CLI: `repo_map.py --root <dir>
+  --task "<task string>" --budget <tokens> --cache-dir <path> [--files f1,f2]`.
+  Steps: (1) walk project tree respecting `.gitignore`, (2) parse each file with
+  tree-sitter to extract tags (definitions: class, function, method; references:
+  call sites, imports), (3) build a directed graph: file A → file B if A references
+  a symbol defined in B, (4) run PageRank with personalization vector biased toward
+  files matching task keywords, (5) emit ranked file entries with signatures only,
+  stopping when token budget is exhausted. Output format: markdown with
+  `## filename` headings and indented signatures.
+- `tools/tag_cache.py` — disk-based tag cache using JSON. Key: file path +
+  mtime. On cache hit, skip tree-sitter parse. Cache stored in
+  `REPO_MAP_CACHE_DIR/tags.json`. Provides `load_cache()`, `save_cache()`,
+  `get_tags(filepath, mtime)`, `set_tags(filepath, mtime, tags)`.
+- `tools/tree_sitter_languages.py` — language detection and grammar loading.
+  Maps file extensions to tree-sitter grammars. Provides `get_parser(ext)` which
+  returns a configured parser or `None` for unsupported languages. Initial
+  language support: Python, JavaScript, TypeScript, Java, Go, Rust, C, C++,
+  Ruby, Bash, Dart, Swift, Kotlin, C#.
+- `tools/requirements.txt` — pinned dependencies: `tree-sitter>=0.21`,
+  `tree-sitter-languages>=1.10` (or individual grammar packages),
+  `networkx>=3.0`.
+
+Files to modify:
+- `lib/indexer.sh` — implement `run_repo_map()` to invoke
+  `tools/repo_map.py` via the project's indexer virtualenv Python. Parse
+  exit code: 0 = success (stdout is the map), 1 = partial (some files
+  failed, map is best-effort), 2 = fatal (fall back to 2.0). Write output
+  to `REPO_MAP_CACHE_DIR/REPO_MAP.md`.
+
+Output format example:
+```markdown
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 5: Pipeline Stage Integration
+<!-- milestone-meta
+id: "5"
+status: "done"
+-->
+
+Wire the repo map into all pipeline stages, replacing or supplementing full
+ARCHITECTURE.md injection. Each stage receives a different slice of the map
+optimized for its role. Integrate with v2's context accounting for
+budget-aware injection. Graceful degradation to 2.0 when map unavailable.
+
+Files to modify:
+- `stages/coder.sh` — when `REPO_MAP_ENABLED=true` and `INDEXER_AVAILABLE=true`:
+  (1) regenerate repo map with task-biased ranking before coder invocation,
+  (2) inject `REPO_MAP_CONTENT` into the coder prompt instead of full
+  `ARCHITECTURE_CONTENT` (architecture file is still available via scout report),
+  (3) if scout identified specific files, call `get_repo_map_slice()` to produce
+  a focused slice showing those files plus their direct dependencies. When
+  indexer unavailable, fall back to existing ARCHITECTURE_CONTENT injection.
+- `stages/review.sh` — when enabled: extract file list from CODER_SUMMARY.md,
+  call `get_repo_map_slice()` for those files + their callers (reverse
+  dependencies), inject as `REPO_MAP_CONTENT`. Reviewer sees the changed files
+  in full context of what calls them and what they call.
+- `stages/tester.sh` — when enabled: extract file list from CODER_SUMMARY.md,
+  call `get_repo_map_slice()` for those files + their test file counterparts
+  (heuristic: `foo.py` → `test_foo.py`, `foo.ts` → `foo.test.ts`). Inject as
+  `REPO_MAP_CONTENT`.
+- `stages/architect.sh` — when enabled: inject full repo map (not sliced).
+  Architect needs the broadest view for drift detection.
+- `lib/prompts.sh` — add `REPO_MAP_CONTENT` and `REPO_MAP_SLICE` as template
+  variables. Add `{{IF:REPO_MAP_CONTENT}}` conditional blocks.
+- `lib/context.sh` — add repo map as a named context component in
+  `log_context_report()`. Include it in budget calculations.
+- `prompts/coder.prompt.md` — add `{{IF:REPO_MAP_CONTENT}}` block with
+  instructions: "The following repo map shows ranked file signatures relevant
+  to your task. Use it to understand the codebase structure and identify files
+  to read or modify. Signatures show the public API — read full files before
+  making changes."
+- `prompts/reviewer.prompt.md` — add repo map block with instruction: "The
+  repo map below shows the changed files and their callers/callees. Use it
+  to verify that changes are consistent with the broader codebase structure."
+- `prompts/tester.prompt.md` — add repo map block with instruction: "The
+  repo map below shows the changed files and their test counterparts. Use it
+  to identify which test files need updates and what interfaces to test against."
+- `prompts/scout.prompt.md` — add full repo map block with instruction: "Use
+  this repo map to identify relevant files without needing to search the
+  filesystem. The map is ranked by likely relevance to the task."
+- `prompts/architect.prompt.md` — add full repo map block for drift analysis
+
+Acceptance criteria:
+- Coder stage injects repo map instead of full ARCHITECTURE.md when available
+- Reviewer sees changed files + reverse dependencies in map slice
+- Tester sees changed files + test counterparts in map slice
+- Scout sees full ranked map (dramatically reducing exploratory reads)
+- Context report shows repo map as a named component with token count
+- When `REPO_MAP_ENABLED=false` or indexer unavailable, all stages behave
+  identically to v2 (no warnings, no changes)
+- Prompt templates use conditional blocks — no repo map content appears in
+  prompts when feature is disabled
+- Token budget is respected: repo map + other context stays within
+  `CONTEXT_BUDGET_PCT`
+- All existing tests pass
+- `shellcheck` passes on all modified `.sh` files
+
+Watch For:
+- The scout stage benefits MOST from the repo map — it replaces blind `find`
+  and `grep` with a ranked file list. This is where the biggest token savings
+  come from.
+- ARCHITECTURE.md still has value for high-level design intent that tree-sitter
+  can't capture. Consider injecting a truncated architecture summary (first
+  N lines) alongside the repo map, not replacing it entirely.
+- The test file heuristic (`foo.py` → `test_foo.py`) is language-specific.
+  Keep it simple and configurable. A missed test file just means the tester
+  falls back to normal discovery.
+- Reverse dependency lookup (callers of changed files) can be expensive for
+  highly-connected files. Cap at top 20 callers by PageRank.
+
+Seeds Forward:
+- Milestone 6 (Serena) enhances the repo map with live symbol data, giving
+  agents even more precise context
+- Milestone 7 (Cross-Run Cache) uses task→file history from this milestone
+  to improve future repo map rankings
+- The prompt template patterns established here (`{{IF:REPO_MAP_CONTENT}}`)
+  are reused by Milestone 6 for LSP tool instructions
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 6: Serena MCP Integration
+<!-- milestone-meta
+id: "6"
+status: "done"
+-->
+
+Add optional LSP-powered symbol resolution via Serena as an MCP server. When
+enabled, agents gain `find_symbol`, `find_referencing_symbols`, and
+`get_symbol_definition` tools that provide live, accurate cross-reference data.
+This supplements the static repo map with runtime precision — the map tells
+agents WHERE to look, Serena tells them EXACTLY what's there.
+
+Files to create:
+- `tools/setup_serena.sh` — setup script for Serena: clones or updates the
+  Serena repo into `.claude/serena/`, installs its dependencies, generates
+  project-specific configuration. Detects available language servers for the
+  target project's languages (e.g., `pyright` for Python, `typescript-language-server`
+  for TS/JS, `gopls` for Go). Idempotent. Invoked via
+  `tekhton --setup-indexer --with-lsp`.
+- `tools/serena_config_template.json` — template MCP server configuration for
+  Claude CLI. Contains `{{SERENA_PATH}}`, `{{PROJECT_DIR}}`, `{{LANGUAGE_SERVERS}}`
+  placeholders that `setup_serena.sh` fills in.
+- `lib/mcp.sh` — MCP server lifecycle management: `start_mcp_server()`,
+  `stop_mcp_server()`, `check_mcp_health()`. Starts Serena as a background
+  process before agent invocation, health-checks it, stops it after the stage
+  completes. Uses the session temp directory for Serena's socket/pipe.
+
+Files to modify:
+- `tekhton.sh` — source `lib/mcp.sh`. Add `--with-lsp` flag parsing for
+  `--setup-indexer`. When `SERENA_ENABLED=true`, call `start_mcp_server()`
+  before first agent stage and `stop_mcp_server()` in the EXIT trap.
+- `lib/indexer.sh` — add `check_serena_available()` that verifies Serena
+  installation and at least one language server. Update `check_indexer_available()`
+  to report both repo map and Serena status separately.
+- `lib/config.sh` — add defaults: `SERENA_ENABLED=false`,
+  `SERENA_PATH=".claude/serena"`, `SERENA_LANGUAGE_SERVERS="auto"`,
+  `SERENA_STARTUP_TIMEOUT=30`, `SERENA_MAX_RETRIES=2`.
+- `lib/agent.sh` — when `SERENA_ENABLED=true` and Serena is running, add
+  `--mcp-config` flag to `claude` CLI invocations pointing to the generated
+  MCP config. This gives agents access to Serena's tools.
+- `prompts/coder.prompt.md` — add `{{IF:SERENA_ENABLED}}` block: "You have
+  access to LSP tools via MCP. Use `find_symbol` to locate definitions,
+  `find_referencing_symbols` to find all callers of a function, and
+  `get_symbol_definition` to read a symbol's full definition with type info.
+  Prefer these over grep for precise symbol lookup. The repo map gives you
+  the overview; LSP tools give you precision."
+- `prompts/reviewer.prompt.md` — add Serena tool instructions for verifying
+  that changes don't break callers
+- `prompts/scout.prompt.md` — add Serena tool instructions for discovery:
+  "Use `find_symbol` to verify that functions you find in the repo map
+  actually exist and to check their signatures before recommending files."
+- `templates/pipeline.conf.example` — add Serena config section
+
+Acceptance criteria:
+- `tekhton --setup-indexer --with-lsp` installs Serena and detects language servers
+- MCP server starts before first agent stage and stops on pipeline exit
+- `check_mcp_health()` returns 0 when Serena responds, 1 otherwise
+- When Serena fails to start, pipeline logs warning and continues without LSP
+  tools (agents still have the static repo map)
+- Agent CLI invocations include `--mcp-config` when Serena is available
+- Prompt templates conditionally inject Serena tool usage instructions
+- `SERENA_ENABLED=false` (default) produces identical behavior to Milestone 5
+- Serena process is always cleaned up on exit (no orphaned processes)
+- All existing tests pass
+- `bash -n lib/mcp.sh tools/setup_serena.sh` passes
+- `shellcheck lib/mcp.sh tools/setup_serena.sh` passes
+
+Watch For:
+- Serena startup can take 10-30 seconds while language servers index the project.
+  `SERENA_STARTUP_TIMEOUT` must be generous. Show a progress indicator.
+- Language server availability varies wildly. A project may have `pyright` but
+  not `gopls`. Serena should work with whatever's available and report which
+  languages have full LSP support vs. tree-sitter-only.
+- MCP server configuration format may change between Claude CLI versions. Keep
+  the config template simple and version-annotated.
+- Orphaned Serena processes are a real risk. The EXIT trap must kill the process
+  group, not just the main process. Test with Ctrl+C, SIGTERM, and SIGKILL.
+- The MCP `--mcp-config` flag may not be available in all Claude CLI versions.
+  Detect CLI version and fall back gracefully.
+
+Seeds Forward:
+- Milestone 7 can use Serena's type information to enrich the tag cache with
+  parameter types and return types (richer signatures)
+- Future v3 milestones for parallel agents (DAG execution) will need per-agent
+  MCP server instances or a shared server with locking — design the lifecycle
+  management with this in mind
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 7: Cross-Run Cache & Personalized Ranking
+<!-- milestone-meta
+id: "7"
+status: "done"
+-->
+
+Make the indexer persistent and adaptive across pipeline runs. The tag cache
+survives between runs with mtime-based invalidation. Task→file association
+history improves PageRank personalization over time — files that were relevant
+to similar past tasks rank higher automatically. Integrate with v2's metrics
+system for tracking indexer performance.
+
+Files to modify:
+- `tools/repo_map.py` — add `--history-file <path>` flag. When provided, load
+  task→file association records and use them to build a personalization vector
+  that blends: (1) task keyword matches (current behavior, weight 0.6),
+  (2) historical file relevance from similar past tasks (weight 0.3),
+  (3) file recency from git log (weight 0.1). Add `--warm-cache` flag that
+  parses all project files and populates the tag cache without producing output
+  (for use during `tekhton --init`).
+- `tools/tag_cache.py` — add cache statistics: hit count, miss count, total
+  parse time saved. Add `prune_cache(root_dir)` that removes entries for files
+  that no longer exist. Add cache versioning — if cache format changes between
+  Tekhton versions, invalidate and rebuild rather than crash.
+- `lib/indexer.sh` — add `warm_index_cache()` (called during `--init` or
+  `--setup-indexer`), `record_task_file_association(task, files[])` (called
+  after coder stage with the files from CODER_SUMMARY.md),
+  `get_indexer_stats()` (returns cache hit rate and timing for metrics).
+  History file: `.claude/index/task_history.jsonl` (append-only JSONL, same
+  pattern as v2 metrics).
+- `lib/metrics.sh` — add indexer metrics to `record_run_metrics()`: cache hit
+  rate, repo map generation time, token savings vs full architecture injection.
+  Add indexer section to `summarize_metrics()` dashboard output.
+- `stages/coder.sh` — after coder completes, call
+  `record_task_file_association()` with the task and modified file list.
+- `tekhton.sh` — during `--init`, if indexer is available, call
+  `warm_index_cache()` to pre-populate the tag cache. Display progress.
+- `templates/pipeline.conf.example` — add `REPO_MAP_HISTORY_ENABLED=true`,
+  `REPO_MAP_HISTORY_MAX_RECORDS=200` config keys
+
+History record format (JSONL):
+```json
+{"ts":"2026-03-21T10:00:00Z","task":"add user authentication","files":["src/auth/login.py","src/models/user.py","src/api/routes.py"],"task_type":"feature"}
+```
+
+Acceptance criteria:
+- Tag cache persists between runs in `.claude/index/tags.json`
+- Changed files (new mtime) are re-parsed; unchanged files use cache
+- Deleted files are pruned from cache on next run
+- `--warm-cache` pre-populates the entire project cache in one pass
+- Task→file history is recorded after each successful coder stage
+- Personalization vector blends keyword, history, and recency signals
+- With 10+ history records, the repo map noticeably favors files that were
+  relevant to similar past tasks (measurable in ranking output)
+- `REPO_MAP_HISTORY_MAX_RECORDS` caps history file size (oldest records pruned)
+- Indexer metrics appear in `tekhton --metrics` dashboard
+- Cache version mismatch triggers rebuild with warning, not crash
+- All existing tests pass
+- New Python tests verify: history loading, personalization blending, cache
+  pruning, version migration, JSONL append safety
+
+Watch For:
+- JSONL is append-only by design. Never read-modify-write. Pruning creates a
+  new file and atomically replaces the old one.
+- Task similarity is keyword-based (bag of words overlap), not semantic. Keep
+  it simple — semantic similarity would require embeddings and adds complexity
+  and cost for marginal gain at this stage.
+- Git recency signal requires a git repo. For non-git projects, drop weight 0.1
+  and redistribute to keywords (0.7) and history (0.3).
+- History file can contain sensitive task descriptions. It lives in `.claude/`
+  which should be gitignored, but add a warning to the setup output.
+- Cache warming on large projects (10k+ files) may take 30-60 seconds. Show
+  a progress bar or periodic status line.
+
+Seeds Forward:
+- Future v3 milestones (parallel execution) can use task→file history to
+  predict which milestones will touch overlapping files and schedule them
+  to avoid merge conflicts
+- The metrics integration provides data for future adaptive token budgeting —
+  if the indexer consistently saves 70% of tokens, the pipeline can allocate
+  the savings to richer prompt content
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 8: Indexer Tests & Documentation
+<!-- milestone-meta
+id: "8"
+status: "done"
+-->
+
+Comprehensive test coverage for all indexing functionality: shell orchestration,
+Python tools, pipeline integration, fallback behavior, and Serena lifecycle.
+Update project documentation and repository layout.
+
+Files to create:
+- `tests/test_indexer.sh` — shell-side tests: `check_indexer_available()` returns
+  correct status for present/absent Python, `run_repo_map()` handles exit codes
+  (0/1/2), `get_repo_map_slice()` extracts correct file entries, fallback to 2.0
+  when indexer unavailable, config key validation (budget must be positive, etc.)
+- `tests/test_mcp.sh` — MCP lifecycle tests: `start_mcp_server()` / `stop_mcp_server()`
+  create and clean up processes, `check_mcp_health()` detects running/stopped
+  server, EXIT trap cleanup works, orphan prevention
+- `tests/test_repo_map_integration.sh` — end-to-end tests using a small fixture
+  project (created in test setup): verify repo map generation, stage injection
+  (coder/reviewer/tester get correct slices), context budget respected, conditional
+  prompt blocks render correctly when feature on/off
+- `tools/tests/test_repo_map.py` — Python unit tests: tag extraction for each
+  supported language, graph construction from tags, PageRank output, token budget
+  enforcement, `.gitignore` respect, error handling for unparseable files
+- `tools/tests/test_tag_cache.py` — cache hit/miss, mtime invalidation, pruning
+  deleted files, version migration, concurrent write safety
+- `tools/tests/test_history.py` — task→file recording, JSONL append, history
+  loading, personalization vector computation, max records pruning
+- `tools/tests/conftest.py` — shared fixtures: small multi-language project tree,
+  mock git repo, sample tag cache files
+- `tests/fixtures/indexer_project/` — small fixture project with Python, JS, and
+  Bash files for integration testing
+
+Files to modify:
+- `CLAUDE.md` — update Repository Layout to include `tools/` directory, `lib/indexer.sh`,
+  `lib/mcp.sh`. Update Template Variables table with all new config keys and their
+  defaults. Update Non-Negotiable Rules to note Python as an optional dependency.
+- `templates/pipeline.conf.example` — ensure all indexer config keys have
+  explanatory comments matching the detail level of existing keys
+- `tests/run_tests.sh` — add new test files to the test runner. Add conditional
+  Python test execution: if Python available, run `python3 -m pytest tools/tests/`;
+  if not, skip with a note.
+
+Acceptance criteria:
+- All shell tests pass via `bash tests/run_tests.sh`
+- All Python tests pass via `python3 -m pytest tools/tests/` (when Python available)
+- Test runner gracefully skips Python tests when Python unavailable
+- Fixture project exercises multi-language parsing (Python + JS + Bash minimum)
+- Integration test verifies full flow: setup → generate map → inject into stage →
+  verify prompt contains repo map content → verify context budget respected
+- Fallback test verifies: disable indexer → run pipeline → identical to v2 output
+- MCP tests verify no orphaned processes after normal exit, Ctrl+C, and error exit
+- `CLAUDE.md` Repository Layout includes all new files and directories
+- `CLAUDE.md` Template Variables table includes all new config keys
+- `bash -n` passes on all new `.sh` files
+- `shellcheck` passes on all new `.sh` files
+- All pre-existing tests (37+) continue to pass unchanged
+
+Watch For:
+- Python test fixtures must be self-contained — no network access, no real
+  language servers. Mock tree-sitter parsing for unit tests; use real parsing
+  only in integration tests.
+- The fixture project must be small (5-10 files) to keep tests fast.
+- MCP lifecycle tests are inherently flaky (process timing). Use retry logic
+  and generous timeouts in test assertions, not in production code.
+- Shell tests that verify prompt content should check for the presence of
+  `REPO_MAP_CONTENT` variable, not exact prompt text (prompts will evolve).
+- Ensure Python tests work with both `tree-sitter-languages` (bundled) and
+  individual grammar packages — CI environments may have either.
+
+Seeds Forward:
+- Test fixtures and patterns established here are reused by future v3 milestones
+  (DAG execution, parallel agents, UI plugin) for their own testing
+- The integration test pattern (fixture project → full pipeline) becomes the
+  template for end-to-end testing of future features
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 9: Security Agent Stage & Finding Classification
+<!-- milestone-meta
+id: "9"
+status: "done"
+-->
+
+Dedicated security review stage that scans coder output for vulnerabilities,
+classifies findings by severity and fixability, and produces a structured
+SECURITY_REPORT.md. Runs after the build gate, before the reviewer. Enabled
+by default (opt-out via SECURITY_AGENT_ENABLED=false).
+
+Seeds Forward (V4): When parallel execution lands, this stage transitions from
+serial (after coder, before reviewer) to parallel (alongside reviewer with
+merged findings). The data model and report format are designed to support both
+execution modes without changes.
+
+Files to create:
+- `stages/security.sh` — `run_stage_security()`: invoke security agent, parse
+  SECURITY_REPORT.md output, classify findings by severity (CRITICAL/HIGH/MEDIUM/LOW),
+  route fixable CRITICAL/HIGH findings to security rework loop (bounded by
+  SECURITY_MAX_REWORK_CYCLES), route unfixable findings per SECURITY_UNFIXABLE_POLICY
+  (escalate → HUMAN_ACTION_REQUIRED.md, halt → pipeline exit, waiver → log and continue).
+  MEDIUM/LOW findings written to SECURITY_NOTES.md for reviewer context. Stage skipped
+  cleanly when SECURITY_AGENT_ENABLED=false.
+  **Fast-path skip:** Before invoking the agent, parse CODER_SUMMARY.md for changed
+  file types. If ALL changed files are docs-only (.md, .txt, .rst), config-only
+  (.json, .yaml, .toml without code), or asset-only (images, fonts), skip the
+  security scan entirely with a log message. This avoids wasting turns on trivial
+  changes like README edits or config formatting.
+  **Post-rework build gate:** After each security rework cycle, re-run the build
+  gate (same as after review rework). A security fix that breaks the build must be
+  caught before re-scanning. Flow: security finding → coder rework → build gate →
+  re-scan (or proceed if max cycles reached).
+- `prompts/security_scan.prompt.md` — Security scan prompt template. Instructs agent to:
+  (1) read CODER_SUMMARY.md for changed files, (2) read only those files,
+  (3) analyze for OWASP Top 10, injection, auth flaws, secrets exposure, insecure
+  dependencies, crypto misuse, (4) produce SECURITY_REPORT.md with structured format:
+  each finding has severity (CRITICAL/HIGH/MEDIUM/LOW), category (OWASP ID or custom),
+  file:line, description, fixable (yes/no/unknown), and suggested fix.
+  Includes static rule reference section for offline operation.
+  When SECURITY_ONLINE_SOURCES is available, instructs agent to cross-reference
+  known CVE databases and dependency advisories.
+- `prompts/security_rework.prompt.md` — Security rework prompt for coder. Injects
+  fixable CRITICAL/HIGH findings from SECURITY_REPORT.md as mandatory fixes.
+  Structured like coder_rework.prompt.md: read the finding, read the file, fix it,
+  verify the fix doesn't introduce new issues.
+- `templates/security.md` — Security agent role definition (copied to target project
+  by --init). Defines the agent's security expertise, review methodology, and
+  output format expectations. Includes static reference material for common
+  vulnerability patterns organized by language/framework.
+
+Files to modify:
+- `tekhton.sh` — Add `source "${TEKHTON_HOME}/stages/security.sh"` to the stage
+  source block. Insert `run_stage_security` call between the build gate (end of
+  Stage 1) and `run_stage_review` (Stage 2). Update `--start-at` handling to
+  support `--start-at security` for resuming from security stage. Update stage
+  numbering in headers: Stage 1 Coder, Stage 2 Security, Stage 3 Reviewer,
+  Stage 4 Tester. Add `--skip-security` flag for one-off bypass.
+- `lib/config_defaults.sh` — Add security agent config defaults:
+  SECURITY_AGENT_ENABLED=true (opt-out model), CLAUDE_SECURITY_MODEL (defaults to
+  CLAUDE_STANDARD_MODEL), SECURITY_MAX_TURNS=15, SECURITY_MIN_TURNS=8,
+  SECURITY_MAX_TURNS_CAP=30, SECURITY_MAX_REWORK_CYCLES=2,
+  MILESTONE_SECURITY_MAX_TURNS=$(( SECURITY_MAX_TURNS * 2 )),
+  SECURITY_BLOCK_SEVERITY=HIGH (minimum severity triggering rework),
+  SECURITY_UNFIXABLE_POLICY=escalate (escalate|halt|waiver),
+  SECURITY_OFFLINE_MODE=auto (auto|offline|online — auto detects connectivity),
+  SECURITY_ONLINE_SOURCES="" (optional: snyk, nvd, ghsa),
+  SECURITY_ROLE_FILE=.claude/agents/security.md,
+  SECURITY_NOTES_FILE=SECURITY_NOTES.md,
+  SECURITY_REPORT_FILE=SECURITY_REPORT.md,
+  SECURITY_WAIVER_FILE="" (optional path to pre-approved waivers list).
+- `lib/config.sh` — Add SECURITY_* keys to config validation. Validate
+  SECURITY_UNFIXABLE_POLICY is one of escalate|halt|waiver. Validate
+  SECURITY_BLOCK_SEVERITY is one of CRITICAL|HIGH|MEDIUM|LOW.
+- `lib/hooks.sh` or `lib/finalize.sh` — Include SECURITY_NOTES.md and
+  SECURITY_REPORT.md in archive step. Include security findings summary in
+  RUN_SUMMARY.json.
+- `lib/prompts.sh` — Register new template variables: SECURITY_REPORT_CONTENT,
+  SECURITY_NOTES_CONTENT, SECURITY_FINDINGS_BLOCK (summary of findings for
+  reviewer injection), SECURITY_FIXES_BLOCK (summary of security fixes applied
+  during rework, for tester awareness).
+- `prompts/tester.prompt.md` — Add conditional security fixes block:
+  `{{IF:SECURITY_FIXES_BLOCK}}## Security Fixes Applied
+  The following security issues were fixed during this run. Ensure your tests
+  cover the fix behavior (e.g., input validation, auth checks).
+  {{SECURITY_FIXES_BLOCK}}{{ENDIF:SECURITY_FIXES_BLOCK}}`
+- `prompts/reviewer.prompt.md` — Add conditional security context block:
+  `{{IF:SECURITY_FINDINGS_BLOCK}}## Security Findings (from Security Agent)
+  {{SECURITY_FINDINGS_BLOCK}}{{ENDIF:SECURITY_FINDINGS_BLOCK}}`
+  Instructs reviewer to treat CRITICAL/HIGH unfixed items as context for their
+  own review but not to duplicate the security agent's work.
+- `lib/state.sh` — Add "security" as valid pipeline stage for state persistence
+  and resume. Support `--start-at security`.
+
+Acceptance criteria:
+- `run_stage_security()` invokes security agent and produces SECURITY_REPORT.md
+- SECURITY_REPORT.md contains structured findings with severity, category, file:line,
+  fixable flag, and suggested fix for each finding
+- Findings classified as CRITICAL or HIGH (configurable via SECURITY_BLOCK_SEVERITY)
+  with fixable=yes trigger rework loop back to coder
+- Rework loop bounded by SECURITY_MAX_REWORK_CYCLES (default 2) — exhaustion
+  proceeds to reviewer with unfixed items in SECURITY_NOTES.md
+- Findings classified as unfixable + CRITICAL/HIGH follow SECURITY_UNFIXABLE_POLICY:
+  escalate writes to HUMAN_ACTION_REQUIRED.md and continues, halt exits pipeline,
+  waiver logs to SECURITY_NOTES.md and continues
+- MEDIUM/LOW findings always go to SECURITY_NOTES.md (never trigger rework)
+- Reviewer prompt includes SECURITY_FINDINGS_BLOCK when findings exist
+- When SECURITY_AGENT_ENABLED=false, stage is cleanly skipped (no error, no output)
+- When SECURITY_OFFLINE_MODE=auto and no connectivity, agent uses static rules only
+- `--start-at security` resumes pipeline from security stage
+- `--skip-security` bypasses security stage for a single run
+- Pipeline state saves/restores correctly through security stage
+- Stage numbering updated throughout: Coder(1), Security(2), Review(3), Test(4)
+- Fast-path skip: docs-only / config-only / asset-only changes skip security scan
+- Post-rework build gate: build gate runs after each security rework cycle
+- Tester prompt includes SECURITY_FIXES_BLOCK when security fixes were applied
+- Dynamic turns: SECURITY_MIN_TURNS and SECURITY_MAX_TURNS_CAP respected
+- Milestone mode: MILESTONE_SECURITY_MAX_TURNS used when --milestone active
+- All existing tests pass
+- `bash -n stages/security.sh` passes
+- `shellcheck stages/security.sh` passes
+
+Watch For:
+- Stage renumbering from 3 to 4 stages affects header output, progress tracking,
+  and any hardcoded "Stage N / 3" strings. Grep for "/ 3" in all stages.
+- The rework loop in security mirrors the review rework loop but routes to a
+  DIFFERENT prompt (security_rework vs coder_rework). The coder needs to understand
+  it's fixing security issues, not review feedback.
+- SECURITY_REPORT.md parsing must be robust — the agent may not perfectly follow
+  the format. Use the same grep-based verdict extraction pattern as review.sh.
+- The `--start-at` chain must be updated: coder → security → review → test.
+  Skipping to review should also skip security. Skipping to security should
+  require CODER_SUMMARY.md to exist.
+- SECURITY_WAIVER_FILE is optional — when provided, known-waivered CVEs/patterns
+  should not trigger rework. This is a simple grep-based check, not a full
+  policy engine.
+- The security agent role file (templates/security.md) needs to be comprehensive
+  enough to work offline but not so large it wastes context. Target ~200 lines
+  covering the most common vulnerability patterns.
+
+Seeds Forward:
+- M10 (PM Agent) can reference security posture when evaluating task readiness
+- Dashboard UI will render SECURITY_REPORT.md findings in a dedicated panel
+- V4 parallel execution converts this from serial to parallel-with-reviewer
+- The SECURITY_WAIVER_FILE pattern is reusable for other policy-driven gates
+- SECURITY_NOTES.md feeds into the future Tech Debt Agent's backlog

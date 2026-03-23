@@ -3,14 +3,31 @@
 # indexer_helpers.sh — Indexer support functions (language detection, config)
 #
 # Sourced by tekhton.sh — do not run directly.
-# Provides: detect_repo_languages(), validate_indexer_config(),
-#           extract_files_from_coder_summary(), infer_test_counterparts()
+# Provides: _indexer_resolve_cache_dir(), detect_repo_languages(),
+#           validate_indexer_config(), extract_files_from_coder_summary(),
+#           infer_test_counterparts()
 #
 # Extracted from indexer.sh to stay under the 300-line ceiling.
 #
 # Dependencies: common.sh (log, warn)
 # =============================================================================
 set -euo pipefail
+
+# --- Cache directory resolution -----------------------------------------------
+
+# _indexer_resolve_cache_dir — Resolve REPO_MAP_CACHE_DIR to an absolute path.
+# Creates the directory if it doesn't exist.
+# Output: absolute path to cache directory on stdout
+# Returns: 0 always
+_indexer_resolve_cache_dir() {
+    local cache_dir="${REPO_MAP_CACHE_DIR:-.claude/index}"
+    local project_dir="${1:-$PROJECT_DIR}"
+    if [[ "$cache_dir" != /* ]]; then
+        cache_dir="${project_dir}/${cache_dir}"
+    fi
+    mkdir -p "$cache_dir" 2>/dev/null || true
+    echo "$cache_dir"
+}
 
 # --- Language auto-detection --------------------------------------------------
 

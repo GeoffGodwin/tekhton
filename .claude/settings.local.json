@@ -9,7 +9,8 @@
       "Bash(find . -maxdepth 2 \\\\\\(-name *v3* -o -name *V3* \\\\\\))",
       "Bash(grep -r \"test.*quality\\\\|test.*coverage\\\\|test.*valid\" /home/geoff/workspace/geoffgodwin/tekhton/lib/*.sh)",
       "Bash(ls -1 prompts/specialist*.prompt.md)",
-      "Bash(grep -l \"test\\\\|Test\" prompts/specialist*.prompt.md)"
+      "Bash(grep -l \"test\\\\|Test\" prompts/specialist*.prompt.md)",
+      "Bash(grep -r \"log_info\\\\|log_warn\\\\|log_error\\\\|log_success\" /home/geoff/workspace/geoffgodwin/tekhton --include=*.sh)"
     ]
   }
 }
