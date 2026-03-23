@@ -260,7 +260,7 @@ _offer_tidy_commit() {
     [[ -z "$changes" ]] && return 0
 
     if prompt_confirm "Create a git commit for the ${tool_name} removal?" "n"; then
-        git -C "$project_dir" add -A >/dev/null 2>&1
+        git -C "$project_dir" add -u >/dev/null 2>&1
         git -C "$project_dir" commit -m "chore: remove prior ${tool_name} config (tekhton --init)" \
             >/dev/null 2>&1 || true
         success "Committed removal of ${tool_name} config"

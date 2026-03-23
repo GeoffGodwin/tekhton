@@ -66,8 +66,7 @@ warm_index_cache() {
         --root "$PROJECT_DIR" \
         --cache-dir "$cache_dir" \
         --languages "$languages" \
-        --warm-cache \
-        --stats 2>&1 | while IFS= read -r line; do
+        --warm-cache 2>&1 | while IFS= read -r line; do
             # Forward progress lines to log
             if [[ "$line" == "[indexer]"* ]]; then
                 log "$line"
@@ -121,7 +120,7 @@ record_task_file_association() {
     local task_type="feature"
     local lower
     lower=$(echo "$task" | tr '[:upper:]' '[:lower:]')
-    if echo "$lower" | grep -qE '(^fix|bug|bugfix|hotfix|patch)'; then
+    if echo "$lower" | grep -qE '(^fix|bug|bugfix|hotfix|patch|regression|broken|crash)'; then
         task_type="bug"
     elif echo "$lower" | grep -qE '(^milestone|milestone [0-9])'; then
         task_type="milestone"

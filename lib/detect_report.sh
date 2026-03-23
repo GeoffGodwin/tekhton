@@ -101,7 +101,7 @@ _format_workspace_section() {
         [[ -z "$ws_type" ]] && continue
         # Count subprojects
         local count
-        count=$(echo "$subs" | tr ',' '\n' | grep -c '.' || echo "0")
+        count=$(echo "$subs" | tr ',' '\n' | grep -cv '\.\.\.' || echo "0")
         echo "| ${ws_type} | ${manifest} | ${count} (${subs}) |"
     done <<< "$workspaces"
     echo ""

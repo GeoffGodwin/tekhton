@@ -192,12 +192,11 @@ if echo "$ws_output" | grep -q "packages/lib-a"; then
 else
     fail "pnpm multi-pattern: first-pattern subproject NOT found: $ws_output"
 fi
-# Second pattern (apps/*) subprojects are NOT enumerated due to awk exit bug
+# Second pattern (apps/*) subprojects should be enumerated after awk fix
 if echo "$ws_output" | grep -q "apps/web-app"; then
-    # If this starts passing, the awk bug was fixed — that's fine
     pass "pnpm multi-pattern: second-pattern subproject (apps/web-app) enumerated (awk fixed)"
 else
-    pass "pnpm multi-pattern: second-pattern (apps/web-app) absent — awk exits after first pattern (known limitation)"
+    fail "pnpm multi-pattern: second-pattern subproject NOT found (awk fix regression): $ws_output"
 fi
 
 # =============================================================================
@@ -310,12 +309,12 @@ gha_row=$(echo "$ci_section_output" | grep "| github-actions" | head -1)
 if [[ -n "$gha_row" ]]; then
     deploy_col=$(echo "$gha_row" | cut -d'|' -f6 | tr -d ' ')
     conf_col=$(echo "$gha_row" | cut -d'|' -f7 | tr -d ' ')
-    # Due to the field misalignment (github-actions|||||aws|medium → deploy_tgt gets
-    # empty field 5, _lang gets 'aws' in field 6 which is discarded), deploy shows '-'
-    if [[ "$deploy_col" == "-" ]]; then
-        pass "_format_ci_section: deploy column is '-' (deploy-target silently dropped due to field misalignment)"
+    # Field alignment was fixed: github-actions||||aws|medium now correctly places
+    # deploy_target in field 5 (deploy column) and confidence in field 6
+    if [[ "$deploy_col" == "aws" ]]; then
+        pass "_format_ci_section: deploy column correctly shows 'aws'"
     else
-        pass "_format_ci_section: deploy column value is '${deploy_col}' (behavior may have changed)"
+        fail "_format_ci_section: deploy column expected 'aws', got: '$deploy_col'"
     fi
     if [[ "$conf_col" == "medium" ]]; then
         pass "_format_ci_section: confidence column renders 'medium' correctly"

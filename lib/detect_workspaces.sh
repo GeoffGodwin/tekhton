@@ -94,7 +94,7 @@ _enum_pnpm_workspaces() {
     local proj_dir="$1"
     # Extract lines under "packages:" that start with "  - "
     local patterns
-    patterns=$(awk '/^packages:/{found=1;next} found && /^  - /{gsub(/^  - /,""); gsub(/["'\'']/,""); print} found && /^[^ ]/{exit}' \
+    patterns=$(awk '/^packages:/{found=1;next} found && /^[^ ]/{exit} found && /^  - /{s=$0; gsub(/^  - /,"",s); gsub(/["'\'']/,"",s); print s}' \
         "$proj_dir/pnpm-workspace.yaml" 2>/dev/null || true)
     _resolve_glob_patterns "$proj_dir" "$patterns"
 }

@@ -29,7 +29,9 @@ write_pipeline_state() { :; }
 append_human_action() { :; }
 extract_files_from_coder_summary() { echo ""; }
 
-# --- Source the stage file (defines the helper functions) ---
+# --- Source the helper and stage files (defines the helper functions) ---
+# shellcheck source=../lib/security_helpers.sh
+source "${TEKHTON_HOME}/lib/security_helpers.sh"
 # shellcheck source=../stages/security.sh
 source "${TEKHTON_HOME}/stages/security.sh"
 

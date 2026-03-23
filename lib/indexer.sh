@@ -4,11 +4,11 @@
 #
 # Sourced by tekhton.sh — do not run directly.
 # Provides: check_indexer_available(), run_repo_map(), get_repo_map_slice(),
-#           invalidate_repo_map_cache(), infer_test_counterparts(),
-#           warm_index_cache(), record_task_file_association(),
-#           get_indexer_stats()
+#           invalidate_repo_map_cache(), infer_test_counterparts()
 # See also: indexer_helpers.sh (detect_repo_languages, validate_indexer_config,
 #           extract_files_from_coder_summary)
+# See also: indexer_history.sh (warm_index_cache, record_task_file_association,
+#           get_indexer_stats)
 #
 # All functions gracefully degrade when Python/tree-sitter is unavailable.
 # When REPO_MAP_ENABLED=true but indexer is not available, a warning is logged

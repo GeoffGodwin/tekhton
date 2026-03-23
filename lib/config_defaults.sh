@@ -201,7 +201,10 @@ set -euo pipefail
 : "${DETECT_WORKSPACES_ENABLED:=true}"
 : "${DETECT_SERVICES_ENABLED:=true}"
 : "${DETECT_CI_ENABLED:=true}"
+: "${DETECT_INFRASTRUCTURE_ENABLED:=true}"
+: "${DETECT_TEST_FRAMEWORKS_ENABLED:=true}"
 : "${DOC_QUALITY_ASSESSMENT_ENABLED:=true}"
+: "${WORKSPACE_ENUM_LIMIT:=50}"            # Max subprojects to enumerate per workspace
 : "${PROJECT_STRUCTURE:=single}"
 
 # --- AI artifact detection defaults (Milestone 11) ---
@@ -264,6 +267,7 @@ _clamp_config_value MILESTONE_SECURITY_MAX_TURNS 500
 _clamp_config_value INTAKE_MAX_TURNS 50
 _clamp_config_value INTAKE_CLARITY_THRESHOLD 100
 _clamp_config_value INTAKE_TWEAK_THRESHOLD 100
+_clamp_config_value ARTIFACT_MERGE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50

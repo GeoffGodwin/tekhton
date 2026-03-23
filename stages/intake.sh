@@ -69,7 +69,7 @@ run_stage_intake() {
 
     # Load intake history from causal log (when available)
     export INTAKE_HISTORY_BLOCK=""
-    if [[ "${CAUSAL_LOG_ENABLED:-true}" == "true" ]] && type verdict_history &>/dev/null 2>&1; then
+    if [[ "${CAUSAL_LOG_ENABLED:-true}" == "true" ]] && type verdict_history &>/dev/null; then
         INTAKE_HISTORY_BLOCK=$(verdict_history "intake" 10 2>/dev/null || true)
         local rework_data
         rework_data=$(events_by_type "rework_cycle" 10 2>/dev/null || true)

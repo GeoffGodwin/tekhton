@@ -13,7 +13,7 @@ set -euo pipefail
 
 # detect_ci_config — Parses CI/CD configs for build/test/lint commands.
 # Args: $1 = project directory (defaults to PROJECT_DIR)
-# Output: One line per finding: CI_SYSTEM|BUILD_CMD|TEST_CMD|LINT_CMD|DEPLOY_TARGET|CONFIDENCE
+# Output: One line per finding: CI_SYSTEM|BUILD_CMD|TEST_CMD|LINT_CMD|DEPLOY_TARGET|_LANG|CONFIDENCE
 detect_ci_config() {
     local proj_dir="${1:-${PROJECT_DIR:-.}}"
 
@@ -80,7 +80,7 @@ _parse_github_workflow() {
 
     # Emit deploy target if found
     if [[ -n "$deploy_target" ]]; then
-        echo "github-actions|||||${deploy_target}|medium"
+        echo "github-actions||||${deploy_target}||medium"
     fi
 }
 
