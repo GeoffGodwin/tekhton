@@ -66,6 +66,7 @@ tekhton/
 │   ├── milestone_dag_migrate.sh # [3.0] Inline→file milestone migration
 │   ├── milestone_window.sh # [3.0] Character-budgeted milestone sliding window
 │   ├── indexer.sh          # [3.0] Repo map orchestration + Python tool invocation
+│   ├── causality.sh        # [3.0] Causal event log infrastructure + query layer
 │   └── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Stage 0: Architect audit (conditional)
@@ -283,6 +284,11 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `SERENA_LANGUAGE_SERVERS` | LSP servers to use, or "auto" (default: auto) |
 | `SERENA_STARTUP_TIMEOUT` | Seconds to wait for Serena startup (default: 30) |
 | `SERENA_MAX_RETRIES` | Retry attempts for Serena health check (default: 2) |
+| `CAUSAL_LOG_ENABLED` | Enable causal event log (default: true) |
+| `CAUSAL_LOG_FILE` | Path to causal event log (default: .claude/logs/CAUSAL_LOG.jsonl) |
+| `CAUSAL_LOG_RETENTION_RUNS` | Archived logs to retain (default: 50) |
+| `CAUSAL_LOG_MAX_EVENTS` | Max events per run before eviction (default: 2000) |
+| `INTAKE_HISTORY_BLOCK` | Historical verdict/rework data from causal log (injected by lib/prompts.sh) |
 
 ## Testing
 

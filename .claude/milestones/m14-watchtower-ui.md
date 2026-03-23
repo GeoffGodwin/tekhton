@@ -95,10 +95,20 @@ Files to create (all in `templates/watchtower/`):
   │ 10:03  Intake: PASS (confidence 82)                 │
   │ 10:04  Scout: 12 files identified                   │
   │ 10:08  Coder: 6 files modified                      │
-  │ 10:09  Build gate: PASS                             │
+  │ 10:09  Build gate: PASS                     [trace] │
   │ 10:10  Security: scanning... (turn 12/15)           │
   └─────────────────────────────────────────────────────┘
   ```
+  **Causal trace interaction:** Each timeline event has a `[trace]` link
+  (shown on hover at >=768px, always visible at >=1200px). Clicking it
+  highlights the event's causal ancestors and descendants in the timeline
+  using a colored left-border highlight. The highlight uses CSS classes
+  toggled by JS — no separate view, just visual emphasis within the existing
+  timeline. This lets users quickly answer "what caused this?" and "what
+  did this trigger?" without leaving the Live Run tab.
+  When the pipeline has failed, the terminal event's causal chain is
+  auto-highlighted on load (no click needed) — the user immediately sees
+  the root-cause path.
   When pipeline is paused (NEEDS_CLARITY, security waiver, etc.):
   ```
   ┌─────────────────────────────────────────────────────┐
@@ -225,7 +235,10 @@ Acceptance criteria:
   when pipeline is running; stops refreshing when pipeline is idle/complete
 - Tab selection persists across refreshes via localStorage
 - Live Run tab shows: pipeline status, stage progress bar, current stage
-  detail (turns/budget/time), scrollable event timeline
+  detail (turns/budget/time), scrollable event timeline with causal trace links
+- Timeline events show [trace] interaction: clicking highlights causal
+  ancestors and descendants within the timeline via CSS class toggle
+- On pipeline failure: terminal event's causal chain is auto-highlighted on load
 - Live Run tab shows human-wait banner with instructions when pipeline paused
 - Milestone Map tab shows swimlane columns (Pending/Ready/Active/Done) with
   milestone cards, dependency badges, and status colors
@@ -271,9 +284,14 @@ Watch For:
 - Tab content should not render until its tab is active (lazy render on tab
   switch). This prevents layout thrashing on load for inactive tabs.
 - The 50KB size constraint is intentional. This is a utility dashboard, not
-  a web app. If we're approaching the limit, we're overbuilding it.
+  a web app. If we're approaching the limit, we're overbuilding it. The causal
+  trace interaction is lightweight — just CSS class toggling, no graph library.
+- Causal trace highlighting: build a simple `caused_by` index on load
+  (Map<eventId, Set<parentIds>>). Walking the chain is O(chain_length), not
+  O(total_events). Keep it simple — this is visual emphasis, not graph analysis.
 - Dark theme colors must have sufficient contrast ratios (WCAG AA minimum).
-  Use a contrast checker during development.
+  Use a contrast checker during development. The causal highlight color must
+  be distinct from all status colors (consider a subtle gold/orange left border).
 
 Seeds Forward:
 - V4 server-based Watchtower replaces file:// loading with localhost HTTP +

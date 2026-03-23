@@ -94,9 +94,22 @@ Files to modify:
 
 - `lib/orchestrate_helpers.sh` — Update `_check_progress()` to distinguish
   between "no progress" (counter increments) and "progress made but incomplete"
-  (counter doesn't increment). Progress indicators: files changed in git,
-  new test files created, milestone acceptance criteria partially met,
-  security findings fixed.
+  (counter doesn't increment). Progress indicators:
+  **Primary (causal log, when available via M13):**
+  - Event count for current pipeline attempt > 0 (work was done)
+  - Non-error events emitted after the last error (recovery happened)
+  - Verdict events with forward-progress outcomes (APPROVED, TWEAKED, PASS)
+  - rework_cycle events that produced file changes (productive rework)
+  **Fallback (when causal log unavailable):**
+  - Files changed in git
+  - New test files created
+  - Milestone acceptance criteria partially met
+  - Security findings fixed
+  The causal log provides richer progress signals because it captures work
+  that doesn't necessarily produce file changes (e.g., a security scan that
+  found zero issues is still progress — the scan completed). The git-diff
+  fallback remains for backward compatibility and for cases where the causal
+  log is disabled.
 
 - `lib/agent_retry.sh` — Add rate-limit detection before transient retry:
   ```bash

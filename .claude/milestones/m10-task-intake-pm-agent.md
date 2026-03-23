@@ -29,12 +29,19 @@ Files to create:
   (1) read the milestone file (or task string), (2) read CLAUDE.md for project
   context, (3) read PROJECT_INDEX.md summary if available (for brownfield projects
   where task clarity depends on understanding existing code structure),
-  (4) evaluate along a clarity rubric: Is the scope bounded? Are
+  (4) read the INTAKE_HISTORY_BLOCK (when available) — a summary of historical
+  verdicts, rework patterns, and causal outcomes for similar milestones, extracted
+  from the causal event log by the shell before agent invocation.
+  (5) evaluate along a clarity rubric: Is the scope bounded? Are
   acceptance criteria testable? Are there implicit assumptions that need stating?
-  Could two competent developers interpret this differently? (4) produce
+  Could two competent developers interpret this differently? (6) produce
   INTAKE_REPORT.md with verdict, confidence score (0-100), reasoning, and either
   tweaks, split recommendations, or questions depending on verdict.
   The prompt includes examples of each verdict level to calibrate the agent.
+  When INTAKE_HISTORY_BLOCK includes patterns like "milestones with similar scope
+  required 3+ rework cycles," the agent should factor this into its confidence
+  scoring and may recommend preventive tweaks (tighter acceptance criteria,
+  explicit Watch For items).
 - `prompts/intake_tweak.prompt.md` — When verdict is TWEAKED, this prompt generates
   the revised milestone content. Instructs agent to: preserve the original intent,
   add missing acceptance criteria, clarify ambiguous scope boundaries, add
@@ -82,8 +89,21 @@ Files to modify:
   comment so the human and dashboard can see what was adjusted.
 - `lib/hooks.sh` or `lib/finalize.sh` — Include INTAKE_REPORT.md in archive.
   Include intake verdict and any tweaks in RUN_SUMMARY.json.
-- `lib/prompts.sh` — Register INTAKE_REPORT_CONTENT, INTAKE_TWEAKS_BLOCK
-  template variables.
+- `lib/prompts.sh` — Register INTAKE_REPORT_CONTENT, INTAKE_TWEAKS_BLOCK,
+  INTAKE_HISTORY_BLOCK template variables. INTAKE_HISTORY_BLOCK is populated by
+  querying the causal event log (when available via M13's lib/causality.sh):
+  ```bash
+  if type verdict_history &>/dev/null; then
+      INTAKE_HISTORY_BLOCK=$(verdict_history "intake" 10)
+      # Also include: rework cycle counts for recent milestones,
+      # split frequency, common failure patterns
+      local rework_data
+      rework_data=$(events_by_type "rework_cycle" 10)
+      INTAKE_HISTORY_BLOCK+=$'\n'"Rework patterns: ${rework_data}"
+  fi
+  ```
+  When lib/causality.sh is not available (pre-M13 builds, CAUSAL_LOG_ENABLED=false),
+  INTAKE_HISTORY_BLOCK is empty and the conditional block in the prompt is skipped.
 - `lib/orchestrate.sh` — In --complete mode, `run_stage_intake` is called once
   per milestone iteration, not once at pipeline start. Each milestone in the
   frontier gets its own intake evaluation. This ensures auto-advanced milestones
@@ -119,6 +139,10 @@ Acceptance criteria:
 - In --complete mode, intake runs once per milestone (not once per pipeline start)
 - Intake verdict and confidence scores recorded in run metrics
 - Intake agent reads PROJECT_INDEX.md when available for project context
+- When causal log is available (M13): INTAKE_HISTORY_BLOCK injected into prompt
+  with historical verdict distribution, rework cycle averages, and split frequency
+- When causal log is unavailable: INTAKE_HISTORY_BLOCK is empty, prompt
+  conditional block skipped, no errors
 - All existing tests pass
 - `bash -n stages/intake.sh` passes
 - `shellcheck stages/intake.sh` passes
@@ -150,4 +174,10 @@ Seeds Forward:
 - Brownfield 2.0 init can use the intake agent to evaluate auto-generated milestones
 - The confidence scoring pattern is reusable for other quality gates
 - PM tweak annotations create an audit trail for milestone evolution
-- V4: intake agent could learn from historical verdict accuracy (metrics integration)
+- The causal log integration means the PM agent improves over time — it learns
+  from the project's history of what kinds of milestones succeed vs need rework.
+  This is the first agent in Tekhton that consumes structured pipeline memory
+  rather than just reading static config.
+- V4: intake agent could correlate its confidence scores with actual outcomes
+  (causal log tracks whether a PASS milestone actually passed without rework)
+  to self-calibrate the INTAKE_CLARITY_THRESHOLD and INTAKE_TWEAK_THRESHOLD
