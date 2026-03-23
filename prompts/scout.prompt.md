@@ -29,6 +29,14 @@ still need to read files to confirm details.
 
 {{REPO_MAP_CONTENT}}
 {{ENDIF:REPO_MAP_CONTENT}}
+{{IF:SERENA_ACTIVE}}
+
+## LSP Tools (Serena MCP)
+You have access to LSP tools via MCP. Use `find_symbol` to verify that functions
+you find in the repo map actually exist and to check their signatures before
+recommending files. Use `find_referencing_symbols` to discover callers and
+dependencies. These tools provide precise cross-reference data.
+{{ENDIF:SERENA_ACTIVE}}
 
 ## Output
 Write a file called `SCOUT_REPORT.md` in this exact format.

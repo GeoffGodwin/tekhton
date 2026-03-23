@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "{{SERENA_PYTHON}}",
+      "args": ["-m", "serena", "--project-dir", "{{PROJECT_DIR}}"],
+      "cwd": "{{SERENA_PATH}}",
+      "env": {
+        "SERENA_LANGUAGE_SERVERS": "{{LANGUAGE_SERVERS}}"
+      }
+    }
+  }
+}

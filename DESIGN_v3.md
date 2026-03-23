@@ -428,6 +428,11 @@ SERENA_MAX_RETRIES=2                # Health check retry attempts
 | Workspace detection | on | DETECT_WORKSPACES_ENABLED=false |
 | CI/CD inference | on | DETECT_CI_ENABLED=false |
 | Doc quality assessment | on | DOC_QUALITY_ASSESSMENT_ENABLED=false |
+| Health scoring | **on** | HEALTH_ENABLED=false to disable |
+| Health re-assess | off | HEALTH_REASSESS_ON_COMPLETE=true |
+| Quota pause/resume | **on** (Tier 1) | Always active (reactive detection) |
+| Quota proactive | off | CLAUDE_QUOTA_CHECK_CMD to enable |
+| Loop counter reset | **on** | Built into orchestration logic |
 
 ---
 
@@ -824,6 +829,119 @@ DASHBOARD_DIR=".claude/dashboard"   # Dashboard output directory
 
 ---
 
+## System Design: Project Health Scoring (M15)
+
+### Problem
+
+Users adopting Tekhton on brownfield projects have no way to measure whether
+Tekhton is actually improving their codebase. They invest time and API quota
+but can't answer "Is my project better now?" with a number. For stakeholders
+and team leads, this makes Tekhton an untestable proposition.
+
+### Design
+
+**Five-dimension health assessment:**
+
+| Dimension | Weight | What it measures |
+|-----------|--------|-----------------|
+| Test health | 30% | Test file presence, framework, naming, pass rate (opt-in) |
+| Code quality | 25% | Linter config, magic numbers, TODO density, function length, type safety |
+| Dependency health | 15% | Lock files, vuln scanner config, version freshness |
+| Documentation | 15% | README depth, contributing guide, API docs, inline density |
+| Project hygiene | 15% | .gitignore, .env safety, CI/CD, changelog |
+
+Composite score: weighted average (0-100). Weights configurable.
+
+**Belt system** (optional, memorable):
+White (0-19) → Yellow (20-39) → Orange (40-59) → Green (60-74) → Blue (75-89) → Black (90-100)
+
+**Lifecycle:**
+1. `--init` runs baseline → HEALTH_BASELINE.json
+2. Health findings feed into synthesis (low test score → milestones prioritize tests)
+3. PM agent sees health context (calibrates priorities)
+4. `--health` for standalone re-assessment
+5. Optional re-assessment on completion (HEALTH_REASSESS_ON_COMPLETE)
+6. Watchtower Trends shows health trend line
+
+**Critical constraint:** All checks are read-only. Never execute project code
+unless HEALTH_RUN_TESTS=true (opt-in).
+
+### Config Keys
+
+```bash
+HEALTH_ENABLED=true
+HEALTH_REASSESS_ON_COMPLETE=false
+HEALTH_RUN_TESTS=false
+HEALTH_SAMPLE_SIZE=20
+HEALTH_WEIGHT_TESTS=30
+HEALTH_WEIGHT_QUALITY=25
+HEALTH_WEIGHT_DEPS=15
+HEALTH_WEIGHT_DOCS=15
+HEALTH_WEIGHT_HYGIENE=15
+```
+
+### Why This Design
+
+- Five dimensions cover what actually correlates with project maintainability.
+- Read-only checks mean the assessment is always safe on untrusted repos.
+- The belt system makes scores memorable: "We went from Yellow to Green Belt."
+- Feeding health context into the PM agent creates a virtuous cycle.
+
+---
+
+## System Design: Autonomous Runtime Improvements (M16)
+
+### Problem
+
+The --complete outer loop punishes productive work. A pipeline that successfully
+completes 4 milestones then fails once has used 4 of 5 attempts on successes.
+Meanwhile, rate limits from the Claude CLI cause hard failures instead of
+graceful pauses.
+
+### Design
+
+**1. Milestone success resets the outer loop counter**
+
+```
+Before:  Success → Success → Success → Fail → Fail → STOP (5 attempts)
+After:   Success(0) → Success(0) → Success(0) → Fail(1) → Fail(2) → ...
+```
+
+Counter only counts consecutive no-progress cycles.
+
+**2. Quota-aware pause/resume**
+
+Tier 1 (Reactive — zero setup): Detect rate-limit errors from CLI output →
+enter QUOTA_PAUSED → disable timeouts → probe every 5min → resume on success.
+
+Tier 2 (Proactive — optional): `CLAUDE_QUOTA_CHECK_CMD` runs a user-provided
+script that returns remaining percentage. Pause when below QUOTA_RESERVE_PCT.
+No API keys in Tekhton — the user's script handles credentials.
+
+**3. Increased safety limits:** MAX_AUTONOMOUS_AGENT_CALLS 20→200 (safety valve
+only), MILESTONE_MAX_SPLIT_DEPTH 3→6 (PM agent catches bad splits).
+
+### Config Keys
+
+```bash
+QUOTA_RETRY_INTERVAL=300
+QUOTA_RESERVE_PCT=10
+CLAUDE_QUOTA_CHECK_CMD=""
+QUOTA_MAX_PAUSE_DURATION=14400
+MAX_AUTONOMOUS_AGENT_CALLS=200
+MILESTONE_MAX_SPLIT_DEPTH=6
+```
+
+### Why This Design
+
+- Success-resets-counter is a tiny code change with transformative behavior.
+  Productive pipelines run until they finish, not until a counter expires.
+- Tier 1 quota handling requires zero configuration. Every user gets it.
+- Tier 2 is a clean plugin interface. Tekhton never touches credentials.
+- The 200 call limit is a true safety valve, not a workflow constraint.
+
+---
+
 ## Updated Pipeline Flow (V3 Complete)
 
 ```
@@ -832,18 +950,22 @@ tekhton --init
   ├─ Tech stack detection
   ├─ Workspace/service/CI detection (M12)  ← NEW
   ├─ Project crawl → PROJECT_INDEX.md
+  ├─ Health baseline assessment (M15) ← NEW
   ├─ Config generation (CI-informed)
   └─ Synthesis → DESIGN.md + CLAUDE.md + milestones/
 
 tekhton "task" or tekhton --milestone
   ├─ Milestone DAG load (M01-M02)
+  ├─ Quota check (M16, if Tier 2 configured) ← NEW
   ├─ Intake gate / PM agent (M10)    ← NEW
   ├─ [Architect audit]
   ├─ Scout + Coder + Build Gate
   ├─ Security scan + rework (M09)    ← NEW
   ├─ Reviewer + rework loop
   ├─ Tester + validation
-  └─ [Cleanup sweep]
+  ├─ [Cleanup sweep]
+  ├─ [Health re-assessment (M15, if enabled)] ← NEW
+  └─ Milestone success → reset loop counter (M16) ← NEW
 ```
 
 ## Updated New Files Summary
@@ -858,6 +980,9 @@ tekhton "task" or tekhton --milestone
 - `artifact_handler.sh` — artifact archive/merge/tidy workflow (M11)
 - `dashboard.sh` — Watchtower data emission + lifecycle (M13)
 - `dashboard_parsers.sh` — Report parsing for dashboard data (M13)
+- `health.sh` — Health scoring engine + assessment lifecycle (M15)
+- `health_checks.sh` — Individual dimension check functions (M15)
+- `quota.sh` — Quota-aware pause/resume + rate limit detection (M16)
 
 **stages/ (pipeline stages):**
 - `security.sh` — security scan + rework routing (M09)
@@ -909,3 +1034,9 @@ The following capabilities are explicitly designed for but not built in V3:
 - **Metric connectors** — The TK_* data format from Watchtower is designed as
   the universal schema for metric export. V4/V5 adds connectors for DataDog,
   NewRelic, Prometheus, and custom webhook targets.
+- **Health score evolution** — V4 adds security posture dimension (from M09
+  findings history), accessibility dimension, performance dimension. Enterprise
+  users can set minimum health scores as deployment gates.
+- **Quota intelligence** — V4 ships default quota check scripts for common
+  setups (Pro subscription, API key, team plan). Parallel workers share a
+  quota pool to prevent N workers exhausting quota N times faster.
