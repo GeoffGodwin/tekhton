@@ -19,6 +19,10 @@ _INIT_DIR="${BASH_SOURCE[0]%/*}"
 source "${_INIT_DIR}/init_config.sh"
 # shellcheck source=lib/prompts_interactive.sh
 source "${_INIT_DIR}/prompts_interactive.sh"
+# shellcheck source=lib/detect_ai_artifacts.sh
+source "${_INIT_DIR}/detect_ai_artifacts.sh"
+# shellcheck source=lib/artifact_handler.sh
+source "${_INIT_DIR}/artifact_handler.sh"
 
 # --- Main entry point ---------------------------------------------------------
 
@@ -53,6 +57,15 @@ run_smart_init() {
     # Create directories
     mkdir -p "${conf_dir}/agents"
     mkdir -p "${conf_dir}/logs/archive"
+
+    # Phase 1.5: AI artifact detection
+    if [[ "${ARTIFACT_DETECTION_ENABLED:-true}" == "true" ]]; then
+        local ai_artifacts=""
+        ai_artifacts=$(detect_ai_artifacts "$project_dir")
+        if [[ -n "$ai_artifacts" ]]; then
+            handle_ai_artifacts "$project_dir" "$ai_artifacts"
+        fi
+    fi
 
     # Phase 2: Detection
     log "Detecting tech stack..."
@@ -90,7 +103,11 @@ run_smart_init() {
     if [[ ! -f "${project_dir}/CLAUDE.md" ]]; then
         local detection_report
         detection_report=$(format_detection_report "$project_dir")
-        _seed_claude_md "$project_dir" "$detection_report" "$project_type"
+        local merge_context=""
+        if [[ -f "${project_dir}/MERGE_CONTEXT.md" ]]; then
+            merge_context=$(cat "${project_dir}/MERGE_CONTEXT.md")
+        fi
+        _seed_claude_md "$project_dir" "$detection_report" "$project_type" "$merge_context"
         success "Created CLAUDE.md (seeded with detection results)"
     else
         log "CLAUDE.md already exists — skipping stub generation"
@@ -257,6 +274,7 @@ _seed_claude_md() {
     local project_dir="$1"
     local detection_report="$2"
     local project_type="$3"
+    local merge_context="${4:-}"
     local project_name
     project_name=$(basename "$project_dir")
 
@@ -270,6 +288,22 @@ All agents read this file. Keep it authoritative and concise.
 
 ${detection_report}
 
+CLAUDE_EOF
+
+    # If merge context is available, inject extracted rules
+    if [[ -n "$merge_context" ]]; then
+        cat >> "${project_dir}/CLAUDE.md" << MERGE_EOF
+## Merged Configuration (from prior AI tool config)
+
+The following rules and conventions were extracted from pre-existing AI tool
+configurations found in this project. Review and adjust as needed.
+
+${merge_context}
+
+MERGE_EOF
+    fi
+
+    cat >> "${project_dir}/CLAUDE.md" << STUB_EOF
 ## Architecture Rules
 <!-- TODO: Add your architecture rules here -->
 
@@ -282,5 +316,5 @@ ${detection_report}
 ## Milestone Plan
 <!-- TODO: Add milestones here, or run tekhton --plan to generate them -->
 
-CLAUDE_EOF
+STUB_EOF
 }

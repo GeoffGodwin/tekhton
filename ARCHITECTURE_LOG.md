@@ -88,3 +88,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-22
 - **Rationale**: - ACP: Claude CLI MCP Server Management — **ACCEPT** — Delegating server process lifecycle to Claude CLI via `--mcp-config` is architecturally correct: avoids orphan process risk, is compatible wi
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-18: Source new libraries in init.sh (Task: "Implement Milestone 11: Brownfield AI Artifact Detection & Handling")
+- **Date**: 2026-03-23
+- **Rationale**: - ACP: Source new libraries in init.sh — **ACCEPT** — Backward compatible; follows the established pattern of sourcing companion files in `init.sh`. ARCHITECTURE.md update needed to add `lib/detec
+- **Source**: Accepted ACP from pipeline run

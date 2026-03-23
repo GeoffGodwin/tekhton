@@ -197,6 +197,13 @@ set -euo pipefail
 : "${INTAKE_ROLE_FILE:=.claude/agents/intake.md}"
 : "${INTAKE_REPORT_FILE:=INTAKE_REPORT.md}"
 
+# --- AI artifact detection defaults (Milestone 11) ---
+: "${ARTIFACT_DETECTION_ENABLED:=true}"
+: "${ARTIFACT_HANDLING_DEFAULT:=}"              # Empty = interactive; set archive|tidy|ignore for headless
+: "${ARTIFACT_ARCHIVE_DIR:=.claude/archived-ai-config}"
+: "${ARTIFACT_MERGE_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+: "${ARTIFACT_MERGE_MAX_TURNS:=10}"
+
 # --- Specialist reviewer defaults ---
 : "${SPECIALIST_SECURITY_ENABLED:=false}"
 : "${SPECIALIST_SECURITY_MODEL:=${CLAUDE_STANDARD_MODEL}}"

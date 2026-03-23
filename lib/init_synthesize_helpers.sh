@@ -85,6 +85,13 @@ _assemble_synthesis_context() {
         fi
     fi
 
+    # Load MERGE_CONTEXT.md if present (from artifact merge — Milestone 11)
+    export MERGE_CONTEXT=""
+    if [[ -f "${project_dir}/MERGE_CONTEXT.md" ]]; then
+        MERGE_CONTEXT=$(cat "${project_dir}/MERGE_CONTEXT.md")
+        log "Loaded MERGE_CONTEXT.md ($(echo "$MERGE_CONTEXT" | wc -c | tr -d '[:space:]') chars)"
+    fi
+
     # --- Context budget check and compression ---
     _compress_synthesis_context
 
@@ -100,10 +107,11 @@ _assemble_synthesis_context() {
 #   4. Git log (truncate to 10 entries)
 _compress_synthesis_context() {
     local cpt="${CHARS_PER_TOKEN:-4}"
+    local _merge_ctx="${MERGE_CONTEXT:-}"
     local total_chars=0
     total_chars=$(( ${#PROJECT_INDEX_CONTENT} + ${#DETECTION_REPORT_CONTENT} \
         + ${#README_CONTENT} + ${#EXISTING_ARCHITECTURE_CONTENT} \
-        + ${#GIT_LOG_SUMMARY} ))
+        + ${#GIT_LOG_SUMMARY} + ${#_merge_ctx} ))
     local total_tokens=$(( (total_chars + cpt - 1) / cpt ))
 
     if check_context_budget "$total_tokens" "$SYNTHESIS_MODEL"; then
@@ -126,7 +134,7 @@ ${compressed_index}"
     # Re-check
     total_chars=$(( ${#PROJECT_INDEX_CONTENT} + ${#DETECTION_REPORT_CONTENT} \
         + ${#README_CONTENT} + ${#EXISTING_ARCHITECTURE_CONTENT} \
-        + ${#GIT_LOG_SUMMARY} ))
+        + ${#GIT_LOG_SUMMARY} + ${#_merge_ctx} ))
     total_tokens=$(( (total_chars + cpt - 1) / cpt ))
     if check_context_budget "$total_tokens" "$SYNTHESIS_MODEL"; then
         log "[synthesis] Under budget after index compression"
@@ -153,7 +161,7 @@ ${compressed_index}"
 
     total_chars=$(( ${#PROJECT_INDEX_CONTENT} + ${#DETECTION_REPORT_CONTENT} \
         + ${#README_CONTENT} + ${#EXISTING_ARCHITECTURE_CONTENT} \
-        + ${#GIT_LOG_SUMMARY} ))
+        + ${#GIT_LOG_SUMMARY} + ${#_merge_ctx} ))
     total_tokens=$(( (total_chars + cpt - 1) / cpt ))
     if ! check_context_budget "$total_tokens" "$SYNTHESIS_MODEL"; then
         warn "[synthesis] Still over budget after compression (${total_tokens} est. tokens)"
