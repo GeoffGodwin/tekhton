@@ -143,6 +143,18 @@ _hook_mark_done() {
 }
 
 # h. Auto-commit or interactive commit prompt
+#    Also tags milestone-complete (post-commit) if milestone is done.
+
+_tag_milestone_if_complete() {
+    [[ "$MILESTONE_MODE" != true ]] && return 0
+    [[ -z "${_CURRENT_MILESTONE:-}" ]] && return 0
+    local disposition
+    disposition=$(get_milestone_disposition 2>/dev/null || echo "")
+    if [[ "$disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$disposition" == COMPLETE_AND_WAIT ]]; then
+        tag_milestone_complete "$_CURRENT_MILESTONE"
+    fi
+}
+
 _hook_commit() {
     local exit_code="$1"
     [[ "$exit_code" -ne 0 ]] && return 0
@@ -208,6 +220,7 @@ _hook_commit() {
         y|Y)
             _do_git_commit "$COMMIT_MSG"
             _COMMIT_SUCCEEDED=true
+            _tag_milestone_if_complete
             print_run_summary
             success "Committed. Open a PR and squash-merge to main when ready."
             ;;
@@ -221,6 +234,7 @@ _hook_commit() {
             rm "$tmpfile"
             _do_git_commit "$edited_msg"
             _COMMIT_SUCCEEDED=true
+            _tag_milestone_if_complete
             print_run_summary
             success "Committed. Open a PR and squash-merge to main when ready."
             ;;
@@ -232,29 +246,26 @@ _hook_commit() {
     esac
 }
 
-# i. Archive completed milestone (after commit, milestone mode only)
+# i. Archive completed milestone (before commit so archive is included)
 _hook_archive_milestone() {
     local exit_code="$1"
     [[ "$exit_code" -ne 0 ]] && return 0
     [[ "$MILESTONE_MODE" != true ]] && return 0
     [[ -z "${_CURRENT_MILESTONE:-}" ]] && return 0
-    [[ "${_COMMIT_SUCCEEDED:-false}" != true ]] && return 0
 
     local disposition
     disposition=$(get_milestone_disposition 2>/dev/null || echo "")
     if [[ "$disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$disposition" == COMPLETE_AND_WAIT ]]; then
-        tag_milestone_complete "$_CURRENT_MILESTONE"
         archive_completed_milestone "$_CURRENT_MILESTONE" "CLAUDE.md" || true
     fi
 }
 
-# j. Clear milestone state (after successful archival)
+# j. Clear milestone state (before commit so cleared state is committed)
 _hook_clear_state() {
     local exit_code="$1"
     [[ "$exit_code" -ne 0 ]] && return 0
     [[ "$MILESTONE_MODE" != true ]] && return 0
     [[ -z "${_CURRENT_MILESTONE:-}" ]] && return 0
-    [[ "${_COMMIT_SUCCEEDED:-false}" != true ]] && return 0
 
     local disposition
     disposition=$(get_milestone_disposition 2>/dev/null || echo "")
@@ -268,7 +279,9 @@ _hook_clear_state() {
 source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary.sh"
 
 # --- Hook registration (at source-time) ---
-# Registration order IS execution order. V3 extends via new hooks.
+# Registration order IS execution order.
+# Archive, clear_state, and emit_run_summary run BEFORE commit so their
+# output is captured in the commit and git state is clean afterward.
 register_finalize_hook "_hook_final_checks"
 register_finalize_hook "_hook_drift_artifacts"
 register_finalize_hook "_hook_record_metrics"
@@ -276,10 +289,10 @@ register_finalize_hook "_hook_cleanup_resolved"
 register_finalize_hook "_hook_resolve_notes"
 register_finalize_hook "_hook_archive_reports"
 register_finalize_hook "_hook_mark_done"
-register_finalize_hook "_hook_commit"
 register_finalize_hook "_hook_archive_milestone"
 register_finalize_hook "_hook_clear_state"
 register_finalize_hook "_hook_emit_run_summary"
+register_finalize_hook "_hook_commit"
 # --- Orchestrator ---
 # finalize_run PIPELINE_EXIT_CODE
 # Executes all registered hooks in order. Each hook receives the exit code
