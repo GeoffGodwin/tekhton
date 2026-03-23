@@ -101,3 +101,37 @@ prompt_input() {
     read -r answer </dev/tty || answer=""
     echo "${answer:-$default}"
 }
+
+# prompt_artifact_menu — Present the A/M/T/I menu for an AI artifact group.
+# Args: $1 = tool name, $2 = artifact details (PATH|TYPE|CONFIDENCE lines)
+# Prints: selected action (archive, merge, tidy, ignore) to stdout
+# Falls back to "ignore" when non-interactive.
+prompt_artifact_menu() {
+    local tool_name="$1"
+    # $2 = group_details (reserved for future per-artifact display)
+
+    # Non-interactive fallback
+    if [[ "${TEKHTON_NON_INTERACTIVE:-}" = "true" ]] || ! _can_prompt; then
+        echo "ignore"
+        return 0
+    fi
+
+    echo "How would you like to handle ${tool_name} artifacts?" >/dev/tty
+    echo "  (A) Archive — move to .claude/archived-ai-config/ (recoverable)" >/dev/tty
+    echo "  (M) Merge   — extract useful rules into Tekhton config" >/dev/tty
+    echo "  (T) Tidy    — remove entirely (with confirmation)" >/dev/tty
+    echo "  (I) Ignore  — leave in place, proceed alongside Tekhton" >/dev/tty
+
+    local answer
+    while true; do
+        printf 'Choice [A/M/T/I]: ' >/dev/tty
+        read -r answer </dev/tty || { echo "ignore"; return 0; }
+        case "${answer,,}" in
+            a|archive) echo "archive"; return 0 ;;
+            m|merge)   echo "merge";   return 0 ;;
+            t|tidy)    echo "tidy";    return 0 ;;
+            i|ignore)  echo "ignore";  return 0 ;;
+            *) echo "  Invalid choice. Enter A, M, T, or I." >/dev/tty ;;
+        esac
+    done
+}

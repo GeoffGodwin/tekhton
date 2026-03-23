@@ -1,4 +1,9 @@
 #### Milestone 11: Brownfield AI Artifact Detection & Handling
+<!-- milestone-meta
+id: "11"
+status: "done"
+-->
+
 When `--init` encounters a codebase that already has AI tool configurations
 (CLAUDE.md, .cursor/, .github/copilot/, aider configs, Cline settings, etc.),
 detect them, present the user with clear options (archive, merge, tidy, ignore),

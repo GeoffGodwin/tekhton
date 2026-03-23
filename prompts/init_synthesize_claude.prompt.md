@@ -36,6 +36,26 @@ The project index provides detailed file inventory and sampled content.
 
 ---
 
+{{IF:MERGE_CONTEXT}}
+## Input: Merged AI Tool Configuration
+
+The project had existing AI tool configurations that were analyzed and merged.
+The following extracted rules and conventions should be incorporated into the
+appropriate CLAUDE.md sections (Non-Negotiable Rules, Code Conventions,
+Architecture Philosophy, etc.). Prefer these project-specific rules over
+generic defaults.
+
+Items marked with `[CONFLICT: ...]` indicate disagreements between sources —
+resolve by preferring the most specific or most recent source. If unresolvable,
+include both options with a note for the human to decide.
+
+---
+
+{{MERGE_CONTEXT}}
+
+---
+{{ENDIF:MERGE_CONTEXT}}
+
 ## Your Task
 
 Generate a complete CLAUDE.md containing all 12 required sections below,

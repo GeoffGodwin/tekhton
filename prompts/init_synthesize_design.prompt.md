@@ -66,6 +66,22 @@ The project has existing architecture documentation:
 ---
 {{ENDIF:GIT_LOG_SUMMARY}}
 
+{{IF:MERGE_CONTEXT}}
+## Input: Merged AI Tool Configuration
+
+The project had existing AI tool configurations that were merged. The following
+extracted rules, conventions, and project context should inform your analysis.
+Where these rules align with patterns you observe in the codebase, treat them
+as confirmed conventions. Where they conflict with observed patterns, note the
+discrepancy in the Technical Debt section.
+
+---
+
+{{MERGE_CONTEXT}}
+
+---
+{{ENDIF:MERGE_CONTEXT}}
+
 {{IF:PLAN_INCOMPLETE_SECTIONS}}
 ## IMPORTANT: Re-Synthesis Pass — Expand Thin Sections
 
