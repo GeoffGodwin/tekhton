@@ -59,30 +59,18 @@ run_complete_loop() {
 
     # Restore orchestration state from prior run (resume support)
     if [[ -f "${PIPELINE_STATE_FILE:-}" ]]; then
-        local _saved_exit_reason _saved_attempt _saved_calls
-        _saved_exit_reason=$(awk '/^## Exit Reason/{getline; print; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
+        local _saved_attempt _saved_calls
         _saved_attempt=$(awk '/^Pipeline attempt:/{print $NF; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
         _saved_calls=$(awk '/^Cumulative agent calls:/{print $NF; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
-
-        # If prior run hit a safety bound, reset counters for fresh budget
-        case "$_saved_exit_reason" in
-            complete_loop_max_attempts|complete_loop_timeout|complete_loop_agent_cap)
-                log "Prior run hit safety bound (${_saved_exit_reason}). Resetting counters for fresh attempt budget."
-                _ORCH_ATTEMPT=0
-                _ORCH_AGENT_CALLS=0
-                ;;
-            *)
-                if [[ -n "$_saved_attempt" ]] && [[ "$_saved_attempt" =~ ^[0-9]+$ ]]; then
-                    _ORCH_ATTEMPT="$_saved_attempt"
-                    log "Restored orchestration attempt counter: ${_ORCH_ATTEMPT}"
-                fi
-                if [[ -n "$_saved_calls" ]] && [[ "$_saved_calls" =~ ^[0-9]+$ ]]; then
-                    _ORCH_AGENT_CALLS="$_saved_calls"
-                    TOTAL_AGENT_INVOCATIONS="$_saved_calls"
-                    log "Restored orchestration agent call counter: ${_ORCH_AGENT_CALLS}"
-                fi
-                ;;
-        esac
+        if [[ -n "$_saved_attempt" ]] && [[ "$_saved_attempt" =~ ^[0-9]+$ ]]; then
+            _ORCH_ATTEMPT="$_saved_attempt"
+            log "Restored orchestration attempt counter: ${_ORCH_ATTEMPT}"
+        fi
+        if [[ -n "$_saved_calls" ]] && [[ "$_saved_calls" =~ ^[0-9]+$ ]]; then
+            _ORCH_AGENT_CALLS="$_saved_calls"
+            TOTAL_AGENT_INVOCATIONS="$_saved_calls"
+            log "Restored orchestration agent call counter: ${_ORCH_AGENT_CALLS}"
+        fi
     fi
 
     # Emit milestone metadata on start (if milestone mode)

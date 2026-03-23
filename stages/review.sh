@@ -21,28 +21,6 @@ run_stage_review() {
         else
             ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
         fi
-
-        # Repo map slice: changed files + their callers/callees
-        # Note: Map is regenerated each review cycle (cleared on line 26, refreshed below if needed)
-        export REPO_MAP_CONTENT=""
-        if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
-            local _review_files
-            _review_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
-            if [[ -n "$_review_files" ]]; then
-                # Ensure we have a map to slice from
-                if [[ -z "${REPO_MAP_CONTENT:-}" ]]; then
-                    run_repo_map "$TASK" || true
-                fi
-                if [[ -n "$REPO_MAP_CONTENT" ]]; then
-                    local _review_slice
-                    if _review_slice=$(get_repo_map_slice "$_review_files"); then
-                        REPO_MAP_CONTENT="$_review_slice"
-                        log "[indexer] Repo map sliced for reviewer (changed files)."
-                    fi
-                fi
-            fi
-        fi
-
         export PRIOR_BLOCKERS_BLOCK=""
         if [ "$REVIEW_CYCLE" -gt 1 ]; then
             PRIOR_BLOCKERS_BLOCK="yes"
@@ -50,7 +28,6 @@ run_stage_review() {
 
         build_context_packet "review" "$TASK" "$CLAUDE_REVIEWER_MODEL"
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
-        _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
         log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_REVIEWER_MODEL"
 
         REVIEWER_PROMPT=$(render_prompt "reviewer")

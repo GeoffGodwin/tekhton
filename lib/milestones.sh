@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 # milestones.sh — Milestone state machine and acceptance checking
 # Sourced by tekhton.sh — expects: PROJECT_DIR, PIPELINE_STATE_FILE, TEST_CMD, ANALYZE_CMD, log(), warn(), success(), header(), run_build_gate()
 # Provides: parse_milestones, get_current_milestone, advance_milestone, write_milestone_disposition, init_milestone_state
@@ -106,10 +105,38 @@ parse_milestones() {
     [[ "$found" -eq 1 ]]
 }
 
-# --- DAG-aware wrappers (extracted to milestone_dag_helpers.sh) ---------------
-# parse_milestones_auto, get_milestone_count, get_milestone_title,
-# is_milestone_done live in lib/milestone_dag_helpers.sh (sourced by tekhton.sh
-# after this file).
+# get_milestone_count CLAUDE_MD_PATH
+# Returns the number of milestones found.
+get_milestone_count() {
+    local claude_md="${1:-CLAUDE.md}"
+    local all_ms
+    all_ms=$(parse_milestones "$claude_md" 2>/dev/null) || true
+    local count
+    count=$(echo "$all_ms" | grep -c '.' || true)
+    echo "${count:-0}"
+}
+
+# get_milestone_title MILESTONE_NUM CLAUDE_MD_PATH
+# Returns the title of a specific milestone.
+get_milestone_title() {
+    local num="$1"
+    local claude_md="${2:-CLAUDE.md}"
+    # Collect all output first to avoid SIGPIPE when awk exits early
+    local all_milestones
+    all_milestones=$(parse_milestones "$claude_md" 2>/dev/null) || true
+    echo "$all_milestones" | awk -F'|' -v n="$num" '$1 == n {print $2; exit}'
+}
+
+# is_milestone_done MILESTONE_NUM CLAUDE_MD_PATH
+# Returns 0 if milestone heading has [DONE] marker.
+is_milestone_done() {
+    local num="$1"
+    local claude_md="${2:-CLAUDE.md}"
+
+    # Escape dots in milestone number for regex safety (e.g., 0.5 → 0\.5)
+    local num_pattern="${num//./\\.}"
+    grep -qiE "^#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+${num_pattern}[[:space:]]*[:.\—\-]" "$claude_md" 2>/dev/null
+}
 
 # --- Milestone state file management ----------------------------------------
 

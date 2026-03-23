@@ -99,31 +99,6 @@ set -euo pipefail
 : "${MILESTONE_TAG_ON_COMPLETE:=false}"
 : "${MILESTONE_ARCHIVE_FILE:=MILESTONE_ARCHIVE.md}"
 
-# --- Milestone DAG (file-based milestones with dependency tracking) ---
-: "${MILESTONE_DAG_ENABLED:=true}"
-: "${MILESTONE_DIR:=.claude/milestones}"
-: "${MILESTONE_MANIFEST:=MANIFEST.cfg}"
-: "${MILESTONE_AUTO_MIGRATE:=true}"
-: "${MILESTONE_WINDOW_PCT:=30}"
-: "${MILESTONE_WINDOW_MAX_CHARS:=20000}"
-
-# --- Repo map / indexer defaults (tree-sitter based code intelligence) ---
-: "${REPO_MAP_ENABLED:=false}"
-: "${REPO_MAP_TOKEN_BUDGET:=2048}"
-: "${REPO_MAP_CACHE_DIR:=.claude/index}"
-: "${REPO_MAP_LANGUAGES:=auto}"
-: "${REPO_MAP_VENV_DIR:=.claude/indexer-venv}"
-: "${REPO_MAP_HISTORY_ENABLED:=true}"
-: "${REPO_MAP_HISTORY_MAX_RECORDS:=200}"
-
-# --- Serena LSP / MCP defaults (optional, future Milestone 6) ---
-: "${SERENA_ENABLED:=false}"
-: "${SERENA_PATH:=.claude/serena}"
-: "${SERENA_CONFIG_PATH:=}"
-: "${SERENA_LANGUAGE_SERVERS:=auto}"
-: "${SERENA_STARTUP_TIMEOUT:=30}"
-: "${SERENA_MAX_RETRIES:=2}"
-
 # --- Milestone pre-flight sizing and auto-split ---
 : "${MILESTONE_SPLIT_ENABLED:=true}"
 : "${MILESTONE_SPLIT_MODEL:=${CLAUDE_CODER_MODEL}}"
@@ -225,9 +200,3 @@ _clamp_config_value MAX_CONTINUATION_ATTEMPTS 10
 _clamp_config_value MAX_TRANSIENT_RETRIES 10
 _clamp_config_value TRANSIENT_RETRY_BASE_DELAY 300
 _clamp_config_value TRANSIENT_RETRY_MAX_DELAY 600
-_clamp_config_value MILESTONE_WINDOW_PCT 80
-_clamp_config_value MILESTONE_WINDOW_MAX_CHARS 100000
-_clamp_config_value REPO_MAP_TOKEN_BUDGET 16384
-_clamp_config_value REPO_MAP_HISTORY_MAX_RECORDS 1000
-_clamp_config_value SERENA_STARTUP_TIMEOUT 120
-_clamp_config_value SERENA_MAX_RETRIES 10

@@ -12,9 +12,7 @@
 #          TEKHTON_HOME
 # Expects: log(), success(), warn(), error(), header() from common.sh
 # Expects: render_prompt(), _call_planning_batch() from lib/plan.sh
-# Expects: _insert_milestone_pointer() from lib/milestone_dag_migrate.sh
 # =============================================================================
-set -euo pipefail
 
 # run_plan_generate — Generate CLAUDE.md from DESIGN.md using a batch call.
 #
@@ -90,23 +88,6 @@ run_plan_generate() {
         local line_count
         line_count=$(count_lines < "$claude_md")
         success "CLAUDE.md generated (${line_count} lines)."
-
-        # Post-process: extract milestones into DAG files if enabled
-        if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-           && declare -f migrate_inline_milestones &>/dev/null; then
-            local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR:-.claude/milestones}"
-            if parse_milestones "$claude_md" >/dev/null 2>&1; then
-                log "Extracting milestones from CLAUDE.md into DAG files..."
-                if migrate_inline_milestones "$claude_md" "$milestone_dir"; then
-                    success "Milestones extracted to ${milestone_dir}/"
-                    # Insert a pointer comment in CLAUDE.md
-                    _insert_milestone_pointer "$claude_md" "$milestone_dir"
-                else
-                    warn "Milestone extraction failed — milestones remain inline in CLAUDE.md"
-                fi
-            fi
-        fi
-
         log "Log saved: ${log_file}"
         return 0
     else

@@ -61,12 +61,7 @@ tekhton/
 │   ├── metrics.sh          # [2.0] Run metrics collection + adaptive calibration
 │   ├── metrics_calibration.sh  # Adaptive turn calibration
 │   ├── errors.sh           # [2.0] Error taxonomy, classification + reporting
-│   ├── errors_helpers.sh   # Error classification helpers
-│   ├── milestone_dag.sh    # [3.0] Milestone DAG infrastructure + manifest parser
-│   ├── milestone_dag_migrate.sh # [3.0] Inline→file milestone migration
-│   ├── milestone_window.sh # [3.0] Character-budgeted milestone sliding window
-│   ├── indexer.sh          # [3.0] Repo map orchestration + Python tool invocation
-│   └── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
+│   └── errors_helpers.sh   # Error classification helpers
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Stage 0: Architect audit (conditional)
 │   ├── coder.sh            # Stage 1: Scout + Coder + build gate
@@ -117,21 +112,7 @@ tekhton/
 │   ├── mobile-app.md
 │   ├── library.md
 │   └── custom.md
-├── tools/                  # [3.0] Python tooling (optional dependency)
-│   ├── repo_map.py         # Tree-sitter repo map generator + PageRank
-│   ├── tag_cache.py        # Disk-based tag cache with mtime tracking
-│   ├── tree_sitter_languages.py  # Language detection + grammar loading
-│   ├── requirements.txt    # Pinned Python dependencies
-│   ├── setup_indexer.sh    # Indexer virtualenv setup script
-│   ├── setup_serena.sh     # Serena MCP server setup script
-│   ├── serena_config_template.json  # MCP config template
-│   └── tests/              # Python unit tests
-│       ├── conftest.py
-│       ├── test_repo_map.py
-│       ├── test_tag_cache.py
-│       └── test_history.py
 ├── tests/                  # Self-tests
-│   └── fixtures/indexer_project/  # [3.0] Multi-language fixture project
 └── examples/               # Sample dependency constraint validation scripts
     ├── architecture_constraints.yaml  # Sample constraint manifest
     ├── check_imports_dart.sh          # Dart/Flutter import validator
@@ -263,26 +244,6 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `AUTONOMOUS_PROGRESS_CHECK` | Enable stuck-detection between loop iterations (default: true) |
 | `HUMAN_MODE` | Set by `--human` flag (default: false) |
 | `HUMAN_NOTES_TAG` | Optional tag filter for `--human` (BUG, FEAT, POLISH) |
-| `MILESTONE_DAG_ENABLED` | Use manifest+files vs inline CLAUDE.md (default: true) |
-| `MILESTONE_DIR` | Directory for milestone files (default: .claude/milestones) |
-| `MILESTONE_MANIFEST` | Manifest filename within MILESTONE_DIR (default: MANIFEST.cfg) |
-| `MILESTONE_WINDOW_PCT` | % of context budget allocated to milestones (default: 30) |
-| `MILESTONE_WINDOW_MAX_CHARS` | Hard cap on milestone window chars (default: 20000) |
-| `MILESTONE_AUTO_MIGRATE` | Auto-extract inline milestones on first run (default: true) |
-| `REPO_MAP_ENABLED` | Enable tree-sitter repo map generation (default: false) |
-| `REPO_MAP_TOKEN_BUDGET` | Max tokens for repo map output (default: 2048) |
-| `REPO_MAP_CACHE_DIR` | Index cache directory (default: .claude/index) |
-| `REPO_MAP_LANGUAGES` | Languages to index, or "auto" (default: auto) |
-| `REPO_MAP_CONTENT` | Generated repo map markdown (injected by lib/indexer.sh) |
-| `REPO_MAP_SLICE` | Task-relevant subset of repo map (per-stage) |
-| `REPO_MAP_HISTORY_ENABLED` | Track task→file associations (default: true) |
-| `REPO_MAP_HISTORY_MAX_RECORDS` | Max history entries before pruning (default: 200) |
-| `SERENA_ENABLED` | Enable Serena LSP via MCP (default: false) |
-| `SERENA_PATH` | Serena installation directory (default: .claude/serena) |
-| `SERENA_CONFIG_PATH` | Path to generated MCP config (auto-generated) |
-| `SERENA_LANGUAGE_SERVERS` | LSP servers to use, or "auto" (default: auto) |
-| `SERENA_STARTUP_TIMEOUT` | Seconds to wait for Serena startup (default: 30) |
-| `SERENA_MAX_RETRIES` | Retry attempts for Serena health check (default: 2) |
 
 ## Testing
 
@@ -427,174 +388,4 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 - **All new `.sh` files must pass `bash -n` and `shellcheck`.**
 
 ### Milestone Plan
-
-## Initiative: Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
-
-Tekhton 3.0 makes the pipeline **context-aware** at two levels. First, a
-**Milestone DAG** with a sliding context window replaces inline milestone storage
-in CLAUDE.md — milestones live as individual files with dependency tracking, and
-only the relevant frontier is injected into agent prompts. This eliminates context
-waste from future milestones and enables future parallel execution. Second,
-**intelligent indexing** via tree-sitter repo maps (optionally enriched with Serena
-LSP via MCP) replaces blind architecture injection — agents receive ranked,
-token-budgeted file signatures relevant to their task.
-
-Full design document: `DESIGN_v3.md`.
-
-### Key Constraints
-
-- **Backward compatible.** Users who don't enable new features see identical 2.0
-  behavior. DAG features auto-detect (manifest exists → use it). Indexer features
-  are opt-in via `REPO_MAP_ENABLED`. All new features default-off until proven stable.
-- **No new shell dependencies for DAG.** The milestone DAG uses only bash 4+ builtins
-  (associative arrays, parameter expansion). No jq, no Python for DAG operations.
-- **Python is optional.** The repo map generator requires Python 3.8+ and
-  tree-sitter, but Tekhton must remain functional without them. Shell detects
-  availability and falls back gracefully to 2.0 context injection.
-- **Shell controls flow.** Python tools are invoked as subprocesses and produce
-  structured output (JSON/text). No Python process holds state across stages.
-- **Bash 4+ for all .sh files.** The indexer orchestration is bash; the analysis
-  tool is Python. Both must be independently testable.
-- **Character budget is king.** The milestone window and repo map output both fit
-  within configurable character budgets. Ranking and priority determine what gets
-  included, not truncation.
-- **Parallel-ready data model.** DAG edges, parallel groups, and dependency
-  tracking exist from day one. The data structures support future parallel
-  execution without modification.
-- **All existing tests must pass** (`bash tests/run_tests.sh`) at every milestone.
-- **All new `.sh` files must pass `bash -n` and `shellcheck`.**
-
-### Architecture Overview
-
-```
-Pipeline Stage Flow (v3):
-
-  tekhton.sh startup
-       │
-       ├──▶ Milestone DAG Layer
-       │    ┌──────────────────────┐
-       │    │  lib/milestone_dag   │ ← MANIFEST.cfg + .md files
-       │    │  lib/milestone_win   │ → MILESTONE_BLOCK (budgeted)
-       │    └──────────────────────┘
-       │
-       ├──▶ Indexer Layer (opt-in)
-       │    ┌─────────────────┐    ┌──────────────────────┐
-       │    │  lib/indexer.sh  │───▶│  tools/repo_map.py   │
-       │    │  (orchestrator)  │    │  (tree-sitter parse  │
-       │    │                  │◀───│   + PageRank + emit)  │
-       │    └─────────────────┘    └──────────────────────┘
-       │         │
-       │         ▼
-       │    REPO_MAP.md (ranked signatures, token-budgeted)
-       │
-       ▼
-  Agent Stages (with budgeted context)
-       ├──▶ Scout    (full map for discovery)
-       ├──▶ Coder    (task-relevant slice + active milestone)
-       ├──▶ Reviewer (changed-file slice)
-       └──▶ Tester   (test-relevant slice)
-
-  Optional: Serena MCP (live symbol queries)
-       └──▶ Agents use find_symbol / references
-            tools alongside static repo map
-```
-
-### Milestone Plan
-
-<!-- Milestones are managed as individual files in /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/.
-     See MANIFEST.cfg for ordering and dependencies. -->
-
-# Tekhton Milestone Manifest v1
-# id|title|status|depends_on|file|parallel_group
-m01|DAG Infrastructure|pending||m01-dag-infra.md|foundation
-m02|Sliding Window|pending|m01|m02-sliding-window.md|foundation
-```
-
-Acceptance criteria:
-- `has_milestone_manifest()` returns 0 when MANIFEST.cfg exists, 1 otherwise
-- `load_manifest()` correctly parses a multi-line manifest into parallel arrays
-- `dag_deps_satisfied()` returns 0 only when all deps have status=done
-- `dag_get_frontier()` returns only milestones whose deps are all done
-- `validate_manifest()` detects: missing dep references, circular deps, missing files
-- `dag_set_status()` + `save_manifest()` roundtrips correctly (read-modify-write)
-- `migrate_inline_milestones()` extracts all milestones from a CLAUDE.md, creates
-  individual files, generates a valid MANIFEST.cfg
-- `parse_milestones_auto()` returns data from manifest in the same format as inline
-- When no manifest exists, all functions fall back to existing v2 behavior unchanged
-- `find_next_milestone()` respects DAG edges when manifest is present
-- `mark_milestone_done()` updates manifest status when manifest is present
-- `archive_completed_milestone()` and `split_milestone()` work with file-based milestones
-- All existing tests pass (`bash tests/run_tests.sh`)
-- `bash -n lib/milestone_dag.sh lib/milestone_dag_migrate.sh` passes
-- `shellcheck lib/milestone_dag.sh lib/milestone_dag_migrate.sh` passes
-- New test file `tests/test_milestone_dag.sh` covers: manifest parsing, DAG queries,
-  frontier detection, cycle detection, migration, status updates
-
-Watch For:
-- `_DAG_IDX` associative array requires `declare -A` (bash 4+ — already enforced).
-- Milestone IDs in the manifest (`m01`) differ from display numbers (`1`) used in
-  task strings and commit messages. The `dag_id_to_number()`/`dag_number_to_id()`
-  conversion must handle both formats seamlessly.
-- Manifest writes must be atomic (tmpfile+mv) — same pattern as milestone_archival.
-- `_extract_milestone_block()` in `milestone_archival_helpers.sh` is reused by
-  migration. The migration function must use the same helper for consistent block
-  boundary detection.
-- Circular dependency detection: DFS with visited set. Report cycle path in error.
-- `.claude/milestones/` directory must be created by migration or plan generation,
-  NOT eagerly at startup if no milestones exist.
-
-Seeds Forward:
-- Milestone 2 consumes the manifest and milestone files to build the sliding window
-- The `parallel_group` field and dependency edges enable future parallel execution
-- `dag_get_frontier()` is directly reusable by future parallel execution logic
-
-## src/models/user.py
-  class User
-    def __init__(self, name, email)
-    def validate(self) -> bool
-    def to_dict(self) -> dict
-
-## src/api/routes.py
-  def register_routes(app)
-  def handle_user_create(request) -> Response
-  def handle_user_get(user_id) -> Response
-
-## src/db/connection.py
-  class DatabasePool
-    def get_connection(self) -> Connection
-    def release(self, conn)
-```
-
-Acceptance criteria:
-- `repo_map.py --root . --task "add user auth" --budget 2048` produces a
-  ranked markdown repo map that fits within the token budget
-- Files matching task keywords rank higher than unrelated files
-- Tag cache eliminates re-parsing unchanged files (mtime-based)
-- Unsupported file types are silently skipped (no error, no output)
-- `.gitignore` patterns are respected (no `node_modules/`, `.venv/`, etc.)
-- Output contains only signatures — no function bodies, no comments
-- Exit code 1 (partial) still produces a usable map from parseable files
-- `python3 -m pytest tools/` passes (unit tests for tag extraction, graph
-  building, ranking, budget enforcement, cache hit/miss)
-- All existing bash tests pass
-
-Watch For:
-- tree-sitter grammar API changed significantly between 0.20 and 0.21+. Pin to
-  >=0.21 and use the new API. The `tree-sitter-languages` package bundles
-  grammars conveniently but may lag behind — support both bundled and individual
-  grammar packages.
-- PageRank personalization vector must handle the case where task keywords match
-  zero files — fall back to uniform personalization (standard PageRank).
-- Token budget enforcement must count tokens in the OUTPUT, not the input files.
-  Use `len(text) / 4` as the token estimate (matching v2's CHARS_PER_TOKEN).
-- `.gitignore` parsing is non-trivial. Use `pathspec` library or shell out to
-  `git ls-files` for git repos. For non-git projects, skip `.gitignore` handling.
-- Large monorepos (10k+ files) must complete in under 30 seconds on first run
-  and under 5 seconds on cached runs. Profile early.
-
-Seeds Forward:
-- Milestone 5 consumes `REPO_MAP.md` in pipeline stages
-- Milestone 7 extends the cache with cross-run task→file associations
-- The tag extraction format is reused by Milestone 6's Serena integration
-  for cache warming
 

@@ -22,10 +22,13 @@ set -euo pipefail
 source "${TEKHTON_HOME:-.}/lib/milestone_archival_helpers.sh"
 
 # archive_completed_milestone MILESTONE_NUM CLAUDE_MD_PATH
-# Moves a completed milestone definition to MILESTONE_ARCHIVE.md.
-# In DAG mode: reads the milestone file directly via dag_get_file().
-# In inline mode: extracts from CLAUDE.md (original behavior).
-# Returns 0 on success, 1 if not found, already archived, or not done.
+# Moves a completed milestone definition from CLAUDE.md to MILESTONE_ARCHIVE.md.
+# 1. Extracts the full block from CLAUDE.md
+# 2. Appends to MILESTONE_ARCHIVE.md with timestamp and initiative name
+# 3. Removes the [DONE] heading and body entirely from CLAUDE.md
+# 4. Inserts archive pointer comment under the Milestone Plan heading (if missing)
+# 5. Collapses 3+ consecutive blank lines down to 2
+# Returns 0 on success, 1 if not found, already archived, or not [DONE].
 archive_completed_milestone() {
     local num="$1"
     local claude_md="${2:-CLAUDE.md}"
@@ -35,41 +38,15 @@ archive_completed_milestone() {
         return 1
     fi
 
-    # Resolve initiative name early so _milestone_in_archive can scope by it
-    local initiative=""
-    initiative=$(_get_initiative_name "$claude_md" "$num")
-
-    if _milestone_in_archive "$num" "$archive_file" "$initiative"; then
+    if _milestone_in_archive "$num" "$archive_file"; then
         return 1
     fi
 
-    local block=""
+    local block
+    block=$(_extract_milestone_block "$num" "$claude_md") || return 1
 
-    # DAG path: read milestone file directly
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-       && declare -f has_milestone_manifest &>/dev/null \
-       && has_milestone_manifest; then
-        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
-            load_manifest 2>/dev/null || true
-        fi
-        local id
-        id=$(dag_number_to_id "$num")
-        local file
-        file=$(dag_get_file "$id" 2>/dev/null) || true
-        if [[ -n "$file" ]]; then
-            local milestone_dir
-            milestone_dir=$(_dag_milestone_dir)
-            if [[ -f "${milestone_dir}/${file}" ]]; then
-                block=$(cat "${milestone_dir}/${file}")
-            fi
-        fi
-        if [[ -z "$block" ]]; then
-            return 1
-        fi
-    else
-        # Inline path: extract from CLAUDE.md
-        block=$(_extract_milestone_block "$num" "$claude_md") || return 1
-    fi
+    local initiative
+    initiative=$(_get_initiative_name "$claude_md" "$num")
 
     if [[ ! -f "$archive_file" ]]; then
         cat > "$archive_file" << 'ARCHIVE_HEADER'
@@ -89,91 +66,66 @@ ARCHIVE_HEADER
         echo "$block"
     } >> "$archive_file"
 
-    # In inline mode, also remove the block from CLAUDE.md
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" != "true" ]] \
-       || ! declare -f has_milestone_manifest &>/dev/null \
-       || ! has_milestone_manifest; then
-        local tmp_file
-        local tmp_dir="${TEKHTON_SESSION_DIR:-$(dirname "$claude_md")}"
-        tmp_file="$(mktemp "${tmp_dir}/archival_XXXXXX" 2>/dev/null)" \
-            || tmp_file="$(mktemp "$(dirname "$claude_md")/archival_XXXXXX")"
+    # --- Pass 1: Remove the [DONE] milestone block entirely from CLAUDE.md ---
+    local tmp_file
+    local tmp_dir="${TEKHTON_SESSION_DIR:-$(dirname "$claude_md")}"
+    tmp_file="$(mktemp "${tmp_dir}/archival_XXXXXX" 2>/dev/null)" \
+        || tmp_file="$(mktemp "$(dirname "$claude_md")/archival_XXXXXX")"
 
-        awk -v num="$num" '
-        BEGIN {
-            in_block = 0; heading_level = 0
-            safe_num = num
-            gsub(/\./, "\\.", safe_num)
+    awk -v num="$num" '
+    BEGIN {
+        in_block = 0; heading_level = 0
+        safe_num = num
+        gsub(/\./, "\\.", safe_num)
+    }
+    {
+        if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[^[:alnum:]]") {
+            heading_level = RLENGTH
+            in_block = 1
+            next
         }
-        {
-            if (!in_block && match($0, /^#{1,5}/) && $0 ~ /\[DONE\]/ && $0 ~ "[Mm]ilestone[[:space:]]+" safe_num "[[:space:]]*[^[:alnum:]]") {
-                heading_level = RLENGTH
-                in_block = 1
-                next
-            }
 
-            if (in_block) {
-                if (match($0, /^#{1,5}[[:space:]]/)) {
-                    this_level = RLENGTH - 1
-                    if (this_level <= heading_level) {
-                        in_block = 0
-                        print
-                        next
-                    }
+        if (in_block) {
+            if (match($0, /^#{1,5}[[:space:]]/)) {
+                this_level = RLENGTH - 1
+                if (this_level <= heading_level) {
+                    in_block = 0
+                    print
+                    next
                 }
-                next
             }
-
-            print
+            next
         }
-        ' "$claude_md" > "$tmp_file"
 
-        mv -f "$tmp_file" "$claude_md"
+        print
+    }
+    ' "$claude_md" > "$tmp_file"
 
-        _insert_archive_pointer "$claude_md" "$initiative"
-        _collapse_blank_lines "$claude_md"
-    fi
+    mv -f "$tmp_file" "$claude_md"
+
+    # --- Pass 2: Insert archive pointer comment if not already present ---
+    _insert_archive_pointer "$claude_md" "$initiative"
+
+    # --- Pass 3: Collapse 3+ consecutive blank lines down to 2 ---
+    _collapse_blank_lines "$claude_md"
 
     log "Archived milestone ${num} to ${archive_file}"
     return 0
 }
 
 # archive_all_completed_milestones CLAUDE_MD_PATH
-# Archives all completed milestones that haven't been archived yet.
-# In DAG mode: iterates manifest for status=done milestones.
-# In inline mode: greps CLAUDE.md for [DONE] headings.
+# Archives all [DONE] milestones that still have full definitions in CLAUDE.md.
 # Idempotent — skips milestones already archived or already summarized.
 archive_all_completed_milestones() {
     local claude_md="${1:-CLAUDE.md}"
-    local archived_count=0
 
-    # DAG path: iterate manifest for done milestones
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-       && declare -f has_milestone_manifest &>/dev/null \
-       && has_milestone_manifest; then
-        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
-            load_manifest 2>/dev/null || true
-        fi
-        local i
-        for (( i = 0; i < ${#_DAG_IDS[@]}; i++ )); do
-            if [[ "${_DAG_STATUSES[$i]}" == "done" ]]; then
-                local num
-                num=$(dag_id_to_number "${_DAG_IDS[$i]}")
-                if archive_completed_milestone "$num" "$claude_md"; then
-                    archived_count=$((archived_count + 1))
-                fi
-            fi
-        done
-        if [[ "$archived_count" -gt 0 ]]; then
-            log "Archived ${archived_count} completed milestone(s) from manifest"
-        fi
-        return 0
-    fi
-
-    # Inline path: grep CLAUDE.md for [DONE] headings
     if [[ ! -f "$claude_md" ]]; then
         return 0
     fi
 
+    local archived_count=0
+
+    # Find all [DONE] milestone numbers
     local done_nums
     done_nums=$(grep -oE '^\#{1,5}[[:space:]]*\[DONE\][[:space:]]*(M|m)ilestone[[:space:]]+([0-9]+([.][0-9]+)*)' "$claude_md" 2>/dev/null \
         | grep -oE '[0-9]+([.][0-9]+)*$' || true)
@@ -183,7 +135,9 @@ archive_all_completed_milestones() {
     fi
 
     while IFS= read -r num; do
-        [[ -z "$num" ]] && continue
+        if [[ -z "$num" ]]; then
+            continue
+        fi
         if archive_completed_milestone "$num" "$claude_md"; then
             archived_count=$((archived_count + 1))
         fi

@@ -28,34 +28,11 @@ run_stage_tester() {
             ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
         fi
 
-        # Repo map slice: changed files + test counterparts
-        export REPO_MAP_CONTENT=""
-        if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
-            local _tester_files
-            _tester_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
-            if [[ -n "$_tester_files" ]]; then
-                # Augment with inferred test file counterparts
-                _tester_files=$(infer_test_counterparts "$_tester_files")
-                # Ensure we have a map to slice from
-                if [[ -z "${REPO_MAP_CONTENT:-}" ]]; then
-                    run_repo_map "$TASK" || true
-                fi
-                if [[ -n "$REPO_MAP_CONTENT" ]]; then
-                    local _tester_slice
-                    if _tester_slice=$(get_repo_map_slice "$_tester_files"); then
-                        REPO_MAP_CONTENT="$_tester_slice"
-                        log "[indexer] Repo map sliced for tester (changed files + test counterparts)."
-                    fi
-                fi
-            fi
-        fi
-
         # --- Context compiler (task-scoped filtering) ------------------------
         build_context_packet "tester" "$TASK" "$CLAUDE_TESTER_MODEL"
 
         # --- Context budget reporting ----------------------------------------
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
-        _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
         log_context_report "tester" "$CLAUDE_TESTER_MODEL"
 
         TESTER_PROMPT=$(render_prompt "tester")

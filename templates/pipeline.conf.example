@@ -282,33 +282,6 @@ CONTEXT_COMPILER_ENABLED=false
 # under context window limits for long-running projects.
 # MILESTONE_ARCHIVE_FILE=MILESTONE_ARCHIVE.md
 
-# --- Milestone DAG (file-based milestones with dependency tracking) -----------
-# When enabled, milestones are stored as individual .md files in .claude/milestones/
-# with a MANIFEST.cfg tracking dependencies and status. This replaces inline
-# CLAUDE.md milestone storage and enables dependency-aware ordering.
-
-# Master toggle for DAG-based milestone storage (default: true)
-# When false, milestones are parsed from CLAUDE.md inline headings (v2 behavior).
-# MILESTONE_DAG_ENABLED=true
-
-# Directory for milestone files (relative to project root)
-# MILESTONE_DIR=".claude/milestones"
-
-# Manifest filename within MILESTONE_DIR
-# MILESTONE_MANIFEST="MANIFEST.cfg"
-
-# Auto-migrate inline CLAUDE.md milestones to file-based DAG on first run.
-# Only triggers when MILESTONE_DAG_ENABLED=true and no manifest exists.
-# MILESTONE_AUTO_MIGRATE=true
-
-# Percentage of context budget allocated to milestone window (default: 30)
-# Hard cap: 80
-# MILESTONE_WINDOW_PCT=30
-
-# Hard cap on milestone window characters (default: 20000)
-# Hard cap: 100000
-# MILESTONE_WINDOW_MAX_CHARS=20000
-
 # --- Milestone pre-flight sizing and auto-split --------------------------------
 # When enabled, the pipeline checks if a milestone's scout estimate exceeds the
 # turn cap. If it does, the milestone is automatically split into 2-4 sub-milestones.
@@ -442,57 +415,6 @@ CONTEXT_COMPILER_ENABLED=false
 
 # Enable stuck-detection: exit loop if git diff is identical between iterations
 # AUTONOMOUS_PROGRESS_CHECK=true
-
-# --- Repo map / Indexer (tree-sitter code intelligence) ---------------------
-# When enabled, the pipeline generates a ranked repo map of file signatures
-# using tree-sitter parsing and PageRank-based relevance scoring. Agents
-# receive only the most task-relevant code signatures instead of the full
-# ARCHITECTURE.md dump.
-#
-# Prerequisites: run `tekhton --setup-indexer` to install Python dependencies.
-
-# Master toggle for repo map generation (default: false — opt-in)
-# REPO_MAP_ENABLED=false
-
-# Maximum tokens for repo map output. Higher = more context, more cost.
-# REPO_MAP_TOKEN_BUDGET=2048
-
-# Cache directory for tag index and repo map artifacts (relative to project root)
-# REPO_MAP_CACHE_DIR=".claude/index"
-
-# Languages to index. "auto" detects from file extensions. Otherwise,
-# comma-separated list: "python,javascript,typescript,go"
-# REPO_MAP_LANGUAGES="auto"
-
-# Virtualenv directory for indexer dependencies (relative to project root).
-# Created by `tekhton --setup-indexer`. Must be in .gitignore.
-# REPO_MAP_VENV_DIR=".claude/indexer-venv"
-
-# Track task→file associations for personalized ranking across runs
-# REPO_MAP_HISTORY_ENABLED=true
-
-# Maximum history entries before pruning oldest records
-# REPO_MAP_HISTORY_MAX_RECORDS=200
-
-# --- Serena LSP / MCP (optional live symbol queries) -------------------------
-# When enabled alongside repo map, agents gain find_symbol and
-# find_referencing_symbols tools via Serena MCP for live cross-references.
-# Requires separate setup: tekhton --setup-indexer --with-lsp (future)
-
-# Master toggle for Serena LSP integration (default: false — opt-in)
-# SERENA_ENABLED=false
-
-# Serena installation directory (relative to project root)
-# SERENA_PATH=".claude/serena"
-
-# Language servers to use. "auto" detects from project type.
-# SERENA_LANGUAGE_SERVERS="auto"
-
-# Seconds to wait for Serena startup before falling back
-# SERENA_STARTUP_TIMEOUT=30
-
-# Retry attempts for Serena health check on startup
-# SERENA_MAX_RETRIES=2
 
 # --- Seed contracts ----------------------------------------------------------
 # Enable inline contract seeding (adds contract doc comments to source files)

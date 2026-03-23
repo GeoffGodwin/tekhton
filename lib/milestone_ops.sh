@@ -127,30 +127,11 @@ should_auto_advance() {
 
 # find_next_milestone CURRENT_NUM CLAUDE_MD_PATH
 # Returns the next non-done milestone number after CURRENT_NUM.
-# Uses DAG-aware ordering when manifest exists, falls back to inline.
 # Returns empty string if no more milestones.
 find_next_milestone() {
     local current="$1"
     local claude_md="${2:-CLAUDE.md}"
 
-    # DAG path: use dag_find_next for dependency-aware ordering
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-       && declare -f has_milestone_manifest &>/dev/null \
-       && has_milestone_manifest; then
-        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
-            load_manifest 2>/dev/null || true
-        fi
-        local current_id
-        current_id=$(dag_number_to_id "$current")
-        local next_id
-        next_id=$(dag_find_next "$current_id" 2>/dev/null) || true
-        if [[ -n "$next_id" ]]; then
-            dag_id_to_number "$next_id"
-        fi
-        return
-    fi
-
-    # Inline path: sequential ordering
     local next=""
     local all_ms
     all_ms=$(parse_milestones "$claude_md" 2>/dev/null) || true
@@ -191,56 +172,35 @@ prompt_auto_advance_confirm() {
 }
 
 # mark_milestone_done MILESTONE_NUM [CLAUDE_MD_PATH]
-# Marks a milestone as done. In DAG mode, updates manifest status.
-# In inline mode, adds [DONE] marker to CLAUDE.md heading.
-# Idempotent — returns 0 if already done.
+# Marks a milestone heading as [DONE] in CLAUDE.md.
+# Changes "#### Milestone N: Title" to "#### [DONE] Milestone N: Title".
+# Idempotent — returns 0 if already marked [DONE].
+# Returns 1 if milestone heading not found.
 mark_milestone_done() {
     local milestone_num="$1"
     local claude_md="${2:-${PROJECT_RULES_FILE:-CLAUDE.md}}"
 
-    # DAG path: update manifest status
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-       && declare -f has_milestone_manifest &>/dev/null \
-       && has_milestone_manifest; then
-        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
-            load_manifest 2>/dev/null || true
-        fi
-        local id
-        id=$(dag_number_to_id "$milestone_num")
-        local current_status
-        current_status=$(dag_get_status "$id" 2>/dev/null) || true
-        if [[ "$current_status" == "done" ]]; then
-            log "Milestone ${milestone_num} already marked done in manifest"
-            return 0
-        fi
-        dag_set_status "$id" "done"
-        save_manifest
-        # Also update the milestone .md file metadata if emit_milestone_metadata exists
-        if declare -f emit_milestone_metadata &>/dev/null; then
-            emit_milestone_metadata "$milestone_num" "done" 2>/dev/null || true
-        fi
-        success "Marked Milestone ${milestone_num} (${id}) as done in manifest"
-        return 0
-    fi
-
-    # Inline path: mark [DONE] in CLAUDE.md
     if [[ ! -f "$claude_md" ]]; then
         warn "mark_milestone_done: ${claude_md} not found"
         return 1
     fi
 
+    # Escape dots in milestone number for regex safety (e.g., 13.2.1.1 → 13\.2\.1\.1)
     local num_pattern="${milestone_num//./\\.}"
 
+    # Check if already marked [DONE]
     if grep -qE "^#{1,5}[[:space:]]*\[DONE\][[:space:]]+Milestone[[:space:]]+${num_pattern}:" "$claude_md" 2>/dev/null; then
         log "Milestone ${milestone_num} already marked [DONE]"
         return 0
     fi
 
+    # Find the unmarked heading
     if ! grep -qE "^#{1,5}[[:space:]]+Milestone[[:space:]]+${num_pattern}:" "$claude_md" 2>/dev/null; then
         warn "mark_milestone_done: Milestone ${milestone_num} heading not found in ${claude_md}"
         return 1
     fi
 
+    # Use tmpfile + mv for portability (no sed -i)
     local tmpfile
     tmpfile=$(mktemp)
     sed -E "s/^(#{1,5})[[:space:]]+(Milestone[[:space:]]+${num_pattern}:)/\1 [DONE] \2/" "$claude_md" > "$tmpfile"

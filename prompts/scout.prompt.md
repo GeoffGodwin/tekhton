@@ -19,16 +19,6 @@ Use `find`, `grep`, and `ls` to locate files by name and keyword. Read only the 
 {{IF:ARCHITECTURE_BLOCK}}
 {{ARCHITECTURE_BLOCK}}
 {{ENDIF:ARCHITECTURE_BLOCK}}
-{{IF:REPO_MAP_CONTENT}}
-
-## Repo Map (ranked file signatures — use INSTEAD of blind find/grep)
-The following repo map shows ranked file signatures relevant to your task.
-Files are ordered by likely relevance. Use this to identify relevant files
-without needing to search the filesystem. The map shows public APIs — you
-still need to read files to confirm details.
-
-{{REPO_MAP_CONTENT}}
-{{ENDIF:REPO_MAP_CONTENT}}
 
 ## Output
 Write a file called `SCOUT_REPORT.md` in this exact format.

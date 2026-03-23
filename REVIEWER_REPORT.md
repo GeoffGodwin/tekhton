@@ -1,3 +1,5 @@
+# Reviewer Report
+
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -8,12 +10,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/indexer_helpers.sh:32-43` — The `&&`-chained array-append pattern (`[[ -z ... ]] && languages+=(...) && seen[x]=1`) is still present. Style note from prior cycles — prefer explicit `if/then/fi` blocks per project shell style. Not a blocker.
-- `stages/review.sh` — The `if [[ -z "${REPO_MAP_CONTENT:-}" ]]` guard after clearing `REPO_MAP_CONTENT` is still redundant (always true at that point). Consider removing for clarity. Not a blocker.
+- `stages/init_synthesize.sh` is 533 lines — well over the 300-line ceiling. Pre-existing from Milestone 21, not introduced here, but a cleanup pass was a natural opportunity to split it.
 
 ## Coverage Gaps
-- No bash tests added for `extract_files_from_coder_summary()` or `infer_test_counterparts()` (carried from prior reports — still unaddressed).
-- No test coverage for the updated `get_repo_map_slice()` suffix-matching logic.
+- None
 
 ## Drift Observations
-- `lib/indexer_helpers.sh` — The `&&`-chained seen-set pattern is now present in both `indexer.sh` (original) and `indexer_helpers.sh` (extracted copy). Two occurrences of the non-standard pattern — approaching the threshold where a style sweep would be warranted if it spreads further.
+- `stages/init_synthesize.sh` — file is 533 lines, exceeding the 300-line ceiling defined in reviewer.md. The coder's changes actually removed a line, so this was not introduced here, but it should be tracked for a future split (e.g., extract `_compress_synthesis_context` and `_synthesize_*` helpers into a `lib/init_synthesize_helpers.sh`).

@@ -70,8 +70,6 @@ mkdir -p "${TMPDIR}/.claude"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 
 # With AUTO_ADVANCE_ENABLED=false, should_auto_advance returns non-zero

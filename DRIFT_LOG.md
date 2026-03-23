@@ -1,11 +1,10 @@
 # Drift Log
 
 ## Metadata
-- Last audit: 2026-03-22
-- Runs since audit: 4
+- Last audit: 2026-03-21
+- Runs since audit: 3
 
 ## Unresolved Observations
-- [2026-03-22 | "Implement Indexer Infrastructure & Setup Command then carry on to future milestones."] `lib/indexer_helpers.sh` — The `&&`-chained seen-set pattern is now present in both `indexer.sh` (original) and `indexer_helpers.sh` (extracted copy). Two occurrences of the non-standard pattern — approaching the threshold where a style sweep would be warranted if it spreads further.
-- [2026-03-22 | "Implement Indexer Infrastructure & Setup Command then carry on to future milestones."] `repo_map.py:113` — direct import of `_EXT_TO_LANG` (private module-level dict in `tree_sitter_languages.py`) creates hidden coupling: if the internal data structure ever changes name or format, `repo_map.py` will break with an `ImportError` rather than a clear AttributeError at the call site. Consider exporting a public API function from `tree_sitter_languages.py` for this use.
+- [2026-03-21 | "Resolve all observations in NON_BLOCKING_LOG.md. For each unresolved item, apply the fix, then mark it resolved. Continue until no unresolved observations remain."] `stages/init_synthesize.sh` — file is 533 lines, exceeding the 300-line ceiling defined in reviewer.md. The coder's changes actually removed a line, so this was not introduced here, but it should be tracked for a future split (e.g., extract `_compress_synthesis_context` and `_synthesize_*` helpers into a `lib/init_synthesize_helpers.sh`).
 
 ## Resolved

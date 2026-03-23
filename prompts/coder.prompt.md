@@ -10,15 +10,6 @@ contradict this directive.
 {{IF:ARCHITECTURE_BLOCK}}
 {{ARCHITECTURE_BLOCK}}
 {{ENDIF:ARCHITECTURE_BLOCK}}
-{{IF:REPO_MAP_CONTENT}}
-
-## Repo Map (ranked file signatures relevant to your task)
-The following repo map shows ranked file signatures relevant to your task.
-Use it to understand the codebase structure and identify files to read or
-modify. Signatures show the public API — read full files before making changes.
-
-{{REPO_MAP_CONTENT}}
-{{ENDIF:REPO_MAP_CONTENT}}
 {{IF:GLOSSARY_BLOCK}}
 {{GLOSSARY_BLOCK}}
 {{ENDIF:GLOSSARY_BLOCK}}

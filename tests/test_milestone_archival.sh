@@ -27,8 +27,6 @@ export MILESTONE_ARCHIVE_FILE
 source "${TEKHTON_HOME}/lib/state.sh"
 run_build_gate() { return 0; }
 source "${TEKHTON_HOME}/lib/milestones.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 
 cd "$TMPDIR_BASE"

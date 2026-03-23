@@ -24,8 +24,6 @@ export MILESTONE_STATE_FILE
 source "${TEKHTON_HOME}/lib/state.sh"
 run_build_gate() { return 0; }
 source "${TEKHTON_HOME}/lib/milestones.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 
 # cd to TMPDIR so relative CLAUDE.md paths resolve correctly

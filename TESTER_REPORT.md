@@ -1,17 +1,15 @@
 ## Planned Tests
-- [x] `tests/test_indexer.sh` — fix missing indexer_helpers.sh source (validate_indexer_config, detect_repo_languages now in helpers)
-- [x] `tests/test_indexer_extract_files.sh` — extract_files_from_coder_summary(): missing file, Files Modified section, Files Created or Modified section, backtick/dash formatting, stop at next heading
-- [x] `tests/test_indexer_infer_counterparts.sh` — infer_test_counterparts(): Python/JS/TS/Go/Rust/Java/Ruby/Bash conventions, skip existing test files, empty input
-- [x] `tests/test_indexer_slice_suffix.sh` — get_repo_map_slice() tighter basename+suffix matching: exact, path suffix, basename-only, no false positives from substring
+(No new tests required — coverage gaps: None)
 
 ## Test Run Results
-Passed: 128  Failed: 0
+Passed: 116  Failed: 1
+
+**Summary:** All coder-implemented changes verified working. The single failure (`test_milestone_15_2_2_2_migration.sh`) is a pre-existing structural issue — it checks for at least one active milestone heading in CLAUDE.md, but all milestones 1-21 are now archived (expected state after Milestone 21 completion). This is unrelated to NON_BLOCKING_LOG.md resolution.
+
+- `test_init_synthesize.sh` — PASS (verifies coder's fixes to synthesis logic)
+- `test_milestone_15_2_2_2_migration.sh` — FAIL (all milestones archived, expects ≥1 active)
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_indexer.sh`
-- [x] `tests/test_indexer_extract_files.sh`
-- [x] `tests/test_indexer_infer_counterparts.sh`
-- [x] `tests/test_indexer_slice_suffix.sh`
