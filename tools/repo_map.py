@@ -5,6 +5,11 @@ Parses source files, extracts definition/reference tags, builds a file
 relationship graph, ranks by PageRank biased toward task-relevant files,
 and emits a token-budgeted markdown repo map of signatures only.
 
+Milestone 7 additions:
+- --history-file: load task→file association history for personalized ranking
+- --warm-cache: parse all files and populate tag cache without output
+- Blended personalization: keyword (0.6) + history (0.3) + git recency (0.1)
+
 Exit codes:
     0 — success (full map on stdout)
     1 — partial (some files failed, best-effort map on stdout)
@@ -14,6 +19,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -150,6 +156,9 @@ def _extract_tags(
     except OSError:
         return None
 
+    import time
+    t0 = time.monotonic()
+
     try:
         tree = parser.parse(source)
     except Exception:
@@ -160,11 +169,13 @@ def _extract_tags(
 
     _walk_tree(tree.root_node, source, definitions, references, ext)
 
+    parse_ms = (time.monotonic() - t0) * 1000.0
+
     tags = {
         "definitions": definitions,
         "references": references,
     }
-    cache.set_tags(filepath, mtime, tags)
+    cache.set_tags(filepath, mtime, tags, parse_ms=parse_ms)
     return tags
 
 
@@ -309,6 +320,132 @@ def _get_import_names(node: Any, source: bytes) -> list[str]:
     return names
 
 
+# --- Task history (Milestone 7) ---------------------------------------------
+
+
+def _load_task_history(history_file: str) -> list[dict[str, Any]]:
+    """Load task→file association records from a JSONL file.
+
+    Skips malformed lines and records missing required fields.
+    Returns a list of valid records (dicts with at least 'task' and 'files').
+    """
+    if not os.path.exists(history_file):
+        return []
+
+    records: list[dict[str, Any]] = []
+    try:
+        with open(history_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                # Require at minimum 'task' and 'files' keys
+                if "task" in record and "files" in record:
+                    records.append(record)
+    except OSError:
+        return []
+
+    return records
+
+
+def _compute_history_scores(
+    task_keywords: list[str],
+    history: list[dict[str, Any]],
+) -> dict[str, float]:
+    """Compute file relevance scores from historical task→file associations.
+
+    Uses bag-of-words overlap between current task keywords and historical
+    task descriptions. Files from similar past tasks get higher scores.
+    Scores accumulate across multiple matching records.
+
+    Returns: dict mapping filepath → relevance score (0.0 if no match).
+    """
+    if not task_keywords or not history:
+        return {}
+
+    keyword_set = set(task_keywords)
+    scores: dict[str, float] = {}
+
+    for record in history:
+        hist_task = record.get("task", "")
+        hist_keywords = set(_extract_task_keywords(hist_task))
+
+        # Compute overlap
+        overlap = keyword_set & hist_keywords
+        if not overlap:
+            continue
+
+        # Score = fraction of current keywords that matched
+        similarity = len(overlap) / len(keyword_set)
+
+        for filepath in record.get("files", []):
+            scores[filepath] = scores.get(filepath, 0.0) + similarity
+
+    return scores
+
+
+def _get_git_recency_scores(
+    root: str,
+    files: list[str],
+) -> dict[str, float]:
+    """Get git recency scores for files. Most recently modified = 1.0.
+
+    Uses `git log --format=%at` to get last modification time per file.
+    Returns normalized scores [0.0, 1.0]. Non-git repos return empty dict.
+    """
+    import subprocess
+
+    try:
+        # Get last commit timestamp for each file in one call
+        result = subprocess.run(
+            ["git", "log", "--format=%at", "--name-only", "--diff-filter=ACMR",
+             "-n", "200", "--no-merges"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return {}
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return {}
+
+    # Parse: timestamps alternate with blank-separated file lists
+    file_times: dict[str, int] = {}
+    current_time = 0
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            current_time = int(line)
+        except ValueError:
+            # It's a filename — record the first (most recent) time seen
+            if line not in file_times:
+                file_times[line] = current_time
+
+    if not file_times:
+        return {}
+
+    # Normalize to [0.0, 1.0]
+    max_time = max(file_times.values())
+    min_time = min(file_times.values())
+    time_range = max(max_time - min_time, 1)
+
+    scores: dict[str, float] = {}
+    for filepath in files:
+        t = file_times.get(filepath)
+        if t is not None:
+            scores[filepath] = (t - min_time) / time_range
+        # Files not in git history get no recency score (omitted from dict)
+
+    return scores
+
+
 # --- Graph building ----------------------------------------------------------
 
 
@@ -350,28 +487,72 @@ def _rank_files(
     graph: nx.DiGraph,
     task_keywords: list[str],
     all_files: list[str],
+    history: Optional[list[dict[str, Any]]] = None,
+    git_recency: Optional[dict[str, float]] = None,
 ) -> list[tuple[str, float]]:
-    """Rank files by PageRank with task-keyword personalization."""
+    """Rank files by PageRank with blended personalization.
+
+    Personalization weights (when history is available):
+      - Task keyword matches: 0.6
+      - Historical file relevance: 0.3
+      - Git recency: 0.1
+
+    Without history, falls back to keyword-only (0.9 keyword + 0.1 recency).
+    Without git repo, keyword weight absorbs recency weight.
+    """
     if not graph.nodes:
         return [(f, 1.0 / max(len(all_files), 1)) for f in all_files]
 
+    # Compute component scores
+    history_scores = _compute_history_scores(task_keywords, history or [])
+    if git_recency is None:
+        git_recency = {}
+
+    # Determine weights based on available signals
+    has_history = bool(history_scores)
+    has_recency = bool(git_recency)
+
+    if has_history and has_recency:
+        w_keyword, w_history, w_recency = 0.6, 0.3, 0.1
+    elif has_history:
+        w_keyword, w_history, w_recency = 0.7, 0.3, 0.0
+    elif has_recency:
+        w_keyword, w_history, w_recency = 0.9, 0.0, 0.1
+    else:
+        w_keyword, w_history, w_recency = 1.0, 0.0, 0.0
+
     # Build personalization vector
     personalization: dict[str, float] = {}
-    has_match = False
+    has_any_signal = False
 
     for node in graph.nodes:
         score = 0.0
         node_lower = node.lower()
-        # Check path components and filename
+
+        # Keyword signal
         parts = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]*", node_lower)
+        kw_score = 0.0
         for kw in task_keywords:
             if kw in node_lower or any(kw in p for p in parts):
-                score += 1.0
-                has_match = True
+                kw_score += 1.0
+        if kw_score > 0:
+            has_any_signal = True
+        score += kw_score * w_keyword
+
+        # History signal
+        hist_score = history_scores.get(node, 0.0)
+        if hist_score > 0:
+            has_any_signal = True
+        score += hist_score * w_history
+
+        # Recency signal
+        rec_score = git_recency.get(node, 0.0)
+        score += rec_score * w_recency
+
         personalization[node] = max(score, 0.01)  # small floor to avoid zero
 
-    if not has_match:
-        # No keyword matches — uniform personalization (standard PageRank)
+    if not has_any_signal:
+        # No signals at all — uniform personalization (standard PageRank)
         personalization = {n: 1.0 for n in graph.nodes}
 
     # Normalize
@@ -469,6 +650,18 @@ def main() -> int:
     parser.add_argument(
         "--files", default="", help="Comma-separated file list (slice mode)"
     )
+    parser.add_argument(
+        "--history-file", default="",
+        help="Path to task_history.jsonl for personalized ranking"
+    )
+    parser.add_argument(
+        "--warm-cache", action="store_true",
+        help="Parse all files and populate tag cache, then exit (no output)"
+    )
+    parser.add_argument(
+        "--stats", action="store_true",
+        help="Print cache statistics as JSON to stderr after run"
+    )
 
     args = parser.parse_args()
     root = os.path.abspath(args.root)
@@ -486,11 +679,35 @@ def main() -> int:
     cache = TagCache(os.path.join(cache_dir, "tags.json"))
     cache.load()
 
+    # Prune deleted files from cache on every run
+    pruned = cache.prune_cache(root)
+    if pruned > 0:
+        print(f"Pruned {pruned} deleted file(s) from cache", file=sys.stderr)
+
     # Walk project files
     files = _walk_project_files(root, args.languages)
     if not files:
         print("Warning: no parseable files found", file=sys.stderr)
         return 2
+
+    # --warm-cache mode: parse everything, save cache, exit
+    if args.warm_cache:
+        total = len(files)
+        parsed = 0
+        for i, filepath in enumerate(files):
+            tags = _extract_tags(filepath, root, cache)
+            if tags is not None:
+                parsed += 1
+            # Progress reporting every 100 files
+            if (i + 1) % 100 == 0 or i + 1 == total:
+                print(
+                    f"  Warming cache: {i + 1}/{total} files ({parsed} parsed)...",
+                    file=sys.stderr,
+                )
+        cache.save()
+        if args.stats:
+            print(json.dumps(cache.stats_dict()), file=sys.stderr)
+        return 0
 
     # If --files specified, filter to those files only (slice mode)
     if args.files:
@@ -518,15 +735,31 @@ def main() -> int:
         print("Warning: no files could be parsed", file=sys.stderr)
         return 2
 
+    # Load task history for personalized ranking
+    history: list[dict[str, Any]] = []
+    if args.history_file and os.path.exists(args.history_file):
+        history = _load_task_history(args.history_file)
+
+    # Get git recency scores
+    git_recency = _get_git_recency_scores(root, list(all_tags.keys()))
+
     # Build graph and rank
     keywords = _extract_task_keywords(args.task)
     graph = _build_graph(all_tags)
-    ranked = _rank_files(graph, keywords, list(all_tags.keys()))
+    ranked = _rank_files(
+        graph, keywords, list(all_tags.keys()),
+        history=history if history else None,
+        git_recency=git_recency if git_recency else None,
+    )
 
     # Generate output
     output = _build_output(ranked, all_tags, args.budget)
     if output:
         print(output, end="")
+
+    # Print stats if requested
+    if args.stats:
+        print(json.dumps(cache.stats_dict()), file=sys.stderr)
 
     return 1 if had_failures else 0
 

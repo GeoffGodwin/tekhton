@@ -242,21 +242,37 @@ ${git_diff_stat}
 # is_substantive_work — Check if agent did meaningful work worth continuing
 #
 # Returns 0 (true) if substantive work was detected, 1 (false) otherwise.
-# Heuristic: (files_modified >= 1) AND (summary_lines >= 20 OR git_diff_lines >= 50)
+# Heuristic: (files_changed >= 1) AND (summary_lines >= 20 OR total_lines >= 50)
+# Counts both tracked modifications AND untracked new files (via git status).
 # =============================================================================
 
 is_substantive_work() {
-    local files_modified=0
+    local files_changed=0
     local summary_lines=0
     local diff_lines=0
+    local untracked_lines=0
 
-    # Count modified files
+    # Count tracked modified files (staged + unstaged)
+    local tracked_modified=0
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
-        files_modified=$(git diff --stat HEAD 2>/dev/null | grep -c '|' || echo "0")
-        files_modified=$(echo "$files_modified" | tr -d '[:space:]')
+        tracked_modified=$(git diff --stat HEAD 2>/dev/null | grep -c '|' || echo "0")
+        tracked_modified=$(echo "$tracked_modified" | tr -d '[:space:]')
     fi
 
-    if [[ "$files_modified" -lt 1 ]]; then
+    # Count untracked new files (excluding logs and session dirs)
+    local untracked_count=0
+    local _session_base
+    _session_base=$(basename "${TEKHTON_SESSION_DIR:-__nosession__}")
+    untracked_count=$(git ls-files --others --exclude-standard 2>/dev/null \
+        | grep -v '^\.claude/logs/' \
+        | grep -v "^${_session_base}/" \
+        | grep -c '' || echo "0")
+    untracked_count=$(echo "$untracked_count" | tr -d '[:space:]')
+    untracked_count="${untracked_count:-0}"
+
+    files_changed=$(( tracked_modified + untracked_count ))
+
+    if [[ "$files_changed" -lt 1 ]]; then
         return 1
     fi
 
@@ -265,11 +281,22 @@ is_substantive_work() {
         summary_lines=$(wc -l < "CODER_SUMMARY.md" 2>/dev/null | tr -d '[:space:]')
     fi
 
-    # Check git diff size
+    # Check git diff size (tracked changes)
     diff_lines=$(git diff HEAD 2>/dev/null | wc -l | tr -d '[:space:]')
     diff_lines="${diff_lines:-0}"
 
-    if [[ "$summary_lines" -ge 20 ]] || [[ "$diff_lines" -ge 50 ]]; then
+    # Count lines in untracked files (new code written)
+    if [[ "$untracked_count" -gt 0 ]]; then
+        untracked_lines=$(git ls-files --others --exclude-standard 2>/dev/null \
+            | grep -v '^\.claude/logs/' \
+            | grep -v "^${_session_base}/" \
+            | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}')
+        untracked_lines="${untracked_lines:-0}"
+    fi
+
+    local total_lines=$(( diff_lines + untracked_lines ))
+
+    if [[ "$summary_lines" -ge 20 ]] || [[ "$total_lines" -ge 50 ]]; then
         return 0
     fi
 

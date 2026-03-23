@@ -67,12 +67,16 @@ horiz_count=$(grep -c "^---$" "$CLAUDE_MD" 2>/dev/null || true)
 assert "No bare horizontal rule '---' lines in CLAUDE.md (found: $horiz_count)" \
   "$([ "$horiz_count" -eq 0 ] && echo 0 || echo 1)"
 
-# --- Criterion 4: Active (non-archived) milestone headings exist ---
-# Dynamically discover milestones from CLAUDE.md rather than hardcoding numbers.
-# Any #### Milestone N: heading that isn't [DONE] counts as active.
+# --- Criterion 4: Active (non-archived) milestones exist ---
+# Milestones may be inline in CLAUDE.md (#### Milestone N:) or in DAG files (.claude/milestones/).
 active_count=$(grep -c '^#### Milestone [0-9]' "$CLAUDE_MD" 2>/dev/null || true)
-assert "At least one active milestone heading in CLAUDE.md (found: $active_count)" \
-  "$([ "$active_count" -ge 1 ] && echo 0 || echo 1)"
+dag_count=0
+if [ -d "$TEKHTON_HOME/.claude/milestones" ]; then
+  dag_count=$(find "$TEKHTON_HOME/.claude/milestones" -name '*.md' -type f 2>/dev/null | wc -l | tr -d '[:space:]')
+fi
+total_active=$((active_count + dag_count))
+assert "At least one active milestone in CLAUDE.md or DAG files (found: $total_active)" \
+  "$([ "$total_active" -ge 1 ] && echo 0 || echo 1)"
 
 # Verify no active heading is a [DONE] one-liner (covered by criterion 1, but belt-and-suspenders)
 done_active=$(grep -c '^#### \[DONE\] Milestone' "$CLAUDE_MD" 2>/dev/null || true)

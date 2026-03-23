@@ -174,6 +174,14 @@ record_run_metrics() {
         record="${record},\"pipeline_attempts\":${pipeline_attempts},\"total_agent_calls\":${total_agent_calls}"
     fi
 
+    # Append indexer metrics when available (M7)
+    if [[ -n "${INDEXER_CACHE_HIT_RATE:-}" ]]; then
+        record="${record},\"indexer_hit_rate\":${INDEXER_CACHE_HIT_RATE}"
+    fi
+    if [[ -n "${INDEXER_GENERATION_TIME_MS:-}" ]] && [[ "${INDEXER_GENERATION_TIME_MS:-0}" -gt 0 ]]; then
+        record="${record},\"indexer_gen_time_ms\":${INDEXER_GENERATION_TIME_MS}"
+    fi
+
     # Append error fields only when populated (12.3)
     if [[ -n "$error_category" ]]; then
         record="${record},\"error_category\":\"${error_category}\",\"error_subcategory\":\"${error_subcategory}\",\"error_transient\":${error_transient:-false}"

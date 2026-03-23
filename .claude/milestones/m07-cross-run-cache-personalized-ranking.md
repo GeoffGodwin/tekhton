@@ -1,4 +1,9 @@
 #### Milestone 7: Cross-Run Cache & Personalized Ranking
+<!-- milestone-meta
+id: "7"
+status: "done"
+-->
+
 Make the indexer persistent and adaptive across pipeline runs. The tag cache
 survives between runs with mtime-based invalidation. Task→file association
 history improves PageRank personalization over time — files that were relevant

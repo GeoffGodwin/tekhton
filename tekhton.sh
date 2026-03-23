@@ -204,6 +204,15 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
 
     run_smart_init "$PROJECT_DIR" "$TEKHTON_HOME" "$local_reinit"
 
+    # Warm indexer cache if available (M7)
+    source "${TEKHTON_HOME}/lib/indexer.sh"
+    source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+    source "${TEKHTON_HOME}/lib/indexer_history.sh"
+    REPO_MAP_ENABLED="${REPO_MAP_ENABLED:-false}"
+    if [[ "$REPO_MAP_ENABLED" == "true" ]] && check_indexer_available; then
+        warm_index_cache || true
+    fi
+
     # --init --full chains: init → synthesize in one invocation
     if [ "${2:-}" = "--full" ]; then
         source "${TEKHTON_HOME}/lib/prompts.sh"
@@ -340,6 +349,7 @@ source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+source "${TEKHTON_HOME}/lib/indexer_history.sh"
 source "${TEKHTON_HOME}/lib/mcp.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
@@ -675,6 +685,12 @@ if [ "$SETUP_INDEXER" = true ]; then
             exit 1
         fi
         bash "$local_serena_script" "$PROJECT_DIR" "${SERENA_PATH:-.claude/serena}"
+    fi
+
+    # Warm cache after setup (M7)
+    REPO_MAP_ENABLED=true
+    if check_indexer_available; then
+        warm_index_cache || true
     fi
 
     _TEKHTON_CLEAN_EXIT=true

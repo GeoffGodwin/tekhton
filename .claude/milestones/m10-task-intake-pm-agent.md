@@ -34,7 +34,11 @@ Files to create:
   from the causal event log by the shell before agent invocation.
   (5) evaluate along a clarity rubric: Is the scope bounded? Are
   acceptance criteria testable? Are there implicit assumptions that need stating?
-  Could two competent developers interpret this differently? (6) produce
+  Could two competent developers interpret this differently? Does the milestone
+  declare its migration impact (new config keys, new .claude/ files, format
+  changes)? If the milestone adds user-facing configuration or files and has
+  no "Migration impact" section, flag it for addition (TWEAKED or NEEDS_CLARITY
+  depending on how much is missing). (6) produce
   INTAKE_REPORT.md with verdict, confidence score (0-100), reasoning, and either
   tweaks, split recommendations, or questions depending on verdict.
   The prompt includes examples of each verdict level to calibrate the agent.

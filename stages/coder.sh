@@ -37,10 +37,19 @@ _switch_to_sub_milestone() {
 _reconstruct_coder_summary() {
     local _files_changed=""
     local _diff_stat=""
+    local _untracked_files=""
+
+    # Tracked modifications
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
         _files_changed=$(git diff --name-only HEAD 2>/dev/null | head -30)
         _diff_stat=$(git diff --stat HEAD 2>/dev/null | tail -5)
     fi
+
+    # Untracked new files (excluding logs and session dirs)
+    _untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null \
+        | grep -v '^\.claude/logs/' \
+        | grep -v "^$(basename "${TEKHTON_SESSION_DIR:-__nosession__}")/" \
+        | head -30)
 
     cat > CODER_SUMMARY.md <<RECON_EOF
 ## Status: IN PROGRESS
@@ -48,10 +57,13 @@ _reconstruct_coder_summary() {
 ## Summary
 CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
 failed to produce or maintain it. The following files were modified based
-on git diff. The reviewer should assess actual changes directly.
+on git state. The reviewer should assess actual changes directly.
 
 ## Files Modified
 $(while IFS= read -r _f; do [ -n "$_f" ] && echo "- $_f"; done <<< "$_files_changed")
+
+## New Files Created
+$(while IFS= read -r _f; do [ -n "$_f" ] && echo "- $_f (new)"; done <<< "$_untracked_files")
 
 ## Git Diff Summary
 \`\`\`
@@ -475,6 +487,42 @@ ${nb_notes}"
         if is_substantive_work; then
             warn "Coder did not produce CODER_SUMMARY.md but substantive work detected."
             _reconstruct_coder_summary
+        elif [[ "${LAST_AGENT_TURNS:-0}" -ge "${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-50}}" ]]; then
+            # Coder exhausted its turn budget without producing a summary and
+            # without substantive tracked/untracked changes. This is a scope
+            # problem (too much exploration, not enough implementation), not a
+            # hard crash. Classify explicitly so the orchestration loop can
+            # attempt recovery (split or retry).
+            warn "Coder exhausted turn budget (${LAST_AGENT_TURNS} turns) without CODER_SUMMARY.md or substantive work."
+            AGENT_ERROR_CATEGORY="AGENT_SCOPE"
+            AGENT_ERROR_SUBCATEGORY="turn_exhaustion_no_output"
+            AGENT_ERROR_MESSAGE="Coder used all ${LAST_AGENT_TURNS} turns but produced no CODER_SUMMARY.md and no substantive file changes."
+
+            # Attempt milestone split before giving up
+            if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                    local _depth
+                    _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                    warn "Auto-split after turn exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                    run_stage_coder
+                    return
+                fi
+            fi
+
+            error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
+            error "Check the log: ${LOG_FILE}"
+            error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
+            # Reset claimed notes — coder didn't produce any work
+            resolve_human_notes
+
+            write_pipeline_state \
+                "coder" \
+                "turn_exhaustion_no_output" \
+                "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                "$TASK" \
+                "Coder used ${LAST_AGENT_TURNS} turns but produced no output. Likely spent turns exploring without implementing. Consider: narrower task, manual scout report, or milestone split."
+            exit 1
         else
             error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
             error "Check the log: ${LOG_FILE}"
@@ -809,6 +857,15 @@ ${GIT_DIFF_STAT}
                 error "State saved. Review BUILD_ERRORS.md manually then re-run."
                 exit 1
             fi
+        fi
+    fi
+
+    # --- Record task→file association for personalized ranking (M7) ----------
+    if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+        local _modified_files
+        _modified_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
+        if [[ -n "$_modified_files" ]]; then
+            record_task_file_association "$TASK" "$_modified_files" || true
         fi
     fi
 }

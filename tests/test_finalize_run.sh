@@ -186,10 +186,10 @@ assert_eq "1.5 fourth hook is _hook_cleanup_resolved" "_hook_cleanup_resolved" "
 assert_eq "1.6 fifth hook is _hook_resolve_notes"    "_hook_resolve_notes"   "${FINALIZE_HOOKS[4]}"
 assert_eq "1.7 sixth hook is _hook_archive_reports"  "_hook_archive_reports" "${FINALIZE_HOOKS[5]}"
 assert_eq "1.8 seventh hook is _hook_mark_done"      "_hook_mark_done"       "${FINALIZE_HOOKS[6]}"
-assert_eq "1.9 eighth hook is _hook_commit"          "_hook_commit"          "${FINALIZE_HOOKS[7]}"
-assert_eq "1.10 ninth hook is _hook_archive_milestone" "_hook_archive_milestone" "${FINALIZE_HOOKS[8]}"
-assert_eq "1.11 tenth hook is _hook_clear_state"     "_hook_clear_state"     "${FINALIZE_HOOKS[9]}"
-assert_eq "1.12 eleventh hook is _hook_emit_run_summary" "_hook_emit_run_summary" "${FINALIZE_HOOKS[10]}"
+assert_eq "1.9 eighth hook is _hook_archive_milestone" "_hook_archive_milestone" "${FINALIZE_HOOKS[7]}"
+assert_eq "1.10 ninth hook is _hook_clear_state"     "_hook_clear_state"     "${FINALIZE_HOOKS[8]}"
+assert_eq "1.11 tenth hook is _hook_emit_run_summary" "_hook_emit_run_summary" "${FINALIZE_HOOKS[9]}"
+assert_eq "1.12 eleventh hook is _hook_commit"       "_hook_commit"          "${FINALIZE_HOOKS[10]}"
 
 # =============================================================================
 # Test Suite 2: register_finalize_hook appends in order
@@ -559,30 +559,20 @@ _hook_archive_milestone 0
 assert "11.3 archive_milestone skips when _CURRENT_MILESTONE is empty" \
     "$([ -z "${_mock_called[archive_completed_milestone]:-}" ] && echo 0 || echo 1)"
 
-# Commit did not succeed
+# All conditions met with COMPLETE disposition (commit no longer gates archive_milestone)
 _reset_mocks
 MILESTONE_MODE=true
 _CURRENT_MILESTONE="15"
-_COMMIT_SUCCEEDED=false
-_hook_archive_milestone 0
-assert "11.4 archive_milestone skips when commit did not succeed" \
-    "$([ -z "${_mock_called[archive_completed_milestone]:-}" ] && echo 0 || echo 1)"
-
-# All conditions met with COMPLETE disposition
-_reset_mocks
-MILESTONE_MODE=true
-_CURRENT_MILESTONE="15"
-_COMMIT_SUCCEEDED=true
 _MOCK_DISPOSITION="COMPLETE_AND_CONTINUE"
 _hook_archive_milestone 0
-assert "11.5 archive_milestone called when all conditions met" \
+assert "11.4 archive_milestone called when all conditions met" \
     "$([ -n "${_mock_called[archive_completed_milestone]:-}" ] && echo 0 || echo 1)"
 
 # PARTIAL disposition — should skip
 _reset_mocks
 _MOCK_DISPOSITION="PARTIAL"
 _hook_archive_milestone 0
-assert "11.6 archive_milestone skips on PARTIAL disposition" \
+assert "11.5 archive_milestone skips on PARTIAL disposition" \
     "$([ -z "${_mock_called[archive_completed_milestone]:-}" ] && echo 0 || echo 1)"
 
 MILESTONE_MODE=false
@@ -613,30 +603,20 @@ _hook_clear_state 0
 assert "12.2 clear_state skips when not in milestone mode" \
     "$([ -z "${_mock_called[clear_milestone_state]:-}" ] && echo 0 || echo 1)"
 
-# Commit did not succeed
+# All conditions met with COMPLETE disposition (commit no longer gates clear_state)
 _reset_mocks
 MILESTONE_MODE=true
 _CURRENT_MILESTONE="15"
-_COMMIT_SUCCEEDED=false
-_hook_clear_state 0
-assert "12.3 clear_state skips when commit did not succeed" \
-    "$([ -z "${_mock_called[clear_milestone_state]:-}" ] && echo 0 || echo 1)"
-
-# All conditions met with COMPLETE disposition
-_reset_mocks
-MILESTONE_MODE=true
-_CURRENT_MILESTONE="15"
-_COMMIT_SUCCEEDED=true
 _MOCK_DISPOSITION="COMPLETE_AND_CONTINUE"
 _hook_clear_state 0
-assert "12.4 clear_state called when all conditions met" \
+assert "12.3 clear_state called when all conditions met" \
     "$([ -n "${_mock_called[clear_milestone_state]:-}" ] && echo 0 || echo 1)"
 
 # PARTIAL disposition — should skip
 _reset_mocks
 _MOCK_DISPOSITION="PARTIAL"
 _hook_clear_state 0
-assert "12.5 clear_state skips on PARTIAL disposition" \
+assert "12.4 clear_state skips on PARTIAL disposition" \
     "$([ -z "${_mock_called[clear_milestone_state]:-}" ] && echo 0 || echo 1)"
 
 MILESTONE_MODE=false

@@ -148,8 +148,7 @@ _hook_mark_done() {
 _tag_milestone_if_complete() {
     [[ "$MILESTONE_MODE" != true ]] && return 0
     [[ -z "${_CURRENT_MILESTONE:-}" ]] && return 0
-    local disposition
-    disposition=$(get_milestone_disposition 2>/dev/null || echo "")
+    local disposition="${_CACHED_DISPOSITION:-}"
     if [[ "$disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$disposition" == COMPLETE_AND_WAIT ]]; then
         tag_milestone_complete "$_CURRENT_MILESTONE"
     fi
@@ -160,12 +159,13 @@ _hook_commit() {
     [[ "$exit_code" -ne 0 ]] && return 0
     [[ "${FINAL_CHECK_RESULT:-0}" -ne 0 ]] && return 0
 
-    # Milestone disposition for commit signatures
+    # Milestone disposition for commit signatures (read from cache —
+    # _hook_clear_state may have already deleted MILESTONE_STATE.md)
     local ms_num=""
     local ms_disposition=""
     if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
         ms_num="$_CURRENT_MILESTONE"
-        ms_disposition=$(get_milestone_disposition 2>/dev/null || echo "")
+        ms_disposition="${_CACHED_DISPOSITION:-}"
     fi
 
     # Remove lock file before staging so it isn't committed
@@ -304,7 +304,14 @@ finalize_run() {
     # State shared between hooks
     FINAL_CHECK_RESULT=0
     _COMMIT_SUCCEEDED=false
-    export FINAL_CHECK_RESULT _COMMIT_SUCCEEDED
+    # Cache milestone disposition before hooks run — _hook_clear_state deletes
+    # MILESTONE_STATE.md (so it's included in the commit), but _hook_commit and
+    # _tag_milestone_if_complete still need the disposition value afterward.
+    _CACHED_DISPOSITION=""
+    if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+        _CACHED_DISPOSITION=$(get_milestone_disposition 2>/dev/null || echo "")
+    fi
+    export FINAL_CHECK_RESULT _COMMIT_SUCCEEDED _CACHED_DISPOSITION
 
     for hook_fn in "${FINALIZE_HOOKS[@]}"; do
         if ! "$hook_fn" "$pipeline_exit_code"; then

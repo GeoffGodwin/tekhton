@@ -4,7 +4,7 @@
 #
 # Sourced by tekhton.sh — do not run directly.
 # Provides: detect_repo_languages(), validate_indexer_config(),
-#           extract_files_from_coder_summary()
+#           extract_files_from_coder_summary(), infer_test_counterparts()
 #
 # Extracted from indexer.sh to stay under the 300-line ceiling.
 #
@@ -142,5 +142,65 @@ extract_files_from_coder_summary() {
     done <<< "$section_content"
 
     echo "${files## }"
+    return 0
+}
+
+# --- Test counterpart inference -----------------------------------------------
+
+# infer_test_counterparts — Given a space-separated list of source files,
+# return the list augmented with likely test file counterparts.
+# Heuristic: foo.py → test_foo.py, foo.ts → foo.test.ts, foo.sh → test_foo.sh
+# Output: space-separated file paths (originals + inferred test paths)
+# Returns: 0 always
+infer_test_counterparts() {
+    local file_list="${1:-}"
+    local result="$file_list"
+
+    local f
+    local -a files=()
+    read -ra files <<< "$file_list"
+
+    for f in "${files[@]}"; do
+        local base="${f##*/}"
+        local name="${base%.*}"
+        local ext="${base##*.}"
+
+        # Skip files that are already test files
+        if [[ "$name" == test_* ]] || [[ "$name" == *_test ]] || \
+           [[ "$name" == *.test ]] || [[ "$name" == *.spec ]]; then
+            continue
+        fi
+
+        # Generate counterparts based on language conventions
+        case "$ext" in
+            py)
+                result="${result} test_${name}.${ext}"
+                result="${result} ${name}_test.${ext}"
+                ;;
+            ts|tsx|js|jsx)
+                result="${result} ${name}.test.${ext}"
+                result="${result} ${name}.spec.${ext}"
+                ;;
+            sh|bash)
+                result="${result} test_${name}.${ext}"
+                ;;
+            go)
+                result="${result} ${name}_test.${ext}"
+                ;;
+            rs)
+                # Rust tests are usually inline, but integration tests live in tests/
+                result="${result} tests/${name}.${ext}"
+                ;;
+            java)
+                result="${result} ${name}Test.${ext}"
+                ;;
+            rb)
+                result="${result} ${name}_spec.${ext}"
+                result="${result} test_${name}.${ext}"
+                ;;
+        esac
+    done
+
+    echo "$result"
     return 0
 }

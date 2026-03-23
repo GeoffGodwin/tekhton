@@ -4,7 +4,9 @@
 #
 # Sourced by tekhton.sh — do not run directly.
 # Provides: check_indexer_available(), run_repo_map(), get_repo_map_slice(),
-#           invalidate_repo_map_cache(), infer_test_counterparts()
+#           invalidate_repo_map_cache(), infer_test_counterparts(),
+#           warm_index_cache(), record_task_file_association(),
+#           get_indexer_stats()
 # See also: indexer_helpers.sh (detect_repo_languages, validate_indexer_config,
 #           extract_files_from_coder_summary)
 #
@@ -24,6 +26,11 @@ export INDEXER_AVAILABLE
 # Cached repo map output (populated by run_repo_map, consumed by stages)
 REPO_MAP_CONTENT=""
 export REPO_MAP_CONTENT
+
+# Indexer stats (populated by get_indexer_stats, consumed by metrics)
+INDEXER_CACHE_HIT_RATE=""
+INDEXER_GENERATION_TIME_MS=""
+export INDEXER_CACHE_HIT_RATE INDEXER_GENERATION_TIME_MS
 
 # --- Python detection ---------------------------------------------------------
 
@@ -129,16 +136,56 @@ run_repo_map() {
 
     local languages="${REPO_MAP_LANGUAGES:-auto}"
 
-    # Invoke the Python tool
+    # Build history file path for personalized ranking (M7)
+    local history_args=()
+    if [[ "${REPO_MAP_HISTORY_ENABLED:-true}" == "true" ]]; then
+        local history_file="${cache_dir}/task_history.jsonl"
+        if [[ -f "$history_file" ]]; then
+            history_args=(--history-file "$history_file")
+        fi
+    fi
+
+    # Invoke the Python tool with timing
     # Exit codes: 0 = success, 1 = partial (best-effort), 2 = fatal
     local exit_code=0
+    local start_time
+    start_time=$(date +%s%N 2>/dev/null || date +%s)
+
+    local stderr_output=""
+    stderr_output=$(mktemp 2>/dev/null || echo "/tmp/tekhton_indexer_$$")
+
     REPO_MAP_CONTENT=$("$venv_python" "$repo_map_script" \
         --root "$PROJECT_DIR" \
         --task "$task" \
         --budget "$budget" \
         --cache-dir "$cache_dir" \
         --languages "$languages" \
-        2>/dev/null) || exit_code=$?
+        --stats \
+        "${history_args[@]}" \
+        2>"$stderr_output") || exit_code=$?
+
+    local end_time
+    end_time=$(date +%s%N 2>/dev/null || date +%s)
+
+    # Calculate generation time (nanoseconds → milliseconds)
+    if [[ "$start_time" =~ ^[0-9]+$ ]] && [[ "$end_time" =~ ^[0-9]+$ ]]; then
+        if [[ ${#start_time} -gt 10 ]]; then
+            INDEXER_GENERATION_TIME_MS=$(( (end_time - start_time) / 1000000 ))
+        else
+            INDEXER_GENERATION_TIME_MS=$(( (end_time - start_time) * 1000 ))
+        fi
+    fi
+
+    # Parse cache stats from stderr (last line is JSON if --stats was passed)
+    if [[ -f "$stderr_output" ]]; then
+        local stats_line
+        stats_line=$(grep -E '^\{' "$stderr_output" | tail -1 2>/dev/null || true)
+        if [[ -n "$stats_line" ]]; then
+            INDEXER_CACHE_HIT_RATE=$(echo "$stats_line" | \
+                grep -oE '"hit_rate":[0-9.]+' | grep -oE '[0-9.]+$' || true)
+        fi
+        rm -f "$stderr_output" 2>/dev/null || true
+    fi
 
     if [[ "$exit_code" -eq 2 ]] || [[ -z "$REPO_MAP_CONTENT" ]]; then
         warn "[indexer] repo_map.py failed — falling back to no repo map."
@@ -215,66 +262,6 @@ get_repo_map_slice() {
         return 0
     fi
     return 1
-}
-
-# --- Test counterpart inference -----------------------------------------------
-
-# infer_test_counterparts — Given a space-separated list of source files,
-# return the list augmented with likely test file counterparts.
-# Heuristic: foo.py → test_foo.py, foo.ts → foo.test.ts, foo.sh → test_foo.sh
-# Output: space-separated file paths (originals + inferred test paths)
-# Returns: 0 always
-infer_test_counterparts() {
-    local file_list="${1:-}"
-    local result="$file_list"
-
-    local f
-    local -a files=()
-    read -ra files <<< "$file_list"
-
-    for f in "${files[@]}"; do
-        local base="${f##*/}"
-        local name="${base%.*}"
-        local ext="${base##*.}"
-
-        # Skip files that are already test files
-        if [[ "$name" == test_* ]] || [[ "$name" == *_test ]] || \
-           [[ "$name" == *.test ]] || [[ "$name" == *.spec ]]; then
-            continue
-        fi
-
-        # Generate counterparts based on language conventions
-        case "$ext" in
-            py)
-                result="${result} test_${name}.${ext}"
-                result="${result} ${name}_test.${ext}"
-                ;;
-            ts|tsx|js|jsx)
-                result="${result} ${name}.test.${ext}"
-                result="${result} ${name}.spec.${ext}"
-                ;;
-            sh|bash)
-                result="${result} test_${name}.${ext}"
-                ;;
-            go)
-                result="${result} ${name}_test.${ext}"
-                ;;
-            rs)
-                # Rust tests are usually inline, but integration tests live in tests/
-                result="${result} tests/${name}.${ext}"
-                ;;
-            java)
-                result="${result} ${name}Test.${ext}"
-                ;;
-            rb)
-                result="${result} ${name}_spec.${ext}"
-                result="${result} test_${name}.${ext}"
-                ;;
-        esac
-    done
-
-    echo "$result"
-    return 0
 }
 
 # --- Cache invalidation -------------------------------------------------------

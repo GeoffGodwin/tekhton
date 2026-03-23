@@ -1,13 +1,13 @@
 {
-  "milestone": "none",
+  "milestone": "7",
   "outcome": "success",
   "attempts": 1,
-  "total_agent_calls": 4,
+  "total_agent_calls": 7,
   "wall_clock_seconds": 0,
-  "files_changed": [],
+  "files_changed": [".claude/MILESTONE_STATE.md",".claude/logs/metrics.jsonl",".claude/milestones/MANIFEST.cfg",".claude/milestones/m07-cross-run-cache-personalized-ranking.md","DRIFT_LOG.md","MILESTONE_ARCHIVE.md","NON_BLOCKING_LOG.md","REVIEWER_REPORT.md","TESTER_REPORT.md","lib/indexer.sh","lib/indexer_helpers.sh","lib/indexer_history.sh","lib/metrics.sh","lib/metrics_dashboard.sh","stages/coder.sh","tekhton.sh","tests/test_finalize_run.sh","tests/test_milestone_15_2_2_2_migration.sh","tools/__pycache__/repo_map.cpython-311.pyc","tools/__pycache__/tag_cache.cpython-311.pyc","tools/__pycache__/tree_sitter_languages.cpython-311.pyc","tools/repo_map.py","tools/tag_cache.py","tools/tests/__pycache__/__init__.cpython-311.pyc","tools/tests/__pycache__/conftest.cpython-311-pytest-7.4.0.pyc","tools/tests/__pycache__/test_extract_tags_integration.cpython-311-pytest-7.4.0.pyc","tools/tests/__pycache__/test_repo_map.cpython-311-pytest-7.4.0.pyc","tools/tests/__pycache__/test_tag_cache.cpython-311-pytest-7.4.0.pyc","tools/tests/__pycache__/test_tree_sitter_languages.cpython-311-pytest-7.4.0.pyc"],
   "error_classes_encountered": [],
-  "recovery_actions_taken": [],
-  "rework_cycles": 1,
+  "recovery_actions_taken": ["continuation"],
+  "rework_cycles": 2,
   "split_depth": 0,
-  "timestamp": "2026-03-23T02:57:44Z"
+  "timestamp": "2026-03-23T12:14:38Z"
 }
