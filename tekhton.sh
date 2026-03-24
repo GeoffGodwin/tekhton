@@ -190,6 +190,8 @@ CURRENT_NOTE_LINE=""
 SKIP_AUDIT=false
 SKIP_SECURITY=false
 FORCE_AUDIT=false
+FIX_NONBLOCKERS_MODE=false
+FIX_DRIFT_MODE=false
 _AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
 TOTAL_TURNS=0
@@ -539,6 +541,8 @@ usage() {
     echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
     echo "  --skip-audit              Skip architect audit even if threshold is reached"
     echo "  --force-audit             Force architect audit regardless of threshold"
+    echo "  --fix-nonblockers, --fix-nb  Loop mode: address all open non-blocking notes"
+    echo "  --fix-drift              Loop mode: force architect audit to resolve drift observations"
     echo "  --migrate-dag             Convert inline CLAUDE.md milestones to DAG file format"
     echo "  --setup-indexer           Set up Python virtualenv for tree-sitter indexer"
     echo "  --with-lsp                Also install Serena LSP server (use with --setup-indexer)"
@@ -556,6 +560,8 @@ usage() {
     echo "  tekhton --human                             # Pick next note and run"
     echo "  tekhton --human BUG                         # Pick next BUG note"
     echo "  tekhton --human --complete                  # Process all notes in loop"
+    echo "  tekhton --fix-nonblockers                    # Address all non-blocking notes"
+    echo "  tekhton --fix-drift                          # Force drift audit + resolution"
     echo ""
     echo "Documentation:"
     echo "  man tekhton                              # Full man page (if installed)"
@@ -764,6 +770,8 @@ EOF
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --skip-security) SKIP_SECURITY=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
+        --fix-nonblockers|--fix-nb) FIX_NONBLOCKERS_MODE=true; shift ;;
+        --fix-drift) FIX_DRIFT_MODE=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
         --add-milestone)
             shift
@@ -864,6 +872,78 @@ if [ "$MILESTONE_MODE" = true ] && [ "$COMPLETE_MODE" != true ]; then
     COMPLETE_MODE=true
 fi
 
+# --- Fix-nonblockers mode: flag validation and task derivation ----------------
+
+if [[ "$FIX_NONBLOCKERS_MODE" = true ]]; then
+    if [[ "$HUMAN_MODE" = true ]]; then
+        error "Cannot combine --fix-nonblockers with --human"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ "$MILESTONE_MODE" = true ]]; then
+        error "Cannot combine --fix-nonblockers with --milestone"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ "$FIX_DRIFT_MODE" = true ]]; then
+        error "Cannot combine --fix-nonblockers with --fix-drift"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ $# -gt 0 ]]; then
+        error "Cannot combine --fix-nonblockers with an explicit task"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    COMPLETE_MODE=true
+    # shellcheck disable=SC2034  # used by stages/intake.sh
+    INTAKE_AGENT_ENABLED=false
+    # shellcheck disable=SC2034  # used by stages/coder.sh
+    NON_BLOCKING_INJECTION_THRESHOLD=0
+    AUTO_COMMIT=true
+    nb_count_pre=$(count_open_nonblocking_notes)
+    if [[ "$nb_count_pre" -eq 0 ]]; then
+        log "No open non-blocking notes. Nothing to fix."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+    TASK="Address all ${nb_count_pre} open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."
+    log "Fix-nonblockers mode: ${nb_count_pre} open item(s) to address."
+fi
+
+# --- Fix-drift mode: flag validation and task derivation ----------------------
+
+if [[ "$FIX_DRIFT_MODE" = true ]]; then
+    if [[ "$HUMAN_MODE" = true ]]; then
+        error "Cannot combine --fix-drift with --human"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ "$MILESTONE_MODE" = true ]]; then
+        error "Cannot combine --fix-drift with --milestone"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ $# -gt 0 ]]; then
+        error "Cannot combine --fix-drift with an explicit task"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    COMPLETE_MODE=true
+    FORCE_AUDIT=true
+    # shellcheck disable=SC2034  # used by stages/intake.sh
+    INTAKE_AGENT_ENABLED=false
+    AUTO_COMMIT=true
+    drift_count_pre=$(count_drift_observations)
+    if [[ "$drift_count_pre" -eq 0 ]]; then
+        log "No unresolved drift observations. Nothing to fix."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+    TASK="Resolve all ${drift_count_pre} unresolved architectural drift observations in DRIFT_LOG.md."
+    log "Fix-drift mode: ${drift_count_pre} unresolved observation(s) to address."
+fi
+
 # --- Human mode: flag validation and note derivation --------------------------
 
 if [[ "$HUMAN_MODE" = true ]]; then
@@ -910,6 +990,9 @@ if [[ "$HUMAN_MODE" = true ]]; then
         export CURRENT_NOTE_LINE
         log "Human mode: picked note — ${TASK}"
     fi
+elif [[ "$FIX_NONBLOCKERS_MODE" = true ]] || [[ "$FIX_DRIFT_MODE" = true ]]; then
+    # TASK already set during flag validation above
+    :
 elif [ $# -eq 0 ]; then
     # No task argument — try to pull from saved pipeline state
     if [ "$START_AT" != "coder" ] && [ -f "$PIPELINE_STATE_FILE" ]; then
@@ -1485,11 +1568,156 @@ _run_human_complete_loop() {
     done
 }
 
+# _run_fix_nonblockers_loop — Process all open non-blocking notes in a loop.
+# Each pass injects all open notes into the coder prompt (threshold forced to 0)
+# and runs the full pipeline. The heuristic resolver in finalize marks addressed
+# items [x]. Loop terminates when no open items remain or safety bounds hit.
+_run_fix_nonblockers_loop() {
+    : "${MAX_PIPELINE_ATTEMPTS:=5}"
+    : "${AUTONOMOUS_TIMEOUT:=7200}"
+    local nb_attempt=0
+    local start_time
+    start_time=$(date +%s)
+
+    while true; do
+        nb_attempt=$((nb_attempt + 1))
+
+        local remaining
+        remaining=$(count_open_nonblocking_notes)
+        if [[ "$remaining" -eq 0 ]]; then
+            success "All non-blocking notes resolved."
+            break
+        fi
+
+        # Safety bound: max attempts
+        if [[ "$nb_attempt" -gt "$MAX_PIPELINE_ATTEMPTS" ]]; then
+            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS}). ${remaining} item(s) remain."
+            break
+        fi
+
+        # Safety bound: wall-clock timeout
+        local elapsed
+        elapsed=$(( $(date +%s) - start_time ))
+        if [[ "$elapsed" -ge "$AUTONOMOUS_TIMEOUT" ]]; then
+            warn "Reached AUTONOMOUS_TIMEOUT (${AUTONOMOUS_TIMEOUT}s). ${remaining} item(s) remain."
+            break
+        fi
+
+        TASK="Address all ${remaining} open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."
+
+        # Archive reports from previous iteration
+        if [[ "$nb_attempt" -gt 1 ]]; then
+            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+                if [[ -f "$f" ]]; then
+                    mkdir -p "${LOG_DIR}/archive"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixnb${nb_attempt}_${f}"
+                fi
+            done
+        fi
+
+        # Update log file for this pass
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        LOG_FILE="${LOG_DIR}/${TIMESTAMP}_fix-nonblockers-pass${nb_attempt}.log"
+
+        # Reset start-at for each pass (always full pipeline)
+        START_AT="coder"
+
+        # Check usage threshold between passes
+        if ! check_usage_threshold; then
+            warn "Usage threshold reached. Pausing fix-nonblockers loop."
+            break
+        fi
+
+        log "Fix-nonblockers pass ${nb_attempt}: ${remaining} item(s) remaining."
+
+        _run_pipeline_stages
+        finalize_run 0
+
+        log "Fix-nonblockers pass ${nb_attempt} complete."
+    done
+}
+
+# _run_fix_drift_loop — Force architect audit to resolve drift observations.
+# Each pass runs the full pipeline with FORCE_AUDIT=true, which triggers the
+# architect stage. The architect resolves observations and marks them in
+# DRIFT_LOG.md. Loop terminates when no unresolved observations remain or
+# safety bounds hit.
+_run_fix_drift_loop() {
+    : "${MAX_PIPELINE_ATTEMPTS:=5}"
+    : "${AUTONOMOUS_TIMEOUT:=7200}"
+    local drift_attempt=0
+    local start_time
+    start_time=$(date +%s)
+
+    while true; do
+        drift_attempt=$((drift_attempt + 1))
+
+        local remaining
+        remaining=$(count_drift_observations)
+        if [[ "$remaining" -eq 0 ]]; then
+            success "All drift observations resolved."
+            break
+        fi
+
+        # Safety bound: max attempts
+        if [[ "$drift_attempt" -gt "$MAX_PIPELINE_ATTEMPTS" ]]; then
+            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS}). ${remaining} observation(s) remain."
+            break
+        fi
+
+        # Safety bound: wall-clock timeout
+        local elapsed
+        elapsed=$(( $(date +%s) - start_time ))
+        if [[ "$elapsed" -ge "$AUTONOMOUS_TIMEOUT" ]]; then
+            warn "Reached AUTONOMOUS_TIMEOUT (${AUTONOMOUS_TIMEOUT}s). ${remaining} observation(s) remain."
+            break
+        fi
+
+        TASK="Resolve all ${remaining} unresolved architectural drift observations in DRIFT_LOG.md."
+
+        # Archive reports from previous iteration
+        if [[ "$drift_attempt" -gt 1 ]]; then
+            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md ARCHITECT_PLAN.md; do
+                if [[ -f "$f" ]]; then
+                    mkdir -p "${LOG_DIR}/archive"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixdrift${drift_attempt}_${f}"
+                fi
+            done
+        fi
+
+        # Update log file for this pass
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        LOG_FILE="${LOG_DIR}/${TIMESTAMP}_fix-drift-pass${drift_attempt}.log"
+
+        # Reset start-at for each pass (always full pipeline)
+        START_AT="coder"
+
+        # Check usage threshold between passes
+        if ! check_usage_threshold; then
+            warn "Usage threshold reached. Pausing fix-drift loop."
+            break
+        fi
+
+        log "Fix-drift pass ${drift_attempt}: ${remaining} observation(s) remaining."
+
+        _run_pipeline_stages
+        finalize_run 0
+
+        log "Fix-drift pass ${drift_attempt} complete."
+    done
+}
+
 # --- Pipeline execution (mode dispatch) --------------------------------------
 
 if [[ "$HUMAN_MODE" = true ]] && [[ "$COMPLETE_MODE" = true ]]; then
     # Human-complete mode: process notes one at a time in a loop
     _run_human_complete_loop
+elif [[ "$FIX_NONBLOCKERS_MODE" = true ]]; then
+    # Fix-nonblockers mode: address all open non-blocking notes in a loop
+    _run_fix_nonblockers_loop
+elif [[ "$FIX_DRIFT_MODE" = true ]]; then
+    # Fix-drift mode: force architect audit to resolve drift observations
+    _run_fix_drift_loop
 elif [[ "$COMPLETE_MODE" = true ]] && [[ "$HUMAN_MODE" != true ]]; then
     # Outer orchestration loop (M16): retry pipeline until acceptance or bounds exhausted.
     # Handles milestone and non-milestone tasks. Auto-advance is wired into the loop.
