@@ -1,0 +1,256 @@
+════════════════════════════════════════
+  Tekhton Self-Tests
+════════════════════════════════════════
+
+[0;32mPASS[0m test_agent_counter.sh
+[0;32mPASS[0m test_agent_exit_detection.sh
+[0;32mPASS[0m test_agent_fifo_invocation.sh
+[0;32mPASS[0m test_agent_file_scan_depth.sh
+[0;32mPASS[0m test_agent_monitor_ring_buffer.sh
+[0;32mPASS[0m test_agent_retry_config_defaults.sh
+[0;32mPASS[0m test_agent_summary.sh
+[0;32mPASS[0m test_architect_multiline_bullets.sh
+[0;32mPASS[0m test_architect_stage.sh
+[0;32mPASS[0m test_artifact_handler_ops.sh
+[0;32mPASS[0m test_auto_advance_enabled_bridge.sh
+[0;32mPASS[0m test_auto_commit_conditional_default.sh
+[0;32mPASS[0m test_causal_log.sh
+[0;32mPASS[0m test_check_usage_threshold.sh
+[0;32mPASS[0m test_clarify_coder_nullrun.sh
+[0;32mPASS[0m test_clarify_detect.sh
+[0;32mPASS[0m test_clarify_handle.sh
+[0;32mPASS[0m test_clarify_intake_handler.sh
+[0;32mPASS[0m test_cleanup_notes.sh
+[0;32mPASS[0m test_cleanup_revert_path.sh
+[0;32mPASS[0m test_clear_resolved_nonblocking_notes.sh
+[0;32mPASS[0m test_coder_prompt_scope.sh
+[0;32mPASS[0m test_coder_stage_split_wiring.sh
+[0;32mPASS[0m test_config_loading.sh
+[0;32mPASS[0m test_config_reviewer_model.sh
+[0;32mPASS[0m test_config_validation_failures.sh
+[0;32mPASS[0m test_context_accounting.sh
+[0;32mPASS[0m test_context_compiler.sh
+[0;32mPASS[0m test_continuation_config_defaults.sh
+[0;32mPASS[0m test_continuation_context.sh
+[0;32mPASS[0m test_continuation_metrics.sh
+[0;32mPASS[0m test_crawler_budget.sh
+[0;32mPASS[0m test_crawler_functions.sh
+[0;32mPASS[0m test_dashboard_data.sh
+[0;32mPASS[0m test_dependency_constraints.sh
+[0;32mPASS[0m test_detect_ai_artifacts.sh
+[0;32mPASS[0m test_detect_brownfield.sh
+[0;32mPASS[0m test_detect_brownfield_coverage.sh
+[0;32mPASS[0m test_detect_cleanup.sh
+[0;32mPASS[0m test_detect_commands.sh
+[0;32mPASS[0m test_detect_coverage_gaps.sh
+[0;32mPASS[0m test_detect_csharp_sln_only.sh
+[0;32mPASS[0m test_detect_entry_points.sh
+[0;32mPASS[0m test_detect_languages.sh
+[0;32mPASS[0m test_detect_project_type.sh
+[0;32mPASS[0m test_detect_report.sh
+[0;32mPASS[0m test_diagnose.sh
+[0;32mPASS[0m test_docs_site.sh
+[0;32mPASS[0m test_docs_structure.sh
+[0;32mPASS[0m test_drift_cleanup.sh
+[0;32mPASS[0m test_drift_config.sh
+[0;32mPASS[0m test_drift_management.sh
+[0;32mPASS[0m test_drift_prompts.sh
+[0;32mPASS[0m test_dynamic_turn_limits.sh
+[0;32mPASS[0m test_errors.sh
+[0;32mPASS[0m test_estimate_block_tokens.sh
+[0;32mPASS[0m test_finalize_run.sh
+[0;32mPASS[0m test_finalize_summary_escaping.sh
+[0;32mPASS[0m test_find_next_milestone_dag.sh
+[0;32mPASS[0m test_find_source_files_depth.sh
+[0;32mPASS[0m test_health_cli_flag.sh
+[0;32mPASS[0m test_health_code_quality.sh
+[0;32mPASS[0m test_health_dashboard.sh
+[0;32mPASS[0m test_health_dependency.sh
+[0;32mPASS[0m test_health_scoring.sh
+[0;32mPASS[0m test_hooks_commit_message.sh
+[0;32mPASS[0m test_hooks_commit_message_root_cause.sh
+[0;32mPASS[0m test_hooks_diff_stat_fallback.sh
+[0;32mPASS[0m test_hooks_diff_stat_portability.sh
+[0;32mPASS[0m test_human_flag_arg_parser.sh
+[0;32mPASS[0m test_human_mode_orchestration.sh
+[0;32mPASS[0m test_human_notes_lifecycle.sh
+[0;32mPASS[0m test_human_orchestration_bounds.sh
+[0;32mPASS[0m test_human_workflow.sh
+[0;32mPASS[0m test_indexer.sh
+[0;32mPASS[0m test_indexer_extract_files.sh
+[0;32mPASS[0m test_indexer_history.sh
+[0;32mPASS[0m test_indexer_infer_counterparts.sh
+[0;32mPASS[0m test_indexer_slice_suffix.sh
+[0;32mPASS[0m test_init_addenda_dedup.sh
+[0;32mPASS[0m test_init_design_file_autoset.sh
+[0;32mPASS[0m test_init_scaffold.sh
+[0;32mPASS[0m test_init_smart_config.sh
+[0;32mPASS[0m test_init_smart_init.sh
+[0;32mPASS[0m test_init_synthesize.sh
+[0;32mPASS[0m test_intake.sh
+[0;32mPASS[0m test_is_substantive_work.sh
+[0;32mPASS[0m test_lifecycle_acp.sh
+[0;32mPASS[0m test_lifecycle_drift.sh
+[0;32mPASS[0m test_lifecycle_human_action.sh
+[0;32mPASS[0m test_mark_milestone_done.sh
+[0;32mPASS[0m test_mcp.sh
+[0;32mPASS[0m test_mcp_lifecycle.sh
+[0;32mPASS[0m test_metrics.sh
+[0;32mPASS[0m test_metrics_retry_stats.sh
+[0;32mPASS[0m test_milestone_15_2_2_2_migration.sh
+[0;32mPASS[0m test_milestone_archival.sh
+[0;32mPASS[0m test_milestone_dag.sh
+[0;32mPASS[0m test_milestone_dag_archival_metadata.sh
+[0;32mPASS[0m test_milestone_dag_coverage.sh
+[0;32mPASS[0m test_milestone_dag_migrate.sh
+[0;32mPASS[0m test_milestone_split.sh
+[0;32mPASS[0m test_milestone_window.sh
+[0;32mPASS[0m test_milestones.sh
+[0;32mPASS[0m test_nonblocking_log_fixes.sh
+[0;32mPASS[0m test_nonblocking_notes.sh
+[0;32mPASS[0m test_orchestrate.sh
+[0;31mFAIL[0m test_orchestrate_integration.sh
+  --- output ---
+  === Integration Test Suite 1: run_complete_loop round trip ===
+  [0;36m[tekhton][0m [baseline] Capturing test baseline for milestone unknown...
+  [1;33m[!][0m [baseline] Tests FAIL at baseline (exit 127, 0 failure lines)
+  [1;33m[!][0m [baseline] These pre-existing failures will not block acceptance
+  
+  [1m[0;36m── Orchestration Loop ──────────────────[0m
+    Attempt:     [1m1[0m / 5
+    Elapsed:     0m 0s
+    Agent calls: 0 / 20
+  [1m[0;36m────────────────────────────────────────[0m
+  
+  [0;36m[tekhton][0m Pipeline attempt 1: failed:unknown/unknown (0 turns, 0 files)
+  [0;36m[tekhton][0m Recovery decision: bump_review
+  [1;33m[!][0m Bumping MAX_REVIEW_CYCLES to 5 (one-time)
+  [1;33m[!][0m No progress detected (1/2 — will retry once more)
+  
+  [1m[0;36m── Orchestration Loop ──────────────────[0m
+    Attempt:     [1m2[0m / 5
+    Elapsed:     0m 0s
+    Agent calls: 0 / 20
+  [1m[0;36m────────────────────────────────────────[0m
+  
+  [0;36m[tekhton][0m Pipeline attempt 2: success (0 turns, 0 files)
+  [0;36m[tekhton][0m Pre-finalization test gate: running bash tests/run_tests.sh...
+  [1;33m[!][0m Pre-finalization test gate failed (exit 127). Routing back to coder for fix.
+  [0;36m[tekhton][0m Pipeline attempt 2: failed:final_check/test_failure (0 turns, 0 files)
+  [1;33m[!][0m Pipeline appears stuck — diff unchanged for 2 consecutive attempts.
+  [1;33m[!][0m State saved. Resume with: tekhton --complete --start-at coder "Test complete loop integration"
+    FAIL: 1.1 run_complete_loop returns 0 on success — expected '0', got '1'
+    PASS: 1.2 _run_pipeline_stages called twice (attempt 1 fail, attempt 2 succeed)
+    FAIL: 1.3 _ORCH_ATTEMPT is 2 at completion — expected '2', got '3'
+    PASS: 1.4 finalize_run was called
+    FAIL: 1.5 finalize_run called with exit code 0 (success) — expected '0', got '1'
+    PASS: 1.6 _ORCH_REVIEW_BUMPED is true (review was bumped on attempt 1)
+  === Integration Test Suite 2: MAX_PIPELINE_ATTEMPTS safety bound ===
+  
+  [1m[0;36m── Orchestration Loop ──────────────────[0m
+    Attempt:     [1m1[0m / 3
+    Elapsed:     0m 0s
+    Agent calls: 0 / 20
+  [1m[0;36m────────────────────────────────────────[0m
+  
+  [0;36m[tekhton][0m Pipeline attempt 1: failed:unknown/unknown (0 turns, 0 files)
+  [0;36m[tekhton][0m Recovery decision: bump_review
+  [1;33m[!][0m Bumping MAX_REVIEW_CYCLES to 7 (one-time)
+  [1;33m[!][0m No progress detected (1/2 — will retry once more)
+  
+  [1m[0;36m── Orchestration Loop ──────────────────[0m
+    Attempt:     [1m2[0m / 3
+    Elapsed:     0m 0s
+    Agent calls: 0 / 20
+  [1m[0;36m────────────────────────────────────────[0m
+  
+  [0;36m[tekhton][0m Pipeline attempt 2: failed:unknown/unknown (0 turns, 0 files)
+  [0;36m[tekhton][0m Recovery decision: bump_review
+  [1;33m[!][0m Review cycles already bumped once. Saving state and exiting.
+  [1;33m[!][0m State saved. Resume with: tekhton --complete --start-at review "Test complete loop integration"
+    PASS: 2.1 run_complete_loop returns 1 when max attempts exhausted
+    PASS: 2.2 finalize_run called on failure path
+    PASS: 2.3 finalize_run called with exit code 1 (failure)
+  === Integration Test Suite 3: AUTONOMOUS_TIMEOUT wall-clock kill switch ===
+  [1;33m[!][0m Reached AUTONOMOUS_TIMEOUT (0s). Saving state.
+  [1;33m[!][0m State saved. Resume with: tekhton --complete --start-at review "Test complete loop integration"
+    PASS: 3.1 run_complete_loop returns 1 on timeout
+    PASS: 3.2 _run_pipeline_stages not called after timeout
+    PASS: 3.3 finalize_run called on timeout path
+  
+  ════════════════════════════════════════
+    orchestrate_integration: 9 passed, 3 failed
+  ════════════════════════════════════════
+  --- end ---
+[0;32mPASS[0m test_pin_version_validation.sh
+[0;32mPASS[0m test_plan_codebase_summary.sh
+[0;32mPASS[0m test_plan_completeness.sh
+[0;32mPASS[0m test_plan_completeness_loop.sh
+[0;32mPASS[0m test_plan_config_defaults.sh
+[0;32mPASS[0m test_plan_config_loading.sh
+[0;32mPASS[0m test_plan_constants.sh
+[0;32mPASS[0m test_plan_generate_integration.sh
+[0;32mPASS[0m test_plan_generate_prompt.sh
+[0;32mPASS[0m test_plan_generate_stage.sh
+[0;32mPASS[0m test_plan_interview_prompt.sh
+[0;32mPASS[0m test_plan_interview_stage.sh
+[0;32mPASS[0m test_plan_phase_context.sh
+[0;32mPASS[0m test_plan_phase_transitions.sh
+[0;32mPASS[0m test_plan_replan_done_milestones.sh
+[0;32mPASS[0m test_plan_resume_flow.sh
+[0;32mPASS[0m test_plan_review_functions.sh
+[0;32mPASS[0m test_plan_review_loop.sh
+[0;32mPASS[0m test_plan_state_clear.sh
+[0;32mPASS[0m test_plan_state_resume_offer.sh
+[0;32mPASS[0m test_plan_state_write_read.sh
+[0;32mPASS[0m test_plan_templates.sh
+[0;32mPASS[0m test_plan_type_selection.sh
+[0;32mPASS[0m test_print_box_frame.sh
+[0;32mPASS[0m test_prompt_helpers.sh
+[0;32mPASS[0m test_prompt_rendering.sh
+[0;32mPASS[0m test_prompt_templates.sh
+[0;32mPASS[0m test_quota.sh
+[0;32mPASS[0m test_quota_roundtrip.sh
+[0;32mPASS[0m test_replan_consolidation_rule.sh
+[0;32mPASS[0m test_replan_detect.sh
+[0;32mPASS[0m test_repo_map_fixtures.sh
+[0;32mPASS[0m test_repo_map_integration.sh
+[0;32mPASS[0m test_report.sh
+[0;32mPASS[0m test_report_error.sh
+[0;32mPASS[0m test_report_retry_formatting.sh
+[0;32mPASS[0m test_rescan.sh
+[0;32mPASS[0m test_retry_config_defaults.sh
+[0;32mPASS[0m test_run_with_retry_loop.sh
+[0;32mPASS[0m test_security_stage.sh
+[0;32mPASS[0m test_semver_lt.sh
+[0;32mPASS[0m test_should_claim_notes.sh
+[0;32mPASS[0m test_should_retry_transient.sh
+[0;32mPASS[0m test_specialists.sh
+[0;32mPASS[0m test_startup_auto_migrate.sh
+[0;32mPASS[0m test_state_error_classification.sh
+[0;32mPASS[0m test_state_roundtrip.sh
+[0;32mPASS[0m test_test_baseline.sh
+[0;32mPASS[0m test_update_check_disabled.sh
+[0;32mPASS[0m test_usage_threshold_missing_arg.sh
+[0;32mPASS[0m test_watchtower_dashboard.sh
+[0;32mPASS[0m test_watchtower_html.sh
+[0;32mPASS[0m test_with_notes_flag.sh
+
+────────────────────────────────────────
+  Shell:  Passed: [0;32m160[0m  Failed: [0;31m1[0m
+────────────────────────────────────────
+
+════════════════════════════════════════
+  Python Tool Tests
+════════════════════════════════════════
+
+........................................................................ [ 94%]
+....                                                                     [100%]
+76 passed, 1 skipped in 0.23s
+  [0;32mPython tests passed[0m
+
+════════════════════════════════════════
+  Final Summary
+════════════════════════════════════════
+  Shell:  Passed: [0;32m160[0m  Failed: [0;31m1[0m
+  Python: [0;32mPASSED[0m

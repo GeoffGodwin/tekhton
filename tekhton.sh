@@ -131,7 +131,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.6.0"
+TEKHTON_VERSION="3.19.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -221,6 +221,84 @@ if [ "${1:-}" = "--docs" ]; then
         echo "Could not detect browser. Open this URL manually:"
         echo "  ${DOCS_URL}"
     fi
+    exit 0
+fi
+
+# --- Early --update check (runs before config exists) ------------------------
+
+if [ "${1:-}" = "--update" ]; then
+    source "${TEKHTON_HOME}/lib/update_check.sh"
+    if [ "${2:-}" = "--check" ]; then
+        perform_update "--check"
+    else
+        perform_update
+    fi
+    exit 0
+fi
+
+# --- Early --uninstall check (delegates to install.sh) -----------------------
+
+if [ "${1:-}" = "--uninstall" ]; then
+    local_install_script="${TEKHTON_HOME}/install.sh"
+    if [ -f "$local_install_script" ]; then
+        bash "$local_install_script" --uninstall
+    else
+        echo "[x] install.sh not found at ${local_install_script}" >&2
+        echo "    Run the installer with --uninstall instead:" >&2
+        echo "    curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/main/install.sh | bash -s -- --uninstall" >&2
+        exit 1
+    fi
+    exit 0
+fi
+
+# --- Early --setup-completion check ------------------------------------------
+
+if [ "${1:-}" = "--setup-completion" ]; then
+    _setup_shell_completions() {
+        local current_shell
+        current_shell=$(basename "${SHELL:-/bin/bash}")
+        local completions_dir="${TEKHTON_HOME}/completions"
+
+        case "$current_shell" in
+            bash)
+                local bash_comp_dir="${HOME}/.local/share/bash-completion/completions"
+                if [ -d "/etc/bash_completion.d" ] && [ -w "/etc/bash_completion.d" ]; then
+                    bash_comp_dir="/etc/bash_completion.d"
+                fi
+                mkdir -p "$bash_comp_dir"
+                cp "${completions_dir}/tekhton.bash" "${bash_comp_dir}/tekhton"
+                echo "[+] Installed bash completion to ${bash_comp_dir}/tekhton"
+                echo "    Run 'source ${bash_comp_dir}/tekhton' or open a new terminal."
+                ;;
+            zsh)
+                local zsh_comp_dir="${HOME}/.zfunc"
+                mkdir -p "$zsh_comp_dir"
+                cp "${completions_dir}/tekhton.zsh" "${zsh_comp_dir}/_tekhton"
+                echo "[+] Installed zsh completion to ${zsh_comp_dir}/_tekhton"
+                if ! grep -q "fpath.*\.zfunc" "${HOME}/.zshrc" 2>/dev/null; then
+                    echo "    Add this to your .zshrc if not already present:"
+                    echo "      fpath=(~/.zfunc \$fpath)"
+                    echo "      autoload -Uz compinit && compinit"
+                fi
+                ;;
+            fish)
+                local fish_comp_dir="${HOME}/.config/fish/completions"
+                mkdir -p "$fish_comp_dir"
+                cp "${completions_dir}/tekhton.fish" "${fish_comp_dir}/tekhton.fish"
+                echo "[+] Installed fish completion to ${fish_comp_dir}/tekhton.fish"
+                ;;
+            *)
+                echo "[!] Unsupported shell: ${current_shell}"
+                echo "    Completion files are available in: ${completions_dir}/"
+                echo "    - tekhton.bash (bash)"
+                echo "    - tekhton.zsh  (zsh)"
+                echo "    - tekhton.fish (fish)"
+                _TEKHTON_CLEAN_EXIT=true
+                exit 1
+                ;;
+        esac
+    }
+    _setup_shell_completions
     exit 0
 fi
 
@@ -497,6 +575,7 @@ source "${TEKHTON_HOME}/lib/dashboard.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
+source "${TEKHTON_HOME}/lib/update_check.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
@@ -518,74 +597,96 @@ load_config
 
 usage() {
     local exit_code="${1:-0}"
-    echo "Tekhton ${TEKHTON_VERSION} — One intent. Many hands."
+    local show_all="${2:-false}"
+
+    echo "Tekhton ${TEKHTON_VERSION} — Multi-agent development pipeline"
     echo ""
     echo "Usage: tekhton [flags] \"<task description>\""
     echo ""
-    echo "  --init                    Smart init: detect stack, generate config + agent roles"
-    echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
-    echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
-    echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
-    echo "  --plan-from-index         Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md"
-    echo "  --rescan                  Incrementally update PROJECT_INDEX.md from git changes"
-    echo "  --rescan --full           Force full re-crawl regardless of change volume"
-    echo "  --init --full             Run init + synthesis in one command"
-    echo "  --status                  Print saved pipeline state and exit (no run)"
-    echo "  --diagnose                Diagnose last failure with recovery suggestions"
-    echo "  --report, report          Print one-screen summary of last pipeline run"
-    echo "  --metrics                 Print run metrics dashboard and exit"
-    echo "  --version, -v             Print version and exit"
-    echo "  --docs                    Open documentation site in browser"
-    echo "  --help, -h                Show this help and exit"
-    echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
-    echo "                            upgraded tester model"
-    echo "  --auto-advance            Auto-advance through milestones after acceptance"
-    echo "  --add-milestone \"desc\"     Create a scoped milestone via intake agent (no run)"
-    echo "  --start-at intake         Run from intake gate (re-evaluate clarity)"
-    echo "  --start-at coder          Full pipeline from scratch (default)"
-    echo "  --start-at security       Skip coder; requires CODER_SUMMARY.md"
-    echo "  --start-at review         Skip coder + security; requires CODER_SUMMARY.md"
-    echo "  --start-at tester         Resume tester from existing TESTER_REPORT.md"
-    echo "  --start-at test           Skip coder + security + reviewer; requires REVIEWER_REPORT.md"
-    echo "  --skip-security           Bypass security stage for a single run"
-    echo "  --notes-filter BUG        Inject only [BUG] notes this run"
-    echo "  --notes-filter FEAT       Inject only [FEAT] notes this run"
-    echo "  --notes-filter POLISH     Inject only [POLISH] notes this run"
-    echo "  --init-notes              Create a blank HUMAN_NOTES.md template and exit"
-    echo "  --seed-contracts          Seed inline system contracts in lib/ source files"
-    echo "  --human [TAG]             Pick next unchecked note from HUMAN_NOTES.md as task"
-    echo "                            Optional TAG: BUG, FEAT, POLISH"
-    echo "  --complete                Loop mode: repeat pipeline until done or bounds hit"
-    echo "  --with-notes              Force human notes injection regardless of task text"
-    echo "  --usage-threshold N       Pause if session usage exceeds N% (overrides config)"
-    echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
-    echo "  --skip-audit              Skip architect audit even if threshold is reached"
-    echo "  --force-audit             Force architect audit regardless of threshold"
-    echo "  --fix-nonblockers, --fix-nb  Loop mode: address all open non-blocking notes"
-    echo "  --fix-drift              Loop mode: force architect audit to resolve drift observations"
-    echo "  --migrate-dag             Convert inline CLAUDE.md milestones to DAG file format"
-    echo "  --setup-indexer           Set up Python virtualenv for tree-sitter indexer"
-    echo "  --with-lsp                Also install Serena LSP server (use with --setup-indexer)"
+
+    if [[ "$show_all" = true ]]; then
+        # Full flag list for power users
+        echo "Getting Started:"
+        echo "  --init                    Smart init: detect stack, generate config + agent roles"
+        echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
+        echo "  --init --full             Run init + synthesis in one command"
+        echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
+        echo "  --plan-from-index         Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md"
+        echo ""
+        echo "Running:"
+        echo "  \"task description\"        Run pipeline with task"
+        echo "  --milestone               Milestone mode: higher turn limits, more review cycles"
+        echo "  --auto-advance            Auto-advance through milestones after acceptance"
+        echo "  --complete                Loop mode: repeat pipeline until done or bounds hit"
+        echo "  --start-at STAGE          Resume from: intake, coder, security, review, tester, test"
+        echo "  --human [TAG]             Pick next unchecked note as task (BUG, FEAT, POLISH)"
+        echo "  --with-notes              Force human notes injection regardless of task text"
+        echo "  --notes-filter TAG        Inject only [TAG] notes (BUG, FEAT, POLISH)"
+        echo "  --add-milestone \"desc\"    Create a scoped milestone via intake agent (no run)"
+        echo "  --skip-security           Bypass security stage for a single run"
+        echo "  --skip-audit              Skip architect audit even if threshold is reached"
+        echo "  --force-audit             Force architect audit regardless of threshold"
+        echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
+        echo "  --usage-threshold N       Pause if session usage exceeds N%"
+        echo ""
+        echo "Inspection:"
+        echo "  --status                  Print saved pipeline state"
+        echo "  --metrics                 Print run metrics dashboard"
+        echo "  --diagnose                Diagnose last failure with recovery suggestions"
+        echo "  --report, report          Print summary of last pipeline run"
+        echo "  --health                  Run standalone project health assessment"
+        echo ""
+        echo "Maintenance:"
+        echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
+        echo "  --rescan [--full]         Update PROJECT_INDEX.md (incrementally or full re-crawl)"
+        echo "  --migrate-dag             Convert inline milestones to DAG file format"
+        echo "  --update [--check]        Check for and install updates (--check: report only)"
+        echo "  --fix-nonblockers         Address all open non-blocking notes (loop mode)"
+        echo "  --fix-drift               Force architect audit to resolve drift observations"
+        echo ""
+        echo "Setup:"
+        echo "  --init-notes              Create blank HUMAN_NOTES.md template"
+        echo "  --seed-contracts          Seed inline system contracts in source files"
+        echo "  --setup-indexer           Set up Python virtualenv for tree-sitter indexer"
+        echo "  --with-lsp                Also install Serena LSP server (with --setup-indexer)"
+        echo "  --setup-completion        Install shell completions for your shell"
+        echo "  --uninstall               Remove Tekhton installation"
+        echo ""
+        echo "Info:"
+        echo "  --version, -v             Print version and exit"
+        echo "  --docs                    Open documentation site in browser"
+        echo "  --help, -h                Show grouped help"
+        echo "  --help --all              Show this full flag list"
+    else
+        # Grouped help — most common operations first
+        echo "Getting Started:"
+        echo "  --init              Initialize Tekhton in current project"
+        echo "  --plan \"desc\"       Start interactive planning session"
+        echo "  --plan-from-index   Generate plan from PROJECT_INDEX.md"
+        echo ""
+        echo "Running:"
+        echo "  \"task description\"  Run pipeline with task"
+        echo "  --milestone         Run in milestone mode (higher turn budgets)"
+        echo "  --auto-advance      Auto-advance through milestones"
+        echo "  --complete          Loop until done or bounds hit"
+        echo "  --human [TAG]       Pick next note as task (BUG, FEAT, POLISH)"
+        echo ""
+        echo "Inspection:"
+        echo "  --status            Show pipeline state"
+        echo "  --metrics           Show run metrics dashboard"
+        echo "  --diagnose          Diagnose last failure with recovery suggestions"
+        echo "  --report            Summarize last run's results"
+        echo "  --health            Run project health assessment"
+        echo ""
+        echo "Maintenance:"
+        echo "  --replan            Update existing plan"
+        echo "  --rescan            Update project index"
+        echo "  --update            Check for and install updates"
+        echo ""
+        echo "  Run --help --all for the full flag list."
+    fi
     echo ""
-    echo "Examples:"
-    echo "  tekhton --init                           # First-time setup"
-    echo "  tekhton --plan                           # Interactive planning phase"
-    echo "  tekhton --replan                         # Update existing plan from drift/changes"
-    echo "  tekhton --plan-from-index                # Synthesize docs from project index"
-    echo "  tekhton --init --full                    # Init + crawl + synthesize in one step"
-    echo "  tekhton --rescan                         # Update PROJECT_INDEX.md incrementally"
-    echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
-    echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
-    echo "  tekhton --milestone \"Feat: payment system\""
-    echo "  tekhton --human                             # Pick next note and run"
-    echo "  tekhton --human BUG                         # Pick next BUG note"
-    echo "  tekhton --human --complete                  # Process all notes in loop"
-    echo "  tekhton --fix-nonblockers                    # Address all non-blocking notes"
-    echo "  tekhton --fix-drift                          # Force drift audit + resolution"
-    echo ""
-    echo "Documentation:"
-    echo "  man tekhton                              # Full man page (if installed)"
-    echo "  man -M \"${TEKHTON_HOME}/man\" tekhton   # Man page from source directory"
+    echo "Documentation: https://geoffgodwin.github.io/tekhton/"
     _TEKHTON_CLEAN_EXIT=true
     exit "$exit_code"
 }
@@ -767,7 +868,13 @@ EOF
             success "Contract seeding complete. Review with: grep -rn 'System:' lib/"
             exit 0
             ;;
-        --help|-h) usage 0 ;;
+        --help|-h)
+            if [[ "${2:-}" == "--all" ]]; then
+                usage 0 true
+            else
+                usage 0
+            fi
+            ;;
         --with-notes) WITH_NOTES=true; shift ;;
         --human)
             HUMAN_MODE=true

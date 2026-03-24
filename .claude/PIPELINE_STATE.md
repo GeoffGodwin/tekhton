@@ -1,33 +1,37 @@
-# Pipeline State — 2026-03-24 09:17:44
+# Pipeline State — 2026-03-24 11:17:34
 ## Exit Stage
-tester
+coder
 
 ## Exit Reason
-partial_tests
+complete_loop_pre_existing_failure
 
 ## Resume Command
---start-at tester
+--complete --milestone --start-at coder
 
 ## Task
-[BUG] The CLARIFICATIONS.md file structure is not working as intended. I just tried a bug fixing call of Tekhton with ` tekhton --complete "Implement fixes for all of the NON_BLOCKING_LOG items until they are all resolved."` and that resulted in the "Clarification Required" process kicking off in Task Intake. It asked for 4 clarifying questions then alleged to have answered them. If you check the CLARIFICATIONS.md file it generated you will see the answers are all nonsensical.
+Implement Milestone 19: Distribution & Install Experience
 
 ## Notes
-2 test(s) remaining — TESTER_REPORT.md has the checklist
+Orchestration: Acceptance stuck on identical pre-existing test failures (2 attempts) (attempt 2/5, 3443s elapsed, 14 agent calls)
 
 ## Milestone
-none
+19
 
 ## Files Present
-- CODER_SUMMARY.md (46 lines)
-- REVIEWER_REPORT.md (46 lines)
+- CODER_SUMMARY.md (missing)
+- REVIEWER_REPORT.md (22 lines)
 - TESTER_REPORT.md (11 lines)
-- JR_CODER_SUMMARY.md (missing)
+- JR_CODER_SUMMARY.md (14 lines)
 
 ## Orchestration Context
-Pipeline attempt: 0
-Cumulative agent calls: 0
-Cumulative turns: 103
-Wall-clock elapsed: 0s
+Pipeline attempt: 2
+Cumulative agent calls: 14
+Cumulative turns: 310
+Wall-clock elapsed: 3443s
+
+### Prior Attempt Outcomes
+- Attempt 1: success (164 turns, 8 files changed)
+- Attempt 2: success (146 turns, 14 files changed)
 
 ## Error Classification
 (no error classification — normal exit or pre-classification failure)

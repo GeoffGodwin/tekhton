@@ -3,7 +3,7 @@
 # test_finalize_run.sh — finalize_run() hook registry and orchestrator tests
 #
 # Tests:
-# - Hook registration order (12 hooks in deterministic sequence, plus M13+M17 hooks)
+# - Hook registration order (12 hooks in deterministic sequence, plus M13+M17+M19 hooks)
 # - register_finalize_hook appends in order
 # - finalize_run calls all hooks in registration order
 # - finalize_run passes pipeline_exit_code to each hook
@@ -140,6 +140,10 @@ emit_dashboard_diagnosis() {
     _mock_called[emit_dashboard_diagnosis]=1
     return 0
 }
+check_for_updates() {
+    _mock_called[check_for_updates]=1
+    return 1
+}
 DIAG_CLASSIFICATION=""
 has_human_actions() {
     return 1
@@ -196,7 +200,7 @@ restore_hooks() {
 # =============================================================================
 echo "=== Test Suite 1: Hook registration order ==="
 
-assert_eq "1.1 exactly 14 hooks registered" "14" "${#FINALIZE_HOOKS[@]}"
+assert_eq "1.1 exactly 15 hooks registered" "15" "${#FINALIZE_HOOKS[@]}"
 assert_eq "1.2 first hook is _hook_final_checks"    "_hook_final_checks"    "${FINALIZE_HOOKS[0]}"
 assert_eq "1.3 second hook is _hook_drift_artifacts" "_hook_drift_artifacts" "${FINALIZE_HOOKS[1]}"
 assert_eq "1.4 third hook is _hook_record_metrics"   "_hook_record_metrics"  "${FINALIZE_HOOKS[2]}"
@@ -211,6 +215,7 @@ assert_eq "1.10b eleventh hook is _hook_health_reassess" "_hook_health_reassess"
 assert_eq "1.11 twelfth hook is _hook_emit_run_summary" "_hook_emit_run_summary" "${FINALIZE_HOOKS[11]}"
 assert_eq "1.12 thirteenth hook is _hook_failure_context" "_hook_failure_context" "${FINALIZE_HOOKS[12]}"
 assert_eq "1.13 fourteenth hook is _hook_commit"    "_hook_commit"          "${FINALIZE_HOOKS[13]}"
+assert_eq "1.14 fifteenth hook is _hook_update_check" "_hook_update_check"  "${FINALIZE_HOOKS[14]}"
 
 # =============================================================================
 # Test Suite 2: register_finalize_hook appends in order
@@ -219,14 +224,14 @@ echo "=== Test Suite 2: register_finalize_hook ==="
 
 _test_new_hook() { return 0; }
 register_finalize_hook "_test_new_hook"
-assert_eq "2.1 hook count increases by 1" "15" "${#FINALIZE_HOOKS[@]}"
-assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[14]}"
+assert_eq "2.1 hook count increases by 1" "16" "${#FINALIZE_HOOKS[@]}"
+assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[15]}"
 
 # Register a second additional hook — ensure ordering is preserved
 _test_new_hook_2() { return 0; }
 register_finalize_hook "_test_new_hook_2"
-assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[15]}"
-assert_eq "2.4 first new hook still at 14" "_test_new_hook" "${FINALIZE_HOOKS[14]}"
+assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[16]}"
+assert_eq "2.4 first new hook still at 15" "_test_new_hook" "${FINALIZE_HOOKS[15]}"
 
 restore_hooks
 
@@ -681,6 +686,16 @@ _hook_archive_reports 0
 assert "13.6 archive_reports runs on exit_code=0" \
     "$([ -n "${_mock_called[archive_reports]:-}" ] && echo 0 || echo 1)"
 
+_reset_mocks
+_hook_update_check 1
+assert "13.7 update_check runs on exit_code=1" \
+    "$([ -n "${_mock_called[check_for_updates]:-}" ] && echo 0 || echo 1)"
+
+_reset_mocks
+_hook_update_check 0
+assert "13.8 update_check runs on exit_code=0" \
+    "$([ -n "${_mock_called[check_for_updates]:-}" ] && echo 0 || echo 1)"
+
 # =============================================================================
 # Test Suite 14: finalize_run 0 vs finalize_run 1 through real hooks
 # =============================================================================
@@ -713,6 +728,9 @@ assert "14.3 record_run_metrics called on success" \
 # hook f always runs
 assert "14.4 archive_reports called on success" \
     "$([ -n "${_mock_called[archive_reports]:-}" ] && echo 0 || echo 1)"
+# hook n (update check) always runs — guards against future hook ordering changes
+assert "14.6 check_for_updates called on success (finalize_run 0)" \
+    "$([ -n "${_mock_called[check_for_updates]:-}" ] && echo 0 || echo 1)"
 
 # Test _hook_final_checks directly with SKIP_FINAL_CHECKS=false
 _reset_mocks
@@ -752,6 +770,9 @@ assert "15.9 archive_completed_milestone NOT called on failure" \
     "$([ -z "${_mock_called[archive_completed_milestone]:-}" ] && echo 0 || echo 1)"
 assert "15.10 clear_milestone_state NOT called on failure" \
     "$([ -z "${_mock_called[clear_milestone_state]:-}" ] && echo 0 || echo 1)"
+# hook n (update check) always runs — guards against future hook ordering changes
+assert "15.11 check_for_updates called on failure (finalize_run 1)" \
+    "$([ -n "${_mock_called[check_for_updates]:-}" ] && echo 0 || echo 1)"
 
 restore_hooks
 
