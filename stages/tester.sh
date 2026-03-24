@@ -225,6 +225,9 @@ TESTER_EOF
                         print_run_summary
                         success "Tester completed after ${_tcont_attempt} continuation(s) — all planned tests written."
                         clear_pipeline_state
+
+                        # --- Test integrity audit (M20) ---
+                        run_test_audit || true
                     else
                         warn "Tester still has ${REMAINING} test(s) remaining after ${_tcont_attempt} continuation(s)."
                     fi
@@ -249,6 +252,9 @@ TESTER_EOF
             success "Tester agent finished — all planned tests written and passing."
             # Clean run — clear any stale state
             clear_pipeline_state
+
+            # --- Test integrity audit (M20) ---
+            run_test_audit || true
         fi
     fi
 }

@@ -256,22 +256,35 @@ run_complete_loop() {
                     # Always append full output to the run log
                     printf '%s\n' "$_preflight_output" >> "$LOG_FILE"
                     if [[ "$_preflight_exit" -ne 0 ]]; then
-                        warn "Pre-finalization test gate failed (exit ${_preflight_exit}). Routing back to coder for fix."
-                        # Write failure context so the coder knows what broke
-                        {
-                            echo "# Pre-Finalization Test Failures"
-                            echo "Command: \`${TEST_CMD}\` exited with code ${_preflight_exit}"
-                            echo ""
-                            echo "## Output (last 80 lines)"
-                            echo '```'
-                            printf '%s\n' "$_preflight_output" | tail -80
-                            echo '```'
-                        } > PREFLIGHT_ERRORS.md
-                        log "Wrote preflight test errors to PREFLIGHT_ERRORS.md"
-                        record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
-                            "failed:final_check/test_failure" "$_iter_turns" "$_files_changed"
-                        START_AT="coder"
-                        continue
+                        # Check baseline before failing — don't retry pre-existing failures
+                        local _preflight_baseline="none"
+                        if [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]] && \
+                           command -v compare_test_with_baseline &>/dev/null; then
+                            _preflight_baseline=$(compare_test_with_baseline "$_preflight_output" "$_preflight_exit")
+                        fi
+
+                        if [[ "$_preflight_baseline" = "pre_existing" ]] && \
+                           [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-true}" = "true" ]]; then
+                            warn "Pre-finalization test gate failed (exit ${_preflight_exit}) — ALL failures match pre-existing baseline."
+                            warn "Treating as PASS for pre-finalization gate (pre-existing failures)."
+                        else
+                            warn "Pre-finalization test gate failed (exit ${_preflight_exit}). Routing back to coder for fix."
+                            # Write failure context so the coder knows what broke
+                            {
+                                echo "# Pre-Finalization Test Failures"
+                                echo "Command: \`${TEST_CMD}\` exited with code ${_preflight_exit}"
+                                echo ""
+                                echo "## Output (last 80 lines)"
+                                echo '```'
+                                printf '%s\n' "$_preflight_output" | tail -80
+                                echo '```'
+                            } > PREFLIGHT_ERRORS.md
+                            log "Wrote preflight test errors to PREFLIGHT_ERRORS.md"
+                            record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
+                                "failed:final_check/test_failure" "$_iter_turns" "$_files_changed"
+                            START_AT="coder"
+                            continue
+                        fi
                     fi
                     _PREFLIGHT_TESTS_PASSED=true
                     # Clean up stale preflight errors from a prior failed iteration

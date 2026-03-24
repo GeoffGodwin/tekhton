@@ -26660,3 +26660,30 @@ Seeds Forward:
 - The docs site structure mirrors the Watchtower tabs conceptually
   (getting started ≈ Live Run, concepts ≈ Milestone Map, reference ≈ Reports,
   troubleshooting ≈ --diagnose)
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 Milestone 20
+
+#### [DONE] Milestone 20: Test Integrity Audit
+Added a dedicated test audit pass within the test stage that independently
+evaluates the quality, honesty, and relevance of tests written or modified
+by the tester agent. Prevents the "agent cheating at tests" problem where
+the tester writes trivial, hard-coded, or orphaned tests that provide false
+confidence.
+
+Implementation:
+- `lib/test_audit.sh` — Audit orchestration, context collection, verdict routing
+- `prompts/test_audit.prompt.md` — Agent audit prompt with 6-point rubric
+- `prompts/test_audit_rework.prompt.md` — Tester rework prompt for audit findings
+- `stages/tester.sh` — Calls `run_test_audit()` after test writing
+- `tekhton.sh` — Adds `--audit-tests` standalone command
+- `lib/config_defaults.sh` — TEST_AUDIT_* configuration defaults
+- `lib/hooks.sh` — Archives TEST_AUDIT_REPORT.md
+- `lib/diagnose_rules.sh` — Adds `_rule_test_audit_failure()` diagnostic
+- `lib/finalize_summary.sh` — Includes test_audit_verdict in RUN_SUMMARY.json
+- `lib/dashboard_emitters.sh` — Includes audit data in Watchtower
+- `prompts/tester.prompt.md` — Adds Test Integrity Rules anti-cheating section
+- `tests/test_audit_tests.sh` — Unit tests for core audit functions
+- `tests/test_audit_standalone.sh` — Standalone audit and emit_event tests
+- `tests/test_audit_coverage_gaps.sh` — Coverage gap and edge case tests

@@ -38,6 +38,17 @@ Task implemented: {{TASK}}
 2. `REVIEWER_REPORT.md` — the 'Coverage Gaps' section is your task list
 3. `CODER_SUMMARY.md` — read the 'Files created or modified' list
 
+## CRITICAL: Test Integrity Rules
+- Write tests that verify REAL behavior, not hard-coded expected values.
+- Every assertion must test output from an actual function/method call.
+- Do NOT mock everything — mock only external dependencies (network, DB, filesystem).
+- Do NOT weaken existing tests to make them pass. If a test fails because
+  the implementation changed, REPORT THE BUG — do not fix the test.
+- If a test is impossible to pass because the feature was INTENTIONALLY
+  removed (per CODER_SUMMARY.md), mark it for removal: `- ORPHAN: [file] reason`
+- Your tests WILL be independently audited. Write them as if a skeptical
+  senior engineer will review every assertion.
+
 ## Critical: Read Before You Write
 Before writing any test that instantiates a model or calls a method, read the
 actual source file for that class. Do not assume constructor signatures.

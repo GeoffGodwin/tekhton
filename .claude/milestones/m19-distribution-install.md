@@ -1,4 +1,8 @@
 #### Milestone 19: Distribution & Install Experience
+<!-- milestone-meta
+id: "19"
+status: "done"
+-->
 Create a cross-platform install script, GitHub Releases workflow with versioned
 tarballs, and a non-intrusive update check mechanism. The goal: a new user goes
 from "what is Tekhton?" to `tekhton --init` in under 60 seconds, on any platform.
