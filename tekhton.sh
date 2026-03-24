@@ -41,6 +41,7 @@
 #   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
 #   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
 #   --version, -v         Print version and exit
+#   --docs                Open documentation site in browser
 #
 # Requirements:
 #   - claude CLI authenticated and on PATH
@@ -202,6 +203,24 @@ STAGE_SUMMARY=""
 
 if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
     echo "Tekhton ${TEKHTON_VERSION}"
+    exit 0
+fi
+
+# --- Early --docs check (opens documentation site) ---------------------------
+
+if [ "${1:-}" = "--docs" ]; then
+    DOCS_URL="https://geoffgodwin.github.io/tekhton/"
+    echo "Opening Tekhton documentation: ${DOCS_URL}"
+    if command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "${DOCS_URL}" 2>/dev/null &
+    elif command -v open >/dev/null 2>&1; then
+        open "${DOCS_URL}"
+    elif command -v start >/dev/null 2>&1; then
+        start "${DOCS_URL}"
+    else
+        echo "Could not detect browser. Open this URL manually:"
+        echo "  ${DOCS_URL}"
+    fi
     exit 0
 fi
 
@@ -516,6 +535,7 @@ usage() {
     echo "  --report, report          Print one-screen summary of last pipeline run"
     echo "  --metrics                 Print run metrics dashboard and exit"
     echo "  --version, -v             Print version and exit"
+    echo "  --docs                    Open documentation site in browser"
     echo "  --help, -h                Show this help and exit"
     echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
     echo "                            upgraded tester model"

@@ -3,7 +3,7 @@
 # test_finalize_run.sh — finalize_run() hook registry and orchestrator tests
 #
 # Tests:
-# - Hook registration order (14 hooks in deterministic sequence including M13/M17 hooks)
+# - Hook registration order (12 hooks in deterministic sequence, plus M13+M17 hooks)
 # - register_finalize_hook appends in order
 # - finalize_run calls all hooks in registration order
 # - finalize_run passes pipeline_exit_code to each hook

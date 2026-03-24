@@ -53,3 +53,6 @@ service-account*.json
 *.tar.gz
 *.zip
 *.7z
+
+# MkDocs build output
+site/

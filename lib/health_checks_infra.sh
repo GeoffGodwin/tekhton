@@ -9,14 +9,50 @@ set -euo pipefail
 # dependencies, never execute test suites.
 #
 # Provides:
+#   _health_sample_files       — Deterministic source file sampler (shared helper)
+#   _health_json_escape        — JSON string escaper (shared helper)
 #   _check_dependency_health   — Lock files, dep counts, vulnerability scanner
 #   _check_doc_quality         — Delegates to M12 assess_doc_quality()
 #   _check_project_hygiene     — .gitignore, CI, .env safety, README setup
-#
-# Depends on helpers from health_checks.sh (sourced first):
-#   _health_json_escape
-#   _health_sample_files
 # =============================================================================
+
+# --- Shared helpers -----------------------------------------------------------
+
+# _health_sample_files PROJECT_DIR COUNT
+# Returns a deterministic sorted list of source files for sampling.
+_health_sample_files() {
+    local proj_dir="$1"
+    local count="${2:-20}"
+
+    local src_ext='(py|ts|tsx|js|jsx|go|rs|java|rb|cs|kt|swift|sh)$'
+
+    if git -C "$proj_dir" rev-parse --git-dir &>/dev/null 2>&1; then
+        git -C "$proj_dir" ls-files 2>/dev/null | \
+            grep -E "\\.$src_ext" | \
+            sort | \
+            head -n "$count"
+    else
+        find "$proj_dir" -type f -not -path '*/.git/*' \
+            -not -path '*/node_modules/*' -not -path '*/.venv/*' \
+            -not -path '*/vendor/*' 2>/dev/null | \
+            sed "s|^${proj_dir}/||" | \
+            grep -E "\\.$src_ext" | \
+            sort | \
+            head -n "$count"
+    fi
+}
+
+# _health_json_escape STRING
+# Escapes a string for safe JSON embedding.
+_health_json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
 
 # --- Dependency Health (weight: 15%) -----------------------------------------
 

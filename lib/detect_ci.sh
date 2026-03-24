@@ -168,10 +168,11 @@ _detect_bitbucket_pipelines() {
     done < "$proj_dir/bitbucket-pipelines.yml"
 }
 
-# --- Dockerfile language detection -------------------------------------------
+# --- Dockerfile language detection (nullglob for safe glob iteration) --------
 
 _detect_dockerfile_langs() {
     local proj_dir="$1"
+    shopt -s nullglob
     local dockerfile
     for dockerfile in "$proj_dir"/Dockerfile "$proj_dir"/Dockerfile.*; do
         [[ ! -f "$dockerfile" ]] && continue
@@ -190,6 +191,7 @@ _detect_dockerfile_langs() {
             *ruby*) echo "dockerfile||||ruby||medium" ;;
         esac
     done
+    shopt -u nullglob
 }
 
 # --- Command classification --------------------------------------------------

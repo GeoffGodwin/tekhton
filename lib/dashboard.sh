@@ -76,7 +76,7 @@ sync_dashboard_static_files() {
 
 # _copy_static_files DASH_DIR
 # Copies templates/watchtower/* (index.html, style.css, app.js) into the
-# dashboard directory. Always overwrites to ensure latest versions.
+# dashboard directory. Overwrites unconditionally to ensure latest versions.
 _copy_static_files() {
     local dash_dir="$1"
     local src_dir="${TEKHTON_HOME:-$(dirname "$(dirname "${BASH_SOURCE[0]}")")}/templates/watchtower"

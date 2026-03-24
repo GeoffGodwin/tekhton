@@ -49,7 +49,10 @@ pass "Fix #4: lib/diagnose.sh extracted to helpers module"
 # === Fix #5: dead _detect_recurring_failures call ===
 # The first call (line ~114 in diagnose.sh) should be removed
 # Check that _detect_recurring_failures is not called with empty DIAG_CLASSIFICATION
-dead_call=$(grep -c "DIAG_CLASSIFICATION=\"\"" "${TEKHTON_HOME}/lib/diagnose.sh" || echo "0")
+# Check that DIAG_CLASSIFICATION="" initialization was removed from diagnose.sh
+dead_call=$(grep -c 'DIAG_CLASSIFICATION=""' "${TEKHTON_HOME}/lib/diagnose.sh" 2>/dev/null || true)
+dead_call="${dead_call//[!0-9]/}"
+: "${dead_call:=0}"
 [[ "$dead_call" -eq 0 ]] || fail "Dead code with empty DIAG_CLASSIFICATION still present"
 pass "Fix #5: dead _detect_recurring_failures call removed"
 
@@ -61,13 +64,15 @@ pass "Fix #6: post-archive context comment added"
 
 # === Fix #7: verdict type filter ===
 # Check that _rule_review_loop filters for CHANGES_REQUIRED verdict type
-verdict_filter=$(grep -A10 "_rule_review_loop" "${TEKHTON_HOME}/lib/diagnose.sh" | grep -i "changes_required\|verdict.*type" || echo "")
+verdict_filter=$(grep -A10 "_rule_review_loop" "${TEKHTON_HOME}/lib/diagnose_rules.sh" | grep -i "changes_required\|verdict.*type" || echo "")
 [[ -n "$verdict_filter" ]] || fail "No verdict type filter in _rule_review_loop"
 pass "Fix #7: verdict type filter added to _rule_review_loop"
 
 # === Fix #8: hard-coded fallback ===
 # Check that _DIAG_REVIEW_CYCLES is used instead of hard-coded "3"
-hardcoded=$(grep "_rule_review_loop" -A20 "${TEKHTON_HOME}/lib/diagnose.sh" | grep -c '"3 times"' || echo "0")
+hardcoded=$(grep "_rule_review_loop" -A20 "${TEKHTON_HOME}/lib/diagnose_rules.sh" | grep -c '"3 times"' || true)
+hardcoded="${hardcoded//[!0-9]/}"
+: "${hardcoded:=0}"
 [[ "$hardcoded" -eq 0 ]] || fail "Hard-coded fallback '3 times' still present"
 pass "Fix #8: hard-coded fallback removed or replaced with _DIAG_REVIEW_CYCLES"
 

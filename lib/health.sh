@@ -15,11 +15,11 @@ set -euo pipefail
 #   format_health_summary     — One-line summary for prompt injection
 # =============================================================================
 
-# Source companion checks file
-# shellcheck source=lib/health_checks.sh
-source "${TEKHTON_HOME:?}/lib/health_checks.sh"
+# Source companion checks files (infra first — provides shared helpers)
 # shellcheck source=lib/health_checks_infra.sh
 source "${TEKHTON_HOME:?}/lib/health_checks_infra.sh"
+# shellcheck source=lib/health_checks.sh
+source "${TEKHTON_HOME:?}/lib/health_checks.sh"
 
 # --- Belt system --------------------------------------------------------------
 
@@ -50,11 +50,11 @@ _get_belt_subtitle() {
 
 # --- Shared dimension evaluation ----------------------------------------------
 
-# _run_health_dimensions PROJECT_DIR
+# _run_dimension_checks PROJECT_DIR
 # Runs all five dimension checks, computes weighted composite, and prints a
 # single tab-delimited line:
 #   composite\tbelt\tsubtitle\ttest_score\tquality_score\tdep_score\tdoc_score\thygiene_score\ttest_detail\tquality_detail\tdep_detail\tdoc_detail\thygiene_detail
-_run_health_dimensions() {
+_run_dimension_checks() {
     local proj_dir="$1"
 
     local w_tests="${HEALTH_WEIGHT_TESTS:-30}"
@@ -118,7 +118,7 @@ assess_project_health() {
     fi
 
     local dims
-    dims=$(_run_health_dimensions "$proj_dir")
+    dims=$(_run_dimension_checks "$proj_dir")
 
     local composite belt subtitle
     local test_score quality_score dep_score doc_score hygiene_score
@@ -197,7 +197,7 @@ reassess_project_health() {
 
     # Run fresh assessment
     local dims
-    dims=$(_run_health_dimensions "$proj_dir")
+    dims=$(_run_dimension_checks "$proj_dir")
 
     local composite belt subtitle
     local test_score quality_score dep_score doc_score hygiene_score

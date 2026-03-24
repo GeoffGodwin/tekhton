@@ -300,6 +300,8 @@ _hook_causal_log_finalize() {
         PIPELINE_STATUS="$status"
         # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
         CURRENT_STAGE="complete"
+        # shellcheck disable=SC2034  # Explicit: waiting_for: null in final state
+        WAITING_FOR=""
         emit_dashboard_run_state 2>/dev/null || true
     fi
     if command -v emit_dashboard_metrics &>/dev/null; then
@@ -324,26 +326,19 @@ _hook_health_reassess() {
     [[ "$exit_code" -ne 0 ]] && return 0
     [[ "${HEALTH_ENABLED:-true}" != "true" ]] && return 0
     [[ "${HEALTH_REASSESS_ON_COMPLETE:-false}" != "true" ]] && return 0
-
     if ! command -v reassess_project_health &>/dev/null; then
         return 0
     fi
-
     local prev_score=0
     local baseline_file="${PROJECT_DIR:-.}/${HEALTH_BASELINE_FILE:-.claude/HEALTH_BASELINE.json}"
     if [[ -f "$baseline_file" ]]; then
         prev_score=$(_read_json_int "$baseline_file" "composite")
     fi
-
     local new_score
     new_score=$(reassess_project_health "${PROJECT_DIR:-.}" 2>/dev/null || echo "0")
-
-    # Export for RUN_SUMMARY.json and completion banner
     export HEALTH_SCORE="$new_score"
     export HEALTH_PREV_SCORE="$prev_score"
-
-    # Re-emit dashboard health data with post-reassessment scores
-    # (_hook_causal_log_finalize ran earlier and emitted stale pre-reassessment data)
+    # Re-emit dashboard health data (causal_log_finalize emitted stale data)
     if command -v emit_dashboard_health &>/dev/null; then
         emit_dashboard_health 2>/dev/null || true
     fi
@@ -361,6 +356,7 @@ _hook_failure_context() {
     local exit_code="$1"
     [[ "$exit_code" -eq 0 ]] && return 0
 
+    # Runs after causal log archive (hook d) — live CAUSAL_LOG.jsonl still present
     # Write failure context for fast --diagnose startup
     if command -v write_last_failure_context &>/dev/null; then
         local stage="${CURRENT_STAGE:-unknown}"

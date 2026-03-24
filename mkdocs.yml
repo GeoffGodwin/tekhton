@@ -1,0 +1,75 @@
+site_name: Tekhton
+site_description: Multi-agent development pipeline built on Claude
+site_url: https://geoffgodwin.github.io/tekhton/
+repo_url: https://github.com/GeoffGodwin/tekhton
+repo_name: GeoffGodwin/tekhton
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Your First Project: getting-started/first-project.md
+    - Your First Milestone: getting-started/first-milestone.md
+    - Understanding Output: getting-started/understanding-output.md
+  - Guides:
+    - Greenfield Projects: guides/greenfield.md
+    - Brownfield Projects: guides/brownfield.md
+    - Monorepo Setup: guides/monorepo.md
+    - Security Configuration: guides/security-config.md
+    - Watchtower Dashboard: guides/watchtower.md
+    - Planning Phase: guides/planning.md
+  - Reference:
+    - Commands: reference/commands.md
+    - Configuration: reference/configuration.md
+    - Pipeline Stages: reference/stages.md
+    - Agent Roles: reference/agents.md
+    - Template Variables: reference/template-variables.md
+  - Concepts:
+    - Pipeline Flow: concepts/pipeline-flow.md
+    - Milestone DAG: concepts/milestone-dag.md
+    - Health Scoring: concepts/health-scoring.md
+    - Context Budget: concepts/context-budget.md
+  - Troubleshooting:
+    - Using --diagnose: troubleshooting/diagnose.md
+    - Common Errors: troubleshooting/common-errors.md
+    - FAQ: troubleshooting/faq.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true

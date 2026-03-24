@@ -11,10 +11,9 @@ set -euo pipefail
 # Provides:
 #   _check_test_health   — Test file presence, naming, framework detection
 #   _check_code_quality  — Linter config, TODO density, magic numbers
-#   _health_sample_files — Deterministic source file sampler (shared helper)
-#   _health_json_escape  — JSON string escaper (shared helper)
 #
-# Infrastructure checks (_check_dependency_health, _check_doc_quality,
+# Shared helpers (_health_sample_files, _health_json_escape) and
+# infrastructure checks (_check_dependency_health, _check_doc_quality,
 # _check_project_hygiene) live in lib/health_checks_infra.sh.
 # =============================================================================
 
@@ -294,42 +293,4 @@ _check_code_quality() {
     local sub_scores="{\"linter\":${linter_score},\"precommit\":${precommit_score},\"todo_density\":${todo_score},\"magic_numbers\":${magic_score},\"type_safety\":${type_score},\"function_length\":${length_score}}"
 
     echo "code_quality|${score}|${sub_scores}"
-}
-
-# --- Shared helpers -----------------------------------------------------------
-
-# _health_sample_files PROJECT_DIR COUNT
-# Returns a deterministic sorted list of source files for sampling.
-_health_sample_files() {
-    local proj_dir="$1"
-    local count="${2:-20}"
-
-    local src_ext='(py|ts|tsx|js|jsx|go|rs|java|rb|cs|kt|swift|sh)$'
-
-    if git -C "$proj_dir" rev-parse --git-dir &>/dev/null 2>&1; then
-        git -C "$proj_dir" ls-files 2>/dev/null | \
-            grep -E "\\.$src_ext" | \
-            sort | \
-            head -n "$count"
-    else
-        find "$proj_dir" -type f -not -path '*/.git/*' \
-            -not -path '*/node_modules/*' -not -path '*/.venv/*' \
-            -not -path '*/vendor/*' 2>/dev/null | \
-            sed "s|^${proj_dir}/||" | \
-            grep -E "\\.$src_ext" | \
-            sort | \
-            head -n "$count"
-    fi
-}
-
-# _health_json_escape STRING
-# Escapes a string for safe JSON embedding.
-_health_json_escape() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    s="${s//$'\t'/\\t}"
-    printf '%s' "$s"
 }

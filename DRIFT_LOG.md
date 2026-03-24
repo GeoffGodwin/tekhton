@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-23
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-03-23 | "Implement Milestone 17: Pipeline Diagnostics & Recovery Guidance"] `diagnose_rules.sh:299` — `# shellcheck disable=SC2034` is placed above the `_rule_unknown()` function definition line. SC2034 disables apply to the immediately following statement, not the function body, so any suppressed assignment inside the function is not actually covered. Shellcheck reports clean, so benign — but the comment placement may confuse future readers.

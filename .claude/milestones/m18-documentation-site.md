@@ -1,4 +1,9 @@
 #### Milestone 18: Documentation Site (MkDocs + GitHub Pages)
+<!-- milestone-meta
+id: "18"
+status: "in_progress"
+-->
+
 Create a comprehensive documentation site using MkDocs with Material theme,
 deployed via GitHub Pages. Covers: Getting Started guide, command reference,
 configuration guide, concepts explainer, and troubleshooting. Auto-deploys
