@@ -241,6 +241,27 @@ run_complete_loop() {
             fi
 
             if [[ "$acceptance_pass" = true ]]; then
+                # --- Pre-finalization test gate ---
+                # Run tests BEFORE finalize_run() so failures feed back into the
+                # retry loop instead of being swallowed by _hook_final_checks.
+                # Sets _PREFLIGHT_TESTS_PASSED so _hook_final_checks can skip
+                # the redundant re-run inside finalization.
+                _PREFLIGHT_TESTS_PASSED=false
+                export _PREFLIGHT_TESTS_PASSED
+                if [[ "${SKIP_FINAL_CHECKS:-false}" != true ]] && [[ -n "${TEST_CMD:-}" ]]; then
+                    log "Pre-finalization test gate: running ${TEST_CMD}..."
+                    local _preflight_exit=0
+                    bash -c "${TEST_CMD}" >> "$LOG_FILE" 2>&1 || _preflight_exit=$?
+                    if [[ "$_preflight_exit" -ne 0 ]]; then
+                        warn "Pre-finalization test gate failed (exit ${_preflight_exit}). Routing back to coder for fix."
+                        record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
+                            "failed:final_check/test_failure" "$_iter_turns" "$_files_changed"
+                        START_AT="coder"
+                        continue
+                    fi
+                    _PREFLIGHT_TESTS_PASSED=true
+                fi
+
                 # --- SUCCESS ---
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     local _next_ms

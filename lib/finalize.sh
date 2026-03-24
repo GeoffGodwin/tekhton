@@ -58,6 +58,14 @@ _hook_final_checks() {
         FINAL_CHECK_RESULT=1
         return 0
     fi
+    # If the pre-finalization test gate in orchestrate.sh already verified
+    # tests pass, skip the redundant re-run. The gate feeds failures back
+    # into the retry loop; by the time we reach here, tests are known-good.
+    if [[ "${_PREFLIGHT_TESTS_PASSED:-false}" = true ]]; then
+        log "Pre-finalization test gate passed — skipping redundant final checks."
+        FINAL_CHECK_RESULT=0
+        return 0
+    fi
     FINAL_CHECK_RESULT=0
     run_final_checks "$LOG_FILE" || FINAL_CHECK_RESULT=$?
     if [[ "$FINAL_CHECK_RESULT" -ne 0 ]]; then

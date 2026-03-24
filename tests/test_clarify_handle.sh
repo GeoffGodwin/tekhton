@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Test: handle_clarifications() — file creation, write format, non-blocking logging,
-#       and abort/skip behavior in test mode.
+#       and abort behavior when no terminal is available.
 #
 # Note on stdin: handle_clarifications reads answers via "read < $input_fd" inside a
 # "while ... done < $blocking_file" loop. The while-loop redirect replaces fd 0 with
-# the blocking file, so /dev/stdin would re-open the blocking file. In production,
-# /dev/tty is always used (when available) to bypass this. In TEKHTON_TEST_MODE,
-# /dev/tty is skipped, so read gets EOF and the || fallback sets answer="skip".
-# Tests below verify the observable file-output behavior for each code path.
+# the blocking file, so /dev/stdin would re-open the blocking file and read question
+# text as answers — a known bug that was fixed. Now, when /dev/tty is unavailable
+# (TEKHTON_TEST_MODE or non-interactive context), handle_clarifications returns 1
+# (abort) instead of producing garbage answers.
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -112,135 +112,54 @@ else
 fi
 
 # ============================================================
-# Test: blocking item creates CLARIFICATIONS.md with timestamp header
+# Test: blocking items without /dev/tty — returns 1 (abort)
 # ============================================================
-echo "=== handle_clarifications — file creation and header format ==="
+echo "=== handle_clarifications — no terminal aborts ==="
 
 rm -f "$BLOCKING_FILE" "$NB_FILE" "$CLARIFICATIONS_FILE"
 echo "Which database should we use?" > "$BLOCKING_FILE"
 
-# In test mode, stdin = blocking file (EOF after question read) → answer="skip"
-handle_clarifications 2>/dev/null || true
-
-if [[ -f "$CLARIFICATIONS_FILE" ]]; then
-    pass "CLARIFICATIONS.md created when blocking items present"
+# In test mode, /dev/tty is not used → handle_clarifications returns 1
+if handle_clarifications 2>/dev/null; then
+    fail "Should return 1 when no terminal available for blocking items"
 else
-    fail "CLARIFICATIONS.md should be created for blocking items"
+    pass "Returns 1 (abort) when no terminal available"
 fi
 
-# Verify timestamp header exists (format: # Clarifications — YYYY-MM-DD HH:MM:SS)
-if grep -qE "^# Clarifications — [0-9]{4}-[0-9]{2}-[0-9]{2}" "$CLARIFICATIONS_FILE"; then
-    pass "Timestamp header written in correct format"
+# CLARIFICATIONS.md should NOT be created (aborted before writing)
+if [[ ! -f "$CLARIFICATIONS_FILE" ]]; then
+    pass "CLARIFICATIONS.md not created when no terminal (correct abort)"
 else
-    fail "Missing or malformed timestamp header"
-fi
-
-# Verify Q header format
-if grep -q "^## Q: Which database" "$CLARIFICATIONS_FILE"; then
-    pass "Question written with '## Q:' prefix"
-else
-    fail "Question not found with expected '## Q:' prefix"
-fi
-
-# Verify A format exists
-if grep -q "^\*\*A:\*\*" "$CLARIFICATIONS_FILE"; then
-    pass "Answer line written with '**A:**' prefix"
-else
-    fail "Answer line missing '**A:**' prefix"
-fi
-
-# In test mode (TEKHTON_TEST_MODE=true), /dev/tty is not used, so /dev/stdin
-# reopens the questions file at offset 0 — the answer is the question text.
-# Verify an **A:** line was written.
-A_LINE=$(grep "^\*\*A:\*\*" "$CLARIFICATIONS_FILE" | head -1 || echo "")
-if [[ -n "$A_LINE" ]]; then
-    pass "Answer line written to CLARIFICATIONS.md in test mode"
-else
-    fail "No **A:** line found in CLARIFICATIONS.md"
+    fail "CLARIFICATIONS.md should not be created on abort"
 fi
 
 # ============================================================
-# Test: multiple blocking questions — all processed
+# Test: multiple blocking questions without /dev/tty — returns 1
 # ============================================================
-echo "=== handle_clarifications — multiple blocking questions ==="
+echo "=== handle_clarifications — multiple questions, no terminal ==="
 
 rm -f "$BLOCKING_FILE" "$NB_FILE" "$CLARIFICATIONS_FILE"
 printf "Question one?\nQuestion two?\n" > "$BLOCKING_FILE"
 
-handle_clarifications 2>/dev/null || true
-
-if [[ -f "$CLARIFICATIONS_FILE" ]]; then
-    pass "CLARIFICATIONS.md created for multiple blocking questions"
+if handle_clarifications 2>/dev/null; then
+    fail "Should return 1 with multiple blocking questions and no terminal"
 else
-    fail "CLARIFICATIONS.md should be created"
-fi
-
-# Q1 should be in the file
-if grep -q "Question one" "$CLARIFICATIONS_FILE"; then
-    pass "First question written to CLARIFICATIONS.md"
-else
-    fail "First question not found in CLARIFICATIONS.md"
+    pass "Returns 1 (abort) for multiple blocking questions without terminal"
 fi
 
 # ============================================================
-# Test: append mode — second run appends with new timestamp header
+# Test: non-blocking + blocking combined without /dev/tty — returns 1
 # ============================================================
-echo "=== handle_clarifications — append mode ==="
-
-rm -f "$BLOCKING_FILE" "$NB_FILE" "$CLARIFICATIONS_FILE"
-echo "First question?" > "$BLOCKING_FILE"
-handle_clarifications 2>/dev/null || true
-
-FIRST_LINES=$(wc -l < "$CLARIFICATIONS_FILE" | tr -d '[:space:]')
-
-rm -f "$BLOCKING_FILE"
-echo "Second question?" > "$BLOCKING_FILE"
-handle_clarifications 2>/dev/null || true
-
-SECOND_LINES=$(wc -l < "$CLARIFICATIONS_FILE" | tr -d '[:space:]')
-
-if [[ "$SECOND_LINES" -gt "$FIRST_LINES" ]]; then
-    pass "File grows on second call (append mode)"
-else
-    fail "File should grow when handle_clarifications called twice"
-fi
-
-# Both questions should be in the file
-if grep -q "First question" "$CLARIFICATIONS_FILE" && grep -q "Second question" "$CLARIFICATIONS_FILE"; then
-    pass "Both questions present after two calls"
-else
-    fail "Expected both questions in CLARIFICATIONS.md after two calls"
-fi
-
-# Should have two timestamp headers
-HEADER_COUNT=$(grep -c "^# Clarifications —" "$CLARIFICATIONS_FILE" || echo "0")
-if [[ "$HEADER_COUNT" -eq 2 ]]; then
-    pass "Two timestamp headers (one per call) in append mode"
-else
-    fail "Expected 2 timestamp headers, got ${HEADER_COUNT}"
-fi
-
-# ============================================================
-# Test: non-blocking + blocking combined — non-blocking doesn't create file
-# ============================================================
-echo "=== handle_clarifications — mixed nb+blocking ==="
+echo "=== handle_clarifications — mixed nb+blocking, no terminal ==="
 
 rm -f "$BLOCKING_FILE" "$NB_FILE" "$CLARIFICATIONS_FILE"
 echo "Non-blocking assumption" > "$NB_FILE"
 echo "Blocking question?" > "$BLOCKING_FILE"
 
-handle_clarifications 2>/dev/null || true
-
-if [[ -f "$CLARIFICATIONS_FILE" ]]; then
-    pass "CLARIFICATIONS.md created when blocking items present alongside non-blocking"
+if handle_clarifications 2>/dev/null; then
+    fail "Should return 1 when blocking items present without terminal"
 else
-    fail "CLARIFICATIONS.md should be created when blocking items present"
-fi
-
-if grep -q "Blocking question" "$CLARIFICATIONS_FILE"; then
-    pass "Blocking question recorded in CLARIFICATIONS.md"
-else
-    fail "Blocking question not found in CLARIFICATIONS.md"
+    pass "Returns 1 (abort) for mixed items without terminal"
 fi
 
 # ============================================================
