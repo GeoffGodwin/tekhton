@@ -232,6 +232,14 @@ set -euo pipefail
 : "${TEST_BASELINE_STUCK_THRESHOLD:=2}"
 : "${TEST_BASELINE_PASS_ON_STUCK:=false}"
 
+# --- Test audit defaults (Milestone 20) ---
+: "${TEST_AUDIT_ENABLED:=true}"
+: "${TEST_AUDIT_MAX_TURNS:=8}"
+: "${TEST_AUDIT_MAX_REWORK_CYCLES:=1}"
+: "${TEST_AUDIT_ORPHAN_DETECTION:=true}"
+: "${TEST_AUDIT_WEAKENING_DETECTION:=true}"
+: "${TEST_AUDIT_REPORT_FILE:=TEST_AUDIT_REPORT.md}"
+
 # --- Health scoring defaults (Milestone 15) ---
 : "${HEALTH_ENABLED:=true}"
 : "${HEALTH_REASSESS_ON_COMPLETE:=false}"
@@ -331,6 +339,8 @@ _clamp_config_value SERENA_STARTUP_TIMEOUT 120
 _clamp_config_value SERENA_MAX_RETRIES 10
 _clamp_config_value CAUSAL_LOG_RETENTION_RUNS 200
 _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
+_clamp_config_value TEST_AUDIT_MAX_TURNS 50
+_clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
 _clamp_config_value DASHBOARD_HISTORY_DEPTH 100
 _clamp_config_value DASHBOARD_REFRESH_INTERVAL 300

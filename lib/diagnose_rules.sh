@@ -297,6 +297,30 @@ _rule_transient_error() {
 
 # _rule_unknown
 # Fallback catch-all — always matches.
+# _rule_test_audit_failure
+# Detect test audit NEEDS_WORK verdict after max rework cycles.
+_rule_test_audit_failure() {
+    local audit_file="${PROJECT_DIR:-.}/${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+    [[ -f "$audit_file" ]] || return 1
+
+    # Check for NEEDS_WORK verdict
+    if ! grep -qi 'Verdict:.*NEEDS_WORK' "$audit_file" 2>/dev/null; then
+        return 1
+    fi
+
+    DIAG_CLASSIFICATION="TEST_AUDIT_FAILURE"
+    DIAG_CONFIDENCE="high"
+    DIAG_SUGGESTIONS=(
+        "Test audit found integrity issues the tester couldn't fix."
+        "Review TEST_AUDIT_REPORT.md for specific findings."
+        "Options:"
+        "  1. Fix flagged tests manually (see HIGH severity findings)"
+        "  2. Remove orphaned tests that import deleted modules"
+        "  3. Increase TEST_AUDIT_MAX_REWORK_CYCLES if more auto-fix attempts are warranted"
+    )
+    return 0
+}
+
 _rule_unknown() {
     # shellcheck disable=SC2034
     DIAG_CLASSIFICATION="UNKNOWN"  # DIAG_* are globals read by the caller
@@ -326,5 +350,6 @@ DIAGNOSE_RULES=(
     "_rule_turn_exhaustion"
     "_rule_split_depth"
     "_rule_transient_error"
+    "_rule_test_audit_failure"
     "_rule_unknown"
 )

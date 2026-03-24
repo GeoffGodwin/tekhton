@@ -107,6 +107,17 @@ _hook_emit_run_summary() {
         quota_json=$(get_quota_stats_json)
     fi
 
+    # Test audit verdict (M20)
+    local test_audit_verdict="skipped"
+    if [[ "${TEST_AUDIT_ENABLED:-true}" = "true" ]]; then
+        local _audit_rpt="${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+        if [[ -f "$_audit_rpt" ]]; then
+            test_audit_verdict=$(grep -oiE 'Verdict:\s*(NEEDS_WORK|PASS|CONCERNS)' "$_audit_rpt" 2>/dev/null \
+                | head -1 | sed 's/.*:\s*//' | tr '[:lower:]' '[:upper:]' || echo "unknown")
+            : "${test_audit_verdict:=unknown}"
+        fi
+    fi
+
     # Test baseline status
     local baseline_status="disabled"
     if [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]]; then
@@ -131,7 +142,7 @@ _hook_emit_run_summary() {
     safe_milestone=$(printf '%s' "${_CURRENT_MILESTONE:-none}" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
     # Write JSON via printf (proper escaping, no heredoc variable issues)
-    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "timestamp": "%s"\n}\n' \
+    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "timestamp": "%s"\n}\n' \
         "$safe_milestone" \
         "$outcome" \
         "${_ORCH_ATTEMPT:-1}" \
@@ -148,6 +159,7 @@ _hook_emit_run_summary() {
         "$intake_confidence" \
         "$quota_json" \
         "$baseline_status" \
+        "$test_audit_verdict" \
         "$timestamp_iso" \
         > "$summary_file"
 

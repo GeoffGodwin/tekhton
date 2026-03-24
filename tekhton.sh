@@ -460,6 +460,23 @@ if [ "${1:-}" = "--plan-from-index" ]; then
     exit 0
 fi
 
+# --- Early --audit-tests check (runs before execution pipeline) --------------
+
+if [ "${1:-}" = "--audit-tests" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/prompts.sh"
+    source "${TEKHTON_HOME}/lib/agent.sh"
+    source "${TEKHTON_HOME}/lib/config.sh"
+    source "${TEKHTON_HOME}/lib/test_audit.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    load_config
+
+    run_standalone_test_audit
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # --- Early --health check (runs before execution pipeline) ------------------
 
 if [ "${1:-}" = "--health" ]; then
@@ -589,6 +606,7 @@ source "${TEKHTON_HOME}/stages/coder.sh"
 source "${TEKHTON_HOME}/lib/security_helpers.sh"
 source "${TEKHTON_HOME}/stages/security.sh"
 source "${TEKHTON_HOME}/stages/review.sh"
+source "${TEKHTON_HOME}/lib/test_audit.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
 source "${TEKHTON_HOME}/stages/cleanup.sh"
 
@@ -635,6 +653,7 @@ usage() {
         echo "  --diagnose                Diagnose last failure with recovery suggestions"
         echo "  --report, report          Print summary of last pipeline run"
         echo "  --health                  Run standalone project health assessment"
+        echo "  --audit-tests             Audit ALL test files for integrity issues"
         echo ""
         echo "Maintenance:"
         echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
@@ -677,6 +696,7 @@ usage() {
         echo "  --diagnose          Diagnose last failure with recovery suggestions"
         echo "  --report            Summarize last run's results"
         echo "  --health            Run project health assessment"
+        echo "  --audit-tests       Audit all tests for integrity issues"
         echo ""
         echo "Maintenance:"
         echo "  --replan            Update existing plan"

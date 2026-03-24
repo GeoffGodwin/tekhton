@@ -141,8 +141,25 @@ emit_dashboard_reports() {
     local reviewer
     reviewer=$(_parse_reviewer_report "REVIEWER_REPORT.md")
 
+    # Test audit verdict (M20)
+    local audit_verdict="skipped"
+    local audit_file="${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+    if [[ -f "$audit_file" ]]; then
+        audit_verdict=$(grep -oiE 'Verdict:\s*(NEEDS_WORK|PASS|CONCERNS)' "$audit_file" 2>/dev/null \
+            | head -1 | sed 's/.*:\s*//' | tr '[:lower:]' '[:upper:]' || echo "skipped")
+        : "${audit_verdict:=skipped}"
+    fi
+    local high_findings=0
+    local medium_findings=0
+    if [[ -f "$audit_file" ]]; then
+        high_findings=$(grep -c 'Severity: HIGH' "$audit_file" 2>/dev/null || echo "0")
+        medium_findings=$(grep -c 'Severity: MEDIUM' "$audit_file" 2>/dev/null || echo "0")
+    fi
+    local test_audit
+    test_audit="{\"verdict\":\"${audit_verdict}\",\"high_findings\":${high_findings},\"medium_findings\":${medium_findings}}"
+
     local json
-    json="{\"intake\":${intake},\"coder\":${coder},\"reviewer\":${reviewer}}"
+    json="{\"intake\":${intake},\"coder\":${coder},\"reviewer\":${reviewer},\"test_audit\":${test_audit}}"
     _write_js_file "${dash_dir}/data/reports.js" "TK_REPORTS" "$json"
 }
 
