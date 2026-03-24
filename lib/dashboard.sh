@@ -21,7 +21,7 @@ set -euo pipefail
 
 # Source report parsers
 # shellcheck source=lib/dashboard_parsers.sh
-source "$(dirname "${BASH_SOURCE[0]}")/dashboard_parsers.sh"
+source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
 
 # --- Enable check -------------------------------------------------------------
 
@@ -56,11 +56,12 @@ init_dashboard() {
     _write_js_file "${dash_dir}/data/reports.js" "TK_REPORTS" '{}'
     _write_js_file "${dash_dir}/data/metrics.js" "TK_METRICS" '{"runs":[]}'
     _write_js_file "${dash_dir}/data/health.js" "TK_HEALTH" '{"available":false}'
+    _write_js_file "${dash_dir}/data/diagnosis.js" "TK_DIAGNOSIS" '{"available":false}'
 }
 
 # _copy_static_files DASH_DIR
-# Copies templates/watchtower/* (index.html, style.css, app.js) into the
-# dashboard directory. Only overwrites if source is newer than destination.
+# Unconditionally copies templates/watchtower/* (index.html, style.css, app.js)
+# into the dashboard directory.
 _copy_static_files() {
     local dash_dir="$1"
     local src_dir="${TEKHTON_HOME:-$(dirname "$(dirname "${BASH_SOURCE[0]}")")}/templates/watchtower"

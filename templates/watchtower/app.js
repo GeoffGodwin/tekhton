@@ -712,6 +712,8 @@
 
   function trendArrow(runs, field) {
     if (runs.length < 20) return '';
+    // Assumes runs[] is sorted newest-first (as emitted by dashboard_parsers.sh).
+    // recent = runs[0..9], prior = runs[10..19].
     var recent = runs.slice(0, 10);
     var prior = runs.slice(10, 20);
     var recentAvg = 0, priorAvg = 0;

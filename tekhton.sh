@@ -35,6 +35,8 @@
 #   --force-audit         Force architect audit regardless of threshold
 #   --add-milestone "desc" Create a scoped milestone via intake agent (no run)
 #   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
+#   --diagnose            Diagnose last failure and print recovery suggestions
+#   --report, report      Print one-screen summary of last pipeline run
 #   --health              Run standalone project health assessment and exit
 #   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
 #   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
@@ -68,9 +70,16 @@ _tekhton_cleanup() {
             echo -e "\033[0;31m[✗] Log:          ${LOG_FILE}\033[0m" >&2
         fi
         echo -e "\033[0;31m[✗]\033[0m" >&2
-        echo -e "\033[0;31m[✗] This is likely a command that returned non-zero under\033[0m" >&2
-        echo -e "\033[0;31m[✗] 'set -euo pipefail'. Common causes: grep found no\033[0m" >&2
-        echo -e "\033[0;31m[✗] matches, unset variable, or a pipeline component failed.\033[0m" >&2
+
+        # --- Smart crash first-aid (M17) ---
+        if command -v print_crash_first_aid &>/dev/null; then
+            print_crash_first_aid 2>/dev/null || true
+        else
+            echo -e "\033[0;31m[✗] This is likely a command that returned non-zero under\033[0m" >&2
+            echo -e "\033[0;31m[✗] 'set -euo pipefail'. Common causes: grep found no\033[0m" >&2
+            echo -e "\033[0;31m[✗] matches, unset variable, or a pipeline component failed.\033[0m" >&2
+        fi
+        echo -e "\033[1;36m[i] Run 'tekhton --diagnose' for recovery suggestions.\033[0m" >&2
         echo >&2
 
         # --- Record metrics on crash (12.3) -----------------------------------
@@ -376,6 +385,38 @@ if [ "${1:-}" = "--health" ]; then
     exit 0
 fi
 
+# --- Early --diagnose check (runs before execution pipeline) -----------------
+
+if [ "${1:-}" = "--diagnose" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/causality.sh"
+    source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
+    source "${TEKHTON_HOME}/lib/diagnose.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    # Set defaults for state file paths
+    : "${PIPELINE_STATE_FILE:=${PROJECT_DIR}/.claude/PIPELINE_STATE.md}"
+    : "${CAUSAL_LOG_FILE:=${PROJECT_DIR}/.claude/logs/CAUSAL_LOG.jsonl}"
+
+    run_diagnose
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
+# --- Early --report / report check (runs before execution pipeline) ----------
+
+if [ "${1:-}" = "--report" ] || [ "${1:-}" = "report" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/report.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    : "${PIPELINE_STATE_FILE:=${PROJECT_DIR}/.claude/PIPELINE_STATE.md}"
+
+    print_run_report
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # --- Acquire pipeline lock (execution pipeline only) -------------------------
 _check_pipeline_lock
 
@@ -430,6 +471,8 @@ source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/dashboard.sh"
+source "${TEKHTON_HOME}/lib/report.sh"
+source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
@@ -465,6 +508,8 @@ usage() {
     echo "  --rescan --full           Force full re-crawl regardless of change volume"
     echo "  --init --full             Run init + synthesis in one command"
     echo "  --status                  Print saved pipeline state and exit (no run)"
+    echo "  --diagnose                Diagnose last failure with recovery suggestions"
+    echo "  --report, report          Print one-screen summary of last pipeline run"
     echo "  --metrics                 Print run metrics dashboard and exit"
     echo "  --version, -v             Print version and exit"
     echo "  --help, -h                Show this help and exit"
@@ -525,20 +570,35 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
         usage 1
     fi
 
-    echo
-    warn "No task given — found saved pipeline state:"
-    echo "────────────────────────────────────────"
-    cat "$PIPELINE_STATE_FILE"
-    echo "────────────────────────────────────────"
-    echo
     SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_REASON=$(awk '/^## Exit Reason$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_STAGE=$(awk '/^## Exit Stage$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_MILESTONE=$(awk '/^## Milestone$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+
+    # Enhanced resume prompt (M17): show structured context
+    echo
+    echo -e "\033[1mFound saved pipeline state:\033[0m"
+    echo -e "  Task:       \033[1m${SAVED_TASK}\033[0m"
+    echo -e "  Stopped at: \033[1m${SAVED_STAGE:-unknown}\033[0m"
+    echo -e "  Reason:     ${SAVED_REASON:-unknown}"
+    if [[ -n "$SAVED_MILESTONE" ]] && [[ "$SAVED_MILESTONE" != "none" ]]; then
+        echo -e "  Milestone:  ${SAVED_MILESTONE}"
+    fi
+    # Enrich from LAST_FAILURE_CONTEXT.json when available
+    local_failure_ctx="${PROJECT_DIR}/.claude/LAST_FAILURE_CONTEXT.json"
+    if [ -f "$local_failure_ctx" ]; then
+        local_classification=$(grep -oP '"classification"\s*:\s*"\K[^"]+' "$local_failure_ctx" 2>/dev/null || true)
+        if [ -n "$local_classification" ]; then
+            echo -e "  Diagnosis:  ${local_classification}"
+        fi
+    fi
+    echo
+
     # Split the saved flag string into an array so multi-word flags
     # (e.g. "--milestone --start-at tester") are passed as separate arguments
     read -ra SAVED_RESUME_FLAGS <<< "$SAVED_RESUME_FLAG"
 
-    warn "Exit reason: ${SAVED_REASON}"
     warn "Will resume with: $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
     echo
     log "Continue? [y/n/fresh]"

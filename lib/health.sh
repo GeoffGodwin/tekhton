@@ -46,19 +46,14 @@ _get_belt_subtitle() {
     fi
 }
 
-# --- Core assessment ----------------------------------------------------------
+# --- Shared dimension evaluation ----------------------------------------------
 
-# assess_project_health PROJECT_DIR
-# Runs all dimension checks and produces composite score.
-# Writes HEALTH_REPORT.md and HEALTH_BASELINE.json.
-# Returns: composite score on stdout.
-assess_project_health() {
-    local proj_dir="${1:-${PROJECT_DIR:-.}}"
-
-    if [[ "${HEALTH_ENABLED:-true}" != "true" ]]; then
-        echo "0"
-        return 0
-    fi
+# _run_health_dimensions PROJECT_DIR
+# Runs all five dimension checks, computes weighted composite, and prints a
+# single tab-delimited line:
+#   composite\tbelt\tsubtitle\ttest_score\tquality_score\tdep_score\tdoc_score\thygiene_score\ttest_detail\tquality_detail\tdep_detail\tdoc_detail\thygiene_detail
+_run_health_dimensions() {
+    local proj_dir="$1"
 
     local w_tests="${HEALTH_WEIGHT_TESTS:-30}"
     local w_quality="${HEALTH_WEIGHT_QUALITY:-25}"
@@ -96,10 +91,46 @@ assess_project_health() {
     [[ "$composite" -gt 100 ]] && composite=100
     [[ "$composite" -lt 0 ]] && composite=0
 
-    local belt
+    local belt subtitle
     belt=$(get_health_belt "$composite")
-    local subtitle
     subtitle=$(_get_belt_subtitle "$composite")
+
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$composite" "$belt" "$subtitle" \
+        "$test_score" "$quality_score" "$dep_score" "$doc_score" "$hygiene_score" \
+        "$test_detail" "$quality_detail" "$dep_detail" "$doc_detail" "$hygiene_detail"
+}
+
+# --- Core assessment ----------------------------------------------------------
+
+# assess_project_health PROJECT_DIR
+# Runs all dimension checks and produces composite score.
+# Writes HEALTH_REPORT.md and HEALTH_BASELINE.json.
+# Returns: composite score on stdout.
+assess_project_health() {
+    local proj_dir="${1:-${PROJECT_DIR:-.}}"
+
+    if [[ "${HEALTH_ENABLED:-true}" != "true" ]]; then
+        echo "0"
+        return 0
+    fi
+
+    local dims
+    dims=$(_run_health_dimensions "$proj_dir")
+
+    local composite belt subtitle
+    local test_score quality_score dep_score doc_score hygiene_score
+    local test_detail quality_detail dep_detail doc_detail hygiene_detail
+    IFS=$'\t' read -r composite belt subtitle \
+        test_score quality_score dep_score doc_score hygiene_score \
+        test_detail quality_detail dep_detail doc_detail hygiene_detail <<< "$dims"
+
+    # Weights needed for baseline JSON
+    local w_tests="${HEALTH_WEIGHT_TESTS:-30}"
+    local w_quality="${HEALTH_WEIGHT_QUALITY:-25}"
+    local w_deps="${HEALTH_WEIGHT_DEPS:-15}"
+    local w_docs="${HEALTH_WEIGHT_DOCS:-15}"
+    local w_hygiene="${HEALTH_WEIGHT_HYGIENE:-15}"
 
     # Write HEALTH_BASELINE.json
     local baseline_file="${proj_dir}/${HEALTH_BASELINE_FILE:-.claude/HEALTH_BASELINE.json}"
@@ -162,43 +193,23 @@ reassess_project_health() {
         prev_hygiene=$(_read_json_int "$baseline_file" "project_hygiene.*score")
     fi
 
-    # Run fresh assessment (this overwrites the baseline file)
+    # Run fresh assessment
+    local dims
+    dims=$(_run_health_dimensions "$proj_dir")
+
+    local composite belt subtitle
+    local test_score quality_score dep_score doc_score hygiene_score
+    local test_detail quality_detail dep_detail doc_detail hygiene_detail
+    IFS=$'\t' read -r composite belt subtitle \
+        test_score quality_score dep_score doc_score hygiene_score \
+        test_detail quality_detail dep_detail doc_detail hygiene_detail <<< "$dims"
+
+    # Weights needed for baseline JSON
     local w_tests="${HEALTH_WEIGHT_TESTS:-30}"
     local w_quality="${HEALTH_WEIGHT_QUALITY:-25}"
     local w_deps="${HEALTH_WEIGHT_DEPS:-15}"
     local w_docs="${HEALTH_WEIGHT_DOCS:-15}"
     local w_hygiene="${HEALTH_WEIGHT_HYGIENE:-15}"
-
-    local test_result quality_result dep_result doc_result hygiene_result
-    test_result=$(_check_test_health "$proj_dir")
-    quality_result=$(_check_code_quality "$proj_dir")
-    dep_result=$(_check_dependency_health "$proj_dir")
-    doc_result=$(_check_doc_quality "$proj_dir")
-    hygiene_result=$(_check_project_hygiene "$proj_dir")
-
-    local test_score quality_score dep_score doc_score hygiene_score
-    test_score=$(echo "$test_result" | cut -d'|' -f2)
-    quality_score=$(echo "$quality_result" | cut -d'|' -f2)
-    dep_score=$(echo "$dep_result" | cut -d'|' -f2)
-    doc_score=$(echo "$doc_result" | cut -d'|' -f2)
-    hygiene_score=$(echo "$hygiene_result" | cut -d'|' -f2)
-
-    local test_detail quality_detail dep_detail doc_detail hygiene_detail
-    test_detail=$(echo "$test_result" | cut -d'|' -f3-)
-    quality_detail=$(echo "$quality_result" | cut -d'|' -f3-)
-    dep_detail=$(echo "$dep_result" | cut -d'|' -f3-)
-    doc_detail=$(echo "$doc_result" | cut -d'|' -f3-)
-    hygiene_detail=$(echo "$hygiene_result" | cut -d'|' -f3-)
-
-    local composite=$(( (test_score * w_tests + quality_score * w_quality + \
-        dep_score * w_deps + doc_score * w_docs + hygiene_score * w_hygiene) / 100 ))
-    [[ "$composite" -gt 100 ]] && composite=100
-    [[ "$composite" -lt 0 ]] && composite=0
-
-    local belt
-    belt=$(get_health_belt "$composite")
-    local subtitle
-    subtitle=$(_get_belt_subtitle "$composite")
 
     # Compute deltas
     local d_composite=$((composite - prev_composite))

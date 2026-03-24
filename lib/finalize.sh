@@ -77,7 +77,7 @@ _hook_record_metrics() {
     record_run_metrics
 }
 
-# d. Clear resolved non-blocking notes (success only)
+# e. Clear resolved non-blocking notes (success only)
 _hook_cleanup_resolved() {
     local exit_code="$1"
     [[ "$exit_code" -ne 0 ]] && return 0
@@ -86,7 +86,7 @@ _hook_cleanup_resolved() {
     fi
 }
 
-# e. Resolve human notes with exit code awareness
+# f. Resolve human notes with exit code awareness
 #    In HUMAN_MODE with a CURRENT_NOTE_LINE, resolves just the single note
 #    via resolve_single_note(). This runs on BOTH success and failure so that
 #    failure resets [~] → [ ]. Otherwise falls through to bulk resolution
@@ -122,13 +122,13 @@ _hook_resolve_notes() {
     fi
 }
 
-# f. Archive reports
+# g. Archive reports
 _hook_archive_reports() {
     local exit_code="$1"
     archive_reports "$LOG_DIR" "$TIMESTAMP"
 }
 
-# g. Mark milestone done (success + milestone mode + acceptance passed)
+# h. Mark milestone done (success + milestone mode + acceptance passed)
 _hook_mark_done() {
     local exit_code="$1"
     [[ "$exit_code" -ne 0 ]] && return 0
@@ -142,8 +142,8 @@ _hook_mark_done() {
     fi
 }
 
-# h. Auto-commit or interactive commit prompt
-#    Also tags milestone-complete (post-commit) if milestone is done.
+# (Helper function — not registered in finalization sequence)
+#    Tags milestone-complete (post-commit) if milestone is done.
 
 _tag_milestone_if_complete() {
     [[ "$MILESTONE_MODE" != true ]] && return 0
@@ -154,6 +154,7 @@ _tag_milestone_if_complete() {
     fi
 }
 
+# m. Auto-commit or interactive commit prompt
 _hook_commit() {
     local exit_code="$1"
     [[ "$exit_code" -ne 0 ]] && return 0
@@ -278,7 +279,7 @@ _hook_clear_state() {
     fi
 }
 
-# l. Emit pipeline_end event and archive causal log (Milestone 13)
+# d. Emit pipeline_end event and archive causal log (Milestone 13)
 _hook_causal_log_finalize() {
     local exit_code="$1"
     local status="success"
@@ -317,7 +318,7 @@ _hook_causal_log_finalize() {
     fi
 }
 
-# m. Health re-assessment (Milestone 15) — optional, on success only
+# k. Health re-assessment (Milestone 15) — optional, on success only
 _hook_health_reassess() {
     local exit_code="$1"
     [[ "$exit_code" -ne 0 ]] && return 0
@@ -342,9 +343,33 @@ _hook_health_reassess() {
     export HEALTH_PREV_SCORE="$prev_score"
 }
 
-# Source RUN_SUMMARY.json emission hook (M16)
+# l. Emit RUN_SUMMARY.json (M16)
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary.sh"
+
+# n. Write LAST_FAILURE_CONTEXT.json and emit diagnose hint (M17, failure only)
+_hook_failure_context() {
+    local exit_code="$1"
+    [[ "$exit_code" -eq 0 ]] && return 0
+
+    # Write failure context for fast --diagnose startup
+    if command -v write_last_failure_context &>/dev/null; then
+        local stage="${CURRENT_STAGE:-unknown}"
+        # Classify failure inline if diagnose_rules.sh is loaded
+        local classification="UNKNOWN"
+        if command -v classify_failure_diag &>/dev/null; then
+            _read_diagnostic_context 2>/dev/null || true
+            classify_failure_diag 2>/dev/null || true
+            classification="${DIAG_CLASSIFICATION:-UNKNOWN}"
+        fi
+        write_last_failure_context "$classification" "$stage" "failure" 2>/dev/null || true
+    fi
+
+    # Emit dashboard diagnosis data
+    if command -v emit_dashboard_diagnosis &>/dev/null; then
+        emit_dashboard_diagnosis 2>/dev/null || true
+    fi
+}
 
 # --- Hook registration (at source-time) ---
 # Registration order IS execution order.
@@ -362,6 +387,7 @@ register_finalize_hook "_hook_archive_milestone"
 register_finalize_hook "_hook_clear_state"
 register_finalize_hook "_hook_health_reassess"
 register_finalize_hook "_hook_emit_run_summary"
+register_finalize_hook "_hook_failure_context"
 register_finalize_hook "_hook_commit"
 # --- Orchestrator ---
 # finalize_run PIPELINE_EXIT_CODE

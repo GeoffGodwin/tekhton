@@ -276,7 +276,7 @@ _check_code_quality() {
         done <<< "$sample_files"
 
         local sample_count
-        sample_count=$(echo "$sample_files" | grep -c '.' || true)
+        [[ -z "$sample_files" ]] && sample_count=0 || sample_count=$(echo "$sample_files" | wc -l)
         if [[ "$sample_count" -gt 0 ]] && [[ "$long_funcs" -gt 0 ]]; then
             local long_pct=$(( (long_funcs * 100) / sample_count ))
             if [[ "$long_pct" -ge 50 ]]; then length_score=0
