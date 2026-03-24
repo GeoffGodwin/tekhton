@@ -1,8 +1,10 @@
+
 #### Milestone 18: Documentation Site (MkDocs + GitHub Pages)
 <!-- milestone-meta
 id: "18"
-status: "in_progress"
+status: "done"
 -->
+<!-- PM-tweaked: 2026-03-24 -->
 
 Create a comprehensive documentation site using MkDocs with Material theme,
 deployed via GitHub Pages. Covers: Getting Started guide, command reference,
@@ -95,6 +97,11 @@ Files to create:
         permalink: true
   ```
 
+- `docs/requirements.txt` — MkDocs dependencies (separate from tools/requirements.txt):
+  ```
+  mkdocs-material>=9.0
+  ```
+
 - `docs/index.md` — Landing page:
   - Hero: "One intent. Many hands." tagline + one-paragraph description
   - Quick start: 3-command install + init + run example
@@ -160,14 +167,14 @@ Files to create:
 
 - `docs/guides/watchtower.md` — Watchtower dashboard guide:
   - How to open it
-  - Tour of each tab with screenshots
+  - Tour of each tab with screenshots (placeholder `<!-- TODO: screenshot -->` comments acceptable for initial merge; regenerate when Watchtower UI stabilizes)
   - Troubleshooting (Safari file:// restrictions, etc.)
   - Verbosity levels
 
 - `docs/reference/commands.md` — Complete command reference:
   - Every flag and option with examples
   - --init, --plan, --milestone, --complete, --auto-advance, --diagnose,
-    --health, --resume, --start-at, --skip-security, --human, --replan, etc.
+    --health, --resume, --start-at, --skip-security, --human, --replan, --docs, etc.
 
 - `docs/reference/configuration.md` — Complete pipeline.conf reference:
   - Every config key, default value, valid range, and explanation
@@ -208,6 +215,9 @@ Files to create:
   - Links to milestone specs for details
 
 - `.github/workflows/docs.yml` — GitHub Actions workflow:
+
+  [PM: The original workflow was missing the `actions/upload-pages-artifact` step required before `actions/deploy-pages@v4`. Without it, the deploy step has no artifact to publish and the workflow fails. Fixed below:]
+
   ```yaml
   name: Deploy Docs
   on:
@@ -215,23 +225,30 @@ Files to create:
       branches: [main]
       paths: ['docs/**', 'mkdocs.yml']
   permissions:
+    contents: read
     pages: write
     id-token: write
   jobs:
     deploy:
       runs-on: ubuntu-latest
+      environment:
+        name: github-pages
+        url: ${{ steps.deployment.outputs.page_url }}
       steps:
         - uses: actions/checkout@v4
         - uses: actions/setup-python@v5
           with:
             python-version: '3.x'
-        - run: pip install mkdocs-material
+        - run: pip install -r docs/requirements.txt
         - run: mkdocs build
-        - uses: actions/deploy-pages@v4
+        - uses: actions/upload-pages-artifact@v3
           with:
-            artifact_name: github-pages
+            path: site/
+        - id: deployment
+          uses: actions/deploy-pages@v4
   ```
   Deploys only when docs/ or mkdocs.yml change. Zero manual intervention.
+  Note: GitHub Pages must be enabled in the repo Settings → Pages → Source: GitHub Actions.
 
 Files to modify:
 - `.gitignore` — Add `site/` (MkDocs build output directory).
@@ -239,11 +256,17 @@ Files to modify:
   default browser (`xdg-open` / `open` / `start` depending on platform).
   Also prints the URL for copy-paste.
 
+  [PM: Clarified behavior: `--docs` opens the remote GitHub Pages URL (the
+  `site_url` from mkdocs.yml), not a local mkdocs serve URL. This works
+  regardless of whether mkdocs is installed locally. Print the URL to stdout
+  before attempting to open, so it's always visible even if the browser open fails.]
+
 Acceptance criteria:
 - `mkdocs serve` runs locally and renders all pages without errors
-- `mkdocs build` produces a clean static site in `site/`
+- `mkdocs build --strict` produces a clean static site in `site/` with no warnings
 - GitHub Actions workflow deploys on push to main (only when docs change)
 - Site is accessible at the configured GitHub Pages URL
+  (requires GitHub Pages enabled in repo Settings → Pages → Source: GitHub Actions)
 - All navigation links work (no broken internal links)
 - Search works (MkDocs Material built-in search)
 - Dark/light theme toggle works
@@ -254,18 +277,19 @@ Acceptance criteria:
 - Reference section covers every CLI flag and every config key
 - Every config key in config_defaults.sh is documented in reference/configuration.md
 - Platform-specific install notes for macOS, Linux, and Windows (WSL)
-- `tekhton --docs` opens the documentation URL in the default browser
+- `tekhton --docs` prints the GitHub Pages URL and attempts to open it in the
+  default browser; exits 0 regardless of whether the browser open succeeds
 - Content is written for the "idea person who isn't a senior dev" audience,
   not just for engineers who already understand CI/CD pipelines
 - All existing tests pass
 - `bash -n` and `shellcheck` pass on any modified .sh files
 
 Watch For:
-- MkDocs Material is a pip package. Add it to a `docs/requirements.txt` (separate
-  from the indexer's requirements.txt). The GitHub Actions workflow installs it
-  independently.
-- Screenshots for the Watchtower guide: these need to be generated from a
-  real dashboard with sample data. Create a `docs/assets/screenshots/` directory.
+- MkDocs Material is a pip package. Add it to `docs/requirements.txt` (separate
+  from the indexer's `tools/requirements.txt`). The GitHub Actions workflow installs
+  from `docs/requirements.txt`.
+- Screenshots for the Watchtower guide: placeholder `<!-- TODO: screenshot -->` comments
+  are acceptable for initial merge. Create `docs/assets/screenshots/` directory.
   Screenshots should be regenerated when the Watchtower UI changes.
 - The configuration reference will be the most maintenance-heavy page. Consider
   generating it from config_defaults.sh comments (a simple script that extracts
@@ -278,6 +302,8 @@ Watch For:
 - Keep the docs conversational, not academic. "Here's what happens when you
   run this" > "The system invokes the following subsystems." Match the tone
   of this design discussion — technical but approachable.
+- GitHub Pages must be configured in the repo's Settings → Pages before the
+  first deployment will succeed. The workflow alone is not sufficient.
 
 Seeds Forward:
 - V4 docs expansion: API reference (when plugin system exists), multi-language,

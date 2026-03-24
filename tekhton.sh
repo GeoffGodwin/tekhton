@@ -214,9 +214,9 @@ if [ "${1:-}" = "--docs" ]; then
     if command -v xdg-open >/dev/null 2>&1; then
         xdg-open "${DOCS_URL}" 2>/dev/null &
     elif command -v open >/dev/null 2>&1; then
-        open "${DOCS_URL}"
+        open "${DOCS_URL}" || true
     elif command -v start >/dev/null 2>&1; then
-        start "${DOCS_URL}"
+        start "${DOCS_URL}" || true
     else
         echo "Could not detect browser. Open this URL manually:"
         echo "  ${DOCS_URL}"

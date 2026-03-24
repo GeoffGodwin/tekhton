@@ -1,18 +1,18 @@
 {
   "milestone": "18",
-  "outcome": "failure",
-  "attempts": 6,
-  "total_agent_calls": 21,
-  "wall_clock_seconds": 3966,
-  "files_changed": [".claude/PIPELINE_STATE.md",".claude/dashboard/data/health.js",".claude/dashboard/data/metrics.js",".claude/dashboard/data/milestones.js",".claude/dashboard/data/reports.js",".claude/dashboard/data/run_state.js",".claude/dashboard/data/security.js",".claude/logs/CAUSAL_LOG.jsonl",".claude/logs/metrics.jsonl",".claude/milestones/MANIFEST.cfg",".claude/milestones/m18-documentation-site.md",".gitignore","DRIFT_LOG.md","INTAKE_REPORT.md","MILESTONE_ARCHIVE.md","NON_BLOCKING_LOG.md","REVIEWER_REPORT.md","TESTER_REPORT.md","tekhton.sh"],
+  "outcome": "success",
+  "attempts": 1,
+  "total_agent_calls": 9,
+  "wall_clock_seconds": 0,
+  "files_changed": [".claude/LAST_FAILURE_CONTEXT.json",".claude/MILESTONE_STATE.md",".claude/PIPELINE_STATE.md",".claude/dashboard/data/health.js",".claude/dashboard/data/metrics.js",".claude/dashboard/data/milestones.js",".claude/dashboard/data/reports.js",".claude/dashboard/data/run_state.js",".claude/dashboard/data/security.js",".claude/logs/CAUSAL_LOG.jsonl",".claude/logs/metrics.jsonl",".claude/milestones/MANIFEST.cfg",".claude/milestones/m18-documentation-site.md","DRIFT_LOG.md","MILESTONE_ARCHIVE.md","REVIEWER_REPORT.md","SECURITY_REPORT.md","TESTER_REPORT.md","tekhton.sh"],
   "error_classes_encountered": [],
   "recovery_actions_taken": [],
-  "rework_cycles": 1,
+  "rework_cycles": 2,
   "split_depth": 0,
   "security_findings_count": 0,
   "security_rework_cycles": 0,
   "intake_verdict": "PASS",
-  "intake_confidence": 88,
+  "intake_confidence": 82,
   "quota": {"total_pause_time_s":0,"pause_count":0,"was_quota_limited":false},
-  "timestamp": "2026-03-24T05:49:09Z"
+  "timestamp": "2026-03-24T12:20:35Z"
 }

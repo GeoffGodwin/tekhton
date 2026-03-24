@@ -142,4 +142,3 @@
 {"id":"tester.001","ts":"2026-03-24T12:13:22Z","run_id":"run_20260324_075646","milestone":"18","type":"stage_start","stage":"tester","detail":"","caused_by":["reviewer.002"],"verdict":null,"context":null}
 {"id":"tester.002","ts":"2026-03-24T12:16:05Z","run_id":"run_20260324_075646","milestone":"18","type":"stage_end","stage":"tester","detail":"","caused_by":["tester.001"],"verdict":null,"context":{"turns_used":18}}
 {"id":"pipeline.002","ts":"2026-03-24T12:20:33Z","run_id":"run_20260324_075646","milestone":"18","type":"pipeline_end","stage":"pipeline","detail":"exit_code=0","caused_by":["pipeline.001"],"verdict":null,"context":{"status":"success","total_turns":123,"total_time":980}}
-{"id":"pipeline.003","ts":"2026-03-24T12:20:34Z","run_id":"run_20260324_075646","milestone":"18","type":"milestone_advance","stage":"pipeline","detail":"Milestone 18 done","caused_by":["tester.002"],"verdict":null,"context":{"milestone":"18"}}
