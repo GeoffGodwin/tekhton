@@ -131,19 +131,32 @@ _intake_handle_split_recommended() {
 _intake_handle_needs_clarity() {
     local report_file="$1"
 
+    if [[ ! -f "$report_file" ]]; then
+        warn "Intake: report file not found: ${report_file}"
+        return 1
+    fi
+
     log "Intake: needs clarification."
     local questions
     questions=$(_intake_parse_questions "$report_file")
 
     if [[ -n "$questions" ]]; then
-        # Write questions to CLARIFICATIONS.md using existing protocol
+        # Write questions to CLARIFICATIONS.md in structured ## Q: format
         local clarify_file="${PROJECT_DIR}/CLARIFICATIONS.md"
         {
             echo ""
             echo "# Intake Clarifications — $(date '+%Y-%m-%d %H:%M:%S')"
             echo ""
-            echo "$questions"
-            echo ""
+            # Format each question as a ## Q: section for consistency
+            while IFS= read -r q_line; do
+                [[ -z "$q_line" ]] && continue
+                # Strip leading "- " and tag prefixes like [BLOCKING]
+                local q_text
+                q_text=$(echo "$q_line" | sed 's/^- //' | sed 's/^\[BLOCKING\][[:space:]]*//' | sed 's/^\[NON_BLOCKING\][[:space:]]*//')
+                [[ -z "$q_text" ]] && continue
+                echo "## Q: ${q_text}"
+                echo ""
+            done <<< "$questions"
         } >> "$clarify_file"
 
         # In --complete (autonomous) mode, never attempt interactive
