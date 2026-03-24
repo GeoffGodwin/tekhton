@@ -297,9 +297,10 @@ _rule_transient_error() {
 
 # _rule_unknown
 # Fallback catch-all — always matches.
-# shellcheck disable=SC2034
 _rule_unknown() {
-    DIAG_CLASSIFICATION="UNKNOWN"
+    # shellcheck disable=SC2034
+    DIAG_CLASSIFICATION="UNKNOWN"  # DIAG_* are globals read by the caller
+    # shellcheck disable=SC2034
     DIAG_CONFIDENCE="low"
     DIAG_SUGGESTIONS=(
         "No specific failure pattern identified."

@@ -12,10 +12,10 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 
 ## Features
-- [ ] [FEAT] Test lifecycle management: Add a mechanism to detect stale or invalidated tests. Tests that assert against CLAUDE.md content (or other evolving artifacts) break silently when new milestones modify those files. Options: (a) tag tests with the milestone that created them and auto-skip when the milestone is archived, (b) add a `tests/MANIFEST` that maps test files to the invariants they guard, (c) run a pre-flight test triage in the build gate that classifies failures as "stale test" vs "real regression". The `test_milestone_15_2_2_2_migration.sh` failure that burned 5 pipeline attempts is the motivating case.
+None currently.
 
 ## Bugs
-- [ ] [BUG] The CLARIFICATIONS.md file structure is not working as intended. I just tried a bug fixing call of Tekhton with ` tekhton --complete "Implement fixes for all of the NON_BLOCKING_LOG items until they are all resolved."` and that resulted in the "Clarification Required" process kicking off in Task Intake. It asked for 4 clarifying questions then alleged to have answered them. If you check the CLARIFICATIONS.md file it generated you will see the answers are all nonsensical.
+- [x] [BUG] The CLARIFICATIONS.md file structure is not working as intended. I just tried a bug fixing call of Tekhton with ` tekhton --complete "Implement fixes for all of the NON_BLOCKING_LOG items until they are all resolved."` and that resulted in the "Clarification Required" process kicking off in Task Intake. It asked for 4 clarifying questions then alleged to have answered them. If you check the CLARIFICATIONS.md file it generated you will see the answers are all nonsensical.
 
 This surfaces two issues: 1) the non sensical answering of these questions inline is broken and 2) the pipeline likely needs a dedicated flag for "clean up the non blockers from the NON_BLOCKER_LOG" since that's such a common case and another flag for --fix-drift which just tackles all the current architectural DRIFT_LOG items without having to wait for the next architecture threshold to be hit.
 

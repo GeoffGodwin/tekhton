@@ -146,7 +146,19 @@ _intake_handle_needs_clarity() {
             echo ""
         } >> "$clarify_file"
 
-        # Use existing clarification handler if available
+        # In --complete (autonomous) mode, never attempt interactive
+        # clarification — save state so the human can answer offline.
+        if [[ "${COMPLETE_MODE:-false}" == "true" ]]; then
+            warn "Intake: questions written to CLARIFICATIONS.md."
+            warn "Cannot collect answers in --complete mode (autonomous). Saving state."
+            write_pipeline_state "intake" "needs_clarity" \
+                "--milestone --start-at coder" "$TASK" \
+                "Intake needs human clarification — answer CLARIFICATIONS.md and re-run" \
+                "${_CURRENT_MILESTONE:-}"
+            exit 1
+        fi
+
+        # Interactive mode: use existing clarification handler if available
         if declare -f handle_clarifications &>/dev/null; then
             # Write questions to temp file for the handler
             echo "$questions" | sed 's/^- //' | sed '/^$/d' \
