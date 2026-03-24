@@ -157,10 +157,10 @@ EOF
 # =============================================================================
 echo "=== Test Suite 1: Rule priority ordering ==="
 
-assert_eq "1.1 DIAGNOSE_RULES has 11 entries" "11" "${#DIAGNOSE_RULES[@]}"
+assert_eq "1.1 DIAGNOSE_RULES has 12 entries" "12" "${#DIAGNOSE_RULES[@]}"
 assert_eq "1.2 first rule is _rule_build_failure" "_rule_build_failure" "${DIAGNOSE_RULES[0]}"
 assert_eq "1.3 second rule is _rule_review_loop" "_rule_review_loop" "${DIAGNOSE_RULES[1]}"
-assert_eq "1.4 last rule is _rule_unknown" "_rule_unknown" "${DIAGNOSE_RULES[10]}"
+assert_eq "1.4 last rule is _rule_unknown" "_rule_unknown" "${DIAGNOSE_RULES[11]}"
 
 # =============================================================================
 # Test Suite 2: _rule_build_failure

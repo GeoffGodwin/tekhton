@@ -284,6 +284,7 @@ perform_update() {
 
     echo ""
     echo "Updated to Tekhton ${_LATEST_VERSION}."
+    echo "Run 'tekhton --migrate' in each project to apply configuration updates."
     echo "See changelog: tekhton --docs"
     return 0
 }

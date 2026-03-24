@@ -1,4 +1,8 @@
 #### Milestone 20: Test Integrity Audit
+<!-- milestone-meta
+id: "20"
+status: "done"
+-->
 Add a dedicated test audit pass within the review stage that independently
 evaluates the quality, honesty, and relevance of tests written or modified
 by the tester agent. Prevents the "agent cheating at tests" problem where

@@ -1,4 +1,9 @@
 #### Milestone 21: Version Migration Framework & Project Upgrade
+<!-- milestone-meta
+id: "21"
+status: "done"
+-->
+
 Build a general-purpose migration system that automatically upgrades project
 configurations when Tekhton's version advances past what the project was set up
 with. Handles config schema evolution, directory structure changes, new required

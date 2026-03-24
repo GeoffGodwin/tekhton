@@ -266,6 +266,11 @@ set -euo pipefail
 : "${TEKHTON_UPDATE_CHECK:=true}"      # Check for updates (set false to disable all network calls)
 : "${TEKHTON_PIN_VERSION:=}"           # Empty = no pin; set to X.Y.Z to prevent upgrade past that version
 
+# --- Migration defaults ---
+: "${TEKHTON_CONFIG_VERSION:=}"        # Set by --init and migration; empty = pre-watermark project
+: "${MIGRATION_AUTO:=true}"            # Auto-prompt for migration on version mismatch
+: "${MIGRATION_BACKUP_DIR:=.claude/migration-backups}"  # Relative path within .claude/
+
 # --- Specialist reviewer defaults ---
 : "${SPECIALIST_SECURITY_ENABLED:=false}"
 : "${SPECIALIST_SECURITY_MODEL:=${CLAUDE_STANDARD_MODEL}}"

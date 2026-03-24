@@ -11,6 +11,15 @@
 # Format: KEY=value (no spaces around =, quote strings with spaces)
 # =============================================================================
 
+# --- Tekhton config version (do not edit manually) ---------------------------
+# Tracks which Tekhton version configured this project. Updated by --init and
+# --migrate. Used to detect when project config needs upgrading.
+# TEKHTON_CONFIG_VERSION="3.20"
+
+# --- Migration ---------------------------------------------------------------
+# Auto-prompt for migration when config version is behind running version
+# MIGRATION_AUTO=true
+
 # --- Project identity --------------------------------------------------------
 
 # Display name used in terminal output and branding

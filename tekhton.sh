@@ -520,6 +520,36 @@ if [ "${1:-}" = "--diagnose" ]; then
     exit 0
 fi
 
+# --- Early --migrate check (runs before execution pipeline) -------------------
+
+if [ "${1:-}" = "--migrate" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/config.sh"
+    source "${TEKHTON_HOME}/lib/migrate.sh"
+    # Milestone DAG functions needed for V2→V3 inline milestone migration
+    source "${TEKHTON_HOME}/lib/milestones.sh"
+    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+
+    # Load config if it exists (for defaults), but don't fail on missing keys
+    if [ -f "${PROJECT_DIR}/.claude/pipeline.conf" ]; then
+        _parse_config_file "${PROJECT_DIR}/.claude/pipeline.conf" 2>/dev/null || true
+        # Set minimum defaults for migration
+        : "${CLAUDE_STANDARD_MODEL:=claude-sonnet-4-6}"
+        # shellcheck source=lib/config_defaults.sh
+        source "${TEKHTON_HOME}/lib/config_defaults.sh" 2>/dev/null || true
+    fi
+
+    shift
+    run_migrate_command "$@"
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # --- Early --report / report check (runs before execution pipeline) ----------
 
 if [ "${1:-}" = "--report" ] || [ "${1:-}" = "report" ]; then
@@ -593,6 +623,7 @@ source "${TEKHTON_HOME}/lib/report.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
 source "${TEKHTON_HOME}/lib/update_check.sh"
+source "${TEKHTON_HOME}/lib/migrate.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
@@ -658,6 +689,10 @@ usage() {
         echo "Maintenance:"
         echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
         echo "  --rescan [--full]         Update PROJECT_INDEX.md (incrementally or full re-crawl)"
+        echo "  --migrate                 Upgrade project config to current Tekhton version"
+        echo "  --migrate --check         Show what migrations would run without applying"
+        echo "  --migrate --status        Show config version vs running version"
+        echo "  --migrate --rollback      Restore from pre-migration backup"
         echo "  --migrate-dag             Convert inline milestones to DAG file format"
         echo "  --update [--check]        Check for and install updates (--check: report only)"
         echo "  --fix-nonblockers         Address all open non-blocking notes (loop mode)"
@@ -701,6 +736,7 @@ usage() {
         echo "Maintenance:"
         echo "  --replan            Update existing plan"
         echo "  --rescan            Update project index"
+        echo "  --migrate           Upgrade project config for current version"
         echo "  --update            Check for and install updates"
         echo ""
         echo "  Run --help --all for the full flag list."
@@ -1245,6 +1281,9 @@ else
         cleanup_dashboard "$PROJECT_DIR"
     fi
 fi
+
+# --- Version migration check (after config load, before pipeline) ------------
+check_project_version
 
 # --- Pre-flight --------------------------------------------------------------
 

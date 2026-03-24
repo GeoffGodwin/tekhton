@@ -5,6 +5,11 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-24 | "Implement Milestone 21: Version Migration Framework & Project Upgrade"] `lib/migrate.sh` is 584 lines — nearly double the 300-line soft ceiling. Works correctly; consider splitting `_cleanup_old_backups`, `rollback_migration`, and the CLI handlers into a `lib/migrate_cli.sh` in a follow-up cleanup pass.
+- [ ] [2026-03-24 | "Implement Milestone 21: Version Migration Framework & Project Upgrade"] `lib/migrate.sh:140` — The outer `if` in `_applicable_migrations` is redundant. The condition `_version_lt "$from_ver" "$ver" || _version_eq "$from_ver" "$ver"` (from ≤ ver) is entirely subsumed by the inner `_version_lt "$from_ver" "$ver"` (from < ver) check one line below. No behavior impact, just dead code.
+- [ ] [2026-03-24 | "Implement Milestone 21: Version Migration Framework & Project Upgrade"] `lib/diagnose_rules.sh:298-299` — The doc comment `# _rule_unknown / # Fallback catch-all — always matches.` was left stranded before `_rule_test_audit_failure()` rather than moved to precede the actual `_rule_unknown()` at line 354. Confusing for readers; easy one-line fix.
+- [ ] [2026-03-24 | "Implement Milestone 21: Version Migration Framework & Project Upgrade"] `tests/test_migration.sh` — Suite 10 (Rollback) tests the file-restore logic directly rather than calling `rollback_migration()` (which requires interactive input). The interactive path is untested. Acceptable for now, but a future pass could add a non-interactive wrapper or pipe input via `echo "1" | rollback_migration`.
+- [ ] [2026-03-24 | "Implement Milestone 21: Version Migration Framework & Project Upgrade"] `check_project_version()` references `COMPLETE_MODE` and `AUTO_ADVANCE` (lines 395-396). These are internal runtime flags; verify they match what `tekhton.sh` actually exports (config keys are named `COMPLETE_MODE_ENABLED` / `AUTO_ADVANCE_ENABLED`). If there's a name mismatch, auto-apply silently falls through to the interactive prompt, which is safe but degrades UX in autonomous mode.
 - [ ] [2026-03-24 | "Implement Milestone 19: Distribution & Install Experience"] Prior cycle 1 blocker FIXED: `tekhton.sh:296` — `_TEKHTON_CLEAN_EXIT=true` is now correctly set before `exit 1` in the unsupported-shell case of `_setup_shell_completions`. Crash diagnostic box no longer fires on unsupported shell.
 - [ ] [2026-03-24 | "Implement Milestone 19: Distribution & Install Experience"] `lib/finalize.sh:389` — `# shellcheck disable=SC2034` comment says "exit_code used by convention" but SC2034 is "assigned but unused" — `exit_code` is a local variable that is assigned `"$1"` and never read. The disable is correct in effect but the comment is misleading. Low priority: harmless.
 - [ ] [2026-03-24 | "Implement Milestone 19: Distribution & Install Experience"] `tekhton.sh` — `--update`, `--uninstall`, and `--setup-completion` produce "Unknown flag" if passed after any other flag. This is consistent with the existing early-exit pattern for `--init`, `--plan`, etc., so not a regression — note for a future polish pass or docs.
@@ -13,3 +18,11 @@ The coder is prompted to address these when the count exceeds the threshold.
 - [ ] [2026-03-24 | "Implement Milestone 18: Documentation Site (MkDocs + GitHub Pages)"] `docs/guides/watchtower.md` — No screenshots present. The milestone's Watch For section explicitly called out that screenshots need to be generated from a real dashboard with sample data in `docs/assets/screenshots/`. The guide is textually complete but visual aids would improve it.
 
 ## Resolved
+
+### Test Audit Concerns (2026-03-24)
+#### COVERAGE: `rollback_migration()` is entirely untested
+#### COVERAGE: `check_project_version()` is entirely untested
+#### INTEGRITY: `$?` assertions after `set -euo pipefail` calls always pass
+#### COVERAGE: No test for mid-chain failure behavior in `run_migrations`
+#### COVERAGE: Missing edge case — `_write_config_version` when `pipeline.conf` absent
+#### INTEGRITY: Weak string match in test 11.3

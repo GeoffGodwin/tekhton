@@ -321,6 +321,36 @@ _rule_test_audit_failure() {
     return 0
 }
 
+# _rule_version_mismatch
+# Detect project config version behind running Tekhton version.
+_rule_version_mismatch() {
+    local conf_file="${PROJECT_DIR:-.}/.claude/pipeline.conf"
+    [[ -f "$conf_file" ]] || return 1
+
+    # Check if detect_config_version is available
+    command -v detect_config_version &>/dev/null || return 1
+
+    local config_ver
+    config_ver=$(detect_config_version "${PROJECT_DIR:-.}" 2>/dev/null || echo "")
+    [[ -n "$config_ver" ]] || return 1
+
+    local running_ver="${TEKHTON_VERSION%.*}"
+    running_ver="${running_ver:-0.0}"
+
+    # Only flag if config is behind running version
+    command -v _version_lt &>/dev/null || return 1
+    _version_lt "$config_ver" "$running_ver" || return 1
+
+    DIAG_CLASSIFICATION="VERSION_MISMATCH"
+    DIAG_CONFIDENCE="medium"
+    DIAG_SUGGESTIONS=(
+        "Project config is V${config_ver} but Tekhton is V${running_ver}."
+        "This may cause features to not work as expected."
+        "Run: tekhton --migrate"
+    )
+    return 0
+}
+
 _rule_unknown() {
     # shellcheck disable=SC2034
     DIAG_CLASSIFICATION="UNKNOWN"  # DIAG_* are globals read by the caller
@@ -351,5 +381,6 @@ DIAGNOSE_RULES=(
     "_rule_split_depth"
     "_rule_transient_error"
     "_rule_test_audit_failure"
+    "_rule_version_mismatch"
     "_rule_unknown"
 )

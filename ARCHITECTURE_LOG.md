@@ -93,3 +93,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-23
 - **Rationale**: - ACP: Source new libraries in init.sh — **ACCEPT** — Backward compatible; follows the established pattern of sourcing companion files in `init.sh`. ARCHITECTURE.md update needed to add `lib/detec
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-19: New `migrations/` directory (Task: "Implement Milestone 21: Version Migration Framework & Project Upgrade")
+- **Date**: 2026-03-24
+- **Rationale**: - ACP: New `migrations/` directory — **ACCEPT** — Dedicated directory with a stable four-function interface (`migration_version`, `migration_description`, `migration_check`, `migration_apply`) and
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-20: Startup version check injection (Task: "Implement Milestone 21: Version Migration Framework & Project Upgrade")
+- **Date**: 2026-03-24
+- **Rationale**: - ACP: Startup version check injection — **ACCEPT** — Placement after config load and before pre-flight is exactly right. Backward compatible: matching-version projects see zero behavior change; p
+- **Source**: Accepted ACP from pipeline run

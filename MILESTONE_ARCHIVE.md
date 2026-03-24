@@ -26687,3 +26687,4095 @@ Implementation:
 - `tests/test_audit_tests.sh` — Unit tests for core audit functions
 - `tests/test_audit_standalone.sh` — Standalone audit and emit_event tests
 - `tests/test_audit_coverage_gaps.sh` — Coverage gap and edge case tests
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 1: Milestone DAG Infrastructure
+Add the DAG-based milestone storage system: a pipe-delimited manifest tracking
+dependencies and status, individual `.md` files per milestone, DAG query functions
+(frontier detection, cycle validation), and auto-migration from inline CLAUDE.md
+milestones. This milestone replaces the sequential-only milestone model with a
+dependency-aware DAG that enables future parallel execution.
+
+Files to create:
+- `lib/milestone_dag.sh` — manifest parser (`load_manifest()`, `save_manifest()`
+  using atomic tmpfile+mv), DAG query functions (`dag_get_frontier()`,
+  `dag_deps_satisfied()`, `dag_find_next()`, `dag_get_active()`), validation
+  (`validate_manifest()` with cycle detection via DFS), ID↔number conversion
+  (`dag_id_to_number()`, `dag_number_to_id()`). Data structures: parallel bash
+  arrays (`_DAG_IDS[]`, `_DAG_TITLES[]`, `_DAG_STATUSES[]`, `_DAG_DEPS[]`,
+  `_DAG_FILES[]`, `_DAG_GROUPS[]`) with associative index `_DAG_IDX[id]=index`.
+- `lib/milestone_dag_migrate.sh` — `migrate_inline_milestones(claude_md, milestone_dir)`
+  extracts all inline milestones from CLAUDE.md into individual files in
+  `.claude/milestones/`, generates `MANIFEST.cfg`. Uses existing
+  `_extract_milestone_block()` for block extraction. File naming:
+  `m{NN}-{slugified-title}.md`. Dependencies inferred from sequential order
+  (each depends on previous) unless explicit "depends on Milestone N" references
+  found in text.
+
+Files to modify:
+- `lib/milestones.sh` — add `parse_milestones_auto()` dual-path wrapper: if
+  manifest exists, returns milestone data from it in the same
+  `NUMBER|TITLE|ACCEPTANCE_CRITERIA` format as `parse_milestones()`. All
+  downstream consumers work unchanged.
+- `lib/milestone_ops.sh` — `find_next_milestone()` gains DAG-aware path calling
+  `dag_find_next()`. `mark_milestone_done()` gains DAG path calling
+  `dag_set_status(id, "done")` + `save_manifest()`.
+- `lib/milestone_archival.sh` — adapt for file-based milestones: read milestone
+  file directly via `dag_get_file()`, append to archive, no CLAUDE.md block
+  extraction needed.
+- `lib/milestone_split.sh` — adapt for file-based milestones: write sub-milestone
+  files + insert manifest rows instead of replacing CLAUDE.md blocks.
+- `lib/milestone_metadata.sh` — write metadata into milestone files instead of
+  CLAUDE.md headings.
+- `lib/config_defaults.sh` — add defaults: `MILESTONE_DAG_ENABLED=true`,
+  `MILESTONE_DIR=".claude/milestones"`, `MILESTONE_MANIFEST="MANIFEST.cfg"`,
+  `MILESTONE_AUTO_MIGRATE=true`, `MILESTONE_WINDOW_PCT=30`,
+  `MILESTONE_WINDOW_MAX_CHARS=20000`. Add clamps for PCT (80) and MAX_CHARS (100000).
+- `tekhton.sh` — source new modules, add DAG-aware milestone initialization,
+  add auto-migration at startup (if manifest missing but inline milestones found).
+- `templates/pipeline.conf.example` — add milestone DAG config section with
+  explanatory comments.
+
+Manifest format (`.claude/milestones/MANIFEST.cfg`):
+```
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 2: Sliding Window & Plan Generation Integration
+<!-- milestone-meta
+id: "2"
+status: "done"
+-->
+
+Wire the DAG into the prompt engine with a character-budgeted sliding window that
+injects only relevant milestones into agent context. Update plan generation to emit
+milestone files instead of inline CLAUDE.md sections. Add auto-migration at startup
+for existing projects with inline milestones.
+
+Files to create:
+- `lib/milestone_window.sh` — `build_milestone_window(model)` assembles
+  character-budgeted milestone context block from the manifest. Priority:
+  active milestone (full content) → frontier milestones (first paragraph +
+  acceptance criteria) → on-deck milestones (title + one-line description).
+  Fills greedily until budget exhaustion. `_compute_milestone_budget(model)`
+  calculates available chars: `min(available * MILESTONE_WINDOW_PCT/100,
+  MILESTONE_WINDOW_MAX_CHARS)`. `_milestone_priority_list()` returns ordered
+  IDs by priority. Integrates with `_add_context_component()` for accounting.
+
+Files to modify:
+- `stages/coder.sh` — replace static MILESTONE_BLOCK with
+  `build_milestone_window()` call when manifest exists. Falls back to existing
+  behavior when no manifest.
+- `stages/plan_generate.sh` — after agent produces CLAUDE.md content, post-process:
+  extract milestone blocks into individual files in `.claude/milestones/`, generate
+  MANIFEST.cfg, remove milestone blocks from CLAUDE.md and insert pointer comment.
+  Agent prompt and output format are unchanged — shell handles extraction.
+- `lib/orchestrate_helpers.sh` — `_run_auto_advance_chain()` uses DAG-aware
+  milestone ordering via `dag_find_next()`.
+- `lib/config.sh` — add MILESTONE_DIR path resolution (relative → absolute).
+- `tekhton.sh` — add auto-migration trigger at startup: if `MILESTONE_DAG_ENABLED`
+  and `MILESTONE_AUTO_MIGRATE` and no manifest exists but inline milestones
+  detected, run `migrate_inline_milestones()`.
+
+Acceptance criteria:
+- `build_milestone_window()` returns only the active milestone + frontier
+  milestones that fit within the character budget
+- When budget is exhausted, frontier milestones are truncated (first paragraph +
+  acceptance criteria only) rather than omitted entirely
+- On-deck milestones only included if budget remains after all frontier milestones
+- The window integrates with `_add_context_component()` for context accounting
+- Plan generation extracts milestones from agent output into individual files and
+  generates a valid MANIFEST.cfg
+- Auto-migration at startup correctly converts inline CLAUDE.md milestones to
+  files + manifest
+- After migration, CLAUDE.md no longer contains full milestone blocks
+- `_run_auto_advance_chain()` works correctly with DAG-based ordering
+- Window respects `MILESTONE_WINDOW_MAX_CHARS` hard cap
+- When `MILESTONE_DAG_ENABLED=false`, all behavior is identical to v2
+- All existing tests pass
+- `bash -n lib/milestone_window.sh` passes
+- `shellcheck lib/milestone_window.sh` passes
+- New test files: `tests/test_milestone_window.sh` (budget calculation, priority
+  ordering, budget exhaustion), `tests/test_milestone_dag_migrate.sh` (inline
+  extraction, manifest generation, CLAUDE.md cleanup, re-migration idempotency)
+
+Watch For:
+- Plan generation post-processing must handle variable heading depth (####, #####)
+  since agents may vary formatting. Use the same regex as `parse_milestones()`.
+- Auto-migration must be idempotent. If MANIFEST.cfg already exists, skip.
+  If interrupted mid-way, next run should detect partial state and complete.
+- CLAUDE.md trimming after milestone extraction must preserve all non-milestone
+  content exactly. Use existing `_extract_milestone_block()` +
+  `_replace_milestone_block()` pattern.
+- Character budget must account for the instruction header (~300 chars) prepended
+  by `build_milestone_window()`. Subtract before filling with file content.
+- When the active milestone file exceeds the entire budget, truncate it (keep
+  acceptance criteria at minimum) rather than failing. Log a warning.
+
+Seeds Forward:
+- The DAG data model supports future parallel execution: `dag_get_frontier()`
+  returns all parallelizable milestones
+- The sliding window pattern can be extended for repo map integration: pre-compute
+  the repo map slice from the milestone's "Files to create/modify" section
+- Auto-migration creates the `.claude/milestones/` directory structure that future
+  tooling (milestone dashboards, progress tracking) can consume
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 3: Indexer Infrastructure & Setup Command
+<!-- milestone-meta
+id: "3"
+status: "done"
+-->
+Add the shell-side orchestration layer, Python dependency detection, setup command,
+and configuration keys. This milestone builds the framework that Milestones 4-8
+plug into. No actual indexing logic yet — just the plumbing.
+
+Files to create:
+- `lib/indexer.sh` — `check_indexer_available()` (returns 0 if Python + tree-sitter
+  found), `run_repo_map(task, token_budget)` (invokes Python tool, captures output),
+  `get_repo_map_slice(file_list)` (extracts entries for specific files from cached
+  map), `invalidate_repo_map_cache()`. All functions are no-ops returning fallback
+  values when Python is unavailable.
+- `tools/setup_indexer.sh` — standalone setup script: checks Python version (≥3.8),
+  creates virtualenv in `.claude/indexer-venv/`, installs `tree-sitter`,
+  `tree-sitter-languages` (or individual grammars), `networkx`. Idempotent — safe
+  to re-run. Prints clear error messages if Python is missing.
+
+Files to modify:
+- `tekhton.sh` — add `--setup-indexer` early-exit path that runs
+  `tools/setup_indexer.sh`. Source `lib/indexer.sh`. Call
+  `check_indexer_available()` at startup and set `INDEXER_AVAILABLE=true/false`.
+- `lib/config.sh` — add defaults: `REPO_MAP_ENABLED=false`,
+  `REPO_MAP_TOKEN_BUDGET=2048`, `REPO_MAP_CACHE_DIR=".claude/index"`,
+  `REPO_MAP_LANGUAGES="auto"` (auto-detect from file extensions),
+  `SERENA_ENABLED=false`, `SERENA_CONFIG_PATH=""`.
+- `templates/pipeline.conf.example` — add indexer config section with explanatory
+  comments
+
+Acceptance criteria:
+- `tekhton --setup-indexer` creates virtualenv and installs dependencies
+- `check_indexer_available` returns 0 when venv + tree-sitter exist, 1 otherwise
+- When `REPO_MAP_ENABLED=true` but Python unavailable, pipeline logs a warning
+  and falls back to 2.0 behavior (no error, no abort)
+- Config keys are validated (token budget must be positive integer, etc.)
+- `.claude/indexer-venv/` is added to the default `.gitignore` warning check
+- All existing tests pass
+- `bash -n lib/indexer.sh tools/setup_indexer.sh` passes
+- `shellcheck lib/indexer.sh tools/setup_indexer.sh` passes
+
+Watch For:
+- virtualenv creation must work on Linux, macOS, and Windows (Git Bash). Use
+  `python3 -m venv` not `virtualenv` command.
+- tree-sitter grammar installation varies by platform. The setup script should
+  handle failures gracefully per-grammar (some languages may fail on some platforms).
+- The `.claude/indexer-venv/` directory can be large. It must never be committed.
+- `REPO_MAP_LANGUAGES="auto"` detection should scan file extensions in the project
+  root (1 level deep to stay fast), not walk the entire tree.
+
+Seeds Forward:
+- Milestone 4 implements the Python tool that `run_repo_map()` invokes
+- Milestone 5 wires the repo map output into pipeline stages
+- Milestone 6 extends the setup command with `--with-lsp` for Serena
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 4: Tree-Sitter Repo Map Generator
+<!-- milestone-meta
+id: "4"
+status: "done"
+-->
+Implement the Python tool that parses source files with tree-sitter, extracts
+definition and reference tags, builds a file-relationship graph, ranks files by
+PageRank relevance to the current task, and emits a token-budgeted repo map
+containing only function/class/method signatures — no implementations.
+
+Files to create:
+- `tools/repo_map.py` — main entry point. CLI: `repo_map.py --root <dir>
+  --task "<task string>" --budget <tokens> --cache-dir <path> [--files f1,f2]`.
+  Steps: (1) walk project tree respecting `.gitignore`, (2) parse each file with
+  tree-sitter to extract tags (definitions: class, function, method; references:
+  call sites, imports), (3) build a directed graph: file A → file B if A references
+  a symbol defined in B, (4) run PageRank with personalization vector biased toward
+  files matching task keywords, (5) emit ranked file entries with signatures only,
+  stopping when token budget is exhausted. Output format: markdown with
+  `## filename` headings and indented signatures.
+- `tools/tag_cache.py` — disk-based tag cache using JSON. Key: file path +
+  mtime. On cache hit, skip tree-sitter parse. Cache stored in
+  `REPO_MAP_CACHE_DIR/tags.json`. Provides `load_cache()`, `save_cache()`,
+  `get_tags(filepath, mtime)`, `set_tags(filepath, mtime, tags)`.
+- `tools/tree_sitter_languages.py` — language detection and grammar loading.
+  Maps file extensions to tree-sitter grammars. Provides `get_parser(ext)` which
+  returns a configured parser or `None` for unsupported languages. Initial
+  language support: Python, JavaScript, TypeScript, Java, Go, Rust, C, C++,
+  Ruby, Bash, Dart, Swift, Kotlin, C#.
+- `tools/requirements.txt` — pinned dependencies: `tree-sitter>=0.21`,
+  `tree-sitter-languages>=1.10` (or individual grammar packages),
+  `networkx>=3.0`.
+
+Files to modify:
+- `lib/indexer.sh` — implement `run_repo_map()` to invoke
+  `tools/repo_map.py` via the project's indexer virtualenv Python. Parse
+  exit code: 0 = success (stdout is the map), 1 = partial (some files
+  failed, map is best-effort), 2 = fatal (fall back to 2.0). Write output
+  to `REPO_MAP_CACHE_DIR/REPO_MAP.md`.
+
+Output format example:
+```markdown
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 5: Pipeline Stage Integration
+<!-- milestone-meta
+id: "5"
+status: "done"
+-->
+
+Wire the repo map into all pipeline stages, replacing or supplementing full
+ARCHITECTURE.md injection. Each stage receives a different slice of the map
+optimized for its role. Integrate with v2's context accounting for
+budget-aware injection. Graceful degradation to 2.0 when map unavailable.
+
+Files to modify:
+- `stages/coder.sh` — when `REPO_MAP_ENABLED=true` and `INDEXER_AVAILABLE=true`:
+  (1) regenerate repo map with task-biased ranking before coder invocation,
+  (2) inject `REPO_MAP_CONTENT` into the coder prompt instead of full
+  `ARCHITECTURE_CONTENT` (architecture file is still available via scout report),
+  (3) if scout identified specific files, call `get_repo_map_slice()` to produce
+  a focused slice showing those files plus their direct dependencies. When
+  indexer unavailable, fall back to existing ARCHITECTURE_CONTENT injection.
+- `stages/review.sh` — when enabled: extract file list from CODER_SUMMARY.md,
+  call `get_repo_map_slice()` for those files + their callers (reverse
+  dependencies), inject as `REPO_MAP_CONTENT`. Reviewer sees the changed files
+  in full context of what calls them and what they call.
+- `stages/tester.sh` — when enabled: extract file list from CODER_SUMMARY.md,
+  call `get_repo_map_slice()` for those files + their test file counterparts
+  (heuristic: `foo.py` → `test_foo.py`, `foo.ts` → `foo.test.ts`). Inject as
+  `REPO_MAP_CONTENT`.
+- `stages/architect.sh` — when enabled: inject full repo map (not sliced).
+  Architect needs the broadest view for drift detection.
+- `lib/prompts.sh` — add `REPO_MAP_CONTENT` and `REPO_MAP_SLICE` as template
+  variables. Add `{{IF:REPO_MAP_CONTENT}}` conditional blocks.
+- `lib/context.sh` — add repo map as a named context component in
+  `log_context_report()`. Include it in budget calculations.
+- `prompts/coder.prompt.md` — add `{{IF:REPO_MAP_CONTENT}}` block with
+  instructions: "The following repo map shows ranked file signatures relevant
+  to your task. Use it to understand the codebase structure and identify files
+  to read or modify. Signatures show the public API — read full files before
+  making changes."
+- `prompts/reviewer.prompt.md` — add repo map block with instruction: "The
+  repo map below shows the changed files and their callers/callees. Use it
+  to verify that changes are consistent with the broader codebase structure."
+- `prompts/tester.prompt.md` — add repo map block with instruction: "The
+  repo map below shows the changed files and their test counterparts. Use it
+  to identify which test files need updates and what interfaces to test against."
+- `prompts/scout.prompt.md` — add full repo map block with instruction: "Use
+  this repo map to identify relevant files without needing to search the
+  filesystem. The map is ranked by likely relevance to the task."
+- `prompts/architect.prompt.md` — add full repo map block for drift analysis
+
+Acceptance criteria:
+- Coder stage injects repo map instead of full ARCHITECTURE.md when available
+- Reviewer sees changed files + reverse dependencies in map slice
+- Tester sees changed files + test counterparts in map slice
+- Scout sees full ranked map (dramatically reducing exploratory reads)
+- Context report shows repo map as a named component with token count
+- When `REPO_MAP_ENABLED=false` or indexer unavailable, all stages behave
+  identically to v2 (no warnings, no changes)
+- Prompt templates use conditional blocks — no repo map content appears in
+  prompts when feature is disabled
+- Token budget is respected: repo map + other context stays within
+  `CONTEXT_BUDGET_PCT`
+- All existing tests pass
+- `shellcheck` passes on all modified `.sh` files
+
+Watch For:
+- The scout stage benefits MOST from the repo map — it replaces blind `find`
+  and `grep` with a ranked file list. This is where the biggest token savings
+  come from.
+- ARCHITECTURE.md still has value for high-level design intent that tree-sitter
+  can't capture. Consider injecting a truncated architecture summary (first
+  N lines) alongside the repo map, not replacing it entirely.
+- The test file heuristic (`foo.py` → `test_foo.py`) is language-specific.
+  Keep it simple and configurable. A missed test file just means the tester
+  falls back to normal discovery.
+- Reverse dependency lookup (callers of changed files) can be expensive for
+  highly-connected files. Cap at top 20 callers by PageRank.
+
+Seeds Forward:
+- Milestone 6 (Serena) enhances the repo map with live symbol data, giving
+  agents even more precise context
+- Milestone 7 (Cross-Run Cache) uses task→file history from this milestone
+  to improve future repo map rankings
+- The prompt template patterns established here (`{{IF:REPO_MAP_CONTENT}}`)
+  are reused by Milestone 6 for LSP tool instructions
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 6: Serena MCP Integration
+<!-- milestone-meta
+id: "6"
+status: "done"
+-->
+
+Add optional LSP-powered symbol resolution via Serena as an MCP server. When
+enabled, agents gain `find_symbol`, `find_referencing_symbols`, and
+`get_symbol_definition` tools that provide live, accurate cross-reference data.
+This supplements the static repo map with runtime precision — the map tells
+agents WHERE to look, Serena tells them EXACTLY what's there.
+
+Files to create:
+- `tools/setup_serena.sh` — setup script for Serena: clones or updates the
+  Serena repo into `.claude/serena/`, installs its dependencies, generates
+  project-specific configuration. Detects available language servers for the
+  target project's languages (e.g., `pyright` for Python, `typescript-language-server`
+  for TS/JS, `gopls` for Go). Idempotent. Invoked via
+  `tekhton --setup-indexer --with-lsp`.
+- `tools/serena_config_template.json` — template MCP server configuration for
+  Claude CLI. Contains `{{SERENA_PATH}}`, `{{PROJECT_DIR}}`, `{{LANGUAGE_SERVERS}}`
+  placeholders that `setup_serena.sh` fills in.
+- `lib/mcp.sh` — MCP server lifecycle management: `start_mcp_server()`,
+  `stop_mcp_server()`, `check_mcp_health()`. Starts Serena as a background
+  process before agent invocation, health-checks it, stops it after the stage
+  completes. Uses the session temp directory for Serena's socket/pipe.
+
+Files to modify:
+- `tekhton.sh` — source `lib/mcp.sh`. Add `--with-lsp` flag parsing for
+  `--setup-indexer`. When `SERENA_ENABLED=true`, call `start_mcp_server()`
+  before first agent stage and `stop_mcp_server()` in the EXIT trap.
+- `lib/indexer.sh` — add `check_serena_available()` that verifies Serena
+  installation and at least one language server. Update `check_indexer_available()`
+  to report both repo map and Serena status separately.
+- `lib/config.sh` — add defaults: `SERENA_ENABLED=false`,
+  `SERENA_PATH=".claude/serena"`, `SERENA_LANGUAGE_SERVERS="auto"`,
+  `SERENA_STARTUP_TIMEOUT=30`, `SERENA_MAX_RETRIES=2`.
+- `lib/agent.sh` — when `SERENA_ENABLED=true` and Serena is running, add
+  `--mcp-config` flag to `claude` CLI invocations pointing to the generated
+  MCP config. This gives agents access to Serena's tools.
+- `prompts/coder.prompt.md` — add `{{IF:SERENA_ENABLED}}` block: "You have
+  access to LSP tools via MCP. Use `find_symbol` to locate definitions,
+  `find_referencing_symbols` to find all callers of a function, and
+  `get_symbol_definition` to read a symbol's full definition with type info.
+  Prefer these over grep for precise symbol lookup. The repo map gives you
+  the overview; LSP tools give you precision."
+- `prompts/reviewer.prompt.md` — add Serena tool instructions for verifying
+  that changes don't break callers
+- `prompts/scout.prompt.md` — add Serena tool instructions for discovery:
+  "Use `find_symbol` to verify that functions you find in the repo map
+  actually exist and to check their signatures before recommending files."
+- `templates/pipeline.conf.example` — add Serena config section
+
+Acceptance criteria:
+- `tekhton --setup-indexer --with-lsp` installs Serena and detects language servers
+- MCP server starts before first agent stage and stops on pipeline exit
+- `check_mcp_health()` returns 0 when Serena responds, 1 otherwise
+- When Serena fails to start, pipeline logs warning and continues without LSP
+  tools (agents still have the static repo map)
+- Agent CLI invocations include `--mcp-config` when Serena is available
+- Prompt templates conditionally inject Serena tool usage instructions
+- `SERENA_ENABLED=false` (default) produces identical behavior to Milestone 5
+- Serena process is always cleaned up on exit (no orphaned processes)
+- All existing tests pass
+- `bash -n lib/mcp.sh tools/setup_serena.sh` passes
+- `shellcheck lib/mcp.sh tools/setup_serena.sh` passes
+
+Watch For:
+- Serena startup can take 10-30 seconds while language servers index the project.
+  `SERENA_STARTUP_TIMEOUT` must be generous. Show a progress indicator.
+- Language server availability varies wildly. A project may have `pyright` but
+  not `gopls`. Serena should work with whatever's available and report which
+  languages have full LSP support vs. tree-sitter-only.
+- MCP server configuration format may change between Claude CLI versions. Keep
+  the config template simple and version-annotated.
+- Orphaned Serena processes are a real risk. The EXIT trap must kill the process
+  group, not just the main process. Test with Ctrl+C, SIGTERM, and SIGKILL.
+- The MCP `--mcp-config` flag may not be available in all Claude CLI versions.
+  Detect CLI version and fall back gracefully.
+
+Seeds Forward:
+- Milestone 7 can use Serena's type information to enrich the tag cache with
+  parameter types and return types (richer signatures)
+- Future v3 milestones for parallel agents (DAG execution) will need per-agent
+  MCP server instances or a shared server with locking — design the lifecycle
+  management with this in mind
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 7: Cross-Run Cache & Personalized Ranking
+<!-- milestone-meta
+id: "7"
+status: "done"
+-->
+
+Make the indexer persistent and adaptive across pipeline runs. The tag cache
+survives between runs with mtime-based invalidation. Task→file association
+history improves PageRank personalization over time — files that were relevant
+to similar past tasks rank higher automatically. Integrate with v2's metrics
+system for tracking indexer performance.
+
+Files to modify:
+- `tools/repo_map.py` — add `--history-file <path>` flag. When provided, load
+  task→file association records and use them to build a personalization vector
+  that blends: (1) task keyword matches (current behavior, weight 0.6),
+  (2) historical file relevance from similar past tasks (weight 0.3),
+  (3) file recency from git log (weight 0.1). Add `--warm-cache` flag that
+  parses all project files and populates the tag cache without producing output
+  (for use during `tekhton --init`).
+- `tools/tag_cache.py` — add cache statistics: hit count, miss count, total
+  parse time saved. Add `prune_cache(root_dir)` that removes entries for files
+  that no longer exist. Add cache versioning — if cache format changes between
+  Tekhton versions, invalidate and rebuild rather than crash.
+- `lib/indexer.sh` — add `warm_index_cache()` (called during `--init` or
+  `--setup-indexer`), `record_task_file_association(task, files[])` (called
+  after coder stage with the files from CODER_SUMMARY.md),
+  `get_indexer_stats()` (returns cache hit rate and timing for metrics).
+  History file: `.claude/index/task_history.jsonl` (append-only JSONL, same
+  pattern as v2 metrics).
+- `lib/metrics.sh` — add indexer metrics to `record_run_metrics()`: cache hit
+  rate, repo map generation time, token savings vs full architecture injection.
+  Add indexer section to `summarize_metrics()` dashboard output.
+- `stages/coder.sh` — after coder completes, call
+  `record_task_file_association()` with the task and modified file list.
+- `tekhton.sh` — during `--init`, if indexer is available, call
+  `warm_index_cache()` to pre-populate the tag cache. Display progress.
+- `templates/pipeline.conf.example` — add `REPO_MAP_HISTORY_ENABLED=true`,
+  `REPO_MAP_HISTORY_MAX_RECORDS=200` config keys
+
+History record format (JSONL):
+```json
+{"ts":"2026-03-21T10:00:00Z","task":"add user authentication","files":["src/auth/login.py","src/models/user.py","src/api/routes.py"],"task_type":"feature"}
+```
+
+Acceptance criteria:
+- Tag cache persists between runs in `.claude/index/tags.json`
+- Changed files (new mtime) are re-parsed; unchanged files use cache
+- Deleted files are pruned from cache on next run
+- `--warm-cache` pre-populates the entire project cache in one pass
+- Task→file history is recorded after each successful coder stage
+- Personalization vector blends keyword, history, and recency signals
+- With 10+ history records, the repo map noticeably favors files that were
+  relevant to similar past tasks (measurable in ranking output)
+- `REPO_MAP_HISTORY_MAX_RECORDS` caps history file size (oldest records pruned)
+- Indexer metrics appear in `tekhton --metrics` dashboard
+- Cache version mismatch triggers rebuild with warning, not crash
+- All existing tests pass
+- New Python tests verify: history loading, personalization blending, cache
+  pruning, version migration, JSONL append safety
+
+Watch For:
+- JSONL is append-only by design. Never read-modify-write. Pruning creates a
+  new file and atomically replaces the old one.
+- Task similarity is keyword-based (bag of words overlap), not semantic. Keep
+  it simple — semantic similarity would require embeddings and adds complexity
+  and cost for marginal gain at this stage.
+- Git recency signal requires a git repo. For non-git projects, drop weight 0.1
+  and redistribute to keywords (0.7) and history (0.3).
+- History file can contain sensitive task descriptions. It lives in `.claude/`
+  which should be gitignored, but add a warning to the setup output.
+- Cache warming on large projects (10k+ files) may take 30-60 seconds. Show
+  a progress bar or periodic status line.
+
+Seeds Forward:
+- Future v3 milestones (parallel execution) can use task→file history to
+  predict which milestones will touch overlapping files and schedule them
+  to avoid merge conflicts
+- The metrics integration provides data for future adaptive token budgeting —
+  if the indexer consistently saves 70% of tokens, the pipeline can allocate
+  the savings to richer prompt content
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 8: Indexer Tests & Documentation
+<!-- milestone-meta
+id: "8"
+status: "done"
+-->
+
+Comprehensive test coverage for all indexing functionality: shell orchestration,
+Python tools, pipeline integration, fallback behavior, and Serena lifecycle.
+Update project documentation and repository layout.
+
+Files to create:
+- `tests/test_indexer.sh` — shell-side tests: `check_indexer_available()` returns
+  correct status for present/absent Python, `run_repo_map()` handles exit codes
+  (0/1/2), `get_repo_map_slice()` extracts correct file entries, fallback to 2.0
+  when indexer unavailable, config key validation (budget must be positive, etc.)
+- `tests/test_mcp.sh` — MCP lifecycle tests: `start_mcp_server()` / `stop_mcp_server()`
+  create and clean up processes, `check_mcp_health()` detects running/stopped
+  server, EXIT trap cleanup works, orphan prevention
+- `tests/test_repo_map_integration.sh` — end-to-end tests using a small fixture
+  project (created in test setup): verify repo map generation, stage injection
+  (coder/reviewer/tester get correct slices), context budget respected, conditional
+  prompt blocks render correctly when feature on/off
+- `tools/tests/test_repo_map.py` — Python unit tests: tag extraction for each
+  supported language, graph construction from tags, PageRank output, token budget
+  enforcement, `.gitignore` respect, error handling for unparseable files
+- `tools/tests/test_tag_cache.py` — cache hit/miss, mtime invalidation, pruning
+  deleted files, version migration, concurrent write safety
+- `tools/tests/test_history.py` — task→file recording, JSONL append, history
+  loading, personalization vector computation, max records pruning
+- `tools/tests/conftest.py` — shared fixtures: small multi-language project tree,
+  mock git repo, sample tag cache files
+- `tests/fixtures/indexer_project/` — small fixture project with Python, JS, and
+  Bash files for integration testing
+
+Files to modify:
+- `CLAUDE.md` — update Repository Layout to include `tools/` directory, `lib/indexer.sh`,
+  `lib/mcp.sh`. Update Template Variables table with all new config keys and their
+  defaults. Update Non-Negotiable Rules to note Python as an optional dependency.
+- `templates/pipeline.conf.example` — ensure all indexer config keys have
+  explanatory comments matching the detail level of existing keys
+- `tests/run_tests.sh` — add new test files to the test runner. Add conditional
+  Python test execution: if Python available, run `python3 -m pytest tools/tests/`;
+  if not, skip with a note.
+
+Acceptance criteria:
+- All shell tests pass via `bash tests/run_tests.sh`
+- All Python tests pass via `python3 -m pytest tools/tests/` (when Python available)
+- Test runner gracefully skips Python tests when Python unavailable
+- Fixture project exercises multi-language parsing (Python + JS + Bash minimum)
+- Integration test verifies full flow: setup → generate map → inject into stage →
+  verify prompt contains repo map content → verify context budget respected
+- Fallback test verifies: disable indexer → run pipeline → identical to v2 output
+- MCP tests verify no orphaned processes after normal exit, Ctrl+C, and error exit
+- `CLAUDE.md` Repository Layout includes all new files and directories
+- `CLAUDE.md` Template Variables table includes all new config keys
+- `bash -n` passes on all new `.sh` files
+- `shellcheck` passes on all new `.sh` files
+- All pre-existing tests (37+) continue to pass unchanged
+
+Watch For:
+- Python test fixtures must be self-contained — no network access, no real
+  language servers. Mock tree-sitter parsing for unit tests; use real parsing
+  only in integration tests.
+- The fixture project must be small (5-10 files) to keep tests fast.
+- MCP lifecycle tests are inherently flaky (process timing). Use retry logic
+  and generous timeouts in test assertions, not in production code.
+- Shell tests that verify prompt content should check for the presence of
+  `REPO_MAP_CONTENT` variable, not exact prompt text (prompts will evolve).
+- Ensure Python tests work with both `tree-sitter-languages` (bundled) and
+  individual grammar packages — CI environments may have either.
+
+Seeds Forward:
+- Test fixtures and patterns established here are reused by future v3 milestones
+  (DAG execution, parallel agents, UI plugin) for their own testing
+- The integration test pattern (fixture project → full pipeline) becomes the
+  template for end-to-end testing of future features
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 9: Security Agent Stage & Finding Classification
+<!-- milestone-meta
+id: "9"
+status: "done"
+-->
+
+Dedicated security review stage that scans coder output for vulnerabilities,
+classifies findings by severity and fixability, and produces a structured
+SECURITY_REPORT.md. Runs after the build gate, before the reviewer. Enabled
+by default (opt-out via SECURITY_AGENT_ENABLED=false).
+
+Seeds Forward (V4): When parallel execution lands, this stage transitions from
+serial (after coder, before reviewer) to parallel (alongside reviewer with
+merged findings). The data model and report format are designed to support both
+execution modes without changes.
+
+Files to create:
+- `stages/security.sh` — `run_stage_security()`: invoke security agent, parse
+  SECURITY_REPORT.md output, classify findings by severity (CRITICAL/HIGH/MEDIUM/LOW),
+  route fixable CRITICAL/HIGH findings to security rework loop (bounded by
+  SECURITY_MAX_REWORK_CYCLES), route unfixable findings per SECURITY_UNFIXABLE_POLICY
+  (escalate → HUMAN_ACTION_REQUIRED.md, halt → pipeline exit, waiver → log and continue).
+  MEDIUM/LOW findings written to SECURITY_NOTES.md for reviewer context. Stage skipped
+  cleanly when SECURITY_AGENT_ENABLED=false.
+  **Fast-path skip:** Before invoking the agent, parse CODER_SUMMARY.md for changed
+  file types. If ALL changed files are docs-only (.md, .txt, .rst), config-only
+  (.json, .yaml, .toml without code), or asset-only (images, fonts), skip the
+  security scan entirely with a log message. This avoids wasting turns on trivial
+  changes like README edits or config formatting.
+  **Post-rework build gate:** After each security rework cycle, re-run the build
+  gate (same as after review rework). A security fix that breaks the build must be
+  caught before re-scanning. Flow: security finding → coder rework → build gate →
+  re-scan (or proceed if max cycles reached).
+- `prompts/security_scan.prompt.md` — Security scan prompt template. Instructs agent to:
+  (1) read CODER_SUMMARY.md for changed files, (2) read only those files,
+  (3) analyze for OWASP Top 10, injection, auth flaws, secrets exposure, insecure
+  dependencies, crypto misuse, (4) produce SECURITY_REPORT.md with structured format:
+  each finding has severity (CRITICAL/HIGH/MEDIUM/LOW), category (OWASP ID or custom),
+  file:line, description, fixable (yes/no/unknown), and suggested fix.
+  Includes static rule reference section for offline operation.
+  When SECURITY_ONLINE_SOURCES is available, instructs agent to cross-reference
+  known CVE databases and dependency advisories.
+- `prompts/security_rework.prompt.md` — Security rework prompt for coder. Injects
+  fixable CRITICAL/HIGH findings from SECURITY_REPORT.md as mandatory fixes.
+  Structured like coder_rework.prompt.md: read the finding, read the file, fix it,
+  verify the fix doesn't introduce new issues.
+- `templates/security.md` — Security agent role definition (copied to target project
+  by --init). Defines the agent's security expertise, review methodology, and
+  output format expectations. Includes static reference material for common
+  vulnerability patterns organized by language/framework.
+
+Files to modify:
+- `tekhton.sh` — Add `source "${TEKHTON_HOME}/stages/security.sh"` to the stage
+  source block. Insert `run_stage_security` call between the build gate (end of
+  Stage 1) and `run_stage_review` (Stage 2). Update `--start-at` handling to
+  support `--start-at security` for resuming from security stage. Update stage
+  numbering in headers: Stage 1 Coder, Stage 2 Security, Stage 3 Reviewer,
+  Stage 4 Tester. Add `--skip-security` flag for one-off bypass.
+- `lib/config_defaults.sh` — Add security agent config defaults:
+  SECURITY_AGENT_ENABLED=true (opt-out model), CLAUDE_SECURITY_MODEL (defaults to
+  CLAUDE_STANDARD_MODEL), SECURITY_MAX_TURNS=15, SECURITY_MIN_TURNS=8,
+  SECURITY_MAX_TURNS_CAP=30, SECURITY_MAX_REWORK_CYCLES=2,
+  MILESTONE_SECURITY_MAX_TURNS=$(( SECURITY_MAX_TURNS * 2 )),
+  SECURITY_BLOCK_SEVERITY=HIGH (minimum severity triggering rework),
+  SECURITY_UNFIXABLE_POLICY=escalate (escalate|halt|waiver),
+  SECURITY_OFFLINE_MODE=auto (auto|offline|online — auto detects connectivity),
+  SECURITY_ONLINE_SOURCES="" (optional: snyk, nvd, ghsa),
+  SECURITY_ROLE_FILE=.claude/agents/security.md,
+  SECURITY_NOTES_FILE=SECURITY_NOTES.md,
+  SECURITY_REPORT_FILE=SECURITY_REPORT.md,
+  SECURITY_WAIVER_FILE="" (optional path to pre-approved waivers list).
+- `lib/config.sh` — Add SECURITY_* keys to config validation. Validate
+  SECURITY_UNFIXABLE_POLICY is one of escalate|halt|waiver. Validate
+  SECURITY_BLOCK_SEVERITY is one of CRITICAL|HIGH|MEDIUM|LOW.
+- `lib/hooks.sh` or `lib/finalize.sh` — Include SECURITY_NOTES.md and
+  SECURITY_REPORT.md in archive step. Include security findings summary in
+  RUN_SUMMARY.json.
+- `lib/prompts.sh` — Register new template variables: SECURITY_REPORT_CONTENT,
+  SECURITY_NOTES_CONTENT, SECURITY_FINDINGS_BLOCK (summary of findings for
+  reviewer injection), SECURITY_FIXES_BLOCK (summary of security fixes applied
+  during rework, for tester awareness).
+- `prompts/tester.prompt.md` — Add conditional security fixes block:
+  `{{IF:SECURITY_FIXES_BLOCK}}## Security Fixes Applied
+  The following security issues were fixed during this run. Ensure your tests
+  cover the fix behavior (e.g., input validation, auth checks).
+  {{SECURITY_FIXES_BLOCK}}{{ENDIF:SECURITY_FIXES_BLOCK}}`
+- `prompts/reviewer.prompt.md` — Add conditional security context block:
+  `{{IF:SECURITY_FINDINGS_BLOCK}}## Security Findings (from Security Agent)
+  {{SECURITY_FINDINGS_BLOCK}}{{ENDIF:SECURITY_FINDINGS_BLOCK}}`
+  Instructs reviewer to treat CRITICAL/HIGH unfixed items as context for their
+  own review but not to duplicate the security agent's work.
+- `lib/state.sh` — Add "security" as valid pipeline stage for state persistence
+  and resume. Support `--start-at security`.
+
+Acceptance criteria:
+- `run_stage_security()` invokes security agent and produces SECURITY_REPORT.md
+- SECURITY_REPORT.md contains structured findings with severity, category, file:line,
+  fixable flag, and suggested fix for each finding
+- Findings classified as CRITICAL or HIGH (configurable via SECURITY_BLOCK_SEVERITY)
+  with fixable=yes trigger rework loop back to coder
+- Rework loop bounded by SECURITY_MAX_REWORK_CYCLES (default 2) — exhaustion
+  proceeds to reviewer with unfixed items in SECURITY_NOTES.md
+- Findings classified as unfixable + CRITICAL/HIGH follow SECURITY_UNFIXABLE_POLICY:
+  escalate writes to HUMAN_ACTION_REQUIRED.md and continues, halt exits pipeline,
+  waiver logs to SECURITY_NOTES.md and continues
+- MEDIUM/LOW findings always go to SECURITY_NOTES.md (never trigger rework)
+- Reviewer prompt includes SECURITY_FINDINGS_BLOCK when findings exist
+- When SECURITY_AGENT_ENABLED=false, stage is cleanly skipped (no error, no output)
+- When SECURITY_OFFLINE_MODE=auto and no connectivity, agent uses static rules only
+- `--start-at security` resumes pipeline from security stage
+- `--skip-security` bypasses security stage for a single run
+- Pipeline state saves/restores correctly through security stage
+- Stage numbering updated throughout: Coder(1), Security(2), Review(3), Test(4)
+- Fast-path skip: docs-only / config-only / asset-only changes skip security scan
+- Post-rework build gate: build gate runs after each security rework cycle
+- Tester prompt includes SECURITY_FIXES_BLOCK when security fixes were applied
+- Dynamic turns: SECURITY_MIN_TURNS and SECURITY_MAX_TURNS_CAP respected
+- Milestone mode: MILESTONE_SECURITY_MAX_TURNS used when --milestone active
+- All existing tests pass
+- `bash -n stages/security.sh` passes
+- `shellcheck stages/security.sh` passes
+
+Watch For:
+- Stage renumbering from 3 to 4 stages affects header output, progress tracking,
+  and any hardcoded "Stage N / 3" strings. Grep for "/ 3" in all stages.
+- The rework loop in security mirrors the review rework loop but routes to a
+  DIFFERENT prompt (security_rework vs coder_rework). The coder needs to understand
+  it's fixing security issues, not review feedback.
+- SECURITY_REPORT.md parsing must be robust — the agent may not perfectly follow
+  the format. Use the same grep-based verdict extraction pattern as review.sh.
+- The `--start-at` chain must be updated: coder → security → review → test.
+  Skipping to review should also skip security. Skipping to security should
+  require CODER_SUMMARY.md to exist.
+- SECURITY_WAIVER_FILE is optional — when provided, known-waivered CVEs/patterns
+  should not trigger rework. This is a simple grep-based check, not a full
+  policy engine.
+- The security agent role file (templates/security.md) needs to be comprehensive
+  enough to work offline but not so large it wastes context. Target ~200 lines
+  covering the most common vulnerability patterns.
+
+Seeds Forward:
+- M10 (PM Agent) can reference security posture when evaluating task readiness
+- Dashboard UI will render SECURITY_REPORT.md findings in a dedicated panel
+- V4 parallel execution converts this from serial to parallel-with-reviewer
+- The SECURITY_WAIVER_FILE pattern is reusable for other policy-driven gates
+- SECURITY_NOTES.md feeds into the future Tech Debt Agent's backlog
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 10: Task Intake / PM Agent (Pre-Stage Gate)
+<!-- milestone-meta
+id: "10"
+status: "done"
+-->
+
+A pre-pipeline agent that evaluates task and milestone clarity before committing
+pipeline resources. Silently passes or auto-tweaks milestones that are "good enough."
+Only escalates to the human when the task is genuinely too ambiguous for a reasonable
+judgement call. Configurable clarity threshold in pipeline.conf.
+
+This is NOT a new command — it's a pre-stage in the existing flow that runs before
+the Scout. It makes Tekhton accessible to users who have ideas and understand what
+they want but don't necessarily write formal acceptance criteria.
+
+Files to create:
+- `stages/intake.sh` — `run_stage_intake()`: pre-stage gate before Scout/Coder.
+  Reads the current milestone (or raw task string if no milestones). Invokes
+  the intake agent to evaluate clarity along dimensions: scope definition,
+  testability, acceptance criteria completeness, ambiguity level. Agent produces
+  INTAKE_REPORT.md with one of four verdicts:
+  (1) PASS — milestone is clear enough, proceed as-is.
+  (2) TWEAKED — milestone was unclear but agent made reasonable judgement calls.
+  Produces a revised milestone description with changes annotated. Auto-proceeds
+  unless INTAKE_CONFIRM_TWEAKS=true.
+  (3) SPLIT_RECOMMENDED — task is too large for one milestone. Produces recommended
+  sub-milestones that can be added to the DAG. Escalates to human for approval
+  (or auto-splits if INTAKE_AUTO_SPLIT=true).
+  (4) NEEDS_CLARITY — genuinely ambiguous, cannot make a reasonable call. Produces
+  specific questions for the human. Writes to CLARIFICATIONS.md using the existing
+  clarification protocol. Pipeline pauses.
+  Stage is skipped cleanly when INTAKE_AGENT_ENABLED=false.
+- `prompts/intake_scan.prompt.md` — Intake evaluation prompt. Instructs agent to:
+  (1) read the milestone file (or task string), (2) read CLAUDE.md for project
+  context, (3) read PROJECT_INDEX.md summary if available (for brownfield projects
+  where task clarity depends on understanding existing code structure),
+  (4) read the INTAKE_HISTORY_BLOCK (when available) — a summary of historical
+  verdicts, rework patterns, and causal outcomes for similar milestones, extracted
+  from the causal event log by the shell before agent invocation.
+  (5) evaluate along a clarity rubric: Is the scope bounded? Are
+  acceptance criteria testable? Are there implicit assumptions that need stating?
+  Could two competent developers interpret this differently? Does the milestone
+  declare its migration impact (new config keys, new .claude/ files, format
+  changes)? If the milestone adds user-facing configuration or files and has
+  no "Migration impact" section, flag it for addition (TWEAKED or NEEDS_CLARITY
+  depending on how much is missing). (6) produce
+  INTAKE_REPORT.md with verdict, confidence score (0-100), reasoning, and either
+  tweaks, split recommendations, or questions depending on verdict.
+  The prompt includes examples of each verdict level to calibrate the agent.
+  When INTAKE_HISTORY_BLOCK includes patterns like "milestones with similar scope
+  required 3+ rework cycles," the agent should factor this into its confidence
+  scoring and may recommend preventive tweaks (tighter acceptance criteria,
+  explicit Watch For items).
+- `prompts/intake_tweak.prompt.md` — When verdict is TWEAKED, this prompt generates
+  the revised milestone content. Instructs agent to: preserve the original intent,
+  add missing acceptance criteria, clarify ambiguous scope boundaries, add
+  Watch For items if obvious risks exist. Annotates changes with `[PM: ...]`
+  markers so the human can see what was adjusted.
+- `templates/intake.md` — Intake agent role definition (copied by --init). Defines
+  the agent's PM expertise: task decomposition, scope assessment, acceptance
+  criteria writing, ambiguity detection. Emphasizes: "Your job is to help, not
+  gatekeep. Pass anything that a competent developer could reasonably execute.
+  Only pause for genuine ambiguity."
+
+Files to modify:
+- `tekhton.sh` — Add `source "${TEKHTON_HOME}/stages/intake.sh"` to source block.
+  Insert `run_stage_intake` call BEFORE the architect audit and Scout/Coder stage.
+  The intake gate runs once per milestone (not per review cycle). If verdict is
+  TWEAKED, update the milestone file in-place (or task string in non-milestone mode)
+  before proceeding. If SPLIT_RECOMMENDED and approved, call existing
+  `split_milestone()` infrastructure with the agent's recommended splits.
+  If NEEDS_CLARITY, enter clarification pause (reuse existing clarification protocol
+  from lib/clarify.sh).
+  Add `--add-milestone "description"` flag: invokes the intake agent in
+  "create" mode — evaluates the description, scopes it, writes a milestone
+  file to MILESTONE_DIR, appends a row to MANIFEST.cfg, and exits. No
+  pipeline run. This gives users a CLI path to add milestones to the DAG
+  without running --replan. The intake agent applies the same clarity rubric
+  and may TWEAK or ask for clarity before committing the milestone.
+- `lib/config_defaults.sh` — Add intake agent config defaults:
+  INTAKE_AGENT_ENABLED=true (opt-out, like security),
+  CLAUDE_INTAKE_MODEL=opus (intake is a judgement call — use best model),
+  INTAKE_MAX_TURNS=10 (should be fast — reading + evaluating, not coding),
+  INTAKE_CLARITY_THRESHOLD=40 (confidence score below this → NEEDS_CLARITY),
+  INTAKE_TWEAK_THRESHOLD=70 (confidence score below this but above clarity
+  threshold → TWEAKED; above this → PASS),
+  INTAKE_CONFIRM_TWEAKS=false (when true, pause for human to review tweaks
+  before proceeding; when false, auto-proceed with tweaks),
+  INTAKE_AUTO_SPLIT=false (when true, auto-add recommended splits to DAG
+  without human approval),
+  INTAKE_ROLE_FILE=.claude/agents/intake.md,
+  INTAKE_REPORT_FILE=INTAKE_REPORT.md.
+- `lib/config.sh` — Add INTAKE_* keys to config validation. Validate
+  INTAKE_CLARITY_THRESHOLD is 0-100, INTAKE_TWEAK_THRESHOLD is 0-100 and
+  greater than INTAKE_CLARITY_THRESHOLD. Validate model is valid.
+- `lib/state.sh` — Add "intake" as valid pipeline stage for state persistence.
+  Support `--start-at intake`. Intake results cached — re-running after a tweak
+  does not re-evaluate the same milestone (uses a hash of milestone content).
+  When verdict is TWEAKED in non-milestone mode, write tweaked task to
+  `${TEKHTON_SESSION_DIR}/INTAKE_TWEAKED_TASK.md` so resume picks up the
+  tweaked version instead of the original CLI argument.
+- `lib/milestone_ops.sh` — When intake produces TWEAKED verdict, update the
+  milestone file content and add a `<!-- PM-tweaked: YYYY-MM-DD -->` metadata
+  comment so the human and dashboard can see what was adjusted.
+- `lib/hooks.sh` or `lib/finalize.sh` — Include INTAKE_REPORT.md in archive.
+  Include intake verdict and any tweaks in RUN_SUMMARY.json.
+- `lib/prompts.sh` — Register INTAKE_REPORT_CONTENT, INTAKE_TWEAKS_BLOCK,
+  INTAKE_HISTORY_BLOCK template variables. INTAKE_HISTORY_BLOCK is populated by
+  querying the causal event log (when available via M13's lib/causality.sh):
+  ```bash
+  if type verdict_history &>/dev/null; then
+      INTAKE_HISTORY_BLOCK=$(verdict_history "intake" 10)
+      # Also include: rework cycle counts for recent milestones,
+      # split frequency, common failure patterns
+      local rework_data
+      rework_data=$(events_by_type "rework_cycle" 10)
+      INTAKE_HISTORY_BLOCK+=$'\n'"Rework patterns: ${rework_data}"
+  fi
+  ```
+  When lib/causality.sh is not available (pre-M13 builds, CAUSAL_LOG_ENABLED=false),
+  INTAKE_HISTORY_BLOCK is empty and the conditional block in the prompt is skipped.
+- `lib/orchestrate.sh` — In --complete mode, `run_stage_intake` is called once
+  per milestone iteration, not once at pipeline start. Each milestone in the
+  frontier gets its own intake evaluation. This ensures auto-advanced milestones
+  also get clarity checking.
+- `lib/metrics.sh` — Record intake verdicts and confidence scores in run metrics.
+  Fields: intake_verdict, intake_confidence, intake_tweaks_applied (boolean),
+  intake_questions_asked (count). Used for threshold calibration over time.
+- `prompts/scout.prompt.md` — Add optional context block:
+  `{{IF:INTAKE_TWEAKS_BLOCK}}## PM Agent Notes{{INTAKE_TWEAKS_BLOCK}}
+  {{ENDIF:INTAKE_TWEAKS_BLOCK}}`
+  So the scout sees any scope clarifications the intake agent made.
+
+Acceptance criteria:
+- `run_stage_intake()` evaluates current milestone/task and produces INTAKE_REPORT.md
+- INTAKE_REPORT.md contains: verdict (PASS|TWEAKED|SPLIT_RECOMMENDED|NEEDS_CLARITY),
+  confidence score (0-100), reasoning, and verdict-specific payload
+- Verdict PASS → pipeline proceeds immediately, no user interaction
+- Verdict TWEAKED → milestone file updated with annotated changes, pipeline proceeds
+  (or pauses if INTAKE_CONFIRM_TWEAKS=true)
+- Verdict SPLIT_RECOMMENDED → recommended sub-milestones presented, pipeline pauses
+  for human approval (or auto-splits if INTAKE_AUTO_SPLIT=true)
+- `tekhton --add-milestone "description"` creates a scoped milestone file + manifest
+  entry using the intake agent in create mode, without running the pipeline
+- Verdict NEEDS_CLARITY → specific questions written to CLARIFICATIONS.md, pipeline
+  pauses using existing clarification protocol
+- When INTAKE_AGENT_ENABLED=false, stage is cleanly skipped
+- Intake does NOT re-evaluate a milestone whose content hash hasn't changed since
+  last evaluation (avoids noise on resume)
+- `[PM: ...]` annotations in tweaked milestones are visible in milestone files
+- Scout prompt includes PM notes when tweaks were made
+- Intake verdict and tweaks included in RUN_SUMMARY.json
+- Two separate thresholds: INTAKE_CLARITY_THRESHOLD and INTAKE_TWEAK_THRESHOLD
+  are independently configurable; lowering clarity threshold makes gate more permissive
+- Tweaked task string persists to session dir for resume in non-milestone mode
+- In --complete mode, intake runs once per milestone (not once per pipeline start)
+- Intake verdict and confidence scores recorded in run metrics
+- Intake agent reads PROJECT_INDEX.md when available for project context
+- When causal log is available (M13): INTAKE_HISTORY_BLOCK injected into prompt
+  with historical verdict distribution, rework cycle averages, and split frequency
+- When causal log is unavailable: INTAKE_HISTORY_BLOCK is empty, prompt
+  conditional block skipped, no errors
+- All existing tests pass
+- `bash -n stages/intake.sh` passes
+- `shellcheck stages/intake.sh` passes
+
+Watch For:
+- The intake agent MUST default to PASS for well-scoped milestones. Calibrate the
+  prompt examples heavily toward PASS verdicts with a few TWEAKED examples. The
+  agent should feel like a helpful colleague, not a bureaucratic gate.
+- Confidence score thresholds (40/70 defaults) will need tuning. The initial values
+  are conservative — expect adjustment after real-world usage. Log the scores to
+  metrics so we can calibrate.
+- TWEAKED milestone writes must use atomic tmpfile+mv pattern (same as manifest writes).
+- In non-milestone mode (raw task string), tweaks modify the TASK variable in memory
+  and log the original vs tweaked task. No file to update.
+- The content hash for skip-on-resume should use `sha256sum` of the milestone file
+  content (or task string). Store in session dir, not in the milestone file itself.
+- SPLIT_RECOMMENDED integrates with the existing `split_milestone()` infrastructure
+  from M01. The intake agent's recommended splits must match the format that
+  `split_milestone()` expects.
+- The opus model default for intake is intentional — this is a judgement call stage
+  where model quality directly affects user experience. It runs once per milestone,
+  so the cost is bounded.
+- Monorepo support: the intake agent should note when a task seems to span multiple
+  project boundaries but should NOT try to solve the monorepo problem itself. That's
+  a separate V4 concern. For now, it flags it as a NEEDS_CLARITY question.
+
+Seeds Forward:
+- Dashboard UI will show intake verdicts, tweaks, and confidence scores
+- Brownfield 2.0 init can use the intake agent to evaluate auto-generated milestones
+- The confidence scoring pattern is reusable for other quality gates
+- PM tweak annotations create an audit trail for milestone evolution
+- The causal log integration means the PM agent improves over time — it learns
+  from the project's history of what kinds of milestones succeed vs need rework.
+  This is the first agent in Tekhton that consumes structured pipeline memory
+  rather than just reading static config.
+- V4: intake agent could correlate its confidence scores with actual outcomes
+  (causal log tracks whether a PASS milestone actually passed without rework)
+  to self-calibrate the INTAKE_CLARITY_THRESHOLD and INTAKE_TWEAK_THRESHOLD
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 11: Brownfield AI Artifact Detection & Handling
+<!-- milestone-meta
+id: "11"
+status: "done"
+-->
+
+When `--init` encounters a codebase that already has AI tool configurations
+(CLAUDE.md, .cursor/, .github/copilot/, aider configs, Cline settings, etc.),
+detect them, present the user with clear options (archive, merge, tidy, ignore),
+and execute the chosen strategy before proceeding with Tekhton's own setup.
+
+This is the "your repo already has AI hands in it" experience. A user dropping
+Tekhton into an existing project should never have their prior config silently
+overwritten or awkwardly coexist with Tekhton's model.
+
+Files to create:
+- `lib/detect_ai_artifacts.sh` — AI artifact detection engine. Scans for known
+  AI tool configuration patterns:
+  **Configuration files:**
+  - `.claude/` directory — scanned at file level, not directory level. Tekhton
+    artifacts (pipeline.conf, agents/*.md, milestones/) detected separately from
+    Claude Code artifacts (settings.json, settings.local.json, commands/).
+    Mixed directories handled granularly.
+  - `CLAUDE.md` (existing project rules — could be Tekhton or Claude Code native)
+  - `.cursor/` directory (Cursor IDE settings, rules, prompts)
+  - `.cursorrules` (Cursor rules file)
+  - `.github/copilot/` (GitHub Copilot config)
+  - `.aider*` files (aider configuration)
+  - `.cline/` or `cline_docs/` (Cline AI config)
+  - `.continue/` (Continue.dev config)
+  - `.windsurf/` or `.windsurfrules` (Windsurf/Codeium config)
+  - `.roomodes` or `.roo/` (Roo Code config)
+  - `.ai/` or `.aiconfig` (generic AI config directories)
+  - `AGENTS.md`, `CONVENTIONS.md`, `ARCHITECTURE.md` when they contain AI-agent
+    style directives (heuristic: look for "## Rules", "## Constraints",
+    "You are", "Your role", agent persona language)
+  **Code-level patterns (heuristic, lower confidence):**
+  - Files with high density of AI-generated comment patterns ("Generated by",
+    "Auto-generated", "AI-assisted", "Copilot", "Claude")
+  - Unusually verbose JSDoc/docstrings on trivial functions (heuristic signal)
+  - `.claude/agents/*.md` files (prior Tekhton setup)
+  - `pipeline.conf` (prior Tekhton setup — special case: reinit path)
+  Main function: `detect_ai_artifacts($project_dir)` returns structured output:
+  `TOOL|PATH|TYPE|CONFIDENCE` where TYPE is config|rules|agents|code-patterns
+  and CONFIDENCE is high|medium|low.
+  Helper: `classify_ai_tool($path)` maps paths to known tool names.
+  Helper: `_scan_for_directive_language($file)` checks if a markdown file
+  contains agent-style directives (grep for persona patterns).
+
+- `lib/artifact_handler.sh` — User-facing artifact handling workflow.
+  Main function: `handle_ai_artifacts($project_dir, $artifacts_list)`
+  Presents detected artifacts to user with interactive menu per artifact group:
+  **(A) Archive** — Move to `.claude/archived-ai-config/` with a manifest
+  recording what was archived, when, and from which tool. Preserves the files
+  intact for reference. User can restore later.
+  **(M) Merge** — For compatible artifacts (especially existing CLAUDE.md,
+  ARCHITECTURE.md, agent role files): extract useful content and incorporate
+  into Tekhton's generated config. The merge is agent-assisted — call a
+  lightweight agent to read the existing config and extract relevant rules,
+  constraints, and project context into a MERGE_CONTEXT.md that feeds into
+  the synthesis pipeline. This is NOT a blind file concat — the agent
+  understands both formats and produces clean Tekhton-native output.
+  When the merge agent detects conflicts between sources (e.g., Cursor rules
+  say "use tabs" but aider config says "use spaces"), it writes `[CONFLICT: ...]`
+  markers in MERGE_CONTEXT.md with both values and a recommendation. The
+  synthesis agent resolves these during CLAUDE.md generation, preferring the
+  most recent / most specific source. Unresolvable conflicts are surfaced
+  in the synthesis review menu for human decision.
+  **(T) Tidy** — Remove the AI artifacts entirely. Requires explicit
+  confirmation per artifact. Optionally creates a git commit with the removal
+  so it's recoverable from history. Also checks for and offers to clean up
+  related .gitignore entries added by the AI tool (e.g., `.aider*` lines,
+  `.cursor/` entries) with separate confirmation.
+  **(I) Ignore** — Leave artifacts in place, proceed with Tekhton setup
+  alongside them. Warn that config conflicts may occur.
+  For prior Tekhton installs (detected via pipeline.conf), offer a specialized
+  **Reinit** path that preserves pipeline.conf settings while regenerating
+  agent roles and updating CLAUDE.md structure.
+  Non-interactive mode: ARTIFACT_HANDLING_DEFAULT=archive|tidy|ignore in
+  pipeline.conf or environment variable for CI/headless use.
+
+- `prompts/artifact_merge.prompt.md` — Merge agent prompt. Instructs agent to:
+  (1) read the detected AI configuration files, (2) extract project-specific
+  rules, constraints, naming conventions, architectural decisions, and any
+  useful context, (3) produce MERGE_CONTEXT.md in a structured format that
+  the synthesis pipeline can consume alongside PROJECT_INDEX.md, (4) flag
+  any conflicts between the existing AI config and Tekhton's approach
+  (e.g., conflicting code style rules).
+
+Files to modify:
+- `lib/init.sh` — Insert artifact detection as Phase 1.5 (after pre-flight,
+  before detection). Call `detect_ai_artifacts()`. If artifacts found, call
+  `handle_ai_artifacts()` before proceeding. If merge chosen, pass
+  MERGE_CONTEXT.md path to synthesis pipeline. If archive/tidy chosen,
+  execute before scaffold generation. Update `_seed_claude_md()` to
+  incorporate merged context when available.
+- `stages/init_synthesize.sh` — When MERGE_CONTEXT.md exists, include it
+  in `_assemble_synthesis_context()` so the synthesis agent has the merged
+  knowledge from prior AI config. Add `{{IF:MERGE_CONTEXT}}` conditional
+  block to synthesis prompts.
+- `prompts/plan_generate.prompt.md` — Add `{{IF:MERGE_CONTEXT}}` block so
+  plan generation also benefits from merged prior config knowledge.
+- `lib/config_defaults.sh` — Add: ARTIFACT_DETECTION_ENABLED=true,
+  ARTIFACT_HANDLING_DEFAULT="" (empty = interactive, set for headless),
+  ARTIFACT_ARCHIVE_DIR=.claude/archived-ai-config,
+  ARTIFACT_MERGE_MODEL=${CLAUDE_STANDARD_MODEL},
+  ARTIFACT_MERGE_MAX_TURNS=10.
+- `lib/prompts_interactive.sh` — Add `prompt_artifact_menu()` helper for the
+  per-artifact-group choice menu (Archive/Merge/Tidy/Ignore).
+
+Acceptance criteria:
+- `detect_ai_artifacts()` correctly identifies: .cursor/, .cursorrules,
+  .github/copilot/, .aider*, .cline/, .continue/, .windsurf/, .windsurfrules,
+  .roomodes, existing CLAUDE.md, existing .claude/ directory, existing
+  pipeline.conf
+- Each detected artifact includes tool name, path, type, and confidence
+- `handle_ai_artifacts()` presents interactive menu with A/M/T/I options
+- Archive moves files to .claude/archived-ai-config/ with manifest
+- Merge invokes agent to extract useful content into MERGE_CONTEXT.md
+- Tidy removes files with confirmation and optional git commit
+- Ignore proceeds with warning about potential conflicts
+- Prior Tekhton install detected via pipeline.conf triggers reinit path
+- Granular .claude/ detection: Tekhton files vs Claude Code files distinguished
+- Merge conflicts marked with [CONFLICT: ...] in MERGE_CONTEXT.md
+- Tidy cleans up related .gitignore entries with separate confirmation
+- MERGE_CONTEXT.md consumed by synthesis pipeline when present
+- Non-interactive mode works via ARTIFACT_HANDLING_DEFAULT
+- When no artifacts detected, phase is silently skipped (no noise)
+- **Init completion report:** After all init phases complete, generate
+  INIT_REPORT.md summarizing: artifacts detected and handled, tech stack
+  detected, milestones generated, health baseline (if M15 available),
+  and "next steps" with exact commands. If DASHBOARD_ENABLED, include
+  "Open Watchtower: open .claude/dashboard/index.html". Print a concise
+  colored summary to terminal. Watchtower's first-load should show the
+  init report as its default content when no runs exist yet.
+- All existing tests pass
+- `bash -n lib/detect_ai_artifacts.sh lib/artifact_handler.sh` passes
+- `shellcheck lib/detect_ai_artifacts.sh lib/artifact_handler.sh` passes
+
+Watch For:
+- CLAUDE.md detection is tricky — it could be a Tekhton-generated file, a Claude
+  Code native file, or a hand-written project rules file. Check for Tekhton
+  markers (<!-- tekhton-managed -->) to distinguish. A hand-written CLAUDE.md
+  with no Tekhton markers is the most valuable merge candidate.
+- The merge agent must be conservative. Better to under-extract (user adds
+  missing context later) than over-extract (user fights with wrong rules).
+- `.cursor/` can contain large binary state files. Only scan .md/.json/.yaml
+  files within AI config directories, not everything.
+- Some projects legitimately use `.ai/` for non-AI-tool purposes (e.g.,
+  Adobe Illustrator files). The confidence level handles this — config files
+  within get high confidence, ambiguous directories get low.
+- The reinit path for existing Tekhton installs must NOT destroy pipeline.conf
+  customizations. Read existing config, merge with new detections, write back
+  with VERIFY markers on changed values.
+- Git commit for tidy operation should use a consistent message format that's
+  easy to find in history: "chore: archive prior AI config (tekhton --init)".
+
+Seeds Forward:
+- MERGE_CONTEXT.md pattern is reusable when Tekhton encounters new AI tools
+  in the future — just add detection patterns to detect_ai_artifacts.sh
+- Archive manifest enables future "restore" command if needed
+- Dashboard UI can show "Prior AI Config" panel with archive status
+- The detection engine is independently useful for the PM agent (understanding
+  what tools have touched this codebase)
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 12: Brownfield Deep Analysis & Inference Quality
+<!-- milestone-meta
+id: "12"
+status: "done"
+-->
+
+Upgrade the detection and crawling heuristics to handle complex project structures:
+monorepos with workspaces, multi-service repositories, CI/CD-informed inference,
+existing documentation quality assessment, and smarter config generation that
+accounts for project maturity and complexity.
+
+This milestone makes `--init` produce accurate results for the hardest cases —
+large brownfield codebases with years of accumulated structure, multiple build
+systems, and inconsistent conventions.
+
+Files to modify:
+- `lib/detect.sh` — Expand language detection with:
+  **Monorepo / workspace detection:**
+  - Detect workspace roots: pnpm-workspace.yaml, lerna.json, nx.json,
+    package.json "workspaces" field, Cargo workspace [workspace] in
+    Cargo.toml, Go workspace go.work files, Gradle multi-project
+    (settings.gradle with include), Maven multi-module (pom.xml with modules).
+  - When workspace detected, enumerate sub-projects and detect per-project.
+    Output includes workspace root + per-project language/framework.
+  - New function: `detect_workspaces($project_dir)` returns
+    `WORKSPACE_TYPE|ROOT_MANIFEST|SUBPROJECT_PATHS`.
+  **Infrastructure-as-code detection:**
+  - Detect Terraform (.tf files, terraform/ directory, .terraform.lock.hcl)
+  - Detect Pulumi (Pulumi.yaml, Pulumi.*.yaml)
+  - Detect AWS CDK (cdk.json, cdk.out/)
+  - Detect CloudFormation (template.yaml/json with AWSTemplateFormatVersion)
+  - Detect Ansible (playbooks/, ansible.cfg, inventory/)
+  - New function: `detect_infrastructure($project_dir)` returns
+    `IAC_TOOL|PATH|PROVIDER|CONFIDENCE`. Feeds into security agent context
+    (infrastructure misconfigs are a major vulnerability class).
+  **Multi-service detection:**
+  - Detect docker-compose.yml / docker-compose.yaml with multiple services.
+  - Detect Procfile with multiple process types.
+  - Detect Kubernetes manifests (k8s/, deploy/, manifests/) referencing
+    multiple service names.
+  - Cross-reference service names with directory structure to map
+    service → directory → tech stack.
+  - New function: `detect_services($project_dir)` returns
+    `SERVICE_NAME|DIRECTORY|TECH_STACK|SOURCE` (source = docker-compose,
+    procfile, k8s, directory-convention).
+  **CI/CD-informed inference:**
+  - Parse .github/workflows/*.yml for: build commands, test commands,
+    language setup actions (actions/setup-node, actions/setup-python, etc.),
+    environment variables hinting at services, deployment targets.
+  - Parse .gitlab-ci.yml, Jenkinsfile, .circleci/config.yml,
+    bitbucket-pipelines.yml for similar signals.
+  - Parse Dockerfile / Dockerfile.* for base images (node:18, python:3.11)
+    confirming language versions.
+  - CI-detected commands used to validate/override heuristic command detection.
+    CI has higher confidence than manifest heuristics because it's what
+    actually runs in production.
+  - New function: `detect_ci_config($project_dir)` returns
+    `CI_SYSTEM|BUILD_CMD|TEST_CMD|LINT_CMD|DEPLOY_TARGET|CONFIDENCE`.
+
+- `lib/detect_commands.sh` — Enhanced command inference:
+  **Priority cascade:**
+  1. CI/CD config (highest confidence — this is what actually runs)
+  2. Makefile / Taskfile / justfile targets
+  3. Package manager scripts (package.json, pyproject.toml)
+  4. Convention-based fallback (current behavior, lowest confidence)
+  When multiple sources agree, confidence = high.
+  When sources disagree, flag for user confirmation during init.
+  **Additional detection:**
+  - Detect linters: eslint, prettier, ruff, black, clippy, golangci-lint
+    from config files (.eslintrc*, pyproject.toml [tool.ruff], etc.)
+  - Detect formatters separate from linters.
+  - Detect pre-commit hooks (.pre-commit-config.yaml) as an authoritative
+    source for lint/format commands.
+  **Test framework detection (separate from TEST_CMD):**
+  - Detect specific frameworks: pytest, unittest, jest, vitest, mocha,
+    cypress, playwright, go test, cargo test, rspec, minitest, junit, xunit.
+  - Source: config files (jest.config.*, pytest.ini, vitest.config.*),
+    dependency manifests, test file naming conventions (*_test.go, *.spec.ts).
+  - New function: `detect_test_frameworks($project_dir)` returns
+    `FRAMEWORK|CONFIG_FILE|CONFIDENCE`. Injected into tester agent context
+    so it generates framework-appropriate test code.
+
+- `lib/detect_report.sh` — Enhanced report format:
+  - Add workspace section when workspaces detected.
+  - Add services section when multi-service detected.
+  - Add CI/CD section with detected pipeline config.
+  - Add documentation quality section (see below).
+  - Color-code confidence levels in terminal output.
+  - Show source attribution for each detection ("detected from: CI workflow").
+
+- `lib/crawler.sh` — Smarter crawl budget allocation for complex projects:
+  - When workspaces detected, allocate per-subproject budgets proportional
+    to file count. Ensure each subproject gets at least a minimum sample.
+  - When services detected, prioritize sampling from service entry points
+    and shared libraries.
+  - Add documentation quality assessment to crawl phase:
+    New function: `_assess_doc_quality($project_dir)` evaluates:
+    - README.md: exists? length? has sections? has examples?
+    - CONTRIBUTING.md / DEVELOPMENT.md: setup instructions present?
+    - API docs: OpenAPI/Swagger specs, generated docs directories?
+    - Architecture docs: ARCHITECTURE.md, docs/architecture/, ADRs?
+    - Inline doc density: sample ratio of documented vs undocumented exports
+    Score: 0-100 doc quality score. Used by synthesis to calibrate how much
+    it should trust existing docs vs infer from code.
+  - Add `DOC_QUALITY_SCORE` to PROJECT_INDEX.md metadata.
+
+- `lib/init.sh` — Updated routing and config generation:
+  - When workspaces detected, ask user: "This is a monorepo with N
+    subprojects. Should Tekhton manage the root (all projects) or a
+    specific subproject?" Offer list of detected subprojects.
+  - When services detected, include service map in pipeline.conf comments
+    so the user can configure per-service overrides if needed.
+  - When CI/CD detected, pre-populate TEST_CMD, ANALYZE_CMD, BUILD_CHECK_CMD
+    from CI config with high confidence (VERIFY markers only when CI and
+    heuristic disagree).
+  - Adjust `_emit_models()` in init_config.sh: consider doc quality score.
+    Low doc quality + large project → use opus for coder (needs more
+    reasoning about unclear architecture). High doc quality → sonnet
+    sufficient.
+
+- `lib/init_config.sh` — Add workspace and service awareness:
+  - New `_emit_workspace_config()` section when workspaces detected.
+  - Include detected CI commands with source annotations.
+  - Add `PROJECT_STRUCTURE=monorepo|multi-service|single` config key.
+  - Add `WORKSPACE_TYPE` and `WORKSPACE_SUBPROJECTS` config keys
+    for monorepo awareness.
+
+- `lib/config_defaults.sh` — Add:
+  DETECT_WORKSPACES_ENABLED=true,
+  DETECT_SERVICES_ENABLED=true,
+  DETECT_CI_ENABLED=true,
+  DOC_QUALITY_ASSESSMENT_ENABLED=true,
+  PROJECT_STRUCTURE=single (overridden by detection).
+
+- `stages/init_synthesize.sh` — Update synthesis context assembly:
+  - Include workspace structure in synthesis context when detected.
+  - Include service map in synthesis context when detected.
+  - Include doc quality score so synthesis agent calibrates depth
+    of inference vs reliance on existing documentation.
+  - When doc quality is high (>70), instruct agent to extract and
+    preserve existing architectural decisions rather than inferring new ones.
+  - When doc quality is low (<30), instruct agent to infer more
+    aggressively from code patterns and generate more detailed
+    architecture documentation.
+
+Acceptance criteria:
+- `detect_workspaces()` correctly identifies: npm/yarn/pnpm workspaces,
+  lerna, nx, Cargo workspaces, Go workspaces, Gradle multi-project,
+  Maven multi-module
+- `detect_services()` identifies services from docker-compose, Procfile,
+  and k8s manifests, mapping them to directories and tech stacks
+- `detect_ci_config()` parses GitHub Actions, GitLab CI, CircleCI,
+  Jenkinsfile, and Bitbucket Pipelines for build/test/lint commands
+- CI-detected commands take precedence over heuristic detection
+- When multiple detection sources disagree, user is prompted to confirm
+- Monorepo init asks user to choose root vs subproject scope
+- Doc quality assessment produces a 0-100 score from README, contributing
+  guides, API docs, architecture docs, and inline doc density
+- DOC_QUALITY_SCORE included in PROJECT_INDEX.md metadata
+- Synthesis agent adjusts inference depth based on doc quality score
+- Crawler budget allocation adapts for workspaces (per-subproject budgets)
+- Detection report includes workspace, service, CI, and doc quality sections
+- `detect_infrastructure()` identifies Terraform, Pulumi, CDK, CloudFormation,
+  Ansible with provider attribution
+- `detect_test_frameworks()` identifies specific test frameworks (not just TEST_CMD)
+  and is injected into tester agent context
+- All detections include source attribution and confidence level
+- Single-project repos see zero change in behavior (backward compatible)
+- All existing tests pass
+- `bash -n` passes on all modified files
+- `shellcheck` passes on all modified files
+- New test cases cover: monorepo detection, service detection, CI parsing,
+  doc quality assessment, workspace-aware crawling
+
+Watch For:
+- Monorepo workspace enumeration can be expensive for repos with many
+  subprojects (100+ packages in a lerna monorepo). Cap enumeration at
+  a configurable limit (default 50 subprojects) and summarize the rest.
+- CI/CD parsing must be read-only and safe. Never execute CI commands,
+  only read config files. Some CI configs reference secrets and sensitive
+  values — skip those fields entirely.
+- docker-compose.yml parsing with awk/sed is fragile for complex YAML.
+  Focus on the `services:` top-level key and extract service names +
+  build context paths. Don't try to parse the full YAML spec.
+- The doc quality score is a heuristic, not a precise metric. It's used
+  to tune synthesis behavior, not as a gate. Don't over-engineer it.
+- Go workspaces (go.work) are relatively new. Ensure the detection
+  handles repos that have go.mod but NOT go.work (single module, not
+  workspace).
+- Kubernetes manifest detection should only scan for standard deployment/
+  service YAMLs, not every .yaml file in the repo. Look in conventional
+  directories (k8s/, deploy/, manifests/, charts/) first.
+- Jenkinsfile parsing is hard (Groovy DSL with arbitrary code). Only detect
+  obvious `pipeline { stages { ... } }` patterns and mark confidence as low.
+  Don't try to eval Groovy.
+- Terraform state files (.tfstate) must NEVER be read — they can contain
+  secrets. Only read .tf config files.
+- Test framework detection is separate from test command detection. The tester
+  agent needs to know "use pytest" vs "use unittest" even when TEST_CMD is
+  just "make test".
+
+Seeds Forward:
+- Workspace and service detection feeds into V4 environment awareness
+  (which services talk to which APIs)
+- CI command detection is reusable by the security agent (what security
+  scanning is already in the CI pipeline?)
+- Doc quality score feeds into the PM agent's confidence calibration
+  (low doc quality + vague task = more likely NEEDS_CLARITY)
+- Multi-service detection feeds into future parallel execution
+  (different services could be milestoned independently)
+- The monorepo "choose subproject" flow seeds the Dashboard UI's
+  project selector concept
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+
+#### Milestone 13: Watchtower Data Layer & Causal Event Log
+<!-- milestone-meta
+id: "13"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-03-23 -->
+
+Pipeline-side event emission system built on a **causal event log** — a structured
+JSONL file where every pipeline event carries a unique ID and causal edges linking
+it to the events that triggered it. The causal log is the primary data store;
+Watchtower JS files are materialized views over it.
+
+This is not just a dashboard data layer — it's Tekhton's **structured memory**.
+Every stage transition, verdict, finding, rework cycle, and milestone state change
+is recorded with causal provenance. Downstream consumers (M17 Diagnostics, M10 PM
+Agent, M16 Autonomous Runtime) query the causal log for root-cause analysis,
+pattern detection, and history-aware judgment. The Watchtower dashboard renders it.
+
+The design is inspired by effect system architectures where agents declare intent
+and the host records outcomes. Tekhton's judgment agents (reviewer, security, intake)
+already emit structured verdicts that the shell interprets — this milestone formalizes
+that pattern into a queryable causal graph stored as flat files.
+
+Files to create:
+- `lib/causality.sh` — Causal event log infrastructure:
+  **Event schema:**
+  Every event in the causal log is a single JSON line with these fields:
+  ```json
+  {
+    "id": "coder.003",
+    "ts": "2024-01-15T10:08:12Z",
+    "run_id": "run_20240115_100000",
+    "milestone": "m03",
+    "type": "stage_end",
+    "stage": "coder",
+    "detail": "6 files modified",
+    "caused_by": ["scout.001"],
+    "verdict": null,
+    "context": { "files_changed": 6, "turns_used": 22 }
+  }
+  ```
+  Fields: `id` (unique within run: `stage.sequence_number`), `ts` (ISO 8601),
+  `run_id` (links events across runs), `milestone` (active milestone ID or null),
+  `type` (event type), `stage` (which stage emitted), `detail` (human-readable),
+  `caused_by` (array of event IDs that triggered this event — the causal edges),
+  `verdict` (structured verdict if this is a judgment event, null otherwise),
+  `context` (type-specific structured data).
+
+  **Event types:**
+  pipeline_start, pipeline_end, stage_start, stage_end, verdict (intake, review,
+  security), finding (security), build_gate (pass/fail), rework_trigger,
+  rework_cycle, milestone_advance, milestone_split, human_wait, error,
+  quota_pause, quota_resume, continuation, transient_retry.
+
+  **Causal edge rules (how caused_by is populated):**
+  - `stage_start` caused_by the previous `stage_end` (or `pipeline_start`)
+  - `rework_trigger` caused_by the `verdict` event that returned CHANGES_REQUIRED
+  - `rework_cycle` caused_by the `rework_trigger`
+  - `build_gate` caused_by the `stage_end` of coder (or rework cycle)
+  - `finding` caused_by the `stage_start` of security
+  - `milestone_split` caused_by the `error` or `verdict` that triggered splitting
+  - `error` caused_by the `stage_start` of the failing stage
+  - `quota_resume` caused_by `quota_pause`
+  The shell populates `caused_by` at each emission site — it knows what triggered
+  the current action because it controls the flow.
+
+  **Core functions:**
+  - `emit_event(type, stage, detail, caused_by, verdict, context)` — Append a
+    JSON line to `CAUSAL_LOG_FILE` (`.claude/logs/CAUSAL_LOG.jsonl`). Auto-assigns
+    monotonic event ID via `_next_event_id(stage)`. Returns the assigned event ID
+    (captured by callers to pass as `caused_by` to downstream events). Also calls
+    `_regenerate_timeline_js()` if dashboard is enabled.
+  - `_next_event_id(stage)` — Returns `stage.NNN` using a per-stage counter stored
+    in `_EVENT_SEQ` associative array (bash 4+). Counter resets per run.
+  - `_last_event_id()` — Returns the most recently emitted event ID. Convenience
+    for linear cause chains where each event is caused by the previous one.
+
+  **Query functions (consumed by M17 Diagnostics, M10 PM Agent, etc.):**
+  - `trace_cause_chain(event_id)` — Walk `caused_by` edges backward from the given
+    event, printing each ancestor event. Returns the chain as newline-delimited
+    JSON lines. Uses grep + associative array lookup on the in-memory log.
+  - `trace_effect_chain(event_id)` — Walk forward: find all events whose
+    `caused_by` array contains this event ID. Breadth-first traversal.
+  - `events_for_milestone(milestone_id, [run_id])` — Filter log by milestone field.
+    Optional run_id filter; defaults to current run.
+  - `events_by_type(event_type, [lookback_runs])` — Return events of a given type
+    across the last N runs. Reads from archived causal logs.
+  - `recurring_pattern(event_type, lookback_runs)` — Count occurrences of an event
+    type across runs. Returns count + list of run_ids where it occurred.
+  - `verdict_history(stage, lookback_runs)` — Extract all verdict events for a
+    stage across recent runs. Used by M10 PM Agent for calibration.
+  - `cause_chain_summary(event_id)` — Produce a human-readable one-line summary
+    of the causal chain: "BUILD_FAILURE ← coder.stage_end ← scout.stage_end".
+    Used by M17 Diagnostics for the terminal summary.
+
+  **Log lifecycle:**
+  - At pipeline start: create new CAUSAL_LOG.jsonl (or append if resuming).
+    Set `_CURRENT_RUN_ID` from session timestamp.
+  - At pipeline end: copy CAUSAL_LOG.jsonl to `.claude/logs/runs/CAUSAL_LOG_${RUN_ID}.jsonl`
+    for cross-run queries. Prune archives older than CAUSAL_LOG_RETENTION_RUNS.
+  - The causal log is append-only during a run. Never modified in place.
+
+- `lib/dashboard.sh` — Dashboard data emission module (views over causal log):
+  **Event emission:**
+  - `emit_dashboard_event(event_type, stage, detail, caused_by)` — Wrapper around
+    `emit_event()` that also regenerates the dashboard JS view files. Events include
+    all types from `lib/causality.sh`. The `caused_by` parameter accepts a
+    comma-separated string of event IDs (or empty string for root events).
+  - Dashboard JS files are materialized views regenerated from the causal log,
+    NOT the primary store.
+  **State emission:**
+  - `emit_dashboard_run_state()` — Read current pipeline state and generate
+    `data/run_state.js`. Includes: current stage, active milestone, turns used
+    vs budget per stage, elapsed time, pipeline status (running/paused/complete/
+    failed), what it's waiting for (if paused).
+  - `emit_dashboard_milestones()` — Read MANIFEST.cfg and generate
+    `data/milestones.js`. Includes: all milestones with id, title, status,
+    dependencies, parallel_group, intake confidence score (if evaluated),
+    PM tweaks applied (if any), security finding count (if scanned).
+  - `emit_dashboard_security()` — Read SECURITY_REPORT.md and SECURITY_NOTES.md,
+    generate `data/security.js`. Includes: findings array with severity, category,
+    file, fixable, fix_status (fixed/escalated/waivered/unfixed).
+  - `emit_dashboard_reports()` — Read stage reports (INTAKE_REPORT.md,
+    SCOUT_REPORT.md, CODER_SUMMARY.md, REVIEWER_REPORT.md, TEST_RESULTS.md)
+    and generate `data/reports.js`. Each report parsed from markdown to structured
+    data (not raw markdown — extracted sections and key values).
+  - `emit_dashboard_metrics()` — Read RUN_SUMMARY.json files from the last
+    DASHBOARD_HISTORY_DEPTH runs (default 50), generate `data/metrics.js`.
+    Includes: per-run stats (turns, duration, outcome, stage breakdown),
+    aggregated trends (average turns per stage, rejection rate, split frequency).
+  **Lifecycle:**
+  - `init_dashboard(project_dir)` — Create `.claude/dashboard/` directory,
+    copy static files (index.html, app.js, style.css) from
+    `${TEKHTON_HOME}/templates/watchtower/`, create `data/` subdirectory,
+    generate initial data files with empty/default state. Called by --init.
+  - `cleanup_dashboard(project_dir)` — Remove `.claude/dashboard/` directory.
+    Called when DASHBOARD_ENABLED transitions from true to false.
+  - `is_dashboard_enabled()` — Check DASHBOARD_ENABLED config. Returns 0/1.
+
+  **CLI progress heartbeat:**
+  The existing spinner in `lib/agent.sh` (elapsed time display) is enhanced
+  to also show turn count and stage context. During agent runs, the spinner
+  line becomes:
+  `[tekhton] Coder (4m12s, 14/25 turns)`
+  `[tekhton] Security (1m03s, 6/15 turns)`
+  This runs in the same spinner PID — no new processes. The heartbeat also
+  triggers `emit_dashboard_run_state()` on a configurable interval
+  (DASHBOARD_REFRESH_INTERVAL, default 10s) so Watchtower picks up mid-stage
+  progress, not just stage boundaries.
+
+  **Verbosity levels:**
+  - `DASHBOARD_VERBOSITY=normal` (default): stage start/end, verdicts, findings,
+    milestone changes, build gate results.
+  - `DASHBOARD_VERBOSITY=minimal`: stage end only, final verdicts only.
+  - `DASHBOARD_VERBOSITY=verbose`: all of normal + individual agent turn counts,
+    rework cycle events, context budget utilization, template variable sizes,
+    continuation attempts, transient retry events.
+
+  **Data format (JS global assignments):**
+  Each `.js` file in `data/` follows the pattern:
+  ```javascript
+  // Generated by Tekhton Watchtower — do not edit
+  // Updated: 2024-01-15T10:03:42Z
+  window.TK_RUN_STATE = {
+    pipeline_status: "running",
+    current_stage: "security",
+    active_milestone: { id: "m03", title: "..." },
+    stages: {
+      intake: { status: "complete", turns: 4, budget: 10, duration_s: 12 },
+      scout: { status: "complete", turns: 8, budget: 15, duration_s: 34 },
+      coder: { status: "complete", turns: 22, budget: 30, duration_s: 187 },
+      build_gate: { status: "pass" },
+      security: { status: "running", turns: 6, budget: 15, elapsed_s: 45 },
+      reviewer: { status: "pending" },
+      tester: { status: "pending" }
+    },
+    waiting_for: null,
+    started_at: "2024-01-15T10:00:00Z"
+  };
+  ```
+  Timeline events include causal edges for UI rendering:
+  ```javascript
+  window.TK_TIMELINE = [
+    { id: "pipeline.001", ts: "...", type: "pipeline_start", caused_by: [], ... },
+    { id: "intake.001", ts: "...", type: "stage_start", stage: "intake",
+      caused_by: ["pipeline.001"], ... },
+    { id: "intake.002", ts: "...", type: "verdict", stage: "intake",
+      verdict: { result: "PASS", confidence: 82 },
+      caused_by: ["intake.001"], ... },
+    { id: "security.002", ts: "...", type: "finding", stage: "security",
+      detail: "SQL injection in handler.py:42",
+      caused_by: ["security.001"],
+      context: { severity: "MEDIUM", category: "A03", fixable: true }, ... },
+    { id: "review.002", ts: "...", type: "rework_trigger", stage: "review",
+      caused_by: ["review.001"],
+      detail: "CHANGES_REQUIRED — 3 findings", ... }
+  ];
+  ```
+
+  **Emit timing (when data files are regenerated):**
+  - `run_state.js` — on every stage transition + every 30s during active stage
+  - `timeline.js` — on every event (append + regenerate)
+  - `milestones.js` — on milestone state change (advance, split, done)
+  - `security.js` — after security stage completes
+  - `reports.js` — after each stage that produces a report
+  - `metrics.js` — on pipeline completion only (reads historical RUN_SUMMARY files)
+
+- `lib/dashboard_parsers.sh` — Report parsing functions:
+  - `_parse_security_report(file)` — Extract findings from SECURITY_REPORT.md
+    into structured pipe-delimited format for JS generation.
+  - `_parse_intake_report(file)` — Extract verdict, confidence, tweaks from
+    INTAKE_REPORT.md.
+  - `_parse_coder_summary(file)` — Extract file list, change summary from
+    CODER_SUMMARY.md.
+  - `_parse_reviewer_report(file)` — Extract verdict, feedback items from
+    reviewer output.
+  - `_parse_run_summaries(dir, depth)` — Read last N RUN_SUMMARY.json files,
+    extract per-run metrics. Uses `python3 -c` for JSON parsing if available,
+    falls back to grep/awk extraction for key fields.
+  - `_to_js_string(varname, json_content)` — Wrap JSON content in a JS global
+    assignment: `window.${varname} = ${json_content};`
+  - `_to_js_timestamp()` — Current ISO 8601 timestamp for the generated header.
+
+Files to modify:
+- `tekhton.sh` — Source `lib/causality.sh` and `lib/dashboard.sh`. At startup:
+  - Always initialize the causal event log (`init_causal_log()`). The causal log
+    is independent of the dashboard — it runs even when DASHBOARD_ENABLED=false.
+  - Check `is_dashboard_enabled()`: if enabled and `.claude/dashboard/` doesn't
+    exist, run `init_dashboard()`. If disabled and exists, run `cleanup_dashboard()`.
+  - Emit `pipeline_start` event (root event, no caused_by). Capture its event ID.
+  - Pass event IDs between stage calls so each stage knows its causal parent.
+  Insert `emit_event()` calls at each stage transition point. Each call captures
+  the returned event ID and passes it as `caused_by` to the next stage's events.
+  On pipeline completion, call `emit_dashboard_metrics()` and archive the causal log.
+  **Event ID threading pattern:**
+  ```bash
+  local pipeline_evt
+  pipeline_evt=$(emit_event "pipeline_start" "pipeline" "$TASK" "" "" "")
+  # ... later:
+  local intake_start_evt
+  intake_start_evt=$(emit_event "stage_start" "intake" "" "$pipeline_evt" "" "")
+  ```
+- `lib/agent.sh` — [PM: added to Files to modify; required for CLI progress heartbeat] Enhance the existing spinner loop to display stage name and turn count alongside elapsed time: `[tekhton] Coder (4m12s, 14/25 turns)`. The spinner already has elapsed-time logic — extend it to accept stage name and turn-budget parameters passed from the call site. Also trigger `emit_dashboard_run_state()` on the DASHBOARD_REFRESH_INTERVAL tick within the existing monitor loop.
+- `stages/coder.sh` — Emit `stage_start` (caused_by previous stage_end),
+  `stage_end` with file change context. Capture event IDs for build_gate linkage.
+  Emit `emit_dashboard_reports` after coder completes.
+- `stages/security.sh` — Emit `stage_start`, individual `finding` events
+  (each caused_by the stage_start), `verdict` event. Call `emit_dashboard_security`
+  after security stage. Each finding event carries severity/category in context.
+- `stages/review.sh` — Emit `verdict` event. If CHANGES_REQUIRED, emit
+  `rework_trigger` event (caused_by the verdict), then `rework_cycle` events
+  for each iteration (each caused_by the rework_trigger).
+- `stages/tester.sh` — Emit `stage_end` with test result context.
+- `stages/intake.sh` — Emit `verdict` event with confidence score in context.
+  If TWEAKED, the tweak details go in the event context.
+- `lib/milestone_ops.sh` — Emit `milestone_advance` or `milestone_split` events
+  (caused_by the verdict or error that triggered the transition). Call
+  `emit_dashboard_milestones()` after any milestone state change.
+- `lib/config_defaults.sh` — Add:
+  DASHBOARD_ENABLED=true,
+  DASHBOARD_VERBOSITY=normal (minimal|normal|verbose),
+  DASHBOARD_HISTORY_DEPTH=50,
+  DASHBOARD_REFRESH_INTERVAL=5 (seconds, written into generated HTML meta),
+  DASHBOARD_DIR=.claude/dashboard,
+  CAUSAL_LOG_FILE=.claude/logs/CAUSAL_LOG.jsonl,
+  CAUSAL_LOG_RETENTION_RUNS=50,
+  CAUSAL_LOG_ENABLED=true,
+  CAUSAL_LOG_MAX_EVENTS=2000, [PM: added; Watch For references this cap but it was absent from the config_defaults list — needs a default so cap logic has a value to read]
+  DASHBOARD_MAX_TIMELINE_EVENTS=500 [PM: added; Watch For references this cap for timeline JS but it was absent from the config_defaults list]
+- `lib/config.sh` — Validate DASHBOARD_* and CAUSAL_LOG_* keys. DASHBOARD_VERBOSITY
+  must be one of minimal|normal|verbose. DASHBOARD_HISTORY_DEPTH must be 1-100.
+  CAUSAL_LOG_RETENTION_RUNS must be 1-200. [PM: also validate CAUSAL_LOG_MAX_EVENTS (1-10000) and DASHBOARD_MAX_TIMELINE_EVENTS (1-2000)]
+- `lib/hooks.sh` — Add `.claude/dashboard/data/` to archive exclusion list
+  (data files are regenerated, not archived). CAUSAL_LOG.jsonl IS archived
+  (it's the primary historical record).
+- `lib/finalize.sh` — Call `emit_dashboard_metrics()` and
+  `emit_dashboard_run_state()` with final status during finalization. Archive
+  the causal log to `.claude/logs/runs/CAUSAL_LOG_${RUN_ID}.jsonl`. Prune
+  archived logs beyond CAUSAL_LOG_RETENTION_RUNS.
+
+**Migration Impact:** [PM: added; required for new config keys]
+New keys added to `config_defaults.sh` with safe defaults — no action required
+for existing projects. All new keys are opt-in or default-on with conservative
+defaults (DASHBOARD_ENABLED=true creates `.claude/dashboard/` on next run;
+CAUSAL_LOG_ENABLED=true writes `.claude/logs/CAUSAL_LOG.jsonl`). Projects that
+do not want the dashboard directory created should set DASHBOARD_ENABLED=false
+before upgrading. Recommend adding `.claude/dashboard/data/` to `.gitignore`
+(data files regenerate each run); the static files under `.claude/dashboard/`
+and `CAUSAL_LOG.jsonl` can be committed. `CAUSAL_LOG_MAX_EVENTS` and
+`DASHBOARD_MAX_TIMELINE_EVENTS` are new config keys — existing pipeline.conf
+files will use the defaults silently.
+
+Acceptance criteria:
+**Causal event log (lib/causality.sh):**
+- `emit_event()` appends a valid JSON line to CAUSAL_LOG.jsonl with all schema
+  fields (id, ts, run_id, milestone, type, stage, detail, caused_by, verdict, context)
+- `emit_event()` returns the assigned event ID so callers can thread causality
+- Event IDs are unique within a run (stage.sequence_number format)
+- `caused_by` arrays correctly link events: rework_trigger → verdict,
+  stage_start → previous stage_end, build_gate → coder stage_end, etc.
+- `trace_cause_chain()` walks backward through caused_by edges and returns
+  ancestor events in causal order
+- `trace_effect_chain()` walks forward and returns descendant events
+- `events_for_milestone()` filters events by milestone ID
+- `events_by_type()` returns events of a given type across multiple runs
+- `recurring_pattern()` counts event type occurrences across archived logs
+- `verdict_history()` extracts verdict events for a stage across recent runs
+- `cause_chain_summary()` produces a human-readable one-line causal chain
+- Causal log is archived to `.claude/logs/runs/` on pipeline completion
+- Archived logs are pruned beyond CAUSAL_LOG_RETENTION_RUNS
+- When CAUSAL_LOG_ENABLED=false, emit_event is a no-op returning synthetic IDs
+- Causal log runs independently of DASHBOARD_ENABLED (it's infrastructure, not UI)
+- [PM: added] Causal log is capped at CAUSAL_LOG_MAX_EVENTS per run; oldest events are evicted when cap is reached
+**Dashboard (lib/dashboard.sh):**
+- `init_dashboard()` creates `.claude/dashboard/` with static files + data dir
+- `cleanup_dashboard()` removes `.claude/dashboard/` cleanly
+- Config transition: setting DASHBOARD_ENABLED=false cleans up dashboard dir
+  on next run; setting it back to true recreates it
+- Dashboard JS files are materialized views regenerated from the causal log
+- `emit_dashboard_run_state()` produces valid JS with current pipeline state
+- `emit_dashboard_milestones()` reads MANIFEST.cfg and produces valid JS
+- `emit_dashboard_security()` parses SECURITY_REPORT.md into structured JS
+- `emit_dashboard_reports()` parses each stage report into structured JS
+- `emit_dashboard_metrics()` reads up to DASHBOARD_HISTORY_DEPTH RUN_SUMMARY
+  files and produces trend data
+- Timeline JS includes causal edges (caused_by arrays) for each event
+- [PM: added] Timeline JS is capped at DASHBOARD_MAX_TIMELINE_EVENTS entries
+- All `.js` data files follow `window.TK_* = { ... };` pattern
+- All data files include generation timestamp in header comment
+- Verbosity levels control event granularity:
+  minimal emits stage_end + final verdicts only,
+  normal adds stage_start + findings + build gate,
+  verbose adds turn counts + rework events + context budget
+- Dashboard data files are excluded from pipeline archives
+- When DASHBOARD_ENABLED=false, dashboard emit functions are no-ops (zero overhead)
+- All existing tests pass
+- `bash -n lib/causality.sh lib/dashboard.sh lib/dashboard_parsers.sh` passes
+- `shellcheck lib/causality.sh lib/dashboard.sh lib/dashboard_parsers.sh` passes
+- New test file `tests/test_causal_log.sh` covers: event emission, ID assignment,
+  caused_by threading, cause chain traversal, effect chain traversal, cross-run
+  queries, log archival, log pruning, milestone filtering
+- New test file `tests/test_dashboard_data.sh` covers: init, cleanup, JS view
+  generation from causal log, state generation, report parsing, config transitions
+**CLI progress heartbeat:**
+- Agent spinner shows stage name, elapsed time, AND turn count (e.g.,
+  "Coder (4m12s, 14/25 turns)")
+- Watchtower run_state.js refreshed during active agent runs at
+  DASHBOARD_REFRESH_INTERVAL (default 10s), not just at stage boundaries
+- Heartbeat refresh uses existing agent_monitor loop (no new background process)
+
+Watch For:
+- JSON generation in pure bash is fragile. Use printf with proper escaping for
+  string values. Special characters in report content (quotes, newlines,
+  backslashes) must be escaped for valid JS. Consider a `_json_escape()` helper.
+  The causal log uses the same escaping for JSONL — share the helper.
+- The 30-second periodic refresh of run_state.js during active stages needs a
+  lightweight mechanism — NOT a background process. Use the existing
+  agent_monitor loop to trigger it (it already runs periodically).
+- RUN_SUMMARY.json parsing: prefer python3 -c for JSON if available, but the
+  fallback grep/awk path must handle the full format. Test both paths.
+- The `.claude/dashboard/data/` directory will contain generated files that
+  change every run. Add it to `.gitignore` recommendations during --init.
+  The static files (index.html, app.js, style.css) CAN be committed.
+  CAUSAL_LOG.jsonl should NOT be gitignored — it's a valuable project artifact.
+- File locking: multiple emit calls could race if the pipeline has concurrent
+  operations (future V4 parallel). Use atomic writes (tmpfile + mv) for all
+  data file generation, same pattern as manifest writes. The causal log itself
+  is append-only (no races for appends in single-process bash).
+- The causal log can grow large on verbose runs with many rework cycles. Cap
+  at CAUSAL_LOG_MAX_EVENTS (default 2000) per run with oldest-first eviction
+  (keep the most recent events, they're most diagnostically useful). The
+  dashboard timeline JS caps separately at DASHBOARD_MAX_TIMELINE_EVENTS (500).
+- **Event ID threading requires discipline at every emission site.** Each
+  `emit_event()` call must capture the returned ID and pass it forward. If a
+  call site forgets, downstream events will have empty caused_by arrays —
+  functional but causally disconnected. The test suite should verify that
+  no event (except pipeline_start) has an empty caused_by in a normal run.
+- **Cross-run queries read archived JSONL files.** For 50 retained runs with
+  2000 events each, that's 100k lines. Query functions must use grep with
+  targeted patterns (type filter first, then parse matching lines), not load
+  everything into memory. Profile with realistic log sizes.
+- The `_EVENT_SEQ` associative array (per-stage counters) must be declared
+  with `declare -A` (bash 4+ — already enforced by Tekhton).
+- `caused_by` is always an array, even for single causes. This keeps the
+  schema consistent and supports future fan-in events (e.g., a milestone_advance
+  caused by both the tester verdict and the acceptance check).
+
+Seeds Forward:
+- **M17 (Diagnostics)** queries the causal log for root-cause chains instead
+  of pattern-matching against state files alone
+- **M10 (PM Agent)** queries verdict_history() for calibration data —
+  historical verdict accuracy, typical rework cycle counts for similar milestones
+- **M14 (Watchtower UI)** renders causal edges in the timeline (click event
+  to highlight its cause chain)
+- **M16 (Autonomous Runtime)** uses causal event counts for smarter progress
+  detection (events emitted = work happening, even without git diff changes)
+- V4 server-based dashboard replaces file polling with WebSocket push but
+  the causal log format and TK_* globals remain identical
+- V4 metric connectors (DataDog, NewRelic) consume the same structured data
+- V4 full effect system: when Claude CLI supports tool-use event streams,
+  the causal log becomes the intercept layer for coder/tester execution events.
+  The infrastructure built here is the foundation for that transition.
+- The causal log is a natural fit for future LLM-based post-mortem analysis —
+  feed the log to an agent and ask "why did this run fail?"
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 14: Watchtower UI
+<!-- milestone-meta
+id: "14"
+status: "done"
+-->
+
+Static HTML/CSS/JS dashboard that renders Tekhton pipeline state in a browser.
+Four-tab interface: Live Run, Milestone Map, Reports, Trends. Responsive design
+for full-screen through corner-of-second-monitor sizes. Auto-refreshes by
+reloading the page on a configurable interval. No server, no build tools, no
+framework — vanilla HTML/CSS/JS that works by opening index.html in any browser.
+
+This is the final V3 milestone before V4 planning begins.
+
+Files to create (all in `templates/watchtower/`):
+- `index.html` — Dashboard shell with tab navigation:
+  **Structure:**
+  ```html
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Tekhton Watchtower</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <header>
+      <h1>Watchtower</h1>
+      <nav><!-- 4 tabs --></nav>
+      <span class="status-indicator"><!-- pipeline status badge --></span>
+    </header>
+    <main>
+      <section id="tab-live" class="tab-content active">...</section>
+      <section id="tab-milestones" class="tab-content">...</section>
+      <section id="tab-reports" class="tab-content">...</section>
+      <section id="tab-trends" class="tab-content">...</section>
+    </main>
+    <!-- Data files loaded as script tags -->
+    <script src="data/run_state.js"></script>
+    <script src="data/timeline.js"></script>
+    <script src="data/milestones.js"></script>
+    <script src="data/security.js"></script>
+    <script src="data/reports.js"></script>
+    <script src="data/metrics.js"></script>
+    <script src="app.js"></script>
+  </body>
+  </html>
+  ```
+  **Auto-refresh:** The app.js sets `setTimeout(() => location.reload(),
+  TK_RUN_STATE?.refresh_interval_ms || 5000)` when pipeline is running.
+  When pipeline is idle/complete, refresh stops (no unnecessary reloads).
+  Refresh interval is configurable via DASHBOARD_REFRESH_INTERVAL in pipeline
+  config, written into run_state.js by the data layer.
+
+- `style.css` — Dashboard styles:
+  **Design language:**
+  - Dark theme by default (developer-friendly, second-monitor-friendly).
+    Light theme toggle via CSS custom properties (prefers-color-scheme respected).
+  - Monospace font for data, sans-serif for labels and navigation.
+  - Color palette: neutral grays for chrome, semantic colors for status
+    (green=pass/done, amber=in-progress/warning, red=fail/critical,
+    blue=info/pending, purple=tweaked/split).
+  - Status badges: colored pills with text (e.g., `[PASS]`, `[CRITICAL]`).
+  - Cards with subtle borders and shadows for report sections.
+  **Responsive breakpoints:**
+  - `>=1200px` (full): side-by-side panels, full DAG lanes, all columns visible
+  - `>=768px` (medium): stacked panels, condensed DAG, timeline scrollable
+  - `<768px` (compact): single column, collapsible sections, essential info only.
+    Live Run tab prioritizes: status badge + current stage + timeline.
+    Milestone Map degrades to a simple ordered list with status badges.
+    Reports show headers only (expand on tap).
+    Trends show summary stats only (no charts).
+  **Animations:** Minimal. Subtle fade on tab switch. Pulse animation on
+  "running" status indicator. No heavy animations — this runs on refresh cycles.
+
+- `app.js` — Dashboard rendering logic (~400-600 lines of vanilla JS):
+  **Architecture:**
+  - `render()` — Main entry point. Reads TK_* globals, delegates to tab renderers.
+  - `renderLiveRun()` — Populates the Live Run tab.
+  - `renderMilestoneMap()` — Populates the Milestone Map tab.
+  - `renderReports()` — Populates the Reports tab.
+  - `renderTrends()` — Populates the Trends tab.
+  - `initTabs()` — Tab switching logic. Remembers active tab in localStorage
+    so refresh doesn't reset your view.
+  - Tab selection persists across refreshes via localStorage.
+
+  **Tab 1: Live Run**
+  Layout:
+  ```
+  ┌─────────────────────────────────────────────────────┐
+  │ [●] Pipeline RUNNING — Milestone 3: Indexer Infra   │
+  ├─────────────────────────────────────────────────────┤
+  │ Stage Progress                                       │
+  │ ✓ Intake  ✓ Scout  ✓ Coder  ✓ Build  ● Security  ○ Review  ○ Test │
+  │                                        ^^^^^^^^^^^          │
+  │                                     12/15 turns  45s       │
+  ├─────────────────────────────────────────────────────┤
+  │ Timeline                                             │
+  │ 10:03  Intake: PASS (confidence 82)                 │
+  │ 10:04  Scout: 12 files identified                   │
+  │ 10:08  Coder: 6 files modified                      │
+  │ 10:09  Build gate: PASS                     [trace] │
+  │ 10:10  Security: scanning... (turn 12/15)           │
+  └─────────────────────────────────────────────────────┘
+  ```
+  **Causal trace interaction:** Each timeline event has a `[trace]` link
+  (shown on hover at >=768px, always visible at >=1200px). Clicking it
+  highlights the event's causal ancestors and descendants in the timeline
+  using a colored left-border highlight. The highlight uses CSS classes
+  toggled by JS — no separate view, just visual emphasis within the existing
+  timeline. This lets users quickly answer "what caused this?" and "what
+  did this trigger?" without leaving the Live Run tab.
+  When the pipeline has failed, the terminal event's causal chain is
+  auto-highlighted on load (no click needed) — the user immediately sees
+  the root-cause path.
+  When pipeline is paused (NEEDS_CLARITY, security waiver, etc.):
+  ```
+  ┌─────────────────────────────────────────────────────┐
+  │ [⏸] Pipeline WAITING — Human Input Required          │
+  ├─────────────────────────────────────────────────────┤
+  │ The intake agent needs clarity on Milestone 5:       │
+  │                                                      │
+  │ Q1: Should the auth system use JWT or session-based? │
+  │ Q2: Is the /admin endpoint public or internal-only?  │
+  │                                                      │
+  │ To respond, edit: .claude/CLARIFICATIONS.md           │
+  │ [📋 Copy path to clipboard]                          │
+  └─────────────────────────────────────────────────────┘
+  ```
+
+  **Tab 2: Milestone Map**
+  CSS flexbox swimlanes:
+  ```
+  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+  │ Pending  │ │  Ready   │ │  Active  │ │   Done   │
+  ├──────────┤ ├──────────┤ ├──────────┤ ├──────────┤
+  │┌────────┐│ │┌────────┐│ │┌────────┐│ │┌────────┐│
+  ││ M05    ││ ││ M04    ││ ││ M03    ││ ││ M01 ✓  ││
+  ││ Pipe-  ││ ││ Repo   ││ ││ Indexer││ ││ DAG    ││
+  ││ line   ││ ││ Map    ││ ││ Infra  ││ ││ Infra  ││
+  ││        ││ ││        ││ ││ ●12min ││ ││        ││
+  ││ dep:M04││ ││ dep:M03││ ││        ││ │├────────┤│
+  │└────────┘│ │└────────┘│ │└────────┘│ │┌────────┐│
+  │┌────────┐│ │          │ │          │ ││ M02 ✓  ││
+  ││ M06    ││ │          │ │          │ ││ Sliding││
+  ││ Serena ││ │          │ │          │ ││ Window ││
+  ││        ││ │          │ │          │ │└────────┘│
+  ││dep:M04 ││ │          │ │          │ │          │
+  │└────────┘│ │          │ │          │ │          │
+  └──────────┘ └──────────┘ └──────────┘ └──────────┘
+  ```
+  Each card shows: milestone ID, title, dependency badges (dep: M03),
+  status indicator, and if active: elapsed time. Click/tap to expand:
+  acceptance criteria summary, PM tweaks, security finding count.
+  Dependency arrows indicated by `dep:` badges (not SVG lines — V4).
+  Cards are color-coded by status (pending=gray, ready=blue, active=amber,
+  done=green). Split milestones show `[split from M05]` annotation.
+
+  **Tab 3: Reports**
+  Accordion layout — one section per report from the current/last run:
+  ```
+  ┌─────────────────────────────────────────────────────┐
+  │ ▼ Intake Report                        [PASS 82%]  │
+  ├─────────────────────────────────────────────────────┤
+  │  Verdict: PASS (confidence: 82/100)                 │
+  │  No tweaks applied.                                 │
+  ├─────────────────────────────────────────────────────┤
+  │ ▶ Scout Report                         [12 files]   │
+  ├─────────────────────────────────────────────────────┤
+  │ ▶ Coder Summary                        [6 modified] │
+  ├─────────────────────────────────────────────────────┤
+  │ ▼ Security Report                      [1 MEDIUM]   │
+  ├─────────────────────────────────────────────────────┤
+  │  Findings: 1                                        │
+  │  ┌──────────────────────────────────────────────┐   │
+  │  │ MEDIUM | A03:Injection | src/api/handler.py:42│  │
+  │  │ SQL query uses string interpolation.          │  │
+  │  │ Status: logged (not blocking)                 │  │
+  │  └──────────────────────────────────────────────┘   │
+  ├─────────────────────────────────────────────────────┤
+  │ ▶ Reviewer Report                      [APPROVED]   │
+  ├─────────────────────────────────────────────────────┤
+  │ ▶ Test Results                         [PASS]       │
+  └─────────────────────────────────────────────────────┘
+  ```
+  Each accordion header shows a summary badge (verdict, count, status).
+  Expanded view shows parsed report content — NOT raw markdown. Key-value
+  pairs, tables for findings, file lists for coder summary.
+  When a report hasn't been generated yet (stage pending), show grayed-out
+  header with "Pending" badge.
+
+  **Tab 4: Trends**
+  Historical metrics from the last DASHBOARD_HISTORY_DEPTH runs:
+  ```
+  ┌─────────────────────────────────────────────────────┐
+  │ Run History (last 50 runs)                          │
+  ├─────────────────────────────────────────────────────┤
+  │ Efficiency                                          │
+  │  Avg turns/run: 42 (↓ from 48 over last 10)        │
+  │  Review rejection rate: 15% (↓ from 22%)            │
+  │  Split frequency: 8% of milestones                  │
+  │  Avg run duration: 12m 34s                          │
+  ├─────────────────────────────────────────────────────┤
+  │ Per-Stage Breakdown                                 │
+  │  Stage     | Avg Turns | Avg Time | Budget Util    │
+  │  ─────────┼───────────┼──────────┼────────────     │
+  │  Intake   |    4      |   12s    |   40%           │
+  │  Scout    |    8      |   34s    |   53%           │
+  │  Coder    |   18      |  4m 12s  |   72%           │
+  │  Security |   10      |  1m 45s  |   67%           │
+  │  Reviewer |    6      |   58s    |   60%           │
+  │  Tester   |   12      |  2m 10s  |   80%           │
+  ├─────────────────────────────────────────────────────┤
+  │ Recent Runs                                         │
+  │  #50 | M03 Indexer | 38 turns | 11m | ✓ PASS       │
+  │  #49 | M02 Window  | 44 turns | 14m | ✓ PASS       │
+  │  #48 | M02 Window  | 52 turns | 18m | ✗ SPLIT      │
+  │  #47 | M01 DAG     | 36 turns | 10m | ✓ PASS       │
+  │  ...                                                │
+  └─────────────────────────────────────────────────────┘
+  ```
+  At full width: include simple CSS bar charts for turns-per-stage distribution
+  (horizontal bars, pure CSS, no charting library). At compact width: tables
+  and summary stats only (bars hidden).
+  Trend arrows (↑↓) compare last 10 runs against the 10 before that.
+
+Files to modify:
+- `lib/dashboard.sh` — Add `_copy_static_files()` helper called by
+  `init_dashboard()` to copy templates/watchtower/* to .claude/dashboard/.
+  Inject DASHBOARD_REFRESH_INTERVAL into run_state.js as refresh_interval_ms.
+- `templates/pipeline.conf.example` — Add commented DASHBOARD_* config section.
+
+Acceptance criteria:
+- Opening `.claude/dashboard/index.html` in Chrome, Firefox, Safari, Edge
+  displays the 4-tab dashboard with no console errors
+- Dashboard loads data from `data/*.js` files via `<script>` tags (no fetch,
+  no CORS issues on file:// protocol)
+- Auto-refresh reloads the page every DASHBOARD_REFRESH_INTERVAL seconds
+  when pipeline is running; stops refreshing when pipeline is idle/complete
+- Tab selection persists across refreshes via localStorage
+- Live Run tab shows: pipeline status, stage progress bar, current stage
+  detail (turns/budget/time), scrollable event timeline with causal trace links
+- Timeline events show [trace] interaction: clicking highlights causal
+  ancestors and descendants within the timeline via CSS class toggle
+- On pipeline failure: terminal event's causal chain is auto-highlighted on load
+- Live Run tab shows human-wait banner with instructions when pipeline paused
+- Milestone Map tab shows swimlane columns (Pending/Ready/Active/Done) with
+  milestone cards, dependency badges, and status colors
+- Milestone card expand shows acceptance criteria summary and PM tweaks
+- Reports tab shows accordion with one section per stage report, summary
+  badges on collapsed headers, parsed (not raw) content when expanded
+- Reports for pending stages show grayed-out "Pending" badge
+- Security findings displayed as a styled table with severity badges
+- Trends tab shows efficiency summary with trend arrows, per-stage breakdown
+  table, and recent run history list
+- Trends tab shows CSS bar charts at full width, hidden at compact width
+- Responsive: 3 breakpoints (>=1200, >=768, <768) with appropriate layout
+  changes at each — tested in browser dev tools responsive mode
+- Dark theme default, respects prefers-color-scheme, light theme toggle works
+- When no data files exist (fresh init, no runs yet): each tab shows a
+  friendly empty state message ("No runs yet — run tekhton to see data here")
+- When some data files are missing (e.g., security disabled): affected
+  sections show "Not enabled" instead of errors
+- Zero external dependencies: no CDN links, no npm, no build step
+- Total static file size (html + css + js) under 50KB uncompressed
+- All existing tests pass
+- New test file `tests/test_watchtower_html.sh` validates: HTML syntax
+  (via tidy or xmllint if available), no external URL references in static
+  files, data file template generates valid JS syntax
+
+Watch For:
+- `<script src="data/X.js">` on `file://` protocol: works in Chrome and
+  Firefox. Safari may block it with stricter security. Test in Safari and
+  document the workaround (--disable-local-file-restrictions or use
+  `python3 -m http.server` in the dashboard dir). Add a troubleshooting
+  note in the dashboard footer.
+- Auto-refresh via location.reload() resets scroll position. Save and restore
+  scroll position per tab in localStorage before reload. This is critical for
+  the timeline (users scroll through events and don't want to lose position).
+- The milestone card expand/collapse state should persist across refreshes
+  (localStorage). Otherwise expanding a card to read details gets reset on
+  next reload.
+- CSS bar charts: use `width: calc(var(--value) / var(--max) * 100%)` pattern.
+  Keep it simple — these are directional indicators, not precise visualizations.
+- Empty data handling: every render function must gracefully handle undefined
+  TK_* globals (data files not yet generated). Use `window.TK_RUN_STATE || {}`
+  pattern throughout.
+- Tab content should not render until its tab is active (lazy render on tab
+  switch). This prevents layout thrashing on load for inactive tabs.
+- The 50KB size constraint is intentional. This is a utility dashboard, not
+  a web app. If we're approaching the limit, we're overbuilding it. The causal
+  trace interaction is lightweight — just CSS class toggling, no graph library.
+- Causal trace highlighting: build a simple `caused_by` index on load
+  (Map<eventId, Set<parentIds>>). Walking the chain is O(chain_length), not
+  O(total_events). Keep it simple — this is visual emphasis, not graph analysis.
+- Dark theme colors must have sufficient contrast ratios (WCAG AA minimum).
+  Use a contrast checker during development. The causal highlight color must
+  be distinct from all status colors (consider a subtle gold/orange left border).
+
+Seeds Forward:
+- V4 server-based Watchtower replaces file:// loading with localhost HTTP +
+  WebSocket for push updates. The TK_* data format is unchanged.
+- V4 adds interactive features: answer clarifications in-browser, approve
+  security waivers, trigger manual milestone runs
+- V4 DAG visualization upgrades to SVG with a proper graph layout library
+- V4/V5 adds metric connectors (DataDog, NewRelic, Prometheus) consuming
+  the same structured data from metrics.js
+- V4 adds real-time log streaming panel (websocket-based, not file-based)
+- The responsive design foundation carries forward to all future versions
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+
+#### Milestone 15: Project Health Scoring & Evaluation
+<!-- milestone-meta
+id: "15"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-03-23 -->
+
+Establish a measurable project health baseline during --init and track improvement
+across Tekhton runs. Users see a concrete score (0-100 or belt system) that
+reflects testing health, code quality, dependency freshness, and documentation
+quality. The score is assessed during brownfield init, re-evaluated periodically,
+and the delta is surfaced in the Watchtower Trends tab. The PM agent uses the
+health score to calibrate milestone priorities.
+
+This milestone answers the user's fundamental question: "Is Tekhton actually
+making my project better?" with a number they can show their team.
+
+Files to create:
+- `lib/health.sh` — Health scoring engine:
+  **Baseline assessment** (`assess_project_health(project_dir)`):
+  Runs a battery of lightweight, non-executing checks and produces a composite
+  score. Each dimension is scored 0-100 independently, then weighted into a
+  composite. Dimensions:
+
+  1. **Test health** (weight: 30%)
+     - Test files exist? (0 if none, scaled by ratio of test files to source files)
+     - Test command detected and executable? (from detect_commands.sh)
+     - If tests can be run: pass rate. If not runnable: inferred from file presence.
+     - Test naming conventions consistent? (*_test.go, *.spec.ts, test_*.py)
+     - Test framework detected? (from M12 detect_test_frameworks)
+     Source: `detect_test_frameworks()`, `TEST_CMD` execution if available, file counting.
+
+  2. **Code quality signals** (weight: 25%)
+     - Linter config exists and is configured? (from M12 linter detection)
+     - Pre-commit hooks configured? (.pre-commit-config.yaml)
+     - Magic number density: sample N source files, count numeric literals outside
+       of common patterns (0, 1, -1, 100, etc.). High density = low score.
+     - TODO/FIXME/HACK/XXX density: count per 1000 lines across sampled files.
+     - Average function/method length in sampled files (heuristic: count lines
+       between function signatures). Very long functions = low score.
+     - Type safety: TypeScript over JavaScript? Type hints in Python? Typed
+       language (Go, Rust) gets full marks automatically.
+     Source: file sampling (reuse crawler sampling from brownfield init), grep.
+
+  3. **Dependency health** (weight: 15%)
+     - Lock file exists? (package-lock.json, yarn.lock, Pipfile.lock, Cargo.lock, go.sum)
+     - Lock file committed to git? (git ls-files check)
+     - Dependency count vs source file count ratio (bloated deps = lower score)
+     - Known vulnerability scanner config present? (snyk.yml, .github/dependabot.yml,
+       renovate.json)
+     - Dependency freshness: if package.json/pyproject.toml has pinned versions,
+       sample a few and check if they're more than 2 major versions behind
+       (heuristic only — no network call needed, compare version numbers in lock file).
+     Source: manifest file parsing, lock file presence checks.
+
+  4. **Documentation quality** (weight: 15%)
+     - Reuse `_assess_doc_quality()` from M12 (README, CONTRIBUTING, API docs,
+       architecture docs, inline doc density).
+     - If M12 already computed DOC_QUALITY_SCORE, use it directly.
+     Source: `DOC_QUALITY_SCORE` from M12, or compute independently if M12 not run.
+
+  5. **Project hygiene** (weight: 15%)
+     - .gitignore exists and covers common patterns? (node_modules, __pycache__, .env)
+     - .env file NOT committed to git? (security check)
+     - CI/CD configured? (from M12 CI detection)
+     - README has setup/install instructions? (grep for "install", "setup", "getting started")
+     - CHANGELOG or release tags present?
+     Source: file existence checks, git history queries.
+
+  **Composite calculation:**
+  ```
+  composite = (test * 0.30) + (quality * 0.25) + (deps * 0.15) + (docs * 0.15) + (hygiene * 0.15)
+  ```
+  Weights are configurable via HEALTH_WEIGHT_* in pipeline.conf.
+
+  **Belt system mapping** (fun, memorable, optional display):
+  ```
+  0-19:   White Belt    — "Starting fresh"
+  20-39:  Yellow Belt   — "Foundation laid"
+  40-59:  Orange Belt   — "Taking shape"
+  60-74:  Green Belt    — "Solid practices"
+  75-89:  Blue Belt     — "Well-maintained"
+  90-100: Black Belt    — "Exemplary"
+  ```
+  Belt labels are cosmetic and configurable (HEALTH_BELT_LABELS in config).
+
+  **Output:** `HEALTH_REPORT.md` with per-dimension breakdown, composite score,
+  belt label, and specific improvement suggestions for low-scoring dimensions.
+  Also writes `HEALTH_BASELINE.json` (machine-readable) for delta tracking.
+
+  **Re-assessment** (`reassess_project_health(project_dir)`):
+  Same assessment, but also reads previous HEALTH_BASELINE.json (or last
+  HEALTH_REPORT.json from run history) and computes delta per dimension.
+  Output includes: current score, previous score, delta, trend arrows.
+
+- `lib/health_checks.sh` — Individual dimension check functions:
+  - `_check_test_health(project_dir)` → score 0-100
+  - `_check_code_quality(project_dir)` → score 0-100
+  - `_check_dependency_health(project_dir)` → score 0-100
+  - `_check_doc_quality(project_dir)` → score 0-100 (delegates to M12 when available)
+  - `_check_project_hygiene(project_dir)` → score 0-100
+  Each function outputs: `DIMENSION|SCORE|DETAIL_JSON` (pipe-delimited, detail
+  is a JSON object with sub-scores and findings for the report).
+  **Critical: these are all read-only, non-executing checks.** They never run
+  project code, never install dependencies, never execute test suites. Only
+  file presence, content sampling, and git queries. Exception: if HEALTH_RUN_TESTS
+  is explicitly set to true AND TEST_CMD is configured, the test dimension CAN
+  execute the test suite for an accurate pass rate. Default: false.
+
+Files to modify:
+- `tekhton.sh` — [PM: missing from original file list but required by acceptance criteria]
+  Add `--health` flag handling. When invoked as `tekhton --health`, call
+  `reassess_project_health "$PROJECT_DIR"` (sourcing lib/health.sh), display
+  results, and exit. No pipeline stages are run. Place flag parsing alongside
+  other single-action flags (--init, --plan, --replan).
+
+- `lib/init.sh` (or equivalent --init orchestration) — [PM: lib/init.sh does not
+  appear in the documented repo layout. The Brownfield Intelligence initiative
+  (which owns --init) is listed as a future initiative, not yet implemented.
+  The coder should: (a) check if lib/init.sh exists; (b) if not, find the actual
+  --init handler in tekhton.sh and add the health assessment call there directly;
+  (c) if a stub exists, add to it. The integration goal is: after --init completes
+  its detection/synthesis phase, call `assess_project_health()`, write
+  HEALTH_BASELINE.json to `.claude/`, and include the score in the completion
+  banner.]
+  During the --init interview/synthesis: include health findings in the synthesis
+  context so the generated CLAUDE.md and milestones can address low-scoring
+  dimensions. For example: if test health is 10/100, the PM agent should know
+  that test coverage is a priority.
+
+- `lib/finalize.sh` — At pipeline completion, if HEALTH_REASSESS_ON_COMPLETE=true,
+  run `reassess_project_health()` and include delta in RUN_SUMMARY.json.
+  Display delta in the completion banner: "Health: 23 → 31 (+8) Yellow Belt".
+  This is optional and defaults to false (re-assessment has a small time cost
+  from file sampling). Can also be triggered explicitly via `tekhton --health`.
+
+- `lib/dashboard.sh` — Add `emit_dashboard_health()` function. Reads
+  HEALTH_BASELINE.json and latest HEALTH_REPORT.json, generates
+  `data/health.js` with `window.TK_HEALTH = { ... }`. Includes: current score,
+  baseline score, per-dimension breakdown, belt label, trend data.
+
+- `stages/intake.sh` — PM agent receives HEALTH_SCORE_SUMMARY in its prompt
+  context. When health score is low in a specific dimension AND the current
+  milestone doesn't address it, the PM can note this in INTAKE_REPORT.md as
+  a suggestion (NOT a block — just awareness). Example: "Note: test coverage
+  is at 12%. Consider prioritizing test milestones."
+
+- `lib/config_defaults.sh` — Add:
+  HEALTH_ENABLED=true,
+  HEALTH_REASSESS_ON_COMPLETE=false,
+  HEALTH_RUN_TESTS=false (never execute tests for health score by default),
+  HEALTH_SAMPLE_SIZE=20 (number of source files to sample for quality checks),
+  HEALTH_WEIGHT_TESTS=30,
+  HEALTH_WEIGHT_QUALITY=25,
+  HEALTH_WEIGHT_DEPS=15,
+  HEALTH_WEIGHT_DOCS=15,
+  HEALTH_WEIGHT_HYGIENE=15,
+  HEALTH_SHOW_BELT=true,
+  HEALTH_BASELINE_FILE=.claude/HEALTH_BASELINE.json,
+  HEALTH_REPORT_FILE=HEALTH_REPORT.md.
+
+- `lib/config.sh` — Validate HEALTH_WEIGHT_* sum to 100. Validate
+  HEALTH_SAMPLE_SIZE is 5-100.
+
+- `prompts/intake_scan.prompt.md` — Add conditional health context block:
+  `{{IF:HEALTH_SCORE_SUMMARY}}## Project Health Context
+  {{HEALTH_SCORE_SUMMARY}}{{ENDIF:HEALTH_SCORE_SUMMARY}}`
+
+- `templates/watchtower/app.js` (M14) — Add health score rendering in the
+  Trends tab: current score with belt badge, per-dimension bar chart,
+  baseline vs current delta with trend arrows.
+
+Acceptance criteria:
+- `assess_project_health()` produces a composite score 0-100 from 5 dimensions
+- Each dimension check is read-only (no code execution unless HEALTH_RUN_TESTS=true)
+- HEALTH_REPORT.md contains per-dimension breakdown with sub-scores and findings
+- HEALTH_BASELINE.json written during --init for future delta tracking
+- `reassess_project_health()` computes delta from baseline and per-dimension trends
+- Belt system maps score to label correctly at all boundaries
+- Health score displayed in --init completion banner with color coding
+- Health delta displayed in run completion banner when HEALTH_REASSESS_ON_COMPLETE=true
+- `tekhton --health` triggers standalone re-assessment without running pipeline
+- PM agent sees HEALTH_SCORE_SUMMARY in context when available
+- Watchtower data layer emits health data to data/health.js
+- Dimension weights are configurable and validated to sum to 100
+- File sampling respects HEALTH_SAMPLE_SIZE limit
+- Magic number detection skips common constants (0, 1, -1, 2, 100, 1000, etc.)
+- .env-in-git detection correctly identifies committed secrets as hygiene failure
+- When HEALTH_ENABLED=false, all health functions are no-ops
+- A project with zero tests, no linter, no docs, no CI scores near 0
+- A well-maintained OSS project (linted, tested, documented, CI'd) scores near 90
+- All existing tests pass
+- `bash -n lib/health.sh lib/health_checks.sh` passes
+- `shellcheck lib/health.sh lib/health_checks.sh` passes
+- New test file `tests/test_health_scoring.sh` covers: dimension checks against
+  fixture projects, composite calculation, weight validation, belt mapping,
+  delta computation, baseline persistence
+
+Watch For:
+- File sampling must be deterministic (sorted file list, not random). Same repo
+  state → same score. Use `git ls-files | sort | head -n SAMPLE_SIZE` pattern.
+- Magic number detection is inherently noisy. Focus on numeric literals in
+  non-obvious contexts (inside conditionals, as function arguments) rather than
+  in array indices or loop bounds. Err toward fewer false positives.
+- The test health dimension without HEALTH_RUN_TESTS=true is a rough proxy
+  (file count ratio + naming conventions). Make this clear in the report:
+  "Estimated from file presence. Run with HEALTH_RUN_TESTS=true for actual pass rate."
+- Dependency version comparison (is it 2+ majors behind?) requires parsing
+  semver from lock files. Handle non-semver versions gracefully (skip them).
+- The composite score should be stable across runs on the same codebase (no
+  randomization in sampling). If a user runs --health twice without changing
+  code, they must get the same score.
+- Belt system is fun but some users may find it patronizing. Make it configurable
+  (HEALTH_SHOW_BELT=true by default) and keep the 0-100 number always visible.
+- Never read .env file contents for the hygiene check — only check if the
+  FILENAME is tracked by git (`git ls-files .env`). The contents may have secrets.
+- [PM: lib/init.sh may not exist — see note in "Files to modify" above. Resolve
+  by locating the actual --init dispatch in tekhton.sh before writing any code.]
+
+Seeds Forward:
+- V4 tech debt agent uses health score to prioritize which debt to tackle first
+  (lowest dimension = highest priority)
+- V4 parallel execution can run health re-assessment in parallel with the
+  regular pipeline (it's read-only, no conflicts)
+- Health score trends in Watchtower provide the "before/after" proof that
+  Tekhton is delivering value
+- Enterprise users can set minimum health scores as gates ("don't deploy below 60")
+- The dimension framework is extensible: V4 adds security posture dimension
+  (from M09 findings history), accessibility dimension, performance dimension
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 16: Autonomous Runtime Improvements
+<!-- milestone-meta
+id: "16"
+status: "done"
+-->
+
+Reform the --complete / --auto-advance outer loop to reward productive work instead
+of punishing it. Three changes: (1) milestone success resets the outer loop counter
+so productive runs continue indefinitely, (2) quota-aware pause/resume so the
+pipeline gracefully handles rate limits instead of failing, (3) increased split
+depth now that PM + security agents provide safety rails.
+
+The end state: a user runs `tekhton --milestone --complete --auto-advance` and
+walks away. The pipeline runs until it's out of milestones OR out of quota. It
+never stops because of an arbitrary cycle count while it's making progress.
+
+Files to create:
+- `lib/quota.sh` — Quota management and rate-limit handling:
+  **Rate limit detection** (`is_rate_limit_error(exit_code, stderr_file)`):
+  - Parse stderr output from `claude` CLI for known rate-limit patterns:
+    "rate limit", "quota exceeded", "usage limit", "too many requests",
+    "429", "capacity", "overloaded"
+  - Return 0 if rate limit detected, 1 otherwise.
+  - This is the Tier 1 (reactive) detection — works for all users with zero
+    configuration.
+
+  **Pause/resume state machine** (`enter_quota_pause()`, `exit_quota_pause()`):
+  - `enter_quota_pause()`:
+    1. Set pipeline state to QUOTA_PAUSED (new state in lib/state.sh)
+    2. Disable AGENT_ACTIVITY_TIMEOUT (save current value, set to 0)
+    3. Disable AUTONOMOUS_TIMEOUT countdown (save remaining time)
+    4. Log event to Watchtower: "Pipeline paused — waiting for quota refresh"
+    5. Write QUOTA_PAUSED marker file with timestamp and retry schedule
+    6. Begin retry loop: attempt a lightweight CLI probe every
+       QUOTA_RETRY_INTERVAL seconds (default 300 = 5 minutes)
+    7. The probe is a minimal `claude` call (single-turn, short prompt) to
+       check if quota has refreshed. NOT a full agent invocation.
+  - `exit_quota_pause()`:
+    1. Remove QUOTA_PAUSED marker file
+    2. Restore AGENT_ACTIVITY_TIMEOUT to saved value
+    3. Restore AUTONOMOUS_TIMEOUT countdown (remaining time, not full reset)
+    4. Set pipeline state back to previous state
+    5. Log event to Watchtower: "Quota refreshed — resuming pipeline"
+    6. Return to the agent call that triggered the pause (retry it)
+
+  **Proactive quota check (Tier 2, optional):**
+  - `check_quota_remaining()` — If CLAUDE_QUOTA_CHECK_CMD is configured,
+    execute it and parse the output for remaining percentage.
+    Default: empty (disabled). Users can set this to a custom script that
+    checks their account's usage via whatever mechanism is available.
+    Example: `CLAUDE_QUOTA_CHECK_CMD="python3 ~/.tekhton/check_usage.py"`
+    The script must output a single number 0-100 (percentage remaining).
+  - `should_pause_proactively()` — If quota check available AND remaining
+    percentage < QUOTA_RESERVE_PCT (default 10), return 0 (should pause).
+  - When proactive pause triggers: same pause/resume flow as reactive, but
+    the Watchtower message says "Paused at X% remaining (reserve threshold)"
+    instead of "Rate limited."
+
+  **Integration with agent_retry.sh:**
+  - Modify `_retry_on_transient()` to call `is_rate_limit_error()` BEFORE
+    the existing transient error retry logic.
+  - If rate limit detected: call `enter_quota_pause()` instead of normal
+    backoff retry. Normal transient retries are for server errors (500, 503).
+    Rate limits get the full pause/resume treatment.
+  - After `exit_quota_pause()` returns, the retry proceeds as if it were
+    the first attempt (counter not incremented for quota pauses).
+
+Files to modify:
+- `lib/orchestrate.sh` — **Milestone success resets outer loop:**
+  In the `--complete` outer loop, after a milestone is successfully completed
+  (mark_milestone_done returns 0), reset the pipeline attempt counter:
+  ```bash
+  if milestone_completed_successfully; then
+      pipeline_attempts=0  # Reset — we're making progress
+      log_info "Milestone complete. Resetting attempt counter."
+  fi
+  ```
+  Also reset on successful milestone split (split produces valid sub-milestones):
+  ```bash
+  if milestone_split_successfully; then
+      pipeline_attempts=0  # Split is forward progress
+      log_info "Milestone split. Resetting attempt counter."
+  fi
+  ```
+  The MAX_PIPELINE_ATTEMPTS counter now ONLY increments on full pipeline
+  cycles that produce no forward progress (no milestone completed, no
+  split performed, no useful rework applied). This means:
+  - 5 successful milestones in a row: counter stays at 0 the whole time
+  - 3 failures then a success: counter goes 1, 2, 3, then resets to 0
+  - 5 consecutive failures with no progress: pipeline stops (existing behavior)
+
+  **Increase default limits:**
+  - MAX_PIPELINE_ATTEMPTS: 5 → 5 (unchanged — it's now failure-only)
+  - MAX_AUTONOMOUS_AGENT_CALLS: 20 → remove hard cap (replaced by quota system).
+    Keep as a safety valve at 200 (effectively unlimited for normal use, catches
+    true runaways). Log a warning at 100 calls.
+  - MILESTONE_MAX_SPLIT_DEPTH: 3 → 6 (PM agent catches bad milestones before
+    they waste budget on deep splitting)
+
+- `lib/orchestrate_helpers.sh` — Update `_check_progress()` to distinguish
+  between "no progress" (counter increments) and "progress made but incomplete"
+  (counter doesn't increment). Progress indicators:
+  **Primary (causal log, when available via M13):**
+  - Event count for current pipeline attempt > 0 (work was done)
+  - Non-error events emitted after the last error (recovery happened)
+  - Verdict events with forward-progress outcomes (APPROVED, TWEAKED, PASS)
+  - rework_cycle events that produced file changes (productive rework)
+  **Fallback (when causal log unavailable):**
+  - Files changed in git
+  - New test files created
+  - Milestone acceptance criteria partially met
+  - Security findings fixed
+  The causal log provides richer progress signals because it captures work
+  that doesn't necessarily produce file changes (e.g., a security scan that
+  found zero issues is still progress — the scan completed). The git-diff
+  fallback remains for backward compatibility and for cases where the causal
+  log is disabled.
+
+- `lib/agent_retry.sh` — Add rate-limit detection before transient retry:
+  ```bash
+  if is_rate_limit_error "$exit_code" "$stderr_file"; then
+      enter_quota_pause
+      # After resume, retry the same call (don't increment retry counter)
+      continue
+  fi
+  ```
+  Rate limit pauses do NOT count against MAX_TRANSIENT_RETRIES.
+
+- `lib/state.sh` — Add QUOTA_PAUSED as valid pipeline state. Add save/restore
+  for timeout values during pause. Add QUOTA_PAUSED marker file path.
+
+- `lib/agent_monitor.sh` — When pipeline state is QUOTA_PAUSED, the activity
+  monitor must be fully disabled (not just extended timeout — completely off).
+  The quota retry loop in quota.sh handles its own timing.
+
+- `lib/config_defaults.sh` — Add:
+  QUOTA_RETRY_INTERVAL=300 (seconds between quota refresh checks, default 5min),
+  QUOTA_RESERVE_PCT=10 (proactive pause threshold, only used with Tier 2),
+  CLAUDE_QUOTA_CHECK_CMD="" (optional external script for proactive checking),
+  QUOTA_MAX_PAUSE_DURATION=14400 (max seconds to wait in pause before giving up,
+  default 4 hours — covers a full 5-hour rolling window refresh).
+  Update: MAX_AUTONOMOUS_AGENT_CALLS=200, MILESTONE_MAX_SPLIT_DEPTH=6.
+
+- `lib/config.sh` — Validate QUOTA_* keys. QUOTA_RETRY_INTERVAL must be 60-3600.
+  QUOTA_RESERVE_PCT must be 1-50. QUOTA_MAX_PAUSE_DURATION must be 300-86400.
+  If CLAUDE_QUOTA_CHECK_CMD is set, verify the command exists and is executable.
+
+- `lib/dashboard.sh` — Emit quota pause/resume events. Add quota status to
+  run_state.js: `quota_status: "ok" | "paused"`, `quota_paused_at`,
+  `quota_retry_count`, `quota_estimated_resume`. Watchtower Live Run tab
+  shows prominent "Paused — Waiting for Quota" banner during pause.
+
+- `lib/finalize.sh` — Include quota pause events in RUN_SUMMARY.json:
+  total_pause_time_s, pause_count, was_quota_limited (boolean).
+
+- `lib/finalize_display.sh` — If quota pauses occurred during the run,
+  include in completion banner: "Quota pauses: 2 (total wait: 12m 34s)".
+
+Acceptance criteria:
+- Milestone success resets pipeline_attempts to 0 in --complete mode
+- Milestone split resets pipeline_attempts to 0 in --complete mode
+- Pipeline continues indefinitely through successful milestones (tested with
+  3+ consecutive milestone completions — counter stays at 0)
+- Pipeline still stops after MAX_PIPELINE_ATTEMPTS consecutive failures
+  with no forward progress
+- `is_rate_limit_error()` correctly identifies rate-limit patterns from
+  claude CLI stderr output
+- Rate limit triggers QUOTA_PAUSED state, not transient retry
+- During QUOTA_PAUSED: activity timeout disabled, autonomous timeout frozen
+- Quota retry probe runs every QUOTA_RETRY_INTERVAL seconds
+- Pipeline resumes automatically when quota refreshes (probe succeeds)
+- Quota pause does not count against MAX_TRANSIENT_RETRIES
+- Pipeline gives up after QUOTA_MAX_PAUSE_DURATION with clear error message
+- When CLAUDE_QUOTA_CHECK_CMD is configured and returns <QUOTA_RESERVE_PCT,
+  pipeline pauses proactively before hitting the rate limit
+- When CLAUDE_QUOTA_CHECK_CMD is not configured, Tier 2 is silently disabled
+- MAX_AUTONOMOUS_AGENT_CALLS raised to 200 (effective safety valve only)
+- MILESTONE_MAX_SPLIT_DEPTH raised to 6
+- Watchtower shows quota pause/resume events in timeline
+- Watchtower Live Run tab shows prominent pause banner during QUOTA_PAUSED
+- RUN_SUMMARY.json includes quota pause statistics
+- Completion banner shows quota pause summary when pauses occurred
+- All existing tests pass
+- `bash -n lib/quota.sh` passes
+- `shellcheck lib/quota.sh` passes
+- New test file `tests/test_quota.sh` covers: rate limit pattern detection,
+  pause/resume state transitions, timeout disable/restore, milestone-success
+  counter reset, progress detection
+
+Watch For:
+- The quota probe must be truly lightweight. A single-turn `claude` call with
+  a trivial prompt ("respond with OK") and --max-turns 1. If even this is
+  rate-limited, the quota hasn't refreshed yet. Don't use a full agent call.
+- AUTONOMOUS_TIMEOUT must be frozen (remaining time saved), not disabled,
+  during quota pause. When resumed, the timer continues from where it left off.
+  Otherwise a long quota pause could allow the pipeline to run indefinitely
+  after resume.
+- The milestone-success reset means MAX_PIPELINE_ATTEMPTS is now effectively
+  "max consecutive failures." Update all documentation and comments to reflect
+  this semantic change.
+- Rate limit error patterns vary by Claude CLI version. Use a broad regex
+  matching approach (case-insensitive, multiple patterns) rather than exact
+  string matching. Test against actual CLI error messages.
+- The CLAUDE_QUOTA_CHECK_CMD runs as a subprocess. It must timeout (5s max)
+  and never block the pipeline. If it fails, silently fall back to Tier 1.
+- Consider: what if the user's quota refreshes at 4am and the pipeline has
+  been paused since 11pm? The periodic probe will catch it. But the user
+  might want to know when it resumed. The Watchtower timeline event + a
+  possible terminal notification (bell character) handles this.
+- The 200 MAX_AUTONOMOUS_AGENT_CALLS is a SAFETY VALVE, not a workflow limit.
+  If a run hits 200 agent calls, something is genuinely wrong (infinite rework
+  loop, misconfigured pipeline). Log a prominent warning at 100 and error at 200.
+
+Seeds Forward:
+- V4 parallel execution: each parallel worker gets its own quota tracking.
+  Shared quota pool prevents N workers from exhausting quota N times faster.
+- V4 tech debt agent: runs on its own quota budget (separate from main pipeline).
+  Can be configured with lower priority (pauses first, resumes last).
+- The CLAUDE_QUOTA_CHECK_CMD interface is a plugin point. V4 could ship
+  default check scripts for common setups (Pro subscription, API key, team plan).
+- Quota statistics from RUN_SUMMARY.json feed into Watchtower Trends:
+  "Average quota utilization per run", "Peak quota periods to avoid".
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 17: Pipeline Diagnostics & Recovery Guidance
+<!-- milestone-meta
+id: "17"
+status: "done"
+-->
+
+Add a `tekhton --diagnose` command that reads the latest pipeline state and the
+**causal event log** (from M13), identifies what went wrong with root-cause
+tracing, and provides actionable recovery suggestions. Also generates a structured
+DIAGNOSIS.md report that both the CLI and Watchtower can consume.
+
+This milestone has immediate value — it solves the "what do I do now?" problem that
+every Tekhton user hits when a pipeline run fails. No agent calls needed — this is
+pure shell logic reading the causal log, state files, and applying diagnostic rules.
+
+The key difference from a naive state-file-only approach: the causal log lets
+--diagnose trace **why** a failure happened, not just **what** failed. A build
+failure isn't just "BUILD_ERRORS.md exists" — it's "build broke because the
+coder modified handler.py, which was triggered by a security rework cycle, which
+was triggered by an injection finding." The user gets a causal chain, not a symptom.
+
+The diagnose command is self-updating: as new stages land (security M09, intake M10,
+etc.), their failure patterns are added to the diagnostic ruleset. The core
+infrastructure built here supports all future stages.
+
+Files to create:
+- `lib/diagnose.sh` — Diagnostic engine:
+  **State reader** (`_read_diagnostic_context()`):
+  - Read the causal event log (CAUSAL_LOG.jsonl from M13) — this is the primary
+    diagnostic input. Extract: last event, all error events, all verdict events,
+    rework cycle count, the terminal event (last event before pipeline stopped).
+  - Read pipeline state from PIPELINE_STATE.md (current stage, attempt count)
+  - Read latest RUN_SUMMARY.json (outcome, per-stage results, error messages)
+  - Read MANIFEST.cfg (milestone status, which is active/stuck)
+  - Read error files: BUILD_ERRORS.md, SECURITY_REPORT.md (when M09 exists),
+    INTAKE_REPORT.md (when M10 exists), HUMAN_ACTION_REQUIRED.md
+  - Read agent log tails (last 20 lines of each stage's agent output)
+  - Compile into a diagnostic context object (associative arrays).
+  - When causal log exists: call `trace_cause_chain()` on the terminal error
+    event to pre-compute the root-cause chain for use by diagnostic rules.
+
+  **Failure classifier** (`classify_failure()`):
+  Applies rules in priority order, returns the FIRST matching diagnosis:
+
+  1. **BUILD_FAILURE** — BUILD_ERRORS.md exists and is non-empty
+     Suggestions:
+     - "Build failed. Errors in BUILD_ERRORS.md."
+     - "Fix the build errors manually, then run: tekhton --start-at coder"
+     - "Or let Tekhton retry: tekhton --milestone (it will attempt build fix)"
+     If build_fix already attempted and failed:
+     - "Automatic build fix was attempted and failed."
+     - "The errors may require manual intervention. See BUILD_ERRORS.md."
+
+  2. **REVIEW_REJECTION_LOOP** — Review stage completed 3+ cycles with no approval
+     Suggestions:
+     - "Reviewer rejected the code N times. The coder may be unable to address
+       the feedback within the turn budget."
+     - "Options: (1) Increase REVIEW_MAX_REWORK_CYCLES in pipeline.conf,
+       (2) Read REVIEWER_REPORT.md and fix the issues manually,
+       (3) Run: tekhton --start-at review to retry review only"
+
+  3. **SECURITY_HALT** — Security stage returned HALT verdict
+     (Available when M09 exists — detect by checking if stages/security.sh sourced)
+     Suggestions:
+     - "Security scan found CRITICAL unfixable vulnerabilities."
+     - "Your SECURITY_UNFIXABLE_POLICY is set to 'halt'."
+     - "Options: (1) Add waivers to SECURITY_WAIVER_FILE for known-accepted risks,
+       (2) Fix the vulnerabilities manually and re-run,
+       (3) Change SECURITY_UNFIXABLE_POLICY to 'escalate' to continue with warnings"
+
+  4. **INTAKE_NEEDS_CLARITY** — Intake paused for human input
+     (Available when M10 exists)
+     Suggestions:
+     - "The PM agent needs clarification on this milestone."
+     - "Questions are in CLARIFICATIONS.md. Answer them and re-run."
+     - "Or lower INTAKE_CLARITY_THRESHOLD if the gate is too aggressive."
+
+  5. **QUOTA_EXHAUSTED** — Pipeline paused due to rate limiting
+     (Available when M16 exists)
+     Suggestions:
+     - "Pipeline paused waiting for quota refresh."
+     - "It will resume automatically. No action needed."
+     - "If you need it sooner, wait for your 5-hour window to refresh."
+
+  6. **STUCK_LOOP** — MAX_PIPELINE_ATTEMPTS reached with no progress
+     Suggestions:
+     - "Pipeline completed N attempts with no forward progress."
+     - "This usually means the task is too complex for automatic resolution."
+     - "Options: (1) Simplify the milestone and re-run,
+       (2) Break it into smaller milestones: tekhton --split-milestone N,
+       (3) Check the scout report for scope issues"
+
+  7. **TURN_EXHAUSTION** — Agent hit max turns without completing
+     Suggestions:
+     - "The [stage] agent exhausted its turn budget ([N] turns)."
+     - "Options: (1) Increase [STAGE]_MAX_TURNS in pipeline.conf,
+       (2) Simplify the task scope,
+       (3) Check if continuation is enabled (CONTINUATION_ENABLED=true)"
+
+  8. **MILESTONE_SPLIT_DEPTH** — Max split depth reached
+     Suggestions:
+     - "Milestone was split N times and still couldn't complete."
+     - "The task may be fundamentally too complex for automated splitting."
+     - "Options: (1) Manually break it into smaller milestones,
+       (2) Increase MILESTONE_MAX_SPLIT_DEPTH (currently N)"
+
+  9. **TRANSIENT_ERROR** — Agent calls failed with server errors
+     Suggestions:
+     - "Claude API returned transient errors (server error, timeout)."
+     - "This is usually temporary. Re-run: tekhton --resume"
+     - "If persistent, check Claude API status: status.anthropic.com"
+
+  10. **UNKNOWN** — No specific pattern matched
+      Suggestions:
+      - "No specific failure pattern identified."
+      - "Check the latest agent output in .claude/runs/latest/"
+      - "Re-run with DASHBOARD_VERBOSITY=verbose for more detail"
+
+  **Report generator** (`generate_diagnosis_report()`):
+  Produces DIAGNOSIS.md with:
+  - **Causal chain** (when causal log available): "Root cause → intermediate
+    events → terminal failure" as a human-readable trace. Uses
+    `cause_chain_summary()` from lib/causality.sh. Example:
+    ```
+    Cause Chain:
+    security.finding (A03:Injection in handler.py:42)
+      → security.verdict (1 HIGH fixable)
+      → coder.rework_cycle (security fix attempt)
+      → build_gate.fail (3 compilation errors)
+    ```
+  - Failure classification and confidence
+  - Current pipeline state summary
+  - Specific suggestions (numbered, actionable)
+  - Relevant file paths to inspect
+  - Exact commands to run for each recovery option
+  - History: if this is a recurring failure, note that ("This is the 3rd
+    build failure in a row — consider manual intervention"). Uses
+    `recurring_pattern()` from lib/causality.sh to query across archived logs.
+
+  **Quick suggestions** (`print_diagnosis_summary()`):
+  Terminal-friendly colored output:
+  ```
+  ╔══════════════════════════════════════════════════╗
+  ║  DIAGNOSIS: BUILD_FAILURE                        ║
+  ╠══════════════════════════════════════════════════╣
+  ║  Build failed after security rework cycle.       ║
+  ║  Errors: 3 compilation errors in src/api/        ║
+  ║                                                  ║
+  ║  Cause chain:                                    ║
+  ║  security.finding → rework_cycle → build_gate    ║
+  ║                                                  ║
+  ║  Suggestions:                                    ║
+  ║  1. Fix manually → tekhton --start-at coder      ║
+  ║  2. Let Tekhton retry → tekhton --milestone      ║
+  ║  3. See details → cat BUILD_ERRORS.md            ║
+  ║                                                  ║
+  ║  Full report: DIAGNOSIS.md                       ║
+  ╚══════════════════════════════════════════════════╝
+  ```
+  When causal log is unavailable (pre-M13 runs, CAUSAL_LOG_ENABLED=false),
+  falls back to symptom-only diagnosis (BUILD_FAILURE without cause chain).
+  The terminal summary always includes the one-line cause chain when available.
+
+- `lib/diagnose_rules.sh` — Diagnostic rule definitions:
+  Each rule is a function: `_rule_build_failure()`, `_rule_review_loop()`, etc.
+  Returns 0 if matched (with suggestions in a variable), 1 if not.
+  Rules are registered in a priority-ordered array so new rules can be inserted
+  by future milestones without modifying existing code:
+  ```bash
+  DIAGNOSE_RULES=(
+      "_rule_build_failure"
+      "_rule_review_loop"
+      "_rule_security_halt"     # no-op until M09 exists
+      "_rule_intake_clarity"    # no-op until M10 exists
+      "_rule_quota_exhausted"   # no-op until M16 exists
+      "_rule_stuck_loop"
+      "_rule_turn_exhaustion"
+      "_rule_split_depth"
+      "_rule_transient_error"
+      "_rule_unknown"
+  )
+  ```
+  Rules that reference future stages (security, intake, quota) check for the
+  presence of the relevant state files before matching. If the file doesn't
+  exist (stage not implemented yet), the rule silently returns 1 (no match).
+  This makes --diagnose forward-compatible without code changes when new
+  stages are added.
+
+Files to modify:
+- `lib/report.sh` — CLI report summary for successful runs:
+  **`print_run_report()`**: Reads the latest run's report files and prints
+  a structured, one-screen summary:
+  ```
+  Last run: 2024-03-23 10:45 — Milestone 3: User Auth
+    Intake:    PASS (confidence 85)
+    Scout:     12 files identified
+    Coder:     6 files modified, 18 turns
+    Security:  1 MEDIUM finding (logged, not blocking)
+    Reviewer:  APPROVED (cycle 1)
+    Tester:    4 tests written, all passing
+
+    Action items: 1 non-blocking note
+    Full reports: .claude/logs/archive/20240323_104500/
+  ```
+  Reads: INTAKE_REPORT.md, SCOUT_REPORT.md, CODER_SUMMARY.md,
+  SECURITY_REPORT.md, REVIEWER_REPORT.md, TESTER_REPORT.md,
+  RUN_SUMMARY.json. Gracefully handles missing files (stages not run or
+  not yet implemented). Color-coded by outcome.
+
+- `tekhton.sh` — Add `--report` flag handling: call `print_run_report()`
+  and exit. Also add `tekhton report` as a subcommand synonym.
+
+- `tekhton.sh` — Enhance crash handler (the `trap ERR` / crash diagnostic
+  at lines 55-99):
+  **Smart crash first-aid:**
+  Before printing the raw exit code, run a quick check:
+  1. Is the Claude CLI authenticated? (`claude --version` quick check)
+  2. Does BUILD_ERRORS.md exist? (build failure)
+  3. Is PIPELINE_STATE.md present? (resumable)
+  4. Was this a known transient error pattern? (grep agent log tail)
+  Print context-appropriate first-aid advice:
+  - "Looks like a quota issue — the pipeline is paused and will resume
+    when quota refreshes. Or run `tekhton` to resume manually."
+  - "Build failure during security rework — run `tekhton --diagnose`
+    for detailed analysis, or `tekhton --rollback` to undo this run."
+  - "Crash during coder stage — your code is safe (checkpoint saved).
+    Run `tekhton` to resume from where it left off."
+  This is fast (no agent calls, pure shell checks) and runs before the
+  existing crash diagnostic output.
+
+  **Enhanced resume prompt:**
+  When the user runs `tekhton` with no args and saved state exists,
+  the resume prompt is enhanced with context:
+  ```
+  Found saved pipeline state:
+    Task:       Add user authentication
+    Stopped at: Review (cycle 2 of 3)
+    Reason:     API rate limit (transient — safe to retry)
+    Elapsed:    12m before interruption
+    Checkpoint: Available (tekhton --rollback to undo)
+
+  Continue? [y/n/fresh]
+  ```
+  Reads LAST_FAILURE_CONTEXT.json (if exists) and checkpoint metadata
+  to provide the "Reason" and "Checkpoint" lines.
+
+- `tekhton.sh` — Add `--diagnose` flag handling. When set:
+  1. Source lib/diagnose.sh and lib/diagnose_rules.sh
+  2. Call `_read_diagnostic_context()`
+  3. Call `classify_failure()`
+  4. Call `generate_diagnosis_report()` → DIAGNOSIS.md
+  5. Call `print_diagnosis_summary()` → terminal output
+  6. Exit (do not run pipeline)
+  Also: at the end of ANY failed pipeline run, automatically print a one-liner:
+  "Run 'tekhton --diagnose' for recovery suggestions."
+
+- `lib/finalize.sh` — After a failed run, append the diagnose hint to the
+  completion banner. Also write a LAST_FAILURE_CONTEXT.json with the failure
+  classification and stage for --diagnose to consume quickly without re-parsing
+  all state files.
+
+- `lib/finalize_display.sh` — Add diagnose hint to failure banner output.
+
+- `lib/dashboard.sh` — Add `emit_dashboard_diagnosis()`. Reads DIAGNOSIS.md
+  and generates `data/diagnosis.js` with `window.TK_DIAGNOSIS = { ... }`.
+  Watchtower Live Run tab shows diagnosis card when a failure is detected.
+
+- `lib/state.sh` — Add LAST_FAILURE_CONTEXT path to session state management.
+
+Acceptance criteria:
+- `tekhton --diagnose` reads causal log + pipeline state and prints recovery suggestions
+- DIAGNOSIS.md generated with causal chain, failure classification, suggestions, and commands
+- When causal log exists: DIAGNOSIS.md includes a "Cause Chain" section tracing
+  from the terminal failure back to its root cause event
+- When causal log is absent: falls back gracefully to state-file-only diagnosis
+  (no errors, just omits the cause chain section)
+- All 10 diagnostic rules correctly identify their failure patterns
+- Rules for future stages (security, intake, quota) are no-ops when those
+  stages don't exist yet — no errors, no false matches
+- Failed pipeline runs print "Run 'tekhton --diagnose' for recovery suggestions"
+- Terminal output is colored and formatted for readability
+**CLI report summary (tekhton report / --report):**
+- `tekhton report` prints a structured one-screen summary of the last run
+- Summary includes: intake verdict, scout file count, coder changes, security
+  findings, reviewer verdict, tester results, action items
+- Gracefully handles missing report files (stages not run, not implemented)
+- Works for both successful and failed runs (failed runs also suggest --diagnose)
+**Smart crash handler:**
+- Crash handler prints context-appropriate first-aid advice before raw error
+- Detects: quota issues, build failures, resumable state, transient errors
+- Each detected condition shows a specific recovery command
+- Fast (no agent calls, pure shell checks)
+**Enhanced resume prompt:**
+- Resume prompt shows: task, stopped-at stage, reason for stop, elapsed time,
+  checkpoint availability
+- Reason populated from LAST_FAILURE_CONTEXT.json when available
+- Terminal summary includes one-line cause chain when causal log available
+- Each suggestion includes an exact command the user can copy-paste
+- Recurring failure detection uses `recurring_pattern()` from causal log when
+  available; falls back to reading LAST_FAILURE_CONTEXT files if no causal log.
+  If the same failure type occurred in the last 3 runs, the diagnosis notes it.
+- LAST_FAILURE_CONTEXT.json written on failure for fast --diagnose startup
+- --diagnose works even if no pipeline has ever run (prints "No runs found")
+- --diagnose works on resumed/interrupted pipelines (reads partial state)
+- Dashboard data emitted when Watchtower is enabled
+- All existing tests pass
+- `bash -n lib/diagnose.sh lib/diagnose_rules.sh` passes
+- `shellcheck lib/diagnose.sh lib/diagnose_rules.sh` passes
+- New test file `tests/test_diagnose.sh` covers: each rule against fixture
+  state, rule priority ordering, causal chain rendering from fixture causal logs,
+  graceful fallback when causal log absent, recurring failure detection (both
+  causal log and LAST_FAILURE_CONTEXT paths), terminal output formatting
+
+Watch For:
+- Rule priority matters. BUILD_FAILURE must be checked before STUCK_LOOP
+  because a stuck loop caused by build failures should give build-specific
+  advice, not generic stuck-loop advice. The causal chain often reveals this
+  naturally (a stuck loop caused by build failures will have build_gate.fail
+  in the chain), but the rule priority is still needed for the terminal summary
+  classification label.
+- Agent log tails (last 20 lines) may contain useful error context but could
+  also contain noise. Only include them in the full DIAGNOSIS.md, not in the
+  terminal summary.
+- LAST_FAILURE_CONTEXT.json must be written atomically (tmpfile + mv) and
+  must survive pipeline crashes (write it in a trap handler or early in the
+  finalize sequence).
+- The forward-compat pattern (check for file existence before matching) means
+  --diagnose never needs updating when new stages land. The new stage just
+  needs to emit events to the causal log (which it will, via M13's emit_event).
+- Don't over-diagnose. If the pipeline succeeded, --diagnose should say
+  "Last run completed successfully. No issues found." Not every run needs
+  recovery suggestions.
+- Recurring failure detection: prefer the causal log's `recurring_pattern()`
+  (queries archived CAUSAL_LOG_*.jsonl files) when available. Fall back to
+  LAST_FAILURE_CONTEXT files only when no archived causal logs exist. The
+  causal log path is more accurate because it counts by event type, not just
+  failure classification.
+- **Causal chain rendering must be concise.** A 20-event chain is noise, not
+  signal. Collapse intermediate events of the same type (e.g., "3 rework_cycles"
+  instead of listing each one). Show at most 5 links in the terminal summary;
+  the full chain goes in DIAGNOSIS.md.
+
+Seeds Forward:
+- M09 (Security) adds security-specific diagnostic rules automatically
+  (SECURITY_HALT, SECURITY_REWORK_EXHAUSTED) — causal chain shows which
+  finding triggered the halt
+- M10 (PM Agent) adds intake-specific rules (INTAKE_NEEDS_CLARITY) — causal
+  chain shows which milestone evaluation triggered the pause
+- M16 (Autonomous Runtime) adds quota-specific rules (QUOTA_EXHAUSTED) —
+  causal chain shows which agent call hit the limit
+- Watchtower Live Run tab renders DIAGNOSIS.md content on failure, including
+  causal chain visualization
+- V4 interactive Watchtower could offer "click to run" recovery commands
+- V4 LLM-powered diagnosis: feed the causal log to an agent for natural-language
+  post-mortem analysis ("explain what went wrong in this run")
+- The rule registry pattern enables plugins: users could add custom diagnostic
+  rules via a hook in pipeline.conf
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+
+#### Milestone 18: Documentation Site (MkDocs + GitHub Pages)
+<!-- milestone-meta
+id: "18"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-03-24 -->
+
+Create a comprehensive documentation site using MkDocs with Material theme,
+deployed via GitHub Pages. Covers: Getting Started guide, command reference,
+configuration guide, concepts explainer, and troubleshooting. Auto-deploys
+on push to main via GitHub Actions.
+
+The docs site is Tekhton's public face — the thing a potential user reads before
+deciding to try it. It must answer: "What is this?", "How do I install it?",
+"How do I use it?", and "What do I do when something breaks?" in that order.
+
+The documentation source lives in the Tekhton repo alongside the code. This
+ensures docs update atomically with features. MkDocs builds static HTML that
+deploys to GitHub Pages independently of the owner's blog (geoffgodwin.com).
+
+Files to create:
+- `mkdocs.yml` — MkDocs configuration:
+  ```yaml
+  site_name: Tekhton
+  site_description: Multi-agent development pipeline built on Claude
+  site_url: https://geoffgodwin.github.io/tekhton/  # or custom domain
+  repo_url: https://github.com/geoffgodwin/tekhton
+  repo_name: geoffgodwin/tekhton
+
+  theme:
+    name: material
+    palette:
+      - scheme: slate         # Dark theme default (matches Watchtower)
+        primary: deep purple
+        accent: amber
+        toggle:
+          icon: material/brightness-7
+          name: Switch to light mode
+      - scheme: default
+        primary: deep purple
+        accent: amber
+        toggle:
+          icon: material/brightness-4
+          name: Switch to dark mode
+    features:
+      - navigation.tabs
+      - navigation.sections
+      - navigation.expand
+      - navigation.top
+      - search.suggest
+      - search.highlight
+      - content.code.copy
+      - content.tabs.link
+
+  nav:
+    - Home: index.md
+    - Getting Started:
+      - Installation: getting-started/installation.md
+      - Your First Project: getting-started/first-project.md
+      - Your First Milestone: getting-started/first-milestone.md
+      - Understanding Output: getting-started/understanding-output.md
+    - Guides:
+      - Greenfield Projects: guides/greenfield.md
+      - Brownfield Projects: guides/brownfield.md
+      - Monorepo Setup: guides/monorepo.md
+      - Security Configuration: guides/security-config.md
+      - Watchtower Dashboard: guides/watchtower.md
+      - Planning Phase: guides/planning.md
+    - Reference:
+      - Commands: reference/commands.md
+      - Configuration: reference/configuration.md
+      - Pipeline Stages: reference/stages.md
+      - Agent Roles: reference/agents.md
+      - Template Variables: reference/template-variables.md
+    - Concepts:
+      - Pipeline Flow: concepts/pipeline-flow.md
+      - Milestone DAG: concepts/milestone-dag.md
+      - Health Scoring: concepts/health-scoring.md
+      - Context Budget: concepts/context-budget.md
+    - Troubleshooting:
+      - Using --diagnose: troubleshooting/diagnose.md
+      - Common Errors: troubleshooting/common-errors.md
+      - FAQ: troubleshooting/faq.md
+    - Changelog: changelog.md
+
+  markdown_extensions:
+    - admonition
+    - pymdownx.details
+    - pymdownx.superfences
+    - pymdownx.tabbed
+    - pymdownx.highlight
+    - pymdownx.inlinehilite
+    - attr_list
+    - md_in_html
+    - toc:
+        permalink: true
+  ```
+
+- `docs/requirements.txt` — MkDocs dependencies (separate from tools/requirements.txt):
+  ```
+  mkdocs-material>=9.0
+  ```
+
+- `docs/index.md` — Landing page:
+  - Hero: "One intent. Many hands." tagline + one-paragraph description
+  - Quick start: 3-command install + init + run example
+  - Feature highlights: Security agent, PM agent, Watchtower, Health scoring
+  - "Who is this for?" section addressing both experienced devs and newcomers
+  - Link to Getting Started for the full walkthrough
+
+- `docs/getting-started/installation.md` — Install guide:
+  - Prerequisites: bash 4+, Claude CLI installed and authenticated
+  - Quick install (one-liner curl script from M19)
+  - Manual install (git clone for contributors)
+  - Platform notes:
+    - **macOS:** bash 4+ via Homebrew (`brew install bash`), explain macOS ships
+      bash 3.2 and why that matters
+    - **Linux:** usually fine out of the box, note Ubuntu/Debian bash 4+ is default
+    - **Windows:** WSL required (link to WSL install guide). Explain that Tekhton
+      is bash-native and WSL provides the environment. Git Bash is NOT sufficient
+      (lacks bash 4 features).
+  - Verify installation: `tekhton --version`
+  - Optional dependencies: Python 3.8+ (for repo map indexer), tree-sitter
+
+- `docs/getting-started/first-project.md` — End-to-end walkthrough:
+  - Start with a fresh project directory
+  - Run `tekhton --init`
+  - Walk through what --init produces: pipeline.conf, agent roles, CLAUDE.md,
+    milestones, Watchtower dashboard
+  - Explain each file briefly with "you'll customize this later" notes
+  - End with "open the Watchtower to see your project: open .claude/dashboard/index.html"
+
+- `docs/getting-started/first-milestone.md` — Running the first pipeline:
+  - `tekhton --milestone`
+  - Explain what happens at each stage (scout → coder → security → reviewer → tester)
+  - Show what the terminal output means
+  - Point to Watchtower for a visual view
+  - What to do when it finishes (check the commit, review changes)
+  - What to do when it fails (use --diagnose)
+
+- `docs/getting-started/understanding-output.md` — Reading Tekhton's artifacts:
+  - CODER_SUMMARY.md, REVIEWER_REPORT.md, SECURITY_REPORT.md explained
+  - RUN_SUMMARY.json fields explained
+  - HEALTH_REPORT.md explained
+  - How to read the Watchtower dashboard tabs
+
+- `docs/guides/brownfield.md` — Brownfield-specific guide:
+  - What --init does differently for existing codebases
+  - AI artifact detection and handling options
+  - Health baseline and what the score means
+  - How to customize pipeline.conf for your existing build/test commands
+  - Monorepo considerations (link to monorepo guide)
+
+- `docs/guides/greenfield.md` — Starting a project from scratch:
+  - Using --plan to design your project
+  - How the interview phase works
+  - Reviewing generated DESIGN.md and CLAUDE.md
+  - Customizing milestones before running
+
+- `docs/guides/security-config.md` — Security agent configuration:
+  - Understanding severity levels
+  - Configuring SECURITY_UNFIXABLE_POLICY
+  - Setting up waivers (SECURITY_WAIVER_FILE)
+  - Online vs offline mode
+  - Reading SECURITY_REPORT.md
+
+- `docs/guides/watchtower.md` — Watchtower dashboard guide:
+  - How to open it
+  - Tour of each tab with screenshots (placeholder `<!-- TODO: screenshot -->` comments acceptable for initial merge; regenerate when Watchtower UI stabilizes)
+  - Troubleshooting (Safari file:// restrictions, etc.)
+  - Verbosity levels
+
+- `docs/reference/commands.md` — Complete command reference:
+  - Every flag and option with examples
+  - --init, --plan, --milestone, --complete, --auto-advance, --diagnose,
+    --health, --resume, --start-at, --skip-security, --human, --replan, --docs, etc.
+
+- `docs/reference/configuration.md` — Complete pipeline.conf reference:
+  - Every config key, default value, valid range, and explanation
+  - Organized by section (core, security, intake, health, watchtower, etc.)
+  - Example configurations for common setups
+
+- `docs/reference/stages.md` — Pipeline stage reference:
+  - What each stage does, its inputs and outputs
+  - Turn budgets and how to tune them
+  - How rework loops work
+
+- `docs/reference/agents.md` — Agent role file reference:
+  - How to customize agent roles
+  - What each default role contains
+  - How to write effective role definitions
+
+- `docs/concepts/pipeline-flow.md` — Architecture explainer:
+  - Full pipeline flow diagram
+  - How stages interact
+  - How the context budget system works
+  - How the milestone DAG drives execution
+
+- `docs/troubleshooting/diagnose.md` — --diagnose guide:
+  - What each diagnostic rule means
+  - Recovery steps for each failure type
+  - When to ask for help vs self-service
+
+- `docs/troubleshooting/faq.md` — Frequently asked questions:
+  - "How much does it cost to run?" (quota/token estimation)
+  - "Can I use it with GPT/Gemini?" (no — Claude CLI only)
+  - "Can multiple people use it on the same repo?" (not yet — V4)
+  - "How do I undo what Tekhton did?" (git revert the commit)
+  - "Is it safe to run on production code?" (yes, explain safety model)
+
+- `docs/changelog.md` — Version history:
+  - Auto-generated or manually maintained
+  - One section per minor version (3.7, 3.8, etc.)
+  - Links to milestone specs for details
+
+- `.github/workflows/docs.yml` — GitHub Actions workflow:
+
+  [PM: The original workflow was missing the `actions/upload-pages-artifact` step required before `actions/deploy-pages@v4`. Without it, the deploy step has no artifact to publish and the workflow fails. Fixed below:]
+
+  ```yaml
+  name: Deploy Docs
+  on:
+    push:
+      branches: [main]
+      paths: ['docs/**', 'mkdocs.yml']
+  permissions:
+    contents: read
+    pages: write
+    id-token: write
+  jobs:
+    deploy:
+      runs-on: ubuntu-latest
+      environment:
+        name: github-pages
+        url: ${{ steps.deployment.outputs.page_url }}
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.x'
+        - run: pip install -r docs/requirements.txt
+        - run: mkdocs build
+        - uses: actions/upload-pages-artifact@v3
+          with:
+            path: site/
+        - id: deployment
+          uses: actions/deploy-pages@v4
+  ```
+  Deploys only when docs/ or mkdocs.yml change. Zero manual intervention.
+  Note: GitHub Pages must be enabled in the repo Settings → Pages → Source: GitHub Actions.
+
+Files to modify:
+- `.gitignore` — Add `site/` (MkDocs build output directory).
+- `tekhton.sh` — Add `--docs` flag that opens the documentation URL in the
+  default browser (`xdg-open` / `open` / `start` depending on platform).
+  Also prints the URL for copy-paste.
+
+  [PM: Clarified behavior: `--docs` opens the remote GitHub Pages URL (the
+  `site_url` from mkdocs.yml), not a local mkdocs serve URL. This works
+  regardless of whether mkdocs is installed locally. Print the URL to stdout
+  before attempting to open, so it's always visible even if the browser open fails.]
+
+Acceptance criteria:
+- `mkdocs serve` runs locally and renders all pages without errors
+- `mkdocs build --strict` produces a clean static site in `site/` with no warnings
+- GitHub Actions workflow deploys on push to main (only when docs change)
+- Site is accessible at the configured GitHub Pages URL
+  (requires GitHub Pages enabled in repo Settings → Pages → Source: GitHub Actions)
+- All navigation links work (no broken internal links)
+- Search works (MkDocs Material built-in search)
+- Dark/light theme toggle works
+- Code blocks have copy buttons
+- Mobile responsive (Material theme handles this)
+- Getting Started guide walks through init → first run → output → diagnose
+  as a complete beginner journey
+- Reference section covers every CLI flag and every config key
+- Every config key in config_defaults.sh is documented in reference/configuration.md
+- Platform-specific install notes for macOS, Linux, and Windows (WSL)
+- `tekhton --docs` prints the GitHub Pages URL and attempts to open it in the
+  default browser; exits 0 regardless of whether the browser open succeeds
+- Content is written for the "idea person who isn't a senior dev" audience,
+  not just for engineers who already understand CI/CD pipelines
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on any modified .sh files
+
+Watch For:
+- MkDocs Material is a pip package. Add it to `docs/requirements.txt` (separate
+  from the indexer's `tools/requirements.txt`). The GitHub Actions workflow installs
+  from `docs/requirements.txt`.
+- Screenshots for the Watchtower guide: placeholder `<!-- TODO: screenshot -->` comments
+  are acceptable for initial merge. Create `docs/assets/screenshots/` directory.
+  Screenshots should be regenerated when the Watchtower UI changes.
+- The configuration reference will be the most maintenance-heavy page. Consider
+  generating it from config_defaults.sh comments (a simple script that extracts
+  key=value + comment pairs). This keeps docs in sync with code.
+- Custom domain setup (if using geoffgodwin.com/projects/tekhton): requires a
+  CNAME file in the repo root or gh-pages branch, plus DNS configuration.
+  GitHub Pages supports both apex domains and subdomains. For a subdirectory
+  path on an existing domain, you'd need a reverse proxy or the Astro blog
+  to handle routing. Simpler to use a subdomain (tekhton.geoffgodwin.com).
+- Keep the docs conversational, not academic. "Here's what happens when you
+  run this" > "The system invokes the following subsystems." Match the tone
+  of this design discussion — technical but approachable.
+- GitHub Pages must be configured in the repo's Settings → Pages before the
+  first deployment will succeed. The workflow alone is not sufficient.
+
+Seeds Forward:
+- V4 docs expansion: API reference (when plugin system exists), multi-language,
+  tutorial videos, interactive playground
+- Config reference auto-generation script is reusable for any future
+  configuration documentation needs
+- The docs site structure mirrors the Watchtower tabs conceptually
+  (getting started ≈ Live Run, concepts ≈ Milestone Map, reference ≈ Reports,
+  troubleshooting ≈ --diagnose)
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 19: Distribution & Install Experience
+<!-- milestone-meta
+id: "19"
+status: "done"
+-->
+Create a cross-platform install script, GitHub Releases workflow with versioned
+tarballs, and a non-intrusive update check mechanism. The goal: a new user goes
+from "what is Tekhton?" to `tekhton --init` in under 60 seconds, on any platform.
+
+Today's experience (git clone, manual alias) is fine for contributors but hostile
+to adopters. This milestone makes Tekhton installable with a single command and
+self-aware of its own version lifecycle.
+
+Files to create:
+- `install.sh` — Cross-platform install script:
+  **Invocation:** `curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/main/install.sh | bash`
+  Or with options: `curl ... | bash -s -- --prefix=/opt/tekhton`
+
+  **Platform detection:**
+  - Detect OS: Linux, macOS, Windows (WSL), Windows (Git Bash → error with guidance)
+  - Detect architecture: x86_64, arm64 (for future binary distribution)
+  - Detect shell: bash version check (≥4.0 required)
+  - macOS: check if Homebrew bash is available, guide user to install if not
+    (`brew install bash` + explain why macOS bash 3.2 won't work)
+  - Windows without WSL: print clear error with WSL install link and exit
+  - Git Bash: print clear error explaining bash 4+ features are required
+
+  **Installation steps:**
+  1. Create install directory (default: `~/.tekhton/`)
+     - Configurable via `--prefix=DIR`
+     - On Windows/WSL: default to `~/.tekhton/` within WSL home
+  2. Download latest release tarball from GitHub Releases
+     - Verify SHA256 checksum (downloaded alongside tarball)
+     - Fall back to git clone if GitHub Releases not available (dev installs)
+  3. Extract to `~/.tekhton/versions/X.Y.Z/`
+  4. Symlink `~/.tekhton/current/` → `~/.tekhton/versions/X.Y.Z/`
+  5. Create executable symlink or PATH entry:
+     - If `/usr/local/bin` is writable: symlink `tekhton` there
+     - Otherwise: add `~/.tekhton/current` to PATH in shell rc file
+     - Detect shell rc file: `.bashrc`, `.zshrc`, `.profile`, `.bash_profile`
+     - Ask before modifying rc file (with preview of what will be added)
+  6. Verify installation: `tekhton --version`
+  7. Print success message with next steps:
+     ```
+     ✓ Tekhton X.Y.Z installed successfully!
+
+     Next steps:
+       cd /path/to/your/project
+       tekhton --init
+
+     Documentation: https://geoffgodwin.github.io/tekhton/
+     ```
+
+  **Flags:**
+  - `--prefix=DIR` — Install to custom directory (default: ~/.tekhton)
+  - `--version=X.Y.Z` — Install specific version (default: latest)
+  - `--no-path` — Don't modify shell rc files (user manages PATH manually)
+  - `--uninstall` — Remove Tekhton installation and PATH entries
+
+  **Uninstall:** `install.sh --uninstall` or `tekhton --uninstall`:
+  - Remove `~/.tekhton/` directory
+  - Remove symlink from `/usr/local/bin/`
+  - Remove PATH entry from shell rc file (if added by installer)
+  - Does NOT remove project-level `.claude/` directories
+
+- `lib/update_check.sh` — Version check and update notification:
+  **Check mechanism** (`check_for_updates()`):
+  - Run at most once per 24 hours (timestamp stored in `~/.tekhton/.last_update_check`)
+  - Fetch latest release tag from GitHub API:
+    `curl -sSL https://api.github.com/repos/geoffgodwin/tekhton/releases/latest`
+  - Compare with current TEKHTON_VERSION using semver comparison
+  - If newer version available: print one-line notice AFTER pipeline output:
+    ```
+    ℹ Tekhton X.Y.Z is available (you have X.Y.Z). Run: tekhton --update
+    ```
+  - Never interrupts pipeline execution. Notice appears only at the very end.
+  - If no internet / API rate limited / check fails: silently skip (no error)
+
+  **Update mechanism** (`perform_update()`):
+  - `tekhton --update` triggers manual update:
+    1. Check for latest version (same as above)
+    2. If current: "You're already on the latest version."
+    3. If newer: show version diff summary (changelog excerpt if available)
+    4. Download new tarball to `~/.tekhton/versions/X.Y.Z/`
+    5. Verify SHA256 checksum
+    6. Update `~/.tekhton/current` symlink
+    7. Print: "Updated to X.Y.Z. See changelog: tekhton --docs changelog"
+  - `tekhton --update --check` only checks, doesn't install (for scripts/CI)
+
+  **Version pinning** (for enterprises):
+  - `TEKHTON_UPDATE_CHECK=false` in pipeline.conf or env var disables ALL
+    update checks (no network calls, no notices)
+  - `TEKHTON_PIN_VERSION=3.14.0` in pipeline.conf prevents --update from
+    upgrading past the pinned version. Useful for teams that want stability.
+
+- `.github/workflows/release.yml` — GitHub Actions release workflow:
+  Triggered by git tags matching `v*`:
+  ```yaml
+  name: Release
+  on:
+    push:
+      tags: ['v*']
+  permissions:
+    contents: write
+  jobs:
+    release:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - name: Create tarball
+          run: |
+            VERSION=${GITHUB_REF_NAME#v}
+            tar -czf tekhton-${VERSION}.tar.gz \
+              --transform "s,^,tekhton-${VERSION}/," \
+              --exclude='.git*' --exclude='site/' --exclude='*.pyc' \
+              --exclude='__pycache__' --exclude='.claude/' \
+              tekhton.sh lib/ stages/ prompts/ templates/ tools/ \
+              install.sh LICENSE README.md
+        - name: Generate checksums
+          run: sha256sum tekhton-*.tar.gz > SHA256SUMS
+        - name: Create GitHub Release
+          uses: softprops/action-gh-release@v1
+          with:
+            files: |
+              tekhton-*.tar.gz
+              SHA256SUMS
+            generate_release_notes: true
+  ```
+
+- `completions/tekhton.bash` — Bash completion script:
+  Completes all flags (--init, --plan, --milestone, --start-at, --diagnose, etc.),
+  subcommands (note, report), --start-at values (coder, security, review, test,
+  tester), --notes-filter values (BUG, FEAT, POLISH), --tag values for note
+  subcommand. Generated statically from the flag list (not dynamic).
+- `completions/tekhton.zsh` — Zsh completion with descriptions for each flag.
+- `completions/tekhton.fish` — Fish completion for the three major shells.
+
+Files to modify:
+- `tekhton.sh` — Add flag handling:
+  - `--update` → call `perform_update()`
+  - `--update --check` → call `check_for_updates()` with forced check
+  - `--uninstall` → call install.sh --uninstall
+  - `--docs` → open docs URL in browser
+  - `--setup-completion` → copy completion files to appropriate shell config
+    directories (bash: /etc/bash_completion.d/ or ~/.local/share/bash-completion/,
+    zsh: ~/.zfunc/, fish: ~/.config/fish/completions/). Auto-detect shell.
+  - At end of every pipeline run (success or failure): call
+    `check_for_updates()` (respects 24-hour cooldown and config disable)
+  - Source lib/update_check.sh
+  **Grouped help text:** Reorganize the --help output from a flat flag list
+  into grouped sections:
+  ```
+  Tekhton — Multi-agent development pipeline
+
+  Getting Started:
+    --init              Initialize Tekhton in current project
+    --plan "desc"       Start interactive planning session
+    --plan-from-index   Generate plan from PROJECT_INDEX.md
+
+  Running:
+    "task description"  Run pipeline with task
+    --milestone         Run in milestone mode (higher turn budgets)
+    --auto-advance      Auto-advance through milestones
+    --complete          Loop until done or bounds hit
+    --dry-run           Preview without executing
+
+  Inspection:
+    --status            Show pipeline state
+    --metrics           Show run metrics dashboard
+    --diagnose          Diagnose last failure with recovery suggestions
+    --report            Summarize last run's results
+    note                Manage human notes (note --help for subcommands)
+
+  Maintenance:
+    --replan            Update existing plan
+    --rescan            Update project index
+    --migrate           Upgrade project config to current version
+    --rollback          Undo last pipeline run
+    --update            Check for and install updates
+
+  Advanced:
+    --start-at STAGE    Resume from specific stage
+    --skip-security     Bypass security for this run
+    --no-commit         Skip auto-commit
+    ...
+  ```
+  Each section has 3-5 entries max. Full flag list available via --help --all.
+
+- `lib/config_defaults.sh` — Add:
+  TEKHTON_UPDATE_CHECK=true (check for updates, set false to disable),
+  TEKHTON_PIN_VERSION="" (empty = no pin, set to version string to pin).
+
+- `lib/config.sh` — Validate TEKHTON_PIN_VERSION is valid semver or empty.
+
+Acceptance criteria:
+- `curl ... | bash` installs Tekhton to ~/.tekhton/ on Linux
+- `curl ... | bash` installs Tekhton to ~/.tekhton/ on macOS (with bash 4+ check)
+- `curl ... | bash` installs Tekhton to ~/.tekhton/ on Windows WSL
+- Git Bash on Windows prints clear error with WSL guidance
+- Install script detects bash version < 4 and prints upgrade instructions
+- `--prefix` flag installs to custom directory
+- `--version` flag installs specific version
+- `--no-path` flag skips shell rc file modification
+- `tekhton --version` works after install (PATH set up correctly)
+- `tekhton --uninstall` removes installation cleanly
+- Shell rc file modification shows preview and asks before writing
+- SHA256 checksum verified on download (failure = abort with error)
+- `tekhton --update` downloads and installs newer version
+- `tekhton --update` on latest version says "already up to date"
+- `tekhton --update --check` reports available version without installing
+- Update check runs at most once per 24 hours (cooldown file)
+- Update notice appears after pipeline output, never during
+- No network calls when TEKHTON_UPDATE_CHECK=false
+- TEKHTON_PIN_VERSION prevents upgrade past pinned version
+- GitHub Actions creates release with tarball + SHA256SUMS on version tag
+- Tarball extracts cleanly and contains all necessary files
+- Tarball excludes: .git, site/, __pycache__, .claude/
+**Shell completion:**
+- `--setup-completion` installs completion for detected shell (bash/zsh/fish)
+- Completion files cover all flags, subcommands, and value options
+- Tab-completing `--start-at` shows valid stage names
+- Tab-completing `note --tag` shows BUG, FEAT, POLISH
+**Help text:**
+- `--help` prints grouped help (Getting Started, Running, Inspection, etc.)
+- `--help --all` prints full flag list for power users
+- Each group has 3-5 entries max, most common operations first
+**Update notification:**
+- When a new version is available, update notice includes brief changelog
+  summary (pulled from GitHub Release notes, cached with the version check)
+- Format: "Tekhton 3.5.0 available (you have 3.4.0). Highlights: security
+  agent, PM intake, Watchtower dashboard. Run `tekhton --update` to upgrade."
+- All existing tests pass
+- `bash -n install.sh lib/update_check.sh` passes
+- `shellcheck install.sh lib/update_check.sh` passes
+
+Watch For:
+- Shell rc file detection is tricky. Users may have .bashrc, .bash_profile,
+  .zshrc, or .profile. Detect the current shell (`$SHELL`) and modify the
+  appropriate file. Always backup before modifying (`cp ~/.bashrc ~/.bashrc.tekhton-backup`).
+- The install script itself must work with bash 3.2 (it runs on the user's
+  system BEFORE Tekhton is installed — macOS default bash is 3.2). Keep the
+  install script bash-3-compatible. Only Tekhton itself requires bash 4+.
+- GitHub API rate limit: unauthenticated requests get 60/hour. The 24-hour
+  cooldown prevents hitting this, but if multiple Tekhton projects check in
+  rapid succession, they could hit it. Cache the result per-user, not per-project.
+- Symlink approach (`~/.tekhton/current → ~/.tekhton/versions/X.Y.Z`) enables
+  instant rollback: `ln -sf ~/.tekhton/versions/3.13.0 ~/.tekhton/current`.
+  Document this as a recovery mechanism.
+- The tarball must NOT include `.claude/` (that's project-level config, not
+  distribution content). It must include `templates/` (which --init copies
+  into projects).
+- Windows WSL path handling: `~/.tekhton/` inside WSL is NOT visible from
+  Windows Explorer by default. The install script should note this.
+- `curl | bash` is controversial in security circles. Offer an alternative:
+  "Download install.sh, review it, then run it." Include a verification step
+  for the install script itself (GPG signature or checksums).
+
+Seeds Forward:
+- V4 Homebrew tap: formula wraps the tarball download
+- V4 Docker image: uses install.sh internally for consistency
+- V4 npm/pip wrapper: thin shim that calls install.sh
+- The version symlink structure enables side-by-side version testing
+  (run old version on one project, new on another)
+- Signed releases (GPG) are a V4 enterprise requirement
+- The update check infrastructure can be extended for plugin updates
+  when plugins exist
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 20: Test Integrity Audit
+<!-- milestone-meta
+id: "20"
+status: "done"
+-->
+Add a dedicated test audit pass within the review stage that independently
+evaluates the quality, honesty, and relevance of tests written or modified
+by the tester agent. Prevents the "agent cheating at tests" problem where
+the tester writes trivial, hard-coded, or orphaned tests that provide false
+confidence.
+
+The core principle: **the entity that writes the tests must never be the sole
+entity that judges them.** The tester writes, the audit evaluates.
+
+This also addresses test scope drift: when the coder removes or refactors
+features, existing tests may become orphaned or impossible to pass. The audit
+detects these and recommends removal rather than forcing ghost code to satisfy
+dead tests.
+
+**Bootstrap consideration:** Tekhton runs on itself. Tests written by earlier
+versions (M01-M19) were never audited against this rubric. The ongoing audit
+only scans tests touched in the current run, so legacy tests won't trigger
+findings until someone modifies them. To establish a clean baseline, this
+milestone also adds a `tekhton --audit-tests` standalone command that runs the
+full audit against ALL test files in the project (not just the current diff).
+After M20 is implemented, a one-time `--audit-tests` run on the Tekhton repo
+validates and cleans up legacy tests as a bootstrap step.
+
+Files to create:
+- `prompts/test_audit.prompt.md` — Test audit prompt for the reviewer:
+  Instructs the reviewer to evaluate test files with a specific rubric.
+  The audit receives: (1) test files written/modified by the tester (from
+  TESTER_REPORT.md or git diff of test directories), (2) CODER_SUMMARY.md
+  (what implementation files changed), (3) the implementation files those
+  tests are supposed to exercise.
+
+  **Six-point audit rubric:**
+
+  1. **Assertion honesty:** Are assertions testing real behavior or hard-coded
+     values? Flag: `assert result == 42` where 42 appears nowhere in the
+     implementation logic. Flag: assertTrue(True), assertEqual(x, x).
+     Good: assertions that verify outputs from actual function calls with
+     meaningful inputs.
+
+  2. **Edge case coverage:** Do tests cover boundary conditions, error paths,
+     empty inputs, null/None handling, overflow, and off-by-one scenarios?
+     Not every test needs every edge case, but a test suite with ONLY happy
+     paths is a red flag. Score: ratio of error-path tests to happy-path tests.
+
+  3. **Implementation exercise:** Do tests actually call the implementation
+     code? Flag: tests that mock every dependency and never call the real
+     function. Flag: tests that only test the mock. Good: tests that use
+     real implementations with minimal, targeted mocking.
+
+  4. **Test weakening detection:** If the tester MODIFIED existing tests
+     (not just added new ones), did the modification weaken them? Compare
+     git diff of test files: removed assertions, broadened expected values
+     (e.g., `assertEqual(x, 5)` → `assertTrue(x > 0)`), removed edge case
+     tests. Any weakening without clear justification in TESTER_REPORT.md
+     is flagged as suspicious.
+
+  5. **Test naming and intent:** Are test names descriptive of what they
+     verify? `test_1()`, `test_thing()`, `test_it_works()` are red flags.
+     Good: `test_login_fails_with_expired_token()`,
+     `test_empty_list_returns_404()`. Names should encode the scenario AND
+     the expected outcome.
+
+  6. **Scope alignment:** Do tests still align with the current codebase?
+     Cross-reference test imports/references against CODER_SUMMARY.md:
+     - If the coder DELETED a module and tests still import it → orphaned test
+     - If the coder RENAMED a function/class and tests reference the old name → stale test
+     - If the coder REMOVED a feature and tests exercise that feature → dead test
+     - If the coder REFACTORED behavior (changed return type, altered contract)
+       and tests assert old behavior → misaligned test
+     For each detected case: recommend removal or update, NOT implementation
+     changes to satisfy the test. **Tests follow code, not the other way around.**
+
+  **Output format:** TEST_AUDIT_REPORT.md with:
+  ```markdown
+  ## Test Audit Report
+
+  ### Audit Summary
+  Tests audited: 12 files, 47 test functions
+  Verdict: NEEDS_WORK | PASS | CONCERNS
+
+  ### Findings
+
+  #### INTEGRITY: Hard-coded assertion
+  - File: tests/test_calculator.py:34
+  - Issue: `assert result == 42` — value 42 not derived from any calculation
+  - Severity: HIGH
+  - Action: Rewrite to test actual computation output
+
+  #### SCOPE: Orphaned test
+  - File: tests/test_legacy_handler.py
+  - Issue: Tests import `src.api.legacy_handler` which was deleted by coder
+  - Severity: HIGH
+  - Action: Remove test file (feature was intentionally removed)
+
+  #### COVERAGE: Missing error path
+  - File: tests/test_auth.py
+  - Issue: Tests only cover successful login. No tests for: expired token,
+    invalid credentials, locked account, rate-limited login
+  - Severity: MEDIUM
+  - Action: Add error path tests
+
+  #### WEAKENING: Assertion broadened
+  - File: tests/test_api.py:78
+  - Issue: Changed `assertEqual(status, 200)` to `assertTrue(status < 500)`
+  - Severity: HIGH
+  - Action: Restore specific assertion or justify in TESTER_REPORT.md
+  ```
+
+  **Verdicts:**
+  - PASS: No HIGH findings. Proceed.
+  - CONCERNS: 1-2 HIGH findings. Log to SECURITY_NOTES.md (if security enabled)
+    and NON_BLOCKING_LOG.md. Proceed but flag for human attention.
+  - NEEDS_WORK: 3+ HIGH findings or any integrity violation. Route back to
+    tester for rework (bounded by TEST_AUDIT_MAX_REWORK_CYCLES).
+
+- `lib/test_audit.sh` — Test audit orchestration:
+  **Pre-audit file collection** (`_collect_audit_context()`):
+  - Parse TESTER_REPORT.md for test files written/modified
+  - Parse CODER_SUMMARY.md for implementation files changed/deleted
+  - Run `git diff --name-status` to detect: test files added (A), modified (M),
+    deleted (D) during this pipeline run
+  - For modified test files: extract the diff to detect weakened assertions
+  - Build a mapping: test file → implementation file it exercises (by import
+    analysis or naming convention: test_foo.py → foo.py)
+
+  **Orphan detection** (`_detect_orphaned_tests()`):
+  Pure shell logic, no agent needed:
+  - For each test file modified/existing in test directories:
+    - Extract import statements (grep for `import`, `from ... import`, `require`)
+    - Cross-reference against files deleted by coder (from CODER_SUMMARY.md)
+    - If a test imports a deleted module → mark as orphaned
+  - For renamed/moved files: check if test still references old path
+  - Output: list of orphaned test files with reason
+
+  **Weakening detection** (`_detect_test_weakening()`):
+  Pure shell logic on git diff:
+  - For each modified test file (not newly created):
+    - Count assertions removed vs added
+    - Detect pattern changes: specific → generic (assertEqual → assertTrue,
+      exact match → range check, etc.)
+    - Detect removed test functions (entire tests deleted)
+  - Output: list of potentially weakened tests with diff context
+
+  **Audit invocation** (`run_test_audit()`):
+  1. Collect audit context
+  2. Run orphan detection (shell-only, instant)
+  3. Run weakening detection (shell-only, instant)
+  4. If orphans or weakening found, inject findings into audit prompt context
+  5. Invoke reviewer agent with test_audit.prompt.md (SHORT turn budget —
+     this is a focused review, not a full coding session)
+  6. Parse TEST_AUDIT_REPORT.md for verdict
+  7. Route based on verdict: PASS → continue, CONCERNS → log + continue,
+     NEEDS_WORK → tester rework
+
+  **Rework routing:**
+  When verdict is NEEDS_WORK, route back to tester with a
+  `test_audit_rework.prompt.md` that includes:
+  - The specific findings from TEST_AUDIT_REPORT.md
+  - The instruction: "Fix the flagged tests. Do NOT modify implementation code.
+    Do NOT weaken assertions. If a test is orphaned because the feature was
+    removed, DELETE the test."
+  - Bounded by TEST_AUDIT_MAX_REWORK_CYCLES (default 1 — if the tester can't
+    fix it in one pass, escalate to human)
+
+- `prompts/test_audit_rework.prompt.md` — Tester rework prompt for audit findings.
+  Structured like security_rework.prompt.md: read the finding, read the test,
+  fix it. Explicit instruction: "Removing an orphaned test IS the correct fix.
+  You are not required to make every test pass. You are required to make every
+  test HONEST and RELEVANT."
+
+Files to modify:
+- `stages/tester.sh` — After the tester completes and tests pass, call
+  `run_test_audit()` before proceeding to finalization. The audit is a
+  sub-stage of the test phase, not a separate pipeline stage. This keeps
+  the stage count at 4 (Coder, Security, Review, Test) while adding the
+  audit within the test stage.
+
+- `tekhton.sh` — Add `--audit-tests` flag. When set:
+  1. Discover ALL test files in the project (using test directory conventions
+     and M12 test framework detection when available)
+  2. Run the full 6-point audit against every test file (not just the diff)
+  3. Generate TEST_AUDIT_REPORT.md with findings across the full suite
+  4. Print summary to terminal (same format as --diagnose output)
+  5. Exit (do not run pipeline)
+  This is the "bootstrap" command for projects adopting M20 on existing
+  test suites. Run once to establish a clean baseline, then ongoing audits
+  handle incremental changes.
+
+- `stages/review.sh` — NO changes. The reviewer's scope remains implementation
+  code quality. Test quality is handled by the audit within the test stage.
+  This maintains clear separation of concerns.
+
+- `lib/config_defaults.sh` — Add:
+  TEST_AUDIT_ENABLED=true (opt-out, enabled by default),
+  TEST_AUDIT_MAX_TURNS=8 (short — focused review, not coding),
+  TEST_AUDIT_MAX_REWORK_CYCLES=1 (one chance to fix, then escalate),
+  TEST_AUDIT_ORPHAN_DETECTION=true (shell-based orphan detection),
+  TEST_AUDIT_WEAKENING_DETECTION=true (shell-based weakening detection),
+  TEST_AUDIT_REPORT_FILE=TEST_AUDIT_REPORT.md.
+
+- `lib/config.sh` — Validate TEST_AUDIT_* keys.
+
+- `lib/prompts.sh` — Register template variables: TEST_AUDIT_CONTEXT
+  (collected file mappings, orphan findings, weakening findings),
+  CODER_DELETED_FILES (list of files deleted by coder, for scope alignment).
+
+- `prompts/tester.prompt.md` — Add explicit anti-cheating instructions:
+  ```
+  ## CRITICAL: Test Integrity Rules
+  - Write tests that verify REAL behavior, not hard-coded expected values.
+  - Every assertion must test output from an actual function/method call.
+  - Do NOT mock everything — mock only external dependencies (network, DB, filesystem).
+  - Do NOT weaken existing tests to make them pass. If a test fails because
+    the implementation changed, REPORT THE BUG — do not fix the test.
+  - If a test is impossible to pass because the feature was INTENTIONALLY
+    removed (per CODER_SUMMARY.md), mark it for removal: `- ORPHAN: [file] reason`
+  - Your tests WILL be independently audited. Write them as if a skeptical
+    senior engineer will review every assertion.
+  ```
+
+- `lib/dashboard.sh` — Add `emit_dashboard_test_audit()`. Include audit
+  verdict and findings in `data/reports.js` under the test stage section.
+
+- `lib/hooks.sh` or `lib/finalize.sh` — Include TEST_AUDIT_REPORT.md in
+  archive and RUN_SUMMARY.json.
+
+- `lib/diagnose_rules.sh` — Add diagnostic rule `_rule_test_audit_failure()`
+  for when the audit verdict is NEEDS_WORK after max rework cycles:
+  Suggestions: "Test audit found integrity issues the tester couldn't fix.
+  Review TEST_AUDIT_REPORT.md and fix tests manually."
+
+Acceptance criteria:
+- Test audit runs after tester completes, within the test stage
+- Audit rubric covers all 6 points: assertion honesty, edge cases,
+  implementation exercise, test weakening, naming, scope alignment
+- Orphan detection correctly flags tests that import deleted modules
+- Weakening detection flags tests where assertions were broadened or removed
+- NEEDS_WORK verdict routes back to tester for rework (bounded by 1 cycle)
+- CONCERNS verdict logs findings but does not block pipeline
+- PASS verdict proceeds without delay
+- Tester prompt includes anti-cheating instructions
+- Tester prompt includes ORPHAN marking instruction for dead tests
+- Rework prompt explicitly allows test REMOVAL as a valid fix
+- Audit is opt-out (TEST_AUDIT_ENABLED=true by default)
+- When TEST_AUDIT_ENABLED=false, audit is cleanly skipped
+- Orphan and weakening detection work without agent calls (pure shell)
+- Agent-based audit uses short turn budget (8 turns max)
+- Pipeline does not get stuck in test-hell: orphaned tests can be removed,
+  not patched with ghost code
+- `tekhton --audit-tests` scans ALL test files (not just current diff) and
+  produces a full-suite audit report
+- `--audit-tests` works as a standalone command (no pipeline run required)
+- After M20 implementation, `--audit-tests` run on the Tekhton repo itself
+  produces a clean report (bootstrap validation step)
+- Watchtower reports include audit verdict and findings
+- Diagnostic rule provides recovery guidance on audit failure
+- All existing tests pass
+- `bash -n lib/test_audit.sh` passes
+- `shellcheck lib/test_audit.sh` passes
+- New test file `tests/test_audit.sh` covers: orphan detection against
+  fixture projects, weakening detection against mock diffs, verdict
+  routing, rework cycle bounds
+
+Watch For:
+- Import analysis in shell is language-dependent. Python uses `import`/`from`,
+  JS uses `require`/`import`, Go uses package paths. Start with the top 3-4
+  patterns and skip files with unrecognized import syntax. The agent-based
+  audit catches what the shell misses.
+- The "weakening detection" diff analysis must distinguish between intentional
+  test updates (changing expected value because the implementation contract
+  changed) and malicious weakening (broadening assertions to hide failures).
+  The shell can flag candidates; the agent makes the judgement call.
+- Test file location conventions vary: `tests/`, `test/`, `__tests__/`,
+  `*_test.go`, `*.spec.ts`, `*.test.js`. Use the same detection patterns
+  from M12's test framework detection.
+- The rework cycle limit of 1 is intentionally low. If the tester can't fix
+  integrity issues in one pass, it's likely a fundamental approach problem
+  that needs human intervention. Don't waste turns on repeated failures.
+- "Removing an orphaned test IS the correct fix" must be prominently stated
+  in the rework prompt. Agents have a strong bias toward adding code, not
+  removing it. The prompt must overcome this bias explicitly.
+- The audit should NOT run when no tests were written (tester produced no
+  test files). Only audit what the tester actually touched this run.
+
+Seeds Forward:
+- Health scoring (M15) test dimension can use audit results for a more
+  accurate test quality score (not just file count, but audit pass rate)
+- V4 tech debt agent uses accumulated CONCERNS findings as a backlog:
+  "Improve edge case coverage in tests/test_auth.py"
+- The audit rubric is extensible: V4 adds coverage measurement dimension
+  when test coverage tooling is integrated
+- The orphan detection pattern is reusable for dead code detection in general
+  (modules that nothing imports)
+- V4 parallel execution: audit runs in parallel with the security agent
+  (both are post-coder, pre-finalize quality gates)
+
+---
+
+## Archived: 2026-03-24 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 21: Version Migration Framework & Project Upgrade
+<!-- milestone-meta
+id: "21"
+status: "done"
+-->
+
+Build a general-purpose migration system that automatically upgrades project
+configurations when Tekhton's version advances past what the project was set up
+with. Handles config schema evolution, directory structure changes, new required
+files, and deprecated features — non-destructively and idempotently.
+
+This solves the "I updated Tekhton and now my 7 projects are broken" problem.
+Every project gets a version watermark. Every Tekhton startup checks the watermark
+against the running version. When there's a gap, migrations run automatically
+(with user confirmation) or on-demand via `tekhton --migrate`.
+
+This is infrastructure that every future major version depends on. Build it once,
+use it forever.
+
+Files to create:
+- `lib/migrate.sh` — Migration framework:
+  **Version watermark:**
+  - Every project gets `TEKHTON_CONFIG_VERSION=X.Y` in pipeline.conf (written
+    by --init, updated after successful migration). This tracks which version of
+    Tekhton last configured this project, NOT which version is currently running.
+  - The watermark uses MAJOR.MINOR only (not PATCH). Patch versions never
+    require migration — they're hotfixes to existing behavior.
+
+  **Version detection** (`detect_config_version(project_dir)`):
+  - If TEKHTON_CONFIG_VERSION exists in pipeline.conf → return it
+  - If pipeline.conf exists but no version key → infer version from artifacts:
+    - Has MANIFEST.cfg + .claude/milestones/ → V3 (3.0)
+    - Has pipeline.conf with V2-era keys (CONTEXT_BUDGET_PCT, etc.) → V2 (2.0)
+    - Has pipeline.conf with only basic keys → V1 (1.0)
+    - Has .claude/ but no pipeline.conf → pre-Tekhton (0.0, prompt for --init)
+  - Version inference is a heuristic fallback for projects created before the
+    watermark was introduced. Once migrated, the explicit version is used.
+
+  **Migration runner** (`run_migrations(from_version, to_version)`):
+  - Load all migration scripts from `${TEKHTON_HOME}/migrations/`
+  - Filter to scripts that apply (from_version < script_version <= to_version)
+  - Sort by version number (ascending)
+  - For each applicable migration:
+    1. Print: "Migrating project from X.Y to X.Z..."
+    2. Run the migration's `check()` function (returns 0 if migration needed,
+       1 if already applied — idempotency check)
+    3. If needed: run the migration's `apply()` function
+    4. If apply() returns 0: print success, continue
+    5. If apply() returns non-zero: print error, STOP (don't run further
+       migrations — partial migration state is safer than skipping failures)
+  - After all migrations complete: update TEKHTON_CONFIG_VERSION in pipeline.conf
+  - Print summary: "Migration complete: X.Y → X.Z (N migrations applied)"
+
+  **Migration script interface:**
+  Each migration script exports three functions:
+  ```bash
+  # migrations/002_to_003.sh
+  migration_version() { echo "3.0"; }
+
+  migration_check() {
+      # Return 0 if this migration needs to run, 1 if already applied
+      # Must be idempotent — safe to call repeatedly
+      local project_dir="$1"
+      [[ -f "${project_dir}/.claude/agents/security.md" ]] && return 1
+      return 0
+  }
+
+  migration_apply() {
+      # Perform the migration. Return 0 on success, non-zero on failure.
+      # Must be non-destructive — never delete user content without backup.
+      local project_dir="$1"
+      # ... migration logic ...
+      return 0
+  }
+
+  migration_description() {
+      echo "Add V3 agent roles, migrate milestones to DAG, add new config keys"
+  }
+  ```
+
+  **Startup integration** (`check_project_version()`):
+  Called at tekhton.sh startup, after config is loaded but before any pipeline
+  stage runs:
+  1. Read TEKHTON_CONFIG_VERSION from pipeline.conf
+  2. Compare against TEKHTON_VERSION (running version)
+  3. If equal or config is newer: proceed (no migration needed)
+  4. If config is older:
+     - If MIGRATION_AUTO=true (default): print migration summary and ask
+       for confirmation ("Project configured for V2.0, running V3.5.
+       N migrations available. Apply? [Y/n]")
+     - If MIGRATION_AUTO=false: print warning and suggest `tekhton --migrate`
+     - If `--migrate` flag was passed: run without confirmation
+     - If running in --complete/--auto-advance: auto-apply (with logging)
+       to avoid blocking autonomous runs. This is safe because migrations
+       are non-destructive and idempotent.
+  5. After migration: proceed with pipeline as normal
+
+  **Backup before migration** (`backup_project_config()`):
+  Before ANY migration runs:
+  - Create `.claude/migration-backups/pre-X.Y-to-X.Z/` directory
+  - Copy: pipeline.conf, CLAUDE.md, all files in .claude/agents/,
+    MANIFEST.cfg (if exists), any file that a migration might modify
+  - Print: "Backup created at .claude/migration-backups/pre-X.Y-to-X.Z/"
+  - This enables `tekhton --migrate --rollback` to restore the pre-migration state
+
+  **Milestone migration impact validation** (`validate_milestone_migration_section()`):
+  During milestone loading (when DAG is parsed), check each pending milestone
+  file for a `Migration impact:` section. If missing:
+  - Log a warning: "Milestone M{XX} has no Migration impact section"
+  - Add to Watchtower data as a milestone health warning
+  - The PM agent (M10) also checks this during intake evaluation and can
+    auto-add the section (TWEAKED verdict) or ask the human (NEEDS_CLARITY)
+  This is a WARNING, not a hard block — milestones without the section still
+  run, but the gap is visible everywhere (terminal, Watchtower, intake report).
+
+  **Migration impact section format** (in milestone .md files):
+  ```markdown
+  Migration impact:
+  - New config keys: KEY1, KEY2, ...
+  - New files in .claude/: path/to/file.md
+  - Modified file formats: FILE (description of change)
+  - Breaking changes: description (or "None")
+  - Migration script update required: YES|NO
+  ```
+  Or: `Migration impact: NONE — no config or file format changes.`
+  The section is required in all new milestones going forward. Existing
+  milestones (M01-M20) are grandfathered but should be backfilled when
+  convenient.
+
+  **Template enforcement:**
+  - Update `templates/plans/*.md` (design doc templates used by --plan) to
+    include the Migration impact section as a required field
+  - Update `prompts/milestone_split.prompt.md` to require the section in
+    sub-milestones generated by the splitter
+  - Update `prompts/plan_generate.prompt.md` to include the section in
+    generated milestones
+
+  **Rollback** (`rollback_migration(project_dir)`):
+  - List available backups in .claude/migration-backups/
+  - User selects which backup to restore
+  - Copy backup files back to their original locations
+  - Restore TEKHTON_CONFIG_VERSION to the backup's version
+  - Print: "Rolled back to pre-migration state (V X.Y)"
+
+- `migrations/001_to_002.sh` — V1 → V2 migration:
+  **check:** Does pipeline.conf have CONTEXT_BUDGET_PCT? If yes → already V2.
+  **apply:**
+  - Add V2 config keys with defaults (context budget, milestones, clarification,
+    specialist, metrics, cleanup, replan keys)
+  - Create .claude/agents/ directory if missing
+  - Ensure agent role files exist (copy from templates if missing)
+  - Add milestone metadata support (if milestones exist in CLAUDE.md)
+  - Log all changes to migration output
+
+- `migrations/002_to_003.sh` — V2 → V3 migration:
+  **check:** Does pipeline.conf have SECURITY_AGENT_ENABLED? If yes → already V3.
+  **apply:**
+  - **Config keys:** Add all V3 config keys to pipeline.conf with defaults:
+    SECURITY_*, INTAKE_*, HEALTH_*, DASHBOARD_*, QUOTA_*, TEST_AUDIT_*,
+    MILESTONE_DAG_ENABLED, REPO_MAP_*, SERENA_*. Each new key is added with
+    a comment: "# Added by V3 migration — see docs for details"
+  - **Agent roles:** Copy security.md and intake.md to .claude/agents/ from
+    Tekhton templates (only if they don't already exist — don't overwrite
+    user customizations)
+  - **Milestone DAG:** If inline milestones exist in CLAUDE.md and no
+    MANIFEST.cfg exists, call `migrate_inline_milestones()` (reuse M01/M02
+    infrastructure). This subsumes the existing auto-migration logic.
+  - **Watchtower:** If DASHBOARD_ENABLED=true (the default), create
+    .claude/dashboard/ with static files (same as --init would)
+  - **Pipeline.conf format:** Add section headers as comments to organize
+    the growing config file:
+    ```
+    # === Security Agent ===
+    SECURITY_AGENT_ENABLED=true
+    ...
+    # === Task Intake / PM Agent ===
+    INTAKE_AGENT_ENABLED=true
+    ...
+    ```
+  - **Template refresh:** Check if agent role files (.claude/agents/coder.md,
+    reviewer.md, tester.md) are from V2 templates (check for a template
+    version marker comment). If so, offer to update them while preserving
+    user customizations (diff + merge, not overwrite). If no marker exists,
+    leave them untouched (assume user-customized).
+
+  **Non-destructive guarantees:**
+  - NEVER delete any user file
+  - NEVER overwrite existing agent role files (only add new ones)
+  - NEVER modify CLAUDE.md content (only the milestone DAG migration moves
+    milestone blocks, which is already proven in M01/M02)
+  - All new config keys are appended, never replacing existing values
+  - Backup exists before any changes
+
+- `migrations/README.md` — Migration authoring guide:
+  How to write a migration script for future versions. Documents the interface
+  (version, check, apply, description), the non-destructive guarantees,
+  the idempotency requirement, and testing expectations.
+
+Files to modify:
+- `tekhton.sh` — Add `--migrate` flag handling:
+  - `--migrate` → run migrations with confirmation
+  - `--migrate --force` → run without confirmation (for CI/scripts)
+  - `--migrate --rollback` → restore from backup
+  - `--migrate --check` → show what migrations would run, don't apply
+  - `--migrate --status` → show current config version vs running version
+  Add `check_project_version()` call at startup (after config load).
+  Source lib/migrate.sh.
+
+- `lib/config_defaults.sh` — Add:
+  TEKHTON_CONFIG_VERSION="" (set by --init and migration, never defaulted),
+  MIGRATION_AUTO=true (auto-prompt on version mismatch),
+  MIGRATION_BACKUP_DIR=.claude/migration-backups.
+
+- `lib/config.sh` — Add TEKHTON_CONFIG_VERSION to config loading (but don't
+  require it — absence means "pre-watermark project, needs inference").
+  Validate MIGRATION_BACKUP_DIR is a relative path within .claude/.
+
+- `lib/init.sh` (or equivalent --init orchestration) — Write
+  TEKHTON_CONFIG_VERSION=${TEKHTON_VERSION%.*} (major.minor only) to
+  pipeline.conf during --init. This establishes the watermark for new projects.
+
+- `lib/update_check.sh` (M19) — After `perform_update()` completes,
+  print: "Updated Tekhton to X.Y.Z. Run 'tekhton --migrate' in each project
+  to apply configuration updates." This is the bridge between updating the
+  tool and updating the projects.
+
+- `lib/diagnose_rules.sh` (M17) — Add diagnostic rule `_rule_version_mismatch()`:
+  If TEKHTON_CONFIG_VERSION < TEKHTON_VERSION, suggest "tekhton --migrate".
+  This catches the case where a user updates Tekhton but forgets to migrate
+  their projects, and something breaks as a result.
+
+- `templates/pipeline.conf.example` — Add TEKHTON_CONFIG_VERSION at the top,
+  MIGRATION_AUTO, and section header comments for V3 config groups.
+
+Acceptance criteria:
+- `detect_config_version()` correctly identifies V1, V2, V3 projects by
+  artifact inspection when no explicit watermark exists
+- `TEKHTON_CONFIG_VERSION` written to pipeline.conf by --init
+- `TEKHTON_CONFIG_VERSION` updated after successful migration
+- V1→V2 migration adds V2 config keys and agent role files
+- V2→V3 migration adds V3 config keys, new agent roles, milestone DAG,
+  Watchtower dashboard, and pipeline.conf section headers
+- V1→V3 migration runs both V1→V2 and V2→V3 in sequence
+- Migrations are idempotent: running twice produces the same result
+- Migrations are non-destructive: no user files deleted or overwritten
+- Backup created before any migration runs
+- `--migrate --rollback` restores pre-migration state from backup
+- `--migrate --check` shows what would run without applying
+- `--migrate --status` shows config version vs running version
+- Startup auto-detection prompts for migration when version mismatch detected
+- In --complete/--auto-advance mode, migration auto-applies with logging
+- Migration failure stops the chain (no partial-then-skip behavior)
+- Each migration's `check()` correctly detects already-applied state
+- Agent role files are only ADDED, never overwritten (existing roles preserved)
+- New config keys added with descriptive comments
+- `--update` (M19) prints reminder to run --migrate in each project
+- `--diagnose` (M17) detects version mismatch as a potential failure cause
+- Milestone files without "Migration impact:" section produce a visible warning
+  during milestone loading (terminal + Watchtower)
+- Plan generation templates (--plan) include Migration impact as a required section
+- Milestone split prompt includes Migration impact in sub-milestone template
+- PM agent (M10) evaluates Migration impact completeness in its clarity rubric
+- migrations/README.md documents the migration authoring interface and conventions
+- All existing tests pass
+- `bash -n lib/migrate.sh migrations/*.sh` passes
+- `shellcheck lib/migrate.sh migrations/*.sh` passes
+- New test file `tests/test_migration.sh` covers: version detection from
+  artifacts, migration check/apply for V1→V2 and V2→V3, idempotency,
+  backup creation, rollback, chain execution order, failure mid-chain
+
+Watch For:
+- **pipeline.conf is not a standard format.** It's sourced as bash. Appending
+  new keys is safe. Modifying existing keys requires careful sed/awk. Prefer
+  append-only for new keys and never modify user-set values.
+- **The version inference heuristic** (for pre-watermark projects) must be
+  conservative. If unsure whether a project is V1 or V2, treat as V1 (run
+  more migrations rather than fewer — idempotency makes this safe).
+- **Agent role file merging** (template refresh) is the hardest part. The
+  safest approach: if the file has been modified from the V2 template (diff
+  against the original), leave it alone and note "custom role file detected,
+  skipping update — see templates/ for new version." Only update if the file
+  is identical to the old template.
+- **Migration backups can grow.** Add a cleanup mechanism: `--migrate --cleanup-backups`
+  removes backups older than MIGRATION_BACKUP_RETENTION (default: keep last 3).
+- **Concurrent Tekhton instances.** If two projects share the same Tekhton
+  installation and one is being migrated while the other runs, the running
+  project should not be affected. Migrations only modify the project directory,
+  never TEKHTON_HOME. This is already the case by design.
+- **The --init path must also set the watermark.** Every new project starts
+  with the current version watermark. The migration system only applies to
+  projects created by older versions.
+- **Config key ordering** in pipeline.conf matters for readability. New keys
+  should be appended in logical groups (security, intake, health, etc.) with
+  section header comments. Don't scatter them randomly.
+- **Testing migrations requires fixture projects.** Create test fixtures for
+  V1-era and V2-era project structures. The migration tests must run against
+  these fixtures, not the live Tekhton repo.
+
+Seeds Forward:
+- Every future major version adds one migration script to migrations/
+- V4's parallel execution may need a migration to restructure .claude/runs/
+  for multi-worktree support
+- The migration backup system is the foundation for a future `tekhton --rollback`
+  command that rolls back the last pipeline run's changes (separate from
+  migration rollback)
+- Enterprise environments can set MIGRATION_AUTO=false and control migration
+  timing centrally (e.g., "migrate all projects to V3 this sprint")
+- The version detection heuristic enables `tekhton --audit` to scan a directory
+  tree for all Tekhton projects and report their version status
