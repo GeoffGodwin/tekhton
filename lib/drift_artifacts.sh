@@ -176,7 +176,10 @@ _process_design_observations() {
     observations=$(awk '/^## Design Observations/{found=1; next} found && /^##/{exit} found{print}' \
         "$summary" 2>/dev/null || true)
 
-    if [[ -z "$observations" ]] || echo "$observations" | grep -qE '^\s*$'; then
+    # Check if the entire section is empty/whitespace (not just any single line)
+    local non_empty_count
+    non_empty_count=$(echo "$observations" | grep -cE '[^[:space:]]' || true)
+    if [[ -z "$observations" ]] || [[ "$non_empty_count" -eq 0 ]]; then
         return 0
     fi
 
@@ -190,6 +193,12 @@ _process_design_observations() {
         echo "$line" | grep -qiE '^No (design|doc|observations?|issues?|action|items?)\b' && continue
         echo "$line" | grep -qiE '^(All|No) (drift |design )?(observations?|items?) (are|have been|were)\b' && continue
         echo "$line" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
+        # Skip meta-text about the file/process itself rather than actual observations
+        echo "$line" | grep -qiE '(HUMAN_ACTION|action.required|action.items?\.md)' && continue
+        echo "$line" | grep -qiE '^(Design (doc )?observations?|Items?|Observations?) (have been |were |are |)(documented|recorded|noted|flagged|generated|created|added|updated)' && continue
+        echo "$line" | grep -qiE '^(Updated|Generated|Created|Documented|Recorded|Flagged|Added|Wrote)\b.*(observations?|action|items?|file|review|human)' && continue
+        echo "$line" | grep -qiE '(aligns? with|consistent with|no contradictions?|no conflicts?|matches?).*(design|GDD|architecture)' && continue
+        echo "$line" | grep -qiE '^(See|Refer to) (the )?(design|GDD|architecture)' && continue
         append_human_action "coder" "$line"
     done <<< "$observations"
 }

@@ -320,6 +320,12 @@ run_stage_architect() {
             echo "$entry" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
             echo "$entry" | grep -qE '^\s*-+\s*$' && continue
             echo "$entry" | grep -qiE '^\*?\(route to human' && continue
+            # Skip meta-text about the file/process itself rather than actual observations
+            echo "$entry" | grep -qiE '(HUMAN_ACTION|action.required|action.items?\.md)' && continue
+            echo "$entry" | grep -qiE '^(Design (doc )?observations?|Items?|Observations?) (have been |were |are |)(documented|recorded|noted|flagged|generated|created|added|updated)' && continue
+            echo "$entry" | grep -qiE '^(Updated|Generated|Created|Documented|Recorded|Flagged|Added|Wrote)\b.*(observations?|action|items?|file|review|human)' && continue
+            echo "$entry" | grep -qiE '(aligns? with|consistent with|no contradictions?|no conflicts?|matches?).*(design|GDD|architecture)' && continue
+            echo "$entry" | grep -qiE '^(See|Refer to) (the )?(design|GDD|architecture)' && continue
             _filtered_design+=("$entry")
         done
 
