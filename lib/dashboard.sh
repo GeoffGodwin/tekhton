@@ -59,6 +59,21 @@ init_dashboard() {
     _write_js_file "${dash_dir}/data/diagnosis.js" "TK_DIAGNOSIS" '{"available":false}'
 }
 
+# sync_dashboard_static_files [PROJECT_DIR]
+# Ensures static UI files are up to date in .claude/dashboard/.
+# Called on every startup when dashboard is enabled.
+sync_dashboard_static_files() {
+    local project_dir="${1:-${PROJECT_DIR:-.}}"
+    if ! is_dashboard_enabled; then
+        return 0
+    fi
+    local dash_dir="${project_dir}/${DASHBOARD_DIR:-.claude/dashboard}"
+    if [[ ! -d "$dash_dir" ]]; then
+        return 0
+    fi
+    _copy_static_files "$dash_dir"
+}
+
 # _copy_static_files DASH_DIR
 # Unconditionally copies templates/watchtower/* (index.html, style.css, app.js)
 # into the dashboard directory.

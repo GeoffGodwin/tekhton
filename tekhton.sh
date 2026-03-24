@@ -1003,6 +1003,9 @@ if is_dashboard_enabled; then
     if [[ ! -d "$local_dash_dir" ]]; then
         init_dashboard "$PROJECT_DIR"
     fi
+    # Always sync static UI files (index.html, style.css, app.js) so template
+    # updates propagate and files added after initial dashboard creation appear.
+    sync_dashboard_static_files "$PROJECT_DIR"
 else
     local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
     if [[ -d "$local_dash_dir" ]]; then
