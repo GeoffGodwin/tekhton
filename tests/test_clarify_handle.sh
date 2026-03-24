@@ -2,11 +2,11 @@
 # Test: handle_clarifications() — file creation, write format, non-blocking logging,
 #       and abort/skip behavior in test mode.
 #
-# Note on stdin: handle_clarifications reads answers via "read < /dev/stdin" inside a
-# "while ... done < $blocking_file" loop. In bash, the while-loop redirect changes fd 0
-# to the blocking_file for the loop duration, so /dev/stdin = blocking_file (not the
-# caller's stdin). In production this is harmless because /dev/tty is used; in
-# TEKHTON_TEST_MODE, read returns EOF and the || fallback sets answer="skip".
+# Note on stdin: handle_clarifications reads answers via "read < $input_fd" inside a
+# "while ... done < $blocking_file" loop. The while-loop redirect replaces fd 0 with
+# the blocking file, so /dev/stdin would re-open the blocking file. In production,
+# /dev/tty is always used (when available) to bypass this. In TEKHTON_TEST_MODE,
+# /dev/tty is skipped, so read gets EOF and the || fallback sets answer="skip".
 # Tests below verify the observable file-output behavior for each code path.
 set -euo pipefail
 
@@ -149,8 +149,9 @@ else
     fail "Answer line missing '**A:**' prefix"
 fi
 
-# In test mode, /dev/stdin reopens the questions file at offset 0, so the
-# answer is the question text itself. Verify an **A:** line was written.
+# In test mode (TEKHTON_TEST_MODE=true), /dev/tty is not used, so /dev/stdin
+# reopens the questions file at offset 0 — the answer is the question text.
+# Verify an **A:** line was written.
 A_LINE=$(grep "^\*\*A:\*\*" "$CLARIFICATIONS_FILE" | head -1 || echo "")
 if [[ -n "$A_LINE" ]]; then
     pass "Answer line written to CLARIFICATIONS.md in test mode"

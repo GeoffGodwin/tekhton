@@ -173,9 +173,9 @@ _detect_bitbucket_pipelines() {
 _detect_dockerfile_langs() {
     local proj_dir="$1"
     local dockerfile
-    for dockerfile in Dockerfile Dockerfile.*; do
-        local full="$proj_dir/$dockerfile"
-        [[ ! -f "$full" ]] && continue
+    for dockerfile in "$proj_dir"/Dockerfile "$proj_dir"/Dockerfile.*; do
+        [[ ! -f "$dockerfile" ]] && continue
+        local full="$dockerfile"
         local from_line
         from_line=$(grep -i '^FROM' "$full" 2>/dev/null | head -1 || true)
         [[ -z "$from_line" ]] && continue

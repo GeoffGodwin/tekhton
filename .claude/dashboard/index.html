@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tekhton Watchtower</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Watchtower</h1>
+    <nav>
+      <button class="tab-btn active" data-tab="live">Live Run</button>
+      <button class="tab-btn" data-tab="milestones">Milestone Map</button>
+      <button class="tab-btn" data-tab="reports">Reports</button>
+      <button class="tab-btn" data-tab="trends">Trends</button>
+    </nav>
+    <span class="status-indicator" id="status-indicator"></span>
+    <button class="theme-toggle" id="theme-toggle" title="Toggle light/dark theme">
+      <span class="theme-icon"></span>
+    </button>
+  </header>
+  <main>
+    <section id="tab-live" class="tab-content active"></section>
+    <section id="tab-milestones" class="tab-content"></section>
+    <section id="tab-reports" class="tab-content"></section>
+    <section id="tab-trends" class="tab-content"></section>
+  </main>
+  <footer>
+    <small>Tekhton Watchtower &mdash; static dashboard, no server required.
+    Safari file:// note: if scripts fail to load, serve with
+    <code>python3 -m http.server 8080</code> in the dashboard directory.</small>
+  </footer>
+  <script src="data/run_state.js"></script>
+  <script src="data/timeline.js"></script>
+  <script src="data/milestones.js"></script>
+  <script src="data/security.js"></script>
+  <script src="data/reports.js"></script>
+  <script src="data/metrics.js"></script>
+  <script src="data/health.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

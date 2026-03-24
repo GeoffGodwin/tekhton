@@ -103,6 +103,37 @@ export DASHBOARD_ENABLED="true"
 export PROJECT_DIR="${TMPDIR_BASE}/project1"
 
 # =============================================================================
+# Test Group 1b: sync_dashboard_static_files() copies files into existing dir
+# =============================================================================
+
+PROJECT_DIR1b="${TMPDIR_BASE}/project1b"
+mkdir -p "${PROJECT_DIR1b}/.claude/dashboard/data"
+export PROJECT_DIR="$PROJECT_DIR1b"
+export DASHBOARD_ENABLED="true"
+
+# Dashboard dir exists but static files are missing (simulates M13→M14 upgrade)
+assert_not "pre-sync: index.html absent" test -f "${PROJECT_DIR1b}/.claude/dashboard/index.html"
+
+sync_dashboard_static_files "$PROJECT_DIR1b"
+
+assert "sync copies index.html into existing dir" test -f "${PROJECT_DIR1b}/.claude/dashboard/index.html"
+assert "sync copies style.css into existing dir" test -f "${PROJECT_DIR1b}/.claude/dashboard/style.css"
+assert "sync copies app.js into existing dir" test -f "${PROJECT_DIR1b}/.claude/dashboard/app.js"
+
+# Verify sync updates stale files (write dummy content, then sync should overwrite)
+echo "stale" > "${PROJECT_DIR1b}/.claude/dashboard/index.html"
+sync_dashboard_static_files "$PROJECT_DIR1b"
+assert_not "sync overwrites stale index.html" grep -q "^stale$" "${PROJECT_DIR1b}/.claude/dashboard/index.html"
+
+# Verify sync is skipped when disabled
+export DASHBOARD_ENABLED="false"
+rm -f "${PROJECT_DIR1b}/.claude/dashboard/app.js"
+sync_dashboard_static_files "$PROJECT_DIR1b"
+assert_not "disabled sync does not copy app.js" test -f "${PROJECT_DIR1b}/.claude/dashboard/app.js"
+export DASHBOARD_ENABLED="true"
+export PROJECT_DIR="${TMPDIR_BASE}/project1"
+
+# =============================================================================
 # Test Group 2: _regenerate_timeline_js() verbosity filter paths
 # =============================================================================
 

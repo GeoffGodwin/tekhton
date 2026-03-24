@@ -20,6 +20,7 @@ success() { :; }
 
 # Source the module under test
 source "${TEKHTON_HOME}/lib/causality.sh"
+source "${TEKHTON_HOME}/lib/causality_query.sh"
 
 # --- Test: init_causal_log creates directory and sets run ID ---
 CAUSAL_LOG_ENABLED=true

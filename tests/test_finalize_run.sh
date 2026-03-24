@@ -3,7 +3,7 @@
 # test_finalize_run.sh — finalize_run() hook registry and orchestrator tests
 #
 # Tests:
-# - Hook registration order (13 hooks in deterministic sequence)
+# - Hook registration order (14 hooks in deterministic sequence including M13/M17 hooks)
 # - register_finalize_hook appends in order
 # - finalize_run calls all hooks in registration order
 # - finalize_run passes pipeline_exit_code to each hook
@@ -123,6 +123,24 @@ _check_gitignore_safety() {
     _mock_called[_check_gitignore_safety]=1
     return 0
 }
+write_last_failure_context() {
+    _mock_called[write_last_failure_context]=1
+    return 0
+}
+_read_diagnostic_context() {
+    _mock_called[_read_diagnostic_context]=1
+    return 0
+}
+classify_failure_diag() {
+    _mock_called[classify_failure_diag]=1
+    DIAG_CLASSIFICATION="UNKNOWN"
+    return 0
+}
+emit_dashboard_diagnosis() {
+    _mock_called[emit_dashboard_diagnosis]=1
+    return 0
+}
+DIAG_CLASSIFICATION=""
 has_human_actions() {
     return 1
 }
@@ -178,7 +196,7 @@ restore_hooks() {
 # =============================================================================
 echo "=== Test Suite 1: Hook registration order ==="
 
-assert_eq "1.1 exactly 13 hooks registered" "13" "${#FINALIZE_HOOKS[@]}"
+assert_eq "1.1 exactly 14 hooks registered" "14" "${#FINALIZE_HOOKS[@]}"
 assert_eq "1.2 first hook is _hook_final_checks"    "_hook_final_checks"    "${FINALIZE_HOOKS[0]}"
 assert_eq "1.3 second hook is _hook_drift_artifacts" "_hook_drift_artifacts" "${FINALIZE_HOOKS[1]}"
 assert_eq "1.4 third hook is _hook_record_metrics"   "_hook_record_metrics"  "${FINALIZE_HOOKS[2]}"
@@ -191,7 +209,8 @@ assert_eq "1.9 ninth hook is _hook_archive_milestone" "_hook_archive_milestone" 
 assert_eq "1.10 tenth hook is _hook_clear_state"     "_hook_clear_state"     "${FINALIZE_HOOKS[9]}"
 assert_eq "1.10b eleventh hook is _hook_health_reassess" "_hook_health_reassess" "${FINALIZE_HOOKS[10]}"
 assert_eq "1.11 twelfth hook is _hook_emit_run_summary" "_hook_emit_run_summary" "${FINALIZE_HOOKS[11]}"
-assert_eq "1.12 thirteenth hook is _hook_commit"    "_hook_commit"          "${FINALIZE_HOOKS[12]}"
+assert_eq "1.12 thirteenth hook is _hook_failure_context" "_hook_failure_context" "${FINALIZE_HOOKS[12]}"
+assert_eq "1.13 fourteenth hook is _hook_commit"    "_hook_commit"          "${FINALIZE_HOOKS[13]}"
 
 # =============================================================================
 # Test Suite 2: register_finalize_hook appends in order
@@ -200,14 +219,14 @@ echo "=== Test Suite 2: register_finalize_hook ==="
 
 _test_new_hook() { return 0; }
 register_finalize_hook "_test_new_hook"
-assert_eq "2.1 hook count increases by 1" "14" "${#FINALIZE_HOOKS[@]}"
-assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[13]}"
+assert_eq "2.1 hook count increases by 1" "15" "${#FINALIZE_HOOKS[@]}"
+assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[14]}"
 
 # Register a second additional hook — ensure ordering is preserved
 _test_new_hook_2() { return 0; }
 register_finalize_hook "_test_new_hook_2"
-assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[14]}"
-assert_eq "2.4 first new hook still at 13" "_test_new_hook" "${FINALIZE_HOOKS[13]}"
+assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[15]}"
+assert_eq "2.4 first new hook still at 14" "_test_new_hook" "${FINALIZE_HOOKS[14]}"
 
 restore_hooks
 

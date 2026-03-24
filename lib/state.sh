@@ -7,6 +7,9 @@
 # Expects: log() from common.sh
 # =============================================================================
 
+# Valid pipeline states for exit_stage:
+# intake, coder, review, tester, cleanup, architect, QUOTA_PAUSED
+
 write_pipeline_state() {
     local exit_stage="$1"
     local exit_reason="$2"
@@ -111,6 +114,11 @@ EOF
 clear_pipeline_state() {
     if [ -f "$PIPELINE_STATE_FILE" ]; then
         rm "$PIPELINE_STATE_FILE"
+    fi
+    # Clear failure context on successful run (M17)
+    local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
+    if [ -f "$failure_ctx" ]; then
+        rm -f "$failure_ctx" 2>/dev/null || true
     fi
 }
 

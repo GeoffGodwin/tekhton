@@ -80,4 +80,10 @@ _print_action_items() {
         success "No action items — clean run."
         echo
     fi
+
+    # Diagnose hint for failed runs (M17)
+    if [[ "${_PIPELINE_EXIT_CODE:-0}" -ne 0 ]] || [[ "${FINAL_CHECK_RESULT:-0}" -ne 0 ]]; then
+        echo -e "${CYAN}  Run 'tekhton --diagnose' for recovery suggestions.${NC}"
+        echo
+    fi
 }

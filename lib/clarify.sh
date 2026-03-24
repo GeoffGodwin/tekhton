@@ -104,9 +104,12 @@ handle_clarifications() {
     echo "  Type 'abort' to save state and exit."
     echo
 
-    # Determine input source
+    # Determine input source.
+    # The while-loop below redirects fd 0 to $blocking_file, so /dev/stdin
+    # would re-open the blocking file — not the user's terminal. Always use
+    # /dev/tty for interactive input when available.
     local input_fd="/dev/stdin"
-    if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
+    if [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
         input_fd="/dev/tty"
     fi
 

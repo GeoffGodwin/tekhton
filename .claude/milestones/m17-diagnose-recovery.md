@@ -1,4 +1,9 @@
 #### Milestone 17: Pipeline Diagnostics & Recovery Guidance
+<!-- milestone-meta
+id: "17"
+status: "done"
+-->
+
 Add a `tekhton --diagnose` command that reads the latest pipeline state and the
 **causal event log** (from M13), identifies what went wrong with root-cause
 tracing, and provides actionable recovery suggestions. Also generates a structured

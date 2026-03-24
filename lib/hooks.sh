@@ -36,7 +36,7 @@ _check_gitignore_safety() {
     fi
 
     local missing_patterns=()
-    for pattern in ".env" "*.pem" "*.key" "id_rsa"; do
+    for pattern in ".env" "*.pem" "*.key" "id_rsa" ".claude/dashboard/"; do
         if ! grep -qF "$pattern" .gitignore 2>/dev/null; then
             missing_patterns+=("$pattern")
         fi

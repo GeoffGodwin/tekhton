@@ -7,7 +7,9 @@ A security scan found fixable vulnerabilities that must be resolved. Read `SECUR
 and fix **only the fixable CRITICAL/HIGH findings** listed below.
 
 ## Mandatory Fixes
+--- BEGIN FILE CONTENT: SECURITY_FIXABLE_BLOCK ---
 {{SECURITY_FIXABLE_BLOCK}}
+--- END FILE CONTENT: SECURITY_FIXABLE_BLOCK ---
 
 ## Rules
 - Fix ONLY the findings listed above — do not refactor unrelated code
