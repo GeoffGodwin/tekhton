@@ -62,7 +62,7 @@ ${extra_notes}
 ${milestone_num:-none}
 
 ## Files Present
-$(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md; do
+$(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md PREFLIGHT_ERRORS.md; do
     [ -f "$f" ] && echo "- $f ($(count_lines < "$f") lines)" || echo "- $f (missing)"
 done)
 

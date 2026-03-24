@@ -384,6 +384,15 @@ _hook_failure_context() {
     fi
 }
 
+# n. Update check — non-intrusive, runs at the very end of output
+_hook_update_check() {
+    # shellcheck disable=SC2034  # exit_code used by convention
+    local exit_code="$1"
+    if command -v check_for_updates &>/dev/null; then
+        check_for_updates 2>/dev/null || true
+    fi
+}
+
 # --- Hook registration (at source-time) ---
 # Registration order IS execution order.
 # Archive, clear_state, and emit_run_summary run BEFORE commit so their
@@ -402,6 +411,7 @@ register_finalize_hook "_hook_health_reassess"
 register_finalize_hook "_hook_emit_run_summary"
 register_finalize_hook "_hook_failure_context"
 register_finalize_hook "_hook_commit"
+register_finalize_hook "_hook_update_check"
 # --- Orchestrator ---
 # finalize_run PIPELINE_EXIT_CODE
 # Executes all registered hooks in order. Each hook receives the exit code

@@ -351,6 +351,19 @@ doing anything else. Do not re-implement anything already working.
 $(_wrap_file_content "TESTER_REPORT" "$_tester_content")"
     fi
 
+    # Pre-finalization test gate failures (from orchestrate.sh retry loop)
+    export PREFLIGHT_TEST_CONTEXT=""
+    if [[ -f "PREFLIGHT_ERRORS.md" ]] && [[ "$START_AT" = "coder" ]]; then
+        local _preflight_content
+        _preflight_content=$(_safe_read_file "PREFLIGHT_ERRORS.md" "PREFLIGHT_ERRORS")
+        PREFLIGHT_TEST_CONTEXT="
+## Pre-Finalization Test Failures (must fix)
+The pipeline completed all stages successfully, but the final test gate failed.
+Fix ONLY these test failures — do not re-implement features already working.
+
+$(_wrap_file_content "PREFLIGHT_ERRORS" "$_preflight_content")"
+    fi
+
     # Accumulated non-blocking notes (injected when above threshold)
     export NON_BLOCKING_CONTEXT=""
     local nb_count
@@ -399,6 +412,7 @@ ${nb_notes}"
     _add_context_component "Prior Reviewer" "$PRIOR_REVIEWER_CONTEXT"
     _add_context_component "Prior Progress" "$PRIOR_PROGRESS_CONTEXT"
     _add_context_component "Prior Tester" "$PRIOR_TESTER_CONTEXT"
+    _add_context_component "Preflight Tests" "$PREFLIGHT_TEST_CONTEXT"
     _add_context_component "Non-Blocking Notes" "$NON_BLOCKING_CONTEXT"
     _add_context_component "Scout Report" "$BUG_SCOUT_CONTEXT"
     _add_context_component "Clarifications" "$CLARIFICATIONS_CONTENT"

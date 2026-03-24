@@ -164,7 +164,7 @@ run_complete_loop() {
 
         # Archive reports from previous iteration (except first)
         if [[ "$_ORCH_ATTEMPT" -gt 1 ]]; then
-            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md INTAKE_REPORT.md; do
+            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md INTAKE_REPORT.md PREFLIGHT_ERRORS.md; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
                     mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_attempt${_ORCH_ATTEMPT}_${f}"
@@ -251,15 +251,31 @@ run_complete_loop() {
                 if [[ "${SKIP_FINAL_CHECKS:-false}" != true ]] && [[ -n "${TEST_CMD:-}" ]]; then
                     log "Pre-finalization test gate: running ${TEST_CMD}..."
                     local _preflight_exit=0
-                    bash -c "${TEST_CMD}" >> "$LOG_FILE" 2>&1 || _preflight_exit=$?
+                    local _preflight_output=""
+                    _preflight_output=$(bash -c "${TEST_CMD}" 2>&1) || _preflight_exit=$?
+                    # Always append full output to the run log
+                    printf '%s\n' "$_preflight_output" >> "$LOG_FILE"
                     if [[ "$_preflight_exit" -ne 0 ]]; then
                         warn "Pre-finalization test gate failed (exit ${_preflight_exit}). Routing back to coder for fix."
+                        # Write failure context so the coder knows what broke
+                        {
+                            echo "# Pre-Finalization Test Failures"
+                            echo "Command: \`${TEST_CMD}\` exited with code ${_preflight_exit}"
+                            echo ""
+                            echo "## Output (last 80 lines)"
+                            echo '```'
+                            printf '%s\n' "$_preflight_output" | tail -80
+                            echo '```'
+                        } > PREFLIGHT_ERRORS.md
+                        log "Wrote preflight test errors to PREFLIGHT_ERRORS.md"
                         record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
                             "failed:final_check/test_failure" "$_iter_turns" "$_files_changed"
                         START_AT="coder"
                         continue
                     fi
                     _PREFLIGHT_TESTS_PASSED=true
+                    # Clean up stale preflight errors from a prior failed iteration
+                    [[ -f "PREFLIGHT_ERRORS.md" ]] && rm -f "PREFLIGHT_ERRORS.md"
                 fi
 
                 # --- SUCCESS ---

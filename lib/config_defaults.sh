@@ -254,6 +254,10 @@ set -euo pipefail
 : "${DASHBOARD_DIR:=.claude/dashboard}"
 : "${DASHBOARD_MAX_TIMELINE_EVENTS:=500}"
 
+# --- Update check defaults ---
+: "${TEKHTON_UPDATE_CHECK:=true}"      # Check for updates (set false to disable all network calls)
+: "${TEKHTON_PIN_VERSION:=}"           # Empty = no pin; set to X.Y.Z to prevent upgrade past that version
+
 # --- Specialist reviewer defaults ---
 : "${SPECIALIST_SECURITY_ENABLED:=false}"
 : "${SPECIALIST_SECURITY_MODEL:=${CLAUDE_STANDARD_MODEL}}"

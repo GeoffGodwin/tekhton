@@ -142,6 +142,12 @@ load_config() {
     # shellcheck source=lib/config_defaults.sh
     source "${TEKHTON_HOME}/lib/config_defaults.sh"
 
+    # --- Validate update pin version ---
+    if [[ -n "${TEKHTON_PIN_VERSION:-}" ]] && ! [[ "${TEKHTON_PIN_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        warn "[config] TEKHTON_PIN_VERSION must be valid semver X.Y.Z (got: ${TEKHTON_PIN_VERSION}). Ignoring pin."
+        TEKHTON_PIN_VERSION=""
+    fi
+
     # --- Validate security agent config ---
     if [[ -n "${SECURITY_UNFIXABLE_POLICY:-}" ]]; then
         case "$SECURITY_UNFIXABLE_POLICY" in
