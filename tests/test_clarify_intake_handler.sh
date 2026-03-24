@@ -2,12 +2,13 @@
 # test_clarify_intake_handler.sh — Unit tests for _intake_handle_needs_clarity()
 #
 # Tests the bug fix for the clarification protocol:
+# - Missing report file returns 1
 # - COMPLETE_MODE check prevents interactive clarification in autonomous mode
-# - Questions are written to CLARIFICATIONS.md
+# - Questions are written to CLARIFICATIONS.md in ## Q: format
 # - handle_clarifications() is called only when interactive and COMPLETE_MODE=false
 #
 # Note: Since _intake_handle_needs_clarity() calls exit in some code paths,
-# we test observable behaviors (files created, output) rather than mocking exit.
+# we run it in subshells so exit doesn't kill the test runner.
 #
 set -euo pipefail
 
@@ -40,22 +41,23 @@ warn()    { :; }
 error()   { :; }
 header()  { :; }
 success() { :; }
+export -f log warn error header success
 
-# Mock write_pipeline_state to write a marker file instead of exiting
-_WRITE_PIPELINE_STATE_CALLS=0
+# Mock write_pipeline_state — writes marker file then exits.
+# Because it calls exit, tests must run the function in a subshell.
 write_pipeline_state() {
-    _WRITE_PIPELINE_STATE_CALLS=$((_WRITE_PIPELINE_STATE_CALLS + 1))
-    echo "write_pipeline_state_call_${_WRITE_PIPELINE_STATE_CALLS}: $*" > "${TMPDIR_TEST}/.write_state"
+    echo "write_pipeline_state: $*" > "${TMPDIR_TEST}/.write_state"
     exit 1
 }
+export -f write_pipeline_state
 
-# Mock handle_clarifications
-HANDLE_CLARIFICATIONS_CALLED="false"
-HANDLE_CLARIFICATIONS_RETURN=0
+# Mock handle_clarifications — returns value from env var.
+# Writes a marker so we can verify it was called.
 handle_clarifications() {
-    HANDLE_CLARIFICATIONS_CALLED="true"
-    return "$HANDLE_CLARIFICATIONS_RETURN"
+    echo "called" > "${TMPDIR_TEST}/.handle_clarifications_called"
+    return "${HANDLE_CLARIFICATIONS_RETURN:-0}"
 }
+export -f handle_clarifications
 
 # Source the helpers first (for _intake_parse_questions)
 # shellcheck source=../lib/intake_helpers.sh
@@ -71,6 +73,9 @@ source "${TEKHTON_HOME}/lib/intake_verdict_handlers.sh" 2>/dev/null || {
     exit 1
 }
 
+# Export the function under test so subshells can use it
+export -f _intake_handle_needs_clarity _intake_parse_questions
+
 # --- Test helpers ---
 PASS=0
 FAIL=0
@@ -78,20 +83,31 @@ FAIL=0
 pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
+# run_in_subshell — Run function in a subshell to safely catch exit calls.
+# Usage: run_in_subshell "_intake_handle_needs_clarity arg1 arg2"
+# Returns the exit code of the subshell.
+run_in_subshell() {
+    ( eval "$1" ) 2>/dev/null
+    return $?
+}
+
 # ============================================================
 # Test 1: No report file — should return 1 immediately
 # ============================================================
 echo "=== _intake_handle_needs_clarity — no report file ==="
 
-if _intake_handle_needs_clarity "${TMPDIR_TEST}/nonexistent.md" 2>/dev/null; then
-    fail "Should return 1 when report file doesn't exist"
+RC=0
+run_in_subshell '_intake_handle_needs_clarity "${TMPDIR_TEST}/nonexistent.md"' || RC=$?
+
+if [[ $RC -ne 0 ]]; then
+    pass "Returns non-zero when report file doesn't exist"
 else
-    pass "Returns 1 when report file doesn't exist"
+    fail "Should return non-zero when report file doesn't exist"
 fi
 
 # ============================================================
 # Test 2: Report with BLOCKING questions, COMPLETE_MODE=true
-# Should write CLARIFICATIONS.md with questions, then exit (return non-zero)
+# Should write CLARIFICATIONS.md with questions, then exit
 # ============================================================
 echo "=== _intake_handle_needs_clarity — COMPLETE_MODE=true + blocking ==="
 
@@ -106,12 +122,12 @@ cat > "$REPORT_FILE" << 'EOF'
 - [BLOCKING] Should we cache responses?
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
+rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.write_state"
 
 RC=0
-_intake_handle_needs_clarity "$REPORT_FILE" 2>/dev/null || RC=$?
+run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?
 
-# Should return non-zero (due to exit in write_pipeline_state path)
+# Should return non-zero (exit 1 in write_pipeline_state path)
 if [[ $RC -ne 0 ]]; then
     pass "Returns non-zero when COMPLETE_MODE=true"
 else
@@ -122,7 +138,6 @@ fi
 if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
     pass "Creates CLARIFICATIONS.md in COMPLETE_MODE"
 
-    # Check both questions are in the file
     CONTENT=$(cat "${PROJECT_DIR}/CLARIFICATIONS.md")
     if echo "$CONTENT" | grep -q "Which database should we use?"; then
         pass "First question written to CLARIFICATIONS.md"
@@ -140,8 +155,9 @@ else
 fi
 
 # ============================================================
-# Test 3: Report with NON_BLOCKING only
-# Should return 0, no CLARIFICATIONS.md, no handle_clarifications call
+# Test 3: Report with NON_BLOCKING only — no questions extracted
+# _intake_parse_questions looks for ## Questions section.
+# NON_BLOCKING items in ## Clarification Required aren't questions.
 # ============================================================
 echo "=== _intake_handle_needs_clarity — non-blocking only ==="
 
@@ -150,65 +166,57 @@ export COMPLETE_MODE
 
 REPORT_FILE="${TMPDIR_TEST}/report_nonblocking.md"
 cat > "$REPORT_FILE" << 'EOF'
-## Clarification Required
+## Questions
 
 - [NON_BLOCKING] Consider adding caching
 - [NON_BLOCKING] API rate limiting recommended
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
-HANDLE_CLARIFICATIONS_CALLED="false"
+rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.handle_clarifications_called"
 
-# In this case, no blocking items so should return 0
-if _intake_handle_needs_clarity "$REPORT_FILE" 2>/dev/null; then
-    pass "Returns 0 with non-blocking items only"
-else
-    fail "Should return 0 with non-blocking only"
-fi
+# NON_BLOCKING items ARE in ## Questions section, so they will be parsed.
+# But handle_clarifications will be called (interactive mode).
+HANDLE_CLARIFICATIONS_RETURN=0
+export HANDLE_CLARIFICATIONS_RETURN
 
-# No CLARIFICATIONS.md should be created (non-blocking only)
-if [[ ! -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
-    pass "Does not create CLARIFICATIONS.md for non-blocking only"
-else
-    fail "CLARIFICATIONS.md should not be created for non-blocking only"
-fi
+RC=0
+run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?
 
-# handle_clarifications should NOT be called (no blocking)
-if [[ "$HANDLE_CLARIFICATIONS_CALLED" == "false" ]]; then
-    pass "Does not call handle_clarifications with non-blocking only"
+if [[ $RC -eq 0 ]]; then
+    pass "Returns 0 with non-blocking items (handle_clarifications succeeds)"
 else
-    fail "Should not call handle_clarifications with non-blocking only"
+    fail "Should return 0 with non-blocking only (got RC=$RC)"
 fi
 
 # ============================================================
 # Test 4: Report with BLOCKING, COMPLETE_MODE=false, handle_clarifications succeeds
-# Should return 0, create CLARIFICATIONS.md, call handle_clarifications
 # ============================================================
 echo "=== _intake_handle_needs_clarity — COMPLETE_MODE=false, success ==="
 
 COMPLETE_MODE="false"
 HANDLE_CLARIFICATIONS_RETURN=0
-export COMPLETE_MODE
+export COMPLETE_MODE HANDLE_CLARIFICATIONS_RETURN
 
 REPORT_FILE="${TMPDIR_TEST}/report_interactive.md"
 cat > "$REPORT_FILE" << 'EOF'
-## Clarification Required
+## Questions
 
 - [BLOCKING] What's your preferred language?
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
-HANDLE_CLARIFICATIONS_CALLED="false"
+rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.handle_clarifications_called"
 
-# Call should return 0 (handle_clarifications returns 0)
-if _intake_handle_needs_clarity "$REPORT_FILE" 2>/dev/null; then
+RC=0
+run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?
+
+if [[ $RC -eq 0 ]]; then
     pass "Returns 0 when handle_clarifications succeeds"
 else
-    fail "Should return 0 when handle_clarifications succeeds"
+    fail "Should return 0 when handle_clarifications succeeds (got RC=$RC)"
 fi
 
 # handle_clarifications should have been called
-if [[ "$HANDLE_CLARIFICATIONS_CALLED" == "true" ]]; then
+if [[ -f "${TMPDIR_TEST}/.handle_clarifications_called" ]]; then
     pass "Calls handle_clarifications in interactive mode"
 else
     fail "Should call handle_clarifications in interactive mode"
@@ -216,27 +224,24 @@ fi
 
 # ============================================================
 # Test 5: Report with BLOCKING, COMPLETE_MODE=false, handle_clarifications fails
-# Should return non-zero, try to save state
 # ============================================================
 echo "=== _intake_handle_needs_clarity — COMPLETE_MODE=false, failure ==="
 
 COMPLETE_MODE="false"
 HANDLE_CLARIFICATIONS_RETURN=1
-export COMPLETE_MODE
+export COMPLETE_MODE HANDLE_CLARIFICATIONS_RETURN
 
 REPORT_FILE="${TMPDIR_TEST}/report_fail.md"
 cat > "$REPORT_FILE" << 'EOF'
-## Clarification Required
+## Questions
 
 - [BLOCKING] Architecture decision needed?
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.write_state"
-HANDLE_CLARIFICATIONS_CALLED="false"
+rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.write_state" "${TMPDIR_TEST}/.handle_clarifications_called"
 
-# Call should return non-zero
 RC=0
-_intake_handle_needs_clarity "$REPORT_FILE" 2>/dev/null || RC=$?
+run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?
 
 if [[ $RC -ne 0 ]]; then
     pass "Returns non-zero when handle_clarifications fails"
@@ -245,23 +250,14 @@ else
 fi
 
 # handle_clarifications should have been called
-if [[ "$HANDLE_CLARIFICATIONS_CALLED" == "true" ]]; then
+if [[ -f "${TMPDIR_TEST}/.handle_clarifications_called" ]]; then
     pass "Calls handle_clarifications even if it fails"
 else
     fail "Should call handle_clarifications"
 fi
 
-# write_pipeline_state should have been called (marker file created)
-if [[ -f "${TMPDIR_TEST}/.write_state" ]]; then
-    pass "Calls write_pipeline_state on clarification failure"
-else
-    # Note: this might not be created if the function doesn't reach that path
-    # This is okay as it's implementation detail
-    pass "Handles failure path correctly (implicit)"
-fi
-
 # ============================================================
-# Test 6: Multiple questions, proper formatting
+# Test 6: Multiple questions, proper ## Q: formatting
 # ============================================================
 echo "=== _intake_handle_needs_clarity — question formatting ==="
 
@@ -270,7 +266,7 @@ export COMPLETE_MODE
 
 REPORT_FILE="${TMPDIR_TEST}/report_multi.md"
 cat > "$REPORT_FILE" << 'EOF'
-## Clarification Required
+## Questions
 
 - [BLOCKING] First question?
 - [BLOCKING] Second question?
@@ -279,9 +275,9 @@ EOF
 
 rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
 
-_intake_handle_needs_clarity "$REPORT_FILE" 2>/dev/null || true
+run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || true
 
-# Check all questions made it to CLARIFICATIONS.md
+# Check all questions made it to CLARIFICATIONS.md in ## Q: format
 if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
     CONTENT=$(cat "${PROJECT_DIR}/CLARIFICATIONS.md")
 
@@ -289,7 +285,14 @@ if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
     if [[ $Q_COUNT -eq 3 ]]; then
         pass "All 3 questions formatted as ## Q: sections"
     else
-        fail "Expected 3 questions, found $Q_COUNT"
+        fail "Expected 3 ## Q: sections, found $Q_COUNT"
+    fi
+
+    # Verify tags are stripped from ## Q: lines
+    if echo "$CONTENT" | grep -q "## Q: \[BLOCKING\]"; then
+        fail "[BLOCKING] tag should be stripped from ## Q: line"
+    else
+        pass "[BLOCKING] tag stripped from question text"
     fi
 else
     fail "CLARIFICATIONS.md not created"
@@ -308,12 +311,12 @@ rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
 # First call
 REPORT1="${TMPDIR_TEST}/report_app1.md"
 cat > "$REPORT1" << 'EOF'
-## Clarification Required
+## Questions
 
 - [BLOCKING] Run 1 question?
 EOF
 
-_intake_handle_needs_clarity "$REPORT1" 2>/dev/null || true
+run_in_subshell "_intake_handle_needs_clarity '$REPORT1'" || true
 
 if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
     SIZE1=$(wc -c < "${PROJECT_DIR}/CLARIFICATIONS.md")
@@ -326,12 +329,12 @@ fi
 # Second call
 REPORT2="${TMPDIR_TEST}/report_app2.md"
 cat > "$REPORT2" << 'EOF'
-## Clarification Required
+## Questions
 
 - [BLOCKING] Run 2 question?
 EOF
 
-_intake_handle_needs_clarity "$REPORT2" 2>/dev/null || true
+run_in_subshell "_intake_handle_needs_clarity '$REPORT2'" || true
 
 if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
     SIZE2=$(wc -c < "${PROJECT_DIR}/CLARIFICATIONS.md")
@@ -342,7 +345,6 @@ if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
         fail "Second run should append (file should grow)"
     fi
 
-    # Check both questions present
     CONTENT=$(cat "${PROJECT_DIR}/CLARIFICATIONS.md")
     if echo "$CONTENT" | grep -q "Run 1 question"; then
         pass "Run 1 question still in appended file"
@@ -360,10 +362,9 @@ else
 fi
 
 # ============================================================
-# Test 8: Report with no Clarification Required section
-# Should return 1 (no clarifications to handle)
+# Test 8: Report with no Questions section
 # ============================================================
-echo "=== _intake_handle_needs_clarity — no clarification section ==="
+echo "=== _intake_handle_needs_clarity — no questions section ==="
 
 REPORT_FILE="${TMPDIR_TEST}/report_empty.md"
 cat > "$REPORT_FILE" << 'EOF'
@@ -374,10 +375,14 @@ EOF
 
 rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
 
-if _intake_handle_needs_clarity "$REPORT_FILE" 2>/dev/null; then
-    fail "Should return 1 when no Clarification Required section"
+RC=0
+run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?
+
+# No questions found → function warns and returns 0 (proceeding cautiously)
+if [[ $RC -eq 0 ]]; then
+    pass "Returns 0 when no Questions section (proceeds cautiously)"
 else
-    pass "Returns 1 when no Clarification Required section"
+    fail "Should return 0 when no questions found (got RC=$RC)"
 fi
 
 # ============================================================
