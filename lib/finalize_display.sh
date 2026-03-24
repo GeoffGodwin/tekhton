@@ -58,6 +58,15 @@ _print_action_items() {
         fi
     fi
 
+    # Quota pause summary (M16)
+    if command -v format_quota_pause_summary &>/dev/null; then
+        local quota_summary
+        quota_summary=$(format_quota_pause_summary)
+        if [[ -n "$quota_summary" ]]; then
+            action_items+=("$(echo -e "${CYAN}  \u2139 ${quota_summary}${NC}")")
+        fi
+    fi
+
     if [[ ${#action_items[@]} -gt 0 ]]; then
         echo -e "${BOLD}══════════════════════════════════════${NC}"
         echo -e "${BOLD}  Action Items${NC}"

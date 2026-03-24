@@ -47,4 +47,3 @@
 {"id":"tester.003","ts":"2026-03-24T01:52:03Z","run_id":"run_20260323_205404","milestone":"16","type":"stage_start","stage":"tester","detail":"","caused_by":["reviewer.004"],"verdict":null,"context":null}
 {"id":"tester.004","ts":"2026-03-24T01:53:23Z","run_id":"run_20260323_205404","milestone":"16","type":"stage_end","stage":"tester","detail":"","caused_by":["tester.003"],"verdict":null,"context":{"turns_used":7}}
 {"id":"pipeline.003","ts":"2026-03-24T01:57:17Z","run_id":"run_20260323_205404","milestone":"16","type":"pipeline_end","stage":"pipeline","detail":"exit_code=0","caused_by":["pipeline.002"],"verdict":null,"context":{"status":"success","total_turns":242,"total_time":3223}}
-{"id":"pipeline.004","ts":"2026-03-24T01:57:18Z","run_id":"run_20260323_205404","milestone":"16","type":"milestone_advance","stage":"pipeline","detail":"Milestone 16 done","caused_by":["tester.004"],"verdict":null,"context":{"milestone":"16"}}

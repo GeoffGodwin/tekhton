@@ -390,6 +390,9 @@ for f in coder reviewer tester; do
 done
 
 (
+    # Unset variables from outer scope so config_defaults.sh defaults apply cleanly
+    unset MILESTONE_SPLIT_ENABLED MILESTONE_SPLIT_THRESHOLD_PCT MILESTONE_SPLIT_MAX_TURNS
+    unset MILESTONE_AUTO_RETRY MILESTONE_MAX_SPLIT_DEPTH
     export PROJECT_DIR="$CONF_TMPDIR"
     export TEKHTON_HOME
     source "${TEKHTON_HOME}/lib/common.sh"
@@ -406,7 +409,7 @@ assert "MILESTONE_SPLIT_ENABLED defaults to true"      "$(grep -q 'MILESTONE_SPL
 assert "MILESTONE_SPLIT_THRESHOLD_PCT defaults to 120" "$(grep -q 'MILESTONE_SPLIT_THRESHOLD_PCT=120' "${CONF_TMPDIR}/defaults.txt" && echo 0 || echo 1)"
 assert "MILESTONE_SPLIT_MAX_TURNS defaults to 15"      "$(grep -q 'MILESTONE_SPLIT_MAX_TURNS=15'      "${CONF_TMPDIR}/defaults.txt" && echo 0 || echo 1)"
 assert "MILESTONE_AUTO_RETRY defaults to true"         "$(grep -q 'MILESTONE_AUTO_RETRY=true'         "${CONF_TMPDIR}/defaults.txt" && echo 0 || echo 1)"
-assert "MILESTONE_MAX_SPLIT_DEPTH defaults to 3"       "$(grep -q 'MILESTONE_MAX_SPLIT_DEPTH=3'       "${CONF_TMPDIR}/defaults.txt" && echo 0 || echo 1)"
+assert "MILESTONE_MAX_SPLIT_DEPTH defaults to 6"       "$(grep -q 'MILESTONE_MAX_SPLIT_DEPTH=6'       "${CONF_TMPDIR}/defaults.txt" && echo 0 || echo 1)"
 
 # Hard cap: MILESTONE_SPLIT_MAX_TURNS clamped to 50
 (
@@ -422,7 +425,7 @@ assert "MILESTONE_MAX_SPLIT_DEPTH defaults to 3"       "$(grep -q 'MILESTONE_MAX
 assert "MILESTONE_SPLIT_MAX_TURNS clamped to 50" \
     "$(grep -q 'MILESTONE_SPLIT_MAX_TURNS=50' "${CONF_TMPDIR}/clamped.txt" && echo 0 || echo 1)"
 
-# Hard cap: MILESTONE_MAX_SPLIT_DEPTH clamped to 5
+# Hard cap: MILESTONE_MAX_SPLIT_DEPTH clamped to 10 (M16: raised from 5)
 (
     export PROJECT_DIR="$CONF_TMPDIR"
     export TEKHTON_HOME
@@ -433,8 +436,8 @@ assert "MILESTONE_SPLIT_MAX_TURNS clamped to 50" \
     echo "MILESTONE_MAX_SPLIT_DEPTH=${MILESTONE_MAX_SPLIT_DEPTH}"
 ) > "${CONF_TMPDIR}/clamped2.txt" 2>/dev/null
 
-assert "MILESTONE_MAX_SPLIT_DEPTH clamped to 5" \
-    "$(grep -q 'MILESTONE_MAX_SPLIT_DEPTH=5' "${CONF_TMPDIR}/clamped2.txt" && echo 0 || echo 1)"
+assert "MILESTONE_MAX_SPLIT_DEPTH clamped to 10" \
+    "$(grep -q 'MILESTONE_MAX_SPLIT_DEPTH=10' "${CONF_TMPDIR}/clamped2.txt" && echo 0 || echo 1)"
 
 # Hard cap: MILESTONE_SPLIT_THRESHOLD_PCT clamped to 500
 (

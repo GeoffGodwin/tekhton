@@ -132,15 +132,30 @@ emit_dashboard_run_state() {
     local refresh_ms
     refresh_ms=$(( ${DASHBOARD_REFRESH_INTERVAL:-5} * 1000 ))
 
+    # Quota status (M16)
+    local quota_status="ok"
+    local quota_paused_at=""
+    local quota_retry_count="0"
+    if [[ "${_QUOTA_PAUSED:-false}" = "true" ]]; then
+        quota_status="paused"
+        if [[ -f "${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED" ]]; then
+            quota_paused_at=$(grep '^paused_at=' "${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED" 2>/dev/null | cut -d= -f2- || true)
+        fi
+        quota_retry_count="${_QUOTA_PAUSE_COUNT:-0}"
+    fi
+
     local json
-    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","refresh_interval_ms":%d}' \
+    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","refresh_interval_ms":%d,"quota_status":"%s","quota_paused_at":"%s","quota_retry_count":%d}' \
         "$(_json_escape "$status")" \
         "$(_json_escape "$current_stage")" \
         "$ms_json" \
         "$stages_json" \
         "${waiting:+\"$(_json_escape "$waiting")\"}" \
         "$(_json_escape "$started_at")" \
-        "$refresh_ms")
+        "$refresh_ms" \
+        "$(_json_escape "$quota_status")" \
+        "$(_json_escape "$quota_paused_at")" \
+        "$quota_retry_count")
     # Fix null for waiting_for when empty
     if [[ -z "$waiting" ]]; then
         json="${json/\"waiting_for\":,/\"waiting_for\":null,}"

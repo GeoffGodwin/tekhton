@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# orchestrate.sh — Outer orchestration loop for --complete mode (Milestone 16)
+# orchestrate.sh — Outer orchestration loop for --complete mode
 #
 # Wraps _run_pipeline_stages() in a retry-with-recovery loop. Contract:
 # run this milestone until it passes acceptance or all recovery options
 # are exhausted.
+#
+# M16: MAX_PIPELINE_ATTEMPTS counts consecutive failures only. Milestone
+# success or successful split resets the counter to 0. MAX_AUTONOMOUS_AGENT_CALLS
+# is now a safety valve (200) rather than a workflow limit.
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: _run_pipeline_stages(), finalize_run(), check_milestone_acceptance(),
@@ -36,6 +40,8 @@ _ORCH_ATTEMPT_LOG=""
 _ORCH_REVIEW_BUMPED=false
 _ORCH_LAST_DIFF_HASH=""
 _ORCH_NO_PROGRESS_COUNT=0
+_ORCH_AGENT_100_WARNED=false
+_ORCH_CAUSAL_LOG_BASELINE=0
 
 export _ORCH_ATTEMPT _ORCH_AGENT_CALLS _ORCH_ELAPSED _ORCH_ATTEMPT_LOG
 
@@ -94,6 +100,14 @@ run_complete_loop() {
         _ORCH_ATTEMPT=$(( _ORCH_ATTEMPT + 1 ))
         _ORCH_ELAPSED=$(( $(date +%s) - _ORCH_START_TIME ))
 
+        # Capture causal log baseline for this iteration (M16 fix: restrict
+        # progress detection to events emitted during THIS attempt only)
+        if [[ "${CAUSAL_LOG_ENABLED:-true}" = "true" ]] && [[ -f "${CAUSAL_LOG_FILE:-}" ]]; then
+            _ORCH_CAUSAL_LOG_BASELINE=$(wc -l < "$CAUSAL_LOG_FILE" 2>/dev/null || echo 0)
+        else
+            _ORCH_CAUSAL_LOG_BASELINE=0
+        fi
+
         # --- Safety bound: wall-clock timeout (checked at TOP of iteration) ---
         if [[ "$_ORCH_ELAPSED" -ge "${AUTONOMOUS_TIMEOUT:-7200}" ]]; then
             warn "Reached AUTONOMOUS_TIMEOUT (${AUTONOMOUS_TIMEOUT:-7200}s). Saving state."
@@ -101,18 +115,22 @@ run_complete_loop() {
             return 1
         fi
 
-        # --- Safety bound: max attempts ---
+        # --- Safety bound: max consecutive failures (M16: resets on success) ---
         if [[ "$_ORCH_ATTEMPT" -gt "${MAX_PIPELINE_ATTEMPTS:-5}" ]]; then
-            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS:-5}). Saving state."
-            _save_orchestration_state "max_attempts" "Exhausted ${MAX_PIPELINE_ATTEMPTS:-5} attempts"
+            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS:-5} consecutive failures). Saving state."
+            _save_orchestration_state "max_attempts" "Exhausted ${MAX_PIPELINE_ATTEMPTS:-5} consecutive failure attempts"
             return 1
         fi
 
-        # --- Safety bound: agent call cap ---
-        if [[ "$_ORCH_AGENT_CALLS" -ge "${MAX_AUTONOMOUS_AGENT_CALLS:-20}" ]]; then
-            warn "Reached MAX_AUTONOMOUS_AGENT_CALLS (${MAX_AUTONOMOUS_AGENT_CALLS:-20}). Saving state."
-            _save_orchestration_state "agent_cap" "Agent call cap (${MAX_AUTONOMOUS_AGENT_CALLS:-20}) reached"
+        # --- Safety bound: agent call cap (M16: raised to 200, warn at 100) ---
+        if [[ "$_ORCH_AGENT_CALLS" -ge "${MAX_AUTONOMOUS_AGENT_CALLS:-200}" ]]; then
+            error "Reached MAX_AUTONOMOUS_AGENT_CALLS (${MAX_AUTONOMOUS_AGENT_CALLS:-200}). This is a safety valve — something may be wrong. Saving state."
+            _save_orchestration_state "agent_cap" "Agent call cap (${MAX_AUTONOMOUS_AGENT_CALLS:-200}) reached"
             return 1
+        fi
+        if [[ "$_ORCH_AGENT_CALLS" -ge 100 ]] && [[ "${_ORCH_AGENT_100_WARNED:-false}" != "true" ]]; then
+            warn "Agent call count reached 100. Pipeline will stop at ${MAX_AUTONOMOUS_AGENT_CALLS:-200}."
+            _ORCH_AGENT_100_WARNED=true
         fi
 
         # --- Progress detection (after first attempt) ---
@@ -204,6 +222,14 @@ run_complete_loop() {
                 fi
 
                 finalize_run 0
+
+                # M16: Milestone success resets attempt counter — productive work
+                # should not be penalized by prior failures.
+                if [[ "$MILESTONE_MODE" = true ]]; then
+                    _ORCH_ATTEMPT=0
+                    _ORCH_NO_PROGRESS_COUNT=0
+                    log "Milestone complete. Resetting attempt counter."
+                fi
 
                 # Handle auto-advance after successful completion
                 if [[ "$MILESTONE_MODE" = true ]] && should_auto_advance 2>/dev/null; then

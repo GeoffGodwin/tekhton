@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-23
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
+- [2026-03-23 | "Implement Milestone 16: Autonomous Runtime Improvements"] `lib/quota.sh:24` — `_QUOTA_SAVED_PIPELINE_STATE=""` is declared as a global but never set or read anywhere in the file. It is vestigial from the `write_pipeline_state()` integration that was ultimately not implemented. Should be removed to avoid confusion.
 - [2026-03-23 | "Implement Milestone 15: Project Health Scoring & Evaluation"] `lib/health.sh:94,193` — `assess_project_health` and `reassess_project_health` each own a full copy of the dimension-check loop and composite calculation. This is the largest instance of deliberate duplication introduced in M15 and should be tracked for future consolidation.
 - [2026-03-23 | "Implement Milestone 15: Project Health Scoring & Evaluation"] `lib/health_checks.sh:279` — `sample_count=$(echo "$sample_files" | grep -c '.' || true)` counts non-empty lines via grep; using `wc -l <<< "$sample_files"` or `mapfile` would be more idiomatic and avoids spawning two processes.
 - [2026-03-23 | "Implement Milestone 14: Watchtower UI"] `lib/dashboard.sh:62-76` — `_copy_static_files()` documentation/implementation mismatch (always-overwrite vs. only-if-newer). Low severity but sets a misleading expectation for future maintainers.

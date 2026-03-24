@@ -212,6 +212,34 @@ load_config() {
         fi
     fi
 
+    # --- Validate quota management config (Milestone 16) ---
+    if [[ -n "${QUOTA_RETRY_INTERVAL:-}" ]] && [[ "${QUOTA_RETRY_INTERVAL}" =~ ^[0-9]+$ ]]; then
+        if [[ "$QUOTA_RETRY_INTERVAL" -lt 60 ]] || [[ "$QUOTA_RETRY_INTERVAL" -gt 3600 ]]; then
+            warn "[config] QUOTA_RETRY_INTERVAL must be 60-3600 (got: ${QUOTA_RETRY_INTERVAL}). Using 300."
+            QUOTA_RETRY_INTERVAL=300
+        fi
+    fi
+    if [[ -n "${QUOTA_RESERVE_PCT:-}" ]] && [[ "${QUOTA_RESERVE_PCT}" =~ ^[0-9]+$ ]]; then
+        if [[ "$QUOTA_RESERVE_PCT" -lt 1 ]] || [[ "$QUOTA_RESERVE_PCT" -gt 50 ]]; then
+            warn "[config] QUOTA_RESERVE_PCT must be 1-50 (got: ${QUOTA_RESERVE_PCT}). Using 10."
+            QUOTA_RESERVE_PCT=10
+        fi
+    fi
+    if [[ -n "${QUOTA_MAX_PAUSE_DURATION:-}" ]] && [[ "${QUOTA_MAX_PAUSE_DURATION}" =~ ^[0-9]+$ ]]; then
+        if [[ "$QUOTA_MAX_PAUSE_DURATION" -lt 300 ]] || [[ "$QUOTA_MAX_PAUSE_DURATION" -gt 86400 ]]; then
+            warn "[config] QUOTA_MAX_PAUSE_DURATION must be 300-86400 (got: ${QUOTA_MAX_PAUSE_DURATION}). Using 14400."
+            QUOTA_MAX_PAUSE_DURATION=14400
+        fi
+    fi
+    if [[ -n "${CLAUDE_QUOTA_CHECK_CMD:-}" ]]; then
+        local _quota_cmd_bin
+        _quota_cmd_bin=$(echo "$CLAUDE_QUOTA_CHECK_CMD" | awk '{print $1}')
+        if ! command -v "$_quota_cmd_bin" &>/dev/null; then
+            warn "[config] CLAUDE_QUOTA_CHECK_CMD command '${_quota_cmd_bin}' not found. Tier 2 quota check disabled."
+            CLAUDE_QUOTA_CHECK_CMD=""
+        fi
+    fi
+
     # --- Validate health scoring config (Milestone 15) ---
     if [[ "${HEALTH_ENABLED:-true}" == "true" ]]; then
         local _hw_sum=$(( ${HEALTH_WEIGHT_TESTS:-30} + ${HEALTH_WEIGHT_QUALITY:-25} + ${HEALTH_WEIGHT_DEPS:-15} + ${HEALTH_WEIGHT_DOCS:-15} + ${HEALTH_WEIGHT_HYGIENE:-15} ))

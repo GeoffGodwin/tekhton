@@ -35,8 +35,10 @@ _run_auto_advance_chain() {
         TASK="Implement Milestone ${_CURRENT_MILESTONE}: ${next_title}"
         START_AT="coder"
 
-        # Reset per-milestone tracking
+        # M16: Reset per-milestone tracking — successful milestone is forward progress
         _ORCH_REVIEW_BUMPED=false
+        _ORCH_ATTEMPT=0
+        _ORCH_NO_PROGRESS_COUNT=0
 
         emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
 

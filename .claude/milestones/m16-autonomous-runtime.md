@@ -1,4 +1,9 @@
 #### Milestone 16: Autonomous Runtime Improvements
+<!-- milestone-meta
+id: "16"
+status: "done"
+-->
+
 Reform the --complete / --auto-advance outer loop to reward productive work instead
 of punishing it. Three changes: (1) milestone success resets the outer loop counter
 so productive runs continue indefinitely, (2) quota-aware pause/resume so the

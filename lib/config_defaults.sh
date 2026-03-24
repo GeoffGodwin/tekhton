@@ -130,7 +130,7 @@ set -euo pipefail
 : "${MILESTONE_SPLIT_MAX_TURNS:=15}"
 : "${MILESTONE_SPLIT_THRESHOLD_PCT:=120}"
 : "${MILESTONE_AUTO_RETRY:=true}"
-: "${MILESTONE_MAX_SPLIT_DEPTH:=3}"
+: "${MILESTONE_MAX_SPLIT_DEPTH:=6}"
 
 # --- Cleanup (autonomous debt sweep) defaults ---
 : "${CLEANUP_ENABLED:=false}"
@@ -161,8 +161,14 @@ set -euo pipefail
 : "${COMPLETE_MODE_ENABLED:=true}"        # Toggle --complete outer loop
 : "${MAX_PIPELINE_ATTEMPTS:=5}"           # Max full pipeline cycles in --complete mode
 : "${AUTONOMOUS_TIMEOUT:=7200}"           # Wall-clock timeout for --complete in seconds (2h)
-: "${MAX_AUTONOMOUS_AGENT_CALLS:=20}"     # Max total agent invocations in --complete mode
+: "${MAX_AUTONOMOUS_AGENT_CALLS:=200}"    # Safety valve for --complete mode (effectively unlimited for normal use)
 : "${AUTONOMOUS_PROGRESS_CHECK:=true}"    # Enable stuck-detection between loop iterations
+
+# --- Quota management defaults (Milestone 16) ---
+: "${QUOTA_RETRY_INTERVAL:=300}"          # Seconds between quota refresh checks (5 min)
+: "${QUOTA_RESERVE_PCT:=10}"              # Proactive pause threshold (Tier 2 only)
+: "${CLAUDE_QUOTA_CHECK_CMD:=}"           # Optional external script for proactive checking
+: "${QUOTA_MAX_PAUSE_DURATION:=14400}"    # Max seconds to wait in pause (4 hours)
 
 # --- Metrics defaults ---
 : "${METRICS_ENABLED:=true}"
@@ -283,7 +289,7 @@ _clamp_config_value MILESTONE_TESTER_MAX_TURNS 500
 _clamp_config_value MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER 10
 _clamp_config_value MILESTONE_SPLIT_MAX_TURNS 50
 _clamp_config_value MILESTONE_SPLIT_THRESHOLD_PCT 500
-_clamp_config_value MILESTONE_MAX_SPLIT_DEPTH 5
+_clamp_config_value MILESTONE_MAX_SPLIT_DEPTH 10
 _clamp_config_value CLEANUP_BATCH_SIZE 50
 _clamp_config_value CLEANUP_MAX_TURNS 500
 _clamp_config_value CLEANUP_TRIGGER_THRESHOLD 100
@@ -301,7 +307,7 @@ _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
 _clamp_config_value MAX_PIPELINE_ATTEMPTS 20
 _clamp_config_value AUTONOMOUS_TIMEOUT 14400
-_clamp_config_value MAX_AUTONOMOUS_AGENT_CALLS 100
+_clamp_config_value MAX_AUTONOMOUS_AGENT_CALLS 500
 _clamp_config_value METRICS_MIN_RUNS 100
 _clamp_config_value MAX_CONTINUATION_ATTEMPTS 10
 _clamp_config_value MAX_TRANSIENT_RETRIES 10
@@ -319,3 +325,6 @@ _clamp_config_value DASHBOARD_HISTORY_DEPTH 100
 _clamp_config_value DASHBOARD_REFRESH_INTERVAL 300
 _clamp_config_value DASHBOARD_MAX_TIMELINE_EVENTS 2000
 _clamp_config_value HEALTH_SAMPLE_SIZE 100
+_clamp_config_value QUOTA_RETRY_INTERVAL 3600
+_clamp_config_value QUOTA_RESERVE_PCT 50
+_clamp_config_value QUOTA_MAX_PAUSE_DURATION 86400

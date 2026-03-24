@@ -121,7 +121,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.5.0"
+TEKHTON_VERSION="3.6.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -388,6 +388,7 @@ source "${TEKHTON_HOME}/lib/notes_single.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
+source "${TEKHTON_HOME}/lib/quota.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/hooks.sh"
