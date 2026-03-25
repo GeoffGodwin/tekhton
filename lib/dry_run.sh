@@ -253,11 +253,9 @@ _parse_scout_preview() {
 
     # Extract file listing (first 10 lines of file references)
     _scout_summary=$(grep -E '^\s*[-*]\s+' "$report_file" 2>/dev/null | head -10 || true)
-    local _total_files
-    _total_files=$(grep -cE '^\s*[-*]\s+' "$report_file" 2>/dev/null || echo "0")
-    if [[ "$_total_files" -gt 10 ]]; then
+    if [[ "$_scout_file_count" -gt 10 ]]; then
         _scout_summary="${_scout_summary}
-    ... and $((_total_files - 10)) more"
+    ... and $((_scout_file_count - 10)) more"
     fi
 
     # Extract estimated turns from scout report

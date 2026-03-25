@@ -1,0 +1,39 @@
+=== test_dry_run.sh ===
+  PASS: _dry_run_task_hash: same input → same hash
+  PASS: _dry_run_task_hash: different input → different hash
+  PASS: roundtrip: _write_dry_run_cache → validate returns 0
+  PASS: roundtrip: DRY_RUN_META.json exists after write
+  PASS: task hash mismatch: validate returns non-zero
+  PASS: git HEAD mismatch: validate returns non-zero
+  PASS: TTL expiry: validate returns non-zero after expiry
+  PASS: within TTL: validate returns 0
+  PASS: missing cache dir: validate returns non-zero
+  PASS: corrupted metadata: validate returns non-zero
+  PASS: consume: SCOUT_CACHED exported as true
+  PASS: consume: INTAKE_CACHED exported as true
+  PASS: consume: cache directory deleted after consumption
+  PASS: consume: SCOUT_REPORT.md copied to working directory
+  PASS: discard: cache directory removed
+  PASS: discard: no error when dir already missing
+  PASS: _parse_intake_preview: blank-line format → PASS verdict
+  PASS: _parse_intake_preview: blank-line format → confidence 85
+  PASS: _parse_intake_preview: actual format (no blank line) limitation
+  PASS: _parse_intake_preview: actual format → confidence 88
+  PASS: _parse_intake_preview: NEEDS_CLARITY verdict
+  PASS: _parse_intake_preview: NEEDS_CLARITY → confidence 40
+  PASS: _parse_intake_preview: REJECT verdict
+  PASS: _parse_intake_preview: REJECT → confidence 10
+  PASS: _parse_intake_preview: missing file → N/A verdict
+  PASS: _parse_intake_preview: missing file → confidence 0
+  PASS: _parse_scout_preview: file count > 0 (got 3)
+  PASS: _parse_scout_preview: security flag for auth/middleware
+  PASS: _parse_scout_preview: estimated turns extracted (got '15')
+  PASS: _parse_scout_preview: no security flag for benign files
+  PASS: _parse_scout_preview: missing file → count 0
+  PASS: _parse_scout_preview: missing file → security NO
+  PASS: load_dry_run_for_continue: returns 1 when no cache
+  PASS: load_dry_run_for_continue: returns 0 for valid cache
+  PASS: load_dry_run_for_continue: returns 1 for expired cache
+  PASS: offer_cached_dry_run: returns 1 when no cache
+  PASS: offer_cached_dry_run: returns 0 when user selects cache
+  PASS: offer_cached_dry_run: cache consumed and deleted

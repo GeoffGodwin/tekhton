@@ -297,8 +297,6 @@ _rule_transient_error() {
     return 0
 }
 
-# _rule_unknown
-# Fallback catch-all — always matches.
 # _rule_test_audit_failure
 # Detect test audit NEEDS_WORK verdict after max rework cycles.
 _rule_test_audit_failure() {
@@ -353,6 +351,8 @@ _rule_version_mismatch() {
     return 0
 }
 
+# _rule_unknown
+# Fallback catch-all — always matches.
 _rule_unknown() {
     # shellcheck disable=SC2034
     DIAG_CLASSIFICATION="UNKNOWN"  # DIAG_* are globals read by the caller

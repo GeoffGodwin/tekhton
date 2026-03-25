@@ -1,55 +1,65 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 33 test assertions
-Verdict: CONCERNS
+Tests audited: 1 file (NON_BLOCKING_LOG.md), 0 executable test functions
+Verdict: PASS
 
----
+### Context Note
+The "test file under audit" (NON_BLOCKING_LOG.md) is a project tracking document,
+not an executable test suite. The coder's task was a documentation cleanup: the
+4 open non-blocking notes were already resolved in the prior commit (ff44b07); the
+coder only removed the stale open entries. The tester's role was to manually verify
+the pre-existing code fixes. There are no assert statements, test functions, or
+test runners to evaluate against the standard rubric. Each rubric point is therefore
+assessed against the tester's verification claims in TESTER_REPORT.md and
+cross-checked against the live implementation files.
 
 ### Findings
 
-#### INTEGRITY: Test 13 always passes regardless of implementation behavior
-- File: tests/test_dry_run.sh:261-266
-- Issue: The test for `_parse_intake_preview` with the "actual format" (no blank line between `## Verdict` heading and value) contains an if/else where **both branches call `pass()`**. This means the test always passes whether the parser returns `"PASS"` or `"N/A"`. The stated rationale is "documenting observed behavior," but the practical effect is an always-true assertion that inflates the pass count and masks the known bug behind a green result. The rubric explicitly flags `assertTrue(True)`-style assertions — assertions that always pass regardless of actual output — as an integrity violation.
-- Severity: HIGH
-- Action: Replace the if/else with a direct assertion that records the current (buggy) behavior as a regression anchor: `assert_eq "_parse_intake_preview: actual format → N/A (known parser bug)" "N/A" "$_actual_verdict_for_actual_format"`. This makes the bug visible as a documented failing assertion and ensures any future fix to `_parse_intake_preview` is detected by the test suite rather than silently absorbed.
-
-#### COVERAGE: `offer_cached_dry_run()` has no test coverage
-- File: tests/test_dry_run.sh (missing coverage), lib/dry_run.sh:468-503
-- Issue: `offer_cached_dry_run()` is the primary pipeline-startup entry point for cache reuse. It has three code paths and internally calls `validate_dry_run_cache` and `consume_dry_run_cache`. The "cache invalid → return 1" path does not require interactive `read` input and is fully testable using the existing `_write_test_cache` helper with a stale timestamp or hash mismatch.
-- Severity: MEDIUM
-- Action: Add one non-interactive test: write an expired cache, call `offer_cached_dry_run "$TASK"` with stdin redirected from `/dev/null` or `echo n` to avoid blocking, assert return code 1. The interactive y/n/fresh branches may reasonably remain untested.
-
-#### COVERAGE: `_parse_intake_preview` confidence value not asserted for valid reports
-- File: tests/test_dry_run.sh:247-248
-- Issue: Test 12 asserts `$_intake_verdict == "PASS"` from a report that also contains `## Confidence\n85\n`, but never asserts `$_intake_confidence`. The confidence extraction path (lib/dry_run.sh:295-299) is exercised but not verified for valid inputs. Only the missing-file case asserts `confidence == 0` (test 16).
+#### NAMING: Tester report overstates line count by one
+- File: TESTER_REPORT.md:15
+- Issue: Report states "File now 267 lines" but `wc -l lib/checkpoint.sh` returns 266.
+  NON_BLOCKING_LOG.md (the resolved entry) correctly records "266 → under 300 lines."
+  The underlying acceptance criterion ("under 300 lines") is satisfied by 266, so
+  the outcome is correct. The count in the tester's prose summary is simply wrong.
 - Severity: LOW
-- Action: Add `assert_eq "_parse_intake_preview: confidence extracted" "85" "$_intake_confidence"` immediately after line 248.
+- Action: No code change needed. Future tester reports should confirm counts by
+  running `wc -l` directly rather than relying on recollection.
 
-#### NAMING: Test 13 label embeds a runtime variable
-- File: tests/test_dry_run.sh:265
-- Issue: The else branch passes label `"_parse_intake_preview: actual format → '${_actual_verdict_for_actual_format}' (observed — see Bugs Found)"`. The runtime interpolation makes the label non-deterministic in output and unsearchable by static `grep`. This is a secondary concern and moot once the always-pass issue above is resolved.
+#### SCOPE: Tester modified a project artifact outside verification scope
+- File: NON_BLOCKING_LOG.md (TESTER_REPORT.md:34)
+- Issue: The tester removed duplicate "Test Audit Concerns" blocks from
+  NON_BLOCKING_LOG.md. The task scope was verifying 4 code-level fixes that the
+  coder had already applied; editing the log content goes beyond verification scope.
 - Severity: LOW
-- Action: Use a static label such as `"_parse_intake_preview: actual format → N/A (known parser bug)"` once the assertion is converted from always-pass to a real assertion.
+- Action: The edit is benign — removing true duplicates left the file coherent and
+  the retained entry (2026-03-25) is the more recent one. No reversal needed. In
+  future runs, the tester should leave project artifact edits to the coder stage.
 
----
+### No findings in the following categories
+- INTEGRITY: No hard-coded values or always-pass assertions (no executable tests exist)
+- COVERAGE: N/A — this is a documentation cleanup task with no new logic
+- WEAKENING: No existing tests were modified
+- EXERCISE: N/A — no test functions call implementation code
 
-### Passing Criteria
+### Verification Accuracy Check (tester claims vs. live code)
 
-#### Assertion Honesty: CONCERNS (one always-pass per finding above)
-All other assertions call real implementation functions and verify outputs derived from actual inputs. No hard-coded magic values, no tautological `assertEqual(x, x)` patterns outside of test 13.
+All four implementation claims confirmed accurate:
 
-#### Edge Case Coverage: PASS
-Cache roundtrip, TTL expiry, git HEAD mismatch, task hash mismatch, missing cache directory, corrupted metadata, missing report file, security-flag detection, benign-file detection, and missing-file defaults are all exercised. Edge case ratio is strong.
+1. **checkpoint.sh extraction** — `show_checkpoint_info` is absent from checkpoint.sh
+   (line 266 reads "# show_checkpoint_info is in checkpoint_display.sh") and is
+   defined at checkpoint_display.sh:13. File is 266 lines (tester said 267 — see
+   NAMING finding). VERIFIED (with caveat on count).
 
-#### Implementation Exercise: PASS
-The test file sources `lib/dry_run.sh` directly and invokes the real functions. The `_write_test_cache` helper bypasses `_write_dry_run_cache` only to control metadata (timestamp, git_head) — a legitimate isolation technique. No hollow mocking of the code under test.
+2. **tmpfile trap guards** — `trap 'rm -f "$tmpfile"' EXIT INT TERM` confirmed at
+   checkpoint.sh:100 (create_run_checkpoint) and checkpoint.sh:139
+   (update_checkpoint_commit). Both traps are cleared with `trap - EXIT INT TERM`
+   after the mv succeeds. VERIFIED.
 
-#### Test Weakening Detection: N/A
-`tests/test_dry_run.sh` is a new file (untracked in git). No existing tests were modified.
+3. **--rollback sources config_defaults.sh** — `source "${TEKHTON_HOME}/lib/config_defaults.sh"`
+   confirmed at tekhton.sh:582 (pipeline.conf present path) and tekhton.sh:587
+   (no pipeline.conf path). Tester cited line 587; both paths are covered.
+   VERIFIED.
 
-#### Test Naming and Intent: PASS (except test 13)
-Labels encode scenario and expected outcome: `"TTL expiry: validate returns non-zero after expiry"`, `"consume: cache directory deleted after consumption"`, `"git HEAD mismatch: validate returns non-zero"`. The `bash -n` and `shellcheck` gate names clearly identify their purpose.
-
-#### Scope Alignment: PASS
-All functions referenced in tests exist in `lib/dry_run.sh`. The JR_CODER_SUMMARY records one fix to `run_dry_run()` (return code at line 376) — that function is an orchestration entry point dependent on agent calls and `read` input, and is correctly excluded from unit tests. No orphaned references, stale imports, or dead test scenarios detected.
+4. **CWD comment in rollback path** — Three-line comment confirmed at
+   checkpoint.sh:216-218 matching the described text. VERIFIED.

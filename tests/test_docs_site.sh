@@ -257,9 +257,7 @@ else
 fi
 
 # --docs should appear in help text
-if grep -q '\-\-docs' "$TEKHTON" | grep -q 'Open documentation' 2>/dev/null || \
-   grep -A1 '\-\-docs' "$TEKHTON" | grep -q 'documentation' || \
-   grep '\-\-docs' "$TEKHTON" | grep -q 'documentation'; then
+if grep '\-\-docs' "$TEKHTON" | grep -q 'documentation'; then
     pass "tekhton.sh --docs appears in help text"
 else
     fail "tekhton.sh --docs missing from help text"
