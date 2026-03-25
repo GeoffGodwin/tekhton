@@ -1645,6 +1645,18 @@ fi
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
 
+# --- UI framework detection (Milestone 28) -----------------------------------
+# Runs at startup to populate UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD.
+# Uses explicit user config when set; falls back to auto-detection otherwise.
+if [[ "${UI_FRAMEWORK:-}" == "auto" ]] || [[ -z "${UI_FRAMEWORK:-}" ]]; then
+    detect_ui_framework "$PROJECT_DIR" >/dev/null 2>&1 || true
+fi
+# Auto-detect UI_TEST_CMD when not explicitly configured
+if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]] && [[ -z "${UI_TEST_CMD:-}" ]]; then
+    UI_TEST_CMD=$(detect_ui_test_cmd "$PROJECT_DIR" "${UI_FRAMEWORK:-}" 2>/dev/null || true)
+    export UI_TEST_CMD
+fi
+
 # --- Run checkpoint (Milestone 24) ------------------------------------------
 # Create a git checkpoint before any agent runs so users can rollback.
 create_run_checkpoint

@@ -101,6 +101,10 @@ Format rules the pipeline enforces:
 Updating 'Test Run Results' after each file (Step 2f) means partial progress is
 always recorded even if the turn limit is hit.
 
+{{IF:UI_PROJECT_DETECTED}}
+{{TESTER_UI_GUIDANCE}}
+{{ENDIF:UI_PROJECT_DETECTED}}
+
 ## CRITICAL: Bug Reporting Rules
 - Only report bugs you FOUND — never report bugs you fixed. You are NOT allowed
   to fix implementation code. If a test reveals broken behavior, document it.

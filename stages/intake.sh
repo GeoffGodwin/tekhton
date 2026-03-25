@@ -142,6 +142,10 @@ run_stage_intake() {
         fi
     fi
 
+    # Export UI detection state for intake prompt conditionals (Milestone 28)
+    export UI_PROJECT_DETECTED="${UI_PROJECT_DETECTED:-false}"
+    export UI_FRAMEWORK="${UI_FRAMEWORK:-}"
+
     # Render and run the intake scan agent
     local intake_prompt
     intake_prompt=$(render_prompt "intake_scan")

@@ -163,6 +163,24 @@ load_config() {
         esac
     fi
 
+    # --- Validate UI testing config (Milestone 28) ---
+    if [[ -n "${UI_FRAMEWORK:-}" ]]; then
+        case "$UI_FRAMEWORK" in
+            auto|playwright|cypress|selenium|puppeteer|testing-library|detox) ;;
+            *) warn "[config] UI_FRAMEWORK must be auto|playwright|cypress|selenium|puppeteer|testing-library|detox (got: ${UI_FRAMEWORK}). Clearing."
+               UI_FRAMEWORK="" ;;
+        esac
+    fi
+    if [[ -n "${UI_TEST_CMD:-}" ]]; then
+        local _ui_cmd_bin
+        _ui_cmd_bin=$(echo "$UI_TEST_CMD" | awk '{print $1}')
+        if [[ "$_ui_cmd_bin" == "npx" ]] || [[ "$_ui_cmd_bin" == "npm" ]]; then
+            : # npx/npm resolve at runtime — skip check
+        elif ! command -v "$_ui_cmd_bin" &>/dev/null; then
+            warn "[config] UI_TEST_CMD command '${_ui_cmd_bin}' not found. UI test gate will warn at runtime."
+        fi
+    fi
+
     # --- Validate security agent config ---
     if [[ -n "${SECURITY_UNFIXABLE_POLICY:-}" ]]; then
         case "$SECURITY_UNFIXABLE_POLICY" in

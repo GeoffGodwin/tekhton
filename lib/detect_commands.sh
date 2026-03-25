@@ -263,6 +263,60 @@ _detect_precommit_linters() {
     fi
 }
 
+# --- UI test command detection (Milestone 28) ---------------------------------
+
+# detect_ui_test_cmd — Infers E2E / UI test command from framework and scripts.
+# Args: $1 = project directory, $2 = detected UI framework (optional)
+# Output: command string, or empty if none detected
+# Priority: CI config > package.json e2e scripts > framework convention
+detect_ui_test_cmd() {
+    local proj_dir="${1:-${PROJECT_DIR:-.}}"
+    local framework="${2:-${UI_FRAMEWORK:-}}"
+
+    # --- Priority 1: CI config referencing E2E commands ---
+    if type -t detect_ci_config &>/dev/null; then
+        local ci_output
+        ci_output=$(detect_ci_config "$proj_dir" 2>/dev/null || true)
+        if [[ -n "$ci_output" ]]; then
+            local line
+            while IFS='|' read -r _ci_sys _build_cmd test_cmd _lint_cmd _deploy _lang _conf; do
+                [[ -z "$test_cmd" ]] && continue
+                # Check if CI test command looks like an E2E command
+                if echo "$test_cmd" | grep -qiE 'playwright|cypress|e2e|selenium|detox' 2>/dev/null; then
+                    echo "$test_cmd"
+                    return 0
+                fi
+            done <<< "$ci_output"
+        fi
+    fi
+
+    # --- Priority 2: package.json e2e/ui-related scripts ---
+    if [[ -f "$proj_dir/package.json" ]]; then
+        local scripts
+        scripts=$(_extract_json_keys "$proj_dir/package.json" '"scripts"')
+        local script_name
+        for script_name in "test:e2e" "e2e" "test:ui" "test:integration"; do
+            if echo "$scripts" | grep -q "\"${script_name}\"" 2>/dev/null; then
+                echo "npm run ${script_name}"
+                return 0
+            fi
+        done
+    fi
+
+    # --- Priority 3: Framework convention ---
+    case "$framework" in
+        playwright)  echo "npx playwright test" ;;
+        cypress)     echo "npx cypress run" ;;
+        detox)       echo "npx detox test" ;;
+        selenium)
+            if [[ -f "$proj_dir/requirements.txt" ]]; then
+                echo "pytest tests/ -k e2e"
+            fi
+            ;;
+        *)           return 0 ;;  # No command inferred
+    esac
+}
+
 # --- Entry point detection ----------------------------------------------------
 
 # detect_entry_points — Identifies likely application entry points.

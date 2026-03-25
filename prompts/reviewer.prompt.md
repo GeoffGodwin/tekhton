@@ -78,6 +78,17 @@ If missing, add as a Simple Blocker: 'Missing inline contract on <ClassName> in 
 Do not block for this on existing untouched classes — only new or modified ones.
 {{ENDIF:INLINE_CONTRACT_PATTERN}}
 
+{{IF:UI_PROJECT_DETECTED}}
+## UI Review Considerations
+This is a UI project. When reviewing changes to UI components, verify:
+- CSS/style changes don't break existing visual layouts (check for
+  removed classes still referenced elsewhere)
+- New components have corresponding E2E test coverage (if not, add
+  to Coverage Gaps, not blockers — the tester handles this)
+- Interactive elements (buttons, forms, links) have event handlers
+- Accessibility attributes present (aria-label, role, alt text)
+{{ENDIF:UI_PROJECT_DETECTED}}
+
 ## Blocker Classification — READ THIS CAREFULLY
 
 A **blocker** triggers a full rework cycle: the coder re-runs (up to {{MILESTONE_CODER_MAX_TURNS}} turns),

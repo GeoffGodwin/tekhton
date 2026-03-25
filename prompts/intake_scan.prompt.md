@@ -73,6 +73,13 @@ Evaluate along these dimensions:
 4. **Implicit Assumptions** — Are there unstated assumptions that need to be explicit?
 5. **Migration Impact** — If the milestone adds user-facing config, files, or format
    changes, does it declare a "Migration impact" section? If not, flag it.
+{{IF:UI_PROJECT_DETECTED}}
+6. **UI Testability** — If this milestone produces or modifies UI components and the
+   project has UI testing infrastructure ({{UI_FRAMEWORK}}), do the acceptance criteria
+   include at least one UI-verifiable criterion (e.g., "page loads without console
+   errors", "form submits and shows confirmation", "component renders at mobile
+   breakpoint")? If not, flag for addition.
+{{ENDIF:UI_PROJECT_DETECTED}}
 
 ## Verdicts
 

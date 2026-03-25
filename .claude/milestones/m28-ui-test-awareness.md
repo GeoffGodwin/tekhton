@@ -1,4 +1,9 @@
 #### Milestone 28: UI Test Awareness & E2E Prompt Integration
+<!-- milestone-meta
+id: "28"
+status: "done"
+-->
+
 Teach the pipeline that user interfaces exist and require UI-level testing.
 Update prompts across PM agent, tester, scout, and reviewer to detect UI
 projects, require UI-verifiable acceptance criteria, and guide the tester

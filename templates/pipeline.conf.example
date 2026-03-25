@@ -158,6 +158,12 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 # DASHBOARD_VERBOSITY="normal"
 # Dashboard data lives in .claude/dashboard — add to .gitignore if desired
 
+# --- UI Testing (Milestone 28) ---
+# UI_TEST_CMD=""                  # E2E test command (e.g., "npx playwright test")
+# UI_FRAMEWORK=""                 # auto | playwright | cypress | selenium | puppeteer | testing-library | detox
+# UI_VALIDATION_ENABLED=true      # Enable UI validation gate when UI detected
+# UI_TEST_TIMEOUT=120             # Seconds before UI test gate times out
+
 SEED_CONTRACTS_ENABLED=false
 # INLINE_CONTRACT_PATTERN=""
 # INLINE_CONTRACT_SEARCH_CMD=""

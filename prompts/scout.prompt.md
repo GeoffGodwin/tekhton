@@ -85,4 +85,11 @@ Recommended tester turns: N
   - Large feature (8+ files): coder 50-80, reviewer 10-15, tester 40-60
   - Milestone (cross-cutting): coder 80-120, reviewer 12-20, tester 50-80
 
+{{IF:UI_PROJECT_DETECTED}}
+## UI Component Identification
+When examining files in scope, identify any UI components (React components, Vue
+templates, HTML files, CSS/SCSS modules). Note these in your scout report under a
+`## UI Components in Scope` section so the tester knows to write E2E tests for them.
+{{ENDIF:UI_PROJECT_DETECTED}}
+
 Do not read more than 10 files. Do not write any code. Just map the territory.

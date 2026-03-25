@@ -98,6 +98,64 @@ EOF
         fi
     fi
 
+    # --- UI test validation (Milestone 28) ---
+    # Runs UI_TEST_CMD when configured and non-empty. Missing command = warning, not failure.
+    # Retries once on failure (E2E tests are inherently flaky).
+    if [[ -n "${UI_TEST_CMD:-}" ]] && [[ "${UI_VALIDATION_ENABLED:-true}" == "true" ]]; then
+        local _ui_cmd_bin
+        _ui_cmd_bin=$(echo "$UI_TEST_CMD" | awk '{print $1}')
+
+        # Check if command is available (npx/npm resolve at runtime)
+        local _ui_cmd_available=true
+        if [[ "$_ui_cmd_bin" != "npx" ]] && [[ "$_ui_cmd_bin" != "npm" ]]; then
+            if ! command -v "$_ui_cmd_bin" &>/dev/null; then
+                _ui_cmd_available=false
+            fi
+        fi
+
+        if [[ "$_ui_cmd_available" == "true" ]]; then
+            log "Running UI tests: ${UI_TEST_CMD}"
+            local _ui_output="" _ui_exit=0
+            local _ui_timeout="${UI_TEST_TIMEOUT:-120}"
+            _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+
+            # Retry once on failure (E2E flakiness mitigation)
+            if [[ "$_ui_exit" -ne 0 ]]; then
+                log "UI tests failed (exit ${_ui_exit}). Retrying once..."
+                _ui_exit=0
+                _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+            fi
+
+            if [[ "$_ui_exit" -ne 0 ]]; then
+                warn "Build gate FAILED (${stage_label}) — UI tests failed:"
+                echo "$_ui_output" | tail -30
+
+                cat > UI_TEST_ERRORS.md << UIEOF
+# UI Test Errors — $(date '+%Y-%m-%d %H:%M:%S')
+## Stage
+${stage_label}
+
+## UI Test Command
+\`${UI_TEST_CMD}\`
+
+## Exit Code
+${_ui_exit}
+
+## Output (last 100 lines)
+\`\`\`
+$(echo "$_ui_output" | tail -100)
+\`\`\`
+UIEOF
+                log "UI test errors written to UI_TEST_ERRORS.md"
+                return 1
+            fi
+            log "UI tests passed."
+        else
+            warn "[build gate] UI_TEST_CMD command '${_ui_cmd_bin}' not found. Skipping UI test gate."
+            warn "Install the E2E framework or update UI_TEST_CMD in pipeline.conf."
+        fi
+    fi
+
     log "Build gate PASSED (${stage_label})"
     [ -f BUILD_ERRORS.md ] && rm BUILD_ERRORS.md
     return 0
