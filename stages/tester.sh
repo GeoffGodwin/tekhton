@@ -15,7 +15,18 @@
 # On success, TESTER_REPORT.md exists with all items checked.
 # Saves state and warns (but does not exit 1) on partial completion.
 run_stage_tester() {
-    header "Stage 4 / 4 — Tester"
+    local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
+    local _stage_pos="${PIPELINE_STAGE_POS:-$_stage_count}"
+    header "Stage ${_stage_pos} / ${_stage_count} — Tester${TESTER_MODE:+ (${TESTER_MODE})}"
+
+    # --- TDD write_failing mode (Milestone 27) --------------------------------
+    # In test_first pipeline order, the first tester pass writes failing tests.
+    # Uses a dedicated prompt and outputs TESTER_PREFLIGHT.md instead of
+    # TESTER_REPORT.md. Skips the test pass gate (tests are expected to fail).
+    if [[ "${TESTER_MODE:-verify_passing}" == "write_failing" ]]; then
+        _run_tester_write_failing
+        return
+    fi
 
     # Build the tester prompt based on whether we are starting fresh or resuming
     if [ "$START_AT" = "tester" ]; then
@@ -256,5 +267,67 @@ TESTER_EOF
             # --- Test integrity audit (M20) ---
             run_test_audit || true
         fi
+    fi
+}
+
+# _run_tester_write_failing — TDD pre-flight: write tests that should fail.
+# Uses tester_write_failing.prompt.md. Outputs TESTER_PREFLIGHT.md.
+# Does NOT enforce test pass gate — tests are expected to fail.
+_run_tester_write_failing() {
+    local _preflight_file="${TDD_PREFLIGHT_FILE:-TESTER_PREFLIGHT.md}"
+    local _max_turns="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
+
+    # Architecture content for the prompt
+    export ARCHITECTURE_CONTENT
+    if [[ -f "${ARCHITECTURE_FILE:-}" ]]; then
+        ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
+    else
+        ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE:-ARCHITECTURE.md} not found)"
+    fi
+
+    # Repo map for TDD tester (scout-identified files)
+    export REPO_MAP_CONTENT="${REPO_MAP_CONTENT:-}"
+    if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
+        if [[ -z "$REPO_MAP_CONTENT" ]]; then
+            run_repo_map "$TASK" || true
+        fi
+    fi
+
+    # Milestone context for acceptance criteria
+    export MILESTONE_BLOCK="${MILESTONE_BLOCK:-}"
+
+    # Context budget reporting
+    build_context_packet "tester_write_failing" "$TASK" "$CLAUDE_TESTER_MODEL"
+    _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
+    _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
+    _add_context_component "Milestone" "${MILESTONE_BLOCK:-}"
+    log_context_report "tester_write_failing" "$CLAUDE_TESTER_MODEL"
+
+    local _tdd_prompt
+    _tdd_prompt=$(render_prompt "tester_write_failing")
+
+    log "Invoking TDD tester agent (write failing tests, max ${_max_turns} turns)..."
+    run_agent \
+        "Tester (TDD pre-flight)" \
+        "$CLAUDE_TESTER_MODEL" \
+        "$_max_turns" \
+        "$_tdd_prompt" \
+        "$LOG_FILE" \
+        "$AGENT_TOOLS_TESTER"
+    print_run_summary
+
+    # --- Null run detection ---
+    if was_null_run; then
+        warn "TDD tester was a null run — falling back. Coder will proceed without pre-written tests."
+        return
+    fi
+
+    # --- Validate output ---
+    if [[ -f "$_preflight_file" ]]; then
+        success "TDD pre-flight complete — ${_preflight_file} written."
+        # Archive for the run log
+        cp "$_preflight_file" "${LOG_DIR}/${TIMESTAMP}_TESTER_PREFLIGHT.md"
+    else
+        warn "TDD tester did not produce ${_preflight_file}. Coder will proceed without pre-written tests."
     fi
 }

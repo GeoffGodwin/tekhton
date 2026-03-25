@@ -72,7 +72,7 @@ tekhton/
 │   ├── test_baseline.sh    # [3.0] Test baseline capture + pre-existing failure detection
 │   └── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
-│   ├── architect.sh        # Stage 0: Architect audit (conditional)
+│   ├── architect.sh        # Pre-stage 2: Architect audit (conditional)
 │   ├── coder.sh            # Stage 1: Scout + Coder + build gate
 │   ├── review.sh           # Stage 2: Review loop + rework routing
 │   ├── tester.sh           # Stage 3: Test writing + validation

@@ -112,7 +112,8 @@ your-project/
 ```
 tekhton "Implement feature X"
         │
-        ├─ Stage 0: Architect audit (conditional — drift thresholds)
+        ├─ Pre-stage 1: Task intake (clarity evaluation)
+        ├─ Pre-stage 2: Architect audit (conditional — drift thresholds)
         │
         ├─ Stage 1: Scout + Coder
         │    ├─ Scout → estimates complexity, adjusts turn limits

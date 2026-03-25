@@ -5,7 +5,9 @@
 # run_stage_review — Review loop: invoke reviewer, parse verdict, route rework,
 # build gate, repeat up to MAX_REVIEW_CYCLES. Exits on max-cycle exhaustion.
 run_stage_review() {
-    header "Stage 3 / 4 — Reviewer"
+    local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
+    local _stage_pos="${PIPELINE_STAGE_POS:-3}"
+    header "Stage ${_stage_pos} / ${_stage_count} — Reviewer"
 
     estimate_post_coder_turns "${ACTUAL_CODER_TURNS:-0}"
     REVIEW_CYCLE=0

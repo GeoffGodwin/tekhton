@@ -148,6 +148,21 @@ load_config() {
         TEKHTON_PIN_VERSION=""
     fi
 
+    # --- Validate pipeline order (Milestone 27) ---
+    if [[ -n "${PIPELINE_ORDER:-}" ]]; then
+        case "$PIPELINE_ORDER" in
+            standard|test_first) ;;
+            auto)
+                warn "[config] PIPELINE_ORDER=auto requires V4 PM agent — falling back to standard."
+                PIPELINE_ORDER="standard"
+                ;;
+            *)
+                warn "[config] PIPELINE_ORDER must be standard|test_first|auto (got: ${PIPELINE_ORDER}). Using standard."
+                PIPELINE_ORDER="standard"
+                ;;
+        esac
+    fi
+
     # --- Validate security agent config ---
     if [[ -n "${SECURITY_UNFIXABLE_POLICY:-}" ]]; then
         case "$SECURITY_UNFIXABLE_POLICY" in

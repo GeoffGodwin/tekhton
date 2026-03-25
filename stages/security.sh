@@ -15,7 +15,9 @@ set -euo pipefail
 # --- Main stage function -----------------------------------------------------
 
 run_stage_security() {
-    header "Stage 2 / 4 — Security"
+    local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
+    local _stage_pos="${PIPELINE_STAGE_POS:-2}"
+    header "Stage ${_stage_pos} / ${_stage_count} — Security"
 
     # Skip if disabled
     if [[ "${SECURITY_AGENT_ENABLED:-true}" != "true" ]]; then

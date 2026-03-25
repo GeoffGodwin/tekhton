@@ -715,6 +715,7 @@ source "${TEKHTON_HOME}/lib/migrate.sh"
 source "${TEKHTON_HOME}/lib/migrate_cli.sh"
 source "${TEKHTON_HOME}/lib/checkpoint.sh"
 source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
+source "${TEKHTON_HOME}/lib/pipeline_order.sh"
 source "${TEKHTON_HOME}/lib/express.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
@@ -1678,7 +1679,7 @@ _run_pipeline_stages() {
     _PIPELINE_START_EVT=$(emit_event "pipeline_start" "pipeline" "$TASK" "" "" "")
     _LAST_STAGE_EVT="$_PIPELINE_START_EVT"
 
-    # Stage 0a: Intake gate (pre-stage clarity evaluation)
+    # Pre-stage 1: Intake gate (pre-stage clarity evaluation)
     # Runs once per milestone/task before any other stage. Skipped when
     # START_AT is past coder (resuming from review/test).
     if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
@@ -1699,7 +1700,7 @@ _run_pipeline_stages() {
         fi
     fi
 
-    # Stage 0b: Architect Audit (conditional)
+    # Pre-stage 2: Architect Audit (conditional)
     # Architect audit runs on its own turn/time budget. Save and restore
     # the pipeline accumulators so architect turns do not inflate coder
     # metrics or affect adaptive calibration.
@@ -1721,97 +1722,149 @@ _run_pipeline_stages() {
         fi
     fi
 
-    # Stage 1: Coder
-    if [ "$START_AT" = "coder" ]; then
-        CURRENT_STAGE="coder"
-        local _coder_start_evt
-        _coder_start_evt=$(emit_event "stage_start" "coder" "$TASK" "$_LAST_STAGE_EVT" "" "")
-        _STAGE_STATUS[coder]="running"
-        _STAGE_BUDGET[coder]="${CODER_MAX_TURNS:-50}"
-        emit_dashboard_run_state 2>/dev/null || true
-        run_stage_coder
-        local _coder_files_changed
-        _coder_files_changed=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]' || echo "0")
-        _LAST_STAGE_EVT=$(emit_event "stage_end" "coder" "${_coder_files_changed} files modified" "$_coder_start_evt" "" \
-            "{\"files_changed\":${_coder_files_changed},\"turns_used\":${LAST_AGENT_TURNS:-0}}")
-        _STAGE_STATUS[coder]="complete"
-        _STAGE_TURNS[coder]="${ACTUAL_CODER_TURNS:-${LAST_AGENT_TURNS:-0}}"
-        _STAGE_DURATION[coder]="${LAST_AGENT_ELAPSED:-0}"
-        emit_dashboard_reports 2>/dev/null || true
-        emit_dashboard_run_state 2>/dev/null || true
-    else
-        header "Stage 1 / 4 — Coder (skipped)"
-        log "Using existing CODER_SUMMARY.md"
-        if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-            warn "HUMAN_NOTES.md has unchecked items but coder stage was skipped."
-            warn "Notes will NOT be injected this run. Include them in your next full run."
-        fi
-    fi
+    # --- Dynamic pipeline stage execution (Milestone 27) -----------------------
+    # Stage order is driven by PIPELINE_ORDER config (standard or test_first).
+    # Each stage block preserves its existing event emission and dashboard logic.
+    local _pipeline_stages
+    _pipeline_stages=$(get_pipeline_order)
+    export PIPELINE_STAGE_COUNT
+    PIPELINE_STAGE_COUNT=$(get_stage_count)
+    local _stage_idx=0
 
-    # Stage 2: Security
-    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ]; then
-        CURRENT_STAGE="security"
-        local _sec_start_evt
-        _sec_start_evt=$(emit_event "stage_start" "security" "" "$_LAST_STAGE_EVT" "" "")
-        _STAGE_STATUS[security]="running"
-        _STAGE_BUDGET[security]="${SECURITY_MAX_TURNS:-15}"
-        emit_dashboard_run_state 2>/dev/null || true
-        run_stage_security
-        _LAST_STAGE_EVT=$(emit_event "stage_end" "security" "" "$_sec_start_evt" "" \
-            "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
-        _STAGE_STATUS[security]="complete"
-        _STAGE_TURNS[security]="${LAST_AGENT_TURNS:-0}"
-        _STAGE_DURATION[security]="${LAST_AGENT_ELAPSED:-0}"
-        emit_dashboard_security 2>/dev/null || true
-        emit_dashboard_run_state 2>/dev/null || true
-    else
-        header "Stage 2 / 4 — Security (skipped)"
-    fi
+    log "Pipeline order: ${PIPELINE_ORDER:-standard} (${PIPELINE_STAGE_COUNT} stages: ${_pipeline_stages})"
 
-    # Stage 3: Review loop
-    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ] || [ "$START_AT" = "review" ]; then
-        CURRENT_STAGE="reviewer"
-        local _review_start_evt
-        _review_start_evt=$(emit_event "stage_start" "reviewer" "" "$_LAST_STAGE_EVT" "" "")
-        _STAGE_STATUS[reviewer]="running"
-        _STAGE_BUDGET[reviewer]="${REVIEWER_MAX_TURNS:-15}"
-        emit_dashboard_run_state 2>/dev/null || true
-        run_stage_review
-        local _review_verdict_json="null"
-        if [[ -n "${VERDICT:-}" ]]; then
-            _review_verdict_json="{\"result\":\"$(_json_escape "${VERDICT}")\"}"
-        fi
-        _LAST_STAGE_EVT=$(emit_event "stage_end" "reviewer" "verdict: ${VERDICT:-unknown}" "$_review_start_evt" \
-            "$_review_verdict_json" "{\"cycles\":${REVIEW_CYCLE:-0}}")
-        _STAGE_STATUS[reviewer]="complete"
-        _STAGE_TURNS[reviewer]="${LAST_AGENT_TURNS:-0}"
-        _STAGE_DURATION[reviewer]="${LAST_AGENT_ELAPSED:-0}"
-        emit_dashboard_reports 2>/dev/null || true
-        emit_dashboard_run_state 2>/dev/null || true
-    else
-        header "Stage 3 / 4 — Reviewer (skipped)"
-        log "Using existing REVIEWER_REPORT.md"
-        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
-        log "Existing verdict: ${VERDICT}"
-    fi
+    # shellcheck disable=SC2086
+    for _stage_name in $_pipeline_stages; do
+        _stage_idx=$((_stage_idx + 1))
+        export PIPELINE_STAGE_POS="$_stage_idx"
 
-    # Stage 4: Tester
-    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "security" ] || [ "$START_AT" = "review" ] || [ "$START_AT" = "test" ] || [ "$START_AT" = "tester" ]; then
-        CURRENT_STAGE="tester"
-        local _tester_start_evt
-        _tester_start_evt=$(emit_event "stage_start" "tester" "" "$_LAST_STAGE_EVT" "" "")
-        _STAGE_STATUS[tester]="running"
-        _STAGE_BUDGET[tester]="${TESTER_MAX_TURNS:-30}"
-        emit_dashboard_run_state 2>/dev/null || true
-        run_stage_tester
-        _LAST_STAGE_EVT=$(emit_event "stage_end" "tester" "" "$_tester_start_evt" "" \
-            "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
-        _STAGE_STATUS[tester]="complete"
-        _STAGE_TURNS[tester]="${LAST_AGENT_TURNS:-0}"
-        _STAGE_DURATION[tester]="${LAST_AGENT_ELAPSED:-0}"
-        emit_dashboard_reports 2>/dev/null || true
-        emit_dashboard_run_state 2>/dev/null || true
-    fi
+        case "$_stage_name" in
+        scout)
+            # Scout is handled inside run_stage_coder — skip as standalone stage.
+            # Scout runs as part of the coder stage invocation.
+            continue
+            ;;
+
+        coder)
+            if should_run_stage "coder" "$START_AT"; then
+                CURRENT_STAGE="coder"
+                local _coder_start_evt
+                _coder_start_evt=$(emit_event "stage_start" "coder" "$TASK" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[coder]="running"
+                _STAGE_BUDGET[coder]="${CODER_MAX_TURNS:-50}"
+                emit_dashboard_run_state 2>/dev/null || true
+                run_stage_coder
+                local _coder_files_changed
+                _coder_files_changed=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]' || echo "0")
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "coder" "${_coder_files_changed} files modified" "$_coder_start_evt" "" \
+                    "{\"files_changed\":${_coder_files_changed},\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[coder]="complete"
+                _STAGE_TURNS[coder]="${ACTUAL_CODER_TURNS:-${LAST_AGENT_TURNS:-0}}"
+                _STAGE_DURATION[coder]="${LAST_AGENT_ELAPSED:-0}"
+                emit_dashboard_reports 2>/dev/null || true
+                emit_dashboard_run_state 2>/dev/null || true
+            else
+                header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Coder (skipped)"
+                log "Using existing CODER_SUMMARY.md"
+                if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+                    warn "HUMAN_NOTES.md has unchecked items but coder stage was skipped."
+                    warn "Notes will NOT be injected this run. Include them in your next full run."
+                fi
+            fi
+            ;;
+
+        security)
+            if should_run_stage "security" "$START_AT"; then
+                CURRENT_STAGE="security"
+                local _sec_start_evt
+                _sec_start_evt=$(emit_event "stage_start" "security" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[security]="running"
+                _STAGE_BUDGET[security]="${SECURITY_MAX_TURNS:-15}"
+                emit_dashboard_run_state 2>/dev/null || true
+                run_stage_security
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "security" "" "$_sec_start_evt" "" \
+                    "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[security]="complete"
+                _STAGE_TURNS[security]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[security]="${LAST_AGENT_ELAPSED:-0}"
+                emit_dashboard_security 2>/dev/null || true
+                emit_dashboard_run_state 2>/dev/null || true
+            else
+                header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Security (skipped)"
+            fi
+            ;;
+
+        review)
+            if should_run_stage "review" "$START_AT"; then
+                CURRENT_STAGE="reviewer"
+                local _review_start_evt
+                _review_start_evt=$(emit_event "stage_start" "reviewer" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[reviewer]="running"
+                _STAGE_BUDGET[reviewer]="${REVIEWER_MAX_TURNS:-15}"
+                emit_dashboard_run_state 2>/dev/null || true
+                run_stage_review
+                local _review_verdict_json="null"
+                if [[ -n "${VERDICT:-}" ]]; then
+                    _review_verdict_json="{\"result\":\"$(_json_escape "${VERDICT}")\"}"
+                fi
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "reviewer" "verdict: ${VERDICT:-unknown}" "$_review_start_evt" \
+                    "$_review_verdict_json" "{\"cycles\":${REVIEW_CYCLE:-0}}")
+                _STAGE_STATUS[reviewer]="complete"
+                _STAGE_TURNS[reviewer]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[reviewer]="${LAST_AGENT_ELAPSED:-0}"
+                emit_dashboard_reports 2>/dev/null || true
+                emit_dashboard_run_state 2>/dev/null || true
+            else
+                header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Reviewer (skipped)"
+                log "Using existing REVIEWER_REPORT.md"
+                VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+                log "Existing verdict: ${VERDICT}"
+            fi
+            ;;
+
+        test_write)
+            # TDD pre-flight: write failing tests (only in test_first order)
+            if should_run_stage "test_write" "$START_AT"; then
+                CURRENT_STAGE="tester"
+                export TESTER_MODE="write_failing"
+                local _tw_start_evt
+                _tw_start_evt=$(emit_event "stage_start" "tester_write" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[tester_write]="running"
+                _STAGE_BUDGET[tester_write]="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
+                emit_dashboard_run_state 2>/dev/null || true
+                run_stage_tester
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "tester_write" "" "$_tw_start_evt" "" \
+                    "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[tester_write]="complete"
+                _STAGE_TURNS[tester_write]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[tester_write]="${LAST_AGENT_ELAPSED:-0}"
+                emit_dashboard_run_state 2>/dev/null || true
+                export TESTER_MODE=""
+            fi
+            ;;
+
+        test_verify)
+            if should_run_stage "test_verify" "$START_AT"; then
+                CURRENT_STAGE="tester"
+                export TESTER_MODE="verify_passing"
+                local _tester_start_evt
+                _tester_start_evt=$(emit_event "stage_start" "tester" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[tester]="running"
+                _STAGE_BUDGET[tester]="${TESTER_MAX_TURNS:-30}"
+                emit_dashboard_run_state 2>/dev/null || true
+                run_stage_tester
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "tester" "" "$_tester_start_evt" "" \
+                    "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[tester]="complete"
+                _STAGE_TURNS[tester]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[tester]="${LAST_AGENT_ELAPSED:-0}"
+                emit_dashboard_reports 2>/dev/null || true
+                emit_dashboard_run_state 2>/dev/null || true
+                export TESTER_MODE=""
+            fi
+            ;;
+        esac
+    done
 
     if [ ! -f "TESTER_REPORT.md" ]; then
         warn "Tester did not produce TESTER_REPORT.md. Tests may have been written but report is missing."

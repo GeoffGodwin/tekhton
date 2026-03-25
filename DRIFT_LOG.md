@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-03-25
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-03-25 | "Implement Milestone 27: Configurable Pipeline Order (TDD Support)"] `validate_pipeline_order()` in `pipeline_order.sh` and the inline `case` block in `config.sh` both validate `PIPELINE_ORDER` against the same allowlist (`standard|test_first|auto`). Duplicated validation — if a new order value is added, both must be updated. The `config.sh` validation runs first and normalizes the value before `pipeline_order.sh` is sourced, so the library's `validate_pipeline_order()` function is only reachable if called directly. One of the two could be removed or one deferred to the other.
+- [2026-03-25 | "Implement Milestone 27: Configurable Pipeline Order (TDD Support)"] `PIPELINE_ORDER_STANDARD` includes "scout" to produce a 5-element array, but scout emits no standalone stage header and is handled internally by `run_stage_coder()`. The array conflates two roles: position-based resume mapping (needs scout for accurate positions) and visible stage count display (should exclude scout). This tension will complicate future stage additions.
 - [2026-03-25 | "Implement Milestone 26: Express Mode (Zero-Config Execution)"] `lib/express.sh:219-226` and `lib/express.sh:87-95` — `_csrc`, `_cconf` (enter_express_mode loop) and `_source`, `_conf` (generate_express_config loop) are assigned by `read -r` inside functions but not declared `local`, making them implicit globals after the loop. This matches the broader codebase pattern for IFS-split discard variables but creates quiet namespace pollution. Low risk given the `_` prefix convention.
 - [2026-03-25 | "Implement Milestone 26: Express Mode (Zero-Config Execution)"] `lib/finalize.sh` — `_hook_express_persist` is registered between `_hook_emit_run_summary` and `_hook_commit`. On the first successful express run the committed snapshot will not include `pipeline.conf` (config is written after archive but before the commit hook fires — but the commit message does not stage the new file). Users will need to manually `git add .claude/pipeline.conf` or the file lands in the next commit. Consider whether this ordering is intentional.
 

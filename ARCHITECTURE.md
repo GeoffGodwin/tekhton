@@ -18,7 +18,7 @@ Tekhton is structured as a three-layer shell pipeline with a shared library core
 Each stage is a single function sourced by `tekhton.sh`:
 
 - **`stages/architect.sh`** → `run_stage_architect()`
-  - Conditional Stage 0: runs before the main task when drift thresholds are exceeded or `--force-audit` is passed
+  - Conditional pre-stage: runs before the main task when drift thresholds are exceeded or `--force-audit` is passed
   - Loads drift log, architecture log, and architecture doc into prompt context
   - Invokes architect agent to produce `ARCHITECT_PLAN.md`
   - Parses plan sections and routes: Simplification → senior coder, Staleness/Dead Code/Naming → jr coder
@@ -141,7 +141,7 @@ tekhton.sh (entry)
   │
   ├─ Pre-flight: should_trigger_audit() → drift threshold warning
   │
-  ├─ Stage 0: run_stage_architect()  [conditional — threshold or --force-audit]
+  ├─ Pre-stage 2: run_stage_architect()  [conditional — threshold or --force-audit]
   │    ├─ render_prompt("architect") → run_agent("Architect")
   │    ├─ parse ARCHITECT_PLAN.md sections
   │    ├─ [if Simplification] → render_prompt("architect_sr_rework") → run_agent("Coder")

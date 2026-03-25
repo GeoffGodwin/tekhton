@@ -61,8 +61,14 @@ ${extra_notes}
 ## Milestone
 ${milestone_num:-none}
 
+## Pipeline Order
+${PIPELINE_ORDER:-standard}
+
+## Tester Mode
+${TESTER_MODE:-verify_passing}
+
 ## Files Present
-$(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md PREFLIGHT_ERRORS.md; do
+$(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md PREFLIGHT_ERRORS.md TESTER_PREFLIGHT.md; do
     [ -f "$f" ] && echo "- $f ($(count_lines < "$f") lines)" || echo "- $f (missing)"
 done)
 

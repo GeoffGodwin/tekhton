@@ -1,4 +1,9 @@
 #### Milestone 27: Configurable Pipeline Order (TDD Support)
+<!-- milestone-meta
+id: "27"
+status: "done"
+-->
+
 
 Add a PIPELINE_ORDER config key that controls stage execution order, enabling
 test-driven development as an opt-in alternative to the default code-first flow.

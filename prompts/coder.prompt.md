@@ -62,6 +62,18 @@ your implementation — they are authoritative.
 --- END FILE CONTENT: CLARIFICATIONS ---
 {{ENDIF:CLARIFICATIONS_CONTENT}}
 
+{{IF:TESTER_PREFLIGHT_CONTENT}}
+
+## Pre-Written Tests (TDD Mode)
+Tests have been written BEFORE your implementation. Your primary goal is to make
+ALL of these tests pass while also satisfying the acceptance criteria.
+Read the test files listed in TESTER_PREFLIGHT.md to understand the expected
+interface contracts. The tests define WHAT your code must do — you decide HOW.
+
+--- BEGIN FILE CONTENT: TESTER_PREFLIGHT ---
+{{TESTER_PREFLIGHT_CONTENT}}
+--- END FILE CONTENT: TESTER_PREFLIGHT ---
+{{ENDIF:TESTER_PREFLIGHT_CONTENT}}
 {{IF:CONTINUATION_CONTEXT}}
 {{CONTINUATION_CONTEXT}}
 {{ENDIF:CONTINUATION_CONTEXT}}

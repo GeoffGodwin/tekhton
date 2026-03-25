@@ -1,4 +1,4 @@
-# Reviewer Report — Milestone 26: Express Mode (Re-review, Cycle 2)
+# Reviewer Report — Milestone 27: Configurable Pipeline Order (TDD Support) — Cycle 2
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,20 +10,17 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/express.sh` is 331 lines — 31 over the 300-line soft ceiling. If this module grows (e.g. more manifest formats, persist strategies), consider splitting persist/role sub-concerns into a `lib/express_persist.sh`.
-- `persist_express_config()` has no cleanup trap on its tmpfile. If the process is killed between `mktemp` and `mv`, a stale `.claude/express_conf_XXXXXX` is left in `.claude/`. Same LOW-severity pattern as the security-agent finding in `init_config.sh` — add `trap 'rm -f "$tmpfile"' EXIT INT TERM` immediately after the `mktemp` call.
-- `_hook_express_persist` always logs "Express config saved to .claude/pipeline.conf. Edit to customize." even when `persist_express_config()` no-ops (conf already exists on run 2+). The inner function also logs its own success message on actual write, so run 1 produces two "saved" lines. Add a guard or move the outer log inside the function.
-- `_detect_express_project_name()` uses `grep -oP` (PCRE), which is not available on macOS/BSD grep. Acceptable for the current Linux/WSL2 target, but worth noting if portability goals expand.
-- Test 6.2 comment reads "resolve_role_file emits a log() line to stdout before the path" — this is incorrect. The `log` call inside `resolve_role_file()` is explicitly redirected to stderr (`>&2`). The `| tail -1` in the test is therefore unnecessary (though harmless). Update the comment to match reality.
+- Stage header display regression (standard mode): scout occupies position 1 in the dynamic order array, so the coder stage now shows "Stage 2 / 5 — Coder" instead of the prior "Stage 1 / 4 — Coder". Scout is never displayed as a standalone stage (the loop `continue`s), so users see stage numbers that skip 1 and count 5 total where only 4 are visible. The defaults `_stage_pos=1` and `_stage_count=4` in `run_stage_coder()` are always bypassed because tekhton.sh sets both globals before calling the function.
+- `TESTER_WRITE_FAILING_MAX_TURNS` default of 10 is likely too low. The test-write agent must read its role file, read SCOUT_REPORT.md, identify test patterns, write test files, run the test suite to confirm they load, and produce TESTER_PREFLIGHT.md. 10 turns is tight for a non-trivial project. Consider raising the default to 15 or 20.
+- `_run_tester_write_failing()` has no UPSTREAM error check. The full `run_stage_tester()` explicitly handles `AGENT_ERROR_CATEGORY=UPSTREAM` with `write_pipeline_state`. The write-failing path silently swallows API errors via the null-run fallback — API failures during TDD pre-flight leave no trace in the state file.
+- `CODER_TDD_TURN_MULTIPLIER` has no upper-bound clamp. The `_clamp_config_value` machinery only matches integers (`^[0-9]+$`), so floats are never clamped. A large value (e.g., `100.0`) would multiply the already-capped base turn budget by 100×, bypassing `CODER_MAX_TURNS_CAP`. Low risk (admin-only config), but worth noting for completeness.
 
 ## Coverage Gaps
-- `enter_express_mode()` is not integration-tested end-to-end. The CLAUDE.md stub creation and `.claude/logs` mkdir are untested paths.
-- `_hook_express_persist` (finalize hook) has no unit test. Specifically: the "no-op when conf already exists" and "persists roles when EXPRESS_PERSIST_ROLES=true" branches are unexercised.
+- `lib/pipeline_order.sh` has no unit test coverage. All five public functions (`validate_pipeline_order`, `get_pipeline_order`, `get_stage_count`, `get_stage_position`, `should_run_stage`) are exercised only at runtime. The position-comparison resume logic in `should_run_stage` — especially the `start_at=test` → `test_verify` mapping and position comparisons across both order arrays — is subtle and would benefit from explicit test assertions.
 
 ## ACP Verdicts
-- ACP: Role file fallbacks live in `express.sh`, not `agent.sh` — **ACCEPT** — Keeps `agent.sh` clean; role-fallback logic is conceptually part of the zero-config story and the placement is well-justified.
-- ACP: `apply_role_file_fallbacks()` runs for configured projects too — **ACCEPT** — Strictly additive; the log message makes the fallback visible when it fires. The change in failure mode (hard error → logged fallback) is a resilience improvement and backward-compatible.
+- None (no Architecture Change Proposals declared in CODER_SUMMARY.md)
 
 ## Drift Observations
-- `lib/express.sh:219-226` and `lib/express.sh:87-95` — `_csrc`, `_cconf` (enter_express_mode loop) and `_source`, `_conf` (generate_express_config loop) are assigned by `read -r` inside functions but not declared `local`, making them implicit globals after the loop. This matches the broader codebase pattern for IFS-split discard variables but creates quiet namespace pollution. Low risk given the `_` prefix convention.
-- `lib/finalize.sh` — `_hook_express_persist` is registered between `_hook_emit_run_summary` and `_hook_commit`. On the first successful express run the committed snapshot will not include `pipeline.conf` (config is written after archive but before the commit hook fires — but the commit message does not stage the new file). Users will need to manually `git add .claude/pipeline.conf` or the file lands in the next commit. Consider whether this ordering is intentional.
+- `validate_pipeline_order()` in `pipeline_order.sh` and the inline `case` block in `config.sh` both validate `PIPELINE_ORDER` against the same allowlist (`standard|test_first|auto`). Duplicated validation — if a new order value is added, both must be updated. The `config.sh` validation runs first and normalizes the value before `pipeline_order.sh` is sourced, so the library's `validate_pipeline_order()` function is only reachable if called directly. One of the two could be removed or one deferred to the other.
+- `PIPELINE_ORDER_STANDARD` includes "scout" to produce a 5-element array, but scout emits no standalone stage header and is handled internally by `run_stage_coder()`. The array conflates two roles: position-based resume mapping (needs scout for accurate positions) and visible stage count display (should exclude scout). This tension will complicate future stage additions.

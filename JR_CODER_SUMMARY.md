@@ -1,14 +1,18 @@
-# JR Coder Summary — Milestone 26: Express Mode
+# Junior Coder Summary — Milestone 27: Configurable Pipeline Order
 
 ## What Was Fixed
 
-- **lib/express.sh:218** — Removed unused `_line` variable from the `local _line _ctype _ccmd` declaration. The variable was assigned by `local` but never referenced in the function. The actual `read -r` target variables are `_ctype`, `_ccmd`, `_csrc`, and `_cconf`. This resolves the shellcheck SC2034 (unused local variable) violation.
+- **`lib/pipeline_order.sh:80`** — Added `# shellcheck disable=SC2086` on the line before the `for stage in $stages` loop in `get_stage_position()`. This suppresses the SC2086 warning for intentional word-splitting of space-separated stage names, consistent with the existing pattern in `get_stage_count()`.
+
+- **`tekhton.sh:1736`** — Added `# shellcheck disable=SC2086` on the line before the `for _stage_name in $_pipeline_stages` loop. This suppresses the SC2086 warning for intentional word-splitting of space-separated pipeline stage names.
 
 ## Files Modified
 
-- `lib/express.sh` — Removed `_line` from local declaration on line 218
+- `lib/pipeline_order.sh`
+- `tekhton.sh`
 
 ## Verification
 
-- `bash -n lib/express.sh` — ✓ passed (syntax valid)
-- `shellcheck lib/express.sh` — ✓ passed (no violations)
+- Both files pass `bash -n` syntax check ✓
+- Both files have zero SC2086 warnings (verified with shellcheck) ✓
+- No new warnings introduced ✓

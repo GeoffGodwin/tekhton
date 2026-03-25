@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# stages/intake.sh — Stage 0: Task Intake / PM Agent (Pre-Stage Gate)
+# stages/intake.sh — Pre-stage 1: Task Intake / PM Agent (Pre-Stage Gate)
 #
 # Evaluates task and milestone clarity before committing pipeline resources.
 # Silently passes well-scoped milestones; auto-tweaks or escalates as needed.
@@ -39,7 +39,7 @@ run_stage_intake() {
 
     # Use cached intake results from dry-run if available (Milestone 23)
     if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
-        header "Stage 0 / Pre-flight — Task Intake (cached)"
+        header "Pre-stage 1 — Task Intake (cached)"
         log "Intake: using cached results from dry-run."
         local _cached_verdict
         _cached_verdict=$(_intake_parse_verdict "${INTAKE_REPORT_FILE}")
@@ -57,9 +57,7 @@ run_stage_intake() {
         return 0
     fi
 
-    header "Stage 0 / Pre-flight — Task Intake"
-
-    # Get content to evaluate
+    # Get content to evaluate (before banner — skip silently if unchanged)
     local content
     content=$(_intake_get_milestone_content)
 
@@ -68,13 +66,15 @@ run_stage_intake() {
         return 0
     fi
 
-    # Check content hash — skip if already evaluated
+    # Check content hash — skip if already evaluated (no banner noise)
     local content_hash
     content_hash=$(_intake_content_hash "$content")
     if _intake_should_skip "$content_hash"; then
         log "Intake: content unchanged since last evaluation. Skipping."
         return 0
     fi
+
+    header "Pre-stage 1 — Task Intake"
 
     # Prepare template variables
     export INTAKE_MILESTONE_CONTENT="$content"

@@ -88,7 +88,9 @@ RECON_EOF
 # Exits the pipeline (exit 1) on unrecoverable failure, saving state for resume.
 # On success, CODER_SUMMARY.md exists and the build passes.
 run_stage_coder() {
-    header "Stage 1 / 4 — Coder"
+    local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
+    local _stage_pos="${PIPELINE_STAGE_POS:-1}"
+    header "Stage ${_stage_pos} / ${_stage_count} — Coder"
 
     # --- Scout sub-agent (optional) ------------------------------------------
     BUG_SCOUT_CONTEXT=""
@@ -397,6 +399,20 @@ ${nb_notes}"
         warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
     fi
 
+    # --- TDD pre-flight context (Milestone 27) --------------------------------
+    # When PIPELINE_ORDER=test_first, inject TESTER_PREFLIGHT.md content so the
+    # coder knows which tests to make pass.
+    export TESTER_PREFLIGHT_CONTENT=""
+    if [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]]; then
+        local _preflight_file="${TDD_PREFLIGHT_FILE:-TESTER_PREFLIGHT.md}"
+        if [[ -f "$_preflight_file" ]]; then
+            TESTER_PREFLIGHT_CONTENT=$(_safe_read_file "$_preflight_file" "TESTER_PREFLIGHT")
+            log "TDD mode: injecting ${_preflight_file} into coder context."
+        else
+            warn "TDD mode active but ${_preflight_file} not found — coder will proceed without pre-written tests."
+        fi
+    fi
+
     # --- Clarification context (from prior pause) ----------------------------
 
     load_clarifications_content
@@ -430,9 +446,22 @@ ${nb_notes}"
     _add_context_component "Non-Blocking Notes" "$NON_BLOCKING_CONTEXT"
     _add_context_component "Scout Report" "$BUG_SCOUT_CONTEXT"
     _add_context_component "Clarifications" "$CLARIFICATIONS_CONTENT"
+    _add_context_component "TDD Preflight" "${TESTER_PREFLIGHT_CONTENT:-}"
     log_context_report "coder" "$CLAUDE_CODER_MODEL"
 
     # --- Invoke coder agent --------------------------------------------------
+
+    # TDD turn multiplier: give the coder slightly more budget when working
+    # against pre-written tests (Milestone 27)
+    if [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]] && [[ -n "${TESTER_PREFLIGHT_CONTENT:-}" ]]; then
+        local _base_turns="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+        local _multiplier="${CODER_TDD_TURN_MULTIPLIER:-1.2}"
+        # bash doesn't do float math — use awk
+        local _boosted_turns
+        _boosted_turns=$(awk "BEGIN { printf \"%.0f\", ${_base_turns} * ${_multiplier} }")
+        ADJUSTED_CODER_TURNS="$_boosted_turns"
+        log "TDD mode: coder turn budget boosted ${_base_turns} → ${_boosted_turns} (×${_multiplier})."
+    fi
 
     CODER_PROMPT=$(render_prompt "coder")
 

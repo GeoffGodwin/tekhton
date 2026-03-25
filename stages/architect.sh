@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# stages/architect.sh — Stage 0: Architect audit (conditional)
+# stages/architect.sh — Pre-stage 2: Architect audit (conditional)
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects all pipeline globals to be set.
@@ -20,7 +20,7 @@
 #  10. Append Design Doc Observations to HUMAN_ACTION_REQUIRED.md
 #  11. Reset runs-since-audit counter
 run_stage_architect() {
-    header "Stage 0 — Architect Audit"
+    header "Pre-stage 2 — Architect Audit"
 
     # --- Load context for prompt ---------------------------------------------
 
