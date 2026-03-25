@@ -7,6 +7,11 @@ set -euo pipefail
 # Depends on: common.sh (log, warn)
 # =============================================================================
 
+# Source sectioned config generator (Milestone 22)
+_INIT_CONFIG_DIR="${BASH_SOURCE[0]%/*}"
+# shellcheck source=lib/init_config_sections.sh
+source "${_INIT_CONFIG_DIR}/init_config_sections.sh"
+
 # --- Config generation --------------------------------------------------------
 
 # _generate_smart_config — Builds pipeline.conf from detection results.
@@ -86,16 +91,13 @@ _generate_smart_config() {
         fi
     fi
 
-    # Write config file
-    {
-        _emit_header "$project_name"
-        _emit_tools "$required_tools"
-        _emit_models "$coder_model"
-        _emit_turns "$coder_turns" "$jr_turns" "$reviewer_turns" "$tester_turns" "$scout_turns"
-        _emit_commands "$test_cmd" "$test_conf" "$analyze_cmd" "$analyze_conf" "$build_cmd" "$build_conf"
-        _emit_workspace_config
-        _emit_paths "$design_file"
-    } > "$conf_file"
+    # Write config file (Milestone 22: sectioned format)
+    generate_sectioned_config "$project_name" \
+        "$test_cmd" "$test_conf" "$analyze_cmd" "$analyze_conf" \
+        "$build_cmd" "$build_conf" "$coder_model" \
+        "$coder_turns" "$jr_turns" "$reviewer_turns" \
+        "$tester_turns" "$scout_turns" "$required_tools" \
+        "$design_file" > "$conf_file"
 }
 
 # _extract_ci_command — Extracts a specific command type from CI detection output.
@@ -160,6 +162,58 @@ _detect_required_tools() {
 
     # Deduplicate
     echo "$tools" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
+# --- Reinit value preservation (Milestone 22) --------------------------------
+
+# _preserve_user_config — Reads existing pipeline.conf and returns KEY=VALUE lines.
+# Used by --reinit to preserve user-modified values after regenerating config.
+# Args: $1 = existing config file path
+# Output: lines of KEY=VALUE (only uncommented, active settings)
+_preserve_user_config() {
+    local conf_file="$1"
+    [[ ! -f "$conf_file" ]] && return 0
+    # Extract active KEY=VALUE lines (skip comments, empty lines, section headers)
+    grep -E '^[A-Z_]+=.' "$conf_file" || true
+}
+
+# _merge_preserved_values — Merges user-preserved values into a new config file.
+# Reads the new config, replaces matching keys with user values, writes result.
+# Args: $1 = config file to update, $2 = preserved values (newline-separated KEY=VALUE)
+_merge_preserved_values() {
+    local conf_file="$1"
+    local preserved="$2"
+    [[ -z "$preserved" ]] && return 0
+    [[ ! -f "$conf_file" ]] && return 0
+
+    # Build associative array of preserved key=value pairs
+    local -A _preserved_map=()
+    local key val kv_line
+    while IFS= read -r kv_line; do
+        [[ -z "$kv_line" ]] && continue
+        key="${kv_line%%=*}"
+        val="${kv_line#*=}"
+        [[ -z "$key" ]] && continue
+        _preserved_map["$key"]="$val"
+    done <<< "$preserved"
+
+    # Rewrite config line-by-line, replacing matching keys.
+    # Pure bash avoids sed delimiter/backreference issues with | and & in values.
+    local tmpfile="${conf_file}.merge.$$"
+    local line line_key
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Match active KEY=... lines (not comments)
+        if [[ "$line" =~ ^([A-Z_]+)= ]]; then
+            line_key="${BASH_REMATCH[1]}"
+            if [[ -n "${_preserved_map[$line_key]+x}" ]]; then
+                echo "${line_key}=${_preserved_map[$line_key]}"
+                continue
+            fi
+        fi
+        echo "$line"
+    done < "$conf_file" > "$tmpfile"
+
+    mv "$tmpfile" "$conf_file"
 }
 
 # --- Config file section emitters --------------------------------------------

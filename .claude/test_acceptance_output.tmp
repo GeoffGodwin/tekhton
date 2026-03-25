@@ -12,6 +12,9 @@
 [0;32mPASS[0m test_architect_multiline_bullets.sh
 [0;32mPASS[0m test_architect_stage.sh
 [0;32mPASS[0m test_artifact_handler_ops.sh
+[0;32mPASS[0m test_audit_coverage_gaps.sh
+[0;32mPASS[0m test_audit_standalone.sh
+[0;32mPASS[0m test_audit_tests.sh
 [0;32mPASS[0m test_auto_advance_enabled_bridge.sh
 [0;32mPASS[0m test_auto_commit_conditional_default.sh
 [0;32mPASS[0m test_causal_log.sh
@@ -83,6 +86,30 @@
 [0;32mPASS[0m test_indexer_slice_suffix.sh
 [0;32mPASS[0m test_init_addenda_dedup.sh
 [0;32mPASS[0m test_init_design_file_autoset.sh
+[0;31mFAIL[0m test_init_merge_preserved.sh
+  --- output ---
+  === Baseline: simple value replacement ===
+    PASS: baseline: simple value replaced correctly
+    PASS: baseline: nonexistent key silently ignored (no crash)
+  === Path value with / ===
+    PASS: path value with /: preserved correctly (| delimiter handles / in value)
+    PASS: nested path value: preserved correctly
+  === Value containing | (sed delimiter) ===
+    FAIL: value with |: got wrong value 'true' (sed delimiter conflict silently corrupted)
+  === Value containing & (sed backreference) ===
+    FAIL: value with &&: got wrong value 'npm test TEST_CMD=trueTEST_CMD=true echo done' (& interpreted as sed backreference) — see Bugs Found
+  === Empty inputs ===
+    PASS: empty preserved: config file unchanged
+    PASS: nonexistent config file: returns silently without error
+  === Multiple key preservation ===
+    PASS: multiple keys: TEST_CMD preserved
+    PASS: multiple keys: ANALYZE_CMD preserved
+  
+  ────────────────────────────────────────
+    Passed: 8  Failed: 2
+  ────────────────────────────────────────
+  --- end ---
+[0;32mPASS[0m test_init_report_dashboard_compat.sh
 [0;32mPASS[0m test_init_scaffold.sh
 [0;32mPASS[0m test_init_smart_config.sh
 [0;32mPASS[0m test_init_smart_init.sh
@@ -97,6 +124,7 @@
 [0;32mPASS[0m test_mcp_lifecycle.sh
 [0;32mPASS[0m test_metrics.sh
 [0;32mPASS[0m test_metrics_retry_stats.sh
+[0;32mPASS[0m test_migration.sh
 [0;32mPASS[0m test_milestone_15_2_2_2_migration.sh
 [0;32mPASS[0m test_milestone_archival.sh
 [0;32mPASS[0m test_milestone_dag.sh
@@ -109,79 +137,7 @@
 [0;32mPASS[0m test_nonblocking_log_fixes.sh
 [0;32mPASS[0m test_nonblocking_notes.sh
 [0;32mPASS[0m test_orchestrate.sh
-[0;31mFAIL[0m test_orchestrate_integration.sh
-  --- output ---
-  === Integration Test Suite 1: run_complete_loop round trip ===
-  [0;36m[tekhton][0m [baseline] Capturing test baseline for milestone unknown...
-  [1;33m[!][0m [baseline] Tests FAIL at baseline (exit 127, 0 failure lines)
-  [1;33m[!][0m [baseline] These pre-existing failures will not block acceptance
-  
-  [1m[0;36m── Orchestration Loop ──────────────────[0m
-    Attempt:     [1m1[0m / 5
-    Elapsed:     0m 0s
-    Agent calls: 0 / 20
-  [1m[0;36m────────────────────────────────────────[0m
-  
-  [0;36m[tekhton][0m Pipeline attempt 1: failed:unknown/unknown (0 turns, 0 files)
-  [0;36m[tekhton][0m Recovery decision: bump_review
-  [1;33m[!][0m Bumping MAX_REVIEW_CYCLES to 5 (one-time)
-  [1;33m[!][0m No progress detected (1/2 — will retry once more)
-  
-  [1m[0;36m── Orchestration Loop ──────────────────[0m
-    Attempt:     [1m2[0m / 5
-    Elapsed:     0m 0s
-    Agent calls: 0 / 20
-  [1m[0;36m────────────────────────────────────────[0m
-  
-  [0;36m[tekhton][0m Pipeline attempt 2: success (0 turns, 0 files)
-  [0;36m[tekhton][0m Pre-finalization test gate: running bash tests/run_tests.sh...
-  [1;33m[!][0m Pre-finalization test gate failed (exit 127). Routing back to coder for fix.
-  [0;36m[tekhton][0m Pipeline attempt 2: failed:final_check/test_failure (0 turns, 0 files)
-  [1;33m[!][0m Pipeline appears stuck — diff unchanged for 2 consecutive attempts.
-  [1;33m[!][0m State saved. Resume with: tekhton --complete --start-at coder "Test complete loop integration"
-    FAIL: 1.1 run_complete_loop returns 0 on success — expected '0', got '1'
-    PASS: 1.2 _run_pipeline_stages called twice (attempt 1 fail, attempt 2 succeed)
-    FAIL: 1.3 _ORCH_ATTEMPT is 2 at completion — expected '2', got '3'
-    PASS: 1.4 finalize_run was called
-    FAIL: 1.5 finalize_run called with exit code 0 (success) — expected '0', got '1'
-    PASS: 1.6 _ORCH_REVIEW_BUMPED is true (review was bumped on attempt 1)
-  === Integration Test Suite 2: MAX_PIPELINE_ATTEMPTS safety bound ===
-  
-  [1m[0;36m── Orchestration Loop ──────────────────[0m
-    Attempt:     [1m1[0m / 3
-    Elapsed:     0m 0s
-    Agent calls: 0 / 20
-  [1m[0;36m────────────────────────────────────────[0m
-  
-  [0;36m[tekhton][0m Pipeline attempt 1: failed:unknown/unknown (0 turns, 0 files)
-  [0;36m[tekhton][0m Recovery decision: bump_review
-  [1;33m[!][0m Bumping MAX_REVIEW_CYCLES to 7 (one-time)
-  [1;33m[!][0m No progress detected (1/2 — will retry once more)
-  
-  [1m[0;36m── Orchestration Loop ──────────────────[0m
-    Attempt:     [1m2[0m / 3
-    Elapsed:     0m 0s
-    Agent calls: 0 / 20
-  [1m[0;36m────────────────────────────────────────[0m
-  
-  [0;36m[tekhton][0m Pipeline attempt 2: failed:unknown/unknown (0 turns, 0 files)
-  [0;36m[tekhton][0m Recovery decision: bump_review
-  [1;33m[!][0m Review cycles already bumped once. Saving state and exiting.
-  [1;33m[!][0m State saved. Resume with: tekhton --complete --start-at review "Test complete loop integration"
-    PASS: 2.1 run_complete_loop returns 1 when max attempts exhausted
-    PASS: 2.2 finalize_run called on failure path
-    PASS: 2.3 finalize_run called with exit code 1 (failure)
-  === Integration Test Suite 3: AUTONOMOUS_TIMEOUT wall-clock kill switch ===
-  [1;33m[!][0m Reached AUTONOMOUS_TIMEOUT (0s). Saving state.
-  [1;33m[!][0m State saved. Resume with: tekhton --complete --start-at review "Test complete loop integration"
-    PASS: 3.1 run_complete_loop returns 1 on timeout
-    PASS: 3.2 _run_pipeline_stages not called after timeout
-    PASS: 3.3 finalize_run called on timeout path
-  
-  ════════════════════════════════════════
-    orchestrate_integration: 9 passed, 3 failed
-  ════════════════════════════════════════
-  --- end ---
+[0;32mPASS[0m test_orchestrate_integration.sh
 [0;32mPASS[0m test_pin_version_validation.sh
 [0;32mPASS[0m test_plan_codebase_summary.sh
 [0;32mPASS[0m test_plan_completeness.sh
@@ -237,7 +193,7 @@
 [0;32mPASS[0m test_with_notes_flag.sh
 
 ────────────────────────────────────────
-  Shell:  Passed: [0;32m160[0m  Failed: [0;31m1[0m
+  Shell:  Passed: [0;32m166[0m  Failed: [0;31m1[0m
 ────────────────────────────────────────
 
 ════════════════════════════════════════
@@ -246,11 +202,11 @@
 
 ........................................................................ [ 94%]
 ....                                                                     [100%]
-76 passed, 1 skipped in 0.23s
+76 passed, 1 skipped in 0.48s
   [0;32mPython tests passed[0m
 
 ════════════════════════════════════════
   Final Summary
 ════════════════════════════════════════
-  Shell:  Passed: [0;32m160[0m  Failed: [0;31m1[0m
+  Shell:  Passed: [0;32m166[0m  Failed: [0;31m1[0m
   Python: [0;32mPASSED[0m

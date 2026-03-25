@@ -1,53 +1,30 @@
 #!/usr/bin/env bash
-# =============================================================================
-# pipeline.conf — Project-specific configuration for the Tekhton pipeline
-#
-# This is the ONLY file you need to edit to adapt the pipeline to a new project.
-# All values below are read by Tekhton's lib/config.sh at startup.
+# Tekhton pipeline.conf — Project-specific configuration
 #
 # Place this file at:  <your-project>/.claude/pipeline.conf
-#
 # Lines starting with # are comments. Empty lines are ignored.
 # Format: KEY=value (no spaces around =, quote strings with spaces)
-# =============================================================================
-
-# --- Tekhton config version (do not edit manually) ---------------------------
-# Tracks which Tekhton version configured this project. Updated by --init and
-# --migrate. Used to detect when project config needs upgrading.
-# TEKHTON_CONFIG_VERSION="3.20"
-
-# --- Migration ---------------------------------------------------------------
-# Auto-prompt for migration when config version is behind running version
-# MIGRATION_AUTO=true
-
-# --- Project identity --------------------------------------------------------
-
-# Display name used in terminal output and branding
-PROJECT_NAME="My Project"
-
-# One-line description shown in --help
-PROJECT_DESCRIPTION="multi-agent development pipeline"
-
-# --- Required CLI tools ------------------------------------------------------
-# Space-separated list of commands that must be on PATH before the pipeline runs
-REQUIRED_TOOLS="claude git"
-
-# --- Agent models ------------------------------------------------------------
-# Every agent has its own model variable. Share models across agents to save
-# cost, or promote individual agents as quality demands.
 #
-#   Agent            Variable                  Default usage
-#   ───────────────  ────────────────────────  ─────────────────────────────────
-#   Senior Coder     CLAUDE_CODER_MODEL        Complex implementation
-#   Jr Coder         CLAUDE_JR_CODER_MODEL     Simple fixes, build-gate rework
-#   Scout            CLAUDE_SCOUT_MODEL        File discovery, complexity est.
-#   Reviewer         CLAUDE_REVIEWER_MODEL     Code review + verdict
-#   Architect        CLAUDE_ARCHITECT_MODEL    Drift audit, remediation planning
-#   Tester           CLAUDE_TESTER_MODEL       Test authoring (upgradeable in --milestone)
-# Base model — all agent-specific variables default to this in lib/config.sh
-CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
+# Review the Essential section below — most users only need the first 20 lines.
+# All other sections have sensible defaults.
 
-# Agent-specific overrides (comment out any line to fall back to CLAUDE_STANDARD_MODEL)
+# Tekhton config version (do not edit manually)
+# TEKHTON_CONFIG_VERSION="3.22"
+
+PROJECT_NAME="My Project"
+TEST_CMD="echo 'No test command configured — set TEST_CMD in pipeline.conf'"
+ANALYZE_CMD="echo 'No analyze command configured — set ANALYZE_CMD in pipeline.conf'"
+BUILD_CHECK_CMD=""
+ARCHITECTURE_FILE="ARCHITECTURE.md"
+PROJECT_RULES_FILE="CLAUDE.md"
+DESIGN_FILE=""
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Section 2: Models & Turns
+# Defaults work well — tune after a few runs if needed
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 CLAUDE_CODER_MODEL="claude-opus-4-6"
 CLAUDE_JR_CODER_MODEL="claude-haiku-4-5"
 CLAUDE_SCOUT_MODEL="claude-haiku-4-5"
@@ -55,147 +32,78 @@ CLAUDE_REVIEWER_MODEL="claude-sonnet-4-6"
 CLAUDE_ARCHITECT_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-haiku-4-5"
 
-# --- Agent permissions -------------------------------------------------------
-# By default, agents use --allowedTools with least-privilege profiles.
-# Each agent role gets only the Claude CLI tools it needs (e.g., reviewers
-# can read and write reports but cannot run bash or edit code).
-# Destructive operations (git push, rm -rf, curl, wget) are always blocked.
-#
-# Set AGENT_SKIP_PERMISSIONS=true to restore the old --dangerously-skip-permissions
-# behavior. NOT recommended — agents will have unrestricted filesystem and bash access.
-# AGENT_SKIP_PERMISSIONS=false
-
-# --- Turn limits (normal mode) ----------------------------------------------
 CODER_MAX_TURNS=35
 JR_CODER_MAX_TURNS=15
 REVIEWER_MAX_TURNS=10
 TESTER_MAX_TURNS=30
 SCOUT_MAX_TURNS=20
-SEED_CONTRACTS_MAX_TURNS=20
+DYNAMIC_TURNS_ENABLED=true
 
-# --- Turn limits (milestone mode overrides) ----------------------------------
-# These override normal limits when --milestone is passed.
-# Defaults: 2× normal turns, upgraded tester model.
-# Uncomment and customize if the defaults don't suit your project.
+# Milestone mode overrides (uncomment to customize):
 # MILESTONE_MAX_REVIEW_CYCLES=4
 # MILESTONE_CODER_MAX_TURNS=70
 # MILESTONE_JR_CODER_MAX_TURNS=30
 # MILESTONE_REVIEWER_MAX_TURNS=15
 # MILESTONE_TESTER_MAX_TURNS=60
 # MILESTONE_TESTER_MODEL="claude-sonnet-4-6"
-# MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER=3  # Applied to AGENT_ACTIVITY_TIMEOUT in milestone mode
+# MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER=3
 
-# --- Review loop -------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════════
+# Section 3: Pipeline Behavior
+# Advanced — most users never change these
+# ═══════════════════════════════════════════════════════════════════════════════
+
+REQUIRED_TOOLS="claude git"
 MAX_REVIEW_CYCLES=2
+CONTEXT_BUDGET_ENABLED=true
+CONTEXT_BUDGET_PCT=50
+CHARS_PER_TOKEN=4
+CONTEXT_COMPILER_ENABLED=false
 
-# --- Build / test / analyze commands -----------------------------------------
-# These commands are run by the pipeline directly and injected into prompts.
-# Adapt for your tech stack (e.g., cargo, npm, go, pytest, make).
-
-# Static analysis command — must exit 0 on clean, nonzero on issues
-ANALYZE_CMD="echo 'No analyze command configured — set ANALYZE_CMD in pipeline.conf'"
-
-# Test runner command
-TEST_CMD="echo 'No test command configured — set TEST_CMD in pipeline.conf'"
-
-# Compile check command(s) — a quick "does it build?" gate.
-# Use || to chain fallbacks. Set to "" to skip compile check.
-BUILD_CHECK_CMD=""
-
-# Pattern to detect errors in analyze output (grep -E pattern)
+# Error pattern matching
 ANALYZE_ERROR_PATTERN="error"
-
-# Pattern to detect errors in compile output (grep pattern)
 BUILD_ERROR_PATTERN="ERROR"
 
-# --- Pipeline file paths -----------------------------------------------------
-PIPELINE_STATE_FILE=".claude/PIPELINE_STATE.md"
-LOG_DIR=".claude/logs"
+# Clarification and replanning
+# CLARIFICATION_ENABLED=true
+# REPLAN_ENABLED=true
+# REPLAN_MODEL="opus"
+# REPLAN_MAX_TURNS=50
 
-# --- Agent role files (relative to repo root) --------------------------------
-# These markdown files define each agent's persona, rules, and constraints.
-# The pipeline checks these exist at startup and injects them into prompts.
-CODER_ROLE_FILE=".claude/agents/coder.md"
-REVIEWER_ROLE_FILE=".claude/agents/reviewer.md"
-TESTER_ROLE_FILE=".claude/agents/tester.md"
-JR_CODER_ROLE_FILE=".claude/agents/jr-coder.md"
+# Turn exhaustion continuation
+# CONTINUATION_ENABLED=true
+# MAX_CONTINUATION_ATTEMPTS=3
 
-# --- Context files (optional — set to "" to skip) ---------------------------
-# These files are injected into agent prompts when they exist.
-ARCHITECTURE_FILE="ARCHITECTURE.md"
-GLOSSARY_FILE=""
-PROJECT_RULES_FILE="CLAUDE.md"
+# Transient error retry
+# TRANSIENT_RETRY_ENABLED=true
+# MAX_TRANSIENT_RETRIES=3
+# TRANSIENT_RETRY_BASE_DELAY=30
+# TRANSIENT_RETRY_MAX_DELAY=120
 
-# --- Design document (optional — enables design cross-referencing) -----------
-DESIGN_FILE=""
+# Planning phase
+# PLAN_INTERVIEW_MODEL="sonnet"
+# PLAN_GENERATION_MODEL="sonnet"
+# PLAN_INTERVIEW_MAX_TURNS=50
+# PLAN_GENERATION_MAX_TURNS=30
 
-# --- Architecture drift configuration ----------------------------------------
-# Path to the architecture decision log (records accepted ACPs)
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-
-# Path to the drift observation log (accumulated across runs)
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-
-# Path to the human action required file (design doc changes needed)
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-
-# Trigger architect audit after this many unresolved drift observations
-DRIFT_OBSERVATION_THRESHOLD=8
-
-# Trigger architect audit after this many pipeline runs since last audit
-DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
-
-# Non-blocking reviewer notes log file
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
-
-# Inject accumulated non-blocking notes into coder prompt when count exceeds this
-NON_BLOCKING_INJECTION_THRESHOLD=8
-
-# --- Usage tracking and commit behavior-------------------------------------
-# Usage threshold: pause before running the next pipeline stage if Claude API
-# usage has exceeded this percentage. Set to 0 (default) to disable.
-# Example: 90 pauses if "claude usage" output shows ≥90% consumed.
-# USAGE_THRESHOLD_PCT=0
-
-# Auto-commit: when true, automatically commits successful pipeline runs without
-# prompting the user. The commit message includes a summary, file list, and
-# change statistics. Default: true. Set to false to always prompt.
-# Use --no-commit flag to skip auto-commit for a single run.
-# AUTO_COMMIT=true
-
-# --- Human notes configuration ----------------------------------------------
-# Valid categories for --notes-filter (pipe-separated for case matching)
+# Human notes
 NOTES_FILTER_CATEGORIES="BUG|FEAT|POLISH"
 
-# --- Architect agent ---------------------------------------------------------
-# Role file for the architect audit agent (relative to repo root)
+# Drift detection
+DRIFT_LOG_FILE="DRIFT_LOG.md"
+ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
+HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+DRIFT_OBSERVATION_THRESHOLD=8
+DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
+NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+NON_BLOCKING_INJECTION_THRESHOLD=8
+
+# Architect agent
 ARCHITECT_ROLE_FILE=".claude/agents/architect.md"
-
-# Turn limits for architect audit
 ARCHITECT_MAX_TURNS=25
-# MILESTONE_ARCHITECT_MAX_TURNS=50
-
-# Model is set in the Agent models section above (CLAUDE_ARCHITECT_MODEL).
-
-# Dependency constraint manifest (empty = skip). See examples/ for format.
 DEPENDENCY_CONSTRAINTS_FILE=""
 
-# --- Agent exit detection ----------------------------------------------------
-# When an agent uses ≤ this many turns AND exits non-zero, it's flagged as a
-# "null run" (died during discovery without doing productive work).
-# AGENT_NULL_RUN_THRESHOLD=2
-
-# Max directory depth for file-change detection (find -maxdepth). Increase for
-# deeply nested project structures. Default 8 works for most projects.
-# AGENT_FILE_SCAN_DEPTH=8
-
-# --- Dynamic turn limits ----------------------------------------------------
-# When enabled, the scout estimates task complexity and adjusts turn limits
-# for coder, reviewer, and tester stages. Recommended values are clamped to
-# [MIN, MAX_CAP] bounds. Set to false to always use the static limits above.
-DYNAMIC_TURNS_ENABLED=true
-
-# Bounds for dynamic turn adjustment (only used when DYNAMIC_TURNS_ENABLED=true)
+# Dynamic turn bounds
 # CODER_MIN_TURNS=15
 # CODER_MAX_TURNS_CAP=200
 # REVIEWER_MIN_TURNS=10
@@ -203,360 +111,112 @@ DYNAMIC_TURNS_ENABLED=true
 # TESTER_MIN_TURNS=10
 # TESTER_MAX_TURNS_CAP=100
 
-# --- Planning phase (--plan) -------------------------------------------------
-# These keys configure the interactive planning phase. They are optional —
-# sensible defaults are applied when not set.
+# Agent exit detection
+# AGENT_NULL_RUN_THRESHOLD=2
+# AGENT_FILE_SCAN_DEPTH=8
 
-# Model for the interview agent (conversational, needs good reasoning)
-# PLAN_INTERVIEW_MODEL="sonnet"
+# ═══════════════════════════════════════════════════════════════════════════════
+# Section 4: Security
+# Security is ON by default — adjust policy to your risk tolerance
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# Model for the CLAUDE.md generation agent (needs strong structure)
-# PLAN_GENERATION_MODEL="sonnet"
-
-# Override both interview and generation models at once
-# CLAUDE_PLAN_MODEL="sonnet"
-
-# Max turns for the interview conversation
-# PLAN_INTERVIEW_MAX_TURNS=50
-
-# Max turns for CLAUDE.md generation
-# PLAN_GENERATION_MAX_TURNS=30
-
-# --- Context budget (token accounting) ----------------------------------------
-# Controls context size measurement and budget warnings for agent prompts.
-# The pipeline measures how much of the model's context window is consumed
-# by injected context blocks (architecture, notes, prior reports, etc.).
-
-# Enable context budget measurement and warnings (true/false)
-CONTEXT_BUDGET_ENABLED=true
-
-# Maximum percentage of the model's context window to use for injected context.
-# When exceeded, a warning is logged. Default: 50 (leaves room for agent output).
-CONTEXT_BUDGET_PCT=50
-
-# Character-to-token ratio for estimation. Lower = more conservative estimates.
-# Real tokenizers typically produce ~3.5 chars/token; 4 is a safe approximation.
-CHARS_PER_TOKEN=4
-
-# --- Clarification protocol ---------------------------------------------------
-# When enabled, agents can surface blocking questions to the human. The pipeline
-# pauses, collects answers, and resumes with the answers injected into context.
-
-# Master toggle for clarification protocol (true/false)
-# CLARIFICATION_ENABLED=true
-
-# Master toggle for mid-run replanning (true/false)
-# When enabled, reviewers can issue REPLAN_REQUIRED verdict to trigger a replan menu.
-# REPLAN_ENABLED=true
-
-# --- Brownfield replan (--replan) ---------------------------------------------
-# The --replan command updates existing DESIGN.md and CLAUDE.md based on
-# accumulated drift observations, architecture decisions, and codebase changes.
-# It produces a delta document for human review before applying changes.
-
-# Model for the replan agent (defaults to PLAN_GENERATION_MODEL)
-# REPLAN_MODEL="opus"
-
-# Max turns for the replan agent (defaults to PLAN_GENERATION_MAX_TURNS)
-# REPLAN_MAX_TURNS=50
-
-# --- Context compiler (task-scoped context assembly) -------------------------
-# When enabled, agents receive only the sections of large artifacts relevant
-# to their current task, instead of full-file injection. Uses keyword extraction
-# from the task string and scout/coder reports to filter context blocks.
-# Falls back to full injection when keyword extraction yields zero matches.
-# Off by default — enable after verifying context budget reports show oversized prompts.
-CONTEXT_COMPILER_ENABLED=false
-
-# --- Auto-advance (--auto-advance) -------------------------------------------
-# When enabled via --auto-advance flag, the pipeline will loop through
-# milestones automatically after each passes acceptance criteria.
-
-# Enable auto-advance (also activated by --auto-advance CLI flag)
-# AUTO_ADVANCE_ENABLED=false
-
-# Maximum milestones to complete per invocation (prevents runaway loops)
-# AUTO_ADVANCE_LIMIT=3
-
-# Prompt user for confirmation between milestones (true = interactive)
-# AUTO_ADVANCE_CONFIRM=true
-
-# Create a git tag (milestone-N-complete) on milestone completion.
-# Useful for worktree-based parallel development as a merge-readiness signal.
-# Tags are local — push manually when ready.
-# MILESTONE_TAG_ON_COMPLETE=false
-
-# Archive file for completed milestone definitions. When a milestone is completed,
-# its full definition is moved from CLAUDE.md to this file, keeping CLAUDE.md
-# under context window limits for long-running projects.
-# MILESTONE_ARCHIVE_FILE=MILESTONE_ARCHIVE.md
-
-# --- Milestone DAG (file-based milestones with dependency tracking) -----------
-# When enabled, milestones are stored as individual .md files in .claude/milestones/
-# with a MANIFEST.cfg tracking dependencies and status. This replaces inline
-# CLAUDE.md milestone storage and enables dependency-aware ordering.
-
-# Master toggle for DAG-based milestone storage (default: true)
-# When false, milestones are parsed from CLAUDE.md inline headings (v2 behavior).
-# MILESTONE_DAG_ENABLED=true
-
-# Directory for milestone files (relative to project root)
-# MILESTONE_DIR=".claude/milestones"
-
-# Manifest filename within MILESTONE_DIR
-# MILESTONE_MANIFEST="MANIFEST.cfg"
-
-# Auto-migrate inline CLAUDE.md milestones to file-based DAG on first run.
-# Only triggers when MILESTONE_DAG_ENABLED=true and no manifest exists.
-# MILESTONE_AUTO_MIGRATE=true
-
-# Percentage of context budget allocated to milestone window (default: 30)
-# Hard cap: 80
-# MILESTONE_WINDOW_PCT=30
-
-# Hard cap on milestone window characters (default: 20000)
-# Hard cap: 100000
-# MILESTONE_WINDOW_MAX_CHARS=20000
-
-# --- Milestone pre-flight sizing and auto-split --------------------------------
-# When enabled, the pipeline checks if a milestone's scout estimate exceeds the
-# turn cap. If it does, the milestone is automatically split into 2-4 sub-milestones.
-# On null-run detection, the pipeline can auto-split and retry without human intervention.
-
-# Enable pre-flight milestone sizing gate (default: true)
-# MILESTONE_SPLIT_ENABLED=true
-
-# Model for the splitting agent (defaults to CLAUDE_CODER_MODEL / opus-class)
-# MILESTONE_SPLIT_MODEL="claude-opus-4-6"
-
-# Turn limit for the splitting agent (short — decomposition, not implementation)
-# Hard cap: 50 (values above 50 are clamped automatically)
-# MILESTONE_SPLIT_MAX_TURNS=15
-
-# Split when scout estimate exceeds cap by this percentage (default: 120 = 20% over)
-# MILESTONE_SPLIT_THRESHOLD_PCT=120
-
-# Auto-split and retry when coder produces a null-run on a milestone (default: true)
-# MILESTONE_AUTO_RETRY=true
-
-# Maximum recursive split depth. Prevents infinite splitting:
-# N → N.1 → N.1.1 but N.1.1 cannot split further at depth 3.
-# MILESTONE_MAX_SPLIT_DEPTH=3
-
-# --- Autonomous debt sweep (cleanup) -----------------------------------------
-# After a successful pipeline run, if accumulated non-blocking notes exceed the
-# threshold, a low-cost jr coder agent sweeps through a batch of items.
-# Items requiring architectural changes are tagged [DEFERRED] and excluded from
-# future sweeps. Build gate failure in cleanup is a warning, not a pipeline failure.
-
-# Master toggle for cleanup sweeps (default: false — opt-in)
-# CLEANUP_ENABLED=false
-
-# Maximum items to address per sweep (higher = more turns consumed)
-# CLEANUP_BATCH_SIZE=5
-
-# Turn budget for the cleanup agent (deliberately low — jr coder model)
-# CLEANUP_MAX_TURNS=15
-
-# Minimum unresolved non-blocking notes before a sweep triggers
-# CLEANUP_TRIGGER_THRESHOLD=5
-
-# --- Task intake / PM agent (pre-stage gate) ----------------------------------
-# The intake agent evaluates task/milestone clarity before committing pipeline
-# resources. Well-scoped tasks pass silently. Unclear tasks get tweaked or
-# escalated for human input. Runs once per milestone.
-
-# Master toggle for intake agent (default: true — opt-out)
-# INTAKE_AGENT_ENABLED=true
-
-# Model for the intake agent (judgement call — use best model)
-# CLAUDE_INTAKE_MODEL="opus"
-
-# Turn limit for intake evaluation (short — reading + evaluating, not coding)
-# INTAKE_MAX_TURNS=10
-
-# Confidence score below this → NEEDS_CLARITY (0-100, default: 40)
-# INTAKE_CLARITY_THRESHOLD=40
-
-# Confidence score below this but above clarity threshold → TWEAKED (0-100, default: 70)
-# INTAKE_TWEAK_THRESHOLD=70
-
-# When true, pause for human to review tweaks before proceeding
-# INTAKE_CONFIRM_TWEAKS=false
-
-# When true, auto-add recommended splits without human approval
-# INTAKE_AUTO_SPLIT=false
-
-# --- Specialist reviewers (opt-in focused review passes) ---------------------
-# After the main reviewer approves, enabled specialists run focused review passes.
-# Findings tagged [BLOCKER] re-enter the rework loop. [NOTE] items go to
-# NON_BLOCKING_LOG.md. All specialists are disabled by default.
-
-# Security specialist — injection risks, auth bypass, secrets exposure
 # SPECIALIST_SECURITY_ENABLED=false
 # SPECIALIST_SECURITY_MODEL="claude-sonnet-4-6"
 # SPECIALIST_SECURITY_MAX_TURNS=8
 
-# Performance specialist — N+1 queries, unbounded loops, memory leaks
 # SPECIALIST_PERFORMANCE_ENABLED=false
 # SPECIALIST_PERFORMANCE_MODEL="claude-sonnet-4-6"
 # SPECIALIST_PERFORMANCE_MAX_TURNS=8
 
-# API contract specialist — schema consistency, backward compatibility
 # SPECIALIST_API_ENABLED=false
 # SPECIALIST_API_MODEL="claude-sonnet-4-6"
 # SPECIALIST_API_MAX_TURNS=8
 
-# Custom specialists: create a prompt template in your project's prompts/
-# directory and add config entries following this naming convention:
-# SPECIALIST_CUSTOM_MYCHECK_ENABLED=true
-# SPECIALIST_CUSTOM_MYCHECK_PROMPT="specialist_mycheck"
-# SPECIALIST_CUSTOM_MYCHECK_MODEL="claude-sonnet-4-6"
-# SPECIALIST_CUSTOM_MYCHECK_MAX_TURNS=8
+# AGENT_SKIP_PERMISSIONS=false
 
-# --- Turn exhaustion continuation (auto-continue on turn limit) ---------------
-# When an agent hits its turn limit but made substantive progress (modified files,
-# meaningful summary), the pipeline automatically re-invokes it with fresh turns
-# and prior-progress context. Eliminates the most common human-in-the-loop scenario.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Section 5: Features
+# Optional features — enable as needed
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# Master toggle for turn exhaustion continuation (default: true)
-# CONTINUATION_ENABLED=true
-
-# Maximum continuation attempts per stage before escalating to split or exit
-# (default: 3, hard cap: 10)
-# MAX_CONTINUATION_ATTEMPTS=3
-
-# --- Transient error retry ---------------------------------------------------
-# When an agent call fails due to a transient error (API 500, rate limit, OOM),
-# the pipeline automatically retries with exponential backoff before giving up.
-# Delay doubles each attempt: BASE_DELAY -> 2x -> 4x, capped at MAX_DELAY.
-
-# Master toggle for transient error retry (default: true)
-# TRANSIENT_RETRY_ENABLED=true
-
-# Maximum retry attempts per agent call (default: 3, hard cap: 10)
-# MAX_TRANSIENT_RETRIES=3
-
-# Initial backoff delay in seconds (default: 30, hard cap: 300)
-# TRANSIENT_RETRY_BASE_DELAY=30
-
-# Maximum backoff delay in seconds (default: 120, hard cap: 600)
-# TRANSIENT_RETRY_MAX_DELAY=120
-
-# --- Run metrics (workflow learning) -----------------------------------------
-# Collects per-run JSONL metrics to .claude/logs/metrics.jsonl. Enables adaptive
-# turn calibration that adjusts scout recommendations based on historical accuracy.
-# View the dashboard with: tekhton --metrics
-
-# Master toggle for metrics collection (default: true)
-# METRICS_ENABLED=true
-
-# Minimum completed runs before adaptive calibration kicks in (default: 5)
-# METRICS_MIN_RUNS=5
-
-# Use historical accuracy to adjust scout turn recommendations (default: true)
-# METRICS_ADAPTIVE_TURNS=true
-
-# --- Outer orchestration loop (--complete) ------------------------------------
-# The --complete flag wraps the pipeline in a retry loop that runs until the
-# milestone passes acceptance criteria or all recovery options are exhausted.
-# Combines transient retry, turn continuation, milestone splitting, and error
-# classification into a single autonomous loop.
-
-# Master toggle for --complete outer loop (default: true)
-# COMPLETE_MODE_ENABLED=true
-
-# Maximum full pipeline cycles per --complete invocation (default: 5)
-# MAX_PIPELINE_ATTEMPTS=5
-
-# Wall-clock timeout in seconds for --complete mode (default: 7200 = 2 hours)
-# AUTONOMOUS_TIMEOUT=7200
-
-# Maximum total agent invocations across all loop iterations (default: 20)
-# MAX_AUTONOMOUS_AGENT_CALLS=20
-
-# Enable stuck-detection: exit loop if git diff is identical between iterations
-# AUTONOMOUS_PROGRESS_CHECK=true
-
-# --- Repo map / Indexer (tree-sitter code intelligence) ---------------------
-# When enabled, the pipeline generates a ranked repo map of file signatures
-# using tree-sitter parsing and PageRank-based relevance scoring. Agents
-# receive only the most task-relevant code signatures instead of the full
-# ARCHITECTURE.md dump.
-#
-# Prerequisites: run `tekhton --setup-indexer` to install Python dependencies.
-
-# Master toggle for repo map generation (default: false — opt-in)
 # REPO_MAP_ENABLED=false
-
-# Maximum tokens for repo map output. Higher = more context, more cost.
 # REPO_MAP_TOKEN_BUDGET=2048
-
-# Cache directory for tag index and repo map artifacts (relative to project root)
 # REPO_MAP_CACHE_DIR=".claude/index"
-
-# Languages to index. "auto" detects from file extensions. Otherwise,
-# comma-separated list: "python,javascript,typescript,go"
 # REPO_MAP_LANGUAGES="auto"
-
-# Virtualenv directory for indexer dependencies (relative to project root).
-# Created by `tekhton --setup-indexer`. Must be in .gitignore.
 # REPO_MAP_VENV_DIR=".claude/indexer-venv"
-
-# Track task→file associations for personalized ranking across runs
 # REPO_MAP_HISTORY_ENABLED=true
 
-# Maximum history entries before pruning oldest records
-# REPO_MAP_HISTORY_MAX_RECORDS=200
-
-# --- Serena LSP / MCP (optional live symbol queries) -------------------------
-# When enabled alongside repo map, agents gain find_symbol and
-# find_referencing_symbols tools via Serena MCP for live cross-references.
-# Requires separate setup: tekhton --setup-indexer --with-lsp (future)
-
-# Master toggle for Serena LSP integration (default: false — opt-in)
 # SERENA_ENABLED=false
-
-# Serena installation directory (relative to project root)
 # SERENA_PATH=".claude/serena"
-
-# Language servers to use. "auto" detects from project type.
 # SERENA_LANGUAGE_SERVERS="auto"
-
-# Seconds to wait for Serena startup before falling back
 # SERENA_STARTUP_TIMEOUT=30
 
-# Retry attempts for Serena health check on startup
-# SERENA_MAX_RETRIES=2
+# DASHBOARD_ENABLED=true
+# DASHBOARD_REFRESH_INTERVAL=5
+# DASHBOARD_MAX_TIMELINE_EVENTS=500
+# DASHBOARD_HISTORY_DEPTH=50
+# DASHBOARD_VERBOSITY="normal"
+# Dashboard data lives in .claude/dashboard — add to .gitignore if desired
 
-# --- Seed contracts ----------------------------------------------------------
-# Enable inline contract seeding (adds contract doc comments to source files)
 SEED_CONTRACTS_ENABLED=false
-
-# Required when SEED_CONTRACTS_ENABLED=true:
-#   INLINE_CONTRACT_PATTERN    — keyword the seeder and reviewer look for
-#                                (e.g. "System:" for Dart, "Contract:" for TypeScript)
-#   INLINE_CONTRACT_SEARCH_CMD — shell command to find all public declarations
-#                                to annotate (e.g. grep -rn "^class\|^  void" lib/)
 # INLINE_CONTRACT_PATTERN=""
 # INLINE_CONTRACT_SEARCH_CMD=""
 
-# --- Dashboard / Watchtower (static HTML pipeline dashboard) ------------------
-# The dashboard emits data/*.js files into .claude/dashboard/ on every run.
-# Open .claude/dashboard/index.html in a browser to view pipeline state.
+# INTAKE_AGENT_ENABLED=true
+# CLAUDE_INTAKE_MODEL="opus"
+# INTAKE_MAX_TURNS=10
+# INTAKE_CLARITY_THRESHOLD=40
+# INTAKE_TWEAK_THRESHOLD=70
 
-# Master toggle for dashboard data emission (default: true)
-# DASHBOARD_ENABLED=true
+# CLEANUP_ENABLED=false
+# CLEANUP_BATCH_SIZE=5
+# CLEANUP_MAX_TURNS=15
+# CLEANUP_TRIGGER_THRESHOLD=5
 
-# Auto-refresh interval in seconds when pipeline is running (default: 5)
-# DASHBOARD_REFRESH_INTERVAL=5
+# MILESTONE_DAG_ENABLED=true
+# MILESTONE_DIR=".claude/milestones"
+# MILESTONE_MANIFEST="MANIFEST.cfg"
+# MILESTONE_AUTO_MIGRATE=true
+# MILESTONE_WINDOW_PCT=30
+# MILESTONE_WINDOW_MAX_CHARS=20000
+# MILESTONE_SPLIT_ENABLED=true
+# MILESTONE_SPLIT_MODEL="claude-opus-4-6"
+# MILESTONE_SPLIT_MAX_TURNS=15
+# MILESTONE_SPLIT_THRESHOLD_PCT=120
+# MILESTONE_AUTO_RETRY=true
+# MILESTONE_MAX_SPLIT_DEPTH=3
 
-# Maximum timeline events to include in the dashboard (default: 500)
-# DASHBOARD_MAX_TIMELINE_EVENTS=500
+# TEST_BASELINE_ENABLED=true
 
-# Number of recent runs to show in Trends tab (default: 50)
-# DASHBOARD_HISTORY_DEPTH=50
+# ═══════════════════════════════════════════════════════════════════════════════
+# Section 6: Quotas & Autonomy
+# Controls for autonomous mode (--complete, --auto-advance)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-# Timeline verbosity: minimal (stage ends only), normal (stages + verdicts +
-# findings + gates), verbose (all events) — default: normal
-# DASHBOARD_VERBOSITY="normal"
+# COMPLETE_MODE_ENABLED=true
+# MAX_PIPELINE_ATTEMPTS=5
+# AUTONOMOUS_TIMEOUT=7200
+# MAX_AUTONOMOUS_AGENT_CALLS=20
+# AUTONOMOUS_PROGRESS_CHECK=true
+
+# AUTO_ADVANCE_ENABLED=false
+# AUTO_ADVANCE_LIMIT=3
+# AUTO_ADVANCE_CONFIRM=true
+# MILESTONE_TAG_ON_COMPLETE=false
+# MILESTONE_ARCHIVE_FILE=MILESTONE_ARCHIVE.md
+
+# USAGE_THRESHOLD_PCT=0
+# AUTO_COMMIT=true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Section 7: Paths & Files
+# File paths — rarely need changing
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PIPELINE_STATE_FILE=".claude/PIPELINE_STATE.md"
+LOG_DIR=".claude/logs"
+CODER_ROLE_FILE=".claude/agents/coder.md"
+REVIEWER_ROLE_FILE=".claude/agents/reviewer.md"
+TESTER_ROLE_FILE=".claude/agents/tester.md"
+JR_CODER_ROLE_FILE=".claude/agents/jr-coder.md"
+# MIGRATION_AUTO=true

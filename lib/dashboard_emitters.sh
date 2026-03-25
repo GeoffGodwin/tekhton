@@ -216,3 +216,46 @@ emit_dashboard_health() {
     json="{\"available\":true,\"belt\":\"$(_json_escape "$belt")\",\"data\":${baseline_content}}"
     _write_js_file "${dash_dir}/data/health.js" "TK_HEALTH" "$json"
 }
+
+# --- Init data emission (Milestone 22) ----------------------------------------
+
+# emit_dashboard_init — Generates init data for Watchtower from INIT_REPORT.md.
+# Args: $1 = project_dir (optional, defaults to PROJECT_DIR)
+emit_dashboard_init() {
+    if ! is_dashboard_enabled; then return 0; fi
+
+    local project_dir="${1:-${PROJECT_DIR:-.}}"
+    local dash_dir="${project_dir}/${DASHBOARD_DIR:-.claude/dashboard}"
+    [[ ! -d "${dash_dir}/data" ]] && return 0
+
+    local report_file="${project_dir}/INIT_REPORT.md"
+    [[ ! -f "$report_file" ]] && return 0
+
+    # Extract metadata from INIT_REPORT.md HTML comment
+    local timestamp="" project_name="" file_count="" project_type=""
+    local in_meta=false
+    while IFS= read -r line; do
+        if [[ "$line" == "<!-- init-report-meta" ]]; then
+            in_meta=true; continue
+        fi
+        if [[ "$line" == "-->" ]]; then
+            in_meta=false; continue
+        fi
+        if [[ "$in_meta" == "true" ]]; then
+            case "$line" in
+                timestamp:*)  timestamp="${line#timestamp: }" ;;
+                project:*)    project_name="${line#project: }" ;;
+                file_count:*) file_count="${line#file_count: }" ;;
+                project_type:*) project_type="${line#project_type: }" ;;
+            esac
+        fi
+    done < "$report_file"
+
+    local json
+    json="{\"available\":true,\"timestamp\":\"$(_json_escape "$timestamp")\","
+    json+="\"project\":\"$(_json_escape "$project_name")\","
+    json+="\"fileCount\":\"$(_json_escape "$file_count")\","
+    json+="\"projectType\":\"$(_json_escape "$project_type")\"}"
+
+    _write_js_file "${dash_dir}/data/init.js" "TK_INIT" "$json"
+}

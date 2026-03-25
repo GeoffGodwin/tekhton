@@ -19,6 +19,10 @@ _INIT_DIR="${BASH_SOURCE[0]%/*}"
 source "${_INIT_DIR}/init_config.sh"
 # shellcheck source=lib/init_helpers.sh
 source "${_INIT_DIR}/init_helpers.sh"
+# shellcheck source=lib/init_report.sh
+source "${_INIT_DIR}/init_report.sh"
+# shellcheck source=lib/init_config_sections.sh
+source "${_INIT_DIR}/init_config_sections.sh"
 # shellcheck source=lib/prompts_interactive.sh
 source "${_INIT_DIR}/prompts_interactive.sh"
 # shellcheck source=lib/detect_ai_artifacts.sh
@@ -38,6 +42,7 @@ run_smart_init() {
 
     local conf_dir="${project_dir}/.claude"
     local conf_file="${conf_dir}/pipeline.conf"
+    local _REINIT_PRESERVED=""
 
     # Phase 1: Pre-flight
     if [[ -f "$conf_file" ]]; then
@@ -47,11 +52,13 @@ run_smart_init() {
             _TEKHTON_CLEAN_EXIT=true
             exit 1
         fi
-        if ! prompt_confirm "Re-initialize will overwrite pipeline.conf and agent roles. Continue?" "n"; then
+        if ! prompt_confirm "Re-initialize will regenerate pipeline.conf (user values preserved). Continue?" "n"; then
             log "Aborted."
             _TEKHTON_CLEAN_EXIT=true
             exit 0
         fi
+        # Preserve existing user config values for merging after regeneration
+        _REINIT_PRESERVED=$(_preserve_user_config "$conf_file")
     fi
 
     header "Tekhton Smart Init"
@@ -123,7 +130,14 @@ run_smart_init() {
     export _INIT_WORKSPACE_SCOPE="$workspace_scope"
     _generate_smart_config "$project_dir" "$conf_file" \
         "$languages" "$frameworks" "$commands" "$tracked_file_count"
-    success "Created ${conf_file}"
+
+    # Reinit: merge preserved user values back into the new sectioned config
+    if [[ -n "${_REINIT_PRESERVED:-}" ]]; then
+        _merge_preserved_values "$conf_file" "$_REINIT_PRESERVED"
+        success "Updated ${conf_file} (user values preserved, section headers added)"
+    else
+        success "Created ${conf_file}"
+    fi
 
     # Phase 5: Agent role customization
     _install_agent_roles "$project_dir" "$tekhton_home" "$languages"
@@ -142,29 +156,17 @@ run_smart_init() {
         log "CLAUDE.md already exists — skipping stub generation"
     fi
 
-    # Phase 7: Next-step routing
+    # Phase 7: Report and next-step routing (Milestone 22)
+    emit_init_report_file "$project_dir" "$languages" "$frameworks" \
+        "$commands" "$entry_points" "$project_type" "$tracked_file_count"
+
+    # Emit dashboard init data if available
+    if type -t emit_dashboard_init &>/dev/null; then
+        emit_dashboard_init "$project_dir" 2>/dev/null || true
+    fi
+
     echo
     header "Init Complete"
-    echo "  Tekhton home: ${tekhton_home}"
-    echo "  Project:      ${project_dir}"
-    echo
-
-    if [[ "$tracked_file_count" -gt 50 ]]; then
-        log "Brownfield project detected (${tracked_file_count} tracked files)"
-        echo
-        echo "  Next steps:"
-        echo "  1. Review .claude/pipeline.conf — verify detected commands (look for # VERIFY:)"
-        echo "  2. Review .claude/agents/*.md — customize agent role definitions"
-        echo "  3. Run: tekhton --plan-from-index"
-        echo "     (uses PROJECT_INDEX.md to synthesize DESIGN.md + CLAUDE.md)"
-    else
-        log "Greenfield project detected (${tracked_file_count} tracked files)"
-        echo
-        echo "  Next steps:"
-        echo "  1. Review .claude/pipeline.conf — verify detected commands (look for # VERIFY:)"
-        echo "  2. Review .claude/agents/*.md — customize agent role definitions"
-        echo "  3. Run: tekhton --plan"
-        echo "     (interactive planning to build DESIGN.md + CLAUDE.md)"
-    fi
-    echo
+    emit_init_summary "$project_dir" "$languages" "$frameworks" \
+        "$commands" "$project_type" "$tracked_file_count"
 }

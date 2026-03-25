@@ -85,6 +85,37 @@ format_detection_report() {
     _format_doc_quality_section "$proj_dir"
 }
 
+# --- Structured detection summary (Milestone 22) -----------------------------
+
+# format_detection_summary — Returns machine-parseable detection summary.
+# Output: KEY|VALUE|CONFIDENCE|SOURCE per line
+# Consumed by emit_init_summary() and emit_init_report_file().
+format_detection_summary() {
+    local proj_dir="${1:-${PROJECT_DIR:-.}}"
+
+    local languages commands
+    languages=$(detect_languages "$proj_dir")
+    commands=$(detect_commands "$proj_dir")
+
+    # Language entries
+    if [[ -n "$languages" ]]; then
+        local lang conf manifest
+        while IFS='|' read -r lang conf manifest; do
+            [[ -z "$lang" ]] && continue
+            echo "LANGUAGE|${lang}|${conf}|${manifest}"
+        done <<< "$languages"
+    fi
+
+    # Command entries (already in TYPE|CMD|SOURCE|CONF format)
+    if [[ -n "$commands" ]]; then
+        local cmd_type cmd source conf
+        while IFS='|' read -r cmd_type cmd source conf; do
+            [[ -z "$cmd_type" ]] && continue
+            echo "COMMAND_${cmd_type}|${cmd}|${conf}|${source}"
+        done <<< "$commands"
+    fi
+}
+
 # --- Extended section formatters (Milestone 12) ------------------------------
 
 _format_workspace_section() {

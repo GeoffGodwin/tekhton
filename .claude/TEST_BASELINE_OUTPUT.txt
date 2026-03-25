@@ -100,6 +100,7 @@
 [0;32mPASS[0m test_mcp_lifecycle.sh
 [0;32mPASS[0m test_metrics.sh
 [0;32mPASS[0m test_metrics_retry_stats.sh
+[0;32mPASS[0m test_migration.sh
 [0;32mPASS[0m test_milestone_15_2_2_2_migration.sh
 [0;32mPASS[0m test_milestone_archival.sh
 [0;32mPASS[0m test_milestone_dag.sh
@@ -168,7 +169,7 @@
 [0;32mPASS[0m test_with_notes_flag.sh
 
 ────────────────────────────────────────
-  Shell:  Passed: [0;32m164[0m  Failed: [0;31m0[0m
+  Shell:  Passed: [0;32m165[0m  Failed: [0;31m0[0m
 ────────────────────────────────────────
 
 ════════════════════════════════════════
@@ -177,11 +178,11 @@
 
 ........................................................................ [ 94%]
 ....                                                                     [100%]
-76 passed, 1 skipped in 0.50s
+76 passed, 1 skipped in 0.52s
   [0;32mPython tests passed[0m
 
 ════════════════════════════════════════
   Final Summary
 ════════════════════════════════════════
-  Shell:  Passed: [0;32m164[0m  Failed: [0;31m0[0m
+  Shell:  Passed: [0;32m165[0m  Failed: [0;31m0[0m
   Python: [0;32mPASSED[0m

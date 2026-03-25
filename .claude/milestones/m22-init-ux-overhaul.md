@@ -1,7 +1,7 @@
 #### Milestone 22: Init UX Overhaul
 <!-- milestone-meta
 id: "22"
-status: "pending"
+status: "done"
 -->
 
 Redesign the post-init experience to guide new users through what matters
