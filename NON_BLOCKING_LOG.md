@@ -5,10 +5,12 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/pipeline_order.sh:27-30`: The three-line NOTE block runs directly into the function docstring comment (`# validate_pipeline_order — Check that a...`) without a blank line separator. The result is one unbroken comment block spanning both the cross-reference note and the function documentation. Functionally correct; a blank line between them would make the intent clearer to future readers.
 (none)
 
 ## Resolved
+
+### Non-Blocking Cleanup Pass (2026-03-25e)
+- [x] `lib/pipeline_order.sh:27-30` — NOTE block already has a blank line separating it from the `validate_pipeline_order` function docstring (added in commit cf4cd20). Marked as resolved.
 
 ### Non-Blocking Cleanup Pass (2026-03-25d)
 - [x] `lib/config.sh:116` — Removed redundant `|| [[ "$val" == "."* ]]` guard from `_clamp_config_float`. The `^[0-9]+` anchor already rejects leading-dot values.

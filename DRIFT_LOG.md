@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-25
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
 - [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] The expedited remediation addressed all three architect-identified drift observations correctly:
