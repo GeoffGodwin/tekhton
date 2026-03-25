@@ -32,6 +32,24 @@ is_dashboard_enabled() {
 
 # --- Lifecycle ----------------------------------------------------------------
 
+# _ensure_dashboard_data_dir DASH_DIR
+# Creates the data/ subdirectory and seeds empty data files if missing.
+# Shared by init_dashboard and sync_dashboard_static_files.
+_ensure_dashboard_data_dir() {
+    local dash_dir="$1"
+    mkdir -p "${dash_dir}/data" 2>/dev/null || true
+
+    # Seed initial empty data files so the HTML doesn't 404 on script tags
+    [[ -f "${dash_dir}/data/run_state.js" ]]  || _write_js_file "${dash_dir}/data/run_state.js" "TK_RUN_STATE" '{"pipeline_status":"initializing","stages":{}}'
+    [[ -f "${dash_dir}/data/timeline.js" ]]   || _write_js_file "${dash_dir}/data/timeline.js" "TK_TIMELINE" '[]'
+    [[ -f "${dash_dir}/data/milestones.js" ]]  || _write_js_file "${dash_dir}/data/milestones.js" "TK_MILESTONES" '[]'
+    [[ -f "${dash_dir}/data/security.js" ]]   || _write_js_file "${dash_dir}/data/security.js" "TK_SECURITY" '{"findings":[]}'
+    [[ -f "${dash_dir}/data/reports.js" ]]    || _write_js_file "${dash_dir}/data/reports.js" "TK_REPORTS" '{}'
+    [[ -f "${dash_dir}/data/metrics.js" ]]    || _write_js_file "${dash_dir}/data/metrics.js" "TK_METRICS" '{"runs":[]}'
+    [[ -f "${dash_dir}/data/health.js" ]]     || _write_js_file "${dash_dir}/data/health.js" "TK_HEALTH" '{"available":false}'
+    [[ -f "${dash_dir}/data/diagnosis.js" ]]  || _write_js_file "${dash_dir}/data/diagnosis.js" "TK_DIAGNOSIS" '{"available":false}'
+}
+
 # init_dashboard [PROJECT_DIR]
 # Creates .claude/dashboard/ directory with data subdirectory.
 init_dashboard() {
@@ -42,25 +60,17 @@ init_dashboard() {
     fi
 
     local dash_dir="${project_dir}/${DASHBOARD_DIR:-.claude/dashboard}"
-    mkdir -p "${dash_dir}/data" 2>/dev/null || true
+
+    # Create data dir + seed empty data files (also creates parent dir)
+    _ensure_dashboard_data_dir "$dash_dir"
 
     # Copy static UI files from templates/watchtower/
     _copy_static_files "$dash_dir"
     _DASHBOARD_JUST_INITIALIZED=true
-
-    # Generate initial empty data files
-    _write_js_file "${dash_dir}/data/run_state.js" "TK_RUN_STATE" '{"pipeline_status":"initializing","stages":{}}'
-    _write_js_file "${dash_dir}/data/timeline.js" "TK_TIMELINE" '[]'
-    _write_js_file "${dash_dir}/data/milestones.js" "TK_MILESTONES" '[]'
-    _write_js_file "${dash_dir}/data/security.js" "TK_SECURITY" '{"findings":[]}'
-    _write_js_file "${dash_dir}/data/reports.js" "TK_REPORTS" '{}'
-    _write_js_file "${dash_dir}/data/metrics.js" "TK_METRICS" '{"runs":[]}'
-    _write_js_file "${dash_dir}/data/health.js" "TK_HEALTH" '{"available":false}'
-    _write_js_file "${dash_dir}/data/diagnosis.js" "TK_DIAGNOSIS" '{"available":false}'
 }
 
 # sync_dashboard_static_files [PROJECT_DIR]
-# Ensures static UI files are up to date in .claude/dashboard/.
+# Ensures static UI files and data directory are up to date.
 # Called on every startup when dashboard is enabled.
 sync_dashboard_static_files() {
     local project_dir="${1:-${PROJECT_DIR:-.}}"
@@ -72,6 +82,9 @@ sync_dashboard_static_files() {
         return 0
     fi
     _copy_static_files "$dash_dir"
+
+    # Ensure data/ exists even when gitignored or cleaned (b3476d4)
+    _ensure_dashboard_data_dir "$dash_dir"
 }
 
 # _copy_static_files DASH_DIR
