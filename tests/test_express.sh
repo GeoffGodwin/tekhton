@@ -95,10 +95,26 @@ _clamp_config_value() {
     fi
 }
 
-export -f detect_languages detect_commands _clamp_config_value
+# Mock _clamp_config_float — defined in config.sh, called by config_defaults.sh.
+# Clamps a floating-point config value to [min, max].
+_clamp_config_float() {
+    local key="$1" min="$2" max="$3"
+    local val="${!key:-0}"
+    if ! [[ "$val" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+        return
+    fi
+    local clamped
+    clamped=$(awk "BEGIN { v=$val; if (v < $min) v=$min; if (v > $max) v=$max; printf \"%.1f\", v }")
+    if [[ "$clamped" != "$val" ]]; then
+        declare -gx "$key=$clamped"
+    fi
+}
 
-# Source express.sh — defines all functions under test
+export -f detect_languages detect_commands _clamp_config_value _clamp_config_float
+
+# Source express.sh and express_persist.sh — defines all functions under test
 source "${TEKHTON_HOME}/lib/express.sh"
+source "${TEKHTON_HOME}/lib/express_persist.sh"
 
 # =============================================================================
 # Test Suite 1: _detect_express_project_name
@@ -372,8 +388,8 @@ assert_eq "6.1 returns project role file path when it exists" \
     ".claude/agents/coder.md" "$result"
 
 # 6.2 Falls back to built-in template when project file is missing.
-# Note: resolve_role_file emits a log() line to stdout before the path when
-# the fallback is taken. Use tail -1 to isolate the returned path.
+# Note: resolve_role_file logs to stderr (not stdout) via log() >&2.
+# The | tail -1 is harmless but unnecessary — kept for safety.
 result=$(resolve_role_file ".claude/agents/reviewer.md" "reviewer.md" | tail -1)
 assert_eq "6.2 falls back to TEKHTON_HOME template when project file missing" \
     "${TEKHTON_HOME}/templates/reviewer.md" "$result"

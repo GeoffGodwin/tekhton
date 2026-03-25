@@ -170,7 +170,6 @@ _hook_express_persist() {
 
     if [[ "${EXPRESS_PERSIST_CONFIG:-true}" == "true" ]]; then
         persist_express_config "${PROJECT_DIR}"
-        log "Express config saved to .claude/pipeline.conf. Edit to customize."
     fi
     if [[ "${EXPRESS_PERSIST_ROLES:-false}" == "true" ]]; then
         persist_express_roles "${PROJECT_DIR}"

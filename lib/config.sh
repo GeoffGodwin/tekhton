@@ -107,6 +107,23 @@ _clamp_config_value() {
     fi
 }
 
+# _clamp_config_float — Clamp a floating-point config value to [min, max].
+# Args: $1 = variable name, $2 = min value, $3 = max value
+_clamp_config_float() {
+    local key="$1" min="$2" max="$3"
+    local val="${!key:-0}"
+    # Validate: must be a number (integer or float)
+    if ! [[ "$val" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+        return
+    fi
+    local clamped
+    clamped=$(awk "BEGIN { v=$val; if (v < $min) v=$min; if (v > $max) v=$max; printf \"%.1f\", v }")
+    if [[ "$clamped" != "$val" ]]; then
+        warn "[config] ${key}=${val} outside range [${min}, ${max}]. Clamped to ${clamped}."
+        declare -gx "$key=$clamped"
+    fi
+}
+
 # --- Loader ------------------------------------------------------------------
 
 load_config() {

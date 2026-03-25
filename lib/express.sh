@@ -41,19 +41,19 @@ _detect_express_project_name() {
     local proj_dir="$1"
     local name=""
 
-    # Try package.json "name" field
+    # Try package.json "name" field (sed for portability — no grep -oP)
     if [[ -f "$proj_dir/package.json" ]]; then
-        name=$(grep -oP '"name"\s*:\s*"\K[^"]+' "$proj_dir/package.json" 2>/dev/null | head -1 || true)
+        name=$(sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$proj_dir/package.json" 2>/dev/null | head -1 || true)
     fi
 
     # Try pyproject.toml "name" field
     if [[ -z "$name" ]] && [[ -f "$proj_dir/pyproject.toml" ]]; then
-        name=$(grep -oP '^name\s*=\s*"\K[^"]+' "$proj_dir/pyproject.toml" 2>/dev/null | head -1 || true)
+        name=$(sed -n 's/^name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$proj_dir/pyproject.toml" 2>/dev/null | head -1 || true)
     fi
 
     # Try Cargo.toml "name" field
     if [[ -z "$name" ]] && [[ -f "$proj_dir/Cargo.toml" ]]; then
-        name=$(grep -oP '^name\s*=\s*"\K[^"]+' "$proj_dir/Cargo.toml" 2>/dev/null | head -1 || true)
+        name=$(sed -n 's/^name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$proj_dir/Cargo.toml" 2>/dev/null | head -1 || true)
     fi
 
     # Try go.mod module name (last path segment)
@@ -253,78 +253,4 @@ EXPRESSEOF
     fi
 }
 
-# --- Config persistence (called from finalize.sh on success) -----------------
-
-# persist_express_config — Write detected config to .claude/pipeline.conf.
-# Args: $1 = project directory
-persist_express_config() {
-    local proj_dir="$1"
-    local conf_path="${proj_dir}/.claude/pipeline.conf"
-
-    # Never overwrite an existing pipeline.conf
-    if [[ -f "$conf_path" ]]; then
-        return 0
-    fi
-
-    mkdir -p "${proj_dir}/.claude" 2>/dev/null || true
-
-    # Build config from template with detected values
-    local template="${TEKHTON_HOME}/templates/express_pipeline.conf"
-    if [[ ! -f "$template" ]]; then
-        warn "Express config template not found — writing inline config."
-        _write_inline_express_config "$conf_path"
-        return 0
-    fi
-
-    # Read template and substitute detected values
-    local content
-    content=$(cat "$template")
-
-    # Substitute template variables
-    content="${content//\{\{PROJECT_NAME\}\}/${PROJECT_NAME}}"
-    content="${content//\{\{TEST_CMD\}\}/${TEST_CMD}}"
-    content="${content//\{\{ANALYZE_CMD\}\}/${ANALYZE_CMD}}"
-    content="${content//\{\{BUILD_CHECK_CMD\}\}/${BUILD_CHECK_CMD:-}}"
-    content="${content//\{\{CLAUDE_STANDARD_MODEL\}\}/${CLAUDE_STANDARD_MODEL}}"
-
-    # Write atomically (tmpfile + mv)
-    local tmpfile
-    tmpfile=$(mktemp "${proj_dir}/.claude/express_conf_XXXXXX")
-    echo "$content" > "$tmpfile"
-    mv "$tmpfile" "$conf_path"
-
-    log "Express config saved to ${conf_path}"
-}
-
-# _write_inline_express_config — Fallback: write config without template.
-_write_inline_express_config() {
-    local conf_path="$1"
-    cat > "$conf_path" << CONFEOF
-# Auto-detected by Tekhton Express Mode.
-# Run 'tekhton --init' for full configuration with planning interview.
-
-PROJECT_NAME="${PROJECT_NAME}"
-CLAUDE_STANDARD_MODEL="${CLAUDE_STANDARD_MODEL}"
-TEST_CMD="${TEST_CMD}"
-ANALYZE_CMD="${ANALYZE_CMD}"
-BUILD_CHECK_CMD="${BUILD_CHECK_CMD:-}"
-CONFEOF
-}
-
-# persist_express_roles — Copy built-in role templates to project.
-# Args: $1 = project directory
-persist_express_roles() {
-    local proj_dir="$1"
-    local agents_dir="${proj_dir}/.claude/agents"
-
-    mkdir -p "$agents_dir" 2>/dev/null || true
-
-    local template_name
-    for template_name in coder.md reviewer.md tester.md jr-coder.md architect.md security.md intake.md; do
-        local src="${TEKHTON_HOME}/templates/${template_name}"
-        local dst="${agents_dir}/${template_name}"
-        if [[ -f "$src" ]] && [[ ! -f "$dst" ]]; then
-            cp "$src" "$dst"
-        fi
-    done
-}
+# --- Config persistence lives in express_persist.sh (sourced by tekhton.sh) ---

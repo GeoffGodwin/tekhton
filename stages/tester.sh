@@ -336,6 +336,20 @@ _run_tester_write_failing() {
         "$AGENT_TOOLS_TESTER"
     print_run_summary
 
+    # --- UPSTREAM error check (API failures) ---
+    if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
+        warn "TDD tester hit an API error (${AGENT_ERROR_SUBCATEGORY:-unknown}): ${AGENT_ERROR_MESSAGE:-unknown}"
+        local _tdd_resume_flag="--start-at test"
+        [ "${MILESTONE_MODE:-false}" = true ] && _tdd_resume_flag="--milestone --start-at test"
+        write_pipeline_state \
+            "tester" \
+            "TDD pre-flight API error: ${AGENT_ERROR_SUBCATEGORY:-unknown}" \
+            "$_tdd_resume_flag" \
+            "$TASK" \
+            "UPSTREAM error during TDD write-failing phase"
+        exit 1
+    fi
+
     # --- Null run detection ---
     if was_null_run; then
         warn "TDD tester was a null run — falling back. Coder will proceed without pre-written tests."

@@ -61,13 +61,17 @@ get_pipeline_order() {
     esac
 }
 
-# get_stage_count — Return the number of stages in the active order.
+# get_stage_count — Return the number of *visible* stages in the active order.
+# Excludes scout, which runs as a sub-step of the coder stage (never displayed).
 get_stage_count() {
-    local stages
+    local stages count=0
     stages=$(get_pipeline_order)
     # shellcheck disable=SC2086
-    set -- $stages
-    echo "$#"
+    for _s in $stages; do
+        [[ "$_s" == "scout" ]] && continue
+        count=$((count + 1))
+    done
+    echo "$count"
 }
 
 # get_stage_position — Return the 1-based position of a stage in the active order.

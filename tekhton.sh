@@ -560,6 +560,7 @@ fi
 if [ "${1:-}" = "note" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
+    source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     shift  # consume "note"
@@ -661,6 +662,7 @@ source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
 source "${TEKHTON_HOME}/lib/notes_cli.sh"
+source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/dry_run.sh"
@@ -717,6 +719,7 @@ source "${TEKHTON_HOME}/lib/checkpoint.sh"
 source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
 source "${TEKHTON_HOME}/lib/pipeline_order.sh"
 source "${TEKHTON_HOME}/lib/express.sh"
+source "${TEKHTON_HOME}/lib/express_persist.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
@@ -1747,15 +1750,19 @@ _run_pipeline_stages() {
 
     # shellcheck disable=SC2086
     for _stage_name in $_pipeline_stages; do
-        _stage_idx=$((_stage_idx + 1))
-        export PIPELINE_STAGE_POS="$_stage_idx"
-
         case "$_stage_name" in
         scout)
             # Scout is handled inside run_stage_coder — skip as standalone stage.
             # Scout runs as part of the coder stage invocation.
+            # Do NOT increment _stage_idx — scout is not a visible stage.
             continue
             ;;
+        esac
+
+        _stage_idx=$((_stage_idx + 1))
+        export PIPELINE_STAGE_POS="$_stage_idx"
+
+        case "$_stage_name" in
 
         coder)
             if should_run_stage "coder" "$START_AT"; then

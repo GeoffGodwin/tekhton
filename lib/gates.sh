@@ -158,6 +158,7 @@ UIEOF
 
     log "Build gate PASSED (${stage_label})"
     [ -f BUILD_ERRORS.md ] && rm BUILD_ERRORS.md
+    [ -f UI_TEST_ERRORS.md ] && rm UI_TEST_ERRORS.md
     return 0
 }
 

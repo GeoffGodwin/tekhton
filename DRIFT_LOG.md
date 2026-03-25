@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-25
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-03-25 | "Implement Milestone 27: Configurable Pipeline Order (TDD Support)"] `validate_pipeline_order()` in `pipeline_order.sh` and the inline `case` block in `config.sh` both validate `PIPELINE_ORDER` against the same allowlist (`standard|test_first|auto`). Duplicated validation — if a new order value is added, both must be updated. The `config.sh` validation runs first and normalizes the value before `pipeline_order.sh` is sourced, so the library's `validate_pipeline_order()` function is only reachable if called directly. One of the two could be removed or one deferred to the other.

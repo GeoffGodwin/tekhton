@@ -235,7 +235,7 @@ set -euo pipefail
 # --- Pipeline order defaults (Milestone 27: TDD support) ---
 : "${PIPELINE_ORDER:=standard}"                    # standard|test_first|auto (auto reserved for V4)
 : "${TDD_PREFLIGHT_FILE:=TESTER_PREFLIGHT.md}"    # Output file for TDD write-failing tester
-: "${TESTER_WRITE_FAILING_MAX_TURNS:=10}"          # Turn limit for write-failing tester (less than full tester)
+: "${TESTER_WRITE_FAILING_MAX_TURNS:=15}"          # Turn limit for write-failing tester (less than full tester)
 : "${CODER_TDD_TURN_MULTIPLIER:=1.2}"             # Multiplier for coder turns in test_first mode
 
 # --- Dry-run / preview defaults (Milestone 23) ---
@@ -375,6 +375,7 @@ _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
 _clamp_config_value UI_TEST_TIMEOUT 600
 _clamp_config_value TESTER_WRITE_FAILING_MAX_TURNS 100
+_clamp_config_float CODER_TDD_TURN_MULTIPLIER 0.5 3.0
 _clamp_config_value DASHBOARD_HISTORY_DEPTH 100
 _clamp_config_value DASHBOARD_REFRESH_INTERVAL 300
 _clamp_config_value DASHBOARD_MAX_TIMELINE_EVENTS 2000

@@ -9,8 +9,8 @@
 #   4. get_pipeline_order: test_first order returns expected stage list
 #   5. get_pipeline_order: auto falls back to standard
 #   6. get_pipeline_order: unset PIPELINE_ORDER defaults to standard
-#   7. get_stage_count: standard order has 5 stages
-#   8. get_stage_count: test_first order has 6 stages
+#   7. get_stage_count: standard order has 4 visible stages (scout excluded)
+#   8. get_stage_count: test_first order has 5 visible stages (scout excluded)
 #   9. get_stage_position: each stage in standard order has correct 1-based position
 #  10. get_stage_position: each stage in test_first order has correct 1-based position
 #  11. get_stage_position: unknown stage returns 0
@@ -128,10 +128,10 @@ assert_eq "4.3 get_pipeline_order: unrecognized value falls back to standard" \
 # =============================================================================
 
 PIPELINE_ORDER="standard"
-assert_eq "5.1 get_stage_count: standard has 5 stages" "5" "$(get_stage_count)"
+assert_eq "5.1 get_stage_count: standard has 4 visible stages" "4" "$(get_stage_count)"
 
 PIPELINE_ORDER="test_first"
-assert_eq "5.2 get_stage_count: test_first has 6 stages" "6" "$(get_stage_count)"
+assert_eq "5.2 get_stage_count: test_first has 5 visible stages" "5" "$(get_stage_count)"
 
 # =============================================================================
 # Phase 6: get_stage_position — standard order
