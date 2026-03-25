@@ -530,6 +530,7 @@ if [ "${1:-}" = "--migrate" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/config.sh"
     source "${TEKHTON_HOME}/lib/migrate.sh"
+    source "${TEKHTON_HOME}/lib/migrate_cli.sh"
     # Milestone DAG functions needed for V2→V3 inline milestone migration
     source "${TEKHTON_HOME}/lib/milestones.sh"
     source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
@@ -580,11 +581,18 @@ if [ "${1:-}" = "--rollback" ]; then
         # shellcheck source=lib/config_defaults.sh
         source "${TEKHTON_HOME}/lib/config_defaults.sh" 2>/dev/null || true
     else
-        : "${CHECKPOINT_ENABLED:=true}"
-        : "${CHECKPOINT_FILE:=.claude/CHECKPOINT_META.json}"
-        : "${PIPELINE_STATE_FILE:=.claude/PIPELINE_STATE.md}"
+        # No pipeline.conf — source config_defaults.sh for canonical defaults
+        : "${CLAUDE_STANDARD_MODEL:=claude-sonnet-4-6}"
+        # shellcheck source=lib/config_defaults.sh
+        source "${TEKHTON_HOME}/lib/config_defaults.sh" 2>/dev/null || {
+            # Fallback only if config_defaults.sh itself fails to source
+            : "${CHECKPOINT_ENABLED:=true}"
+            : "${CHECKPOINT_FILE:=.claude/CHECKPOINT_META.json}"
+            : "${PIPELINE_STATE_FILE:=.claude/PIPELINE_STATE.md}"
+        }
     fi
     source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
     if [ "${2:-}" = "--check" ]; then
         show_checkpoint_info
     else
@@ -655,7 +663,9 @@ source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
 source "${TEKHTON_HOME}/lib/update_check.sh"
 source "${TEKHTON_HOME}/lib/migrate.sh"
+source "${TEKHTON_HOME}/lib/migrate_cli.sh"
 source "${TEKHTON_HOME}/lib/checkpoint.sh"
+source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"

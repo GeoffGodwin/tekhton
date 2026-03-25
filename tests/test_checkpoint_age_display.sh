@@ -81,6 +81,7 @@ echo "=== Test 1: BSD date -d unavailable → age shows 'unknown' ==="
     export -f date
 
     source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
     output=$(show_checkpoint_info 2>&1)
 
     if echo "$output" | grep -q "unknown"; then
@@ -127,6 +128,7 @@ echo "=== Test 2: Recent checkpoint displays seconds ==="
     CHECKPOINT_ENABLED=true
 
     source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
     output=$(show_checkpoint_info 2>&1)
 
     # Age should be in seconds (e.g. "5s ago") when date -d works
@@ -174,6 +176,7 @@ echo "=== Test 3: Checkpoint 10 minutes ago displays minutes ==="
     CHECKPOINT_ENABLED=true
 
     source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
     output=$(show_checkpoint_info 2>&1)
 
     if date -d "10 minutes ago" +%s &>/dev/null; then
@@ -208,6 +211,7 @@ echo "=== Test 4: Checkpoint 2 hours ago displays hours ==="
     CHECKPOINT_ENABLED=true
 
     source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
     output=$(show_checkpoint_info 2>&1)
 
     if date -d "2 hours ago" +%s &>/dev/null; then
@@ -242,6 +246,7 @@ echo "=== Test 5: Checkpoint 3 days ago displays days ==="
     CHECKPOINT_ENABLED=true
 
     source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
     output=$(show_checkpoint_info 2>&1)
 
     if date -d "3 days ago" +%s &>/dev/null; then
@@ -273,6 +278,7 @@ echo "=== Test 6: No checkpoint file → informational message ==="
     CHECKPOINT_ENABLED=true
 
     source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
     output=$(show_checkpoint_info 2>&1)
 
     if echo "$output" | grep -qi "no checkpoint"; then
@@ -309,6 +315,7 @@ echo "=== Test 7: CHECKPOINT_ENABLED=false → informational message ==="
     CHECKPOINT_ENABLED=false
 
     source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
     output=$(show_checkpoint_info 2>&1)
 
     if echo "$output" | grep -qi "disabled"; then

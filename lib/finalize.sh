@@ -394,7 +394,7 @@ _hook_failure_context() {
 
 # n. Update check — non-intrusive, runs at the very end of output
 _hook_update_check() {
-    # shellcheck disable=SC2034  # exit_code used by convention
+    # shellcheck disable=SC2034  # exit_code assigned for hook interface consistency
     local exit_code="$1"
     if command -v check_for_updates &>/dev/null; then
         check_for_updates 2>/dev/null || true

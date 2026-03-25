@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-24
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-03-25 | "Address all 20 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/checkpoint.sh` defines `_ckpt_read_field`/`_ckpt_read_bool` helpers to parse CHECKPOINT_META.json, but the `--status` block in `tekhton.sh` duplicates the same JSON extraction inline with its own `sed` patterns. Once `checkpoint.sh` is sourced in the main pipeline path, `--status` should delegate to the shared helpers to avoid two parsing implementations for the same file.
 - [2026-03-24 | "Implement Milestone 24: Run Safety Net & Rollback"] `lib/checkpoint.sh` defines `_ckpt_read_field`/`_ckpt_read_bool` helpers to parse CHECKPOINT_META.json, but the `--status` block in `tekhton.sh` duplicates the same JSON extraction inline with its own `sed` patterns. Once `checkpoint.sh` is sourced in the main pipeline path, `--status` should delegate to the shared helpers to avoid two parsing implementations for the same file.
 
 ## Resolved
