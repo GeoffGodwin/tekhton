@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-03-24
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
+- [2026-03-25 | "Implement Milestone 25: Human Notes UX Enhancement"] `lib/notes_cli.sh:98-121` and `lib/notes_cli.sh:300-311` create tmpfiles via `mktemp` with no `trap ... EXIT INT TERM` cleanup guard. Mirrors the `init_config.sh` pattern flagged by the security agent — worth addressing both together in a future cleanup pass.
+- [2026-03-25 | "Implement Milestone 25: Human Notes UX Enhancement"] `lib/finalize_display.sh` and `lib/dashboard_emitters.sh` guard `get_notes_summary` with `command -v get_notes_summary &>/dev/null`. Since `notes_cli.sh` is always sourced via tekhton.sh, this guard is never false — a short comment explaining the defensive intent would help future readers.
 - [2026-03-25 | "Address all 20 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/checkpoint.sh` defines `_ckpt_read_field`/`_ckpt_read_bool` helpers to parse CHECKPOINT_META.json, but the `--status` block in `tekhton.sh` duplicates the same JSON extraction inline with its own `sed` patterns. Once `checkpoint.sh` is sourced in the main pipeline path, `--status` should delegate to the shared helpers to avoid two parsing implementations for the same file.
 - [2026-03-24 | "Implement Milestone 24: Run Safety Net & Rollback"] `lib/checkpoint.sh` defines `_ckpt_read_field`/`_ckpt_read_bool` helpers to parse CHECKPOINT_META.json, but the `--status` block in `tekhton.sh` duplicates the same JSON extraction inline with its own `sed` patterns. Once `checkpoint.sh` is sourced in the main pipeline path, `--status` should delegate to the shared helpers to avoid two parsing implementations for the same file.
 

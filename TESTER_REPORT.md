@@ -1,16 +1,11 @@
-# Test Report
-
-## Status
-All non-blocking notes have been addressed. No additional test coverage gaps identified.
-
 ## Planned Tests
-None — coder resolved the 1 open non-blocking note (duplicate "Test Audit Concerns" blocks).
+- [x] `tests/test_notes_cli.sh` — get_notes_summary contract and add_human_note section-insertion logic
 
 ## Test Run Results
-Passed: 0  Failed: 0
+Passed: 1  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-None
+- [x] `tests/test_notes_cli.sh`

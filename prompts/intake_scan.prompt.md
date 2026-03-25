@@ -55,6 +55,15 @@ scope have required multiple rework cycles, consider recommending preventive twe
 {{INTAKE_HISTORY_BLOCK}}
 {{ENDIF:INTAKE_HISTORY_BLOCK}}
 
+{{IF:NOTES_CONTEXT_BLOCK}}
+## Related Human Notes
+The following human-authored notes may be relevant to this task. Consider them
+as additional context — they represent observations the human has made that
+could inform your evaluation.
+
+{{NOTES_CONTEXT_BLOCK}}
+{{ENDIF:NOTES_CONTEXT_BLOCK}}
+
 ## Clarity Rubric
 Evaluate along these dimensions:
 

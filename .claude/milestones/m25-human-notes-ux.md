@@ -1,7 +1,7 @@
 #### Milestone 25: Human Notes UX Enhancement
 <!-- milestone-meta
 id: "25"
-status: "pending"
+status: "done"
 -->
 
 Make the human notes system discoverable, easy to use, and integrated

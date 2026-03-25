@@ -112,6 +112,36 @@ run_stage_intake() {
         INTAKE_ROLE_CONTENT=$(_safe_read_file "$role_file" "INTAKE_ROLE")
     fi
 
+    # Inject related human notes context (M25)
+    export NOTES_CONTEXT_BLOCK=""
+    if [[ -f "HUMAN_NOTES.md" ]] && command -v extract_human_notes &>/dev/null; then
+        local all_notes
+        all_notes=$(NOTES_FILTER="" extract_human_notes 2>/dev/null || true)
+        if [[ -n "$all_notes" ]]; then
+            # Simple keyword overlap: include notes if any word from the task
+            # appears in the notes (case-insensitive, 4+ char words only)
+            local task_words
+            task_words=$(echo "${TASK:-}" | tr '[:upper:]' '[:lower:]' | grep -oE '[a-z]{4,}' | sort -u || true)
+            local matching_notes=""
+            while IFS= read -r note_line; do
+                [[ -z "$note_line" ]] && continue
+                local note_lower
+                note_lower=$(echo "$note_line" | tr '[:upper:]' '[:lower:]')
+                while IFS= read -r word; do
+                    [[ -z "$word" ]] && continue
+                    if [[ "$note_lower" == *"$word"* ]]; then
+                        matching_notes="${matching_notes}${note_line}
+"
+                        break
+                    fi
+                done <<< "$task_words"
+            done <<< "$all_notes"
+            if [[ -n "$matching_notes" ]]; then
+                NOTES_CONTEXT_BLOCK="$matching_notes"
+            fi
+        fi
+    fi
+
     # Render and run the intake scan agent
     local intake_prompt
     intake_prompt=$(render_prompt "intake_scan")

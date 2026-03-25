@@ -2,13 +2,12 @@
 PASS
 
 ## Confidence
-88
+82
 
 ## Reasoning
-- Scope is well-defined: one new file (`lib/checkpoint.sh`) with five named functions, four existing files to modify, all listed explicitly
-- Acceptance criteria are specific and testable — each maps to a concrete behavior (checkpoint created, stash ref recorded, rollback refuses on safety conditions, etc.)
-- Watch For section addresses the trickiest edge cases: untracked files, stash ref shifting, monorepo scoping, and mid-run crash recovery
-- Migration impact section is present and complete (new config keys, new transient file, no breaking changes)
-- The prohibition on `git reset --hard` is explicit and the non-destructive revert approach is clearly specified
-- Seeds Forward section is present
-- One minor note: `lib/dashboard.sh` is listed under "Files to modify" without conditional language. Since this is M24, M13 (Watchtower/dashboard) should already be implemented — a developer can reasonably treat this as an unconditional modification. No flag needed.
+- Scope is well-defined: files to create and modify are explicitly listed with function signatures and behaviors
+- Acceptance criteria are specific and testable — each maps to a concrete CLI invocation or observable output
+- Watch For section covers the highest-risk areas (format compatibility, fuzzy match behavior, subcommand parsing precedent, --clear safety)
+- Migration impact section is present and correctly declares no breaking changes
+- `lib/dashboard.sh (M13)` and `prompts/intake_scan.prompt.md (M10)` are listed under "Files to modify" with milestone tags, implying they may not yet exist. The acceptance criteria do not cover these integrations, correctly signaling they are conditional. A competent developer should skip these if the files do not exist and leave a TODO comment. Not a blocker.
+- `lib/init.sh` is listed as a file to modify but does not appear in the repository layout in CLAUDE.md. If this file does not exist, the --init tip should be added wherever init logic currently lives. The acceptance criteria do not test this path — not a blocker.

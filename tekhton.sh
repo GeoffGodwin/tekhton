@@ -555,6 +555,54 @@ if [ "${1:-}" = "--migrate" ]; then
     exit 0
 fi
 
+# --- Early note subcommand (runs before execution pipeline) ------------------
+
+if [ "${1:-}" = "note" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/notes_cli.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    shift  # consume "note"
+
+    # Parse note subcommand arguments
+    if [[ "${1:-}" = "--list" ]]; then
+        shift
+        _note_filter=""
+        if [[ "${1:-}" = "--tag" ]] && [[ -n "${2:-}" ]]; then
+            _note_filter="$2"
+        fi
+        list_human_notes_cli "$_note_filter"
+    elif [[ "${1:-}" = "--done" ]]; then
+        shift
+        if [[ -z "${1:-}" ]]; then
+            error "--done requires a note number or text match."
+            echo "Usage: tekhton note --done 3"
+            echo "       tekhton note --done \"partial text\""
+            _TEKHTON_CLEAN_EXIT=true
+            exit 1
+        fi
+        complete_human_note "$1"
+    elif [[ "${1:-}" = "--clear" ]]; then
+        clear_completed_notes
+    elif [[ -n "${1:-}" ]] && [[ "${1:-}" != -* ]]; then
+        # Positional text argument — add a note
+        _note_text="$1"
+        shift
+        _note_tag="FEAT"
+        if [[ "${1:-}" = "--tag" ]] && [[ -n "${2:-}" ]]; then
+            _note_tag="$2"
+        fi
+        add_human_note "$_note_text" "$_note_tag"
+    else
+        echo "Usage: tekhton note \"description\" [--tag BUG|FEAT|POLISH]"
+        echo "       tekhton note --list [--tag BUG|FEAT|POLISH]"
+        echo "       tekhton note --done <number|text>"
+        echo "       tekhton note --clear"
+    fi
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # --- Early --report / report check (runs before execution pipeline) ----------
 
 if [ "${1:-}" = "--report" ] || [ "${1:-}" = "report" ]; then
@@ -612,6 +660,7 @@ source "${TEKHTON_HOME}/lib/config.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
+source "${TEKHTON_HOME}/lib/notes_cli.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/dry_run.sh"
@@ -734,6 +783,13 @@ usage() {
         echo "  --health                  Run standalone project health assessment"
         echo "  --audit-tests             Audit ALL test files for integrity issues"
         echo ""
+        echo "Notes:"
+        echo "  note \"text\"                Add a note (default tag: FEAT)"
+        echo "  note \"text\" --tag TAG      Add a note with tag (BUG, FEAT, POLISH)"
+        echo "  note --list [--tag TAG]    List unchecked notes, optionally filtered"
+        echo "  note --done <N|text>       Mark a note as completed"
+        echo "  note --clear               Remove all completed notes"
+        echo ""
         echo "Maintenance:"
         echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
         echo "  --rescan [--full]         Update PROJECT_INDEX.md (incrementally or full re-crawl)"
@@ -784,6 +840,12 @@ usage() {
         echo "  --report            Summarize last run's results"
         echo "  --health            Run project health assessment"
         echo "  --audit-tests       Audit all tests for integrity issues"
+        echo ""
+        echo "Notes:"
+        echo "  note \"text\"         Add a note to HUMAN_NOTES.md"
+        echo "  note --list         List unchecked notes"
+        echo "  note --done <N>     Complete a note"
+        echo "  note --clear        Remove completed notes"
         echo ""
         echo "Maintenance:"
         echo "  --replan            Update existing plan"

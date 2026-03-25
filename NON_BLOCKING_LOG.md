@@ -5,6 +5,8 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-25 | "Implement Milestone 25: Human Notes UX Enhancement"] `lib/notes_cli.sh` remains ~395 lines, exceeding the 300-line soft ceiling. Consider extracting file-write helpers into `notes_cli_write.sh` in a future cleanup pass.
+- [ ] [2026-03-25 | "Implement Milestone 25: Human Notes UX Enhancement"] `list_human_notes_cli()` still uses `output+="... "` / `echo -e "$output"`. A direct `printf` per line would be more portable and avoid the large single-variable allocation.
 (none)
 
 ## Resolved

@@ -58,6 +58,19 @@ _print_action_items() {
         fi
     fi
 
+    # Check for unchecked human notes (M25)
+    if command -v get_notes_summary &>/dev/null && [[ -f "HUMAN_NOTES.md" ]]; then
+        local notes_summary
+        notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
+        local notes_unchecked
+        IFS='|' read -r _ _ _ _ _ notes_unchecked <<< "$notes_summary"
+        if [[ "$notes_unchecked" -gt 0 ]]; then
+            action_items+=("$(echo -e "${YELLOW}  ⚠ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
+            action_items+=("$(echo -e "${CYAN}    Tip: Run \`tekhton --human\` to process notes, or${NC}")")
+            action_items+=("$(echo -e "${CYAN}         \`tekhton note --list\` to see them${NC}")")
+        fi
+    fi
+
     # Quota pause summary (M16)
     if command -v format_quota_pause_summary &>/dev/null; then
         local quota_summary

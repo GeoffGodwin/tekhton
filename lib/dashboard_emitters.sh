@@ -158,8 +158,18 @@ emit_dashboard_reports() {
     local test_audit
     test_audit="{\"verdict\":\"${audit_verdict}\",\"high_findings\":${high_findings},\"medium_findings\":${medium_findings}}"
 
+    # Notes backlog (M25)
+    local backlog='{"total":0,"bug":0,"feat":0,"polish":0,"checked":0,"unchecked":0}'
+    if command -v get_notes_summary &>/dev/null && [[ -f "HUMAN_NOTES.md" ]]; then
+        local ns
+        ns=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
+        local n_total n_bug n_feat n_polish n_checked n_unchecked
+        IFS='|' read -r n_total n_bug n_feat n_polish n_checked n_unchecked <<< "$ns"
+        backlog="{\"total\":${n_total},\"bug\":${n_bug},\"feat\":${n_feat},\"polish\":${n_polish},\"checked\":${n_checked},\"unchecked\":${n_unchecked}}"
+    fi
+
     local json
-    json="{\"intake\":${intake},\"coder\":${coder},\"reviewer\":${reviewer},\"test_audit\":${test_audit}}"
+    json="{\"intake\":${intake},\"coder\":${coder},\"reviewer\":${reviewer},\"test_audit\":${test_audit},\"backlog\":${backlog}}"
     _write_js_file "${dash_dir}/data/reports.js" "TK_REPORTS" "$json"
 }
 
