@@ -39,6 +39,7 @@ service-account*.json
 .claude/PIPELINE.lock
 .claude/PIPELINE_STATE.md
 .claude/MILESTONE_STATE.md
+.claude/CHECKPOINT_META.json
 .claude/LAST_FAILURE_CONTEXT.json
 .claude/TEST_BASELINE.json
 .claude/TEST_BASELINE_OUTPUT.txt
