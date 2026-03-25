@@ -224,6 +224,10 @@ set -euo pipefail
 : "${DRY_RUN_CACHE_TTL:=3600}"                    # Cache validity in seconds (default: 1 hour)
 : "${DRY_RUN_CACHE_DIR:=${PROJECT_DIR:-.}/.claude/dry_run_cache}"
 
+# --- Checkpoint / rollback defaults (Milestone 24) ---
+: "${CHECKPOINT_ENABLED:=true}"
+: "${CHECKPOINT_FILE:=.claude/CHECKPOINT_META.json}"
+
 # --- Causal event log defaults (Milestone 13) ---
 : "${CAUSAL_LOG_ENABLED:=true}"
 : "${CAUSAL_LOG_FILE:=.claude/logs/CAUSAL_LOG.jsonl}"

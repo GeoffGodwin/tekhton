@@ -170,11 +170,14 @@ _detect_required_tools() {
 # Used by --reinit to preserve user-modified values after regenerating config.
 # Args: $1 = existing config file path
 # Output: lines of KEY=VALUE (only uncommented, active settings)
+# Note: Config keys must start with an uppercase letter, followed by uppercase letters,
+#       digits, or underscores (e.g., CODER_TURNS, BUILD_CMD, MAX_RETRIES).
 _preserve_user_config() {
     local conf_file="$1"
     [[ ! -f "$conf_file" ]] && return 0
     # Extract active KEY=VALUE lines (skip comments, empty lines, section headers)
-    grep -E '^[A-Z_]+=.' "$conf_file" || true
+    # Keys: uppercase letter, then zero or more uppercase/digits/underscore
+    grep -E '^[A-Z][A-Z0-9_]*=' "$conf_file" || true
 }
 
 # _merge_preserved_values — Merges user-preserved values into a new config file.

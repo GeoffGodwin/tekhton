@@ -292,6 +292,7 @@ run_complete_loop() {
                 fi
 
                 # --- SUCCESS ---
+                local _should_advance=false
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     local _next_ms
                     _next_ms=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
@@ -299,6 +300,10 @@ run_complete_loop() {
                         write_milestone_disposition "COMPLETE_AND_CONTINUE"
                     else
                         write_milestone_disposition "COMPLETE_AND_WAIT"
+                    fi
+                    # Cache auto-advance decision BEFORE finalize_run deletes state file
+                    if should_auto_advance 2>/dev/null; then
+                        _should_advance=true
                     fi
                 fi
 
@@ -313,7 +318,7 @@ run_complete_loop() {
                 fi
 
                 # Handle auto-advance after successful completion
-                if [[ "$MILESTONE_MODE" = true ]] && should_auto_advance 2>/dev/null; then
+                if [[ "$_should_advance" = true ]]; then
                     _run_auto_advance_chain
                 fi
 

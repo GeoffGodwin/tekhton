@@ -5,6 +5,10 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-24 | "Implement Milestone 24: Run Safety Net & Rollback"] `lib/checkpoint.sh` is 344 lines — 44 over the 300-line soft ceiling. Consider extracting `show_checkpoint_info` into a `checkpoint_display.sh` (following the `finalize_display.sh` pattern) in a future cleanup pass.
+- [ ] [2026-03-24 | "Implement Milestone 24: Run Safety Net & Rollback"] `create_run_checkpoint` (line 99) and `update_checkpoint_commit` (line 136) create tmpfiles via `mktemp` without a `trap ... EXIT` cleanup guard. Under `set -euo pipefail`, a write failure leaves a stale `checkpoint.XXXXXX` file in `.claude/`. Same pattern as the LOW security finding flagged in `init_config.sh`.
+- [ ] [2026-03-24 | "Implement Milestone 24: Run Safety Net & Rollback"] `--rollback` early-exit path in `tekhton.sh` hardcodes `CHECKPOINT_ENABLED` and `CHECKPOINT_FILE` defaults inline rather than sourcing `config_defaults.sh`. If these defaults change in `config_defaults.sh`, the rollback fallback path silently diverges.
+- [ ] [2026-03-24 | "Implement Milestone 24: Run Safety Net & Rollback"] `git checkout -- .` and `git clean -fd` in the no-commit rollback path (lines 212-214) operate on CWD, not explicitly on `PROJECT_DIR`. Consistent with how the stash was created (`-- .`), but requires the user to invoke `--rollback` from the same directory as the original run. A comment would help future readers understand this assumption.
 - [ ] [2026-03-24 | "Implement Milestone 23: Dry-Run & Preview Mode"] `lib/dry_run.sh:252,257`: `_parse_scout_preview` computes `_scout_file_count` and `_total_files` via identical `grep -cE '^s*[-*]s+'` calls — `_scout_file_count` is assigned but immediately shadowed by `_total_files`. Use `_total_files` for both purposes and drop the redundant first grep.
 - [ ] [2026-03-24 | "Implement Milestone 23: Dry-Run & Preview Mode"] `lib/config_defaults.sh:225`: Cache default is `${PROJECT_DIR}/.claude/dry_run_cache` instead of `${TEKHTON_SESSION_DIR}/dry_run_cache` as specified. The implementation choice is better for the `--continue-preview` use case (session dirs are ephemeral; a fixed `.claude/` path survives session boundaries). Intentional spec deviation.
 - [ ] [2026-03-24 | "Implement Milestone 23: Dry-Run & Preview Mode"] `lib/state.sh` was listed in the milestone spec as "Files to modify" but was not modified. `--continue-preview` achieves its goal through direct cache file validation (`load_dry_run_for_continue`), so the omission does not affect correctness.
@@ -31,6 +35,12 @@ The coder is prompted to address these when the count exceeds the threshold.
 #### COVERAGE: No test for mid-chain failure behavior in `run_migrations`
 #### COVERAGE: Missing edge case — `_write_config_version` when `pipeline.conf` absent
 #### INTEGRITY: Weak string match in test 11.3
+
+### Test Audit Concerns (2026-03-24)
+#### INTEGRITY: Test 13 always passes regardless of implementation behavior
+#### COVERAGE: `offer_cached_dry_run()` has no test coverage
+#### COVERAGE: `_parse_intake_preview` confidence value not asserted for valid reports
+#### NAMING: Test 13 label embeds a runtime variable
 
 ### Test Audit Concerns (2026-03-24)
 #### INTEGRITY: Test 13 always passes regardless of implementation behavior

@@ -233,6 +233,10 @@ _hook_commit() {
         y|Y)
             _do_git_commit "$COMMIT_MSG"
             _COMMIT_SUCCEEDED=true
+            # Update checkpoint with commit sha (Milestone 24)
+            if command -v update_checkpoint_commit &>/dev/null; then
+                update_checkpoint_commit "$(git rev-parse HEAD 2>/dev/null || echo "")"
+            fi
             _tag_milestone_if_complete
             print_run_summary
             success "Committed. Open a PR and squash-merge to main when ready."
@@ -247,6 +251,10 @@ _hook_commit() {
             rm "$tmpfile"
             _do_git_commit "$edited_msg"
             _COMMIT_SUCCEEDED=true
+            # Update checkpoint with commit sha (Milestone 24)
+            if command -v update_checkpoint_commit &>/dev/null; then
+                update_checkpoint_commit "$(git rev-parse HEAD 2>/dev/null || echo "")"
+            fi
             _tag_milestone_if_complete
             print_run_summary
             success "Committed. Open a PR and squash-merge to main when ready."

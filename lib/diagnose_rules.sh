@@ -18,6 +18,8 @@ set -euo pipefail
 #   _rule_turn_exhaustion     — Agent max-turns without completion
 #   _rule_split_depth         — MILESTONE_MAX_SPLIT_DEPTH exceeded
 #   _rule_transient_error     — Transient API errors
+#   _rule_test_audit_failure  — Test audit NEEDS_WORK verdict after max rework cycles
+#   _rule_version_mismatch    — Project config version behind running Tekhton version
 #   _rule_unknown             — Fallback catch-all
 # =============================================================================
 

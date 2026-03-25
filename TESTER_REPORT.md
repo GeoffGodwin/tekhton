@@ -1,11 +1,13 @@
 ## Planned Tests
-- [x] `tests/test_dry_run.sh` — cache roundtrip, TTL expiry, git HEAD mismatch, consume flags, parse helpers, syntax/shellcheck
+- [x] `tests/test_checkpoint_rollback_safety.sh` — rollback_last_run safety check: rejects when current_head != commit_sha and other edge cases
+- [x] `tests/test_checkpoint_age_display.sh` — show_checkpoint_info age calculation degrades to "unknown" when date -d unavailable (BSD/macOS)
 
 ## Test Run Results
-Passed: 33  Failed: 0
+Passed: 13  Failed: 0
 
 ## Bugs Found
-- BUG: [lib/dry_run.sh:289] `_parse_intake_preview` uses `grep -A2 '## Verdict' | tail -1` which lands on the blank line after the verdict value when the actual intake report format is `## Verdict\nPASS\n` — returns "N/A" instead of the correct verdict
+None
 
 ## Files Modified
-- [x] `tests/test_dry_run.sh`
+- [x] `tests/test_checkpoint_rollback_safety.sh`
+- [x] `tests/test_checkpoint_age_display.sh`

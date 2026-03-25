@@ -40,6 +40,8 @@
 #   --health              Run standalone project health assessment and exit
 #   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
 #   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
+#   --rollback            Revert the last pipeline run (clean git revert)
+#   --rollback --check    Preview what rollback would do
 #   --version, -v         Print version and exit
 #   --docs                Open documentation site in browser
 #
@@ -566,6 +568,32 @@ if [ "${1:-}" = "--report" ] || [ "${1:-}" = "report" ]; then
     exit 0
 fi
 
+# --- Early --rollback check (runs before execution pipeline) -----------------
+
+if [ "${1:-}" = "--rollback" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/config.sh"
+    # Load config for CHECKPOINT_ENABLED, CHECKPOINT_FILE defaults
+    if [ -f "${PROJECT_DIR}/.claude/pipeline.conf" ]; then
+        _parse_config_file "${PROJECT_DIR}/.claude/pipeline.conf" 2>/dev/null || true
+        : "${CLAUDE_STANDARD_MODEL:=claude-sonnet-4-6}"
+        # shellcheck source=lib/config_defaults.sh
+        source "${TEKHTON_HOME}/lib/config_defaults.sh" 2>/dev/null || true
+    else
+        : "${CHECKPOINT_ENABLED:=true}"
+        : "${CHECKPOINT_FILE:=.claude/CHECKPOINT_META.json}"
+        : "${PIPELINE_STATE_FILE:=.claude/PIPELINE_STATE.md}"
+    fi
+    source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    if [ "${2:-}" = "--check" ]; then
+        show_checkpoint_info
+    else
+        rollback_last_run
+    fi
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # --- Acquire pipeline lock (execution pipeline only) -------------------------
 _check_pipeline_lock
 
@@ -627,6 +655,7 @@ source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
 source "${TEKHTON_HOME}/lib/update_check.sh"
 source "${TEKHTON_HOME}/lib/migrate.sh"
+source "${TEKHTON_HOME}/lib/checkpoint.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
@@ -683,8 +712,12 @@ usage() {
         echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
         echo "  --usage-threshold N       Pause if session usage exceeds N%"
         echo ""
+        echo "Safety:"
+        echo "  --rollback                Revert the last pipeline run (clean git operations)"
+        echo "  --rollback --check        Preview what rollback would do without acting"
+        echo ""
         echo "Inspection:"
-        echo "  --status                  Print saved pipeline state"
+        echo "  --status                  Print saved pipeline state (includes rollback availability)"
         echo "  --metrics                 Print run metrics dashboard"
         echo "  --diagnose                Diagnose last failure with recovery suggestions"
         echo "  --report, report          Print summary of last pipeline run"
@@ -731,8 +764,11 @@ usage() {
         echo "  --dry-run           Preview what the pipeline would do"
         echo "  --human [TAG]       Pick next note as task (BUG, FEAT, POLISH)"
         echo ""
+        echo "Safety:"
+        echo "  --rollback          Undo the last pipeline run"
+        echo ""
         echo "Inspection:"
-        echo "  --status            Show pipeline state"
+        echo "  --status            Show pipeline state + rollback availability"
         echo "  --metrics           Show run metrics dashboard"
         echo "  --diagnose          Diagnose last failure with recovery suggestions"
         echo "  --report            Summarize last run's results"
@@ -826,22 +862,41 @@ while [[ $# -gt 0 ]]; do
         --status)
             if [ ! -f "$PIPELINE_STATE_FILE" ]; then
                 echo "No saved pipeline state found."
-                exit 0
+            else
+                echo
+                echo "════════════════════════════════════════"
+                echo "  ${PROJECT_NAME} Pipeline — Saved State"
+                echo "════════════════════════════════════════"
+                cat "$PIPELINE_STATE_FILE"
+                echo "════════════════════════════════════════"
+                echo
+                SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+                SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+                echo "Resume with:"
+                echo "  $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
+                echo "  — or —"
+                echo "  $0   (interactive resume prompt)"
+                echo
             fi
-            echo
-            echo "════════════════════════════════════════"
-            echo "  ${PROJECT_NAME} Pipeline — Saved State"
-            echo "════════════════════════════════════════"
-            cat "$PIPELINE_STATE_FILE"
-            echo "════════════════════════════════════════"
-            echo
-            SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-            SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-            echo "Resume with:"
-            echo "  $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
-            echo "  — or —"
-            echo "  $0   (interactive resume prompt)"
-            echo
+            # Show checkpoint status (Milestone 24)
+            _ckpt_file="${PROJECT_DIR:-.}/${CHECKPOINT_FILE:-.claude/CHECKPOINT_META.json}"
+            if [[ -f "$_ckpt_file" ]]; then
+                _ckpt_task=$(sed -n 's/.*"task"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ckpt_file" | head -1)
+                _ckpt_ts=$(sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ckpt_file" | head -1)
+                _ckpt_committed=$(sed -n 's/.*"auto_committed"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "$_ckpt_file" | head -1)
+                _ckpt_sha=$(sed -n 's/.*"commit_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ckpt_file" | head -1)
+                echo "Rollback available: Yes"
+                echo "  Task:      ${_ckpt_task:-unknown}"
+                echo "  Created:   ${_ckpt_ts:-unknown}"
+                if [[ "$_ckpt_committed" == "true" ]] && [[ -n "$_ckpt_sha" ]]; then
+                    echo "  Commit:    ${_ckpt_sha:0:7}"
+                fi
+                echo "  Run \`tekhton --rollback --check\` for details."
+                echo
+            else
+                echo "Rollback available: No (no checkpoint)"
+                echo
+            fi
             exit 0
             ;;
         --metrics)
@@ -1498,6 +1553,10 @@ fi
 # the run captures what was resolved; these logs don't need to keep them forever.
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
+
+# --- Run checkpoint (Milestone 24) ------------------------------------------
+# Create a git checkpoint before any agent runs so users can rollback.
+create_run_checkpoint
 
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
 

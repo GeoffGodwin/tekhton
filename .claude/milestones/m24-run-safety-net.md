@@ -1,7 +1,7 @@
 #### Milestone 24: Run Safety Net & Rollback
 <!-- milestone-meta
 id: "24"
-status: "pending"
+status: "done"
 -->
 
 Add a pre-run git checkpoint and `--rollback` command that lets users
