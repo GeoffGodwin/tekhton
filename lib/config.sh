@@ -113,7 +113,7 @@ _clamp_config_float() {
     local key="$1" min="$2" max="$3"
     local val="${!key:-0}"
     # Validate: must be a number (integer or float)
-    if ! [[ "$val" =~ ^[0-9]+\.?[0-9]*$ ]] || [[ "$val" == "."* ]]; then
+    if ! [[ "$val" =~ ^[0-9]+\.?[0-9]*$ ]]; then
         return
     fi
     local clamped
@@ -166,6 +166,9 @@ load_config() {
     fi
 
     # --- Validate pipeline order (Milestone 27) ---
+    # Normalization runs here (during load_config) before pipeline_order.sh is sourced.
+    # validate_pipeline_order() in pipeline_order.sh provides the test-facing validation API.
+    # When adding a new order value, update BOTH this block and pipeline_order.sh:validate_pipeline_order().
     if [[ -n "${PIPELINE_ORDER:-}" ]]; then
         case "$PIPELINE_ORDER" in
             standard|test_first) ;;

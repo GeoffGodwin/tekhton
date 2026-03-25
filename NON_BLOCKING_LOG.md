@@ -5,10 +5,13 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-03-25 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/config.sh:116` — The added `|| [[ "$val" == "."* ]]` guard is redundant. The existing regex `^[0-9]+.?[0-9]*$` already rejects leading-dot floats like `.5` because the `^[0-9]+` anchor requires at least one digit before anything else — `.5` does not match, so the early return already fired. The guard is harmless but the stated rationale ("it accepted leading-dot floats") is incorrect. Consider removing the redundant clause in a future cleanup pass to avoid misleading future readers.
+- [ ] [2026-03-25 | "Address all 1 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/pipeline_order.sh:27-30`: The three-line NOTE block runs directly into the function docstring comment (`# validate_pipeline_order — Check that a...`) without a blank line separator. The result is one unbroken comment block spanning both the cross-reference note and the function documentation. Functionally correct; a blank line between them would make the intent clearer to future readers.
 (none)
 
 ## Resolved
+
+### Non-Blocking Cleanup Pass (2026-03-25d)
+- [x] `lib/config.sh:116` — Removed redundant `|| [[ "$val" == "."* ]]` guard from `_clamp_config_float`. The `^[0-9]+` anchor already rejects leading-dot values.
 
 ### Non-Blocking Cleanup Pass (2026-03-25)
 - [x] `lib/checkpoint.sh` extracted `show_checkpoint_info` into `checkpoint_display.sh` (266 → under 300 lines).

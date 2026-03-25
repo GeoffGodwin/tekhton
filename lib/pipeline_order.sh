@@ -24,6 +24,10 @@ readonly PIPELINE_ORDER_TEST_FIRST="scout test_write coder security review test_
 
 # --- Validation --------------------------------------------------------------
 
+# NOTE: load_config() in config.sh contains a parallel inline case block that runs before
+# this library is sourced. Any new order value must be added to both locations.
+# This function is the test-facing validation API; config.sh is the runtime normalizer.
+
 # validate_pipeline_order — Check that a pipeline order string is valid.
 # Args: $1 = order string (standard|test_first|auto)
 # Returns: 0 if valid, 1 if invalid (prints warning).

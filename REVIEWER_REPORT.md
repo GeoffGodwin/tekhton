@@ -1,17 +1,42 @@
+# Reviewer Report — Architect Remediation Review
+**Date:** 2026-03-25
+**Reviewer:** Code Review Agent
+**Type:** Expedited Architect Remediation Review (single-pass, no rework cycle)
+
+---
+
 ## Verdict
 APPROVED_WITH_NOTES
+
+---
 
 ## Complex Blockers (senior coder)
 None
 
+---
+
 ## Simple Blockers (jr coder)
 None
 
+---
+
 ## Non-Blocking Notes
-- `lib/config.sh:116` — The added `|| [[ "$val" == "."* ]]` guard is redundant. The existing regex `^[0-9]+\.?[0-9]*$` already rejects leading-dot floats like `.5` because the `^[0-9]+` anchor requires at least one digit before anything else — `.5` does not match, so the early return already fired. The guard is harmless but the stated rationale ("it accepted leading-dot floats") is incorrect. Consider removing the redundant clause in a future cleanup pass to avoid misleading future readers.
+
+- `lib/pipeline_order.sh:27-30`: The three-line NOTE block runs directly into the function docstring comment (`# validate_pipeline_order — Check that a...`) without a blank line separator. The result is one unbroken comment block spanning both the cross-reference note and the function documentation. Functionally correct; a blank line between them would make the intent clearer to future readers.
+
+---
 
 ## Coverage Gaps
 None
 
+---
+
 ## Drift Observations
-None
+
+The expedited remediation addressed all three architect-identified drift observations correctly:
+
+- **SF-1 (PIPELINE_ORDER split validation):** Cross-reference comments added at both `config.sh:169-171` and `pipeline_order.sh:27-29`. Comment content matches the architect's specification verbatim. Both locations now explain the split responsibility and the dual-update requirement.
+- **SF-2 (loop-local variable leakage in express.sh):** `local cmd_type cmd _source _conf` at line 87 and `local _ctype _ccmd _csrc _cconf` at line 218 correctly declare all `read -r` targets before their respective loops. Namespace pollution eliminated.
+- **Out-of-scope items** (`_hook_express_persist` ordering, DDO-1 design decision) were correctly left untouched by both coders.
+
+Senior coder correctly identified that Simplification section contained "None" and made no source changes. No scope creep in either coder's work.

@@ -84,7 +84,7 @@ generate_express_config() {
 
     # Extract commands from detection output
     local test_cmd="" analyze_cmd="" build_cmd=""
-    local cmd_type cmd
+    local cmd_type cmd _source _conf
     while IFS='|' read -r cmd_type cmd _source _conf; do
         [[ -z "$cmd_type" ]] && continue
         case "$cmd_type" in
@@ -215,7 +215,7 @@ enter_express_mode() {
     fi
 
     local _test_found="" _analyze_found="" _build_found=""
-    local _ctype _ccmd
+    local _ctype _ccmd _csrc _cconf
     while IFS='|' read -r _ctype _ccmd _csrc _cconf; do
         [[ -z "$_ctype" ]] && continue
         case "$_ctype" in
