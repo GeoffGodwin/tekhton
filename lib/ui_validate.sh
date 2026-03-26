@@ -39,13 +39,13 @@ _check_headless_browser() {
     _UI_BROWSER_CMD=""
 
     # 1. Playwright (preferred — bundles Chromium)
-    if command -v npx &>/dev/null && npx playwright --version &>/dev/null 2>&1; then
+    if command -v npx &>/dev/null && timeout 10 npx --yes playwright --version &>/dev/null 2>&1; then
         _UI_BROWSER_CMD="playwright"
         return 0
     fi
 
     # 2. Puppeteer
-    if command -v npx &>/dev/null && npx puppeteer --version &>/dev/null 2>&1; then
+    if command -v npx &>/dev/null && timeout 10 npx --yes puppeteer --version &>/dev/null 2>&1; then
         _UI_BROWSER_CMD="puppeteer"
         return 0
     fi
@@ -229,6 +229,13 @@ _detect_ui_targets() {
 
 # _should_self_test_watchtower
 # Returns 0 if Watchtower files were modified and self-test is enabled.
+#
+# NOTE: The DASHBOARD_ENABLED and DASHBOARD_DIR checks below are intentional
+# co-feature guards. Watchtower is the Dashboard's self-test mechanism. Both
+# keys are set together in config_defaults.sh (line 245):
+#   WATCHTOWER_SELF_TEST:=${DASHBOARD_ENABLED:-true}
+# This relationship ensures that a future refactor of the Dashboard feature
+# will naturally propagate to Watchtower's activation state.
 _should_self_test_watchtower() {
     [[ "${WATCHTOWER_SELF_TEST:-false}" = "true" ]] || return 1
     [[ "${DASHBOARD_ENABLED:-true}" = "true" ]] || return 1
