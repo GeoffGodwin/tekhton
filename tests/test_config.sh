@@ -19,6 +19,7 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_DIR="${PROJECT_DIR:-/tmp}"
 
 # Source libraries needed for _clamp_config_float
 source "${TEKHTON_HOME}/lib/common.sh"
