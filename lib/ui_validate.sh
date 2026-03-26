@@ -27,10 +27,21 @@ _UI_SERVER_PORT_ACTUAL=0
 
 # --- Prerequisite detection ---------------------------------------------------
 
+# _check_npm_package PACKAGE
+# Checks if an npm package is installed locally without triggering install prompts.
+# Uses `npm ls` (side-effect free, works across all npm versions).
+# Returns: 0 if installed, 1 if not.
+_check_npm_package() {
+    local pkg="$1"
+    command -v npm &>/dev/null || return 1
+    timeout 10 npm ls "$pkg" --depth=0 &>/dev/null
+}
+
 # _check_headless_browser
 # Detects available headless browser in priority order.
 # Returns: browser command string via _UI_BROWSER_CMD, or empty if none found.
 # Caches result for the session.
+# Wrapped in a 30-second overall timeout as defense-in-depth.
 _check_headless_browser() {
     if [[ "$_UI_BROWSER_CHECKED" = true ]]; then
         return 0
@@ -38,34 +49,51 @@ _check_headless_browser() {
     _UI_BROWSER_CHECKED=true
     _UI_BROWSER_CMD=""
 
-    # 1. Playwright (preferred — bundles Chromium)
-    if command -v npx &>/dev/null && timeout 10 npx --yes playwright --version &>/dev/null 2>&1; then
-        _UI_BROWSER_CMD="playwright"
-        return 0
-    fi
+    # Run detection in a subshell with a hard 30-second timeout.
+    # If anything hangs (npm, npx, etc.), we treat it as "no browser".
+    local detected=""
+    detected=$(timeout 30 bash -c '
+        # 1. Playwright (preferred — bundles Chromium)
+        # Check via npm ls first (zero side effects), then fall back to timeout-wrapped npx
+        if command -v npm &>/dev/null; then
+            if timeout 10 npm ls playwright --depth=0 &>/dev/null 2>&1; then
+                echo "playwright"; exit 0
+            fi
+        fi
+        if command -v npx &>/dev/null; then
+            if timeout 10 npx --yes playwright --version &>/dev/null 2>&1; then
+                echo "playwright"; exit 0
+            fi
+        fi
 
-    # 2. Puppeteer
-    if command -v npx &>/dev/null && timeout 10 npx --yes puppeteer --version &>/dev/null 2>&1; then
-        _UI_BROWSER_CMD="puppeteer"
-        return 0
-    fi
+        # 2. Puppeteer
+        if command -v npm &>/dev/null; then
+            if timeout 10 npm ls puppeteer --depth=0 &>/dev/null 2>&1; then
+                echo "puppeteer"; exit 0
+            fi
+        fi
+        if command -v npx &>/dev/null; then
+            if timeout 10 npx --yes puppeteer --version &>/dev/null 2>&1; then
+                echo "puppeteer"; exit 0
+            fi
+        fi
 
-    # 3. System Chromium
-    local chromium_bin=""
-    if command -v chromium-browser &>/dev/null; then
-        chromium_bin="chromium-browser"
-    elif command -v chromium &>/dev/null; then
-        chromium_bin="chromium"
-    fi
-    if [[ -n "$chromium_bin" ]]; then
-        _UI_BROWSER_CMD="system:${chromium_bin}"
-        return 0
-    fi
+        # 3. System Chromium
+        if command -v chromium-browser &>/dev/null; then
+            echo "system:chromium-browser"; exit 0
+        fi
+        if command -v chromium &>/dev/null; then
+            echo "system:chromium"; exit 0
+        fi
 
-    # 4. System Chrome
-    if command -v google-chrome &>/dev/null; then
-        _UI_BROWSER_CMD="system:google-chrome"
-        return 0
+        # 4. System Chrome
+        if command -v google-chrome &>/dev/null; then
+            echo "system:google-chrome"; exit 0
+        fi
+    ' 2>/dev/null) || true
+
+    if [[ -n "$detected" ]]; then
+        _UI_BROWSER_CMD="$detected"
     fi
 
     return 0
@@ -159,7 +187,8 @@ _start_ui_server() {
     # Wait for server readiness
     local elapsed=0
     while [[ "$elapsed" -lt "$startup_timeout" ]]; do
-        if curl -s -o /dev/null -w "%{http_code}" "http://localhost:${actual_port}" 2>/dev/null | grep -qE "^[23]"; then
+        # Cap each curl probe at 5 seconds to prevent DNS/connection hangs
+        if timeout 5 curl -s -o /dev/null -w "%{http_code}" "http://localhost:${actual_port}" 2>/dev/null | grep -qE "^[23]"; then
             log "UI server ready on port ${actual_port}."
             return 0
         fi
@@ -180,8 +209,13 @@ _start_ui_server() {
 
 # _stop_ui_server
 # Stops the background server if running.
+# Attempts process group kill first to clean up orphaned child processes
+# (e.g., headless browser instances spawned by the server).
 _stop_ui_server() {
     if [[ "$_UI_SERVER_PID" -gt 0 ]]; then
+        # Try process group kill first (catches orphaned children)
+        kill -TERM "-$_UI_SERVER_PID" 2>/dev/null || true
+        # Fall back to direct PID kill if process group kill didn't work
         kill "$_UI_SERVER_PID" 2>/dev/null || true
         wait "$_UI_SERVER_PID" 2>/dev/null || true
         _UI_SERVER_PID=0

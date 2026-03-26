@@ -1,76 +1,47 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 65 test functions
+Tests audited: 2 files, 11 test functions (Tests 1–9 in test_build_gate_timeouts.sh, Tests 10–11 in test_ui_server_hardening.sh)
 Verdict: PASS
+
+---
 
 ### Findings
 
-#### COVERAGE: "tester" alias only verifies run, not skip
-- File: tests/test_pipeline_order.sh:195
-- Issue: Test 8.19 (`should_run_stage: tester start runs test_verify`) confirms
-  only that test_verify runs when start_at=tester. It does not verify that
-  earlier stages (scout, coder, security, review) are skipped. The "test"
-  alias in tests 8.14–8.18 covers the full skip-side; "tester" is a second
-  alias for the identical mapping but its skip behavior is untested.
-- Severity: LOW
-- Action: Add four assert_false checks for scout/coder/security/review with
-  start_at="tester", mirroring 8.14–8.17.
+#### COVERAGE: Test 4 treats both gate outcomes as passing
+- File: tests/test_build_gate_timeouts.sh:133–138
+- Issue: Both branches of `if run_build_gate "test-analyze-timeout"` call `pass`. The implementation contracts that ANALYZE_CMD timeout (exit 124) is treated as pass, so `run_build_gate` should return 0. As written, a regression where the gate returns 1 on analyze timeout still marks the test green — only the elapsed-time assertion detects a hang, not a wrong return code.
+- Severity: MEDIUM
+- Action: Remove the two-pass dual-branch. Assert `run_build_gate` returns 0, adding `fail` to the else branch. Separate the timing check as it is now.
 
-#### COVERAGE: should_run_stage with stage absent from pipeline not tested
-- File: tests/test_pipeline_order.sh:98–227
-- Issue: `should_run_stage` uses `|| stage_pos=0` fallback for unknown stages.
-  When stage_pos=0 and start_pos=0 (both lookups miss), `[[ 0 -ge 0 ]]`
-  returns true — a stage that does not exist in the pipeline is treated as
-  runnable. This path is not exercised. In normal operation, tekhton.sh
-  only passes known stage names, limiting practical risk, but the boundary
-  behavior is undocumented by tests.
-- Severity: LOW
-- Action: Add one test calling `should_run_stage "nonexistent_stage" ""`.
-  If the intended behavior is to skip unknown stages, a guard `[[ stage_pos -gt 0 ]]`
-  should be added to the implementation; if run-by-default is correct, a
-  comment suffices.
+#### COVERAGE: Test 9 timing threshold equals the implementation's own internal timeout
+- File: tests/test_build_gate_timeouts.sh:273–276
+- Issue: `_check_npm_package` internally wraps `npm ls` with `timeout 10`. Test 9 asserts `elapsed -lt 10`. On a system where npm takes the full 10s to time out and the wall clock rounds up, the assertion fails spuriously. There is no slack between the implementation ceiling and the test limit.
+- Severity: MEDIUM
+- Action: Change the assertion to `elapsed -lt 15` to give the implementation's 10s timeout room to complete and return without flakiness.
 
-#### COVERAGE: get_stage_count not tested under fallback orders
-- File: tests/test_pipeline_order.sh:130–134
-- Issue: `get_stage_count` is only tested for standard (5) and test_first (6).
-  The auto and unrecognized-value fallback paths (both return standard count)
-  are not covered. The underlying `get_pipeline_order` fallback is tested in
-  Phase 4, so the gap is minor.
+#### COVERAGE: Tests 5 and 8 discard the return code for timeout scenarios
+- File: tests/test_build_gate_timeouts.sh:159, 247
+- Issue: Both use `|| true`, verifying only that execution finishes in time. The implementation contracts that BUILD_CHECK_CMD timeout and constraint-validation timeout are both treated as pass (return 0). A regression changing either to return 1 on timeout would go undetected.
 - Severity: LOW
-- Action: Optional regression guard: `PIPELINE_ORDER="auto"; assert_eq "5" "$(get_stage_count)"`.
+- Action: Capture the exit code and add a pass/fail assertion that it equals 0, matching the documented "timeout = pass" contract for both phases.
 
-#### NAMING: TESTER_REPORT pass count does not match test file count
-- File: TESTER_REPORT.md
-- Issue: TESTER_REPORT states "Passed: 173 Failed: 0" but the audited test
-  file contains 65 test functions. The count likely reflects the full suite
-  result (`bash tests/run_tests.sh`) rather than just the new file, but this
-  distinction is not stated. Readers tracking per-milestone test counts will
-  find the figure misleading.
+#### SCOPE: CODER_SUMMARY.md deleted but silently referenced by sourced implementation functions
+- File: tests/test_build_gate_timeouts.sh (sources lib/gates.sh and lib/ui_validate.sh)
+- Issue: CODER_SUMMARY.md was intentionally deleted by the coder. `lib/gates.sh` (`_warn_summary_drift`, `run_completion_gate`) and `lib/ui_validate.sh` (`_detect_ui_targets`, `_should_self_test_watchtower`) all reference it. The M30 test functions are not affected: they run inside a clean TMPDIR (file absent), and every path that reads CODER_SUMMARY.md has an `[[ -f … ]] || return 0` guard. No test breaks today, but four implementation functions silently no-op on the missing-file path without any test coverage.
 - Severity: LOW
-- Action: Clarify in TESTER_REPORT: "65 new tests in test_pipeline_order.sh;
-  173 total across full suite."
+- Action: No action required for these tests. Raise a follow-on ticket to add tests for the absent-file branch of `_warn_summary_drift` and `run_completion_gate` (outside M30 scope).
+
+---
 
 ### No findings in the following categories
 
-**INTEGRITY (hard-coded values) — PASS.** Every expected value in the
-assertions is derivable directly from `PIPELINE_ORDER_STANDARD` /
-`PIPELINE_ORDER_TEST_FIRST` constants or from arithmetic on their lengths.
-Stage positions (1–6) match list order; stage counts (5, 6) match list
-lengths. No magic numbers appear that are absent from the implementation.
+**INTEGRITY (hard-coded values) — PASS.** All assertions derive from real implementation behavior. The "Gate Timeout" string in Test 6 (`grep -q "Gate Timeout" BUILD_ERRORS.md`) maps exactly to the `## Gate Timeout` heading written by `_gate_check_timeout` in `lib/gates.sh:57`. No magic numbers appear that are absent from the implementation.
 
-**EXERCISE — PASS.** Tests source `lib/pipeline_order.sh` directly and call
-all five public functions plus both helpers (`get_tester_mode`,
-`is_test_first_order`). No mocking is used anywhere in the file.
+**EXERCISE — PASS.** Tests source and directly invoke the actual functions under test (`_check_headless_browser`, `run_build_gate`, `_check_npm_package`, `_start_ui_server`, `_stop_ui_server`). Stubs are limited to out-of-scope dependencies (`run_ui_validation`, `emit_event`). No function under test is mocked.
 
-**WEAKENING — PASS.** `test_pipeline_order.sh` is a new file (untracked in
-git at audit time). No existing test files were modified.
+**WEAKENING — PASS.** Both test files are newly created (untracked in git). No existing test files were modified.
 
-**NAMING — PASS.** All 65 test names encode both the scenario and the
-expected outcome (e.g., "8.4 should_run_stage: coder start skips scout",
-"11.2 is_test_first_order: returns 1 for standard").
+**NAMING — PASS.** Test descriptions are descriptive of both the scenario and the expected outcome (e.g., "Browser detection completed in Xs (< 35s limit)", "Overall gate timeout returned non-zero exit", "10b. _start_ui_server completed in Xs — curl probe timeout enforced").
 
-**SCOPE — PASS.** The JR_CODER_SUMMARY confirms the only changes to
-`lib/pipeline_order.sh` were shellcheck disable comments. All test imports
-and function references match current implementation signatures. No orphaned,
-stale, or dead tests detected.
+**REGRESSION SIGNAL — PASS.** TESTER_REPORT.md confirms both files correctly fail against pre-M30 code via git stash. This is the key integrity signal that tests are genuinely M30-specific and not written to pass unconditionally.
