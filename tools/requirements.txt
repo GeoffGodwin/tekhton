@@ -1,5 +1,7 @@
 # Tekhton indexer dependencies
 # Installed by tools/setup_indexer.sh into .claude/indexer-venv/
-tree-sitter>=0.21.0
+tree-sitter>=0.22.0
 networkx>=3.0
+numpy>=1.24.0
+scipy>=1.10.0
 pathspec>=0.11.0

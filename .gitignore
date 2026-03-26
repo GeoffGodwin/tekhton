@@ -46,6 +46,11 @@ service-account*.json
 .claude/test_acceptance_output.tmp
 .claude/dashboard/data/
 .claude/logs/
+.claude/indexer-venv/
+.claude/index/
+.claude/serena/
+.claude/dry_run_cache/
+.claude/migration-backups/
 
 # Test artifacts
 /tmp/

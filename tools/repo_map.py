@@ -231,6 +231,24 @@ def _walk_tree(
         if name:
             references.append({"name": name, "type": "call", "line": node.start_point[0] + 1})
 
+    elif ntype == "command" and ext in (".sh", ".bash"):
+        # Bash: command nodes have command_name -> word children
+        for child in node.children:
+            if child.type == "command_name":
+                for sub in child.children:
+                    if sub.type == "word":
+                        name = sub.text.decode("utf-8", errors="replace")
+                        if not name.startswith(("-", "[")):
+                            references.append({"name": name, "type": "call", "line": node.start_point[0] + 1})
+                        break
+                break
+
+    elif ntype == "source_command" and ext in (".sh", ".bash"):
+        # Bash: source/. commands are like imports
+        for child in node.children:
+            if child.type == "word":
+                references.append({"name": child.text.decode("utf-8", errors="replace"), "type": "import", "line": node.start_point[0] + 1})
+
     elif ntype in ("import_statement", "import_from_statement", "import_declaration"):
         names = _get_import_names(node, source)
         for n in names:
@@ -244,7 +262,7 @@ def _walk_tree(
 def _get_name_child(node: Any) -> Optional[str]:
     """Extract the name identifier from a definition node."""
     for child in node.children:
-        if child.type in ("identifier", "name", "type_identifier", "property_identifier"):
+        if child.type in ("identifier", "name", "type_identifier", "property_identifier", "word"):
             return child.text.decode("utf-8", errors="replace")
     return None
 

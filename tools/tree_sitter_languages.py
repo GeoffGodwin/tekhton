@@ -70,6 +70,10 @@ def get_language(ext: str) -> Optional[object]:
         if lang_fn is None:
             return None
         lang = lang_fn() if callable(lang_fn) else lang_fn
+        # tree-sitter >= 0.22: grammar packages return a PyCapsule that
+        # must be wrapped in tree_sitter.Language() for the Parser API
+        if not isinstance(lang, tree_sitter.Language):
+            lang = tree_sitter.Language(lang)
         _lang_cache[cache_key] = lang
         return lang
     except (ImportError, OSError, AttributeError):
