@@ -152,8 +152,10 @@ emit_dashboard_reports() {
     local high_findings=0
     local medium_findings=0
     if [[ -f "$audit_file" ]]; then
-        high_findings=$(grep -c 'Severity: HIGH' "$audit_file" 2>/dev/null || echo "0")
-        medium_findings=$(grep -c 'Severity: MEDIUM' "$audit_file" 2>/dev/null || echo "0")
+        high_findings=$(grep -c 'Severity: HIGH' "$audit_file" 2>/dev/null || true)
+        : "${high_findings:=0}"
+        medium_findings=$(grep -c 'Severity: MEDIUM' "$audit_file" 2>/dev/null || true)
+        : "${medium_findings:=0}"
     fi
     local test_audit
     test_audit="{\"verdict\":\"${audit_verdict}\",\"high_findings\":${high_findings},\"medium_findings\":${medium_findings}}"

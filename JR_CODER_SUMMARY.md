@@ -1,17 +1,14 @@
-# Junior Coder Summary — 2026-03-25
+# Junior Coder Summary — Milestone 30
 
 ## What Was Fixed
 
-- **SF-1:** Added documenting comment to `lib/ui_validate.sh:230–240` explaining that the `DASHBOARD_ENABLED` and `DASHBOARD_DIR` checks in `_should_self_test_watchtower()` are intentional co-feature guards. Watchtower is the Dashboard's self-test mechanism, and both keys are set together in `config_defaults.sh` (line 245). This makes the relationship explicit for future readers without any behavioral change.
-
-- **DC-1:** Deleted `prompts/ui_rework.prompt.md` (28 lines). No code path calls `render_prompt("ui_rework")` — the file was authored for a UI rework routing path that was replaced by the `BUILD_ERRORS.md` approach during Milestone 29 implementation.
+- `lib/ui_validate.sh:37` — Removed redundant `2>&1` after `&>/dev/null` in `_check_npm_package()`. The `&>/dev/null` already redirects both stdout and stderr, making the trailing redirection redundant and triggering shellcheck SC2069.
 
 ## Files Modified
 
-- `lib/ui_validate.sh` — added comment block (no logic change)
-- `prompts/ui_rework.prompt.md` — deleted
+- `lib/ui_validate.sh`
 
 ## Verification
 
-- ✓ `bash -n lib/ui_validate.sh` passed
-- ✓ `shellcheck lib/ui_validate.sh` passed
+- ✓ `bash -n lib/ui_validate.sh` — Syntax check passed
+- ✓ `shellcheck lib/ui_validate.sh` — Shellcheck passed (SC2069 resolved)

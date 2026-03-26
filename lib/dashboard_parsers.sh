@@ -158,8 +158,8 @@ try:
         d = json.load(f)
     print(json.dumps({
         'outcome': d.get('outcome', 'unknown'),
-        'total_turns': d.get('total_turns', 0),
-        'total_time_s': d.get('total_time_s', 0),
+        'total_turns': d.get('total_turns', d.get('total_agent_calls', 0)),
+        'total_time_s': d.get('total_time_s', d.get('wall_clock_seconds', 0)),
         'milestone': d.get('milestone', ''),
         'stages': d.get('stages', {})
     }))
@@ -172,10 +172,16 @@ except: pass
             local outcome
             outcome=$(grep -oP '"outcome"\s*:\s*"\K[^"]+' "$summary_file" 2>/dev/null || echo "unknown")
             local turns
-            turns=$(grep -oP '"total_turns"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || echo "0")
+            turns=$(grep -oP '"total_turns"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || true)
+            [[ -z "$turns" ]] && turns=$(grep -oP '"total_agent_calls"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || echo "0")
+            : "${turns:=0}"
             local time_s
-            time_s=$(grep -oP '"total_time_s"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || echo "0")
-            json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s}}"
+            time_s=$(grep -oP '"total_time_s"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || true)
+            [[ -z "$time_s" ]] && time_s=$(grep -oP '"wall_clock_seconds"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || echo "0")
+            : "${time_s:=0}"
+            local milestone
+            milestone=$(grep -oP '"milestone"\s*:\s*"\K[^"]+' "$summary_file" 2>/dev/null || echo "")
+            json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"${milestone}\",\"stages\":{}}"
         fi
 
         if [[ -n "$json_content" ]]; then

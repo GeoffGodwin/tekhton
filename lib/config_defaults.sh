@@ -225,6 +225,12 @@ set -euo pipefail
 : "${ARTIFACT_MERGE_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
 : "${ARTIFACT_MERGE_MAX_TURNS:=10}"
 
+# --- Build gate timeout defaults (Milestone 30: hang prevention) ---
+: "${BUILD_GATE_TIMEOUT:=600}"                     # Overall gate timeout (10 minutes)
+: "${BUILD_GATE_ANALYZE_TIMEOUT:=300}"             # ANALYZE_CMD timeout (5 minutes)
+: "${BUILD_GATE_COMPILE_TIMEOUT:=120}"             # BUILD_CHECK_CMD timeout (2 minutes)
+: "${BUILD_GATE_CONSTRAINT_TIMEOUT:=60}"           # Dependency constraint timeout (1 minute)
+
 # --- UI testing defaults (Milestone 28: UI Test Awareness) ---
 : "${UI_TEST_CMD:=}"                                    # E2E test command (e.g., "npx playwright test")
 : "${UI_FRAMEWORK:=}"                                   # auto|playwright|cypress|selenium|puppeteer|testing-library|detox|""
@@ -385,6 +391,10 @@ _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
 _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
+_clamp_config_value BUILD_GATE_TIMEOUT 1800
+_clamp_config_value BUILD_GATE_ANALYZE_TIMEOUT 900
+_clamp_config_value BUILD_GATE_COMPILE_TIMEOUT 600
+_clamp_config_value BUILD_GATE_CONSTRAINT_TIMEOUT 300
 _clamp_config_value UI_TEST_TIMEOUT 600
 _clamp_config_value UI_SERVE_PORT 65535
 _clamp_config_value UI_SERVER_STARTUP_TIMEOUT 120

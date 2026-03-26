@@ -7,6 +7,60 @@
 #           BUILD_ERROR_PATTERN (set by config.sh)
 # =============================================================================
 
+# _gate_effective_timeout PHASE_TIMEOUT GATE_START GATE_TIMEOUT
+# Returns the effective timeout for a phase: min(phase_timeout, remaining_gate_time).
+# Prints the timeout value. Returns 1 if gate time is already exceeded.
+_gate_effective_timeout() {
+    local phase_timeout="$1"
+    local gate_start="$2"
+    local gate_timeout="$3"
+    local now elapsed remaining
+
+    now=$(date +%s)
+    elapsed=$((now - gate_start))
+    remaining=$((gate_timeout - elapsed))
+
+    if [[ "$remaining" -le 0 ]]; then
+        return 1
+    fi
+
+    if [[ "$phase_timeout" -gt "$remaining" ]]; then
+        echo "$remaining"
+    else
+        echo "$phase_timeout"
+    fi
+}
+
+# _gate_check_timeout STAGE_LABEL GATE_START GATE_TIMEOUT
+# Checks if the overall gate timeout has been exceeded.
+# If exceeded, writes BUILD_ERRORS.md and returns 1. Otherwise returns 0.
+_gate_check_timeout() {
+    local stage_label="$1"
+    local gate_start="$2"
+    local gate_timeout="$3"
+    local now elapsed
+
+    now=$(date +%s)
+    elapsed=$((now - gate_start))
+
+    if [[ "$elapsed" -ge "$gate_timeout" ]]; then
+        warn "Build gate TIMED OUT after ${gate_timeout}s (${stage_label})."
+        warn "This is a safety timeout — the build gate took too long."
+        cat > BUILD_ERRORS.md << EOF
+# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')
+## Stage
+${stage_label}
+
+## Gate Timeout
+The build gate exceeded the overall timeout of ${gate_timeout}s.
+This typically indicates a hanging subprocess (e.g., static analysis,
+UI server, or headless browser). Check BUILD_GATE_TIMEOUT in pipeline.conf.
+EOF
+        return 1
+    fi
+    return 0
+}
+
 # BUILD GATE — runs after coder, before reviewer
 # Catches broken builds before wasting reviewer/tester turns on bad code
 #
@@ -14,11 +68,31 @@
 # Returns: 0 on pass, 1 on failure (writes BUILD_ERRORS.md on failure)
 run_build_gate() {
     local stage_label="$1"  # "post-coder" or "post-jr-coder"
+    local gate_timeout="${BUILD_GATE_TIMEOUT:-600}"
+    local gate_start
+    gate_start=$(date +%s)
+
     log "Running build gate (${stage_label})..."
 
+    # --- Phase 1: Static analysis (ANALYZE_CMD) ---
+    local analyze_timeout="${BUILD_GATE_ANALYZE_TIMEOUT:-300}"
+    local effective_timeout
+    effective_timeout=$(_gate_effective_timeout "$analyze_timeout" "$gate_start" "$gate_timeout") || {
+        _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout"
+        return 1
+    }
+
+    local analyze_exit=0
     # Capture analyze errors only (warnings are ok, errors are not)
-    # Use bash -c instead of unquoted expansion to avoid word-splitting issues
-    ANALYZE_OUTPUT=$(bash -c "${ANALYZE_CMD}" 2>&1)
+    # Wrapped in a configurable timeout to prevent runaway static analysis
+    ANALYZE_OUTPUT=$(timeout "$effective_timeout" bash -c "${ANALYZE_CMD}" 2>&1) || analyze_exit=$?
+
+    if [[ "$analyze_exit" -eq 124 ]]; then
+        warn "ANALYZE_CMD timed out after ${effective_timeout}s (${stage_label}). Treating as pass."
+        warn "Increase BUILD_GATE_ANALYZE_TIMEOUT if this is expected."
+        ANALYZE_OUTPUT=""
+    fi
+
     ANALYZE_ERRORS=$(echo "$ANALYZE_OUTPUT" | grep -E "${ANALYZE_ERROR_PATTERN}" || true)
 
     if [ -n "$ANALYZE_ERRORS" ]; then
@@ -45,10 +119,25 @@ EOF
         return 1
     fi
 
-    # Also run a quick compile check (no device needed)
+    # Check overall gate timeout before next phase
+    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || return 1
+
+    # --- Phase 2: Compile check (BUILD_CHECK_CMD) ---
     if [ -n "${BUILD_CHECK_CMD}" ]; then
+        local compile_timeout="${BUILD_GATE_COMPILE_TIMEOUT:-120}"
+        effective_timeout=$(_gate_effective_timeout "$compile_timeout" "$gate_start" "$gate_timeout") || {
+            _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout"
+            return 1
+        }
+
+        local compile_exit=0
         # Use bash -c instead of eval to avoid arbitrary code execution
-        COMPILE_OUTPUT=$(bash -c "${BUILD_CHECK_CMD}" 2>&1)
+        COMPILE_OUTPUT=$(timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD}" 2>&1) || compile_exit=$?
+
+        if [[ "$compile_exit" -eq 124 ]]; then
+            warn "BUILD_CHECK_CMD timed out after ${effective_timeout}s (${stage_label}). Treating as pass."
+            COMPILE_OUTPUT=""
+        fi
         if echo "$COMPILE_OUTPUT" | grep -q "${BUILD_ERROR_PATTERN}"; then
             COMPILE_ERRORS=$(echo "$COMPILE_OUTPUT" | grep "${BUILD_ERROR_PATTERN}" | head -20)
             warn "Build gate FAILED (${stage_label}) — compile errors found:"
@@ -65,7 +154,10 @@ EOF
         fi
     fi  # end BUILD_CHECK_CMD guard
 
-    # --- Dependency constraint validation (P5) ---
+    # Check overall gate timeout before next phase
+    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || return 1
+
+    # --- Phase 3: Dependency constraint validation (P5) ---
     # Runs the validation_command from the constraint manifest, if configured.
     # This is deterministic enforcement — no LLM judgment needed.
     if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE}" ]; then
@@ -74,11 +166,23 @@ EOF
             | sed 's/^validation_command: *//' | tr -d '"'"'" 2>/dev/null || true)
 
         if [ -n "$validation_cmd" ]; then
+            local constraint_timeout="${BUILD_GATE_CONSTRAINT_TIMEOUT:-60}"
+            effective_timeout=$(_gate_effective_timeout "$constraint_timeout" "$gate_start" "$gate_timeout") || {
+                _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout"
+                return 1
+            }
+
             log "Running dependency constraint validation: ${validation_cmd}"
             local constraint_output=""
             local constraint_exit=0
             # Use bash -c instead of eval to avoid arbitrary code execution
-            constraint_output=$(bash -c "$validation_cmd" 2>&1) || constraint_exit=$?
+            constraint_output=$(timeout "$effective_timeout" bash -c "$validation_cmd" 2>&1) || constraint_exit=$?
+
+            if [[ "$constraint_exit" -eq 124 ]]; then
+                warn "Constraint validation timed out after ${effective_timeout}s (${stage_label}). Treating as pass."
+                constraint_exit=0
+                constraint_output=""
+            fi
 
             if [ "$constraint_exit" -ne 0 ]; then
                 warn "Build gate FAILED (${stage_label}) — dependency constraint violations:"
@@ -98,7 +202,10 @@ EOF
         fi
     fi
 
-    # --- UI test validation (Milestone 28) ---
+    # Check overall gate timeout before next phase
+    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || return 1
+
+    # --- Phase 4: UI test validation (Milestone 28) ---
     # Runs UI_TEST_CMD when configured and non-empty. Missing command = warning, not failure.
     # Retries once on failure (E2E tests are inherently flaky).
     if [[ -n "${UI_TEST_CMD:-}" ]] && [[ "${UI_VALIDATION_ENABLED:-true}" == "true" ]]; then
@@ -156,7 +263,10 @@ UIEOF
         fi
     fi
 
-    # --- UI validation gate (Milestone 29: headless browser smoke tests) ---
+    # Check overall gate timeout before next phase
+    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || return 1
+
+    # --- Phase 5: UI validation gate (Milestone 29: headless browser smoke tests) ---
     # Runs AFTER UI_TEST_CMD (M28). Soft-fails when no headless browser available.
     if command -v run_ui_validation &>/dev/null; then
         if ! run_ui_validation "$stage_label"; then

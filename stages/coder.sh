@@ -427,7 +427,9 @@ ${nb_notes}"
     # --- Context budget reporting --------------------------------------------
 
     # Mark human notes as in-progress before coder runs (only when task is about notes)
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+    # In --human (single-note) mode, claim_single_note already ran in tekhton.sh —
+    # skip bulk claiming to avoid marking unrelated notes as [~].
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         claim_human_notes
     elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — skipping notes injection."
@@ -591,8 +593,11 @@ ${nb_notes}"
     fi
 
     # Resolve human notes based on coder's structured reporting
-    # Only resolve if notes were actually claimed (marked [~]) for this run
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+    # Only resolve if notes were actually claimed (marked [~]) for this run.
+    # In --human (single-note) mode, _hook_resolve_notes in finalize.sh handles
+    # resolution via resolve_single_note — skip bulk resolution to avoid resetting
+    # the single claimed note before finalization can process it.
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         resolve_human_notes
     fi
 

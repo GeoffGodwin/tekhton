@@ -114,6 +114,9 @@ render_prompt()             { echo "mock_prompt_${1:-}"; }
 print_run_summary()         { true; }
 apply_scout_turn_limits()   { export SCOUT_REC_CODER_TURNS=30; }
 run_completion_gate()       { return 0; }
+run_repo_map()              { return 1; }
+extract_files_from_coder_summary() { echo ""; }
+is_substantive_work()       { return 1; }
 
 # _safe_read_file FILE LABEL — return empty content
 _safe_read_file()           { echo ""; }

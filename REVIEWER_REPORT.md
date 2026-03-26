@@ -1,3 +1,5 @@
+# Reviewer Report — Milestone 30: Build Gate Hardening & Hang Prevention (Cycle 2)
+
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -8,17 +10,17 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/ui_validate.sh:560` — `head -n -5` is GNU-specific and fails silently on macOS BSD head. Use `head -n $(( count - 5 ))` pattern or a sort+tail workaround for portability.
-- `lib/ui_validate.sh:371-421` — retry block duplicates the full validation loop verbatim (~50 lines). Extract the per-target iteration into a `_run_validation_pass()` helper to avoid future divergence.
-- `lib/ui_validate_report.sh:166` — `_json_field()` uses `grep -oP` (PCRE). On Alpine Linux or minimal Docker images, grep may lack PCRE support; the `|| true` fallback silently returns empty strings, producing a report table full of `?` values. Add a comment noting the dependency.
+- `lib/ui_validate.sh` (621 lines), `lib/gates.sh` (359 lines), `lib/config_defaults.sh` (411 lines) all exceed the 300-line soft ceiling. Log for next cleanup pass — all files function correctly.
+- `_check_npm_package()` defined at `ui_validate.sh:34-38` is not called from within `_check_headless_browser()` (the subshell duplicates the `npm ls` logic inline). The function is tested independently and is available as a public helper, but the module itself doesn't use it — a small inconsistency worth noting for future refactoring.
 
 ## Coverage Gaps
-- No shell unit tests for `lib/ui_validate.sh` or `lib/ui_validate_report.sh`. Functions `_json_field`, `_find_available_port`, `_is_port_in_use`, and `get_ui_validation_summary` are directly testable with fixture inputs.
-- `tools/ui_smoke_test.js` has no test coverage. The `pixelDiffRatio` function and argument parsing are unit-testable without a browser.
-
-## ACP Verdicts
-- ACP: UI validation gate integration in run_build_gate() — ACCEPT — Guard-checking with `command -v run_ui_validation` is consistent with the existing project pattern. Placement after UI_TEST_CMD is architecturally correct. The two new library files sourced between gates.sh and hooks.sh in tekhton.sh follows established sourcing order. ARCHITECTURE.md update noted as needed by coder.
+- Test 11 (process group kill in `_stop_ui_server`) conditionally skips when `setsid` is unavailable. The skip path is safe and well-documented, but a minimal fallback assertion (e.g., verifying `_UI_SERVER_PID` resets to 0 even without `setsid`) would ensure some coverage in every environment.
 
 ## Drift Observations
-- `prompts/ui_rework.prompt.md:1-28` — file remains unreachable; no code path calls `render_prompt("ui_rework")`. The BUILD_ERRORS.md approach chosen for the blocker fix supersedes this prompt entirely. Consider removing the file to avoid confusing future maintainers.
-- `lib/ui_validate.sh:243-248` — `_should_self_test_watchtower()` references `DASHBOARD_ENABLED` and `DASHBOARD_DIR`, creating an implicit coupling between the UI validation module and the Watchtower/Dashboard feature. If that feature is refactored, this coupling breaks silently.
+- None
+
+## ACP Verdicts
+None present in CODER_SUMMARY.md.
+
+## Prior Blocker Verification
+- **FIXED**: `lib/ui_validate.sh:37` — redundant `2>&1` after `&>/dev/null` removed. Line now reads `timeout 10 npm ls "$pkg" --depth=0 &>/dev/null` with no trailing redirect.

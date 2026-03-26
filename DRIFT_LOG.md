@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-25
-- Runs since audit: 3
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-03-25 | "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing"] `prompts/ui_rework.prompt.md:1-28` — file remains unreachable; no code path calls `render_prompt("ui_rework")`. The BUILD_ERRORS.md approach chosen for the blocker fix supersedes this prompt entirely. Consider removing the file to avoid confusing future maintainers.
