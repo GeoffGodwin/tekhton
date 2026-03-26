@@ -13,6 +13,13 @@ TESTS_DIR="${TEKHTON_HOME}/tests"
 PASS=0
 FAIL=0
 
+# Disable commit signing for all test subprocesses — tests create temporary
+# git repos that inherit the global signing config, causing failures in
+# environments with broken or unavailable signing keys.
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0="commit.gpgsign"
+export GIT_CONFIG_VALUE_0="false"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -64,7 +71,7 @@ PYTHON_FAIL=0
 PYTHON_TESTS_DIR="${TEKHTON_HOME}/tools/tests"
 
 if [ -d "$PYTHON_TESTS_DIR" ]; then
-    if command -v python3 &>/dev/null; then
+    if command -v python3 &>/dev/null && python3 -c "import pytest" &>/dev/null; then
         echo
         echo "════════════════════════════════════════"
         echo "  Python Tool Tests"
@@ -79,6 +86,9 @@ if [ -d "$PYTHON_TESTS_DIR" ]; then
             PYTHON_FAIL=1
             FAIL=$((FAIL + 1))
         fi
+    elif command -v python3 &>/dev/null; then
+        echo
+        echo -e "  ${YELLOW}SKIP${NC} Python tests (pytest not installed)"
     else
         echo
         echo -e "  ${YELLOW}SKIP${NC} Python tests (python3 not found)"

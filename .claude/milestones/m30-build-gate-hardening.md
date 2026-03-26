@@ -2,7 +2,7 @@
 
 <!-- milestone-meta
 id: "30"
-status: "pending"
+status: "done"
 -->
 
 The build gate (`run_build_gate()` in `lib/gates.sh`) has two reliability issues

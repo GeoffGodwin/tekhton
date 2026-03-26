@@ -16,8 +16,9 @@ set -euo pipefail
 # the process has a controlling terminal.
 _can_prompt() {
     [[ -t 0 ]] && return 0
-    # /dev/tty exists as a device but may not be openable (CI, piped stdin, etc.)
-    [[ -r /dev/tty ]] && [[ -w /dev/tty ]] 2>/dev/null && return 0
+    # /dev/tty may report as readable/writable via stat but fail when actually
+    # opened (containers, CI, sandboxed environments). Test with a real open.
+    : </dev/tty 2>/dev/null && return 0
     return 1
 }
 

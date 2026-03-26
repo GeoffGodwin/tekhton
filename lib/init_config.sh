@@ -76,9 +76,9 @@ _generate_smart_config() {
     # Milestone 12: CI-detected command override
     if [[ -n "${_INIT_CI_CONFIG:-}" ]]; then
         local ci_test ci_build ci_lint
-        ci_test=$(_extract_ci_command "${_INIT_CI_CONFIG}" "test")
-        ci_build=$(_extract_ci_command "${_INIT_CI_CONFIG}" "build")
-        ci_lint=$(_extract_ci_command "${_INIT_CI_CONFIG}" "lint")
+        ci_test=$(_extract_ci_command "${_INIT_CI_CONFIG}" "test" || true)
+        ci_build=$(_extract_ci_command "${_INIT_CI_CONFIG}" "build" || true)
+        ci_lint=$(_extract_ci_command "${_INIT_CI_CONFIG}" "lint" || true)
         # CI overrides heuristic when heuristic confidence < high
         if [[ -n "$ci_test" ]] && [[ "$test_conf" != "high" ]]; then
             test_cmd="$ci_test"; test_conf="high"

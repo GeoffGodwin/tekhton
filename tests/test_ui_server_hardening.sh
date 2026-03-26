@@ -182,8 +182,9 @@ MOCKEOF
         # _stop_ui_server resets _UI_SERVER_PID to 0
         assert_eq "11a. _stop_ui_server resets _UI_SERVER_PID to 0" "0" "$_UI_SERVER_PID"
 
-        # Give processes a moment to be reaped
-        sleep 1
+        # Give processes a moment to be reaped — some environments (containers,
+        # sandboxes) are slow to propagate SIGTERM to process group children.
+        sleep 2
 
         # Verify the server process itself is dead (using saved original PID)
         if ! kill -0 "$_t11_orig_server_pid" 2>/dev/null; then
