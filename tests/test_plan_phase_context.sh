@@ -68,10 +68,10 @@ setup_answers() {
     local features_ans="${3:-}"
     local config_ans="${4:-}"
 
-    [[ -n "$overview_ans" ]] && save_answer "overview" "$overview_ans" || true
-    [[ -n "$techstack_ans" ]] && save_answer "tech_stack" "$techstack_ans" || true
-    [[ -n "$features_ans" ]] && save_answer "core_features" "$features_ans" || true
-    [[ -n "$config_ans" ]] && save_answer "config_architecture" "$config_ans" || true
+    if [[ -n "$overview_ans" ]]; then save_answer "overview" "$overview_ans"; fi
+    if [[ -n "$techstack_ans" ]]; then save_answer "tech_stack" "$techstack_ans"; fi
+    if [[ -n "$features_ans" ]]; then save_answer "core_features" "$features_ans"; fi
+    if [[ -n "$config_ans" ]]; then save_answer "config_architecture" "$config_ans"; fi
 }
 
 # ---------------------------------------------------------------------------
