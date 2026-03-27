@@ -123,7 +123,7 @@ _milestone_in_archive() {
     local in_initiative=false
     while IFS= read -r line; do
         # Track which initiative section we're in via archive headers
-        if [[ "$line" =~ ^##[[:space:]]+Archived:.*—[[:space:]]*(.*) ]]; then
+        if [[ "$line" =~ ^##[[:space:]]+Archived:[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]+—[[:space:]]+(.*) ]]; then
             local section_initiative="${BASH_REMATCH[1]}"
             section_initiative="${section_initiative%"${section_initiative##*[![:space:]]}"}"
             if [[ "$section_initiative" == "$initiative" ]]; then

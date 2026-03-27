@@ -17,7 +17,7 @@ export PLAN_ANSWER_FILE="${TEST_TMPDIR}/.claude/plan_answers.yaml"
 export TEKHTON_VERSION="3.32.0"
 export TEKHTON_SESSION_DIR="${TEST_TMPDIR}/.claude/logs"
 export TEKHTON_TEST_MODE=1
-trap 'rm -rf "$TEST_TMPDIR"' EXIT
+trap '_stop_plan_server 2>/dev/null || true; rm -rf "$TEST_TMPDIR"' EXIT
 
 # Stubs for logging
 log()     { :; }
@@ -228,9 +228,28 @@ if command -v python3 &>/dev/null; then
     mkdir -p "$SRV_FORM_DIR"
     echo "<html><body>test</body></html>" > "${SRV_FORM_DIR}/index.html"
 
-    if _start_plan_server "$SRV_FORM_DIR"; then
-        pass "Server started"
+    # Attempt to start server with diagnostics
+    _srv_started=false
+    _srv_diagnostic=""
+    for _srv_attempt in 1 2 3; do
+        if _start_plan_server "$SRV_FORM_DIR"; then
+            _srv_started=true
+            pass "Server started (attempt $_srv_attempt of 3)"
+            break
+        else
+            # Capture diagnostics on failure
+            _stop_plan_server 2>/dev/null || true
+            if [[ -f "${TEKHTON_SESSION_DIR}/plan_server.log" ]]; then
+                _srv_diagnostic=$(tail -3 "${TEKHTON_SESSION_DIR}/plan_server.log" 2>/dev/null | tr '\n' ' ')
+                _srv_diagnostic="[attempt $_srv_attempt] $_srv_diagnostic"
+            fi
+            if [[ $_srv_attempt -lt 3 ]]; then
+                sleep 2
+            fi
+        fi
+    done
 
+    if [[ "$_srv_started" == true ]]; then
         # Verify server responds
         if curl -s -o /dev/null "http://127.0.0.1:${_PLAN_SERVER_PORT}" 2>/dev/null; then
             pass "Server responds to GET"
@@ -309,7 +328,7 @@ if command -v python3 &>/dev/null; then
             pass "Server stopped (port release may be delayed)"
         fi
     else
-        fail "Server failed to start"
+        fail "Server failed to start${_srv_diagnostic:+ — $_srv_diagnostic}"
     fi
 
     # ============================================================

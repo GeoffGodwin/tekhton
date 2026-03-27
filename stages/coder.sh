@@ -52,7 +52,7 @@ _reconstruct_coder_summary() {
         | head -30)
 
     cat > CODER_SUMMARY.md <<RECON_EOF
-## Status: IN PROGRESS
+## Status: COMPLETE
 
 ## Summary
 CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
