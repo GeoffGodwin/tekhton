@@ -92,15 +92,37 @@ run_stage_tester() {
         TESTER_PROMPT=$(render_prompt "tester")
     fi
 
-    log "Invoking tester agent (max ${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS} turns)..."
+    # --- Tester diagnostics: pre-invocation snapshot ----------------------------
+    local _tester_stage_start
+    _tester_stage_start=$(date +%s)
+    local _tester_prompt_chars=${#TESTER_PROMPT}
+    local _tester_prompt_tokens=$(( (_tester_prompt_chars + 3) / 4 ))
+    local _tester_turn_budget="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
+    log "[tester-diag] Prompt: ${_tester_prompt_chars} chars (~${_tester_prompt_tokens} tokens)"
+    log "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL}"
+    if [[ "$START_AT" = "tester" ]]; then
+        log "[tester-diag] Mode: RESUME (tester_resume prompt)"
+    else
+        log "[tester-diag] Mode: FRESH (full tester prompt)"
+    fi
+
+    log "Invoking tester agent (max ${_tester_turn_budget} turns)..."
     run_agent \
         "Tester" \
         "$CLAUDE_TESTER_MODEL" \
-        "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
+        "$_tester_turn_budget" \
         "$TESTER_PROMPT" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_TESTER"
     export TESTER_EXIT=$?
+
+    # --- Tester diagnostics: post-invocation summary ----------------------------
+    local _tester_agent_end
+    _tester_agent_end=$(date +%s)
+    local _tester_agent_elapsed=$(( _tester_agent_end - _tester_stage_start ))
+    local _tester_agent_mins=$(( _tester_agent_elapsed / 60 ))
+    local _tester_agent_secs=$(( _tester_agent_elapsed % 60 ))
+    log "[tester-diag] Primary invocation: ${LAST_AGENT_TURNS}/${_tester_turn_budget} turns, ${_tester_agent_mins}m${_tester_agent_secs}s, exit=${LAST_AGENT_EXIT_CODE}"
 
     # --- UPSTREAM error detection (12.2) ----------------------------------------
 
@@ -205,9 +227,12 @@ TESTER_EOF
                     local _tcont_attempt=0
                     local _tcont_max="${MAX_CONTINUATION_ATTEMPTS:-3}"
                     local _tcumulative_turns="${LAST_AGENT_TURNS:-0}"
+                    log "[tester-diag] Entering continuation loop: ${REMAINING} tests remaining, max ${_tcont_max} continuations"
 
                     while [[ "$_tcont_attempt" -lt "$_tcont_max" ]] && [[ "$REMAINING" -gt 0 ]]; do
                         _tcont_attempt=$((_tcont_attempt + 1))
+                        local _tcont_start
+                        _tcont_start=$(date +%s)
                         log "Tester hit turn limit with ${REMAINING} tests remaining (attempt ${_tcont_attempt}/${_tcont_max}). Continuing..."
 
                         local _tnext_budget="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
@@ -225,6 +250,14 @@ TESTER_EOF
                             "$AGENT_TOOLS_TESTER"
 
                         _tcumulative_turns=$((_tcumulative_turns + ${LAST_AGENT_TURNS:-0}))
+
+                        # --- Tester diagnostics: continuation timing ----------------
+                        local _tcont_end
+                        _tcont_end=$(date +%s)
+                        local _tcont_elapsed=$(( _tcont_end - _tcont_start ))
+                        local _tcont_mins=$(( _tcont_elapsed / 60 ))
+                        local _tcont_secs=$(( _tcont_elapsed % 60 ))
+                        log "[tester-diag] Continuation ${_tcont_attempt}: ${LAST_AGENT_TURNS:-0} turns, ${_tcont_mins}m${_tcont_secs}s, cumulative=${_tcumulative_turns} turns"
 
                         # Check for API errors
                         if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
@@ -250,6 +283,14 @@ TESTER_EOF
 
                     export CONTINUATION_ATTEMPTS="${_tcont_attempt}"
                     export CONTINUATION_CONTEXT=""
+
+                    # --- Tester diagnostics: continuation loop summary ----------
+                    local _tcont_loop_end
+                    _tcont_loop_end=$(date +%s)
+                    local _tcont_loop_elapsed=$(( _tcont_loop_end - _tester_stage_start ))
+                    local _tcont_loop_mins=$(( _tcont_loop_elapsed / 60 ))
+                    local _tcont_loop_secs=$(( _tcont_loop_elapsed % 60 ))
+                    log "[tester-diag] Stage total so far: ${_tcumulative_turns} turns across $((1 + _tcont_attempt)) invocations, ${_tcont_loop_mins}m${_tcont_loop_secs}s wall-clock"
 
                     if [[ "$REMAINING" -eq 0 ]]; then
                         _tester_continued=true
@@ -288,6 +329,22 @@ TESTER_EOF
             run_test_audit || true
         fi
     fi
+
+    # --- Tester diagnostics: final stage summary --------------------------------
+    local _tester_stage_end
+    _tester_stage_end=$(date +%s)
+    local _tester_total_elapsed=$(( _tester_stage_end - _tester_stage_start ))
+    local _tester_total_mins=$(( _tester_total_elapsed / 60 ))
+    local _tester_total_secs=$(( _tester_total_elapsed % 60 ))
+    local _tester_test_count=0
+    if [[ -f "TESTER_REPORT.md" ]]; then
+        _tester_test_count=$(grep -c '^- \[' TESTER_REPORT.md || true)
+    fi
+    log "[tester-diag] === Stage Complete ==="
+    log "[tester-diag] Total wall-clock: ${_tester_total_mins}m${_tester_total_secs}s"
+    log "[tester-diag] Test items in report: ${_tester_test_count}"
+    log "[tester-diag] Prompt size: ${_tester_prompt_chars:-0} chars (~${_tester_prompt_tokens:-0} tokens)"
+    log "[tester-diag] Turn budget: ${_tester_turn_budget:-?} | Turns used (primary): ${LAST_AGENT_TURNS:-?}"
 }
 
 # _run_tester_write_failing — TDD pre-flight: write tests that should fail.

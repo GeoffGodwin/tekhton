@@ -1,4 +1,4 @@
-# Reviewer Report — M31 Planning Answer Layer & File Mode (2026-03-26)
+# Reviewer Report
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,10 +10,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_plan_phase_context.sh:71-74` — The `|| true` idiom is correct and shellcheck-clean, but `if [[ -n "$var" ]]; then ...; fi` is the more idiomatic bash form for a conditional-with-no-else and would be marginally clearer to future readers. Readability preference only; no defect.
+- `stages/tester.sh` is now 426 lines, exceeding the 300-line soft ceiling. The diagnostic block adds ~50 lines of well-structured, correct code, but the file was already over ceiling before this change. Log for a future cleanup pass.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- None
+- `_run_tester_write_failing()` (lines 353–425) is a parallel code path that invokes the tester agent but has no `[tester-diag]` instrumentation. Out of scope for this task, but if TDD pre-flight mode proves slow, diagnostics will be absent there.

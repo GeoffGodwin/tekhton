@@ -250,26 +250,39 @@ _start_plan_server() {
     export PLAN_SERVER_PORT="$port"
     export PLAN_SERVER_LOG="$server_log"
 
-    (cd "$form_dir" && python3 "$server_script") &
+    (cd "$form_dir" && python3 "$server_script" 2>>"$server_log") &
     _PLAN_SERVER_PID=$!
 
-    # Wait for server readiness (up to 10 seconds)
-    local elapsed=0
-    while [[ "$elapsed" -lt 10 ]]; do
-        if curl -s -o /dev/null "http://127.0.0.1:${port}" 2>/dev/null; then
-            log "Planning form server ready on port ${port}."
-            return 0
-        fi
+    # Wait for server readiness (up to 15 seconds, checking frequently at first)
+    local retries=0
+    local max_retries=30  # 30 * 0.5s = 15s
+    while [[ "$retries" -lt "$max_retries" ]]; do
+        # Verify process is still alive
         if ! kill -0 "$_PLAN_SERVER_PID" 2>/dev/null; then
-            warn "Planning server process exited before becoming ready."
+            local error_msg
+            error_msg=$(tail -5 "$server_log" 2>/dev/null | tr '\n' ' ' || echo "Unknown error")
+            warn "Planning server process exited before becoming ready. Last stderr: $error_msg"
             _PLAN_SERVER_PID=0
             return 1
         fi
-        sleep 1
-        elapsed=$((elapsed + 1))
+
+        # Try health check with connection timeout
+        if curl -s --connect-timeout 1 --max-time 2 -o /dev/null "http://127.0.0.1:${port}" 2>/dev/null; then
+            log "Planning form server ready on port ${port}."
+            return 0
+        fi
+
+        sleep 0.5
+        retries=$((retries + 1))
     done
 
-    warn "Planning server did not become ready within 10 seconds."
+    # Collect diagnostics before giving up
+    local diag=""
+    if [[ -f "$server_log" ]]; then
+        diag=$(tail -10 "$server_log" 2>/dev/null | sed 's/^/  [server] /')
+    fi
+    warn "Planning server did not become ready within 15 seconds."
+    [[ -n "$diag" ]] && warn "Server log:\n${diag}"
     _stop_plan_server
     return 1
 }
