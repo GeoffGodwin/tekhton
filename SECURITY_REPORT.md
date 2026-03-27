@@ -1,5 +1,5 @@
 ## Summary
-This change removes a redundant guard clause from `_clamp_config_float` in `lib/config.sh` and adds a blank line separator in `lib/pipeline_order.sh`. Both changes are cosmetic/cleanup with no impact on security posture. The pre-existing `awk` interpolation of `$val` at `config.sh:120` is safe because the regex at line 116 (`^[0-9]+\.?[0-9]*$`) strictly limits `$val` to digits and an optional single dot before it reaches the `awk` command, preventing any injection.
+This change modifies `archive_completed_milestone()` in `lib/milestone_archival.sh` to skip initiative-scoped archive lookups when DAG mode is active, passing an empty string to `_milestone_in_archive()` for a global search instead. The change is a focused, single-function logic fix with no authentication, network, or user-input surface. No security concerns were identified.
 
 ## Findings
 None

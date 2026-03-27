@@ -36,11 +36,24 @@ archive_completed_milestone() {
         return 1
     fi
 
-    # Resolve initiative name early so _milestone_in_archive can scope by it
+    # Resolve initiative name for the archive header
     local initiative=""
     initiative=$(_get_initiative_name "$claude_md" "$num")
 
-    if _milestone_in_archive "$num" "$archive_file" "$initiative"; then
+    # In DAG mode, milestone numbers are unique across the manifest, so check
+    # the archive globally (no initiative scoping).  _get_initiative_name always
+    # returns the initiative that contains the DAG pointer comment, which may
+    # differ from the initiative under which a milestone was originally archived.
+    # Scoping by that (wrong) initiative causes the check to miss already-archived
+    # entries, leading to unbounded re-archival on every run.
+    local archive_initiative="$initiative"
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && declare -f has_milestone_manifest &>/dev/null \
+       && has_milestone_manifest; then
+        archive_initiative=""
+    fi
+
+    if _milestone_in_archive "$num" "$archive_file" "$archive_initiative"; then
         return 1
     fi
 
