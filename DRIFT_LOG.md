@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-26
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-27 | "**[BUG] Milestone archival re-archives ALL completed milestones on every run**"] `_run_tester_write_failing()` (lines 353–425) is a parallel code path that invokes the tester agent but has no `[tester-diag]` instrumentation. Out of scope for this task, but if TDD pre-flight mode proves slow, diagnostics will be absent there.
 - [2026-03-26 | "[FEAT] Add debugging/diagnostic output to the Tester stage to surface why it runs disproportionately long compared to the Coder stage."] `_run_tester_write_failing()` (lines 353–425) is a parallel code path that invokes the tester agent but has no `[tester-diag]` instrumentation. Out of scope for this task, but if TDD pre-flight mode proves slow, diagnostics will be absent there.
 
 ## Resolved

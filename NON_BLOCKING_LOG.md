@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-27 | "**[BUG] Milestone archival re-archives ALL completed milestones on every run**"] `stages/tester.sh` is now 426 lines, exceeding the 300-line soft ceiling. The diagnostic block adds ~50 lines of well-structured, correct code, but the file was already over ceiling before this change. Log for a future cleanup pass.
 - [ ] [2026-03-26 | "[FEAT] Add debugging/diagnostic output to the Tester stage to surface why it runs disproportionately long compared to the Coder stage."] `stages/tester.sh` is now 426 lines, exceeding the 300-line soft ceiling. The diagnostic block adds ~50 lines of well-structured, correct code, but the file was already over ceiling before this change. Log for a future cleanup pass.
 - [ ] [2026-03-26 | "M32"] `tests/test_plan_phase_context.sh:71-74` — The `|| true` idiom is correct and shellcheck-clean, but `if [[ -n "$var" ]]; then ...; fi` is the more idiomatic bash form for a conditional-with-no-else and would be marginally clearer to future readers. Readability preference only; no defect.
 - [ ] [2026-03-26 | "M31"] `tests/test_plan_phase_context.sh:71-74` — The `|| true` idiom is correct and shellcheck-clean, but `if [[ -n "$var" ]]; then ...; fi` is the more idiomatic bash form for a conditional-with-no-else and would be marginally clearer to future readers. Readability preference only; no defect.
