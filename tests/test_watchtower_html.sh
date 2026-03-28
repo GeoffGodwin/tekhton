@@ -130,13 +130,14 @@ assert "app.js uses localStorage" grep -q 'localStorage' "${WATCHTOWER_DIR}/app.
 assert "app.js has TK_RUN_STATE fallback" grep -q 'TK_RUN_STATE || {}' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has TK_TIMELINE fallback" grep -q 'TK_TIMELINE || \[\]' "${WATCHTOWER_DIR}/app.js"
 
-# --- Test 13: Size constraint (50KB total) ---
+# --- Test 13: Size constraint (75KB total) ---
+# Bumped from 50KB to 75KB for M36 Actions tab (forms + server integration)
 total_size=0
 for file in index.html style.css app.js; do
     fsize=$(wc -c < "${WATCHTOWER_DIR}/${file}")
     total_size=$((total_size + fsize))
 done
-assert "total static size under 50KB" test "$total_size" -lt 51200
+assert "total static size under 75KB" test "$total_size" -lt 76800
 
 # --- Test 14: _copy_static_files function exists in dashboard.sh ---
 assert "_copy_static_files in dashboard.sh" grep -q '_copy_static_files' "${TEKHTON_HOME}/lib/dashboard.sh"
@@ -150,6 +151,28 @@ assert "CSS has prefers-color-scheme" grep -q 'prefers-color-scheme' "${WATCHTOW
 
 # --- Test 17: Causal trace support ---
 assert "app.js has causal trace" grep -q 'causal-highlight\|getCausalChain\|causalChildren' "${WATCHTOWER_DIR}/app.js"
+
+# --- Test 18: Actions tab (M36) ---
+assert "HTML has Actions tab button" grep -q 'data-tab="actions"' "${WATCHTOWER_DIR}/index.html"
+assert "HTML has Actions tab section" grep -q 'id="tab-actions"' "${WATCHTOWER_DIR}/index.html"
+assert "HTML includes inbox.js" grep -q 'data/inbox.js' "${WATCHTOWER_DIR}/index.html"
+assert "app.js has renderActions" grep -q 'renderActions' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has TK_INBOX fallback" grep -q 'TK_INBOX' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has submitFile" grep -q 'submitFile' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has server probe" grep -q 'probeServer\|/api/ping' "${WATCHTOWER_DIR}/app.js"
+assert "CSS has action-card styles" grep -q 'action-card' "${WATCHTOWER_DIR}/style.css"
+assert "CSS has form-group styles" grep -q 'form-group' "${WATCHTOWER_DIR}/style.css"
+
+# --- Test 19: inbox.js seed in dashboard.sh ---
+assert "dashboard.sh seeds inbox.js" grep -q 'inbox.js' "${TEKHTON_HOME}/lib/dashboard.sh"
+
+# --- Test 20: emit_dashboard_inbox in emitters ---
+assert "emit_dashboard_inbox exists" grep -q 'emit_dashboard_inbox' "${TEKHTON_HOME}/lib/dashboard_emitters.sh"
+
+# --- Test 21: inbox.sh exists and sources ---
+assert "inbox.sh exists" test -f "${TEKHTON_HOME}/lib/inbox.sh"
+assert "inbox.sh has process_watchtower_inbox" grep -q 'process_watchtower_inbox' "${TEKHTON_HOME}/lib/inbox.sh"
+assert "tekhton.sh sources inbox.sh" grep -q 'source.*inbox.sh' "${TEKHTON_HOME}/tekhton.sh"
 
 # --- Summary ---
 echo "watchtower_html: ${PASS} passed, ${FAIL} failed"

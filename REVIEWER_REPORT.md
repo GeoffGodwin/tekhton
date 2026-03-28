@@ -1,4 +1,4 @@
-# Reviewer Report — M35 Watchtower Smart Refresh
+# Reviewer Report — M36: Watchtower Interactive Controls
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,12 +10,20 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `renderedTabs` is now write-only state. `renderActiveTab()` sets non-active tabs to `false` and `switchTab()` sets the active tab to `true`, but neither function reads `renderedTabs` as a lazy-render gate before calling `renderTab()`. The variable is dead. Either restore the lazy-render check in `switchTab()` (but only for non-refresh-triggered navigation) or remove `renderedTabs` entirely and let every tab switch and every `renderActiveTab()` call unconditionally re-render.
-- In `render()` (line 528–529), `checkRefreshLifecycle()` already calls `scheduleRefresh()` when status is `running` or `initializing`, and then the very next line redundantly calls `scheduleRefresh()` again for the same condition. `scheduleRefresh()` clears the existing timer first so it's safe, but the second call is dead code. Remove the `if (!refreshStopped) { ... scheduleRefresh(); }` block in `render()` since `checkRefreshLifecycle()` handles it.
+- `lib/inbox.sh:86-88` — The guard `[[ "$basename" == manifest_append_* ]]` in `_process_milestone()` is dead code: the function is only called from the `milestone_*.md` glob loop, which cannot match `manifest_append_*`. Safe to remove.
+- `lib/dashboard_emitters.sh:303` — Similarly, `[[ "$basename" != manifest_append_* ]]` in `emit_dashboard_inbox()` is dead code for the same reason (the enclosing glob is `milestone_*.md`).
+- `lib/inbox.sh:65-75` — `_process_note()` silently drops the description, priority, and source fields when calling `add_human_note()`. Only the title is written to HUMAN_NOTES.md. This is consistent with how the flat checklist works, but worth documenting as a known limitation.
+- `lib/dashboard_emitters.sh:280-331` — `emit_dashboard_inbox()` does not enumerate `manifest_append_*.cfg` files in the pending display. When a milestone is submitted via the UI, users will see the `.md` entry but not the associated `.cfg` entry. Minor UX gap; acceptable since they are submitted as a pair.
+- `tools/watchtower_server.py:45` — The 100KB payload limit is a hard-coded magic number; could be a CLI arg for future extensibility, but acceptable at this scope.
 
 ## Coverage Gaps
-- No test for `checkRefreshLifecycle()` stopping refresh when status is `'waiting'` — if the pipeline enters the waiting state while refresh is running, `checkRefreshLifecycle()` neither schedules the next cycle nor shows the completion indicator, silently halting refresh. (This matches pre-M35 behavior, so not a regression, but worth documenting.)
-- Filter button click handler (DOM interaction with `.run-type-tag` text-scraping to reconstruct `run_type`) is not covered by the structural tests.
+- `shellcheck` and `bash -n` passes for `lib/inbox.sh` were not independently verified during review (tool execution was unavailable). The tester should run `shellcheck lib/inbox.sh` and `bash -n lib/inbox.sh` as part of acceptance gating.
+- `tools/watchtower_server.py` smoke test: tester should verify `python3 tools/watchtower_server.py --help` runs without error and the `/api/ping` endpoint returns `{"ok": true}` when the server is running.
+- No test covers the `_process_note()` → `add_human_note()` integration path (note file read from fixture inbox dir and appended to HUMAN_NOTES.md). A unit test for `process_watchtower_inbox()` with a populated fixture inbox would close this gap.
+
+## ACP Verdicts
+- ACP: Watchtower Inbox Directory — **ACCEPT** — The `.claude/watchtower_inbox/` convention is well-motivated, backward compatible (no-op when absent), and follows the existing `.claude/` staging pattern. ARCHITECTURE.md update needed as noted.
+- ACP: New `lib/inbox.sh` Library — **ACCEPT** — Correctly scoped single-entry-point library. Source order in `tekhton.sh` is correct (`notes_cli.sh` at line 699, `inbox.sh` at line 749), so `add_human_note()` is always available. The `command -v` guard provides safe fallback. ARCHITECTURE.md Layer 3 update needed.
 
 ## Drift Observations
-- `app.js` (line 497–498): the error thrown in the `new Function(text)()` catch block references `name` from the outer IIFE closure (`name` is the `dataFiles[i]` iteration variable captured via the inner IIFE). The error message (`'Parse error in ' + name + '.js'`) is constructed correctly, but the error is immediately swallowed by the outer `Promise.all(...).catch(() => location.reload())`. The detail is silently lost. Consider at minimum a `console.error` before falling back, which would aid debugging without any user-visible change.
+- `lib/inbox.sh:103`, `lib/dashboard_emitters.sh:85`, and `lib/milestone_dag.sh` all independently construct the manifest path as `${MILESTONE_DIR:-...}/${MILESTONE_MANIFEST:-MANIFEST.cfg}`. This same two-part path expression is repeated in at least three files. A shared `_manifest_path()` helper would eliminate the drift in a future cleanup pass.

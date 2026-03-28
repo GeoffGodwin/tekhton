@@ -9,6 +9,7 @@
   var reports = function () { return window.TK_REPORTS || {}; };
   var metrics = function () { return window.TK_METRICS || {}; };
   var health = function () { return window.TK_HEALTH || { available: false }; };
+  var inbox = function () { return window.TK_INBOX || { items: [] }; };
 
   var causalChildren = {}, causalParents = {};
   function buildCausalIndex() {
@@ -106,6 +107,7 @@
       case 'milestones': renderMilestoneMap(); break;
       case 'reports': renderReports(); break;
       case 'trends': renderTrends(); break;
+      case 'actions': renderActions(); break;
     }
   }
   function initTheme() {
@@ -483,10 +485,251 @@
     return html + '</tbody></table>';
   }
 
+  // --- Tab 5: Actions ---
+  var serverAvailable = null; // null = unknown, true/false after probe
+  function probeServer() {
+    if (serverAvailable !== null) return;
+    if (typeof fetch !== 'function') { serverAvailable = false; return; }
+    fetch('/api/ping', { method: 'GET' }).then(function (r) {
+      serverAvailable = r.ok;
+    }).catch(function () { serverAvailable = false; });
+  }
+  probeServer();
+
+  function getNextMilestoneId() {
+    var ms = milestones(), maxNum = 0;
+    for (var i = 0; i < ms.length; i++) {
+      var m = ms[i].id.replace(/^m0*/, '');
+      var n = parseInt(m, 10);
+      if (!isNaN(n) && n > maxNum) maxNum = n;
+    }
+    var next = maxNum + 1;
+    return next < 10 ? 'm0' + next : 'm' + next;
+  }
+  function getExistingGroups() {
+    var ms = milestones(), groups = {};
+    for (var i = 0; i < ms.length; i++) {
+      var g = ms[i].parallel_group;
+      if (g) groups[g] = true;
+    }
+    var result = [];
+    for (var k in groups) if (groups.hasOwnProperty(k)) result.push(k);
+    return result.sort();
+  }
+  function milestoneIdExists(id) {
+    var ms = milestones();
+    for (var i = 0; i < ms.length; i++) if (ms[i].id === id) return true;
+    return false;
+  }
+  function generateFilename(prefix, type) {
+    var ts = new Date().toISOString().replace(/[-:T]/g, '').replace(/\.\d+Z$/, '');
+    return prefix + '_' + ts + (type ? '_' + type.toLowerCase() : '') + (prefix === 'task' ? '.txt' : '.md');
+  }
+  function downloadFile(filename, content) {
+    var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
+  }
+  function submitFile(filename, content, callback) {
+    if (serverAvailable) {
+      fetch('/api/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: filename, content: content })
+      }).then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        callback(true, 'Saved to inbox');
+      }).catch(function () { downloadFile(filename, content); callback(true, 'Downloaded (save to .claude/watchtower_inbox/)'); });
+    } else {
+      downloadFile(filename, content);
+      callback(true, 'Downloaded (save to .claude/watchtower_inbox/)');
+    }
+  }
+  function showFormSuccess(formId, msg) {
+    var el = document.getElementById(formId + '-success');
+    if (el) { el.textContent = msg; el.style.display = 'block'; setTimeout(function () { el.style.display = 'none'; }, 4000); }
+  }
+  function showFormError(formId, msg) {
+    var el = document.getElementById(formId + '-error');
+    if (el) { el.textContent = msg; el.style.display = 'block'; setTimeout(function () { el.style.display = 'none'; }, 4000); }
+  }
+
+  function renderActions() {
+    var ct = document.getElementById('tab-actions');
+    if (!ct) return;
+    var h = '<div class="actions-grid">';
+
+    // --- Human Notes Form ---
+    h += '<div class="action-card"><h3>Submit Human Note</h3>';
+    h += '<form id="note-form" onsubmit="return false">';
+    h += '<div class="form-group"><label>Type (required)</label><div class="radio-group">';
+    h += '<label><input type="radio" name="note-type" value="BUG"><span>BUG</span></label>';
+    h += '<label><input type="radio" name="note-type" value="FEAT" checked><span>FEAT</span></label>';
+    h += '<label><input type="radio" name="note-type" value="POLISH"><span>POLISH</span></label>';
+    h += '</div></div>';
+    h += '<div class="form-group"><label>Title (required)</label><input type="text" id="note-title" maxlength="120" placeholder="Brief description of the issue or request"></div>';
+    h += '<div class="form-group"><label>Description (optional)</label><textarea id="note-desc" maxlength="2000" placeholder="Additional details, steps to reproduce, etc."></textarea><div class="char-count"><span id="note-desc-count">0</span>/2000</div></div>';
+    h += '<div class="form-group"><label>Priority</label><div class="radio-group">';
+    h += '<label><input type="radio" name="note-priority" value="Low"><span>Low</span></label>';
+    h += '<label><input type="radio" name="note-priority" value="Medium" checked><span>Medium</span></label>';
+    h += '<label><input type="radio" name="note-priority" value="High"><span>High</span></label>';
+    h += '</div></div>';
+    h += '<div class="form-actions"><button class="btn-submit" id="note-submit">Submit Note</button></div>';
+    h += '<div class="form-error" id="note-form-error"></div>';
+    h += '<div class="form-success" id="note-form-success"></div>';
+    h += '</form></div>';
+
+    // --- Milestone Form ---
+    var nextId = getNextMilestoneId();
+    var groups = getExistingGroups();
+    h += '<div class="action-card"><h3>Create Milestone</h3>';
+    h += '<form id="ms-form" onsubmit="return false">';
+    h += '<div class="form-group"><label>Milestone ID</label><input type="text" id="ms-id" value="' + esc(nextId) + '" maxlength="10"></div>';
+    h += '<div class="form-group"><label>Title (required)</label><input type="text" id="ms-title" maxlength="100" placeholder="Milestone title"></div>';
+    h += '<div class="form-group"><label>Description (required)</label><textarea id="ms-desc" maxlength="5000" placeholder="Scope description for this milestone"></textarea><div class="char-count"><span id="ms-desc-count">0</span>/5000</div></div>';
+    h += '<div class="form-group"><label>Depends On (optional)</label><select id="ms-deps" multiple style="min-height:3rem">';
+    var ms = milestones();
+    for (var i = 0; i < ms.length; i++) h += '<option value="' + esc(ms[i].id) + '">' + esc(ms[i].id) + ' — ' + esc(truncate(ms[i].title, 40)) + '</option>';
+    h += '</select><div class="form-hint">Hold Ctrl/Cmd to select multiple</div></div>';
+    h += '<div class="form-group"><label>Parallel Group (optional)</label><input type="text" id="ms-group" list="ms-group-list" placeholder="e.g. foundation"><datalist id="ms-group-list">';
+    for (var g = 0; g < groups.length; g++) h += '<option value="' + esc(groups[g]) + '">';
+    h += '</datalist></div>';
+    h += '<div class="form-actions"><button class="btn-submit" id="ms-submit">Create Milestone</button></div>';
+    h += '<div class="form-error" id="ms-form-error"></div>';
+    h += '<div class="form-success" id="ms-form-success"></div>';
+    h += '</form></div>';
+
+    // --- Ad Hoc Task Form ---
+    h += '<div class="action-card"><h3>Queue Ad Hoc Task</h3>';
+    h += '<form id="task-form" onsubmit="return false">';
+    h += '<div class="form-group"><label>Task Description (required)</label><textarea id="task-desc" maxlength="2000" placeholder="Describe the task to queue for the next pipeline run"></textarea><div class="char-count"><span id="task-desc-count">0</span>/2000</div></div>';
+    h += '<div class="form-actions"><button class="btn-submit" id="task-submit">Queue Task</button></div>';
+    h += '<div class="form-error" id="task-form-error"></div>';
+    h += '<div class="form-success" id="task-form-success"></div>';
+    h += '</form></div>';
+
+    // --- Pending Submissions ---
+    var items = inbox().items || [];
+    h += '<div class="action-card full-width inbox-section"><h3>Pending Submissions (' + items.length + ')</h3>';
+    if (items.length === 0) {
+      h += '<div class="empty-state" style="padding:1rem">No pending items in inbox</div>';
+    } else {
+      for (var p = 0; p < items.length; p++) {
+        var it = items[p];
+        h += '<div class="inbox-item"><span class="' + badgeClass(it.type || 'info') + ' inbox-type">' + esc(it.type || 'unknown') + '</span>';
+        h += '<span class="inbox-title">' + esc(it.title || it.filename || '') + '</span>';
+        h += '<span class="inbox-time">' + esc(it.submitted || '') + '</span></div>';
+      }
+    }
+    h += '</div>';
+
+    h += '</div>'; // actions-grid
+    ct.innerHTML = h;
+    bindActionForms();
+  }
+
+  function bindActionForms() {
+    // Character counters
+    var pairs = [['note-desc', 'note-desc-count'], ['ms-desc', 'ms-desc-count'], ['task-desc', 'task-desc-count']];
+    for (var i = 0; i < pairs.length; i++) (function (id, cid) {
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('input', function () {
+        var c = document.getElementById(cid);
+        if (c) c.textContent = el.value.length;
+      });
+    })(pairs[i][0], pairs[i][1]);
+
+    // Milestone ID collision check
+    var msIdEl = document.getElementById('ms-id');
+    if (msIdEl) msIdEl.addEventListener('input', function () {
+      var btn = document.getElementById('ms-submit');
+      if (milestoneIdExists(msIdEl.value.trim())) {
+        showFormError('ms-form', 'Milestone ID already exists');
+        if (btn) btn.disabled = true;
+      } else {
+        var errEl = document.getElementById('ms-form-error');
+        if (errEl) errEl.style.display = 'none';
+        if (btn) btn.disabled = false;
+      }
+    });
+
+    // Note submit
+    var noteBtn = document.getElementById('note-submit');
+    if (noteBtn) noteBtn.addEventListener('click', function () {
+      var title = (document.getElementById('note-title') || {}).value || '';
+      if (!title.trim()) { showFormError('note-form', 'Title is required'); return; }
+      var typeEl = document.querySelector('input[name="note-type"]:checked');
+      var type = typeEl ? typeEl.value : 'FEAT';
+      var desc = (document.getElementById('note-desc') || {}).value || '';
+      var prioEl = document.querySelector('input[name="note-priority"]:checked');
+      var prio = prioEl ? prioEl.value : 'Medium';
+      var ts = new Date().toISOString();
+      var content = '<!-- watchtower-note -->\n- [ ] [' + type + '] ' + title.trim() + '\n';
+      if (desc.trim()) content += '\n' + desc.trim() + '\n';
+      content += '\nPriority: ' + prio + '\nSubmitted: ' + ts + '\nSource: watchtower\n';
+      var filename = generateFilename('note', type);
+      submitFile(filename, content, function (ok, msg) {
+        if (ok) {
+          showFormSuccess('note-form', 'Note submitted. ' + msg);
+          (document.getElementById('note-title') || {}).value = '';
+          (document.getElementById('note-desc') || {}).value = '';
+          var cnt = document.getElementById('note-desc-count'); if (cnt) cnt.textContent = '0';
+        }
+      });
+    });
+
+    // Milestone submit
+    var msBtn = document.getElementById('ms-submit');
+    if (msBtn) msBtn.addEventListener('click', function () {
+      var id = (document.getElementById('ms-id') || {}).value || '';
+      var title = (document.getElementById('ms-title') || {}).value || '';
+      var desc = (document.getElementById('ms-desc') || {}).value || '';
+      if (!id.trim()) { showFormError('ms-form', 'Milestone ID is required'); return; }
+      if (!title.trim()) { showFormError('ms-form', 'Title is required'); return; }
+      if (!desc.trim()) { showFormError('ms-form', 'Description is required'); return; }
+      if (milestoneIdExists(id.trim())) { showFormError('ms-form', 'Milestone ID already exists'); return; }
+      var depsEl = document.getElementById('ms-deps'), deps = [];
+      if (depsEl) for (var d = 0; d < depsEl.options.length; d++) if (depsEl.options[d].selected) deps.push(depsEl.options[d].value);
+      var group = (document.getElementById('ms-group') || {}).value || '';
+      var num = id.trim().replace(/^m0*/, '');
+      var mdContent = '# Milestone ' + num + ': ' + title.trim() + '\n\n## Overview\n\n' + desc.trim() + '\n\n## Scope\n\n(To be detailed during planning or execution)\n\n## Acceptance Criteria\n\n- (To be defined)\n\n## Watch For\n\n- (To be defined)\n';
+      var cfgLine = id.trim() + '|' + title.trim() + '|pending|' + deps.join(',') + '|milestone_' + id.trim() + '.md|' + group.trim() + '\n';
+      submitFile('milestone_' + id.trim() + '.md', mdContent, function (ok, msg) {
+        if (ok) submitFile('manifest_append_' + id.trim() + '.cfg', cfgLine, function (ok2, msg2) {
+          if (ok2) {
+            showFormSuccess('ms-form', 'Milestone created. ' + msg2);
+            (document.getElementById('ms-title') || {}).value = '';
+            (document.getElementById('ms-desc') || {}).value = '';
+            var cnt = document.getElementById('ms-desc-count'); if (cnt) cnt.textContent = '0';
+          }
+        });
+      });
+    });
+
+    // Task submit
+    var taskBtn = document.getElementById('task-submit');
+    if (taskBtn) taskBtn.addEventListener('click', function () {
+      var desc = (document.getElementById('task-desc') || {}).value || '';
+      if (!desc.trim()) { showFormError('task-form', 'Task description is required'); return; }
+      var filename = generateFilename('task');
+      submitFile(filename, desc.trim() + '\n', function (ok, msg) {
+        if (ok) {
+          showFormSuccess('task-form', 'Task queued. ' + msg);
+          (document.getElementById('task-desc') || {}).value = '';
+          var cnt = document.getElementById('task-desc-count'); if (cnt) cnt.textContent = '0';
+        }
+      });
+    });
+  }
+
   // --- Incremental data refresh ---
   var refreshTimer = null, refreshStopped = false;
   function refreshData() {
-    var dataFiles = ['run_state', 'timeline', 'milestones', 'reports', 'metrics', 'security', 'health'];
+    var dataFiles = ['run_state', 'timeline', 'milestones', 'reports', 'metrics', 'security', 'health', 'inbox'];
     var promises = [];
     for (var i = 0; i < dataFiles.length; i++) (function (name) {
       promises.push(fetch('data/' + name + '.js?t=' + Date.now()).then(function (r) {

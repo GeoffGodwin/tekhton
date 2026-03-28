@@ -1,45 +1,49 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 13 test functions (7 in test_agent_counter.sh, 9 phases in test_agent_fifo_invocation.sh)
-Verdict: CONCERNS
-
----
+Tests audited: 1 file, 14 test functions
+Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: Tautological assertion in success branch (4.2)
-- File: `tests/test_agent_fifo_invocation.sh:139-143`
-- Issue: `assert_eq "4.2 log file has JSON output" "0" "0"` compares the literal string "0" to itself — this assertion always passes regardless of what `grep` found. The `if grep -q ...; then assert_eq "..." "0" "0"` pattern is intended to register a pass, but the assert call itself verifies nothing. The actual failure detection lives in the `else` branch (`FAIL=1`), so the test would still fail if `grep` didn't match — but the assertion on the success path is a dead no-op that communicates false rigour.
-- Severity: HIGH
-- Action: Replace `assert_eq "4.2 ..." "0" "0"` with a direct `echo "PASS: 4.2 ..."` statement (and add a PASS counter — see NAMING finding). Do not leave an always-true `assert_eq` in the success branch.
-
-#### INTEGRITY: Tautological assertion in success branch (6.3)
-- File: `tests/test_agent_fifo_invocation.sh:196-201`
-- Issue: Identical pattern to finding above. `assert_eq "6.3 log contains ACTIVITY TIMEOUT message" "0" "0"` is always true regardless of the `grep` result. Same reasoning and risk apply.
-- Severity: HIGH
-- Action: Same as 4.2 — replace the tautological `assert_eq "..." "0" "0"` with a `echo "PASS: ..."` statement.
-
-#### SCOPE: lib/agent.sh modified but not reported in TESTER_REPORT.md
-- File: `lib/agent.sh:130`, `TESTER_REPORT.md`
-- Issue: `git diff lib/agent.sh` reveals an unstaged working-tree change: a `&& command -v get_mcp_config_path &>/dev/null` guard was added to the MCP config block inside `run_agent()`. TESTER_REPORT.md states "Implementation Files Changed: none." The change is defensive and correct (prevents calling an undefined function), and is the likely fix for one or both of the originally failing tests. The omission from the report means the implementation change is undocumented and unreviewed.
-- Severity: MEDIUM
-- Action: Update TESTER_REPORT.md to list `lib/agent.sh` under "Implementation Files Changed" and describe the change. Stage the file so it is included in the next commit alongside the test fixes.
-
-#### NAMING: No PASS counter in test_agent_fifo_invocation.sh
-- File: `tests/test_agent_fifo_invocation.sh:44-68`
-- Issue: `FAIL` is tracked but `PASS` is not. The test exits correctly on failure but produces no pass-count summary. Silent success paths make it harder to confirm that all assertion branches actually executed — particularly relevant given the tautological assertions in 4.2 and 6.3 that print "PASS" without incrementing any counter.
+#### SCOPE: Audit context metadata inconsistency
+- File: tests/test_inbox_processing.sh
+- Issue: The audit context states "Implementation files changed: none" (reflecting only the JR Coder's `DRIFT_LOG.md` cleanup). The tests exercise two untracked files — `lib/inbox.sh` and `tools/watchtower_server.py` — which appear in git status as `??` (new, untracked). These were authored by a prior stage (senior coder, M36 implementation) and are the actual implementation under test. The audit metadata does not surface this.
 - Severity: LOW
-- Action: Add `PASS=0` and increment it in `assert_eq`, `assert_ge`, and `assert_file_exists`/`assert_file_not_exists` on success. Print a summary line at the end matching the `test_agent_counter.sh` style.
+- Action: No test changes needed. For future audits of this milestone, the audit context should list `lib/inbox.sh` and `tools/watchtower_server.py` as implementation files.
 
----
+#### COVERAGE: Unknown-tag fallback not tested
+- File: tests/test_inbox_processing.sh
+- Issue: `lib/inbox.sh:64-67` has an explicit fallback: if a note's tag is not BUG/FEAT/POLISH, it is coerced to FEAT. Tests cover BUG and FEAT tags but no test exercises this path (e.g., a note tagged `[CUSTOM]`).
+- Severity: LOW
+- Action: Add a test case with a note using an unrecognized tag (e.g., `[CUSTOM]`) and assert it is appended as a `[FEAT]` entry and moved to processed.
 
-### Tests That Pass Audit
+#### COVERAGE: Missing MANIFEST.cfg edge case untested
+- File: tests/test_inbox_processing.sh
+- Issue: `lib/inbox.sh:106-109` — `_process_manifest_append` returns 1 early when no `MANIFEST.cfg` exists. Tests cover duplicate ID and missing dependency rejection, but not the case where a `manifest_append_*.cfg` arrives and no manifest file exists at all.
+- Severity: LOW
+- Action: Add a test that places a `manifest_append_*.cfg` in an inbox with no `MANIFEST.cfg` present and asserts the file is NOT moved to processed.
 
-**test_agent_counter.sh** — No findings. This test:
-- Correctly overrides `_run_with_retry` after sourcing `agent.sh`, allowing `run_agent()` to execute all pre-call code including the `TOTAL_AGENT_INVOCATIONS` increment at `lib/agent.sh:88`.
-- Asserts derived values (1, 2, 3, 11) that reflect actual accumulation logic, not unrelated magic numbers.
-- Covers: basic increment (Suite 1), accumulation from non-zero baseline (Suite 2), independence of `TOTAL_AGENT_INVOCATIONS` from `TOTAL_TURNS` (Suite 3).
-- Sets `TEKHTON_TEST_MODE=1` to correctly suppress the spinner before calling `run_agent()`.
+#### COVERAGE: Fixed port in server smoke test
+- File: tests/test_inbox_processing.sh:58-86
+- Issue: Port 18271 is hard-coded. A port collision produces "Server did not start within timeout" — a misleading failure message in CI. The test handles the failure gracefully (it does not hang), but the root cause is obscured.
+- Severity: LOW
+- Action: Consider deriving the port from `$$` or a random value in a safe range, or emit a `SKIP` message when the bind fails rather than a `FAIL`.
 
-**test_agent_fifo_invocation.sh — honest assertions** — Phases 1, 2, 3, 4 (a/b/c/d/e), 5, 6.1/6.2, 7, 8, and 9 all use real mock claude binaries through the actual FIFO infrastructure in `lib/agent.sh`. Assertions are derived from mock output (e.g. `"num_turns":5` → `LAST_AGENT_TURNS=5`) and real agent.sh logic (null-run threshold at line 297, activity-timeout exit code 124 at line 277). These are honest tests of real behavior.
+#### COVERAGE: milestone_dag.sh not sourced in test harness
+- File: tests/test_inbox_processing.sh:109-113
+- Issue: `lib/inbox.sh` header (line 8) documents: "Expects: common.sh, notes_cli.sh, milestone_dag.sh sourced first." Each test subshell sources `common.sh` and `notes_cli.sh` but omits `milestone_dag.sh`. Tests pass today because current code paths do not call any `dag_*` functions. If future `inbox.sh` changes call milestone_dag functions, tests will fail with "command not found" rather than a meaningful assertion error.
+- Severity: LOW
+- Action: Add `source "${TEKHTON_HOME}/lib/milestone_dag.sh"` to each subshell's preamble to match the documented dependency contract.
+
+#### None: Assertion honesty
+All assertions derive expected values from implementation logic. The `/api/ping` response string `'{"ok": true}'` correctly matches Python's `json.dumps({"ok": True})` output. `grep` patterns match the exact format written by `_process_note` and `add_human_note`. No always-true assertions or hard-coded magic values were found.
+
+#### None: Test weakening
+`test_inbox_processing.sh` is a new file. No pre-existing tests were modified.
+
+#### None: Naming and intent
+All 14 test names clearly encode both scenario and expected outcome (e.g., `"manifest_append with duplicate ID rejected, MANIFEST.cfg unchanged"`, `"absent inbox directory: returns 0 without error"`).
+
+#### None: Implementation exercise
+Tests source and invoke the real `process_watchtower_inbox()` function with no mocking of core logic. File system side effects (HUMAN_NOTES.md appended, files moved to `processed/`, MANIFEST.cfg updated) are verified against actual file contents. The server smoke test starts a real Python process and queries it over HTTP.

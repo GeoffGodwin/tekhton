@@ -2,14 +2,15 @@
 PASS
 
 ## Confidence
-88
+80
 
 ## Reasoning
-- Scope is well-defined: four numbered subsections, each with explicit problem/fix descriptions, a code example, and named target files
-- Acceptance criteria are specific and testable — behavioral criteria ("no visible blink") are standard for UI milestones and validated manually
-- Watch For section anticipates key risks: `file://` CORS, `new Function` parse errors, `renderedTabs` conflict with incremental refresh, backward compat for pre-M34 data files
-- Run type → section visibility mapping is enumerated explicitly, eliminating implementation ambiguity
-- Backward compatibility is addressed: `TK_RUN_STATE.run_type` defaults to `"milestone"` when absent
-- No new config keys or file format changes introduced, so a Migration Impact section is not required
-- The parenthetical UI testing infrastructure check in the rubric was empty (no UI testing infra detected), so absence of automated UI test criteria is acceptable; manual verifiability is sufficient
-- Seeds Forward correctly ties incremental refresh to M36/M37 dependencies
+- Scope is well-defined: 6 clearly delineated sub-sections, each with explicit files to create/modify
+- Acceptance criteria are specific and testable — "Actions tab appears in nav", "Download-prompt works on file:// (Chrome, Firefox)", "pipeline startup processes inbox items" are all verifiable
+- Dual approach (download-prompt vs HTTP server) is explicitly resolved: "Ship both. Approach A is default."
+- Watch For section covers the critical risks (localhost-only binding, directory traversal, race conditions, manifest collision)
+- UI testability criteria are present (tab visibility, form behavior, browser compatibility)
+- File write mechanism constraint (`file://` → Blob download) is well-understood and handled
+- The inbox pattern is additive and non-breaking: pipeline startup checks a new directory, no existing behavior changes
+- `lib/notes_cli.sh` inbox reader and `lib/milestone_dag.sh` inbox reader sections imply these files already contain `add_note()` and manifest-write logic — reasonable assumption given project history
+- No genuine ambiguity that would cause two developers to produce incompatible implementations

@@ -746,6 +746,7 @@ source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/causality_query.sh"
 source "${TEKHTON_HOME}/lib/dashboard.sh"
+source "${TEKHTON_HOME}/lib/inbox.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
@@ -1522,6 +1523,16 @@ fi
 
 # --- Version migration check (after config load, before pipeline) ------------
 check_project_version
+
+# --- Watchtower inbox processing (Milestone 36) ------------------------------
+process_watchtower_inbox 2>/dev/null || true
+if [[ -n "${INBOX_TASK_DESCRIPTIONS:-}" ]]; then
+    warn "Watchtower inbox: queued task(s) available:"
+    while IFS= read -r _inbox_task_desc; do
+        [[ -z "$_inbox_task_desc" ]] && continue
+        log "  - ${_inbox_task_desc}"
+    done <<< "$INBOX_TASK_DESCRIPTIONS"
+fi
 
 # --- Pre-flight --------------------------------------------------------------
 

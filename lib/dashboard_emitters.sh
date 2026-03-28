@@ -272,3 +272,60 @@ emit_dashboard_init() {
 
     _write_js_file "${dash_dir}/data/init.js" "TK_INIT" "$json"
 }
+
+# --- Inbox emission (Milestone 36) --------------------------------------------
+
+# emit_dashboard_inbox
+# Reads .claude/watchtower_inbox/ and generates data/inbox.js listing pending items.
+emit_dashboard_inbox() {
+    if ! is_dashboard_enabled; then return 0; fi
+
+    local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
+    [[ ! -d "${dash_dir}/data" ]] && return 0
+
+    local inbox_dir="${PROJECT_DIR:-.}/.claude/watchtower_inbox"
+
+    local json='{"items":['
+    local first=true
+
+    if [[ -d "$inbox_dir" ]]; then
+        local file
+        for file in "${inbox_dir}"/note_*.md "${inbox_dir}"/milestone_*.md "${inbox_dir}"/task_*.txt; do
+            [[ ! -f "$file" ]] && continue
+            local basename
+            basename=$(basename "$file")
+            local ftype="unknown" title=""
+
+            if [[ "$basename" == note_* ]]; then
+                ftype="note"
+                # Extract title from the checkbox line
+                title=$(grep -m1 '^\- \[ \] \[' "$file" 2>/dev/null | sed 's/^- \[ \] \[[A-Z]*\] //' || true)
+            elif [[ "$basename" == milestone_* ]] && [[ "$basename" != manifest_append_* ]]; then
+                ftype="milestone"
+                title=$(grep -m1 '^# Milestone' "$file" 2>/dev/null | sed 's/^# //' || true)
+            elif [[ "$basename" == task_* ]]; then
+                ftype="task"
+                title=$(head -1 "$file" 2>/dev/null || true)
+            fi
+
+            # Extract submitted timestamp if present
+            local submitted=""
+            submitted=$(grep -m1 '^Submitted: ' "$file" 2>/dev/null | sed 's/^Submitted: //' || true)
+            if [[ -z "$submitted" ]]; then
+                # Use file mtime as fallback
+                submitted=$(date -r "$file" -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || true)
+            fi
+
+            # Truncate title for display
+            if [[ ${#title} -gt 80 ]]; then
+                title="${title:0:79}..."
+            fi
+
+            if [[ "$first" = true ]]; then first=false; else json="${json},"; fi
+            json="${json}{\"type\":\"$(_json_escape "$ftype")\",\"title\":\"$(_json_escape "$title")\",\"filename\":\"$(_json_escape "$basename")\",\"submitted\":\"$(_json_escape "$submitted")\"}"
+        done
+    fi
+
+    json="${json}]}"
+    _write_js_file "${dash_dir}/data/inbox.js" "TK_INBOX" "$json"
+}

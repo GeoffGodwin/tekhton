@@ -118,3 +118,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-25
 - **Rationale**: Guard-checking with `command -v run_ui_validation` is consistent with the existing project pattern. Placement after UI_TEST_CMD is architecturally correct. The two new library files sourced between ga
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-24: Watchtower Inbox Directory (Task: "M36")
+- **Date**: 2026-03-28
+- **Rationale**: - ACP: Watchtower Inbox Directory — **ACCEPT** — The `.claude/watchtower_inbox/` convention is well-motivated, backward compatible (no-op when absent), and follows the existing `.claude/` staging 
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-25: New `lib/inbox.sh` Library (Task: "M36")
+- **Date**: 2026-03-28
+- **Rationale**: - ACP: New `lib/inbox.sh` Library — **ACCEPT** — Correctly scoped single-entry-point library. Source order in `tekhton.sh` is correct (`notes_cli.sh` at line 699, `inbox.sh` at line 749), so `add_
+- **Source**: Accepted ACP from pipeline run

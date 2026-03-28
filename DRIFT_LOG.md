@@ -2,14 +2,15 @@
 
 ## Metadata
 - Last audit: 2026-03-28
-- Runs since audit: 5
+- Runs since audit: 1
 
 ## Unresolved Observations
-- [2026-03-28 | "M35"] `app.js` (line 497–498): the error thrown in the `new Function(text)()` catch block references `name` from the outer IIFE closure (`name` is the `dataFiles[i]` iteration variable captured via the inner IIFE). The error message (`'Parse error in ' + name + '.js'`) is constructed correctly, but the error is immediately swallowed by the outer `Promise.all(...).catch(() => location.reload())`. The detail is silently lost. Consider at minimum a `console.error` before falling back, which would aid debugging without any user-visible change.
-- [2026-03-28 | "Fix two failed self tests: test_agent_counter.sh and test_agent_fifo_invocation.sh which both failed on the last run."] `app.js` (line 497–498): the error thrown in the `new Function(text)()` catch block references `name` from the outer IIFE closure (`name` is the `dataFiles[i]` iteration variable captured via the inner IIFE). The error message (`'Parse error in ' + name + '.js'`) is constructed correctly, but the error is immediately swallowed by the outer `Promise.all(...).catch(() => location.reload())`. The detail is silently lost. Consider at minimum a `console.error` before falling back, which would aid debugging without any user-visible change.
-- [2026-03-28 | "M35"] `app.js` (line 497–498): the error thrown in the `new Function(text)()` catch block references `name` from the outer IIFE closure (`name` is the `dataFiles[i]` iteration variable captured via the inner IIFE). The error message (`'Parse error in ' + name + '.js'`) is constructed correctly, but the error is immediately swallowed by the outer `Promise.all(...).catch(() => location.reload())`. The detail is silently lost. Consider at minimum a `console.error` before falling back, which would aid debugging without any user-visible change.
+- [2026-03-28 | "M36"] `lib/inbox.sh:103`, `lib/dashboard_emitters.sh:85`, and `lib/milestone_dag.sh` all independently construct the manifest path as `${MILESTONE_DIR:-...}/${MILESTONE_MANIFEST:-MANIFEST.cfg}`. This same two-part path expression is repeated in at least three files. A shared `_manifest_path()` helper would eliminate the drift in a future cleanup pass.
 
 ## Resolved
+- [RESOLVED 2026-03-28] `app.js` (line 498): Three duplicate stale drift observations about error logging in Promise.all catch handler. **RESOLVED**: `console.error('Watchtower refresh failed:', err)` is present at `templates/watchtower/app.js:498`. Fix predates this audit and satisfies the recommendation. (Duplicate entries from M35 and prior test failure task runs.)
+- [RESOLVED 2026-03-28] `app.js` (line 498): Duplicate of above — same observation logged again in "Fix two failed self tests" task run.
+- [RESOLVED 2026-03-28] `app.js` (line 498): Duplicate of above — second M35 entry, identical observation.
 - [RESOLVED 2026-03-28] `lib/state.sh` — Prior cycle flagged missing `set -euo pipefail`; confirmed fixed in this cycle (line 2). Other sourced-only lib files not touched by M33 may have the same omission — worth a sweep across the full `lib/` directory.
 - [RESOLVED 2026-03-28] `lib/state.sh` — Prior cycle flagged missing `set -euo pipefail`; confirmed fixed in this cycle (line 2). Other sourced-only lib files not touched by M33 may have the same omission — worth a sweep across the full `lib/` directory.
 - [RESOLVED 2026-03-28] Milestone archival re-archives ALL completed milestones on every run**"] `_run_tester_write_failing()` (lines 353–425) is a parallel code path that invokes the tester agent but has no `[tester-diag]` instrumentation. Out of scope for this task, but if TDD pre-flight mode proves slow, diagnostics will be absent there.
