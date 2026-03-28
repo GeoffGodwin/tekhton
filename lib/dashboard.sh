@@ -179,14 +179,23 @@ emit_dashboard_run_state() {
         waiting_json="\"$(_json_escape "$waiting")\""
     fi
 
+    # completed_at timestamp (M34 §3) — set when pipeline_status is success/failed
+    local completed_at_json="null"
+    if [[ "$status" = "success" ]] || [[ "$status" = "failed" ]]; then
+        local completed_ts
+        completed_ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
+        completed_at_json="\"${completed_ts}\""
+    fi
+
     local json
-    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","refresh_interval_ms":%d,"quota_status":"%s","quota_paused_at":"%s","quota_retry_count":%d}' \
+    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","completed_at":%s,"refresh_interval_ms":%d,"quota_status":"%s","quota_paused_at":"%s","quota_retry_count":%d}' \
         "$(_json_escape "$status")" \
         "$(_json_escape "$current_stage")" \
         "$ms_json" \
         "$stages_json" \
         "$waiting_json" \
         "$(_json_escape "$started_at")" \
+        "$completed_at_json" \
         "$refresh_ms" \
         "$(_json_escape "$quota_status")" \
         "$(_json_escape "$quota_paused_at")" \

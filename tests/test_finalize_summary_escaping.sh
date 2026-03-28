@@ -32,6 +32,17 @@ LAST_AGENT_RETRY_COUNT=0
 REVIEW_CYCLE=1
 MILESTONE_CURRENT_SPLIT_DEPTH=0
 
+HUMAN_MODE=false
+HUMAN_NOTES_TAG=""
+FIX_DRIFT_MODE=false
+FIX_NONBLOCKERS_MODE=false
+TASK="test task"
+
+# Stage tracking arrays (M34)
+declare -A _STAGE_TURNS=()
+declare -A _STAGE_DURATION=()
+declare -A _STAGE_BUDGET=()
+
 export LOG_DIR PROJECT_DIR
 export _ORCH_ATTEMPT _ORCH_AGENT_CALLS _ORCH_ELAPSED _ORCH_NO_PROGRESS_COUNT
 export _ORCH_REVIEW_BUMPED AUTONOMOUS_TIMEOUT AGENT_ERROR_CATEGORY AGENT_ERROR_SUBCATEGORY
@@ -119,17 +130,22 @@ _CURRENT_MILESTONE='path\"quoted'
 _hook_emit_run_summary 0
 json=$(cat "${LOG_DIR}/RUN_SUMMARY.json")
 
-# Expected: "milestone": "path\\\"quoted"
-if echo "$json" | grep -q '"milestone": "path\\\\"quoted"' || \
-   echo "$json" | grep -q '"milestone": "path\\\\\"quoted"'; then
-    pass "Backslash+quote combination correctly escaped in JSON"
-else
-    # Manually verify the raw bytes are valid
-    milestone_val=$(echo "$json" | grep '"milestone"' | sed 's/.*"milestone": "\(.*\)",/\1/')
-    if [[ "$milestone_val" == 'path\\"quoted' ]] || [[ "$milestone_val" == 'path\\\"quoted' ]]; then
-        pass "Backslash+quote combination correctly escaped in JSON (raw check)"
+# Expected: "milestone": "path\\\"quoted" — valid JSON with escaped backslash + escaped quote
+# Use python3 to validate JSON and extract the milestone value reliably
+if command -v python3 &>/dev/null; then
+    milestone_val=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['milestone'])" "${LOG_DIR}/RUN_SUMMARY.json" 2>/dev/null || echo "PARSE_ERROR")
+    if [[ "$milestone_val" == 'path\"quoted' ]]; then
+        pass "Backslash+quote combination correctly escaped in JSON (python3 validation)"
     else
-        fail "Backslash+quote escaping failed: $(echo "$json" | grep milestone)"
+        fail "Backslash+quote escaping failed — milestone value: ${milestone_val}"
+    fi
+else
+    # Fallback: grep for the expected escaped form
+    if echo "$json" | grep -q '"milestone": "path\\\\"quoted"' || \
+       echo "$json" | grep -q '"milestone": "path\\\\\"quoted"'; then
+        pass "Backslash+quote combination correctly escaped in JSON"
+    else
+        fail "Backslash+quote escaping failed: $(echo "$json" | grep '"milestone"')"
     fi
 fi
 
@@ -202,6 +218,7 @@ echo "=== Test 9: JSON structure has required keys ==="
 json=$(run_and_read_json "M1" 0)
 
 required_keys=("milestone" "outcome" "attempts" "total_agent_calls" "wall_clock_seconds"
+               "total_turns" "total_time_s" "run_type" "task_label" "stages"
                "files_changed" "error_classes_encountered" "recovery_actions_taken"
                "rework_cycles" "split_depth" "timestamp")
 

@@ -70,3 +70,6 @@ service-account*.json
 
 # MkDocs build output
 site/
+
+# Milestone Archive
+MILESTONE_ARCHIVE.md

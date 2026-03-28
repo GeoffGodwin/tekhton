@@ -1,4 +1,9 @@
 # Milestone 34: Watchtower Data Fidelity & Bug Fixes
+<!-- milestone-meta
+id: "34"
+status: "done"
+-->
+
 
 ## Overview
 

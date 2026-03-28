@@ -140,6 +140,63 @@ _hook_emit_run_summary() {
     local ui_validation_fail="${UI_VALIDATION_FAIL_COUNT:-0}"
     local ui_validation_warn="${UI_VALIDATION_WARN_COUNT:-0}"
 
+    # --- Per-stage data (M34 §1) ---
+    # Serialize _STAGE_TURNS, _STAGE_DURATION, _STAGE_BUDGET in deterministic order.
+    local stages_json="{"
+    local stage_first=true
+    local _stg
+    for _stg in intake scout coder build_gate security reviewer tester; do
+        local _s_turns="${_STAGE_TURNS[$_stg]:-0}"
+        local _s_dur="${_STAGE_DURATION[$_stg]:-0}"
+        local _s_budget="${_STAGE_BUDGET[$_stg]:-0}"
+        # Only emit stages that have non-zero data
+        if [[ "$_s_turns" -eq 0 ]] && [[ "$_s_dur" -eq 0 ]] && [[ "$_s_budget" -eq 0 ]]; then
+            continue
+        fi
+        if [[ "$stage_first" = true ]]; then stage_first=false; else stages_json="${stages_json},"; fi
+        stages_json="${stages_json}\"${_stg}\":{\"turns\":${_s_turns},\"duration_s\":${_s_dur},\"budget\":${_s_budget}}"
+    done
+    stages_json="${stages_json}}"
+
+    # --- Computed totals from stage data (M34 §5) ---
+    local computed_turns=0
+    local computed_time=0
+    for _stg in intake scout coder build_gate security reviewer tester; do
+        computed_turns=$(( computed_turns + ${_STAGE_TURNS[$_stg]:-0} ))
+        computed_time=$(( computed_time + ${_STAGE_DURATION[$_stg]:-0} ))
+    done
+    # Use stage sums as ground truth; fall back to orchestrator counters if zero
+    local total_turns="$computed_turns"
+    if [[ "$total_turns" -eq 0 ]]; then
+        total_turns="${_ORCH_AGENT_CALLS:-0}"
+    fi
+    local total_time_s="$computed_time"
+    if [[ "$total_time_s" -eq 0 ]]; then
+        total_time_s="${_ORCH_ELAPSED:-0}"
+    fi
+
+    # --- Run type classification (M34 §2) ---
+    local run_type="adhoc"
+    if [[ -n "${_CURRENT_MILESTONE:-}" ]] && [[ "${_CURRENT_MILESTONE}" != "none" ]]; then
+        run_type="milestone"
+    elif [[ "${HUMAN_MODE:-false}" = "true" ]]; then
+        case "${HUMAN_NOTES_TAG:-}" in
+            BUG)    run_type="human_bug" ;;
+            FEAT)   run_type="human_feat" ;;
+            POLISH) run_type="human_polish" ;;
+            *)      run_type="human" ;;
+        esac
+    elif [[ "${FIX_DRIFT_MODE:-false}" = "true" ]]; then
+        run_type="drift"
+    elif [[ "${FIX_NONBLOCKERS_MODE:-false}" = "true" ]]; then
+        run_type="nonblocker"
+    fi
+    # Task label: first ~80 chars of TASK for display
+    local task_label=""
+    if [[ -n "${TASK:-}" ]]; then
+        task_label=$(printf '%s' "$TASK" | head -c 80 | sed 's/\\/\\\\/g; s/"/\\"/g')
+    fi
+
     local timestamp_iso
     timestamp_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -147,12 +204,17 @@ _hook_emit_run_summary() {
     safe_milestone=$(printf '%s' "${_CURRENT_MILESTONE:-none}" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
     # Write JSON via printf (proper escaping, no heredoc variable issues)
-    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "timestamp": "%s"\n}\n' \
+    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "timestamp": "%s"\n}\n' \
         "$safe_milestone" \
         "$outcome" \
         "${_ORCH_ATTEMPT:-1}" \
         "${_ORCH_AGENT_CALLS:-0}" \
         "${_ORCH_ELAPSED:-0}" \
+        "$total_turns" \
+        "$total_time_s" \
+        "$run_type" \
+        "$task_label" \
+        "$stages_json" \
         "$files_json" \
         "$error_classes" \
         "$recovery_actions" \

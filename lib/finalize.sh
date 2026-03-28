@@ -433,6 +433,24 @@ _hook_update_check() {
     fi
 }
 
+# p. Final dashboard status (M34 §3) — highest priority (runs last).
+# Guarantees run_state.js reflects completion even if earlier hooks failed.
+_hook_final_dashboard_status() {
+    local exit_code="$1"
+    if ! command -v emit_dashboard_run_state &>/dev/null; then
+        return 0
+    fi
+    local status="success"
+    [[ "$exit_code" -ne 0 ]] && status="failed"
+    # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
+    PIPELINE_STATUS="$status"
+    # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
+    CURRENT_STAGE="complete"
+    # shellcheck disable=SC2034  # Explicit: waiting_for: null in final state
+    WAITING_FOR=""
+    emit_dashboard_run_state 2>/dev/null || true
+}
+
 # --- Hook registration (at source-time) ---
 # Registration order IS execution order.
 # Archive, clear_state, and emit_run_summary run BEFORE commit so their
@@ -453,6 +471,7 @@ register_finalize_hook "_hook_failure_context"
 register_finalize_hook "_hook_express_persist"
 register_finalize_hook "_hook_commit"
 register_finalize_hook "_hook_update_check"
+register_finalize_hook "_hook_final_dashboard_status"
 # --- Orchestrator ---
 # finalize_run PIPELINE_EXIT_CODE
 # Executes all registered hooks in order. Each hook receives the exit code

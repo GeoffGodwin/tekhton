@@ -88,6 +88,9 @@ _parse_security_report() {
 
 # _parse_intake_report FILE
 # Extract verdict and confidence from INTAKE_REPORT.md.
+# Handles two formats:
+#   Format A (inline): "Verdict: PASS"  /  "Confidence: 82"
+#   Format B (header):  "## Verdict\nPASS"  /  "## Confidence\n82"
 _parse_intake_report() {
     local file="$1"
     [[ ! -f "$file" ]] && { echo "null"; return 0; }
@@ -95,9 +98,17 @@ _parse_intake_report() {
     local verdict=""
     local confidence=""
 
-    verdict=$(grep -m1 -oP '(?<=Verdict:\s).*' "$file" 2>/dev/null || \
-              grep -m1 -oP '(?<=verdict:\s).*' "$file" 2>/dev/null || true)
-    confidence=$(grep -m1 -oP '(?<=[Cc]onfidence:\s)\d+' "$file" 2>/dev/null || true)
+    # Try inline format first (portable sed, no grep -P)
+    verdict=$(sed -n 's/^[#]* *[Vv]erdict[: ]*//p' "$file" 2>/dev/null | head -1 | tr -d '[:space:]')
+    # If inline failed, try header-then-next-line format
+    if [[ -z "$verdict" ]]; then
+        verdict=$(awk '/^##? *[Vv]erdict/{getline; gsub(/^[[:space:]]+|[[:space:]]+$/,""); print; exit}' "$file" 2>/dev/null)
+    fi
+
+    confidence=$(sed -n 's/^[#]* *[Cc]onfidence[: ]*//p' "$file" 2>/dev/null | head -1 | grep -oE '[0-9]+' | head -1)
+    if [[ -z "$confidence" ]]; then
+        confidence=$(awk '/^##? *[Cc]onfidence/{getline; gsub(/[^0-9]/,""); print; exit}' "$file" 2>/dev/null)
+    fi
 
     printf '{"verdict":"%s","confidence":%s}' \
         "$(_json_escape "${verdict:-unknown}")" \
@@ -106,12 +117,18 @@ _parse_intake_report() {
 
 # _parse_coder_summary FILE
 # Extract status and file list from CODER_SUMMARY.md.
+# Handles: "## Status: COMPLETE", "## Status\nCOMPLETE", "Status: IN PROGRESS"
 _parse_coder_summary() {
     local file="$1"
     [[ ! -f "$file" ]] && { echo "null"; return 0; }
 
     local status=""
-    status=$(grep -m1 -oP '(?<=Status:\s).*' "$file" 2>/dev/null || true)
+    # Try inline "## Status: VALUE" (most common format)
+    status=$(sed -n 's/^[#]* *Status[: ]*//p' "$file" 2>/dev/null | head -1 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    # Fallback: header then next line
+    if [[ -z "$status" ]]; then
+        status=$(awk '/^##? *Status *$/{getline; gsub(/^[[:space:]]+|[[:space:]]+$/,""); print; exit}' "$file" 2>/dev/null)
+    fi
 
     local file_count=0
     file_count=$(awk '/^## Files ([Cc]reated|[Mm]odified)/{f=1;next} f && /^##/{exit} f && /^[-*]/{c++} END{print c+0}' \
@@ -161,27 +178,33 @@ try:
         'total_turns': d.get('total_turns', d.get('total_agent_calls', 0)),
         'total_time_s': d.get('total_time_s', d.get('wall_clock_seconds', 0)),
         'milestone': d.get('milestone', ''),
+        'run_type': d.get('run_type', 'adhoc'),
         'stages': d.get('stages', {})
     }))
 except: pass
 " "$summary_file" 2>/dev/null || true)
         fi
 
-        # Fallback: grep/awk extraction
+        # Fallback: portable sed extraction (no grep -P)
         if [[ -z "$json_content" ]]; then
             local outcome
-            outcome=$(grep -oP '"outcome"\s*:\s*"\K[^"]+' "$summary_file" 2>/dev/null || echo "unknown")
+            outcome=$(sed -n 's/.*"outcome"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
+            : "${outcome:=unknown}"
             local turns
-            turns=$(grep -oP '"total_turns"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || true)
-            [[ -z "$turns" ]] && turns=$(grep -oP '"total_agent_calls"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || echo "0")
+            turns=$(sed -n 's/.*"total_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$summary_file" 2>/dev/null | head -1)
+            [[ -z "$turns" ]] && turns=$(sed -n 's/.*"total_agent_calls"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$summary_file" 2>/dev/null | head -1)
             : "${turns:=0}"
             local time_s
-            time_s=$(grep -oP '"total_time_s"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || true)
-            [[ -z "$time_s" ]] && time_s=$(grep -oP '"wall_clock_seconds"\s*:\s*\K[0-9]+' "$summary_file" 2>/dev/null || echo "0")
+            time_s=$(sed -n 's/.*"total_time_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$summary_file" 2>/dev/null | head -1)
+            [[ -z "$time_s" ]] && time_s=$(sed -n 's/.*"wall_clock_seconds"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' "$summary_file" 2>/dev/null | head -1)
             : "${time_s:=0}"
             local milestone
-            milestone=$(grep -oP '"milestone"\s*:\s*"\K[^"]+' "$summary_file" 2>/dev/null || echo "")
-            json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"${milestone}\",\"stages\":{}}"
+            milestone=$(sed -n 's/.*"milestone"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
+            : "${milestone:=}"
+            local run_type
+            run_type=$(sed -n 's/.*"run_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
+            : "${run_type:=adhoc}"
+            json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"${milestone}\",\"run_type\":\"${run_type}\",\"stages\":{}}"
         fi
 
         if [[ -n "$json_content" ]]; then

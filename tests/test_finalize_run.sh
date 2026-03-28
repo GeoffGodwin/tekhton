@@ -40,6 +40,29 @@ _TEKHTON_LOCK_FILE=""
 WITH_NOTES=false
 HUMAN_MODE=false
 NOTES_FILTER=""
+HUMAN_NOTES_TAG=""
+FIX_DRIFT_MODE=false
+FIX_NONBLOCKERS_MODE=false
+
+# Stage tracking arrays (M34)
+declare -A _STAGE_TURNS=()
+declare -A _STAGE_DURATION=()
+declare -A _STAGE_BUDGET=()
+declare -A _STAGE_STATUS=()
+
+# Orchestrator counters used by _hook_emit_run_summary
+_ORCH_ATTEMPT=1
+_ORCH_AGENT_CALLS=0
+_ORCH_ELAPSED=0
+_ORCH_NO_PROGRESS_COUNT=0
+_ORCH_REVIEW_BUMPED=false
+AUTONOMOUS_TIMEOUT=7200
+AGENT_ERROR_CATEGORY=""
+AGENT_ERROR_SUBCATEGORY=""
+CONTINUATION_ATTEMPTS=0
+LAST_AGENT_RETRY_COUNT=0
+REVIEW_CYCLE=0
+MILESTONE_CURRENT_SPLIT_DEPTH=0
 
 export PROJECT_DIR LOG_DIR TIMESTAMP LOG_FILE TASK MILESTONE_MODE AUTO_COMMIT
 export _CURRENT_MILESTONE TEKHTON_SESSION_DIR START_AT VERDICT
@@ -211,7 +234,7 @@ restore_hooks() {
 # =============================================================================
 echo "=== Test Suite 1: Hook registration order ==="
 
-assert_eq "1.1 exactly 16 hooks registered" "16" "${#FINALIZE_HOOKS[@]}"
+assert_eq "1.1 exactly 17 hooks registered" "17" "${#FINALIZE_HOOKS[@]}"
 assert_eq "1.2 first hook is _hook_final_checks"    "_hook_final_checks"    "${FINALIZE_HOOKS[0]}"
 assert_eq "1.3 second hook is _hook_drift_artifacts" "_hook_drift_artifacts" "${FINALIZE_HOOKS[1]}"
 assert_eq "1.4 third hook is _hook_record_metrics"   "_hook_record_metrics"  "${FINALIZE_HOOKS[2]}"
@@ -228,6 +251,7 @@ assert_eq "1.12 thirteenth hook is _hook_failure_context" "_hook_failure_context
 assert_eq "1.12b fourteenth hook is _hook_express_persist" "_hook_express_persist" "${FINALIZE_HOOKS[13]}"
 assert_eq "1.13 fifteenth hook is _hook_commit"    "_hook_commit"          "${FINALIZE_HOOKS[14]}"
 assert_eq "1.14 sixteenth hook is _hook_update_check" "_hook_update_check"  "${FINALIZE_HOOKS[15]}"
+assert_eq "1.15 seventeenth hook is _hook_final_dashboard_status" "_hook_final_dashboard_status" "${FINALIZE_HOOKS[16]}"
 
 # =============================================================================
 # Test Suite 2: register_finalize_hook appends in order
@@ -236,14 +260,14 @@ echo "=== Test Suite 2: register_finalize_hook ==="
 
 _test_new_hook() { return 0; }
 register_finalize_hook "_test_new_hook"
-assert_eq "2.1 hook count increases by 1" "17" "${#FINALIZE_HOOKS[@]}"
-assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[16]}"
+assert_eq "2.1 hook count increases by 1" "18" "${#FINALIZE_HOOKS[@]}"
+assert_eq "2.2 new hook appended at end"  "_test_new_hook" "${FINALIZE_HOOKS[17]}"
 
 # Register a second additional hook — ensure ordering is preserved
 _test_new_hook_2() { return 0; }
 register_finalize_hook "_test_new_hook_2"
-assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[17]}"
-assert_eq "2.4 first new hook still at 16" "_test_new_hook" "${FINALIZE_HOOKS[16]}"
+assert_eq "2.3 second new hook appended"  "_test_new_hook_2" "${FINALIZE_HOOKS[18]}"
+assert_eq "2.4 first new hook still at 17" "_test_new_hook" "${FINALIZE_HOOKS[17]}"
 
 restore_hooks
 
