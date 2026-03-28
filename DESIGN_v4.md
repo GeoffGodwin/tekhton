@@ -2291,3 +2291,1426 @@ The following capabilities are explicitly designed for but not built in V4:
 - **Auto pipeline ordering** — V4's PM agent decomposes tasks. V5's PM agent
   recommends standard or test-first pipeline order per milestone based on task
   type and historical rework data.
+
+---
+
+## Milestone Plan
+
+### Overview
+
+27 milestones across 4 phases. Each milestone is scoped for a single
+`tekhton --milestone` run. Dogfood checkpoints mark optimal points to replace
+the working Tekhton copy with the latest V4 build.
+
+```
+Phase 1: Foundations (M01-M07)     — Test, logging, provider abstraction
+Phase 2: Core (M08-M16)           — Parallel execution, Watchtower, owner UX
+Phase 3: Enterprise (M17-M23)     — Integrations, NFRs, auth
+Phase 4: Intelligence (M24-M27)   — Learning, language awareness
+```
+
+### Dependency Graph (Simplified)
+
+```
+M01 ─────────────────────────────────────────────────────────────────────
+M02 ──┬──── M03 ──┬── M04 ──┬── M06 ──┬── M10 ── M13
+      │           └── M05 ──┘    │     └── M16
+      │                └── M07   │     └── M20 ── M21
+      ├──── M08 ── M09 ─────────┘          └── M24 ── M25
+      ├──── M11 ── M12 ─────────────── M13
+      ├──── M14
+      ├──── M15 ──┬── M16
+      │           └── M17
+      ├──── M18
+      ├──── M19
+      ├──── M22 ── M23
+      └──── M26 ── M27
+```
+
+---
+
+### Phase 1: Foundations (M01-M07)
+
+#### Milestone 1: Test Harness & Isolation Framework
+
+**Parallel group:** foundation | **Depends on:** (none)
+
+Files to create/modify:
+- Create `lib/test_harness.sh` — isolation framework (temp dirs, port allocator,
+  process tracking, teardown traps)
+- Modify `tests/run_tests.sh` — integrate harness, add `--flake-check` mode,
+  quarantine support
+- Create `tests/test_harness_self.sh` — self-tests for the harness itself
+- Modify existing browser/network tests to use harness lifecycle
+
+Acceptance criteria:
+- `_test_setup` creates isolated temp dir, `_test_teardown` removes it on all
+  exit paths (normal, error, signal)
+- `_allocate_port` / `_release_port` prevent port conflicts across concurrent tests
+- `_spawn_tracked` registers PIDs; teardown kills all tracked processes
+- `--flake-check 5` runs each test 5 times, reports inconsistent results
+- Quarantine file (`.claude/test_quarantine.json`) excludes quarantined tests
+  from blocking pipeline while still running and reporting them
+- Test categories (`unit`, `integration`, `browser`, `network`, `e2e`) parsed
+  from `# test_category:` comment in each test file
+- Zombie process detection (`_check_zombies`) runs pre/post test suite
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/test_harness.sh` and `shellcheck lib/test_harness.sh` pass
+
+Watch For:
+- Trap chaining — `_test_teardown` trap must not clobber existing traps in test
+  files. Use `trap '...; _test_teardown' EXIT` pattern that preserves prior traps.
+- Port lock directory cleanup on unclean system reboot — stale lock dirs from
+  crashed tests. Add age-based cleanup (locks older than 1 hour = stale).
+- macOS vs Linux `mktemp` flag differences (`-d` works on both but template
+  handling differs).
+
+Seeds Forward:
+- Every subsequent milestone's tests use the harness automatically
+- Flakiness data feeds into the Learning subsystem (M24)
+- Quarantine status is displayed in Watchtower Reports tab (M13)
+
+---
+
+#### Milestone 2: Three-Tier Logging & Structured Events
+
+**Parallel group:** foundation | **Depends on:** (none)
+
+Files to create/modify:
+- Create `lib/logging.sh` — `log_default()`, `log_verbose()`, `log_debug()`,
+  `emit_event()`, `_log_to_file()`, log level parsing, file management
+- Modify `lib/common.sh` — replace existing `log_info` / `log_warn` / `log_error`
+  with three-tier wrappers, source `lib/logging.sh`
+- Modify all `stages/*.sh` — add `_stage_banner()` and `_stage_complete()` calls
+- Modify `tekhton.sh` — parse `--verbose` / `--debug` flags, init log files
+- Modify `lib/config_defaults.sh` — add `TEKHTON_LOG_LEVEL`, `TEKHTON_LOG_DIR`,
+  `TEKHTON_LOG_RETENTION`, `TEKHTON_STRUCTURED_EVENTS`
+- Create `tests/test_logging.sh` — tier filtering, event format, file rotation
+
+Acceptance criteria:
+- `TEKHTON_LOG_LEVEL=default` shows only stage banners and outcomes (no `[tekhton]`
+  tagged debug lines)
+- `TEKHTON_LOG_LEVEL=verbose` adds context economics and model details
+- `TEKHTON_LOG_LEVEL=debug` shows everything (identical to current V3 output)
+- Debug log always written to `.claude/logs/run_<RUN_ID>.log` regardless of level
+- Structured events always written to `.claude/logs/run_<RUN_ID>.events.jsonl`
+- Symlink `.claude/logs/latest.log` points to most recent run
+- Log rotation retains last `TEKHTON_LOG_RETENTION` runs (default 50)
+- `emit_event()` produces valid JSONL with `ts`, `type`, `run_id`, `data` fields
+- Stage banners render consistently: `── Stage ──── Stage N/M` format
+- Existing `log_info()` / `log_warn()` calls map to `log_default()` — no breaks
+- All existing tests pass
+- `bash -n lib/logging.sh` and `shellcheck lib/logging.sh` pass
+
+Watch For:
+- High-frequency `emit_event()` calls must not slow the pipeline. Use append-only
+  writes (no file locking). JSONL is naturally append-safe.
+- `date -u +%Y-%m-%dT%H:%M:%SZ` — the `-u` flag for UTC is critical for
+  consistent timestamps across timezones. macOS `date` supports this.
+- Log file directory must be created at startup if missing, not assumed to exist.
+- The `latest.log` symlink must use relative paths for portability.
+
+Seeds Forward:
+- Every subsequent milestone emits structured events automatically
+- Watchtower server (M11) reads the events.jsonl stream
+- Log shipping (M19) forwards the events.jsonl to DataDog/Splunk
+- NFR checks (M20) emit `nfr.check` / `nfr.violation` events
+
+---
+
+### DOGFOOD CHECKPOINT 1: Foundation Complete (After M02)
+
+**Action:** Replace the working Tekhton copy with the latest V4 build.
+
+**What's new:**
+- Test harness ensures self-tests are more robust (no more zombie processes)
+- Three-tier logging means building M03+ produces cleaner default output
+- Debug log always captured to disk for post-mortem analysis
+
+**What to verify after upgrade:**
+- `bash tests/run_tests.sh` passes with new harness
+- Default CLI output shows stage banners (not debug tags)
+- `.claude/logs/` directory populates with run logs
+
+**Safe rollback:** `git checkout v3.XX.0 -- tekhton.sh lib/ stages/` restores
+V3 behavior. New files (`lib/logging.sh`, `lib/test_harness.sh`) are harmless
+if unused.
+
+**Risk:** Low — purely additive improvements to existing infrastructure. No
+behavioral changes to agent invocation or pipeline flow.
+
+---
+
+#### Milestone 3: Bridge Core Architecture & Shell Routing
+
+**Parallel group:** bridge | **Depends on:** M02
+
+Files to create/modify:
+- Create `tools/bridge/__init__.py`
+- Create `tools/bridge/bridge.py` — CLI entry point
+  (`tekhton-bridge call`, `tekhton-bridge calibrate`, `tekhton-bridge list-models`,
+  `tekhton-bridge update-pricing`)
+- Create `tools/bridge/types.py` — `AgentRequest`, `AgentResponse`, `ModelInfo`,
+  `ProviderStatus`, `ProviderProfile`
+- Create `tools/bridge/providers/__init__.py` — adapter registry + discovery
+- Create `tools/bridge/providers/base.py` — `ProviderAdapter` base class
+- Modify `lib/agent.sh` — add `_resolve_provider()` routing, bridge invocation
+  path alongside existing `claude` CLI path
+- Modify `lib/config_defaults.sh` — add `BRIDGE_ENABLED`, `BRIDGE_DEFAULT_PROVIDER`,
+  per-stage provider overrides
+- Create `tools/bridge/requirements.txt` — bridge Python dependencies
+- Create `tools/tests/test_bridge_core.py` — types, CLI parsing, adapter registry
+- Create `tests/test_bridge_routing.sh` — shell-side provider resolution
+
+Acceptance criteria:
+- `_resolve_provider("opus")` returns `anthropic`
+- `_resolve_provider("gpt-4o")` returns `openai`
+- `_resolve_provider("ollama/llama3")` returns `ollama`
+- When `BRIDGE_ENABLED=false`, all calls go through `claude` CLI (V3 behavior)
+- When `BRIDGE_ENABLED=true` and provider is `anthropic`, still uses `claude` CLI
+- When `BRIDGE_ENABLED=true` and provider is non-anthropic, calls `tekhton-bridge`
+- `tekhton-bridge call --help` shows usage without errors
+- `ProviderAdapter` base class defines: `call()`, `count_tokens()`,
+  `list_models()`, `supports_tool_use()`, `supports_mcp()`, `health_check()`
+- Adapter registry discovers providers from `providers/` directory automatically
+- `python3 -m pytest tools/tests/test_bridge_core.py` passes
+- All existing tests pass
+- `shellcheck lib/agent.sh` passes
+
+Watch For:
+- The bridge subprocess must inherit the project's environment (API keys, paths)
+  but not leak sensitive vars in debug output. Sanitize key display.
+- `tekhton-bridge` must be invocable both as `python3 -m tools.bridge.bridge`
+  and as a standalone script. Support both patterns.
+- Provider resolution must be deterministic — no ambiguous model names that
+  could map to multiple providers.
+
+Seeds Forward:
+- M04 and M05 implement concrete adapters against this base
+- M06 adds failover logic to the bridge core
+- M07 adds MCP gateway capability
+- M14 (NL task decomposition) uses bridge for non-Anthropic PM agents
+
+---
+
+#### Milestone 4: Anthropic Direct API Adapter
+
+**Parallel group:** bridge | **Depends on:** M03
+
+Files to create/modify:
+- Create `tools/bridge/providers/anthropic.py` — Anthropic SDK adapter
+  (direct API calls, not claude CLI)
+- Update `tools/bridge/requirements.txt` — add `anthropic` SDK
+- Create `tools/tests/test_provider_anthropic.py` — unit tests with mocked API
+- Modify `tools/bridge/bridge.py` — register anthropic adapter
+
+Acceptance criteria:
+- `tekhton-bridge call --provider anthropic --model claude-sonnet-4-6
+  --prompt-file /tmp/test.md` produces valid agent output
+- Adapter uses Anthropic SDK directly (not claude CLI subprocess)
+- Token counting uses Anthropic's tokenizer when available, falls back to
+  chars/4 estimation
+- Tool use / function calling works through the adapter
+- Streaming output is supported (tokens stream to stdout as they arrive)
+- `health_check()` validates API key and returns quota/rate limit info
+- `list_models()` returns available Anthropic models
+- Error handling: rate limits → retry with backoff, auth errors → clear message,
+  network errors → transient classification
+- `python3 -m pytest tools/tests/test_provider_anthropic.py` passes
+- All existing tests pass
+
+Watch For:
+- Anthropic SDK version pinning — the API changes frequently. Pin to a specific
+  minor version in requirements.txt.
+- Extended thinking and prompt caching are Anthropic-specific features. The
+  adapter should support them when the model allows, but the bridge interface
+  must not require them (other providers won't have them).
+- Streaming token counting requires accumulating tokens as they arrive. Don't
+  count after-the-fact from the final output.
+
+Seeds Forward:
+- M06 uses this adapter as the failover target when claude CLI is throttled
+- The adapter validates the bridge architecture before adding more providers
+- Direct API access enables future features (batching, prompt caching control)
+
+---
+
+#### Milestone 5: OpenAI & Ollama Adapters
+
+**Parallel group:** bridge | **Depends on:** M03
+
+Files to create/modify:
+- Create `tools/bridge/providers/openai.py` — OpenAI SDK adapter
+- Create `tools/bridge/providers/ollama.py` — Ollama REST API adapter
+- Create `tools/bridge/providers/openai_compat.py` — generic OpenAI-compatible
+  endpoint adapter (Together, Groq, vLLM, Azure OpenAI)
+- Update `tools/bridge/requirements.txt` — add `openai` SDK
+- Create `tools/tests/test_provider_openai.py` — unit tests with mocked API
+- Create `tools/tests/test_provider_ollama.py` — unit tests with mocked API
+- Create `tools/tests/test_provider_compat.py` — generic adapter tests
+
+Acceptance criteria:
+- `tekhton-bridge call --provider openai --model gpt-4o --prompt-file /tmp/test.md`
+  produces valid agent output (with mocked API in tests)
+- `tekhton-bridge call --provider ollama --model llama3 --prompt-file /tmp/test.md`
+  produces valid agent output (with mocked API in tests)
+- OpenAI adapter supports: GPT-4o, GPT-4-turbo, o1, o3 model families
+- Ollama adapter connects to local Ollama instance (configurable host/port)
+- OpenAI-compatible adapter works with any endpoint that implements the OpenAI
+  chat completions API format
+- Tool use / function calling works on OpenAI (native) and Ollama (when model
+  supports it; prompt-based fallback when not)
+- `list_models()` queries each provider for available models
+- `health_check()` validates connectivity and credentials
+- `python3 -m pytest tools/tests/test_provider_*.py` passes
+- All existing tests pass
+
+Watch For:
+- Ollama's tool use support varies by model. The adapter must detect capability
+  and fall back gracefully to prompt-based tool injection.
+- OpenAI's function calling format differs from Anthropic's tool use format.
+  The adapter must normalize both directions (request and response).
+- Azure OpenAI uses a different auth mechanism (API key in header vs bearer
+  token) and different endpoint URL format. The compat adapter must handle both.
+- Ollama may not be running — `health_check()` must return a clear "not available"
+  status, not crash.
+
+Seeds Forward:
+- M06 uses these adapters for failover targets
+- M07 adds MCP gateway capability to these adapters
+- Users can immediately start using OpenAI or local models for any stage
+
+---
+
+#### Milestone 6: Provider Failover, Calibration & Cost Ledger
+
+**Parallel group:** bridge | **Depends on:** M04, M05
+
+Files to create/modify:
+- Create `tools/bridge/failover.py` — failover logic, provider health monitoring,
+  automatic switching
+- Create `tools/bridge/calibration.py` — provider profile generation, prompt
+  adjustment recording, validation
+- Create `tools/bridge/cost.py` — cost calculation, pricing tables, ledger
+  management, `update-pricing` command
+- Create `.claude/bridge/` directory structure (profiles/, cost_ledger.jsonl)
+- Modify `tools/bridge/bridge.py` — integrate failover, calibration, cost tracking
+- Modify `lib/config_defaults.sh` — add `BRIDGE_FAILOVER_ENABLED`,
+  `BRIDGE_FAILOVER_PROVIDER`, `BRIDGE_COST_TRACKING`
+- Create `tools/tests/test_failover.py` — failover scenarios
+- Create `tools/tests/test_calibration.py` — profile generation
+- Create `tools/tests/test_cost.py` — cost calculation, ledger format
+- Create `tests/test_bridge_cost.sh` — shell-side cost ledger verification
+
+Acceptance criteria:
+- `tekhton-bridge calibrate --provider openai` runs representative prompts,
+  stores profile in `.claude/bridge/profiles/openai.json`
+- Provider profile contains prompt adjustments (if any), quality score, and
+  validation timestamp
+- When primary provider returns rate limit error and failover is enabled, bridge
+  automatically switches to secondary provider
+- Failover applies pre-computed profile adjustments to prompts
+- Failover is logged as `agent.failover` event in structured log
+- Cost ledger records every invocation: timestamp, run_id, stage, provider,
+  model, input/output tokens, cost_usd, duration_ms
+- `tekhton-bridge update-pricing` refreshes pricing tables
+- Cost calculation uses provider-specific pricing (Anthropic, OpenAI, Ollama=$0)
+- When no calibration profile exists for failover provider, conservative defaults
+  are applied and run is flagged as `degraded-provider`
+- `python3 -m pytest tools/tests/test_failover.py test_calibration.py test_cost.py`
+  passes
+- All existing tests pass
+
+Watch For:
+- Failover must not create infinite loops — if secondary also fails, report
+  error clearly rather than bouncing between providers.
+- Cost pricing tables become stale. Ship with current prices at release time,
+  but `update-pricing` must be able to refresh from a maintained source.
+- Calibration prompts must be representative but small — 5 prompts, not 50.
+  The calibration run should complete in under 5 minutes.
+- Cost ledger JSONL must be append-only and never rewritten (data integrity).
+
+Seeds Forward:
+- M10 (parallel budgeting) distributes quota using cost ledger data
+- M13 (Watchtower cost dashboard) reads the cost ledger
+- M16 (cost forecasting) uses historical cost data for predictions
+- M20 (NFR cost checks) validates against cost ceilings from the ledger
+
+---
+
+#### Milestone 7: MCP Gateway for Non-Anthropic Providers
+
+**Parallel group:** bridge | **Depends on:** M05
+
+Files to create/modify:
+- Create `tools/bridge/mcp_gateway.py` — MCP client implementation (JSON-RPC),
+  tool definition translation, response normalization
+- Modify `tools/bridge/providers/openai.py` — integrate MCP gateway for tool calls
+- Modify `tools/bridge/providers/ollama.py` — integrate MCP gateway for tool calls
+- Modify `tools/bridge/providers/openai_compat.py` — MCP gateway integration
+- Modify `lib/config_defaults.sh` — add `BRIDGE_MCP_GATEWAY`
+- Create `tools/tests/test_mcp_gateway.py` — MCP protocol tests, translation tests
+
+Acceptance criteria:
+- MCP gateway connects to configured MCP servers using same config format as
+  claude CLI (`.claude/mcp_servers.json` or equivalent)
+- MCP tool definitions are translated to OpenAI function calling format for
+  OpenAI adapter
+- MCP tool definitions are translated to prompt-based tool injection for models
+  without native tool calling
+- Tool call results from the model are translated back to MCP response format
+- Gateway handles MCP server lifecycle (start, health check, reconnect)
+- For models that don't support tool use at all, MCP tools are presented as
+  context in the system prompt (read-only mode)
+- `python3 -m pytest tools/tests/test_mcp_gateway.py` passes
+- All existing tests pass
+
+Watch For:
+- MCP servers may have startup latency. The gateway must wait for readiness
+  before declaring tools available.
+- MCP tool schemas can be complex (nested objects, arrays). Translation to
+  OpenAI's function schema must handle all JSON Schema types.
+- Some MCP servers are stateful (Serena LSP). The gateway must maintain a
+  single connection per server, not reconnect per tool call.
+- Error handling: if an MCP server crashes mid-run, the gateway must report
+  the failure clearly rather than hanging.
+
+Seeds Forward:
+- Enterprise users get cross-repo awareness on all providers (not just Anthropic)
+- Future MCP ecosystem tools (databases, APIs, docs) work with any provider
+- V5's B1 bridge (full CLI replacement) builds on this gateway
+
+---
+
+### DOGFOOD CHECKPOINT 2: Bridge Complete (After M07)
+
+**Action:** Replace the working Tekhton copy with the latest V4 build.
+
+**What's new:**
+- Full multi-provider support (Anthropic, OpenAI, Ollama)
+- If Anthropic throttles during M08+ development, failover kicks in
+- Cost tracking is active — see what building Tekhton costs per milestone
+- MCP works on all providers (cross-repo awareness preserved)
+
+**What to verify after upgrade:**
+- `BRIDGE_ENABLED=true` in pipeline.conf
+- `tekhton-bridge call --provider anthropic --model sonnet --prompt-file /tmp/test.md`
+  works (validates bridge installation)
+- Optional: configure `BRIDGE_FAILOVER_PROVIDER=openai` for resilience
+- `.claude/bridge/cost_ledger.jsonl` populates after a run
+
+**Safe rollback:** Set `BRIDGE_ENABLED=false` — all calls revert to claude CLI.
+Bridge code is dormant when disabled.
+
+**Risk:** Medium — bridge is new code, but the Anthropic path through claude CLI
+is unchanged (B2 architecture). Failover is opt-in.
+
+---
+
+### Phase 2: Core Capabilities (M08-M16)
+
+#### Milestone 8: Parallel Coordinator & Worktree Lifecycle
+
+**Parallel group:** parallel | **Depends on:** M02
+
+Files to create/modify:
+- Create `lib/parallel.sh` — coordinator loop, team spawning, wave management,
+  progress polling, `run_parallel_execution()`
+- Create `lib/parallel_teams.sh` — `_create_team_worktree()`,
+  `_remove_team_worktree()`, team status files, team pipeline invocation
+- Modify `lib/config_defaults.sh` — add `PARALLEL_ENABLED`, `PARALLEL_MAX_TEAMS`,
+  `PARALLEL_WORKTREE_DIR`
+- Modify `tekhton.sh` — source parallel modules, parallel mode detection
+- Create `tests/test_parallel_basic.sh` — worktree creation/removal, coordinator
+  skeleton, team status file format
+
+Acceptance criteria:
+- `_create_team_worktree(1, "m05")` creates a git worktree at
+  `.claude/worktrees/team-1/` on branch `tekhton/parallel/m05`
+- Team status files (`TEAM_STATUS.json`) written with: team_id, milestone_id,
+  stage, started_at, status
+- Coordinator reads DAG frontier, groups by parallel_group, spawns teams up to
+  `PARALLEL_MAX_TEAMS`
+- Each team runs a full pipeline (coder → reviewer → tester) in its worktree
+- `_remove_team_worktree()` cleans up worktree and branch
+- `PARALLEL_ENABLED=false` (default) gives identical V3 serial behavior
+- `PARALLEL_MAX_TEAMS=1` gives serial behavior through the parallel engine
+- All existing tests pass
+- `bash -n lib/parallel.sh lib/parallel_teams.sh` passes
+- `shellcheck lib/parallel.sh lib/parallel_teams.sh` passes
+
+Watch For:
+- Git worktree creation fails if the branch already exists (leftover from
+  previous run). Check and clean up stale worktrees at startup.
+- Each team's pipeline invocation must use the worktree as `PROJECT_DIR`, not
+  the main repo root. All path resolution must be worktree-aware.
+- Team subshells must not share file descriptors or FIFOs with the coordinator.
+  Each team gets its own FIFO for agent communication.
+
+Seeds Forward:
+- M09 adds conflict detection and merge strategies
+- M10 adds resource budgeting and shared build gate
+- M13 adds Watchtower visualization of parallel teams
+
+---
+
+#### Milestone 9: Parallel Conflict Detection & Merge
+
+**Parallel group:** parallel | **Depends on:** M08
+
+Files to create/modify:
+- Modify `lib/parallel.sh` — merge orchestration after teams complete
+- Modify `lib/parallel_teams.sh` — `_merge_team_result()`,
+  `_detect_conflicts()`, sequential fallback logic
+- Modify `lib/config_defaults.sh` — add `PARALLEL_CONFLICT_STRATEGY`
+- Create `tests/test_parallel_merge.sh` — conflict scenarios, merge strategies
+
+Acceptance criteria:
+- `_detect_conflicts(team_a, team_b)` compares `git diff --name-only` outputs
+  and reports overlapping files
+- Non-overlapping changes in the same file → git auto-merge succeeds
+- Overlapping changes → sequential fallback (merge earlier team first, re-run
+  later team on merged base)
+- `PARALLEL_CONFLICT_STRATEGY=sequential` re-runs conflicting milestone
+- `PARALLEL_CONFLICT_STRATEGY=human` writes to HUMAN_ACTION_REQUIRED.md
+- `PARALLEL_CONFLICT_STRATEGY=abort` stops with clear error message
+- Merge commits use format: `Merge milestone <id> from parallel team <n>`
+- Failed merges are logged as `parallel.conflict` events
+- All existing tests pass
+
+Watch For:
+- `git merge --abort` must be called if merge fails, otherwise the repo is left
+  in a dirty merge state.
+- Sequential fallback means re-running an entire milestone — this could be
+  expensive. Log the cost clearly so users can decide if parallelism is worth it.
+- Three-way merges can produce unexpected results with generated code. Consider
+  a post-merge build gate (M10) as the safety net.
+
+Seeds Forward:
+- M10 adds shared build gate after merge to catch subtle merge issues
+- V5's stage-level parallelism will reuse conflict detection infrastructure
+
+---
+
+#### Milestone 10: Parallel Resource Budgeting & Shared Build Gate
+
+**Parallel group:** parallel | **Depends on:** M06, M09
+
+Files to create/modify:
+- Create `lib/parallel_budget.sh` — quota distribution strategies (equal,
+  weighted, priority), budget tracking, pause/resume on exhaustion
+- Modify `lib/parallel.sh` — shared build gate after group merge,
+  `_parallel_group_gate()`, `_bisect_build_failure()`
+- Modify `lib/config_defaults.sh` — add `PARALLEL_QUOTA_STRATEGY`,
+  `PARALLEL_SHARED_GATE`, `PARALLEL_BISECT_ON_FAILURE`
+- Create `tests/test_parallel_budget.sh` — quota distribution, gate scenarios
+
+Acceptance criteria:
+- `equal` strategy: each team gets `1/N` of total budget
+- `weighted` strategy: budget proportional to scout complexity estimate
+- `priority` strategy: highest-priority milestone gets full budget, others
+  get remainder
+- When a team exhausts its budget, it pauses until other teams complete
+- After all teams in a parallel group merge, shared build gate validates
+  combined result
+- If shared gate fails, `_bisect_build_failure()` identifies which team's
+  changes broke the build (binary search on team merge order)
+- Budget tracking integrates with cost ledger (M06) for actual cost data
+- All existing tests pass
+
+Watch For:
+- Budget exhaustion + pause can create deadlocks if all teams pause
+  simultaneously. The coordinator must detect this and release budget from
+  the lowest-priority team.
+- Build gate bisection requires selectively reverting team merges — this must
+  use temporary branches, not destructive operations on the main branch.
+- Scout estimates may not be available for all milestones. Fallback to equal
+  distribution when weighted is configured but estimates are missing.
+
+Seeds Forward:
+- M13 displays budget allocation and consumption in Watchtower
+- V5's quota intelligence shares pools across parallel workers
+
+---
+
+#### Milestone 11: Watchtower Server Mode & WebSocket
+
+**Parallel group:** watchtower | **Depends on:** M02
+
+Files to create/modify:
+- Create `tools/watchtower_server.py` — HTTP server, WebSocket, file watcher,
+  REST API endpoints, SSE event stream
+- Modify `lib/dashboard.sh` — `_watchtower_serve()`, `_watchtower_stop()`,
+  `_watchtower_status()`, PID management
+- Modify `lib/config_defaults.sh` — add `WATCHTOWER_SERVE_ENABLED`,
+  `WATCHTOWER_PORT`, `WATCHTOWER_API_ENABLED`, `WATCHTOWER_WS_ENABLED`
+- Modify `tekhton.sh` — `--watchtower-serve`, `--watchtower-stop`,
+  `--watchtower-status` commands, auto-start when config enabled
+- Modify `templates/watchtower/app.js` — WebSocket client, replace polling with
+  push updates when server is available, fallback to polling when not
+- Create `tools/tests/test_watchtower_server.py` — API endpoint tests, WebSocket tests
+- Create `tests/test_watchtower_serve.sh` — server lifecycle, PID management
+
+Acceptance criteria:
+- `tekhton --watchtower-serve` starts server on configured port (default 8420)
+- `WATCHTOWER_SERVE_ENABLED=true` auto-starts server with pipeline
+- `GET /` serves the dashboard HTML/JS/CSS
+- `GET /api/v1/runs/latest` returns current run state as JSON
+- `GET /api/v1/milestones` returns milestone DAG and statuses
+- WebSocket at `/ws` pushes real-time events as they occur
+- SSE at `/api/v1/events/stream` provides alternative to WebSocket
+- File watcher monitors `.claude/watchtower/*.json` and `.claude/logs/events.jsonl`
+- Dashboard auto-detects server vs static mode (WebSocket vs polling)
+- `tekhton --watchtower-stop` cleanly shuts down server
+- Server PID tracked in `.claude/watchtower.pid`
+- All existing tests pass
+
+Watch For:
+- Port already in use — detect and report clearly, suggest alternative port.
+- Server must not block the pipeline. It runs as a background process.
+- WebSocket connections from stale browser tabs — implement heartbeat/ping.
+- Static mode must continue to work when server is not running. The dashboard
+  detects which mode is available and adapts.
+
+Seeds Forward:
+- M12 adds interactive controls through the REST API
+- M13 adds cost dashboard and parallel team views
+- M19 CI/CD mode may disable served Watchtower (headless environment)
+
+---
+
+#### Milestone 12: Watchtower Interactive Controls
+
+**Parallel group:** watchtower | **Depends on:** M11
+
+Files to create/modify:
+- Modify `tools/watchtower_server.py` — add POST endpoints for task submission,
+  note submission, milestone management, run control
+- Create `lib/inbox.sh` — `_process_inbox()`, inbox file format, task/note/control
+  enqueueing
+- Modify `lib/orchestrate.sh` — call `_process_inbox()` at startup and between stages
+- Modify `templates/watchtower/app.js` — task submission form, milestone manager
+  UI, run control buttons (pause/resume/abort)
+- Modify `templates/watchtower/index.html` — interactive control panels
+- Modify `lib/config_defaults.sh` — add `WATCHTOWER_INBOX_ENABLED`,
+  `WATCHTOWER_INBOX_DIR`
+- Create `tests/test_inbox.sh` — inbox processing, file format validation
+
+Acceptance criteria:
+- Task submission form in Watchtower creates
+  `.claude/inbox/task_<timestamp>.json`
+- Note submission form creates `.claude/inbox/note_<timestamp>.json`
+- Run control (pause/resume/abort) creates `.claude/inbox/control_<timestamp>.json`
+- `_process_inbox()` reads and processes inbox files at pipeline checkpoints
+- Processed files moved to `.claude/inbox/processed/`
+- Milestone manager allows: status override, title editing, dependency editing
+- POST endpoints validate input and return appropriate HTTP status codes
+- Pause/resume uses a flag file that stages check between operations
+- Abort triggers graceful shutdown with state save
+- All existing tests pass
+
+Watch For:
+- Race condition: Watchtower writes inbox file while pipeline reads it. Use
+  atomic write (tmpfile + rename) for inbox files.
+- Pause must not interrupt a running agent mid-invocation. It takes effect
+  between stages, not mid-stage.
+- Milestone editing through Watchtower must write to both the milestone file
+  AND the manifest. Use existing `save_manifest()` for atomicity.
+
+Seeds Forward:
+- M13 adds cost and parallel views to the interactive UI
+- M14 (NL task decomposition) can be triggered from Watchtower's task form
+- M17 (GitHub integration) can sync issues to Watchtower's task queue
+
+---
+
+#### Milestone 13: Watchtower Cost Dashboard & Parallel Team View
+
+**Parallel group:** watchtower | **Depends on:** M06, M10, M12
+
+Files to create/modify:
+- Modify `tools/watchtower_server.py` — add `GET /api/v1/costs` (cost ledger
+  summary, per-stage, per-provider, per-model), `GET /api/v1/teams` (parallel
+  team status)
+- Modify `templates/watchtower/app.js` — cost dashboard panel (charts, trends,
+  budget alerts), parallel team view (team cards, swimlanes, merge status)
+- Modify `templates/watchtower/style.css` — cost and parallel view styling
+- Create `tests/test_watchtower_cost.sh` — cost API, team status API
+
+Acceptance criteria:
+- Cost dashboard shows: per-run breakdown, per-stage costs, per-provider costs,
+  cumulative project cost with trend line
+- Budget alerts display when cost exceeds configurable threshold percentage
+- Parallel team view shows: team cards with stage progress, unified timeline
+  with team swimlanes, conflict alerts, merge status
+- Cost data sourced from `.claude/bridge/cost_ledger.jsonl`
+- Team data sourced from `.claude/worktrees/team-N/TEAM_STATUS.json`
+- Dashboard gracefully handles missing data (no cost ledger = no cost panel,
+  no parallel teams = no team view)
+- Test quarantine status (from M01) displayed in Reports tab
+- All existing tests pass
+
+Watch For:
+- Cost ledger can grow large over many runs. The API should support pagination
+  and date range filtering, not load the entire file.
+- Parallel team view must handle teams completing at different rates — the
+  UI updates incrementally as each team progresses.
+- Chart rendering should use lightweight JS (no heavy charting library). CSS
+  bar charts and simple SVG are sufficient for V4.
+
+Seeds Forward:
+- M16 (cost forecasting) adds prediction data to the cost dashboard
+- V5's cloud-hosted Watchtower reuses these API endpoints and UI components
+
+---
+
+### DOGFOOD CHECKPOINT 3: Parallel Ready (After M10)
+
+**Action:** Optionally enable parallel execution for remaining milestones.
+
+**What's new:**
+- Parallel milestone execution via git worktrees
+- Conflict detection and merge strategies
+- Resource budgeting across teams
+
+**What to verify after upgrade:**
+- `PARALLEL_ENABLED=true` and `PARALLEL_MAX_TEAMS=2` in pipeline.conf
+- Run two independent milestones — verify both complete and merge cleanly
+- Check `.claude/worktrees/` cleanup after run
+
+**Safe rollback:** Set `PARALLEL_ENABLED=false` — reverts to serial execution.
+
+**Risk:** Higher — parallel execution is complex. Start with `PARALLEL_MAX_TEAMS=2`
+to limit blast radius. If unstable, revert to serial for remaining milestones.
+
+---
+
+#### Milestone 14: Natural Language Task Decomposition
+
+**Parallel group:** owner | **Depends on:** M03
+
+Files to create/modify:
+- Modify `lib/intake_helpers.sh` — extend PM agent to accept natural language
+  input, decompose into milestones with acceptance criteria
+- Modify `stages/intake.sh` — natural language detection, decomposition flow
+- Modify `prompts/intake.prompt.md` — add NL decomposition instructions,
+  examples of input→milestone transformation
+- Modify `lib/config_defaults.sh` — add `PM_NATURAL_LANGUAGE`,
+  `PM_AUTO_DECOMPOSE`
+- Create `tests/test_intake_nl.sh` — NL detection, decomposition format
+
+Acceptance criteria:
+- PM agent accepts natural language input like "I want a login page with email
+  and social sign-in" and decomposes into concrete milestones
+- Each generated milestone has: title, description, file list, acceptance
+  criteria, test requirements
+- Decomposition uses project context (CLAUDE.md, DESIGN.md, detected stack) to
+  ground milestones in the project's architecture
+- Generated milestones are written to `.claude/milestones/` and MANIFEST.cfg
+  in proper DAG format
+- `PM_AUTO_DECOMPOSE=true` automatically generates milestones from NL input
+- `PM_AUTO_DECOMPOSE=false` presents proposed milestones for user approval
+- Existing precise engineering task descriptions still work (backward compatible)
+- All existing tests pass
+
+Watch For:
+- NL decomposition quality varies by model. The PM prompt must include 2-3
+  concrete examples of input→output transformations.
+- Over-decomposition risk: "add a button" shouldn't become 5 milestones.
+  Include guidance on appropriate granularity.
+- The PM agent must respect the project's existing milestone numbering. New
+  milestones get IDs after the highest existing one.
+
+Seeds Forward:
+- Watchtower's task form (M12) triggers NL decomposition when user submits
+  natural language
+- V5's "Maximum" scope builds on this for full product requirement → deployment
+
+---
+
+#### Milestone 15: Release Notes & Changelog Automation
+
+**Parallel group:** owner | **Depends on:** M02
+
+Files to create/modify:
+- Create `lib/release.sh` — `_generate_release_notes()`,
+  `_update_changelog()`, `_generate_deliverable_summary()`
+- Modify `lib/finalize.sh` — call release note generation after milestone
+  completion
+- Modify `lib/finalize_display.sh` — project-owner-friendly completion banner
+  (what was built, what to review, files changed, tests status)
+- Modify `lib/config_defaults.sh` — add `RELEASE_NOTES_ENABLED`,
+  `CHANGELOG_ENABLED`, `CHANGELOG_FILE`, `DELIVERABLES_DIR`
+- Create `tests/test_release.sh` — release note format, changelog format,
+  deliverable package contents
+
+Acceptance criteria:
+- After milestone completion, release notes generated at
+  `.claude/deliverables/release_<milestone_id>.md`
+- Release notes contain: what's new (non-technical), setup required, technical
+  details (files changed, tests added)
+- Changelog entry appended to CHANGELOG.md in Keep a Changelog format
+- Completion banner shows plain-language summary: task, status, duration, cost
+  (if available), what was built, what to review
+- Deliverable package (`.claude/deliverables/`) contains: summary.md,
+  release_notes.md, changelog_entry.md, test_report.md, diff_summary.md
+- `RELEASE_NOTES_ENABLED=false` skips generation (backward compatible)
+- All existing tests pass
+
+Watch For:
+- Release notes are generated from git diffs and stage reports, NOT from an
+  additional agent call. Keep it cheap. An optional agent polish pass can be
+  added later.
+- CHANGELOG.md must be appended to, not overwritten. Check for existing content.
+- The completion banner must fit in a standard terminal width (80 chars).
+
+Seeds Forward:
+- M16 adds cost data to release notes and deliverables
+- M17 (GitHub integration) uses release notes for GitHub Releases
+- Watchtower Reports tab can display deliverable summaries
+
+---
+
+#### Milestone 16: Cost Forecasting & Deliverable Packages
+
+**Parallel group:** owner | **Depends on:** M06, M15
+
+Files to create/modify:
+- Modify `lib/release.sh` — add `_forecast_cost()`, integrate cost data into
+  release notes and deliverables
+- Modify `tools/watchtower_server.py` — add `GET /api/v1/costs/forecast`
+- Modify `lib/finalize_display.sh` — add cost summary to completion banner
+- Create `lib/cost_forecast.sh` — historical analysis, per-milestone averaging,
+  complexity-weighted prediction
+- Modify `lib/config_defaults.sh` — add `COST_FORECAST_ENABLED`
+- Create `tests/test_cost_forecast.sh` — forecast accuracy, edge cases
+
+Acceptance criteria:
+- `_forecast_cost()` estimates remaining project cost from: historical
+  cost-per-milestone average, remaining milestone count, scout complexity
+  estimates
+- Cost summary in completion banner: "Duration: 47m | Cost: $8.40"
+- Release notes include cost section: "This milestone cost $X.XX"
+- Deliverables include `cost_report.json` with detailed breakdown
+- Cost forecast available via Watchtower API: estimated remaining cost,
+  estimated total project cost, cost trend (per-milestone)
+- Forecast accuracy improves with more historical data (first run uses
+  scout estimates only, subsequent runs blend actuals)
+- `COST_FORECAST_ENABLED=false` disables forecasting
+- All existing tests pass
+
+Watch For:
+- First-run forecasts are necessarily inaccurate. Display with appropriate
+  confidence indicators ("estimated" vs "based on N prior runs").
+- Cost data may not be available if `BRIDGE_COST_TRACKING=false`. Forecast
+  must degrade gracefully (show "cost tracking disabled" not an error).
+
+Seeds Forward:
+- M13 (Watchtower cost dashboard) displays forecast alongside actuals
+- M20 (NFR cost checks) uses forecast data for budget ceiling warnings
+
+---
+
+### DOGFOOD CHECKPOINT 4: Core Complete (After M16)
+
+**Action:** Replace the working Tekhton copy with the latest V4 build.
+
+**What's new:**
+- Full V4 experience: parallel execution, interactive Watchtower, cost tracking,
+  release notes, natural language task intake
+- Building Phase 3-4 with complete project owner tooling active
+- Cost forecasting shows what remaining milestones will cost
+
+**What to verify after upgrade:**
+- Watchtower served mode active (`WATCHTOWER_SERVE_ENABLED=true`)
+- Submit a test task via Watchtower UI — verify inbox processing
+- Check cost dashboard after a run — verify ledger data flows through
+- Release notes generated in `.claude/deliverables/`
+
+**Safe rollback:** Disable individual features via config. Each feature has its
+own `_ENABLED=false` toggle. No all-or-nothing dependency.
+
+**Risk:** Low — Watchtower improvements don't affect pipeline execution. Release
+notes and cost tracking are additive outputs.
+
+---
+
+### Phase 3: Enterprise & Integration (M17-M23)
+
+#### Milestone 17: GitHub Integration
+
+**Parallel group:** integration | **Depends on:** M02, M15
+
+Files to create/modify:
+- Create `lib/integrations/github.sh` — `_integration_github_init()`,
+  `_integration_github_on_event()`, `_integration_github_pull_issues()`,
+  PR creation, issue commenting, release creation
+- Create `lib/integrations/adapter.sh` — base integration interface,
+  event dispatch, adapter registration
+- Modify `lib/config_defaults.sh` — add `INTEGRATION_GITHUB_ENABLED`,
+  `INTEGRATION_GITHUB_TOKEN`, `INTEGRATION_GITHUB_REPO`, etc.
+- Modify `lib/finalize.sh` — dispatch `milestone.complete` and `pipeline.complete`
+  events to registered integrations
+- Create `tests/test_integration_github.sh` — event dispatch, PR format, issue
+  comment format
+
+Acceptance criteria:
+- On `milestone.complete`: creates PR with milestone changes (if configured)
+- On `milestone.complete`: comments on linked GitHub issue with summary
+- On `pipeline.fail`: comments on linked issue with failure details
+- On `release.ready`: creates GitHub Release with release notes (from M15)
+- `_integration_github_pull_issues()` fetches issues with configurable label
+  filter (default: "tekhton") and queues them as tasks
+- Integration uses `gh` CLI or GitHub API directly (curl) — whichever is available
+- `INTEGRATION_GITHUB_AUTO_PR=true` creates PRs automatically
+- `INTEGRATION_GITHUB_AUTO_RELEASE=true` creates releases automatically
+- `INTEGRATION_GITHUB_ENABLED=false` disables all GitHub integration
+- Adapter base interface supports: `_init()`, `_on_event()`, `_health()`
+- All existing tests pass
+- `shellcheck lib/integrations/github.sh lib/integrations/adapter.sh` passes
+
+Watch For:
+- GitHub token permissions vary. PR creation requires `repo` scope, issue
+  comments require `issues` scope. Validate permissions at init and report
+  clearly what's missing.
+- Rate limiting on GitHub API — implement backoff. Don't fail the pipeline
+  because GitHub is slow.
+- PR creation should be non-blocking — create the PR and continue. Don't wait
+  for CI checks on the PR.
+
+Seeds Forward:
+- M19 (CI/CD mode) extends GitHub integration for Actions workflows
+- Watchtower can display linked GitHub issues/PRs
+- V5 adds bidirectional issue sync (GitHub → Tekhton task queue)
+
+---
+
+#### Milestone 18: Slack/Teams & Webhook Notifications
+
+**Parallel group:** integration | **Depends on:** M02
+
+Files to create/modify:
+- Create `lib/integrations/slack.sh` — `_integration_slack_on_event()`,
+  webhook posting, message formatting
+- Create `lib/integrations/webhook.sh` — `_integration_webhook_on_event()`,
+  generic HTTP POST with HMAC signing
+- Modify `lib/integrations/adapter.sh` — register slack and webhook adapters
+- Modify `lib/config_defaults.sh` — add `INTEGRATION_SLACK_ENABLED`,
+  `INTEGRATION_SLACK_WEBHOOK_URL`, `INTEGRATION_WEBHOOK_ENABLED`, etc.
+- Create `tests/test_integration_slack.sh` — message format, event filtering
+- Create `tests/test_integration_webhook.sh` — payload format, signature
+
+Acceptance criteria:
+- Slack notifications sent on configurable events (default:
+  `pipeline.complete,pipeline.fail,human.required`)
+- Messages include: project name, event type, summary, action items
+- Webhook sends JSON payload with `X-Tekhton-Event` header and HMAC signature
+- `INTEGRATION_WEBHOOK_SECRET` used for HMAC-SHA256 signature generation
+- Event filtering: `INTEGRATION_SLACK_EVENTS="*"` sends all,
+  comma-separated list sends only those events
+- Notification failures are logged but don't block the pipeline
+- All existing tests pass
+- `shellcheck lib/integrations/slack.sh lib/integrations/webhook.sh` passes
+
+Watch For:
+- Slack webhook URLs are secrets — never log them at any level. Mask in debug output.
+- Microsoft Teams uses a different webhook format than Slack. Either support both
+  or document Teams setup separately.
+- Webhook HMAC signing must use the raw payload bytes, not a re-serialized version.
+
+Seeds Forward:
+- V5 adds rich Slack messages (blocks, attachments, thread replies)
+- Webhook support enables integration with any tool that accepts HTTP callbacks
+
+---
+
+#### Milestone 19: Log Shipping & CI/CD Mode
+
+**Parallel group:** integration | **Depends on:** M02
+
+Files to create/modify:
+- Create `lib/integrations/logging_ship.sh` — DataDog API shipping, Splunk HEC
+  shipping, syslog forwarding, file-based agent pickup
+- Create `lib/integrations/ci.sh` — CI environment detection, artifact output,
+  exit code mapping, status check posting
+- Modify `lib/config_defaults.sh` — add `INTEGRATION_LOG_SHIPPING`,
+  `INTEGRATION_DATADOG_API_KEY`, `INTEGRATION_SPLUNK_HEC_URL`,
+  `INTEGRATION_CI_MODE`, `INTEGRATION_CI_ARTIFACT_DIR`
+- Modify `tekhton.sh` — CI mode detection (auto-detect from env vars),
+  headless behavior adjustments
+- Create `tests/test_integration_logging.sh` — shipping format, API payload
+- Create `tests/test_integration_ci.sh` — CI detection, artifact output
+
+Acceptance criteria:
+- `INTEGRATION_LOG_SHIPPING=file` (default): structured events written to
+  `.claude/logs/events.jsonl` for external agent pickup (DataDog/Splunk agents)
+- `INTEGRATION_LOG_SHIPPING=datadog`: events batched and POSTed to DataDog
+  Logs API with source=tekhton tag
+- `INTEGRATION_LOG_SHIPPING=splunk`: events sent to Splunk HEC endpoint
+- `INTEGRATION_LOG_SHIPPING=syslog`: events forwarded to syslog
+- `INTEGRATION_CI_MODE=true` (or auto-detected from `CI`, `GITHUB_ACTIONS`,
+  `GITLAB_CI` env vars): headless mode, no interactive prompts, structured
+  output, artifacts written to `INTEGRATION_CI_ARTIFACT_DIR`
+- CI mode exit codes: 0=success, 1=pipeline failure, 2=config error
+- CI artifacts include: RUN_SUMMARY.json, deliverables, test reports
+- Watchtower served mode disabled in CI (headless environment)
+- All existing tests pass
+
+Watch For:
+- DataDog and Splunk have payload size limits. Batch events (100 per request
+  or 1MB, whichever is smaller).
+- CI environments may not have Python installed. Log shipping via curl (DataDog
+  API, Splunk HEC) must work without the bridge.
+- CI mode must detect and respect existing CI timeouts — don't let the pipeline
+  run for 8 hours in a CI job with a 30-minute limit.
+
+Seeds Forward:
+- GitHub Actions marketplace action (future) wraps this CI mode
+- V5 adds Prometheus metrics endpoint for Kubernetes monitoring
+
+---
+
+#### Milestone 20: NFR Engine & Cost/SLA Checks
+
+**Parallel group:** nfr | **Depends on:** M02, M06
+
+Files to create/modify:
+- Create `lib/nfr.sh` — `run_nfr_checks()`, check engine, violation policy
+  enforcement, anomaly detection
+- Modify `lib/gates.sh` — integrate NFR checks into build gate and acceptance gate
+- Modify `lib/orchestrate.sh` — cost ceiling checks after each agent invocation,
+  SLA timeout checks continuously
+- Modify `lib/config_defaults.sh` — add all `NFR_*` config keys (cost, SLA,
+  policy defaults)
+- Create `.claude/nfr.conf.example` — example NFR configuration
+- Create `tests/test_nfr.sh` — check engine, violation policies, cost/SLA checks
+
+Acceptance criteria:
+- `run_nfr_checks("post-build")` runs all enabled checks for that timing point
+- Cost ceiling check: blocks pipeline when actual cost exceeds
+  `NFR_COST_MAX_PER_MILESTONE` (if policy=block)
+- Cost alert: warns when cost exceeds `NFR_COST_ALERT_PCT` of ceiling
+- SLA check: warns when milestone duration exceeds `NFR_SLA_MILESTONE_TIMEOUT_S`
+- Stage timeout: warns when stage exceeds `NFR_SLA_STAGE_TIMEOUT_S`
+- Violation policies: `block` stops pipeline, `warn` logs warning, `log` records silently
+- `_check_pipeline_anomalies()` detects: stage 3x longer than historical average,
+  cost per turn 2x higher than normal, max turns hit 3 consecutive times
+- NFR events emitted: `nfr.check`, `nfr.violation`, `nfr.anomaly`
+- All NFR checks disabled by default (`NFR_*_ENABLED=false`) — opt-in
+- All existing tests pass
+- `shellcheck lib/nfr.sh` passes
+
+Watch For:
+- Cost ceiling checks run after EVERY agent invocation. They must be extremely
+  cheap (read last line of cost ledger, compare to threshold). No file scanning.
+- SLA timeout must be non-blocking — run as a background timer, not a poll loop.
+- Anomaly baselines require historical data. First N runs (configurable) use
+  generous defaults until baselines are established.
+
+Seeds Forward:
+- M21 adds expensive NFR checks (performance, accessibility, coverage)
+- M24 (learning) feeds anomaly patterns into the knowledge base
+
+---
+
+#### Milestone 21: NFR Performance, Accessibility, Coverage & License Checks
+
+**Parallel group:** nfr | **Depends on:** M20
+
+Files to create/modify:
+- Create `lib/nfr_checks.sh` — individual check implementations for performance
+  budgets, accessibility (axe/pa11y/lighthouse), test coverage, bundle size,
+  license compliance
+- Modify `lib/nfr.sh` — register new checks, timing-point assignment
+- Modify `lib/config_defaults.sh` — add `NFR_PERF_*`, `NFR_A11Y_*`,
+  `NFR_COVERAGE_*`, `NFR_LICENSE_*`, `NFR_BUNDLE_*` config keys
+- Create `tests/test_nfr_checks.sh` — individual check validation
+
+Acceptance criteria:
+- Performance budget: runs configured perf test command, checks against thresholds
+  (page load, API response time, bundle size)
+- Accessibility: invokes configured a11y tool (axe/pa11y/lighthouse), checks
+  against WCAG standard level
+- Test coverage: reads coverage report (auto-detected format), checks against
+  min line/branch percentage
+- License compliance: scans dependency licenses, blocks on denied licenses
+- Bundle size: checks output artifact size against threshold
+- Each check runs at its designated timing point (post-build, post-test, etc.)
+- Each check has its own enabled flag and violation policy
+- Checks that require external tools (lighthouse, coverage reporter) fail
+  gracefully when tool is not installed
+- All existing tests pass
+
+Watch For:
+- Performance and accessibility checks may require a running application.
+  If no start command is configured, skip with a clear message.
+- Coverage report formats vary by language/tool (lcov, cobertura, istanbul,
+  go cover). Auto-detection must handle the common ones.
+- License scanning tools differ by ecosystem (license-checker for npm,
+  cargo-deny for Rust, pip-licenses for Python). Support auto-detection.
+
+Seeds Forward:
+- V5 adds visual regression testing as an NFR check
+- V5's health score incorporates NFR violation history
+
+---
+
+### DOGFOOD CHECKPOINT 5: Enterprise NFR Active (After M21)
+
+**Action:** Enable NFR checks for remaining milestone development.
+
+**What's new:**
+- NFR framework catches cost overruns and SLA violations during builds
+- Pipeline monitors itself for anomalous behavior
+
+**What to verify after upgrade:**
+- `NFR_COST_ENABLED=true` and `NFR_SLA_ENABLED=true` in pipeline.conf
+- Set reasonable thresholds (e.g., `NFR_COST_MAX_PER_MILESTONE=25.00`,
+  `NFR_SLA_MILESTONE_TIMEOUT_S=7200`)
+- Run a milestone — verify NFR events in structured log
+
+**Safe rollback:** Set `NFR_*_ENABLED=false` — all checks disabled.
+
+**Risk:** Low — NFR policies default to `warn`, not `block`. Pipeline continues
+even if thresholds are exceeded.
+
+---
+
+#### Milestone 22: Auth Abstraction & Local/Env Modes
+
+**Parallel group:** auth | **Depends on:** M02
+
+Files to create/modify:
+- Create `lib/auth.sh` — `_auth_init()`, `_auth_get_identity()`,
+  `_auth_enrich_event()`, provider abstraction, local/env mode implementations
+- Modify `lib/logging.sh` — call `_auth_enrich_event()` in `emit_event()`
+  to include identity in structured events
+- Modify `lib/config_defaults.sh` — add `AUTH_ENABLED`, `AUTH_PROVIDER`,
+  `AUTH_USER_ID`, `AUTH_ENV_USER_VAR`, `AUTH_AUDIT_IDENTITY`
+- Create `.claude/auth.conf.example` — example auth configuration
+- Create `tests/test_auth.sh` — identity resolution, event enrichment
+
+Acceptance criteria:
+- `AUTH_PROVIDER=local`: identity from `AUTH_USER_ID` config or `$USER` env var
+- `AUTH_PROVIDER=env`: identity from configurable env vars (`AUTH_ENV_USER_VAR`,
+  `AUTH_ENV_ROLE_VAR`)
+- `_auth_get_identity()` returns JSON: `{"id":"...","provider":"...","role":"..."}`
+- When `AUTH_AUDIT_IDENTITY=true`, all structured events include `user` field
+- When `AUTH_ENABLED=false`, no identity enrichment (V3 behavior)
+- Identity is recorded in RUN_SUMMARY.json
+- Auth init validates configuration and reports missing/invalid settings clearly
+- All existing tests pass
+- `shellcheck lib/auth.sh` passes
+
+Watch For:
+- `$USER` may not be set in all environments (some containers, CI). Fall back
+  to `$(whoami)` or `unknown`.
+- Auth config should be in a separate file (`.claude/auth.conf`) not
+  `pipeline.conf` — auth settings are sensitive and may have different
+  access controls.
+
+Seeds Forward:
+- M23 adds OIDC token validation
+- V5 adds full OAuth flow and RBAC enforcement
+- All audit trail queries can filter by user identity
+
+---
+
+#### Milestone 23: OIDC Token Validation Stub
+
+**Parallel group:** auth | **Depends on:** M22
+
+Files to create/modify:
+- Modify `lib/auth.sh` — add OIDC provider mode, JWT validation, issuer
+  discovery, token file reading
+- Modify `lib/config_defaults.sh` — add `AUTH_OIDC_ISSUER`,
+  `AUTH_OIDC_CLIENT_ID`, `AUTH_OIDC_TOKEN_FILE`
+- Create `tools/bridge/auth_oidc.py` — OIDC discovery, JWT signature
+  validation, claims extraction (Python for crypto)
+- Create `tools/tests/test_auth_oidc.py` — JWT validation, claims parsing
+- Create `tests/test_auth_oidc.sh` — OIDC mode integration
+
+Acceptance criteria:
+- `AUTH_PROVIDER=oidc` reads JWT from `AUTH_OIDC_TOKEN_FILE`
+- Token validation: checks signature against issuer's JWKS, validates expiry,
+  validates audience (`AUTH_OIDC_CLIENT_ID`)
+- Claims extracted: `sub` (user ID), `email`, `groups` or `roles`
+- OIDC discovery fetches `.well-known/openid-configuration` from issuer URL
+- Works with: Okta, Auth0, Microsoft Entra ID, PingID (all implement OIDC)
+- Expired tokens produce clear error message with re-auth instructions
+- Invalid tokens produce clear error (not a stack trace)
+- V4 does NOT implement OAuth redirect flow — user provides pre-obtained token
+- `python3 -m pytest tools/tests/test_auth_oidc.py` passes
+- All existing tests pass
+
+Watch For:
+- JWKS (JSON Web Key Set) must be cached — don't fetch on every validation.
+  Cache with TTL (default: 1 hour).
+- Token file must be read-protected (0600 permissions). Warn if permissions
+  are too open.
+- Different OIDC providers put roles in different claims (`groups`, `roles`,
+  `custom:roles`). Make the role claim name configurable.
+
+Seeds Forward:
+- V5 implements full OAuth redirect flow (consent, token exchange, refresh)
+- V5 enforces RBAC based on roles extracted from OIDC claims
+
+---
+
+### Phase 4: Intelligence (M24-M27)
+
+#### Milestone 24: Knowledge Base & Failure Pattern Recognition
+
+**Parallel group:** learning | **Depends on:** M02, M06
+
+Files to create/modify:
+- Create `lib/learning.sh` — `_learning_init()`, `_record_run()`,
+  `_calibrate_scout_estimate()`, `_classify_failure()`,
+  `_record_new_failure()`, knowledge base file management
+- Create `.claude/knowledge/` directory structure (run_history.jsonl,
+  stage_performance.jsonl, failure_patterns.jsonl, task_complexity.jsonl)
+- Modify `lib/finalize_summary.sh` — call `_record_run()` after each run
+- Modify `lib/agent.sh` — call `_record_stage_performance()` after each stage
+- Modify `stages/coder.sh` — use `_calibrate_scout_estimate()` for turn budget
+- Modify `lib/orchestrate_recovery.sh` — call `_classify_failure()` on errors
+- Modify `lib/config_defaults.sh` — add `LEARNING_ENABLED`,
+  `LEARNING_HISTORY_MAX_RUNS`, `LEARNING_CALIBRATION_ENABLED`,
+  `LEARNING_FAILURE_PATTERNS`, `LEARNING_FAILURE_PROMOTE_THRESHOLD`
+- Create `tests/test_learning.sh` — history recording, calibration, pattern
+  matching, knowledge base rotation
+
+Acceptance criteria:
+- `_record_run()` appends run summary (cost, duration, outcome, stages) to
+  `run_history.jsonl`
+- `_record_stage_performance()` records per-stage metrics (turns, time, outcome)
+- `_calibrate_scout_estimate()` adjusts raw scout estimate based on historical
+  accuracy for the task type (over-estimators deflated, under-estimators inflated)
+- `_classify_failure()` matches error output against known failure patterns
+  and suggests resolution
+- New failure patterns auto-recorded after first occurrence
+- Pattern promoted to "known" after `LEARNING_FAILURE_PROMOTE_THRESHOLD`
+  occurrences (default: 3) with a successful resolution
+- Knowledge base files rotated at `LEARNING_HISTORY_MAX_RUNS` (default: 100)
+- `LEARNING_ENABLED=false` disables all learning (V3 behavior)
+- Cost data from bridge cost ledger (M06) included in run history
+- All existing tests pass
+- `shellcheck lib/learning.sh` passes
+
+Watch For:
+- Scout calibration must handle cold start (no history yet) — return raw
+  estimate unchanged, don't apply a default multiplier.
+- Failure pattern matching uses regex. Patterns must be specific enough to avoid
+  false positives (don't match "error" generically).
+- JSONL files grow over time. Rotation must preserve the most recent N records,
+  not the oldest. Use tail-based rotation.
+
+Seeds Forward:
+- M25 adds prompt effectiveness tracking and cross-project sharing
+- V5's prompt auto-tuning consumes the calibration data
+- Watchtower Trends tab can display learning metrics (calibration accuracy)
+
+---
+
+#### Milestone 25: Prompt Tracking & Cross-Project Knowledge
+
+**Parallel group:** learning | **Depends on:** M24
+
+Files to create/modify:
+- Modify `lib/learning.sh` — add `_record_prompt_effectiveness()`,
+  `_compute_effectiveness()`, global knowledge base read/write
+- Create `~/.tekhton/global_knowledge/` directory structure (failure_patterns.jsonl,
+  provider_profiles.jsonl, cost_benchmarks.jsonl)
+- Modify `lib/agent.sh` — call `_record_prompt_effectiveness()` after each
+  stage completion with prompt hash, turns used, rework count, outcome
+- Modify `lib/config_defaults.sh` — add `LEARNING_PROMPT_TRACKING`,
+  `LEARNING_GLOBAL_ENABLED`, `LEARNING_GLOBAL_DIR`
+- Create `tests/test_learning_global.sh` — cross-project sharing, prompt tracking
+
+Acceptance criteria:
+- `_record_prompt_effectiveness()` records: stage, prompt_hash, effectiveness_score
+  (computed from turns, reworks, outcome)
+- Prompt effectiveness data written to `prompt_effectiveness.jsonl`
+- When `LEARNING_GLOBAL_ENABLED=true`, failure patterns and cost benchmarks
+  written to both project-local and global (`~/.tekhton/global_knowledge/`)
+- Global knowledge base is read at startup (if enabled) and merged with
+  project-local knowledge (local takes priority on conflicts)
+- Provider cost benchmarks aggregated across projects (average cost per
+  complexity tier per provider)
+- `LEARNING_GLOBAL_ENABLED=false` (default) — no cross-project sharing
+- All existing tests pass
+
+Watch For:
+- Global knowledge directory may not exist on first run. Create it lazily.
+- Cross-project knowledge must not leak project-specific data (file paths,
+  task descriptions). Only aggregate metrics (cost averages, pattern templates).
+- Prompt hashing must be stable across runs. Use content hash, not memory
+  address or timestamp.
+
+Seeds Forward:
+- V5 uses effectiveness data to A/B test prompt variants
+- V5 adds team knowledge bases (shared across users, not just projects)
+- Provider cost benchmarks help users choose the most cost-effective provider
+
+---
+
+#### Milestone 26: Language Profiles & Domain Detection
+
+**Parallel group:** language | **Depends on:** M02
+
+Files to create/modify:
+- Create `lib/language.sh` — `_detect_language_domains()`, profile loading,
+  domain matching, template variable assembly
+- Create `tools/bridge/language_profiles/` directory with JSON profiles:
+  `javascript.json`, `typescript.json`, `python.json`, `rust.json`, `go.json`,
+  `java.json`, `csharp.json`, `lua.json`, `shell.json`, `c.json`, `cpp.json`
+- Modify `lib/detect.sh` — extend tech stack detection to classify detected
+  languages into frontend/backend/fullstack domains
+- Modify `lib/prompts.sh` — inject `LANGUAGE_REVIEW_FOCUS`, `LANGUAGE_CONVENTIONS`,
+  `LANGUAGE_PITFALLS`, `LANGUAGE_TEST_STRATEGY` template variables
+- Modify `lib/config_defaults.sh` — add `LANGUAGE_PROFILES_ENABLED`,
+  `LANGUAGE_DOMAIN_AUTO_DETECT`, `LANGUAGE_DOMAIN_OVERRIDE`
+- Create `tests/test_language.sh` — profile loading, domain detection,
+  template variable assembly
+
+Acceptance criteria:
+- Language profiles loaded from JSON files (one per language)
+- Each profile contains: domain hints (frontend/backend indicators, test
+  frameworks, review focus, conventions), pitfalls, ecosystem info
+- `_detect_language_domains()` maps detected languages + frameworks to
+  domain classifications (e.g., "javascript:frontend", "python:backend")
+- Template variables assembled from detected profiles:
+  - `LANGUAGE_REVIEW_FOCUS` — review priorities for detected languages/domains
+  - `LANGUAGE_CONVENTIONS` — coding conventions to follow
+  - `LANGUAGE_PITFALLS` — language-specific issues to watch for
+  - `LANGUAGE_TEST_STRATEGY` — test framework and strategy recommendations
+- `LANGUAGE_DOMAIN_OVERRIDE=frontend` manually sets domain (bypasses detection)
+- Mixed projects (fullstack) get both frontend and backend profiles
+- `LANGUAGE_PROFILES_ENABLED=false` disables all language intelligence
+- All existing tests pass
+- `shellcheck lib/language.sh` passes
+
+Watch For:
+- JSON parsing in bash is limited. Use Python helper or simple grep/sed for
+  structured extraction. Keep profile format flat enough for bash parsing.
+- Domain detection may be ambiguous (React app with Express backend). Default
+  to fullstack when both frontend and backend indicators are present.
+- Profile directory must support user overrides (custom profiles in
+  `.claude/language_profiles/` take precedence over shipped profiles).
+
+Seeds Forward:
+- M27 integrates language profiles into all pipeline stages
+- V5 adds semantic similarity for profile matching (not just keyword indicators)
+- Community contributions: new language profiles are a single JSON file
+
+---
+
+#### Milestone 27: Language-Aware Pipeline Stages
+
+**Parallel group:** language | **Depends on:** M26
+
+Files to create/modify:
+- Modify `prompts/coder.prompt.md` — add `{{IF:LANGUAGE_CONVENTIONS}}`
+  conditional block
+- Modify `prompts/reviewer.prompt.md` — add `{{IF:LANGUAGE_REVIEW_FOCUS}}`
+  and `{{IF:LANGUAGE_PITFALLS}}` conditional blocks
+- Modify `prompts/tester.prompt.md` — add `{{IF:LANGUAGE_TEST_STRATEGY}}`
+  conditional block
+- Modify `prompts/specialist_security.prompt.md` — add domain-specific
+  security focus (frontend: XSS/CSP/CORS, backend: SQLi/auth/secrets)
+- Modify `stages/coder.sh` — inject language conventions into prompt context
+- Modify `stages/review.sh` — inject review focus and pitfalls
+- Modify `stages/tester.sh` — inject test strategy
+- Modify `stages/security.sh` — inject domain-specific security focus
+- Create `tests/test_language_integration.sh` — prompt injection verification,
+  domain-specific behavior
+
+Acceptance criteria:
+- Coder prompt includes language conventions when profile is active
+- Reviewer prompt includes language-specific pitfalls and review priorities
+- Tester prompt includes domain-appropriate test strategy
+  (component+e2e for frontend, unit+integration for backend)
+- Security agent prompt includes domain-appropriate focus areas
+- Prompt injection only occurs when `LANGUAGE_PROFILES_ENABLED=true`
+- Conditional blocks are empty (no injection) when profiles are disabled
+- Frontend projects get different review focus than backend projects
+- Fullstack projects get both frontend and backend guidance
+- All existing tests pass
+
+Watch For:
+- Prompt injection must not exceed context budget. Language blocks should be
+  concise (200-500 chars each). The context compiler should account for them.
+- Existing prompt templates have carefully balanced instructions. Language
+  blocks must enhance, not override, existing guidance.
+- Test the prompts with multiple models — language-specific instructions may
+  need different phrasing for different providers (via bridge profiles from M06).
+
+Seeds Forward:
+- V5 uses language profiles for automated code review scoring
+- V5 adds language-specific refactoring patterns
+- Community can contribute domain-specific review checklists
+
+---
+
+### Manifest Summary
+
+```
+# Tekhton Milestone Manifest v1
+# id|title|status|depends_on|file|parallel_group
+
+# Phase 1: Foundations
+m01|Test Harness & Isolation Framework|pending||m01-test-harness.md|foundation
+m02|Three-Tier Logging & Structured Events|pending||m02-structured-logging.md|foundation
+# --- DOGFOOD CHECKPOINT 1 ---
+m03|Bridge Core Architecture & Shell Routing|pending|m02|m03-bridge-core.md|bridge
+m04|Anthropic Direct API Adapter|pending|m03|m04-anthropic-adapter.md|bridge
+m05|OpenAI & Ollama Adapters|pending|m03|m05-openai-ollama-adapters.md|bridge
+m06|Provider Failover Calibration & Cost Ledger|pending|m04,m05|m06-failover-cost.md|bridge
+m07|MCP Gateway for Non-Anthropic Providers|pending|m05|m07-mcp-gateway.md|bridge
+# --- DOGFOOD CHECKPOINT 2 ---
+
+# Phase 2: Core Capabilities
+m08|Parallel Coordinator & Worktree Lifecycle|pending|m02|m08-parallel-coordinator.md|parallel
+m09|Parallel Conflict Detection & Merge|pending|m08|m09-parallel-merge.md|parallel
+m10|Parallel Resource Budgeting & Shared Gate|pending|m06,m09|m10-parallel-budget.md|parallel
+# --- DOGFOOD CHECKPOINT 3 ---
+m11|Watchtower Server Mode & WebSocket|pending|m02|m11-watchtower-server.md|watchtower
+m12|Watchtower Interactive Controls|pending|m11|m12-watchtower-interactive.md|watchtower
+m13|Watchtower Cost Dashboard & Parallel View|pending|m06,m10,m12|m13-watchtower-cost-parallel.md|watchtower
+m14|Natural Language Task Decomposition|pending|m03|m14-nl-decomposition.md|owner
+m15|Release Notes & Changelog Automation|pending|m02|m15-release-notes.md|owner
+m16|Cost Forecasting & Deliverable Packages|pending|m06,m15|m16-cost-forecast.md|owner
+# --- DOGFOOD CHECKPOINT 4 ---
+
+# Phase 3: Enterprise & Integration
+m17|GitHub Integration|pending|m02,m15|m17-github-integration.md|integration
+m18|Slack Teams & Webhook Notifications|pending|m02|m18-slack-webhook.md|integration
+m19|Log Shipping & CI/CD Mode|pending|m02|m19-log-shipping-ci.md|integration
+m20|NFR Engine & Cost SLA Checks|pending|m02,m06|m20-nfr-engine.md|nfr
+m21|NFR Performance A11y Coverage & License|pending|m20|m21-nfr-checks.md|nfr
+# --- DOGFOOD CHECKPOINT 5 ---
+m22|Auth Abstraction & Local Env Modes|pending|m02|m22-auth-local.md|auth
+m23|OIDC Token Validation Stub|pending|m22|m23-auth-oidc.md|auth
+
+# Phase 4: Intelligence
+m24|Knowledge Base & Failure Pattern Recognition|pending|m02,m06|m24-knowledge-base.md|learning
+m25|Prompt Tracking & Cross-Project Knowledge|pending|m24|m25-prompt-tracking.md|learning
+m26|Language Profiles & Domain Detection|pending|m02|m26-language-profiles.md|language
+m27|Language-Aware Pipeline Stages|pending|m26|m27-language-stages.md|language
+```
+
+### Parallel Execution Opportunities
+
+When V4's own parallel engine is active (after M10), these milestones can
+run concurrently within their parallel groups:
+
+| Wave | Milestones (concurrent) | Prerequisite |
+|------|------------------------|-------------|
+| 1 | M01 + M02 | None |
+| 2 | M03 + M08 + M11 + M15 + M18 + M19 + M22 + M26 | M02 |
+| 3 | M04 + M05 + M09 + M12 + M14 | M03, M08, M11 |
+| 4 | M06 + M07 + M17 + M23 + M27 | M04, M05, M22, M26 |
+| 5 | M10 + M13 + M16 + M20 + M24 | M06, M09, M12 |
+| 6 | M21 + M25 | M20, M24 |
+
+In practice, API quota and team count limits will constrain concurrency.
+But the DAG permits up to 8 milestones in a single wave (Wave 2).
