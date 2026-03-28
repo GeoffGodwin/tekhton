@@ -1,7 +1,7 @@
-# Reviewer Report — M33: Human Mode Completion Loop & State Fidelity (Re-review Cycle 3)
+# Reviewer Report — M35 Watchtower Smart Refresh
 
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,27 +10,12 @@ APPROVED
 - None
 
 ## Non-Blocking Notes
-- None
+- `renderedTabs` is now write-only state. `renderActiveTab()` sets non-active tabs to `false` and `switchTab()` sets the active tab to `true`, but neither function reads `renderedTabs` as a lazy-render gate before calling `renderTab()`. The variable is dead. Either restore the lazy-render check in `switchTab()` (but only for non-refresh-triggered navigation) or remove `renderedTabs` entirely and let every tab switch and every `renderActiveTab()` call unconditionally re-render.
+- In `render()` (line 528–529), `checkRefreshLifecycle()` already calls `scheduleRefresh()` when status is `running` or `initializing`, and then the very next line redundantly calls `scheduleRefresh()` again for the same condition. `scheduleRefresh()` clears the existing timer first so it's safe, but the second call is dead code. Remove the `if (!refreshStopped) { ... scheduleRefresh(); }` block in `render()` since `checkRefreshLifecycle()` handles it.
 
 ## Coverage Gaps
-- No test covers exec-resume with a `[~]` note (crash recovery scenario): a test that simulates a resumed invocation where the note is `[~]` and verifies `pick_next_note` is skipped would close the gap introduced by the tekhton.sh fix.
-
-## ACP Verdicts
-None
+- No test for `checkRefreshLifecycle()` stopping refresh when status is `'waiting'` — if the pipeline enters the waiting state while refresh is running, `checkRefreshLifecycle()` neither schedules the next cycle nor shows the completion indicator, silently halting refresh. (This matches pre-M35 behavior, so not a regression, but worth documenting.)
+- Filter button click handler (DOM interaction with `.run-type-tag` text-scraping to reconstruct `run_type`) is not covered by the structural tests.
 
 ## Drift Observations
-- None
-
----
-
-**Review notes (cycle 3):**
-
-All three prior non-blocking notes have been addressed correctly:
-
-1. **tekhton.sh:1385** — Guard is correct. `[[ -n "${CURRENT_NOTE_LINE:-}" ]]` skips `pick_next_note` on crash-recovery resume. The claimed `[~]` note was invisible to `pick_next_note` (only scans `[ ]`), so the restore-from-env path is the right fix. Log message is accurate.
-
-2. **stages/coder.sh:434** — The elif guard `&& [[ "${HUMAN_MODE:-false}" != true ]]` is correct. Silences the false-positive "no notes flag set" log when `HUMAN_MODE=true`. Consistent with the pattern used in the if-branch above it; shellcheck-clean.
-
-3. **lib/finalize.sh:115-121** — Comment accurately describes the failure-path edge case (bulk resolution at line 126 returns early on non-zero exit, leaving `[~]` stuck until next success). The `warn` fallthrough provides a visible signal without changing behavior. No ambiguity.
-
-Test results (193 shell / 76 Python / 0 failures) and shellcheck clean confirm no regressions.
+- `app.js` (line 497–498): the error thrown in the `new Function(text)()` catch block references `name` from the outer IIFE closure (`name` is the `dataFiles[i]` iteration variable captured via the inner IIFE). The error message (`'Parse error in ' + name + '.js'`) is constructed correctly, but the error is immediately swallowed by the outer `Promise.all(...).catch(() => location.reload())`. The detail is silently lost. Consider at minimum a `console.error` before falling back, which would aid debugging without any user-visible change.

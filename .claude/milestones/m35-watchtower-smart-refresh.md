@@ -1,4 +1,9 @@
 # Milestone 35: Watchtower Smart Refresh & Context-Aware Layout
+<!-- milestone-meta
+id: "35"
+status: "done"
+-->
+
 
 ## Overview
 

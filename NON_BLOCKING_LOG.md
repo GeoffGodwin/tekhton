@@ -5,6 +5,12 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-28 | "M35"] `renderedTabs` is now write-only state. `renderActiveTab()` sets non-active tabs to `false` and `switchTab()` sets the active tab to `true`, but neither function reads `renderedTabs` as a lazy-render gate before calling `renderTab()`. The variable is dead. Either restore the lazy-render check in `switchTab()` (but only for non-refresh-triggered navigation) or remove `renderedTabs` entirely and let every tab switch and every `renderActiveTab()` call unconditionally re-render.
+- [ ] [2026-03-28 | "M35"] In `render()` (line 528–529), `checkRefreshLifecycle()` already calls `scheduleRefresh()` when status is `running` or `initializing`, and then the very next line redundantly calls `scheduleRefresh()` again for the same condition. `scheduleRefresh()` clears the existing timer first so it's safe, but the second call is dead code. Remove the `if (!refreshStopped) { ... scheduleRefresh(); }` block in `render()` since `checkRefreshLifecycle()` handles it.
+- [ ] [2026-03-28 | "Fix two failed self tests: test_agent_counter.sh and test_agent_fifo_invocation.sh which both failed on the last run."] `renderedTabs` is now write-only state. `renderActiveTab()` sets non-active tabs to `false` and `switchTab()` sets the active tab to `true`, but neither function reads `renderedTabs` as a lazy-render gate before calling `renderTab()`. The variable is dead. Either restore the lazy-render check in `switchTab()` (but only for non-refresh-triggered navigation) or remove `renderedTabs` entirely and let every tab switch and every `renderActiveTab()` call unconditionally re-render.
+- [ ] [2026-03-28 | "Fix two failed self tests: test_agent_counter.sh and test_agent_fifo_invocation.sh which both failed on the last run."] In `render()` (line 528–529), `checkRefreshLifecycle()` already calls `scheduleRefresh()` when status is `running` or `initializing`, and then the very next line redundantly calls `scheduleRefresh()` again for the same condition. `scheduleRefresh()` clears the existing timer first so it's safe, but the second call is dead code. Remove the `if (!refreshStopped) { ... scheduleRefresh(); }` block in `render()` since `checkRefreshLifecycle()` handles it.
+- [ ] [2026-03-28 | "M35"] `renderedTabs` is now write-only state. `renderActiveTab()` sets non-active tabs to `false` and `switchTab()` sets the active tab to `true`, but neither function reads `renderedTabs` as a lazy-render gate before calling `renderTab()`. The variable is dead. Either restore the lazy-render check in `switchTab()` (but only for non-refresh-triggered navigation) or remove `renderedTabs` entirely and let every tab switch and every `renderActiveTab()` call unconditionally re-render.
+- [ ] [2026-03-28 | "M35"] In `render()` (line 528–529), `checkRefreshLifecycle()` already calls `scheduleRefresh()` when status is `running` or `initializing`, and then the very next line redundantly calls `scheduleRefresh()` again for the same condition. `scheduleRefresh()` clears the existing timer first so it's safe, but the second call is dead code. Remove the `if (!refreshStopped) { ... scheduleRefresh(); }` block in `render()` since `checkRefreshLifecycle()` handles it.
 - [ ] [2026-03-27 | "M33"] **Crash-recovery resume gap (state.sh / tekhton.sh)**: In the exec-based resume path for single-note human mode, `CURRENT_NOTE_LINE` is exported to the child process env (tekhton.sh:991) but then unconditionally overwritten by `pick_next_note` at tekhton.sh:1382. Since the claimed note is in `[~]` state and `pick_next_note` only scans `[ ]` notes, a note that was `[~]` at crash time is invisible to resume. The gap is only in crash/SIGINT scenarios where `finalize_run` never runs. Suggest a future guard: if `CURRENT_NOTE_LINE` is already set from env AND `HUMAN_SINGLE_NOTE=true`, skip `pick_next_note` and restore `TASK` from the env value directly.
 - [ ] [2026-03-27 | "M33"] **Misleading log in coder.sh elif branch (stages/coder.sh:435)**: The message "Human notes exist but no notes flag set" can fire when `HUMAN_MODE=true` (single-note mode), where notes ARE being handled via `claim_single_note`. The condition matches whenever notes remain regardless of mode — confusing to operators who ran `--human`. Not harmful, just noisy.
 - [ ] [2026-03-27 | "M33"] **`_hook_resolve_notes` fallthrough edge case (lib/finalize.sh:115)**: When `HUMAN_MODE=true` but `CURRENT_NOTE_LINE` is empty and the pipeline fails, no `[~]` reset occurs. Stuck `[~]` notes from this path are cleaned up only by the safety net on the next successful run. Acceptable given the scenario requires an invariant violation, but worth documenting.
@@ -77,3 +83,15 @@ The coder is prompted to address these when the count exceeds the threshold.
 #### COVERAGE: `offer_cached_dry_run()` has no test coverage
 #### COVERAGE: `_parse_intake_preview` confidence value not asserted for valid reports
 #### NAMING: Test 13 label embeds a runtime variable
+
+### Test Audit Concerns (2026-03-28)
+#### INTEGRITY: Tautological assertion in success branch (4.2)
+#### INTEGRITY: Tautological assertion in success branch (6.3)
+#### SCOPE: lib/agent.sh modified but not reported in TESTER_REPORT.md
+#### NAMING: No PASS counter in test_agent_fifo_invocation.sh
+
+### Test Audit Concerns (2026-03-28)
+#### INTEGRITY: Tautological assertion in success branch (4.2)
+#### INTEGRITY: Tautological assertion in success branch (6.3)
+#### SCOPE: lib/agent.sh modified but not reported in TESTER_REPORT.md
+#### NAMING: No PASS counter in test_agent_fifo_invocation.sh
