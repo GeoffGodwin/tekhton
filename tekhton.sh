@@ -1247,6 +1247,7 @@ if [ "$SETUP_INDEXER" = true ]; then
             exit 1
         fi
         bash "$local_serena_script" "$PROJECT_DIR" "${SERENA_PATH:-.claude/serena}"
+        SERENA_ENABLED=true  # so check_indexer_available sees Serena as installed
     fi
 
     # Warm cache after setup (M7)

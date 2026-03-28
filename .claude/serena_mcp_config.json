@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "/home/geoff/workspace/geoffgodwin/tekhton/.claude/serena/.venv/bin/python",
+      "args": ["-m", "serena", "--project-dir", "/home/geoff/workspace/geoffgodwin/tekhton"],
+      "cwd": "/home/geoff/workspace/geoffgodwin/tekhton/.claude/serena",
+      "env": {
+        "SERENA_LANGUAGE_SERVERS": "pylsp"
+      }
+    }
+  }
+}
