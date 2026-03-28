@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-28
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
+- [2026-03-28 | "Fix two failed self tests: test_agent_counter.sh and test_agent_fifo_invocation.sh which both failed on the last run."] `app.js` (line 497–498): the error thrown in the `new Function(text)()` catch block references `name` from the outer IIFE closure (`name` is the `dataFiles[i]` iteration variable captured via the inner IIFE). The error message (`'Parse error in ' + name + '.js'`) is constructed correctly, but the error is immediately swallowed by the outer `Promise.all(...).catch(() => location.reload())`. The detail is silently lost. Consider at minimum a `console.error` before falling back, which would aid debugging without any user-visible change.
 - [2026-03-28 | "M35"] `app.js` (line 497–498): the error thrown in the `new Function(text)()` catch block references `name` from the outer IIFE closure (`name` is the `dataFiles[i]` iteration variable captured via the inner IIFE). The error message (`'Parse error in ' + name + '.js'`) is constructed correctly, but the error is immediately swallowed by the outer `Promise.all(...).catch(() => location.reload())`. The detail is silently lost. Consider at minimum a `console.error` before falling back, which would aid debugging without any user-visible change.
 
 ## Resolved

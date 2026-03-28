@@ -127,7 +127,7 @@ run_agent() {
     fi
 
     # Add MCP config flag when Serena is available
-    if [[ "${SERENA_MCP_AVAILABLE:-false}" == "true" ]]; then
+    if [[ "${SERENA_MCP_AVAILABLE:-false}" == "true" ]] && command -v get_mcp_config_path &>/dev/null; then
         local _mcp_config
         _mcp_config=$(get_mcp_config_path)
         if [[ -n "$_mcp_config" ]] && [ -f "$_mcp_config" ]; then

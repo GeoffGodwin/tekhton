@@ -1,64 +1,45 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 13 test assertions (6 phases)
-Verdict: PASS
+Tests audited: 2 files, 13 test functions (7 in test_agent_counter.sh, 9 phases in test_agent_fifo_invocation.sh)
+Verdict: CONCERNS
+
+---
 
 ### Findings
 
-#### COVERAGE: Orphan safety-net at finalize.sh:132-141 is not exercised by any test phase
-- File: tests/test_human_mode_resolve_notes_edge.sh:125-148 (Phase 1), 224-252 (Phase 5)
-- Issue: The file header (lines 8-12) and Phase 1/5 comments state that the "orphan
-  safety-net (lines 132-141) must resolve orphaned [~] notes to [x]." In practice,
-  the bulk resolution path at `finalize.sh:122-130` runs first: when `exit_code=0` and
-  any `[~]` notes exist, `_PIPELINE_EXIT_CODE` is set to 0 and `resolve_human_notes` is
-  called. With no `CODER_SUMMARY.md` present (the test environment), `resolve_human_notes`
-  takes the `_PIPELINE_EXIT_CODE -eq 0` branch and converts all `^- \[~\] ` lines to
-  `[x]` via sed. By the time the orphan sweep at line 136 runs, `orphan_count` is 0 and
-  the safety-net sed at line 140 never executes.
+#### INTEGRITY: Tautological assertion in success branch (4.2)
+- File: `tests/test_agent_fifo_invocation.sh:139-143`
+- Issue: `assert_eq "4.2 log file has JSON output" "0" "0"` compares the literal string "0" to itself — this assertion always passes regardless of what `grep` found. The `if grep -q ...; then assert_eq "..." "0" "0"` pattern is intended to register a pass, but the assert call itself verifies nothing. The actual failure detection lives in the `else` branch (`FAIL=1`), so the test would still fail if `grep` didn't match — but the assertion on the success path is a dead no-op that communicates false rigour.
+- Severity: HIGH
+- Action: Replace `assert_eq "4.2 ..." "0" "0"` with a direct `echo "PASS: 4.2 ..."` statement (and add a PASS counter — see NAMING finding). Do not leave an always-true `assert_eq` in the success branch.
 
-  The `remaining_claimed` grep (line 122) and `orphan_count` grep (line 136) use identical
-  patterns (`^- \[~\]`). This makes the orphan safety-net unreachable in normal operation:
-  if `remaining_claimed > 0`, `resolve_human_notes` is called and resolves all `[~]` notes;
-  if `remaining_claimed = 0`, `orphan_count` is also 0. The code at `finalize.sh:132-141`
-  is dead under all currently tested paths.
+#### INTEGRITY: Tautological assertion in success branch (6.3)
+- File: `tests/test_agent_fifo_invocation.sh:196-201`
+- Issue: Identical pattern to finding above. `assert_eq "6.3 log contains ACTIVITY TIMEOUT message" "0" "0"` is always true regardless of the `grep` result. Same reasoning and risk apply.
+- Severity: HIGH
+- Action: Same as 4.2 — replace the tautological `assert_eq "..." "0" "0"` with a `echo "PASS: ..."` statement.
 
-  The assertions themselves are correct about the final file state — they just do not
-  validate the code they claim to validate.
+#### SCOPE: lib/agent.sh modified but not reported in TESTER_REPORT.md
+- File: `lib/agent.sh:130`, `TESTER_REPORT.md`
+- Issue: `git diff lib/agent.sh` reveals an unstaged working-tree change: a `&& command -v get_mcp_config_path &>/dev/null` guard was added to the MCP config block inside `run_agent()`. TESTER_REPORT.md states "Implementation Files Changed: none." The change is defensive and correct (prevents calling an undefined function), and is the likely fix for one or both of the originally failing tests. The omission from the report means the implementation change is undocumented and unreviewed.
 - Severity: MEDIUM
-- Action: Update the file header and Phase 1/5 comments to accurately attribute resolution
-  to `resolve_human_notes` (lines 122-130), not the orphan safety-net (lines 132-141). To
-  exercise the orphan safety-net in isolation, add a phase that stubs or replaces
-  `resolve_human_notes` with a no-op (e.g., `resolve_human_notes() { return 0; }`) so the
-  `[~]` notes survive into the safety-net check. Do not change the implementation to
-  satisfy this gap — the safety-net may be intentionally redundant and its reachability
-  should be investigated separately.
+- Action: Update TESTER_REPORT.md to list `lib/agent.sh` under "Implementation Files Changed" and describe the change. Stage the file so it is included in the next commit alongside the test fixes.
 
-### Notes (non-findings)
+#### NAMING: No PASS counter in test_agent_fifo_invocation.sh
+- File: `tests/test_agent_fifo_invocation.sh:44-68`
+- Issue: `FAIL` is tracked but `PASS` is not. The test exits correctly on failure but produces no pass-count summary. Silent success paths make it harder to confirm that all assertion branches actually executed — particularly relevant given the tautological assertions in 4.2 and 6.3 that print "PASS" without incrementing any counter.
+- Severity: LOW
+- Action: Add `PASS=0` and increment it in `assert_eq`, `assert_ge`, and `assert_file_exists`/`assert_file_not_exists` on success. Print a summary line at the end matching the `test_agent_counter.sh` style.
 
-**Assertion honesty (all phases):** All 13 assertions verify file state after calling the
-real `_hook_resolve_notes`. Expected strings (`- [x] [BUG] ...`, `- [ ] [BUG] ...`) are
-derived directly from the sed substitutions in `finalize.sh` and `notes.sh` — no
-constants divorced from implementation logic. No always-pass assertions were found.
+---
 
-**Edge case coverage:** Six distinct code paths are tested: fall-through on success
-(Phase 1), fall-through on failure (Phase 2), single-note success (Phase 3), single-note
-failure (Phase 4), multiple orphans on success (Phase 5), and standard non-human mode
-(Phase 6). The early-return guard at `finalize.sh:120` is correctly exercised by Phase 2.
+### Tests That Pass Audit
 
-**Implementation exercise:** Tests source and directly call real implementations
-(`lib/finalize.sh`, `lib/notes.sh`, `lib/notes_single.sh`). Stubs are limited to
-functions unrelated to note resolution (archive, metrics, events, milestone ops). No
-mocking of the functions under test was found.
+**test_agent_counter.sh** — No findings. This test:
+- Correctly overrides `_run_with_retry` after sourcing `agent.sh`, allowing `run_agent()` to execute all pre-call code including the `TOTAL_AGENT_INVOCATIONS` increment at `lib/agent.sh:88`.
+- Asserts derived values (1, 2, 3, 11) that reflect actual accumulation logic, not unrelated magic numbers.
+- Covers: basic increment (Suite 1), accumulation from non-zero baseline (Suite 2), independence of `TOTAL_AGENT_INVOCATIONS` from `TOTAL_TURNS` (Suite 3).
+- Sets `TEKHTON_TEST_MODE=1` to correctly suppress the spinner before calling `run_agent()`.
 
-**Test naming:** All 13 assertion labels (e.g., `"1.1 orphaned [~] note resolved to [x]
-on success"`, `"2.1 [~] note untouched on failure in fall-through path"`) clearly encode
-both the scenario and the expected outcome.
-
-**Scope alignment:** Deleted files `INTAKE_REPORT.md` and `JR_CODER_SUMMARY.md` are not
-referenced or imported by this test file. The absence of `CODER_SUMMARY.md` in the test
-temp directory is intentional and correctly triggers the `_PIPELINE_EXIT_CODE` fallback
-path in `resolve_human_notes`. No orphaned tests detected.
-
-**Test count matches tester report:** 13 assertions across 6 phases, consistent with the
-tester's reported "Passed: 13, Failed: 0."
+**test_agent_fifo_invocation.sh — honest assertions** — Phases 1, 2, 3, 4 (a/b/c/d/e), 5, 6.1/6.2, 7, 8, and 9 all use real mock claude binaries through the actual FIFO infrastructure in `lib/agent.sh`. Assertions are derived from mock output (e.g. `"num_turns":5` → `LAST_AGENT_TURNS=5`) and real agent.sh logic (null-run threshold at line 297, activity-timeout exit code 124 at line 277). These are honest tests of real behavior.
