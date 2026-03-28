@@ -24,7 +24,7 @@ _PLAN_COMPLETION_FILE=""
 _plan_find_available_port() {
     local base_port="$1"
     local port
-    for port in $(seq "$base_port" "$((base_port + 10))"); do
+    for port in $(seq "$base_port" "$((base_port + 50))"); do
         if ! _plan_is_port_in_use "$port"; then
             echo "$port"
             return 0
@@ -291,8 +291,10 @@ _start_plan_server() {
 # Stops the background server if running.
 _stop_plan_server() {
     if [[ "$_PLAN_SERVER_PID" -gt 0 ]]; then
-        kill -TERM "-$_PLAN_SERVER_PID" 2>/dev/null || true
+        # Kill the process and any children (the subshell may have spawned python3)
         kill "$_PLAN_SERVER_PID" 2>/dev/null || true
+        # Also kill children — the subshell's child python3 process
+        pkill -P "$_PLAN_SERVER_PID" 2>/dev/null || true
         wait "$_PLAN_SERVER_PID" 2>/dev/null || true
         _PLAN_SERVER_PID=0
     fi
