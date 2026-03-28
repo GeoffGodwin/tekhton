@@ -431,7 +431,7 @@ ${nb_notes}"
     # skip bulk claiming to avoid marking unrelated notes as [~].
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         claim_human_notes
-    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && [[ "${HUMAN_MODE:-false}" != true ]]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — skipping notes injection."
         # Defensive hint: detect tasks that appear to originate from HUMAN_NOTES.md
         if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then

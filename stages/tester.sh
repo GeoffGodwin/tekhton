@@ -383,6 +383,14 @@ _run_tester_write_failing() {
     local _tdd_prompt
     _tdd_prompt=$(render_prompt "tester_write_failing")
 
+    # --- TDD diagnostics: pre-invocation snapshot ---
+    local _tdd_stage_start
+    _tdd_stage_start=$(date +%s)
+    local _tdd_prompt_chars=${#_tdd_prompt}
+    local _tdd_prompt_tokens=$(( (_tdd_prompt_chars + 3) / 4 ))
+    log "[tester-diag] Prompt: ${_tdd_prompt_chars} chars (~${_tdd_prompt_tokens} tokens)"
+    log "[tester-diag] Turn budget: ${_max_turns} | Model: ${CLAUDE_TESTER_MODEL}"
+
     log "Invoking TDD tester agent (write failing tests, max ${_max_turns} turns)..."
     run_agent \
         "Tester (TDD pre-flight)" \
@@ -392,6 +400,14 @@ _run_tester_write_failing() {
         "$LOG_FILE" \
         "$AGENT_TOOLS_TESTER"
     print_run_summary
+
+    # --- TDD diagnostics: post-invocation summary ---
+    local _tdd_agent_end
+    _tdd_agent_end=$(date +%s)
+    local _tdd_agent_elapsed=$(( _tdd_agent_end - _tdd_stage_start ))
+    local _tdd_agent_mins=$(( _tdd_agent_elapsed / 60 ))
+    local _tdd_agent_secs=$(( _tdd_agent_elapsed % 60 ))
+    log "[tester-diag] TDD invocation: ${LAST_AGENT_TURNS}/${_max_turns} turns, ${_tdd_agent_mins}m${_tdd_agent_secs}s, exit=${LAST_AGENT_EXIT_CODE}"
 
     # --- UPSTREAM error check (API failures) ---
     if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
@@ -422,4 +438,12 @@ _run_tester_write_failing() {
     else
         warn "TDD tester did not produce ${_preflight_file}. Coder will proceed without pre-written tests."
     fi
+
+    # --- TDD stage complete summary ---
+    local _tdd_stage_end
+    _tdd_stage_end=$(date +%s)
+    local _tdd_total_elapsed=$(( _tdd_stage_end - _tdd_stage_start ))
+    local _tdd_total_mins=$(( _tdd_total_elapsed / 60 ))
+    local _tdd_total_secs=$(( _tdd_total_elapsed % 60 ))
+    log "[tester-diag] TDD write-failing stage complete: ${_tdd_total_mins}m${_tdd_total_secs}s, model=${CLAUDE_TESTER_MODEL}, turns=${LAST_AGENT_TURNS}"
 }

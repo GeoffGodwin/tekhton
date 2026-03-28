@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # replan_brownfield.sh — Brownfield replanning (--replan CLI command)
 #

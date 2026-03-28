@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # drift.sh — Drift log management (observations, thresholds, audit counters)
 #

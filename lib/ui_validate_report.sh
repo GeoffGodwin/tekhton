@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # ui_validate_report.sh — UI validation report parser and formatter (Milestone 29)
 #

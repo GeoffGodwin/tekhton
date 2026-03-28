@@ -1,16 +1,16 @@
 # Drift Log
 
 ## Metadata
-- Last audit: 2026-03-26
-- Runs since audit: 6
+- Last audit: 2026-03-28
+- Runs since audit: 1
 
 ## Unresolved Observations
-- [2026-03-27 | "M33"] `lib/state.sh` — Prior cycle flagged missing `set -euo pipefail`; confirmed fixed in this cycle (line 2). Other sourced-only lib files not touched by M33 may have the same omission — worth a sweep across the full `lib/` directory.
-- [2026-03-27 | "M33"] `lib/state.sh` — Prior cycle flagged missing `set -euo pipefail`; confirmed fixed in this cycle (line 2). Other sourced-only lib files not touched by M33 may have the same omission — worth a sweep across the full `lib/` directory.
-- [2026-03-27 | "**[BUG] Milestone archival re-archives ALL completed milestones on every run**"] `_run_tester_write_failing()` (lines 353–425) is a parallel code path that invokes the tester agent but has no `[tester-diag]` instrumentation. Out of scope for this task, but if TDD pre-flight mode proves slow, diagnostics will be absent there.
-- [2026-03-26 | "[FEAT] Add debugging/diagnostic output to the Tester stage to surface why it runs disproportionately long compared to the Coder stage."] `_run_tester_write_failing()` (lines 353–425) is a parallel code path that invokes the tester agent but has no `[tester-diag]` instrumentation. Out of scope for this task, but if TDD pre-flight mode proves slow, diagnostics will be absent there.
 
 ## Resolved
+- [RESOLVED 2026-03-28] `lib/state.sh` — Prior cycle flagged missing `set -euo pipefail`; confirmed fixed in this cycle (line 2). Other sourced-only lib files not touched by M33 may have the same omission — worth a sweep across the full `lib/` directory.
+- [RESOLVED 2026-03-28] `lib/state.sh` — Prior cycle flagged missing `set -euo pipefail`; confirmed fixed in this cycle (line 2). Other sourced-only lib files not touched by M33 may have the same omission — worth a sweep across the full `lib/` directory.
+- [RESOLVED 2026-03-28] Milestone archival re-archives ALL completed milestones on every run**"] `_run_tester_write_failing()` (lines 353–425) is a parallel code path that invokes the tester agent but has no `[tester-diag]` instrumentation. Out of scope for this task, but if TDD pre-flight mode proves slow, diagnostics will be absent there.
+- [RESOLVED 2026-03-28] Add debugging/diagnostic output to the Tester stage to surface why it runs disproportionately long compared to the Coder stage."] `_run_tester_write_failing()` (lines 353–425) is a parallel code path that invokes the tester agent but has no `[tester-diag]` instrumentation. Out of scope for this task, but if TDD pre-flight mode proves slow, diagnostics will be absent there.
 - [RESOLVED 2026-03-26] `prompts/ui_rework.prompt.md:1-28` — file remains unreachable; no code path calls `render_prompt("ui_rework")`. The BUILD_ERRORS.md approach chosen for the blocker fix supersedes this prompt entirely. Consider removing the file to avoid confusing future maintainers.
 - [RESOLVED 2026-03-26] `lib/ui_validate.sh:243-248` — `_should_self_test_watchtower()` references `DASHBOARD_ENABLED` and `DASHBOARD_DIR`, creating an implicit coupling between the UI validation module and the Watchtower/Dashboard feature. If that feature is refactored, this coupling breaks silently.
 - [RESOLVED 2026-03-26] The expedited remediation addressed all three architect-identified drift observations correctly:

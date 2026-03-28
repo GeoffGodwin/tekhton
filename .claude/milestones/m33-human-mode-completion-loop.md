@@ -2,7 +2,7 @@
 
 <!-- milestone-meta
 id: "33"
-status: "in_progress"
+status: "done"
 -->
 
 The `--human` flag is broken in six interrelated ways that compound into a

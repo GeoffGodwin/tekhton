@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # agent_monitor.sh — Agent monitoring, activity detection, process management
 # Sourced by agent.sh. Provides: _invoke_and_monitor()
 # Platform detection + _kill_agent_windows() live in agent_monitor_platform.sh.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # ui_validate.sh — UI validation gate orchestrator (Milestone 29)
 #

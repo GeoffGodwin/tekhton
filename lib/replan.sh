@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # replan.sh — Shim that sources both mid-run and brownfield replan modules.
 #

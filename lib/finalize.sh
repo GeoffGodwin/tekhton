@@ -112,6 +112,12 @@ _hook_resolve_notes() {
             resolve_single_note "$CURRENT_NOTE_LINE" "$exit_code" || true
             return 0
         else
+            # Edge case: HUMAN_MODE=true but CURRENT_NOTE_LINE is empty.
+            # On failure, bulk resolution returns early (exit_code != 0) and
+            # the safety net below won't run, leaving [~] notes stuck until
+            # the next successful run resolves them. This requires an invariant
+            # violation (HUMAN_MODE set without CURRENT_NOTE_LINE) and is
+            # acceptable — the safety net catches it on the next success.
             warn "HUMAN_MODE active but CURRENT_NOTE_LINE is empty — falling through to bulk resolution"
         fi
     fi

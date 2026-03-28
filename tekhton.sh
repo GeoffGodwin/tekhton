@@ -1378,8 +1378,15 @@ if [[ "$HUMAN_MODE" = true ]]; then
         # shellcheck disable=SC2034
         AUTO_COMMIT=true
     else
-        # Single-note mode: pick the highest-priority unchecked note
-        CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+        # Single-note mode: pick the highest-priority unchecked note.
+        # On crash-recovery resume, CURRENT_NOTE_LINE is already set from env
+        # (exported at line ~991). The claimed note is [~], invisible to
+        # pick_next_note which only scans [ ] notes. Restore from env directly.
+        if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
+            log "Human mode: restoring claimed note from prior run"
+        else
+            CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+        fi
         if [[ -z "$CURRENT_NOTE_LINE" ]]; then
             if [[ -n "$HUMAN_NOTES_TAG" ]]; then
                 log "No unchecked [${HUMAN_NOTES_TAG}] notes in HUMAN_NOTES.md"

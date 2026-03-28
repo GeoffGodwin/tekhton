@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # hooks.sh — Post-pipeline utility functions (commit, archive, final checks)
 #

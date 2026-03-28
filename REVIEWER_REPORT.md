@@ -1,7 +1,7 @@
-# Reviewer Report — M33: Human Mode Completion Loop & State Fidelity (Re-review Cycle 2)
+# Reviewer Report — M33: Human Mode Completion Loop & State Fidelity (Re-review Cycle 3)
 
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,16 +10,27 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- **Crash-recovery resume gap (state.sh / tekhton.sh)**: In the exec-based resume path for single-note human mode, `CURRENT_NOTE_LINE` is exported to the child process env (tekhton.sh:991) but then unconditionally overwritten by `pick_next_note` at tekhton.sh:1382. Since the claimed note is in `[~]` state and `pick_next_note` only scans `[ ]` notes, a note that was `[~]` at crash time is invisible to resume. The gap is only in crash/SIGINT scenarios where `finalize_run` never runs. Suggest a future guard: if `CURRENT_NOTE_LINE` is already set from env AND `HUMAN_SINGLE_NOTE=true`, skip `pick_next_note` and restore `TASK` from the env value directly.
-- **Misleading log in coder.sh elif branch (stages/coder.sh:435)**: The message "Human notes exist but no notes flag set" can fire when `HUMAN_MODE=true` (single-note mode), where notes ARE being handled via `claim_single_note`. The condition matches whenever notes remain regardless of mode — confusing to operators who ran `--human`. Not harmful, just noisy.
-- **`_hook_resolve_notes` fallthrough edge case (lib/finalize.sh:115)**: When `HUMAN_MODE=true` but `CURRENT_NOTE_LINE` is empty and the pipeline fails, no `[~]` reset occurs. Stuck `[~]` notes from this path are cleaned up only by the safety net on the next successful run. Acceptable given the scenario requires an invariant violation, but worth documenting.
+- None
 
 ## Coverage Gaps
-- No test covers exec-resume with a `[~]` note (crash recovery scenario): `test_human_mode_state_resume.sh` validates state serialization and `_build_resume_flag` but does not simulate a resumed invocation where the note is `[~]` and `pick_next_note` is called.
-- `test_human_mode_resolve_notes_edge.sh` should include a case for `HUMAN_MODE=true` + empty `CURRENT_NOTE_LINE` + non-zero exit path to document that `[~]` notes are not reset until the next successful run.
+- No test covers exec-resume with a `[~]` note (crash recovery scenario): a test that simulates a resumed invocation where the note is `[~]` and verifies `pick_next_note` is skipped would close the gap introduced by the tekhton.sh fix.
 
 ## ACP Verdicts
 None
 
 ## Drift Observations
-- `lib/state.sh` — Prior cycle flagged missing `set -euo pipefail`; confirmed fixed in this cycle (line 2). Other sourced-only lib files not touched by M33 may have the same omission — worth a sweep across the full `lib/` directory.
+- None
+
+---
+
+**Review notes (cycle 3):**
+
+All three prior non-blocking notes have been addressed correctly:
+
+1. **tekhton.sh:1385** — Guard is correct. `[[ -n "${CURRENT_NOTE_LINE:-}" ]]` skips `pick_next_note` on crash-recovery resume. The claimed `[~]` note was invisible to `pick_next_note` (only scans `[ ]`), so the restore-from-env path is the right fix. Log message is accurate.
+
+2. **stages/coder.sh:434** — The elif guard `&& [[ "${HUMAN_MODE:-false}" != true ]]` is correct. Silences the false-positive "no notes flag set" log when `HUMAN_MODE=true`. Consistent with the pattern used in the if-branch above it; shellcheck-clean.
+
+3. **lib/finalize.sh:115-121** — Comment accurately describes the failure-path edge case (bulk resolution at line 126 returns early on non-zero exit, leaving `[~]` stuck until next success). The `warn` fallthrough provides a visible signal without changing behavior. No ambiguity.
+
+Test results (193 shell / 76 Python / 0 failures) and shellcheck clean confirm no regressions.
