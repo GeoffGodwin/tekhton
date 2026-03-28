@@ -390,3 +390,44 @@ footer code { background:var(--bg-input); padding:0.1rem 0.3rem; border-radius:2
 .ms-id-preview { font-family:var(--font-data); font-size:0.8rem; color:var(--accent); margin-bottom:0.5rem; }
 .char-count { font-size:0.7rem; color:var(--text-muted); text-align:right; }
 .action-card.full-width { grid-column:1/-1; }
+
+/* --- Parallel Teams (M37) --- */
+.team-cards-row { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem; }
+.team-card { flex:1; min-width:200px; max-width:350px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; padding:0.6rem 0.75rem; border-top:3px solid var(--accent); cursor:pointer; transition:background 0.15s,box-shadow 0.15s; }
+.team-card:hover { background:var(--bg-card-hover); }
+.team-card-selected { box-shadow:0 0 0 2px var(--accent); }
+.team-card-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:0.3rem; }
+.team-name { font-family:var(--font-data); font-size:0.8rem; font-weight:700; text-transform:capitalize; }
+.team-milestone { font-size:0.75rem; color:var(--text-secondary); margin-bottom:0.3rem; }
+.stage-progress.compact { padding:0.3rem 0.4rem; gap:0.15rem; margin-bottom:0.3rem; }
+.stage-progress.compact .stage-chip { font-size:0.65rem; padding:0.15rem 0.35rem; }
+.team-card .stage-detail { font-size:0.7rem; padding:0.3rem 0.4rem; margin-bottom:0; }
+
+.timeline-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:0.3rem; padding:0.3rem 0.5rem; font-size:0.8rem; font-weight:600; color:var(--text-secondary); }
+.team-filter-chips { display:flex; gap:0.2rem; }
+.team-filter-btn { font-size:0.7rem; padding:0.15rem 0.5rem; }
+.timeline-team-tag { font-family:var(--font-data); font-size:0.7rem; white-space:nowrap; min-width:3em; }
+.timeline-event.hidden { display:none; }
+
+/* Milestone map parallel group view */
+.ms-view-toggle { display:flex; align-items:center; gap:0.3rem; margin-bottom:0.75rem; }
+.ms-view-label { font-size:0.8rem; color:var(--text-secondary); margin-right:0.3rem; }
+.parallel-group-view .swimlane-header { font-weight:700; text-transform:capitalize; }
+.cross-deps-summary { margin-top:0.75rem; font-size:0.8rem; }
+.cross-deps-summary h4 { font-size:0.85rem; margin-bottom:0.4rem; color:var(--text-primary); }
+.cross-dep-row { display:flex; align-items:center; gap:0.4rem; padding:0.2rem 0; }
+.cross-dep-arrow { color:var(--text-muted); font-size:0.9rem; }
+.cross-dep-groups { color:var(--text-muted); font-size:0.7rem; font-family:var(--font-data); }
+
+/* Reports team selector */
+.report-team-selector { display:flex; gap:0.2rem; margin-bottom:0.75rem; padding:0.3rem 0; }
+
+/* Trends team tag */
+.run-team-tag { font-family:var(--font-data); font-size:0.6rem; padding:0.1rem 0.3rem; border-radius:3px; background:var(--bg-input); color:var(--text-muted); white-space:nowrap; }
+
+/* Responsive: team cards stack on mobile */
+@media (max-width:767px) {
+  .team-cards-row { flex-direction:column; }
+  .team-card { max-width:none; }
+  .team-filter-chips { flex-wrap:wrap; }
+}

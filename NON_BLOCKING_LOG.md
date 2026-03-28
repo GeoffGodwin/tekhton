@@ -5,6 +5,11 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-28 | "M37"] `lib/inbox.sh:86-88` — The guard `[[ "$basename" == manifest_append_* ]]` in `_process_milestone()` is dead code: the function is only called from the `milestone_*.md` glob loop, which cannot match `manifest_append_*`. Safe to remove.
+- [ ] [2026-03-28 | "M37"] `lib/dashboard_emitters.sh:303` — Similarly, `[[ "$basename" != manifest_append_* ]]` in `emit_dashboard_inbox()` is dead code for the same reason (the enclosing glob is `milestone_*.md`).
+- [ ] [2026-03-28 | "M37"] `lib/inbox.sh:65-75` — `_process_note()` silently drops the description, priority, and source fields when calling `add_human_note()`. Only the title is written to HUMAN_NOTES.md. This is consistent with how the flat checklist works, but worth documenting as a known limitation.
+- [ ] [2026-03-28 | "M37"] `lib/dashboard_emitters.sh:280-331` — `emit_dashboard_inbox()` does not enumerate `manifest_append_*.cfg` files in the pending display. When a milestone is submitted via the UI, users will see the `.md` entry but not the associated `.cfg` entry. Minor UX gap; acceptable since they are submitted as a pair.
+- [ ] [2026-03-28 | "M37"] `tools/watchtower_server.py:45` — The 100KB payload limit is a hard-coded magic number; could be a CLI arg for future extensibility, but acceptable at this scope.
 - [ ] [2026-03-28 | "M36"] `lib/inbox.sh:86-88` — The guard `[[ "$basename" == manifest_append_* ]]` in `_process_milestone()` is dead code: the function is only called from the `milestone_*.md` glob loop, which cannot match `manifest_append_*`. Safe to remove.
 - [ ] [2026-03-28 | "M36"] `lib/dashboard_emitters.sh:303` — Similarly, `[[ "$basename" != manifest_append_* ]]` in `emit_dashboard_inbox()` is dead code for the same reason (the enclosing glob is `milestone_*.md`).
 - [ ] [2026-03-28 | "M36"] `lib/inbox.sh:65-75` — `_process_note()` silently drops the description, priority, and source fields when calling `add_human_note()`. Only the title is written to HUMAN_NOTES.md. This is consistent with how the flat checklist works, but worth documenting as a known limitation.

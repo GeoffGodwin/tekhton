@@ -188,8 +188,49 @@ emit_dashboard_run_state() {
         completed_at_json="\"${completed_ts}\""
     fi
 
+    # --- Parallel teams support (M37) ---
+    local parallel_mode="false"
+    local teams_json="{}"
+    if [[ -n "${_PARALLEL_TEAMS[*]:-}" ]] && [[ ${#_PARALLEL_TEAMS[@]} -gt 0 ]]; then
+        parallel_mode="true"
+        teams_json="{"
+        local team_first=true
+        local _team_id
+        for _team_id in "${_PARALLEL_TEAMS[@]}"; do
+            [[ -z "$_team_id" ]] && continue
+            local _t_ms_id="${_TEAM_MILESTONE[$_team_id]:-}"
+            local _t_ms_title="${_TEAM_MILESTONE_TITLE[$_team_id]:-}"
+            local _t_stage="${_TEAM_STAGE[$_team_id]:-unknown}"
+            local _t_status="${_TEAM_STATUS[$_team_id]:-pending}"
+            local _t_started="${_TEAM_STARTED[$_team_id]:-}"
+
+            # Build per-team stages JSON
+            local _t_stages_json="{"
+            local _t_stg_first=true
+            for stg in intake scout coder build_gate security reviewer tester; do
+                local _t_stg_key="${_team_id}:${stg}"
+                local _ts_status="${_TEAM_STAGE_STATUS[$_t_stg_key]:-pending}"
+                local _ts_turns="${_TEAM_STAGE_TURNS[$_t_stg_key]:-0}"
+                local _ts_budget="${_TEAM_STAGE_BUDGET[$_t_stg_key]:-0}"
+                local _ts_dur="${_TEAM_STAGE_DURATION[$_t_stg_key]:-0}"
+                if [[ "$_t_stg_first" = true ]]; then _t_stg_first=false; else _t_stages_json="${_t_stages_json},"; fi
+                _t_stages_json="${_t_stages_json}\"${stg}\":{\"status\":\"${_ts_status}\",\"turns\":${_ts_turns},\"budget\":${_ts_budget},\"duration_s\":${_ts_dur}}"
+            done
+            _t_stages_json="${_t_stages_json}}"
+
+            local _t_ms_json="null"
+            if [[ -n "$_t_ms_id" ]]; then
+                _t_ms_json="{\"id\":\"$(_json_escape "$_t_ms_id")\",\"title\":\"$(_json_escape "$_t_ms_title")\"}"
+            fi
+
+            if [[ "$team_first" = true ]]; then team_first=false; else teams_json="${teams_json},"; fi
+            teams_json="${teams_json}\"$(_json_escape "$_team_id")\":{\"milestone\":${_t_ms_json},\"current_stage\":\"$(_json_escape "$_t_stage")\",\"stages\":${_t_stages_json},\"status\":\"$(_json_escape "$_t_status")\",\"started_at\":\"$(_json_escape "$_t_started")\"}"
+        done
+        teams_json="${teams_json}}"
+    fi
+
     local json
-    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","completed_at":%s,"refresh_interval_ms":%d,"quota_status":"%s","quota_paused_at":"%s","quota_retry_count":%d}' \
+    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","completed_at":%s,"refresh_interval_ms":%d,"quota_status":"%s","quota_paused_at":"%s","quota_retry_count":%d,"parallel_mode":%s,"teams":%s}' \
         "$(_json_escape "$status")" \
         "$(_json_escape "$current_stage")" \
         "$ms_json" \
@@ -200,7 +241,23 @@ emit_dashboard_run_state() {
         "$refresh_ms" \
         "$(_json_escape "$quota_status")" \
         "$(_json_escape "$quota_paused_at")" \
-        "$quota_retry_count")
+        "$quota_retry_count" \
+        "$parallel_mode" \
+        "$teams_json")
 
     _write_js_file "${dash_dir}/data/run_state.js" "TK_RUN_STATE" "$json"
+}
+
+# emit_dashboard_team_state TEAM_ID
+# Called per team in parallel mode. Updates the team's entry in _TEAM_*
+# associative arrays, which are serialized by emit_dashboard_run_state().
+# V4 execution engine will call this per team during parallel execution.
+emit_dashboard_team_state() {
+    # Validate team_id argument (V4 will pass a specific team identifier)
+    [[ -n "${1:-}" ]] || { warn "emit_dashboard_team_state: team_id required"; return 1; }
+    # This function is a hook for V4's execution engine. It reads the current
+    # state of the given team from orchestration globals and triggers a
+    # run_state.js re-emission. For now, it simply calls emit_dashboard_run_state
+    # to serialize whatever is in the _TEAM_* arrays.
+    emit_dashboard_run_state
 }

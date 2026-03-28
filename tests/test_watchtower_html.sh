@@ -130,14 +130,14 @@ assert "app.js uses localStorage" grep -q 'localStorage' "${WATCHTOWER_DIR}/app.
 assert "app.js has TK_RUN_STATE fallback" grep -q 'TK_RUN_STATE || {}' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has TK_TIMELINE fallback" grep -q 'TK_TIMELINE || \[\]' "${WATCHTOWER_DIR}/app.js"
 
-# --- Test 13: Size constraint (75KB total) ---
-# Bumped from 50KB to 75KB for M36 Actions tab (forms + server integration)
+# --- Test 13: Size constraint (90KB total) ---
+# Bumped from 75KB to 90KB for M37 parallel teams UI (team cards, group view, team trends)
 total_size=0
 for file in index.html style.css app.js; do
     fsize=$(wc -c < "${WATCHTOWER_DIR}/${file}")
     total_size=$((total_size + fsize))
 done
-assert "total static size under 75KB" test "$total_size" -lt 76800
+assert "total static size under 90KB" test "$total_size" -lt 92160
 
 # --- Test 14: _copy_static_files function exists in dashboard.sh ---
 assert "_copy_static_files in dashboard.sh" grep -q '_copy_static_files' "${TEKHTON_HOME}/lib/dashboard.sh"
@@ -173,6 +173,24 @@ assert "emit_dashboard_inbox exists" grep -q 'emit_dashboard_inbox' "${TEKHTON_H
 assert "inbox.sh exists" test -f "${TEKHTON_HOME}/lib/inbox.sh"
 assert "inbox.sh has process_watchtower_inbox" grep -q 'process_watchtower_inbox' "${TEKHTON_HOME}/lib/inbox.sh"
 assert "tekhton.sh sources inbox.sh" grep -q 'source.*inbox.sh' "${TEKHTON_HOME}/tekhton.sh"
+
+# --- Test 22: Parallel teams support (M37) ---
+assert "dashboard.sh has parallel_mode" grep -q 'parallel_mode' "${TEKHTON_HOME}/lib/dashboard.sh"
+assert "dashboard.sh has emit_dashboard_team_state" grep -q 'emit_dashboard_team_state' "${TEKHTON_HOME}/lib/dashboard.sh"
+assert "app.js has team-cards-row" grep -q 'team-cards-row' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has parallel_mode detection" grep -q 'parallel_mode' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has renderMilestonesByGroup" grep -q 'renderMilestonesByGroup' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has renderTeamPerformance" grep -q 'renderTeamPerformance' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has team filter" grep -q 'team-filter-btn\|activeTeamFilter' "${WATCHTOWER_DIR}/app.js"
+assert "app.js has report team selector" grep -q 'report-team-selector\|activeReportTeam' "${WATCHTOWER_DIR}/app.js"
+assert "CSS has team-card styles" grep -q 'team-card' "${WATCHTOWER_DIR}/style.css"
+assert "CSS has ms-view-toggle" grep -q 'ms-view-toggle' "${WATCHTOWER_DIR}/style.css"
+assert "CSS has cross-deps-summary" grep -q 'cross-deps-summary' "${WATCHTOWER_DIR}/style.css"
+assert "CSS has report-team-selector" grep -q 'report-team-selector' "${WATCHTOWER_DIR}/style.css"
+assert "finalize_summary.sh has team field" grep -q '"team"' "${TEKHTON_HOME}/lib/finalize_summary.sh"
+assert "finalize_summary.sh has parallel_group field" grep -q '"parallel_group"' "${TEKHTON_HOME}/lib/finalize_summary.sh"
+assert "finalize_summary.sh has concurrent_teams field" grep -q '"concurrent_teams"' "${TEKHTON_HOME}/lib/finalize_summary.sh"
+assert "emitters has per-team reports" grep -q 'teams_reports_json' "${TEKHTON_HOME}/lib/dashboard_emitters.sh"
 
 # --- Summary ---
 echo "watchtower_html: ${PASS} passed, ${FAIL} failed"

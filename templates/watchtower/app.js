@@ -138,6 +138,38 @@
   // --- Tab 1: Live Run ---
   var stageOrder = ['intake', 'scout', 'coder', 'build_gate', 'security', 'reviewer', 'tester'];
   var stageLabels = { intake: 'Intake', scout: 'Scout', coder: 'Coder', build_gate: 'Build', security: 'Security', reviewer: 'Review', tester: 'Test' };
+  var teamColors = ['#4a9eff', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4'];
+  var activeTeamFilter = null;
+
+  function getTeamColor(teamId, teamIds) {
+    for (var i = 0; i < teamIds.length; i++) if (teamIds[i] === teamId) return teamColors[i % teamColors.length];
+    return teamColors[0];
+  }
+
+  function renderStageChips(stgs) {
+    var h = '';
+    for (var i = 0; i < stageOrder.length; i++) {
+      var si = stgs[stageOrder[i]] || {}, ss = (si.status || 'pending').toLowerCase();
+      h += '<span class="stage-chip ' + esc(ss) + '">' + statusIcon(ss) + ' ' + (stageLabels[stageOrder[i]] || stageOrder[i]) + '</span>';
+    }
+    return h;
+  }
+
+  function renderTeamCard(teamId, team, color) {
+    var ts = (team.status || 'pending').toLowerCase();
+    var msLabel = team.milestone ? esc(team.milestone.id) + ': ' + esc(truncate(team.milestone.title, 20)) : 'No milestone';
+    var stg = team.current_stage || 'unknown';
+    var stgData = (team.stages || {})[stg] || {};
+    var h = '<div class="team-card" data-team="' + esc(teamId) + '" style="border-top-color:' + color + '">';
+    h += '<div class="team-card-header"><span class="team-name" style="color:' + color + '">' + esc(teamId) + '</span>';
+    h += '<span class="' + badgeClass(ts) + '">' + esc(ts) + '</span></div>';
+    h += '<div class="team-milestone">' + statusIcon(ts) + ' ' + msLabel + '</div>';
+    h += '<div class="stage-progress compact">' + renderStageChips(team.stages || {}) + '</div>';
+    h += '<div class="stage-detail">' + esc(stageLabels[stg] || stg) + ': ' + esc(stgData.turns || 0) + '/' + esc(stgData.budget || '?') + ' turns';
+    if (stgData.duration_s) h += '  \u00B7  ' + fmtDuration(stgData.duration_s);
+    h += '</div></div>';
+    return h;
+  }
 
   function renderLiveRun() {
     var c = document.getElementById('tab-live');
@@ -147,41 +179,105 @@
       c.innerHTML = '<div class="empty-state">No runs yet \u2014 run tekhton to see data here</div>'; return;
     }
     var st = (s.pipeline_status || 'idle').toLowerCase();
-    var ml = s.active_milestone ? ' \u2014 Milestone ' + esc(s.active_milestone.id) + ': ' + esc(s.active_milestone.title) : '';
-    h += '<div class="live-status-banner ' + esc(st) + '">' + statusIcon(st) + ' Pipeline ' + esc(st.toUpperCase()) + ml + '</div>';
-    if (s.waiting_for)
-      h += '<div class="waiting-banner"><h3>\u23F8 Pipeline WAITING \u2014 Human Input Required</h3><p>' + esc(s.waiting_for) + '</p><p>To respond, edit: <code>.claude/CLARIFICATIONS.md</code></p></div>';
-    var stgs = s.stages || {};
-    h += '<div class="stage-progress">';
-    for (var i = 0; i < stageOrder.length; i++) {
-      var si = stgs[stageOrder[i]] || {}, ss = (si.status || 'pending').toLowerCase();
-      h += '<span class="stage-chip ' + esc(ss) + '">' + statusIcon(ss) + ' ' + (stageLabels[stageOrder[i]] || stageOrder[i]) + '</span>';
-    }
-    h += '</div>';
-    if (s.current_stage && stgs[s.current_stage]) {
-      var d = stgs[s.current_stage];
-      h += '<div class="stage-detail">' + esc(stageLabels[s.current_stage] || s.current_stage) + ': ' + esc(d.turns || 0) + '/' + esc(d.budget || '?') + ' turns';
-      if (d.duration_s) h += '  \u00B7  ' + fmtDuration(d.duration_s);
+    var teams = s.teams || {};
+    var teamIds = []; for (var tk in teams) if (teams.hasOwnProperty(tk)) teamIds.push(tk);
+    teamIds.sort();
+    var isParallel = s.parallel_mode === true && teamIds.length > 1;
+
+    if (isParallel) {
+      // --- Multi-team layout ---
+      h += '<div class="live-status-banner ' + esc(st) + '">' + statusIcon(st) + ' Pipeline ' + esc(st.toUpperCase()) + ' \u2014 ' + teamIds.length + ' teams active</div>';
+      if (s.waiting_for)
+        h += '<div class="waiting-banner"><h3>\u23F8 Pipeline WAITING \u2014 Human Input Required</h3><p>' + esc(s.waiting_for) + '</p><p>To respond, edit: <code>.claude/CLARIFICATIONS.md</code></p></div>';
+      h += '<div class="team-cards-row">';
+      for (var ti = 0; ti < teamIds.length; ti++) {
+        h += renderTeamCard(teamIds[ti], teams[teamIds[ti]], getTeamColor(teamIds[ti], teamIds));
+      }
       h += '</div>';
+    } else {
+      // --- Single pipeline layout (existing) ---
+      var ml = s.active_milestone ? ' \u2014 Milestone ' + esc(s.active_milestone.id) + ': ' + esc(s.active_milestone.title) : '';
+      h += '<div class="live-status-banner ' + esc(st) + '">' + statusIcon(st) + ' Pipeline ' + esc(st.toUpperCase()) + ml + '</div>';
+      if (s.waiting_for)
+        h += '<div class="waiting-banner"><h3>\u23F8 Pipeline WAITING \u2014 Human Input Required</h3><p>' + esc(s.waiting_for) + '</p><p>To respond, edit: <code>.claude/CLARIFICATIONS.md</code></p></div>';
+      var stgs = s.stages || {};
+      h += '<div class="stage-progress">' + renderStageChips(stgs) + '</div>';
+      if (s.current_stage && stgs[s.current_stage]) {
+        var d = stgs[s.current_stage];
+        h += '<div class="stage-detail">' + esc(stageLabels[s.current_stage] || s.current_stage) + ': ' + esc(d.turns || 0) + '/' + esc(d.budget || '?') + ' turns';
+        if (d.duration_s) h += '  \u00B7  ' + fmtDuration(d.duration_s);
+        h += '</div>';
+      }
     }
+
+    // Timeline (unified, color-coded by team when parallel)
     var ev, events = timeline();
     if (events.length) {
+      if (isParallel) {
+        h += '<div class="timeline-header"><span>Unified Timeline</span>';
+        h += '<div class="team-filter-chips">';
+        h += '<button class="filter-btn team-filter-btn' + (!activeTeamFilter ? ' active' : '') + '" data-team-filter="">All</button>';
+        for (var tf = 0; tf < teamIds.length; tf++) {
+          var tfc = getTeamColor(teamIds[tf], teamIds);
+          h += '<button class="filter-btn team-filter-btn' + (activeTeamFilter === teamIds[tf] ? ' active' : '') + '" data-team-filter="' + esc(teamIds[tf]) + '" style="border-left:3px solid ' + tfc + '">' + esc(teamIds[tf]) + '</button>';
+        }
+        h += '</div></div>';
+      }
       h += '<div class="timeline" id="timeline-scroll">';
       for (var j = 0; j < events.length; j++) {
         ev = events[j]; if (!ev) continue;
         var eid = ev.id || '', det = ev.detail || ev.type || '';
         if (typeof det === 'object') det = JSON.stringify(det);
-        h += '<div class="timeline-event" data-event-id="' + esc(eid) + '"><span class="time">' + fmtTime(ev.ts) + '</span><span class="detail">' + esc(ev.type || '') + ': ' + esc(det) + '</span>';
+        var evTeam = ev.team || '';
+        var evColor = evTeam && isParallel ? getTeamColor(evTeam, teamIds) : '';
+        var evHidden = isParallel && activeTeamFilter && evTeam && evTeam !== activeTeamFilter;
+        h += '<div class="timeline-event' + (evHidden ? ' hidden' : '') + '" data-event-id="' + esc(eid) + '" data-team="' + esc(evTeam) + '"' + (evColor ? ' style="border-left-color:' + evColor + '"' : '') + '>';
+        h += '<span class="time">' + fmtTime(ev.ts) + '</span>';
+        if (evTeam && isParallel) h += '<span class="timeline-team-tag" style="color:' + evColor + '">[' + esc(evTeam) + ']</span>';
+        h += '<span class="detail">' + esc(ev.type || '') + ': ' + esc(det) + '</span>';
         if (eid) h += '<span class="trace-link" data-trace="' + esc(eid) + '">[trace]</span>';
         h += '</div>';
       }
       h += '</div>';
     }
     c.innerHTML = h;
+
+    // Bind team card clicks (filter timeline)
+    var tcards = c.querySelectorAll('.team-card');
+    for (var tc = 0; tc < tcards.length; tc++) tcards[tc].addEventListener('click', function () {
+      var tid = this.dataset.team;
+      activeTeamFilter = (activeTeamFilter === tid) ? null : tid;
+      applyTeamFilter();
+    });
+    // Bind team filter buttons
+    var tfbs = c.querySelectorAll('.team-filter-btn');
+    for (var tfb = 0; tfb < tfbs.length; tfb++) tfbs[tfb].addEventListener('click', function () {
+      var fv = this.dataset.teamFilter || null;
+      activeTeamFilter = (activeTeamFilter === fv) ? null : fv;
+      applyTeamFilter();
+    });
+
     var tl = c.querySelectorAll('.trace-link');
     for (var k = 0; k < tl.length; k++)
       tl[k].addEventListener('click', function (e) { e.stopPropagation(); toggleCausalHighlight(this.dataset.trace); });
     if (st === 'failed' && events.length) { var last = events[events.length - 1]; if (last && last.id) toggleCausalHighlight(last.id); }
+  }
+
+  function applyTeamFilter() {
+    var evts = document.querySelectorAll('.timeline-event');
+    for (var i = 0; i < evts.length; i++) {
+      var et = evts[i].dataset.team || '';
+      evts[i].classList.toggle('hidden', !!(activeTeamFilter && et && et !== activeTeamFilter));
+    }
+    var btns = document.querySelectorAll('.team-filter-btn');
+    for (var j = 0; j < btns.length; j++) {
+      var bv = btns[j].dataset.teamFilter || null;
+      btns[j].classList.toggle('active', bv === activeTeamFilter);
+    }
+    var cards = document.querySelectorAll('.team-card');
+    for (var k = 0; k < cards.length; k++) {
+      cards[k].classList.toggle('team-card-selected', cards[k].dataset.team === activeTeamFilter);
+    }
   }
   var activeTrace = null;
   function toggleCausalHighlight(eventId) {
@@ -196,11 +292,70 @@
   }
 
   // --- Tab 2: Milestone Map ---
+  var msViewMode = 'status'; // 'status' or 'parallel_group'
+  function getMsViewMode() { try { return localStorage.getItem('tk_ms_view') || 'status'; } catch (e) { return 'status'; } }
+  function setMsViewMode(m) { msViewMode = m; try { localStorage.setItem('tk_ms_view', m); } catch (e) { /* noop */ } }
+
+  function renderMsCard(mi, ec) {
+    var h = '<div class="ms-card status-' + (mi.status || 'pending').toLowerCase() + (ec[mi.id] ? ' expanded' : '') + '" data-ms-id="' + esc(mi.id) + '"><span class="ms-id">' + esc(mi.id) + '</span>';
+    if (mi.status === 'done') h += ' <span class="badge badge-done">\u2713</span>';
+    h += '<div class="ms-title">' + esc(mi.title) + '</div>';
+    if (mi.depends_on) {
+      h += '<div class="ms-deps">';
+      var deps = mi.depends_on.split(',');
+      for (var d = 0; d < deps.length; d++) { var dp = deps[d].trim(); if (dp) h += '<span class="dep-badge">dep:' + esc(dp) + '</span>'; }
+      h += '</div>';
+    }
+    h += '<div class="ms-expanded"><div>Status: ' + esc(mi.status || 'pending') + '</div>';
+    if (mi.parallel_group) h += '<div>Group: ' + esc(mi.parallel_group) + '</div>';
+    h += '</div></div>';
+    return h;
+  }
+
   function renderMilestoneMap() {
     var ct = document.getElementById('tab-milestones');
     if (!ct) return;
     var ms = milestones();
     if (!ms.length) { ct.innerHTML = '<div class="empty-state">No milestones yet \u2014 run tekhton to see data here</div>'; return; }
+
+    // Check if parallel groups exist
+    var hasGroups = false;
+    for (var gi = 0; gi < ms.length; gi++) if (ms[gi].parallel_group) { hasGroups = true; break; }
+    msViewMode = getMsViewMode();
+
+    var ec = {};
+    try { var sv = localStorage.getItem('tk_ms_expanded'); if (sv) ec = JSON.parse(sv); } catch (e) { /* noop */ }
+
+    var h = '';
+    // View toggle (only if groups exist)
+    if (hasGroups) {
+      h += '<div class="ms-view-toggle">';
+      h += '<span class="ms-view-label">View by:</span>';
+      h += '<button class="filter-btn' + (msViewMode === 'status' ? ' active' : '') + '" data-ms-view="status">Status</button>';
+      h += '<button class="filter-btn' + (msViewMode === 'parallel_group' ? ' active' : '') + '" data-ms-view="parallel_group">Parallel Group</button>';
+      h += '</div>';
+    }
+
+    if (msViewMode === 'parallel_group' && hasGroups) {
+      h += renderMilestonesByGroup(ms, ec);
+    } else {
+      h += renderMilestonesByStatus(ms, ec);
+    }
+
+    ct.innerHTML = h;
+
+    // Bind view toggle
+    var vbs = ct.querySelectorAll('[data-ms-view]');
+    for (var v = 0; v < vbs.length; v++) vbs[v].addEventListener('click', function () {
+      setMsViewMode(this.dataset.msView);
+      renderMilestoneMap();
+    });
+
+    var cards = ct.querySelectorAll('.ms-card');
+    for (var c = 0; c < cards.length; c++) cards[c].addEventListener('click', function () { this.classList.toggle('expanded'); persistMsExpanded(); });
+  }
+
+  function renderMilestonesByStatus(ms, ec) {
     var aId = (state().active_milestone || {}).id, lanes = { done: [], active: [], ready: [], pending: [] }, ds = {}, m, st;
     for (var i = 0; i < ms.length; i++) if ((ms[i].status || '').toLowerCase() === 'done') ds[ms[i].id] = true;
     for (var j = 0; j < ms.length; j++) {
@@ -210,33 +365,70 @@
       else if (depsAllDone(m, ds)) lanes.ready.push(m);
       else lanes.pending.push(m);
     }
-    var ec = {};
-    try { var sv = localStorage.getItem('tk_ms_expanded'); if (sv) ec = JSON.parse(sv); } catch (e) { /* noop */ }
     var h = '<div class="swimlanes">', lo = [['pending','Pending'],['ready','Ready'],['active','Active'],['done','Done']];
     for (var l = 0; l < lo.length; l++) {
       var items = lanes[lo[l][0]];
       h += '<div class="swimlane"><div class="swimlane-header">' + lo[l][1] + ' (' + items.length + ')</div>';
-      for (var n = 0; n < items.length; n++) {
-        var mi = items[n];
-        h += '<div class="ms-card status-' + (mi.status || 'pending').toLowerCase() + (ec[mi.id] ? ' expanded' : '') + '" data-ms-id="' + esc(mi.id) + '"><span class="ms-id">' + esc(mi.id) + '</span>';
-        if (mi.status === 'done') h += ' <span class="badge badge-done">\u2713</span>';
-        h += '<div class="ms-title">' + esc(mi.title) + '</div>';
-        if (mi.depends_on) {
-          h += '<div class="ms-deps">';
-          var deps = mi.depends_on.split(',');
-          for (var d = 0; d < deps.length; d++) { var dp = deps[d].trim(); if (dp) h += '<span class="dep-badge">dep:' + esc(dp) + '</span>'; }
-          h += '</div>';
-        }
-        h += '<div class="ms-expanded"><div>Status: ' + esc(mi.status || 'pending') + '</div>';
-        if (mi.parallel_group) h += '<div>Group: ' + esc(mi.parallel_group) + '</div>';
-        h += '</div></div>';
-      }
+      for (var n = 0; n < items.length; n++) h += renderMsCard(items[n], ec);
       h += '</div>';
     }
     h += '</div>';
-    ct.innerHTML = h;
-    var cards = ct.querySelectorAll('.ms-card');
-    for (var c = 0; c < cards.length; c++) cards[c].addEventListener('click', function () { this.classList.toggle('expanded'); persistMsExpanded(); });
+    return h;
+  }
+
+  function renderMilestonesByGroup(ms, ec) {
+    // Collect groups and assign milestones
+    var groups = {}, order = [];
+    for (var i = 0; i < ms.length; i++) {
+      var g = ms[i].parallel_group || 'default';
+      if (!groups[g]) { groups[g] = []; order.push(g); }
+      groups[g].push(ms[i]);
+    }
+    // Topological sort within each group (by dependency chain)
+    var ds = {};
+    for (var d = 0; d < ms.length; d++) if ((ms[d].status || '').toLowerCase() === 'done') ds[ms[d].id] = true;
+
+    // Cross-group dependencies for display
+    var crossDeps = [];
+    for (var cd = 0; cd < ms.length; cd++) {
+      if (!ms[cd].depends_on) continue;
+      var cdeps = ms[cd].depends_on.split(',');
+      var srcGroup = ms[cd].parallel_group || 'default';
+      for (var cdi = 0; cdi < cdeps.length; cdi++) {
+        var depId = cdeps[cdi].trim();
+        if (!depId) continue;
+        for (var cj = 0; cj < ms.length; cj++) {
+          if (ms[cj].id === depId) {
+            var depGroup = ms[cj].parallel_group || 'default';
+            if (depGroup !== srcGroup) crossDeps.push({ from: depId, fromGroup: depGroup, to: ms[cd].id, toGroup: srcGroup });
+            break;
+          }
+        }
+      }
+    }
+
+    var h = '<div class="swimlanes parallel-group-view">';
+    for (var g2 = 0; g2 < order.length; g2++) {
+      var gName = order[g2], gItems = groups[gName];
+      var gColor = getTeamColor(gName, order);
+      h += '<div class="swimlane"><div class="swimlane-header" style="border-bottom-color:' + gColor + '">' + esc(gName) + ' (' + gItems.length + ')</div>';
+      for (var n = 0; n < gItems.length; n++) h += renderMsCard(gItems[n], ec);
+      h += '</div>';
+    }
+    h += '</div>';
+
+    // Cross-group dependency summary
+    if (crossDeps.length) {
+      h += '<div class="cross-deps-summary card"><h4>Cross-Group Dependencies</h4>';
+      for (var x = 0; x < crossDeps.length; x++) {
+        h += '<div class="cross-dep-row"><span class="dep-badge">' + esc(crossDeps[x].from) + '</span>';
+        h += '<span class="cross-dep-arrow">\u2192</span>';
+        h += '<span class="dep-badge">' + esc(crossDeps[x].to) + '</span>';
+        h += '<span class="cross-dep-groups">(' + esc(crossDeps[x].fromGroup) + ' \u2192 ' + esc(crossDeps[x].toGroup) + ')</span></div>';
+      }
+      h += '</div>';
+    }
+    return h;
   }
   function depsAllDone(m, doneSet) {
     if (!m.depends_on) return true;
@@ -251,9 +443,11 @@
   }
 
   // --- Tab 3: Reports (context-aware) ---
-  function getRelevantSections() {
+  var activeReportTeam = null; // null = aggregate, or team id
+
+  function getRelevantSections(reportData) {
     var s = state(), runType = (s.run_type || 'milestone').toLowerCase();
-    var stages = s.stages || {}, r = reports(), sec = security();
+    var stages = s.stages || {}, r = reportData || reports(), sec = security();
     var all = [
       { key: 'run_context', label: 'Run Context', render: renderRunContextBody, always: true },
       { key: 'intake', label: 'Intake Report', render: renderIntakeBody, stage: 'intake' },
@@ -284,24 +478,58 @@
   function renderReports() {
     var ct = document.getElementById('tab-reports');
     if (!ct) return;
-    var r = reports(), sec = security(), secs = getRelevantSections(), hasAny = false;
+    var r = reports(), sec = security();
+
+    // Check for per-team reports
+    var teamReports = r.teams || {};
+    var teamIds = []; for (var tk in teamReports) if (teamReports.hasOwnProperty(tk)) teamIds.push(tk);
+    teamIds.sort();
+    var hasTeams = teamIds.length > 0;
+
+    // Determine effective report data
+    var effectiveReports = r;
+    if (hasTeams && activeReportTeam && teamReports[activeReportTeam]) {
+      effectiveReports = teamReports[activeReportTeam];
+    }
+
+    var secs = getRelevantSections(effectiveReports), hasAny = false;
     for (var i = 0; i < secs.length; i++) {
       var sk = secs[i].key; if (sk === 'run_context') continue;
-      if ((sk === 'security' && sec.findings && sec.findings.length) || r[sk]) { hasAny = true; break; }
+      if ((sk === 'security' && sec.findings && sec.findings.length) || effectiveReports[sk]) { hasAny = true; break; }
     }
-    if (!hasAny && secs.length <= 1) { ct.innerHTML = '<div class="empty-state">No reports yet \u2014 run tekhton to see data here</div>'; return; }
-    var os = {}; try { var sv = localStorage.getItem('tk_reports_open'); if (sv) os = JSON.parse(sv); } catch (e) { /* noop */ }
+    if (!hasAny && secs.length <= 1 && !hasTeams) { ct.innerHTML = '<div class="empty-state">No reports yet \u2014 run tekhton to see data here</div>'; return; }
+
     var h = '';
+
+    // Team selector tabs (M37)
+    if (hasTeams) {
+      h += '<div class="report-team-selector">';
+      h += '<button class="filter-btn' + (!activeReportTeam ? ' active' : '') + '" data-report-team="">All Teams</button>';
+      for (var ti = 0; ti < teamIds.length; ti++) {
+        h += '<button class="filter-btn' + (activeReportTeam === teamIds[ti] ? ' active' : '') + '" data-report-team="' + esc(teamIds[ti]) + '">' + esc(teamIds[ti]) + '</button>';
+      }
+      h += '</div>';
+    }
+
+    var os = {}; try { var sv = localStorage.getItem('tk_reports_open'); if (sv) os = JSON.parse(sv); } catch (e) { /* noop */ }
     for (var j = 0; j < secs.length; j++) {
       var s = secs[j];
       if (s.key === 'run_context') { h += s.render(); continue; }
-      var data = s.key === 'security' ? sec : r[s.key], ip = !data;
+      var data = s.key === 'security' ? sec : effectiveReports[s.key], ip = !data;
       h += '<div class="accordion-item' + (os[s.key] ? ' open' : '') + (ip ? ' disabled' : '') + '" data-section="' + s.key + '">';
       h += '<div class="accordion-header"><span class="arrow">\u25B6</span><span class="title">' + esc(s.label) + '</span>';
       h += (ip ? '<span class="badge badge-pending">Pending</span>' : getSectionBadge(s.key, data));
       h += '</div><div class="accordion-body">' + (ip ? '<em>Pending</em>' : s.render(data)) + '</div></div>';
     }
     ct.innerHTML = h;
+
+    // Bind team selector
+    var rtbs = ct.querySelectorAll('[data-report-team]');
+    for (var rt = 0; rt < rtbs.length; rt++) rtbs[rt].addEventListener('click', function () {
+      activeReportTeam = this.dataset.reportTeam || null;
+      renderReports();
+    });
+
     var hds = ct.querySelectorAll('.accordion-header');
     for (var k = 0; k < hds.length; k++) hds[k].addEventListener('click', function () {
       var it = this.parentElement;
@@ -403,11 +631,15 @@
       var oi = (run.outcome || '').toLowerCase() === 'pass' || (run.outcome || '').toLowerCase() === 'success' ? '\u2713' : '\u2717';
       h += '<li' + (matchFilter(af, rt) ? '' : ' class="hidden"') + '><span class="run-num">#' + (runs.length - r) + '</span>';
       h += '<span class="' + badgeClass(rt) + ' run-type-tag">' + esc(rt.replace(/_/g, ' ')) + '</span>';
+      if (run.team) h += '<span class="run-team-tag">' + esc(run.team) + '</span>';
       h += '<span class="run-milestone">' + (run.milestone && rt === 'milestone' ? esc(run.milestone) + (run.milestone_title ? ': ' + esc(truncate(run.milestone_title, 30)) : '') : esc(truncate(run.task_label || run.milestone || '-', 40))) + '</span>';
       h += '<span class="run-turns">' + (run.total_turns || 0) + ' turns</span><span class="run-time">' + fmtDuration(run.total_time_s || 0) + '</span>';
       h += '<span class="' + badgeClass(run.outcome) + '">' + oi + ' ' + esc(run.outcome || 'unknown') + '</span></li>';
     }
     h += '</ul></div>';
+
+    // Per-Team Performance section (M37)
+    h += renderTeamPerformance(runs);
     ct.innerHTML = h;
     var fbs = ct.querySelectorAll('.filter-btn');
     for (var fb = 0; fb < fbs.length; fb++) fbs[fb].addEventListener('click', function () {
@@ -483,6 +715,41 @@
       html += '<td class="bar-chart-cell"><div class="bar-wrap"><div class="bar-fill" style="width:' + Math.round((avgT / maxAvg) * 100) + '%"></div></div></td></tr>';
     }
     return html + '</tbody></table>';
+  }
+
+  function renderTeamPerformance(runs) {
+    // Collect team stats from runs that have a team field
+    var teamStats = {}, hasAny = false;
+    for (var i = 0; i < runs.length; i++) {
+      var t = runs[i].team || runs[i].parallel_group;
+      if (!t) continue;
+      hasAny = true;
+      if (!teamStats[t]) teamStats[t] = { runs: 0, turns: 0, time: 0, success: 0 };
+      teamStats[t].runs++;
+      teamStats[t].turns += (runs[i].total_turns || 0);
+      teamStats[t].time += (runs[i].total_time_s || 0);
+      var oc = (runs[i].outcome || '').toLowerCase();
+      if (oc === 'success' || oc === 'pass') teamStats[t].success++;
+    }
+    if (!hasAny) return '';
+    var teamNames = []; for (var tn in teamStats) if (teamStats.hasOwnProperty(tn)) teamNames.push(tn);
+    teamNames.sort();
+    var maxTurns = 1;
+    for (var m = 0; m < teamNames.length; m++) {
+      var avg = teamStats[teamNames[m]].turns / teamStats[teamNames[m]].runs;
+      if (avg > maxTurns) maxTurns = avg;
+    }
+    var html = '<div class="card trend-section" style="margin-top:0.75rem"><h3>Per-Team Performance</h3>';
+    html += '<table class="breakdown-table"><thead><tr><th>Team</th><th>Runs</th><th>Avg Turns</th><th>Avg Duration</th><th>Success Rate</th><th class="bar-chart-cell">Turns</th></tr></thead><tbody>';
+    for (var j = 0; j < teamNames.length; j++) {
+      var ts = teamStats[teamNames[j]], avgT = Math.round(ts.turns / ts.runs), avgD = Math.round(ts.time / ts.runs), sr = Math.round((ts.success / ts.runs) * 100);
+      var color = getTeamColor(teamNames[j], teamNames);
+      html += '<tr><td><span style="color:' + color + ';font-weight:700">' + esc(teamNames[j]) + '</span></td>';
+      html += '<td>' + ts.runs + '</td><td>' + avgT + '</td><td>' + fmtDuration(avgD) + '</td><td>' + sr + '%</td>';
+      html += '<td class="bar-chart-cell"><div class="bar-wrap"><div class="bar-fill" style="width:' + Math.round((avgT / maxTurns) * 100) + '%;background:' + color + '"></div></div></td></tr>';
+    }
+    html += '</tbody></table></div>';
+    return html;
   }
 
   // --- Tab 5: Actions ---

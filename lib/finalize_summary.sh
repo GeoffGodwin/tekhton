@@ -140,6 +140,11 @@ _hook_emit_run_summary() {
     local ui_validation_fail="${UI_VALIDATION_FAIL_COUNT:-0}"
     local ui_validation_warn="${UI_VALIDATION_WARN_COUNT:-0}"
 
+    # Parallel team fields (M37)
+    local team_id="${CURRENT_TEAM_ID:-}"
+    local parallel_group="${CURRENT_PARALLEL_GROUP:-}"
+    local concurrent_teams="${CONCURRENT_TEAM_COUNT:-0}"
+
     # --- Per-stage data (M34 §1) ---
     # Serialize _STAGE_TURNS, _STAGE_DURATION, _STAGE_BUDGET in deterministic order.
     local stages_json="{"
@@ -203,8 +208,14 @@ _hook_emit_run_summary() {
     local safe_milestone
     safe_milestone=$(printf '%s' "${_CURRENT_MILESTONE:-none}" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
+    # Escape team fields for JSON
+    local safe_team
+    safe_team=$(printf '%s' "$team_id" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    local safe_pgroup
+    safe_pgroup=$(printf '%s' "$parallel_group" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
     # Write JSON via printf (proper escaping, no heredoc variable issues)
-    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "timestamp": "%s"\n}\n' \
+    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "team": "%s",\n  "parallel_group": "%s",\n  "concurrent_teams": %d,\n  "timestamp": "%s"\n}\n' \
         "$safe_milestone" \
         "$outcome" \
         "${_ORCH_ATTEMPT:-1}" \
@@ -230,6 +241,9 @@ _hook_emit_run_summary() {
         "$ui_validation_pass" \
         "$ui_validation_fail" \
         "$ui_validation_warn" \
+        "$safe_team" \
+        "$safe_pgroup" \
+        "$concurrent_teams" \
         "$timestamp_iso" \
         > "$summary_file"
 

@@ -171,8 +171,44 @@ emit_dashboard_reports() {
         backlog="{\"total\":${n_total},\"bug\":${n_bug},\"feat\":${n_feat},\"polish\":${n_polish},\"checked\":${n_checked},\"unchecked\":${n_unchecked}}"
     fi
 
+    # --- Per-team reports (M37) ---
+    local teams_reports_json="{}"
+    if [[ -n "${_PARALLEL_TEAMS[*]:-}" ]] && [[ ${#_PARALLEL_TEAMS[@]} -gt 0 ]]; then
+        teams_reports_json="{"
+        local _tr_first=true
+        local _tr_team
+        for _tr_team in "${_PARALLEL_TEAMS[@]}"; do
+            [[ -z "$_tr_team" ]] && continue
+            # Parse team-prefixed report files if they exist
+            local _tr_intake _tr_coder _tr_reviewer
+            local _tr_intake_file="${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}"
+            local _tr_coder_file="CODER_SUMMARY.md"
+            local _tr_reviewer_file="REVIEWER_REPORT.md"
+            # In parallel mode, team reports use _<team> suffix
+            local _tr_suffix="_${_tr_team}"
+            if [[ -f "${_tr_intake_file%.md}${_tr_suffix}.md" ]]; then
+                _tr_intake=$(_parse_intake_report "${_tr_intake_file%.md}${_tr_suffix}.md")
+            else
+                _tr_intake='{"verdict":"pending","confidence":0}'
+            fi
+            if [[ -f "${_tr_coder_file%.md}${_tr_suffix}.md" ]]; then
+                _tr_coder=$(_parse_coder_summary "${_tr_coder_file%.md}${_tr_suffix}.md")
+            else
+                _tr_coder='{"status":"pending","files_modified":0}'
+            fi
+            if [[ -f "${_tr_reviewer_file%.md}${_tr_suffix}.md" ]]; then
+                _tr_reviewer=$(_parse_reviewer_report "${_tr_reviewer_file%.md}${_tr_suffix}.md")
+            else
+                _tr_reviewer='{"verdict":"pending"}'
+            fi
+            if [[ "$_tr_first" = true ]]; then _tr_first=false; else teams_reports_json="${teams_reports_json},"; fi
+            teams_reports_json="${teams_reports_json}\"$(_json_escape "$_tr_team")\":{\"intake\":${_tr_intake},\"coder\":${_tr_coder},\"reviewer\":${_tr_reviewer}}"
+        done
+        teams_reports_json="${teams_reports_json}}"
+    fi
+
     local json
-    json="{\"intake\":${intake},\"coder\":${coder},\"reviewer\":${reviewer},\"test_audit\":${test_audit},\"backlog\":${backlog}}"
+    json="{\"intake\":${intake},\"coder\":${coder},\"reviewer\":${reviewer},\"test_audit\":${test_audit},\"backlog\":${backlog},\"teams\":${teams_reports_json}}"
     _write_js_file "${dash_dir}/data/reports.js" "TK_REPORTS" "$json"
 }
 
