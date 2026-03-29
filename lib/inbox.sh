@@ -101,7 +101,12 @@ _process_milestone() {
 # Validates a manifest append line and adds it to MANIFEST.cfg.
 _process_manifest_append() {
     local file="$1"
-    local manifest="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    local manifest
+    if declare -f _dag_manifest_path &>/dev/null; then
+        manifest=$(_dag_manifest_path)
+    else
+        manifest="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    fi
 
     if [[ ! -f "$manifest" ]]; then
         warn "Inbox: MANIFEST.cfg not found, skipping manifest append: $(basename "$file")"

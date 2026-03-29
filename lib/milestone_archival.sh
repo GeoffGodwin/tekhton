@@ -36,20 +36,37 @@ archive_completed_milestone() {
         return 1
     fi
 
+    # Evaluate DAG mode once at function entry — used by multiple code paths below
+    local is_dag_mode=false
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && declare -f has_milestone_manifest &>/dev/null \
+       && has_milestone_manifest; then
+        is_dag_mode=true
+    fi
+
     # Resolve initiative name for the archive header
     local initiative=""
     initiative=$(_get_initiative_name "$claude_md" "$num")
 
-    # In DAG mode, milestone numbers are unique across the manifest, so check
-    # the archive globally (no initiative scoping).  _get_initiative_name always
-    # returns the initiative that contains the DAG pointer comment, which may
-    # differ from the initiative under which a milestone was originally archived.
-    # Scoping by that (wrong) initiative causes the check to miss already-archived
-    # entries, leading to unbounded re-archival on every run.
+    # Determine whether to scope archive search by initiative
+    # ───────────────────────────────────────────────────────────────────────
+    # In DAG mode, we clear archive_initiative to force a GLOBAL search across
+    # ALL archived milestones, not filtered by initiative name. This avoids false
+    # negatives when _get_initiative_name() returns a different initiative name
+    # than what was used when the milestone was originally archived.
+    #
+    # UNIQUENESS ASSUMPTION: DAG milestone numbers are assumed to be GLOBALLY
+    # UNIQUE across a project's entire lifetime. Each milestone ID (m01, m02, etc.)
+    # and its numeric display name (1, 2, etc.) should never be reused.
+    #
+    # KNOWN EDGE CASE: If a project resets milestone numbering (e.g., starting a
+    # new DAG manifest at m01 after completing an earlier inline v2 run), a prior
+    # archived entry with the same number could produce a false-positive match,
+    # silently skipping the new milestone on archival. This edge case is considered
+    # acceptable given current usage patterns.
+    # ───────────────────────────────────────────────────────────────────────
     local archive_initiative="$initiative"
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-       && declare -f has_milestone_manifest &>/dev/null \
-       && has_milestone_manifest; then
+    if [[ "$is_dag_mode" == "true" ]]; then
         archive_initiative=""
     fi
 
@@ -60,9 +77,7 @@ archive_completed_milestone() {
     local block=""
 
     # DAG path: read milestone file directly
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-       && declare -f has_milestone_manifest &>/dev/null \
-       && has_milestone_manifest; then
+    if [[ "$is_dag_mode" == "true" ]]; then
         if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
             load_manifest 2>/dev/null || true
         fi
@@ -104,9 +119,7 @@ ARCHIVE_HEADER
     } >> "$archive_file"
 
     # In inline mode, also remove the block from CLAUDE.md
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" != "true" ]] \
-       || ! declare -f has_milestone_manifest &>/dev/null \
-       || ! has_milestone_manifest; then
+    if [[ "$is_dag_mode" != "true" ]]; then
         local tmp_file
         local tmp_dir="${TEKHTON_SESSION_DIR:-$(dirname "$claude_md")}"
         tmp_file="$(mktemp "${tmp_dir}/archival_XXXXXX" 2>/dev/null)" \

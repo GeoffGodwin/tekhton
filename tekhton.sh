@@ -205,6 +205,9 @@ DRY_RUN_MODE=false
 CONTINUE_PREVIEW=false
 _AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
+# Auto-fix recursion guard: inherited from parent invocation via env export.
+# Incremented by the tester stage before spawning a fix run.
+export TEKHTON_FIX_DEPTH="${TEKHTON_FIX_DEPTH:-0}"
 TOTAL_TURNS=0
 TOTAL_TIME=0
 STAGE_SUMMARY=""

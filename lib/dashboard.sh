@@ -160,7 +160,7 @@ emit_dashboard_run_state() {
         fi
 
         # Live elapsed time for active stages
-        if [[ "$stg_status" = "active" ]] && [[ -n "${_STAGE_START_TS[$stg]:-}" ]]; then
+        if [[ "$stg_status" = "active" ]] && [[ "${_STAGE_START_TS[$stg]:-0}" -gt 0 ]]; then
             stg_dur=$(( SECONDS - _STAGE_START_TS[$stg] ))
         fi
 

@@ -5,6 +5,8 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-29 | "[BUG] Pipeline exits with "failures detected" when self-tests fail instead of auto-seeding a fix run"] `AUTO_FIX_*` defaults in `config_defaults.sh` are placed under the `# --- Test baseline defaults ---` comment section (line 280), which is misleading — these are a distinct feature. A dedicated `# --- Auto-fix on test failure ---` section header would avoid confusion with the `TEST_BASELINE_*` keys immediately below.
+- [ ] [2026-03-29 | "[BUG] Pipeline exits with "failures detected" when self-tests fail instead of auto-seeding a fix run"] On auto-fix success (`tester.sh` lines 235–237), `clear_pipeline_state` is called and the function returns, but the parent pipeline continues to its own finalize phase (archive reports, commit prompt, etc.) after the child pipeline already ran its own finalize. With `AUTO_COMMIT=false` this produces two commit prompts for the same work. Not a correctness bug (feature is opt-in, default disabled), but adding `SKIP_FINAL_CHECKS=true` on the success path would prevent the duplicate finalization.
 - [ ] [2026-03-29 | "[BUG] Milestone archival re-archives ALL completed milestones on every run instead of skipping already-archived ones — MILESTONE_ARCHIVE.md grows by the full milestone set each invocation; needs an idempotency check (e.g., grep for milestone ID before appending)"] No code was changed this run — the fix was already present. HUMAN_NOTES.md item should be marked resolved so it doesn't resurface in future runs.
 - [ ] [2026-03-28 | "M39"] `finalize_display.sh:99`: the `IFS='|' read -r _ _ _ _ _ notes_unchecked` pattern assumes `get_notes_summary` always returns exactly 6 pipe-separated fields. A comment noting the field contract would prevent future silent failures if that count changes.
 - [ ] [2026-03-28 | "M39"] `finalize_display.sh:111-119`: "normal" and "warning" severity branches for human notes both emit the same tip lines. Intentional but slightly redundant — consider a shared variable if the block grows.
@@ -111,6 +113,13 @@ The coder is prompted to address these when the count exceeds the threshold.
 #### INTEGRITY: Tautological assertion in success branch (6.3)
 #### SCOPE: lib/agent.sh modified but not reported in TESTER_REPORT.md
 #### NAMING: No PASS counter in test_agent_fifo_invocation.sh
+
+### Test Audit Concerns (2026-03-29)
+#### INTEGRITY: Edge-case test accepts any outcome — always passes
+#### COVERAGE: DAG-mode missing-file path not exercised
+#### WEAKENING
+#### NAMING
+#### SCOPE
 
 ### Test Audit Concerns (2026-03-29)
 #### INTEGRITY: Edge-case test accepts any outcome — always passes

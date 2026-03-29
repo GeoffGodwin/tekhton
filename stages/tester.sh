@@ -208,8 +208,44 @@ TESTER_EOF
             done
             warn "TESTER_REPORT.md updated — failed files reset to unchecked for resume."
         elif grep -qE "^\s+-[0-9]+:" "$LOG_FILE" || grep -q " -[1-9][0-9]*:" "$LOG_FILE"; then
-            error "${TEST_CMD} reported failures. Review TESTER_REPORT.md and the log."
-            warn "Resume with: $0 --start-at tester \"${TASK}\""
+            # --- Auto-fix on test failure (opt-in) --------------------------------
+            if [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" == "true" ]] \
+               && [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${AUTO_FIX_MAX_DEPTH:-1}" ]]; then
+                local _fix_depth="${TEKHTON_FIX_DEPTH:-0}"
+                local _max_depth="${AUTO_FIX_MAX_DEPTH:-1}"
+                local _output_limit="${AUTO_FIX_OUTPUT_LIMIT:-4000}"
+                warn "${TEST_CMD} reported failures. Auto-fix enabled (depth ${_fix_depth}/${_max_depth}) — seeding fix run."
+
+                # Capture test failure output from log (truncate to limit)
+                local _failure_output
+                _failure_output=$(grep -E '(FAIL|ERROR|error|failure|assert)' "$LOG_FILE" | tail -c "$_output_limit" || true)
+                if [[ -z "$_failure_output" ]]; then
+                    _failure_output=$(tail -100 "$LOG_FILE" | tail -c "$_output_limit")
+                fi
+
+                # Spawn fix run with incremented depth
+                local _fix_task
+                _fix_task="Fix failing tests from previous pipeline run:
+${_failure_output}"
+                log "[auto-fix] Invoking fix run (depth $((_fix_depth + 1))/${_max_depth})..."
+                local _fix_exit=0
+                TEKHTON_FIX_DEPTH=$((_fix_depth + 1)) \
+                    bash "${TEKHTON_HOME}/tekhton.sh" "$_fix_task" || _fix_exit=$?
+
+                if [[ "$_fix_exit" -eq 0 ]]; then
+                    success "Auto-fix run succeeded — test failures resolved."
+                    clear_pipeline_state
+                else
+                    error "Auto-fix run failed (exit ${_fix_exit}). Original test failures remain."
+                    warn "Resume with: $0 --start-at tester \"${TASK}\""
+                fi
+            else
+                error "${TEST_CMD} reported failures. Review TESTER_REPORT.md and the log."
+                if [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" == "true" ]]; then
+                    warn "Auto-fix depth limit reached (${TEKHTON_FIX_DEPTH:-0}/${AUTO_FIX_MAX_DEPTH:-1}). No further recursion."
+                fi
+                warn "Resume with: $0 --start-at tester \"${TASK}\""
+            fi
         elif [ "$REMAINING" -gt 0 ]; then
             warn "Tester completed partial run — ${REMAINING} planned test(s) not yet written."
 

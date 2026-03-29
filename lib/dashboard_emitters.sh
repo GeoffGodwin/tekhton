@@ -124,8 +124,15 @@ emit_dashboard_milestones() {
     local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
-    local ms_dir="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}"
-    local manifest="${ms_dir}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    local ms_dir
+    local manifest
+    if declare -f _dag_milestone_dir &>/dev/null; then
+        ms_dir=$(_dag_milestone_dir)
+        manifest=$(_dag_manifest_path)
+    else
+        ms_dir="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}"
+        manifest="${ms_dir}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    fi
 
     # Pass 1: Parse manifest into parallel arrays
     local -a ms_ids=() ms_titles=() ms_statuses=() ms_deps=() ms_files=() ms_pgroups=()

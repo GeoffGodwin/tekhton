@@ -277,6 +277,10 @@ set -euo pipefail
 : "${CAUSAL_LOG_MAX_EVENTS:=2000}"
 
 # --- Test baseline defaults (pre-existing failure detection) ---
+: "${AUTO_FIX_ON_TEST_FAILURE:=false}"     # Auto-seed fix run on test failure (opt-in)
+: "${AUTO_FIX_MAX_DEPTH:=1}"              # Max recursive fix attempts (recursion guard)
+: "${AUTO_FIX_OUTPUT_LIMIT:=4000}"        # Max chars of test output in fix task string
+
 : "${TEST_BASELINE_ENABLED:=true}"
 : "${TEST_BASELINE_PASS_ON_PREEXISTING:=true}"
 : "${TEST_BASELINE_STUCK_THRESHOLD:=2}"
@@ -400,6 +404,8 @@ _clamp_config_value CAUSAL_LOG_RETENTION_RUNS 200
 _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
 _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
+_clamp_config_value AUTO_FIX_MAX_DEPTH 5
+_clamp_config_value AUTO_FIX_OUTPUT_LIMIT 16000
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
 _clamp_config_value BUILD_GATE_TIMEOUT 1800
 _clamp_config_value BUILD_GATE_ANALYZE_TIMEOUT 900
