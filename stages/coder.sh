@@ -124,6 +124,13 @@ $(cat SCOUT_REPORT.md)
 
     if [ "$SHOULD_SCOUT" = true ]; then
         log "Running scout agent to locate relevant files and estimate complexity..."
+        # Dashboard tracking: mark scout active (arrays declared in tekhton.sh)
+        if declare -p _STAGE_STATUS &>/dev/null 2>&1; then
+            # shellcheck disable=SC2154  # scout is a string key, not a variable
+            _STAGE_STATUS[scout]="active"
+            _STAGE_START_TS[scout]="$SECONDS"
+            emit_dashboard_run_state 2>/dev/null || true
+        fi
 
         export HUMAN_NOTES_CONTENT
         HUMAN_NOTES_CONTENT=$(extract_human_notes)
@@ -223,6 +230,12 @@ $(cat SCOUT_REPORT.md)
             warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
         else
             warn "Scout agent did not produce SCOUT_REPORT.md — coder will explore independently."
+        fi
+        if declare -p _STAGE_STATUS &>/dev/null 2>&1; then
+            _STAGE_STATUS[scout]="complete"
+            _STAGE_DURATION[scout]="${LAST_AGENT_ELAPSED:-0}"
+            _STAGE_TURNS[scout]="${LAST_AGENT_TURNS:-0}"
+            emit_dashboard_run_state 2>/dev/null || true
         fi
     fi
 

@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-03-28
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
+- [2026-03-28 | "M38"] `dashboard.sh:163`: The live elapsed computation `$(( SECONDS - _STAGE_START_TS[$stg] ))` will produce a large positive integer if `_STAGE_START_TS[$stg]` is 0 (default for unset array key, because `${_STAGE_START_TS[$stg]:-}` is empty but arithmetic treats it as 0 while `SECONDS` may be 300+). This only fires for non-active stages that coincidentally get `stg_status=active` from the emit-time override — a narrow but possible edge case worth noting.
 - [2026-03-28 | "M37"] `lib/inbox.sh:103`, `lib/dashboard_emitters.sh:85`, and `lib/milestone_dag.sh` all independently construct the manifest path as `${MILESTONE_DIR:-...}/${MILESTONE_MANIFEST:-MANIFEST.cfg}`. This same two-part path expression is repeated in at least three files. A shared `_manifest_path()` helper would eliminate the drift in a future cleanup pass.
 - [2026-03-28 | "M36"] `lib/inbox.sh:103`, `lib/dashboard_emitters.sh:85`, and `lib/milestone_dag.sh` all independently construct the manifest path as `${MILESTONE_DIR:-...}/${MILESTONE_MANIFEST:-MANIFEST.cfg}`. This same two-part path expression is repeated in at least three files. A shared `_manifest_path()` helper would eliminate the drift in a future cleanup pass.
 

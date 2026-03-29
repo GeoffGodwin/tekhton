@@ -139,6 +139,11 @@ emit_dashboard_run_state() {
     local started_at="${START_AT_TS:-}"
     local waiting="${WAITING_FOR:-}"
 
+    # Defensive guard: _STAGE_START_TS may not exist in older callers or tests
+    if ! declare -p _STAGE_START_TS &>/dev/null; then
+        declare -gA _STAGE_START_TS=()
+    fi
+
     # Build stages JSON
     local stages_json="{"
     local first=true
@@ -147,6 +152,17 @@ emit_dashboard_run_state() {
         local stg_turns="${_STAGE_TURNS[$stg]:-0}"
         local stg_budget="${_STAGE_BUDGET[$stg]:-0}"
         local stg_dur="${_STAGE_DURATION[$stg]:-0}"
+
+        # Emit-time override: if this is the current stage but still "pending",
+        # override to "active" without mutating global state
+        if [[ "$stg" = "$current_stage" ]] && [[ "$stg_status" = "pending" ]]; then
+            stg_status="active"
+        fi
+
+        # Live elapsed time for active stages
+        if [[ "$stg_status" = "active" ]] && [[ -n "${_STAGE_START_TS[$stg]:-}" ]]; then
+            stg_dur=$(( SECONDS - _STAGE_START_TS[$stg] ))
+        fi
 
         if [[ "$first" = true ]]; then first=false; else stages_json="${stages_json},"; fi
         stages_json="${stages_json}\"${stg}\":{\"status\":\"${stg_status}\",\"turns\":${stg_turns},\"budget\":${stg_budget},\"duration_s\":${stg_dur}}"

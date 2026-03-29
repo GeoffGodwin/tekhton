@@ -425,6 +425,22 @@ footer code { background:var(--bg-input); padding:0.1rem 0.3rem; border-radius:2
 /* Trends team tag */
 .run-team-tag { font-family:var(--font-data); font-size:0.6rem; padding:0.1rem 0.3rem; border-radius:3px; background:var(--bg-input); color:var(--text-muted); white-space:nowrap; }
 
+/* --- Scout sub-badge (M38) --- */
+.scout-sub-badge { font-size:0.65rem; padding:0.1rem 0.3rem; border-radius:3px; margin-left:0.2rem; font-weight:600; }
+.scout-sub-badge.complete, .scout-sub-badge.done { color:var(--status-done); }
+.scout-sub-badge.active, .scout-sub-badge.running { color:var(--status-active); }
+
+/* --- Milestone detail expansion (M38) --- */
+.milestone-summary { font-size:0.75rem; color:var(--text-secondary); margin:0.4rem 0; line-height:1.4; }
+.ms-dep-section { margin-top:0.3rem; }
+.ms-dep-section .ms-dep-label { font-size:0.65rem; font-weight:600; text-transform:uppercase; color:var(--text-muted); margin-bottom:0.15rem; }
+.dep-chip-enabledby { font-family:var(--font-data); font-size:0.65rem; padding:0.1rem 0.35rem; border-radius:3px; background:rgba(34,197,94,0.15); color:var(--status-done); cursor:pointer; transition:opacity 0.15s; }
+.dep-chip-enabledby:hover { opacity:0.7; }
+.dep-chip-enables { font-family:var(--font-data); font-size:0.65rem; padding:0.1rem 0.35rem; border-radius:3px; background:rgba(59,130,246,0.15); color:var(--status-info); cursor:pointer; transition:opacity 0.15s; }
+.dep-chip-enables:hover { opacity:0.7; }
+@keyframes msHighlight { 0% { box-shadow:0 0 0 2px var(--accent); } 100% { box-shadow:none; } }
+.milestone-highlight { animation:msHighlight 1.5s ease-out; }
+
 /* Responsive: team cards stack on mobile */
 @media (max-width:767px) {
   .team-cards-row { flex-direction:column; }

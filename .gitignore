@@ -73,3 +73,6 @@ site/
 
 # Milestone Archive
 MILESTONE_ARCHIVE.md
+
+# Watchtower Dashboard
+.claude/dashboard/

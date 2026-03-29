@@ -1,7 +1,7 @@
 # Milestone 38: Watchtower Live Run & Milestone Map UX Polish
 <!-- milestone-meta
 id: "38"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

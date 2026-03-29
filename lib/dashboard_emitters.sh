@@ -74,34 +74,116 @@ _regenerate_timeline_js() {
 
 # --- Milestone emission -------------------------------------------------------
 
+# _extract_milestone_summary MILESTONE_FILE
+# Extracts the first paragraph of ## Overview from a milestone .md file.
+# Output is capped at 300 characters. Returns empty string if no Overview found.
+_extract_milestone_summary() {
+    local mfile="$1"
+    [[ ! -f "$mfile" ]] && return 0
+
+    local in_overview=false
+    local summary=""
+    while IFS= read -r line; do
+        if [[ "$in_overview" = false ]]; then
+            if [[ "$line" =~ ^##[[:space:]]+Overview ]]; then
+                in_overview=true
+            fi
+            continue
+        fi
+        # Stop at next heading or empty line after content
+        if [[ "$line" =~ ^## ]] && [[ ! "$line" =~ ^##[[:space:]]+Overview ]]; then
+            break
+        fi
+        # Skip blank lines before first content
+        if [[ -z "$summary" ]] && [[ -z "${line// /}" ]]; then
+            continue
+        fi
+        # Stop at first blank line after content starts
+        if [[ -n "$summary" ]] && [[ -z "${line// /}" ]]; then
+            break
+        fi
+        if [[ -n "$summary" ]]; then
+            summary="${summary} ${line}"
+        else
+            summary="$line"
+        fi
+    done < "$mfile"
+
+    # Cap at 300 chars
+    if [[ ${#summary} -gt 300 ]]; then
+        summary="${summary:0:297}..."
+    fi
+    printf '%s' "$summary"
+}
+
 # emit_dashboard_milestones
-# Reads MANIFEST.cfg and generates data/milestones.js.
+# Reads MANIFEST.cfg and generates data/milestones.js with summary + enables fields.
 emit_dashboard_milestones() {
     if ! is_dashboard_enabled; then return 0; fi
 
     local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
-    local manifest="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    local ms_dir="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}"
+    local manifest="${ms_dir}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
 
-    local json="["
-    local first=true
+    # Pass 1: Parse manifest into parallel arrays
+    local -a ms_ids=() ms_titles=() ms_statuses=() ms_deps=() ms_files=() ms_pgroups=()
 
     if [[ -f "$manifest" ]]; then
-        while IFS='|' read -r mid title status deps _mfile pgroup; do
-            # Skip comments and empty lines
+        while IFS='|' read -r mid title status deps mfile pgroup; do
             [[ -z "$mid" ]] && continue
             [[ "$mid" =~ ^[[:space:]]*# ]] && continue
             mid="${mid## }"; mid="${mid%% }"
             title="${title## }"; title="${title%% }"
             status="${status## }"; status="${status%% }"
             deps="${deps## }"; deps="${deps%% }"
+            mfile="${mfile## }"; mfile="${mfile%% }"
             pgroup="${pgroup## }"; pgroup="${pgroup%% }"
 
-            if [[ "$first" = true ]]; then first=false; else json="${json},"; fi
-            json="${json}{\"id\":\"$(_json_escape "$mid")\",\"title\":\"$(_json_escape "$title")\",\"status\":\"$(_json_escape "$status")\",\"depends_on\":\"$(_json_escape "$deps")\",\"parallel_group\":\"$(_json_escape "$pgroup")\"}"
+            ms_ids+=("$mid")
+            ms_titles+=("$title")
+            ms_statuses+=("$status")
+            ms_deps+=("$deps")
+            ms_files+=("$mfile")
+            ms_pgroups+=("$pgroup")
         done < "$manifest"
     fi
+
+    # Pass 2: Build reverse dependency map (id → comma-separated list of IDs it enables)
+    local -A enables_map=()
+    local i dep_list dep_item
+    for i in "${!ms_ids[@]}"; do
+        dep_list="${ms_deps[$i]}"
+        if [[ -n "$dep_list" ]]; then
+            IFS=',' read -ra _dep_arr <<< "$dep_list"
+            for dep_item in "${_dep_arr[@]}"; do
+                dep_item="${dep_item## }"; dep_item="${dep_item%% }"
+                [[ -z "$dep_item" ]] && continue
+                if [[ -n "${enables_map[$dep_item]:-}" ]]; then
+                    enables_map[$dep_item]="${enables_map[$dep_item]},${ms_ids[$i]}"
+                else
+                    enables_map[$dep_item]="${ms_ids[$i]}"
+                fi
+            done
+        fi
+    done
+
+    # Pass 3: Emit JSON with summary and enables fields
+    local json="["
+    local first=true
+    for i in "${!ms_ids[@]}"; do
+        local mid="${ms_ids[$i]}"
+        local summary=""
+        local mfile="${ms_files[$i]}"
+        if [[ -n "$mfile" ]] && [[ -f "${ms_dir}/${mfile}" ]]; then
+            summary=$(_extract_milestone_summary "${ms_dir}/${mfile}")
+        fi
+        local enables="${enables_map[$mid]:-}"
+
+        if [[ "$first" = true ]]; then first=false; else json="${json},"; fi
+        json="${json}{\"id\":\"$(_json_escape "$mid")\",\"title\":\"$(_json_escape "${ms_titles[$i]}")\",\"status\":\"$(_json_escape "${ms_statuses[$i]}")\",\"depends_on\":\"$(_json_escape "${ms_deps[$i]}")\",\"parallel_group\":\"$(_json_escape "${ms_pgroups[$i]}")\",\"summary\":\"$(_json_escape "$summary")\",\"enables\":\"$(_json_escape "$enables")\"}"
+    done
 
     json="${json}]"
     _write_js_file "${dash_dir}/data/milestones.js" "TK_MILESTONES" "$json"

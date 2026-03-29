@@ -1,4 +1,4 @@
-# Reviewer Report — M36: Watchtower Interactive Controls
+# Reviewer Report — M38 Re-Review (Cycle 2)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,20 +10,23 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/inbox.sh:86-88` — The guard `[[ "$basename" == manifest_append_* ]]` in `_process_milestone()` is dead code: the function is only called from the `milestone_*.md` glob loop, which cannot match `manifest_append_*`. Safe to remove.
-- `lib/dashboard_emitters.sh:303` — Similarly, `[[ "$basename" != manifest_append_* ]]` in `emit_dashboard_inbox()` is dead code for the same reason (the enclosing glob is `milestone_*.md`).
-- `lib/inbox.sh:65-75` — `_process_note()` silently drops the description, priority, and source fields when calling `add_human_note()`. Only the title is written to HUMAN_NOTES.md. This is consistent with how the flat checklist works, but worth documenting as a known limitation.
-- `lib/dashboard_emitters.sh:280-331` — `emit_dashboard_inbox()` does not enumerate `manifest_append_*.cfg` files in the pending display. When a milestone is submitted via the UI, users will see the `.md` entry but not the associated `.cfg` entry. Minor UX gap; acceptable since they are submitted as a pair.
-- `tools/watchtower_server.py:45` — The 100KB payload limit is a hard-coded magic number; could be a CLI arg for future extensibility, but acceptable at this scope.
+- `stages/coder.sh`: The `declare -p _STAGE_STATUS &>/dev/null 2>&1` guard duplicates stderr redirect (`&>` already redirects both; the trailing `2>&1` is redundant but harmless).
+- `dashboard_emitters.sh:159`: `IFS=',' read -ra _dep_arr <<< "$dep_list"` uses a leading underscore on a local array name; unconventional but harmless — the leading `_` is generally reserved for library-internal globals in this codebase.
+- `app.js:326`: `setTimeout(..., 1500)` hardcodes the animation duration to match the CSS keyframe. If the CSS animation duration ever changes, this will silently diverge. Low risk but worth a comment.
 
 ## Coverage Gaps
-- `shellcheck` and `bash -n` passes for `lib/inbox.sh` were not independently verified during review (tool execution was unavailable). The tester should run `shellcheck lib/inbox.sh` and `bash -n lib/inbox.sh` as part of acceptance gating.
-- `tools/watchtower_server.py` smoke test: tester should verify `python3 tools/watchtower_server.py --help` runs without error and the `/api/ping` endpoint returns `{"ok": true}` when the server is running.
-- No test covers the `_process_note()` → `add_human_note()` integration path (note file read from fixture inbox dir and appended to HUMAN_NOTES.md). A unit test for `process_watchtower_inbox()` with a populated fixture inbox would close this gap.
-
-## ACP Verdicts
-- ACP: Watchtower Inbox Directory — **ACCEPT** — The `.claude/watchtower_inbox/` convention is well-motivated, backward compatible (no-op when absent), and follows the existing `.claude/` staging pattern. ARCHITECTURE.md update needed as noted.
-- ACP: New `lib/inbox.sh` Library — **ACCEPT** — Correctly scoped single-entry-point library. Source order in `tekhton.sh` is correct (`notes_cli.sh` at line 699, `inbox.sh` at line 749), so `add_human_note()` is always available. The `command -v` guard provides safe fallback. ARCHITECTURE.md Layer 3 update needed.
+- No new shell tests cover `_extract_milestone_summary()` (positive path: finds `## Overview`; negative paths: no Overview section, file missing). The function is a pure text parser and is testable without mocking. Consider adding cases to an existing dashboard test file.
+- No test covers the emit-time `"pending"→"active"` override in `emit_dashboard_run_state()` — specifically the case where `CURRENT_STAGE` is set but its `_STAGE_STATUS` entry was never updated from pending.
 
 ## Drift Observations
-- `lib/inbox.sh:103`, `lib/dashboard_emitters.sh:85`, and `lib/milestone_dag.sh` all independently construct the manifest path as `${MILESTONE_DIR:-...}/${MILESTONE_MANIFEST:-MANIFEST.cfg}`. This same two-part path expression is repeated in at least three files. A shared `_manifest_path()` helper would eliminate the drift in a future cleanup pass.
+- `dashboard.sh:163`: The live elapsed computation `$(( SECONDS - _STAGE_START_TS[$stg] ))` will produce a large positive integer if `_STAGE_START_TS[$stg]` is 0 (default for unset array key, because `${_STAGE_START_TS[$stg]:-}` is empty but arithmetic treats it as 0 while `SECONDS` may be 300+). This only fires for non-active stages that coincidentally get `stg_status=active` from the emit-time override — a narrow but possible edge case worth noting.
+
+## Prior Blocker Resolution
+
+**FIXED** — All four M38 features now implemented:
+1. `tekhton.sh`: `_STAGE_START_TS` array declared, `_STAGE_STATUS[intake]="active"` + `_STAGE_START_TS[intake]="$SECONDS"` set before `run_stage_intake`, pre-emit call present (line 1799). All six stage sites updated with timestamps and "active" status.
+2. `dashboard.sh`: Defensive `declare -p _STAGE_START_TS` guard (lines 143–145), emit-time `"pending"→"active"` override (lines 158–160), live elapsed computation for active stages (lines 163–165).
+3. `dashboard_emitters.sh`: `_extract_milestone_summary()` helper present (lines 80–117). `emit_dashboard_milestones()` rewritten with 3-pass approach; `summary` and `enables` fields emitted in JSON (line 185).
+4. `stages/coder.sh`: Scout `active`/`complete` status tracking with `declare -p` guard (lines 128–133, 234–239).
+5. `templates/watchtower/app.js`: Scout skipped in top-level `renderStageChips` loop (line 154); scout sub-badge rendered inside coder chip (lines 157–164); stage-detail shows `fmtDuration · budget: N turns` for active and `N turns used · fmtDuration` for completed (lines 181–186, 225–231); `scrollToMilestone()` with highlight animation (lines 321–328); milestone card summary + dep chips with `stopPropagation` click handlers (lines 342–373, 420–425).
+6. `templates/watchtower/style.css`: All six CSS additions present (lines 428–442): `.scout-sub-badge`, `.milestone-summary`, `.ms-dep-section`, `.dep-chip-enabledby`, `.dep-chip-enables`, `@keyframes msHighlight` / `.milestone-highlight`.
