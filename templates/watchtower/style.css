@@ -275,6 +275,12 @@ main {
 .stat-row { display:flex; justify-content:space-between; padding:0.25rem 0; font-size:0.8rem; }
 .stat-label { color:var(--text-secondary); }
 .stat-value { font-family:var(--font-data); color:var(--text-primary); font-weight:600; }
+.intake-task-text { padding:0.35rem 0; font-size:0.8rem; }
+.intake-task-text .stat-label { display:block; margin-bottom:0.2rem; }
+.intake-task-content { color:var(--text-primary); font-size:0.78rem; line-height:1.4; padding:0.3rem 0.5rem; background:var(--bg-input); border-radius:4px; border-left:3px solid var(--accent); }
+.intake-ms-link { padding:0.3rem 0 0; font-size:0.78rem; }
+.intake-ms-link a { color:var(--accent); text-decoration:none; }
+.intake-ms-link a:hover { text-decoration:underline; }
 .trend-arrow { font-size:0.75rem; margin-left:0.3rem; }
 .trend-arrow.up { color:var(--status-fail); }
 .trend-arrow.down { color:var(--status-done); }

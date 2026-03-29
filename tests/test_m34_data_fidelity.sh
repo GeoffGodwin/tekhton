@@ -408,6 +408,38 @@ else
     fail "4.6 expected verdict=CONDITIONAL_PASS, got '${verdict}' (result: ${result})"
 fi
 
+# 4.7 — Tweaked Content section extracts task_text
+cat > "$TEST_TMPDIR/INTAKE_D.md" << 'EOF'
+## Verdict
+TWEAKED
+
+## Confidence
+62
+
+## Tweaked Content
+
+[FEAT] Add user authentication to the API
+
+### Acceptance Criteria
+- Users can log in
+EOF
+
+result=$(_parse_intake_report "$TEST_TMPDIR/INTAKE_D.md")
+task_text=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('task_text',''))" 2>/dev/null)
+if [[ "$task_text" == *"Add user authentication"* ]]; then
+    pass "4.7 _parse_intake_report extracts task_text from Tweaked Content section"
+else
+    fail "4.7 expected task_text containing 'Add user authentication', got '${task_text}' (result: ${result})"
+fi
+
+# 4.8 — Missing Tweaked Content yields empty task_text
+task_text_c=$(echo "$(_parse_intake_report "$TEST_TMPDIR/INTAKE_C.md")" | python3 -c "import json,sys; print(json.load(sys.stdin).get('task_text',''))" 2>/dev/null)
+if [[ -z "$task_text_c" ]]; then
+    pass "4.8 _parse_intake_report returns empty task_text when no Tweaked Content"
+else
+    fail "4.8 expected empty task_text, got '${task_text_c}'"
+fi
+
 # =============================================================================
 # Test Suite 5: _parse_coder_summary (inline and header formats)
 # =============================================================================

@@ -110,9 +110,16 @@ _parse_intake_report() {
         confidence=$(awk '/^##? *[Cc]onfidence/{getline; gsub(/[^0-9]/,""); print; exit}' "$file" 2>/dev/null)
     fi
 
-    printf '{"verdict":"%s","confidence":%s}' \
+    # Extract task text from "Tweaked Content" section (falls back to empty)
+    local task_text=""
+    task_text=$(awk '/^## Tweaked Content/{found=1; next} found && /^## /{exit} found && /^###/{exit} found{print}' "$file" 2>/dev/null | sed '/^$/d' | head -5 || true)
+    # Strip leading/trailing whitespace; collapse newlines to single space
+    task_text=$(printf '%s' "$task_text" | tr '\n' ' ' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//;s/  */ /g')
+
+    printf '{"verdict":"%s","confidence":%s,"task_text":"%s"}' \
         "$(_json_escape "${verdict:-unknown}")" \
-        "${confidence:-0}"
+        "${confidence:-0}" \
+        "$(_json_escape "${task_text}")"
 }
 
 # _parse_coder_summary FILE

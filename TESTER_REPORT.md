@@ -1,11 +1,15 @@
 ## Planned Tests
-- [x] `tests/test_nonblocking_log_structure.sh` — Verify NON_BLOCKING_LOG.md structure and item completion tracking
+- [x] `tests/test_intake_report_rendering.sh` — JavaScript UI rendering of task text and milestone link
+- [x] `tests/test_intake_report_json_escape.sh` — JSON escaping of task text with special characters
+- [x] `tests/test_intake_report_edge_cases.sh` — Missing milestone, empty task_text, link generation
 
 ## Test Run Results
-Passed: 205  Failed: 0
+Passed: 46 (13 + 19 + 14)  Failed: 0
 
 ## Bugs Found
-None
+- BUG: [lib/dashboard_parsers.sh:110] Confidence header-then-value parsing concatenates all numbers (gsub removes non-digits), produces "100100" instead of "100"
 
 ## Files Modified
-- [x] `tests/test_nonblocking_log_structure.sh`
+- [x] `tests/test_intake_report_json_escape.sh`
+- [x] `tests/test_intake_report_rendering.sh`
+- [x] `tests/test_intake_report_edge_cases.sh`

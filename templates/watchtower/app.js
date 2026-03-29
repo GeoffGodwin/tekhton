@@ -675,7 +675,13 @@
     return '';
   }
   function statRow(label, value) { return '<div class="stat-row"><span class="stat-label">' + label + '</span><span class="stat-value">' + value + '</span></div>'; }
-  function renderIntakeBody(data) { return statRow('Verdict:', esc(data.verdict || 'unknown')) + statRow('Confidence:', esc(data.confidence || 0) + '/100'); }
+  function renderIntakeBody(data) {
+    var html = statRow('Verdict:', esc(data.verdict || 'unknown')) + statRow('Confidence:', esc(data.confidence || 0) + '/100');
+    if (data.task_text) html += '<div class="intake-task-text"><span class="stat-label">Task:</span><div class="intake-task-content">' + esc(data.task_text) + '</div></div>';
+    var s = state(), msId = s.active_milestone ? s.active_milestone.id : '';
+    if (msId) html += '<div class="intake-ms-link"><a href="#" data-ms-link="' + esc(msId) + '">View in Milestone Map \u2192</a></div>';
+    return html;
+  }
   function renderCoderBody(data) { return statRow('Status:', esc(data.status || 'unknown')) + statRow('Files modified:', esc(data.files_modified || 0)); }
   function renderSecurityBody(data) {
     var findings = data.findings || [];
@@ -1144,6 +1150,14 @@
     buildCausalIndex(); updateStatusIndicator(); initTheme(); initTabs();
     var btn = document.getElementById('manual-refresh');
     if (btn) btn.addEventListener('click', manualRefresh);
+    document.addEventListener('click', function (e) {
+      var link = e.target.closest('[data-ms-link]');
+      if (!link) return;
+      e.preventDefault();
+      var msId = link.getAttribute('data-ms-link');
+      switchTab('milestones');
+      setTimeout(function () { scrollToMilestone(msId); }, 100);
+    });
     checkRefreshLifecycle();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', render); else render();

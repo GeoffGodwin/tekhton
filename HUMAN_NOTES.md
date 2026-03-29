@@ -12,7 +12,7 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 
 ## Features
-- [ ] [FEAT] The "Intake Report" section of the Reports page only shows the Verfict and Confidence currently - it should also show the original notes for context, and ideally a link to the full notes in the Milestone Map 
+- [x] [FEAT] The "Intake Report" section of the Reports page only shows the Verfict and Confidence currently - it should also show the original notes for context, and ideally a link to the full notes in the Milestone Map 
 - [ ] [FEAT] Currently if there are failures during the Tekhton Self-Tests, the pipeline gives it final summary and then notes there are failed tests and exits cleanly. Instead of exiting it should immediately spawn a fix run with the same notes + a new note to "Fix failed tests" so that the user can get right into fixing instead of having to trigger a new run manually. This will make the feedback loop much smoother and encourage users to fix tests immediately instead of leaving them broken for a while.
 
 ## Bugs
