@@ -234,6 +234,9 @@ ${_failure_output}"
 
                 if [[ "$_fix_exit" -eq 0 ]]; then
                     success "Auto-fix run succeeded — test failures resolved."
+                    # Prevent duplicate finalization: child pipeline already ran its
+                    # own finalize phase (archive reports, commit prompt, etc.).
+                    export SKIP_FINAL_CHECKS=true
                     clear_pipeline_state
                 else
                     error "Auto-fix run failed (exit ${_fix_exit}). Original test failures remain."

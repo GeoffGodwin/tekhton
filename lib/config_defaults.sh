@@ -276,11 +276,12 @@ set -euo pipefail
 : "${CAUSAL_LOG_RETENTION_RUNS:=50}"
 : "${CAUSAL_LOG_MAX_EVENTS:=2000}"
 
-# --- Test baseline defaults (pre-existing failure detection) ---
+# --- Auto-fix on test failure ---
 : "${AUTO_FIX_ON_TEST_FAILURE:=false}"     # Auto-seed fix run on test failure (opt-in)
 : "${AUTO_FIX_MAX_DEPTH:=1}"              # Max recursive fix attempts (recursion guard)
 : "${AUTO_FIX_OUTPUT_LIMIT:=4000}"        # Max chars of test output in fix task string
 
+# --- Test baseline defaults (pre-existing failure detection) ---
 : "${TEST_BASELINE_ENABLED:=true}"
 : "${TEST_BASELINE_PASS_ON_PREEXISTING:=true}"
 : "${TEST_BASELINE_STUCK_THRESHOLD:=2}"

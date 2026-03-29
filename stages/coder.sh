@@ -125,7 +125,7 @@ $(cat SCOUT_REPORT.md)
     if [ "$SHOULD_SCOUT" = true ]; then
         log "Running scout agent to locate relevant files and estimate complexity..."
         # Dashboard tracking: mark scout active (arrays declared in tekhton.sh)
-        if declare -p _STAGE_STATUS &>/dev/null 2>&1; then
+        if declare -p _STAGE_STATUS &>/dev/null; then
             # shellcheck disable=SC2154  # scout is a string key, not a variable
             _STAGE_STATUS[scout]="active"
             _STAGE_START_TS[scout]="$SECONDS"
@@ -233,7 +233,7 @@ $(cat SCOUT_REPORT.md)
         else
             warn "Scout agent did not produce SCOUT_REPORT.md — coder will explore independently."
         fi
-        if declare -p _STAGE_STATUS &>/dev/null 2>&1; then
+        if declare -p _STAGE_STATUS &>/dev/null; then
             _STAGE_STATUS[scout]="complete"
             _STAGE_DURATION[scout]="${LAST_AGENT_ELAPSED:-0}"
             _STAGE_TURNS[scout]="${LAST_AGENT_TURNS:-0}"
@@ -447,7 +447,7 @@ ${nb_notes}"
     # skip bulk claiming to avoid marking unrelated notes as [~].
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         claim_human_notes
-    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && ! should_claim_notes; then
+    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && ! should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — injection skipped."
         # Defensive hint: detect tasks that appear to originate from HUMAN_NOTES.md
         if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then

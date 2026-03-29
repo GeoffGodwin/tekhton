@@ -96,6 +96,8 @@ _print_action_items() {
         local notes_summary
         notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         local notes_unchecked
+        # Field contract: get_notes_summary returns 6 pipe-separated fields:
+        # total|bug|feat|polish|checked|unchecked
         IFS='|' read -r _ _ _ _ _ notes_unchecked <<< "$notes_summary"
         if [[ "$notes_unchecked" -gt 0 ]]; then
             local notes_severity
@@ -109,15 +111,16 @@ _print_action_items() {
                     ;;
                 warning)
                     action_items+=("$(echo -e "${YELLOW}  ⚠ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
-                    action_items+=("$(echo -e "${CYAN}    Tip: Run \`tekhton --human\` to process notes, or${NC}")")
-                    action_items+=("$(echo -e "${CYAN}         \`tekhton note --list\` to see them${NC}")")
                     ;;
                 *)
                     action_items+=("$(echo -e "${CYAN}  ℹ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
-                    action_items+=("$(echo -e "${CYAN}    Tip: Run \`tekhton --human\` to process notes, or${NC}")")
-                    action_items+=("$(echo -e "${CYAN}         \`tekhton note --list\` to see them${NC}")")
                     ;;
             esac
+            # Shared tip for warning + normal severity (critical has its own)
+            if [[ "$notes_severity" != "critical" ]]; then
+                action_items+=("$(echo -e "${CYAN}    Tip: Run \`tekhton --human\` to process notes, or${NC}")")
+                action_items+=("$(echo -e "${CYAN}         \`tekhton note --list\` to see them${NC}")")
+            fi
         fi
     fi
 

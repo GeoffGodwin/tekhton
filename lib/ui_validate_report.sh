@@ -164,6 +164,8 @@ get_ui_validation_summary() {
 _json_field() {
     local json="$1"
     local key="$2"
+    # Requires grep with PCRE support (-P). On minimal images (Alpine) without
+    # PCRE, this silently returns empty → report cells show "?". Acceptable tradeoff.
     echo "$json" | grep -oP "\"${key}\"\\s*:\\s*\"?\\K[^\",}]+" | head -1 || true
 }
 

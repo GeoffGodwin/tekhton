@@ -1,15 +1,13 @@
 ## Planned Tests
-- [x] `tests/test_milestone_archival_dag_rearchive.sh` — Verify DAG mode doesn't re-archive milestones from older initiatives
-- [x] `tests/test_milestone_archival_number_reuse_edge.sh` — Test edge case: milestone number reuse across initiatives
-- [x] `tests/test_auto_fix_on_test_failure.sh` — auto-fix depth guard, output truncation, success/failure paths
+(none)
 
 ## Test Run Results
-Passed: 222  Failed: 0
+Passed: 200  Failed: 0
 
 ## Bugs Found
-None
+- BUG: [lib/ui_validate_report.sh:13] duplicate set -euo pipefail statement appears at lines 2 and 13
+- BUG: [lib/ui_validate.sh:19] duplicate set -euo pipefail statement appears at lines 2 and 19
+- BUG: [lib/dashboard_emitters.sh:162] dep_arr variable used in read -ra but not declared local alongside other loop locals on line 162
 
 ## Files Modified
-- [x] `tests/test_milestone_archival_dag_rearchive.sh`
-- [x] `tests/test_milestone_archival_number_reuse_edge.sh`
-- [x] `tests/test_auto_fix_on_test_failure.sh`
+(none)

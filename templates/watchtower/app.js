@@ -365,6 +365,7 @@
     if (card) {
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });
       card.classList.add('milestone-highlight');
+      // Duration must match the CSS milestone-highlight animation (1.5s)
       setTimeout(function () { card.classList.remove('milestone-highlight'); }, 1500);
     }
   }

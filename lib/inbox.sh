@@ -66,7 +66,10 @@ _process_note() {
         *) tag="FEAT" ;;
     esac
 
-    # Use the existing add_human_note function
+    # Use the existing add_human_note function.
+    # Known limitation: description, priority, and source fields from the inbox
+    # file are not passed through — only title+tag are written to the flat
+    # HUMAN_NOTES.md checklist format.
     if command -v add_human_note &>/dev/null; then
         add_human_note "$title" "$tag"
     else
@@ -82,10 +85,7 @@ _process_milestone() {
     local basename
     basename=$(basename "$file")
 
-    # Only process milestone_mNN.md files, not manifest_append files
-    if [[ "$basename" == manifest_append_* ]]; then
-        return 0
-    fi
+    # Only milestone_mNN.md files reach here (from the milestone_*.md glob loop)
 
     local ms_dir="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}"
     if [[ ! -d "$ms_dir" ]]; then

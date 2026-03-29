@@ -41,7 +41,7 @@ class WatchtowerHandler(http.server.SimpleHTTPRequestHandler):
     def _handle_submit(self):
         try:
             length = int(self.headers.get("Content-Length", 0))
-            if length > 100000:  # 100KB safety limit
+            if length > 100000:  # 100KB safety limit (hardcoded; sufficient for dashboard payloads)
                 self._json_response(413, {"error": "Payload too large"})
                 return
             body = self.rfile.read(length)

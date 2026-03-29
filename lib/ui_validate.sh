@@ -52,6 +52,9 @@ _check_headless_browser() {
 
     # Run detection in a subshell with a hard 30-second timeout.
     # If anything hangs (npm, npx, etc.), we treat it as "no browser".
+    # Note: _check_npm_package() above provides the same `npm ls` logic, but
+    # cannot be called from inside `bash -c` (separate process, no function access).
+    # The inline duplication is intentional for subshell isolation.
     local detected=""
     detected=$(timeout 30 bash -c '
         # 1. Playwright (preferred — bundles Chromium)
@@ -362,64 +365,10 @@ run_ui_validation() {
         fi
     fi
 
-    # Run Watchtower self-test
-    if [[ "$watchtower_test" = true ]]; then
-        local wt_result
-        wt_result=$(_run_watchtower_self_test) || true
-        all_results+=("$wt_result")
-        if echo "$wt_result" | grep -q '"verdict":"FAIL"'; then
-            validation_failed=true
-        fi
-    fi
-
-    # Run validation on detected targets
-    for target_line in "${targets[@]}"; do
-        local target_type="${target_line%%|*}"
-        local target_path="${target_line#*|}"
-
-        case "$target_type" in
-            html)
-                local html_result
-                html_result=$(_validate_html_file "$target_path" "$screenshot_dir") || true
-                [[ -n "$html_result" ]] && all_results+=("$html_result")
-                if echo "$html_result" | grep -q '"verdict":"FAIL"'; then
-                    validation_failed=true
-                fi
-                ;;
-            webapp)
-                if [[ "$server_started" = true ]]; then
-                    local app_result
-                    app_result=$(_validate_webapp "$target_path" "$screenshot_dir") || true
-                    [[ -n "$app_result" ]] && all_results+=("$app_result")
-                    if echo "$app_result" | grep -q '"verdict":"FAIL"'; then
-                        validation_failed=true
-                    fi
-                fi
-                ;;
-        esac
-    done
-
-    # Stop server
-    if [[ "$server_started" = true ]]; then
-        _stop_ui_server
-    fi
-
-    # Generate report
-    if [[ ${#all_results[@]} -gt 0 ]]; then
-        _generate_ui_report "${all_results[@]}"
-    fi
-
-    # Handle retry on failure
-    if [[ "$validation_failed" = true ]] && [[ "${UI_VALIDATION_RETRY:-true}" = "true" ]]; then
-        log "UI validation failed. Retrying once..."
-        validation_failed=false
-        all_results=()
-
-        if [[ "$server_started" = true ]]; then
-            _start_ui_server || true
-        fi
-
-        # Re-run failed targets only
+    # Run one validation pass: watchtower self-test + all detected targets.
+    # Sets validation_failed=true if any result contains a FAIL verdict.
+    # Appends JSON result strings to all_results[].
+    _run_validation_pass() {
         if [[ "$watchtower_test" = true ]]; then
             local wt_result
             wt_result=$(_run_watchtower_self_test) || true
@@ -428,9 +377,11 @@ run_ui_validation() {
                 validation_failed=true
             fi
         fi
+
         for target_line in "${targets[@]}"; do
             local target_type="${target_line%%|*}"
             local target_path="${target_line#*|}"
+
             case "$target_type" in
                 html)
                     local html_result
@@ -452,6 +403,31 @@ run_ui_validation() {
                     ;;
             esac
         done
+    }
+
+    _run_validation_pass
+
+    # Stop server
+    if [[ "$server_started" = true ]]; then
+        _stop_ui_server
+    fi
+
+    # Generate report
+    if [[ ${#all_results[@]} -gt 0 ]]; then
+        _generate_ui_report "${all_results[@]}"
+    fi
+
+    # Handle retry on failure
+    if [[ "$validation_failed" = true ]] && [[ "${UI_VALIDATION_RETRY:-true}" = "true" ]]; then
+        log "UI validation failed. Retrying once..."
+        validation_failed=false
+        all_results=()
+
+        if [[ "$server_started" = true ]]; then
+            _start_ui_server || true
+        fi
+
+        _run_validation_pass
 
         if [[ "$server_started" = true ]]; then
             _stop_ui_server
@@ -599,7 +575,13 @@ _prune_old_screenshots() {
 
     # Keep directories from the last 5 runs (sorted by name, most recent last)
     local run_dirs
-    run_dirs=$(find "$dir" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -n -5 || true)
+    # List all run dirs except the 5 most recent. Avoids GNU-specific `head -n -5`
+    # for macOS/BSD portability.
+    local total_dirs
+    total_dirs=$(find "$dir" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)
+    local keep=$(( total_dirs - 5 ))
+    if [[ "$keep" -le 0 ]]; then return 0; fi
+    run_dirs=$(find "$dir" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | head -n "$keep" || true)
     while IFS= read -r old_dir; do
         [[ -z "$old_dir" ]] && continue
         rm -rf "$old_dir" 2>/dev/null || true
