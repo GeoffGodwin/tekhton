@@ -1,13 +1,15 @@
 ## Planned Tests
-(none)
+- [x] `tests/test_nonblocking_ui_validate_report.sh` — Verify no duplicate `set -euo pipefail` in ui_validate_report.sh
+- [x] `tests/test_nonblocking_ui_validate.sh` — Verify no duplicate `set -euo pipefail` in ui_validate.sh
+- [x] `tests/test_nonblocking_dashboard_emitters.sh` — Verify `dep_arr` is declared in local statement on line 162
 
 ## Test Run Results
-Passed: 200  Failed: 0
+Passed: 203  Failed: 0
 
 ## Bugs Found
-- BUG: [lib/ui_validate_report.sh:13] duplicate set -euo pipefail statement appears at lines 2 and 13
-- BUG: [lib/ui_validate.sh:19] duplicate set -euo pipefail statement appears at lines 2 and 19
-- BUG: [lib/dashboard_emitters.sh:162] dep_arr variable used in read -ra but not declared local alongside other loop locals on line 162
+None
 
 ## Files Modified
-(none)
+- [x] `tests/test_nonblocking_ui_validate_report.sh`
+- [x] `tests/test_nonblocking_ui_validate.sh`
+- [x] `tests/test_nonblocking_dashboard_emitters.sh`

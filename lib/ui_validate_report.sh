@@ -10,7 +10,6 @@ set -euo pipefail
 #   generate_ui_validation_report — parse JSON results, write report
 #   get_ui_validation_summary     — one-line pass/fail summary for banners
 # =============================================================================
-set -euo pipefail
 
 # generate_ui_validation_report RESULTS...
 # Reads JSON output lines from ui_smoke_test.js and produces

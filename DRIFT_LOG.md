@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-29
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
 - [2026-03-29 | "Address all 41 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/dashboard_emitters.sh`, `lib/ui_validate.sh`, `stages/coder.sh`, `stages/tester.sh` — all substantially exceed the 300-line file ceiling; pre-existing technical debt accumulated across milestones

@@ -159,7 +159,7 @@ emit_dashboard_milestones() {
 
     # Pass 2: Build reverse dependency map (id → comma-separated list of IDs it enables)
     local -A enables_map=()
-    local i dep_list dep_item
+    local i dep_list dep_item dep_arr
     for i in "${!ms_ids[@]}"; do
         dep_list="${ms_deps[$i]}"
         if [[ -n "$dep_list" ]]; then

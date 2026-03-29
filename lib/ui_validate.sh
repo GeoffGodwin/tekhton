@@ -16,7 +16,6 @@ set -euo pipefail
 #   _start_ui_server       — start dev/preview server in background
 #   _stop_ui_server        — stop background server
 # =============================================================================
-set -euo pipefail
 
 # Cached headless browser command (session-scoped)
 _UI_BROWSER_CMD=""

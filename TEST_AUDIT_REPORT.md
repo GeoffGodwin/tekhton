@@ -1,96 +1,73 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, ~17 assertions
-Verdict: CONCERNS
-
----
-
-### Pre-Audit Note: CODER_SUMMARY.md absent
-
-`CODER_SUMMARY.md` was not present on disk and does not appear in git status.
-Scope-alignment analysis was performed directly against the implementation files
-(`lib/milestone_archival.sh`, `lib/milestone_archival_helpers.sh`) and
-`INTAKE_REPORT.md` in lieu of a coder summary.
-
----
+Tests audited: 3 files, 3 test scripts (script-level assertions)
+Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: Edge-case test accepts any outcome — always passes
-- File: `tests/test_milestone_archival_number_reuse_edge.sh:135` and `:152`
-- Issue: Both branches of the `if [ $result -eq 1 ]; then ... elif [ $result -eq 0 ]; then ...fi`
-  block open with a hardcoded-pass assertion (`assert "..." "0"`). Because exactly one
-  branch always executes and both lead to `"0"` (PASS), the test as a whole passes
-  regardless of whether the implementation skips or archives the number-reuse milestone.
-  This means the test cannot detect a future regression that flips the behavior in either
-  direction. The file documents the edge case but provides zero regression protection for it.
+#### INTEGRITY: Line-number hardcoding in dashboard_emitters test
+- File: tests/test_nonblocking_dashboard_emitters.sh:11,20
+- Issue: The test asserts that `dep_arr` appears in a `local` declaration on **line 162**
+  and that `read -ra dep_arr` appears on **line 166** of `lib/dashboard_emitters.sh`.
+  Both line assertions are currently correct: line 162 reads
+  `local i dep_list dep_item dep_arr` and line 166 reads
+  `IFS=',' read -ra dep_arr <<< "$dep_list"`. However, hardcoded line numbers are
+  silently wrong after any insertion or deletion above those lines — the test would
+  pass while inspecting the wrong line with no error.
+- Severity: MEDIUM
+- Action: Replace `sed -n '162p'` / `sed -n '166p'` with pattern-based searches:
+  `grep -q "local[[:space:]].*dep_arr" "$test_file"` for the declaration and
+  `grep -q "read -ra dep_arr" "$test_file"` for the read command. The intent (verify
+  the variable is properly declared and used) is preserved; the brittleness is removed.
 
-  Concretely:
-  ```bash
-  # line 135 — always passes (hardcoded "0")
-  assert "archiving new Milestone 1 with same number as old milestone: skipped (edge case)" "0"
-  # line 152 — always passes (hardcoded "0")
-  assert "archiving new Milestone 1 succeeds" "0"
-  ```
-
-  The subsequent assertions within each branch (line-count checks, grep counts) do test
-  real state, but they are only reached after the always-passing opener, and since both
-  paths are treated as equally valid the test provides no regression boundary at all.
-
-- Severity: HIGH
-- Action: Determine which outcome is correct for this edge case and assert it explicitly.
-  Based on the implementation (`_milestone_in_archive` in global-search mode uses a
-  heading-number regex that will match the old "Milestone 1" heading), the current
-  behavior is to SKIP the new Milestone 1. The test should assert `result=1` and fail
-  if the implementation changes. If the team truly accepts both outcomes as correct,
-  convert the file to a documentation comment with no assertions — a test that always
-  passes regardless of behavior is indistinguishable from no test at all. Do NOT
-  introduce implementation changes to satisfy the test; pick one expected behavior
-  and assert it.
-
-#### COVERAGE: DAG-mode missing-file path not exercised
-- File: `tests/test_milestone_archival_dag_rearchive.sh`
-- Issue: All scenarios use a well-formed manifest with milestone files that exist on disk.
-  The path at `lib/milestone_archival.sh:80` (`block` empty after `dag_get_file` returns
-  a path to a missing file → return 1) is reachable in production when a manifest entry
-  is stale or a file was manually deleted. This path has no test coverage.
+#### COVERAGE: No negative cases in set -euo pipefail duplicate tests
+- File: tests/test_nonblocking_ui_validate_report.sh, tests/test_nonblocking_ui_validate.sh
+- Issue: Both tests verify `count == 1` but contain no negative-case path. If a future
+  edit re-introduces a duplicate `set -euo pipefail`, the tests catch it, but there is
+  no self-verifying path that confirms the failure branch executes and produces the
+  expected FAIL message.
 - Severity: LOW
-- Action: Add a test scenario in `test_milestone_archival_dag_rearchive.sh` that adds a
-  manifest entry pointing to a non-existent file and asserts `archive_completed_milestone`
-  returns 1 without modifying the archive.
+- Action: Acceptable as-is for this style of regression test. Optionally add a comment
+  documenting the expected failure message for future maintainers.
 
----
+#### SCOPE: CODER_SUMMARY.md absent — partial audit gap
+- File: (audit infrastructure, not a test file)
+- Issue: `CODER_SUMMARY.md` does not exist in the repo. The audit instructions require
+  it as the primary source for cross-referencing implementation changes. Its absence
+  means this audit relied on `TESTER_REPORT.md` and direct inspection of the
+  implementation files. All three implementation files listed in `TESTER_REPORT.md`
+  exist on disk and were read directly.
+- Severity: LOW
+- Action: No change needed to the tests. The pipeline should ensure `CODER_SUMMARY.md`
+  is written before the tester stage runs so future audits have a complete record.
+
+### Assertion Verification (per implementation file)
+
+| Test file | Implementation file | Assertion | Verified |
+|-----------|--------------------|-----------|-----------------------|
+| test_nonblocking_ui_validate_report.sh | lib/ui_validate_report.sh | count of `set -euo pipefail` == 1 | PASS — line 2 is the only occurrence |
+| test_nonblocking_ui_validate.sh | lib/ui_validate.sh | count of `set -euo pipefail` == 1 | PASS — line 2 is the only occurrence |
+| test_nonblocking_dashboard_emitters.sh | lib/dashboard_emitters.sh | `local.*dep_arr` on line 162 | PASS — line 162: `local i dep_list dep_item dep_arr` |
+| test_nonblocking_dashboard_emitters.sh | lib/dashboard_emitters.sh | `read -ra dep_arr` on line 166 | PASS — line 166: `IFS=',' read -ra dep_arr <<< "$dep_list"` |
 
 ### Findings: None for remaining rubric categories
 
 #### EXERCISE
-Both test files source the real implementation modules
-(`lib/milestone_archival.sh`, `lib/milestone_archival_helpers.sh`,
-`lib/milestone_dag.sh`, `lib/milestone_dag_helpers.sh`,
-`lib/milestone_dag_migrate.sh`) with only `run_build_gate()` stubbed out.
-All assertions flow from actual `archive_completed_milestone` calls. No mocking
-of the functions under test.
+All three tests directly read the implementation files and apply grep/sed to verify
+static code properties. This is appropriate: the non-blocking notes addressed code
+quality issues (duplicate directives, missing local declaration), not behavioral bugs.
+Static text inspection is the correct verification strategy here.
 
 #### WEAKENING
-No existing tests were modified. Both files are new additions.
+No existing tests were modified. All three files are new additions.
 
 #### NAMING
-Assertion descriptions in `test_milestone_archival_dag_rearchive.sh` are specific
-and encode both scenario and expected outcome (e.g., "archive file does not grow
-when m01 is already archived under a different initiative"). The edge-case file's
-names are consistent with its stated documentation purpose.
+Test file names and inline comments clearly encode the scenario and expected property
+being verified. Descriptions in the failure echo paths state the count found vs.
+expected, aiding diagnosis.
 
 #### SCOPE
-`lib/milestone_dag_helpers.sh` exists on disk (confirmed via glob). All files
-sourced by both test scripts are present. No orphaned imports. `JR_CODER_SUMMARY.md`
-is listed as deleted per the audit context; neither test file references it. The
-core fix verified in `lib/milestone_archival.sh:49-54` (setting `archive_initiative=""`
-for DAG mode) directly aligns with what `test_milestone_archival_dag_rearchive.sh`
-exercises.
-
-#### ASSERTION HONESTY (`test_milestone_archival_dag_rearchive.sh`)
-All assertions in this file derive their expected values from actual function calls.
-Line counts (`wc -l`) and grep counts are compared against pre-call baselines rather
-than hard-coded values. The return-value captures use the `cmd && result=1 || result=0`
-inversion pattern correctly under `set -euo pipefail`. No always-true assertions found.
+All three implementation files exist on disk and contain the properties under test.
+`JR_CODER_SUMMARY.md` was deleted per the audit context; none of the three test files
+reference it. No orphaned imports detected.
