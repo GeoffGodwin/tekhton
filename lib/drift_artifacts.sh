@@ -215,15 +215,17 @@ _process_design_observations() {
 
 # clear_resolved_drift_observations — Removes items from the ## Resolved section.
 # Called at the start of each run so only the current run's resolutions are visible.
+# Matches both current format (- [RESOLVED ...]) and legacy format (- [DATE | RESOLVED ...]).
 clear_resolved_drift_observations() {
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
     if [ ! -f "$drift_file" ]; then
         return 0
     fi
 
-    # Count resolved items first — skip file rewrite if none exist
+    # Count resolved items first — skip file rewrite if none exist.
+    # Match both formats and use /^## [^#]/ to avoid matching ### subheadings.
     local resolved_count
-    resolved_count=$(awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- \[RESOLVED/{c++} END{print c+0}' \
+    resolved_count=$(awk '/^## Resolved/{f=1; next} f && /^## [^#]/{exit} f && /^- /{c++} END{print c+0}' \
         "$drift_file" 2>/dev/null)
     if [ "$resolved_count" -eq 0 ] 2>/dev/null; then
         return 0
@@ -234,14 +236,14 @@ clear_resolved_drift_observations() {
     local in_resolved=false
 
     while IFS= read -r line; do
-        if echo "$line" | grep -q "^## Resolved"; then
+        if [[ "$line" == "## Resolved"* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=true
             echo "$line" >> "$tmpfile"
-        elif echo "$line" | grep -q "^## " && [[ "$in_resolved" = true ]]; then
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=false
             echo "$line" >> "$tmpfile"
-        elif [[ "$in_resolved" = true ]] && echo "$line" | grep -q "^- \[RESOLVED"; then
-            # Skip resolved items
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "- "* ]]; then
+            # Skip all bullet items in the Resolved section (any format)
             :
         else
             echo "$line" >> "$tmpfile"
@@ -252,13 +254,14 @@ clear_resolved_drift_observations() {
     log "Cleared ${resolved_count} resolved item(s) from DRIFT_LOG.md."
 }
 
-# get_resolved_drift_observations — Returns text of [RESOLVED ...] items from ## Resolved.
+# get_resolved_drift_observations — Returns text of resolved items from ## Resolved.
 # Used to include resolved drift items in the commit message.
+# Matches both current format (- [RESOLVED ...]) and legacy format (- [DATE | RESOLVED ...]).
 get_resolved_drift_observations() {
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
     if [ ! -f "$drift_file" ]; then
         return
     fi
-    awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- \[RESOLVED/{print}' \
+    awk '/^## Resolved/{f=1; next} f && /^## [^#]/{exit} f && /^- /{print}' \
         "$drift_file" 2>/dev/null || true
 }

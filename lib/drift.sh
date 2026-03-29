@@ -125,7 +125,7 @@ count_drift_observations() {
         return
     fi
     local count
-    count=$(awk '/^## Unresolved Observations/{found=1; next} found && /^##/{exit} found && /^- \[/{count++} END{print count+0}' \
+    count=$(awk '/^## Unresolved Observations/{found=1; next} found && /^## [^#]/{exit} found && /^- \[/{count++} END{print count+0}' \
         "$drift_file" 2>/dev/null)
     echo "$count"
 }

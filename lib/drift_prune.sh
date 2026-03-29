@@ -26,7 +26,7 @@ prune_resolved_drift_entries() {
 
     # Extract resolved entries (skip the ## Resolved heading)
     local resolved_entries
-    resolved_entries=$(awk '/^## Resolved/{found=1; next} found && /^##/{exit} found && /^- /{print}' \
+    resolved_entries=$(awk '/^## Resolved/{found=1; next} found && /^## [^#]/{exit} found && /^- /{print}' \
         "$drift_file" 2>/dev/null || true)
 
     if [ -z "$resolved_entries" ]; then
@@ -77,17 +77,17 @@ EOF
     local in_resolved=false
 
     while IFS= read -r line; do
-        if echo "$line" | grep -q "^## Resolved"; then
+        if [[ "$line" == "## Resolved"* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=true
             echo "$line" >> "$tmpfile"
             # Insert kept entries after heading
             if [ -n "$kept_entries" ]; then
                 echo "$kept_entries" >> "$tmpfile"
             fi
-        elif echo "$line" | grep -q "^## " && [[ "$in_resolved" = true ]]; then
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=false
             echo "$line" >> "$tmpfile"
-        elif [[ "$in_resolved" = true ]] && echo "$line" | grep -q "^- "; then
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "- "* ]]; then
             # Skip old entries (they're now in archive)
             :
         elif [[ "$in_resolved" = true ]] && [[ -z "${line// /}" ]]; then
