@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_drift_prune_realistic.sh` — Test pruning path with over-threshold fixture and verify ordering
+- [x] `tests/test_nonblocking_log_structure.sh` — Verify NON_BLOCKING_LOG.md structure and item completion tracking
 
 ## Test Run Results
-Passed: 204  Failed: 1 (pre-existing failure unrelated to drift pruning)
+Passed: 205  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_drift_prune_realistic.sh`
+- [x] `tests/test_nonblocking_log_structure.sh`

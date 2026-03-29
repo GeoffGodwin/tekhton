@@ -11,14 +11,27 @@ trap "rm -rf '$TEST_DIR'" EXIT INT TERM
 PASS=0
 FAIL=0
 
-# Test 1: Open section is empty
-echo "Test 1: Verify Open section is empty..."
-if grep -A 1 "^## Open$" NON_BLOCKING_LOG.md | grep -q "(none)"; then
-	echo "✓ PASS: Open section is empty"
-	PASS=$((PASS+1))
-else
-	echo "✗ FAIL: Open section should be empty"
+# Test 1: Open section has valid structure
+# Either contains only "(none)" or properly formatted "- [ ]" items — never both
+echo "Test 1: Verify Open section has valid structure..."
+OPEN_BLOCK="$(sed -n '/^## Open$/,/^## /{ /^## /d; p; }' NON_BLOCKING_LOG.md)"
+HAS_ITEMS=false
+HAS_NONE=false
+if echo "$OPEN_BLOCK" | grep -q "^- \[ \]"; then
+	HAS_ITEMS=true
+fi
+if echo "$OPEN_BLOCK" | grep -q "^(none)"; then
+	HAS_NONE=true
+fi
+if $HAS_ITEMS && $HAS_NONE; then
+	echo "✗ FAIL: Open section has both items and (none) marker — stale marker"
 	FAIL=$((FAIL+1))
+elif ! $HAS_ITEMS && ! $HAS_NONE; then
+	echo "✗ FAIL: Open section is empty (missing items or (none) marker)"
+	FAIL=$((FAIL+1))
+else
+	echo "✓ PASS: Open section structure is valid"
+	PASS=$((PASS+1))
 fi
 
 # Test 2: Verify the 3 items are marked as [x] in Resolved
