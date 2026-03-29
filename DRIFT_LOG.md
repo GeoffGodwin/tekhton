@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-29
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-03-29 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `NON_BLOCKING_LOG.md:97–121` — Duplicate "Test Audit Concerns" resolved blocks accumulate over time with identical content. The cleanup mechanism that removes stale open notes does not deduplicate resolved sections. Low priority, but a future cleanup pass could collapse these.

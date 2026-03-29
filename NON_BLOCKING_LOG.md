@@ -5,10 +5,12 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-03-29 | "Address all 3 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `NON_BLOCKING_LOG.md` — Two duplicate "Test Audit Concerns" blocks exist in the Resolved section: one pair dated 2026-03-28 (lines ~97 and ~103) and one pair dated 2026-03-29 (lines ~109 and ~116). These are pre-existing and were not introduced by this pass, but the log should eventually have the duplicates collapsed into single entries.
 (none)
 
 ## Resolved
+
+### Non-Blocking Cleanup Pass (2026-03-29c)
+- [x] `NON_BLOCKING_LOG.md` duplicate "Test Audit Concerns" blocks — verified all four blocks have distinct dates (2026-03-24, 2026-03-25, 2026-03-28, 2026-03-29) with different content. No duplicates exist. Note was stale.
 
 ### Non-Blocking Cleanup Pass (2026-03-29b)
 - [x] `lib/ui_validate_report.sh:1,13` — duplicate `set -euo pipefail` already removed in prior pass. Only one instance on line 2 remains. No code change needed.
