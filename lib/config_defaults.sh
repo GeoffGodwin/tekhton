@@ -175,6 +175,8 @@ set -euo pipefail
 : "${AUTONOMOUS_TIMEOUT:=7200}"           # Wall-clock timeout for --complete in seconds (2h)
 : "${MAX_AUTONOMOUS_AGENT_CALLS:=200}"    # Safety valve for --complete mode (effectively unlimited for normal use)
 : "${AUTONOMOUS_PROGRESS_CHECK:=true}"    # Enable stuck-detection between loop iterations
+: "${FIX_NONBLOCKERS_MAX_PASSES:=3}"     # Hard limit on --fix-nonblockers loop iterations
+: "${FIX_DRIFT_MAX_PASSES:=3}"           # Hard limit on --fix-drift loop iterations
 
 # --- Quota management defaults (Milestone 16) ---
 : "${QUOTA_RETRY_INTERVAL:=300}"          # Seconds between quota refresh checks (5 min)
@@ -389,6 +391,8 @@ _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
 _clamp_config_value MAX_PIPELINE_ATTEMPTS 20
+_clamp_config_value FIX_NONBLOCKERS_MAX_PASSES 20
+_clamp_config_value FIX_DRIFT_MAX_PASSES 20
 _clamp_config_value AUTONOMOUS_TIMEOUT 14400
 _clamp_config_value MAX_AUTONOMOUS_AGENT_CALLS 500
 _clamp_config_value METRICS_MIN_RUNS 100

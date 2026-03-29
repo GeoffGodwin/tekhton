@@ -200,6 +200,40 @@ resolve_human_notes() {
 # Provides: _escape_sed_pattern, _section_for_tag, pick_next_note,
 #   claim_single_note, resolve_single_note, extract_note_text, count_unchecked_notes
 
+# clear_completed_human_notes — Removes [x] items from HUMAN_NOTES.md.
+# Called at the start of each pipeline run so completed notes from prior runs
+# do not accumulate. Non-interactive (no confirmation prompt).
+clear_completed_human_notes() {
+    local notes_file="${PROJECT_DIR}/HUMAN_NOTES.md"
+    if [ ! -f "$notes_file" ]; then
+        return 0
+    fi
+
+    local completed_count
+    completed_count=$(grep -c '^- \[x\] ' "$notes_file" || true)
+    if [ "$completed_count" -eq 0 ]; then
+        return 0
+    fi
+
+    # Safety: count unchecked before
+    local unchecked_before
+    unchecked_before=$(grep -c '^- \[ \] ' "$notes_file" || true)
+
+    local tmpfile
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/notes_XXXXXXXX")
+    grep -v '^- \[x\] ' "$notes_file" > "$tmpfile"
+    mv "$tmpfile" "$notes_file"
+
+    # Safety: verify unchecked count unchanged
+    local unchecked_after
+    unchecked_after=$(grep -c '^- \[ \] ' "$notes_file" || true)
+    if [ "$unchecked_after" -ne "$unchecked_before" ]; then
+        warn "HUMAN_NOTES.md unchecked count changed unexpectedly (${unchecked_before} → ${unchecked_after})"
+    fi
+
+    log "Cleared ${completed_count} completed [x] item(s) from HUMAN_NOTES.md."
+}
+
 # --- NON_BLOCKING_LOG batch functions extracted to lib/notes_cleanup.sh ---
 # Provides: count_unresolved_notes, select_cleanup_batch,
 #   mark_note_resolved, mark_note_deferred

@@ -1739,12 +1739,15 @@ if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
     archive_all_completed_milestones "CLAUDE.md"
 fi
 
-# --- Startup cleanup: clear completed items from logs -----------------------
-# Remove [x] items from NON_BLOCKING_LOG.md and [RESOLVED] items from DRIFT_LOG.md
-# so only the current run's completions appear. The commit message at the end of
-# the run captures what was resolved; these logs don't need to keep them forever.
+# --- Startup cleanup: clear completed/resolved items from logs ----------------
+# Remove [x] items from HUMAN_NOTES.md and NON_BLOCKING_LOG.md Open section,
+# [RESOLVED] items from DRIFT_LOG.md, and resolved entries from
+# NON_BLOCKING_LOG.md Resolved section. Commit messages already captured what
+# was resolved; these logs don't need to keep them across runs.
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
+clear_completed_human_notes
+clear_resolved_nonblocking_notes > /dev/null
 
 # --- UI framework detection (Milestone 28) -----------------------------------
 # Runs at startup to populate UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD.
@@ -2094,7 +2097,6 @@ _run_human_complete_loop() {
 # and runs the full pipeline. The heuristic resolver in finalize marks addressed
 # items [x]. Loop terminates when no open items remain or safety bounds hit.
 _run_fix_nonblockers_loop() {
-    : "${MAX_PIPELINE_ATTEMPTS:=5}"
     : "${AUTONOMOUS_TIMEOUT:=7200}"
     local nb_attempt=0
     local start_time
@@ -2110,9 +2112,9 @@ _run_fix_nonblockers_loop() {
             break
         fi
 
-        # Safety bound: max attempts
-        if [[ "$nb_attempt" -gt "$MAX_PIPELINE_ATTEMPTS" ]]; then
-            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS}). ${remaining} item(s) remain."
+        # Safety bound: max passes
+        if [[ "$nb_attempt" -gt "${FIX_NONBLOCKERS_MAX_PASSES:-3}" ]]; then
+            warn "Reached FIX_NONBLOCKERS_MAX_PASSES (${FIX_NONBLOCKERS_MAX_PASSES:-3}). ${remaining} item(s) remain."
             break
         fi
 
@@ -2164,7 +2166,6 @@ _run_fix_nonblockers_loop() {
 # DRIFT_LOG.md. Loop terminates when no unresolved observations remain or
 # safety bounds hit.
 _run_fix_drift_loop() {
-    : "${MAX_PIPELINE_ATTEMPTS:=5}"
     : "${AUTONOMOUS_TIMEOUT:=7200}"
     local drift_attempt=0
     local start_time
@@ -2180,9 +2181,9 @@ _run_fix_drift_loop() {
             break
         fi
 
-        # Safety bound: max attempts
-        if [[ "$drift_attempt" -gt "$MAX_PIPELINE_ATTEMPTS" ]]; then
-            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS}). ${remaining} observation(s) remain."
+        # Safety bound: max passes
+        if [[ "$drift_attempt" -gt "${FIX_DRIFT_MAX_PASSES:-3}" ]]; then
+            warn "Reached FIX_DRIFT_MAX_PASSES (${FIX_DRIFT_MAX_PASSES:-3}). ${remaining} observation(s) remain."
             break
         fi
 

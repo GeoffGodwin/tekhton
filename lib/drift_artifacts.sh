@@ -146,7 +146,11 @@ has_human_actions() {
 # human action file as needed.
 process_drift_artifacts() {
     # 1. Append drift observations from reviewer report
-    append_drift_observations
+    # Skip during --fix-drift to prevent feedback loop:
+    # architect resolves → reviewer generates new observations → appended → next pass resolves those
+    if [[ "${FIX_DRIFT_MODE:-false}" != "true" ]]; then
+        append_drift_observations
+    fi
 
     # 2. Record accepted ACPs in the Architecture Decision Log
     append_architecture_decision
@@ -155,7 +159,11 @@ process_drift_artifacts() {
     _process_design_observations
 
     # 4. Accumulate non-blocking notes from reviewer report
-    append_nonblocking_notes
+    # Skip during --fix-nonblockers to prevent feedback loop:
+    # coder fixes notes → reviewer generates new notes → appended → next pass fixes those
+    if [[ "${FIX_NONBLOCKERS_MODE:-false}" != "true" ]]; then
+        append_nonblocking_notes
+    fi
 
     # 5. Mark addressed non-blocking notes from coder summary
     _resolve_addressed_nonblocking_notes
