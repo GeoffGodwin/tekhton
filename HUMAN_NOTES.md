@@ -15,5 +15,5 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 None currently.
 
 ## Bugs
-- [ ] [BUG] Milestone archival re-archives ALL completed milestones on every run instead of skipping already-archived ones — MILESTONE_ARCHIVE.md grows by the full milestone set each invocation; needs an idempotency check (e.g., grep for milestone ID before appending)
+- [x] [BUG] Milestone archival re-archives ALL completed milestones on every run instead of skipping already-archived ones — MILESTONE_ARCHIVE.md grows by the full milestone set each invocation; needs an idempotency check (e.g., grep for milestone ID before appending)
 - [ ] [BUG] Pipeline exits with "failures detected" when self-tests fail instead of auto-seeding a fix run — should immediately invoke a new tekhton run with the failed test output as the task to fix; pipeline must never end in a non-pristine state when the fix is trivial

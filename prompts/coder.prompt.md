@@ -84,6 +84,10 @@ These items are part of your required scope. You MUST implement each one and
 report completion status in CODER_SUMMARY.md. Do NOT set Status to COMPLETE
 until every note below is either implemented or explicitly marked NOT_ADDRESSED
 with a reason. The pipeline will reject COMPLETE status if notes are unaccounted for.
+
+**DO NOT modify HUMAN_NOTES.md.** The pipeline manages note state (checkboxes)
+automatically. You may read it for context but must never write to it.
+Your completions are tracked via CODER_SUMMARY.md, not by editing the notes file.
 {{HUMAN_NOTES_BLOCK}}
 {{ENDIF:HUMAN_NOTES_BLOCK}}
 

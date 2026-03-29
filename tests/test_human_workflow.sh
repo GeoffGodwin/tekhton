@@ -331,6 +331,62 @@ EOF
 note="- [ ] [BUG] Test"
 assert_exit_code "Non-zero exit code handled" 0 "resolve_single_note '$note' 42"
 
+# --- Section 4b: resolve_single_note fallback (agent clobber resilience) ---
+
+echo ""
+echo "=== Section 4b: resolve_single_note fallback when [~] clobbered back to [ ] ==="
+
+test_case "resolve_single_note fallback: marks [x] when agent clobbered [~] to [ ]"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [ ] [BUG] Fix login form validation
+- [ ] [BUG] API error message formatting
+EOF
+note="- [ ] [BUG] Fix login form validation"
+resolve_single_note "$note" 0
+assert_contains "Fallback marked [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+
+test_case "resolve_single_note fallback: resets to [ ] on failure when clobbered"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [ ] [BUG] Fix login form validation
+EOF
+note="- [ ] [BUG] Fix login form validation"
+resolve_single_note "$note" 1
+assert_contains "Fallback reset to [ ]" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+
+test_case "resolve_single_note fallback: leaves other notes unchanged"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [ ] [BUG] First note
+- [ ] [BUG] Second note
+- [x] [BUG] Third note
+EOF
+note="- [ ] [BUG] First note"
+resolve_single_note "$note" 0
+assert_contains "Fallback second unchanged" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Second note"
+assert_contains "Fallback third unchanged" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Third note"
+
+test_case "resolve_single_note fallback: returns 0 on success"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [ ] [BUG] Test
+EOF
+note="- [ ] [BUG] Test"
+assert_exit_code "Fallback return 0" 0 "resolve_single_note '$note' 0"
+
+test_case "resolve_single_note prefers [~] match over [ ] fallback"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [~] [BUG] Fix login form validation
+- [ ] [BUG] Fix login form validation
+EOF
+note="- [ ] [BUG] Fix login form validation"
+resolve_single_note "$note" 0
+# Should match the [~] line (primary), leaving [ ] line untouched
+assert_contains "Primary [~] matched" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Fallback [ ] untouched" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+
 # --- Section 5: extract_note_text ---
 
 echo ""

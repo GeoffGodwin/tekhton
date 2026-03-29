@@ -125,6 +125,11 @@ claim_single_note() {
 # If exit_code=0: [~] → [x]. If non-zero: [~] → [ ].
 # The note_line should be the ORIGINAL line (with [ ]); this function
 # reconstructs the [~] version to match against the file.
+#
+# Resilience: If the [~] form is not found (e.g., an agent rewrote the file
+# and clobbered the marker back to [ ]), falls back to matching the original
+# [ ] form. This prevents silent resolution failures when agents have write
+# access to HUMAN_NOTES.md.
 # Usage: resolve_single_note "- [ ] [BUG] Fix the thing" 0
 resolve_single_note() {
     local note_line="$1"
@@ -149,6 +154,11 @@ resolve_single_note() {
     local found=0
     while IFS= read -r line || [[ -n "$line" ]]; do
         if [[ "$found" -eq 0 ]] && [[ "$line" = "$claimed_line" ]]; then
+            # Primary match: [~] form found as expected
+            printf '%s\n' "$replacement"
+            found=1
+        elif [[ "$found" -eq 0 ]] && [[ "$line" = "$note_line" ]]; then
+            # Fallback: agent clobbered [~] back to [ ] — match original form
             printf '%s\n' "$replacement"
             found=1
         else
