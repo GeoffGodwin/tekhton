@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-28
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-03-28 | "M38"] `dashboard.sh:163`: The live elapsed computation `$(( SECONDS - _STAGE_START_TS[$stg] ))` will produce a large positive integer if `_STAGE_START_TS[$stg]` is 0 (default for unset array key, because `${_STAGE_START_TS[$stg]:-}` is empty but arithmetic treats it as 0 while `SECONDS` may be 300+). This only fires for non-active stages that coincidentally get `stg_status=active` from the emit-time override — a narrow but possible edge case worth noting.

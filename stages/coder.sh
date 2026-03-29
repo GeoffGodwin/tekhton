@@ -132,8 +132,10 @@ $(cat SCOUT_REPORT.md)
             emit_dashboard_run_state 2>/dev/null || true
         fi
 
-        export HUMAN_NOTES_CONTENT
-        HUMAN_NOTES_CONTENT=$(extract_human_notes)
+        export HUMAN_NOTES_CONTENT=""
+        if should_claim_notes; then
+            HUMAN_NOTES_CONTENT=$(extract_human_notes)
+        fi
 
         # Build architecture block for scout if available
         ARCHITECTURE_BLOCK=""
@@ -268,9 +270,9 @@ $(cat SCOUT_REPORT.md)
 
     # --- Build context blocks for prompt template ----------------------------
 
-    # Human notes block
+    # Human notes block — only populated when notes flags are set
     HUMAN_NOTES_BLOCK=""
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
         case "$NOTES_FILTER" in
             BUG)
                 NOTE_GUIDANCE="${NOTES_GUIDANCE_BUG:-These are confirmed bugs. The scout report below has already located the relevant files — read THOSE files first, not the whole project. Find the root cause, fix it, then document your Root Cause Analysis in CODER_SUMMARY.md.}"
@@ -393,12 +395,11 @@ Fix ONLY these test failures — do not re-implement features already working.
 $(_wrap_file_content "PREFLIGHT_ERRORS" "$_preflight_content")"
     fi
 
-    # Accumulated non-blocking notes (injected when above threshold)
+    # Accumulated non-blocking notes (only injected in --fix-nonblockers mode)
     export NON_BLOCKING_CONTEXT=""
     local nb_count
     nb_count=$(count_open_nonblocking_notes)
-    local nb_threshold="${NON_BLOCKING_INJECTION_THRESHOLD:-8}"
-    if [ "$nb_count" -gt "$nb_threshold" ]; then
+    if [[ "${FIX_NONBLOCKERS_MODE:-false}" = "true" ]] && [[ "$nb_count" -gt 0 ]]; then
         local nb_notes
         nb_notes=$(get_open_nonblocking_notes)
         NON_BLOCKING_CONTEXT="
@@ -409,7 +410,9 @@ Otherwise, address as many as your remaining turns allow. For each item you
 address, note the file and what you changed. Items you cannot reach are fine to skip.
 
 ${nb_notes}"
-        warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
+        log "Non-blocking notes (${nb_count}) injected into coder prompt (--fix-nonblockers mode)."
+    elif [[ "$nb_count" -gt 0 ]]; then
+        log "Non-blocking notes: ${nb_count} open (injection skipped — not in --fix-nonblockers mode)."
     fi
 
     # --- TDD pre-flight context (Milestone 27) --------------------------------
@@ -444,13 +447,12 @@ ${nb_notes}"
     # skip bulk claiming to avoid marking unrelated notes as [~].
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         claim_human_notes
-    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && [[ "${HUMAN_MODE:-false}" != true ]]; then
-        log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — skipping notes injection."
+    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && ! should_claim_notes; then
+        log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — injection skipped."
         # Defensive hint: detect tasks that appear to originate from HUMAN_NOTES.md
         if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then
             warn "Tip: This task appears to come from HUMAN_NOTES.md. Did you mean to use --human?"
         fi
-        HUMAN_NOTES_BLOCK=""
     fi
 
     _add_context_component "Architecture" "$ARCHITECTURE_BLOCK"

@@ -2,15 +2,14 @@
 PASS
 
 ## Confidence
-85
+88
 
 ## Reasoning
-- Scope is well-defined across 6 explicit sections, each listing target files
-- Data structures are fully specified with concrete JavaScript examples
-- Acceptance criteria are specific and independently verifiable (parallel_mode flag, team card layout, toggle buttons, team selector)
-- Watch For section covers the main edge cases: empty parallel_group, team count explosion, timeline interleaving, prefixed report filenames, run_state.js file size
-- Backward compatibility strategy is explicit: auto-detect from data shape, no feature flags needed
-- Seeds Forward section clearly identifies what downstream milestones (V4 execution engine) will consume
-- The "Migration Impact" section is absent as a named heading, but Section 6 (Data Layer Preparation) covers backward compat and new RUN_SUMMARY.json fields adequately — a developer would find this
-- No UI testing infrastructure is specified in the project context, so the absence of UI-verifiable criteria (e.g., "page loads without console errors") is not a blocker
-- The only mild ambiguity is what constitutes "cross-group dependency arrows render correctly" — the layout diagram shows CSS lines, but no specific test for correctness is given. A developer can make a reasonable judgement call here (arrows appear, point in the right direction) without needing clarification
+- Scope is well-defined across four named sub-scopes with specific files listed for each
+- Acceptance criteria are concrete and testable: flag combinations, log message text, color levels, suggested commands
+- Watch For section addresses the key interaction risks (`--with-notes` gate logic, template whitespace, threshold reuse)
+- New config keys have explicit defaults and are mapped to `lib/config_defaults.sh` and `lib/config.sh`
+- The four scopes are cohesive (all notes injection hygiene) — no split needed
+- `WITH_NOTES` and `FIX_NONBLOCKERS_MODE` variables are assumed to already exist; Watch For confirms `--with-notes` is an existing flag, so this assumption is reasonable
+- No UI testing infrastructure in scope for this project, so Watchtower criterion "reflects the same severity coloring" is sufficient
+- Omission: no formal "Migration impact" section, but new config keys are purely additive with defaults — existing users unaffected; no migration action required

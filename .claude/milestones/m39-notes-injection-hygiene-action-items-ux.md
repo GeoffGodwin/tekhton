@@ -1,7 +1,7 @@
 # Milestone 39: Notes Injection Hygiene & Action Items UX
 <!-- milestone-meta
 id: "39"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

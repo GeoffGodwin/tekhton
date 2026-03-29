@@ -325,7 +325,7 @@ run_dry_run() {
     log "Running scout agent for file discovery and complexity estimation..."
 
     export HUMAN_NOTES_CONTENT=""
-    if command -v extract_human_notes &>/dev/null; then
+    if command -v extract_human_notes &>/dev/null && should_claim_notes; then
         HUMAN_NOTES_CONTENT=$(extract_human_notes 2>/dev/null || true)
     fi
 

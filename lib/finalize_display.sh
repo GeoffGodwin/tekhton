@@ -4,19 +4,37 @@ set -euo pipefail
 # finalize_display.sh — Action items summary display
 #
 # Sourced by finalize.sh — do not run directly.
-# Expects: Color codes (YELLOW, NC, CYAN, BOLD) from common.sh
+# Expects: Color codes (RED, YELLOW, NC, CYAN, BOLD) from common.sh
 # Expects: Helper functions: has_human_actions, count_human_actions,
 #          count_open_nonblocking_notes, count_drift_observations, success
 # Expects: FINAL_CHECK_RESULT, HUMAN_ACTION_FILE, NON_BLOCKING_LOG_FILE,
 #          DRIFT_LOG_FILE variables set by caller
+# Expects: ACTION_ITEMS_WARN_THRESHOLD, ACTION_ITEMS_CRITICAL_THRESHOLD,
+#          HUMAN_NOTES_WARN_THRESHOLD, HUMAN_NOTES_CRITICAL_THRESHOLD from config
 #
 # Provides:
 #   _print_action_items — display summary of outstanding action items
 # =============================================================================
 
+# _severity_for_count count warn_threshold critical_threshold
+# Returns "normal", "warning", or "critical" based on count vs thresholds.
+_severity_for_count() {
+    local count="$1"
+    local warn="${2:-5}"
+    local crit="${3:-10}"
+    if [[ "$count" -ge "$crit" ]]; then
+        echo "critical"
+    elif [[ "$count" -ge "$warn" ]]; then
+        echo "warning"
+    else
+        echo "normal"
+    fi
+}
+
 # _print_action_items
 # Displays a summary of outstanding action items: tester bugs, test failures,
 # human action items, non-blocking notes, and drift observations.
+# Uses progressive color: cyan (normal), yellow (warning), red (critical).
 _print_action_items() {
     local action_items=()
 
@@ -40,12 +58,27 @@ _print_action_items() {
         action_items+=("$(echo -e "${YELLOW}  ⚠ ${HUMAN_ACTION_FILE} — ${ha_count} item(s) needing manual work${NC}")")
     fi
 
-    # Check for non-blocking notes (info only)
+    # Check for non-blocking notes with progressive severity
     if [[ -f "${NON_BLOCKING_LOG_FILE:-}" ]] && [[ -s "${NON_BLOCKING_LOG_FILE:-}" ]]; then
         local nb_count
         nb_count=$(count_open_nonblocking_notes 2>/dev/null || echo 0)
         if [[ "$nb_count" -gt 0 ]]; then
-            action_items+=("$(echo -e "${CYAN}  ℹ ${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)${NC}")")
+            local nb_severity
+            nb_severity=$(_severity_for_count "$nb_count" \
+                "${ACTION_ITEMS_WARN_THRESHOLD:-5}" \
+                "${ACTION_ITEMS_CRITICAL_THRESHOLD:-10}")
+            case "$nb_severity" in
+                critical)
+                    action_items+=("$(echo -e "${RED}  ✗ ${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s) [CRITICAL]${NC}")")
+                    action_items+=("$(echo -e "${RED}    → Suggested: tekhton --fix-nonblockers --complete${NC}")")
+                    ;;
+                warning)
+                    action_items+=("$(echo -e "${YELLOW}  ⚠ ${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)${NC}")")
+                    ;;
+                *)
+                    action_items+=("$(echo -e "${CYAN}  ℹ ${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)${NC}")")
+                    ;;
+            esac
         fi
     fi
 
@@ -58,17 +91,33 @@ _print_action_items() {
         fi
     fi
 
-    # Check for unchecked human notes (M25)
-    # Defensive: notes_cli.sh is unconditionally sourced, but we guard against sourcing-order edge cases or future refactors
+    # Check for unchecked human notes (M25) with progressive severity
     if command -v get_notes_summary &>/dev/null && [[ -f "HUMAN_NOTES.md" ]]; then
         local notes_summary
         notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         local notes_unchecked
         IFS='|' read -r _ _ _ _ _ notes_unchecked <<< "$notes_summary"
         if [[ "$notes_unchecked" -gt 0 ]]; then
-            action_items+=("$(echo -e "${YELLOW}  ⚠ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
-            action_items+=("$(echo -e "${CYAN}    Tip: Run \`tekhton --human\` to process notes, or${NC}")")
-            action_items+=("$(echo -e "${CYAN}         \`tekhton note --list\` to see them${NC}")")
+            local notes_severity
+            notes_severity=$(_severity_for_count "$notes_unchecked" \
+                "${HUMAN_NOTES_WARN_THRESHOLD:-10}" \
+                "${HUMAN_NOTES_CRITICAL_THRESHOLD:-20}")
+            case "$notes_severity" in
+                critical)
+                    action_items+=("$(echo -e "${RED}  ✗ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining [CRITICAL]${NC}")")
+                    action_items+=("$(echo -e "${RED}    → Suggested: tekhton --human --complete${NC}")")
+                    ;;
+                warning)
+                    action_items+=("$(echo -e "${YELLOW}  ⚠ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
+                    action_items+=("$(echo -e "${CYAN}    Tip: Run \`tekhton --human\` to process notes, or${NC}")")
+                    action_items+=("$(echo -e "${CYAN}         \`tekhton note --list\` to see them${NC}")")
+                    ;;
+                *)
+                    action_items+=("$(echo -e "${CYAN}  ℹ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
+                    action_items+=("$(echo -e "${CYAN}    Tip: Run \`tekhton --human\` to process notes, or${NC}")")
+                    action_items+=("$(echo -e "${CYAN}         \`tekhton note --list\` to see them${NC}")")
+                    ;;
+            esac
         fi
     fi
 

@@ -143,6 +143,12 @@ set -euo pipefail
 : "${CLEANUP_MAX_TURNS:=15}"
 : "${CLEANUP_TRIGGER_THRESHOLD:=5}"
 
+# --- Action items display thresholds (progressive color) ---
+: "${ACTION_ITEMS_WARN_THRESHOLD:=${CLEANUP_TRIGGER_THRESHOLD}}"
+: "${ACTION_ITEMS_CRITICAL_THRESHOLD:=$(( ACTION_ITEMS_WARN_THRESHOLD * 2 ))}"
+: "${HUMAN_NOTES_WARN_THRESHOLD:=10}"
+: "${HUMAN_NOTES_CRITICAL_THRESHOLD:=20}"
+
 # --- Turn exhaustion continuation defaults ---
 : "${CONTINUATION_ENABLED:=true}"
 : "${MAX_CONTINUATION_ATTEMPTS:=3}"
@@ -360,6 +366,10 @@ _clamp_config_value MILESTONE_MAX_SPLIT_DEPTH 10
 _clamp_config_value CLEANUP_BATCH_SIZE 50
 _clamp_config_value CLEANUP_MAX_TURNS 500
 _clamp_config_value CLEANUP_TRIGGER_THRESHOLD 100
+_clamp_config_value ACTION_ITEMS_WARN_THRESHOLD 100
+_clamp_config_value ACTION_ITEMS_CRITICAL_THRESHOLD 200
+_clamp_config_value HUMAN_NOTES_WARN_THRESHOLD 100
+_clamp_config_value HUMAN_NOTES_CRITICAL_THRESHOLD 200
 _clamp_config_value SECURITY_MAX_TURNS 500
 _clamp_config_value SECURITY_MIN_TURNS 500
 _clamp_config_value SECURITY_MAX_TURNS_CAP 500

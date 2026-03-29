@@ -361,6 +361,9 @@ _hook_causal_log_finalize() {
     if command -v emit_dashboard_health &>/dev/null; then
         emit_dashboard_health 2>/dev/null || true
     fi
+    if command -v emit_dashboard_action_items &>/dev/null; then
+        emit_dashboard_action_items 2>/dev/null || true
+    fi
 
     # Archive causal log
     if command -v archive_causal_log &>/dev/null; then

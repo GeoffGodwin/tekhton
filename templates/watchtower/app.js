@@ -10,6 +10,7 @@
   var metrics = function () { return window.TK_METRICS || {}; };
   var health = function () { return window.TK_HEALTH || { available: false }; };
   var inbox = function () { return window.TK_INBOX || { items: [] }; };
+  var actionItems = function () { return window.TK_ACTION_ITEMS || {}; };
 
   var causalChildren = {}, causalParents = {};
   function buildCausalIndex() {
@@ -188,6 +189,42 @@
     return h;
   }
 
+  function renderActionItemsSummary() {
+    var ai = actionItems();
+    var items = [];
+    if (ai.human_actions && ai.human_actions.count > 0) {
+      items.push({ label: 'HUMAN_ACTION_REQUIRED.md', count: ai.human_actions.count, severity: 'warning', hint: '' });
+    }
+    if (ai.nonblocking && ai.nonblocking.count > 0) {
+      var nbSev = ai.nonblocking.severity || 'normal';
+      var nbHint = nbSev === 'critical' ? 'tekhton --fix-nonblockers --complete' : '';
+      items.push({ label: 'NON_BLOCKING_LOG.md', count: ai.nonblocking.count, severity: nbSev, hint: nbHint });
+    }
+    if (ai.human_notes && ai.human_notes.count > 0) {
+      var hnSev = ai.human_notes.severity || 'normal';
+      var hnHint = hnSev === 'critical' ? 'tekhton --human --complete' : '';
+      items.push({ label: 'HUMAN_NOTES.md', count: ai.human_notes.count, severity: hnSev, hint: hnHint });
+    }
+    if (ai.drift && ai.drift.count > 0) {
+      items.push({ label: 'DRIFT_LOG.md', count: ai.drift.count, severity: 'normal', hint: '' });
+    }
+    if (!items.length) return '';
+    var h = '<div class="action-items-summary"><div class="action-items-title">Action Items</div>';
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      h += '<div class="action-item-row action-' + esc(it.severity) + '">';
+      var icon = it.severity === 'critical' ? '\u2717' : it.severity === 'warning' ? '\u26A0' : '\u2139';
+      h += '<span class="action-icon">' + icon + '</span>';
+      h += '<span>' + esc(it.label) + ' \u2014 ' + it.count + ' item(s)';
+      if (it.severity === 'critical') h += ' [CRITICAL]';
+      h += '</span>';
+      if (it.hint) h += '<div class="action-hint">\u2192 Suggested: <code>' + esc(it.hint) + '</code></div>';
+      h += '</div>';
+    }
+    h += '</div>';
+    return h;
+  }
+
   function renderLiveRun() {
     var c = document.getElementById('tab-live');
     if (!c) return;
@@ -230,6 +267,11 @@
         }
         h += '</div>';
       }
+    }
+
+    // Action items summary (shown when pipeline is complete)
+    if (st === 'success' || st === 'failed') {
+      h += renderActionItemsSummary();
     }
 
     // Timeline (unified, color-coded by team when parallel)

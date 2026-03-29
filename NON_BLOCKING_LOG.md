@@ -5,6 +5,8 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-28 | "M39"] `finalize_display.sh:99`: the `IFS='|' read -r _ _ _ _ _ notes_unchecked` pattern assumes `get_notes_summary` always returns exactly 6 pipe-separated fields. A comment noting the field contract would prevent future silent failures if that count changes.
+- [ ] [2026-03-28 | "M39"] `finalize_display.sh:111-119`: "normal" and "warning" severity branches for human notes both emit the same tip lines. Intentional but slightly redundant — consider a shared variable if the block grows.
 - [ ] [2026-03-28 | "M38"] `stages/coder.sh`: The `declare -p _STAGE_STATUS &>/dev/null 2>&1` guard duplicates stderr redirect (`&>` already redirects both; the trailing `2>&1` is redundant but harmless).
 - [ ] [2026-03-28 | "M38"] `dashboard_emitters.sh:159`: `IFS=',' read -ra _dep_arr <<< "$dep_list"` uses a leading underscore on a local array name; unconventional but harmless — the leading `_` is generally reserved for library-internal globals in this codebase.
 - [ ] [2026-03-28 | "M38"] `app.js:326`: `setTimeout(..., 1500)` hardcodes the animation duration to match the CSS keyframe. If the CSS animation duration ever changes, this will silently diverge. Low risk but worth a comment.

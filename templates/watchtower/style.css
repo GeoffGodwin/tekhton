@@ -441,6 +441,17 @@ footer code { background:var(--bg-input); padding:0.1rem 0.3rem; border-radius:2
 @keyframes msHighlight { 0% { box-shadow:0 0 0 2px var(--accent); } 100% { box-shadow:none; } }
 .milestone-highlight { animation:msHighlight 1.5s ease-out; }
 
+/* --- Action items summary (M39) --- */
+.action-items-summary { margin:0.75rem 0; padding:0.5rem 0.75rem; border-radius:6px; background:var(--bg-card); border:1px solid var(--border-subtle); }
+.action-items-title { font-weight:700; font-size:0.8rem; text-transform:uppercase; color:var(--text-secondary); margin-bottom:0.4rem; }
+.action-item-row { display:flex; flex-wrap:wrap; align-items:center; gap:0.3rem; padding:0.25rem 0; font-size:0.8rem; }
+.action-item-row .action-icon { width:1.2em; text-align:center; }
+.action-normal { color:var(--status-info, #3b82f6); }
+.action-warning { color:var(--status-warn, #f59e0b); }
+.action-critical { color:var(--status-error, #ef4444); font-weight:600; }
+.action-hint { width:100%; padding-left:1.5em; font-size:0.75rem; color:var(--text-muted); }
+.action-hint code { font-family:var(--font-data); background:var(--bg-input); padding:0.1rem 0.3rem; border-radius:3px; }
+
 /* Responsive: team cards stack on mobile */
 @media (max-width:767px) {
   .team-cards-row { flex-direction:column; }

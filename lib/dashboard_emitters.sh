@@ -447,3 +447,63 @@ emit_dashboard_inbox() {
     json="${json}]}"
     _write_js_file "${dash_dir}/data/inbox.js" "TK_INBOX" "$json"
 }
+
+# --- Action items emission (Milestone 39) -------------------------------------
+
+# emit_dashboard_action_items
+# Generates data/action_items.js with severity-annotated counts.
+# Severity levels: "normal", "warning", "critical" — matching CLI thresholds.
+emit_dashboard_action_items() {
+    if ! is_dashboard_enabled; then return 0; fi
+
+    local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
+    [[ ! -d "${dash_dir}/data" ]] && return 0
+
+    local nb_count=0 nb_severity="normal"
+    if command -v count_open_nonblocking_notes &>/dev/null; then
+        nb_count=$(count_open_nonblocking_notes 2>/dev/null || echo 0)
+    fi
+    local nb_warn="${ACTION_ITEMS_WARN_THRESHOLD:-5}"
+    local nb_crit="${ACTION_ITEMS_CRITICAL_THRESHOLD:-10}"
+    if [[ "$nb_count" -ge "$nb_crit" ]]; then
+        nb_severity="critical"
+    elif [[ "$nb_count" -ge "$nb_warn" ]]; then
+        nb_severity="warning"
+    fi
+
+    local hn_count=0 hn_severity="normal"
+    if command -v get_notes_summary &>/dev/null && [[ -f "${PROJECT_DIR:-.}/HUMAN_NOTES.md" ]]; then
+        local notes_summary
+        notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
+        IFS='|' read -r _ _ _ _ _ hn_count <<< "$notes_summary"
+    fi
+    local hn_warn="${HUMAN_NOTES_WARN_THRESHOLD:-10}"
+    local hn_crit="${HUMAN_NOTES_CRITICAL_THRESHOLD:-20}"
+    if [[ "$hn_count" -ge "$hn_crit" ]]; then
+        hn_severity="critical"
+    elif [[ "$hn_count" -ge "$hn_warn" ]]; then
+        hn_severity="warning"
+    fi
+
+    local drift_count=0
+    if command -v count_drift_observations &>/dev/null \
+       && [[ -f "${DRIFT_LOG_FILE:-}" ]] && [[ -s "${DRIFT_LOG_FILE:-}" ]]; then
+        drift_count=$(count_drift_observations 2>/dev/null || echo 0)
+    fi
+
+    local ha_count=0
+    if command -v count_human_actions &>/dev/null \
+       && command -v has_human_actions &>/dev/null \
+       && has_human_actions 2>/dev/null; then
+        ha_count=$(count_human_actions 2>/dev/null || echo 0)
+    fi
+
+    local json
+    json=$(printf '{"nonblocking":{"count":%d,"severity":"%s"},"human_notes":{"count":%d,"severity":"%s"},"drift":{"count":%d},"human_actions":{"count":%d}}' \
+        "$nb_count" "$nb_severity" \
+        "$hn_count" "$hn_severity" \
+        "$drift_count" \
+        "$ha_count")
+
+    _write_js_file "${dash_dir}/data/action_items.js" "TK_ACTION_ITEMS" "$json"
+}
