@@ -1499,6 +1499,7 @@ declare -A _STAGE_STATUS=()
 declare -A _STAGE_TURNS=()
 declare -A _STAGE_BUDGET=()
 declare -A _STAGE_DURATION=()
+declare -A _STAGE_START_TS=()
 PIPELINE_STATUS="running"
 CURRENT_STAGE="initializing"
 START_AT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
@@ -1792,7 +1793,10 @@ _run_pipeline_stages() {
     # START_AT is past coder (resuming from review/test).
     if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
         CURRENT_STAGE="intake"
+        _STAGE_STATUS[intake]="active"
         _STAGE_BUDGET[intake]="${INTAKE_MAX_TURNS:-10}"
+        _STAGE_START_TS[intake]="$SECONDS"
+        emit_dashboard_run_state 2>/dev/null || true
         local _intake_start_evt
         _intake_start_evt=$(emit_event "stage_start" "intake" "" "$_LAST_STAGE_EVT" "" "")
         run_stage_intake
@@ -1862,8 +1866,9 @@ _run_pipeline_stages() {
                 CURRENT_STAGE="coder"
                 local _coder_start_evt
                 _coder_start_evt=$(emit_event "stage_start" "coder" "$TASK" "$_LAST_STAGE_EVT" "" "")
-                _STAGE_STATUS[coder]="running"
+                _STAGE_STATUS[coder]="active"
                 _STAGE_BUDGET[coder]="${CODER_MAX_TURNS:-50}"
+                _STAGE_START_TS[coder]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
                 run_stage_coder
                 local _coder_files_changed
@@ -1890,8 +1895,9 @@ _run_pipeline_stages() {
                 CURRENT_STAGE="security"
                 local _sec_start_evt
                 _sec_start_evt=$(emit_event "stage_start" "security" "" "$_LAST_STAGE_EVT" "" "")
-                _STAGE_STATUS[security]="running"
+                _STAGE_STATUS[security]="active"
                 _STAGE_BUDGET[security]="${SECURITY_MAX_TURNS:-15}"
+                _STAGE_START_TS[security]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
                 run_stage_security
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "security" "" "$_sec_start_evt" "" \
@@ -1911,8 +1917,9 @@ _run_pipeline_stages() {
                 CURRENT_STAGE="reviewer"
                 local _review_start_evt
                 _review_start_evt=$(emit_event "stage_start" "reviewer" "" "$_LAST_STAGE_EVT" "" "")
-                _STAGE_STATUS[reviewer]="running"
+                _STAGE_STATUS[reviewer]="active"
                 _STAGE_BUDGET[reviewer]="${REVIEWER_MAX_TURNS:-15}"
+                _STAGE_START_TS[reviewer]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
                 run_stage_review
                 local _review_verdict_json="null"
@@ -1941,8 +1948,9 @@ _run_pipeline_stages() {
                 export TESTER_MODE="write_failing"
                 local _tw_start_evt
                 _tw_start_evt=$(emit_event "stage_start" "tester_write" "" "$_LAST_STAGE_EVT" "" "")
-                _STAGE_STATUS[tester_write]="running"
+                _STAGE_STATUS[tester_write]="active"
                 _STAGE_BUDGET[tester_write]="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
+                _STAGE_START_TS[tester_write]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
                 run_stage_tester
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "tester_write" "" "$_tw_start_evt" "" \
@@ -1961,8 +1969,9 @@ _run_pipeline_stages() {
                 export TESTER_MODE="verify_passing"
                 local _tester_start_evt
                 _tester_start_evt=$(emit_event "stage_start" "tester" "" "$_LAST_STAGE_EVT" "" "")
-                _STAGE_STATUS[tester]="running"
+                _STAGE_STATUS[tester]="active"
                 _STAGE_BUDGET[tester]="${TESTER_MAX_TURNS:-30}"
+                _STAGE_START_TS[tester]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
                 run_stage_tester
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "tester" "" "$_tester_start_evt" "" \

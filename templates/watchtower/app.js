@@ -149,8 +149,20 @@
   function renderStageChips(stgs) {
     var h = '';
     for (var i = 0; i < stageOrder.length; i++) {
-      var si = stgs[stageOrder[i]] || {}, ss = (si.status || 'pending').toLowerCase();
-      h += '<span class="stage-chip ' + esc(ss) + '">' + statusIcon(ss) + ' ' + (stageLabels[stageOrder[i]] || stageOrder[i]) + '</span>';
+      var sn = stageOrder[i];
+      // Scout renders as a sub-badge inside the Coder chip, not as a top-level chip
+      if (sn === 'scout') continue;
+      var si = stgs[sn] || {}, ss = (si.status || 'pending').toLowerCase();
+      h += '<span class="stage-chip ' + esc(ss) + '">' + statusIcon(ss) + ' ' + (stageLabels[sn] || sn);
+      // Nest scout sub-badge inside coder chip when scout has run
+      if (sn === 'coder') {
+        var scoutInfo = stgs['scout'] || {};
+        var scoutSt = (scoutInfo.status || 'pending').toLowerCase();
+        if (scoutSt !== 'pending') {
+          h += ' <span class="scout-sub-badge ' + esc(scoutSt) + '">(' + statusIcon(scoutSt) + ' Scout)</span>';
+        }
+      }
+      h += '</span>';
     }
     return h;
   }
@@ -165,8 +177,13 @@
     h += '<span class="' + badgeClass(ts) + '">' + esc(ts) + '</span></div>';
     h += '<div class="team-milestone">' + statusIcon(ts) + ' ' + msLabel + '</div>';
     h += '<div class="stage-progress compact">' + renderStageChips(team.stages || {}) + '</div>';
-    h += '<div class="stage-detail">' + esc(stageLabels[stg] || stg) + ': ' + esc(stgData.turns || 0) + '/' + esc(stgData.budget || '?') + ' turns';
-    if (stgData.duration_s) h += '  \u00B7  ' + fmtDuration(stgData.duration_s);
+    h += '<div class="stage-detail">' + esc(stageLabels[stg] || stg) + ': ';
+    if ((stgData.status || '').toLowerCase() === 'active') {
+      h += fmtDuration(stgData.duration_s || 0) + ' \u00B7 budget: ' + esc(stgData.budget || '?') + ' turns';
+    } else {
+      h += esc(stgData.turns || 0) + ' turns used';
+      if (stgData.duration_s) h += ' \u00B7 ' + fmtDuration(stgData.duration_s);
+    }
     h += '</div></div>';
     return h;
   }
@@ -204,8 +221,13 @@
       h += '<div class="stage-progress">' + renderStageChips(stgs) + '</div>';
       if (s.current_stage && stgs[s.current_stage]) {
         var d = stgs[s.current_stage];
-        h += '<div class="stage-detail">' + esc(stageLabels[s.current_stage] || s.current_stage) + ': ' + esc(d.turns || 0) + '/' + esc(d.budget || '?') + ' turns';
-        if (d.duration_s) h += '  \u00B7  ' + fmtDuration(d.duration_s);
+        h += '<div class="stage-detail">' + esc(stageLabels[s.current_stage] || s.current_stage) + ': ';
+        if ((d.status || '').toLowerCase() === 'active') {
+          h += fmtDuration(d.duration_s || 0) + ' \u00B7 budget: ' + esc(d.budget || '?') + ' turns';
+        } else {
+          h += esc(d.turns || 0) + ' turns used';
+          if (d.duration_s) h += ' \u00B7 ' + fmtDuration(d.duration_s);
+        }
         h += '</div>';
       }
     }
@@ -296,6 +318,15 @@
   function getMsViewMode() { try { return localStorage.getItem('tk_ms_view') || 'status'; } catch (e) { return 'status'; } }
   function setMsViewMode(m) { msViewMode = m; try { localStorage.setItem('tk_ms_view', m); } catch (e) { /* noop */ } }
 
+  function scrollToMilestone(msId) {
+    var card = document.querySelector('.ms-card[data-ms-id="' + msId + '"]');
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('milestone-highlight');
+      setTimeout(function () { card.classList.remove('milestone-highlight'); }, 1500);
+    }
+  }
+
   function renderMsCard(mi, ec) {
     var h = '<div class="ms-card status-' + (mi.status || 'pending').toLowerCase() + (ec[mi.id] ? ' expanded' : '') + '" data-ms-id="' + esc(mi.id) + '"><span class="ms-id">' + esc(mi.id) + '</span>';
     if (mi.status === 'done') h += ' <span class="badge badge-done">\u2713</span>';
@@ -308,6 +339,38 @@
     }
     h += '<div class="ms-expanded"><div>Status: ' + esc(mi.status || 'pending') + '</div>';
     if (mi.parallel_group) h += '<div>Group: ' + esc(mi.parallel_group) + '</div>';
+    // Summary paragraph
+    if (mi.summary) {
+      h += '<div class="milestone-summary">' + esc(mi.summary) + '</div>';
+    }
+    // Enabled by (dependencies) chips
+    if (mi.depends_on) {
+      var depList = mi.depends_on.split(',');
+      var hasValidDeps = false;
+      for (var di = 0; di < depList.length; di++) if (depList[di].trim()) { hasValidDeps = true; break; }
+      if (hasValidDeps) {
+        h += '<div class="ms-dep-section"><div class="ms-dep-label">Enabled by:</div><div class="ms-deps">';
+        for (var dj = 0; dj < depList.length; dj++) {
+          var depId = depList[dj].trim();
+          if (depId) h += '<span class="dep-chip-enabledby" data-scroll-ms="' + esc(depId) + '">' + esc(depId) + '</span> ';
+        }
+        h += '</div></div>';
+      }
+    }
+    // Enables (forward dependencies) chips
+    if (mi.enables) {
+      var enList = mi.enables.split(',');
+      var hasValidEn = false;
+      for (var ei = 0; ei < enList.length; ei++) if (enList[ei].trim()) { hasValidEn = true; break; }
+      if (hasValidEn) {
+        h += '<div class="ms-dep-section"><div class="ms-dep-label">Enables:</div><div class="ms-deps">';
+        for (var ej = 0; ej < enList.length; ej++) {
+          var enId = enList[ej].trim();
+          if (enId) h += '<span class="dep-chip-enables" data-scroll-ms="' + esc(enId) + '">' + esc(enId) + '</span> ';
+        }
+        h += '</div></div>';
+      }
+    }
     h += '</div></div>';
     return h;
   }
@@ -353,6 +416,13 @@
 
     var cards = ct.querySelectorAll('.ms-card');
     for (var c = 0; c < cards.length; c++) cards[c].addEventListener('click', function () { this.classList.toggle('expanded'); persistMsExpanded(); });
+
+    // Bind dep chip click-to-scroll (stop propagation so card toggle doesn't fire)
+    var depChips = ct.querySelectorAll('[data-scroll-ms]');
+    for (var dc = 0; dc < depChips.length; dc++) depChips[dc].addEventListener('click', function (e) {
+      e.stopPropagation();
+      scrollToMilestone(this.dataset.scrollMs);
+    });
   }
 
   function renderMilestonesByStatus(ms, ec) {

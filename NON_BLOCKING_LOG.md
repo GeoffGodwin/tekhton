@@ -5,6 +5,9 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-03-28 | "M38"] `stages/coder.sh`: The `declare -p _STAGE_STATUS &>/dev/null 2>&1` guard duplicates stderr redirect (`&>` already redirects both; the trailing `2>&1` is redundant but harmless).
+- [ ] [2026-03-28 | "M38"] `dashboard_emitters.sh:159`: `IFS=',' read -ra _dep_arr <<< "$dep_list"` uses a leading underscore on a local array name; unconventional but harmless — the leading `_` is generally reserved for library-internal globals in this codebase.
+- [ ] [2026-03-28 | "M38"] `app.js:326`: `setTimeout(..., 1500)` hardcodes the animation duration to match the CSS keyframe. If the CSS animation duration ever changes, this will silently diverge. Low risk but worth a comment.
 - [ ] [2026-03-28 | "M37"] `lib/inbox.sh:86-88` — The guard `[[ "$basename" == manifest_append_* ]]` in `_process_milestone()` is dead code: the function is only called from the `milestone_*.md` glob loop, which cannot match `manifest_append_*`. Safe to remove.
 - [ ] [2026-03-28 | "M37"] `lib/dashboard_emitters.sh:303` — Similarly, `[[ "$basename" != manifest_append_* ]]` in `emit_dashboard_inbox()` is dead code for the same reason (the enclosing glob is `milestone_*.md`).
 - [ ] [2026-03-28 | "M37"] `lib/inbox.sh:65-75` — `_process_note()` silently drops the description, priority, and source fields when calling `add_human_note()`. Only the title is written to HUMAN_NOTES.md. This is consistent with how the flat checklist works, but worth documenting as a known limitation.
