@@ -1,6 +1,6 @@
-# Milestone 40: V3 Documentation & README Finalization
+# Milestone 43: V3 Documentation & README Finalization
 <!-- milestone-meta
-id: "40"
+id: "43"
 status: "pending"
 -->
 
@@ -8,7 +8,7 @@ status: "pending"
 
 Tekhton V3 introduced major features — Milestone DAG, intelligent indexing,
 Serena MCP, Watchtower, brownfield intelligence, security agent, express mode,
-TDD support, and more — across 39 milestones. The README still says "v2.0 —
+TDD support, and more — across 42 milestones. The README still says "v2.0 —
 Adaptive Pipeline" and the GitHub Pages documentation site covers V3 features
 only partially. This milestone brings all documentation current so the repo is
 ready to merge into main as a polished V3 release.
