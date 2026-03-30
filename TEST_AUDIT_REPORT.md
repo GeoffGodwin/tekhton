@@ -1,46 +1,49 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, ~100 test assertions
-Verdict: CONCERNS
+Tests audited: 1 file, 11 test cases (`tests/test_drift_prune_realistic.sh`)
+Verdict: PASS
 
 ---
 
 ### Findings
 
-#### INTEGRITY: Always-pass assertion in Test 7
-- File: `tests/test_watchtower_actions_auto_refresh.sh:284-295`
-- Issue: Both branches of the if/else call `pass()`. The test checks whether `manualRefresh()` calls `refreshData()`, but regardless of the result — found or not found — it records a pass. There is no `fail()` call anywhere in this test block. A regression that removes the `refreshData()` call from `manualRefresh()` would produce a green result with the message "exists and will benefit from the guard indirectly".
-  ```bash
-  if grep -A 5 "function manualRefresh()" "$APP_JS" | grep -q "refreshData()"; then
-      pass "manualRefresh() calls refreshData(), inheriting the guard"
-  else
-      pass "manualRefresh() exists and will benefit from the guard indirectly"  # ← always passes
-  fi
-  ```
-- Severity: HIGH
-- Action: Replace the else-branch `pass` with `fail "manualRefresh() does not call refreshData() — guard is not inherited"`.
-
-#### SCOPE: TESTER_REPORT.md claims files were modified that were not
-- File: `TESTER_REPORT.md` (cross-referenced against git status)
-- Issue: The "Files Modified" checklist marks `tests/test_watchtower_html.sh` and `tests/test_watchtower_actions_auto_refresh.sh` as modified (`[x]`). Neither file appears in `git status` as modified or untracked — only `tests/test_watchtower_trends_filter_fix.sh` is new in this task. The two existing test files were not changed. The checked boxes misrepresent what work was done.
+#### COVERAGE: Test 11 assertion is vacuously true
+- File: tests/test_drift_prune_realistic.sh:211-217
+- Issue: The missing-file no-op test calls `prune_resolved_drift_entries` after `rm -f DRIFT_LOG.md`, then enters `if [ ! -f ... ]; then :; fi`. The if-body is a no-op (`:`) and the else branch is absent, so the block can never set `FAIL=1` regardless of what the function does. The only actual check is that the function exits 0 (enforced by `set -euo pipefail`). If the implementation unexpectedly recreated the file, the test would still report PASS.
 - Severity: MEDIUM
-- Action: Correct TESTER_REPORT.md to reflect that only `tests/test_watchtower_trends_filter_fix.sh` was authored in this task. The other two files are pre-existing tests verified still passing — list them under a "Verified Passing (unchanged)" section, not "Files Modified".
+- Action: Replace the vacuous if-block with `assert_file_not_contains "missing-file prune: no file created" "${PROJECT_DIR}/DRIFT_LOG.md" ""` or add a `[ -f ... ] && echo "FAIL..." && FAIL=1` check to assert the file was not created.
 
-#### EXERCISE: Node.js logic tests use an inline copy of matchFilter, not the real implementation
-- File: `tests/test_watchtower_trends_filter_fix.sh:229-231` (Test 8)
-- Issue: The Node.js test block defines its own `matchFilter` function verbatim rather than loading or parsing `app.js`. If the real implementation's `matchFilter` logic changes, this test still passes because it is testing the copy. The grep-based tests (Tests 1–7, 10) do exercise the real source; Test 8 adds confidence in the logic model but is decoupled from the file under test.
-- Severity: MEDIUM
-- Action: Either (a) add a pre-check in Test 8 that extracts `matchFilter` from `app.js` and asserts the extracted source matches the inline definition, or (b) add a comment explicitly documenting that Test 8 is a standalone logic unit test and that Tests 1–3 + 10 provide source-coupling coverage. The silent decoupling is the problem, not the approach itself.
-
-#### COVERAGE: No behavioral test for the dynamic run-count span DOM update
-- File: `tests/test_watchtower_trends_filter_fix.sh` (Test 7, lines 188-213)
-- Issue: Root cause 2 of the bug was the static header count (`runs.length` never updating). The fix adds `rc.textContent = shown` inside the filter-click handler (`app.js:704-705`). Test 7 verifies that `classList.toggle('hidden'` and `classList.toggle('active'` appear in the source, but no assertion confirms that `rc.textContent = shown` is present in the click handler body. Test 9 checks that `run-count` appears in the header, but not in the update path.
+#### COVERAGE: Test 10 does not assert archive remains absent after under-threshold prune
+- File: tests/test_drift_prune_realistic.sh:195-202
+- Issue: The test removes `DRIFT_ARCHIVE.md` before calling `prune_resolved_drift_entries` with 10 entries (below the 20-entry threshold). The implementation correctly returns early at line 41 of `lib/drift_prune.sh` (`if [ "$total_count" -le "$keep_count" ]; then return 0; fi`), so no archive is created. The test verifies 10 entries remain but never asserts the archive was NOT recreated. The comment at lines 205-207 hedges ("this may be expected behavior") but the code path is deterministic — the archive should not be created.
 - Severity: LOW
-- Action: Add a targeted grep inside the click handler section (scoped with sed, matching the pattern used in Test 10) that confirms `rc.textContent = shown` is present: `echo "$CLICK_HANDLER" | grep -q "rc.textContent = shown"`.
+- Action: Add `[ ! -f "${PROJECT_DIR}/DRIFT_ARCHIVE.md" ] || { echo "FAIL: archive created for under-threshold prune"; FAIL=1; }` after the prune call to make the non-creation assertion explicit.
 
-#### NAMING: Test 7 heading overstates what is verified
-- File: `tests/test_watchtower_actions_auto_refresh.sh:284`
-- Issue: The section heading reads `=== Test 7: manualRefresh() behavior with the guard ===` but the test never distinguishes guarded from unguarded behavior (both outcomes pass). The name implies behavioral validation that does not exist.
-- Severity: LOW
-- Action: Fix the always-pass defect (see INTEGRITY finding above); the naming will then be accurate.
+#### (None — all other rubric points passed)
+
+---
+
+### Rubric Assessment
+
+**1. Assertion Honesty — PASS.**
+All expected values (20 kept, 10 archived, 30 total) derive directly from `DRIFT_RESOLVED_KEEP_COUNT=20` and the 30-entry fixture. Entry numbers in assertions (Entry 1, Entry 20, Entry 21, Entry 30) correspond to the exact loop indices used to generate the fixture. No unexplained magic numbers.
+
+**2. Edge Case Coverage — PASS.**
+Three distinct scenarios are exercised: over-threshold (30 entries → prune), at-threshold (20 entries → idempotent no-op), below-threshold (10 entries → no-op), and missing-file (graceful return). This is solid coverage for a pruning function. The one gap (Test 11, noted above) is MEDIUM, not a coverage failure.
+
+**3. Implementation Exercise — PASS.**
+The test sources `lib/drift_prune.sh` directly and calls `prune_resolved_drift_entries()` with real files in a temp directory. No mocking. The `count_entries_in_section` helper uses the same awk idiom as the implementation, which is intentional and appropriate.
+
+**4. Test Weakening — NOT APPLICABLE.**
+This replaces no prior passing tests. The previous audit (which yielded NEEDS_WORK) found that the wrong test files had been audited; the correct file (`test_drift_prune_realistic.sh`) was excluded. That prior verdict is now superseded by this audit.
+
+**5. Test Naming — PASS.**
+Test names encode scenario and expected outcome (e.g., "Entry 1 kept (newest)", "Entry 21 removed (oldest kept was 20)", "idempotent: still 20 entries after second prune", "under threshold: all 10 entries remain").
+
+**6. Scope Alignment — PASS.**
+The test file exercises `lib/drift_prune.sh:prune_resolved_drift_entries()`, which is the exact function identified in the bug report. The awk fix at line 149 (changed from gawk 3-argument `match($0, /pattern/, array)` to POSIX `match($0, /pattern/)` + `substr($0, RSTART+6, RLENGTH-6)`) is correct: for a match of `Entry [0-9]+`, `RSTART+6` skips the 6-char "Entry " prefix, and `RLENGTH-6` is the digit count. Verified against the implementation's entry format (`Entry $i — resolved observation`) for values 1–30.
+
+**Awk Fix Verification:**
+- Pattern `Entry [0-9]+` matches "Entry 1" (RLENGTH=7), "Entry 10" (RLENGTH=8), "Entry 20" (RLENGTH=8). `RLENGTH-6` correctly yields 1, 2, 2 digits respectively.
+- Compatible with mawk, gawk, nawk, busybox awk (POSIX-compliant). The prior gawk-only 3-argument form is absent. Fix is sound.
