@@ -38,9 +38,9 @@ _plan_find_available_port() {
 _plan_is_port_in_use() {
     local port="$1"
     if command -v ss &>/dev/null; then
-        ss -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+        ss -tlnp 2>/dev/null | grep -qE ":${port}([^0-9]|$)" && return 0
     elif command -v netstat &>/dev/null; then
-        netstat -tlnp 2>/dev/null | grep -q ":${port} " && return 0
+        netstat -tlnp 2>/dev/null | grep -qE ":${port}([^0-9]|$)" && return 0
     else
         (echo >/dev/tcp/localhost/"$port") 2>/dev/null && return 0
     fi

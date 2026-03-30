@@ -10,13 +10,20 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- Historical JSONL records that already have an under-reported `total_time_s` (recorded before this fix) will continue to pull down averages until enough new correct records accumulate. This is an unavoidable side-effect of fixing a metric recording bug and requires no code change, but users should be aware averages will improve gradually over subsequent runs.
-- The proportional per-stage duration estimation (`time_s * turns / total_turns`) is an approximation that breaks down when a stage uses many turns but runs quickly (or few turns but runs slowly — e.g., long model think times). For averages across many runs it's acceptable, but a Drift Observation is noted below.
+- `lib/plan_server.sh` is 370 lines, exceeding the 300-line ceiling. This is pre-existing (the fix touched only one line). Flag for a future extraction pass.
 
 ## Coverage Gaps
-- No test covers the new `total_time` computation path in `record_run_metrics()` — specifically that `_STAGE_DURATION` sum takes precedence over `TOTAL_TIME` and that the fallback to `TOTAL_TIME` fires when the array is empty.
-- No test for the new proportional duration estimation branch in `_parse_run_summaries_from_jsonl` (both Python and shell paths).
+- None
 
 ## Drift Observations
-- `lib/dashboard_parsers.sh:236–239` (shell fallback) and the equivalent Python block: duration estimation assumes turns-per-stage is a proxy for time-per-stage. If the codebase ever records stage durations directly for all stages (making the estimate unnecessary), the two estimation blocks become dead code — worth a cleanup note when `_STAGE_DURATION` coverage is confirmed complete.
-- `lib/metrics.sh:107` iterates over a hardcoded list (`intake scout coder build_gate security reviewer tester`) to sum `_STAGE_DURATION`. If new stages are added in future milestones, this list will silently miss them and undercount `total_time`. Consider using a loop over all keys of `_STAGE_DURATION` instead (`"${!_STAGE_DURATION[@]}"`) to be future-proof.
+- None
+
+---
+
+## Review Notes
+
+Both fixes are correct.
+
+**Port detection (`lib/plan_server.sh:41-43`):** The old pattern `:${port} ` required a trailing space, which `ss -tlnp` does not guarantee (output may use tabs or have the port at end-of-line). The new pattern `:${port}([^0-9]|$)` with `-qE` correctly anchors to non-digit or end-of-line, preventing both false positives (prefix matching) and false negatives (non-space delimiters). The test harness now uses a Python-bound socket with a ready-poll loop plus a graceful skip path when the dummy port cannot be occupied — this avoids the orphaned-process leak described in the test file comment.
+
+**Awk `&` escaping (`lib/plan_browser.sh:141-146`):** The root cause was correct: in awk's `gsub()`, `&` in the replacement string means "the matched text". When `pname` or `ptype` held HTML-escaped values like `&amp;`, the `&` was expanded to `{{PROJECT_NAME}}`, producing `{{PROJECT_NAME}}amp;` in the output. The `BEGIN` block's `gsub(/&/, "\\\\&", pname)` replaces each `&` with `\&` in the awk variable (four shell-literal backslashes in the awk source → two awk-string backslashes → awk gsub replacement `\\&` → one literal `\` + matched `&` = `\&`). When the main-body gsub then uses `pname` as a replacement, `\&` → literal `&`. Chain is sound.

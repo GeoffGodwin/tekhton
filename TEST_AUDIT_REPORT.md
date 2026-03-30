@@ -1,46 +1,107 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, ~100 test assertions
-Verdict: CONCERNS
+Tests audited: 1 file (tests/test_plan_browser.sh), 26 pass/fail assertions
+Verdict: PASS
 
 ---
 
 ### Findings
 
-#### INTEGRITY: Always-pass assertion in Test 7
-- File: `tests/test_watchtower_actions_auto_refresh.sh:284-295`
-- Issue: Both branches of the if/else call `pass()`. The test checks whether `manualRefresh()` calls `refreshData()`, but regardless of the result — found or not found — it records a pass. There is no `fail()` call anywhere in this test block. A regression that removes the `refreshData()` call from `manualRefresh()` would produce a green result with the message "exists and will benefit from the guard indirectly".
-  ```bash
-  if grep -A 5 "function manualRefresh()" "$APP_JS" | grep -q "refreshData()"; then
-      pass "manualRefresh() calls refreshData(), inheriting the guard"
-  else
-      pass "manualRefresh() exists and will benefit from the guard indirectly"  # ← always passes
-  fi
-  ```
-- Severity: HIGH
-- Action: Replace the else-branch `pass` with `fail "manualRefresh() does not call refreshData() — guard is not inherited"`.
+None — all prior HIGH and MEDIUM findings were resolved by the rework. See the
+resolution notes below for each prior finding.
 
-#### SCOPE: TESTER_REPORT.md claims files were modified that were not
-- File: `TESTER_REPORT.md` (cross-referenced against git status)
-- Issue: The "Files Modified" checklist marks `tests/test_watchtower_html.sh` and `tests/test_watchtower_actions_auto_refresh.sh` as modified (`[x]`). Neither file appears in `git status` as modified or untracked — only `tests/test_watchtower_trends_filter_fix.sh` is new in this task. The two existing test files were not changed. The checked boxes misrepresent what work was done.
-- Severity: MEDIUM
-- Action: Correct TESTER_REPORT.md to reflect that only `tests/test_watchtower_trends_filter_fix.sh` was authored in this task. The other two files are pre-existing tests verified still passing — list them under a "Verified Passing (unchanged)" section, not "Files Modified".
+---
 
-#### EXERCISE: Node.js logic tests use an inline copy of matchFilter, not the real implementation
-- File: `tests/test_watchtower_trends_filter_fix.sh:229-231` (Test 8)
-- Issue: The Node.js test block defines its own `matchFilter` function verbatim rather than loading or parsing `app.js`. If the real implementation's `matchFilter` logic changes, this test still passes because it is testing the copy. The grep-based tests (Tests 1–7, 10) do exercise the real source; Test 8 adds confidence in the logic model but is decoupled from the file under test.
-- Severity: MEDIUM
-- Action: Either (a) add a pre-check in Test 8 that extracts `matchFilter` from `app.js` and asserts the extracted source matches the inline definition, or (b) add a comment explicitly documenting that Test 8 is a standalone logic unit test and that Tests 1–3 + 10 provide source-coupling coverage. The silent decoupling is the problem, not the approach itself.
+### Prior Findings — Resolution Status
 
-#### COVERAGE: No behavioral test for the dynamic run-count span DOM update
-- File: `tests/test_watchtower_trends_filter_fix.sh` (Test 7, lines 188-213)
-- Issue: Root cause 2 of the bug was the static header count (`runs.length` never updating). The fix adds `rc.textContent = shown` inside the filter-click handler (`app.js:704-705`). Test 7 verifies that `classList.toggle('hidden'` and `classList.toggle('active'` appear in the source, but no assertion confirms that `rc.textContent = shown` is present in the click handler body. Test 9 checks that `run-count` appears in the header, but not in the update path.
-- Severity: LOW
-- Action: Add a targeted grep inside the click handler section (scoped with sed, matching the pattern used in Test 10) that confirms `rc.textContent = shown` is present: `echo "$CLICK_HANDLER" | grep -q "rc.textContent = shown"`.
+#### INTEGRITY: TESTER_REPORT falsely claims no implementation files changed
+- **Status: RESOLVED**
+- TESTER_REPORT.md "Files Modified" section now explicitly lists `lib/plan_server.sh:41-43`
+  and `lib/plan_browser.sh:141-146` with a description of each change. A reviewer
+  reading the report can identify every file touched without consulting git diff.
 
-#### NAMING: Test 7 heading overstates what is verified
-- File: `tests/test_watchtower_actions_auto_refresh.sh:284`
-- Issue: The section heading reads `=== Test 7: manualRefresh() behavior with the guard ===` but the test never distinguishes guarded from unguarded behavior (both outcomes pass). The name implies behavioral validation that does not exist.
-- Severity: LOW
-- Action: Fix the always-pass defect (see INTEGRITY finding above); the naming will then be accurate.
+#### EXERCISE: HTML escaping test does not exercise the actual Bug 2 fix
+- **Status: RESOLVED**
+- Test "Awk BEGIN block prevents double-encoding in form" (test_plan_browser.sh:340–355)
+  sets `PLAN_PROJECT_TYPE="web & mobile"`, calls `_generate_plan_form`, and checks
+  that the generated `index.html` contains `Type: <strong>web &amp; mobile</strong>`
+  (single-encoded), not `web &amp;amp; mobile` (double-encoded).
+- This test walks the full awk pipeline at plan_browser.sh:141–156: `_html_escape`
+  converts `&` → `&amp;`, the awk BEGIN block converts `&amp;` → `\&amp;` for safe
+  gsub use, and the final HTML receives the singly-encoded value. The test is
+  mechanically correct.
+- Observation (LOW, no action required): The awk BEGIN block escapes `&` using
+  `gsub(/&/, "\\\\&", ...)`, which in awk produces the replacement string `\&amp;`.
+  In awk's gsub replacement, `\&` denotes a literal `&`, so the output is `&amp;`.
+  This chain is correct and the test confirms it end-to-end.
+
+#### COVERAGE: Occupied-port test soft-passes when socket bind fails
+- **Status: RESOLVED**
+- When the dummy socket cannot be bound, the test now emits
+  `SKIP: could not bind dummy port — skipping occupied-port test` (line 311)
+  without incrementing PASS. The skip is visible, distinct from a pass, and
+  cannot silently inflate the pass count on infrastructure failure.
+
+#### COVERAGE: HTML escape test omits `&` from input
+- **Status: RESOLVED**
+- Test "Ampersand encodes to &amp; (single-encoded)" (test_plan_browser.sh:333–338)
+  verifies `_html_escape 'a & b'` produces exactly `a &amp; b`. This confirms
+  that the bash `_html_escape` function processes `&` first (preventing it from
+  re-encoding the `&` introduced by later `<` → `&lt;` substitutions).
+
+---
+
+### Full Rubric Evaluation (Current State)
+
+#### 1. Assertion Honesty — PASS
+All assertions derive from real function call outputs. No fabricated expected values
+detected. The awk double-encoding test supplies a known input, calls the actual
+implementation, and compares against the logically correct expected output.
+
+#### 2. Edge Case Coverage — PASS
+The suite covers: free port, occupied port (with correct SKIP on infrastructure
+failure), HTML special characters (`<`, `>`, `"`, `&`), double-encoding prevention
+through the full awk render path, pre-populated answers (resume path), empty
+answers (fresh path), and mode selection. No gaps material to the two bugs under
+test.
+
+#### 3. Implementation Exercise — PASS
+Tests call the real implementations directly:
+- `_html_escape` (plan_browser.sh:23–31) — tested at lines 325 and 333
+- `_generate_plan_form` awk path (plan_browser.sh:141–156) — tested at line 346
+- `_plan_is_port_in_use` regex fix (plan_server.sh:41–43) — tested at lines 183 and 295
+- `_plan_find_available_port` — tested at lines 190 and 303
+- `_write_plan_server_script` — tested at lines 205 and 235
+- `_select_interview_mode` — tested at line 362
+No mocking of the functions under test.
+
+#### 4. Test Weakening Detection — PASS
+No existing assertions were removed or broadened. The occupied-port SKIP change
+makes the suite more honest, not weaker: a bind failure now produces a visible
+SKIP instead of a fabricated pass.
+
+#### 5. Test Naming and Intent — PASS
+Pass/fail messages encode scenario and expected outcome:
+- "Port finding skips occupied port $DUMMY_PORT, found $found_port"
+- "Awk BEGIN block prevents double-encoding in form"
+- "Ampersand encodes to &amp; (single-encoded)"
+
+#### 6. Scope Alignment — PASS
+All referenced functions exist in the sourced libraries. No orphaned or stale
+references detected. No coder-removed functions called in tests.
+
+---
+
+### Non-Material Observations (no action required)
+
+- **Port exhaustion not tested**: `_plan_find_available_port` returns 1 if all
+  50 candidate ports are occupied. This path is untested, but it is an extreme
+  operational condition unlikely to occur in CI and not related to either reported
+  bug. Not flagged.
+- **`_html_escape ""` not tested**: Empty string input to `_html_escape` is not
+  covered. The function's bash parameter expansion handles empty strings correctly
+  by construction. Not flagged.
+- **CODER_SUMMARY.md absent**: The required reading list references this file,
+  but it does not exist. TESTER_REPORT.md serves its role for this audit. The
+  two implementation changes are fully documented there.

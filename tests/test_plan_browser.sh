@@ -307,8 +307,8 @@ finally:
             fail "Port finding did not skip occupied port (got: $found_port)"
         fi
     else
-        # Port couldn't be occupied — skip rather than fail
-        pass "Port finding (skipped — could not bind dummy port)"
+        # Port couldn't be occupied — skip without incrementing pass count
+        echo "  SKIP: could not bind dummy port — skipping occupied-port test"
     fi
 
     kill "$DUMMY_PID" 2>/dev/null || true
@@ -321,11 +321,37 @@ fi
 echo "=== HTML escaping ==="
 # ============================================================
 
+# Test 1: Direct _html_escape function with script tags and quotes
 escaped=$(_html_escape '<script>alert("xss")</script>')
 if [[ "$escaped" == *"&lt;script&gt;"* ]] && [[ "$escaped" == *"&quot;"* ]]; then
     pass "HTML escaping works for special characters"
 else
     fail "HTML escaping broken: $escaped"
+fi
+
+# Test 2: _html_escape handles ampersand (single-encoding, not double)
+escaped2=$(_html_escape 'a & b')
+if [[ "$escaped2" == "a &amp; b" ]]; then
+    pass "Ampersand encodes to &amp; (single-encoded)"
+else
+    fail "Ampersand encoding broken: $escaped2"
+fi
+
+# Test 3: awk BEGIN block prevents double-encoding in form generation
+# This tests the actual Bug 2 fix: project type with & should be single-encoded
+PLAN_PROJECT_TYPE="web & mobile"
+FORM_DIR3="${TEST_TMPDIR}/form-ampersand"
+mkdir -p "$FORM_DIR3"
+init_answer_file "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
+_generate_plan_form "$FORM_DIR3"
+
+# Verify the form contains "web &amp; mobile" not "web &amp;amp; mobile"
+if grep -q "Type: <strong>web &amp; mobile</strong>" "${FORM_DIR3}/index.html"; then
+    pass "Awk BEGIN block prevents double-encoding in form"
+else
+    # Check what we actually got
+    actual=$(grep "Type: <strong>" "${FORM_DIR3}/index.html" || echo "not found")
+    fail "Awk BEGIN block double-encoding issue: $actual"
 fi
 
 # ============================================================

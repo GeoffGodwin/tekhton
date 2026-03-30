@@ -143,7 +143,10 @@ assert_file_contains "resolved heading preserved" "${PROJECT_DIR}/DRIFT_LOG.md" 
 # ============================================================================
 # Extract just the entry numbers from the Resolved section and verify they
 # appear in descending order (1, 2, 3, ... 20)
-local_drift_entries=$(awk '/^## Resolved/{found=1; next} found && /^##/{exit} found && /^- /{match($0, /Entry ([0-9]+)/, a); print a[1]}' "${PROJECT_DIR}/DRIFT_LOG.md")
+# Note: Using POSIX-compatible awk syntax (mawk/gawk compatible):
+#   match($0, /pattern/) sets RSTART and RLENGTH instead of using gawk-only
+#   3-argument form match($0, /pattern/, array). Works with mawk, gawk, nawk.
+local_drift_entries=$(awk '/^## Resolved/{found=1; next} found && /^##/{exit} found && /^- / && match($0, /Entry [0-9]+/){print substr($0, RSTART+6, RLENGTH-6)}' "${PROJECT_DIR}/DRIFT_LOG.md")
 local_first_entry=$(echo "$local_drift_entries" | head -1)
 local_last_entry=$(echo "$local_drift_entries" | tail -1)
 

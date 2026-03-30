@@ -139,6 +139,11 @@ _generate_plan_form() {
     # Assemble the final HTML: substitute simple vars, then splice sections
     local template_file="${TEKHTON_HOME}/templates/plan_form/index.html"
     awk -v pname="$project_name" -v ptype="$project_type" -v sfile="$sections_file" '
+    BEGIN {
+        # Escape & for awk gsub replacement strings (& means "matched text" in awk)
+        gsub(/&/, "\\\\&", pname)
+        gsub(/&/, "\\\\&", ptype)
+    }
     {
         gsub(/\{\{PROJECT_NAME\}\}/, pname)
         gsub(/\{\{PROJECT_TYPE\}\}/, ptype)

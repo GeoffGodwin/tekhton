@@ -1,39 +1,56 @@
 ## Planned Tests
-- [x] `tests/test_metrics_total_time_computation.sh` — Verify total_time uses _STAGE_DURATION sum with TOTAL_TIME fallback
-- [x] `tests/test_duration_estimation_jsonl.sh` — Test proportional duration estimation in JSONL parsing (both Python and shell paths)
-- [x] `tests/test_duration_estimation_shell_fallback.sh` — Test shell fallback duration estimation with legacy metrics records
+- [x] `tests/test_plan_browser.sh` — Verify port detection and HTML escaping fixes
 
 ## Test Run Results
-Passed: 24  Failed: 0
-
-## Test Coverage Summary
-
-### Test 1: total_time computation (6 tests)
-- _STAGE_DURATION array sum takes precedence over TOTAL_TIME
-- Fallback to TOTAL_TIME when _STAGE_DURATION is empty
-- Partial stage durations with zero entries
-- All stage durations zero → use TOTAL_TIME
-- Large values (7200s) calculated correctly
-- JSON format validation
-
-### Test 2: Duration estimation — Python/JSON path (9 tests)
-- Proportional estimation: duration = (total_time * stage_turns) / total_turns
-- Actual durations used when provided (no estimation)
-- Zero total turns edge case
-- Mixed durations (some stages have durations, some don't)
-- Asymmetric turns: many turns → short time, few turns → long time
-- Large total_time (3600s) distributed proportionally
-- Multiple metrics in JSONL processed independently
-
-### Test 3: Duration estimation — Shell fallback path (9 tests)
-- Identical test coverage to Test 2 using sed/awk extraction
-- Confirms Python mocking forces shell path
-- Validates portable extraction without Python dependency
+Passed: 26  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_metrics_total_time_computation.sh`
-- [x] `tests/test_duration_estimation_jsonl.sh`
-- [x] `tests/test_duration_estimation_shell_fallback.sh`
+- [x] `tests/test_plan_browser.sh` — Added/updated tests for port detection and HTML escaping fixes
+- [x] `lib/plan_server.sh:41-43` — Bug 1 fix: Changed grep pattern from `:${port} ` to `:${port}([^0-9]|$)` to correctly skip occupied ports
+- [x] `lib/plan_browser.sh:141-146` — Bug 2 fix: Added awk BEGIN block to escape `&` in replacement variables before gsub()
+
+## Verification Summary
+
+### Bug 1: Port Detection (lib/plan_server.sh:41-43)
+**Status:** VERIFIED FIXED
+- **Test:** "Port finding (occupied port)" (line 263-318)
+- **Verification:** Test correctly skips an occupied port (58432) and finds an alternative (58433)
+- **Fix Validation:** Regex pattern `:${port}([^0-9]|$)` with `-qE` flag correctly matches port delimiters regardless of spacing/tabs/EOL
+
+### Bug 2: HTML Escaping (lib/plan_browser.sh:141-146)
+**Status:** VERIFIED FIXED
+- **Test:** "HTML escaping works for special characters" (line 321-329)
+- **Verification:** Test confirms `&`, `<`, `>`, `"` are properly escaped to `&amp;`, `&lt;`, `&gt;`, `&quot;`
+- **Fix Validation:** Awk BEGIN block escapes `&` in replacement variables before gsub() uses them, preventing double-encoding
+
+### Test Coverage
+All 26 tests in the planning form test suite pass, including:
+- Form generation and structure validation
+- Port detection (free and occupied)
+- HTML escaping for special characters
+- Python server script syntax validation
+- Pre-population and resume functionality
+- Browser interview mode selection
+- Ampersand single-encoding verification (Bug 2 fix validation)
+- Awk BEGIN block double-encoding prevention (Bug 2 fix integration)
+
+## Audit Rework
+
+### INTEGRITY: Implementation files undeclared in report
+- [x] Fixed: Updated TESTER_REPORT.md "Files Modified" section to explicitly list `lib/plan_server.sh:41-43` and `lib/plan_browser.sh:141-146` with descriptions of each change. An auditor can now read the report and understand implementation changes without consulting git diff.
+
+### EXERCISE: HTML escaping test does not exercise actual Bug 2 fix
+- [x] Fixed: Added test "Awk BEGIN block prevents double-encoding in form" (test_plan_browser.sh:340-350) that:
+  - Sets project type to "web & mobile" (contains ampersand)
+  - Generates a full form via `_generate_plan_form`
+  - Verifies form HTML contains `web &amp; mobile` (single-encoded) not `web &amp;amp; mobile` (double-encoded)
+  - This directly exercises the awk BEGIN block fix path at lib/plan_browser.sh:141-146
+
+### COVERAGE: Occupied-port test soft-passes when socket bind fails
+- [x] Fixed: Replaced soft-pass with neutral skip at test_plan_browser.sh line 311. Now outputs "SKIP: could not bind dummy port" without incrementing PASS count, making infrastructure failures visible while not blocking the pipeline.
+
+### COVERAGE: HTML escape test omits ampersand
+- [x] Fixed: Added test "Ampersand encodes to &amp; (single-encoded)" at test_plan_browser.sh:335-337 that verifies `_html_escape 'a & b'` produces exactly `a &amp; b`.
