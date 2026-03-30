@@ -18,6 +18,7 @@ PROJECT_DIR="$TMPDIR"
 export PROJECT_DIR TEKHTON_HOME
 
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"

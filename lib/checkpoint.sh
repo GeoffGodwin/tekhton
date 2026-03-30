@@ -94,6 +94,12 @@ create_run_checkpoint() {
     # Escape quotes and backslashes for JSON
     task_escaped=$(printf '%s' "${TASK:-}" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
+    # M40: Snapshot note states for rollback protection
+    local note_states="{}"
+    if command -v snapshot_note_states &>/dev/null; then
+        note_states=$(snapshot_note_states 2>/dev/null || echo "{}")
+    fi
+
     # Write checkpoint metadata (atomic: tmpfile + mv)
     local tmpfile
     tmpfile=$(mktemp "${ckpt_dir}/checkpoint.XXXXXX")
@@ -107,7 +113,8 @@ create_run_checkpoint() {
   "task": "${task_escaped}",
   "milestone": "${milestone_id}",
   "auto_committed": false,
-  "commit_sha": null
+  "commit_sha": null,
+  "note_states": ${note_states}
 }
 EOF
     mv -f "$tmpfile" "$ckpt_file"
@@ -236,6 +243,20 @@ rollback_last_run() {
             fi
         else
             warn "Pre-run stash not found (may have been manually popped)."
+        fi
+    fi
+
+    # M40: Restore note states — undo pipeline's claim/resolve actions
+    # without touching user edits, new mid-run notes, or manual completions.
+    if command -v restore_note_states &>/dev/null; then
+        local note_states_json=""
+        # Extract note_states from checkpoint (simple JSON extraction)
+        if [[ -f "$ckpt_file" ]]; then
+            note_states_json=$(sed -n 's/.*"note_states"[[:space:]]*:[[:space:]]*\({[^}]*}\).*/\1/p' "$ckpt_file" | head -1)
+        fi
+        if [[ -n "$note_states_json" ]] && [[ "$note_states_json" != "{}" ]]; then
+            restore_note_states "$note_states_json" 2>/dev/null || true
+            log "Restored note states from checkpoint"
         fi
     fi
 

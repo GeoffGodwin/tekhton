@@ -1,7 +1,7 @@
 # Milestone 40: Human Notes Core Rewrite
 <!-- milestone-meta
 id: "40"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

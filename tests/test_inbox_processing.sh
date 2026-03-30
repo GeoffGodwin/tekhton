@@ -109,6 +109,7 @@ EOF
     # shellcheck source=../lib/common.sh
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -136,6 +137,7 @@ EOF
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -161,6 +163,7 @@ EOF
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -192,6 +195,7 @@ EOF
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -216,6 +220,7 @@ mkdir -p "${PROJ_EMPTY}/.claude/watchtower_inbox"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -241,6 +246,7 @@ mkdir -p "$PROJ_ABSENT"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -270,6 +276,7 @@ EOF
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -301,6 +308,7 @@ EOF
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -333,6 +341,7 @@ EOF
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
@@ -367,6 +376,7 @@ EOF
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox

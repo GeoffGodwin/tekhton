@@ -69,6 +69,7 @@ mkdir -p "$LOG_DIR"
 
 # Source required libraries
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 
@@ -148,9 +149,10 @@ assert_file_not_contains \
     "HUMAN_NOTES.md"
 
 # =============================================================================
-# Phase 2: Fall-through path — HUMAN_MODE=true, CURRENT_NOTE_LINE empty,
+# Phase 2: Fall-through path — HUMAN_MODE=true, CURRENT_NOTE_LINE/ID empty,
 #          exit_code=1 (failure), orphaned [~] note exists.
-#          Expected: early return at line 120; [~] note remains as-is.
+#          M40: [~] notes are now reset to [ ] on failure (not left as [~]).
+#          The [~] state is transient and must not persist between runs.
 # =============================================================================
 
 reset_notes "## Bugs
@@ -158,12 +160,13 @@ reset_notes "## Bugs
 
 export HUMAN_MODE="true"
 export CURRENT_NOTE_LINE=""
+export CURRENT_NOTE_ID=""
 
 _hook_resolve_notes 1
 
 assert_file_contains \
-    "2.1 [~] note untouched on failure in fall-through path" \
-    "- [~] [BUG] Orphaned note from crashed run" \
+    "2.1 [~] note reset to [ ] on failure in fall-through path" \
+    "- [ ] [BUG] Orphaned note from crashed run" \
     "HUMAN_NOTES.md"
 
 assert_file_not_contains \

@@ -4,8 +4,12 @@ set -euo pipefail
 # inbox.sh — Watchtower inbox processing for pipeline startup
 #
 # Sourced by tekhton.sh — do not run directly.
-# Expects: common.sh, notes_cli.sh, milestone_dag.sh sourced first.
+# Expects: common.sh, notes_core.sh, notes_cli.sh, milestone_dag.sh sourced first.
 # Expects: PROJECT_DIR, MILESTONE_DIR, MILESTONE_MANIFEST from config.
+#
+# M40: _process_note now extracts description, priority, and source from inbox
+# files and passes them to add_human_note. Duplicate detection is built in.
+# drain_pending_inbox added for pre-commit inbox processing.
 #
 # Processes files from .claude/watchtower_inbox/ at pipeline startup:
 #   - note_*.md   → appended to HUMAN_NOTES.md via add_human_note()
@@ -17,6 +21,7 @@ set -euo pipefail
 #
 # Provides:
 #   process_watchtower_inbox  — main entry point, called at pipeline startup
+#   drain_pending_inbox       — lightweight drain before commit (M40)
 # =============================================================================
 
 # --- Constants ---------------------------------------------------------------
@@ -42,16 +47,41 @@ _processed_dir() {
 
 # _process_note FILE
 # Reads a note file from the inbox and appends it to HUMAN_NOTES.md.
+# M40: Extracts full watchtower note structure (title, description, priority,
+# timestamp, source) and passes them to add_human_note with metadata.
 _process_note() {
     local file="$1"
-    local tag="" title="" line
+    local tag="" title="" description="" priority="medium" source="watchtower"
+    local line in_description=false
 
-    # Extract the checkbox line to get tag and title
     while IFS= read -r line; do
         if [[ "$line" =~ ^-\ \[\ \]\ \[([A-Z]+)\]\ (.+)$ ]]; then
             tag="${BASH_REMATCH[1]}"
             title="${BASH_REMATCH[2]}"
-            break
+            in_description=true
+            continue
+        fi
+        # Extract priority from metadata line
+        if [[ "$line" =~ ^priority:\ *(.+)$ ]]; then
+            priority="${BASH_REMATCH[1]}"
+            continue
+        fi
+        # Extract source from metadata line
+        if [[ "$line" =~ ^source:\ *(.+)$ ]]; then
+            source="${BASH_REMATCH[1]}"
+            continue
+        fi
+        # Collect description lines (indented or > prefixed)
+        if [[ "$in_description" == true ]]; then
+            if [[ "$line" =~ ^[[:space:]]*\> ]] || [[ "$line" =~ ^[[:space:]]{2,} ]]; then
+                local desc_text="${line#*> }"
+                desc_text="${desc_text#  }"  # strip 2-space indent
+                if [[ -n "$description" ]]; then
+                    description="${description} ${desc_text}"
+                else
+                    description="$desc_text"
+                fi
+            fi
         fi
     done < "$file"
 
@@ -60,18 +90,14 @@ _process_note() {
         return 1
     fi
 
-    # Validate tag
-    case "$tag" in
-        BUG|FEAT|POLISH) ;;
-        *) tag="FEAT" ;;
-    esac
+    # Validate tag via registry
+    if ! _validate_tag_registry "$tag" 2>/dev/null; then
+        tag="FEAT"
+    fi
 
-    # Use the existing add_human_note function.
-    # Known limitation: description, priority, and source fields from the inbox
-    # file are not passed through — only title+tag are written to the flat
-    # HUMAN_NOTES.md checklist format.
+    # add_human_note handles duplicate detection internally (M40)
     if command -v add_human_note &>/dev/null; then
-        add_human_note "$title" "$tag"
+        add_human_note "$title" "$tag" "$priority" "$source" "$description"
     else
         warn "Inbox: add_human_note not available, appending raw note"
         echo "- [ ] [${tag}] ${title}" >> "${PROJECT_DIR:-.}/HUMAN_NOTES.md"
@@ -85,14 +111,11 @@ _process_milestone() {
     local basename
     basename=$(basename "$file")
 
-    # Only milestone_mNN.md files reach here (from the milestone_*.md glob loop)
-
     local ms_dir="${MILESTONE_DIR:-${PROJECT_DIR:-.}/.claude/milestones}"
     if [[ ! -d "$ms_dir" ]]; then
         mkdir -p "$ms_dir" 2>/dev/null || true
     fi
 
-    # Move milestone file to the milestones directory
     mv "$file" "${ms_dir}/${basename}"
     log "Inbox: moved milestone file to ${ms_dir}/${basename}"
 }
@@ -120,7 +143,6 @@ _process_manifest_append() {
         return 1
     fi
 
-    # Parse the line: id|title|status|deps|file|parallel_group
     local mid
     mid=$(echo "$line" | cut -d'|' -f1)
     mid="${mid## }"; mid="${mid%% }"
@@ -130,13 +152,11 @@ _process_manifest_append() {
         return 1
     fi
 
-    # Check for ID collision
     if grep -q "^${mid}|" "$manifest" 2>/dev/null; then
         warn "Inbox: milestone ID '${mid}' already exists in MANIFEST.cfg, skipping"
         return 1
     fi
 
-    # Validate deps exist in manifest
     local deps
     deps=$(echo "$line" | cut -d'|' -f4)
     deps="${deps## }"; deps="${deps%% }"
@@ -152,7 +172,6 @@ _process_manifest_append() {
         done
     fi
 
-    # Append to manifest (atomic via tmpfile+mv)
     local tmpfile="${manifest}.tmp.$$"
     cp "$manifest" "$tmpfile"
     printf '%s\n' "$line" >> "$tmpfile"
@@ -160,13 +179,10 @@ _process_manifest_append() {
     success "Inbox: added milestone '${mid}' to MANIFEST.cfg"
 }
 
-# --- Public function ---------------------------------------------------------
+# --- Public functions --------------------------------------------------------
 
 # process_watchtower_inbox
 # Main entry point: processes all pending inbox items at pipeline startup.
-# Returns 0 on success, even if individual items fail.
-# Sets INBOX_TASK_DESCRIPTIONS as a newline-separated list of task descriptions
-# (for the caller to surface to the user).
 process_watchtower_inbox() {
     local inbox_dir
     inbox_dir="$(_inbox_dir)"
@@ -193,12 +209,11 @@ process_watchtower_inbox() {
         fi
     done
 
-    # Process milestone files (milestone_mNN.md first, then manifest_append)
+    # Process milestone files
     for file in "${inbox_dir}"/milestone_*.md; do
         [[ ! -f "$file" ]] && continue
         basename=$(basename "$file")
         if _process_milestone "$file"; then
-            # milestone_*.md files are moved by _process_milestone itself
             count=$((count + 1))
         fi
     done
@@ -212,7 +227,7 @@ process_watchtower_inbox() {
         fi
     done
 
-    # Collect task files (surfaced to user, not auto-executed)
+    # Collect task files
     for file in "${inbox_dir}"/task_*.txt; do
         [[ ! -f "$file" ]] && continue
         basename=$(basename "$file")
@@ -227,8 +242,38 @@ process_watchtower_inbox() {
         log "Inbox: processed ${count} item(s) from Watchtower"
     fi
 
-    # Emit updated inbox data for dashboard
     if command -v emit_dashboard_inbox &>/dev/null; then
         emit_dashboard_inbox 2>/dev/null || true
+    fi
+}
+
+# drain_pending_inbox — Lightweight pre-commit inbox drain (M40).
+# Processes any new inbox note files that arrived mid-run into HUMAN_NOTES.md.
+# These notes are persisted in the committed file but won't be triaged or
+# executed in the current run.
+drain_pending_inbox() {
+    local inbox_dir
+    inbox_dir="$(_inbox_dir)"
+
+    if [[ ! -d "$inbox_dir" ]]; then
+        return 0
+    fi
+
+    local processed_dir
+    processed_dir="$(_processed_dir)"
+
+    local count=0
+    local file basename
+    for file in "${inbox_dir}"/note_*.md; do
+        [[ ! -f "$file" ]] && continue
+        basename=$(basename "$file")
+        if _process_note "$file"; then
+            mv "$file" "${processed_dir}/${basename}"
+            count=$((count + 1))
+        fi
+    done
+
+    if [[ "$count" -gt 0 ]]; then
+        log "Inbox drain: processed ${count} mid-run note(s) before commit"
     fi
 }

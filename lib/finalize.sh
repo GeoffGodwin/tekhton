@@ -36,8 +36,13 @@ register_finalize_hook() {
 
 # _do_git_commit MSG
 # Stages all changes, runs gitignore safety check, commits with MSG.
+# M40: Drains pending inbox before commit so mid-run notes are persisted.
 _do_git_commit() {
     local msg="$1"
+    # Drain any pending watchtower inbox notes before committing
+    if command -v drain_pending_inbox &>/dev/null; then
+        drain_pending_inbox 2>/dev/null || true
+    fi
     _check_gitignore_safety
     git add -A > /dev/null 2>&1
     local git_output
@@ -95,10 +100,9 @@ _hook_cleanup_resolved() {
 }
 
 # f. Resolve human notes with exit code awareness
-#    In HUMAN_MODE with a CURRENT_NOTE_LINE, resolves just the single note
-#    via resolve_single_note(). This runs on BOTH success and failure so that
-#    failure resets [~] → [ ]. Otherwise falls through to bulk resolution
-#    (success-only for bulk path).
+#    M40: Unified path — resolves CLAIMED_NOTE_IDS (set during claiming).
+#    Works for both --human single-note and batch modes.
+#    CURRENT_NOTE_ID provides fallback for --human mode.
 _hook_resolve_notes() {
     local exit_code="$1"
     if [[ ! -f "HUMAN_NOTES.md" ]]; then
@@ -107,43 +111,53 @@ _hook_resolve_notes() {
 
     # Single-note resolution for --human mode (runs on success AND failure)
     if [[ "${HUMAN_MODE:-false}" = true ]]; then
-        if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
-            log "Resolving single note (--human mode, exit_code=$exit_code)"
+        if [[ -n "${CURRENT_NOTE_ID:-}" ]]; then
+            log "Resolving single note ${CURRENT_NOTE_ID} (--human mode, exit_code=$exit_code)"
+            local outcome="reset"
+            [[ "$exit_code" -eq 0 ]] && outcome="complete"
+            resolve_note "$CURRENT_NOTE_ID" "$outcome" || {
+                # Fallback: try text-based resolution via CURRENT_NOTE_LINE compat
+                if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
+                    resolve_single_note "$CURRENT_NOTE_LINE" "$exit_code" || true
+                fi
+            }
+            return 0
+        elif [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
+            # Legacy path: no ID available, use text-based resolution
+            log "Resolving note via text match (--human mode, exit_code=$exit_code)"
             resolve_single_note "$CURRENT_NOTE_LINE" "$exit_code" || true
             return 0
-        else
-            # Edge case: HUMAN_MODE=true but CURRENT_NOTE_LINE is empty.
-            # On failure, bulk resolution returns early (exit_code != 0) and
-            # the safety net below won't run, leaving [~] notes stuck until
-            # the next successful run resolves them. This requires an invariant
-            # violation (HUMAN_MODE set without CURRENT_NOTE_LINE) and is
-            # acceptable — the safety net catches it on the next success.
-            warn "HUMAN_MODE active but CURRENT_NOTE_LINE is empty — falling through to bulk resolution"
         fi
+        # Fall through to bulk if neither ID nor LINE is set
     fi
 
-    # Bulk resolution for standard (non-human) mode — success only
-    [[ "$exit_code" -ne 0 ]] && return 0
+    # Bulk resolution via CLAIMED_NOTE_IDS (runs on success AND failure)
+    if [[ -n "${CLAIMED_NOTE_IDS:-}" ]]; then
+        log "Resolving claimed notes (exit_code=$exit_code): ${CLAIMED_NOTE_IDS}"
+        _PIPELINE_EXIT_CODE="$exit_code"
+        export _PIPELINE_EXIT_CODE
+        resolve_notes_batch "$CLAIMED_NOTE_IDS" "$exit_code"
+    fi
+
+    # Fallback: resolve remaining [~] notes (legacy/edge cases)
+    _PIPELINE_EXIT_CODE="$exit_code"
+    export _PIPELINE_EXIT_CODE
     local remaining_claimed
     remaining_claimed=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
     if [[ "$remaining_claimed" -gt 0 ]]; then
-        log "Resolving all claimed notes (bulk mode)"
-        # Set _PIPELINE_EXIT_CODE so resolve_human_notes can use it
-        # for the fallback path when CODER_SUMMARY.md is missing
-        _PIPELINE_EXIT_CODE="$exit_code"
-        export _PIPELINE_EXIT_CODE
+        log "Resolving ${remaining_claimed} remaining [~] note(s) (legacy fallback)"
         resolve_human_notes
     fi
 
     # Safety net: resolve orphaned [~] notes on success (M33 Bug 6).
-    # These can occur when a prior run claimed a note but crashed before
-    # resolution, and the resumed run lost HUMAN_MODE context.
-    local orphan_count
-    orphan_count=$(grep -c '^- \[~\]' HUMAN_NOTES.md 2>/dev/null || echo "0")
-    orphan_count=$(echo "$orphan_count" | tr -d '[:space:]')
-    if [[ "$orphan_count" -gt 0 ]]; then
-        warn "Found ${orphan_count} orphaned in-progress note(s) — resolving as complete."
-        sed -i 's/^- \[~\]/- [x]/' HUMAN_NOTES.md
+    if [[ "$exit_code" -eq 0 ]]; then
+        local orphan_count
+        orphan_count=$(grep -c '^- \[~\]' HUMAN_NOTES.md 2>/dev/null || echo "0")
+        orphan_count=$(echo "$orphan_count" | tr -d '[:space:]')
+        if [[ "$orphan_count" -gt 0 ]]; then
+            warn "Found ${orphan_count} orphaned in-progress note(s) — resolving as complete."
+            sed -i 's/^- \[~\]/- [x]/' HUMAN_NOTES.md
+        fi
     fi
 }
 
@@ -363,6 +377,10 @@ _hook_causal_log_finalize() {
     fi
     if command -v emit_dashboard_action_items &>/dev/null; then
         emit_dashboard_action_items 2>/dev/null || true
+    fi
+    # M40: Emit notes data for dashboard Notes tab
+    if command -v emit_dashboard_notes &>/dev/null; then
+        emit_dashboard_notes 2>/dev/null || true
     fi
 
     # Archive causal log

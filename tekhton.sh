@@ -192,8 +192,14 @@ COMPLETE_MODE=false
 MIGRATE_DAG=false
 SETUP_INDEXER=false
 WITH_LSP=false
-# Preserve CURRENT_NOTE_LINE and HUMAN_SINGLE_NOTE across resume (M33 Bug 2).
+# Preserve CURRENT_NOTE_ID and HUMAN_SINGLE_NOTE across resume (M33 Bug 2, M40).
 # These are set via env export before exec; --human flag restores HUMAN_MODE/TAG.
+# M40: CURRENT_NOTE_ID replaces CURRENT_NOTE_LINE for ID-based note tracking.
+CURRENT_NOTE_ID="${CURRENT_NOTE_ID:-}"
+# Backward compat: accept CURRENT_NOTE_LINE from pre-M40 state files
+if [[ -z "$CURRENT_NOTE_ID" ]] && [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
+    CURRENT_NOTE_ID=""  # Will be resolved from the note line later
+fi
 CURRENT_NOTE_LINE="${CURRENT_NOTE_LINE:-}"
 HUMAN_SINGLE_NOTE="${HUMAN_SINGLE_NOTE:-false}"
 SKIP_AUDIT=false
@@ -597,6 +603,7 @@ fi
 
 if [ "${1:-}" = "note" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
@@ -696,11 +703,13 @@ _check_pipeline_lock
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/config.sh"
+source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
 source "${TEKHTON_HOME}/lib/notes_cli.sh"
 source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
+source "${TEKHTON_HOME}/lib/notes_migrate.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/dry_run.sh"
@@ -948,6 +957,8 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
     SAVED_HUMAN_MODE=$(awk '/^## Human Mode$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_HUMAN_TAG=$(awk '/^## Human Notes Tag$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_NOTE_LINE=$(awk '/^## Current Note Line$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    # M40: Also read CURRENT_NOTE_ID from state file
+    SAVED_NOTE_ID=$(awk '/^## Current Note ID$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_HUMAN_SINGLE=$(awk '/^## Human Single Note$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
 
     # Enhanced resume prompt (M17): show structured context
@@ -994,6 +1005,7 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
                 export HUMAN_MODE="true"
                 export HUMAN_NOTES_TAG="${SAVED_HUMAN_TAG:-}"
                 export CURRENT_NOTE_LINE="${SAVED_NOTE_LINE:-}"
+                export CURRENT_NOTE_ID="${SAVED_NOTE_ID:-}"
                 export HUMAN_SINGLE_NOTE="${SAVED_HUMAN_SINGLE:-false}"
             fi
             # Human-mode tasks are derived via pick_next_note, not positional args.
@@ -1385,15 +1397,22 @@ if [[ "$HUMAN_MODE" = true ]]; then
         AUTO_COMMIT=true
     else
         # Single-note mode: pick the highest-priority unchecked note.
-        # On crash-recovery resume, CURRENT_NOTE_LINE is already set from env
-        # (exported at line ~991). The claimed note is [~], invisible to
+        # On crash-recovery resume, CURRENT_NOTE_ID is already set from env
+        # (exported at resume). The claimed note is [~], invisible to
         # pick_next_note which only scans [ ] notes. Restore from env directly.
         _note_restored=false
-        if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
-            log "Human mode: restoring claimed note from prior run"
+        if [[ -n "${CURRENT_NOTE_ID:-}" ]]; then
+            log "Human mode: restoring claimed note ${CURRENT_NOTE_ID} from prior run"
+            CURRENT_NOTE_LINE=$(_find_note_by_id "$CURRENT_NOTE_ID")
+            _note_restored=true
+        elif [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
+            # Backward compat: pre-M40 state had CURRENT_NOTE_LINE without ID
+            log "Human mode: restoring claimed note from prior run (legacy)"
+            CURRENT_NOTE_ID=$(_extract_note_id "$CURRENT_NOTE_LINE")
             _note_restored=true
         else
             CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+            CURRENT_NOTE_ID=$(_extract_note_id "$CURRENT_NOTE_LINE")
         fi
         if [[ -z "$CURRENT_NOTE_LINE" ]]; then
             if [[ -n "$HUMAN_NOTES_TAG" ]]; then
@@ -1416,6 +1435,7 @@ if [[ "$HUMAN_MODE" = true ]]; then
             claim_single_note "$CURRENT_NOTE_LINE"
         fi
         export CURRENT_NOTE_LINE
+        export CURRENT_NOTE_ID
         log "Human mode: picked note — ${TASK}"
         # Imply COMPLETE_MODE so single-note gets the orchestration loop
         # (continuation attempts, retry logic) instead of single-shot exit.
@@ -1765,6 +1785,10 @@ clear_resolved_drift_observations
 clear_completed_human_notes
 clear_resolved_nonblocking_notes > /dev/null
 
+# --- M40: Migrate legacy notes and ensure gitignore for inbox ----------------
+migrate_legacy_notes
+_ensure_gitignore_inbox
+
 # --- UI framework detection (Milestone 28) -----------------------------------
 # Runs at startup to populate UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD.
 # Uses explicit user config when set; falls back to auto-detection otherwise.
@@ -2058,9 +2082,11 @@ _run_human_complete_loop() {
             fi
             break
         fi
+        CURRENT_NOTE_ID=$(_extract_note_id "$CURRENT_NOTE_LINE")
 
         TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
         export CURRENT_NOTE_LINE
+        export CURRENT_NOTE_ID
 
         log "Human note ${human_attempt}: ${TASK}"
         claim_single_note "$CURRENT_NOTE_LINE"

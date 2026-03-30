@@ -111,6 +111,20 @@ resolve_single_note() {
     _mock_resolve_single_exit_code="${2:-}"
     return 0
 }
+resolve_note() {
+    _mock_called[resolve_note]=1
+    _mock_resolve_note_id="${1:-}"
+    _mock_resolve_note_outcome="${2:-}"
+    return 0
+}
+resolve_notes_batch() {
+    _mock_called[resolve_notes_batch]=1
+    _mock_resolve_batch_ids="${1:-}"
+    _mock_resolve_batch_exit="${2:-}"
+    return 0
+}
+# M40: stub CLAIMED_NOTE_IDS (set during claiming, read by resolve hooks)
+CLAIMED_NOTE_IDS=""
 archive_reports() {
     _mock_called[archive_reports]=1
     return 0
@@ -429,78 +443,86 @@ assert "8.4 resolve_notes skips when no [~] items" \
 rm -f "${TMPDIR}/HUMAN_NOTES.md"
 
 # =============================================================================
-# Test Suite 8b: _hook_resolve_notes — HUMAN_MODE single-note resolution
+# Test Suite 8b: _hook_resolve_notes — HUMAN_MODE single-note resolution (M40)
 # =============================================================================
-echo "=== Test Suite 8b: _hook_resolve_notes HUMAN_MODE ==="
+echo "=== Test Suite 8b: _hook_resolve_notes HUMAN_MODE (M40 ID-based) ==="
 
-# HUMAN_MODE + CURRENT_NOTE_LINE: should call resolve_single_note, NOT resolve_human_notes
+# HUMAN_MODE + CURRENT_NOTE_ID: should call resolve_note (ID-based), NOT resolve_human_notes
 _reset_mocks
 HUMAN_MODE=true
-CURRENT_NOTE_LINE="- [ ] [BUG] Fix the thing"
-export HUMAN_MODE CURRENT_NOTE_LINE
+CURRENT_NOTE_ID="n01"
+CURRENT_NOTE_LINE=""
+export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE
 cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
-- [~] [BUG] Fix the thing
+- [~] [BUG] Fix the thing <!-- note:n01 created:2026-03-28 priority:medium source:cli -->
 EOF
 _hook_resolve_notes 0
-assert "8b.1 resolve_single_note called in HUMAN_MODE" \
-    "$([ -n "${_mock_called[resolve_single_note]:-}" ] && echo 0 || echo 1)"
+assert "8b.1 resolve_note called in HUMAN_MODE" \
+    "$([ -n "${_mock_called[resolve_note]:-}" ] && echo 0 || echo 1)"
 assert "8b.2 resolve_human_notes NOT called in HUMAN_MODE" \
     "$([ -z "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
-assert_eq "8b.3 resolve_single_note receives CURRENT_NOTE_LINE" \
-    "- [ ] [BUG] Fix the thing" "${_mock_resolve_single_note_line:-}"
-assert_eq "8b.4 resolve_single_note receives exit_code 0" \
-    "0" "${_mock_resolve_single_exit_code:-}"
+assert_eq "8b.3 resolve_note receives CURRENT_NOTE_ID" \
+    "n01" "${_mock_resolve_note_id:-}"
+assert_eq "8b.4 resolve_note receives outcome complete on success" \
+    "complete" "${_mock_resolve_note_outcome:-}"
 
-# HUMAN_MODE + empty CURRENT_NOTE_LINE: should fall through to bulk resolution
+# HUMAN_MODE + empty CURRENT_NOTE_ID: should fall through to bulk resolution
 _reset_mocks
 HUMAN_MODE=true
+CURRENT_NOTE_ID=""
 CURRENT_NOTE_LINE=""
-export HUMAN_MODE CURRENT_NOTE_LINE
+CLAIMED_NOTE_IDS=""
+export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE CLAIMED_NOTE_IDS
 cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
 - [~] [BUG] Fix the thing
 EOF
 _hook_resolve_notes 0
-assert "8b.5 resolve_single_note NOT called when CURRENT_NOTE_LINE empty" \
-    "$([ -z "${_mock_called[resolve_single_note]:-}" ] && echo 0 || echo 1)"
-assert "8b.6 resolve_human_notes called as fallback when CURRENT_NOTE_LINE empty" \
+assert "8b.5 resolve_note NOT called when CURRENT_NOTE_ID empty" \
+    "$([ -z "${_mock_called[resolve_note]:-}" ] && echo 0 || echo 1)"
+assert "8b.6 resolve_human_notes called as fallback when CURRENT_NOTE_ID empty" \
     "$([ -n "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
 
-# HUMAN_MODE=false: should NOT call resolve_single_note even with CURRENT_NOTE_LINE set
+# HUMAN_MODE=false: should NOT call resolve_note even with CURRENT_NOTE_ID set
 _reset_mocks
 HUMAN_MODE=false
-CURRENT_NOTE_LINE="- [ ] [BUG] Fix the thing"
-export HUMAN_MODE CURRENT_NOTE_LINE
+CURRENT_NOTE_ID="n01"
+CURRENT_NOTE_LINE=""
+CLAIMED_NOTE_IDS=""
+export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE CLAIMED_NOTE_IDS
 cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
 - [~] [BUG] Fix the thing
 EOF
 _hook_resolve_notes 0
-assert "8b.7 resolve_single_note NOT called when HUMAN_MODE=false" \
-    "$([ -z "${_mock_called[resolve_single_note]:-}" ] && echo 0 || echo 1)"
+assert "8b.7 resolve_note NOT called when HUMAN_MODE=false" \
+    "$([ -z "${_mock_called[resolve_note]:-}" ] && echo 0 || echo 1)"
 assert "8b.8 resolve_human_notes called when HUMAN_MODE=false" \
     "$([ -n "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
 
-# HUMAN_MODE on failure (exit_code != 0): resolve_single_note IS called to reset [~] → [ ]
+# HUMAN_MODE on failure (exit_code != 0): resolve_note IS called to reset [~] → [ ]
 _reset_mocks
 HUMAN_MODE=true
-CURRENT_NOTE_LINE="- [ ] [BUG] Fix the thing"
-export HUMAN_MODE CURRENT_NOTE_LINE
+CURRENT_NOTE_ID="n01"
+CURRENT_NOTE_LINE=""
+export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE
 cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
-- [~] [BUG] Fix the thing
+- [~] [BUG] Fix the thing <!-- note:n01 created:2026-03-28 priority:medium source:cli -->
 EOF
 _hook_resolve_notes 1
-assert "8b.9 resolve_single_note IS called on failure in HUMAN_MODE" \
-    "$([ -n "${_mock_called[resolve_single_note]:-}" ] && echo 0 || echo 1)"
-assert_eq "8b.10 resolve_single_note receives exit_code 1 on failure" \
-    "1" "${_mock_resolve_single_exit_code:-}"
+assert "8b.9 resolve_note IS called on failure in HUMAN_MODE" \
+    "$([ -n "${_mock_called[resolve_note]:-}" ] && echo 0 || echo 1)"
+assert_eq "8b.10 resolve_note receives outcome reset on failure" \
+    "reset" "${_mock_resolve_note_outcome:-}"
 
 # Reset HUMAN_MODE state
 HUMAN_MODE=false
+CURRENT_NOTE_ID=""
 CURRENT_NOTE_LINE=""
-export HUMAN_MODE CURRENT_NOTE_LINE
+CLAIMED_NOTE_IDS=""
+export HUMAN_MODE CURRENT_NOTE_ID CURRENT_NOTE_LINE CLAIMED_NOTE_IDS
 rm -f "${TMPDIR}/HUMAN_NOTES.md"
 
 # =============================================================================
