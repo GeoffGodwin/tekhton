@@ -104,7 +104,7 @@ record_run_metrics() {
     local computed_time=0
     local _stg_name
     if declare -p _STAGE_DURATION &>/dev/null; then
-        for _stg_name in intake scout coder build_gate security reviewer tester; do
+        for _stg_name in "${!_STAGE_DURATION[@]}"; do
             computed_time=$(( computed_time + ${_STAGE_DURATION[$_stg_name]:-0} ))
         done
     fi

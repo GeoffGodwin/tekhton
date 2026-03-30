@@ -6,6 +6,8 @@
 # unbounded growth. Called by reset_runs_since_audit() in drift.sh post-audit.
 # Sourced by tekhton.sh after drift_cleanup.sh — do not run directly.
 # Expects: PROJECT_DIR, DRIFT_LOG_FILE, DRIFT_RESOLVED_KEEP_COUNT (set by config)
+# Expects: TEKHTON_SESSION_DIR (used in mktemp fallback)
+# Expects: log() from common.sh
 # =============================================================================
 
 set -euo pipefail
@@ -27,7 +29,7 @@ prune_resolved_drift_entries() {
     # Extract resolved entries (skip the ## Resolved heading)
     local resolved_entries
     resolved_entries=$(awk '/^## Resolved/{found=1; next} found && /^## [^#]/{exit} found && /^- /{print}' \
-        "$drift_file" 2>/dev/null || true)
+        "$drift_file" || true)
 
     if [ -z "$resolved_entries" ]; then
         return 0

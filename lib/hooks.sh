@@ -316,7 +316,7 @@ run_final_checks() {
             warn "${TEST_CMD}: failures detected. Spawning test fix agent (attempt ${fix_attempt}/${max_fix_attempts})..."
 
             export TEST_FAILURES_CONTENT
-            TEST_FAILURES_CONTENT=$(printf '%s' "$test_output" | tail -120)
+            TEST_FAILURES_CONTENT=$(printf '%s' "$test_output" | tail -n 120)
             local test_fix_prompt
             test_fix_prompt=$(render_prompt "test_fix")
 

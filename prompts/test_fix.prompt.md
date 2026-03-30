@@ -12,6 +12,14 @@ The test suite failed after the pipeline completed. Fix ONLY the failing tests â
 {{TEST_FAILURES_CONTENT}}
 ```
 
+{{IF:HUMAN_NOTES_BLOCK}}
+## Human Notes Context
+
+The following human notes were active during this pipeline run:
+
+{{HUMAN_NOTES_BLOCK}}
+{{ENDIF:HUMAN_NOTES_BLOCK}}
+
 ## Rules
 - Fix only what the test output reports. Do not refactor, rename, or improve anything else.
 - Read the failing test files to understand what they expect.

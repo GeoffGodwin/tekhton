@@ -150,7 +150,7 @@ _hook_emit_run_summary() {
     local stages_json="{"
     local stage_first=true
     local _stg
-    for _stg in intake scout coder build_gate security reviewer tester; do
+    for _stg in "${!_STAGE_DURATION[@]}"; do
         local _s_turns="${_STAGE_TURNS[$_stg]:-0}"
         local _s_dur="${_STAGE_DURATION[$_stg]:-0}"
         local _s_budget="${_STAGE_BUDGET[$_stg]:-0}"
@@ -166,7 +166,7 @@ _hook_emit_run_summary() {
     # --- Computed totals from stage data (M34 §5) ---
     local computed_turns=0
     local computed_time=0
-    for _stg in intake scout coder build_gate security reviewer tester; do
+    for _stg in "${!_STAGE_DURATION[@]}"; do
         computed_turns=$(( computed_turns + ${_STAGE_TURNS[$_stg]:-0} ))
         computed_time=$(( computed_time + ${_STAGE_DURATION[$_stg]:-0} ))
     done

@@ -676,7 +676,7 @@
     for (var r = 0; r < runs.length; r++) {
       var run = runs[r], rt = (run.run_type || 'adhoc').toLowerCase();
       var oi = (run.outcome || '').toLowerCase() === 'pass' || (run.outcome || '').toLowerCase() === 'success' ? '\u2713' : '\u2717';
-      h += '<li' + (matchFilter(af, rt) ? '' : ' class="hidden"') + '><span class="run-num">#' + (runs.length - r) + '</span>';
+      h += '<li data-run-type="' + esc(rt) + '"' + (matchFilter(af, rt) ? '' : ' class="hidden"') + '><span class="run-num">#' + (runs.length - r) + '</span>';
       h += '<span class="' + badgeClass(rt) + ' run-type-tag">' + esc(rt.replace(/_/g, ' ')) + '</span>';
       if (run.team) h += '<span class="run-team-tag">' + esc(run.team) + '</span>';
       h += '<span class="run-milestone">' + (run.milestone && rt === 'milestone' ? esc(run.milestone) + (run.milestone_title ? ': ' + esc(truncate(run.milestone_title, 30)) : '') : esc(truncate(run.task_label || run.milestone || '-', 40))) + '</span>';
@@ -696,7 +696,7 @@
       var lis = document.querySelectorAll('.run-list li');
       var shown = 0;
       for (var ri = 0; ri < lis.length; ri++) {
-        var b = lis[ri].querySelector('.run-type-tag'), it = b ? b.textContent.toLowerCase().replace(/\s+/g, '_') : '';
+        var it = lis[ri].getAttribute('data-run-type') || '';
         var vis = matchFilter(f, it);
         lis[ri].classList.toggle('hidden', !vis);
         if (vis) shown++;
@@ -1090,7 +1090,7 @@
       if (!refreshStopped) { refreshStopped = true; updateRefreshIndicator(true); }
       return;
     }
-    if (!refreshStopped && (status === 'running' || status === 'initializing')) scheduleRefresh();
+    if (!refreshStopped && (status === 'running' || status === 'initializing' || status === 'waiting')) scheduleRefresh();
   }
   function scheduleRefresh() {
     if (refreshTimer) clearTimeout(refreshTimer);

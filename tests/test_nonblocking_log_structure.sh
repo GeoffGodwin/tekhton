@@ -5,9 +5,6 @@
 
 set -euo pipefail
 
-TEST_DIR="$(mktemp -d)"
-trap "rm -rf '$TEST_DIR'" EXIT INT TERM
-
 PASS=0
 FAIL=0
 
