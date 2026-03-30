@@ -2,40 +2,34 @@
 TWEAKED
 
 ## Confidence
-52
+62
 
 ## Reasoning
-- Core intent is clear: promote Live Run from an isolated page to a persistent, always-visible banner
-- Zero acceptance criteria — no specification of what the banner displays, when it appears/hides, or what "every page" means concretely
-- The old Live Run page disposition is unspecified (remove? redirect? keep as expanded view?)
-- No UI testability criteria despite being a pure UI change
-- Related human note about auto-refresh scope suggests the banner should also be exempt from unnecessary refreshes (already flagged separately, but worth noting)
-- Filling these gaps with reasonable defaults yields a workable milestone
+- Scope is clear: the Recent Runs section on the Watchtower Trends page has two distinct bugs — wrong run-type filter (only milestone runs surface) and wrong count aggregation (always shows 1)
+- These two bugs are likely in the same data-fetching/rendering path, making this a single cohesive fix
+- No explicit acceptance criteria are stated — a developer knows *what* is broken but has no testable definition of "fixed"
+- No UI testability criterion is present despite this being a pure UI bug fix
+- "All of them" for count is slightly ambiguous — added a reasonable cap/clarification with [PM:] marker
 
 ## Tweaked Content
 
-### [BUG] Watchtower: Promote Live Run to a persistent top-of-page banner
+**[BUG] Watchtower Trends page: Recent Runs section does not show --human runs and shows incorrect counts**
 
-**Problem:** The Live Run page occupies its own route and requires navigation to see run progress. When a pipeline is active, users lose visibility the moment they navigate away.
+The Recent Runs section on the Watchtower Trends page has two bugs:
 
-**Goal:** Replace the standalone Live Run page with a persistent banner rendered at the top of every Watchtower page, showing live run status whenever a run is active and hiding when no run is in progress.
+1. **Wrong run-type filter:** Only the last `--milestone` run appears. Runs executed with `--human` are silently excluded. Users cannot verify their most recent human-mode runs are being tracked.
 
-**Scope:**
-- Add a persistent Live Run banner component to the shared layout (renders on all pages)
-- Banner is **only visible when a run is active**; hidden (zero height, no layout shift) otherwise
-- [PM: existing Live Run route should be removed or redirected to the Reports page to avoid a dead link — if a dedicated expanded view is needed in the future that is a separate task]
-- [PM: banner content should match what the current Live Run page shows — at minimum: current stage name, overall progress indicator, elapsed time, and a status label (running / succeeded / failed). If the existing page shows more, carry it all over.]
-- Auto-refresh for live data applies to the banner on all pages [PM: coordinate with the separate auto-refresh scope bug — banner polling should be independent of page-level refresh]
+2. **Wrong count aggregation:** The section always shows a count of 1 regardless of how many runs have been recorded. All runs should be counted and the most recent N should be displayed.
 
-**Acceptance Criteria:**
-- [PM: added] Banner appears at the top of every Watchtower page (Reports, Trends, Actions, and any others) when a run is active
-- [PM: added] Banner is not rendered (no empty space) when no run is active
-- [PM: added] Banner displays at minimum: active stage, progress, elapsed time, and run status
-- [PM: added] Navigating between pages does not reset or flicker the banner
-- [PM: added] The former Live Run page route returns a redirect or 404 (not a broken blank page)
-- [PM: added] Banner renders without console errors on all pages at desktop and mobile breakpoints
-- [PM: added] If a run completes while the user is on any page, the banner transitions to a final state (succeeded/failed) and then hides after a short delay (e.g. 5 seconds) — or hides immediately on next navigation
+**Acceptance Criteria**
 
-## Questions
-- Should the banner be collapsible/dismissible by the user, or always fully visible when a run is active?
-- Is there a dedicated "expanded Live Run view" use case that should be preserved (e.g., clicking the banner expands details), or is full removal of the page correct?
+- After two or more `--human` runs, the Recent Runs section lists those runs (not just milestone runs)
+- The run count reflects the actual total number of recorded runs, not a hard-coded or accidentally reset value of 1
+- Both `--human` and `--milestone` runs appear in the section (run type is not used as a filter) [PM: made explicit — the fix should not swing to showing only --human and dropping --milestone]
+- [PM: UI criterion] The Trends page loads without console errors after the fix, and the Recent Runs section renders with at least one row when run history exists
+- [PM: UI criterion] The displayed count matches the number of rows shown (or the total run count if rows are paginated/capped)
+
+**Watch For**
+
+- [PM: added] The run-type filter may be an explicit `run_mode == "milestone"` guard or an implicit sort/query that only picks up milestone state files — check both the data source and the rendering layer
+- [PM: added] Count-of-1 may be caused by overwriting a counter variable in a loop rather than incrementing it, or by reading only the most recent file rather than all files in the run history directory

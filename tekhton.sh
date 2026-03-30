@@ -1388,8 +1388,10 @@ if [[ "$HUMAN_MODE" = true ]]; then
         # On crash-recovery resume, CURRENT_NOTE_LINE is already set from env
         # (exported at line ~991). The claimed note is [~], invisible to
         # pick_next_note which only scans [ ] notes. Restore from env directly.
+        local _note_restored=false
         if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
             log "Human mode: restoring claimed note from prior run"
+            _note_restored=true
         else
             CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
         fi
@@ -1405,7 +1407,14 @@ if [[ "$HUMAN_MODE" = true ]]; then
         TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
         # Capture count BEFORE claiming so pre-flight display is accurate (M33 Bug 5)
         _PRE_CLAIM_NOTE_COUNT=$(count_human_notes)
-        claim_single_note "$CURRENT_NOTE_LINE"
+        if [[ "$_note_restored" = true ]]; then
+            # Resume path: note may be [~] (prior run exited cleanly, cleanup
+            # didn't reset) or [ ] (prior run crashed, cleanup did reset).
+            # Try claiming — if it's already [~], the [ ] match fails harmlessly.
+            claim_single_note "$CURRENT_NOTE_LINE" || true
+        else
+            claim_single_note "$CURRENT_NOTE_LINE"
+        fi
         export CURRENT_NOTE_LINE
         log "Human mode: picked note — ${TASK}"
         # Imply COMPLETE_MODE so single-note gets the orchestration loop

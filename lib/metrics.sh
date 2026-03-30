@@ -27,7 +27,7 @@ _ensure_metrics_file() {
 # =============================================================================
 # _classify_task_type — Heuristic task classification from task string
 #
-# Returns: "bug", "milestone", or "feature" (default)
+# Returns: "bug", "milestone", "polish", "drift", or "feature" (default)
 # =============================================================================
 
 _classify_task_type() {
@@ -35,10 +35,14 @@ _classify_task_type() {
     local lower
     lower=$(echo "$task" | tr '[:upper:]' '[:lower:]')
 
-    if echo "$lower" | grep -qE '(^fix|bug|bugfix|hotfix|patch|regression|broken|crash)'; then
+    if echo "$lower" | grep -qE '(\[bug\]|^fix|bug|bugfix|hotfix|patch|regression|broken|crash)'; then
         echo "bug"
     elif echo "$lower" | grep -qE '(^milestone|milestone [0-9])'; then
         echo "milestone"
+    elif echo "$lower" | grep -qE '\[polish\]'; then
+        echo "polish"
+    elif echo "$lower" | grep -qE '(drift|audit)'; then
+        echo "drift"
     else
         echo "feature"
     fi

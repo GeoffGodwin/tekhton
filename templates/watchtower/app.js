@@ -643,25 +643,29 @@
     if (!ct) return;
     var runs = (metrics().runs || []);
     if (!runs.length) { ct.innerHTML = '<div class="empty-state">No runs yet \u2014 run tekhton to see data here</div>'; return; }
+    // Filter to meaningful runs (exclude crashed/null runs with no turns and no time)
+    var mRuns = [];
+    for (var mi = 0; mi < runs.length; mi++) { if ((runs[mi].total_turns || 0) > 0 || (runs[mi].total_time_s || 0) > 0) mRuns.push(runs[mi]); }
     var h = '<div class="trends-grid">', tT = 0, tTm = 0, tTmCount = 0, sC = 0, rC = 0, oc;
-    for (var i = 0; i < runs.length; i++) {
-      tT += (runs[i].total_turns || 0);
-      if (runs[i].total_time_s > 0) { tTm += runs[i].total_time_s; tTmCount++; }
-      oc = (runs[i].outcome || '').toLowerCase();
+    for (var i = 0; i < mRuns.length; i++) {
+      tT += (mRuns[i].total_turns || 0);
+      if (mRuns[i].total_time_s > 0) { tTm += mRuns[i].total_time_s; tTmCount++; }
+      oc = (mRuns[i].outcome || '').toLowerCase();
       if (oc === 'split') sC++; if (oc === 'rejected') rC++;
     }
+    var mLen = mRuns.length || 1;
     h += '<div class="card trend-section"><h3>Efficiency</h3>';
-    h += statRow('Avg turns/run', Math.round(tT / runs.length) + trendArrow(runs, 'total_turns'));
-    h += statRow('Avg run duration', (tTmCount > 0 ? fmtDuration(Math.round(tTm / tTmCount)) : '-') + trendArrow(runs, 'total_time_s'));
-    h += statRow('Review rejection rate', Math.round((rC / runs.length) * 100) + '%');
-    h += statRow('Split frequency', Math.round((sC / runs.length) * 100) + '%');
+    h += statRow('Avg turns/run', Math.round(tT / mLen) + trendArrow(mRuns, 'total_turns'));
+    h += statRow('Avg run duration', (tTmCount > 0 ? fmtDuration(Math.round(tTm / tTmCount)) : '-') + trendArrow(mRuns, 'total_time_s'));
+    h += statRow('Review rejection rate', Math.round((rC / mLen) * 100) + '%');
+    h += statRow('Split frequency', Math.round((sC / mLen) * 100) + '%');
     var tg = {}, tn, ta = '';
-    for (var g = 0; g < runs.length; g++) { tn = (runs[g].run_type || 'milestone').toLowerCase(); if (!tg[tn]) tg[tn] = { t: 0, c: 0 }; tg[tn].t += (runs[g].total_turns || 0); tg[tn].c++; }
+    for (var g = 0; g < mRuns.length; g++) { tn = (mRuns[g].run_type || 'milestone').toLowerCase(); if (!tg[tn]) tg[tn] = { t: 0, c: 0 }; tg[tn].t += (mRuns[g].total_turns || 0); tg[tn].c++; }
     var tns = []; for (tn in tg) if (tg.hasOwnProperty(tn)) tns.push(tn); tns.sort();
     for (var t = 0; t < tns.length; t++) { var lb = tns[t].replace(/_/g, ' '); if (ta) ta += ' \u00B7 '; ta += lb.charAt(0).toUpperCase() + lb.slice(1) + ' avg: ' + Math.round(tg[tns[t]].t / tg[tns[t]].c) + ' turns'; }
     if (ta) h += '<div class="stat-row type-averages"><span class="stat-label">By type</span><span class="stat-value stat-value-small">' + ta + '</span></div>';
     h += '</div>' + renderHealthCard();
-    h += '<div class="card trend-section"><h3>Per-Stage Breakdown</h3>' + renderStageBreakdown(runs) + '</div></div>';
+    h += '<div class="card trend-section"><h3>Per-Stage Breakdown</h3>' + renderStageBreakdown(mRuns) + '</div></div>';
     var af = getRunTypeFilter();
     h += '<div class="card trend-section" style="margin-top:0.75rem"><div class="trends-header-row"><h3>Recent Runs (' + runs.length + ')</h3><div class="run-type-filters">';
     var fl = [['all','All'],['milestone','Milestones'],['human','Human Notes'],['drift','Drift'],['adhoc','Ad Hoc']];
@@ -680,7 +684,7 @@
     h += '</ul></div>';
 
     // Per-Team Performance section (M37)
-    h += renderTeamPerformance(runs);
+    h += renderTeamPerformance(mRuns);
     ct.innerHTML = h;
     var fbs = ct.querySelectorAll('.filter-btn');
     for (var fb = 0; fb < fbs.length; fb++) fbs[fb].addEventListener('click', function () {
@@ -1071,7 +1075,7 @@
       var active = getActiveTab();
       if (active === 'reports') renderActiveTab();
       updateStatusIndicator(); checkRefreshLifecycle();
-    }).catch(function (err) { if (typeof console !== 'undefined') console.error('Watchtower refresh failed:', err); location.reload(); });
+    }).catch(function (err) { if (typeof console !== 'undefined') console.error('Watchtower refresh failed:', err); scheduleRefresh(); });
   }
   function checkRefreshLifecycle() {
     var s = state(), status = (s.pipeline_status || '').toLowerCase();
