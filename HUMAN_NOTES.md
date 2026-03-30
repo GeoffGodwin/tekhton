@@ -12,11 +12,9 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 
 ## Features
-- [x] [FEAT] The "Intake Report" section of the Reports page only shows the Verfict and Confidence currently - it should also show the original notes for context, and ideally a link to the full notes in the Milestone Map 
-- [x] [FEAT] Currently if there are failures during the Tekhton Self-Tests, the pipeline gives it final summary and then notes there are failed tests and exits cleanly. Instead of exiting it should immediately spawn a fix run with the same notes + a new note to "Fix failed tests" so that the user can get right into fixing instead of having to trigger a new run manually. This will make the feedback loop much smoother and encourage users to fix tests immediately instead of leaving them broken for a while.
 
 ## Bugs
-- [ ] [BUG] Watchtower Trends page: Recent Runs section does not show the latest two --human runs, it only shows the last --milestone run. This is critical for users to verify that their latest runs are being tracked and to see their most recent performance data. It also only ever shows the most recent run, with a count of 1 instead of all of them.
+- [~] [BUG] Watchtower Trends page: Recent Runs section does not show the latest two --human runs, it only shows the last --milestone run. This is critical for users to verify that their latest runs are being tracked and to see their most recent performance data. It also only ever shows the most recent run, with a count of 1 instead of all of them.
 - [ ] [BUG] Watchtower Trends page: Per-stage breakdown shows unclear arbitrary percentage in Last Run column, Budget Util is redundant, Avg Turns and Last Run are always identical, and Build stage row never populates
 - [ ] [BUG] Watchtower Reports page: Test Audit section never displays any information
 - [ ] [BUG] Watchtower Actions screen: Auto-refresh wipes all form fields every few seconds, making the screen unusable during a pipeline run. Actions screen has no live run data and should not refresh at all

@@ -49,7 +49,7 @@ _reconstruct_coder_summary() {
     _untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null \
         | grep -v '^\.claude/logs/' \
         | grep -v "^$(basename "${TEKHTON_SESSION_DIR:-__nosession__}")/" \
-        | head -30)
+        | head -30 || true)
 
     cat > CODER_SUMMARY.md <<RECON_EOF
 ## Status: COMPLETE

@@ -159,8 +159,157 @@ _parse_reviewer_report() {
 }
 
 # _parse_run_summaries DIR DEPTH
-# Read last N RUN_SUMMARY.json files, extract per-run metrics.
+# Read last N run records from metrics.jsonl (primary) or RUN_SUMMARY_*.json
+# files (fallback). metrics.jsonl is authoritative because it accumulates
+# across all runs and is written by _hook_record_metrics before dashboard
+# emission. Individual RUN_SUMMARY_*.json files are only a fallback for
+# projects that have them but lack a metrics.jsonl.
 _parse_run_summaries() {
+    local dir="$1"
+    local depth="${2:-50}"
+
+    local metrics_file="${dir}/metrics.jsonl"
+
+    # Primary path: read from metrics.jsonl (has all historical data)
+    if [[ -f "$metrics_file" ]] && [[ -s "$metrics_file" ]]; then
+        _parse_run_summaries_from_jsonl "$metrics_file" "$depth"
+        return
+    fi
+
+    # Fallback: read individual RUN_SUMMARY_*.json files
+    _parse_run_summaries_from_files "$dir" "$depth"
+}
+
+# _parse_run_summaries_from_jsonl METRICS_FILE DEPTH
+# Parse metrics.jsonl (one JSON object per line) and convert to the runs
+# array format expected by the frontend. Reads the last DEPTH lines.
+_parse_run_summaries_from_jsonl() {
+    local metrics_file="$1"
+    local depth="$2"
+
+    # Prefer python3 for reliable JSON parsing
+    if command -v python3 &>/dev/null; then
+        local py_result
+        py_result=$(python3 -c "
+import json, sys
+results = []
+lines = []
+with open(sys.argv[1]) as f:
+    for line in f:
+        line = line.strip()
+        if line:
+            lines.append(line)
+# Take last N lines (most recent runs)
+for line in lines[-int(sys.argv[2]):]:
+    try:
+        d = json.loads(line)
+        # Derive run_type from task_type + milestone_mode
+        run_type = 'adhoc'
+        if d.get('milestone_mode') is True or d.get('milestone_mode') == 'true':
+            run_type = 'milestone'
+        else:
+            tt = d.get('task_type', '')
+            if tt == 'bug':
+                run_type = 'human_bug'
+            elif tt == 'feature':
+                run_type = 'human_feat'
+            elif tt == 'polish':
+                run_type = 'human_polish'
+            elif tt == 'drift':
+                run_type = 'drift'
+        # Build per-stage data from individual turn counts
+        stages = {}
+        for sname, skey in [('coder','coder_turns'),('reviewer','reviewer_turns'),('tester','tester_turns'),('scout','scout_turns')]:
+            t = d.get(skey, 0)
+            if t and int(t) > 0:
+                stages[sname] = {'turns': int(t), 'duration_s': 0, 'budget': 0}
+        # Task label: first 80 chars of task
+        task = d.get('task', '')
+        task_label = task[:80] if task else ''
+        results.append({
+            'outcome': d.get('outcome', 'unknown'),
+            'total_turns': d.get('total_turns', 0),
+            'total_time_s': d.get('total_time_s', 0),
+            'milestone': '',
+            'run_type': run_type,
+            'task_label': task_label,
+            'timestamp': d.get('timestamp', ''),
+            'team': '',
+            'stages': stages
+        })
+    except:
+        pass
+# Reverse so newest is first
+results.reverse()
+print(json.dumps(results))
+" "$metrics_file" "$depth" 2>/dev/null || true)
+
+        if [[ -n "$py_result" ]] && [[ "$py_result" != "[]" ]]; then
+            echo "$py_result"
+            return
+        fi
+    fi
+
+    # Fallback: portable sed/awk extraction from JSONL
+    local result="["
+    local first=true
+    local count=0
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        [[ "$count" -ge "$depth" ]] && break
+
+        local outcome
+        outcome=$(printf '%s' "$line" | sed -n 's/.*"outcome"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        : "${outcome:=unknown}"
+        local turns
+        turns=$(printf '%s' "$line" | sed -n 's/.*"total_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        : "${turns:=0}"
+        local time_s
+        time_s=$(printf '%s' "$line" | sed -n 's/.*"total_time_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        : "${time_s:=0}"
+        local task_type
+        task_type=$(printf '%s' "$line" | sed -n 's/.*"task_type"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        : "${task_type:=adhoc}"
+        local ms_mode
+        ms_mode=$(printf '%s' "$line" | sed -n 's/.*"milestone_mode"[[:space:]]*:[[:space:]]*\([a-z]*\).*/\1/p' | head -1)
+        local run_type="adhoc"
+        if [[ "$ms_mode" = "true" ]]; then
+            run_type="milestone"
+        else
+            case "$task_type" in
+                bug) run_type="human_bug" ;;
+                feature) run_type="human_feat" ;;
+                polish) run_type="human_polish" ;;
+                drift) run_type="drift" ;;
+            esac
+        fi
+        local task_label
+        task_label=$(printf '%s' "$line" | sed -n 's/.*"task"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        task_label="${task_label:0:80}"
+        local timestamp
+        timestamp=$(printf '%s' "$line" | sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+
+        local json_content
+        json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"\",\"run_type\":\"${run_type}\",\"task_label\":\"${task_label}\",\"timestamp\":\"${timestamp}\",\"stages\":{}}"
+
+        if [[ "$first" = true ]]; then
+            first=false
+        else
+            result="${result},"
+        fi
+        result="${result}${json_content}"
+        count=$(( count + 1 ))
+    done < <(tail -n "$depth" "$metrics_file" 2>/dev/null | tac 2>/dev/null || tail -n "$depth" "$metrics_file")
+
+    result="${result}]"
+    echo "$result"
+}
+
+# _parse_run_summaries_from_files DIR DEPTH
+# Legacy path: read individual RUN_SUMMARY_*.json files (fallback when
+# metrics.jsonl doesn't exist).
+_parse_run_summaries_from_files() {
     local dir="$1"
     local depth="${2:-50}"
 
