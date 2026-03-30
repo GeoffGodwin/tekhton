@@ -660,19 +660,21 @@
     h += statRow('Review rejection rate', Math.round((rC / mLen) * 100) + '%');
     h += statRow('Split frequency', Math.round((sC / mLen) * 100) + '%');
     var tg = {}, tn, ta = '';
-    for (var g = 0; g < mRuns.length; g++) { tn = (mRuns[g].run_type || 'milestone').toLowerCase(); if (!tg[tn]) tg[tn] = { t: 0, c: 0 }; tg[tn].t += (mRuns[g].total_turns || 0); tg[tn].c++; }
+    for (var g = 0; g < mRuns.length; g++) { tn = (mRuns[g].run_type || 'adhoc').toLowerCase(); if (!tg[tn]) tg[tn] = { t: 0, c: 0 }; tg[tn].t += (mRuns[g].total_turns || 0); tg[tn].c++; }
     var tns = []; for (tn in tg) if (tg.hasOwnProperty(tn)) tns.push(tn); tns.sort();
     for (var t = 0; t < tns.length; t++) { var lb = tns[t].replace(/_/g, ' '); if (ta) ta += ' \u00B7 '; ta += lb.charAt(0).toUpperCase() + lb.slice(1) + ' avg: ' + Math.round(tg[tns[t]].t / tg[tns[t]].c) + ' turns'; }
     if (ta) h += '<div class="stat-row type-averages"><span class="stat-label">By type</span><span class="stat-value stat-value-small">' + ta + '</span></div>';
     h += '</div>' + renderHealthCard();
     h += '<div class="card trend-section"><h3>Per-Stage Breakdown</h3>' + renderStageBreakdown(mRuns) + '</div></div>';
     var af = getRunTypeFilter();
-    h += '<div class="card trend-section" style="margin-top:0.75rem"><div class="trends-header-row"><h3>Recent Runs (' + runs.length + ')</h3><div class="run-type-filters">';
+    var visCount = 0;
+    for (var vc = 0; vc < runs.length; vc++) { if (matchFilter(af, (runs[vc].run_type || 'adhoc').toLowerCase())) visCount++; }
+    h += '<div class="card trend-section" style="margin-top:0.75rem"><div class="trends-header-row"><h3>Recent Runs (<span class="run-count">' + visCount + '</span>)</h3><div class="run-type-filters">';
     var fl = [['all','All'],['milestone','Milestones'],['human','Human Notes'],['drift','Drift'],['adhoc','Ad Hoc']];
     for (var fi = 0; fi < fl.length; fi++) h += '<button class="filter-btn' + (af === fl[fi][0] ? ' active' : '') + '" data-filter="' + fl[fi][0] + '">' + fl[fi][1] + '</button>';
     h += '</div></div><ul class="run-list">';
     for (var r = 0; r < runs.length; r++) {
-      var run = runs[r], rt = (run.run_type || 'milestone').toLowerCase();
+      var run = runs[r], rt = (run.run_type || 'adhoc').toLowerCase();
       var oi = (run.outcome || '').toLowerCase() === 'pass' || (run.outcome || '').toLowerCase() === 'success' ? '\u2713' : '\u2717';
       h += '<li' + (matchFilter(af, rt) ? '' : ' class="hidden"') + '><span class="run-num">#' + (runs.length - r) + '</span>';
       h += '<span class="' + badgeClass(rt) + ' run-type-tag">' + esc(rt.replace(/_/g, ' ')) + '</span>';
@@ -692,10 +694,15 @@
       var ab = document.querySelectorAll('.filter-btn');
       for (var a = 0; a < ab.length; a++) ab[a].classList.toggle('active', ab[a].dataset.filter === f);
       var lis = document.querySelectorAll('.run-list li');
+      var shown = 0;
       for (var ri = 0; ri < lis.length; ri++) {
         var b = lis[ri].querySelector('.run-type-tag'), it = b ? b.textContent.toLowerCase().replace(/\s+/g, '_') : '';
-        lis[ri].classList.toggle('hidden', !matchFilter(f, it));
+        var vis = matchFilter(f, it);
+        lis[ri].classList.toggle('hidden', !vis);
+        if (vis) shown++;
       }
+      var rc = document.querySelector('.run-count');
+      if (rc) rc.textContent = shown;
     });
   }
   function renderHealthCard() {

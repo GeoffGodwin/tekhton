@@ -1,73 +1,46 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 3 test scripts (script-level assertions)
-Verdict: PASS
+Tests audited: 3 files, ~100 test assertions
+Verdict: CONCERNS
+
+---
 
 ### Findings
 
-#### INTEGRITY: Line-number hardcoding in dashboard_emitters test
-- File: tests/test_nonblocking_dashboard_emitters.sh:11,20
-- Issue: The test asserts that `dep_arr` appears in a `local` declaration on **line 162**
-  and that `read -ra dep_arr` appears on **line 166** of `lib/dashboard_emitters.sh`.
-  Both line assertions are currently correct: line 162 reads
-  `local i dep_list dep_item dep_arr` and line 166 reads
-  `IFS=',' read -ra dep_arr <<< "$dep_list"`. However, hardcoded line numbers are
-  silently wrong after any insertion or deletion above those lines — the test would
-  pass while inspecting the wrong line with no error.
+#### INTEGRITY: Always-pass assertion in Test 7
+- File: `tests/test_watchtower_actions_auto_refresh.sh:284-295`
+- Issue: Both branches of the if/else call `pass()`. The test checks whether `manualRefresh()` calls `refreshData()`, but regardless of the result — found or not found — it records a pass. There is no `fail()` call anywhere in this test block. A regression that removes the `refreshData()` call from `manualRefresh()` would produce a green result with the message "exists and will benefit from the guard indirectly".
+  ```bash
+  if grep -A 5 "function manualRefresh()" "$APP_JS" | grep -q "refreshData()"; then
+      pass "manualRefresh() calls refreshData(), inheriting the guard"
+  else
+      pass "manualRefresh() exists and will benefit from the guard indirectly"  # ← always passes
+  fi
+  ```
+- Severity: HIGH
+- Action: Replace the else-branch `pass` with `fail "manualRefresh() does not call refreshData() — guard is not inherited"`.
+
+#### SCOPE: TESTER_REPORT.md claims files were modified that were not
+- File: `TESTER_REPORT.md` (cross-referenced against git status)
+- Issue: The "Files Modified" checklist marks `tests/test_watchtower_html.sh` and `tests/test_watchtower_actions_auto_refresh.sh` as modified (`[x]`). Neither file appears in `git status` as modified or untracked — only `tests/test_watchtower_trends_filter_fix.sh` is new in this task. The two existing test files were not changed. The checked boxes misrepresent what work was done.
 - Severity: MEDIUM
-- Action: Replace `sed -n '162p'` / `sed -n '166p'` with pattern-based searches:
-  `grep -q "local[[:space:]].*dep_arr" "$test_file"` for the declaration and
-  `grep -q "read -ra dep_arr" "$test_file"` for the read command. The intent (verify
-  the variable is properly declared and used) is preserved; the brittleness is removed.
+- Action: Correct TESTER_REPORT.md to reflect that only `tests/test_watchtower_trends_filter_fix.sh` was authored in this task. The other two files are pre-existing tests verified still passing — list them under a "Verified Passing (unchanged)" section, not "Files Modified".
 
-#### COVERAGE: No negative cases in set -euo pipefail duplicate tests
-- File: tests/test_nonblocking_ui_validate_report.sh, tests/test_nonblocking_ui_validate.sh
-- Issue: Both tests verify `count == 1` but contain no negative-case path. If a future
-  edit re-introduces a duplicate `set -euo pipefail`, the tests catch it, but there is
-  no self-verifying path that confirms the failure branch executes and produces the
-  expected FAIL message.
+#### EXERCISE: Node.js logic tests use an inline copy of matchFilter, not the real implementation
+- File: `tests/test_watchtower_trends_filter_fix.sh:229-231` (Test 8)
+- Issue: The Node.js test block defines its own `matchFilter` function verbatim rather than loading or parsing `app.js`. If the real implementation's `matchFilter` logic changes, this test still passes because it is testing the copy. The grep-based tests (Tests 1–7, 10) do exercise the real source; Test 8 adds confidence in the logic model but is decoupled from the file under test.
+- Severity: MEDIUM
+- Action: Either (a) add a pre-check in Test 8 that extracts `matchFilter` from `app.js` and asserts the extracted source matches the inline definition, or (b) add a comment explicitly documenting that Test 8 is a standalone logic unit test and that Tests 1–3 + 10 provide source-coupling coverage. The silent decoupling is the problem, not the approach itself.
+
+#### COVERAGE: No behavioral test for the dynamic run-count span DOM update
+- File: `tests/test_watchtower_trends_filter_fix.sh` (Test 7, lines 188-213)
+- Issue: Root cause 2 of the bug was the static header count (`runs.length` never updating). The fix adds `rc.textContent = shown` inside the filter-click handler (`app.js:704-705`). Test 7 verifies that `classList.toggle('hidden'` and `classList.toggle('active'` appear in the source, but no assertion confirms that `rc.textContent = shown` is present in the click handler body. Test 9 checks that `run-count` appears in the header, but not in the update path.
 - Severity: LOW
-- Action: Acceptable as-is for this style of regression test. Optionally add a comment
-  documenting the expected failure message for future maintainers.
+- Action: Add a targeted grep inside the click handler section (scoped with sed, matching the pattern used in Test 10) that confirms `rc.textContent = shown` is present: `echo "$CLICK_HANDLER" | grep -q "rc.textContent = shown"`.
 
-#### SCOPE: CODER_SUMMARY.md absent — partial audit gap
-- File: (audit infrastructure, not a test file)
-- Issue: `CODER_SUMMARY.md` does not exist in the repo. The audit instructions require
-  it as the primary source for cross-referencing implementation changes. Its absence
-  means this audit relied on `TESTER_REPORT.md` and direct inspection of the
-  implementation files. All three implementation files listed in `TESTER_REPORT.md`
-  exist on disk and were read directly.
+#### NAMING: Test 7 heading overstates what is verified
+- File: `tests/test_watchtower_actions_auto_refresh.sh:284`
+- Issue: The section heading reads `=== Test 7: manualRefresh() behavior with the guard ===` but the test never distinguishes guarded from unguarded behavior (both outcomes pass). The name implies behavioral validation that does not exist.
 - Severity: LOW
-- Action: No change needed to the tests. The pipeline should ensure `CODER_SUMMARY.md`
-  is written before the tester stage runs so future audits have a complete record.
-
-### Assertion Verification (per implementation file)
-
-| Test file | Implementation file | Assertion | Verified |
-|-----------|--------------------|-----------|-----------------------|
-| test_nonblocking_ui_validate_report.sh | lib/ui_validate_report.sh | count of `set -euo pipefail` == 1 | PASS — line 2 is the only occurrence |
-| test_nonblocking_ui_validate.sh | lib/ui_validate.sh | count of `set -euo pipefail` == 1 | PASS — line 2 is the only occurrence |
-| test_nonblocking_dashboard_emitters.sh | lib/dashboard_emitters.sh | `local.*dep_arr` on line 162 | PASS — line 162: `local i dep_list dep_item dep_arr` |
-| test_nonblocking_dashboard_emitters.sh | lib/dashboard_emitters.sh | `read -ra dep_arr` on line 166 | PASS — line 166: `IFS=',' read -ra dep_arr <<< "$dep_list"` |
-
-### Findings: None for remaining rubric categories
-
-#### EXERCISE
-All three tests directly read the implementation files and apply grep/sed to verify
-static code properties. This is appropriate: the non-blocking notes addressed code
-quality issues (duplicate directives, missing local declaration), not behavioral bugs.
-Static text inspection is the correct verification strategy here.
-
-#### WEAKENING
-No existing tests were modified. All three files are new additions.
-
-#### NAMING
-Test file names and inline comments clearly encode the scenario and expected property
-being verified. Descriptions in the failure echo paths state the count found vs.
-expected, aiding diagnosis.
-
-#### SCOPE
-All three implementation files exist on disk and contain the properties under test.
-`JR_CODER_SUMMARY.md` was deleted per the audit context; none of the three test files
-reference it. No orphaned imports detected.
+- Action: Fix the always-pass defect (see INTEGRITY finding above); the naming will then be accurate.

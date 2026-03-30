@@ -2,34 +2,37 @@
 TWEAKED
 
 ## Confidence
-62
+58
 
 ## Reasoning
-- Scope is clear: the Recent Runs section on the Watchtower Trends page has two distinct bugs — wrong run-type filter (only milestone runs surface) and wrong count aggregation (always shows 1)
-- These two bugs are likely in the same data-fetching/rendering path, making this a single cohesive fix
-- No explicit acceptance criteria are stated — a developer knows *what* is broken but has no testable definition of "fixed"
-- No UI testability criterion is present despite this being a pure UI bug fix
-- "All of them" for count is slightly ambiguous — added a reasonable cap/clarification with [PM:] marker
+- The bug description clearly identifies the problem symptoms (wrong run type filtered, count stuck at 1)
+- However, there are **no acceptance criteria** — a developer cannot know when the fix is complete without them
+- The expected behavior is partially implicit: "show all recent runs including --human runs" but the desired count/limit is unspecified
+- Two distinct bugs are bundled (run type filter + count aggregation) — both are clearly related to the same data source/query, so splitting is not warranted
+- No UI testability criterion is present
 
 ## Tweaked Content
 
-**[BUG] Watchtower Trends page: Recent Runs section does not show --human runs and shows incorrect counts**
+**[BUG] Watchtower Trends page: Recent Runs section does not show the latest two --human runs, it only shows the last --milestone run.**
 
-The Recent Runs section on the Watchtower Trends page has two bugs:
+The Recent Runs section on the Trends page has two defects:
+1. **Run type filter bug**: Only `--milestone` runs appear; `--human` runs (and any other run modes) are excluded.
+2. **Count/aggregation bug**: Only the single most recent run is shown with a count of 1, instead of displaying all recent runs up to the display limit.
 
-1. **Wrong run-type filter:** Only the last `--milestone` run appears. Runs executed with `--human` are silently excluded. Users cannot verify their most recent human-mode runs are being tracked.
+This is critical for users to verify that their latest runs are being tracked and to see their most recent performance data.
 
-2. **Wrong count aggregation:** The section always shows a count of 1 regardless of how many runs have been recorded. All runs should be counted and the most recent N should be displayed.
+### Acceptance Criteria
 
-**Acceptance Criteria**
+- Recent Runs section displays runs from all invocation modes (`--human`, `--milestone`, and any other modes) without filtering by type
+- Recent Runs section shows the last N runs (N = existing display limit, or 10 if no limit was previously defined) [PM: limit is unspecified in the bug; use existing limit or default to 10]
+- Each entry in the list represents a distinct run, not an aggregated count
+- After two consecutive `--human` runs, both appear in the Recent Runs list
+- After a `--milestone` run followed by a `--human` run, both appear (not just the milestone run)
+- [PM: UI criterion added] The Recent Runs section renders without console errors after a page load when run history contains mixed run types
 
-- After two or more `--human` runs, the Recent Runs section lists those runs (not just milestone runs)
-- The run count reflects the actual total number of recorded runs, not a hard-coded or accidentally reset value of 1
-- Both `--human` and `--milestone` runs appear in the section (run type is not used as a filter) [PM: made explicit — the fix should not swing to showing only --human and dropping --milestone]
-- [PM: UI criterion] The Trends page loads without console errors after the fix, and the Recent Runs section renders with at least one row when run history exists
-- [PM: UI criterion] The displayed count matches the number of rows shown (or the total run count if rows are paginated/capped)
+### Watch For
+- [PM: added] The data query or aggregation feeding Recent Runs may be grouping by task/mode instead of by run timestamp — check whether a `GROUP BY` or deduplication step is incorrectly collapsing rows
+- [PM: added] Separate from the Trends Average Stage Times bug (noted in Human Notes) — do not conflate the two data paths; they may share the same broken query or be independent
 
-**Watch For**
-
-- [PM: added] The run-type filter may be an explicit `run_mode == "milestone"` guard or an implicit sort/query that only picks up milestone state files — check both the data source and the rendering layer
-- [PM: added] Count-of-1 may be caused by overwriting a counter variable in a loop rather than incrementing it, or by reading only the most recent file rather than all files in the run history directory
+## Questions
+- What is the intended maximum number of runs to display in Recent Runs? (Used "10" as default above — confirm or override.)
