@@ -1134,7 +1134,10 @@
       }).then(function (text) { try { new Function(text)(); } catch (e) { throw new Error('Parse error in ' + name + '.js'); } }));
     })(dataFiles[i]);
     Promise.all(promises).then(function () {
-      buildCausalIndex(); renderActiveTab(); updateStatusIndicator(); checkRefreshLifecycle();
+      buildCausalIndex();
+      var active = getActiveTab();
+      if (active !== 'actions') renderActiveTab();
+      updateStatusIndicator(); checkRefreshLifecycle();
     }).catch(function (err) { if (typeof console !== 'undefined') console.error('Watchtower refresh failed:', err); location.reload(); });
   }
   function checkRefreshLifecycle() {

@@ -17,7 +17,7 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 - [~] [BUG] Watchtower Trends page: Recent Runs section does not show the latest two --human runs, it only shows the last --milestone run. This is critical for users to verify that their latest runs are being tracked and to see their most recent performance data. It also only ever shows the most recent run, with a count of 1 instead of all of them.
 - [x] [BUG] Watchtower Trends page: Per-stage breakdown shows unclear arbitrary percentage in Last Run column, Budget Util is redundant, Avg Turns and Last Run are always identical, and Build stage row never populates
 - [x] [BUG] Watchtower Reports page: Test Audit section never displays any information
-- [ ] [BUG] Watchtower Actions screen: Auto-refresh wipes all form fields every few seconds, making the screen unusable during a pipeline run. Actions screen has no live run data and should not refresh at all
+- [x] [BUG] Watchtower Actions screen: Auto-refresh wipes all form fields every few seconds, making the screen unusable during a pipeline run. Actions screen has no live run data and should not refresh at all
 - [ ] [BUG] Watchtower Actions screen: Cannot add new Parallel Groups, only existing ones are selectable. New projects have only one (or zero) options available
 - [ ] [BUG] Watchtower: Live Run page uses minimal screen real estate and should be a persistent banner at the top of every page instead of its own page
 - [ ] [BUG] Watchtower: Auto-refresh applies to all pages instead of only Reports and Live Run, causing unnecessary reloads elsewhere

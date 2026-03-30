@@ -10,13 +10,14 @@ APPROVED
 - None
 
 ## Non-Blocking Notes
-- None
+- `manualRefresh()` also routes through `refreshData()`, so it too skips `renderActiveTab()` when the Actions tab is active. This is the correct behavior (prevents form wipe on manual refresh), but worth noting for documentation clarity.
+- CODER_SUMMARY.md notes that auto-refresh still applies to all other non-data tabs (Milestones, Trends, etc.) — there's a separate open bug for this. The fix here is correctly scoped to just the Actions tab as specified by the task.
 
 ## Coverage Gaps
-- A targeted test for `renderTestAuditBody()` (e.g. in `tests/test_watchtower_perstage_jsonl.sh` or a new file) would guard against future emitter/renderer shape divergence
-
-## ACP Verdicts
-None
+- None
 
 ## Drift Observations
-- `templates/watchtower/app.js` — The emitter→renderer contract (data shape) is implicit; a comment on `renderTestAuditBody()` documenting the expected fields (`verdict`, `high_findings`, `medium_findings`) would prevent re-introducing the same mismatch
+- None
+
+## ACP Verdicts
+(No Architecture Change Proposals in CODER_SUMMARY.md — section omitted.)

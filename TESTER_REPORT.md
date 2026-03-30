@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_watchtower_test_audit_rendering.sh` — Test Audit section emitter/renderer contract verification
+- [x] `tests/test_watchtower_actions_auto_refresh.sh` — Verify Actions tab auto-refresh guard prevents renderActiveTab() calls
 
 ## Test Run Results
-Passed: 26  Failed: 0
+Passed: 19  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_watchtower_test_audit_rendering.sh`
+- [x] `tests/test_watchtower_actions_auto_refresh.sh`
