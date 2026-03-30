@@ -205,9 +205,9 @@ SEED_CONTRACTS_ENABLED=false
 # MILESTONE_MAX_SPLIT_DEPTH=3
 
 # --- Auto-fix on test failure ---
-# AUTO_FIX_ON_TEST_FAILURE=false    # Auto-seed a fix run when tests fail (opt-in)
-# AUTO_FIX_MAX_DEPTH=1              # Max recursive fix attempts (prevents infinite loops)
-# AUTO_FIX_OUTPUT_LIMIT=4000        # Max chars of test output in fix task string
+# TESTER_FIX_ENABLED=false          # Auto-seed a fix run when tests fail (opt-in)
+# TESTER_FIX_MAX_DEPTH=1            # Max recursive fix attempts (prevents infinite loops)
+# TESTER_FIX_OUTPUT_LIMIT=4000      # Max chars of test output in fix task string
 
 # TEST_BASELINE_ENABLED=true
 

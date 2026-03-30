@@ -306,9 +306,9 @@ run_final_checks() {
     if [ $test_exit -eq 0 ]; then
         print_run_summary
         success "${TEST_CMD}: all passing"
-    elif [[ "${TEST_FIX_ENABLED:-true}" = "true" ]]; then
+    elif [[ "${FINAL_FIX_ENABLED:-true}" = "true" ]]; then
         # --- Auto-fix loop for test failures ---
-        local max_fix_attempts="${TEST_FIX_MAX_ATTEMPTS:-2}"
+        local max_fix_attempts="${FINAL_FIX_MAX_ATTEMPTS:-2}"
         local fix_attempt=0
 
         while [ $test_exit -ne 0 ] && [ "$fix_attempt" -lt "$max_fix_attempts" ]; do
@@ -321,7 +321,7 @@ run_final_checks() {
             test_fix_prompt=$(render_prompt "test_fix")
 
             local fix_model="${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}"
-            local fix_turns="${TEST_FIX_MAX_TURNS:-$((CODER_MAX_TURNS / 3))}"
+            local fix_turns="${FINAL_FIX_MAX_TURNS:-$((CODER_MAX_TURNS / 3))}"
 
             run_agent \
                 "Test Fix (attempt ${fix_attempt})" \

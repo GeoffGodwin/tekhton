@@ -56,10 +56,10 @@ set -euo pipefail
 : "${SEED_CONTRACTS_ENABLED:=false}"
 : "${DESIGN_FILE:=}"
 
-# --- Test fix defaults (auto-fix on final check test failures) ---
-: "${TEST_FIX_ENABLED:=true}"              # Spawn fix agent when TEST_CMD fails in final checks
-: "${TEST_FIX_MAX_ATTEMPTS:=2}"            # Max fix attempts before giving up
-: "${TEST_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
+# --- Final check fix defaults (auto-fix on final check test failures) ---
+: "${FINAL_FIX_ENABLED:=true}"              # Spawn fix agent when TEST_CMD fails in final checks
+: "${FINAL_FIX_MAX_ATTEMPTS:=2}"            # Max fix attempts before giving up
+: "${FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
 
 # --- Drift detection defaults ---
 : "${ARCHITECTURE_LOG_FILE:=ARCHITECTURE_LOG.md}"
@@ -284,10 +284,10 @@ set -euo pipefail
 : "${CAUSAL_LOG_RETENTION_RUNS:=50}"
 : "${CAUSAL_LOG_MAX_EVENTS:=2000}"
 
-# --- Auto-fix on test failure ---
-: "${AUTO_FIX_ON_TEST_FAILURE:=false}"     # Auto-seed fix run on test failure (opt-in)
-: "${AUTO_FIX_MAX_DEPTH:=1}"              # Max recursive fix attempts (recursion guard)
-: "${AUTO_FIX_OUTPUT_LIMIT:=4000}"        # Max chars of test output in fix task string
+# --- Tester stage fix defaults (auto-fix on test failure) ---
+: "${TESTER_FIX_ENABLED:=false}"           # Auto-seed fix run on test failure (opt-in)
+: "${TESTER_FIX_MAX_DEPTH:=1}"             # Max recursive fix attempts (recursion guard)
+: "${TESTER_FIX_OUTPUT_LIMIT:=4000}"       # Max chars of test output in fix task string
 
 # --- Test baseline defaults (pre-existing failure detection) ---
 : "${TEST_BASELINE_ENABLED:=true}"

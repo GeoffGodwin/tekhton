@@ -209,11 +209,11 @@ TESTER_EOF
             warn "TESTER_REPORT.md updated — failed files reset to unchecked for resume."
         elif grep -qE "^\s+-[0-9]+:" "$LOG_FILE" || grep -q " -[1-9][0-9]*:" "$LOG_FILE"; then
             # --- Auto-fix on test failure (opt-in) --------------------------------
-            if [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" == "true" ]] \
-               && [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${AUTO_FIX_MAX_DEPTH:-1}" ]]; then
+            if [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]] \
+               && [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${TESTER_FIX_MAX_DEPTH:-1}" ]]; then
                 local _fix_depth="${TEKHTON_FIX_DEPTH:-0}"
-                local _max_depth="${AUTO_FIX_MAX_DEPTH:-1}"
-                local _output_limit="${AUTO_FIX_OUTPUT_LIMIT:-4000}"
+                local _max_depth="${TESTER_FIX_MAX_DEPTH:-1}"
+                local _output_limit="${TESTER_FIX_OUTPUT_LIMIT:-4000}"
                 warn "${TEST_CMD} reported failures. Auto-fix enabled (depth ${_fix_depth}/${_max_depth}) — seeding fix run."
 
                 # Capture test failure output from log (truncate to limit)
@@ -244,8 +244,8 @@ ${_failure_output}"
                 fi
             else
                 error "${TEST_CMD} reported failures. Review TESTER_REPORT.md and the log."
-                if [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" == "true" ]]; then
-                    warn "Auto-fix depth limit reached (${TEKHTON_FIX_DEPTH:-0}/${AUTO_FIX_MAX_DEPTH:-1}). No further recursion."
+                if [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]]; then
+                    warn "Auto-fix depth limit reached (${TEKHTON_FIX_DEPTH:-0}/${TESTER_FIX_MAX_DEPTH:-1}). No further recursion."
                 fi
                 warn "Resume with: $0 --start-at tester \"${TASK}\""
             fi

@@ -670,7 +670,7 @@
       return '<span class="' + badgeClass(mx) + '">' + f.length + ' ' + mx + '</span>';
     }
     if (key === 'reviewer' && data.verdict) return '<span class="' + badgeClass(data.verdict) + '">' + esc(data.verdict) + '</span>';
-    if (key === 'test_audit' && data.total != null) return '<span class="badge badge-info">' + (data.passed || 0) + '/' + data.total + ' passed</span>';
+    if (key === 'test_audit' && data.verdict) return '<span class="' + badgeClass(data.verdict) + '">' + esc(data.verdict) + '</span>';
     if (key === 'backlog') { var tot = (data.bug || 0) + (data.feat || 0) + (data.polish || 0); if (tot > 0) return '<span class="badge badge-info">' + tot + ' items</span>'; }
     return '';
   }
@@ -696,10 +696,9 @@
   function renderReviewerBody(data) { return statRow('Verdict:', esc(data.verdict || 'unknown')); }
   function renderTestAuditBody(data) {
     if (!data) return '<em>No test audit data</em>';
-    var html = '';
-    if (data.total != null) { html += statRow('Total tests:', esc(data.total)) + statRow('Passed:', esc(data.passed || 0)) + statRow('Failed:', esc(data.failed || 0)); }
-    if (data.pre_existing_failures != null) html += statRow('Pre-existing failures:', esc(data.pre_existing_failures));
-    if (data.details) html += '<div style="white-space:pre-wrap;font-size:0.75rem;margin-top:0.5rem">' + esc(data.details) + '</div>';
+    var html = statRow('Verdict:', '<span class="' + badgeClass(data.verdict || 'skipped') + '">' + esc(data.verdict || 'skipped') + '</span>');
+    if (data.high_findings != null) html += statRow('High severity findings:', esc(data.high_findings));
+    if (data.medium_findings != null) html += statRow('Medium severity findings:', esc(data.medium_findings));
     return html;
   }
   function renderBacklogBody(data) {

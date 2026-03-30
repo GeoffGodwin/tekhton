@@ -2,35 +2,42 @@
 TWEAKED
 
 ## Confidence
-58
+55
 
 ## Reasoning
-- Four distinct, identifiable bugs are named — scope is clear and bounded to the Trends page per-stage breakdown table
-- "Budget Util is redundant" lacks a stated fix direction: remove the column entirely, merge it into another, or replace it with something else? A developer could make a call, but two developers might reach different conclusions
-- "Last Run column shows an unclear arbitrary percentage" — clear that it's wrong, but what it SHOULD show is unstated; a developer must reverse-engineer intent from the data model
-- "Avg Turns and Last Run are always identical" — data bug is clear, but no acceptance criterion defines what the correct difference looks like
-- "Build stage row never populates" — clear and actionable
-- No acceptance criteria present — added testable criteria below
-- UI-testable criterion added per rubric (Trends page renders without console errors after fix)
+- Scope is clear enough: the Test Audit section on the Watchtower Reports page displays nothing when it should display data
+- The bug title is specific (a named UI section on a named page), so a developer familiar with the codebase will know where to look
+- Missing: no acceptance criteria stating what the section *should* display once fixed, making it hard to verify the fix is complete
+- Missing: no UI-verifiable criterion (the project has UI infrastructure; a before/after test criterion is needed)
+- Missing: no indication of what triggers the empty state — is data absent from the backend, is the frontend rendering logic broken, or is a data fetch failing silently?
+- The related human notes suggest Watchtower has widespread data/refresh bugs, so the root cause here (stale data? missing fetch? rendering guard?) is genuinely ambiguous without a criterion
 
 ## Tweaked Content
 
-[BUG] Watchtower Trends page: Per-stage breakdown — fix Last Run column content, remove redundant Budget Util column, fix Avg Turns/Last Run identity bug, and fix unpopulated Build stage row
+[BUG] Watchtower Reports page: Test Audit section never displays any information
 
-### Problem Description
+**Problem:**
+The Test Audit section on the Watchtower Reports page is permanently empty — no
+test results, no counts, no status indicators are rendered, regardless of whether
+runs with test data exist.
 
-The per-stage breakdown table on the Trends page has four defects:
+**Acceptance Criteria:**
+- When at least one completed pipeline run exists with test output, the Test Audit
+  section renders test result data (e.g., pass/fail counts, test names, or audit
+  summary — whatever the section is designed to show)
+- When no runs with test data exist, the section renders a visible empty-state
+  message (e.g., "No test data available") rather than a blank region
+- [PM: Added] The section loads without JavaScript console errors
+- [PM: Added] The fix does not regress other Reports page sections (Overview,
+  Stage Breakdown, etc. continue to display correctly)
+- [PM: Added] If the root cause is a missing or broken data fetch, the fix
+  includes the fetch; if it is a rendering guard evaluating to false, the fix
+  corrects the guard condition
 
-1. **Last Run column** shows an unclear, apparently arbitrary percentage. It should show the turn count (or time) from the most recent run for that stage — not a percentage.
-2. **Budget Util column** is redundant with other displayed data. [PM: Interpreted as "remove this column"; if it should instead be replaced with a different metric, the human should clarify before implementation.]
-3. **Avg Turns and Last Run columns always show identical values.** These are distinct concepts — average across all historical runs vs. the single most recent run — and should differ whenever more than one run exists.
-4. **Build stage row never populates.** The Build stage produces no data in the per-stage table even when build activity occurred during a run.
+**[PM: Note for implementer]** Investigate whether the issue is:
+1. A fetch/API call that never fires or returns empty unexpectedly
+2. A conditional render guard (e.g., `if data && data.testAudit`) that evaluates
+   falsy due to a shape mismatch
+3. A missing data field in the backend response for the Reports endpoint
 
-### Acceptance Criteria
-
-- [ ] Last Run column displays the turn count (integer) from the most recent run for each stage, not a percentage
-- [ ] Budget Util column is removed from the per-stage breakdown table [PM: remove unless human prefers replacement metric]
-- [ ] Avg Turns and Last Run show different values when more than one run has been recorded (they may be equal only on the very first run)
-- [ ] Build stage row populates with turn count and average data when build activity was recorded in run history
-- [ ] Trends page loads without JavaScript console errors after all changes
-- [ ] No regression to other columns (Stage, Avg Time, etc.) in the per-stage table
+Root cause should be confirmed before deciding the fix approach.

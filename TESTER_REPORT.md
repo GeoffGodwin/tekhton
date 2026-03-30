@@ -1,13 +1,11 @@
-# Tester Report
-
 ## Planned Tests
-- [ ] `tests/test_watchtower_perstage_jsonl.sh` — Test sed/awk fallback in _parse_run_summaries_from_jsonl() for per-stage turn and budget extraction
+- [x] `tests/test_watchtower_test_audit_rendering.sh` — Test Audit section emitter/renderer contract verification
 
 ## Test Run Results
-Passed: 0  Failed: 0
+Passed: 26  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [ ] `tests/test_watchtower_perstage_jsonl.sh`
+- [x] `tests/test_watchtower_test_audit_rendering.sh`

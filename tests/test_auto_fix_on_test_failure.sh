@@ -3,9 +3,9 @@
 # test_auto_fix_on_test_failure.sh — Auto-fix on test failure behavior
 #
 # Tests the auto-fix feature that re-seeds the pipeline on test failure:
-#   1. Config defaults (AUTO_FIX_ON_TEST_FAILURE, AUTO_FIX_MAX_DEPTH, AUTO_FIX_OUTPUT_LIMIT)
+#   1. Config defaults (TESTER_FIX_ENABLED, TESTER_FIX_MAX_DEPTH, TESTER_FIX_OUTPUT_LIMIT)
 #   2. Depth guard logic (stops recursing at max depth)
-#   3. Failure output truncation to AUTO_FIX_OUTPUT_LIMIT
+#   3. Failure output truncation to TESTER_FIX_OUTPUT_LIMIT
 #   4. Feature is opt-in (disabled by default)
 #   5. Test failure detection via grep patterns
 # =============================================================================
@@ -76,14 +76,14 @@ echo "=== Phase 1: Config Defaults ==="
 
 load_config
 
-assert_eq "1.1 AUTO_FIX_ON_TEST_FAILURE default is false" \
-    "false" "${AUTO_FIX_ON_TEST_FAILURE:-}"
+assert_eq "1.1 TESTER_FIX_ENABLED default is false" \
+    "false" "${TESTER_FIX_ENABLED:-}"
 
-assert_eq "1.2 AUTO_FIX_MAX_DEPTH default is 1" \
-    "1" "${AUTO_FIX_MAX_DEPTH:-}"
+assert_eq "1.2 TESTER_FIX_MAX_DEPTH default is 1" \
+    "1" "${TESTER_FIX_MAX_DEPTH:-}"
 
-assert_eq "1.3 AUTO_FIX_OUTPUT_LIMIT default is 4000" \
-    "4000" "${AUTO_FIX_OUTPUT_LIMIT:-}"
+assert_eq "1.3 TESTER_FIX_OUTPUT_LIMIT default is 4000" \
+    "4000" "${TESTER_FIX_OUTPUT_LIMIT:-}"
 
 # =============================================================================
 # Phase 2: Test depth guard logic
@@ -92,7 +92,7 @@ echo
 echo "=== Phase 2: Depth Guard Logic ==="
 
 # Test case: depth 0, max 1 — should allow fix
-# Simulate: TEKHTON_FIX_DEPTH=0, AUTO_FIX_MAX_DEPTH=1
+# Simulate: TEKHTON_FIX_DEPTH=0, TESTER_FIX_MAX_DEPTH=1
 FIX_DEPTH=0
 MAX_DEPTH=1
 if [[ "$FIX_DEPTH" -lt "$MAX_DEPTH" ]]; then
@@ -210,14 +210,14 @@ echo "=== Phase 5: Feature is Opt-In ==="
 # Reload config to check defaults again
 load_config
 
-# Verify AUTO_FIX_ON_TEST_FAILURE is false by default
-if [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" != "true" ]]; then
+# Verify TESTER_FIX_ENABLED is false by default
+if [[ "${TESTER_FIX_ENABLED:-false}" != "true" ]]; then
     assert_true "5.1 Auto-fix is disabled by default" "true"
 else
     assert_false "5.1 Auto-fix is disabled by default" "true"
 fi
 
-# Create config with AUTO_FIX_ON_TEST_FAILURE=true
+# Create config with TESTER_FIX_ENABLED=true
 cat > "$PROJECT_DIR/.claude/pipeline.conf" << 'EOF'
 PROJECT_NAME=test-project
 CLAUDE_STANDARD_MODEL=claude-sonnet
@@ -227,21 +227,21 @@ TESTER_MAX_TURNS=20
 JR_CODER_MAX_TURNS=15
 ANALYZE_CMD=echo "mock"
 TEST_CMD=bash tests/mock_test.sh
-AUTO_FIX_ON_TEST_FAILURE=true
-AUTO_FIX_MAX_DEPTH=2
-AUTO_FIX_OUTPUT_LIMIT=2000
+TESTER_FIX_ENABLED=true
+TESTER_FIX_MAX_DEPTH=2
+TESTER_FIX_OUTPUT_LIMIT=2000
 EOF
 
 load_config
 
 assert_eq "5.2 Auto-fix can be enabled via config" \
-    "true" "${AUTO_FIX_ON_TEST_FAILURE:-}"
+    "true" "${TESTER_FIX_ENABLED:-}"
 
 assert_eq "5.3 Max depth can be configured" \
-    "2" "${AUTO_FIX_MAX_DEPTH:-}"
+    "2" "${TESTER_FIX_MAX_DEPTH:-}"
 
 assert_eq "5.4 Output limit can be configured" \
-    "2000" "${AUTO_FIX_OUTPUT_LIMIT:-}"
+    "2000" "${TESTER_FIX_OUTPUT_LIMIT:-}"
 
 # =============================================================================
 # Phase 6: Config clamping and validation
@@ -259,19 +259,19 @@ TESTER_MAX_TURNS=20
 JR_CODER_MAX_TURNS=15
 ANALYZE_CMD=echo "mock"
 TEST_CMD=bash tests/mock_test.sh
-AUTO_FIX_MAX_DEPTH=999
-AUTO_FIX_OUTPUT_LIMIT=999999
+TESTER_FIX_MAX_DEPTH=999
+TESTER_FIX_OUTPUT_LIMIT=999999
 EOF
 
 load_config
 
 # MAX_DEPTH should be clamped to some reasonable max (check in config_defaults.sh)
 # For now, just verify the value is loaded
-assert_true "6.1 AUTO_FIX_MAX_DEPTH loads from config" \
-    "[[ -n \"${AUTO_FIX_MAX_DEPTH:-}\" ]]"
+assert_true "6.1 TESTER_FIX_MAX_DEPTH loads from config" \
+    "[[ -n \"${TESTER_FIX_MAX_DEPTH:-}\" ]]"
 
-assert_true "6.2 AUTO_FIX_OUTPUT_LIMIT loads from config" \
-    "[[ -n \"${AUTO_FIX_OUTPUT_LIMIT:-}\" ]]"
+assert_true "6.2 TESTER_FIX_OUTPUT_LIMIT loads from config" \
+    "[[ -n \"${TESTER_FIX_OUTPUT_LIMIT:-}\" ]]"
 
 # =============================================================================
 # Phase 7: Environment variable override (TEKHTON_FIX_DEPTH)
@@ -307,8 +307,8 @@ TESTER_MAX_TURNS=20
 JR_CODER_MAX_TURNS=15
 ANALYZE_CMD=echo "mock"
 TEST_CMD=bash tests/mock_test.sh
-AUTO_FIX_ON_TEST_FAILURE=true
-AUTO_FIX_MAX_DEPTH=2
+TESTER_FIX_ENABLED=true
+TESTER_FIX_MAX_DEPTH=2
 EOF
 
 load_config
@@ -319,8 +319,8 @@ FAILURE_DETECTED=true
 # Depth 0, max depth 2 — should allow fix
 TEKHTON_FIX_DEPTH=0
 if [[ "$FAILURE_DETECTED" == "true" ]] && \
-   [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" == "true" ]] && \
-   [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${AUTO_FIX_MAX_DEPTH:-1}" ]]; then
+   [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]] && \
+   [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${TESTER_FIX_MAX_DEPTH:-1}" ]]; then
     assert_true "8.1 Condition allows fix at depth 0 with max 2" "true"
 else
     assert_false "8.1 Condition allows fix at depth 0 with max 2" "true"
@@ -329,8 +329,8 @@ fi
 # Depth 1, max depth 2 — should allow fix
 TEKHTON_FIX_DEPTH=1
 if [[ "$FAILURE_DETECTED" == "true" ]] && \
-   [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" == "true" ]] && \
-   [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${AUTO_FIX_MAX_DEPTH:-1}" ]]; then
+   [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]] && \
+   [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${TESTER_FIX_MAX_DEPTH:-1}" ]]; then
     assert_true "8.2 Condition allows fix at depth 1 with max 2" "true"
 else
     assert_false "8.2 Condition allows fix at depth 1 with max 2" "true"
@@ -339,8 +339,8 @@ fi
 # Depth 2, max depth 2 — should NOT allow fix
 TEKHTON_FIX_DEPTH=2
 if [[ "$FAILURE_DETECTED" == "true" ]] && \
-   [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" == "true" ]] && \
-   [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${AUTO_FIX_MAX_DEPTH:-1}" ]]; then
+   [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]] && \
+   [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${TESTER_FIX_MAX_DEPTH:-1}" ]]; then
     assert_false "8.3 Condition blocks fix at depth 2 with max 2" "true"
 else
     assert_true "8.3 Condition blocks fix at depth 2 with max 2" "true"
@@ -356,15 +356,15 @@ TESTER_MAX_TURNS=20
 JR_CODER_MAX_TURNS=15
 ANALYZE_CMD=echo "mock"
 TEST_CMD=bash tests/mock_test.sh
-AUTO_FIX_ON_TEST_FAILURE=false
+TESTER_FIX_ENABLED=false
 EOF
 
 load_config
 
 TEKHTON_FIX_DEPTH=0
 if [[ "$FAILURE_DETECTED" == "true" ]] && \
-   [[ "${AUTO_FIX_ON_TEST_FAILURE:-false}" == "true" ]] && \
-   [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${AUTO_FIX_MAX_DEPTH:-1}" ]]; then
+   [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]] && \
+   [[ "${TEKHTON_FIX_DEPTH:-0}" -lt "${TESTER_FIX_MAX_DEPTH:-1}" ]]; then
     assert_false "8.4 Condition blocks fix when feature disabled" "true"
 else
     assert_true "8.4 Condition blocks fix when feature disabled" "true"

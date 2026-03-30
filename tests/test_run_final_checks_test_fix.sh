@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_run_final_checks_test_fix.sh — TEST_FIX_ENABLED retry loop verification
+# test_run_final_checks_test_fix.sh — FINAL_FIX_ENABLED retry loop verification
 #
-# Tests the run_final_checks() function's TEST_FIX_ENABLED behavior:
+# Tests the run_final_checks() function's FINAL_FIX_ENABLED behavior:
 # - Retry loop terminates on success (test passes after fix)
 # - Retry loop terminates on exhausted attempts (test still fails)
-# - Loop respects TEST_FIX_MAX_ATTEMPTS config
-# - TEST_FIX_ENABLED=false skips the fix agent entirely
+# - Loop respects FINAL_FIX_MAX_ATTEMPTS config
+# - FINAL_FIX_ENABLED=false skips the fix agent entirely
 # =============================================================================
 set -euo pipefail
 
@@ -26,16 +26,16 @@ CLAUDE_JR_CODER_MODEL="claude-sonnet-4-6"
 AGENT_TOOLS_BUILD_FIX=""
 
 # Test variables
-TEST_FIX_ENABLED=true
-TEST_FIX_MAX_ATTEMPTS=2
-TEST_FIX_MAX_TURNS=$((CODER_MAX_TURNS / 3))
+FINAL_FIX_ENABLED=true
+FINAL_FIX_MAX_ATTEMPTS=2
+FINAL_FIX_MAX_TURNS=$((CODER_MAX_TURNS / 3))
 
 # Setup config for defaults
 ANALYZE_CMD="true"
 TEST_CMD="bash /tmp/test_cmd.sh"
 
 export PROJECT_DIR LOG_DIR TIMESTAMP LOG_FILE TASK
-export TEST_FIX_ENABLED TEST_FIX_MAX_ATTEMPTS TEST_FIX_MAX_TURNS
+export FINAL_FIX_ENABLED FINAL_FIX_MAX_ATTEMPTS FINAL_FIX_MAX_TURNS
 export CODER_MAX_TURNS CLAUDE_CODER_MODEL CLAUDE_JR_CODER_MODEL
 export ANALYZE_CMD TEST_CMD AGENT_TOOLS_BUILD_FIX
 
@@ -121,8 +121,8 @@ EOF
     chmod +x /tmp/test_cmd.sh
 
     > "$LOG_FILE"
-    TEST_FIX_ENABLED=true
-    TEST_FIX_MAX_ATTEMPTS=2
+    FINAL_FIX_ENABLED=true
+    FINAL_FIX_MAX_ATTEMPTS=2
 
     local result=0
     run_final_checks "$LOG_FILE" || result=$?
@@ -155,8 +155,8 @@ EOF
     chmod +x /tmp/test_cmd.sh
 
     > "$LOG_FILE"
-    TEST_FIX_ENABLED=true
-    TEST_FIX_MAX_ATTEMPTS=2
+    FINAL_FIX_ENABLED=true
+    FINAL_FIX_MAX_ATTEMPTS=2
 
     local result=0
     run_final_checks "$LOG_FILE" || result=$?
@@ -176,7 +176,7 @@ EOF
     return 0
 }
 
-# --- Test 4: TEST_FIX_ENABLED=false skips fix agent ---
+# --- Test 4: FINAL_FIX_ENABLED=false skips fix agent ---
 test_fix_disabled() {
     _RUN_AGENT_CALL_COUNT=0
     _RUN_AGENT_SUCCESS_ON_ATTEMPT=-1
@@ -189,7 +189,7 @@ EOF
     chmod +x /tmp/test_cmd.sh
 
     > "$LOG_FILE"
-    TEST_FIX_ENABLED=false
+    FINAL_FIX_ENABLED=false
 
     local result=0
     run_final_checks "$LOG_FILE" || result=$?
@@ -201,7 +201,7 @@ EOF
     fi
 
     if [ $_RUN_AGENT_CALL_COUNT -gt 0 ]; then
-        echo "FAIL: run_agent should not be called when TEST_FIX_ENABLED=false (called $_RUN_AGENT_CALL_COUNT times)"
+        echo "FAIL: run_agent should not be called when FINAL_FIX_ENABLED=false (called $_RUN_AGENT_CALL_COUNT times)"
         return 1
     fi
 
@@ -222,8 +222,8 @@ EOF
     chmod +x /tmp/test_cmd.sh
 
     > "$LOG_FILE"
-    TEST_FIX_ENABLED=true
-    TEST_FIX_MAX_ATTEMPTS=2
+    FINAL_FIX_ENABLED=true
+    FINAL_FIX_MAX_ATTEMPTS=2
 
     local result=0
     run_final_checks "$LOG_FILE" || result=$?
