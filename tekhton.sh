@@ -1388,7 +1388,7 @@ if [[ "$HUMAN_MODE" = true ]]; then
         # On crash-recovery resume, CURRENT_NOTE_LINE is already set from env
         # (exported at line ~991). The claimed note is [~], invisible to
         # pick_next_note which only scans [ ] notes. Restore from env directly.
-        local _note_restored=false
+        _note_restored=false
         if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
             log "Human mode: restoring claimed note from prior run"
             _note_restored=true
