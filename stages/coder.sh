@@ -235,7 +235,7 @@ $(cat SCOUT_REPORT.md)
         fi
         if declare -p _STAGE_STATUS &>/dev/null; then
             _STAGE_STATUS[scout]="complete"
-            _STAGE_DURATION[scout]="${LAST_AGENT_ELAPSED:-0}"
+            _STAGE_DURATION[scout]="$(( SECONDS - ${_STAGE_START_TS[scout]:-$SECONDS} ))"
             _STAGE_TURNS[scout]="${LAST_AGENT_TURNS:-0}"
             emit_dashboard_run_state 2>/dev/null || true
         fi

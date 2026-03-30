@@ -2,37 +2,36 @@
 TWEAKED
 
 ## Confidence
-58
+62
 
 ## Reasoning
-- The bug description clearly identifies the problem symptoms (wrong run type filtered, count stuck at 1)
-- However, there are **no acceptance criteria** — a developer cannot know when the fix is complete without them
-- The expected behavior is partially implicit: "show all recent runs including --human runs" but the desired count/limit is unspecified
-- Two distinct bugs are bundled (run type filter + count aggregation) — both are clearly related to the same data source/query, so splitting is not warranted
-- No UI testability criterion is present
+- Scope is clear: auto-refresh must be scoped to Reports and Live Run pages only
+- Fix direction is unambiguous — restrict the refresh trigger to those two pages
+- No acceptance criteria listed; a developer cannot verify the fix is correct without them
+- No specification of which pages currently exist in Watchtower, so "elsewhere" is underspecified
+- UI testability gap: no verifiable browser-level criteria despite this being a navigation/reload behavior
 
 ## Tweaked Content
 
-**[BUG] Watchtower Trends page: Recent Runs section does not show the latest two --human runs, it only shows the last --milestone run.**
+### [BUG] Watchtower: Auto-refresh applies to all pages instead of only Reports and Live Run
 
-The Recent Runs section on the Trends page has two defects:
-1. **Run type filter bug**: Only `--milestone` runs appear; `--human` runs (and any other run modes) are excluded.
-2. **Count/aggregation bug**: Only the single most recent run is shown with a count of 1, instead of displaying all recent runs up to the display limit.
+**Problem:** The auto-refresh mechanism triggers on all Watchtower pages instead of being restricted to the pages where live data is relevant: Reports and Live Run.
 
-This is critical for users to verify that their latest runs are being tracked and to see their most recent performance data.
+**Expected behavior:** Auto-refresh should only be active on:
+- The Reports page
+- The Live Run page
 
-### Acceptance Criteria
+Auto-refresh must be inactive (no polling, no reloads) on all other pages (e.g., Trends, Settings, History, or any other non-live pages).
 
-- Recent Runs section displays runs from all invocation modes (`--human`, `--milestone`, and any other modes) without filtering by type
-- Recent Runs section shows the last N runs (N = existing display limit, or 10 if no limit was previously defined) [PM: limit is unspecified in the bug; use existing limit or default to 10]
-- Each entry in the list represents a distinct run, not an aggregated count
-- After two consecutive `--human` runs, both appear in the Recent Runs list
-- After a `--milestone` run followed by a `--human` run, both appear (not just the milestone run)
-- [PM: UI criterion added] The Recent Runs section renders without console errors after a page load when run history contains mixed run types
+**Acceptance criteria:**
+- Navigating to the Reports page starts the auto-refresh cycle as before
+- Navigating to the Live Run page starts the auto-refresh cycle as before
+- Navigating to any other page (e.g., Trends) does NOT trigger auto-refresh
+- Switching away from Reports or Live Run to another page stops any active refresh timer
+- Switching back to Reports or Live Run from another page resumes auto-refresh
+- [PM: added] No console errors on any page transition related to refresh teardown
+- [PM: added] Rapid page switching (Reports → Trends → Reports) does not result in duplicate refresh intervals
 
-### Watch For
-- [PM: added] The data query or aggregation feeding Recent Runs may be grouping by task/mode instead of by run timestamp — check whether a `GROUP BY` or deduplication step is incorrectly collapsing rows
-- [PM: added] Separate from the Trends Average Stage Times bug (noted in Human Notes) — do not conflate the two data paths; they may share the same broken query or be independent
-
-## Questions
-- What is the intended maximum number of runs to display in Recent Runs? (Used "10" as default above — confirm or override.)
+**Watch For:**
+- [PM: added] Timer/interval leak: if the refresh interval is not cleared on page leave, multiple overlapping timers can accumulate and cause rapid-fire reloads
+- [PM: added] Component lifecycle: if the refresh is initialized in a shared layout component rather than per-page, it must be moved or made conditional on the current route

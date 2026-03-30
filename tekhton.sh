@@ -1823,7 +1823,7 @@ _run_pipeline_stages() {
             "{\"confidence\":${INTAKE_CONFIDENCE:-0}}")
         _STAGE_STATUS[intake]="complete"
         _STAGE_TURNS[intake]="${LAST_AGENT_TURNS:-0}"
-        _STAGE_DURATION[intake]="${LAST_AGENT_ELAPSED:-0}"
+        _STAGE_DURATION[intake]="$(( SECONDS - ${_STAGE_START_TS[intake]:-$SECONDS} ))"
         emit_dashboard_run_state 2>/dev/null || true
         # If START_AT was "intake", advance to "coder" for subsequent stages
         if [ "$START_AT" = "intake" ]; then
@@ -1896,7 +1896,7 @@ _run_pipeline_stages() {
                     "{\"files_changed\":${_coder_files_changed},\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[coder]="complete"
                 _STAGE_TURNS[coder]="${ACTUAL_CODER_TURNS:-${LAST_AGENT_TURNS:-0}}"
-                _STAGE_DURATION[coder]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[coder]="$(( SECONDS - ${_STAGE_START_TS[coder]:-$SECONDS} ))"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -1923,7 +1923,7 @@ _run_pipeline_stages() {
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[security]="complete"
                 _STAGE_TURNS[security]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[security]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[security]="$(( SECONDS - ${_STAGE_START_TS[security]:-$SECONDS} ))"
                 emit_dashboard_security 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -1949,7 +1949,7 @@ _run_pipeline_stages() {
                     "$_review_verdict_json" "{\"cycles\":${REVIEW_CYCLE:-0}}")
                 _STAGE_STATUS[reviewer]="complete"
                 _STAGE_TURNS[reviewer]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[reviewer]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[reviewer]="$(( SECONDS - ${_STAGE_START_TS[reviewer]:-$SECONDS} ))"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -1976,7 +1976,7 @@ _run_pipeline_stages() {
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[tester_write]="complete"
                 _STAGE_TURNS[tester_write]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[tester_write]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[tester_write]="$(( SECONDS - ${_STAGE_START_TS[tester_write]:-$SECONDS} ))"
                 emit_dashboard_run_state 2>/dev/null || true
                 export TESTER_MODE=""
             fi
@@ -1997,7 +1997,7 @@ _run_pipeline_stages() {
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[tester]="complete"
                 _STAGE_TURNS[tester]="${LAST_AGENT_TURNS:-0}"
-                _STAGE_DURATION[tester]="${LAST_AGENT_ELAPSED:-0}"
+                _STAGE_DURATION[tester]="$(( SECONDS - ${_STAGE_START_TS[tester]:-$SECONDS} ))"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
                 export TESTER_MODE=""
