@@ -50,11 +50,11 @@ calibrate_turn_estimate() {
     fi
 
     # Determine field names based on stage
-    local est_field actual_field
+    local est_field actual_field adjusted_field
     case "$stage" in
-        coder)    est_field="scout_est_coder";    actual_field="coder_turns" ;;
-        reviewer) est_field="scout_est_reviewer";  actual_field="reviewer_turns" ;;
-        tester)   est_field="scout_est_tester";    actual_field="tester_turns" ;;
+        coder)    est_field="scout_est_coder";    actual_field="coder_turns";    adjusted_field="adjusted_coder" ;;
+        reviewer) est_field="scout_est_reviewer";  actual_field="reviewer_turns"; adjusted_field="adjusted_reviewer" ;;
+        tester)   est_field="scout_est_tester";    actual_field="tester_turns";   adjusted_field="adjusted_tester" ;;
         *)
             echo "$recommendation"
             return
@@ -65,14 +65,23 @@ calibrate_turn_estimate() {
     local records
     records=$(tail -n 50 "$_METRICS_FILE")
 
-    # Compute average estimate and average actual for records where est > 0
+    # Compute average estimate and average actual for records where est > 0.
+    # IMPORTANT: Skip records where the agent hit its turn limit (actual >= adjusted * 0.85).
+    # Capped records poison the calibration — they record "turns allowed" not "turns needed",
+    # creating a negative feedback loop that drives limits progressively lower.
     local est_sum=0 actual_sum=0 count=0
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
-        local est actual
+        local est actual adjusted
         est=$(echo "$line" | grep -oE "\"${est_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
         actual=$(echo "$line" | grep -oE "\"${actual_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
+        adjusted=$(echo "$line" | grep -oE "\"${adjusted_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
         if [[ "$est" -gt 0 ]] && [[ "$actual" -gt 0 ]]; then
+            # Skip capped records: if the agent used >= 85% of its allocated turns,
+            # it likely hit the limit rather than finishing naturally
+            if [[ "$adjusted" -gt 0 ]] && [[ $(( actual * 100 / adjusted )) -ge 85 ]]; then
+                continue
+            fi
             est_sum=$(( est_sum + est ))
             actual_sum=$(( actual_sum + actual ))
             count=$(( count + 1 ))

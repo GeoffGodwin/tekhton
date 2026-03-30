@@ -24,10 +24,10 @@ set -euo pipefail
 : "${CLAUDE_JR_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
 : "${CLAUDE_REVIEWER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
 : "${CLAUDE_TESTER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
-: "${CODER_MAX_TURNS:=50}"
-: "${JR_CODER_MAX_TURNS:=25}"
-: "${REVIEWER_MAX_TURNS:=15}"
-: "${TESTER_MAX_TURNS:=30}"
+: "${CODER_MAX_TURNS:=80}"
+: "${JR_CODER_MAX_TURNS:=40}"
+: "${REVIEWER_MAX_TURNS:=20}"
+: "${TESTER_MAX_TURNS:=50}"
 : "${MAX_REVIEW_CYCLES:=3}"
 # Defaults to `true` (no-op) — intentional for projects without a test suite.
 # Projects with tests MUST set TEST_CMD in pipeline.conf.
@@ -86,11 +86,11 @@ set -euo pipefail
 
 # --- Dynamic turn limit defaults ---
 : "${DYNAMIC_TURNS_ENABLED:=true}"
-: "${CODER_MIN_TURNS:=15}"
+: "${CODER_MIN_TURNS:=40}"
 : "${CODER_MAX_TURNS_CAP:=200}"
-: "${REVIEWER_MIN_TURNS:=10}"
-: "${REVIEWER_MAX_TURNS_CAP:=30}"
-: "${TESTER_MIN_TURNS:=10}"
+: "${REVIEWER_MIN_TURNS:=15}"
+: "${REVIEWER_MAX_TURNS_CAP:=50}"
+: "${TESTER_MIN_TURNS:=20}"
 : "${TESTER_MAX_TURNS_CAP:=100}"
 
 # --- Clarification and replan defaults ---
@@ -297,7 +297,7 @@ set -euo pipefail
 
 # --- Test audit defaults (Milestone 20) ---
 : "${TEST_AUDIT_ENABLED:=true}"
-: "${TEST_AUDIT_MAX_TURNS:=8}"
+: "${TEST_AUDIT_MAX_TURNS:=15}"
 : "${TEST_AUDIT_MAX_REWORK_CYCLES:=1}"
 : "${TEST_AUDIT_ORPHAN_DETECTION:=true}"
 : "${TEST_AUDIT_WEAKENING_DETECTION:=true}"

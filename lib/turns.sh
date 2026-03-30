@@ -105,16 +105,26 @@ apply_scout_turn_limits() {
     log "  Interconnected:  ${SCOUT_INTERCONNECTED}"
     log "  Recommended:     coder=${SCOUT_REC_CODER_TURNS}, reviewer=${SCOUT_REC_REVIEWER_TURNS}, tester=${SCOUT_REC_TESTER_TURNS}"
 
-    # Apply scout recommendation, with adaptive calibration, clamped to bounds
+    # Apply scout recommendation, with adaptive calibration, clamped to bounds.
+    # IMPORTANT: Scout can only RAISE the budget above the configured default, never lower it.
+    # This prevents the negative feedback loop where low estimates → low limits → capped data
+    # → even lower estimates.
     if [ "${SCOUT_REC_CODER_TURNS:-0}" -gt 0 ] 2>/dev/null; then
         local calibrated_coder
         calibrated_coder=$(calibrate_turn_estimate "$SCOUT_REC_CODER_TURNS" "coder" | tail -1)
         [[ "$calibrated_coder" =~ ^[0-9]+$ ]] || calibrated_coder="$SCOUT_REC_CODER_TURNS"
-        ADJUSTED_CODER_TURNS=$(clamp_turns "$calibrated_coder" "$CODER_MIN_TURNS" "$CODER_MAX_TURNS_CAP")
-        if [ "$calibrated_coder" != "$SCOUT_REC_CODER_TURNS" ]; then
-            log "[metrics] Adaptive calibration: coder ${SCOUT_REC_CODER_TURNS} → ${calibrated_coder} (adjusted), clamped → ${ADJUSTED_CODER_TURNS}"
+        local clamped_coder
+        clamped_coder=$(clamp_turns "$calibrated_coder" "$CODER_MIN_TURNS" "$CODER_MAX_TURNS_CAP")
+        # Floor: never go below configured default
+        if [ "$clamped_coder" -gt "$CODER_MAX_TURNS" ] 2>/dev/null; then
+            ADJUSTED_CODER_TURNS="$clamped_coder"
         else
-            log "Coder turns: ${CODER_MAX_TURNS} (configured) → ${ADJUSTED_CODER_TURNS} (scout-adjusted)"
+            ADJUSTED_CODER_TURNS="$CODER_MAX_TURNS"
+        fi
+        if [ "$calibrated_coder" != "$SCOUT_REC_CODER_TURNS" ]; then
+            log "[metrics] Adaptive calibration: coder ${SCOUT_REC_CODER_TURNS} → ${calibrated_coder} (adjusted), floor ${CODER_MAX_TURNS} → ${ADJUSTED_CODER_TURNS}"
+        else
+            log "Coder turns: ${CODER_MAX_TURNS} (configured) → ${ADJUSTED_CODER_TURNS} (scout-adjusted, floor=${CODER_MAX_TURNS})"
         fi
     fi
 
@@ -122,11 +132,18 @@ apply_scout_turn_limits() {
         local calibrated_reviewer
         calibrated_reviewer=$(calibrate_turn_estimate "$SCOUT_REC_REVIEWER_TURNS" "reviewer" | tail -1)
         [[ "$calibrated_reviewer" =~ ^[0-9]+$ ]] || calibrated_reviewer="$SCOUT_REC_REVIEWER_TURNS"
-        ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$calibrated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
-        if [ "$calibrated_reviewer" != "$SCOUT_REC_REVIEWER_TURNS" ]; then
-            log "[metrics] Adaptive calibration: reviewer ${SCOUT_REC_REVIEWER_TURNS} → ${calibrated_reviewer} (adjusted), clamped → ${ADJUSTED_REVIEWER_TURNS}"
+        local clamped_reviewer
+        clamped_reviewer=$(clamp_turns "$calibrated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
+        # Floor: never go below configured default
+        if [ "$clamped_reviewer" -gt "$REVIEWER_MAX_TURNS" ] 2>/dev/null; then
+            ADJUSTED_REVIEWER_TURNS="$clamped_reviewer"
         else
-            log "Reviewer turns: ${REVIEWER_MAX_TURNS} (configured) → ${ADJUSTED_REVIEWER_TURNS} (scout-adjusted)"
+            ADJUSTED_REVIEWER_TURNS="$REVIEWER_MAX_TURNS"
+        fi
+        if [ "$calibrated_reviewer" != "$SCOUT_REC_REVIEWER_TURNS" ]; then
+            log "[metrics] Adaptive calibration: reviewer ${SCOUT_REC_REVIEWER_TURNS} → ${calibrated_reviewer} (adjusted), floor ${REVIEWER_MAX_TURNS} → ${ADJUSTED_REVIEWER_TURNS}"
+        else
+            log "Reviewer turns: ${REVIEWER_MAX_TURNS} (configured) → ${ADJUSTED_REVIEWER_TURNS} (scout-adjusted, floor=${REVIEWER_MAX_TURNS})"
         fi
     fi
 
@@ -134,11 +151,18 @@ apply_scout_turn_limits() {
         local calibrated_tester
         calibrated_tester=$(calibrate_turn_estimate "$SCOUT_REC_TESTER_TURNS" "tester" | tail -1)
         [[ "$calibrated_tester" =~ ^[0-9]+$ ]] || calibrated_tester="$SCOUT_REC_TESTER_TURNS"
-        ADJUSTED_TESTER_TURNS=$(clamp_turns "$calibrated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
-        if [ "$calibrated_tester" != "$SCOUT_REC_TESTER_TURNS" ]; then
-            log "[metrics] Adaptive calibration: tester ${SCOUT_REC_TESTER_TURNS} → ${calibrated_tester} (adjusted), clamped → ${ADJUSTED_TESTER_TURNS}"
+        local clamped_tester
+        clamped_tester=$(clamp_turns "$calibrated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
+        # Floor: never go below configured default
+        if [ "$clamped_tester" -gt "$TESTER_MAX_TURNS" ] 2>/dev/null; then
+            ADJUSTED_TESTER_TURNS="$clamped_tester"
         else
-            log "Tester turns: ${TESTER_MAX_TURNS} (configured) → ${ADJUSTED_TESTER_TURNS} (scout-adjusted)"
+            ADJUSTED_TESTER_TURNS="$TESTER_MAX_TURNS"
+        fi
+        if [ "$calibrated_tester" != "$SCOUT_REC_TESTER_TURNS" ]; then
+            log "[metrics] Adaptive calibration: tester ${SCOUT_REC_TESTER_TURNS} → ${calibrated_tester} (adjusted), floor ${TESTER_MAX_TURNS} → ${ADJUSTED_TESTER_TURNS}"
+        else
+            log "Tester turns: ${TESTER_MAX_TURNS} (configured) → ${ADJUSTED_TESTER_TURNS} (scout-adjusted, floor=${TESTER_MAX_TURNS})"
         fi
     fi
 
@@ -209,26 +233,52 @@ estimate_post_coder_turns() {
         local files_tester_part=$(( files_modified * 20 / 10 ))
         estimated_tester=$(( coder_tester_part + files_tester_part ))
 
-        ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$estimated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
-        ADJUSTED_TESTER_TURNS=$(clamp_turns "$estimated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
+        local clamped_reviewer clamped_tester
+        clamped_reviewer=$(clamp_turns "$estimated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
+        clamped_tester=$(clamp_turns "$estimated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
+
+        # Floor: never go below configured defaults
+        if [ "$clamped_reviewer" -gt "$REVIEWER_MAX_TURNS" ] 2>/dev/null; then
+            ADJUSTED_REVIEWER_TURNS="$clamped_reviewer"
+        else
+            ADJUSTED_REVIEWER_TURNS="$REVIEWER_MAX_TURNS"
+        fi
+        if [ "$clamped_tester" -gt "$TESTER_MAX_TURNS" ] 2>/dev/null; then
+            ADJUSTED_TESTER_TURNS="$clamped_tester"
+        else
+            ADJUSTED_TESTER_TURNS="$TESTER_MAX_TURNS"
+        fi
 
         log "Post-coder recalibration: reviewer ${prior_reviewer}→${ADJUSTED_REVIEWER_TURNS}, tester ${prior_tester}→${ADJUSTED_TESTER_TURNS}"
         log "  (coder used ${actual_coder_turns} turns, ${files_modified} files, ~${diff_lines} diff lines)"
     else
         # Fallback heuristic when actual turns unavailable (e.g., --start-at review)
         if [ "$files_modified" -le 3 ] && [ "$diff_lines" -le 100 ]; then
-            estimated_reviewer=8
-            estimated_tester=20
+            estimated_reviewer=15
+            estimated_tester=30
         elif [ "$files_modified" -le 8 ] && [ "$diff_lines" -le 500 ]; then
-            estimated_reviewer=12
-            estimated_tester=35
+            estimated_reviewer=20
+            estimated_tester=40
         else
-            estimated_reviewer=18
+            estimated_reviewer=25
             estimated_tester=50
         fi
 
-        ADJUSTED_REVIEWER_TURNS=$(clamp_turns "$estimated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
-        ADJUSTED_TESTER_TURNS=$(clamp_turns "$estimated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
+        local clamped_reviewer_fb clamped_tester_fb
+        clamped_reviewer_fb=$(clamp_turns "$estimated_reviewer" "$REVIEWER_MIN_TURNS" "$REVIEWER_MAX_TURNS_CAP")
+        clamped_tester_fb=$(clamp_turns "$estimated_tester" "$TESTER_MIN_TURNS" "$TESTER_MAX_TURNS_CAP")
+
+        # Floor: never go below configured defaults
+        if [ "$clamped_reviewer_fb" -gt "$REVIEWER_MAX_TURNS" ] 2>/dev/null; then
+            ADJUSTED_REVIEWER_TURNS="$clamped_reviewer_fb"
+        else
+            ADJUSTED_REVIEWER_TURNS="$REVIEWER_MAX_TURNS"
+        fi
+        if [ "$clamped_tester_fb" -gt "$TESTER_MAX_TURNS" ] 2>/dev/null; then
+            ADJUSTED_TESTER_TURNS="$clamped_tester_fb"
+        else
+            ADJUSTED_TESTER_TURNS="$TESTER_MAX_TURNS"
+        fi
 
         log "Post-coder turn estimate — fallback heuristic (${files_modified} files, ~${diff_lines} diff lines):"
         log "  Reviewer: ${ADJUSTED_REVIEWER_TURNS}, Tester: ${ADJUSTED_TESTER_TURNS}"

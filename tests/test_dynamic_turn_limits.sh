@@ -257,9 +257,10 @@ EOF
 
 apply_scout_turn_limits "${TMPDIR}/SCOUT_REPORT.md" 2>/dev/null
 
-assert_eq "4.4 coder clamped to min" "15" "$ADJUSTED_CODER_TURNS"
+# Scout recommends below config default — floor kicks in (never reduce below configured default)
+assert_eq "4.4 coder floored to config default" "35" "$ADJUSTED_CODER_TURNS"
 assert_eq "4.5 reviewer clamped to min" "10" "$ADJUSTED_REVIEWER_TURNS"
-assert_eq "4.6 tester clamped to min" "10" "$ADJUSTED_TESTER_TURNS"
+assert_eq "4.6 tester floored to config default" "30" "$ADJUSTED_TESTER_TURNS"
 
 # 4.7: Recommendation above maximum
 cat > "${TMPDIR}/SCOUT_REPORT.md" << 'EOF'
@@ -314,16 +315,17 @@ echo "small change" >> "${TMPDIR}/init.txt"
 # No actual_coder_turns → falls back to heuristic
 estimate_post_coder_turns 0 2>/dev/null
 
-# Should be the small-change heuristic (reviewer ~8, tester ~20)
-assert_eq "6.1 fallback small reviewer" "10" "$ADJUSTED_REVIEWER_TURNS"
-assert_eq "6.2 fallback small tester" "20" "$ADJUSTED_TESTER_TURNS"
+# Should be the small-change heuristic, floored to config defaults (reviewer=15, tester=30)
+assert_eq "6.1 fallback small reviewer" "15" "$ADJUSTED_REVIEWER_TURNS"
+assert_eq "6.2 fallback small tester" "30" "$ADJUSTED_TESTER_TURNS"
 
 # 6.3: Formula with actual_coder_turns=50, files=2
 # reviewer = max(10, 50*0.35 + 2*1.5) = max(10, 17+3) = 20
 # tester   = max(10, 50*0.5 + 2*2.0) = max(10, 25+4) = 29
 estimate_post_coder_turns 50 2>/dev/null
 assert_eq "6.3 formula reviewer (50 turns, 2 files)" "20" "$ADJUSTED_REVIEWER_TURNS"
-assert_eq "6.4 formula tester (50 turns, 2 files)" "29" "$ADJUSTED_TESTER_TURNS"
+# Formula gives 29, but floor is TESTER_MAX_TURNS=30
+assert_eq "6.4 formula tester (50 turns, 2 files)" "30" "$ADJUSTED_TESTER_TURNS"
 
 # 6.5: Formula overrides scout values (the whole point of Milestone 9)
 SCOUT_REC_REVIEWER_TURNS=15
@@ -338,12 +340,12 @@ estimate_post_coder_turns 300 2>/dev/null
 assert_eq "6.6 formula clamped reviewer max" "30" "$ADJUSTED_REVIEWER_TURNS"
 assert_eq "6.7 formula clamped tester max" "100" "$ADJUSTED_TESTER_TURNS"
 
-# 6.8: Formula with small turns — clamped to min
-# reviewer = 5*0.35 + 2*1.5 = 1+3 = 4 → clamped to REVIEWER_MIN_TURNS=10
-# tester   = 5*0.5  + 2*2.0 = 2+4 = 6 → clamped to TESTER_MIN_TURNS=10
+# 6.8: Formula with small turns — clamped to min, then floored to config default
+# reviewer = 5*0.35 + 2*1.5 = 1+3 = 4 → clamped to REVIEWER_MIN_TURNS=10 → floor REVIEWER_MAX_TURNS=10
+# tester   = 5*0.5  + 2*2.0 = 2+4 = 6 → clamped to TESTER_MIN_TURNS=10 → floor TESTER_MAX_TURNS=30
 estimate_post_coder_turns 5 2>/dev/null
 assert_eq "6.8 formula clamped reviewer min" "10" "$ADJUSTED_REVIEWER_TURNS"
-assert_eq "6.9 formula clamped tester min" "10" "$ADJUSTED_TESTER_TURNS"
+assert_eq "6.9 formula clamped tester floored to config" "30" "$ADJUSTED_TESTER_TURNS"
 
 # 6.10: Formula with many files
 cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
@@ -378,13 +380,13 @@ assert_eq "6.13 disabled tester uses default" "$TESTER_MAX_TURNS" "$ADJUSTED_TES
 DYNAMIC_TURNS_ENABLED=true
 
 # 6.14: Absent CODER_SUMMARY.md — files_modified defaults to 0 in formula path
-# reviewer = max(10, 50*35/100 + 0*15/10) = max(10, 17+0) = 17
-# tester   = max(10, 50*50/100 + 0*20/10) = max(10, 25+0) = 25
+# reviewer = 50*35/100 + 0*15/10 = 17 → floor REVIEWER_MAX_TURNS=10 → 17
+# tester   = 50*50/100 + 0*20/10 = 25 → floor TESTER_MAX_TURNS=30 → 30
 DYNAMIC_TURNS_ENABLED=true
 rm -f "${TMPDIR}/CODER_SUMMARY.md"
 estimate_post_coder_turns 50 2>/dev/null
 assert_eq "6.14 absent summary: reviewer with files=0" "17" "$ADJUSTED_REVIEWER_TURNS"
-assert_eq "6.15 absent summary: tester with files=0" "25" "$ADJUSTED_TESTER_TURNS"
+assert_eq "6.15 absent summary: tester with files=0" "30" "$ADJUSTED_TESTER_TURNS"
 
 # Restore small coder summary for remaining tests
 cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
