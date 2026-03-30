@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-30
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-03-30 | "[BUG] test_drift_prune_realistic.sh: awk syntax error during drift log pruning. The prune_resolved_entries function triggers `awk: line 1: syntax error at or near ,` — likely a platform-specific awk compatibility issue (gawk vs mawk)."] `lib/dashboard_parsers.sh:236–239` (shell fallback) and the equivalent Python block: duration estimation assumes turns-per-stage is a proxy for time-per-stage. If the codebase ever records stage durations directly for all stages (making the estimate unnecessary), the two estimation blocks become dead code — worth a cleanup note when `_STAGE_DURATION` coverage is confirmed complete.

@@ -116,7 +116,7 @@ pass "Fix #14: _copy_static_files docstring corrected"
 
 # === Fix #15: trendArrow ordering assumption ===
 # Check that ordering assumption is documented or validated in app.js
-trendArrow=$(grep -B5 -A5 "trendArrow" "${TEKHTON_HOME}/.claude/dashboard/app.js" | grep -i "recent\|order\|oldest\|newest" || echo "")
+trendArrow=$(grep -B5 -A5 "trendArrow" "${TEKHTON_HOME}/templates/watchtower/app.js" | grep -i "recent\|order\|oldest\|newest" || echo "")
 [[ -n "$trendArrow" ]] || fail "trendArrow ordering assumption not documented"
 pass "Fix #15: trendArrow ordering assumption documented/validated"
 
