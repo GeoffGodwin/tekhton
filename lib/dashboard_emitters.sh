@@ -621,6 +621,31 @@ emit_dashboard_notes() {
             promoted="${BASH_REMATCH[1]}"
         fi
 
+        # M42: Extract execution outcome metadata
+        local acceptance_val="" completed_at="" turns_used="" reviewer_skipped_val=""
+        if [[ "$line" =~ acceptance:([^ ]+) ]]; then
+            acceptance_val="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ completed:([^ ]+) ]]; then
+            completed_at="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ turns_used:([^ ]+) ]]; then
+            turns_used="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ reviewer_skipped:([^ ]+) ]]; then
+            reviewer_skipped_val="${BASH_REMATCH[1]}"
+        fi
+
+        # Check for RCA section presence (BUG notes)
+        local rca_present="false"
+        if [[ "$status" == "done" ]] && [[ "$tag" == "BUG" ]]; then
+            # We can't check CODER_SUMMARY.md per note at emit time;
+            # rely on acceptance metadata instead
+            if [[ -n "$acceptance_val" ]] && [[ "$acceptance_val" != *"warn_no_rca"* ]]; then
+                rca_present="true"
+            fi
+        fi
+
         json="${json}{\"id\":\"$(_json_escape "${nid}")\","
         json="${json}\"tag\":\"$(_json_escape "${tag}")\","
         json="${json}\"title\":\"$(_json_escape "${title}")\","
@@ -632,7 +657,12 @@ emit_dashboard_notes() {
         json="${json}\"triage_disposition\":\"$(_json_escape "${triage_disp}")\","
         json="${json}\"estimated_turns\":\"$(_json_escape "${est_turns}")\","
         json="${json}\"triaged_at\":\"$(_json_escape "${triaged_at}")\","
-        json="${json}\"promoted\":\"$(_json_escape "${promoted}")\"}"
+        json="${json}\"promoted\":\"$(_json_escape "${promoted}")\","
+        json="${json}\"acceptance_result\":\"$(_json_escape "${acceptance_val}")\","
+        json="${json}\"completed_at\":\"$(_json_escape "${completed_at}")\","
+        json="${json}\"turns_used\":\"$(_json_escape "${turns_used}")\","
+        json="${json}\"reviewer_skipped\":\"$(_json_escape "${reviewer_skipped_val}")\","
+        json="${json}\"rca_present\":${rca_present}}"
 
     done
 

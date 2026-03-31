@@ -2,16 +2,13 @@
 PASS
 
 ## Confidence
-88
+82
 
 ## Reasoning
-- Scope is well-defined across 7 subsections with explicit file targets for each
-- Acceptance criteria are specific and testable (heuristic scoring, agent escalation trigger, metadata caching, `--triage` CLI output, tag filter, bypass flag)
-- Watch For section covers the key edge cases: false positives, token budget, loop promotion counting, race condition, non-interactive confirm mode
-- Configuration section lists all new keys with defaults and documents them for `config_defaults.sh` and `pipeline.conf.example`
-- M40 dependency is declared explicitly; `_set_note_metadata()` reuse is called out
-- New test file `tests/test_notes_triage.sh` with coverage areas listed
-- The `lib/inbox.sh` or `stages/intake.sh` ambiguity in section 3 is minor — either is a reasonable integration point and the developer can make that call
-- Dashboard acceptance criterion ("Notes tab shows triage disposition and estimated turns") is present and verifiable, satisfying the UI testability requirement
-- All shell/syntax checks (`bash -n`, `shellcheck`) are in acceptance criteria
-- `run_intake_create()` is referenced in the promotion flow without explicit declaration of where it lives, but given the M40 dependency and the note that `lib/inbox.sh` or `stages/intake.sh` is the integration target, this is inferrable
+- Scope is tightly defined: 8 numbered sections, each with Problem/Fix/Files breakdown; in/out-of-scope is unambiguous
+- Acceptance criteria are specific and verifiable: template selection by tag, scout behavior per config key, turn budget arithmetic, acceptance heuristic patterns, reviewer skip condition
+- New files are enumerated (`lib/notes_acceptance.sh`, 3 prompt templates, test file) with clear behavioral contracts
+- Config keys have defaults and are documented in the Configuration section — no implicit plumbing
+- Watch For covers the key edge cases (underflow floor on turn budget, false positives on logic-file check, scout skip vs user expectations)
+- Dependencies on M40 (tag registry) and M41 (triage metadata) are stated explicitly
+- One minor gap: Sections 7 and 8 modify `templates/watchtower/app.js` (dashboard UI), but acceptance criteria cover only data emission (JSON shape) — there is no UI-verifiable criterion (e.g., "Notes tab renders acceptance warnings without console errors"). This is advisory; the milestone is otherwise implementable as written.

@@ -96,13 +96,50 @@ run_stage_coder() {
     BUG_SCOUT_CONTEXT=""
     SHOULD_SCOUT=false
 
-    if [ "$NOTES_FILTER" = "BUG" ] && [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        SHOULD_SCOUT=true
-    elif [ "$NOTES_FILTER" = "FEAT" ] && [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        # Only scout features that extend existing systems — not greenfield work
-        if echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
-            SHOULD_SCOUT=true
-        fi
+    # Tag-specific scout behavior (M42): configurable per tag
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+        case "$NOTES_FILTER" in
+            BUG)
+                case "${SCOUT_ON_BUG:-always}" in
+                    always) SHOULD_SCOUT=true ;;
+                    auto)   SHOULD_SCOUT=true ;;  # BUG auto = same as always
+                    never)  SHOULD_SCOUT=false ;;
+                esac
+                ;;
+            FEAT)
+                case "${SCOUT_ON_FEAT:-auto}" in
+                    always) SHOULD_SCOUT=true ;;
+                    auto)
+                        # Scout if est. turns > 10 or brownfield indicators present
+                        local _est_turns_val=""
+                        _est_turns_val=$(grep -oP 'est_turns:\K[0-9]+' HUMAN_NOTES.md 2>/dev/null | head -1 || true)
+                        if [[ -n "$_est_turns_val" ]] && [[ "$_est_turns_val" -gt 10 ]]; then
+                            SHOULD_SCOUT=true
+                        elif echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
+                            SHOULD_SCOUT=true
+                        fi
+                        ;;
+                    never)  SHOULD_SCOUT=false ;;
+                esac
+                ;;
+            POLISH)
+                case "${SCOUT_ON_POLISH:-never}" in
+                    always) SHOULD_SCOUT=true ;;
+                    auto)
+                        if echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
+                            SHOULD_SCOUT=true
+                        fi
+                        ;;
+                    never)  SHOULD_SCOUT=false ;;
+                esac
+                ;;
+            *)
+                # No tag filter — use dynamic turns heuristic
+                if [ "${DYNAMIC_TURNS_ENABLED}" = "true" ]; then
+                    SHOULD_SCOUT=true
+                fi
+                ;;
+        esac
     elif [ "${DYNAMIC_TURNS_ENABLED}" = "true" ]; then
         # Scout for complexity estimation even without human notes
         SHOULD_SCOUT=true
@@ -271,28 +308,29 @@ $(cat SCOUT_REPORT.md)
     # --- Build context blocks for prompt template ----------------------------
 
     # Human notes block — only populated when notes flags are set
+    # --- Tag-specific prompt template selection (M42) --------------------------
+    # When a tag-specific template exists, it replaces coder.prompt.md entirely.
+    # The human notes block is still built for injection into the template.
     HUMAN_NOTES_BLOCK=""
+    NOTE_TEMPLATE_NAME=""   # Set when a tag-specific template should be used
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+        # Select tag-specific template if available
         case "$NOTES_FILTER" in
-            BUG)
-                NOTE_GUIDANCE="${NOTES_GUIDANCE_BUG:-These are confirmed bugs. The scout report below has already located the relevant files — read THOSE files first, not the whole project. Find the root cause, fix it, then document your Root Cause Analysis in CODER_SUMMARY.md.}"
-                ;;
-            FEAT)
-                local _default_feat="These are new feature requests. Read ${PROJECT_RULES_FILE} and ${ARCHITECTURE_FILE} before writing any code. New configurable values must use the project's config system — never hardcoded."
-                NOTE_GUIDANCE="${NOTES_GUIDANCE_FEAT:-$_default_feat}"
-                ;;
-            POLISH)
-                NOTE_GUIDANCE="${NOTES_GUIDANCE_POLISH:-These are visual/UX polish items. No logic changes. Focus only on UI files and config.}"
-                ;;
-            *)
-                NOTE_GUIDANCE="${NOTES_GUIDANCE_DEFAULT:-Implement scoped items directly. Flag anything ambiguous or architectural in CODER_SUMMARY.md.}"
-                ;;
+            BUG)    NOTE_TEMPLATE_NAME="coder_note_bug" ;;
+            FEAT)   NOTE_TEMPLATE_NAME="coder_note_feat" ;;
+            POLISH) NOTE_TEMPLATE_NAME="coder_note_polish" ;;
         esac
+
+        # Verify template exists; fall back to generic if not
+        if [[ -n "$NOTE_TEMPLATE_NAME" ]] && \
+           [[ ! -f "${TEKHTON_HOME}/prompts/${NOTE_TEMPLATE_NAME}.prompt.md" ]]; then
+            log "Tag-specific template '${NOTE_TEMPLATE_NAME}' not found — using generic coder template."
+            NOTE_TEMPLATE_NAME=""
+        fi
 
         export HUMAN_NOTES_BLOCK
         HUMAN_NOTES_BLOCK="
 ## Human Notes [${NOTES_FILTER:-ALL}]
-${NOTE_GUIDANCE}
 
 $(extract_human_notes)
 ${BUG_SCOUT_CONTEXT}"
@@ -474,6 +512,42 @@ ${nb_notes}"
 
     # --- Invoke coder agent --------------------------------------------------
 
+    # Tag-specific turn budget adjustment (M42)
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ -n "$NOTES_FILTER" ]]; then
+        local _tag_base="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+        local _tag_multiplier="1.0"
+        case "$NOTES_FILTER" in
+            BUG)    _tag_multiplier="${BUG_TURN_MULTIPLIER:-1.0}" ;;
+            FEAT)   _tag_multiplier="${FEAT_TURN_MULTIPLIER:-1.0}" ;;
+            POLISH) _tag_multiplier="${POLISH_TURN_MULTIPLIER:-0.6}" ;;
+        esac
+
+        # If triage estimated turns are available, use them with a 1.5x buffer
+        local _triage_est=""
+        _triage_est=$(grep -oP 'est_turns:\K[0-9]+' HUMAN_NOTES.md 2>/dev/null | head -1 || true)
+        if [[ -n "$_triage_est" ]] && [[ "$_triage_est" -gt 0 ]]; then
+            local _max_from_multiplier
+            _max_from_multiplier=$(awk "BEGIN { printf \"%.0f\", ${_tag_base} * ${_tag_multiplier} }")
+            local _from_estimate
+            _from_estimate=$(awk "BEGIN { v = ${_triage_est} * 1.5; printf \"%.0f\", (v < ${_max_from_multiplier}) ? v : ${_max_from_multiplier} }")
+            ADJUSTED_CODER_TURNS="$_from_estimate"
+            log "Tag ${NOTES_FILTER}: turn budget from triage estimate (${_triage_est} × 1.5 = ${_from_estimate}, cap ${_max_from_multiplier})."
+        else
+            local _adjusted
+            _adjusted=$(awk "BEGIN { printf \"%.0f\", ${_tag_base} * ${_tag_multiplier} }")
+            ADJUSTED_CODER_TURNS="$_adjusted"
+            if [[ "$_tag_multiplier" != "1.0" ]]; then
+                log "Tag ${NOTES_FILTER}: turn budget ${_tag_base} × ${_tag_multiplier} = ${_adjusted}."
+            fi
+        fi
+
+        # Enforce minimum floor of 5 turns to avoid underflow
+        if [[ "${ADJUSTED_CODER_TURNS:-0}" -lt 5 ]]; then
+            ADJUSTED_CODER_TURNS=5
+            log "Tag ${NOTES_FILTER}: turn budget floored to 5 (minimum)."
+        fi
+    fi
+
     # TDD turn multiplier: give the coder slightly more budget when working
     # against pre-written tests (Milestone 27)
     if [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]] && [[ -n "${TESTER_PREFLIGHT_CONTENT:-}" ]]; then
@@ -486,7 +560,9 @@ ${nb_notes}"
         log "TDD mode: coder turn budget boosted ${_base_turns} → ${_boosted_turns} (×${_multiplier})."
     fi
 
-    CODER_PROMPT=$(render_prompt "coder")
+    # Select prompt template: tag-specific or generic (M42)
+    local _coder_template="${NOTE_TEMPLATE_NAME:-coder}"
+    CODER_PROMPT=$(render_prompt "$_coder_template")
 
     log "Invoking coder agent (max ${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS} turns)..."
     run_agent \

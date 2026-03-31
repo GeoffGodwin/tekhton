@@ -164,6 +164,17 @@ set -euo pipefail
 : "${HUMAN_NOTES_PROMOTE_THRESHOLD:=20}"      # Est. turns above which to recommend promotion
 : "${HUMAN_NOTES_PROMOTE_MODE:=confirm}"      # confirm = ask user; auto = promote silently
 
+# --- Tag-Specific Execution (Milestone 42) ---
+: "${SCOUT_ON_BUG:=always}"                   # always|auto|never — scout behavior for BUG notes
+: "${SCOUT_ON_FEAT:=auto}"                    # always|auto|never — scout behavior for FEAT notes
+: "${SCOUT_ON_POLISH:=never}"                 # always|auto|never — scout behavior for POLISH notes
+: "${BUG_TURN_MULTIPLIER:=1.0}"              # Turn budget multiplier for BUG notes
+: "${FEAT_TURN_MULTIPLIER:=1.0}"             # Turn budget multiplier for FEAT notes
+: "${POLISH_TURN_MULTIPLIER:=0.6}"           # Turn budget multiplier for POLISH notes (60% of base)
+: "${POLISH_SKIP_REVIEW:=true}"              # Skip reviewer for non-logic-only polish changes
+: "${POLISH_SKIP_REVIEW_PATTERNS:=*.css *.scss *.less *.json *.yaml *.yml *.toml *.cfg *.ini *.svg *.png *.md}"
+: "${POLISH_LOGIC_FILE_PATTERNS:=*.py *.js *.ts *.sh *.go *.rs *.java *.rb *.c *.cpp *.h}"
+
 # --- Turn exhaustion continuation defaults ---
 : "${CONTINUATION_ENABLED:=true}"
 : "${MAX_CONTINUATION_ATTEMPTS:=3}"
@@ -440,6 +451,9 @@ _clamp_config_value UI_SERVER_STARTUP_TIMEOUT 120
 _clamp_config_value UI_VALIDATION_TIMEOUT 120
 _clamp_config_value TESTER_WRITE_FAILING_MAX_TURNS 100
 _clamp_config_float CODER_TDD_TURN_MULTIPLIER 0.5 3.0
+_clamp_config_float BUG_TURN_MULTIPLIER 0.1 3.0
+_clamp_config_float FEAT_TURN_MULTIPLIER 0.1 3.0
+_clamp_config_float POLISH_TURN_MULTIPLIER 0.1 3.0
 _clamp_config_value DASHBOARD_HISTORY_DEPTH 100
 _clamp_config_value DASHBOARD_REFRESH_INTERVAL 300
 _clamp_config_value DASHBOARD_MAX_TIMELINE_EVENTS 2000

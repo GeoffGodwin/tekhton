@@ -9,6 +9,16 @@ run_stage_review() {
     local _stage_pos="${PIPELINE_STAGE_POS:-3}"
     header "Stage ${_stage_pos} / ${_stage_count} — Reviewer"
 
+    # Polish reviewer skip heuristic (M42): if all changed files are non-logic,
+    # skip the review cycle entirely. Tests still run in the tester stage.
+    if command -v should_skip_review_for_polish &>/dev/null \
+       && should_skip_review_for_polish; then
+        log "Polish note: all changes are non-logic files. Skipping reviewer."
+        VERDICT="APPROVED_WITH_NOTES"
+        export REVIEWER_SKIPPED="true"
+        return 0
+    fi
+
     estimate_post_coder_turns "${ACTUAL_CODER_TURNS:-0}"
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"

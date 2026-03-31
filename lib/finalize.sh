@@ -455,6 +455,16 @@ _hook_final_dashboard_status() {
 # Registration order IS execution order.
 # Archive, clear_state, and emit_run_summary run BEFORE commit so their
 # output is captured in the commit and git state is clean afterward.
+# o2. Note acceptance checks (M42) — before final checks
+_hook_note_acceptance() {
+    local exit_code="$1"
+    [[ "$exit_code" -ne 0 ]] && return 0
+    if command -v run_note_acceptance &>/dev/null; then
+        run_note_acceptance || true
+    fi
+}
+
+register_finalize_hook "_hook_note_acceptance"
 register_finalize_hook "_hook_final_checks"
 register_finalize_hook "_hook_drift_artifacts"
 register_finalize_hook "_hook_record_metrics"
