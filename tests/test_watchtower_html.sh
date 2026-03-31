@@ -131,13 +131,13 @@ assert "app.js has TK_RUN_STATE fallback" grep -q 'TK_RUN_STATE || {}' "${WATCHT
 assert "app.js has TK_TIMELINE fallback" grep -q 'TK_TIMELINE || \[\]' "${WATCHTOWER_DIR}/app.js"
 
 # --- Test 13: Size constraint (90KB total) ---
-# Bumped from 75KB to 90KB for M37 parallel teams UI (team cards, group view, team trends)
+# Bumped from 90KB to 100KB for M40 Notes tab (per-note table, filter, sort)
 total_size=0
 for file in index.html style.css app.js; do
     fsize=$(wc -c < "${WATCHTOWER_DIR}/${file}")
     total_size=$((total_size + fsize))
 done
-assert "total static size under 90KB" test "$total_size" -lt 92160
+assert "total static size under 100KB" test "$total_size" -lt 102400
 
 # --- Test 14: _copy_static_files function exists in dashboard.sh ---
 assert "_copy_static_files in dashboard.sh" grep -q '_copy_static_files' "${TEKHTON_HOME}/lib/dashboard.sh"

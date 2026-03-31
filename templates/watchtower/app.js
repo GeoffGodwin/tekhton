@@ -11,6 +11,7 @@
   var health = function () { return window.TK_HEALTH || { available: false }; };
   var inbox = function () { return window.TK_INBOX || { items: [] }; };
   var actionItems = function () { return window.TK_ACTION_ITEMS || {}; };
+  var notesData = function () { return window.TK_NOTES || []; };
 
   var causalChildren = {}, causalParents = {};
   function buildCausalIndex() {
@@ -109,6 +110,7 @@
       case 'reports': renderReports(); break;
       case 'trends': renderTrends(); break;
       case 'actions': renderActions(); break;
+      case 'notes': renderNotes(); break;
     }
   }
   function initTheme() {
@@ -1101,6 +1103,58 @@
   }
   function manualRefresh() {
     if (typeof fetch === 'function' && typeof Promise === 'function') refreshData(); else location.reload();
+  }
+
+  // --- Notes tab (M40) ---
+  function renderNotes() {
+    var ct = document.getElementById('tab-notes');
+    if (!ct) return;
+    var notes = notesData();
+    if (!notes.length) { ct.innerHTML = '<div class="empty-state"><p>No notes found.</p></div>'; return; }
+    var tagColors = { BUG: 'badge-bug', FEAT: 'badge-feat', POLISH: 'badge-polish' };
+    var statusIcons = { open: '\u25cb', claimed: '\u25d4', done: '\u2713' };
+    var h = '<div class="notes-controls"><label>Filter: <select id="notes-tag-filter"><option value="">All</option><option value="BUG">BUG</option><option value="FEAT">FEAT</option><option value="POLISH">POLISH</option></select></label>';
+    h += ' <label>Sort: <select id="notes-sort"><option value="priority">Priority</option><option value="status">Status</option><option value="created">Created</option></select></label></div>';
+    h += '<table class="notes-table"><thead><tr><th>ID</th><th>Tag</th><th>Title</th><th>Status</th><th>Priority</th><th>Source</th><th>Created</th></tr></thead><tbody id="notes-tbody">';
+    for (var i = 0; i < notes.length; i++) {
+      var n = notes[i];
+      var badgeCls = tagColors[n.tag] || '';
+      var icon = statusIcons[n.status] || '';
+      h += '<tr data-tag="' + esc(n.tag) + '" data-status="' + esc(n.status) + '" data-priority="' + esc(n.priority) + '">';
+      h += '<td class="note-id">' + esc(n.id) + '</td>';
+      h += '<td><span class="note-badge ' + badgeCls + '">' + esc(n.tag) + '</span></td>';
+      h += '<td>' + esc(n.title) + '</td>';
+      h += '<td class="note-status note-status-' + esc(n.status) + '">' + icon + ' ' + esc(n.status) + '</td>';
+      h += '<td>' + esc(n.priority) + '</td>';
+      h += '<td>' + esc(n.source) + '</td>';
+      h += '<td>' + esc(n.created) + '</td>';
+      h += '</tr>';
+    }
+    h += '</tbody></table>';
+    ct.innerHTML = h;
+    var tagFilter = document.getElementById('notes-tag-filter');
+    var sortSelect = document.getElementById('notes-sort');
+    if (tagFilter) tagFilter.addEventListener('change', filterNotes);
+    if (sortSelect) sortSelect.addEventListener('change', filterNotes);
+  }
+  function filterNotes() {
+    var tagVal = (document.getElementById('notes-tag-filter') || {}).value || '';
+    var sortVal = (document.getElementById('notes-sort') || {}).value || 'priority';
+    var tbody = document.getElementById('notes-tbody');
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+    var prioOrder = { high: 0, medium: 1, low: 2, '': 3 };
+    var statusOrder = { open: 0, claimed: 1, done: 2 };
+    rows.sort(function (a, b) {
+      if (sortVal === 'priority') return (prioOrder[a.dataset.priority] || 3) - (prioOrder[b.dataset.priority] || 3);
+      if (sortVal === 'status') return (statusOrder[a.dataset.status] || 2) - (statusOrder[b.dataset.status] || 2);
+      return 0;
+    });
+    for (var i = 0; i < rows.length; i++) {
+      var show = !tagVal || rows[i].dataset.tag === tagVal;
+      rows[i].style.display = show ? '' : 'none';
+      tbody.appendChild(rows[i]);
+    }
   }
 
   // --- Main render ---

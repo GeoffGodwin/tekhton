@@ -4,45 +4,41 @@ set -euo pipefail
 # notes_single.sh — Single-note utility functions for --human mode
 #
 # Extracted from notes.sh to stay under the 300-line guideline.
-# Sourced by tekhton.sh after notes.sh — do not run directly.
+# Sourced by tekhton.sh after notes.sh and notes_core.sh — do not run directly.
 # Expects: LOG_DIR, TIMESTAMP from caller
 # Operates on HUMAN_NOTES.md in the current directory.
 #
+# M40: _section_for_tag and _validate_tag now delegate to the tag registry
+# in notes_core.sh. pick_next_note uses _NOTE_TAG_PRIORITY for ordering.
+# claim_single_note/resolve_single_note preserved for backward compat but
+# also support ID-based operation when notes have IDs.
+#
 # Provides:
 #   _escape_sed_pattern    — regex escaping for sed patterns
-#   _section_for_tag       — tag-to-section heading mapping
+#   _section_for_tag       — tag-to-section heading mapping (delegates to registry)
 #   pick_next_note         — priority-ordered note selection
-#   claim_single_note      — mark one note [ ] → [~]
-#   resolve_single_note    — mark one note [~] → [x] or [ ]
+#   claim_single_note      — mark one note [ ] → [~] (by ID or text)
+#   resolve_single_note    — mark one note [~] → [x] or [ ] (by ID or text)
 #   extract_note_text      — strip checkbox prefix
 #   count_unchecked_notes  — count remaining [ ] notes
 # =============================================================================
 
 # _escape_sed_pattern — Escapes regex special characters for safe sed matching.
-# Currently unused: claim_single_note/resolve_single_note use exact string
-# matching instead. Retained for 15.4.2/15.4.3 which may need sed-based matching.
-# Usage: escaped=$(_escape_sed_pattern "$text")
 _escape_sed_pattern() {
     # shellcheck disable=SC2016
     printf '%s' "$1" | sed 's/[.[\*^$()+?{|/&]/\\&/g'
 }
 
 # _section_for_tag — Maps a tag filter to the HUMAN_NOTES.md section heading.
-# BUG → ## Bugs, FEAT → ## Features, POLISH → ## Polish
+# M40: Delegates to the tag registry in notes_core.sh.
 _section_for_tag() {
     local tag="${1:-}"
-    case "$tag" in
-        BUG)    echo "## Bugs" ;;
-        FEAT)   echo "## Features" ;;
-        POLISH) echo "## Polish" ;;
-        *)      echo "" ;;
-    esac
+    _section_for_tag_registry "$tag"
 }
 
 # pick_next_note — Returns the first unchecked note from HUMAN_NOTES.md in priority
-# order: ## Bugs first, then ## Features, then ## Polish.
+# order determined by _NOTE_TAG_PRIORITY array from the tag registry.
 # If tag_filter is set, only scans the corresponding section.
-# Usage: note_line=$(pick_next_note "BUG")  # or "" for all sections
 pick_next_note() {
     local tag_filter="${1:-}"
 
@@ -51,7 +47,7 @@ pick_next_note() {
         return 0
     fi
 
-    local sections
+    local sections=()
     if [[ -n "$tag_filter" ]]; then
         local target_section
         target_section=$(_section_for_tag "$tag_filter")
@@ -61,7 +57,11 @@ pick_next_note() {
         fi
         sections=("$target_section")
     else
-        sections=("## Bugs" "## Features" "## Polish")
+        # Build sections list from registry priority order
+        local tag
+        for tag in "${_NOTE_TAG_PRIORITY[@]}"; do
+            sections+=("${_NOTE_TAG_SECTION[$tag]}")
+        done
     fi
 
     local section
@@ -84,8 +84,8 @@ pick_next_note() {
 }
 
 # claim_single_note — Marks exactly ONE note from [ ] to [~] in HUMAN_NOTES.md.
+# M40: If the note line has an ID, also registers it in CLAIMED_NOTE_IDS.
 # Archives pre-run snapshot before modification.
-# Usage: claim_single_note "- [ ] [BUG] Fix the thing"
 claim_single_note() {
     local note_line="$1"
 
@@ -99,6 +99,10 @@ claim_single_note() {
     else
         cp "HUMAN_NOTES.md" "HUMAN_NOTES.md.bak"
     fi
+
+    # Extract ID if present for CLAIMED_NOTE_IDS tracking
+    local nid=""
+    nid=$(_extract_note_id "$note_line")
 
     # Replace first occurrence of the exact [ ] line with [~]
     local tmpfile
@@ -116,6 +120,10 @@ claim_single_note() {
     mv "$tmpfile" "HUMAN_NOTES.md"
 
     if [[ "$found" -eq 1 ]]; then
+        # Track claimed ID for batch resolution
+        if [[ -n "$nid" ]]; then
+            CLAIMED_NOTE_IDS="${CLAIMED_NOTE_IDS:+${CLAIMED_NOTE_IDS} }${nid}"
+        fi
         return 0
     fi
     return 1
@@ -123,14 +131,8 @@ claim_single_note() {
 
 # resolve_single_note — Resolves a single in-progress note.
 # If exit_code=0: [~] → [x]. If non-zero: [~] → [ ].
-# The note_line should be the ORIGINAL line (with [ ]); this function
-# reconstructs the [~] version to match against the file.
-#
-# Resilience: If the [~] form is not found (e.g., an agent rewrote the file
-# and clobbered the marker back to [ ]), falls back to matching the original
-# [ ] form. This prevents silent resolution failures when agents have write
-# access to HUMAN_NOTES.md.
-# Usage: resolve_single_note "- [ ] [BUG] Fix the thing" 0
+# M40: If the note has an ID, uses ID-based matching as primary path.
+# Falls back to text matching for legacy notes.
 resolve_single_note() {
     local note_line="$1"
     local exit_code="${2:-1}"
@@ -139,9 +141,22 @@ resolve_single_note() {
         return 1
     fi
 
-    # Reconstruct the [~] version of the note line
-    local claimed_line="${note_line/\[ \]/[~]}"
+    # Try ID-based resolution first
+    local nid=""
+    nid=$(_extract_note_id "$note_line")
+    if [[ -n "$nid" ]]; then
+        local outcome="reset"
+        if [[ "$exit_code" -eq 0 ]]; then
+            outcome="complete"
+        fi
+        if resolve_note "$nid" "$outcome"; then
+            return 0
+        fi
+        # Fall through to text matching if ID-based failed
+    fi
 
+    # Text-based fallback for legacy notes
+    local claimed_line="${note_line/\[ \]/[~]}"
     local replacement
     if [[ "$exit_code" -eq 0 ]]; then
         replacement="${note_line/\[ \]/[x]}"
@@ -154,11 +169,9 @@ resolve_single_note() {
     local found=0
     while IFS= read -r line || [[ -n "$line" ]]; do
         if [[ "$found" -eq 0 ]] && [[ "$line" = "$claimed_line" ]]; then
-            # Primary match: [~] form found as expected
             printf '%s\n' "$replacement"
             found=1
         elif [[ "$found" -eq 0 ]] && [[ "$line" = "$note_line" ]]; then
-            # Fallback: agent clobbered [~] back to [ ] — match original form
             printf '%s\n' "$replacement"
             found=1
         else
@@ -175,18 +188,17 @@ resolve_single_note() {
 
 # extract_note_text — Strips the checkbox prefix from a note line.
 # Returns the rest of the line after "- [ ] ", "- [~] ", or "- [x] ".
-# Usage: text=$(extract_note_text "- [ ] [BUG] Fix the thing")
-#   → "[BUG] Fix the thing"
+# M40: Also strips trailing HTML comment metadata.
 extract_note_text() {
     local note_line="$1"
-    # Strip "- [ ] ", "- [~] ", or "- [x] " prefix using glob ? for the checkbox char
     local text="${note_line#- \[?\] }"
+    # Strip trailing metadata comment
+    text="${text%% <!-- note:*}"
     echo "$text"
 }
 
 # count_unchecked_notes — Counts remaining [ ] lines in HUMAN_NOTES.md.
 # If tag_filter is set, counts only within the matching section.
-# Usage: remaining=$(count_unchecked_notes "BUG")
 count_unchecked_notes() {
     local tag_filter="${1:-}"
 

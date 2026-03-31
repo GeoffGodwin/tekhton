@@ -516,3 +516,107 @@ emit_dashboard_action_items() {
 
     _write_js_file "${dash_dir}/data/action_items.js" "TK_ACTION_ITEMS" "$json"
 }
+
+# emit_dashboard_notes
+# Generates data/notes.js with per-note structured data (M40).
+# Reads HUMAN_NOTES.md, parses all notes with metadata, produces TK_NOTES array.
+emit_dashboard_notes() {
+    if ! is_dashboard_enabled; then return 0; fi
+
+    local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
+    [[ ! -d "${dash_dir}/data" ]] && return 0
+
+    local nf="${PROJECT_DIR:-.}/HUMAN_NOTES.md"
+    if [[ ! -f "$nf" ]]; then
+        _write_js_file "${dash_dir}/data/notes.js" "TK_NOTES" '[]'
+        return 0
+    fi
+
+    local json="["
+    local first=true
+    local lines=()
+    mapfile -t lines < "$nf"
+
+    local i
+    for (( i=0; i<${#lines[@]}; i++ )); do
+        local line="${lines[$i]}"
+        # Match note lines: - [ ] or - [~] or - [x]
+        if [[ ! "$line" =~ ^-\ \[([x\ ~])\] ]]; then
+            continue
+        fi
+
+        local state_char="${BASH_REMATCH[1]}"
+        local status="open"
+        case "$state_char" in
+            x) status="done" ;;
+            "~") status="claimed" ;;
+            " ") status="open" ;;
+        esac
+
+        # Extract tag
+        local tag=""
+        if [[ "$line" =~ \[BUG\] ]]; then tag="BUG"
+        elif [[ "$line" =~ \[FEAT\] ]]; then tag="FEAT"
+        elif [[ "$line" =~ \[POLISH\] ]]; then tag="POLISH"
+        fi
+
+        # Extract title (between tag and metadata comment)
+        local title="$line"
+        title="${title#- \[?\] }"          # strip checkbox
+        if [[ -n "$tag" ]]; then
+            title="${title#\["${tag}"\] }"    # strip tag
+        fi
+        title="${title%% <!-- note:*}"     # strip metadata
+
+        # Collect description lines (indented > blocks following this note)
+        local desc=""
+        local j=$(( i + 1 ))
+        while [[ "$j" -lt "${#lines[@]}" ]]; do
+            local next="${lines[$j]}"
+            if [[ "$next" =~ ^[[:space:]]*\> ]]; then
+                # Strip leading whitespace and > marker
+                local desc_text="${next#"${next%%[! ]*}"}"  # ltrim spaces
+                desc_text="${desc_text#> }"
+                desc_text="${desc_text#>}"
+                desc="${desc:+${desc} }${desc_text}"
+                (( j++ ))
+            else
+                break
+            fi
+        done
+
+        # Extract metadata
+        local nid="" created="" priority="" source_val=""
+        if [[ "$line" =~ \<\!--\ note:([^ ]+) ]]; then
+            nid="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ created:([^ ]+) ]]; then
+            created="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ priority:([^ ]+) ]]; then
+            priority="${BASH_REMATCH[1]}"
+        fi
+        if [[ "$line" =~ source:([^ ]+) ]]; then
+            source_val="${BASH_REMATCH[1]}"
+        fi
+
+        if [[ "$first" == true ]]; then
+            first=false
+        else
+            json="${json},"
+        fi
+
+        json="${json}{\"id\":\"$(_json_escape "${nid}")\","
+        json="${json}\"tag\":\"$(_json_escape "${tag}")\","
+        json="${json}\"title\":\"$(_json_escape "${title}")\","
+        json="${json}\"description\":\"$(_json_escape "${desc}")\","
+        json="${json}\"status\":\"${status}\","
+        json="${json}\"priority\":\"$(_json_escape "${priority}")\","
+        json="${json}\"source\":\"$(_json_escape "${source_val}")\","
+        json="${json}\"created\":\"$(_json_escape "${created}")\"}"
+
+    done
+
+    json="${json}]"
+    _write_js_file "${dash_dir}/data/notes.js" "TK_NOTES" "$json"
+}

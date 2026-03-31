@@ -49,6 +49,7 @@ _ensure_dashboard_data_dir() {
     [[ -f "${dash_dir}/data/health.js" ]]     || _write_js_file "${dash_dir}/data/health.js" "TK_HEALTH" '{"available":false}'
     [[ -f "${dash_dir}/data/diagnosis.js" ]]  || _write_js_file "${dash_dir}/data/diagnosis.js" "TK_DIAGNOSIS" '{"available":false}'
     [[ -f "${dash_dir}/data/inbox.js" ]]      || _write_js_file "${dash_dir}/data/inbox.js" "TK_INBOX" '{"items":[]}'
+    [[ -f "${dash_dir}/data/notes.js" ]]     || _write_js_file "${dash_dir}/data/notes.js" "TK_NOTES" '[]'
 }
 
 # init_dashboard [PROJECT_DIR]

@@ -17,6 +17,7 @@ PROJECT_DIR="$TMPDIR_TEST"
 PROJECT_NAME="test-project"
 
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes_cli.sh"
 source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
 

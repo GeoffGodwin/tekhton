@@ -469,3 +469,21 @@ footer code { background:var(--bg-input); padding:0.1rem 0.3rem; border-radius:2
   .team-card { max-width:none; }
   .team-filter-chips { flex-wrap:wrap; }
 }
+
+/* --- Notes tab (M40) --- */
+.notes-controls { display:flex; gap:1rem; margin-bottom:1rem; align-items:center; }
+.notes-controls label { display:flex; align-items:center; gap:0.4rem; color:var(--text-secondary); font-size:0.85rem; }
+.notes-controls select { background:var(--bg-input); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; padding:0.3rem 0.5rem; }
+.notes-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
+.notes-table th { text-align:left; padding:0.5rem 0.75rem; border-bottom:2px solid var(--border-color); color:var(--text-secondary); font-weight:600; }
+.notes-table td { padding:0.5rem 0.75rem; border-bottom:1px solid var(--border-subtle); }
+.notes-table tr:hover td { background:var(--bg-card-hover); }
+.note-id { font-family:monospace; color:var(--text-muted); font-size:0.8rem; }
+.note-badge { display:inline-block; padding:0.15rem 0.5rem; border-radius:3px; font-size:0.75rem; font-weight:700; text-transform:uppercase; }
+.badge-bug { background:rgba(239,68,68,0.2); color:var(--status-fail); }
+.badge-feat { background:rgba(74,158,255,0.2); color:var(--accent); }
+.badge-polish { background:rgba(245,158,11,0.2); color:var(--status-warning); }
+.note-status { font-size:0.8rem; }
+.note-status-open { color:var(--text-secondary); }
+.note-status-claimed { color:var(--status-active); }
+.note-status-done { color:var(--status-done); }

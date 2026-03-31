@@ -29,6 +29,7 @@ TIMESTAMP=""
 export PROJECT_DIR LOG_DIR TIMESTAMP
 
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 

@@ -113,6 +113,9 @@ ${HUMAN_NOTES_TAG:-}
 ## Current Note Line
 ${CURRENT_NOTE_LINE:-}
 
+## Current Note ID
+${CURRENT_NOTE_ID:-}
+
 ## Human Single Note
 ${HUMAN_SINGLE_NOTE:-false}
 

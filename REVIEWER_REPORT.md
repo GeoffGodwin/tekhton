@@ -10,20 +10,13 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/plan_server.sh` is 370 lines, exceeding the 300-line ceiling. This is pre-existing (the fix touched only one line). Flag for a future extraction pass.
+- `lib/notes_core.sh` is 327 lines — reduced from 399 by the extraction but still over the 300-line soft ceiling. Further extraction opportunity exists (e.g. the claim/resolve API into a separate `notes_claim.sh`).
+- `lib/dashboard_emitters.sh` is 623 lines — the new `emit_dashboard_notes` function adds ~100 lines to a file already well over the ceiling. Consider extracting the new function to a `dashboard_emitters_notes.sh` companion in a future cleanup pass.
+- `emit_dashboard_notes` (dashboard_emitters.sh:573): `local j=$(( i + 1 ))` combines declaration and arithmetic — shellcheck SC2155 may flag this. Prefer `local j; j=$(( i + 1 ))`.
+- `emit_dashboard_notes` (dashboard_emitters.sh:576): `(( j++ ))` in a `set -e` context is safe here because `j` starts at `i + 1 >= 1`, but the pattern is subtle. A brief comment would help the next reader.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- None
-
----
-
-## Review Notes
-
-Both fixes are correct.
-
-**Port detection (`lib/plan_server.sh:41-43`):** The old pattern `:${port} ` required a trailing space, which `ss -tlnp` does not guarantee (output may use tabs or have the port at end-of-line). The new pattern `:${port}([^0-9]|$)` with `-qE` correctly anchors to non-digit or end-of-line, preventing both false positives (prefix matching) and false negatives (non-space delimiters). The test harness now uses a Python-bound socket with a ready-poll loop plus a graceful skip path when the dummy port cannot be occupied — this avoids the orphaned-process leak described in the test file comment.
-
-**Awk `&` escaping (`lib/plan_browser.sh:141-146`):** The root cause was correct: in awk's `gsub()`, `&` in the replacement string means "the matched text". When `pname` or `ptype` held HTML-escaped values like `&amp;`, the `&` was expanded to `{{PROJECT_NAME}}`, producing `{{PROJECT_NAME}}amp;` in the output. The `BEGIN` block's `gsub(/&/, "\\\\&", pname)` replaces each `&` with `\&` in the awk variable (four shell-literal backslashes in the awk source → two awk-string backslashes → awk gsub replacement `\\&` → one literal `\` + matched `&` = `\&`). When the main-body gsub then uses `pname` as a replacement, `\&` → literal `&`. Chain is sound.
+- `lib/finalize.sh:_hook_resolve_notes` (lines 114–129): when `CLAIMED_NOTE_IDS` is non-empty AND orphan `[~]` notes remain after the first `resolve_notes_batch` call, the legacy fallback path calls `resolve_human_notes`, which calls `resolve_notes_batch` a second time with the same IDs. The second call is a no-op (those notes are already transitioned) but the double invocation is redundant. Harmless, low priority.
