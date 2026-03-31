@@ -118,24 +118,18 @@ _hook_resolve_notes() {
         resolve_notes_batch "$CLAIMED_NOTE_IDS" "$exit_code"
     fi
 
-    # Fallback: resolve remaining [~] notes (legacy/edge cases)
-    _PIPELINE_EXIT_CODE="$exit_code"
-    export _PIPELINE_EXIT_CODE
-    local remaining_claimed
-    remaining_claimed=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
-    if [[ "$remaining_claimed" -gt 0 ]]; then
-        log "Resolving ${remaining_claimed} remaining [~] note(s) (legacy fallback)"
-        resolve_human_notes
-    fi
-
-    # Safety net: resolve orphaned [~] notes on success (M33 Bug 6).
-    if [[ "$exit_code" -eq 0 ]]; then
-        local orphan_count
-        orphan_count=$(grep -c '^- \[~\]' HUMAN_NOTES.md 2>/dev/null || echo "0")
-        orphan_count=$(echo "$orphan_count" | tr -d '[:space:]')
-        if [[ "$orphan_count" -gt 0 ]]; then
+    # Safety net: resolve orphaned [~] notes (M33 Bug 6, M42 fix).
+    # On success → mark [x]; on failure → reset to [ ] for next run.
+    local orphan_count
+    orphan_count=$(grep -c '^- \[~\]' HUMAN_NOTES.md 2>/dev/null || echo "0")
+    orphan_count=$(echo "$orphan_count" | tr -d '[:space:]')
+    if [[ "$orphan_count" -gt 0 ]]; then
+        if [[ "$exit_code" -eq 0 ]]; then
             warn "Found ${orphan_count} orphaned in-progress note(s) — resolving as complete."
             sed -i 's/^- \[~\]/- [x]/' HUMAN_NOTES.md
+        else
+            warn "Found ${orphan_count} orphaned in-progress note(s) — resetting for next run."
+            sed -i 's/^- \[~\]/- [ ]/' HUMAN_NOTES.md
         fi
     fi
 }

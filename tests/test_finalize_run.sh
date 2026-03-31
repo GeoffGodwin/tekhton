@@ -424,15 +424,15 @@ _hook_resolve_notes 0
 assert "8.2 resolve_notes skips when no HUMAN_NOTES.md" \
     "$([ -z "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
 
-# On success with HUMAN_NOTES.md containing [~] items: should call resolve_human_notes
+# On success with HUMAN_NOTES.md containing [~] items: orphan safety net resolves [~] → [x]
 _reset_mocks
 cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
 - [~] Fix the thing
 EOF
 _hook_resolve_notes 0
-assert "8.3 resolve_notes called when [~] items exist" \
-    "$([ -n "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
+assert "8.3 orphaned [~] resolved to [x] on success" \
+    "$(grep -qc '^\- \[x\]' "${TMPDIR}/HUMAN_NOTES.md" && echo 0 || echo 1)"
 
 # On success with HUMAN_NOTES.md but no [~] items: should NOT call resolve_human_notes
 _reset_mocks
@@ -471,7 +471,7 @@ assert_eq "8b.2 batch receives claimed IDs" \
 assert_eq "8b.3 batch receives exit code 0" \
     "0" "${_mock_resolve_batch_exit:-}"
 
-# HUMAN_MODE + empty CLAIMED_NOTE_IDS: falls through to legacy [~] cleanup
+# HUMAN_MODE + empty CLAIMED_NOTE_IDS: orphan safety net resolves [~] → [x]
 _reset_mocks
 HUMAN_MODE=true
 CURRENT_NOTE_ID=""
@@ -485,8 +485,9 @@ EOF
 _hook_resolve_notes 0
 assert "8b.4 resolve_notes_batch NOT called when CLAIMED_NOTE_IDS empty" \
     "$([ -z "${_mock_called[resolve_notes_batch]:-}" ] && echo 0 || echo 1)"
-assert "8b.5 resolve_human_notes called as fallback" \
-    "$([ -n "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
+# M42: resolve_human_notes fallback removed — orphan safety net resolves directly
+assert "8b.5 orphaned [~] note resolved to [x] by safety net" \
+    "$(grep -qc '^\- \[x\]' "${TMPDIR}/HUMAN_NOTES.md" && echo 0 || echo 1)"
 
 # HUMAN_MODE=false + CLAIMED_NOTE_IDS: same unified path
 _reset_mocks

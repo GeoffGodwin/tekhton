@@ -44,7 +44,7 @@ _triage_heuristic_score() {
     local ind
     while IFS='|' read -ra inds; do
         for ind in "${inds[@]}"; do
-            if echo "$lower_text" | grep -qE "$ind" 2>/dev/null; then
+            if printf '%s ' "$lower_text" | grep -qE "$ind" 2>/dev/null; then
                 score=$(( score + 2 ))
             fi
         done
