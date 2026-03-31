@@ -13,7 +13,7 @@ set -euo pipefail
 #                  _set_note_metadata
 #   Claim/resolve: claim_note, resolve_note, claim_notes_batch,
 #                  resolve_notes_batch
-#   Rollback:      snapshot_note_states, restore_note_states
+#   Rollback:      (moved to notes_rollback.sh)
 # =============================================================================
 
 # --- Tag Registry -----------------------------------------------------------
@@ -322,78 +322,5 @@ resolve_notes_batch() {
 }
 
 # --- Rollback Support --------------------------------------------------------
-
-# snapshot_note_states — Record which note IDs are in which state.
-# Writes JSON-ish state to stdout for checkpoint embedding.
-snapshot_note_states() {
-    local nf
-    nf="$(_notes_file)"
-    if [[ ! -f "$nf" ]]; then
-        echo "{}"
-        return 0
-    fi
-
-    local json="{"
-    local first=true
-    while IFS= read -r line; do
-        local nid=""
-        if [[ "$line" =~ \<\!--\ note:([^ ]+) ]]; then
-            nid="${BASH_REMATCH[1]}"
-        else
-            continue
-        fi
-
-        local state=""
-        if [[ "$line" =~ ^-\ \[x\] ]]; then
-            state="x"
-        elif [[ "$line" =~ ^-\ \[~\] ]]; then
-            state="~"
-        elif [[ "$line" =~ ^-\ \[\ \] ]]; then
-            state=" "
-        else
-            continue
-        fi
-
-        if [[ "$first" == true ]]; then
-            first=false
-        else
-            json="${json},"
-        fi
-        json="${json}\"${nid}\":\"${state}\""
-    done < "$nf"
-
-    json="${json}}"
-    echo "$json"
-}
-
-# restore_note_states SNAPSHOT_JSON — Restore note states after rollback.
-# Any note that was [~] (claimed by this run) gets reset to [ ].
-# Notes that were [x] before the run stay [x].
-# Notes added mid-run (no entry in snapshot) are left untouched.
-restore_note_states() {
-    local snapshot="$1"
-    local nf
-    nf="$(_notes_file)"
-    if [[ ! -f "$nf" ]] || [[ -z "$snapshot" ]] || [[ "$snapshot" == "{}" ]]; then
-        return 0
-    fi
-
-    local tmpfile
-    tmpfile=$(mktemp)
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        local nid=""
-        if [[ "$line" =~ \<\!--\ note:([^ ]+) ]]; then
-            nid="${BASH_REMATCH[1]}"
-        fi
-
-        if [[ -n "$nid" ]] && [[ "$line" =~ ^-\ \[~\] ]]; then
-            # Check if this note was [ ] in the snapshot — if so, reset it
-            if echo "$snapshot" | grep -q "\"${nid}\":\" \"" 2>/dev/null; then
-                printf '%s\n' "${line/\[~\]/[ ]}"
-                continue
-            fi
-        fi
-        printf '%s\n' "$line"
-    done < "$nf" > "$tmpfile"
-    mv "$tmpfile" "$nf"
-}
+# Extracted to lib/notes_rollback.sh (sourced separately by tekhton.sh).
+# Functions: snapshot_note_states, restore_note_states

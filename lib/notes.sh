@@ -44,15 +44,19 @@ count_human_notes() {
 }
 
 # Extracts unchecked human notes as a formatted block for injection into prompts.
-# Returns items with their tags but without the checkbox prefix.
+# Returns items with their tags but without the checkbox prefix or metadata comments.
 extract_human_notes() {
     if [ ! -f "HUMAN_NOTES.md" ]; then
         return
     fi
     if [ -n "$NOTES_FILTER" ]; then
-        grep "^- \[ \] \[${NOTES_FILTER}\]" HUMAN_NOTES.md | sed 's/^- \[ \] /- /' || true
+        grep "^- \[ \] \[${NOTES_FILTER}\]" HUMAN_NOTES.md \
+            | sed 's/^- \[ \] /- /' \
+            | sed 's/ <!-- note:[^>]*-->//' || true
     else
-        grep "^- \[ \]" HUMAN_NOTES.md | sed 's/^- \[ \] /- /' || true
+        grep "^- \[ \]" HUMAN_NOTES.md \
+            | sed 's/^- \[ \] /- /' \
+            | sed 's/ <!-- note:[^>]*-->//' || true
     fi
 }
 
@@ -63,9 +67,7 @@ claim_human_notes() {
         return
     fi
 
-    # Archive pre-run snapshot
-    cp "HUMAN_NOTES.md" "${LOG_DIR}/${TIMESTAMP}_HUMAN_NOTES.md"
-    log "Archived HUMAN_NOTES.md → ${LOG_DIR}/${TIMESTAMP}_HUMAN_NOTES.md"
+    # Archive handled by claim_notes_batch() — no duplicate cp needed
 
     local filter="${NOTES_FILTER:-}"
     # claim_notes_batch also populates CLAIMED_NOTE_IDS (used by finalize hooks)

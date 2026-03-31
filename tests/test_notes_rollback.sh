@@ -57,6 +57,7 @@ _run_in_proj() {
         success() { :; }
         header()  { :; }
         source "${TEKHTON_HOME}/lib/notes_core.sh"
+        source "${TEKHTON_HOME}/lib/notes_rollback.sh"
         source "${TEKHTON_HOME}/lib/notes_cli.sh"
         # Now execute the provided inline function
         "$@"
@@ -74,6 +75,7 @@ result=$(_run_in_proj "$PROJ1" bash -c '
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     snapshot_note_states
 ' 2>/dev/null)
@@ -99,6 +101,7 @@ snapshot=$(_run_in_proj "$PROJ2" bash -c '
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     export _NOTES_FILE="HUMAN_NOTES.md"
     snapshot_note_states
@@ -133,6 +136,7 @@ snap=$(_run_in_proj "$PROJ3" bash -c '
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     export _NOTES_FILE="HUMAN_NOTES.md"
     snapshot_note_states
@@ -167,6 +171,7 @@ snapshot='{"n01":" ","n02":"x"}'
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     export _NOTES_FILE="HUMAN_NOTES.md"
     restore_note_states "$snapshot"
@@ -204,6 +209,7 @@ snapshot='{"n01":" "}'
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     export _NOTES_FILE="HUMAN_NOTES.md"
     restore_note_states "$snapshot"
@@ -239,6 +245,7 @@ cp "${PROJ6}/HUMAN_NOTES.md" "${PROJ6}/HUMAN_NOTES.md.before"
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     export _NOTES_FILE="HUMAN_NOTES.md"
     restore_note_states "{}"
@@ -265,6 +272,7 @@ snap=$(_run_in_proj "$PROJ7" bash -c '
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     export _NOTES_FILE="HUMAN_NOTES.md"
     snapshot_note_states
@@ -278,6 +286,7 @@ snap=$(_run_in_proj "$PROJ7" bash -c '
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     export _NOTES_FILE="HUMAN_NOTES.md"
     claim_note "n01"
@@ -291,6 +300,7 @@ snap=$(_run_in_proj "$PROJ7" bash -c '
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; warn() { :; }; error() { :; }; success() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_rollback.sh"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     export _NOTES_FILE="HUMAN_NOTES.md"
     restore_note_states "$snap"

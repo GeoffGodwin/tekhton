@@ -100,35 +100,14 @@ _hook_cleanup_resolved() {
 }
 
 # f. Resolve human notes with exit code awareness
-#    M40: Unified path — resolves CLAIMED_NOTE_IDS (set during claiming).
-#    Works for both --human single-note and batch modes.
-#    CURRENT_NOTE_ID provides fallback for --human mode.
+#    Unified path — resolves CLAIMED_NOTE_IDS (set during claiming).
+#    Works for both --human single-note and batch modes because
+#    claim_single_note() and claim_notes_batch() both register IDs
+#    in CLAIMED_NOTE_IDS.
 _hook_resolve_notes() {
     local exit_code="$1"
     if [[ ! -f "HUMAN_NOTES.md" ]]; then
         return 0
-    fi
-
-    # Single-note resolution for --human mode (runs on success AND failure)
-    if [[ "${HUMAN_MODE:-false}" = true ]]; then
-        if [[ -n "${CURRENT_NOTE_ID:-}" ]]; then
-            log "Resolving single note ${CURRENT_NOTE_ID} (--human mode, exit_code=$exit_code)"
-            local outcome="reset"
-            [[ "$exit_code" -eq 0 ]] && outcome="complete"
-            resolve_note "$CURRENT_NOTE_ID" "$outcome" || {
-                # Fallback: try text-based resolution via CURRENT_NOTE_LINE compat
-                if [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
-                    resolve_single_note "$CURRENT_NOTE_LINE" "$exit_code" || true
-                fi
-            }
-            return 0
-        elif [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
-            # Legacy path: no ID available, use text-based resolution
-            log "Resolving note via text match (--human mode, exit_code=$exit_code)"
-            resolve_single_note "$CURRENT_NOTE_LINE" "$exit_code" || true
-            return 0
-        fi
-        # Fall through to bulk if neither ID nor LINE is set
     fi
 
     # Bulk resolution via CLAIMED_NOTE_IDS (runs on success AND failure)

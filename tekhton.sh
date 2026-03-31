@@ -704,6 +704,7 @@ _check_pipeline_lock
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/config.sh"
 source "${TEKHTON_HOME}/lib/notes_core.sh"
+source "${TEKHTON_HOME}/lib/notes_rollback.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"

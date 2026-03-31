@@ -534,7 +534,12 @@ emit_dashboard_notes() {
 
     local json="["
     local first=true
-    while IFS= read -r line; do
+    local lines=()
+    mapfile -t lines < "$nf"
+
+    local i
+    for (( i=0; i<${#lines[@]}; i++ )); do
+        local line="${lines[$i]}"
         # Match note lines: - [ ] or - [~] or - [x]
         if [[ ! "$line" =~ ^-\ \[([x\ ~])\] ]]; then
             continue
@@ -563,6 +568,23 @@ emit_dashboard_notes() {
         fi
         title="${title%% <!-- note:*}"     # strip metadata
 
+        # Collect description lines (indented > blocks following this note)
+        local desc=""
+        local j=$(( i + 1 ))
+        while [[ "$j" -lt "${#lines[@]}" ]]; do
+            local next="${lines[$j]}"
+            if [[ "$next" =~ ^[[:space:]]*\> ]]; then
+                # Strip leading whitespace and > marker
+                local desc_text="${next#"${next%%[! ]*}"}"  # ltrim spaces
+                desc_text="${desc_text#> }"
+                desc_text="${desc_text#>}"
+                desc="${desc:+${desc} }${desc_text}"
+                (( j++ ))
+            else
+                break
+            fi
+        done
+
         # Extract metadata
         local nid="" created="" priority="" source_val=""
         if [[ "$line" =~ \<\!--\ note:([^ ]+) ]]; then
@@ -587,12 +609,13 @@ emit_dashboard_notes() {
         json="${json}{\"id\":\"$(_json_escape "${nid}")\","
         json="${json}\"tag\":\"$(_json_escape "${tag}")\","
         json="${json}\"title\":\"$(_json_escape "${title}")\","
+        json="${json}\"description\":\"$(_json_escape "${desc}")\","
         json="${json}\"status\":\"${status}\","
         json="${json}\"priority\":\"$(_json_escape "${priority}")\","
         json="${json}\"source\":\"$(_json_escape "${source_val}")\","
         json="${json}\"created\":\"$(_json_escape "${created}")\"}"
 
-    done < "$nf"
+    done
 
     json="${json}]"
     _write_js_file "${dash_dir}/data/notes.js" "TK_NOTES" "$json"
