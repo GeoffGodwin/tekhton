@@ -3,7 +3,7 @@
 # These functions provide rollback protection for the claim/resolve cycle.
 set -euo pipefail
 
-TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PASS=0
 FAIL=0
