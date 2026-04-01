@@ -1,127 +1,38 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, ~161 test functions
-(test_finalize_run.sh, test_human_workflow.sh, test_notes_acceptance.sh, test_notes_triage.sh)
-Verdict: NEEDS_WORK
+Tests audited: 1 file, 16 test functions (3 suites)
+Verdict: PASS
 
 ---
 
 ### Findings
 
-#### INTEGRITY: Both branches of integration test call pass() — test can never fail
-- File: tests/test_notes_acceptance.sh:222-229
-- Issue: Suite 4 BUG acceptance integration test reads:
-  ```bash
-  run_note_acceptance
-  if [[ "${NOTE_ACCEPTANCE_RESULT:-}" == *"warn_no_test"* ]]; then
-      pass "run_note_acceptance sets NOTE_ACCEPTANCE_RESULT for BUG"
-  else
-      # May be pass if test files happen to exist
-      pass "run_note_acceptance runs without error for BUG"
-  fi
-  ```
-  Both `if` and `else` branches call `pass()`. The test unconditionally records a pass regardless
-  of what `run_note_acceptance` actually does. Any behavior — including crash-and-recover,
-  wrong result, or silent no-op — produces a green test. The comment "May be pass if test files
-  happen to exist" suggests the author intended the else-branch as a fallback, but using `pass()`
-  in both branches means the `if` condition is never load-bearing. The implementation under test
-  (`lib/notes_acceptance.sh:run_note_acceptance`) sets `NOTE_ACCEPTANCE_RESULT`; the test never
-  verifies this is non-empty or contains expected tokens on failure.
-- Severity: HIGH
-- Action: Decide what the test must guarantee. Option A — verify the specific warn code:
-  ```bash
-  run_note_acceptance
-  if [[ "${NOTE_ACCEPTANCE_RESULT:-}" == *"warn_no_test"* ]]; then
-      pass "run_note_acceptance sets warn_no_test for BUG with no test file change"
-  else
-      fail "run_note_acceptance should set warn_no_test for BUG (got: ${NOTE_ACCEPTANCE_RESULT:-<empty>})"
-  fi
-  ```
-  Option B — if the environment makes the warn non-deterministic, set it up deterministically
-  (no staged test file changes) and assert the expected code.
-
-#### INTEGRITY: Special-characters test asserts echo 'ok' instead of claim_single_note result
-- File: tests/test_human_workflow.sh:233-237
-- Issue: The "special characters in note" test suppresses the real outcome and then asserts a
-  no-op command:
-  ```bash
-  claim_single_note "$note" || true       # real result discarded
-  # If it didn't error, that's good
-  assert_exit_code "Special chars handled" 0 "echo 'ok'"  # always passes
-  ```
-  `echo 'ok'` always exits 0. The assertion provides zero coverage of `claim_single_note`'s
-  behavior with special characters. The real question — does the function handle regex
-  metacharacters without corrupting HUMAN_NOTES.md or erroring? — is never answered.
-  If `claim_single_note` failed silently, panicked, or mangled the file, this test still passes.
-- Severity: HIGH
-- Action: Capture the real exit code and assert it, or test the file state:
-  ```bash
-  set +e; claim_single_note "$note"; _rc=$?; set -e
-  assert_exit_code "Special chars: claim returns non-error" 0 "[ $_rc -eq 0 ] || [ $_rc -eq 1 ]"
-  # and/or: assert file is not corrupted
-  ```
-  At minimum, remove `|| true` and assert the exit code directly.
-
-#### SCOPE: Assertion 15.6 tests a removed function — vacuously true for all inputs
-- File: tests/test_finalize_run.sh:830
-- Issue: `assert "15.6 resolve_human_notes NOT called on failure"` checks that the mock for
-  `resolve_human_notes` was not invoked when `finalize_run 1` is called. However, `resolve_human_notes`
-  is not called anywhere in the current `lib/finalize.sh` implementation — it was removed as part
-  of the M42 unified CLAIMED_NOTE_IDS path. The mock is registered at test line 108–111 but
-  `_hook_resolve_notes` never calls it. The assertion is vacuously true for both success and
-  failure exit codes, and provides no protection against future regressions that might
-  accidentally re-introduce a `resolve_human_notes` call on the success path.
+#### EXERCISE: Suites 1 and 2 duplicate implementation logic rather than calling it
+- File: tests/test_m43_test_aware.sh:32-44 (Suite 1), tests/test_m43_test_aware.sh:145-157 (Suite 2)
+- Issue: `_extract_affected_test_files()` and `_build_test_baseline_summary()` are character-for-character copies of the inline logic in `stages/coder.sh:320-350`. The tests verify correctness of the algorithm at time of writing, but if coder.sh logic is modified later, these tests will remain green while the real behavior breaks silently. This is a structural limitation: the production logic is embedded inline in a function rather than in a callable helper, so it cannot be directly sourced and tested.
 - Severity: MEDIUM
-- Action: Remove assertion 15.6 (it tests a removed code path). If the intent is to guard against
-  `resolve_human_notes` being called at any time, add a companion test that runs `finalize_run 0`
-  and asserts the mock is still not called — but document the intent clearly. Alternatively,
-  replace with an assertion that `resolve_notes_batch` IS called on success when `CLAIMED_NOTE_IDS`
-  is non-empty, testing the live code path that replaced the old one.
+- Action: Add a comment in the test file noting that `_extract_affected_test_files` mirrors `stages/coder.sh:320-327` and `_build_test_baseline_summary` mirrors `stages/coder.sh:342-347`, so maintainers know to update both locations together. No blocking issue for this milestone.
 
-#### WEAKENING: Net loss of 4 assertions — deferred without per-assertion documentation
-- File: tests/test_finalize_run.sh (whole file)
-- Issue: Shell pre-verification detected 6 assertions removed and 2 added (net −4). The TESTER_REPORT
-  attributes the removals to HUMAN_MODE-branching paths eliminated in M42 and defers creating a
-  per-assertion audit record. The justification is plausible — the unified CLAIMED_NOTE_IDS path
-  did consolidate what were previously separate HUMAN_MODE branches. The new Suite 8b (8 test cases
-  covering the unified path) likely covers equivalent behavioral surface. However, "likely covers"
-  is not confirmed: the tester did not enumerate which specific assertions were removed or which
-  8b cases map to them. Until that mapping exists, the net reduction cannot be verified as
-  non-weakening.
-- Severity: MEDIUM
-- Action: Add a comment block in test_finalize_run.sh (or in TESTER_REPORT.md) listing each removed
-  assertion by its former test ID/description and the M42 behavioral reason it no longer applies.
-  Confirm that each removed behavioral guarantee is covered by a specific Suite 8b case.
-
-#### EXERCISE: Section 10 flag-validation tests inline-reimplement logic from tekhton.sh
-- File: tests/test_human_workflow.sh:634-688 (Section 10)
-- Issue: Tests 10.1–10.4 validate `--human` flag rejection rules by simulating the validation
-  logic locally using shell variables (`HUMAN_MODE`, `MILESTONE_MODE`, `MOCK_TASK`) rather than
-  calling the real argument-parsing code in `tekhton.sh`. The comment added in this pass
-  (lines 634–638) acknowledges the limitation. A breaking change to tekhton.sh flag handling
-  would not be caught by these tests; they only verify the test's own inline simulation.
+#### COVERAGE: Missing edge case for malformed/partial baseline JSON
+- File: tests/test_m43_test_aware.sh:160-210
+- Issue: Suite 2 tests passing baseline, failing baseline, and missing file — but does not test a JSON file that is present but missing the `exit_code` key. The production `grep -oP '"exit_code"...'` would return empty string, producing an empty summary. This edge case is realistic (interrupted writes, partial baseline capture).
 - Severity: LOW
-- Action: The added acknowledgment comment is the minimum acceptable for now. Longer-term,
-  extract the flag validation gate into a sourceable lib function (e.g., `lib/flags.sh`) so
-  it can be directly exercised by the test suite without standing up a full pipeline.
+- Action: Add a test case with a JSON file that has no `exit_code` key and verify the summary result is empty. Not blocking.
 
----
+#### None (Assertion Honesty)
+All assertions test real behavior. Strings checked — `tests/test_foo.sh`, `tests/test_bar.sh`, `All tests passed`, `3 pre-existing failure(s)`, `NOT caused by your work` — match exactly what the production logic in `stages/coder.sh:343-347` produces. No hard-coded values disconnected from implementation logic.
 
-### Prior Findings — Disposition
+#### None (Test Weakening)
+This is a new test file. No existing tests were modified.
 
-The following findings from the previous TEST_AUDIT_REPORT.md were addressed and are
-considered RESOLVED in this pass:
+#### None (Naming)
+Suite names and pass/fail message strings are descriptive and encode both scenario and expected outcome. Examples: "Extracts test_foo.sh from Affected Test Files section", "Empty result when section says 'None identified'", "Failing baseline includes reassurance message". Appropriate for the bash tap-style pattern used throughout this codebase.
 
-- **INTEGRITY (test_finalize_run.sh:428)** — RESOLVED. Test 8.2 now captures actual exit
-  code via `set +e; _hook_resolve_notes 0; _rc=$?; set -e` and asserts `$_rc -eq 0`.
-
-- **INTEGRITY (NON_BLOCKING_LOG.md false "resolved" entry)** — RESOLVED. The log was
-  reopened and split into five accurate resolved entries covering Tests 8.1, 8.2, 8.4,
-  and two test_human_workflow.sh fixes.
-
-- **NAMING (test_human_workflow.sh:779)** — RESOLVED. The assert message at line 783
-  now reads "Orphan safety net marks [x]" consistent with the test_case description.
-
-- **EXERCISE (test_human_workflow.sh:635-683)** — PARTIALLY RESOLVED. Acknowledgment
-  comment added at lines 634–638. Coverage gap remains (LOW severity, see above).
+#### None (Scope Alignment)
+All four implementation changes identified in INTAKE_REPORT.md are exercised:
+- `stages/coder.sh` extraction logic (lines 316-350) → Suites 1 and 2
+- `prompts/coder.prompt.md` conditionals (lines 94-109) and Test Maintenance section (line 111) → Suite 3, lines 220-257
+- `prompts/scout.prompt.md` Affected Test Files section (line 82) → Suite 3, lines 233-237
+- `prompts/tester.prompt.md` intentional API change rule (line 45) → Suite 3, lines 240-249
+No orphaned, stale, or dead tests detected.

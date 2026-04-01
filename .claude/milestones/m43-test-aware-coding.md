@@ -1,7 +1,7 @@
 # Milestone 43: Test-Aware Coding
 <!-- milestone-meta
 id: "43"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
