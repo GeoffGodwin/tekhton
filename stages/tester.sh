@@ -89,7 +89,9 @@ run_stage_tester() {
         _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
         log_context_report "tester" "$CLAUDE_TESTER_MODEL"
 
+        _phase_start "tester_prompt"
         TESTER_PROMPT=$(render_prompt "tester")
+        _phase_end "tester_prompt"
     fi
 
     # --- Tester diagnostics: pre-invocation snapshot ----------------------------
@@ -107,6 +109,7 @@ run_stage_tester() {
     fi
 
     log "Invoking tester agent (max ${_tester_turn_budget} turns)..."
+    _phase_start "tester_agent"
     run_agent \
         "Tester" \
         "$CLAUDE_TESTER_MODEL" \
@@ -114,6 +117,7 @@ run_stage_tester() {
         "$TESTER_PROMPT" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_TESTER"
+    _phase_end "tester_agent"
     export TESTER_EXIT=$?
 
     # --- Tester diagnostics: post-invocation summary ----------------------------

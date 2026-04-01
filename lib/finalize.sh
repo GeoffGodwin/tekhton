@@ -221,6 +221,15 @@ _hook_commit() {
     if [[ -n "${HEALTH_SCORE:-}" ]] && command -v display_health_score &>/dev/null; then
         display_health_score "$HEALTH_SCORE" "${HEALTH_PREV_SCORE:-}"
     fi
+    # Top-3 time consumers (M46)
+    if command -v _format_timing_banner &>/dev/null && [[ ${#_PHASE_TIMINGS[@]} -gt 0 ]]; then
+        local _timing_banner
+        _timing_banner=$(_format_timing_banner)
+        if [[ -n "$_timing_banner" ]]; then
+            echo -e "  ${BOLD}Time breakdown (top 3):${NC}"
+            echo "$_timing_banner"
+        fi
+    fi
     echo
     # Print action items summary
     _print_action_items
@@ -390,6 +399,10 @@ _hook_health_reassess() {
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary.sh"
 
+# l2. Emit TIMING_REPORT.md (M46)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/timing.sh"
+
 # m. Write LAST_FAILURE_CONTEXT.json and emit diagnose hint (M17, failure only)
 # NOTE: This hook runs AFTER _hook_causal_log_finalize (hook d), which archives
 # the causal log. The live CAUSAL_LOG.jsonl is still present (archive_causal_log
@@ -471,6 +484,7 @@ register_finalize_hook "_hook_archive_milestone"
 register_finalize_hook "_hook_clear_state"
 register_finalize_hook "_hook_health_reassess"
 register_finalize_hook "_hook_emit_run_summary"
+register_finalize_hook "_hook_emit_timing_report"
 register_finalize_hook "_hook_failure_context"
 register_finalize_hook "_hook_express_persist"
 register_finalize_hook "_hook_commit"
@@ -496,9 +510,11 @@ finalize_run() {
     fi
     export FINAL_CHECK_RESULT _COMMIT_SUCCEEDED _CACHED_DISPOSITION
 
+    _phase_start "finalization"
     for hook_fn in "${FINALIZE_HOOKS[@]}"; do
         if ! "$hook_fn" "$pipeline_exit_code"; then
             warn "Finalize hook '${hook_fn}' failed (continuing)."
         fi
     done
+    _phase_end "finalization"
 }

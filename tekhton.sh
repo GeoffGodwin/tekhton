@@ -702,6 +702,7 @@ _check_pipeline_lock
 # --- Library sources ---------------------------------------------------------
 
 source "${TEKHTON_HOME}/lib/common.sh"
+_phase_start "startup"
 source "${TEKHTON_HOME}/lib/config.sh"
 source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes_rollback.sh"
@@ -794,7 +795,10 @@ source "${TEKHTON_HOME}/lib/test_audit.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
 source "${TEKHTON_HOME}/stages/cleanup.sh"
 
+_phase_end "startup"
+
 # --- Express mode: auto-detect config when pipeline.conf is missing -----------
+_phase_start "config_load"
 if [ ! -f "${PROJECT_DIR}/.claude/pipeline.conf" ]; then
     if [[ "${TEKHTON_EXPRESS_ENABLED:-true}" != "false" ]]; then
         log "No pipeline.conf found. Running in Express Mode (auto-detected config)."
@@ -1594,6 +1598,8 @@ if [[ -n "${INBOX_TASK_DESCRIPTIONS:-}" ]]; then
         log "  - ${_inbox_task_desc}"
     done <<< "$INBOX_TASK_DESCRIPTIONS"
 fi
+
+_phase_end "config_load"
 
 # --- Pre-flight --------------------------------------------------------------
 

@@ -213,11 +213,15 @@ mark_milestone_done() {
             log "Milestone ${milestone_num} already marked done in manifest"
             return 0
         fi
-        dag_set_status "$id" "done"
-        save_manifest
-        # Also update the milestone .md file metadata if emit_milestone_metadata exists
-        if declare -f emit_milestone_metadata &>/dev/null; then
-            emit_milestone_metadata "$milestone_num" "done" 2>/dev/null || true
+        # Update milestone .md file AND manifest together via emit_milestone_metadata.
+        # If it fails (missing file, etc.), fall back to manifest-only update with a warning.
+        if declare -f emit_milestone_metadata &>/dev/null \
+           && emit_milestone_metadata "$milestone_num" "done"; then
+            : # emit_milestone_metadata updated both file and manifest
+        else
+            warn "mark_milestone_done: milestone file metadata update failed for ${milestone_num}; updating manifest only"
+            dag_set_status "$id" "done"
+            save_manifest
         fi
         success "Marked Milestone ${milestone_num} (${id}) as done in manifest"
         # Emit milestone_advance event (Milestone 13)

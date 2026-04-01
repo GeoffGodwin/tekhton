@@ -160,6 +160,7 @@ $(cat SCOUT_REPORT.md)
     fi
 
     if [ "$SHOULD_SCOUT" = true ]; then
+        _phase_start "scout_agent"
         log "Running scout agent to locate relevant files and estimate complexity..."
         # Dashboard tracking: mark scout active (arrays declared in tekhton.sh)
         if declare -p _STAGE_STATUS &>/dev/null; then
@@ -289,6 +290,7 @@ $(cat SCOUT_REPORT.md)
             _STAGE_TURNS[scout]="${LAST_AGENT_TURNS:-0}"
             emit_dashboard_run_state 2>/dev/null || true
         fi
+        _phase_end "scout_agent"
     fi
 
     # --- Repo map for coder (task-biased or scout-sliced) -------------------
@@ -526,6 +528,7 @@ ${nb_notes}"
     # NOTE: build_context_packet is called before should_claim_notes intentionally.
     # It takes explicit args (not HUMAN_NOTES_BLOCK global), so the ordering is safe.
 
+    _phase_start "context_assembly"
     build_context_packet "coder" "$TASK" "$CLAUDE_CODER_MODEL"
 
     # --- Context budget reporting --------------------------------------------
@@ -614,9 +617,13 @@ ${nb_notes}"
 
     # Select prompt template: tag-specific or generic (M42)
     local _coder_template="${NOTE_TEMPLATE_NAME:-coder}"
+    _phase_start "coder_prompt"
     CODER_PROMPT=$(render_prompt "$_coder_template")
+    _phase_end "coder_prompt"
+    _phase_end "context_assembly"
 
     log "Invoking coder agent (max ${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS} turns)..."
+    _phase_start "coder_agent"
     run_agent \
         "Coder" \
         "$CLAUDE_CODER_MODEL" \
@@ -624,6 +631,7 @@ ${nb_notes}"
         "$CODER_PROMPT" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_CODER"
+    _phase_end "coder_agent"
     print_run_summary
 
     # Export actual coder turns for post-coder recalibration (Milestone 9)

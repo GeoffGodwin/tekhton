@@ -7573,3 +7573,318 @@ Seeds Forward:
   milestone doesn't catch
 - Milestone 46 (Instrumentation) will measure the reduction in test failures
   at the pre-finalization gate
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+
+# Milestone 44: Jr Coder Test-Fix Gate
+<!-- milestone-meta
+id: "44"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-04-01 -->
+
+## Overview
+
+Even with test-aware coding (M43), some test failures will still slip through to
+the pre-finalization gate. Currently, any new test failure at this point triggers
+a full pipeline retry (Coder→Reviewer→Tester) — the most expensive recovery
+path. This milestone inserts a cheap Jr Coder fix attempt before the full retry,
+preventing disproportionate reruns for trivial test breakage.
+
+The lightweight fix agent in `hooks.sh:309-351` (`FINAL_FIX_ENABLED`) already
+exists but fires only at finalization — after the orchestration loop is
+exhausted. This milestone moves that concept earlier in the flow.
+
+Depends on Milestone 43 (Test-Aware Coding) which addresses the root cause;
+this milestone is the safety net.
+
+## Scope
+
+### 1. Pre-Finalization Fix Loop
+
+**File:** `lib/orchestrate.sh` (lines 251-287)
+
+When the pre-finalization test gate detects new failures, insert a Jr Coder fix
+loop before the existing full-retry logic:
+
+```
+Tests fail → Jr Coder fix attempt (Haiku, ~15-20 turns)
+  → Shell independently runs TEST_CMD (agent never sees its own output)
+  → Pass? → Proceed to finalization
+  → Fail? → Toss back to Jr Coder with shell's test output
+  → Still fail after PREFLIGHT_FIX_MAX_ATTEMPTS? → Fall through to full retry
+```
+
+**Key design: shell-verified testing.** The Jr Coder fixes code and the shell
+independently runs `TEST_CMD`. The Jr Coder never sees test output it generated
+itself — only the shell's independent verification. This prevents the agent from
+"fixing" tests by weakening assertions.
+
+### 2. Configuration
+
+**File:** `lib/config_defaults.sh`
+
+New config keys:
+- `PREFLIGHT_FIX_ENABLED` (default: true)
+- `PREFLIGHT_FIX_MAX_ATTEMPTS` (default: 2)
+- `PREFLIGHT_FIX_MODEL` (default: `${CLAUDE_JR_CODER_MODEL}`)
+- `PREFLIGHT_FIX_MAX_TURNS` (default: `${JR_CODER_MAX_TURNS}`)
+
+### 3. Fix Prompt Template
+
+**File:** `prompts/preflight_fix.prompt.md` (new)
+
+The fix agent receives:
+- Test command output (from shell's independent run)
+- List of files changed in this pipeline run (from CODER_SUMMARY.md)
+- Error details and failure context
+
+Constraints:
+- Fix the failing tests or the code causing them to fail
+- Do NOT refactor, do NOT add features, do NOT modify unrelated files
+- Do NOT weaken test assertions to make them pass
+
+### 4. Helper Function
+
+**File:** `lib/orchestrate_helpers.sh`
+
+New function `_try_preflight_fix()` encapsulating:
+- Jr Coder agent invocation with fix prompt
+- Shell-side `TEST_CMD` re-run
+- Retry loop with attempt counter
+- Causal log events for fix attempts
+
+## Migration Impact
+
+[PM: Added — new config keys with user-visible behavior change require documentation.]
+
+`PREFLIGHT_FIX_ENABLED` defaults to `true`. **This changes existing pipeline
+behavior**: pipelines that previously went straight to full retry on test failure
+will now attempt a cheap Jr Coder fix first. The outcome is equivalent or better
+(same or fewer full retries), but the execution path changes. Users who want to
+preserve the old behavior exactly must set `PREFLIGHT_FIX_ENABLED=false` in
+`pipeline.conf`. No file format or state schema changes.
+
+## Acceptance Criteria
+
+- When 1-2 tests fail at run end, Jr Coder fix is attempted before full retry
+- Tests are run by the shell, not by the fix agent
+- If Jr Coder fixes the issue, no full pipeline retry occurs
+- If Jr Coder fails after max attempts, existing retry logic fires unchanged
+- `PREFLIGHT_FIX_ENABLED=false` restores existing behavior exactly
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified/new files
+- New test covering the fix-before-retry flow
+
+Tests:
+- Preflight fix config defaults are set correctly
+- `_try_preflight_fix()` returns 0 when fix succeeds, 1 when exhausted
+- Shell runs `TEST_CMD` independently after each fix attempt
+- Full retry fires only after preflight fix is exhausted
+- `PREFLIGHT_FIX_ENABLED=false` skips the fix loop entirely
+
+Watch For:
+- The Jr Coder must not have access to run `TEST_CMD` itself — only the shell
+  runs tests. The agent's tool allowlist should be `AGENT_TOOLS_BUILD_FIX`
+  (Edit, Read, Glob, Grep — no Bash test execution).
+- The fix prompt must include enough test output context for the agent to
+  diagnose the issue. Last 80-120 lines of test output should suffice.
+- Count preflight fix agent calls toward `TOTAL_AGENT_INVOCATIONS` and
+  `MAX_AUTONOMOUS_AGENT_CALLS` safety valve.
+- If the fix introduces new failures (not just failing to fix the original),
+  abort immediately rather than retrying.
+
+Seeds Forward:
+- Milestone 46 (Instrumentation) will measure how often the fix gate saves
+  a full retry
+- This pattern (cheap agent fix before expensive retry) could extend to
+  build gate failures in a future milestone
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 45: Scout Prompt — Leverage Repo Map & Serena
+<!-- milestone-meta
+id: "45"
+status: "done"
+-->
+
+## Overview
+
+When tree-sitter repo maps and/or Serena LSP are available, Scout should use
+them as primary discovery tools instead of blind `find`/`grep`. Currently,
+Scout's core directive hardcodes "Use find, grep, and ls" even when the repo
+map already provides ranked, task-relevant file signatures and Serena provides
+precise symbol cross-references. This wastes Haiku turns re-discovering files
+that tree-sitter already indexed.
+
+This milestone was partially implemented in an earlier commit (conditional
+prompt with `SCOUT_NO_REPO_MAP` flag). This milestone completes the work by
+also adjusting Scout's tool allowlist and validating turn savings.
+
+Depends on Milestone 42 (Tag-Specialized Execution Paths) for the tag-aware
+execution structure.
+
+## Scope
+
+### 1. Complete Scout Prompt Conditional Rewrite
+
+**File:** `prompts/scout.prompt.md`
+
+Verify and refine the existing conditional directives:
+- When `REPO_MAP_CONTENT` available: verify-and-refine strategy
+- When `SERENA_ACTIVE`: LSP-based cross-referencing
+- When neither: filesystem exploration fallback
+
+### 2. Conditional Tool Allowlist
+
+**File:** `stages/coder.sh`
+
+When `REPO_MAP_CONTENT` is non-empty, reduce Scout's tool allowlist:
+- Keep: Read, Glob, Grep, Write (for SCOUT_REPORT.md)
+- Remove: `Bash(find:*)`, `Bash(cat:*)`, `Bash(ls:*)` — redundant when repo
+  map provides the data
+
+Add config key `SCOUT_REPO_MAP_TOOLS_ONLY` (default: true) to control this.
+
+### 3. Turn Usage Validation
+
+After implementing, verify that Scout turn usage drops when repo map is
+available. The metrics system already tracks per-agent turns — compare runs
+with and without repo map to validate savings.
+
+## Acceptance Criteria
+
+- When `REPO_MAP_ENABLED=true`, Scout prompt instructs verification-first strategy
+- When `SERENA_ACTIVE=true`, Scout prompt instructs LSP-based cross-referencing
+- When neither available, Scout falls back to existing find/grep behavior
+- Scout produces identical SCOUT_REPORT.md format regardless of tooling mode
+- Tool allowlist is reduced when repo map available (configurable)
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+Tests:
+- `SCOUT_NO_REPO_MAP` is set when `REPO_MAP_CONTENT` is empty
+- `SCOUT_NO_REPO_MAP` is unset when `REPO_MAP_CONTENT` is populated
+- Tool allowlist changes based on `SCOUT_REPO_MAP_TOOLS_ONLY` config
+
+Watch For:
+- Scout is on Haiku — prompt must be clear and simple, not overloaded with
+  conditional logic that confuses cheaper models.
+- The repo map might be incomplete (e.g., tree-sitter can't parse some files).
+  Scout should still be able to discover files the repo map missed.
+- Removing Bash tools entirely could prevent Scout from checking file existence.
+  Keep Read and Glob available always.
+
+Seeds Forward:
+- Milestone 43 (Test-Aware Coding) extends Scout's report with test file
+  discovery, which benefits from the same repo map / Serena tooling
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 46: Instrumentation & Timing Report
+<!-- milestone-meta
+id: "46"
+status: "done"
+-->
+
+## Overview
+
+Tekhton lacks visibility into where wall-clock time is spent during a run. Users
+see agents starting and finishing but cannot tell whether slowness comes from
+agent execution, build gates, context assembly, or retries. This milestone adds
+per-phase timing instrumentation and emits a human-readable timing report at run
+end. It also establishes the baseline data needed to measure the impact of all
+optimizations in this initiative.
+
+Depends on Milestones 43-44 (Test-Aware Coding and Fix Gate) so their impact
+can be measured in the timing report from day one.
+
+## Scope
+
+### 1. Timing Helpers
+
+**File:** `lib/common.sh`
+
+Add `_phase_start()` and `_phase_end()` functions:
+- `_phase_start "phase_name"` — records start timestamp in associative array
+- `_phase_end "phase_name"` — records end timestamp, computes duration
+- Use `date +%s%N` for nanosecond precision (with `date +%s` fallback)
+- Store in `_PHASE_TIMINGS` associative array
+
+### 2. Phase Instrumentation
+
+Instrument each phase in `tekhton.sh` and stage files:
+- Startup/sourcing
+- Config load + detection
+- Indexer (repo map generation)
+- Per-agent: prompt assembly, agent execution, output parsing
+- Build gate (per-phase: analyze, compile, constraints, UI test)
+- State persistence
+- Finalization (per-hook)
+- Preflight fix attempts (from M44)
+
+### 3. TIMING_REPORT.md Emission
+
+**File:** `lib/finalize_summary.sh`
+
+At run end, emit `TIMING_REPORT.md` with per-phase breakdown:
+
+```markdown
+## Timing Report — run_20260331_143022
+
+| Phase | Duration | % of Total |
+|-------|----------|-----------|
+| Scout (agent) | 45s | 12% |
+| Coder (agent) | 4m 22s | 68% |
+| Build gate | 28s | 7% |
+| Reviewer (agent) | 38s | 10% |
+| Tester (agent) | 12s | 3% |
+| Context assembly | 1.2s | <1% |
+| Finalization | 0.8s | <1% |
+
+Total wall time: 6m 27s
+Agent calls: 4 (of 200 max)
+```
+
+### 4. Completion Banner Enhancement
+
+**File:** `lib/finalize_display.sh`
+
+Add top-3 time consumers to the completion banner so users see timing at a
+glance without opening the report.
+
+## Acceptance Criteria
+
+- Every agent invocation records prompt assembly, execution, and parse time
+- Every build gate phase records wall-clock duration
+- `TIMING_REPORT.md` is written at run end with per-phase breakdown
+- Completion banner shows top-3 time consumers
+- No measurable performance regression from instrumentation (<100ms total overhead)
+- All existing tests pass
+- New test coverage for timing helpers
+
+Tests:
+- `_phase_start` / `_phase_end` correctly compute durations
+- Nested phases are handled (e.g., agent execution within coder stage)
+- `TIMING_REPORT.md` is valid markdown with correct percentages summing to ~100%
+- Missing `_phase_end` calls don't crash (graceful handling)
+
+Watch For:
+- `date +%s%N` is not available on all platforms (macOS `date` doesn't support
+  `%N`). Use `gdate` fallback or fall back to second-precision.
+- Instrumentation must not interfere with subshell boundaries. Use file-based
+  timing (like the existing `_STAGE_DURATION` arrays) rather than shell variables
+  that don't survive subshells.
+- Dashboard heartbeat already emits some timing data — integrate rather than
+  duplicate.
+
+Seeds Forward:
+- All subsequent milestones use timing data to validate their impact
+- Timing report feeds into future adaptive turn calibration improvements

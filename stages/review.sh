@@ -62,8 +62,11 @@ run_stage_review() {
         _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
         log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_REVIEWER_MODEL"
 
+        _phase_start "reviewer_prompt"
         REVIEWER_PROMPT=$(render_prompt "reviewer")
+        _phase_end "reviewer_prompt"
 
+        _phase_start "reviewer_agent"
         run_agent \
             "Reviewer (cycle ${REVIEW_CYCLE})" \
             "$CLAUDE_REVIEWER_MODEL" \
@@ -71,6 +74,7 @@ run_stage_review() {
             "$REVIEWER_PROMPT" \
             "$LOG_FILE" \
             "$AGENT_TOOLS_REVIEWER"
+        _phase_end "reviewer_agent"
         print_run_summary
         success "Reviewer finished."
 
@@ -190,6 +194,7 @@ REVIEW_EOF
 
                     REWORK_PROMPT=$(render_prompt "coder_rework")
 
+                    _phase_start "rework_agent"
                     run_agent \
                         "Coder (rework cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_CODER_MODEL" \
@@ -197,6 +202,7 @@ REVIEW_EOF
                         "$REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_CODER"
+                    _phase_end "rework_agent"
                     print_run_summary
                     success "Senior coder rework finished."
                     if [ "$HAS_SIMPLE" -gt 0 ]; then

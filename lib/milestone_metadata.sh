@@ -59,16 +59,14 @@ emit_milestone_metadata() {
             return 1
         fi
 
-        # Also update manifest status
-        dag_set_status "$id" "$status"
-        save_manifest
-
         local meta_block
         meta_block="<!-- milestone-meta
 id: \"${milestone_num}\"
 status: \"${status}\"
 -->"
 
+        # Write milestone .md file FIRST, then manifest — ensures they
+        # cannot diverge if the process dies between the two writes.
         # Check if meta block already exists in the file
         if grep -q '^<!-- milestone-meta' "$filepath" 2>/dev/null; then
             # Replace existing meta block
@@ -97,6 +95,10 @@ status: \"${status}\"
             ' "$filepath" > "$tmpfile"
             mv "$tmpfile" "$filepath"
         fi
+
+        # Update manifest AFTER file write succeeded
+        dag_set_status "$id" "$status"
+        save_manifest
 
         log "Milestone ${milestone_num} metadata updated in ${file}: status=${status}"
         return 0

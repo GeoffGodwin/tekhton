@@ -74,8 +74,10 @@ run_build_gate() {
     gate_start=$(date +%s)
 
     log "Running build gate (${stage_label})..."
+    _phase_start "build_gate"
 
     # --- Phase 1: Static analysis (ANALYZE_CMD) ---
+    _phase_start "build_gate_analyze"
     local analyze_timeout="${BUILD_GATE_ANALYZE_TIMEOUT:-300}"
     local effective_timeout
     effective_timeout=$(_gate_effective_timeout "$analyze_timeout" "$gate_start" "$gate_timeout") || {
@@ -117,14 +119,19 @@ ${ANALYZE_OUTPUT}
 \`\`\`
 EOF
         log "Build errors written to BUILD_ERRORS.md"
+        _phase_end "build_gate_analyze"
+        _phase_end "build_gate"
         return 1
     fi
 
+    _phase_end "build_gate_analyze"
+
     # Check overall gate timeout before next phase
-    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || return 1
+    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || { _phase_end "build_gate"; return 1; }
 
     # --- Phase 2: Compile check (BUILD_CHECK_CMD) ---
     if [ -n "${BUILD_CHECK_CMD}" ]; then
+        _phase_start "build_gate_compile"
         local compile_timeout="${BUILD_GATE_COMPILE_TIMEOUT:-120}"
         effective_timeout=$(_gate_effective_timeout "$compile_timeout" "$gate_start" "$gate_timeout") || {
             _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout"
@@ -151,12 +158,15 @@ EOF
 ${COMPILE_ERRORS}
 \`\`\`
 EOF
+            _phase_end "build_gate_compile"
+            _phase_end "build_gate"
             return 1
         fi
+        _phase_end "build_gate_compile"
     fi  # end BUILD_CHECK_CMD guard
 
     # Check overall gate timeout before next phase
-    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || return 1
+    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || { _phase_end "build_gate"; return 1; }
 
     # --- Phase 3: Dependency constraint validation (P5) ---
     # Runs the validation_command from the constraint manifest, if configured.
@@ -197,6 +207,7 @@ EOF
 ${constraint_output}
 \`\`\`
 EOF
+                _phase_end "build_gate"
                 return 1
             fi
             log "Dependency constraints passed."
@@ -210,6 +221,7 @@ EOF
     # Runs UI_TEST_CMD when configured and non-empty. Missing command = warning, not failure.
     # Retries once on failure (E2E tests are inherently flaky).
     if [[ -n "${UI_TEST_CMD:-}" ]] && [[ "${UI_VALIDATION_ENABLED:-true}" == "true" ]]; then
+        _phase_start "build_gate_ui_test"
         local _ui_cmd_bin
         _ui_cmd_bin=$(echo "$UI_TEST_CMD" | awk '{print $1}')
 
@@ -255,6 +267,8 @@ $(echo "$_ui_output" | tail -100)
 \`\`\`
 UIEOF
                 log "UI test errors written to UI_TEST_ERRORS.md"
+                _phase_end "build_gate_ui_test"
+                _phase_end "build_gate"
                 return 1
             fi
             log "UI tests passed."
@@ -262,10 +276,11 @@ UIEOF
             warn "[build gate] UI_TEST_CMD command '${_ui_cmd_bin}' not found. Skipping UI test gate."
             warn "Install the E2E framework or update UI_TEST_CMD in pipeline.conf."
         fi
+        _phase_end "build_gate_ui_test"
     fi
 
     # Check overall gate timeout before next phase
-    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || return 1
+    _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || { _phase_end "build_gate"; return 1; }
 
     # --- Phase 5: UI validation gate (Milestone 29: headless browser smoke tests) ---
     # Runs AFTER UI_TEST_CMD (M28). Soft-fails when no headless browser available.
@@ -284,10 +299,12 @@ UIEOF
                     cat "UI_VALIDATION_REPORT.md"
                 } >> BUILD_ERRORS.md
             fi
+            _phase_end "build_gate"
             return 1
         fi
     fi
 
+    _phase_end "build_gate"
     log "Build gate PASSED (${stage_label})"
     [ -f BUILD_ERRORS.md ] && rm BUILD_ERRORS.md
     [ -f UI_TEST_ERRORS.md ] && rm UI_TEST_ERRORS.md

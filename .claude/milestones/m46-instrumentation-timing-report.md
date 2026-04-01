@@ -1,7 +1,7 @@
 # Milestone 46: Instrumentation & Timing Report
 <!-- milestone-meta
 id: "46"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

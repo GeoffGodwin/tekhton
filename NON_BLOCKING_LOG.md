@@ -5,6 +5,9 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-04-01 | "M46"] `lib/timing.sh` & `stages/coder.sh`: `context_assembly` and `coder_prompt` are nested phases (coder_prompt starts/ends inside context_assembly). Both appear in TIMING_REPORT.md with independent durations, causing the sum of all phase percentages to slightly exceed 100% in production runs. Not a correctness bug — timing is accurate — but the report header could note this to avoid user confusion.
+- [ ] [2026-04-01 | "M46"] `lib/timing.sh:64`: `build_gate_constraints` is listed in `_phase_display_name()` but `gates.sh` never calls `_phase_start "build_gate_constraints"` — the constraint validation phase is unmetered. The display name entry is forward-compatible dead code for now. Consider either instrumenting the constraint phase or removing the dead entry.
+- [ ] [2026-04-01 | "M46"] `tests/test_timing_report_generation.sh:101`: Uses `grep -oP` (Perl regex). This is fine on Linux/WSL2 but would fail on macOS BSD grep. Low risk given the Linux-only deployment context, but worth noting for any future macOS contributors.
 - [ ] [2026-04-01 | "Implement Milestones 44 a
 nd then 45"] `CODER_SUMMARY.md` "Files Modified" section lists only `CODER_SUMMARY.md` but git status shows many staged files (`lib/config_defaults.sh`, `lib/orchestrate.sh`, `lib/orchestrate_helpers.sh`, `stages/coder.sh`, plus 4 untracked new files). Accurate file lists help the reviewer gate and the drift system. Future coder runs should enumerate all files changed in the session.
 - [ ] [2026-04-01 | "Implement Milestones 44 a
