@@ -63,8 +63,7 @@ check_feat_acceptance() {
     _new_files=$(git ls-files --others --exclude-standard 2>/dev/null || true)
     local _staged_new=""
     _staged_new=$(git diff --cached --name-only --diff-filter=A 2>/dev/null || true)
-    _new_files="${_new_files}${_staged_new:+
-${_staged_new}}"
+    _new_files=$(printf '%s\n%s' "$_new_files" "$_staged_new")
     # Deduplicate (untracked + staged new can overlap)
     if [[ -n "$_new_files" ]]; then
         _new_files=$(echo "$_new_files" | sort -u)

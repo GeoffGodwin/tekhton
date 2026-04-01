@@ -1,8 +1,10 @@
+
 # Milestone 44: Jr Coder Test-Fix Gate
 <!-- milestone-meta
 id: "44"
-status: "pending"
+status: "done"
 -->
+<!-- PM-tweaked: 2026-04-01 -->
 
 ## Overview
 
@@ -74,6 +76,17 @@ New function `_try_preflight_fix()` encapsulating:
 - Shell-side `TEST_CMD` re-run
 - Retry loop with attempt counter
 - Causal log events for fix attempts
+
+## Migration Impact
+
+[PM: Added — new config keys with user-visible behavior change require documentation.]
+
+`PREFLIGHT_FIX_ENABLED` defaults to `true`. **This changes existing pipeline
+behavior**: pipelines that previously went straight to full retry on test failure
+will now attempt a cheap Jr Coder fix first. The outcome is equivalent or better
+(same or fewer full retries), but the execution path changes. Users who want to
+preserve the old behavior exactly must set `PREFLIGHT_FIX_ENABLED=false` in
+`pipeline.conf`. No file format or state schema changes.
 
 ## Acceptance Criteria
 

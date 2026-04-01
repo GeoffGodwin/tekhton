@@ -349,6 +349,16 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         fi
     fi
 
+    # M45: Set fallback flag and reduce tools when repo map available
+    export SCOUT_NO_REPO_MAP=""
+    if [[ -z "${REPO_MAP_CONTENT}" ]]; then
+        SCOUT_NO_REPO_MAP="true"
+    fi
+    local _scout_tools="${AGENT_TOOLS_SCOUT:-}"
+    if [[ -n "${REPO_MAP_CONTENT}" ]] && [[ "${SCOUT_REPO_MAP_TOOLS_ONLY:-true}" = "true" ]]; then
+        _scout_tools="Read Glob Grep Write"
+    fi
+
     SCOUT_PROMPT=$(render_prompt "scout")
 
     run_agent \
@@ -357,7 +367,7 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         "${SCOUT_MAX_TURNS:-20}" \
         "$SCOUT_PROMPT" \
         "$LOG_FILE" \
-        "${AGENT_TOOLS_SCOUT:-}"
+        "$_scout_tools"
 
     if [[ -f "SCOUT_REPORT.md" ]]; then
         has_scout=true

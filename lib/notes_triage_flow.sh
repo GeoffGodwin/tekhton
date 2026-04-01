@@ -57,6 +57,7 @@ _prompt_promote_note() {
 # promote_note_to_milestone ID TEXT [DESCRIPTION]
 # Creates a milestone from the note via run_intake_create and marks note [x].
 # Returns 0 on success, 1 on failure. Sets PROMOTED_MILESTONE_ID.
+# Output variable: populated by promote_note_to_milestone()
 PROMOTED_MILESTONE_ID=""
 
 promote_note_to_milestone() {

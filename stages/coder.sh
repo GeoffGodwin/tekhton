@@ -200,6 +200,12 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             SCOUT_NO_REPO_MAP="true"
         fi
 
+        # M45: Reduce scout tools when repo map provides file discovery
+        local _scout_tools="$AGENT_TOOLS_SCOUT"
+        if [[ -n "${REPO_MAP_CONTENT}" ]] && [[ "${SCOUT_REPO_MAP_TOOLS_ONLY:-true}" = "true" ]]; then
+            _scout_tools="Read Glob Grep Write"
+        fi
+
         SCOUT_PROMPT=$(render_prompt "scout")
 
         run_agent \
@@ -208,7 +214,7 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             "${SCOUT_MAX_TURNS}" \
             "$SCOUT_PROMPT" \
             "$LOG_FILE" \
-            "$AGENT_TOOLS_SCOUT"
+            "$_scout_tools"
 
         if [ -f "SCOUT_REPORT.md" ]; then
             print_run_summary
@@ -245,7 +251,7 @@ $(cat SCOUT_REPORT.md)
                             "${SCOUT_MAX_TURNS}" \
                             "$SCOUT_PROMPT" \
                             "$LOG_FILE" \
-                            "$AGENT_TOOLS_SCOUT"
+                            "$_scout_tools"
 
                         if [ -f "SCOUT_REPORT.md" ]; then
                             print_run_summary

@@ -1,7 +1,7 @@
 # Milestone 45: Scout Prompt — Leverage Repo Map & Serena
 <!-- milestone-meta
 id: "45"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
