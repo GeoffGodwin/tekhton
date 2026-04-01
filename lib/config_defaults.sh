@@ -129,6 +129,7 @@ set -euo pipefail
 : "${REPO_MAP_VENV_DIR:=.claude/indexer-venv}"
 : "${REPO_MAP_HISTORY_ENABLED:=true}"
 : "${REPO_MAP_HISTORY_MAX_RECORDS:=200}"
+: "${SCOUT_REPO_MAP_TOOLS_ONLY:=true}"    # Reduce scout tools when repo map available
 
 # --- Serena LSP / MCP defaults (optional, future Milestone 6) ---
 : "${SERENA_ENABLED:=false}"
@@ -304,6 +305,12 @@ set -euo pipefail
 : "${CAUSAL_LOG_RETENTION_RUNS:=50}"
 : "${CAUSAL_LOG_MAX_EVENTS:=2000}"
 
+# --- Pre-finalization fix defaults (cheap Jr Coder fix before full retry) ---
+: "${PREFLIGHT_FIX_ENABLED:=true}"                          # Try Jr Coder fix before full pipeline retry
+: "${PREFLIGHT_FIX_MAX_ATTEMPTS:=2}"                        # Max fix attempts before falling through
+: "${PREFLIGHT_FIX_MODEL:=${CLAUDE_JR_CODER_MODEL}}"        # Model for fix agent
+: "${PREFLIGHT_FIX_MAX_TURNS:=${JR_CODER_MAX_TURNS}}"       # Turn budget per fix attempt
+
 # --- Tester stage fix defaults (auto-fix on test failure) ---
 : "${TESTER_FIX_ENABLED:=false}"           # Auto-seed fix run on test failure (opt-in)
 : "${TESTER_FIX_MAX_DEPTH:=1}"             # Max recursive fix attempts (recursion guard)
@@ -438,6 +445,8 @@ _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
 _clamp_config_value AUTO_FIX_MAX_DEPTH 5
 _clamp_config_value AUTO_FIX_OUTPUT_LIMIT 16000
+_clamp_config_value PREFLIGHT_FIX_MAX_ATTEMPTS 10
+_clamp_config_value PREFLIGHT_FIX_MAX_TURNS 500
 _clamp_config_value FINAL_FIX_MAX_ATTEMPTS 10
 _clamp_config_value FINAL_FIX_MAX_TURNS 500
 _clamp_config_value TEST_BASELINE_STUCK_THRESHOLD 10
