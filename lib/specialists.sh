@@ -42,6 +42,24 @@ run_specialist_reviews() {
         return 0
     fi
 
+    # M48: Filter out specialists whose diff doesn't touch relevant files
+    if [[ "${SPECIALIST_SKIP_IRRELEVANT:-true}" == "true" ]]; then
+        local -a filtered=()
+        for spec_name in "${specialists[@]}"; do
+            if _specialist_diff_relevant "$spec_name"; then
+                filtered+=("$spec_name")
+            else
+                log "[Specialist ${spec_name}] Skipped — diff does not touch relevant files."
+            fi
+        done
+        specialists=("${filtered[@]+"${filtered[@]}"}")
+    fi
+
+    if [ ${#specialists[@]} -eq 0 ]; then
+        log "All specialists skipped (no relevant files in diff)."
+        return 0
+    fi
+
     header "Specialist Reviews"
     log "Running ${#specialists[@]} specialist review(s)..."
 
@@ -255,4 +273,65 @@ _append_specialist_notes() {
 # has_specialist_blockers — Returns 0 if SPECIALIST_BLOCKERS is non-empty.
 has_specialist_blockers() {
     [ -n "${SPECIALIST_BLOCKERS:-}" ]
+}
+
+# =============================================================================
+# _specialist_diff_relevant — Check if git diff touches files relevant to a specialist.
+# Args: $1 = specialist name (security, performance, api, or custom)
+# Returns 0 if relevant files found, 1 if diff is irrelevant.
+# Custom specialists always return 0 (relevant) — no keyword list available.
+# =============================================================================
+_specialist_diff_relevant() {
+    local spec_name="$1"
+
+    # Get changed file paths (staged + unstaged vs HEAD)
+    local diff_files
+    diff_files=$(git diff --name-only HEAD 2>/dev/null || true)
+    if [[ -z "$diff_files" ]]; then
+        # Also check staged-only changes
+        diff_files=$(git diff --name-only --cached 2>/dev/null || true)
+    fi
+
+    # If we can't determine diff, be conservative — run the specialist
+    if [[ -z "$diff_files" ]]; then
+        return 0
+    fi
+
+    local patterns
+    case "$spec_name" in
+        security)
+            # Broad keyword list — false negatives are costly for security
+            patterns="auth|crypto|crypt|password|passwd|token|session|login|
+                      signin|signup|oauth|jwt|secret|key|cert|tls|ssl|
+                      cookie|csrf|xss|sanitiz|escap|hash|salt|permiss|
+                      access|credential|secur|encrypt|decrypt|verify|
+                      middleware|guard|policy|role|acl|rbac"
+            ;;
+        performance)
+            patterns="cache|query|queries|index|perf|optim|loop|batch|
+                      pool|buffer|stream|async|concurr|parallel|throttl|
+                      debounce|memo|lazy|eager|preload|prefetch|
+                      database|db|sql|redis|queue|worker|schedule"
+            ;;
+        api)
+            patterns="route|endpoint|controller|handler|middleware|
+                      schema|swagger|openapi|graphql|grpc|proto|
+                      request|response|api|rest|rpc|service|
+                      serializ|deserializ|dto|payload|contract|
+                      version|v1|v2|v3"
+            ;;
+        *)
+            # Custom specialists: no keyword list, always relevant
+            return 0
+            ;;
+    esac
+
+    # Collapse multiline pattern to single line, strip whitespace
+    patterns=$(echo "$patterns" | tr -d '[:space:]' | tr -s '|')
+
+    if echo "$diff_files" | grep -qiE "$patterns"; then
+        return 0
+    fi
+
+    return 1
 }

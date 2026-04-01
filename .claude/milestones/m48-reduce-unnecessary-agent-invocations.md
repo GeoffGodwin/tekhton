@@ -1,8 +1,9 @@
 # Milestone 48: Reduce Unnecessary Agent Invocations
 <!-- milestone-meta
 id: "48"
-status: "pending"
+status: "done"
 -->
+<!-- PM-tweaked: 2026-04-01 -->
 
 ## Overview
 
@@ -50,6 +51,19 @@ When `METRICS_ADAPTIVE_TURNS=true` and sufficient run history exists
 (`METRICS_MIN_RUNS`), use historical median turns for the task type rather
 than the configured maximum. This reduces over-provisioned budgets that
 cause unnecessary turn-exhaustion continuations.
+
+## Migration Impact
+
+[PM: Added — two new opt-in config keys with conservative defaults; no changes required to existing `pipeline.conf` files.]
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `SPECIALIST_SKIP_IRRELEVANT` | `true` | Set to `false` to restore unconditional specialist invocation |
+| `REVIEW_SKIP_THRESHOLD` | `0` | Lines-changed threshold below which review is skipped; `0` = always review |
+
+Both keys are backward-compatible: defaults preserve prior behavior for
+`REVIEW_SKIP_THRESHOLD` (always review) and add conservative skipping for
+`SPECIALIST_SKIP_IRRELEVANT` (enabled, but keyword lists are intentionally broad).
 
 ## Acceptance Criteria
 

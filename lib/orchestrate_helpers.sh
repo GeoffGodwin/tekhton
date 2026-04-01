@@ -83,6 +83,10 @@ _try_preflight_fix() {
     fi
 
     # Capture initial failure signature for regression detection
+    # Note: grep pattern counts keyword occurrences and may over-count in test frameworks
+    # that print "0 errors" or "no failures found" in passing output. This is accepted
+    # because the heuristic uses exit codes for correctness; grep counts only throttle
+    # early-abort decisions (see regression check below).
     local _pf_initial_fail_count
     _pf_initial_fail_count=$(printf '%s\n' "$_pf_output" | grep -ciE '(FAIL|ERROR|error|failure)' || echo "0")
 
@@ -132,6 +136,10 @@ _try_preflight_fix() {
         # Regression detection: if fix introduced MORE failures, abort immediately
         local _pf_new_fail_count
         _pf_new_fail_count=$(printf '%s\n' "$_pf_verify_output" | grep -ciE '(FAIL|ERROR|error|failure)' || echo "0")
+        # The +2 threshold accommodates slight variance in noisy grep counts. Frameworks
+        # that print "0 errors" or "no failures found" can shift the count by 1–2 between
+        # runs. This prevents aborting on measurement noise while still catching genuine
+        # regressions (sustained growth in actual failures).
         if [[ "$_pf_new_fail_count" -gt "$(( _pf_initial_fail_count + 2 ))" ]]; then
             warn "Pre-finalization fix: attempt ${_pf_attempt} introduced new failures (${_pf_new_fail_count} vs ${_pf_initial_fail_count}). Aborting fix loop."
             break

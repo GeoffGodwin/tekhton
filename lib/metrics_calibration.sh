@@ -110,6 +110,13 @@ calibrate_turn_estimate() {
     local adjusted
     adjusted=$(( (recommendation * centimult + 50) / 100 ))
 
+    # M48: Floor at 50% of the original recommendation to prevent
+    # pathological under-provisioning from noisy historical data.
+    local floor=$(( (recommendation + 1) / 2 ))
+    if [[ "$adjusted" -lt "$floor" ]]; then
+        adjusted="$floor"
+    fi
+
     # Never go below 1
     if [[ "$adjusted" -lt 1 ]]; then
         adjusted=1

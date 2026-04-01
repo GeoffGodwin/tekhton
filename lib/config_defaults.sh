@@ -362,6 +362,8 @@ set -euo pipefail
 : "${MIGRATION_BACKUP_DIR:=.claude/migration-backups}"  # Relative path within .claude/
 
 # --- Specialist reviewer defaults ---
+: "${SPECIALIST_SKIP_IRRELEVANT:=true}"    # Skip specialists when diff doesn't touch relevant files
+: "${REVIEW_SKIP_THRESHOLD:=0}"            # Lines-changed below which review is skipped; 0 = always review
 : "${SPECIALIST_SECURITY_ENABLED:=false}"
 : "${SPECIALIST_SECURITY_MODEL:=${CLAUDE_STANDARD_MODEL}}"
 : "${SPECIALIST_SECURITY_MAX_TURNS:=8}"

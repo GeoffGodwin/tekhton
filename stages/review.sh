@@ -19,6 +19,20 @@ run_stage_review() {
         return 0
     fi
 
+    # M48: Diff-size review threshold — skip review for trivial diffs.
+    # Never applies in milestone mode (milestones always get full review).
+    local _skip_threshold="${REVIEW_SKIP_THRESHOLD:-0}"
+    if [[ "$_skip_threshold" -gt 0 ]] && [[ "${MILESTONE_MODE:-false}" != "true" ]]; then
+        local _diff_lines
+        _diff_lines=$(git diff --stat HEAD 2>/dev/null | tail -1 | grep -oE '[0-9]+ insertion|[0-9]+ deletion' | grep -oE '[0-9]+' | paste -sd+ - | bc 2>/dev/null || echo "0")
+        if [[ "$_diff_lines" -gt 0 ]] && [[ "$_diff_lines" -lt "$_skip_threshold" ]]; then
+            log "Diff size (${_diff_lines} lines) below review threshold (${_skip_threshold}). Skipping review."
+            VERDICT="APPROVED_WITH_NOTES"
+            export REVIEWER_SKIPPED="true"
+            return 0
+        fi
+    fi
+
     estimate_post_coder_turns "${ACTUAL_CODER_TURNS:-0}"
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"

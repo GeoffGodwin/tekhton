@@ -1,7 +1,5 @@
-# Reviewer Report
-
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,10 +8,27 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `NON_BLOCKING_LOG.md` Resolved section is empty — the 3 resolved items were removed rather than moved; traceability of what was fixed is lost. Consider appending entries under `## Resolved` when closing notes.
+- None
 
 ## Coverage Gaps
 - None
 
+## ACP Verdicts
+None present.
+
 ## Drift Observations
-- `lib/context_cache.sh:19-38` — DESIGN NOTES block documents spec divergence inline in source. This is the right call given the permission-denied constraint on the milestone file, but the divergence should eventually be reconciled in `.claude/milestones/m47-intra-run-context-cache.md` once write access is available (noted in CODER_SUMMARY.md Remaining Spec Updates section).
+None.
+
+---
+
+## Review Notes
+
+**SF-1** (`orchestrate_helpers.sh:86–89`): Comment added above the grep invocation at line 91. Content accurately describes the over-count risk and the accepted rationale (exit codes govern correctness; grep counts only throttle early-abort). Comment is well-placed and precise.
+
+**SF-2** (`orchestrate_helpers.sh:139–142`): Comment added immediately before the `+2` comparison at line 143. Explains the 1–2 count variance from "0 errors"/"no failures found" output and why this prevents aborting on measurement noise. Matches the plan spec exactly.
+
+**Senior coder**: Correctly identified zero simplification items and produced a no-op summary. No scope creep.
+
+**Jr coder**: Both SF-1 and SF-2 implemented as comments only — no logic changes. `bash -n` and `shellcheck` verified clean per JR_CODER_SUMMARY.md. Changes are bounded to the plan.
+
+**DDO-1**: Correctly left for human action. No attempt by either coder to modify the milestone spec file autonomously.
