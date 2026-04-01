@@ -163,10 +163,10 @@ gitignore_pattern=$(grep -r "\.claude/dashboard" "${TEKHTON_HOME}/templates/" ||
 pass "Fix #22: .claude/dashboard gitignore pattern added"
 
 # === Fix #23: test comment count ===
-# Check that test_finalize_run.sh comment is updated from 11 to 12 hooks
+# Check that test_finalize_run.sh comment matches actual hook count (20)
 test_comment=$(grep "hooks in deterministic" "${TEKHTON_HOME}/tests/test_finalize_run.sh")
-echo "$test_comment" | grep -q "12 hooks" || fail "test_finalize_run.sh comment still says 11 hooks"
-pass "Fix #23: test_finalize_run.sh hook count comment updated to 12"
+echo "$test_comment" | grep -q "20 hooks" || fail "test_finalize_run.sh comment does not match actual hook count"
+pass "Fix #23: test_finalize_run.sh hook count comment matches actual count"
 
 # === Fix #24: hook letter labeling ===
 # Check that hook letter labeling is corrected (no skip from j to l, order should be consistent)

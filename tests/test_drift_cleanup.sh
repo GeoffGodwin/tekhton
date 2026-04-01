@@ -89,7 +89,7 @@ RESULT=$(get_completed_nonblocking_notes)
 assert_eq "no completed items returns empty" "" "$RESULT"
 
 # ============================================================
-# Test 5: clear_completed_nonblocking_notes — removes [x] items only
+# Test 5: clear_completed_nonblocking_notes — moves [x] items to Resolved
 # ============================================================
 cat > "$NB_FILE" << 'EOF'
 # Non-Blocking Log
@@ -105,9 +105,23 @@ EOF
 clear_completed_nonblocking_notes
 COUNT=$(count_open_nonblocking_notes)
 assert_eq "only open items remain after clear" "1" "$COUNT"
-assert_file_not_contains "completed foo removed" "$NB_FILE" "foo.sh"
-assert_file_not_contains "completed baz removed" "$NB_FILE" "baz.sh"
 assert_file_contains "open bar preserved" "$NB_FILE" "bar.sh"
+# Items moved to ## Resolved for traceability
+RESOLVED_SECTION=$(awk '/^## Resolved/{f=1; next} f && /^## [^#]/{exit} f{print}' "$NB_FILE")
+if ! echo "$RESOLVED_SECTION" | grep -q "foo.sh"; then
+    echo "FAIL: completed foo.sh should be in ## Resolved"
+    FAIL=1
+fi
+if ! echo "$RESOLVED_SECTION" | grep -q "baz.sh"; then
+    echo "FAIL: completed baz.sh should be in ## Resolved"
+    FAIL=1
+fi
+# Verify they are NOT in the ## Open section
+OPEN_SECTION=$(awk '/^## Open/{f=1; next} f && /^## [^#]/{exit} f{print}' "$NB_FILE")
+if echo "$OPEN_SECTION" | grep -q "foo.sh"; then
+    echo "FAIL: completed foo.sh should not be in ## Open"
+    FAIL=1
+fi
 
 # ============================================================
 # Test 6: get_completed_nonblocking_notes — returns [x] items before clear
@@ -160,6 +174,12 @@ COUNT=$(count_open_nonblocking_notes)
 assert_eq "all completed cleared, Open section empty" "0" "$COUNT"
 assert_file_contains "Open section header preserved" "$NB_FILE" "## Open"
 assert_file_contains "Resolved section preserved" "$NB_FILE" "## Resolved"
+# Verify the item was moved to Resolved
+RESOLVED_SECTION=$(awk '/^## Resolved/{f=1; next} f && /^## [^#]/{exit} f{print}' "$NB_FILE")
+if ! echo "$RESOLVED_SECTION" | grep -q "only.sh"; then
+    echo "FAIL: completed only.sh should be in ## Resolved"
+    FAIL=1
+fi
 
 # ============================================================
 # Test 9: clear_resolved_drift_observations — missing file is safe

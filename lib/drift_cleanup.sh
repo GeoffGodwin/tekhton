@@ -167,8 +167,9 @@ _resolve_addressed_nonblocking_notes() {
 # CLEANUP HELPERS
 # =============================================================================
 
-# clear_completed_nonblocking_notes — Removes [x] items from the ## Open section.
+# clear_completed_nonblocking_notes — Moves [x] items from ## Open to ## Resolved.
 # Called at the start of each run so only the current run's completions are visible.
+# Preserves traceability by appending resolved items under ## Resolved.
 clear_completed_nonblocking_notes() {
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
     if [ ! -f "$nb_file" ]; then
@@ -184,27 +185,52 @@ clear_completed_nonblocking_notes() {
         return 0
     fi
 
+    # Collect completed items to move to ## Resolved
+    local completed_items
+    completed_items=$(awk '/^## Open/{f=1; next} f && /^## [^#]/{exit} f && /^- \[x\]/{print}' \
+        "$nb_file" 2>/dev/null || true)
+
     local tmpfile
     tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     local in_open=false
+    local in_resolved=false
+    local resolved_injected=false
 
     while IFS= read -r line; do
         if [[ "$line" == "## Open"* ]] && [[ "$line" != "###"* ]]; then
             in_open=true
+            in_resolved=false
             echo "$line" >> "$tmpfile"
+        elif [[ "$line" == "## Resolved"* ]] && [[ "$line" != "###"* ]]; then
+            in_open=false
+            in_resolved=true
+            echo "$line" >> "$tmpfile"
+            # Inject completed items right after the ## Resolved heading
+            if [[ -n "$completed_items" ]]; then
+                echo "$completed_items" >> "$tmpfile"
+                resolved_injected=true
+            fi
         elif [[ "$in_open" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
             in_open=false
             echo "$line" >> "$tmpfile"
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
+            in_resolved=false
+            echo "$line" >> "$tmpfile"
         elif [[ "$in_open" = true ]] && echo "$line" | grep -qi "^- \[x\]"; then
-            # Skip completed items
+            # Skip completed items from Open (they are moved to Resolved)
             :
         else
             echo "$line" >> "$tmpfile"
         fi
     done < "$nb_file"
 
+    # If no ## Resolved section existed, append one with the items
+    if [[ "$resolved_injected" = false ]] && [[ -n "$completed_items" ]]; then
+        printf '\n## Resolved\n%s\n' "$completed_items" >> "$tmpfile"
+    fi
+
     mv "$tmpfile" "$nb_file"
-    log "Cleared ${completed_count} completed item(s) from NON_BLOCKING_LOG.md."
+    log "Moved ${completed_count} completed item(s) from ## Open to ## Resolved in NON_BLOCKING_LOG.md."
 }
 
 # get_completed_nonblocking_notes — Returns text of [x] items from ## Open.

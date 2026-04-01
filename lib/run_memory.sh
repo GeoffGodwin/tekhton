@@ -276,13 +276,18 @@ build_intake_history_from_memory() {
 
         [[ "$matched" == false ]] && continue
 
-        # Extract fields with simple grep -o patterns
+        # Extract fields with portable sed (no grep -oP which requires GNU grep)
         local run_id milestone task verdict duration
-        run_id=$(printf '%s' "$line" | grep -oP '"run_id"\s*:\s*"\K[^"]*' 2>/dev/null || echo "unknown")
-        milestone=$(printf '%s' "$line" | grep -oP '"milestone"\s*:\s*"\K[^"]*' 2>/dev/null || echo "none")
-        task=$(printf '%s' "$line" | grep -oP '"task"\s*:\s*"\K[^"]*' 2>/dev/null || echo "")
-        verdict=$(printf '%s' "$line" | grep -oP '"verdict"\s*:\s*"\K[^"]*' 2>/dev/null || echo "unknown")
-        duration=$(printf '%s' "$line" | grep -oP '"duration_seconds"\s*:\s*\K[0-9]+' 2>/dev/null || echo "0")
+        run_id=$(printf '%s' "$line" | sed -n 's/.*"run_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+        run_id="${run_id:-unknown}"
+        milestone=$(printf '%s' "$line" | sed -n 's/.*"milestone"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+        milestone="${milestone:-none}"
+        task=$(printf '%s' "$line" | sed -n 's/.*"task"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+        task="${task:-}"
+        verdict=$(printf '%s' "$line" | sed -n 's/.*"verdict"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' 2>/dev/null)
+        verdict="${verdict:-unknown}"
+        duration=$(printf '%s' "$line" | sed -n 's/.*"duration_seconds"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' 2>/dev/null)
+        duration="${duration:-0}"
 
         output="${output}- [${verdict}] ${task} (milestone: ${milestone}, ${duration}s)
 "
