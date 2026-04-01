@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TESTS_DIR="${TEKHTON_HOME}/tests"
 PASS=0
 FAIL=0

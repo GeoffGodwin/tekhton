@@ -241,6 +241,22 @@ record_run_metrics() {
         record="${record},\"error_category\":\"${error_category}\",\"error_subcategory\":\"${error_subcategory}\",\"error_transient\":${error_transient:-false}"
     fi
 
+    # Append note execution metrics when in --human mode (M42)
+    if [[ "${HUMAN_MODE:-false}" = "true" ]] || [[ -n "${NOTES_FILTER:-}" ]]; then
+        local _note_tag="${NOTES_FILTER:-unknown}"
+        local _note_acceptance="${NOTE_ACCEPTANCE_RESULT:-}"
+        local _reviewer_skipped="${REVIEWER_SKIPPED:-false}"
+        local _note_id=""
+        if [[ -n "${CLAIMED_NOTE_IDS:-}" ]]; then
+            _note_id="${CLAIMED_NOTE_IDS%% *}"  # First claimed note ID
+        fi
+        # Escape for JSON
+        _note_tag=$(printf '%s' "$_note_tag" | sed 's/"/\\"/g')
+        _note_acceptance=$(printf '%s' "$_note_acceptance" | sed 's/"/\\"/g')
+        _note_id=$(printf '%s' "$_note_id" | sed 's/"/\\"/g')
+        record="${record},\"note_id\":\"${_note_id}\",\"note_tag\":\"${_note_tag}\",\"note_acceptance\":\"${_note_acceptance}\",\"reviewer_skipped\":${_reviewer_skipped}"
+    fi
+
     record="${record}}"
 
     echo "$record" >> "$_METRICS_FILE"

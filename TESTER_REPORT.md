@@ -1,11 +1,13 @@
+# Tester Report
+
 ## Planned Tests
-- [x] `tests/test_notes_triage.sh` — Add 3 suites covering reviewer coverage gaps
+- [x] Verify existing tests pass after refactoring
 
 ## Test Run Results
-Passed: 33  Failed: 0
+Passed: 225  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_notes_triage.sh`
+- [x] NON_BLOCKING_LOG.md — Added "(none)" marker to Open section

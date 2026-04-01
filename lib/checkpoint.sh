@@ -82,6 +82,9 @@ create_run_checkpoint() {
             # Find the stash by message (not index, which can shift)
             stash_ref="$stash_msg"
             log "Stashed uncommitted changes: ${stash_msg}"
+            # Restore working tree — stash is kept for rollback, but pipeline
+            # needs the user's changes on disk to operate correctly.
+            git stash apply --quiet 2>/dev/null || true
         else
             warn "git stash failed — checkpoint created without stash"
             had_uncommitted=false

@@ -341,6 +341,66 @@ echo "=== Test 6: Happy path — uncommitted rollback ==="
                || { fail "6 happy path: uncommitted rollback succeeds"; }
 
 # =============================================================================
+# Test 7: create_run_checkpoint preserves working tree after stashing
+# =============================================================================
+echo "=== Test 7: Stash preserves working tree ==="
+
+(
+    REPO="$TMPDIR/t7"
+    _make_git_repo "$REPO"
+
+    # Simulate user edits (e.g. adding a BUG to HUMAN_NOTES.md)
+    mkdir -p "$REPO/.claude"
+    echo "- [ ] BUG: three tests are failing" > "$REPO/HUMAN_NOTES.md"
+    echo "modified" >> "$REPO/initial.txt"
+
+    PROJECT_DIR="$REPO"
+    CHECKPOINT_FILE=".claude/CHECKPOINT_META.json"
+    CHECKPOINT_ENABLED=true
+    TASK="test task"
+    _CURRENT_MILESTONE=""
+
+    cd "$REPO"
+    source "${TEKHTON_HOME}/lib/checkpoint.sh"
+
+    create_run_checkpoint 2>/dev/null
+
+    # 7.1 Stash entry exists
+    if git stash list 2>/dev/null | grep -qF "tekhton-checkpoint-"; then
+        echo "PASS: 7.1 stash entry created"
+    else
+        echo "FAIL: 7.1 stash entry should exist in git stash list"
+        exit 1
+    fi
+
+    # 7.2 HUMAN_NOTES.md still present in working tree with correct content
+    if grep -qF "BUG: three tests are failing" "$REPO/HUMAN_NOTES.md" 2>/dev/null; then
+        echo "PASS: 7.2 HUMAN_NOTES.md preserved in working tree"
+    else
+        echo "FAIL: 7.2 HUMAN_NOTES.md should still contain the BUG entry"
+        exit 1
+    fi
+
+    # 7.3 Tracked file modifications preserved
+    if grep -qF "modified" "$REPO/initial.txt" 2>/dev/null; then
+        echo "PASS: 7.3 tracked file modifications preserved in working tree"
+    else
+        echo "FAIL: 7.3 tracked file modifications should still be present"
+        exit 1
+    fi
+
+    # 7.4 Checkpoint metadata created with had_uncommitted=true
+    if grep -q '"had_uncommitted": true' "$REPO/.claude/CHECKPOINT_META.json" 2>/dev/null; then
+        echo "PASS: 7.4 checkpoint metadata records had_uncommitted=true"
+    else
+        echo "FAIL: 7.4 checkpoint should record had_uncommitted=true"
+        exit 1
+    fi
+)
+[[ $? -eq 0 ]] && pass "7 stash preserves working tree (HUMAN_NOTES.md bug fix)" \
+               || { fail "7 stash preserves working tree (HUMAN_NOTES.md bug fix)"; }
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo ""

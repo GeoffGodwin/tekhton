@@ -1,7 +1,7 @@
 # Milestone 42: Tag-Specialized Execution Paths
 <!-- milestone-meta
 id: "42"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

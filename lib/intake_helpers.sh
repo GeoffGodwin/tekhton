@@ -81,7 +81,7 @@ _intake_parse_tweaks() {
     if [[ ! -f "$report" ]]; then
         return
     fi
-    awk '/^## Tweaked Content/{found=1; next} found && /^## /{exit} found{print}' "$report" 2>/dev/null || true
+    awk '/^## Tweaked Content/{found=1; next} found && /^## (Verdict|Confidence|Reasoning|Split Recommendations|Questions)/{exit} found{print}' "$report" 2>/dev/null || true
 }
 
 # _intake_parse_questions — Extract questions from INTAKE_REPORT.md
@@ -90,7 +90,7 @@ _intake_parse_questions() {
     if [[ ! -f "$report" ]]; then
         return
     fi
-    awk '/^## Questions/{found=1; next} found && /^## /{exit} found{print}' "$report" 2>/dev/null || true
+    awk '/^## Questions/{found=1; next} found && /^## (Verdict|Confidence|Reasoning|Tweaked Content|Split Recommendations)/{exit} found{print}' "$report" 2>/dev/null || true
 }
 
 # --- Tweak application -------------------------------------------------------

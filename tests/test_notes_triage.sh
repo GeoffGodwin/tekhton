@@ -32,6 +32,10 @@ source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 # shellcheck source=../lib/notes_triage.sh
 source "${TEKHTON_HOME}/lib/notes_triage.sh"
+# shellcheck source=../lib/notes_triage_flow.sh
+source "${TEKHTON_HOME}/lib/notes_triage_flow.sh"
+# shellcheck source=../lib/notes_triage_report.sh
+source "${TEKHTON_HOME}/lib/notes_triage_report.sh"
 
 # --------------------------------------------------------------------------
 echo "Suite 1: Heuristic scoring — scope keywords"
