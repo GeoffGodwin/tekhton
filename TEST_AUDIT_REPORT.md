@@ -1,37 +1,127 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file (tests/test_notes_triage.sh), 33 pass/fail assertions across 17 suites
-Verdict: CONCERNS
+Tests audited: 4 files, ~161 test functions
+(test_finalize_run.sh, test_human_workflow.sh, test_notes_acceptance.sh, test_notes_triage.sh)
+Verdict: NEEDS_WORK
+
+---
 
 ### Findings
 
-#### COVERAGE: triage_before_claim promotion path untested
-- File: tests/test_notes_triage.sh:269
-- Issue: Suite 10 only exercises the `fit` path. n01 is a BUG note that scores <= 1 (disposition=fit), so `triage_before_claim` trivially returns 0 without ever entering the promotion decision logic. The function's primary purpose — detecting an oversized note whose `_TRIAGE_EST_TURNS` exceeds `HUMAN_NOTES_PROMOTE_THRESHOLD` and routing to promote/skip/keep — is never exercised. The return-1 code path, the auto-promote branch (`lib/notes_triage.sh:414`), and the confirm-mode `p`/`s`/`k` dispatch (`lib/notes_triage.sh:422`) have zero test coverage.
+#### INTEGRITY: Both branches of integration test call pass() — test can never fail
+- File: tests/test_notes_acceptance.sh:222-229
+- Issue: Suite 4 BUG acceptance integration test reads:
+  ```bash
+  run_note_acceptance
+  if [[ "${NOTE_ACCEPTANCE_RESULT:-}" == *"warn_no_test"* ]]; then
+      pass "run_note_acceptance sets NOTE_ACCEPTANCE_RESULT for BUG"
+  else
+      # May be pass if test files happen to exist
+      pass "run_note_acceptance runs without error for BUG"
+  fi
+  ```
+  Both `if` and `else` branches call `pass()`. The test unconditionally records a pass regardless
+  of what `run_note_acceptance` actually does. Any behavior — including crash-and-recover,
+  wrong result, or silent no-op — produces a green test. The comment "May be pass if test files
+  happen to exist" suggests the author intended the else-branch as a fallback, but using `pass()`
+  in both branches means the `if` condition is never load-bearing. The implementation under test
+  (`lib/notes_acceptance.sh:run_note_acceptance`) sets `NOTE_ACCEPTANCE_RESULT`; the test never
+  verifies this is non-empty or contains expected tokens on failure.
 - Severity: HIGH
-- Action: Add a test that sets up a note whose heuristic score is >= 5 (to ensure disposition=oversized), manually sets `_TRIAGE_EST_TURNS` above the promotion threshold, stubs `run_intake_create`, and verifies that `triage_before_claim` returns 1. A second case with `HUMAN_NOTES_PROMOTE_MODE=auto` closes the auto-promote branch.
+- Action: Decide what the test must guarantee. Option A — verify the specific warn code:
+  ```bash
+  run_note_acceptance
+  if [[ "${NOTE_ACCEPTANCE_RESULT:-}" == *"warn_no_test"* ]]; then
+      pass "run_note_acceptance sets warn_no_test for BUG with no test file change"
+  else
+      fail "run_note_acceptance should set warn_no_test for BUG (got: ${NOTE_ACCEPTANCE_RESULT:-<empty>})"
+  fi
+  ```
+  Option B — if the environment makes the warn non-deterministic, set it up deterministically
+  (no staged test file changes) and assert the expected code.
 
-#### COVERAGE: Suite 7 cache invalidation asserts presence, not updated value
-- File: tests/test_notes_triage.sh:205
-- Issue: After modifying n04's text from "Fix button alignment" to "Redesign entire button system across all pages", the test asserts `[[ "$line" =~ triage: ]]`. Since `triage:fit` was already written to the note in Suite 6, this assertion passes even if the cache-invalidation code is broken and the old "fit" value is silently reused. The new heuristic result should be "oversized" ("redesign" +3, "entire" +2, "all" +2 = 7 → score >= 5), but that updated value is never verified.
+#### INTEGRITY: Special-characters test asserts echo 'ok' instead of claim_single_note result
+- File: tests/test_human_workflow.sh:233-237
+- Issue: The "special characters in note" test suppresses the real outcome and then asserts a
+  no-op command:
+  ```bash
+  claim_single_note "$note" || true       # real result discarded
+  # If it didn't error, that's good
+  assert_exit_code "Special chars handled" 0 "echo 'ok'"  # always passes
+  ```
+  `echo 'ok'` always exits 0. The assertion provides zero coverage of `claim_single_note`'s
+  behavior with special characters. The real question — does the function handle regex
+  metacharacters without corrupting HUMAN_NOTES.md or erroring? — is never answered.
+  If `claim_single_note` failed silently, panicked, or mangled the file, this test still passes.
+- Severity: HIGH
+- Action: Capture the real exit code and assert it, or test the file state:
+  ```bash
+  set +e; claim_single_note "$note"; _rc=$?; set -e
+  assert_exit_code "Special chars: claim returns non-error" 0 "[ $_rc -eq 0 ] || [ $_rc -eq 1 ]"
+  # and/or: assert file is not corrupted
+  ```
+  At minimum, remove `|| true` and assert the exit code directly.
+
+#### SCOPE: Assertion 15.6 tests a removed function — vacuously true for all inputs
+- File: tests/test_finalize_run.sh:830
+- Issue: `assert "15.6 resolve_human_notes NOT called on failure"` checks that the mock for
+  `resolve_human_notes` was not invoked when `finalize_run 1` is called. However, `resolve_human_notes`
+  is not called anywhere in the current `lib/finalize.sh` implementation — it was removed as part
+  of the M42 unified CLAIMED_NOTE_IDS path. The mock is registered at test line 108–111 but
+  `_hook_resolve_notes` never calls it. The assertion is vacuously true for both success and
+  failure exit codes, and provides no protection against future regressions that might
+  accidentally re-introduce a `resolve_human_notes` call on the success path.
 - Severity: MEDIUM
-- Action: Change the assertion to `[[ "$line" =~ triage:oversized ]]` to confirm that the re-triage produced the newly computed result, not merely that some triage field exists.
+- Action: Remove assertion 15.6 (it tests a removed code path). If the intent is to guard against
+  `resolve_human_notes` being called at any time, add a companion test that runs `finalize_run 0`
+  and asserts the mock is still not called — but document the intent clearly. Alternatively,
+  replace with an assertion that `resolve_notes_batch` IS called on success when `CLAIMED_NOTE_IDS`
+  is non-empty, testing the live code path that replaced the old one.
 
-#### COVERAGE: Mid-range score (2–4) in triage_note untested end-to-end
-- File: tests/test_notes_triage.sh (no direct test)
-- Issue: `triage_note` in `lib/notes_triage.sh:146` has no else branch for scores 2–4; those cases leave `_TRIAGE_DISPOSITION` at the default "fit" and trigger `_triage_agent_escalation`. No test calls `triage_note` (as opposed to `_triage_heuristic_score` directly) with a mid-range input to verify that: (a) disposition defaults to "fit" when `run_agent` is unavailable, and (b) the fallback in `_triage_agent_escalation` fires without error. Suite 3 tests confidence via the scoring function only and never exercises the full `triage_note` → agent escalation → fallback chain.
+#### WEAKENING: Net loss of 4 assertions — deferred without per-assertion documentation
+- File: tests/test_finalize_run.sh (whole file)
+- Issue: Shell pre-verification detected 6 assertions removed and 2 added (net −4). The TESTER_REPORT
+  attributes the removals to HUMAN_MODE-branching paths eliminated in M42 and defers creating a
+  per-assertion audit record. The justification is plausible — the unified CLAIMED_NOTE_IDS path
+  did consolidate what were previously separate HUMAN_MODE branches. The new Suite 8b (8 test cases
+  covering the unified path) likely covers equivalent behavioral surface. However, "likely covers"
+  is not confirmed: the tester did not enumerate which specific assertions were removed or which
+  8b cases map to them. Until that mapping exists, the net reduction cannot be verified as
+  non-weakening.
 - Severity: MEDIUM
-- Action: Add a test that calls `triage_note` on a note whose text scores 2–4 (e.g., "Add dark mode toggle" with FEAT — "add support for" is absent here, plain "Add" is not a keyword, so score ≈ 0–1; pick a phrasing that reliably hits 2–4) with no `run_agent` defined. Assert `_TRIAGE_DISPOSITION == "fit"` and confirm triage metadata is persisted.
+- Action: Add a comment block in test_finalize_run.sh (or in TESTER_REPORT.md) listing each removed
+  assertion by its former test ID/description and the M42 behavioral reason it no longer applies.
+  Confirm that each removed behavioral guarantee is covered by a specific Suite 8b case.
 
-#### COVERAGE: Suite 4 does not isolate the length +1 bonus
-- File: tests/test_notes_triage.sh:110
-- Issue: Suite 4 asserts that the test string's character count is > 120, confirming a precondition, but never compares the score for a long vs. short version of the same neutral text. Because the long-text example also contains scope keywords ("integration", "authentication", "API"), the +1 length contribution is invisible against keyword scoring and is effectively untested.
+#### EXERCISE: Section 10 flag-validation tests inline-reimplement logic from tekhton.sh
+- File: tests/test_human_workflow.sh:634-688 (Section 10)
+- Issue: Tests 10.1–10.4 validate `--human` flag rejection rules by simulating the validation
+  logic locally using shell variables (`HUMAN_MODE`, `MILESTONE_MODE`, `MOCK_TASK`) rather than
+  calling the real argument-parsing code in `tekhton.sh`. The comment added in this pass
+  (lines 634–638) acknowledges the limitation. A breaking change to tekhton.sh flag handling
+  would not be caught by these tests; they only verify the test's own inline simulation.
 - Severity: LOW
-- Action: Add a comparison: call `_triage_heuristic_score` with a keyword-free string exactly <= 120 chars to get a baseline score, then pad the same string to > 120 chars and assert the second score equals baseline + 1.
+- Action: The added acknowledgment comment is the minimum acceptable for now. Longer-term,
+  extract the flag validation gate into a sourceable lib function (e.g., `lib/flags.sh`) so
+  it can be directly exercised by the test suite without standing up a full pipeline.
 
-#### COVERAGE: _triage_agent_escalation fallback branches unreachable in test suite
-- File: tests/test_notes_triage.sh (no direct test)
-- Issue: `render_prompt` is stubbed to return `""`. All test inputs are chosen to score either >= 5 or <= 1, so `_TRIAGE_CONFIDENCE` is always "high" and `_triage_agent_escalation` is never called. Both fallback branches in `lib/notes_triage.sh:185` (`run_agent` unavailable) and `lib/notes_triage.sh:233` (empty prompt template) are dead code within this suite.
-- Severity: LOW
-- Action: Addressed as a side effect of the medium finding above — a mid-range `triage_note` test would reach the `run_agent not available` fallback branch at `lib/notes_triage.sh:185`.
+---
+
+### Prior Findings — Disposition
+
+The following findings from the previous TEST_AUDIT_REPORT.md were addressed and are
+considered RESOLVED in this pass:
+
+- **INTEGRITY (test_finalize_run.sh:428)** — RESOLVED. Test 8.2 now captures actual exit
+  code via `set +e; _hook_resolve_notes 0; _rc=$?; set -e` and asserts `$_rc -eq 0`.
+
+- **INTEGRITY (NON_BLOCKING_LOG.md false "resolved" entry)** — RESOLVED. The log was
+  reopened and split into five accurate resolved entries covering Tests 8.1, 8.2, 8.4,
+  and two test_human_workflow.sh fixes.
+
+- **NAMING (test_human_workflow.sh:779)** — RESOLVED. The assert message at line 783
+  now reads "Orphan safety net marks [x]" consistent with the test_case description.
+
+- **EXERCISE (test_human_workflow.sh:635-683)** — PARTIALLY RESOLVED. Acknowledgment
+  comment added at lines 634–638. Coverage gap remains (LOW severity, see above).

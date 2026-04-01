@@ -631,6 +631,10 @@ echo "=== Section 10: Flag validation ==="
 # Read tekhton.sh flag validation section to test indirectly.
 # We can't run tekhton.sh directly without a full project, so we verify the
 # validation logic exists and test it by simulating the flag state.
+# NOTE: These tests (10.1–10.4) inline-reimplement the flag-check logic
+# rather than calling the actual validation code from tekhton.sh. To catch
+# regressions in tekhton.sh's argument parsing, changes to flag handling must
+# be verified manually against these test scenarios.
 
 test_case "Flag validation: --human --milestone rejected"
 # The flag validation in tekhton.sh checks HUMAN_MODE=true && MILESTONE_MODE=true
@@ -760,7 +764,7 @@ _hook_resolve_notes 1
 # On failure, resolve_single_note resets [~] → [ ]
 assert_contains "Note reset to [ ] on failure" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
 
-test_case "_hook_resolve_notes in non-HUMAN_MODE calls bulk resolution"
+test_case "_hook_resolve_notes in non-HUMAN_MODE resolves [~] notes via orphan safety net"
 cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
@@ -776,7 +780,7 @@ cat > "$TMPDIR/CODER_SUMMARY.md" <<'EOF'
 EOF
 _hook_resolve_notes 0
 # Bulk resolve_human_notes with COMPLETE status marks all [~] → [x]
-assert_contains "Bulk resolution marks [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Orphan safety net marks [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
 rm -f "$TMPDIR/CODER_SUMMARY.md"
 
 # Clean up

@@ -16,4 +16,3 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 ## Features
 
 ## Bugs
-- [x] [BUG] The following tests now fail per the most recent changes: test_human_workflow.sh, test_human_mode_resolve_notes_edge.sh, test_finalize_run.sh. We should analyze if they still make sense and the code needs to be fixed, or if the code change is correct and the tests are no longer good tests. <!-- note:n01 created:2026-03-31 priority:medium source:legacy -->

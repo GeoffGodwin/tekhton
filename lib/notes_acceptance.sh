@@ -64,6 +64,10 @@ check_feat_acceptance() {
     _staged_new=$(git diff --cached --name-only --diff-filter=A 2>/dev/null || true)
     _new_files="${_new_files}${_staged_new:+
 ${_staged_new}}"
+    # Deduplicate (untracked + staged new can overlap)
+    if [[ -n "$_new_files" ]]; then
+        _new_files=$(echo "$_new_files" | sort -u)
+    fi
 
     if [[ -z "$_new_files" ]]; then
         echo "$warnings"
@@ -94,8 +98,8 @@ ${_staged_new}}"
         if echo "$newfile" | grep -qiE '(test[_/]|_test\.|\.test\.|\.spec\.|tests/|spec/)'; then
             continue
         fi
-        # Check if this directory is already established
-        if ! echo "$_common_dirs" | grep -qF "$_dir"; then
+        # Check if this directory is already established (exact line match)
+        if ! echo "$_common_dirs" | grep -qxF "$_dir"; then
             # Find the closest matching directory by prefix
             local _parent_dir
             _parent_dir=$(dirname "$_dir")
@@ -255,10 +259,12 @@ run_note_acceptance() {
     # Log warnings
     warn "Note acceptance [${tag}]: warnings found"
     local _warning_codes=""
+    local _code=""
+    local _msg=""
     while IFS= read -r w; do
         [[ -z "$w" ]] && continue
-        local _code="${w%%:*}"
-        local _msg="${w#*: }"
+        _code="${w%%:*}"
+        _msg="${w#*: }"
         warn "  ${_msg}"
         _warning_codes="${_warning_codes:+${_warning_codes},}${_code}"
     done <<< "$warnings"
@@ -293,8 +299,10 @@ _store_acceptance_result() {
     # Update metadata for each claimed note
     if [[ -n "${CLAIMED_NOTE_IDS:-}" ]] && command -v _set_note_metadata &>/dev/null; then
         local nid
+        local _rev_skipped="${REVIEWER_SKIPPED:-false}"
         for nid in $CLAIMED_NOTE_IDS; do
             _set_note_metadata "$nid" "acceptance" "$code" 2>/dev/null || true
+            _set_note_metadata "$nid" "reviewer_skipped" "$_rev_skipped" 2>/dev/null || true
         done
     fi
 }

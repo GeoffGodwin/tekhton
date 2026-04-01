@@ -412,17 +412,21 @@ echo "=== Test Suite 8: _hook_resolve_notes exit-code guard ==="
 
 _reset_mocks
 
-# On failure: resolve_human_notes should NOT be called
+# On failure with [~] items: orphan safety net resets [~] → [ ]
+cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
+## Bugs
+- [~] Fix the thing
+EOF
 _hook_resolve_notes 1
-assert "8.1 resolve_notes skips on exit_code=1" \
-    "$([ -z "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
+assert "8.1 orphaned [~] reset to [ ] on failure" \
+    "$(grep -qc '^\- \[ \]' "${TMPDIR}/HUMAN_NOTES.md" && echo 0 || echo 1)"
 
-# On success with no HUMAN_NOTES.md: resolve_human_notes should NOT be called
+# On success with no HUMAN_NOTES.md: early return without error
 _reset_mocks
 rm -f "${TMPDIR}/HUMAN_NOTES.md"
-_hook_resolve_notes 0
-assert "8.2 resolve_notes skips when no HUMAN_NOTES.md" \
-    "$([ -z "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
+set +e; _hook_resolve_notes 0; _rc=$?; set -e
+assert "8.2 resolve_notes returns cleanly when no HUMAN_NOTES.md" \
+    "$([[ $_rc -eq 0 ]] && echo 0 || echo 1)"
 
 # On success with HUMAN_NOTES.md containing [~] items: orphan safety net resolves [~] → [x]
 _reset_mocks
@@ -434,16 +438,17 @@ _hook_resolve_notes 0
 assert "8.3 orphaned [~] resolved to [x] on success" \
     "$(grep -qc '^\- \[x\]' "${TMPDIR}/HUMAN_NOTES.md" && echo 0 || echo 1)"
 
-# On success with HUMAN_NOTES.md but no [~] items: should NOT call resolve_human_notes
+# On success with HUMAN_NOTES.md but no [~] items: file unchanged
 _reset_mocks
 cat > "${TMPDIR}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
 - [ ] Fix the thing
 - [x] Done item
 EOF
+_before_84=$(cat "${TMPDIR}/HUMAN_NOTES.md")
 _hook_resolve_notes 0
-assert "8.4 resolve_notes skips when no [~] items" \
-    "$([ -z "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
+_after_84=$(cat "${TMPDIR}/HUMAN_NOTES.md")
+assert_eq "8.4 no [~] items leaves file unchanged" "$_before_84" "$_after_84"
 
 rm -f "${TMPDIR}/HUMAN_NOTES.md"
 
