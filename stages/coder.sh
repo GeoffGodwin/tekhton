@@ -156,6 +156,13 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             fi
         fi
 
+        # Set fallback flag so scout prompt renders filesystem-exploration
+        # directive when repo map is unavailable
+        export SCOUT_NO_REPO_MAP=""
+        if [[ -z "${REPO_MAP_CONTENT}" ]]; then
+            SCOUT_NO_REPO_MAP="true"
+        fi
+
         SCOUT_PROMPT=$(render_prompt "scout")
 
         run_agent \
