@@ -455,6 +455,23 @@ rm -f "${TMPDIR}/HUMAN_NOTES.md"
 # =============================================================================
 # Test Suite 8b: _hook_resolve_notes — unified path (HUMAN_MODE branch removed)
 # =============================================================================
+# M42 removed the separate HUMAN_MODE branch inside _hook_resolve_notes in favour
+# of a single CLAIMED_NOTE_IDS-based path. The following former assertions were
+# retired and their behavioural guarantees are now covered by Suite 8b:
+#
+#   Former assertion (pre-M42)             → Covered by Suite 8b case
+#   ─────────────────────────────────────────────────────────────────
+#   "HUMAN_MODE=true skips resolve_note"   → 8b.1: batch called with CLAIMED IDs
+#   "HUMAN_MODE=true calls resolve_notes_  → 8b.2: batch receives correct IDs
+#    batch with correct IDs"
+#   "HUMAN_MODE=true passes exit code"     → 8b.3: batch receives exit code 0
+#                                            8b.8: batch receives exit code 1
+#   "HUMAN_MODE=false does not call batch" → 8b.6: HUMAN_MODE=false uses same path
+#
+# Net change: −4 former assertions, +8 Suite 8b assertions covering equivalent
+# (and broader) behavioural surface: both HUMAN_MODE values, empty vs non-empty
+# CLAIMED_NOTE_IDS, and success vs failure exit codes.
+# =============================================================================
 echo "=== Test Suite 8b: _hook_resolve_notes unified path (no HUMAN_MODE branch) ==="
 
 # HUMAN_MODE + CLAIMED_NOTE_IDS: uses bulk resolution (unified path)
@@ -827,8 +844,9 @@ assert "15.4 archive_reports called on failure" \
 # Success-only hooks d, e, g, h, i, j should NOT run
 assert "15.5 clear_resolved_nonblocking_notes NOT called on failure" \
     "$([ -z "${_mock_called[clear_resolved_nonblocking_notes]:-}" ] && echo 0 || echo 1)"
-assert "15.6 resolve_human_notes NOT called on failure" \
-    "$([ -z "${_mock_called[resolve_human_notes]:-}" ] && echo 0 || echo 1)"
+# 15.6 removed: resolve_human_notes was eliminated in M42 (unified CLAIMED_NOTE_IDS
+# path). The assertion was vacuously true because the function is never called by
+# finalize.sh. The equivalent live guard is in Suite 8b (8b.4 + 8b.7).
 assert "15.7 mark_milestone_done NOT called on failure" \
     "$([ -z "${_mock_called[mark_milestone_done]:-}" ] && echo 0 || echo 1)"
 assert "15.8 generate_commit_message NOT called on failure" \

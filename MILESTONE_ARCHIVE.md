@@ -3818,3 +3818,3626 @@ in `templates/pipeline.conf.example`):
   dashboard
 - The reviewer skip heuristic could be generalized to other scenarios (e.g., skip
   review for documentation-only changes in any mode)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 7: Cross-Run Cache & Personalized Ranking
+<!-- milestone-meta
+id: "7"
+status: "done"
+-->
+
+Make the indexer persistent and adaptive across pipeline runs. The tag cache
+survives between runs with mtime-based invalidation. Task→file association
+history improves PageRank personalization over time — files that were relevant
+to similar past tasks rank higher automatically. Integrate with v2's metrics
+system for tracking indexer performance.
+
+Files to modify:
+- `tools/repo_map.py` — add `--history-file <path>` flag. When provided, load
+  task→file association records and use them to build a personalization vector
+  that blends: (1) task keyword matches (current behavior, weight 0.6),
+  (2) historical file relevance from similar past tasks (weight 0.3),
+  (3) file recency from git log (weight 0.1). Add `--warm-cache` flag that
+  parses all project files and populates the tag cache without producing output
+  (for use during `tekhton --init`).
+- `tools/tag_cache.py` — add cache statistics: hit count, miss count, total
+  parse time saved. Add `prune_cache(root_dir)` that removes entries for files
+  that no longer exist. Add cache versioning — if cache format changes between
+  Tekhton versions, invalidate and rebuild rather than crash.
+- `lib/indexer.sh` — add `warm_index_cache()` (called during `--init` or
+  `--setup-indexer`), `record_task_file_association(task, files[])` (called
+  after coder stage with the files from CODER_SUMMARY.md),
+  `get_indexer_stats()` (returns cache hit rate and timing for metrics).
+  History file: `.claude/index/task_history.jsonl` (append-only JSONL, same
+  pattern as v2 metrics).
+- `lib/metrics.sh` — add indexer metrics to `record_run_metrics()`: cache hit
+  rate, repo map generation time, token savings vs full architecture injection.
+  Add indexer section to `summarize_metrics()` dashboard output.
+- `stages/coder.sh` — after coder completes, call
+  `record_task_file_association()` with the task and modified file list.
+- `tekhton.sh` — during `--init`, if indexer is available, call
+  `warm_index_cache()` to pre-populate the tag cache. Display progress.
+- `templates/pipeline.conf.example` — add `REPO_MAP_HISTORY_ENABLED=true`,
+  `REPO_MAP_HISTORY_MAX_RECORDS=200` config keys
+
+History record format (JSONL):
+```json
+{"ts":"2026-03-21T10:00:00Z","task":"add user authentication","files":["src/auth/login.py","src/models/user.py","src/api/routes.py"],"task_type":"feature"}
+```
+
+Acceptance criteria:
+- Tag cache persists between runs in `.claude/index/tags.json`
+- Changed files (new mtime) are re-parsed; unchanged files use cache
+- Deleted files are pruned from cache on next run
+- `--warm-cache` pre-populates the entire project cache in one pass
+- Task→file history is recorded after each successful coder stage
+- Personalization vector blends keyword, history, and recency signals
+- With 10+ history records, the repo map noticeably favors files that were
+  relevant to similar past tasks (measurable in ranking output)
+- `REPO_MAP_HISTORY_MAX_RECORDS` caps history file size (oldest records pruned)
+- Indexer metrics appear in `tekhton --metrics` dashboard
+- Cache version mismatch triggers rebuild with warning, not crash
+- All existing tests pass
+- New Python tests verify: history loading, personalization blending, cache
+  pruning, version migration, JSONL append safety
+
+Watch For:
+- JSONL is append-only by design. Never read-modify-write. Pruning creates a
+  new file and atomically replaces the old one.
+- Task similarity is keyword-based (bag of words overlap), not semantic. Keep
+  it simple — semantic similarity would require embeddings and adds complexity
+  and cost for marginal gain at this stage.
+- Git recency signal requires a git repo. For non-git projects, drop weight 0.1
+  and redistribute to keywords (0.7) and history (0.3).
+- History file can contain sensitive task descriptions. It lives in `.claude/`
+  which should be gitignored, but add a warning to the setup output.
+- Cache warming on large projects (10k+ files) may take 30-60 seconds. Show
+  a progress bar or periodic status line.
+
+Seeds Forward:
+- Future v3 milestones (parallel execution) can use task→file history to
+  predict which milestones will touch overlapping files and schedule them
+  to avoid merge conflicts
+- The metrics integration provides data for future adaptive token budgeting —
+  if the indexer consistently saves 70% of tokens, the pipeline can allocate
+  the savings to richer prompt content
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 8: Indexer Tests & Documentation
+<!-- milestone-meta
+id: "8"
+status: "done"
+-->
+
+Comprehensive test coverage for all indexing functionality: shell orchestration,
+Python tools, pipeline integration, fallback behavior, and Serena lifecycle.
+Update project documentation and repository layout.
+
+Files to create:
+- `tests/test_indexer.sh` — shell-side tests: `check_indexer_available()` returns
+  correct status for present/absent Python, `run_repo_map()` handles exit codes
+  (0/1/2), `get_repo_map_slice()` extracts correct file entries, fallback to 2.0
+  when indexer unavailable, config key validation (budget must be positive, etc.)
+- `tests/test_mcp.sh` — MCP lifecycle tests: `start_mcp_server()` / `stop_mcp_server()`
+  create and clean up processes, `check_mcp_health()` detects running/stopped
+  server, EXIT trap cleanup works, orphan prevention
+- `tests/test_repo_map_integration.sh` — end-to-end tests using a small fixture
+  project (created in test setup): verify repo map generation, stage injection
+  (coder/reviewer/tester get correct slices), context budget respected, conditional
+  prompt blocks render correctly when feature on/off
+- `tools/tests/test_repo_map.py` — Python unit tests: tag extraction for each
+  supported language, graph construction from tags, PageRank output, token budget
+  enforcement, `.gitignore` respect, error handling for unparseable files
+- `tools/tests/test_tag_cache.py` — cache hit/miss, mtime invalidation, pruning
+  deleted files, version migration, concurrent write safety
+- `tools/tests/test_history.py` — task→file recording, JSONL append, history
+  loading, personalization vector computation, max records pruning
+- `tools/tests/conftest.py` — shared fixtures: small multi-language project tree,
+  mock git repo, sample tag cache files
+- `tests/fixtures/indexer_project/` — small fixture project with Python, JS, and
+  Bash files for integration testing
+
+Files to modify:
+- `CLAUDE.md` — update Repository Layout to include `tools/` directory, `lib/indexer.sh`,
+  `lib/mcp.sh`. Update Template Variables table with all new config keys and their
+  defaults. Update Non-Negotiable Rules to note Python as an optional dependency.
+- `templates/pipeline.conf.example` — ensure all indexer config keys have
+  explanatory comments matching the detail level of existing keys
+- `tests/run_tests.sh` — add new test files to the test runner. Add conditional
+  Python test execution: if Python available, run `python3 -m pytest tools/tests/`;
+  if not, skip with a note.
+
+Acceptance criteria:
+- All shell tests pass via `bash tests/run_tests.sh`
+- All Python tests pass via `python3 -m pytest tools/tests/` (when Python available)
+- Test runner gracefully skips Python tests when Python unavailable
+- Fixture project exercises multi-language parsing (Python + JS + Bash minimum)
+- Integration test verifies full flow: setup → generate map → inject into stage →
+  verify prompt contains repo map content → verify context budget respected
+- Fallback test verifies: disable indexer → run pipeline → identical to v2 output
+- MCP tests verify no orphaned processes after normal exit, Ctrl+C, and error exit
+- `CLAUDE.md` Repository Layout includes all new files and directories
+- `CLAUDE.md` Template Variables table includes all new config keys
+- `bash -n` passes on all new `.sh` files
+- `shellcheck` passes on all new `.sh` files
+- All pre-existing tests (37+) continue to pass unchanged
+
+Watch For:
+- Python test fixtures must be self-contained — no network access, no real
+  language servers. Mock tree-sitter parsing for unit tests; use real parsing
+  only in integration tests.
+- The fixture project must be small (5-10 files) to keep tests fast.
+- MCP lifecycle tests are inherently flaky (process timing). Use retry logic
+  and generous timeouts in test assertions, not in production code.
+- Shell tests that verify prompt content should check for the presence of
+  `REPO_MAP_CONTENT` variable, not exact prompt text (prompts will evolve).
+- Ensure Python tests work with both `tree-sitter-languages` (bundled) and
+  individual grammar packages — CI environments may have either.
+
+Seeds Forward:
+- Test fixtures and patterns established here are reused by future v3 milestones
+  (DAG execution, parallel agents, UI plugin) for their own testing
+- The integration test pattern (fixture project → full pipeline) becomes the
+  template for end-to-end testing of future features
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 22: Init UX Overhaul
+<!-- milestone-meta
+id: "22"
+status: "done"
+-->
+
+Redesign the post-init experience to guide new users through what matters
+instead of dumping them into an 80+ key config file. The init report becomes
+a focused, actionable summary that highlights what was detected, what needs
+attention, and exactly what to do next. Config file gets clear section
+separation between essential and advanced settings.
+
+Files to create:
+- `lib/init_report.sh` — Post-init report generator:
+  **Focused summary** (`emit_init_summary()`):
+  Prints a structured, color-coded summary after init completes:
+  ```
+  ✓ Tekhton initialized for: my-project
+
+  Detected:
+    Language:    TypeScript (high confidence — from package.json)
+    Framework:   Next.js 14 (from next.config.js)
+    Build:       npm run build (from CI workflow)
+    Test:        jest (from jest.config.ts)
+    Lint:        eslint (from .eslintrc.json)
+
+  ⚠ Needs attention:
+    ARCHITECTURE_FILE not detected — create one or set to "" to skip
+    No pre-existing tests found — tester will generate from scratch
+
+  Health score: 45/100 (see INIT_REPORT.md for details)
+
+  Next steps:
+    1. Review essential config: .claude/pipeline.conf (lines 1-15)
+    2. Start planning:  tekhton --plan "Describe your project goals"
+    3. Open dashboard:  open .claude/dashboard/index.html
+  ```
+  When Watchtower is enabled, also prints: "Full report: .claude/dashboard/index.html"
+  When Watchtower is disabled, prints: "Full report: INIT_REPORT.md"
+
+  **Report file** (`emit_init_report_file()`):
+  Writes INIT_REPORT.md with the complete detection results, health score
+  breakdown, config decisions made, and anything that needs human review.
+  This is the persistent artifact that Watchtower and `tekhton report`
+  can consume later. Format is structured markdown with machine-parseable
+  sections (for dashboard data extraction).
+
+- `lib/init_config_sections.sh` — Config file section generator:
+  Replaces the current flat config emission with clearly sectioned output:
+
+  **Section 1: Essential (lines 1-20)**
+  PROJECT_NAME, TEST_CMD, ANALYZE_CMD, BUILD_CHECK_CMD, ARCHITECTURE_FILE.
+  Comment: "# Review these — auto-detected values may need adjustment"
+
+  **Section 2: Models & Turns (lines 25-50)**
+  CLAUDE_CODER_MODEL, CODER_MAX_TURNS, etc.
+  Comment: "# Defaults work well — tune after a few runs if needed"
+
+  **Section 3: Pipeline Behavior (lines 55-80)**
+  MAX_REVIEW_CYCLES, CONTINUATION_ENABLED, etc.
+  Comment: "# Advanced — most users never change these"
+
+  **Section 4: Security (lines 85-100)**
+  SECURITY_AGENT_ENABLED, SECURITY_BLOCK_SEVERITY, etc.
+  Comment: "# Security is ON by default — adjust policy to your risk tolerance"
+
+  **Section 5: Features (lines 105-130)**
+  REPO_MAP_ENABLED, SERENA_ENABLED, WATCHTOWER_ENABLED, etc.
+  Comment: "# Optional features — enable as needed"
+
+  **Section 6: Quotas & Autonomy (lines 135-155)**
+  USAGE_THRESHOLD_PCT, MAX_PIPELINE_ATTEMPTS, AUTONOMOUS_TIMEOUT, etc.
+  Comment: "# Controls for autonomous mode (--complete, --auto-advance)"
+
+  Each section has a clear header with ═══ separators and a one-line
+  description of what the section controls.
+
+  **VERIFY markers:** When detection confidence is below HIGH for a critical
+  key (TEST_CMD, ANALYZE_CMD, BUILD_CHECK_CMD), append `# VERIFY` comment
+  with the detection source. This tells the user which values need checking
+  without making them read every key.
+
+Files to modify:
+- `lib/init.sh` — Replace current post-init output with `emit_init_summary()`.
+  Current behavior: prints file list + generic "next steps."
+  New behavior: calls `emit_init_summary()` which reads detection results,
+  health score (M15), and Watchtower status to produce the focused summary.
+  Also calls `emit_init_report_file()` to write the persistent report.
+
+- `lib/init_config.sh` — Refactor config emission to use sectioned format
+  from init_config_sections.sh. All existing config keys remain in the same
+  positions (backward compatible for sed/grep-based tools). Only the
+  COMMENTS and WHITESPACE change, not the key-value pairs.
+  When upgrading (--reinit or migration), preserve user values but add new
+  section headers if missing.
+
+- `templates/pipeline.conf.example` — Update the example config with the
+  new sectioned format. This is what users see when they open the file
+  for the first time.
+
+- `lib/detect_report.sh` — Ensure detection results are written to a
+  structured format that `emit_init_summary()` can consume. Add
+  confidence levels to each detection (HIGH/MEDIUM/LOW) with source
+  attribution.
+
+- `lib/dashboard.sh` (M13) — Add `emit_dashboard_init()` function that
+  generates the init data for Watchtower from INIT_REPORT.md.
+
+Acceptance criteria:
+- Post-init terminal output shows focused summary with detected values,
+  attention items, health score, and numbered next steps
+- INIT_REPORT.md written with complete detection results and config decisions
+- pipeline.conf uses clear section headers with ═══ separators
+- Essential config section is first 15-20 lines (most users only need these)
+- VERIFY markers appear on low-confidence detections
+- When Watchtower enabled, summary directs user to dashboard
+- When Watchtower disabled, summary directs user to INIT_REPORT.md
+- Config sectioning is backward compatible (key names/values unchanged)
+- --reinit preserves user values while adding section headers if missing
+- All existing tests pass
+- `bash -n lib/init_report.sh lib/init_config_sections.sh` passes
+- `shellcheck lib/init_report.sh lib/init_config_sections.sh` passes
+
+Watch For:
+- pipeline.conf is `source`d as bash. Section headers (comments) and
+  whitespace changes are safe, but be careful not to add syntax that
+  breaks sourcing (e.g., unescaped special chars in comments).
+- The "essential" section MUST include every key a new user might need
+  to verify. Missing a key here means the user won't check it.
+- VERIFY markers should be rare (only low-confidence detections). If
+  everything is marked VERIFY, the signal is lost.
+- Health score display depends on M15. When M15 isn't implemented yet,
+  skip the health score line gracefully.
+
+Seeds Forward:
+- INIT_REPORT.md is consumed by Watchtower (M13/M14) for the init view
+- Config sectioning format is maintained by migration scripts (M21)
+- VERIFY markers feed into the PM agent's confidence assessment (M10)
+- The focused summary pattern is reusable for other CLI output improvements
+
+Migration impact:
+- New files in .claude/: INIT_REPORT.md (generated by init)
+- Modified file formats: pipeline.conf (section headers added, values unchanged)
+- New config keys: NONE
+- Breaking changes: NONE — terminal output changes only, no behavioral change
+- Migration script update required: YES — add section headers to existing
+  pipeline.conf files (append-only, non-destructive)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 23: Dry-Run & Preview Mode
+<!-- milestone-meta
+id: "23"
+status: "done"
+-->
+
+Add a `--dry-run` execution mode that runs the scout and intake agents,
+shows what the pipeline WOULD do, and caches the results. The next actual
+run can continue from the cached dry-run instead of re-running scout and
+intake, ensuring the preview matches the execution. This builds trust with
+new users and helps experienced users scope work before committing turns.
+
+Files to create:
+- `lib/dry_run.sh` — Dry-run orchestration and caching:
+  **Execution** (`run_dry_run(task)`):
+  1. Run intake gate (M10) → produce INTAKE_REPORT.md with verdict + confidence
+  2. Run scout agent → produce SCOUT_REPORT.md with file list + estimates
+  3. Summarize: estimated files to modify, estimated complexity, intake verdict,
+     security-relevant files flagged, milestone scope assessment
+  4. Cache results to `${TEKHTON_SESSION_DIR}/dry_run_cache/`:
+     - INTAKE_REPORT.md (cached copy)
+     - SCOUT_REPORT.md (cached copy)
+     - DRY_RUN_META.json: task hash, git HEAD sha, timestamp, cache TTL
+  5. Print formatted preview to terminal:
+  ```
+  ══════════════════════════════════════
+    Tekhton — Dry Run Preview
+  ══════════════════════════════════════
+    Task:       Add user authentication
+    Intake:     PASS (confidence 85)
+
+    Scout identified 14 files:
+      Modified:  src/api/routes.ts, src/middleware/auth.ts, ...
+      New:       src/services/auth-service.ts, tests/auth.test.ts
+      Estimated: ~20 turns (coder), 2 review cycles
+
+    Security-relevant: YES (auth, middleware changes)
+
+    Continue with full run? [y/n]
+  ══════════════════════════════════════
+  ```
+  6. If user says yes: set DRY_RUN_CONTINUE=true, return to main flow
+  7. If user says no: save state for later `tekhton --continue-preview`
+
+  **Cache validation** (`validate_dry_run_cache(task)`):
+  Returns 0 (valid) when ALL conditions met:
+  - Cache exists and is non-empty
+  - Task hash matches (same task string)
+  - Git HEAD sha matches (no code changes since dry-run)
+  - Cache age < DRY_RUN_CACHE_TTL (default: 1 hour)
+  Returns 1 (invalid) and logs reason when any condition fails.
+
+  **Cache consumption** (`consume_dry_run_cache()`):
+  Called at the start of a real run when valid cache exists:
+  - Copy cached SCOUT_REPORT.md to the active session directory
+  - Copy cached INTAKE_REPORT.md to the active session directory
+  - Set SCOUT_CACHED=true so the coder stage skips re-running scout
+  - Set INTAKE_CACHED=true so the intake gate skips re-running
+  - Log: "Using cached dry-run results (scout + intake from Xm ago)"
+  - Delete cache after consumption (one-use)
+
+Files to modify:
+- `tekhton.sh` — Add flag handling:
+  - `--dry-run` → Run `run_dry_run(task)` instead of `_run_pipeline_stages`
+  - `--continue-preview` → Load cached dry-run, skip to coder stage
+  At pipeline startup (before stage execution), call
+  `validate_dry_run_cache()`. If valid, offer to use it:
+  "Found cached dry-run from 12m ago. Use cached scout results? [y/n/fresh]"
+  If yes: `consume_dry_run_cache()`. If no/fresh: discard cache, run normally.
+  Source lib/dry_run.sh.
+
+- `stages/coder.sh` — When SCOUT_CACHED=true, skip scout agent invocation
+  and read SCOUT_REPORT.md directly. Log: "Scout: using cached results."
+  The coder prompt assembly reads SCOUT_REPORT.md the same way regardless
+  of whether it came from cache or a live run.
+
+- `stages/intake.sh` (M10) — When INTAKE_CACHED=true, skip intake agent
+  invocation and read INTAKE_REPORT.md directly. If cached verdict was
+  NEEDS_CLARITY, still pause (user may have answered clarifications since
+  the dry-run). If cached verdict was TWEAKED, apply the tweaks.
+
+- `lib/config_defaults.sh` — Add:
+  DRY_RUN_CACHE_TTL=3600 (seconds, default 1 hour),
+  DRY_RUN_CACHE_DIR="${TEKHTON_SESSION_DIR}/dry_run_cache".
+
+- `lib/state.sh` — Add dry-run state to pipeline state persistence.
+  `--continue-preview` loads the cached state and resumes.
+
+- `lib/dashboard.sh` (M13) — Emit dry-run results to Watchtower data
+  when a dry-run completes.
+
+Acceptance criteria:
+- `tekhton --dry-run "task"` runs scout + intake only, no coder/security/review/test
+- Terminal preview shows: task, intake verdict, file list, estimates, security flag
+- Results cached to session directory with task hash + git sha + timestamp
+- Cache validated on next actual run: task match, git HEAD match, TTL check
+- Valid cache consumed by next run: scout and intake skip re-running
+- Invalid cache (code changed, task changed, expired) is discarded with log message
+- `--continue-preview` loads cached dry-run and starts from coder stage
+- Interactive "Continue with full run? [y/n]" at end of dry-run
+- Cache is one-use: consumed and deleted after real run starts
+- When M10 (intake) not yet enabled, dry-run shows scout results only
+- When no stages produce meaningful preview data, dry-run says so and suggests
+  running the full pipeline instead of silently producing empty output
+- All existing tests pass
+- `bash -n lib/dry_run.sh` passes
+- `shellcheck lib/dry_run.sh` passes
+
+Watch For:
+- The scout is non-deterministic — the whole point of caching is that the
+  preview matches the execution. The cache MUST be invalidated on ANY code
+  change (git HEAD check), not just task changes.
+- Cache TTL is 1 hour by default. For fast-moving repos with frequent
+  commits, this may be too long. The git HEAD check handles this naturally
+  (any commit invalidates), but branch switches should also invalidate.
+- `--dry-run` in --milestone mode should preview the ACTIVE milestone,
+  not require a task string. Detect milestone mode and read the milestone
+  file as the task context.
+- The scout's estimated complexity (turns, review cycles) is a rough
+  heuristic. Label it clearly as "estimated" to set expectations.
+- `--dry-run` should NOT count against quota or autonomous loop limits.
+  It's a preview, not a pipeline run.
+
+Seeds Forward:
+- Dry-run cache pattern is reusable for other pre-computation (e.g.,
+  caching repo map generation for fast startup)
+- The preview format feeds into Watchtower's "upcoming work" view
+- `--continue-preview` pattern seeds future "staged execution" where
+  users approve each stage before it runs
+
+Migration impact:
+- New config keys: DRY_RUN_CACHE_TTL, DRY_RUN_CACHE_DIR
+- New files in .claude/: dry_run_cache/ directory (transient, auto-cleaned)
+- Breaking changes: NONE
+- Migration script update required: NO — new feature only
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 24: Run Safety Net & Rollback
+<!-- milestone-meta
+id: "24"
+status: "done"
+-->
+
+Add a pre-run git checkpoint and `--rollback` command that lets users
+cleanly revert the last pipeline run. This is a critical safety net for
+new users who aren't comfortable with git recovery, and for experienced
+users who want a quick undo when the pipeline produces bad results.
+
+Files to create:
+- `lib/checkpoint.sh` — Git checkpoint management:
+  **Create checkpoint** (`create_run_checkpoint()`):
+  Called at the very start of pipeline execution (before scout/intake).
+  1. Check for uncommitted changes. If any exist:
+     - `git stash push -m "tekhton-checkpoint-${TIMESTAMP}"` to save them
+     - Record stash ref in CHECKPOINT_META.json
+  2. Record current HEAD sha in CHECKPOINT_META.json
+  3. If previous checkpoint exists and is unused, warn: "Previous checkpoint
+     exists — overwriting (only the most recent run is rollback-able)"
+  4. Write CHECKPOINT_META.json to `.claude/`:
+     ```json
+     {
+       "timestamp": "2024-03-23T10:45:00Z",
+       "head_sha": "abc123",
+       "had_uncommitted": true,
+       "stash_ref": "stash@{0}",
+       "task": "Add user authentication",
+       "milestone": "m03",
+       "auto_committed": false,
+       "commit_sha": null
+     }
+     ```
+  5. Log: "Checkpoint created — use `tekhton --rollback` to undo this run"
+
+  **Update checkpoint** (`update_checkpoint_commit(commit_sha)`):
+  Called after auto-commit or manual commit during finalization.
+  Updates CHECKPOINT_META.json with `auto_committed: true` and
+  `commit_sha`. This is needed so rollback knows to revert the commit.
+
+  **Rollback** (`rollback_last_run()`):
+  1. Read CHECKPOINT_META.json. If missing: "No checkpoint found — nothing
+     to rollback."
+  2. If auto_committed: `git revert --no-edit ${commit_sha}` (creates a
+     revert commit, non-destructive). Show what was reverted.
+  3. If NOT auto_committed: `git checkout -- .` to discard uncommitted
+     changes back to checkpoint HEAD. Warn about unstaged changes.
+  4. If stash_ref exists: `git stash pop ${stash_ref}` to restore the
+     pre-run uncommitted changes.
+  5. Remove CHECKPOINT_META.json (checkpoint consumed).
+  6. Clean up pipeline state files (PIPELINE_STATE.md, session dir).
+  7. Print summary:
+  ```
+  ✓ Rollback complete
+    Reverted: commit abc123 ("Add user auth middleware")
+    Restored: 3 uncommitted files from pre-run state
+    Pipeline state: cleared
+  ```
+
+  **Checkpoint info** (`show_checkpoint_info()`):
+  For `--rollback --check`. Shows what would be rolled back without doing it:
+  - What commit would be reverted (if auto-committed)
+  - What files would be restored
+  - Whether pre-run stash would be restored
+  - Age of checkpoint
+
+  **Safety checks:**
+  - Rollback refuses if the current HEAD is NOT the commit_sha or its
+    immediate successor (someone else committed on top). Prints:
+    "Cannot rollback — commits have been made after the pipeline run.
+    Use `git revert ${commit_sha}` manually."
+  - Rollback refuses if there are uncommitted changes that would be lost.
+    Prints: "Uncommitted changes detected. Stash or commit them first."
+  - Rollback is ALWAYS a clean git operation (revert, checkout, stash pop).
+    NEVER uses `git reset --hard` or any destructive force operation.
+
+Files to modify:
+- `tekhton.sh` — Add flag handling:
+  - `--rollback` → Run `rollback_last_run()` and exit
+  - `--rollback --check` → Run `show_checkpoint_info()` and exit
+  Add `create_run_checkpoint()` call at pipeline startup, BEFORE stage
+  execution begins (after config load, after argument parsing, before
+  scout/intake). Source lib/checkpoint.sh.
+
+- `lib/finalize.sh` — After auto-commit or manual commit, call
+  `update_checkpoint_commit($commit_sha)` to record the commit in the
+  checkpoint metadata. This enables clean revert.
+
+- `lib/config_defaults.sh` — Add:
+  CHECKPOINT_ENABLED=true (enabled by default — safety net should be on),
+  CHECKPOINT_FILE=".claude/CHECKPOINT_META.json".
+
+- `lib/state.sh` — Include checkpoint info in `--status` output so the
+  user knows a rollback is available.
+
+- `lib/dashboard.sh` (M13) — Include checkpoint status in Watchtower:
+  "Last run rollback available: Yes (12m ago, commit abc123)"
+
+Acceptance criteria:
+- Checkpoint created automatically at pipeline start (before any agent runs)
+- Pre-existing uncommitted changes are stashed with tekhton-specific message
+- CHECKPOINT_META.json records: timestamp, HEAD sha, stash ref, task, milestone
+- After auto-commit, checkpoint updated with commit sha
+- `tekhton --rollback` reverts auto-committed changes via `git revert`
+- `tekhton --rollback` restores pre-run uncommitted changes from stash
+- `tekhton --rollback --check` shows what would be rolled back without acting
+- Rollback refuses when additional commits exist after the pipeline run
+- Rollback refuses when uncommitted changes would be lost
+- Rollback NEVER uses `git reset --hard` or destructive operations
+- Only one checkpoint exists at a time (most recent run only)
+- When CHECKPOINT_ENABLED=false, no checkpoint created, --rollback disabled
+- `tekhton --status` shows checkpoint availability
+- All existing tests pass
+- `bash -n lib/checkpoint.sh` passes
+- `shellcheck lib/checkpoint.sh` passes
+
+Watch For:
+- `git stash` behavior with untracked files: by default `git stash` only
+  stashes tracked files. Use `git stash push --include-untracked` to also
+  save new files the user created but hasn't committed.
+- `git revert` creates a new commit. This is intentional — it's
+  non-destructive and preserves history. The user can see what was
+  reverted and why.
+- The stash ref (`stash@{0}`) may shift if the user manually stashes
+  between the checkpoint and rollback. Record the stash message string
+  and find it by message, not index: `git stash list | grep tekhton-checkpoint`.
+- Monorepo users may have changes in directories outside the project.
+  Checkpoint should only stash changes within PROJECT_DIR, not the entire
+  repo. Use `git stash push -- .` (current directory scope).
+- If the pipeline crashes mid-run (no finalization), the checkpoint still
+  exists but auto_committed will be false. Rollback should handle this
+  gracefully (just discard uncommitted changes, restore stash).
+
+Seeds Forward:
+- Checkpoint metadata feeds into --diagnose (M17): "Last run was rolled back"
+- The pattern is reusable for future "safe experiment" mode where the
+  pipeline works on a branch and merges only on success
+- Watchtower can show rollback history for project health trends
+
+Migration impact:
+- New config keys: CHECKPOINT_ENABLED, CHECKPOINT_FILE
+- New files in .claude/: CHECKPOINT_META.json (transient, auto-managed)
+- Breaking changes: NONE
+- Migration script update required: NO — new feature only
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 25: Human Notes UX Enhancement
+<!-- milestone-meta
+id: "25"
+status: "done"
+-->
+
+Make the human notes system discoverable, easy to use, and integrated
+into the pipeline feedback loop. Today HUMAN_NOTES.md is powerful but
+hidden — users have to know it exists, know the format, and manually
+edit a markdown file. This milestone adds CLI commands for note management
+and integrates notes into the post-run experience.
+
+Files to create:
+- `lib/notes_cli.sh` — CLI note management commands:
+  **Add note** (`add_human_note(text, tag)`):
+  Appends a properly formatted entry to HUMAN_NOTES.md:
+  `- [ ] [TAG] Note text here`
+  If HUMAN_NOTES.md doesn't exist, creates it with the standard header.
+  Valid tags: BUG, FEAT, POLISH (default: FEAT if omitted).
+  Prints: "✓ Added [TAG] note: Note text here"
+
+  **List notes** (`list_human_notes(filter)`):
+  Prints all unchecked notes, optionally filtered by tag.
+  Color-coded by tag: BUG=red, FEAT=cyan, POLISH=yellow.
+  Shows count: "3 notes (1 BUG, 1 FEAT, 1 POLISH)"
+
+  **Complete note** (`complete_human_note(number_or_text)`):
+  Marks a note as checked (done). Accepts line number or text match.
+  Prints: "✓ Completed: [BUG] Fix login redirect loop"
+
+  **Clear completed** (`clear_completed_notes()`):
+  Removes all checked items from HUMAN_NOTES.md. Requires confirmation.
+  Prints count removed.
+
+Files to modify:
+- `tekhton.sh` — Add subcommand handling:
+  - `tekhton note "Fix the login bug"` → `add_human_note "Fix the login bug"`
+  - `tekhton note "Fix the login bug" --tag BUG` → `add_human_note "..." BUG`
+  - `tekhton note --list` → `list_human_notes`
+  - `tekhton note --list --tag BUG` → `list_human_notes BUG`
+  - `tekhton note --done 3` → `complete_human_note 3`
+  - `tekhton note --done "Fix login"` → `complete_human_note "Fix login"`
+  - `tekhton note --clear` → `clear_completed_notes`
+  Source lib/notes_cli.sh.
+
+- `lib/finalize_display.sh` — After pipeline completion, when unchecked
+  notes exist, enhance the action items display:
+  ```
+  ⚠ HUMAN_NOTES.md — 3 item(s) remaining
+    Tip: Run `tekhton --human` to process notes, or
+         `tekhton note --list` to see them
+  ```
+  When the pipeline is run with --human and completes a note, show:
+  ```
+  ✓ Completed note: [BUG] Fix login redirect loop
+    2 notes remaining — run `tekhton --human` to continue
+  ```
+
+- `lib/notes.sh` — Add `get_notes_summary()` function that returns
+  a structured count (total, by_tag, checked, unchecked) for use by
+  other modules (Watchtower, finalize_display, report).
+
+- `lib/init.sh` — During --init, if unchecked notes would be useful
+  (e.g., health score is low, tech debt detected), suggest:
+  "Tip: Use `tekhton note \"description\"` to track items for the pipeline"
+
+- `lib/dashboard.sh` (M13) — Include notes summary in Watchtower data.
+  Notes appear in the Reports tab as a "Backlog" card showing
+  unchecked items by tag.
+
+- `prompts/intake_scan.prompt.md` (M10) — When notes exist that match
+  the current task's topic (keyword overlap), inject a NOTES_CONTEXT_BLOCK
+  so the PM agent is aware of related human observations.
+
+Acceptance criteria:
+- `tekhton note "text"` appends properly formatted entry to HUMAN_NOTES.md
+- `tekhton note "text" --tag BUG` uses specified tag
+- Default tag is FEAT when --tag omitted
+- `tekhton note --list` shows unchecked notes color-coded by tag with count
+- `tekhton note --list --tag BUG` filters to BUG notes only
+- `tekhton note --done 3` marks note on line 3 as completed
+- `tekhton note --done "partial text"` finds and completes matching note
+- `tekhton note --clear` removes checked items with confirmation
+- HUMAN_NOTES.md created automatically if it doesn't exist
+- Post-run display includes notes count with usage tip
+- --human completion shows which note was processed
+- Notes summary available to Watchtower and report command
+- All existing notes functionality (--human, --with-notes, --notes-filter)
+  continues to work unchanged
+- All existing tests pass
+- `bash -n lib/notes_cli.sh` passes
+- `shellcheck lib/notes_cli.sh` passes
+
+Watch For:
+- The HUMAN_NOTES.md format is already established (checkbox markdown).
+  The CLI commands must produce EXACTLY the same format that the existing
+  parser expects. Test with `_count_unchecked_notes()` after adding.
+- Note completion by text match should be fuzzy enough to be useful
+  (case-insensitive substring) but not so fuzzy that it matches the wrong
+  note. When multiple matches found, show all and ask user to specify.
+- The `tekhton note` subcommand is the first subcommand (not a --flag).
+  This is a UX precedent — if we add more subcommands later (e.g.,
+  `tekhton report`, `tekhton milestone`), the parsing pattern must be
+  consistent. Use positional argument detection before flag parsing.
+- `--clear` should NEVER delete unchecked notes. Only checked items.
+  Add a safety check that counts unchecked items before and after.
+
+Seeds Forward:
+- The subcommand pattern (`tekhton note`, `tekhton report`) establishes
+  a CLI design precedent for future subcommands
+- Notes integration with the PM agent enables "human observations feed
+  into automated planning" — a key V4 capability
+- Notes summary in Watchtower creates a backlog view that feeds into
+  the future tech debt agent's work queue
+
+Migration impact:
+- New config keys: NONE
+- New files in .claude/: NONE (HUMAN_NOTES.md already exists)
+- Breaking changes: NONE — existing notes behavior unchanged
+- Migration script update required: NO
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 26: Express Mode (Zero-Config Execution)
+<!-- milestone-meta
+id: "26"
+status: "done"
+-->
+
+
+Enable Tekhton to run without `--init` by auto-detecting project configuration
+and using sensible defaults. When a user runs `tekhton "task"` in a project
+with no `.claude/pipeline.conf`, the pipeline silently detects the tech stack,
+infers commands, and executes immediately. Config is persisted on completion
+so subsequent runs use the detected values.
+
+This is the "try it in 30 seconds" experience. The full `--init` with interview,
+synthesis, and milestone planning remains the recommended path for serious projects.
+Express mode is for evaluation, one-off tasks, and quick fixes.
+
+Files to create:
+- `lib/express.sh` — Express mode orchestration:
+  **Detection and config generation:**
+  - `detect_express_config($project_dir)` — runs a FAST subset of the M12
+    detection engine: language detection, build/test/lint command inference,
+    project name from directory name or package manifest. No workspace
+    detection, no CI/CD parsing, no doc quality assessment — those are --init
+    features. Target: <3 seconds for detection.
+  - `generate_express_config()` — builds an in-memory config from detection
+    results + conservative defaults: CLAUDE_CODER_MODEL=sonnet,
+    SECURITY_AGENT_ENABLED=true, INTAKE_AGENT_ENABLED=true,
+    MAX_REVIEW_CYCLES=2, standard turn limits.
+  - `persist_express_config($project_dir)` — after successful pipeline
+    completion, writes `.claude/pipeline.conf` with auto-detected values,
+    section headers, and comments: "# Auto-detected by Tekhton Express Mode.
+    # Run 'tekhton --init' for full configuration with planning interview."
+    Also writes minimal agent role files from Tekhton templates.
+  **Express mode entry point:**
+  - `enter_express_mode($project_dir, $task)` — called from tekhton.sh when
+    no pipeline.conf exists. Runs detection, generates config, sets all
+    pipeline variables in memory, then returns control to the normal pipeline
+    flow. The rest of the pipeline (scout, coder, security, review, test)
+    runs identically to configured mode.
+
+- `templates/express_pipeline.conf` — Template for the auto-generated config
+  file. Includes all section headers (Essential, Models, Pipeline Behavior,
+  Security, Features, Quotas) with detected values filled in and descriptive
+  comments. VERIFY markers on low-confidence detections.
+
+Files to modify:
+- `tekhton.sh` — At startup, after checking for pipeline.conf:
+  If pipeline.conf not found AND TEKHTON_EXPRESS_ENABLED != false:
+    Print: "No pipeline.conf found. Running in Express Mode (auto-detected config)."
+    Print: "For full configuration, run: tekhton --init"
+    Call `enter_express_mode()`
+  If pipeline.conf not found AND TEKHTON_EXPRESS_ENABLED == false:
+    Error and exit with current behavior (tell user to run --init)
+  Source lib/express.sh.
+
+- `lib/agent.sh` (or agent role resolution) — When agent role file
+  (e.g., `.claude/agents/coder.md`) doesn't exist in the project, fall back
+  to `${TEKHTON_HOME}/templates/coder.md` (the built-in template). This is
+  a one-line change in the role file resolution path. Log: "Using built-in
+  role template for [agent] (no project-specific role file found)."
+
+- `lib/config_defaults.sh` — Add:
+  TEKHTON_EXPRESS_ENABLED=true (can be disabled globally in ~/.tekhton/config
+  for users who always want explicit --init),
+  EXPRESS_PERSIST_CONFIG=true (write config on completion),
+  EXPRESS_PERSIST_ROLES=false (don't copy role files by default — use
+  built-in templates until user runs --init).
+
+- `lib/config.sh` — Handle the case where config is generated in-memory
+  (not loaded from file). The validation path must work for both file-loaded
+  and express-generated configs.
+
+- `lib/detect.sh` / `lib/detect_commands.sh` — Ensure the detection functions
+  can be called independently (not just from --init flow). They should already
+  be modular from M12, but verify no --init-specific state is required.
+
+- `lib/finalize.sh` — After successful pipeline completion in express mode,
+  call `persist_express_config()` if EXPRESS_PERSIST_CONFIG=true. Print:
+  "Express config saved to .claude/pipeline.conf. Edit to customize."
+
+Acceptance criteria:
+- `tekhton "task"` works in a project with no .claude/ directory at all
+- Detection runs in <3 seconds for typical projects
+- Pipeline executes identically to a configured project (same stages, same
+  agents, same gates)
+- On completion, .claude/pipeline.conf is written with detected values
+- Subsequent runs use the persisted config (no re-detection)
+- Agent role files fall back to built-in templates when project-local files
+  don't exist
+- Express mode prints clear banner explaining what's happening and how to
+  get full config
+- TEKHTON_EXPRESS_ENABLED=false restores current behavior (error without --init)
+- EXPRESS_PERSIST_CONFIG=false skips config persistence (truly ephemeral mode)
+- Express mode works for: Node.js, Python, Go, Rust, Java, Ruby, C#, shell
+  projects (all languages M12 detection supports)
+- Detection failures (unknown language, no build command found) result in
+  conservative defaults, not errors — the pipeline should still run
+- All existing tests pass
+- `bash -n lib/express.sh` passes
+- `shellcheck lib/express.sh` passes
+
+Watch For:
+- Express mode must NOT run the full M12 detection suite (workspaces, CI/CD,
+  services, doc quality). That's heavyweight and belongs in --init. Express
+  runs the fast subset: language, build cmd, test cmd, lint cmd, project name.
+- The config persistence must not overwrite an existing pipeline.conf. If the
+  user ran --init between the express run and the next run (unlikely but
+  possible), the --init config takes precedence.
+- Agent role file fallback must be clearly logged so users understand why
+  their agent behavior might differ from a fully configured project.
+- Express mode should set PIPELINE_STATE so it's resumable. If the user
+  interrupts and re-runs, it should resume, not re-detect.
+- The in-memory config must be complete enough that ALL pipeline code paths
+  work. Any config key that's read but not set will cause `set -u` to fail.
+  The express config generator must set every key that config_defaults.sh sets.
+
+Seeds Forward:
+- The role file fallback (built-in templates when no project file) is reusable
+  by --init for showing users what the defaults look like before customization
+- Express config persistence is the starting point for --init --quick (Tier 1)
+  which adds detection report and interactive confirmation
+- The fast detection subset could be used by --diagnose to verify config
+  matches actual project state
+- V4 multi-platform support can use express mode as the common entry point
+  across all platforms
+
+Migration impact:
+- New config keys: TEKHTON_EXPRESS_ENABLED, EXPRESS_PERSIST_CONFIG, EXPRESS_PERSIST_ROLES
+- New files in .claude/: None (express mode creates pipeline.conf only on completion)
+- Modified file formats: None
+- Breaking changes: Projects without pipeline.conf now run instead of erroring
+  (behavior change, but additive — old behavior available via TEKHTON_EXPRESS_ENABLED=false)
+- Migration script update required: NO — express mode is auto-detected, not configured
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 27: Configurable Pipeline Order (TDD Support)
+<!-- milestone-meta
+id: "27"
+status: "done"
+-->
+
+
+Add a PIPELINE_ORDER config key that controls stage execution order, enabling
+test-driven development as an opt-in alternative to the default code-first flow.
+
+The default order remains Scout → Coder → Security → Review → Test (standard).
+The test_first order runs: Scout → Tester (write failing tests) → Coder (make
+them pass) → Security → Review → Tester (verify all pass).
+
+Seeds Forward (V4): The `auto` mode lets the PM agent (M10) decide per-milestone
+based on task type analysis. Bug fixes → test_first. New features with unknown
+API surface → standard. Requires PM agent maturity and calibration data.
+
+Files to create:
+- `lib/pipeline_order.sh` — Pipeline ordering logic:
+  **Order definitions:**
+  - `PIPELINE_ORDER_STANDARD=(scout coder security review test)` — current flow
+  - `PIPELINE_ORDER_TEST_FIRST=(scout test_write coder security review test_verify)`
+    — TDD flow with two tester invocations
+  - `get_pipeline_order()` — returns the active order array based on config
+  - `validate_pipeline_order($order)` — validates the order string is one of:
+    standard, test_first, auto (auto reserved for V4, errors gracefully with
+    "auto mode requires V4 — using standard")
+
+  **Test-first stage variants:**
+  - The tester stage needs to know if it's in "write failing tests" mode or
+    "verify passing tests" mode. This is controlled by a TESTER_MODE variable:
+    - `TESTER_MODE=write_failing` — first invocation in test_first order.
+      Tester writes tests that SHOULD FAIL against the current codebase.
+      Uses `prompts/tester_write_failing.prompt.md`.
+    - `TESTER_MODE=verify_passing` — second invocation (or the single
+      invocation in standard order). Tester writes/updates tests that should
+      PASS. Uses existing `prompts/tester.prompt.md`.
+
+- `prompts/tester_write_failing.prompt.md` — TDD-specific tester prompt:
+  Instructs tester to:
+  (1) Read the milestone/task acceptance criteria
+  (2) Read SCOUT_REPORT.md for identified files and structure
+  (3) Write test files that encode the EXPECTED behavior from acceptance criteria
+  (4) These tests SHOULD FAIL when run against the current codebase — that's
+      the point. A test that already passes is not testing new behavior.
+  (5) Focus on interface contracts, not implementation details — the coder
+      needs freedom to choose HOW to implement
+  (6) Output TESTER_PREFLIGHT.md with: test files created, expected failures,
+      the acceptance criteria each test covers
+  **Critical guidance:**
+  - Test PUBLIC interfaces only. Don't test internal methods that the coder
+    hasn't created yet.
+  - Use the project's existing test framework and conventions (detected by M12
+    or from the tester role file).
+  - If the task is creating entirely new modules with no existing interface,
+    write tests against the interface DESCRIBED in the acceptance criteria.
+    If the acceptance criteria don't describe an interface, write behavioral
+    tests (e.g., "when I run command X, output should contain Y").
+  - Keep tests simple and focused. The coder will extend them. Don't try to
+    achieve full coverage in the pre-flight tests.
+
+Files to modify:
+- `tekhton.sh` — Replace hardcoded stage ordering with dynamic ordering from
+  `get_pipeline_order()`. The stage functions themselves don't change — only
+  the ORDER in which they're called changes. Add TESTER_MODE variable that's
+  set before each tester invocation based on position in the order.
+  When PIPELINE_ORDER=test_first:
+    1. run_stage_scout
+    2. TESTER_MODE=write_failing; run_stage_test  (write failing tests)
+    3. run_stage_coder  (coder sees TESTER_PREFLIGHT.md as context)
+    4. run_stage_security
+    5. run_stage_review
+    6. TESTER_MODE=verify_passing; run_stage_test  (verify tests pass)
+
+- `stages/tester.sh` — Check TESTER_MODE at the start of run_stage_test().
+  When write_failing: use tester_write_failing.prompt.md, output TESTER_PREFLIGHT.md,
+  skip the test execution gate (tests are EXPECTED to fail).
+  When verify_passing: use existing tester.prompt.md, run tests, enforce the
+  test pass gate as normal.
+
+- `stages/coder.sh` — When PIPELINE_ORDER=test_first, inject TESTER_PREFLIGHT.md
+  content into coder prompt context. The coder sees the pre-written tests and
+  knows: "Make these tests pass." This gives the coder a clear "done" signal.
+
+- `prompts/coder.prompt.md` — Add conditional block:
+  `{{IF:TESTER_PREFLIGHT_CONTENT}}## Pre-Written Tests (TDD Mode)
+  Tests have been written before your implementation. Your goal is to make
+  ALL of these tests pass while also satisfying the acceptance criteria.
+  Read the test files listed in TESTER_PREFLIGHT.md to understand the
+  expected interface contracts.
+  {{TESTER_PREFLIGHT_CONTENT}}{{ENDIF:TESTER_PREFLIGHT_CONTENT}}`
+
+- `lib/config_defaults.sh` — Add:
+  PIPELINE_ORDER=standard (standard|test_first|auto),
+  TDD_PREFLIGHT_FILE=TESTER_PREFLIGHT.md,
+  TESTER_WRITE_FAILING_MAX_TURNS=10 (less than full tester — just writing
+  tests, not debugging them).
+
+- `lib/config.sh` — Validate PIPELINE_ORDER is one of standard|test_first|auto.
+  When auto: warn "auto mode is V4 — falling back to standard" and set to standard.
+
+- `lib/prompts.sh` — Register TESTER_PREFLIGHT_CONTENT template variable.
+
+- `lib/state.sh` — State persistence must track TESTER_MODE so resume works
+  correctly. If interrupted between test_write and coder, resume at coder
+  (tests already written). If interrupted between coder and test_verify,
+  resume at test_verify.
+
+Acceptance criteria:
+- PIPELINE_ORDER=standard produces identical behavior to current pipeline
+  (zero regression)
+- PIPELINE_ORDER=test_first runs tester before coder with write_failing mode
+- Tester in write_failing mode produces TESTER_PREFLIGHT.md with test files
+  and expected failure descriptions
+- Coder in test_first mode sees TESTER_PREFLIGHT.md content and "make these
+  tests pass" instruction
+- Tester in verify_passing mode (second pass) runs tests and enforces pass gate
+- PIPELINE_ORDER=auto falls back to standard with a warning message
+- Resume from any point in both orderings works correctly
+- State persistence tracks TESTER_MODE for accurate resume
+- Build gate still runs between coder and security in both orderings
+- Security agent still runs between coder and reviewer in both orderings
+- The reviewer sees the same context regardless of pipeline order
+- All existing tests pass
+- `bash -n lib/pipeline_order.sh` passes
+- `shellcheck lib/pipeline_order.sh` passes
+
+Watch For:
+- The tester writing "failing" tests in a brownfield project might write tests
+  that fail for the WRONG reason (import errors, missing fixtures, etc). The
+  prompt must be very clear: tests should fail because the feature doesn't
+  exist yet, not because the test setup is broken. If test_write produces
+  tests that can't even be parsed/loaded, that's a signal to fall back to
+  standard order.
+- PIPELINE_ORDER affects stage numbering in progress output. "Stage 2 of 6"
+  vs "Stage 2 of 5" needs to adapt. Use the order array length, not a
+  hardcoded count.
+- The coder in test_first mode might need MORE turns than standard mode if
+  the pre-written tests are extensive. Consider a CODER_TDD_TURN_MULTIPLIER
+  (default 1.2) that gives the coder slightly more budget when working against
+  pre-written tests.
+- Don't inject TESTER_PREFLIGHT.md into the security agent or reviewer — they
+  don't need it and it wastes context.
+- The test_first flow has TWO tester invocations per pipeline run. This costs
+  more than standard order. Users should understand this trade-off. Add a note
+  to the config file: "# test_first uses two tester passes (higher cost, TDD rigor)"
+
+Seeds Forward:
+- V4 `auto` mode: PM agent evaluates milestone and recommends pipeline order.
+  Bug fix tasks → test_first. New module creation → standard. Refactoring → standard.
+  Data-driven: track which order produces fewer rework cycles per task type.
+- The TESTER_PREFLIGHT.md format is reusable by the test integrity audit (M20)
+  as a baseline reference for "what tests were originally intended to verify"
+- Multi-platform support (V4) needs pipeline ordering to be platform-agnostic.
+  This milestone ensures ordering is config-driven, not hardcoded.
+
+Migration impact:
+- New config keys: PIPELINE_ORDER, TDD_PREFLIGHT_FILE, TESTER_WRITE_FAILING_MAX_TURNS
+- New files in .claude/: None
+- Modified file formats: None
+- Breaking changes: None — default is standard (identical to current behavior)
+- Migration script update required: NO — new config key with backward-compatible default
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 28: UI Test Awareness & E2E Prompt Integration
+<!-- milestone-meta
+id: "28"
+status: "done"
+-->
+
+Teach the pipeline that user interfaces exist and require UI-level testing.
+Update prompts across PM agent, tester, scout, and reviewer to detect UI
+projects, require UI-verifiable acceptance criteria, and guide the tester
+toward writing E2E tests when appropriate. Add UI_TEST_CMD and
+UI_FRAMEWORK config keys so projects with existing E2E infrastructure
+(Playwright, Cypress, Selenium, etc.) get those tests run as part of the
+pipeline.
+
+This milestone is prompt-and-config changes only — no new infrastructure.
+It addresses the root cause of the Watchtower class of bug: milestones
+that produce UI artifacts pass all acceptance criteria while the actual
+visual output is broken, because nobody thought to test at the UI level.
+
+Files to create:
+- `prompts/tester_ui_guidance.prompt.md` — Conditional block injected into
+  the tester prompt when a UI project is detected. Contains:
+  - Framework-specific E2E test guidance for the top 6 frameworks:
+    Playwright, Cypress, Selenium, Puppeteer, Testing Library, Detox (mobile)
+  - A decision tree: "If the milestone creates/modifies UI components,
+    write E2E tests that verify rendering and interaction, not just logic."
+  - Common UI test patterns: page loads without errors, critical elements
+    visible, form submission works, navigation functions, responsive breakpoints
+  - Anti-patterns: "Don't test implementation details (CSS class names,
+    DOM structure). Test user-visible behavior."
+  - The guidance adapts based on UI_FRAMEWORK config: if Playwright is
+    configured, give Playwright-specific examples. If no framework configured,
+    give framework-agnostic guidance and recommend Playwright as default.
+
+Files to modify:
+- `lib/config_defaults.sh` — Add:
+  UI_TEST_CMD="" (command to run E2E/UI tests, separate from TEST_CMD),
+  UI_FRAMEWORK="" (playwright|cypress|selenium|puppeteer|testing-library|
+  detox|auto|"" — auto detects from project, "" disables UI awareness),
+  UI_PROJECT_DETECTED=false (set by detection engine, not user-configured),
+  UI_VALIDATION_ENABLED=true (enable UI validation gate when UI detected).
+
+- `lib/config.sh` — Validate UI_FRAMEWORK is one of the known values or
+  empty. Validate UI_TEST_CMD is a runnable command when set.
+
+- `lib/detect.sh` — Add UI project detection to the existing detection engine:
+  New function: `detect_ui_framework($project_dir)` checks for:
+  - Playwright: playwright.config.ts/js, @playwright/test in package.json
+  - Cypress: cypress.config.ts/js, cypress/ directory
+  - Selenium: selenium in requirements.txt/pom.xml, webdriver configs
+  - Testing Library: @testing-library/* in package.json
+  - Detox: .detoxrc.js, detox in package.json
+  - Generic web UI: src/**/*.tsx, src/**/*.vue, src/**/*.svelte,
+    templates/**/*.html, app/views/**/*.erb
+  Sets UI_PROJECT_DETECTED=true and UI_FRAMEWORK when found.
+  Detection runs during --init AND at pipeline startup (cached in session).
+
+- `lib/detect_commands.sh` — Add UI test command detection:
+  When UI framework detected, infer UI_TEST_CMD:
+  - Playwright: "npx playwright test"
+  - Cypress: "npx cypress run"
+  - package.json scripts containing "e2e", "test:e2e", "test:ui"
+  - CI/CD config referencing E2E test steps
+  CI source takes priority (same cascade as TEST_CMD detection in M12).
+
+- `stages/intake.sh` — Update PM agent context injection:
+  When UI_PROJECT_DETECTED=true, inject a UI awareness block into the
+  intake prompt: "This is a UI project using {{UI_FRAMEWORK}}. Milestones
+  that create or modify user-facing components should include UI-verifiable
+  acceptance criteria (e.g., 'page loads without console errors', 'form
+  submits and shows confirmation', 'component renders at mobile breakpoint').
+  Flag milestones that produce UI artifacts without such criteria."
+
+- `prompts/intake_scan.prompt.md` — Add to the clarity rubric:
+  "(7) If this milestone produces or modifies UI components and the project
+  has UI testing infrastructure, do the acceptance criteria include at least
+  one UI-verifiable criterion? If not, flag for addition."
+
+- `prompts/tester.prompt.md` — Add conditional UI guidance block:
+  `{{IF:UI_PROJECT_DETECTED}}
+  {{TESTER_UI_GUIDANCE}}
+  {{ENDIF:UI_PROJECT_DETECTED}}`
+  Where TESTER_UI_GUIDANCE is rendered from tester_ui_guidance.prompt.md
+  with framework-specific content based on UI_FRAMEWORK.
+
+- `prompts/scout.prompt.md` — Add UI component identification:
+  "When examining files in scope, identify any UI components (React
+  components, Vue templates, HTML files, CSS/SCSS modules). Note these
+  in your scout report under a '## UI Components in Scope' section so
+  the tester knows to write E2E tests for them."
+
+- `prompts/reviewer.prompt.md` — Add UI review awareness:
+  `{{IF:UI_PROJECT_DETECTED}}
+  ## UI Review Considerations
+  This is a UI project. When reviewing changes to UI components, verify:
+  - CSS/style changes don't break existing visual layouts (check for
+    removed classes still referenced elsewhere)
+  - New components have corresponding E2E test coverage (if not, add
+    to Coverage Gaps, not blockers — the tester handles this)
+  - Interactive elements (buttons, forms, links) have event handlers
+  - Accessibility attributes present (aria-label, role, alt text)
+  {{ENDIF:UI_PROJECT_DETECTED}}`
+
+- `lib/gates.sh` — Add UI test execution to the build gate:
+  After the standard BUILD_CHECK_CMD and ANALYZE_CMD, if UI_TEST_CMD
+  is set and non-empty, run it. Parse exit code:
+  - 0: UI tests pass, continue
+  - Non-zero: UI tests failed, write UI_TEST_ERRORS.md with output,
+    route to coder rework (same as build failure)
+  If UI_TEST_CMD is set but the command is not found (e.g., Playwright
+  not installed), log a WARNING but do not fail the gate. Include the
+  warning in CODER_SUMMARY.md so the reviewer sees it.
+
+- `lib/prompts.sh` — Register template variables:
+  UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD,
+  TESTER_UI_GUIDANCE (rendered from tester_ui_guidance.prompt.md).
+
+- `templates/pipeline.conf.example` — Add UI testing section:
+  ```
+  # --- UI Testing ---
+  # UI_TEST_CMD=""           # E2E test command (e.g., "npx playwright test")
+  # UI_FRAMEWORK=""          # auto | playwright | cypress | selenium | ...
+  # UI_VALIDATION_ENABLED=true  # Enable UI validation gate
+  ```
+
+Acceptance criteria:
+- `detect_ui_framework()` correctly identifies Playwright, Cypress,
+  Selenium, Testing Library, and Detox from config files and dependencies
+- Generic web UI detection works for React, Vue, Svelte, Rails, Django
+  template projects without explicit E2E framework
+- UI_TEST_CMD auto-detected from package.json scripts and CI config
+- PM agent flags milestones producing UI artifacts without UI-verifiable
+  acceptance criteria
+- Tester agent receives framework-specific E2E test guidance when
+  UI_PROJECT_DETECTED=true
+- Scout report includes "UI Components in Scope" section when applicable
+- Reviewer prompt includes UI review considerations for UI projects
+- Build gate runs UI_TEST_CMD when configured, routes failures to rework
+- Missing E2E framework (command not found) produces a warning, not a failure
+- UI_TEST_CMD failures produce UI_TEST_ERRORS.md for coder context
+- Non-UI projects see zero change in behavior
+- All existing tests pass
+- `bash -n` passes on all modified files
+- `shellcheck` passes on all modified files
+
+Watch For:
+- UI detection must not be over-eager. A project with a single HTML README
+  is not a "UI project." Look for MULTIPLE signals: framework dependencies
+  + component files + routing config. Single HTML files alone are insufficient
+  unless they're in a templates/ or views/ directory.
+- The tester UI guidance must be concise — it's injected into every tester
+  prompt for UI projects. Keep it under 100 lines. Use framework-specific
+  conditional blocks to avoid bloating the prompt with irrelevant framework
+  guidance.
+- UI_TEST_CMD can be slow (Playwright tests take 30-60 seconds). Consider
+  this in the activity timeout. The UI test gate should have its own
+  timeout config (UI_TEST_TIMEOUT, default 120 seconds) separate from
+  the build gate timeout.
+- E2E tests are flaky by nature. A single failure shouldn't immediately
+  trigger rework. Consider a retry (run UI_TEST_CMD twice on failure)
+  before routing to rework.
+
+Seeds Forward:
+- M29 (UI Validation Gate) builds on this detection to add headless
+  smoke testing for projects without E2E frameworks
+- V4 vision-in-the-loop uses the UI detection to decide when screenshot
+  comparison is worthwhile
+- The UI_FRAMEWORK detection feeds into express mode (M26) — express
+  mode for a React app should default to including E2E awareness
+
+Migration impact:
+- New config keys: UI_TEST_CMD, UI_FRAMEWORK, UI_PROJECT_DETECTED,
+  UI_VALIDATION_ENABLED, UI_TEST_TIMEOUT
+- New files in .claude/: none (detection is runtime, not persisted config)
+- Modified file formats: CODER_SUMMARY.md may include UI test warnings,
+  Scout report gains "UI Components in Scope" section
+- Breaking changes: None
+- Migration script update required: YES — V3 migration adds UI config
+  keys to pipeline.conf with commented-out defaults
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 29: UI Validation Gate & Headless Smoke Testing
+<!-- milestone-meta
+id: "29"
+status: "done"
+-->
+
+Add a UI validation gate that runs headless browser smoke tests against
+UI artifacts produced by the pipeline. This catches the class of bugs
+where code compiles, unit tests pass, and E2E tests pass (or don't exist),
+but the actual rendered output is broken — missing resources, JS errors,
+layout failures, or degraded behavior like the Watchtower blink bug.
+
+This milestone provides infrastructure for projects that DON'T have their
+own E2E test framework configured. For projects WITH E2E tests (covered
+by M28's UI_TEST_CMD), the validation gate runs AFTER E2E tests as an
+additional safety net.
+
+Requires a headless browser (Chromium via Playwright or Puppeteer).
+Soft-fails gracefully when no headless browser is available, with clear
+diagnostic output explaining what's missing and how to install it.
+
+Files to create:
+- `lib/ui_validate.sh` — UI validation gate orchestrator:
+  **Core function: `run_ui_validation()`**
+  Called from the build gate (lib/gates.sh) after UI_TEST_CMD (if any).
+  Workflow:
+  1. Check prerequisites: headless browser available? Node.js available?
+     If not, emit a clear diagnostic message:
+     "UI validation skipped: headless browser not available.
+      To enable: npm install -g playwright && npx playwright install chromium
+      Or: apt-get install chromium-browser (for system Chromium)
+      See: [docs link] for full setup instructions."
+     Log to Watchtower as UI_VALIDATION_SKIPPED event. Continue pipeline
+     (soft fail, not hard fail).
+  2. Determine validation targets from CODER_SUMMARY.md:
+     - Static HTML files created/modified → validate directly
+     - Web app with dev server → start server, validate, stop server
+     - Watchtower dashboard → special-case self-validation
+     Detection heuristic: check file extensions in CODER_SUMMARY.md
+     (.html, .htm, .jsx, .tsx, .vue, .svelte) and presence of
+     UI_SERVE_CMD in config.
+  3. For each validation target, run the smoke test script (see below).
+  4. Parse results, write UI_VALIDATION_REPORT.md.
+  5. If failures found: route to coder rework (same as build failure).
+
+  **Prerequisite detection: `_check_headless_browser()`**
+  Checks in order:
+  1. `npx playwright --version` (preferred — Playwright bundles Chromium)
+  2. `npx puppeteer --version` (fallback)
+  3. `chromium-browser --version` or `chromium --version` (system)
+  4. `google-chrome --headless --version` (system Chrome)
+  Returns the command to use, or empty string if none found.
+  Caches result in session dir (don't re-detect every gate run).
+
+  **Server management: `_start_ui_server()` / `_stop_ui_server()`**
+  When UI_SERVE_CMD is configured (e.g., "npm run dev", "python -m http.server"):
+  - Start the server in background, capture PID
+  - Wait for the server to be ready (poll localhost:UI_SERVE_PORT with
+    curl, timeout after UI_SERVER_STARTUP_TIMEOUT seconds)
+  - If server fails to start, log diagnostic and soft-fail
+  - After validation completes, kill the server process
+  For static HTML files: use `python3 -m http.server` as a minimal server
+  (Python is already an optional dep for tree-sitter).
+
+- `tools/ui_smoke_test.js` — Headless browser smoke test script:
+  A standalone Node.js script that Tekhton invokes as a subprocess.
+  Accepts: URL or file path, optional viewport size, optional timeout.
+  Performs these checks:
+  1. **Page load:** Navigate to URL, wait for load event. FAIL if timeout.
+  2. **Console errors:** Capture all console.error messages during load
+     and for 3 seconds after. FAIL if any errors (configurable severity).
+  3. **Missing resources:** Check for 404s on CSS, JS, image, font loads.
+     FAIL if any referenced resources return 404.
+  4. **Basic rendering:** Check that document.body has non-zero dimensions
+     and contains at least one visible element. FAIL if page is blank.
+  5. **Crash detection:** Check for uncaught exceptions, unhandled promise
+     rejections. FAIL if any.
+  6. **Flicker detection:** Take 3 screenshots at 2-second intervals.
+     Compare pixel hashes. If they differ significantly between consecutive
+     frames (indicating page is re-rendering/flickering), report as WARNING
+     (not failure — flicker is a UX issue, not a crash).
+  Output: JSON result with pass/fail per check, console errors captured,
+  missing resources listed, screenshots saved (for human review and future
+  vision-in-the-loop).
+
+  The script uses Playwright if available, falls back to Puppeteer.
+  If neither is available as a Node module, the shell orchestrator
+  already detected this and skipped (see _check_headless_browser above).
+
+  **Viewport testing:** Runs checks at two viewports by default:
+  - Desktop: 1280x800
+  - Mobile: 375x812
+  Configurable via UI_VALIDATION_VIEWPORTS in pipeline.conf.
+
+- `lib/ui_validate_report.sh` — Report parser and formatter:
+  Reads the JSON output from ui_smoke_test.js, produces:
+  - UI_VALIDATION_REPORT.md (human-readable, stored alongside other reports)
+  - Watchtower event data (for dashboard rendering)
+  - Coder context block (if failures found, injected into rework prompt)
+  Report format:
+  ```markdown
+  ## UI Validation Report
+  ### Results
+  | Target | Load | Console | Resources | Rendering | Verdict |
+  |--------|------|---------|-----------|-----------|---------|
+  | /index.html (desktop) | ✅ | ✅ | ✅ | ✅ | PASS |
+  | /index.html (mobile)  | ✅ | ⚠️ 1 warn | ✅ | ✅ | PASS |
+
+  ### Console Errors
+  (none)
+
+  ### Missing Resources
+  (none)
+
+  ### Flicker Detection
+  ⚠️ index.html: page content changes between frame 1 and frame 2
+     (possible auto-refresh or animation — review manually)
+
+  ### Screenshots
+  Saved to .claude/ui-validation/screenshots/
+  ```
+
+- `prompts/ui_rework.prompt.md` — Rework prompt for UI validation failures:
+  "The UI validation gate detected issues with the rendered output.
+  Read UI_VALIDATION_REPORT.md for details. Fix the issues and ensure
+  the page loads cleanly in both desktop and mobile viewports.
+  Common causes:
+  - Console errors: missing imports, undefined variables, API call failures
+  - Missing resources: wrong file path, file not generated, wrong directory
+  - Blank page: JS crash before rendering, missing root element
+  - Flicker: auto-refresh loop, CSS transition on load, state oscillation"
+
+Files to modify:
+- `lib/gates.sh` — Insert UI validation after UI_TEST_CMD in the build gate:
+  ```
+  # Existing: BUILD_CHECK_CMD → ANALYZE_CMD → UI_TEST_CMD (M28)
+  # New:      → run_ui_validation() (M29)
+  ```
+  UI validation runs AFTER E2E tests. If E2E tests already caught the
+  problem, UI validation confirms it's fixed after rework.
+
+- `lib/config_defaults.sh` — Add:
+  UI_SERVE_CMD="" (command to start a dev/preview server),
+  UI_SERVE_PORT=3000 (port the dev server listens on),
+  UI_SERVER_STARTUP_TIMEOUT=30 (seconds to wait for server ready),
+  UI_VALIDATION_VIEWPORTS="1280x800,375x812" (viewport sizes to test),
+  UI_VALIDATION_TIMEOUT=30 (seconds per page load timeout),
+  UI_VALIDATION_CONSOLE_SEVERITY=error (error|warn — what level fails),
+  UI_VALIDATION_FLICKER_THRESHOLD=0.05 (pixel diff ratio for flicker warning),
+  UI_VALIDATION_RETRY=true (retry once on failure before routing to rework),
+  UI_VALIDATION_SCREENSHOTS=true (save screenshots for review).
+
+- `lib/config.sh` — Validate UI_SERVE_PORT is numeric, viewports match
+  NNNNxNNNN format, timeout values are positive integers.
+
+- `lib/prompts.sh` — Register UI_VALIDATION_REPORT_CONTENT and
+  UI_VALIDATION_FAILURES_BLOCK template variables.
+
+- `prompts/coder_rework.prompt.md` — Add conditional UI failures block:
+  `{{IF:UI_VALIDATION_FAILURES_BLOCK}}
+  ## UI Validation Failures
+  The rendered UI has issues detected by headless browser testing.
+  These MUST be fixed — they indicate the user-facing output is broken.
+  {{UI_VALIDATION_FAILURES_BLOCK}}
+  {{ENDIF:UI_VALIDATION_FAILURES_BLOCK}}`
+
+- `lib/hooks.sh` or `lib/finalize.sh` — Include UI_VALIDATION_REPORT.md
+  in archive step. Include UI validation results in RUN_SUMMARY.json.
+  Clean up screenshots older than 5 runs.
+
+- `lib/finalize_display.sh` — When UI validation ran:
+  Include pass/fail count in the completion banner.
+  When screenshots were captured, note their location.
+
+- `templates/pipeline.conf.example` — Extend UI testing section:
+  ```
+  # --- UI Validation (headless browser smoke tests) ---
+  # UI_SERVE_CMD=""                    # Dev server command (e.g., "npm run dev")
+  # UI_SERVE_PORT=3000                 # Dev server port
+  # UI_VALIDATION_VIEWPORTS="1280x800,375x812"  # Viewport sizes
+  # UI_VALIDATION_CONSOLE_SEVERITY=error  # error | warn
+  # UI_VALIDATION_SCREENSHOTS=true     # Save screenshots for review
+  ```
+
+- **Watchtower self-test (special case):**
+  Add a built-in validation target for Tekhton's own Watchtower dashboard.
+  When Watchtower files are modified (detected from CODER_SUMMARY.md),
+  the validation gate automatically tests the generated dashboard:
+  - Serve .claude/dashboard/ via python3 http.server
+  - Run smoke test against localhost:PORT/index.html
+  - Verify: page loads, no console errors, data panels render,
+    auto-refresh doesn't cause visible flicker
+  This is Tekhton testing its own output — no user configuration needed.
+  Guarded by WATCHTOWER_SELF_TEST=true (default when Watchtower enabled).
+
+Acceptance criteria:
+- `_check_headless_browser()` detects Playwright, Puppeteer, system
+  Chromium, and system Chrome in priority order
+- When no headless browser available: clear diagnostic message printed
+  with install instructions, pipeline continues (soft fail), Watchtower
+  logs UI_VALIDATION_SKIPPED event
+- `ui_smoke_test.js` checks: page load, console errors, missing resources,
+  basic rendering, crash detection, flicker detection
+- Smoke test runs at both desktop and mobile viewports by default
+- Console errors at configured severity level trigger validation failure
+- Missing resources (404 on CSS/JS/images) trigger validation failure
+- Blank page (zero-dimension body) triggers validation failure
+- Flicker detection reports as WARNING, not failure
+- Screenshots captured and saved to .claude/ui-validation/screenshots/
+- UI_VALIDATION_REPORT.md produced with structured results table
+- Validation failures route to coder rework with UI_VALIDATION_FAILURES_BLOCK
+- UI_VALIDATION_RETRY: failure retried once before routing to rework
+- Dev server management: starts before validation, stops after, handles
+  startup timeout with diagnostic output
+- Static HTML files validated directly via minimal Python HTTP server
+- Watchtower self-test: automatically validates dashboard when Watchtower
+  files are modified, no user config needed
+- Non-UI projects and projects without headless browser see zero change
+  in behavior (soft fail + skip)
+- All existing tests pass
+- `bash -n lib/ui_validate.sh lib/ui_validate_report.sh` passes
+- `shellcheck lib/ui_validate.sh lib/ui_validate_report.sh` passes
+
+Watch For:
+- **Headless browser installation is the #1 friction point.** The diagnostic
+  message when it's missing must be crystal clear. Include exact commands
+  for the 3 most common environments: macOS (`brew install chromium`),
+  Ubuntu/Debian (`apt-get install chromium-browser`), and npm global
+  (`npm install -g playwright && npx playwright install chromium`).
+  Link to the docs site (M18) troubleshooting page.
+- **Dev server startup is non-deterministic.** The server might be "ready"
+  (process started) but not yet accepting connections. The readiness poll
+  must use actual HTTP requests, not just process existence checks. Use
+  `curl -s -o /dev/null -w "%{http_code}" http://localhost:$PORT` in a
+  loop with 1-second intervals.
+- **Port conflicts.** UI_SERVE_PORT might already be in use (dev left a
+  server running). Detect this before starting: check if port is occupied,
+  if so try PORT+1 through PORT+10, or fail with a clear message.
+- **Screenshots can be large.** At 1280x800, a PNG screenshot is ~500KB.
+  Two viewports × 3 frames = 6 screenshots = ~3MB per validation run.
+  Prune aggressively (keep last 5 runs only) and use JPEG for non-baseline
+  screenshots to save space.
+- **Flicker detection false positives.** Pages with intentional animations
+  (loading spinners, transitions) will trigger the flicker detector.
+  The threshold must be tuned to ignore small animated regions. Compare
+  full-page pixel hashes, not individual regions. A page that's 95%
+  identical between frames is fine — one that's 50% different is not.
+- **ui_smoke_test.js must be self-contained.** It cannot require npm install
+  in the Tekhton repo. It should use whatever Playwright/Puppeteer is
+  globally installed or available in the project's node_modules. If
+  neither exists, the shell-side prerequisite check already skipped.
+- **CI environments.** Many CI runners have headless Chromium pre-installed
+  but Playwright is NOT installed. The fallback chain (Playwright →
+  Puppeteer → system Chromium → system Chrome) must handle this. For
+  system Chromium, ui_smoke_test.js uses puppeteer-core with
+  executablePath pointing to the detected binary.
+
+Seeds Forward:
+- V4 vision-in-the-loop: screenshots from this gate become the input
+  for a vision-capable Claude agent that can judge "does this look right?"
+- V4 visual regression: screenshots saved here become the baseline for
+  future comparison (pixel diff between runs)
+- The flicker detection algorithm is reusable for V4 performance monitoring
+  (detecting layout thrash, excessive re-renders)
+- The dev server management functions are reusable for any future feature
+  that needs to interact with a running project (e.g., API testing)
+
+Migration impact:
+- New config keys: UI_SERVE_CMD, UI_SERVE_PORT, UI_SERVER_STARTUP_TIMEOUT,
+  UI_VALIDATION_VIEWPORTS, UI_VALIDATION_TIMEOUT, UI_VALIDATION_CONSOLE_SEVERITY,
+  UI_VALIDATION_FLICKER_THRESHOLD, UI_VALIDATION_RETRY,
+  UI_VALIDATION_SCREENSHOTS, WATCHTOWER_SELF_TEST
+- New files in .claude/: ui-validation/screenshots/ (auto-created on first run)
+- New files in project: UI_VALIDATION_REPORT.md (per-run artifact)
+- Modified file formats: RUN_SUMMARY.json gains ui_validation results
+- Breaking changes: None
+- Migration script update required: YES — V3 migration adds UI validation
+  config keys to pipeline.conf
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 30: Build Gate Hardening & Hang Prevention
+
+<!-- milestone-meta
+id: "30"
+status: "done"
+-->
+
+The build gate (`run_build_gate()` in `lib/gates.sh`) has two reliability issues
+that compound at scale:
+
+**Critical bug — npx browser detection hangs indefinitely.**
+`_check_headless_browser()` in `lib/ui_validate.sh:42` runs
+`npx playwright --version` to detect available browsers. When Playwright is not
+installed locally, modern npx (npm 7+) delegates to `npm exec`, which prompts
+"Need to install the following packages: playwright. OK to proceed? (y/n)".
+In a non-interactive pipeline context (no TTY on stdin), this prompt blocks
+forever — the process hangs with zero CPU, waiting for input that never arrives.
+The same pattern applies to the `npx puppeteer --version` fallback on line 48.
+This has been confirmed in production: the process `npm exec playwright --version`
+sits indefinitely, stalling the entire pipeline at the build gate.
+
+**Performance issue — ANALYZE_CMD shellchecks the entire codebase.**
+`ANALYZE_CMD="shellcheck tekhton.sh lib/*.sh stages/*.sh"` expands to 130 files
+(118 in lib/, 11 in stages/, plus tekhton.sh). This takes ~2 minutes on a clean
+run and scales worse under memory pressure (WSL2, concurrent agent processes).
+The build gate runs this full sweep after every code change, regardless of how
+many files were actually modified. A two-line comment addition triggers the same
+analysis as a 500-line refactor.
+
+This milestone fixes both issues and adds defensive timeouts throughout the gate.
+
+Files to modify:
+- `lib/ui_validate.sh` — Fix npx hang, add defensive timeouts:
+  **Fix 1: npx non-interactive mode.**
+  Replace bare `npx` calls with timeout-wrapped, non-interactive variants.
+  Use `timeout 10 npx --yes playwright --version` (the `--yes` flag
+  auto-accepts the install prompt and prevents the hang). If the package
+  isn't cached, the 10-second timeout will kill it before it can download
+  the full package — which is the correct behavior (we want detection, not
+  installation).
+  Alternative: use `npm ls playwright` to check if it's installed locally
+  without triggering any install prompt. This is faster and side-effect-free.
+  Recommended approach: check with `npm ls` first (zero side effects), fall
+  back to `timeout`-wrapped `npx --yes` only if `npm ls` can't determine
+  the answer.
+  Apply the same fix to the puppeteer detection on line 48.
+
+  **Fix 2: Overall browser detection timeout.**
+  Wrap the entire `_check_headless_browser()` function body in a subshell
+  with a hard 30-second timeout. If browser detection takes longer than
+  30 seconds total, treat it as "no browser available" and soft-skip.
+  This is the defense-in-depth layer — even if individual commands have
+  their own timeouts, the aggregate timeout catches unexpected hangs.
+
+- `lib/gates.sh` — Add per-phase timeouts and incremental analysis:
+  **Fix 3: ANALYZE_CMD timeout.**
+  Wrap the `bash -c "${ANALYZE_CMD}"` call in a configurable timeout
+  (new config key: `BUILD_GATE_ANALYZE_TIMEOUT`, default: 300 seconds).
+  If the analysis exceeds the timeout, log a warning and treat it as a
+  pass (analysis timeout is not a build failure — it's an infrastructure
+  issue). This prevents runaway static analysis from blocking the pipeline.
+
+  **Fix 4: BUILD_CHECK_CMD timeout.**
+  Same treatment for the compile check: wrap in
+  `BUILD_GATE_COMPILE_TIMEOUT` (default: 120 seconds).
+
+  **Fix 5: Dependency constraint timeout.**
+  Wrap constraint validation in `BUILD_GATE_CONSTRAINT_TIMEOUT`
+  (default: 60 seconds).
+
+  **Fix 6: Overall gate timeout.**
+  Add a `BUILD_GATE_TIMEOUT` (default: 600 seconds / 10 minutes) that
+  wraps the entire `run_build_gate()` function. If the gate exceeds this
+  absolute limit, kill all child processes and return failure with a clear
+  diagnostic message. This is the "no gate call should ever hang the
+  pipeline for 20 minutes" safety net.
+
+- `lib/config_defaults.sh` — Add new config keys:
+  - `BUILD_GATE_TIMEOUT` (default: 600)
+  - `BUILD_GATE_ANALYZE_TIMEOUT` (default: 300)
+  - `BUILD_GATE_COMPILE_TIMEOUT` (default: 120)
+  - `BUILD_GATE_CONSTRAINT_TIMEOUT` (default: 60)
+
+- `lib/ui_validate.sh` — Additional robustness:
+  **Fix 7: Server startup timeout enforcement.**
+  The `_start_ui_server()` function already has a timeout loop, but it
+  relies on `sleep 1` increments — if the curl probe itself hangs (DNS
+  resolution, connection timeout), each iteration can exceed 1 second
+  significantly. Wrap the curl probe in `timeout 5` to cap each iteration.
+
+  **Fix 8: Smoke test process cleanup.**
+  `_run_smoke_test()` uses `timeout` on the node process, but if the
+  timeout fires, the node process may leave orphaned child processes
+  (headless browser instances). Add a process group kill after timeout:
+  run the node process in its own process group (`setsid` or `set -m`)
+  and kill the group on timeout.
+
+- `tests/test_build_gate_timeouts.sh` — New test file:
+  - Test that `_check_headless_browser()` completes within 30 seconds
+    even when npx would hang (mock npx with a `sleep infinity` script)
+  - Test that `run_build_gate()` respects `BUILD_GATE_TIMEOUT`
+    (mock ANALYZE_CMD with `sleep infinity`, verify gate returns within
+    timeout + grace period)
+  - Test that per-phase timeouts are individually configurable
+  - Test that timeout produces a clear diagnostic message (not silent failure)
+  - Test that orphaned server/browser processes are cleaned up after timeout
+
+Acceptance criteria:
+- `_check_headless_browser()` never hangs, even when npx prompts for install
+- `npx playwright --version` and `npx puppeteer --version` are either
+  replaced with non-prompting alternatives or wrapped in hard timeouts
+- `run_build_gate()` completes within `BUILD_GATE_TIMEOUT` seconds under
+  all circumstances, including when subprocesses hang
+- Each phase (analyze, compile, constraint, UI test, UI validation) has
+  its own configurable timeout
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/gates.sh lib/ui_validate.sh` passes
+- `shellcheck lib/gates.sh lib/ui_validate.sh` passes
+- New test file `tests/test_build_gate_timeouts.sh` covers hang scenarios
+
+Watch For:
+- `npx --yes` behavior varies across npm versions. npm 6 doesn't support
+  `--yes`. The fix must detect npm version or use the `npm ls` approach
+  which works across all versions.
+- `timeout` command availability: GNU coreutils `timeout` is standard on
+  Linux but may not exist on macOS. Tekhton already targets bash 4+ on
+  Linux, but verify `timeout` is in the PATH.
+- Process group kills (`kill -TERM -$pgid`) require the process to have
+  been started with `setsid` or in a subshell with job control. Verify
+  this works under `set -euo pipefail`.
+- The `BUILD_GATE_TIMEOUT` kill must clean up ALL child processes — a
+  dangling `python3 -m http.server` or headless browser after a timeout
+  will cause port conflicts on the next gate run.
+- WSL2 process management: `kill -0` and process group operations may
+  behave differently under WSL2. Test on the actual target platform.
+
+Seeds Forward:
+- The per-phase timeout infrastructure enables future metrics collection
+  on gate phase durations (how long does shellcheck take? how long does
+  the UI server take to start?) for adaptive calibration.
+- The `npm ls` detection pattern can be reused by future milestones that
+  need to detect locally-installed npm packages without side effects.
+- The overall gate timeout pattern could be applied to agent invocations
+  as an additional safety layer beyond the existing activity timeout.
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 31: Planning Answer Layer & File Mode
+
+<!-- milestone-meta
+id: "31"
+status: "done"
+-->
+
+The `--plan` interview currently collects answers in a transient Bash array that
+exists only in memory during the session. If interrupted, all answers are lost.
+The interview flow is locked to CLI-only interaction, which is tedious for the
+multi-paragraph, deeply structured answers that good planning requires.
+
+This milestone extracts answer collection into a **mode-agnostic answer layer**
+backed by a persistent YAML file (`.claude/plan_answers.yaml`). It adds **file
+mode** as an alternative input path — users export a question template, fill it
+out in their editor of choice, and point the pipeline at the completed file.
+Finally, it adds a **draft review step** before synthesis, letting users see all
+their answers at once and go back to edit before committing to Claude generation.
+
+This is the foundation for M32 (Browser-Based Planning Interview), which adds a
+third input mode that writes to the same answer layer.
+
+Files to modify:
+- `stages/plan_interview.sh` — Refactor to use the answer layer:
+  **Current flow:**
+  1. Loop over template sections
+  2. Collect answers into `answers[$i]` array
+  3. Build `$INTERVIEW_ANSWERS_BLOCK` string
+  4. Call Claude for synthesis
+
+  **New flow:**
+  1. Check for existing `.claude/plan_answers.yaml` — offer to resume or start fresh
+  2. Loop over template sections (CLI mode) OR load from file (file mode)
+  3. Write each answer to `.claude/plan_answers.yaml` as it's collected
+  4. On completion (all sections answered), show draft review
+  5. Build `$INTERVIEW_ANSWERS_BLOCK` from the YAML file
+  6. Call Claude for synthesis (unchanged)
+
+  The mode selection happens after project type selection (which stays in CLI):
+  ```
+  How would you like to answer the planning questions?
+    1) CLI Mode     — answer questions one by one in the terminal
+    2) File Mode    — export questions to YAML, fill out in your editor
+    3) Browser Mode — fill out a form in your browser (requires M32)
+  ```
+  Option 3 is shown but gated on M32 being implemented (check for
+  `lib/plan_browser.sh` existence).
+
+- `lib/plan_answers.sh` — **NEW** Answer persistence layer:
+  **Core functions:**
+  - `init_answer_file()` — Create `.claude/plan_answers.yaml` with header metadata
+    (project_type, template, timestamp, tekhton_version)
+  - `save_answer()` — Write/update a single section's answer to the YAML file.
+    Uses section ID (slugified section title) as the key. Handles multi-line text
+    via YAML block scalars (`|`).
+  - `load_answer()` — Read a single section's answer from the YAML file.
+    Returns empty string if section not yet answered.
+  - `load_all_answers()` — Read all answers into parallel arrays (section_ids,
+    section_titles, answers). Used by draft review and synthesis.
+  - `has_answer_file()` — Check if `.claude/plan_answers.yaml` exists with valid
+    header metadata.
+  - `answer_file_complete()` — Check if all REQUIRED sections have non-empty,
+    non-TBD answers.
+  - `export_question_template()` — Generate a YAML file with all sections from
+    the template as keys, guidance as comments, and empty values. Write to
+    stdout or a specified path.
+  - `import_answer_file()` — Parse a user-filled YAML file, validate structure,
+    load into the answer layer. Returns non-zero if required sections are missing.
+  - `build_answers_block()` — Construct the `$INTERVIEW_ANSWERS_BLOCK` string
+    from the YAML file, matching the format the existing synthesis prompt expects.
+
+  **YAML schema:**
+  ```yaml
+  # Tekhton Planning Answers
+  # Project: my-project
+  # Template: web-app
+  # Generated: 2026-03-26T12:00:00Z
+  # Tekhton: 3.31.0
+
+  sections:
+    developer_philosophy:
+      title: "Developer Philosophy & Constraints"
+      phase: 1
+      required: true
+      answer: |
+        This project follows a composition-over-inheritance pattern...
+
+    project_overview:
+      title: "Project Overview"
+      phase: 1
+      required: true
+      answer: |
+        A real-time collaborative editing tool for...
+
+    tech_stack:
+      title: "Tech Stack"
+      phase: 1
+      required: true
+      answer: ""  # Not yet answered
+  ```
+
+  **YAML parsing constraint:** No external YAML parser dependency. Use `awk`
+  and `sed` for reading/writing. The schema is intentionally flat — no nested
+  objects beyond `sections → section_id → {title, phase, required, answer}`.
+  Multi-line answers use YAML block scalar (`|`) which is parseable with a
+  simple state machine: read lines until the next key at the same indentation.
+
+- `lib/plan_review.sh` — **NEW** Draft review before synthesis:
+  **Core function: `show_draft_review()`**
+  Displays all collected answers in a structured summary:
+  ```
+  ══════════════════════════════════════
+    Planning Draft Review
+  ══════════════════════════════════════
+
+  Phase 1: Concept Capture
+  ────────────────────────────────────
+  ✓ Developer Philosophy (324 chars)
+  ✓ Project Overview (189 chars)
+  ✗ Tech Stack (TBD)              ← highlighted, required
+
+  Phase 2: System Deep-Dive
+  ────────────────────────────────────
+  ✓ Data Model (512 chars)
+  ~ Authentication (skipped)       ← optional, skipped
+  ...
+
+  3 of 12 sections complete. 1 required section needs answers.
+
+  Actions:
+    [e] Edit a section    [s] Start synthesis    [q] Quit (answers saved)
+  ```
+
+  When user selects "Edit a section", prompt for section number, open the
+  answer in `$EDITOR` (or inline if no editor). Updated answer is saved
+  to the YAML file immediately.
+
+  When user selects "Start synthesis", verify all required sections are
+  answered, then proceed to Claude generation.
+
+  When user selects "Quit", print reminder that answers are saved and
+  can be resumed with `tekhton --plan`.
+
+- `stages/plan_followup_interview.sh` — Update to read/write through answer layer:
+  Follow-up questions should update the answer file rather than collecting in
+  a transient array. When a section needs follow-up, load the existing answer,
+  show it, collect the clarification, and update the YAML file.
+
+- `lib/plan.sh` — Update orchestration:
+  - Add `--export-questions` flag handling: call `export_question_template()` and exit
+  - Add `--answers <file>` flag handling: call `import_answer_file()`, skip interview
+  - Add resume detection: if `.claude/plan_answers.yaml` exists, offer to resume
+  - Wire draft review between interview and synthesis
+
+- `lib/plan_state.sh` — Update state persistence:
+  - Record answer file path in plan state
+  - On resume, check answer file exists and offer to continue from where left off
+
+Files to create:
+- `lib/plan_answers.sh` — Answer persistence layer (described above)
+- `lib/plan_review.sh` — Draft review UI (described above)
+
+Files to modify:
+- `stages/plan_interview.sh` — Refactor to use answer layer + mode selection
+- `stages/plan_followup_interview.sh` — Use answer layer for follow-up
+- `lib/plan.sh` — New flags, resume detection, draft review wiring
+- `lib/plan_state.sh` — Answer file in state
+- `tekhton.sh` — Add `--export-questions` and `--answers` flags to arg parser
+
+Acceptance criteria:
+- `--plan` in CLI mode behaves identically to current behavior but persists
+  answers to `.claude/plan_answers.yaml` as they're collected
+- Interrupting `--plan` mid-interview and re-running resumes from the last
+  unanswered section (answers preserved)
+- `--plan --export-questions` writes a valid YAML template to stdout with all
+  sections from the selected project type, guidance as comments, empty values
+- `--plan --answers path/to/filled.yaml` skips the interview entirely, loads
+  answers from the file, proceeds to draft review then synthesis
+- Draft review shows all sections with completeness status and char counts
+- Draft review allows editing individual sections before synthesis
+- `build_answers_block()` produces output identical in format to the current
+  `$INTERVIEW_ANSWERS_BLOCK` construction
+- YAML parsing handles multi-line answers with special characters (colons,
+  quotes, hashes) without corruption
+- All existing planning tests pass
+- `bash -n lib/plan_answers.sh lib/plan_review.sh` passes
+- New test file `tests/test_plan_answers.sh` covers: YAML roundtrip, export/import,
+  resume detection, build_answers_block format, multi-line edge cases
+- New test file `tests/test_plan_review.sh` covers: completeness calculation,
+  section status display
+
+Tests:
+- YAML roundtrip: `save_answer "section_id" "multi\nline\nanswer"` then
+  `load_answer "section_id"` returns exact same content
+- Special characters: answers containing `: # " ' | > -` survive roundtrip
+- Export template: `export_question_template "web-app"` produces valid YAML
+  with all sections from `templates/plans/web-app.md`
+- Import validation: `import_answer_file` rejects files missing required sections
+- Resume: create partial answer file, run interview, verify it starts at the
+  first unanswered section
+- Block format: `build_answers_block()` output matches existing format exactly
+
+Watch For:
+- YAML parsing in pure bash is fragile. The schema must stay flat — no nested
+  objects, no flow mappings, no anchors/aliases. Block scalars (`|`) are the
+  only multi-line format supported. Test edge cases: empty answers, answers
+  that are just whitespace, answers containing YAML-like syntax.
+- The answer file must use atomic writes (tmpfile + mv) to prevent corruption
+  if the pipeline is killed mid-write. Same pattern as milestone manifest writes.
+- `$EDITOR` may not be set. Fall back to `vi`, then `nano`, then inline input.
+  Don't crash if no editor is available.
+- The mode selection prompt must use `prompts_interactive.sh` helpers and fall
+  back gracefully in non-interactive environments (default to CLI mode).
+- Answer file cleanup: don't leave `.claude/plan_answers.yaml` after successful
+  synthesis. Move it to `.claude/plan_answers.yaml.done` so resume detection
+  doesn't trigger on the next `--plan` run.
+
+Seeds Forward:
+- M32 (Browser Mode) writes to the same `.claude/plan_answers.yaml` via POST
+  endpoint — the answer layer is shared across all modes
+- The YAML schema is extensible: M32 can add `answered_via: "browser"` metadata
+  per section without breaking M31's parser
+- `export_question_template()` is reused by M32 to generate the HTML form fields
+- Draft review UI pattern is reusable for other confirmation flows (e.g., pre-run
+  task review, milestone acceptance review)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 32: Browser-Based Planning Interview
+
+<!-- milestone-meta
+id: "32"
+status: "done"
+-->
+
+The planning interview asks detailed, multi-paragraph questions about project
+architecture, constraints, data models, and user flows. Answering these in a
+terminal — one question at a time, no ability to scroll back, no copy-paste
+from reference docs — is the worst possible UX for this kind of structured
+authoring. This milestone adds a **browser-based planning form** that serves
+the same questions as an HTML form, lets users navigate freely between sections,
+draft answers at their own pace, and submit when ready.
+
+The architecture follows Watchtower's pattern: generate static HTML/CSS/JS,
+serve via a minimal local HTTP server, and communicate results back to the
+shell via a single POST endpoint that writes to the shared answer layer from
+M31.
+
+Depends on M31 (Planning Answer Layer) — the browser mode writes to the same
+`.claude/plan_answers.yaml` file as CLI and file modes.
+
+Files to create:
+- `lib/plan_browser.sh` — **NEW** Browser mode orchestrator:
+  **Core function: `run_browser_interview()`**
+  Workflow:
+  1. Generate the form HTML from the template sections (call `_generate_plan_form()`)
+  2. Write form + assets to a temp directory (`$TEKHTON_SESSION_DIR/plan-form/`)
+  3. Start the local HTTP server (`_start_plan_server()`)
+  4. Open the browser (`_open_plan_browser()`)
+  5. Wait for submission (`_wait_for_plan_submit()`)
+  6. Stop the server, clean up
+  7. Return to the shell — answers are in `.claude/plan_answers.yaml`
+
+  **`_generate_plan_form()`**
+  Reads the selected template (e.g., `templates/plans/web-app.md`), extracts
+  sections using `_extract_template_sections()` (existing function from
+  `plan_interview.sh`), and generates an HTML form:
+
+  For each section:
+  - Section title as `<h3>` with phase badge and required/optional indicator
+  - Guidance text from template HTML comments rendered as a collapsible
+    `<details>` block above the textarea (collapsed by default)
+  - `<textarea>` for the answer, pre-populated from existing `.claude/plan_answers.yaml`
+    if resuming (call `load_answer()` from M31's answer layer)
+  - Character count indicator below each textarea
+  - Visual indicator: empty (red outline), in-progress (yellow), complete (green)
+
+  Form layout:
+  ```
+  ┌──────────────────────────────────────────────┐
+  │  Tekhton Planning Interview                  │
+  │  Project: my-project  |  Type: web-app       │
+  │                                              │
+  │  Phase 1: Concept Capture                    │
+  │  ┌────────────────────────────────────────┐  │
+  │  │ Developer Philosophy * (REQUIRED)      │  │
+  │  │ ▶ Guidance: What are the non-neg...    │  │
+  │  │ ┌──────────────────────────────────┐   │  │
+  │  │ │                                  │   │  │
+  │  │ │  (textarea, ~8 rows)             │   │  │
+  │  │ │                                  │   │  │
+  │  │ └──────────────────────────────────┘   │  │
+  │  │ 324 chars                              │  │
+  │  └────────────────────────────────────────┘  │
+  │                                              │
+  │  Phase 2: System Deep-Dive                   │
+  │  ┌────────────────────────────────────────┐  │
+  │  │ Data Model * (REQUIRED)                │  │
+  │  │ ...                                    │  │
+  │  └────────────────────────────────────────┘  │
+  │                                              │
+  │  ┌──────────────────────────────────┐        │
+  │  │  Save Draft  │  Submit Answers   │        │
+  │  └──────────────────────────────────┘        │
+  │                                              │
+  │  Progress: 7/12 sections  │  3 required left │
+  └──────────────────────────────────────────────┘
+  ```
+
+  The form is a single scrollable page with all sections visible. Phase
+  headings act as visual dividers. No pagination, no wizard — users should
+  see everything at once and jump freely between sections.
+
+  **Submit button** is disabled until all REQUIRED sections have non-empty
+  answers. A progress bar at the top and bottom shows completion status.
+
+  **Save Draft button** sends a POST to `/save-draft` with all current
+  answers. This updates `.claude/plan_answers.yaml` without completing the
+  interview. The CLI shows "Draft saved" and continues waiting.
+
+  **Auto-save:** Every 30 seconds, the form auto-saves via POST `/save-draft`
+  if any textarea has changed since last save. Visual indicator: "Saved ✓"
+  or "Saving..." in the header.
+
+- `templates/plan_form/index.html` — **NEW** Form HTML template:
+  A minimal HTML shell that the generator fills in. Contains:
+  - `<form>` with `id="plan-form"`
+  - `<div id="sections">` — populated by generator
+  - `<script>` block for form behavior (submit handler, validation,
+    auto-save, character counts, progress tracking)
+  - `<link>` to `style.css`
+  No external dependencies. No framework. Vanilla HTML/CSS/JS matching
+  Watchtower's approach.
+
+- `templates/plan_form/style.css` — **NEW** Form styling:
+  Clean, readable form design optimized for long-form text entry.
+  Key properties:
+  - Max-width container (800px) centered on page for comfortable reading
+  - Textareas: monospace font, min-height 150px, auto-grow on input
+  - Phase headings: sticky position so phase context is always visible
+  - Required indicators: red asterisk, border highlight when empty
+  - Completion badges: red/yellow/green per section
+  - Dark/light theme toggle (reuse Watchtower's CSS variable pattern)
+  - Print-friendly: `@media print` hides chrome, shows all answers
+  - Responsive: works on mobile (for answering on a phone while looking
+    at the codebase on desktop)
+
+- `lib/plan_server.sh` — **NEW** Local HTTP server for planning form:
+  **`_start_plan_server()`**
+  Starts a Python HTTP server with custom POST handler:
+  ```python
+  # Embedded in shell via heredoc, written to temp file, executed
+  # Same pattern as Watchtower's self-test server
+  from http.server import HTTPServer, SimpleHTTPRequestHandler
+  import json, os, signal
+
+  ANSWERS_FILE = os.environ["PLAN_ANSWERS_FILE"]
+  COMPLETION_FILE = os.environ["PLAN_COMPLETION_FILE"]
+
+  class PlanHandler(SimpleHTTPRequestHandler):
+      def do_POST(self):
+          if self.path == "/submit":
+              # Read form data, write to ANSWERS_FILE in YAML format
+              # Touch COMPLETION_FILE to signal the shell
+              ...
+          elif self.path == "/save-draft":
+              # Same write, but don't touch COMPLETION_FILE
+              ...
+  ```
+
+  The server:
+  - Serves static files from the form directory (GET requests)
+  - Handles POST `/submit` — writes answers to `.claude/plan_answers.yaml`
+    using M31's YAML schema, then touches a completion sentinel file
+  - Handles POST `/save-draft` — same write, no sentinel
+  - Finds an available port (start at 8787, increment on EADDRINUSE)
+  - Logs to `$TEKHTON_SESSION_DIR/plan_server.log`
+
+  **`_wait_for_plan_submit()`**
+  Polls for the completion sentinel file (1-second interval). Shows a
+  spinner in the terminal: "Waiting for browser submission... (Ctrl-C to
+  cancel)". On Ctrl-C, saves any draft answers that were auto-saved and
+  exits cleanly.
+
+  **`_stop_plan_server()`**
+  Same process-group kill pattern as `_stop_ui_server()` in `ui_validate.sh`.
+
+  **`_open_plan_browser()`**
+  Opens the form URL in the default browser:
+  - macOS: `open "http://localhost:$port"`
+  - Linux: `xdg-open "http://localhost:$port"` or `sensible-browser`
+  - WSL: `cmd.exe /c start "http://localhost:$port"`
+  - Fallback: print URL and ask user to open manually
+  Same detection pattern as Watchtower.
+
+Files to modify:
+- `stages/plan_interview.sh` — Enable browser mode option:
+  When user selects option 3 (Browser Mode), call `run_browser_interview()`
+  from `lib/plan_browser.sh`. After it returns, proceed to draft review
+  (M31) and then synthesis as normal.
+
+- `lib/plan.sh` — Source `lib/plan_browser.sh` and `lib/plan_server.sh`.
+  Add `--plan-browser` flag as a shortcut to skip the mode selection prompt
+  and go directly to browser mode.
+
+- `tekhton.sh` — Add `--plan-browser` flag to arg parser. Source new library
+  files.
+
+Acceptance criteria:
+- `--plan` shows browser mode as option 3 in mode selection
+- Selecting browser mode generates an HTML form with all sections from the
+  template, opens it in the default browser, and waits for submission
+- Filling out the form and clicking "Submit" writes answers to
+  `.claude/plan_answers.yaml` in the M31 YAML schema
+- The shell detects submission and proceeds to draft review → synthesis
+- "Save Draft" button saves current answers without completing the interview
+- Auto-save triggers every 30 seconds when content changes
+- Resuming `--plan` after a draft save shows existing answers in the form
+- Form validates: submit button disabled until all required sections answered
+- Form works in Chrome, Firefox, Safari (no framework dependencies)
+- Form renders correctly at 1024px and 768px widths (responsive)
+- `_start_plan_server` finds an available port and serves the form
+- `_stop_plan_server` cleans up all server processes (no orphans)
+- `--plan-browser` flag skips mode selection and goes straight to browser
+- Ctrl-C during browser wait saves draft and exits cleanly
+- All existing planning tests pass
+- `bash -n lib/plan_browser.sh lib/plan_server.sh` passes
+- New test `tests/test_plan_browser.sh` covers: form generation, server
+  start/stop, POST handler writes valid YAML, port finding, cleanup
+- Python server is only required for browser mode — CLI and file modes
+  work without Python
+
+Tests:
+- Form generation: `_generate_plan_form "web-app"` produces valid HTML with
+  textareas for all sections from web-app template
+- Pre-populated resume: generate form with existing answers → textareas
+  contain previous answers
+- Server lifecycle: start → verify port responds → stop → verify port free
+- POST /submit: send JSON answers → verify `.claude/plan_answers.yaml` written
+  correctly and completion sentinel exists
+- POST /save-draft: send JSON answers → verify YAML written, no sentinel
+- Port finding: bind port 8787 manually → `_start_plan_server` finds 8788
+- Cleanup: start server → kill test process → verify no orphaned server
+
+Watch For:
+- The Python HTTP server handler receives JSON from the browser but must
+  write YAML to the answer file. Keep the JSON→YAML conversion simple —
+  the schema is flat, so iterate keys and write `key: |` blocks. Do NOT
+  pull in a YAML library for the Python side.
+- CORS is not needed — the browser loads the form from the same server
+  that handles POST requests (same-origin). Do not add CORS headers.
+- Large answers (>10KB per section) must not cause the POST handler to
+  truncate. Use `content_length = int(self.headers['Content-Length'])` and
+  read the full body.
+- Browser detection for auto-open: `xdg-open` may not work in headless
+  server environments. Always print the URL to the terminal as fallback.
+- The form's `<textarea>` elements should use `name` attributes matching
+  the section IDs from the YAML schema, so the POST body maps directly.
+- Security: the server binds to `127.0.0.1` only (not `0.0.0.0`). No
+  external access. No authentication needed for localhost.
+- The auto-save interval (30s) should be configurable via a CSS/JS constant,
+  not hardcoded in multiple places.
+
+Seeds Forward:
+- The local HTTP server pattern is reusable for future interactive features
+  (e.g., interactive milestone reordering, visual DAG editor)
+- The form template pattern can be extended with conditional sections
+  (show/hide based on project type or previous answers)
+- Auto-save infrastructure enables future real-time collaboration features
+  (multiple users filling out sections concurrently via shared file)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 33: Human Mode Completion Loop & State Fidelity
+
+<!-- milestone-meta
+id: "33"
+status: "done"
+-->
+
+The `--human` flag is broken in six interrelated ways that compound into a
+frustrating user experience: the pipeline picks a note, makes a single coder
+attempt, hits the turn limit, and exits — telling the user to re-run manually.
+The re-run then loses all human-mode context (flag, tag filter, note claim)
+because pipeline state persistence doesn't track human-mode metadata. The
+resumed run enters milestone mode instead, which changes turn budgets, skips
+notes injection, and leaves claimed notes in limbo (`[~]` status, never
+resolved). Meanwhile, the scout's coder turn estimate is never adjusted by
+adaptive calibration, so it keeps underestimating on every retry.
+
+This milestone fixes all six issues to bring `--human` up to the v3 standard
+of deterministic, run-to-completion behavior.
+
+---
+
+### Bug 1: `--human` without `--complete` is single-shot
+
+**Root cause:** `tekhton.sh:1343-1371` — when `HUMAN_MODE=true` and
+`COMPLETE_MODE=false` (the default), the pipeline picks ONE note and calls
+`_run_pipeline_stages` exactly once. If the coder hits the turn limit, the
+code at `stages/coder.sh:789-812` saves state and `exit 1`. There is no
+retry loop. The user must manually re-run.
+
+**Expected behavior:** `tekhton --human BUG` should automatically retry
+the coder (via the continuation loop) and, if continuations are exhausted,
+proceed to review with partial work — exactly as the orchestration loop does
+for `--complete` mode. The user should never need to manually re-run a
+`--human` invocation unless the failure is non-transient.
+
+**Fix:** When `HUMAN_MODE=true`, imply `COMPLETE_MODE=true` so the pipeline
+enters the orchestration loop (`_run_human_complete_loop` for multi-note or
+the standard `run_complete_loop` for single-note). This ensures the coder
+gets continuation attempts and the full pipeline retry logic applies. Add a
+`HUMAN_SINGLE_NOTE` flag to distinguish "process one note to completion"
+(current `--human` behavior) from "process all notes" (`--human --complete`).
+Both paths use the orchestration loop; the difference is whether the loop
+picks a new note after each success.
+
+Files: `tekhton.sh`
+
+---
+
+### Bug 2: Pipeline state doesn't persist HUMAN_MODE or HUMAN_NOTES_TAG
+
+**Root cause:** `lib/state.sh:13-118` — `write_pipeline_state()` writes
+exit_stage, exit_reason, resume_flag, task, notes, milestone, pipeline_order,
+tester_mode, and orchestration context. It does NOT write `HUMAN_MODE`,
+`HUMAN_NOTES_TAG`, or `CURRENT_NOTE_LINE`. These are command-line-derived
+variables that vanish on `exit 1`.
+
+**Expected behavior:** When the pipeline saves state after a human-mode run,
+the state file must include all human-mode metadata so that a no-argument
+resume reconstructs the exact same execution context.
+
+**Fix:** Add three new sections to `write_pipeline_state()`:
+```
+## Human Mode
+${HUMAN_MODE:-false}
+
+## Human Notes Tag
+${HUMAN_NOTES_TAG:-}
+
+## Current Note Line
+${CURRENT_NOTE_LINE:-}
+```
+
+Add corresponding extraction in the resume detection block
+(`tekhton.sh:933-937`) and set the variables before `exec`:
+```bash
+SAVED_HUMAN_MODE=$(awk '/^## Human Mode$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+SAVED_HUMAN_TAG=$(awk '/^## Human Notes Tag$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+SAVED_NOTE_LINE=$(awk '/^## Current Note Line$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+```
+
+Files: `lib/state.sh`, `tekhton.sh`
+
+---
+
+### Bug 3: Resume constructs `--milestone` instead of `--human`
+
+**Root cause:** `stages/coder.sh:790` — when the coder hits the turn limit
+with partial work (`IMPLEMENTED_LINES > 3`), the resume flag is hardcoded:
+```bash
+RESUME_FLAG="--milestone --start-at coder"
+```
+This ignores `HUMAN_MODE` entirely. The resumed run enters milestone mode
+(different turn budgets, `MILESTONE MODE` banner, etc.) instead of human mode.
+
+**Expected behavior:** The resume flag must reflect the original invocation
+mode. If `HUMAN_MODE=true`, the resume flag should be:
+```bash
+RESUME_FLAG="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG} --start-at coder"
+```
+
+**Fix:** In every `write_pipeline_state` call in `stages/coder.sh` (lines
+487, 530, 578, 609, 647, 703, 803, 839, 878, 913), prefix the resume flag
+with `--human [TAG]` when `HUMAN_MODE=true` instead of `--milestone`. Create
+a helper function `_build_resume_flag()` that constructs the correct flag
+string based on current mode:
+```bash
+_build_resume_flag() {
+    local start_at="${1:-coder}"
+    local flag=""
+    if [[ "${HUMAN_MODE:-false}" = "true" ]]; then
+        flag="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG}"
+    elif [[ "${MILESTONE_MODE:-false}" = "true" ]]; then
+        flag="--milestone"
+    fi
+    echo "${flag:+$flag }--start-at $start_at"
+}
+```
+Use this helper in all `write_pipeline_state` calls across `stages/coder.sh`,
+`stages/review.sh`, and `stages/tester.sh`.
+
+Files: `stages/coder.sh`, `stages/review.sh`, `stages/tester.sh`, `lib/state.sh`
+
+---
+
+### Bug 4: "Human notes exist but no notes flag set" on resume
+
+**Root cause:** `stages/coder.sh:434-435` — the condition checks
+`HUMAN_MODE != true` before printing this warning. On a resumed run where
+HUMAN_MODE was lost (Bug 2), this condition is true even though the original
+invocation was `--human BUG`.
+
+**Expected behavior:** This message should never appear on a resumed
+human-mode run. Fixing Bug 2 (state persistence) and Bug 3 (resume flag)
+eliminates this — the resumed run will have `HUMAN_MODE=true` and the
+condition at line 432 will be satisfied.
+
+**Fix:** No additional code change needed beyond Bugs 2 and 3. However, add
+a defensive log line: if `HUMAN_MODE` is false but the task string contains
+`[BUG]`, `[FEAT]`, or `[POLISH]` tags, emit a hint:
+```
+Tip: This task appears to come from HUMAN_NOTES.md. Did you mean to use --human?
+```
+
+Files: `stages/coder.sh`
+
+---
+
+### Bug 5: Human notes count displayed AFTER claim, showing wrong number
+
+**Root cause:** `tekhton.sh:1368` calls `claim_single_note` which marks the
+picked note as `[~]`. Then `tekhton.sh:1505` calls `count_human_notes` which
+counts only `[ ]` items. By this point the claimed note is `[~]`, so the
+count is short by one.
+
+In the user's first run: 2 BUG items existed, one was picked and claimed
+(marked `[~]`), then the count showed "1 unchecked [BUG] item(s)" — the
+picked note was already excluded from the count.
+
+**Expected behavior:** The pre-flight count should show the number of
+unchecked items BEFORE any claiming, so the user sees the full picture:
+"2 unchecked [BUG] item(s)" with the picked note highlighted.
+
+**Fix:** Move the `count_human_notes` call and its display (lines 1503-1517)
+to BEFORE the `claim_single_note` call (line 1368). Alternatively, capture
+the count before claiming:
+```bash
+# In the HUMAN_MODE single-note block:
+CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+PRE_CLAIM_COUNT=$(count_human_notes)  # Count before claiming
+claim_single_note "$CURRENT_NOTE_LINE"
+```
+Then use `PRE_CLAIM_COUNT` for the pre-flight display instead of re-counting.
+
+Files: `tekhton.sh`
+
+---
+
+### Bug 6: Notes never resolved after successful resumed run
+
+**Root cause:** Two failures compound:
+
+1. The resumed run has `HUMAN_MODE=false` (Bug 2), so `_hook_resolve_notes`
+   in `lib/finalize.sh:102-131` skips the single-note resolution path.
+
+2. The bulk resolution path (`resolve_human_notes` in `stages/coder.sh:600`)
+   only runs when `should_claim_notes()` returns true AND `HUMAN_MODE != true`.
+   Since `should_claim_notes()` requires `WITH_NOTES=true` OR `HUMAN_MODE=true`
+   OR `NOTES_FILTER` set, and none of these are true on resume, bulk resolution
+   also skips.
+
+3. The note claimed as `[~]` by the first run is never resolved to `[x]`
+   (success) or `[ ]` (failure). It stays as `[~]` indefinitely.
+
+**Expected behavior:** When a resumed run completes the task that originated
+from a human note, that note must be marked `[x]`. This requires either:
+- Restoring `HUMAN_MODE` and `CURRENT_NOTE_LINE` on resume (Bug 2 fix), OR
+- A cleanup sweep that resolves orphaned `[~]` notes after successful runs.
+
+**Fix:** Primary fix is Bug 2 (state persistence). As a safety net, add
+orphan detection to `_hook_resolve_notes`:
+```bash
+# After normal resolution, check for orphaned [~] notes
+local orphan_count
+orphan_count=$(grep -c '^- \[~\]' HUMAN_NOTES.md 2>/dev/null || echo "0")
+if [[ "$orphan_count" -gt 0 ]] && [[ "$exit_code" -eq 0 ]]; then
+    warn "Found ${orphan_count} orphaned in-progress note(s) — resolving."
+    sed -i 's/^- \[~\]/- [x]/' HUMAN_NOTES.md
+fi
+```
+
+Files: `lib/finalize.sh`, `lib/notes.sh`
+
+---
+
+### Bug 7: Scout coder estimate not adjusted by adaptive calibration
+
+**Root cause:** `lib/metrics_calibration.sh` — `calibrate_turn_estimate()`
+is called for reviewer and tester stages but NOT for the coder stage. The
+scout's coder recommendation is applied directly at
+`stages/coder.sh:apply_scout_turn_limits` without passing through
+calibration. The log confirms:
+```
+[metrics] Adaptive calibration: reviewer 8 → 11 (adjusted), clamped → 11
+[metrics] Adaptive calibration: tester 20 → 10 (adjusted), clamped → 10
+```
+No calibration line for coder.
+
+When the scout says `coder=25` and the coder actually needs 99 turns (across
+continuations), that historical data should inflate future scout estimates.
+Instead, the next scout says `coder=25` again.
+
+**Expected behavior:** The scout's coder turn recommendation should pass
+through `calibrate_turn_estimate("coder", recommended_turns)` before being
+applied. Historical overshoot should increase the estimate; historical
+undershoot should decrease it.
+
+**Fix:** In `stages/coder.sh`, after `apply_scout_turn_limits` sets
+`ADJUSTED_CODER_TURNS`, apply adaptive calibration:
+```bash
+if [[ "${METRICS_ADAPTIVE_TURNS:-true}" = "true" ]]; then
+    local calibrated
+    calibrated=$(calibrate_turn_estimate "$ADJUSTED_CODER_TURNS" "coder")
+    if [[ "$calibrated" != "$ADJUSTED_CODER_TURNS" ]]; then
+        log "[metrics] Adaptive calibration: coder ${ADJUSTED_CODER_TURNS} → ${calibrated} (adjusted)"
+        ADJUSTED_CODER_TURNS="$calibrated"
+    fi
+fi
+```
+
+Also verify that `calibrate_turn_estimate` handles the "coder" stage name
+correctly — it must map to `scout_est_coder` (estimate) vs `coder_turns`
+(actual) in the metrics JSONL.
+
+Files: `stages/coder.sh`, `lib/metrics_calibration.sh` (verify coder mapping)
+
+---
+
+Files to create:
+- None
+
+Files to modify:
+- `tekhton.sh` — Human-mode orchestration loop entry, pre-flight count
+  ordering, resume state restoration
+- `lib/state.sh` — Persist HUMAN_MODE, HUMAN_NOTES_TAG, CURRENT_NOTE_LINE
+- `stages/coder.sh` — Use `_build_resume_flag()` helper, apply coder
+  calibration, defensive hint for orphaned human tasks
+- `stages/review.sh` — Use `_build_resume_flag()` helper in state writes
+- `stages/tester.sh` — Use `_build_resume_flag()` helper in state writes
+- `lib/finalize.sh` — Orphaned `[~]` note detection and resolution
+- `lib/metrics_calibration.sh` — Verify coder stage mapping exists
+
+Acceptance criteria:
+- `tekhton --human BUG` enters the orchestration loop (no manual re-run needed)
+- Coder gets continuation attempts on turn exhaustion in human mode
+- Pipeline state file contains `## Human Mode`, `## Human Notes Tag`,
+  `## Current Note Line` sections
+- No-argument resume of a human-mode run restores HUMAN_MODE and HUMAN_NOTES_TAG
+- Resume flag includes `--human [TAG]` instead of `--milestone` for human-mode runs
+- "Human notes exist but no notes flag set" never appears on a human-mode resume
+- Pre-flight count shows number of unchecked items BEFORE claiming
+- Successful completion marks the claimed note as `[x]`
+- Orphaned `[~]` notes are resolved on successful pipeline completion
+- Scout's coder turn estimate passes through adaptive calibration
+- Historical coder overshoot inflates future coder estimates
+- `calibrate_turn_estimate "25" "coder"` returns a higher value when
+  historical coder runs averaged 50+ turns with 25-turn estimates
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n tekhton.sh lib/state.sh stages/coder.sh lib/finalize.sh` passes
+- `shellcheck tekhton.sh lib/state.sh stages/coder.sh lib/finalize.sh` passes
+
+Watch For:
+- `_run_human_complete_loop` processes ALL matching notes in a loop. The new
+  single-note orchestration path must exit after completing ONE note, not loop
+  to pick the next one. Use a `HUMAN_SINGLE_NOTE=true` flag to distinguish.
+- `claim_single_note` marks `[ ] → [~]`. If the orchestration loop retries
+  the same note, the second attempt must not re-claim (it's already `[~]`).
+  Check for idempotency in `claim_single_note`.
+- The resume `exec` at line 975 replaces the process. Environment variables
+  set before `exec` are inherited. Consider exporting `HUMAN_MODE` and
+  `HUMAN_NOTES_TAG` before the `exec` rather than relying solely on
+  command-line flags in the resume command.
+- `calibrate_turn_estimate` uses `scout_est_coder` and `coder_turns` fields
+  from METRICS.jsonl. Verify these fields are actually populated by
+  `lib/metrics.sh` — if the field names differ, calibration will silently
+  return the unadjusted value.
+- The `--human` flag and `--milestone` flag should be mutually exclusive.
+  If both are somehow set, `--human` should take precedence. Add a guard.
+- Continuation turns (`ACTUAL_CODER_TURNS`) accumulate across continuations
+  (e.g., 25+25+25+21=96). The metrics record must store the TOTAL turns,
+  not just the last segment, for calibration to be accurate. Verify
+  `ACTUAL_CODER_TURNS` is exported correctly after continuations.
+
+Seeds Forward:
+- The `_build_resume_flag()` helper centralizes resume flag construction,
+  making it trivial to add new modes (e.g., `--express` resume) later
+- Human-mode state persistence enables future features like "pause and
+  resume a multi-note session across terminal restarts"
+- Coder adaptive calibration closes the feedback loop between scout
+  estimation and actual coder behavior, improving cost efficiency for
+  all pipeline modes — not just human mode
+
+Migration impact:
+- New config keys: NONE
+- New files in .claude/: NONE
+- Breaking changes: `--human` now implies `--complete` behavior (orchestration
+  loop). Users who relied on single-shot `--human` for quick testing can use
+  `--human --no-complete` (add this flag if needed, but default should be
+  run-to-completion)
+- State file format: additive (3 new sections). Old state files without these
+  sections resume with `HUMAN_MODE=false` — backward compatible
+- Migration script update required: NO
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 34: Watchtower Data Fidelity & Bug Fixes
+<!-- milestone-meta
+id: "34"
+status: "done"
+-->
+
+
+## Overview
+
+Watchtower's data layer has gaps that cause blank sections, stale status indicators,
+and inaccurate metrics. This milestone fixes the root causes: RUN_SUMMARY.json
+missing per-stage data, pipeline status not reflecting completion, report parsers
+failing on actual file formats, and no support for non-milestone run types.
+
+## Scope
+
+### 1. Per-Stage Data in RUN_SUMMARY.json
+
+**Problem:** `_hook_emit_run_summary()` in `finalize_summary.sh` never serializes
+the `_STAGE_TURNS`, `_STAGE_DURATION`, or `_STAGE_BUDGET` associative arrays.
+The `_parse_run_summaries()` parser reads `d.get('stages', {})` and always gets `{}`.
+This causes the Trends per-stage breakdown table to show all zeros.
+
+**Fix:** Add a `stages` object to RUN_SUMMARY.json that serializes the per-stage
+arrays. The JSON structure:
+
+```json
+{
+  "stages": {
+    "intake":     { "turns": 2,  "duration_s": 45,  "budget": 5  },
+    "scout":      { "turns": 8,  "duration_s": 120, "budget": 15 },
+    "coder":      { "turns": 35, "duration_s": 900, "budget": 50 },
+    "build_gate": { "turns": 0,  "duration_s": 12,  "budget": 0  },
+    "security":   { "turns": 5,  "duration_s": 90,  "budget": 8  },
+    "reviewer":   { "turns": 10, "duration_s": 200, "budget": 15 },
+    "tester":     { "turns": 12, "duration_s": 180, "budget": 20 }
+  }
+}
+```
+
+**Files:** `lib/finalize_summary.sh`
+
+### 2. Run Type Classification
+
+**Problem:** RUN_SUMMARY.json has no concept of run type. Non-milestone runs
+(human notes, drift fixes, nonblocker fixes, ad hoc tasks) produce summaries
+with empty milestone fields, making Trends show "-" for every non-milestone run.
+
+**Fix:** Add `run_type` and `task_label` fields to RUN_SUMMARY.json:
+
+```json
+{
+  "run_type": "milestone|human_bug|human_feat|human_polish|drift|nonblocker|adhoc",
+  "task_label": "Fix login timeout bug"
+}
+```
+
+Run type is determined from execution mode:
+- `_CURRENT_MILESTONE` set → `"milestone"`
+- `HUMAN_MODE=true` + `HUMAN_NOTES_TAG=BUG` → `"human_bug"`
+- `HUMAN_MODE=true` + `HUMAN_NOTES_TAG=FEAT` → `"human_feat"`
+- `HUMAN_MODE=true` + `HUMAN_NOTES_TAG=POLISH` → `"human_polish"`
+- `FIX_DRIFT_MODE=true` → `"drift"`
+- `FIX_NONBLOCKERS_MODE=true` → `"nonblocker"`
+- Everything else → `"adhoc"`
+
+`task_label` captures the first ~80 chars of the task description for display.
+
+**Files:** `lib/finalize_summary.sh`, `tekhton.sh` (export mode variables)
+
+### 3. Pipeline Completion Status
+
+**Problem:** Watchtower shows "RUNNING" after the pipeline completes. Two causes:
+(a) The `emit_dashboard_run_state` in `_hook_causal_log_finalize` may not execute
+if an earlier finalization hook fails, leaving the last-written status as "running".
+(b) Browser auto-refresh via `location.reload()` may re-read the file mid-write.
+
+**Fix:**
+- Move the final `emit_dashboard_run_state` to a dedicated finalization hook
+  registered at highest priority (runs last, after all other hooks), ensuring it
+  always executes even if earlier hooks fail.
+- Add a `completed_at` timestamp to `run_state.js` so the UI can distinguish
+  "no update yet" from "pipeline finished".
+- The `_write_js_file` function already uses tmpfile+mv (atomic), so the mid-write
+  race is already handled. The issue is hook ordering.
+
+**Files:** `lib/finalize.sh`, `lib/dashboard.sh`
+
+### 4. Report Parser Fixes
+
+**Problem:** Intake Report always shows "Verdict: Unknown, Confidence: 0/100".
+Coder Summary always shows "Status: pending". The parsers use Perl-style regex
+extensions (`\K`, `(?<=)`) via `grep -P` which may not be available on all systems
+and may not match actual file formats.
+
+**Fix:**
+- Audit INTAKE_REPORT.md, CODER_SUMMARY.md, and REVIEWER_REPORT.md actual output
+  formats (generated by agent prompts).
+- Update `_parse_intake_report()` to use portable regex or sed extraction.
+- Update `_parse_coder_summary()` to handle the actual section headers and format.
+- Add fallback extraction when primary patterns don't match.
+- Ensure `emit_dashboard_reports()` is called after each stage that produces a
+  report file, not just at hardcoded points.
+
+**Files:** `lib/dashboard_parsers.sh`, `lib/dashboard_emitters.sh`, `tekhton.sh`
+
+### 5. Metrics Accuracy
+
+**Problem:** `_parse_run_summaries()` maps `total_turns` from `total_agent_calls`
+(the `_ORCH_AGENT_CALLS` counter) and `total_time_s` from `wall_clock_seconds`
+(`_ORCH_ELAPSED`). For non-orchestrated runs (single milestone, no --complete),
+`_ORCH_AGENT_CALLS` may be 0 because the orchestrator wasn't invoked.
+
+**Fix:**
+- Add `total_turns` and `total_time_s` as first-class fields in RUN_SUMMARY.json
+  that are always computed from `_STAGE_TURNS` sums (ground truth).
+- `_parse_run_summaries()` reads `total_turns` directly, falls back to
+  `total_agent_calls` for older summaries.
+- Similarly compute `total_time_s` from `_STAGE_DURATION` sums with fallback
+  to `wall_clock_seconds`.
+
+**Files:** `lib/finalize_summary.sh`, `lib/dashboard_parsers.sh`
+
+## Acceptance Criteria
+
+- RUN_SUMMARY.json contains a `stages` object with per-stage turns, duration_s, and budget
+- RUN_SUMMARY.json contains `run_type` field correctly set for all execution modes
+- RUN_SUMMARY.json contains `task_label` for non-milestone runs
+- RUN_SUMMARY.json contains `total_turns` and `total_time_s` computed from stage sums
+- Watchtower status indicator shows "COMPLETE" or "FAILED" after pipeline finishes
+  (not stuck on "RUNNING")
+- Trends per-stage breakdown table shows non-zero values from real stage data
+- Trends Avg turns/run and Avg run duration reflect actual totals
+- Intake Report section shows real verdict and confidence from INTAKE_REPORT.md
+- Coder Summary section shows real status and file count from CODER_SUMMARY.md
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/finalize_summary.sh lib/dashboard_parsers.sh lib/dashboard.sh` passes
+- `shellcheck lib/finalize_summary.sh lib/dashboard_parsers.sh lib/dashboard.sh` passes
+
+## Watch For
+
+- The `_STAGE_TURNS` and `_STAGE_DURATION` arrays are `declare -A` (associative).
+  Iterating them for JSON serialization requires `${!_STAGE_TURNS[@]}` which gives
+  keys in arbitrary order. Use the fixed `stageOrder` list for deterministic output.
+- `_hook_emit_run_summary` runs as a finalization hook. The `_STAGE_*` arrays must
+  still be in scope at that point. Verify they aren't unset or cleared before the
+  hook fires.
+- The parser fallback chain (Python → grep) must handle both old-format summaries
+  (no `stages`, no `run_type`) and new-format summaries gracefully.
+- `HUMAN_NOTES_TAG` may be empty even in human mode (user ran `--human` without
+  specifying BUG/FEAT/POLISH). Default `run_type` to `"human"` in that case.
+
+## Seeds Forward
+
+- M35 consumes the per-stage data and run_type fields to render rich Trends views
+- M35 uses the `completed_at` timestamp for smart refresh logic
+- M36 uses `run_type` taxonomy to categorize submissions
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 35: Watchtower Smart Refresh & Context-Aware Layout
+<!-- milestone-meta
+id: "35"
+status: "done"
+-->
+
+
+## Overview
+
+Watchtower's full-page `location.reload()` causes a visible blink every refresh
+cycle. Its layout is static — Reports and Trends render the same sections regardless
+of run type, leaving irrelevant sections visible and relevant ones showing "pending"
+or blank data. This milestone replaces the refresh mechanism with incremental data
+loading and makes the layout adapt to the current run context.
+
+## Scope
+
+### 1. Incremental Data Refresh (No Blink)
+
+**Problem:** `scheduleRefresh()` calls `location.reload()` every
+`refresh_interval_ms` (default 10s). This reloads all HTML, CSS, JS, and data
+files, causing a full DOM teardown and rebuild. Even with scroll position
+persistence via `localStorage`, the visual flash is jarring.
+
+**Fix:** Replace `location.reload()` with `fetch()` calls that reload only the
+`data/*.js` files, then re-execute them to update the `window.TK_*` globals,
+and selectively re-render changed tabs.
+
+Implementation approach:
+```javascript
+function refreshData() {
+  var dataFiles = ['run_state', 'timeline', 'milestones', 'reports',
+                   'metrics', 'security', 'health'];
+  var promises = dataFiles.map(function(name) {
+    return fetch('data/' + name + '.js?t=' + Date.now())
+      .then(function(r) { return r.text(); })
+      .then(function(text) {
+        // Execute the JS to update window.TK_* globals
+        // Use Function constructor instead of eval for CSP compat
+        new Function(text)();
+      });
+  });
+  Promise.all(promises).then(function() {
+    renderActiveTab();     // Only re-render current tab
+    updateStatusIndicator();
+    scheduleRefresh();     // Schedule next cycle
+  });
+}
+```
+
+Cache-busting via `?t=` query parameter ensures fresh data on `file://` protocol.
+Fall back to `location.reload()` if `fetch()` is unavailable (old browsers).
+
+**Selective re-render:** Only re-render the currently active tab. Other tabs get
+`renderedTabs[tabId] = false` so they re-render when switched to.
+
+**Files:** `templates/watchtower/app.js`
+
+### 2. Context-Aware Reports Tab
+
+**Problem:** The Reports tab always shows four accordion sections (Intake, Coder,
+Security, Reviewer) regardless of run type. For human-notes runs, there's no
+security stage. For ad hoc runs, there may be no intake. Sections show "Pending"
+badges when they'll never be populated.
+
+**Fix:**
+- Read `run_type` from `TK_RUN_STATE` (added by M34) to determine which report
+  sections are relevant.
+- Show/hide sections based on run type:
+  - `milestone`: All sections visible
+  - `human_*`: Intake + Coder + Reviewer (no Security unless security stage ran)
+  - `drift`: Coder + Reviewer (architect-driven, no intake)
+  - `nonblocker`: Coder + Reviewer
+  - `adhoc`: Show sections that have non-null data; hide rest
+- Add stage status awareness: if `TK_RUN_STATE.stages[stage].status === "complete"`,
+  show its report section; if "pending", hide it (not "pending" badge — hidden).
+- Add a "Run Context" header card showing: run type badge, task label, milestone
+  ID (if applicable), started timestamp, current/final status.
+
+**Additional report sections** (from existing data, not currently rendered):
+- **Test Audit** section: data is already in `TK_REPORTS.test_audit` but no
+  render function exists. Add `renderTestAuditBody()`.
+- **Notes Backlog** section: data is already in `TK_REPORTS.backlog` but no
+  render function exists. Add `renderBacklogBody()` showing bug/feat/polish counts.
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 3. Enhanced Trends Tab
+
+**Problem:** Recent Runs list shows milestone ID as the only run identifier.
+Non-milestone runs show "-". The per-stage breakdown was always empty (fixed by
+M34's data layer changes), but the display needs updating.
+
+**Fix:**
+
+**Recent Runs enhancements:**
+- Show `run_type` as a colored badge alongside run number
+- Show `task_label` (truncated to ~40 chars) instead of just milestone ID
+- For milestone runs, show both milestone ID and title
+- Add run type filter buttons above the list: All | Milestones | Human Notes |
+  Drift | Ad Hoc — filter toggles stored in `localStorage`
+
+**Efficiency Summary enhancements:**
+- Calculate averages per run type (milestone runs vs human notes vs ad hoc)
+- Show the breakdown: "Milestone avg: 42 turns · Human avg: 18 turns · Ad hoc avg: 12 turns"
+- Fix trend arrows to work with fewer than 20 runs (currently returns empty string
+  if `runs.length < 20`). Lower threshold to 4 runs and compare halves.
+
+**Per-Stage Breakdown enhancements:**
+- Now populated with real data (from M34)
+- Add a "last run" column showing the most recent run's per-stage values alongside
+  the historical averages, so users can spot anomalies
+- Color-code budget utilization: green (<80%), amber (80-100%), red (>100%)
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 4. Refresh Lifecycle Cleanup
+
+**Problem:** Auto-refresh continues indefinitely when status is "running" but
+never terminates cleanly when the pipeline finishes between reloads.
+
+**Fix:**
+- Use `completed_at` timestamp from `TK_RUN_STATE` (added by M34) to detect
+  pipeline completion
+- On detecting completion, do one final data refresh, then stop the refresh loop
+- Show a subtle "Pipeline completed — refresh stopped" indicator in the header
+- Add a manual "Refresh" button in the header that triggers a single data reload
+  (useful after pipeline completes, for viewing updated metrics)
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/index.html`,
+`templates/watchtower/style.css`
+
+## Acceptance Criteria
+
+- Watchtower updates data without full page reload (no visible blink/flash)
+- Only the active tab re-renders on each refresh cycle
+- Scroll position is preserved across refreshes without localStorage hacks
+- Reports tab hides sections for stages that didn't run in the current run type
+- Reports tab shows Test Audit and Notes Backlog sections when data is available
+- Reports tab shows a "Run Context" header with run type, task label, and status
+- Trends Recent Runs shows run type badges and task labels for all run types
+- Trends Recent Runs supports filtering by run type
+- Trends efficiency stats show per-run-type averages
+- Trend arrows work with as few as 4 historical runs
+- Per-stage breakdown shows color-coded budget utilization
+- Auto-refresh stops when pipeline completes, with manual refresh button available
+- Fallback to `location.reload()` works when `fetch()` is unavailable
+- All existing tests pass (`bash tests/run_tests.sh`)
+
+## Watch For
+
+- `file://` protocol has CORS restrictions in some browsers. `fetch('data/run_state.js')`
+  may fail on `file://`. Test with Chrome (allows same-origin file://), Firefox
+  (restricts by default), and Safari. Document the `python3 -m http.server` fallback
+  prominently.
+- The `new Function(text)()` approach for executing loaded JS must handle parse errors
+  gracefully. Wrap in try/catch and fall back to `location.reload()` on failure.
+- Selective re-render must rebuild the causal index (`buildCausalIndex()`) when
+  timeline data changes, not just on initial load.
+- The `renderedTabs` lazy-render pattern conflicts with incremental refresh.
+  Change to: always re-render active tab on data change, mark other tabs as stale.
+- `TK_RUN_STATE.run_type` won't exist in data files from runs before M34. Default
+  to `"milestone"` when `run_type` is missing (backward compat).
+
+## Seeds Forward
+
+- M36 adds interactive controls that need non-blinking refresh to feel responsive
+- M37 adds parallel team views that rely on selective tab re-rendering
+- The fetch-based refresh pattern enables future WebSocket upgrade for real-time push
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 36: Watchtower Interactive Controls (Input Layer)
+<!-- milestone-meta
+id: "36"
+status: "done"
+-->
+
+
+## Overview
+
+Watchtower is currently read-only — a glass pane for observing pipeline execution.
+This milestone adds an input layer: users can submit human notes (bugs, features,
+polish), create new milestones, and queue ad hoc tasks directly from the Watchtower
+UI. All input is file-based (Watchtower writes structured files that Tekhton reads
+on the next run), preserving the zero-server architecture.
+
+## Motivation
+
+Today, submitting work to Tekhton requires terminal access:
+- New milestones: manually create `.md` file + edit `MANIFEST.cfg`
+- Bug reports: manually edit `HUMAN_NOTES.md` with correct `[BUG]` tag format
+- Feature requests: edit `HUMAN_NOTES.md` with `[FEAT]` tag
+- Ad hoc tasks: run `tekhton.sh "task description"` from CLI
+
+Watchtower already has the user's browser open. Adding input forms turns it from
+a monitoring tool into a lightweight project management interface, closing the loop
+between observing pipeline output and feeding it new work.
+
+## Scope
+
+### 1. New "Actions" Tab
+
+Add a fifth tab to the Watchtower nav bar: **Actions**. This tab contains forms
+for submitting work items. The tab is always available regardless of pipeline state
+(unlike Live Run which is most useful during execution).
+
+Layout: card-based form sections, similar to Reports accordion style.
+
+**Files:** `templates/watchtower/index.html`, `templates/watchtower/app.js`,
+`templates/watchtower/style.css`
+
+### 2. Human Notes Submission
+
+A form for submitting bug reports, feature requests, and polish items.
+
+**Form fields:**
+- **Type** (required): Radio buttons — BUG | FEAT | POLISH
+- **Title** (required): Single-line text input (max 120 chars)
+- **Description** (optional): Textarea for details (max 2000 chars)
+- **Priority** (optional): Low | Medium | High (default: Medium)
+- **Submit** button
+
+**On submit:** Watchtower writes a structured file to `.claude/watchtower_inbox/`
+(a new staging directory) with naming convention:
+`note_<timestamp>_<type>.md`
+
+File format:
+```markdown
+<!-- watchtower-note -->
+- [ ] [BUG] Title goes here
+
+Description text goes here.
+
+Priority: Medium
+Submitted: 2025-01-15T10:30:00Z
+Source: watchtower
+```
+
+**Pipeline integration:** At pipeline startup, Tekhton checks
+`.claude/watchtower_inbox/` for `note_*.md` files. Each file's content is appended
+to `HUMAN_NOTES.md` using the existing `add_note()` function from `lib/notes_cli.sh`,
+then the inbox file is moved to `.claude/watchtower_inbox/processed/`.
+
+**Validation:** Client-side validation prevents empty titles. Type is required.
+Description is optional but encouraged.
+
+**Files:** `templates/watchtower/app.js`, `lib/notes_cli.sh` (inbox reader),
+`tekhton.sh` (startup inbox check)
+
+### 3. Milestone Submission
+
+A form for creating new milestones from the Watchtower UI.
+
+**Form fields:**
+- **ID** (required): Auto-generated as next `mNN` (reads current manifest), editable
+- **Title** (required): Single-line text input (max 100 chars)
+- **Description** (required): Textarea for scope description (max 5000 chars)
+- **Depends on** (optional): Multi-select from existing milestone IDs
+- **Parallel group** (optional): Text input (existing groups shown as suggestions)
+- **Submit** button
+
+**On submit:** Watchtower writes two files to `.claude/watchtower_inbox/`:
+1. `milestone_<id>.md` — The milestone file content:
+   ```markdown
+   # Milestone NN: Title
+
+   ## Overview
+
+   Description text from form.
+
+   ## Scope
+
+   (To be detailed during planning or execution)
+
+   ## Acceptance Criteria
+
+   - (To be defined)
+
+   ## Watch For
+
+   - (To be defined)
+   ```
+2. `manifest_append_<id>.cfg` — A single manifest line:
+   ```
+   mNN|Title|pending|deps|milestone_mNN.md|parallel_group
+   ```
+
+**Pipeline integration:** At pipeline startup, Tekhton checks for
+`manifest_append_*.cfg` files in the inbox. Each is validated (ID doesn't collide,
+deps exist) and appended to `MANIFEST.cfg`. The corresponding `.md` file is moved
+to the milestones directory. Processed inbox files move to `processed/`.
+
+**Form intelligence:**
+- Auto-reads `TK_MILESTONES` to suggest next ID and show dependency options
+- Shows existing parallel groups as datalist suggestions
+- Disables submit if ID conflicts with existing milestone
+- Preview section shows how the milestone will appear in the Milestone Map tab
+
+**Files:** `templates/watchtower/app.js`, `lib/milestone_dag.sh` (inbox reader),
+`tekhton.sh` (startup inbox check)
+
+### 4. Ad Hoc Task Queue
+
+A simple form for queuing one-off tasks.
+
+**Form fields:**
+- **Task description** (required): Textarea (max 2000 chars)
+- **Submit** button
+
+**On submit:** Writes `task_<timestamp>.txt` to `.claude/watchtower_inbox/`.
+The file contains the raw task description.
+
+**Pipeline integration:** `tekhton.sh` checks for `task_*.txt` files and offers
+them in the next `--human` or `--complete` run. Not auto-executed — surfaced as
+available tasks.
+
+**Files:** `templates/watchtower/app.js`, `tekhton.sh`
+
+### 5. Inbox Status Display
+
+The Actions tab shows a "Pending Submissions" section listing items currently in
+the inbox (not yet processed by a pipeline run). Uses existing `TK_RUN_STATE` or
+a new `TK_INBOX` data file to surface queued items.
+
+**New emitter:** `emit_dashboard_inbox()` reads `.claude/watchtower_inbox/` and
+generates `data/inbox.js` listing pending items by type.
+
+**Files:** `lib/dashboard_emitters.sh`, `templates/watchtower/app.js`,
+`templates/watchtower/index.html` (new script tag for inbox.js)
+
+### 6. File Write Mechanism
+
+Watchtower runs as a static HTML page opened from `file://` protocol. Writing
+files from JavaScript in a browser is restricted. Two approaches:
+
+**Approach A (recommended): Download prompt**
+- On submit, generate file content as a Blob
+- Trigger browser download via `<a download="filename">` click
+- User saves the file to `.claude/watchtower_inbox/` directory
+- Show clear instructions: "Save this file to: [path shown]"
+
+**Approach B (http server mode): Direct write via POST**
+- When served via `python3 -m http.server` or similar, add a tiny CGI/handler
+  that accepts POST requests and writes files
+- `tools/watchtower_server.py` — lightweight HTTP server with a `/api/submit`
+  endpoint that writes to the inbox directory
+- Auto-detected by Watchtower: if `fetch('/api/ping')` succeeds, use POST;
+  otherwise fall back to Approach A
+
+**Recommended default:** Ship both. Approach A works everywhere. Approach B is
+opt-in for users who want seamless submission. The server script is <100 lines.
+
+**Files:** `templates/watchtower/app.js`, `tools/watchtower_server.py` (new)
+
+## Acceptance Criteria
+
+- Actions tab appears in Watchtower navigation
+- Human Notes form validates input and generates correctly formatted note files
+- Milestone form auto-suggests next ID and validates against collisions
+- Milestone form shows dependency options from current manifest
+- Ad hoc task form generates task files
+- Pending submissions section shows queued items from inbox
+- Download-prompt approach works on `file://` protocol (Chrome, Firefox)
+- HTTP server mode (opt-in) allows direct file writing via POST
+- Pipeline startup processes inbox items: notes appended to HUMAN_NOTES.md,
+  milestones added to MANIFEST.cfg, task files surfaced
+- Processed inbox items moved to `processed/` subdirectory
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` passes for any modified `.sh` files
+- `shellcheck` passes for any modified `.sh` files
+- New `tools/watchtower_server.py` passes basic smoke test
+
+## Watch For
+
+- **Security:** The HTTP server (Approach B) binds to `localhost` only. Never
+  expose to `0.0.0.0`. The server must validate file paths to prevent directory
+  traversal (all writes constrained to `.claude/watchtower_inbox/`).
+- **File:// restrictions:** `file://` cannot make `fetch()` POST requests.
+  The download-prompt fallback is essential. Test that the generated Blob
+  content is valid and complete.
+- **Race condition:** Pipeline may start while user is mid-submission. Inbox
+  processing should use `mv` (atomic) not read-then-delete.
+- **Manifest validation:** Duplicate milestone IDs must be rejected at both
+  form level (JS) and pipeline level (bash). Belt and suspenders.
+- **Existing M32 integration:** M32 already provides a browser-based planning
+  interview. The Actions tab should link to the planning UI URL when available,
+  not duplicate it.
+
+## Seeds Forward
+
+- M37 uses the Actions tab infrastructure for parallel team management controls
+- The `watchtower_server.py` HTTP server could be extended in V4 for real-time
+  WebSocket push notifications
+- The inbox pattern is extensible: future submission types (config changes,
+  replan triggers) follow the same file-based protocol
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 37: Watchtower V4 Parallel Teams Readiness
+<!-- milestone-meta
+id: "37"
+status: "done"
+-->
+
+
+## Overview
+
+Tekhton V4 will introduce parallel work teams — multiple agent pipelines executing
+independent milestones concurrently. Watchtower must evolve from tracking a single
+linear pipeline to visualizing multiple concurrent execution streams. This milestone
+builds the data model, UI components, and display infrastructure for parallel team
+monitoring, even before V4's execution engine exists.
+
+## Motivation
+
+The existing Watchtower was designed for a single serial pipeline:
+- **Live Run** shows one timeline, one stage progress bar, one active milestone
+- **Milestone Map** shows lanes by status (done/active/ready/pending) but doesn't
+  visualize parallel execution groups
+- **Reports** shows one set of stage reports
+- **Trends** aggregates all runs into one flat list
+
+V4 parallel execution will run 2-4 independent pipelines simultaneously (one per
+`parallel_group` in MANIFEST.cfg). Each team has its own coder, reviewer, and
+tester operating on a different milestone. Watchtower needs to show all teams at
+once without losing the ability to drill into individual team details.
+
+## Scope
+
+### 1. Team-Aware Run State
+
+Extend `emit_dashboard_run_state()` to emit per-team state when parallel execution
+is active.
+
+**New data structure in `run_state.js`:**
+```javascript
+window.TK_RUN_STATE = {
+  pipeline_status: "running",
+  parallel_mode: true,       // NEW: true when multiple teams active
+  teams: {                   // NEW: per-team state
+    "team_quality": {
+      milestone: { id: "m20", title: "Test Integrity Audit" },
+      current_stage: "coder",
+      stages: { intake: {...}, scout: {...}, coder: {...}, ... },
+      status: "running",
+      started_at: "2025-01-15T10:00:00Z"
+    },
+    "team_brownfield": {
+      milestone: { id: "m15", title: "Project Health Scoring" },
+      current_stage: "reviewer",
+      stages: { ... },
+      status: "running",
+      started_at: "2025-01-15T10:00:00Z"
+    }
+  },
+  // Existing fields for backward compat (reflect "lead" team or aggregate)
+  current_stage: "coder",
+  active_milestone: { id: "m20", title: "Test Integrity Audit" },
+  stages: { ... }
+};
+```
+
+When `parallel_mode` is false (current behavior), `teams` is empty/absent and
+existing single-pipeline fields are used. UI auto-detects which mode to render.
+
+**Files:** `lib/dashboard.sh`, `lib/dashboard_emitters.sh`
+
+### 2. Multi-Team Live Run View
+
+When `parallel_mode` is true, the Live Run tab switches from single-pipeline view
+to a multi-team layout.
+
+**Layout:**
+```
+┌─────────────────────────────────────────────┐
+│ Pipeline RUNNING — 3 teams active           │
+├──────────────┬──────────────┬───────────────┤
+│ Team Quality │ Team Brown   │ Team DevX     │
+│ ● m20: Test  │ ✓ m15: Hea  │ ● m22: Init   │
+│ [I][S][C]... │ [I][S][C]... │ [I][S][C]...  │
+│ Coder: 12/50 │ Review: 5/15 │ Scout: 3/15   │
+├──────────────┴──────────────┴───────────────┤
+│ Unified Timeline (color-coded by team)      │
+│ 10:05 [quality] stage_start: coder          │
+│ 10:04 [brownfield] verdict: approved        │
+│ 10:03 [devx] stage_start: scout             │
+└─────────────────────────────────────────────┘
+```
+
+Each team card shows:
+- Team name (derived from parallel_group or auto-generated)
+- Active milestone ID and title
+- Compact stage progress chips (same as current, but smaller)
+- Current stage detail (turns/budget, duration)
+- Status badge (running/waiting/complete/failed)
+
+Below the team cards: unified timeline with team-colored event markers.
+Click a team card to filter the timeline to that team's events only.
+
+**Single-team mode:** When only one team is active (or `parallel_mode` is false),
+render the existing single-pipeline view unchanged.
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 3. Enhanced Milestone Map with Parallel Groups
+
+The Milestone Map currently uses swimlanes by status (Done/Active/Ready/Pending).
+Enhance it to optionally view by parallel group, showing which milestones can
+execute concurrently.
+
+**New view toggle:** "View by: Status | Parallel Group" buttons above the swimlanes.
+
+**Parallel Group view:**
+```
+┌─────────────────────────────────────────────┐
+│ View by: [Status] [Parallel Group]          │
+├──────────────┬──────────────┬───────────────┤
+│ quality      │ brownfield   │ devx          │
+│ ┌──────────┐ │ ┌──────────┐ │ ┌──────────┐  │
+│ │ m09 ✓    │ │ │ m11 ✓    │ │ │ m18 ✓    │  │
+│ │ m10 ✓    │ │ │ m12 ✓    │ │ │ m19 ✓    │  │
+│ │ m20 ●    │ │ │ m15 ●    │ │ │ m22 ●    │  │
+│ └──────────┘ │ └──────────┘ │ └──────────┘  │
+│              │              │               │
+│ Cross-group dependency arrows (CSS lines)   │
+└─────────────────────────────────────────────┘
+```
+
+Dependency arrows between groups show cross-group constraints. Within a group,
+milestones are ordered by dependency chain (topological sort).
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 4. Per-Team Reports
+
+When parallel teams are active, the Reports tab needs to scope reports to a
+selected team. Add a team selector dropdown/tabs at the top of the Reports tab.
+
+Each team has its own set of reports (intake, coder, security, reviewer) because
+each runs its own pipeline stages independently.
+
+**Data model extension:**
+```javascript
+window.TK_REPORTS = {
+  // Existing fields (for single-pipeline compat)
+  intake: { verdict: "pass", confidence: 85 },
+  coder: { ... },
+  // New: per-team reports
+  teams: {
+    "team_quality": {
+      intake: { ... },
+      coder: { ... },
+      security: { ... },
+      reviewer: { ... }
+    },
+    "team_brownfield": { ... }
+  }
+};
+```
+
+**Files:** `lib/dashboard_emitters.sh`, `templates/watchtower/app.js`
+
+### 5. Team-Aware Trends
+
+Extend Trends to break down metrics by team in addition to by stage.
+
+**New section:** "Per-Team Performance" table showing:
+- Team name
+- Total runs
+- Avg turns per milestone
+- Avg duration per milestone
+- Success rate
+- Distribution bar chart
+
+**Filter integration:** Existing run type filters (from M35) gain a team filter:
+"All Teams | Quality | Brownfield | DevX"
+
+**Files:** `templates/watchtower/app.js`
+
+### 6. Data Layer Preparation
+
+The parallel team data model must be defined now so M34-M36 can build on it,
+even though V4's execution engine doesn't exist yet.
+
+**New fields in RUN_SUMMARY.json:**
+```json
+{
+  "team": "quality",
+  "parallel_group": "quality",
+  "concurrent_teams": 3
+}
+```
+
+**New emitter hook:** `emit_dashboard_team_state(team_id)` — called per team in
+parallel mode. Writes team-specific state into the `teams` object of `run_state.js`.
+
+**Backward compat:** When `parallel_mode` is absent or false, all existing views
+render identically to pre-M37 behavior. No feature flags needed — auto-detect
+from data shape.
+
+**Files:** `lib/dashboard.sh`, `lib/dashboard_emitters.sh`,
+`lib/finalize_summary.sh`
+
+## Acceptance Criteria
+
+- `TK_RUN_STATE` supports `parallel_mode` and `teams` fields
+- Live Run tab renders multi-team card layout when `parallel_mode` is true
+- Live Run tab renders existing single-pipeline view when `parallel_mode` is false
+- Timeline events are color-coded by team with click-to-filter
+- Milestone Map supports "View by Parallel Group" toggle
+- Cross-group dependency arrows render correctly
+- Reports tab shows team selector when multiple teams have reports
+- Trends tab shows per-team performance breakdown
+- RUN_SUMMARY.json includes `team` and `parallel_group` fields
+- All views degrade gracefully to single-pipeline display for pre-M37 data
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` passes for any modified `.sh` files
+- `shellcheck` passes for any modified `.sh` files
+
+## Watch For
+
+- **Team naming:** Parallel groups in MANIFEST.cfg are optional and may be empty.
+  When no group is assigned, milestones default to a "default" team. The UI must
+  handle mixed grouped/ungrouped milestones.
+- **Team count explosion:** V4 will likely cap at 4 concurrent teams. The UI layout
+  should work for 1-6 teams but optimize for 2-4. Beyond 4, use a scrollable
+  horizontal layout instead of fixed columns.
+- **Timeline interleaving:** Events from different teams arrive in temporal order,
+  not grouped by team. The unified timeline must handle interleaved events.
+  Team filtering must not re-order events.
+- **Report scoping:** In parallel mode, each team writes its own report files with
+  team-prefixed names (e.g., `CODER_SUMMARY_quality.md`). The parser must handle
+  both prefixed and unprefixed filenames.
+- **Data file size:** With 4 teams, `run_state.js` grows ~4x. Ensure the file
+  stays under 50KB even with verbose stage data.
+
+## Seeds Forward
+
+- V4 execution engine will call `emit_dashboard_team_state()` per team
+- The team data model enables future features: team-level retry, team reassignment,
+  cross-team artifact sharing visualization
+- The HTTP server from M36 could be extended for real-time team status WebSocket push
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 38: Watchtower Live Run & Milestone Map UX Polish
+<!-- milestone-meta
+id: "38"
+status: "done"
+-->
+
+## Overview
+
+The Watchtower Live Run screen has several display fidelity issues: the active
+stage indicator lags one stage behind reality (Intake never shows as active,
+Scout never lights up), the turns display shows `0/N` which is misleading since
+turn counts aren't available until a stage completes, and stage elapsed time —
+already tracked in `_STAGE_DURATION` — isn't surfaced. The Milestone Map tab is
+also shallow: clicking a milestone reveals only its status and parallel group,
+not the rich context needed to understand what it does or how it connects to the
+dependency graph.
+
+## Scope
+
+### 1. Fix Active Stage Indicator Lag
+
+**Problem:** When the pipeline enters Intake, the Live Run stage chips show all
+stages as `○` (pending). Intake never shows as `●` (active). Once Coder starts,
+Intake flips to `✓` and Coder becomes `●` — always one behind. The root cause
+is that `emit_dashboard_run_state()` in `lib/dashboard.sh` sets `current_stage`
+and `_STAGE_STATUS` but the Intake stage doesn't call the status-update hooks
+early enough, and Scout's status is never emitted as a distinct active stage.
+
+**Fix:**
+- In `lib/dashboard.sh` (`emit_dashboard_run_state()`), ensure `_STAGE_STATUS`
+  for the `current_stage` is always at least `"active"` when emitting. If
+  `_STAGE_STATUS[$CURRENT_STAGE]` is empty or `"pending"`, override it to
+  `"active"` in the emitted JSON (don't mutate the global).
+- In `stages/coder.sh`, ensure `_STAGE_STATUS[intake]` is set to `"active"` at
+  the start of the intake phase and `"complete"` before moving to scout/coder.
+- In `stages/coder.sh`, ensure `_STAGE_STATUS[scout]` is set to `"active"` when
+  scout begins and `"complete"` when scout finishes, with a dashboard emit
+  between transitions so watchtower picks it up on the next refresh cycle.
+- Verify `statusIcon()` in `templates/watchtower/app.js` (lines 69-75) maps
+  `"active"` → `●` correctly (it already does, but confirm).
+
+**Files:** `lib/dashboard.sh`, `stages/coder.sh`
+
+### 2. Replace Turns Display with Stage Elapsed Time
+
+**Problem:** The Live Run detail line shows `turns: 0/70` for the active stage.
+The numerator is always 0 during execution because `_STAGE_TURNS` is only
+populated after an agent call completes. This makes the display misleading. The
+denominator (budget) is useful, but a counter stuck at 0 is not.
+
+**Fix:**
+- In `templates/watchtower/app.js`, replace the turns display with elapsed time.
+  The data is already available: `_STAGE_DURATION[stg]` is emitted as
+  `duration_s` in the stage JSON object (lib/dashboard.sh line 148).
+- Format: `Stage: Coder · 3m 42s · budget: 70 turns`
+  - Show `duration_s` formatted as `Xm Ys` (or `Xh Ym` for long stages)
+  - Show budget as a reference, not a fraction
+- In `lib/dashboard.sh`, ensure `_STAGE_DURATION` for the current active stage
+  is computed as `$(( SECONDS - _STAGE_START_TS ))` at emit time, not just at
+  stage completion. If `_STAGE_START_TS[$CURRENT_STAGE]` exists and the stage
+  status is `"active"`, compute live elapsed.
+- Keep completed stages showing final `duration_s` and `turns` (actual turns
+  used) in their chip tooltip or detail view.
+
+**Files:** `templates/watchtower/app.js`, `lib/dashboard.sh`
+
+### 3. Scout Stage Visibility in Live Run
+
+**Problem:** Scout runs within the Coder stage but has its own entry in
+`stageOrder` (line 137 of app.js). During scout execution, the Live Run shows
+Scout as a chip before Coder, but it never lights up as active. It appears as
+a dead step.
+
+**Fix:**
+- Option A (recommended): Make Scout a sub-step of Coder rather than a
+  top-level stage chip. Render it as an indented or nested indicator within the
+  Coder chip: `[Intake ✓] [Coder ● (Scout ✓)] [Review ○] [Test ○]`
+- In `templates/watchtower/app.js`, when rendering stage chips, check if Scout
+  is in the stage data. If so, render it as a sub-badge inside the Coder chip
+  rather than its own chip. This better reflects the actual pipeline structure
+  where Scout is a phase within the Coder stage.
+- Alternatively, if Scout is kept as a top-level chip, ensure its
+  `_STAGE_STATUS` is properly set to `"active"` and `"complete"` (see fix #1)
+  so it lights up correctly.
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 4. Milestone Map Detail Expansion
+
+**Problem:** Clicking a milestone in the Milestone Map shows only `status` and
+`parallel_group` (lines 228-229 of app.js). This is nearly useless — users
+can't tell what a milestone does without opening the file.
+
+**Fix:**
+- Extend the milestone data emitter (`lib/dashboard_emitters.sh` or
+  `lib/dashboard.sh`) to include a `summary` field for each milestone. Extract
+  the first paragraph of the `## Overview` section from each milestone `.md`
+  file (everything between `## Overview` and the next `##` heading, limited to
+  300 chars).
+- Extend the emitter to include `depends_on` (already in manifest) and
+  `enables` (reverse-lookup: which milestones list this ID in their deps).
+- In `templates/watchtower/app.js` `renderMilestoneMap()`:
+  - Show the `summary` text in the expanded detail view.
+  - Show dependency chips in two rows:
+    - **Enabled by:** small colored chips (green) for milestones in `depends_on`
+    - **Enables:** small colored chips (blue) for milestones in `enables`
+  - Chips show milestone ID and are clickable (scroll to that milestone in the
+    map and briefly highlight it).
+- In `templates/watchtower/style.css`, add styles for:
+  - `.milestone-summary` — truncated overview text, muted color
+  - `.dep-chip` and `.enables-chip` — small rounded badges with distinct colors
+  - `.milestone-highlight` — brief CSS animation for scroll-to highlight
+
+**Files:** `lib/dashboard.sh` or `lib/dashboard_emitters.sh`,
+`templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+## Acceptance Criteria
+
+- Intake stage shows `●` (active) on the Live Run screen while intake is running
+- Scout stage shows `●` (active) during scout execution (either as sub-step of
+  Coder or as its own chip that properly lights up)
+- Stage transitions emit dashboard data between each phase so Watchtower picks
+  up intermediate states on the next refresh
+- Live Run active stage detail shows elapsed time (e.g., `3m 42s`) instead of
+  `0/70` turns
+- Budget is still shown but as a standalone reference, not a fraction
+- Completed stages show actual turns used and final duration
+- Milestone Map expanded view shows a summary paragraph from the milestone's
+  Overview section
+- Milestone Map expanded view shows "Enabled by" dependency chips (green)
+- Milestone Map expanded view shows "Enables" forward-dependency chips (blue)
+- Dependency chips are clickable and scroll/highlight the target milestone
+- Milestone data emitter extracts overview summaries from milestone `.md` files
+- Milestone data emitter computes reverse dependency lookup (`enables`)
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` passes for any modified `.sh` files
+- `shellcheck` passes for any modified `.sh` files
+
+## Watch For
+
+- **Emit frequency:** Dashboard emits happen at stage transitions. If emits are
+  too infrequent, the Live Run will still appear laggy. Ensure an emit happens
+  at: intake start, intake end, scout start, scout end, coder start, etc.
+- **Duration computation at emit time:** Computing `SECONDS - _STAGE_START_TS`
+  requires `_STAGE_START_TS` to be set at stage entry. Verify all stages set
+  this timestamp. For stages that haven't started, `duration_s` should be 0.
+- **Milestone file parsing in bash:** Extracting the Overview section requires
+  reading each milestone `.md` file. For 40+ milestones, this adds startup
+  latency. Cache the summaries in a generated data file rather than parsing on
+  every emit cycle.
+- **Reverse dependency computation:** The `enables` lookup is an O(N²) scan of
+  all manifest entries. With <50 milestones this is fine, but compute it once
+  at startup, not per-emit.
+- **Scout as sub-step:** If Scout becomes a Coder sub-step in the UI, the
+  `stageOrder` array and stage-chip rendering logic both need updating. Ensure
+  the Trends per-stage breakdown still counts Scout separately for metrics.
+
+## Seeds Forward
+
+- M39 builds on the action items display improvements
+- M40 documents all Watchtower features including these UX changes
+- V4 parallel teams (M37) reuses the multi-stage chip pattern for per-team views
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 39: Notes Injection Hygiene & Action Items UX
+<!-- milestone-meta
+id: "39"
+status: "done"
+-->
+
+## Overview
+
+Human notes and non-blocking notes are injected into agent prompts on nearly
+every run, even though they're only actionable when specific flags (`--human`,
+`--fix-nonblockers`) are used. This wastes context tokens and confuses agents
+with information they can't act on. Additionally, the action items section at
+the end of a pipeline run is always cyan/blue regardless of severity, giving no
+visual signal when the non-blocking backlog is approaching a dangerous threshold.
+This milestone tightens injection criteria, gates notes behind their respective
+flags, and adds progressive color warnings to the action items display.
+
+## Scope
+
+### 1. Gate Human Notes Injection Behind `--human` Flag
+
+**Problem:** `extract_human_notes()` in `lib/notes.sh` is called during prompt
+assembly in `stages/coder.sh` (line 282) on every run. The resulting
+`HUMAN_NOTES_BLOCK` is injected into the coder prompt via the template engine.
+On non-`--human` runs, this block is present in the prompt but serves no purpose
+— the coder isn't tasked with addressing those notes and typically ignores them.
+This wastes context tokens (often 500-2000 chars) and occasionally causes agents
+to start "fixing" human notes they weren't asked to address.
+
+**Fix:**
+- In `lib/prompts.sh` or wherever `HUMAN_NOTES_BLOCK` / `HUMAN_NOTES_CONTENT`
+  are set for template substitution: only populate these variables when
+  `HUMAN_MODE=true`.
+- When `HUMAN_MODE=false`, set `HUMAN_NOTES_BLOCK=""` and
+  `HUMAN_NOTES_CONTENT=""` so the template `{{IF:HUMAN_NOTES_BLOCK}}` blocks
+  produce no output.
+- Ensure the `--with-notes` flag (which explicitly opts in to notes on a
+  non-human run) still works: if `WITH_NOTES=true`, populate the variables
+  even when `HUMAN_MODE=false`.
+- Update the pipeline log message that says "Human notes injected into prompt"
+  to only appear when injection actually happens.
+
+**Files:** `lib/notes.sh`, `lib/prompts.sh`, `stages/coder.sh`
+
+### 2. Gate Non-Blocking Notes Injection Behind `--fix-nonblockers` Flag
+
+**Problem:** In `stages/coder.sh` (lines 384-400), non-blocking notes from
+`NON_BLOCKING_LOG.md` are injected as a context component when the count exceeds
+`NON_BLOCKING_INJECTION_THRESHOLD` (default 8). This happens on regular milestone
+runs, human-notes runs, and ad hoc runs — not just `--fix-nonblockers` runs. The
+injected notes waste context and occasionally cause agents to address non-blocking
+items unprompted, muddying the scope of the current task.
+
+**Fix:**
+- Only inject non-blocking notes into the coder prompt when
+  `FIX_NONBLOCKERS_MODE=true`.
+- Remove or gate the threshold-based injection logic. The threshold concept was
+  meant to surface urgent debt, but the action items display (Scope §3) now
+  handles urgency signaling visually.
+- Keep the `count_open_nonblocking_notes()` call for the action items display
+  but don't build the context component unless in fix-nonblockers mode.
+- The non-blocking notes count should still be logged for observability:
+  `info "Non-blocking notes: ${nb_count} open (injection skipped — not in --fix-nonblockers mode)"`
+
+**Files:** `stages/coder.sh`, `lib/drift_cleanup.sh`
+
+### 3. Progressive Color Action Items Display
+
+**Problem:** The action items section in `lib/finalize_display.sh`
+(`_print_action_items()`) uses a fixed cyan color (ℹ) for non-blocking notes
+and yellow (⚠) for human notes, regardless of quantity. A backlog of 3
+non-blocking items and a backlog of 30 look identical. There's no escalating
+visual urgency.
+
+**Fix:**
+- Define three severity thresholds for non-blocking notes:
+  - **Normal** (count < `CLEANUP_TRIGGER_THRESHOLD`, default 5): cyan/blue ℹ
+  - **Warning** (count >= threshold but < 2× threshold): yellow ⚠
+  - **Critical** (count >= 2× threshold): red ✗
+- Apply the same logic to human notes (using a separate threshold, default 10).
+- For the critical (red) level, append a suggested command:
+  ```
+  ✗ NON_BLOCKING_LOG.md — 14 accumulated observation(s) [CRITICAL]
+    → Suggested: tekhton --fix-nonblockers --complete
+  ```
+- For human notes at critical level:
+  ```
+  ✗ HUMAN_NOTES.md — 22 item(s) remaining [CRITICAL]
+    → Suggested: tekhton --human --complete
+  ```
+- Use the existing color functions from `lib/common.sh` (`red`, `yellow`,
+  `cyan`, `bold`).
+- Add config keys for the thresholds:
+  - `ACTION_ITEMS_WARN_THRESHOLD` (default: `CLEANUP_TRIGGER_THRESHOLD` or 5)
+  - `ACTION_ITEMS_CRITICAL_THRESHOLD` (default: 2× warn threshold or 10)
+  - `HUMAN_NOTES_WARN_THRESHOLD` (default: 10)
+  - `HUMAN_NOTES_CRITICAL_THRESHOLD` (default: 20)
+
+**Files:** `lib/finalize_display.sh`, `lib/config_defaults.sh`, `lib/config.sh`
+
+### 4. Watchtower Action Items Color Sync
+
+**Problem:** The Watchtower Reports tab or post-run summary may also display
+action item counts. These should match the progressive color scheme from the
+CLI output.
+
+**Fix:**
+- In `lib/dashboard_emitters.sh`, extend the action items data to include a
+  `severity` field (`"normal"`, `"warning"`, `"critical"`) computed from the
+  same thresholds.
+- In `templates/watchtower/app.js`, use the severity field to apply CSS classes:
+  - `.action-normal` — existing blue/cyan styling
+  - `.action-warning` — yellow/amber background
+  - `.action-critical` — red background with suggested command text
+- In `templates/watchtower/style.css`, add the warning/critical styles.
+
+**Files:** `lib/dashboard_emitters.sh`, `templates/watchtower/app.js`,
+`templates/watchtower/style.css`
+
+## Acceptance Criteria
+
+- Human notes (`HUMAN_NOTES_BLOCK`, `HUMAN_NOTES_CONTENT`) are NOT injected
+  into agent prompts when `HUMAN_MODE=false` and `WITH_NOTES=false`
+- Human notes ARE injected when `HUMAN_MODE=true` or `WITH_NOTES=true`
+- Non-blocking notes are NOT injected as a context component on regular
+  milestone runs or ad hoc runs
+- Non-blocking notes ARE injected when `FIX_NONBLOCKERS_MODE=true`
+- Pipeline log shows "injection skipped" message when notes are present but
+  not injected
+- Action items display uses cyan for low counts, yellow for moderate, red for
+  high (threshold-based)
+- Red-level action items include a suggested `tekhton` command
+- Thresholds are configurable via `pipeline.conf`
+- Watchtower action items reflect the same severity coloring as CLI output
+- `--with-notes` flag still works as an explicit opt-in for notes injection
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` passes for any modified `.sh` files
+- `shellcheck` passes for any modified `.sh` files
+- No regressions in `--human` mode behavior
+- No regressions in `--fix-nonblockers` mode behavior
+
+## Watch For
+
+- **`--with-notes` interaction:** The `--with-notes` flag explicitly opts into
+  notes injection even on non-human runs. Don't break this path. The gate
+  logic should be: `if HUMAN_MODE || WITH_NOTES; then inject; fi`.
+- **Template conditionals:** `{{IF:HUMAN_NOTES_BLOCK}}` blocks in prompt
+  templates will naturally produce no output when the variable is empty. But
+  verify that an empty variable doesn't leave stray whitespace or blank lines
+  in the rendered prompt.
+- **Threshold defaults:** `CLEANUP_TRIGGER_THRESHOLD` already exists (default 5)
+  and is used for triggering autonomous debt sweeps. Reuse it as the warn
+  threshold for action items rather than introducing a duplicate concept.
+- **Color function availability:** `lib/common.sh` defines `red()`, `yellow()`,
+  `cyan()`, etc. Ensure `finalize_display.sh` sources `common.sh` (it already
+  does via the standard source chain).
+- **Non-blocking count during --fix-nonblockers:** When in fix-nonblockers mode,
+  the count naturally decreases across iterations. The action items display at
+  the end of each iteration should reflect the updated count.
+
+## Seeds Forward
+
+- M40 documents the notes injection behavior and action items color scheme
+- The severity thresholds feed into future Watchtower dashboard health indicators
+- The gated injection pattern could be extended to other context components
+  (drift log, architecture log) for further token savings

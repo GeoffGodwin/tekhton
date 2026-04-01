@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-03-31
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-03-31 | "Address all 10 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] lib/notes_triage_flow.sh:60 — `PROMOTED_MILESTONE_ID=""` is declared as a module-level global variable rather than using `declare -g`; the pattern is inconsistent with how other module-level state is exposed across the codebase (minor naming/pattern drift)

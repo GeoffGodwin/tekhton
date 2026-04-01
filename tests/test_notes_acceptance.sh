@@ -224,10 +224,9 @@ export CLAIMED_NOTE_IDS=""
 
 run_note_acceptance
 if [[ "${NOTE_ACCEPTANCE_RESULT:-}" == *"warn_no_test"* ]]; then
-    pass "run_note_acceptance sets NOTE_ACCEPTANCE_RESULT for BUG"
+    pass "run_note_acceptance sets warn_no_test for BUG with no test file change"
 else
-    # May be pass if test files happen to exist
-    pass "run_note_acceptance runs without error for BUG"
+    fail "run_note_acceptance should set warn_no_test for BUG (got: ${NOTE_ACCEPTANCE_RESULT:-<empty>})"
 fi
 
 # POLISH run — reset first

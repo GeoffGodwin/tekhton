@@ -312,6 +312,43 @@ $(cat SCOUT_REPORT.md)
         fi
     fi
 
+    # --- Extract affected test files from scout report (M43) -----------------
+    export AFFECTED_TEST_FILES=""
+    local _scout_archive="${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+    if [[ -f "$_scout_archive" ]]; then
+        # Extract the "## Affected Test Files" section from the archived scout report
+        AFFECTED_TEST_FILES=$(awk '
+            /^## Affected Test Files/{found=1; next}
+            found && /^## /{exit}
+            found{print}
+        ' "$_scout_archive" | sed '/^[[:space:]]*$/d')
+        # Suppress if scout wrote "None identified"
+        if [[ "$AFFECTED_TEST_FILES" == *"None identified"* ]]; then
+            AFFECTED_TEST_FILES=""
+        fi
+        if [[ -n "$AFFECTED_TEST_FILES" ]]; then
+            log "[test-aware] Extracted affected test files from scout report."
+        fi
+    fi
+
+    # --- Build test baseline summary for coder context (M43) -----------------
+    export TEST_BASELINE_SUMMARY=""
+    if declare -f has_test_baseline &>/dev/null && has_test_baseline 2>/dev/null; then
+        local _baseline_json
+        _baseline_json=$(_test_baseline_json)
+        local _baseline_exit _baseline_failures
+        _baseline_exit=$(grep -oP '"exit_code"\s*:\s*\K[0-9]+' "$_baseline_json" 2>/dev/null || echo "")
+        _baseline_failures=$(grep -oP '"failure_count"\s*:\s*\K[0-9]+' "$_baseline_json" 2>/dev/null || echo "0")
+        if [[ -n "$_baseline_exit" ]]; then
+            if [[ "$_baseline_exit" -eq 0 ]]; then
+                TEST_BASELINE_SUMMARY="All tests passed before your changes (exit code 0, 0 failures)."
+            else
+                TEST_BASELINE_SUMMARY="Tests had ${_baseline_failures} pre-existing failure(s) before your changes (exit code ${_baseline_exit}). These are NOT caused by your work."
+            fi
+            log "[test-aware] Test baseline summary injected into coder context."
+        fi
+    fi
+
     # --- Build context blocks for prompt template ----------------------------
 
     # Human notes block — only populated when notes flags are set
@@ -513,6 +550,8 @@ ${nb_notes}"
     _add_context_component "Preflight Tests" "$PREFLIGHT_TEST_CONTEXT"
     _add_context_component "Non-Blocking Notes" "$NON_BLOCKING_CONTEXT"
     _add_context_component "Scout Report" "$BUG_SCOUT_CONTEXT"
+    _add_context_component "Affected Test Files" "${AFFECTED_TEST_FILES:-}"
+    _add_context_component "Test Baseline" "${TEST_BASELINE_SUMMARY:-}"
     _add_context_component "Clarifications" "$CLARIFICATIONS_CONTENT"
     _add_context_component "TDD Preflight" "${TESTER_PREFLIGHT_CONTENT:-}"
     log_context_report "coder" "$CLAUDE_CODER_MODEL"

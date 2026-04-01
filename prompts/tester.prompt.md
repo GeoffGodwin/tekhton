@@ -42,8 +42,11 @@ Task implemented: {{TASK}}
 - Write tests that verify REAL behavior, not hard-coded expected values.
 - Every assertion must test output from an actual function/method call.
 - Do NOT mock everything — mock only external dependencies (network, DB, filesystem).
-- Do NOT weaken existing tests to make them pass. If a test fails because
-  the implementation changed, REPORT THE BUG — do not fix the test.
+- If existing tests fail due to intentional API/behavior changes that the Coder
+  already implemented correctly (per CODER_SUMMARY.md), update the tests to match
+  the new behavior. If they fail because the implementation is wrong, report as
+  BUG. Never weaken assertions or delete test coverage — update expectations to
+  match correct new behavior.
 - If a test is impossible to pass because the feature was INTENTIONALLY
   removed (per CODER_SUMMARY.md), mark it for removal: `- ORPHAN: [file] reason`
 - Your tests WILL be independently audited. Write them as if a skeptical

@@ -79,6 +79,19 @@ integer (not a range like "25-30").
 ## Suspected Root Cause Areas
 - One line per item describing which file/method is the likely culprit
 
+## Affected Test Files
+- path/to/test_file — tests functions in path/to/source_file (naming convention)
+- path/to/other_test — calls symbol_name() which is modified (cross-reference)
+
+Identify test files that exercise the files you listed in Relevant Files using:
+1. **Naming conventions:** `test_foo.sh` → `foo.sh`, `foo_test.go` → `foo.go`,
+   `test_foo.py` → `foo.py`, `foo.spec.ts` → `foo.ts`
+2. **Repo map cross-references:** If REPO_MAP_CONTENT is available, check for test
+   files that import/call symbols in the files to modify
+3. **Directory co-location:** Test directories that mirror source directories
+   (e.g., `tests/test_foo.sh` for `lib/foo.sh`)
+If no test files are found, write "None identified" in this section.
+
 ## Complexity Estimate
 Files to modify: N
 Estimated lines of change: N

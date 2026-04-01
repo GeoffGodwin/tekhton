@@ -231,10 +231,16 @@ cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
 - [ ] [BUG] Handle [brackets] in JSON
 EOF
 note="- [ ] [BUG] Fix regex pattern: \`^[a-z]+(\\.\d+)?\$\`"
-# Should handle the special chars gracefully
-claim_single_note "$note" || true
-# If it didn't error, that's good
-assert_exit_code "Special chars handled" 0 "echo 'ok'"
+# Should handle the special chars gracefully without corrupting the file
+set +e; claim_single_note "$note"; _special_rc=$?; set -e
+# Exit 0 (claimed) or 1 (not found) are both acceptable; a crash exits >1
+if [[ "$_special_rc" -gt 1 ]]; then
+    echo "    FAIL: Special chars — claim_single_note crashed with rc=$_special_rc"
+    FAIL=1
+fi
+# File must not be corrupted (still contains the BUG note text)
+assert_contains "Special chars: HUMAN_NOTES.md not corrupted" \
+    "$(cat "$TMPDIR/HUMAN_NOTES.md")" "BUG"
 
 test_case "claim_single_note returns 0 on success"
 cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
