@@ -43,8 +43,8 @@ check_milestone_acceptance() {
             # Tier 1: compare against baseline
             local _baseline_assessment="none"
             if [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]] \
-               && command -v compare_test_with_baseline &>/dev/null \
-               && command -v has_test_baseline &>/dev/null \
+               && declare -f compare_test_with_baseline &>/dev/null \
+               && declare -f has_test_baseline &>/dev/null \
                && has_test_baseline; then
                 _baseline_assessment=$(compare_test_with_baseline "$test_output" "$test_exit")
             fi

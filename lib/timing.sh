@@ -157,6 +157,10 @@ _hook_emit_timing_report() {
     cat > "$report_file" <<EOF
 ## Timing Report — run_${ts}
 
+> **Note:** Some phases are nested (e.g., \`coder_prompt\` runs inside
+> \`context_assembly\`). Percentage totals may slightly exceed the expected
+> sum due to this overlap. Individual phase durations are accurate.
+
 | Phase | Duration | % of Total |
 |-------|----------|-----------|
 ${table_rows}

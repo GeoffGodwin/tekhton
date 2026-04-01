@@ -177,8 +177,10 @@ EOF
             | sed 's/^validation_command: *//' | tr -d '"'"'" 2>/dev/null || true)
 
         if [ -n "$validation_cmd" ]; then
+            _phase_start "build_gate_constraints"
             local constraint_timeout="${BUILD_GATE_CONSTRAINT_TIMEOUT:-60}"
             effective_timeout=$(_gate_effective_timeout "$constraint_timeout" "$gate_start" "$gate_timeout") || {
+                _phase_end "build_gate_constraints"
                 _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout"
                 return 1
             }
@@ -207,9 +209,11 @@ EOF
 ${constraint_output}
 \`\`\`
 EOF
+                _phase_end "build_gate_constraints"
                 _phase_end "build_gate"
                 return 1
             fi
+            _phase_end "build_gate_constraints"
             log "Dependency constraints passed."
         fi
     fi
@@ -332,7 +336,17 @@ _warn_summary_drift() {
 
     if [[ -z "$files_section" ]] || echo "$files_section" | grep -qi "no files\|none\|N/A"; then
         warn "CODER_SUMMARY.md reports no files modified but git shows ${actual_count} changed file(s)."
-        warn "Summary accuracy drift detected — review CODER_SUMMARY.md before committing."
+        warn "Summary accuracy drift detected — auto-appending actual file list."
+        # Auto-append the actual git diff file list to CODER_SUMMARY.md
+        local _actual_files
+        _actual_files=$(git diff --name-only HEAD 2>/dev/null | head -30)
+        if [[ -n "$_actual_files" ]]; then
+            {
+                echo ""
+                echo "## Files Modified (auto-detected)"
+                echo "$_actual_files" | while IFS= read -r f; do echo "- \`${f}\`"; done
+            } >> CODER_SUMMARY.md
+        fi
     fi
 }
 

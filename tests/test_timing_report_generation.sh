@@ -98,7 +98,7 @@ echo "=== Test: percentages are reasonable ==="
 # Extract all percentage values from the table
 pct_sum=0
 while IFS= read -r line; do
-    pct=$(echo "$line" | grep -oP '\d+(?=%)' || echo "")
+    pct=$(echo "$line" | sed -n 's/.*[^0-9]\([0-9][0-9]*\)%.*/\1/p')
     if [[ -n "$pct" ]]; then
         pct_sum=$((pct_sum + pct))
     fi

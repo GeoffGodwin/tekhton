@@ -28,7 +28,10 @@ RED="" CYAN="" YELLOW="" NC=""
 echo "Suite 1: Affected Test Files extraction from scout report"
 # --------------------------------------------------------------------------
 
-# Helper: extract affected test files using the same awk logic as coder.sh
+# Helper: extract affected test files using the same awk logic as coder.sh.
+# NOTE: This duplicates inline logic from stages/coder.sh (around line 325-336).
+# Source of truth is coder.sh — if that logic changes, update this helper too.
+# Sourcing coder.sh directly is impractical due to its heavy dependency chain.
 _extract_affected_test_files() {
     local report_file="$1"
     local result
@@ -141,7 +144,9 @@ fi
 echo "Suite 2: Test baseline summary generation"
 # --------------------------------------------------------------------------
 
-# Simulate baseline JSON parsing (same logic as coder.sh)
+# Simulate baseline JSON parsing (same logic as coder.sh).
+# NOTE: This duplicates inline logic from stages/coder.sh (around line 344-358).
+# Source of truth is coder.sh — if that logic changes, update this helper too.
 _build_test_baseline_summary() {
     local baseline_json="$1"
     local exit_code failures summary=""

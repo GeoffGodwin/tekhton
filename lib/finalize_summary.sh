@@ -121,7 +121,7 @@ _hook_emit_run_summary() {
     # Test baseline status
     local baseline_status="disabled"
     if [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]]; then
-        if command -v has_test_baseline &>/dev/null && has_test_baseline 2>/dev/null; then
+        if declare -f has_test_baseline &>/dev/null && has_test_baseline 2>/dev/null; then
             local _bl_json="${PROJECT_DIR:-.}/.claude/TEST_BASELINE.json"
             local _bl_exit
             _bl_exit=$(grep -oP '"exit_code"\s*:\s*\K[0-9]+' "$_bl_json" 2>/dev/null || echo "0")
