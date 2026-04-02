@@ -1,7 +1,7 @@
-# Reviewer Report
+# REVIEWER_REPORT.md
 
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,10 +10,30 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/init_report.sh:130` — The `! grep -q '<!-- TODO:.*--plan -->'` guard is dead code. The actual stub text injected by `init_helpers.sh:252` is `<!-- TODO: Add milestones here, or run tekhton --plan to generate them -->`, which contains ` to generate them` between `--plan` and `-->`, so the pattern `<!-- TODO:.*--plan -->` never matches. The fallback detection still works correctly via the `^#### Milestone` check alone; the guard can be simplified away.
+- None
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `lib/plan.sh:515` (`_display_milestone_summary`) — uses `grep -E '^#{2,3} Milestone [0-9]+'` (2–3 hashes) but `prompts/plan_generate.prompt.md:131` specifies `#### Milestone N:` (4 hashes). The milestone count display in the `--plan` review UI will always show 0 after a successful generation. Pre-existing; not introduced by this PR.
+- None
+
+---
+
+## Review Notes
+
+**Scope:** Single one-character fix — `^#{2,3}` → `^#{2,4}` in `lib/plan.sh:515`
+(`_display_milestone_summary`). Exactly addresses the logged drift observation.
+
+**Correctness:** The plan generation prompt emits `#### Milestone N:` (4 hashes).
+The old pattern `^#{2,3}` stopped at 3 hashes, causing `_display_milestone_summary`
+to always show 0 milestones. The new pattern `^#{2,4}` covers 2–4 hashes, matching
+both the generated format and any hand-authored CLAUDE.md files with shallower headings.
+The fix is strictly additive — no regressions possible.
+
+**DRIFT_LOG.md:** Observation correctly moved from Unresolved to Resolved with a
+2026-04-02 timestamp. Unresolved section now reads "(none)". Metadata updated
+(last audit, runs since audit reset to 0). Format is correct.
+
+**Shell quality:** Change is a grep regex string — no quoting or syntax concerns.
+`bash -n` and shellcheck pass for `lib/plan.sh` (confirmed in JR_CODER_SUMMARY.md).

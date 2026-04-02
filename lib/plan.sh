@@ -512,7 +512,7 @@ _display_milestone_summary() {
     fi
 
     local milestones
-    milestones=$(echo "$file_content" | grep -E '^#{2,3} Milestone [0-9]+' | sed 's/^#* //' || true)
+    milestones=$(echo "$file_content" | grep -E '^#{2,4} Milestone [0-9]+' | sed 's/^#* //' || true)
     local milestone_count
     milestone_count=$(echo "$milestones" | grep -c '.' || true)
 

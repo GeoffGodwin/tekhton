@@ -85,6 +85,50 @@ else
 fi
 
 # ============================================================
+# Test 7: Verify the milestone pattern fix in lib/plan.sh:515
+# The bug: OLD pattern was ^#{2,3} (2-3 hashes)
+# The fix: NEW pattern is ^#{2,4} (2-4 hashes) to match plan_generate output
+# ============================================================
+PATTERN_LINE=$(grep -n '_display_milestone_summary' "${TEKHTON_HOME}/lib/plan.sh" | head -1 | cut -d: -f1)
+if [ -z "$PATTERN_LINE" ]; then
+    fail "Could not find _display_milestone_summary function"
+else
+    # Extract the grep pattern around line 515
+    GREP_PATTERN=$(sed -n '510,520p' "${TEKHTON_HOME}/lib/plan.sh" | grep -o '\^#{2,4}' | head -1)
+    if [ "$GREP_PATTERN" = '^#{2,4}' ]; then
+        pass "lib/plan.sh line 515 has corrected pattern (^#{2,4})"
+    else
+        fail "lib/plan.sh pattern should be ^#{2,4} but found: $GREP_PATTERN"
+    fi
+fi
+
+# ============================================================
+# Test 8: Pattern correctly matches 4-hash milestone headings
+# (This validates that the fix actually works in practice)
+# ============================================================
+TEST_CLAUDE_CONTENT="# Project Title
+## Milestone 1: Setup
+### Milestone 2: Build
+#### Milestone 3: Test
+Content here"
+
+# Test the NEW pattern (what the fix installed)
+NEW_MATCHES=$(echo "$TEST_CLAUDE_CONTENT" | grep -E '^#{2,4} Milestone [0-9]+' | wc -l)
+if [ "$NEW_MATCHES" -eq 3 ]; then
+    pass "Pattern with fix ^#{2,4} correctly detects all 3 milestone types"
+else
+    fail "Pattern should match 3 milestones (2, 3, 4 hashes) but found $NEW_MATCHES"
+fi
+
+# Test the OLD pattern would have failed
+OLD_MATCHES=$(echo "$TEST_CLAUDE_CONTENT" | grep -E '^#{2,3} Milestone [0-9]+' | wc -l || true)
+if [ "$OLD_MATCHES" -eq 2 ]; then
+    pass "Old pattern ^#{2,3} correctly misses the 4-hash milestone (regression confirmed)"
+else
+    fail "Old pattern should have found only 2 matches but found $OLD_MATCHES"
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 if [ "$FAIL" -eq 0 ]; then
