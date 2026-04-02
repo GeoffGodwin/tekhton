@@ -69,14 +69,83 @@ tekhton/
 │   ├── indexer_helpers.sh  # [3.0] Language detection, config validation, file extraction
 │   ├── indexer_history.sh  # [3.0] Task→file association tracking (JSONL)
 │   ├── causality.sh        # [3.0] Causal event log infrastructure + query layer
+│   ├── causality_query.sh  # [3.0] Causal log query helpers
 │   ├── test_baseline.sh    # [3.0] Test baseline capture + pre-existing failure detection
-│   └── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
+│   ├── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
+│   ├── health.sh           # [3.0] Project health scoring orchestration
+│   ├── health_checks.sh    # [3.0] Health check implementations
+│   ├── health_checks_infra.sh # [3.0] Infrastructure health checks
+│   ├── dashboard.sh        # [3.0] Watchtower dashboard data emission
+│   ├── dashboard_emitters.sh  # [3.0] Dashboard data file writers
+│   ├── dashboard_parsers.sh   # [3.0] Dashboard data parsers
+│   ├── diagnose.sh         # [3.0] Pipeline diagnostics engine
+│   ├── diagnose_helpers.sh # [3.0] Diagnostic helper functions
+│   ├── diagnose_output.sh  # [3.0] Diagnostic output formatting
+│   ├── diagnose_rules.sh   # [3.0] Diagnostic rule definitions
+│   ├── express.sh          # [3.0] Express mode (zero-config execution)
+│   ├── express_persist.sh  # [3.0] Express mode configuration persistence
+│   ├── dry_run.sh          # [3.0] Dry-run preview mode
+│   ├── init.sh             # [3.0] Init orchestration
+│   ├── init_config.sh      # [3.0] Init config generation
+│   ├── init_config_emitters.sh # [3.0] Init config section emitters
+│   ├── init_config_sections.sh # [3.0] Init config section builders
+│   ├── init_helpers.sh     # [3.0] Init helper functions
+│   ├── init_report.sh      # [3.0] Init report generation
+│   ├── init_synthesize_helpers.sh # [3.0] Init synthesis helpers
+│   ├── init_synthesize_ui.sh # [3.0] Init synthesis UI
+│   ├── intake_helpers.sh   # [3.0] Intake agent helpers
+│   ├── intake_verdict_handlers.sh # [3.0] Intake verdict routing
+│   ├── migrate.sh          # [3.0] Version migration framework
+│   ├── migrate_cli.sh      # [3.0] Migration CLI interface
+│   ├── notes_core.sh       # [3.0] Notes core rewrite
+│   ├── notes_cli.sh        # [3.0] Notes CLI subcommand
+│   ├── notes_cli_write.sh  # [3.0] Notes CLI write operations
+│   ├── notes_cleanup.sh    # [3.0] Notes cleanup operations
+│   ├── notes_acceptance.sh # [3.0] Notes acceptance checking
+│   ├── notes_acceptance_helpers.sh # [3.0] Notes acceptance helpers
+│   ├── notes_migrate.sh    # [3.0] Notes format migration
+│   ├── notes_rollback.sh   # [3.0] Notes rollback support
+│   ├── context_cache.sh    # [3.0] Intra-run context cache
+│   ├── checkpoint.sh       # [3.0] Progress checkpoint management
+│   ├── checkpoint_display.sh # [3.0] Checkpoint display formatting
+│   ├── crawler.sh          # [3.0] Project crawler orchestration
+│   ├── crawler_content.sh  # [3.0] Crawler content sampling
+│   ├── crawler_inventory.sh # [3.0] Crawler file inventory
+│   ├── crawler_deps.sh     # [3.0] Crawler dependency analysis
+│   ├── rescan.sh           # [3.0] Incremental rescan
+│   ├── rescan_helpers.sh   # [3.0] Rescan helper functions
+│   ├── artifact_handler.sh # [3.0] AI artifact detection handler
+│   ├── artifact_handler_ops.sh # [3.0] Artifact handler operations
+│   ├── detect_services.sh  # [3.0] Service detection
+│   ├── detect_workspaces.sh # [3.0] Workspace detection
+│   ├── detect_ci.sh        # [3.0] CI/CD detection
+│   ├── detect_infrastructure.sh # [3.0] Infrastructure detection
+│   ├── detect_test_frameworks.sh # [3.0] Test framework detection
+│   ├── detect_doc_quality.sh # [3.0] Documentation quality assessment
+│   ├── detect_ai_artifacts.sh # [3.0] AI artifact detection
+│   ├── inbox.sh            # [3.0] Inbox management
+│   ├── plan_answers.sh     # [3.0] Planning answer file import
+│   ├── plan_browser.sh     # [3.0] Browser-based planning
+│   ├── plan_review.sh      # [3.0] Planning review UI
+│   ├── safety_net.sh       # [3.0] Run safety net + rollback
+│   ├── run_memory.sh       # [3.0] Structured cross-run memory (JSONL)
+│   ├── timing.sh           # [3.0] Stage timing and duration estimation
+│   ├── milestone_dag_helpers.sh # [3.0] DAG helper functions
+│   ├── milestone_dag_io.sh # [3.0] DAG I/O operations
+│   ├── milestone_dag_validate.sh # [3.0] DAG validation
+│   ├── milestone_archival_helpers.sh # [3.0] Archival helper functions
+│   ├── metrics_dashboard.sh # [3.0] Metrics dashboard formatting
+│   ├── drift_prune.sh      # [3.0] Drift log pruning
+│   └── quota.sh            # [3.0] API quota management
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
-│   ├── architect.sh        # Pre-stage 2: Architect audit (conditional)
-│   ├── coder.sh            # Stage 1: Scout + Coder + build gate
-│   ├── review.sh           # Stage 2: Review loop + rework routing
-│   ├── tester.sh           # Stage 3: Test writing + validation
+│   ├── architect.sh        # Pre-stage: Architect audit (conditional)
+│   ├── intake.sh           # [3.0] Task intake / PM gate
+│   ├── coder.sh            # Scout + Coder + build gate
+│   ├── security.sh         # [3.0] Security review stage
+│   ├── review.sh           # Review loop + rework routing
+│   ├── tester.sh           # Test writing + validation
 │   ├── cleanup.sh          # [2.0] Post-success debt sweep stage
+│   ├── init_synthesize.sh  # [3.0] Init synthesis stage
 │   ├── plan_interview.sh   # Planning: interactive interview agent
 │   ├── plan_followup_interview.sh # Planning: follow-up interview agent
 │   └── plan_generate.sh    # Planning: CLAUDE.md generation agent
@@ -308,6 +377,18 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `TESTER_FIX_ENABLED` | Auto-seed fix run when tester stage tests fail (default: false) |
 | `TESTER_FIX_MAX_DEPTH` | Max recursive fix attempts in tester stage (default: 1) |
 | `TESTER_FIX_OUTPUT_LIMIT` | Max chars of test output in tester fix task string (default: 4000) |
+| `SECURITY_AGENT_ENABLED` | Toggle security review stage (default: true) |
+| `SECURITY_MAX_TURNS` | Max turns for security agent (default: 15) |
+| `SECURITY_BLOCK_SEVERITY` | Minimum severity to block pipeline (default: HIGH) |
+| `INTAKE_AGENT_ENABLED` | Toggle intake/PM stage (default: true) |
+| `INTAKE_MAX_TURNS` | Max turns for intake agent (default: 10) |
+| `INTAKE_CLARITY_THRESHOLD` | Clarity score below which tasks are rejected (default: 40) |
+| `DASHBOARD_ENABLED` | Toggle Watchtower dashboard (default: true) |
+| `DASHBOARD_REFRESH_INTERVAL` | Seconds between data refreshes (default: 10) |
+| `HEALTH_ENABLED` | Toggle health scoring (default: true) |
+| `PIPELINE_ORDER` | Stage order: standard or test_first (default: standard) |
+| `DRY_RUN_CACHE_TTL` | Dry-run cache validity in seconds (default: 3600) |
+| `RUN_MEMORY_MAX_ENTRIES` | Max entries in structured run memory (default: 50) |
 
 ## Testing
 
@@ -377,7 +458,7 @@ The gold standard is `loenn/docs/GDD_Loenn.md` and `loenn/CLAUDE.md`. Key qualit
 
 <!-- See MILESTONE_ARCHIVE.md for completed milestones -->
 
-## Current Initiative: Adaptive Pipeline 2.0
+## Completed Initiative: Adaptive Pipeline 2.0
 
 Tekhton 2.0 makes the pipeline **adaptive**: aware of its own context economics,
 capable of milestone-to-milestone progression, able to interrupt itself when
@@ -402,7 +483,7 @@ Full design document: `DESIGN_v2.md`.
 ### Milestone Plan
 <!-- See MILESTONE_ARCHIVE.md for completed milestones -->
 
-## Future Initiative: Brownfield Intelligence (Smart Init)
+## Completed Initiative: Brownfield Intelligence (Smart Init)
 
 Tekhton's `--init` today is a bare scaffold: copy templates, stub CLAUDE.md, tell
 the user to fill in the blanks. This locks out every project that isn't greenfield.
@@ -453,7 +534,10 @@ The end state: Tekhton can be dropped into any repository — 50-file CLI tool o
 
 ### Milestone Plan
 
-## Initiative: Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+## Completed Initiative: Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+**Status: Complete** — All 51 milestones delivered (April 2026). See `DESIGN_v3.md` for
+the full design document and retrospective.
 
 Tekhton 3.0 makes the pipeline **context-aware** at two levels. First, a
 **Milestone DAG** with a sliding context window replaces inline milestone storage
@@ -463,6 +547,10 @@ waste from future milestones and enables future parallel execution. Second,
 **intelligent indexing** via tree-sitter repo maps (optionally enriched with Serena
 LSP via MCP) replaces blind architecture injection — agents receive ranked,
 token-budgeted file signatures relevant to their task.
+
+V3 also delivered: Watchtower dashboard, security agent, intake agent, express mode,
+TDD support, browser planning, dry-run preview, rollback, health scoring, structured
+run memory, progress transparency, and many developer experience improvements.
 
 Full design document: `DESIGN_v3.md`.
 

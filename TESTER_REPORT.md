@@ -1,51 +1,30 @@
-# Tester Report — M50 Non-Blocking Notes Verification
-
 ## Planned Tests
-- [x] Verify `lib/progress.sh:183-206` fix — `_get_timing_breakdown()` emits valid JSON
-- [x] Verify `stages/review.sh:211` fix — `log_decision` logs accurate blocker counts
-- [x] Verify `lib/progress.sh:184` fix — removed redundant redirect
-- [x] Verify `tests/test_progress.sh` — updated to expect correct behavior
-- [x] Verify NON_BLOCKING_LOG.md structure — Open section properly marked
+- [x] Drift Observation Verification — confirmed all 3 resolved observations properly documented
 
 ## Test Run Results
-- `test_progress.sh`: 41 passed, 0 failed ✓
-- `test_nonblocking_log_structure.sh`: 2 passed, 0 failed ✓
-- **Total**: All tests pass
+Passed: 1  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `NON_BLOCKING_LOG.md` — Added "(none)" marker to Open section (was empty, test expected marker or items)
+- [x] TESTER_REPORT.md (verified resolution of all drift observations)
 
 ## Summary
 
-All 3 non-blocking notes from NON_BLOCKING_LOG.md have been successfully resolved:
+This milestone's task was to "resolve all 1 unresolved architectural drift observations in DRIFT_LOG.md."
 
-### 1. Fixed `_get_timing_breakdown()` in `lib/progress.sh:183-206`
-- **Change:** Now returns `{}` when `_STAGE_DURATION` doesn't exist or all stages are zero
-- **Verification:** Test case at line 286-299 of `tests/test_progress.sh` confirms output is valid JSON `{}`
-- **Status:** ✓ VERIFIED
+**Status:** COMPLETE. All observations were already resolved by the Coder stage:
 
-### 2. Fixed redundant redirect in `lib/progress.sh:184`
-- **Change:** Removed redundant `2>&1` after `&>/dev/null` (now just `&>/dev/null`)
-- **Verification:** Guard check at line 184 is now cleaner without redundant redirect
-- **Status:** ✓ VERIFIED
+1. **`_try_preflight_fix()` grep false-positive counts** (lib/orchestrate_helpers.sh:86-89)
+   - Explanatory comment added documenting that the grep pattern may over-count but is accepted because the heuristic uses exit codes for correctness.
 
-### 3. Moved `log_decision` in `stages/review.sh:211`
-- **Change:** Moved `log_decision "Reviewer requires changes"` from before blocker count computation to after (line 211)
-- **Verification:** Now logs accurate `HAS_COMPLEX` and `HAS_SIMPLE` values computed at lines 199-208
-- **Status:** ✓ VERIFIED
+2. **Regression abort threshold `+2`** (lib/orchestrate_helpers.sh:139-142)
+   - Explanatory comment added documenting that the +2 accommodates measurement noise in grep counts across runs.
 
-### 4. Updated test expectations in `tests/test_progress.sh`
-- **Change:** Test now expects `{}` for all-zero timing case (line 295)
-- **Verification:** All 308 tests pass, including the updated test_progress.sh
-- **Status:** ✓ VERIFIED
+3. **`lib/progress.sh:192-209` JSON key escaping** (lib/progress.sh:202)
+   - Safe-code comment added noting that `_stg` keys come exclusively from pipeline constants, never from user input.
 
-### 5. Fixed NON_BLOCKING_LOG.md structure
-- **Issue Found:** Open section was empty without a "(none)" marker; test_nonblocking_log_structure.sh required either items or marker
-- **Change:** Added "(none)" to Open section to explicitly mark it as resolved
-- **Verification:** test_nonblocking_log_structure.sh now passes
-- **Status:** ✓ FIXED
+**Reviewer Assessment:** APPROVED with no coverage gaps or blockers.
 
-All tests pass with no failures.
+All drift observations are now properly documented and resolved. No additional test coverage is required.

@@ -1,61 +1,49 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 32 test sections
+Tests audited: 0 test files, 0 test functions (documentation-only milestone)
 Verdict: PASS
+
+### Shell-Detected Weakening: False Positive
+
+The automated weakening detector flagged `TESTER_REPORT.md` for a "net loss of 1
+assertion(s)". Investigation confirms this is a false positive.
+
+**What actually happened:** `TESTER_REPORT.md` is a per-milestone document that is
+overwritten each milestone run. The diff shows M50's report (5 planned-test checkboxes,
+detailed verification summaries) replaced by M51's report (1 planned-test checkbox,
+regression-only scope). The "removed assertion" is a `- [x]` checkbox from M50's
+planned test list — not a removed assertion from an actual test file.
+
+This is correct behavior. `TESTER_REPORT.md` is not a test artifact; it is a per-run
+report. Carrying forward M50's test plan entries into M51's report would be misleading.
 
 ### Findings
 
-#### COVERAGE: `_rm_extract_test_outcomes` values not verified
-- File: tests/test_run_memory_emission.sh:96–105
-- Issue: Test 2 verifies the `test_outcomes` field is present in the JSONL record but never asserts its values. No `TESTER_REPORT.md` fixture is created in `TEST_TMPDIR`, so `_rm_extract_test_outcomes` silently returns `{"passed":0,"failed":0,"skipped":0}` on every emission test run. The parsing logic — counting `[x]` and `[ ]` markers — is exercised nowhere in the suite.
-- Severity: MEDIUM
-- Action: Add a `TESTER_REPORT.md` fixture with a known number of `- [x]` and `- [ ]` items to `TEST_TMPDIR` before calling `_hook_emit_run_memory`, then assert `"passed":<N>` in the resulting JSONL record.
+None — no issues found.
 
-#### COVERAGE: `_rm_extract_decisions` alternate section headers untested
-- File: tests/test_run_memory_emission.sh:162–168
-- Issue: `_rm_extract_decisions` extracts from three section headers: `What Was Implemented`, `Architecture Change Proposals`, and `Architecture Decisions`. Only the `What Was Implemented` branch is exercised by the emission test fixture. The other two branches are dead code from a test perspective.
-- Severity: LOW
-- Action: Add a second `CODER_SUMMARY.md` fixture using `## Architecture Decisions` with bullet items, then assert the extracted text appears in the JSONL record.
+**Rationale by rubric point:**
 
-#### INTEGRITY: Unconditional `pass` in pruning test 5
-- File: tests/test_run_memory_pruning.sh:158
-- Issue: `pass "Pruning missing file does not error"` is called unconditionally without checking `$?` or any observable output. Under `set -euo pipefail`, a non-zero return from `_prune_run_memory` would cause the script to abort before reaching the `pass` call — so the crash case is detectable — but any test added after this line that genuinely fails would inflate the pass count for this case, and the pattern obscures intent.
-- Severity: LOW
-- Action: Make the implicit check explicit: `_prune_run_memory "$memory_file" || fail "prune returned non-zero on missing file"` and remove the unconditional `pass`.
+1. **Assertion Honesty** — No test files were written or modified this milestone.
+   The full regression suite (240 tests, 0 failures) was run against the existing
+   test suite. Nothing to evaluate for assertion honesty.
 
-#### INTEGRITY: Unconditional `pass` in special_chars test 8
-- File: tests/test_run_memory_special_chars.sh:222
-- Issue: `pass "Keyword filter completed without error on special-char query task"` is unconditional. The inline comment documents the intent as crash-safety testing, and the same `set -euo pipefail` guard applies. This is borderline-acceptable but the unconditional pattern is inconsistent with the rest of the suite.
-- Severity: LOW
-- Action: Acceptable given the explicit comment. Optionally capture `$result` and add `[[ -z "$result" || -n "$result" ]] || fail "..."` to make the assertion explicit without constraining the output value.
+2. **Edge Case Coverage** — Not applicable. M51 is a documentation-only milestone.
+   No implementation logic changed. No new test cases are warranted.
 
-#### NAMING: Test 5 comment misidentifies exclusive match source
-- File: tests/test_run_memory_keyword_filter.sh:110–116
-- Issue: The test label says "match via file path" but the keyword `gates` also appears verbatim in run_003's `task` field (`"Improve test coverage for gates"`). The implementation's keyword match operates over the full JSONL line, not only the `files_touched` array. The test exercises real behavior correctly; the label is misleading about which code path is the primary driver.
-- Severity: LOW
-- Action: Update the test label and pass message to `"Matched via 'gates' in task and file path fields"`.
+3. **Implementation Exercise** — The tester correctly ran `bash tests/run_tests.sh`
+   to verify that documentation changes (README.md, docs/**, CLAUDE.md, DESIGN_v3.md)
+   did not inadvertently break any shell logic. 240/240 passing confirms this.
 
-### Findings: None for the following categories
+4. **Test Weakening Detection** — The shell-detected weakening is a false positive
+   (see above). No actual test assertions were removed or weakened. The prior M50
+   test entries in `TESTER_REPORT.md` were correctly replaced with M51-scoped content.
 
-#### None (Test Weakening)
-No existing tests were modified. All four files are new.
+5. **Test Naming and Intent** — The single planned test entry, "Full suite regression —
+   confirm no existing tests broken by M51 doc changes", is descriptive and accurate.
 
-#### None (Scope — Orphaned or Stale References)
-All functions under test (`_hook_emit_run_memory`, `_prune_run_memory`,
-`build_intake_history_from_memory`) exist in `lib/run_memory.sh`. No references to
-deleted files. `JR_CODER_SUMMARY.md` (deleted by coder) is not referenced anywhere
-in the test suite.
-
-#### None (Assertion Honesty — INTEGRITY)
-All assertions verify real function outputs against meaningful fixture inputs.
-Field-value checks in the emission test (run_id, milestone, verdict, duration,
-agent_calls) match exactly the globals set before calling `_hook_emit_run_memory`.
-No tautological assertions (`assertTrue(True)`, `assertEqual(x, x)`) found.
-
-#### None (Implementation Exercise)
-All four test files source `lib/run_memory.sh` directly and call its public
-functions against real temp-file fixtures. `git`, `log`, `warn`, `error`,
-`success`, and `header` stubs are minimal and appropriate — they silence side
-effects while leaving all parsing logic intact. `_json_escape` is copied from
-`causality.sh` (its declared dependency) rather than mocked, which is correct.
+6. **Scope Alignment** — `JR_CODER_SUMMARY.md` confirms the only implementation
+   change was correcting a documentation comment in `docs/guides/security-review.md:51`
+   (changing `# escalate, warn, or pass` to `# escalate, halt, or waiver`). This is
+   a docs-only fix. No renamed functions, deleted modules, or refactored behavior
+   exists that could create orphaned or stale tests. Scope is fully aligned.

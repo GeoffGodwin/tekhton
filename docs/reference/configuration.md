@@ -26,6 +26,14 @@ This file is sourced as bash, so values follow bash syntax.
 | `BUILD_ERROR_PATTERN` | `ERROR` | Pattern to match in build output for errors |
 | `REQUIRED_TOOLS` | `git claude` | Space-separated list of required CLI tools |
 
+## Pipeline Order
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `PIPELINE_ORDER` | `standard` | Stage execution order: `standard` or `test_first` (TDD mode) |
+| `TDD_PREFLIGHT_FILE` | `TESTER_PREFLIGHT.md` | Output file for TDD write-failing tester |
+| `CODER_TDD_TURN_MULTIPLIER` | `1.2` | Coder turn multiplier in `test_first` mode |
+
 ## Agent Models
 
 | Key | Default | Description |
@@ -320,6 +328,28 @@ When running in `--milestone` mode, these values override the base turn limits:
 | `CAUSAL_LOG_FILE` | `.claude/logs/CAUSAL_LOG.jsonl` | Event log file path |
 | `CAUSAL_LOG_RETENTION_RUNS` | `50` | Archived logs to retain |
 | `CAUSAL_LOG_MAX_EVENTS` | `2000` | Max events per run before eviction |
+
+## Test Baseline
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `TEST_BASELINE_ENABLED` | `true` | Toggle pre-existing failure detection |
+| `TEST_BASELINE_PASS_ON_PREEXISTING` | `true` | Auto-pass when all failures are pre-existing |
+| `TEST_BASELINE_STUCK_THRESHOLD` | `2` | Consecutive identical failures before stuck detection |
+| `TEST_BASELINE_PASS_ON_STUCK` | `false` | Auto-pass on stuck vs exit with diagnosis |
+
+## Structured Run Memory
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `RUN_MEMORY_MAX_ENTRIES` | `50` | Max entries in the run memory store |
+
+## Dry-Run Preview
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `DRY_RUN_CACHE_TTL` | `3600` | Cache validity in seconds (default: 1 hour) |
+| `DRY_RUN_CACHE_DIR` | `.claude/dry_run_cache` | Cache directory for preview results |
 
 ## Brownfield Detection
 

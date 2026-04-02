@@ -21,45 +21,71 @@ xdg-open .claude/dashboard/index.html
     `python3 -m http.server 8080 -d .claude/dashboard` and open
     `http://localhost:8080`.
 
-## Dashboard Sections
+## Dashboard Tabs
 
-### Live Run Status
+### Live Run
 
-Shows the currently running pipeline stage, agent name, turn count, and elapsed
-time. Updates automatically during a pipeline run.
+Shows the currently running pipeline stage with real-time updates:
+
+- Current agent name and stage
+- Turn count and elapsed time
+- Stage timeline showing progression through the pipeline
+- Activity indicator (active, idle, waiting)
+
+Updates automatically during a pipeline run via data file polling.
 
 ### Milestone Map
 
-Visualizes your milestone plan as a dependency graph. Each milestone shows:
+Visualizes your milestone plan as a dependency graph:
 
-- Status (pending, in progress, done, failed)
-- Acceptance criteria progress
-- Dependencies on other milestones
+- Status indicators: pending, in progress, done, failed
+- Dependency edges between milestones
+- Parallel group visualization
+- Acceptance criteria progress for the active milestone
 
-### Run History
+### Reports
 
-A timeline of past pipeline runs showing:
+Run history with detailed breakdowns:
 
-- Task description
-- Duration and agent call count
-- Outcome (success, failure, partial)
-- Stage-by-stage breakdown
+- Task description and outcome (success, failure, partial)
+- Duration and agent call count per run
+- Stage-by-stage breakdown with turn counts
+- Error classification for failed runs
+
+### Trends
+
+Performance trends across your run history:
+
+- Success rate over time
+- Average duration by task type
+- Turn consumption patterns
+- Health score trend (improving or declining)
 
 ### Health Score
 
-Displays your project's health score with category breakdowns:
+Displays your project's health assessment:
 
-- Tests, Quality, Dependencies, Documentation, Hygiene
-- Trend over time (improving or declining)
-- Belt rating (visual indicator)
+- Five-category breakdown: Tests, Quality, Dependencies, Documentation, Hygiene
+- Weighted overall score
+- Belt rating for quick visual feedback
+- Comparison against baseline (if set)
 
 ### Security Summary
 
 Overview of security findings across runs:
 
-- Open findings by severity
-- Remediation rate
-- Waived issues
+- Open findings grouped by severity (Critical, High, Medium, Low)
+- Remediation rate and trend
+- Waived issues count
+
+### Action Items
+
+Aggregated view of items needing attention:
+
+- Non-blocking notes from `NON_BLOCKING_LOG.md` with severity colors
+- Drift observations from `DRIFT_LOG.md`
+- Human action items from `HUMAN_ACTION_REQUIRED.md`
+- Count badges and priority indicators
 
 ## Configuration
 
@@ -80,6 +106,15 @@ DASHBOARD_MAX_TIMELINE_EVENTS=500    # Max events in the timeline
 | `minimal` | Current status and outcome only |
 | `normal` | Status, run history, milestone map, health (default) |
 | `verbose` | Everything, including detailed agent logs and metrics |
+
+## Smart Refresh
+
+The dashboard uses smart refresh to minimize unnecessary reloads:
+
+- Data files are only re-read when their modification time changes
+- During active pipeline runs, the refresh interval is `DASHBOARD_REFRESH_INTERVAL` seconds
+- Between runs, refresh is less frequent to reduce resource usage
+- Layout adapts based on available data (e.g., hides milestone map when no milestones exist)
 
 ## Troubleshooting
 
