@@ -1,10 +1,9 @@
 ## Summary
-This change adds 11 lines to `lib/dashboard_parsers.sh`, a bash library that parses pipeline report files (SECURITY_REPORT.md, CODER_SUMMARY.md, REVIEWER_REPORT.md, INTAKE_REPORT.md, and metrics JSONL/JSON files) into JSON for the Watchtower dashboard. All input comes from internal pipeline-generated files, not from network or direct user input. No authentication, cryptography, or secrets handling is involved. The overall security posture is good; findings are all LOW severity related to JSON construction robustness in bash fallback paths and a predictable temporary filename.
+This change extracted `_parse_run_summaries_from_files()` into a new file (`lib/dashboard_parsers_runs_files.sh`) and updated stale file references in `SECURITY_NOTES.md`. No authentication, cryptography, user input handling, or network communication is involved. The refactor is mechanical: the function body is unchanged, the source chain is extended by one hop, and all prior security properties are preserved. The three previously-identified LOW findings (JSON escape coverage, predictable temp file suffix) are confirmed fixed in the current code. No new vulnerabilities were introduced.
 
 ## Findings
-- [LOW] [category:A03] [lib/dashboard_parsers.sh:362] fixable:yes — Bash fallback JSON construction in `_parse_run_summaries_from_jsonl` interpolates `${task_label}` directly into a JSON string without calling `_json_escape`. If a task label contains backslashes or control characters, the resulting JSON is malformed. Use `$(_json_escape "${task_label}")` consistent with how other string fields are handled in `_parse_intake_report` and `_parse_coder_summary`.
-- [LOW] [category:A03] [lib/dashboard_parsers.sh:448] fixable:yes — Same issue in `_parse_run_summaries_from_files`: `${milestone}`, `${run_type}`, `${task_label}`, and `${outcome}` are interpolated into JSON without `_json_escape`. These fields are sourced from RUN_SUMMARY_*.json files which could contain arbitrary task label strings.
-- [LOW] [category:A04] [lib/dashboard_parsers.sh:35] fixable:yes — Temporary file in `_write_js_file` uses `${filepath}.tmp.$$` (PID-based). PID is guessable in low-process-count environments. Prefer `mktemp "${filepath}.tmp.XXXXXX"` for an unpredictable suffix, reducing the TOCTOU window on shared filesystems.
+
+- [LOW] [category:A03] [lib/dashboard_parsers_runs_files.sh:75] fixable:yes — SECURITY_NOTES.md cites line 84 as the location of the `_json_escape` fix in the sed fallback path, but the JSON construction where the fix applies is at line 75. Line 84 is `result="${result}${json_content}"`. The fix is present and correct; only the reference line number in the notes is off by ~9 lines. Informational only — no security risk.
 
 ## Verdict
-FINDINGS_PRESENT
+CLEAN
