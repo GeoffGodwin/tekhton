@@ -19,11 +19,12 @@ set -euo pipefail
 : "${CONTEXT_COMPILER_ENABLED:=false}"   # Toggle task-scoped context assembly
 
 # --- Execution pipeline defaults (derivable from CLAUDE_STANDARD_MODEL) ---
+: "${CLAUDE_STANDARD_MODEL:=claude-sonnet-4-6}"   # Must be set before any derived model defaults
 : "${REQUIRED_TOOLS:=git claude}"
-: "${CLAUDE_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
-: "${CLAUDE_JR_CODER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
-: "${CLAUDE_REVIEWER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
-: "${CLAUDE_TESTER_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+: "${CLAUDE_CODER_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+: "${CLAUDE_JR_CODER_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+: "${CLAUDE_REVIEWER_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+: "${CLAUDE_TESTER_MODEL:=${CLAUDE_STANDARD_MODEL}}"
 : "${CODER_MAX_TURNS:=80}"
 : "${JR_CODER_MAX_TURNS:=40}"
 : "${REVIEWER_MAX_TURNS:=20}"
@@ -234,7 +235,7 @@ set -euo pipefail
 
 # --- Intake agent defaults (PM pre-stage gate) ---
 : "${INTAKE_AGENT_ENABLED:=true}"
-: "${CLAUDE_INTAKE_MODEL:=${CLAUDE_STANDARD_MODEL:-sonnet}}"  # Sonnet for eval; Opus reserved for NEEDS_CLARITY
+: "${CLAUDE_INTAKE_MODEL:=${CLAUDE_STANDARD_MODEL}}"  # Sonnet for eval; Opus reserved for NEEDS_CLARITY
 : "${INTAKE_MAX_TURNS:=10}"
 : "${INTAKE_CLARITY_THRESHOLD:=40}"
 : "${INTAKE_TWEAK_THRESHOLD:=70}"
@@ -257,7 +258,7 @@ set -euo pipefail
 : "${ARTIFACT_DETECTION_ENABLED:=true}"
 : "${ARTIFACT_HANDLING_DEFAULT:=}"              # Empty = interactive; set archive|tidy|ignore for headless
 : "${ARTIFACT_ARCHIVE_DIR:=.claude/archived-ai-config}"
-: "${ARTIFACT_MERGE_MODEL:=${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+: "${ARTIFACT_MERGE_MODEL:=${CLAUDE_STANDARD_MODEL}}"
 : "${ARTIFACT_MERGE_MAX_TURNS:=10}"
 
 # --- Build gate timeout defaults (Milestone 30: hang prevention) ---

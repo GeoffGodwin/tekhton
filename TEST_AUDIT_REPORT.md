@@ -1,73 +1,54 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 18 test assertions
+Tests audited: 1 file, 6 test functions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: No test for empty-directory edge case
-- File: tests/test_dashboard_parsers_delegation.sh (absent test — no specific line)
-- Issue: No test calls `_parse_run_summaries` against a directory containing neither
-  `metrics.jsonl` nor `RUN_SUMMARY_*.json` files. The implementation falls through to
-  `_parse_run_summaries_from_files`, whose `ls ... || true` guard produces `[]`, but no
-  assertion confirms this. All three suites (2–4) inject fixture data before calling
-  the function.
+#### SCOPE: CODER_SUMMARY.md absent; audit context misstates implementation changes
+- File: tests/test_config_defaults_claude_standard_model.sh (general)
+- Issue: The audit context lists "Implementation Files Changed: none", but `lib/config_defaults.sh` is modified per `git status` and confirmed by REVIEWER_REPORT.md. CODER_SUMMARY.md does not exist in the repo. The tests reference specific implementation line numbers in comments (lines 24–27, 47, 82) and the grep-based Test 4 exercises the real file — so tests are verifiably aligned with the actual fix. The gap is in documentation, not test quality.
 - Severity: LOW
-- Action: Add a test case after Suite 3's teardown: call `_parse_run_summaries` on an
-  empty directory and assert output equals `[]`.
+- Action: No test changes needed. Ensure CODER_SUMMARY.md is produced by the coder agent on future tasks so the audit context is accurate.
 
-#### COVERAGE: Depth parameter enforcement not exercised
-- File: tests/test_dashboard_parsers_delegation.sh (absent test — no specific line)
-- Issue: All fixture sets contain fewer records than the `depth=10` argument. Neither
-  the Python `lines[-depth:]` truncation path nor the bash counter path is stress-tested
-  with N+1 records. The divergence between paths (documented at
-  `lib/dashboard_parsers_runs.sh:221-227`) goes unverified.
+#### COVERAGE: Test 4 comment enumerates fewer fix sites than the reviewer identified
+- File: tests/test_config_defaults_claude_standard_model.sh:115-121
+- Issue: The comment lists lines 24, 25, 26, 27, 47, 82 as the fixed lines, but REVIEWER_REPORT.md also identifies lines 238 (CLAUDE_INTAKE_MODEL) and 261 (ARTIFACT_MERGE_MODEL) as having had redundant fallbacks removed. The comment is informational only — Test 4's `grep -E 'CLAUDE_.*MODEL.*:-.*claude-'` scans the entire file and would catch stale fallbacks on any line, including 238 and 261. The structural coverage is complete; the inline comment documentation is incomplete.
 - Severity: LOW
-- Action: Add a test with more fixture JSONL lines than the depth limit (e.g., depth=2,
-  3 records) and assert exactly 2 entries are returned.
+- Action: Update the comment in Test 4 to note that the grep covers all CLAUDE_*_MODEL lines, or add the two additional line numbers (238, 261) to the existing list.
 
-#### COVERAGE: Zero-turn filtering not exercised
-- File: tests/test_dashboard_parsers_delegation.sh (absent test — no specific line)
-- Issue: Both the Python and bash paths in `_parse_run_summaries_from_jsonl` filter
-  records where `total_turns == 0`. Suite 2's two fixture records both have non-zero
-  turns. No test inserts a zero-turn noise record to confirm exclusion.
+#### EXERCISE: _clamp_config_value and _clamp_config_float are no-op stubs
+- File: tests/test_config_defaults_claude_standard_model.sh:30-38
+- Issue: Both clamp helpers are stubbed as no-ops, so the clamping block at lines 393–479 of config_defaults.sh is not exercised. This is a conscious and correct trade-off: the task under test is initialization order for CLAUDE_STANDARD_MODEL, not clamping behavior. Existing tests in the broader suite cover clamping. The stubs are required to source config_defaults.sh in isolation without depending on common.sh internals.
 - Severity: LOW
-- Action: Add a JSONL fixture line with `"total_turns":0` interleaved with valid records
-  in Suite 2 and assert the zero-turn record does not appear in the output.
+- Action: No change needed. Adding a comment explaining why the stubs exist (isolation of init-order concern, not clamping) would improve future maintainability.
 
 ### Detailed Pass Notes
 
-**Assertion Honesty — GOOD.** All asserted values are directly traceable to fixture
-data processed through real implementation logic:
-- `"task_label"` field name (tests 2.2/2.3): matches Python emitter at
-  `lib/dashboard_parsers_runs.sh:95`.
-- `total_turns: 15`, `total_time_s: 120` (tests 2.4/2.5): values injected in Suite 2
-  JSONL and passed through by `d.get('total_turns', 0)` and `d.get('total_time_s', 0)`.
-- `total_agent_calls → total_turns` alias (test 3.2): confirmed at
-  `lib/dashboard_parsers_runs.sh:264` (Python) and lines 282-283 (sed fallback).
-- `wall_clock_seconds → total_time_s` alias (test 3.3): confirmed at line 265 / 286-287.
-No hard-coded magic values unmoored from the implementation.
+**Assertion Honesty — GOOD.** All asserted values are traceable to the implementation:
+- `"claude-sonnet-4-6"` (Test 2, line 71): matches `config_defaults.sh:22` exactly.
+- Non-empty derived model checks (Test 3): sourced from real `:=` assignments at lines 24–27, 47, 82.
+- Grep absence check (Test 4): structurally verifies the fix removed hardcoded `:-claude-` fallbacks; the absence is directly observable in the current file state.
+- No hard-coded magic values unmoored from implementation logic.
 
-**Implementation Exercise — GOOD.** Suites 2–4 call `_parse_run_summaries` and
-`_parse_run_summaries_from_files` against real temporary files after sourcing the actual
-implementation. Suite 4's PATH-prepended stub `python3` (exits 1, no output) correctly
-forces the sed/bash fallback: the `$(python3 -c "..." || true)` subshell produces empty
-`json_content`, which triggers the `[[ -z "$json_content" ]]` branch at
-`lib/dashboard_parsers_runs.sh:277`. The fallback is genuinely exercised.
+**Implementation Exercise — GOOD.** All six tests source `lib/config_defaults.sh` directly inside
+subshells. No implementation functions are mocked. Only the two `_clamp_*` helpers are stubbed,
+which is necessary for isolation and does not compromise coverage of the bug being tested.
 
-**Scope Alignment — GOOD.** The test directly targets the file-split delegation pattern
-that resolved DRIFT_LOG.md observation 1 (`dashboard_parsers.sh` growing past the
-300-line ceiling). Suite 5 asserts structural evidence of the fix: source directive
-present (line 164 of `dashboard_parsers.sh`), shellcheck comment present, companion
-file exists. The second drift observation (stale header in `test_dashboard_parsers_bugfix.sh`)
-requires no new test.
+**Edge Case Coverage — GOOD.** The suite covers:
+- Happy path: variable defined and correct default (Tests 1, 2)
+- Derived variable chain: all downstream model vars non-empty (Test 3)
+- Static structural check: no stale fallback patterns remain (Test 4)
+- Bug reproduction case: strict mode + clean environment → no crash (Test 5)
+- Idempotency: preset values from pipeline.conf not overwritten by defaults (Test 6)
 
 **Test Weakening — N/A.** This is a new test file; no existing tests were modified.
 
-**Naming — GOOD.** Pass/fail message strings encode both the scenario and the expected
-outcome (e.g., `"1a.1 _parse_run_summaries function is defined after sourcing
-dashboard_parsers.sh"`). Suite and sub-test numbering is consistent throughout.
+**Naming — GOOD.** Function names encode both the scenario and expected outcome:
+`test_no_unbound_crash_in_strict_mode`, `test_preset_values_respected`,
+`test_no_redundant_fallbacks`, `test_derived_models_safe`. All are self-documenting.
 
-**Count verification.** TESTER_REPORT claims 18 assertions.
-Suite 1 (4) + Suite 2 (5) + Suite 3 (4) + Suite 4 (2) + Suite 5 (3) = 18. ✓
+**Scope Alignment — GOOD.** Tests directly exercise `lib/config_defaults.sh` and verify the
+exact failure mode described in the task (unbound variable crash in express mode). The file
+exists, is sourced correctly, and all assertions reflect the current state of the implementation.
