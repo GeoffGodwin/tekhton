@@ -246,8 +246,29 @@ emit_dashboard_run_state() {
         teams_json="${teams_json}}"
     fi
 
+    # --- Progress transparency fields (M50) ---
+    local elapsed_s=0
+    if [[ -n "$started_at" ]]; then
+        elapsed_s="${SECONDS:-0}"
+    fi
+
+    local estimated_remaining_s="null"
+    if command -v _estimate_stage_time &>/dev/null && [[ -n "$current_stage" ]] && [[ "$current_stage" != "unknown" ]]; then
+        local _est_total
+        _est_total=$(_estimate_stage_time "$current_stage" 2>/dev/null || true)
+        if [[ -n "$_est_total" ]] && [[ "$_est_total" -gt 0 ]]; then
+            local _stage_elapsed="${_STAGE_DURATION[$current_stage]:-0}"
+            if [[ "${_STAGE_STATUS[$current_stage]:-}" = "active" ]] && [[ "${_STAGE_START_TS[$current_stage]:-0}" -gt 0 ]]; then
+                _stage_elapsed=$(( SECONDS - _STAGE_START_TS[$current_stage] ))
+            fi
+            local _remaining=$(( _est_total - _stage_elapsed ))
+            [[ "$_remaining" -lt 0 ]] && _remaining=0
+            estimated_remaining_s="$_remaining"
+        fi
+    fi
+
     local json
-    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","completed_at":%s,"refresh_interval_ms":%d,"quota_status":"%s","quota_paused_at":"%s","quota_retry_count":%d,"parallel_mode":%s,"teams":%s}' \
+    json=$(printf '{"pipeline_status":"%s","current_stage":"%s","active_milestone":%s,"stages":%s,"waiting_for":%s,"started_at":"%s","completed_at":%s,"elapsed_s":%d,"estimated_remaining_s":%s,"refresh_interval_ms":%d,"quota_status":"%s","quota_paused_at":"%s","quota_retry_count":%d,"parallel_mode":%s,"teams":%s}' \
         "$(_json_escape "$status")" \
         "$(_json_escape "$current_stage")" \
         "$ms_json" \
@@ -255,6 +276,8 @@ emit_dashboard_run_state() {
         "$waiting_json" \
         "$(_json_escape "$started_at")" \
         "$completed_at_json" \
+        "$elapsed_s" \
+        "$estimated_remaining_s" \
         "$refresh_ms" \
         "$(_json_escape "$quota_status")" \
         "$(_json_escape "$quota_paused_at")" \

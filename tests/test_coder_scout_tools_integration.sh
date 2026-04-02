@@ -149,6 +149,8 @@ count_open_nonblocking_notes()   { echo "0"; }
 get_open_nonblocking_notes()     { echo ""; }
 emit_dashboard_run_state()       { :; }
 emit_event()                     { :; }
+log_decision()                   { :; }
+progress_status()                { :; }
 _safe_read_file()                { echo ""; }
 _wrap_file_content()             { echo ""; }
 _phase_start()                   { :; }

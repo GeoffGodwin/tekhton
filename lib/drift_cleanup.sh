@@ -125,15 +125,15 @@ _resolve_addressed_nonblocking_notes() {
     local in_open=false
 
     while IFS= read -r line; do
-        if echo "$line" | grep -q "^## Open"; then
+        if [[ "$line" =~ ^##\ Open ]]; then
             in_open=true
             echo "$line" >> "$tmpfile"
             continue
-        elif echo "$line" | grep -q "^## " && [[ "$in_open" = true ]]; then
+        elif [[ "$line" =~ ^##\  ]] && [[ "$in_open" = true ]]; then
             in_open=false
         fi
 
-        if [[ "$in_open" = true ]] && echo "$line" | grep -q "^- \[ \]"; then
+        if [[ "$in_open" = true ]] && [[ "$line" =~ ^-\ \[\ \] ]]; then
             local matched=false
             while IFS= read -r mod_file; do
                 [[ -z "$mod_file" ]] && continue
@@ -216,7 +216,7 @@ clear_completed_nonblocking_notes() {
         elif [[ "$in_resolved" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=false
             echo "$line" >> "$tmpfile"
-        elif [[ "$in_open" = true ]] && echo "$line" | grep -qi "^- \[x\]"; then
+        elif [[ "$in_open" = true ]] && [[ "$line" =~ ^-\ \[x\] ]]; then
             # Skip completed items from Open (they are moved to Resolved)
             :
         else

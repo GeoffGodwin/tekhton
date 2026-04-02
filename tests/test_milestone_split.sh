@@ -522,6 +522,10 @@ _define_coder_stubs() {
     load_clarifications_content() { CLARIFICATIONS_CONTENT=""; }
     detect_clarifications() { return 1; }
 
+    # Progress stubs (M50)
+    log_decision() { :; }
+    progress_status() { :; }
+
     # Agent stubs
     LAST_AGENT_TURNS=10
     LAST_AGENT_EXIT_CODE=0

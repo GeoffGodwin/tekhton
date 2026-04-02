@@ -6,6 +6,8 @@
 # Expects all pipeline globals to be set (TASK, LOG_FILE, START_AT, etc.)
 # =============================================================================
 
+set -euo pipefail
+
 # run_stage_tester — Runs the tester stage:
 #   1. Select prompt (fresh vs resume)
 #   2. Invoke tester agent
@@ -218,7 +220,7 @@ TESTER_EOF
                 local _fix_depth="${TEKHTON_FIX_DEPTH:-0}"
                 local _max_depth="${TESTER_FIX_MAX_DEPTH:-1}"
                 local _output_limit="${TESTER_FIX_OUTPUT_LIMIT:-4000}"
-                warn "${TEST_CMD} reported failures. Auto-fix enabled (depth ${_fix_depth}/${_max_depth}) — seeding fix run."
+                log_decision "Seeding auto-fix run" "${TEST_CMD} failures detected (depth ${_fix_depth}/${_max_depth})" "TESTER_FIX_ENABLED=true"
 
                 # Capture test failure output from log (truncate to limit)
                 local _failure_output
@@ -276,7 +278,7 @@ ${_failure_output}"
                         _tcont_attempt=$((_tcont_attempt + 1))
                         local _tcont_start
                         _tcont_start=$(date +%s)
-                        log "Tester hit turn limit with ${REMAINING} tests remaining (attempt ${_tcont_attempt}/${_tcont_max}). Continuing..."
+                        log_decision "Continuing tester" "turn limit hit, ${REMAINING} tests remaining (attempt ${_tcont_attempt}/${_tcont_max})" "CONTINUATION_ENABLED=true"
 
                         local _tnext_budget="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
                         export CONTINUATION_CONTEXT

@@ -2,6 +2,8 @@
 # stages/review.sh — Stage 2: Review loop (review → rework → build gate)
 # Sourced by tekhton.sh. Sets: VERDICT (global).
 
+set -euo pipefail
+
 # run_stage_review — Review loop: invoke reviewer, parse verdict, route rework,
 # build gate, repeat up to MAX_REVIEW_CYCLES. Exits on max-cycle exhaustion.
 run_stage_review() {
@@ -13,7 +15,7 @@ run_stage_review() {
     # skip the review cycle entirely. Tests still run in the tester stage.
     if command -v should_skip_review_for_polish &>/dev/null \
        && should_skip_review_for_polish; then
-        log "Polish note: all changes are non-logic files. Skipping reviewer."
+        log_decision "Skipping reviewer" "all changes are non-logic files (polish mode)" "NOTES_FILTER=POLISH"
         VERDICT="APPROVED_WITH_NOTES"
         export REVIEWER_SKIPPED="true"
         return 0
@@ -26,7 +28,7 @@ run_stage_review() {
         local _diff_lines
         _diff_lines=$(git diff --stat HEAD 2>/dev/null | tail -1 | grep -oE '[0-9]+ insertion|[0-9]+ deletion' | grep -oE '[0-9]+' | paste -sd+ - | bc 2>/dev/null || echo "0")
         if [[ "$_diff_lines" -gt 0 ]] && [[ "$_diff_lines" -lt "$_skip_threshold" ]]; then
-            log "Diff size (${_diff_lines} lines) below review threshold (${_skip_threshold}). Skipping review."
+            log_decision "Skipping reviewer" "diff size (${_diff_lines} lines) below threshold (${_skip_threshold})" "REVIEW_SKIP_THRESHOLD=${_skip_threshold}"
             VERDICT="APPROVED_WITH_NOTES"
             export REVIEWER_SKIPPED="true"
             return 0
@@ -39,7 +41,7 @@ run_stage_review() {
 
     while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; do
         REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
-        log "Review cycle ${REVIEW_CYCLE} / ${MAX_REVIEW_CYCLES}..."
+        progress_status "${PIPELINE_STAGE_POS:-3}" "${PIPELINE_STAGE_COUNT:-4}" "Reviewer" "cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES}"
 
         # M47: use cached architecture content
         export ARCHITECTURE_CONTENT
@@ -160,6 +162,11 @@ REVIEW_EOF
         fi
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
 
+        # Log routing decision based on verdict
+        if [[ "$VERDICT" = "APPROVED" ]] || [[ "$VERDICT" = "APPROVED_WITH_NOTES" ]]; then
+            log_decision "Reviewer approved" "verdict ${VERDICT}" ""
+        fi
+
         if detect_replan_required "REVIEWER_REPORT.md"; then
             warn "Reviewer recommends REPLAN_REQUIRED."
             if ! trigger_replan "REVIEWER_REPORT.md"; then
@@ -201,10 +208,11 @@ REVIEW_EOF
             HAS_SIMPLE=$(echo "$HAS_SIMPLE" | tr -d '[:space:]')
             rm -rf "$TMPDIR_BLOCKS"
 
+            log_decision "Reviewer requires changes" "${HAS_COMPLEX} complex, ${HAS_SIMPLE} simple blockers (cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES})" ""
             log "Complex blockers: ${HAS_COMPLEX}, Simple blockers: ${HAS_SIMPLE}"
             if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
                 if [ "$HAS_COMPLEX" -gt 0 ]; then
-                    warn "Complex blockers found. Re-invoking senior coder..."
+                    log_decision "Routing to senior coder rework" "${HAS_COMPLEX} complex blocker(s) found" ""
 
                     REWORK_PROMPT=$(render_prompt "coder_rework")
 
@@ -238,7 +246,7 @@ REVIEW_EOF
                     fi
 
                 elif [ "$HAS_SIMPLE" -gt 0 ]; then
-                    warn "Only simple blockers found. Invoking jr coder..."
+                    log_decision "Routing to jr coder" "${HAS_SIMPLE} simple blocker(s), no complex blockers" ""
 
                     export JR_AFTER_SENIOR=""
                     JR_REWORK_PROMPT=$(render_prompt "jr_coder")

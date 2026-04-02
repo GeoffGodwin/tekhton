@@ -763,6 +763,7 @@ source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
+source "${TEKHTON_HOME}/lib/progress.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/causality_query.sh"
@@ -1952,6 +1953,7 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[coder]="${CODER_MAX_TURNS:-50}"
                 _STAGE_START_TS[coder]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Coder"
                 run_stage_coder
                 local _coder_files_changed
                 _coder_files_changed=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]' || echo "0")
@@ -1960,6 +1962,7 @@ _run_pipeline_stages() {
                 _STAGE_STATUS[coder]="complete"
                 _STAGE_TURNS[coder]="${ACTUAL_CODER_TURNS:-${LAST_AGENT_TURNS:-0}}"
                 _STAGE_DURATION[coder]="$(( SECONDS - ${_STAGE_START_TS[coder]:-$SECONDS} ))"
+                progress_outcome "Coder" "${_coder_files_changed} files modified" "${_STAGE_DURATION[coder]}"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -1981,12 +1984,14 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[security]="${SECURITY_MAX_TURNS:-15}"
                 _STAGE_START_TS[security]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Security"
                 run_stage_security
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "security" "" "$_sec_start_evt" "" \
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[security]="complete"
                 _STAGE_TURNS[security]="${LAST_AGENT_TURNS:-0}"
                 _STAGE_DURATION[security]="$(( SECONDS - ${_STAGE_START_TS[security]:-$SECONDS} ))"
+                progress_outcome "Security" "complete" "${_STAGE_DURATION[security]}"
                 emit_dashboard_security 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -2003,6 +2008,7 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[reviewer]="${REVIEWER_MAX_TURNS:-15}"
                 _STAGE_START_TS[reviewer]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Reviewer"
                 run_stage_review
                 local _review_verdict_json="null"
                 if [[ -n "${VERDICT:-}" ]]; then
@@ -2013,6 +2019,7 @@ _run_pipeline_stages() {
                 _STAGE_STATUS[reviewer]="complete"
                 _STAGE_TURNS[reviewer]="${LAST_AGENT_TURNS:-0}"
                 _STAGE_DURATION[reviewer]="$(( SECONDS - ${_STAGE_START_TS[reviewer]:-$SECONDS} ))"
+                progress_outcome "Reviewer" "${VERDICT:-unknown} (${REVIEW_CYCLE:-0} cycles)" "${_STAGE_DURATION[reviewer]}"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
             else
@@ -2034,12 +2041,14 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[tester_write]="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
                 _STAGE_START_TS[tester_write]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Tester" "TDD write-failing"
                 run_stage_tester
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "tester_write" "" "$_tw_start_evt" "" \
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[tester_write]="complete"
                 _STAGE_TURNS[tester_write]="${LAST_AGENT_TURNS:-0}"
                 _STAGE_DURATION[tester_write]="$(( SECONDS - ${_STAGE_START_TS[tester_write]:-$SECONDS} ))"
+                progress_outcome "Tester (TDD)" "complete" "${_STAGE_DURATION[tester_write]}"
                 emit_dashboard_run_state 2>/dev/null || true
                 export TESTER_MODE=""
             fi
@@ -2055,12 +2064,14 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[tester]="${TESTER_MAX_TURNS:-30}"
                 _STAGE_START_TS[tester]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Tester"
                 run_stage_tester
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "tester" "" "$_tester_start_evt" "" \
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
                 _STAGE_STATUS[tester]="complete"
                 _STAGE_TURNS[tester]="${LAST_AGENT_TURNS:-0}"
                 _STAGE_DURATION[tester]="$(( SECONDS - ${_STAGE_START_TS[tester]:-$SECONDS} ))"
+                progress_outcome "Tester" "complete" "${_STAGE_DURATION[tester]}"
                 emit_dashboard_reports 2>/dev/null || true
                 emit_dashboard_run_state 2>/dev/null || true
                 export TESTER_MODE=""

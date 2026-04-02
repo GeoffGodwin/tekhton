@@ -106,6 +106,8 @@ fi
 # Stub all functions coder.sh calls (defaults — overridden per test)
 # =============================================================================
 
+log_decision()              { :; }
+progress_status()           { :; }
 extract_human_notes()       { echo ""; }
 claim_human_notes()         { true; }
 resolve_human_notes()       { true; }

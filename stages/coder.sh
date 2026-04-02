@@ -148,7 +148,7 @@ run_stage_coder() {
     # Use cached scout results from dry-run if available (Milestone 23)
     if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "SCOUT_REPORT.md" ]]; then
         SHOULD_SCOUT=false
-        log "Scout: using cached results from dry-run."
+        log_decision "Scout using cached results" "dry-run cache available" "SCOUT_CACHED=true"
         apply_scout_turn_limits "SCOUT_REPORT.md"
         BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
@@ -161,7 +161,7 @@ $(cat SCOUT_REPORT.md)
 
     if [ "$SHOULD_SCOUT" = true ]; then
         _phase_start "scout_agent"
-        log "Running scout agent to locate relevant files and estimate complexity..."
+        log_decision "Running scout agent" "locate relevant files and estimate complexity" "DYNAMIC_TURNS_ENABLED=${DYNAMIC_TURNS_ENABLED:-false}"
         # Dashboard tracking: mark scout active (arrays declared in tekhton.sh)
         if declare -p _STAGE_STATUS &>/dev/null; then
             # shellcheck disable=SC2154  # scout is a string key, not a variable
@@ -197,6 +197,9 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         # Set fallback flag so scout prompt renders filesystem-exploration
         # directive when repo map is unavailable
         export SCOUT_NO_REPO_MAP=""
+        if [[ -n "${REPO_MAP_CONTENT}" ]]; then
+            log_decision "Scout using repo map verification mode" "REPO_MAP_CONTENT available" "REPO_MAP_ENABLED=true"
+        fi
         if [[ -z "${REPO_MAP_CONTENT}" ]]; then
             SCOUT_NO_REPO_MAP="true"
         fi
@@ -833,7 +836,7 @@ ${nb_notes}"
 
             while [[ "$_cont_attempt" -lt "$_cont_max" ]]; do
                 _cont_attempt=$((_cont_attempt + 1))
-                log "Coder hit turn limit with progress (attempt ${_cont_attempt}/${_cont_max}). Continuing..."
+                log_decision "Continuing coder" "turn limit hit, progress detected (attempt ${_cont_attempt}/${_cont_max})" "CONTINUATION_ENABLED=true"
 
                 # Build continuation context and inject into prompt
                 local _next_budget="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"

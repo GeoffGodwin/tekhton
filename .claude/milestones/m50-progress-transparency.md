@@ -1,7 +1,7 @@
 # Milestone 50: Progress Transparency
 <!-- milestone-meta
 id: "50"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

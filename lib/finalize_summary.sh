@@ -214,8 +214,18 @@ _hook_emit_run_summary() {
     local safe_pgroup
     safe_pgroup=$(printf '%s' "$parallel_group" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
+    # --- Pipeline decisions and timing breakdown (M50) ---
+    local decisions_json="[]"
+    if command -v _get_decision_log &>/dev/null; then
+        decisions_json=$(_get_decision_log)
+    fi
+    local timing_json="{}"
+    if command -v _get_timing_breakdown &>/dev/null; then
+        timing_json=$(_get_timing_breakdown)
+    fi
+
     # Write JSON via printf (proper escaping, no heredoc variable issues)
-    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "team": "%s",\n  "parallel_group": "%s",\n  "concurrent_teams": %d,\n  "timestamp": "%s"\n}\n' \
+    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "team": "%s",\n  "parallel_group": "%s",\n  "concurrent_teams": %d,\n  "decisions": %s,\n  "timing_breakdown": %s,\n  "timestamp": "%s"\n}\n' \
         "$safe_milestone" \
         "$outcome" \
         "${_ORCH_ATTEMPT:-1}" \
@@ -244,6 +254,8 @@ _hook_emit_run_summary() {
         "$safe_team" \
         "$safe_pgroup" \
         "$concurrent_teams" \
+        "$decisions_json" \
+        "$timing_json" \
         "$timestamp_iso" \
         > "$summary_file"
 

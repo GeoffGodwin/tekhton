@@ -269,6 +269,7 @@ run_complete_loop() {
                             warn "Treating as PASS for pre-finalization gate (pre-existing failures)."
                         else
                             # M44: Try cheap Jr Coder fix before expensive full retry
+                            log_decision "Trying preflight fix" "${_preflight_exit} test failures detected" "FINAL_FIX_ENABLED=${FINAL_FIX_ENABLED:-true}"
                             if _try_preflight_fix "$_preflight_output" "$_preflight_exit"; then
                                 _PREFLIGHT_TESTS_PASSED=true
                                 [[ -f "PREFLIGHT_ERRORS.md" ]] && rm -f "PREFLIGHT_ERRORS.md"
@@ -348,7 +349,7 @@ run_complete_loop() {
 
             local recovery
             recovery=$(_classify_failure)
-            log "Recovery decision: ${recovery}"
+            log_decision "Recovery: ${recovery}" "failure class ${AGENT_ERROR_CATEGORY:-unknown}/${AGENT_ERROR_SUBCATEGORY:-unknown}" ""
 
             case "$recovery" in
                 bump_review)
