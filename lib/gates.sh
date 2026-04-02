@@ -243,6 +243,43 @@ EOF
             local _ui_timeout="${UI_TEST_TIMEOUT:-120}"
             _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
 
+            # --- Environment auto-remediation for known setup errors ---
+            # Some test frameworks require one-time setup (e.g., browser downloads).
+            # Detect these and attempt auto-fix before wasting a build-fix retry.
+            if [[ "$_ui_exit" -ne 0 ]]; then
+                local _remediated=false
+
+                # Playwright: "npx playwright install" needed for browser binaries
+                if echo "$_ui_output" | grep -q "npx playwright install"; then
+                    log "Detected missing Playwright browsers. Running auto-remediation: npx playwright install"
+                    local _pw_exit=0
+                    timeout 120 npx playwright install 2>&1 || _pw_exit=$?
+                    if [[ "$_pw_exit" -eq 0 ]]; then
+                        log "Playwright browsers installed successfully. Re-running UI tests."
+                        _remediated=true
+                        _ui_exit=0
+                        _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+                    else
+                        warn "Playwright browser installation failed (exit ${_pw_exit}). Continuing with failure."
+                    fi
+                fi
+
+                # Cypress: "npx cypress install" needed for binary
+                if [[ "$_remediated" == "false" ]] && echo "$_ui_output" | grep -q "npx cypress install"; then
+                    log "Detected missing Cypress binary. Running auto-remediation: npx cypress install"
+                    local _cy_exit=0
+                    timeout 120 npx cypress install 2>&1 || _cy_exit=$?
+                    if [[ "$_cy_exit" -eq 0 ]]; then
+                        log "Cypress binary installed successfully. Re-running UI tests."
+                        _remediated=true
+                        _ui_exit=0
+                        _ui_output=$(timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+                    else
+                        warn "Cypress binary installation failed (exit ${_cy_exit}). Continuing with failure."
+                    fi
+                fi
+            fi
+
             # Retry once on failure (E2E flakiness mitigation)
             if [[ "$_ui_exit" -ne 0 ]]; then
                 log "UI tests failed (exit ${_ui_exit}). Retrying once..."
@@ -271,6 +308,26 @@ $(echo "$_ui_output" | tail -100)
 \`\`\`
 UIEOF
                 log "UI test errors written to UI_TEST_ERRORS.md"
+
+                # Also append UI test errors to BUILD_ERRORS.md so the
+                # build-fix agent has full visibility (it only reads BUILD_ERRORS.md).
+                {
+                    if [[ ! -f BUILD_ERRORS.md ]]; then
+                        echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
+                        echo "## Stage"
+                        echo "${stage_label}"
+                        echo ""
+                    fi
+                    echo "## UI Test Failures"
+                    echo "Command: \`${UI_TEST_CMD}\`"
+                    echo "Exit code: ${_ui_exit}"
+                    echo ""
+                    echo "\`\`\`"
+                    echo "$_ui_output" | tail -100
+                    echo "\`\`\`"
+                } >> BUILD_ERRORS.md
+                log "UI test errors also appended to BUILD_ERRORS.md"
+
                 _phase_end "build_gate_ui_test"
                 _phase_end "build_gate"
                 return 1
