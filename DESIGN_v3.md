@@ -1,5 +1,7 @@
 # Tekhton 3.0 — Intelligent Indexing, Milestone DAG & Pipeline Quality Design Document
 
+> **Status: Complete** — All 51 milestones delivered. V3 branch merged April 2026.
+
 ## Problem Statement
 
 Tekhton 2.0 delivered adaptive pipeline behavior: context accounting, milestone
@@ -1329,3 +1331,61 @@ The following capabilities are explicitly designed for but not built in V3:
   recommends standard or test_first order based on task type. Bug fixes →
   test_first. New features → standard. Data-driven from rework cycle history.
   Requires PM maturity and calibration data from V3 runs.
+
+---
+
+## Retrospective (April 2026)
+
+### Summary
+
+Tekhton V3 delivered all 51 planned milestones across 7 themes:
+
+- **Milestone DAG & Indexing** (M1–M8) — File-based milestones with dependency
+  tracking, sliding context window, tree-sitter repo maps with PageRank, Serena
+  LSP integration. The core V3 promise: context-aware agent prompts.
+- **Quality & Safety** (M9–M10, M20, M28–M30, M33, M39, M43–M44) — Dedicated
+  security agent, intake/PM gate, test integrity, UI test awareness, build gate
+  hardening, test-aware coding, and jr coder test-fix gate.
+- **Watchtower Dashboard** (M13–M14, M34–M38) — Browser-based monitoring with
+  six tabs, smart refresh, data fidelity fixes, and V4 parallel-teams readiness.
+- **Brownfield Intelligence** (M11–M12, M15, M22) — AI artifact detection, deep
+  analysis, health scoring, and init UX overhaul.
+- **Developer Experience** (M17–M19, M21, M23–M27, M31–M32) — Diagnostics, docs
+  site, migration framework, dry-run, rollback, express mode, TDD, browser
+  planning.
+- **Acceleration** (M40–M50) — Notes rewrite, triage, tag-specialized paths,
+  run memory, timing reports, context caching, skip logic, progress transparency.
+- **Runtime** (M16) — Quota management and usage-aware pacing.
+
+### Deviations from Original Plan
+
+The original V3 design focused narrowly on the Milestone DAG and Intelligent
+Indexing (8 milestones). During execution, scope expanded significantly to include
+Watchtower, security agent, intake agent, brownfield improvements, and a full
+developer experience suite. This was driven by user feedback and the recognition
+that context-aware prompting alone wasn't sufficient — the pipeline needed better
+safety, observability, and ease of use to realize the full benefit of V3's
+architectural changes.
+
+The core DAG and indexer milestones (M1–M8) were delivered as designed. The
+Watchtower dashboard evolved beyond the original spec (two milestones) into a
+six-milestone effort with significantly richer functionality. The acceleration
+theme (M40–M50) was added late in the initiative to address performance and
+usability feedback from real-world V3 usage.
+
+### What Worked Well
+
+- Self-applicable development: Tekhton built its own V3 features using the V2
+  pipeline, then switched to the V3 pipeline mid-initiative
+- File-based milestones eliminated CLAUDE.md bloat and enabled clean git history
+  per milestone
+- The intake agent reduced rework cycles by catching ambiguous tasks early
+- Browser-based planning dramatically improved the planning interview experience
+
+### What to Improve in V4
+
+- The Watchtower dashboard is static HTML with file polling; V4 should use a
+  localhost server with WebSocket push for real-time updates
+- Express mode works but lacks persistence; repeated runs on the same project
+  should benefit from cached configuration
+- Parallel milestone execution is data-model-ready but not yet implemented

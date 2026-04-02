@@ -1,132 +1,90 @@
 # Changelog
 
-## 3.18.0
+## v3.0 — Context-Aware Pipeline (April 2026)
 
-- Documentation site with MkDocs Material theme
-- Getting Started guide (installation, first project, first milestone)
-- Complete configuration reference
-- Command reference for all CLI flags
-- Concept explainers (pipeline flow, milestone DAG, health scoring, context budget)
-- Troubleshooting guide with --diagnose walkthrough
-- GitHub Actions deployment to GitHub Pages
-- `--docs` flag to open documentation in browser
+51 milestones delivered across the V3 initiative. Changes grouped by theme:
 
-## 3.17.0
+### Milestone DAG & Intelligent Indexing (M1–M8)
+
+- File-based milestones with `MANIFEST.cfg` dependency tracking and parallel groups
+- Sliding context window — only active + frontier milestones injected into prompts
+- Automatic migration from inline CLAUDE.md milestones (`--migrate-dag`)
+- Tree-sitter repo maps with PageRank ranking and token-budgeted output
+- Task-relevant context slicing per pipeline stage
+- Cross-run file association tracking for personalized ranking
+- Serena LSP integration via MCP for live symbol lookup
+- Indexer setup command (`--setup-indexer`) and Python virtualenv management
+
+### Quality & Safety (M9–M10, M20, M28–M30, M33, M39, M43–M44)
+
+- Dedicated security agent stage with OWASP-aware scanning, severity scoring, and auto-remediation
+- Task intake / PM agent with clarity scoring, scope assessment, and task decomposition
+- Test integrity audit for verifying test file quality
+- UI test awareness and E2E prompt integration
+- UI validation gate with headless smoke testing
+- Build gate hardening: hang prevention, timeout enforcement, process tree cleanup
+- Human mode completion loop and state fidelity improvements
+- Notes injection hygiene and action items UX with severity colors
+- Test-aware coding — coder receives test context for targeted implementations
+- Jr coder test-fix gate for automatic test repair
+
+### Watchtower Dashboard (M13–M14, M34–M38)
+
+- Browser-based pipeline monitoring with Live Run, Milestone Map, Reports, and Trends tabs
+- Causal event log (JSONL) for structured debugging and cross-run learning
+- Data fidelity fixes and smart refresh with context-aware layout
+- Interactive controls and parallel teams readiness (V4-ready data model)
+- Live Run and Milestone Map UX polish
+- Security summary view and health score display
+
+### Brownfield Intelligence (M11–M12, M15, M22)
+
+- AI artifact detection with archive, tidy, and ignore handling modes
+- Deep analysis: workspace, service, CI/CD, infrastructure, test framework detection
+- Documentation quality assessment
+- Project health scoring with five-category assessment and belt ratings
+- Init UX overhaul with improved detection and onboarding flow
+
+### Developer Experience (M17–M19, M21, M23–M27, M31–M32)
 
 - Pipeline diagnostics and recovery guidance (`--diagnose`)
-- Failure classification with structured recovery suggestions
-- Diagnostic rules for common failure modes
+- Documentation site with MkDocs Material theme and GitHub Pages deployment
+- Distribution and install experience improvements
+- Version migration framework (`--migrate`, `--migrate --check`, `--migrate --rollback`)
+- Dry-run preview mode (`--dry-run`) — scout + intake only
+- Run safety net with `--rollback` for reverting pipeline runs
+- Human notes UX enhancement with `note` subcommand
+- Express mode — zero-config execution when no `pipeline.conf` exists
+- TDD support with `PIPELINE_ORDER=test_first`
+- Planning answer layer with file-based answer import
+- Browser-based planning interview (`--plan-browser`)
 
-## 3.16.0
+### Acceleration (M40–M50)
+
+- Human notes core rewrite with cleaner state management
+- Note triage and sizing gate (`--triage`)
+- Tag-specialized execution paths for BUG, FEAT, POLISH
+- Scout leverages repo map and Serena for better file discovery
+- Instrumentation and timing report with stage-level duration tracking
+- Intra-run context cache to avoid redundant file reads
+- Reduced unnecessary agent invocations via smarter skip logic
+- Structured run memory (JSONL) for cross-run learning with keyword filtering
+- Progress transparency with timing estimates from run history
+
+### Autonomous Runtime (M16)
 
 - Quota management and usage-aware pacing
 - Proactive pause before hitting API rate limits
-- Configurable usage thresholds and retry intervals
 
-## 3.15.0
+## v2.0 — Adaptive Pipeline (March 2026)
 
-- Project health scoring (`--health`)
-- Five-category assessment: tests, quality, dependencies, documentation, hygiene
-- Belt rating system for quick visual feedback
-- Health baseline tracking and trend comparison
+22 milestones: autonomous operation (`--complete`, `--auto-advance`, `--human`),
+transient error retry, turn-exhaustion continuation, milestone auto-split, context
+budgeting, specialist reviews, autonomous debt sweeps, error taxonomy, metrics
+dashboard, brownfield init/replan, clarification protocol, security hardening.
 
-## 3.14.0
+## v1.0 — Foundation (March 2026)
 
-- Watchtower dashboard enhancements
-- Security summary view
-- Milestone map visualization
-
-## 3.13.0
-
-- Watchtower dashboard (browser-based pipeline monitoring)
-- Causal event log for run history tracking
-- Real-time pipeline progress display
-
-## 3.12.0
-
-- Brownfield deep analysis during `--init`
-- Workspace, service, CI/CD, and infrastructure detection
-- Test framework detection
-- Documentation quality assessment
-
-## 3.11.0
-
-- AI artifact detection during `--init`
-- Archive, tidy, and ignore handling modes
-- Artifact merge agent for combining AI configs
-
-## 3.10.0
-
-- Intake agent (PM pre-stage gate)
-- Task clarity scoring and scope assessment
-- Automatic task tweaking and splitting
-
-## 3.9.0
-
-- Security agent stage
-- Vulnerability scanning with severity ratings
-- Automatic remediation and unfixable issue escalation
-- Security waivers
-
-## 3.8.0
-
-- Health scoring foundations
-
-## 3.7.0
-
-- Indexer task-file history tracking
-
-## 3.6.0
-
-- Serena LSP integration via MCP
-
-## 3.5.0
-
-- Repo map indexer with tree-sitter (Python)
-- PageRank-based file relevance scoring
-- Token-budgeted output
-
-## 3.4.0
-
-- Repo map orchestration from shell
-
-## 3.3.0
-
-- Indexer Python tooling foundations
-
-## 3.2.0
-
-- Milestone sliding window with character budget
-
-## 3.1.0
-
-- Milestone DAG infrastructure
-- File-based milestones with MANIFEST.cfg
-- Dependency tracking and frontier detection
-
-## 2.x
-
-- Context budget system
-- Task-scoped context assembly
-- Milestone state machine and auto-advance
-- Clarification protocol
-- Autonomous debt sweep stage
-- Specialist reviewers
-- Run metrics and adaptive calibration
-- Error taxonomy and classification
-- Milestone archival
-- Milestone splitting
-- Outer orchestration loop (`--complete`)
-- Transient error retry with exponential backoff
-- Turn exhaustion continuation
-- Quota-aware pacing
-
-## 1.x
-
-- Core pipeline: scout, coder, reviewer, tester
-- Build gate and completion gate
-- Review-rework loop
-- Human notes system
-- Drift detection and architect audit
-- Planning phase (`--plan`)
-- Pipeline state persistence and resume
+Core pipeline (Scout → Coder → Reviewer → Tester), dynamic turn limits, architecture
+drift detection, build gates, `--plan` interactive planning, human notes, pipeline
+state persistence, FIFO-isolated agent invocation, `--milestone` mode.
