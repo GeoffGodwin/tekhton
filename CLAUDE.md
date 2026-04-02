@@ -44,110 +44,110 @@ tekhton/
 │   ├── replan.sh           # Replan orchestration
 │   ├── replan_brownfield.sh # Brownfield replan with codebase summary
 │   ├── replan_midrun.sh    # Mid-run replan trigger
-│   ├── context.sh          # [2.0] Token accounting + context compiler
+│   ├── context.sh          # Token accounting + context compiler
 │   ├── context_budget.sh   # Context budget checking
 │   ├── context_compiler.sh # Task-scoped context assembly
-│   ├── milestones.sh       # [2.0] Milestone state machine + acceptance checking
+│   ├── milestones.sh       # Milestone state machine + acceptance checking
 │   ├── milestone_ops.sh    # Milestone marking + disposition
 │   ├── milestone_acceptance.sh # Milestone acceptance criteria checking
 │   ├── milestone_archival.sh   # Milestone archival to MILESTONE_ARCHIVE.md
 │   ├── milestone_metadata.sh   # Milestone metadata HTML comments
 │   ├── milestone_split.sh  # Pre-flight milestone splitting
-│   ├── orchestrate.sh      # [2.0] Outer orchestration loop (--complete)
+│   ├── orchestrate.sh      # Outer orchestration loop (--complete)
 │   ├── orchestrate_helpers.sh  # Orchestration support functions
 │   ├── orchestrate_recovery.sh # Failure classification + recovery
-│   ├── clarify.sh          # [2.0] Clarification protocol + replan trigger
-│   ├── specialists.sh      # [2.0] Specialist review framework
-│   ├── metrics.sh          # [2.0] Run metrics collection + adaptive calibration
+│   ├── clarify.sh          # Clarification protocol + replan trigger
+│   ├── specialists.sh      # Specialist review framework
+│   ├── metrics.sh          # Run metrics collection + adaptive calibration
 │   ├── metrics_calibration.sh  # Adaptive turn calibration
-│   ├── errors.sh           # [2.0] Error taxonomy, classification + reporting
+│   ├── errors.sh           # Error taxonomy, classification + reporting
 │   ├── errors_helpers.sh   # Error classification helpers
-│   ├── milestone_dag.sh    # [3.0] Milestone DAG infrastructure + manifest parser
-│   ├── milestone_dag_migrate.sh # [3.0] Inline→file milestone migration
-│   ├── milestone_window.sh # [3.0] Character-budgeted milestone sliding window
-│   ├── indexer.sh          # [3.0] Repo map orchestration + Python tool invocation
-│   ├── indexer_helpers.sh  # [3.0] Language detection, config validation, file extraction
-│   ├── indexer_history.sh  # [3.0] Task→file association tracking (JSONL)
-│   ├── causality.sh        # [3.0] Causal event log infrastructure + query layer
-│   ├── causality_query.sh  # [3.0] Causal log query helpers
-│   ├── test_baseline.sh    # [3.0] Test baseline capture + pre-existing failure detection
-│   ├── mcp.sh              # [3.0] MCP server lifecycle management (Serena)
-│   ├── health.sh           # [3.0] Project health scoring orchestration
-│   ├── health_checks.sh    # [3.0] Health check implementations
-│   ├── health_checks_infra.sh # [3.0] Infrastructure health checks
-│   ├── dashboard.sh        # [3.0] Watchtower dashboard data emission
-│   ├── dashboard_emitters.sh  # [3.0] Dashboard data file writers
-│   ├── dashboard_parsers.sh   # [3.0] Dashboard data parsers
-│   ├── diagnose.sh         # [3.0] Pipeline diagnostics engine
-│   ├── diagnose_helpers.sh # [3.0] Diagnostic helper functions
-│   ├── diagnose_output.sh  # [3.0] Diagnostic output formatting
-│   ├── diagnose_rules.sh   # [3.0] Diagnostic rule definitions
-│   ├── express.sh          # [3.0] Express mode (zero-config execution)
-│   ├── express_persist.sh  # [3.0] Express mode configuration persistence
-│   ├── dry_run.sh          # [3.0] Dry-run preview mode
-│   ├── init.sh             # [3.0] Init orchestration
-│   ├── init_config.sh      # [3.0] Init config generation
-│   ├── init_config_emitters.sh # [3.0] Init config section emitters
-│   ├── init_config_sections.sh # [3.0] Init config section builders
-│   ├── init_helpers.sh     # [3.0] Init helper functions
-│   ├── init_report.sh      # [3.0] Init report generation
-│   ├── init_synthesize_helpers.sh # [3.0] Init synthesis helpers
-│   ├── init_synthesize_ui.sh # [3.0] Init synthesis UI
-│   ├── intake_helpers.sh   # [3.0] Intake agent helpers
-│   ├── intake_verdict_handlers.sh # [3.0] Intake verdict routing
-│   ├── migrate.sh          # [3.0] Version migration framework
-│   ├── migrate_cli.sh      # [3.0] Migration CLI interface
-│   ├── notes_core.sh       # [3.0] Notes core rewrite
-│   ├── notes_cli.sh        # [3.0] Notes CLI subcommand
-│   ├── notes_cli_write.sh  # [3.0] Notes CLI write operations
-│   ├── notes_cleanup.sh    # [3.0] Notes cleanup operations
-│   ├── notes_acceptance.sh # [3.0] Notes acceptance checking
-│   ├── notes_acceptance_helpers.sh # [3.0] Notes acceptance helpers
-│   ├── notes_migrate.sh    # [3.0] Notes format migration
-│   ├── notes_rollback.sh   # [3.0] Notes rollback support
-│   ├── context_cache.sh    # [3.0] Intra-run context cache
-│   ├── checkpoint.sh       # [3.0] Progress checkpoint management
-│   ├── checkpoint_display.sh # [3.0] Checkpoint display formatting
-│   ├── crawler.sh          # [3.0] Project crawler orchestration
-│   ├── crawler_content.sh  # [3.0] Crawler content sampling
-│   ├── crawler_inventory.sh # [3.0] Crawler file inventory
-│   ├── crawler_deps.sh     # [3.0] Crawler dependency analysis
-│   ├── rescan.sh           # [3.0] Incremental rescan
-│   ├── rescan_helpers.sh   # [3.0] Rescan helper functions
-│   ├── artifact_handler.sh # [3.0] AI artifact detection handler
-│   ├── artifact_handler_ops.sh # [3.0] Artifact handler operations
-│   ├── detect_services.sh  # [3.0] Service detection
-│   ├── detect_workspaces.sh # [3.0] Workspace detection
-│   ├── detect_ci.sh        # [3.0] CI/CD detection
-│   ├── detect_infrastructure.sh # [3.0] Infrastructure detection
-│   ├── detect_test_frameworks.sh # [3.0] Test framework detection
-│   ├── detect_doc_quality.sh # [3.0] Documentation quality assessment
-│   ├── detect_ai_artifacts.sh # [3.0] AI artifact detection
-│   ├── inbox.sh            # [3.0] Inbox management
-│   ├── plan_answers.sh     # [3.0] Planning answer file import
-│   ├── plan_browser.sh     # [3.0] Browser-based planning
-│   ├── plan_review.sh      # [3.0] Planning review UI
-│   ├── safety_net.sh       # [3.0] Run safety net + rollback
-│   ├── run_memory.sh       # [3.0] Structured cross-run memory (JSONL)
-│   ├── timing.sh           # [3.0] Stage timing and duration estimation
-│   ├── milestone_dag_helpers.sh # [3.0] DAG helper functions
-│   ├── milestone_dag_io.sh # [3.0] DAG I/O operations
-│   ├── milestone_dag_validate.sh # [3.0] DAG validation
-│   ├── milestone_archival_helpers.sh # [3.0] Archival helper functions
-│   ├── metrics_dashboard.sh # [3.0] Metrics dashboard formatting
-│   ├── drift_prune.sh      # [3.0] Drift log pruning
-│   ├── quota.sh            # [3.0] API quota management
-│   ├── error_patterns.sh   # [3.0] Error pattern registry + classification engine
-│   └── preflight.sh        # [3.0] Pre-flight environment validation
+│   ├── milestone_dag.sh    # Milestone DAG infrastructure + manifest parser
+│   ├── milestone_dag_migrate.sh # Inline→file milestone migration
+│   ├── milestone_window.sh # Character-budgeted milestone sliding window
+│   ├── indexer.sh          # Repo map orchestration + Python tool invocation
+│   ├── indexer_helpers.sh  # Language detection, config validation, file extraction
+│   ├── indexer_history.sh  # Task→file association tracking (JSONL)
+│   ├── causality.sh        # Causal event log infrastructure + query layer
+│   ├── causality_query.sh  # Causal log query helpers
+│   ├── test_baseline.sh    # Test baseline capture + pre-existing failure detection
+│   ├── mcp.sh              # MCP server lifecycle management (Serena)
+│   ├── health.sh           # Project health scoring orchestration
+│   ├── health_checks.sh    # Health check implementations
+│   ├── health_checks_infra.sh # Infrastructure health checks
+│   ├── dashboard.sh        # Watchtower dashboard data emission
+│   ├── dashboard_emitters.sh  # Dashboard data file writers
+│   ├── dashboard_parsers.sh   # Dashboard data parsers
+│   ├── diagnose.sh         # Pipeline diagnostics engine
+│   ├── diagnose_helpers.sh # Diagnostic helper functions
+│   ├── diagnose_output.sh  # Diagnostic output formatting
+│   ├── diagnose_rules.sh   # Diagnostic rule definitions
+│   ├── express.sh          # Express mode (zero-config execution)
+│   ├── express_persist.sh  # Express mode configuration persistence
+│   ├── dry_run.sh          # Dry-run preview mode
+│   ├── init.sh             # Init orchestration
+│   ├── init_config.sh      # Init config generation
+│   ├── init_config_emitters.sh # Init config section emitters
+│   ├── init_config_sections.sh # Init config section builders
+│   ├── init_helpers.sh     # Init helper functions
+│   ├── init_report.sh      # Init report generation
+│   ├── init_synthesize_helpers.sh # Init synthesis helpers
+│   ├── init_synthesize_ui.sh # Init synthesis UI
+│   ├── intake_helpers.sh   # Intake agent helpers
+│   ├── intake_verdict_handlers.sh # Intake verdict routing
+│   ├── migrate.sh          # Version migration framework
+│   ├── migrate_cli.sh      # Migration CLI interface
+│   ├── notes_core.sh       # Notes core rewrite
+│   ├── notes_cli.sh        # Notes CLI subcommand
+│   ├── notes_cli_write.sh  # Notes CLI write operations
+│   ├── notes_cleanup.sh    # Notes cleanup operations
+│   ├── notes_acceptance.sh # Notes acceptance checking
+│   ├── notes_acceptance_helpers.sh # Notes acceptance helpers
+│   ├── notes_migrate.sh    # Notes format migration
+│   ├── notes_rollback.sh   # Notes rollback support
+│   ├── context_cache.sh    # Intra-run context cache
+│   ├── checkpoint.sh       # Progress checkpoint management
+│   ├── checkpoint_display.sh # Checkpoint display formatting
+│   ├── crawler.sh          # Project crawler orchestration
+│   ├── crawler_content.sh  # Crawler content sampling
+│   ├── crawler_inventory.sh # Crawler file inventory
+│   ├── crawler_deps.sh     # Crawler dependency analysis
+│   ├── rescan.sh           # Incremental rescan
+│   ├── rescan_helpers.sh   # Rescan helper functions
+│   ├── artifact_handler.sh # AI artifact detection handler
+│   ├── artifact_handler_ops.sh # Artifact handler operations
+│   ├── detect_services.sh  # Service detection
+│   ├── detect_workspaces.sh # Workspace detection
+│   ├── detect_ci.sh        # CI/CD detection
+│   ├── detect_infrastructure.sh # Infrastructure detection
+│   ├── detect_test_frameworks.sh # Test framework detection
+│   ├── detect_doc_quality.sh # Documentation quality assessment
+│   ├── detect_ai_artifacts.sh # AI artifact detection
+│   ├── inbox.sh            # Inbox management
+│   ├── plan_answers.sh     # Planning answer file import
+│   ├── plan_browser.sh     # Browser-based planning
+│   ├── plan_review.sh      # Planning review UI
+│   ├── safety_net.sh       # Run safety net + rollback
+│   ├── run_memory.sh       # Structured cross-run memory (JSONL)
+│   ├── timing.sh           # Stage timing and duration estimation
+│   ├── milestone_dag_helpers.sh # DAG helper functions
+│   ├── milestone_dag_io.sh # DAG I/O operations
+│   ├── milestone_dag_validate.sh # DAG validation
+│   ├── milestone_archival_helpers.sh # Archival helper functions
+│   ├── metrics_dashboard.sh # Metrics dashboard formatting
+│   ├── drift_prune.sh      # Drift log pruning
+│   ├── quota.sh            # API quota management
+│   ├── error_patterns.sh   # Error pattern registry + classification engine
+│   └── preflight.sh        # Pre-flight environment validation
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
-│   ├── intake.sh           # [3.0] Task intake / PM gate
+│   ├── intake.sh           # Task intake / PM gate
 │   ├── coder.sh            # Scout + Coder + build gate
-│   ├── security.sh         # [3.0] Security review stage
+│   ├── security.sh         # Security review stage
 │   ├── review.sh           # Review loop + rework routing
 │   ├── tester.sh           # Test writing + validation
-│   ├── cleanup.sh          # [2.0] Post-success debt sweep stage
-│   ├── init_synthesize.sh  # [3.0] Init synthesis stage
+│   ├── cleanup.sh          # Post-success debt sweep stage
+│   ├── init_synthesize.sh  # Init synthesis stage
 │   ├── plan_interview.sh   # Planning: interactive interview agent
 │   ├── plan_followup_interview.sh # Planning: follow-up interview agent
 │   └── plan_generate.sh    # Planning: CLAUDE.md generation agent
@@ -171,12 +171,12 @@ tekhton/
 │   ├── plan_interview.prompt.md          # Planning interview system prompt
 │   ├── plan_interview_followup.prompt.md # Planning follow-up interview prompt
 │   ├── plan_generate.prompt.md           # CLAUDE.md generation prompt
-│   ├── cleanup.prompt.md                 # [2.0] Debt sweep agent prompt
-│   ├── replan.prompt.md                  # [2.0] Brownfield replan prompt
-│   ├── clarification.prompt.md           # [2.0] Clarification integration prompt
-│   ├── specialist_security.prompt.md     # [2.0] Security review prompt
-│   ├── specialist_performance.prompt.md  # [2.0] Performance review prompt
-│   └── specialist_api.prompt.md          # [2.0] API contract review prompt
+│   ├── cleanup.prompt.md                 # Debt sweep agent prompt
+│   ├── replan.prompt.md                  # Brownfield replan prompt
+│   ├── clarification.prompt.md           # Clarification integration prompt
+│   ├── specialist_security.prompt.md     # Security review prompt
+│   ├── specialist_performance.prompt.md  # Performance review prompt
+│   └── specialist_api.prompt.md          # API contract review prompt
 ├── templates/              # Templates copied into target projects by --init
 │   ├── pipeline.conf.example
 │   ├── coder.md
@@ -192,7 +192,7 @@ tekhton/
 │   ├── mobile-app.md
 │   ├── library.md
 │   └── custom.md
-├── tools/                  # [3.0] Python tooling (optional dependency)
+├── tools/                  # Python tooling (optional dependency)
 │   ├── repo_map.py         # Tree-sitter repo map generator + PageRank
 │   ├── tag_cache.py        # Disk-based tag cache with mtime tracking
 │   ├── tree_sitter_languages.py  # Language detection + grammar loading
@@ -208,7 +208,7 @@ tekhton/
 │       ├── test_tree_sitter_languages.py
 │       └── test_extract_tags_integration.py
 ├── tests/                  # Self-tests
-│   └── fixtures/indexer_project/  # [3.0] Multi-language fixture project
+│   └── fixtures/indexer_project/  # Multi-language fixture project
 └── examples/               # Sample dependency constraint validation scripts
     ├── architecture_constraints.yaml  # Sample constraint manifest
     ├── check_imports_dart.sh          # Dart/Flutter import validator
@@ -415,212 +415,24 @@ cd /path/to/your/project
 /path/to/tekhton/tekhton.sh "Your first task"
 ```
 
-## Completed Initiative: Planning Phase Quality Overhaul
+## Completed Initiatives
 
-The `--plan` pipeline was overhauled to produce deep, interconnected output. The
-DESIGN.md and CLAUDE.md it generates now match the depth of professional design
-documents (multi-phase interview, depth-scored completeness checks, 12-section
-CLAUDE.md generation). All milestones below are complete.
+All prior initiatives are complete. See design docs for full details and
+MILESTONE_ARCHIVE.md for individual milestone records.
 
-### Reference: What "Good" Looks Like
+| Initiative | Version | Milestones | Design Doc |
+|-----------|---------|-----------|------------|
+| Planning Phase Quality Overhaul | 1.x | Multi-phase interview, depth-scored completeness, 12-section CLAUDE.md generation | — |
+| Adaptive Pipeline 2.0 | 2.x | Context economics, milestone progression, clarification protocol, specialist reviews, run metrics | `DESIGN_v2.md` |
+| Brownfield Intelligence (Smart Init) | 2.x | Shell-driven crawler, tech stack detection, agent-assisted synthesis, incremental rescan | — |
+| Tekhton 3.0 — DAG, Indexing & Cost Reduction | 3.0–3.51 | 51 milestones: Milestone DAG, tree-sitter repo maps, Serena MCP, Watchtower, security agent, intake agent, express mode, TDD, browser planning, dry-run, rollback, health scoring, run memory, progress transparency | `DESIGN_v3.md` |
 
-The gold standard is `loenn/docs/GDD_Loenn.md` and `loenn/CLAUDE.md`. Key qualities:
-
-**DESIGN.md (GDD) qualities:**
-- Opens with a Developer Philosophy section establishing non-negotiable architectural
-  constraints before any feature content
-- Each game system gets its own deep section with sub-sections, tables, config examples,
-  edge cases, balance warnings, and explicit interaction rules with other systems
-- Configurable values are called out specifically with defaults and rationale
-- Open design questions are tracked explicitly rather than glossed over
-- Naming conventions section maps lore names to code names
-- ~1,600 lines for a complex project
-
-**CLAUDE.md qualities:**
-- Architecture Philosophy section with concrete patterns (composition over inheritance,
-  interface-first, config-driven)
-- Full project structure tree with every directory and key file annotated
-- Key Design Decisions section resolving ambiguities with canonical rulings
-- Config Architecture section with example config structures and key values
-- Milestones with: scope, file paths, acceptance criteria, `Tests:` block,
-  `Watch For:` block, `Seeds Forward:` block explaining what future milestones depend on
-- Critical Game Rules section — behavioral invariants the engine must enforce
-- "What Not to Build Yet" section — explicitly deferred features
-- Code Conventions section (naming, git workflow, testing requirements, state management pattern)
-- ~970 lines for a complex project
-
-### Key Constraints
-
-- **No `--dangerously-skip-permissions`.** The shell drives all file I/O. Claude
-  generates text only via `_call_planning_batch()`.
-- **Zero execution pipeline changes.** Modify only: `lib/plan.sh`, `stages/plan_interview.sh`,
-  `stages/plan_generate.sh`, `prompts/plan_*.prompt.md`, `templates/plans/*.md`, and tests.
-- **Default model: Opus.** Planning is a one-time cost per project. Use the best model.
-- **All new `.sh` files must pass `bash -n` syntax check.**
-- **All existing tests must continue to pass** (`bash tests/run_tests.sh`).
-
-### Milestone Plan
+### Milestone Management
 
 <!-- See MILESTONE_ARCHIVE.md for completed milestones -->
 
-## Completed Initiative: Adaptive Pipeline 2.0
-
-Tekhton 2.0 makes the pipeline **adaptive**: aware of its own context economics,
-capable of milestone-to-milestone progression, able to interrupt itself when
-assumptions break, and able to improve from run history. All features are additive
-or opt-in. Existing 1.0 workflows remain unchanged.
-
-Full design document: `DESIGN_v2.md`.
-
-### Key Constraints
-
-- **Backward compatible.** Users who don't enable 2.0 features see identical 1.0
-  behavior. All new features are opt-in or default-off.
-- **Shell controls flow.** Agents advise; the shell decides. No agent autonomously
-  modifies pipeline control flow.
-- **Measure first.** Token accounting and context measurement in Milestone 1 before
-  any compression or pruning in Milestone 2. Data before optimization.
-- **Self-applicable.** Each milestone is scoped for a single `tekhton --milestone`
-  run. The pipeline implements its own improvements.
-- **All existing tests must pass** (`bash tests/run_tests.sh`) at every milestone.
-- **All new `.sh` files must pass `bash -n` and `shellcheck`.**
-
-### Milestone Plan
-<!-- See MILESTONE_ARCHIVE.md for completed milestones -->
-
-## Completed Initiative: Brownfield Intelligence (Smart Init)
-
-Tekhton's `--init` today is a bare scaffold: copy templates, stub CLAUDE.md, tell
-the user to fill in the blanks. This locks out every project that isn't greenfield.
-The Brownfield Intelligence initiative makes `--init` a deep, context-aware onboarding
-experience. A shell-driven crawler indexes the project structure, detects the tech
-stack, infers build/test/lint commands, samples key files, and feeds that index to
-an agent-assisted synthesis pipeline that produces a production-quality CLAUDE.md
-and DESIGN.md — no 30-minute interview required.
-
-The end state: Tekhton can be dropped into any repository — 50-file CLI tool or
-500k-line monorepo — and produce an accurate project model on the first run.
-
-### Design Philosophy
-
-- **Shell crawls, agent synthesizes.** The crawler is pure bash with no LLM calls.
-  It produces a structured, token-efficient project manifest (PROJECT_INDEX.md).
-  The agent reads the manifest + sampled key files and synthesizes CLAUDE.md and
-  DESIGN.md. This separation keeps crawling fast, deterministic, and free.
-- **Breadth-first, depth-bounded.** Large repos have deep directory trees. The
-  crawler visits every directory but only descends into files at configurable depth.
-  Breadth-first ensures top-level structure is always captured even if the crawl
-  budget is exhausted mid-tree.
-- **Heuristic detection, agent verification.** Shell heuristics detect tech stack,
-  entry points, and commands with high recall but imperfect precision. The synthesis
-  agent validates and corrects heuristic output. This avoids the "garbage in,
-  garbage out" problem of pure heuristic approaches without paying for full-LLM
-  indexing.
-- **One-time cost, persistent artifact.** The project index (PROJECT_INDEX.md) is
-  generated once and committed alongside CLAUDE.md. Future `--replan` runs consume
-  the index rather than re-crawling.
-- **Incremental by default.** After initial crawl, `--rescan` only processes files
-  changed since the last scan (via `git diff`). Full re-crawl available via
-  `--rescan --full`.
-
-### Key Constraints
-
-- **No new runtime dependencies.** Crawler uses only bash builtins, `find`, `file`,
-  `wc`, `head`, `awk`, `sed`, and `git`. No Python, no jq, no external indexers.
-- **Budget-bounded.** Crawler output (PROJECT_INDEX.md) must fit within a
-  configurable token budget (default: 30k tokens / ~120k chars). Larger projects
-  get coarser granularity, not truncated output.
-- **Deterministic.** Same repo state → same index output. No randomization,
-  no sampling variability.
-- **Safe.** Crawler never executes project code, never reads `.env` or key files,
-  never follows symlinks outside the project tree.
-- **All existing tests must pass** at every milestone.
-- **All new `.sh` files must pass `bash -n` and `shellcheck`.**
-
-### Milestone Plan
-
-## Completed Initiative: Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
-
-**Status: Complete** — All 51 milestones delivered (April 2026). See `DESIGN_v3.md` for
-the full design document and retrospective.
-
-Tekhton 3.0 makes the pipeline **context-aware** at two levels. First, a
-**Milestone DAG** with a sliding context window replaces inline milestone storage
-in CLAUDE.md — milestones live as individual files with dependency tracking, and
-only the relevant frontier is injected into agent prompts. This eliminates context
-waste from future milestones and enables future parallel execution. Second,
-**intelligent indexing** via tree-sitter repo maps (optionally enriched with Serena
-LSP via MCP) replaces blind architecture injection — agents receive ranked,
-token-budgeted file signatures relevant to their task.
-
-V3 also delivered: Watchtower dashboard, security agent, intake agent, express mode,
-TDD support, browser planning, dry-run preview, rollback, health scoring, structured
-run memory, progress transparency, and many developer experience improvements.
-
-Full design document: `DESIGN_v3.md`.
-
-### Key Constraints
-
-- **Backward compatible.** Users who don't enable new features see identical 2.0
-  behavior. DAG features auto-detect (manifest exists → use it). Indexer features
-  are opt-in via `REPO_MAP_ENABLED`. All new features default-off until proven stable.
-- **No new shell dependencies for DAG.** The milestone DAG uses only bash 4+ builtins
-  (associative arrays, parameter expansion). No jq, no Python for DAG operations.
-- **Python is optional.** The repo map generator requires Python 3.8+ and
-  tree-sitter, but Tekhton must remain functional without them. Shell detects
-  availability and falls back gracefully to 2.0 context injection.
-- **Shell controls flow.** Python tools are invoked as subprocesses and produce
-  structured output (JSON/text). No Python process holds state across stages.
-- **Bash 4+ for all .sh files.** The indexer orchestration is bash; the analysis
-  tool is Python. Both must be independently testable.
-- **Character budget is king.** The milestone window and repo map output both fit
-  within configurable character budgets. Ranking and priority determine what gets
-  included, not truncation.
-- **Parallel-ready data model.** DAG edges, parallel groups, and dependency
-  tracking exist from day one. The data structures support future parallel
-  execution without modification.
-- **All existing tests must pass** (`bash tests/run_tests.sh`) at every milestone.
-- **All new `.sh` files must pass `bash -n` and `shellcheck`.**
-
-### Architecture Overview
-
-```
-Pipeline Stage Flow (v3):
-
-  tekhton.sh startup
-       │
-       ├──▶ Milestone DAG Layer
-       │    ┌──────────────────────┐
-       │    │  lib/milestone_dag   │ ← MANIFEST.cfg + .md files
-       │    │  lib/milestone_win   │ → MILESTONE_BLOCK (budgeted)
-       │    └──────────────────────┘
-       │
-       ├──▶ Indexer Layer (opt-in)
-       │    ┌─────────────────┐    ┌──────────────────────┐
-       │    │  lib/indexer.sh  │───▶│  tools/repo_map.py   │
-       │    │  (orchestrator)  │    │  (tree-sitter parse  │
-       │    │                  │◀───│   + PageRank + emit)  │
-       │    └─────────────────┘    └──────────────────────┘
-       │         │
-       │         ▼
-       │    REPO_MAP.md (ranked signatures, token-budgeted)
-       │
-       ▼
-  Agent Stages (with budgeted context)
-       ├──▶ Scout    (full map for discovery)
-       ├──▶ Coder    (task-relevant slice + active milestone)
-       ├──▶ Reviewer (changed-file slice)
-       └──▶ Tester   (test-relevant slice)
-
-  Optional: Serena MCP (live symbol queries)
-       └──▶ Agents use find_symbol / references
-            tools alongside static repo map
-```
-
-### Milestone Plan
-
-<!-- Milestones are managed as individual files in .claude/milestones/.
-     See MANIFEST.cfg for ordering and dependencies. -->
+Milestones are managed as individual files in `.claude/milestones/`.
+See `MANIFEST.cfg` for ordering, dependencies, and status.
 
 ## Active Initiative: Environment Intelligence (Milestones 53–56)
 
