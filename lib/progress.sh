@@ -199,6 +199,7 @@ _get_timing_breakdown() {
         else
             json="${json},"
         fi
+        # Safe: _stg keys come exclusively from _STAGE_DURATION, set only by pipeline constants ("coder", "reviewer", "tester"), never from user input
         json="${json}\"${_stg}\":${dur}"
     done
     if [[ "$first" = true ]]; then
