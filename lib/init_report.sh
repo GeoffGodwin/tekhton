@@ -116,7 +116,25 @@ emit_init_summary() {
     # --- Next steps ---
     echo -e "  ${BOLD}Next steps:${NC}"
     echo "    1. Review essential config: .claude/pipeline.conf (lines 1-20)"
-    if [[ "$file_count" -gt 50 ]]; then
+
+    # Detect whether milestones already exist (from a prior --plan run).
+    # Strongest signal: MANIFEST.cfg with entries. Fallback: non-stub CLAUDE.md
+    # with milestone headers.
+    local _has_milestones=false
+    local _milestone_dir="${project_dir}/.claude/milestones"
+    local _claude_md="${project_dir}/CLAUDE.md"
+    if [[ -f "${_milestone_dir}/MANIFEST.cfg" ]] \
+        && grep -q '|' "${_milestone_dir}/MANIFEST.cfg" 2>/dev/null; then
+        _has_milestones=true
+    elif [[ -f "$_claude_md" ]] \
+        && ! grep -q '<!-- TODO:.*--plan' "$_claude_md" 2>/dev/null \
+        && grep -q '^#### Milestone' "$_claude_md" 2>/dev/null; then
+        _has_milestones=true
+    fi
+
+    if [[ "$_has_milestones" == "true" ]]; then
+        echo "    2. Run: tekhton \"Implement Milestone 1: <title>\""
+    elif [[ "$file_count" -gt 50 ]]; then
         echo "    2. Start planning:  tekhton --plan-from-index"
         echo "       (uses PROJECT_INDEX.md to synthesize DESIGN.md + CLAUDE.md)"
     else
