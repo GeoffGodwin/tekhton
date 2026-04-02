@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-01 23:26:56
+Generated: 2026-04-02 00:05:10
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [LOW] [category:A03] [lib/dashboard_parsers.sh:362] fixable:yes — Bash fallback JSON construction in `_parse_run_summaries_from_jsonl` interpolates `${task_label}` directly into a JSON string without calling `_json_escape`. If a task label contains backslashes or control characters, the resulting JSON is malformed. Use `$(_json_escape "${task_label}")` consistent with how other string fields are handled in `_parse_intake_report` and `_parse_coder_summary`.
