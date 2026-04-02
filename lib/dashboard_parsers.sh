@@ -32,7 +32,8 @@ _write_js_file() {
     local varname="$2"
     local json_content="$3"
 
-    local tmpfile="${filepath}.tmp.$$"
+    local tmpfile
+    tmpfile=$(mktemp "${filepath}.tmp.XXXXXX")
     _to_js_string "$varname" "$json_content" > "$tmpfile"
     mv "$tmpfile" "$filepath"
 }
@@ -359,7 +360,7 @@ print(json.dumps(results))
         stages_json="${stages_json}}"
 
         local json_content
-        json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"\",\"run_type\":\"${run_type}\",\"task_label\":\"${task_label}\",\"timestamp\":\"${timestamp}\",\"stages\":${stages_json}}"
+        json_content="{\"outcome\":\"$(_json_escape "${outcome}")\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"\",\"run_type\":\"$(_json_escape "${run_type}")\",\"task_label\":\"$(_json_escape "${task_label}")\",\"timestamp\":\"$(_json_escape "${timestamp}")\",\"stages\":${stages_json}}"
 
         if [[ "$first" = true ]]; then
             first=false
@@ -445,7 +446,7 @@ except: pass
             local task_label
             task_label=$(sed -n 's/.*"task_label"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
             : "${task_label:=}"
-            json_content="{\"outcome\":\"${outcome}\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"${milestone}\",\"run_type\":\"${run_type}\",\"task_label\":\"${task_label}\",\"stages\":{}}"
+            json_content="{\"outcome\":\"$(_json_escape "${outcome}")\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"$(_json_escape "${milestone}")\",\"run_type\":\"$(_json_escape "${run_type}")\",\"task_label\":\"$(_json_escape "${task_label}")\",\"stages\":{}}"
         fi
 
         if [[ -n "$json_content" ]]; then

@@ -2,17 +2,25 @@
 # =============================================================================
 # test_dashboard_parsers_bugfix.sh — Verify fixes for dashboard parser bugs
 #
+# PRIOR BUG FIXES (covered in Test Suites 1-6):
 # Bug #1: dashboard_emitters.sh:155-156 — grep -c pattern producing double "0"
 # Bug #2: dashboard_parsers.sh:159-163 — Python parser field name mismatch
 # Bug #3: dashboard_parsers.sh:175-181 — grep fallback field name mismatch
-# Bug #4: dashboard_parsers.sh:207,277,283 — Zero-turn crash records appearing as blank "HUMAN FEAT" in trends
+# Bug #4: dashboard_parsers.sh:207,277,283 — Zero-turn crash records in trends
 #
-# Test Suites 1-5: Cover bugs #1-3 (RUN_SUMMARY.json field name handling)
-# Test Suites 6-6b: Cover bug #4 (zero-turn crash record filtering in metrics.jsonl)
+# SECURITY FIXES (April 2026):
+# Item 1 [lib/dashboard_parsers.sh:362]: Wrapped outcome, run_type, task_label,
+#        timestamp in _json_escape() calls in _parse_run_summaries_from_jsonl
+#        bash fallback to prevent JSON injection from unescaped field values.
+# Item 2 [lib/dashboard_parsers.sh:449]: Wrapped outcome, milestone, run_type,
+#        task_label in _json_escape() calls in _parse_run_summaries_from_files
+#        sed fallback to prevent JSON injection from sed-extracted fields.
+# Item 3 [lib/dashboard_parsers.sh:35]: Replaced PID-based tmpfile suffix
+#        (${filepath}.tmp.$$) with mktemp "${filepath}.tmp.XXXXXX" for safer
+#        atomic file creation (eliminates predictable temp file names).
 #
-# Bug #4 root cause: ERR trap handler writes metrics with total_turns=0 and empty task
-# on startup crashes. Parser was treating these as valid runs, producing blank dashboard entries.
-# Fix: Filter records where total_turns == 0 in both Python and bash fallback paths.
+# Coverage for Item 1 & 2: Dedicated test file test_dashboard_parsers_json_escape.sh
+# verifies _json_escape() special-character handling (quotes, backslashes, newlines).
 # =============================================================================
 set -euo pipefail
 
@@ -34,9 +42,12 @@ is_dashboard_enabled() {
 # Helper for JSON escaping used by parsers
 _json_escape() {
     local s="$1"
-    # Minimal JSON escape for testing
-    printf '%s' "$s" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g; s/
-/\\n/g'
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
 }
 
 # For non-Python environments, also test grep fallback
