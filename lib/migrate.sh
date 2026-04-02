@@ -309,6 +309,20 @@ run_migrations() {
     done <<< "$migrations"
 
     if [[ "$failed" = true ]]; then
+        # Write minimal failure context so --diagnose can detect the crash.
+        # diagnose_output.sh may not be loaded yet, so write directly.
+        local ctx_dir="${project_dir}/.claude"
+        mkdir -p "$ctx_dir" 2>/dev/null || true
+        local ctx_file="${ctx_dir}/LAST_FAILURE_CONTEXT.json"
+        local timestamp_iso
+        timestamp_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        local safe_task=""
+        if [[ -n "${TASK:-}" ]]; then
+            safe_task=$(printf '%s' "$TASK" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        fi
+        printf '{\n  "classification": "MIGRATION_FAILURE",\n  "stage": "migration",\n  "outcome": "failure",\n  "task": "%s",\n  "migration_from": "%s",\n  "migration_to": "%s",\n  "consecutive_count": 1,\n  "timestamp": "%s"\n}\n' \
+            "$safe_task" "$from_ver" "$to_ver" "$timestamp_iso" \
+            > "$ctx_file" 2>/dev/null || true
         return 1
     fi
 
@@ -367,6 +381,11 @@ _write_config_version() {
 # check_project_version — Called at startup after config load.
 # Detects version mismatch and prompts for migration.
 check_project_version() {
+    # Express mode has no pipeline.conf — migration is not applicable
+    if [[ "${EXPRESS_MODE_ACTIVE:-false}" = true ]]; then
+        return 0
+    fi
+
     local project_dir="${PROJECT_DIR:-.}"
     local config_ver
     config_ver=$(detect_config_version "$project_dir")

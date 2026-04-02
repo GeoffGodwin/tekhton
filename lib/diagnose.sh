@@ -196,6 +196,14 @@ run_diagnose() {
         has_state=true
     fi
 
+    # Also detect migration failures via backup directories
+    if [[ "$has_state" != true ]]; then
+        local backup_base="${PROJECT_DIR:-.}/${MIGRATION_BACKUP_DIR:-.claude/migration-backups}"
+        if compgen -G "${backup_base}/pre-*" >/dev/null 2>&1; then
+            has_state=true
+        fi
+    fi
+
     if [[ "$has_state" != true ]]; then
         echo -e "${YELLOW}No pipeline runs found. Nothing to diagnose.${NC}"
         echo "Run 'tekhton \"your task\"' to start a pipeline."

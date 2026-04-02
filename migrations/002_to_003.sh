@@ -22,7 +22,8 @@ migration_check() {
     local project_dir="$1"
     local conf_file="${project_dir}/.claude/pipeline.conf"
 
-    [[ -f "$conf_file" ]] || return 0
+    # No conf file means nothing to migrate (express mode or bare .claude/)
+    [[ -f "$conf_file" ]] || return 1
 
     # If V3-era key exists, consider it already applied
     if grep -q '^SECURITY_AGENT_ENABLED=' "$conf_file" 2>/dev/null; then

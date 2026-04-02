@@ -321,6 +321,54 @@ _rule_test_audit_failure() {
     return 0
 }
 
+# _rule_migration_crash
+# Detect failed migration via LAST_FAILURE_CONTEXT or backup dirs.
+_rule_migration_crash() {
+    # Check LAST_FAILURE_CONTEXT.json for migration classification
+    local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
+    if [[ -f "$failure_ctx" ]]; then
+        local class
+        class=$(grep -oP '"classification"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
+        if [[ "$class" = "MIGRATION_FAILURE" ]]; then
+            local from_ver to_ver
+            from_ver=$(grep -oP '"migration_from"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
+            to_ver=$(grep -oP '"migration_to"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
+            DIAG_CLASSIFICATION="MIGRATION_FAILURE"
+            DIAG_CONFIDENCE="high"
+            DIAG_SUGGESTIONS=(
+                "Migration from V${from_ver:-?} to V${to_ver:-?} failed."
+                "This usually happens when running express mode (no pipeline.conf) against an older Tekhton version."
+                "Options:"
+                "  1. Rollback the failed migration: tekhton --migrate --rollback"
+                "  2. Initialize the project properly: tekhton --init"
+                "  3. If already rolled back, re-run your task — the fix should prevent recurrence"
+            )
+            return 0
+        fi
+    fi
+
+    # Fallback: check for backup dirs without a matching version watermark
+    local backup_base="${PROJECT_DIR:-.}/${MIGRATION_BACKUP_DIR:-.claude/migration-backups}"
+    if compgen -G "${backup_base}/pre-*" >/dev/null 2>&1; then
+        # Backup exists — check if migration completed (watermark updated)
+        local conf_file="${PROJECT_DIR:-.}/.claude/pipeline.conf"
+        if [[ ! -f "$conf_file" ]] || ! grep -q '^TEKHTON_CONFIG_VERSION=' "$conf_file" 2>/dev/null; then
+            DIAG_CLASSIFICATION="MIGRATION_FAILURE"
+            DIAG_CONFIDENCE="medium"
+            DIAG_SUGGESTIONS=(
+                "A migration backup exists but the migration did not complete."
+                "Options:"
+                "  1. Rollback: tekhton --migrate --rollback"
+                "  2. Retry migration: tekhton --migrate"
+                "  3. Initialize fresh: tekhton --init"
+            )
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
 # _rule_version_mismatch
 # Detect project config version behind running Tekhton version.
 _rule_version_mismatch() {
@@ -383,6 +431,7 @@ DIAGNOSE_RULES=(
     "_rule_split_depth"
     "_rule_transient_error"
     "_rule_test_audit_failure"
+    "_rule_migration_crash"
     "_rule_version_mismatch"
     "_rule_unknown"
 )
