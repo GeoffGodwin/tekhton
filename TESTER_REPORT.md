@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_error_patterns.sh` — add annotate_build_errors(non-code/env_setup) and filter_code_errors(all-code, all-noncode) coverage
+- [x] `tests/test_m52_circular_onboarding.sh` — add file_count>50 branch test, strengthen test7 assertion, remove unused run_test() helper
 
 ## Test Run Results
-Passed: 86  Failed: 0
+Passed: 250  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_error_patterns.sh`
+- [x] `tests/test_m52_circular_onboarding.sh`

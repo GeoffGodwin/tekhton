@@ -7,8 +7,8 @@ set -euo pipefail
 #   1. run_build_gate with env error → writes BUILD_RAW_ERRORS.txt
 #   2. has_only_noncode_errors on BUILD_RAW_ERRORS.txt → returns 0 (bypass)
 #   3. has_only_noncode_errors on annotated BUILD_ERRORS.md → returns 1
-#      (markdown headers produce unclassified → code fallback; known limitation
-#       per M53 Drift Observations — Phase 4 UI path does not write raw file)
+#      (markdown headers produce unclassified → code fallback; validates that
+#       raw file is always preferred — Phase 4 now writes BUILD_RAW_ERRORS.txt)
 #   4. Code errors in BUILD_RAW_ERRORS.txt → returns 1 (no bypass)
 #   5. Mixed env+code errors → returns 1 (no bypass)
 #   6. Pure env multi-category errors → returns 0 (bypass)
@@ -78,10 +78,12 @@ fi
 
 # =============================================================================
 # Test 2: Annotated BUILD_ERRORS.md (written by gate) → markdown headers
-#         cause unclassified fallback → has_only_noncode_errors returns 1
-#         This documents the known Phase 4 limitation (Drift Observation M53).
+#         cause unclassified fallback → has_only_noncode_errors returns 1.
+#         This validates that the raw file path is always preferred over
+#         BUILD_ERRORS.md (Phase 4 now writes BUILD_RAW_ERRORS.txt, so this
+#         fallback only fires if raw file is missing for an unforeseen reason).
 # =============================================================================
-echo "=== Annotated BUILD_ERRORS.md markdown headers → no bypass (known limitation) ==="
+echo "=== Annotated BUILD_ERRORS.md markdown headers → no bypass (validates raw-file preference) ==="
 
 # BUILD_ERRORS.md was written by the gate in Test 1 with annotated format
 if [[ -f BUILD_ERRORS.md ]]; then
@@ -93,9 +95,9 @@ fi
 md_content=$(cat BUILD_ERRORS.md)
 
 # Markdown headers like "# Build Errors — ..." are unclassified → "code" fallback
-# so has_only_noncode_errors returns 1 (never triggers bypass)
+# so has_only_noncode_errors returns 1 — confirms raw file must be preferred
 if ! has_only_noncode_errors "$md_content"; then
-    pass  # Expected: markdown headers prevent bypass on BUILD_ERRORS.md content
+    pass  # Expected: markdown headers prevent bypass — raw file is the correct input
 else
     fail "has_only_noncode_errors on annotated BUILD_ERRORS.md should return 1 (markdown headers → code fallback)"
 fi

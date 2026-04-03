@@ -1,7 +1,7 @@
 #### Milestone 52: Fix Circular Onboarding Flow
 <!-- milestone-meta
 id: "52"
-status: "in_progress"
+status: "done"
 -->
 
 The `--init` and `--plan` commands each tell users to run the other as a next step,

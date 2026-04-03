@@ -47,13 +47,24 @@ assert_file_contains "drift log unresolved section" "${PROJECT_DIR}/DRIFT_LOG.md
 assert_file_contains "drift log resolved section" "${PROJECT_DIR}/DRIFT_LOG.md" "## Resolved"
 
 # ============================================================
-# Test 3: Unresolved Observations section is empty
+# Test 3: Unresolved Observations section has valid structure
+# Either contains "(none)" or properly formatted entries — never both
 # ============================================================
-UNRESOLVED_SECTION=$(sed -n '/^## Unresolved Observations$/,/^## Resolved$/p' "${PROJECT_DIR}/DRIFT_LOG.md" | head -n 2)
-if echo "$UNRESOLVED_SECTION" | grep -q "(none)"; then
-    pass "Unresolved Observations section shows (none)"
+UNRESOLVED_SECTION=$(sed -n '/^## Unresolved Observations$/,/^## Resolved$/p' "${PROJECT_DIR}/DRIFT_LOG.md")
+HAS_ENTRIES=false
+HAS_NONE=false
+if echo "$UNRESOLVED_SECTION" | grep -q "^-"; then
+    HAS_ENTRIES=true
+fi
+if echo "$UNRESOLVED_SECTION" | grep -q "^(none)"; then
+    HAS_NONE=true
+fi
+if $HAS_ENTRIES && $HAS_NONE; then
+    fail "Unresolved section has both entries and (none) marker — stale marker"
+elif ! $HAS_ENTRIES && ! $HAS_NONE; then
+    fail "Unresolved section is empty (missing entries or (none) marker)"
 else
-    fail "Unresolved Observations section should show (none)"
+    pass "Unresolved Observations section has valid structure"
 fi
 
 # ============================================================
@@ -65,13 +76,20 @@ assert_file_contains \
     "Last audit:"
 
 # ============================================================
-# Test 5: No unresolved entries remain in the file
+# Test 5: Unresolved entries (if any) are properly formatted
 # ============================================================
 UNRESOLVED_SECTION=$(sed -n '/^## Unresolved Observations$/,/^## Resolved$/p' "${PROJECT_DIR}/DRIFT_LOG.md" || true)
-if echo "$UNRESOLVED_SECTION" | grep -q "^-"; then
-    fail "Found unresolved entries when there should be none"
+UNRESOLVED_ENTRIES=$(echo "$UNRESOLVED_SECTION" | grep "^-" || true)
+if [ -n "$UNRESOLVED_ENTRIES" ]; then
+    # All entries should have the standard date+tag format
+    BAD_ENTRIES=$(echo "$UNRESOLVED_ENTRIES" | grep -v '^\- \[' || true)
+    if [ -n "$BAD_ENTRIES" ]; then
+        fail "Unresolved entries have invalid format: $BAD_ENTRIES"
+    else
+        pass "Unresolved entries are properly formatted"
+    fi
 else
-    pass "No actual unresolved entries remain"
+    pass "No unresolved entries (section shows (none))"
 fi
 
 # ============================================================

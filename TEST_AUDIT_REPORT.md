@@ -1,54 +1,66 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 5 test functions
+Tests audited: 1 file, 10 test functions
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: Test 5 copies implementation logic inline rather than calling the real function
-- File: tests/test_init_report_stub_detection.sh:112-164
-- Issue: `test_full_detection_logic` replicates the detection logic from `lib/init_report.sh:126-133`
-  verbatim inside the test body rather than sourcing `init_report.sh` and calling the real code.
-  If `lib/init_report.sh` changes the detection logic, this test will silently pass while the
-  actual implementation regresses. The test currently validates a snapshot of logic, not the live
-  function.
+#### SCOPE: Tests exercise files not listed in implementation changes
+- File: tests/test_m52_circular_onboarding.sh
+- Issue: The audit context lists "Implementation Files Changed: none." JR_CODER_SUMMARY.md
+  confirms only `lib/gates.sh` received a comment addition this run. The tests exclusively
+  exercise `lib/plan.sh:542-558` (`_print_next_steps`) and `lib/init_report.sh:18-154`
+  (`emit_init_summary`) — neither was changed. This indicates the M52 implementation was
+  completed in a prior run and tests are being added retroactively to cover it. The functions
+  exist and behave as the tests assert, so there are no orphaned or stale references, and no
+  test exercises removed or renamed behavior. This is an acceptable catch-up test addition;
+  however, TESTER_REPORT.md does not acknowledge that it covers pre-existing code, which makes
+  the "Bugs Found: None" claim ambiguous.
 - Severity: MEDIUM
-- Action: Extract the stub-detection condition from `init_report.sh` into a named helper (e.g.
-  `_has_real_milestones()`), then call that helper from the test. If refactoring is out of scope,
-  add an inline comment acknowledging the copy is intentional and note the risk of drift.
+- Action: Annotate TESTER_REPORT.md to clarify that these tests verify already-implemented
+  M52 behavior rather than code written in this run. No test changes required.
 
-#### COVERAGE: MANIFEST.cfg branch has zero test coverage
-- File: tests/test_init_report_stub_detection.sh (no test covers this branch)
-- Issue: The detection logic in `lib/init_report.sh:126-128` has two branches: (1) MANIFEST.cfg
-  with pipe-delimited entries (strongest signal per the inline comment), and (2) a non-stub
-  CLAUDE.md with `#### Milestone` headers. All five tests exercise only branch 2. Branch 1 is
-  entirely untested.
-- Severity: MEDIUM
-- Action: Add a test case that creates `.claude/milestones/MANIFEST.cfg` containing a
-  pipe-delimited entry and verifies `_has_milestones` resolves to `true` via the manifest branch.
-  Also add a negative case (MANIFEST.cfg exists but contains no `|`) to confirm it falls through
-  to branch 2.
-
-#### COVERAGE: Missing CLAUDE.md case not tested
-- File: tests/test_init_report_stub_detection.sh (no test for absent file)
-- Issue: No test covers the case where CLAUDE.md does not exist. The guard `[[ -f "$_claude_md" ]]`
-  at `init_report.sh:129` should cleanly yield `_has_milestones=false`. An absent file could
-  produce unexpected `grep` errors if the guard were accidentally removed.
+#### COVERAGE: test3 asserts only the section header, not step content
+- File: tests/test_m52_circular_onboarding.sh:80-99
+- Issue: `test3_print_next_steps_has_next_steps` greps for the string "Next steps" to confirm
+  the section header is present. This assertion would pass even if the step content beneath
+  the header were empty or entirely wrong. The log line at `lib/plan.sh:549` prints "Next
+  steps:" unconditionally, so the test adds no signal beyond "the function ran without
+  error." The other test functions (test1, test2) already cover the meaningful conditional
+  behavior in the same code path, making test3 redundant at its current assertion strength.
 - Severity: LOW
-- Action: Add a minimal test case confirming that when neither MANIFEST.cfg nor CLAUDE.md is
-  present, the detection result is `false` with no error output.
+- Action: Strengthen to verify at least one concrete step is present, e.g.:
+  `echo "$output" | grep -q "tekhton --init\|Implement Milestone"`. Alternatively, remove
+  test3 and rely on test1/test2 for coverage of `_print_next_steps`.
 
-### Positive Observations
+#### EXERCISE: EXIT trap overwrite leaks temp directories
+- File: tests/test_m52_circular_onboarding.sh (all test functions)
+- Issue: Each test function registers `trap "rm -rf $PROJECT_DIR" EXIT`. Because these
+  functions run in the same process (not subshells), each registration silently overwrites
+  the previous one. At script exit, only the trap set by the last function to run fires.
+  Tests 1-8 and 10 each create a `mktemp -d` directory that is not reliably cleaned up.
+  This is not a correctness issue but it leaves up to nine temporary directories on disk
+  per test run.
+- Severity: LOW
+- Action: Run each test in a subshell to scope the trap correctly:
+  `( test1_... ) && pass "..." || fail "..."`. Alternatively, collect temp dirs in a global
+  array and clean up in a single EXIT trap registered once at the top of `main()`.
 
-- **Assertion Honesty (PASS)**: All grep patterns and expected values are derived directly from
-  `lib/init_report.sh:130`. No hard-coded magic values disconnected from implementation.
-- **Regression Anchor (PASS)**: Test 2 (`test_old_pattern_fails`) honestly documents the original
-  bug by confirming the old strict pattern `<!-- TODO:.*--plan -->` does NOT match the actual stub
-  text. This is a legitimate negative regression test.
-- **Test Naming (PASS)**: All five function names clearly encode the scenario and the expected
-  outcome (`test_pattern_no_false_positive_on_real_milestones`, `test_old_pattern_fails`, etc.).
-- **Test Weakening (N/A)**: This is a new test file. No existing tests were modified.
-- **Scope Alignment (PASS)**: No orphaned imports or stale references. `JR_CODER_SUMMARY.md` was
-  deleted but is not referenced anywhere in the test. `lib/init_report.sh` is present and the
-  pattern under test exists at line 130 as described in TESTER_REPORT.md.
+#### None (Assertion Honesty — no issues found)
+All grep targets (`tekhton --plan`, `tekhton --init`, `tekhton --plan-from-index`,
+`Implement Milestone 1`, `Next steps`) appear verbatim in production code:
+`lib/init_report.sh:136,138,141` and `lib/plan.sh:549,553-556`. No hard-coded magic
+values. No trivially-passing assertions (assertTrue(True)-style) detected.
+
+#### None (Test Weakening — no issues found)
+TESTER_REPORT.md reports that test7 was strengthened and `run_test()` was removed.
+Both changes are confirmed in the current file: test7 (lines 176-213) now asserts both
+the negative (`! grep -q "tekhton --plan"`) and the positive (`grep -q "Implement Milestone 1"`),
+matching the pattern established by test5. No `run_test()` helper exists in the file.
+No assertions were removed or broadened relative to the described changes.
+
+#### None (Naming — no issues found)
+All ten test names encode both the scenario and the expected outcome (e.g.,
+`test2_print_next_steps_with_pipeline_conf`, `test10_emit_init_summary_large_project`).
+No generic names (`test_1`, `test_thing`) detected.

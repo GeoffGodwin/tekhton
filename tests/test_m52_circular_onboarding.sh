@@ -25,38 +25,6 @@ fail() {
     echo "  ✗ $*"
 }
 
-# Helper to run test in isolated environment
-run_test() {
-    local test_name="$1"
-    local test_func="$2"
-
-    # Create new shell for test to avoid state pollution
-    bash << EOF
-set -euo pipefail
-TEKHTON_HOME="$TEKHTON_HOME"
-TEST_NAME="$test_name"
-
-pass() {
-    echo "PASS: \$TEST_NAME"
-}
-
-fail() {
-    echo "FAIL: \$TEST_NAME"
-    exit 1
-}
-
-$test_func
-EOF
-    local rc=$?
-    if [[ $rc -eq 0 ]]; then
-        ((PASSED++))
-        echo "  ✓ $test_name"
-    else
-        ((FAILED++))
-        echo "  ✗ $test_name"
-    fi
-}
-
 # =============================================================================
 # Test implementations
 # =============================================================================
@@ -236,7 +204,10 @@ EOF
 
     # Should NOT recommend --plan when CLAUDE.md has milestones
     if ! echo "$output" | grep -q "tekhton --plan"; then
-        return 0
+        # Should still recommend implementing milestone 1
+        if echo "$output" | grep -q "Implement Milestone 1"; then
+            return 0
+        fi
     fi
     return 1
 }
@@ -324,6 +295,31 @@ EOF
     return 1
 }
 
+test10_emit_init_summary_large_project() {
+    local PROJECT_DIR
+    PROJECT_DIR=$(mktemp -d)
+    trap "rm -rf $PROJECT_DIR" EXIT
+    export PROJECT_DIR
+
+    mkdir -p "${PROJECT_DIR}/.claude"
+
+    source "${TEKHTON_HOME}/lib/common.sh" >/dev/null 2>&1
+    source "${TEKHTON_HOME}/lib/init_report.sh" >/dev/null 2>&1
+
+    # No milestones present, file_count > 50
+    local output
+    output=$(emit_init_summary "$PROJECT_DIR" "" "" "" "custom" "100" 2>&1 || true)
+
+    # Should recommend --plan-from-index for large projects
+    if echo "$output" | grep -q "tekhton --plan-from-index"; then
+        # Should NOT recommend regular --plan
+        if ! echo "$output" | grep -q "tekhton --plan \""; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # =============================================================================
 # Run all tests
 # =============================================================================
@@ -344,6 +340,10 @@ main() {
     test6_emit_init_summary_with_empty_manifest && pass "--plan recommended with empty MANIFEST.cfg" || fail "--plan recommended with empty MANIFEST.cfg"
     test7_emit_init_summary_with_claude_md_milestones && pass "Skips --plan with CLAUDE.md milestones" || fail "Skips --plan with CLAUDE.md milestones"
     test8_emit_init_summary_with_stub_claude_md && pass "--plan recommended with stub CLAUDE.md" || fail "--plan recommended with stub CLAUDE.md"
+
+    echo ""
+    echo "Group 3: Large-project branch"
+    test10_emit_init_summary_large_project && pass "Uses --plan-from-index for file_count > 50" || fail "Uses --plan-from-index for file_count > 50"
 
     echo ""
     echo "Integration tests"

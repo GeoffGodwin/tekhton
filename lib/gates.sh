@@ -271,6 +271,8 @@ EOF
             if [[ "$_ui_exit" -ne 0 ]] && command -v classify_build_error &>/dev/null; then
                 local _remediated=false
                 local _classification
+                # Use classify_build_error (first-match) deliberately: env_setup patterns appear early in output,
+                # and a single actionable remediation command is sufficient for auto-remediation in this context.
                 _classification=$(classify_build_error "$_ui_output")
                 local _class_cat _class_safety _class_remed
                 _class_cat=$(echo "$_classification" | cut -d'|' -f1)
@@ -303,6 +305,10 @@ EOF
             if [[ "$_ui_exit" -ne 0 ]]; then
                 warn "Build gate FAILED (${stage_label}) — UI tests failed:"
                 echo "$_ui_output" | tail -30
+
+                # Write raw output so coder.sh bypass logic reads unadorned text
+                # (BUILD_RAW_ERRORS.txt was deleted at gate entry; Phases 1-3 passed)
+                printf '%s\n' "$_ui_output" > BUILD_RAW_ERRORS.txt
 
                 cat > UI_TEST_ERRORS.md << UIEOF
 # UI Test Errors — $(date '+%Y-%m-%d %H:%M:%S')

@@ -1,7 +1,5 @@
-# Reviewer Report — M53: Error Pattern Registry & Build Gate Classification
-
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,13 +8,34 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/error_patterns.sh` is 337 lines, exceeds the 300-line soft ceiling. The registry heredoc accounts for the bulk; consider splitting the registry data from the classification engine if it grows further.
-- `lib/errors.sh` is 304 lines, marginally over the ceiling — acceptable but worth noting for future cleanup.
+- `lib/gates.sh` remains at 477 lines (pre-existing; already logged in prior cycle). No action required this cycle.
 
 ## Coverage Gaps
-- `annotate_build_errors` is only tested with a code-category error. The non-code branch (env_setup with `Auto-fix:` remediation line) is exercised by the gate tests but not unit-tested in `test_error_patterns.sh` directly.
-- `filter_code_errors` is not tested for all-code input (no non-code errors present) or all-noncode input (no code errors present) — only mixed input is tested.
+- `tests/test_m52_circular_onboarding.sh`: `file_count > 50` branch in `emit_init_summary` (lib/init_report.sh:137–139) is never exercised — add a test passing `file_count=100` and assert output contains `tekhton --plan-from-index`.
+- `tests/test_m52_circular_onboarding.sh` test7: asserts only the negative (`--plan` absent) but never verifies what IS recommended — add a positive assertion mirroring test5 (e.g., `Implement Milestone 1` present).
+- `tests/test_m52_circular_onboarding.sh`: `run_test()` helper is defined (30 lines) but never called — remove it or refactor `main()` to use it consistently.
 
 ## Drift Observations
-- `lib/gates.sh` Phase 4 (UI test path) does not write `BUILD_RAW_ERRORS.txt`. When UI tests fail with non-code errors, `coder.sh` falls back to `BUILD_ERRORS.md` (annotated markdown), which causes `has_only_noncode_errors` to return 1 (markdown headers produce unclassified→code fallback), preventing bypass. Phase 4 has auto-remediation for `env_setup` issues but not the full bypass routing that Phases 1–2 provide. This is intentionally documented as a known limitation in `test_gates_bypass_flow.sh` (Test 2). Candidate for M54 improvement.
-- `classify_build_error` (single-line semantics, first-match on full multi-line input) and `classify_build_errors_all` (per-line with dedup) serve different purposes but are easily confused. Phase 4 auto-remediation uses `classify_build_error` on the full UI test output — this works in practice because env_setup patterns (e.g., "npx playwright install") appear early in playwright output, but the inconsistency could mislead future maintainers.
+- None
+
+---
+
+## Review Notes
+
+### Change Reviewed
+
+The only substantive change this cycle is the addition of `(none)` to the `## Unresolved Observations` section of `DRIFT_LOG.md` (line 8), addressing the prior cycle's non-blocking note. The placement is correct and `test_drift_resolution_verification.sh` Test 3 explicitly validates this invariant (lines 52–68).
+
+### Correctness
+
+`test_drift_resolution_verification.sh` Test 3 guards three conditions: entries-only, `(none)`-only, and the invalid mixed case. With `(none)` now present and no unresolved entries, the test passes. Shell quoting and `set -euo pipefail` are in place throughout the new test file.
+
+### Prior Non-Blocking Notes
+
+Both prior notes were addressed or remain correctly deferred:
+1. DRIFT_LOG.md tracking gap — fixed by this change.
+2. `lib/gates.sh` line count — pre-existing, no new lines added this cycle; still logged above.
+
+### Coverage Gaps Source
+
+The three coverage gaps above come from `TEST_AUDIT_REPORT.md` (rated MEDIUM and LOW). They are actionable by the tester in a future cycle.
