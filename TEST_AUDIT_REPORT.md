@@ -1,66 +1,51 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 10 test functions
+Tests audited: 1 file, ~86 test assertions (inline bash)
 Verdict: PASS
 
 ### Findings
 
-#### SCOPE: Tests exercise files not listed in implementation changes
-- File: tests/test_m52_circular_onboarding.sh
-- Issue: The audit context lists "Implementation Files Changed: none." JR_CODER_SUMMARY.md
-  confirms only `lib/gates.sh` received a comment addition this run. The tests exclusively
-  exercise `lib/plan.sh:542-558` (`_print_next_steps`) and `lib/init_report.sh:18-154`
-  (`emit_init_summary`) — neither was changed. This indicates the M52 implementation was
-  completed in a prior run and tests are being added retroactively to cover it. The functions
-  exist and behave as the tests assert, so there are no orphaned or stale references, and no
-  test exercises removed or renamed behavior. This is an acceptable catch-up test addition;
-  however, TESTER_REPORT.md does not acknowledge that it covers pre-existing code, which makes
-  the "Bugs Found: None" claim ambiguous.
-- Severity: MEDIUM
-- Action: Annotate TESTER_REPORT.md to clarify that these tests verify already-implemented
-  M52 behavior rather than code written in this run. No test changes required.
-
-#### COVERAGE: test3 asserts only the section header, not step content
-- File: tests/test_m52_circular_onboarding.sh:80-99
-- Issue: `test3_print_next_steps_has_next_steps` greps for the string "Next steps" to confirm
-  the section header is present. This assertion would pass even if the step content beneath
-  the header were empty or entirely wrong. The log line at `lib/plan.sh:549` prints "Next
-  steps:" unconditionally, so the test adds no signal beyond "the function ran without
-  error." The other test functions (test1, test2) already cover the meaningful conditional
-  behavior in the same code path, making test3 redundant at its current assertion strength.
+#### COVERAGE: No test for empty input to annotate_build_errors
+- File: tests/test_error_patterns.sh (annotate_build_errors section — no empty-input case)
+- Issue: `annotate_build_errors "" "stage"` is not tested. With empty input, `classify_build_errors_all ""` returns nothing, so `classification_block` stays empty, `has_env=false`, `has_code=false`, and neither the "Error Classification" section nor the category headers are emitted. Only the stage block is output. This is valid behaviour that is unverified.
 - Severity: LOW
-- Action: Strengthen to verify at least one concrete step is present, e.g.:
-  `echo "$output" | grep -q "tekhton --init\|Implement Milestone"`. Alternatively, remove
-  test3 and rely on test1/test2 for coverage of `_print_next_steps`.
+- Action: Add a test asserting that empty raw_output still emits the stage label but does not emit "Error Classification".
 
-#### EXERCISE: EXIT trap overwrite leaks temp directories
-- File: tests/test_m52_circular_onboarding.sh (all test functions)
-- Issue: Each test function registers `trap "rm -rf $PROJECT_DIR" EXIT`. Because these
-  functions run in the same process (not subshells), each registration silently overwrites
-  the previous one. At script exit, only the trap set by the last function to run fires.
-  Tests 1-8 and 10 each create a `mktemp -d` directory that is not reliably cleaned up.
-  This is not a correctness issue but it leaves up to nine temporary directories on disk
-  per test run.
+#### COVERAGE: has_only_noncode_errors tested with only one non-code category
+- File: tests/test_error_patterns.sh:334–359
+- Issue: The positive case (returns 0) uses only a `service_dep` error. Categories `env_setup`, `toolchain`, `resource`, and `test_infra` are not exercised as the "all non-code" branch. The function checks generically for `cat == "code"`, so the risk is low, but coverage of the five non-code categories is incomplete.
 - Severity: LOW
-- Action: Run each test in a subshell to scope the trap correctly:
-  `( test1_... ) && pass "..." || fail "..."`. Alternatively, collect temp dirs in a global
-  array and clean up in a single EXIT trap registered once at the top of `main()`.
+- Action: Add one positive test using a `toolchain` or `env_setup` error (e.g., `"Cannot find module 'react'"`) to confirm all non-code category types return 0.
 
-#### None (Assertion Honesty — no issues found)
-All grep targets (`tekhton --plan`, `tekhton --init`, `tekhton --plan-from-index`,
-`Implement Milestone 1`, `Next steps`) appear verbatim in production code:
-`lib/init_report.sh:136,138,141` and `lib/plan.sh:549,553-556`. No hard-coded magic
-values. No trivially-passing assertions (assertTrue(True)-style) detected.
+#### COVERAGE: classify_build_errors_all unmatched-line deduplication not verified
+- File: tests/test_error_patterns.sh:260–293
+- Issue: The mixed-output test verifies category presence and a minimum result count but does not verify that identical unrecognised lines deduplicate to a single `code|code||Unclassified build error` entry. The deduplication path for unmatched lines (lib/error_patterns.sh:200–206) uses a unique key per 80-char prefix, which is correct, but is untested.
+- Severity: LOW
+- Action: Add a test with two identical unrecognised lines and assert exactly one `code|code||Unclassified build error` line appears in the output.
 
-#### None (Test Weakening — no issues found)
-TESTER_REPORT.md reports that test7 was strengthened and `run_test()` was removed.
-Both changes are confirmed in the current file: test7 (lines 176-213) now asserts both
-the negative (`! grep -q "tekhton --plan"`) and the positive (`grep -q "Implement Milestone 1"`),
-matching the pattern established by test5. No `run_test()` helper exists in the file.
-No assertions were removed or broadened relative to the described changes.
+---
 
-#### None (Naming — no issues found)
-All ten test names encode both the scenario and the expected outcome (e.g.,
-`test2_print_next_steps_with_pipeline_conf`, `test10_emit_init_summary_large_project`).
-No generic names (`test_1`, `test_thing`) detected.
+### Rubric Assessment
+
+#### 1. Assertion Honesty — PASS
+All assertions derive from real function calls against the live implementation. Expected values — category strings, safety levels, remediation commands, diagnosis strings — were cross-referenced against the `_build_pattern_registry()` heredoc in `lib/error_patterns.sh` and match exactly. The fallback strings "Empty error input" (lib/error_patterns.sh:152) and "Unclassified build error" (lib/error_patterns.sh:164) appear verbatim as expected values on lines 247 and 253 of the test file. No hard-coded magic values appear unconnected to the implementation. No trivially-passing assertions detected.
+
+#### 2. Edge Case Coverage — PASS
+Covered: empty string to `classify_build_error`, empty string to `classify_build_errors_all`, empty string to `filter_code_errors`, unrecognised input fallback, mixed code+non-code input, duplicate-category deduplication, all-code input, all-noncode input, and all four `has_only_noncode_errors` branches (all non-code, has code, mixed, empty). The three gaps above are all LOW severity.
+
+#### 3. Implementation Exercise — PASS
+The test script sources `lib/error_patterns.sh` directly (line 23) and exercises all seven public functions: `load_error_patterns`, `get_pattern_count`, `classify_build_error`, `classify_build_errors_all`, `filter_code_errors`, `annotate_build_errors`, `has_only_noncode_errors`. No mocking is used. Assertions exercise real pattern matching via `grep -iE` against the parallel arrays populated by `load_error_patterns`.
+
+#### 4. Test Weakening Detection — NOT APPLICABLE
+M53 created `lib/error_patterns.sh` as a new file. No prior implementation existed to be weakened. The test file was modified (per TESTER_REPORT.md) but represents net additions; no pre-existing assertions were narrowed or removed.
+
+#### 5. Test Naming and Intent — PASS
+The script uses labelled `check_field` calls (e.g., `"playwright cat"`, `"postgres safety"`, `"empty diag"`) and descriptive section banners. Each label encodes both the scenario and the field under assertion, which is appropriate for an inline bash harness. Labels are consistently applied across all 86 assertions.
+
+#### 6. Scope Alignment — PASS
+- `lib/error_patterns.sh` exists and exports all functions under test. ✓
+- `lib/common.sh` exists and is correctly sourced at line 21. ✓
+- `JR_CODER_SUMMARY.md` (deleted this run) is not referenced anywhere in the test file. ✓
+- `CODER_SUMMARY.md` was absent at audit time. TESTER_REPORT.md states "Implementation Files Changed: none", which is misleading — M53 added `lib/error_patterns.sh` as a new file. The tests correctly target this file regardless. No orphaned, stale, or dead tests found.
+- All pattern-to-category assertions were verified against the registry in `_build_pattern_registry()`. All match.

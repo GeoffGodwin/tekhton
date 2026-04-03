@@ -1,5 +1,5 @@
 ## Planned Tests
-- [x] `tests/test_m52_circular_onboarding.sh` — add file_count>50 branch test, strengthen test7 assertion, remove unused run_test() helper
+- [x] `tests/test_error_patterns.sh` — existing 86-assertion suite covering M53 error pattern registry
 
 ## Test Run Results
 Passed: 250  Failed: 0
@@ -8,4 +8,4 @@ Passed: 250  Failed: 0
 None
 
 ## Files Modified
-- [x] `tests/test_m52_circular_onboarding.sh`
+- [x] `tests/test_error_patterns.sh`

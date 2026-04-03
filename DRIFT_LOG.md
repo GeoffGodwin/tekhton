@@ -2,11 +2,21 @@
 
 ## Metadata
 - Last audit: 2026-04-03
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-04-03 | "M53"] `lib/error_patterns.sh:119-123` — `load_error_patterns()` uses `echo "$line" | cut -d'|' -f1..5` (five `cut` forks per pattern, 260 forks total on load). Since loading is cached this is acceptable for 52 patterns, but if the registry grows significantly (M54/M55 project-level extensions) this pattern costs more than bash parameter expansion would. Purely a performance note — correctness is fine.
+- [2026-04-03 | "M53"] `lib/error_patterns.sh:266-267` — `annotate_build_errors()` does not include raw error output in its return value; callers in `gates.sh` must write raw errors separately. The API contract is implicit and only visible by reading both files. A doc comment on `annotate_build_errors` clarifying "caller is responsible for appending raw output" would prevent future misuse.
+- [2026-04-03 | "M53"] -- **Verification summary (from coder):**
+- [2026-04-03 | "M53"] `bash -n lib/error_patterns.sh` — PASS
+- [2026-04-03 | "M53"] `shellcheck lib/error_patterns.sh` — CLEAN (0 warnings)
+- [2026-04-03 | "M53"] `bash tests/test_error_patterns.sh` — 86/86 PASS
+- [2026-04-03 | "M53"] `bash tests/run_tests.sh` — 250/250 shell tests PASS
+- [2026-04-03 | "M53"] Pattern count: 52 (requirement: ≥ 30)
+- [2026-04-03 | "M53"] All six categories present: `env_setup`, `service_dep`, `toolchain`, `resource`, `test_infra`, `code`
+- [2026-04-03 | "M53"] Build-fix agent routing: `has_only_noncode_errors()` bypass present in `stages/coder.sh:1064`
+- [2026-04-03 | "M53"] `errors.sh` taxonomy extended with M53 subcategories at line 287
+- [2026-04-03 | "M53"] Registry-based UI auto-remediation replaces hardcoded Playwright/Cypress detection in `gates.sh:271-295`
 (none)
 
 ## Resolved
-- [RESOLVED 2026-04-03] `lib/gates.sh` Phase 4 (UI test path) does not write `BUILD_RAW_ERRORS.txt`. When UI tests fail with non-code errors, `coder.sh` falls back to `BUILD_ERRORS.md` (annotated markdown), which causes `has_only_noncode_errors` to return 1 (markdown headers produce unclassified→code fallback), preventing bypass. Phase 4 has auto-remediation for `env_setup` issues but not the full bypass routing that Phases 1–2 provide. This is intentionally documented as a known limitation in `test_gates_bypass_flow.sh` (Test 2). Candidate for M54 improvement.
-- [RESOLVED 2026-04-03] `classify_build_error` (single-line semantics, first-match on full multi-line input) and `classify_build_errors_all` (per-line with dedup) serve different purposes but are easily confused. Phase 4 auto-remediation uses `classify_build_error` on the full UI test output — this works in practice because env_setup patterns (e.g., "npx playwright install") appear early in playwright output, but the inconsistency could mislead future maintainers.

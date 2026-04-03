@@ -1,41 +1,34 @@
+# Reviewer Report — M53: Error Pattern Registry & Build Gate Classification
+
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- `lib/gates.sh` remains at 477 lines (pre-existing; already logged in prior cycle). No action required this cycle.
+- `gates.sh` Phase 2 (compile errors): when Phase 1 passes and only Phase 2 fails, `BUILD_ERRORS.md` is created via `>>` with no `# Build Errors` header or `## Stage` section — only the `## Error Classification (compile)` and `## Compile Errors` blocks. Inconsistent structure versus Phase 1 failure path where `annotate_build_errors()` writes the canonical header. Low impact (file is still readable by build-fix agent) but worth aligning in a cleanup pass.
+- `classify_build_errors_all`: multiple distinct unmatched input lines produce multiple identical `code|code||Unclassified build error` output lines (deduplication key is line-specific but output value is not). Downstream consumers cannot distinguish "one unrecognized error" from "five unrecognized errors" without counting lines. Harmless for current use, but worth noting for M54 auto-remediation consumption.
 
 ## Coverage Gaps
-- `tests/test_m52_circular_onboarding.sh`: `file_count > 50` branch in `emit_init_summary` (lib/init_report.sh:137–139) is never exercised — add a test passing `file_count=100` and assert output contains `tekhton --plan-from-index`.
-- `tests/test_m52_circular_onboarding.sh` test7: asserts only the negative (`--plan` absent) but never verifies what IS recommended — add a positive assertion mirroring test5 (e.g., `Implement Milestone 1` present).
-- `tests/test_m52_circular_onboarding.sh`: `run_test()` helper is defined (30 lines) but never called — remove it or refactor `main()` to use it consistently.
+None
 
 ## Drift Observations
-- None
+- `lib/error_patterns.sh:119-123` — `load_error_patterns()` uses `echo "$line" | cut -d'|' -f1..5` (five `cut` forks per pattern, 260 forks total on load). Since loading is cached this is acceptable for 52 patterns, but if the registry grows significantly (M54/M55 project-level extensions) this pattern costs more than bash parameter expansion would. Purely a performance note — correctness is fine.
+- `lib/error_patterns.sh:266-267` — `annotate_build_errors()` does not include raw error output in its return value; callers in `gates.sh` must write raw errors separately. The API contract is implicit and only visible by reading both files. A doc comment on `annotate_build_errors` clarifying "caller is responsible for appending raw output" would prevent future misuse.
 
 ---
 
-## Review Notes
-
-### Change Reviewed
-
-The only substantive change this cycle is the addition of `(none)` to the `## Unresolved Observations` section of `DRIFT_LOG.md` (line 8), addressing the prior cycle's non-blocking note. The placement is correct and `test_drift_resolution_verification.sh` Test 3 explicitly validates this invariant (lines 52–68).
-
-### Correctness
-
-`test_drift_resolution_verification.sh` Test 3 guards three conditions: entries-only, `(none)`-only, and the invalid mixed case. With `(none)` now present and no unresolved entries, the test passes. Shell quoting and `set -euo pipefail` are in place throughout the new test file.
-
-### Prior Non-Blocking Notes
-
-Both prior notes were addressed or remain correctly deferred:
-1. DRIFT_LOG.md tracking gap — fixed by this change.
-2. `lib/gates.sh` line count — pre-existing, no new lines added this cycle; still logged above.
-
-### Coverage Gaps Source
-
-The three coverage gaps above come from `TEST_AUDIT_REPORT.md` (rated MEDIUM and LOW). They are actionable by the tester in a future cycle.
+**Verification summary (from coder):**
+- `bash -n lib/error_patterns.sh` — PASS
+- `shellcheck lib/error_patterns.sh` — CLEAN (0 warnings)
+- `bash tests/test_error_patterns.sh` — 86/86 PASS
+- `bash tests/run_tests.sh` — 250/250 shell tests PASS
+- Pattern count: 52 (requirement: ≥ 30)
+- All six categories present: `env_setup`, `service_dep`, `toolchain`, `resource`, `test_infra`, `code`
+- Build-fix agent routing: `has_only_noncode_errors()` bypass present in `stages/coder.sh:1064`
+- `errors.sh` taxonomy extended with M53 subcategories at line 287
+- Registry-based UI auto-remediation replaces hardcoded Playwright/Cypress detection in `gates.sh:271-295`

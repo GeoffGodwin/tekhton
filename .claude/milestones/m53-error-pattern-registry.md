@@ -1,7 +1,7 @@
 # Milestone 53: Error Pattern Registry & Build Gate Classification
 <!-- milestone-meta
 id: "53"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
