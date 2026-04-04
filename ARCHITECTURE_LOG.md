@@ -148,3 +148,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-04-03
 - **Rationale**: remediation logic (~250 lines) would have pushed error_patterns.sh over the ceiling; clean separation of classification (error_patterns.sh) from execution (error_patterns_remediation.sh); sourcing ord
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-30: Extract service logic to `lib/preflight_services.sh` (Task: "M56")
+- **Date**: 2026-04-03
+- **Rationale**: `preflight.sh` was already 607 lines; extraction follows the established module-splitting pattern used by `agent_monitor_helpers.sh`, `drift_artifacts.sh`, etc. Backward-compatible via `command -v` gu
+- **Source**: Accepted ACP from pipeline run

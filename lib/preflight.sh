@@ -539,6 +539,11 @@ _emit_preflight_report() {
         for line in "${_PF_REPORT_LINES[@]}"; do
             echo "$line"
         done
+
+        # Emit services section if preflight_services.sh is loaded
+        if command -v _pf_emit_services_report &>/dev/null; then
+            _pf_emit_services_report
+        fi
     } > "$report_file"
 }
 
@@ -568,6 +573,13 @@ run_preflight_checks() {
     _preflight_check_runtime_version
     _preflight_check_ports
     _preflight_check_lock_freshness
+
+    # Service readiness probing (M56) — requires preflight_services.sh
+    if command -v _preflight_check_docker &>/dev/null; then
+        _preflight_check_docker
+        _preflight_check_services
+        _preflight_check_dev_server
+    fi
 
     # Skip report if nothing was checked
     local total=$(( _PF_PASS + _PF_WARN + _PF_FAIL + _PF_REMEDIATED ))

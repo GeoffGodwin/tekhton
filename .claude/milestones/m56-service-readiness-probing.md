@@ -1,7 +1,7 @@
 # Milestone 56: Service Readiness Probing & Enhanced Diagnosis
 <!-- milestone-meta
 id: "56"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
