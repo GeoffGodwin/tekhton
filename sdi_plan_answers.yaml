@@ -353,3 +353,255 @@ sections:
       TTY detection: When stdout is not a TTY, SDI automatically switches to uncolored output
       and suppresses progress indicators. The --format flag still defaults to "text" (not json)
       to avoid surprising users who redirect to a file expecting readable text.
+
+  configuration_system:
+    title: "Configuration System"
+    phase: 2
+    required: true
+    guidance: "Config file format, locations, discovery order, example config?"
+    answer: |
+      Config file format: TOML (.sdi/config.toml). TOML is human-readable, has a clear spec,
+      supports nested tables without YAML's indentation fragility, and is the standard for
+      Python project configuration (pyproject.toml). The boundary specification uses YAML
+      separately because boundary specs contain lists-of-objects with comments that benefit
+      from YAML's expressiveness — these are two distinct artifacts with different audiences.
+
+      Config file locations:
+      - Project-local: .sdi/config.toml (in repository root, committed to VCS)
+      - Global defaults: ~/.config/sdi/config.toml (user-level preferences)
+
+      Discovery order: CLI flags > environment variables (SDI_*) > .sdi/config.toml > ~/.config/sdi/config.toml > built-in defaults.
+
+      Example config with actual keys and defaults:
+
+      ```toml
+      [core]
+      # Languages to analyze. "auto" detects from file extensions.
+      languages = "auto"
+      # Files/directories to exclude (gitignore-style globs, additive to .gitignore)
+      exclude = ["**/vendor/**", "**/node_modules/**", "**/__pycache__/**", "**/dist/**"]
+      # Random seed for reproducible Leiden partitioning on cold start
+      random_seed = 42
+
+      [snapshots]
+      # Where to store snapshot files (relative to repo root)
+      dir = ".sdi/snapshots"
+      # Max snapshots to retain (oldest pruned on new capture). 0 = unlimited.
+      retention = 100
+
+      [boundaries]
+      # Path to boundary specification file
+      spec_file = ".sdi/boundaries.yaml"
+      # Leiden resolution parameter (higher = more, smaller clusters)
+      leiden_gamma = 1.0
+      # Consecutive runs a node must appear in new cluster before boundary updates
+      stability_threshold = 3
+      # Use weighted edges (import frequency) vs unweighted
+      weighted_edges = false
+
+      [patterns]
+      # Pattern categories to detect. "auto" uses built-in catalog for detected languages.
+      categories = "auto"
+      # Minimum AST subtree size to consider as a pattern instance (nodes)
+      min_pattern_nodes = 5
+
+      [thresholds]
+      # Drift rate thresholds for `sdi check`. Per-dimension overrides below.
+      # Values are max acceptable delta per snapshot interval.
+      pattern_entropy_rate = 2.0
+      convention_drift_rate = 3.0
+      coupling_delta_rate = 0.15
+      boundary_violation_rate = 2.0
+
+      [change_coupling]
+      # Minimum co-change frequency (0.0-1.0) to flag cross-boundary coupling
+      min_frequency = 0.6
+      # Number of recent commits to analyze for co-change
+      history_depth = 500
+
+      [output]
+      # Default output format
+      format = "text"
+      # Color mode: "auto" (detect TTY), "always", "never"
+      color = "auto"
+      ```
+
+      There is no `sdi config` subcommand in v1. Configuration is edited directly in the
+      TOML file. `sdi init` generates the file with commented defaults. Config changes take
+      effect on the next command invocation — no restart or daemon involved.
+
+  core_processing_logic:
+    title: "Core Processing Logic"
+    phase: 2
+    required: true
+    guidance: "Main processing pipeline, algorithm, complexity, failure modes?"
+    answer: |
+      The core pipeline has five stages, executed sequentially on every `sdi snapshot`:
+
+      Stage 1: Source Parsing (tree-sitter)
+      - Walk repository file tree, filter by .gitignore + configured excludes
+      - Detect language per file (extension-based, with tree-sitter grammar probe fallback)
+      - Parse each file into a concrete syntax tree (CST) via tree-sitter
+      - Extract structural features: imports/dependencies, function/class definitions,
+        exported symbols, and pattern-relevant AST subtrees (e.g., try/catch blocks,
+        API call patterns, data access patterns)
+      - Output: per-file feature records (symbols, imports, pattern instances)
+      - Complexity: O(N) in total lines of code. Tree-sitter parsing is ~1M lines/sec.
+      - Failure mode: missing grammar for a language. Graceful skip with warning — that
+        language's files are excluded from analysis but don't block the snapshot.
+
+      Stage 2: Dependency Graph Construction
+      - Build a directed graph where nodes are files (or modules, configurable) and edges
+        are import/dependency relationships extracted in Stage 1
+      - Normalize cross-language dependency semantics into a language-agnostic graph:
+        Python imports, JS/TS imports/requires, Go imports, Java imports, Rust use statements
+        all produce the same edge type
+      - Optionally weight edges by import frequency (number of symbols imported)
+      - Compute graph metrics: node count, edge count, density, connected components
+      - Output: igraph Graph object + metrics dict
+      - Complexity: O(N + E) where N = files, E = import relationships
+      - Failure mode: cyclic import resolution ambiguity. Handled by recording all edges
+        including cycles — cycles are a measurement target, not an error.
+
+      Stage 3: Community Detection (Leiden algorithm)
+      - If previous partition exists (.sdi/cache/partition.json), seed from it
+      - If cold start, use configured random_seed for reproducibility
+      - Run Leiden algorithm via leidenalg with configured gamma (resolution parameter)
+      - Compute partition stability score vs previous run (% nodes that kept membership)
+      - Apply stability threshold: only update boundary map if node moved in N consecutive
+        runs (debounce)
+      - Compute additional structural signals: dependency directionality between clusters,
+        interface surface area ratio per cluster, change coupling from git history
+      - Output: cluster assignments, stability score, inter-cluster dependency graph,
+        surface area ratios, change coupling flags
+      - Complexity: Leiden is O(E) per iteration, typically converges in 2-5 iterations.
+        igraph's C implementation keeps this fast even for large graphs.
+      - Failure mode: graph too small for meaningful clustering (< 10 nodes). Report
+        "insufficient structure for boundary detection" and skip boundary metrics.
+
+      Stage 4: Pattern Fingerprinting
+      - For each configured pattern category (error_handling, data_access, validation, etc.),
+        query the AST features from Stage 1 using category-specific tree-sitter queries
+      - Compute structural fingerprint for each pattern instance: a normalized representation
+        of the AST subtree shape (node types and structure, stripped of identifiers/literals)
+      - Group fingerprints by category, count distinct shapes per category
+      - Identify canonical pattern per category (most frequent shape, or user-declared in config)
+      - Compute pattern entropy: count of distinct structural shapes per category
+      - Output: pattern catalog with per-category shape counts and canonical markers
+      - Complexity: O(P) where P = total pattern instances across all categories. Fingerprint
+        comparison is O(depth) per pair but shapes are hashed for O(1) grouping.
+      - Failure mode: no pattern instances found for a category. Report zero entropy, not an error.
+
+      Stage 5: Snapshot Assembly & Delta Computation
+      - Combine outputs from Stages 2-4 into a snapshot JSON document
+      - If previous snapshot exists, compute deltas for all four SDI dimensions:
+        - Pattern entropy delta: change in distinct shapes per category
+        - Convention drift rate: net new patterns minus consolidated patterns since last snapshot
+        - Coupling topology delta: structural comparison of dependency graphs (cycle count
+          change, hub concentration change, max depth change)
+        - Boundary violation velocity: new cross-boundary dependencies since last snapshot,
+          compared against ratified boundary spec if available
+      - Compute intent divergence (detected boundaries vs ratified spec) if boundary spec exists
+      - Write snapshot to configured directory
+      - Output: snapshot JSON file + human-readable summary to stdout
+      - Complexity: O(N + E) for graph comparison, O(C) for pattern catalog diff where C = categories
+      - Failure mode: previous snapshot has incompatible schema version. Warn and treat as
+        baseline (no delta computed).
+
+      Parallelization opportunity: Stage 1 (file parsing) is embarrassingly parallel —
+      each file is independent. Use concurrent.futures.ProcessPoolExecutor for multi-core
+      parsing. Stages 2-5 are sequential but fast (graph operations are C-backed via igraph).
+
+  error_handling_diagnostics:
+    title: "Error Handling & Diagnostics"
+    phase: 2
+    required: false
+    guidance: "How does the tool report errors? Verbose/debug mode?"
+    answer: |
+      Error reporting strategy:
+
+      All errors go to stderr. Format: "[LEVEL] message" where LEVEL is ERROR, WARN, or
+      DEBUG. Colors applied when stderr is a TTY (red for ERROR, yellow for WARN, dim for
+      DEBUG). Rich library handles formatting.
+
+      Error categories and behavior:
+
+      1. Configuration errors (exit code 2):
+         - Missing or malformed .sdi/config.toml: "Error: invalid config at .sdi/config.toml
+           line 14: expected string value for 'core.languages'"
+         - Invalid boundary spec YAML: parse error with line number
+         - Suggestion: "Run 'sdi init' to generate a default configuration"
+
+      2. Environment errors (exit code 2):
+         - Not a git repository: "Error: not a git repository (or any parent). SDI requires git."
+         - Git not installed: "Error: git not found in PATH"
+         - Python version too old: caught at install time, not runtime
+
+      3. Analysis errors (exit code 3):
+         - Tree-sitter grammar not available for a detected language: WARN (not fatal).
+           "Warning: no tree-sitter grammar for 'kotlin' — skipping 23 files. Install with:
+           pip install tree-sitter-kotlin"
+         - All languages unsupported: ERROR + exit 3. "Error: no supported languages found
+           in repository"
+         - Graph too small: WARN. Proceeds with partial metrics.
+
+      4. Runtime errors (exit code 1):
+         - Unexpected exceptions: catch at top level, print traceback only in DEBUG mode.
+           User sees: "Error: unexpected failure during pattern analysis. Run with
+           SDI_LOG_LEVEL=DEBUG for details."
+
+      Verbose/debug mode:
+      - SDI_LOG_LEVEL=DEBUG or --debug flag: shows tree-sitter parse timings per file,
+        graph construction details, Leiden iteration count, partition stability details,
+        pattern matching internals
+      - SDI_LOG_LEVEL=INFO (default): progress bar during parsing, summary stats after each stage
+      - SDI_LOG_LEVEL=WARN: only warnings and errors
+      - SDI_LOG_LEVEL=ERROR: only errors
+
+  shell_integration:
+    title: "Shell Integration"
+    phase: 2
+    required: false
+    guidance: "Tab completion, piping, signal handling, color, progress?"
+    answer: |
+      Git hook integration (primary integration point):
+      - `sdi init` offers to install a post-merge git hook that runs `sdi snapshot`
+        automatically on every merge to the configured branch
+      - Hook script is a thin shell wrapper: checks branch, runs `sdi snapshot --quiet`,
+        exits 0 always (hook failure should never block merges)
+      - Pre-commit hook option: `sdi check` as a pre-push hook, exits non-zero to block
+        pushes that would exceed drift thresholds. Opt-in only.
+      - Hook installation is non-destructive: appends to existing hooks or creates new ones
+
+      CI integration:
+      - GitHub Actions: provide a reusable action (sdi-action) that runs `sdi snapshot` +
+        `sdi check` and posts a summary comment on the PR with drift deltas. Stretch goal,
+        not v1 — document manual CI integration with `pip install sdi && sdi check`.
+      - Generic CI: `sdi check` with exit codes is the universal integration point. Any CI
+        system that can run a command and check exit codes can use SDI.
+
+      Tab completion:
+      - Click provides built-in shell completion generation for bash, zsh, and fish
+      - Installed via: eval "$(_SDI_COMPLETE=bash_source sdi)" in .bashrc (standard Click pattern)
+
+      Piping support:
+      - `sdi show --format json | jq '.pattern_catalog'` — JSON output is pipe-friendly
+      - `sdi trend --format csv | head -20` — CSV output is pipe-friendly
+      - `sdi diff --format json` — delta objects are valid JSON for downstream processing
+
+      Signal handling:
+      - SIGINT (Ctrl+C): clean shutdown. If mid-snapshot, discard incomplete snapshot file
+        (atomic write via tempfile + rename means partial snapshots never exist).
+      - SIGTERM: same as SIGINT.
+      - No SIGHUP handling needed (not a daemon).
+
+      Color output:
+      - Respects NO_COLOR environment variable (no-color.org convention)
+      - --no-color flag overrides
+      - Auto-detection: color when stderr/stdout is a TTY, plain when piped
+      - Rich library handles all color/formatting
+
+      Progress indicators:
+      - File parsing: Rich progress bar on stderr ("Parsing files [143/892] ...")
+      - Graph analysis: spinner on stderr ("Building dependency graph...")
+      - Suppressed when --quiet or when stderr is not a TTY
