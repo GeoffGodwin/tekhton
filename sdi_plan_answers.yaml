@@ -1,0 +1,355 @@
+# Tekhton Planning Answers
+# Project: sdi
+# Template: cli-tool
+# Generated: 2026-04-04T12:00:00Z
+# Tekhton: 3.51
+
+sections:
+  developer_philosophy_constraints:
+    title: "Developer Philosophy & Constraints"
+    phase: 1
+    required: true
+    guidance: "What are your non-negotiable architectural rules?"
+    answer: |
+      Non-negotiable rules:
+
+      1. Measurement over opinion. Every claim SDI makes about a codebase must be backed by
+         a concrete, reproducible measurement derived from AST analysis or dependency graph
+         structure. No heuristics that cannot be explained. No scores without traceable inputs.
+
+      2. Fever chart, not thermometer. Every metric SDI produces must be trackable over time.
+         Point-in-time values are necessary but insufficient. The primary output is always the
+         trend: the rate of change of structural coherence, not the absolute state. Alerts fire
+         on rate-of-change thresholds, not absolute values.
+
+      3. Automated inference, human ratification. SDI never tells a team what their architecture
+         "should" be. It infers structural boundaries from the code via community detection
+         (Leiden algorithm), proposes them, and waits for a human to ratify, merge, split, or
+         override. The tool measures divergence from declared intent, not from its own opinions.
+
+      4. Safe defaults, zero mandatory config. Running `sdi snapshot` on an un-initialized repo
+         should produce useful output using purely inferred boundaries and auto-detected patterns.
+         Configuration only refines and ratifies — it is never required for first use.
+
+      5. Composable Unix tooling. SDI reads from the filesystem and git history, writes JSON
+         snapshots and human-readable reports to stdout/files, and exits with meaningful codes.
+         It composes with jq, diff, CI pipelines, and git hooks. No daemon mode, no server,
+         no interactive TUI in v1.
+
+      6. Language-agnostic core, language-specific adapters. The dependency graph, community
+         detection, pattern fingerprinting, and snapshot diffing are language-agnostic. Language
+         specifics (import resolution, AST queries for pattern categories) live in adapter
+         modules that can be added independently. Tree-sitter provides the parsing primitive.
+
+      7. Deterministic and reproducible. Given the same commit, the same configuration, and the
+         same boundary spec, SDI produces the same snapshot. The Leiden algorithm is seeded from
+         the previous partition for stability, but cold-start runs use a fixed random seed so
+         that results are reproducible.
+
+      8. Fast enough for CI. A snapshot capture must complete in seconds to low minutes on
+         codebases up to 500K lines. This is a hard constraint — SDI runs on every merge to the
+         primary branch. Tree-sitter parsing is already fast; the budget concern is graph
+         analysis on large dependency graphs.
+
+      Anti-patterns banned:
+      - No machine learning or LLM calls in the analysis pipeline. SDI is a measurement
+        instrument, not an AI tool. Determinism and reproducibility are non-negotiable.
+      - No network calls during analysis. Everything operates on local filesystem and git history.
+      - No opinions about code quality. SDI measures structural divergence, not whether code is
+        "good" or "bad." A high pattern entropy might be acceptable for a given project stage.
+        SDI reports the number; the team decides what it means.
+
+  project_overview:
+    title: "Project Overview"
+    phase: 1
+    required: true
+    guidance: "What does this tool do in one sentence?"
+    answer: |
+      SDI (Structural Divergence Index) is a CLI tool that measures the rate of structural
+      drift in a codebase across four dimensions — pattern entropy, convention drift rate,
+      coupling topology delta, and boundary violation velocity — by capturing periodic
+      structural fingerprints (snapshots) and diffing them over time to produce trend data
+      and actionable alerts.
+
+      Who uses it: Software engineers, tech leads, and engineering managers responsible for
+      the structural health of codebases, especially those using AI-assisted development at
+      scale where multiple independent contributors (human or agent) are generating code
+      concurrently without shared structural awareness.
+
+      What it replaces: There is no existing tool that does this. Current quality tooling
+      (linters, static analyzers, code review) evaluates individual changes in isolation.
+      SDI fills the gap between "every individual change is good" and "the collective
+      direction of all changes is coherent." It is the urban planner's aerial photograph
+      overlaid on the master plan, complementing the building inspector (linter) and
+      structural engineer (static analyzer) that already exist.
+
+      Distribution model: Open source (MIT or Apache 2.0). The tool and its output format
+      are public goods — the value proposition is the measurement methodology, not proprietary
+      analysis.
+
+      Invocation frequency: Typically once per merge to the primary integration branch.
+      High-velocity teams might run it 10-50 times per day. CI integration is the primary
+      use case, with manual invocation for exploration and debugging.
+
+  tech_stack:
+    title: "Tech Stack"
+    phase: 1
+    required: true
+    guidance: "Language, argument parsing, serialization, testing, distribution, build tool?"
+    answer: |
+      Language: Python 3.10+. Rationale: tree-sitter has mature Python bindings
+      (tree-sitter 0.24+), the Leiden algorithm has a maintained Python package (leidenalg
+      by V.A. Traag), igraph has a mature Python interface for graph analysis, and Python
+      is the lingua franca for developer tooling that interacts with AST parsing. Performance-
+      critical paths (tree-sitter parsing, igraph graph operations) are backed by C/C++
+      libraries, so Python overhead is negligible for the orchestration layer.
+
+      Key dependencies:
+      - tree-sitter (>=0.24) — Multi-language AST parsing
+      - tree-sitter grammar packages — Per-language parsers (tree-sitter-python,
+        tree-sitter-javascript, tree-sitter-typescript, tree-sitter-go, tree-sitter-java,
+        tree-sitter-rust, etc.)
+      - leidenalg — Leiden community detection algorithm
+      - igraph — Graph construction, analysis, cycle detection, centrality metrics
+      - click — CLI framework (argument parsing, subcommands, help generation)
+      - rich — Terminal output formatting (tables, progress bars, colored diff output)
+      - tomli / tomllib — TOML config parsing (tomllib is stdlib in 3.11+, tomli for 3.10)
+      - tomli-w — TOML writing for `sdi init` config generation
+
+      Serialization: JSON for snapshot files (stdlib json module). TOML for configuration.
+      YAML for boundary specification files (PyYAML or ruamel.yaml — need to decide; leaning
+      ruamel for round-trip preservation of comments in ratified boundary specs).
+
+      Testing: pytest with pytest-cov for coverage. Fixture repos (small synthetic codebases
+      with known structural properties) for integration tests. Snapshot testing for CLI output
+      stability.
+
+      Build tool: Standard Python packaging with pyproject.toml (PEP 621). hatchling or
+      setuptools as build backend.
+
+      Distribution:
+      - PyPI: `pip install sdi` (primary)
+      - Homebrew: formula in homebrew-tap repo
+      - Binary releases: Consider PyInstaller or Nuitka for standalone binaries on GitHub
+        Releases (stretch goal, not v1)
+
+  command_taxonomy:
+    title: "Command Taxonomy"
+    phase: 1
+    required: true
+    guidance: "Is this a single-command tool or multi-command CLI? List every command."
+    answer: |
+      Multi-command CLI (git-style). Root command is `sdi`.
+
+      ### sdi init
+
+      Syntax: `sdi init [--force] [--language LANG]...`
+      Description: Initialize SDI configuration in the current repository. Creates `.sdi/`
+      directory with default config, runs initial structural inference to propose boundaries,
+      and optionally writes a starter boundary spec for ratification.
+      Flags:
+        --force: Overwrite existing .sdi/ configuration
+        --language LANG: Explicitly specify languages to analyze (repeatable). Default: auto-detect.
+      Examples:
+        sdi init
+        sdi init --language python --language typescript
+
+      ### sdi snapshot
+
+      Syntax: `sdi snapshot [--output PATH] [--commit REF] [--format json|summary]`
+      Description: Capture the current structural fingerprint of the codebase. Parses source
+      via tree-sitter, builds dependency graph, runs Leiden community detection (seeded from
+      previous partition if available), computes all four SDI dimensions, and writes a snapshot
+      file.
+      Flags:
+        --output PATH: Write snapshot to specific path (default: .sdi/snapshots/<timestamp>-<short-sha>.json)
+        --commit REF: Analyze a specific git commit instead of working tree (checks out to tmpdir)
+        --format: Output format. "json" writes full snapshot file. "summary" prints human-readable
+                  summary to stdout. Default: json (writes file) + summary (prints to terminal).
+      Examples:
+        sdi snapshot
+        sdi snapshot --commit HEAD~5
+        sdi snapshot --output /tmp/baseline.json --format json
+
+      ### sdi diff
+
+      Syntax: `sdi diff [SNAPSHOT_A] [SNAPSHOT_B] [--format json|text]`
+      Description: Compare two snapshots and show what changed structurally. If no arguments,
+      compares the two most recent snapshots. If one argument, compares it against the most recent.
+      Flags:
+        --format: Output format. "text" for human-readable colored diff. "json" for machine-readable
+                  delta object. Default: text.
+      Examples:
+        sdi diff
+        sdi diff .sdi/snapshots/20260401-a1b2c3d.json .sdi/snapshots/20260403-d4e5f6a.json
+        sdi diff --format json
+
+      ### sdi trend
+
+      Syntax: `sdi trend [--last N] [--dimension DIMENSION] [--format text|json|csv]`
+      Description: Show trend data across multiple snapshots. Displays the trajectory of each
+      SDI dimension over time — the fever chart.
+      Flags:
+        --last N: Number of most recent snapshots to include (default: 20)
+        --dimension: Filter to a specific dimension (pattern_entropy, convention_drift,
+                     coupling_topology, boundary_violations). Default: all.
+        --format: Output format. "text" for terminal table/sparklines. "json" for structured
+                  data. "csv" for spreadsheet import. Default: text.
+      Examples:
+        sdi trend
+        sdi trend --last 50 --dimension pattern_entropy
+        sdi trend --format csv > metrics.csv
+
+      ### sdi check
+
+      Syntax: `sdi check [--threshold FLOAT] [--dimension DIMENSION] [--snapshot PATH]`
+      Description: CI-friendly gate. Captures a snapshot (or uses provided one), computes
+      drift rates against recent history, and exits non-zero if any rate exceeds the configured
+      threshold. Designed for use in CI pipelines and git hooks.
+      Flags:
+        --threshold FLOAT: Override drift rate threshold (default: from config)
+        --dimension: Check only a specific dimension. Default: all.
+        --snapshot PATH: Use an existing snapshot instead of capturing a new one.
+      Exit codes:
+        0: All dimensions within threshold
+        1: One or more dimensions exceeded threshold (prints which ones)
+        2: Configuration or runtime error
+      Examples:
+        sdi check
+        sdi check --threshold 0.5 --dimension boundary_violations
+        sdi check --snapshot .sdi/snapshots/latest.json
+
+      ### sdi show
+
+      Syntax: `sdi show [--format text|json] [--verbose]`
+      Description: Human-readable summary of the current state. Shows the most recent snapshot
+      data, current boundary map, pattern catalog summary, and any active alerts. This is the
+      "what does my codebase look like right now" command.
+      Flags:
+        --format: Output format. Default: text.
+        --verbose: Include full pattern catalog and boundary details. Default: summary only.
+      Examples:
+        sdi show
+        sdi show --verbose
+        sdi show --format json | jq '.pattern_catalog'
+
+      ### sdi boundaries
+
+      Syntax: `sdi boundaries [--propose] [--ratify] [--export PATH] [--format text|yaml]`
+      Description: View, propose, or manage architectural boundary definitions. Without flags,
+      shows the current ratified boundary map. With --propose, runs Leiden inference and shows
+      proposed changes. With --ratify, opens boundary spec for interactive editing.
+      Flags:
+        --propose: Run structural inference and show proposed boundary map (does not modify
+                   ratified spec)
+        --ratify: Open boundary spec in $EDITOR for ratification after reviewing proposal
+        --export PATH: Export current boundary map to a file
+        --format: Output format for display. Default: text.
+      Examples:
+        sdi boundaries
+        sdi boundaries --propose
+        sdi boundaries --propose --ratify
+
+      ### sdi catalog
+
+      Syntax: `sdi catalog [--category CATEGORY] [--format text|json]`
+      Description: View the detected pattern catalog — all structural fingerprints grouped by
+      operation category (error handling, data access, validation, etc.). Shows which patterns
+      exist, how many variants of each, and which is marked canonical.
+      Flags:
+        --category: Filter to a specific pattern category. Default: all.
+        --format: Output format. Default: text.
+      Examples:
+        sdi catalog
+        sdi catalog --category error_handling --format json
+
+  input_sources_formats:
+    title: "Input Sources & Formats"
+    phase: 2
+    required: true
+    guidance: "What does the tool read? File formats, stdin, env vars, config files?"
+    answer: |
+      SDI reads from five input sources:
+
+      1. Source code files (via tree-sitter)
+         Format: Any language with a tree-sitter grammar. V1 targets: Python, TypeScript,
+         JavaScript, Go, Java, Rust. Additional languages added via grammar packages.
+         Discovery: Walks the repository file tree, filters by .gitignore and configured
+         exclude patterns. Language detection by file extension with fallback to tree-sitter
+         grammar probing.
+
+      2. Git history (via subprocess calls to git)
+         Used for: Change coupling analysis (co-change frequency), commit-to-snapshot
+         association, convention drift rate computation (when were new patterns introduced).
+         Reads: git log, git diff, git show. Requires a git repository.
+
+      3. Configuration file (.sdi/config.toml)
+         Format: TOML
+         Discovery order: CLI flags > environment variables (SDI_* prefix) > .sdi/config.toml
+         in repo root > ~/.config/sdi/config.toml (global defaults) > built-in defaults.
+         Malformed config: exits with error code 2 and specific parse error message.
+
+      4. Boundary specification (.sdi/boundaries.yaml)
+         Format: YAML (see boundary spec format in the blog post / design methodology).
+         This is the human-ratified architectural intent artifact. Read on every snapshot
+         capture for intent divergence detection. Optional — if absent, SDI operates with
+         inferred boundaries only and skips intent divergence metrics.
+
+      5. Previous snapshots (.sdi/snapshots/*.json)
+         Format: JSON (SDI's own output format, versioned via snapshot_version field).
+         Read for: seeding Leiden partition, computing deltas and trends, drift rate
+         calculation. If no previous snapshots exist, the first snapshot is a baseline with
+         no delta information.
+
+      Stdin: SDI does not read from stdin in v1. All input is file-based. Future consideration
+      for piping snapshot JSON into `sdi diff` but not in initial scope.
+
+      Environment variables:
+        SDI_CONFIG_PATH — Override config file location
+        SDI_SNAPSHOT_DIR — Override snapshot storage directory
+        SDI_LOG_LEVEL — Set log verbosity (DEBUG, INFO, WARN, ERROR)
+        NO_COLOR — Disable colored output (standard convention)
+
+      Precedence: CLI flags > env vars > local config > global config > defaults.
+
+  output_formatting_modes:
+    title: "Output Formatting & Modes"
+    phase: 2
+    required: true
+    guidance: "What does the tool produce? Stdout, stderr, files, exit codes?"
+    answer: |
+      Stdout output:
+      - Human mode (default when TTY detected): Colored, formatted tables via Rich library.
+        Snapshot summaries, diff views with red/green deltas, trend sparklines, boundary maps
+        with indented tree display. Uses unicode box-drawing characters.
+      - Machine mode (--format json): Structured JSON objects. One JSON document per invocation,
+        no streaming. Designed for piping to jq or consumption by CI scripts.
+      - CSV mode (--format csv, trend command only): Headerless CSV for spreadsheet import.
+
+      Stderr output:
+      - All log messages (INFO, WARN, ERROR, DEBUG) go to stderr.
+      - Progress indicators (tree-sitter parsing progress, graph analysis) go to stderr.
+      - This ensures stdout is always clean for piping even in human mode.
+
+      Files created:
+      - .sdi/config.toml — Created by `sdi init`
+      - .sdi/boundaries.yaml — Created by `sdi init` (proposed) or `sdi boundaries --ratify`
+      - .sdi/snapshots/<timestamp>-<short-sha>.json — Created by `sdi snapshot`
+      - .sdi/cache/ — Tree-sitter parse cache, Leiden partition cache (internal, not
+        user-facing)
+
+      Exit codes:
+        0 — Success (for `sdi check`: all dimensions within threshold)
+        1 — Check failure (one or more dimensions exceeded threshold) OR command error
+        2 — Configuration or environment error (missing config, invalid TOML, no git repo)
+        3 — Analysis error (tree-sitter grammar not available, graph construction failed)
+
+      Output control flags (available on all commands):
+        --format text|json|csv — Output format (csv only where applicable)
+        --no-color — Disable colored output (also respects NO_COLOR env var)
+        --quiet — Suppress non-essential output (only errors and requested data)
+        --verbose — Include additional detail (full pattern lists, all boundary details)
+
+      TTY detection: When stdout is not a TTY, SDI automatically switches to uncolored output
+      and suppresses progress indicators. The --format flag still defaults to "text" (not json)
+      to avoid surprising users who redirect to a file expecting readable text.
