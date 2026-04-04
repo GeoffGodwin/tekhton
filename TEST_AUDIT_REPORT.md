@@ -1,79 +1,41 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 6 test functions (3 per file)
+Tests audited: 2 files, 23 test assertions (11 in test_prompt_tempfile.sh, 12 in test_drift_resolution_verification.sh)
 Verdict: PASS
-
----
 
 ### Findings
 
-#### COVERAGE: Continue-fix not distinguished from unfixed code
-- File: tests/test_preflight_infer_degenerate.sh:63-84 (Test 1), :106-127 (Test 2)
-- Issue: The stated goal is verifying that the `continue` statement in
-  `_pf_infer_from_compose` (preflight_services_infer.sh:49) prevents a
-  service-name line from being re-evaluated by the `image:` and `ports:` checks
-  below it. Both degenerate fixtures use an unrecognized image name
-  (`my-custom-app:1.0`, `my-custom-app:2.0`). Because `my-custom-app` is not in
-  `_PF_SVC_PORTS`, neither the fixed nor the unfixed code would detect a service
-  from those lines — the assertion `${#_PF_SERVICES[@]} -eq 0` passes in both
-  cases. Removing the `continue` statement from the implementation would leave
-  both tests green.
+#### COVERAGE: _extract_template_sections() untested in extracted module
+- File: tests/test_prompt_tempfile.sh (whole file)
+- Issue: `plan_batch.sh` contains two exported functions: `_call_planning_batch` (lines 30–110) and `_extract_template_sections` (lines 124–170). `test_prompt_tempfile.sh` covers only `_call_planning_batch`. `_extract_template_sections` — a 46-line awk program — was extracted from plan.sh with no direct test coverage in either audited file.
+- Severity: LOW
+- Action: Add tests for `_extract_template_sections` in a future pass (verify section name, required flag, guidance, and phase parsing against a fixture template). Not required to unblock this milestone since the function's behavior was not changed by this task, only its file location.
 
-  A fixture that exposes the regression would use a recognized image embedded in
-  the service-name line, e.g.:
+#### COVERAGE: Structural grep tests are necessary but not sufficient for Test 5 dependency chain
+- File: tests/test_prompt_tempfile.sh:145–154
+- Issue: Test 5 sources `plan.sh` via `source "${TEKHTON_HOME}/lib/plan.sh" 2>/dev/null || true`. At source time, `plan.sh` calls `load_plan_config` immediately (line 67 of plan.sh), then sources three sub-modules (lines 100–102). If any sub-module fails to source, the `|| true` silences the error and `_call_planning_batch` will be undefined. The subsequent call at line 154 (`output=$(_call_planning_batch ...) || true`) would then silently fail with "command not found", leaving `received_prompt.txt` uncreated, and line 156's guard would correctly catch this as a test failure — but the failure message ("Mock claude never received prompt") does not distinguish a sourcing failure from a functional failure. Verified: `lib/plan_answers_flow.sh` is present in the repo (listed in `git status` as an untracked new file), so this is not currently broken.
+- Severity: LOW
+- Action: Consider adding a sourcing guard: assert `declare -f _call_planning_batch` returns 0 immediately after sourcing, and fail with "plan.sh sourcing failed" if not. This makes the diagnostic message actionable.
 
-  ```yaml
-  services:
-    image-db: image: postgres:15
-      ports:
-        - "5432:5432"
-  ```
+#### SCOPE: test_drift_resolution_verification.sh Tests 1–6 test live repo state
+- File: tests/test_drift_resolution_verification.sh:35–103
+- Issue: Tests 1–6 assert structural properties of the actual `DRIFT_LOG.md` at `PROJECT_DIR` (which equals `TEKHTON_HOME` here). Test 3 in particular fails if the unresolved section ever contains both real entries and a `(none)` marker simultaneously — a valid transient state when drift notes are being resolved mid-pipeline. This is pre-existing behavior (the test was not written by this task), but it is worth noting that these tests are repo-state tests, not code-behavior tests. They will fail in any repo state where `DRIFT_LOG.md` is temporarily inconsistent during a pipeline run.
+- Severity: LOW
+- Action: No change needed now; the existing pipeline ensures DRIFT_LOG.md is consistent at any milestone boundary. Document that these tests should not be run mid-pipeline.
 
-  Without `continue`, the line `  image-db: image: postgres:15` would match
-  both the service-name regex (setting `current_service="image-db"`) AND the
-  `image:` check (setting `current_image="postgres"`). On emit, postgres would
-  be recognized and added as a service — `${#_PF_SERVICES[@]} -eq 1`. With
-  `continue`, image stays empty and "image-db" doesn't match a known key —
-  `${#_PF_SERVICES[@]} -eq 0`. Only this fixture makes the assertion
-  discriminating.
+#### EXERCISE: Test 7 pattern extraction fragile to function restructuring
+- File: tests/test_drift_resolution_verification.sh:111–124
+- Issue: Test 7 locates `_display_milestone_summary` by line number (via `grep -n`), then extracts a 30-line window and greps for the literal string `^#{2,4}`. This works today because the pattern appears at line 30 of `plan_milestone_review.sh`, within the 30-line window. If `_display_milestone_summary` is restructured or the grep pattern is moved further than 30 lines from the function header, the test would silently return empty `GREP_PATTERN` and fail with "pattern should be ^#{2,4} but found: " — a confusing diagnostic.
+- Severity: LOW
+- Action: Replace the windowed sed extraction with a direct grep on the file: `GREP_PATTERN=$(grep -o '\^#{2,4}' "${TEKHTON_HOME}/lib/plan_milestone_review.sh" | head -1)`. Simpler and immune to line-count drift.
 
-- Severity: MEDIUM
-- Action: Change the degenerate fixture image names from `my-custom-app:*` to
-  `postgres:15` / `postgres:16` (or any key present in `_PF_SVC_PORTS`). Keep
-  the `${#_PF_SERVICES[@]} -eq 0` assertion. This makes the test fail if
-  `continue` is ever removed from the implementation.
+### Integrity Assessment
 
----
+All test assertions derive their expected values from actual implementation behavior:
 
-### Notes on Passing Findings
+- Tests 1–4 in `test_prompt_tempfile.sh` grep for patterns that correspond directly to code present in `lib/plan_batch.sh` (lines 65, 83, 88) and `lib/agent_monitor.sh`. No hard-coded magic values.
+- Test 5 uses a mock `claude` to exercise the real `_call_planning_batch` code path end-to-end, verifying stdin delivery of a >128KB prompt. The 131072-byte threshold is the correct `MAX_ARG_STRLEN` boundary.
+- Tests 7–8 in `test_drift_resolution_verification.sh` verify both the presence of the corrected regex in the implementation (`plan_milestone_review.sh:30`) and that the regex behaves correctly against a synthetic fixture. The fixture correctly encodes all three heading depths (##, ###, ####) and the expected match counts (3 and 2) are derived from the regex semantics, not hard-coded.
 
-**Previous INTEGRITY violations (always-true `>= 0` assertions) — resolved.**
-Both `test_preflight_infer_degenerate.sh:80` and `:123` now use `eq 0`, which is
-a meaningful assertion that can fail if the function incorrectly matches the
-degenerate service name.
-
-**Test isolation — resolved.**
-Tests 2 and 3 in `test_preflight_infer_degenerate.sh` now reset `_PF_SVC_PORTS`,
-`_PF_SVC_NAMES`, and `_PF_SERVICES` with `unset` + `declare -gA` before the
-fixture is built. Tests are self-contained.
-
-**test_plan_trap_restore.sh Test 3 — resolved.**
-Lines 195–207 now assert that `trap -p INT` and `trap -p TERM` are both empty
-after the function returns when no prior handlers existed. This directly tests
-the `trap - INT / trap - TERM` fallback path at plan.sh:231 and plan.sh:234.
-
-**test_plan_trap_restore.sh Tests 1 and 2** test real implementation behavior.
-The `trap -p INT/TERM` capture-before / compare-after pattern correctly exercises
-the `eval "$_prev_trap_int"` restore path (plan.sh:228–230, :232–235). The
-"CLEANUP_CALLED" / "TERM_CLEANUP_CALLED" string checks provide a secondary
-confirmation that the handler body is preserved, not just any non-empty trap.
-Mock `claude` binary approach is appropriate — the contract under test is trap
-preservation, not claude output.
-
-**test_preflight_infer_degenerate.sh Test 3** (regression) correctly verifies
-that the fix does not break normal compose parsing. The `${#_PF_SERVICES[@]} -gt 0`
-assertion is meaningful: postgres and redis are both recognized by `_pf_emit_compose_service`
-via image-name matching (`postgres:15` → `"postgres"`, `redis:7` → `"redis"`,
-both present in `_PF_SVC_PORTS`), and the implementation appends entries to
-`_PF_SERVICES` via `_pf_add_service`.
+No weakening of existing tests was found. No orphaned tests were found (the deleted file `JR_CODER_SUMMARY.md` is not imported or referenced by either audited test file).

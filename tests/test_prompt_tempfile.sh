@@ -43,12 +43,12 @@ else
     pass "agent_monitor.sh: no -p \"\$prompt\" pattern"
 fi
 
-# Check plan.sh
+# Check plan_batch.sh (extracted from plan.sh)
 # shellcheck disable=SC2016
-if grep -n '\-p "\$prompt"' "${TEKHTON_HOME}/lib/plan.sh" >/dev/null 2>&1; then
-    fail "plan.sh still has -p \"\$prompt\" pattern"
+if grep -n '\-p "\$prompt"' "${TEKHTON_HOME}/lib/plan_batch.sh" >/dev/null 2>&1; then
+    fail "plan_batch.sh still has -p \"\$prompt\" pattern"
 else
-    pass "plan.sh: no -p \"\$prompt\" pattern"
+    pass "plan_batch.sh: no -p \"\$prompt\" pattern"
 fi
 
 # =============================================================================
@@ -64,10 +64,10 @@ else
 fi
 
 # shellcheck disable=SC2016
-if grep -q 'printf.*%s.*\$prompt.*>.*\$_prompt_file' "${TEKHTON_HOME}/lib/plan.sh"; then
-    pass "plan.sh writes prompt to temp file"
+if grep -q 'printf.*%s.*\$prompt.*>.*\$_prompt_file' "${TEKHTON_HOME}/lib/plan_batch.sh"; then
+    pass "plan_batch.sh writes prompt to temp file"
 else
-    fail "plan.sh missing prompt-to-temp-file write"
+    fail "plan_batch.sh missing prompt-to-temp-file write"
 fi
 
 # =============================================================================
@@ -83,10 +83,10 @@ else
 fi
 
 # shellcheck disable=SC2016
-if grep -q '< "\$_prompt_file"' "${TEKHTON_HOME}/lib/plan.sh"; then
-    pass "plan.sh redirects temp file as stdin"
+if grep -q '< "\$_prompt_file"' "${TEKHTON_HOME}/lib/plan_batch.sh"; then
+    pass "plan_batch.sh redirects temp file as stdin"
 else
-    fail "plan.sh missing stdin redirect from temp file"
+    fail "plan_batch.sh missing stdin redirect from temp file"
 fi
 
 # =============================================================================
@@ -102,11 +102,11 @@ else
     fail "agent_monitor.sh abort trap missing prompt file cleanup"
 fi
 
-# plan.sh cleans up after the call (no abort trap needed — simple pipeline)
-if grep -q 'rm -f "\$_prompt_file"' "${TEKHTON_HOME}/lib/plan.sh"; then
-    pass "plan.sh cleans up prompt file after call"
+# plan_batch.sh cleans up after the call (no abort trap needed — simple pipeline)
+if grep -q 'rm -f "\$_prompt_file"' "${TEKHTON_HOME}/lib/plan_batch.sh"; then
+    pass "plan_batch.sh cleans up prompt file after call"
 else
-    fail "plan.sh missing prompt file cleanup"
+    fail "plan_batch.sh missing prompt file cleanup"
 fi
 
 # =============================================================================

@@ -1,62 +1,42 @@
 # Tester Report
 
-## Summary
-Wrote two test files covering the specific coverage gaps identified by the reviewer:
-1. Test for the `continue` statement fix in `_pf_infer_from_compose` (Observation 1)
-2. Test for trap save/restore in `_call_planning_batch` (Observation 2)
-
-All coverage gaps from the reviewer report are now addressed with passing test assertions.
-
 ## Planned Tests
-- [x] `tests/test_preflight_infer_degenerate.sh` — Service name degenerate case with `image:` or `ports:` in name
-- [x] `tests/test_plan_trap_restore.sh` — Trap save/restore path in `_call_planning_batch`
+- [x] `tests/test_prompt_tempfile.sh` — Verify plan_batch.sh uses temp files for prompts > 128KB
+- [x] `tests/test_drift_resolution_verification.sh` — Verify plan_milestone_review.sh milestone pattern fix
 
 ## Test Run Results
-
-### File 1: test_preflight_infer_degenerate.sh
-- 3 test cases (6 assertions): all passing
-  - Degenerate service name with 'image:' text
-  - Degenerate service name with 'ports:' text  
-  - Valid docker-compose with normal service names (regression)
-- Status: **PASS** ✓
-
-### File 2: test_plan_trap_restore.sh
-- 3 test cases (9 assertions): all passing
-  - Previous trap handlers are captured and restored
-  - TERM trap is also preserved
-  - Function works correctly with no pre-existing handlers
-- Status: **PASS** ✓
-
-**Test Suite Integration:**
-- Both test files are automatically discovered by `tests/run_tests.sh`
-- Full suite results: 258 shell tests passed, 0 failed (includes these 2 new files)
-- Python tests: 76 passed
-
-**Individual Test Totals: Passed 15  Failed 0**
+Passed: 23  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_preflight_infer_degenerate.sh`
-- [x] `tests/test_plan_trap_restore.sh`
+- [x] `tests/test_prompt_tempfile.sh` — Updated to check plan_batch.sh instead of plan.sh
+- [x] `tests/test_drift_resolution_verification.sh` — Updated to check plan_milestone_review.sh instead of plan.sh
 
-## Audit Rework
+## Verification Summary
 
-### Findings Addressed
-- [x] **INTEGRITY (HIGH)**: Removed always-true assertions in tests/test_preflight_infer_degenerate.sh
-  - Lines 79 & 117: Replaced `[[ ${#_PF_SERVICES[@]} -ge 0 ]]` with meaningful assertion `[[ ${#_PF_SERVICES[@]} -eq 0 ]]`
-  - Verifies degenerate service names ("image-svc", "ports-svc") are not recognized as known services
-  - Changed test YAML to use unrecognized image names (`my-custom-app:1.0`, `my-custom-app:2.0`) instead of "postgres:15" to ensure assertion tests actual function correctness
+Both non-blocking notes from NON_BLOCKING_LOG.md have been successfully addressed by the coder:
 
-- [x] **COVERAGE (HIGH)**: Added missing trap state verification in tests/test_plan_trap_restore.sh
-  - Test 3 (lines 192–207): Added assertions verifying INT and TERM traps are not set after function returns when no pre-existing handlers existed
-  - Tests actual contract of trap save/restore implementation: previous handlers captured, restored on exit, cleaned up if none existed
+### 1. `preflight_checks_env.sh:133` — Missing `local cmd_var` declaration
+- **Fix**: Added `local cmd_var cmd_val` declaration at line 130 in `_preflight_check_ports()`
+- **Verification**: Matches style in `preflight_checks.sh:125` ✓
 
-- [x] **SCOPE (LOW)**: Removed cross-test state dependencies in tests/test_preflight_infer_degenerate.sh
-  - Tests 2 & 3: Added explicit reset of `_PF_SVC_PORTS` and `_PF_SVC_NAMES` arrays with `unset` + `declare -gA`
-  - Tests are now self-contained and resilient to future test isolation changes
+### 2. `plan.sh` exceeded 300-line ceiling (was 650 lines)
+- **Fix**: Extracted 3 sub-modules:
+  - `lib/plan_batch.sh` (170 lines)
+  - `lib/plan_milestone_review.sh` (134 lines)
+  - `lib/plan_answers_flow.sh` (147 lines)
+- **Verification**: 
+  - `plan.sh` now 258 lines ✓
+  - All 3 sub-modules properly sourced at lines 100-102 ✓
+  - All 23 tests pass (11 from test_prompt_tempfile.sh + 12 from test_drift_resolution_verification.sh) ✓
+  - Syntax check passes for all files ✓
 
-### Verification
-All 6 assertions in test_preflight_infer_degenerate.sh: PASSING
-All 11 assertions in test_plan_trap_restore.sh: PASSING
+### Test Results
+- **test_prompt_tempfile.sh**: 11 passed, 0 failed
+- **test_drift_resolution_verification.sh**: 12 passed, 0 failed
+- **Full test suite**: All pre-existing tests continue to pass
+
+### Coverage Assessment
+**Coverage Gaps**: None (per REVIEWER_REPORT.md) — all fixes are verified by existing test infrastructure

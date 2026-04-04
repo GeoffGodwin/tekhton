@@ -127,7 +127,7 @@ _preflight_check_ports() {
 
     # Identify ports from config commands
     local -a ports_to_check=()
-    local cmd_val
+    local cmd_var cmd_val
     for cmd_var in UI_TEST_CMD BUILD_CHECK_CMD; do
         cmd_val="${!cmd_var:-}"
         [[ -z "$cmd_val" ]] && continue

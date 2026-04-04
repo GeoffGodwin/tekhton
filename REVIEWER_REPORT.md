@@ -10,12 +10,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `preflight_checks_env.sh:133` — `_preflight_check_ports` iterates over `cmd_var` without a `local cmd_var` declaration, leaking the variable to calling scope. Contrast with `_preflight_check_tools` in `preflight_checks.sh:125` which correctly declares `local cmd_var cmd_val cmd_token`. Low risk (variable unused outside the function), but inconsistent with project style and may draw a shellcheck annotation in a future pass.
-- `plan.sh` is 650 lines — pre-existing condition not introduced by this task, but the file has grown well beyond the 300-line ceiling and warrants an extraction pass in a future milestone.
+- `CLAUDE.md` repository layout section does not list the 3 new library files (`lib/plan_batch.sh`, `lib/plan_milestone_review.sh`, `lib/plan_answers_flow.sh`) — minor documentation gap, no behavioral impact.
 
 ## Coverage Gaps
-- No test case covers the `continue` path in `_pf_infer_from_compose` where a service-name line also contains `image:` or `ports:` text — the specific fragility that was fixed. A fixture with such a degenerate service name (e.g., `image-svc:`) would lock in the fix against regression.
-- No test covers the trap save/restore path in `_call_planning_batch`; the previous `trap - INT TERM` behavior was never tested either, so this is a gap inherited from before, not introduced here.
+- None
 
 ## Drift Observations
 - None
