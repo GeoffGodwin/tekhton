@@ -778,3 +778,274 @@ sections:
       No self-update command. Version check on `sdi --version` could print a notice if a
       newer version is available on PyPI, but this requires a network call so it's opt-in
       only and off by default (respects the "no network calls" philosophy).
+
+  testing_strategy:
+    title: "Testing Strategy"
+    phase: 2
+    required: false
+    guidance: "Unit tests, integration tests, fixtures, platform testing, benchmarks?"
+    answer: |
+      Testing framework: pytest with pytest-cov for coverage reporting.
+
+      Unit tests (tests/unit/):
+      - Pattern fingerprinting: verify that structurally equivalent AST subtrees produce
+        identical fingerprints, and structurally different ones produce different fingerprints.
+        Test across multiple languages.
+      - Dependency graph construction: given known import relationships, verify correct graph
+        edges. Test each language adapter independently.
+      - Snapshot delta computation: given two snapshot JSON objects, verify correct computation
+        of all four SDI dimensions.
+      - Leiden partition stability: verify seeded partitions are stable when graph changes are
+        small, and update correctly when changes are large.
+      - Config loading: verify precedence order, default values, invalid config handling.
+      - Boundary spec parsing: verify YAML parsing, validation of required fields, handling
+        of aspirational splits.
+
+      Integration tests (tests/integration/):
+      - Full pipeline tests: run `sdi snapshot` against fixture repos and verify snapshot
+        output matches expected structure and values.
+      - Multi-snapshot workflows: init → snapshot → modify fixture → snapshot → diff → trend.
+        Verify the full lifecycle produces correct deltas.
+      - CLI output tests: snapshot stdout/stderr output for each command and compare against
+        expected output (pytest-snapshot or similar).
+      - Git hook integration: verify hook installation and that post-merge hook triggers
+        snapshot capture correctly.
+
+      Fixture repos (tests/fixtures/):
+      - tests/fixtures/simple-python/ — Small Python project with known dependency structure,
+        one deliberate pattern variant (two error handling styles), and one boundary crossing.
+        Used as the baseline for most integration tests.
+      - tests/fixtures/multi-language/ — Project with Python + TypeScript files. Tests
+        cross-language dependency graph construction and language adapter integration.
+      - tests/fixtures/high-entropy/ — Project with deliberately high pattern entropy (4+
+        error handling styles, 3 data access patterns). Tests pattern fingerprinting accuracy
+        and entropy computation.
+      - tests/fixtures/evolving/ — Git repo with multiple commits that introduce progressive
+        structural drift. Used for trend and diff testing. Created by a setup script that
+        builds the git history programmatically.
+
+      Platform testing:
+      - CI matrix: Linux (Ubuntu latest) + macOS (latest). Python 3.10, 3.11, 3.12.
+      - Windows: not in CI matrix for v1. Document as best-effort.
+
+      Performance benchmarks:
+      - tests/benchmarks/ — pytest-benchmark tests for the parsing stage and Leiden detection
+        on synthetic graphs of increasing size (100, 1000, 5000, 10000 nodes). Track regression
+        across releases. Not run in normal CI — triggered manually or on release tags.
+
+      Coverage target: 80%+ for unit tests. Integration tests are not coverage-gated but must
+      all pass.
+
+  naming_conventions:
+    title: "Naming Conventions"
+    phase: 3
+    required: false
+    guidance: "Code naming, command naming, flag naming, env vars, domain terms?"
+    answer: |
+      Code naming (Python):
+      - PEP 8 throughout. snake_case for functions, variables, modules. PascalCase for classes.
+        UPPER_SNAKE for module-level constants.
+      - Type hints on all public function signatures. No type hints on local variables unless
+        the type is non-obvious.
+      - Docstrings on all public functions and classes (Google style).
+
+      Module naming:
+      - Top-level package: `sdi`
+      - Sub-packages mirror the pipeline stages: `sdi.parsing`, `sdi.graph`, `sdi.detection`,
+        `sdi.patterns`, `sdi.snapshot`, `sdi.cli`
+      - Language adapters: `sdi.parsing.python`, `sdi.parsing.typescript`, etc.
+      - One class per file is NOT required — group related functionality by module.
+
+      Command naming:
+      - Subcommands are single words: init, snapshot, diff, trend, check, show, boundaries, catalog
+      - No multi-word commands. If a concept needs two words, pick the more specific single word.
+
+      Flag naming:
+      - Long flags: --kebab-case (--no-color, --format, --last, --output)
+      - Short flags: single letter for the most common flags only (-o for --output, -f for --format,
+        -n for --last, -v for --verbose, -q for --quiet)
+      - Boolean flags: --flag to enable, --no-flag to disable (Click convention)
+
+      Environment variables:
+      - Prefix: SDI_ (e.g., SDI_CONFIG_PATH, SDI_LOG_LEVEL, SDI_WORKERS)
+      - UPPER_SNAKE_CASE
+      - Respect NO_COLOR (no prefix, industry standard)
+
+      Domain term → code concept mapping:
+      - "snapshot" → `Snapshot` dataclass in sdi.snapshot.model
+      - "boundary" → `BoundarySpec` / `BoundaryModule` in sdi.detection.boundaries
+      - "pattern" → `PatternInstance` / `PatternFingerprint` in sdi.patterns.fingerprint
+      - "catalog" → `PatternCatalog` dict mapping category names to lists of fingerprints
+      - "partition" → igraph `VertexClustering` object (Leiden output)
+      - "divergence" → `DivergenceSummary` dataclass with the four SDI dimensions
+      - "drift rate" → float computed as delta / interval, always a rate not an absolute
+
+  config_architecture:
+    title: "Config Architecture"
+    phase: 3
+    required: true
+    guidance: "What values MUST live in config? Complete default config? Override hierarchy?"
+    answer: |
+      Values that MUST live in config (not hardcoded):
+      - Leiden gamma parameter (teams must tune to their project)
+      - Drift rate thresholds for `sdi check` (project-specific)
+      - Snapshot retention count (disk space implications)
+      - Exclude patterns (project-specific ignore rules)
+      - Change coupling history depth and min frequency (tuning knobs)
+      - Pattern categories (must be extensible beyond built-in catalog)
+
+      Values that are hardcoded:
+      - Snapshot JSON schema version (tied to code version)
+      - Exit code semantics (0, 1, 2, 3)
+      - .sdi/ directory name (convention, not configurable)
+      - Tree-sitter query patterns per language (shipped with the tool, not user-editable in v1)
+
+      Complete default config (every key, every default):
+
+      ```toml
+      [core]
+      languages = "auto"
+      exclude = ["**/vendor/**", "**/node_modules/**", "**/__pycache__/**", "**/dist/**", "**/build/**", "**/.git/**"]
+      random_seed = 42
+
+      [snapshots]
+      dir = ".sdi/snapshots"
+      retention = 100
+
+      [boundaries]
+      spec_file = ".sdi/boundaries.yaml"
+      leiden_gamma = 1.0
+      stability_threshold = 3
+      weighted_edges = false
+
+      [patterns]
+      categories = "auto"
+      min_pattern_nodes = 5
+
+      [thresholds]
+      pattern_entropy_rate = 2.0
+      convention_drift_rate = 3.0
+      coupling_delta_rate = 0.15
+      boundary_violation_rate = 2.0
+
+      [change_coupling]
+      min_frequency = 0.6
+      history_depth = 500
+
+      [output]
+      format = "text"
+      color = "auto"
+      ```
+
+      Override hierarchy (highest to lowest precedence):
+      1. CLI flags (--format json, --no-color, etc.)
+      2. Environment variables (SDI_LOG_LEVEL, SDI_WORKERS, SDI_CONFIG_PATH, NO_COLOR)
+      3. Project-local config (.sdi/config.toml in repo root)
+      4. Global user config (~/.config/sdi/config.toml)
+      5. Built-in defaults (hardcoded in sdi/config.py)
+
+      Reset to defaults: delete .sdi/config.toml and run `sdi init` to regenerate. Or
+      manually remove specific keys — missing keys fall through to defaults.
+
+  open_design_questions:
+    title: "Open Design Questions"
+    phase: 3
+    required: true
+    guidance: "What decisions are you deliberately deferring?"
+    answer: |
+      1. Weighted vs unweighted edges in the dependency graph.
+         Should import frequency (number of symbols imported) affect edge weight in Leiden
+         community detection? Weighted edges might improve cluster quality by distinguishing
+         a single type import from a module that imports 20 symbols. But they might also
+         introduce noise if a utility module is heavily imported everywhere. Default is
+         unweighted. Needs empirical testing across real codebases to decide. Exposing as
+         a config toggle (weighted_edges) lets users experiment.
+
+      2. Resolution parameter auto-tuning.
+         Leiden's gamma parameter controls cluster granularity. The default (1.0) works for
+         many graphs but may produce too few clusters on large codebases or too many on small
+         ones. Open question: should SDI auto-tune gamma based on graph density, or is a
+         static default with manual override sufficient? Auto-tuning adds complexity and
+         reduces reproducibility. Deferring to manual config for v1 and collecting data on
+         what gamma values real projects use.
+
+      3. Pattern category extensibility mechanism.
+         V1 ships with a built-in catalog of pattern categories and tree-sitter queries per
+         language (error handling, data access, validation, logging, etc.). Users will want
+         to define custom categories. The mechanism is TBD: tree-sitter query files in .sdi/?
+         A Python plugin interface? A TOML-based pattern definition DSL? Need real user
+         feedback on what categories people want before designing the extensibility API.
+
+      4. Multi-language dependency resolution in monorepos.
+         When a TypeScript frontend imports from a Python backend via an API contract, that's
+         a cross-language dependency that doesn't appear in import statements. How (or whether)
+         to model these implicit dependencies is an open question. V1 only tracks explicit
+         in-language imports. Cross-language coupling detection is deferred.
+
+      5. Snapshot storage scaling.
+         At 100 snapshots retained with JSON files of ~10-50KB each, storage is trivial. But
+         some teams might want years of history (1000+ snapshots). Should there be a compact
+         binary format? A SQLite store? Deferred — JSON files with retention limits are
+         sufficient for v1 and the simplicity is worth preserving.
+
+      6. YAML library choice for boundary specs.
+         PyYAML is ubiquitous but loses comments on round-trip. ruamel.yaml preserves comments
+         but is a heavier dependency with a more complex API. Since boundary specs are
+         human-edited artifacts where comments carry rationale, comment preservation matters.
+         Leaning ruamel.yaml but need to evaluate install friction on all platforms.
+
+      7. How to handle generated/vendored code.
+         Files in vendor/ or generated/ directories are excluded by default, but what about
+         generated code that lives alongside handwritten code (e.g., protobuf stubs, ORM
+         models)? These affect the dependency graph and pattern catalog but weren't authored
+         by humans or agents. Need a way to tag files or directories as "generated" so they
+         can be optionally excluded from pattern entropy calculations while still being
+         included in dependency graph construction.
+
+  what_not_to_build_yet:
+    title: "What Not to Build Yet"
+    phase: 3
+    required: false
+    guidance: "What features are explicitly deferred? Why? When might they be added?"
+    answer: |
+      1. IDE/editor plugin — CLI first. An IDE integration that shows real-time boundary
+         violations or pattern drift inline would be valuable, but requires a stable API
+         and snapshot format. Evaluate after v1.0 when the schema is stable.
+
+      2. SaaS dashboard / web UI — SDI is a measurement instrument, not a platform. The
+         output is JSON and text that can be consumed by existing dashboards (Grafana,
+         Datadog, custom). Building a hosted UI is a different product. If there's demand,
+         it would be a separate project that reads SDI snapshots.
+
+      3. Auto-remediation / gardener agent — The blog post discusses a "gardener" role that
+         converges pattern variants. SDI's job is to detect and measure drift, not fix it.
+         A companion tool that reads SDI output and generates PRs to consolidate patterns
+         is a logical follow-on but out of scope for the measurement instrument itself.
+
+      4. GitHub Actions marketplace action — Document manual CI integration in v1 (`pip
+         install sdi && sdi check`). A polished reusable action with PR comments, badge
+         generation, and trend graphs is a post-v1 deliverable.
+
+      5. Plugin system for custom analyzers — V1 ships built-in pattern categories only.
+         A plugin interface for user-defined tree-sitter queries and custom metrics requires
+         a stable internal API. Design the extensibility point after real users tell us what
+         they need.
+
+      6. Cross-language dependency inference — Detecting implicit dependencies between
+         services (TypeScript frontend calling Python API) requires understanding API
+         contracts, OpenAPI specs, or protobuf definitions. This is a significant scope
+         expansion. V1 tracks only explicit in-language imports.
+
+      7. Historical backfill — Running SDI retroactively across hundreds of past commits
+         to generate a historical trend line. Technically possible (`sdi snapshot --commit REF`)
+         but the UX for batch backfill (parallelism, progress, storage) is not designed yet.
+         Users can script it with a bash loop in v1.
+
+      8. Standalone binary distribution — PyInstaller or Nuitka packaging for users who don't
+         want Python installed. Evaluate after the dependency tree stabilizes. Tree-sitter
+         grammar loading from bundled binaries has known complexity.
+
+      9. Real-time / watch mode — A daemon that monitors file changes and updates metrics
+         continuously. Violates the Unix philosophy constraint and adds significant
+         complexity (file watchers, incremental graph updates). CLI invocation on merge
+         events is the intended cadence.
