@@ -212,8 +212,10 @@ sections:
         --snapshot PATH: Use an existing snapshot instead of capturing a new one.
       Exit codes:
         0: All dimensions within threshold
-        1: One or more dimensions exceeded threshold (prints which ones)
-        2: Configuration or runtime error
+        1: Unexpected runtime error
+        2: Configuration or environment error
+        3: Analysis error (e.g., no supported languages found)
+        10: One or more dimensions exceeded threshold (prints which ones)
       Examples:
         sdi check
         sdi check --threshold 0.5 --dimension boundary_violations
@@ -290,10 +292,52 @@ sections:
          Malformed config: exits with error code 2 and specific parse error message.
 
       4. Boundary specification (.sdi/boundaries.yaml)
-         Format: YAML (see boundary spec format in the blog post / design methodology).
-         This is the human-ratified architectural intent artifact. Read on every snapshot
-         capture for intent divergence detection. Optional — if absent, SDI operates with
-         inferred boundaries only and skips intent divergence metrics.
+         Format: YAML. This is the human-ratified architectural intent artifact. Read on
+         every snapshot capture for intent divergence detection. Optional — if absent, SDI
+         operates with inferred boundaries only and skips intent divergence metrics.
+         Schema:
+         ```yaml
+         sdi_boundaries:
+           version: "0.1.0"
+           generated_from: "leiden-community-detection"
+           last_ratified: "2026-04-03T22:00:00Z"
+           ratified_by: "geoffgodwin"
+
+           modules:
+             - name: "billing"
+               paths: ["src/billing/", "src/invoicing/"]
+               layer: "domain"
+             - name: "users"
+               paths: ["src/users/", "src/auth/"]
+               layer: "domain"
+             - name: "api"
+               paths: ["src/api/", "src/routes/"]
+               layer: "presentation"
+             - name: "persistence"
+               paths: ["src/data/", "src/repositories/"]
+               layer: "infrastructure"
+
+           layers:
+             ordering: ["presentation", "domain", "infrastructure"]
+             direction: "downward"  # presentation -> domain -> infrastructure
+
+           allowed_cross_domain:
+             - from: "billing"
+               to: "users"
+               via: "users.public_api"
+               reason: "Billing needs user account status for invoice generation"
+
+           aspirational_splits:
+             - current_module: "billing"
+               intended_boundary: ["billing_core", "invoicing"]
+               target_date: "2026-Q3"
+         ```
+         Key concepts:
+         - modules: ratified boundary definitions with file path patterns and layer assignment
+         - layers: optional layered architecture constraint with allowed dependency direction
+         - allowed_cross_domain: explicitly permitted cross-boundary dependencies with rationale
+         - aspirational_splits: planned future boundaries that don't exist in code yet but
+           should be tracked for progress toward separation
 
       5. Previous snapshots (.sdi/snapshots/*.json)
          Format: JSON (SDI's own output format, versioned via snapshot_version field).
@@ -338,9 +382,10 @@ sections:
       - .sdi/cache/ — Tree-sitter parse cache, Leiden partition cache (internal, not
         user-facing)
 
-      Exit codes:
+      Exit codes (consistent across all commands):
         0 — Success (for `sdi check`: all dimensions within threshold)
-        1 — Check failure (one or more dimensions exceeded threshold) OR command error
+        1 — General runtime error or unexpected failure
+        10 — Check threshold exceeded (`sdi check` only: one or more dimensions over limit)
         2 — Configuration or environment error (missing config, invalid TOML, no git repo)
         3 — Analysis error (tree-sitter grammar not available, graph construction failed)
 
@@ -379,7 +424,7 @@ sections:
       # Languages to analyze. "auto" detects from file extensions.
       languages = "auto"
       # Files/directories to exclude (gitignore-style globs, additive to .gitignore)
-      exclude = ["**/vendor/**", "**/node_modules/**", "**/__pycache__/**", "**/dist/**"]
+      exclude = ["**/vendor/**", "**/node_modules/**", "**/__pycache__/**", "**/dist/**", "**/build/**", "**/.git/**"]
       # Random seed for reproducible Leiden partitioning on cold start
       random_seed = 42
 
@@ -480,8 +525,21 @@ sections:
         "insufficient structure for boundary detection" and skip boundary metrics.
 
       Stage 4: Pattern Fingerprinting
-      - For each configured pattern category (error_handling, data_access, validation, etc.),
-        query the AST features from Stage 1 using category-specific tree-sitter queries
+      - Built-in pattern categories shipped with v1:
+        * error_handling — try/catch/except blocks, error propagation patterns, Result/Either types
+        * data_access — database queries, ORM calls, repository pattern implementations,
+          raw SQL vs query builder vs ORM
+        * api_validation — input validation at API boundaries, schema validation, type checking
+          guards, assertion patterns
+        * logging — log call patterns, structured vs unstructured logging, log level usage
+        * dependency_injection — constructor injection, factory patterns, service locators,
+          global state access
+        * async_patterns — async/await usage, callback styles, promise chains, concurrency
+          primitives
+        * config_access — how configuration values are read (env vars, config objects,
+          hardcoded values, magic strings)
+      - For each category, query the AST features from Stage 1 using category-specific
+        tree-sitter queries
       - Compute structural fingerprint for each pattern instance: a normalized representation
         of the AST subtree shape (node types and structure, stripped of identifiers/literals)
       - Group fingerprints by category, count distinct shapes per category
@@ -493,7 +551,63 @@ sections:
       - Failure mode: no pattern instances found for a category. Report zero entropy, not an error.
 
       Stage 5: Snapshot Assembly & Delta Computation
-      - Combine outputs from Stages 2-4 into a snapshot JSON document
+      - Combine outputs from Stages 2-4 into a snapshot JSON document with this schema:
+        ```json
+        {
+          "snapshot_version": "0.1.0",
+          "timestamp": "2026-04-03T14:32:00Z",
+          "commit": "a1b2c3d4e5f6",
+          "config_hash": "sha256 of config.toml at capture time",
+          "languages_analyzed": ["python", "typescript"],
+          "files_analyzed": 892,
+          "pattern_catalog": {
+            "error_handling": {
+              "distinct_shapes": 3,
+              "canonical": "try-catch-log-rethrow",
+              "instances": 47,
+              "shapes": {"shape_hash_1": 31, "shape_hash_2": 12, "shape_hash_3": 4}
+            },
+            "data_access": { "..." : "same structure per category" }
+          },
+          "dependency_topology": {
+            "node_count": 142,
+            "edge_count": 387,
+            "cycle_count": 3,
+            "max_depth": 7,
+            "hub_concentration": 0.12,
+            "connected_components": 2
+          },
+          "detected_boundaries": {
+            "cluster_count": 8,
+            "partition_stability": 0.97,
+            "clusters": [
+              {"id": 0, "files": ["src/billing/..."], "surface_area_ratio": 0.15},
+              "..."
+            ],
+            "inter_cluster_deps": [
+              {"from": 0, "to": 1, "edge_count": 3, "bidirectional": false}
+            ]
+          },
+          "boundary_status": {
+            "spec_present": true,
+            "defined_boundaries": 8,
+            "active_cross_boundary_deps": 23,
+            "intent_divergence_score": 0.12
+          },
+          "change_coupling": {
+            "cross_boundary_pairs": [
+              {"file_a": "...", "file_b": "...", "frequency": 0.72, "boundary_a": "billing", "boundary_b": "users"}
+            ]
+          },
+          "divergence_summary": {
+            "pattern_entropy": {"absolute": 12, "delta": 1, "category_deltas": {"api_validation": 1}},
+            "convention_drift": {"net_new_patterns": 2, "consolidated_patterns": 0, "net_drift": 2},
+            "coupling_topology": {"cycle_count_delta": 0, "hub_concentration_delta": 0.02, "max_depth_delta": 0},
+            "boundary_violations": {"new_crossings": 1, "resolved_crossings": 0, "velocity": 1}
+          },
+          "previous_snapshot": "20260401-a1b2c3d.json"
+        }
+        ```
       - If previous snapshot exists, compute deltas for all four SDI dimensions:
         - Pattern entropy delta: change in distinct shapes per category
         - Convention drift rate: net new patterns minus consolidated patterns since last snapshot
@@ -549,6 +663,11 @@ sections:
          - Unexpected exceptions: catch at top level, print traceback only in DEBUG mode.
            User sees: "Error: unexpected failure during pattern analysis. Run with
            SDI_LOG_LEVEL=DEBUG for details."
+
+      5. Threshold exceeded (exit code 10, `sdi check` only):
+         - One or more SDI dimensions exceeded configured thresholds. Prints which dimensions
+           and by how much. This is a distinct exit code (10) so CI scripts can distinguish
+           "drift too high" from "tool broke" without parsing output.
 
       Verbose/debug mode:
       - SDI_LOG_LEVEL=DEBUG or --debug flag: shows tree-sitter parse timings per file,
@@ -730,8 +849,8 @@ sections:
       Backward compatibility guarantees (post-1.0):
       - `sdi snapshot` always produces a valid snapshot file readable by the same or later version
       - `sdi diff` and `sdi trend` can always read snapshots from the same major version
-      - `sdi check` exit code semantics (0 = pass, 1 = fail, 2 = config error, 3 = analysis error)
-        are stable across all versions
+      - Exit code semantics (0 = success, 1 = runtime error, 2 = config error, 3 = analysis error,
+        10 = threshold exceeded) are stable across all versions
       - Config keys are never repurposed (a removed key is reserved forever)
 
   distribution_installation:
@@ -896,7 +1015,7 @@ sections:
 
       Values that are hardcoded:
       - Snapshot JSON schema version (tied to code version)
-      - Exit code semantics (0, 1, 2, 3)
+      - Exit code semantics (0, 1, 2, 3, 10)
       - .sdi/ directory name (convention, not configurable)
       - Tree-sitter query patterns per language (shipped with the tool, not user-editable in v1)
 
