@@ -13,25 +13,26 @@ sections:
     answer: |
       Non-negotiable rules:
 
-      1. Measurement over opinion. Every claim SDI makes about a codebase must be backed by
-         a concrete, reproducible measurement derived from AST analysis or dependency graph
-         structure. No heuristics that cannot be explained. No scores without traceable inputs.
+      1. Measurement over opinion. Every claim the indexer makes about a codebase must be
+         backed by a concrete, reproducible measurement derived from AST analysis or dependency
+         graph structure. No heuristics that cannot be explained. No scores without traceable
+         inputs.
 
-      2. Fever chart, not thermometer. Every metric SDI produces must be trackable over time.
+      2. Fever chart, not thermometer. Every metric the indexer produces must be trackable over time.
          Point-in-time values are necessary but insufficient. The primary output is always the
          trend: the rate of change of structural coherence, not the absolute state. Alerts fire
          on rate-of-change thresholds, not absolute values.
 
-      3. Automated inference, human ratification. SDI never tells a team what their architecture
-         "should" be. It infers structural boundaries from the code via community detection
+      3. Automated inference, human ratification. The indexer never tells a team what their
+         architecture "should" be. It infers structural boundaries from the code via community detection
          (Leiden algorithm), proposes them, and waits for a human to ratify, merge, split, or
          override. The tool measures divergence from declared intent, not from its own opinions.
 
-      4. Safe defaults, zero mandatory config. Running `sdi snapshot` on an un-initialized repo
-         should produce useful output using purely inferred boundaries and auto-detected patterns.
-         Configuration only refines and ratifies — it is never required for first use.
+      4. Safe defaults, zero mandatory config. Running `sdi snapshot` on an un-initialized
+         repo should produce useful output using purely inferred boundaries and auto-detected
+         patterns. Configuration only refines and ratifies — it is never required for first use.
 
-      5. Composable Unix tooling. SDI reads from the filesystem and git history, writes JSON
+      5. Composable Unix tooling. The indexer reads from the filesystem and git history, writes JSON
          snapshots and human-readable reports to stdout/files, and exits with meaningful codes.
          It composes with jq, diff, CI pipelines, and git hooks. No daemon mode, no server,
          no interactive TUI in v1.
@@ -42,7 +43,7 @@ sections:
          modules that can be added independently. Tree-sitter provides the parsing primitive.
 
       7. Deterministic and reproducible. Given the same commit, the same configuration, and the
-         same boundary spec, SDI produces the same snapshot. The Leiden algorithm is seeded from
+         same boundary spec, the indexer produces the same snapshot. The Leiden algorithm is seeded from
          the previous partition for stability, but cold-start runs use a fixed random seed so
          that results are reproducible.
 
@@ -52,12 +53,12 @@ sections:
          analysis on large dependency graphs.
 
       Anti-patterns banned:
-      - No machine learning or LLM calls in the analysis pipeline. SDI is a measurement
-        instrument, not an AI tool. Determinism and reproducibility are non-negotiable.
+      - No machine learning or LLM calls in the analysis pipeline. The indexer is a
+        measurement instrument, not an AI tool. Determinism and reproducibility are non-negotiable.
       - No network calls during analysis. Everything operates on local filesystem and git history.
-      - No opinions about code quality. SDI measures structural divergence, not whether code is
-        "good" or "bad." A high pattern entropy might be acceptable for a given project stage.
-        SDI reports the number; the team decides what it means.
+      - No opinions about code quality. The indexer measures structural divergence, not whether
+        code is "good" or "bad." A high pattern entropy might be acceptable for a given project
+        stage. The tool reports the number; the team decides what it means.
 
   project_overview:
     title: "Project Overview"
@@ -65,11 +66,13 @@ sections:
     required: true
     guidance: "What does this tool do in one sentence?"
     answer: |
-      SDI (Structural Divergence Index) is a CLI tool that measures the rate of structural
-      drift in a codebase across four dimensions — pattern entropy, convention drift rate,
-      coupling topology delta, and boundary violation velocity — by capturing periodic
-      structural fingerprints (snapshots) and diffing them over time to produce trend data
-      and actionable alerts.
+      SDI (Structural Divergence Indexer) is a CLI tool that computes and tracks the
+      Structural Divergence Index — a composite metric measuring the rate of structural
+      drift in a codebase across four dimensions: pattern entropy, convention drift rate,
+      coupling topology delta, and boundary violation velocity. It captures periodic
+      structural fingerprints (snapshots) and diffs them over time to produce trend data
+      and actionable alerts. The metric is the Structural Divergence Index; the tool is
+      the Structural Divergence Indexer.
 
       Who uses it: Software engineers, tech leads, and engineering managers responsible for
       the structural health of codebases, especially those using AI-assisted development at
@@ -78,10 +81,11 @@ sections:
 
       What it replaces: There is no existing tool that does this. Current quality tooling
       (linters, static analyzers, code review) evaluates individual changes in isolation.
-      SDI fills the gap between "every individual change is good" and "the collective
-      direction of all changes is coherent." It is the urban planner's aerial photograph
-      overlaid on the master plan, complementing the building inspector (linter) and
-      structural engineer (static analyzer) that already exist.
+      The Structural Divergence Index fills the gap between "every individual change is
+      good" and "the collective direction of all changes is coherent." The indexer is the
+      urban planner's aerial photograph overlaid on the master plan, complementing the
+      building inspector (linter) and structural engineer (static analyzer) that already
+      exist.
 
       Distribution model: Open source (MIT or Apache 2.0). The tool and its output format
       are public goods — the value proposition is the measurement methodology, not proprietary
@@ -1131,7 +1135,7 @@ sections:
          violations or pattern drift inline would be valuable, but requires a stable API
          and snapshot format. Evaluate after v1.0 when the schema is stable.
 
-      2. SaaS dashboard / web UI — SDI is a measurement instrument, not a platform. The
+      2. SaaS dashboard / web UI — The indexer is a measurement instrument, not a platform. The
          output is JSON and text that can be consumed by existing dashboards (Grafana,
          Datadog, custom). Building a hosted UI is a different product. If there's demand,
          it would be a separate project that reads SDI snapshots.
