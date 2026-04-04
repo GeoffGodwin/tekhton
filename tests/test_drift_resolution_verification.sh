@@ -111,10 +111,12 @@ PATTERN_LINE=$(grep -n '_display_milestone_summary' "${TEKHTON_HOME}/lib/plan.sh
 if [ -z "$PATTERN_LINE" ]; then
     fail "Could not find _display_milestone_summary function"
 else
-    # Extract the grep pattern around line 515
-    GREP_PATTERN=$(sed -n '510,520p' "${TEKHTON_HOME}/lib/plan.sh" | grep -o '\^#{2,4}' | head -1)
+    # Extract the grep pattern from within _display_milestone_summary (search ±15 lines)
+    SEARCH_START=$((PATTERN_LINE))
+    SEARCH_END=$((PATTERN_LINE + 30))
+    GREP_PATTERN=$(sed -n "${SEARCH_START},${SEARCH_END}p" "${TEKHTON_HOME}/lib/plan.sh" | grep -o '\^#{2,4}' | head -1)
     if [ "$GREP_PATTERN" = '^#{2,4}' ]; then
-        pass "lib/plan.sh line 515 has corrected pattern (^#{2,4})"
+        pass "lib/plan.sh _display_milestone_summary has corrected pattern (^#{2,4})"
     else
         fail "lib/plan.sh pattern should be ^#{2,4} but found: $GREP_PATTERN"
     fi

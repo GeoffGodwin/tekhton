@@ -38,6 +38,12 @@ _invoke_and_monitor() {
         rm -f "$_fifo"
         mkfifo "$_fifo"
 
+        # Write prompt to temp file to avoid MAX_ARG_STRLEN (128KB) limit on Linux.
+        # The -p flag (print mode) reads the prompt from stdin when no positional
+        # argument is provided.
+        local _prompt_file="${_session_dir}/agent_prompt_$$.txt"
+        printf '%s' "$prompt" > "$_prompt_file"
+
         # Background: run claude, write stdout to FIFO, tee stderr to
         # a dedicated file and the caller's stdout (not the FIFO).
         local _stderr_file="${_session_dir}/agent_stderr.txt"
@@ -48,8 +54,8 @@ _invoke_and_monitor() {
                 "${_IM_PERM_FLAGS[@]}" \
                 --max-turns "$max_turns" \
                 --output-format json \
-                -p "$prompt" \
-                < /dev/null \
+                -p \
+                < "$_prompt_file" \
                 > "$_fifo" 2> >(tee -a "$_stderr_file" >&1)
             echo "$?" > "$_exit_file"
         ) &
@@ -64,7 +70,7 @@ _invoke_and_monitor() {
                 kill -9 "$_TEKHTON_AGENT_PID" 2>/dev/null || true
             fi
             _kill_agent_windows
-            rm -f "${_fifo:-}" 2>/dev/null || true
+            rm -f "${_fifo:-}" "${_prompt_file:-}" 2>/dev/null || true
         }
         trap '_run_agent_abort' INT TERM
 
@@ -220,7 +226,7 @@ _invoke_and_monitor() {
 
         # Wait for background subshell to fully exit
         wait "$_TEKHTON_AGENT_PID" 2>/dev/null || true
-        rm -f "$_fifo"
+        rm -f "$_fifo" "$_prompt_file"
 
         # Read API error detection from FIFO reader subshell (12.2)
         if [[ -f "${_session_dir}/agent_api_error.txt" ]]; then
@@ -248,9 +254,15 @@ _invoke_and_monitor() {
         # WARNING: Ctrl+C may not work if claude hangs, and there is no
         # activity timeout. This path exists only for exotic environments
         # without mkfifo (no known modern system lacks it).
+
+        # Write prompt to temp file to avoid MAX_ARG_STRLEN (128KB) limit on Linux.
+        local _prompt_file="${_session_dir}/agent_prompt_$$.txt"
+        printf '%s' "$prompt" > "$_prompt_file"
+
         _run_agent_abort() {
             trap - INT TERM
             _TEKHTON_CLEAN_EXIT=true
+            rm -f "${_prompt_file:-}" 2>/dev/null || true
             kill 0 2>/dev/null || true
         }
         trap '_run_agent_abort' INT TERM
@@ -260,8 +272,8 @@ _invoke_and_monitor() {
             "${_IM_PERM_FLAGS[@]}" \
             --max-turns "$max_turns" \
             --output-format json \
-            -p "$prompt" \
-            < /dev/null \
+            -p \
+            < "$_prompt_file" \
             2>&1 | tee -a "$log_file" | (
                 turns=0
                 last_line=""
@@ -279,6 +291,7 @@ _invoke_and_monitor() {
                 echo "$turns" > "$_turns_file"
             )
         _MONITOR_EXIT_CODE=${PIPESTATUS[0]}
+        rm -f "$_prompt_file"
     fi
 }
 

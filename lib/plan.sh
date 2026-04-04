@@ -194,16 +194,24 @@ _call_planning_batch() {
         spinner_pid=$!
     fi
 
+    # Write prompt to temp file to avoid MAX_ARG_STRLEN (128KB) limit on Linux.
+    # The -p flag (print mode) reads the prompt from stdin when no positional
+    # argument is provided.
+    local _prompt_file="${TMPDIR:-/tmp}/tekhton_prompt_$$.txt"
+    printf '%s' "$prompt" > "$_prompt_file"
+
     set +o pipefail
     claude \
         --model "$model" \
         --max-turns "$max_turns" \
         --output-format text \
-        -p "$prompt" \
-        < /dev/null \
+        -p \
+        < "$_prompt_file" \
         2>&1 | tee -a "$log_file"
     local -a _pst=("${PIPESTATUS[@]}")
     set -o pipefail
+
+    rm -f "$_prompt_file"
 
     # Stop spinner and clear the line
     if [[ -n "$spinner_pid" ]]; then

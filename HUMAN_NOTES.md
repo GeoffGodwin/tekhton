@@ -17,7 +17,7 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 ## Bugs
 
-- [ ] [BUG] Fix MAX_ARG_STRLEN (128KB) limit when passing prompts as positional arguments to the `claude` CLI. On Linux, individual command-line arguments are capped at 131072 bytes. Planning prompts that embed design docs, codebase summaries, repo maps, and template content routinely exceed this, causing "Argument list too long" failures. There are 3 affected call sites that all use the pattern `-p "$prompt" < /dev/null`:
+- [x] [BUG] Fix MAX_ARG_STRLEN (128KB) limit when passing prompts as positional arguments to the `claude` CLI. On Linux, individual command-line arguments are capped at 131072 bytes. Planning prompts that embed design docs, codebase summaries, repo maps, and template content routinely exceed this, causing "Argument list too long" failures. There are 3 affected call sites that all use the pattern `-p "$prompt" < /dev/null`:
   1. `lib/plan.sh:202` — `_call_planning_batch()`: used by `--plan`, `--replan`, milestone splitting, artifact merging, and init synthesis. Most likely to hit the limit since planning prompts are the largest.
   2. `lib/agent_monitor.sh:51` — FIFO-monitored path in `_invoke_and_monitor()`: used by all main pipeline agents (coder, reviewer, tester, etc.) via `run_agent()`. Prompts include rendered templates with injected context, repo maps, and milestone content.
   3. `lib/agent_monitor.sh:263` — Non-FIFO fallback path in `_invoke_and_monitor()`: same prompt, rare code path for systems without mkfifo.

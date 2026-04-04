@@ -5,13 +5,10 @@ PASS
 88
 
 ## Reasoning
-- Scope is tightly defined: one new file (`lib/preflight.sh`), one new test file (`tests/test_preflight.sh`), and a single integration point in `tekhton.sh`
-- All eight check functions are named and fully specified with tables showing ecosystems, signals, and remediation ratings
-- Acceptance criteria are concrete and testable — each maps to a specific check function or config key
-- Watch For section pre-emptively covers the key implementation risks: mtime on CI, platform differences for `ss`/`lsof`, `.env` value-reading prohibition, monorepo scoping, detection engine ordering
-- Performance constraint (< 5 seconds) is explicit and measurable
-- Test cases for `tests/test_preflight.sh` are enumerated with specific scenarios (mock filesystem, touch-based mtime, `PREFLIGHT_ENABLED=false`, etc.)
-- M54 dependency for `attempt_remediation()` is called out explicitly
-- Config keys (`PREFLIGHT_ENABLED`, `PREFLIGHT_AUTO_FIX`, `PREFLIGHT_FAIL_ON_WARN`) are already declared in CLAUDE.md template variables table with correct defaults — no migration gap
-- No UI components; UI testability criterion is not applicable
-- Stage exclusion list (`--init`, `--plan`, `--diagnose`, `--dry-run`) is explicitly stated in Watch For
+- Scope is well-defined: the bug is specific (Linux MAX_ARG_STRLEN = 131072 bytes per positional argument), the trigger is known (large prompts from planning phase with embedded design docs, repo maps, codebase summaries), and the failure mode is exact ("Argument list too long")
+- Root cause is unambiguous: `claude` CLI invocations pass prompts as positional args; Linux kernel rejects any single arg exceeding 128KB
+- Fix approach is standard and well-understood: detect prompt size before exec and route oversized prompts via stdin pipe or temp file — no implementation ambiguity
+- Testability is implicit but concrete: a test can construct a 130KB+ string, invoke the agent wrapper, and assert no ARG_STRLEN error occurs and the run succeeds
+- No user-facing config changes, no migration impact
+- No UI surface — UI testability criterion not applicable
+- Historical pattern: similar targeted bug fixes all PASSed on first cycle — confident this will too
