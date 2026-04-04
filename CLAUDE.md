@@ -207,6 +207,14 @@ tekhton/
 │       ├── test_history.py
 │       ├── test_tree_sitter_languages.py
 │       └── test_extract_tags_integration.py
+├── platforms/              # Platform-specific UI knowledge (M57–M60)
+│   ├── _base.sh            # Platform resolution + universal helpers
+│   ├── _universal/         # Cross-platform UI guidance (always included)
+│   ├── web/                # Web: React, Vue, Svelte, Angular, HTML
+│   ├── mobile_flutter/     # Flutter/Dart
+│   ├── mobile_native_ios/  # Swift/SwiftUI/UIKit
+│   ├── mobile_native_android/ # Kotlin/Jetpack Compose
+│   └── game_web/           # Phaser, PixiJS, Three.js, Babylon.js
 ├── tests/                  # Self-tests
 │   └── fixtures/indexer_project/  # Multi-language fixture project
 └── examples/               # Sample dependency constraint validation scripts
@@ -317,6 +325,16 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `CODEBASE_SUMMARY` | Directory tree + git log for --replan |
 | `SPECIALIST_*_ENABLED` | Toggle per specialist (default: false each) |
 | `SPECIALIST_*_MODEL` | Model per specialist (default: CLAUDE_STANDARD_MODEL) |
+| `SPECIALIST_UI_ENABLED` | Toggle UI/UX specialist (default: auto — enabled when UI_PROJECT_DETECTED) |
+| `SPECIALIST_UI_MODEL` | Model for UI specialist (default: CLAUDE_STANDARD_MODEL) |
+| `SPECIALIST_UI_MAX_TURNS` | Turn limit for UI specialist (default: 8) |
+| `UI_PLATFORM` | Override auto-detected UI platform (default: auto) |
+| `DESIGN_SYSTEM` | Detected design system name (detected at runtime) |
+| `DESIGN_SYSTEM_CONFIG` | Path to design system config file (detected at runtime) |
+| `COMPONENT_LIBRARY_DIR` | Path to reusable component directory (detected at runtime) |
+| `UI_CODER_GUIDANCE` | Assembled UI guidance for coder prompt (computed at runtime) |
+| `UI_SPECIALIST_CHECKLIST` | Platform-specific specialist checklist (computed at runtime) |
+| `UI_TESTER_PATTERNS` | Platform-specific tester patterns (computed at runtime) |
 | `SPECIALIST_*_MAX_TURNS` | Turn limit per specialist (default: 8) |
 | `METRICS_ENABLED` | Enable run metrics collection (default: true) |
 | `METRICS_MIN_RUNS` | Min runs before adaptive calibration (default: 5) |
@@ -426,6 +444,7 @@ MILESTONE_ARCHIVE.md for individual milestone records.
 | Adaptive Pipeline 2.0 | 2.x | Context economics, milestone progression, clarification protocol, specialist reviews, run metrics | `DESIGN_v2.md` |
 | Brownfield Intelligence (Smart Init) | 2.x | Shell-driven crawler, tech stack detection, agent-assisted synthesis, incremental rescan | — |
 | Tekhton 3.0 — DAG, Indexing & Cost Reduction | 3.0–3.51 | 51 milestones: Milestone DAG, tree-sitter repo maps, Serena MCP, Watchtower, security agent, intake agent, express mode, TDD, browser planning, dry-run, rollback, health scoring, run memory, progress transparency | `DESIGN_v3.md` |
+| Environment Intelligence | 3.53–3.56 | Error pattern registry, auto-remediation engine, pre-flight validation, service readiness probing | `DESIGN_v3.md` |
 
 ### Milestone Management
 
@@ -434,42 +453,44 @@ MILESTONE_ARCHIVE.md for individual milestone records.
 Milestones are managed as individual files in `.claude/milestones/`.
 See `MANIFEST.cfg` for ordering, dependencies, and status.
 
-## Active Initiative: Environment Intelligence (Milestones 53–56)
+## Active Initiative: UI/UX Design Intelligence (Milestones 57–60)
 
-Tekhton has been self-hosting (building itself — a pure shell project). Real-world
-projects introduce failure modes the pipeline was never designed for: missing browser
-binaries, stale `node_modules`, databases not running, generated code out of date,
-port conflicts, wrong runtime versions. These are **not code bugs** but the build gate
-treats them identically — dumping raw output and hoping the build-fix agent figures
-it out. The agent cannot: it has no shell context, no environment awareness, and no
-guidance to distinguish `npx playwright install` from a TypeScript compilation error.
+Tekhton produces high-quality non-visual code but leaves significant quality gaps
+when building user interfaces. The pipeline treats UI implementation identically
+to backend work — the coder receives zero design guidance, the reviewer checks
+four behavioral bullets, and quality judgment is limited to "does it load?"
 
-The Environment Intelligence initiative adds three layers of defense:
+The initiative adds three layers of defense, organized as a platform adapter
+system that supports web, mobile (Flutter, iOS, Android), and game engine projects:
 
-1. **Error Pattern Registry (M53)** — Declarative pattern→category mapping that
-   classifies build/test output into six categories (env_setup, service_dep,
-   toolchain, resource, test_infra, code). Only code errors reach the build-fix agent.
-2. **Auto-Remediation Engine (M54)** — Safe, registry-driven fixes executed
-   automatically in the build gate before any agent retry.
-3. **Pre-flight Validation (M55)** — Lightweight checks BEFORE agent stages that
-   catch environment issues before burning turns. Uses detection engine output.
-4. **Service Readiness Probing (M56)** — Port-level service detection with
-   actionable startup instructions for databases, caches, and queues.
+1. **UI Platform Adapter Framework (M57)** — File-based adapter convention in
+   `platforms/` with universal + platform-specific UI knowledge. Detection-gated
+   resolution maps detected frameworks to adapter directories. User-extensible
+   via `.claude/platforms/` overrides.
+2. **Web UI Platform Adapter (M58)** — Design system detection (Tailwind, MUI,
+   shadcn, etc.), coder guidance, specialist checklist, and tester patterns for
+   web projects. Migrates existing `tester_ui_guidance.prompt.md` content.
+3. **UI/UX Specialist Reviewer (M59)** — New built-in specialist following the
+   security/performance/API pattern. Auto-enabled when `UI_PROJECT_DETECTED=true`.
+   8-category checklist covering component structure, design system consistency,
+   accessibility (WCAG 2.1 AA), responsive behavior, state presentation, and
+   interaction patterns.
+4. **Mobile & Game Platform Adapters (M60)** — Platform adapters for Flutter,
+   iOS (SwiftUI/UIKit), Android (Jetpack Compose), and browser-based game engines
+   (Phaser, PixiJS, Three.js, Babylon.js).
 
 ### Key Constraints
 
-- **No new runtime dependencies.** Pattern registry and pre-flight use only bash
-  builtins and standard Unix tools (ss, nc, lsof as available).
-- **Safe auto-remediation only.** Only commands rated `safe` execute automatically.
-  Blocklist enforced: no `rm -rf`, `drop`, `reset --hard`, `force`, `destroy`.
-- **Pre-flight must be fast.** Under 5 seconds total, no network calls, no agent
-  invocations, no test execution. Pure filesystem and process checks.
-- **Detection engine reuse.** Pre-flight leverages `detect_languages()`,
-  `detect_frameworks()`, `detect_test_frameworks()`, `detect_services()` which are
-  already sourced at runtime (tekhton.sh line 752+).
-- **Backward compatible.** All features default-on but skippable via config keys
-  (`PREFLIGHT_ENABLED`, `PREFLIGHT_AUTO_FIX`). Existing pipelines see improved
-  behavior, never degraded behavior.
+- **No new pipeline stages.** Enriches existing agents via prompt injection and
+  the specialist framework. Zero overhead for non-UI projects.
+- **Platform adapters are content directories, not code plugins.** Each platform
+  is 4 files (detect.sh + 3 prompt fragments) in a named directory.
+- **Detection-gated.** All features conditional on `UI_PROJECT_DETECTED`. Non-UI
+  projects see no prompt bloat, no extra specialist invocations.
+- **User-extensible.** `.claude/platforms/<name>/` in target projects can override
+  or extend built-in adapters. Custom platforms supported via `UI_PLATFORM=custom_<name>`.
+- **Backward compatible.** All features default-on for UI projects but overridable
+  via config keys (`SPECIALIST_UI_ENABLED`, `UI_PLATFORM`).
 - **All existing tests must pass** at every milestone.
 - **All new `.sh` files must pass `bash -n` and `shellcheck`.**
 

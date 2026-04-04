@@ -1295,6 +1295,357 @@ TESTER_WRITE_FAILING_MAX_TURNS=10       # Budget for test-write pass
 
 ---
 
+## System Design: UI/UX Design Intelligence (M57–M60)
+
+### Problem Statement
+
+Tekhton produces high-quality non-visual code but leaves significant quality gaps
+when building user interfaces. Testing across greenfield and brownfield projects
+with visual components reveals a consistent pattern: the pipeline treats UI
+implementation identically to backend work. The coder receives zero design guidance,
+the reviewer checks four behavioral bullets (CSS class references, E2E coverage,
+event handlers, aria attributes), and quality judgment is limited to "does it load
+without crashing?"
+
+The root causes are structural:
+
+1. **The coder is design-blind.** `coder.prompt.md` contains no `{{IF:UI_PROJECT_DETECTED}}`
+   block. A coder building a React dashboard gets the same prompt as one writing a
+   database migration — no component structure guidance, no design system awareness,
+   no accessibility mandates, no responsive patterns.
+
+2. **No design system awareness.** Detection identifies testing frameworks (Playwright,
+   Cypress) and UI frameworks (React, Vue) but not design systems (Tailwind, MUI,
+   shadcn, Flutter ThemeData, SwiftUI environment values). The coder cannot know
+   "this project uses Tailwind with a custom theme config" so it invents bespoke
+   styles instead of using what exists.
+
+3. **No specialist for visual/UX concerns.** Security, performance, and API each
+   get a dedicated specialist with an 8-category checklist and `[BLOCKER]`/`[NOTE]`
+   output. UI/UX gets 4 bullets in the reviewer prompt — no dedicated review pass,
+   no structured findings, no rework routing for accessibility violations or broken
+   responsive layouts.
+
+4. **Platform blindness.** The existing UI detection is web-centric (scans for
+   `package.json` deps, `.tsx`/`.vue` files, CSS modules). Flutter apps, SwiftUI
+   apps, Jetpack Compose projects, and game engine projects all produce visual
+   interfaces but share almost nothing in terms of design conventions, component
+   patterns, or testing approaches. A single hardcoded set of UI guidance cannot
+   cover this spectrum.
+
+### Design Philosophy
+
+1. **Platform adapters, not hardcoded guidance.** UI knowledge is organized into
+   platform-specific directories. Each platform provides detection, coder guidance,
+   review criteria, and tester patterns. Adding a new platform means adding files
+   to a directory, not editing core pipeline code.
+
+2. **Enrich existing agents, don't fork them.** The coder gets richer context via
+   prompt injection — no "UI coder" variant. The specialist framework handles
+   review depth. No new pipeline stages.
+
+3. **Universal principles with platform-specific expression.** State presentation
+   (loading/error/empty), accessibility, component composition, and responsive/adaptive
+   layout are universal. How they manifest (CSS media queries vs. Flutter LayoutBuilder
+   vs. SwiftUI GeometryReader) is platform-specific.
+
+4. **Detection-gated, zero overhead for non-UI projects.** Every feature is
+   conditional on `UI_PROJECT_DETECTED`. Non-UI projects see no prompt bloat, no
+   extra specialist invocations, no detection latency.
+
+5. **Extensible by users.** A `.claude/platforms/<name>/` directory in the target
+   project overrides or extends Tekhton's built-in platform adapters. Projects with
+   unusual stacks can provide custom guidance without forking Tekhton.
+
+### System Architecture
+
+#### Platform Adapter Convention
+
+UI knowledge is organized as a file-based adapter system:
+
+```
+tekhton/
+├── platforms/                              # Platform-specific UI knowledge
+│   ├── _base.sh                            # Platform resolution + universal helpers
+│   ├── _universal/                         # Cross-platform guidance (always included)
+│   │   ├── coder_guidance.prompt.md        # State handling, a11y, composition
+│   │   └── specialist_checklist.prompt.md  # Universal review criteria
+│   ├── web/                                # Web: React, Vue, Svelte, Angular, HTML
+│   │   ├── detect.sh                       # Design system detection (web-specific)
+│   │   ├── coder_guidance.prompt.md        # CSS systems, responsive, web a11y
+│   │   ├── specialist_checklist.prompt.md  # Web-specific review criteria
+│   │   └── tester_patterns.prompt.md       # E2E patterns (Playwright, Cypress, etc.)
+│   ├── mobile_flutter/                     # Flutter/Dart
+│   │   ├── detect.sh                       # ThemeData, MaterialApp, widget tree
+│   │   ├── coder_guidance.prompt.md        # Widget composition, themes, adaptive
+│   │   ├── specialist_checklist.prompt.md  # Flutter-specific review criteria
+│   │   └── tester_patterns.prompt.md       # Widget tests, integration, golden
+│   ├── mobile_native_ios/                  # Swift/SwiftUI/UIKit
+│   │   ├── detect.sh                       # SwiftUI views, UIKit xibs, asset catalogs
+│   │   ├── coder_guidance.prompt.md        # HIG compliance, SF Symbols, SwiftUI idioms
+│   │   ├── specialist_checklist.prompt.md  # iOS-specific review criteria
+│   │   └── tester_patterns.prompt.md       # XCTest, UI testing, snapshot tests
+│   ├── mobile_native_android/              # Kotlin/Jetpack Compose/XML layouts
+│   │   ├── detect.sh                       # Compose, Material3, resource system
+│   │   ├── coder_guidance.prompt.md        # Compose idioms, Material Design, adaptive
+│   │   ├── specialist_checklist.prompt.md  # Android-specific review criteria
+│   │   └── tester_patterns.prompt.md       # Espresso, Compose testing, screenshot
+│   └── game_web/                           # Phaser, PixiJS, Three.js, Babylon.js
+│       ├── detect.sh                       # Engine detection, asset pipeline
+│       ├── coder_guidance.prompt.md        # Game loop, scene graph, asset management
+│       ├── specialist_checklist.prompt.md  # Game-specific review criteria
+│       └── tester_patterns.prompt.md       # Headless rendering, state-based testing
+```
+
+#### Platform Resolution Flow
+
+```
+detect_ui_framework()          # Existing — sets UI_PROJECT_DETECTED, UI_FRAMEWORK
+    │
+    ▼
+detect_ui_platform()           # NEW — maps framework + project type → platform dir
+    │                          #   flutter → mobile_flutter
+    │                          #   swiftui → mobile_native_ios
+    │                          #   react/vue/svelte/angular → web
+    │                          #   phaser/pixi/three/babylon → game_web
+    │                          #   jetpack-compose → mobile_native_android
+    │                          #   generic (2+ UI signals) → web (safe default)
+    │
+    ▼
+source platforms/<platform>/detect.sh    # Platform-specific design system detection
+    │                                    #   Sets: DESIGN_SYSTEM, DESIGN_SYSTEM_CONFIG,
+    │                                    #          COMPONENT_LIBRARY_DIR
+    │
+    ▼
+load_platform_fragments()      # NEW — reads .prompt.md files from platform dir
+    │                          #   Sets: UI_CODER_GUIDANCE, UI_SPECIALIST_CHECKLIST,
+    │                          #          UI_TESTER_PATTERNS
+    │                          #   Prepends _universal/ content, then platform content
+    │                          #   Checks .claude/platforms/<name>/ for user overrides
+    ▼
+(variables available for prompt rendering)
+```
+
+#### Coder Prompt Integration
+
+Add a `{{IF:UI_PROJECT_DETECTED}}` block to `coder.prompt.md` (currently absent):
+
+```markdown
+{{IF:UI_CODER_GUIDANCE}}
+
+## UI Implementation Guidance
+This is a UI project. Follow these guidelines for visual implementation.
+{{UI_CODER_GUIDANCE}}
+{{ENDIF:UI_CODER_GUIDANCE}}
+```
+
+The `UI_CODER_GUIDANCE` variable is assembled from three layers (in order):
+1. `platforms/_universal/coder_guidance.prompt.md` — state handling, accessibility
+   principles, component composition (always present)
+2. `platforms/<platform>/coder_guidance.prompt.md` — framework-specific patterns
+3. Design system context — if `DESIGN_SYSTEM` was detected, a block naming the
+   system and its config file path
+
+#### UI/UX Specialist
+
+New built-in specialist following the existing `specialist_security` pattern:
+
+- **Prompt**: `prompts/specialist_ui.prompt.md` — platform-agnostic skeleton that
+  loads `{{UI_SPECIALIST_CHECKLIST}}` from the resolved platform adapter
+- **Enablement**: `SPECIALIST_UI_ENABLED` — auto-set to `true` when
+  `UI_PROJECT_DETECTED=true` (new pattern: detection-gated default). Explicitly
+  overridable to `false` via `pipeline.conf`.
+- **Diff relevance** (`_specialist_diff_relevant "ui"`): `.tsx`, `.jsx`, `.vue`,
+  `.svelte`, `.css`, `.scss`, `.html`, `.dart`, `.swift`, `.kt`, `**/components/**`,
+  `**/pages/**`, `**/views/**`, `**/screens/**`, `**/widgets/**`, `**/scenes/**`
+- **Output**: `SPECIALIST_UI_FINDINGS.md` → consumed by reviewer via
+  `{{UI_FINDINGS_BLOCK}}` (same as `{{SECURITY_FINDINGS_BLOCK}}` pattern)
+- **Blocker threshold**: Broken accessibility (no keyboard/gesture nav, missing focus
+  management), missing state handling (no loading/error states on async UI), design
+  system violation that breaks visual consistency. Aesthetic preferences are `[NOTE]`.
+
+**Universal checklist categories** (8, in `_universal/specialist_checklist.prompt.md`):
+1. Component structure & reusability
+2. Design system / token consistency
+3. Responsive / adaptive behavior
+4. Accessibility (platform-appropriate: WCAG for web, HIG for iOS, Material a11y
+   for Android, engine-specific for games)
+5. State presentation (loading, error, empty, success)
+6. Interaction patterns (forms, modals/sheets, navigation, transitions)
+7. Visual hierarchy & layout consistency
+8. Platform convention adherence
+
+**Platform specialist checklists** add items specific to their domain. Example —
+`web/specialist_checklist.prompt.md` adds: CSS specificity management, hydration
+correctness (SSR), bundle impact of component libraries, progressive enhancement.
+`mobile_flutter/specialist_checklist.prompt.md` adds: unnecessary widget rebuilds,
+`const` constructor usage, platform channel UI thread safety.
+
+#### Scout Enhancement
+
+Expand the existing `{{IF:UI_PROJECT_DETECTED}}` block in `scout.prompt.md` to
+also identify:
+- The design system in use (component library, theme configuration)
+- Existing reusable components in scope
+- The project's breakpoint/adaptive layout conventions
+
+This enriches `SCOUT_REPORT.md` so the coder receives structured design context
+alongside the file map.
+
+#### Tester Guidance Expansion
+
+Replace the monolithic `tester_ui_guidance.prompt.md` with a composed approach:
+existing content migrates to `platforms/web/tester_patterns.prompt.md`, and each
+platform provides its own patterns. The tester prompt's `{{TESTER_UI_GUIDANCE}}`
+variable is assembled from the resolved platform's `tester_patterns.prompt.md`.
+
+New patterns added across platforms:
+- State management UI (loading/error/empty state rendering)
+- Modal/sheet/dialog behavior (focus trap, dismiss, scroll lock)
+- Keyboard/gesture navigation
+- Focus management (return focus after dismiss, skip-to-content)
+- Multi-step flows (wizard state, back nav, step validation)
+
+### Platform-Specific Detection Details
+
+#### Web (`platforms/web/detect.sh`)
+
+Detects:
+- **CSS framework**: `tailwind.config.*` → Tailwind; `bootstrap` in deps → Bootstrap;
+  `bulma` in deps → Bulma; `@unocss` → UnoCSS
+- **Component library**: `@mui/material` → MUI; `@chakra-ui` → Chakra;
+  `components.json` with `"$schema".*shadcn` → shadcn/ui; `@radix-ui` → Radix;
+  `antd` → Ant Design; `@headlessui` → Headless UI
+- **Design tokens**: `tailwind.config.*` theme section; `*.tokens.css`;
+  `variables.css`/`variables.scss`; CSS custom property files
+- **Component directory**: `src/components/ui/`, `components/common/`, `src/ui/`
+
+Exports: `DESIGN_SYSTEM`, `DESIGN_SYSTEM_CONFIG`, `COMPONENT_LIBRARY_DIR`
+
+#### Flutter (`platforms/mobile_flutter/detect.sh`)
+
+Detects:
+- **Theme system**: `ThemeData` usage in `lib/`; `MaterialApp`/`CupertinoApp` in
+  main; custom theme file (`*theme*.dart`, `*color*.dart`)
+- **Widget library**: `flutter_bloc`/`riverpod`/`provider` state management;
+  custom widget directory (`lib/widgets/`, `lib/ui/`, `lib/components/`)
+- **Design tokens**: Theme extension classes, `ColorScheme` customization
+
+#### iOS (`platforms/mobile_native_ios/detect.sh`)
+
+Detects:
+- **UI framework**: SwiftUI (`import SwiftUI` in sources) vs. UIKit (`UIViewController`
+  subclasses, `.xib`/`.storyboard` files)
+- **Design system**: Asset catalog (`Assets.xcassets`), custom color sets, SF Symbols
+  usage, custom `ViewModifier` files
+- **Component patterns**: `Views/` or `Screens/` directory, `ViewModels/`
+
+#### Android (`platforms/mobile_native_android/detect.sh`)
+
+Detects:
+- **UI framework**: Jetpack Compose (`@Composable` in sources) vs. XML layouts
+  (`res/layout/*.xml`)
+- **Design system**: Material3 (`material3` in deps), custom theme (`Theme.kt`,
+  `Color.kt`, `Type.kt`), resource-based theming (`res/values/colors.xml`,
+  `res/values/themes.xml`)
+- **Component patterns**: `ui/` package, `composables/` directory, `screens/` directory
+
+#### Web Games (`platforms/game_web/detect.sh`)
+
+Detects:
+- **Engine**: `phaser` → Phaser; `pixi.js`/`@pixi` → PixiJS; `three` → Three.js;
+  `@babylonjs` → Babylon.js (from `package.json` deps)
+- **Asset pipeline**: `assets/` or `public/assets/` directory, sprite sheets,
+  tilemap files, audio directories
+- **Scene structure**: `scenes/` directory, scene class patterns
+
+### User Override Mechanism
+
+Users can extend or override platform adapters by placing files in their project:
+
+```
+<project>/.claude/platforms/<platform_name>/
+├── detect.sh                       # Additional detection (sourced AFTER built-in)
+├── coder_guidance.prompt.md        # Appended to built-in guidance
+├── specialist_checklist.prompt.md  # Appended to built-in checklist
+└── tester_patterns.prompt.md       # Appended to built-in patterns
+```
+
+User files are **appended** to built-in content, not replacing it. This ensures
+the universal and platform-specific base is always present while allowing projects
+to add custom rules (e.g., "always use our `<AppButton>` wrapper, never raw
+`<button>`").
+
+A fully custom platform (e.g., for Godot, Unity, or an internal framework) can be
+defined entirely in `.claude/platforms/custom_<name>/` with all four files. The
+platform name is then set via `UI_PLATFORM=custom_<name>` in `pipeline.conf`.
+
+### Config Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SPECIALIST_UI_ENABLED` | `auto` | `auto` = enabled when `UI_PROJECT_DETECTED=true`. Set `true`/`false` to override. |
+| `SPECIALIST_UI_MODEL` | `CLAUDE_STANDARD_MODEL` | Model for UI specialist agent |
+| `SPECIALIST_UI_MAX_TURNS` | `8` | Turn limit for UI specialist |
+| `UI_PLATFORM` | `auto` | Override auto-detected platform. Set to a platform directory name. |
+| `UI_PLATFORM_DIR` | (computed) | Resolved platform directory path (read-only) |
+| `DESIGN_SYSTEM` | (detected) | Detected design system name (e.g., `tailwind`, `mui`, `material3`) |
+| `DESIGN_SYSTEM_CONFIG` | (detected) | Path to the design system config file |
+| `COMPONENT_LIBRARY_DIR` | (detected) | Path to the project's reusable component directory |
+
+### Milestone Breakdown
+
+| ID | Title | Depends | Parallel Group | Scope |
+|----|-------|---------|---------------|-------|
+| M57 | UI Platform Adapter Framework | M56 | — | `platforms/` directory, `_base.sh`, `_universal/`, `detect_ui_platform()`, `load_platform_fragments()`, prompt engine integration, user override mechanism |
+| M58 | Web UI Platform Adapter | M57 | ui_platforms | `platforms/web/` — design system detection, coder guidance, specialist checklist, tester patterns. Migrate `tester_ui_guidance.prompt.md`. |
+| M59 | UI/UX Specialist Reviewer | M57 | ui_platforms | `specialist_ui.prompt.md`, auto-enable logic, diff relevance filter, `{{UI_FINDINGS_BLOCK}}` injection, `{{UI_CODER_GUIDANCE}}` in coder prompt |
+| M60 | Mobile & Game Platform Adapters | M57 | ui_platforms | `platforms/mobile_flutter/`, `platforms/mobile_native_ios/`, `platforms/mobile_native_android/`, `platforms/game_web/` — detect, coder guidance, specialist checklist, tester patterns |
+
+M58, M59, and M60 share a parallel group because they are independent once M57
+establishes the framework. In practice they will execute sequentially in the
+current single-agent pipeline, but the DAG correctly models their independence.
+
+### Scope Boundaries — What This Does NOT Include
+
+- **Visual regression testing** (screenshot comparison) — requires vision model
+  integration. V4 candidate.
+- **Design mockup comparison** — requires image input to agents. V4 candidate.
+- **Storybook / component catalog integration** — useful but not essential for the
+  core design intelligence problem.
+- **Custom design system generation** — Tekhton is a pipeline, not a design tool.
+- **Native game engine platforms** (Unity C#, Unreal C++, Godot GDScript) — deferred
+  to user-contributed platform adapters or a future milestone. The `game_web` adapter
+  covers browser-based game engines only.
+- **React Native** — architecturally distinct from both web React and native mobile.
+  Deferred to a future `mobile_react_native/` adapter milestone.
+
+### Why This Design
+
+- **Platform adapters are content directories, not code plugins.** No plugin
+  registration API, no dynamic loading, no version compatibility matrix. A platform
+  is 4 markdown/shell files in a directory with a naming convention. This is the
+  simplest possible extension mechanism that supports the full platform spectrum.
+- **Enrichment over replacement.** The coder is enhanced with context, not replaced
+  with a "UI coder" variant. One prompt chain to maintain. The specialist adds
+  review depth through the proven specialist framework — no new pipeline stages,
+  no new rework loops, no new agent invocation infrastructure.
+- **Universal + platform layering.** Every UI project gets baseline guidance (state
+  handling, accessibility, composition). Platform-specific content is additive.
+  An unrecognized platform still gets the universal layer — degradation is graceful,
+  not cliff-edge.
+- **Auto-enable with explicit override.** `SPECIALIST_UI_ENABLED=auto` means UI
+  projects get the specialist without configuration, but operators can disable it.
+  This matches the security agent pattern (default-on) rather than the other
+  specialists (default-off), because UI quality gaps are as common as security gaps
+  in real-world projects.
+- **User overrides are append-only.** This prevents users from accidentally losing
+  the universal accessibility and state-handling guidance. If a project truly needs
+  to replace built-in guidance entirely, they can set `UI_PLATFORM=custom_<name>`
+  and provide a complete adapter.
+
+---
+
 ## V4 Forward Seeds
 
 The following capabilities are explicitly designed for but not built in V3:
@@ -1317,8 +1668,9 @@ The following capabilities are explicitly designed for but not built in V3:
   the universal schema for metric export. V4/V5 adds connectors for DataDog,
   NewRelic, Prometheus, and custom webhook targets.
 - **Health score evolution** — V4 adds security posture dimension (from M09
-  findings history), accessibility dimension, performance dimension. Enterprise
-  users can set minimum health scores as deployment gates.
+  findings history), accessibility dimension (from M59 UI specialist findings),
+  performance dimension. Enterprise users can set minimum health scores as
+  deployment gates.
 - **Quota intelligence** — V4 ships default quota check scripts for common
   setups (Pro subscription, API key, team plan). Parallel workers share a
   quota pool to prevent N workers exhausting quota N times faster.
@@ -1331,6 +1683,18 @@ The following capabilities are explicitly designed for but not built in V3:
   recommends standard or test_first order based on task type. Bug fixes →
   test_first. New features → standard. Data-driven from rework cycle history.
   Requires PM maturity and calibration data from V3 runs.
+- **Visual regression testing** — Vision model integration for screenshot-based
+  comparison. The UI platform adapter framework (M57) provides the injection
+  points; V4 adds actual screenshot capture and vision model evaluation.
+- **Design mockup comparison** — Image input to agents for comparing
+  implementation against design specs (Figma exports, wireframes). Requires
+  vision model capabilities.
+- **Native game engine adapters** — Unity (C#), Unreal (C++), Godot (GDScript)
+  platform adapters for `platforms/`. The adapter framework (M57) and user
+  override mechanism support community-contributed adapters in the interim.
+- **React Native adapter** — Architecturally distinct from both web React and
+  native mobile. `platforms/mobile_react_native/` with bridge-aware detection,
+  native module guidance, and platform-split testing patterns.
 
 ---
 
