@@ -30,6 +30,8 @@ source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
 source "${TEKHTON_HOME}/lib/preflight.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight_services.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/preflight_services_infer.sh"
 
 PASS=0
 FAIL=0

@@ -129,7 +129,7 @@ MOCK_EOF
 chmod +x "${TMPDIR_TEST}/claude"
 
 # Generate a prompt larger than 128KB (131073 bytes)
-large_prompt=$(python3 -c "print('X' * 200000)" 2>/dev/null || printf '%0.s.' $(seq 1 200000))
+large_prompt=$(python3 -c "print('X' * 200000)" 2>/dev/null || head -c 200000 < /dev/zero | tr '\0' 'X')
 prompt_len=${#large_prompt}
 if [[ "$prompt_len" -ge 131072 ]]; then
     pass "Generated test prompt of ${prompt_len} bytes (> 128KB)"
