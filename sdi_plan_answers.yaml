@@ -605,3 +605,176 @@ sections:
       - File parsing: Rich progress bar on stderr ("Parsing files [143/892] ...")
       - Graph analysis: spinner on stderr ("Building dependency graph...")
       - Suppressed when --quiet or when stderr is not a TTY
+
+  file_system_operations:
+    title: "File System Operations"
+    phase: 2
+    required: false
+    guidance: "What files/dirs does the tool create, read, modify, delete?"
+    answer: |
+      Directory structure created by `sdi init`:
+
+      .sdi/
+      ├── config.toml          # Project configuration (user-editable, committed to VCS)
+      ├── boundaries.yaml      # Ratified boundary spec (user-editable, committed to VCS)
+      ├── snapshots/           # Snapshot JSON files (committed to VCS)
+      │   └── <timestamp>-<short-sha>.json
+      └── cache/               # Internal caches (gitignored)
+          ├── partition.json   # Last Leiden partition for seeding
+          ├── parse_cache/     # Tree-sitter parse results keyed by file content hash
+          └── fingerprints/    # Pattern fingerprint hashes keyed by file content hash
+
+      VCS policy:
+      - .sdi/config.toml, .sdi/boundaries.yaml, .sdi/snapshots/ — committed. These are the
+        project's structural health record. Teams should be able to review snapshot history
+        in git log just like they review code changes.
+      - .sdi/cache/ — gitignored. `sdi init` adds `.sdi/cache/` to .gitignore (or creates
+        .sdi/.gitignore).
+
+      Atomic writes:
+      - All file creation uses tempfile in the target directory + os.replace() (atomic rename).
+        A crash or SIGINT mid-write never produces a partial snapshot or corrupted config.
+      - Snapshot filenames include timestamp and short SHA, so concurrent runs (unlikely but
+        possible in CI) produce distinct files rather than overwriting.
+
+      Temporary files:
+      - Created in the target directory (same filesystem for atomic rename) via Python tempfile.
+      - Cleaned up on normal exit and in signal handlers. Stale tempfiles (from hard kills)
+        are ignored — they have random suffixes and don't interfere with operation.
+
+      Lock files: None in v1. SDI operations are idempotent — running two snapshots
+      concurrently produces two snapshot files, both valid. The cache directory uses
+      content-addressed filenames (hash-keyed) so concurrent writes don't conflict.
+
+      File permissions: Default umask. No special permission handling — SDI operates within
+      the user's normal permissions context.
+
+      Snapshot retention: `sdi snapshot` enforces the configured retention limit (default: 100).
+      After writing a new snapshot, if the snapshot count exceeds the limit, the oldest
+      snapshots are deleted. This keeps the .sdi/snapshots/ directory bounded without manual
+      cleanup.
+
+  performance_resource_usage:
+    title: "Performance & Resource Usage"
+    phase: 2
+    required: false
+    guidance: "Expected performance, memory, large input handling, caching?"
+    answer: |
+      Performance targets (must-hit for CI viability):
+      - Small project (< 10K LOC, ~100 files): snapshot in < 5 seconds
+      - Medium project (10K-100K LOC, ~1000 files): snapshot in < 30 seconds
+      - Large project (100K-500K LOC, ~5000 files): snapshot in < 2 minutes
+      - Very large (500K+ LOC): best-effort, may require exclude patterns to stay under 5 min
+
+      Performance breakdown by stage (estimated for medium project):
+      - Tree-sitter parsing: ~2-5 seconds (1M+ lines/sec native speed, bottleneck is file I/O)
+      - Dependency graph construction: < 1 second (in-memory graph building)
+      - Leiden community detection: < 1 second for seeded runs, 2-5 seconds cold start
+        (igraph C backend, typical convergence in 2-5 iterations)
+      - Pattern fingerprinting: 1-5 seconds (AST query traversal, proportional to pattern count)
+      - Snapshot assembly + delta: < 1 second (JSON serialization + graph comparison)
+
+      Memory usage:
+      - Tree-sitter CSTs are parsed per-file and features extracted immediately. Full CSTs are
+        NOT held in memory simultaneously — parse, extract, discard. Memory proportional to
+        the largest single file, not total codebase size.
+      - Dependency graph: held entirely in memory via igraph. For 5000-node graphs this is
+        negligible (< 50MB). For very large monorepos (50K+ files) this could reach hundreds
+        of MB — document this as a known scaling limit.
+      - Pattern fingerprints: hash-based, constant memory per pattern instance.
+
+      Caching strategy:
+      - Parse cache: keyed by file content hash (SHA-256 of file bytes). If file hasn't changed,
+        reuse extracted features from .sdi/cache/parse_cache/. This makes incremental snapshots
+        (few files changed since last run) near-instant for the parsing stage.
+      - Partition cache: previous Leiden partition stored in .sdi/cache/partition.json. Seeding
+        from this makes subsequent community detection runs faster and more stable.
+      - Cache invalidation: content-addressed (hash-keyed) so stale entries are naturally
+        orphaned. Periodic cleanup on `sdi snapshot` removes orphaned cache entries older
+        than the configured retention window.
+
+      Parallelism:
+      - File parsing uses concurrent.futures.ProcessPoolExecutor. Worker count defaults to
+        os.cpu_count() but is configurable via SDI_WORKERS environment variable.
+      - Graph operations are single-threaded (igraph limitation) but are fast enough that
+        parallelism isn't needed.
+
+  versioning_compatibility:
+    title: "Versioning & Compatibility"
+    phase: 2
+    required: false
+    guidance: "Semver? CLI stability? Output format stability? Config versioning?"
+    answer: |
+      Versioning scheme: Semantic versioning (semver). MAJOR.MINOR.PATCH.
+
+      Pre-1.0 (0.x.y):
+      - No stability guarantees. CLI flags, config keys, snapshot schema, and boundary spec
+        format may all change between minor versions.
+      - This is explicitly a prototype/validation phase. The snapshot schema will evolve as
+        we learn what measurements are actually useful in practice.
+
+      Post-1.0:
+      - CLI interface: flags and commands are stable across minor versions. New commands and
+        flags may be added. Existing flags are never removed or have their semantics changed
+        without a major version bump. Deprecation warnings for at least one minor version
+        before removal.
+      - Snapshot JSON schema: versioned via "snapshot_version" field in every snapshot file.
+        SDI can read snapshots from older schema versions for trend computation. Schema
+        changes that would break backward-readable compatibility require a major version bump.
+      - Config file: versioned implicitly. New config keys are additive with defaults — old
+        config files continue to work. Removed keys are silently ignored with a deprecation
+        warning.
+      - Boundary spec: versioned via "version" field. Same backward-compatibility rules as
+        snapshot schema.
+
+      Backward compatibility guarantees (post-1.0):
+      - `sdi snapshot` always produces a valid snapshot file readable by the same or later version
+      - `sdi diff` and `sdi trend` can always read snapshots from the same major version
+      - `sdi check` exit code semantics (0 = pass, 1 = fail, 2 = config error, 3 = analysis error)
+        are stable across all versions
+      - Config keys are never repurposed (a removed key is reserved forever)
+
+  distribution_installation:
+    title: "Distribution & Installation"
+    phase: 2
+    required: false
+    guidance: "How do users install? Package managers, binary releases, build from source?"
+    answer: |
+      Primary installation methods:
+
+      1. PyPI (primary):
+         pip install sdi
+         Installs the `sdi` command-line entry point. Pulls tree-sitter and leidenalg as
+         dependencies. Tree-sitter grammar packages are installed separately per-language:
+         pip install tree-sitter-python tree-sitter-javascript tree-sitter-typescript
+         Consider a convenience bundle: pip install sdi[all] or sdi[web] (TS+JS+Python),
+         sdi[systems] (Go+Rust+C) for common language packs.
+
+      2. Homebrew:
+         brew tap geoffgodwin/sdi
+         brew install sdi
+         Formula in a separate homebrew-sdi tap repo. Handles Python dependency isolation via
+         Homebrew's Python virtualenv conventions. Includes the most common grammar packages.
+
+      3. Build from source:
+         git clone https://github.com/GeoffGodwin/sdi.git
+         cd sdi
+         pip install -e ".[dev]"
+         Requires Python 3.10+.
+
+      Platform support:
+      - Linux (primary development and CI platform)
+      - macOS (tested in CI, Homebrew formula ensures it works)
+      - Windows: best-effort. tree-sitter and igraph have Windows wheels. leidenalg may
+        require C compiler on Windows — document this. Not a blocking concern for v1.
+
+      System requirements:
+      - Python 3.10+
+      - git (must be in PATH — SDI shells out to git for history analysis)
+      - No other system dependencies (tree-sitter, igraph, leidenalg all distribute
+        pre-built wheels for major platforms)
+
+      Update mechanism: Manual only in v1 (pip install --upgrade sdi, brew upgrade sdi).
+      No self-update command. Version check on `sdi --version` could print a notice if a
+      newer version is available on PyPI, but this requires a network call so it's opt-in
+      only and off by default (respects the "no network calls" philosophy).
