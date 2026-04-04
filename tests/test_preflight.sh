@@ -28,6 +28,14 @@ source "${TEKHTON_HOME}/lib/detect.sh"
 source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/preflight_checks.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/preflight_checks_env.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/preflight_services.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/preflight_services_infer.sh"
 
 PASS=0
 FAIL=0
@@ -619,6 +627,525 @@ fi
 
 _cleanup_test_dir "$PROJECT_DIR"
 export PREFLIGHT_AUTO_FIX=true
+
+# =============================================================================
+# M56: Service inference from docker-compose.yml
+# =============================================================================
+
+echo "=== Service inference: docker-compose ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+cat > "$PROJECT_DIR/docker-compose.yml" <<'COMPOSE'
+services:
+  db:
+    image: postgres:15
+    ports:
+      - "5433:5432"
+  cache:
+    image: redis:7-alpine
+COMPOSE
+
+_PF_SERVICES=()
+_pf_infer_from_compose
+
+# Should detect 2 services
+if [[ ${#_PF_SERVICES[@]} -eq 2 ]]; then
+    pass
+else
+    fail "docker-compose should detect 2 services (got ${#_PF_SERVICES[@]})"
+fi
+
+# PostgreSQL should use host port 5433 (not default 5432)
+local_pg=""
+for entry in "${_PF_SERVICES[@]}"; do
+    if [[ "$entry" == PostgreSQL* ]]; then
+        local_pg="$entry"
+        break
+    fi
+done
+if [[ "$local_pg" == *"|5433|"* ]]; then
+    pass
+else
+    fail "PostgreSQL should use host port 5433 from port mapping (got: $local_pg)"
+fi
+
+# Redis should use default port 6379
+local_redis=""
+for entry in "${_PF_SERVICES[@]}"; do
+    if [[ "$entry" == Redis* ]]; then
+        local_redis="$entry"
+        break
+    fi
+done
+if [[ "$local_redis" == *"|6379|"* ]]; then
+    pass
+else
+    fail "Redis should use default port 6379 (got: $local_redis)"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Service inference from package.json
+# =============================================================================
+
+echo "=== Service inference: package.json ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+cat > "$PROJECT_DIR/package.json" <<'PKG'
+{
+  "name": "test-app",
+  "dependencies": {
+    "ioredis": "^5.0.0",
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "mongoose": "^7.0.0"
+  }
+}
+PKG
+
+_PF_SERVICES=()
+_pf_infer_from_packages
+
+# Should detect Redis (ioredis) and MongoDB (mongoose)
+if [[ ${#_PF_SERVICES[@]} -eq 2 ]]; then
+    pass
+else
+    fail "package.json should detect 2 services (got ${#_PF_SERVICES[@]})"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Service inference from .env.example
+# =============================================================================
+
+echo "=== Service inference: .env.example ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+cat > "$PROJECT_DIR/.env.example" <<'ENV'
+DATABASE_URL=postgres://localhost:5432/mydb
+REDIS_URL=redis://localhost:6379
+APP_SECRET=changeme
+ENV
+
+_PF_SERVICES=()
+_pf_infer_from_env
+
+# Should detect PostgreSQL and Redis
+if [[ ${#_PF_SERVICES[@]} -eq 2 ]]; then
+    pass
+else
+    fail ".env.example should detect 2 services (got ${#_PF_SERVICES[@]})"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Service deduplication across sources
+# =============================================================================
+
+echo "=== Service dedup: multiple sources ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+# Both docker-compose and package.json mention postgres
+cat > "$PROJECT_DIR/docker-compose.yml" <<'COMPOSE'
+services:
+  db:
+    image: postgres:15
+COMPOSE
+
+cat > "$PROJECT_DIR/package.json" <<'PKG'
+{
+  "dependencies": { "pg": "^8.0.0" }
+}
+PKG
+
+_PF_SERVICES=()
+_pf_infer_from_compose
+_pf_infer_from_packages
+
+# Should have only 1 PostgreSQL entry (deduplicated)
+pg_count=0
+for entry in "${_PF_SERVICES[@]}"; do
+    [[ "$entry" == PostgreSQL* ]] && pg_count=$((pg_count + 1))
+done
+
+if [[ "$pg_count" -eq 1 ]]; then
+    pass
+else
+    fail "PostgreSQL should be deduplicated (got $pg_count entries)"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Port probe with temporary listener
+# =============================================================================
+
+echo "=== Port probe: temporary listener ==="
+
+# Start a temporary TCP listener on an ephemeral port
+local_port=0
+if command -v socat &>/dev/null; then
+    socat TCP-LISTEN:0,fork,reuseaddr /dev/null &
+    socat_pid=$!
+    sleep 0.5
+    # Get actual port from /proc or ss
+    local_port=$(ss -tlnp 2>/dev/null | grep "pid=${socat_pid}" | grep -oP ':\K\d+' | head -1 || true)
+    if [[ -z "$local_port" ]] || [[ "$local_port" == "0" ]]; then
+        kill "$socat_pid" 2>/dev/null || true
+        wait "$socat_pid" 2>/dev/null || true
+        # Fallback: use a known available port with bash /dev/tcp approach
+        local_port=""
+    fi
+fi
+
+# If socat failed, use a fixed high port with a bash listener
+if [[ -z "$local_port" ]] || [[ "$local_port" == "0" ]]; then
+    local_port=39182
+    # Start a simple listener using bash coproc or nc
+    if command -v nc &>/dev/null; then
+        nc -l -p "$local_port" &>/dev/null &
+        socat_pid=$!
+        sleep 0.5
+    else
+        # Skip if no listener tool available
+        pass
+        echo "  (skipped: no socat or nc available)"
+        socat_pid=""
+    fi
+fi
+
+if [[ -n "${socat_pid:-}" ]]; then
+    if _probe_service_port "127.0.0.1" "$local_port" 2; then
+        pass
+    else
+        fail "Port probe should detect open port $local_port"
+    fi
+
+    # Kill listener and verify closed port
+    kill "$socat_pid" 2>/dev/null || true
+    wait "$socat_pid" 2>/dev/null || true
+    sleep 0.3
+
+    if ! _probe_service_port "127.0.0.1" "$local_port" 1; then
+        pass
+    else
+        fail "Port probe should detect closed port $local_port after listener stopped"
+    fi
+fi
+
+# =============================================================================
+# M56: Docker daemon check (mock docker command)
+# =============================================================================
+
+echo "=== Docker daemon check: not installed ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+cat > "$PROJECT_DIR/docker-compose.yml" <<'COMPOSE'
+services:
+  db:
+    image: postgres:15
+COMPOSE
+
+# Override PATH to hide real docker
+_orig_path="$PATH"
+export PATH="/usr/bin:/bin"
+
+_PF_PASS=0; _PF_WARN=0; _PF_FAIL=0; _PF_REMEDIATED=0; _PF_REPORT_LINES=()
+_PF_LANGUAGES=""; _PF_TEST_FWS=""
+
+# Only test if docker is truly not in the restricted PATH
+if ! command -v docker &>/dev/null; then
+    _preflight_check_docker
+
+    if [[ "$_PF_WARN" -ge 1 ]]; then
+        pass
+    else
+        fail "Missing docker should produce warning (warn=$_PF_WARN)"
+    fi
+
+    local_report=$(printf '%s\n' "${_PF_REPORT_LINES[@]}")
+    if echo "$local_report" | grep -qi "docker.*not.*installed"; then
+        pass
+    else
+        fail "Report should mention docker not installed"
+    fi
+else
+    # docker exists even in restricted PATH — skip
+    pass
+    pass
+fi
+
+export PATH="$_orig_path"
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Dev server detection from Playwright config
+# =============================================================================
+
+echo "=== Dev server: Playwright config ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+cat > "$PROJECT_DIR/playwright.config.ts" <<'PW'
+export default defineConfig({
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://localhost:3000',
+  },
+});
+PW
+
+_PF_PASS=0; _PF_WARN=0; _PF_FAIL=0; _PF_REMEDIATED=0; _PF_REPORT_LINES=()
+_PF_LANGUAGES=""; _PF_TEST_FWS=""
+_preflight_check_dev_server
+
+# Should produce either pass or warn for port 3000
+local_total=$(( _PF_PASS + _PF_WARN ))
+if [[ "$local_total" -ge 1 ]]; then
+    pass
+else
+    fail "Playwright config should trigger dev server check (total=$local_total)"
+fi
+
+local_report=$(printf '%s\n' "${_PF_REPORT_LINES[@]}")
+if echo "$local_report" | grep -q "3000"; then
+    pass
+else
+    fail "Report should mention port 3000"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Services report section in PREFLIGHT_REPORT.md
+# =============================================================================
+
+echo "=== Services report section ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+export PREFLIGHT_AUTO_FIX=false
+
+# Set up project with a service dependency
+cat > "$PROJECT_DIR/docker-compose.yml" <<'COMPOSE'
+services:
+  db:
+    image: postgres:15
+COMPOSE
+echo '{}' > "$PROJECT_DIR/package.json"
+
+run_preflight_checks || true
+
+if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]]; then
+    pass
+else
+    fail "PREFLIGHT_REPORT.md should be created"
+fi
+
+# Check for services section
+if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]] && grep -q "## Services" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+    pass
+else
+    fail "Report should have Services section"
+fi
+
+# Check for table header
+if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]] && grep -q "| Service | Port | Status | Source |" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+    pass
+else
+    fail "Report should have services status table"
+fi
+
+# Check PostgreSQL appears in table
+if [[ -f "$PROJECT_DIR/PREFLIGHT_REPORT.md" ]] && grep -q "PostgreSQL" "$PROJECT_DIR/PREFLIGHT_REPORT.md"; then
+    pass
+else
+    fail "Report should list PostgreSQL in services table"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
+export PREFLIGHT_AUTO_FIX=true
+
+# =============================================================================
+# M56: CI environment downgrades service warnings
+# =============================================================================
+
+echo "=== CI environment: downgrade warnings ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+export CI=true
+
+cat > "$PROJECT_DIR/.env.example" <<'ENV'
+REDIS_URL=redis://localhost:6379
+ENV
+
+_PF_PASS=0; _PF_WARN=0; _PF_FAIL=0; _PF_REMEDIATED=0; _PF_REPORT_LINES=()
+_PF_LANGUAGES=""; _PF_TEST_FWS=""
+_PF_SERVICES=()
+_preflight_check_services
+
+# In CI, service not running should be pass (not warn)
+if [[ "$_PF_WARN" -eq 0 ]]; then
+    pass
+else
+    fail "CI should not produce service warnings (warn=$_PF_WARN)"
+fi
+
+unset CI
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Service inference from requirements.txt (Python)
+# =============================================================================
+
+echo "=== Service inference: requirements.txt (Python) ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+cat > "$PROJECT_DIR/requirements.txt" <<'REQ'
+psycopg2-binary==2.9.9
+redis==5.0.0
+pymongo==4.6.0
+flask==3.0.0
+REQ
+
+_PF_SERVICES=()
+_pf_infer_from_packages
+
+# Should detect PostgreSQL (psycopg2-binary), Redis, MongoDB (pymongo)
+if [[ ${#_PF_SERVICES[@]} -eq 3 ]]; then
+    pass
+else
+    fail "requirements.txt should detect 3 services: PostgreSQL, Redis, MongoDB (got ${#_PF_SERVICES[@]})"
+fi
+
+local_pg_found=false
+for entry in "${_PF_SERVICES[@]}"; do
+    [[ "$entry" == PostgreSQL* ]] && local_pg_found=true
+done
+if [[ "$local_pg_found" == "true" ]]; then
+    pass
+else
+    fail "requirements.txt with psycopg2-binary should detect PostgreSQL"
+fi
+
+local_redis_found=false
+for entry in "${_PF_SERVICES[@]}"; do
+    [[ "$entry" == Redis* ]] && local_redis_found=true
+done
+if [[ "$local_redis_found" == "true" ]]; then
+    pass
+else
+    fail "requirements.txt with redis should detect Redis"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Service inference from go.mod (Go)
+# =============================================================================
+
+echo "=== Service inference: go.mod (Go) ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+cat > "$PROJECT_DIR/go.mod" <<'GOMOD'
+module example.com/app
+
+go 1.21
+
+require (
+	github.com/jackc/pgx/v5 v5.4.3
+	github.com/redis/go-redis/v9 v9.0.0
+)
+GOMOD
+
+_PF_SERVICES=()
+_pf_infer_from_packages
+
+# Should detect PostgreSQL (pgx) and Redis (go-redis)
+if [[ ${#_PF_SERVICES[@]} -eq 2 ]]; then
+    pass
+else
+    fail "go.mod should detect 2 services: PostgreSQL and Redis (got ${#_PF_SERVICES[@]})"
+fi
+
+local_pg_found=false
+for entry in "${_PF_SERVICES[@]}"; do
+    [[ "$entry" == PostgreSQL* ]] && local_pg_found=true
+done
+if [[ "$local_pg_found" == "true" ]]; then
+    pass
+else
+    fail "go.mod with pgx should detect PostgreSQL"
+fi
+
+local_redis_found=false
+for entry in "${_PF_SERVICES[@]}"; do
+    [[ "$entry" == Redis* ]] && local_redis_found=true
+done
+if [[ "$local_redis_found" == "true" ]]; then
+    pass
+else
+    fail "go.mod with go-redis should detect Redis"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
+
+# =============================================================================
+# M56: Startup instructions appear in services report for not-running services
+# =============================================================================
+
+echo "=== Services report: startup instructions ==="
+
+PROJECT_DIR=$(_make_test_dir)
+export PROJECT_DIR
+
+# Create compose file so startup instructions are always generated
+cat > "$PROJECT_DIR/docker-compose.yml" <<'COMPOSE'
+services:
+  db:
+    image: postgres:15
+COMPOSE
+
+# Inject a not_running entry directly — bypasses port probing for determinism
+_PF_SERVICES=("PostgreSQL|5432|docker-compose|not_running|5432")
+
+local_report=$(_pf_emit_services_report)
+
+# Report should include the startup instructions header
+if echo "$local_report" | grep -q "Start it with:"; then
+    pass
+else
+    fail "Services report should include 'Start it with:' for not-running services"
+fi
+
+# When compose file is present, a docker command is always included
+if echo "$local_report" | grep -qiE "docker"; then
+    pass
+else
+    fail "Services report should include a docker command when compose file is present"
+fi
+
+_cleanup_test_dir "$PROJECT_DIR"
 
 # =============================================================================
 # Results

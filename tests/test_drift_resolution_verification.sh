@@ -103,22 +103,23 @@ else
 fi
 
 # ============================================================
-# Test 7: Verify the milestone pattern fix in lib/plan.sh:515
+# Test 7: Verify the milestone pattern fix in lib/plan_milestone_review.sh
 # The bug: OLD pattern was ^#{2,3} (2-3 hashes)
 # The fix: NEW pattern is ^#{2,4} (2-4 hashes) to match plan_generate output
+# (_display_milestone_summary was extracted from plan.sh to plan_milestone_review.sh)
 # ============================================================
-PATTERN_LINE=$(grep -n '_display_milestone_summary' "${TEKHTON_HOME}/lib/plan.sh" | head -1 | cut -d: -f1)
+PATTERN_LINE=$(grep -n '_display_milestone_summary' "${TEKHTON_HOME}/lib/plan_milestone_review.sh" | head -1 | cut -d: -f1)
 if [ -z "$PATTERN_LINE" ]; then
     fail "Could not find _display_milestone_summary function"
 else
     # Extract the grep pattern from within _display_milestone_summary (search ±15 lines)
     SEARCH_START=$((PATTERN_LINE))
     SEARCH_END=$((PATTERN_LINE + 30))
-    GREP_PATTERN=$(sed -n "${SEARCH_START},${SEARCH_END}p" "${TEKHTON_HOME}/lib/plan.sh" | grep -o '\^#{2,4}' | head -1)
+    GREP_PATTERN=$(sed -n "${SEARCH_START},${SEARCH_END}p" "${TEKHTON_HOME}/lib/plan_milestone_review.sh" | grep -o '\^#{2,4}' | head -1)
     if [ "$GREP_PATTERN" = '^#{2,4}' ]; then
-        pass "lib/plan.sh _display_milestone_summary has corrected pattern (^#{2,4})"
+        pass "lib/plan_milestone_review.sh _display_milestone_summary has corrected pattern (^#{2,4})"
     else
-        fail "lib/plan.sh pattern should be ^#{2,4} but found: $GREP_PATTERN"
+        fail "lib/plan_milestone_review.sh pattern should be ^#{2,4} but found: $GREP_PATTERN"
     fi
 fi
 

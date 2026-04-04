@@ -6,6 +6,12 @@ set -euo pipefail
 # Provides the interactive planning flow: project type selection, template
 # resolution, interactive interview, completeness check, and generation.
 # Sourced by tekhton.sh when --plan is passed. Do not run directly.
+#
+# Sub-modules (sourced below):
+#   plan_batch.sh           — _call_planning_batch(), _extract_template_sections()
+#   plan_milestone_review.sh — run_plan_review(), _display_milestone_summary()
+#   plan_answers_flow.sh    — _run_plan_export_questions(), _run_plan_with_answers_file(),
+#                             _offer_answer_file_resume()
 # =============================================================================
 
 # --- Constants ---------------------------------------------------------------
@@ -88,6 +94,13 @@ PLAN_PROJECT_LABELS=(
     "Library / Package     (reusable module published to a registry)"
     "Custom                (anything else — minimal template)"
 )
+
+# --- Source extracted sub-modules --------------------------------------------
+
+source "${TEKHTON_HOME}/lib/plan_batch.sh"
+source "${TEKHTON_HOME}/lib/plan_milestone_review.sh"
+source "${TEKHTON_HOME}/lib/plan_answers_flow.sh"
+
 # --- Project Type Selection --------------------------------------------------
 
 # Displays the project type menu and reads the user's choice.
@@ -138,150 +151,12 @@ select_project_type() {
         fi
     done
 }
+
 # --- Completeness Check ------------------------------------------------------
 # Extracted to lib/plan_completeness.sh — sourced separately by tekhton.sh.
 
 # --- Planning State Persistence ----------------------------------------------
 # Extracted to lib/plan_state.sh — sourced separately by tekhton.sh.
-
-# --- Batch Planning Call Helper ----------------------------------------------
-
-# _call_planning_batch — Call claude in batch mode and print text content to stdout.
-#
-# Uses --output-format text so the response is plain text with no JSON parsing.
-# Does NOT use --dangerously-skip-permissions — planning agents generate text
-# only; the caller (shell) is responsible for writing any files.
-#
-# The response is tee'd to the log file and also passed through to stdout so
-# the caller can capture it with output=$(_call_planning_batch ...).
-#
-# Shows a progress indicator on /dev/tty while claude is running so the user
-# knows the operation hasn't stalled. Skipped in TEKHTON_TEST_MODE.
-#
-# Usage:
-#   output=$(_call_planning_batch model max_turns prompt log_file)
-#   rc=$?   # claude's exit code
-#
-# Prints the full text response to stdout. Returns claude's exit code.
-_call_planning_batch() {
-    local model="$1"
-    local max_turns="$2"
-    local prompt="$3"
-    local log_file="$4"
-
-    # Start an in-place spinner on /dev/tty (visible even inside $() capture).
-    # Animates a single line with elapsed time so the user knows it's working
-    # without flooding the terminal with output over 20+ minute runs.
-    local spinner_pid=""
-    if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
-        (
-            local chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-            local start_ts
-            start_ts=$(date +%s)
-            local i=0
-            while true; do
-                local now
-                now=$(date +%s)
-                local elapsed=$(( now - start_ts ))
-                local mins=$(( elapsed / 60 ))
-                local secs=$(( elapsed % 60 ))
-                printf '\r\033[0;36m[tekhton]\033[0m %s Generating... %dm%02ds ' \
-                    "${chars:i%${#chars}:1}" "$mins" "$secs" > /dev/tty
-                i=$(( i + 1 ))
-                sleep 0.2
-            done
-        ) &
-        spinner_pid=$!
-    fi
-
-    # Write prompt to temp file to avoid MAX_ARG_STRLEN (128KB) limit on Linux.
-    # The -p flag (print mode) reads the prompt from stdin when no positional
-    # argument is provided.
-    local _prompt_file="${TMPDIR:-/tmp}/tekhton_prompt_$$.txt"
-    printf '%s' "$prompt" > "$_prompt_file"
-
-    set +o pipefail
-    claude \
-        --model "$model" \
-        --max-turns "$max_turns" \
-        --output-format text \
-        -p \
-        < "$_prompt_file" \
-        2>&1 | tee -a "$log_file"
-    local -a _pst=("${PIPESTATUS[@]}")
-    set -o pipefail
-
-    rm -f "$_prompt_file"
-
-    # Stop spinner and clear the line
-    if [[ -n "$spinner_pid" ]]; then
-        kill "$spinner_pid" 2>/dev/null || true
-        wait "$spinner_pid" 2>/dev/null || true
-        printf '\r\033[K' > /dev/tty 2>/dev/null || true
-    fi
-
-    return "${_pst[0]}"
-}
-
-# _extract_template_sections — Parse a template file and print section data.
-#
-# Output format (one line per section):   NAME|REQUIRED|GUIDANCE|PHASE
-#   NAME     — section heading (without "## " prefix)
-#   REQUIRED — "true" or "false"
-#   GUIDANCE — single-line concatenation of <!-- ... --> guidance comments
-#   PHASE    — integer (1, 2, or 3) from <!-- PHASE:N --> marker; default 1
-#
-# Usage:
-#   while IFS='|' read -r name required guidance phase; do
-#       ...
-#   done < <(_extract_template_sections "$template_file")
-_extract_template_sections() {
-    local template="$1"
-    awk '
-    BEGIN { section = ""; required = "false"; guidance = ""; phase = "1" }
-    /^## / {
-        if (section != "") {
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", guidance)
-            print section "|" required "|" guidance "|" phase
-        }
-        section = $0
-        sub(/^## /, "", section)
-        required = "false"
-        guidance = ""
-        phase = "1"
-        if (section ~ /<!-- REQUIRED -->/) {
-            required = "true"
-            gsub(/[[:space:]]*<!-- REQUIRED -->[[:space:]]*/, "", section)
-        }
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", section)
-        next
-    }
-    section != "" && /^<!-- REQUIRED -->/ { required = "true"; next }
-    section != "" && /^<!-- PHASE:[0-9]+ -->/ {
-        line = $0
-        gsub(/^<!-- PHASE:/, "", line)
-        gsub(/[[:space:]]*-->.*/, "", line)
-        phase = line
-        next
-    }
-    section != "" && /^<!--/ {
-        line = $0
-        gsub(/^<!--[[:space:]]*/, "", line)
-        gsub(/[[:space:]]*-->$/, "", line)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
-        if (length(line) > 0 && line != "REQUIRED") {
-            guidance = (guidance == "") ? line : guidance " " line
-        }
-        next
-    }
-    END {
-        if (section != "") {
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", guidance)
-            print section "|" required "|" guidance "|" phase
-        }
-    }
-    ' "$template"
-}
 
 # --- Brownfield Replan --------------------------------------------------------
 # Extracted to lib/replan.sh — sourced separately by tekhton.sh.
@@ -380,248 +255,4 @@ run_plan() {
     # Success — clear state and rename answer file
     clear_plan_state
     rename_answer_file_done
-}
-
-# _run_plan_export_questions — Handle --export-questions flag.
-# Prompts for project type, then exports question template to stdout.
-_run_plan_export_questions() {
-    select_project_type || return 1
-    export_question_template "$PLAN_TEMPLATE_FILE"
-    return 0
-}
-
-# _run_plan_with_answers_file — Handle --answers flag.
-# Imports answers, prompts for project type if needed, then proceeds
-# through draft review → completeness → generation → milestone review.
-_run_plan_with_answers_file() {
-    local answers_file="$PLAN_ANSWERS_IMPORT"
-
-    if [[ ! -f "$answers_file" ]]; then
-        error "Answer file not found: ${answers_file}"
-        return 1
-    fi
-
-    # Extract template from the answer file header if possible
-    local template_from_file
-    template_from_file=$(grep '^# Template:' "$answers_file" 2>/dev/null | head -1 | sed 's/^# Template: *//')
-
-    if [[ -n "$template_from_file" ]]; then
-        PLAN_PROJECT_TYPE="$template_from_file"
-        PLAN_TEMPLATE_FILE="${PLAN_TEMPLATES_DIR}/${PLAN_PROJECT_TYPE}.md"
-        if [[ ! -f "$PLAN_TEMPLATE_FILE" ]]; then
-            warn "Template '${PLAN_PROJECT_TYPE}' from answer file not found."
-            select_project_type || return 1
-        else
-            log "Using project type from answer file: ${PLAN_PROJECT_TYPE}"
-        fi
-    else
-        select_project_type || return 1
-    fi
-
-    # Import the answer file
-    import_answer_file "$answers_file" || {
-        warn "Answer file imported with incomplete required sections."
-        log "You can edit sections in the draft review."
-    }
-
-    # Show draft review
-    echo
-    show_draft_review || return 1
-
-    # Synthesize DESIGN.md
-    echo
-    log "Synthesizing DESIGN.md from imported answers..."
-    echo
-    run_plan_interview || return 1
-
-    write_plan_state "completeness" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
-
-    # Completeness check
-    echo
-    run_plan_completeness_loop || return 1
-    write_plan_state "generation" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
-
-    # CLAUDE.md generation
-    echo
-    run_plan_generate || return 1
-    write_plan_state "review" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
-
-    # Milestone review
-    echo
-    run_plan_review || return 1
-
-    clear_plan_state
-    rename_answer_file_done
-}
-
-# _offer_answer_file_resume — Check for existing answer file and offer to resume.
-# Returns 0 to resume from draft_review, 1 to start fresh, 2 to abort.
-_offer_answer_file_resume() {
-    echo
-    log "Found existing planning answers: ${PLAN_ANSWER_FILE}"
-
-    local input_fd="/dev/stdin"
-    if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
-        input_fd="/dev/tty"
-    fi
-
-    log "  [r] Resume — review and complete existing answers"
-    log "  [f] Start fresh (discard saved answers)"
-    log "  [n] Abort"
-    printf "  Select [r/f/n]: "
-
-    local choice
-    read -r choice < "$input_fd" || return 2
-    choice="${choice//$'\r'/}"
-
-    case "$choice" in
-        r|R)
-            # Extract project type from answer file
-            local saved_template
-            saved_template=$(grep '^# Template:' "$PLAN_ANSWER_FILE" 2>/dev/null | head -1 | sed 's/^# Template: *//')
-            if [[ -n "$saved_template" ]]; then
-                PLAN_PROJECT_TYPE="$saved_template"
-                PLAN_TEMPLATE_FILE="${PLAN_TEMPLATES_DIR}/${PLAN_PROJECT_TYPE}.md"
-                if [[ ! -f "$PLAN_TEMPLATE_FILE" ]]; then
-                    warn "Saved template '${PLAN_PROJECT_TYPE}' not found."
-                    select_project_type || return 2
-                fi
-            else
-                select_project_type || return 2
-            fi
-            PLAN_RESUME_STAGE="draft_review"
-            write_plan_state "draft_review" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
-            success "Resuming with existing answers."
-            return 0
-            ;;
-        f|F)
-            rm -f "$PLAN_ANSWER_FILE"
-            return 1
-            ;;
-        *)
-            return 2
-            ;;
-    esac
-}
-
-# --- Milestone Review UI ----------------------------------------------------
-
-# _display_milestone_summary — Show the milestone review screen.
-# Reads the file once and extracts both project name and milestones.
-_display_milestone_summary() {
-    local claude_file="$1"
-    local file_content
-    file_content=$(cat "$claude_file" 2>/dev/null || true)
-
-    local project_name
-    project_name=$(echo "$file_content" | grep -m 1 '^# ' | sed 's/^# //')
-    if [[ -z "$project_name" ]]; then
-        project_name=$(basename "$PROJECT_DIR")
-    fi
-
-    local milestones
-    milestones=$(echo "$file_content" | grep -E '^#{2,4} Milestone [0-9]+' | sed 's/^#* //' || true)
-    local milestone_count
-    milestone_count=$(echo "$milestones" | grep -c '.' || true)
-
-    header "Tekhton Plan — Milestone Summary"
-    echo "  Project: ${project_name}"
-    echo "  Milestones: ${milestone_count}"
-    echo
-
-    if [[ -n "$milestones" ]]; then
-        echo "$milestones" | while IFS= read -r line; do
-            echo "  ${line}"
-        done
-    else
-        warn "  No milestone headings found in CLAUDE.md."
-        warn "  The file may use a different heading format."
-    fi
-
-    echo
-    echo "  [y] Accept and write files"
-    echo "  [e] Edit CLAUDE.md in \${EDITOR:-nano}"
-    echo "  [r] Re-generate with same DESIGN.md"
-    echo "  [n] Abort without writing files"
-    echo
-}
-
-# _print_next_steps — Instructions printed after successful file write.
-_print_next_steps() {
-    echo
-    success "Planning phase complete!"
-    echo
-    log "Your files:"
-    log "  DESIGN.md  — project design document"
-    log "  CLAUDE.md  — project rules and milestone plan"
-    echo
-    log "Next steps:"
-    log "  1. Review the generated files and make any manual edits"
-    if [[ -f "${PROJECT_DIR}/.claude/pipeline.conf" ]]; then
-        log "  2. Run: tekhton \"Implement Milestone 1: <title>\""
-    else
-        log "  2. Run: tekhton --init    (generate pipeline config & agent roles)"
-        log "  3. Run: tekhton \"Implement Milestone 1: <title>\""
-    fi
-    echo
-}
-
-# run_plan_review — Interactive milestone review loop.
-#
-# Displays the milestone summary and prompts the user to accept, edit,
-# re-generate, or abort. Loops until the user accepts or aborts.
-#
-# Returns 0 on accept, 1 on abort.
-run_plan_review() {
-    local claude_file="${PROJECT_DIR}/CLAUDE.md"
-    local design_file="${PROJECT_DIR}/DESIGN.md"
-
-    if [[ ! -f "$claude_file" ]]; then
-        error "CLAUDE.md not found — nothing to review."
-        return 1
-    fi
-
-    # Use /dev/tty for interactive input when stdin is not a terminal,
-    # unless running in test mode.
-    local input_fd="/dev/stdin"
-    if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
-        input_fd="/dev/tty"
-    fi
-
-    local choice
-    while true; do
-        _display_milestone_summary "$claude_file"
-        printf "  Select [y/e/r/n]: "
-        read -r choice < "$input_fd" || { warn "End of input — accepting files."; choice="y"; }
-        choice="${choice//$'\r'/}"
-
-        case "$choice" in
-            y|Y)
-                success "Files confirmed at ${PROJECT_DIR}:"
-                log "  DESIGN.md"
-                log "  CLAUDE.md"
-                _print_next_steps
-                return 0
-                ;;
-            e|E)
-                log "Opening CLAUDE.md in editor..."
-                "${EDITOR:-nano}" "$claude_file" || warn "Editor exited with non-zero status"
-                log "Editor closed. Refreshing milestone summary..."
-                ;;
-            r|R)
-                log "Re-generating CLAUDE.md from DESIGN.md..."
-                echo
-                run_plan_generate || return 1
-                ;;
-            n|N)
-                warn "Aborted. DESIGN.md is preserved at: ${design_file}"
-                warn "CLAUDE.md is preserved at: ${claude_file}"
-                log "Re-run 'tekhton --plan' to try again."
-                return 1
-                ;;
-            *)
-                warn "Invalid choice '${choice}'. Please enter y, e, r, or n."
-                ;;
-        esac
-    done
 }

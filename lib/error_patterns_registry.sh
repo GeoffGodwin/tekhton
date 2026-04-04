@@ -54,6 +54,11 @@ ECONNREFUSED.*5432|service_dep|manual||PostgreSQL not running (port 5432)
 ECONNREFUSED.*3306|service_dep|manual||MySQL not running (port 3306)
 ECONNREFUSED.*27017|service_dep|manual||MongoDB not running (port 27017)
 ECONNREFUSED.*6379|service_dep|manual||Redis not running (port 6379)
+ECONNREFUSED.*5672|service_dep|manual||RabbitMQ not running (port 5672)
+ECONNREFUSED.*9092|service_dep|manual||Kafka not running (port 9092)
+ECONNREFUSED.*9200|service_dep|manual||Elasticsearch not running (port 9200)
+connection.*timed out.*:6379|service_dep|manual||Redis not reachable (port 6379)
+connection.*timed out.*:5432|service_dep|manual||PostgreSQL not reachable (port 5432)
 connection refused.*database|service_dep|manual||Database connection refused
 Connection refused.*localhost|service_dep|manual||Local service connection refused
 # --- Docker ---
