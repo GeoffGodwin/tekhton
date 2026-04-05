@@ -96,7 +96,8 @@ _intake_parse_questions() {
 # --- Tweak application -------------------------------------------------------
 
 # _intake_apply_tweak_milestone — Update milestone file with tweaked content.
-# Uses atomic tmpfile+mv pattern.
+# Uses atomic tmpfile+mv pattern. Creates backup and validates content size
+# to prevent catastrophic data loss from PM agent summarization.
 _intake_apply_tweak_milestone() {
     local tweaked_content="$1"
     local ms_num="$2"
@@ -119,9 +120,32 @@ _intake_apply_tweak_milestone() {
             [[ -n "$ms_file_name" ]] && ms_file="${MILESTONE_DIR}/${ms_file_name}"
         fi
         if [[ -f "$ms_file" ]]; then
+            # --- Guard: reject tweaked content that is dramatically shorter ---
+            local orig_lines tweaked_lines
+            orig_lines=$(wc -l < "$ms_file")
+            tweaked_lines=$(printf '%s\n' "$tweaked_content" | wc -l)
+            # Allow shrinkage up to 50%; beyond that the PM likely summarized
+            # rather than annotating. Threshold configurable via env.
+            local min_pct="${INTAKE_TWEAK_MIN_SIZE_PCT:-50}"
+            if [[ "$orig_lines" -gt 20 ]] && [[ "$tweaked_lines" -gt 0 ]]; then
+                local pct=$(( (tweaked_lines * 100) / orig_lines ))
+                if [[ "$pct" -lt "$min_pct" ]]; then
+                    warn "Intake: tweaked content is ${pct}% of original (${tweaked_lines}/${orig_lines} lines). Minimum: ${min_pct}%."
+                    warn "Intake: rejecting tweak to prevent data loss. Original milestone preserved."
+                    log "Intake: PM tweaks saved to ${TEKHTON_SESSION_DIR}/REJECTED_TWEAK.md for review."
+                    printf '%s\n' "$tweaked_content" > "${TEKHTON_SESSION_DIR}/REJECTED_TWEAK.md"
+                    return 1
+                fi
+            fi
+
+            # --- Backup original before overwriting ---
+            local backup_file="${ms_file}.pre-tweak"
+            cp -f "$ms_file" "$backup_file"
+            log "Intake: backed up original to ${backup_file}"
+
             local tmpfile
             tmpfile=$(mktemp "${MILESTONE_DIR}/intake_tweak.XXXXXX")
-            echo "$tweaked_content" > "$tmpfile"
+            printf '%s\n' "$tweaked_content" > "$tmpfile"
             mv -f "$tmpfile" "$ms_file"
             log "Intake: updated milestone file ${ms_file}"
 
