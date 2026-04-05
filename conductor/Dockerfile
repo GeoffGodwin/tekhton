@@ -26,27 +26,34 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 
 # Python deps
 WORKDIR /app
-COPY requirements.txt .
+COPY conductor/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# App code
-COPY conductor.py api.py ./
+# Conductor app code
+COPY conductor/conductor.py conductor/api.py ./
 
-# Dirs for state and logs (will be volume-mounted)
-RUN mkdir -p /data/state /data/logs
+# Bake entire Tekhton source into the image.
+# Build context is the tekhton repo root (set in compose).
+COPY . /tekhton
+
+# Dirs for state, logs, and ephemeral repo workspace
+RUN mkdir -p /data/state /data/logs /repo
 
 # Non-root user matching typical host UID
 ARG PUID=1000
 ARG PGID=1000
-RUN groupadd -g ${PGID} conductor \
-    && useradd -u ${PUID} -g conductor -m -s /bin/bash conductor \
-    && chown -R conductor:conductor /app /data
+RUN groupadd -g ${PGID} conductor 2>/dev/null || true \
+    && useradd -u ${PUID} -g ${PGID} -m -s /bin/bash conductor 2>/dev/null || true \
+    && chown -R ${PUID}:${PGID} /app /data /repo /tekhton
 
 USER conductor
 
 # Git config for commits
 RUN git config --global user.name "Tekhton Conductor" \
     && git config --global user.email "conductor@tekhton.local"
+
+# SSH: accept GitHub host key automatically
+RUN mkdir -p ~/.ssh && ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null
 
 EXPOSE 7411
 

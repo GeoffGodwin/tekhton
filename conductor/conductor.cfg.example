@@ -1,15 +1,19 @@
 # Tekhton Conductor configuration
-# For Docker: copy to $DOCKERDIR/appdata/tekhton-conductor/conductor.cfg
-# Paths below are container-internal (matching volume mounts in compose YAML)
+# Copy alongside docker-compose and edit. Container-internal paths below
+# match the volume mounts / tmpfs defined in the compose YAML.
 
-# Path to the tekhton repository (where tekhton.sh lives)
+# Path to the tekhton source (baked into the image at build time)
 tekhton_path=/tekhton
 
-# Path to the milestone manifest file
-manifest_path=/repo/.claude/milestones/MANIFEST.cfg
+# Git SSH URL of the target project repo (cloned into /repo on startup)
+repo_url=git@github.com:yourorg/yourproject.git
 
-# Path to the target project repository
+# Local path for the cloned repo (tmpfs inside the container)
 repo_path=/repo
+
+# Path to manifest — auto-resolved to <repo_path>/.claude/milestones/MANIFEST.cfg
+# if left blank. Only set this if your manifest is in a non-standard location.
+#manifest_path=
 
 # Git integration branch for PRs
 integration_branch=feature/Version3
@@ -17,11 +21,12 @@ integration_branch=feature/Version3
 # HTTP API port
 api_port=7411
 
-# Static bearer token for API authentication (also set CONDUCTOR_API_TOKEN in .env)
+# Static bearer token for API authentication
 api_token=CHANGE_ME_TO_A_RANDOM_SECRET
 
-# Anthropic API key (for error analysis calls — also set ANTHROPIC_API_KEY in .env)
-anthropic_api_key=sk-ant-...
+# Anthropic API key for error analysis calls.
+# Can also be set via ANTHROPIC_API_KEY environment variable (takes precedence).
+#anthropic_api_key=sk-ant-...
 
 # Rolling usage window in hours
 usage_window_hours=5
@@ -32,8 +37,8 @@ usage_safety_threshold=0.25
 # Stop after this many consecutive failures of the same milestone
 max_milestone_retries=3
 
-# Log file path (inside container — persisted via /data volume)
+# Log file path (persisted via /data volume)
 log_path=/data/logs/conductor.log
 
-# Persistent state file path (inside container — persisted via /data volume)
+# Persistent state file path (persisted via /data volume)
 state_path=/data/state/conductor.state.json

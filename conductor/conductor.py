@@ -7,7 +7,6 @@ manages git branching/merging, tracks API token usage, and exposes
 an HTTP control plane for external monitoring and commands.
 """
 
-import asyncio
 import configparser
 import enum
 import json
@@ -18,7 +17,6 @@ import signal
 import subprocess
 import sys
 import threading
-import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,9 +30,10 @@ import anthropic
 
 @dataclass
 class ConductorConfig:
-    tekhton_path: str = ""
+    tekhton_path: str = "/tekhton"
     manifest_path: str = ""
-    repo_path: str = ""
+    repo_url: str = ""
+    repo_path: str = "/repo"
     integration_branch: str = "feature/Version3"
     api_port: int = 7411
     api_token: str = ""
@@ -42,8 +41,8 @@ class ConductorConfig:
     usage_window_hours: float = 5.0
     usage_safety_threshold: float = 0.25
     max_milestone_retries: int = 3
-    log_path: str = "/var/log/tekhton-conductor.log"
-    state_path: str = "/var/run/tekhton-conductor.state.json"
+    log_path: str = "/data/logs/conductor.log"
+    state_path: str = "/data/state/conductor.state.json"
 
     @classmethod
     def from_file(cls, path: str) -> "ConductorConfig":
@@ -55,7 +54,7 @@ class ConductorConfig:
         cp.read_string(content)
         section = cp["conductor"]
         for key in (
-            "tekhton_path", "manifest_path", "repo_path",
+            "tekhton_path", "manifest_path", "repo_url", "repo_path",
             "integration_branch", "api_token", "anthropic_api_key",
             "log_path", "state_path",
         ):
@@ -67,6 +66,10 @@ class ConductorConfig:
         for key in ("usage_window_hours", "usage_safety_threshold"):
             if key in section:
                 setattr(cfg, key, float(section[key]))
+        # Allow ANTHROPIC_API_KEY from environment (preferred in Docker)
+        env_key = os.environ.get("ANTHROPIC_API_KEY")
+        if env_key:
+            cfg.anthropic_api_key = env_key
         return cfg
 
 
@@ -202,6 +205,47 @@ class Conductor:
             except (json.JSONDecodeError, KeyError) as exc:
                 self.logger.warning("Corrupt state file, starting fresh: %s", exc)
                 self.state = ConductorState()
+
+    # -- Repo bootstrap -------------------------------------------------------
+
+    def _ensure_repo(self):
+        """Clone the target repo if absent, or fetch latest if present."""
+        repo = Path(self.config.repo_path)
+        git_dir = repo / ".git"
+
+        if git_dir.is_dir():
+            # Repo exists — fetch and reset to integration branch
+            self.logger.info("Repo exists at %s, refreshing", repo)
+            self._run_subprocess(
+                ["git", "fetch", "origin"],
+                cwd=str(repo), timeout=120,
+            )
+            self._run_subprocess(
+                ["git", "checkout", self.config.integration_branch],
+                cwd=str(repo), timeout=30,
+            )
+            self._run_subprocess(
+                ["git", "reset", "--hard", f"origin/{self.config.integration_branch}"],
+                cwd=str(repo), timeout=30,
+            )
+        else:
+            # Fresh clone
+            if not self.config.repo_url:
+                raise RuntimeError("repo_url not set in config and no repo at repo_path")
+            self.logger.info("Cloning %s into %s", self.config.repo_url, repo)
+            repo.mkdir(parents=True, exist_ok=True)
+            self._run_subprocess(
+                ["git", "clone", "--branch", self.config.integration_branch,
+                 self.config.repo_url, str(repo)],
+                cwd="/tmp", timeout=300,
+            )
+
+        # Resolve manifest_path relative to repo if not absolute
+        if not self.config.manifest_path:
+            self.config.manifest_path = str(repo / ".claude" / "milestones" / "MANIFEST.cfg")
+
+        self.logger.info("Repo ready at %s, manifest at %s",
+                         repo, self.config.manifest_path)
 
     # -- State transitions ---------------------------------------------------
 
@@ -470,6 +514,15 @@ Return ONLY valid JSON. No markdown fences. No explanation outside the JSON."""
     def run(self):
         """Main blocking loop — call from the daemon entry point."""
         self.logger.info("Conductor run() starting, state=%s", self.state.state)
+
+        # Bootstrap: clone or refresh the target repo
+        try:
+            self._ensure_repo()
+        except Exception as exc:
+            self.logger.error("Failed to bootstrap repo: %s", exc)
+            self._transition(State.STOPPED_ERROR, night_run_active=False,
+                             last_error_output=f"Repo bootstrap failed: {exc}")
+            return
 
         if self.state.state == State.ARMED.value:
             self._transition(State.IDLE)

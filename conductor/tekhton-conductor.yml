@@ -1,7 +1,9 @@
 services:
   tekhton-conductor:
     build:
-      context: ./conductor
+      # Context is the tekhton repo root so the entire source gets baked in
+      context: .
+      dockerfile: conductor/Dockerfile
       args:
         PUID: ${PUID:-1000}
         PGID: ${PGID:-1000}
@@ -14,18 +16,15 @@ services:
     volumes:
       # Config file
       - ./conductor.cfg:/config/conductor.cfg:ro
-      # Persistent state + logs
+      # Persistent state + logs (survives container restarts)
       - conductor-data:/data
-      # Tekhton source (read-only)
-      - ${TEKHTON_HOME:?Set TEKHTON_HOME to the tekhton repo path}:/tekhton:ro
-      # Target project repo (read-write for git operations)
-      - ${PROJECT_REPO:?Set PROJECT_REPO to the target project path}:/repo
       # SSH keys for git push
       - ~/.ssh:/home/conductor/.ssh:ro
       # GitHub CLI auth
       - ~/.config/gh:/home/conductor/.config/gh:ro
-      # Claude Code CLI auth
-      - ~/.claude:/home/conductor/.claude:ro
+    tmpfs:
+      # Ephemeral workspace for cloned target repo — fast, disposable
+      - /repo:uid=1000,gid=1000
     environment:
       TZ: ${TZ:-UTC}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY}
@@ -35,7 +34,7 @@ services:
       interval: 60s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
 
 volumes:
   conductor-data:
