@@ -709,6 +709,7 @@
     var dbs = ct.querySelectorAll('[data-dist-toggle] .dist-btn');
     for (var db = 0; db < dbs.length; db++) dbs[db].addEventListener('click', function () {
       var m = this.dataset.mode; setDistMode(m);
+      for (var i = 0; i < dbs.length; i++) dbs[i].setAttribute('aria-pressed', dbs[i].dataset.mode === m ? 'true' : 'false');
       renderTrends();
     });
   }
@@ -778,9 +779,9 @@
       var aTm = stageTimeCount[activeStages[t]] ? stageTotals[activeStages[t]].time / stageTimeCount[activeStages[t]] : 0;
       if (aTm > maxAvgTime) maxAvgTime = aTm;
     }
-    var html = '<div class="dist-header"><span class="dist-label">Distribution \u2014 ' + (mode === 'time' ? 'Time Spent' : 'Run Count') + '</span>';
-    html += '<div class="dist-toggle" data-dist-toggle><button class="dist-btn' + (mode === 'time' ? ' active' : '') + '" data-mode="time">Time Spent</button>';
-    html += '<button class="dist-btn' + (mode === 'turns' ? ' active' : '') + '" data-mode="turns">Run Count</button></div></div>';
+    var html = '<div class="dist-header"><span class="dist-label">Distribution \u2014 ' + (mode === 'time' ? 'Time Spent' : 'Avg Turns') + '</span>';
+    html += '<div class="dist-toggle" data-dist-toggle><button class="dist-btn' + (mode === 'time' ? ' active' : '') + '" data-mode="time" aria-pressed="' + (mode === 'time') + '">Time Spent</button>';
+    html += '<button class="dist-btn' + (mode === 'turns' ? ' active' : '') + '" data-mode="turns" aria-pressed="' + (mode === 'turns') + '">Avg Turns</button></div></div>';
     html += '<table class="breakdown-table"><thead><tr><th>Stage</th><th>Avg Turns</th><th>Last Run</th><th>Avg Time</th><th class="bar-chart-cell">Distribution</th></tr></thead><tbody>';
     for (var b = 0; b < activeStages.length; b++) {
       sn = activeStages[b]; var cnt = stageTurnCount[sn] || 1;

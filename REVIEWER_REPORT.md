@@ -10,7 +10,8 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- Four decorative tag/chip classes (`.run-team-tag`, `.scout-sub-badge`, `.dep-chip-enabledby`, `.dep-chip-enables`) remain at 0.7rem = 10.5px at the new 15px base. This is still technically sub-WCAG for body text, but acceptable for small badge/tag elements where text is 1–4 characters and context makes meaning clear. Worth revisiting if contrast complaints arise.
+- `tests/test_platform_fragments.sh:86-94` — Test 27 writes the mock `coder_guidance.prompt.md` to `${TEKHTON_HOME}/platforms/web/` (inside the repo tree) rather than a temp dir. A file-level `trap` would prevent leaving stale mock files if the process is killed between the write and the `rm -f` cleanup line.
+- `tests/test_watchtower_distribution_toggle.sh:160` — Comment still reads "Verify Run Count button" after the label was renamed to "Avg Turns". Stale comment only; test assertions are correct.
 
 ## Coverage Gaps
 - None

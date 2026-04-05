@@ -18,4 +18,3 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 ## Bugs
 
 ## Polish
-- [x] [POLISH] The Watchtower text sizes are all fairly small, with some lines being nearly impossible to read like the "Milestone" column in the recent runs view. We should consider standard WCAG text sizes and spacing to improve readability.

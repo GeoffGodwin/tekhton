@@ -20,20 +20,15 @@
 #  15.  detect_ui_platform() maps pixi → game_web
 #  16.  detect_ui_platform() maps three → game_web
 #  17.  detect_ui_platform() maps babylon → game_web
-#  18.  detect_ui_platform() maps detox → mobile_flutter
+#  18.  detect_ui_platform() detox → no platform (no adapter yet)
 #  19.  detect_ui_platform() generic + web-game → game_web
 #  20.  detect_ui_platform() generic + mobile-app → mobile_flutter
 #  21.  detect_ui_platform() generic + other → web
 #  22.  detect_ui_platform() returns 1 for non-UI project
 #  23.  detect_ui_platform() honors explicit UI_PLATFORM (not auto)
 #  24.  detect_ui_platform() handles custom_<name> platform
-#  25.  load_platform_fragments() loads universal coder guidance
-#  26.  load_platform_fragments() loads universal specialist checklist
-#  27.  load_platform_fragments() appends platform-specific content
-#  28.  load_platform_fragments() appends user override content
-#  29.  load_platform_fragments() handles missing platform dir gracefully
-#  30.  load_platform_fragments() appends design system info
-#  31.  load_platform_fragments() appends component library info
+#
+# Fragment loading tests (25-31) are in test_platform_fragments.sh
 # =============================================================================
 set -euo pipefail
 
@@ -205,12 +200,15 @@ UI_FRAMEWORK="babylon"
 detect_ui_platform
 [[ "$UI_PLATFORM" == "game_web" ]] && pass "17: babylon → game_web" || fail "17: babylon → game_web (got: $UI_PLATFORM)"
 
-# Test 18: detox → mobile_flutter
+# Test 18: detox → no platform (Detox is React Native, not Flutter; no adapter yet)
 reset_ui_globals
 UI_PROJECT_DETECTED="true"
 UI_FRAMEWORK="detox"
-detect_ui_platform
-[[ "$UI_PLATFORM" == "mobile_flutter" ]] && pass "18: detox → mobile_flutter" || fail "18: detox → mobile_flutter (got: $UI_PLATFORM)"
+if detect_ui_platform; then
+    fail "18: detox should return 1 (no platform) (got: $UI_PLATFORM)"
+else
+    [[ -z "$UI_PLATFORM" ]] && pass "18: detox → no platform" || fail "18: detox platform should be empty (got: $UI_PLATFORM)"
+fi
 
 # Test 19: generic + web-game → game_web
 reset_ui_globals
@@ -261,79 +259,6 @@ UI_PLATFORM="custom_myplatform"
 detect_ui_platform
 [[ "$UI_PLATFORM" == "custom_myplatform" ]] && pass "24a: custom platform name preserved" || fail "24a: custom platform name (got: $UI_PLATFORM)"
 [[ "$UI_PLATFORM_DIR" == "${PROJECT_DIR}/.claude/platforms/custom_myplatform" ]] && pass "24b: custom platform dir resolves" || fail "24b: custom platform dir (got: $UI_PLATFORM_DIR)"
-
-# --- load_platform_fragments() tests ---
-
-# Test 25: loads universal coder guidance
-reset_ui_globals
-make_proj
-UI_PLATFORM="web"
-load_platform_fragments
-[[ "$UI_CODER_GUIDANCE" == *"State Presentation"* ]] && pass "25: universal coder guidance loaded" || fail "25: universal coder guidance not found in UI_CODER_GUIDANCE"
-
-# Test 26: loads universal specialist checklist
-reset_ui_globals
-make_proj
-UI_PLATFORM="web"
-load_platform_fragments
-[[ "$UI_SPECIALIST_CHECKLIST" == *"Component Structure"* ]] && pass "26: universal specialist checklist loaded" || fail "26: universal specialist checklist not found"
-
-# Test 27: appends platform-specific content
-reset_ui_globals
-make_proj
-# Create a mock platform-specific coder guidance
-mkdir -p "${TEKHTON_HOME}/platforms/web"
-echo "### Web-specific guidance" > "${TEKHTON_HOME}/platforms/web/coder_guidance.prompt.md"
-UI_PLATFORM="web"
-load_platform_fragments
-# Should have both universal and platform content
-[[ "$UI_CODER_GUIDANCE" == *"State Presentation"* ]] && [[ "$UI_CODER_GUIDANCE" == *"Web-specific guidance"* ]] \
-    && pass "27: platform-specific content appended" \
-    || fail "27: platform-specific content not appended"
-# Clean up the mock file
-rm -f "${TEKHTON_HOME}/platforms/web/coder_guidance.prompt.md"
-
-# Test 28: appends user override content
-reset_ui_globals
-make_proj
-mkdir -p "${PROJECT_DIR}/.claude/platforms/web"
-echo "### Custom project guidance" > "${PROJECT_DIR}/.claude/platforms/web/coder_guidance.prompt.md"
-UI_PLATFORM="web"
-load_platform_fragments
-[[ "$UI_CODER_GUIDANCE" == *"Custom project guidance"* ]] \
-    && pass "28: user override content appended" \
-    || fail "28: user override content not found in UI_CODER_GUIDANCE"
-
-# Test 29: handles missing platform dir gracefully
-reset_ui_globals
-make_proj
-UI_PLATFORM="nonexistent_platform"
-load_platform_fragments
-# Should still have universal content
-[[ "$UI_CODER_GUIDANCE" == *"State Presentation"* ]] \
-    && pass "29: graceful fallback with missing platform dir" \
-    || fail "29: universal content missing on fallback"
-
-# Test 30: appends design system info
-reset_ui_globals
-make_proj
-UI_PLATFORM="web"
-DESIGN_SYSTEM="Tailwind CSS"
-DESIGN_SYSTEM_CONFIG="tailwind.config.js"
-load_platform_fragments
-[[ "$UI_CODER_GUIDANCE" == *"Design System: Tailwind CSS"* ]] \
-    && pass "30: design system info appended" \
-    || fail "30: design system info not found"
-
-# Test 31: appends component library info
-reset_ui_globals
-make_proj
-UI_PLATFORM="web"
-COMPONENT_LIBRARY_DIR="src/components"
-load_platform_fragments
-[[ "$UI_CODER_GUIDANCE" == *"src/components"* ]] \
-    && pass "31: component library info appended" \
-    || fail "31: component library info not found"
 
 # --- Summary ---
 echo ""

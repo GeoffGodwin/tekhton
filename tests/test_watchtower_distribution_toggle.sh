@@ -130,11 +130,11 @@ else
     fail "Distribution label does not show 'Time Spent'"
 fi
 
-# Verify Run Count label appears
-if echo "$BREAKDOWN_FUNC" | grep -q "'Run Count'"; then
-    pass "Distribution label includes 'Run Count' option"
+# Verify Avg Turns label appears
+if echo "$BREAKDOWN_FUNC" | grep -q "'Avg Turns'"; then
+    pass "Distribution label includes 'Avg Turns' option"
 else
-    fail "Distribution label does not mention 'Run Count'"
+    fail "Distribution label does not mention 'Avg Turns'"
 fi
 
 # =============================================================================
@@ -157,11 +157,11 @@ else
     fail "Time Spent button missing or misnamed"
 fi
 
-# Verify Run Count button
+# Verify Avg Turns button
 if echo "$BREAKDOWN_FUNC" | grep -q "dist-btn.*data-mode=\"turns\""; then
-    pass "Run Count button has data-mode='turns' attribute"
+    pass "Avg Turns button has data-mode='turns' attribute"
 else
-    fail "Run Count button missing or misnamed"
+    fail "Avg Turns button missing or misnamed"
 fi
 
 # Verify active class based on mode

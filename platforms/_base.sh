@@ -113,8 +113,6 @@ detect_ui_platform() {
             resolved="web" ;;
         playwright|cypress|testing-library|puppeteer)
             resolved="web" ;;
-        detox)
-            resolved="mobile_flutter" ;;
         selenium)
             resolved="web" ;;
         "")

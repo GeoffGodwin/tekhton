@@ -32,24 +32,24 @@ test_no_subseven_rem_fonts() {
   fi
 }
 
-# Test 3: .run-team-tag should be 0.7rem
+# Test 3: .run-team-tag should be 0.75rem
 test_run_team_tag_size() {
-  if grep '\.run-team-tag.*font-size:\s*0\.7rem' "$CSS_TEMPLATE" > /dev/null; then
-    pass ".run-team-tag is 0.7rem"
+  if grep '\.run-team-tag.*font-size:\s*0\.75rem' "$CSS_TEMPLATE" > /dev/null; then
+    pass ".run-team-tag is 0.75rem"
     return 0
   else
-    fail ".run-team-tag is not 0.7rem"
+    fail ".run-team-tag is not 0.75rem"
     return 1
   fi
 }
 
-# Test 4: .scout-sub-badge should be 0.7rem
+# Test 4: .scout-sub-badge should be 0.75rem
 test_scout_sub_badge_size() {
-  if grep '\.scout-sub-badge.*font-size:\s*0\.7rem' "$CSS_TEMPLATE" > /dev/null; then
-    pass ".scout-sub-badge is 0.7rem"
+  if grep '\.scout-sub-badge.*font-size:\s*0\.75rem' "$CSS_TEMPLATE" > /dev/null; then
+    pass ".scout-sub-badge is 0.75rem"
     return 0
   else
-    fail ".scout-sub-badge is not 0.7rem"
+    fail ".scout-sub-badge is not 0.75rem"
     return 1
   fi
 }
@@ -65,24 +65,24 @@ test_ms_dep_label_size() {
   fi
 }
 
-# Test 6: .dep-chip-enabledby should be 0.7rem
+# Test 6: .dep-chip-enabledby should be 0.75rem
 test_dep_chip_enabledby_size() {
-  if grep '\.dep-chip-enabledby.*font-size:\s*0\.7rem' "$CSS_TEMPLATE" > /dev/null; then
-    pass ".dep-chip-enabledby is 0.7rem"
+  if grep '\.dep-chip-enabledby.*font-size:\s*0\.75rem' "$CSS_TEMPLATE" > /dev/null; then
+    pass ".dep-chip-enabledby is 0.75rem"
     return 0
   else
-    fail ".dep-chip-enabledby is not 0.7rem"
+    fail ".dep-chip-enabledby is not 0.75rem"
     return 1
   fi
 }
 
-# Test 7: .dep-chip-enables should be 0.7rem
+# Test 7: .dep-chip-enables should be 0.75rem
 test_dep_chip_enables_size() {
-  if grep '\.dep-chip-enables.*font-size:\s*0\.7rem' "$CSS_TEMPLATE" > /dev/null; then
-    pass ".dep-chip-enables is 0.7rem"
+  if grep '\.dep-chip-enables.*font-size:\s*0\.75rem' "$CSS_TEMPLATE" > /dev/null; then
+    pass ".dep-chip-enables is 0.75rem"
     return 0
   else
-    fail ".dep-chip-enables is not 0.7rem"
+    fail ".dep-chip-enables is not 0.75rem"
     return 1
   fi
 }
