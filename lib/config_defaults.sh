@@ -383,6 +383,12 @@ set -euo pipefail
 : "${SPECIALIST_API_MODEL:=${CLAUDE_STANDARD_MODEL}}"
 : "${SPECIALIST_API_MAX_TURNS:=8}"
 
+# --- UI platform adapter defaults (Milestone 57) ---
+: "${UI_PLATFORM:=auto}"
+: "${SPECIALIST_UI_ENABLED:=auto}"
+: "${SPECIALIST_UI_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+: "${SPECIALIST_UI_MAX_TURNS:=8}"
+
 # Milestone overrides — defaults to 2x normal if not specified
 : "${MILESTONE_MAX_REVIEW_CYCLES:=$(( MAX_REVIEW_CYCLES * 2 ))}"
 : "${MILESTONE_CODER_MAX_TURNS:=$(( CODER_MAX_TURNS * 2 ))}"
@@ -434,6 +440,7 @@ _clamp_config_value ARTIFACT_MERGE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
+_clamp_config_value SPECIALIST_UI_MAX_TURNS 50
 _clamp_config_value MAX_PIPELINE_ATTEMPTS 20
 _clamp_config_value FIX_NONBLOCKERS_MAX_PASSES 20
 _clamp_config_value FIX_DRIFT_MAX_PASSES 20

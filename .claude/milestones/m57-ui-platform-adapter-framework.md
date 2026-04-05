@@ -1,7 +1,7 @@
 # Milestone 57: UI Platform Adapter Framework
 <!-- milestone-meta
 id: "57"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

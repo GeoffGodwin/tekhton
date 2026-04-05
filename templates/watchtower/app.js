@@ -706,6 +706,12 @@
       var rc = document.querySelector('.run-count');
       if (rc) rc.textContent = shown;
     });
+    var dbs = ct.querySelectorAll('[data-dist-toggle] .dist-btn');
+    for (var db = 0; db < dbs.length; db++) dbs[db].addEventListener('click', function () {
+      var m = this.dataset.mode; setDistMode(m);
+      for (var i = 0; i < dbs.length; i++) dbs[i].setAttribute('aria-pressed', dbs[i].dataset.mode === m ? 'true' : 'false');
+      renderTrends();
+    });
   }
   function renderHealthCard() {
     var h = health();
@@ -745,6 +751,9 @@
     if (pct < 5) return '<span class="trend-arrow neutral">\u2192</span>';
     return diff < 0 ? '<span class="trend-arrow down">\u2193</span>' : '<span class="trend-arrow up">\u2191</span>';
   }
+  function getDistMode() { try { return localStorage.getItem('tk_dist_mode') || 'time'; } catch (e) { return 'time'; } }
+  function setDistMode(m) { try { localStorage.setItem('tk_dist_mode', m); } catch (e) { /* noop */ } }
+
   function renderStageBreakdown(runs) {
     var stageTotals = {}, stageTurnCount = {}, stageTimeCount = {}, sn;
     for (var i = 0; i < stageOrder.length; i++) { stageTotals[stageOrder[i]] = { turns: 0, time: 0 }; stageTurnCount[stageOrder[i]] = 0; stageTimeCount[stageOrder[i]] = 0; }
@@ -762,9 +771,18 @@
     var activeStages = [];
     for (var f = 0; f < stageOrder.length; f++) { if (stageTurnCount[stageOrder[f]] > 0) activeStages.push(stageOrder[f]); }
     if (activeStages.length === 0) return '<p>No per-stage data available yet.</p>';
-    var maxAvg = 1;
-    for (var t = 0; t < activeStages.length; t++) { var a = stageTurnCount[activeStages[t]] ? stageTotals[activeStages[t]].turns / stageTurnCount[activeStages[t]] : 0; if (a > maxAvg) maxAvg = a; }
-    var html = '<table class="breakdown-table"><thead><tr><th>Stage</th><th>Avg Turns</th><th>Last Run</th><th>Avg Time</th><th class="bar-chart-cell">Distribution</th></tr></thead><tbody>';
+    var mode = getDistMode();
+    var maxAvgTurns = 1, maxAvgTime = 1;
+    for (var t = 0; t < activeStages.length; t++) {
+      var aT = stageTurnCount[activeStages[t]] ? stageTotals[activeStages[t]].turns / stageTurnCount[activeStages[t]] : 0;
+      if (aT > maxAvgTurns) maxAvgTurns = aT;
+      var aTm = stageTimeCount[activeStages[t]] ? stageTotals[activeStages[t]].time / stageTimeCount[activeStages[t]] : 0;
+      if (aTm > maxAvgTime) maxAvgTime = aTm;
+    }
+    var html = '<div class="dist-header"><span class="dist-label">Distribution \u2014 ' + (mode === 'time' ? 'Time Spent' : 'Avg Turns') + '</span>';
+    html += '<div class="dist-toggle" data-dist-toggle><button class="dist-btn' + (mode === 'time' ? ' active' : '') + '" data-mode="time" aria-pressed="' + (mode === 'time') + '">Time Spent</button>';
+    html += '<button class="dist-btn' + (mode === 'turns' ? ' active' : '') + '" data-mode="turns" aria-pressed="' + (mode === 'turns') + '">Avg Turns</button></div></div>';
+    html += '<table class="breakdown-table"><thead><tr><th>Stage</th><th>Avg Turns</th><th>Last Run</th><th>Avg Time</th><th class="bar-chart-cell">Distribution</th></tr></thead><tbody>';
     for (var b = 0; b < activeStages.length; b++) {
       sn = activeStages[b]; var cnt = stageTurnCount[sn] || 1;
       var avgT = Math.round(stageTotals[sn].turns / cnt);
@@ -782,10 +800,19 @@
       }
       var timeCnt = stageTimeCount[sn];
       var avgTime = timeCnt > 0 ? Math.round(stageTotals[sn].time / timeCnt) : 0;
+      var barPct, barTitle;
+      if (mode === 'time') {
+        var avgTimeRaw = timeCnt > 0 ? stageTotals[sn].time / timeCnt : 0;
+        barPct = maxAvgTime > 0 ? Math.round((avgTimeRaw / maxAvgTime) * 100) : 0;
+        barTitle = (stageLabels[sn] || sn) + ': ' + (avgTime > 0 ? fmtDuration(avgTime) + ' avg' : 'no data');
+      } else {
+        barPct = Math.round((avgT / maxAvgTurns) * 100);
+        barTitle = (stageLabels[sn] || sn) + ': ' + avgT + ' turns avg';
+      }
       html += '<tr><td>' + (stageLabels[sn] || sn) + '</td><td>' + avgT + '</td>';
       html += '<td>' + lastCell + '</td>';
       html += '<td>' + (avgTime > 0 ? fmtDuration(avgTime) : '-') + '</td>';
-      html += '<td class="bar-chart-cell"><div class="bar-wrap"><div class="bar-fill" style="width:' + Math.round((avgT / maxAvg) * 100) + '%"></div></div></td></tr>';
+      html += '<td class="bar-chart-cell"><div class="bar-wrap" title="' + esc(barTitle) + '"><div class="bar-fill" style="width:' + barPct + '%"></div></div></td></tr>';
     }
     return html + '</tbody></table>';
   }

@@ -133,6 +133,13 @@ For TWEAKED verdict, also include:
 (Full revised milestone content with [PM: ...] annotations on changes)
 ```
 
+**CRITICAL: The Tweaked Content section MUST reproduce the ENTIRE original milestone
+content — every section, every acceptance criterion, every code block, every table.
+Your additions (marked with `[PM: ...]`) should be ADDITIVE — new sections, new
+list items, new clarifications inserted into the existing structure. NEVER summarize,
+condense, or omit sections from the original. The tweaked content REPLACES the
+milestone file, so any content you omit is permanently lost.**
+
 For SPLIT_RECOMMENDED verdict, also include:
 ```markdown
 ## Split Recommendations

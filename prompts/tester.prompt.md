@@ -105,6 +105,7 @@ Updating 'Test Run Results' after each file (Step 2f) means partial progress is
 always recorded even if the turn limit is hit.
 
 {{IF:UI_PROJECT_DETECTED}}
+{{IF:UI_TESTER_PATTERNS}}{{UI_TESTER_PATTERNS}}{{ENDIF:UI_TESTER_PATTERNS}}
 {{TESTER_UI_GUIDANCE}}
 {{ENDIF:UI_PROJECT_DETECTED}}
 

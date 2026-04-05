@@ -767,6 +767,7 @@ source "${TEKHTON_HOME}/lib/detect_ci.sh"
 source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
 source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
 source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+source "${TEKHTON_HOME}/platforms/_base.sh"    # UI platform adapter framework (Milestone 57)
 source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_deps.sh (via crawler_content.sh)
 source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # helpers only; full rescan.sh sourced in --rescan block
 source "${TEKHTON_HOME}/lib/specialists.sh"
@@ -1844,6 +1845,19 @@ fi
 if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]] && [[ -z "${UI_TEST_CMD:-}" ]]; then
     UI_TEST_CMD=$(detect_ui_test_cmd "$PROJECT_DIR" "${UI_FRAMEWORK:-}" 2>/dev/null || true)
     export UI_TEST_CMD
+fi
+
+# --- UI platform adapter resolution (Milestone 57) ---------------------------
+# Maps UI_FRAMEWORK to a platform directory and loads prompt fragments.
+if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]]; then
+    detect_ui_platform || true
+    if [[ -n "${UI_PLATFORM_DIR:-}" ]]; then
+        source_platform_detect
+        load_platform_fragments
+    elif [[ -n "${UI_PLATFORM:-}" ]]; then
+        # Platform set but no directory — still load universal fragments
+        load_platform_fragments
+    fi
 fi
 
 # --- Intra-run context cache (Milestone 47) ----------------------------------

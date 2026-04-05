@@ -107,6 +107,13 @@ distinguish pre-existing failures from failures YOUR changes introduced.
 
 {{TEST_BASELINE_SUMMARY}}
 {{ENDIF:TEST_BASELINE_SUMMARY}}
+{{IF:UI_CODER_GUIDANCE}}
+
+## UI Implementation Guidance
+This is a UI project. Follow these guidelines for visual implementation.
+
+{{UI_CODER_GUIDANCE}}
+{{ENDIF:UI_CODER_GUIDANCE}}
 
 ## Test Maintenance (mandatory)
 If your changes cause existing tests to fail, you MUST update those tests to

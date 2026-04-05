@@ -119,6 +119,11 @@ Recommended tester turns: N
 When examining files in scope, identify any UI components (React components, Vue
 templates, HTML files, CSS/SCSS modules). Note these in your scout report under a
 `## UI Components in Scope` section so the tester knows to write E2E tests for them.
+
+Additionally identify:
+- The design system in use (component library, theme configuration file)
+- Existing reusable components relevant to the task
+- The project's breakpoint/adaptive layout conventions
 {{ENDIF:UI_PROJECT_DETECTED}}
 
 Do not read more than 10 files. Do not write any code. Just map the territory.

@@ -10,7 +10,8 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `CLAUDE.md` repository layout section does not list the 3 new library files (`lib/plan_batch.sh`, `lib/plan_milestone_review.sh`, `lib/plan_answers_flow.sh`) — minor documentation gap, no behavioral impact.
+- `tests/test_platform_fragments.sh:86-94` — Test 27 writes the mock `coder_guidance.prompt.md` to `${TEKHTON_HOME}/platforms/web/` (inside the repo tree) rather than a temp dir. A file-level `trap` would prevent leaving stale mock files if the process is killed between the write and the `rm -f` cleanup line.
+- `tests/test_watchtower_distribution_toggle.sh:160` — Comment still reads "Verify Run Count button" after the label was renamed to "Avg Turns". Stale comment only; test assertions are correct.
 
 ## Coverage Gaps
 - None
