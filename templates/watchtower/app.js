@@ -1098,7 +1098,7 @@
   // --- Incremental data refresh ---
   var refreshTimer = null, refreshStopped = false;
   function refreshData() {
-    var dataFiles = ['run_state', 'timeline', 'milestones', 'reports', 'metrics', 'security', 'health', 'inbox'];
+    var dataFiles = ['run_state', 'timeline', 'milestones', 'reports', 'metrics', 'security', 'health', 'inbox', 'action_items', 'notes'];
     var promises = [];
     for (var i = 0; i < dataFiles.length; i++) (function (name) {
       promises.push(fetch('data/' + name + '.js?t=' + Date.now()).then(function (r) {

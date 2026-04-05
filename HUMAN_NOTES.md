@@ -16,7 +16,7 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 ## Features
 
 ## Bugs
-- [ ] [BUG] Refresh Button in Watchtower not functioning as expected.
+- [x] [BUG] Refresh Button in Watchtower not functioning as expected.
 The refresh button in watchtower doesn't appear to be working. It doesn't trigger a refresh of the data, and the UI doesn't update with new information. An actual refresh of the browser page is required to see updated data. Currently once a run ends or a new run begins, the Refresh button becomes non-functional and a browser refresh is required.
 Priority: Medium
 Submitted: 2026-04-05T18:35:16.589Z

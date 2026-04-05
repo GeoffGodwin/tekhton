@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_specialist_ui.sh` — add diff relevance tests for 10 uncovered UI patterns
+- [x] `tests/test_watchtower_refresh_data_completeness.sh` — verify dataFiles array matches all script tags
 
 ## Test Run Results
-Passed: 268  Failed: 0
+Passed: 25  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_specialist_ui.sh`
+- [x] `tests/test_watchtower_refresh_data_completeness.sh`
