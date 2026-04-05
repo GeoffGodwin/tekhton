@@ -1,0 +1,38 @@
+# Tekhton Conductor configuration
+# Copy to /etc/tekhton-conductor/conductor.cfg and fill in values
+
+# Path to the tekhton repository (where tekhton.sh lives)
+tekhton_path=/opt/tekhton
+
+# Path to the milestone manifest file
+manifest_path=/path/to/project/.claude/milestones/MANIFEST.cfg
+
+# Path to the target project repository
+repo_path=/path/to/project
+
+# Git integration branch for PRs
+integration_branch=feature/Version3
+
+# HTTP API port
+api_port=7411
+
+# Static bearer token for API authentication
+api_token=CHANGE_ME_TO_A_RANDOM_SECRET
+
+# Anthropic API key (for error analysis calls)
+anthropic_api_key=sk-ant-...
+
+# Rolling usage window in hours
+usage_window_hours=5
+
+# Wait when remaining capacity drops below this fraction
+usage_safety_threshold=0.25
+
+# Stop after this many consecutive failures of the same milestone
+max_milestone_retries=3
+
+# Log file path
+log_path=/var/log/tekhton-conductor.log
+
+# Persistent state file path
+state_path=/var/run/tekhton-conductor/state.json
