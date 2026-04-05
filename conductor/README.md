@@ -7,7 +7,7 @@ Autonomous milestone progression daemon for Tekhton. Runs as a Docker container,
 - Reads the milestone manifest and walks the DAG in dependency order
 - For each milestone: creates a git branch, runs `--milestone <id>`, runs `--fix-nonblockers` and `--fix-driftlog`, commits, creates a PR, and enables auto-merge
 - Tracks API token usage to avoid hitting the 5-hour rolling window ceiling
-- On failure, calls the Anthropic API (`claude-opus-4-6`) to analyze the error and decide: retry, fix, diagnose, or stop
+- On failure, uses the Claude CLI to analyze the error and decide: retry, fix, diagnose, or stop
 - Stops after 3 consecutive failures of the same milestone
 - Exposes an HTTP control plane (FastAPI on port 7411) for monitoring and commands
 
@@ -17,11 +17,11 @@ The conductor is fully self-contained:
 
 - **Tekhton source** is baked into the Docker image at build time
 - **Target project repo** is cloned from `repo_url` on startup into a tmpfs (ephemeral, fast, disposable after push)
-- **Auth** uses `ANTHROPIC_API_KEY` env var for both the Claude CLI and the conductor's own API calls (no OAuth expiry issues)
+- **Auth** uses your existing Claude Max subscription via the Claude CLI OAuth token (mounted from `~/.claude`). No separate API key or billing needed.
 - **SSH keys** and **gh CLI auth** are mounted read-only from the host for git push and PR creation
 - **State** persists to a named Docker volume so the conductor survives restarts
 
-Nothing lives on the host except SSH keys, gh auth, and the config file.
+Nothing lives on the host except SSH/gh/Claude auth and the config file.
 
 ## Quick Start
 
@@ -36,12 +36,11 @@ Edit `conductor.cfg`:
 - Set `integration_branch` to your integration branch name
 - Set `api_token` to a random secret
 
-### 2. Set environment variables
+### 2. Set environment variables (optional)
 
 Create a `.env` file or export:
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-...    # required
 CONDUCTOR_PORT=7411             # optional, defaults to 7411
 PUID=1000                       # optional, match your host UID
 PGID=1000                       # optional, match your host GID
@@ -65,12 +64,13 @@ curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:7411/status
 
 ## Host Prerequisites
 
-The container bind-mounts these from the host (read-only):
+The container bind-mounts these from the host:
 
-- **`~/.ssh/`** -- SSH keys for `git push` (must have access to the target repo)
-- **`~/.config/gh/`** -- GitHub CLI auth (`gh auth login` must have been run)
+- **`~/.ssh/`** (read-only) -- SSH keys for `git push` (must have access to the target repo)
+- **`~/.config/gh/`** (read-only) -- GitHub CLI auth (`gh auth login` must have been run)
+- **`~/.claude/`** (read-write) -- Claude CLI OAuth token from your Claude Max subscription (`claude login` must have been run)
 
-The `ANTHROPIC_API_KEY` environment variable handles all Claude authentication. No OAuth login or `~/.claude` mount needed.
+The Claude mount is read-write so the CLI can refresh its OAuth token. All Claude usage (both tekhton.sh milestone runs and the conductor's error analysis) runs under your existing Max subscription -- no separate API billing.
 
 ## Integrating with an Existing Compose Stack
 
@@ -148,7 +148,6 @@ IDLE -> ARMED -> RUNNING_MILESTONE -> RUNNING_FIXES -> COMMITTING -> IDLE (loop)
 | `integration_branch` | PR base branch | `feature/Version3` |
 | `api_port` | HTTP API port | `7411` |
 | `api_token` | Bearer token for API auth | -- |
-| `anthropic_api_key` | Anthropic key (env var preferred) | -- |
 | `usage_window_hours` | Rolling usage window | `5` |
 | `usage_safety_threshold` | Wait threshold (fraction) | `0.25` |
 | `max_milestone_retries` | Max consecutive failures | `3` |

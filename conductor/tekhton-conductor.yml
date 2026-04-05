@@ -22,12 +22,13 @@ services:
       - ~/.ssh:/home/conductor/.ssh:ro
       # GitHub CLI auth
       - ~/.config/gh:/home/conductor/.config/gh:ro
+      # Claude CLI auth (read-write so OAuth tokens can refresh)
+      - ~/.claude:/home/conductor/.claude
     tmpfs:
       # Ephemeral workspace for cloned target repo — fast, disposable
       - /repo:uid=1000,gid=1000
     environment:
       TZ: ${TZ:-UTC}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY}
       HOME: /home/conductor
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:7411/status", "-H", "Authorization: Bearer dummy"]

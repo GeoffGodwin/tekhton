@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-import anthropic
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -37,7 +36,6 @@ class ConductorConfig:
     integration_branch: str = "feature/Version3"
     api_port: int = 7411
     api_token: str = ""
-    anthropic_api_key: str = ""
     usage_window_hours: float = 5.0
     usage_safety_threshold: float = 0.25
     max_milestone_retries: int = 3
@@ -55,7 +53,7 @@ class ConductorConfig:
         section = cp["conductor"]
         for key in (
             "tekhton_path", "manifest_path", "repo_url", "repo_path",
-            "integration_branch", "api_token", "anthropic_api_key",
+            "integration_branch", "api_token",
             "log_path", "state_path",
         ):
             if key in section:
@@ -66,10 +64,6 @@ class ConductorConfig:
         for key in ("usage_window_hours", "usage_safety_threshold"):
             if key in section:
                 setattr(cfg, key, float(section[key]))
-        # Allow ANTHROPIC_API_KEY from environment (preferred in Docker)
-        env_key = os.environ.get("ANTHROPIC_API_KEY")
-        if env_key:
-            cfg.anthropic_api_key = env_key
         return cfg
 
 
@@ -403,13 +397,32 @@ class Conductor:
         )
         self._gh("pr", "merge", "--squash", "--auto")
 
-    # -- Error analysis via Anthropic API ------------------------------------
+    # -- Error analysis via Claude CLI ----------------------------------------
+
+    # JSON schema for structured output from claude --print --json-schema
+    ERROR_ANALYSIS_SCHEMA = json.dumps({
+        "type": "object",
+        "properties": {
+            "decision": {
+                "type": "string",
+                "enum": [
+                    "RETRY_MILESTONE", "RUN_FIX_NONBLOCKERS",
+                    "RUN_FIX_DRIFTLOG", "RUN_DIAGNOSE", "STOP_AND_REPORT",
+                ],
+            },
+            "reason": {"type": "string"},
+        },
+        "required": ["decision", "reason"],
+    })
 
     def _analyze_error(self, milestone: Milestone, error_output: str) -> dict:
-        """Call Anthropic API to decide next action after a failure."""
-        self.logger.info("Analyzing error for milestone %s via Anthropic API", milestone.id)
+        """Use Claude CLI (--print) to decide next action after a failure.
 
-        # Read manifest state for this milestone
+        Runs under the user's Claude Max subscription — no API key needed.
+        """
+        self.logger.info("Analyzing error for milestone %s via Claude CLI", milestone.id)
+
+        # Read manifest state
         manifest_lines = ""
         try:
             with open(self.config.manifest_path, "r") as f:
@@ -423,7 +436,7 @@ class Conductor:
         if os.path.exists(drift_path):
             try:
                 with open(drift_path, "r") as f:
-                    drift_log = f.read()[-5000:]  # last 5k chars
+                    drift_log = f.read()[-5000:]
             except Exception:
                 pass
 
@@ -431,53 +444,56 @@ class Conductor:
         error_lines = error_output.strip().split("\n")
         truncated_error = "\n".join(error_lines[-200:])
 
-        prompt = f"""You are the Tekhton Conductor's error analysis module. A milestone run has failed.
+        prompt = (
+            "You are the Tekhton Conductor's error analysis module. "
+            "A milestone run has failed. Analyze the information and decide the next action.\n\n"
+            f"## Failing milestone\nID: {milestone.id}\nTitle: {milestone.title}\n\n"
+            f"## Last 200 lines of output\n```\n{truncated_error}\n```\n\n"
+            f"## Manifest state\n```\n{manifest_lines}\n```\n\n"
+            f"## Drift log (last 5000 chars)\n```\n{drift_log}\n```\n\n"
+            "Decide: RETRY_MILESTONE if transient/fixable, RUN_FIX_NONBLOCKERS if "
+            "non-blocking issues are piling up, RUN_FIX_DRIFTLOG if drift entries "
+            "need resolution, RUN_DIAGNOSE if the failure is unclear, or "
+            "STOP_AND_REPORT if the failure looks unrecoverable."
+        )
 
-Analyze the following information and return EXACTLY one JSON object with two keys:
-- "decision": one of RETRY_MILESTONE, RUN_FIX_NONBLOCKERS, RUN_FIX_DRIFTLOG, RUN_DIAGNOSE, STOP_AND_REPORT
-- "reason": a brief explanation string
-
-## Failing milestone
-ID: {milestone.id}
-Title: {milestone.title}
-
-## Last 200 lines of output
-```
-{truncated_error}
-```
-
-## Manifest state
-```
-{manifest_lines}
-```
-
-## Drift log (last 5000 chars)
-```
-{drift_log}
-```
-
-Return ONLY valid JSON. No markdown fences. No explanation outside the JSON."""
-
-        client = anthropic.Anthropic(api_key=self.config.anthropic_api_key)
         try:
-            response = client.messages.create(
-                model="claude-opus-4-6",
-                max_tokens=256,
-                messages=[{"role": "user", "content": prompt}],
+            result = subprocess.run(
+                [
+                    "claude", "--print",
+                    "--model", "sonnet",
+                    "--output-format", "json",
+                    "--json-schema", self.ERROR_ANALYSIS_SCHEMA,
+                    "--max-turns", "1",
+                    "--no-input",
+                    prompt,
+                ],
+                capture_output=True, text=True, timeout=120,
             )
-            text = response.content[0].text.strip()
 
-            # Track tokens from this API call
-            if response.usage:
-                self.state.accumulated_tokens += response.usage.input_tokens
-                self.state.accumulated_tokens += response.usage.output_tokens
+            if result.returncode != 0:
+                self.logger.error("Claude CLI error analysis failed (exit %d): %s",
+                                  result.returncode, (result.stderr or "")[:500])
+                return {"decision": "STOP_AND_REPORT",
+                        "reason": f"Claude CLI exited {result.returncode}"}
 
-            # Parse — strip markdown fences if present
-            text = re.sub(r'^```\w*\n?', '', text)
-            text = re.sub(r'\n?```$', '', text)
-            result = json.loads(text)
+            # Parse structured JSON output
+            text = result.stdout.strip()
+            # The --output-format json wraps in a result object; extract
+            try:
+                outer = json.loads(text)
+                # output-format json returns {"result": "...", ...}
+                if "result" in outer:
+                    parsed = json.loads(outer["result"])
+                else:
+                    parsed = outer
+            except (json.JSONDecodeError, TypeError):
+                # Try parsing raw text directly
+                text = re.sub(r'^```\w*\n?', '', text)
+                text = re.sub(r'\n?```$', '', text)
+                parsed = json.loads(text)
 
-            decision = result.get("decision", "STOP_AND_REPORT")
+            decision = parsed.get("decision", "STOP_AND_REPORT")
             valid_decisions = {
                 "RETRY_MILESTONE", "RUN_FIX_NONBLOCKERS",
                 "RUN_FIX_DRIFTLOG", "RUN_DIAGNOSE", "STOP_AND_REPORT",
@@ -486,11 +502,14 @@ Return ONLY valid JSON. No markdown fences. No explanation outside the JSON."""
                 self.logger.warning("Invalid decision '%s', defaulting to STOP_AND_REPORT", decision)
                 decision = "STOP_AND_REPORT"
 
-            return {"decision": decision, "reason": result.get("reason", "")}
+            return {"decision": decision, "reason": parsed.get("reason", "")}
 
+        except subprocess.TimeoutExpired:
+            self.logger.error("Claude CLI error analysis timed out")
+            return {"decision": "STOP_AND_REPORT", "reason": "Analysis timed out"}
         except Exception as exc:
-            self.logger.error("Error analysis API call failed: %s", exc)
-            return {"decision": "STOP_AND_REPORT", "reason": f"API call failed: {exc}"}
+            self.logger.error("Error analysis failed: %s", exc)
+            return {"decision": "STOP_AND_REPORT", "reason": f"Analysis failed: {exc}"}
 
     # -- Main loop -----------------------------------------------------------
 

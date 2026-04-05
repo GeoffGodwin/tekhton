@@ -24,10 +24,6 @@ api_port=7411
 # Static bearer token for API authentication
 api_token=CHANGE_ME_TO_A_RANDOM_SECRET
 
-# Anthropic API key for error analysis calls.
-# Can also be set via ANTHROPIC_API_KEY environment variable (takes precedence).
-#anthropic_api_key=sk-ant-...
-
 # Rolling usage window in hours
 usage_window_hours=5
 
