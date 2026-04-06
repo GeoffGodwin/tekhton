@@ -1,0 +1,40 @@
+# Tekhton Conductor configuration
+# Copy alongside docker-compose and edit. Container-internal paths below
+# match the volume mounts / tmpfs defined in the compose YAML.
+
+# Path to the tekhton source (baked into the image at build time)
+tekhton_path=/tekhton
+
+# Git SSH URL of the target project repo (cloned into /repo on startup)
+repo_url=git@github.com:yourorg/yourproject.git
+
+# Local path for the cloned repo (tmpfs inside the container)
+repo_path=/repo
+
+# Path to manifest — auto-resolved to <repo_path>/.claude/milestones/MANIFEST.cfg
+# if left blank. Only set this if your manifest is in a non-standard location.
+#manifest_path=
+
+# Git integration branch for PRs
+integration_branch=feature/Version3
+
+# HTTP API port
+api_port=7411
+
+# Static bearer token for API authentication
+api_token=CHANGE_ME_TO_A_RANDOM_SECRET
+
+# Rolling usage window in hours
+usage_window_hours=5
+
+# Wait when remaining capacity drops below this fraction
+usage_safety_threshold=0.25
+
+# Stop after this many consecutive failures of the same milestone
+max_milestone_retries=3
+
+# Log file path (persisted via /data volume)
+log_path=/data/logs/conductor.log
+
+# Persistent state file path (persisted via /data volume)
+state_path=/data/state/conductor.state.json
