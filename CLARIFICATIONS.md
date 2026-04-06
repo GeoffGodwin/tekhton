@@ -79,3 +79,14 @@
 ## Q: Is there a reproduction case — e.g., "run `--init` on a repo with an existing CLAUDE.md and observe X"?
 **A:** If you run either --init or --plan regardless of the state of the repo it will then tell you to run the other. You can reproduce this and just keep running one after the other again and again.
 
+
+# Intake Clarifications — 2026-04-06 11:49:15
+
+## Q: What is the specific inconsistency? (e.g., notes shown in one stage but not another, notes marked complete still appearing, notes content lost after a run, duplicate entries, wrong tag filtering)
+
+## Q: Where does the inconsistency manifest? (e.g., which agent prompt, which pipeline stage, which output file)
+
+## Q: What is the expected behavior vs. the observed behavior?
+
+## Q: Is there a repro sequence (e.g., run tekhton with X config, observe Y in HUMAN_NOTES.md)?
+

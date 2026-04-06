@@ -1,14 +1,18 @@
 ## Verdict
-PASS
+NEEDS_CLARITY
 
 ## Confidence
-88
+15
 
 ## Reasoning
-- Scope is precisely bounded: 17 new files across 4 platform adapter directories, zero file modifications
-- Each adapter's `detect.sh` logic is described with concrete detection heuristics (file patterns, dependency names, variable assignments)
-- Acceptance criteria are specific and testable — each criterion maps to observable outputs (`bash -n`, `shellcheck`, variable set correctly, test file passes)
-- The 4-file adapter convention is already established by M57/M58, reducing ambiguity to near zero
-- Test coverage requirements are explicit: `test_platform_mobile_game.sh` with named test cases for each adapter
-- Integration requirement is explicit: variables must assemble into `UI_CODER_GUIDANCE`, `UI_SPECIALIST_CHECKLIST`, `UI_TESTER_PATTERNS` via `load_platform_fragments()`
-- Prior run failure is implementation-side (6388s suggests a completed but rejected run), not a clarity gap
+- The milestone is a single-line title with zero body content
+- "Human Notes inconsistency" describes neither the symptom nor the expected behavior
+- No reproduction steps, no affected files, no before/after description
+- A competent developer could interpret this as a display bug, a parsing bug, a persistence bug, a filtering bug, or a format mismatch — these require completely different fixes
+- Scope, testability, and acceptance criteria are all absent; no reasonable judgement calls can fill these gaps without guessing the actual defect
+
+## Questions
+- What is the specific inconsistency? (e.g., notes shown in one stage but not another, notes marked complete still appearing, notes content lost after a run, duplicate entries, wrong tag filtering)
+- Where does the inconsistency manifest? (e.g., which agent prompt, which pipeline stage, which output file)
+- What is the expected behavior vs. the observed behavior?
+- Is there a repro sequence (e.g., run tekhton with X config, observe Y in HUMAN_NOTES.md)?

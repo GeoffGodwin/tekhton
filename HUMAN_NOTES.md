@@ -18,5 +18,5 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 - [ ] [FEAT] Milestone shorthand tasks <!-- note:n01 created:2026-04-06 priority:medium source:watchtower -->
 ## Bugs
 
-- [ ] [BUG] Human Notes inconsistency <!-- note:n02 created:2026-04-06 priority:medium source:watchtower -->
+- [~] [BUG] Human Notes inconsistency <!-- note:n02 created:2026-04-06 priority:medium source:watchtower triage:fit est_turns:3 text_hash:1862913326 triaged:2026-04-06 -->
 ## Polish
