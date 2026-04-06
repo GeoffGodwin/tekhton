@@ -116,3 +116,20 @@ always recorded even if the turn limit is hit.
 - If you find zero bugs, the section must contain only the word `None`.
 - Do NOT use sub-headings (###), bold text, numbered lists, or multi-line
   descriptions inside the Bugs Found section.
+
+## Timing Tracking
+When you run `{{TEST_CMD}}`, note the approximate wall-clock duration of each
+invocation. At the very end of your TESTER_REPORT.md (after all other sections),
+include this section:
+
+```
+## Timing
+- Test executions: N
+- Approximate total test execution time: Xs
+- Test files written: N
+```
+
+Where N is the number of times you ran `{{TEST_CMD}}`, Xs is the approximate
+total seconds spent waiting for test commands to complete, and the last N is
+the number of test files you created or modified. These are estimates — rough
+accuracy is fine.

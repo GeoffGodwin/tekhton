@@ -71,6 +71,9 @@ _tester_run_continuations() {
 
         _tcumulative_turns=$((_tcumulative_turns + ${LAST_AGENT_TURNS:-0}))
 
+        # --- M62: Accumulate tester self-reported timing from continuation ---
+        _parse_tester_timing "TESTER_REPORT.md" "accumulate"
+
         # --- Tester diagnostics: continuation timing ----------------
         local _tcont_end
         _tcont_end=$(date +%s)

@@ -1,13 +1,17 @@
 ## Planned Tests
-- [x] `tests/test_timing_repo_map_stats.sh` — _hook_emit_timing_report with non-zero cache hits writes correct repo map stats line
-- [x] `tests/test_review_cache_invalidation.sh` — review.sh cache invalidation heuristic when new files detected across cycles
+- [x] `tests/test_m62_tester_timing.sh` — M62 tester timing instrumentation unit tests
+- [x] `tests/test_m62_resume_cumulative_overcount.sh` — M62 resume delta accumulation overcount fix
 
 ## Test Run Results
-Passed: 20  Failed: 0
+Passed: 285  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_timing_repo_map_stats.sh`
-- [x] `tests/test_review_cache_invalidation.sh`
+- [x] `tests/test_m62_resume_cumulative_overcount.sh`
+
+## Timing
+- Test executions: 285
+- Approximate total test execution time: 90s
+- Test files written: 0

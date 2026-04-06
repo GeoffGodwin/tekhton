@@ -1,7 +1,7 @@
 # Milestone 62: Tester & Build Gate Timing Instrumentation
 <!-- milestone-meta
 id: "62"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

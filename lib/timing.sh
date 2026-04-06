@@ -126,10 +126,31 @@ _hook_emit_timing_report() {
     local total_human
     total_human=$(_format_duration_human "$total_time")
 
+    # --- M62: Identify sub-phases (naming convention: parent_child) ---
+    # Sub-phases are phases whose key starts with a known parent prefix.
+    # They are rendered indented under their parent, not as top-level rows.
+    local -A _sub_phase_parents=()
+    local -a _sub_phase_prefixes=("build_gate_")
+    local _spk
+    for _spk in "${!_PHASE_TIMINGS[@]}"; do
+        local _pfx
+        for _pfx in "${_sub_phase_prefixes[@]}"; do
+            if [[ "$_spk" == "${_pfx}"* ]] && [[ "$_spk" != "${_pfx%_}" ]]; then
+                _sub_phase_parents["$_spk"]="${_pfx%_}"
+            fi
+        done
+    done
+
     # Build the table rows sorted by duration descending
     local table_rows=""
     while IFS='|' read -r dur name; do
         [[ -z "$dur" ]] && continue
+
+        # Skip sub-phases in the main listing — they appear under their parent
+        if [[ -n "${_sub_phase_parents[$name]+x}" ]]; then
+            continue
+        fi
+
         local display_name
         display_name=$(_phase_display_name "$name")
         local human_dur
@@ -141,6 +162,53 @@ _hook_emit_timing_report() {
         fi
         table_rows="${table_rows}| ${display_name} | ${human_dur} | ${pct}% |
 "
+
+        # --- Render sub-phases for this parent ---
+        local _sub_key _sub_dur _sub_display _sub_human _sub_pct
+        while IFS='|' read -r _sub_dur _sub_key; do
+            [[ -z "$_sub_dur" ]] && continue
+            _sub_display=$(_phase_display_name "$_sub_key")
+            _sub_human=$(_format_duration_human "$_sub_dur")
+            _sub_pct="<1"
+            if [[ "$dur" -gt 0 ]] && [[ "$_sub_dur" -gt 0 ]]; then
+                _sub_pct=$(( (_sub_dur * 100) / dur ))
+                [[ "$_sub_pct" -eq 0 ]] && _sub_pct="<1"
+            fi
+            table_rows="${table_rows}|   ↳ ${_sub_display} | ${_sub_human} | ${_sub_pct}% of parent |
+"
+        done < <(
+            for _spk in "${!_sub_phase_parents[@]}"; do
+                if [[ "${_sub_phase_parents[$_spk]}" == "$name" ]]; then
+                    echo "${_PHASE_TIMINGS[$_spk]:-0}|${_spk}"
+                fi
+            done | sort -t'|' -k1 -rn
+        )
+
+        # --- M62: Tester self-reported timing sub-rows ---
+        if [[ "$name" == "tester_agent" ]] && [[ "${_TESTER_TIMING_EXEC_APPROX_S:--1}" -gt -1 ]]; then
+            local _tester_writing_s
+            _tester_writing_s=$(_compute_tester_writing_time "$dur")
+            local _exec_human
+            _exec_human=$(_format_duration_human "$_TESTER_TIMING_EXEC_APPROX_S")
+            local _exec_pct="<1"
+            if [[ "$dur" -gt 0 ]] && [[ "$_TESTER_TIMING_EXEC_APPROX_S" -gt 0 ]]; then
+                _exec_pct=$(( (_TESTER_TIMING_EXEC_APPROX_S * 100) / dur ))
+                [[ "$_exec_pct" -eq 0 ]] && _exec_pct="<1"
+            fi
+            table_rows="${table_rows}|   ↳ Test execution | ~${_exec_human} | ~${_exec_pct}% of tester |
+"
+            if [[ "$_tester_writing_s" -gt -1 ]]; then
+                local _write_human
+                _write_human=$(_format_duration_human "$_tester_writing_s")
+                local _write_pct="<1"
+                if [[ "$dur" -gt 0 ]] && [[ "$_tester_writing_s" -gt 0 ]]; then
+                    _write_pct=$(( (_tester_writing_s * 100) / dur ))
+                    [[ "$_write_pct" -eq 0 ]] && _write_pct="<1"
+                fi
+                table_rows="${table_rows}|   ↳ Test writing | ~${_write_human} | ~${_write_pct}% of tester |
+"
+            fi
+        fi
     done < <(
         for key in "${!_PHASE_TIMINGS[@]}"; do
             local d="${_PHASE_TIMINGS[$key]:-0}"

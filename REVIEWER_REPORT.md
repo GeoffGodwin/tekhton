@@ -1,21 +1,37 @@
+# Reviewer Report — M62 Tester Timing Instrumentation (Cumulative Overcount Fix)
+
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- `lib/indexer.sh` is 302 lines — 2 lines over the 300-line soft ceiling. The overage is a 5-line comment block (lines 298–302) that documents the extracted cache functions. Could be trimmed to a single pointer line if the ceiling is enforced strictly.
-- `timing.sh` cosmetic edge case: when `REPO_MAP_CACHE_HITS=0` but `INDEXER_GENERATION_TIME_MS>0` (first run, no cache hits yet), the timing report line reads "Repo map: 1 generation + 0 cache hits (saved ~0s)". "0 cache hits" is grammatically odd. Consider guarding with `[[ "${_rmc_hits:-0}" -gt 0 ]]` so the line only appears when hits > 0.
-- `_REVIEW_MAP_FILES` in `stages/review.sh` (line 41) is not declared `local` — it leaks as a global after `run_stage_review()` returns. No current consumer collides with this name, but follows the existing global-variable convention. Low risk.
-- CODER_SUMMARY says "19 test cases" but there are 11 test groups with 18 total pass assertions. Minor documentation discrepancy only.
+- `tests/test_m62_resume_cumulative_overcount.sh:206–208` — The comment on scenario 4 reads "cumulative report (first continuation)" and the inline comment says "fires 'accumulate' on a cumulative report". In the new delta-based contract, agents never write cumulative totals — the report in that scenario is a delta, same as any other continuation. The comment is stale and slightly misleading. Worth updating to say "delta report (first continuation, no prior replace)" to match the actual invariant.
 
 ## Coverage Gaps
-- No unit test for the timing.sh repo map stats section — the timing report is typically exercised via integration runs. Consider adding a test that exercises `_hook_emit_timing_report` with a non-zero `_REPO_MAP_CACHE_HITS` to cover the new branch.
-- No test covers the review.sh cache invalidation heuristic (new files detected across review cycles). This would require mocking `extract_files_from_coder_summary` and `invalidate_repo_map_run_cache` — similar to the pattern in `test_coder_stage_split_wiring.sh`.
+None
 
 ## Drift Observations
-- `stages/review.sh:56` — `export REPO_MAP_CONTENT=""` uses `export` on a reassignment inside a function. The variable is already exported at module init in `indexer.sh`. Using `REPO_MAP_CONTENT=""` (without `export`) would suffice here and matches the pattern used elsewhere in the codebase. Not a correctness issue.
+None
+
+---
+
+## Review Notes
+
+Both changed files are minimal, targeted, and correct.
+
+**`prompts/tester_resume.prompt.md`** — The new phrasing "values from THIS continuation only (not cumulative totals — the pipeline accumulates across runs)" is unambiguous and directly fixes the contract mismatch. The parenthetical rationale is a nice touch — it tells the agent *why* it must write deltas, reducing the chance of future regression.
+
+**`tests/test_m62_resume_cumulative_overcount.sh`** — Four well-chosen scenarios:
+1. Basic replace + accumulate with clean delta values — covers the primary regression path
+2. Same with `~60s` tilde-prefix variant — confirms parser handles approximate-time notation
+3. Three sequential continuations — confirms accumulation is additive across multiple calls, not just two
+4. Accumulate on -1 baseline — confirms set-not-add behavior when primary `replace` was never called
+
+The `shellcheck disable=SC1090` directives are correctly placed before the process-substitution `source` lines. `set -euo pipefail` present. Variable quoting and `[[ ]]` usage consistent throughout.
+
+Coder's claim that all 285 existing tests pass is plausible given the change is confined to a prompt file and a new test file — no library or stage code was modified.

@@ -342,7 +342,7 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
     fi
 
     # Generate repo map for scout if available
-    export REPO_MAP_CONTENT=""
+    REPO_MAP_CONTENT=""
     if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
         if run_repo_map "$task" 2>/dev/null; then
             log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
