@@ -2152,6 +2152,10 @@ _run_human_complete_loop() {
             break
         fi
 
+        # Drain any watchtower inbox notes that arrived since the last iteration
+        # so they're available to pick_next_note (e.g. notes submitted mid-run).
+        process_watchtower_inbox 2>/dev/null || true
+
         # Pick next note
         CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
         if [[ -z "$CURRENT_NOTE_LINE" ]]; then

@@ -27,6 +27,9 @@ set -euo pipefail
 # --- Constants ---------------------------------------------------------------
 
 _INBOX_DIR_NAME="watchtower_inbox"
+# Common mis-creation: hyphenated variant (the note marker <!-- watchtower-note -->
+# uses hyphens, so users naturally create the directory with hyphens too).
+_INBOX_DIR_NAME_ALT="watchtower-inbox"
 
 # --- Internal helpers --------------------------------------------------------
 
@@ -34,6 +37,44 @@ _INBOX_DIR_NAME="watchtower_inbox"
 # Returns the inbox directory path.
 _inbox_dir() {
     echo "${PROJECT_DIR:-.}/.claude/${_INBOX_DIR_NAME}"
+}
+
+# _migrate_hyphenated_inbox
+# If .claude/watchtower-inbox/ exists (common mis-creation due to the
+# <!-- watchtower-note --> marker using hyphens), move its contents into
+# the canonical .claude/watchtower_inbox/ directory.
+_migrate_hyphenated_inbox() {
+    local alt_dir="${PROJECT_DIR:-.}/.claude/${_INBOX_DIR_NAME_ALT}"
+    local canon_dir
+    canon_dir="$(_inbox_dir)"
+
+    [[ -d "$alt_dir" ]] || return 0
+
+    mkdir -p "$canon_dir" 2>/dev/null || true
+
+    # Move any files from the hyphenated dir into the canonical dir
+    local moved=0
+    local f
+    for f in "${alt_dir}"/*; do
+        [[ -e "$f" ]] || continue
+        local base
+        base=$(basename "$f")
+        # Skip if same-named file already exists in canonical dir
+        if [[ -e "${canon_dir}/${base}" ]]; then
+            warn "Inbox: skipping duplicate '${base}' during inbox directory migration"
+            continue
+        fi
+        mv "$f" "${canon_dir}/${base}"
+        moved=$((moved + 1))
+    done
+
+    # Remove the hyphenated directory if now empty (including processed/ subdir)
+    rmdir "${alt_dir}/processed" 2>/dev/null || true
+    rmdir "$alt_dir" 2>/dev/null || true
+
+    if [[ "$moved" -gt 0 ]]; then
+        log "Inbox: migrated ${moved} file(s) from watchtower-inbox/ to watchtower_inbox/"
+    fi
 }
 
 # _processed_dir
@@ -184,6 +225,9 @@ _process_manifest_append() {
 # process_watchtower_inbox
 # Main entry point: processes all pending inbox items at pipeline startup.
 process_watchtower_inbox() {
+    # Migrate hyphenated variant before anything else
+    _migrate_hyphenated_inbox
+
     local inbox_dir
     inbox_dir="$(_inbox_dir)"
 
