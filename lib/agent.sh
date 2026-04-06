@@ -228,7 +228,7 @@ run_agent() {
 
     TOTAL_TURNS=$(( TOTAL_TURNS + turns_used ))
     TOTAL_TIME=$(( TOTAL_TIME + elapsed ))
-    STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label}: ${turns_display} turns, ${mins}m${secs}s${_retry_suffix}"
+    STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label} (${model}): ${turns_display} turns, ${mins}m${secs}s${_retry_suffix}"
 
     # --- Null run detection (file changes override FIFO-based heuristic) ------
     export LAST_AGENT_TURNS="$turns_used"

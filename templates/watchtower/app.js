@@ -407,11 +407,18 @@
 
   function renderMilestonesByStatus(ms, ec) {
     var aId = (state().active_milestone || {}).id, lanes = { done: [], active: [], ready: [], pending: [] }, ds = {}, m, st;
+    // Normalize active milestone ID for comparison: manifest uses "m60", run_state uses "60"
+    function msIdMatch(mid, aid) {
+      if (!mid || !aid) return false;
+      if (mid === aid) return true;
+      var a = mid.replace(/^m0*/, ''), b = aid.replace(/^m0*/, '');
+      return a === b;
+    }
     for (var i = 0; i < ms.length; i++) if ((ms[i].status || '').toLowerCase() === 'done') ds[ms[i].id] = true;
     for (var j = 0; j < ms.length; j++) {
       m = ms[j]; st = (m.status || 'pending').toLowerCase();
       if (st === 'done') lanes.done.push(m);
-      else if (st === 'in_progress' || st === 'active' || m.id === aId) lanes.active.push(m);
+      else if (st === 'in_progress' || st === 'active' || msIdMatch(m.id, aId)) lanes.active.push(m);
       else if (depsAllDone(m, ds)) lanes.ready.push(m);
       else lanes.pending.push(m);
     }
@@ -1221,19 +1228,22 @@
   var refreshTimer = null, refreshStopped = false;
   function refreshData() {
     var dataFiles = ['run_state', 'timeline', 'milestones', 'security', 'reports', 'metrics', 'health', 'inbox', 'action_items', 'notes'];
-    var promises = [];
+    var loaded = 0, failed = 0, total = dataFiles.length;
     for (var i = 0; i < dataFiles.length; i++) (function (name) {
-      promises.push(fetch('data/' + name + '.js?t=' + Date.now()).then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status); return r.text();
-      }).then(function (text) { try { new Function(text)(); } catch (e) { throw new Error('Parse error in ' + name + '.js'); } }));
+      var script = document.createElement('script');
+      script.src = 'data/' + name + '.js?t=' + Date.now();
+      script.onload = function () { loaded++; script.parentNode.removeChild(script); if (loaded + failed === total) onRefreshDone(); };
+      script.onerror = function () { failed++; script.parentNode.removeChild(script); if (loaded + failed === total) onRefreshDone(); };
+      document.head.appendChild(script);
     })(dataFiles[i]);
-    Promise.all(promises).then(function () {
+    function onRefreshDone() {
+      if (failed === total) { if (typeof console !== 'undefined') console.error('Watchtower refresh: all data files failed to load'); scheduleRefresh(); return; }
       buildCausalIndex();
       renderLiveRunBanner();
       var active = getActiveTab();
       if (active === 'reports') renderActiveTab();
       updateStatusIndicator(); checkRefreshLifecycle();
-    }).catch(function (err) { if (typeof console !== 'undefined') console.error('Watchtower refresh failed:', err); scheduleRefresh(); });
+    }
   }
   function checkRefreshLifecycle() {
     var s = state(), status = (s.pipeline_status || '').toLowerCase();
@@ -1246,13 +1256,9 @@
   function scheduleRefresh() {
     if (refreshTimer) clearTimeout(refreshTimer);
     var interval = state().refresh_interval_ms || 5000;
-    refreshTimer = setTimeout(function () {
-      if (typeof fetch === 'function' && typeof Promise === 'function') refreshData(); else location.reload();
-    }, interval);
+    refreshTimer = setTimeout(function () { refreshData(); }, interval);
   }
-  function manualRefresh() {
-    if (typeof fetch === 'function' && typeof Promise === 'function') refreshData(); else location.reload();
-  }
+  function manualRefresh() { refreshData(); }
 
   // --- Notes tab (M40) ---
   function renderNotes() {

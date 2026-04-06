@@ -245,16 +245,16 @@ print(json.dumps(results))
             esac
             if [[ "$_st" -gt 0 ]]; then
                 if [[ "$sfirst" = true ]]; then sfirst=false; else stages_json="${stages_json},"; fi
-                stages_json="${stages_json}\"${_sn}\":{\"turns\":${_st},\"duration_s\":${_sd},\"budget\":${_sb}}"
+                # Emit cycle metadata inline
+                local _cycle_prefix=""
+                if [[ "$_sn" = "reviewer" ]] && [[ "$review_cycles_v" -gt 0 ]]; then
+                    _cycle_prefix="\"cycles\":${review_cycles_v},"
+                elif [[ "$_sn" = "security" ]] && [[ "$security_rework_v" -gt 0 ]]; then
+                    _cycle_prefix="\"rework_cycles\":${security_rework_v},"
+                fi
+                stages_json="${stages_json}\"${_sn}\":{${_cycle_prefix}\"turns\":${_st},\"duration_s\":${_sd},\"budget\":${_sb}}"
             fi
         done
-        # Append cycle metadata (M66)
-        if [[ "$review_cycles_v" -gt 0 ]] && echo "$stages_json" | grep -q '"reviewer"' 2>/dev/null; then
-            stages_json=$(printf '%s' "$stages_json" | sed "s/\"reviewer\":{/\"reviewer\":{\"cycles\":${review_cycles_v},/")
-        fi
-        if [[ "$security_rework_v" -gt 0 ]] && echo "$stages_json" | grep -q '"security"' 2>/dev/null; then
-            stages_json=$(printf '%s' "$stages_json" | sed "s/\"security\":{/\"security\":{\"rework_cycles\":${security_rework_v},/")
-        fi
         stages_json="${stages_json}}"
 
         local json_content

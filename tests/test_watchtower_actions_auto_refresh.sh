@@ -54,12 +54,12 @@ else
     fail "Guard code not found in app.js"
 fi
 
-# Verify guard is in the refreshData() function promise callback
-if grep -A 5 "Promise.all(promises).then(function ()" "$APP_JS" | \
+# Verify guard is in the refreshData() onRefreshDone callback
+if sed -n '/function onRefreshDone()/,/^    }/p' "$APP_JS" | \
    grep -q "if (active === 'reports') renderActiveTab();"; then
-    pass "Guard is located in refreshData() promise callback"
+    pass "Guard is located in refreshData() onRefreshDone callback"
 else
-    fail "Guard not found in correct location (Promise.all callback)"
+    fail "Guard not found in correct location (onRefreshDone callback)"
 fi
 
 # =============================================================================
@@ -98,7 +98,7 @@ echo ""
 echo "=== Test 3: Banner, status indicator and refresh lifecycle run unconditionally ==="
 
 # Verify renderLiveRunBanner() runs before the tab guard
-AFTER_GUARD=$(sed -n '/Promise.all(promises).then/,/}).catch/p' "$APP_JS")
+AFTER_GUARD=$(sed -n '/function onRefreshDone()/,/^    }/p' "$APP_JS")
 
 if echo "$AFTER_GUARD" | grep -q "renderLiveRunBanner()"; then
     pass "renderLiveRunBanner() is called (banner always refreshes)"
@@ -234,8 +234,8 @@ fi
 echo ""
 echo "=== Test 5: Guard placement in callback chain ==="
 
-# Extract Promise.all section and verify order of operations
-PROMISE_SECTION=$(sed -n '/Promise.all(promises).then(function ()/,/}).catch/p' "$APP_JS")
+# Extract onRefreshDone section and verify order of operations
+PROMISE_SECTION=$(sed -n '/function onRefreshDone()/,/^    }/p' "$APP_JS")
 
 # Find line numbers to verify order
 BUILD_LINE=$(echo "$PROMISE_SECTION" | grep -n "buildCausalIndex()" | cut -d: -f1 | head -1)

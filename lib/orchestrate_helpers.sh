@@ -43,6 +43,10 @@ _run_auto_advance_chain() {
         _ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
 
         emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
+        # Refresh dashboard milestones so the "in_progress" status is visible
+        if command -v emit_dashboard_milestones &>/dev/null; then
+            emit_dashboard_milestones 2>/dev/null || true
+        fi
 
         # Re-enter the complete loop for the new milestone.
         # Recursion depth is bounded by AUTO_ADVANCE_LIMIT (default 3) — the

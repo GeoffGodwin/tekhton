@@ -15,8 +15,8 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 ## Features
 
+- [ ] [FEAT] Milestone shorthand tasks <!-- note:n01 created:2026-04-06 priority:medium source:watchtower -->
 ## Bugs
-- [ ] [BUG] The Milestone Map is no longer showing the currently active milestone in the Active column. It remains in the READY column and then jumps to DONE when completed, without ever showing as ACTIVE.
 
+- [ ] [BUG] Human Notes inconsistency <!-- note:n02 created:2026-04-06 priority:medium source:watchtower -->
 ## Polish
-- [ ] [POLISH] The Run Summary print out in Tekhton should also reflect which model was used at that stage. For instance if the Coder was using sonnet-4-6 or opus-4-6, that should be printed in the summary for that stage. This is important for debugging and understanding performance differences between models.

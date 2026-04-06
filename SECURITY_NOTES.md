@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-02 12:14:26
+Generated: 2026-04-06 11:17:24
 
 ## Non-Blocking Findings (MEDIUM/LOW)
-- [LOW] [category:A03] [lib/dashboard_parsers_runs_files.sh:75] fixable:yes — SECURITY_NOTES.md cites line 84 as the location of the `_json_escape` fix in the sed fallback path, but the JSON construction where the fix applies is at line 75. Line 84 is `result="${result}${json_content}"`. The fix is present and correct; only the reference line number in the notes is off by ~9 lines. Informational only — no security risk.
+- [LOW] [category:A03] [platforms/mobile_native_android/detect.sh:60,65,87] fixable:yes — `echo "$gradle_files" | xargs grep -l '...'` splits newline-separated paths on whitespace, so any `build.gradle` path containing spaces will be silently mishandled by xargs (treated as two arguments). No injection risk since filenames come from `find` within `PROJECT_DIR`, but the detection logic will silently fail for space-containing paths. Fix: replace with a `while IFS= read -r f; do grep -ql '...' "$f" && ...; done <<< "$gradle_files"` loop or use `grep -rl '...' "$proj_dir" --include='build.gradle'` directly.

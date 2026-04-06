@@ -9,6 +9,17 @@
 
 set -euo pipefail
 
+# _run_and_record_test_audit — Run test integrity audit and record timing.
+# Shared by tester.sh (clean completion) and _tester_run_continuations (continuation success).
+_run_and_record_test_audit() {
+    local _audit_start="$SECONDS"
+    run_test_audit || true
+    if declare -p _STAGE_DURATION &>/dev/null; then
+        _STAGE_DURATION["test_audit"]="$(( SECONDS - _audit_start ))"
+        _STAGE_TURNS["test_audit"]="${LAST_AGENT_TURNS:-0}"
+    fi
+}
+
 # _tester_run_continuations — Run tester continuation loop when tests remain.
 # Args: $1 = resume_flag, $2 = _tester_stage_start timestamp
 # Reads/writes: REMAINING (global), SKIP_FINAL_CHECKS
@@ -108,12 +119,7 @@ _tester_run_continuations() {
         clear_pipeline_state
 
         # --- Test integrity audit (M20) ---
-        local _audit_start="$SECONDS"
-        run_test_audit || true
-        if declare -p _STAGE_DURATION &>/dev/null; then
-            _STAGE_DURATION["test_audit"]="$(( SECONDS - _audit_start ))"
-            _STAGE_TURNS["test_audit"]="${LAST_AGENT_TURNS:-0}"
-        fi
+        _run_and_record_test_audit
     else
         warn "Tester still has ${REMAINING} test(s) remaining after ${_tcont_attempt} continuation(s)."
     fi

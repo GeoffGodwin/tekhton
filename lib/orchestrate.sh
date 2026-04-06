@@ -107,6 +107,10 @@ run_complete_loop() {
     # Emit milestone metadata on start (if milestone mode)
     if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
         emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
+        # Refresh dashboard milestones so the "in_progress" status is visible
+        if command -v emit_dashboard_milestones &>/dev/null; then
+            emit_dashboard_milestones 2>/dev/null || true
+        fi
     fi
 
     while true; do
