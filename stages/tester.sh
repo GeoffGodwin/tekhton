@@ -353,7 +353,12 @@ ${_failure_output}"
                         clear_pipeline_state
 
                         # --- Test integrity audit (M20) ---
+                        local _audit_start="$SECONDS"
                         run_test_audit || true
+                        if declare -p _STAGE_DURATION &>/dev/null; then
+                            _STAGE_DURATION["test_audit"]="$(( SECONDS - _audit_start ))"
+                            _STAGE_TURNS["test_audit"]="${LAST_AGENT_TURNS:-0}"
+                        fi
                     else
                         warn "Tester still has ${REMAINING} test(s) remaining after ${_tcont_attempt} continuation(s)."
                     fi
@@ -380,7 +385,12 @@ ${_failure_output}"
             clear_pipeline_state
 
             # --- Test integrity audit (M20) ---
+            local _audit_start="$SECONDS"
             run_test_audit || true
+            if declare -p _STAGE_DURATION &>/dev/null; then
+                _STAGE_DURATION["test_audit"]="$(( SECONDS - _audit_start ))"
+                _STAGE_TURNS["test_audit"]="${LAST_AGENT_TURNS:-0}"
+            fi
         fi
     fi
 

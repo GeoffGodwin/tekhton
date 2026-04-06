@@ -82,6 +82,7 @@ run_stage_review() {
         REVIEWER_PROMPT=$(render_prompt "reviewer")
         _phase_end "reviewer_prompt"
 
+        local _rev_cycle_start="$SECONDS"
         _phase_start "reviewer_agent"
         run_agent \
             "Reviewer (cycle ${REVIEW_CYCLE})" \
@@ -91,6 +92,11 @@ run_stage_review() {
             "$LOG_FILE" \
             "$AGENT_TOOLS_REVIEWER"
         _phase_end "reviewer_agent"
+        # Record per-cycle sub-step (M66)
+        if declare -p _STAGE_DURATION &>/dev/null; then
+            _STAGE_DURATION["reviewer_cycle_${REVIEW_CYCLE}"]="$(( SECONDS - _rev_cycle_start ))"
+            _STAGE_TURNS["reviewer_cycle_${REVIEW_CYCLE}"]="${LAST_AGENT_TURNS:-0}"
+        fi
         print_run_summary
         success "Reviewer finished."
 

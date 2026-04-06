@@ -2434,7 +2434,10 @@ else
     # Build gate failure in cleanup logs a warning but does not fail the pipeline.
 
     if [ "${SKIP_FINAL_CHECKS:-false}" != true ] && should_run_cleanup; then
+        _STAGE_START_TS[cleanup]="$SECONDS"
         run_stage_cleanup
+        _STAGE_TURNS[cleanup]="${LAST_AGENT_TURNS:-0}"
+        _STAGE_DURATION[cleanup]="$(( SECONDS - ${_STAGE_START_TS[cleanup]:-$SECONDS} ))"
     fi
 
     # --- Finalize pipeline ---------------------------------------------------

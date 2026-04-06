@@ -75,13 +75,20 @@ for line in lines[-int(sys.argv[2]):]:
         # Use adjusted_* as per-stage budget (turn limit from scout calibration)
         stages = {}
         budget_map = {'coder': 'adjusted_coder', 'reviewer': 'adjusted_reviewer', 'tester': 'adjusted_tester'}
-        for sname, skey in [('coder','coder_turns'),('reviewer','reviewer_turns'),('tester','tester_turns'),('scout','scout_turns')]:
+        for sname, skey in [('coder','coder_turns'),('reviewer','reviewer_turns'),('tester','tester_turns'),('scout','scout_turns'),('security','security_turns'),('cleanup','cleanup_turns'),('test_audit','test_audit_turns'),('analyze_cleanup','analyze_cleanup_turns'),('specialist_security','specialist_security_turns'),('specialist_perf','specialist_perf_turns'),('specialist_api','specialist_api_turns')]:
             t = d.get(skey, 0)
             bkey = budget_map.get(sname)
             b = int(d.get(bkey, 0)) if bkey else 0
             dur = int(d.get(sname + '_duration_s', 0))
             if t and int(t) > 0:
                 stages[sname] = {'turns': int(t), 'duration_s': dur, 'budget': b}
+        # Add review_cycles and security_rework_cycles as metadata (M66)
+        rc = int(d.get('review_cycles', 0))
+        if rc > 0 and 'reviewer' in stages:
+            stages['reviewer']['cycles'] = rc
+        src = int(d.get('security_rework_cycles', 0))
+        if src > 0 and 'security' in stages:
+            stages['security']['rework_cycles'] = src
         # Estimate per-stage durations proportionally from total_time_s when
         # individual duration_s fields are missing (legacy metrics records).
         total_ts = int(d.get('total_time_s', 0))
@@ -167,6 +174,16 @@ print(json.dumps(results))
         reviewer_t=$(printf '%s' "$line" | sed -n 's/.*"reviewer_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         tester_t=$(printf '%s' "$line" | sed -n 's/.*"tester_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         scout_t=$(printf '%s' "$line" | sed -n 's/.*"scout_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        # M66: Extended stage turn counts
+        local security_t cleanup_t test_audit_t analyze_cleanup_t
+        local specialist_security_t specialist_perf_t specialist_api_t
+        security_t=$(printf '%s' "$line" | sed -n 's/.*"security_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        cleanup_t=$(printf '%s' "$line" | sed -n 's/.*"cleanup_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        test_audit_t=$(printf '%s' "$line" | sed -n 's/.*"test_audit_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        analyze_cleanup_t=$(printf '%s' "$line" | sed -n 's/.*"analyze_cleanup_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        specialist_security_t=$(printf '%s' "$line" | sed -n 's/.*"specialist_security_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        specialist_perf_t=$(printf '%s' "$line" | sed -n 's/.*"specialist_perf_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        specialist_api_t=$(printf '%s' "$line" | sed -n 's/.*"specialist_api_turns"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         local adj_coder adj_reviewer adj_tester
         adj_coder=$(printf '%s' "$line" | sed -n 's/.*"adjusted_coder"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         adj_reviewer=$(printf '%s' "$line" | sed -n 's/.*"adjusted_reviewer"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
@@ -177,36 +194,65 @@ print(json.dumps(results))
         reviewer_dur=$(printf '%s' "$line" | sed -n 's/.*"reviewer_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         tester_dur=$(printf '%s' "$line" | sed -n 's/.*"tester_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         scout_dur=$(printf '%s' "$line" | sed -n 's/.*"scout_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        # M66: Extended stage durations
+        local security_dur cleanup_dur
+        security_dur=$(printf '%s' "$line" | sed -n 's/.*"security_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        cleanup_dur=$(printf '%s' "$line" | sed -n 's/.*"cleanup_duration_s"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        # M66: Cycle counts
+        local review_cycles_v security_rework_v
+        review_cycles_v=$(printf '%s' "$line" | sed -n 's/.*"review_cycles"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+        security_rework_v=$(printf '%s' "$line" | sed -n 's/.*"security_rework_cycles"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
         : "${coder_t:=0}" "${reviewer_t:=0}" "${tester_t:=0}" "${scout_t:=0}"
+        : "${security_t:=0}" "${cleanup_t:=0}"
+        : "${test_audit_t:=0}" "${analyze_cleanup_t:=0}"
+        : "${specialist_security_t:=0}" "${specialist_perf_t:=0}" "${specialist_api_t:=0}"
         : "${adj_coder:=0}" "${adj_reviewer:=0}" "${adj_tester:=0}"
         : "${coder_dur:=0}" "${reviewer_dur:=0}" "${tester_dur:=0}" "${scout_dur:=0}"
+        : "${security_dur:=0}" "${cleanup_dur:=0}"
+        : "${review_cycles_v:=0}" "${security_rework_v:=0}"
         # Estimate per-stage durations proportionally when missing (legacy records)
         if [[ "$time_s" -gt 0 ]] && \
            [[ "$coder_dur" -eq 0 ]] && [[ "$reviewer_dur" -eq 0 ]] && \
            [[ "$tester_dur" -eq 0 ]] && [[ "$scout_dur" -eq 0 ]]; then
-            local _total_st=$(( coder_t + reviewer_t + tester_t + scout_t ))
+            local _total_st=$(( coder_t + reviewer_t + tester_t + scout_t + security_t + cleanup_t + test_audit_t + analyze_cleanup_t + specialist_security_t + specialist_perf_t + specialist_api_t ))
             if [[ "$_total_st" -gt 0 ]]; then
                 coder_dur=$(( time_s * coder_t / _total_st ))
                 reviewer_dur=$(( time_s * reviewer_t / _total_st ))
                 tester_dur=$(( time_s * tester_t / _total_st ))
                 scout_dur=$(( time_s * scout_t / _total_st ))
+                security_dur=$(( time_s * security_t / _total_st ))
+                cleanup_dur=$(( time_s * cleanup_t / _total_st ))
             fi
         fi
         local stages_json="{"
         local sfirst=true
         local _sn _st _sb _sd
-        for _sn in coder reviewer tester scout; do
+        for _sn in coder reviewer tester scout security cleanup test_audit analyze_cleanup specialist_security specialist_perf specialist_api; do
             case "$_sn" in
                 coder)    _st="$coder_t"; _sb="$adj_coder"; _sd="$coder_dur" ;;
                 reviewer) _st="$reviewer_t"; _sb="$adj_reviewer"; _sd="$reviewer_dur" ;;
                 tester)   _st="$tester_t"; _sb="$adj_tester"; _sd="$tester_dur" ;;
                 scout)    _st="$scout_t"; _sb=0; _sd="$scout_dur" ;;
+                security) _st="$security_t"; _sb=0; _sd="$security_dur" ;;
+                cleanup)  _st="$cleanup_t"; _sb=0; _sd="$cleanup_dur" ;;
+                test_audit) _st="$test_audit_t"; _sb=0; _sd=0 ;;
+                analyze_cleanup) _st="$analyze_cleanup_t"; _sb=0; _sd=0 ;;
+                specialist_security) _st="$specialist_security_t"; _sb=0; _sd=0 ;;
+                specialist_perf) _st="$specialist_perf_t"; _sb=0; _sd=0 ;;
+                specialist_api) _st="$specialist_api_t"; _sb=0; _sd=0 ;;
             esac
             if [[ "$_st" -gt 0 ]]; then
                 if [[ "$sfirst" = true ]]; then sfirst=false; else stages_json="${stages_json},"; fi
                 stages_json="${stages_json}\"${_sn}\":{\"turns\":${_st},\"duration_s\":${_sd},\"budget\":${_sb}}"
             fi
         done
+        # Append cycle metadata (M66)
+        if [[ "$review_cycles_v" -gt 0 ]] && echo "$stages_json" | grep -q '"reviewer"' 2>/dev/null; then
+            stages_json=$(printf '%s' "$stages_json" | sed "s/\"reviewer\":{/\"reviewer\":{\"cycles\":${review_cycles_v},/")
+        fi
+        if [[ "$security_rework_v" -gt 0 ]] && echo "$stages_json" | grep -q '"security"' 2>/dev/null; then
+            stages_json=$(printf '%s' "$stages_json" | sed "s/\"security\":{/\"security\":{\"rework_cycles\":${security_rework_v},/")
+        fi
         stages_json="${stages_json}}"
 
         local json_content

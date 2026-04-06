@@ -1,7 +1,7 @@
 # Milestone 66: Watchtower Full-Stage Metrics & Hierarchical Breakdown
 <!-- milestone-meta
 id: "66"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

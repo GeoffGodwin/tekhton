@@ -273,6 +273,7 @@ run_final_checks() {
         ANALYZE_ISSUES=$(echo "$ANALYZE_OUTPUT" | grep -E "^  (error|warning|info)" || true)
         CLEANUP_PROMPT=$(render_prompt "analyze_cleanup")
 
+        local _acl_start="$SECONDS"
         run_agent \
             "Analyze Cleanup" \
             "$CLEANUP_MODEL" \
@@ -280,6 +281,11 @@ run_final_checks() {
             "$CLEANUP_PROMPT" \
             "$log_file" \
             "$AGENT_TOOLS_CLEANUP"
+        # Record analyze_cleanup sub-step (M66)
+        if declare -p _STAGE_DURATION &>/dev/null; then
+            _STAGE_DURATION["analyze_cleanup"]="$(( SECONDS - _acl_start ))"
+            _STAGE_TURNS["analyze_cleanup"]="${LAST_AGENT_TURNS:-0}"
+        fi
 
         # Re-run analyze to confirm cleanup worked
         log "Re-running ${ANALYZE_CMD} after cleanup..."

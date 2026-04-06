@@ -139,8 +139,20 @@
   }
 
   // --- Stage constants ---
-  var stageOrder = ['intake', 'scout', 'coder', 'build_gate', 'security', 'reviewer', 'tester'];
-  var stageLabels = { intake: 'Intake', scout: 'Scout', coder: 'Coder', build_gate: 'Build', security: 'Security', reviewer: 'Review', tester: 'Test' };
+  var stageOrder = ['intake', 'scout', 'coder', 'build_gate', 'security', 'reviewer', 'tester', 'cleanup'];
+  var stageLabels = { intake: 'Intake', scout: 'Scout', coder: 'Coder', build_gate: 'Build', security: 'Security', reviewer: 'Review', tester: 'Test', cleanup: 'Cleanup', test_audit: 'Test Audit', analyze_cleanup: 'Analyze Cleanup' };
+  // M66: Hierarchical stage grouping for Per-Stage Breakdown
+  var stageGroups = {
+    scout:    { label: 'Scout',    children: [] },
+    coder:    { label: 'Coder',    children: [] },
+    security: { label: 'Security', children: [] },
+    reviewer: { label: 'Review',   children: [] },
+    tester:   { label: 'Test',     children: ['test_audit'] },
+    cleanup:  { label: 'Cleanup',  children: ['analyze_cleanup'] }
+  };
+  var stageGroupOrder = ['scout', 'coder', 'security', 'reviewer', 'tester', 'cleanup'];
+  function getExpandedStages() { try { return JSON.parse(localStorage.getItem('tk_expanded_stages') || '{}'); } catch (e) { return {}; } }
+  function setExpandedStages(o) { try { localStorage.setItem('tk_expanded_stages', JSON.stringify(o)); } catch (e) { /* noop */ } }
   var teamColors = ['#4a9eff', '#22c55e', '#f59e0b', '#a855f7', '#ef4444', '#06b6d4'];
   var activeTeamFilter = null;
 
@@ -712,6 +724,28 @@
       for (var i = 0; i < dbs.length; i++) dbs[i].setAttribute('aria-pressed', dbs[i].dataset.mode === m ? 'true' : 'false');
       renderTrends();
     });
+    // M66: Expand/collapse stage group rows
+    var expRows = ct.querySelectorAll('.expandable-row');
+    for (var er = 0; er < expRows.length; er++) {
+      expRows[er].addEventListener('click', function () { _toggleStageGroup(this); });
+      expRows[er].addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); _toggleStageGroup(this); } });
+    }
+  }
+  function _toggleStageGroup(row) {
+    var gn = row.getAttribute('data-stage-group');
+    if (!gn) return;
+    var exp = getExpandedStages();
+    var nowExpanded = !exp[gn];
+    exp[gn] = nowExpanded;
+    setExpandedStages(exp);
+    row.setAttribute('aria-expanded', nowExpanded ? 'true' : 'false');
+    var icon = row.querySelector('.expand-icon');
+    if (icon) icon.textContent = nowExpanded ? '\u25be' : '\u25b8';
+    var children = row.parentNode.querySelectorAll('[data-parent="' + gn + '"]');
+    for (var i = 0; i < children.length; i++) {
+      if (nowExpanded) children[i].classList.remove('hidden');
+      else children[i].classList.add('hidden');
+    }
   }
   function renderHealthCard() {
     var h = health();
@@ -755,12 +789,26 @@
   function setDistMode(m) { try { localStorage.setItem('tk_dist_mode', m); } catch (e) { /* noop */ } }
 
   function renderStageBreakdown(runs) {
-    var stageTotals = {}, stageTurnCount = {}, stageTimeCount = {}, sn;
-    for (var i = 0; i < stageOrder.length; i++) { stageTotals[stageOrder[i]] = { turns: 0, time: 0 }; stageTurnCount[stageOrder[i]] = 0; stageTimeCount[stageOrder[i]] = 0; }
-    for (var r = 0; r < runs.length; r++) {
-      var stages = runs[r].stages || {};
-      for (var s = 0; s < stageOrder.length; s++) {
-        sn = stageOrder[s]; var sd = stages[sn];
+    // Collect all stage keys present across runs (includes parent + child stages)
+    var allKeys = {};
+    var r, s, sn, stages;
+    for (r = 0; r < runs.length; r++) {
+      stages = runs[r].stages || {};
+      for (sn in stages) { if (stages.hasOwnProperty(sn)) allKeys[sn] = true; }
+    }
+    // Build aggregates for all known stage keys
+    var stageTotals = {}, stageTurnCount = {}, stageTimeCount = {};
+    for (sn in allKeys) {
+      if (!allKeys.hasOwnProperty(sn)) continue;
+      stageTotals[sn] = { turns: 0, time: 0 };
+      stageTurnCount[sn] = 0;
+      stageTimeCount[sn] = 0;
+    }
+    for (r = 0; r < runs.length; r++) {
+      stages = runs[r].stages || {};
+      for (sn in allKeys) {
+        if (!allKeys.hasOwnProperty(sn)) continue;
+        var sd = stages[sn];
         if (sd) {
           stageTotals[sn].turns += (sd.turns || 0); stageTurnCount[sn]++;
           if (sd.duration_s > 0) { stageTotals[sn].time += sd.duration_s; stageTimeCount[sn]++; }
@@ -768,53 +816,105 @@
       }
     }
     var lastRun = runs.length ? runs[0] : null, lastStages = lastRun ? (lastRun.stages || {}) : {};
-    var activeStages = [];
-    for (var f = 0; f < stageOrder.length; f++) { if (stageTurnCount[stageOrder[f]] > 0) activeStages.push(stageOrder[f]); }
-    if (activeStages.length === 0) return '<p>No per-stage data available yet.</p>';
+    // Determine which parent groups have data
+    var activeGroups = [];
+    for (var g = 0; g < stageGroupOrder.length; g++) {
+      var gn = stageGroupOrder[g];
+      if (stageTurnCount[gn] > 0) activeGroups.push(gn);
+    }
+    if (activeGroups.length === 0) return '<p>No per-stage data available yet.</p>';
     var mode = getDistMode();
     var maxAvgTurns = 1, maxAvgTime = 1;
-    for (var t = 0; t < activeStages.length; t++) {
-      var aT = stageTurnCount[activeStages[t]] ? stageTotals[activeStages[t]].turns / stageTurnCount[activeStages[t]] : 0;
+    for (var t = 0; t < activeGroups.length; t++) {
+      var aT = stageTurnCount[activeGroups[t]] ? stageTotals[activeGroups[t]].turns / stageTurnCount[activeGroups[t]] : 0;
       if (aT > maxAvgTurns) maxAvgTurns = aT;
-      var aTm = stageTimeCount[activeStages[t]] ? stageTotals[activeStages[t]].time / stageTimeCount[activeStages[t]] : 0;
+      var aTm = stageTimeCount[activeGroups[t]] ? stageTotals[activeGroups[t]].time / stageTimeCount[activeGroups[t]] : 0;
       if (aTm > maxAvgTime) maxAvgTime = aTm;
     }
+    var expanded = getExpandedStages();
     var html = '<div class="dist-header"><span class="dist-label">Distribution \u2014 ' + (mode === 'time' ? 'Time Spent' : 'Avg Turns') + '</span>';
     html += '<div class="dist-toggle" data-dist-toggle><button class="dist-btn' + (mode === 'time' ? ' active' : '') + '" data-mode="time" aria-pressed="' + (mode === 'time') + '">Time Spent</button>';
     html += '<button class="dist-btn' + (mode === 'turns' ? ' active' : '') + '" data-mode="turns" aria-pressed="' + (mode === 'turns') + '">Avg Turns</button></div></div>';
     html += '<table class="breakdown-table"><thead><tr><th>Stage</th><th>Avg Turns</th><th>Last Run</th><th>Avg Time</th><th class="bar-chart-cell">Distribution</th></tr></thead><tbody>';
-    for (var b = 0; b < activeStages.length; b++) {
-      sn = activeStages[b]; var cnt = stageTurnCount[sn] || 1;
-      var avgT = Math.round(stageTotals[sn].turns / cnt);
+    for (var b = 0; b < activeGroups.length; b++) {
+      sn = activeGroups[b];
+      var grp = stageGroups[sn] || { label: stageLabels[sn] || sn, children: [] };
+      // Find active children for this group
+      var activeChildren = [];
+      for (var ci = 0; ci < grp.children.length; ci++) {
+        if (stageTurnCount[grp.children[ci]] > 0) activeChildren.push(grp.children[ci]);
+      }
+      var hasChildren = activeChildren.length > 0;
+      var isExpanded = expanded[sn] === true;
+      // Cycle badge for reviewer/security
+      var cycleBadge = '';
       var lsd = lastStages[sn];
-      var lastCell = '-';
-      if (lsd) {
-        var lt = lsd.turns || 0, lb = lsd.budget || 0;
-        if (lb > 0) {
-          var lbu = Math.round((lt / lb) * 100);
-          var lbc = lbu >= 100 ? 'budget-red' : lbu >= 80 ? 'budget-amber' : 'budget-green';
-          lastCell = lt + '/' + lb + ' <span class="' + lbc + '">(' + lbu + '%)</span>';
-        } else {
-          lastCell = '' + lt;
+      if (sn === 'reviewer' && lsd && lsd.cycles > 1) {
+        var cc = lsd.cycles;
+        cycleBadge = ' <span class="cycle-badge' + (cc >= 3 ? ' cycle-red' : '') + '">\u00d7' + cc + '</span>';
+      }
+      if (sn === 'security' && lsd && lsd.rework_cycles > 0) {
+        cycleBadge = ' <span class="cycle-badge">\u00d7' + (lsd.rework_cycles + 1) + '</span>';
+      }
+      // Parent row
+      html += _renderStageRow(sn, grp.label + cycleBadge, stageTotals, stageTurnCount, stageTimeCount, lastStages, maxAvgTurns, maxAvgTime, mode, false, hasChildren, isExpanded);
+      // Child rows (hidden unless expanded)
+      if (hasChildren) {
+        for (var c = 0; c < activeChildren.length; c++) {
+          var cn = activeChildren[c];
+          var cLabel = stageLabels[cn] || cn;
+          html += _renderStageRow(cn, '\u2514 ' + cLabel, stageTotals, stageTurnCount, stageTimeCount, lastStages, maxAvgTurns, maxAvgTime, mode, true, false, false, sn, isExpanded);
         }
       }
-      var timeCnt = stageTimeCount[sn];
-      var avgTime = timeCnt > 0 ? Math.round(stageTotals[sn].time / timeCnt) : 0;
-      var barPct, barTitle;
-      if (mode === 'time') {
-        var avgTimeRaw = timeCnt > 0 ? stageTotals[sn].time / timeCnt : 0;
-        barPct = maxAvgTime > 0 ? Math.round((avgTimeRaw / maxAvgTime) * 100) : 0;
-        barTitle = (stageLabels[sn] || sn) + ': ' + (avgTime > 0 ? fmtDuration(avgTime) + ' avg' : 'no data');
-      } else {
-        barPct = Math.round((avgT / maxAvgTurns) * 100);
-        barTitle = (stageLabels[sn] || sn) + ': ' + avgT + ' turns avg';
-      }
-      html += '<tr><td>' + (stageLabels[sn] || sn) + '</td><td>' + avgT + '</td>';
-      html += '<td>' + lastCell + '</td>';
-      html += '<td>' + (avgTime > 0 ? fmtDuration(avgTime) : '-') + '</td>';
-      html += '<td class="bar-chart-cell"><div class="bar-wrap" title="' + esc(barTitle) + '"><div class="bar-fill" style="width:' + barPct + '%"></div></div></td></tr>';
     }
     return html + '</tbody></table>';
+  }
+
+  // Helper: render a single stage row (parent or child)
+  function _renderStageRow(sn, label, totals, turnCounts, timeCounts, lastStages, maxTurns, maxTime, mode, isChild, hasChildren, isExpanded, parentKey, parentExpanded) {
+    var cnt = turnCounts[sn] || 1;
+    var avgT = Math.round(totals[sn].turns / cnt);
+    var lsd = lastStages[sn];
+    var lastCell = '-';
+    if (lsd) {
+      var lt = lsd.turns || 0, lb = lsd.budget || 0;
+      if (lb > 0) {
+        var lbu = Math.round((lt / lb) * 100);
+        var lbc = lbu >= 100 ? 'budget-red' : lbu >= 80 ? 'budget-amber' : 'budget-green';
+        lastCell = lt + '/' + lb + ' <span class="' + lbc + '">(' + lbu + '%)</span>';
+      } else {
+        lastCell = '' + lt;
+      }
+    }
+    var timeCnt = timeCounts[sn];
+    var avgTime = timeCnt > 0 ? Math.round(totals[sn].time / timeCnt) : 0;
+    var barPct, barTitle;
+    if (mode === 'time') {
+      var avgTimeRaw = timeCnt > 0 ? totals[sn].time / timeCnt : 0;
+      barPct = maxTime > 0 ? Math.round((avgTimeRaw / maxTime) * 100) : 0;
+      barTitle = (stageLabels[sn] || sn) + ': ' + (avgTime > 0 ? fmtDuration(avgTime) + ' avg' : 'no data');
+    } else {
+      barPct = Math.round((avgT / maxTurns) * 100);
+      barTitle = (stageLabels[sn] || sn) + ': ' + avgT + ' turns avg';
+    }
+    var rowClass = '';
+    var hidden = '';
+    if (isChild) {
+      rowClass = ' class="substep-row' + (parentExpanded ? '' : ' hidden') + '"';
+      hidden = ' data-parent="' + esc(parentKey || '') + '"';
+    } else if (hasChildren) {
+      rowClass = ' class="expandable-row" tabindex="0" role="button" aria-expanded="' + isExpanded + '"';
+      hidden = ' data-stage-group="' + esc(sn) + '"';
+    }
+    var expandIcon = '';
+    if (hasChildren) expandIcon = '<span class="expand-icon">' + (isExpanded ? '\u25be' : '\u25b8') + '</span> ';
+    var tdClass = isChild ? ' class="substep-label"' : '';
+    var h = '<tr' + rowClass + hidden + '>';
+    h += '<td' + tdClass + '>' + expandIcon + label + '</td><td>' + avgT + '</td>';
+    h += '<td>' + lastCell + '</td>';
+    h += '<td>' + (avgTime > 0 ? fmtDuration(avgTime) : '-') + '</td>';
+    h += '<td class="bar-chart-cell"><div class="bar-wrap" title="' + esc(barTitle) + '"><div class="bar-fill' + (isChild ? ' bar-fill-sub' : '') + '" style="width:' + barPct + '%"></div></div></td></tr>';
+    return h;
   }
 
   function renderTeamPerformance(runs) {
@@ -1098,7 +1198,7 @@
   // --- Incremental data refresh ---
   var refreshTimer = null, refreshStopped = false;
   function refreshData() {
-    var dataFiles = ['run_state', 'timeline', 'milestones', 'reports', 'metrics', 'security', 'health', 'inbox', 'action_items', 'notes'];
+    var dataFiles = ['run_state', 'timeline', 'milestones', 'security', 'reports', 'metrics', 'health', 'inbox', 'action_items', 'notes'];
     var promises = [];
     for (var i = 0; i < dataFiles.length; i++) (function (name) {
       promises.push(fetch('data/' + name + '.js?t=' + Date.now()).then(function (r) {

@@ -137,6 +137,7 @@ _run_single_specialist() {
     local spec_prompt
     spec_prompt=$(render_prompt "$prompt_template")
 
+    local _spec_start="$SECONDS"
     run_agent \
         "Specialist (${spec_name})" \
         "$model" \
@@ -144,6 +145,11 @@ _run_single_specialist() {
         "$spec_prompt" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_SPECIALIST"
+    # Record specialist sub-step (M66)
+    if declare -p _STAGE_DURATION &>/dev/null; then
+        _STAGE_DURATION["specialist_${spec_name}"]="$(( SECONDS - _spec_start ))"
+        _STAGE_TURNS["specialist_${spec_name}"]="${LAST_AGENT_TURNS:-0}"
+    fi
 
     if was_null_run; then
         warn "[Specialist ${spec_name}] Null run — no findings produced."

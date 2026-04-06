@@ -65,6 +65,7 @@ run_stage_security() {
 
         SECURITY_SCAN_PROMPT=$(render_prompt "security_scan")
 
+        local _sec_scan_start="$SECONDS"
         run_agent \
             "Security (scan)" \
             "${CLAUDE_SECURITY_MODEL:-${CLAUDE_STANDARD_MODEL}}" \
@@ -72,6 +73,11 @@ run_stage_security() {
             "$SECURITY_SCAN_PROMPT" \
             "$LOG_FILE" \
             "${AGENT_TOOLS_REVIEWER:-}"
+        # Record security scan sub-step (M66)
+        if declare -p _STAGE_DURATION &>/dev/null; then
+            _STAGE_DURATION["security_scan"]="$(( SECONDS - _sec_scan_start ))"
+            _STAGE_TURNS["security_scan"]="${LAST_AGENT_TURNS:-0}"
+        fi
         print_run_summary
         success "Security scan finished."
 
@@ -111,6 +117,7 @@ run_stage_security() {
             local rework_prompt
             rework_prompt=$(render_prompt "security_rework")
 
+            local _sec_rework_start="$SECONDS"
             run_agent \
                 "Security Rework (cycle ${security_rework_cycle})" \
                 "${CLAUDE_CODER_MODEL}" \
@@ -118,6 +125,11 @@ run_stage_security() {
                 "$rework_prompt" \
                 "$LOG_FILE" \
                 "${AGENT_TOOLS_CODER:-}"
+            # Record security rework sub-step (M66)
+            if declare -p _STAGE_DURATION &>/dev/null; then
+                _STAGE_DURATION["security_rework_${security_rework_cycle}"]="$(( SECONDS - _sec_rework_start ))"
+                _STAGE_TURNS["security_rework_${security_rework_cycle}"]="${LAST_AGENT_TURNS:-0}"
+            fi
             print_run_summary
 
             # Post-rework build gate

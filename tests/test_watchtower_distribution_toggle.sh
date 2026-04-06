@@ -109,7 +109,11 @@ fi
 echo ""
 echo "=== Test 3: renderStageBreakdown() integration ==="
 
+# M66: renderStageBreakdown now delegates row rendering to _renderStageRow.
+# Extract both functions for pattern matching.
 BREAKDOWN_FUNC=$(sed -n '/function renderStageBreakdown(runs)/,/^  }/p' "$APP_JS")
+STAGE_ROW_FUNC=$(sed -n '/function _renderStageRow(/,/^  }/p' "$APP_JS")
+BREAKDOWN_ALL="${BREAKDOWN_FUNC}${STAGE_ROW_FUNC}"
 
 if echo "$BREAKDOWN_FUNC" | grep -q "var mode = getDistMode()"; then
     pass "renderStageBreakdown() calls getDistMode()"
@@ -184,21 +188,21 @@ echo ""
 echo "=== Test 6: Both metric types computed ==="
 
 # Verify stageTotals tracks both turns and time
-if echo "$BREAKDOWN_FUNC" | grep -q "stageTotals\[stageOrder\[i\]\] = { turns: 0, time: 0 }"; then
+if echo "$BREAKDOWN_FUNC" | grep -q "stageTotals\[sn\] = { turns: 0, time: 0 }"; then
     pass "stageTotals initialized with both 'turns' and 'time' fields"
 else
     fail "stageTotals missing field initialization"
 fi
 
 # Verify turn counting per stage
-if echo "$BREAKDOWN_FUNC" | grep -q "stageTurnCount\[stageOrder\[i\]\] = 0"; then
+if echo "$BREAKDOWN_FUNC" | grep -q "stageTurnCount\[sn\] = 0"; then
     pass "stageTurnCount array initialized for each stage"
 else
     fail "stageTurnCount array not initialized"
 fi
 
 # Verify time counting per stage
-if echo "$BREAKDOWN_FUNC" | grep -q "stageTimeCount\[stageOrder\[i\]\] = 0"; then
+if echo "$BREAKDOWN_FUNC" | grep -q "stageTimeCount\[sn\] = 0"; then
     pass "stageTimeCount array initialized for each stage"
 else
     fail "stageTimeCount array not initialized"
@@ -252,15 +256,15 @@ else
 fi
 
 # Verify time mode calculates bar percentage using time
-if echo "$BREAKDOWN_FUNC" | grep -A 3 "mode === 'time'" | \
-   grep -q "avgTimeRaw / maxAvgTime"; then
+if echo "$BREAKDOWN_ALL" | grep -A 3 "mode === 'time'" | \
+   grep -q "avgTimeRaw / maxTime"; then
     pass "Time mode calculates bar percentage from time data"
 else
     fail "Time mode does not use time data for bar calculation"
 fi
 
 # Verify time mode tooltip shows duration
-if echo "$BREAKDOWN_FUNC" | grep -A 3 "mode === 'time'" | \
+if echo "$BREAKDOWN_ALL" | grep -A 3 "mode === 'time'" | \
    grep -q "fmtDuration"; then
     pass "Time mode tooltip formats duration in tooltip"
 else
@@ -273,22 +277,22 @@ fi
 echo ""
 echo "=== Test 9: Bar calculation for turns mode ==="
 
-# Verify turns mode uses turn data
-if echo "$BREAKDOWN_FUNC" | grep -q "else {" | head -1; then
+# Verify turns mode uses turn data (in _renderStageRow)
+if echo "$BREAKDOWN_ALL" | grep -q "else {"; then
     pass "Else block for turns mode exists"
 else
     fail "Turns mode calculation missing"
 fi
 
 # Verify turns mode calculates bar percentage using turns
-if echo "$BREAKDOWN_FUNC" | grep -q "avgT / maxAvgTurns"; then
+if echo "$BREAKDOWN_ALL" | grep -q "avgT / maxTurns"; then
     pass "Turns mode calculates bar percentage from turn data"
 else
     fail "Turns mode does not use turn data for bar calculation"
 fi
 
 # Verify turns mode tooltip shows turn count
-if echo "$BREAKDOWN_FUNC" | grep -q "turns avg"; then
+if echo "$BREAKDOWN_ALL" | grep -q "turns avg"; then
     pass "Turns mode tooltip shows turn count"
 else
     fail "Turns mode tooltip does not show turn count"
@@ -336,8 +340,8 @@ fi
 echo ""
 echo "=== Test 11: activeStages filtering ==="
 
-# Verify only stages with turn count data are included
-if echo "$BREAKDOWN_FUNC" | grep -q "if (stageTurnCount\[stageOrder\[f\]\] > 0)"; then
+# Verify only stages with turn count data are included (uses stageGroupOrder)
+if echo "$BREAKDOWN_FUNC" | grep -q "stageTurnCount\[gn\] > 0"; then
     pass "activeStages only includes stages with turn count data"
 else
     fail "activeStages does not filter by turn count"
@@ -356,8 +360,8 @@ fi
 echo ""
 echo "=== Test 12: Division by zero protection ==="
 
-# Verify maxAvgTime check before division
-if echo "$BREAKDOWN_FUNC" | grep -q "maxAvgTime > 0"; then
+# Verify maxTime check before division (in _renderStageRow)
+if echo "$BREAKDOWN_ALL" | grep -q "maxTime > 0"; then
     pass "Division by zero check for maxAvgTime"
 else
     fail "maxAvgTime division not protected"
