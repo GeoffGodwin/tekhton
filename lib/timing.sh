@@ -154,6 +154,22 @@ _hook_emit_timing_report() {
 
     local ts="${TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}"
 
+    # M61: Repo map cache statistics
+    local repo_map_line=""
+    if declare -f get_repo_map_cache_stats &>/dev/null; then
+        local _rmc_stats _rmc_hits _rmc_gen_ms
+        _rmc_stats=$(get_repo_map_cache_stats)
+        _rmc_hits=$(echo "$_rmc_stats" | grep -oE 'hits:[0-9]+' | cut -d: -f2)
+        _rmc_gen_ms=$(echo "$_rmc_stats" | grep -oE 'gen_time_ms:[0-9]+' | cut -d: -f2)
+        if [[ "${_rmc_hits:-0}" -gt 0 ]] || [[ "${_rmc_gen_ms:-0}" -gt 0 ]]; then
+            local _rmc_saved_s=0
+            if [[ "${_rmc_hits:-0}" -gt 0 ]] && [[ "${_rmc_gen_ms:-0}" -gt 0 ]]; then
+                _rmc_saved_s=$(( _rmc_hits * _rmc_gen_ms / 1000 ))
+            fi
+            repo_map_line="Repo map: 1 generation + ${_rmc_hits} cache hits (saved ~${_rmc_saved_s}s)"
+        fi
+    fi
+
     cat > "$report_file" <<EOF
 ## Timing Report — run_${ts}
 
@@ -166,6 +182,7 @@ _hook_emit_timing_report() {
 ${table_rows}
 Total wall time: ${total_human}
 Agent calls: ${agent_calls} (of ${max_calls} max)
+${repo_map_line}
 EOF
 
     log "Timing report written to ${report_file}"

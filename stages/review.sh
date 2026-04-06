@@ -38,6 +38,7 @@ run_stage_review() {
     estimate_post_coder_turns "${ACTUAL_CODER_TURNS:-0}"
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"
+    _REVIEW_MAP_FILES=""  # M61: track cycle-1 file list for cache comparison
 
     while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; do
         REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
@@ -51,12 +52,23 @@ run_stage_review() {
         fi
 
         # Repo map slice: changed files + their callers/callees
-        # Note: Map is regenerated each review cycle (cleared on line 26, refreshed below if needed)
+        # M61: Use run cache — only regenerate if new files detected since cycle 1
         export REPO_MAP_CONTENT=""
         if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
             local _review_files
             _review_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
             if [[ -n "$_review_files" ]]; then
+                # On cycle 2+, check if new files appeared since cycle 1
+                if [[ "$REVIEW_CYCLE" -gt 1 ]] && [[ -n "${_REVIEW_MAP_FILES:-}" ]]; then
+                    local _new_basenames _old_basenames
+                    _new_basenames=$(echo "$_review_files" | tr ' ' '\n' | sed 's|.*/||' | sort)
+                    _old_basenames=$(echo "$_REVIEW_MAP_FILES" | tr ' ' '\n' | sed 's|.*/||' | sort)
+                    if [[ "$_new_basenames" != "$_old_basenames" ]]; then
+                        log "[indexer] New files detected in coder summary — invalidating run cache."
+                        invalidate_repo_map_run_cache
+                    fi
+                fi
+
                 run_repo_map "$TASK" || true
                 if [[ -n "$REPO_MAP_CONTENT" ]]; then
                     local _review_slice
@@ -64,6 +76,11 @@ run_stage_review() {
                         REPO_MAP_CONTENT="$_review_slice"
                         log "[indexer] Repo map sliced for reviewer (changed files)."
                     fi
+                fi
+
+                # Store cycle-1 file list for comparison in subsequent cycles
+                if [[ "$REVIEW_CYCLE" -eq 1 ]]; then
+                    _REVIEW_MAP_FILES="$_review_files"
                 fi
             fi
         fi

@@ -1,7 +1,7 @@
 # Milestone 61: Repo Map Cross-Stage Cache
 <!-- milestone-meta
 id: "61"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

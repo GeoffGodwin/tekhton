@@ -241,6 +241,7 @@ $(cat SCOUT_REPORT.md)
                     if split_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         # Update to target the first sub-milestone
                         _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                         # Archive original scout report and re-scout narrower scope
                         cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
@@ -676,6 +677,7 @@ ${nb_notes}"
             if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                 # Split succeeded — update state and re-run from scout
                 _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                 # Recursive call to run_stage_coder creates nested call frames up to
                 # MILESTONE_MAX_SPLIT_DEPTH deep. With default of 3, this is safe.
@@ -721,6 +723,7 @@ ${nb_notes}"
             if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                 if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                     _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                    invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                     local _depth
                     _depth=$(get_split_depth "$_CURRENT_MILESTONE")
                     warn "Auto-split after turn exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
@@ -916,6 +919,7 @@ ${nb_notes}"
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
                         _depth=$(get_split_depth "$_CURRENT_MILESTONE")
                         warn "Auto-split after continuation exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
@@ -975,6 +979,7 @@ ${GIT_DIFF_STAT}
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
                         _depth=$(get_split_depth "$_CURRENT_MILESTONE")
                         warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."

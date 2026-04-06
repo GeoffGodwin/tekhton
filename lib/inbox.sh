@@ -86,12 +86,13 @@ _processed_dir() {
     echo "$dir"
 }
 
-# _process_note FILE
+# _process_note FILE [INBOX_BASENAME]
 # Reads a note file from the inbox and appends it to HUMAN_NOTES.md.
 # M40: Extracts full watchtower note structure (title, description, priority,
 # timestamp, source) and passes them to add_human_note with metadata.
 _process_note() {
     local file="$1"
+    local inbox_basename="${2:-}"
     local tag="" title="" description="" priority="medium" source="watchtower"
     local line in_description=false
 
@@ -138,7 +139,7 @@ _process_note() {
 
     # add_human_note handles duplicate detection internally (M40)
     if command -v add_human_note &>/dev/null; then
-        add_human_note "$title" "$tag" "$priority" "$source" "$description"
+        add_human_note "$title" "$tag" "$priority" "$source" "$description" "$inbox_basename"
     else
         warn "Inbox: add_human_note not available, appending raw note"
         echo "- [ ] [${tag}] ${title}" >> "${PROJECT_DIR:-.}/HUMAN_NOTES.md"
@@ -251,8 +252,10 @@ process_watchtower_inbox() {
     for file in "${inbox_dir}"/note_*.md; do
         [[ ! -f "$file" ]] && continue
         basename=$(basename "$file")
-        if _process_note "$file"; then
+        if _process_note "$file" "$basename"; then
             mv "$file" "${processed_dir}/${basename}"
+            # Mark in-progress in the processed copy
+            sed -i 's/^- \[ \]/- [~]/' "${processed_dir}/${basename}" 2>/dev/null || true
             count=$((count + 1))
         fi
     done
@@ -315,8 +318,10 @@ drain_pending_inbox() {
     for file in "${inbox_dir}"/note_*.md; do
         [[ ! -f "$file" ]] && continue
         basename=$(basename "$file")
-        if _process_note "$file"; then
+        if _process_note "$file" "$basename"; then
             mv "$file" "${processed_dir}/${basename}"
+            # Mark in-progress in the processed copy
+            sed -i 's/^- \[ \]/- [~]/' "${processed_dir}/${basename}" 2>/dev/null || true
             count=$((count + 1))
         fi
     done

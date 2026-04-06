@@ -27,6 +27,12 @@ export INDEXER_AVAILABLE
 REPO_MAP_CONTENT=""
 export REPO_MAP_CONTENT
 
+# Intra-run repo map cache (M61): full map content cached after first generation
+_CACHED_REPO_MAP_CONTENT=""
+_REPO_MAP_CACHE_HITS=0
+_REPO_MAP_CACHE_FILE=""
+export _CACHED_REPO_MAP_CONTENT _REPO_MAP_CACHE_HITS _REPO_MAP_CACHE_FILE
+
 # Indexer stats (populated by get_indexer_stats, consumed by metrics)
 INDEXER_CACHE_HIT_RATE=""
 INDEXER_GENERATION_TIME_MS=""
@@ -107,14 +113,24 @@ check_indexer_available() {
 # Args:
 #   $1 — task description (used for keyword-based ranking)
 #   $2 — token budget (optional, defaults to REPO_MAP_TOKEN_BUDGET)
+#   $3 — force_refresh (optional, "true" to bypass run cache)
 # Output: markdown repo map on stdout
 # Returns: 0 on success, 1 on failure or unavailable
 run_repo_map() {
     local task="${1:-}"
     local budget="${2:-${REPO_MAP_TOKEN_BUDGET:-2048}}"
+    local force_refresh="${3:-false}"
 
     if [[ "$INDEXER_AVAILABLE" != "true" ]]; then
         return 1
+    fi
+
+    # M61: Check intra-run cache before invoking Python tool
+    if [[ "$force_refresh" != "true" ]] && _load_repo_map_run_cache; then
+        REPO_MAP_CONTENT="$_CACHED_REPO_MAP_CONTENT"
+        _REPO_MAP_CACHE_HITS=$(( _REPO_MAP_CACHE_HITS + 1 ))
+        log "[indexer] Repo map loaded from run cache (hit #${_REPO_MAP_CACHE_HITS})."
+        return 0
     fi
 
     local venv_python
@@ -193,6 +209,9 @@ run_repo_map() {
     if [[ "$exit_code" -eq 1 ]]; then
         log "[indexer] Partial repo map generated (some files could not be parsed)."
     fi
+
+    # M61: Save to run cache after successful generation
+    _save_repo_map_run_cache
 
     return 0
 }
@@ -275,3 +294,8 @@ invalidate_repo_map_cache() {
     fi
     return 0
 }
+
+# --- Intra-run cache functions live in indexer_cache.sh (M61) ----------------
+# See: _repo_map_cache_path(), _save_repo_map_run_cache(),
+#      _load_repo_map_run_cache(), invalidate_repo_map_run_cache(),
+#      _get_cached_repo_map(), get_repo_map_cache_stats()

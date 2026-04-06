@@ -67,7 +67,7 @@ _validate_tag() {
 
 # --- Public Functions --------------------------------------------------------
 
-# add_human_note TEXT [TAG] [PRIORITY] [SOURCE] [DESCRIPTION]
+# add_human_note TEXT [TAG] [PRIORITY] [SOURCE] [DESCRIPTION] [INBOX_FILE]
 # Appends a properly formatted entry with auto-assigned ID to HUMAN_NOTES.md.
 # TAG defaults to FEAT if omitted. Creates the file if it doesn't exist.
 add_human_note() {
@@ -76,6 +76,7 @@ add_human_note() {
     local priority="${3:-medium}"
     local source="${4:-cli}"
     local description="${5:-}"
+    local inbox_file="${6:-}"
 
     if [[ -z "$text" ]]; then
         error "Note text is required."
@@ -112,7 +113,7 @@ add_human_note() {
     local nid
     nid=$(_next_note_id)
     local meta
-    meta=$(_build_metadata_comment "$nid" "$priority" "$source")
+    meta=$(_build_metadata_comment "$nid" "$priority" "$source" "$inbox_file")
     local entry="- [ ] [${tag}] ${text} ${meta}"
 
     local section_heading

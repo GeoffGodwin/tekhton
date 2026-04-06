@@ -406,7 +406,6 @@
   }
 
   function renderMilestonesByStatus(ms, ec) {
-    var aId = (state().active_milestone || {}).id, lanes = { done: [], active: [], ready: [], pending: [] }, ds = {}, m, st;
     // Normalize active milestone ID for comparison: manifest uses "m60", run_state uses "60"
     function msIdMatch(mid, aid) {
       if (!mid || !aid) return false;
@@ -414,6 +413,7 @@
       var a = mid.replace(/^m0*/, ''), b = aid.replace(/^m0*/, '');
       return a === b;
     }
+    var aId = (state().active_milestone || {}).id, lanes = { done: [], active: [], ready: [], pending: [] }, ds = {}, m, st;
     for (var i = 0; i < ms.length; i++) if ((ms[i].status || '').toLowerCase() === 'done') ds[ms[i].id] = true;
     for (var j = 0; j < ms.length; j++) {
       m = ms[j]; st = (m.status || 'pending').toLowerCase();

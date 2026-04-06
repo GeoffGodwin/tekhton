@@ -290,7 +290,8 @@ record_run_metrics() {
 }
 
 # --- Helper: extract turns for a stage from STAGE_SUMMARY -------------------
-# STAGE_SUMMARY format: "\n  Coder: 45/100 turns, 5m30s"
+# STAGE_SUMMARY format: "\n  Coder (claude-sonnet-4-6): 45/100 turns, 5m30s"
+# Also handles legacy format without model suffix: "\n  Coder: 45/100 turns, 5m30s"
 # Returns the first number (actual turns used).
 
 _extract_stage_turns() {

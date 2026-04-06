@@ -356,6 +356,7 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     # Warm indexer cache if available (M7)
     source "${TEKHTON_HOME}/lib/indexer.sh"
     source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+    source "${TEKHTON_HOME}/lib/indexer_cache.sh"
     source "${TEKHTON_HOME}/lib/indexer_history.sh"
     REPO_MAP_ENABLED="${REPO_MAP_ENABLED:-false}"
     if [[ "$REPO_MAP_ENABLED" == "true" ]] && check_indexer_available; then
@@ -755,6 +756,7 @@ source "${TEKHTON_HOME}/lib/milestone_window.sh"
 source "${TEKHTON_HOME}/lib/context_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+source "${TEKHTON_HOME}/lib/indexer_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer_history.sh"
 source "${TEKHTON_HOME}/lib/mcp.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
@@ -1745,13 +1747,14 @@ fi
 # Parse milestone number from task for both --milestone and --auto-advance modes.
 # This enables commit signatures in single-run --milestone mode, not just auto-advance.
 #
-# First tries regex extraction from the task string (e.g. "Milestone 3: ...").
+# First tries regex extraction from the task string (e.g. "Milestone 3: ..." or "M3: ...").
 # If that fails and a DAG manifest exists, falls back to the DAG frontier —
 # the first pending milestone whose dependencies are all satisfied.
 
 _CURRENT_MILESTONE=""
 if [ "$MILESTONE_MODE" = true ]; then
-    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]]; then
+    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]] ||
+       [[ "$TASK" =~ ^[Mm]([0-9]+([.][0-9]+)*)(:|[[:space:]]|$) ]]; then
         _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
     fi
 
@@ -2161,6 +2164,9 @@ _run_human_complete_loop() {
             break
         fi
 
+        # Reset claimed IDs so finalization only resolves the current iteration's note.
+        CLAIMED_NOTE_IDS=""
+
         # Drain any watchtower inbox notes that arrived since the last iteration
         # so they're available to pick_next_note (e.g. notes submitted mid-run).
         process_watchtower_inbox 2>/dev/null || true
@@ -2232,8 +2238,8 @@ _run_human_complete_loop() {
         _run_pipeline_stages
 
         # Pipeline succeeded — finalize (includes commit for this note).
-        # _hook_resolve_notes detects HUMAN_MODE and calls resolve_single_note
-        # for CURRENT_NOTE_LINE, marking it [x] on success.
+        # _hook_resolve_notes resolves CLAIMED_NOTE_IDS via resolve_notes_batch,
+        # marking [~] → [x] on success or [~] → [ ] on failure.
         finalize_run 0
 
         log "Note completed: ${TASK}"

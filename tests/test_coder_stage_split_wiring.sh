@@ -108,6 +108,7 @@ fi
 
 log_decision()              { :; }
 progress_status()           { :; }
+invalidate_repo_map_run_cache() { :; }  # M61: stub for run cache invalidation
 extract_human_notes()       { echo ""; }
 claim_human_notes()         { true; }
 resolve_human_notes()       { true; }

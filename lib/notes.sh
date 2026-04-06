@@ -148,6 +148,11 @@ clear_completed_human_notes() {
     local skip_desc=false
     while IFS= read -r line || [[ -n "$line" ]]; do
         if [[ "$line" =~ ^-\ \[x\]\  ]]; then
+            # Delete inbox source file if this was a watchtower note
+            if [[ "$line" =~ inbox_file:([^\ ]+) ]]; then
+                local inbox_processed="${PROJECT_DIR}/.claude/watchtower_inbox/processed/${BASH_REMATCH[1]}"
+                rm -f "$inbox_processed" 2>/dev/null || true
+            fi
             skip_desc=true
             continue
         fi

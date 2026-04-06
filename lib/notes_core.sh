@@ -175,15 +175,21 @@ _extract_note_id() {
     fi
 }
 
-# _build_metadata_comment ID [PRIORITY] [SOURCE]
+# _build_metadata_comment ID [PRIORITY] [SOURCE] [INBOX_FILE]
 # Builds the HTML comment metadata string for a note.
 _build_metadata_comment() {
     local id="$1"
     local priority="${2:-medium}"
     local source="${3:-cli}"
+    local inbox_file="${4:-}"
     local created
     created=$(date +%Y-%m-%d 2>/dev/null || date +%Y-%m-%d)
-    echo "<!-- note:${id} created:${created} priority:${priority} source:${source} -->"
+    local meta="<!-- note:${id} created:${created} priority:${priority} source:${source}"
+    if [[ -n "$inbox_file" ]]; then
+        meta="${meta} inbox_file:${inbox_file}"
+    fi
+    meta="${meta} -->"
+    echo "$meta"
 }
 
 # --- Unified Claim/Resolve API -----------------------------------------------
