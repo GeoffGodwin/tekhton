@@ -189,6 +189,10 @@ process_watchtower_inbox() {
 
     INBOX_TASK_DESCRIPTIONS=""
 
+    # Ensure the inbox directory exists so Watchtower submissions have a
+    # landing zone even before the first note is submitted (Bug fix).
+    mkdir -p "$inbox_dir" 2>/dev/null || true
+
     if [[ ! -d "$inbox_dir" ]]; then
         return 0
     fi

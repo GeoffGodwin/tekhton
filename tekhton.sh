@@ -1402,6 +1402,18 @@ if [[ "$FIX_DRIFT_MODE" = true ]]; then
     log "Fix-drift mode: ${drift_count_pre} unresolved observation(s) to address."
 fi
 
+# --- Watchtower inbox processing (Milestone 36) ------------------------------
+# Runs before --human note picking so that notes submitted via Watchtower
+# are available in HUMAN_NOTES.md when pick_next_note() executes.
+process_watchtower_inbox 2>/dev/null || true
+if [[ -n "${INBOX_TASK_DESCRIPTIONS:-}" ]]; then
+    warn "Watchtower inbox: queued task(s) available:"
+    while IFS= read -r _inbox_task_desc; do
+        [[ -z "$_inbox_task_desc" ]] && continue
+        log "  - ${_inbox_task_desc}"
+    done <<< "$INBOX_TASK_DESCRIPTIONS"
+fi
+
 # --- Human mode: flag validation and note derivation --------------------------
 
 if [[ "$HUMAN_MODE" = true ]]; then
@@ -1603,15 +1615,8 @@ fi
 # --- Version migration check (after config load, before pipeline) ------------
 check_project_version
 
-# --- Watchtower inbox processing (Milestone 36) ------------------------------
-process_watchtower_inbox 2>/dev/null || true
-if [[ -n "${INBOX_TASK_DESCRIPTIONS:-}" ]]; then
-    warn "Watchtower inbox: queued task(s) available:"
-    while IFS= read -r _inbox_task_desc; do
-        [[ -z "$_inbox_task_desc" ]] && continue
-        log "  - ${_inbox_task_desc}"
-    done <<< "$INBOX_TASK_DESCRIPTIONS"
-fi
+# Watchtower inbox processing moved earlier (before --human note picking)
+# to ensure inbox notes land in HUMAN_NOTES.md before pick_next_note() runs.
 
 _phase_end "config_load"
 
