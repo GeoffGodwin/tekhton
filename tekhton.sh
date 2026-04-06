@@ -1745,13 +1745,14 @@ fi
 # Parse milestone number from task for both --milestone and --auto-advance modes.
 # This enables commit signatures in single-run --milestone mode, not just auto-advance.
 #
-# First tries regex extraction from the task string (e.g. "Milestone 3: ...").
+# First tries regex extraction from the task string (e.g. "Milestone 3: ..." or "M3: ...").
 # If that fails and a DAG manifest exists, falls back to the DAG frontier —
 # the first pending milestone whose dependencies are all satisfied.
 
 _CURRENT_MILESTONE=""
 if [ "$MILESTONE_MODE" = true ]; then
-    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]]; then
+    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]] ||
+       [[ "$TASK" =~ ^[Mm]([0-9]+([.][0-9]+)*)(:|[[:space:]]|$) ]]; then
         _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
     fi
 
