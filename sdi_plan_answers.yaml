@@ -52,6 +52,16 @@ sections:
          primary branch. Tree-sitter parsing is already fast; the budget concern is graph
          analysis on large dependency graphs.
 
+      9. Drift vs. evolution is measured, not classified. The indexer computes the
+         second-order signals that distinguish incoherent structural drift from intentional
+         architectural migration — pattern velocity vectors (instance count deltas per shape
+         across snapshots) and boundary-locality (how many boundaries a pattern variant spans).
+         These are objective measurements reported in the snapshot. The indexer never classifies
+         a change as "drift" or "migration" — that is a human judgment. Teams declare migration
+         intent through per-category threshold overrides with expiry dates, mirroring the
+         boundary ratification model: automated inference surfaces the data, human declaration
+         captures the intent.
+
       Anti-patterns banned:
       - No machine learning or LLM calls in the analysis pipeline. The indexer is a
         measurement instrument, not an AI tool. Determinism and reproducibility are non-negotiable.
@@ -59,6 +69,10 @@ sections:
       - No opinions about code quality. The indexer measures structural divergence, not whether
         code is "good" or "bad." A high pattern entropy might be acceptable for a given project
         stage. The tool reports the number; the team decides what it means.
+      - No automatic suppression of alerts. The indexer never decides that elevated metrics are
+        acceptable. If a team expects elevated drift during a planned migration, they declare
+        that intent via per-category threshold overrides with expiry dates. The tool enforces
+        the declared thresholds; it does not infer which changes are "okay."
 
   project_overview:
     title: "Project Overview"
@@ -549,10 +563,19 @@ sections:
       - Group fingerprints by category, count distinct shapes per category
       - Identify canonical pattern per category (most frequent shape, or user-declared in config)
       - Compute pattern entropy: count of distinct structural shapes per category
-      - Output: pattern catalog with per-category shape counts and canonical markers
+      - Compute per-shape velocity: if a previous snapshot exists, compute the instance count
+        delta for each shape (current count minus previous count). Positive = growing, negative
+        = shrinking, zero = stable. This is a pure integer delta, not a classification.
+      - Compute per-shape boundary spread: cross-reference each shape's file locations against
+        the boundary partition from Stage 3. Record the count of distinct boundaries each shape
+        spans. This is a pure count, not a judgment.
+      - Output: pattern catalog with per-category shape counts, canonical markers, per-shape
+        velocity, and per-shape boundary spread
       - Complexity: O(P) where P = total pattern instances across all categories. Fingerprint
-        comparison is O(depth) per pair but shapes are hashed for O(1) grouping.
+        comparison is O(depth) per pair but shapes are hashed for O(1) grouping. Velocity and
+        boundary spread add O(S * B) where S = shapes and B = boundaries, which is negligible.
       - Failure mode: no pattern instances found for a category. Report zero entropy, not an error.
+        No previous snapshot for velocity: report velocity as null (baseline snapshot).
 
       Stage 5: Snapshot Assembly & Delta Computation
       - Combine outputs from Stages 2-4 into a snapshot JSON document with this schema:
@@ -569,7 +592,11 @@ sections:
               "distinct_shapes": 3,
               "canonical": "try-catch-log-rethrow",
               "instances": 47,
-              "shapes": {"shape_hash_1": 31, "shape_hash_2": 12, "shape_hash_3": 4}
+              "shapes": {
+                "try-catch-log-rethrow": {"count": 31, "velocity": -3, "boundary_spread": 4},
+                "result-type-propagation": {"count": 12, "velocity": 5, "boundary_spread": 1},
+                "try-catch-ignore": {"count": 4, "velocity": -2, "boundary_spread": 2}
+              }
             },
             "data_access": { "..." : "same structure per category" }
           },
@@ -1016,6 +1043,7 @@ sections:
       - Exclude patterns (project-specific ignore rules)
       - Change coupling history depth and min frequency (tuning knobs)
       - Pattern categories (must be extensible beyond built-in catalog)
+      - Per-category threshold overrides with expiry (migration intent declarations)
 
       Values that are hardcoded:
       - Snapshot JSON schema version (tied to code version)
@@ -1050,6 +1078,22 @@ sections:
       convention_drift_rate = 3.0
       coupling_delta_rate = 0.15
       boundary_violation_rate = 2.0
+
+      # Per-category threshold overrides for planned migrations.
+      # Teams declare elevated thresholds with an expiry date when they expect
+      # a category to show increased drift during an intentional migration.
+      # After the expiry date, the override is ignored and defaults resume.
+      # This mirrors the boundary ratification model: human declaration of intent.
+      #
+      # [thresholds.overrides.error_handling]
+      # pattern_entropy_rate = 5.0
+      # expires = "2026-09-30"
+      # reason = "Migrating to Result types per ADR-0047"
+      #
+      # [thresholds.overrides.async_patterns]
+      # convention_drift_rate = 6.0
+      # expires = "2026-12-31"
+      # reason = "Callback-to-async migration across services"
 
       [change_coupling]
       min_frequency = 0.6
@@ -1125,6 +1169,35 @@ sections:
          can be optionally excluded from pattern entropy calculations while still being
          included in dependency graph construction.
 
+      Resolved design decisions (decided during planning, documented here for rationale):
+
+      R1. Drift vs. evolution: measure, don't classify.
+          The question "is this drift or intentional evolution?" is central to SDI's value
+          proposition. The rejected approach was automatic classification — having SDI infer
+          from pattern velocity vectors and boundary-locality whether a change is a "migration"
+          or "drift" and suppressing alerts accordingly. This was rejected because it violates
+          principles #1 (classification requires heuristic thresholds that are opinions, not
+          measurements) and #3 (the tool would be deciding what changes are acceptable, which
+          is a human judgment). It also creates dangerous false negatives in CI gates: an AI
+          agent consistently adopting a new pattern would create a false convergence signal.
+
+          The adopted approach has two parts:
+          (a) SDI computes and reports per-shape velocity (instance count delta vs previous
+              snapshot) and per-shape boundary spread (count of boundaries a shape appears in)
+              as raw measurements in the snapshot. These appear in `sdi diff` and `sdi trend`
+              output so humans can see at a glance whether opposing velocity vectors suggest
+              a migration is underway. The tool surfaces the evidence; the human makes the call.
+          (b) Teams declare migration intent via per-category threshold overrides with expiry
+              dates in config.toml (`[thresholds.overrides.<category>]`). This mirrors the
+              boundary ratification pattern: explicit, auditable, time-boxed, committed to VCS.
+              When the override expires, default thresholds resume — forcing a conversation if
+              the migration stalled.
+
+          This preserves the core contract: SDI measures divergence from declared intent. For
+          boundaries, declared intent is the ratified boundary spec. For patterns, declared
+          intent is the threshold configuration (including any active overrides). The tool never
+          guesses intent.
+
   what_not_to_build_yet:
     title: "What Not to Build Yet"
     phase: 3
@@ -1172,3 +1245,12 @@ sections:
          continuously. Violates the Unix philosophy constraint and adds significant
          complexity (file watchers, incremental graph updates). CLI invocation on merge
          events is the intended cadence.
+
+      10. Automatic drift-vs-evolution classification — SDI will never automatically classify
+          pattern changes as "drift" or "migration" or suppress alerts based on inferred intent.
+          This was considered and explicitly rejected (see open_design_questions R1) because it
+          requires opinionated heuristics and creates false negatives in CI gates. SDI reports
+          the raw measurements (velocity vectors, boundary spread) that make the distinction
+          visible to humans, and teams declare migration intent via threshold overrides. If
+          future versions add classification, it would be an opt-in advisory annotation, never
+          a gate-suppression mechanism.
