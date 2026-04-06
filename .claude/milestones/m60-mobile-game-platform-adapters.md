@@ -1,7 +1,7 @@
 # Milestone 60: Mobile & Game Platform Adapters
 <!-- milestone-meta
 id: "60"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

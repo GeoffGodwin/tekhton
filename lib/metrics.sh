@@ -89,7 +89,7 @@ record_run_metrics() {
         scout_turns=$(_extract_stage_turns "$STAGE_SUMMARY" "Scout")
     fi
 
-    # Per-stage durations from _STAGE_DURATION (populated by tekhton.sh)
+    # Block 1: primary stage durations from _STAGE_DURATION (coder/reviewer/tester/scout/security/cleanup)
     local coder_duration_s=0 reviewer_duration_s=0 tester_duration_s=0 scout_duration_s=0
     local security_duration_s=0 cleanup_duration_s=0
     if declare -p _STAGE_DURATION &>/dev/null; then
@@ -101,7 +101,7 @@ record_run_metrics() {
         cleanup_duration_s="${_STAGE_DURATION[cleanup]:-0}"
     fi
 
-    # Per-stage turns + durations from _STAGE_TURNS / _STAGE_DURATION (extended stages)
+    # Block 2: extended stages via _collect_extended_stage_vars() (turns + durations for test_audit/analyze_cleanup/specialists/cycles; also security/cleanup turns)
     local security_turns=0 cleanup_turns=0
     local test_audit_turns=0 test_audit_duration_s=0
     local analyze_cleanup_turns=0 analyze_cleanup_duration_s=0

@@ -292,12 +292,7 @@ ${_failure_output}"
             clear_pipeline_state
 
             # --- Test integrity audit (M20) ---
-            local _audit_start="$SECONDS"
-            run_test_audit || true
-            if declare -p _STAGE_DURATION &>/dev/null; then
-                _STAGE_DURATION["test_audit"]="$(( SECONDS - _audit_start ))"
-                _STAGE_TURNS["test_audit"]="${LAST_AGENT_TURNS:-0}"
-            fi
+            _run_and_record_test_audit
         fi
     fi
 
