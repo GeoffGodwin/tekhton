@@ -1,0 +1,30 @@
+[Unit]
+Description=Tekhton Conductor — autonomous milestone progression daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tekhton
+Group=tekhton
+Environment=CONDUCTOR_CONFIG=/etc/tekhton-conductor/conductor.cfg
+ExecStart=/usr/bin/python3 /opt/tekhton/conductor.py
+Restart=on-failure
+RestartSec=30
+TimeoutStopSec=120
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tekhton-conductor
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/tekhton-conductor.log /var/run/tekhton-conductor
+# The repo and tekhton paths need write access for git operations
+ReadWritePaths=/opt/tekhton
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
