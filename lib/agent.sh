@@ -126,12 +126,18 @@ run_agent() {
         fi
     fi
 
-    # Add MCP config flag when Serena is available
+    # Add MCP config flag when Serena is available.
+    # Skip for read-only agents (Reviewer, Scout, Architect) — they can't use MCP
+    # tools anyway (allowedTools restricts to Read/Glob/Grep/Write) and loading the
+    # MCP tool schema into context is pure overhead.
     if [[ "${SERENA_MCP_AVAILABLE:-false}" == "true" ]] && command -v get_mcp_config_path &>/dev/null; then
-        local _mcp_config
-        _mcp_config=$(get_mcp_config_path)
-        if [[ -n "$_mcp_config" ]] && [ -f "$_mcp_config" ]; then
-            _perm_flags+=(--mcp-config "$_mcp_config")
+        if [[ "$label" =~ ^(Coder|Tester|Jr.Coder|Build.Fix|Cleanup|Security.Rework) ]] \
+           || echo "$allowed_tools" | grep -q 'Bash'; then
+            local _mcp_config
+            _mcp_config=$(get_mcp_config_path)
+            if [[ -n "$_mcp_config" ]] && [ -f "$_mcp_config" ]; then
+                _perm_flags+=(--mcp-config "$_mcp_config")
+            fi
         fi
     fi
 
