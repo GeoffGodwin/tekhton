@@ -1228,19 +1228,22 @@
   var refreshTimer = null, refreshStopped = false;
   function refreshData() {
     var dataFiles = ['run_state', 'timeline', 'milestones', 'security', 'reports', 'metrics', 'health', 'inbox', 'action_items', 'notes'];
-    var promises = [];
+    var loaded = 0, failed = 0, total = dataFiles.length;
     for (var i = 0; i < dataFiles.length; i++) (function (name) {
-      promises.push(fetch('data/' + name + '.js?t=' + Date.now()).then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status); return r.text();
-      }).then(function (text) { try { new Function(text)(); } catch (e) { throw new Error('Parse error in ' + name + '.js'); } }));
+      var script = document.createElement('script');
+      script.src = 'data/' + name + '.js?t=' + Date.now();
+      script.onload = function () { loaded++; script.parentNode.removeChild(script); if (loaded + failed === total) onRefreshDone(); };
+      script.onerror = function () { failed++; script.parentNode.removeChild(script); if (loaded + failed === total) onRefreshDone(); };
+      document.head.appendChild(script);
     })(dataFiles[i]);
-    Promise.all(promises).then(function () {
+    function onRefreshDone() {
+      if (failed === total) { if (typeof console !== 'undefined') console.error('Watchtower refresh: all data files failed to load'); scheduleRefresh(); return; }
       buildCausalIndex();
       renderLiveRunBanner();
       var active = getActiveTab();
       if (active === 'reports') renderActiveTab();
       updateStatusIndicator(); checkRefreshLifecycle();
-    }).catch(function (err) { if (typeof console !== 'undefined') console.error('Watchtower refresh failed:', err); scheduleRefresh(); });
+    }
   }
   function checkRefreshLifecycle() {
     var s = state(), status = (s.pipeline_status || '').toLowerCase();
@@ -1253,13 +1256,9 @@
   function scheduleRefresh() {
     if (refreshTimer) clearTimeout(refreshTimer);
     var interval = state().refresh_interval_ms || 5000;
-    refreshTimer = setTimeout(function () {
-      if (typeof fetch === 'function' && typeof Promise === 'function') refreshData(); else location.reload();
-    }, interval);
+    refreshTimer = setTimeout(function () { refreshData(); }, interval);
   }
-  function manualRefresh() {
-    if (typeof fetch === 'function' && typeof Promise === 'function') refreshData(); else location.reload();
-  }
+  function manualRefresh() { refreshData(); }
 
   // --- Notes tab (M40) ---
   function renderNotes() {
