@@ -1646,6 +1646,177 @@ current single-agent pipeline, but the DAG correctly models their independence.
 
 ---
 
+## System Design: Pipeline Acceleration & Transparency (M44–M50)
+
+> Originally drafted as a standalone DESIGN_v3.1.md addendum after the M51 README
+> finalization revealed that V3 had become opaque and slower than necessary. Folded
+> into DESIGN_v3.md during M66 wrap-up.
+
+### Problem
+
+Tekhton produces high-quality code but its execution is opaque and often slower
+than necessary. Users cannot tell why a run takes 10 minutes vs. 45 minutes. The
+pipeline's multi-agent architecture compounds latency through redundant I/O,
+full pipeline reruns for trivial test failures, underutilized tooling, and lack
+of visibility into where time is spent.
+
+**Goal:** Make Tekhton measurably faster at what it already does well, and make
+its execution transparent enough that users can diagnose slowness themselves.
+
+### Where Wall-Clock Time Goes
+
+| Phase | Estimated % of Wall Time | Notes |
+|-------|--------------------------|-------|
+| Agent execution (Claude API) | 85-92% | Dominant cost by far |
+| Build gate (external tools) | 3-8% | Analyze + compile + UI test |
+| Startup + detection + sourcing | 1-3% | 208 source statements, tech detection |
+| Context assembly + prompting | 0.5-1% | Template rendering, budget checking |
+| State persistence + I/O | 0.5-1% | State writes, causal log, metrics |
+| Monitor + process management | <0.5% | FIFO-based, efficient |
+
+**Key insight:** The only way to meaningfully reduce wall time is to reduce the
+number and cost of agent invocations. All other optimizations save seconds, not
+minutes.
+
+### Agent Invocation Audit
+
+A "clean pass" pipeline run invokes a minimum of 4 agents
+(Scout → Coder → Reviewer → Tester). Real-world runs frequently hit 6–12:
+
+| Trigger | Extra Agent Calls | Frequency |
+|---------|-------------------|-----------|
+| Build failure → fix agent | +1-2 | Common |
+| Review rework → Coder again | +1-2 per cycle | Common |
+| Turn exhaustion → continuation | +1-3 per stage | Occasional |
+| Self-test failure → full pipeline retry | +4-8 | **Very common** |
+| Specialist reviews (security/perf/API) | +1-3 | When enabled |
+| Architect audit | +1 | Drift-triggered |
+| Clarification → re-run | +1 | Occasional |
+
+In `--complete` mode, the outer loop can retry the entire pipeline up to
+`MAX_PIPELINE_ATTEMPTS=5` times, with a hard cap at `MAX_AUTONOMOUS_AGENT_CALLS=200`.
+**Typical worst case:** 15-25 invocations for a difficult milestone.
+
+### The Self-Test Rerun Problem (Highest-Impact Issue)
+
+The most common cause of excessive wall time is the **pre-finalization test gate**
+in `orchestrate.sh`. When 1-2 self-tests fail at run end — often due to trivial
+issues like a shellcheck warning or an assertion needing an update — the
+orchestration loop triggers a **full pipeline retry** from the coder stage. This
+is wildly disproportionate; the lightweight `FINAL_FIX_ENABLED` agent in
+`hooks.sh` exists but only fires at finalization time, *after* the orchestration
+loop is exhausted. A targeted Jr Coder fix should be tried **before** falling
+back to a full pipeline retry. This drives M44 (Jr Coder Test-Fix Gate).
+
+### Scout Underutilizes Tree-Sitter and Serena
+
+Scout's prompt receives both the repo map and Serena LSP tools, but its core
+directive hardcodes a filesystem-crawling strategy ("Use `find`, `grep`, and `ls`
+to locate files"). The result: Scout wastes Haiku turns re-discovering files
+that tree-sitter already indexed and ranked. This drives M45 (Scout Prompt —
+Leverage Repo Map & Serena).
+
+### Redundant Work Across Stages
+
+Every agent invocation independently re-reads architecture content, drift log,
+human notes, clarifications, and re-computes the milestone window and context
+budget. For a 6-agent run, architecture content alone is read 6 times. This
+drives M47 (Intra-Run Context Cache).
+
+### Design Philosophy
+
+1. **Fix the biggest pain point first.** Self-test failures triggering full
+   pipeline reruns is the most common cause of excessive run time.
+2. **Use the tools you already have.** Tree-sitter and Serena are enabled but
+   underutilized. Make existing agents leverage them properly before adding new
+   infrastructure.
+3. **Reduce agent calls > reduce per-call cost.** Eliminating one agent
+   invocation saves more than optimizing ten file reads.
+4. **Cheap models for cheap work.** Scout, Tester, and Jr Coder already run on
+   Haiku — this is correct. Don't merge agents across model tiers.
+5. **Cache within a run, not across runs.** Intra-run caching (read once, use
+   many times) is safe and deterministic.
+6. **Transparency is a feature.** Users should see a timing breakdown after
+   every run. This also serves as a regression detector.
+7. **No new dependencies.** All optimizations use bash 4+ and existing tools.
+   Vector databases (Qdrant, ChromaDB) are deferred to v4.0.
+
+### Milestones
+
+**M44 — Jr Coder Test-Fix Gate.** When self-tests fail at run end, try a cheap
+Jr Coder fix before triggering a full pipeline retry. The Jr Coder fixes code;
+the shell independently runs `TEST_CMD`. The agent never sees test output it
+generated itself, preventing it from "fixing" tests by weakening assertions.
+Config keys: `FINAL_FIX_ENABLED`, `FINAL_FIX_MAX_ATTEMPTS`, `FINAL_FIX_MAX_TURNS`.
+
+**M45 — Scout Prompt: Leverage Repo Map & Serena.** Conditional rewrite of
+`prompts/scout.prompt.md`. When `REPO_MAP_CONTENT` is available, Scout's job
+shifts from "explore the filesystem" to "verify and refine the repo map's ranked
+candidates" using LSP cross-references. When neither is available, fall back to
+existing find/grep behavior. Reduces Scout turn usage measurably.
+
+**M46 — Instrumentation & Timing Report.** Add `_phase_start()` / `_phase_end()`
+helpers to `lib/timing.sh`. Instrument startup, indexer, per-agent
+(prompt assembly + execution + parse), build gate phases, state persistence,
+and finalization. Emit `TIMING_REPORT.md` alongside `RUN_SUMMARY.json`. Display
+top-3 time consumers in the completion banner.
+
+**M47 — Intra-Run Context Cache.** Pre-read shared context files at startup
+(`_CACHED_ARCHITECTURE_CONTENT`, `_CACHED_DRIFT_LOG_CONTENT`,
+`_CACHED_HUMAN_NOTES_BLOCK`, `_CACHED_CLARIFICATIONS_CONTENT`,
+`_CACHED_ARCHITECTURE_LOG_CONTENT`). `render_prompt()` uses cached values.
+Milestone window computed once per milestone, not per agent. Keyword extraction
+cached. No behavioral change — identical prompts.
+
+**M48 — Reduce Unnecessary Agent Invocations.** Conditional specialist
+invocation: skip security if no auth/crypto/input files changed; skip perf if
+no hot-path/query/loop files changed; skip API if no route/endpoint/schema
+files changed. Diff-size review threshold (`REVIEW_SKIP_THRESHOLD`).
+Metrics-calibrated turn budgets reduce over-provisioned continuation attempts.
+
+**M49 — Structured Run Memory.** Replace grep-based causal log scanning with
+`RUN_MEMORY.jsonl` containing per-run task, files touched, decisions, rework
+reasons, test outcomes, duration, agent calls, verdict. On next run,
+`INTAKE_HISTORY_BLOCK` is built from the last N entries filtered by keyword
+relevance. Pruned to `RUN_MEMORY_MAX_ENTRIES=50`. No vector DB — keyword
+matching on 50 structured records is instant in bash.
+
+**M50 — Progress Transparency.** Stage progress display before each agent
+invocation (`Stage 2/4: Reviewer (cycle 1/3) — estimated 2-4 min based on
+history`). Decision explanation logging (skip specialist, trigger continuation,
+try Jr Coder fix). Live dashboard enhancement with current phase + elapsed
+time + estimated remaining. Run-end "Pipeline Decisions" + "Time Breakdown"
+sections in `RUN_SUMMARY.json`.
+
+### Why Not Vector Memory (Yet)
+
+The bottleneck is agent execution time, not context retrieval speed.
+Keyword-based filtering on 50 structured records is instant in bash. A vector
+DB adds a service dependency, embedding costs, and non-determinism. The
+structured approach provides 80% of the benefit. If it proves insufficient, V4
+adds optional vector augmentation as a layer over `RUN_MEMORY.jsonl`.
+
+### Estimated Impact
+
+| Milestone | Agent Calls Saved | Wall Time Saved |
+|-----------|-------------------|-----------------|
+| M44: Jr Coder Test-Fix | 4-8 per failed run | 5-20 min per run |
+| M45: Scout Prompt | 0 (same calls, fewer turns) | 1-3 min (turn savings) |
+| M46: Instrumentation | 0 | 0 (diagnostic) |
+| M47: Intra-Run Cache | 0 | 1-5s per run |
+| M48: Reduce Agents | 1-3 per run | 2-10 min per run |
+| M49: Run Memory | 0-1 (better context) | Indirect (fewer reworks) |
+| M50: Transparency | 0 | 0 (diagnostic) |
+
+**M44 is the highest-impact milestone.** Preventing full pipeline reruns for
+trivial test failures saves entire pipeline cycles — often 5-20 minutes per
+occurrence on the most common failure mode.
+
+**M45 is the highest-ROI milestone.** A prompt rewrite with no infrastructure
+changes makes Scout leverage tooling it already has access to.
+
+---
+
 ## V4 Forward Seeds
 
 The following capabilities are explicitly designed for but not built in V3:
@@ -1702,40 +1873,72 @@ The following capabilities are explicitly designed for but not built in V3:
 
 ### Summary
 
-Tekhton V3 delivered all 51 planned milestones across 7 themes:
+Tekhton V3 delivered **66 milestones** across 10 themes:
 
 - **Milestone DAG & Indexing** (M1–M8) — File-based milestones with dependency
   tracking, sliding context window, tree-sitter repo maps with PageRank, Serena
   LSP integration. The core V3 promise: context-aware agent prompts.
-- **Quality & Safety** (M9–M10, M20, M28–M30, M33, M39, M43–M44) — Dedicated
-  security agent, intake/PM gate, test integrity, UI test awareness, build gate
-  hardening, test-aware coding, and jr coder test-fix gate.
-- **Watchtower Dashboard** (M13–M14, M34–M38) — Browser-based monitoring with
-  six tabs, smart refresh, data fidelity fixes, and V4 parallel-teams readiness.
+- **Quality & Safety Stages** (M9–M10, M20, M28–M30) — Dedicated security
+  agent, intake/PM gate, test integrity audit, UI test awareness, UI validation
+  gate, build gate hardening.
+- **Watchtower Dashboard** (M13–M14, M34–M38, M66) — Browser-based monitoring
+  with six tabs, smart refresh, data fidelity fixes, V4 parallel-teams readiness,
+  full-stage metrics with hierarchical breakdown.
 - **Brownfield Intelligence** (M11–M12, M15, M22) — AI artifact detection, deep
   analysis, health scoring, and init UX overhaul.
-- **Developer Experience** (M17–M19, M21, M23–M27, M31–M32) — Diagnostics, docs
-  site, migration framework, dry-run, rollback, express mode, TDD, browser
-  planning.
-- **Acceleration** (M40–M50) — Notes rewrite, triage, tag-specialized paths,
-  run memory, timing reports, context caching, skip logic, progress transparency.
-- **Runtime** (M16) — Quota management and usage-aware pacing.
+- **Developer Experience** (M17–M19, M21, M23–M27, M52) — Diagnostics, docs
+  site, migration framework, dry-run, rollback, express mode, TDD, onboarding
+  flow fix.
+- **Planning UX** (M31–M32) — Planning answer file mode and browser-based
+  planning interview.
+- **Notes Pipeline Rewrite** (M33, M39–M42) — Human mode completion loop, notes
+  injection hygiene, core rewrite, triage & sizing gate, tag-specialized paths.
+- **Pipeline Acceleration & Transparency** (M43–M50) — Test-aware coding, jr
+  coder test-fix gate, scout prompt leveraging repo map + Serena, instrumentation
+  & timing report, intra-run context cache, reduce unnecessary agent invocations,
+  structured run memory, progress transparency. (Documented in the Pipeline
+  Acceleration section above; originally a v3.1 addendum.)
+- **Environment Intelligence** (M53–M56) — Error pattern registry, auto-remediation
+  engine, pre-flight environment validation, service readiness probing.
+- **UI/UX Design Intelligence** (M57–M60) — Platform adapter framework, web
+  adapter (Tailwind/MUI/shadcn/Chakra/Bootstrap), UI/UX specialist reviewer
+  (auto-on for UI projects), mobile (Flutter/SwiftUI/Compose) and game engine
+  (Phaser/PixiJS/Three.js/Babylon.js) adapters.
+- **Final Polish** (M61–M66) — Repo map cross-stage cache, tester timing
+  instrumentation, test baseline hygiene & completion gate hardening, tester fix
+  surgical mode, prompt tool awareness for Serena & repo map, Watchtower
+  full-stage metrics. M51 served as the V3 documentation & README finalization
+  checkpoint mid-stream; M16 (autonomous runtime improvements) covered quota
+  management and usage-aware pacing.
 
 ### Deviations from Original Plan
 
 The original V3 design focused narrowly on the Milestone DAG and Intelligent
-Indexing (8 milestones). During execution, scope expanded significantly to include
-Watchtower, security agent, intake agent, brownfield improvements, and a full
-developer experience suite. This was driven by user feedback and the recognition
-that context-aware prompting alone wasn't sufficient — the pipeline needed better
-safety, observability, and ease of use to realize the full benefit of V3's
-architectural changes.
+Indexing (8 milestones). During execution, scope expanded by **8x** — from 8 to
+66 milestones — driven by user feedback and the recognition that context-aware
+prompting alone wasn't sufficient. The pipeline needed better safety,
+observability, and ease of use to realize the full benefit of V3's architectural
+changes.
+
+Three major scope expansions happened post-launch:
+
+1. **Pipeline Acceleration (M43–M50)** — Originally drafted as a standalone
+   `DESIGN_v3.1.md` after M51 finalization revealed that V3 had become opaque
+   and slower than necessary. Folded back into this document during M66 wrap-up.
+2. **Environment Intelligence (M53–M56)** — Added when real-world brownfield
+   adoption surfaced repeated build failures from missing dependencies, port
+   conflicts, and unready services. Pre-flight validation and auto-remediation
+   addressed the highest-frequency failure modes.
+3. **UI/UX Design Intelligence (M57–M60)** — Added because Tekhton produced
+   high-quality non-visual code but treated UI work identically to backend work.
+   The platform adapter framework introduced UI knowledge without adding new
+   pipeline stages, and the UI/UX specialist became the first auto-enabled
+   specialist (gated on `UI_PROJECT_DETECTED`).
 
 The core DAG and indexer milestones (M1–M8) were delivered as designed. The
 Watchtower dashboard evolved beyond the original spec (two milestones) into a
-six-milestone effort with significantly richer functionality. The acceleration
-theme (M40–M50) was added late in the initiative to address performance and
-usability feedback from real-world V3 usage.
+seven-milestone effort with significantly richer functionality, ending with M66's
+full-stage hierarchical metrics breakdown.
 
 ### What Worked Well
 

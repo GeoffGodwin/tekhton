@@ -3,8 +3,9 @@
 ## What This Is
 
 Tekhton is a standalone, project-agnostic multi-agent development pipeline built on
-the Claude CLI. It orchestrates a Coder → Reviewer → Tester cycle with automatic
-rework routing, build gates, state persistence, and resume support.
+the Claude CLI. It orchestrates a Pre-flight → Intake → Scout → Coder → Security
+→ Reviewer → Tester cycle with automatic rework routing, build gates, state
+persistence, and resume support.
 
 **One intent. Many hands.**
 
@@ -440,62 +441,28 @@ cd /path/to/your/project
 
 ## Completed Initiatives
 
-All prior initiatives are complete. See design docs for full details and
-MILESTONE_ARCHIVE.md for individual milestone records.
+All prior initiatives are complete. V3 is feature complete as of v3.66.0
+(M01–M66 all done). See design docs for full details and `MILESTONE_ARCHIVE.md`
+for individual milestone records.
 
 | Initiative | Version | Milestones | Design Doc |
 |-----------|---------|-----------|------------|
 | Planning Phase Quality Overhaul | 1.x | Multi-phase interview, depth-scored completeness, 12-section CLAUDE.md generation | — |
 | Adaptive Pipeline 2.0 | 2.x | Context economics, milestone progression, clarification protocol, specialist reviews, run metrics | `DESIGN_v2.md` |
 | Brownfield Intelligence (Smart Init) | 2.x | Shell-driven crawler, tech stack detection, agent-assisted synthesis, incremental rescan | — |
-| Tekhton 3.0 — DAG, Indexing & Cost Reduction | 3.0–3.51 | 51 milestones: Milestone DAG, tree-sitter repo maps, Serena MCP, Watchtower, security agent, intake agent, express mode, TDD, browser planning, dry-run, rollback, health scoring, run memory, progress transparency | `DESIGN_v3.md` |
-| Environment Intelligence | 3.53–3.56 | Error pattern registry, auto-remediation engine, pre-flight validation, service readiness probing | `DESIGN_v3.md` |
+| Tekhton 3.0 — DAG, Indexing & Cost Reduction | 3.0–3.51 | 51 milestones: Milestone DAG, tree-sitter repo maps, Serena MCP, Watchtower, security agent, intake agent, express mode, TDD, browser planning, dry-run, rollback, health scoring, notes pipeline rewrite, pipeline acceleration & transparency | `DESIGN_v3.md` |
+| Environment Intelligence | 3.52–3.56 | Onboarding flow fix, error pattern registry, auto-remediation engine, pre-flight validation, service readiness probing | `DESIGN_v3.md` |
+| UI/UX Design Intelligence | 3.57–3.60 | Platform adapter framework, web adapter (Tailwind/MUI/shadcn/Chakra/Bootstrap), UI/UX specialist reviewer (auto-on for UI projects), mobile (Flutter/SwiftUI/Compose) and game engine (Phaser/PixiJS/Three.js/Babylon.js) adapters | `DESIGN_v3.md` |
+| V3 Final Polish | 3.61–3.66 | Repo map cross-stage cache, tester timing instrumentation, test baseline hygiene & completion gate hardening, tester fix surgical mode, prompt tool awareness, Watchtower full-stage metrics | `DESIGN_v3.md` |
 
 ### Milestone Management
 
-<!-- See MILESTONE_ARCHIVE.md for completed milestones -->
-
 Milestones are managed as individual files in `.claude/milestones/`.
-See `MANIFEST.cfg` for ordering, dependencies, and status.
+See `MANIFEST.cfg` for ordering, dependencies, and status. Completed milestones
+are archived to `MILESTONE_ARCHIVE.md`.
 
-## Active Initiative: UI/UX Design Intelligence (Milestones 57–60)
+## Next Initiative: Tekhton 4.0
 
-Tekhton produces high-quality non-visual code but leaves significant quality gaps
-when building user interfaces. The pipeline treats UI implementation identically
-to backend work — the coder receives zero design guidance, the reviewer checks
-four behavioral bullets, and quality judgment is limited to "does it load?"
-
-The initiative adds three layers of defense, organized as a platform adapter
-system that supports web, mobile (Flutter, iOS, Android), and game engine projects:
-
-1. **UI Platform Adapter Framework (M57)** — File-based adapter convention in
-   `platforms/` with universal + platform-specific UI knowledge. Detection-gated
-   resolution maps detected frameworks to adapter directories. User-extensible
-   via `.claude/platforms/` overrides.
-2. **Web UI Platform Adapter (M58)** — Design system detection (Tailwind, MUI,
-   shadcn, etc.), coder guidance, specialist checklist, and tester patterns for
-   web projects. Migrates existing `tester_ui_guidance.prompt.md` content.
-3. **UI/UX Specialist Reviewer (M59)** — New built-in specialist following the
-   security/performance/API pattern. Auto-enabled when `UI_PROJECT_DETECTED=true`.
-   8-category checklist covering component structure, design system consistency,
-   accessibility (WCAG 2.1 AA), responsive behavior, state presentation, and
-   interaction patterns.
-4. **Mobile & Game Platform Adapters (M60)** — Platform adapters for Flutter,
-   iOS (SwiftUI/UIKit), Android (Jetpack Compose), and browser-based game engines
-   (Phaser, PixiJS, Three.js, Babylon.js).
-
-### Key Constraints
-
-- **No new pipeline stages.** Enriches existing agents via prompt injection and
-  the specialist framework. Zero overhead for non-UI projects.
-- **Platform adapters are content directories, not code plugins.** Each platform
-  is 4 files (detect.sh + 3 prompt fragments) in a named directory.
-- **Detection-gated.** All features conditional on `UI_PROJECT_DETECTED`. Non-UI
-  projects see no prompt bloat, no extra specialist invocations.
-- **User-extensible.** `.claude/platforms/<name>/` in target projects can override
-  or extend built-in adapters. Custom platforms supported via `UI_PLATFORM=custom_<name>`.
-- **Backward compatible.** All features default-on for UI projects but overridable
-  via config keys (`SPECIALIST_UI_ENABLED`, `UI_PLATFORM`).
-- **All existing tests must pass** at every milestone.
-- **All new `.sh` files must pass `bash -n` and `shellcheck`.**
+V4 is in design (`DESIGN_v4.md`). Milestone numbering will restart with V4 and
+the `.claude/milestones/` directory will be reset when V4 work begins.
 
