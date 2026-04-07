@@ -17,7 +17,17 @@ The repo map below shows the changed files and their test counterparts. Use it
 to identify which test files need updates and what interfaces to test against.
 
 {{REPO_MAP_CONTENT}}
+
+Use the repo map as your primary source for identifying test targets. Do NOT
+grep for class definitions — the repo map has already indexed them.
 {{ENDIF:REPO_MAP_CONTENT}}
+{{IF:SERENA_ACTIVE}}
+
+## LSP Tools (Serena MCP)
+Use `find_symbol` to look up class/function signatures before writing test
+assertions. Use `get_symbol_definition` to verify constructor parameters.
+**Prefer LSP tools over grep for symbol lookup.**
+{{ENDIF:SERENA_ACTIVE}}
 
 {{IF:CONTINUATION_CONTEXT}}
 {{CONTINUATION_CONTEXT}}

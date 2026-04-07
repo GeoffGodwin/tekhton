@@ -63,8 +63,8 @@ else
     fail "stages/review.sh has syntax errors"
 fi
 
-# Test 7: Verify _TESTER_TIMING_WRITING_S is properly set to -1
-if grep -q '_TESTER_TIMING_WRITING_S=-1' "${TEKHTON_HOME}/stages/tester.sh"; then
+# Test 7: Verify _TESTER_TIMING_WRITING_S is properly set to -1 (in tester_timing.sh after M65 extraction)
+if grep -q '_TESTER_TIMING_WRITING_S=-1' "${TEKHTON_HOME}/stages/tester_timing.sh"; then
     pass "Tester timing initialization includes _TESTER_TIMING_WRITING_S"
 else
     fail "Tester timing initialization missing _TESTER_TIMING_WRITING_S"

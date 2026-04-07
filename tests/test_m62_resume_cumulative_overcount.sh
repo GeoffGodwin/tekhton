@@ -38,9 +38,9 @@ source "${TEKHTON_HOME}/lib/common.sh"
 
 # Extract only the parsing functions from tester.sh (avoids sourcing full stage)
 # shellcheck disable=SC1090
-source <(sed -n '/^_parse_tester_timing()/,/^}/p' "${TEKHTON_HOME}/stages/tester.sh")
+source <(sed -n '/^_parse_tester_timing()/,/^}/p' "${TEKHTON_HOME}/stages/tester_timing.sh")
 # shellcheck disable=SC1090
-source <(sed -n '/^_compute_tester_writing_time()/,/^}/p' "${TEKHTON_HOME}/stages/tester.sh")
+source <(sed -n '/^_compute_tester_writing_time()/,/^}/p' "${TEKHTON_HOME}/stages/tester_timing.sh")
 
 # =========================================================================
 echo "=== Test: replace then accumulate — second file has DELTA values ==="

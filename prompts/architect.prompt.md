@@ -18,7 +18,17 @@ The following repo map shows all file signatures in the codebase, ranked by
 connectivity. Use it alongside the architecture documentation for drift analysis.
 
 {{REPO_MAP_CONTENT}}
+
+Use the repo map as your primary file discovery source. Do NOT use `find` or
+`grep` for broad file discovery — the repo map has already done that work.
 {{ENDIF:REPO_MAP_CONTENT}}
+{{IF:SERENA_ACTIVE}}
+
+## LSP Tools Available
+You have LSP tools via MCP: `find_symbol`, `find_referencing_symbols`,
+`get_symbol_definition`. These provide exact cross-reference data.
+**Prefer LSP tools over grep/find for symbol lookup.**
+{{ENDIF:SERENA_ACTIVE}}
 
 ## Architecture Decision Log (why things are the way they are)
 {{ARCHITECTURE_LOG_CONTENT}}

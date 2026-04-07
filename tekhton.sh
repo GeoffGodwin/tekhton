@@ -136,7 +136,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.30.0"
+TEKHTON_VERSION="3.65.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------

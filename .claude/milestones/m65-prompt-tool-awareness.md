@@ -1,7 +1,7 @@
 # Milestone 65: Prompt Tool Awareness — Serena & Repo Map Coverage
 <!-- milestone-meta
 id: "65"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

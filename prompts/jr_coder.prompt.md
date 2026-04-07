@@ -6,6 +6,10 @@ Original task: {{TASK}}
 
 Senior coder just fixed complex blockers. You fix the simple ones.
 {{ENDIF:JR_AFTER_SENIOR}}
+{{IF:SERENA_ACTIVE}}
+LSP tools available via MCP (`find_symbol`, `find_referencing_symbols`) —
+prefer over grep for symbol lookup.
+{{ENDIF:SERENA_ACTIVE}}
 Read `REVIEWER_REPORT.md` — fix **only items under 'Simple Blockers (send to jr coder)'**.
 Read only the specific files those blockers reference. Nothing else.
 Write `JR_CODER_SUMMARY.md`.

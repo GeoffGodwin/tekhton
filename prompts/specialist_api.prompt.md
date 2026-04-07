@@ -20,6 +20,13 @@ Task: {{TASK}}
 --- END FILE CONTENT: ARCHITECTURE ---
 {{ENDIF:ARCHITECTURE_CONTENT}}
 
+{{IF:SERENA_ACTIVE}}
+## LSP Tools Available
+You have LSP tools via MCP: `find_symbol`, `find_referencing_symbols`,
+`get_symbol_definition`. These provide exact cross-reference data.
+**Prefer LSP tools over grep/find for symbol lookup.**
+{{ENDIF:SERENA_ACTIVE}}
+
 ## Required Reading
 1. `CODER_SUMMARY.md` — what was built and what files were touched
 2. Only the files listed under 'Files created or modified' in CODER_SUMMARY.md

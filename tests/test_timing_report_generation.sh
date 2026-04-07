@@ -32,6 +32,7 @@ header()  { :; }
 
 # Source common.sh (timing helpers) and timing.sh (report functions)
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/stages/tester_timing.sh"
 source "${TEKHTON_HOME}/lib/timing.sh"
 
 # Globals expected by timing.sh
