@@ -1,22 +1,35 @@
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- `stages/tester_validation.sh` is a new file not listed in the repo layout tables in `CLAUDE.md` or `ARCHITECTURE.md` — add a line entry for discoverability (pattern: existing tester sub-stages like `tester_tdd.sh`, `tester_continuation.sh`, `tester_fix.sh` are also missing from ARCHITECTURE.md)
-- `CODER_SUMMARY.md` was again not produced by the coder — same observation as cycle 1. Downstream pipeline functions that parse it (e.g., `extract_files_from_coder_summary` in `review.sh`) will receive empty results.
+None
 
 ## Coverage Gaps
-- None
+None
 
 ## Drift Observations
-- None
+None
 
-## Prior Blocker Verification
-- **Note 1 (REVIEWER_MAX_TURNS_CAP inline default):** ADDRESSED — `lib/config_defaults.sh:96` now sets `REVIEWER_MAX_TURNS_CAP:=50` with a clamp at line 416. The inline `:-30` fallback was correctly removed from `stages/review.sh`.
-- **Note 2 (CODER_SUMMARY.md not produced):** Observational — not a code defect, carried forward above.
+---
+
+**Review summary**: Both drift observations were substantively resolved in M65.
+This run correctly formalizes the resolution in DRIFT_LOG.md.
+
+1. **Sourcing convention** — `tekhton.sh` lines 813–814 have an inline comment
+   documenting that all five tester sub-stages are sourced by `tester.sh` itself.
+   Verified correct.
+
+2. **ARCHITECTURE.md tester sub-stages** — All five sub-stages (`tester_tdd.sh`,
+   `tester_continuation.sh`, `tester_fix.sh`, `tester_timing.sh`, `tester_validation.sh`)
+   are listed in `ARCHITECTURE.md` with "Sourced by `tester.sh` — do not run directly"
+   entries. Verified correct.
+
+DRIFT_LOG.md moves both observations from Unresolved to Resolved and resets
+"Runs since audit" to 0. No regressions; no scope creep. No code changes were
+required because the underlying fixes were already in place.

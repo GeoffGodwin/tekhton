@@ -1,44 +1,29 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files (CLAUDE.md, ARCHITECTURE.md), 0 test functions
-Verdict: PASS
+Tests audited: 2 files, 11 test functions
+Verdict: CONCERNS
 
 ### Findings
 
-None
+#### INTEGRITY: Test 5 in sourcing convention never fails
+- File: tests/test_drift_resolution_sourcing_convention.sh:83-93
+- Issue: Test 5 ("Checking that tester.sh sources all 5 sub-stages") has no failure path. When the grep fails to find a sub-stage source, it executes `echo "Note: Could not confirm..."` and continues without calling `fail()`. The test always exits 0 regardless of whether `tester.sh` actually sources the sub-stages. This matches the `assertTrue(True)` pattern — it provides false confidence that sourcing is verified.
+- Severity: HIGH
+- Action: Replace the `else` branch's `echo "Note: ..."` with `fail "tester.sh does not source $substage"`. The implementation at `stages/tester.sh` lines 13–29 does source all 5 sub-stages, so the corrected assertion will legitimately pass.
 
----
+#### COVERAGE: Hard-coded line range in Test 3
+- File: tests/test_drift_resolution_sourcing_convention.sh:48
+- Issue: `sed -n '812,816p'` extracts a fixed line range from `tekhton.sh`. At time of writing, the comment and `cleanup.sh` source are at lines 812–815. If lines are inserted or removed before line 812, this test will silently inspect the wrong content — passing incorrectly or failing for the wrong reason. The rest of the suite uses `grep` for content-based lookups; this test diverges without justification.
+- Severity: MEDIUM
+- Action: Replace the `sed` extraction with `grep -A 3 'source.*stages/tester\.sh'` to capture the tester.sh source line and its following context, then check that content for `cleanup.sh`. This makes the test robust to file growth.
 
-### Audit Notes
+#### COVERAGE: Tests 2 and 3 in architecture doc test verify the same line
+- File: tests/test_drift_resolution_architecture_doc.sh:39-56
+- Issue: Both Test 2 ("Sourced by tester.sh" marker) and Test 3 ("do not run directly" warning) use `grep -A 1 "stages/${substage}"` to retrieve the same second line. In the actual ARCHITECTURE.md, "Sourced by `tester.sh` — do not run directly" is a single line, so both tests grep identical text and redundantly confirm one documentation requirement rather than two distinct ones.
+- Severity: LOW
+- Action: No change required. Both assertions are honest and pass for the right reason. If ARCHITECTURE.md entries ever split the sourcing note and the warning onto separate lines, the tests will naturally diverge. Acceptable as-is.
 
-The files under audit (`CLAUDE.md`, `ARCHITECTURE.md`) are documentation files, not
-executable test files. This is appropriate: the task was to address 7 non-blocking
-notes from NON_BLOCKING_LOG.md, all of which were documentation and structural
-hygiene items (adding repo layout entries, removing duplicate inline defaults,
-resolving double-sourcing). No logic changes were made, and implementation files
-changed: none.
+### Scope Alignment
 
-**Rubric evaluation:**
-
-- **Assertion Honesty**: N/A — no test assertions exist. Documentation updates are
-  factual claims verified against the actual codebase:
-  - `stages/tester_validation.sh` exists and provides `_validate_tester_output()`
-    (confirmed at tester_validation.sh:16).
-  - All 5 tester sub-stages (`tester_tdd.sh`, `tester_continuation.sh`,
-    `tester_fix.sh`, `tester_timing.sh`, `tester_validation.sh`) exist and match
-    their ARCHITECTURE.md descriptions (ARCHITECTURE.md:57–75).
-
-- **Edge Case Coverage**: N/A — documentation task; no behavioral code changed.
-
-- **Implementation Exercise**: N/A — no new code paths introduced.
-
-- **Test Weakening Detection**: No existing tests were modified.
-
-- **Test Naming and Intent**: N/A — no test functions present.
-
-- **Scope Alignment**: Documentation claims are accurate. TESTER_REPORT.md
-  correctly reports 0 tests run (Passed: 0, Failed: 0), consistent with a
-  documentation-only change set. The tester's determination that no new test
-  cases were required is correct: NON_BLOCKING_LOG.md shows all 7 items resolved
-  with no behavioral code changes (implementation files changed: none).
+No orphaned, stale, or misaligned tests detected. All implementation files exercised by these tests (`tekhton.sh`, `ARCHITECTURE.md`, `stages/tester.sh`, and the five sub-stage files) exist and contain the expected content. The drift observations in `DRIFT_LOG.md` match the documentation verified by the tests. `JR_CODER_SUMMARY.md` reports no implementation files were changed, which is consistent — both drift resolutions are documentation-only (inline comment added to `tekhton.sh` at lines 813–814; five sub-stage entries added to `ARCHITECTURE.md` at lines 57–75).
