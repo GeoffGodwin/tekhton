@@ -26,6 +26,8 @@ source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/metrics.sh"
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/metrics_extended.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
 
 PASS=0

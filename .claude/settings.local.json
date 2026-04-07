@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l lib/milestone*.sh lib/state.sh lib/orchestrate*.sh lib/plan_state.sh)",
+      "Bash(grep -E \"^#{1,5}.*Milestone [0-9]\" CLAUDE.md)",
+      "Read(//mnt/wsl/Ubuntu/home/geoff/workspace/geoffgodwin/tekhton/**)",
+      "Read(///wsl.localhost/Ubuntu//**)",
+      "Bash(wc -l -c \"\\\\\\\\wsl.localhost\\\\Ubuntu\\\\home\\\\geoff\\\\workspace\\\\geoffgodwin\\\\tekhton\\\\CLAUDE.md\")",
+      "Bash(find . -maxdepth 2 \\\\\\(-name *v3* -o -name *V3* \\\\\\))",
+      "Bash(grep -r \"test.*quality\\\\|test.*coverage\\\\|test.*valid\" /home/geoff/workspace/geoffgodwin/tekhton/lib/*.sh)",
+      "Bash(ls -1 prompts/specialist*.prompt.md)",
+      "Bash(grep -l \"test\\\\|Test\" prompts/specialist*.prompt.md)",
+      "Bash(grep -r \"log_info\\\\|log_warn\\\\|log_error\\\\|log_success\" /home/geoff/workspace/geoffgodwin/tekhton --include=*.sh)",
+      "Bash(git --global config --add safe.directory '%\\(prefix\\)///wsl.localhost/Ubuntu/home/geoff/workspace/geoffgodwin/tekhton')",
+      "Bash(git config:*)",
+      "Bash(/tmp/analyze_turns.txt:*)",
+      "Read(//tmp/**)",
+      "Bash(while IFS= read -r line)",
+      "Bash(do echo:*)",
+      "Bash(done)",
+      "Bash(ls -la /home/geoff/workspace/geoffgodwin/tekhton/.claude/logs/*REVIEWER*)",
+      "Bash(find /home/geoff/workspace/geoffgodwin/tekhton/.claude/logs -name *REVIEWER* -newer /home/geoff/workspace/geoffgodwin/tekhton/.claude/logs/archive/20260323_100255_REVIEWER_REPORT.md)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "Bash(ls /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/m2*.md)",
+      "Bash(ls /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/*.md)",
+      "Bash(find /home/geoff/workspace/geoffgodwin/tekhton/.claude/milestones/ -name *.md)"
+    ]
+  }
+}

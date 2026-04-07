@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# stages/architect.sh — Stage 0: Architect audit (conditional)
+# stages/architect.sh — Pre-stage 2: Architect audit (conditional)
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects all pipeline globals to be set.
@@ -20,26 +20,36 @@
 #  10. Append Design Doc Observations to HUMAN_ACTION_REQUIRED.md
 #  11. Reset runs-since-audit counter
 run_stage_architect() {
-    header "Stage 0 — Architect Audit"
+    header "Pre-stage 2 — Architect Audit"
 
     # --- Load context for prompt ---------------------------------------------
 
-    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
-    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}"
-
-    export DRIFT_LOG_CONTENT="(No drift log found)"
-    if [ -f "$drift_file" ]; then
-        DRIFT_LOG_CONTENT=$(_wrap_file_content "DRIFT_LOG" "$(_safe_read_file "$drift_file" "DRIFT_LOG")")
+    # M47: use cached context when available
+    export DRIFT_LOG_CONTENT
+    DRIFT_LOG_CONTENT=$(_get_cached_drift_log_content)
+    if [[ -z "$DRIFT_LOG_CONTENT" ]]; then
+        DRIFT_LOG_CONTENT="(No drift log found)"
     fi
 
-    export ARCHITECTURE_LOG_CONTENT="(No architecture decision log found)"
-    if [ -f "$adl_file" ]; then
-        ARCHITECTURE_LOG_CONTENT=$(_wrap_file_content "ARCHITECTURE_LOG" "$(_safe_read_file "$adl_file" "ARCHITECTURE_LOG")")
+    export ARCHITECTURE_LOG_CONTENT
+    ARCHITECTURE_LOG_CONTENT=$(_get_cached_architecture_log_content)
+    if [[ -z "$ARCHITECTURE_LOG_CONTENT" ]]; then
+        ARCHITECTURE_LOG_CONTENT="(No architecture decision log found)"
     fi
 
-    export ARCHITECTURE_CONTENT="(No architecture file found)"
-    if [ -f "${ARCHITECTURE_FILE}" ]; then
-        ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
+    export ARCHITECTURE_CONTENT
+    ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
+    if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
+        ARCHITECTURE_CONTENT="(No architecture file found)"
+    fi
+
+    # Full repo map for architect (broadest view for drift detection)
+    export REPO_MAP_CONTENT=""
+    if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+        log "[indexer] Generating full repo map for architect..."
+        if run_repo_map "architecture audit drift analysis"; then
+            log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
+        fi
     fi
 
     DRIFT_OBSERVATION_COUNT=$(count_drift_observations)
@@ -179,10 +189,10 @@ run_stage_architect() {
 
         log "Running expedited review of architect remediation..."
 
+        # M47: use cached architecture content
         export ARCHITECTURE_CONTENT
-        if [ -f "${ARCHITECTURE_FILE}" ]; then
-            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
-        else
+        ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
+        if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
             ARCHITECTURE_CONTENT="(not found)"
         fi
         export PRIOR_BLOCKERS_BLOCK=""
@@ -311,6 +321,12 @@ run_stage_architect() {
             echo "$entry" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
             echo "$entry" | grep -qE '^\s*-+\s*$' && continue
             echo "$entry" | grep -qiE '^\*?\(route to human' && continue
+            # Skip meta-text about the file/process itself rather than actual observations
+            echo "$entry" | grep -qiE '(HUMAN_ACTION|action.required|action.items?\.md)' && continue
+            echo "$entry" | grep -qiE '^(Design (doc )?observations?|Items?|Observations?) (have been |were |are |)(documented|recorded|noted|flagged|generated|created|added|updated)' && continue
+            echo "$entry" | grep -qiE '^(Updated|Generated|Created|Documented|Recorded|Flagged|Added|Wrote)\b.*(observations?|action|items?|file|review|human)' && continue
+            echo "$entry" | grep -qiE '(aligns? with|consistent with|no contradictions?|no conflicts?|matches?).*(design|GDD|architecture)' && continue
+            echo "$entry" | grep -qiE '^(See|Refer to) (the )?(design|GDD|architecture)' && continue
             _filtered_design+=("$entry")
         done
 

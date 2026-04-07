@@ -1,4 +1,6 @@
 # Human Notes
+<!-- notes-format: v2 -->
+<!-- IDs are auto-managed by Tekhton. Do not remove note: comments. -->
 
 Add your observations below as unchecked items. The pipeline will inject
 unchecked items into the next coder run and archive them when done.
@@ -12,10 +14,8 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 
 ## Features
-None currently.
 
 ## Bugs
-None currently.
+
 
 ## Polish
-None currently.

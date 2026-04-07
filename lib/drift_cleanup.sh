@@ -82,7 +82,7 @@ count_open_nonblocking_notes() {
         return
     fi
     local count
-    count=$(awk '/^## Open/{found=1; next} found && /^##/{exit} found && /^- \[ \]/{count++} END{print count+0}' \
+    count=$(awk '/^## Open/{found=1; next} found && /^## [^#]/{exit} found && /^- \[ \]/{count++} END{print count+0}' \
         "$nb_file" 2>/dev/null)
     echo "$count"
 }
@@ -93,7 +93,7 @@ get_open_nonblocking_notes() {
     if [ ! -f "$nb_file" ]; then
         return
     fi
-    awk '/^## Open/{found=1; next} found && /^##/{exit} found && /^- \[ \]/{print}' \
+    awk '/^## Open/{found=1; next} found && /^## [^#]/{exit} found && /^- \[ \]/{print}' \
         "$nb_file" 2>/dev/null || true
 }
 
@@ -125,15 +125,15 @@ _resolve_addressed_nonblocking_notes() {
     local in_open=false
 
     while IFS= read -r line; do
-        if echo "$line" | grep -q "^## Open"; then
+        if [[ "$line" =~ ^##\ Open ]]; then
             in_open=true
             echo "$line" >> "$tmpfile"
             continue
-        elif echo "$line" | grep -q "^## " && [[ "$in_open" = true ]]; then
+        elif [[ "$line" =~ ^##\  ]] && [[ "$in_open" = true ]]; then
             in_open=false
         fi
 
-        if [[ "$in_open" = true ]] && echo "$line" | grep -q "^- \[ \]"; then
+        if [[ "$in_open" = true ]] && [[ "$line" =~ ^-\ \[\ \] ]]; then
             local matched=false
             while IFS= read -r mod_file; do
                 [[ -z "$mod_file" ]] && continue
@@ -167,43 +167,70 @@ _resolve_addressed_nonblocking_notes() {
 # CLEANUP HELPERS
 # =============================================================================
 
-# clear_completed_nonblocking_notes — Removes [x] items from the ## Open section.
+# clear_completed_nonblocking_notes — Moves [x] items from ## Open to ## Resolved.
 # Called at the start of each run so only the current run's completions are visible.
+# Preserves traceability by appending resolved items under ## Resolved.
 clear_completed_nonblocking_notes() {
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
     if [ ! -f "$nb_file" ]; then
         return 0
     fi
 
-    # Count [x] items first — skip file rewrite if none exist
+    # Count [x] items first — skip file rewrite if none exist.
+    # Use /^## [^#]/ as section boundary to avoid matching ### subheadings.
     local completed_count
-    completed_count=$(awk '/^## Open/{f=1; next} f && /^##/{exit} f && /^- \[x\]/{c++} END{print c+0}' \
+    completed_count=$(awk '/^## Open/{f=1; next} f && /^## [^#]/{exit} f && /^- \[x\]/{c++} END{print c+0}' \
         "$nb_file" 2>/dev/null)
     if [ "$completed_count" -eq 0 ] 2>/dev/null; then
         return 0
     fi
 
+    # Collect completed items to move to ## Resolved
+    local completed_items
+    completed_items=$(awk '/^## Open/{f=1; next} f && /^## [^#]/{exit} f && /^- \[x\]/{print}' \
+        "$nb_file" 2>/dev/null || true)
+
     local tmpfile
     tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     local in_open=false
+    local in_resolved=false
+    local resolved_injected=false
 
     while IFS= read -r line; do
-        if echo "$line" | grep -q "^## Open"; then
+        if [[ "$line" == "## Open"* ]] && [[ "$line" != "###"* ]]; then
             in_open=true
+            in_resolved=false
             echo "$line" >> "$tmpfile"
-        elif echo "$line" | grep -q "^## " && [[ "$in_open" = true ]]; then
+        elif [[ "$line" == "## Resolved"* ]] && [[ "$line" != "###"* ]]; then
+            in_open=false
+            in_resolved=true
+            echo "$line" >> "$tmpfile"
+            # Inject completed items right after the ## Resolved heading
+            if [[ -n "$completed_items" ]]; then
+                echo "$completed_items" >> "$tmpfile"
+                resolved_injected=true
+            fi
+        elif [[ "$in_open" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
             in_open=false
             echo "$line" >> "$tmpfile"
-        elif [[ "$in_open" = true ]] && echo "$line" | grep -qi "^- \[x\]"; then
-            # Skip completed items
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
+            in_resolved=false
+            echo "$line" >> "$tmpfile"
+        elif [[ "$in_open" = true ]] && [[ "$line" =~ ^-\ \[x\] ]]; then
+            # Skip completed items from Open (they are moved to Resolved)
             :
         else
             echo "$line" >> "$tmpfile"
         fi
     done < "$nb_file"
 
+    # If no ## Resolved section existed, append one with the items
+    if [[ "$resolved_injected" = false ]] && [[ -n "$completed_items" ]]; then
+        printf '\n## Resolved\n%s\n' "$completed_items" >> "$tmpfile"
+    fi
+
     mv "$tmpfile" "$nb_file"
-    log "Cleared ${completed_count} completed item(s) from NON_BLOCKING_LOG.md."
+    log "Moved ${completed_count} completed item(s) from ## Open to ## Resolved in NON_BLOCKING_LOG.md."
 }
 
 # get_completed_nonblocking_notes — Returns text of [x] items from ## Open.
@@ -213,7 +240,7 @@ get_completed_nonblocking_notes() {
     if [ ! -f "$nb_file" ]; then
         return
     fi
-    awk '/^## Open/{f=1; next} f && /^##/{exit} f && /^- \[x\]/{print}' \
+    awk '/^## Open/{f=1; next} f && /^## [^#]/{exit} f && /^- \[x\]/{print}' \
         "$nb_file" 2>/dev/null || true
 }
 
@@ -226,35 +253,40 @@ clear_resolved_nonblocking_notes() {
         return 0
     fi
 
-    # Extract resolved items for metrics capture (output them before clearing)
-    local resolved_items
-    resolved_items=$(awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- /{print}' \
-        "$nb_file" 2>/dev/null || true)
-
-    if [ -z "$resolved_items" ]; then
+    # Count non-blank content lines in ## Resolved section.
+    # Use /^## [^#]/ as section boundary to avoid matching ### subheadings.
+    local resolved_count
+    resolved_count=$(awk '/^## Resolved/{f=1; next} f && /^## [^#]/{exit} f && /[^[:space:]]/{c++} END{print c+0}' \
+        "$nb_file" 2>/dev/null)
+    if [ "$resolved_count" -eq 0 ] 2>/dev/null; then
         return 0
     fi
 
-    # Output cleared items for caller to capture
-    echo "$resolved_items"
+    # Extract resolved bullet items for metrics capture (output them before clearing)
+    local resolved_items
+    resolved_items=$(awk '/^## Resolved/{f=1; next} f && /^## [^#]/{exit} f && /^- /{print}' \
+        "$nb_file" 2>/dev/null || true)
 
-    # Rewrite file without resolved items (keep the ## Resolved heading)
+    # Output cleared items for caller to capture
+    if [ -n "$resolved_items" ]; then
+        echo "$resolved_items"
+    fi
+
+    # Rewrite file dropping everything in ## Resolved section except the heading.
+    # Match section boundary with ^## followed by non-# to avoid matching ### subheadings.
     local tmpfile
     tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     local in_resolved=false
 
     while IFS= read -r line; do
-        if echo "$line" | grep -q "^## Resolved"; then
+        if [[ "$line" == "## Resolved"* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=true
             echo "$line" >> "$tmpfile"
-        elif echo "$line" | grep -q "^## " && [[ "$in_resolved" = true ]]; then
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=false
             echo "$line" >> "$tmpfile"
-        elif [[ "$in_resolved" = true ]] && echo "$line" | grep -q "^- "; then
-            # Skip resolved items
-            :
-        elif [[ "$in_resolved" = true ]] && [[ -z "${line// /}" ]]; then
-            # Skip blank lines between resolved items to keep section clean
+        elif [[ "$in_resolved" = true ]]; then
+            # Skip all content in the Resolved section (bullets, subheadings, blank lines)
             :
         else
             echo "$line" >> "$tmpfile"
@@ -266,3 +298,4 @@ clear_resolved_nonblocking_notes() {
     count=$(echo "$resolved_items" | wc -l)
     log "Cleared ${count} resolved item(s) from NON_BLOCKING_LOG.md ## Resolved section."
 }
+

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # agent_monitor_helpers.sh — Post-invocation monitoring helpers
 #

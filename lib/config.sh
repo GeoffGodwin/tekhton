@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # config.sh — Load and validate pipeline.conf
 #
@@ -107,6 +108,23 @@ _clamp_config_value() {
     fi
 }
 
+# _clamp_config_float — Clamp a floating-point config value to [min, max].
+# Args: $1 = variable name, $2 = min value, $3 = max value
+_clamp_config_float() {
+    local key="$1" min="$2" max="$3"
+    local val="${!key:-0}"
+    # Validate: must be a number (integer or float)
+    if ! [[ "$val" =~ ^[0-9]+\.?[0-9]*$ ]]; then
+        return
+    fi
+    local clamped
+    clamped=$(awk "BEGIN { v=$val; if (v < $min) v=$min; if (v > $max) v=$max; printf \"%.1f\", v }")
+    if [[ "$clamped" != "$val" ]]; then
+        warn "[config] ${key}=${val} outside range [${min}, ${max}]. Clamped to ${clamped}."
+        declare -gx "$key=$clamped"
+    fi
+}
+
 # --- Loader ------------------------------------------------------------------
 
 load_config() {
@@ -142,6 +160,201 @@ load_config() {
     # shellcheck source=lib/config_defaults.sh
     source "${TEKHTON_HOME}/lib/config_defaults.sh"
 
+    # --- Validate update pin version ---
+    if [[ -n "${TEKHTON_PIN_VERSION:-}" ]] && ! [[ "${TEKHTON_PIN_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        warn "[config] TEKHTON_PIN_VERSION must be valid semver X.Y.Z (got: ${TEKHTON_PIN_VERSION}). Ignoring pin."
+        TEKHTON_PIN_VERSION=""
+    fi
+
+    # --- Validate pipeline order (Milestone 27) ---
+    # Normalization runs here (during load_config) before pipeline_order.sh is sourced.
+    # validate_pipeline_order() in pipeline_order.sh provides the test-facing validation API.
+    # When adding a new order value, update BOTH this block and pipeline_order.sh:validate_pipeline_order().
+    if [[ -n "${PIPELINE_ORDER:-}" ]]; then
+        case "$PIPELINE_ORDER" in
+            standard|test_first) ;;
+            auto)
+                warn "[config] PIPELINE_ORDER=auto requires V4 PM agent — falling back to standard."
+                PIPELINE_ORDER="standard"
+                ;;
+            *)
+                warn "[config] PIPELINE_ORDER must be standard|test_first|auto (got: ${PIPELINE_ORDER}). Using standard."
+                PIPELINE_ORDER="standard"
+                ;;
+        esac
+    fi
+
+    # --- Validate UI testing config (Milestone 28) ---
+    if [[ -n "${UI_FRAMEWORK:-}" ]]; then
+        case "$UI_FRAMEWORK" in
+            auto|playwright|cypress|selenium|puppeteer|testing-library|detox) ;;
+            *) warn "[config] UI_FRAMEWORK must be auto|playwright|cypress|selenium|puppeteer|testing-library|detox (got: ${UI_FRAMEWORK}). Clearing."
+               UI_FRAMEWORK="" ;;
+        esac
+    fi
+    if [[ -n "${UI_TEST_CMD:-}" ]]; then
+        local _ui_cmd_bin
+        _ui_cmd_bin=$(echo "$UI_TEST_CMD" | awk '{print $1}')
+        if [[ "$_ui_cmd_bin" == "npx" ]] || [[ "$_ui_cmd_bin" == "npm" ]]; then
+            : # npx/npm resolve at runtime — skip check
+        elif ! command -v "$_ui_cmd_bin" &>/dev/null; then
+            warn "[config] UI_TEST_CMD command '${_ui_cmd_bin}' not found. UI test gate will warn at runtime."
+        fi
+    fi
+
+    # --- Validate UI validation config (Milestone 29) ---
+    if [[ -n "${UI_SERVE_PORT:-}" ]] && ! [[ "${UI_SERVE_PORT}" =~ ^[0-9]+$ ]]; then
+        warn "[config] UI_SERVE_PORT must be numeric (got: ${UI_SERVE_PORT}). Using 3000."
+        UI_SERVE_PORT=3000
+    fi
+    if [[ -n "${UI_VALIDATION_VIEWPORTS:-}" ]]; then
+        local _vp_valid=true
+        IFS=',' read -ra _vp_parts <<< "$UI_VALIDATION_VIEWPORTS"
+        for _vp in "${_vp_parts[@]}"; do
+            _vp=$(echo "$_vp" | tr -d '[:space:]')
+            if ! [[ "$_vp" =~ ^[0-9]+x[0-9]+$ ]]; then
+                _vp_valid=false
+                break
+            fi
+        done
+        if [[ "$_vp_valid" = false ]]; then
+            warn "[config] UI_VALIDATION_VIEWPORTS must match NNNNxNNNN format (got: ${UI_VALIDATION_VIEWPORTS}). Using default."
+            UI_VALIDATION_VIEWPORTS="1280x800,375x812"
+        fi
+    fi
+    if [[ -n "${UI_VALIDATION_TIMEOUT:-}" ]] && ! [[ "${UI_VALIDATION_TIMEOUT}" =~ ^[0-9]+$ ]]; then
+        warn "[config] UI_VALIDATION_TIMEOUT must be a positive integer (got: ${UI_VALIDATION_TIMEOUT}). Using 30."
+        UI_VALIDATION_TIMEOUT=30
+    fi
+    if [[ -n "${UI_SERVER_STARTUP_TIMEOUT:-}" ]] && ! [[ "${UI_SERVER_STARTUP_TIMEOUT}" =~ ^[0-9]+$ ]]; then
+        warn "[config] UI_SERVER_STARTUP_TIMEOUT must be a positive integer (got: ${UI_SERVER_STARTUP_TIMEOUT}). Using 30."
+        UI_SERVER_STARTUP_TIMEOUT=30
+    fi
+    if [[ -n "${UI_VALIDATION_CONSOLE_SEVERITY:-}" ]]; then
+        case "$UI_VALIDATION_CONSOLE_SEVERITY" in
+            error|warn) ;;
+            *) warn "[config] UI_VALIDATION_CONSOLE_SEVERITY must be error|warn (got: ${UI_VALIDATION_CONSOLE_SEVERITY}). Using error."
+               UI_VALIDATION_CONSOLE_SEVERITY="error" ;;
+        esac
+    fi
+
+    # --- Validate security agent config ---
+    if [[ -n "${SECURITY_UNFIXABLE_POLICY:-}" ]]; then
+        case "$SECURITY_UNFIXABLE_POLICY" in
+            escalate|halt|waiver) ;;
+            *) warn "[config] SECURITY_UNFIXABLE_POLICY must be escalate|halt|waiver (got: ${SECURITY_UNFIXABLE_POLICY}). Using 'escalate'."
+               SECURITY_UNFIXABLE_POLICY="escalate" ;;
+        esac
+    fi
+    if [[ -n "${SECURITY_BLOCK_SEVERITY:-}" ]]; then
+        case "$SECURITY_BLOCK_SEVERITY" in
+            CRITICAL|HIGH|MEDIUM|LOW) ;;
+            *) warn "[config] SECURITY_BLOCK_SEVERITY must be CRITICAL|HIGH|MEDIUM|LOW (got: ${SECURITY_BLOCK_SEVERITY}). Using 'HIGH'."
+               SECURITY_BLOCK_SEVERITY="HIGH" ;;
+        esac
+    fi
+
+    # --- Validate intake agent config ---
+    if [[ -n "${INTAKE_CLARITY_THRESHOLD:-}" ]] && [[ "${INTAKE_CLARITY_THRESHOLD}" =~ ^[0-9]+$ ]]; then
+        if [[ "$INTAKE_CLARITY_THRESHOLD" -gt 100 ]]; then
+            warn "[config] INTAKE_CLARITY_THRESHOLD must be 0-100 (got: ${INTAKE_CLARITY_THRESHOLD}). Using 40."
+            INTAKE_CLARITY_THRESHOLD=40
+        fi
+    fi
+    if [[ -n "${INTAKE_TWEAK_THRESHOLD:-}" ]] && [[ "${INTAKE_TWEAK_THRESHOLD}" =~ ^[0-9]+$ ]]; then
+        if [[ "$INTAKE_TWEAK_THRESHOLD" -gt 100 ]]; then
+            warn "[config] INTAKE_TWEAK_THRESHOLD must be 0-100 (got: ${INTAKE_TWEAK_THRESHOLD}). Using 70."
+            INTAKE_TWEAK_THRESHOLD=70
+        fi
+        if [[ -n "${INTAKE_CLARITY_THRESHOLD:-}" ]] && [[ "${INTAKE_CLARITY_THRESHOLD}" =~ ^[0-9]+$ ]]; then
+            if [[ "$INTAKE_TWEAK_THRESHOLD" -le "$INTAKE_CLARITY_THRESHOLD" ]]; then
+                warn "[config] INTAKE_TWEAK_THRESHOLD (${INTAKE_TWEAK_THRESHOLD}) must be greater than INTAKE_CLARITY_THRESHOLD (${INTAKE_CLARITY_THRESHOLD}). Using defaults."
+                INTAKE_CLARITY_THRESHOLD=40
+                INTAKE_TWEAK_THRESHOLD=70
+            fi
+        fi
+    fi
+
+    # --- Validate dashboard / causal log config (Milestone 13) ---
+    if [[ -n "${DASHBOARD_VERBOSITY:-}" ]]; then
+        case "$DASHBOARD_VERBOSITY" in
+            minimal|normal|verbose) ;;
+            *) warn "[config] DASHBOARD_VERBOSITY must be minimal|normal|verbose (got: ${DASHBOARD_VERBOSITY}). Using 'normal'."
+               DASHBOARD_VERBOSITY="normal" ;;
+        esac
+    fi
+    if [[ -n "${DASHBOARD_HISTORY_DEPTH:-}" ]] && [[ "${DASHBOARD_HISTORY_DEPTH}" =~ ^[0-9]+$ ]]; then
+        if [[ "$DASHBOARD_HISTORY_DEPTH" -lt 1 ]] || [[ "$DASHBOARD_HISTORY_DEPTH" -gt 100 ]]; then
+            warn "[config] DASHBOARD_HISTORY_DEPTH must be 1-100 (got: ${DASHBOARD_HISTORY_DEPTH}). Using 50."
+            DASHBOARD_HISTORY_DEPTH=50
+        fi
+    fi
+    if [[ -n "${CAUSAL_LOG_RETENTION_RUNS:-}" ]] && [[ "${CAUSAL_LOG_RETENTION_RUNS}" =~ ^[0-9]+$ ]]; then
+        if [[ "$CAUSAL_LOG_RETENTION_RUNS" -lt 1 ]] || [[ "$CAUSAL_LOG_RETENTION_RUNS" -gt 200 ]]; then
+            warn "[config] CAUSAL_LOG_RETENTION_RUNS must be 1-200 (got: ${CAUSAL_LOG_RETENTION_RUNS}). Using 50."
+            CAUSAL_LOG_RETENTION_RUNS=50
+        fi
+    fi
+    if [[ -n "${CAUSAL_LOG_MAX_EVENTS:-}" ]] && [[ "${CAUSAL_LOG_MAX_EVENTS}" =~ ^[0-9]+$ ]]; then
+        if [[ "$CAUSAL_LOG_MAX_EVENTS" -lt 1 ]] || [[ "$CAUSAL_LOG_MAX_EVENTS" -gt 10000 ]]; then
+            warn "[config] CAUSAL_LOG_MAX_EVENTS must be 1-10000 (got: ${CAUSAL_LOG_MAX_EVENTS}). Using 2000."
+            CAUSAL_LOG_MAX_EVENTS=2000
+        fi
+    fi
+    if [[ -n "${DASHBOARD_MAX_TIMELINE_EVENTS:-}" ]] && [[ "${DASHBOARD_MAX_TIMELINE_EVENTS}" =~ ^[0-9]+$ ]]; then
+        if [[ "$DASHBOARD_MAX_TIMELINE_EVENTS" -lt 1 ]] || [[ "$DASHBOARD_MAX_TIMELINE_EVENTS" -gt 2000 ]]; then
+            warn "[config] DASHBOARD_MAX_TIMELINE_EVENTS must be 1-2000 (got: ${DASHBOARD_MAX_TIMELINE_EVENTS}). Using 500."
+            DASHBOARD_MAX_TIMELINE_EVENTS=500
+        fi
+    fi
+
+    # --- Validate quota management config (Milestone 16) ---
+    if [[ -n "${QUOTA_RETRY_INTERVAL:-}" ]] && [[ "${QUOTA_RETRY_INTERVAL}" =~ ^[0-9]+$ ]]; then
+        if [[ "$QUOTA_RETRY_INTERVAL" -lt 60 ]] || [[ "$QUOTA_RETRY_INTERVAL" -gt 3600 ]]; then
+            warn "[config] QUOTA_RETRY_INTERVAL must be 60-3600 (got: ${QUOTA_RETRY_INTERVAL}). Using 300."
+            QUOTA_RETRY_INTERVAL=300
+        fi
+    fi
+    if [[ -n "${QUOTA_RESERVE_PCT:-}" ]] && [[ "${QUOTA_RESERVE_PCT}" =~ ^[0-9]+$ ]]; then
+        if [[ "$QUOTA_RESERVE_PCT" -lt 1 ]] || [[ "$QUOTA_RESERVE_PCT" -gt 50 ]]; then
+            warn "[config] QUOTA_RESERVE_PCT must be 1-50 (got: ${QUOTA_RESERVE_PCT}). Using 10."
+            QUOTA_RESERVE_PCT=10
+        fi
+    fi
+    if [[ -n "${QUOTA_MAX_PAUSE_DURATION:-}" ]] && [[ "${QUOTA_MAX_PAUSE_DURATION}" =~ ^[0-9]+$ ]]; then
+        if [[ "$QUOTA_MAX_PAUSE_DURATION" -lt 300 ]] || [[ "$QUOTA_MAX_PAUSE_DURATION" -gt 86400 ]]; then
+            warn "[config] QUOTA_MAX_PAUSE_DURATION must be 300-86400 (got: ${QUOTA_MAX_PAUSE_DURATION}). Using 14400."
+            QUOTA_MAX_PAUSE_DURATION=14400
+        fi
+    fi
+    if [[ -n "${CLAUDE_QUOTA_CHECK_CMD:-}" ]]; then
+        local _quota_cmd_bin
+        _quota_cmd_bin=$(echo "$CLAUDE_QUOTA_CHECK_CMD" | awk '{print $1}')
+        if ! command -v "$_quota_cmd_bin" &>/dev/null; then
+            warn "[config] CLAUDE_QUOTA_CHECK_CMD command '${_quota_cmd_bin}' not found. Tier 2 quota check disabled."
+            CLAUDE_QUOTA_CHECK_CMD=""
+        fi
+    fi
+
+    # --- Validate health scoring config (Milestone 15) ---
+    if [[ "${HEALTH_ENABLED:-true}" == "true" ]]; then
+        local _hw_sum=$(( ${HEALTH_WEIGHT_TESTS:-30} + ${HEALTH_WEIGHT_QUALITY:-25} + ${HEALTH_WEIGHT_DEPS:-15} + ${HEALTH_WEIGHT_DOCS:-15} + ${HEALTH_WEIGHT_HYGIENE:-15} ))
+        if [[ "$_hw_sum" -ne 100 ]]; then
+            warn "[config] HEALTH_WEIGHT_* must sum to 100 (got: ${_hw_sum}). Using defaults."
+            HEALTH_WEIGHT_TESTS=30
+            HEALTH_WEIGHT_QUALITY=25
+            HEALTH_WEIGHT_DEPS=15
+            HEALTH_WEIGHT_DOCS=15
+            HEALTH_WEIGHT_HYGIENE=15
+        fi
+        if [[ -n "${HEALTH_SAMPLE_SIZE:-}" ]] && [[ "${HEALTH_SAMPLE_SIZE}" =~ ^[0-9]+$ ]]; then
+            if [[ "$HEALTH_SAMPLE_SIZE" -lt 5 ]] || [[ "$HEALTH_SAMPLE_SIZE" -gt 100 ]]; then
+                warn "[config] HEALTH_SAMPLE_SIZE must be 5-100 (got: ${HEALTH_SAMPLE_SIZE}). Using 20."
+                HEALTH_SAMPLE_SIZE=20
+            fi
+        fi
+    fi
+
     # --- Resolve relative paths to absolute from PROJECT_DIR ---
     if [[ "$PIPELINE_STATE_FILE" != /* ]]; then
         PIPELINE_STATE_FILE="${PROJECT_DIR}/${PIPELINE_STATE_FILE}"
@@ -151,6 +364,12 @@ load_config() {
     fi
     if [[ "$MILESTONE_ARCHIVE_FILE" != /* ]]; then
         MILESTONE_ARCHIVE_FILE="${PROJECT_DIR}/${MILESTONE_ARCHIVE_FILE}"
+    fi
+    if [[ "${MILESTONE_DIR:-}" != /* ]] && [[ -n "${MILESTONE_DIR:-}" ]]; then
+        MILESTONE_DIR="${PROJECT_DIR}/${MILESTONE_DIR}"
+    fi
+    if [[ "${CAUSAL_LOG_FILE:-}" != /* ]] && [[ -n "${CAUSAL_LOG_FILE:-}" ]]; then
+        CAUSAL_LOG_FILE="${PROJECT_DIR}/${CAUSAL_LOG_FILE}"
     fi
 }
 

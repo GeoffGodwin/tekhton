@@ -14,13 +14,18 @@
 # Flags:
 #   --init                Scaffold pipeline config + agent roles for a new project
 #   --plan                Interactive planning: build DESIGN.md + CLAUDE.md from scratch
+#   --plan --answers <f>  Import pre-filled YAML answers (skip interview)
+#   --plan-browser        Skip mode selection, go straight to browser form
+#   --export-questions    Export planning questions as YAML template to stdout
 #   --replan              Delta-based update to existing DESIGN.md + CLAUDE.md
 #   --status              Print saved pipeline state and exit
 #   --milestone           Milestone mode: higher turn limits, more review cycles
 #   --start-at coder      Full pipeline from scratch (default)
-#   --start-at review     Skip coder; requires CODER_SUMMARY.md
+#   --start-at security   Skip coder; requires CODER_SUMMARY.md
+#   --start-at review     Skip coder + security; requires CODER_SUMMARY.md
 #   --start-at tester     Resume tester from existing TESTER_REPORT.md
-#   --start-at test       Skip coder + reviewer; requires REVIEWER_REPORT.md
+#   --start-at test       Skip coder + security + reviewer; requires REVIEWER_REPORT.md
+#   --skip-security       Bypass security stage for a single run
 #   --plan-from-index     Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md
 #   --rescan              Incrementally update PROJECT_INDEX.md from git changes
 #   --rescan --full       Force full re-crawl regardless of change volume
@@ -31,7 +36,17 @@
 #   --skip-audit          Skip architect audit even if threshold is reached
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
+#   --add-milestone "desc" Create a scoped milestone via intake agent (no run)
+#   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
+#   --diagnose            Diagnose last failure and print recovery suggestions
+#   --report, report      Print one-screen summary of last pipeline run
+#   --health              Run standalone project health assessment and exit
+#   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
+#   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
+#   --rollback            Revert the last pipeline run (clean git revert)
+#   --rollback --check    Preview what rollback would do
 #   --version, -v         Print version and exit
+#   --docs                Open documentation site in browser
 #
 # Requirements:
 #   - claude CLI authenticated and on PATH
@@ -61,9 +76,16 @@ _tekhton_cleanup() {
             echo -e "\033[0;31m[✗] Log:          ${LOG_FILE}\033[0m" >&2
         fi
         echo -e "\033[0;31m[✗]\033[0m" >&2
-        echo -e "\033[0;31m[✗] This is likely a command that returned non-zero under\033[0m" >&2
-        echo -e "\033[0;31m[✗] 'set -euo pipefail'. Common causes: grep found no\033[0m" >&2
-        echo -e "\033[0;31m[✗] matches, unset variable, or a pipeline component failed.\033[0m" >&2
+
+        # --- Smart crash first-aid (M17) ---
+        if command -v print_crash_first_aid &>/dev/null; then
+            print_crash_first_aid 2>/dev/null || true
+        else
+            echo -e "\033[0;31m[✗] This is likely a command that returned non-zero under\033[0m" >&2
+            echo -e "\033[0;31m[✗] 'set -euo pipefail'. Common causes: grep found no\033[0m" >&2
+            echo -e "\033[0;31m[✗] matches, unset variable, or a pipeline component failed.\033[0m" >&2
+        fi
+        echo -e "\033[1;36m[i] Run 'tekhton --diagnose' for recovery suggestions.\033[0m" >&2
         echo >&2
 
         # --- Record metrics on crash (12.3) -----------------------------------
@@ -93,6 +115,11 @@ _tekhton_cleanup() {
         fi
     fi
 
+    # --- MCP server cleanup: stop Serena if running ----------------------------
+    if command -v stop_mcp_server &>/dev/null; then
+        stop_mcp_server 2>/dev/null || true
+    fi
+
     # --- Session cleanup: remove temp directory and lock file -----------------
     if [ -n "${TEKHTON_SESSION_DIR:-}" ] && [ -d "${TEKHTON_SESSION_DIR}" ]; then
         rm -rf "${TEKHTON_SESSION_DIR}" 2>/dev/null || true
@@ -109,7 +136,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="2.21.0"
+TEKHTON_VERSION="3.66.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -162,9 +189,26 @@ WITH_NOTES=false
 export HUMAN_MODE=false
 export HUMAN_NOTES_TAG=""
 COMPLETE_MODE=false
-CURRENT_NOTE_LINE=""
+MIGRATE_DAG=false
+SETUP_INDEXER=false
+WITH_LSP=false
+# Preserve CURRENT_NOTE_ID and HUMAN_SINGLE_NOTE across resume (M33 Bug 2, M40).
+# These are set via env export before exec; --human flag restores HUMAN_MODE/TAG.
+# M40: CURRENT_NOTE_ID replaces CURRENT_NOTE_LINE for ID-based note tracking.
+CURRENT_NOTE_ID="${CURRENT_NOTE_ID:-}"
+# Backward compat: accept CURRENT_NOTE_LINE from pre-M40 state files
+if [[ -z "$CURRENT_NOTE_ID" ]] && [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
+    CURRENT_NOTE_ID=""  # Will be resolved from the note line later
+fi
+CURRENT_NOTE_LINE="${CURRENT_NOTE_LINE:-}"
+HUMAN_SINGLE_NOTE="${HUMAN_SINGLE_NOTE:-false}"
 SKIP_AUDIT=false
+SKIP_SECURITY=false
 FORCE_AUDIT=false
+FIX_NONBLOCKERS_MODE=false
+FIX_DRIFT_MODE=false
+DRY_RUN_MODE=false
+CONTINUE_PREVIEW=false
 _AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
 TOTAL_TURNS=0
@@ -178,6 +222,102 @@ if [ "${1:-}" = "--version" ] || [ "${1:-}" = "-v" ]; then
     exit 0
 fi
 
+# --- Early --docs check (opens documentation site) ---------------------------
+
+if [ "${1:-}" = "--docs" ]; then
+    DOCS_URL="https://geoffgodwin.github.io/tekhton/"
+    echo "Opening Tekhton documentation: ${DOCS_URL}"
+    if command -v xdg-open >/dev/null 2>&1; then
+        xdg-open "${DOCS_URL}" 2>/dev/null &
+    elif command -v open >/dev/null 2>&1; then
+        open "${DOCS_URL}" || true
+    elif command -v start >/dev/null 2>&1; then
+        start "${DOCS_URL}" || true
+    else
+        echo "Could not detect browser. Open this URL manually:"
+        echo "  ${DOCS_URL}"
+    fi
+    exit 0
+fi
+
+# --- Early --update check (runs before config exists) ------------------------
+
+if [ "${1:-}" = "--update" ]; then
+    source "${TEKHTON_HOME}/lib/update_check.sh"
+    if [ "${2:-}" = "--check" ]; then
+        perform_update "--check"
+    else
+        perform_update
+    fi
+    exit 0
+fi
+
+# --- Early --uninstall check (delegates to install.sh) -----------------------
+
+if [ "${1:-}" = "--uninstall" ]; then
+    local_install_script="${TEKHTON_HOME}/install.sh"
+    if [ -f "$local_install_script" ]; then
+        bash "$local_install_script" --uninstall
+    else
+        echo "[x] install.sh not found at ${local_install_script}" >&2
+        echo "    Run the installer with --uninstall instead:" >&2
+        echo "    curl -sSL https://raw.githubusercontent.com/geoffgodwin/tekhton/main/install.sh | bash -s -- --uninstall" >&2
+        exit 1
+    fi
+    exit 0
+fi
+
+# --- Early --setup-completion check ------------------------------------------
+
+if [ "${1:-}" = "--setup-completion" ]; then
+    _setup_shell_completions() {
+        local current_shell
+        current_shell=$(basename "${SHELL:-/bin/bash}")
+        local completions_dir="${TEKHTON_HOME}/completions"
+
+        case "$current_shell" in
+            bash)
+                local bash_comp_dir="${HOME}/.local/share/bash-completion/completions"
+                if [ -d "/etc/bash_completion.d" ] && [ -w "/etc/bash_completion.d" ]; then
+                    bash_comp_dir="/etc/bash_completion.d"
+                fi
+                mkdir -p "$bash_comp_dir"
+                cp "${completions_dir}/tekhton.bash" "${bash_comp_dir}/tekhton"
+                echo "[+] Installed bash completion to ${bash_comp_dir}/tekhton"
+                echo "    Run 'source ${bash_comp_dir}/tekhton' or open a new terminal."
+                ;;
+            zsh)
+                local zsh_comp_dir="${HOME}/.zfunc"
+                mkdir -p "$zsh_comp_dir"
+                cp "${completions_dir}/tekhton.zsh" "${zsh_comp_dir}/_tekhton"
+                echo "[+] Installed zsh completion to ${zsh_comp_dir}/_tekhton"
+                if ! grep -q "fpath.*\.zfunc" "${HOME}/.zshrc" 2>/dev/null; then
+                    echo "    Add this to your .zshrc if not already present:"
+                    echo "      fpath=(~/.zfunc \$fpath)"
+                    echo "      autoload -Uz compinit && compinit"
+                fi
+                ;;
+            fish)
+                local fish_comp_dir="${HOME}/.config/fish/completions"
+                mkdir -p "$fish_comp_dir"
+                cp "${completions_dir}/tekhton.fish" "${fish_comp_dir}/tekhton.fish"
+                echo "[+] Installed fish completion to ${fish_comp_dir}/tekhton.fish"
+                ;;
+            *)
+                echo "[!] Unsupported shell: ${current_shell}"
+                echo "    Completion files are available in: ${completions_dir}/"
+                echo "    - tekhton.bash (bash)"
+                echo "    - tekhton.zsh  (zsh)"
+                echo "    - tekhton.fish (fish)"
+                _TEKHTON_CLEAN_EXIT=true
+                exit 1
+                ;;
+        esac
+    }
+    _setup_shell_completions
+    exit 0
+fi
+
 # --- Early --init / --reinit check (runs before config exists) ----------------
 
 if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
@@ -185,6 +325,13 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     source "${TEKHTON_HOME}/lib/detect.sh"
     source "${TEKHTON_HOME}/lib/detect_commands.sh"
     source "${TEKHTON_HOME}/lib/detect_report.sh"
+    # Milestone 12: Extended detection modules
+    source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
+    source "${TEKHTON_HOME}/lib/detect_services.sh"
+    source "${TEKHTON_HOME}/lib/detect_ci.sh"
+    source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
+    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
+    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
     source "${TEKHTON_HOME}/lib/crawler.sh"
     source "${TEKHTON_HOME}/lib/init.sh"
 
@@ -192,6 +339,26 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     [ "${1:-}" = "--reinit" ] && local_reinit="reinit"
 
     run_smart_init "$PROJECT_DIR" "$TEKHTON_HOME" "$local_reinit"
+
+    # Milestone 15: Run health assessment and write baseline
+    source "${TEKHTON_HOME}/lib/health.sh"
+    if [[ "${HEALTH_ENABLED:-true}" == "true" ]]; then
+        log "Running project health assessment..."
+        local_health_score=$(assess_project_health "$PROJECT_DIR")
+        echo
+        display_health_score "$local_health_score"
+        echo
+    fi
+
+    # Warm indexer cache if available (M7)
+    source "${TEKHTON_HOME}/lib/indexer.sh"
+    source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+    source "${TEKHTON_HOME}/lib/indexer_cache.sh"
+    source "${TEKHTON_HOME}/lib/indexer_history.sh"
+    REPO_MAP_ENABLED="${REPO_MAP_ENABLED:-false}"
+    if [[ "$REPO_MAP_ENABLED" == "true" ]] && check_indexer_available; then
+        warm_index_cache || true
+    fi
 
     # --init --full chains: init → synthesize in one invocation
     if [ "${2:-}" = "--full" ]; then
@@ -211,13 +378,47 @@ fi
 
 # --- Early --plan check (runs before config exists) -------------------------
 
-if [ "${1:-}" = "--plan" ]; then
+if [ "${1:-}" = "--plan" ] || [ "${1:-}" = "--plan-browser" ] || [ "${1:-}" = "--export-questions" ]; then
+    # Parse --plan sub-flags: --export-questions, --answers <file>, --plan-browser
+    PLAN_EXPORT_QUESTIONS=""
+    PLAN_ANSWERS_IMPORT=""
+    PLAN_BROWSER_MODE=""
+    if [ "${1:-}" = "--export-questions" ]; then
+        PLAN_EXPORT_QUESTIONS="true"
+    fi
+    if [ "${1:-}" = "--plan-browser" ]; then
+        PLAN_BROWSER_MODE="true"
+    fi
+    shift
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --export-questions) PLAN_EXPORT_QUESTIONS="true"; shift ;;
+            --answers)
+                if [ -z "${2:-}" ]; then
+                    echo "[✗] --answers requires a file path argument." >&2
+                    exit 1
+                fi
+                PLAN_ANSWERS_IMPORT="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+    export PLAN_EXPORT_QUESTIONS PLAN_ANSWERS_IMPORT PLAN_BROWSER_MODE
+
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
     source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh, agent_helpers.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/plan_state.sh"
     source "${TEKHTON_HOME}/lib/plan_completeness.sh"
+    source "${TEKHTON_HOME}/lib/plan_answers.sh"
+    source "${TEKHTON_HOME}/lib/plan_review.sh"
+    source "${TEKHTON_HOME}/lib/plan_server.sh"
+    source "${TEKHTON_HOME}/lib/plan_browser.sh"
+    source "${TEKHTON_HOME}/lib/milestones.sh"
+    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
     source "${TEKHTON_HOME}/stages/plan_interview.sh"
     source "${TEKHTON_HOME}/stages/plan_followup_interview.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
@@ -238,6 +439,11 @@ if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
     source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # _extract_scan_metadata for replan_brownfield
+    source "${TEKHTON_HOME}/lib/milestones.sh"
+    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
     # PROJECT_NAME is needed by run_agent() for temp file naming;
     # in --replan mode config is not loaded, so derive from directory name.
@@ -254,6 +460,12 @@ if [ "${1:-}" = "--rescan" ]; then
     source "${TEKHTON_HOME}/lib/detect.sh"
     source "${TEKHTON_HOME}/lib/detect_commands.sh"
     source "${TEKHTON_HOME}/lib/detect_report.sh"
+    source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
+    source "${TEKHTON_HOME}/lib/detect_services.sh"
+    source "${TEKHTON_HOME}/lib/detect_ci.sh"
+    source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
+    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
+    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
     source "${TEKHTON_HOME}/lib/crawler.sh"
     source "${TEKHTON_HOME}/lib/rescan.sh"
 
@@ -273,6 +485,12 @@ if [ "${1:-}" = "--plan-from-index" ]; then
     source "${TEKHTON_HOME}/lib/detect.sh"
     source "${TEKHTON_HOME}/lib/detect_commands.sh"
     source "${TEKHTON_HOME}/lib/detect_report.sh"
+    source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
+    source "${TEKHTON_HOME}/lib/detect_services.sh"
+    source "${TEKHTON_HOME}/lib/detect_ci.sh"
+    source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
+    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
+    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
     source "${TEKHTON_HOME}/lib/prompts.sh"
     source "${TEKHTON_HOME}/lib/agent.sh"
     source "${TEKHTON_HOME}/lib/plan.sh"
@@ -288,113 +506,465 @@ if [ "${1:-}" = "--plan-from-index" ]; then
     exit 0
 fi
 
+# --- Early --audit-tests check (runs before execution pipeline) --------------
+
+if [ "${1:-}" = "--audit-tests" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/prompts.sh"
+    source "${TEKHTON_HOME}/lib/agent.sh"
+    source "${TEKHTON_HOME}/lib/config.sh"
+    source "${TEKHTON_HOME}/lib/test_audit.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    load_config
+
+    run_standalone_test_audit
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
+# --- Early --health check (runs before execution pipeline) ------------------
+
+if [ "${1:-}" = "--health" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/detect.sh"
+    source "${TEKHTON_HOME}/lib/detect_commands.sh"
+    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
+    source "${TEKHTON_HOME}/lib/detect_ci.sh"
+    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+    source "${TEKHTON_HOME}/lib/health.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+
+    header "Tekhton — Project Health Assessment"
+    local_score=$(reassess_project_health "$PROJECT_DIR")
+
+    echo
+    display_health_score "$local_score"
+    echo
+    log "Report: ${PROJECT_DIR}/${HEALTH_REPORT_FILE:-HEALTH_REPORT.md}"
+    log "Baseline: ${PROJECT_DIR}/${HEALTH_BASELINE_FILE:-.claude/HEALTH_BASELINE.json}"
+    exit 0
+fi
+
+# --- Early --diagnose check (runs before execution pipeline) -----------------
+
+if [ "${1:-}" = "--diagnose" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/causality.sh"
+    source "${TEKHTON_HOME}/lib/causality_query.sh"
+    source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
+    source "${TEKHTON_HOME}/lib/diagnose.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    # Set defaults for state file paths
+    : "${PIPELINE_STATE_FILE:=${PROJECT_DIR}/.claude/PIPELINE_STATE.md}"
+    : "${CAUSAL_LOG_FILE:=${PROJECT_DIR}/.claude/logs/CAUSAL_LOG.jsonl}"
+
+    run_diagnose
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
+# --- Early --migrate check (runs before execution pipeline) -------------------
+
+if [ "${1:-}" = "--migrate" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/config.sh"
+    source "${TEKHTON_HOME}/lib/migrate.sh"
+    source "${TEKHTON_HOME}/lib/migrate_cli.sh"
+    # Milestone DAG functions needed for V2→V3 inline milestone migration
+    source "${TEKHTON_HOME}/lib/milestones.sh"
+    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+
+    # Load config if it exists (for defaults), but don't fail on missing keys
+    if [ -f "${PROJECT_DIR}/.claude/pipeline.conf" ]; then
+        _parse_config_file "${PROJECT_DIR}/.claude/pipeline.conf" 2>/dev/null || true
+        # Set minimum defaults for migration
+        : "${CLAUDE_STANDARD_MODEL:=claude-sonnet-4-6}"
+        # shellcheck source=lib/config_defaults.sh
+        source "${TEKHTON_HOME}/lib/config_defaults.sh" 2>/dev/null || true
+    fi
+
+    shift
+    run_migrate_command "$@"
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
+# --- Early note subcommand (runs before execution pipeline) ------------------
+
+if [ "${1:-}" = "note" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/notes_core.sh"
+    source "${TEKHTON_HOME}/lib/notes_cli.sh"
+    source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    shift  # consume "note"
+
+    # Parse note subcommand arguments
+    if [[ "${1:-}" = "--list" ]]; then
+        shift
+        _note_filter=""
+        if [[ "${1:-}" = "--tag" ]] && [[ -n "${2:-}" ]]; then
+            _note_filter="$2"
+        fi
+        list_human_notes_cli "$_note_filter"
+    elif [[ "${1:-}" = "--done" ]]; then
+        shift
+        if [[ -z "${1:-}" ]]; then
+            error "--done requires a note number or text match."
+            echo "Usage: tekhton note --done 3"
+            echo "       tekhton note --done \"partial text\""
+            _TEKHTON_CLEAN_EXIT=true
+            exit 1
+        fi
+        complete_human_note "$1"
+    elif [[ "${1:-}" = "--clear" ]]; then
+        clear_completed_notes
+    elif [[ -n "${1:-}" ]] && [[ "${1:-}" != -* ]]; then
+        # Positional text argument — add a note
+        _note_text="$1"
+        shift
+        _note_tag="FEAT"
+        if [[ "${1:-}" = "--tag" ]] && [[ -n "${2:-}" ]]; then
+            _note_tag="$2"
+        fi
+        add_human_note "$_note_text" "$_note_tag"
+    else
+        echo "Usage: tekhton note \"description\" [--tag BUG|FEAT|POLISH]"
+        echo "       tekhton note --list [--tag BUG|FEAT|POLISH]"
+        echo "       tekhton note --done <number|text>"
+        echo "       tekhton note --clear"
+    fi
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
+# --- Early --report / report check (runs before execution pipeline) ----------
+
+if [ "${1:-}" = "--report" ] || [ "${1:-}" = "report" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/report.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    : "${PIPELINE_STATE_FILE:=${PROJECT_DIR}/.claude/PIPELINE_STATE.md}"
+
+    print_run_report
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
+# --- Early --rollback check (runs before execution pipeline) -----------------
+
+if [ "${1:-}" = "--rollback" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/config.sh"
+    # Load config for CHECKPOINT_ENABLED, CHECKPOINT_FILE defaults
+    if [ -f "${PROJECT_DIR}/.claude/pipeline.conf" ]; then
+        _parse_config_file "${PROJECT_DIR}/.claude/pipeline.conf" 2>/dev/null || true
+        : "${CLAUDE_STANDARD_MODEL:=claude-sonnet-4-6}"
+        # shellcheck source=lib/config_defaults.sh
+        source "${TEKHTON_HOME}/lib/config_defaults.sh" 2>/dev/null || true
+    else
+        # No pipeline.conf — source config_defaults.sh for canonical defaults
+        : "${CLAUDE_STANDARD_MODEL:=claude-sonnet-4-6}"
+        # shellcheck source=lib/config_defaults.sh
+        source "${TEKHTON_HOME}/lib/config_defaults.sh" 2>/dev/null || {
+            # Fallback only if config_defaults.sh itself fails to source
+            : "${CHECKPOINT_ENABLED:=true}"
+            : "${CHECKPOINT_FILE:=.claude/CHECKPOINT_META.json}"
+            : "${PIPELINE_STATE_FILE:=.claude/PIPELINE_STATE.md}"
+        }
+    fi
+    source "${TEKHTON_HOME}/lib/checkpoint.sh"
+    source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
+    if [ "${2:-}" = "--check" ]; then
+        show_checkpoint_info
+    else
+        rollback_last_run
+    fi
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # --- Acquire pipeline lock (execution pipeline only) -------------------------
 _check_pipeline_lock
 
 # --- Library sources ---------------------------------------------------------
 
 source "${TEKHTON_HOME}/lib/common.sh"
+_phase_start "startup"
 source "${TEKHTON_HOME}/lib/config.sh"
+source "${TEKHTON_HOME}/lib/notes_core.sh"
+source "${TEKHTON_HOME}/lib/notes_rollback.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
+source "${TEKHTON_HOME}/lib/notes_triage.sh"
+source "${TEKHTON_HOME}/lib/notes_triage_flow.sh"
+source "${TEKHTON_HOME}/lib/notes_triage_report.sh"
 source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
+source "${TEKHTON_HOME}/lib/notes_cli.sh"
+source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
+source "${TEKHTON_HOME}/lib/notes_migrate.sh"
+source "${TEKHTON_HOME}/lib/notes_acceptance.sh"
+source "${TEKHTON_HOME}/lib/notes_acceptance_helpers.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
+source "${TEKHTON_HOME}/lib/dry_run.sh"
+source "${TEKHTON_HOME}/lib/quota.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
+source "${TEKHTON_HOME}/lib/error_patterns.sh"
+source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
+source "${TEKHTON_HOME}/lib/preflight.sh"
+source "${TEKHTON_HOME}/lib/preflight_checks.sh"
+source "${TEKHTON_HOME}/lib/preflight_checks_env.sh"
+source "${TEKHTON_HOME}/lib/preflight_services.sh"
+source "${TEKHTON_HOME}/lib/preflight_services_infer.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
+source "${TEKHTON_HOME}/lib/gates_phases.sh"
+source "${TEKHTON_HOME}/lib/gates_ui.sh"
+source "${TEKHTON_HOME}/lib/gates_completion.sh"
+source "${TEKHTON_HOME}/lib/ui_validate.sh"
+source "${TEKHTON_HOME}/lib/ui_validate_report.sh"
 source "${TEKHTON_HOME}/lib/hooks.sh"
+source "${TEKHTON_HOME}/lib/hooks_final_checks.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
+source "${TEKHTON_HOME}/lib/drift_prune.sh"
 source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
 source "${TEKHTON_HOME}/lib/context.sh"
 source "${TEKHTON_HOME}/lib/context_compiler.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"  # DAG-aware wrappers (extracted from milestones.sh)
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
+source "${TEKHTON_HOME}/lib/milestone_window.sh"
+source "${TEKHTON_HOME}/lib/context_cache.sh"
+source "${TEKHTON_HOME}/lib/indexer.sh"
+source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
+source "${TEKHTON_HOME}/lib/indexer_cache.sh"
+source "${TEKHTON_HOME}/lib/indexer_history.sh"
+source "${TEKHTON_HOME}/lib/mcp.sh"
 source "${TEKHTON_HOME}/lib/clarify.sh"
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/detect.sh"
 source "${TEKHTON_HOME}/lib/detect_commands.sh"
 source "${TEKHTON_HOME}/lib/detect_report.sh"
+source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
+source "${TEKHTON_HOME}/lib/detect_services.sh"
+source "${TEKHTON_HOME}/lib/detect_ci.sh"
+source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
+source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
+source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+# shellcheck disable=SC1091
+source "${TEKHTON_HOME}/platforms/_base.sh"    # UI platform adapter framework (Milestone 57)
 source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_deps.sh (via crawler_content.sh)
 source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # helpers only; full rescan.sh sourced in --rescan block
 source "${TEKHTON_HOME}/lib/specialists.sh"
+source "${TEKHTON_HOME}/lib/specialists_helpers.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
+source "${TEKHTON_HOME}/lib/metrics_extended.sh"
 source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
+source "${TEKHTON_HOME}/lib/progress.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
+source "${TEKHTON_HOME}/lib/causality.sh"
+source "${TEKHTON_HOME}/lib/causality_query.sh"
+source "${TEKHTON_HOME}/lib/dashboard.sh"
+source "${TEKHTON_HOME}/lib/inbox.sh"
+source "${TEKHTON_HOME}/lib/report.sh"
+source "${TEKHTON_HOME}/lib/diagnose.sh"
+source "${TEKHTON_HOME}/lib/health.sh"
+source "${TEKHTON_HOME}/lib/update_check.sh"
+source "${TEKHTON_HOME}/lib/migrate.sh"
+source "${TEKHTON_HOME}/lib/migrate_cli.sh"
+source "${TEKHTON_HOME}/lib/checkpoint.sh"
+source "${TEKHTON_HOME}/lib/checkpoint_display.sh"
+source "${TEKHTON_HOME}/lib/pipeline_order.sh"
+source "${TEKHTON_HOME}/lib/express.sh"
+source "${TEKHTON_HOME}/lib/express_persist.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
 
-# Stage implementations
+# Stage helpers and implementations
+source "${TEKHTON_HOME}/lib/intake_helpers.sh"
+source "${TEKHTON_HOME}/lib/intake_verdict_handlers.sh"
+source "${TEKHTON_HOME}/stages/intake.sh"
 source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
+source "${TEKHTON_HOME}/lib/security_helpers.sh"
+source "${TEKHTON_HOME}/stages/security.sh"
 source "${TEKHTON_HOME}/stages/review.sh"
+source "${TEKHTON_HOME}/stages/review_helpers.sh"
+source "${TEKHTON_HOME}/lib/test_audit.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
+# Note: tester sub-stages (tester_tdd.sh, tester_continuation.sh, tester_fix.sh,
+# tester_timing.sh, tester_validation.sh) are sourced by tester.sh itself.
 source "${TEKHTON_HOME}/stages/cleanup.sh"
 
-# Load project config — populates all settings from .claude/pipeline.conf
-load_config
+_phase_end "startup"
+
+# --- Express mode: auto-detect config when pipeline.conf is missing -----------
+_phase_start "config_load"
+if [ ! -f "${PROJECT_DIR}/.claude/pipeline.conf" ]; then
+    if [[ "${TEKHTON_EXPRESS_ENABLED:-true}" != "false" ]]; then
+        log "No pipeline.conf found. Running in Express Mode (auto-detected config)."
+        log "For full configuration, run: tekhton --init"
+        enter_express_mode "$PROJECT_DIR"
+    else
+        echo "[✗] pipeline.conf not found at: ${PROJECT_DIR}/.claude/pipeline.conf" >&2
+        echo "    Run 'tekhton --init' from your project root to create one." >&2
+        echo "    Or set TEKHTON_EXPRESS_ENABLED=true to enable auto-detection." >&2
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+else
+    # Load project config — populates all settings from .claude/pipeline.conf
+    load_config
+    # Apply role file fallbacks for configured projects too
+    apply_role_file_fallbacks
+fi
 
 usage() {
     local exit_code="${1:-0}"
-    echo "Tekhton ${TEKHTON_VERSION} — One intent. Many hands."
+    local show_all="${2:-false}"
+
+    echo "Tekhton ${TEKHTON_VERSION} — Multi-agent development pipeline"
     echo ""
     echo "Usage: tekhton [flags] \"<task description>\""
     echo ""
-    echo "  --init                    Smart init: detect stack, generate config + agent roles"
-    echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
-    echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
-    echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
-    echo "  --plan-from-index         Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md"
-    echo "  --rescan                  Incrementally update PROJECT_INDEX.md from git changes"
-    echo "  --rescan --full           Force full re-crawl regardless of change volume"
-    echo "  --init --full             Run init + synthesis in one command"
-    echo "  --status                  Print saved pipeline state and exit (no run)"
-    echo "  --metrics                 Print run metrics dashboard and exit"
-    echo "  --version, -v             Print version and exit"
-    echo "  --help, -h                Show this help and exit"
-    echo "  --milestone               Milestone mode: higher turn limits, more review cycles,"
-    echo "                            upgraded tester model"
-    echo "  --auto-advance            Auto-advance through milestones after acceptance"
-    echo "  --start-at coder          Full pipeline from scratch (default)"
-    echo "  --start-at review         Skip coder; requires CODER_SUMMARY.md"
-    echo "  --start-at tester         Resume tester from existing TESTER_REPORT.md"
-    echo "  --start-at test           Skip coder + reviewer; requires REVIEWER_REPORT.md"
-    echo "  --notes-filter BUG        Inject only [BUG] notes this run"
-    echo "  --notes-filter FEAT       Inject only [FEAT] notes this run"
-    echo "  --notes-filter POLISH     Inject only [POLISH] notes this run"
-    echo "  --init-notes              Create a blank HUMAN_NOTES.md template and exit"
-    echo "  --seed-contracts          Seed inline system contracts in lib/ source files"
-    echo "  --human [TAG]             Pick next unchecked note from HUMAN_NOTES.md as task"
-    echo "                            Optional TAG: BUG, FEAT, POLISH"
-    echo "  --complete                Loop mode: repeat pipeline until done or bounds hit"
-    echo "  --with-notes              Force human notes injection regardless of task text"
-    echo "  --usage-threshold N       Pause if session usage exceeds N% (overrides config)"
-    echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
-    echo "  --skip-audit              Skip architect audit even if threshold is reached"
-    echo "  --force-audit             Force architect audit regardless of threshold"
+
+    if [[ "$show_all" = true ]]; then
+        # Full flag list for power users
+        echo "Getting Started:"
+        echo "  --init                    Smart init: detect stack, generate config + agent roles"
+        echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
+        echo "  --init --full             Run init + synthesis in one command"
+        echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
+        echo "  --plan --answers <file>   Import pre-filled YAML answers (skip interview)"
+        echo "  --plan-browser            Go straight to browser-based planning form"
+        echo "  --export-questions        Export planning questions as YAML template to stdout"
+        echo "  --plan-from-index         Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md"
+        echo ""
+        echo "Running:"
+        echo "  \"task description\"        Run pipeline with task"
+        echo "  --milestone               Milestone mode: higher turn limits, more review cycles"
+        echo "  --auto-advance            Auto-advance through milestones after acceptance"
+        echo "  --complete                Loop mode: repeat pipeline until done or bounds hit"
+        echo "  --start-at STAGE          Resume from: intake, coder, security, review, tester, test"
+        echo "  --human [TAG]             Pick next unchecked note as task (BUG, FEAT, POLISH)"
+        echo "  --with-notes              Force human notes injection regardless of task text"
+        echo "  --notes-filter TAG        Inject only [TAG] notes (BUG, FEAT, POLISH)"
+        echo "  --add-milestone \"desc\"    Create a scoped milestone via intake agent (no run)"
+        echo "  --triage [TAG]            Triage all unchecked notes (size estimate) without running"
+        echo "  --dry-run                 Preview mode: run scout + intake only, show what would happen"
+        echo "  --continue-preview        Resume from a previous --dry-run (uses cached results)"
+        echo "  --skip-security           Bypass security stage for a single run"
+        echo "  --skip-audit              Skip architect audit even if threshold is reached"
+        echo "  --force-audit             Force architect audit regardless of threshold"
+        echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
+        echo "  --usage-threshold N       Pause if session usage exceeds N%"
+        echo ""
+        echo "Safety:"
+        echo "  --rollback                Revert the last pipeline run (clean git operations)"
+        echo "  --rollback --check        Preview what rollback would do without acting"
+        echo ""
+        echo "Inspection:"
+        echo "  --status                  Print saved pipeline state (includes rollback availability)"
+        echo "  --metrics                 Print run metrics dashboard"
+        echo "  --diagnose                Diagnose last failure with recovery suggestions"
+        echo "  --report, report          Print summary of last pipeline run"
+        echo "  --health                  Run standalone project health assessment"
+        echo "  --audit-tests             Audit ALL test files for integrity issues"
+        echo ""
+        echo "Notes:"
+        echo "  note \"text\"                Add a note (default tag: FEAT)"
+        echo "  note \"text\" --tag TAG      Add a note with tag (BUG, FEAT, POLISH)"
+        echo "  note --list [--tag TAG]    List unchecked notes, optionally filtered"
+        echo "  note --done <N|text>       Mark a note as completed"
+        echo "  note --clear               Remove all completed notes"
+        echo ""
+        echo "Maintenance:"
+        echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
+        echo "  --rescan [--full]         Update PROJECT_INDEX.md (incrementally or full re-crawl)"
+        echo "  --migrate                 Upgrade project config to current Tekhton version"
+        echo "  --migrate --check         Show what migrations would run without applying"
+        echo "  --migrate --status        Show config version vs running version"
+        echo "  --migrate --rollback      Restore from pre-migration backup"
+        echo "  --migrate-dag             Convert inline milestones to DAG file format"
+        echo "  --update [--check]        Check for and install updates (--check: report only)"
+        echo "  --fix-nonblockers         Address all open non-blocking notes (loop mode)"
+        echo "  --fix-drift               Force architect audit to resolve drift observations"
+        echo ""
+        echo "Setup:"
+        echo "  --init-notes              Create blank HUMAN_NOTES.md template"
+        echo "  --seed-contracts          Seed inline system contracts in source files"
+        echo "  --setup-indexer           Set up Python virtualenv for tree-sitter indexer"
+        echo "  --with-lsp                Also install Serena LSP server (with --setup-indexer)"
+        echo "  --setup-completion        Install shell completions for your shell"
+        echo "  --uninstall               Remove Tekhton installation"
+        echo ""
+        echo "Info:"
+        echo "  --version, -v             Print version and exit"
+        echo "  --docs                    Open documentation site in browser"
+        echo "  --help, -h                Show grouped help"
+        echo "  --help --all              Show this full flag list"
+    else
+        # Grouped help — most common operations first
+        echo "Getting Started:"
+        echo "  --init              Initialize Tekhton in current project"
+        echo "  --plan \"desc\"       Start interactive planning session"
+        echo "  --plan-browser      Browser-based planning form"
+        echo "  --export-questions  Export planning questions as YAML"
+        echo "  --plan-from-index   Generate plan from PROJECT_INDEX.md"
+        echo ""
+        echo "Running:"
+        echo "  \"task description\"  Run pipeline with task"
+        echo "  --milestone         Run in milestone mode (higher turn budgets)"
+        echo "  --auto-advance      Auto-advance through milestones"
+        echo "  --complete          Loop until done or bounds hit"
+        echo "  --dry-run           Preview what the pipeline would do"
+        echo "  --human [TAG]       Pick next note as task (BUG, FEAT, POLISH)"
+        echo ""
+        echo "Safety:"
+        echo "  --rollback          Undo the last pipeline run"
+        echo ""
+        echo "Inspection:"
+        echo "  --status            Show pipeline state + rollback availability"
+        echo "  --metrics           Show run metrics dashboard"
+        echo "  --diagnose          Diagnose last failure with recovery suggestions"
+        echo "  --report            Summarize last run's results"
+        echo "  --health            Run project health assessment"
+        echo "  --audit-tests       Audit all tests for integrity issues"
+        echo ""
+        echo "Notes:"
+        echo "  note \"text\"         Add a note to HUMAN_NOTES.md"
+        echo "  note --list         List unchecked notes"
+        echo "  note --done <N>     Complete a note"
+        echo "  note --clear        Remove completed notes"
+        echo ""
+        echo "Maintenance:"
+        echo "  --replan            Update existing plan"
+        echo "  --rescan            Update project index"
+        echo "  --migrate           Upgrade project config for current version"
+        echo "  --update            Check for and install updates"
+        echo ""
+        echo "  Run --help --all for the full flag list."
+    fi
     echo ""
-    echo "Examples:"
-    echo "  tekhton --init                           # First-time setup"
-    echo "  tekhton --plan                           # Interactive planning phase"
-    echo "  tekhton --replan                         # Update existing plan from drift/changes"
-    echo "  tekhton --plan-from-index                # Synthesize docs from project index"
-    echo "  tekhton --init --full                    # Init + crawl + synthesize in one step"
-    echo "  tekhton --rescan                         # Update PROJECT_INDEX.md incrementally"
-    echo "  tekhton \"Implement user authentication\"   # Run full pipeline"
-    echo "  tekhton --notes-filter BUG \"Fix: login bugs\""
-    echo "  tekhton --milestone \"Feat: payment system\""
-    echo "  tekhton --human                             # Pick next note and run"
-    echo "  tekhton --human BUG                         # Pick next BUG note"
-    echo "  tekhton --human --complete                  # Process all notes in loop"
-    echo ""
-    echo "Documentation:"
-    echo "  man tekhton                              # Full man page (if installed)"
-    echo "  man -M \"${TEKHTON_HOME}/man\" tekhton   # Man page from source directory"
+    echo "Documentation: https://geoffgodwin.github.io/tekhton/"
     _TEKHTON_CLEAN_EXIT=true
     exit "$exit_code"
 }
@@ -407,20 +977,46 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
         usage 1
     fi
 
-    echo
-    warn "No task given — found saved pipeline state:"
-    echo "────────────────────────────────────────"
-    cat "$PIPELINE_STATE_FILE"
-    echo "────────────────────────────────────────"
-    echo
     SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
     SAVED_REASON=$(awk '/^## Exit Reason$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_STAGE=$(awk '/^## Exit Stage$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_MILESTONE=$(awk '/^## Milestone$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+
+    # Restore human-mode metadata (Bug 2, M33)
+    SAVED_HUMAN_MODE=$(awk '/^## Human Mode$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_HUMAN_TAG=$(awk '/^## Human Notes Tag$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_NOTE_LINE=$(awk '/^## Current Note Line$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    # M40: Also read CURRENT_NOTE_ID from state file
+    SAVED_NOTE_ID=$(awk '/^## Current Note ID$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_HUMAN_SINGLE=$(awk '/^## Human Single Note$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+
+    # Enhanced resume prompt (M17): show structured context
+    echo
+    echo -e "\033[1mFound saved pipeline state:\033[0m"
+    echo -e "  Task:       \033[1m${SAVED_TASK}\033[0m"
+    echo -e "  Stopped at: \033[1m${SAVED_STAGE:-unknown}\033[0m"
+    echo -e "  Reason:     ${SAVED_REASON:-unknown}"
+    if [[ -n "$SAVED_MILESTONE" ]] && [[ "$SAVED_MILESTONE" != "none" ]]; then
+        echo -e "  Milestone:  ${SAVED_MILESTONE}"
+    fi
+    if [[ "${SAVED_HUMAN_MODE:-false}" = "true" ]]; then
+        echo -e "  Human mode: yes${SAVED_HUMAN_TAG:+ (tag: ${SAVED_HUMAN_TAG})}"
+    fi
+    # Enrich from LAST_FAILURE_CONTEXT.json when available
+    local_failure_ctx="${PROJECT_DIR}/.claude/LAST_FAILURE_CONTEXT.json"
+    if [ -f "$local_failure_ctx" ]; then
+        local_classification=$(grep -oP '"classification"\s*:\s*"\K[^"]+' "$local_failure_ctx" 2>/dev/null || true)
+        if [ -n "$local_classification" ]; then
+            echo -e "  Diagnosis:  ${local_classification}"
+        fi
+    fi
+    echo
+
     # Split the saved flag string into an array so multi-word flags
     # (e.g. "--milestone --start-at tester") are passed as separate arguments
     read -ra SAVED_RESUME_FLAGS <<< "$SAVED_RESUME_FLAG"
 
-    warn "Exit reason: ${SAVED_REASON}"
     warn "Will resume with: $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
     echo
     log "Continue? [y/n/fresh]"
@@ -434,7 +1030,21 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
             # Remove lock before exec — exec replaces the process (same PID),
             # so the EXIT trap never fires. The resumed invocation recreates it.
             rm -f "$_TEKHTON_LOCK_FILE" 2>/dev/null || true
-            exec bash "$0" "${SAVED_RESUME_FLAGS[@]}" "$SAVED_TASK"
+            # Restore human-mode metadata via env vars (survive exec)
+            if [[ "${SAVED_HUMAN_MODE:-false}" = "true" ]]; then
+                export HUMAN_MODE="true"
+                export HUMAN_NOTES_TAG="${SAVED_HUMAN_TAG:-}"
+                export CURRENT_NOTE_LINE="${SAVED_NOTE_LINE:-}"
+                export CURRENT_NOTE_ID="${SAVED_NOTE_ID:-}"
+                export HUMAN_SINGLE_NOTE="${SAVED_HUMAN_SINGLE:-false}"
+            fi
+            # Human-mode tasks are derived via pick_next_note, not positional args.
+            # Passing $SAVED_TASK would trip the "--human with explicit task" guard.
+            if [[ "${SAVED_HUMAN_MODE:-false}" = "true" ]]; then
+                exec bash "$0" "${SAVED_RESUME_FLAGS[@]}"
+            else
+                exec bash "$0" "${SAVED_RESUME_FLAGS[@]}" "$SAVED_TASK"
+            fi
             ;;
         fresh)
             clear_pipeline_state
@@ -457,22 +1067,41 @@ while [[ $# -gt 0 ]]; do
         --status)
             if [ ! -f "$PIPELINE_STATE_FILE" ]; then
                 echo "No saved pipeline state found."
-                exit 0
+            else
+                echo
+                echo "════════════════════════════════════════"
+                echo "  ${PROJECT_NAME} Pipeline — Saved State"
+                echo "════════════════════════════════════════"
+                cat "$PIPELINE_STATE_FILE"
+                echo "════════════════════════════════════════"
+                echo
+                SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+                SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+                echo "Resume with:"
+                echo "  $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
+                echo "  — or —"
+                echo "  $0   (interactive resume prompt)"
+                echo
             fi
-            echo
-            echo "════════════════════════════════════════"
-            echo "  ${PROJECT_NAME} Pipeline — Saved State"
-            echo "════════════════════════════════════════"
-            cat "$PIPELINE_STATE_FILE"
-            echo "════════════════════════════════════════"
-            echo
-            SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-            SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-            echo "Resume with:"
-            echo "  $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
-            echo "  — or —"
-            echo "  $0   (interactive resume prompt)"
-            echo
+            # Show checkpoint status (Milestone 24)
+            _ckpt_file="${PROJECT_DIR:-.}/${CHECKPOINT_FILE:-.claude/CHECKPOINT_META.json}"
+            if [[ -f "$_ckpt_file" ]]; then
+                _ckpt_task=$(sed -n 's/.*"task"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ckpt_file" | head -1)
+                _ckpt_ts=$(sed -n 's/.*"timestamp"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ckpt_file" | head -1)
+                _ckpt_committed=$(sed -n 's/.*"auto_committed"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' "$_ckpt_file" | head -1)
+                _ckpt_sha=$(sed -n 's/.*"commit_sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$_ckpt_file" | head -1)
+                echo "Rollback available: Yes"
+                echo "  Task:      ${_ckpt_task:-unknown}"
+                echo "  Created:   ${_ckpt_ts:-unknown}"
+                if [[ "$_ckpt_committed" == "true" ]] && [[ -n "$_ckpt_sha" ]]; then
+                    echo "  Commit:    ${_ckpt_sha:0:7}"
+                fi
+                echo "  Run \`tekhton --rollback --check\` for details."
+                echo
+            else
+                echo "Rollback available: No (no checkpoint)"
+                echo
+            fi
             exit 0
             ;;
         --metrics)
@@ -482,8 +1111,8 @@ while [[ $# -gt 0 ]]; do
         --start-at)
             shift
             case "$1" in
-                coder|review|tester|test) START_AT="$1" ;;
-                *) error "Invalid --start-at value: '$1'. Must be coder, review, tester, or test."; usage 1 ;;
+                intake|coder|security|review|tester|test) START_AT="$1" ;;
+                *) error "Invalid --start-at value: '$1'. Must be intake, coder, security, review, tester, or test."; usage 1 ;;
             esac
             shift
             ;;
@@ -561,7 +1190,13 @@ EOF
             success "Contract seeding complete. Review with: grep -rn 'System:' lib/"
             exit 0
             ;;
-        --help|-h) usage 0 ;;
+        --help|-h)
+            if [[ "${2:-}" == "--all" ]]; then
+                usage 0 true
+            else
+                usage 0
+            fi
+            ;;
         --with-notes) WITH_NOTES=true; shift ;;
         --human)
             HUMAN_MODE=true
@@ -582,12 +1217,106 @@ EOF
         --complete) COMPLETE_MODE=true; shift ;;
         --no-commit) AUTO_COMMIT=false; _AUTO_COMMIT_EXPLICIT=true; shift ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
+        --skip-security) SKIP_SECURITY=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
+        --fix-nonblockers|--fix-nb) FIX_NONBLOCKERS_MODE=true; shift ;;
+        --fix-drift) FIX_DRIFT_MODE=true; shift ;;
+        --triage)
+            shift
+            TRIAGE_FILTER=""
+            if [[ -n "${1:-}" ]] && [[ "$1" =~ ^[A-Z]+$ ]] && [[ ! "$1" =~ ^-- ]]; then
+                TRIAGE_FILTER="$1"
+                shift
+            fi
+            run_triage_report "$TRIAGE_FILTER"
+            _TEKHTON_CLEAN_EXIT=true
+            exit 0
+            ;;
+        --dry-run) DRY_RUN_MODE=true; shift ;;
+        --continue-preview) CONTINUE_PREVIEW=true; shift ;;
+        --migrate-dag) MIGRATE_DAG=true; shift ;;
+        --add-milestone)
+            shift
+            if [[ -z "${1:-}" ]]; then
+                error "--add-milestone requires a description string."
+                usage 1
+            fi
+            run_intake_create "$1"
+            _TEKHTON_CLEAN_EXIT=true
+            exit 0
+            ;;
+        --setup-indexer) SETUP_INDEXER=true; shift ;;
+        --with-lsp) WITH_LSP=true; shift ;;
         --) shift; break ;;
         -*) error "Unknown flag: $1"; usage 1 ;;
         *) break ;;
     esac
 done
+
+# --- Early --migrate-dag: convert inline milestones to DAG format and exit ----
+if [ "$MIGRATE_DAG" = true ]; then
+    if ! [ -f "CLAUDE.md" ]; then
+        error "CLAUDE.md not found in the current directory."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if has_milestone_manifest; then
+        warn "Milestone manifest already exists at $(_dag_manifest_path)"
+        warn "Remove it first if you want to re-migrate."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+    if ! parse_milestones "CLAUDE.md" >/dev/null 2>&1; then
+        error "No inline milestones found in CLAUDE.md."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    log "Migrating inline milestones to DAG file format..."
+    milestone_dir="$(_dag_milestone_dir)"
+    if migrate_inline_milestones "CLAUDE.md" "$milestone_dir"; then
+        _insert_milestone_pointer "CLAUDE.md" "$milestone_dir"
+        success "Migration complete. Milestones written to ${milestone_dir}/"
+        success "Manifest: $(_dag_manifest_path)"
+    else
+        error "Migration failed."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
+# --- Early --setup-indexer: install Python dependencies and exit ---------------
+if [ "$SETUP_INDEXER" = true ]; then
+    local_setup_script="${TEKHTON_HOME}/tools/setup_indexer.sh"
+    if [ ! -f "$local_setup_script" ]; then
+        error "setup_indexer.sh not found at ${local_setup_script}"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    bash "$local_setup_script" "$PROJECT_DIR" "${REPO_MAP_VENV_DIR:-.claude/indexer-venv}"
+
+    # If --with-lsp was also passed, install Serena after the indexer
+    if [ "$WITH_LSP" = true ]; then
+        local_serena_script="${TEKHTON_HOME}/tools/setup_serena.sh"
+        if [ ! -f "$local_serena_script" ]; then
+            error "setup_serena.sh not found at ${local_serena_script}"
+            _TEKHTON_CLEAN_EXIT=true
+            exit 1
+        fi
+        bash "$local_serena_script" "$PROJECT_DIR" "${SERENA_PATH:-.claude/serena}"
+        SERENA_ENABLED=true  # so check_indexer_available sees Serena as installed
+    fi
+
+    # Warm cache after setup (M7)
+    REPO_MAP_ENABLED=true
+    if check_indexer_available; then
+        warm_index_cache || true
+    fi
+
+    _TEKHTON_CLEAN_EXIT=true
+    exit $?
+fi
 
 # AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
 # config_defaults.sh sets the non-milestone default (false). Here we override
@@ -604,6 +1333,90 @@ fi
 # still allows opt-out.
 if [ "$MILESTONE_MODE" = true ] && [ "$COMPLETE_MODE" != true ]; then
     COMPLETE_MODE=true
+fi
+
+# --- Fix-nonblockers mode: flag validation and task derivation ----------------
+
+if [[ "$FIX_NONBLOCKERS_MODE" = true ]]; then
+    if [[ "$HUMAN_MODE" = true ]]; then
+        error "Cannot combine --fix-nonblockers with --human"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ "$MILESTONE_MODE" = true ]]; then
+        error "Cannot combine --fix-nonblockers with --milestone"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ "$FIX_DRIFT_MODE" = true ]]; then
+        error "Cannot combine --fix-nonblockers with --fix-drift"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ $# -gt 0 ]]; then
+        error "Cannot combine --fix-nonblockers with an explicit task"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    COMPLETE_MODE=true
+    # shellcheck disable=SC2034  # used by stages/intake.sh
+    INTAKE_AGENT_ENABLED=false
+    # shellcheck disable=SC2034  # used by stages/coder.sh
+    NON_BLOCKING_INJECTION_THRESHOLD=0
+    AUTO_COMMIT=true
+    nb_count_pre=$(count_open_nonblocking_notes)
+    if [[ "$nb_count_pre" -eq 0 ]]; then
+        log "No open non-blocking notes. Nothing to fix."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+    TASK="Address all ${nb_count_pre} open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."
+    log "Fix-nonblockers mode: ${nb_count_pre} open item(s) to address."
+fi
+
+# --- Fix-drift mode: flag validation and task derivation ----------------------
+
+if [[ "$FIX_DRIFT_MODE" = true ]]; then
+    if [[ "$HUMAN_MODE" = true ]]; then
+        error "Cannot combine --fix-drift with --human"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ "$MILESTONE_MODE" = true ]]; then
+        error "Cannot combine --fix-drift with --milestone"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    if [[ $# -gt 0 ]]; then
+        error "Cannot combine --fix-drift with an explicit task"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+    COMPLETE_MODE=true
+    FORCE_AUDIT=true
+    # shellcheck disable=SC2034  # used by stages/intake.sh
+    INTAKE_AGENT_ENABLED=false
+    AUTO_COMMIT=true
+    drift_count_pre=$(count_drift_observations)
+    if [[ "$drift_count_pre" -eq 0 ]]; then
+        log "No unresolved drift observations. Nothing to fix."
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+    TASK="Resolve all ${drift_count_pre} unresolved architectural drift observations in DRIFT_LOG.md."
+    log "Fix-drift mode: ${drift_count_pre} unresolved observation(s) to address."
+fi
+
+# --- Watchtower inbox processing (Milestone 36) ------------------------------
+# Runs before --human note picking so that notes submitted via Watchtower
+# are available in HUMAN_NOTES.md when pick_next_note() executes.
+process_watchtower_inbox 2>/dev/null || true
+if [[ -n "${INBOX_TASK_DESCRIPTIONS:-}" ]]; then
+    warn "Watchtower inbox: queued task(s) available:"
+    while IFS= read -r _inbox_task_desc; do
+        [[ -z "$_inbox_task_desc" ]] && continue
+        log "  - ${_inbox_task_desc}"
+    done <<< "$INBOX_TASK_DESCRIPTIONS"
 fi
 
 # --- Human mode: flag validation and note derivation --------------------------
@@ -636,8 +1449,24 @@ if [[ "$HUMAN_MODE" = true ]]; then
         # shellcheck disable=SC2034
         AUTO_COMMIT=true
     else
-        # Single-note mode: pick the highest-priority unchecked note
-        CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+        # Single-note mode: pick the highest-priority unchecked note.
+        # On crash-recovery resume, CURRENT_NOTE_ID is already set from env
+        # (exported at resume). The claimed note is [~], invisible to
+        # pick_next_note which only scans [ ] notes. Restore from env directly.
+        _note_restored=false
+        if [[ -n "${CURRENT_NOTE_ID:-}" ]]; then
+            log "Human mode: restoring claimed note ${CURRENT_NOTE_ID} from prior run"
+            CURRENT_NOTE_LINE=$(_find_note_by_id "$CURRENT_NOTE_ID")
+            _note_restored=true
+        elif [[ -n "${CURRENT_NOTE_LINE:-}" ]]; then
+            # Backward compat: pre-M40 state had CURRENT_NOTE_LINE without ID
+            log "Human mode: restoring claimed note from prior run (legacy)"
+            CURRENT_NOTE_ID=$(_extract_note_id "$CURRENT_NOTE_LINE")
+            _note_restored=true
+        else
+            CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+            CURRENT_NOTE_ID=$(_extract_note_id "$CURRENT_NOTE_LINE")
+        fi
         if [[ -z "$CURRENT_NOTE_LINE" ]]; then
             if [[ -n "$HUMAN_NOTES_TAG" ]]; then
                 log "No unchecked [${HUMAN_NOTES_TAG}] notes in HUMAN_NOTES.md"
@@ -648,10 +1477,42 @@ if [[ "$HUMAN_MODE" = true ]]; then
             exit 0
         fi
         TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
-        claim_single_note "$CURRENT_NOTE_LINE"
+        # Triage gate: check if note is oversized before claiming (M41)
+        if [[ "$_note_restored" != true ]] && [[ -n "$CURRENT_NOTE_ID" ]]; then
+            if ! triage_before_claim "$CURRENT_NOTE_ID"; then
+                # Note was promoted or skipped — exit single-note mode
+                log "Note ${CURRENT_NOTE_ID} was promoted/skipped by triage."
+                _TEKHTON_CLEAN_EXIT=true
+                exit 0
+            fi
+            # Re-read note line after triage — triage_before_claim may have added
+            # metadata which changes the line. claim_single_note needs the current line.
+            CURRENT_NOTE_LINE=$(_find_note_by_id "$CURRENT_NOTE_ID")
+        fi
+        # Capture count BEFORE claiming so pre-flight display is accurate (M33 Bug 5)
+        _PRE_CLAIM_NOTE_COUNT=$(count_human_notes)
+        if [[ "$_note_restored" = true ]]; then
+            # Resume path: note may be [~] (prior run exited cleanly, cleanup
+            # didn't reset) or [ ] (prior run crashed, cleanup did reset).
+            # Try claiming — if it's already [~], the [ ] match fails harmlessly.
+            claim_single_note "$CURRENT_NOTE_LINE" || true
+        else
+            claim_single_note "$CURRENT_NOTE_LINE"
+        fi
         export CURRENT_NOTE_LINE
+        export CURRENT_NOTE_ID
         log "Human mode: picked note — ${TASK}"
+        # Imply COMPLETE_MODE so single-note gets the orchestration loop
+        # (continuation attempts, retry logic) instead of single-shot exit.
+        # HUMAN_SINGLE_NOTE distinguishes "one note to completion" from
+        # "process all notes" (--human --complete).
+        COMPLETE_MODE=true
+        HUMAN_SINGLE_NOTE=true
+        export HUMAN_SINGLE_NOTE
     fi
+elif [[ "$FIX_NONBLOCKERS_MODE" = true ]] || [[ "$FIX_DRIFT_MODE" = true ]]; then
+    # TASK already set during flag validation above
+    :
 elif [ $# -eq 0 ]; then
     # No task argument — try to pull from saved pipeline state
     if [ "$START_AT" != "coder" ] && [ -f "$PIPELINE_STATE_FILE" ]; then
@@ -698,6 +1559,12 @@ if [ ! -f "$PROJECT_RULES_FILE" ]; then
 fi
 
 # Validate required files exist when skipping stages
+if [ "$START_AT" = "security" ] && [ ! -f "CODER_SUMMARY.md" ]; then
+    error "--start-at security requires CODER_SUMMARY.md to exist in the repo root."
+    error "Run the full pipeline or ensure the coder has already produced this file."
+    exit 1
+fi
+
 if [ "$START_AT" = "review" ] && [ ! -f "CODER_SUMMARY.md" ]; then
     error "--start-at review requires CODER_SUMMARY.md to exist in the repo root."
     error "Run the full pipeline or ensure the coder has already produced this file."
@@ -722,6 +1589,45 @@ LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
 
 mkdir -p "$LOG_DIR"
 
+# --- Causal event log + dashboard initialization (Milestone 13) ---------------
+init_causal_log
+
+# Stage tracking arrays for dashboard run_state emission
+declare -A _STAGE_STATUS=()
+declare -A _STAGE_TURNS=()
+declare -A _STAGE_BUDGET=()
+declare -A _STAGE_DURATION=()
+declare -A _STAGE_START_TS=()
+PIPELINE_STATUS="running"
+CURRENT_STAGE="initializing"
+START_AT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
+WAITING_FOR=""
+
+# Dashboard lifecycle: create if enabled + missing, cleanup if disabled + exists
+if is_dashboard_enabled; then
+    local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
+    if [[ ! -d "$local_dash_dir" ]]; then
+        init_dashboard "$PROJECT_DIR"
+    else
+        # Sync static UI files only when dashboard already existed (init_dashboard
+        # already copies files on creation, so this avoids a redundant second copy).
+        sync_dashboard_static_files "$PROJECT_DIR"
+    fi
+else
+    local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
+    if [[ -d "$local_dash_dir" ]]; then
+        cleanup_dashboard "$PROJECT_DIR"
+    fi
+fi
+
+# --- Version migration check (after config load, before pipeline) ------------
+check_project_version
+
+# Watchtower inbox processing moved earlier (before --human note picking)
+# to ensure inbox notes land in HUMAN_NOTES.md before pick_next_note() runs.
+
+_phase_end "config_load"
+
 # --- Pre-flight --------------------------------------------------------------
 
 header "Tekhton — ${PROJECT_NAME} — Starting at: ${START_AT}"
@@ -740,8 +1646,9 @@ if [ "$AUTO_ADVANCE" = true ]; then
     warn "AUTO-ADVANCE — Will advance through milestones (limit: ${AUTO_ADVANCE_LIMIT}, confirm: ${AUTO_ADVANCE_CONFIRM})"
 fi
 
-# Pre-flight: show only the notes that will actually be injected
-HUMAN_NOTE_COUNT=$(count_human_notes)
+# Pre-flight: show only the notes that will actually be injected.
+# Use pre-claim count if available (M33 Bug 5: count before claim_single_note).
+HUMAN_NOTE_COUNT="${_PRE_CLAIM_NOTE_COUNT:-$(count_human_notes)}"
 if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
     echo
     if [ -n "$NOTES_FILTER" ]; then
@@ -757,6 +1664,29 @@ if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
     fi
 fi
 echo
+
+# Pre-flight: indexer availability check
+if [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
+    if ! validate_indexer_config; then
+        error "Invalid indexer configuration. Fix the values in pipeline.conf."
+        exit 1
+    fi
+    if check_indexer_available; then
+        log "Indexer: available (repo map enabled)"
+    else
+        warn "REPO_MAP_ENABLED=true but indexer not available — falling back to 2.0 behavior."
+        warn "Run 'tekhton --setup-indexer' to install dependencies."
+    fi
+fi
+
+# Pre-flight: Serena MCP server startup (when enabled)
+if [[ "${SERENA_ENABLED:-false}" == "true" ]]; then
+    if start_mcp_server; then
+        log "Serena: MCP integration active"
+    else
+        warn "SERENA_ENABLED=true but Serena not available — continuing without LSP tools."
+    fi
+fi
 
 # Pre-flight drift threshold check
 if should_trigger_audit 2>/dev/null; then
@@ -779,8 +1709,8 @@ if ! git diff --quiet; then
 fi
 
 # Only archive prior reports when starting fresh from the coder stage
-if [ "$START_AT" = "coder" ]; then
-    for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
+    for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md INTAKE_REPORT.md; do
         if [ -f "$f" ]; then
             ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_${f}"
             mkdir -p "${LOG_DIR}/archive"
@@ -813,11 +1743,28 @@ fi
 # --- Milestone number parsing ------------------------------------------------
 # Parse milestone number from task for both --milestone and --auto-advance modes.
 # This enables commit signatures in single-run --milestone mode, not just auto-advance.
+#
+# First tries regex extraction from the task string (e.g. "Milestone 3: ..." or "M3: ...").
+# If that fails and a DAG manifest exists, falls back to the DAG frontier —
+# the first pending milestone whose dependencies are all satisfied.
 
 _CURRENT_MILESTONE=""
 if [ "$MILESTONE_MODE" = true ]; then
-    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]]; then
+    if [[ "$TASK" =~ [Mm]ilestone[[:space:]]+([0-9]+([.][0-9]+)*) ]] ||
+       [[ "$TASK" =~ ^[Mm]([0-9]+([.][0-9]+)*)(:|[[:space:]]|$) ]]; then
         _CURRENT_MILESTONE="${BASH_REMATCH[1]}"
+    fi
+
+    # DAG fallback: if task string didn't contain a milestone number,
+    # load the manifest and resolve the next actionable milestone.
+    if [ -z "$_CURRENT_MILESTONE" ] && has_milestone_manifest; then
+        load_manifest "$(_dag_manifest_path)" || true
+        _dag_next_id=$(dag_find_next "") || true
+        if [ -n "${_dag_next_id:-}" ]; then
+            _CURRENT_MILESTONE=$(dag_id_to_number "$_dag_next_id")
+            log "Resolved milestone ${_CURRENT_MILESTONE} from DAG frontier (${_dag_next_id})"
+        fi
+        unset _dag_next_id
     fi
 fi
 
@@ -836,6 +1783,7 @@ if [ "$AUTO_ADVANCE" = true ]; then
     else
         warn "Auto-advance enabled but task does not reference a milestone number."
         warn "Expected task like: 'Implement Milestone 3: ...'"
+        warn "Or ensure a DAG manifest exists with pending milestones."
         warn "Falling back to single-run mode."
         AUTO_ADVANCE=false
     fi
@@ -847,6 +1795,32 @@ elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
     log "Milestone mode: targeting milestone ${_CURRENT_MILESTONE}"
 fi
 
+# --- DAG auto-migration: convert inline milestones to file-based DAG --------
+# If MILESTONE_DAG_ENABLED and MILESTONE_AUTO_MIGRATE, and no manifest exists
+# but inline milestones are detected, run migration automatically.
+if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
+    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
+       && [[ "${MILESTONE_AUTO_MIGRATE:-true}" == "true" ]] \
+       && ! has_milestone_manifest; then
+        # Check if there are inline milestones to migrate
+        if parse_milestones "CLAUDE.md" >/dev/null 2>&1; then
+            log "Auto-migrating inline milestones to DAG file format..."
+            milestone_dir="$(_dag_milestone_dir)"
+            if migrate_inline_milestones "CLAUDE.md" "$milestone_dir"; then
+                # Insert pointer comment in CLAUDE.md after successful migration
+                _insert_milestone_pointer "CLAUDE.md" "$milestone_dir"
+            else
+                warn "Milestone migration failed — continuing with inline mode"
+            fi
+        fi
+    fi
+
+    # Load manifest if it exists (either from migration or pre-existing)
+    if has_milestone_manifest; then
+        load_manifest "$(_dag_manifest_path)" || warn "Failed to load milestone manifest"
+    fi
+fi
+
 # --- Startup archival: clean up completed milestones from previous runs ------
 # Archive [DONE] milestones that still have full definitions in CLAUDE.md.
 # This handles cases where the previous run completed a milestone but crashed
@@ -855,12 +1829,56 @@ if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
     archive_all_completed_milestones "CLAUDE.md"
 fi
 
-# --- Startup cleanup: clear completed items from logs -----------------------
-# Remove [x] items from NON_BLOCKING_LOG.md and [RESOLVED] items from DRIFT_LOG.md
-# so only the current run's completions appear. The commit message at the end of
-# the run captures what was resolved; these logs don't need to keep them forever.
+# --- Run checkpoint (Milestone 24) ------------------------------------------
+# Create a git checkpoint before any agent runs so users can rollback.
+# This MUST run before startup cleanup — the checkpoint stashes uncommitted
+# changes, and cleanup modifies files on disk. If cleanup ran first, the stash
+# would revert those cleanup edits.
+create_run_checkpoint
+
+# --- Startup cleanup: clear completed/resolved items from logs ----------------
+# Remove [x] items from HUMAN_NOTES.md and NON_BLOCKING_LOG.md Open section,
+# [RESOLVED] items from DRIFT_LOG.md, and resolved entries from
+# NON_BLOCKING_LOG.md Resolved section. Commit messages already captured what
+# was resolved; these logs don't need to keep them across runs.
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
+clear_completed_human_notes
+clear_resolved_nonblocking_notes > /dev/null
+
+# --- M40: Migrate legacy notes and ensure gitignore for inbox ----------------
+migrate_legacy_notes
+_ensure_gitignore_inbox
+
+# --- UI framework detection (Milestone 28) -----------------------------------
+# Runs at startup to populate UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD.
+# Uses explicit user config when set; falls back to auto-detection otherwise.
+if [[ "${UI_FRAMEWORK:-}" == "auto" ]] || [[ -z "${UI_FRAMEWORK:-}" ]]; then
+    detect_ui_framework "$PROJECT_DIR" >/dev/null 2>&1 || true
+fi
+# Auto-detect UI_TEST_CMD when not explicitly configured
+if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]] && [[ -z "${UI_TEST_CMD:-}" ]]; then
+    UI_TEST_CMD=$(detect_ui_test_cmd "$PROJECT_DIR" "${UI_FRAMEWORK:-}" 2>/dev/null || true)
+    export UI_TEST_CMD
+fi
+
+# --- UI platform adapter resolution (Milestone 57) ---------------------------
+# Maps UI_FRAMEWORK to a platform directory and loads prompt fragments.
+if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]]; then
+    detect_ui_platform || true
+    if [[ -n "${UI_PLATFORM_DIR:-}" ]]; then
+        source_platform_detect
+        load_platform_fragments
+    elif [[ -n "${UI_PLATFORM:-}" ]]; then
+        # Platform set but no directory — still load universal fragments
+        load_platform_fragments
+    fi
+fi
+
+# --- Intra-run context cache (Milestone 47) ----------------------------------
+# Pre-read shared context files once. Stages use _get_cached_* accessors instead
+# of re-reading from disk on every agent invocation.
+preload_context_cache
 
 # --- Ctrl+C handler for auto-advance state preservation ---------------------
 
@@ -888,7 +1906,35 @@ trap _tekhton_sigint_handler INT
 # --- Pipeline execution (with auto-advance loop) ----------------------------
 
 _run_pipeline_stages() {
-    # Stage 0: Architect Audit (conditional)
+    # Emit pipeline_start event (root event, no caused_by)
+    _PIPELINE_START_EVT=$(emit_event "pipeline_start" "pipeline" "$TASK" "" "" "")
+    _LAST_STAGE_EVT="$_PIPELINE_START_EVT"
+
+    # Pre-stage 1: Intake gate (pre-stage clarity evaluation)
+    # Runs once per milestone/task before any other stage. Skipped when
+    # START_AT is past coder (resuming from review/test).
+    if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
+        CURRENT_STAGE="intake"
+        _STAGE_STATUS[intake]="active"
+        _STAGE_BUDGET[intake]="${INTAKE_MAX_TURNS:-10}"
+        _STAGE_START_TS[intake]="$SECONDS"
+        emit_dashboard_run_state 2>/dev/null || true
+        local _intake_start_evt
+        _intake_start_evt=$(emit_event "stage_start" "intake" "" "$_LAST_STAGE_EVT" "" "")
+        run_stage_intake
+        _LAST_STAGE_EVT=$(emit_event "stage_end" "intake" "${INTAKE_VERDICT:-pass}" "$_intake_start_evt" "" \
+            "{\"confidence\":${INTAKE_CONFIDENCE:-0}}")
+        _STAGE_STATUS[intake]="complete"
+        _STAGE_TURNS[intake]="${LAST_AGENT_TURNS:-0}"
+        _STAGE_DURATION[intake]="$(( SECONDS - ${_STAGE_START_TS[intake]:-$SECONDS} ))"
+        emit_dashboard_run_state 2>/dev/null || true
+        # If START_AT was "intake", advance to "coder" for subsequent stages
+        if [ "$START_AT" = "intake" ]; then
+            START_AT="coder"
+        fi
+    fi
+
+    # Pre-stage 2: Architect Audit (conditional)
     # Architect audit runs on its own turn/time budget. Save and restore
     # the pipeline accumulators so architect turns do not inflate coder
     # metrics or affect adaptive calibration.
@@ -910,32 +1956,168 @@ _run_pipeline_stages() {
         fi
     fi
 
-    # Stage 1: Coder
-    if [ "$START_AT" = "coder" ]; then
-        run_stage_coder
-    else
-        header "Stage 1 / 3 — Coder (skipped)"
-        log "Using existing CODER_SUMMARY.md"
-        if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-            warn "HUMAN_NOTES.md has unchecked items but coder stage was skipped."
-            warn "Notes will NOT be injected this run. Include them in your next full run."
-        fi
-    fi
+    # --- Dynamic pipeline stage execution (Milestone 27) -----------------------
+    # Stage order is driven by PIPELINE_ORDER config (standard or test_first).
+    # Each stage block preserves its existing event emission and dashboard logic.
+    local _pipeline_stages
+    _pipeline_stages=$(get_pipeline_order)
+    export PIPELINE_STAGE_COUNT
+    PIPELINE_STAGE_COUNT=$(get_stage_count)
+    local _stage_idx=0
 
-    # Stage 2: Review loop
-    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ]; then
-        run_stage_review
-    else
-        header "Stage 2 / 3 — Reviewer (skipped)"
-        log "Using existing REVIEWER_REPORT.md"
-        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
-        log "Existing verdict: ${VERDICT}"
-    fi
+    log "Pipeline order: ${PIPELINE_ORDER:-standard} (${PIPELINE_STAGE_COUNT} stages: ${_pipeline_stages})"
 
-    # Stage 3: Tester
-    if [ "$START_AT" = "coder" ] || [ "$START_AT" = "review" ] || [ "$START_AT" = "test" ] || [ "$START_AT" = "tester" ]; then
-        run_stage_tester
-    fi
+    # shellcheck disable=SC2086
+    for _stage_name in $_pipeline_stages; do
+        case "$_stage_name" in
+        scout)
+            # Scout is handled inside run_stage_coder — skip as standalone stage.
+            # Scout runs as part of the coder stage invocation.
+            # Do NOT increment _stage_idx — scout is not a visible stage.
+            continue
+            ;;
+        esac
+
+        _stage_idx=$((_stage_idx + 1))
+        export PIPELINE_STAGE_POS="$_stage_idx"
+
+        case "$_stage_name" in
+
+        coder)
+            if should_run_stage "coder" "$START_AT"; then
+                CURRENT_STAGE="coder"
+                local _coder_start_evt
+                _coder_start_evt=$(emit_event "stage_start" "coder" "$TASK" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[coder]="active"
+                _STAGE_BUDGET[coder]="${CODER_MAX_TURNS:-50}"
+                _STAGE_START_TS[coder]="$SECONDS"
+                emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Coder"
+                run_stage_coder
+                local _coder_files_changed
+                _coder_files_changed=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]' || echo "0")
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "coder" "${_coder_files_changed} files modified" "$_coder_start_evt" "" \
+                    "{\"files_changed\":${_coder_files_changed},\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[coder]="complete"
+                _STAGE_TURNS[coder]="${ACTUAL_CODER_TURNS:-${LAST_AGENT_TURNS:-0}}"
+                _STAGE_DURATION[coder]="$(( SECONDS - ${_STAGE_START_TS[coder]:-$SECONDS} ))"
+                progress_outcome "Coder" "${_coder_files_changed} files modified" "${_STAGE_DURATION[coder]}"
+                emit_dashboard_reports 2>/dev/null || true
+                emit_dashboard_run_state 2>/dev/null || true
+            else
+                header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Coder (skipped)"
+                log "Using existing CODER_SUMMARY.md"
+                if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+                    warn "HUMAN_NOTES.md has unchecked items but coder stage was skipped."
+                    warn "Notes will NOT be injected this run. Include them in your next full run."
+                fi
+            fi
+            ;;
+
+        security)
+            if should_run_stage "security" "$START_AT"; then
+                CURRENT_STAGE="security"
+                local _sec_start_evt
+                _sec_start_evt=$(emit_event "stage_start" "security" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[security]="active"
+                _STAGE_BUDGET[security]="${SECURITY_MAX_TURNS:-15}"
+                _STAGE_START_TS[security]="$SECONDS"
+                emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Security"
+                run_stage_security
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "security" "" "$_sec_start_evt" "" \
+                    "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[security]="complete"
+                _STAGE_TURNS[security]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[security]="$(( SECONDS - ${_STAGE_START_TS[security]:-$SECONDS} ))"
+                progress_outcome "Security" "complete" "${_STAGE_DURATION[security]}"
+                emit_dashboard_security 2>/dev/null || true
+                emit_dashboard_run_state 2>/dev/null || true
+            else
+                header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Security (skipped)"
+            fi
+            ;;
+
+        review)
+            if should_run_stage "review" "$START_AT"; then
+                CURRENT_STAGE="reviewer"
+                local _review_start_evt
+                _review_start_evt=$(emit_event "stage_start" "reviewer" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[reviewer]="active"
+                _STAGE_BUDGET[reviewer]="${REVIEWER_MAX_TURNS:-15}"
+                _STAGE_START_TS[reviewer]="$SECONDS"
+                emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Reviewer"
+                run_stage_review
+                local _review_verdict_json="null"
+                if [[ -n "${VERDICT:-}" ]]; then
+                    _review_verdict_json="{\"result\":\"$(_json_escape "${VERDICT}")\"}"
+                fi
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "reviewer" "verdict: ${VERDICT:-unknown}" "$_review_start_evt" \
+                    "$_review_verdict_json" "{\"cycles\":${REVIEW_CYCLE:-0}}")
+                _STAGE_STATUS[reviewer]="complete"
+                _STAGE_TURNS[reviewer]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[reviewer]="$(( SECONDS - ${_STAGE_START_TS[reviewer]:-$SECONDS} ))"
+                progress_outcome "Reviewer" "${VERDICT:-unknown} (${REVIEW_CYCLE:-0} cycles)" "${_STAGE_DURATION[reviewer]}"
+                emit_dashboard_reports 2>/dev/null || true
+                emit_dashboard_run_state 2>/dev/null || true
+            else
+                header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Reviewer (skipped)"
+                log "Using existing REVIEWER_REPORT.md"
+                VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+                log "Existing verdict: ${VERDICT}"
+            fi
+            ;;
+
+        test_write)
+            # TDD pre-flight: write failing tests (only in test_first order)
+            if should_run_stage "test_write" "$START_AT"; then
+                CURRENT_STAGE="tester"
+                export TESTER_MODE="write_failing"
+                local _tw_start_evt
+                _tw_start_evt=$(emit_event "stage_start" "tester_write" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[tester_write]="active"
+                _STAGE_BUDGET[tester_write]="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
+                _STAGE_START_TS[tester_write]="$SECONDS"
+                emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Tester" "TDD write-failing"
+                run_stage_tester
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "tester_write" "" "$_tw_start_evt" "" \
+                    "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[tester_write]="complete"
+                _STAGE_TURNS[tester_write]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[tester_write]="$(( SECONDS - ${_STAGE_START_TS[tester_write]:-$SECONDS} ))"
+                progress_outcome "Tester (TDD)" "complete" "${_STAGE_DURATION[tester_write]}"
+                emit_dashboard_run_state 2>/dev/null || true
+                export TESTER_MODE=""
+            fi
+            ;;
+
+        test_verify)
+            if should_run_stage "test_verify" "$START_AT"; then
+                CURRENT_STAGE="tester"
+                export TESTER_MODE="verify_passing"
+                local _tester_start_evt
+                _tester_start_evt=$(emit_event "stage_start" "tester" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[tester]="active"
+                _STAGE_BUDGET[tester]="${TESTER_MAX_TURNS:-30}"
+                _STAGE_START_TS[tester]="$SECONDS"
+                emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Tester"
+                run_stage_tester
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "tester" "" "$_tester_start_evt" "" \
+                    "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[tester]="complete"
+                _STAGE_TURNS[tester]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[tester]="$(( SECONDS - ${_STAGE_START_TS[tester]:-$SECONDS} ))"
+                progress_outcome "Tester" "complete" "${_STAGE_DURATION[tester]}"
+                emit_dashboard_reports 2>/dev/null || true
+                emit_dashboard_run_state 2>/dev/null || true
+                export TESTER_MODE=""
+            fi
+            ;;
+        esac
+    done
 
     if [ ! -f "TESTER_REPORT.md" ]; then
         warn "Tester did not produce TESTER_REPORT.md. Tests may have been written but report is missing."
@@ -979,6 +2161,13 @@ _run_human_complete_loop() {
             break
         fi
 
+        # Reset claimed IDs so finalization only resolves the current iteration's note.
+        CLAIMED_NOTE_IDS=""
+
+        # Drain any watchtower inbox notes that arrived since the last iteration
+        # so they're available to pick_next_note (e.g. notes submitted mid-run).
+        process_watchtower_inbox 2>/dev/null || true
+
         # Pick next note
         CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
         if [[ -z "$CURRENT_NOTE_LINE" ]]; then
@@ -989,9 +2178,28 @@ _run_human_complete_loop() {
             fi
             break
         fi
+        CURRENT_NOTE_ID=$(_extract_note_id "$CURRENT_NOTE_LINE")
 
         TASK=$(extract_note_text "$CURRENT_NOTE_LINE")
+
+        # Triage gate for --human --complete loop (M41)
+        # Promotions are administrative, not execution failures — don't count against attempts
+        if [[ -n "$CURRENT_NOTE_ID" ]] && ! triage_before_claim "$CURRENT_NOTE_ID"; then
+            log "Note ${CURRENT_NOTE_ID} was promoted/skipped by triage."
+            human_attempt=$(( human_attempt - 1 ))
+            continue
+        fi
+
+        # Re-read note line after triage — triage_before_claim may have added
+        # metadata (triage:, est_turns:, text_hash:, triaged:) which changes
+        # the line in HUMAN_NOTES.md. claim_single_note uses exact string
+        # matching, so it needs the current line, not the pre-triage version.
+        if [[ -n "$CURRENT_NOTE_ID" ]]; then
+            CURRENT_NOTE_LINE=$(_find_note_by_id "$CURRENT_NOTE_ID")
+        fi
+
         export CURRENT_NOTE_LINE
+        export CURRENT_NOTE_ID
 
         log "Human note ${human_attempt}: ${TASK}"
         claim_single_note "$CURRENT_NOTE_LINE"
@@ -1027,19 +2235,212 @@ _run_human_complete_loop() {
         _run_pipeline_stages
 
         # Pipeline succeeded — finalize (includes commit for this note).
-        # _hook_resolve_notes detects HUMAN_MODE and calls resolve_single_note
-        # for CURRENT_NOTE_LINE, marking it [x] on success.
+        # _hook_resolve_notes resolves CLAIMED_NOTE_IDS via resolve_notes_batch,
+        # marking [~] → [x] on success or [~] → [ ] on failure.
         finalize_run 0
 
         log "Note completed: ${TASK}"
     done
 }
 
+# _run_fix_nonblockers_loop — Process all open non-blocking notes in a loop.
+# Each pass injects all open notes into the coder prompt (threshold forced to 0)
+# and runs the full pipeline. The heuristic resolver in finalize marks addressed
+# items [x]. Loop terminates when no open items remain or safety bounds hit.
+_run_fix_nonblockers_loop() {
+    : "${AUTONOMOUS_TIMEOUT:=7200}"
+    local nb_attempt=0
+    local start_time
+    start_time=$(date +%s)
+
+    while true; do
+        nb_attempt=$((nb_attempt + 1))
+
+        local remaining
+        remaining=$(count_open_nonblocking_notes)
+        if [[ "$remaining" -eq 0 ]]; then
+            success "All non-blocking notes resolved."
+            break
+        fi
+
+        # Safety bound: max passes
+        if [[ "$nb_attempt" -gt "${FIX_NONBLOCKERS_MAX_PASSES:-3}" ]]; then
+            warn "Reached FIX_NONBLOCKERS_MAX_PASSES (${FIX_NONBLOCKERS_MAX_PASSES:-3}). ${remaining} item(s) remain."
+            break
+        fi
+
+        # Safety bound: wall-clock timeout
+        local elapsed
+        elapsed=$(( $(date +%s) - start_time ))
+        if [[ "$elapsed" -ge "$AUTONOMOUS_TIMEOUT" ]]; then
+            warn "Reached AUTONOMOUS_TIMEOUT (${AUTONOMOUS_TIMEOUT}s). ${remaining} item(s) remain."
+            break
+        fi
+
+        TASK="Address all ${remaining} open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."
+
+        # Archive reports from previous iteration
+        if [[ "$nb_attempt" -gt 1 ]]; then
+            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+                if [[ -f "$f" ]]; then
+                    mkdir -p "${LOG_DIR}/archive"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixnb${nb_attempt}_${f}"
+                fi
+            done
+        fi
+
+        # Update log file for this pass
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        LOG_FILE="${LOG_DIR}/${TIMESTAMP}_fix-nonblockers-pass${nb_attempt}.log"
+
+        # Reset start-at for each pass (always full pipeline)
+        START_AT="coder"
+
+        # Check usage threshold between passes
+        if ! check_usage_threshold; then
+            warn "Usage threshold reached. Pausing fix-nonblockers loop."
+            break
+        fi
+
+        log "Fix-nonblockers pass ${nb_attempt}: ${remaining} item(s) remaining."
+
+        _run_pipeline_stages
+        finalize_run 0
+
+        log "Fix-nonblockers pass ${nb_attempt} complete."
+    done
+}
+
+# _run_fix_drift_loop — Force architect audit to resolve drift observations.
+# Each pass runs the full pipeline with FORCE_AUDIT=true, which triggers the
+# architect stage. The architect resolves observations and marks them in
+# DRIFT_LOG.md. Loop terminates when no unresolved observations remain or
+# safety bounds hit.
+_run_fix_drift_loop() {
+    : "${AUTONOMOUS_TIMEOUT:=7200}"
+    local drift_attempt=0
+    local start_time
+    start_time=$(date +%s)
+
+    while true; do
+        drift_attempt=$((drift_attempt + 1))
+
+        local remaining
+        remaining=$(count_drift_observations)
+        if [[ "$remaining" -eq 0 ]]; then
+            success "All drift observations resolved."
+            break
+        fi
+
+        # Safety bound: max passes
+        if [[ "$drift_attempt" -gt "${FIX_DRIFT_MAX_PASSES:-3}" ]]; then
+            warn "Reached FIX_DRIFT_MAX_PASSES (${FIX_DRIFT_MAX_PASSES:-3}). ${remaining} observation(s) remain."
+            break
+        fi
+
+        # Safety bound: wall-clock timeout
+        local elapsed
+        elapsed=$(( $(date +%s) - start_time ))
+        if [[ "$elapsed" -ge "$AUTONOMOUS_TIMEOUT" ]]; then
+            warn "Reached AUTONOMOUS_TIMEOUT (${AUTONOMOUS_TIMEOUT}s). ${remaining} observation(s) remain."
+            break
+        fi
+
+        TASK="Resolve all ${remaining} unresolved architectural drift observations in DRIFT_LOG.md."
+
+        # Archive reports from previous iteration
+        if [[ "$drift_attempt" -gt 1 ]]; then
+            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md ARCHITECT_PLAN.md; do
+                if [[ -f "$f" ]]; then
+                    mkdir -p "${LOG_DIR}/archive"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixdrift${drift_attempt}_${f}"
+                fi
+            done
+        fi
+
+        # Update log file for this pass
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        LOG_FILE="${LOG_DIR}/${TIMESTAMP}_fix-drift-pass${drift_attempt}.log"
+
+        # Reset start-at for each pass (always full pipeline)
+        START_AT="coder"
+
+        # Check usage threshold between passes
+        if ! check_usage_threshold; then
+            warn "Usage threshold reached. Pausing fix-drift loop."
+            break
+        fi
+
+        log "Fix-drift pass ${drift_attempt}: ${remaining} observation(s) remaining."
+
+        _run_pipeline_stages
+        finalize_run 0
+
+        log "Fix-drift pass ${drift_attempt} complete."
+    done
+}
+
+# --- Dry-run mode (Milestone 23) --------------------------------------------
+
+if [[ "$DRY_RUN_MODE" = true ]]; then
+    run_dry_run "$TASK"
+    if [[ "${DRY_RUN_CONTINUE:-false}" != "true" ]]; then
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+    # DRY_RUN_CONTINUE=true — fall through to standard pipeline execution
+    # Cache was already consumed by run_dry_run, setting SCOUT_CACHED + INTAKE_CACHED
+fi
+
+# --- Continue-preview mode (Milestone 23) -----------------------------------
+
+if [[ "$CONTINUE_PREVIEW" = true ]]; then
+    if load_dry_run_for_continue "$TASK"; then
+        log "Resuming from dry-run preview."
+    else
+        log "No valid dry-run cache. Running full pipeline."
+    fi
+    # Fall through to standard pipeline — SCOUT_CACHED and INTAKE_CACHED set if loaded
+fi
+
+# --- Offer cached dry-run (before pipeline execution) -----------------------
+
+if [[ "$DRY_RUN_MODE" != true ]] && [[ "$CONTINUE_PREVIEW" != true ]]; then
+    if offer_cached_dry_run "$TASK" 2>/dev/null; then
+        log "Proceeding with cached dry-run results."
+    fi
+fi
+
+# --- Pre-flight environment validation (Milestone 55) -------------------------
+# Runs fast, deterministic checks BEFORE any agent invocation. Catches stale
+# deps, missing tools, env var gaps, version mismatches. Only during task runs.
+run_preflight_checks || {
+    write_pipeline_state "preflight" "env_failure" "" "$TASK" \
+        "Pre-flight environment validation failed. See PREFLIGHT_REPORT.md."
+    exit 1
+}
+
 # --- Pipeline execution (mode dispatch) --------------------------------------
 
-if [[ "$HUMAN_MODE" = true ]] && [[ "$COMPLETE_MODE" = true ]]; then
-    # Human-complete mode: process notes one at a time in a loop
+if [[ "$HUMAN_MODE" = true ]] && [[ "$COMPLETE_MODE" = true ]] && [[ "${HUMAN_SINGLE_NOTE:-false}" != true ]]; then
+    # Human-complete mode (--human --complete): process notes one at a time in a loop
     _run_human_complete_loop
+elif [[ "$HUMAN_MODE" = true ]] && [[ "${HUMAN_SINGLE_NOTE:-false}" = true ]]; then
+    # Human single-note mode: one note with full orchestration loop (retry, continuation)
+    if [[ "${COMPLETE_MODE_ENABLED:-true}" != "true" ]]; then
+        warn "--complete is disabled (COMPLETE_MODE_ENABLED=false). Running single pipeline."
+        _run_pipeline_stages
+        finalize_run 0
+    else
+        run_complete_loop || true
+    fi
+    echo
+elif [[ "$FIX_NONBLOCKERS_MODE" = true ]]; then
+    # Fix-nonblockers mode: address all open non-blocking notes in a loop
+    _run_fix_nonblockers_loop
+elif [[ "$FIX_DRIFT_MODE" = true ]]; then
+    # Fix-drift mode: force architect audit to resolve drift observations
+    _run_fix_drift_loop
 elif [[ "$COMPLETE_MODE" = true ]] && [[ "$HUMAN_MODE" != true ]]; then
     # Outer orchestration loop (M16): retry pipeline until acceptance or bounds exhausted.
     # Handles milestone and non-milestone tasks. Auto-advance is wired into the loop.
@@ -1052,122 +2453,20 @@ elif [[ "$COMPLETE_MODE" = true ]] && [[ "$HUMAN_MODE" != true ]]; then
     fi
     echo
 else
-    # Standard single-run pipeline execution
+    # Standard single-run pipeline execution (no --milestone, no --complete)
+    # Note: --milestone implies --complete and --auto-advance implies --milestone,
+    # so this branch only runs for plain non-milestone tasks.
     _run_pipeline_stages
-
-    # --- Auto-advance loop ---------------------------------------------------
-
-    if [ "$AUTO_ADVANCE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
-        # Check acceptance for current milestone
-        _acceptance_pass=true
-        check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
-
-        if [ "$_acceptance_pass" = true ]; then
-            # Find next milestone
-            _next_milestone=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
-
-            if [ -n "$_next_milestone" ]; then
-                write_milestone_disposition "COMPLETE_AND_CONTINUE"
-
-                # Auto-advance loop
-                while should_auto_advance; do
-                    _next_milestone=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
-                    if [ -z "$_next_milestone" ]; then
-                        log "No more milestones to advance to."
-                        write_milestone_disposition "COMPLETE_AND_WAIT"
-                        break
-                    fi
-
-                    _next_title=$(get_milestone_title "$_next_milestone")
-
-                    # Confirm if configured
-                    if [ "${AUTO_ADVANCE_CONFIRM}" = "true" ]; then
-                        if ! prompt_auto_advance_confirm "$_next_milestone" "$_next_title"; then
-                            log "Auto-advance declined by user."
-                            write_milestone_disposition "COMPLETE_AND_WAIT"
-                            break
-                        fi
-                    fi
-
-                    advance_milestone "$_CURRENT_MILESTONE" "$_next_milestone"
-                    _CURRENT_MILESTONE="$_next_milestone"
-
-                    # Update task for the new milestone
-                    TASK="Implement Milestone ${_CURRENT_MILESTONE}: ${_next_title}"
-                    log "Task updated: ${TASK}"
-
-                    # Reset START_AT to coder for subsequent milestones
-                    START_AT="coder"
-
-                    # Archive reports from previous milestone
-                    for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
-                        if [ -f "$f" ]; then
-                            ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_milestone${_CURRENT_MILESTONE}_${f}"
-                            mkdir -p "${LOG_DIR}/archive"
-                            mv "$f" "$ARCHIVE_NAME"
-                        fi
-                    done
-
-                    # Check usage threshold before starting next milestone
-                    if ! check_usage_threshold; then
-                        warn "Usage threshold reached before milestone ${_CURRENT_MILESTONE}. Pausing auto-advance."
-                        write_milestone_disposition "COMPLETE_AND_WAIT"
-                        break
-                    fi
-
-                    # Update log file for new milestone
-                    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-                    TASK_SLUG=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
-                    LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
-
-                    # Run pipeline stages for new milestone
-                    _run_pipeline_stages
-
-                    # Check acceptance for new milestone
-                    _acceptance_pass=true
-                    check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
-
-                    if [ "$_acceptance_pass" = true ]; then
-                        _next_check=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
-                        if [ -n "$_next_check" ]; then
-                            write_milestone_disposition "COMPLETE_AND_CONTINUE"
-                        else
-                            write_milestone_disposition "COMPLETE_AND_WAIT"
-                            log "All milestones complete."
-                            break
-                        fi
-                    else
-                        write_milestone_disposition "INCOMPLETE_REWORK"
-                        warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Stopping auto-advance."
-                        break
-                    fi
-                done
-            else
-                write_milestone_disposition "COMPLETE_AND_WAIT"
-                log "No more milestones — this was the last one."
-            fi
-        else
-            write_milestone_disposition "INCOMPLETE_REWORK"
-            warn "Milestone ${_CURRENT_MILESTONE} acceptance failed. Fix issues and re-run."
-        fi
-    elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ] && [ "${SKIP_FINAL_CHECKS:-false}" != true ]; then
-        # Non-auto-advance milestone run: check acceptance and set disposition
-        _acceptance_pass=true
-        check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || _acceptance_pass=false
-
-        if [ "$_acceptance_pass" = true ]; then
-            write_milestone_disposition "COMPLETE_AND_WAIT"
-        else
-            write_milestone_disposition "INCOMPLETE_REWORK"
-        fi
-    fi
 
     # --- Autonomous debt sweep (post-success only) ----------------------------
     # Runs after the primary pipeline completes. Never runs during rework cycles.
     # Build gate failure in cleanup logs a warning but does not fail the pipeline.
 
     if [ "${SKIP_FINAL_CHECKS:-false}" != true ] && should_run_cleanup; then
+        _STAGE_START_TS[cleanup]="$SECONDS"
         run_stage_cleanup
+        _STAGE_TURNS[cleanup]="${LAST_AGENT_TURNS:-0}"
+        _STAGE_DURATION[cleanup]="$(( SECONDS - ${_STAGE_START_TS[cleanup]:-$SECONDS} ))"
     fi
 
     # --- Finalize pipeline ---------------------------------------------------

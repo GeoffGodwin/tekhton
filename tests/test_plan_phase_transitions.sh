@@ -38,6 +38,8 @@ source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
+source "${TEKHTON_HOME}/lib/plan_answers.sh"
+source "${TEKHTON_HOME}/lib/plan_review.sh"
 
 # Mock _call_planning_batch — avoids real claude invocation.
 _call_planning_batch() {
@@ -77,10 +79,12 @@ run_interview_with_input() {
     # Feed input via process substitution (pipe).
     TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$project_dir" \
+    PLAN_ANSWER_FILE="${project_dir}/.claude/plan_answers.yaml" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="web-app" \
     PLAN_INTERVIEW_MODEL="test-model" \
     PLAN_INTERVIEW_MAX_TURNS="5" \
+    TEKHTON_VERSION="3.31.0" \
     TEKHTON_TEST_MODE=1 \
     bash "$script_file" < <(printf '%s' "$input_string") 2>/dev/null || true
 }
@@ -96,10 +100,11 @@ run_interview_with_input() {
 # ---------------------------------------------------------------------------
 
 # All sections skipped — drives every section to SKIP/TBD quickly.
-ALL_SKIP=$'skip\n\nskip\n\nskip\n\nskip\n\n'
+# Prepend "1\n" for CLI mode selection in _select_interview_mode
+ALL_SKIP=$'1\nskip\n\nskip\n\nskip\n\nskip\n\n'
 
 # Phase 1 'Overview' has a real answer; everything else skipped.
-WITH_P1_ANSWER=$'My overview answer\n\nskip\n\nskip\n\nMy config answer\n\n'
+WITH_P1_ANSWER=$'1\nMy overview answer\n\nskip\n\nskip\n\nMy config answer\n\n'
 
 # ---------------------------------------------------------------------------
 echo "=== Phase 1 header fires before the first section ==="

@@ -3,6 +3,7 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TEKHTON_VERSION="${TEKHTON_VERSION:-0.0.0}"
 
 PASS=0
 FAIL=0

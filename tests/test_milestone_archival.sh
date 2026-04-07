@@ -27,6 +27,8 @@ export MILESTONE_ARCHIVE_FILE
 source "${TEKHTON_HOME}/lib/state.sh"
 run_build_gate() { return 0; }
 source "${TEKHTON_HOME}/lib/milestones.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 
 cd "$TMPDIR_BASE"
@@ -210,6 +212,30 @@ assert "_milestone_in_archive returns 1 when milestone not present" \
 # Test 10: returns 0 when milestone IS present in archive
 assert "_milestone_in_archive returns 0 when milestone is present" \
     "$(_milestone_in_archive "2" "$ARCHIVE" 2>/dev/null && echo 0 || echo 1)"
+
+# Test 10b: initiative name containing em-dash does not break scoped matching
+EMDASH_ARCHIVE="${TMPDIR_BASE}/emdash_archive.md"
+cat > "$EMDASH_ARCHIVE" << 'EOF'
+# Milestone Archive
+
+---
+
+## Archived: 2026-03-22 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing
+
+#### Milestone 1: DAG Infrastructure
+Content for M1.
+
+---
+
+## Archived: 2026-03-23 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing
+
+#### Milestone 2: Sliding Window
+Content for M2.
+EOF
+assert "_milestone_in_archive matches when initiative contains em-dash" \
+    "$(_milestone_in_archive "1" "$EMDASH_ARCHIVE" "Tekhton 3.0 — Milestone DAG, Intelligent Indexing" && echo 0 || echo 1)"
+assert "_milestone_in_archive returns 1 for absent milestone with em-dash initiative" \
+    "$(_milestone_in_archive "99" "$EMDASH_ARCHIVE" "Tekhton 3.0 — Milestone DAG, Intelligent Indexing" && echo 1 || echo 0)"
 
 # =============================================================================
 # Tests: archive_completed_milestone — happy path

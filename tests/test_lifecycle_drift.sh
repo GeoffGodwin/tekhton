@@ -30,6 +30,7 @@ TASK="lifecycle test run"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
+source "${TEKHTON_HOME}/lib/drift_prune.sh"
 
 FAIL=0
 

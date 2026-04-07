@@ -91,13 +91,24 @@ source "${TEKHTON_HOME}/lib/state.sh"
 run_build_gate() { return 0; }
 
 source "${TEKHTON_HOME}/lib/milestones.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
+
+# Stub _phase_start/_phase_end before sourcing context_cache.sh
+if ! declare -f _phase_start &>/dev/null; then
+    _phase_start() { :; }
+    _phase_end() { :; }
+fi
 
 # =============================================================================
 # Stub all functions coder.sh calls (defaults — overridden per test)
 # =============================================================================
 
+log_decision()              { :; }
+progress_status()           { :; }
+invalidate_repo_map_run_cache() { :; }  # M61: stub for run cache invalidation
 extract_human_notes()       { echo ""; }
 claim_human_notes()         { true; }
 resolve_human_notes()       { true; }
@@ -112,12 +123,19 @@ render_prompt()             { echo "mock_prompt_${1:-}"; }
 print_run_summary()         { true; }
 apply_scout_turn_limits()   { export SCOUT_REC_CODER_TURNS=30; }
 run_completion_gate()       { return 0; }
+run_repo_map()              { return 1; }
+extract_files_from_coder_summary() { echo ""; }
+is_substantive_work()       { return 1; }
 
 # _safe_read_file FILE LABEL — return empty content
 _safe_read_file()           { echo ""; }
 
 # _wrap_file_content LABEL CONTENT — return content unchanged
 _wrap_file_content()        { echo "${2:-}"; }
+
+# Source context cache (M47 — needed by coder.sh)
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/context_cache.sh"
 
 # write_pipeline_state STAGE REASON RESUME TASK NOTES
 write_pipeline_state() {

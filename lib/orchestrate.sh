@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# orchestrate.sh — Outer orchestration loop for --complete mode (Milestone 16)
+# orchestrate.sh — Outer orchestration loop for --complete mode
 #
 # Wraps _run_pipeline_stages() in a retry-with-recovery loop. Contract:
 # run this milestone until it passes acceptance or all recovery options
 # are exhausted.
+#
+# M16: MAX_PIPELINE_ATTEMPTS counts consecutive failures only. Milestone
+# success or successful split resets the counter to 0. MAX_AUTONOMOUS_AGENT_CALLS
+# is now a safety valve (200) rather than a workflow limit.
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: _run_pipeline_stages(), finalize_run(), check_milestone_acceptance(),
@@ -27,6 +31,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_recovery.sh"
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_helpers.sh"
 
+# Source test baseline helpers (pre-existing failure detection)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/test_baseline.sh"
+
+# Source test baseline cleanup helpers (extracted for 300-line ceiling)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/test_baseline_cleanup.sh"
+
 # --- Orchestration state globals -----------------------------------------------
 _ORCH_ATTEMPT=0
 _ORCH_AGENT_CALLS=0
@@ -36,6 +48,10 @@ _ORCH_ATTEMPT_LOG=""
 _ORCH_REVIEW_BUMPED=false
 _ORCH_LAST_DIFF_HASH=""
 _ORCH_NO_PROGRESS_COUNT=0
+_ORCH_AGENT_100_WARNED=false
+_ORCH_CAUSAL_LOG_BASELINE=0
+_ORCH_LAST_ACCEPTANCE_HASH=""
+_ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
 
 export _ORCH_ATTEMPT _ORCH_AGENT_CALLS _ORCH_ELAPSED _ORCH_ATTEMPT_LOG
 
@@ -55,32 +71,65 @@ run_complete_loop() {
     _ORCH_NO_PROGRESS_COUNT=0
     _ORCH_REVIEW_BUMPED=false
     _ORCH_ATTEMPT_LOG=""
+    _ORCH_LAST_ACCEPTANCE_HASH=""
+    _ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
     local _build_retried=false
 
     # Restore orchestration state from prior run (resume support)
     if [[ -f "${PIPELINE_STATE_FILE:-}" ]]; then
-        local _saved_attempt _saved_calls
+        local _saved_exit_reason _saved_attempt _saved_calls
+        _saved_exit_reason=$(awk '/^## Exit Reason/{getline; print; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
         _saved_attempt=$(awk '/^Pipeline attempt:/{print $NF; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
         _saved_calls=$(awk '/^Cumulative agent calls:/{print $NF; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
-        if [[ -n "$_saved_attempt" ]] && [[ "$_saved_attempt" =~ ^[0-9]+$ ]]; then
-            _ORCH_ATTEMPT="$_saved_attempt"
-            log "Restored orchestration attempt counter: ${_ORCH_ATTEMPT}"
-        fi
-        if [[ -n "$_saved_calls" ]] && [[ "$_saved_calls" =~ ^[0-9]+$ ]]; then
-            _ORCH_AGENT_CALLS="$_saved_calls"
-            TOTAL_AGENT_INVOCATIONS="$_saved_calls"
-            log "Restored orchestration agent call counter: ${_ORCH_AGENT_CALLS}"
-        fi
+
+        # If prior run hit a safety bound, reset counters for fresh budget
+        case "$_saved_exit_reason" in
+            complete_loop_max_attempts|complete_loop_timeout|complete_loop_agent_cap)
+                log "Prior run hit safety bound (${_saved_exit_reason}). Resetting counters for fresh attempt budget."
+                _ORCH_ATTEMPT=0
+                _ORCH_AGENT_CALLS=0
+                ;;
+            *)
+                if [[ -n "$_saved_attempt" ]] && [[ "$_saved_attempt" =~ ^[0-9]+$ ]]; then
+                    _ORCH_ATTEMPT="$_saved_attempt"
+                    log "Restored orchestration attempt counter: ${_ORCH_ATTEMPT}"
+                fi
+                if [[ -n "$_saved_calls" ]] && [[ "$_saved_calls" =~ ^[0-9]+$ ]]; then
+                    _ORCH_AGENT_CALLS="$_saved_calls"
+                    TOTAL_AGENT_INVOCATIONS="$_saved_calls"
+                    log "Restored orchestration agent call counter: ${_ORCH_AGENT_CALLS}"
+                fi
+                ;;
+        esac
+    fi
+
+    # Capture test baseline before any pipeline attempt (pre-existing failure detection)
+    if _should_capture_test_baseline 2>/dev/null; then
+        capture_test_baseline "${_CURRENT_MILESTONE:-}" || true
     fi
 
     # Emit milestone metadata on start (if milestone mode)
     if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
         emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
+        # Refresh dashboard milestones so the "in_progress" status is visible.
+        # Guard: always true under tekhton.sh (dashboard_emitters.sh is sourced),
+        # but kept for safety if this function is ever sourced standalone.
+        if command -v emit_dashboard_milestones &>/dev/null; then
+            emit_dashboard_milestones 2>/dev/null || true
+        fi
     fi
 
     while true; do
         _ORCH_ATTEMPT=$(( _ORCH_ATTEMPT + 1 ))
         _ORCH_ELAPSED=$(( $(date +%s) - _ORCH_START_TIME ))
+
+        # Capture causal log baseline for this iteration (M16 fix: restrict
+        # progress detection to events emitted during THIS attempt only)
+        if [[ "${CAUSAL_LOG_ENABLED:-true}" = "true" ]] && [[ -f "${CAUSAL_LOG_FILE:-}" ]]; then
+            _ORCH_CAUSAL_LOG_BASELINE=$(wc -l < "$CAUSAL_LOG_FILE" 2>/dev/null || echo 0)
+        else
+            _ORCH_CAUSAL_LOG_BASELINE=0
+        fi
 
         # --- Safety bound: wall-clock timeout (checked at TOP of iteration) ---
         if [[ "$_ORCH_ELAPSED" -ge "${AUTONOMOUS_TIMEOUT:-7200}" ]]; then
@@ -89,18 +138,22 @@ run_complete_loop() {
             return 1
         fi
 
-        # --- Safety bound: max attempts ---
+        # --- Safety bound: max consecutive failures (M16: resets on success) ---
         if [[ "$_ORCH_ATTEMPT" -gt "${MAX_PIPELINE_ATTEMPTS:-5}" ]]; then
-            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS:-5}). Saving state."
-            _save_orchestration_state "max_attempts" "Exhausted ${MAX_PIPELINE_ATTEMPTS:-5} attempts"
+            warn "Reached MAX_PIPELINE_ATTEMPTS (${MAX_PIPELINE_ATTEMPTS:-5} consecutive failures). Saving state."
+            _save_orchestration_state "max_attempts" "Exhausted ${MAX_PIPELINE_ATTEMPTS:-5} consecutive failure attempts"
             return 1
         fi
 
-        # --- Safety bound: agent call cap ---
-        if [[ "$_ORCH_AGENT_CALLS" -ge "${MAX_AUTONOMOUS_AGENT_CALLS:-20}" ]]; then
-            warn "Reached MAX_AUTONOMOUS_AGENT_CALLS (${MAX_AUTONOMOUS_AGENT_CALLS:-20}). Saving state."
-            _save_orchestration_state "agent_cap" "Agent call cap (${MAX_AUTONOMOUS_AGENT_CALLS:-20}) reached"
+        # --- Safety bound: agent call cap (M16: raised to 200, warn at 100) ---
+        if [[ "$_ORCH_AGENT_CALLS" -ge "${MAX_AUTONOMOUS_AGENT_CALLS:-200}" ]]; then
+            error "Reached MAX_AUTONOMOUS_AGENT_CALLS (${MAX_AUTONOMOUS_AGENT_CALLS:-200}). This is a safety valve — something may be wrong. Saving state."
+            _save_orchestration_state "agent_cap" "Agent call cap (${MAX_AUTONOMOUS_AGENT_CALLS:-200}) reached"
             return 1
+        fi
+        if [[ "$_ORCH_AGENT_CALLS" -ge 100 ]] && [[ "${_ORCH_AGENT_100_WARNED:-false}" != "true" ]]; then
+            warn "Agent call count reached 100. Pipeline will stop at ${MAX_AUTONOMOUS_AGENT_CALLS:-200}."
+            _ORCH_AGENT_100_WARNED=true
         fi
 
         # --- Progress detection (after first attempt) ---
@@ -121,7 +174,7 @@ run_complete_loop() {
 
         # Archive reports from previous iteration (except first)
         if [[ "$_ORCH_ATTEMPT" -gt 1 ]]; then
-            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md INTAKE_REPORT.md PREFLIGHT_ERRORS.md; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
                     mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_attempt${_ORCH_ATTEMPT}_${f}"
@@ -141,6 +194,11 @@ run_complete_loop() {
             warn "Usage threshold reached. Pausing orchestration loop."
             _save_orchestration_state "usage_threshold" "Usage threshold exceeded"
             return 1
+        fi
+
+        # --- Intake gate (per-milestone evaluation) ---
+        if declare -f run_stage_intake &>/dev/null; then
+            run_stage_intake || true
         fi
 
         # --- Run the pipeline ---
@@ -174,8 +232,85 @@ run_complete_loop() {
             record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
                 "success" "$_iter_turns" "$_files_changed"
 
+            # --- Tier 2: acceptance-failure stuck detection ---
+            if [[ "$acceptance_pass" = false ]] && [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]]; then
+                local _stuck_result=0
+                _check_acceptance_stuck || _stuck_result=$?
+                case "$_stuck_result" in
+                    0)  # Stuck + auto-pass: override acceptance to pass
+                        acceptance_pass=true
+                        warn "Acceptance overridden by stuck detection (auto-pass)."
+                        ;;
+                    2)  # Stuck + no auto-pass: exit with diagnosis
+                        _save_orchestration_state "pre_existing_failure" \
+                            "Acceptance stuck on identical pre-existing test failures (${_ORCH_IDENTICAL_ACCEPTANCE_COUNT} attempts)"
+                        return 1
+                        ;;
+                    *)  ;; # Not stuck, continue to normal acceptance_pass check
+                esac
+            fi
+
             if [[ "$acceptance_pass" = true ]]; then
+                # --- Pre-finalization test gate ---
+                # Run tests BEFORE finalize_run() so failures feed back into the
+                # retry loop instead of being swallowed by _hook_final_checks.
+                # Sets _PREFLIGHT_TESTS_PASSED so _hook_final_checks can skip
+                # the redundant re-run inside finalization.
+                _PREFLIGHT_TESTS_PASSED=false
+                export _PREFLIGHT_TESTS_PASSED
+                if [[ "${SKIP_FINAL_CHECKS:-false}" != true ]] && [[ -n "${TEST_CMD:-}" ]]; then
+                    log "Pre-finalization test gate: running ${TEST_CMD}..."
+                    local _preflight_exit=0
+                    local _preflight_output=""
+                    _preflight_output=$(bash -c "${TEST_CMD}" 2>&1) || _preflight_exit=$?
+                    # Always append full output to the run log
+                    printf '%s\n' "$_preflight_output" >> "$LOG_FILE"
+                    if [[ "$_preflight_exit" -ne 0 ]]; then
+                        # Check baseline before failing — don't retry pre-existing failures
+                        local _preflight_baseline="none"
+                        if [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]] && \
+                           command -v compare_test_with_baseline &>/dev/null; then
+                            _preflight_baseline=$(compare_test_with_baseline "$_preflight_output" "$_preflight_exit")
+                        fi
+
+                        if [[ "$_preflight_baseline" = "pre_existing" ]] && \
+                           [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-true}" = "true" ]]; then
+                            warn "Pre-finalization test gate failed (exit ${_preflight_exit}) — ALL failures match pre-existing baseline."
+                            warn "Treating as PASS for pre-finalization gate (pre-existing failures)."
+                        else
+                            # M44: Try cheap Jr Coder fix before expensive full retry
+                            log_decision "Trying preflight fix" "${_preflight_exit} test failures detected" "FINAL_FIX_ENABLED=${FINAL_FIX_ENABLED:-true}"
+                            if _try_preflight_fix "$_preflight_output" "$_preflight_exit"; then
+                                _PREFLIGHT_TESTS_PASSED=true
+                                [[ -f "PREFLIGHT_ERRORS.md" ]] && rm -f "PREFLIGHT_ERRORS.md"
+                                log "Pre-finalization fix succeeded — proceeding to finalization."
+                            else
+                                warn "Pre-finalization test gate failed (exit ${_preflight_exit}). Routing back to coder for fix."
+                                # Write failure context so the coder knows what broke
+                                {
+                                    echo "# Pre-Finalization Test Failures"
+                                    echo "Command: \`${TEST_CMD}\` exited with code ${_preflight_exit}"
+                                    echo ""
+                                    echo "## Output (last 80 lines)"
+                                    echo '```'
+                                    printf '%s\n' "$_preflight_output" | tail -80
+                                    echo '```'
+                                } > PREFLIGHT_ERRORS.md
+                                log "Wrote preflight test errors to PREFLIGHT_ERRORS.md"
+                                record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
+                                    "failed:final_check/test_failure" "$_iter_turns" "$_files_changed"
+                                START_AT="coder"
+                                continue
+                            fi
+                        fi
+                    fi
+                    _PREFLIGHT_TESTS_PASSED=true
+                    # Clean up stale preflight errors from a prior failed iteration
+                    [[ -f "PREFLIGHT_ERRORS.md" ]] && rm -f "PREFLIGHT_ERRORS.md"
+                fi
+
                 # --- SUCCESS ---
+                local _should_advance=false
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     local _next_ms
                     _next_ms=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
@@ -184,12 +319,24 @@ run_complete_loop() {
                     else
                         write_milestone_disposition "COMPLETE_AND_WAIT"
                     fi
+                    # Cache auto-advance decision BEFORE finalize_run deletes state file
+                    if should_auto_advance 2>/dev/null; then
+                        _should_advance=true
+                    fi
                 fi
 
                 finalize_run 0
 
+                # M16: Milestone success resets attempt counter — productive work
+                # should not be penalized by prior failures.
+                if [[ "$MILESTONE_MODE" = true ]]; then
+                    _ORCH_ATTEMPT=0
+                    _ORCH_NO_PROGRESS_COUNT=0
+                    log "Milestone complete. Resetting attempt counter."
+                fi
+
                 # Handle auto-advance after successful completion
-                if [[ "$MILESTONE_MODE" = true ]] && should_auto_advance 2>/dev/null; then
+                if [[ "$_should_advance" = true ]]; then
                     _run_auto_advance_chain
                 fi
 
@@ -212,7 +359,7 @@ run_complete_loop() {
 
             local recovery
             recovery=$(_classify_failure)
-            log "Recovery decision: ${recovery}"
+            log_decision "Recovery: ${recovery}" "failure class ${AGENT_ERROR_CATEGORY:-unknown}/${AGENT_ERROR_SUBCATEGORY:-unknown}" ""
 
             case "$recovery" in
                 bump_review)

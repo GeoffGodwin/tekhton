@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # state.sh — Pipeline state persistence for resume support
 #
@@ -6,6 +7,25 @@
 # Expects: PIPELINE_STATE_FILE (set by caller)
 # Expects: log() from common.sh
 # =============================================================================
+
+# Valid pipeline states for exit_stage:
+# intake, coder, review, tester, cleanup, architect, QUOTA_PAUSED
+
+# _build_resume_flag — Construct the correct resume flag string based on
+# the current execution mode (human, milestone, or standard).
+# Usage: _build_resume_flag [start_at]
+#   start_at: stage to resume at (default: "coder")
+# Returns: flag string on stdout (e.g. "--human BUG --start-at coder")
+_build_resume_flag() {
+    local start_at="${1:-coder}"
+    local flag=""
+    if [[ "${HUMAN_MODE:-false}" = "true" ]]; then
+        flag="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG}"
+    elif [[ "${MILESTONE_MODE:-false}" = "true" ]]; then
+        flag="--milestone"
+    fi
+    echo "${flag:+$flag }--start-at $start_at"
+}
 
 write_pipeline_state() {
     local exit_stage="$1"
@@ -58,8 +78,14 @@ ${extra_notes}
 ## Milestone
 ${milestone_num:-none}
 
+## Pipeline Order
+${PIPELINE_ORDER:-standard}
+
+## Tester Mode
+${TESTER_MODE:-verify_passing}
+
 ## Files Present
-$(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md; do
+$(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md PREFLIGHT_ERRORS.md TESTER_PREFLIGHT.md; do
     [ -f "$f" ] && echo "- $f ($(count_lines < "$f") lines)" || echo "- $f (missing)"
 done)
 
@@ -77,6 +103,21 @@ $(if [ -n "${_ORCH_ATTEMPT:-}" ]; then
 else
     echo "(not in --complete mode)"
 fi)
+
+## Human Mode
+${HUMAN_MODE:-false}
+
+## Human Notes Tag
+${HUMAN_NOTES_TAG:-}
+
+## Current Note Line
+${CURRENT_NOTE_LINE:-}
+
+## Current Note ID
+${CURRENT_NOTE_ID:-}
+
+## Human Single Note
+${HUMAN_SINGLE_NOTE:-false}
 
 ## Error Classification
 $(if [ -n "${AGENT_ERROR_CATEGORY:-}" ]; then
@@ -109,7 +150,29 @@ EOF
 }
 
 clear_pipeline_state() {
-    if [ -f "$PIPELINE_STATE_FILE" ]; then
+    if [[ -f "$PIPELINE_STATE_FILE" ]]; then
         rm "$PIPELINE_STATE_FILE"
     fi
+    # Clear failure context on successful run (M17)
+    local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
+    if [[ -f "$failure_ctx" ]]; then
+        rm -f "$failure_ctx" 2>/dev/null || true
+    fi
+}
+
+# load_intake_tweaked_task — On resume, load the tweaked task string from session dir.
+# Returns 0 and sets TASK if a tweaked task file exists, 1 otherwise.
+load_intake_tweaked_task() {
+    local tweaked_file="${TEKHTON_SESSION_DIR}/INTAKE_TWEAKED_TASK.md"
+    if [[ -f "$tweaked_file" ]]; then
+        local tweaked_task
+        tweaked_task=$(cat "$tweaked_file")
+        if [[ -n "$tweaked_task" ]]; then
+            TASK="$tweaked_task"
+            export TASK
+            log "Loaded tweaked task from prior intake evaluation."
+            return 0
+        fi
+    fi
+    return 1
 }

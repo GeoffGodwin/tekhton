@@ -32,6 +32,20 @@ their original numbered order before any new or remaining milestones.
 --- END COMPLETED MILESTONES ---
 {{ENDIF:COMPLETED_MILESTONES}}
 
+{{IF:MERGE_CONTEXT}}
+## Merged AI Tool Configuration
+
+The project had existing AI tool configurations that were analyzed and merged.
+Incorporate the following extracted rules and conventions into the appropriate
+CLAUDE.md sections.
+
+---
+
+{{MERGE_CONTEXT}}
+
+---
+{{ENDIF:MERGE_CONTEXT}}
+
 ## Your Task
 
 Generate a complete `CLAUDE.md` file containing all 12 required sections below,

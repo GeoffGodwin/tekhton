@@ -66,6 +66,22 @@ suggest_recovery() {
         ENVIRONMENT/env_unknown)
             echo "Unexpected environment error. Check system logs for details."
             ;;
+        # M53: Pattern registry subcategories
+        ENVIRONMENT/env_setup)
+            echo "Missing tool or binary. Install the required dependency (check BUILD_ERRORS.md for the exact command)."
+            ;;
+        ENVIRONMENT/service_dep)
+            echo "A required service is not running (database, cache, or queue). Start it and re-run."
+            ;;
+        ENVIRONMENT/toolchain)
+            echo "Build toolchain issue (stale deps, missing codegen). Run the suggested install/generate command."
+            ;;
+        ENVIRONMENT/resource)
+            echo "Machine resource constraint (port in use, OOM, disk full, permissions). Resolve the resource conflict and re-run."
+            ;;
+        ENVIRONMENT/test_infra)
+            echo "Test infrastructure issue (stale snapshots, missing fixtures, timeout). Update test infrastructure and re-run."
+            ;;
         AGENT_SCOPE/null_run)
             echo "Agent died before doing meaningful work. The prompt may be too large or the task too ambiguous. Try splitting the milestone or simplifying the task."
             ;;
@@ -133,4 +149,47 @@ redact_sensitive() {
         -e 's/api[_-]key[[:space:]]*=[[:space:]]*[^ ]*/api_key=[REDACTED]/g' \
         -e 's/[Bb][Ee][Aa][Rr][Ee][Rr] [A-Za-z0-9_.-]*/bearer [REDACTED]/g' \
         -e "s/${_req_placeholder}//g"
+}
+
+# --- is_transient -----------------------------------------------------------
+# Returns 0 if the error category/subcategory is transient (retryable).
+# Returns 1 if permanent (requires human action or scope change).
+#
+# Usage: is_transient CATEGORY SUBCATEGORY
+
+is_transient() {
+    local category="${1:?is_transient requires category}"
+    local subcategory="${2:-}"
+
+    case "$category" in
+        UPSTREAM)
+            # Most upstream errors are transient — except auth failures,
+            # which won't self-resolve on retry and need human action.
+            if [[ "$subcategory" == "api_auth" ]]; then
+                return 1
+            fi
+            return 0
+            ;;
+        ENVIRONMENT)
+            case "$subcategory" in
+                network|oom)
+                    return 0
+                    ;;
+                # M53 subcategories — all permanent (require human/auto-remediation)
+                env_setup|service_dep|toolchain|resource|test_infra)
+                    return 1
+                    ;;
+                *)
+                    return 1
+                    ;;
+            esac
+            ;;
+        AGENT_SCOPE|PIPELINE)
+            return 1
+            ;;
+        *)
+            # Unknown category — assume permanent
+            return 1
+            ;;
+    esac
 }

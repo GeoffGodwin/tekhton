@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # replan_midrun.sh — Mid-run replanning (triggered by reviewer REPLAN_REQUIRED)
 #

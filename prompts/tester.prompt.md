@@ -10,10 +10,42 @@ contradict this directive.
 
 ## Architecture Map (use to find test directories and source files)
 {{ARCHITECTURE_CONTENT}}
+{{IF:REPO_MAP_CONTENT}}
+
+## Repo Map (changed files and their test counterparts)
+The repo map below shows the changed files and their test counterparts. Use it
+to identify which test files need updates and what interfaces to test against.
+
+{{REPO_MAP_CONTENT}}
+
+Use the repo map as your primary source for identifying test targets. Do NOT
+grep for class definitions — the repo map has already indexed them.
+{{ENDIF:REPO_MAP_CONTENT}}
+{{IF:SERENA_ACTIVE}}
+
+## LSP Tools (Serena MCP)
+Use `find_symbol` to look up class/function signatures before writing test
+assertions. Use `get_symbol_definition` to verify constructor parameters.
+**Prefer LSP tools over grep for symbol lookup.**
+{{ENDIF:SERENA_ACTIVE}}
 
 {{IF:CONTINUATION_CONTEXT}}
 {{CONTINUATION_CONTEXT}}
 {{ENDIF:CONTINUATION_CONTEXT}}
+
+{{IF:SECURITY_FIXES_BLOCK}}
+## Security Fixes Applied
+The following security issues were fixed during this run. Ensure your tests
+cover the fix behavior (e.g., input validation, auth checks).
+{{SECURITY_FIXES_BLOCK}}
+{{ENDIF:SECURITY_FIXES_BLOCK}}
+
+{{IF:TEST_BASELINE_SUMMARY}}
+## Pre-Change Test Baseline
+{{TEST_BASELINE_SUMMARY}}
+Do NOT treat pre-existing failures as regressions from your test work.
+Focus on testing NEW functionality only.
+{{ENDIF:TEST_BASELINE_SUMMARY}}
 
 ## Context
 Task implemented: {{TASK}}
@@ -22,6 +54,20 @@ Task implemented: {{TASK}}
 1. `{{TESTER_ROLE_FILE}}` — your role and conventions
 2. `REVIEWER_REPORT.md` — the 'Coverage Gaps' section is your task list
 3. `CODER_SUMMARY.md` — read the 'Files created or modified' list
+
+## CRITICAL: Test Integrity Rules
+- Write tests that verify REAL behavior, not hard-coded expected values.
+- Every assertion must test output from an actual function/method call.
+- Do NOT mock everything — mock only external dependencies (network, DB, filesystem).
+- If existing tests fail due to intentional API/behavior changes that the Coder
+  already implemented correctly (per CODER_SUMMARY.md), update the tests to match
+  the new behavior. If they fail because the implementation is wrong, report as
+  BUG. Never weaken assertions or delete test coverage — update expectations to
+  match correct new behavior.
+- If a test is impossible to pass because the feature was INTENTIONALLY
+  removed (per CODER_SUMMARY.md), mark it for removal: `- ORPHAN: [file] reason`
+- Your tests WILL be independently audited. Write them as if a skeptical
+  senior engineer will review every assertion.
 
 ## Critical: Read Before You Write
 Before writing any test that instantiates a model or calls a method, read the
@@ -75,6 +121,11 @@ Format rules the pipeline enforces:
 Updating 'Test Run Results' after each file (Step 2f) means partial progress is
 always recorded even if the turn limit is hit.
 
+{{IF:UI_PROJECT_DETECTED}}
+{{IF:UI_TESTER_PATTERNS}}{{UI_TESTER_PATTERNS}}{{ENDIF:UI_TESTER_PATTERNS}}
+{{TESTER_UI_GUIDANCE}}
+{{ENDIF:UI_PROJECT_DETECTED}}
+
 ## CRITICAL: Bug Reporting Rules
 - Only report bugs you FOUND — never report bugs you fixed. You are NOT allowed
   to fix implementation code. If a test reveals broken behavior, document it.
@@ -82,3 +133,20 @@ always recorded even if the turn limit is hit.
 - If you find zero bugs, the section must contain only the word `None`.
 - Do NOT use sub-headings (###), bold text, numbered lists, or multi-line
   descriptions inside the Bugs Found section.
+
+## Timing Tracking
+When you run `{{TEST_CMD}}`, note the approximate wall-clock duration of each
+invocation. At the very end of your TESTER_REPORT.md (after all other sections),
+include this section:
+
+```
+## Timing
+- Test executions: N
+- Approximate total test execution time: Xs
+- Test files written: N
+```
+
+Where N is the number of times you ran `{{TEST_CMD}}`, Xs is the approximate
+total seconds spent waiting for test commands to complete, and the last N is
+the number of test files you created or modified. These are estimates — rough
+accuracy is fine.

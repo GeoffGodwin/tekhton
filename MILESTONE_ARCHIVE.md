@@ -74,8 +74,6 @@ Acceptance criteria:
 
 ---
 
-## Archived: 2026-03-18 — Planning Phase Quality Overhaul
-
 #### [DONE] Milestone 2: Multi-Phase Interview with Deep Probing
 Rewrite the interview flow to use a three-phase approach instead of a single pass.
 The shell collects progressively deeper information, and the synthesis call produces
@@ -116,8 +114,6 @@ Acceptance criteria:
 - All tests pass (`bash tests/run_tests.sh`)
 
 ---
-
-## Archived: 2026-03-18 — Planning Phase Quality Overhaul
 
 #### [DONE] Milestone 3: Generation Prompt Overhaul for Deep CLAUDE.md
 Rewrite the CLAUDE.md generation prompt to produce output matching the Lönn CLAUDE.md
@@ -172,8 +168,6 @@ Acceptance criteria:
 
 ---
 
-## Archived: 2026-03-18 — Planning Phase Quality Overhaul
-
 #### [DONE] Milestone 4: Follow-Up Interview Depth + Completeness Checker Upgrade
 Upgrade the completeness checker to enforce depth thresholds — not just "is the
 section non-empty" but "does the section have enough content to drive implementation?"
@@ -200,8 +194,6 @@ Acceptance criteria:
 
 ---
 
-## Archived: 2026-03-18 — Planning Phase Quality Overhaul
-
 #### [DONE] Milestone 5: Tests + Documentation Update
 Write tests covering the new multi-phase interview, deep templates, expanded
 completeness checking, and generation prompt changes. Update project documentation.
@@ -227,6 +219,8 @@ Acceptance criteria:
 - All 34+ existing tests continue to pass
 - New tests pass via `bash tests/run_tests.sh`
 - `bash -n` passes on all modified `.sh` files
+
+---
 
 ---
 
@@ -342,8 +336,6 @@ Seeds Forward:
 
 ---
 
-## Archived: 2026-03-18 — Adaptive Pipeline 2.0
-
 #### Milestone 0.5: Agent Output Monitoring And Null-Run Detection
 Harden the FIFO-based agent monitoring to handle `--output-format json` non-streaming
 behavior and prevent false null-run declarations when agents complete work silently.
@@ -399,594 +391,6 @@ Seeds Forward:
   corrupt the metrics dataset
 
 ---
-
-## Archived: 2026-03-18 — Adaptive Pipeline 2.0
-
-#### Milestone 1: Token And Context Accounting
-Add measurement infrastructure so the pipeline knows how much context it's injecting
-into each agent call — character counts, estimated token counts, and percentage of
-model context window consumed. This is logging and measurement only; no behavioral
-changes. Data gathered here informs every subsequent milestone.
-
-Files to create:
-- `lib/context.sh` — `measure_context_size()`, `log_context_report()`,
-  `check_context_budget()` functions. Model window lookup table (opus/sonnet/haiku).
-  Character-to-token ratio configurable via `CHARS_PER_TOKEN` (default: 4).
-
-Files to modify:
-- `tekhton.sh` — source `lib/context.sh`
-- `lib/config.sh` — add defaults: `CONTEXT_BUDGET_PCT=50`, `CHARS_PER_TOKEN=4`,
-  `CONTEXT_BUDGET_ENABLED=true`
-- `lib/agent.sh` — add context size line to `print_run_summary()`:
-  `Context: ~NNk tokens (NN% of window)`
-- `stages/coder.sh` — call `log_context_report()` after assembling context blocks
-  but before `render_prompt()`, passing each named block and its size
-- `stages/review.sh` — same context reporting before reviewer invocation
-- `stages/tester.sh` — same context reporting before tester invocation
-- `templates/pipeline.conf.example` — add `CONTEXT_BUDGET_PCT`, `CHARS_PER_TOKEN`,
-  `CONTEXT_BUDGET_ENABLED` with comments
-
-Acceptance criteria:
-- `measure_context_size "hello world"` returns character count and estimated tokens
-- `log_context_report` writes a structured breakdown to the run log showing each
-  context component name and size (chars, est. tokens, % of budget)
-- `check_context_budget` returns 0 under budget, 1 over budget
-- Run summary includes a `Context:` line with k-tokens and window percentage
-- Context reports appear in the run log for coder, reviewer, and tester stages
-- All existing tests pass
-- `bash -n lib/context.sh` passes
-- `shellcheck lib/context.sh` passes
-
-Watch For:
-- Model window sizes will change — keep the lookup table easily updatable
-- `CHARS_PER_TOKEN=4` is deliberately conservative; do not over-engineer tokenization
-- Do not add compression logic yet — this milestone is measurement only
-
-Seeds Forward:
-- Milestone 2 (Context Compiler) depends on `check_context_budget()` to know when
-  compression is needed
-- Milestone 8 (Workflow Learning) depends on context size data for metrics records
-
-#### Milestone 2: Context Compiler
-Add task-scoped context assembly so agents receive only the sections of large
-artifacts relevant to their current task, instead of full-file injection.
-Uses the budget infrastructure from Milestone 1 to trigger compression when
-context exceeds the budget threshold.
-
-Files to create:
-- No new files — all logic goes in `lib/context.sh` (extending Milestone 1)
-
-Files to modify:
-- `lib/context.sh` — add `extract_relevant_sections(file, keywords[])`,
-  `build_context_packet(stage, task, prior_artifacts)`,
-  `compress_context(component, strategy)` (strategies: truncate, summarize_headings,
-  omit). Add keyword extraction from task string and scout report file paths.
-- `lib/config.sh` — add default: `CONTEXT_COMPILER_ENABLED=false`
-- `stages/coder.sh` — when `CONTEXT_COMPILER_ENABLED=true`, replace raw block
-  concatenation with `build_context_packet()` call. Architecture block stays full
-  for coder. Fallback to 1.0 behavior if keyword extraction yields zero matches.
-- `stages/review.sh` — when enabled, filter ARCHITECTURE.md to sections referencing
-  files in CODER_SUMMARY.md
-- `stages/tester.sh` — when enabled, filter context to relevant sections
-- `templates/pipeline.conf.example` — add `CONTEXT_COMPILER_ENABLED` with comment
-
-Acceptance criteria:
-- `extract_relevant_sections` given a markdown file and keywords returns only sections
-  whose headings or body match at least one keyword
-- When keywords yield zero matches, full artifact is used (fallback to 1.0)
-- Architecture block is always injected in full for coder stage
-- When context is over budget, `compress_context` applies truncation to the largest
-  non-essential component first (priority order: prior tester context, non-blocking
-  notes, prior progress context)
-- A prompt note is injected when compression occurs: `[Context compressed: <component>
-  reduced from N to M lines]`
-- Feature is off by default (`CONTEXT_COMPILER_ENABLED=false`)
-- All existing tests pass
-- New tests verify keyword extraction, section filtering, compression strategies,
-  and fallback behavior
-
-Watch For:
-- Section extraction is awk on markdown headings — keep it simple, do not parse
-  nested markdown. Each `##` heading starts a section, content until next `##`.
-- Compression priority order matters: never compress architecture or task
-- Fallback to full injection is critical — a broken keyword extractor must not
-  starve an agent of context
-
-Seeds Forward:
-- Milestone 4 (Clarifications) may need to inject clarification answers into
-  the context packet
-- Milestone 7 (Specialists) will use `build_context_packet()` for specialist prompts
-
-#### Milestone 3: Milestone State Machine And Auto-Advance
-Add milestone tracking so the pipeline can parse acceptance criteria from CLAUDE.md,
-check them after each run, and optionally auto-advance to the next milestone. This
-is the foundation for multi-milestone autonomous operation.
-
-Files to create:
-- `lib/milestones.sh` — `parse_milestones(claude_md)`, `get_current_milestone()`,
-  `check_milestone_acceptance(milestone_num)`, `advance_milestone(from, to)`,
-  `write_milestone_disposition(disposition)`. Disposition vocabulary:
-  `COMPLETE_AND_CONTINUE`, `COMPLETE_AND_WAIT`, `INCOMPLETE_REWORK`, `REPLAN_REQUIRED`.
-
-Files to modify:
-- `tekhton.sh` — add `--auto-advance` flag parsing. Source `lib/milestones.sh`.
-  After tester stage, call `check_milestone_acceptance()`. In auto-advance mode,
-  loop back to coder stage with next milestone if disposition is `COMPLETE_AND_CONTINUE`.
-  Enforce `AUTO_ADVANCE_LIMIT` (default: 3). Save state on Ctrl+C.
-- `lib/config.sh` — add defaults: `AUTO_ADVANCE_ENABLED=false`,
-  `AUTO_ADVANCE_LIMIT=3`, `AUTO_ADVANCE_CONFIRM=true`
-- `lib/state.sh` — extend state persistence to include current milestone number
-  and auto-advance progress
-- `templates/pipeline.conf.example` — add auto-advance config keys
-
-State file: `.claude/MILESTONE_STATE.md` tracks current milestone, status, and
-transition history with timestamps.
-
-Acceptance criteria:
-- `parse_milestones` extracts milestone list from a CLAUDE.md with numbered
-  `#### Milestone N:` headings, returning number, title, and acceptance criteria
-- `check_milestone_acceptance` runs automatable criteria (`$TEST_CMD` passes,
-  files exist, build gate passes) and marks non-automatable criteria as `MANUAL`
-- `advance_milestone` updates MILESTONE_STATE.md and prints a transition banner
-- Without `--auto-advance`, behavior is identical to 1.0 (single run, exit)
-- With `--auto-advance`, pipeline loops through milestones until limit, failure,
-  or replan
-- `AUTO_ADVANCE_CONFIRM=true` prompts between milestones; `false` proceeds silently
-- Ctrl+C during auto-advance saves state for resume
-- All existing tests pass
-
-Watch For:
-- Acceptance criteria parsing must be lenient — CLAUDE.md is human-authored and may
-  use varied formatting. Match on keywords, not exact syntax.
-- The `MANUAL` skip for non-automatable criteria is essential — do not try to
-  LLM-evaluate subjective criteria
-- Auto-advance limit of 3 prevents runaway loops in case of false-positive acceptance
-
-Seeds Forward:
-- Milestone 4 (Clarifications) adds `REPLAN_REQUIRED` as a disposition trigger
-- Milestone 6 (Brownfield Replan) uses milestone state to know what's been completed
-- Milestone 8 (Metrics) records milestone progression data
-
-#### Milestone 4: Mid-Run Clarification And Replanning
-Add a structured protocol for agents to surface blocking questions to the human
-and for the pipeline to pause, collect an answer, and resume. Add single-milestone
-replanning when scope breaks.
-
-Files to create:
-- `lib/clarify.sh` — `detect_clarifications(report_file)`,
-  `handle_clarifications(items[])`, `trigger_replan(rationale)`.
-  Clarification format: `## Clarification Required` section with `[BLOCKING]`
-  and `[NON_BLOCKING]` tagged items.
-- `prompts/clarification.prompt.md` — integration prompt for feeding human answers
-  back into subsequent agent calls
-
-Files to modify:
-- `tekhton.sh` — source `lib/clarify.sh`
-- `lib/config.sh` — add defaults: `CLARIFICATION_ENABLED=true`,
-  `REPLAN_ENABLED=true`
-- `stages/coder.sh` — after coder completes, call `detect_clarifications()` on
-  CODER_SUMMARY.md. If blocking clarifications found, call `handle_clarifications()`
-  which pauses for human input, writes answers to `CLARIFICATIONS.md`, then resumes
-  (re-runs coder with clarification context if needed)
-- `stages/review.sh` — detect `REPLAN_REQUIRED` verdict from reviewer. If found
-  and `REPLAN_ENABLED=true`, call `trigger_replan()` which displays rationale and
-  offers menu: `[r] Replan  [s] Split  [c] Continue  [a] Abort`
-- `prompts/coder.prompt.md` — add `## Clarification Required` output format
-  instructions and `{{IF:CLARIFICATIONS_CONTENT}}` block
-- `prompts/reviewer.prompt.md` — add `REPLAN_REQUIRED` as a valid verdict option
-  with trigger conditions: "when the task is fundamentally mis-scoped or
-  contradicts the architecture"
-- `templates/pipeline.conf.example` — add clarification and replan config keys
-
-Acceptance criteria:
-- `detect_clarifications` parses `[BLOCKING]` and `[NON_BLOCKING]` items from a
-  markdown file's `## Clarification Required` section
-- Blocking clarifications pause the pipeline and read from `/dev/tty`
-- Human answers are written to `CLARIFICATIONS.md` and injected into subsequent
-  agent prompts via template variable
-- Non-blocking clarifications are logged but do not pause the pipeline
-- `REPLAN_REQUIRED` reviewer verdict triggers the replan menu
-- Replan calls `_call_planning_batch()` with current DESIGN.md, CLAUDE.md, and
-  rationale to produce an updated milestone definition
-- Scope: single-milestone replan only, not full-project
-- All existing tests pass
-
-Watch For:
-- `/dev/tty` interaction must work on both Linux and Windows (Git Bash). Test both.
-- Replan re-invokes `_call_planning_batch()` which uses batch mode without
-  `--dangerously-skip-permissions` — the shell writes the result, not Claude
-- Non-blocking clarifications should NOT pause the pipeline — agents state their
-  assumption and proceed
-
-Seeds Forward:
-- Milestone 6 (Brownfield Replan) extends single-milestone replan to project-wide
-- Clarification answers become part of context for all subsequent agent calls,
-  handled by the context compiler from Milestone 2
-
-#### Milestone 5: Autonomous Debt Sweeps
-Add a post-pipeline cleanup stage that addresses non-blocking technical debt items
-automatically after successful milestone completion, using the jr coder model to
-keep costs low.
-
-Files to create:
-- `stages/cleanup.sh` — `run_stage_cleanup()`: selects up to `CLEANUP_BATCH_SIZE`
-  items from `NON_BLOCKING_LOG.md`, invokes jr coder with cleanup prompt, runs
-  build gate, marks resolved items
-- `prompts/cleanup.prompt.md` — cleanup-specific agent prompt. Instructs agent to
-  address each item individually. If an item requires architectural changes or is
-  unsafe to fix in isolation, mark it `[DEFERRED]` and skip.
-
-Files to modify:
-- `tekhton.sh` — source `stages/cleanup.sh`. After successful tester stage (or
-  review if tester skipped), check cleanup trigger conditions and run if met.
-- `lib/config.sh` — add defaults: `CLEANUP_ENABLED=false`, `CLEANUP_BATCH_SIZE=5`,
-  `CLEANUP_MAX_TURNS=15`, `CLEANUP_TRIGGER_THRESHOLD=5`
-- `lib/notes.sh` — add `count_unresolved_notes()`, `select_cleanup_batch(n)` with
-  prioritization: recurring patterns first, then files modified this run, then FIFO.
-  Add `mark_note_resolved(item_id)` and `mark_note_deferred(item_id)`.
-- `templates/pipeline.conf.example` — add cleanup config keys with comments
-
-Trigger conditions (all must be true):
-1. Primary pipeline completed successfully
-2. Unresolved non-blocking count exceeds `CLEANUP_TRIGGER_THRESHOLD`
-3. `CLEANUP_ENABLED=true`
-
-Acceptance criteria:
-- `select_cleanup_batch` returns up to N items prioritized by: recurrence count,
-  overlap with this run's modified files, then age (oldest first)
-- Cleanup stage invokes jr coder model with low turn budget
-- Build gate runs after cleanup (cleanup must not break the build)
-- Items successfully addressed are marked `[x]` in NON_BLOCKING_LOG.md
-- Items the agent marks as requiring architectural change are tagged `[DEFERRED]`
-  and not re-selected in future sweeps until manually un-deferred
-- Cleanup only runs after successful primary pipeline (never during rework)
-- Feature is off by default (`CLEANUP_ENABLED=false`)
-- All existing tests pass
-
-Watch For:
-- Cleanup must NEVER run during a rework cycle — only after final success
-- The jr coder model is deliberately chosen for cost. Do not upgrade to opus.
-- `[DEFERRED]` items must not re-enter the selection pool. This prevents the
-  system from repeatedly attempting items it can't safely fix.
-- Build gate failure in cleanup should log a warning but not fail the overall run
-
-Seeds Forward:
-- Milestone 8 (Metrics) tracks cleanup sweep results (items resolved, deferred)
-- The prioritization logic (recurrence, file overlap) improves as more runs
-  generate non-blocking notes
-
-#### Milestone 6: Brownfield Replan
-Add `--replan` command that updates DESIGN.md and CLAUDE.md for existing projects
-based on accumulated drift, completed milestones, and codebase evolution. This is
-delta-based (not a full re-interview) to preserve human edits.
-
-Files to create:
-- `prompts/replan.prompt.md` — replan prompt template with variables:
-  `{{DESIGN_CONTENT}}`, `{{CLAUDE_CONTENT}}`, `{{DRIFT_LOG_CONTENT}}`,
-  `{{ARCHITECTURE_LOG_CONTENT}}`, `{{HUMAN_ACTION_CONTENT}}`,
-  `{{CODEBASE_SUMMARY}}`. Instructions: identify sections that contradict
-  current code, propose updated milestones, preserve completed history,
-  flag decisions needing human review.
-
-Files to modify:
-- `tekhton.sh` — add `--replan` early-exit path (same pattern as `--plan`).
-  Validate that DESIGN.md and CLAUDE.md exist. Generate codebase summary
-  (directory tree + last 20 git log entries). Call `_call_planning_batch()`
-  with replan prompt. Write output to `DESIGN_DELTA.md`. Display delta and
-  offer menu: `[a] Apply  [e] Edit  [n] Reject`. If apply: merge into
-  DESIGN.md and regenerate CLAUDE.md milestones.
-- `lib/plan.sh` — add `run_replan()` orchestration function. Add
-  `_generate_codebase_summary()` helper (tree output + git log, capped at
-  reasonable size).
-- `lib/config.sh` — add defaults: `REPLAN_MODEL="${PLAN_GENERATION_MODEL}"`,
-  `REPLAN_MAX_TURNS="${PLAN_GENERATION_MAX_TURNS}"`
-- `templates/pipeline.conf.example` — add replan config keys
-
-Acceptance criteria:
-- `--replan` requires existing DESIGN.md and CLAUDE.md (errors if not found)
-- Codebase summary includes directory tree (depth-limited) and recent git commits
-- Replan prompt includes all accumulated drift observations and architecture decisions
-- Output is a delta document showing: additions, modifications, and removals with
-  rationale for each change
-- User sees the delta and must explicitly approve before changes are applied
-- Completed milestones in CLAUDE.md are preserved in their `[DONE]` state
-- Applying the delta updates DESIGN.md in-place and triggers CLAUDE.md regeneration
-- All existing tests pass
-
-Watch For:
-- The delta MUST be human-readable and reviewable. Do not auto-apply.
-- `_generate_codebase_summary()` output must be size-bounded — large monorepos will
-  produce enormous trees. Cap at ~200 lines of tree output.
-- Replan reuses `_call_planning_batch()` — no `--dangerously-skip-permissions`
-- Git log may not exist if the project doesn't use git. Handle gracefully.
-
-Seeds Forward:
-- Future 3.0 work may add multi-milestone replanning (full DESIGN.md rewrite with
-  interview), but 2.0 is delta-only
-- Milestone 8 (Metrics) benefits from replan — metrics before and after replan show
-  whether the updated milestones are better-scoped
-
-#### Milestone 7: Specialist Reviewers
-Add an opt-in specialist review framework that runs focused review passes
-(security, performance, API contract) after the main reviewer approves. Findings
-route to the existing rework loop or non-blocking log.
-
-Files to create:
-- `lib/specialists.sh` — `run_specialist_reviews()`: iterates over enabled
-  specialists, invokes each as a low-turn review pass, collects findings into
-  `SPECIALIST_REPORT.md`. Findings tagged `[BLOCKER]` re-enter rework loop;
-  `[NOTE]` items go to NON_BLOCKING_LOG.md.
-- `prompts/specialist_security.prompt.md` — security review prompt: injection
-  risks, auth bypass, secrets exposure, input validation, dependency vulnerabilities
-- `prompts/specialist_performance.prompt.md` — performance review prompt: N+1
-  queries, unbounded loops, memory leaks, missing pagination, expensive operations
-- `prompts/specialist_api.prompt.md` — API contract review prompt: schema
-  consistency, error format compliance, versioning, backward compatibility
-
-Files to modify:
-- `tekhton.sh` — source `lib/specialists.sh`
-- `lib/config.sh` — add defaults for each built-in specialist:
-  `SPECIALIST_SECURITY_ENABLED=false`, `SPECIALIST_SECURITY_MODEL`,
-  `SPECIALIST_SECURITY_MAX_TURNS=8`, and similarly for performance and API
-- `stages/review.sh` — after main reviewer verdict is APPROVED or
-  APPROVED_WITH_NOTES, call `run_specialist_reviews()`. If any blocker findings,
-  route to rework (same as reviewer blockers). If only notes, log and proceed.
-- `templates/pipeline.conf.example` — add specialist config section with comments
-  explaining custom specialist creation
-
-Custom specialists: Users create a prompt template and add config entries:
-```bash
-SPECIALIST_CUSTOM_MYCHECK_ENABLED=true
-SPECIALIST_CUSTOM_MYCHECK_PROMPT="specialist_mycheck"
-SPECIALIST_CUSTOM_MYCHECK_MODEL="${CLAUDE_STANDARD_MODEL}"
-SPECIALIST_CUSTOM_MYCHECK_MAX_TURNS=8
-```
-
-Acceptance criteria:
-- `run_specialist_reviews()` iterates over all `SPECIALIST_*_ENABLED=true` config keys
-- Each specialist runs as a separate `run_agent()` call with its own prompt and model
-- `[BLOCKER]` findings trigger rework routing (same path as reviewer blockers)
-- `[NOTE]` findings are appended to NON_BLOCKING_LOG.md
-- Specialists only run after the main reviewer approves (not during rework)
-- All specialists are disabled by default
-- Custom specialist support via `SPECIALIST_CUSTOM_*` naming convention
-- All existing tests pass
-
-Watch For:
-- Specialists must see the SAME code the reviewer approved. If specialist findings
-  trigger rework and re-review, the next specialist pass must see the updated code.
-- Keep specialist turn budgets LOW (8–12) — they're focused checks, not full reviews
-- Custom specialist prompt templates are user-created in the target project's
-  `.claude/prompts/` directory, not in Tekhton
-
-Seeds Forward:
-- Specialist findings feed into Milestone 5 (Cleanup) if tagged as `[NOTE]`
-- Milestone 8 (Metrics) tracks specialist findings per run
-- Future 3.0 work may parallelize specialist reviews
-
-#### Milestone 8: Workflow Learning
-Add run metrics collection, adaptive turn calibration based on project history,
-and a human-readable metrics dashboard. This closes the feedback loop: the pipeline
-learns from its own runs to produce better estimates and identify recurring patterns.
-
-Files to create:
-- `lib/metrics.sh` — `record_run_metrics()`: appends a structured JSONL record to
-  `.claude/logs/metrics.jsonl` with: timestamp, task, task type, milestone mode,
-  per-stage turns/elapsed/status, context sizes, scout estimate vs actual, outcome.
-  `summarize_metrics(n)`: reads last N runs, computes averages by task type and
-  scout accuracy. `calibrate_turn_estimate(recommendation, stage)`: adjusts scout
-  recommendation based on historical accuracy (multiplier, clamped to existing bounds).
-
-Files to modify:
-- `tekhton.sh` — source `lib/metrics.sh`. Add `--metrics` flag early-exit path
-  that calls `summarize_metrics()` and prints dashboard. After final stage, call
-  `record_run_metrics()`.
-- `lib/config.sh` — add defaults: `METRICS_ENABLED=true`, `METRICS_MIN_RUNS=5`,
-  `METRICS_ADAPTIVE_TURNS=true`
-- `lib/turns.sh` — in `apply_scout_turn_limits()`, call
-  `calibrate_turn_estimate()` when `METRICS_ADAPTIVE_TURNS=true` and at least
-  `METRICS_MIN_RUNS` records exist. Calibration is a multiplier on the scout's
-  recommendation (e.g., if scout underestimates coder turns by 40% on average,
-  multiply by 1.4), still clamped to `[MIN_TURNS, MAX_TURNS_CAP]`.
-- `lib/hooks.sh` — call `record_run_metrics()` in the finalization hook so metrics
-  are captured even on early exits
-- `templates/pipeline.conf.example` — add metrics config keys
-
-Dashboard output (`tekhton --metrics`):
-```
-Tekhton Metrics — last 20 runs
-────────────────────────────────
-Bug fixes:     12 runs, avg 22 coder turns, 92% success
-Features:       6 runs, avg 45 coder turns, 83% success
-Milestones:     2 runs, avg 85 coder turns, 100% success
-────────────────────────────────
-Scout accuracy: coder ±8 turns, reviewer ±2, tester ±5
-Common blocker: "Missing test coverage" (4 occurrences)
-Cleanup sweep:  15 items resolved, 3 deferred
-```
-
-Acceptance criteria:
-- `record_run_metrics` writes a valid JSONL line with all specified fields
-- `.claude/logs/` directory is created if it does not exist
-- `summarize_metrics` produces per-task-type averages and scout accuracy
-- `calibrate_turn_estimate` returns adjusted turns only after `METRICS_MIN_RUNS`
-  runs; before that, returns the original estimate unchanged
-- Calibration multiplier is clamped between 0.5 and 2.0 (no extreme adjustments)
-- `--metrics` prints the dashboard to stdout and exits
-- Metrics collection is on by default; adaptive calibration is on by default but
-  has no effect until enough runs accumulate
-- All existing tests pass
-
-Watch For:
-- JSONL is append-only. Never read-modify-write the file — only append.
-- Categorizing task type (bug/feature/milestone) from the task string is heuristic.
-  Keep it simple: check for keywords like "fix", "bug" → bug; "milestone" → milestone;
-  default → feature. Do not over-engineer classification.
-- Calibration multiplier must be clamped aggressively. A bad sample of 5 runs should
-  not produce a 10× multiplier.
-- Metrics file can grow indefinitely — `summarize_metrics` should read only the
-  last N records (configurable, default: 50)
-
-Seeds Forward:
-- Future 3.0 may add cost tracking (dollar amounts from API billing)
-- Future 3.0 may add cross-project metric aggregation
-- Adaptive calibration data improves with every run — the more the pipeline is used,
-  the better its estimates become
-
-#### Milestone 9: Post-Coder Turn Recalibration
-Replace the scout's pre-coder reviewer/tester turn estimates with a deterministic
-formula-based recalibration that runs after the coder completes. The scout estimates
-reviewer and tester turns before any code exists — a fundamentally unreliable guess.
-By the time the coder finishes, the pipeline has concrete data: actual coder turns
-used, files modified count, diff line count, and CODER_SUMMARY.md content. Use this
-data to compute reviewer and tester turn limits with a simple formula, overriding
-the scout's pre-coder guesses unconditionally.
-
-Files to modify:
-- `lib/turns.sh` — rewrite `estimate_post_coder_turns()` to always run (remove the
-  `SCOUT_REC_REVIEWER_TURNS > 0` early return). New formula:
-  `reviewer_turns = max(REVIEWER_MIN_TURNS, coder_actual_turns * 0.35 + files_modified * 1.5)`
-  `tester_turns = max(TESTER_MIN_TURNS, coder_actual_turns * 0.5 + files_modified * 2.0)`
-  Both clamped to their respective `*_MAX_TURNS_CAP`. Accept `actual_coder_turns` as
-  a parameter (read from agent exit metadata or FIFO turn count). Keep the existing
-  heuristic tiers as a fallback when actual coder turns are unavailable (e.g.,
-  `--start-at review`).
-- `stages/review.sh` — pass actual coder turns to `estimate_post_coder_turns()`.
-  Log the recalibration: "Post-coder recalibration: reviewer N→M, tester N→M
-  (coder used X turns, Y files, ~Z diff lines)".
-- `stages/coder.sh` — export `ACTUAL_CODER_TURNS` after coder completion so
-  `review.sh` can read it. Extract from the agent's exit metadata (already
-  captured in `run_agent()`'s turn-count parsing).
-- `tests/test_dynamic_turn_limits.sh` — update existing Phase 6 tests. Add new
-  tests: formula produces expected values for known inputs, clamping works at
-  both bounds, fallback heuristic still works when actual turns are unavailable.
-
-Acceptance criteria:
-- After coder completion, reviewer and tester turn limits are recalculated using
-  actual coder turns + files modified + diff lines — not the scout's pre-coder guess
-- Formula is deterministic: same inputs always produce the same output
-- Recalibration runs regardless of whether the scout set values
-- If `actual_coder_turns` is unavailable (null run, `--start-at review`), the
-  existing file-count/diff-line heuristic is used as fallback
-- Reviewer turn limit never drops below `REVIEWER_MIN_TURNS`
-- Tester turn limit never drops below `TESTER_MIN_TURNS`
-- Both are clamped to `*_MAX_TURNS_CAP`
-- Log output clearly shows the before/after recalibration with the data used
-- All existing tests pass
-- `bash -n` and `shellcheck` pass on modified files
-
-Watch For:
-- The existing `estimate_post_coder_turns` skips when `SCOUT_REC_REVIEWER_TURNS > 0`.
-  This guard must be removed — the whole point is to override the scout.
-- `ACTUAL_CODER_TURNS` must come from the agent's exit metadata, not from
-  `ADJUSTED_CODER_TURNS` (which is the *limit*, not the *actual*).
-- The formula coefficients (0.35, 1.5, 0.5, 2.0) are initial values. Milestone 8's
-  adaptive calibration will eventually tune these per-project, but the formula
-  structure is the stable interface.
-- Don't add an LLM call here. This is arithmetic — a few lines of shell. The
-  value of this milestone is its speed and determinism.
-
-What NOT To Do:
-- Do NOT add a post-coder scout or mini-scout LLM call. This is a formula, not a
-  prompt. The pipeline has all the data it needs in shell variables.
-- Do NOT change the scout's pre-coder estimation logic. The scout still estimates
-  coder turns (which are useful). It's the reviewer/tester estimates that get
-  overridden post-coder.
-- Do NOT remove the scout's reviewer/tester fields from `SCOUT_REPORT.md` or
-  `parse_scout_complexity()`. They remain as a signal for logging and metrics
-  comparison (scout-predicted vs formula-recalibrated vs actual).
-- Do NOT make the recalibration optional via config. This is a correctness fix —
-  post-coder data is always better than pre-coder guesses. There is no scenario
-  where the old behavior is preferable.
-
-Seeds Forward:
-- Milestone 8 (Metrics) records both scout estimates AND recalibrated values,
-  enabling the adaptive calibration to tune the formula coefficients over time
-- Milestone 11 (Pre-Flight Sizing) uses the scout's coder estimate for its
-  pre-flight gate; reviewer/tester are no longer relevant at that stage since
-  they'll be recalibrated anyway
-
-#### Milestone 10: Milestone Commit Signatures, Completion Signaling, And Archival
-Add structured milestone completion signaling to commit messages and pipeline
-output so that milestone boundaries are unambiguous in git history. When
-`check_milestone_acceptance()` passes, the commit message and pipeline output
-must clearly indicate that the milestone is signed off. When a run ends in a
-partial state, the commit message must indicate continuation is expected.
-
-Additionally, archive completed milestone definitions out of CLAUDE.md into a
-separate `MILESTONE_ARCHIVE.md` file to prevent CLAUDE.md from growing beyond
-its ~40K character context limit. Each completed milestone is replaced in
-CLAUDE.md with a one-line summary (`#### [DONE] Milestone N: Title`) while the
-full definition (description, files, acceptance criteria, Watch For, Seeds
-Forward) is appended to the archive. This is essential for long-running projects
-where the rolling design process continuously adds new milestones — without
-archival, CLAUDE.md bloats until agents can no longer read the full file.
-
-**Phase 1 — Commit Signatures:**
-
-Files to modify:
-- `lib/hooks.sh` — modify `generate_commit_message()` to accept milestone state
-  as input. When milestone mode is active:
-  - Acceptance passed: prefix commit with `[MILESTONE N ✓] ` and append
-    `\n\nMilestone N: <title> — COMPLETE` to the commit body
-  - Acceptance failed or partial: prefix with `[MILESTONE N — partial] `
-  - No milestone mode: unchanged from current behavior
-- `lib/milestones.sh` — add `get_milestone_commit_prefix(milestone_num, disposition)`
-  that returns the appropriate prefix string based on disposition. Add optional
-  `tag_milestone_complete(milestone_num)` that runs `git tag milestone-N-complete`
-  if `MILESTONE_TAG_ON_COMPLETE=true`.
-- `tekhton.sh` — after `check_milestone_acceptance()` and before commit prompt,
-  pass milestone number and disposition to `generate_commit_message()`. After
-  successful commit with `COMPLETE_AND_WAIT` or `COMPLETE_AND_CONTINUE` disposition,
-  call `tag_milestone_complete()` if tagging is enabled.
-- `lib/config.sh` — add default: `MILESTONE_TAG_ON_COMPLETE=false`
-- `templates/pipeline.conf.example` — add `MILESTONE_TAG_ON_COMPLETE` with comment
-  explaining the worktree/branch merge workflow it enables
-
-**Phase 2 — Milestone Archival:**
-
-Files to modify:
-- `lib/milestones.sh` — add `archive_completed_milestone(milestone_num, claude_md_path)`:
-  1. Extract the full milestone definition block from CLAUDE.md (from
-     `#### Milestone N:` or `#### [DONE] Milestone N:` heading to the next
-     milestone heading or end of milestones section)
-  2. Append the extracted block to `MILESTONE_ARCHIVE.md` with a timestamp
-     header: `## Archived: YYYY-MM-DD` and the initiative name
-  3. Replace the full block in CLAUDE.md with a single summary line:
-     `#### [DONE] Milestone N: <title>` (no body — just the heading)
-  4. Return 0 on success, 1 if the milestone was not found or already archived
-     (one-line summary = already archived)
-- `lib/milestones.sh` — add `archive_all_completed_milestones(claude_md_path)`:
-  Iterates all `[DONE]` milestones in CLAUDE.md and archives any that still
-  have full definitions (more than one line). Called at pipeline startup to
-  retroactively archive milestones completed in previous runs.
-- `tekhton.sh` — after sourcing `lib/milestones.sh` and before the main pipeline
-  loop, call `archive_all_completed_milestones()` if CLAUDE.md exists and
-  milestone mode is active. This ensures stale completed milestones from
-  previous sessions are cleaned up even if the previous run didn't archive
-  (crash, manual completion, etc.).
-- `lib/hooks.sh` — in the post-commit finalization path, after
-  `tag_milestone_complete()`, call `archive_completed_milestone()` for the
-  just-completed milestone. The archive happens after commit so the full
-  milestone definition is part of the commit that completed it.
-
-`MILESTONE_ARCHIVE.md` format:
-```markdown
-# Milestone Archive
-
-Completed milestone definitions archived from CLAUDE.md.
-See git history for the commit that completed each milestone.
-
----
-
-## Archived: 2026-03-15 — Adaptive Pipeline 2.0
-
-#### Milestone 0: Security Hardening
-[full original milestone definition preserved verbatim]
-
----
-
-## Archived: 2026-03-17 — Adaptive Pipeline 2.0
 
 #### Milestone 9: Post-Coder Turn Recalibration
 [full original milestone definition preserved verbatim]
@@ -1597,8 +1001,6 @@ metrics JSONL record and dashboard output.
 
 ---
 
-## Archived: 2026-03-19 — Adaptive Pipeline 2.0
-
 #### [DONE] Milestone 14: Turn Exhaustion Continuation Loop
 
 Add automatic continuation when an agent hits its turn limit but made substantive
@@ -1701,8 +1103,6 @@ should go to the split path, not the continuation path.
 - The substantive-work heuristic can be refined using metrics data from Milestone 8
 
 ---
-
-## Archived: 2026-03-20 — Adaptive Pipeline 2.0
 
 #### [DONE] Milestone 16: Outer Orchestration Loop (Milestone-to-Completion)
 
@@ -1962,15 +1362,12 @@ After _run_pipeline_stages returns non-zero:
 
 ---
 
-## Archived: 2026-03-20 — Adaptive Pipeline 2.0
-
 #### [DONE] Milestone 17: Tech Stack Detection Engine
 <!-- milestone-meta
 id: "17"
 estimated_complexity: "large"
 status: "in_progress"
 -->
-
 
 Pure shell library that detects project language(s), framework(s), package manager,
 build system, and infers ANALYZE_CMD / TEST_CMD / BUILD_CHECK_CMD. No agent calls.
@@ -2693,15 +2090,12 @@ completes the end-to-end `--human` workflow: pick → claim → pipeline → res
 
 ---
 
-## Archived: 2026-03-20 — Adaptive Pipeline 2.0
-
 #### [DONE] Milestone 18: Project Crawler & Index Generator
 <!-- milestone-meta
 id: "18"
 estimated_complexity: "large"
 status: "in_progress"
 -->
-
 
 Shell-driven breadth-first crawler that traverses a project directory and produces
 PROJECT_INDEX.md — a structured, token-budgeted manifest of the project's
@@ -2796,15 +2190,12 @@ calls. The index is the foundation for all downstream synthesis.
 
 ---
 
-## Archived: 2026-03-21 — Adaptive Pipeline 2.0
-
 #### [DONE] Milestone 19: Smart Init Orchestrator
 <!-- milestone-meta
 id: "19"
 estimated_complexity: "large"
 status: "in_progress"
 -->
-
 
 Replace the current `--init` with an intelligent, interactive initialization flow
 that uses tech stack detection (M17) and the project crawler (M18) to auto-populate
@@ -2891,15 +2282,12 @@ and guide the user to the appropriate next step (--plan or --replan).
 
 ---
 
-## Archived: 2026-03-21 — Adaptive Pipeline 2.0
-
 #### [DONE] Milestone 20: Incremental Rescan & Index Maintenance
 <!-- milestone-meta
 id: "20"
 estimated_complexity: "large"
 status: "in_progress"
 -->
-
 
 Add `--rescan` command that updates PROJECT_INDEX.md incrementally using git diff
 since the last scan. This keeps the project index current without repeating the
@@ -2974,15 +2362,12 @@ projects can keep their index and documents in sync as the codebase evolves.
 
 ---
 
-## Archived: 2026-03-21 — Adaptive Pipeline 2.0
-
 #### [DONE] Milestone 21: Agent-Assisted Project Synthesis
 <!-- milestone-meta
 id: "21"
 estimated_complexity: "large"
 status: "in_progress"
 -->
-
 
 The capstone milestone. Uses PROJECT_INDEX.md from the crawler (M18) plus tech
 stack detection (M17) as input to an agent-assisted synthesis pipeline that
@@ -3084,3 +2469,9411 @@ and synthesizes the design documents from evidence.
 - The synthesis pipeline becomes the standard onboarding path for all
   new Tekhton projects, eventually replacing the interview-based `--plan`
   for any project that already has code
+
+---
+
+---
+
+## Archived: 2026-03-22 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### [DONE] Milestone 1: Milestone DAG Infrastructure
+Add the DAG-based milestone storage system: a pipe-delimited manifest tracking
+dependencies and status, individual `.md` files per milestone, DAG query functions
+(frontier detection, cycle validation), and auto-migration from inline CLAUDE.md
+milestones. This milestone replaces the sequential-only milestone model with a
+dependency-aware DAG that enables future parallel execution.
+
+Files to create:
+- `lib/milestone_dag.sh` — manifest parser (`load_manifest()`, `save_manifest()`
+  using atomic tmpfile+mv), DAG query functions (`dag_get_frontier()`,
+  `dag_deps_satisfied()`, `dag_find_next()`, `dag_get_active()`), validation
+  (`validate_manifest()` with cycle detection via DFS), ID↔number conversion
+  (`dag_id_to_number()`, `dag_number_to_id()`). Data structures: parallel bash
+  arrays (`_DAG_IDS[]`, `_DAG_TITLES[]`, `_DAG_STATUSES[]`, `_DAG_DEPS[]`,
+  `_DAG_FILES[]`, `_DAG_GROUPS[]`) with associative index `_DAG_IDX[id]=index`.
+- `lib/milestone_dag_migrate.sh` — `migrate_inline_milestones(claude_md, milestone_dir)`
+  extracts all inline milestones from CLAUDE.md into individual files in
+  `.claude/milestones/`, generates `MANIFEST.cfg`. Uses existing
+  `_extract_milestone_block()` for block extraction. File naming:
+  `m{NN}-{slugified-title}.md`. Dependencies inferred from sequential order
+  (each depends on previous) unless explicit "depends on Milestone N" references
+  found in text.
+
+Files to modify:
+- `lib/milestones.sh` — add `parse_milestones_auto()` dual-path wrapper: if
+  manifest exists, returns milestone data from it in the same
+  `NUMBER|TITLE|ACCEPTANCE_CRITERIA` format as `parse_milestones()`. All
+  downstream consumers work unchanged.
+- `lib/milestone_ops.sh` — `find_next_milestone()` gains DAG-aware path calling
+  `dag_find_next()`. `mark_milestone_done()` gains DAG path calling
+  `dag_set_status(id, "done")` + `save_manifest()`.
+- `lib/milestone_archival.sh` — adapt for file-based milestones: read milestone
+  file directly via `dag_get_file()`, append to archive, no CLAUDE.md block
+  extraction needed.
+- `lib/milestone_split.sh` — adapt for file-based milestones: write sub-milestone
+  files + insert manifest rows instead of replacing CLAUDE.md blocks.
+- `lib/milestone_metadata.sh` — write metadata into milestone files instead of
+  CLAUDE.md headings.
+- `lib/config_defaults.sh` — add defaults: `MILESTONE_DAG_ENABLED=true`,
+  `MILESTONE_DIR=".claude/milestones"`, `MILESTONE_MANIFEST="MANIFEST.cfg"`,
+  `MILESTONE_AUTO_MIGRATE=true`, `MILESTONE_WINDOW_PCT=30`,
+  `MILESTONE_WINDOW_MAX_CHARS=20000`. Add clamps for PCT (80) and MAX_CHARS (100000).
+- `tekhton.sh` — source new modules, add DAG-aware milestone initialization,
+  add auto-migration at startup (if manifest missing but inline milestones found).
+- `templates/pipeline.conf.example` — add milestone DAG config section with
+  explanatory comments.
+
+Manifest format (`.claude/milestones/MANIFEST.cfg`):
+```
+
+---
+
+#### [DONE] Milestone 2: Sliding Window & Plan Generation Integration
+<!-- milestone-meta
+id: "2"
+status: "done"
+-->
+
+Wire the DAG into the prompt engine with a character-budgeted sliding window that
+injects only relevant milestones into agent context. Update plan generation to emit
+milestone files instead of inline CLAUDE.md sections. Add auto-migration at startup
+for existing projects with inline milestones.
+
+Files to create:
+- `lib/milestone_window.sh` — `build_milestone_window(model)` assembles
+  character-budgeted milestone context block from the manifest. Priority:
+  active milestone (full content) → frontier milestones (first paragraph +
+  acceptance criteria) → on-deck milestones (title + one-line description).
+  Fills greedily until budget exhaustion. `_compute_milestone_budget(model)`
+  calculates available chars: `min(available * MILESTONE_WINDOW_PCT/100,
+  MILESTONE_WINDOW_MAX_CHARS)`. `_milestone_priority_list()` returns ordered
+  IDs by priority. Integrates with `_add_context_component()` for accounting.
+
+Files to modify:
+- `stages/coder.sh` — replace static MILESTONE_BLOCK with
+  `build_milestone_window()` call when manifest exists. Falls back to existing
+  behavior when no manifest.
+- `stages/plan_generate.sh` — after agent produces CLAUDE.md content, post-process:
+  extract milestone blocks into individual files in `.claude/milestones/`, generate
+  MANIFEST.cfg, remove milestone blocks from CLAUDE.md and insert pointer comment.
+  Agent prompt and output format are unchanged — shell handles extraction.
+- `lib/orchestrate_helpers.sh` — `_run_auto_advance_chain()` uses DAG-aware
+  milestone ordering via `dag_find_next()`.
+- `lib/config.sh` — add MILESTONE_DIR path resolution (relative → absolute).
+- `tekhton.sh` — add auto-migration trigger at startup: if `MILESTONE_DAG_ENABLED`
+  and `MILESTONE_AUTO_MIGRATE` and no manifest exists but inline milestones
+  detected, run `migrate_inline_milestones()`.
+
+Acceptance criteria:
+- `build_milestone_window()` returns only the active milestone + frontier
+  milestones that fit within the character budget
+- When budget is exhausted, frontier milestones are truncated (first paragraph +
+  acceptance criteria only) rather than omitted entirely
+- On-deck milestones only included if budget remains after all frontier milestones
+- The window integrates with `_add_context_component()` for context accounting
+- Plan generation extracts milestones from agent output into individual files and
+  generates a valid MANIFEST.cfg
+- Auto-migration at startup correctly converts inline CLAUDE.md milestones to
+  files + manifest
+- After migration, CLAUDE.md no longer contains full milestone blocks
+- `_run_auto_advance_chain()` works correctly with DAG-based ordering
+- Window respects `MILESTONE_WINDOW_MAX_CHARS` hard cap
+- When `MILESTONE_DAG_ENABLED=false`, all behavior is identical to v2
+- All existing tests pass
+- `bash -n lib/milestone_window.sh` passes
+- `shellcheck lib/milestone_window.sh` passes
+- New test files: `tests/test_milestone_window.sh` (budget calculation, priority
+  ordering, budget exhaustion), `tests/test_milestone_dag_migrate.sh` (inline
+  extraction, manifest generation, CLAUDE.md cleanup, re-migration idempotency)
+
+Watch For:
+- Plan generation post-processing must handle variable heading depth (####, #####)
+  since agents may vary formatting. Use the same regex as `parse_milestones()`.
+- Auto-migration must be idempotent. If MANIFEST.cfg already exists, skip.
+  If interrupted mid-way, next run should detect partial state and complete.
+- CLAUDE.md trimming after milestone extraction must preserve all non-milestone
+  content exactly. Use existing `_extract_milestone_block()` +
+  `_replace_milestone_block()` pattern.
+- Character budget must account for the instruction header (~300 chars) prepended
+  by `build_milestone_window()`. Subtract before filling with file content.
+- When the active milestone file exceeds the entire budget, truncate it (keep
+  acceptance criteria at minimum) rather than failing. Log a warning.
+
+Seeds Forward:
+- The DAG data model supports future parallel execution: `dag_get_frontier()`
+  returns all parallelizable milestones
+- The sliding window pattern can be extended for repo map integration: pre-compute
+  the repo map slice from the milestone's "Files to create/modify" section
+- Auto-migration creates the `.claude/milestones/` directory structure that future
+  tooling (milestone dashboards, progress tracking) can consume
+
+---
+
+#### [DONE] Milestone 3: Indexer Infrastructure & Setup Command
+<!-- milestone-meta
+id: "3"
+status: "done"
+-->
+Add the shell-side orchestration layer, Python dependency detection, setup command,
+and configuration keys. This milestone builds the framework that Milestones 4-8
+plug into. No actual indexing logic yet — just the plumbing.
+
+Files to create:
+- `lib/indexer.sh` — `check_indexer_available()` (returns 0 if Python + tree-sitter
+  found), `run_repo_map(task, token_budget)` (invokes Python tool, captures output),
+  `get_repo_map_slice(file_list)` (extracts entries for specific files from cached
+  map), `invalidate_repo_map_cache()`. All functions are no-ops returning fallback
+  values when Python is unavailable.
+- `tools/setup_indexer.sh` — standalone setup script: checks Python version (≥3.8),
+  creates virtualenv in `.claude/indexer-venv/`, installs `tree-sitter`,
+  `tree-sitter-languages` (or individual grammars), `networkx`. Idempotent — safe
+  to re-run. Prints clear error messages if Python is missing.
+
+Files to modify:
+- `tekhton.sh` — add `--setup-indexer` early-exit path that runs
+  `tools/setup_indexer.sh`. Source `lib/indexer.sh`. Call
+  `check_indexer_available()` at startup and set `INDEXER_AVAILABLE=true/false`.
+- `lib/config.sh` — add defaults: `REPO_MAP_ENABLED=false`,
+  `REPO_MAP_TOKEN_BUDGET=2048`, `REPO_MAP_CACHE_DIR=".claude/index"`,
+  `REPO_MAP_LANGUAGES="auto"` (auto-detect from file extensions),
+  `SERENA_ENABLED=false`, `SERENA_CONFIG_PATH=""`.
+- `templates/pipeline.conf.example` — add indexer config section with explanatory
+  comments
+
+Acceptance criteria:
+- `tekhton --setup-indexer` creates virtualenv and installs dependencies
+- `check_indexer_available` returns 0 when venv + tree-sitter exist, 1 otherwise
+- When `REPO_MAP_ENABLED=true` but Python unavailable, pipeline logs a warning
+  and falls back to 2.0 behavior (no error, no abort)
+- Config keys are validated (token budget must be positive integer, etc.)
+- `.claude/indexer-venv/` is added to the default `.gitignore` warning check
+- All existing tests pass
+- `bash -n lib/indexer.sh tools/setup_indexer.sh` passes
+- `shellcheck lib/indexer.sh tools/setup_indexer.sh` passes
+
+Watch For:
+- virtualenv creation must work on Linux, macOS, and Windows (Git Bash). Use
+  `python3 -m venv` not `virtualenv` command.
+- tree-sitter grammar installation varies by platform. The setup script should
+  handle failures gracefully per-grammar (some languages may fail on some platforms).
+- The `.claude/indexer-venv/` directory can be large. It must never be committed.
+- `REPO_MAP_LANGUAGES="auto"` detection should scan file extensions in the project
+  root (1 level deep to stay fast), not walk the entire tree.
+
+Seeds Forward:
+- Milestone 4 implements the Python tool that `run_repo_map()` invokes
+- Milestone 5 wires the repo map output into pipeline stages
+- Milestone 6 extends the setup command with `--with-lsp` for Serena
+
+---
+
+#### [DONE] Milestone 4: Tree-Sitter Repo Map Generator
+<!-- milestone-meta
+id: "4"
+status: "done"
+-->
+Implement the Python tool that parses source files with tree-sitter, extracts
+definition and reference tags, builds a file-relationship graph, ranks files by
+PageRank relevance to the current task, and emits a token-budgeted repo map
+containing only function/class/method signatures — no implementations.
+
+Files to create:
+- `tools/repo_map.py` — main entry point. CLI: `repo_map.py --root <dir>
+  --task "<task string>" --budget <tokens> --cache-dir <path> [--files f1,f2]`.
+  Steps: (1) walk project tree respecting `.gitignore`, (2) parse each file with
+  tree-sitter to extract tags (definitions: class, function, method; references:
+  call sites, imports), (3) build a directed graph: file A → file B if A references
+  a symbol defined in B, (4) run PageRank with personalization vector biased toward
+  files matching task keywords, (5) emit ranked file entries with signatures only,
+  stopping when token budget is exhausted. Output format: markdown with
+  `## filename` headings and indented signatures.
+- `tools/tag_cache.py` — disk-based tag cache using JSON. Key: file path +
+  mtime. On cache hit, skip tree-sitter parse. Cache stored in
+  `REPO_MAP_CACHE_DIR/tags.json`. Provides `load_cache()`, `save_cache()`,
+  `get_tags(filepath, mtime)`, `set_tags(filepath, mtime, tags)`.
+- `tools/tree_sitter_languages.py` — language detection and grammar loading.
+  Maps file extensions to tree-sitter grammars. Provides `get_parser(ext)` which
+  returns a configured parser or `None` for unsupported languages. Initial
+  language support: Python, JavaScript, TypeScript, Java, Go, Rust, C, C++,
+  Ruby, Bash, Dart, Swift, Kotlin, C#.
+- `tools/requirements.txt` — pinned dependencies: `tree-sitter>=0.21`,
+  `tree-sitter-languages>=1.10` (or individual grammar packages),
+  `networkx>=3.0`.
+
+Files to modify:
+- `lib/indexer.sh` — implement `run_repo_map()` to invoke
+  `tools/repo_map.py` via the project's indexer virtualenv Python. Parse
+  exit code: 0 = success (stdout is the map), 1 = partial (some files
+  failed, map is best-effort), 2 = fatal (fall back to 2.0). Write output
+  to `REPO_MAP_CACHE_DIR/REPO_MAP.md`.
+
+Output format example:
+```markdown
+
+---
+
+#### [DONE] Milestone 5: Pipeline Stage Integration
+<!-- milestone-meta
+id: "5"
+status: "done"
+-->
+
+Wire the repo map into all pipeline stages, replacing or supplementing full
+ARCHITECTURE.md injection. Each stage receives a different slice of the map
+optimized for its role. Integrate with v2's context accounting for
+budget-aware injection. Graceful degradation to 2.0 when map unavailable.
+
+Files to modify:
+- `stages/coder.sh` — when `REPO_MAP_ENABLED=true` and `INDEXER_AVAILABLE=true`:
+  (1) regenerate repo map with task-biased ranking before coder invocation,
+  (2) inject `REPO_MAP_CONTENT` into the coder prompt instead of full
+  `ARCHITECTURE_CONTENT` (architecture file is still available via scout report),
+  (3) if scout identified specific files, call `get_repo_map_slice()` to produce
+  a focused slice showing those files plus their direct dependencies. When
+  indexer unavailable, fall back to existing ARCHITECTURE_CONTENT injection.
+- `stages/review.sh` — when enabled: extract file list from CODER_SUMMARY.md,
+  call `get_repo_map_slice()` for those files + their callers (reverse
+  dependencies), inject as `REPO_MAP_CONTENT`. Reviewer sees the changed files
+  in full context of what calls them and what they call.
+- `stages/tester.sh` — when enabled: extract file list from CODER_SUMMARY.md,
+  call `get_repo_map_slice()` for those files + their test file counterparts
+  (heuristic: `foo.py` → `test_foo.py`, `foo.ts` → `foo.test.ts`). Inject as
+  `REPO_MAP_CONTENT`.
+- `stages/architect.sh` — when enabled: inject full repo map (not sliced).
+  Architect needs the broadest view for drift detection.
+- `lib/prompts.sh` — add `REPO_MAP_CONTENT` and `REPO_MAP_SLICE` as template
+  variables. Add `{{IF:REPO_MAP_CONTENT}}` conditional blocks.
+- `lib/context.sh` — add repo map as a named context component in
+  `log_context_report()`. Include it in budget calculations.
+- `prompts/coder.prompt.md` — add `{{IF:REPO_MAP_CONTENT}}` block with
+  instructions: "The following repo map shows ranked file signatures relevant
+  to your task. Use it to understand the codebase structure and identify files
+  to read or modify. Signatures show the public API — read full files before
+  making changes."
+- `prompts/reviewer.prompt.md` — add repo map block with instruction: "The
+  repo map below shows the changed files and their callers/callees. Use it
+  to verify that changes are consistent with the broader codebase structure."
+- `prompts/tester.prompt.md` — add repo map block with instruction: "The
+  repo map below shows the changed files and their test counterparts. Use it
+  to identify which test files need updates and what interfaces to test against."
+- `prompts/scout.prompt.md` — add full repo map block with instruction: "Use
+  this repo map to identify relevant files without needing to search the
+  filesystem. The map is ranked by likely relevance to the task."
+- `prompts/architect.prompt.md` — add full repo map block for drift analysis
+
+Acceptance criteria:
+- Coder stage injects repo map instead of full ARCHITECTURE.md when available
+- Reviewer sees changed files + reverse dependencies in map slice
+- Tester sees changed files + test counterparts in map slice
+- Scout sees full ranked map (dramatically reducing exploratory reads)
+- Context report shows repo map as a named component with token count
+- When `REPO_MAP_ENABLED=false` or indexer unavailable, all stages behave
+  identically to v2 (no warnings, no changes)
+- Prompt templates use conditional blocks — no repo map content appears in
+  prompts when feature is disabled
+- Token budget is respected: repo map + other context stays within
+  `CONTEXT_BUDGET_PCT`
+- All existing tests pass
+- `shellcheck` passes on all modified `.sh` files
+
+Watch For:
+- The scout stage benefits MOST from the repo map — it replaces blind `find`
+  and `grep` with a ranked file list. This is where the biggest token savings
+  come from.
+- ARCHITECTURE.md still has value for high-level design intent that tree-sitter
+  can't capture. Consider injecting a truncated architecture summary (first
+  N lines) alongside the repo map, not replacing it entirely.
+- The test file heuristic (`foo.py` → `test_foo.py`) is language-specific.
+  Keep it simple and configurable. A missed test file just means the tester
+  falls back to normal discovery.
+- Reverse dependency lookup (callers of changed files) can be expensive for
+  highly-connected files. Cap at top 20 callers by PageRank.
+
+Seeds Forward:
+- Milestone 6 (Serena) enhances the repo map with live symbol data, giving
+  agents even more precise context
+- Milestone 7 (Cross-Run Cache) uses task→file history from this milestone
+  to improve future repo map rankings
+- The prompt template patterns established here (`{{IF:REPO_MAP_CONTENT}}`)
+  are reused by Milestone 6 for LSP tool instructions
+
+---
+
+#### Milestone 6: Serena MCP Integration
+<!-- milestone-meta
+id: "6"
+status: "done"
+-->
+
+Add optional LSP-powered symbol resolution via Serena as an MCP server. When
+enabled, agents gain `find_symbol`, `find_referencing_symbols`, and
+`get_symbol_definition` tools that provide live, accurate cross-reference data.
+This supplements the static repo map with runtime precision — the map tells
+agents WHERE to look, Serena tells them EXACTLY what's there.
+
+Files to create:
+- `tools/setup_serena.sh` — setup script for Serena: clones or updates the
+  Serena repo into `.claude/serena/`, installs its dependencies, generates
+  project-specific configuration. Detects available language servers for the
+  target project's languages (e.g., `pyright` for Python, `typescript-language-server`
+  for TS/JS, `gopls` for Go). Idempotent. Invoked via
+  `tekhton --setup-indexer --with-lsp`.
+- `tools/serena_config_template.json` — template MCP server configuration for
+  Claude CLI. Contains `{{SERENA_PATH}}`, `{{PROJECT_DIR}}`, `{{LANGUAGE_SERVERS}}`
+  placeholders that `setup_serena.sh` fills in.
+- `lib/mcp.sh` — MCP server lifecycle management: `start_mcp_server()`,
+  `stop_mcp_server()`, `check_mcp_health()`. Starts Serena as a background
+  process before agent invocation, health-checks it, stops it after the stage
+  completes. Uses the session temp directory for Serena's socket/pipe.
+
+Files to modify:
+- `tekhton.sh` — source `lib/mcp.sh`. Add `--with-lsp` flag parsing for
+  `--setup-indexer`. When `SERENA_ENABLED=true`, call `start_mcp_server()`
+  before first agent stage and `stop_mcp_server()` in the EXIT trap.
+- `lib/indexer.sh` — add `check_serena_available()` that verifies Serena
+  installation and at least one language server. Update `check_indexer_available()`
+  to report both repo map and Serena status separately.
+- `lib/config.sh` — add defaults: `SERENA_ENABLED=false`,
+  `SERENA_PATH=".claude/serena"`, `SERENA_LANGUAGE_SERVERS="auto"`,
+  `SERENA_STARTUP_TIMEOUT=30`, `SERENA_MAX_RETRIES=2`.
+- `lib/agent.sh` — when `SERENA_ENABLED=true` and Serena is running, add
+  `--mcp-config` flag to `claude` CLI invocations pointing to the generated
+  MCP config. This gives agents access to Serena's tools.
+- `prompts/coder.prompt.md` — add `{{IF:SERENA_ENABLED}}` block: "You have
+  access to LSP tools via MCP. Use `find_symbol` to locate definitions,
+  `find_referencing_symbols` to find all callers of a function, and
+  `get_symbol_definition` to read a symbol's full definition with type info.
+  Prefer these over grep for precise symbol lookup. The repo map gives you
+  the overview; LSP tools give you precision."
+- `prompts/reviewer.prompt.md` — add Serena tool instructions for verifying
+  that changes don't break callers
+- `prompts/scout.prompt.md` — add Serena tool instructions for discovery:
+  "Use `find_symbol` to verify that functions you find in the repo map
+  actually exist and to check their signatures before recommending files."
+- `templates/pipeline.conf.example` — add Serena config section
+
+Acceptance criteria:
+- `tekhton --setup-indexer --with-lsp` installs Serena and detects language servers
+- MCP server starts before first agent stage and stops on pipeline exit
+- `check_mcp_health()` returns 0 when Serena responds, 1 otherwise
+- When Serena fails to start, pipeline logs warning and continues without LSP
+  tools (agents still have the static repo map)
+- Agent CLI invocations include `--mcp-config` when Serena is available
+- Prompt templates conditionally inject Serena tool usage instructions
+- `SERENA_ENABLED=false` (default) produces identical behavior to Milestone 5
+- Serena process is always cleaned up on exit (no orphaned processes)
+- All existing tests pass
+- `bash -n lib/mcp.sh tools/setup_serena.sh` passes
+- `shellcheck lib/mcp.sh tools/setup_serena.sh` passes
+
+Watch For:
+- Serena startup can take 10-30 seconds while language servers index the project.
+  `SERENA_STARTUP_TIMEOUT` must be generous. Show a progress indicator.
+- Language server availability varies wildly. A project may have `pyright` but
+  not `gopls`. Serena should work with whatever's available and report which
+  languages have full LSP support vs. tree-sitter-only.
+- MCP server configuration format may change between Claude CLI versions. Keep
+  the config template simple and version-annotated.
+- Orphaned Serena processes are a real risk. The EXIT trap must kill the process
+  group, not just the main process. Test with Ctrl+C, SIGTERM, and SIGKILL.
+- The MCP `--mcp-config` flag may not be available in all Claude CLI versions.
+  Detect CLI version and fall back gracefully.
+
+Seeds Forward:
+- Milestone 7 can use Serena's type information to enrich the tag cache with
+  parameter types and return types (richer signatures)
+- Future v3 milestones for parallel agents (DAG execution) will need per-agent
+  MCP server instances or a shared server with locking — design the lifecycle
+  management with this in mind
+
+---
+
+#### Milestone 6: Serena MCP Integration
+<!-- milestone-meta
+id: "6"
+status: "done"
+-->
+
+Add optional LSP-powered symbol resolution via Serena as an MCP server. When
+enabled, agents gain `find_symbol`, `find_referencing_symbols`, and
+`get_symbol_definition` tools that provide live, accurate cross-reference data.
+This supplements the static repo map with runtime precision — the map tells
+agents WHERE to look, Serena tells them EXACTLY what's there.
+
+Files to create:
+- `tools/setup_serena.sh` — setup script for Serena: clones or updates the
+  Serena repo into `.claude/serena/`, installs its dependencies, generates
+  project-specific configuration. Detects available language servers for the
+  target project's languages (e.g., `pyright` for Python, `typescript-language-server`
+  for TS/JS, `gopls` for Go). Idempotent. Invoked via
+  `tekhton --setup-indexer --with-lsp`.
+- `tools/serena_config_template.json` — template MCP server configuration for
+  Claude CLI. Contains `{{SERENA_PATH}}`, `{{PROJECT_DIR}}`, `{{LANGUAGE_SERVERS}}`
+  placeholders that `setup_serena.sh` fills in.
+- `lib/mcp.sh` — MCP server lifecycle management: `start_mcp_server()`,
+  `stop_mcp_server()`, `check_mcp_health()`. Starts Serena as a background
+  process before agent invocation, health-checks it, stops it after the stage
+  completes. Uses the session temp directory for Serena's socket/pipe.
+
+Files to modify:
+- `tekhton.sh` — source `lib/mcp.sh`. Add `--with-lsp` flag parsing for
+  `--setup-indexer`. When `SERENA_ENABLED=true`, call `start_mcp_server()`
+  before first agent stage and `stop_mcp_server()` in the EXIT trap.
+- `lib/indexer.sh` — add `check_serena_available()` that verifies Serena
+  installation and at least one language server. Update `check_indexer_available()`
+  to report both repo map and Serena status separately.
+- `lib/config.sh` — add defaults: `SERENA_ENABLED=false`,
+  `SERENA_PATH=".claude/serena"`, `SERENA_LANGUAGE_SERVERS="auto"`,
+  `SERENA_STARTUP_TIMEOUT=30`, `SERENA_MAX_RETRIES=2`.
+- `lib/agent.sh` — when `SERENA_ENABLED=true` and Serena is running, add
+  `--mcp-config` flag to `claude` CLI invocations pointing to the generated
+  MCP config. This gives agents access to Serena's tools.
+- `prompts/coder.prompt.md` — add `{{IF:SERENA_ENABLED}}` block: "You have
+  access to LSP tools via MCP. Use `find_symbol` to locate definitions,
+  `find_referencing_symbols` to find all callers of a function, and
+  `get_symbol_definition` to read a symbol's full definition with type info.
+  Prefer these over grep for precise symbol lookup. The repo map gives you
+  the overview; LSP tools give you precision."
+- `prompts/reviewer.prompt.md` — add Serena tool instructions for verifying
+  that changes don't break callers
+- `prompts/scout.prompt.md` — add Serena tool instructions for discovery:
+  "Use `find_symbol` to verify that functions you find in the repo map
+  actually exist and to check their signatures before recommending files."
+- `templates/pipeline.conf.example` — add Serena config section
+
+Acceptance criteria:
+- `tekhton --setup-indexer --with-lsp` installs Serena and detects language servers
+- MCP server starts before first agent stage and stops on pipeline exit
+- `check_mcp_health()` returns 0 when Serena responds, 1 otherwise
+- When Serena fails to start, pipeline logs warning and continues without LSP
+  tools (agents still have the static repo map)
+- Agent CLI invocations include `--mcp-config` when Serena is available
+- Prompt templates conditionally inject Serena tool usage instructions
+- `SERENA_ENABLED=false` (default) produces identical behavior to Milestone 5
+- Serena process is always cleaned up on exit (no orphaned processes)
+- All existing tests pass
+- `bash -n lib/mcp.sh tools/setup_serena.sh` passes
+- `shellcheck lib/mcp.sh tools/setup_serena.sh` passes
+
+Watch For:
+- Serena startup can take 10-30 seconds while language servers index the project.
+  `SERENA_STARTUP_TIMEOUT` must be generous. Show a progress indicator.
+- Language server availability varies wildly. A project may have `pyright` but
+  not `gopls`. Serena should work with whatever's available and report which
+  languages have full LSP support vs. tree-sitter-only.
+- MCP server configuration format may change between Claude CLI versions. Keep
+  the config template simple and version-annotated.
+- Orphaned Serena processes are a real risk. The EXIT trap must kill the process
+  group, not just the main process. Test with Ctrl+C, SIGTERM, and SIGKILL.
+- The MCP `--mcp-config` flag may not be available in all Claude CLI versions.
+  Detect CLI version and fall back gracefully.
+
+Seeds Forward:
+- Milestone 7 can use Serena's type information to enrich the tag cache with
+  parameter types and return types (richer signatures)
+- Future v3 milestones for parallel agents (DAG execution) will need per-agent
+  MCP server instances or a shared server with locking — design the lifecycle
+  management with this in mind
+
+#### [DONE] Milestone 20: Test Integrity Audit
+Added a dedicated test audit pass within the test stage that independently
+evaluates the quality, honesty, and relevance of tests written or modified
+by the tester agent. Prevents the "agent cheating at tests" problem where
+the tester writes trivial, hard-coded, or orphaned tests that provide false
+confidence.
+
+Implementation:
+- `lib/test_audit.sh` — Audit orchestration, context collection, verdict routing
+- `prompts/test_audit.prompt.md` — Agent audit prompt with 6-point rubric
+- `prompts/test_audit_rework.prompt.md` — Tester rework prompt for audit findings
+- `stages/tester.sh` — Calls `run_test_audit()` after test writing
+- `tekhton.sh` — Adds `--audit-tests` standalone command
+- `lib/config_defaults.sh` — TEST_AUDIT_* configuration defaults
+- `lib/hooks.sh` — Archives TEST_AUDIT_REPORT.md
+- `lib/diagnose_rules.sh` — Adds `_rule_test_audit_failure()` diagnostic
+- `lib/finalize_summary.sh` — Includes test_audit_verdict in RUN_SUMMARY.json
+- `lib/dashboard_emitters.sh` — Includes audit data in Watchtower
+- `prompts/tester.prompt.md` — Adds Test Integrity Rules anti-cheating section
+- `tests/test_audit_tests.sh` — Unit tests for core audit functions
+- `tests/test_audit_standalone.sh` — Standalone audit and emit_event tests
+- `tests/test_audit_coverage_gaps.sh` — Coverage gap and edge case tests
+
+---
+
+---
+
+---
+
+## Archived: 2026-03-30 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 40: Human Notes Core Rewrite
+<!-- milestone-meta
+id: "40"
+status: "done"
+-->
+
+## Overview
+
+The human notes system (`lib/notes.sh`, `lib/notes_single.sh`, `lib/notes_cli.sh`,
+`lib/notes_cli_write.sh`) was built in V1 and has accumulated structural debt across
+V2 and V3. Note identity relies on exact text matching (fragile when users edit notes
+mid-run), the tag system is hardcoded in six locations, claim/resolve logic has two
+divergent paths (bulk and single) with documented edge cases in finalization, and
+notes carry no metadata (no timestamps, no estimates, no triage state). This milestone
+rewrites the notes internals with stable IDs, a metadata layer, a unified
+claim/resolve path, a data-driven tag registry, and safety guarantees for mid-run
+watchtower injection and rollback.
+
+The file format (`HUMAN_NOTES.md`) remains human-editable. Backward compatibility is
+preserved via lazy migration — legacy notes without IDs continue to work via text
+matching and receive IDs when first touched by the pipeline.
+
+## Scope
+
+### 1. Note ID System
+
+**Problem:** `claim_single_note()` and `resolve_single_note()` use exact string
+matching (`[[ "$line" = "$note_line" ]]`). If the user edits note text between claim
+and resolve (which is the entire point of out-of-band editing), resolution silently
+fails. The bulk path in `resolve_human_notes()` parses free-text from
+CODER_SUMMARY.md using regex — also fragile.
+
+**Fix:**
+- Notes get stable IDs via HTML comment metadata appended to the checkbox line:
+  ```
+  - [ ] [BUG] Fix login when email has plus sign <!-- note:n07 created:2026-03-28 priority:high source:watchtower -->
+    > Login fails on Safari 17. Steps: register with user+test@example.com, log in.
+  ```
+- IDs are auto-assigned by `add_human_note()` (format: `n01`, `n02`, ..., monotonic
+  within the file). Next ID is derived by scanning existing IDs in `HUMAN_NOTES.md`.
+- All claim/resolve operations use ID-based matching as primary, with text-matching
+  fallback for legacy notes.
+- Description blocks (indented `>` lines below the checkbox) are preserved by all
+  operations that modify the file.
+
+**New functions:**
+- `_next_note_id()` — scan HUMAN_NOTES.md for highest existing ID, return next
+- `_find_note_by_id(id)` — return the full line for a note by its ID
+- `_parse_note_metadata(line)` — extract id, created, priority, source, triage fields
+- `_set_note_metadata(id, key, value)` — update a single metadata field in-place
+
+**Files:** `lib/notes_core.sh` (new), `lib/notes_cli.sh` (update `add_human_note`)
+
+### 2. Unified Claim/Resolve
+
+**Problem:** Two divergent code paths exist:
+- **Bulk:** `claim_human_notes()` / `resolve_human_notes()` in `notes.sh` — marks ALL
+  unchecked notes as `[~]`, resolves by parsing CODER_SUMMARY.md free text
+- **Single:** `claim_single_note()` / `resolve_single_note()` in `notes_single.sh` —
+  marks one note by exact text match
+
+The finalization hook (`_hook_resolve_notes` in `finalize.sh:102`) branches on
+`HUMAN_MODE` to decide which path to use, with a documented edge case where
+`HUMAN_MODE=true` but `CURRENT_NOTE_LINE` is empty.
+
+**Fix:**
+- Single unified API: `claim_note(id)` and `resolve_note(id, outcome)` where outcome
+  is `complete` or `reset`. Both operate by note ID.
+- `claim_notes_batch(filter)` — claims all matching notes, returns list of claimed IDs.
+  Used by `--with-notes` and `--notes-filter` paths (replaces `claim_human_notes()`).
+- `resolve_notes_batch(ids, exit_code)` — resolves a list of IDs based on exit code.
+  Replaces the CODER_SUMMARY.md parsing path — the pipeline tracks which IDs were
+  claimed and resolves them based on pipeline outcome.
+- `_hook_resolve_notes` in `finalize.sh` simplified to one path: resolve whatever IDs
+  are in `CLAIMED_NOTE_IDS` (set during claiming). No HUMAN_MODE branching needed.
+- The `CURRENT_NOTE_LINE` variable is replaced by `CURRENT_NOTE_ID`.
+
+**Deleted code:**
+- `claim_human_notes()`, `resolve_human_notes()` from `notes.sh`
+- `claim_single_note()`, `resolve_single_note()` from `notes_single.sh`
+- CODER_SUMMARY.md `## Human Notes Status` parsing logic
+
+**Files:** `lib/notes_core.sh` (new), `lib/notes.sh` (gutted), `lib/notes_single.sh`
+(gutted or deleted), `lib/finalize.sh` (simplify hook), `stages/coder.sh` (use new API),
+`tekhton.sh` (replace CURRENT_NOTE_LINE with CURRENT_NOTE_ID)
+
+### 3. Tag Registry
+
+**Problem:** BUG/FEAT/POLISH is hardcoded in `_validate_tag()`, `_section_for_tag()`,
+`_tag_to_section()`, `pick_next_note()` awk scripts, `list_human_notes_cli()` color
+mapping, and `coder.sh` guidance strings. Adding a new tag requires touching six files.
+
+**Fix:**
+- Associative array registry in `notes_core.sh`:
+  ```bash
+  declare -A _NOTE_TAG_SECTION=( [BUG]="## Bugs" [FEAT]="## Features" [POLISH]="## Polish" )
+  declare -A _NOTE_TAG_COLOR=( [BUG]="$RED" [FEAT]="$CYAN" [POLISH]="$YELLOW" )
+  declare -a _NOTE_TAG_PRIORITY=( BUG FEAT POLISH )  # Priority order for pick_next_note
+  ```
+- All tag validation, section mapping, color lookup, and priority ordering read from
+  the registry. Adding a tag = adding entries to these three structures.
+- `pick_next_note()` iterates `_NOTE_TAG_PRIORITY` instead of hardcoded section list.
+- `_ensure_notes_file()` generates section headings from the registry.
+
+**Files:** `lib/notes_core.sh` (new), `lib/notes_cli.sh` (update), `lib/notes_single.sh`
+(update or absorb into notes_core.sh)
+
+### 4. Lazy Migration
+
+**Problem:** Existing HUMAN_NOTES.md files in active projects have no IDs or metadata.
+A forced migration would be disruptive.
+
+**Fix:**
+- On first pipeline run after upgrade, `migrate_legacy_notes()` scans HUMAN_NOTES.md.
+  Any note line matching `^- \[[ x~]\] ` that lacks a `<!-- note:nNN` comment gets an
+  ID assigned and metadata appended.
+- Migration is idempotent — running it twice produces the same result.
+- Migration preserves all existing content (descriptions, comments, section headings).
+- Migration runs automatically at startup (like `migrate_inline_milestones()`), guarded
+  by a version marker: `<!-- notes-format: v2 -->` added at top of file after migration.
+- Pre-migration backup: `HUMAN_NOTES.md.v1-backup` created before modification.
+
+**Files:** `lib/notes_migrate.sh` (new)
+
+### 5. Watchtower Inbox Safety & Rich Parsing
+
+**Problem:** Three safety issues exist with mid-run watchtower note injection:
+
+1. **Git stash swallows inbox files.** `create_run_checkpoint()` (line 1759) runs
+   `git stash push --include-untracked` AFTER `process_watchtower_inbox()` (line 1529).
+   If a user submits a note via Watchtower mid-run, the file lands in
+   `.claude/watchtower_inbox/`. On rollback, `git clean -fd` deletes it. The note is
+   gone with no trace.
+
+2. **`git add -A` sweeps inbox files.** `_do_git_commit()` stages everything. Mid-run
+   inbox files get committed as raw inbox files (never processed into HUMAN_NOTES.md).
+   On the next run, `process_watchtower_inbox()` won't find them because they're already
+   committed and removed from the inbox.
+
+3. **Watchtower captures priority and description but they're discarded.** `_process_note()`
+   in `inbox.sh:45-76` only extracts the `- [ ] [TAG] Title` line. The description body
+   and priority metadata are thrown away.
+
+**Fix:**
+- Add `.claude/watchtower_inbox/` to the `.gitignore` template generated by `--init`.
+  For existing projects, the migration in Scope 4 adds the entry if missing.
+- Pre-commit inbox drain: before `_do_git_commit()` in `finalize.sh`, call
+  `drain_pending_inbox()` — a lightweight function that processes any new inbox files
+  into HUMAN_NOTES.md. These notes won't be triaged or executed in the current run,
+  but they'll be persisted in the committed file.
+- `_process_note()` updated to extract the full watchtower note structure (title,
+  description, priority, timestamp, source) and pass them to `add_human_note()` which
+  stores them as metadata on the note line and as an indented description block.
+- Duplicate detection: before adding, check if a note with identical tag + title (case-
+  insensitive) already exists. If so, skip with a warning.
+
+**Files:** `lib/inbox.sh` (update), `lib/finalize.sh` (add drain hook),
+`templates/pipeline.conf.example` (add inbox to gitignore section)
+
+### 6. HUMAN_NOTES.md Rollback Protection
+
+**Problem:** `rollback_last_run()` uses `git revert` (for committed runs) or
+`git checkout -- . && git clean -fd` (for uncommitted runs). Both destroy mid-run
+edits to HUMAN_NOTES.md. Since notes are user-authored content, the pipeline should
+never wholesale-revert them.
+
+**Fix:**
+- Before `create_run_checkpoint()`, snapshot note states: record which note IDs are in
+  `[ ]`, `[~]`, and `[x]` state. Store in the checkpoint metadata JSON:
+  ```json
+  {
+    "note_states": {"n01": "x", "n03": "~", "n05": " "},
+    ...existing fields...
+  }
+  ```
+- `rollback_last_run()` skips HUMAN_NOTES.md in its revert/checkout operation. After
+  the main rollback completes, it restores note states from the checkpoint: any note
+  that was `[~]` (claimed by this run) gets reset to `[ ]`. Notes that were `[x]`
+  before the run stay `[x]`. Notes added mid-run (no entry in the snapshot) are left
+  untouched.
+- This means rollback undoes the pipeline's claim/resolve actions on notes without
+  touching any user edits to note text, new notes added mid-run, or manual completions.
+
+**Files:** `lib/checkpoint.sh` (update snapshot and rollback), `lib/notes_core.sh`
+(add `snapshot_note_states()` and `restore_note_states()`)
+
+### 7. Dashboard Notes Panel
+
+**Problem:** The Watchtower dashboard shows notes only as aggregate counts in the
+Action Items section. There's no way to see individual notes, their states, metadata,
+or triage results.
+
+**Fix:**
+- New emitter: `emit_dashboard_notes()` reads HUMAN_NOTES.md, parses all notes with
+  metadata, writes `data/notes.js` containing `window.TK_NOTES` with structured data:
+  ```json
+  [
+    {"id": "n07", "tag": "BUG", "title": "Fix login...", "status": "open",
+     "priority": "high", "source": "watchtower", "created": "2026-03-28",
+     "description": "Login fails on Safari 17..."}
+  ]
+  ```
+- New "Notes" tab (tab 6) in the dashboard UI. Table view with columns: ID, Tag
+  (color-coded badge), Title, Status (open/claimed/done/promoted), Priority, Source
+  (cli/watchtower icon). Sortable by priority and status. Filter by tag.
+- The existing Action Items counts remain but link to the Notes tab for detail.
+
+**Files:** `lib/dashboard_emitters.sh` (add emitter), `templates/watchtower/app.js`
+(add Notes tab rendering), `templates/watchtower/index.html` (add tab),
+`templates/watchtower/style.css` (note status badges)
+
+## Acceptance Criteria
+
+- `add_human_note()` auto-assigns IDs; new notes have `<!-- note:nNN ... -->` metadata
+- `claim_note(id)` / `resolve_note(id, outcome)` work by ID for notes with IDs
+- Legacy notes without IDs fall back to text matching (backward compat)
+- `migrate_legacy_notes()` adds IDs to all existing notes idempotently
+- Tag registry is data-driven: adding a tag requires updating only the registry arrays
+- `_hook_resolve_notes` in finalize.sh uses a single code path (no HUMAN_MODE branch)
+- `CURRENT_NOTE_ID` replaces `CURRENT_NOTE_LINE` throughout tekhton.sh and state.sh
+- `.claude/watchtower_inbox/` is in `.gitignore` template; existing projects get it
+  added during migration
+- Mid-run watchtower note submissions survive both pipeline commit and rollback
+- `drain_pending_inbox()` processes new inbox files before `_do_git_commit()`
+- `rollback_last_run()` restores note claim states without reverting user edits or
+  deleting mid-run notes
+- `_process_note()` preserves watchtower description and priority as note metadata
+- Duplicate notes (same tag + title) are detected and skipped on inbox processing
+- `emit_dashboard_notes()` produces `data/notes.js` with per-note structured data
+- Dashboard Notes tab displays all notes with status badges and tag filtering
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/notes_core.sh lib/notes_migrate.sh` passes
+- `shellcheck lib/notes_core.sh lib/notes_migrate.sh` passes
+
+## Watch For
+
+- **HTML comment metadata and markdown rendering.** The `<!-- note:nNN -->` comments
+  are invisible in GitHub/rendered markdown but visible in raw text editors. Users who
+  edit HUMAN_NOTES.md must not accidentally delete them. The migration should add a
+  brief comment at the top explaining the format: `<!-- IDs are auto-managed by Tekhton.
+  Do not remove note: comments. -->`.
+- **Note ID monotonicity.** IDs must be unique within the file but don't need to be
+  sequential. If note n05 is deleted, n05 is never reused — next ID is based on the
+  highest existing ID. This prevents confusion in logs and dashboard.
+- **Rollback atomicity.** The note state restore must happen AFTER the main git
+  rollback completes. If the git revert fails, note states should not be modified.
+- **Inbox drain timing.** `drain_pending_inbox()` runs just before commit. If it finds
+  notes, they're added to HUMAN_NOTES.md and included in the commit. This is correct —
+  the notes exist in the committed state. But the drain must not trigger triage (that's
+  Milestone 41). It just persists them as unchecked notes.
+- **State.sh compatibility.** The pipeline state file stores `CURRENT_NOTE_LINE` for
+  crash recovery. The migration to `CURRENT_NOTE_ID` must handle resume from a
+  pre-migration state file (CURRENT_NOTE_LINE present, CURRENT_NOTE_ID absent).
+- **`_NOTES_FILE` constant.** `notes_cli.sh` defines `_NOTES_FILE="HUMAN_NOTES.md"`.
+  The new core should use this same constant (or a shared one) rather than introducing
+  a second variable.
+- **Description block parsing.** Indented `>` lines below a note are the description.
+  All file-modifying operations (claim, resolve, migrate, clear) must preserve these
+  blocks. The simplest approach: when iterating lines, track "current note" and treat
+  subsequent `>` or `  >` lines as belonging to it.
+
+## Seeds Forward
+
+- Milestone 41 consumes note IDs and metadata for the triage gate
+- Milestone 42 consumes the tag registry for specialized prompt template selection
+- The `emit_dashboard_notes()` emitter is extended by M41 (triage fields) and M42
+  (execution outcomes)
+- The checkpoint note-state snapshot enables M41 to cache triage results in metadata
+  without them being lost on rollback
+
+---
+
+## Archived: 2026-03-30 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 41: Note Triage & Sizing Gate
+<!-- milestone-meta
+id: "41"
+status: "done"
+-->
+
+## Overview
+
+Human notes are currently injected into the coder prompt with no pre-evaluation of
+scope, complexity, or appropriateness. A one-line polish fix and a multi-system feature
+rewrite receive identical treatment. This milestone adds a triage phase that evaluates
+notes before execution — estimating size, detecting oversized items, and offering to
+promote milestone-scale notes into proper milestones. It also introduces a standalone
+`tekhton --triage` command for backlog review without execution.
+
+Depends on Milestone 40 (Notes Core Rewrite) for note IDs, metadata layer, and tag
+registry.
+
+## Scope
+
+### 1. Shell Heuristic Triage
+
+**Problem:** Notes have no sizing gate. `- [ ] [FEAT] Rewrite the auth system to use
+OAuth2 with PKCE flow` is treated identically to `- [ ] [POLISH] Fix button alignment`.
+
+**Fix:**
+- `triage_note(id)` — evaluates a single note and returns a disposition:
+  - **FIT** — appropriate size for a single pipeline run
+  - **OVERSIZED** — likely exceeds a single run; recommend promotion to milestone
+- Shell heuristics (no agent call needed for high-confidence cases):
+  - **Scope keywords:** "rewrite", "redesign", "migrate", "new system", "replace",
+    "overhaul", "refactor entire", "add support for" → score +3 each
+  - **Scale indicators:** "all", "every", "entire", "across the codebase" → score +2
+  - **Multi-system markers:** mentions of 3+ distinct system nouns (detected via
+    project's architecture file keywords if available) → score +2
+  - **Length heuristic:** note title > 120 chars → score +1
+  - **Tag weight:** BUG notes get -2 (bugs are typically scoped), POLISH gets -1
+  - Score ≥ 5 → OVERSIZED (high confidence)
+  - Score ≤ 1 → FIT (high confidence)
+  - Score 2-4 → low confidence (escalate to agent)
+- Heuristic confidence is recorded: `high` or `low`. Only `low` triggers agent
+  escalation.
+
+**Files:** `lib/notes_triage.sh` (new)
+
+### 2. Agent Escalation (Haiku)
+
+**Problem:** Shell heuristics can't evaluate semantic complexity — "Add WebSocket
+support" could be trivial (drop-in library) or massive (custom protocol), depending
+on context.
+
+**Fix:**
+- When shell heuristics return low confidence (score 2-4), escalate to a single Haiku
+  agent call for a definitive assessment.
+- Prompt template: `prompts/notes_triage.prompt.md`. Input: note text, tag, project
+  name, architecture file summary (first 2K chars if available), and the note's
+  description block if present. Total input < 3K tokens.
+- Agent output: structured response with `DISPOSITION: FIT|OVERSIZED`,
+  `ESTIMATED_TURNS: N`, and one-line `RATIONALE:`.
+- Model: configurable via `HUMAN_NOTES_TRIAGE_MODEL` (default: `haiku`). The triage
+  call is intentionally cheap — Haiku for a 3K-token input costs fractions of a cent.
+- If the agent call fails (timeout, API error), fall back to FIT with a warning. Triage
+  failure should never block execution.
+
+**Files:** `lib/notes_triage.sh` (update), `prompts/notes_triage.prompt.md` (new)
+
+### 3. Promotion Flow
+
+**Problem:** When a note is identified as milestone-scale, the only current option is
+for the user to manually delete it from HUMAN_NOTES.md and run `--add-milestone`.
+
+**Fix:**
+- When triage returns OVERSIZED for a note, the pipeline offers promotion:
+  - **Confirm mode** (default, `HUMAN_NOTES_PROMOTE_MODE=confirm`): pipeline pauses
+    with a prompt:
+    ```
+    Note n07 [FEAT] "Rewrite auth system to use OAuth2" is estimated at ~35 turns.
+    This exceeds the promotion threshold (20 turns) and would work better as a milestone.
+
+    [p] Promote to milestone  [k] Keep as note  [s] Skip this note
+    ```
+  - **Auto mode** (`HUMAN_NOTES_PROMOTE_MODE=auto`): promotes silently, logs the action.
+- Promotion mechanics:
+  - Calls `run_intake_create()` with the note text as the milestone description
+  - Marks the note `[x]` with metadata annotation: `promoted:mNN`
+  - The note's description block (if any) is included in the milestone content
+  - Dashboard notes panel shows the note with a "promoted → mNN" badge
+- The promotion threshold is configurable: `HUMAN_NOTES_PROMOTE_THRESHOLD` (default: 20
+  turns). Notes with `ESTIMATED_TURNS` above this threshold trigger the promotion flow.
+
+**Files:** `lib/notes_triage.sh` (update), `lib/inbox.sh` or `stages/intake.sh`
+(promotion integration)
+
+### 4. Triage Metadata Persistence
+
+**Problem:** Triage results need to persist so notes aren't re-evaluated on every run.
+
+**Fix:**
+- After triage, results are stored in the note's metadata comment:
+  ```
+  - [ ] [FEAT] Add dark mode <!-- note:n12 created:2026-03-29 triage:fit est_turns:8 triaged:2026-03-30 -->
+  ```
+- `_set_note_metadata(id, key, value)` from M40 handles the update.
+- On subsequent runs, `triage_note(id)` checks for existing `triage:` and `triaged:`
+  metadata. If present and the note text hasn't changed, skip re-triage.
+- If the user edits the note text (detected by comparing a hash stored in metadata:
+  `text_hash:abc123`), the triage is invalidated and re-runs.
+- Triage metadata survives rollback because M40's rollback protection preserves
+  HUMAN_NOTES.md content.
+
+**Files:** `lib/notes_triage.sh` (update), `lib/notes_core.sh` (text hash helper)
+
+### 5. `tekhton --triage` Standalone Command
+
+**Problem:** Users have no way to review their note backlog's triage status without
+running the full pipeline.
+
+**Fix:**
+- New CLI flag: `--triage`. Runs triage on all unchecked notes and prints a report:
+  ```
+  Human Notes Triage Report
+  ─────────────────────────────────────────────────────────
+  ID    Tag     Disposition  Est. Turns  Title
+  n03   BUG     fit              5       Fix login on Safari
+  n07   FEAT    oversized       35       Rewrite auth to OAuth2
+  n12   FEAT    fit              8       Add dark mode toggle
+  n15   POLISH  fit              3       Align settings buttons
+  ─────────────────────────────────────────────────────────
+  4 notes: 3 fit, 1 oversized
+
+  Recommendation: Promote n07 to a milestone before executing.
+  ```
+- Accepts optional tag filter: `--triage BUG` evaluates only bug notes.
+- Updates triage metadata on each note (so results persist for next pipeline run).
+- Refreshes the dashboard: calls `emit_dashboard_notes()` after triage completes so
+  the Notes tab reflects the latest triage results.
+- Does not execute any pipeline stages. Exit 0 on success.
+
+**Files:** `tekhton.sh` (flag parsing, dispatch), `lib/notes_triage.sh` (report formatter)
+
+### 6. Triage Integration with Pipeline Startup
+
+**Problem:** Triage needs to run automatically before execution in `--human` mode.
+
+**Fix:**
+- After note selection in `--human` mode (single-note or `--human --complete` loop),
+  run `triage_note(id)` on the selected note before claiming it.
+- If disposition is OVERSIZED, enter the promotion flow (confirm or auto per config).
+- If promoted, skip this note and pick the next one (in `--human --complete` loop) or
+  exit with a message (in single-note mode).
+- If the user chooses "keep as note" in confirm mode, proceed with execution as normal.
+  The `triage:oversized` metadata stays — the user made an informed choice.
+- For `--with-notes` (bulk injection), triage runs on all matching notes before claiming.
+  OVERSIZED notes are listed with a warning but not auto-promoted (bulk mode is less
+  interactive). User can run `--triage` first to handle them.
+- Triage is skippable: `HUMAN_NOTES_TRIAGE_ENABLED=false` bypasses all of this.
+
+**Files:** `tekhton.sh` (human mode note selection), `stages/coder.sh` (bulk notes path)
+
+### 7. Dashboard Triage Integration
+
+**Fix:**
+- `emit_dashboard_notes()` (from M40) extended to include triage fields in each note's
+  JSON: `triage_disposition`, `estimated_turns`, `triaged_at`.
+- Notes tab shows triage status: "fit" (green), "oversized" (orange), "untriaged" (grey).
+- Promoted notes show a linked badge: "promoted → m14".
+- `--triage` command refreshes the dashboard data after running.
+
+**Files:** `lib/dashboard_emitters.sh` (update emitter), `templates/watchtower/app.js`
+(update Notes tab rendering)
+
+## Configuration
+
+All new config keys with defaults (added to `lib/config_defaults.sh` and documented
+in `templates/pipeline.conf.example`):
+
+```bash
+# --- Human Notes Triage ---
+# HUMAN_NOTES_TRIAGE_ENABLED=true          # Run triage gate before note execution
+# HUMAN_NOTES_TRIAGE_MODEL=haiku           # Model for agent escalation (haiku recommended)
+# HUMAN_NOTES_PROMOTE_THRESHOLD=20         # Est. turns above which to recommend promotion
+# HUMAN_NOTES_PROMOTE_MODE=confirm         # confirm = ask user; auto = promote silently
+```
+
+## Acceptance Criteria
+
+- Shell heuristics detect scope keywords and produce FIT/OVERSIZED with high confidence
+  for clear-cut cases (no agent call needed)
+- Low-confidence heuristic results escalate to Haiku agent (< 3K token input)
+- Agent failure falls back to FIT with a warning (triage never blocks execution)
+- Promote-confirm mode pauses with clear [p/k/s] prompt
+- Promote-auto mode creates milestone and marks note without user interaction
+- `tekhton --triage` prints a formatted report and exits without running pipeline stages
+- `tekhton --triage BUG` filters to bug notes only
+- Triage results are cached in note metadata; unchanged notes skip re-triage
+- Edited notes (text changed) invalidate cached triage and re-evaluate
+- In `--human` mode, OVERSIZED notes trigger promotion flow before claiming
+- In `--with-notes` mode, OVERSIZED notes are warned but not auto-promoted
+- `HUMAN_NOTES_TRIAGE_ENABLED=false` bypasses all triage logic
+- Dashboard Notes tab shows triage disposition and estimated turns
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/notes_triage.sh` passes
+- `shellcheck lib/notes_triage.sh` passes
+- New test file `tests/test_notes_triage.sh` covers: heuristic scoring, agent escalation
+  trigger, promotion flow, metadata caching, `--triage` report output
+
+## Watch For
+
+- **Heuristic false positives.** "Add support for dark mode" contains "add support for"
+  (a scope keyword) but is typically a moderate-sized task, not milestone-scale. The tag
+  weight adjustment (POLISH gets -1) and the confidence threshold (score 2-4 = low
+  confidence → escalate) should catch this. Test with real-world note examples.
+- **Agent prompt size.** The triage prompt must stay under 3K tokens including the
+  architecture summary excerpt. If the architecture file is large, truncate to the
+  first 2K chars (file listing and key modules, not implementation details).
+- **Promotion during --human --complete loop.** If note N is promoted, the loop should
+  advance to note N+1 without counting the promotion as a pipeline attempt against
+  `MAX_PIPELINE_ATTEMPTS`. Promotions are administrative, not execution failures.
+- **Race condition: triage then edit.** If the user triages a note, then edits its text
+  before the next run, the text hash mismatch invalidates the cached triage. This is
+  correct behavior — the edit may have changed the scope.
+- **Confirm mode UX.** The [p/k/s] prompt must handle invalid input gracefully (re-prompt,
+  not crash). Also handle non-interactive mode (e.g., piped input) by defaulting to "keep"
+  with a warning.
+
+## Seeds Forward
+
+- Milestone 42 consumes triage `estimated_turns` for tag-specific turn budget adjustment
+- The triage prompt template can be extended with project-specific context in future
+  versions (e.g., repo map excerpts for more accurate sizing)
+- The `--triage` command establishes a pattern for non-executing pipeline analysis that
+  could extend to `--audit` (architecture review without execution)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 42: Tag-Specialized Execution Paths
+<!-- milestone-meta
+id: "42"
+status: "done"
+-->
+
+## Overview
+
+The coder agent currently receives identical prompt structure regardless of whether it's
+working on a bug fix, a new feature, or a polish item. The only differentiation is a
+one-line `NOTE_GUIDANCE` string embedded in `coder.sh`. This milestone introduces
+tag-specific prompt templates, turn budgets, scout behavior, and acceptance heuristics
+so that bugs get root-cause-first debugging, features get architecture-aware scaffolding,
+and polish items get minimal-change constraints.
+
+Depends on Milestone 40 (Notes Core Rewrite) for the tag registry and note metadata,
+and Milestone 41 (Note Triage) for estimated turn counts used in budget adjustment.
+
+## Scope
+
+### 1. Tag-Specific Prompt Templates
+
+**Problem:** The coder prompt (`prompts/coder.prompt.md`) has a single
+`{{IF:HUMAN_NOTES_BLOCK}}` section with generic instructions. The tag-specific guidance
+is a bash string in `coder.sh:278-289` (`NOTE_GUIDANCE_BUG`, etc.) — not a proper prompt
+template that can be iterated on.
+
+**Fix:**
+- Three new prompt templates:
+  - `prompts/coder_note_bug.prompt.md` — Root-cause-first workflow: diagnose before
+    fixing. Mandatory `## Root Cause Analysis` section in CODER_SUMMARY.md. Explicit
+    instruction to write a regression test covering the fix.
+  - `prompts/coder_note_feat.prompt.md` — Architecture-aware: read architecture file
+    and active milestone context before coding. Check for conflicts with in-progress
+    milestones. Follow existing patterns (file placement, naming conventions). Flag
+    architectural concerns in CODER_SUMMARY.md.
+  - `prompts/coder_note_polish.prompt.md` — Minimal-change constraint: "Do not refactor
+    surrounding code. Do not change logic. Do not add features beyond what the note
+    describes. Touch only the files necessary for the visual/UX change."
+- `render_prompt()` in `prompts.sh` selects the appropriate template based on the
+  active note's tag. When `NOTES_FILTER` is set (or `HUMAN_MODE` is active with a
+  claimed note), the tag determines the template. Fallback: if no tag-specific template
+  exists for a tag, use the generic `coder.prompt.md` with the `HUMAN_NOTES_BLOCK`.
+- The `NOTE_GUIDANCE` bash strings in `coder.sh` are removed. All guidance lives in
+  the prompt templates where it belongs.
+
+**Files:** `prompts/coder_note_bug.prompt.md` (new),
+`prompts/coder_note_feat.prompt.md` (new), `prompts/coder_note_polish.prompt.md` (new),
+`lib/prompts.sh` (template selection logic), `stages/coder.sh` (remove NOTE_GUIDANCE
+strings, use template-based injection)
+
+### 2. Tag-Specific Scout Behavior
+
+**Problem:** Scout behavior has some tag awareness (`coder.sh:99-109`) — bugs always
+get scouted, features only if they extend existing systems — but it's incomplete and
+the logic is embedded in bash conditionals rather than being configurable.
+
+**Fix:**
+- Scout behavior per tag, driven by config:
+  - **BUG:** Always scout. Scout prompt includes explicit instruction to identify the
+    likely root cause location (not just "relevant files"). Scout report should include
+    a `## Suspected Root Cause` section.
+  - **FEAT:** Scout if the note's estimated turns (from triage metadata) > 10, or if
+    the note text contains brownfield indicators (extend/modify/integrate). For small
+    features (est. ≤ 10 turns), skip scout to save turns.
+  - **POLISH:** Skip scout entirely. Polish items should be self-evident from the note
+    description. If the user explicitly wants scouting for polish, they can use
+    `--with-notes` instead of `--human POLISH`.
+- Configurable: `SCOUT_ON_BUG=always`, `SCOUT_ON_FEAT=auto`, `SCOUT_ON_POLISH=never`.
+  Values: `always`, `auto` (use heuristics), `never`.
+- The existing brownfield detection (`grep -qiE "extend|add to|modify|..."`) is
+  preserved within the `auto` logic for FEAT.
+
+**Files:** `stages/coder.sh` (refactor scout decision logic),
+`lib/config_defaults.sh` (add scout config keys)
+
+### 3. Tag-Specific Turn Budgets
+
+**Problem:** All notes get the same `CODER_MAX_TURNS` regardless of expected scope.
+A 3-turn polish fix burns the same turn budget as a 30-turn feature.
+
+**Fix:**
+- Per-tag turn budget multipliers:
+  - **BUG:** `BUG_TURN_MULTIPLIER=1.0` (default, bugs use full budget — debugging is
+    unpredictable)
+  - **FEAT:** `FEAT_TURN_MULTIPLIER=1.0` (default, features use full budget)
+  - **POLISH:** `POLISH_TURN_MULTIPLIER=0.6` (default, polish gets 60% of budget —
+    if a polish item needs more, it probably should have been a FEAT)
+- If triage estimated turns are available (from M41 metadata), use them directly:
+  `ADJUSTED_CODER_TURNS = min(estimated_turns * 1.5, CODER_MAX_TURNS * multiplier)`.
+  The 1.5x buffer accounts for estimation error.
+- Turn budget adjustment happens in `coder.sh` after scout (same location as the
+  existing `apply_scout_turn_limits` and TDD multiplier logic).
+
+**Files:** `stages/coder.sh` (turn budget logic), `lib/config_defaults.sh` (multiplier
+defaults)
+
+### 4. Tag-Specific Acceptance Heuristics
+
+**Problem:** Note completion is currently self-graded — the coder says "COMPLETED" in
+CODER_SUMMARY.md and the pipeline trusts it. Milestones have structured acceptance
+criteria checked by the pipeline. Notes have nothing comparable.
+
+**Fix:**
+- Lightweight, tag-specific acceptance checks run during finalization (after coder
+  completes, before note is resolved). These are heuristic — warnings, not hard blocks.
+  Results are logged to CODER_SUMMARY.md and recorded in note metadata.
+
+- **BUG acceptance:**
+  - Check: did the git diff include changes to at least one test file? (Pattern:
+    `*test*`, `*spec*`, `*_test.*`, `test_*.*` in the diff)
+  - If no test file was touched: warning "Bug fix has no regression test coverage.
+    Consider adding a test that reproduces the original bug."
+  - Check: does CODER_SUMMARY.md contain a `## Root Cause Analysis` section?
+  - If missing: warning "No root cause analysis provided. Future debugging may repeat
+    the same investigation."
+
+- **FEAT acceptance:**
+  - Check: do new files follow existing directory conventions? (Heuristic: if the
+    project has `src/models/`, a new model should be in `src/models/`, not in `src/`
+    root). Implementation: compare new file paths against the most common directory
+    patterns in the git tree.
+  - If unconventional placement detected: warning "New file {path} may not follow
+    project conventions. Expected location: {suggested_path}."
+  - This is advisory only — the heuristic can be wrong for valid reasons.
+
+- **POLISH acceptance:**
+  - Check: were any "logic files" modified? (Pattern: `*.py`, `*.js`, `*.ts`, `*.sh`,
+    `*.go`, `*.rs`, `*.java`, `*.rb`, `*.c`, `*.cpp`, `*.h` — configurable via
+    `POLISH_LOGIC_FILE_PATTERNS`).
+  - If logic files were modified: warning "Polish note modified logic files: {files}.
+    This may indicate scope creep beyond the visual/UX change."
+  - Exclusions: if the only logic file change is in a test file, suppress the warning
+    (tests for polish are fine).
+
+- Acceptance results stored in note metadata: `acceptance:pass` or
+  `acceptance:warn_no_test`, `acceptance:warn_logic_modified`, etc.
+
+**Files:** `lib/notes_acceptance.sh` (new), `lib/finalize.sh` (hook acceptance check
+into finalization before note resolution), `lib/config_defaults.sh` (pattern configs)
+
+### 5. Feature Notes: Milestone Context Injection
+
+**Problem:** When executing a FEAT note, the coder has no awareness of in-progress
+milestones. A feature note might add functionality that conflicts with or duplicates
+work in an active milestone.
+
+**Fix:**
+- When a FEAT note is being executed and milestones exist, inject a brief milestone
+  context block into the prompt: "Active milestones: {list of pending/in-progress
+  milestone titles}. If this feature overlaps with any of these milestones, note the
+  overlap in CODER_SUMMARY.md."
+- This uses the existing `MILESTONE_BLOCK` variable (already computed by
+  `build_context_packet`) but the FEAT-specific prompt template explicitly calls
+  attention to it with instructions to check for conflicts.
+- No new data plumbing needed — just prompt template wording that references the
+  existing milestone context.
+
+**Files:** `prompts/coder_note_feat.prompt.md` (prompt wording)
+
+### 6. Polish Notes: Reviewer Skip Heuristic
+
+**Problem:** A CSS-only or config-only change from a POLISH note doesn't benefit from
+a full code review cycle. The reviewer stage adds turns and latency for no value on
+trivial visual changes.
+
+**Fix:**
+- After the coder stage completes for a POLISH note, check the git diff for file types.
+  If ALL changed files match non-logic patterns (`*.css`, `*.scss`, `*.less`, `*.json`,
+  `*.yaml`, `*.yml`, `*.toml`, `*.cfg`, `*.ini`, `*.svg`, `*.png`, `*.md` —
+  configurable via `POLISH_SKIP_REVIEW_PATTERNS`), skip the reviewer stage.
+- Log: "Polish note: all changes are non-logic files. Skipping reviewer."
+- If ANY logic file is in the diff, reviewer runs as normal.
+- Configurable: `POLISH_SKIP_REVIEW=true` (default: true). Set to false to always
+  review polish.
+- The skip is implemented in `tekhton.sh` or `stages/review.sh` as a pre-check before
+  invoking the reviewer agent.
+
+**Files:** `stages/review.sh` (skip logic), `lib/config_defaults.sh` (patterns and
+toggle)
+
+### 7. Dashboard Execution Outcome Display
+
+**Fix:**
+- `emit_dashboard_notes()` (from M40, extended in M41) further extended with execution
+  outcome fields:
+  ```json
+  {
+    "id": "n07", "tag": "BUG", "title": "Fix login...",
+    "status": "done",
+    "completed_at": "2026-03-30T14:22:00Z",
+    "turns_used": 12,
+    "acceptance_result": "warn_no_test",
+    "acceptance_warnings": ["Bug fix has no regression test coverage"],
+    "rca_present": true,
+    "reviewer_skipped": false
+  }
+  ```
+- Dashboard Notes tab shows:
+  - Green check for clean acceptance, yellow warning icon for acceptance warnings
+  - Turns used vs estimated turns (if triage ran)
+  - Expandable acceptance warnings
+  - "Reviewer skipped" badge for polish items that bypassed review
+
+**Files:** `lib/dashboard_emitters.sh` (update emitter),
+`templates/watchtower/app.js` (Notes tab rendering)
+
+### 8. Note Throughput Metrics
+
+**Fix:**
+- `record_run_metrics()` (in `lib/metrics.sh`) extended to capture note-specific data
+  when a `--human` run completes:
+  - `note_id`, `note_tag`, `turns_used`, `estimated_turns` (from triage),
+    `acceptance_result`, `reviewer_skipped`
+- `emit_dashboard_metrics()` aggregates note data across runs for the Trends tab:
+  - Notes completed per run (by tag)
+  - Average turns per note (by tag)
+  - Promotion rate (notes promoted to milestones vs executed)
+  - Acceptance warning rate (by tag)
+- This gives users visibility into backlog velocity and whether their notes are
+  appropriately sized.
+
+**Files:** `lib/metrics.sh` (extend), `lib/dashboard_emitters.sh` (extend Trends data)
+
+## Configuration
+
+All new config keys with defaults (added to `lib/config_defaults.sh` and documented
+in `templates/pipeline.conf.example`):
+
+```bash
+# --- Tag-Specific Execution ---
+# SCOUT_ON_BUG=always                      # always|auto|never
+# SCOUT_ON_FEAT=auto                       # always|auto|never
+# SCOUT_ON_POLISH=never                    # always|auto|never
+# BUG_TURN_MULTIPLIER=1.0                  # Turn budget multiplier for BUG notes
+# FEAT_TURN_MULTIPLIER=1.0                 # Turn budget multiplier for FEAT notes
+# POLISH_TURN_MULTIPLIER=0.6               # Turn budget multiplier for POLISH notes
+# POLISH_SKIP_REVIEW=true                  # Skip reviewer for non-logic-only changes
+# POLISH_SKIP_REVIEW_PATTERNS="*.css *.scss *.less *.json *.yaml *.yml *.toml *.cfg *.svg *.png *.md"
+# POLISH_LOGIC_FILE_PATTERNS="*.py *.js *.ts *.sh *.go *.rs *.java *.rb *.c *.cpp *.h"
+```
+
+## Acceptance Criteria
+
+- BUG notes use `coder_note_bug.prompt.md` with root-cause-first workflow instructions
+- FEAT notes use `coder_note_feat.prompt.md` with architecture and milestone awareness
+- POLISH notes use `coder_note_polish.prompt.md` with minimal-change constraints
+- Falling back to generic `coder.prompt.md` works when no tag-specific template exists
+- Scout always runs for BUG notes (`SCOUT_ON_BUG=always`)
+- Scout runs conditionally for FEAT notes based on heuristics (`SCOUT_ON_FEAT=auto`)
+- Scout is skipped for POLISH notes (`SCOUT_ON_POLISH=never`)
+- POLISH notes get reduced turn budget (default 60% of CODER_MAX_TURNS)
+- Triage estimated turns (from M41) are used for turn budget when available
+- BUG acceptance checks for regression test presence and RCA section
+- FEAT acceptance checks for conventional file placement
+- POLISH acceptance checks for unintended logic file modifications
+- Acceptance warnings are logged to CODER_SUMMARY.md and note metadata (not hard blocks)
+- POLISH notes with non-logic-only diffs skip the reviewer stage when enabled
+- Dashboard Notes tab shows execution outcomes, acceptance results, and turns used
+- Run metrics include per-note data; Trends tab shows note throughput by tag
+- `NOTE_GUIDANCE` bash strings removed from `coder.sh` — all guidance in templates
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/notes_acceptance.sh` passes
+- `shellcheck lib/notes_acceptance.sh` passes
+- New test file `tests/test_notes_acceptance.sh` covers: BUG/FEAT/POLISH acceptance
+  heuristics, reviewer skip logic, turn budget calculation
+
+## Watch For
+
+- **Template selection complexity.** The prompt rendering system already supports
+  conditionals (`{{IF:VAR}}`). The tag-specific templates should be standalone files,
+  not nested conditionals within the main `coder.prompt.md`. The main template stays
+  as the fallback — tag templates replace it entirely when active.
+- **Scout skip for POLISH vs user expectations.** Some users may expect scouting for
+  polish items (e.g., "polish the settings page" needs file discovery). The
+  `SCOUT_ON_POLISH=never` default is conservative. Document that users can override
+  to `auto` or `always` if their polish notes are more exploratory.
+- **Acceptance false positives.** The "logic file modified" check for POLISH will fire
+  if a polish note legitimately requires a small logic change (e.g., adding a CSS class
+  name to a component). This is why it's a warning, not a block. The warning text should
+  say "may indicate" not "is definitely" scope creep.
+- **Turn budget underflow.** `POLISH_TURN_MULTIPLIER=0.6` on a project with
+  `CODER_MAX_TURNS=15` gives 9 turns. Enforce a minimum floor (e.g., 5 turns) to avoid
+  giving the agent too little budget to even start.
+- **Reviewer skip and test stage.** Skipping the reviewer for polish does NOT skip the
+  tester stage. Tests should still run to catch regressions. Only the human-style code
+  review is skipped.
+- **Metric cardinality.** Note metrics are per-note, per-run. For users who process
+  many notes per session (`--human --complete`), the metrics data could grow. Cap at
+  `DASHBOARD_HISTORY_DEPTH` runs like existing metrics.
+
+## Seeds Forward
+
+- The tag-specific prompt template pattern is extensible to future tags (SECURITY,
+  REFACTOR, etc.) — just add a template file and a registry entry (from M40)
+- The acceptance heuristic framework can be extended with project-specific checks
+  configured in pipeline.conf
+- Note throughput metrics enable future "backlog health" scoring in the Watchtower
+  dashboard
+- The reviewer skip heuristic could be generalized to other scenarios (e.g., skip
+  review for documentation-only changes in any mode)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 7: Cross-Run Cache & Personalized Ranking
+<!-- milestone-meta
+id: "7"
+status: "done"
+-->
+
+Make the indexer persistent and adaptive across pipeline runs. The tag cache
+survives between runs with mtime-based invalidation. Task→file association
+history improves PageRank personalization over time — files that were relevant
+to similar past tasks rank higher automatically. Integrate with v2's metrics
+system for tracking indexer performance.
+
+Files to modify:
+- `tools/repo_map.py` — add `--history-file <path>` flag. When provided, load
+  task→file association records and use them to build a personalization vector
+  that blends: (1) task keyword matches (current behavior, weight 0.6),
+  (2) historical file relevance from similar past tasks (weight 0.3),
+  (3) file recency from git log (weight 0.1). Add `--warm-cache` flag that
+  parses all project files and populates the tag cache without producing output
+  (for use during `tekhton --init`).
+- `tools/tag_cache.py` — add cache statistics: hit count, miss count, total
+  parse time saved. Add `prune_cache(root_dir)` that removes entries for files
+  that no longer exist. Add cache versioning — if cache format changes between
+  Tekhton versions, invalidate and rebuild rather than crash.
+- `lib/indexer.sh` — add `warm_index_cache()` (called during `--init` or
+  `--setup-indexer`), `record_task_file_association(task, files[])` (called
+  after coder stage with the files from CODER_SUMMARY.md),
+  `get_indexer_stats()` (returns cache hit rate and timing for metrics).
+  History file: `.claude/index/task_history.jsonl` (append-only JSONL, same
+  pattern as v2 metrics).
+- `lib/metrics.sh` — add indexer metrics to `record_run_metrics()`: cache hit
+  rate, repo map generation time, token savings vs full architecture injection.
+  Add indexer section to `summarize_metrics()` dashboard output.
+- `stages/coder.sh` — after coder completes, call
+  `record_task_file_association()` with the task and modified file list.
+- `tekhton.sh` — during `--init`, if indexer is available, call
+  `warm_index_cache()` to pre-populate the tag cache. Display progress.
+- `templates/pipeline.conf.example` — add `REPO_MAP_HISTORY_ENABLED=true`,
+  `REPO_MAP_HISTORY_MAX_RECORDS=200` config keys
+
+History record format (JSONL):
+```json
+{"ts":"2026-03-21T10:00:00Z","task":"add user authentication","files":["src/auth/login.py","src/models/user.py","src/api/routes.py"],"task_type":"feature"}
+```
+
+Acceptance criteria:
+- Tag cache persists between runs in `.claude/index/tags.json`
+- Changed files (new mtime) are re-parsed; unchanged files use cache
+- Deleted files are pruned from cache on next run
+- `--warm-cache` pre-populates the entire project cache in one pass
+- Task→file history is recorded after each successful coder stage
+- Personalization vector blends keyword, history, and recency signals
+- With 10+ history records, the repo map noticeably favors files that were
+  relevant to similar past tasks (measurable in ranking output)
+- `REPO_MAP_HISTORY_MAX_RECORDS` caps history file size (oldest records pruned)
+- Indexer metrics appear in `tekhton --metrics` dashboard
+- Cache version mismatch triggers rebuild with warning, not crash
+- All existing tests pass
+- New Python tests verify: history loading, personalization blending, cache
+  pruning, version migration, JSONL append safety
+
+Watch For:
+- JSONL is append-only by design. Never read-modify-write. Pruning creates a
+  new file and atomically replaces the old one.
+- Task similarity is keyword-based (bag of words overlap), not semantic. Keep
+  it simple — semantic similarity would require embeddings and adds complexity
+  and cost for marginal gain at this stage.
+- Git recency signal requires a git repo. For non-git projects, drop weight 0.1
+  and redistribute to keywords (0.7) and history (0.3).
+- History file can contain sensitive task descriptions. It lives in `.claude/`
+  which should be gitignored, but add a warning to the setup output.
+- Cache warming on large projects (10k+ files) may take 30-60 seconds. Show
+  a progress bar or periodic status line.
+
+Seeds Forward:
+- Future v3 milestones (parallel execution) can use task→file history to
+  predict which milestones will touch overlapping files and schedule them
+  to avoid merge conflicts
+- The metrics integration provides data for future adaptive token budgeting —
+  if the indexer consistently saves 70% of tokens, the pipeline can allocate
+  the savings to richer prompt content
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 8: Indexer Tests & Documentation
+<!-- milestone-meta
+id: "8"
+status: "done"
+-->
+
+Comprehensive test coverage for all indexing functionality: shell orchestration,
+Python tools, pipeline integration, fallback behavior, and Serena lifecycle.
+Update project documentation and repository layout.
+
+Files to create:
+- `tests/test_indexer.sh` — shell-side tests: `check_indexer_available()` returns
+  correct status for present/absent Python, `run_repo_map()` handles exit codes
+  (0/1/2), `get_repo_map_slice()` extracts correct file entries, fallback to 2.0
+  when indexer unavailable, config key validation (budget must be positive, etc.)
+- `tests/test_mcp.sh` — MCP lifecycle tests: `start_mcp_server()` / `stop_mcp_server()`
+  create and clean up processes, `check_mcp_health()` detects running/stopped
+  server, EXIT trap cleanup works, orphan prevention
+- `tests/test_repo_map_integration.sh` — end-to-end tests using a small fixture
+  project (created in test setup): verify repo map generation, stage injection
+  (coder/reviewer/tester get correct slices), context budget respected, conditional
+  prompt blocks render correctly when feature on/off
+- `tools/tests/test_repo_map.py` — Python unit tests: tag extraction for each
+  supported language, graph construction from tags, PageRank output, token budget
+  enforcement, `.gitignore` respect, error handling for unparseable files
+- `tools/tests/test_tag_cache.py` — cache hit/miss, mtime invalidation, pruning
+  deleted files, version migration, concurrent write safety
+- `tools/tests/test_history.py` — task→file recording, JSONL append, history
+  loading, personalization vector computation, max records pruning
+- `tools/tests/conftest.py` — shared fixtures: small multi-language project tree,
+  mock git repo, sample tag cache files
+- `tests/fixtures/indexer_project/` — small fixture project with Python, JS, and
+  Bash files for integration testing
+
+Files to modify:
+- `CLAUDE.md` — update Repository Layout to include `tools/` directory, `lib/indexer.sh`,
+  `lib/mcp.sh`. Update Template Variables table with all new config keys and their
+  defaults. Update Non-Negotiable Rules to note Python as an optional dependency.
+- `templates/pipeline.conf.example` — ensure all indexer config keys have
+  explanatory comments matching the detail level of existing keys
+- `tests/run_tests.sh` — add new test files to the test runner. Add conditional
+  Python test execution: if Python available, run `python3 -m pytest tools/tests/`;
+  if not, skip with a note.
+
+Acceptance criteria:
+- All shell tests pass via `bash tests/run_tests.sh`
+- All Python tests pass via `python3 -m pytest tools/tests/` (when Python available)
+- Test runner gracefully skips Python tests when Python unavailable
+- Fixture project exercises multi-language parsing (Python + JS + Bash minimum)
+- Integration test verifies full flow: setup → generate map → inject into stage →
+  verify prompt contains repo map content → verify context budget respected
+- Fallback test verifies: disable indexer → run pipeline → identical to v2 output
+- MCP tests verify no orphaned processes after normal exit, Ctrl+C, and error exit
+- `CLAUDE.md` Repository Layout includes all new files and directories
+- `CLAUDE.md` Template Variables table includes all new config keys
+- `bash -n` passes on all new `.sh` files
+- `shellcheck` passes on all new `.sh` files
+- All pre-existing tests (37+) continue to pass unchanged
+
+Watch For:
+- Python test fixtures must be self-contained — no network access, no real
+  language servers. Mock tree-sitter parsing for unit tests; use real parsing
+  only in integration tests.
+- The fixture project must be small (5-10 files) to keep tests fast.
+- MCP lifecycle tests are inherently flaky (process timing). Use retry logic
+  and generous timeouts in test assertions, not in production code.
+- Shell tests that verify prompt content should check for the presence of
+  `REPO_MAP_CONTENT` variable, not exact prompt text (prompts will evolve).
+- Ensure Python tests work with both `tree-sitter-languages` (bundled) and
+  individual grammar packages — CI environments may have either.
+
+Seeds Forward:
+- Test fixtures and patterns established here are reused by future v3 milestones
+  (DAG execution, parallel agents, UI plugin) for their own testing
+- The integration test pattern (fixture project → full pipeline) becomes the
+  template for end-to-end testing of future features
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 22: Init UX Overhaul
+<!-- milestone-meta
+id: "22"
+status: "done"
+-->
+
+Redesign the post-init experience to guide new users through what matters
+instead of dumping them into an 80+ key config file. The init report becomes
+a focused, actionable summary that highlights what was detected, what needs
+attention, and exactly what to do next. Config file gets clear section
+separation between essential and advanced settings.
+
+Files to create:
+- `lib/init_report.sh` — Post-init report generator:
+  **Focused summary** (`emit_init_summary()`):
+  Prints a structured, color-coded summary after init completes:
+  ```
+  ✓ Tekhton initialized for: my-project
+
+  Detected:
+    Language:    TypeScript (high confidence — from package.json)
+    Framework:   Next.js 14 (from next.config.js)
+    Build:       npm run build (from CI workflow)
+    Test:        jest (from jest.config.ts)
+    Lint:        eslint (from .eslintrc.json)
+
+  ⚠ Needs attention:
+    ARCHITECTURE_FILE not detected — create one or set to "" to skip
+    No pre-existing tests found — tester will generate from scratch
+
+  Health score: 45/100 (see INIT_REPORT.md for details)
+
+  Next steps:
+    1. Review essential config: .claude/pipeline.conf (lines 1-15)
+    2. Start planning:  tekhton --plan "Describe your project goals"
+    3. Open dashboard:  open .claude/dashboard/index.html
+  ```
+  When Watchtower is enabled, also prints: "Full report: .claude/dashboard/index.html"
+  When Watchtower is disabled, prints: "Full report: INIT_REPORT.md"
+
+  **Report file** (`emit_init_report_file()`):
+  Writes INIT_REPORT.md with the complete detection results, health score
+  breakdown, config decisions made, and anything that needs human review.
+  This is the persistent artifact that Watchtower and `tekhton report`
+  can consume later. Format is structured markdown with machine-parseable
+  sections (for dashboard data extraction).
+
+- `lib/init_config_sections.sh` — Config file section generator:
+  Replaces the current flat config emission with clearly sectioned output:
+
+  **Section 1: Essential (lines 1-20)**
+  PROJECT_NAME, TEST_CMD, ANALYZE_CMD, BUILD_CHECK_CMD, ARCHITECTURE_FILE.
+  Comment: "# Review these — auto-detected values may need adjustment"
+
+  **Section 2: Models & Turns (lines 25-50)**
+  CLAUDE_CODER_MODEL, CODER_MAX_TURNS, etc.
+  Comment: "# Defaults work well — tune after a few runs if needed"
+
+  **Section 3: Pipeline Behavior (lines 55-80)**
+  MAX_REVIEW_CYCLES, CONTINUATION_ENABLED, etc.
+  Comment: "# Advanced — most users never change these"
+
+  **Section 4: Security (lines 85-100)**
+  SECURITY_AGENT_ENABLED, SECURITY_BLOCK_SEVERITY, etc.
+  Comment: "# Security is ON by default — adjust policy to your risk tolerance"
+
+  **Section 5: Features (lines 105-130)**
+  REPO_MAP_ENABLED, SERENA_ENABLED, WATCHTOWER_ENABLED, etc.
+  Comment: "# Optional features — enable as needed"
+
+  **Section 6: Quotas & Autonomy (lines 135-155)**
+  USAGE_THRESHOLD_PCT, MAX_PIPELINE_ATTEMPTS, AUTONOMOUS_TIMEOUT, etc.
+  Comment: "# Controls for autonomous mode (--complete, --auto-advance)"
+
+  Each section has a clear header with ═══ separators and a one-line
+  description of what the section controls.
+
+  **VERIFY markers:** When detection confidence is below HIGH for a critical
+  key (TEST_CMD, ANALYZE_CMD, BUILD_CHECK_CMD), append `# VERIFY` comment
+  with the detection source. This tells the user which values need checking
+  without making them read every key.
+
+Files to modify:
+- `lib/init.sh` — Replace current post-init output with `emit_init_summary()`.
+  Current behavior: prints file list + generic "next steps."
+  New behavior: calls `emit_init_summary()` which reads detection results,
+  health score (M15), and Watchtower status to produce the focused summary.
+  Also calls `emit_init_report_file()` to write the persistent report.
+
+- `lib/init_config.sh` — Refactor config emission to use sectioned format
+  from init_config_sections.sh. All existing config keys remain in the same
+  positions (backward compatible for sed/grep-based tools). Only the
+  COMMENTS and WHITESPACE change, not the key-value pairs.
+  When upgrading (--reinit or migration), preserve user values but add new
+  section headers if missing.
+
+- `templates/pipeline.conf.example` — Update the example config with the
+  new sectioned format. This is what users see when they open the file
+  for the first time.
+
+- `lib/detect_report.sh` — Ensure detection results are written to a
+  structured format that `emit_init_summary()` can consume. Add
+  confidence levels to each detection (HIGH/MEDIUM/LOW) with source
+  attribution.
+
+- `lib/dashboard.sh` (M13) — Add `emit_dashboard_init()` function that
+  generates the init data for Watchtower from INIT_REPORT.md.
+
+Acceptance criteria:
+- Post-init terminal output shows focused summary with detected values,
+  attention items, health score, and numbered next steps
+- INIT_REPORT.md written with complete detection results and config decisions
+- pipeline.conf uses clear section headers with ═══ separators
+- Essential config section is first 15-20 lines (most users only need these)
+- VERIFY markers appear on low-confidence detections
+- When Watchtower enabled, summary directs user to dashboard
+- When Watchtower disabled, summary directs user to INIT_REPORT.md
+- Config sectioning is backward compatible (key names/values unchanged)
+- --reinit preserves user values while adding section headers if missing
+- All existing tests pass
+- `bash -n lib/init_report.sh lib/init_config_sections.sh` passes
+- `shellcheck lib/init_report.sh lib/init_config_sections.sh` passes
+
+Watch For:
+- pipeline.conf is `source`d as bash. Section headers (comments) and
+  whitespace changes are safe, but be careful not to add syntax that
+  breaks sourcing (e.g., unescaped special chars in comments).
+- The "essential" section MUST include every key a new user might need
+  to verify. Missing a key here means the user won't check it.
+- VERIFY markers should be rare (only low-confidence detections). If
+  everything is marked VERIFY, the signal is lost.
+- Health score display depends on M15. When M15 isn't implemented yet,
+  skip the health score line gracefully.
+
+Seeds Forward:
+- INIT_REPORT.md is consumed by Watchtower (M13/M14) for the init view
+- Config sectioning format is maintained by migration scripts (M21)
+- VERIFY markers feed into the PM agent's confidence assessment (M10)
+- The focused summary pattern is reusable for other CLI output improvements
+
+Migration impact:
+- New files in .claude/: INIT_REPORT.md (generated by init)
+- Modified file formats: pipeline.conf (section headers added, values unchanged)
+- New config keys: NONE
+- Breaking changes: NONE — terminal output changes only, no behavioral change
+- Migration script update required: YES — add section headers to existing
+  pipeline.conf files (append-only, non-destructive)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 23: Dry-Run & Preview Mode
+<!-- milestone-meta
+id: "23"
+status: "done"
+-->
+
+Add a `--dry-run` execution mode that runs the scout and intake agents,
+shows what the pipeline WOULD do, and caches the results. The next actual
+run can continue from the cached dry-run instead of re-running scout and
+intake, ensuring the preview matches the execution. This builds trust with
+new users and helps experienced users scope work before committing turns.
+
+Files to create:
+- `lib/dry_run.sh` — Dry-run orchestration and caching:
+  **Execution** (`run_dry_run(task)`):
+  1. Run intake gate (M10) → produce INTAKE_REPORT.md with verdict + confidence
+  2. Run scout agent → produce SCOUT_REPORT.md with file list + estimates
+  3. Summarize: estimated files to modify, estimated complexity, intake verdict,
+     security-relevant files flagged, milestone scope assessment
+  4. Cache results to `${TEKHTON_SESSION_DIR}/dry_run_cache/`:
+     - INTAKE_REPORT.md (cached copy)
+     - SCOUT_REPORT.md (cached copy)
+     - DRY_RUN_META.json: task hash, git HEAD sha, timestamp, cache TTL
+  5. Print formatted preview to terminal:
+  ```
+  ══════════════════════════════════════
+    Tekhton — Dry Run Preview
+  ══════════════════════════════════════
+    Task:       Add user authentication
+    Intake:     PASS (confidence 85)
+
+    Scout identified 14 files:
+      Modified:  src/api/routes.ts, src/middleware/auth.ts, ...
+      New:       src/services/auth-service.ts, tests/auth.test.ts
+      Estimated: ~20 turns (coder), 2 review cycles
+
+    Security-relevant: YES (auth, middleware changes)
+
+    Continue with full run? [y/n]
+  ══════════════════════════════════════
+  ```
+  6. If user says yes: set DRY_RUN_CONTINUE=true, return to main flow
+  7. If user says no: save state for later `tekhton --continue-preview`
+
+  **Cache validation** (`validate_dry_run_cache(task)`):
+  Returns 0 (valid) when ALL conditions met:
+  - Cache exists and is non-empty
+  - Task hash matches (same task string)
+  - Git HEAD sha matches (no code changes since dry-run)
+  - Cache age < DRY_RUN_CACHE_TTL (default: 1 hour)
+  Returns 1 (invalid) and logs reason when any condition fails.
+
+  **Cache consumption** (`consume_dry_run_cache()`):
+  Called at the start of a real run when valid cache exists:
+  - Copy cached SCOUT_REPORT.md to the active session directory
+  - Copy cached INTAKE_REPORT.md to the active session directory
+  - Set SCOUT_CACHED=true so the coder stage skips re-running scout
+  - Set INTAKE_CACHED=true so the intake gate skips re-running
+  - Log: "Using cached dry-run results (scout + intake from Xm ago)"
+  - Delete cache after consumption (one-use)
+
+Files to modify:
+- `tekhton.sh` — Add flag handling:
+  - `--dry-run` → Run `run_dry_run(task)` instead of `_run_pipeline_stages`
+  - `--continue-preview` → Load cached dry-run, skip to coder stage
+  At pipeline startup (before stage execution), call
+  `validate_dry_run_cache()`. If valid, offer to use it:
+  "Found cached dry-run from 12m ago. Use cached scout results? [y/n/fresh]"
+  If yes: `consume_dry_run_cache()`. If no/fresh: discard cache, run normally.
+  Source lib/dry_run.sh.
+
+- `stages/coder.sh` — When SCOUT_CACHED=true, skip scout agent invocation
+  and read SCOUT_REPORT.md directly. Log: "Scout: using cached results."
+  The coder prompt assembly reads SCOUT_REPORT.md the same way regardless
+  of whether it came from cache or a live run.
+
+- `stages/intake.sh` (M10) — When INTAKE_CACHED=true, skip intake agent
+  invocation and read INTAKE_REPORT.md directly. If cached verdict was
+  NEEDS_CLARITY, still pause (user may have answered clarifications since
+  the dry-run). If cached verdict was TWEAKED, apply the tweaks.
+
+- `lib/config_defaults.sh` — Add:
+  DRY_RUN_CACHE_TTL=3600 (seconds, default 1 hour),
+  DRY_RUN_CACHE_DIR="${TEKHTON_SESSION_DIR}/dry_run_cache".
+
+- `lib/state.sh` — Add dry-run state to pipeline state persistence.
+  `--continue-preview` loads the cached state and resumes.
+
+- `lib/dashboard.sh` (M13) — Emit dry-run results to Watchtower data
+  when a dry-run completes.
+
+Acceptance criteria:
+- `tekhton --dry-run "task"` runs scout + intake only, no coder/security/review/test
+- Terminal preview shows: task, intake verdict, file list, estimates, security flag
+- Results cached to session directory with task hash + git sha + timestamp
+- Cache validated on next actual run: task match, git HEAD match, TTL check
+- Valid cache consumed by next run: scout and intake skip re-running
+- Invalid cache (code changed, task changed, expired) is discarded with log message
+- `--continue-preview` loads cached dry-run and starts from coder stage
+- Interactive "Continue with full run? [y/n]" at end of dry-run
+- Cache is one-use: consumed and deleted after real run starts
+- When M10 (intake) not yet enabled, dry-run shows scout results only
+- When no stages produce meaningful preview data, dry-run says so and suggests
+  running the full pipeline instead of silently producing empty output
+- All existing tests pass
+- `bash -n lib/dry_run.sh` passes
+- `shellcheck lib/dry_run.sh` passes
+
+Watch For:
+- The scout is non-deterministic — the whole point of caching is that the
+  preview matches the execution. The cache MUST be invalidated on ANY code
+  change (git HEAD check), not just task changes.
+- Cache TTL is 1 hour by default. For fast-moving repos with frequent
+  commits, this may be too long. The git HEAD check handles this naturally
+  (any commit invalidates), but branch switches should also invalidate.
+- `--dry-run` in --milestone mode should preview the ACTIVE milestone,
+  not require a task string. Detect milestone mode and read the milestone
+  file as the task context.
+- The scout's estimated complexity (turns, review cycles) is a rough
+  heuristic. Label it clearly as "estimated" to set expectations.
+- `--dry-run` should NOT count against quota or autonomous loop limits.
+  It's a preview, not a pipeline run.
+
+Seeds Forward:
+- Dry-run cache pattern is reusable for other pre-computation (e.g.,
+  caching repo map generation for fast startup)
+- The preview format feeds into Watchtower's "upcoming work" view
+- `--continue-preview` pattern seeds future "staged execution" where
+  users approve each stage before it runs
+
+Migration impact:
+- New config keys: DRY_RUN_CACHE_TTL, DRY_RUN_CACHE_DIR
+- New files in .claude/: dry_run_cache/ directory (transient, auto-cleaned)
+- Breaking changes: NONE
+- Migration script update required: NO — new feature only
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 24: Run Safety Net & Rollback
+<!-- milestone-meta
+id: "24"
+status: "done"
+-->
+
+Add a pre-run git checkpoint and `--rollback` command that lets users
+cleanly revert the last pipeline run. This is a critical safety net for
+new users who aren't comfortable with git recovery, and for experienced
+users who want a quick undo when the pipeline produces bad results.
+
+Files to create:
+- `lib/checkpoint.sh` — Git checkpoint management:
+  **Create checkpoint** (`create_run_checkpoint()`):
+  Called at the very start of pipeline execution (before scout/intake).
+  1. Check for uncommitted changes. If any exist:
+     - `git stash push -m "tekhton-checkpoint-${TIMESTAMP}"` to save them
+     - Record stash ref in CHECKPOINT_META.json
+  2. Record current HEAD sha in CHECKPOINT_META.json
+  3. If previous checkpoint exists and is unused, warn: "Previous checkpoint
+     exists — overwriting (only the most recent run is rollback-able)"
+  4. Write CHECKPOINT_META.json to `.claude/`:
+     ```json
+     {
+       "timestamp": "2024-03-23T10:45:00Z",
+       "head_sha": "abc123",
+       "had_uncommitted": true,
+       "stash_ref": "stash@{0}",
+       "task": "Add user authentication",
+       "milestone": "m03",
+       "auto_committed": false,
+       "commit_sha": null
+     }
+     ```
+  5. Log: "Checkpoint created — use `tekhton --rollback` to undo this run"
+
+  **Update checkpoint** (`update_checkpoint_commit(commit_sha)`):
+  Called after auto-commit or manual commit during finalization.
+  Updates CHECKPOINT_META.json with `auto_committed: true` and
+  `commit_sha`. This is needed so rollback knows to revert the commit.
+
+  **Rollback** (`rollback_last_run()`):
+  1. Read CHECKPOINT_META.json. If missing: "No checkpoint found — nothing
+     to rollback."
+  2. If auto_committed: `git revert --no-edit ${commit_sha}` (creates a
+     revert commit, non-destructive). Show what was reverted.
+  3. If NOT auto_committed: `git checkout -- .` to discard uncommitted
+     changes back to checkpoint HEAD. Warn about unstaged changes.
+  4. If stash_ref exists: `git stash pop ${stash_ref}` to restore the
+     pre-run uncommitted changes.
+  5. Remove CHECKPOINT_META.json (checkpoint consumed).
+  6. Clean up pipeline state files (PIPELINE_STATE.md, session dir).
+  7. Print summary:
+  ```
+  ✓ Rollback complete
+    Reverted: commit abc123 ("Add user auth middleware")
+    Restored: 3 uncommitted files from pre-run state
+    Pipeline state: cleared
+  ```
+
+  **Checkpoint info** (`show_checkpoint_info()`):
+  For `--rollback --check`. Shows what would be rolled back without doing it:
+  - What commit would be reverted (if auto-committed)
+  - What files would be restored
+  - Whether pre-run stash would be restored
+  - Age of checkpoint
+
+  **Safety checks:**
+  - Rollback refuses if the current HEAD is NOT the commit_sha or its
+    immediate successor (someone else committed on top). Prints:
+    "Cannot rollback — commits have been made after the pipeline run.
+    Use `git revert ${commit_sha}` manually."
+  - Rollback refuses if there are uncommitted changes that would be lost.
+    Prints: "Uncommitted changes detected. Stash or commit them first."
+  - Rollback is ALWAYS a clean git operation (revert, checkout, stash pop).
+    NEVER uses `git reset --hard` or any destructive force operation.
+
+Files to modify:
+- `tekhton.sh` — Add flag handling:
+  - `--rollback` → Run `rollback_last_run()` and exit
+  - `--rollback --check` → Run `show_checkpoint_info()` and exit
+  Add `create_run_checkpoint()` call at pipeline startup, BEFORE stage
+  execution begins (after config load, after argument parsing, before
+  scout/intake). Source lib/checkpoint.sh.
+
+- `lib/finalize.sh` — After auto-commit or manual commit, call
+  `update_checkpoint_commit($commit_sha)` to record the commit in the
+  checkpoint metadata. This enables clean revert.
+
+- `lib/config_defaults.sh` — Add:
+  CHECKPOINT_ENABLED=true (enabled by default — safety net should be on),
+  CHECKPOINT_FILE=".claude/CHECKPOINT_META.json".
+
+- `lib/state.sh` — Include checkpoint info in `--status` output so the
+  user knows a rollback is available.
+
+- `lib/dashboard.sh` (M13) — Include checkpoint status in Watchtower:
+  "Last run rollback available: Yes (12m ago, commit abc123)"
+
+Acceptance criteria:
+- Checkpoint created automatically at pipeline start (before any agent runs)
+- Pre-existing uncommitted changes are stashed with tekhton-specific message
+- CHECKPOINT_META.json records: timestamp, HEAD sha, stash ref, task, milestone
+- After auto-commit, checkpoint updated with commit sha
+- `tekhton --rollback` reverts auto-committed changes via `git revert`
+- `tekhton --rollback` restores pre-run uncommitted changes from stash
+- `tekhton --rollback --check` shows what would be rolled back without acting
+- Rollback refuses when additional commits exist after the pipeline run
+- Rollback refuses when uncommitted changes would be lost
+- Rollback NEVER uses `git reset --hard` or destructive operations
+- Only one checkpoint exists at a time (most recent run only)
+- When CHECKPOINT_ENABLED=false, no checkpoint created, --rollback disabled
+- `tekhton --status` shows checkpoint availability
+- All existing tests pass
+- `bash -n lib/checkpoint.sh` passes
+- `shellcheck lib/checkpoint.sh` passes
+
+Watch For:
+- `git stash` behavior with untracked files: by default `git stash` only
+  stashes tracked files. Use `git stash push --include-untracked` to also
+  save new files the user created but hasn't committed.
+- `git revert` creates a new commit. This is intentional — it's
+  non-destructive and preserves history. The user can see what was
+  reverted and why.
+- The stash ref (`stash@{0}`) may shift if the user manually stashes
+  between the checkpoint and rollback. Record the stash message string
+  and find it by message, not index: `git stash list | grep tekhton-checkpoint`.
+- Monorepo users may have changes in directories outside the project.
+  Checkpoint should only stash changes within PROJECT_DIR, not the entire
+  repo. Use `git stash push -- .` (current directory scope).
+- If the pipeline crashes mid-run (no finalization), the checkpoint still
+  exists but auto_committed will be false. Rollback should handle this
+  gracefully (just discard uncommitted changes, restore stash).
+
+Seeds Forward:
+- Checkpoint metadata feeds into --diagnose (M17): "Last run was rolled back"
+- The pattern is reusable for future "safe experiment" mode where the
+  pipeline works on a branch and merges only on success
+- Watchtower can show rollback history for project health trends
+
+Migration impact:
+- New config keys: CHECKPOINT_ENABLED, CHECKPOINT_FILE
+- New files in .claude/: CHECKPOINT_META.json (transient, auto-managed)
+- Breaking changes: NONE
+- Migration script update required: NO — new feature only
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 25: Human Notes UX Enhancement
+<!-- milestone-meta
+id: "25"
+status: "done"
+-->
+
+Make the human notes system discoverable, easy to use, and integrated
+into the pipeline feedback loop. Today HUMAN_NOTES.md is powerful but
+hidden — users have to know it exists, know the format, and manually
+edit a markdown file. This milestone adds CLI commands for note management
+and integrates notes into the post-run experience.
+
+Files to create:
+- `lib/notes_cli.sh` — CLI note management commands:
+  **Add note** (`add_human_note(text, tag)`):
+  Appends a properly formatted entry to HUMAN_NOTES.md:
+  `- [ ] [TAG] Note text here`
+  If HUMAN_NOTES.md doesn't exist, creates it with the standard header.
+  Valid tags: BUG, FEAT, POLISH (default: FEAT if omitted).
+  Prints: "✓ Added [TAG] note: Note text here"
+
+  **List notes** (`list_human_notes(filter)`):
+  Prints all unchecked notes, optionally filtered by tag.
+  Color-coded by tag: BUG=red, FEAT=cyan, POLISH=yellow.
+  Shows count: "3 notes (1 BUG, 1 FEAT, 1 POLISH)"
+
+  **Complete note** (`complete_human_note(number_or_text)`):
+  Marks a note as checked (done). Accepts line number or text match.
+  Prints: "✓ Completed: [BUG] Fix login redirect loop"
+
+  **Clear completed** (`clear_completed_notes()`):
+  Removes all checked items from HUMAN_NOTES.md. Requires confirmation.
+  Prints count removed.
+
+Files to modify:
+- `tekhton.sh` — Add subcommand handling:
+  - `tekhton note "Fix the login bug"` → `add_human_note "Fix the login bug"`
+  - `tekhton note "Fix the login bug" --tag BUG` → `add_human_note "..." BUG`
+  - `tekhton note --list` → `list_human_notes`
+  - `tekhton note --list --tag BUG` → `list_human_notes BUG`
+  - `tekhton note --done 3` → `complete_human_note 3`
+  - `tekhton note --done "Fix login"` → `complete_human_note "Fix login"`
+  - `tekhton note --clear` → `clear_completed_notes`
+  Source lib/notes_cli.sh.
+
+- `lib/finalize_display.sh` — After pipeline completion, when unchecked
+  notes exist, enhance the action items display:
+  ```
+  ⚠ HUMAN_NOTES.md — 3 item(s) remaining
+    Tip: Run `tekhton --human` to process notes, or
+         `tekhton note --list` to see them
+  ```
+  When the pipeline is run with --human and completes a note, show:
+  ```
+  ✓ Completed note: [BUG] Fix login redirect loop
+    2 notes remaining — run `tekhton --human` to continue
+  ```
+
+- `lib/notes.sh` — Add `get_notes_summary()` function that returns
+  a structured count (total, by_tag, checked, unchecked) for use by
+  other modules (Watchtower, finalize_display, report).
+
+- `lib/init.sh` — During --init, if unchecked notes would be useful
+  (e.g., health score is low, tech debt detected), suggest:
+  "Tip: Use `tekhton note \"description\"` to track items for the pipeline"
+
+- `lib/dashboard.sh` (M13) — Include notes summary in Watchtower data.
+  Notes appear in the Reports tab as a "Backlog" card showing
+  unchecked items by tag.
+
+- `prompts/intake_scan.prompt.md` (M10) — When notes exist that match
+  the current task's topic (keyword overlap), inject a NOTES_CONTEXT_BLOCK
+  so the PM agent is aware of related human observations.
+
+Acceptance criteria:
+- `tekhton note "text"` appends properly formatted entry to HUMAN_NOTES.md
+- `tekhton note "text" --tag BUG` uses specified tag
+- Default tag is FEAT when --tag omitted
+- `tekhton note --list` shows unchecked notes color-coded by tag with count
+- `tekhton note --list --tag BUG` filters to BUG notes only
+- `tekhton note --done 3` marks note on line 3 as completed
+- `tekhton note --done "partial text"` finds and completes matching note
+- `tekhton note --clear` removes checked items with confirmation
+- HUMAN_NOTES.md created automatically if it doesn't exist
+- Post-run display includes notes count with usage tip
+- --human completion shows which note was processed
+- Notes summary available to Watchtower and report command
+- All existing notes functionality (--human, --with-notes, --notes-filter)
+  continues to work unchanged
+- All existing tests pass
+- `bash -n lib/notes_cli.sh` passes
+- `shellcheck lib/notes_cli.sh` passes
+
+Watch For:
+- The HUMAN_NOTES.md format is already established (checkbox markdown).
+  The CLI commands must produce EXACTLY the same format that the existing
+  parser expects. Test with `_count_unchecked_notes()` after adding.
+- Note completion by text match should be fuzzy enough to be useful
+  (case-insensitive substring) but not so fuzzy that it matches the wrong
+  note. When multiple matches found, show all and ask user to specify.
+- The `tekhton note` subcommand is the first subcommand (not a --flag).
+  This is a UX precedent — if we add more subcommands later (e.g.,
+  `tekhton report`, `tekhton milestone`), the parsing pattern must be
+  consistent. Use positional argument detection before flag parsing.
+- `--clear` should NEVER delete unchecked notes. Only checked items.
+  Add a safety check that counts unchecked items before and after.
+
+Seeds Forward:
+- The subcommand pattern (`tekhton note`, `tekhton report`) establishes
+  a CLI design precedent for future subcommands
+- Notes integration with the PM agent enables "human observations feed
+  into automated planning" — a key V4 capability
+- Notes summary in Watchtower creates a backlog view that feeds into
+  the future tech debt agent's work queue
+
+Migration impact:
+- New config keys: NONE
+- New files in .claude/: NONE (HUMAN_NOTES.md already exists)
+- Breaking changes: NONE — existing notes behavior unchanged
+- Migration script update required: NO
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 26: Express Mode (Zero-Config Execution)
+<!-- milestone-meta
+id: "26"
+status: "done"
+-->
+
+
+Enable Tekhton to run without `--init` by auto-detecting project configuration
+and using sensible defaults. When a user runs `tekhton "task"` in a project
+with no `.claude/pipeline.conf`, the pipeline silently detects the tech stack,
+infers commands, and executes immediately. Config is persisted on completion
+so subsequent runs use the detected values.
+
+This is the "try it in 30 seconds" experience. The full `--init` with interview,
+synthesis, and milestone planning remains the recommended path for serious projects.
+Express mode is for evaluation, one-off tasks, and quick fixes.
+
+Files to create:
+- `lib/express.sh` — Express mode orchestration:
+  **Detection and config generation:**
+  - `detect_express_config($project_dir)` — runs a FAST subset of the M12
+    detection engine: language detection, build/test/lint command inference,
+    project name from directory name or package manifest. No workspace
+    detection, no CI/CD parsing, no doc quality assessment — those are --init
+    features. Target: <3 seconds for detection.
+  - `generate_express_config()` — builds an in-memory config from detection
+    results + conservative defaults: CLAUDE_CODER_MODEL=sonnet,
+    SECURITY_AGENT_ENABLED=true, INTAKE_AGENT_ENABLED=true,
+    MAX_REVIEW_CYCLES=2, standard turn limits.
+  - `persist_express_config($project_dir)` — after successful pipeline
+    completion, writes `.claude/pipeline.conf` with auto-detected values,
+    section headers, and comments: "# Auto-detected by Tekhton Express Mode.
+    # Run 'tekhton --init' for full configuration with planning interview."
+    Also writes minimal agent role files from Tekhton templates.
+  **Express mode entry point:**
+  - `enter_express_mode($project_dir, $task)` — called from tekhton.sh when
+    no pipeline.conf exists. Runs detection, generates config, sets all
+    pipeline variables in memory, then returns control to the normal pipeline
+    flow. The rest of the pipeline (scout, coder, security, review, test)
+    runs identically to configured mode.
+
+- `templates/express_pipeline.conf` — Template for the auto-generated config
+  file. Includes all section headers (Essential, Models, Pipeline Behavior,
+  Security, Features, Quotas) with detected values filled in and descriptive
+  comments. VERIFY markers on low-confidence detections.
+
+Files to modify:
+- `tekhton.sh` — At startup, after checking for pipeline.conf:
+  If pipeline.conf not found AND TEKHTON_EXPRESS_ENABLED != false:
+    Print: "No pipeline.conf found. Running in Express Mode (auto-detected config)."
+    Print: "For full configuration, run: tekhton --init"
+    Call `enter_express_mode()`
+  If pipeline.conf not found AND TEKHTON_EXPRESS_ENABLED == false:
+    Error and exit with current behavior (tell user to run --init)
+  Source lib/express.sh.
+
+- `lib/agent.sh` (or agent role resolution) — When agent role file
+  (e.g., `.claude/agents/coder.md`) doesn't exist in the project, fall back
+  to `${TEKHTON_HOME}/templates/coder.md` (the built-in template). This is
+  a one-line change in the role file resolution path. Log: "Using built-in
+  role template for [agent] (no project-specific role file found)."
+
+- `lib/config_defaults.sh` — Add:
+  TEKHTON_EXPRESS_ENABLED=true (can be disabled globally in ~/.tekhton/config
+  for users who always want explicit --init),
+  EXPRESS_PERSIST_CONFIG=true (write config on completion),
+  EXPRESS_PERSIST_ROLES=false (don't copy role files by default — use
+  built-in templates until user runs --init).
+
+- `lib/config.sh` — Handle the case where config is generated in-memory
+  (not loaded from file). The validation path must work for both file-loaded
+  and express-generated configs.
+
+- `lib/detect.sh` / `lib/detect_commands.sh` — Ensure the detection functions
+  can be called independently (not just from --init flow). They should already
+  be modular from M12, but verify no --init-specific state is required.
+
+- `lib/finalize.sh` — After successful pipeline completion in express mode,
+  call `persist_express_config()` if EXPRESS_PERSIST_CONFIG=true. Print:
+  "Express config saved to .claude/pipeline.conf. Edit to customize."
+
+Acceptance criteria:
+- `tekhton "task"` works in a project with no .claude/ directory at all
+- Detection runs in <3 seconds for typical projects
+- Pipeline executes identically to a configured project (same stages, same
+  agents, same gates)
+- On completion, .claude/pipeline.conf is written with detected values
+- Subsequent runs use the persisted config (no re-detection)
+- Agent role files fall back to built-in templates when project-local files
+  don't exist
+- Express mode prints clear banner explaining what's happening and how to
+  get full config
+- TEKHTON_EXPRESS_ENABLED=false restores current behavior (error without --init)
+- EXPRESS_PERSIST_CONFIG=false skips config persistence (truly ephemeral mode)
+- Express mode works for: Node.js, Python, Go, Rust, Java, Ruby, C#, shell
+  projects (all languages M12 detection supports)
+- Detection failures (unknown language, no build command found) result in
+  conservative defaults, not errors — the pipeline should still run
+- All existing tests pass
+- `bash -n lib/express.sh` passes
+- `shellcheck lib/express.sh` passes
+
+Watch For:
+- Express mode must NOT run the full M12 detection suite (workspaces, CI/CD,
+  services, doc quality). That's heavyweight and belongs in --init. Express
+  runs the fast subset: language, build cmd, test cmd, lint cmd, project name.
+- The config persistence must not overwrite an existing pipeline.conf. If the
+  user ran --init between the express run and the next run (unlikely but
+  possible), the --init config takes precedence.
+- Agent role file fallback must be clearly logged so users understand why
+  their agent behavior might differ from a fully configured project.
+- Express mode should set PIPELINE_STATE so it's resumable. If the user
+  interrupts and re-runs, it should resume, not re-detect.
+- The in-memory config must be complete enough that ALL pipeline code paths
+  work. Any config key that's read but not set will cause `set -u` to fail.
+  The express config generator must set every key that config_defaults.sh sets.
+
+Seeds Forward:
+- The role file fallback (built-in templates when no project file) is reusable
+  by --init for showing users what the defaults look like before customization
+- Express config persistence is the starting point for --init --quick (Tier 1)
+  which adds detection report and interactive confirmation
+- The fast detection subset could be used by --diagnose to verify config
+  matches actual project state
+- V4 multi-platform support can use express mode as the common entry point
+  across all platforms
+
+Migration impact:
+- New config keys: TEKHTON_EXPRESS_ENABLED, EXPRESS_PERSIST_CONFIG, EXPRESS_PERSIST_ROLES
+- New files in .claude/: None (express mode creates pipeline.conf only on completion)
+- Modified file formats: None
+- Breaking changes: Projects without pipeline.conf now run instead of erroring
+  (behavior change, but additive — old behavior available via TEKHTON_EXPRESS_ENABLED=false)
+- Migration script update required: NO — express mode is auto-detected, not configured
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 27: Configurable Pipeline Order (TDD Support)
+<!-- milestone-meta
+id: "27"
+status: "done"
+-->
+
+
+Add a PIPELINE_ORDER config key that controls stage execution order, enabling
+test-driven development as an opt-in alternative to the default code-first flow.
+
+The default order remains Scout → Coder → Security → Review → Test (standard).
+The test_first order runs: Scout → Tester (write failing tests) → Coder (make
+them pass) → Security → Review → Tester (verify all pass).
+
+Seeds Forward (V4): The `auto` mode lets the PM agent (M10) decide per-milestone
+based on task type analysis. Bug fixes → test_first. New features with unknown
+API surface → standard. Requires PM agent maturity and calibration data.
+
+Files to create:
+- `lib/pipeline_order.sh` — Pipeline ordering logic:
+  **Order definitions:**
+  - `PIPELINE_ORDER_STANDARD=(scout coder security review test)` — current flow
+  - `PIPELINE_ORDER_TEST_FIRST=(scout test_write coder security review test_verify)`
+    — TDD flow with two tester invocations
+  - `get_pipeline_order()` — returns the active order array based on config
+  - `validate_pipeline_order($order)` — validates the order string is one of:
+    standard, test_first, auto (auto reserved for V4, errors gracefully with
+    "auto mode requires V4 — using standard")
+
+  **Test-first stage variants:**
+  - The tester stage needs to know if it's in "write failing tests" mode or
+    "verify passing tests" mode. This is controlled by a TESTER_MODE variable:
+    - `TESTER_MODE=write_failing` — first invocation in test_first order.
+      Tester writes tests that SHOULD FAIL against the current codebase.
+      Uses `prompts/tester_write_failing.prompt.md`.
+    - `TESTER_MODE=verify_passing` — second invocation (or the single
+      invocation in standard order). Tester writes/updates tests that should
+      PASS. Uses existing `prompts/tester.prompt.md`.
+
+- `prompts/tester_write_failing.prompt.md` — TDD-specific tester prompt:
+  Instructs tester to:
+  (1) Read the milestone/task acceptance criteria
+  (2) Read SCOUT_REPORT.md for identified files and structure
+  (3) Write test files that encode the EXPECTED behavior from acceptance criteria
+  (4) These tests SHOULD FAIL when run against the current codebase — that's
+      the point. A test that already passes is not testing new behavior.
+  (5) Focus on interface contracts, not implementation details — the coder
+      needs freedom to choose HOW to implement
+  (6) Output TESTER_PREFLIGHT.md with: test files created, expected failures,
+      the acceptance criteria each test covers
+  **Critical guidance:**
+  - Test PUBLIC interfaces only. Don't test internal methods that the coder
+    hasn't created yet.
+  - Use the project's existing test framework and conventions (detected by M12
+    or from the tester role file).
+  - If the task is creating entirely new modules with no existing interface,
+    write tests against the interface DESCRIBED in the acceptance criteria.
+    If the acceptance criteria don't describe an interface, write behavioral
+    tests (e.g., "when I run command X, output should contain Y").
+  - Keep tests simple and focused. The coder will extend them. Don't try to
+    achieve full coverage in the pre-flight tests.
+
+Files to modify:
+- `tekhton.sh` — Replace hardcoded stage ordering with dynamic ordering from
+  `get_pipeline_order()`. The stage functions themselves don't change — only
+  the ORDER in which they're called changes. Add TESTER_MODE variable that's
+  set before each tester invocation based on position in the order.
+  When PIPELINE_ORDER=test_first:
+    1. run_stage_scout
+    2. TESTER_MODE=write_failing; run_stage_test  (write failing tests)
+    3. run_stage_coder  (coder sees TESTER_PREFLIGHT.md as context)
+    4. run_stage_security
+    5. run_stage_review
+    6. TESTER_MODE=verify_passing; run_stage_test  (verify tests pass)
+
+- `stages/tester.sh` — Check TESTER_MODE at the start of run_stage_test().
+  When write_failing: use tester_write_failing.prompt.md, output TESTER_PREFLIGHT.md,
+  skip the test execution gate (tests are EXPECTED to fail).
+  When verify_passing: use existing tester.prompt.md, run tests, enforce the
+  test pass gate as normal.
+
+- `stages/coder.sh` — When PIPELINE_ORDER=test_first, inject TESTER_PREFLIGHT.md
+  content into coder prompt context. The coder sees the pre-written tests and
+  knows: "Make these tests pass." This gives the coder a clear "done" signal.
+
+- `prompts/coder.prompt.md` — Add conditional block:
+  `{{IF:TESTER_PREFLIGHT_CONTENT}}## Pre-Written Tests (TDD Mode)
+  Tests have been written before your implementation. Your goal is to make
+  ALL of these tests pass while also satisfying the acceptance criteria.
+  Read the test files listed in TESTER_PREFLIGHT.md to understand the
+  expected interface contracts.
+  {{TESTER_PREFLIGHT_CONTENT}}{{ENDIF:TESTER_PREFLIGHT_CONTENT}}`
+
+- `lib/config_defaults.sh` — Add:
+  PIPELINE_ORDER=standard (standard|test_first|auto),
+  TDD_PREFLIGHT_FILE=TESTER_PREFLIGHT.md,
+  TESTER_WRITE_FAILING_MAX_TURNS=10 (less than full tester — just writing
+  tests, not debugging them).
+
+- `lib/config.sh` — Validate PIPELINE_ORDER is one of standard|test_first|auto.
+  When auto: warn "auto mode is V4 — falling back to standard" and set to standard.
+
+- `lib/prompts.sh` — Register TESTER_PREFLIGHT_CONTENT template variable.
+
+- `lib/state.sh` — State persistence must track TESTER_MODE so resume works
+  correctly. If interrupted between test_write and coder, resume at coder
+  (tests already written). If interrupted between coder and test_verify,
+  resume at test_verify.
+
+Acceptance criteria:
+- PIPELINE_ORDER=standard produces identical behavior to current pipeline
+  (zero regression)
+- PIPELINE_ORDER=test_first runs tester before coder with write_failing mode
+- Tester in write_failing mode produces TESTER_PREFLIGHT.md with test files
+  and expected failure descriptions
+- Coder in test_first mode sees TESTER_PREFLIGHT.md content and "make these
+  tests pass" instruction
+- Tester in verify_passing mode (second pass) runs tests and enforces pass gate
+- PIPELINE_ORDER=auto falls back to standard with a warning message
+- Resume from any point in both orderings works correctly
+- State persistence tracks TESTER_MODE for accurate resume
+- Build gate still runs between coder and security in both orderings
+- Security agent still runs between coder and reviewer in both orderings
+- The reviewer sees the same context regardless of pipeline order
+- All existing tests pass
+- `bash -n lib/pipeline_order.sh` passes
+- `shellcheck lib/pipeline_order.sh` passes
+
+Watch For:
+- The tester writing "failing" tests in a brownfield project might write tests
+  that fail for the WRONG reason (import errors, missing fixtures, etc). The
+  prompt must be very clear: tests should fail because the feature doesn't
+  exist yet, not because the test setup is broken. If test_write produces
+  tests that can't even be parsed/loaded, that's a signal to fall back to
+  standard order.
+- PIPELINE_ORDER affects stage numbering in progress output. "Stage 2 of 6"
+  vs "Stage 2 of 5" needs to adapt. Use the order array length, not a
+  hardcoded count.
+- The coder in test_first mode might need MORE turns than standard mode if
+  the pre-written tests are extensive. Consider a CODER_TDD_TURN_MULTIPLIER
+  (default 1.2) that gives the coder slightly more budget when working against
+  pre-written tests.
+- Don't inject TESTER_PREFLIGHT.md into the security agent or reviewer — they
+  don't need it and it wastes context.
+- The test_first flow has TWO tester invocations per pipeline run. This costs
+  more than standard order. Users should understand this trade-off. Add a note
+  to the config file: "# test_first uses two tester passes (higher cost, TDD rigor)"
+
+Seeds Forward:
+- V4 `auto` mode: PM agent evaluates milestone and recommends pipeline order.
+  Bug fix tasks → test_first. New module creation → standard. Refactoring → standard.
+  Data-driven: track which order produces fewer rework cycles per task type.
+- The TESTER_PREFLIGHT.md format is reusable by the test integrity audit (M20)
+  as a baseline reference for "what tests were originally intended to verify"
+- Multi-platform support (V4) needs pipeline ordering to be platform-agnostic.
+  This milestone ensures ordering is config-driven, not hardcoded.
+
+Migration impact:
+- New config keys: PIPELINE_ORDER, TDD_PREFLIGHT_FILE, TESTER_WRITE_FAILING_MAX_TURNS
+- New files in .claude/: None
+- Modified file formats: None
+- Breaking changes: None — default is standard (identical to current behavior)
+- Migration script update required: NO — new config key with backward-compatible default
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 28: UI Test Awareness & E2E Prompt Integration
+<!-- milestone-meta
+id: "28"
+status: "done"
+-->
+
+Teach the pipeline that user interfaces exist and require UI-level testing.
+Update prompts across PM agent, tester, scout, and reviewer to detect UI
+projects, require UI-verifiable acceptance criteria, and guide the tester
+toward writing E2E tests when appropriate. Add UI_TEST_CMD and
+UI_FRAMEWORK config keys so projects with existing E2E infrastructure
+(Playwright, Cypress, Selenium, etc.) get those tests run as part of the
+pipeline.
+
+This milestone is prompt-and-config changes only — no new infrastructure.
+It addresses the root cause of the Watchtower class of bug: milestones
+that produce UI artifacts pass all acceptance criteria while the actual
+visual output is broken, because nobody thought to test at the UI level.
+
+Files to create:
+- `prompts/tester_ui_guidance.prompt.md` — Conditional block injected into
+  the tester prompt when a UI project is detected. Contains:
+  - Framework-specific E2E test guidance for the top 6 frameworks:
+    Playwright, Cypress, Selenium, Puppeteer, Testing Library, Detox (mobile)
+  - A decision tree: "If the milestone creates/modifies UI components,
+    write E2E tests that verify rendering and interaction, not just logic."
+  - Common UI test patterns: page loads without errors, critical elements
+    visible, form submission works, navigation functions, responsive breakpoints
+  - Anti-patterns: "Don't test implementation details (CSS class names,
+    DOM structure). Test user-visible behavior."
+  - The guidance adapts based on UI_FRAMEWORK config: if Playwright is
+    configured, give Playwright-specific examples. If no framework configured,
+    give framework-agnostic guidance and recommend Playwright as default.
+
+Files to modify:
+- `lib/config_defaults.sh` — Add:
+  UI_TEST_CMD="" (command to run E2E/UI tests, separate from TEST_CMD),
+  UI_FRAMEWORK="" (playwright|cypress|selenium|puppeteer|testing-library|
+  detox|auto|"" — auto detects from project, "" disables UI awareness),
+  UI_PROJECT_DETECTED=false (set by detection engine, not user-configured),
+  UI_VALIDATION_ENABLED=true (enable UI validation gate when UI detected).
+
+- `lib/config.sh` — Validate UI_FRAMEWORK is one of the known values or
+  empty. Validate UI_TEST_CMD is a runnable command when set.
+
+- `lib/detect.sh` — Add UI project detection to the existing detection engine:
+  New function: `detect_ui_framework($project_dir)` checks for:
+  - Playwright: playwright.config.ts/js, @playwright/test in package.json
+  - Cypress: cypress.config.ts/js, cypress/ directory
+  - Selenium: selenium in requirements.txt/pom.xml, webdriver configs
+  - Testing Library: @testing-library/* in package.json
+  - Detox: .detoxrc.js, detox in package.json
+  - Generic web UI: src/**/*.tsx, src/**/*.vue, src/**/*.svelte,
+    templates/**/*.html, app/views/**/*.erb
+  Sets UI_PROJECT_DETECTED=true and UI_FRAMEWORK when found.
+  Detection runs during --init AND at pipeline startup (cached in session).
+
+- `lib/detect_commands.sh` — Add UI test command detection:
+  When UI framework detected, infer UI_TEST_CMD:
+  - Playwright: "npx playwright test"
+  - Cypress: "npx cypress run"
+  - package.json scripts containing "e2e", "test:e2e", "test:ui"
+  - CI/CD config referencing E2E test steps
+  CI source takes priority (same cascade as TEST_CMD detection in M12).
+
+- `stages/intake.sh` — Update PM agent context injection:
+  When UI_PROJECT_DETECTED=true, inject a UI awareness block into the
+  intake prompt: "This is a UI project using {{UI_FRAMEWORK}}. Milestones
+  that create or modify user-facing components should include UI-verifiable
+  acceptance criteria (e.g., 'page loads without console errors', 'form
+  submits and shows confirmation', 'component renders at mobile breakpoint').
+  Flag milestones that produce UI artifacts without such criteria."
+
+- `prompts/intake_scan.prompt.md` — Add to the clarity rubric:
+  "(7) If this milestone produces or modifies UI components and the project
+  has UI testing infrastructure, do the acceptance criteria include at least
+  one UI-verifiable criterion? If not, flag for addition."
+
+- `prompts/tester.prompt.md` — Add conditional UI guidance block:
+  `{{IF:UI_PROJECT_DETECTED}}
+  {{TESTER_UI_GUIDANCE}}
+  {{ENDIF:UI_PROJECT_DETECTED}}`
+  Where TESTER_UI_GUIDANCE is rendered from tester_ui_guidance.prompt.md
+  with framework-specific content based on UI_FRAMEWORK.
+
+- `prompts/scout.prompt.md` — Add UI component identification:
+  "When examining files in scope, identify any UI components (React
+  components, Vue templates, HTML files, CSS/SCSS modules). Note these
+  in your scout report under a '## UI Components in Scope' section so
+  the tester knows to write E2E tests for them."
+
+- `prompts/reviewer.prompt.md` — Add UI review awareness:
+  `{{IF:UI_PROJECT_DETECTED}}
+  ## UI Review Considerations
+  This is a UI project. When reviewing changes to UI components, verify:
+  - CSS/style changes don't break existing visual layouts (check for
+    removed classes still referenced elsewhere)
+  - New components have corresponding E2E test coverage (if not, add
+    to Coverage Gaps, not blockers — the tester handles this)
+  - Interactive elements (buttons, forms, links) have event handlers
+  - Accessibility attributes present (aria-label, role, alt text)
+  {{ENDIF:UI_PROJECT_DETECTED}}`
+
+- `lib/gates.sh` — Add UI test execution to the build gate:
+  After the standard BUILD_CHECK_CMD and ANALYZE_CMD, if UI_TEST_CMD
+  is set and non-empty, run it. Parse exit code:
+  - 0: UI tests pass, continue
+  - Non-zero: UI tests failed, write UI_TEST_ERRORS.md with output,
+    route to coder rework (same as build failure)
+  If UI_TEST_CMD is set but the command is not found (e.g., Playwright
+  not installed), log a WARNING but do not fail the gate. Include the
+  warning in CODER_SUMMARY.md so the reviewer sees it.
+
+- `lib/prompts.sh` — Register template variables:
+  UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD,
+  TESTER_UI_GUIDANCE (rendered from tester_ui_guidance.prompt.md).
+
+- `templates/pipeline.conf.example` — Add UI testing section:
+  ```
+  # --- UI Testing ---
+  # UI_TEST_CMD=""           # E2E test command (e.g., "npx playwright test")
+  # UI_FRAMEWORK=""          # auto | playwright | cypress | selenium | ...
+  # UI_VALIDATION_ENABLED=true  # Enable UI validation gate
+  ```
+
+Acceptance criteria:
+- `detect_ui_framework()` correctly identifies Playwright, Cypress,
+  Selenium, Testing Library, and Detox from config files and dependencies
+- Generic web UI detection works for React, Vue, Svelte, Rails, Django
+  template projects without explicit E2E framework
+- UI_TEST_CMD auto-detected from package.json scripts and CI config
+- PM agent flags milestones producing UI artifacts without UI-verifiable
+  acceptance criteria
+- Tester agent receives framework-specific E2E test guidance when
+  UI_PROJECT_DETECTED=true
+- Scout report includes "UI Components in Scope" section when applicable
+- Reviewer prompt includes UI review considerations for UI projects
+- Build gate runs UI_TEST_CMD when configured, routes failures to rework
+- Missing E2E framework (command not found) produces a warning, not a failure
+- UI_TEST_CMD failures produce UI_TEST_ERRORS.md for coder context
+- Non-UI projects see zero change in behavior
+- All existing tests pass
+- `bash -n` passes on all modified files
+- `shellcheck` passes on all modified files
+
+Watch For:
+- UI detection must not be over-eager. A project with a single HTML README
+  is not a "UI project." Look for MULTIPLE signals: framework dependencies
+  + component files + routing config. Single HTML files alone are insufficient
+  unless they're in a templates/ or views/ directory.
+- The tester UI guidance must be concise — it's injected into every tester
+  prompt for UI projects. Keep it under 100 lines. Use framework-specific
+  conditional blocks to avoid bloating the prompt with irrelevant framework
+  guidance.
+- UI_TEST_CMD can be slow (Playwright tests take 30-60 seconds). Consider
+  this in the activity timeout. The UI test gate should have its own
+  timeout config (UI_TEST_TIMEOUT, default 120 seconds) separate from
+  the build gate timeout.
+- E2E tests are flaky by nature. A single failure shouldn't immediately
+  trigger rework. Consider a retry (run UI_TEST_CMD twice on failure)
+  before routing to rework.
+
+Seeds Forward:
+- M29 (UI Validation Gate) builds on this detection to add headless
+  smoke testing for projects without E2E frameworks
+- V4 vision-in-the-loop uses the UI detection to decide when screenshot
+  comparison is worthwhile
+- The UI_FRAMEWORK detection feeds into express mode (M26) — express
+  mode for a React app should default to including E2E awareness
+
+Migration impact:
+- New config keys: UI_TEST_CMD, UI_FRAMEWORK, UI_PROJECT_DETECTED,
+  UI_VALIDATION_ENABLED, UI_TEST_TIMEOUT
+- New files in .claude/: none (detection is runtime, not persisted config)
+- Modified file formats: CODER_SUMMARY.md may include UI test warnings,
+  Scout report gains "UI Components in Scope" section
+- Breaking changes: None
+- Migration script update required: YES — V3 migration adds UI config
+  keys to pipeline.conf with commented-out defaults
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 29: UI Validation Gate & Headless Smoke Testing
+<!-- milestone-meta
+id: "29"
+status: "done"
+-->
+
+Add a UI validation gate that runs headless browser smoke tests against
+UI artifacts produced by the pipeline. This catches the class of bugs
+where code compiles, unit tests pass, and E2E tests pass (or don't exist),
+but the actual rendered output is broken — missing resources, JS errors,
+layout failures, or degraded behavior like the Watchtower blink bug.
+
+This milestone provides infrastructure for projects that DON'T have their
+own E2E test framework configured. For projects WITH E2E tests (covered
+by M28's UI_TEST_CMD), the validation gate runs AFTER E2E tests as an
+additional safety net.
+
+Requires a headless browser (Chromium via Playwright or Puppeteer).
+Soft-fails gracefully when no headless browser is available, with clear
+diagnostic output explaining what's missing and how to install it.
+
+Files to create:
+- `lib/ui_validate.sh` — UI validation gate orchestrator:
+  **Core function: `run_ui_validation()`**
+  Called from the build gate (lib/gates.sh) after UI_TEST_CMD (if any).
+  Workflow:
+  1. Check prerequisites: headless browser available? Node.js available?
+     If not, emit a clear diagnostic message:
+     "UI validation skipped: headless browser not available.
+      To enable: npm install -g playwright && npx playwright install chromium
+      Or: apt-get install chromium-browser (for system Chromium)
+      See: [docs link] for full setup instructions."
+     Log to Watchtower as UI_VALIDATION_SKIPPED event. Continue pipeline
+     (soft fail, not hard fail).
+  2. Determine validation targets from CODER_SUMMARY.md:
+     - Static HTML files created/modified → validate directly
+     - Web app with dev server → start server, validate, stop server
+     - Watchtower dashboard → special-case self-validation
+     Detection heuristic: check file extensions in CODER_SUMMARY.md
+     (.html, .htm, .jsx, .tsx, .vue, .svelte) and presence of
+     UI_SERVE_CMD in config.
+  3. For each validation target, run the smoke test script (see below).
+  4. Parse results, write UI_VALIDATION_REPORT.md.
+  5. If failures found: route to coder rework (same as build failure).
+
+  **Prerequisite detection: `_check_headless_browser()`**
+  Checks in order:
+  1. `npx playwright --version` (preferred — Playwright bundles Chromium)
+  2. `npx puppeteer --version` (fallback)
+  3. `chromium-browser --version` or `chromium --version` (system)
+  4. `google-chrome --headless --version` (system Chrome)
+  Returns the command to use, or empty string if none found.
+  Caches result in session dir (don't re-detect every gate run).
+
+  **Server management: `_start_ui_server()` / `_stop_ui_server()`**
+  When UI_SERVE_CMD is configured (e.g., "npm run dev", "python -m http.server"):
+  - Start the server in background, capture PID
+  - Wait for the server to be ready (poll localhost:UI_SERVE_PORT with
+    curl, timeout after UI_SERVER_STARTUP_TIMEOUT seconds)
+  - If server fails to start, log diagnostic and soft-fail
+  - After validation completes, kill the server process
+  For static HTML files: use `python3 -m http.server` as a minimal server
+  (Python is already an optional dep for tree-sitter).
+
+- `tools/ui_smoke_test.js` — Headless browser smoke test script:
+  A standalone Node.js script that Tekhton invokes as a subprocess.
+  Accepts: URL or file path, optional viewport size, optional timeout.
+  Performs these checks:
+  1. **Page load:** Navigate to URL, wait for load event. FAIL if timeout.
+  2. **Console errors:** Capture all console.error messages during load
+     and for 3 seconds after. FAIL if any errors (configurable severity).
+  3. **Missing resources:** Check for 404s on CSS, JS, image, font loads.
+     FAIL if any referenced resources return 404.
+  4. **Basic rendering:** Check that document.body has non-zero dimensions
+     and contains at least one visible element. FAIL if page is blank.
+  5. **Crash detection:** Check for uncaught exceptions, unhandled promise
+     rejections. FAIL if any.
+  6. **Flicker detection:** Take 3 screenshots at 2-second intervals.
+     Compare pixel hashes. If they differ significantly between consecutive
+     frames (indicating page is re-rendering/flickering), report as WARNING
+     (not failure — flicker is a UX issue, not a crash).
+  Output: JSON result with pass/fail per check, console errors captured,
+  missing resources listed, screenshots saved (for human review and future
+  vision-in-the-loop).
+
+  The script uses Playwright if available, falls back to Puppeteer.
+  If neither is available as a Node module, the shell orchestrator
+  already detected this and skipped (see _check_headless_browser above).
+
+  **Viewport testing:** Runs checks at two viewports by default:
+  - Desktop: 1280x800
+  - Mobile: 375x812
+  Configurable via UI_VALIDATION_VIEWPORTS in pipeline.conf.
+
+- `lib/ui_validate_report.sh` — Report parser and formatter:
+  Reads the JSON output from ui_smoke_test.js, produces:
+  - UI_VALIDATION_REPORT.md (human-readable, stored alongside other reports)
+  - Watchtower event data (for dashboard rendering)
+  - Coder context block (if failures found, injected into rework prompt)
+  Report format:
+  ```markdown
+  ## UI Validation Report
+  ### Results
+  | Target | Load | Console | Resources | Rendering | Verdict |
+  |--------|------|---------|-----------|-----------|---------|
+  | /index.html (desktop) | ✅ | ✅ | ✅ | ✅ | PASS |
+  | /index.html (mobile)  | ✅ | ⚠️ 1 warn | ✅ | ✅ | PASS |
+
+  ### Console Errors
+  (none)
+
+  ### Missing Resources
+  (none)
+
+  ### Flicker Detection
+  ⚠️ index.html: page content changes between frame 1 and frame 2
+     (possible auto-refresh or animation — review manually)
+
+  ### Screenshots
+  Saved to .claude/ui-validation/screenshots/
+  ```
+
+- `prompts/ui_rework.prompt.md` — Rework prompt for UI validation failures:
+  "The UI validation gate detected issues with the rendered output.
+  Read UI_VALIDATION_REPORT.md for details. Fix the issues and ensure
+  the page loads cleanly in both desktop and mobile viewports.
+  Common causes:
+  - Console errors: missing imports, undefined variables, API call failures
+  - Missing resources: wrong file path, file not generated, wrong directory
+  - Blank page: JS crash before rendering, missing root element
+  - Flicker: auto-refresh loop, CSS transition on load, state oscillation"
+
+Files to modify:
+- `lib/gates.sh` — Insert UI validation after UI_TEST_CMD in the build gate:
+  ```
+  # Existing: BUILD_CHECK_CMD → ANALYZE_CMD → UI_TEST_CMD (M28)
+  # New:      → run_ui_validation() (M29)
+  ```
+  UI validation runs AFTER E2E tests. If E2E tests already caught the
+  problem, UI validation confirms it's fixed after rework.
+
+- `lib/config_defaults.sh` — Add:
+  UI_SERVE_CMD="" (command to start a dev/preview server),
+  UI_SERVE_PORT=3000 (port the dev server listens on),
+  UI_SERVER_STARTUP_TIMEOUT=30 (seconds to wait for server ready),
+  UI_VALIDATION_VIEWPORTS="1280x800,375x812" (viewport sizes to test),
+  UI_VALIDATION_TIMEOUT=30 (seconds per page load timeout),
+  UI_VALIDATION_CONSOLE_SEVERITY=error (error|warn — what level fails),
+  UI_VALIDATION_FLICKER_THRESHOLD=0.05 (pixel diff ratio for flicker warning),
+  UI_VALIDATION_RETRY=true (retry once on failure before routing to rework),
+  UI_VALIDATION_SCREENSHOTS=true (save screenshots for review).
+
+- `lib/config.sh` — Validate UI_SERVE_PORT is numeric, viewports match
+  NNNNxNNNN format, timeout values are positive integers.
+
+- `lib/prompts.sh` — Register UI_VALIDATION_REPORT_CONTENT and
+  UI_VALIDATION_FAILURES_BLOCK template variables.
+
+- `prompts/coder_rework.prompt.md` — Add conditional UI failures block:
+  `{{IF:UI_VALIDATION_FAILURES_BLOCK}}
+  ## UI Validation Failures
+  The rendered UI has issues detected by headless browser testing.
+  These MUST be fixed — they indicate the user-facing output is broken.
+  {{UI_VALIDATION_FAILURES_BLOCK}}
+  {{ENDIF:UI_VALIDATION_FAILURES_BLOCK}}`
+
+- `lib/hooks.sh` or `lib/finalize.sh` — Include UI_VALIDATION_REPORT.md
+  in archive step. Include UI validation results in RUN_SUMMARY.json.
+  Clean up screenshots older than 5 runs.
+
+- `lib/finalize_display.sh` — When UI validation ran:
+  Include pass/fail count in the completion banner.
+  When screenshots were captured, note their location.
+
+- `templates/pipeline.conf.example` — Extend UI testing section:
+  ```
+  # --- UI Validation (headless browser smoke tests) ---
+  # UI_SERVE_CMD=""                    # Dev server command (e.g., "npm run dev")
+  # UI_SERVE_PORT=3000                 # Dev server port
+  # UI_VALIDATION_VIEWPORTS="1280x800,375x812"  # Viewport sizes
+  # UI_VALIDATION_CONSOLE_SEVERITY=error  # error | warn
+  # UI_VALIDATION_SCREENSHOTS=true     # Save screenshots for review
+  ```
+
+- **Watchtower self-test (special case):**
+  Add a built-in validation target for Tekhton's own Watchtower dashboard.
+  When Watchtower files are modified (detected from CODER_SUMMARY.md),
+  the validation gate automatically tests the generated dashboard:
+  - Serve .claude/dashboard/ via python3 http.server
+  - Run smoke test against localhost:PORT/index.html
+  - Verify: page loads, no console errors, data panels render,
+    auto-refresh doesn't cause visible flicker
+  This is Tekhton testing its own output — no user configuration needed.
+  Guarded by WATCHTOWER_SELF_TEST=true (default when Watchtower enabled).
+
+Acceptance criteria:
+- `_check_headless_browser()` detects Playwright, Puppeteer, system
+  Chromium, and system Chrome in priority order
+- When no headless browser available: clear diagnostic message printed
+  with install instructions, pipeline continues (soft fail), Watchtower
+  logs UI_VALIDATION_SKIPPED event
+- `ui_smoke_test.js` checks: page load, console errors, missing resources,
+  basic rendering, crash detection, flicker detection
+- Smoke test runs at both desktop and mobile viewports by default
+- Console errors at configured severity level trigger validation failure
+- Missing resources (404 on CSS/JS/images) trigger validation failure
+- Blank page (zero-dimension body) triggers validation failure
+- Flicker detection reports as WARNING, not failure
+- Screenshots captured and saved to .claude/ui-validation/screenshots/
+- UI_VALIDATION_REPORT.md produced with structured results table
+- Validation failures route to coder rework with UI_VALIDATION_FAILURES_BLOCK
+- UI_VALIDATION_RETRY: failure retried once before routing to rework
+- Dev server management: starts before validation, stops after, handles
+  startup timeout with diagnostic output
+- Static HTML files validated directly via minimal Python HTTP server
+- Watchtower self-test: automatically validates dashboard when Watchtower
+  files are modified, no user config needed
+- Non-UI projects and projects without headless browser see zero change
+  in behavior (soft fail + skip)
+- All existing tests pass
+- `bash -n lib/ui_validate.sh lib/ui_validate_report.sh` passes
+- `shellcheck lib/ui_validate.sh lib/ui_validate_report.sh` passes
+
+Watch For:
+- **Headless browser installation is the #1 friction point.** The diagnostic
+  message when it's missing must be crystal clear. Include exact commands
+  for the 3 most common environments: macOS (`brew install chromium`),
+  Ubuntu/Debian (`apt-get install chromium-browser`), and npm global
+  (`npm install -g playwright && npx playwright install chromium`).
+  Link to the docs site (M18) troubleshooting page.
+- **Dev server startup is non-deterministic.** The server might be "ready"
+  (process started) but not yet accepting connections. The readiness poll
+  must use actual HTTP requests, not just process existence checks. Use
+  `curl -s -o /dev/null -w "%{http_code}" http://localhost:$PORT` in a
+  loop with 1-second intervals.
+- **Port conflicts.** UI_SERVE_PORT might already be in use (dev left a
+  server running). Detect this before starting: check if port is occupied,
+  if so try PORT+1 through PORT+10, or fail with a clear message.
+- **Screenshots can be large.** At 1280x800, a PNG screenshot is ~500KB.
+  Two viewports × 3 frames = 6 screenshots = ~3MB per validation run.
+  Prune aggressively (keep last 5 runs only) and use JPEG for non-baseline
+  screenshots to save space.
+- **Flicker detection false positives.** Pages with intentional animations
+  (loading spinners, transitions) will trigger the flicker detector.
+  The threshold must be tuned to ignore small animated regions. Compare
+  full-page pixel hashes, not individual regions. A page that's 95%
+  identical between frames is fine — one that's 50% different is not.
+- **ui_smoke_test.js must be self-contained.** It cannot require npm install
+  in the Tekhton repo. It should use whatever Playwright/Puppeteer is
+  globally installed or available in the project's node_modules. If
+  neither exists, the shell-side prerequisite check already skipped.
+- **CI environments.** Many CI runners have headless Chromium pre-installed
+  but Playwright is NOT installed. The fallback chain (Playwright →
+  Puppeteer → system Chromium → system Chrome) must handle this. For
+  system Chromium, ui_smoke_test.js uses puppeteer-core with
+  executablePath pointing to the detected binary.
+
+Seeds Forward:
+- V4 vision-in-the-loop: screenshots from this gate become the input
+  for a vision-capable Claude agent that can judge "does this look right?"
+- V4 visual regression: screenshots saved here become the baseline for
+  future comparison (pixel diff between runs)
+- The flicker detection algorithm is reusable for V4 performance monitoring
+  (detecting layout thrash, excessive re-renders)
+- The dev server management functions are reusable for any future feature
+  that needs to interact with a running project (e.g., API testing)
+
+Migration impact:
+- New config keys: UI_SERVE_CMD, UI_SERVE_PORT, UI_SERVER_STARTUP_TIMEOUT,
+  UI_VALIDATION_VIEWPORTS, UI_VALIDATION_TIMEOUT, UI_VALIDATION_CONSOLE_SEVERITY,
+  UI_VALIDATION_FLICKER_THRESHOLD, UI_VALIDATION_RETRY,
+  UI_VALIDATION_SCREENSHOTS, WATCHTOWER_SELF_TEST
+- New files in .claude/: ui-validation/screenshots/ (auto-created on first run)
+- New files in project: UI_VALIDATION_REPORT.md (per-run artifact)
+- Modified file formats: RUN_SUMMARY.json gains ui_validation results
+- Breaking changes: None
+- Migration script update required: YES — V3 migration adds UI validation
+  config keys to pipeline.conf
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 30: Build Gate Hardening & Hang Prevention
+
+<!-- milestone-meta
+id: "30"
+status: "done"
+-->
+
+The build gate (`run_build_gate()` in `lib/gates.sh`) has two reliability issues
+that compound at scale:
+
+**Critical bug — npx browser detection hangs indefinitely.**
+`_check_headless_browser()` in `lib/ui_validate.sh:42` runs
+`npx playwright --version` to detect available browsers. When Playwright is not
+installed locally, modern npx (npm 7+) delegates to `npm exec`, which prompts
+"Need to install the following packages: playwright. OK to proceed? (y/n)".
+In a non-interactive pipeline context (no TTY on stdin), this prompt blocks
+forever — the process hangs with zero CPU, waiting for input that never arrives.
+The same pattern applies to the `npx puppeteer --version` fallback on line 48.
+This has been confirmed in production: the process `npm exec playwright --version`
+sits indefinitely, stalling the entire pipeline at the build gate.
+
+**Performance issue — ANALYZE_CMD shellchecks the entire codebase.**
+`ANALYZE_CMD="shellcheck tekhton.sh lib/*.sh stages/*.sh"` expands to 130 files
+(118 in lib/, 11 in stages/, plus tekhton.sh). This takes ~2 minutes on a clean
+run and scales worse under memory pressure (WSL2, concurrent agent processes).
+The build gate runs this full sweep after every code change, regardless of how
+many files were actually modified. A two-line comment addition triggers the same
+analysis as a 500-line refactor.
+
+This milestone fixes both issues and adds defensive timeouts throughout the gate.
+
+Files to modify:
+- `lib/ui_validate.sh` — Fix npx hang, add defensive timeouts:
+  **Fix 1: npx non-interactive mode.**
+  Replace bare `npx` calls with timeout-wrapped, non-interactive variants.
+  Use `timeout 10 npx --yes playwright --version` (the `--yes` flag
+  auto-accepts the install prompt and prevents the hang). If the package
+  isn't cached, the 10-second timeout will kill it before it can download
+  the full package — which is the correct behavior (we want detection, not
+  installation).
+  Alternative: use `npm ls playwright` to check if it's installed locally
+  without triggering any install prompt. This is faster and side-effect-free.
+  Recommended approach: check with `npm ls` first (zero side effects), fall
+  back to `timeout`-wrapped `npx --yes` only if `npm ls` can't determine
+  the answer.
+  Apply the same fix to the puppeteer detection on line 48.
+
+  **Fix 2: Overall browser detection timeout.**
+  Wrap the entire `_check_headless_browser()` function body in a subshell
+  with a hard 30-second timeout. If browser detection takes longer than
+  30 seconds total, treat it as "no browser available" and soft-skip.
+  This is the defense-in-depth layer — even if individual commands have
+  their own timeouts, the aggregate timeout catches unexpected hangs.
+
+- `lib/gates.sh` — Add per-phase timeouts and incremental analysis:
+  **Fix 3: ANALYZE_CMD timeout.**
+  Wrap the `bash -c "${ANALYZE_CMD}"` call in a configurable timeout
+  (new config key: `BUILD_GATE_ANALYZE_TIMEOUT`, default: 300 seconds).
+  If the analysis exceeds the timeout, log a warning and treat it as a
+  pass (analysis timeout is not a build failure — it's an infrastructure
+  issue). This prevents runaway static analysis from blocking the pipeline.
+
+  **Fix 4: BUILD_CHECK_CMD timeout.**
+  Same treatment for the compile check: wrap in
+  `BUILD_GATE_COMPILE_TIMEOUT` (default: 120 seconds).
+
+  **Fix 5: Dependency constraint timeout.**
+  Wrap constraint validation in `BUILD_GATE_CONSTRAINT_TIMEOUT`
+  (default: 60 seconds).
+
+  **Fix 6: Overall gate timeout.**
+  Add a `BUILD_GATE_TIMEOUT` (default: 600 seconds / 10 minutes) that
+  wraps the entire `run_build_gate()` function. If the gate exceeds this
+  absolute limit, kill all child processes and return failure with a clear
+  diagnostic message. This is the "no gate call should ever hang the
+  pipeline for 20 minutes" safety net.
+
+- `lib/config_defaults.sh` — Add new config keys:
+  - `BUILD_GATE_TIMEOUT` (default: 600)
+  - `BUILD_GATE_ANALYZE_TIMEOUT` (default: 300)
+  - `BUILD_GATE_COMPILE_TIMEOUT` (default: 120)
+  - `BUILD_GATE_CONSTRAINT_TIMEOUT` (default: 60)
+
+- `lib/ui_validate.sh` — Additional robustness:
+  **Fix 7: Server startup timeout enforcement.**
+  The `_start_ui_server()` function already has a timeout loop, but it
+  relies on `sleep 1` increments — if the curl probe itself hangs (DNS
+  resolution, connection timeout), each iteration can exceed 1 second
+  significantly. Wrap the curl probe in `timeout 5` to cap each iteration.
+
+  **Fix 8: Smoke test process cleanup.**
+  `_run_smoke_test()` uses `timeout` on the node process, but if the
+  timeout fires, the node process may leave orphaned child processes
+  (headless browser instances). Add a process group kill after timeout:
+  run the node process in its own process group (`setsid` or `set -m`)
+  and kill the group on timeout.
+
+- `tests/test_build_gate_timeouts.sh` — New test file:
+  - Test that `_check_headless_browser()` completes within 30 seconds
+    even when npx would hang (mock npx with a `sleep infinity` script)
+  - Test that `run_build_gate()` respects `BUILD_GATE_TIMEOUT`
+    (mock ANALYZE_CMD with `sleep infinity`, verify gate returns within
+    timeout + grace period)
+  - Test that per-phase timeouts are individually configurable
+  - Test that timeout produces a clear diagnostic message (not silent failure)
+  - Test that orphaned server/browser processes are cleaned up after timeout
+
+Acceptance criteria:
+- `_check_headless_browser()` never hangs, even when npx prompts for install
+- `npx playwright --version` and `npx puppeteer --version` are either
+  replaced with non-prompting alternatives or wrapped in hard timeouts
+- `run_build_gate()` completes within `BUILD_GATE_TIMEOUT` seconds under
+  all circumstances, including when subprocesses hang
+- Each phase (analyze, compile, constraint, UI test, UI validation) has
+  its own configurable timeout
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/gates.sh lib/ui_validate.sh` passes
+- `shellcheck lib/gates.sh lib/ui_validate.sh` passes
+- New test file `tests/test_build_gate_timeouts.sh` covers hang scenarios
+
+Watch For:
+- `npx --yes` behavior varies across npm versions. npm 6 doesn't support
+  `--yes`. The fix must detect npm version or use the `npm ls` approach
+  which works across all versions.
+- `timeout` command availability: GNU coreutils `timeout` is standard on
+  Linux but may not exist on macOS. Tekhton already targets bash 4+ on
+  Linux, but verify `timeout` is in the PATH.
+- Process group kills (`kill -TERM -$pgid`) require the process to have
+  been started with `setsid` or in a subshell with job control. Verify
+  this works under `set -euo pipefail`.
+- The `BUILD_GATE_TIMEOUT` kill must clean up ALL child processes — a
+  dangling `python3 -m http.server` or headless browser after a timeout
+  will cause port conflicts on the next gate run.
+- WSL2 process management: `kill -0` and process group operations may
+  behave differently under WSL2. Test on the actual target platform.
+
+Seeds Forward:
+- The per-phase timeout infrastructure enables future metrics collection
+  on gate phase durations (how long does shellcheck take? how long does
+  the UI server take to start?) for adaptive calibration.
+- The `npm ls` detection pattern can be reused by future milestones that
+  need to detect locally-installed npm packages without side effects.
+- The overall gate timeout pattern could be applied to agent invocations
+  as an additional safety layer beyond the existing activity timeout.
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 31: Planning Answer Layer & File Mode
+
+<!-- milestone-meta
+id: "31"
+status: "done"
+-->
+
+The `--plan` interview currently collects answers in a transient Bash array that
+exists only in memory during the session. If interrupted, all answers are lost.
+The interview flow is locked to CLI-only interaction, which is tedious for the
+multi-paragraph, deeply structured answers that good planning requires.
+
+This milestone extracts answer collection into a **mode-agnostic answer layer**
+backed by a persistent YAML file (`.claude/plan_answers.yaml`). It adds **file
+mode** as an alternative input path — users export a question template, fill it
+out in their editor of choice, and point the pipeline at the completed file.
+Finally, it adds a **draft review step** before synthesis, letting users see all
+their answers at once and go back to edit before committing to Claude generation.
+
+This is the foundation for M32 (Browser-Based Planning Interview), which adds a
+third input mode that writes to the same answer layer.
+
+Files to modify:
+- `stages/plan_interview.sh` — Refactor to use the answer layer:
+  **Current flow:**
+  1. Loop over template sections
+  2. Collect answers into `answers[$i]` array
+  3. Build `$INTERVIEW_ANSWERS_BLOCK` string
+  4. Call Claude for synthesis
+
+  **New flow:**
+  1. Check for existing `.claude/plan_answers.yaml` — offer to resume or start fresh
+  2. Loop over template sections (CLI mode) OR load from file (file mode)
+  3. Write each answer to `.claude/plan_answers.yaml` as it's collected
+  4. On completion (all sections answered), show draft review
+  5. Build `$INTERVIEW_ANSWERS_BLOCK` from the YAML file
+  6. Call Claude for synthesis (unchanged)
+
+  The mode selection happens after project type selection (which stays in CLI):
+  ```
+  How would you like to answer the planning questions?
+    1) CLI Mode     — answer questions one by one in the terminal
+    2) File Mode    — export questions to YAML, fill out in your editor
+    3) Browser Mode — fill out a form in your browser (requires M32)
+  ```
+  Option 3 is shown but gated on M32 being implemented (check for
+  `lib/plan_browser.sh` existence).
+
+- `lib/plan_answers.sh` — **NEW** Answer persistence layer:
+  **Core functions:**
+  - `init_answer_file()` — Create `.claude/plan_answers.yaml` with header metadata
+    (project_type, template, timestamp, tekhton_version)
+  - `save_answer()` — Write/update a single section's answer to the YAML file.
+    Uses section ID (slugified section title) as the key. Handles multi-line text
+    via YAML block scalars (`|`).
+  - `load_answer()` — Read a single section's answer from the YAML file.
+    Returns empty string if section not yet answered.
+  - `load_all_answers()` — Read all answers into parallel arrays (section_ids,
+    section_titles, answers). Used by draft review and synthesis.
+  - `has_answer_file()` — Check if `.claude/plan_answers.yaml` exists with valid
+    header metadata.
+  - `answer_file_complete()` — Check if all REQUIRED sections have non-empty,
+    non-TBD answers.
+  - `export_question_template()` — Generate a YAML file with all sections from
+    the template as keys, guidance as comments, and empty values. Write to
+    stdout or a specified path.
+  - `import_answer_file()` — Parse a user-filled YAML file, validate structure,
+    load into the answer layer. Returns non-zero if required sections are missing.
+  - `build_answers_block()` — Construct the `$INTERVIEW_ANSWERS_BLOCK` string
+    from the YAML file, matching the format the existing synthesis prompt expects.
+
+  **YAML schema:**
+  ```yaml
+  # Tekhton Planning Answers
+  # Project: my-project
+  # Template: web-app
+  # Generated: 2026-03-26T12:00:00Z
+  # Tekhton: 3.31.0
+
+  sections:
+    developer_philosophy:
+      title: "Developer Philosophy & Constraints"
+      phase: 1
+      required: true
+      answer: |
+        This project follows a composition-over-inheritance pattern...
+
+    project_overview:
+      title: "Project Overview"
+      phase: 1
+      required: true
+      answer: |
+        A real-time collaborative editing tool for...
+
+    tech_stack:
+      title: "Tech Stack"
+      phase: 1
+      required: true
+      answer: ""  # Not yet answered
+  ```
+
+  **YAML parsing constraint:** No external YAML parser dependency. Use `awk`
+  and `sed` for reading/writing. The schema is intentionally flat — no nested
+  objects beyond `sections → section_id → {title, phase, required, answer}`.
+  Multi-line answers use YAML block scalar (`|`) which is parseable with a
+  simple state machine: read lines until the next key at the same indentation.
+
+- `lib/plan_review.sh` — **NEW** Draft review before synthesis:
+  **Core function: `show_draft_review()`**
+  Displays all collected answers in a structured summary:
+  ```
+  ══════════════════════════════════════
+    Planning Draft Review
+  ══════════════════════════════════════
+
+  Phase 1: Concept Capture
+  ────────────────────────────────────
+  ✓ Developer Philosophy (324 chars)
+  ✓ Project Overview (189 chars)
+  ✗ Tech Stack (TBD)              ← highlighted, required
+
+  Phase 2: System Deep-Dive
+  ────────────────────────────────────
+  ✓ Data Model (512 chars)
+  ~ Authentication (skipped)       ← optional, skipped
+  ...
+
+  3 of 12 sections complete. 1 required section needs answers.
+
+  Actions:
+    [e] Edit a section    [s] Start synthesis    [q] Quit (answers saved)
+  ```
+
+  When user selects "Edit a section", prompt for section number, open the
+  answer in `$EDITOR` (or inline if no editor). Updated answer is saved
+  to the YAML file immediately.
+
+  When user selects "Start synthesis", verify all required sections are
+  answered, then proceed to Claude generation.
+
+  When user selects "Quit", print reminder that answers are saved and
+  can be resumed with `tekhton --plan`.
+
+- `stages/plan_followup_interview.sh` — Update to read/write through answer layer:
+  Follow-up questions should update the answer file rather than collecting in
+  a transient array. When a section needs follow-up, load the existing answer,
+  show it, collect the clarification, and update the YAML file.
+
+- `lib/plan.sh` — Update orchestration:
+  - Add `--export-questions` flag handling: call `export_question_template()` and exit
+  - Add `--answers <file>` flag handling: call `import_answer_file()`, skip interview
+  - Add resume detection: if `.claude/plan_answers.yaml` exists, offer to resume
+  - Wire draft review between interview and synthesis
+
+- `lib/plan_state.sh` — Update state persistence:
+  - Record answer file path in plan state
+  - On resume, check answer file exists and offer to continue from where left off
+
+Files to create:
+- `lib/plan_answers.sh` — Answer persistence layer (described above)
+- `lib/plan_review.sh` — Draft review UI (described above)
+
+Files to modify:
+- `stages/plan_interview.sh` — Refactor to use answer layer + mode selection
+- `stages/plan_followup_interview.sh` — Use answer layer for follow-up
+- `lib/plan.sh` — New flags, resume detection, draft review wiring
+- `lib/plan_state.sh` — Answer file in state
+- `tekhton.sh` — Add `--export-questions` and `--answers` flags to arg parser
+
+Acceptance criteria:
+- `--plan` in CLI mode behaves identically to current behavior but persists
+  answers to `.claude/plan_answers.yaml` as they're collected
+- Interrupting `--plan` mid-interview and re-running resumes from the last
+  unanswered section (answers preserved)
+- `--plan --export-questions` writes a valid YAML template to stdout with all
+  sections from the selected project type, guidance as comments, empty values
+- `--plan --answers path/to/filled.yaml` skips the interview entirely, loads
+  answers from the file, proceeds to draft review then synthesis
+- Draft review shows all sections with completeness status and char counts
+- Draft review allows editing individual sections before synthesis
+- `build_answers_block()` produces output identical in format to the current
+  `$INTERVIEW_ANSWERS_BLOCK` construction
+- YAML parsing handles multi-line answers with special characters (colons,
+  quotes, hashes) without corruption
+- All existing planning tests pass
+- `bash -n lib/plan_answers.sh lib/plan_review.sh` passes
+- New test file `tests/test_plan_answers.sh` covers: YAML roundtrip, export/import,
+  resume detection, build_answers_block format, multi-line edge cases
+- New test file `tests/test_plan_review.sh` covers: completeness calculation,
+  section status display
+
+Tests:
+- YAML roundtrip: `save_answer "section_id" "multi\nline\nanswer"` then
+  `load_answer "section_id"` returns exact same content
+- Special characters: answers containing `: # " ' | > -` survive roundtrip
+- Export template: `export_question_template "web-app"` produces valid YAML
+  with all sections from `templates/plans/web-app.md`
+- Import validation: `import_answer_file` rejects files missing required sections
+- Resume: create partial answer file, run interview, verify it starts at the
+  first unanswered section
+- Block format: `build_answers_block()` output matches existing format exactly
+
+Watch For:
+- YAML parsing in pure bash is fragile. The schema must stay flat — no nested
+  objects, no flow mappings, no anchors/aliases. Block scalars (`|`) are the
+  only multi-line format supported. Test edge cases: empty answers, answers
+  that are just whitespace, answers containing YAML-like syntax.
+- The answer file must use atomic writes (tmpfile + mv) to prevent corruption
+  if the pipeline is killed mid-write. Same pattern as milestone manifest writes.
+- `$EDITOR` may not be set. Fall back to `vi`, then `nano`, then inline input.
+  Don't crash if no editor is available.
+- The mode selection prompt must use `prompts_interactive.sh` helpers and fall
+  back gracefully in non-interactive environments (default to CLI mode).
+- Answer file cleanup: don't leave `.claude/plan_answers.yaml` after successful
+  synthesis. Move it to `.claude/plan_answers.yaml.done` so resume detection
+  doesn't trigger on the next `--plan` run.
+
+Seeds Forward:
+- M32 (Browser Mode) writes to the same `.claude/plan_answers.yaml` via POST
+  endpoint — the answer layer is shared across all modes
+- The YAML schema is extensible: M32 can add `answered_via: "browser"` metadata
+  per section without breaking M31's parser
+- `export_question_template()` is reused by M32 to generate the HTML form fields
+- Draft review UI pattern is reusable for other confirmation flows (e.g., pre-run
+  task review, milestone acceptance review)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 32: Browser-Based Planning Interview
+
+<!-- milestone-meta
+id: "32"
+status: "done"
+-->
+
+The planning interview asks detailed, multi-paragraph questions about project
+architecture, constraints, data models, and user flows. Answering these in a
+terminal — one question at a time, no ability to scroll back, no copy-paste
+from reference docs — is the worst possible UX for this kind of structured
+authoring. This milestone adds a **browser-based planning form** that serves
+the same questions as an HTML form, lets users navigate freely between sections,
+draft answers at their own pace, and submit when ready.
+
+The architecture follows Watchtower's pattern: generate static HTML/CSS/JS,
+serve via a minimal local HTTP server, and communicate results back to the
+shell via a single POST endpoint that writes to the shared answer layer from
+M31.
+
+Depends on M31 (Planning Answer Layer) — the browser mode writes to the same
+`.claude/plan_answers.yaml` file as CLI and file modes.
+
+Files to create:
+- `lib/plan_browser.sh` — **NEW** Browser mode orchestrator:
+  **Core function: `run_browser_interview()`**
+  Workflow:
+  1. Generate the form HTML from the template sections (call `_generate_plan_form()`)
+  2. Write form + assets to a temp directory (`$TEKHTON_SESSION_DIR/plan-form/`)
+  3. Start the local HTTP server (`_start_plan_server()`)
+  4. Open the browser (`_open_plan_browser()`)
+  5. Wait for submission (`_wait_for_plan_submit()`)
+  6. Stop the server, clean up
+  7. Return to the shell — answers are in `.claude/plan_answers.yaml`
+
+  **`_generate_plan_form()`**
+  Reads the selected template (e.g., `templates/plans/web-app.md`), extracts
+  sections using `_extract_template_sections()` (existing function from
+  `plan_interview.sh`), and generates an HTML form:
+
+  For each section:
+  - Section title as `<h3>` with phase badge and required/optional indicator
+  - Guidance text from template HTML comments rendered as a collapsible
+    `<details>` block above the textarea (collapsed by default)
+  - `<textarea>` for the answer, pre-populated from existing `.claude/plan_answers.yaml`
+    if resuming (call `load_answer()` from M31's answer layer)
+  - Character count indicator below each textarea
+  - Visual indicator: empty (red outline), in-progress (yellow), complete (green)
+
+  Form layout:
+  ```
+  ┌──────────────────────────────────────────────┐
+  │  Tekhton Planning Interview                  │
+  │  Project: my-project  |  Type: web-app       │
+  │                                              │
+  │  Phase 1: Concept Capture                    │
+  │  ┌────────────────────────────────────────┐  │
+  │  │ Developer Philosophy * (REQUIRED)      │  │
+  │  │ ▶ Guidance: What are the non-neg...    │  │
+  │  │ ┌──────────────────────────────────┐   │  │
+  │  │ │                                  │   │  │
+  │  │ │  (textarea, ~8 rows)             │   │  │
+  │  │ │                                  │   │  │
+  │  │ └──────────────────────────────────┘   │  │
+  │  │ 324 chars                              │  │
+  │  └────────────────────────────────────────┘  │
+  │                                              │
+  │  Phase 2: System Deep-Dive                   │
+  │  ┌────────────────────────────────────────┐  │
+  │  │ Data Model * (REQUIRED)                │  │
+  │  │ ...                                    │  │
+  │  └────────────────────────────────────────┘  │
+  │                                              │
+  │  ┌──────────────────────────────────┐        │
+  │  │  Save Draft  │  Submit Answers   │        │
+  │  └──────────────────────────────────┘        │
+  │                                              │
+  │  Progress: 7/12 sections  │  3 required left │
+  └──────────────────────────────────────────────┘
+  ```
+
+  The form is a single scrollable page with all sections visible. Phase
+  headings act as visual dividers. No pagination, no wizard — users should
+  see everything at once and jump freely between sections.
+
+  **Submit button** is disabled until all REQUIRED sections have non-empty
+  answers. A progress bar at the top and bottom shows completion status.
+
+  **Save Draft button** sends a POST to `/save-draft` with all current
+  answers. This updates `.claude/plan_answers.yaml` without completing the
+  interview. The CLI shows "Draft saved" and continues waiting.
+
+  **Auto-save:** Every 30 seconds, the form auto-saves via POST `/save-draft`
+  if any textarea has changed since last save. Visual indicator: "Saved ✓"
+  or "Saving..." in the header.
+
+- `templates/plan_form/index.html` — **NEW** Form HTML template:
+  A minimal HTML shell that the generator fills in. Contains:
+  - `<form>` with `id="plan-form"`
+  - `<div id="sections">` — populated by generator
+  - `<script>` block for form behavior (submit handler, validation,
+    auto-save, character counts, progress tracking)
+  - `<link>` to `style.css`
+  No external dependencies. No framework. Vanilla HTML/CSS/JS matching
+  Watchtower's approach.
+
+- `templates/plan_form/style.css` — **NEW** Form styling:
+  Clean, readable form design optimized for long-form text entry.
+  Key properties:
+  - Max-width container (800px) centered on page for comfortable reading
+  - Textareas: monospace font, min-height 150px, auto-grow on input
+  - Phase headings: sticky position so phase context is always visible
+  - Required indicators: red asterisk, border highlight when empty
+  - Completion badges: red/yellow/green per section
+  - Dark/light theme toggle (reuse Watchtower's CSS variable pattern)
+  - Print-friendly: `@media print` hides chrome, shows all answers
+  - Responsive: works on mobile (for answering on a phone while looking
+    at the codebase on desktop)
+
+- `lib/plan_server.sh` — **NEW** Local HTTP server for planning form:
+  **`_start_plan_server()`**
+  Starts a Python HTTP server with custom POST handler:
+  ```python
+  # Embedded in shell via heredoc, written to temp file, executed
+  # Same pattern as Watchtower's self-test server
+  from http.server import HTTPServer, SimpleHTTPRequestHandler
+  import json, os, signal
+
+  ANSWERS_FILE = os.environ["PLAN_ANSWERS_FILE"]
+  COMPLETION_FILE = os.environ["PLAN_COMPLETION_FILE"]
+
+  class PlanHandler(SimpleHTTPRequestHandler):
+      def do_POST(self):
+          if self.path == "/submit":
+              # Read form data, write to ANSWERS_FILE in YAML format
+              # Touch COMPLETION_FILE to signal the shell
+              ...
+          elif self.path == "/save-draft":
+              # Same write, but don't touch COMPLETION_FILE
+              ...
+  ```
+
+  The server:
+  - Serves static files from the form directory (GET requests)
+  - Handles POST `/submit` — writes answers to `.claude/plan_answers.yaml`
+    using M31's YAML schema, then touches a completion sentinel file
+  - Handles POST `/save-draft` — same write, no sentinel
+  - Finds an available port (start at 8787, increment on EADDRINUSE)
+  - Logs to `$TEKHTON_SESSION_DIR/plan_server.log`
+
+  **`_wait_for_plan_submit()`**
+  Polls for the completion sentinel file (1-second interval). Shows a
+  spinner in the terminal: "Waiting for browser submission... (Ctrl-C to
+  cancel)". On Ctrl-C, saves any draft answers that were auto-saved and
+  exits cleanly.
+
+  **`_stop_plan_server()`**
+  Same process-group kill pattern as `_stop_ui_server()` in `ui_validate.sh`.
+
+  **`_open_plan_browser()`**
+  Opens the form URL in the default browser:
+  - macOS: `open "http://localhost:$port"`
+  - Linux: `xdg-open "http://localhost:$port"` or `sensible-browser`
+  - WSL: `cmd.exe /c start "http://localhost:$port"`
+  - Fallback: print URL and ask user to open manually
+  Same detection pattern as Watchtower.
+
+Files to modify:
+- `stages/plan_interview.sh` — Enable browser mode option:
+  When user selects option 3 (Browser Mode), call `run_browser_interview()`
+  from `lib/plan_browser.sh`. After it returns, proceed to draft review
+  (M31) and then synthesis as normal.
+
+- `lib/plan.sh` — Source `lib/plan_browser.sh` and `lib/plan_server.sh`.
+  Add `--plan-browser` flag as a shortcut to skip the mode selection prompt
+  and go directly to browser mode.
+
+- `tekhton.sh` — Add `--plan-browser` flag to arg parser. Source new library
+  files.
+
+Acceptance criteria:
+- `--plan` shows browser mode as option 3 in mode selection
+- Selecting browser mode generates an HTML form with all sections from the
+  template, opens it in the default browser, and waits for submission
+- Filling out the form and clicking "Submit" writes answers to
+  `.claude/plan_answers.yaml` in the M31 YAML schema
+- The shell detects submission and proceeds to draft review → synthesis
+- "Save Draft" button saves current answers without completing the interview
+- Auto-save triggers every 30 seconds when content changes
+- Resuming `--plan` after a draft save shows existing answers in the form
+- Form validates: submit button disabled until all required sections answered
+- Form works in Chrome, Firefox, Safari (no framework dependencies)
+- Form renders correctly at 1024px and 768px widths (responsive)
+- `_start_plan_server` finds an available port and serves the form
+- `_stop_plan_server` cleans up all server processes (no orphans)
+- `--plan-browser` flag skips mode selection and goes straight to browser
+- Ctrl-C during browser wait saves draft and exits cleanly
+- All existing planning tests pass
+- `bash -n lib/plan_browser.sh lib/plan_server.sh` passes
+- New test `tests/test_plan_browser.sh` covers: form generation, server
+  start/stop, POST handler writes valid YAML, port finding, cleanup
+- Python server is only required for browser mode — CLI and file modes
+  work without Python
+
+Tests:
+- Form generation: `_generate_plan_form "web-app"` produces valid HTML with
+  textareas for all sections from web-app template
+- Pre-populated resume: generate form with existing answers → textareas
+  contain previous answers
+- Server lifecycle: start → verify port responds → stop → verify port free
+- POST /submit: send JSON answers → verify `.claude/plan_answers.yaml` written
+  correctly and completion sentinel exists
+- POST /save-draft: send JSON answers → verify YAML written, no sentinel
+- Port finding: bind port 8787 manually → `_start_plan_server` finds 8788
+- Cleanup: start server → kill test process → verify no orphaned server
+
+Watch For:
+- The Python HTTP server handler receives JSON from the browser but must
+  write YAML to the answer file. Keep the JSON→YAML conversion simple —
+  the schema is flat, so iterate keys and write `key: |` blocks. Do NOT
+  pull in a YAML library for the Python side.
+- CORS is not needed — the browser loads the form from the same server
+  that handles POST requests (same-origin). Do not add CORS headers.
+- Large answers (>10KB per section) must not cause the POST handler to
+  truncate. Use `content_length = int(self.headers['Content-Length'])` and
+  read the full body.
+- Browser detection for auto-open: `xdg-open` may not work in headless
+  server environments. Always print the URL to the terminal as fallback.
+- The form's `<textarea>` elements should use `name` attributes matching
+  the section IDs from the YAML schema, so the POST body maps directly.
+- Security: the server binds to `127.0.0.1` only (not `0.0.0.0`). No
+  external access. No authentication needed for localhost.
+- The auto-save interval (30s) should be configurable via a CSS/JS constant,
+  not hardcoded in multiple places.
+
+Seeds Forward:
+- The local HTTP server pattern is reusable for future interactive features
+  (e.g., interactive milestone reordering, visual DAG editor)
+- The form template pattern can be extended with conditional sections
+  (show/hide based on project type or previous answers)
+- Auto-save infrastructure enables future real-time collaboration features
+  (multiple users filling out sections concurrently via shared file)
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+#### Milestone 33: Human Mode Completion Loop & State Fidelity
+
+<!-- milestone-meta
+id: "33"
+status: "done"
+-->
+
+The `--human` flag is broken in six interrelated ways that compound into a
+frustrating user experience: the pipeline picks a note, makes a single coder
+attempt, hits the turn limit, and exits — telling the user to re-run manually.
+The re-run then loses all human-mode context (flag, tag filter, note claim)
+because pipeline state persistence doesn't track human-mode metadata. The
+resumed run enters milestone mode instead, which changes turn budgets, skips
+notes injection, and leaves claimed notes in limbo (`[~]` status, never
+resolved). Meanwhile, the scout's coder turn estimate is never adjusted by
+adaptive calibration, so it keeps underestimating on every retry.
+
+This milestone fixes all six issues to bring `--human` up to the v3 standard
+of deterministic, run-to-completion behavior.
+
+---
+
+### Bug 1: `--human` without `--complete` is single-shot
+
+**Root cause:** `tekhton.sh:1343-1371` — when `HUMAN_MODE=true` and
+`COMPLETE_MODE=false` (the default), the pipeline picks ONE note and calls
+`_run_pipeline_stages` exactly once. If the coder hits the turn limit, the
+code at `stages/coder.sh:789-812` saves state and `exit 1`. There is no
+retry loop. The user must manually re-run.
+
+**Expected behavior:** `tekhton --human BUG` should automatically retry
+the coder (via the continuation loop) and, if continuations are exhausted,
+proceed to review with partial work — exactly as the orchestration loop does
+for `--complete` mode. The user should never need to manually re-run a
+`--human` invocation unless the failure is non-transient.
+
+**Fix:** When `HUMAN_MODE=true`, imply `COMPLETE_MODE=true` so the pipeline
+enters the orchestration loop (`_run_human_complete_loop` for multi-note or
+the standard `run_complete_loop` for single-note). This ensures the coder
+gets continuation attempts and the full pipeline retry logic applies. Add a
+`HUMAN_SINGLE_NOTE` flag to distinguish "process one note to completion"
+(current `--human` behavior) from "process all notes" (`--human --complete`).
+Both paths use the orchestration loop; the difference is whether the loop
+picks a new note after each success.
+
+Files: `tekhton.sh`
+
+---
+
+### Bug 2: Pipeline state doesn't persist HUMAN_MODE or HUMAN_NOTES_TAG
+
+**Root cause:** `lib/state.sh:13-118` — `write_pipeline_state()` writes
+exit_stage, exit_reason, resume_flag, task, notes, milestone, pipeline_order,
+tester_mode, and orchestration context. It does NOT write `HUMAN_MODE`,
+`HUMAN_NOTES_TAG`, or `CURRENT_NOTE_LINE`. These are command-line-derived
+variables that vanish on `exit 1`.
+
+**Expected behavior:** When the pipeline saves state after a human-mode run,
+the state file must include all human-mode metadata so that a no-argument
+resume reconstructs the exact same execution context.
+
+**Fix:** Add three new sections to `write_pipeline_state()`:
+```
+## Human Mode
+${HUMAN_MODE:-false}
+
+## Human Notes Tag
+${HUMAN_NOTES_TAG:-}
+
+## Current Note Line
+${CURRENT_NOTE_LINE:-}
+```
+
+Add corresponding extraction in the resume detection block
+(`tekhton.sh:933-937`) and set the variables before `exec`:
+```bash
+SAVED_HUMAN_MODE=$(awk '/^## Human Mode$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+SAVED_HUMAN_TAG=$(awk '/^## Human Notes Tag$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+SAVED_NOTE_LINE=$(awk '/^## Current Note Line$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+```
+
+Files: `lib/state.sh`, `tekhton.sh`
+
+---
+
+### Bug 3: Resume constructs `--milestone` instead of `--human`
+
+**Root cause:** `stages/coder.sh:790` — when the coder hits the turn limit
+with partial work (`IMPLEMENTED_LINES > 3`), the resume flag is hardcoded:
+```bash
+RESUME_FLAG="--milestone --start-at coder"
+```
+This ignores `HUMAN_MODE` entirely. The resumed run enters milestone mode
+(different turn budgets, `MILESTONE MODE` banner, etc.) instead of human mode.
+
+**Expected behavior:** The resume flag must reflect the original invocation
+mode. If `HUMAN_MODE=true`, the resume flag should be:
+```bash
+RESUME_FLAG="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG} --start-at coder"
+```
+
+**Fix:** In every `write_pipeline_state` call in `stages/coder.sh` (lines
+487, 530, 578, 609, 647, 703, 803, 839, 878, 913), prefix the resume flag
+with `--human [TAG]` when `HUMAN_MODE=true` instead of `--milestone`. Create
+a helper function `_build_resume_flag()` that constructs the correct flag
+string based on current mode:
+```bash
+_build_resume_flag() {
+    local start_at="${1:-coder}"
+    local flag=""
+    if [[ "${HUMAN_MODE:-false}" = "true" ]]; then
+        flag="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG}"
+    elif [[ "${MILESTONE_MODE:-false}" = "true" ]]; then
+        flag="--milestone"
+    fi
+    echo "${flag:+$flag }--start-at $start_at"
+}
+```
+Use this helper in all `write_pipeline_state` calls across `stages/coder.sh`,
+`stages/review.sh`, and `stages/tester.sh`.
+
+Files: `stages/coder.sh`, `stages/review.sh`, `stages/tester.sh`, `lib/state.sh`
+
+---
+
+### Bug 4: "Human notes exist but no notes flag set" on resume
+
+**Root cause:** `stages/coder.sh:434-435` — the condition checks
+`HUMAN_MODE != true` before printing this warning. On a resumed run where
+HUMAN_MODE was lost (Bug 2), this condition is true even though the original
+invocation was `--human BUG`.
+
+**Expected behavior:** This message should never appear on a resumed
+human-mode run. Fixing Bug 2 (state persistence) and Bug 3 (resume flag)
+eliminates this — the resumed run will have `HUMAN_MODE=true` and the
+condition at line 432 will be satisfied.
+
+**Fix:** No additional code change needed beyond Bugs 2 and 3. However, add
+a defensive log line: if `HUMAN_MODE` is false but the task string contains
+`[BUG]`, `[FEAT]`, or `[POLISH]` tags, emit a hint:
+```
+Tip: This task appears to come from HUMAN_NOTES.md. Did you mean to use --human?
+```
+
+Files: `stages/coder.sh`
+
+---
+
+### Bug 5: Human notes count displayed AFTER claim, showing wrong number
+
+**Root cause:** `tekhton.sh:1368` calls `claim_single_note` which marks the
+picked note as `[~]`. Then `tekhton.sh:1505` calls `count_human_notes` which
+counts only `[ ]` items. By this point the claimed note is `[~]`, so the
+count is short by one.
+
+In the user's first run: 2 BUG items existed, one was picked and claimed
+(marked `[~]`), then the count showed "1 unchecked [BUG] item(s)" — the
+picked note was already excluded from the count.
+
+**Expected behavior:** The pre-flight count should show the number of
+unchecked items BEFORE any claiming, so the user sees the full picture:
+"2 unchecked [BUG] item(s)" with the picked note highlighted.
+
+**Fix:** Move the `count_human_notes` call and its display (lines 1503-1517)
+to BEFORE the `claim_single_note` call (line 1368). Alternatively, capture
+the count before claiming:
+```bash
+# In the HUMAN_MODE single-note block:
+CURRENT_NOTE_LINE=$(pick_next_note "$HUMAN_NOTES_TAG")
+PRE_CLAIM_COUNT=$(count_human_notes)  # Count before claiming
+claim_single_note "$CURRENT_NOTE_LINE"
+```
+Then use `PRE_CLAIM_COUNT` for the pre-flight display instead of re-counting.
+
+Files: `tekhton.sh`
+
+---
+
+### Bug 6: Notes never resolved after successful resumed run
+
+**Root cause:** Two failures compound:
+
+1. The resumed run has `HUMAN_MODE=false` (Bug 2), so `_hook_resolve_notes`
+   in `lib/finalize.sh:102-131` skips the single-note resolution path.
+
+2. The bulk resolution path (`resolve_human_notes` in `stages/coder.sh:600`)
+   only runs when `should_claim_notes()` returns true AND `HUMAN_MODE != true`.
+   Since `should_claim_notes()` requires `WITH_NOTES=true` OR `HUMAN_MODE=true`
+   OR `NOTES_FILTER` set, and none of these are true on resume, bulk resolution
+   also skips.
+
+3. The note claimed as `[~]` by the first run is never resolved to `[x]`
+   (success) or `[ ]` (failure). It stays as `[~]` indefinitely.
+
+**Expected behavior:** When a resumed run completes the task that originated
+from a human note, that note must be marked `[x]`. This requires either:
+- Restoring `HUMAN_MODE` and `CURRENT_NOTE_LINE` on resume (Bug 2 fix), OR
+- A cleanup sweep that resolves orphaned `[~]` notes after successful runs.
+
+**Fix:** Primary fix is Bug 2 (state persistence). As a safety net, add
+orphan detection to `_hook_resolve_notes`:
+```bash
+# After normal resolution, check for orphaned [~] notes
+local orphan_count
+orphan_count=$(grep -c '^- \[~\]' HUMAN_NOTES.md 2>/dev/null || echo "0")
+if [[ "$orphan_count" -gt 0 ]] && [[ "$exit_code" -eq 0 ]]; then
+    warn "Found ${orphan_count} orphaned in-progress note(s) — resolving."
+    sed -i 's/^- \[~\]/- [x]/' HUMAN_NOTES.md
+fi
+```
+
+Files: `lib/finalize.sh`, `lib/notes.sh`
+
+---
+
+### Bug 7: Scout coder estimate not adjusted by adaptive calibration
+
+**Root cause:** `lib/metrics_calibration.sh` — `calibrate_turn_estimate()`
+is called for reviewer and tester stages but NOT for the coder stage. The
+scout's coder recommendation is applied directly at
+`stages/coder.sh:apply_scout_turn_limits` without passing through
+calibration. The log confirms:
+```
+[metrics] Adaptive calibration: reviewer 8 → 11 (adjusted), clamped → 11
+[metrics] Adaptive calibration: tester 20 → 10 (adjusted), clamped → 10
+```
+No calibration line for coder.
+
+When the scout says `coder=25` and the coder actually needs 99 turns (across
+continuations), that historical data should inflate future scout estimates.
+Instead, the next scout says `coder=25` again.
+
+**Expected behavior:** The scout's coder turn recommendation should pass
+through `calibrate_turn_estimate("coder", recommended_turns)` before being
+applied. Historical overshoot should increase the estimate; historical
+undershoot should decrease it.
+
+**Fix:** In `stages/coder.sh`, after `apply_scout_turn_limits` sets
+`ADJUSTED_CODER_TURNS`, apply adaptive calibration:
+```bash
+if [[ "${METRICS_ADAPTIVE_TURNS:-true}" = "true" ]]; then
+    local calibrated
+    calibrated=$(calibrate_turn_estimate "$ADJUSTED_CODER_TURNS" "coder")
+    if [[ "$calibrated" != "$ADJUSTED_CODER_TURNS" ]]; then
+        log "[metrics] Adaptive calibration: coder ${ADJUSTED_CODER_TURNS} → ${calibrated} (adjusted)"
+        ADJUSTED_CODER_TURNS="$calibrated"
+    fi
+fi
+```
+
+Also verify that `calibrate_turn_estimate` handles the "coder" stage name
+correctly — it must map to `scout_est_coder` (estimate) vs `coder_turns`
+(actual) in the metrics JSONL.
+
+Files: `stages/coder.sh`, `lib/metrics_calibration.sh` (verify coder mapping)
+
+---
+
+Files to create:
+- None
+
+Files to modify:
+- `tekhton.sh` — Human-mode orchestration loop entry, pre-flight count
+  ordering, resume state restoration
+- `lib/state.sh` — Persist HUMAN_MODE, HUMAN_NOTES_TAG, CURRENT_NOTE_LINE
+- `stages/coder.sh` — Use `_build_resume_flag()` helper, apply coder
+  calibration, defensive hint for orphaned human tasks
+- `stages/review.sh` — Use `_build_resume_flag()` helper in state writes
+- `stages/tester.sh` — Use `_build_resume_flag()` helper in state writes
+- `lib/finalize.sh` — Orphaned `[~]` note detection and resolution
+- `lib/metrics_calibration.sh` — Verify coder stage mapping exists
+
+Acceptance criteria:
+- `tekhton --human BUG` enters the orchestration loop (no manual re-run needed)
+- Coder gets continuation attempts on turn exhaustion in human mode
+- Pipeline state file contains `## Human Mode`, `## Human Notes Tag`,
+  `## Current Note Line` sections
+- No-argument resume of a human-mode run restores HUMAN_MODE and HUMAN_NOTES_TAG
+- Resume flag includes `--human [TAG]` instead of `--milestone` for human-mode runs
+- "Human notes exist but no notes flag set" never appears on a human-mode resume
+- Pre-flight count shows number of unchecked items BEFORE claiming
+- Successful completion marks the claimed note as `[x]`
+- Orphaned `[~]` notes are resolved on successful pipeline completion
+- Scout's coder turn estimate passes through adaptive calibration
+- Historical coder overshoot inflates future coder estimates
+- `calibrate_turn_estimate "25" "coder"` returns a higher value when
+  historical coder runs averaged 50+ turns with 25-turn estimates
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n tekhton.sh lib/state.sh stages/coder.sh lib/finalize.sh` passes
+- `shellcheck tekhton.sh lib/state.sh stages/coder.sh lib/finalize.sh` passes
+
+Watch For:
+- `_run_human_complete_loop` processes ALL matching notes in a loop. The new
+  single-note orchestration path must exit after completing ONE note, not loop
+  to pick the next one. Use a `HUMAN_SINGLE_NOTE=true` flag to distinguish.
+- `claim_single_note` marks `[ ] → [~]`. If the orchestration loop retries
+  the same note, the second attempt must not re-claim (it's already `[~]`).
+  Check for idempotency in `claim_single_note`.
+- The resume `exec` at line 975 replaces the process. Environment variables
+  set before `exec` are inherited. Consider exporting `HUMAN_MODE` and
+  `HUMAN_NOTES_TAG` before the `exec` rather than relying solely on
+  command-line flags in the resume command.
+- `calibrate_turn_estimate` uses `scout_est_coder` and `coder_turns` fields
+  from METRICS.jsonl. Verify these fields are actually populated by
+  `lib/metrics.sh` — if the field names differ, calibration will silently
+  return the unadjusted value.
+- The `--human` flag and `--milestone` flag should be mutually exclusive.
+  If both are somehow set, `--human` should take precedence. Add a guard.
+- Continuation turns (`ACTUAL_CODER_TURNS`) accumulate across continuations
+  (e.g., 25+25+25+21=96). The metrics record must store the TOTAL turns,
+  not just the last segment, for calibration to be accurate. Verify
+  `ACTUAL_CODER_TURNS` is exported correctly after continuations.
+
+Seeds Forward:
+- The `_build_resume_flag()` helper centralizes resume flag construction,
+  making it trivial to add new modes (e.g., `--express` resume) later
+- Human-mode state persistence enables future features like "pause and
+  resume a multi-note session across terminal restarts"
+- Coder adaptive calibration closes the feedback loop between scout
+  estimation and actual coder behavior, improving cost efficiency for
+  all pipeline modes — not just human mode
+
+Migration impact:
+- New config keys: NONE
+- New files in .claude/: NONE
+- Breaking changes: `--human` now implies `--complete` behavior (orchestration
+  loop). Users who relied on single-shot `--human` for quick testing can use
+  `--human --no-complete` (add this flag if needed, but default should be
+  run-to-completion)
+- State file format: additive (3 new sections). Old state files without these
+  sections resume with `HUMAN_MODE=false` — backward compatible
+- Migration script update required: NO
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 34: Watchtower Data Fidelity & Bug Fixes
+<!-- milestone-meta
+id: "34"
+status: "done"
+-->
+
+
+## Overview
+
+Watchtower's data layer has gaps that cause blank sections, stale status indicators,
+and inaccurate metrics. This milestone fixes the root causes: RUN_SUMMARY.json
+missing per-stage data, pipeline status not reflecting completion, report parsers
+failing on actual file formats, and no support for non-milestone run types.
+
+## Scope
+
+### 1. Per-Stage Data in RUN_SUMMARY.json
+
+**Problem:** `_hook_emit_run_summary()` in `finalize_summary.sh` never serializes
+the `_STAGE_TURNS`, `_STAGE_DURATION`, or `_STAGE_BUDGET` associative arrays.
+The `_parse_run_summaries()` parser reads `d.get('stages', {})` and always gets `{}`.
+This causes the Trends per-stage breakdown table to show all zeros.
+
+**Fix:** Add a `stages` object to RUN_SUMMARY.json that serializes the per-stage
+arrays. The JSON structure:
+
+```json
+{
+  "stages": {
+    "intake":     { "turns": 2,  "duration_s": 45,  "budget": 5  },
+    "scout":      { "turns": 8,  "duration_s": 120, "budget": 15 },
+    "coder":      { "turns": 35, "duration_s": 900, "budget": 50 },
+    "build_gate": { "turns": 0,  "duration_s": 12,  "budget": 0  },
+    "security":   { "turns": 5,  "duration_s": 90,  "budget": 8  },
+    "reviewer":   { "turns": 10, "duration_s": 200, "budget": 15 },
+    "tester":     { "turns": 12, "duration_s": 180, "budget": 20 }
+  }
+}
+```
+
+**Files:** `lib/finalize_summary.sh`
+
+### 2. Run Type Classification
+
+**Problem:** RUN_SUMMARY.json has no concept of run type. Non-milestone runs
+(human notes, drift fixes, nonblocker fixes, ad hoc tasks) produce summaries
+with empty milestone fields, making Trends show "-" for every non-milestone run.
+
+**Fix:** Add `run_type` and `task_label` fields to RUN_SUMMARY.json:
+
+```json
+{
+  "run_type": "milestone|human_bug|human_feat|human_polish|drift|nonblocker|adhoc",
+  "task_label": "Fix login timeout bug"
+}
+```
+
+Run type is determined from execution mode:
+- `_CURRENT_MILESTONE` set → `"milestone"`
+- `HUMAN_MODE=true` + `HUMAN_NOTES_TAG=BUG` → `"human_bug"`
+- `HUMAN_MODE=true` + `HUMAN_NOTES_TAG=FEAT` → `"human_feat"`
+- `HUMAN_MODE=true` + `HUMAN_NOTES_TAG=POLISH` → `"human_polish"`
+- `FIX_DRIFT_MODE=true` → `"drift"`
+- `FIX_NONBLOCKERS_MODE=true` → `"nonblocker"`
+- Everything else → `"adhoc"`
+
+`task_label` captures the first ~80 chars of the task description for display.
+
+**Files:** `lib/finalize_summary.sh`, `tekhton.sh` (export mode variables)
+
+### 3. Pipeline Completion Status
+
+**Problem:** Watchtower shows "RUNNING" after the pipeline completes. Two causes:
+(a) The `emit_dashboard_run_state` in `_hook_causal_log_finalize` may not execute
+if an earlier finalization hook fails, leaving the last-written status as "running".
+(b) Browser auto-refresh via `location.reload()` may re-read the file mid-write.
+
+**Fix:**
+- Move the final `emit_dashboard_run_state` to a dedicated finalization hook
+  registered at highest priority (runs last, after all other hooks), ensuring it
+  always executes even if earlier hooks fail.
+- Add a `completed_at` timestamp to `run_state.js` so the UI can distinguish
+  "no update yet" from "pipeline finished".
+- The `_write_js_file` function already uses tmpfile+mv (atomic), so the mid-write
+  race is already handled. The issue is hook ordering.
+
+**Files:** `lib/finalize.sh`, `lib/dashboard.sh`
+
+### 4. Report Parser Fixes
+
+**Problem:** Intake Report always shows "Verdict: Unknown, Confidence: 0/100".
+Coder Summary always shows "Status: pending". The parsers use Perl-style regex
+extensions (`\K`, `(?<=)`) via `grep -P` which may not be available on all systems
+and may not match actual file formats.
+
+**Fix:**
+- Audit INTAKE_REPORT.md, CODER_SUMMARY.md, and REVIEWER_REPORT.md actual output
+  formats (generated by agent prompts).
+- Update `_parse_intake_report()` to use portable regex or sed extraction.
+- Update `_parse_coder_summary()` to handle the actual section headers and format.
+- Add fallback extraction when primary patterns don't match.
+- Ensure `emit_dashboard_reports()` is called after each stage that produces a
+  report file, not just at hardcoded points.
+
+**Files:** `lib/dashboard_parsers.sh`, `lib/dashboard_emitters.sh`, `tekhton.sh`
+
+### 5. Metrics Accuracy
+
+**Problem:** `_parse_run_summaries()` maps `total_turns` from `total_agent_calls`
+(the `_ORCH_AGENT_CALLS` counter) and `total_time_s` from `wall_clock_seconds`
+(`_ORCH_ELAPSED`). For non-orchestrated runs (single milestone, no --complete),
+`_ORCH_AGENT_CALLS` may be 0 because the orchestrator wasn't invoked.
+
+**Fix:**
+- Add `total_turns` and `total_time_s` as first-class fields in RUN_SUMMARY.json
+  that are always computed from `_STAGE_TURNS` sums (ground truth).
+- `_parse_run_summaries()` reads `total_turns` directly, falls back to
+  `total_agent_calls` for older summaries.
+- Similarly compute `total_time_s` from `_STAGE_DURATION` sums with fallback
+  to `wall_clock_seconds`.
+
+**Files:** `lib/finalize_summary.sh`, `lib/dashboard_parsers.sh`
+
+## Acceptance Criteria
+
+- RUN_SUMMARY.json contains a `stages` object with per-stage turns, duration_s, and budget
+- RUN_SUMMARY.json contains `run_type` field correctly set for all execution modes
+- RUN_SUMMARY.json contains `task_label` for non-milestone runs
+- RUN_SUMMARY.json contains `total_turns` and `total_time_s` computed from stage sums
+- Watchtower status indicator shows "COMPLETE" or "FAILED" after pipeline finishes
+  (not stuck on "RUNNING")
+- Trends per-stage breakdown table shows non-zero values from real stage data
+- Trends Avg turns/run and Avg run duration reflect actual totals
+- Intake Report section shows real verdict and confidence from INTAKE_REPORT.md
+- Coder Summary section shows real status and file count from CODER_SUMMARY.md
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/finalize_summary.sh lib/dashboard_parsers.sh lib/dashboard.sh` passes
+- `shellcheck lib/finalize_summary.sh lib/dashboard_parsers.sh lib/dashboard.sh` passes
+
+## Watch For
+
+- The `_STAGE_TURNS` and `_STAGE_DURATION` arrays are `declare -A` (associative).
+  Iterating them for JSON serialization requires `${!_STAGE_TURNS[@]}` which gives
+  keys in arbitrary order. Use the fixed `stageOrder` list for deterministic output.
+- `_hook_emit_run_summary` runs as a finalization hook. The `_STAGE_*` arrays must
+  still be in scope at that point. Verify they aren't unset or cleared before the
+  hook fires.
+- The parser fallback chain (Python → grep) must handle both old-format summaries
+  (no `stages`, no `run_type`) and new-format summaries gracefully.
+- `HUMAN_NOTES_TAG` may be empty even in human mode (user ran `--human` without
+  specifying BUG/FEAT/POLISH). Default `run_type` to `"human"` in that case.
+
+## Seeds Forward
+
+- M35 consumes the per-stage data and run_type fields to render rich Trends views
+- M35 uses the `completed_at` timestamp for smart refresh logic
+- M36 uses `run_type` taxonomy to categorize submissions
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 35: Watchtower Smart Refresh & Context-Aware Layout
+<!-- milestone-meta
+id: "35"
+status: "done"
+-->
+
+
+## Overview
+
+Watchtower's full-page `location.reload()` causes a visible blink every refresh
+cycle. Its layout is static — Reports and Trends render the same sections regardless
+of run type, leaving irrelevant sections visible and relevant ones showing "pending"
+or blank data. This milestone replaces the refresh mechanism with incremental data
+loading and makes the layout adapt to the current run context.
+
+## Scope
+
+### 1. Incremental Data Refresh (No Blink)
+
+**Problem:** `scheduleRefresh()` calls `location.reload()` every
+`refresh_interval_ms` (default 10s). This reloads all HTML, CSS, JS, and data
+files, causing a full DOM teardown and rebuild. Even with scroll position
+persistence via `localStorage`, the visual flash is jarring.
+
+**Fix:** Replace `location.reload()` with `fetch()` calls that reload only the
+`data/*.js` files, then re-execute them to update the `window.TK_*` globals,
+and selectively re-render changed tabs.
+
+Implementation approach:
+```javascript
+function refreshData() {
+  var dataFiles = ['run_state', 'timeline', 'milestones', 'reports',
+                   'metrics', 'security', 'health'];
+  var promises = dataFiles.map(function(name) {
+    return fetch('data/' + name + '.js?t=' + Date.now())
+      .then(function(r) { return r.text(); })
+      .then(function(text) {
+        // Execute the JS to update window.TK_* globals
+        // Use Function constructor instead of eval for CSP compat
+        new Function(text)();
+      });
+  });
+  Promise.all(promises).then(function() {
+    renderActiveTab();     // Only re-render current tab
+    updateStatusIndicator();
+    scheduleRefresh();     // Schedule next cycle
+  });
+}
+```
+
+Cache-busting via `?t=` query parameter ensures fresh data on `file://` protocol.
+Fall back to `location.reload()` if `fetch()` is unavailable (old browsers).
+
+**Selective re-render:** Only re-render the currently active tab. Other tabs get
+`renderedTabs[tabId] = false` so they re-render when switched to.
+
+**Files:** `templates/watchtower/app.js`
+
+### 2. Context-Aware Reports Tab
+
+**Problem:** The Reports tab always shows four accordion sections (Intake, Coder,
+Security, Reviewer) regardless of run type. For human-notes runs, there's no
+security stage. For ad hoc runs, there may be no intake. Sections show "Pending"
+badges when they'll never be populated.
+
+**Fix:**
+- Read `run_type` from `TK_RUN_STATE` (added by M34) to determine which report
+  sections are relevant.
+- Show/hide sections based on run type:
+  - `milestone`: All sections visible
+  - `human_*`: Intake + Coder + Reviewer (no Security unless security stage ran)
+  - `drift`: Coder + Reviewer (architect-driven, no intake)
+  - `nonblocker`: Coder + Reviewer
+  - `adhoc`: Show sections that have non-null data; hide rest
+- Add stage status awareness: if `TK_RUN_STATE.stages[stage].status === "complete"`,
+  show its report section; if "pending", hide it (not "pending" badge — hidden).
+- Add a "Run Context" header card showing: run type badge, task label, milestone
+  ID (if applicable), started timestamp, current/final status.
+
+**Additional report sections** (from existing data, not currently rendered):
+- **Test Audit** section: data is already in `TK_REPORTS.test_audit` but no
+  render function exists. Add `renderTestAuditBody()`.
+- **Notes Backlog** section: data is already in `TK_REPORTS.backlog` but no
+  render function exists. Add `renderBacklogBody()` showing bug/feat/polish counts.
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 3. Enhanced Trends Tab
+
+**Problem:** Recent Runs list shows milestone ID as the only run identifier.
+Non-milestone runs show "-". The per-stage breakdown was always empty (fixed by
+M34's data layer changes), but the display needs updating.
+
+**Fix:**
+
+**Recent Runs enhancements:**
+- Show `run_type` as a colored badge alongside run number
+- Show `task_label` (truncated to ~40 chars) instead of just milestone ID
+- For milestone runs, show both milestone ID and title
+- Add run type filter buttons above the list: All | Milestones | Human Notes |
+  Drift | Ad Hoc — filter toggles stored in `localStorage`
+
+**Efficiency Summary enhancements:**
+- Calculate averages per run type (milestone runs vs human notes vs ad hoc)
+- Show the breakdown: "Milestone avg: 42 turns · Human avg: 18 turns · Ad hoc avg: 12 turns"
+- Fix trend arrows to work with fewer than 20 runs (currently returns empty string
+  if `runs.length < 20`). Lower threshold to 4 runs and compare halves.
+
+**Per-Stage Breakdown enhancements:**
+- Now populated with real data (from M34)
+- Add a "last run" column showing the most recent run's per-stage values alongside
+  the historical averages, so users can spot anomalies
+- Color-code budget utilization: green (<80%), amber (80-100%), red (>100%)
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 4. Refresh Lifecycle Cleanup
+
+**Problem:** Auto-refresh continues indefinitely when status is "running" but
+never terminates cleanly when the pipeline finishes between reloads.
+
+**Fix:**
+- Use `completed_at` timestamp from `TK_RUN_STATE` (added by M34) to detect
+  pipeline completion
+- On detecting completion, do one final data refresh, then stop the refresh loop
+- Show a subtle "Pipeline completed — refresh stopped" indicator in the header
+- Add a manual "Refresh" button in the header that triggers a single data reload
+  (useful after pipeline completes, for viewing updated metrics)
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/index.html`,
+`templates/watchtower/style.css`
+
+## Acceptance Criteria
+
+- Watchtower updates data without full page reload (no visible blink/flash)
+- Only the active tab re-renders on each refresh cycle
+- Scroll position is preserved across refreshes without localStorage hacks
+- Reports tab hides sections for stages that didn't run in the current run type
+- Reports tab shows Test Audit and Notes Backlog sections when data is available
+- Reports tab shows a "Run Context" header with run type, task label, and status
+- Trends Recent Runs shows run type badges and task labels for all run types
+- Trends Recent Runs supports filtering by run type
+- Trends efficiency stats show per-run-type averages
+- Trend arrows work with as few as 4 historical runs
+- Per-stage breakdown shows color-coded budget utilization
+- Auto-refresh stops when pipeline completes, with manual refresh button available
+- Fallback to `location.reload()` works when `fetch()` is unavailable
+- All existing tests pass (`bash tests/run_tests.sh`)
+
+## Watch For
+
+- `file://` protocol has CORS restrictions in some browsers. `fetch('data/run_state.js')`
+  may fail on `file://`. Test with Chrome (allows same-origin file://), Firefox
+  (restricts by default), and Safari. Document the `python3 -m http.server` fallback
+  prominently.
+- The `new Function(text)()` approach for executing loaded JS must handle parse errors
+  gracefully. Wrap in try/catch and fall back to `location.reload()` on failure.
+- Selective re-render must rebuild the causal index (`buildCausalIndex()`) when
+  timeline data changes, not just on initial load.
+- The `renderedTabs` lazy-render pattern conflicts with incremental refresh.
+  Change to: always re-render active tab on data change, mark other tabs as stale.
+- `TK_RUN_STATE.run_type` won't exist in data files from runs before M34. Default
+  to `"milestone"` when `run_type` is missing (backward compat).
+
+## Seeds Forward
+
+- M36 adds interactive controls that need non-blinking refresh to feel responsive
+- M37 adds parallel team views that rely on selective tab re-rendering
+- The fetch-based refresh pattern enables future WebSocket upgrade for real-time push
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 36: Watchtower Interactive Controls (Input Layer)
+<!-- milestone-meta
+id: "36"
+status: "done"
+-->
+
+
+## Overview
+
+Watchtower is currently read-only — a glass pane for observing pipeline execution.
+This milestone adds an input layer: users can submit human notes (bugs, features,
+polish), create new milestones, and queue ad hoc tasks directly from the Watchtower
+UI. All input is file-based (Watchtower writes structured files that Tekhton reads
+on the next run), preserving the zero-server architecture.
+
+## Motivation
+
+Today, submitting work to Tekhton requires terminal access:
+- New milestones: manually create `.md` file + edit `MANIFEST.cfg`
+- Bug reports: manually edit `HUMAN_NOTES.md` with correct `[BUG]` tag format
+- Feature requests: edit `HUMAN_NOTES.md` with `[FEAT]` tag
+- Ad hoc tasks: run `tekhton.sh "task description"` from CLI
+
+Watchtower already has the user's browser open. Adding input forms turns it from
+a monitoring tool into a lightweight project management interface, closing the loop
+between observing pipeline output and feeding it new work.
+
+## Scope
+
+### 1. New "Actions" Tab
+
+Add a fifth tab to the Watchtower nav bar: **Actions**. This tab contains forms
+for submitting work items. The tab is always available regardless of pipeline state
+(unlike Live Run which is most useful during execution).
+
+Layout: card-based form sections, similar to Reports accordion style.
+
+**Files:** `templates/watchtower/index.html`, `templates/watchtower/app.js`,
+`templates/watchtower/style.css`
+
+### 2. Human Notes Submission
+
+A form for submitting bug reports, feature requests, and polish items.
+
+**Form fields:**
+- **Type** (required): Radio buttons — BUG | FEAT | POLISH
+- **Title** (required): Single-line text input (max 120 chars)
+- **Description** (optional): Textarea for details (max 2000 chars)
+- **Priority** (optional): Low | Medium | High (default: Medium)
+- **Submit** button
+
+**On submit:** Watchtower writes a structured file to `.claude/watchtower_inbox/`
+(a new staging directory) with naming convention:
+`note_<timestamp>_<type>.md`
+
+File format:
+```markdown
+<!-- watchtower-note -->
+- [ ] [BUG] Title goes here
+
+Description text goes here.
+
+Priority: Medium
+Submitted: 2025-01-15T10:30:00Z
+Source: watchtower
+```
+
+**Pipeline integration:** At pipeline startup, Tekhton checks
+`.claude/watchtower_inbox/` for `note_*.md` files. Each file's content is appended
+to `HUMAN_NOTES.md` using the existing `add_note()` function from `lib/notes_cli.sh`,
+then the inbox file is moved to `.claude/watchtower_inbox/processed/`.
+
+**Validation:** Client-side validation prevents empty titles. Type is required.
+Description is optional but encouraged.
+
+**Files:** `templates/watchtower/app.js`, `lib/notes_cli.sh` (inbox reader),
+`tekhton.sh` (startup inbox check)
+
+### 3. Milestone Submission
+
+A form for creating new milestones from the Watchtower UI.
+
+**Form fields:**
+- **ID** (required): Auto-generated as next `mNN` (reads current manifest), editable
+- **Title** (required): Single-line text input (max 100 chars)
+- **Description** (required): Textarea for scope description (max 5000 chars)
+- **Depends on** (optional): Multi-select from existing milestone IDs
+- **Parallel group** (optional): Text input (existing groups shown as suggestions)
+- **Submit** button
+
+**On submit:** Watchtower writes two files to `.claude/watchtower_inbox/`:
+1. `milestone_<id>.md` — The milestone file content:
+   ```markdown
+   # Milestone NN: Title
+
+   ## Overview
+
+   Description text from form.
+
+   ## Scope
+
+   (To be detailed during planning or execution)
+
+   ## Acceptance Criteria
+
+   - (To be defined)
+
+   ## Watch For
+
+   - (To be defined)
+   ```
+2. `manifest_append_<id>.cfg` — A single manifest line:
+   ```
+   mNN|Title|pending|deps|milestone_mNN.md|parallel_group
+   ```
+
+**Pipeline integration:** At pipeline startup, Tekhton checks for
+`manifest_append_*.cfg` files in the inbox. Each is validated (ID doesn't collide,
+deps exist) and appended to `MANIFEST.cfg`. The corresponding `.md` file is moved
+to the milestones directory. Processed inbox files move to `processed/`.
+
+**Form intelligence:**
+- Auto-reads `TK_MILESTONES` to suggest next ID and show dependency options
+- Shows existing parallel groups as datalist suggestions
+- Disables submit if ID conflicts with existing milestone
+- Preview section shows how the milestone will appear in the Milestone Map tab
+
+**Files:** `templates/watchtower/app.js`, `lib/milestone_dag.sh` (inbox reader),
+`tekhton.sh` (startup inbox check)
+
+### 4. Ad Hoc Task Queue
+
+A simple form for queuing one-off tasks.
+
+**Form fields:**
+- **Task description** (required): Textarea (max 2000 chars)
+- **Submit** button
+
+**On submit:** Writes `task_<timestamp>.txt` to `.claude/watchtower_inbox/`.
+The file contains the raw task description.
+
+**Pipeline integration:** `tekhton.sh` checks for `task_*.txt` files and offers
+them in the next `--human` or `--complete` run. Not auto-executed — surfaced as
+available tasks.
+
+**Files:** `templates/watchtower/app.js`, `tekhton.sh`
+
+### 5. Inbox Status Display
+
+The Actions tab shows a "Pending Submissions" section listing items currently in
+the inbox (not yet processed by a pipeline run). Uses existing `TK_RUN_STATE` or
+a new `TK_INBOX` data file to surface queued items.
+
+**New emitter:** `emit_dashboard_inbox()` reads `.claude/watchtower_inbox/` and
+generates `data/inbox.js` listing pending items by type.
+
+**Files:** `lib/dashboard_emitters.sh`, `templates/watchtower/app.js`,
+`templates/watchtower/index.html` (new script tag for inbox.js)
+
+### 6. File Write Mechanism
+
+Watchtower runs as a static HTML page opened from `file://` protocol. Writing
+files from JavaScript in a browser is restricted. Two approaches:
+
+**Approach A (recommended): Download prompt**
+- On submit, generate file content as a Blob
+- Trigger browser download via `<a download="filename">` click
+- User saves the file to `.claude/watchtower_inbox/` directory
+- Show clear instructions: "Save this file to: [path shown]"
+
+**Approach B (http server mode): Direct write via POST**
+- When served via `python3 -m http.server` or similar, add a tiny CGI/handler
+  that accepts POST requests and writes files
+- `tools/watchtower_server.py` — lightweight HTTP server with a `/api/submit`
+  endpoint that writes to the inbox directory
+- Auto-detected by Watchtower: if `fetch('/api/ping')` succeeds, use POST;
+  otherwise fall back to Approach A
+
+**Recommended default:** Ship both. Approach A works everywhere. Approach B is
+opt-in for users who want seamless submission. The server script is <100 lines.
+
+**Files:** `templates/watchtower/app.js`, `tools/watchtower_server.py` (new)
+
+## Acceptance Criteria
+
+- Actions tab appears in Watchtower navigation
+- Human Notes form validates input and generates correctly formatted note files
+- Milestone form auto-suggests next ID and validates against collisions
+- Milestone form shows dependency options from current manifest
+- Ad hoc task form generates task files
+- Pending submissions section shows queued items from inbox
+- Download-prompt approach works on `file://` protocol (Chrome, Firefox)
+- HTTP server mode (opt-in) allows direct file writing via POST
+- Pipeline startup processes inbox items: notes appended to HUMAN_NOTES.md,
+  milestones added to MANIFEST.cfg, task files surfaced
+- Processed inbox items moved to `processed/` subdirectory
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` passes for any modified `.sh` files
+- `shellcheck` passes for any modified `.sh` files
+- New `tools/watchtower_server.py` passes basic smoke test
+
+## Watch For
+
+- **Security:** The HTTP server (Approach B) binds to `localhost` only. Never
+  expose to `0.0.0.0`. The server must validate file paths to prevent directory
+  traversal (all writes constrained to `.claude/watchtower_inbox/`).
+- **File:// restrictions:** `file://` cannot make `fetch()` POST requests.
+  The download-prompt fallback is essential. Test that the generated Blob
+  content is valid and complete.
+- **Race condition:** Pipeline may start while user is mid-submission. Inbox
+  processing should use `mv` (atomic) not read-then-delete.
+- **Manifest validation:** Duplicate milestone IDs must be rejected at both
+  form level (JS) and pipeline level (bash). Belt and suspenders.
+- **Existing M32 integration:** M32 already provides a browser-based planning
+  interview. The Actions tab should link to the planning UI URL when available,
+  not duplicate it.
+
+## Seeds Forward
+
+- M37 uses the Actions tab infrastructure for parallel team management controls
+- The `watchtower_server.py` HTTP server could be extended in V4 for real-time
+  WebSocket push notifications
+- The inbox pattern is extensible: future submission types (config changes,
+  replan triggers) follow the same file-based protocol
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 37: Watchtower V4 Parallel Teams Readiness
+<!-- milestone-meta
+id: "37"
+status: "done"
+-->
+
+
+## Overview
+
+Tekhton V4 will introduce parallel work teams — multiple agent pipelines executing
+independent milestones concurrently. Watchtower must evolve from tracking a single
+linear pipeline to visualizing multiple concurrent execution streams. This milestone
+builds the data model, UI components, and display infrastructure for parallel team
+monitoring, even before V4's execution engine exists.
+
+## Motivation
+
+The existing Watchtower was designed for a single serial pipeline:
+- **Live Run** shows one timeline, one stage progress bar, one active milestone
+- **Milestone Map** shows lanes by status (done/active/ready/pending) but doesn't
+  visualize parallel execution groups
+- **Reports** shows one set of stage reports
+- **Trends** aggregates all runs into one flat list
+
+V4 parallel execution will run 2-4 independent pipelines simultaneously (one per
+`parallel_group` in MANIFEST.cfg). Each team has its own coder, reviewer, and
+tester operating on a different milestone. Watchtower needs to show all teams at
+once without losing the ability to drill into individual team details.
+
+## Scope
+
+### 1. Team-Aware Run State
+
+Extend `emit_dashboard_run_state()` to emit per-team state when parallel execution
+is active.
+
+**New data structure in `run_state.js`:**
+```javascript
+window.TK_RUN_STATE = {
+  pipeline_status: "running",
+  parallel_mode: true,       // NEW: true when multiple teams active
+  teams: {                   // NEW: per-team state
+    "team_quality": {
+      milestone: { id: "m20", title: "Test Integrity Audit" },
+      current_stage: "coder",
+      stages: { intake: {...}, scout: {...}, coder: {...}, ... },
+      status: "running",
+      started_at: "2025-01-15T10:00:00Z"
+    },
+    "team_brownfield": {
+      milestone: { id: "m15", title: "Project Health Scoring" },
+      current_stage: "reviewer",
+      stages: { ... },
+      status: "running",
+      started_at: "2025-01-15T10:00:00Z"
+    }
+  },
+  // Existing fields for backward compat (reflect "lead" team or aggregate)
+  current_stage: "coder",
+  active_milestone: { id: "m20", title: "Test Integrity Audit" },
+  stages: { ... }
+};
+```
+
+When `parallel_mode` is false (current behavior), `teams` is empty/absent and
+existing single-pipeline fields are used. UI auto-detects which mode to render.
+
+**Files:** `lib/dashboard.sh`, `lib/dashboard_emitters.sh`
+
+### 2. Multi-Team Live Run View
+
+When `parallel_mode` is true, the Live Run tab switches from single-pipeline view
+to a multi-team layout.
+
+**Layout:**
+```
+┌─────────────────────────────────────────────┐
+│ Pipeline RUNNING — 3 teams active           │
+├──────────────┬──────────────┬───────────────┤
+│ Team Quality │ Team Brown   │ Team DevX     │
+│ ● m20: Test  │ ✓ m15: Hea  │ ● m22: Init   │
+│ [I][S][C]... │ [I][S][C]... │ [I][S][C]...  │
+│ Coder: 12/50 │ Review: 5/15 │ Scout: 3/15   │
+├──────────────┴──────────────┴───────────────┤
+│ Unified Timeline (color-coded by team)      │
+│ 10:05 [quality] stage_start: coder          │
+│ 10:04 [brownfield] verdict: approved        │
+│ 10:03 [devx] stage_start: scout             │
+└─────────────────────────────────────────────┘
+```
+
+Each team card shows:
+- Team name (derived from parallel_group or auto-generated)
+- Active milestone ID and title
+- Compact stage progress chips (same as current, but smaller)
+- Current stage detail (turns/budget, duration)
+- Status badge (running/waiting/complete/failed)
+
+Below the team cards: unified timeline with team-colored event markers.
+Click a team card to filter the timeline to that team's events only.
+
+**Single-team mode:** When only one team is active (or `parallel_mode` is false),
+render the existing single-pipeline view unchanged.
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 3. Enhanced Milestone Map with Parallel Groups
+
+The Milestone Map currently uses swimlanes by status (Done/Active/Ready/Pending).
+Enhance it to optionally view by parallel group, showing which milestones can
+execute concurrently.
+
+**New view toggle:** "View by: Status | Parallel Group" buttons above the swimlanes.
+
+**Parallel Group view:**
+```
+┌─────────────────────────────────────────────┐
+│ View by: [Status] [Parallel Group]          │
+├──────────────┬──────────────┬───────────────┤
+│ quality      │ brownfield   │ devx          │
+│ ┌──────────┐ │ ┌──────────┐ │ ┌──────────┐  │
+│ │ m09 ✓    │ │ │ m11 ✓    │ │ │ m18 ✓    │  │
+│ │ m10 ✓    │ │ │ m12 ✓    │ │ │ m19 ✓    │  │
+│ │ m20 ●    │ │ │ m15 ●    │ │ │ m22 ●    │  │
+│ └──────────┘ │ └──────────┘ │ └──────────┘  │
+│              │              │               │
+│ Cross-group dependency arrows (CSS lines)   │
+└─────────────────────────────────────────────┘
+```
+
+Dependency arrows between groups show cross-group constraints. Within a group,
+milestones are ordered by dependency chain (topological sort).
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 4. Per-Team Reports
+
+When parallel teams are active, the Reports tab needs to scope reports to a
+selected team. Add a team selector dropdown/tabs at the top of the Reports tab.
+
+Each team has its own set of reports (intake, coder, security, reviewer) because
+each runs its own pipeline stages independently.
+
+**Data model extension:**
+```javascript
+window.TK_REPORTS = {
+  // Existing fields (for single-pipeline compat)
+  intake: { verdict: "pass", confidence: 85 },
+  coder: { ... },
+  // New: per-team reports
+  teams: {
+    "team_quality": {
+      intake: { ... },
+      coder: { ... },
+      security: { ... },
+      reviewer: { ... }
+    },
+    "team_brownfield": { ... }
+  }
+};
+```
+
+**Files:** `lib/dashboard_emitters.sh`, `templates/watchtower/app.js`
+
+### 5. Team-Aware Trends
+
+Extend Trends to break down metrics by team in addition to by stage.
+
+**New section:** "Per-Team Performance" table showing:
+- Team name
+- Total runs
+- Avg turns per milestone
+- Avg duration per milestone
+- Success rate
+- Distribution bar chart
+
+**Filter integration:** Existing run type filters (from M35) gain a team filter:
+"All Teams | Quality | Brownfield | DevX"
+
+**Files:** `templates/watchtower/app.js`
+
+### 6. Data Layer Preparation
+
+The parallel team data model must be defined now so M34-M36 can build on it,
+even though V4's execution engine doesn't exist yet.
+
+**New fields in RUN_SUMMARY.json:**
+```json
+{
+  "team": "quality",
+  "parallel_group": "quality",
+  "concurrent_teams": 3
+}
+```
+
+**New emitter hook:** `emit_dashboard_team_state(team_id)` — called per team in
+parallel mode. Writes team-specific state into the `teams` object of `run_state.js`.
+
+**Backward compat:** When `parallel_mode` is absent or false, all existing views
+render identically to pre-M37 behavior. No feature flags needed — auto-detect
+from data shape.
+
+**Files:** `lib/dashboard.sh`, `lib/dashboard_emitters.sh`,
+`lib/finalize_summary.sh`
+
+## Acceptance Criteria
+
+- `TK_RUN_STATE` supports `parallel_mode` and `teams` fields
+- Live Run tab renders multi-team card layout when `parallel_mode` is true
+- Live Run tab renders existing single-pipeline view when `parallel_mode` is false
+- Timeline events are color-coded by team with click-to-filter
+- Milestone Map supports "View by Parallel Group" toggle
+- Cross-group dependency arrows render correctly
+- Reports tab shows team selector when multiple teams have reports
+- Trends tab shows per-team performance breakdown
+- RUN_SUMMARY.json includes `team` and `parallel_group` fields
+- All views degrade gracefully to single-pipeline display for pre-M37 data
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` passes for any modified `.sh` files
+- `shellcheck` passes for any modified `.sh` files
+
+## Watch For
+
+- **Team naming:** Parallel groups in MANIFEST.cfg are optional and may be empty.
+  When no group is assigned, milestones default to a "default" team. The UI must
+  handle mixed grouped/ungrouped milestones.
+- **Team count explosion:** V4 will likely cap at 4 concurrent teams. The UI layout
+  should work for 1-6 teams but optimize for 2-4. Beyond 4, use a scrollable
+  horizontal layout instead of fixed columns.
+- **Timeline interleaving:** Events from different teams arrive in temporal order,
+  not grouped by team. The unified timeline must handle interleaved events.
+  Team filtering must not re-order events.
+- **Report scoping:** In parallel mode, each team writes its own report files with
+  team-prefixed names (e.g., `CODER_SUMMARY_quality.md`). The parser must handle
+  both prefixed and unprefixed filenames.
+- **Data file size:** With 4 teams, `run_state.js` grows ~4x. Ensure the file
+  stays under 50KB even with verbose stage data.
+
+## Seeds Forward
+
+- V4 execution engine will call `emit_dashboard_team_state()` per team
+- The team data model enables future features: team-level retry, team reassignment,
+  cross-team artifact sharing visualization
+- The HTTP server from M36 could be extended for real-time team status WebSocket push
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 38: Watchtower Live Run & Milestone Map UX Polish
+<!-- milestone-meta
+id: "38"
+status: "done"
+-->
+
+## Overview
+
+The Watchtower Live Run screen has several display fidelity issues: the active
+stage indicator lags one stage behind reality (Intake never shows as active,
+Scout never lights up), the turns display shows `0/N` which is misleading since
+turn counts aren't available until a stage completes, and stage elapsed time —
+already tracked in `_STAGE_DURATION` — isn't surfaced. The Milestone Map tab is
+also shallow: clicking a milestone reveals only its status and parallel group,
+not the rich context needed to understand what it does or how it connects to the
+dependency graph.
+
+## Scope
+
+### 1. Fix Active Stage Indicator Lag
+
+**Problem:** When the pipeline enters Intake, the Live Run stage chips show all
+stages as `○` (pending). Intake never shows as `●` (active). Once Coder starts,
+Intake flips to `✓` and Coder becomes `●` — always one behind. The root cause
+is that `emit_dashboard_run_state()` in `lib/dashboard.sh` sets `current_stage`
+and `_STAGE_STATUS` but the Intake stage doesn't call the status-update hooks
+early enough, and Scout's status is never emitted as a distinct active stage.
+
+**Fix:**
+- In `lib/dashboard.sh` (`emit_dashboard_run_state()`), ensure `_STAGE_STATUS`
+  for the `current_stage` is always at least `"active"` when emitting. If
+  `_STAGE_STATUS[$CURRENT_STAGE]` is empty or `"pending"`, override it to
+  `"active"` in the emitted JSON (don't mutate the global).
+- In `stages/coder.sh`, ensure `_STAGE_STATUS[intake]` is set to `"active"` at
+  the start of the intake phase and `"complete"` before moving to scout/coder.
+- In `stages/coder.sh`, ensure `_STAGE_STATUS[scout]` is set to `"active"` when
+  scout begins and `"complete"` when scout finishes, with a dashboard emit
+  between transitions so watchtower picks it up on the next refresh cycle.
+- Verify `statusIcon()` in `templates/watchtower/app.js` (lines 69-75) maps
+  `"active"` → `●` correctly (it already does, but confirm).
+
+**Files:** `lib/dashboard.sh`, `stages/coder.sh`
+
+### 2. Replace Turns Display with Stage Elapsed Time
+
+**Problem:** The Live Run detail line shows `turns: 0/70` for the active stage.
+The numerator is always 0 during execution because `_STAGE_TURNS` is only
+populated after an agent call completes. This makes the display misleading. The
+denominator (budget) is useful, but a counter stuck at 0 is not.
+
+**Fix:**
+- In `templates/watchtower/app.js`, replace the turns display with elapsed time.
+  The data is already available: `_STAGE_DURATION[stg]` is emitted as
+  `duration_s` in the stage JSON object (lib/dashboard.sh line 148).
+- Format: `Stage: Coder · 3m 42s · budget: 70 turns`
+  - Show `duration_s` formatted as `Xm Ys` (or `Xh Ym` for long stages)
+  - Show budget as a reference, not a fraction
+- In `lib/dashboard.sh`, ensure `_STAGE_DURATION` for the current active stage
+  is computed as `$(( SECONDS - _STAGE_START_TS ))` at emit time, not just at
+  stage completion. If `_STAGE_START_TS[$CURRENT_STAGE]` exists and the stage
+  status is `"active"`, compute live elapsed.
+- Keep completed stages showing final `duration_s` and `turns` (actual turns
+  used) in their chip tooltip or detail view.
+
+**Files:** `templates/watchtower/app.js`, `lib/dashboard.sh`
+
+### 3. Scout Stage Visibility in Live Run
+
+**Problem:** Scout runs within the Coder stage but has its own entry in
+`stageOrder` (line 137 of app.js). During scout execution, the Live Run shows
+Scout as a chip before Coder, but it never lights up as active. It appears as
+a dead step.
+
+**Fix:**
+- Option A (recommended): Make Scout a sub-step of Coder rather than a
+  top-level stage chip. Render it as an indented or nested indicator within the
+  Coder chip: `[Intake ✓] [Coder ● (Scout ✓)] [Review ○] [Test ○]`
+- In `templates/watchtower/app.js`, when rendering stage chips, check if Scout
+  is in the stage data. If so, render it as a sub-badge inside the Coder chip
+  rather than its own chip. This better reflects the actual pipeline structure
+  where Scout is a phase within the Coder stage.
+- Alternatively, if Scout is kept as a top-level chip, ensure its
+  `_STAGE_STATUS` is properly set to `"active"` and `"complete"` (see fix #1)
+  so it lights up correctly.
+
+**Files:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+### 4. Milestone Map Detail Expansion
+
+**Problem:** Clicking a milestone in the Milestone Map shows only `status` and
+`parallel_group` (lines 228-229 of app.js). This is nearly useless — users
+can't tell what a milestone does without opening the file.
+
+**Fix:**
+- Extend the milestone data emitter (`lib/dashboard_emitters.sh` or
+  `lib/dashboard.sh`) to include a `summary` field for each milestone. Extract
+  the first paragraph of the `## Overview` section from each milestone `.md`
+  file (everything between `## Overview` and the next `##` heading, limited to
+  300 chars).
+- Extend the emitter to include `depends_on` (already in manifest) and
+  `enables` (reverse-lookup: which milestones list this ID in their deps).
+- In `templates/watchtower/app.js` `renderMilestoneMap()`:
+  - Show the `summary` text in the expanded detail view.
+  - Show dependency chips in two rows:
+    - **Enabled by:** small colored chips (green) for milestones in `depends_on`
+    - **Enables:** small colored chips (blue) for milestones in `enables`
+  - Chips show milestone ID and are clickable (scroll to that milestone in the
+    map and briefly highlight it).
+- In `templates/watchtower/style.css`, add styles for:
+  - `.milestone-summary` — truncated overview text, muted color
+  - `.dep-chip` and `.enables-chip` — small rounded badges with distinct colors
+  - `.milestone-highlight` — brief CSS animation for scroll-to highlight
+
+**Files:** `lib/dashboard.sh` or `lib/dashboard_emitters.sh`,
+`templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+## Acceptance Criteria
+
+- Intake stage shows `●` (active) on the Live Run screen while intake is running
+- Scout stage shows `●` (active) during scout execution (either as sub-step of
+  Coder or as its own chip that properly lights up)
+- Stage transitions emit dashboard data between each phase so Watchtower picks
+  up intermediate states on the next refresh
+- Live Run active stage detail shows elapsed time (e.g., `3m 42s`) instead of
+  `0/70` turns
+- Budget is still shown but as a standalone reference, not a fraction
+- Completed stages show actual turns used and final duration
+- Milestone Map expanded view shows a summary paragraph from the milestone's
+  Overview section
+- Milestone Map expanded view shows "Enabled by" dependency chips (green)
+- Milestone Map expanded view shows "Enables" forward-dependency chips (blue)
+- Dependency chips are clickable and scroll/highlight the target milestone
+- Milestone data emitter extracts overview summaries from milestone `.md` files
+- Milestone data emitter computes reverse dependency lookup (`enables`)
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` passes for any modified `.sh` files
+- `shellcheck` passes for any modified `.sh` files
+
+## Watch For
+
+- **Emit frequency:** Dashboard emits happen at stage transitions. If emits are
+  too infrequent, the Live Run will still appear laggy. Ensure an emit happens
+  at: intake start, intake end, scout start, scout end, coder start, etc.
+- **Duration computation at emit time:** Computing `SECONDS - _STAGE_START_TS`
+  requires `_STAGE_START_TS` to be set at stage entry. Verify all stages set
+  this timestamp. For stages that haven't started, `duration_s` should be 0.
+- **Milestone file parsing in bash:** Extracting the Overview section requires
+  reading each milestone `.md` file. For 40+ milestones, this adds startup
+  latency. Cache the summaries in a generated data file rather than parsing on
+  every emit cycle.
+- **Reverse dependency computation:** The `enables` lookup is an O(N²) scan of
+  all manifest entries. With <50 milestones this is fine, but compute it once
+  at startup, not per-emit.
+- **Scout as sub-step:** If Scout becomes a Coder sub-step in the UI, the
+  `stageOrder` array and stage-chip rendering logic both need updating. Ensure
+  the Trends per-stage breakdown still counts Scout separately for metrics.
+
+## Seeds Forward
+
+- M39 builds on the action items display improvements
+- M40 documents all Watchtower features including these UX changes
+- V4 parallel teams (M37) reuses the multi-stage chip pattern for per-team views
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 39: Notes Injection Hygiene & Action Items UX
+<!-- milestone-meta
+id: "39"
+status: "done"
+-->
+
+## Overview
+
+Human notes and non-blocking notes are injected into agent prompts on nearly
+every run, even though they're only actionable when specific flags (`--human`,
+`--fix-nonblockers`) are used. This wastes context tokens and confuses agents
+with information they can't act on. Additionally, the action items section at
+the end of a pipeline run is always cyan/blue regardless of severity, giving no
+visual signal when the non-blocking backlog is approaching a dangerous threshold.
+This milestone tightens injection criteria, gates notes behind their respective
+flags, and adds progressive color warnings to the action items display.
+
+## Scope
+
+### 1. Gate Human Notes Injection Behind `--human` Flag
+
+**Problem:** `extract_human_notes()` in `lib/notes.sh` is called during prompt
+assembly in `stages/coder.sh` (line 282) on every run. The resulting
+`HUMAN_NOTES_BLOCK` is injected into the coder prompt via the template engine.
+On non-`--human` runs, this block is present in the prompt but serves no purpose
+— the coder isn't tasked with addressing those notes and typically ignores them.
+This wastes context tokens (often 500-2000 chars) and occasionally causes agents
+to start "fixing" human notes they weren't asked to address.
+
+**Fix:**
+- In `lib/prompts.sh` or wherever `HUMAN_NOTES_BLOCK` / `HUMAN_NOTES_CONTENT`
+  are set for template substitution: only populate these variables when
+  `HUMAN_MODE=true`.
+- When `HUMAN_MODE=false`, set `HUMAN_NOTES_BLOCK=""` and
+  `HUMAN_NOTES_CONTENT=""` so the template `{{IF:HUMAN_NOTES_BLOCK}}` blocks
+  produce no output.
+- Ensure the `--with-notes` flag (which explicitly opts in to notes on a
+  non-human run) still works: if `WITH_NOTES=true`, populate the variables
+  even when `HUMAN_MODE=false`.
+- Update the pipeline log message that says "Human notes injected into prompt"
+  to only appear when injection actually happens.
+
+**Files:** `lib/notes.sh`, `lib/prompts.sh`, `stages/coder.sh`
+
+### 2. Gate Non-Blocking Notes Injection Behind `--fix-nonblockers` Flag
+
+**Problem:** In `stages/coder.sh` (lines 384-400), non-blocking notes from
+`NON_BLOCKING_LOG.md` are injected as a context component when the count exceeds
+`NON_BLOCKING_INJECTION_THRESHOLD` (default 8). This happens on regular milestone
+runs, human-notes runs, and ad hoc runs — not just `--fix-nonblockers` runs. The
+injected notes waste context and occasionally cause agents to address non-blocking
+items unprompted, muddying the scope of the current task.
+
+**Fix:**
+- Only inject non-blocking notes into the coder prompt when
+  `FIX_NONBLOCKERS_MODE=true`.
+- Remove or gate the threshold-based injection logic. The threshold concept was
+  meant to surface urgent debt, but the action items display (Scope §3) now
+  handles urgency signaling visually.
+- Keep the `count_open_nonblocking_notes()` call for the action items display
+  but don't build the context component unless in fix-nonblockers mode.
+- The non-blocking notes count should still be logged for observability:
+  `info "Non-blocking notes: ${nb_count} open (injection skipped — not in --fix-nonblockers mode)"`
+
+**Files:** `stages/coder.sh`, `lib/drift_cleanup.sh`
+
+### 3. Progressive Color Action Items Display
+
+**Problem:** The action items section in `lib/finalize_display.sh`
+(`_print_action_items()`) uses a fixed cyan color (ℹ) for non-blocking notes
+and yellow (⚠) for human notes, regardless of quantity. A backlog of 3
+non-blocking items and a backlog of 30 look identical. There's no escalating
+visual urgency.
+
+**Fix:**
+- Define three severity thresholds for non-blocking notes:
+  - **Normal** (count < `CLEANUP_TRIGGER_THRESHOLD`, default 5): cyan/blue ℹ
+  - **Warning** (count >= threshold but < 2× threshold): yellow ⚠
+  - **Critical** (count >= 2× threshold): red ✗
+- Apply the same logic to human notes (using a separate threshold, default 10).
+- For the critical (red) level, append a suggested command:
+  ```
+  ✗ NON_BLOCKING_LOG.md — 14 accumulated observation(s) [CRITICAL]
+    → Suggested: tekhton --fix-nonblockers --complete
+  ```
+- For human notes at critical level:
+  ```
+  ✗ HUMAN_NOTES.md — 22 item(s) remaining [CRITICAL]
+    → Suggested: tekhton --human --complete
+  ```
+- Use the existing color functions from `lib/common.sh` (`red`, `yellow`,
+  `cyan`, `bold`).
+- Add config keys for the thresholds:
+  - `ACTION_ITEMS_WARN_THRESHOLD` (default: `CLEANUP_TRIGGER_THRESHOLD` or 5)
+  - `ACTION_ITEMS_CRITICAL_THRESHOLD` (default: 2× warn threshold or 10)
+  - `HUMAN_NOTES_WARN_THRESHOLD` (default: 10)
+  - `HUMAN_NOTES_CRITICAL_THRESHOLD` (default: 20)
+
+**Files:** `lib/finalize_display.sh`, `lib/config_defaults.sh`, `lib/config.sh`
+
+### 4. Watchtower Action Items Color Sync
+
+**Problem:** The Watchtower Reports tab or post-run summary may also display
+action item counts. These should match the progressive color scheme from the
+CLI output.
+
+**Fix:**
+- In `lib/dashboard_emitters.sh`, extend the action items data to include a
+  `severity` field (`"normal"`, `"warning"`, `"critical"`) computed from the
+  same thresholds.
+- In `templates/watchtower/app.js`, use the severity field to apply CSS classes:
+  - `.action-normal` — existing blue/cyan styling
+  - `.action-warning` — yellow/amber background
+  - `.action-critical` — red background with suggested command text
+- In `templates/watchtower/style.css`, add the warning/critical styles.
+
+**Files:** `lib/dashboard_emitters.sh`, `templates/watchtower/app.js`,
+`templates/watchtower/style.css`
+
+## Acceptance Criteria
+
+- Human notes (`HUMAN_NOTES_BLOCK`, `HUMAN_NOTES_CONTENT`) are NOT injected
+  into agent prompts when `HUMAN_MODE=false` and `WITH_NOTES=false`
+- Human notes ARE injected when `HUMAN_MODE=true` or `WITH_NOTES=true`
+- Non-blocking notes are NOT injected as a context component on regular
+  milestone runs or ad hoc runs
+- Non-blocking notes ARE injected when `FIX_NONBLOCKERS_MODE=true`
+- Pipeline log shows "injection skipped" message when notes are present but
+  not injected
+- Action items display uses cyan for low counts, yellow for moderate, red for
+  high (threshold-based)
+- Red-level action items include a suggested `tekhton` command
+- Thresholds are configurable via `pipeline.conf`
+- Watchtower action items reflect the same severity coloring as CLI output
+- `--with-notes` flag still works as an explicit opt-in for notes injection
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` passes for any modified `.sh` files
+- `shellcheck` passes for any modified `.sh` files
+- No regressions in `--human` mode behavior
+- No regressions in `--fix-nonblockers` mode behavior
+
+## Watch For
+
+- **`--with-notes` interaction:** The `--with-notes` flag explicitly opts into
+  notes injection even on non-human runs. Don't break this path. The gate
+  logic should be: `if HUMAN_MODE || WITH_NOTES; then inject; fi`.
+- **Template conditionals:** `{{IF:HUMAN_NOTES_BLOCK}}` blocks in prompt
+  templates will naturally produce no output when the variable is empty. But
+  verify that an empty variable doesn't leave stray whitespace or blank lines
+  in the rendered prompt.
+- **Threshold defaults:** `CLEANUP_TRIGGER_THRESHOLD` already exists (default 5)
+  and is used for triggering autonomous debt sweeps. Reuse it as the warn
+  threshold for action items rather than introducing a duplicate concept.
+- **Color function availability:** `lib/common.sh` defines `red()`, `yellow()`,
+  `cyan()`, etc. Ensure `finalize_display.sh` sources `common.sh` (it already
+  does via the standard source chain).
+- **Non-blocking count during --fix-nonblockers:** When in fix-nonblockers mode,
+  the count naturally decreases across iterations. The action items display at
+  the end of each iteration should reflect the updated count.
+
+## Seeds Forward
+
+- M40 documents the notes injection behavior and action items color scheme
+- The severity thresholds feed into future Watchtower dashboard health indicators
+- The gated injection pattern could be extended to other context components
+  (drift log, architecture log) for further token savings
+
+---
+
+## Archived: 2026-03-31 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 43: Test-Aware Coding
+<!-- milestone-meta
+id: "43"
+status: "done"
+-->
+
+## Overview
+
+50% of milestone runs fail self-tests at the end of the pipeline, triggering
+expensive full pipeline reruns. Root cause analysis reveals a fundamental gap:
+**no agent is responsible for updating existing tests when code changes break
+them.** Scout doesn't identify test files. Coder runs tests but has no mandate
+to fix what it breaks. Tester is explicitly forbidden from modifying existing
+tests. The result: test breakage is discovered only at the pre-finalization gate,
+where it triggers the most expensive recovery path (full Coder→Reviewer→Tester
+retry).
+
+This milestone closes the gap by making Scout identify affected test files and
+making Coder responsible for maintaining tests it breaks — without adding any
+new agents or pipeline stages.
+
+Depends on Milestone 42 (Tag-Specialized Execution Paths) for the tag-aware
+coder prompt structure that this milestone extends with test context.
+
+## Scope
+
+### 1. Scout Test File Discovery
+
+**File:** `prompts/scout.prompt.md`
+
+Add `## Affected Test Files` section to the SCOUT_REPORT.md output format.
+Scout identifies test files that exercise the files-to-modify using:
+
+- **Naming conventions:** `test_foo.sh` → `foo.sh`, `foo_test.go` → `foo.go`,
+  `test_foo.py` → `foo.py`, `foo.spec.ts` → `foo.ts`
+- **Repo map cross-references:** When `REPO_MAP_CONTENT` is available,
+  tree-sitter shows imports/calls — test files that reference changed functions
+  are discoverable
+- **Serena LSP:** When `SERENA_ACTIVE`, use `find_referencing_symbols` to find
+  test functions that call symbols in changed files
+
+The Scout report output format gains:
+
+```
+## Affected Test Files
+- tests/test_foo.sh — tests functions in lib/foo.sh (naming convention)
+- tests/test_bar.sh — calls validate_config() which is modified (cross-reference)
+```
+
+### 2. Coder Test Maintenance Mandate
+
+**File:** `prompts/coder.prompt.md`
+
+Add explicit instruction after the existing "Run TEST_CMD" step:
+
+> **Test maintenance:** If your changes cause existing tests to fail, you MUST
+> update those tests to match your new implementation — unless the failing test
+> reveals a bug in YOUR code, in which case fix your code instead. Do not skip,
+> delete, or weaken test assertions. The Scout report below identifies test files
+> likely affected by your changes — check these first.
+
+Inject two new context blocks:
+- `AFFECTED_TEST_FILES` — extracted from Scout's `## Affected Test Files` section
+- `TEST_BASELINE_SUMMARY` — pre-change test baseline showing what was passing
+  before (already captured by `lib/test_baseline.sh`, just not currently injected)
+
+### 3. Coder Stage — Extract Affected Test Files
+
+**File:** `stages/coder.sh`
+
+After Scout report is parsed, extract the `## Affected Test Files` section and
+export it as `AFFECTED_TEST_FILES` for prompt template rendering. Also export
+`TEST_BASELINE_SUMMARY` from the baseline captured at run start.
+
+### 4. Tester Prompt — Allow Intentional API Updates
+
+**File:** `prompts/tester.prompt.md`
+
+Change the existing rule from:
+> Do NOT weaken existing tests to make them pass. If a test fails because the
+> implementation changed, REPORT THE BUG — do not fix the test.
+
+To:
+> If existing tests fail due to intentional API/behavior changes that the Coder
+> already implemented correctly, update the tests to match the new behavior.
+> If they fail because the implementation is wrong, report as BUG. Never weaken
+> assertions or delete test coverage — update expectations to match correct new
+> behavior.
+
+## Acceptance Criteria
+
+- Scout report includes `## Affected Test Files` section with file paths and
+  reasoning for each
+- Coder prompt includes test maintenance mandate and affected file list
+- Coder receives pre-change test baseline summary in prompt context
+- Tester can update existing tests for intentional API changes without reporting
+  them as bugs
+- No new agents added; no new pipeline stages
+- No increase in Scout or Coder turn budgets (the work fits within existing budgets)
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` and `shellcheck` pass on all modified files
+
+Tests:
+- Scout report parser correctly extracts `## Affected Test Files` section
+- `AFFECTED_TEST_FILES` is populated when Scout report contains the section
+- `AFFECTED_TEST_FILES` is empty when Scout report lacks the section (graceful)
+- `TEST_BASELINE_SUMMARY` is injected when baseline exists
+- Template rendering includes test context blocks when populated
+
+Watch For:
+- Scout is on Haiku — the test file discovery must be simple enough for a
+  cheaper model. Don't over-engineer the cross-reference analysis; naming
+  conventions alone catch 80% of cases.
+- The Coder might over-correct and start modifying tests unnecessarily. The
+  prompt must be clear: only fix tests YOUR changes broke, don't refactor
+  unrelated tests.
+- `TEST_BASELINE_SUMMARY` could be large. Truncate to a summary (pass count,
+  fail count, list of passing test names) rather than injecting full output.
+- The tester prompt relaxation must not allow weakening assertions. The
+  distinction is: update expected values for intentional changes vs. deleting
+  or loosening assertions to hide bugs.
+
+Seeds Forward:
+- Milestone 44 (Jr Coder Test-Fix Gate) is the safety net for whatever this
+  milestone doesn't catch
+- Milestone 46 (Instrumentation) will measure the reduction in test failures
+  at the pre-finalization gate
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+
+# Milestone 44: Jr Coder Test-Fix Gate
+<!-- milestone-meta
+id: "44"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-04-01 -->
+
+## Overview
+
+Even with test-aware coding (M43), some test failures will still slip through to
+the pre-finalization gate. Currently, any new test failure at this point triggers
+a full pipeline retry (Coder→Reviewer→Tester) — the most expensive recovery
+path. This milestone inserts a cheap Jr Coder fix attempt before the full retry,
+preventing disproportionate reruns for trivial test breakage.
+
+The lightweight fix agent in `hooks.sh:309-351` (`FINAL_FIX_ENABLED`) already
+exists but fires only at finalization — after the orchestration loop is
+exhausted. This milestone moves that concept earlier in the flow.
+
+Depends on Milestone 43 (Test-Aware Coding) which addresses the root cause;
+this milestone is the safety net.
+
+## Scope
+
+### 1. Pre-Finalization Fix Loop
+
+**File:** `lib/orchestrate.sh` (lines 251-287)
+
+When the pre-finalization test gate detects new failures, insert a Jr Coder fix
+loop before the existing full-retry logic:
+
+```
+Tests fail → Jr Coder fix attempt (Haiku, ~15-20 turns)
+  → Shell independently runs TEST_CMD (agent never sees its own output)
+  → Pass? → Proceed to finalization
+  → Fail? → Toss back to Jr Coder with shell's test output
+  → Still fail after PREFLIGHT_FIX_MAX_ATTEMPTS? → Fall through to full retry
+```
+
+**Key design: shell-verified testing.** The Jr Coder fixes code and the shell
+independently runs `TEST_CMD`. The Jr Coder never sees test output it generated
+itself — only the shell's independent verification. This prevents the agent from
+"fixing" tests by weakening assertions.
+
+### 2. Configuration
+
+**File:** `lib/config_defaults.sh`
+
+New config keys:
+- `PREFLIGHT_FIX_ENABLED` (default: true)
+- `PREFLIGHT_FIX_MAX_ATTEMPTS` (default: 2)
+- `PREFLIGHT_FIX_MODEL` (default: `${CLAUDE_JR_CODER_MODEL}`)
+- `PREFLIGHT_FIX_MAX_TURNS` (default: `${JR_CODER_MAX_TURNS}`)
+
+### 3. Fix Prompt Template
+
+**File:** `prompts/preflight_fix.prompt.md` (new)
+
+The fix agent receives:
+- Test command output (from shell's independent run)
+- List of files changed in this pipeline run (from CODER_SUMMARY.md)
+- Error details and failure context
+
+Constraints:
+- Fix the failing tests or the code causing them to fail
+- Do NOT refactor, do NOT add features, do NOT modify unrelated files
+- Do NOT weaken test assertions to make them pass
+
+### 4. Helper Function
+
+**File:** `lib/orchestrate_helpers.sh`
+
+New function `_try_preflight_fix()` encapsulating:
+- Jr Coder agent invocation with fix prompt
+- Shell-side `TEST_CMD` re-run
+- Retry loop with attempt counter
+- Causal log events for fix attempts
+
+## Migration Impact
+
+[PM: Added — new config keys with user-visible behavior change require documentation.]
+
+`PREFLIGHT_FIX_ENABLED` defaults to `true`. **This changes existing pipeline
+behavior**: pipelines that previously went straight to full retry on test failure
+will now attempt a cheap Jr Coder fix first. The outcome is equivalent or better
+(same or fewer full retries), but the execution path changes. Users who want to
+preserve the old behavior exactly must set `PREFLIGHT_FIX_ENABLED=false` in
+`pipeline.conf`. No file format or state schema changes.
+
+## Acceptance Criteria
+
+- When 1-2 tests fail at run end, Jr Coder fix is attempted before full retry
+- Tests are run by the shell, not by the fix agent
+- If Jr Coder fixes the issue, no full pipeline retry occurs
+- If Jr Coder fails after max attempts, existing retry logic fires unchanged
+- `PREFLIGHT_FIX_ENABLED=false` restores existing behavior exactly
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified/new files
+- New test covering the fix-before-retry flow
+
+Tests:
+- Preflight fix config defaults are set correctly
+- `_try_preflight_fix()` returns 0 when fix succeeds, 1 when exhausted
+- Shell runs `TEST_CMD` independently after each fix attempt
+- Full retry fires only after preflight fix is exhausted
+- `PREFLIGHT_FIX_ENABLED=false` skips the fix loop entirely
+
+Watch For:
+- The Jr Coder must not have access to run `TEST_CMD` itself — only the shell
+  runs tests. The agent's tool allowlist should be `AGENT_TOOLS_BUILD_FIX`
+  (Edit, Read, Glob, Grep — no Bash test execution).
+- The fix prompt must include enough test output context for the agent to
+  diagnose the issue. Last 80-120 lines of test output should suffice.
+- Count preflight fix agent calls toward `TOTAL_AGENT_INVOCATIONS` and
+  `MAX_AUTONOMOUS_AGENT_CALLS` safety valve.
+- If the fix introduces new failures (not just failing to fix the original),
+  abort immediately rather than retrying.
+
+Seeds Forward:
+- Milestone 46 (Instrumentation) will measure how often the fix gate saves
+  a full retry
+- This pattern (cheap agent fix before expensive retry) could extend to
+  build gate failures in a future milestone
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 45: Scout Prompt — Leverage Repo Map & Serena
+<!-- milestone-meta
+id: "45"
+status: "done"
+-->
+
+## Overview
+
+When tree-sitter repo maps and/or Serena LSP are available, Scout should use
+them as primary discovery tools instead of blind `find`/`grep`. Currently,
+Scout's core directive hardcodes "Use find, grep, and ls" even when the repo
+map already provides ranked, task-relevant file signatures and Serena provides
+precise symbol cross-references. This wastes Haiku turns re-discovering files
+that tree-sitter already indexed.
+
+This milestone was partially implemented in an earlier commit (conditional
+prompt with `SCOUT_NO_REPO_MAP` flag). This milestone completes the work by
+also adjusting Scout's tool allowlist and validating turn savings.
+
+Depends on Milestone 42 (Tag-Specialized Execution Paths) for the tag-aware
+execution structure.
+
+## Scope
+
+### 1. Complete Scout Prompt Conditional Rewrite
+
+**File:** `prompts/scout.prompt.md`
+
+Verify and refine the existing conditional directives:
+- When `REPO_MAP_CONTENT` available: verify-and-refine strategy
+- When `SERENA_ACTIVE`: LSP-based cross-referencing
+- When neither: filesystem exploration fallback
+
+### 2. Conditional Tool Allowlist
+
+**File:** `stages/coder.sh`
+
+When `REPO_MAP_CONTENT` is non-empty, reduce Scout's tool allowlist:
+- Keep: Read, Glob, Grep, Write (for SCOUT_REPORT.md)
+- Remove: `Bash(find:*)`, `Bash(cat:*)`, `Bash(ls:*)` — redundant when repo
+  map provides the data
+
+Add config key `SCOUT_REPO_MAP_TOOLS_ONLY` (default: true) to control this.
+
+### 3. Turn Usage Validation
+
+After implementing, verify that Scout turn usage drops when repo map is
+available. The metrics system already tracks per-agent turns — compare runs
+with and without repo map to validate savings.
+
+## Acceptance Criteria
+
+- When `REPO_MAP_ENABLED=true`, Scout prompt instructs verification-first strategy
+- When `SERENA_ACTIVE=true`, Scout prompt instructs LSP-based cross-referencing
+- When neither available, Scout falls back to existing find/grep behavior
+- Scout produces identical SCOUT_REPORT.md format regardless of tooling mode
+- Tool allowlist is reduced when repo map available (configurable)
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+Tests:
+- `SCOUT_NO_REPO_MAP` is set when `REPO_MAP_CONTENT` is empty
+- `SCOUT_NO_REPO_MAP` is unset when `REPO_MAP_CONTENT` is populated
+- Tool allowlist changes based on `SCOUT_REPO_MAP_TOOLS_ONLY` config
+
+Watch For:
+- Scout is on Haiku — prompt must be clear and simple, not overloaded with
+  conditional logic that confuses cheaper models.
+- The repo map might be incomplete (e.g., tree-sitter can't parse some files).
+  Scout should still be able to discover files the repo map missed.
+- Removing Bash tools entirely could prevent Scout from checking file existence.
+  Keep Read and Glob available always.
+
+Seeds Forward:
+- Milestone 43 (Test-Aware Coding) extends Scout's report with test file
+  discovery, which benefits from the same repo map / Serena tooling
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 46: Instrumentation & Timing Report
+<!-- milestone-meta
+id: "46"
+status: "done"
+-->
+
+## Overview
+
+Tekhton lacks visibility into where wall-clock time is spent during a run. Users
+see agents starting and finishing but cannot tell whether slowness comes from
+agent execution, build gates, context assembly, or retries. This milestone adds
+per-phase timing instrumentation and emits a human-readable timing report at run
+end. It also establishes the baseline data needed to measure the impact of all
+optimizations in this initiative.
+
+Depends on Milestones 43-44 (Test-Aware Coding and Fix Gate) so their impact
+can be measured in the timing report from day one.
+
+## Scope
+
+### 1. Timing Helpers
+
+**File:** `lib/common.sh`
+
+Add `_phase_start()` and `_phase_end()` functions:
+- `_phase_start "phase_name"` — records start timestamp in associative array
+- `_phase_end "phase_name"` — records end timestamp, computes duration
+- Use `date +%s%N` for nanosecond precision (with `date +%s` fallback)
+- Store in `_PHASE_TIMINGS` associative array
+
+### 2. Phase Instrumentation
+
+Instrument each phase in `tekhton.sh` and stage files:
+- Startup/sourcing
+- Config load + detection
+- Indexer (repo map generation)
+- Per-agent: prompt assembly, agent execution, output parsing
+- Build gate (per-phase: analyze, compile, constraints, UI test)
+- State persistence
+- Finalization (per-hook)
+- Preflight fix attempts (from M44)
+
+### 3. TIMING_REPORT.md Emission
+
+**File:** `lib/finalize_summary.sh`
+
+At run end, emit `TIMING_REPORT.md` with per-phase breakdown:
+
+```markdown
+## Timing Report — run_20260331_143022
+
+| Phase | Duration | % of Total |
+|-------|----------|-----------|
+| Scout (agent) | 45s | 12% |
+| Coder (agent) | 4m 22s | 68% |
+| Build gate | 28s | 7% |
+| Reviewer (agent) | 38s | 10% |
+| Tester (agent) | 12s | 3% |
+| Context assembly | 1.2s | <1% |
+| Finalization | 0.8s | <1% |
+
+Total wall time: 6m 27s
+Agent calls: 4 (of 200 max)
+```
+
+### 4. Completion Banner Enhancement
+
+**File:** `lib/finalize_display.sh`
+
+Add top-3 time consumers to the completion banner so users see timing at a
+glance without opening the report.
+
+## Acceptance Criteria
+
+- Every agent invocation records prompt assembly, execution, and parse time
+- Every build gate phase records wall-clock duration
+- `TIMING_REPORT.md` is written at run end with per-phase breakdown
+- Completion banner shows top-3 time consumers
+- No measurable performance regression from instrumentation (<100ms total overhead)
+- All existing tests pass
+- New test coverage for timing helpers
+
+Tests:
+- `_phase_start` / `_phase_end` correctly compute durations
+- Nested phases are handled (e.g., agent execution within coder stage)
+- `TIMING_REPORT.md` is valid markdown with correct percentages summing to ~100%
+- Missing `_phase_end` calls don't crash (graceful handling)
+
+Watch For:
+- `date +%s%N` is not available on all platforms (macOS `date` doesn't support
+  `%N`). Use `gdate` fallback or fall back to second-precision.
+- Instrumentation must not interfere with subshell boundaries. Use file-based
+  timing (like the existing `_STAGE_DURATION` arrays) rather than shell variables
+  that don't survive subshells.
+- Dashboard heartbeat already emits some timing data — integrate rather than
+  duplicate.
+
+Seeds Forward:
+- All subsequent milestones use timing data to validate their impact
+- Timing report feeds into future adaptive turn calibration improvements
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 47: Intra-Run Context Cache
+<!-- milestone-meta
+id: "47"
+status: "done"
+-->
+
+## Overview
+
+Every agent invocation in a pipeline run independently re-reads the same files
+from disk: architecture content, drift log, human notes, clarifications, and
+milestone window. For a 6-agent run, architecture content alone is read 6 times.
+The milestone window (DAG parse + file reads + budget arithmetic) is computed 6
+times with identical results.
+
+This milestone implements a read-once-use-many pattern for shared context within
+a single pipeline run.
+
+Depends on Milestone 46 (Instrumentation) to measure the before/after impact.
+
+## Scope
+
+### 1. Startup Context Pre-Read
+
+**File:** `tekhton.sh`
+
+After config load, pre-read and cache in exported shell variables:
+- `_CACHED_ARCHITECTURE_CONTENT` — from `ARCHITECTURE_FILE`
+- `_CACHED_DRIFT_LOG_CONTENT` — from `DRIFT_LOG_FILE`
+- `_CACHED_HUMAN_NOTES_BLOCK` — filtered notes
+- `_CACHED_CLARIFICATIONS_CONTENT` — from CLARIFICATIONS.md
+- `_CACHED_ARCHITECTURE_LOG_CONTENT` — from `ARCHITECTURE_LOG_FILE`
+
+### 2. Prompt Rendering Integration
+
+**File:** `lib/prompts.sh`
+
+Modify `render_prompt()` to check for `_CACHED_*` variables before reading from
+disk. If cached variable is set, use it directly. If not (e.g., during planning
+mode where caching isn't initialized), fall back to file read.
+
+### 3. Milestone Window Compute-Once
+
+**File:** `lib/milestone_window.sh`
+
+Compute the milestone window once at startup (and re-compute only after
+milestone transitions via `mark_milestone_done`). Export as
+`_CACHED_MILESTONE_BLOCK`. Clear the cache variable in `mark_milestone_done()`
+to force recomputation.
+
+### 4. Context Compiler Caching
+
+**Files:** `lib/context_compiler.sh`, `lib/context_budget.sh`
+
+- Cache keyword extraction results from task string (computed once, reused by
+  context compiler across all agents)
+- Cache `_estimate_block_tokens()` results and invalidate only when blocks are
+  compressed
+
+## Acceptance Criteria
+
+- Architecture content, drift log, notes, and clarifications are read from disk
+  exactly once per pipeline run (verifiable via timing report)
+- Milestone window is computed once per milestone, not per agent
+- Context budget arithmetic runs once per agent, not 3-5 times
+- No behavioral change — identical prompts generated with and without caching
+- All existing tests pass
+- Timing report shows reduced context assembly time vs. M46 baseline
+
+Tests:
+- Cached variables are populated at startup when files exist
+- Cached variables are empty when files don't exist (graceful)
+- Milestone window cache clears on `mark_milestone_done()`
+- Prompt output is byte-identical with and without caching
+
+Watch For:
+- If a file is modified DURING a pipeline run (e.g., drift log updated by
+  reviewer), the cached version will be stale. For drift log specifically, the
+  cache should be invalidated after the review stage appends observations.
+- Subshell boundaries: cached variables set in the main shell are visible to
+  subshells via `export`, but changes in subshells don't propagate back. This
+  is fine for read-only caches.
+- Don't cache `CODER_SUMMARY.md` or `REVIEWER_REPORT.md` — these change
+  between stages and are only read by the next stage.
+
+Seeds Forward:
+- Reduced I/O overhead benefits all subsequent milestones
+- Cache pattern can extend to repo map slicing in a future optimization
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 48: Reduce Unnecessary Agent Invocations
+<!-- milestone-meta
+id: "48"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-04-01 -->
+
+## Overview
+
+Beyond test-related reruns (addressed in M43-M44), the pipeline makes several
+agent calls that could be skipped or reduced with smarter routing. Specialist
+agents run unconditionally when enabled, turn budgets are over-provisioned
+leading to unnecessary continuations, and small diffs get the same full review
+as large changes.
+
+This milestone adds data-driven routing decisions to skip unnecessary work.
+
+Depends on Milestone 46 (Instrumentation) for baseline agent-call counts and
+Milestone 47 (Context Cache) for the cache infrastructure.
+
+## Scope
+
+### 1. Conditional Specialist Invocation
+
+**File:** `lib/specialists.sh`
+
+Before spawning a specialist agent (security, perf, API), check if the diff
+touches files relevant to that specialist:
+- **Security:** skip if no auth/crypto/input-handling/session files changed
+- **Performance:** skip if no hot-path/query/loop/cache files changed
+- **API:** skip if no route/endpoint/schema/controller files changed
+
+Detection is keyword-based on `git diff --name-only` file paths — fast, no
+agent needed. Add `SPECIALIST_SKIP_IRRELEVANT` config (default: true).
+
+### 2. Diff-Size Review Threshold
+
+**File:** `stages/review.sh`
+
+After Coder completes, measure diff size via `git diff --stat`. If diff is
+below `REVIEW_SKIP_THRESHOLD` (default: 0, meaning always review), skip the
+full Reviewer agent and auto-pass review.
+
+Use case: single-line typo fixes, config-only changes, comment updates.
+
+### 3. Adaptive Turn Budgets from Metrics History
+
+**File:** `lib/metrics_calibration.sh`
+
+When `METRICS_ADAPTIVE_TURNS=true` and sufficient run history exists
+(`METRICS_MIN_RUNS`), use historical median turns for the task type rather
+than the configured maximum. This reduces over-provisioned budgets that
+cause unnecessary turn-exhaustion continuations.
+
+## Migration Impact
+
+[PM: Added — two new opt-in config keys with conservative defaults; no changes required to existing `pipeline.conf` files.]
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `SPECIALIST_SKIP_IRRELEVANT` | `true` | Set to `false` to restore unconditional specialist invocation |
+| `REVIEW_SKIP_THRESHOLD` | `0` | Lines-changed threshold below which review is skipped; `0` = always review |
+
+Both keys are backward-compatible: defaults preserve prior behavior for
+`REVIEW_SKIP_THRESHOLD` (always review) and add conservative skipping for
+`SPECIALIST_SKIP_IRRELEVANT` (enabled, but keyword lists are intentionally broad).
+
+## Acceptance Criteria
+
+- Specialist agents only run when diff touches relevant files
+- Skip decisions are logged with reasoning (for M50 transparency)
+- `REVIEW_SKIP_THRESHOLD=0` means always review (backward compatible)
+- Metrics-calibrated budgets reduce continuation frequency
+- All optimizations are configurable and default to conservative settings
+- All existing tests pass
+- Timing report shows reduced agent count vs. M46 baseline
+
+Tests:
+- Specialist skip detection correctly identifies relevant file patterns
+- `SPECIALIST_SKIP_IRRELEVANT=false` disables skip logic
+- Review skip triggers only below threshold
+- Adaptive turn calibration produces sane values (not less than minimum)
+
+Watch For:
+- Specialist skip logic must be conservative — false negatives (running an
+  unnecessary specialist) are cheap; false positives (skipping a needed review)
+  could miss security issues. Default keyword lists should be broad.
+- Review skip should never apply in milestone mode — milestones always get
+  full review.
+- Adaptive turn budgets should have a floor (never below 50% of configured max)
+  to prevent pathological under-provisioning.
+
+Seeds Forward:
+- Skip decisions feed into M50 (Progress Transparency) decision logging
+- Turn calibration data improves with each run
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 49: Structured Run Memory
+<!-- milestone-meta
+id: "49"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-04-01 -->
+
+## Overview
+
+Cross-run context injection currently relies on grep-scanning the causal event
+log (JSONL) with bash string operations — slow for large logs and imprecise for
+relevance matching. This milestone introduces a structured run-end summary
+(`RUN_MEMORY.jsonl`) that captures decisions, outcomes, and file associations
+in a format optimized for keyword-based retrieval on subsequent runs.
+
+Depends on Milestone 46 (Instrumentation) for timing data to include in memory
+records and Milestone 47 (Context Cache) for the caching patterns.
+
+## Scope
+
+### 1. Run Memory Emission
+
+**File:** `lib/finalize_summary.sh`
+
+At run end, append a structured record to `RUN_MEMORY.jsonl`:
+
+```json
+{
+  "run_id": "run_20260331_143022",
+  "milestone": "m43",
+  "task": "Make Scout identify affected test files",
+  "files_touched": ["prompts/scout.prompt.md", "stages/coder.sh"],
+  "decisions": ["Added Affected Test Files section to Scout report format"],
+  "rework_reasons": ["Missing test baseline injection in coder prompt"],
+  "test_outcomes": {"passed": 47, "failed": 0, "skipped": 2},
+  "duration_seconds": 387,
+  "agent_calls": 5,
+  "verdict": "PASS"
+}
+```
+
+### 2. INTAKE_HISTORY_BLOCK from Structured Memory
+
+**File:** `lib/prompts.sh`
+
+On next run, build `INTAKE_HISTORY_BLOCK` by reading the last N entries from
+`RUN_MEMORY.jsonl` filtered by keyword relevance to the current task. Keyword
+matching uses simple bash string operations — word overlap between task
+descriptions and stored tasks/files. [PM: Relevance threshold is ≥1 matching
+word (case-insensitive, after stripping common stop words). This keeps filtering
+inclusive while excluding completely unrelated runs. Stop word list: the, a, an,
+is, in, of, to, and, or, for, with, on, at, by, from, that, this, it, be, as.]
+
+### 3. Memory Pruning
+
+**File:** `lib/config_defaults.sh`
+
+Add `RUN_MEMORY_MAX_ENTRIES` (default: 50). When the file exceeds this count,
+prune oldest entries (FIFO). The file stays small enough for instant bash
+processing.
+
+## Migration Impact
+
+[PM: Added — required for any milestone introducing new files or config keys.]
+
+- **New file:** `RUN_MEMORY.jsonl` is created automatically at first run end.
+  No manual action required. Existing installations gain this file on next run.
+- **New config key:** `RUN_MEMORY_MAX_ENTRIES` (default: 50) in
+  `lib/config_defaults.sh`. No action required; existing `pipeline.conf` files
+  without this key use the default. Users may override in `pipeline.conf`.
+- **No format changes** to existing files. `INTAKE_HISTORY_BLOCK` was previously
+  built from the causal log; it now comes from `RUN_MEMORY.jsonl`. Behavior is
+  additive — if `RUN_MEMORY.jsonl` does not yet exist (first run), the block is
+  empty, matching prior behavior.
+
+## Acceptance Criteria
+
+- `RUN_MEMORY.jsonl` is emitted at every run end
+- Next run's `INTAKE_HISTORY_BLOCK` is built from structured memory
+- Keyword relevance filtering produces useful context for related tasks
+- Memory file stays under 50 entries (auto-pruned)
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+Tests:
+- Memory record is appended correctly with all required fields
+- Keyword filtering returns relevant entries (≥1 task word overlap, case-insensitive, stop words excluded) [PM: threshold made explicit]
+- Pruning removes oldest entries when limit exceeded
+- Empty memory file doesn't cause errors
+- `INTAKE_HISTORY_BLOCK` is populated in prompt templates
+
+Watch For:
+- JSON construction in bash is fragile — use the same `_json_escape()` pattern
+  from `lib/causality.sh` for string escaping.
+- `decisions` and `rework_reasons` fields must be extracted from agent outputs
+  (CODER_SUMMARY.md, REVIEWER_REPORT.md). This extraction should be
+  best-effort — missing fields produce empty arrays, not errors.
+- Keyword matching should be case-insensitive and ignore common stop words.
+
+Seeds Forward:
+- If structured keyword matching proves insufficient, a future v4.0 milestone
+  could add optional vector-augmented retrieval (Qdrant/ChromaDB)
+- Memory records feed into future adaptive calibration improvements
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 50: Progress Transparency
+<!-- milestone-meta
+id: "50"
+status: "done"
+-->
+
+## Overview
+
+Tekhton's pipeline is opaque during execution. Users see agent spinners but
+cannot tell what the pipeline is doing, why it made a routing decision, or how
+long the current phase is expected to take. This milestone adds real-time
+progress display, decision explanation logging, and enhanced run-end summaries.
+
+Depends on Milestone 46 (Instrumentation) for timing data and Milestone 48
+(Reduce Agents) for routing decisions to log.
+
+## Scope
+
+### 1. Stage Progress Display
+
+**Files:** `stages/coder.sh`, `stages/review.sh`, `stages/tester.sh`
+
+Before each agent invocation, print a clear status line:
+```
+[tekhton] Stage 2/4: Reviewer (cycle 1/3) — estimated 2-4 min based on history
+```
+
+After each agent, print outcome:
+```
+[tekhton] Reviewer: REWORK (3 issues) — 2m 14s — rework coder next
+```
+
+### 2. Decision Explanation Logging
+
+**Files:** `lib/orchestrate.sh`, `lib/specialists.sh`, `stages/coder.sh`
+
+When the pipeline makes a routing decision, log the reason:
+```
+[tekhton] Trying Jr Coder fix — 2 test failures detected (PREFLIGHT_FIX_ENABLED=true)
+[tekhton] Skipping security specialist — diff doesn't touch auth files
+[tekhton] Continuing coder — turn limit hit, progress detected (attempt 2/3)
+[tekhton] Scout using repo map verification mode (REPO_MAP_CONTENT available)
+```
+
+### 3. Live Dashboard Enhancement
+
+**File:** `lib/dashboard.sh`
+
+Add current phase, elapsed time, and estimated remaining time to the dashboard
+state emitted via `emit_dashboard_run_state()`.
+
+### 4. Run-End Summary Enhancement
+
+**File:** `lib/finalize_summary.sh`
+
+Add a "Pipeline Decisions" section to `RUN_SUMMARY.json` listing every routing
+decision made and why. Add "Time Breakdown" section with per-phase timings
+from Milestone 46.
+
+## Acceptance Criteria
+
+- Every agent invocation is preceded by a human-readable status line
+- Every routing decision is logged with its reason
+- Run-end summary includes a decisions log and timing breakdown
+- Dashboard shows current phase and elapsed time
+- All existing tests pass
+- `bash -n` and `shellcheck` pass on all modified files
+
+Tests:
+- Status lines include stage number, name, and timing estimate
+- Decision log entries include config key that triggered the decision
+- `RUN_SUMMARY.json` includes decisions and timing sections
+- Status lines don't appear in agent output (only in pipeline stderr/log)
+
+Watch For:
+- Status lines must go to stderr or the log file, NOT stdout — stdout is
+  reserved for agent communication via FIFO.
+- Timing estimates based on history may be wildly wrong for novel tasks. Show
+  "no estimate" rather than a misleading prediction when history is sparse.
+- Decision logging should use the existing `log()` function pattern, not a
+  separate mechanism.
+
+Seeds Forward:
+- Decision logging feeds into future run analytics / Watchtower enhancements
+- Timing estimates improve with each run as metrics history grows
+
+---
+
+## Archived: 2026-04-01 — Tekhton 3.0 — Milestone DAG, Intelligent Indexing & Cost Reduction
+
+# Milestone 51: V3 Documentation & README Finalization
+<!-- milestone-meta
+id: "51"
+status: "done"
+-->
+
+## Overview
+
+Tekhton V3 introduced major features — Milestone DAG, intelligent indexing,
+Serena MCP, Watchtower, brownfield intelligence, security agent, express mode,
+TDD support, and more — across 50 milestones. The README still says "v2.0 —
+Adaptive Pipeline" and the GitHub Pages documentation site covers V3 features
+only partially. This milestone brings all documentation current so the repo is
+ready to merge into main as a polished V3 release.
+
+## Scope
+
+### 1. README.md Overhaul
+
+**Problem:** The README header says `v2.0 — Adaptive Pipeline` (line 8). The
+"What's New" section covers only V2 features. V3 features (DAG milestones,
+repo maps, Watchtower, security agent, express mode, brownfield init, planning
+interview, TDD support, etc.) are undocumented in the README.
+
+**Fix:**
+- Update version badge to `v3.0 — Context-Aware Pipeline` (or similar)
+- Replace "What's New in v2.0" with "What's New in v3.0" covering key features:
+  - **Milestone DAG** — file-based milestones with dependency tracking, sliding
+    context window, parallel groups
+  - **Intelligent Indexing** — tree-sitter repo maps with PageRank ranking,
+    task-relevant context slicing, cross-run file association tracking
+  - **Watchtower Dashboard** — real-time browser-based pipeline monitoring with
+    Live Run, Milestone Map, Reports, and Trends tabs
+  - **Security Agent** — automated OWASP-aware security review stage with
+    finding classification and severity scoring
+  - **Task Intake / PM Agent** — complexity estimation, task decomposition,
+    scope validation before execution
+  - **Brownfield Intelligence** — deep codebase analysis for `--init` on
+    existing projects (tech stack detection, health scoring, AI artifact
+    detection)
+  - **Express Mode** — zero-config execution for quick tasks (`tekhton -x "fix typo"`)
+  - **TDD Support** — configurable pipeline order (`--tdd` flag, tester-first)
+  - **Browser Planning** — interactive planning interview in the browser
+  - **Build Gate Hardening** — hang prevention, timeout enforcement, process
+    tree cleanup
+  - **Causal Event Log** — structured event logging for debugging and
+    cross-run learning
+  - **Test Baseline** — pre-existing failure detection to avoid blaming agents
+    for inherited test debt
+- Keep V2 features mentioned briefly in a "Foundation (v2)" subsection
+- Update the Requirements section if V3 added any (Python 3.8+ for indexer)
+- Update Quick Start if the workflow changed
+- Add a "Watchtower" section with a brief description and launch instructions
+- Add an "Optional Dependencies" section covering tree-sitter, Serena
+
+**Files:** `README.md`
+
+### 2. GitHub Pages Documentation Site
+
+**Problem:** The `docs/` directory has guides and references but many are stale
+or missing V3 content. Key gaps:
+- `docs/index.md` — mentions V2 features only
+- `docs/guides/watchtower.md` — exists but may not cover M34-M38 improvements
+- `docs/concepts/milestone-dag.md` — exists but may lack DAG details from M1
+- No docs for: security agent, express mode, TDD mode, test baseline, causal
+  log, browser planning
+- `docs/reference/commands.md` — may be missing V3 flags
+- `docs/reference/configuration.md` — may be missing V3 config keys
+- `docs/changelog.md` — needs V3 entries
+
+**Fix:**
+- Update `docs/index.md` to reflect V3 capabilities and features
+- Update `docs/guides/watchtower.md` with current Watchtower feature set
+  (Live Run, Milestone Map, Reports, Trends, smart refresh, context-aware
+  layout, action items severity colors)
+- Update `docs/concepts/milestone-dag.md` with MANIFEST.cfg format, DAG
+  queries, migration from inline milestones, sliding window mechanics
+- Add `docs/guides/security-review.md` — security agent configuration,
+  finding severity levels, suppression
+- Add `docs/guides/express-mode.md` — zero-config usage, when to use express
+  vs full pipeline
+- Add `docs/guides/tdd-mode.md` — `--tdd` flag, pipeline order customization
+- Add `docs/concepts/causal-log.md` — event types, retention, querying
+- Add `docs/concepts/test-baseline.md` — pre-existing failure detection,
+  stuck detection, configuration
+- Update `docs/reference/commands.md` with all V3 flags (`--watchtower`,
+  `--express`, `--tdd`, `--fix-nonblockers`, `--diagnose`, `--dry-run`, etc.)
+- Update `docs/reference/configuration.md` with all V3 config keys (DAG,
+  indexer, Serena, causal log, test baseline, action items thresholds)
+- Update `docs/changelog.md` with a V3 release section summarizing all
+  milestones by theme (Watchtower, DAG, Indexer, Quality, DevX, Brownfield)
+- Update `docs/getting-started/` guides if the onboarding flow changed
+
+**Files:** `docs/index.md`, `docs/guides/watchtower.md`,
+`docs/concepts/milestone-dag.md`, `docs/reference/commands.md`,
+`docs/reference/configuration.md`, `docs/changelog.md`,
+`docs/getting-started/*.md`, new files for missing guides/concepts
+
+### 3. CLAUDE.md Sync
+
+**Problem:** The project's own `CLAUDE.md` contains the repository layout,
+template variables table, and initiative descriptions. These need to reflect
+the final V3 state.
+
+**Fix:**
+- Update the repository layout tree if any new files were added in M36-M40
+- Update the template variables table with any new variables from M36-M40
+- Update the version section to reflect V3 final state
+- Mark all V3 milestones as complete in the initiative description
+- Add a brief "V3 Complete" summary under the V3 initiative section
+
+**Files:** `CLAUDE.md`
+
+### 4. DESIGN_v3.md Retrospective
+
+**Problem:** `DESIGN_v3.md` was the planning document for V3. Now that V3 is
+complete, the design doc should be annotated with final status.
+
+**Fix:**
+- Add a "Status: Complete" header or badge at the top
+- Add a brief retrospective section noting: milestones completed, features
+  shipped, any deviations from the original plan
+- Do NOT rewrite the design doc — it's a historical artifact. Only add a
+  status annotation and retrospective appendix.
+
+**Files:** `DESIGN_v3.md`
+
+## Acceptance Criteria
+
+- README.md version badge says V3 (not V2)
+- README.md "What's New" section covers all major V3 features
+- README.md Requirements section mentions optional Python dependency
+- `docs/index.md` reflects V3 capabilities
+- `docs/reference/commands.md` includes all V3 CLI flags
+- `docs/reference/configuration.md` includes all V3 config keys
+- `docs/guides/watchtower.md` covers the complete Watchtower feature set
+- `docs/concepts/milestone-dag.md` covers MANIFEST.cfg, DAG operations,
+  migration, sliding window
+- New guide pages exist for: security review, express mode, TDD mode
+- New concept pages exist for: causal log, test baseline
+- `docs/changelog.md` has a V3 release section
+- `CLAUDE.md` repository layout and template variables are current
+- `DESIGN_v3.md` has a completion status annotation
+- All documentation is internally consistent (no references to "upcoming"
+  features that are already shipped)
+- All existing tests pass (`bash tests/run_tests.sh`)
+- No broken internal links in documentation (relative paths all resolve)
+
+## Watch For
+
+- **Documentation scope creep:** This milestone is about documenting what
+  exists, not redesigning docs infrastructure. Don't add search, versioning,
+  or theme changes. Keep it to content updates.
+- **CLAUDE.md size:** CLAUDE.md is already large. Don't expand it significantly.
+  The template variables table should only add genuinely new variables, not
+  re-document existing ones.
+- **Changelog granularity:** Don't list all 40 milestones individually. Group
+  by theme (Watchtower, DAG, Indexer, Quality, DevX, Brownfield, Planning)
+  with 2-3 bullet points per theme.
+- **Stale screenshots:** `docs/assets/screenshots/.gitkeep` exists but has no
+  actual screenshots. If adding Watchtower screenshots, ensure they're
+  generated from a real run, not mocked up.
+- **Links to DESIGN_v3.md:** The CLAUDE.md already references `DESIGN_v3.md`.
+  Don't move or rename the design doc.
+
+## Seeds Forward
+
+- This is the final V3 milestone. After completion, the branch is ready for
+  merge to main.
+- The documentation structure established here carries into V4 planning.
+- The changelog format provides a template for future release notes.
+
+---
+
+## Archived: 2026-04-03 — Unknown Initiative
+
+#### Milestone 52: Fix Circular Onboarding Flow
+<!-- milestone-meta
+id: "52"
+status: "done"
+-->
+
+The `--init` and `--plan` commands each tell users to run the other as a next step,
+creating a confusing circular loop. Fix the next-steps messaging in all three
+entry points to be context-aware: detect what has already been done and only
+recommend what remains.
+
+**The problem:**
+- `--init` finishes and says "2. Start planning: tekhton --plan ..."
+- `--plan` finishes and says "2. Run: tekhton --init (scaffold pipeline config)"
+- A user who runs either command first gets told to run the other, which then
+  tells them to run the first one again.
+
+**The intended flows:**
+- **Brownfield** (existing project): `--init` → `--plan-from-index` → run tasks
+  (or `--init --full` which combines both)
+- **Greenfield** (new project): `--plan` → `--init` → run tasks
+
+**The fix:** Make next-steps messaging context-aware by checking what artifacts
+already exist before recommending the next action.
+
+Files to modify:
+- `lib/plan.sh` — `_print_next_steps()` (line ~542):
+  Check if `.claude/pipeline.conf` already exists. If it does, skip the
+  "Run: tekhton --init" step. The next steps become:
+  ```
+  Next steps:
+    1. Review the generated files and make any manual edits
+    2. Run: tekhton "Implement Milestone 1: <title>"
+  ```
+  If `pipeline.conf` does NOT exist, keep the current messaging but clarify:
+  ```
+  Next steps:
+    1. Review the generated files and make any manual edits
+    2. Run: tekhton --init    (generate pipeline config & agent roles)
+    3. Run: tekhton "Implement Milestone 1: <title>"
+  ```
+
+- `lib/init_report.sh` — `emit_init_summary()` (line ~116):
+  Check if `CLAUDE.md` already has milestones (not just a stub). If milestones
+  exist, skip the "Start planning" step and go straight to "run your first task".
+  The next steps become:
+  ```
+  Next steps:
+    1. Review essential config: .claude/pipeline.conf (lines 1-20)
+    2. Run: tekhton "Implement Milestone 1: <title>"
+  ```
+  If CLAUDE.md is absent or is a stub (contains the TODO placeholder), keep the
+  current planning recommendation.
+  Detection: check for `<!-- TODO:.*--plan -->` comment OR absence of any
+  `#### Milestone` header in CLAUDE.md, OR presence of MANIFEST.cfg with at
+  least one entry.
+
+- `lib/init_synthesize_ui.sh` — `_print_synthesis_next_steps()` (line ~107):
+  This one is already correct (no circular reference). No changes needed, but
+  verify it still reads well after the other changes.
+
+Scope: ~30 lines of logic changes across 2 files. No new files, no new
+functions, no new config keys.
+
+Acceptance criteria:
+- After `--plan` in a project that already has `.claude/pipeline.conf`, the
+  next-steps output does NOT mention `--init`
+- After `--plan` in a project that does NOT have `.claude/pipeline.conf`, the
+  next-steps output mentions `--init` with a clear description
+- After `--init` in a project that already has milestones (MANIFEST.cfg or
+  non-stub CLAUDE.md), the next-steps output does NOT mention `--plan`
+- After `--init` in a project with no milestones, the next-steps output
+  recommends `--plan` or `--plan-from-index` as appropriate
+- After `--init --full` (which runs both), the synthesis next-steps do NOT
+  mention `--init` (already the case)
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `shellcheck lib/plan.sh lib/init_report.sh` passes
+- No new files created
+
+Tests:
+- Manual: run `--plan` in a project with pipeline.conf → verify no --init mention
+- Manual: run `--init` in a project with milestones → verify no --plan mention
+- Existing test suite passes
+
+Watch For:
+- The milestone detection in `init_report.sh` must handle three cases: no CLAUDE.md,
+  stub CLAUDE.md (from init), and full CLAUDE.md (from plan). Use the presence of
+  MANIFEST.cfg as the strongest signal since DAG is the default.
+- `_print_next_steps()` in plan.sh uses `PROJECT_DIR` which is a global — confirm
+  it is set when the function is called.
+- Don't break the `--plan-from-index` path in init_report.sh — brownfield projects
+  with >50 files should still see that recommendation when no milestones exist.
+
+---
+
+## Archived: 2026-04-03 — Unknown Initiative
+
+# Milestone 53: Error Pattern Registry & Build Gate Classification
+<!-- milestone-meta
+id: "53"
+status: "done"
+-->
+
+## Overview
+
+Tekhton's build gate treats all failures identically: dump raw output into
+BUILD_ERRORS.md and hand it to a build-fix agent. This works when the only
+failures are code bugs, but real-world projects produce failures across six
+distinct categories — environment setup, service dependencies, build toolchain,
+resource constraints, test infrastructure, and actual code errors. Only the last
+category should ever reach the build-fix agent.
+
+This milestone introduces a declarative error pattern registry and a
+classification engine that categorizes build/test output before any remediation
+is attempted. The registry is a simple bash data structure — no new dependencies,
+no jq, no Python.
+
+Depends on Milestone 52. Seeds Milestones 54 (auto-remediation) and 55
+(pre-flight).
+
+## Scope
+
+### 1. Error Pattern Registry (`lib/error_patterns.sh` — NEW)
+
+A declarative registry mapping error output patterns to classifications.
+Each entry is a line in a heredoc-based registry with pipe-delimited fields:
+
+```
+REGEX_PATTERN|CATEGORY|SAFETY|REMEDIATION_CMD|DIAGNOSIS
+```
+
+**Categories:**
+- `env_setup` — Missing tool/binary installation (Playwright browsers, native deps)
+- `service_dep` — Required service not running (database, cache, queue)
+- `toolchain` — Build pipeline broken (stale deps, missing codegen, cache corruption)
+- `resource` — Machine resource issue (port in use, OOM, disk full, permissions)
+- `test_infra` — Test infrastructure issue (snapshot staleness, fixture missing, timeout)
+- `code` — Actual code error (compilation, type, import, assertion failures)
+
+**Safety ratings:**
+- `safe` — Auto-remediation OK (e.g., `npm install`, `npx playwright install`)
+- `prompt` — Needs user confirmation (e.g., `npm test -- -u` for snapshot updates)
+- `manual` — Cannot auto-fix, human intervention required (e.g., database not running)
+- `code` — Route to build-fix agent (actual code bugs)
+
+**Functions:**
+- `load_error_patterns()` — Parse the registry into arrays on first call (cached)
+- `classify_build_error()` — Takes error output string, returns first matching
+  classification as `CATEGORY|SAFETY|REMEDIATION_CMD|DIAGNOSIS`
+- `classify_build_errors_all()` — Returns ALL matching patterns (error output
+  may contain multiple distinct issues)
+- `get_pattern_count()` — Returns number of loaded patterns (for testing)
+
+**Initial pattern coverage (minimum 30 patterns):**
+
+| Ecosystem | Patterns |
+|-----------|----------|
+| Node.js/npm | `Cannot find module`, `ENOENT.*node_modules`, `npx playwright install`, `npx cypress install`, `npm ERR! Missing`, `EADDRINUSE`, `heap out of memory`, `ERR_MODULE_NOT_FOUND` |
+| Python | `ModuleNotFoundError`, `ImportError.*No module`, `pip install`, `No module named`, `venv.*not found` |
+| Go | `missing go.sum entry`, `go mod download`, `cannot find package` |
+| Rust | `could not compile`, `cargo build`, `unresolved import` |
+| Java/Kotlin | `ClassNotFoundException`, `NoClassDefFoundError`, `BUILD FAILED` |
+| Database | `ECONNREFUSED.*5432` (postgres), `ECONNREFUSED.*3306` (mysql), `ECONNREFUSED.*27017` (mongo), `ECONNREFUSED.*6379` (redis), `connection refused.*database` |
+| Docker | `Cannot connect to the Docker daemon`, `docker.*not found` |
+| E2E/Browser | `Executable doesn't exist.*chrome`, `browser.*not found`, `WebDriverError`, `PLAYWRIGHT_BROWSERS_PATH` |
+| Generated code | `@prisma/client.*not.*generated`, `prisma generate`, `codegen`, `protoc.*not found` |
+| Resource | `EADDRINUSE`, `ENOMEM`, `ENOSPC`, `Permission denied`, `EACCES` |
+| Test infra | `Snapshot.*obsolete`, `snapshot.*mismatch`, `TIMEOUT`, `fixture.*not found` |
+| Generic | `command not found`, `No such file or directory` (with context-dependent classification) |
+
+### 2. Build Gate Classification Integration (`lib/gates.sh`)
+
+After any phase failure, before writing BUILD_ERRORS.md, run the error output
+through `classify_build_errors_all()`. Annotate BUILD_ERRORS.md with
+classification headers:
+
+```markdown
+# Build Errors — 2026-04-02 16:03:15
+## Stage
+post-coder
+
+## Error Classification
+- **env_setup** (safe): Playwright browsers not installed
+  → Auto-fix: `npx playwright install`
+- **code** (code): TypeScript compilation error in src/auth.ts
+  → Route to build-fix agent
+
+## Classified as Environment/Setup (1 issue)
+...raw output...
+
+## Classified as Code Error (1 issue)
+...raw output...
+```
+
+**Refactor**: Remove the hardcoded Playwright/Cypress detection added in the
+prior hotfix (the patterns now live in the registry). The auto-remediation
+logic itself moves to M54; this milestone only classifies.
+
+### 3. Build-Fix Agent Error Routing (`stages/coder.sh`)
+
+When invoking the build-fix agent, filter BUILD_ERRORS.md to include ONLY
+`code`-category errors. Non-code errors get a summary header:
+
+```
+## Already Handled (not code errors)
+- Environment: Playwright browsers installed automatically
+- Service: PostgreSQL not running (flagged for human action)
+
+## Code Errors to Fix
+[only code-category errors here]
+```
+
+If ALL errors are non-code, skip the build-fix agent entirely and route to
+either auto-remediation (M54) or HUMAN_ACTION_REQUIRED.md.
+
+### 4. Error Taxonomy Extension (`lib/errors.sh`)
+
+Extend the existing error taxonomy with new subcategories that map to the
+pattern registry categories:
+
+- `ENVIRONMENT/env_setup` — Tool/binary setup needed
+- `ENVIRONMENT/service_dep` — Service not running
+- `ENVIRONMENT/toolchain` — Build toolchain issue
+- `ENVIRONMENT/resource` — Resource constraint
+- `ENVIRONMENT/test_infra` — Test infrastructure issue
+
+These integrate with the existing `classify_error()` and `suggest_recovery()`
+functions so the orchestration recovery layer also benefits.
+
+## Acceptance Criteria
+
+- `load_error_patterns()` parses registry into arrays without errors
+- `classify_build_error()` correctly classifies at least 30 distinct patterns
+- `classify_build_errors_all()` returns multiple classifications from mixed output
+- BUILD_ERRORS.md includes classification annotations after any gate failure
+- Build-fix agent receives only code-category errors
+- When all errors are non-code, build-fix agent is NOT invoked
+- Hardcoded Playwright/Cypress patterns in gates.sh are replaced by registry lookup
+- `errors.sh` taxonomy includes new subcategories
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/error_patterns.sh` passes
+- `shellcheck lib/error_patterns.sh` passes
+- New test file `tests/test_error_patterns.sh` covers: pattern loading, each
+  category classification, mixed-output classification, empty input handling,
+  unknown error passthrough (defaults to `code` category)
+
+Tests:
+- Pattern count ≥ 30 after `load_error_patterns()`
+- `classify_build_error "Cannot find module 'express'"` returns `toolchain|safe|npm install|...`
+- `classify_build_error "ECONNREFUSED 127.0.0.1:5432"` returns `service_dep|manual||PostgreSQL not running`
+- `classify_build_error "error TS2304: Cannot find name 'foo'"` returns `code|code||...`
+- Mixed output with both service and code errors returns both classifications
+- Unrecognized error text defaults to `code|code||Unclassified build error`
+
+Watch For:
+- Pattern order matters: more specific patterns must come before generic ones.
+  `Cannot find module.*playwright` (env_setup) must match before `Cannot find module`
+  (toolchain). Load patterns in specificity order.
+- Regex must be compatible with bash `[[ "$text" =~ $pattern ]]` or `grep -E`.
+  Avoid PCRE-only features. Test each pattern individually.
+- The `code` fallback category is critical: any unrecognized error MUST default
+  to `code` so the build-fix agent still gets a chance. Never silently drop errors.
+- BUILD_ERRORS.md format change must not break the build-fix prompt template
+  variable `{{BUILD_ERRORS_CONTENT}}` — the prompt still reads this file.
+- Large error output (e.g., 500-line TypeScript error dump) should not cause
+  `classify_build_errors_all()` to hang. Process line-by-line with early exit
+  on first match per line, not full-text regex on the entire output.
+
+Seeds Forward:
+- Milestone 54 consumes the registry's REMEDIATION_CMD field for auto-fixes
+- Milestone 55 reuses the pattern categories for pre-flight check prioritization
+- The registry is extensible: projects can eventually define custom patterns in
+  pipeline.conf or a `.claude/error_patterns.cfg` file (future milestone)
+
+---
+
+## Archived: 2026-04-03 — Unknown Initiative
+
+# Milestone 54: Auto-Remediation Engine
+<!-- milestone-meta
+id: "54"
+status: "done"
+-->
+
+## Overview
+
+Milestone 53 classifies build errors into categories. This milestone acts on
+that classification: when the registry identifies a `safe`-rated remediation
+command, the build gate executes it automatically, then re-runs only the failed
+phase. This eliminates the most common class of pipeline stalls — environment
+setup issues that have known, deterministic fixes.
+
+The engine is conservative by design: max 2 remediation attempts per gate run,
+only `safe`-rated commands execute, all actions logged to the causal event log.
+`prompt`-rated remediations are written to HUMAN_ACTION_REQUIRED.md for the
+operator. `manual`-rated issues get clear diagnosis but no automated action.
+
+Depends on Milestone 53 (error pattern registry). Can run in parallel with
+Milestone 55 (pre-flight).
+
+## Scope
+
+### 1. Remediation Executor (`lib/error_patterns.sh` — extend)
+
+Add functions to the error pattern registry:
+
+- `attempt_remediation()` — Takes classified error output, executes safe
+  remediation commands. Returns 0 if at least one remediation succeeded, 1 if
+  none succeeded or none were safe. Tracks attempted commands to avoid
+  re-running the same fix twice in one gate invocation.
+- `_run_safe_remediation()` — Executes a single remediation command with
+  timeout (60s default), captures output, returns exit code. Never runs
+  commands rated below `safe`.
+- `_remediation_already_attempted()` — Checks in-memory set of already-tried
+  commands to prevent loops.
+
+**Safety enforcement:**
+- Only `safe`-rated commands execute automatically
+- Each command runs in a subshell with a 60-second timeout
+- Commands execute from `$PROJECT_DIR` (not TEKHTON_HOME)
+- stderr/stdout captured for logging, not shown to user unless verbose
+- Max 2 total remediation attempts per gate invocation (across all phases)
+- No remediation command may contain `rm -rf`, `drop`, `delete`, `destroy`,
+  `reset --hard`, or `force` (blocklist enforced in `_run_safe_remediation`)
+
+### 2. Build Gate Remediation Loop (`lib/gates.sh` — extend)
+
+Modify the failure path for each build gate phase:
+
+```
+Phase fails
+  → classify_build_errors_all(output)
+  → separate: remediable (safe) vs non-remediable
+  → if remediable AND attempts_remaining > 0:
+      → attempt_remediation(remediable_errors)
+      → if any succeeded:
+          → re-run ONLY the failed phase (not all 5 phases)
+          → if passes: continue to next phase
+          → if fails again: fall through to normal failure path
+  → if non-remediable or remediation exhausted:
+      → write classified BUILD_ERRORS.md
+      → route to build-fix agent (code errors only) or human action
+```
+
+**Key change**: The gate currently re-runs the entire gate on retry. After this
+milestone, only the specific failed phase re-runs after remediation. This saves
+time and avoids re-running already-passed phases.
+
+Remove the hardcoded Playwright/Cypress `if` blocks added in the prior hotfix —
+these patterns now flow through the registry.
+
+### 3. Human Action Routing (`lib/gates.sh`, `lib/hooks.sh`)
+
+For `manual`-rated and `prompt`-rated errors that cannot be auto-fixed:
+
+- Append clear diagnosis to HUMAN_ACTION_REQUIRED.md:
+  ```
+  ## Environment Issue — [timestamp]
+  **Category:** service_dep
+  **Diagnosis:** PostgreSQL is not running on port 5432
+  **Suggested fix:** Start PostgreSQL: `sudo systemctl start postgresql`
+  or `docker-compose up -d postgres`
+  **Pipeline impact:** Tests requiring database will fail until resolved.
+  ```
+- For `prompt`-rated: also append to HUMAN_ACTION_REQUIRED.md with a note
+  that the fix is automatable if the user opts in (future: config flag)
+
+### 4. Causal Log Integration (`lib/error_patterns.sh`)
+
+Every remediation attempt emits a causal event via `emit_event()`:
+
+```bash
+emit_event "remediation_attempted" \
+    "category=env_setup" \
+    "command=npx playwright install" \
+    "exit_code=0" \
+    "duration_s=14" \
+    "phase=build_gate_ui_test"
+```
+
+Events emitted:
+- `remediation_attempted` — Command was run (with exit code and duration)
+- `remediation_skipped` — Pattern matched but safety rating blocked auto-fix
+- `human_action_required` — Issue routed to HUMAN_ACTION_REQUIRED.md
+
+### 5. Remediation Report in Run Summary (`lib/finalize_summary.sh`)
+
+Add a "Remediations" section to RUN_SUMMARY.json listing all auto-fix
+attempts, their outcomes, and any human-action items generated.
+
+## Acceptance Criteria
+
+- `attempt_remediation()` executes safe-rated commands and returns success/failure
+- Remediation commands run with 60s timeout in a subshell
+- Blocklisted command fragments (`rm -rf`, `drop`, etc.) are rejected
+- Max 2 remediation attempts per gate invocation enforced
+- After successful remediation, only the failed phase re-runs (not all phases)
+- `manual` and `prompt` errors are written to HUMAN_ACTION_REQUIRED.md
+- Causal log contains remediation events after any build gate failure
+- RUN_SUMMARY.json includes remediation section
+- Hardcoded Playwright/Cypress blocks removed from gates.sh
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` and `shellcheck` pass on all modified files
+- New tests in `tests/test_error_patterns.sh` (extend from M53):
+  - Safe command executes and gate re-runs phase
+  - Manual command is NOT executed, routed to human action
+  - Blocklisted command is rejected
+  - Max 2 attempts enforced
+  - Causal events emitted correctly
+
+Watch For:
+- Remediation commands must run from `$PROJECT_DIR`, not `$TEKHTON_HOME`. Use
+  `(cd "$PROJECT_DIR" && timeout 60 bash -c "$cmd")` pattern.
+- The `npm install` remediation can take 30+ seconds on large projects. The 60s
+  timeout must be generous enough. Consider making it configurable per-pattern
+  in a future iteration.
+- Re-running a single phase requires the gate to track which phase failed. The
+  current `run_build_gate()` function is monolithic. Extract each phase into a
+  callable function (e.g., `_gate_phase_ui_test()`) that can be invoked
+  independently.
+- The `attempt_remediation()` function must be idempotent: running `npm install`
+  twice is harmless, but some commands may not be. The `_remediation_already_attempted`
+  check prevents this.
+- `HUMAN_ACTION_REQUIRED.md` already exists in the pipeline. Append to it, don't
+  overwrite. Use the existing format with `## ` section headers.
+
+Seeds Forward:
+- Milestone 55 reuses `attempt_remediation()` for pre-flight auto-fixes
+- The causal log remediation events feed into Watchtower dashboards (future)
+- Per-project custom patterns (future) can add project-specific remediation commands
+
+---
+
+## Archived: 2026-04-03 — Unknown Initiative
+
+# Milestone 55: Pre-flight Environment Validation
+<!-- milestone-meta
+id: "55"
+status: "done"
+-->
+
+## Overview
+
+Build gate failures are expensive: the coder has already spent 20-70 turns
+before the gate discovers that Playwright browsers aren't installed or
+`node_modules` is stale. Pre-flight validation catches these issues BEFORE
+any agent invocation, saving time and API cost.
+
+This milestone adds a lightweight, shell-only pre-flight check that runs after
+config loading but before the first pipeline stage. It uses existing detection
+engine output (languages, frameworks, test frameworks, services) to know what
+to check, then validates environment readiness. Safe issues are auto-remediated
+via the M54 engine. Blocking issues halt the pipeline with actionable diagnosis.
+
+Depends on Milestone 53 (error pattern registry for classification). Can run
+in parallel with Milestone 54 (auto-remediation — though pre-flight auto-fixes
+use the same `attempt_remediation()` function, so M54 must be complete or
+the pre-flight only reports without fixing).
+
+## Scope
+
+### 1. Pre-flight Orchestration (`lib/preflight.sh` — NEW)
+
+**Main function:** `run_preflight_checks()`
+
+Called from `tekhton.sh` after config loading and detection, before stage
+dispatch. Runs a series of fast, deterministic checks and produces a
+PREFLIGHT_REPORT.md with pass/warn/fail per check.
+
+```bash
+run_preflight_checks() {
+    # Skip if disabled
+    [[ "${PREFLIGHT_ENABLED:-true}" == "true" ]] || return 0
+
+    local _pass=0 _warn=0 _fail=0 _remediated=0
+
+    # Run checks based on detected stack
+    _preflight_check_dependencies    # node_modules, venv, vendor, go mod
+    _preflight_check_tools           # playwright, cypress, build tools
+    _preflight_check_generated_code  # prisma, codegen, protobuf
+    _preflight_check_env_vars        # .env vs .env.example
+    _preflight_check_runtime_version # .node-version, .python-version
+    _preflight_check_ports           # ports needed by UI_TEST_CMD, dev server
+    _preflight_check_lock_freshness  # lock file vs manifest mtime
+
+    # Emit report
+    _emit_preflight_report
+
+    # Fail pipeline if blocking issues remain after remediation
+    if [[ "$_fail" -gt 0 ]]; then
+        error "Pre-flight failed: $_fail blocking issue(s). See PREFLIGHT_REPORT.md."
+        return 1
+    fi
+    return 0
+}
+```
+
+**Performance target:** All checks complete in under 5 seconds. No network
+calls, no agent invocations, no test execution. Pure filesystem/process checks.
+
+### 2. Dependency Freshness Check
+
+**Function:** `_preflight_check_dependencies()`
+
+Detects when package manager dependencies are stale or missing:
+
+| Ecosystem | Lock File | Install Dir | Staleness Signal |
+|-----------|-----------|-------------|-----------------|
+| Node.js | `package-lock.json` / `yarn.lock` / `pnpm-lock.yaml` | `node_modules/` | Lock file newer than `node_modules/.package-lock.json` mtime, OR `node_modules/` missing |
+| Python | `requirements.txt` / `poetry.lock` / `Pipfile.lock` | `.venv/` / `venv/` | Lock file newer than venv `site-packages/` mtime, OR venv missing |
+| Go | `go.sum` | `$GOPATH/pkg/mod/` | `go.sum` newer than mod cache, OR missing entries |
+| Ruby | `Gemfile.lock` | `vendor/bundle/` | Gemfile.lock newer than vendor mtime |
+| Rust | `Cargo.lock` | `target/` | Cargo.lock newer than target mtime |
+| PHP | `composer.lock` | `vendor/` | composer.lock newer than vendor/autoload.php mtime |
+
+**Remediation:** `safe` — runs the appropriate install command (`npm install`,
+`pip install -r requirements.txt`, `go mod download`, etc.)
+
+Detection is conditional: only check ecosystems that `detect_languages()` found.
+If no lock file exists, skip (don't create one — that's the coder's job).
+
+### 3. Tool Availability Check
+
+**Function:** `_preflight_check_tools()`
+
+Cross-references detected test frameworks with required tool installations:
+
+| Framework | Check | Remediation |
+|-----------|-------|-------------|
+| Playwright | Browser binaries exist in cache dir | `safe`: `npx playwright install` |
+| Cypress | Cypress binary exists | `safe`: `npx cypress install` |
+| Puppeteer | Chrome/Chromium binary reachable | `warn` only (varies by platform) |
+| Android (Flutter/RN) | `ANDROID_HOME` set, platform-tools exist | `manual`: instructions only |
+| iOS (Flutter/Swift) | `xcodebuild` available, simulator exists | `manual`: instructions only |
+
+Also checks that commands referenced in pipeline.conf are available:
+- `ANALYZE_CMD` first token is executable
+- `BUILD_CHECK_CMD` first token is executable
+- `TEST_CMD` first token is executable
+- `UI_TEST_CMD` first token is executable
+
+### 4. Generated Code Freshness Check
+
+**Function:** `_preflight_check_generated_code()`
+
+Detects when schema/definition files are newer than their generated output:
+
+| Tool | Schema File | Generated Output | Remediation |
+|------|-------------|-----------------|-------------|
+| Prisma | `prisma/schema.prisma` | `node_modules/.prisma/client/` | `safe`: `npx prisma generate` |
+| GraphQL Codegen | `codegen.yml` / `codegen.ts` | Check for `generated/` or configured output | `safe`: `npm run codegen` (if script exists) |
+| Protobuf | `*.proto` files | Corresponding `*_pb.js` / `*_pb2.py` | `warn`: varies by setup |
+| OpenAPI | `openapi.yaml` / `swagger.json` | Configured output dir | `warn`: varies by setup |
+
+Only checks when the tool's config file is detected in the project.
+
+### 5. Environment Variable Check
+
+**Function:** `_preflight_check_env_vars()`
+
+If `.env.example` (or `.env.template`, `.env.sample`) exists but `.env` does
+not, emit a warning. Do NOT create `.env` automatically (security: may contain
+secrets that need manual configuration).
+
+If `.env` exists, check that every key in `.env.example` has a corresponding
+key in `.env` (key presence only — never read values). Missing keys produce
+warnings, not failures.
+
+### 6. Runtime Version Check
+
+**Function:** `_preflight_check_runtime_version()`
+
+If version pinning files exist, validate the running runtime matches:
+
+| File | Check |
+|------|-------|
+| `.node-version` / `.nvmrc` | `node --version` major matches |
+| `.python-version` | `python3 --version` major.minor matches |
+| `rust-toolchain.toml` | `rustc --version` channel matches |
+| `.ruby-version` | `ruby --version` major.minor matches |
+| `.go-version` | `go version` major.minor matches |
+| `.java-version` | `java --version` major matches |
+
+Mismatches produce warnings (not failures) since the project may still work
+with a close version.
+
+### 7. Port Availability Check
+
+**Function:** `_preflight_check_ports()`
+
+If `UI_TEST_CMD` or `BUILD_CHECK_CMD` implies a dev server (detectable via
+common patterns: `next dev`, `vite`, `webpack-dev-server`, `flask run`),
+check if the expected port is already in use. Common ports: 3000, 5173, 8080,
+4200, 8000, 5000.
+
+Port check: `ss -tlnp 2>/dev/null | grep -q ":$port "` (Linux) or
+`lsof -i :$port` (macOS). Falls back gracefully if neither is available.
+
+Port conflicts produce warnings, not failures (the dev server may handle it).
+
+### 8. Lock File Freshness Check
+
+**Function:** `_preflight_check_lock_freshness()`
+
+Detects when the manifest (package.json, pyproject.toml, etc.) is newer than
+the lock file, suggesting the lock file needs regeneration:
+
+```bash
+if [[ "package.json" -nt "package-lock.json" ]]; then
+    # manifest edited after lock — npm install needed
+fi
+```
+
+This is separate from the dependency freshness check (§2) which checks
+installed deps vs lock file. This check catches lock file drift before
+installation.
+
+### 9. Pipeline Integration (`tekhton.sh`)
+
+Wire `run_preflight_checks()` into the main execution path:
+
+```bash
+# After config loading, detection, and milestone resolution
+# Before first stage dispatch
+source "${TEKHTON_HOME}/lib/preflight.sh"
+run_preflight_checks || {
+    write_pipeline_state "preflight" "env_failure" ...
+    exit 1
+}
+```
+
+**Config keys:**
+- `PREFLIGHT_ENABLED` (default: `true`) — Toggle pre-flight checks
+- `PREFLIGHT_AUTO_FIX` (default: `true`) — Allow auto-remediation of safe issues
+- `PREFLIGHT_FAIL_ON_WARN` (default: `false`) — Treat warnings as failures
+
+### 10. PREFLIGHT_REPORT.md Output
+
+Human-readable report written to the project directory:
+
+```markdown
+# Pre-flight Report — 2026-04-02 16:03:15
+
+## Summary
+✓ 5 passed  ⚠ 1 warned  ✗ 0 failed  🔧 1 auto-fixed
+
+## Checks
+
+### ✓ Dependencies (node_modules)
+node_modules is up-to-date with package-lock.json.
+
+### 🔧 Tools (Playwright)
+Playwright browsers were missing. Auto-fixed: `npx playwright install` (14s)
+
+### ⚠ Environment Variables
+.env is missing key `DATABASE_URL` (present in .env.example).
+This may cause runtime failures if the key is required.
+
+### ✓ Runtime Version (Node.js)
+.node-version requires 20.x, running 20.18.1. ✓
+```
+
+## Acceptance Criteria
+
+- `run_preflight_checks()` completes in under 5 seconds on a typical project
+- Detects stale `node_modules` when `package-lock.json` is newer
+- Detects missing Playwright browsers when Playwright is the detected test framework
+- Detects missing `.env` when `.env.example` exists
+- Detects runtime version mismatch when version file exists
+- Detects port conflicts when identifiable from pipeline config
+- Auto-remediates safe issues when `PREFLIGHT_AUTO_FIX=true`
+- Produces PREFLIGHT_REPORT.md with clear pass/warn/fail per check
+- Pipeline halts on blocking failures with actionable message
+- Skippable via `PREFLIGHT_ENABLED=false`
+- Only checks ecosystems actually detected in the project (no false checks)
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n lib/preflight.sh` passes
+- `shellcheck lib/preflight.sh` passes
+- New test file `tests/test_preflight.sh` covers:
+  - Missing node_modules detection (mock filesystem)
+  - Stale lock file detection (touch-based mtime testing)
+  - Tool availability check with mock `command -v`
+  - Env var presence check
+  - Report generation format
+  - PREFLIGHT_ENABLED=false skips all checks
+  - PREFLIGHT_AUTO_FIX=false reports but doesn't fix
+
+Watch For:
+- `mtime` comparison with `-nt` is filesystem-dependent. On some CI systems,
+  all files may have the same mtime (git clone doesn't preserve). Handle this
+  gracefully: if mtimes are identical, skip the freshness check (assume OK).
+- The pre-flight must NOT run during `--init`, `--plan`, `--diagnose`, or
+  `--dry-run` — only during actual pipeline execution (task runs).
+- `ss` is Linux-only. macOS uses `lsof`. Check platform and fall back.
+- `.env` files must NEVER be read for values — only check key presence by
+  parsing lines matching `^[A-Z_]+=`. This is a security requirement.
+- Some monorepos have multiple `package.json` files. The pre-flight should
+  check the root project directory only, not recursively scan.
+- `detect_languages()` may not be called yet when pre-flight runs. Ensure
+  the detection results are available (they are: sourced at line 752+ in
+  tekhton.sh, before stage dispatch).
+
+Seeds Forward:
+- Milestone 56 extends pre-flight with service readiness probing (port + health)
+- Pre-flight report data feeds into Watchtower dashboard (future)
+- Per-project custom pre-flight checks via pipeline.conf (future)
+- Pre-flight can eventually cache results with TTL to skip on rapid re-runs
+
+---
+
+## Archived: 2026-04-03 — Unknown Initiative
+
+# Milestone 56: Service Readiness Probing & Enhanced Diagnosis
+<!-- milestone-meta
+id: "56"
+status: "done"
+-->
+
+## Overview
+
+When a project's tests require a database, cache, or queue, the most common
+failure mode is "service not running." These failures manifest as cryptic
+`ECONNREFUSED` errors deep in test output — often after minutes of agent work.
+Milestone 55's pre-flight validates tool availability but doesn't probe network
+services. This milestone adds service readiness probing: detect what services
+the project depends on, check if they're accessible, and provide actionable
+startup instructions rather than raw connection errors.
+
+Depends on Milestone 55 (pre-flight framework).
+
+## Scope
+
+### 1. Service Dependency Inference (`lib/preflight.sh` — extend)
+
+**Function:** `_preflight_check_services()`
+
+Cross-reference multiple signals to build a list of required services:
+
+**Signal sources:**
+1. **Docker Compose** — Parse `docker-compose.yml` / `compose.yml` for service
+   names. Map common images to service types:
+   - `postgres` / `postgis` → PostgreSQL (port 5432)
+   - `mysql` / `mariadb` → MySQL (port 3306)
+   - `mongo` → MongoDB (port 27017)
+   - `redis` → Redis (port 6379)
+   - `rabbitmq` → RabbitMQ (port 5672)
+   - `kafka` / `confluentinc/cp-kafka` → Kafka (port 9092)
+   - `elasticsearch` / `opensearch` → Elasticsearch (port 9200)
+   - `minio` → MinIO/S3 (port 9000)
+   - `mailhog` / `mailpit` → Mail (port 1025)
+
+2. **Package dependencies** — Check manifest files for database client libraries:
+   - `pg` / `prisma` / `typeorm` / `sequelize` / `knex` → PostgreSQL/MySQL (check config)
+   - `redis` / `ioredis` / `bull` / `bullmq` → Redis
+   - `mongoose` / `mongodb` → MongoDB
+   - `amqplib` / `amqp-connection-manager` → RabbitMQ
+   - `kafkajs` → Kafka
+   - Python: `psycopg2` / `asyncpg` / `sqlalchemy` / `django.db` → PostgreSQL
+   - Python: `redis` / `celery` → Redis
+   - Go: `pgx` / `go-redis` / `mongo-driver` → respective services
+
+3. **Environment variable names** — Scan `.env.example` for patterns:
+   - `DATABASE_URL` / `DB_HOST` / `POSTGRES_*` → PostgreSQL
+   - `REDIS_URL` / `REDIS_HOST` → Redis
+   - `MONGO_URI` / `MONGODB_URI` → MongoDB
+   - `RABBITMQ_URL` / `AMQP_URL` → RabbitMQ
+
+4. **Existing detection** — Reuse `detect_services` output (already parsed
+   docker-compose, Procfile, k8s manifests).
+
+### 2. Port Probing (`lib/preflight.sh` — extend)
+
+**Function:** `_probe_service_port()`
+
+For each inferred service, probe its expected port:
+
+```bash
+_probe_service_port() {
+    local host="${1:-127.0.0.1}"
+    local port="$2"
+    local timeout_s="${3:-2}"
+
+    # Method 1: bash /dev/tcp (most portable, no extra deps)
+    if (echo >/dev/tcp/"$host"/"$port") 2>/dev/null; then
+        return 0
+    fi
+
+    # Method 2: nc/ncat fallback
+    if command -v nc &>/dev/null; then
+        nc -z -w "$timeout_s" "$host" "$port" 2>/dev/null && return 0
+    fi
+
+    return 1
+}
+```
+
+**Timeout:** 2 seconds per probe. With max ~8 services, total probe time
+stays under the 5-second pre-flight budget.
+
+### 3. Service Status Reporting
+
+For each required service, report one of:
+- **Running** — Port is open, service is presumably healthy
+- **Not running** — Port is closed, include startup instructions
+- **Unknown** — Cannot determine (port probe failed for non-network reason)
+
+**Startup instructions** are context-aware based on what's available:
+
+```
+PostgreSQL is not running on port 5432.
+
+Start it with one of:
+  • docker-compose up -d postgres    (docker-compose.yml detected)
+  • brew services start postgresql   (macOS)
+  • sudo systemctl start postgresql  (Linux systemd)
+  • pg_ctl start                     (manual)
+```
+
+Instruction selection:
+- If `docker-compose.yml` exists with the service → recommend `docker-compose up -d <name>`
+- If on macOS (detect via `uname`) → recommend `brew services start`
+- If on Linux with systemd (`systemctl` available) → recommend `systemctl start`
+- Always include the generic manual command as fallback
+
+### 4. Docker Daemon Check
+
+**Function:** `_preflight_check_docker()`
+
+If docker-compose.yml exists OR any service is expected via Docker:
+- Check if Docker daemon is running: `docker info &>/dev/null`
+- If not: warn with instructions (`sudo systemctl start docker` / open Docker Desktop)
+- If running but compose services not up: suggest `docker-compose up -d`
+
+This check runs BEFORE individual service port probes (no point probing
+ports if Docker isn't running).
+
+### 5. Dev Server Readiness for E2E
+
+**Function:** `_preflight_check_dev_server()`
+
+Many E2E test frameworks need a dev server running. Detect this from:
+- Playwright config (`webServer` field in `playwright.config.ts`)
+- `UI_TEST_CMD` that references a URL
+- Common patterns: `start-server-and-test`, `concurrently`
+
+If a dev server dependency is detected, check if the expected port is already
+serving. If not, this is a **warning** (not failure) — many test frameworks
+handle server startup internally.
+
+### 6. Enhanced Error Pattern Diagnosis (`lib/error_patterns.sh` — extend)
+
+Add service-specific patterns with richer diagnosis that references the
+pre-flight service detection:
+
+```
+ECONNREFUSED.*:5432 | service_dep | manual | | PostgreSQL not running on port 5432
+ECONNREFUSED.*:3306 | service_dep | manual | | MySQL not running on port 3306
+connection.*timed out.*:6379 | service_dep | manual | | Redis not reachable on port 6379
+```
+
+When the build gate hits these patterns AND pre-flight has already probed the
+service, include the pre-flight diagnosis (startup instructions) in
+BUILD_ERRORS.md rather than just the raw `ECONNREFUSED` message.
+
+### 7. PREFLIGHT_REPORT.md Service Section
+
+Extend the pre-flight report with a services section:
+
+```markdown
+### Services
+
+| Service | Port | Status | Source |
+|---------|------|--------|--------|
+| PostgreSQL | 5432 | ✓ Running | docker-compose.yml |
+| Redis | 6379 | ✗ Not running | package.json (ioredis) |
+| MongoDB | 27017 | — Skipped | not detected |
+
+#### ✗ Redis (port 6379)
+Redis is required (detected via `ioredis` in package.json) but not running.
+Start it with:
+  docker-compose up -d redis
+```
+
+## Acceptance Criteria
+
+- Detects required services from docker-compose, package dependencies, and env vars
+- Probes service ports with 2-second timeout per service
+- Total pre-flight time remains under 5 seconds (including service probes)
+- Reports running/not-running status for each detected service
+- Provides context-aware startup instructions (docker-compose vs systemd vs brew)
+- Docker daemon availability is checked before service probes
+- Dev server dependency detected from Playwright config or UI_TEST_CMD
+- PREFLIGHT_REPORT.md includes service status table
+- Build gate error patterns reference pre-flight diagnosis for ECONNREFUSED errors
+- Service probing does NOT fail the pipeline (warning only) — services may be
+  optional or test-only, and the pipeline should attempt execution
+- All existing tests pass (`bash tests/run_tests.sh`)
+- `bash -n` and `shellcheck` pass on all modified files
+- Tests in `tests/test_preflight.sh` (extend from M55):
+  - Service inference from mock docker-compose.yml
+  - Service inference from mock package.json dependencies
+  - Port probe mock (using a temporary listener)
+  - Docker daemon check with mock `docker` command
+  - Report includes service status table
+
+Watch For:
+- Port probing via `/dev/tcp` is a bashism that may not work in all bash
+  builds (some distros compile bash without `/dev/tcp` support). The `nc`
+  fallback is essential. Test on both paths.
+- Docker Compose v1 (`docker-compose`) vs v2 (`docker compose`) — check both.
+  The compose file may be `docker-compose.yml`, `docker-compose.yaml`, or
+  `compose.yml`.
+- Service port mapping in docker-compose may differ from default: `ports: "5433:5432"`
+  means the HOST port is 5433, not 5432. Parse the port mapping, don't assume
+  defaults when compose config is available.
+- Package dependency detection must be lightweight: `grep` the manifest file,
+  don't parse JSON. Check `dependencies` and `devDependencies` sections for
+  Node.js (both can contain database clients).
+- On CI environments, services are often provided by the CI platform (GitHub
+  Actions services, GitLab services). Pre-flight should not fail on CI when
+  services are managed externally. Detect CI environment via `CI=true` env
+  var and downgrade service failures from warning to info.
+- Rate the entire service check as `manual` safety — never auto-start services.
+  Starting a database is a side-effect-heavy operation that should always
+  require explicit human action.
+
+Seeds Forward:
+- Service health data feeds into project health scoring (health_checks_infra.sh)
+- Future: service auto-start via docker-compose for projects that opt in
+- Future: CI-specific service configuration detection (GitHub Actions, GitLab CI)
+- Pre-flight service data enables future "test isolation" features (skip tests
+  that require unavailable services rather than failing the entire suite)
+
+---
+
+## Archived: 2026-04-05 — Unknown Initiative
+
+# Milestone 57: UI Platform Adapter Framework
+<!-- milestone-meta
+id: "57"
+status: "done"
+-->
+
+## Overview
+
+Tekhton's UI awareness is currently web-centric and hardcoded: a handful of
+`{{IF:UI_PROJECT_DETECTED}}` blocks in scout, reviewer, and tester prompts
+inject the same guidance regardless of whether the project is a React SPA, a
+Flutter mobile app, a SwiftUI iOS app, or a Phaser browser game. The coder
+prompt has no UI block at all.
+
+This milestone establishes a **platform adapter framework** — a file-based
+convention where each UI platform (web, mobile_flutter, mobile_native_ios,
+mobile_native_android, game_web) provides detection logic, coder guidance,
+specialist review criteria, and tester patterns as files in a named directory.
+
+Depends on Milestone 56. Seeds Milestones 58 (web adapter), 59 (UI specialist),
+and 60 (mobile & game adapters).
+
+## Scope
+
+### 1. Platform Directory Structure (`platforms/` — NEW)
+
+Create the `platforms/` directory at the Tekhton repo root:
+
+```
+platforms/
+├── _base.sh                            # Platform resolution + fragment loading
+├── _universal/                         # Always-included guidance
+│   ├── coder_guidance.prompt.md        # Universal UI coder guidance
+│   └── specialist_checklist.prompt.md  # Universal specialist checklist
+├── web/                                # (populated by M58)
+├── mobile_flutter/                     # (populated by M60)
+├── mobile_native_ios/                  # (populated by M60)
+├── mobile_native_android/              # (populated by M60)
+└── game_web/                           # (populated by M60)
+```
+
+Platform directories are created as empty directories with a `.gitkeep` for M58
+and M60 to populate. Only `_base.sh` and `_universal/` contain content in this
+milestone.
+
+### 2. Platform Resolution (`platforms/_base.sh`)
+
+New file sourced by `tekhton.sh` after `detect.sh`. Provides:
+
+**`detect_ui_platform()`** — Maps the already-detected `UI_FRAMEWORK` and
+project type to a platform directory name. Resolution rules:
+
+| Detected Framework/Signal | Project Type | Platform Dir |
+|--------------------------|-------------|-------------|
+| `flutter` | any | `mobile_flutter` |
+| `swiftui` | any | `mobile_native_ios` |
+| Package.swift + UIKit signals | any | `mobile_native_ios` |
+| `jetpack-compose` / Kotlin + Android signals | any | `mobile_native_android` |
+| `phaser` / `pixi` / `three` / `babylon` | any | `game_web` |
+| `react` / `vue` / `svelte` / `angular` / `next.js` | any | `web` |
+| `playwright` / `cypress` / `testing-library` / `puppeteer` | any | `web` |
+| `generic` (2+ UI signals) | `web-game` | `game_web` |
+| `generic` (2+ UI signals) | `mobile-app` | `mobile_flutter` |
+| `generic` (2+ UI signals) | any other | `web` |
+| (none — `UI_PROJECT_DETECTED` is false) | any | (empty — skip) |
+
+The function:
+- Checks `UI_PLATFORM` config first — if set to anything other than `auto`, uses
+  that value directly (supports `custom_<name>` for user-defined platforms)
+- Falls through to auto-detection only when `UI_PLATFORM=auto` or empty
+- Sets `UI_PLATFORM` and `UI_PLATFORM_DIR` globals
+- Returns 0 if a platform was resolved, 1 if not (non-UI project)
+
+**`load_platform_fragments()`** — Reads `.prompt.md` files from the resolved
+platform directory and assembles them into prompt variables:
+
+1. Read `_universal/coder_guidance.prompt.md` → start of `UI_CODER_GUIDANCE`
+2. Read `<platform>/coder_guidance.prompt.md` → append to `UI_CODER_GUIDANCE`
+3. Read `_universal/specialist_checklist.prompt.md` → start of `UI_SPECIALIST_CHECKLIST`
+4. Read `<platform>/specialist_checklist.prompt.md` → append to `UI_SPECIALIST_CHECKLIST`
+5. Read `<platform>/tester_patterns.prompt.md` → set `UI_TESTER_PATTERNS`
+
+For each file, also check `${PROJECT_DIR}/.claude/platforms/<platform>/` for a
+user override file. If present, append its content after the built-in content.
+
+If a platform directory or file doesn't exist, skip it gracefully (the universal
+layer is always present).
+
+Sets globals: `UI_CODER_GUIDANCE`, `UI_SPECIALIST_CHECKLIST`, `UI_TESTER_PATTERNS`
+
+**`source_platform_detect()`** — Sources the platform's `detect.sh` if it exists:
+1. Source `${TEKHTON_HOME}/platforms/<platform>/detect.sh`
+2. Source `${PROJECT_DIR}/.claude/platforms/<platform>/detect.sh` (user override)
+
+The platform detect scripts are expected to set: `DESIGN_SYSTEM`,
+`DESIGN_SYSTEM_CONFIG`, `COMPONENT_LIBRARY_DIR`. These are optional — if a
+platform's detect.sh doesn't set them, they remain empty.
+
+**Helper functions:**
+
+- `_read_platform_file()` — Reads a file with 1MB size limit (same safety as
+  `_safe_read_file` in prompts.sh). Returns content or empty string.
+- `_resolve_platform_dir()` — Returns the full path to the built-in platform
+  directory, or empty if it doesn't exist.
+- `_resolve_user_platform_dir()` — Returns the full path to the user's platform
+  override directory, or empty if it doesn't exist.
+
+### 3. Universal UI Guidance (`platforms/_universal/`)
+
+**`coder_guidance.prompt.md`** — Platform-agnostic UI guidance for the coder:
+
+- **State presentation**: Every view/screen/component that fetches data MUST handle
+  loading, error, and empty states. No blank screens while data loads.
+- **Accessibility floor**: Use semantic elements/widgets over generic containers.
+  Every interactive element must be reachable via keyboard/gesture navigation.
+  Provide text alternatives for images. Ensure sufficient contrast. Support
+  screen reader announcements for dynamic content changes.
+- **Component composition**: Prefer small, reusable components with clear prop/parameter
+  interfaces. Separate data fetching from presentation. Avoid prop drilling beyond
+  2 levels — use context/provider/state management.
+- **Adaptive layout**: Design for the narrowest supported viewport first. Use the
+  project's existing breakpoint/layout system — do not invent new breakpoints.
+- **Design system adherence**: If a design system is detected (see below), use its
+  tokens, components, and patterns. Do not use raw color values, pixel sizes, or
+  custom components when the design system provides an equivalent.
+
+**`specialist_checklist.prompt.md`** — Universal 8-category review checklist:
+
+1. **Component structure & reusability** — Components have clear single responsibility.
+   Props/parameters are typed. No god-components doing everything.
+2. **Design system / token consistency** — Uses project design tokens for colors,
+   spacing, typography. No hardcoded values that bypass the design system.
+3. **Responsive / adaptive behavior** — Layout adapts correctly to supported viewport
+   sizes. No horizontal overflow. Touch targets meet minimum size (44x44pt iOS,
+   48x48dp Android, 44x44px web).
+4. **Accessibility** — Semantic structure. Keyboard/gesture navigable. Screen reader
+   labels on interactive elements. Sufficient color contrast. Focus management on
+   navigation/modal changes.
+5. **State presentation** — Loading, error, and empty states are handled. No
+   unhandled promise/future rejections that produce blank screens.
+6. **Interaction patterns** — Form validation provides inline feedback. Modals/sheets
+   trap focus and support dismiss. Navigation is consistent with platform conventions.
+7. **Visual hierarchy & layout consistency** — Heading levels are sequential. Spacing
+   follows a consistent rhythm. Typography scale matches project conventions.
+8. **Platform convention adherence** — Follows platform-specific guidelines (HIG for
+   iOS, Material for Android, WCAG for web, engine best practices for games).
+
+### 4. Pipeline Integration
+
+**`tekhton.sh` changes:**
+
+Add `source "${TEKHTON_HOME}/platforms/_base.sh"` after the existing detection
+engine sourcing. Call the platform resolution functions after `detect_ui_framework()`:
+
+```bash
+# After existing detection calls:
+if [[ "${UI_PROJECT_DETECTED:-}" == "true" ]]; then
+    detect_ui_platform
+    if [[ -n "${UI_PLATFORM_DIR:-}" ]]; then
+        source_platform_detect
+        load_platform_fragments
+    fi
+fi
+```
+
+**`coder.prompt.md` changes:**
+
+Add a UI guidance block (currently absent from the coder prompt):
+
+```markdown
+{{IF:UI_CODER_GUIDANCE}}
+
+## UI Implementation Guidance
+This is a UI project. Follow these guidelines for visual implementation.
+
+{{UI_CODER_GUIDANCE}}
+{{ENDIF:UI_CODER_GUIDANCE}}
+```
+
+Insert after the `{{IF:AFFECTED_TEST_FILES}}` block and before the
+`## Test Maintenance` section.
+
+If `DESIGN_SYSTEM` is detected, append a block to `UI_CODER_GUIDANCE`:
+
+```
+### Design System: {DESIGN_SYSTEM}
+This project uses {DESIGN_SYSTEM}. Configuration: {DESIGN_SYSTEM_CONFIG}.
+Use its tokens, components, and patterns. Do not use raw values when the
+design system provides an equivalent. Read the config file for available
+theme values.
+```
+
+If `COMPONENT_LIBRARY_DIR` is detected, also append:
+
+```
+### Reusable Components
+Check {COMPONENT_LIBRARY_DIR} for existing components before creating new ones.
+```
+
+**`scout.prompt.md` changes:**
+
+Expand the existing `{{IF:UI_PROJECT_DETECTED}}` block to also request:
+- Identify the design system in use (component library, theme configuration)
+- List existing reusable components relevant to the task
+- Note the project's breakpoint/adaptive layout conventions
+
+**`tester.prompt.md` changes:**
+
+Replace the hardcoded `{{TESTER_UI_GUIDANCE}}` injection with
+`{{UI_TESTER_PATTERNS}}` when the platform adapter provides it. Fall back to
+the existing `tester_ui_guidance.prompt.md` content when no platform adapter
+is resolved (backward compatibility).
+
+**`config_defaults.sh` changes:**
+
+Add defaults:
+```bash
+UI_PLATFORM="${UI_PLATFORM:-auto}"
+SPECIALIST_UI_ENABLED="${SPECIALIST_UI_ENABLED:-auto}"
+SPECIALIST_UI_MODEL="${SPECIALIST_UI_MODEL:-${CLAUDE_STANDARD_MODEL}}"
+SPECIALIST_UI_MAX_TURNS="${SPECIALIST_UI_MAX_TURNS:-8}"
+```
+
+### 5. User Override Support
+
+When `load_platform_fragments()` processes each fragment type, it checks:
+1. `${TEKHTON_HOME}/platforms/<platform>/<file>` (built-in)
+2. `${PROJECT_DIR}/.claude/platforms/<platform>/<file>` (user override — appended)
+
+User files are **appended** to built-in content, not replacing it. This ensures
+universal guidance is always present.
+
+A fully custom platform is supported by setting `UI_PLATFORM=custom_<name>` in
+`pipeline.conf`. The platform resolution skips auto-detection and looks directly
+for `${PROJECT_DIR}/.claude/platforms/custom_<name>/` (user-provided) or
+`${TEKHTON_HOME}/platforms/custom_<name>/` (if someone adds one to Tekhton).
+
+### 6. Self-Tests
+
+Add to `tests/`:
+
+- `test_platform_base.sh` — Tests `detect_ui_platform()` resolution for each
+  framework → platform mapping. Tests `load_platform_fragments()` with mock
+  platform directories. Tests user override append behavior. Tests custom
+  platform resolution. Tests graceful fallback when platform dir doesn't exist.
+
+## Acceptance Criteria
+
+- [ ] `platforms/_base.sh` passes `bash -n` and `shellcheck`
+- [ ] `detect_ui_platform()` correctly maps all framework values from
+      `detect_ui_framework()` to platform directory names
+- [ ] `load_platform_fragments()` assembles `UI_CODER_GUIDANCE` from universal +
+      platform content
+- [ ] User override files in `.claude/platforms/<name>/` are appended to built-in
+      content
+- [ ] `UI_PLATFORM=custom_<name>` skips auto-detection and resolves to the named
+      platform directory
+- [ ] `coder.prompt.md` renders `{{UI_CODER_GUIDANCE}}` when `UI_PROJECT_DETECTED=true`
+- [ ] Non-UI projects see no prompt changes (variables are empty, conditional blocks
+      are stripped)
+- [ ] `_universal/coder_guidance.prompt.md` and `_universal/specialist_checklist.prompt.md`
+      contain the universal guidance content
+- [ ] All existing tests pass
+- [ ] New test file `test_platform_base.sh` passes
+
+## Files Created
+- `platforms/_base.sh`
+- `platforms/_universal/coder_guidance.prompt.md`
+- `platforms/_universal/specialist_checklist.prompt.md`
+- `platforms/web/.gitkeep`
+- `platforms/mobile_flutter/.gitkeep`
+- `platforms/mobile_native_ios/.gitkeep`
+- `platforms/mobile_native_android/.gitkeep`
+- `platforms/game_web/.gitkeep`
+- `tests/test_platform_base.sh`
+
+## Files Modified
+- `tekhton.sh` (source _base.sh, call platform resolution after detection)
+- `prompts/coder.prompt.md` (add `{{IF:UI_CODER_GUIDANCE}}` block)
+- `prompts/scout.prompt.md` (expand UI component identification block)
+- `lib/config_defaults.sh` (add UI_PLATFORM, SPECIALIST_UI_* defaults)
+
+---
+
+## Archived: 2026-04-05 — Unknown Initiative
+
+# Milestone 58: Web UI Platform Adapter
+<!-- milestone-meta
+id: "58"
+status: "done"
+-->
+
+## Overview
+
+With the platform adapter framework (M57) in place, this milestone populates the
+`platforms/web/` directory — the first and most common platform adapter. It provides
+design system detection for web projects, coder guidance for CSS frameworks and
+component libraries, a specialist review checklist for web-specific concerns, and
+tester patterns that migrate and expand the existing `tester_ui_guidance.prompt.md`.
+
+Depends on Milestone 57.
+
+## Scope
+
+### 1. Web Design System Detection (`platforms/web/detect.sh`)
+
+A shell script sourced by `source_platform_detect()` from `_base.sh`. Detects:
+
+**CSS Frameworks:**
+- Tailwind CSS: `tailwind.config.ts`, `tailwind.config.js`, `tailwind.config.cjs`,
+  `tailwind.config.mjs`, or `tailwindcss` in `package.json` deps →
+  `DESIGN_SYSTEM=tailwind`, `DESIGN_SYSTEM_CONFIG=<config file path>`
+- Bootstrap: `bootstrap` in `package.json` deps → `DESIGN_SYSTEM=bootstrap`
+- Bulma: `bulma` in `package.json` deps → `DESIGN_SYSTEM=bulma`
+- UnoCSS: `unocss` or `@unocss` in `package.json` deps →
+  `DESIGN_SYSTEM=unocss`, `DESIGN_SYSTEM_CONFIG=uno.config.ts` (if exists)
+
+**Component Libraries:**
+- MUI: `@mui/material` in deps → `DESIGN_SYSTEM=mui` (overrides CSS framework)
+- Chakra UI: `@chakra-ui/react` in deps → `DESIGN_SYSTEM=chakra`
+- shadcn/ui: `components.json` with shadcn schema → `DESIGN_SYSTEM=shadcn`
+- Radix: `@radix-ui/react-*` in deps (without shadcn) → `DESIGN_SYSTEM=radix`
+- Ant Design: `antd` in deps → `DESIGN_SYSTEM=antd`
+- Headless UI: `@headlessui/react` or `@headlessui/vue` → `DESIGN_SYSTEM=headlessui`
+- Vuetify: `vuetify` in deps → `DESIGN_SYSTEM=vuetify`
+- Element Plus: `element-plus` in deps → `DESIGN_SYSTEM=element-plus`
+
+Component libraries take precedence over CSS frameworks when both are present
+(e.g., a project using MUI + Tailwind reports `DESIGN_SYSTEM=mui`).
+
+**Design Tokens:**
+- Tailwind theme: if `DESIGN_SYSTEM=tailwind`, set `DESIGN_SYSTEM_CONFIG` to the
+  config file path (the theme section contains the tokens)
+- CSS custom property files: scan for `variables.css`, `variables.scss`,
+  `tokens.css`, `tokens.scss`, `theme.css`, `theme.scss` in `src/` and root →
+  set `DESIGN_SYSTEM_CONFIG` if found and not already set
+
+**Component Directory:**
+- Scan for: `src/components/ui/`, `src/components/common/`, `src/ui/`,
+  `components/ui/`, `components/common/`, `app/components/ui/`
+- Set `COMPONENT_LIBRARY_DIR` to the first existing directory
+
+**Implementation notes:**
+- Uses the same grep-based `package.json` parsing as `detect.sh` (`_extract_json_keys`,
+  `_check_dep`) — no jq dependency
+- Must `source "${TEKHTON_HOME}/lib/detect.sh"` is already loaded (it is, since
+  `_base.sh` is sourced after detect.sh)
+- All detection is best-effort — missing signals result in empty variables, not errors
+- Must pass `shellcheck` and `bash -n`
+
+### 2. Web Coder Guidance (`platforms/web/coder_guidance.prompt.md`)
+
+Platform-specific coder guidance appended after the universal guidance. Content:
+
+**CSS & Styling:**
+- Use the project's CSS methodology. If Tailwind: use utility classes, avoid
+  `@apply` for one-off styles, use theme values (`text-primary`, `bg-surface`)
+  not raw hex/rgb. If CSS modules: scope styles to components. If styled-components
+  or CSS-in-JS: colocate styles with components.
+- Never use `!important` unless overriding a third-party library.
+- Use relative units (`rem`, `em`, `%`, `vw/vh`) over absolute `px` for layout.
+  `px` is acceptable for borders, shadows, and icon sizes.
+- Responsive: mobile-first with `min-width` breakpoints. Use the project's
+  breakpoint system (Tailwind config, CSS variables, or framework breakpoints).
+  Test at 375px (mobile), 768px (tablet), 1280px (desktop) minimum.
+
+**Component Patterns:**
+- React: functional components with hooks. Props interface defined with TypeScript
+  types. Forward refs on interactive components. Use `children` for composition.
+- Vue: Single File Components with `<script setup>` (Vue 3) or Options API matching
+  project convention. Scoped styles. Props with type validation.
+- Svelte: Component props with `export let`. Reactive declarations. Scoped styles
+  by default.
+- Angular: Component decorator with appropriate change detection. Input/Output
+  decorators. OnPush when possible.
+- Use the project's state management pattern. Don't introduce a new state library.
+
+**Web Accessibility (WCAG 2.1 AA):**
+- Semantic HTML: `<button>` for actions, `<a>` for navigation, `<nav>`, `<main>`,
+  `<article>`, `<section>` with accessible names.
+- Form inputs: `<label>` elements associated with inputs. Error messages linked
+  with `aria-describedby`. Required fields marked with `aria-required`.
+- Focus management: visible focus indicators on all interactive elements. Focus
+  moves logically with tabbing. Focus trapped in modals. Focus restored on
+  modal close.
+- Dynamic content: `aria-live` regions for async updates. Loading states
+  announced to screen readers. Route changes announced.
+- Color: do not convey information through color alone. Minimum 4.5:1 contrast
+  for normal text, 3:1 for large text.
+
+**Performance:**
+- Lazy-load routes and heavy components. Use dynamic `import()` for code splitting.
+- Images: use `loading="lazy"`, provide `width`/`height` or aspect ratio, use
+  appropriate format (WebP with fallback).
+- Avoid layout shift: reserve space for async content (skeleton screens, fixed
+  dimensions on media elements).
+
+### 3. Web Specialist Checklist (`platforms/web/specialist_checklist.prompt.md`)
+
+Web-specific additions to the universal 8-category checklist:
+
+1. **CSS specificity management** — No `!important` cascading. Styles don't leak
+   between components. CSS module or scoped styles used consistently.
+2. **SSR/hydration correctness** — If the project uses SSR (Next.js, Nuxt, SvelteKit),
+   verify no hydration mismatches. No `window`/`document` access during server render
+   without guards. Dynamic content handled with client-only wrappers.
+3. **Bundle impact** — New dependencies are justified. No full-library imports when
+   tree-shakeable alternatives exist (e.g., `import { Button } from '@mui/material'`
+   not `import * as MUI`).
+4. **Progressive enhancement** — Core functionality works without JavaScript where
+   feasible. Form submissions have server-side handling if applicable.
+5. **SEO considerations** — Pages have appropriate `<title>`, `<meta description>`,
+   heading hierarchy. Dynamic routes have meaningful URLs.
+6. **Asset optimization** — Images have alt text and appropriate dimensions. Fonts
+   loaded with `font-display: swap` or equivalent. No render-blocking resources
+   in critical path.
+
+### 4. Web Tester Patterns (`platforms/web/tester_patterns.prompt.md`)
+
+Migrate the content from `prompts/tester_ui_guidance.prompt.md` into this file.
+The existing content covers:
+- Decision tree for E2E test writing
+- Page load, form submission, navigation patterns
+- Framework-specific code examples (Playwright, Cypress, Selenium, Puppeteer,
+  Testing Library, Detox)
+- Anti-patterns
+
+Add new patterns not in the existing file:
+- **State management UI**: Assert loading spinner/skeleton visible during fetch,
+  error message renders on API failure, empty state component shows when data
+  array is empty
+- **Modal/dialog behavior**: Focus moves into modal on open, escape key closes,
+  click-outside closes (if applicable), focus returns to trigger on close,
+  background scroll is locked
+- **Keyboard navigation**: Tab order follows visual order, enter/space activates
+  buttons and links, arrow keys navigate within menus/listboxes, escape closes
+  dropdowns and overlays
+- **Focus management**: After route change focus moves to main content or page
+  title, after modal close focus returns to trigger element, skip-to-content
+  link present and functional
+- **Responsive behavior**: Test at mobile (375px) and desktop (1280px) viewports,
+  navigation collapses to mobile menu, content reflows without horizontal scroll,
+  touch targets meet minimum 44x44px
+
+### 5. Backward Compatibility
+
+The existing `prompts/tester_ui_guidance.prompt.md` is NOT deleted. The
+`tester.prompt.md` template continues to use `{{TESTER_UI_GUIDANCE}}`. The
+pipeline logic in `stages/tester.sh` (or wherever `TESTER_UI_GUIDANCE` is
+assembled) is updated:
+
+```bash
+# If platform adapter provided tester patterns, use those
+if [[ -n "${UI_TESTER_PATTERNS:-}" ]]; then
+    export TESTER_UI_GUIDANCE="$UI_TESTER_PATTERNS"
+else
+    # Fall back to legacy monolithic file
+    TESTER_UI_GUIDANCE=$(_safe_read_file "${TEKHTON_HOME}/prompts/tester_ui_guidance.prompt.md" "tester_ui_guidance")
+    export TESTER_UI_GUIDANCE
+fi
+```
+
+This ensures existing pipelines that don't resolve a platform adapter still get
+the original tester UI guidance.
+
+### 6. Self-Tests
+
+Add to `tests/`:
+
+- `test_platform_web.sh` — Tests:
+  - `detect.sh` correctly identifies Tailwind, MUI, shadcn, Bootstrap, and other
+    design systems from mock `package.json` files
+  - Component directory detection finds `src/components/ui/`
+  - Design system config path is correctly set
+  - CSS custom property file detection works
+  - Fragment files are syntactically valid (no broken markdown)
+
+## Acceptance Criteria
+
+- [ ] `platforms/web/detect.sh` passes `bash -n` and `shellcheck`
+- [ ] Design system detection correctly identifies Tailwind, MUI, shadcn, Chakra,
+      Ant Design, Radix, Headless UI, Bootstrap, Bulma, UnoCSS, Vuetify, Element Plus
+- [ ] `DESIGN_SYSTEM_CONFIG` points to the correct config file for Tailwind and
+      UnoCSS projects
+- [ ] `COMPONENT_LIBRARY_DIR` is set when a component directory exists
+- [ ] Component libraries take precedence over CSS frameworks in `DESIGN_SYSTEM`
+- [ ] `coder_guidance.prompt.md` contains web-specific CSS, component, a11y, and
+      performance guidance
+- [ ] `specialist_checklist.prompt.md` adds web-specific review items to the
+      universal checklist
+- [ ] `tester_patterns.prompt.md` contains all content from the existing
+      `tester_ui_guidance.prompt.md` plus new state/modal/keyboard/focus/responsive
+      patterns
+- [ ] Existing `tester_ui_guidance.prompt.md` is preserved as fallback
+- [ ] `UI_TESTER_PATTERNS` overrides `TESTER_UI_GUIDANCE` when platform adapter
+      provides it
+- [ ] All existing tests pass
+- [ ] New test file `test_platform_web.sh` passes
+
+## Files Created
+- `platforms/web/detect.sh`
+- `platforms/web/coder_guidance.prompt.md`
+- `platforms/web/specialist_checklist.prompt.md`
+- `platforms/web/tester_patterns.prompt.md`
+- `tests/test_platform_web.sh`
+
+## Files Modified
+- `stages/tester.sh` or `lib/prompts.sh` (TESTER_UI_GUIDANCE assembly logic)
+
+---
+
+## Archived: 2026-04-05 — Unknown Initiative
+
+# Milestone 59: UI/UX Specialist Reviewer
+<!-- milestone-meta
+id: "59"
+status: "done"
+-->
+
+## Overview
+
+Tekhton has three built-in specialist reviewers (security, performance, API) that
+each provide focused, domain-expert review passes after the main reviewer approves.
+UI/UX quality has no equivalent — the reviewer's 4-bullet `{{IF:UI_PROJECT_DETECTED}}`
+block is thin compared to the 8-category checklists the specialists provide, and
+there is no rework routing for accessibility violations or design system misuse.
+
+This milestone adds a UI/UX specialist reviewer following the exact same pattern
+as the existing specialists: a prompt template, auto-enablement logic, diff
+relevance filtering, and findings consumption by the reviewer.
+
+Depends on Milestone 57. Parallel-safe with M58 and M60 (uses the platform
+adapter framework but doesn't require specific platform content — falls back to
+universal checklist).
+
+## Scope
+
+### 1. Specialist Prompt (`prompts/specialist_ui.prompt.md` — NEW)
+
+Follows the 6-section pattern established by `specialist_security.prompt.md`:
+
+```markdown
+You are a **UI/UX specialist reviewer** for {{PROJECT_NAME}}.
+
+## Security Directive
+[standard anti-prompt-injection block]
+
+## Your Role
+You perform a focused UI/UX quality review of code changes made by the coder
+agent. You are NOT a general code reviewer — focus exclusively on user interface
+quality, accessibility, and design consistency.
+
+## Context
+Task: {{TASK}}
+{{IF:ARCHITECTURE_CONTENT}}
+--- BEGIN FILE CONTENT: ARCHITECTURE ---
+{{ARCHITECTURE_CONTENT}}
+--- END FILE CONTENT: ARCHITECTURE ---
+{{ENDIF:ARCHITECTURE_CONTENT}}
+
+{{IF:DESIGN_SYSTEM}}
+## Design System: {{DESIGN_SYSTEM}}
+This project uses {{DESIGN_SYSTEM}} as its design system.
+{{IF:DESIGN_SYSTEM_CONFIG}}
+Configuration file: {{DESIGN_SYSTEM_CONFIG}} — read this to understand available
+theme values, tokens, and component configurations.
+{{ENDIF:DESIGN_SYSTEM_CONFIG}}
+{{IF:COMPONENT_LIBRARY_DIR}}
+Reusable component directory: {{COMPONENT_LIBRARY_DIR}} — check for existing
+components before flagging missing abstractions.
+{{ENDIF:COMPONENT_LIBRARY_DIR}}
+{{ENDIF:DESIGN_SYSTEM}}
+
+## Required Reading
+1. `CODER_SUMMARY.md` — what was built and what files were touched
+2. Only the files listed under 'Files created or modified' in CODER_SUMMARY.md
+   that have UI-related extensions (.tsx, .jsx, .vue, .svelte, .css, .scss,
+   .html, .dart, .swift, .kt, or files in components/pages/views/screens/widgets
+   directories)
+3. `{{PROJECT_RULES_FILE}}` — only if checking a specific UI/design rule
+
+## UI/UX Review Checklist
+Review the changed UI files against these criteria:
+
+{{UI_SPECIALIST_CHECKLIST}}
+
+## Required Output
+Write `SPECIALIST_UI_FINDINGS.md` with this format:
+
+# UI/UX Review Findings
+
+## Blockers
+- [BLOCKER] <file:line> — <description and remediation>
+(or 'None')
+
+## Notes
+- [NOTE] <file:line> — <description and recommendation>
+(or 'None')
+
+## Summary
+<1-2 sentence summary of UI/UX quality>
+
+Rules:
+- Use `[BLOCKER]` only for:
+  - Accessibility violations that prevent keyboard/screen reader users from
+    using the feature (missing focus management, no keyboard navigation,
+    broken semantic structure)
+  - Missing state handling that produces blank/broken screens (no loading
+    state on async data, unhandled error state)
+  - Design system violations that break visual consistency across the app
+    (raw values where tokens exist, custom components duplicating library
+    components)
+- Use `[NOTE]` for:
+  - Improvement suggestions for UX flow
+  - Minor accessibility enhancements (better labels, improved contrast)
+  - Performance optimizations (lazy loading, code splitting)
+  - Platform convention suggestions that don't break functionality
+- Be specific: include file paths, line numbers, and concrete fixes
+- Do not flag issues in files that were NOT modified in this change
+- Do not flag aesthetic preferences as blockers — those are notes
+```
+
+The `{{UI_SPECIALIST_CHECKLIST}}` variable is assembled by `load_platform_fragments()`
+(M57): universal checklist + platform-specific additions. If no platform adapter
+is resolved, only the universal checklist is injected.
+
+### 2. Auto-Enable Logic (`lib/specialists.sh`)
+
+Add UI specialist to the built-in specialist collection with auto-enable behavior:
+
+```bash
+# In run_specialist_reviews(), after collecting built-in specialists:
+
+# UI specialist: auto-enable when UI project detected
+local ui_enabled="${SPECIALIST_UI_ENABLED:-auto}"
+if [[ "$ui_enabled" == "auto" ]]; then
+    if [[ "${UI_PROJECT_DETECTED:-}" == "true" ]]; then
+        ui_enabled="true"
+    else
+        ui_enabled="false"
+    fi
+fi
+if [[ "$ui_enabled" == "true" ]]; then
+    specialists+=("ui")
+fi
+```
+
+This is distinct from the other specialists which default to `false`. The `auto`
+value means: "enable me when the detection engine says this is a UI project."
+Users can explicitly set `SPECIALIST_UI_ENABLED=false` to disable it even for
+UI projects.
+
+### 3. Diff Relevance Filter (`lib/specialists.sh`)
+
+Add a `ui)` case to `_specialist_diff_relevant()`:
+
+```bash
+ui)
+    relevance_patterns='\.tsx$|\.jsx$|\.vue$|\.svelte$|\.css$|\.scss$|\.sass$|\.less$|\.html$|\.dart$|\.swift$|\.kt$|\.kts$|/components/|/pages/|/views/|/screens/|/widgets/|/scenes/|/ui/|/styles/|/theme/|\.storyboard$|\.xib$'
+    ;;
+```
+
+This is intentionally broad — the UI specialist should run whenever any visual
+file is touched. False positives (running on a non-visual `.kt` file) are
+low-cost because the specialist reads `CODER_SUMMARY.md` first and scopes to
+UI-related files within it.
+
+### 4. Findings Consumption (`prompts/reviewer.prompt.md`)
+
+Add a `{{IF:UI_FINDINGS_BLOCK}}` section to the reviewer prompt, following the
+same pattern as `{{SECURITY_FINDINGS_BLOCK}}`:
+
+```markdown
+{{IF:UI_FINDINGS_BLOCK}}
+## UI/UX Findings (from UI Specialist)
+The following UI/UX findings were identified by the UI specialist reviewer.
+Do not duplicate the UI specialist's work — focus on code quality and correctness.
+{{UI_FINDINGS_BLOCK}}
+{{ENDIF:UI_FINDINGS_BLOCK}}
+```
+
+Insert after the existing `{{IF:SECURITY_FINDINGS_BLOCK}}` block.
+
+The `UI_FINDINGS_BLOCK` variable is populated the same way `SECURITY_FINDINGS_BLOCK`
+is — by reading `SPECIALIST_UI_FINDINGS.md` after the specialist runs.
+
+### 5. Variable Export for Prompt Rendering
+
+Ensure the following variables are exported before prompt rendering when the UI
+specialist is active:
+
+- `DESIGN_SYSTEM` — from platform detect.sh
+- `DESIGN_SYSTEM_CONFIG` — from platform detect.sh
+- `COMPONENT_LIBRARY_DIR` — from platform detect.sh
+- `UI_SPECIALIST_CHECKLIST` — from `load_platform_fragments()`
+- `UI_FINDINGS_BLOCK` — from specialist output (populated after specialist runs)
+
+These are already set by M57's pipeline integration; this milestone just ensures
+the specialist prompt template references them correctly.
+
+### 6. Coder Rework Integration
+
+When the UI specialist reports `[BLOCKER]` items, the rework loop in
+`stages/review.sh` already handles this via the existing `_route_specialist_rework()`
+function — specialist blockers are aggregated into `SPECIALIST_BLOCKERS` and
+trigger a rework cycle. No changes needed to the rework routing.
+
+The `coder_rework.prompt.md` already receives specialist findings context via
+the reviewer's report. No changes needed to the rework prompt.
+
+### 7. Self-Tests
+
+Add to `tests/`:
+
+- `test_specialist_ui.sh` — Tests:
+  - UI specialist is collected when `SPECIALIST_UI_ENABLED=true`
+  - UI specialist is collected when `SPECIALIST_UI_ENABLED=auto` and
+    `UI_PROJECT_DETECTED=true`
+  - UI specialist is NOT collected when `SPECIALIST_UI_ENABLED=auto` and
+    `UI_PROJECT_DETECTED` is unset
+  - UI specialist is NOT collected when `SPECIALIST_UI_ENABLED=false`
+  - Diff relevance filter matches `.tsx`, `.vue`, `.dart`, `.swift`, `.kt`,
+    `/components/`, `/screens/`, `/widgets/` patterns
+  - Diff relevance filter does NOT match `.go`, `.py`, `.rs` (non-UI files)
+  - `specialist_ui.prompt.md` renders without errors (no unresolved `{{VAR}}`
+    when required variables are set)
+
+## Acceptance Criteria
+
+- [ ] `prompts/specialist_ui.prompt.md` follows the established specialist
+      prompt pattern (6 sections, `[BLOCKER]`/`[NOTE]` output format)
+- [ ] `SPECIALIST_UI_ENABLED=auto` enables the specialist when
+      `UI_PROJECT_DETECTED=true` and disables it otherwise
+- [ ] `SPECIALIST_UI_ENABLED=false` disables the specialist even for UI projects
+- [ ] `SPECIALIST_UI_ENABLED=true` enables the specialist even for non-UI projects
+- [ ] Diff relevance filter correctly identifies UI-related files across all
+      supported platform file extensions
+- [ ] `{{UI_SPECIALIST_CHECKLIST}}` is injected from the platform adapter's
+      specialist checklist (universal + platform-specific)
+- [ ] `{{UI_FINDINGS_BLOCK}}` is injected into the reviewer prompt after the
+      specialist runs
+- [ ] `[BLOCKER]` items from the UI specialist trigger rework via the existing
+      specialist rework routing
+- [ ] The specialist prompt includes design system context (`{{DESIGN_SYSTEM}}`,
+      `{{DESIGN_SYSTEM_CONFIG}}`, `{{COMPONENT_LIBRARY_DIR}}`) when detected
+- [ ] All existing tests pass
+- [ ] New test file `test_specialist_ui.sh` passes
+
+## Files Created
+- `prompts/specialist_ui.prompt.md`
+- `tests/test_specialist_ui.sh`
+
+## Files Modified
+- `lib/specialists.sh` (add UI specialist collection, auto-enable logic,
+  diff relevance case)
+- `prompts/reviewer.prompt.md` (add `{{IF:UI_FINDINGS_BLOCK}}` section)
+
+---
+
+## Archived: 2026-04-05 — Unknown Initiative
+
+# Milestone 66: Watchtower Full-Stage Metrics & Hierarchical Breakdown
+<!-- milestone-meta
+id: "66"
+status: "done"
+-->
+
+## Overview
+
+Watchtower's Per-Stage Breakdown on the Trends screen only tracks 4 stages from
+metrics.jsonl (Scout, Coder, Reviewer, Tester) even though the pipeline can
+execute 10+ distinct timed steps per run. Security scans, Test Audit, Analyze
+Cleanup, specialists, and rework cycles are all invisible — in a recent run,
+these "invisible" steps accounted for 28% of total wall-clock time (11m40s of
+40m51s).
+
+Meanwhile, the Run Summary banner printed at the end of each run *does* show
+every step — it already has the data. The problem is that this data never flows
+into metrics.jsonl or the Watchtower frontend.
+
+This milestone closes the gap with two changes:
+1. **Backend:** Record all stage/step durations and turn counts in metrics.jsonl
+2. **Frontend:** Render a hierarchical Per-Stage Breakdown that groups sub-steps
+   under parent stages, with collapsed-by-default drill-down
+
+The default view remains clean and scannable. Expanding a row reveals the
+sub-steps that composed it (review cycles, rework iterations, test audit, etc.).
+
+Depends on M57 (last completed milestone) for stable pipeline baseline.
+
+## Scope
+
+### 1. Expand metrics.jsonl Stage Recording
+
+**File:** `lib/metrics.sh`
+
+Add recording for all pipeline steps that currently have `_STAGE_DURATION` /
+`_STAGE_TURNS` data but are not written to metrics.jsonl:
+
+| Field | Source | Currently Recorded |
+|-------|--------|--------------------|
+| `security_turns` / `security_duration_s` | `_STAGE_DURATION[security]` | No |
+| `security_rework_cycles` | `SECURITY_REWORK_CYCLES_DONE` | No |
+| `test_audit_turns` / `test_audit_duration_s` | `_STAGE_DURATION[test_audit]` | No |
+| `cleanup_turns` / `cleanup_duration_s` | `_STAGE_DURATION[cleanup]` | No |
+| `analyze_cleanup_turns` / `analyze_cleanup_duration_s` | Captured in hooks.sh | No |
+| `review_cycles` | `REVIEW_CYCLE` | Partial (in RUN_SUMMARY.json, not metrics.jsonl) |
+| `specialist_security_turns` / `_duration_s` | `_STAGE_DURATION[specialist_security]` | No |
+| `specialist_performance_turns` / `_duration_s` | `_STAGE_DURATION[specialist_perf]` | No |
+| `specialist_api_turns` / `_duration_s` | `_STAGE_DURATION[specialist_api]` | No |
+
+Steps that don't run in a given pipeline invocation emit nothing (sparse keys).
+This is already how the existing 4 stages work — no change to the JSONL schema
+contract, just additional optional fields.
+
+### 2. Track Sub-Step Durations in _STAGE_DURATION
+
+**Files:** `stages/security.sh`, `stages/review.sh`, `stages/tester.sh`,
+`lib/hooks.sh`, `lib/specialists.sh`
+
+Ensure every agent invocation that contributes to a parent stage records its
+duration in `_STAGE_DURATION` with a namespaced key:
+
+- `security` (parent) → `security_scan`, `security_rework_1`, `security_rework_2`
+- `reviewer` (parent) → `reviewer_cycle_1`, `reviewer_cycle_2`, `reviewer_cycle_3`
+- `tester` (parent) → `tester_write`, `tester_audit`
+- `post_pipeline` (parent) → `cleanup`, `analyze_cleanup`
+
+Parent stage duration remains the wall-clock total. Sub-steps are recorded
+separately so the frontend can show the breakdown.
+
+### 3. Update metrics.jsonl Parser (Backend)
+
+**File:** `lib/dashboard_parsers_runs.sh`
+
+Expand both the Python and bash parsers to extract the new stage fields:
+
+```python
+# Extended stage extraction
+for sname, skey in [
+    ('coder','coder_turns'), ('reviewer','reviewer_turns'),
+    ('tester','tester_turns'), ('scout','scout_turns'),
+    ('security','security_turns'), ('test_audit','test_audit_turns'),
+    ('cleanup','cleanup_turns'), ('analyze_cleanup','analyze_cleanup_turns'),
+]:
+    ...
+```
+
+Add sub-step data as nested objects within the parent stage:
+
+```json
+{
+  "stages": {
+    "reviewer": {
+      "turns": 42, "duration_s": 720, "budget": 28,
+      "cycles": 2,
+      "sub_steps": [
+        {"label": "Review (cycle 1)", "turns": 14, "duration_s": 90},
+        {"label": "Rework + Re-review", "turns": 28, "duration_s": 630}
+      ]
+    },
+    "tester": {
+      "turns": 26, "duration_s": 984, "budget": 40,
+      "sub_steps": [
+        {"label": "Test Writing", "turns": 1, "duration_s": 782},
+        {"label": "Test Audit", "turns": 25, "duration_s": 204}
+      ]
+    },
+    "post_pipeline": {
+      "turns": 1, "duration_s": 436,
+      "sub_steps": [
+        {"label": "Analyze Cleanup", "turns": 1, "duration_s": 436}
+      ]
+    }
+  }
+}
+```
+
+### 4. Frontend: Hierarchical Stage Grouping
+
+**File:** `templates/watchtower/app.js`
+
+Update `stageOrder`, `stageLabels`, and `renderStageBreakdown()`:
+
+**Stage hierarchy:**
+
+```javascript
+var stageGroups = {
+  'scout':    { label: 'Scout',    children: [] },
+  'coder':    { label: 'Coder',    children: ['build_gate'] },
+  'security': { label: 'Security', children: ['security_rework'] },
+  'reviewer': { label: 'Review',   children: [] },  // cycles shown via (×N) indicator
+  'tester':   { label: 'Test',     children: ['test_audit'] },
+  'post_pipeline': { label: 'Post-Pipeline', children: ['cleanup', 'analyze_cleanup'] }
+};
+```
+
+**Default (collapsed) view:**
+
+```
+Stage            | Avg Turns | Last Run     | Avg Time | Distribution
+Scout            | 9         | 9/20 (45%)   | 0m 48s   | [==]
+Coder            | 52        | 52/40 (130%) | 13m 51s  | [=============]
+Security         | 9         | 9/15 (60%)   | 1m 00s   | [==]
+Review (×1)      | 14        | 14/28 (50%)  | 1m 30s   | [===]
+Test             | 26        | 26/40 (65%)  | 16m 26s  | [================]
+Post-Pipeline    | 1         | -            | 7m 16s   | [=======]
+```
+
+- Parent rows show **aggregated** turns and duration (sum of sub-steps)
+- Review shows cycle count as `(×N)` suffix when cycles > 1
+- Post-Pipeline only appears when cleanup or analyze ran
+- Expandable indicator (▸/▾) on rows with sub-steps
+
+**Expanded view (user clicks row):**
+
+```
+▾ Test           | 26        | 26/40 (65%)  | 16m 26s  | [================]
+  └ Test Writing | 1         | 1/40         | 13m 02s  | [=============]
+  └ Test Audit   | 25        | 25/15 (167%) | 3m 24s   | [===]
+```
+
+Sub-step rows use indented styling with `└` prefix, lighter text color, and
+narrower bars. Sub-step bars scale relative to the parent, not the global max.
+
+### 5. Frontend: Cycle Indicators
+
+**File:** `templates/watchtower/app.js`
+
+When `review_cycles > 1` or `security_rework_cycles > 0`, show the cycle count
+as a badge next to the stage label:
+
+```html
+<td>Review <span class="cycle-badge">×2</span></td>
+```
+
+CSS: `.cycle-badge` uses subtle background color (amber for 2 cycles, red for 3+).
+
+### 6. Frontend: Expand/Collapse Interaction
+
+**File:** `templates/watchtower/app.js`, `templates/watchtower/style.css`
+
+- Parent rows with sub-steps get `cursor: pointer` and `▸` indicator
+- Click toggles visibility of child `<tr>` elements
+- State persists via `localStorage` key `tk_expanded_stages`
+- Default: all collapsed
+- Keyboard accessible: Enter/Space toggles expansion
+
+### 7. Backward Compatibility
+
+**File:** `lib/dashboard_parsers_runs.sh`
+
+Historical metrics.jsonl records won't have the new fields. The parser must:
+- Handle missing fields gracefully (default to 0 / empty sub_steps)
+- Continue to produce valid output for old records
+- The frontend shows "no data" for sub-steps on historical runs
+
+## Migration Impact
+
+No new config keys. All changes are additive to existing data formats:
+- metrics.jsonl gains optional new fields (sparse — absent when stage didn't run)
+- Frontend adds expandable rows (collapsed by default — identical visual for
+  users who don't interact)
+- No breaking changes to existing Watchtower features
+
+## Acceptance Criteria
+
+- metrics.jsonl records security, test_audit, cleanup, analyze_cleanup, and
+  specialist turns + durations when those stages run
+- metrics.jsonl records review_cycles and security_rework_cycles counts
+- Watchtower Per-Stage Breakdown shows all active stages (not just 4)
+- Collapsed view groups sub-steps under parent stages
+- Expanded view shows sub-step breakdown with correct turn/time attribution
+- Review cycle count shown as badge when > 1
+- Post-Pipeline group only appears when cleanup or analyze ran
+- Sub-step turns and durations sum to parent totals (accounting for overlap)
+- Historical runs without new fields display gracefully (no errors, no data)
+- Expand/collapse state persists across page refreshes
+- All existing Watchtower tests pass
+- New tests for expanded metrics parsing and hierarchical rendering
+
+Tests:
+- Parser extracts security/test_audit/cleanup from metrics.jsonl
+- Parser handles missing fields in historical records (no crash, sane defaults)
+- Frontend renders hierarchical view with correct grouping
+- Expand/collapse toggles child row visibility
+- Cycle badge appears when review_cycles > 1
+- Post-Pipeline group hidden when no cleanup stages ran
+- Sub-step duration sum matches parent duration
+- Bash fallback parser extracts new fields (mirrors Python parser)
+- Distribution bars scale correctly with sub-steps (parent vs global max)
+
+Watch For:
+- **Sub-step timing overlap:** Some sub-steps run sequentially within a parent
+  stage, so their durations should sum to approximately the parent duration.
+  However, if there's overhead between sub-steps (state persistence, context
+  assembly), the sub-step sum may be less than the parent. Show both — don't
+  try to force them to match.
+- **Specialist stages are rare:** Most runs don't enable specialists. The
+  frontend should handle 0-specialist runs gracefully (no empty group).
+  Consider grouping specialists under a "Specialist Reviews" parent only when
+  at least one ran.
+- **JSONL backward compatibility:** The bash sed-based parser in the fallback
+  path is fragile with many fields. Consider whether the new fields justify
+  making Python a soft requirement for dashboard parsing (with bash as a
+  degraded-but-functional fallback that only extracts the original 4 stages).
+- **Mobile rendering:** The expanded sub-step rows need to work on narrow
+  screens. Use responsive hiding of the Distribution column (already done in
+  existing CSS) and ensure sub-step labels don't wrap awkwardly.
+- **Post-Pipeline naming:** "Post-Pipeline" is a functional label. Consider
+  whether "Finalization" or "Cleanup" is clearer for users who haven't read
+  the pipeline internals.
+
+Seeds Forward:
+- Full-stage metrics enable M62 (Tester Timing Instrumentation) sub-phase data
+  to flow directly into the hierarchical view
+- Cycle count data supports future "churn detection" — alerting when review
+  cycles trend upward across runs
+- Specialist timing data enables cost/benefit analysis of specialist reviews
+
+---
+
+## Archived: 2026-04-06 — Unknown Initiative
+
+# Milestone 60: Mobile & Game Platform Adapters
+<!-- milestone-meta
+id: "60"
+status: "done"
+-->
+
+## Overview
+
+Milestone 57 established the platform adapter framework and M58 populated the
+web adapter. This milestone delivers four additional platform adapters covering
+the most common non-web UI platforms: Flutter, iOS (SwiftUI/UIKit), Android
+(Jetpack Compose/XML), and browser-based game engines (Phaser, PixiJS, Three.js,
+Babylon.js).
+
+Each adapter follows the same 4-file convention: `detect.sh` for design system
+detection, `coder_guidance.prompt.md` for implementation guidance,
+`specialist_checklist.prompt.md` for review criteria, and
+`tester_patterns.prompt.md` for test patterns.
+
+Depends on Milestone 57. Parallel-safe with M58 and M59.
+
+## Scope
+
+### 1. Flutter Platform Adapter (`platforms/mobile_flutter/`)
+
+**`detect.sh`** — Design system detection for Flutter/Dart projects:
+
+- **Theme system**: Scan `lib/` for `ThemeData` usage. Check `lib/main.dart` (or
+  the file containing `runApp`) for `MaterialApp`/`CupertinoApp`. Look for custom
+  theme files matching `*theme*.dart`, `*color*.dart`, `*style*.dart` in `lib/`.
+  Set `DESIGN_SYSTEM=material` (MaterialApp) or `DESIGN_SYSTEM=cupertino`
+  (CupertinoApp). If both, set `DESIGN_SYSTEM=material` (more common).
+- **Design tokens**: Look for `ThemeExtension` subclasses (custom semantic tokens).
+  Look for `ColorScheme.fromSeed()` or explicit `ColorScheme()` construction.
+  Set `DESIGN_SYSTEM_CONFIG` to the file containing the primary theme definition.
+- **Widget library**: Check `pubspec.yaml` deps for state management
+  (`flutter_bloc`, `riverpod`, `provider`, `get`, `mobx`). Check for custom
+  widget directories: `lib/widgets/`, `lib/ui/`, `lib/components/`,
+  `lib/presentation/`. Set `COMPONENT_LIBRARY_DIR` to the first found.
+
+**`coder_guidance.prompt.md`** — Flutter-specific coder guidance:
+
+- **Widget composition**: Prefer composition over inheritance. Use `const`
+  constructors wherever possible to enable widget caching. Extract widget
+  subtrees into separate widget classes when they exceed ~50 lines or are
+  reused. Avoid deeply nested widget trees — extract into named methods or
+  widgets at 4+ nesting levels.
+- **Theme usage**: Always use `Theme.of(context)` for colors, text styles, and
+  shapes. Never hardcode `Color(0xFF...)` or `TextStyle(fontSize: ...)` when a
+  theme token exists. Use `ColorScheme` semantic colors (`primary`, `onPrimary`,
+  `surface`, etc.) not raw palette values.
+- **State management**: Follow the project's established state management pattern.
+  Don't introduce a second state management library. Keep widget state local when
+  it doesn't need to be shared. Use `ValueNotifier`/`ValueListenableBuilder` for
+  simple local state.
+- **Adaptive layout**: Use `LayoutBuilder` and `MediaQuery` for responsive layouts.
+  Support both portrait and landscape if the app allows rotation. Use
+  `SafeArea` to respect system UI intrusions. Test on smallest supported device
+  size (typically 320dp wide).
+- **Accessibility**: Set `Semantics` widgets on custom interactive elements.
+  Provide `semanticLabel` on `Icon` widgets. Ensure touch targets are at least
+  48x48dp. Use `ExcludeSemantics` to remove decorative elements from the
+  accessibility tree. Test with `SemanticsDebugger` or TalkBack/VoiceOver.
+- **Performance**: Avoid `setState` on large widget subtrees — scope rebuilds
+  narrowly. Use `const` widgets to prevent unnecessary rebuilds. Avoid
+  allocations in `build()` — move to `initState()` or use cached values.
+  Lazy-load list items with `ListView.builder`, not `ListView(children: [...])`.
+
+**`specialist_checklist.prompt.md`** — Flutter-specific review additions:
+
+1. **Unnecessary widget rebuilds** — `setState` scoped narrowly. `const`
+   constructors used. `AnimatedBuilder`/`ValueListenableBuilder` used instead
+   of rebuilding the whole subtree.
+2. **Platform channel safety** — UI thread not blocked by platform channel calls.
+   `compute()` or isolates used for heavy work.
+3. **Navigation consistency** — Uses the project's router (GoRouter, auto_route,
+   Navigator 2.0). Deep links handled. Back button behavior correct.
+4. **Cupertino/Material consistency** — If the app supports both iOS and Android
+   looks, adaptive widgets used (`Switch.adaptive`, platform-specific dialogs).
+5. **Asset management** — Images in appropriate resolution buckets (1x, 2x, 3x).
+   Fonts loaded correctly. No hardcoded asset paths — use generated constants
+   if available.
+
+**`tester_patterns.prompt.md`** — Flutter testing patterns:
+
+- **Widget tests**: Use `testWidgets` and `WidgetTester`. Pump widgets with
+  `pumpWidget(MaterialApp(home: YourWidget()))`. Use `find.byType`, `find.text`,
+  `find.byKey` for element discovery. Verify state changes with `tester.tap()`
+  + `tester.pump()`.
+- **Integration tests**: Use `integration_test` package. Test full user flows
+  (navigate → interact → verify). Use `binding.setSurfaceSize()` for responsive
+  testing.
+- **Golden tests**: Use `matchesGoldenFile` for visual regression on critical
+  components. Generate goldens with `--update-goldens`.
+- **State testing patterns**: Verify loading indicator shows during async
+  operations (`tester.pump()` between states). Verify error widgets render
+  on exception. Verify empty state widget when data list is empty.
+- **Anti-patterns**: Don't test Flutter framework behavior. Don't assert on
+  render object properties. Don't use `find.byWidget` (fragile). Don't
+  hardcode pixel positions.
+
+### 2. iOS Platform Adapter (`platforms/mobile_native_ios/`)
+
+**`detect.sh`** — Design system detection for iOS projects:
+
+- **UI framework**: Scan `.swift` files for `import SwiftUI` → `swiftui`.
+  Scan for `UIViewController` subclasses, `.xib`, `.storyboard` files → `uikit`.
+  If both present, set `DESIGN_SYSTEM` to whichever has more files.
+- **Asset catalog**: Check for `Assets.xcassets/` (always present in iOS projects).
+  Check for custom color sets within (`*.colorset/`). Set `DESIGN_SYSTEM_CONFIG`
+  to the primary `.xcassets` path.
+- **Custom components**: Check for `Views/`, `Screens/`, `Components/` directories
+  in the source tree. Check for custom `ViewModifier` files (SwiftUI) or
+  reusable `UIView` subclasses (UIKit). Set `COMPONENT_LIBRARY_DIR`.
+- **Design patterns**: Check for `ViewModels/` (MVVM pattern), `Coordinators/`
+  (coordinator pattern). This informs coder guidance about architecture.
+
+**`coder_guidance.prompt.md`** — iOS-specific coder guidance:
+
+- **SwiftUI idioms**: Prefer `@State` for view-local state, `@ObservedObject`/
+  `@StateObject` for shared state. Use `ViewModifier` for reusable style
+  combinations. Prefer `LazyVStack`/`LazyHStack` for lists. Use `@Environment`
+  for system values (color scheme, size class, accessibility).
+- **UIKit idioms**: Subclass sparingly. Use Auto Layout (programmatic or IB).
+  Delegate pattern for communication up. Avoid massive view controllers —
+  extract into child view controllers or separate concerns.
+- **Human Interface Guidelines**: Use SF Symbols for icons (specify rendering
+  mode). Respect Dynamic Type — use `preferredFont(forTextStyle:)` or
+  `.font(.body)` in SwiftUI. Support Dark Mode — use semantic colors from
+  asset catalogs. Respect safe areas. Use standard navigation patterns
+  (NavigationStack, TabView, sheets).
+- **Accessibility**: Set `accessibilityLabel` on all interactive and meaningful
+  elements. Group related elements with `accessibilityElement(children: .combine)`.
+  Support VoiceOver gestures. Ensure Dynamic Type works up to AX5. Use
+  `accessibilityAction` for custom interactions.
+- **Adaptive layout**: Use size classes for iPad vs iPhone layouts. Support
+  Split View on iPad. Use `GeometryReader` sparingly — prefer layout
+  priorities and flexible frames.
+
+**`specialist_checklist.prompt.md`** — iOS-specific review additions:
+
+1. **HIG compliance** — SF Symbols used for standard actions. System colors
+   and Dynamic Type respected. Standard navigation patterns followed.
+2. **Memory management** — No strong reference cycles in closures (use
+   `[weak self]`). Image caching appropriate. Large assets not held in memory.
+3. **Main thread safety** — UI updates on `@MainActor` or `DispatchQueue.main`.
+   No blocking calls on main thread.
+4. **Localization readiness** — User-facing strings use `LocalizedStringKey` or
+   `NSLocalizedString`. No hardcoded string dimensions. RTL layout supported.
+5. **Dark Mode** — All custom colors have dark mode variants. No hardcoded
+   colors that fail in dark mode.
+
+**`tester_patterns.prompt.md`** — iOS testing patterns:
+
+- **XCTest UI testing**: Use `XCUIApplication` for launch. `XCUIElement` queries
+  with `accessibilityIdentifier` (preferred) or `label`. `waitForExistence`
+  for async elements. Assert `isHittable` for interactive elements.
+- **SwiftUI previews as tests**: Use `#Preview` for visual verification. Preview
+  with different color schemes, size classes, and Dynamic Type sizes.
+- **Snapshot tests**: Use snapshot testing libraries (e.g., swift-snapshot-testing)
+  for visual regression on key screens.
+- **State testing**: Verify loading → loaded → error state transitions. Test
+  empty states. Test offline behavior. Test with VoiceOver running
+  (`XCUIDevice.shared.press(.home)` accessibility shortcut).
+- **Anti-patterns**: Don't sleep for fixed durations — use `waitForExistence`.
+  Don't test against frame coordinates. Don't test UIKit internal behavior.
+
+### 3. Android Platform Adapter (`platforms/mobile_native_android/`)
+
+**`detect.sh`** — Design system detection for Android projects:
+
+- **UI framework**: Scan for `@Composable` annotations in `.kt` files →
+  `compose`. Scan for `res/layout/*.xml` → `xml-layouts`. If both, determine
+  majority.
+- **Design system**: Check `build.gradle`/`build.gradle.kts` for
+  `material3`/`material` dependency. Check for custom theme files:
+  `Theme.kt`, `Color.kt`, `Type.kt`, `Shape.kt` in source. Check
+  `res/values/colors.xml`, `res/values/themes.xml`, `res/values/styles.xml`.
+  Set `DESIGN_SYSTEM=material3` or `DESIGN_SYSTEM=material`.
+- **Component directory**: Check for `ui/` package, `composables/` directory,
+  `screens/` directory, `components/` directory. Set `COMPONENT_LIBRARY_DIR`.
+- **Design tokens**: Set `DESIGN_SYSTEM_CONFIG` to the custom theme file
+  (e.g., `ui/theme/Theme.kt`) if found.
+
+**`coder_guidance.prompt.md`** — Android-specific coder guidance:
+
+- **Compose idioms**: Stateless composables preferred — hoist state to callers.
+  Use `remember` and `rememberSaveable` for local state. Use `LazyColumn`/
+  `LazyRow` for lists (never `Column` with `forEach` for dynamic lists).
+  Use `Modifier` parameter as first optional parameter in all composable
+  signatures.
+- **Material Design compliance**: Use Material3 theme tokens (`MaterialTheme.
+  colorScheme`, `MaterialTheme.typography`, `MaterialTheme.shapes`). Follow
+  Material component patterns (TopAppBar, NavigationBar, FAB placement). Use
+  `contentColor` and `containerColor` semantics.
+- **Accessibility**: Provide `contentDescription` on images and icons.
+  `Modifier.semantics` for custom components. `Modifier.clickable` sets
+  touch target to 48dp minimum automatically. Ensure `mergeDescendants` on
+  meaningful groupings. Support TalkBack navigation.
+- **Adaptive layout**: Use `WindowSizeClass` for phone/tablet/desktop layouts.
+  Support foldable devices with `Accompanist` adaptive layouts or Jetpack
+  WindowManager. Use `BoxWithConstraints` for adaptive composables.
+- **XML layouts** (if applicable): ConstraintLayout for complex layouts.
+  `match_parent`/`wrap_content` over fixed dimensions. `@dimen` resources
+  for reusable dimensions. Style resources for repeated styling.
+
+**`specialist_checklist.prompt.md`** — Android-specific review additions:
+
+1. **Material Design adherence** — Material3 tokens used consistently. Standard
+   Material components used (no custom reimplementations of standard patterns).
+2. **Recomposition efficiency** — No side effects in `@Composable` functions.
+   `derivedStateOf` used for computed values. `key()` used in `LazyColumn` items.
+   `State` reads scoped to smallest possible composable.
+3. **Configuration change handling** — State survives rotation. `rememberSaveable`
+   used for user input. ViewModel used for screen state.
+4. **Resource management** — Strings in `strings.xml` (not hardcoded). Dimensions
+   in `dimens.xml` for reuse. Night-mode resources provided.
+5. **Navigation correctness** — Jetpack Navigation or project router used
+   consistently. Back stack correct. Deep links handled.
+
+**`tester_patterns.prompt.md`** — Android testing patterns:
+
+- **Compose testing**: `composeTestRule.setContent {}` for component mounting.
+  `onNodeWithText`, `onNodeWithContentDescription`, `onNodeWithTag` for
+  element discovery. `performClick()`, `performTextInput()` for interactions.
+  `assertIsDisplayed()`, `assertTextEquals()` for assertions.
+- **Espresso** (XML layouts): `onView(withId(R.id.x))` for element discovery.
+  `perform(click())`, `perform(typeText())` for interactions.
+  `check(matches(isDisplayed()))` for assertions. Use `IdlingResource` for
+  async operations.
+- **Screenshot tests**: Use Compose Preview Screenshot Testing or Paparazzi for
+  visual regression.
+- **State testing**: Verify loading composable shows during data fetch. Error
+  composable renders on failure. Empty state composable when list is empty.
+  Snackbar/Toast shown on action completion.
+- **Anti-patterns**: Don't use `Thread.sleep` — use `waitUntil` or
+  `IdlingResource`. Don't test internal Compose state — test visible behavior.
+  Don't hardcode resource IDs that may change.
+
+### 4. Web Game Platform Adapter (`platforms/game_web/`)
+
+**`detect.sh`** — Design system detection for browser-based game projects:
+
+- **Engine**: Parse `package.json` deps for: `phaser` → `phaser`, `pixi.js` or
+  `@pixi/*` → `pixi`, `three` → `three`, `@babylonjs/core` → `babylon`.
+  Set `DESIGN_SYSTEM` to the engine name (used here as "the design framework"
+  rather than a visual design system).
+- **Asset pipeline**: Check for `assets/`, `public/assets/`, `static/assets/`
+  directories. Look for sprite sheets (`.json` + `.png` pairs in assets),
+  tilemap files (`*.tmx`, `*.json` with tilemap markers), audio directories.
+  Set `DESIGN_SYSTEM_CONFIG` to the game's main config file if identifiable
+  (e.g., Phaser's `new Phaser.Game({...})` file).
+- **Scene structure**: Check for `scenes/`, `levels/`, `states/` directories.
+  Set `COMPONENT_LIBRARY_DIR` to the scenes directory if found.
+
+**`coder_guidance.prompt.md`** — Web game-specific coder guidance:
+
+- **Game loop discipline**: Never perform I/O, DOM manipulation, or heavy
+  computation inside the render/update loop. Pre-compute in scene load or
+  use worker threads. Budget frame time (16.6ms at 60fps).
+- **Scene/state management**: Use the engine's scene system. Clean up resources
+  on scene exit (remove event listeners, destroy sprites, clear timers).
+  Separate game logic from rendering — game rules should be testable without
+  a canvas.
+- **Asset management**: Preload assets during a loading scene. Use texture
+  atlases/sprite sheets, not individual images. Cache frequently used assets.
+  Display loading progress to the player.
+- **Configuration**: All tunable values (speeds, costs, timers, spawn rates)
+  must be in configuration objects, not hardcoded in logic. This enables
+  balancing without code changes.
+- **Input handling**: Support both keyboard and mouse/touch (where applicable).
+  Use the engine's input system, not raw DOM events. Map logical actions to
+  physical inputs (allows rebinding). Handle simultaneous inputs correctly.
+- **Performance**: Use object pooling for frequently created/destroyed objects
+  (bullets, particles, enemies). Minimize draw calls (batch rendering, sprite
+  sheets). Use the engine's camera culling — don't render off-screen objects.
+  Profile with browser DevTools Performance tab.
+
+**`specialist_checklist.prompt.md`** — Game-specific review additions:
+
+1. **Frame budget compliance** — No blocking operations in update/render loops.
+   Heavy computations deferred or chunked.
+2. **Resource lifecycle** — Assets loaded during appropriate scene. Resources
+   cleaned up on scene exit. No memory leaks from orphaned event listeners
+   or unreferenced objects.
+3. **Configuration externalization** — Gameplay values are configurable, not
+   hardcoded. Balance changes don't require code changes.
+4. **Input robustness** — Multiple input methods supported. No hardcoded key
+   codes (use named actions). Input works on mobile browsers if touch supported.
+5. **Game state integrity** — State transitions are explicit (menu → playing →
+   paused → game over). Pause/resume works correctly. Game state is
+   serializable for save/load if applicable.
+
+**`tester_patterns.prompt.md`** — Game testing patterns:
+
+- **Unit tests for game logic**: Test game rules, scoring, collision detection,
+  economy calculations independently of the renderer. Mock the engine's
+  event system if needed.
+- **Scene lifecycle tests**: Verify scene loads without errors. Verify scene
+  transitions work (menu → game → game over → menu). Verify resources are
+  cleaned up on scene exit.
+- **Input tests**: Simulate key/mouse/touch events through the engine's test
+  utilities (if available) or through dispatching synthetic DOM events.
+  Verify game responds correctly to input sequences.
+- **Configuration tests**: Verify game works with modified config values
+  (boundary testing: zero values, negative values, very large values).
+- **Headless rendering** (if engine supports): Phaser supports headless mode
+  with `Phaser.HEADLESS`. Use this for CI. Three.js can render to
+  off-screen canvas. Verify no console errors during a game loop cycle.
+- **Anti-patterns**: Don't test frame-by-frame visual output (flaky). Don't
+  test animation timing (environment-dependent). Don't test random outcomes
+  without seeding RNG. Don't test engine internals.
+
+### 5. Self-Tests
+
+Add to `tests/`:
+
+- `test_platform_mobile_game.sh` — Tests:
+  - Flutter `detect.sh` identifies `ThemeData`, `MaterialApp`, custom theme files
+  - iOS `detect.sh` identifies SwiftUI vs UIKit, asset catalogs
+  - Android `detect.sh` identifies Compose vs XML layouts, Material3
+  - Game `detect.sh` identifies Phaser, PixiJS, Three.js, Babylon.js from
+    mock `package.json` files
+  - All `detect.sh` files pass `bash -n` and `shellcheck`
+  - All `.prompt.md` files are non-empty and contain expected section headings
+  - Platform resolution maps framework names to correct platform directories
+
+## Acceptance Criteria
+
+- [ ] All four platform adapter directories contain `detect.sh`,
+      `coder_guidance.prompt.md`, `specialist_checklist.prompt.md`, and
+      `tester_patterns.prompt.md`
+- [ ] All `detect.sh` files pass `bash -n` and `shellcheck`
+- [ ] Flutter adapter correctly detects Material/Cupertino themes, ThemeData
+      files, widget directories
+- [ ] iOS adapter correctly identifies SwiftUI vs UIKit and asset catalogs
+- [ ] Android adapter correctly identifies Compose vs XML layouts and Material3
+- [ ] Game adapter correctly identifies Phaser, PixiJS, Three.js, Babylon.js
+- [ ] Coder guidance for each platform covers: component patterns, design system
+      usage, accessibility, adaptive layout, performance
+- [ ] Specialist checklists add platform-specific review items to the universal
+      checklist
+- [ ] Tester patterns provide framework-specific test examples for each platform
+- [ ] Platform adapters integrate correctly with `load_platform_fragments()` from
+      M57 (variables are assembled into `UI_CODER_GUIDANCE`,
+      `UI_SPECIALIST_CHECKLIST`, `UI_TESTER_PATTERNS`)
+- [ ] All existing tests pass
+- [ ] New test file `test_platform_mobile_game.sh` passes
+
+## Files Created
+- `platforms/mobile_flutter/detect.sh`
+- `platforms/mobile_flutter/coder_guidance.prompt.md`
+- `platforms/mobile_flutter/specialist_checklist.prompt.md`
+- `platforms/mobile_flutter/tester_patterns.prompt.md`
+- `platforms/mobile_native_ios/detect.sh`
+- `platforms/mobile_native_ios/coder_guidance.prompt.md`
+- `platforms/mobile_native_ios/specialist_checklist.prompt.md`
+- `platforms/mobile_native_ios/tester_patterns.prompt.md`
+- `platforms/mobile_native_android/detect.sh`
+- `platforms/mobile_native_android/coder_guidance.prompt.md`
+- `platforms/mobile_native_android/specialist_checklist.prompt.md`
+- `platforms/mobile_native_android/tester_patterns.prompt.md`
+- `platforms/game_web/detect.sh`
+- `platforms/game_web/coder_guidance.prompt.md`
+- `platforms/game_web/specialist_checklist.prompt.md`
+- `platforms/game_web/tester_patterns.prompt.md`
+- `tests/test_platform_mobile_game.sh`
+
+## Files Modified
+- None (all new files; M57's framework handles loading)
+
+---
+
+## Archived: 2026-04-06 — Unknown Initiative
+
+# Milestone 61: Repo Map Cross-Stage Cache
+<!-- milestone-meta
+id: "61"
+status: "done"
+-->
+
+## Overview
+
+The tree-sitter repo map is regenerated from scratch for every pipeline stage
+(scout, coder, review, tester, architect). Each invocation calls `run_repo_map()`
+which spawns `tools/repo_map.py`, runs PageRank, and formats output — even though
+the underlying files haven't changed between stages within a single run. Only the
+*slice* differs per stage.
+
+This milestone introduces an intra-run repo map cache so the full map is generated
+once and sliced per stage without re-invoking the Python tool.
+
+Depends on M56 (last completed milestone) for stable pipeline baseline.
+
+## Scope
+
+### 1. Run-Scoped Map Cache
+
+**File:** `lib/indexer.sh`
+
+After the first successful `run_repo_map()` call, write the full map content to
+a run-scoped cache file (e.g., `.claude/logs/${TIMESTAMP}/REPO_MAP_CACHE.md`).
+On subsequent calls within the same run:
+- Check if cache file exists and `TIMESTAMP` matches the current run
+- If cached, load from file instead of invoking Python tool
+- If task context differs significantly (different task string), allow optional
+  re-generation via a `force_refresh` parameter (function parameter, not config key)
+
+**Implementation note:** Use `TIMESTAMP` (set once at tekhton.sh startup, globally
+available) as the run identifier — NOT `_CURRENT_RUN_ID` from causality.sh which
+is scoped to that module. The cache file path uses the same LOG_DIR that already
+receives agent logs.
+
+**Follow M47 pattern:** Model on `lib/context_cache.sh` conventions:
+- Add `_CACHED_REPO_MAP_CONTENT` variable (preloaded after first generation)
+- Add `_get_cached_repo_map()` accessor function
+- Add `invalidate_repo_map_run_cache()` for explicit invalidation
+
+### 2. Stage-Specific Slicing from Cache
+
+**File:** `lib/indexer.sh`
+
+`get_repo_map_slice()` already operates on the in-memory `REPO_MAP_CONTENT`
+variable. Ensure it works identically whether content came from cache or fresh
+generation. No changes needed to slice logic itself — only to the source.
+
+**Verify:** When `get_repo_map_slice()` can't match a requested file via any of
+its three strategies (exact, suffix, basename), it silently drops that file. This
+is acceptable behavior — do NOT add warnings for dropped files as it would be
+noisy for normal operation.
+
+### 3. Cache Invalidation
+
+**File:** `lib/indexer.sh`
+
+Add `invalidate_repo_map_run_cache()` — distinct from the existing
+`invalidate_repo_map_cache()` (which invalidates the persistent tree-sitter
+disk cache in `.claude/index/`). The new function:
+- Clears `_CACHED_REPO_MAP_CONTENT`
+- Removes the run-scoped cache file
+- Next `run_repo_map()` call regenerates from Python tool
+
+The review and tester stages should call this if they detect the coder created
+**new** files. Use `extract_files_from_coder_summary()` (already in
+`lib/indexer_helpers.sh:129`) to get the file list, then compare against the
+cached map's file inventory. If files exist in the summary that are absent from
+the cached map, invalidate.
+
+**Do NOT add a separate `detect_new_files_in_coder_summary()` function.** The
+existing extraction + comparison is sufficient.
+
+### 4. Skip Regeneration on Review Cycle 2+
+
+**File:** `stages/review.sh`
+
+Review cycles 2+ currently reset `REPO_MAP_CONTENT=""` at line 55 and
+regenerate. Since review rework only modifies existing files (not creates new
+ones), reuse the cached map and re-slice to the same file list.
+
+**Implementation:** At `review.sh:55`, instead of blanket reset, check:
+1. Is `_CACHED_REPO_MAP_CONTENT` populated?
+2. Call `extract_files_from_coder_summary()` and compare file count against
+   the file list used in cycle 1 (store in a local variable)
+3. If same count and no new files → load from cache and re-slice
+4. If new files detected → invalidate and regenerate
+
+**File list comparison:** Use sorted basename comparison (not full path match).
+Store the cycle-1 file list in `_REVIEW_MAP_FILES` (local to the review stage).
+
+### 5. Milestone Split Invalidation
+
+**File:** `stages/coder.sh`
+
+When `_switch_to_sub_milestone()` runs (coder.sh:245-277), the task scope
+narrows. The cached map's PageRank weighting was computed for the original task
+and may not be optimal for the sub-milestone. Invalidate the run cache after
+milestone split so the sub-task gets a fresh map with correct PageRank bias.
+
+Add `invalidate_repo_map_run_cache` call after `_switch_to_sub_milestone()`.
+
+### 6. Timing Integration
+
+**File:** `lib/indexer.sh`
+
+Track cache hits vs. misses. Add a counter `_REPO_MAP_CACHE_HITS` (integer,
+starts at 0). Increment on each cache load; generation count is implicit
+(total calls minus hits).
+
+Report in TIMING_REPORT.md (integrate into `lib/timing.sh` display name map):
+```
+Repo map: 1 generation + 3 cache hits (saved ~Xs)
+```
+
+Compute "saved time" as `cache_hits × INDEXER_GENERATION_TIME_MS / 1000` using
+the actual generation time recorded from the first (uncached) call. This variable
+already exists at `indexer.sh:31-33`.
+
+## Migration Impact
+
+No new config keys required. Cache is automatic and internal. Existing
+`REPO_MAP_ENABLED` and `REPO_MAP_TOKEN_BUDGET` settings continue to work
+unchanged.
+
+## Acceptance Criteria
+
+- Full repo map generated at most once per run (unless invalidated)
+- Subsequent stages load from cache file, not Python tool
+- `get_repo_map_slice()` produces identical output from cached vs. fresh content
+- Review cycle 2+ reuses cached map without regeneration (when file list unchanged)
+- Cache invalidation triggers correctly when coder creates new files
+- Cache invalidation triggers on milestone split
+- TIMING_REPORT.md shows cache hit/miss statistics
+- All existing tests pass
+- No measurable difference in prompt content between cached and uncached runs
+
+Tests:
+- Cache file written after first `run_repo_map()` call to `LOG_DIR/REPO_MAP_CACHE.md`
+- Second call within same run reads from cache (verify no Python invocation)
+- `invalidate_repo_map_run_cache()` forces regeneration on next call
+- Review cycle 2 reuses map without reset (when no new files)
+- Review cycle 2 regenerates when new files detected in CODER_SUMMARY.md
+- Different `TIMESTAMP` does not match stale cache from prior run
+- Milestone split triggers cache invalidation
+- Slice from cached map is byte-identical to slice from fresh map
+
+Watch For:
+- The task string passed to `run_repo_map()` affects PageRank weighting. Since
+  the scout and coder may pass different task contexts, the cached map should use
+  the original task. Slicing handles per-stage relevance — the full map just needs
+  to include all files.
+- Cache file is written to `LOG_DIR` and cleaned up by existing run log cleanup.
+- Ensure `REPO_MAP_CONTENT` export still works correctly for template rendering
+  after loading from cache.
+- The existing `invalidate_repo_map_cache()` at `indexer.sh:268` invalidates the
+  **persistent disk cache** (tree-sitter tags in `.claude/index/`). The new
+  `invalidate_repo_map_run_cache()` invalidates the **intra-run content cache**.
+  These are distinct — do not conflate them.
+
+Seeds Forward:
+- Reduced Python invocations directly cut run time
+- Cache hit statistics feed into Watchtower dashboard metrics
+
+---
+
+## Archived: 2026-04-06 — Unknown Initiative
+
+# Milestone 62: Tester & Build Gate Timing Instrumentation
+<!-- milestone-meta
+id: "62"
+status: "done"
+-->
+
+## Overview
+
+The tester stage averages 19 minutes — longer than the coder (17 min) — but all
+of that time is reported as a single `tester_agent` phase. There is no visibility
+into how time splits between test writing, test execution, and failure debugging.
+Without this breakdown, optimization efforts are guesswork.
+
+This milestone adds timing visibility by two mechanisms:
+1. **Agent self-reporting:** Instruct the tester agent to log TEST_CMD timing in
+   a structured section of TESTER_REPORT.md, then parse it post-hoc.
+2. **Build gate phase surfacing:** Expose existing `_phase_start`/`_phase_end`
+   data for individual build gate phases in TIMING_REPORT.md.
+
+Depends on M56 for stable pipeline baseline.
+
+**Design rationale:** Claude CLI's `-p --output-format json` returns a single
+result JSON, not per-tool-call timing breakdown. We cannot extract TEST_CMD
+timing from agent logs externally. Instead, the tester prompt instructs the agent
+to self-report timing data in a parseable format, and the pipeline extracts it
+from TESTER_REPORT.md after the agent completes.
+
+## Scope
+
+### 1. Tester Agent Self-Reporting
+
+**File:** `prompts/tester.prompt.md`
+
+Add instructions to the tester prompt:
+
+```markdown
+## Timing Tracking
+When you run {{TEST_CMD}}, note the wall-clock duration. At the end of your
+TESTER_REPORT.md, include a section:
+
+## Timing
+- Test executions: N
+- Approximate total test execution time: Xs
+- Test files written: N
+```
+
+This is approximate (agents estimate, don't have precise clocks) but provides
+directional signal that's better than zero visibility.
+
+### 2. TESTER_REPORT.md Timing Extraction
+
+**File:** `stages/tester.sh`
+
+After the tester agent completes, parse TESTER_REPORT.md for the `## Timing`
+section. Extract:
+- `tester_test_execution_count` — number of TEST_CMD invocations
+- `tester_test_execution_approx_s` — agent-reported test execution time
+- `tester_writing_approx_s` — remainder (total agent time minus reported
+  execution time)
+
+Use defensive parsing: if section is missing or unparseable, set all values to
+`-1` (unknown) and fall back to single-phase reporting.
+
+Store in `_TESTER_TIMING_*` global variables for downstream consumption.
+
+### 3. Build Gate Phase Surfacing
+
+**File:** `lib/timing.sh`
+
+The build gate already uses `_phase_start`/`_phase_end` for its sub-phases
+(`build_gate_compile`, `build_gate_analyze`, `build_gate_constraints`). These
+are recorded in `_PHASE_TIMINGS` but not displayed in TIMING_REPORT.md.
+
+Add display name mappings for build gate phases:
+```bash
+build_gate_compile    → "  ↳ Build (compile)"
+build_gate_analyze    → "  ↳ Build (analyze)"
+build_gate_constraints → "  ↳ Build (constraints)"
+```
+
+When rendering TIMING_REPORT.md, detect phases that start with a common prefix
+(e.g., `build_gate_*`) and render them as indented sub-rows under the parent.
+
+**Implementation constraint:** Do NOT introduce a formal phase hierarchy or
+nesting data structure. Use naming convention only (`parent_child` prefix
+pattern). This keeps the timing system flat and simple.
+
+### 4. TIMING_REPORT.md Sub-Phase Display
+
+**File:** `lib/timing.sh`
+
+Modify `_hook_emit_timing_report()` to handle sub-phases:
+- After rendering a parent phase row, check for `_PHASE_TIMINGS` keys that
+  start with `${parent}_` prefix
+- Render sub-phases as indented rows with `↳` prefix
+- Sub-phase percentages are computed against the **parent duration**, not
+  total run time (this differs from top-level phases)
+- If tester self-reported timing is available, render as sub-rows:
+  ```
+  | Tester (agent)       | 19m 12s | 45% |
+  |   ↳ Test execution   | ~10m    | ~52% of tester |
+  |   ↳ Test writing     | ~9m     | ~48% of tester |
+  ```
+
+The `~` prefix indicates agent-estimated (not precise) values.
+
+### 5. RUN_SUMMARY.json Enhancement
+
+**File:** `lib/finalize_summary.sh`
+
+Add optional sub-fields to the tester stage entry:
+```json
+{
+  "tester": {
+    "turns": 45,
+    "duration_s": 1152,
+    "budget": 100,
+    "test_execution_approx_s": -1,
+    "test_execution_count": -1,
+    "test_writing_approx_s": -1
+  }
+}
+```
+
+Values of `-1` mean "not available" (agent didn't report, or parsing failed).
+Downstream consumers must handle this.
+
+Extend the `stages_json` builder at `finalize_summary.sh:148-164` to
+conditionally include tester sub-fields when `_TESTER_TIMING_*` globals are set.
+
+### 6. Continuation Handling
+
+**File:** `stages/tester.sh`
+
+When tester continuations occur (`tester.sh:270-287`), each continuation is a
+new agent invocation. The self-reported timing from each invocation should be
+**accumulated** (not replaced). After each continuation:
+- Parse TESTER_REPORT.md for timing section
+- Add to running totals in `_TESTER_TIMING_*` globals
+
+## Migration Impact
+
+No new config keys. Timing data is purely additive to existing reports. The
+`~` prefix in TIMING_REPORT.md clearly signals estimated vs. measured values.
+
+## Acceptance Criteria
+
+- Tester prompt includes timing self-report instructions
+- TESTER_REPORT.md parsing extracts timing when section present
+- Missing timing section produces graceful fallback (no crash, values = -1)
+- Build gate sub-phases visible in TIMING_REPORT.md
+- Sub-phase percentages computed against parent duration (not total)
+- RUN_SUMMARY.json includes tester timing fields (or -1 when unavailable)
+- Continuation runs accumulate timing across invocations
+- All existing tests pass
+- Timing extraction overhead < 100ms (simple text parsing, not log scanning)
+
+Tests:
+- Parse logic extracts timing from sample TESTER_REPORT.md with `## Timing` section
+- Missing `## Timing` section produces `-1` values (no crash)
+- Malformed timing values (non-numeric) produce `-1` (defensive parsing)
+- Build gate phases appear as indented sub-rows in TIMING_REPORT.md
+- Sub-phase percentages sum to ~100% of parent (within rounding)
+- Continuation accumulation adds timing across multiple TESTER_REPORT.md parses
+
+Watch For:
+- Agent timing estimates are approximate. The `~` prefix in reports and the
+  `_approx_s` suffix in JSON signal this clearly. Do NOT present agent-estimated
+  times as precise measurements.
+- The `## Timing` section in TESTER_REPORT.md must be at the END of the file
+  to avoid interfering with existing verdict/bug parsing (which reads from top).
+- Build gate phase names (`build_gate_compile`, etc.) must match exactly what
+  `lib/gates.sh` uses in its `_phase_start` calls. Verify against actual code.
+- Do NOT add sub-phase timing to the metrics JSONL record (`metrics.sh`). Keep
+  it in RUN_SUMMARY.json only. Metrics JSONL is for adaptive calibration and
+  doesn't need sub-phase granularity.
+
+Seeds Forward:
+- Writing vs. execution split informs whether to optimize test startup time
+  or test authoring prompts
+- Build gate phase visibility helps identify slow compilation or analysis steps
+
+---
+
+## Archived: 2026-04-06 — Unknown Initiative
+
+# Milestone 63: Test Baseline Hygiene & Completion Gate Hardening
+<!-- milestone-meta
+id: "63"
+status: "done"
+-->
+
+## Overview
+
+Tekhton is designed to leave the repo in a pristine state — all tests passing,
+no build errors. However, the test baseline system has gaps that allow runs to
+complete with failing tests or misclassify new failures as "pre-existing":
+
+1. **Stale baselines on resume:** `capture_test_baseline()` skips re-capture if
+   `TEST_BASELINE.json` exists for the current milestone, even across separate
+   runs. A baseline from Run A persists into Run B.
+2. **Completion gate doesn't run tests:** `run_completion_gate()` only checks
+   whether `CODER_SUMMARY.md` says "COMPLETE" — it never executes `TEST_CMD`.
+3. **Tester blind to baseline:** The tester prompt has no `TEST_BASELINE_SUMMARY`
+   context, so it cannot distinguish pre-existing failures from new ones when
+   deciding whether to trigger `TESTER_FIX_ENABLED` auto-fix.
+4. **Stuck detection can auto-pass:** When `TEST_BASELINE_PASS_ON_STUCK=true`,
+   identical failures across 2+ attempts are auto-passed, even if the failures
+   are genuine regressions from the current run (baseline was clean).
+
+This milestone hardens the test integrity guarantees so Tekhton never silently
+passes a run with failing tests.
+
+Depends on M56 for stable pipeline baseline.
+
+## Scope
+
+### 1. Fresh Baseline Per Run
+
+**File:** `lib/test_baseline.sh`
+
+**Problem:** `_should_capture_test_baseline()` at line 171-177 only checks
+`! has_test_baseline` — i.e., whether a baseline file exists for the current
+milestone. It cannot distinguish "resume within same run" from "new run."
+
+**Fix:** Add a `run_id` field to `TEST_BASELINE.json`. Use `TIMESTAMP` (set
+once at `tekhton.sh` startup, globally exported) as the run identifier.
+
+Modify `_should_capture_test_baseline()`:
+1. If no baseline file exists → capture (current behavior)
+2. If baseline exists, read its `run_id` field
+3. If `run_id` matches current `TIMESTAMP` → skip (same-run resume)
+4. If `run_id` differs → re-capture (new run with stale baseline)
+
+Modify baseline JSON emission at lines 115-130 to include:
+```json
+{
+  "run_id": "${TIMESTAMP}",
+  "timestamp": "...",
+  "milestone": "...",
+  "exit_code": 0,
+  "output_hash": "...",
+  "failure_hash": "...",
+  "failure_count": 0
+}
+```
+
+### 2. Inject TEST_BASELINE_SUMMARY into Tester
+
+**Files:** `stages/tester.sh`, `prompts/tester.prompt.md`
+
+**Problem:** `stages/coder.sh:346-361` builds and exports `TEST_BASELINE_SUMMARY`
+but the tester stage never reads or injects it.
+
+**Fix:** In `stages/tester.sh`, before calling `render_prompt`, build
+`TEST_BASELINE_SUMMARY` using the same pattern as coder.sh:
+
+```bash
+export TEST_BASELINE_SUMMARY=""
+if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] && has_test_baseline; then
+    local _bl_status
+    _bl_status=$(get_baseline_status)
+    if [[ "$_bl_status" == "pre_existing_failures" ]]; then
+        TEST_BASELINE_SUMMARY="Pre-existing test failures detected before your changes.
+$(get_baseline_failure_summary)"
+    fi
+fi
+```
+
+Add conditional block to `prompts/tester.prompt.md`:
+```markdown
+{{IF:TEST_BASELINE_SUMMARY}}
+## Pre-Change Test Baseline
+{{TEST_BASELINE_SUMMARY}}
+Do NOT treat pre-existing failures as regressions from your test work.
+Focus on testing NEW functionality only.
+{{ENDIF:TEST_BASELINE_SUMMARY}}
+```
+
+Context cost: ~200 tokens. Negligible.
+
+### 3. Completion Gate Test Enforcement
+
+**File:** `lib/gates_completion.sh`
+
+**Problem:** `run_completion_gate()` at lines 52-84 only checks
+`CODER_SUMMARY.md` for "COMPLETE" status. It never executes `TEST_CMD`.
+
+**Note:** The pre-finalization test gate in `orchestrate.sh:244-300` already
+runs `TEST_CMD`, but it runs AFTER acceptance checking, not as a formal
+completion gate. These serve different purposes:
+- Pre-finalization gate: catches regressions before final commit
+- Completion gate: prevents "SUCCESS" status when tests fail
+
+**Fix:** Add test enforcement to `run_completion_gate()`:
+1. After the existing CODER_SUMMARY check passes, if `TEST_CMD` is configured
+   and `COMPLETION_GATE_TEST_ENABLED=true`:
+   - Run `TEST_CMD`
+   - If exit code 0 → pass
+   - If exit code non-zero → compare against baseline using
+     `compare_test_with_baseline()` (already in test_baseline.sh:181-233)
+   - If all failures are pre-existing → pass (with logged note)
+   - If new failures exist → fail the gate
+
+Add config key `COMPLETION_GATE_TEST_ENABLED` to `lib/config_defaults.sh`:
+```bash
+: "${COMPLETION_GATE_TEST_ENABLED:=true}"
+```
+
+Place it near the existing `TEST_BASELINE_*` keys (around line 332).
+
+### 4. Tighten Stuck Detection
+
+**File:** `lib/test_baseline.sh`
+
+**Problem:** `_check_acceptance_stuck()` at line 295 returns 0 (auto-pass)
+when `TEST_BASELINE_PASS_ON_STUCK=true` **without checking whether the
+baseline was clean**. If baseline had zero failures (exit_code=0), all
+current failures are definitionally new regressions — auto-passing is wrong.
+
+**Fix:** Before the auto-pass return at line 295, add a baseline state check:
+
+```bash
+if [[ "${TEST_BASELINE_PASS_ON_STUCK:-false}" = "true" ]]; then
+    # Never auto-pass if baseline was clean — all failures are new
+    local _bl_exit
+    _bl_exit=$(get_baseline_exit_code)
+    if [[ "$_bl_exit" == "0" ]]; then
+        warn "Stuck detected but baseline was clean — all failures are new regressions. NOT auto-passing."
+        emit_causal_event "stuck_test_detected" "clean_baseline" \
+            "Stuck on identical failures but baseline had zero failures — auto-pass blocked"
+        return 1
+    fi
+    warn "TEST_BASELINE_PASS_ON_STUCK=true — treating acceptance as PASSED."
+    return 0
+fi
+```
+
+Also update the causal event emission at lines 287-293 to use event type
+`stuck_test_detected` (more specific than the current generic event).
+
+### 5. Baseline Cleanup
+
+**File:** `lib/test_baseline.sh`
+
+Add `cleanup_stale_baselines()`:
+- Called during finalization (add hook in `lib/finalize.sh`)
+- Removes TEST_BASELINE.json files with `run_id` not matching current `TIMESTAMP`
+- Keeps only the current run's baseline (for potential resume)
+- Logs cleanup action to causal log
+
+Implementation: Baseline files are per-milestone (stored relative to
+`.claude/` or milestone dir). Walk the baseline storage location, check
+each file's `run_id`, remove if stale.
+
+### 6. Tester Fix Baseline Check
+
+**File:** `stages/tester.sh`
+
+**Problem:** The `TESTER_FIX_ENABLED` flow at lines 226-248 spawns a fix
+run for ANY test failure, including pre-existing ones.
+
+**Fix:** Before spawning the fix agent (line 247), check baseline:
+```bash
+if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] && has_test_baseline; then
+    local _comparison
+    _comparison=$(compare_test_with_baseline "$_failure_output" "$_test_exit")
+    if [[ "$_comparison" == "pre_existing" ]]; then
+        log "All test failures are pre-existing — skipping tester fix."
+        # Continue to normal completion, not fix
+        continue  # or break, depending on control flow
+    fi
+fi
+```
+
+## Migration Impact
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `COMPLETION_GATE_TEST_ENABLED` | `true` | Set to `false` to restore prior behavior (no test enforcement at completion) |
+
+Existing `TEST_BASELINE_ENABLED`, `TEST_BASELINE_PASS_ON_STUCK`, and
+`TEST_BASELINE_STUCK_THRESHOLD` settings continue to work unchanged.
+
+The `run_id` field added to `TEST_BASELINE.json` is backward-compatible:
+if a baseline file from a prior version lacks `run_id`, treat it as stale
+(re-capture).
+
+## Acceptance Criteria
+
+- Fresh baseline captured at start of each new run (not reused across runs)
+- Resume within the same run reuses baseline (no unnecessary re-capture)
+- Tester prompt includes `TEST_BASELINE_SUMMARY` when available
+- Completion gate runs `TEST_CMD` and fails on non-zero exit (minus baseline)
+- Stuck detection never auto-passes when baseline was clean (exit_code=0)
+- Stale baseline files cleaned up during finalization
+- Tester fix flow checks baseline before spawning fix agent
+- All existing tests pass
+- No run can report SUCCESS with genuinely failing tests
+
+Tests:
+- New run re-captures baseline even when `TEST_BASELINE.json` exists (different TIMESTAMP)
+- Resume within same run skips re-capture (same TIMESTAMP in run_id field)
+- Baseline file missing `run_id` field treated as stale (backward compat)
+- Tester prompt renders baseline block when summary is non-empty
+- Tester prompt omits baseline block when summary is empty
+- Completion gate catches test failures that acceptance gate missed
+- Completion gate passes when all failures are pre-existing (baseline comparison)
+- Stuck detection with clean baseline (exit_code=0) never auto-passes
+- Stuck detection with dirty baseline auto-passes when PASS_ON_STUCK=true
+- Stale baseline cleanup removes old files, keeps current
+- Tester fix skips when all failures are pre-existing
+
+Watch For:
+- The completion gate test run adds wall-clock time to every successful run.
+  This is acceptable because it's the only way to guarantee test integrity.
+  If `TEST_CMD` is slow, users can disable with `COMPLETION_GATE_TEST_ENABLED=false`.
+- Baseline re-capture means running `TEST_CMD` once more at run start. For
+  projects with slow test suites, this adds startup cost. The trade-off is
+  correctness — a stale baseline is worse than a 30-second test run.
+- The `get_baseline_exit_code` function must handle missing or malformed
+  baseline JSON defensively (return empty string, not crash).
+- The pre-finalization test gate in `orchestrate.sh:244-300` is a SEPARATE
+  mechanism from the completion gate. Do NOT remove or merge them — they serve
+  different purposes at different points in the pipeline.
+
+Seeds Forward:
+- Clean baseline guarantees make stuck detection more trustworthy
+- Completion gate data feeds into run memory for cross-run quality tracking
+- Baseline-aware tester fix is a prerequisite for M64 (Surgical Fix Mode)
+
+---
+
+## Archived: 2026-04-07 — Unknown Initiative
+
+# Milestone 64: Tester Fix — Surgical Mode
+<!-- milestone-meta
+id: "64"
+status: "done"
+-->
+
+## Overview
+
+When `TESTER_FIX_ENABLED=true` and the tester stage detects test failures, it
+spawns a **complete recursive pipeline run** — coder, reviewer, tester, all
+stages. For a single failing test, this can add 40+ minutes to the run. The
+recursive approach was designed for cases where implementation bugs cause test
+failures, but most tester-stage failures are simpler: wrong assertions, missing
+imports, stale mocks, or constructor signature mismatches.
+
+This milestone replaces the full-pipeline recursion with a lightweight surgical
+fix agent that operates within the tester stage itself, similar to how the coder's
+build-fix retry works within the coder stage (`coder.sh:1084-1110`).
+
+Depends on M63 (Test Baseline Hygiene) so the fix agent has accurate baseline
+data and doesn't waste effort on pre-existing failures.
+
+## Current State (What Exists Today)
+
+The following code is in place and must be **replaced**, not extended:
+
+- `stages/tester.sh:226-259` — Recursive pipeline invocation via
+  `bash "${TEKHTON_HOME}/tekhton.sh" "$_fix_task"`. This spawns a full coder →
+  reviewer → tester cycle. Remove entirely.
+- `TEKHTON_FIX_DEPTH` env var — Used as recursion guard for the recursive
+  approach. No longer needed with inline fix.
+- `lib/config_defaults.sh:323-326` — Config keys exist:
+  - `TESTER_FIX_ENABLED=false` (keep as-is)
+  - `TESTER_FIX_MAX_DEPTH=1` (repurpose: now means inline fix attempts)
+  - `TESTER_FIX_OUTPUT_LIMIT=4000` (keep as-is)
+  - `TESTER_FIX_MAX_TURNS` — **MISSING, must be added**
+
+**Reference implementation:** `coder.sh:1084-1110` (inline build-fix pattern):
+```bash
+BUILD_FIX_PROMPT=$(render_prompt "build_fix")
+run_agent "Coder (build fix)" "$CLAUDE_CODER_MODEL" \
+    "$((CODER_MAX_TURNS / 3))" "$BUILD_FIX_PROMPT" "$LOG_FILE" \
+    "$AGENT_TOOLS_BUILD_FIX"
+```
+
+## Scope
+
+### 1. Add TESTER_FIX_MAX_TURNS Config Key
+
+**File:** `lib/config_defaults.sh`
+
+Add after the existing TESTER_FIX keys (line 326):
+```bash
+: "${TESTER_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"
+```
+
+Also add clamp (like FINAL_FIX at line 469):
+```bash
+_clamp_config_value TESTER_FIX_MAX_TURNS 100
+```
+
+Update comment on line 325 from "Max recursive fix attempts (recursion guard)"
+to "Max inline fix attempts per tester stage".
+
+### 2. Create Tester Fix Prompt
+
+**File:** `prompts/tester_fix.prompt.md` (new)
+
+Model on `prompts/build_fix.prompt.md` — focused, short, no architecture bloat.
+
+```markdown
+# Tester Fix Agent
+
+You are fixing test failures. The tests below are failing after a tester
+agent wrote or modified them.
+
+## Failing Test Output
+{{TESTER_FIX_OUTPUT}}
+
+## Test Files
+{{TESTER_FIX_TEST_FILES}}
+
+## Source Files (from CODER_SUMMARY.md)
+{{TESTER_FIX_SOURCE_FILES}}
+
+{{IF:TEST_BASELINE_SUMMARY}}
+## Pre-Existing Failures (DO NOT fix these)
+{{TEST_BASELINE_SUMMARY}}
+{{ENDIF:TEST_BASELINE_SUMMARY}}
+
+{{IF:SERENA_ACTIVE}}
+## LSP Tools Available
+You have LSP tools via MCP: `find_symbol`, `find_referencing_symbols`,
+`get_symbol_definition`. Use these to verify signatures before fixing tests.
+{{ENDIF:SERENA_ACTIVE}}
+
+## Rules
+1. Fix the TEST code, not the implementation.
+2. If the implementation is genuinely wrong (tests are correct but code is
+   buggy), document the bug in TESTER_REPORT.md under "## Bugs Found" and
+   do NOT attempt to fix the implementation.
+3. Do NOT modify files outside the test directory unless the test imports
+   or fixtures require it.
+4. Run {{TEST_CMD}} to verify your fixes.
+5. Update TESTER_REPORT.md with what you fixed.
+```
+
+### 3. Inline Tester Fix Agent
+
+**File:** `stages/tester.sh`
+
+Replace lines 226-259 (recursive pipeline invocation) with inline fix agent.
+Follow the `coder.sh:1084-1110` pattern exactly:
+
+```bash
+if [[ "${TESTER_FIX_ENABLED:-false}" == "true" ]]; then
+    local _fix_depth=0
+    local _max_depth="${TESTER_FIX_MAX_DEPTH:-1}"
+
+    while [[ "$_fix_depth" -lt "$_max_depth" ]]; do
+        _fix_depth=$((_fix_depth + 1))
+
+        # Extract failing test output
+        local _failure_output _output_limit
+        _output_limit="${TESTER_FIX_OUTPUT_LIMIT:-4000}"
+        _failure_output=$(grep -E '(FAIL|ERROR|error|failure|assert)' \
+            "$LOG_FILE" | tail -c "$_output_limit" || true)
+        if [[ -z "$_failure_output" ]]; then
+            _failure_output=$(tail -100 "$LOG_FILE" | tail -c "$_output_limit")
+        fi
+
+        # Baseline-aware gating (requires M63)
+        if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] && has_test_baseline; then
+            local _comparison
+            _comparison=$(compare_test_with_baseline "$_failure_output" "$_test_exit")
+            if [[ "$_comparison" == "pre_existing" ]]; then
+                log "All test failures are pre-existing — skipping tester fix."
+                break
+            fi
+        fi
+
+        # Build scoped context
+        export TESTER_FIX_OUTPUT="$_failure_output"
+        export TESTER_FIX_TEST_FILES=""  # Extract from test output paths
+        export TESTER_FIX_SOURCE_FILES="" # Extract from CODER_SUMMARY.md
+
+        # Extract file paths from CODER_SUMMARY.md
+        if [ -f "CODER_SUMMARY.md" ]; then
+            TESTER_FIX_SOURCE_FILES=$(extract_files_from_coder_summary 2>/dev/null || true)
+        fi
+
+        # Render scoped prompt and run inline agent
+        _phase_start "tester_fix"
+        local _fix_prompt
+        _fix_prompt=$(render_prompt "tester_fix")
+        run_agent "Tester (fix)" "$CLAUDE_CODER_MODEL" \
+            "${TESTER_FIX_MAX_TURNS}" "$_fix_prompt" "$LOG_FILE" \
+            "$AGENT_TOOLS_BUILD_FIX"
+        _phase_end "tester_fix"
+
+        # Log fix attempt in causal log
+        emit_causal_event "tester_fix_attempt" "attempt_${_fix_depth}" \
+            "exit=${LAST_AGENT_EXIT_CODE} turns=${LAST_AGENT_TURNS}"
+
+        # Re-run tests to verify fix
+        # (Use the pipeline's test gate, not a separate invocation)
+        break  # Single attempt by default; loop only if MAX_DEPTH > 1
+    done
+fi
+```
+
+### 4. Remove Recursive Pipeline Spawn
+
+**File:** `stages/tester.sh`
+
+Delete entirely:
+- The `TEKHTON_FIX_DEPTH` environment variable check
+- The `bash "${TEKHTON_HOME}/tekhton.sh" "$_fix_task"` invocation
+- The `SKIP_FINAL_CHECKS=true` / `clear_pipeline_state` success handling
+
+The inline fix agent replaces all of this. After fix, normal pipeline flow
+continues (test gate will be re-evaluated by the orchestration layer).
+
+### 5. Smart Test Output Truncation
+
+**File:** `stages/tester.sh` (or `lib/agent_helpers.sh`)
+
+Replace the current naive `grep + tail -c` truncation with smarter extraction:
+- Split test output by failure markers (FAIL, ERROR, etc.)
+- For each failure block, keep first 5 and last 5 lines
+- Cap total at `TESTER_FIX_OUTPUT_LIMIT` chars
+- Preserve actual error messages over stack traces
+
+This is a helper function, not a separate file:
+```bash
+_smart_truncate_test_output() {
+    local output="$1" limit="${2:-4000}"
+    # ... implementation ...
+}
+```
+
+## Migration Impact
+
+| Key | Default | Change |
+|-----|---------|--------|
+| `TESTER_FIX_ENABLED` | `false` | No change — still opt-in |
+| `TESTER_FIX_MAX_DEPTH` | `1` | Now means inline fix attempts, not pipeline recursions |
+| `TESTER_FIX_MAX_TURNS` | `CODER_MAX_TURNS / 3` | **New key** — turn budget per fix attempt |
+| `TESTER_FIX_OUTPUT_LIMIT` | `4000` | No change |
+
+The `TEKHTON_FIX_DEPTH` environment variable is no longer set or checked.
+Existing pipeline.conf files with `TESTER_FIX_MAX_DEPTH` continue to work
+(same key, new semantics: inline attempts instead of recursive depth).
+
+## Acceptance Criteria
+
+- Tester fix uses inline agent, NOT recursive pipeline spawn
+- No reference to `tekhton.sh` recursive invocation remains in tester.sh
+- Fix agent receives focused context (test output + files only, no architecture)
+- Pre-existing failures are filtered out before fix attempt (requires M63)
+- Fix agent has Serena/repo map access when available (via prompt conditionals)
+- `TESTER_FIX_ENABLED=false` skips fix entirely
+- `TESTER_FIX_MAX_DEPTH=0` disables fix attempts
+- Fix agent time is tracked as `tester_fix` sub-phase in timing report
+- All existing tests pass
+- Fix attempts are logged in causal event log
+- `TESTER_FIX_MAX_TURNS` config key exists with clamp
+
+Tests:
+- Fix agent spawns with correct scoped context (no architecture/design bloat)
+- Pre-existing failure filtering skips fix when all failures are baseline
+- Mixed failures correctly filter to only new failures
+- `TESTER_FIX_ENABLED=false` skips fix entirely (no agent spawned)
+- `TESTER_FIX_MAX_DEPTH=0` skips fix entirely
+- Turn budget respected (agent gets TESTER_FIX_MAX_TURNS, not TESTER_MAX_TURNS)
+- Phase timing wraps fix agent (`_phase_start "tester_fix"` / `_phase_end`)
+- Causal event emitted with attempt number and exit code
+- Smart truncation preserves error messages over stack traces
+
+Watch For:
+- The fix agent MUST NOT modify implementation code. The prompt is explicit
+  about this boundary. If the fix agent modifies non-test files, those changes
+  haven't been validated by the reviewer. The prompt must be very clear.
+- Some test failures genuinely require implementation fixes (real bugs found by
+  tests). The fix agent should document these in Bugs Found rather than attempting
+  a fix it's not scoped for.
+- The `TESTER_FIX_OUTPUT_LIMIT` cap must be sufficient to include the actual
+  error messages, not just stack traces. The smart truncation helps here.
+- Serena/repo map guidance references M65. If M65 hasn't run yet, the
+  `{{IF:SERENA_ACTIVE}}` block simply won't render. No hard dependency.
+
+Seeds Forward:
+- Surgical fix data feeds into run metrics for fix success rate tracking
+- Pattern of scoped fix agents could be reused for review rework
+- Smart test output truncation is reusable by M62 timing extraction
+
+---
+
+## Archived: 2026-04-07 — Unknown Initiative
+
+# Milestone 65: Prompt Tool Awareness — Serena & Repo Map Coverage
+<!-- milestone-meta
+id: "65"
+status: "done"
+-->
+
+## Overview
+
+An audit of all 42 prompt templates found that only 5 (scout, coder, reviewer,
+coder_note_bug, coder_note_feat) have explicit instructions to use Serena MCP
+tools and prefer them over grep/find. The remaining prompts — including
+high-impact ones like tester, coder_rework, build_fix, and all specialists —
+have zero tool guidance. Agents in these roles have Serena tools available via
+`--mcp-config` but don't know to use them, causing fallback to manual grep/find
+that wastes turns and time.
+
+This milestone adds Serena and repo map guidance to prompts where agents do
+code discovery or modification. Prompts that are planning-only, interview-only,
+or never do file discovery are explicitly out of scope.
+
+Depends on M61 (Repo Map Cache) so cached maps are available without
+regeneration cost, and M56 for stable baseline.
+
+## Already Done (Do Not Modify)
+
+These prompts already have complete `{{IF:SERENA_ACTIVE}}` blocks. Use them
+as templates for the new additions — do NOT modify them:
+
+- `prompts/coder.prompt.md` (lines 22-30) — Full LSP block with role examples
+- `prompts/scout.prompt.md` (lines 53-63) — Full LSP block with preference language
+- `prompts/reviewer.prompt.md` (lines 21-28) — Full LSP block
+- `prompts/coder_note_bug.prompt.md` (lines 22-30) — Copy of coder block
+- `prompts/coder_note_feat.prompt.md` — Copy of coder block
+
+## Scope
+
+### 1. High-Impact Prompts (Tier 1 — Code-Changing Agents)
+
+These agents write/modify code and benefit most from file discovery tools.
+Add **expanded** `{{IF:SERENA_ACTIVE}}` blocks with role-specific examples.
+
+**`prompts/tester.prompt.md`:**
+- Add `{{IF:SERENA_ACTIVE}}` block with tester-specific guidance:
+  "Use `find_symbol` to look up class/function signatures before writing test
+  assertions. Use `get_symbol_definition` to verify constructor parameters."
+- Add repo map preference language to existing `{{IF:REPO_MAP_CONTENT}}` block:
+  "Use the repo map as your primary source for identifying test targets. Do NOT
+  grep for class definitions — the repo map has already indexed them."
+- **Note:** tester.prompt.md is already the longest prompt (~119 lines). Keep
+  additions concise (≤15 lines for both blocks combined).
+
+**`prompts/coder_rework.prompt.md`:**
+- Add `{{IF:SERENA_ACTIVE}}` block: "Use `find_symbol` to locate the exact
+  functions mentioned in review blockers before modifying them."
+- Add `{{IF:REPO_MAP_CONTENT}}` block (currently absent) with standard
+  preference language.
+
+**`prompts/build_fix.prompt.md`:**
+- Add `{{IF:SERENA_ACTIVE}}` block: "Use `find_symbol` to resolve import paths
+  and verify symbol names before fixing build errors."
+- Keep it brief — build fix prompts are intentionally short.
+
+**`prompts/tester_resume.prompt.md`:**
+- Add brief `{{IF:SERENA_ACTIVE}}` block (3 lines max — agent already has
+  context from initial invocation, just needs a reminder).
+
+### 2. Medium-Impact Prompts (Tier 2 — Code-Analyzing Agents)
+
+These agents analyze code and verify cross-references. Add the **standard
+block** (see Section 4 below).
+
+**`prompts/architect.prompt.md`:**
+- Add `{{IF:SERENA_ACTIVE}}` block — drift analysis benefits from
+  `find_referencing_symbols` to verify caller/callee relationships
+- Strengthen existing `{{IF:REPO_MAP_CONTENT}}` block (lines 14-20) with
+  preference language: "Use the repo map as your primary file discovery source.
+  Do NOT use `find` or `grep` for broad file discovery."
+
+**`prompts/specialist_security.prompt.md`:**
+- Add standard `{{IF:SERENA_ACTIVE}}` block — security review should use
+  `find_referencing_symbols` to trace data flow through auth/input handlers
+
+**`prompts/specialist_performance.prompt.md`:**
+- Add standard `{{IF:SERENA_ACTIVE}}` block — performance review benefits from
+  `find_referencing_symbols` to identify hot-path callers
+
+**`prompts/specialist_api.prompt.md`:**
+- Add standard `{{IF:SERENA_ACTIVE}}` block — API review should verify contract
+  consistency across endpoints using `find_symbol`
+
+**Note:** `prompts/specialist_ui.prompt.md` exists but is out of scope for this
+milestone — UI review doesn't typically need LSP-level code navigation.
+
+### 3. Lower-Impact Prompts (Tier 3 — Brief Notes)
+
+These are short-lived agents with narrow scope. Add a **one-line** Serena note.
+
+**`prompts/jr_coder.prompt.md`:**
+- Add brief `{{IF:SERENA_ACTIVE}}` note (jr coder fixes specific files, but
+  may need to verify signatures)
+
+**`prompts/architect_sr_rework.prompt.md`** and **`prompts/architect_jr_rework.prompt.md`:**
+- Add brief `{{IF:SERENA_ACTIVE}}` notes for rework file discovery
+
+**`prompts/build_fix_minimal.prompt.md`:**
+- This prompt is currently ~1 line. Adding Serena guidance would triple it.
+  Add a SINGLE line inside `{{IF:SERENA_ACTIVE}}`:
+  "LSP tools available: `find_symbol`, `find_referencing_symbols` — use for
+  import resolution."
+
+### 4. Standardized Guidance Blocks
+
+**Standard block (Tier 2):**
+```markdown
+{{IF:SERENA_ACTIVE}}
+## LSP Tools Available
+You have LSP tools via MCP: `find_symbol`, `find_referencing_symbols`,
+`get_symbol_definition`. These provide exact cross-reference data.
+**Prefer LSP tools over grep/find for symbol lookup.**
+{{ENDIF:SERENA_ACTIVE}}
+```
+
+**Brief note (Tier 3):**
+```markdown
+{{IF:SERENA_ACTIVE}}
+LSP tools available via MCP (`find_symbol`, `find_referencing_symbols`) —
+prefer over grep for symbol lookup.
+{{ENDIF:SERENA_ACTIVE}}
+```
+
+**Tier 1 prompts** get the standard block PLUS role-specific examples (see
+Section 1 for per-prompt guidance).
+
+### 5. Repo Map Preference Language
+
+For prompts that have `{{IF:REPO_MAP_CONTENT}}` but lack preference instructions,
+add explicit guidance inside the existing conditional block:
+
+```markdown
+Use the repo map as your primary file discovery source. Do NOT use `find` or
+`grep` for broad file discovery — the repo map has already done that work.
+```
+
+Apply to:
+- `tester.prompt.md` — has REPO_MAP_CONTENT block but no preference language
+- `architect.prompt.md` — has REPO_MAP_CONTENT block, needs stronger language
+- `coder_rework.prompt.md` — currently has NO REPO_MAP_CONTENT block (add one)
+
+**Do NOT modify** prompts that already have strong preference language:
+- `scout.prompt.md` (line 12-21) already says "Use it as your primary file
+  discovery source instead of blind find/grep" — leave as-is
+- `coder.prompt.md` already has adequate repo map guidance — leave as-is
+
+### 6. Out-of-Scope Prompts
+
+The following prompts are explicitly NOT modified by this milestone. They are
+planning, interview, or synthesis prompts that don't do code-level file discovery:
+
+- `plan_generate.prompt.md`, `plan_interview.prompt.md`, `plan_interview_followup.prompt.md`
+- `init_synthesize_*.prompt.md`
+- `intake_scan.prompt.md`, `notes_triage.prompt.md`
+- `milestone_split.prompt.md`, `replan.prompt.md`, `clarification.prompt.md`
+- `cleanup.prompt.md`, `analyze_cleanup.prompt.md`
+- `seed_contracts.prompt.md`
+- `tester_write_failing.prompt.md` (TDD mode — writes tests from spec, not code)
+- `tester_ui_guidance.prompt.md` (UI-specific, not code navigation)
+- `security_rework.prompt.md` (already gets full coder tools + reviewer report)
+
+## Migration Impact
+
+No new config keys. All additions are inside `{{IF:...}}` conditional blocks —
+zero impact when Serena or repo map are disabled. Zero prompt size increase for
+non-Serena, non-indexed runs.
+
+## Acceptance Criteria
+
+- All Tier 1 prompts have Serena + repo map guidance with role-specific examples
+- All Tier 2 prompts have standard Serena guidance block
+- All Tier 3 prompts have brief Serena notes
+- No prompt has contradictory "use grep to find" instructions alongside Serena guidance
+- All `{{IF:SERENA_ACTIVE}}` blocks render correctly:
+  - With `SERENA_ACTIVE="true"` → block content appears
+  - With `SERENA_ACTIVE=""` → block content is absent
+- All `{{IF:REPO_MAP_CONTENT}}` blocks that this milestone touches include
+  preference language
+- All existing tests pass
+- All modified prompt templates have balanced `{{IF:VAR}}` / `{{ENDIF:VAR}}` pairs
+  (verify with: `grep -c 'IF:' file` == `grep -c 'ENDIF:' file` for each file)
+
+Tests:
+- Render each modified prompt with SERENA_ACTIVE=true — verify block appears
+- Render each modified prompt with SERENA_ACTIVE="" — verify block is absent
+- Render tester prompt with REPO_MAP_CONTENT populated — verify preference text
+- Verify no modified prompt contains bare "use grep" or "use find" without it
+  being inside a fallback conditional (e.g., scout's no-repo-map path is OK)
+- Verify all `{{IF:*}}` / `{{ENDIF:*}}` pairs are balanced in modified files
+
+Watch For:
+- Prompt size inflation: each Serena block adds ~100-150 tokens. For the tester
+  (which already has the longest prompt), keep additions to ≤15 lines. Verify
+  rendered prompt stays within context budget using `_add_context_component`
+  tracking in `lib/context.sh`.
+- Don't over-instruct: the standard block should be brief. Claude already knows
+  how to use MCP tools — the prompt just needs to say "prefer them."
+- Conditional blocks must handle the case where Serena is available but the MCP
+  server failed to start (SERENA_ACTIVE="" even though SERENA_ENABLED=true).
+  This is correct behavior — `{{IF:SERENA_ACTIVE}}` handles it automatically.
+- `scout.prompt.md` line 26 says "Use find, grep, and ls to locate files" — this
+  is the no-repo-map fallback path and is intentional. Do NOT remove it.
+- The template engine (`prompts.sh:101-127`) uses sed to strip `{{IF:VAR}}`
+  markers. Ensure no prompt contains these markers as literal text (e.g., in
+  documentation examples). If needed, escape with a backslash.
+
+Seeds Forward:
+- Tool-aware agents should show reduced grep/find usage in future runs
+- M62 timing data can measure before/after impact on tester stage duration

@@ -7,7 +7,9 @@
 #   2. Modified file + summary >= 20 lines → returns true
 #   3. Modified file + diff >= 50 lines → returns true (even with short summary)
 #   4. Modified file + short summary + small diff → returns false
-#   5. No files counted (grep returns 0) → returns false regardless of summary
+#   5. Untracked files with substantial content → returns true
+#   5b. Untracked files with tiny content → returns false
+#   5c. Large untracked code files (no summary) → returns true
 # =============================================================================
 set -euo pipefail
 
@@ -153,29 +155,68 @@ else
 fi
 
 # =============================================================================
-# Test 5: No files modified in git → returns false even with large summary
+# Test 5: Untracked files with large summary → returns true (new code written)
 # =============================================================================
-echo "=== Test 5: No git changes → false even with large summary ==="
+echo "=== Test 5: Untracked files + large summary → true ==="
 
 REPO=$(_make_git_repo)
 
 (
     cd "$REPO"
-    # Create CODER_SUMMARY.md with many lines but do NOT stage/modify tracked files
-    # (CODER_SUMMARY.md is untracked — won't appear in git diff --stat HEAD)
+    # Create CODER_SUMMARY.md with many lines — untracked new file counts now
     {
         echo "## Status: IN PROGRESS"
         for i in $(seq 1 30); do
             echo "- item $i"
         done
     } > CODER_SUMMARY.md
-    # Do NOT modify any tracked file — git diff HEAD will show 0 modified files
+    # Do NOT modify any tracked file — only untracked files exist
+)
+
+if _check_substantive "$REPO" 2>/dev/null; then
+    pass "5.1: Untracked summary (31 lines) → returns true (untracked files count)"
+else
+    fail "5.1: Should return true when untracked files have substantial content"
+fi
+
+# =============================================================================
+# Test 5b: Untracked files with tiny content → returns false
+# =============================================================================
+echo "=== Test 5b: Untracked files + tiny content → false ==="
+
+REPO=$(_make_git_repo)
+
+(
+    cd "$REPO"
+    # Small untracked file — below threshold (< 50 lines, no summary >= 20)
+    printf "## Status: IN PROGRESS\n- item 1\n" > CODER_SUMMARY.md
 )
 
 if ! _check_substantive "$REPO" 2>/dev/null; then
-    pass "5.1: Untracked summary only → returns false (no modified tracked files)"
+    pass "5b.1: Tiny untracked file → returns false (below thresholds)"
 else
-    fail "5.1: Should return false when only untracked files exist"
+    fail "5b.1: Should return false when untracked files are too small"
+fi
+
+# =============================================================================
+# Test 5c: Large untracked new files (no summary) → returns true
+# =============================================================================
+echo "=== Test 5c: Large untracked code files → true ==="
+
+REPO=$(_make_git_repo)
+
+(
+    cd "$REPO"
+    # Create new source file with significant content (60 lines)
+    for i in $(seq 1 60); do
+        echo "function impl_$i() { return $i; }"
+    done > new_module.sh
+)
+
+if _check_substantive "$REPO" 2>/dev/null; then
+    pass "5c.1: Large untracked file (60 lines) → returns true"
+else
+    fail "5c.1: Should return true when untracked file has >= 50 lines"
 fi
 
 # =============================================================================

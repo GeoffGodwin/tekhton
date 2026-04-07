@@ -1,0 +1,41 @@
+services:
+  tekhton-conductor:
+    build:
+      # Context is the tekhton repo root so the entire source gets baked in
+      context: .
+      dockerfile: conductor/Dockerfile
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    container_name: tekhton-conductor
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    ports:
+      - "${CONDUCTOR_PORT:-7411}:7411/tcp"
+    volumes:
+      # Config file
+      - ./conductor.cfg:/config/conductor.cfg:ro
+      # Persistent state + logs (survives container restarts)
+      - conductor-data:/data
+      # SSH keys for git push
+      - ~/.ssh:/home/conductor/.ssh:ro
+      # GitHub CLI auth
+      - ~/.config/gh:/home/conductor/.config/gh:ro
+      # Claude CLI auth (read-write so OAuth tokens can refresh)
+      - ~/.claude:/home/conductor/.claude
+    tmpfs:
+      # Ephemeral workspace for cloned target repo — fast, disposable
+      - /repo:uid=1000,gid=1000
+    environment:
+      TZ: ${TZ:-UTC}
+      HOME: /home/conductor
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:7411/status", "-H", "Authorization: Bearer dummy"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  conductor-data:

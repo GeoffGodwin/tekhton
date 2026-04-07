@@ -1,10 +1,12 @@
 # Drift Log
 
 ## Metadata
-- Last audit: 2026-03-21
-- Runs since audit: 3
+- Last audit: 2026-04-07
+- Runs since audit: 1
 
 ## Unresolved Observations
-- [2026-03-21 | "Resolve all observations in NON_BLOCKING_LOG.md. For each unresolved item, apply the fix, then mark it resolved. Continue until no unresolved observations remain."] `stages/init_synthesize.sh` — file is 533 lines, exceeding the 300-line ceiling defined in reviewer.md. The coder's changes actually removed a line, so this was not introduced here, but it should be tracked for a future split (e.g., extract `_compress_synthesis_context` and `_synthesize_*` helpers into a `lib/init_synthesize_helpers.sh`).
+(none)
 
 ## Resolved
+- [RESOLVED 2026-04-07] `tekhton.sh` lines 812-815 source `tester_tdd.sh`, `tester_continuation.sh`, and `tester_fix.sh` directly after sourcing `tester.sh` (which itself sources some of them). The convention for which sub-stage files get a direct `source` in `tekhton.sh` vs only through their parent is undocumented. As the tester family grows (timing, tdd, continuation, fix), this is worth codifying.
+- [RESOLVED 2026-04-07] `stages/tester.sh` and `stages/tester_timing.sh` together reach 412 lines. When `tester_fix.sh`, `tester_tdd.sh`, and `tester_continuation.sh` are added, the tester subsystem spans 6 files. The ARCHITECTURE.md description of `stages/tester.sh` has not been updated to reflect the extracted `tester_timing.sh` module. Worth adding a bullet to the Architecture Map entry for the tester stage.

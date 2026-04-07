@@ -146,7 +146,11 @@ has_human_actions() {
 # human action file as needed.
 process_drift_artifacts() {
     # 1. Append drift observations from reviewer report
-    append_drift_observations
+    # Skip during --fix-drift to prevent feedback loop:
+    # architect resolves → reviewer generates new observations → appended → next pass resolves those
+    if [[ "${FIX_DRIFT_MODE:-false}" != "true" ]]; then
+        append_drift_observations
+    fi
 
     # 2. Record accepted ACPs in the Architecture Decision Log
     append_architecture_decision
@@ -155,7 +159,11 @@ process_drift_artifacts() {
     _process_design_observations
 
     # 4. Accumulate non-blocking notes from reviewer report
-    append_nonblocking_notes
+    # Skip during --fix-nonblockers to prevent feedback loop:
+    # coder fixes notes → reviewer generates new notes → appended → next pass fixes those
+    if [[ "${FIX_NONBLOCKERS_MODE:-false}" != "true" ]]; then
+        append_nonblocking_notes
+    fi
 
     # 5. Mark addressed non-blocking notes from coder summary
     _resolve_addressed_nonblocking_notes
@@ -176,7 +184,10 @@ _process_design_observations() {
     observations=$(awk '/^## Design Observations/{found=1; next} found && /^##/{exit} found{print}' \
         "$summary" 2>/dev/null || true)
 
-    if [[ -z "$observations" ]] || echo "$observations" | grep -qE '^\s*$'; then
+    # Check if the entire section is empty/whitespace (not just any single line)
+    local non_empty_count
+    non_empty_count=$(echo "$observations" | grep -cE '[^[:space:]]' || true)
+    if [[ -z "$observations" ]] || [[ "$non_empty_count" -eq 0 ]]; then
         return 0
     fi
 
@@ -190,6 +201,12 @@ _process_design_observations() {
         echo "$line" | grep -qiE '^No (design|doc|observations?|issues?|action|items?)\b' && continue
         echo "$line" | grep -qiE '^(All|No) (drift |design )?(observations?|items?) (are|have been|were)\b' && continue
         echo "$line" | grep -qiE '^Nothing (to|requiring|needs)\b' && continue
+        # Skip meta-text about the file/process itself rather than actual observations
+        echo "$line" | grep -qiE '(HUMAN_ACTION|action.required|action.items?\.md)' && continue
+        echo "$line" | grep -qiE '^(Design (doc )?observations?|Items?|Observations?) (have been |were |are |)(documented|recorded|noted|flagged|generated|created|added|updated)' && continue
+        echo "$line" | grep -qiE '^(Updated|Generated|Created|Documented|Recorded|Flagged|Added|Wrote)\b.*(observations?|action|items?|file|review|human)' && continue
+        echo "$line" | grep -qiE '(aligns? with|consistent with|no contradictions?|no conflicts?|matches?).*(design|GDD|architecture)' && continue
+        echo "$line" | grep -qiE '^(See|Refer to) (the )?(design|GDD|architecture)' && continue
         append_human_action "coder" "$line"
     done <<< "$observations"
 }
@@ -198,15 +215,17 @@ _process_design_observations() {
 
 # clear_resolved_drift_observations — Removes items from the ## Resolved section.
 # Called at the start of each run so only the current run's resolutions are visible.
+# Matches both current format (- [RESOLVED ...]) and legacy format (- [DATE | RESOLVED ...]).
 clear_resolved_drift_observations() {
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
     if [ ! -f "$drift_file" ]; then
         return 0
     fi
 
-    # Count resolved items first — skip file rewrite if none exist
+    # Count resolved items first — skip file rewrite if none exist.
+    # Match both formats and use /^## [^#]/ to avoid matching ### subheadings.
     local resolved_count
-    resolved_count=$(awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- \[RESOLVED/{c++} END{print c+0}' \
+    resolved_count=$(awk '/^## Resolved/{f=1; next} f && /^## [^#]/{exit} f && /^- /{c++} END{print c+0}' \
         "$drift_file" 2>/dev/null)
     if [ "$resolved_count" -eq 0 ] 2>/dev/null; then
         return 0
@@ -217,14 +236,14 @@ clear_resolved_drift_observations() {
     local in_resolved=false
 
     while IFS= read -r line; do
-        if echo "$line" | grep -q "^## Resolved"; then
+        if [[ "$line" == "## Resolved"* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=true
             echo "$line" >> "$tmpfile"
-        elif echo "$line" | grep -q "^## " && [[ "$in_resolved" = true ]]; then
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "## "* ]] && [[ "$line" != "###"* ]]; then
             in_resolved=false
             echo "$line" >> "$tmpfile"
-        elif [[ "$in_resolved" = true ]] && echo "$line" | grep -q "^- \[RESOLVED"; then
-            # Skip resolved items
+        elif [[ "$in_resolved" = true ]] && [[ "$line" == "- "* ]]; then
+            # Skip all bullet items in the Resolved section (any format)
             :
         else
             echo "$line" >> "$tmpfile"
@@ -235,13 +254,14 @@ clear_resolved_drift_observations() {
     log "Cleared ${resolved_count} resolved item(s) from DRIFT_LOG.md."
 }
 
-# get_resolved_drift_observations — Returns text of [RESOLVED ...] items from ## Resolved.
+# get_resolved_drift_observations — Returns text of resolved items from ## Resolved.
 # Used to include resolved drift items in the commit message.
+# Matches both current format (- [RESOLVED ...]) and legacy format (- [DATE | RESOLVED ...]).
 get_resolved_drift_observations() {
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
     if [ ! -f "$drift_file" ]; then
         return
     fi
-    awk '/^## Resolved/{f=1; next} f && /^##/{exit} f && /^- \[RESOLVED/{print}' \
+    awk '/^## Resolved/{f=1; next} f && /^## [^#]/{exit} f && /^- /{print}' \
         "$drift_file" 2>/dev/null || true
 }

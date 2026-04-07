@@ -19,6 +19,7 @@ TASK="Implement test feature"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
+source "${TEKHTON_HOME}/lib/drift_prune.sh"
 source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
 
 FAIL=0

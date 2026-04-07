@@ -37,11 +37,14 @@ pointer_count=$(grep -c "$pointer_comment" "$CLAUDE_MD" 2>/dev/null || true)
 assert "Archive pointer comment present at least once (found: $pointer_count)" \
   "$([ "$pointer_count" -ge 1 ] && echo 0 || echo 1)"
 
-# Verify pointer appears after "### Milestone Plan" in the two initiative sections
-# Check that it appears within the first 5 lines after each ### Milestone Plan heading
-section_lines=$(grep -n "^### Milestone Plan" "$CLAUDE_MD" | head -2 | awk -F: '{print $1}')
+# Verify pointer appears after "### Milestone Plan" headings (if any exist)
+# CLAUDE.md may have been restructured since the original migration — if no
+# "### Milestone Plan" headings remain, the pointer-after-heading check is N/A.
+section_lines=$(grep -n "^### Milestone Plan" "$CLAUDE_MD" 2>/dev/null | head -2 | awk -F: '{print $1}' || true)
+section_count=0
 pointer_after_section=0
 for section_line in $section_lines; do
+  section_count=$((section_count + 1))
   # Check next 5 lines for the pointer
   found=$(awk -v start="$section_line" -v pattern="$pointer_comment" \
     'NR > start && NR <= start+5 && index($0, pattern) {found=1} END {print found+0}' \
@@ -50,8 +53,12 @@ for section_line in $section_lines; do
     pointer_after_section=$((pointer_after_section + 1))
   fi
 done
-assert "Archive pointer follows both ### Milestone Plan headings (found: $pointer_after_section/2)" \
-  "$([ "$pointer_after_section" -ge 2 ] && echo 0 || echo 1)"
+if [ "$section_count" -eq 0 ]; then
+  assert "No ### Milestone Plan headings to check (CLAUDE.md restructured)" "0"
+else
+  assert "Archive pointer follows ### Milestone Plan headings (found: $pointer_after_section/$section_count)" \
+    "$([ "$pointer_after_section" -ge "$section_count" ] && echo 0 || echo 1)"
+fi
 
 # --- Criterion 3: Orphaned agent output text removed ---
 orphan1_count=$(grep -c "This milestone has two cleanly independent pieces" "$CLAUDE_MD" 2>/dev/null || true)
@@ -67,12 +74,16 @@ horiz_count=$(grep -c "^---$" "$CLAUDE_MD" 2>/dev/null || true)
 assert "No bare horizontal rule '---' lines in CLAUDE.md (found: $horiz_count)" \
   "$([ "$horiz_count" -eq 0 ] && echo 0 || echo 1)"
 
-# --- Criterion 4: Active (non-archived) milestone headings exist ---
-# Dynamically discover milestones from CLAUDE.md rather than hardcoding numbers.
-# Any #### Milestone N: heading that isn't [DONE] counts as active.
+# --- Criterion 4: Active (non-archived) milestones exist ---
+# Milestones may be inline in CLAUDE.md (#### Milestone N:) or in DAG files (.claude/milestones/).
 active_count=$(grep -c '^#### Milestone [0-9]' "$CLAUDE_MD" 2>/dev/null || true)
-assert "At least one active milestone heading in CLAUDE.md (found: $active_count)" \
-  "$([ "$active_count" -ge 1 ] && echo 0 || echo 1)"
+dag_count=0
+if [ -d "$TEKHTON_HOME/.claude/milestones" ]; then
+  dag_count=$(find "$TEKHTON_HOME/.claude/milestones" -name '*.md' -type f 2>/dev/null | wc -l | tr -d '[:space:]')
+fi
+total_active=$((active_count + dag_count))
+assert "At least one active milestone in CLAUDE.md or DAG files (found: $total_active)" \
+  "$([ "$total_active" -ge 1 ] && echo 0 || echo 1)"
 
 # Verify no active heading is a [DONE] one-liner (covered by criterion 1, but belt-and-suspenders)
 done_active=$(grep -c '^#### \[DONE\] Milestone' "$CLAUDE_MD" 2>/dev/null || true)

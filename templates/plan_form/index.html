@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tekhton Planning Interview</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div>
+            <h1>Tekhton Planning Interview</h1>
+            <div class="header-meta">
+                Project: <strong>{{PROJECT_NAME}}</strong> | Type: <strong>{{PROJECT_TYPE}}</strong>
+            </div>
+        </div>
+        <div class="header-controls">
+            <span class="save-indicator" id="save-indicator"></span>
+            <button class="theme-toggle" onclick="toggleTheme()" type="button">Toggle Theme</button>
+        </div>
+    </div>
+
+    <div class="progress-bar" id="progress-top">
+        <span id="progress-text-top">0/0 sections</span>
+        <div class="progress-track">
+            <div class="progress-fill" id="progress-fill-top" style="width: 0%"></div>
+        </div>
+        <span id="required-text-top">0 required left</span>
+    </div>
+
+    <form id="plan-form">
+        <div id="sections">
+            {{SECTIONS_HTML}}
+        </div>
+
+        <div class="button-bar">
+            <button type="button" class="btn btn-secondary" id="save-draft-btn" onclick="saveDraft()">Save Draft</button>
+            <button type="submit" class="btn btn-primary" id="submit-btn" disabled>Submit Answers</button>
+        </div>
+    </form>
+
+    <div class="progress-bar">
+        <span id="progress-text-bottom">0/0 sections</span>
+        <div class="progress-track">
+            <div class="progress-fill" id="progress-fill-bottom" style="width: 0%"></div>
+        </div>
+        <span id="required-text-bottom">0 required left</span>
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    var AUTO_SAVE_INTERVAL = 30000; // 30 seconds
+    var lastSavedState = '';
+    var autoSaveTimer = null;
+    var saveInFlight = false;
+
+    // --- Theme ---
+    window.toggleTheme = function() {
+        var current = document.documentElement.getAttribute('data-theme');
+        var next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('tekhton-theme', next); } catch(e) {}
+    };
+
+    // Restore saved theme
+    try {
+        var saved = localStorage.getItem('tekhton-theme');
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+    } catch(e) {}
+
+    // --- Progress tracking ---
+    function updateProgress() {
+        var textareas = document.querySelectorAll('.section-textarea');
+        var total = textareas.length;
+        var filled = 0;
+        var requiredLeft = 0;
+
+        textareas.forEach(function(ta) {
+            var card = ta.closest('.section-card');
+            var isRequired = card.getAttribute('data-required') === 'true';
+            var val = ta.value.trim();
+            var badge = card.querySelector('.section-badge');
+
+            if (val.length > 0) {
+                filled++;
+                card.classList.remove('empty', 'partial');
+                card.classList.add('complete');
+                if (badge) { badge.className = 'section-badge complete'; badge.textContent = 'Done'; }
+            } else {
+                card.classList.remove('complete', 'partial');
+                card.classList.add('empty');
+                if (badge) {
+                    if (isRequired) {
+                        badge.className = 'section-badge empty';
+                        badge.textContent = 'Required';
+                    } else {
+                        badge.className = 'section-badge partial';
+                        badge.textContent = 'Optional';
+                    }
+                }
+                if (isRequired) requiredLeft++;
+            }
+
+            // Update char count
+            var counter = card.querySelector('.char-count');
+            if (counter) counter.textContent = val.length + ' chars';
+        });
+
+        var pct = total > 0 ? Math.round((filled / total) * 100) : 0;
+        ['top', 'bottom'].forEach(function(pos) {
+            var textEl = document.getElementById('progress-text-' + pos);
+            var fillEl = document.getElementById('progress-fill-' + pos);
+            var reqEl = document.getElementById('required-text-' + pos);
+            if (textEl) textEl.textContent = filled + '/' + total + ' sections';
+            if (fillEl) fillEl.style.width = pct + '%';
+            if (reqEl) reqEl.textContent = requiredLeft + ' required left';
+        });
+
+        // Enable/disable submit
+        var submitBtn = document.getElementById('submit-btn');
+        if (submitBtn) submitBtn.disabled = (requiredLeft > 0);
+    }
+
+    // --- Auto-grow textareas ---
+    function autoGrow(el) {
+        el.style.height = 'auto';
+        var newHeight = Math.max(150, el.scrollHeight + 2);
+        el.style.height = newHeight + 'px';
+    }
+
+    // --- Collect answers ---
+    function collectAnswers() {
+        var data = {};
+        document.querySelectorAll('.section-textarea').forEach(function(ta) {
+            data[ta.name] = ta.value;
+        });
+        return data;
+    }
+
+    function getStateSnapshot() {
+        return JSON.stringify(collectAnswers());
+    }
+
+    // --- Save/Submit ---
+    function showSaveStatus(msg) {
+        var el = document.getElementById('save-indicator');
+        if (el) el.textContent = msg;
+    }
+
+    function postAnswers(endpoint, callback) {
+        if (saveInFlight) return;
+        saveInFlight = true;
+        showSaveStatus('Saving...');
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', endpoint, true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                saveInFlight = false;
+                if (xhr.status === 200) {
+                    lastSavedState = getStateSnapshot();
+                    showSaveStatus('Saved \u2713');
+                    if (callback) callback(true);
+                } else {
+                    showSaveStatus('Save failed');
+                    if (callback) callback(false);
+                }
+            }
+        };
+        xhr.send(JSON.stringify(collectAnswers()));
+    }
+
+    window.saveDraft = function() {
+        postAnswers('/save-draft');
+    };
+
+    // --- Auto-save ---
+    function checkAutoSave() {
+        var current = getStateSnapshot();
+        if (current !== lastSavedState) {
+            postAnswers('/save-draft');
+        }
+    }
+
+    // --- Init ---
+    function init() {
+        // Attach listeners to all textareas
+        document.querySelectorAll('.section-textarea').forEach(function(ta) {
+            ta.addEventListener('input', function() {
+                autoGrow(ta);
+                updateProgress();
+            });
+            // Initial auto-grow for pre-populated textareas
+            autoGrow(ta);
+        });
+
+        // Form submit
+        var form = document.getElementById('plan-form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                postAnswers('/submit', function(ok) {
+                    if (ok) {
+                        document.getElementById('submit-btn').disabled = true;
+                        document.getElementById('submit-btn').textContent = 'Submitted!';
+                        showSaveStatus('Submitted \u2713');
+                    }
+                });
+            });
+        }
+
+        // Initial state
+        lastSavedState = getStateSnapshot();
+        updateProgress();
+
+        // Start auto-save timer
+        autoSaveTimer = setInterval(checkAutoSave, AUTO_SAVE_INTERVAL);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
+</script>
+</body>
+</html>

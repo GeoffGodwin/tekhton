@@ -68,6 +68,47 @@ _run_with_retry() {
             fi
         fi
 
+        # --- Rate limit detection (M16) — check before error classification ---
+        # Rate limits get the full pause/resume treatment, not transient retry.
+        if command -v is_rate_limit_error &>/dev/null; then
+            local _stderr_path="${session_dir}/agent_stderr.txt"
+            if is_rate_limit_error "$_RWR_EXIT" "$_stderr_path"; then
+                if command -v enter_quota_pause &>/dev/null; then
+                    warn "[$label] Rate limit detected — entering quota pause."
+                    if enter_quota_pause "Rate limited (agent: ${label})"; then
+                        # Quota refreshed — retry without incrementing counter
+                        _reset_monitoring_state "$session_dir"
+                        rm -f "$exit_file" "$turns_file"
+                        continue
+                    else
+                        # Quota pause timed out — treat as fatal
+                        # shellcheck disable=SC2034
+                        AGENT_ERROR_CATEGORY="UPSTREAM"
+                        # shellcheck disable=SC2034
+                        AGENT_ERROR_SUBCATEGORY="quota_exhausted"
+                        # shellcheck disable=SC2034
+                        AGENT_ERROR_TRANSIENT="false"
+                        # shellcheck disable=SC2034
+                        AGENT_ERROR_MESSAGE="Quota pause exceeded max duration"
+                        break
+                    fi
+                fi
+            fi
+        fi
+
+        # --- Proactive quota check (Tier 2, M16) -----------------------------
+        if command -v should_pause_proactively &>/dev/null; then
+            if should_pause_proactively; then
+                local _remaining
+                _remaining=$(check_quota_remaining)
+                warn "[$label] Quota at ${_remaining}% — below reserve threshold. Entering proactive pause."
+                if enter_quota_pause "Paused at ${_remaining}% remaining (reserve threshold)"; then
+                    # Continue to error classification — the current call may have succeeded
+                    true
+                fi
+            fi
+        fi
+
         # --- Error classification (12.2) --------------------------------------
         _classify_agent_exit "$_RWR_EXIT" "$session_dir" "$prerun_marker" "$_RWR_TURNS"
 

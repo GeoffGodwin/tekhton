@@ -23,6 +23,7 @@ LOG_DIR=""
 TIMESTAMP=""
 
 source "${TEKHTON_HOME}/lib/common.sh"
+source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 
@@ -230,10 +231,16 @@ cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
 - [ ] [BUG] Handle [brackets] in JSON
 EOF
 note="- [ ] [BUG] Fix regex pattern: \`^[a-z]+(\\.\d+)?\$\`"
-# Should handle the special chars gracefully
-claim_single_note "$note" || true
-# If it didn't error, that's good
-assert_exit_code "Special chars handled" 0 "echo 'ok'"
+# Should handle the special chars gracefully without corrupting the file
+set +e; claim_single_note "$note"; _special_rc=$?; set -e
+# Exit 0 (claimed) or 1 (not found) are both acceptable; a crash exits >1
+if [[ "$_special_rc" -gt 1 ]]; then
+    echo "    FAIL: Special chars — claim_single_note crashed with rc=$_special_rc"
+    FAIL=1
+fi
+# File must not be corrupted (still contains the BUG note text)
+assert_contains "Special chars: HUMAN_NOTES.md not corrupted" \
+    "$(cat "$TMPDIR/HUMAN_NOTES.md")" "BUG"
 
 test_case "claim_single_note returns 0 on success"
 cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
@@ -330,6 +337,62 @@ cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
 EOF
 note="- [ ] [BUG] Test"
 assert_exit_code "Non-zero exit code handled" 0 "resolve_single_note '$note' 42"
+
+# --- Section 4b: resolve_single_note fallback (agent clobber resilience) ---
+
+echo ""
+echo "=== Section 4b: resolve_single_note fallback when [~] clobbered back to [ ] ==="
+
+test_case "resolve_single_note fallback: marks [x] when agent clobbered [~] to [ ]"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [ ] [BUG] Fix login form validation
+- [ ] [BUG] API error message formatting
+EOF
+note="- [ ] [BUG] Fix login form validation"
+resolve_single_note "$note" 0
+assert_contains "Fallback marked [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+
+test_case "resolve_single_note fallback: resets to [ ] on failure when clobbered"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [ ] [BUG] Fix login form validation
+EOF
+note="- [ ] [BUG] Fix login form validation"
+resolve_single_note "$note" 1
+assert_contains "Fallback reset to [ ]" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+
+test_case "resolve_single_note fallback: leaves other notes unchanged"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [ ] [BUG] First note
+- [ ] [BUG] Second note
+- [x] [BUG] Third note
+EOF
+note="- [ ] [BUG] First note"
+resolve_single_note "$note" 0
+assert_contains "Fallback second unchanged" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Second note"
+assert_contains "Fallback third unchanged" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Third note"
+
+test_case "resolve_single_note fallback: returns 0 on success"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [ ] [BUG] Test
+EOF
+note="- [ ] [BUG] Test"
+assert_exit_code "Fallback return 0" 0 "resolve_single_note '$note' 0"
+
+test_case "resolve_single_note prefers [~] match over [ ] fallback"
+cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+## Bugs
+- [~] [BUG] Fix login form validation
+- [ ] [BUG] Fix login form validation
+EOF
+note="- [ ] [BUG] Fix login form validation"
+resolve_single_note "$note" 0
+# Should match the [~] line (primary), leaving [ ] line untouched
+assert_contains "Primary [~] matched" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Fallback [ ] untouched" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
 
 # --- Section 5: extract_note_text ---
 
@@ -574,6 +637,10 @@ echo "=== Section 10: Flag validation ==="
 # Read tekhton.sh flag validation section to test indirectly.
 # We can't run tekhton.sh directly without a full project, so we verify the
 # validation logic exists and test it by simulating the flag state.
+# NOTE: These tests (10.1–10.4) inline-reimplement the flag-check logic
+# rather than calling the actual validation code from tekhton.sh. To catch
+# regressions in tekhton.sh's argument parsing, changes to flag handling must
+# be verified manually against these test scenarios.
 
 test_case "Flag validation: --human --milestone rejected"
 # The flag validation in tekhton.sh checks HUMAN_MODE=true && MILESTONE_MODE=true
@@ -703,7 +770,7 @@ _hook_resolve_notes 1
 # On failure, resolve_single_note resets [~] → [ ]
 assert_contains "Note reset to [ ] on failure" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
 
-test_case "_hook_resolve_notes in non-HUMAN_MODE calls bulk resolution"
+test_case "_hook_resolve_notes in non-HUMAN_MODE resolves [~] notes via orphan safety net"
 cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
@@ -719,7 +786,7 @@ cat > "$TMPDIR/CODER_SUMMARY.md" <<'EOF'
 EOF
 _hook_resolve_notes 0
 # Bulk resolve_human_notes with COMPLETE status marks all [~] → [x]
-assert_contains "Bulk resolution marks [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Orphan safety net marks [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
 rm -f "$TMPDIR/CODER_SUMMARY.md"
 
 # Clean up

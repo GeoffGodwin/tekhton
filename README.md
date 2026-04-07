@@ -5,48 +5,110 @@
 
   <p><strong>One intent. Many hands.</strong></p>
 
-  <p><em>v2.0 — Adaptive Pipeline</em></p>
+  <p><em>v3.66 — Context-Aware Pipeline</em></p>
 </div>
 
 Tekhton is a standalone, project-agnostic multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
-Give it a task description and it orchestrates a **Scout → Coder → Reviewer → Tester** cycle
+Give it a task description and it orchestrates an **Intake → Scout → Coder → Security → Reviewer → Tester** cycle
 with automatic rework routing, build gates, dynamic turn limits, architecture drift
 prevention, transient error retry, turn-exhaustion continuation, milestone splitting,
 state persistence, and resume support — or hand it `--complete` and walk away.
 
-## What's New in v2.0
+## What's New in v3
 
-Tekhton 2.0 makes the pipeline **adaptive** — aware of its own context economics,
-capable of milestone-to-milestone progression, able to interrupt itself when
-assumptions break, and able to improve from its own run history. All v2 features
-are additive or opt-in; existing v1 workflows remain unchanged.
+Tekhton 3 makes the pipeline **context-aware** — milestones live as a dependency
+graph with a sliding context window, agents receive ranked file signatures relevant
+to their task, and a suite of new stages and modes make the pipeline safer, faster,
+and easier to use. 66 milestones delivered across the V3 initiative; all v3 features
+are additive or default-safe (a few are auto-enabled when their preconditions are
+met, e.g. UI specialist on UI projects), and existing v2 workflows remain unchanged.
 
-**Highlights:**
+**Context & Indexing**
 
-- **`--complete` autonomous loop** — wraps the entire pipeline in an outer loop that retries until the task passes acceptance or recovery options are exhausted
-- **`--auto-advance` milestone chaining** — after each milestone passes acceptance, the pipeline advances to the next automatically
-- **`--human` notes mode** — pick the next item from `HUMAN_NOTES.md` as the task; combine with `--complete` to process all notes in batch
-- **`--replan` brownfield replanning** — delta-based update of DESIGN.md and CLAUDE.md from accumulated drift and codebase evolution
-- **`--metrics` dashboard** — run history, per-task-type averages, scout accuracy, and adaptive turn calibration
-- **`--init` brownfield intelligence** — auto-detects tech stack, crawls the project, and generates production-quality CLAUDE.md and DESIGN.md from codebase evidence
-- **Transient error retry** — API errors (500, 429, 529), OOM kills, and network failures trigger automatic retry with exponential backoff
-- **Turn-exhaustion continuation** — agents that hit their turn limit with substantive progress are automatically re-invoked with a fresh budget
-- **Milestone auto-split** — oversized milestones are automatically decomposed into sub-milestones and retried
-- **Context budgeting** — token accounting prevents context window overflow with configurable compression strategies
-- **Specialist reviews** — opt-in security, performance, and API contract review passes after the main reviewer approves
-- **Autonomous debt sweeps** — post-success cleanup stage addresses non-blocking technical debt automatically
-- **Error taxonomy** — structured error classification with transience detection, recovery suggestions, and sensitive data redaction
-- **Security hardening** — safe config parsing, per-session temp files, prompt injection mitigation, git safety checks
-- **Milestone archival** — completed milestones are automatically archived from CLAUDE.md to keep it under context limits
-- **Post-coder turn recalibration** — reviewer/tester turn limits are recalculated using actual coder data instead of scout guesses
+- **Milestone DAG** — file-based milestones with dependency tracking, sliding context window, parallel groups, and automatic migration from inline CLAUDE.md milestones
+- **Intelligent Indexing** — tree-sitter repo maps with PageRank ranking, task-relevant context slicing per stage, cross-run file association tracking, repo map cross-stage cache, and optional Serena LSP via MCP
+- **Prompt Tool Awareness** — coder/reviewer/tester prompts surface available Serena and repo map tools so agents actually use them
+- **Intra-run Context Cache** — avoids redundant file reads within a single run
+
+**Quality & Safety Stages**
+
+- **Security Agent** — dedicated OWASP-aware security review stage with finding classification, severity scoring, automatic remediation, and waiver support
+- **Task Intake / PM Agent** — complexity estimation, clarity scoring, task decomposition, and scope validation before execution
+- **UI/UX Specialist** — auto-enabled on UI projects; 8-category checklist covering component structure, design system consistency, WCAG 2.1 AA accessibility, responsive behavior, state presentation, and interaction patterns
+- **Test Baseline & Hygiene** — pre-existing test failure detection plus completion-gate hardening so agents aren't blamed for inherited test debt
+- **Tester Surgical Fix Mode** — when tests fail, the tester spawns a scoped fix agent instead of rewriting the world
+- **Build Gate Hardening** — hang prevention, timeout enforcement, and process tree cleanup for build/test commands
+
+**Environment Intelligence**
+
+- **Pre-flight Validation** — environment checks (toolchain, dependencies, services) before the pipeline starts, with optional auto-remediation
+- **Error Pattern Registry** — structured classification of build/test failures with curated remediation hints
+- **Auto-Remediation Engine** — applies known-safe fixes for cataloged failure patterns
+- **Service Readiness Probing** — waits for databases, message queues, and dev servers to come up before declaring failures
+
+**UI/UX Design Intelligence (Platform Adapters)**
+
+- **Platform Adapter Framework** — file-based adapters in `platforms/` providing UI knowledge for the coder, specialist, and tester
+- **Web** — Tailwind, MUI, shadcn, Chakra, Bootstrap detection with framework-specific guidance
+- **Mobile & Game** — Flutter/Dart, SwiftUI/UIKit, Jetpack Compose, and browser game engines (Phaser, PixiJS, Three.js, Babylon.js)
+- **User-extensible** — drop a `.claude/platforms/<name>/` override into any project
+
+**Watchtower Dashboard**
+
+- Real-time browser-based pipeline monitoring with Live Run, Milestone Map, Reports, Trends, and Security Summary tabs
+- Smart refresh, context-aware layout, action items with severity colors, and interactive controls
+- Full-stage metrics with hierarchical breakdown, parallel teams readiness, and run history timeline
+
+**Brownfield Intelligence**
+
+- Deep codebase analysis for `--init` on existing projects: tech stack detection, health scoring, AI artifact detection, workspace/service/CI enumeration
+- Documentation quality assessment, test framework detection, UI framework detection, and E2E test awareness
+
+**Notes Pipeline (rewritten)**
+
+- Core rewrite with note triage and sizing gate, tag-specialized execution paths, injection hygiene, and an action-items UX surfaced in Watchtower
+- `note` subcommand for managing HUMAN_NOTES.md from the CLI
+
+**Developer Experience**
+
+- **Express Mode** — zero-config execution when no `pipeline.conf` exists; Tekhton auto-detects your stack and runs
+- **TDD Support** — `PIPELINE_ORDER=test_first` runs the tester before the coder, with a preflight test spec that guides implementation
+- **Browser Planning** — interactive `--plan-browser` mode opens a web form for the planning interview with answer persistence; YAML answer import via `--plan --answers`
+- **Dry-Run Preview** — `--dry-run` runs scout + intake only and shows what the pipeline would do without executing
+- **Rollback** — `--rollback` reverts the last pipeline run with clean git operations
+- **Pipeline Diagnostics** — `--diagnose` analyzes the last failure with structured recovery suggestions
+- **Version Migration Framework** — `--migrate` upgrades project config across Tekhton versions
+- **Onboarding Flow Fix** — repaired the circular `--init` ↔ `--plan` handoff so new projects start cleanly
+
+**Acceleration & Telemetry**
+
+- **Test-Aware Coding** with a jr coder test-fix gate
+- **Causal Event Log** — structured JSONL event logging for debugging and cross-run learning
+- **Structured Run Memory** — cross-run JSONL learning store with keyword filtering and automatic pruning
+- **Instrumentation & Timing Report** — per-stage and per-agent timing surfaces in metrics and Watchtower
+- **Progress Transparency** — real-time stage progress reporting with timing estimates based on run history
+- **Reduced Agent Invocations** — smarter skip logic when stages have no work to do
+- **Project Health Scoring** — five-category assessment (tests, quality, deps, docs, hygiene) with belt ratings and trend tracking
+
+### Foundation (v2.0)
+
+- `--complete` autonomous loop, `--auto-advance` milestone chaining, `--human` notes mode
+- Transient error retry, turn-exhaustion continuation, milestone auto-split
+- Context budgeting, specialist reviews, autonomous debt sweeps
+- Error taxonomy, security hardening, metrics dashboard, brownfield replanning
 
 ## Requirements
 
-- **Bash 4+** — Linux, macOS, or WSL2 (Git Bash also supported)
+- **Bash 4+** — Linux, macOS, or WSL2
 - **Claude CLI** — authenticated and on `PATH` (`claude --version` should work)
 - **Git** — used for commit integration
 - **Python 3** — used for JSON parsing of agent output
-- **Your project's build/test tools** — configured via `ANALYZE_CMD`, `TEST_CMD`, `BUILD_CHECK_CMD`
+
+### Optional Dependencies
+
+- **Python 3.8+** with **tree-sitter** — for intelligent repo map indexing (`--setup-indexer` installs automatically)
+- **Serena LSP** — for live symbol lookup via MCP (`--setup-indexer --with-lsp`)
+- **shellcheck** — for development on Tekhton itself
 
 ## Quick Start
 
@@ -100,10 +162,19 @@ your-project/
 │   │   ├── tester.md          # Tester role definition
 │   │   ├── jr-coder.md        # Jr coder role definition
 │   │   └── architect.md       # Architect role definition
-│   └── logs/                  # Run logs, metrics (gitignored)
+│   ├── milestones/            # Milestone DAG: per-milestone files + MANIFEST.cfg
+│   ├── dashboard/             # Watchtower browser dashboard (open index.html)
+│   ├── index/                 # Tree-sitter repo map cache (if --setup-indexer)
+│   ├── logs/                  # Run logs, metrics, CAUSAL_LOG.jsonl, RUN_MEMORY.jsonl (gitignored)
+│   └── platforms/             # (optional) user UI platform adapter overrides
 ├── CLAUDE.md                  # Project rules (read by all agents)
+├── DESIGN.md                  # Design doc (from --plan)
+├── PROJECT_INDEX.md           # Brownfield crawl output (--init / --rescan)
+├── HUMAN_NOTES.md             # Bug/feat/polish queue
+├── MILESTONE_ARCHIVE.md       # Completed milestone history
 ├── CODER_SUMMARY.md           # (generated per-run)
 ├── REVIEWER_REPORT.md         # (generated per-run)
+├── SECURITY_REPORT.md         # (generated per-run)
 └── TESTER_REPORT.md           # (generated per-run)
 ```
 
@@ -112,26 +183,34 @@ your-project/
 ```
 tekhton "Implement feature X"
         │
-        ├─ Stage 0: Architect audit (conditional — drift thresholds)
+        ├─ Pre-flight: env validation, service readiness, optional auto-remediation
+        ├─ Task Intake: clarity scoring, scope assessment, task tweaking
+        ├─ Architect audit (conditional — drift thresholds)
         │
-        ├─ Stage 1: Scout + Coder
-        │    ├─ Scout → estimates complexity, adjusts turn limits
+        ├─ Scout + Coder
+        │    ├─ Scout → estimates complexity, adjusts turn limits, leverages repo map + Serena
         │    ├─ Coder → writes code + CODER_SUMMARY.md
         │    ├─ Turn continuation → auto-resume if coder hits turn limit with progress
-        │    └─ Build gate → auto-fix on failure (Jr → Sr escalation)
+        │    └─ Build gate → error pattern classification → auto-fix (Jr → Sr escalation)
         │
-        ├─ Stage 2: Reviewer
+        ├─ Security Review
+        │    ├─ OWASP-aware vulnerability scan → SECURITY_REPORT.md
+        │    └─ High/Critical findings → auto-remediation rework loop
+        │
+        ├─ Code Review
         │    ├─ Reviewer → REVIEWER_REPORT.md
         │    ├─ Complex blockers → Senior coder rework
         │    ├─ Simple blockers → Jr coder fix
         │    ├─ Build gate after fixes
-        │    ├─ Specialist reviews (security, performance, API — opt-in)
+        │    ├─ Specialist reviews (UI/UX auto on UI projects; performance, API, custom — opt-in)
         │    └─ (repeats up to MAX_REVIEW_CYCLES)
         │
-        ├─ Stage 3: Tester
-        │    └─ Writes tests for coverage gaps → TESTER_REPORT.md
+        ├─ Tester
+        │    ├─ Writes tests for coverage gaps → TESTER_REPORT.md
+        │    ├─ Test baseline check → ignore pre-existing failures
+        │    └─ Surgical fix mode → scoped fix agent on test failures
         │
-        ├─ Stage 4: Cleanup (opt-in — autonomous debt sweep)
+        ├─ Cleanup (opt-in — autonomous debt sweep)
         │
         ├─ Drift processing (observations, ACPs, non-blocking notes)
         ├─ Milestone acceptance check (in --milestone / --complete mode)
@@ -149,12 +228,15 @@ Each agent runs on its own configurable model. Defaults:
 | Agent | Default Model | Purpose |
 |-------|--------------|---------|
 | Coder | Opus | Primary implementation |
-| Jr Coder | Haiku | Simple fixes, build repairs, debt sweeps |
+| Jr Coder | Haiku | Simple fixes, build repairs, debt sweeps, test fixes |
 | Scout | Haiku | File discovery, complexity estimation |
 | Reviewer | Sonnet | Code review, drift observation |
 | Architect | Sonnet | Drift audit, remediation planning |
-| Tester | Haiku (Sonnet in `--milestone`) | Test writing and validation |
-| Specialists | Sonnet | Security, performance, API reviews (opt-in) |
+| Tester | Haiku (Sonnet in `--milestone`) | Test writing, validation, surgical fix mode |
+| Intake / PM | Sonnet | Task clarity scoring, scope assessment, decomposition |
+| Security | Sonnet | OWASP-aware vulnerability review (built-in stage) |
+| UI/UX Specialist | Sonnet | Component, accessibility, design-system review (auto on UI projects) |
+| Other Specialists | Sonnet | Performance, API, custom focused reviews (opt-in) |
 
 ### Dynamic Turn Limits
 
@@ -346,11 +428,36 @@ Tekhton uses FIFO-isolated agent invocation with multiple layers of fault tolera
 - **Error taxonomy** — Structured error classification (UPSTREAM, ENVIRONMENT, AGENT_SCOPE, PIPELINE) with transience detection, recovery suggestions, and sensitive data redaction. Errors are displayed in formatted boxes with actionable next steps.
 - **Windows compatibility** — Detects Windows-native `claude.exe` running via WSL interop or Git Bash and uses `taskkill.exe` for cleanup (Windows processes ignore POSIX signals).
 
-## Specialist Reviews (Opt-In)
+## Watchtower Dashboard
 
-After the main reviewer approves, optional specialist agents can run focused review passes:
+Tekhton includes a browser-based dashboard for real-time pipeline monitoring:
 
-- **Security** — injection risks, auth bypass, secrets exposure, input validation
+```bash
+open .claude/dashboard/index.html    # macOS
+xdg-open .claude/dashboard/index.html  # Linux
+```
+
+The dashboard provides:
+- **Live Run** — current stage, agent, turn count, and elapsed time
+- **Milestone Map** — dependency graph visualization with status indicators
+- **Reports** — run history with stage breakdowns and outcomes
+- **Trends** — success rates, timing patterns, and health score trends
+- **Security Summary** — open findings by severity, remediation rate
+- **Action Items** — non-blocking notes, drift observations, and human actions with severity colors
+
+The dashboard is created automatically by `--init` and updated at the end of each pipeline stage.
+
+## Specialist Reviews
+
+After the main reviewer approves, focused specialist agents can run additional review passes.
+
+**Built-in / auto-enabled:**
+
+- **Security** — runs as a dedicated pipeline stage (not just a specialist). OWASP-aware vulnerability scanning with severity scoring and auto-remediation. Toggle with `SECURITY_AGENT_ENABLED`.
+- **UI/UX** — auto-enabled when `UI_PROJECT_DETECTED=true`. 8-category checklist covering component structure, design system consistency, WCAG 2.1 AA accessibility, responsive behavior, state presentation, interaction patterns, loading/empty/error states, and keyboard/focus management. Pulls platform-specific patterns from the active platform adapter (web / Flutter / iOS / Android / game engines). Override with `SPECIALIST_UI_ENABLED` and `UI_PLATFORM`.
+
+**Opt-in:**
+
 - **Performance** — N+1 queries, unbounded loops, memory leaks, expensive operations
 - **API contracts** — schema consistency, error format compliance, backward compatibility
 
@@ -358,12 +465,13 @@ After the main reviewer approves, optional specialist agents can run focused rev
 
 Enable per specialist in `pipeline.conf`:
 ```bash
-SPECIALIST_SECURITY_ENABLED=true
 SPECIALIST_PERFORMANCE_ENABLED=true
 SPECIALIST_API_ENABLED=true
+# UI specialist is auto-on for UI projects; force off with:
+# SPECIALIST_UI_ENABLED=false
 ```
 
-Custom specialists are supported via `SPECIALIST_CUSTOM_*` config keys with your own prompt templates.
+Custom specialists are supported via `SPECIALIST_CUSTOM_*` config keys with your own prompt templates. User platform adapters can be dropped into `.claude/platforms/<name>/` to extend or override the built-in UI knowledge.
 
 ## Autonomous Debt Sweeps (Opt-In)
 
@@ -451,27 +559,51 @@ higher-quality document updates.
 
 | Flag | Purpose |
 |------|---------|
+| `--init` | Smart init — detect stack, generate config, agent roles, and dashboard |
+| `--init --full` | Run init + synthesis (DESIGN.md + CLAUDE.md) in one command |
+| `--reinit` | Re-initialize, preserving existing config while adding new defaults |
 | `--plan` | Interactive planning — generates DESIGN.md and CLAUDE.md |
+| `--plan --answers <f>` | Import pre-filled YAML answers, skip interview |
+| `--plan-browser` | Browser-based planning interview form |
+| `--export-questions` | Export planning questions as YAML template to stdout |
+| `--plan-from-index` | Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md |
 | `--replan` | Delta-based update of DESIGN.md and CLAUDE.md from current codebase |
-| `--init` | Scaffold pipeline config and agent roles for a new project |
-| `--init-notes` | Create blank HUMAN_NOTES.md template |
 | `--complete` | Autonomous loop — retry pipeline until task passes or bounds exhausted |
-| `--milestone` | Milestone mode — 2× turns, extra review, acceptance checking (implies `--complete`) |
+| `--milestone` | Milestone mode — higher turns, extra review, acceptance checking |
 | `--auto-advance` | Chain milestones autonomously (implies `--milestone`) |
+| `--add-milestone "desc"` | Create a scoped milestone via the intake agent (no run) |
 | `--human [TAG]` | Pick next note from HUMAN_NOTES.md as task (optional: BUG, FEAT, POLISH) |
-| `--start-at coder` | Full pipeline (default) |
-| `--start-at review` | Skip coder, start at reviewer (requires CODER_SUMMARY.md) |
-| `--start-at test` | Skip to tester (requires REVIEWER_REPORT.md) |
-| `--start-at tester` | Resume incomplete tester from TESTER_REPORT.md |
-| `--notes-filter BUG` | Only inject `[BUG]` tagged human notes |
-| `--force-audit` | Run architect audit regardless of thresholds |
+| `--with-notes` | Force human notes injection regardless of task text |
+| `--notes-filter TAG` | Inject only notes matching TAG (BUG, FEAT, POLISH) |
+| `--triage [TAG]` | Triage all unchecked notes (size estimate) without running |
+| `--dry-run` | Preview mode — run scout + intake only, show what would happen |
+| `--continue-preview` | Resume from a previous `--dry-run` (uses cached results) |
+| `--start-at STAGE` | Resume from: `intake`, `coder`, `security`, `review`, `tester`, `test` |
+| `--skip-security` | Bypass security review stage for a single run |
 | `--skip-audit` | Skip architect audit even if thresholds exceeded |
-| `--seed-contracts` | Seed inline system contracts in source files |
+| `--force-audit` | Run architect audit regardless of thresholds |
 | `--no-commit` | Skip auto-commit (prompt instead) |
+| `--usage-threshold N` | Pause if session usage exceeds N% |
+| `--rollback` | Revert the last pipeline run (clean git operations; `--check` to preview) |
+| `--status` | Print saved pipeline state (includes rollback availability) |
 | `--metrics` | Print run metrics dashboard and exit |
-| `--status` | Print saved pipeline state and exit |
+| `--diagnose` | Analyze last failure and suggest recovery steps |
+| `--report` | Print summary of the last pipeline run |
+| `--health` | Run standalone project health assessment |
+| `--audit-tests` | Audit ALL test files for integrity issues |
+| `--fix-nonblockers` | Address all open non-blocking notes |
+| `--fix-drift` | Force architect audit to resolve drift observations |
+| `--rescan` | Update PROJECT_INDEX.md incrementally (add `--full` for full re-crawl) |
+| `--migrate` | Upgrade project config to current Tekhton version (`--check`, `--status`, `--rollback`) |
+| `--migrate-dag` | Convert inline milestones to DAG file format |
+| `--setup-indexer` | Install Python virtualenv for tree-sitter indexer (`--with-lsp` for Serena) |
+| `--setup-completion` | Install shell completions for your shell |
+| `--update` | Check for and install updates (`--check` to report only) |
+| `--uninstall` | Remove Tekhton installation |
+| `--docs` | Open documentation site in browser |
 | `--version`, `-v` | Print version and exit |
-| `--help` | Show usage information |
+| `--help` | Show usage information (`--help --all` for full flag list) |
+| `note "text"` | Add a note to HUMAN_NOTES.md (with `--tag TAG`, `--list`, `--done`, `--clear`) |
 
 Running `tekhton` with no arguments checks for saved pipeline state and offers to resume.
 
@@ -509,6 +641,19 @@ Key configuration areas:
 | **Clarifications** | `CLARIFICATION_ENABLED=true` | Mid-run human Q&A |
 | **Role files** | `CODER_ROLE_FILE=".claude/agents/coder.md"` | Agent persona definitions |
 | **Planning** | `PLAN_INTERVIEW_MODEL="opus"` | Planning phase model/turn config |
+| **Security agent** | `SECURITY_AGENT_ENABLED=true`, `SECURITY_BLOCK_SEVERITY=HIGH` | Dedicated security stage |
+| **Intake agent** | `INTAKE_AGENT_ENABLED=true`, `INTAKE_CLARITY_THRESHOLD=40` | Task clarity/scope gate |
+| **Watchtower** | `DASHBOARD_ENABLED=true`, `DASHBOARD_REFRESH_INTERVAL=10` | Browser-based dashboard |
+| **Health** | `HEALTH_ENABLED=true`, `HEALTH_SHOW_BELT=true` | Project health scoring |
+| **Milestone DAG** | `MILESTONE_DAG_ENABLED=true`, `MILESTONE_WINDOW_PCT=30` | File-based milestones |
+| **Repo map** | `REPO_MAP_ENABLED=false`, `REPO_MAP_TOKEN_BUDGET=2048` | Tree-sitter indexing |
+| **Causal log** | `CAUSAL_LOG_ENABLED=true` | Structured event logging |
+| **Test baseline** | `TEST_BASELINE_ENABLED=true`, `TEST_BASELINE_PASS_ON_PREEXISTING=true` | Pre-existing failure detection + completion gate hardening |
+| **Tester fix** | `TESTER_FIX_ENABLED=false`, `FINAL_FIX_ENABLED=true`, `FINAL_FIX_MAX_ATTEMPTS=2` | Surgical fix mode on test failures |
+| **Pre-flight** | `PREFLIGHT_ENABLED=true`, `PREFLIGHT_AUTO_FIX=true`, `PREFLIGHT_FAIL_ON_WARN=false` | Environment validation + auto-remediation |
+| **UI specialist** | `SPECIALIST_UI_ENABLED=auto`, `UI_PLATFORM=auto` | Auto-on for UI projects; platform adapter selection |
+| **Run memory** | `RUN_MEMORY_MAX_ENTRIES=50` | Cross-run JSONL learning store |
+| **Pipeline order** | `PIPELINE_ORDER=standard` | `standard` or `test_first` (TDD) |
 
 See [templates/pipeline.conf.example](templates/pipeline.conf.example) for the full annotated reference with all options and defaults.
 
@@ -542,86 +687,105 @@ brew install shellcheck
 
 ## Changelog
 
-### v2.0 — Adaptive Pipeline (March 2026)
+### v3.66 — Context-Aware Pipeline (April 2026)
 
-22 milestones delivered across the Adaptive Pipeline initiative. Key changes by category:
+66 milestones delivered across the V3 initiative. Key changes by theme:
 
-**Autonomous Operation**
-- Outer orchestration loop (`--complete`) with safety bounds: max pipeline attempts, wall-clock timeout, agent call limits, stuck-detection
-- Milestone state machine with acceptance checking and `--auto-advance` for multi-milestone chaining
-- `--human` mode for processing `HUMAN_NOTES.md` items as tasks, with batch support via `--complete`
-- Turn-exhaustion continuation — agents that hit turn limits with progress automatically get a fresh budget (up to 3 continuations)
-- Pre-flight milestone sizing gate with automatic splitting when scope exceeds turn budget
-- Null-run auto-split — failed milestone attempts trigger decomposition and retry without human intervention
+**Milestone DAG & Context (M01–M08)**
+- File-based milestones with `MANIFEST.cfg` dependency tracking and parallel groups
+- Sliding context window — only active + frontier milestones injected into prompts
+- Automatic migration from inline CLAUDE.md milestones (`--migrate-dag`)
+- Tree-sitter repo maps with PageRank ranking and token-budgeted output
+- Task-relevant context slicing per pipeline stage (scout, coder, reviewer, tester)
+- Cross-run file association tracking for personalized ranking
+- Optional Serena LSP integration via MCP for live symbol lookup
+- Indexer tests, documentation, and setup tooling
 
-**Resilience & Error Handling**
-- Transient error retry with exponential backoff (30s → 60s → 120s) for API 500/429/529, OOM, and network failures
-- Error taxonomy with 4 top-level categories (UPSTREAM, ENVIRONMENT, AGENT_SCOPE, PIPELINE) and structured classification
-- Sensitive data redaction in error reports, log summaries, and state files
-- File-change activity detection prevents false kills when agents work silently (JSON output mode)
-- Real-time API error detection in FIFO monitoring stream
-- Structured error reporting boxes with Unicode/ASCII fallback
+**Quality & Safety Stages (M09–M10, M20, M28–M30)**
+- Dedicated security agent stage with OWASP-aware scanning, severity scoring, and auto-remediation
+- Task intake / PM agent with clarity scoring, scope assessment, and task decomposition
+- Test integrity audit (`--audit-tests`) for catching weak/skipped tests
+- UI test awareness, E2E prompt integration, and a UI validation gate with headless smoke testing
+- Build gate hardening with hang prevention, timeout enforcement, and process tree cleanup
 
-**Context & Intelligence**
-- Token accounting — character counts, estimated tokens, and context window percentage for every agent call
-- Context compiler — task-scoped context assembly injects only relevant sections instead of full files
-- Context budget enforcement with configurable compression strategies (truncate, summarize headings, omit)
-- Post-coder turn recalibration — reviewer/tester limits recalculated from actual coder turns, files modified, and diff size
-- Adaptive turn calibration from run history when enough data accumulates
+**Watchtower Dashboard (M13–M14, M34–M38, M66)**
+- Browser-based pipeline monitoring with Live Run, Milestone Map, Reports, Trends, and Security Summary tabs
+- Data fidelity passes, smart refresh, context-aware layout, and action items severity colors
+- Interactive controls, parallel teams readiness (V4 prep)
+- Live Run + Milestone Map UX polish, full-stage metrics with hierarchical breakdown
 
-**Brownfield Intelligence**
-- Tech stack detection engine — identifies languages, frameworks, entry points, and infers build/test/lint commands
-- Project crawler & index generator — produces `PROJECT_INDEX.md` with file inventory, dependency analysis, and sampled key files
-- Incremental rescan — only processes files changed since last scan via `git diff`
-- Agent-assisted project synthesis — generates CLAUDE.md and DESIGN.md from codebase evidence
-- `--init` now auto-detects tech stack and populates `pipeline.conf` intelligently for brownfield projects
+**Brownfield Intelligence (M11–M12, M15, M22)**
+- Deep analysis during `--init`: workspace, service, CI/CD, and infrastructure detection
+- AI artifact detection with archive, tidy, and ignore handling modes
+- Documentation quality assessment and test framework detection
+- Project health scoring with five-category assessment and belt ratings
+- Init UX overhaul
 
-**Review & Quality**
-- Specialist review framework — opt-in security, performance, and API contract review passes
-- Custom specialist support via `SPECIALIST_CUSTOM_*` config convention
-- Autonomous debt sweeps — post-success cleanup stage addresses `NON_BLOCKING_LOG.md` items using jr coder model
-- Mid-run clarification protocol — agents surface blocking questions, pipeline pauses for human input
-- Brownfield replan (`--replan`) — delta-based DESIGN.md and CLAUDE.md updates from codebase drift
+**Developer Experience (M16–M19, M21, M23–M27, M52)**
+- Autonomous runtime improvements
+- Pipeline diagnostics (`--diagnose`) with structured recovery suggestions
+- Documentation site, distribution & install experience
+- Version migration framework (`--migrate`)
+- Dry-run preview (`--dry-run`) and `--continue-preview`
+- Run safety net + `--rollback` for reverting pipeline runs
+- Human notes UX enhancement, `note` subcommand for managing HUMAN_NOTES.md from the CLI
+- Express mode — zero-config execution when no `pipeline.conf` exists
+- TDD support (`PIPELINE_ORDER=test_first`) — tester runs before coder
+- Onboarding flow fix — repaired the circular `--init` ↔ `--plan` handoff
 
-**Metrics & Observability**
-- Run metrics collection to `.claude/logs/metrics.jsonl` with per-stage turns, timing, and outcomes
-- `--metrics` dashboard with per-task-type averages, scout accuracy, error breakdown
-- Structured agent run summary blocks appended to log files (tail-friendly diagnostics)
-- Milestone commit signatures (`[MILESTONE N ✓]` / `[MILESTONE N — partial]`) in git history
-- Milestone archival to `MILESTONE_ARCHIVE.md` — keeps CLAUDE.md under context limits
+**Planning UX (M31–M32)**
+- Planning answer layer + file mode (YAML import via `--plan --answers`)
+- Browser-based planning interview (`--plan-browser`) with answer persistence
 
-**Security**
-- Safe config parsing — rejects `$(`, backticks, `;`, `|`, `&` in config values
-- Per-session temp directory via `mktemp -d` with signal-trapped cleanup
-- Pipeline locking — PID-validated lock file prevents concurrent runs
-- Anti-prompt-injection directives in all agent system prompts
-- File content delimiters in prompts mark untrusted content boundaries
-- Git safety — warns if `.gitignore` is missing `.env` or key patterns
-- Config bounds — numeric values clamped to hard upper limits
-- Sensitive data redaction in error reports and state files
+**Notes Pipeline Rewrite (M33, M39–M42)**
+- Human mode completion loop & state fidelity
+- Notes injection hygiene + action items UX
+- Notes core rewrite with triage & sizing gate
+- Tag-specialized execution paths (BUG/FEAT/POLISH)
 
-**Pipeline Lifecycle**
-- Notes gating with flag-only claiming and `--human` orchestration
-- Consolidated `finalize_run()` hook sequence
-- Single-note utility functions for note selection and resolution
-- Resolved note cleanup for `NON_BLOCKING_LOG.md`
-- `AUTO_COMMIT` conditional default behavior
+**Acceleration & Telemetry (M43–M50)**
+- Test-aware coding with jr coder test-fix gate
+- Scout prompt leverages repo map & Serena
+- Instrumentation & timing report (per-stage, per-agent)
+- Intra-run context cache to avoid redundant file reads
+- Reduced unnecessary agent invocations via smarter skip logic
+- Structured run memory (JSONL) for cross-run learning with keyword filtering
+- Progress transparency with timing estimates from run history
+- Causal event log (JSONL) for structured debugging
+- V3 documentation & README finalization (M51)
+
+**Environment Intelligence (M53–M56)**
+- Error pattern registry with build gate classification
+- Auto-remediation engine for cataloged failure patterns
+- Pre-flight environment validation with optional auto-fix
+- Service readiness probing & enhanced diagnosis
+
+**UI/UX Design Intelligence (M57–M60)**
+- UI platform adapter framework — file-based adapters in `platforms/`
+- Web UI platform adapter — Tailwind, MUI, shadcn, Chakra, Bootstrap detection
+- UI/UX specialist reviewer — auto-on for UI projects with 8-category checklist
+- Mobile & game platform adapters — Flutter, SwiftUI/UIKit, Jetpack Compose, Phaser/PixiJS/Three.js/Babylon.js
+
+**Final Polish (M61–M66)**
+- Repo map cross-stage cache for indexer reuse
+- Tester timing instrumentation
+- Test baseline hygiene & completion gate hardening
+- Tester fix surgical mode — scoped fix agents on failures
+- Prompt tool awareness — Serena & repo map coverage in agent prompts
+- Watchtower full-stage metrics & hierarchical breakdown
+
+### v2.21.0 — Adaptive Pipeline (March 2026)
+
+21 milestones: autonomous operation (`--complete`, `--auto-advance`, `--human`),
+transient error retry, turn-exhaustion continuation, milestone auto-split, context
+budgeting, specialist reviews, autonomous debt sweeps, error taxonomy, metrics
+dashboard, brownfield init/replan, clarification protocol, security hardening.
 
 ### v1.0 — Foundation (March 2026)
 
-- Scout → Coder → Reviewer → Tester multi-agent pipeline
-- Dynamic turn limits via Scout complexity estimation
-- Architecture drift detection, ACPs, and architect audit remediation
-- Build gate with Jr → Sr coder escalation
-- `--plan` interactive planning with three-phase interview
-- Deep design doc templates (15–25 sections per project type)
-- CLAUDE.md generation with 12 mandated sections
-- Human notes injection with `[BUG]`, `[FEAT]`, `[POLISH]` tags
-- Pipeline state persistence and resume support
-- FIFO-isolated agent invocation with activity timeout
-- Null-run detection and Windows compatibility
-- Dependency constraint validation (Dart, Python, TypeScript)
-- `--milestone` mode with 2× turn limits and upgraded tester model
+Core pipeline (Scout → Coder → Reviewer → Tester), dynamic turn limits, architecture
+drift detection, build gates, `--plan` interactive planning, human notes, pipeline
+state persistence, FIFO-isolated agent invocation, `--milestone` mode.
 
 ## License
 

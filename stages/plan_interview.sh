@@ -8,6 +8,10 @@ set -euo pipefail
 # --dangerously-skip-permissions) to synthesize a complete DESIGN.md.
 # The shell writes the resulting file.
 #
+# Answers are persisted to .claude/plan_answers.yaml via lib/plan_answers.sh
+# so that interrupted sessions can be resumed. Supports CLI mode (interactive)
+# and file mode (import pre-filled YAML).
+#
 # Phase 1 — Concept Capture: high-level questions (overview, stack, philosophy)
 # Phase 2 — System Deep-Dive: each system/feature section, with Phase 1 context
 # Phase 3 — Architecture & Constraints: config, naming, open questions
@@ -19,6 +23,8 @@ set -euo pipefail
 # Expects: log(), success(), warn(), header() from common.sh
 # Expects: render_prompt(), _call_planning_batch(), _extract_template_sections()
 #          from lib/plan.sh
+# Expects: init_answer_file(), save_answer(), load_answer(), has_answer_file(),
+#          build_answers_block() from lib/plan_answers.sh
 # =============================================================================
 
 # Phase labels for display headers
@@ -146,38 +152,77 @@ _read_section_answer_editor() {
     echo "$answer"
 }
 
-# _build_phase_context — Build a summary of prior phase answers.
+# _build_phase_context — Build a summary of prior phase answers from YAML.
 #
 # Arguments:
-#   $1  names_ref     — nameref to section_names array
-#   $2  answers_ref   — nameref to answers array
-#   $3  phases_ref    — nameref to section_phases array
-#   $4  max_phase     — include answers from phases < this value
+#   $1  max_phase — include answers from phases < this value
 #
 # Prints a formatted summary to stdout.
 _build_phase_context() {
-    local -n _bpc_names=$1
-    local -n _bpc_answers=$2
-    local -n _bpc_phases=$3
-    local max_phase="$4"
+    local max_phase="$1"
 
-    local context="" i
-    for i in "${!_bpc_names[@]}"; do
-        local phase="${_bpc_phases[$i]}"
-        local ans="${_bpc_answers[$i]:-}"
-        if [[ "$phase" -lt "$max_phase" ]] && [[ -n "$ans" ]] && \
-           [[ "$ans" != "SKIP" ]] && [[ "$ans" != "TBD" ]]; then
-            context+="- **${_bpc_names[$i]}**: ${ans}"$'\n'
+    local context=""
+    while IFS='|' read -r _id title phase _req answer; do
+        if [[ "$phase" -lt "$max_phase" ]] && [[ -n "$answer" ]] && \
+           [[ "$answer" != "SKIP" ]] && [[ "$answer" != "TBD" ]]; then
+            # Decode %%NL%% for display, but truncate for context
+            local decoded="${answer//%%NL%%/ }"
+            # Limit context display per section
+            if [[ "${#decoded}" -gt 200 ]]; then
+                decoded="${decoded:0:200}..."
+            fi
+            context+="- **${title}**: ${decoded}"$'\n'
         fi
-    done
+    done < <(load_all_answers)
     echo "$context"
+}
+
+# _select_interview_mode — Present mode selection menu.
+# Returns the chosen mode: "cli", "file", or "browser".
+_select_interview_mode() {
+    local input_fd="$1"
+
+    echo >&2
+    echo "  How would you like to answer the planning questions?" >&2
+    echo "    1) CLI Mode     — answer questions one by one in the terminal" >&2
+    echo "    2) File Mode    — export questions to YAML, fill out in your editor" >&2
+    echo "    3) Browser Mode — fill out a form in your browser" >&2
+    echo >&2
+
+    local choice
+    while true; do
+        printf "  Select [1-3]: " >&2
+        read -r -u "$input_fd" choice || { echo "cli"; return 0; }
+        choice="${choice//$'\r'/}"
+        case "$choice" in
+            1) echo "cli"; return 0 ;;
+            2) echo "file"; return 0 ;;
+            3) echo "browser"; return 0 ;;
+            *) warn "Invalid choice. Enter 1, 2, or 3." ;;
+        esac
+    done
+}
+
+# _run_file_mode — Handle file-mode interview flow.
+# Exports template, waits for user to fill it, then imports.
+_run_file_mode() {
+    local export_path="${PROJECT_DIR}/.claude/plan_questions.yaml"
+
+    export_question_template "$PLAN_TEMPLATE_FILE" "$export_path"
+    success "Question template exported to: ${export_path}"
+    echo
+    log "Fill in the 'answer' field for each section in your editor."
+    log "When done, re-run: tekhton --plan --answers ${export_path}"
+    echo
+    return 1
 }
 
 # run_plan_interview — Shell-driven interview: collect answers, synthesize DESIGN.md.
 #
-# Presents each template section in three phases, reads answers, then calls
-# Claude in batch mode to synthesize a complete DESIGN.md.
-# No --dangerously-skip-permissions. The shell writes DESIGN.md to PROJECT_DIR.
+# Presents each template section in three phases, reads answers (persisting
+# each to plan_answers.yaml), then calls Claude in batch mode to synthesize
+# a complete DESIGN.md. No --dangerously-skip-permissions. The shell writes
+# DESIGN.md to PROJECT_DIR.
 #
 # Returns 0 if DESIGN.md was produced, 1 otherwise.
 run_plan_interview() {
@@ -192,9 +237,6 @@ run_plan_interview() {
     header "Planning Interview — ${PLAN_PROJECT_TYPE}"
     log "Model: ${PLAN_INTERVIEW_MODEL}"
     log "Log: ${log_file}"
-    echo
-    log "Answer each question. Blank line to submit each answer."
-    log "Type 'skip' for optional sections."
     echo
 
     # Write session metadata to log
@@ -212,8 +254,6 @@ run_plan_interview() {
     write_plan_state "interview" "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
 
     # Open input source on a dedicated fd for reliable position sharing
-    # across subshell calls ($()). Using fd duplication (<&0) instead of
-    # re-opening /dev/stdin avoids WSL/regular-file position-reset issues.
     if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
         exec 3< /dev/tty
     else
@@ -221,107 +261,52 @@ run_plan_interview() {
     fi
     local input_fd=3
 
-    # Parse template sections into parallel arrays (4-field format)
-    local -a section_names=() section_required=() section_guidance=() section_phases=()
-    while IFS='|' read -r s_name s_req s_guide s_phase; do
-        section_names+=("$s_name")
-        section_required+=("$s_req")
-        section_guidance+=("$s_guide")
-        section_phases+=("${s_phase:-1}")
-    done < <(_extract_template_sections "$PLAN_TEMPLATE_FILE")
-
-    local total="${#section_names[@]}"
-    if [[ "$total" -eq 0 ]]; then
-        warn "No sections found in template: ${PLAN_TEMPLATE_FILE}"
-        exec 3<&-
-        return 1
+    # Initialize or resume answer file
+    if has_answer_file; then
+        log "Resuming from saved answers in ${PLAN_ANSWER_FILE}"
+    else
+        init_answer_file "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
     fi
 
-    # Collect user answers for each section, organized by phase
-    local -a answers=()
-    # Pre-fill answers array with empty strings (one per section)
-    local _i
-    for _i in "${!section_names[@]}"; do
-        # shellcheck disable=SC2034
-        answers[$_i]=""
-    done
-
-    local current_phase=0
-    local section_num=0
-    local i
-    for i in "${!section_names[@]}"; do
-        local name="${section_names[$i]}"
-        local req="${section_required[$i]}"
-        local guide="${section_guidance[$i]:-}"
-        local phase="${section_phases[$i]}"
-
-        # Display phase header on phase transition
-        if [[ "$phase" -ne "$current_phase" ]]; then
-            current_phase="$phase"
-            echo
-            echo "╔══════════════════════════════════════════════════╗"
-            echo "║  ${_PHASE_LABELS[$phase]}"
-            echo "╚══════════════════════════════════════════════════╝"
-            echo
-
-            # Show Phase 1 context at the start of Phase 2+
-            if [[ "$phase" -ge 2 ]]; then
-                local context
-                context=$(_build_phase_context section_names answers section_phases "$phase")
-                if [[ -n "$context" ]]; then
-                    log "Your answers so far:"
-                    echo "$context" | while IFS= read -r ctx_line; do
-                        [[ -n "$ctx_line" ]] && echo "  ${ctx_line}"
-                    done
-                    echo
-                fi
-            fi
-        fi
-
-        section_num=$((section_num + 1))
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        if [[ "$req" == "true" ]]; then
-            echo "  [${section_num}/${total}] ${name}  *required"
+    # Mode selection (skip if PLAN_ANSWERS_FILE is set — file mode via --answers)
+    if [[ -n "${PLAN_ANSWERS_IMPORT:-}" ]]; then
+        log "Using answers from: ${PLAN_ANSWERS_IMPORT}"
+    else
+        local mode
+        if [[ -n "${PLAN_BROWSER_MODE:-}" ]]; then
+            mode="browser"
         else
-            echo "  [${section_num}/${total}] ${name}  (optional)"
+            mode=$(_select_interview_mode "$input_fd")
         fi
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        case "$mode" in
+            file)
+                _run_file_mode
+                exec 3<&-
+                return 1
+                ;;
+            browser)
+                exec 3<&-
+                run_browser_interview || return 1
+                # Browser mode writes answers directly — skip CLI interview
+                ;;
+            cli)
+                log "Answer each question. Blank line to submit each answer."
+                log "Type 'skip' for optional sections."
+                echo
 
-        local answer
-        answer=$(_read_section_answer "$guide" "$req" "$input_fd")
-
-        if [[ "$answer" == "skip" || "$answer" == "s" ]]; then
-            if [[ "$req" == "true" ]]; then
-                warn "  Required section skipped — will be marked TBD in DESIGN.md."
-                answers[$i]="TBD"
-            else
-                log "  Skipped."
-                answers[$i]="SKIP"
-            fi
-        else
-            answers[$i]="$answer"
-        fi
-        echo
-    done
+                # Parse template sections and collect answers in CLI mode
+                _run_cli_interview "$input_fd"
+                ;;
+        esac
+    fi
 
     echo
     log "Interview complete. Synthesizing DESIGN.md..."
     echo
 
-    # Build the answers block for the synthesis prompt
-    local answers_block=""
-    for i in "${!section_names[@]}"; do
-        local name="${section_names[$i]}"
-        local req="${section_required[$i]}"
-        local ans="${answers[$i]}"
-        local req_label=""
-        [[ "$req" == "true" ]] && req_label=" [REQUIRED]"
-        if [[ "$ans" == "SKIP" ]]; then
-            answers_block+="**${name}${req_label}**: (skipped — write a placeholder)"$'\n\n'
-        else
-            answers_block+="**${name}${req_label}**: ${ans}"$'\n\n'
-        fi
-    done
+    # Build the answers block from the YAML file
+    local answers_block
+    answers_block=$(build_answers_block)
 
     # Set template variables for prompt rendering
     export TEMPLATE_CONTENT
@@ -377,4 +362,97 @@ run_plan_interview() {
         exec 3<&-
         return 1
     fi
+}
+
+# _run_cli_interview — Interactive CLI interview loop.
+# Collects answers section by section, saving each to the YAML file.
+# Args: input_fd
+_run_cli_interview() {
+    local input_fd="$1"
+
+    # Parse template sections into parallel arrays (4-field format)
+    local -a section_names=() section_required=() section_guidance=() section_phases=()
+    local -a section_ids=()
+    while IFS='|' read -r s_name s_req s_guide s_phase; do
+        section_names+=("$s_name")
+        section_required+=("$s_req")
+        section_guidance+=("$s_guide")
+        section_phases+=("${s_phase:-1}")
+        section_ids+=("$(_slugify_section "$s_name")")
+    done < <(_extract_template_sections "$PLAN_TEMPLATE_FILE")
+
+    local total="${#section_names[@]}"
+    if [[ "$total" -eq 0 ]]; then
+        warn "No sections found in template: ${PLAN_TEMPLATE_FILE}"
+        return 1
+    fi
+
+    local current_phase=0
+    local section_num=0
+    local i
+    for i in "${!section_names[@]}"; do
+        local name="${section_names[$i]}"
+        local req="${section_required[$i]}"
+        local guide="${section_guidance[$i]:-}"
+        local phase="${section_phases[$i]}"
+        local sid="${section_ids[$i]}"
+
+        # Check if already answered (resume support)
+        local existing_answer
+        existing_answer=$(load_answer "$sid")
+        if [[ -n "$existing_answer" ]] && [[ "$existing_answer" != "SKIP" ]] && \
+           [[ "$existing_answer" != "TBD" ]]; then
+            section_num=$((section_num + 1))
+            log "  [${section_num}/${total}] ${name} — already answered (${#existing_answer} chars)"
+            continue
+        fi
+
+        # Display phase header on phase transition
+        if [[ "$phase" -ne "$current_phase" ]]; then
+            current_phase="$phase"
+            echo
+            echo "╔══════════════════════════════════════════════════╗"
+            echo "║  ${_PHASE_LABELS[$phase]}"
+            echo "╚══════════════════════════════════════════════════╝"
+            echo
+
+            # Show Phase 1 context at the start of Phase 2+
+            if [[ "$phase" -ge 2 ]]; then
+                local context
+                context=$(_build_phase_context "$phase")
+                if [[ -n "$context" ]]; then
+                    log "Your answers so far:"
+                    echo "$context" | while IFS= read -r ctx_line; do
+                        [[ -n "$ctx_line" ]] && echo "  ${ctx_line}"
+                    done
+                    echo
+                fi
+            fi
+        fi
+
+        section_num=$((section_num + 1))
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if [[ "$req" == "true" ]]; then
+            echo "  [${section_num}/${total}] ${name}  *required"
+        else
+            echo "  [${section_num}/${total}] ${name}  (optional)"
+        fi
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        local answer
+        answer=$(_read_section_answer "$guide" "$req" "$input_fd")
+
+        if [[ "$answer" == "skip" || "$answer" == "s" ]]; then
+            if [[ "$req" == "true" ]]; then
+                warn "  Required section skipped — will be marked TBD in DESIGN.md."
+                save_answer "$sid" "TBD"
+            else
+                log "  Skipped."
+                save_answer "$sid" "SKIP"
+            fi
+        else
+            save_answer "$sid" "$answer"
+        fi
+        echo
+    done
 }

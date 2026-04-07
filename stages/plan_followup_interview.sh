@@ -8,6 +8,8 @@ set -euo pipefail
 # and add what's missing. Calls Claude in batch mode to produce an updated
 # complete DESIGN.md. The shell writes the file.
 #
+# Updates the answer file via lib/plan_answers.sh so follow-up answers persist.
+#
 # Sourced by tekhton.sh when --plan is passed. Do not run directly.
 # Expects: PLAN_TEMPLATE_FILE, PLAN_PROJECT_TYPE, PLAN_INTERVIEW_MODEL,
 #          PLAN_INTERVIEW_MAX_TURNS, PROJECT_DIR, TEKHTON_HOME
@@ -17,6 +19,7 @@ set -euo pipefail
 #          from lib/plan.sh
 # Expects: _get_section_content() from lib/plan_completeness.sh
 # Expects: _read_section_answer() from stages/plan_interview.sh
+# Expects: save_answer(), _slugify_section() from lib/plan_answers.sh
 # =============================================================================
 
 # run_plan_followup_interview — Re-interview for incomplete sections only.
@@ -141,6 +144,10 @@ run_plan_followup_interview() {
             answers_block+="**${section_name}** [${tag}]: (user skipped — leave as-is)"$'\n\n'
         else
             answers_block+="**${section_name}** [${tag}]: ${answer}"$'\n\n'
+            # Persist follow-up answer to YAML file
+            local sid
+            sid=$(_slugify_section "$section_name")
+            save_answer "$sid" "$answer"
         fi
         echo
     done

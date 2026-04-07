@@ -32,6 +32,7 @@ write_plan_state() {
 
     # Unquoted heredoc — ${PROJECT_DIR} and subshells are expanded by the
     # outer shell at write time, not written literally into the state file.
+    local _answer_file="${PLAN_ANSWER_FILE:-${PROJECT_DIR}/.claude/plan_answers.yaml}"
     cat > "$tmp_state" << EOF
 # Planning State — $(date '+%Y-%m-%d %H:%M:%S')
 ## Stage
@@ -43,9 +44,13 @@ ${project_type}
 ## Template File
 ${template_file}
 
+## Answer File
+$([ -f "$_answer_file" ] && echo "${_answer_file}" || echo "(none)")
+
 ## Files Present
 $([ -f "${PROJECT_DIR}/DESIGN.md" ] && echo "- DESIGN.md ($(count_lines < "${PROJECT_DIR}/DESIGN.md") lines)" || echo "- DESIGN.md (missing)")
 $([ -f "${PROJECT_DIR}/CLAUDE.md" ] && echo "- CLAUDE.md ($(count_lines < "${PROJECT_DIR}/CLAUDE.md") lines)" || echo "- CLAUDE.md (missing)")
+$([ -f "$_answer_file" ] && echo "- plan_answers.yaml (present)" || echo "- plan_answers.yaml (missing)")
 EOF
 
     if mv -f "$tmp_state" "$PLAN_STATE_FILE" 2>/dev/null; then

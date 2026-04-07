@@ -15,6 +15,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 FAIL=0
 
 source "${TEKHTON_HOME}/lib/common.sh" 2>/dev/null || true
+source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
 source "${TEKHTON_HOME}/lib/notes_single.sh"
 

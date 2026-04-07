@@ -2,6 +2,9 @@
 # Test: _build_phase_context() in stages/plan_interview.sh
 # Verifies that phase context summaries include only prior-phase answers
 # and exclude SKIP, TBD, and empty entries.
+#
+# Updated for M31: _build_phase_context now reads from the YAML answer layer
+# rather than taking nameref arrays. Takes a single arg (max_phase).
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,28 +18,76 @@ pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 # ---------------------------------------------------------------------------
-# Setup: source libraries in a subshell wrapper to avoid polluting test env.
-# _build_phase_context uses bash namerefs (local -n), so it must be called
-# in the same shell that defined the arrays.
+# Setup: source libraries, create a test template and answer file.
 # ---------------------------------------------------------------------------
 
 export PROJECT_DIR="$TMPDIR_BASE"
+export PLAN_ANSWER_FILE="${TMPDIR_BASE}/.claude/plan_answers.yaml"
+export TEKHTON_VERSION="3.31.0"
 export TEKHTON_HOME
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
+source "${TEKHTON_HOME}/lib/plan_answers.sh"
 source "${TEKHTON_HOME}/stages/plan_interview.sh"
+
+# Create a test template
+TEST_TEMPLATE="${TMPDIR_BASE}/template.md"
+cat > "$TEST_TEMPLATE" << 'EOF'
+# Design Document — Test
+
+## Overview
+<!-- REQUIRED -->
+<!-- PHASE:1 -->
+<!-- Describe the project -->
+
+## Tech Stack
+<!-- PHASE:1 -->
+<!-- Languages and frameworks -->
+
+## Core Features
+<!-- PHASE:2 -->
+<!-- List features -->
+
+## Config Architecture
+<!-- REQUIRED -->
+<!-- PHASE:3 -->
+<!-- Configuration details -->
+EOF
+
+PLAN_TEMPLATE_FILE="$TEST_TEMPLATE"
+PLAN_PROJECT_TYPE="test"
+
+# Helper: create answer file with specific answers
+setup_answers() {
+    init_answer_file "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
+    local overview_ans="${1:-}"
+    local techstack_ans="${2:-}"
+    local features_ans="${3:-}"
+    local config_ans="${4:-}"
+
+    if [[ -n "$overview_ans" ]]; then
+        save_answer "overview" "$overview_ans"
+    fi
+    if [[ -n "$techstack_ans" ]]; then
+        save_answer "tech_stack" "$techstack_ans"
+    fi
+    if [[ -n "$features_ans" ]]; then
+        save_answer "core_features" "$features_ans"
+    fi
+    if [[ -n "$config_ans" ]]; then
+        save_answer "config_architecture" "$config_ans"
+    fi
+}
 
 # ---------------------------------------------------------------------------
 echo "=== Includes prior-phase answers when max_phase=2 ==="
 
-names_a=("Overview" "Tech Stack" "Core Features")
-answers_a=("A web app for teams" "React and Node.js" "Authentication module")
-phases_a=("1" "1" "2")
+setup_answers "A web app for teams" "React and Node.js" "Authentication module" ""
 
-result_a=$(_build_phase_context names_a answers_a phases_a 2)
+result_a=$(_build_phase_context 2)
 
 if echo "$result_a" | grep -q "Overview"; then
     pass "Phase 1 'Overview' answer included when max_phase=2"
@@ -60,11 +111,9 @@ fi
 echo
 echo "=== Excludes SKIP answers ==="
 
-names_b=("Overview" "Tech Stack")
-answers_b=("SKIP" "React and Node.js")
-phases_b=("1" "1")
+setup_answers "SKIP" "React and Node.js" "" ""
 
-result_b=$(_build_phase_context names_b answers_b phases_b 2)
+result_b=$(_build_phase_context 2)
 
 if echo "$result_b" | grep -q "Overview"; then
     fail "SKIP answer for 'Overview' incorrectly included in context"
@@ -82,11 +131,10 @@ fi
 echo
 echo "=== Excludes TBD answers ==="
 
-names_c=("Overview" "Philosophy")
-answers_c=("TBD" "Config-driven from day one")
-phases_c=("1" "1")
+setup_answers "TBD" "" "" ""
+save_answer "tech_stack" "Config-driven from day one"
 
-result_c=$(_build_phase_context names_c answers_c phases_c 2)
+result_c=$(_build_phase_context 2)
 
 if echo "$result_c" | grep -q "Overview"; then
     fail "TBD answer for 'Overview' incorrectly included in context"
@@ -94,21 +142,19 @@ else
     pass "TBD answer excluded from context"
 fi
 
-if echo "$result_c" | grep -q "Philosophy"; then
-    pass "Non-TBD 'Philosophy' answer included alongside TBD entry"
+if echo "$result_c" | grep -q "Tech Stack"; then
+    pass "Non-TBD 'Tech Stack' answer included alongside TBD entry"
 else
-    fail "Non-TBD 'Philosophy' answer missing"
+    fail "Non-TBD 'Tech Stack' answer missing"
 fi
 
 # ---------------------------------------------------------------------------
 echo
 echo "=== Excludes empty answers ==="
 
-names_d=("Overview" "Tech Stack")
-answers_d=("" "React and Node.js")
-phases_d=("1" "1")
+setup_answers "" "React and Node.js" "" ""
 
-result_d=$(_build_phase_context names_d answers_d phases_d 2)
+result_d=$(_build_phase_context 2)
 
 if echo "$result_d" | grep -q "\*\*Overview\*\*"; then
     fail "Empty answer for 'Overview' incorrectly included in context"
@@ -126,13 +172,11 @@ fi
 echo
 echo "=== Output uses bold markdown formatting ==="
 
-names_e=("Project Overview")
-answers_e=("A web app for teams")
-phases_e=("1")
+setup_answers "A web app for teams" "" "" ""
 
-result_e=$(_build_phase_context names_e answers_e phases_e 2)
+result_e=$(_build_phase_context 2)
 
-if echo "$result_e" | grep -q "\*\*Project Overview\*\*"; then
+if echo "$result_e" | grep -q "\*\*Overview\*\*"; then
     pass "Section name wrapped in bold markdown (**Name**)"
 else
     fail "Section name not wrapped in bold markdown: '${result_e}'"
@@ -148,11 +192,9 @@ fi
 echo
 echo "=== Returns empty string when no prior-phase answers exist ==="
 
-names_f=("Core Features")
-answers_f=("Authentication and login")
-phases_f=("2")
+setup_answers "" "" "Authentication and login" ""
 
-result_f=$(_build_phase_context names_f answers_f phases_f 2)
+result_f=$(_build_phase_context 2)
 stripped_f=$(echo "$result_f" | tr -d '[:space:]')
 
 if [[ -z "$stripped_f" ]]; then
@@ -165,11 +207,10 @@ fi
 echo
 echo "=== max_phase=3 includes phases 1 and 2, excludes phase 3 ==="
 
-names_g=("Overview" "Core Features" "Config Architecture")
-answers_g=("A web app" "Auth module" "JSON config file")
-phases_g=("1" "2" "3")
+setup_answers "A web app" "" "" "JSON config file"
+save_answer "core_features" "Auth module"
 
-result_g=$(_build_phase_context names_g answers_g phases_g 3)
+result_g=$(_build_phase_context 3)
 
 if echo "$result_g" | grep -q "Overview"; then
     pass "Phase 1 answer included when max_phase=3"
@@ -193,11 +234,9 @@ fi
 echo
 echo "=== Returns empty string when all answers are SKIP or TBD ==="
 
-names_h=("Overview" "Tech Stack")
-answers_h=("SKIP" "TBD")
-phases_h=("1" "1")
+setup_answers "SKIP" "TBD" "" ""
 
-result_h=$(_build_phase_context names_h answers_h phases_h 2)
+result_h=$(_build_phase_context 2)
 stripped_h=$(echo "$result_h" | tr -d '[:space:]')
 
 if [[ -z "$stripped_h" ]]; then

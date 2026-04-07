@@ -2,25 +2,89 @@
 # stages/review.sh — Stage 2: Review loop (review → rework → build gate)
 # Sourced by tekhton.sh. Sets: VERDICT (global).
 
+set -euo pipefail
+
 # run_stage_review — Review loop: invoke reviewer, parse verdict, route rework,
 # build gate, repeat up to MAX_REVIEW_CYCLES. Exits on max-cycle exhaustion.
 run_stage_review() {
-    header "Stage 2 / 3 — Reviewer"
+    local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
+    local _stage_pos="${PIPELINE_STAGE_POS:-3}"
+    header "Stage ${_stage_pos} / ${_stage_count} — Reviewer"
+
+    # Polish reviewer skip heuristic (M42): if all changed files are non-logic,
+    # skip the review cycle entirely. Tests still run in the tester stage.
+    if command -v should_skip_review_for_polish &>/dev/null \
+       && should_skip_review_for_polish; then
+        log_decision "Skipping reviewer" "all changes are non-logic files (polish mode)" "NOTES_FILTER=POLISH"
+        VERDICT="APPROVED_WITH_NOTES"
+        export REVIEWER_SKIPPED="true"
+        return 0
+    fi
+
+    # M48: Diff-size review threshold — skip review for trivial diffs.
+    # Never applies in milestone mode (milestones always get full review).
+    local _skip_threshold="${REVIEW_SKIP_THRESHOLD:-0}"
+    if [[ "$_skip_threshold" -gt 0 ]] && [[ "${MILESTONE_MODE:-false}" != "true" ]]; then
+        local _diff_lines
+        _diff_lines=$(git diff --stat HEAD 2>/dev/null | tail -1 | grep -oE '[0-9]+ insertion|[0-9]+ deletion' | grep -oE '[0-9]+' | paste -sd+ - | bc 2>/dev/null || echo "0")
+        if [[ "$_diff_lines" -gt 0 ]] && [[ "$_diff_lines" -lt "$_skip_threshold" ]]; then
+            log_decision "Skipping reviewer" "diff size (${_diff_lines} lines) below threshold (${_skip_threshold})" "REVIEW_SKIP_THRESHOLD=${_skip_threshold}"
+            VERDICT="APPROVED_WITH_NOTES"
+            export REVIEWER_SKIPPED="true"
+            return 0
+        fi
+    fi
 
     estimate_post_coder_turns "${ACTUAL_CODER_TURNS:-0}"
     REVIEW_CYCLE=0
     VERDICT="CHANGES_REQUIRED"
+    _REVIEW_MAP_FILES=""  # M61: track cycle-1 file list for cache comparison (global — tested externally)
 
     while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; do
         REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
-        log "Review cycle ${REVIEW_CYCLE} / ${MAX_REVIEW_CYCLES}..."
+        progress_status "${PIPELINE_STAGE_POS:-3}" "${PIPELINE_STAGE_COUNT:-4}" "Reviewer" "cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES}"
 
+        # M47: use cached architecture content
         export ARCHITECTURE_CONTENT
-        if [ -f "${ARCHITECTURE_FILE}" ]; then
-            ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")")
-        else
+        ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
+        if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
             ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
         fi
+
+        # Repo map slice: changed files + their callers/callees
+        # M61: Use run cache — only regenerate if new files detected since cycle 1
+        REPO_MAP_CONTENT=""
+        if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
+            local _review_files
+            _review_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
+            if [[ -n "$_review_files" ]]; then
+                # On cycle 2+, check if new files appeared since cycle 1
+                if [[ "$REVIEW_CYCLE" -gt 1 ]] && [[ -n "${_REVIEW_MAP_FILES:-}" ]]; then
+                    local _new_basenames _old_basenames
+                    _new_basenames=$(echo "$_review_files" | tr ' ' '\n' | sed 's|.*/||' | sort)
+                    _old_basenames=$(echo "$_REVIEW_MAP_FILES" | tr ' ' '\n' | sed 's|.*/||' | sort)
+                    if [[ "$_new_basenames" != "$_old_basenames" ]]; then
+                        log "[indexer] New files detected in coder summary — invalidating run cache."
+                        invalidate_repo_map_run_cache
+                    fi
+                fi
+
+                run_repo_map "$TASK" || true
+                if [[ -n "$REPO_MAP_CONTENT" ]]; then
+                    local _review_slice
+                    if _review_slice=$(get_repo_map_slice "$_review_files"); then
+                        REPO_MAP_CONTENT="$_review_slice"
+                        log "[indexer] Repo map sliced for reviewer (changed files)."
+                    fi
+                fi
+
+                # Store cycle-1 file list for comparison in subsequent cycles
+                if [[ "$REVIEW_CYCLE" -eq 1 ]]; then
+                    _REVIEW_MAP_FILES="$_review_files"
+                fi
+            fi
+        fi
+
         export PRIOR_BLOCKERS_BLOCK=""
         if [ "$REVIEW_CYCLE" -gt 1 ]; then
             PRIOR_BLOCKERS_BLOCK="yes"
@@ -28,10 +92,15 @@ run_stage_review() {
 
         build_context_packet "review" "$TASK" "$CLAUDE_REVIEWER_MODEL"
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
+        _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
         log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_REVIEWER_MODEL"
 
+        _phase_start "reviewer_prompt"
         REVIEWER_PROMPT=$(render_prompt "reviewer")
+        _phase_end "reviewer_prompt"
 
+        local _rev_cycle_start="$SECONDS"
+        _phase_start "reviewer_agent"
         run_agent \
             "Reviewer (cycle ${REVIEW_CYCLE})" \
             "$CLAUDE_REVIEWER_MODEL" \
@@ -39,8 +108,34 @@ run_stage_review() {
             "$REVIEWER_PROMPT" \
             "$LOG_FILE" \
             "$AGENT_TOOLS_REVIEWER"
+        _phase_end "reviewer_agent"
+        # Record per-cycle sub-step (M66)
+        if declare -p _STAGE_DURATION &>/dev/null; then
+            _STAGE_DURATION["reviewer_cycle_${REVIEW_CYCLE}"]="$(( SECONDS - _rev_cycle_start ))"
+            _STAGE_TURNS["reviewer_cycle_${REVIEW_CYCLE}"]="${LAST_AGENT_TURNS:-0}"
+        fi
         print_run_summary
         success "Reviewer finished."
+
+        # In-loop recalibration: if the reviewer used >= 85% of its allocated
+        # turns, bump the limit for the next cycle so repeated overshoots
+        # don't keep hitting the same ceiling.
+        local _rev_limit="${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}"
+        local _rev_used="${LAST_AGENT_TURNS:-0}"
+        if [[ "$_rev_limit" -gt 0 ]] && [[ "$_rev_used" -gt 0 ]]; then
+            local _rev_usage_pct=$(( _rev_used * 100 / _rev_limit ))
+            if [[ "$_rev_usage_pct" -ge 85 ]]; then
+                # Bump by 25%, clamped to REVIEWER_MAX_TURNS_CAP
+                local _bumped=$(( _rev_limit * 125 / 100 ))
+                if [[ "$_bumped" -gt "${REVIEWER_MAX_TURNS_CAP}" ]]; then
+                    _bumped="${REVIEWER_MAX_TURNS_CAP}"
+                fi
+                if [[ "$_bumped" -gt "$_rev_limit" ]]; then
+                    log "[turns] Reviewer used ${_rev_used}/${_rev_limit} turns (${_rev_usage_pct}%) — bumping limit to ${_bumped} for next cycle."
+                    ADJUSTED_REVIEWER_TURNS="$_bumped"
+                fi
+            fi
+        fi
 
         # UPSTREAM error detection (12.2)
         if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
@@ -49,7 +144,7 @@ run_stage_review() {
             if [ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]; then
                 error "Reviewer API error at max review cycles — cannot proceed."
                 write_pipeline_state "review" "upstream_error" \
-                    "${MILESTONE_MODE:+--milestone }--start-at review" \
+                    "$(_build_resume_flag review)" \
                     "$TASK" \
                     "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. Re-run the same command."
                 exit 1
@@ -64,7 +159,7 @@ run_stage_review() {
             if [ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]; then
                 error "Reviewer null run at max review cycles — cannot proceed."
                 write_pipeline_state "review" "null_run" \
-                    "${MILESTONE_MODE:+--milestone }--start-at review" \
+                    "$(_build_resume_flag review)" \
                     "$TASK" \
                     "Reviewer agent died without producing output (${LAST_AGENT_TURNS} turns). Check logs."
                 exit 1
@@ -110,6 +205,11 @@ REVIEW_EOF
         fi
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
 
+        # Log routing decision based on verdict
+        if [[ "$VERDICT" = "APPROVED" ]] || [[ "$VERDICT" = "APPROVED_WITH_NOTES" ]]; then
+            log_decision "Reviewer approved" "verdict ${VERDICT}" ""
+        fi
+
         if detect_replan_required "REVIEWER_REPORT.md"; then
             warn "Reviewer recommends REPLAN_REQUIRED."
             if ! trigger_replan "REVIEWER_REPORT.md"; then
@@ -151,13 +251,15 @@ REVIEW_EOF
             HAS_SIMPLE=$(echo "$HAS_SIMPLE" | tr -d '[:space:]')
             rm -rf "$TMPDIR_BLOCKS"
 
+            log_decision "Reviewer requires changes" "${HAS_COMPLEX} complex, ${HAS_SIMPLE} simple blockers (cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES})" ""
             log "Complex blockers: ${HAS_COMPLEX}, Simple blockers: ${HAS_SIMPLE}"
             if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
                 if [ "$HAS_COMPLEX" -gt 0 ]; then
-                    warn "Complex blockers found. Re-invoking senior coder..."
+                    log_decision "Routing to senior coder rework" "${HAS_COMPLEX} complex blocker(s) found" ""
 
                     REWORK_PROMPT=$(render_prompt "coder_rework")
 
+                    _phase_start "rework_agent"
                     run_agent \
                         "Coder (rework cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_CODER_MODEL" \
@@ -165,6 +267,7 @@ REVIEW_EOF
                         "$REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_CODER"
+                    _phase_end "rework_agent"
                     print_run_summary
                     success "Senior coder rework finished."
                     if [ "$HAS_SIMPLE" -gt 0 ]; then
@@ -186,7 +289,7 @@ REVIEW_EOF
                     fi
 
                 elif [ "$HAS_SIMPLE" -gt 0 ]; then
-                    warn "Only simple blockers found. Invoking jr coder..."
+                    log_decision "Routing to jr coder" "${HAS_SIMPLE} simple blocker(s), no complex blockers" ""
 
                     export JR_AFTER_SENIOR=""
                     JR_REWORK_PROMPT=$(render_prompt "jr_coder")
@@ -214,7 +317,7 @@ REVIEW_EOF
                     if ! run_build_gate "post-fix-pass-retry"; then
                         error "Build gate failed again. See BUILD_ERRORS.md."
                         write_pipeline_state "review" "build_failure" \
-                            "${MILESTONE_MODE:+--milestone }--start-at review" \
+                            "$(_build_resume_flag review)" \
                             "$TASK" "Build broken after fix pass. See BUILD_ERRORS.md."
                         exit 1
                     fi
@@ -224,11 +327,7 @@ REVIEW_EOF
                 error "Max review cycles (${MAX_REVIEW_CYCLES}) reached with unresolved blockers."
 
                 BLOCKER_SUMMARY="Complex: ${HAS_COMPLEX}, Simple: ${HAS_SIMPLE} — see REVIEWER_REPORT.md"
-                if [ "$MILESTONE_MODE" = true ]; then
-                    RESUME_FLAG="--milestone --start-at review"
-                else
-                    RESUME_FLAG="--start-at review"
-                fi
+                RESUME_FLAG="$(_build_resume_flag review)"
 
                 write_pipeline_state \
                     "review" \
@@ -253,76 +352,4 @@ REVIEW_EOF
     success "Review passed (verdict: ${VERDICT})."
 }
 
-# _route_specialist_rework — Handles specialist blocker rework and re-review.
-_route_specialist_rework() {
-    warn "Specialist blocker(s) detected. Routing to senior coder rework."
-
-    if has_specialist_blockers; then
-        {
-            echo ""
-            echo "## Specialist Blockers"
-            echo "$SPECIALIST_BLOCKERS"
-        } >> "REVIEWER_REPORT.md"
-    fi
-
-    VERDICT="CHANGES_REQUIRED"
-
-    if [[ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]]; then
-        error "Specialist blockers found but no review cycles remain."
-        write_pipeline_state "review" "specialist_blockers" \
-            "${MILESTONE_MODE:+--milestone }--start-at review" \
-            "$TASK" "Specialist reviewers found blockers. See SPECIALIST_REPORT.md."
-        exit 1
-    fi
-
-    REWORK_PROMPT=$(render_prompt "coder_rework")
-    run_agent \
-        "Coder (specialist rework)" \
-        "$CLAUDE_CODER_MODEL" \
-        "$CODER_MAX_TURNS" \
-        "$REWORK_PROMPT" \
-        "$LOG_FILE" \
-        "$AGENT_TOOLS_CODER"
-    print_run_summary
-    success "Specialist rework finished."
-
-    if ! run_build_gate "post-specialist-rework"; then
-        error "Build gate failed after specialist rework."
-        BUILD_FIX_PROMPT=$(render_prompt "build_fix_minimal")
-        run_agent \
-            "Coder (post-specialist build fix)" \
-            "$CLAUDE_CODER_MODEL" \
-            "$((CODER_MAX_TURNS / 3))" \
-            "$BUILD_FIX_PROMPT" \
-            "$LOG_FILE" \
-            "$AGENT_TOOLS_BUILD_FIX"
-        if ! run_build_gate "post-specialist-retry"; then
-            error "Build gate failed again after specialist rework."
-            write_pipeline_state "review" "specialist_build_failure" \
-                "${MILESTONE_MODE:+--milestone }--start-at review" \
-                "$TASK" "Build broken after specialist rework. See BUILD_ERRORS.md."
-            exit 1
-        fi
-    fi
-
-    REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
-    log "Re-running reviewer to verify specialist fixes (cycle ${REVIEW_CYCLE})..."
-
-    REVIEWER_PROMPT=$(render_prompt "reviewer")
-    run_agent \
-        "Reviewer (post-specialist cycle ${REVIEW_CYCLE})" \
-        "$CLAUDE_REVIEWER_MODEL" \
-        "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
-        "$REVIEWER_PROMPT" \
-        "$LOG_FILE" \
-        "$AGENT_TOOLS_REVIEWER"
-    print_run_summary
-
-    if [[ -f "REVIEWER_REPORT.md" ]]; then
-        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
-        if [[ -z "$VERDICT" || "$VERDICT" = "##Verdict" ]]; then
-            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
-        fi
-        log "Post-specialist reviewer verdict: ${BOLD}${VERDICT}${NC}"
-    fi
-}
+# Note: _route_specialist_rework() has been extracted to stages/review_helpers.sh

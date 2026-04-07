@@ -35,9 +35,48 @@ check_milestone_acceptance() {
         if [[ "$test_exit" -eq 0 ]]; then
             success "Tests pass"
         else
-            warn "Tests FAILED (exit ${test_exit})"
-            echo "$test_output" | tail -20
-            all_pass=false
+            # Save output for Tier 2 stuck detection
+            if command -v save_acceptance_test_output &>/dev/null; then
+                save_acceptance_test_output "$test_output" "$test_exit"
+            fi
+
+            # Tier 1: compare against baseline
+            local _baseline_assessment="none"
+            if [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]] \
+               && declare -f compare_test_with_baseline &>/dev/null \
+               && declare -f has_test_baseline &>/dev/null \
+               && has_test_baseline; then
+                _baseline_assessment=$(compare_test_with_baseline "$test_output" "$test_exit")
+            fi
+
+            case "$_baseline_assessment" in
+                pre_existing)
+                    if [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-true}" = "true" ]]; then
+                        warn "Tests FAILED (exit ${test_exit}) — ALL failures match pre-existing baseline"
+                        warn "Treating as PASS for acceptance (pre-existing failures)"
+                        if command -v emit_event &>/dev/null; then
+                            emit_event "acceptance_preexisting_pass" "acceptance" \
+                                "test_exit=${test_exit}, assessment=pre_existing" \
+                                "" "" "" 2>/dev/null || true
+                        fi
+                    else
+                        warn "Tests FAILED (exit ${test_exit}) — pre-existing, but PASS_ON_PREEXISTING=false"
+                        echo "$test_output" | tail -20
+                        all_pass=false
+                    fi
+                    ;;
+                new_failures)
+                    warn "Tests FAILED (exit ${test_exit}) — NEW failures detected since baseline"
+                    echo "$test_output" | tail -20
+                    all_pass=false
+                    ;;
+                *)
+                    # inconclusive or no baseline — standard failure behavior
+                    warn "Tests FAILED (exit ${test_exit})"
+                    echo "$test_output" | tail -20
+                    all_pass=false
+                    ;;
+            esac
         fi
     else
         log "No TEST_CMD configured — skipping test check"

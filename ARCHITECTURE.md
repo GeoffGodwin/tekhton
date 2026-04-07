@@ -18,7 +18,7 @@ Tekhton is structured as a three-layer shell pipeline with a shared library core
 Each stage is a single function sourced by `tekhton.sh`:
 
 - **`stages/architect.sh`** → `run_stage_architect()`
-  - Conditional Stage 0: runs before the main task when drift thresholds are exceeded or `--force-audit` is passed
+  - Conditional pre-stage: runs before the main task when drift thresholds are exceeded or `--force-audit` is passed
   - Loads drift log, architecture log, and architecture doc into prompt context
   - Invokes architect agent to produce `ARCHITECT_PLAN.md`
   - Parses plan sections and routes: Simplification → senior coder, Staleness/Dead Code/Naming → jr coder
@@ -52,6 +52,27 @@ Each stage is a single function sourced by `tekhton.sh`:
   - Detects compilation failures in log, resets affected items in report
   - Turn exhaustion continuation: auto-continues if partial tests remain with substantive work
   - Saves state on partial completion for turn-limit resume
+  - Sources sub-stages: `tester_tdd.sh`, `tester_continuation.sh`, `tester_fix.sh`, `tester_timing.sh`, `tester_validation.sh`
+
+- **`stages/tester_tdd.sh`** — TDD phase orchestration
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: TDD phase detection and routing logic
+
+- **`stages/tester_continuation.sh`** — Turn-exhaustion continuation logic
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: continuation prompt rendering and resume handling for partial test runs
+
+- **`stages/tester_fix.sh`** — Test failure fix orchestration
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: test failure detection, fix routing, and recursive fix attempt limits
+
+- **`stages/tester_timing.sh`** — Tester timing and duration estimation
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: stage timing utilities for progress tracking and turn estimation
+
+- **`stages/tester_validation.sh`** — Post-tester output validation and routing
+  - Sourced by `tester.sh` — do not run directly
+  - Provides: `_validate_tester_output()` for report validation, missing output synthesis, and test file discovery
 
 - **`stages/plan_interview.sh`** → `run_plan_interview()`
   - Planning phase only (sourced via `--plan`, not the execution pipeline)
@@ -96,6 +117,10 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/detect.sh`** — Tech stack detection: language identification via manifest files and source file extension counting. `detect_languages()` scans top 2 directory levels, returns `LANG|CONFIDENCE|MANIFEST` lines. `detect_frameworks()` reads manifests for framework signatures. Sourced by `tekhton.sh`.
 - **`lib/detect_commands.sh`** — Command inference, entry point detection, and project type classification. `detect_commands()` returns `CMD_TYPE|COMMAND|SOURCE|CONFIDENCE` lines. `detect_entry_points()` finds likely app entry files. `detect_project_type()` classifies into plan template categories. Sourced by `tekhton.sh`.
 - **`lib/detect_report.sh`** — Detection report formatting. `format_detection_report()` renders all detection results as structured markdown for PROJECT_INDEX.md and agent prompts. Sourced by `tekhton.sh`.
+- **`lib/dashboard.sh`** — Dashboard lifecycle and run-state emission. `is_dashboard_enabled()`, `init_dashboard()`, `sync_dashboard_static_files()`, `cleanup_dashboard()`, `emit_dashboard_run_state()`, `emit_dashboard_team_state()`. Sourced by `tekhton.sh`.
+- **`lib/dashboard_emitters.sh`** — Dashboard data emitter functions. `emit_dashboard_milestones()`, `emit_dashboard_security()`, `emit_dashboard_reports()`, `emit_dashboard_metrics()`, `emit_dashboard_health()`, `emit_dashboard_init()`, `emit_dashboard_inbox()`, `emit_dashboard_action_items()`, `emit_dashboard_notes()`. Sourced by `tekhton.sh` after `dashboard.sh`.
+- **`lib/dashboard_parsers.sh`** — Report parsing for individual stage reports (security, intake, coder, reviewer) and JS file emission utilities. `_to_js_timestamp()`, `_to_js_string()`, `_write_js_file()`, `_parse_security_report()`, `_parse_intake_report()`, `_parse_coder_summary()`, `_parse_reviewer_report()`. Sources `dashboard_parsers_runs.sh`. Sourced by `dashboard.sh`.
+- **`lib/dashboard_parsers_runs.sh`** — Run summary parsing from `metrics.jsonl` (primary) and `RUN_SUMMARY_*.json` files (fallback). `_parse_run_summaries()`, `_parse_run_summaries_from_jsonl()`, `_parse_run_summaries_from_files()`. Sourced by `dashboard_parsers.sh` — do not run directly.
 - **`lib/drift_cleanup.sh`** — Non-blocking notes management and drift cleanup helpers. Extracted from `drift.sh` for size management. Sourced by `tekhton.sh` after `drift.sh`.
 - **`lib/errors_helpers.sh`** — Recovery suggestions and sensitive data redaction. Sourced by `errors.sh` — do not run directly.
 - **`lib/metrics.sh`** — Run metrics collection and dashboard. `record_run_metrics()` appends JSONL records. `summarize_metrics()` reads history and prints a dashboard. Sourced by `tekhton.sh`.
@@ -118,6 +143,15 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/replan_brownfield.sh`** — Brownfield replan orchestration (`--replan` CLI command). `run_replan()`, `_generate_codebase_summary()`, `_brownfield_approval_menu()`, `_apply_brownfield_delta()`, `_archive_replan_delta()`.
 - **`lib/prompts.sh`** — `render_prompt(template_name)` reads `TEKHTON_HOME/prompts/<name>.prompt.md`, substitutes `{{VAR}}` from shell globals, strips `{{IF:VAR}}...{{ENDIF:VAR}}` blocks when VAR is empty.
 - **`lib/state.sh`** — `write_pipeline_state(stage, reason, resume_flag, task, detail)`, `clear_pipeline_state()`. Persists to `PIPELINE_STATE_FILE` for resume.
+- **`lib/milestone_dag.sh`** — Milestone DAG infrastructure and manifest parser (v3 Milestone 1). Sources `milestone_dag_io.sh` (I/O: `_dag_manifest_path`, `_dag_milestone_dir`, `has_milestone_manifest`, `load_manifest`, `save_manifest`), `milestone_dag_validate.sh`, and `milestone_dag_migrate.sh`. Provides: `dag_get_frontier()`, `dag_deps_satisfied()`, `dag_set_status()`, and query functions (`dag_get_status`, `dag_get_active`, `dag_find_next`).
+- **`lib/milestone_dag_migrate.sh`** — Inline-to-file milestone migration (v3). `migrate_inline_milestones()` extracts milestones from CLAUDE.md into individual files with a MANIFEST.cfg.
+- **`lib/milestone_window.sh`** — Character-budgeted milestone sliding window (v3 Milestone 2). `build_milestone_window()` selects active + frontier + on-deck milestones within a character budget.
+- **`lib/indexer.sh`** — Repo map orchestration and Python tool invocation (v3). `check_indexer_available()`, `run_repo_map()`, `get_repo_map_slice()`. Gracefully degrades when Python/tree-sitter is unavailable. Sources `indexer_helpers.sh`.
+- **`lib/error_patterns_remediation.sh`** — Auto-remediation engine for classified build/test errors (Milestone 54). `attempt_remediation()` executes safe-rated remediation commands from the error pattern registry, with blocklist enforcement, deduplication, and max-attempt limits. Routes non-automatable issues to `HUMAN_ACTION_REQUIRED.md`. All actions logged to causal event log. Sourced by `tekhton.sh` after `error_patterns.sh`.
+- **`lib/gates_phases.sh`** — Extracted build gate phase functions with remediation loops (Milestone 54). `_gate_phase_analyze()` and `_gate_phase_compile()` run static analysis and compile checks respectively, each with auto-remediation retry on failure. Sourced by `tekhton.sh` after `gates.sh`.
+- **`lib/preflight_services.sh`** — Service readiness probing for pre-flight validation (Milestone 56). `_preflight_check_services()` orchestrates service detection and port probing. `_preflight_check_docker()` validates Docker daemon availability. `_preflight_check_dev_server()` detects dev server dependencies from Playwright config. `_pf_emit_services_report()` renders the services section of `PREFLIGHT_REPORT.md`. Sourced by `tekhton.sh` after `preflight.sh`.
+- **`lib/preflight_services_infer.sh`** — Service inference from project manifests. `_pf_infer_from_compose()` parses docker-compose for service images and port mappings. `_pf_infer_from_packages()` checks package manifests (Node, Python, Go) for database client libraries. `_pf_infer_from_env()` scans `.env.example` for service-related variable patterns. Sourced by `tekhton.sh` after `preflight_services.sh`.
+- **`lib/mcp.sh`** — MCP server lifecycle management for Serena LSP integration (v3 Milestone 6). `start_mcp_server()`, `stop_mcp_server()`, `check_mcp_health()`, `get_mcp_config_path()`. Claude CLI manages the actual server process; this module handles config generation and availability tracking. Consumed by `agent.sh` to add `--mcp-config` flag.
 
 ### Layer 4: Prompt Templates (`prompts/*.prompt.md`)
 Declarative agent instructions with `{{VAR}}` placeholders. Rendered by `lib/prompts.sh`.
@@ -136,7 +170,7 @@ tekhton.sh (entry)
   │
   ├─ Pre-flight: should_trigger_audit() → drift threshold warning
   │
-  ├─ Stage 0: run_stage_architect()  [conditional — threshold or --force-audit]
+  ├─ Pre-stage 2: run_stage_architect()  [conditional — threshold or --force-audit]
   │    ├─ render_prompt("architect") → run_agent("Architect")
   │    ├─ parse ARCHITECT_PLAN.md sections
   │    ├─ [if Simplification] → render_prompt("architect_sr_rework") → run_agent("Coder")

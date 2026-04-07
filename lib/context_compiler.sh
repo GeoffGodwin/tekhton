@@ -198,7 +198,7 @@ build_context_packet() {
         return
     fi
 
-    # Extract keywords from task and available reference files
+    # Extract keywords from task and available reference files (M47: cache per ref_file)
     local ref_file=""
     if [[ -f "SCOUT_REPORT.md" ]]; then
         ref_file="SCOUT_REPORT.md"
@@ -207,7 +207,15 @@ build_context_packet() {
     fi
 
     local keywords
-    keywords=$(_extract_keywords "$task" "$ref_file")
+    local _cache_key="${task}::${ref_file}"
+    if [[ "${_CACHED_KEYWORDS_KEY:-}" == "$_cache_key" ]] && [[ -n "${_CACHED_KEYWORDS:-}" ]]; then
+        keywords="$_CACHED_KEYWORDS"
+    else
+        keywords=$(_extract_keywords "$task" "$ref_file")
+        _CACHED_KEYWORDS_KEY="$_cache_key"
+        _CACHED_KEYWORDS="$keywords"
+        export _CACHED_KEYWORDS_KEY _CACHED_KEYWORDS
+    fi
 
     if [[ -z "$keywords" ]]; then
         log "[context-compiler] No keywords extracted — using full context (1.0 fallback)"

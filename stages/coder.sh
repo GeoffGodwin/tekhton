@@ -37,21 +37,33 @@ _switch_to_sub_milestone() {
 _reconstruct_coder_summary() {
     local _files_changed=""
     local _diff_stat=""
+    local _untracked_files=""
+
+    # Tracked modifications
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
         _files_changed=$(git diff --name-only HEAD 2>/dev/null | head -30)
         _diff_stat=$(git diff --stat HEAD 2>/dev/null | tail -5)
     fi
 
+    # Untracked new files (excluding logs and session dirs)
+    _untracked_files=$(git ls-files --others --exclude-standard 2>/dev/null \
+        | grep -v '^\.claude/logs/' \
+        | grep -v "^$(basename "${TEKHTON_SESSION_DIR:-__nosession__}")/" \
+        | head -30 || true)
+
     cat > CODER_SUMMARY.md <<RECON_EOF
-## Status: IN PROGRESS
+## Status: COMPLETE
 
 ## Summary
 CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
 failed to produce or maintain it. The following files were modified based
-on git diff. The reviewer should assess actual changes directly.
+on git state. The reviewer should assess actual changes directly.
 
 ## Files Modified
 $(while IFS= read -r _f; do [ -n "$_f" ] && echo "- $_f"; done <<< "$_files_changed")
+
+## New Files Created
+$(while IFS= read -r _f; do [ -n "$_f" ] && echo "- $_f (new)"; done <<< "$_untracked_files")
 
 ## Git Diff Summary
 \`\`\`
@@ -76,38 +88,126 @@ RECON_EOF
 # Exits the pipeline (exit 1) on unrecoverable failure, saving state for resume.
 # On success, CODER_SUMMARY.md exists and the build passes.
 run_stage_coder() {
-    header "Stage 1 / 3 — Coder"
+    local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
+    local _stage_pos="${PIPELINE_STAGE_POS:-1}"
+    header "Stage ${_stage_pos} / ${_stage_count} — Coder"
 
     # --- Scout sub-agent (optional) ------------------------------------------
     BUG_SCOUT_CONTEXT=""
     SHOULD_SCOUT=false
 
-    if [ "$NOTES_FILTER" = "BUG" ] && [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        SHOULD_SCOUT=true
-    elif [ "$NOTES_FILTER" = "FEAT" ] && [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        # Only scout features that extend existing systems — not greenfield work
-        if echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
-            SHOULD_SCOUT=true
-        fi
+    # Tag-specific scout behavior (M42): configurable per tag
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+        case "$NOTES_FILTER" in
+            BUG)
+                case "${SCOUT_ON_BUG:-always}" in
+                    always) SHOULD_SCOUT=true ;;
+                    auto)   SHOULD_SCOUT=true ;;  # BUG auto = same as always
+                    never)  SHOULD_SCOUT=false ;;
+                esac
+                ;;
+            FEAT)
+                case "${SCOUT_ON_FEAT:-auto}" in
+                    always) SHOULD_SCOUT=true ;;
+                    auto)
+                        # Scout if est. turns > 10 or brownfield indicators present
+                        local _est_turns_val=""
+                        _est_turns_val=$(grep -oP 'est_turns:\K[0-9]+' HUMAN_NOTES.md 2>/dev/null | head -1 || true)
+                        if [[ -n "$_est_turns_val" ]] && [[ "$_est_turns_val" -gt 10 ]]; then
+                            SHOULD_SCOUT=true
+                        elif echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
+                            SHOULD_SCOUT=true
+                        fi
+                        ;;
+                    never)  SHOULD_SCOUT=false ;;
+                esac
+                ;;
+            POLISH)
+                case "${SCOUT_ON_POLISH:-never}" in
+                    always) SHOULD_SCOUT=true ;;
+                    auto)
+                        if echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
+                            SHOULD_SCOUT=true
+                        fi
+                        ;;
+                    never)  SHOULD_SCOUT=false ;;
+                esac
+                ;;
+            *)
+                # No tag filter — use dynamic turns heuristic
+                if [ "${DYNAMIC_TURNS_ENABLED}" = "true" ]; then
+                    SHOULD_SCOUT=true
+                fi
+                ;;
+        esac
     elif [ "${DYNAMIC_TURNS_ENABLED}" = "true" ]; then
         # Scout for complexity estimation even without human notes
         SHOULD_SCOUT=true
     fi
 
+    # Use cached scout results from dry-run if available (Milestone 23)
+    if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "SCOUT_REPORT.md" ]]; then
+        SHOULD_SCOUT=false
+        log_decision "Scout using cached results" "dry-run cache available" "SCOUT_CACHED=true"
+        apply_scout_turn_limits "SCOUT_REPORT.md"
+        BUG_SCOUT_CONTEXT="
+## Scout Report (pre-located relevant files — read THESE files, not the whole project)
+$(cat SCOUT_REPORT.md)
+"
+        # Archive the cached report same as a live one
+        cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+        rm "SCOUT_REPORT.md"
+    fi
+
     if [ "$SHOULD_SCOUT" = true ]; then
-        log "Running scout agent to locate relevant files and estimate complexity..."
+        _phase_start "scout_agent"
+        log_decision "Running scout agent" "locate relevant files and estimate complexity" "DYNAMIC_TURNS_ENABLED=${DYNAMIC_TURNS_ENABLED:-false}"
+        # Dashboard tracking: mark scout active (arrays declared in tekhton.sh)
+        if declare -p _STAGE_STATUS &>/dev/null; then
+            # shellcheck disable=SC2154  # scout is a string key, not a variable
+            _STAGE_STATUS[scout]="active"
+            _STAGE_START_TS[scout]="$SECONDS"
+            emit_dashboard_run_state 2>/dev/null || true
+        fi
 
-        export HUMAN_NOTES_CONTENT
-        HUMAN_NOTES_CONTENT=$(extract_human_notes)
+        export HUMAN_NOTES_CONTENT=""
+        if should_claim_notes; then
+            HUMAN_NOTES_CONTENT=$(extract_human_notes)
+        fi
 
-        # Build architecture block for scout if available
+        # Build architecture block for scout if available (M47: use cache)
         ARCHITECTURE_BLOCK=""
-        if [ -f "${ARCHITECTURE_FILE}" ]; then
-            local _arch_content
-            _arch_content=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
+        local _arch_content
+        _arch_content=$(_get_cached_architecture_raw)
+        if [[ -n "$_arch_content" ]]; then
             ARCHITECTURE_BLOCK="
 ## Architecture Map (use this to find files — do NOT explore blindly)
 $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
+        fi
+
+        # Generate full repo map for scout (biggest token savings — replaces blind find/grep)
+        export REPO_MAP_CONTENT=""
+        if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+            log "[indexer] Generating repo map for scout..."
+            if run_repo_map "$TASK"; then
+                log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
+            fi
+        fi
+
+        # Set fallback flag so scout prompt renders filesystem-exploration
+        # directive when repo map is unavailable
+        export SCOUT_NO_REPO_MAP=""
+        if [[ -n "${REPO_MAP_CONTENT}" ]]; then
+            log_decision "Scout using repo map verification mode" "REPO_MAP_CONTENT available" "REPO_MAP_ENABLED=true"
+        fi
+        if [[ -z "${REPO_MAP_CONTENT}" ]]; then
+            SCOUT_NO_REPO_MAP="true"
+        fi
+
+        # M45: Reduce scout tools when repo map provides file discovery
+        local _scout_tools="$AGENT_TOOLS_SCOUT"
+        if [[ -n "${REPO_MAP_CONTENT}" ]] && [[ "${SCOUT_REPO_MAP_TOOLS_ONLY:-true}" = "true" ]]; then
+            _scout_tools="Read Glob Grep Write"
         fi
 
         SCOUT_PROMPT=$(render_prompt "scout")
@@ -118,7 +218,7 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             "${SCOUT_MAX_TURNS}" \
             "$SCOUT_PROMPT" \
             "$LOG_FILE" \
-            "$AGENT_TOOLS_SCOUT"
+            "$_scout_tools"
 
         if [ -f "SCOUT_REPORT.md" ]; then
             print_run_summary
@@ -141,6 +241,7 @@ $(cat SCOUT_REPORT.md)
                     if split_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         # Update to target the first sub-milestone
                         _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                         # Archive original scout report and re-scout narrower scope
                         cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
@@ -155,7 +256,7 @@ $(cat SCOUT_REPORT.md)
                             "${SCOUT_MAX_TURNS}" \
                             "$SCOUT_PROMPT" \
                             "$LOG_FILE" \
-                            "$AGENT_TOOLS_SCOUT"
+                            "$_scout_tools"
 
                         if [ -f "SCOUT_REPORT.md" ]; then
                             print_run_summary
@@ -187,43 +288,115 @@ $(cat SCOUT_REPORT.md)
         else
             warn "Scout agent did not produce SCOUT_REPORT.md — coder will explore independently."
         fi
+        if declare -p _STAGE_STATUS &>/dev/null; then
+            _STAGE_STATUS[scout]="complete"
+            _STAGE_DURATION[scout]="$(( SECONDS - ${_STAGE_START_TS[scout]:-$SECONDS} ))"
+            _STAGE_TURNS[scout]="${LAST_AGENT_TURNS:-0}"
+            emit_dashboard_run_state 2>/dev/null || true
+        fi
+        _phase_end "scout_agent"
+    fi
+
+    # --- Repo map for coder (task-biased or scout-sliced) -------------------
+
+    export REPO_MAP_CONTENT="${REPO_MAP_CONTENT:-}"
+    if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+        # If we already have a full map from scout, try to slice it to scout-identified files
+        if [[ -n "$REPO_MAP_CONTENT" ]] && [[ -n "$BUG_SCOUT_CONTEXT" ]]; then
+            # Extract file paths from the scout report context
+            local _scout_files=""
+            if [[ -f "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md" ]]; then
+                _scout_files=$(extract_files_from_coder_summary "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md")
+            fi
+            if [[ -n "$_scout_files" ]]; then
+                local _slice
+                if _slice=$(get_repo_map_slice "$_scout_files"); then
+                    REPO_MAP_CONTENT="$_slice"
+                    log "[indexer] Repo map sliced to scout-identified files."
+                fi
+            fi
+        elif [[ -z "$REPO_MAP_CONTENT" ]]; then
+            # No map from scout phase — generate a fresh task-biased map
+            log "[indexer] Generating repo map for coder..."
+            if run_repo_map "$TASK"; then
+                log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
+            fi
+        fi
+    fi
+
+    # --- Extract affected test files from scout report (M43) -----------------
+    export AFFECTED_TEST_FILES=""
+    local _scout_archive="${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+    if [[ -f "$_scout_archive" ]]; then
+        # Extract the "## Affected Test Files" section from the archived scout report
+        AFFECTED_TEST_FILES=$(awk '
+            /^## Affected Test Files/{found=1; next}
+            found && /^## /{exit}
+            found{print}
+        ' "$_scout_archive" | sed '/^[[:space:]]*$/d')
+        # Suppress if scout wrote "None identified"
+        if [[ "$AFFECTED_TEST_FILES" == *"None identified"* ]]; then
+            AFFECTED_TEST_FILES=""
+        fi
+        if [[ -n "$AFFECTED_TEST_FILES" ]]; then
+            log "[test-aware] Extracted affected test files from scout report."
+        fi
+    fi
+
+    # --- Build test baseline summary for coder context (M43) -----------------
+    export TEST_BASELINE_SUMMARY=""
+    if declare -f has_test_baseline &>/dev/null && has_test_baseline 2>/dev/null; then
+        local _baseline_json
+        _baseline_json=$(_test_baseline_json)
+        local _baseline_exit _baseline_failures
+        _baseline_exit=$(grep -oP '"exit_code"\s*:\s*\K[0-9]+' "$_baseline_json" 2>/dev/null || echo "")
+        _baseline_failures=$(grep -oP '"failure_count"\s*:\s*\K[0-9]+' "$_baseline_json" 2>/dev/null || echo "0")
+        if [[ -n "$_baseline_exit" ]]; then
+            if [[ "$_baseline_exit" -eq 0 ]]; then
+                TEST_BASELINE_SUMMARY="All tests passed before your changes (exit code 0, 0 failures)."
+            else
+                TEST_BASELINE_SUMMARY="Tests had ${_baseline_failures} pre-existing failure(s) before your changes (exit code ${_baseline_exit}). These are NOT caused by your work."
+            fi
+            log "[test-aware] Test baseline summary injected into coder context."
+        fi
     fi
 
     # --- Build context blocks for prompt template ----------------------------
 
-    # Human notes block
+    # Human notes block — only populated when notes flags are set
+    # --- Tag-specific prompt template selection (M42) --------------------------
+    # When a tag-specific template exists, it replaces coder.prompt.md entirely.
+    # The human notes block is still built for injection into the template.
     HUMAN_NOTES_BLOCK=""
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+    NOTE_TEMPLATE_NAME=""   # Set when a tag-specific template should be used
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+        # Select tag-specific template if available
         case "$NOTES_FILTER" in
-            BUG)
-                NOTE_GUIDANCE="${NOTES_GUIDANCE_BUG:-These are confirmed bugs. The scout report below has already located the relevant files — read THOSE files first, not the whole project. Find the root cause, fix it, then document your Root Cause Analysis in CODER_SUMMARY.md.}"
-                ;;
-            FEAT)
-                local _default_feat="These are new feature requests. Read ${PROJECT_RULES_FILE} and ${ARCHITECTURE_FILE} before writing any code. New configurable values must use the project's config system — never hardcoded."
-                NOTE_GUIDANCE="${NOTES_GUIDANCE_FEAT:-$_default_feat}"
-                ;;
-            POLISH)
-                NOTE_GUIDANCE="${NOTES_GUIDANCE_POLISH:-These are visual/UX polish items. No logic changes. Focus only on UI files and config.}"
-                ;;
-            *)
-                NOTE_GUIDANCE="${NOTES_GUIDANCE_DEFAULT:-Implement scoped items directly. Flag anything ambiguous or architectural in CODER_SUMMARY.md.}"
-                ;;
+            BUG)    NOTE_TEMPLATE_NAME="coder_note_bug" ;;
+            FEAT)   NOTE_TEMPLATE_NAME="coder_note_feat" ;;
+            POLISH) NOTE_TEMPLATE_NAME="coder_note_polish" ;;
         esac
+
+        # Verify template exists; fall back to generic if not
+        if [[ -n "$NOTE_TEMPLATE_NAME" ]] && \
+           [[ ! -f "${TEKHTON_HOME}/prompts/${NOTE_TEMPLATE_NAME}.prompt.md" ]]; then
+            log "Tag-specific template '${NOTE_TEMPLATE_NAME}' not found — using generic coder template."
+            NOTE_TEMPLATE_NAME=""
+        fi
 
         export HUMAN_NOTES_BLOCK
         HUMAN_NOTES_BLOCK="
 ## Human Notes [${NOTES_FILTER:-ALL}]
-${NOTE_GUIDANCE}
 
 $(extract_human_notes)
 ${BUG_SCOUT_CONTEXT}"
     fi
 
-    # Architecture context
+    # Architecture context (M47: use cache)
     export ARCHITECTURE_BLOCK=""
-    if [ -f "${ARCHITECTURE_FILE}" ]; then
-        local _arch_main
-        _arch_main=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
+    local _arch_main
+    _arch_main=$(_get_cached_architecture_raw)
+    if [[ -n "$_arch_main" ]]; then
         ARCHITECTURE_BLOCK="
 ## Architecture Map (read FIRST — saves you 10+ turns of exploration)
 $(_wrap_file_content "ARCHITECTURE" "$_arch_main")"
@@ -238,7 +411,12 @@ $(cat "${GLOSSARY_FILE}")"
 
     export MILESTONE_BLOCK=""
     if [ "$MILESTONE_MODE" = true ]; then
-        MILESTONE_BLOCK="
+        # DAG path: use cached milestone window (M47) or compute fresh
+        _get_cached_milestone_block "$CLAUDE_CODER_MODEL" 2>/dev/null || true
+
+        # Fallback: static block when no DAG or window build failed
+        if [[ -z "$MILESTONE_BLOCK" ]]; then
+            MILESTONE_BLOCK="
 ## Milestone Mode
 This is a milestone-sized task. Before writing any code:
 1. Read the relevant Milestone section in ${PROJECT_RULES_FILE} in full
@@ -246,6 +424,7 @@ This is a milestone-sized task. Before writing any code:
    that must be made now to avoid rework later
 3. Note any 'Watch for' annotations and design those extension points into your implementation
 4. Document your architectural decisions in CODER_SUMMARY.md under '## Architecture Decisions'"
+        fi
     fi
 
     # Prior reviewer context (unresolved blockers from a previous run)
@@ -293,12 +472,24 @@ doing anything else. Do not re-implement anything already working.
 $(_wrap_file_content "TESTER_REPORT" "$_tester_content")"
     fi
 
-    # Accumulated non-blocking notes (injected when above threshold)
+    # Pre-finalization test gate failures (from orchestrate.sh retry loop)
+    export PREFLIGHT_TEST_CONTEXT=""
+    if [[ -f "PREFLIGHT_ERRORS.md" ]] && [[ "$START_AT" = "coder" ]]; then
+        local _preflight_content
+        _preflight_content=$(_safe_read_file "PREFLIGHT_ERRORS.md" "PREFLIGHT_ERRORS")
+        PREFLIGHT_TEST_CONTEXT="
+## Pre-Finalization Test Failures (must fix)
+The pipeline completed all stages successfully, but the final test gate failed.
+Fix ONLY these test failures — do not re-implement features already working.
+
+$(_wrap_file_content "PREFLIGHT_ERRORS" "$_preflight_content")"
+    fi
+
+    # Accumulated non-blocking notes (only injected in --fix-nonblockers mode)
     export NON_BLOCKING_CONTEXT=""
     local nb_count
     nb_count=$(count_open_nonblocking_notes)
-    local nb_threshold="${NON_BLOCKING_INJECTION_THRESHOLD:-8}"
-    if [ "$nb_count" -gt "$nb_threshold" ]; then
+    if [[ "${FIX_NONBLOCKERS_MODE:-false}" = "true" ]] && [[ "$nb_count" -gt 0 ]]; then
         local nb_notes
         nb_notes=$(get_open_nonblocking_notes)
         NON_BLOCKING_CONTEXT="
@@ -309,47 +500,134 @@ Otherwise, address as many as your remaining turns allow. For each item you
 address, note the file and what you changed. Items you cannot reach are fine to skip.
 
 ${nb_notes}"
-        warn "Non-blocking notes (${nb_count}) exceed threshold (${nb_threshold}) — injecting into coder prompt."
+        log "Non-blocking notes (${nb_count}) injected into coder prompt (--fix-nonblockers mode)."
+    elif [[ "$nb_count" -gt 0 ]]; then
+        log "Non-blocking notes: ${nb_count} open (injection skipped — not in --fix-nonblockers mode)."
+    fi
+
+    # --- TDD pre-flight context (Milestone 27) --------------------------------
+    # When PIPELINE_ORDER=test_first, inject TESTER_PREFLIGHT.md content so the
+    # coder knows which tests to make pass.
+    export TESTER_PREFLIGHT_CONTENT=""
+    if [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]]; then
+        local _preflight_file="${TDD_PREFLIGHT_FILE:-TESTER_PREFLIGHT.md}"
+        if [[ -f "$_preflight_file" ]]; then
+            TESTER_PREFLIGHT_CONTENT=$(_safe_read_file "$_preflight_file" "TESTER_PREFLIGHT")
+            log "TDD mode: injecting ${_preflight_file} into coder context."
+        else
+            warn "TDD mode active but ${_preflight_file} not found — coder will proceed without pre-written tests."
+        fi
     fi
 
     # --- Clarification context (from prior pause) ----------------------------
 
-    load_clarifications_content
+    # M47: use cached clarifications when available
     export CLARIFICATIONS_CONTENT
+    CLARIFICATIONS_CONTENT=$(_get_cached_clarifications_content)
+    if [[ -z "$CLARIFICATIONS_CONTENT" ]]; then
+        load_clarifications_content
+    fi
 
     # --- Context compiler (task-scoped filtering) ----------------------------
     # NOTE: build_context_packet is called before should_claim_notes intentionally.
     # It takes explicit args (not HUMAN_NOTES_BLOCK global), so the ordering is safe.
 
+    _phase_start "context_assembly"
     build_context_packet "coder" "$TASK" "$CLAUDE_CODER_MODEL"
 
     # --- Context budget reporting --------------------------------------------
 
     # Mark human notes as in-progress before coder runs (only when task is about notes)
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+    # In --human (single-note) mode, claim_single_note already ran in tekhton.sh —
+    # skip bulk claiming to avoid marking unrelated notes as [~].
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
+        # Triage bulk notes and warn about oversized ones (M41)
+        triage_bulk_warn "${NOTES_FILTER:-}" || true
         claim_human_notes
-    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-        log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — skipping notes injection."
-        HUMAN_NOTES_BLOCK=""
+    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && ! should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
+        log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — injection skipped."
+        # Defensive hint: detect tasks that appear to originate from HUMAN_NOTES.md
+        if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then
+            warn "Tip: This task appears to come from HUMAN_NOTES.md. Did you mean to use --human?"
+        fi
     fi
 
     _add_context_component "Architecture" "$ARCHITECTURE_BLOCK"
+    _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
     _add_context_component "Glossary" "$GLOSSARY_BLOCK"
     _add_context_component "Milestone" "$MILESTONE_BLOCK"
     _add_context_component "Human Notes" "$HUMAN_NOTES_BLOCK"
     _add_context_component "Prior Reviewer" "$PRIOR_REVIEWER_CONTEXT"
     _add_context_component "Prior Progress" "$PRIOR_PROGRESS_CONTEXT"
     _add_context_component "Prior Tester" "$PRIOR_TESTER_CONTEXT"
+    _add_context_component "Preflight Tests" "$PREFLIGHT_TEST_CONTEXT"
     _add_context_component "Non-Blocking Notes" "$NON_BLOCKING_CONTEXT"
     _add_context_component "Scout Report" "$BUG_SCOUT_CONTEXT"
+    _add_context_component "Affected Test Files" "${AFFECTED_TEST_FILES:-}"
+    _add_context_component "Test Baseline" "${TEST_BASELINE_SUMMARY:-}"
     _add_context_component "Clarifications" "$CLARIFICATIONS_CONTENT"
+    _add_context_component "TDD Preflight" "${TESTER_PREFLIGHT_CONTENT:-}"
     log_context_report "coder" "$CLAUDE_CODER_MODEL"
 
     # --- Invoke coder agent --------------------------------------------------
 
-    CODER_PROMPT=$(render_prompt "coder")
+    # Tag-specific turn budget adjustment (M42)
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ -n "$NOTES_FILTER" ]]; then
+        local _tag_base="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+        local _tag_multiplier="1.0"
+        case "$NOTES_FILTER" in
+            BUG)    _tag_multiplier="${BUG_TURN_MULTIPLIER:-1.0}" ;;
+            FEAT)   _tag_multiplier="${FEAT_TURN_MULTIPLIER:-1.0}" ;;
+            POLISH) _tag_multiplier="${POLISH_TURN_MULTIPLIER:-0.6}" ;;
+        esac
+
+        # If triage estimated turns are available, use them with a 1.5x buffer
+        local _triage_est=""
+        _triage_est=$(grep -oP 'est_turns:\K[0-9]+' HUMAN_NOTES.md 2>/dev/null | head -1 || true)
+        if [[ -n "$_triage_est" ]] && [[ "$_triage_est" -gt 0 ]]; then
+            local _max_from_multiplier
+            _max_from_multiplier=$(awk "BEGIN { printf \"%.0f\", ${_tag_base} * ${_tag_multiplier} }")
+            local _from_estimate
+            _from_estimate=$(awk "BEGIN { v = ${_triage_est} * 1.5; printf \"%.0f\", (v < ${_max_from_multiplier}) ? v : ${_max_from_multiplier} }")
+            ADJUSTED_CODER_TURNS="$_from_estimate"
+            log "Tag ${NOTES_FILTER}: turn budget from triage estimate (${_triage_est} × 1.5 = ${_from_estimate}, cap ${_max_from_multiplier})."
+        else
+            local _adjusted
+            _adjusted=$(awk "BEGIN { printf \"%.0f\", ${_tag_base} * ${_tag_multiplier} }")
+            ADJUSTED_CODER_TURNS="$_adjusted"
+            if [[ "$_tag_multiplier" != "1.0" ]]; then
+                log "Tag ${NOTES_FILTER}: turn budget ${_tag_base} × ${_tag_multiplier} = ${_adjusted}."
+            fi
+        fi
+
+        # Enforce minimum floor of 5 turns to avoid underflow
+        if [[ "${ADJUSTED_CODER_TURNS:-0}" -lt 5 ]]; then
+            ADJUSTED_CODER_TURNS=5
+            log "Tag ${NOTES_FILTER}: turn budget floored to 5 (minimum)."
+        fi
+    fi
+
+    # TDD turn multiplier: give the coder slightly more budget when working
+    # against pre-written tests (Milestone 27)
+    if [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]] && [[ -n "${TESTER_PREFLIGHT_CONTENT:-}" ]]; then
+        local _base_turns="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+        local _multiplier="${CODER_TDD_TURN_MULTIPLIER:-1.2}"
+        # bash doesn't do float math — use awk
+        local _boosted_turns
+        _boosted_turns=$(awk "BEGIN { printf \"%.0f\", ${_base_turns} * ${_multiplier} }")
+        ADJUSTED_CODER_TURNS="$_boosted_turns"
+        log "TDD mode: coder turn budget boosted ${_base_turns} → ${_boosted_turns} (×${_multiplier})."
+    fi
+
+    # Select prompt template: tag-specific or generic (M42)
+    local _coder_template="${NOTE_TEMPLATE_NAME:-coder}"
+    _phase_start "coder_prompt"
+    CODER_PROMPT=$(render_prompt "$_coder_template")
+    _phase_end "coder_prompt"
+    _phase_end "context_assembly"
 
     log "Invoking coder agent (max ${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS} turns)..."
+    _phase_start "coder_agent"
     run_agent \
         "Coder" \
         "$CLAUDE_CODER_MODEL" \
@@ -357,6 +635,7 @@ ${nb_notes}"
         "$CODER_PROMPT" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_CODER"
+    _phase_end "coder_agent"
     print_run_summary
 
     # Export actual coder turns for post-coder recalibration (Milestone 9)
@@ -369,7 +648,7 @@ ${nb_notes}"
         write_pipeline_state \
             "coder" \
             "upstream_error" \
-            "${MILESTONE_MODE:+--milestone }--start-at coder" \
+            "$(_build_resume_flag coder)" \
             "$TASK" \
             "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. This is transient — re-run the same command."
 
@@ -398,6 +677,7 @@ ${nb_notes}"
             if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                 # Split succeeded — update state and re-run from scout
                 _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                 # Recursive call to run_stage_coder creates nested call frames up to
                 # MILESTONE_MAX_SPLIT_DEPTH deep. With default of 3, this is safe.
@@ -412,7 +692,7 @@ ${nb_notes}"
         write_pipeline_state \
             "coder" \
             "null_run" \
-            "--start-at coder" \
+            "$(_build_resume_flag coder)" \
             "$TASK" \
             "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a SCOUT_REPORT.md manually, or checking agent logs."
 
@@ -428,6 +708,43 @@ ${nb_notes}"
         if is_substantive_work; then
             warn "Coder did not produce CODER_SUMMARY.md but substantive work detected."
             _reconstruct_coder_summary
+        elif [[ "${LAST_AGENT_TURNS:-0}" -ge "${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-50}}" ]]; then
+            # Coder exhausted its turn budget without producing a summary and
+            # without substantive tracked/untracked changes. This is a scope
+            # problem (too much exploration, not enough implementation), not a
+            # hard crash. Classify explicitly so the orchestration loop can
+            # attempt recovery (split or retry).
+            warn "Coder exhausted turn budget (${LAST_AGENT_TURNS} turns) without CODER_SUMMARY.md or substantive work."
+            AGENT_ERROR_CATEGORY="AGENT_SCOPE"
+            AGENT_ERROR_SUBCATEGORY="turn_exhaustion_no_output"
+            AGENT_ERROR_MESSAGE="Coder used all ${LAST_AGENT_TURNS} turns but produced no CODER_SUMMARY.md and no substantive file changes."
+
+            # Attempt milestone split before giving up
+            if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                    invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
+                    local _depth
+                    _depth=$(get_split_depth "$_CURRENT_MILESTONE")
+                    warn "Auto-split after turn exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                    run_stage_coder
+                    return
+                fi
+            fi
+
+            error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
+            error "Check the log: ${LOG_FILE}"
+            error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
+            # Reset claimed notes — coder didn't produce any work
+            resolve_human_notes
+
+            write_pipeline_state \
+                "coder" \
+                "turn_exhaustion_no_output" \
+                "$(_build_resume_flag coder)" \
+                "$TASK" \
+                "Coder used ${LAST_AGENT_TURNS} turns but produced no output. Likely spent turns exploring without implementing. Consider: narrower task, manual scout report, or milestone split."
+            exit 1
         else
             error "Coder did not produce CODER_SUMMARY.md and no substantive work detected."
             error "Check the log: ${LOG_FILE}"
@@ -439,8 +756,11 @@ ${nb_notes}"
     fi
 
     # Resolve human notes based on coder's structured reporting
-    # Only resolve if notes were actually claimed (marked [~]) for this run
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+    # Only resolve if notes were actually claimed (marked [~]) for this run.
+    # In --human (single-note) mode, _hook_resolve_notes in finalize.sh handles
+    # resolution via resolve_single_note — skip bulk resolution to avoid resetting
+    # the single claimed note before finalization can process it.
+    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         resolve_human_notes
     fi
 
@@ -452,7 +772,7 @@ ${nb_notes}"
             write_pipeline_state \
                 "coder" \
                 "clarification_abort" \
-                "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                "$(_build_resume_flag coder)" \
                 "$TASK" \
                 "Clarification collection aborted by user. Partial answers in CLARIFICATIONS.md."
             error "Pipeline paused for clarification. Re-run to resume."
@@ -490,7 +810,7 @@ ${nb_notes}"
                 write_pipeline_state \
                     "coder" \
                     "null_run_post_clarification" \
-                    "--start-at coder" \
+                    "$(_build_resume_flag coder)" \
                     "$TASK" \
                     "Post-clarification coder used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Consider: clarification answers may be incomplete, or agent couldn't translate them into code changes."
 
@@ -519,7 +839,7 @@ ${nb_notes}"
 
             while [[ "$_cont_attempt" -lt "$_cont_max" ]]; do
                 _cont_attempt=$((_cont_attempt + 1))
-                log "Coder hit turn limit with progress (attempt ${_cont_attempt}/${_cont_max}). Continuing..."
+                log_decision "Continuing coder" "turn limit hit, progress detected (attempt ${_cont_attempt}/${_cont_max})" "CONTINUATION_ENABLED=true"
 
                 # Build continuation context and inject into prompt
                 local _next_budget="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
@@ -546,7 +866,7 @@ ${nb_notes}"
                     write_pipeline_state \
                         "coder" \
                         "upstream_error" \
-                        "${MILESTONE_MODE:+--milestone }--start-at coder" \
+                        "$(_build_resume_flag coder)" \
                         "$TASK" \
                         "API error during continuation attempt ${_cont_attempt}: ${AGENT_ERROR_MESSAGE}."
                     error "State saved. Re-run the same command."
@@ -599,6 +919,7 @@ ${nb_notes}"
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
                         _depth=$(get_split_depth "$_CURRENT_MILESTONE")
                         warn "Auto-split after continuation exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
@@ -630,7 +951,7 @@ ${nb_notes}"
                 # Skip the state-save-and-exit — fall through to completion gate
                 :
             elif [[ "$IMPLEMENTED_LINES" -gt 3 ]]; then
-                RESUME_FLAG="--milestone --start-at coder"
+                RESUME_FLAG="$(_build_resume_flag coder)"
                 RESUME_NOTE="Coder hit turn limit mid-implementation (${IMPLEMENTED_LINES} summary lines). Git diff shows partial work — coder should CONTINUE, not restart."
 
                 local _state_notes="${RESUME_NOTE}"
@@ -658,6 +979,7 @@ ${GIT_DIFF_STAT}
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
                         _depth=$(get_split_depth "$_CURRENT_MILESTONE")
                         warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
@@ -666,7 +988,7 @@ ${GIT_DIFF_STAT}
                     fi
                 fi
 
-                RESUME_FLAG="--milestone"
+                RESUME_FLAG="$(_build_resume_flag coder)"
                 RESUME_NOTE="Coder hit turn limit with minimal summary output — retry from scratch recommended."
 
                 local _state_notes="${RESUME_NOTE}"
@@ -712,11 +1034,7 @@ ${GIT_DIFF_STAT}
 
             GIT_DIFF_STAT=$(git diff --stat HEAD 2>/dev/null | tail -20 || echo "no changes")
 
-            if [ "$MILESTONE_MODE" = true ]; then
-                RESUME_FLAG="--milestone --start-at coder"
-            else
-                RESUME_FLAG="--start-at coder"
-            fi
+            RESUME_FLAG="$(_build_resume_flag coder)"
 
             write_pipeline_state \
                 "coder" \
@@ -737,9 +1055,45 @@ ${GIT_DIFF_STAT}
     if ! run_build_gate "post-coder"; then
         if [ "$BUILD_GATE_RETRY" -lt 1 ]; then
             BUILD_GATE_RETRY=1
+
+            # --- M53: Classify errors and route appropriately ---
+            # Read raw error lines (not the annotated markdown) for classification
+            local _raw_errors=""
+            if [[ -f BUILD_RAW_ERRORS.txt ]]; then
+                _raw_errors=$(_safe_read_file BUILD_RAW_ERRORS.txt "BUILD_RAW_ERRORS")
+            else
+                _raw_errors=$(_safe_read_file BUILD_ERRORS.md "BUILD_ERRORS")
+            fi
+
+            # Check if ALL errors are non-code (env/service/toolchain/resource/test_infra)
+            if command -v has_only_noncode_errors &>/dev/null \
+                && has_only_noncode_errors "$_raw_errors"; then
+                warn "All build errors are non-code (environment/setup). Skipping build-fix agent."
+                warn "These errors require environment remediation, not code changes."
+                # Log non-code errors to HUMAN_ACTION_REQUIRED.md if available
+                if command -v append_human_action &>/dev/null; then
+                    append_human_action "build_gate" \
+                        "Non-code build errors detected. See BUILD_ERRORS.md for details."
+                fi
+                write_pipeline_state \
+                    "coder" \
+                    "env_failure" \
+                    "$(_build_resume_flag coder)" \
+                    "$TASK" \
+                    "Build failed with environment errors (not code bugs). See BUILD_ERRORS.md."
+                error "State saved. Fix environment issues in BUILD_ERRORS.md then re-run."
+                exit 1
+            fi
+
+            # Filter to code-only errors for the build-fix agent (M53)
             warn "Invoking coder to fix build errors (1 retry allowed)..."
             export BUILD_ERRORS_CONTENT
-            BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" "$(_safe_read_file BUILD_ERRORS.md "BUILD_ERRORS")")
+            if command -v filter_code_errors &>/dev/null; then
+                BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" \
+                    "$(filter_code_errors "$_raw_errors")")
+            else
+                BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" "$_raw_errors")
+            fi
             BUILD_FIX_PROMPT=$(render_prompt "build_fix")
 
             run_agent \
@@ -756,12 +1110,21 @@ ${GIT_DIFF_STAT}
                 write_pipeline_state \
                     "coder" \
                     "build_failure" \
-                    "--start-at coder" \
+                    "$(_build_resume_flag coder)" \
                     "$TASK" \
                     "Build errors remain after auto-fix attempt. See BUILD_ERRORS.md."
                 error "State saved. Review BUILD_ERRORS.md manually then re-run."
                 exit 1
             fi
+        fi
+    fi
+
+    # --- Record task→file association for personalized ranking (M7) ----------
+    if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
+        local _modified_files
+        _modified_files=$(extract_files_from_coder_summary "CODER_SUMMARY.md")
+        if [[ -n "$_modified_files" ]]; then
+            record_task_file_association "$TASK" "$_modified_files" || true
         fi
     fi
 }

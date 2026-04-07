@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # clarify.sh — Mid-run clarification protocol
 #
@@ -104,10 +105,18 @@ handle_clarifications() {
     echo "  Type 'abort' to save state and exit."
     echo
 
-    # Determine input source
-    local input_fd="/dev/stdin"
-    if [[ ! -t 0 ]] && [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
+    # Determine input source.
+    # The while-loop below redirects fd 0 to $blocking_file, so /dev/stdin
+    # would re-open the blocking file — reading question text as answers.
+    # We MUST use /dev/tty for interactive input. If /dev/tty is unavailable
+    # (non-interactive context, piped input, --complete mode), abort rather
+    # than producing garbage answers.
+    local input_fd=""
+    if [[ -e /dev/tty ]] && [[ -z "${TEKHTON_TEST_MODE:-}" ]]; then
         input_fd="/dev/tty"
+    else
+        warn "No interactive terminal available (/dev/tty). Cannot collect clarification answers."
+        return 1
     fi
 
     # Initialize or append to CLARIFICATIONS.md

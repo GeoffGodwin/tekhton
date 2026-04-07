@@ -21,6 +21,7 @@ export PROJECT_DIR LOG_DIR
 
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
+source "${TEKHTON_HOME}/lib/metrics_extended.sh"
 source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
 
 PASS=0

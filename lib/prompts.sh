@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # prompts.sh — Template engine for agent prompt files
 #
@@ -69,6 +70,20 @@ _safe_read_file() {
     fi
 
     cat "$file_path"
+}
+
+# --- Intake template variable setup -------------------------------------------
+
+# load_intake_template_vars — Populate INTAKE_* template variables for rendering.
+# Called before render_prompt for prompts that use intake context.
+load_intake_template_vars() {
+    export INTAKE_REPORT_CONTENT=""
+    export INTAKE_TWEAKS_BLOCK="${INTAKE_TWEAKS_BLOCK:-}"
+    export INTAKE_HISTORY_BLOCK="${INTAKE_HISTORY_BLOCK:-}"
+
+    if [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
+        INTAKE_REPORT_CONTENT=$(_safe_read_file "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" "INTAKE_REPORT")
+    fi
 }
 
 render_prompt() {

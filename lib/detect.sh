@@ -259,6 +259,133 @@ detect_frameworks() {
     fi
 }
 
+# --- UI framework detection (Milestone 28) ------------------------------------
+
+# detect_ui_framework — Detects E2E test frameworks and UI project indicators.
+# Args: $1 = project directory (defaults to PROJECT_DIR)
+# Sets globals: UI_PROJECT_DETECTED, UI_FRAMEWORK (when UI_FRAMEWORK=auto or empty)
+# Output: framework name if detected, empty otherwise
+detect_ui_framework() {
+    local proj_dir="${1:-${PROJECT_DIR:-.}}"
+    local detected_framework=""
+    local ui_signals=0
+
+    # --- E2E framework detection (specific → generic) ---
+
+    # Playwright
+    if [[ -f "$proj_dir/playwright.config.ts" ]] || [[ -f "$proj_dir/playwright.config.js" ]]; then
+        detected_framework="playwright"
+    elif [[ -f "$proj_dir/package.json" ]]; then
+        local deps
+        deps=$(_extract_json_keys "$proj_dir/package.json" '"dependencies"' '"devDependencies"')
+        if _check_dep "$deps" '"@playwright/test"'; then
+            detected_framework="playwright"
+        elif _check_dep "$deps" '"cypress"'; then
+            detected_framework="cypress"
+        elif _check_dep "$deps" '"puppeteer"'; then
+            detected_framework="puppeteer"
+        fi
+
+        # Testing Library (component-level E2E)
+        if [[ -z "$detected_framework" ]]; then
+            if _check_dep "$deps" '"@testing-library/react"' || \
+               _check_dep "$deps" '"@testing-library/vue"' || \
+               _check_dep "$deps" '"@testing-library/svelte"'; then
+                detected_framework="testing-library"
+            fi
+        fi
+
+        # Detox (mobile E2E)
+        if [[ -z "$detected_framework" ]]; then
+            if _check_dep "$deps" '"detox"'; then
+                detected_framework="detox"
+            fi
+        fi
+    fi
+
+    # Cypress (config file check — may not be in package.json)
+    if [[ -z "$detected_framework" ]]; then
+        if [[ -f "$proj_dir/cypress.config.ts" ]] || [[ -f "$proj_dir/cypress.config.js" ]] || \
+           [[ -d "$proj_dir/cypress" ]]; then
+            detected_framework="cypress"
+        fi
+    fi
+
+    # Selenium (Python/Java)
+    if [[ -z "$detected_framework" ]]; then
+        if [[ -f "$proj_dir/requirements.txt" ]] && grep -qi 'selenium' "$proj_dir/requirements.txt" 2>/dev/null; then
+            detected_framework="selenium"
+        elif [[ -f "$proj_dir/pom.xml" ]] && grep -q 'selenium' "$proj_dir/pom.xml" 2>/dev/null; then
+            detected_framework="selenium"
+        fi
+    fi
+
+    # Detox (config file check)
+    if [[ -z "$detected_framework" ]]; then
+        if [[ -f "$proj_dir/.detoxrc.js" ]] || [[ -f "$proj_dir/.detoxrc.json" ]]; then
+            detected_framework="detox"
+        fi
+    fi
+
+    # --- Generic web UI detection (requires MULTIPLE signals) ---
+    if [[ -z "$detected_framework" ]]; then
+        # Count UI signals — need 2+ to classify as UI project
+        # Signal: component files (React/Vue/Svelte)
+        if _has_source_files "$proj_dir" "tsx jsx"; then
+            ui_signals=$((ui_signals + 1))
+        fi
+        if _has_source_files "$proj_dir" "vue svelte"; then
+            ui_signals=$((ui_signals + 1))
+        fi
+        # Signal: templates directory with HTML
+        if [[ -d "$proj_dir/templates" ]] || [[ -d "$proj_dir/app/views" ]] || \
+           [[ -d "$proj_dir/src/pages" ]] || [[ -d "$proj_dir/pages" ]]; then
+            ui_signals=$((ui_signals + 1))
+        fi
+        # Signal: frontend framework dependency
+        if [[ -f "$proj_dir/package.json" ]]; then
+            local _ui_deps
+            _ui_deps=$(_extract_json_keys "$proj_dir/package.json" '"dependencies"')
+            if _check_dep "$_ui_deps" '"react"' || _check_dep "$_ui_deps" '"vue"' || \
+               _check_dep "$_ui_deps" '"svelte"' || _check_dep "$_ui_deps" '"@angular/core"'; then
+                ui_signals=$((ui_signals + 1))
+            fi
+        fi
+        # Signal: CSS/SCSS modules
+        if _has_source_files "$proj_dir" "scss css module.css"; then
+            ui_signals=$((ui_signals + 1))
+        fi
+        # Signal: Django/Rails/Flask templates
+        if [[ -d "$proj_dir/templates" ]] && [[ -f "$proj_dir/manage.py" ]]; then
+            ui_signals=$((ui_signals + 1))
+        fi
+        if [[ -d "$proj_dir/app/views" ]] && [[ -f "$proj_dir/Gemfile" ]]; then
+            ui_signals=$((ui_signals + 1))
+        fi
+
+        # Require 2+ signals to avoid false positives (single HTML README ≠ UI project)
+        if [[ "$ui_signals" -ge 2 ]]; then
+            detected_framework="generic"
+        fi
+    fi
+
+    # --- Apply results ---
+    if [[ -n "$detected_framework" ]]; then
+        UI_PROJECT_DETECTED="true"
+        export UI_PROJECT_DETECTED
+        # Only override UI_FRAMEWORK if set to "auto" or empty
+        if [[ -z "${UI_FRAMEWORK:-}" ]] || [[ "${UI_FRAMEWORK:-}" == "auto" ]]; then
+            if [[ "$detected_framework" != "generic" ]]; then
+                UI_FRAMEWORK="$detected_framework"
+            else
+                UI_FRAMEWORK=""
+            fi
+            export UI_FRAMEWORK
+        fi
+        echo "$detected_framework"
+    fi
+}
+
 # --- JSON key extraction (grep-based, no jq dependency) -----------------------
 
 # _extract_json_keys — Extracts content between two JSON section markers.

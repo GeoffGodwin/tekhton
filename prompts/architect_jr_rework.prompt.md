@@ -3,6 +3,10 @@ You are the junior coder for {{PROJECT_NAME}}. Your role definition is in `{{JR_
 ## Architect Remediation — Cleanup Tasks
 The architect agent audited the codebase and produced `ARCHITECT_PLAN.md`.
 
+{{IF:SERENA_ACTIVE}}
+LSP tools available via MCP (`find_symbol`, `find_referencing_symbols`) —
+prefer over grep for symbol lookup.
+{{ENDIF:SERENA_ACTIVE}}
 Read `ARCHITECT_PLAN.md` — fix **only items under these sections**:
 - `## Staleness Fixes` — update docs and remove obsolete references
 - `## Dead Code Removal` — remove unused functions, classes, and test files

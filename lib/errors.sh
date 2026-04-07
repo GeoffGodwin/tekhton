@@ -21,7 +21,9 @@ source "${TEKHTON_HOME:?}/lib/errors_helpers.sh"
 #   UPSTREAM       — API provider failures (all transient): api_500, api_rate_limit,
 #                    api_overloaded, api_auth, api_timeout, api_unknown
 #   ENVIRONMENT    — Local system issues: disk_full, network, missing_dep,
-#                    permissions, oom, env_unknown
+#                    permissions, oom, env_unknown,
+#                    env_setup (M53), service_dep (M53), toolchain (M53),
+#                    resource (M53), test_infra (M53)
 #   AGENT_SCOPE    — Expected agent failures (all permanent): null_run, max_turns,
 #                    activity_timeout, no_summary, scope_unknown
 #   PIPELINE       — Tekhton internal errors (all permanent): state_corrupt,
@@ -257,41 +259,4 @@ classify_error() {
     return 0
 }
 
-# --- is_transient -----------------------------------------------------------
-# Returns 0 if the error category/subcategory is transient (retryable).
-# Returns 1 if permanent (requires human action or scope change).
-#
-# Usage: is_transient CATEGORY SUBCATEGORY
-
-is_transient() {
-    local category="${1:?is_transient requires category}"
-    local subcategory="${2:-}"
-
-    case "$category" in
-        UPSTREAM)
-            # Most upstream errors are transient — except auth failures,
-            # which won't self-resolve on retry and need human action.
-            if [[ "$subcategory" == "api_auth" ]]; then
-                return 1
-            fi
-            return 0
-            ;;
-        ENVIRONMENT)
-            case "$subcategory" in
-                network|oom)
-                    return 0
-                    ;;
-                *)
-                    return 1
-                    ;;
-            esac
-            ;;
-        AGENT_SCOPE|PIPELINE)
-            return 1
-            ;;
-        *)
-            # Unknown category — assume permanent
-            return 1
-            ;;
-    esac
-}
+# --- is_transient() lives in errors_helpers.sh ---

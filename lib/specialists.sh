@@ -35,10 +35,41 @@ run_specialist_reviews() {
         specialists+=("api")
     fi
 
+    # UI specialist: auto-enable when UI project detected
+    local ui_enabled="${SPECIALIST_UI_ENABLED:-auto}"
+    if [[ "$ui_enabled" == "auto" ]]; then
+        if [[ "${UI_PROJECT_DETECTED:-}" == "true" ]]; then
+            ui_enabled="true"
+        else
+            ui_enabled="false"
+        fi
+    fi
+    if [[ "$ui_enabled" == "true" ]]; then
+        specialists+=("ui")
+    fi
+
     # Collect custom specialists (SPECIALIST_CUSTOM_*_ENABLED=true)
     _collect_custom_specialists specialists
 
     if [ ${#specialists[@]} -eq 0 ]; then
+        return 0
+    fi
+
+    # M48: Filter out specialists whose diff doesn't touch relevant files
+    if [[ "${SPECIALIST_SKIP_IRRELEVANT:-true}" == "true" ]]; then
+        local -a filtered=()
+        for spec_name in "${specialists[@]}"; do
+            if _specialist_diff_relevant "$spec_name"; then
+                filtered+=("$spec_name")
+            else
+                log "[Specialist ${spec_name}] Skipped — diff does not touch relevant files."
+            fi
+        done
+        specialists=("${filtered[@]+"${filtered[@]}"}")
+    fi
+
+    if [ ${#specialists[@]} -eq 0 ]; then
+        log "All specialists skipped (no relevant files in diff)."
         return 0
     fi
 
@@ -75,6 +106,12 @@ EOF
         _append_specialist_notes "$spec_name"
     done
 
+    # Populate UI_FINDINGS_BLOCK for downstream reviewer prompt injection
+    export UI_FINDINGS_BLOCK=""
+    if [[ -f "SPECIALIST_UI_FINDINGS.md" ]]; then
+        UI_FINDINGS_BLOCK=$(cat "SPECIALIST_UI_FINDINGS.md")
+    fi
+
     if [ "$has_blockers" = true ]; then
         warn "Specialist review(s) found blocker(s). Routing to rework."
         return 1
@@ -100,6 +137,7 @@ _run_single_specialist() {
     local spec_prompt
     spec_prompt=$(render_prompt "$prompt_template")
 
+    local _spec_start="$SECONDS"
     run_agent \
         "Specialist (${spec_name})" \
         "$model" \
@@ -107,6 +145,11 @@ _run_single_specialist() {
         "$spec_prompt" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_SPECIALIST"
+    # Record specialist sub-step (M66)
+    if declare -p _STAGE_DURATION &>/dev/null; then
+        _STAGE_DURATION["specialist_${spec_name}"]="$(( SECONDS - _spec_start ))"
+        _STAGE_TURNS["specialist_${spec_name}"]="${LAST_AGENT_TURNS:-0}"
+    fi
 
     if was_null_run; then
         warn "[Specialist ${spec_name}] Null run — no findings produced."
@@ -180,79 +223,11 @@ _collect_custom_specialists() {
     done < <(env | grep "^SPECIALIST_CUSTOM_" | grep "_ENABLED=" || true)
 }
 
-# _extract_specialist_blockers — Reads [BLOCKER] items from a specialist's output.
-# Args: $1 = specialist name
-# Returns: blocker text (one per line) or empty string
-_extract_specialist_blockers() {
-    local spec_name="$1"
-    local upper_name
-    upper_name=$(echo "$spec_name" | tr '[:lower:]' '[:upper:]')
-    local findings_file="SPECIALIST_${upper_name}_FINDINGS.md"
-
-    if [ ! -f "$findings_file" ]; then
-        return
-    fi
-
-    grep "\[BLOCKER\]" "$findings_file" 2>/dev/null || true
-}
-
-# _append_specialist_notes — Reads [NOTE] items and appends to NON_BLOCKING_LOG.md.
-# Args: $1 = specialist name
-_append_specialist_notes() {
-    local spec_name="$1"
-    local upper_name
-    upper_name=$(echo "$spec_name" | tr '[:lower:]' '[:upper:]')
-    local findings_file="SPECIALIST_${upper_name}_FINDINGS.md"
-
-    if [ ! -f "$findings_file" ]; then
-        return
-    fi
-
-    local notes
-    notes=$(grep "\[NOTE\]" "$findings_file" 2>/dev/null || true)
-
-    if [ -z "$notes" ]; then
-        return
-    fi
-
-    _ensure_nonblocking_log
-
-    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
-    local date_tag
-    date_tag=$(date +%Y-%m-%d)
-
-    # Append each [NOTE] item as an open non-blocking note.
-    # Uses awk to insert after "## Open" header — avoids sed -i which interprets
-    # escape sequences (\n, \t) in the replacement text, corrupting entries.
-    local tmpfile
-    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/specialist_nb_XXXXXXXX")
-
-    # Build the block of new entries to insert
-    local insert_block=""
-    while IFS= read -r note_line; do
-        [[ -z "$note_line" ]] && continue
-        # Strip leading "- " if present
-        local text="${note_line#- }"
-        insert_block="${insert_block}- [ ] [${date_tag} | specialist:${spec_name}] ${text}"$'\n'
-    done <<< "$notes"
-
-    # Insert the block after "## Open" using awk.
-    # Reads the insert block from a temp file to avoid export/ENVIRON leak risk
-    # and awk -v C-style escape interpretation (\n, \U, etc.).
-    local insert_file
-    insert_file=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/specialist_ins_XXXXXXXX")
-    printf '%s' "$insert_block" > "$insert_file"
-    awk '/^## Open$/{print; while ((getline line < insfile) > 0) print line; next} {print}' \
-        insfile="$insert_file" "$nb_file" > "$tmpfile"
-    rm -f "$insert_file"
-
-    mv "$tmpfile" "$nb_file"
-    local note_count
-    note_count=$(echo "$notes" | grep -c "\[NOTE\]")
-    log "[Specialist ${spec_name}] ${note_count} note(s) appended to ${NON_BLOCKING_LOG_FILE}."
-}
-
 # has_specialist_blockers — Returns 0 if SPECIALIST_BLOCKERS is non-empty.
 has_specialist_blockers() {
     [ -n "${SPECIALIST_BLOCKERS:-}" ]
 }
+
+# Source extracted helpers
+# shellcheck source=lib/specialists_helpers.sh
+source "${TEKHTON_HOME}/lib/specialists_helpers.sh"

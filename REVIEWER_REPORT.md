@@ -1,19 +1,35 @@
-# Reviewer Report
-
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- `stages/init_synthesize.sh` is 533 lines — well over the 300-line ceiling. Pre-existing from Milestone 21, not introduced here, but a cleanup pass was a natural opportunity to split it.
+None
 
 ## Coverage Gaps
-- None
+None
 
 ## Drift Observations
-- `stages/init_synthesize.sh` — file is 533 lines, exceeding the 300-line ceiling defined in reviewer.md. The coder's changes actually removed a line, so this was not introduced here, but it should be tracked for a future split (e.g., extract `_compress_synthesis_context` and `_synthesize_*` helpers into a `lib/init_synthesize_helpers.sh`).
+None
+
+---
+
+**Review summary**: Both drift observations were substantively resolved in M65.
+This run correctly formalizes the resolution in DRIFT_LOG.md.
+
+1. **Sourcing convention** — `tekhton.sh` lines 813–814 have an inline comment
+   documenting that all five tester sub-stages are sourced by `tester.sh` itself.
+   Verified correct.
+
+2. **ARCHITECTURE.md tester sub-stages** — All five sub-stages (`tester_tdd.sh`,
+   `tester_continuation.sh`, `tester_fix.sh`, `tester_timing.sh`, `tester_validation.sh`)
+   are listed in `ARCHITECTURE.md` with "Sourced by `tester.sh` — do not run directly"
+   entries. Verified correct.
+
+DRIFT_LOG.md moves both observations from Unresolved to Resolved and resets
+"Runs since audit" to 0. No regressions; no scope creep. No code changes were
+required because the underlying fixes were already in place.

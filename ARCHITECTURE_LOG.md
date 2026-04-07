@@ -63,3 +63,93 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-03-21
 - **Rationale**: Clean, backward-compatible extension; `--init` alone is unchanged. ARCHITECTURE.md update is needed (noted by coder).
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-13: Extract DAG helpers from milestones.sh (Task: "Implement Milestone 2: Sliding Window & Plan Generation Integration")
+- **Date**: 2026-03-22
+- **Rationale**: Previously accepted; no new concerns.
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-14: Extract init_synthesize helpers (Task: "Implement Milestone 2: Sliding Window & Plan Generation Integration")
+- **Date**: 2026-03-22
+- **Rationale**: Original extraction triggered the MODIFY verdict due to the 342-line helpers file. That concern is now resolved: `init_synthesize_helpers.sh` is 242 lines and `init_synthesize_ui.sh` is 121 lines, bot
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-15: REPO_MAP_VENV_DIR as configurable path (Task: "Implement Indexer Infrastructure & Setup Command then carry on to future milestones.")
+- **Date**: 2026-03-22
+- **Rationale**: Reasonable extension; custom venv location is a valid operational need.
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-16: Per-grammar installation (not bundle) (Task: "Implement Indexer Infrastructure & Setup Command then carry on to future milestones.")
+- **Date**: 2026-03-22
+- **Rationale**: Graceful degradation on platform failures is preferable to all-or-nothing.
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-17: Claude CLI MCP Server Management (Task: "Implement Milestone 6: Serena MCP Integration then continue onto more milestones.")
+- **Date**: 2026-03-22
+- **Rationale**: - ACP: Claude CLI MCP Server Management — **ACCEPT** — Delegating server process lifecycle to Claude CLI via `--mcp-config` is architecturally correct: avoids orphan process risk, is compatible wi
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-18: Source new libraries in init.sh (Task: "Implement Milestone 11: Brownfield AI Artifact Detection & Handling")
+- **Date**: 2026-03-23
+- **Rationale**: - ACP: Source new libraries in init.sh — **ACCEPT** — Backward compatible; follows the established pattern of sourcing companion files in `init.sh`. ARCHITECTURE.md update needed to add `lib/detec
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-19: New `migrations/` directory (Task: "Implement Milestone 21: Version Migration Framework & Project Upgrade")
+- **Date**: 2026-03-24
+- **Rationale**: - ACP: New `migrations/` directory — **ACCEPT** — Dedicated directory with a stable four-function interface (`migration_version`, `migration_description`, `migration_check`, `migration_apply`) and
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-20: Startup version check injection (Task: "Implement Milestone 21: Version Migration Framework & Project Upgrade")
+- **Date**: 2026-03-24
+- **Rationale**: - ACP: Startup version check injection — **ACCEPT** — Placement after config load and before pre-flight is exactly right. Backward compatible: matching-version projects see zero behavior change; p
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-21: Role file fallbacks live in `express.sh`, not `agent.sh` (Task: "Implement Milestone 26: Express Mode (Zero-Config Execution)")
+- **Date**: 2026-03-25
+- **Rationale**: - ACP: Role file fallbacks live in `express.sh`, not `agent.sh` — **ACCEPT** — Keeps `agent.sh` clean; role-fallback logic is conceptually part of the zero-config story and the placement is well-j
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-22: `apply_role_file_fallbacks()` runs for configured projects too (Task: "Implement Milestone 26: Express Mode (Zero-Config Execution)")
+- **Date**: 2026-03-25
+- **Rationale**: - ACP: `apply_role_file_fallbacks()` runs for configured projects too — **ACCEPT** — Strictly additive; the log message makes the fallback visible when it fires. The change in failure mode (hard e
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-23: UI validation gate integration in run_build_gate() (Task: "Implement Milestone 29: UI Validation Gate & Headless Smoke Testing")
+- **Date**: 2026-03-25
+- **Rationale**: Guard-checking with `command -v run_ui_validation` is consistent with the existing project pattern. Placement after UI_TEST_CMD is architecturally correct. The two new library files sourced between ga
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-24: Watchtower Inbox Directory (Task: "M36")
+- **Date**: 2026-03-28
+- **Rationale**: - ACP: Watchtower Inbox Directory — **ACCEPT** — The `.claude/watchtower_inbox/` convention is well-motivated, backward compatible (no-op when absent), and follows the existing `.claude/` staging 
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-25: New `lib/inbox.sh` Library (Task: "M36")
+- **Date**: 2026-03-28
+- **Rationale**: - ACP: New `lib/inbox.sh` Library — **ACCEPT** — Correctly scoped single-entry-point library. Source order in `tekhton.sh` is correct (`notes_cli.sh` at line 699, `inbox.sh` at line 749), so `add_
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-26: Watchtower Inbox Directory (Task: "M37")
+- **Date**: 2026-03-28
+- **Rationale**: - ACP: Watchtower Inbox Directory — **ACCEPT** — The `.claude/watchtower_inbox/` convention is well-motivated, backward compatible (no-op when absent), and follows the existing `.claude/` staging 
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-27: New `lib/inbox.sh` Library (Task: "M37")
+- **Date**: 2026-03-28
+- **Rationale**: - ACP: New `lib/inbox.sh` Library — **ACCEPT** — Correctly scoped single-entry-point library. Source order in `tekhton.sh` is correct (`notes_cli.sh` at line 699, `inbox.sh` at line 749), so `add_
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-28: Extract build gate phases to separate file (Task: "M54")
+- **Date**: 2026-04-03
+- **Rationale**: gates.sh was approaching the 300-line ceiling; per-phase re-runability is a direct M54 requirement; backward-compatible (run_build_gate() behavior unchanged).
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-29: New remediation engine file (Task: "M54")
+- **Date**: 2026-04-03
+- **Rationale**: remediation logic (~250 lines) would have pushed error_patterns.sh over the ceiling; clean separation of classification (error_patterns.sh) from execution (error_patterns_remediation.sh); sourcing ord
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-30: Extract service logic to `lib/preflight_services.sh` (Task: "M56")
+- **Date**: 2026-04-03
+- **Rationale**: `preflight.sh` was already 607 lines; extraction follows the established module-splitting pattern used by `agent_monitor_helpers.sh`, `drift_artifacts.sh`, etc. Backward-compatible via `command -v` gu
+- **Source**: Accepted ACP from pipeline run

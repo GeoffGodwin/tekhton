@@ -118,6 +118,33 @@ summarize_metrics() {
         has_errors=true
     fi
 
+    # Indexer metrics (M7)
+    local indexer_runs=0
+    local total_hit_rate=0
+    local total_gen_time=0
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local hr
+        hr=$(echo "$line" | grep -oE '"indexer_hit_rate":[0-9.]+' | grep -oE '[0-9.]+$' || true)
+        if [[ -n "$hr" ]]; then
+            indexer_runs=$((indexer_runs + 1))
+            # Multiply by 100 for integer arithmetic
+            local hr_int
+            hr_int=$(echo "$hr" | awk '{printf "%d", $1 * 100}')
+            total_hit_rate=$((total_hit_rate + hr_int))
+            local gt
+            gt=$(echo "$line" | grep -oE '"indexer_gen_time_ms":[0-9]+' | grep -oE '[0-9]+$' || echo "0")
+            total_gen_time=$((total_gen_time + gt))
+        fi
+    done <<< "$records"
+
+    if [[ "$indexer_runs" -gt 0 ]]; then
+        local avg_hit_rate=$((total_hit_rate / indexer_runs))
+        local avg_gen_time=$((total_gen_time / indexer_runs))
+        echo "────────────────────────────────────────"
+        echo "Indexer:        ${indexer_runs} runs, avg ${avg_hit_rate}% cache hit rate, avg ${avg_gen_time}ms generation"
+    fi
+
     if [[ "$has_errors" = true ]]; then
         echo "────────────────────────────────────────"
         echo "Error breakdown:"

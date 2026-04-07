@@ -126,24 +126,56 @@ run_agent() {
         fi
     fi
 
+    # Add MCP config flag when Serena is available.
+    # Skip for read-only agents (Reviewer, Scout, Architect) — they can't use MCP
+    # tools anyway (allowedTools restricts to Read/Glob/Grep/Write) and loading the
+    # MCP tool schema into context is pure overhead.
+    if [[ "${SERENA_MCP_AVAILABLE:-false}" == "true" ]] && command -v get_mcp_config_path &>/dev/null; then
+        if [[ "$label" =~ ^(Coder|Tester|Jr.Coder|Build.Fix|Cleanup|Security.Rework) ]] \
+           || echo "$allowed_tools" | grep -q 'Bash'; then
+            local _mcp_config
+            _mcp_config=$(get_mcp_config_path)
+            if [[ -n "$_mcp_config" ]] && [ -f "$_mcp_config" ]; then
+                _perm_flags+=(--mcp-config "$_mcp_config")
+            fi
+        fi
+    fi
+
     _IM_PERM_FLAGS=("${_perm_flags[@]}")  # Pass to monitor
 
     # --- CLI activity indicator (spinner) — shows which agent is working --------
+    # Enhanced for Milestone 13: shows turn count and triggers dashboard refresh.
     local _spinner_pid=""
     if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
         (
             trap 'exit 0' INT TERM
             chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
             start_ts=$(date +%s)
+            _last_refresh=0
+            _refresh_interval="${DASHBOARD_REFRESH_INTERVAL:-10}"
             i=0
             while true; do
                 now=$(date +%s)
                 elapsed=$(( now - start_ts ))
                 mins=$(( elapsed / 60 ))
                 secs=$(( elapsed % 60 ))
-                printf '\r\033[0;36m[tekhton]\033[0m %s %s is generating... %dm%02ds ' \
-                    "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" > /dev/tty
+                # Read turns from turns file if available
+                _cur_turns=0
+                if [[ -f "$_turns_file" ]]; then
+                    _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "0")
+                    [[ "$_cur_turns" =~ ^[0-9]+$ ]] || _cur_turns=0
+                fi
+                printf '\r\033[0;36m[tekhton]\033[0m %s %s (%dm%02ds, %s/%s turns) ' \
+                    "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" \
+                    "$_cur_turns" "$max_turns" > /dev/tty
                 i=$(( i + 1 ))
+                # Dashboard heartbeat: refresh run_state.js periodically
+                if (( elapsed - _last_refresh >= _refresh_interval )); then
+                    if command -v emit_dashboard_run_state &>/dev/null; then
+                        emit_dashboard_run_state 2>/dev/null || true
+                    fi
+                    _last_refresh=$elapsed
+                fi
                 sleep 0.2
             done
         ) &
@@ -196,7 +228,7 @@ run_agent() {
 
     TOTAL_TURNS=$(( TOTAL_TURNS + turns_used ))
     TOTAL_TIME=$(( TOTAL_TIME + elapsed ))
-    STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label}: ${turns_display} turns, ${mins}m${secs}s${_retry_suffix}"
+    STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label} (${model}): ${turns_display} turns, ${mins}m${secs}s${_retry_suffix}"
 
     # --- Null run detection (file changes override FIFO-based heuristic) ------
     export LAST_AGENT_TURNS="$turns_used"

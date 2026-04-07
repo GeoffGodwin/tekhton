@@ -22,13 +22,21 @@ _compute_diff_hash() {
 }
 
 # _check_progress
-# Compares current diff hash against the last iteration.
+# Multi-signal progress detection (M16). Uses causal log events as primary
+# signal when available, falls back to git diff hash comparison.
 # Returns 0 if progress detected, 1 if stuck.
 _check_progress() {
     if [[ "${AUTONOMOUS_PROGRESS_CHECK:-true}" != "true" ]]; then
         return 0
     fi
 
+    # Primary: causal log signals (richer than git diff alone)
+    if _check_progress_causal_log; then
+        _ORCH_NO_PROGRESS_COUNT=0
+        return 0
+    fi
+
+    # Fallback: git diff hash comparison
     local current_hash
     current_hash=$(_compute_diff_hash)
 
@@ -44,6 +52,46 @@ _check_progress() {
     _ORCH_NO_PROGRESS_COUNT=0
     _ORCH_LAST_DIFF_HASH="$current_hash"
     return 0
+}
+
+# _check_progress_causal_log
+# Returns 0 if causal log shows forward-progress events for the current attempt.
+# Returns 1 if no causal log or no progress events found.
+_check_progress_causal_log() {
+    # Requires causal log to be enabled and file to exist
+    if [[ "${CAUSAL_LOG_ENABLED:-true}" != "true" ]]; then
+        return 1
+    fi
+    if [[ ! -f "${CAUSAL_LOG_FILE:-}" ]]; then
+        return 1
+    fi
+
+    # Only examine events emitted during THIS attempt (lines after baseline).
+    # _ORCH_CAUSAL_LOG_BASELINE is captured at the start of each iteration.
+    local baseline="${_ORCH_CAUSAL_LOG_BASELINE:-0}"
+    local attempt_lines
+    attempt_lines=$(tail -n "+$(( baseline + 1 ))" "$CAUSAL_LOG_FILE" 2>/dev/null) || attempt_lines=""
+
+    if [[ -z "$attempt_lines" ]]; then
+        return 1  # No new events this attempt
+    fi
+
+    # Check for forward-progress event types emitted since this attempt started.
+    # These indicate work was done even if git diff didn't change.
+    local progress_patterns='verdict.*APPROVED\|verdict.*TWEAKED\|verdict.*PASS\|milestone_advance\|stage_end.*success\|rework_cycle'
+    if echo "$attempt_lines" | grep -q "$progress_patterns" 2>/dev/null; then
+        return 0
+    fi
+
+    # Check for non-error events in this attempt's portion
+    local recent_events
+    recent_events=$(echo "$attempt_lines" | grep -cv '"type":"error"' 2>/dev/null | tr -d '[:space:]' || echo "0")
+    [[ "$recent_events" =~ ^[0-9]+$ ]] || recent_events=0
+    if [[ "$recent_events" -gt 5 ]]; then
+        return 0  # Active work happening
+    fi
+
+    return 1
 }
 
 # --- Recovery decision tree ----------------------------------------------------

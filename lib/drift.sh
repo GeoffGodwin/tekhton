@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -euo pipefail
 # =============================================================================
 # drift.sh — Drift log management (observations, thresholds, audit counters)
 #
@@ -124,7 +125,7 @@ count_drift_observations() {
         return
     fi
     local count
-    count=$(awk '/^## Unresolved Observations/{found=1; next} found && /^##/{exit} found && /^- \[/{count++} END{print count+0}' \
+    count=$(awk '/^## Unresolved Observations/{found=1; next} found && /^## [^#]/{exit} found && /^- \[/{count++} END{print count+0}' \
         "$drift_file" 2>/dev/null)
     echo "$count"
 }
@@ -305,6 +306,9 @@ reset_runs_since_audit() {
         -e "s/Last audit: .*/Last audit: ${date_tag}/" \
         "$drift_file" > "$tmpfile"
     mv "$tmpfile" "$drift_file"
+
+    # Prune old resolved entries after audit to prevent unbounded growth
+    prune_resolved_drift_entries
 }
 
 # should_trigger_audit — Returns 0 (true) if audit threshold is reached.
