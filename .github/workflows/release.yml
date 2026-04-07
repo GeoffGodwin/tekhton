@@ -12,11 +12,43 @@ jobs:
 
       - name: Extract version from tag
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          MAJOR="${VERSION%%.*}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major=$MAJOR" >> "$GITHUB_OUTPUT"
+
+      - name: Skip retroactive (pre-V3) tags
+        id: gate
+        run: |
+          if [ "${{ steps.version.outputs.major }}" -lt 3 ]; then
+            echo "::notice::Skipping tarball build for retroactive tag ${GITHUB_REF_NAME}. Pre-V3 source trees predate the modern release layout (tools/, completions/, install.sh, LICENSE)."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create tarball
+        if: steps.gate.outputs.skip == 'false'
         run: |
-          VERSION=${{ steps.version.outputs.version }}
+          VERSION="${{ steps.version.outputs.version }}"
+          # Build the path list dynamically — only include paths that actually
+          # exist at this tag's commit. This makes the workflow tolerant of
+          # ongoing structural changes to the repo without needing to update
+          # the workflow in lockstep.
+          PATHS=()
+          for p in tekhton.sh lib stages prompts templates tools \
+                   completions install.sh LICENSE README.md; do
+            if [ -e "$p" ]; then
+              PATHS+=("$p")
+            else
+              echo "::warning::Skipping missing path: $p"
+            fi
+          done
+          if [ ${#PATHS[@]} -eq 0 ]; then
+            echo "::error::No releasable paths found at this tag"
+            exit 1
+          fi
           tar -czf "tekhton-${VERSION}.tar.gz" \
             --transform "s,^,tekhton-${VERSION}/," \
             --exclude='.git*' \
@@ -24,16 +56,33 @@ jobs:
             --exclude='*.pyc' \
             --exclude='__pycache__' \
             --exclude='.claude/' \
-            tekhton.sh lib/ stages/ prompts/ templates/ tools/ \
-            completions/ install.sh LICENSE README.md
+            "${PATHS[@]}"
 
       - name: Generate checksums
+        if: steps.gate.outputs.skip == 'false'
         run: sha256sum tekhton-*.tar.gz > SHA256SUMS
 
-      - name: Create GitHub Release
+      - name: Resolve release notes file
+        if: steps.gate.outputs.skip == 'false'
+        id: notes
+        run: |
+          NOTES_FILE="tools/release_notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$NOTES_FILE" ]; then
+            echo "path=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Using release notes from $NOTES_FILE"
+          else
+            echo "path=" >> "$GITHUB_OUTPUT"
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No release notes file at $NOTES_FILE — falling back to auto-generated notes"
+          fi
+
+      - name: Create or update GitHub Release
+        if: steps.gate.outputs.skip == 'false'
         uses: softprops/action-gh-release@v2
         with:
           files: |
             tekhton-*.tar.gz
             SHA256SUMS
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
+          generate_release_notes: ${{ steps.notes.outputs.found == 'false' }}
