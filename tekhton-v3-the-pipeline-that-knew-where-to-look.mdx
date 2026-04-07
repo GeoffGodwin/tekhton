@@ -1,0 +1,137 @@
+---
+author: Geoff Godwin
+pubDatetime: 2026-04-07T12:00:00Z
+title: "Tekhton V3: The Pipeline That Knew Where to Look"
+slug: tekhton-v3-the-pipeline-that-knew-where-to-look
+featured: true
+draft: false
+tags:
+  - tekhton
+  - ai
+  - agents
+  - claude
+  - pipelines
+  - developer-experience
+description: "Sixty-six milestones, one quiet afternoon. The story of what V2 taught me, why context relevance matters more than context volume, and the day Tekhton stopped needing me to babysit it."
+---
+
+There is a specific afternoon I want to tell you about.
+
+I was running the last few milestones of V3 back to back. New feature, build, review, test, security scan, finalize. Then the next one. Then the next one. I had a notebook open beside the terminal because that is what I do — I write down the bugs I notice, the things I will need to circle back to, the moments where the pipeline needs a nudge from me to get unstuck. The notebook stayed empty. Five milestones in a row, no intervention. No build failures I had to triage. No reviews that spiralled. No tests that needed me to step in and explain what the agent had misunderstood. Five clean runs in a row, while I drank coffee and thought about features I might add next.
+
+That was the moment Tekhton V3 stopped being a project and became a tool I trust. Not because it was finally bug-free — it was not — but because for the first time the pipeline was doing the entire job of a small dev shop without a human in the loop holding it together with both hands. I was no longer the operator. I was barely the supervisor. I was, mostly, the person with the vision — and the workshop downstairs was running on its own.
+
+This post is the story of how it got there, and what that journey taught me.
+
+## What V2 Left Me With
+
+If you read [the V2 post](https://geoffgodwin.com/posts/tekhton-v2-building-the-system-that-builds-itself/), you already know the headline: V2 was the version where Tekhton became autonomous enough to build itself. State machines, milestone progression, context budgeting, recovery layers. By the end of V2, the pipeline could run unattended for hours and produce real, mergeable work.
+
+But running it for hours is not the same as trusting it for hours. Every time I left V2 alone I came back to a notebook full of friction. Trivial test failures triggering full pipeline reruns. No dashboard, so the only way to know what the pipeline was thinking was to scroll through colored terminal output. Rate limits killing runs that were succeeding. Security was opportunistic — whatever the reviewer happened to notice. And the whole thing required a senior developer to drive: precise tasks, scoped acceptance criteria, knowing which knob to turn when something went sideways. V2 worked. But it worked the way a powerful tool works in the hands of the one person who knows how to hold it. That was not the tool I wanted to ship.
+
+V3 is not "more autonomy." V2 already had that. V3 is the answer to a specific set of things V2 taught me by *running* — and the reason it took 66 milestones instead of the eight I originally planned.
+
+## The Thesis: Relevance, Not Volume
+
+The deepest lesson from V2 was not about token counts. It was about what ended up *inside* those tokens.
+
+V2 taught me to measure context. I built a whole accounting system to do it — budgets, percentages, compression passes, logs of how big every block was. The measurements were honest. But the longer I ran it, the more I noticed the same uncomfortable thing: most of what I was carefully budgeting was junk. The coder did not need the signatures of every file in the project to fix one bug in `lib/agent.sh`. The reviewer did not need every milestone definition to evaluate a thirty-line diff. The realization that drove V3 was simple: **the problem was never how much context fits, it was which context matters.**
+
+Once you frame it that way, the architecture writes itself. You need to *rank* context by relevance to the current task. You need to *exclude* the ranked-low parts when you do not have room. And the ranking has to be cheap — cheap enough to do per-stage, per-agent, per-cycle, without burning a separate model call just to decide what to look at.
+
+That is what the first eight V3 milestones built. Tree-sitter parses the repo once and extracts every definition and reference into a tag cache. A graph gets built from the cross-references. PageRank runs over the graph with the current task's keywords as the personalization vector, so files that talk about the thing you are working on float to the top. The shell takes a token budget and emits only the highest-ranked signatures — no bodies, just shapes — until the budget is full. Low-ranked files are not truncated. They are simply not invited. When I want sharper signal than the static map can give, Serena's LSP joins the pipeline through MCP and the agents get `find_symbol` and `find_referencing_symbols` as tools. The map tells them where to look; the LSP confirms what is actually there.
+
+That single change — rank, do not truncate — quietly redrew the cost curve for every stage that came after it.
+
+## Files Wanted to Be Files
+
+The other half of the indexing thesis turned out to be about milestones themselves.
+
+In V2, milestones lived as Markdown blocks inside a single CLAUDE.md. Eight milestones meant eight blocks, and on a real plan that section ate roughly 25,000 characters before the agent saw line one — about half the file, paid on every single agent invocation, regardless of which milestone was actually active. Adding more milestones made it linearly worse.
+
+V3 promoted milestones to first-class files. Each one became a standalone `.md` in `.claude/milestones/`, ordered by a pipe-delimited `MANIFEST.cfg` that records dependencies and parallel groups. The shell reads the manifest into bash arrays. A sliding window assembles, per stage, only the milestones the agent actually needs: the active one in full, the frontier (anything whose dependencies are satisfied) as one paragraph plus acceptance criteria, and the on-deck items as a one-liner. Everything else stays on disk.
+
+The DAG was the visible win. The invisible win was the one I cared more about. Every milestone now has its own git history. When I look back at how M44 — the Jr Coder test-fix gate — evolved, I can read the file's commit log instead of grepping a giant monolithic markdown. The diffs are clean. The data model already supports parallel execution, even though V3 does not run agents in parallel yet. V4 will inherit that for free.
+
+## Opening the Black Box
+
+If indexing was V3's brain, Watchtower was its face. The original spec called for two milestones of dashboard work. It ended up being six, and I am not sorry about any of them.
+
+Watchtower is static HTML, vanilla JavaScript, and a stylesheet — no server, no build step, no framework. The pipeline writes JS files that assign to `window.TK_*` globals, the HTML loads them with `<script src>` (exempt from CORS in `file://` mode), and auto-refresh is a `setTimeout` calling `location.reload`. That is the entire architecture. What it shows you is not boring: a Live Run tab with the active agent, elapsed time, and turn count; a Milestone Map that draws the DAG with status colors; a Reports tab with every finding and rejection; a Trends tab where you can watch a project's health score climb across weeks of work. The pipeline went from "scrolling text" to "I can leave it on the second monitor and glance over." The first time I saw a real run light up Watchtower, I sat there watching it the way you watch a load bar, except this load bar was building features.
+
+## The Walls That Came Down
+
+V2 required everything a senior developer brings: precise tasks, scoped acceptance criteria, calibrated turn budgets, comfort with markdown state files, willingness to read drift logs and fix things by hand. That is a high bar, and it locked out the people I most wanted to give it to. A whole block of V3 milestones is dedicated to lowering that bar without lowering the floor.
+
+The **intake/PM agent** runs as a pre-stage gate before each milestone. It reads the task, scores its clarity, and either passes it through, tweaks it in place, suggests a split, or pauses for clarification. Defaults heavily favor passing through — it is a colleague, not a bureaucrat — and it runs on the strongest model because judgment is exactly the kind of thing you do not want a cheap model doing. **Express mode** lets you skip `--init` entirely: run `tekhton "Add login page"` in any project and the pipeline spends three seconds detecting your language and build commands, generates an in-memory config, runs, and persists the config on success. Time to first run dropped from ten minutes of interview to five seconds of detection. **Dry-run** previews what the pipeline plans to do before spending the turns. **Rollback** checkpoints every run and undoes it with `git revert`, never `git reset --hard`. **Health scoring** evaluates a project across five dimensions and assigns a belt — white, yellow, orange, green, blue, black — so non-engineers can answer "is my project getting better?" with a number that does not require a degree to interpret.
+
+The walls did not just come down. They came down in a way that did not embarrass the developers who already trusted the tool.
+
+## The Walls That Went Up
+
+While accessibility was opening doors, V3 was closing others on purpose.
+
+The **security agent** gets its own stage between the build gate and the reviewer, with OWASP-flavored knowledge baked in and optional live CVE cross-referencing. Findings get classified by severity; only fixable HIGH/CRITICAL items trigger a bounded rework loop. Unfixable findings route through an explicit policy — `halt`, `escalate`, or `waiver` — so a fintech and a startup iterating fast can use the same tool with different risk tolerances. This is the *401k principle*: opt out, not in. The default is "yes, please protect me."
+
+The **diagnostics engine** is the other wall. When a run fails, `tekhton --diagnose` reads the pipeline state files and runs them through ten priority-ordered rules, emitting a focused report with copy-pasteable recovery commands. Zero agent calls. Instant and free. The tribal knowledge that lived in my head got turned into shell logic, where it belongs. Pre-flight validation, service readiness probing, and the error pattern registry extend that idea further into the run itself: most pipelines that fail in the first thirty seconds fail because something in the local environment is wrong, and V3 catches those *before* it spends an agent turn on them.
+
+## The System Grew Up While Running
+
+The single most useful thing about building Tekhton with Tekhton is that the system tells you what it needs next. Not in metaphor — literally. You watch it work, you read its reports, you notice the seam, and you write a milestone for the seam.
+
+The clearest example is the milestone block I labelled V3.1 in the design notes. It was never in the original plan. It exists because halfway through V3, after thirty-something milestones had shipped and the pipeline was running on itself daily, I started noticing the same kinds of waste over and over.
+
+The big one was the **pre-finalization test gate**. When one or two self-tests failed at run end — usually for trivial reasons, an updated assertion, a shellcheck warning — the orchestration loop would trigger a full pipeline retry. Coder, reviewer, tester, all of it, on Opus, for what was almost always a five-minute fix. I watched Tekhton burn 5 to 20 minutes per occurrence on its most common failure mode. M44, the **Jr Coder test-fix gate**, fixed it. A Haiku Jr Coder gets the test output and tries to fix it; the shell — not the agent — re-runs the tests independently, so the agent cannot cheat by weakening assertions. If Haiku fixes it, the run finishes. If it fails twice, the existing full retry kicks in unchanged. Cheap by default, expensive only when necessary.
+
+The other one made me laugh. M45, the **scout prompt rewrite**. The Tekhton self-build had `REPO_MAP_ENABLED=true` and `SERENA_ENABLED=true`. Scout had access to the ranked tree-sitter map and the LSP cross-reference tools. And the scout prompt's core directive said: "Use `find`, `grep`, and `ls` to locate files by name and keyword." The Haiku scout had been doing filesystem crawls past the index it was supposed to be using. The fix was a prompt rewrite. No infrastructure. Shipping a capability and *using* it are not the same act, and I needed the system to run on itself before I noticed the gap.
+
+M47, the intra-run context cache, was the same kind of finding. Timing instrumentation (M46) showed that on a six-agent run, the architecture file was being read from disk six times. The drift log six times. Human notes six times. The milestone window recomputed six times with identical results. The fix was to read once at startup and pass cached values into every prompt render. Decision logging (M50) closed the loop on transparency: every routing choice the pipeline makes now gets logged with its reason, so when I look back at a run I can see not just what happened but why.
+
+None of this was in the design doc. All of it came from running V3 against itself in anger. The system told me where it limped, and I patched the limp.
+
+## Eight Milestones Became Sixty-Six
+
+The original V3 design doc described eight milestones: the DAG, the indexer, the LSP integration, the cross-run cache, and the tests. That was supposed to be V3. Then I started running it.
+
+V3 shipped with sixty-six milestones across seven themes — not because I lost discipline, but because the indexing thesis turned out to be necessary and not sufficient. Once the agents knew what to *look at*, they surfaced bigger questions about what they should be looking *for*. Better context made it worth giving the security agent its own stage, the intake agent a real role file, Watchtower six milestones instead of two. The acceleration block only existed because the previous fifty milestones had given me enough working pipeline to notice where it was slow. Environment Intelligence (M53–M56) caught local-environment failures before they reached an agent. UI/UX Design Intelligence (M57–M60) introduced a platform adapter framework — file-based directories under `platforms/` holding per-platform UI knowledge for web, Flutter, native iOS, native Android, and browser game engines — with zero overhead on non-UI projects. Every block followed the same pattern: the system kept running, kept producing artifacts, kept telling me what was missing.
+
+## The Curve
+
+I covered the self-building idea in V2 and I do not want to rehash it. But there is a sharper version of it that V3 made me feel for the first time.
+
+When M01 was being implemented, it was being implemented by plain V2. No DAG, no indexer, no Watchtower, no security agent, no intake gate. By M14, when Watchtower's UI shipped, the pipeline implementing it already had the DAG, the sliding window, the indexer, the LSP integration, the security stage, and the intake gate. By M44, the pipeline implementing the Jr Coder test-fix gate had Watchtower, a health score, dry-run, rollback, and the entire accessibility layer. By M66, the pipeline implementing the final milestones bore almost no resemblance to the one that started M01.
+
+**Every milestone ran on a stronger version of the pipeline than the one before it.** The workshop kept upgrading itself while the workshop built the next room. Every reduction in noise, every new safety net, every bit of accessibility, compounded into the next milestone's working conditions. By the end the runs were so calm that I caught myself standing up to refill my coffee mid-run because I had forgotten there was a run going. Those five quiet runs were not luck. They were the curve catching up with itself.
+
+## What I Learned Building This
+
+A few things I did not expect, in case they are useful to someone else doing this work.
+
+**The right place to put intelligence is often in the shell.** The diagnostics engine has zero agent calls. The Jr Coder test-fix gate verifies tests with the *shell*, not the agent. Every time I was tempted to throw an agent at a problem, the better answer turned out to be a few hundred lines of bash that did the same thing deterministically and for free. Models are powerful. Determinism is also powerful. Most production reliability comes from the second one.
+
+**Opt-out beats opt-in for anything safety-related.** Security on by default. Intake on by default. Health scoring on by default. Pre-flight on by default. Conscious effort required to disable any of them. It is the same instinct behind 401k auto-enrollment, and it works for the same reason: most people will live with the default, and the default should protect them.
+
+**Build things that compound.** The single best decision I made in V3 was the one that turned milestones into files. It looked like a mechanical refactor at the time. It turned out to enable cleaner git history, parallel readiness, better archival, sliding-window context, and a dashboard that could draw the DAG. Every architectural choice should be evaluated on whether it makes the next ten choices easier or harder.
+
+## What's Next
+
+V4 is going to be about teams and enterprises. Tekhton today is a tool for one captain and one ship. V4 is the version where it becomes a tool for a fleet — parallel milestone execution across worktrees, multiple agents working different parts of a DAG simultaneously, shared quota pools, audit trails that satisfy a real compliance team, the ability to plug into corporate identity and policy systems. The foundation is already in place: the DAG was designed to be parallel-ready from M01, the security report format is merge-ready for parallel reviewers, and Watchtower's data model was built so a future server can stream events to multiple browsers at once. V4 is mostly about activating seams V3 quietly left open. I will write about it when I get there.
+
+## Why I Am Writing This
+
+I have spent fifteen years as a staff engineer and software architect inside a financial institution. The work was real and the problems were hard, but the box was small and the box was closed. Almost nothing I built ever got to live anywhere outside the four walls of the company that paid me to build it. That is most of an entire career, with very little of it visible from the outside.
+
+Tekhton and this blog are part of how I am trying to change that. Not by selling anything — Tekhton is open source and will stay that way — but by getting my thinking and my work into the open where the rest of the world can see it. My ambition is to keep growing as an engineer and as an architect, and eventually to reach a Distinguished role somewhere I can do this kind of work in the daylight. Sharing the journey honestly, including the parts where the system told me I had built something wrong and I rewrote it, is the most useful thing I know how to do toward that.
+
+So if you read this far, thank you. If you want to try Tekhton, [the repo is here](https://github.com/GeoffGodwin/tekhton). If you find it useful, a star helps more than you would think, and sharing it with someone who might get value out of it helps even more. If you want to talk about any of this — the indexing thesis, the accessibility layer, the way the pipeline taught me what to build next, the broader question of what it means to build with agentic systems instead of just *using* them — I am genuinely interested in the conversation.
+
+Sixty-six milestones and one quiet afternoon. That is V3. The pipeline knew where to look, because I finally figured out that the question was never how much it could see.
+
+
+
+
+
+
+
+
+
