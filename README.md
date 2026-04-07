@@ -774,9 +774,9 @@ brew install shellcheck
 - Prompt tool awareness — Serena & repo map coverage in agent prompts
 - Watchtower full-stage metrics & hierarchical breakdown
 
-### v2.0 — Adaptive Pipeline (March 2026)
+### v2.21.0 — Adaptive Pipeline (March 2026)
 
-22 milestones: autonomous operation (`--complete`, `--auto-advance`, `--human`),
+21 milestones: autonomous operation (`--complete`, `--auto-advance`, `--human`),
 transient error retry, turn-exhaustion continuation, milestone auto-split, context
 budgeting, specialist reviews, autonomous debt sweeps, error taxonomy, metrics
 dashboard, brownfield init/replan, clarification protocol, security hardening.
