@@ -1,13 +1,18 @@
 ## Planned Tests
-- [x] `tests/test_m65_prompt_tool_awareness.sh` — verify SERENA_ACTIVE and REPO_MAP_CONTENT conditional blocks in all M65-modified prompts
-- [x] `tests/test_m65_tester_timing_functions.sh` — functional tests for _parse_tester_timing() and _compute_tester_writing_time()
+- [x] `tests/test_metrics_calibration_overshoot.sh` — Verify overshoots are included in calibration
+- [x] `tests/test_review_inloop_recalibration.sh` — Verify ADJUSTED_REVIEWER_TURNS bumps on high usage
 
 ## Test Run Results
-Passed: 294  Failed: 1 (pre-existing: test_drift_resolution_verification.sh)
+Passed: 14  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_m65_prompt_tool_awareness.sh`
-- [x] `tests/test_m65_tester_timing_functions.sh`
+- [x] `tests/test_metrics_calibration_overshoot.sh`
+- [x] `tests/test_review_inloop_recalibration.sh`
+
+## Timing (Continuation)
+- Test executions: 2
+- Approximate total test execution time: 2s
+- Test files written: 0

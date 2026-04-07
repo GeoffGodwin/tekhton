@@ -1,5 +1,3 @@
-# Reviewer Report — M65: Prompt Tool Awareness (Cycle 4)
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,13 +8,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `stages/tester.sh` is 323 lines — 23 over the 300-line soft ceiling. Carried from prior cycles; the M65 extraction reduced it from ~406 to 323. Further extraction would close the gap. Log for next cleanup pass.
-- `stages/tester_fix.sh` is sourced twice: once inside `tester.sh` (line 322-323) and once in `tekhton.sh` (line 815). Double-sourcing is idempotent and harmless, but the sourcing convention across the tester sub-stage family is inconsistent. Log for a cleanup pass.
+- `REVIEWER_MAX_TURNS_CAP` is a new config variable introduced in `stages/review.sh:130` with an inline default of 30 but is not added to `lib/config_defaults.sh` or documented in the CLAUDE.md template variables table — add a default entry there for discoverability.
+- `CODER_SUMMARY.md` was not produced by the coder agent, which is required pipeline output. The review was conducted directly from git status and file inspection, but downstream pipeline steps that parse `CODER_SUMMARY.md` (e.g., `extract_files_from_coder_summary` in `review.sh:59`) will silently receive empty results.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `tekhton.sh` lines 812-815 source `tester_tdd.sh`, `tester_continuation.sh`, and `tester_fix.sh` directly after sourcing `tester.sh` (which itself sources some of them). The convention for which sub-stage files get a direct `source` in `tekhton.sh` vs only through their parent is undocumented. As the tester family grows (timing, tdd, continuation, fix), this is worth codifying.
-
-## ACP Verdicts
+- None

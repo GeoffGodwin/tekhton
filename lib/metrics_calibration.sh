@@ -77,9 +77,11 @@ calibrate_turn_estimate() {
         actual=$(echo "$line" | grep -oE "\"${actual_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
         adjusted=$(echo "$line" | grep -oE "\"${adjusted_field}\":[0-9]+" | grep -oE '[0-9]+$' || echo "0")
         if [[ "$est" -gt 0 ]] && [[ "$actual" -gt 0 ]]; then
-            # Skip capped records: if the agent used >= 85% of its allocated turns,
-            # it likely hit the limit rather than finishing naturally
-            if [[ "$adjusted" -gt 0 ]] && [[ $(( actual * 100 / adjusted )) -ge 85 ]]; then
+            # Skip capped records: if the agent used >= 85% of its allocated turns
+            # AND did not exceed the limit, it likely hit the cap rather than
+            # finishing naturally. Overshoots (actual > adjusted) are INCLUDED —
+            # they teach calibration to raise limits.
+            if [[ "$adjusted" -gt 0 ]] && [[ "$actual" -le "$adjusted" ]] && [[ $(( actual * 100 / adjusted )) -ge 85 ]]; then
                 continue
             fi
             est_sum=$(( est_sum + est ))

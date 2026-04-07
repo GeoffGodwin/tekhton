@@ -117,6 +117,26 @@ run_stage_review() {
         print_run_summary
         success "Reviewer finished."
 
+        # In-loop recalibration: if the reviewer used >= 85% of its allocated
+        # turns, bump the limit for the next cycle so repeated overshoots
+        # don't keep hitting the same ceiling.
+        local _rev_limit="${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}"
+        local _rev_used="${LAST_AGENT_TURNS:-0}"
+        if [[ "$_rev_limit" -gt 0 ]] && [[ "$_rev_used" -gt 0 ]]; then
+            local _rev_usage_pct=$(( _rev_used * 100 / _rev_limit ))
+            if [[ "$_rev_usage_pct" -ge 85 ]]; then
+                # Bump by 25%, clamped to REVIEWER_MAX_TURNS_CAP
+                local _bumped=$(( _rev_limit * 125 / 100 ))
+                if [[ "$_bumped" -gt "${REVIEWER_MAX_TURNS_CAP:-30}" ]]; then
+                    _bumped="${REVIEWER_MAX_TURNS_CAP:-30}"
+                fi
+                if [[ "$_bumped" -gt "$_rev_limit" ]]; then
+                    log "[turns] Reviewer used ${_rev_used}/${_rev_limit} turns (${_rev_usage_pct}%) — bumping limit to ${_bumped} for next cycle."
+                    ADJUSTED_REVIEWER_TURNS="$_bumped"
+                fi
+            fi
+        fi
+
         # UPSTREAM error detection (12.2)
         if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
             warn "Reviewer hit an API error (${AGENT_ERROR_SUBCATEGORY}). Will retry on next cycle."
