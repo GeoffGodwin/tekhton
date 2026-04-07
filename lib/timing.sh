@@ -135,7 +135,7 @@ _hook_emit_timing_report() {
     for _spk in "${!_PHASE_TIMINGS[@]}"; do
         local _pfx
         for _pfx in "${_sub_phase_prefixes[@]}"; do
-            if [[ "$_spk" == "${_pfx}"* ]] && [[ "$_spk" != "${_pfx%_}" ]]; then
+            if [[ "$_spk" == "${_pfx}"* ]]; then
                 _sub_phase_parents["$_spk"]="${_pfx%_}"
             fi
         done
@@ -234,7 +234,11 @@ _hook_emit_timing_report() {
             if [[ "${_rmc_hits:-0}" -gt 0 ]] && [[ "${_rmc_gen_ms:-0}" -gt 0 ]]; then
                 _rmc_saved_s=$(( _rmc_hits * _rmc_gen_ms / 1000 ))
             fi
-            repo_map_line="Repo map: 1 generation + ${_rmc_hits} cache hits (saved ~${_rmc_saved_s}s)"
+            if [[ "${_rmc_hits:-0}" -gt 0 ]]; then
+                repo_map_line="Repo map: 1 generation + ${_rmc_hits} cache hits (saved ~${_rmc_saved_s}s)"
+            else
+                repo_map_line="Repo map: 1 generation (saved ~0s)"
+            fi
         fi
     fi
 

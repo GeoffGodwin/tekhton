@@ -13,6 +13,7 @@ set -euo pipefail
 _TESTER_TIMING_EXEC_COUNT=-1
 _TESTER_TIMING_EXEC_APPROX_S=-1
 _TESTER_TIMING_FILES_WRITTEN=-1
+_TESTER_TIMING_WRITING_S=-1
 
 # _parse_tester_timing — Extract timing data from TESTER_REPORT.md.
 # Reads the ## Timing section and populates _TESTER_TIMING_* globals.

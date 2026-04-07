@@ -205,7 +205,7 @@ fi
 # =========================================================================
 echo "=== Test: accumulate on -1 baseline + delta report (first continuation, no prior replace) ==="
 # When the primary run _parse_tester_timing "replace" was never called but the
-# continuation fires "accumulate" on a delta report — should set, not add.
+# continuation fires "accumulate" on a delta report — should set, not add to -1.
 # =========================================================================
 
 _TESTER_TIMING_EXEC_COUNT=-1

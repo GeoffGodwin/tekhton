@@ -295,7 +295,4 @@ invalidate_repo_map_cache() {
     return 0
 }
 
-# --- Intra-run cache functions live in indexer_cache.sh (M61) ----------------
-# See: _repo_map_cache_path(), _save_repo_map_run_cache(),
-#      _load_repo_map_run_cache(), invalidate_repo_map_run_cache(),
-#      _get_cached_repo_map(), get_repo_map_cache_stats()
+# Intra-run cache functions: see lib/indexer_cache.sh (M61)
