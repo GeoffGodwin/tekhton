@@ -35,6 +35,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_helpers.sh"
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/test_baseline.sh"
 
+# Source test baseline cleanup helpers (extracted for 300-line ceiling)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/test_baseline_cleanup.sh"
+
 # --- Orchestration state globals -----------------------------------------------
 _ORCH_ATTEMPT=0
 _ORCH_AGENT_CALLS=0

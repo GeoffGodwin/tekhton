@@ -177,7 +177,7 @@ run_stage_tester() {
 
         # --- Test baseline summary for tester context (M63) -------------------
         export TEST_BASELINE_SUMMARY=""
-        if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] \
+        if [[ "${TEST_BASELINE_ENABLED:-true}" == "true" ]] \
            && declare -f has_test_baseline &>/dev/null && has_test_baseline 2>/dev/null; then
             local _bl_json
             _bl_json=$(_test_baseline_json)
@@ -341,7 +341,7 @@ TESTER_EOF
                 fi
 
                 # M63: Check baseline — skip fix if all failures are pre-existing
-                if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] \
+                if [[ "${TEST_BASELINE_ENABLED:-true}" == "true" ]] \
                    && declare -f has_test_baseline &>/dev/null \
                    && declare -f compare_test_with_baseline &>/dev/null \
                    && has_test_baseline 2>/dev/null; then

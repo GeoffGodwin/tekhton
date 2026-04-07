@@ -26,6 +26,7 @@ export -f log warn success header
 
 # Source the module under test
 source "${TEKHTON_HOME}/lib/test_baseline.sh"
+source "${TEKHTON_HOME}/lib/test_baseline_cleanup.sh"
 
 # --- Test temp dir ---
 TEST_TMP=$(mktemp -d)
