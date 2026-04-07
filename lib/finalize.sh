@@ -480,6 +480,16 @@ _hook_note_acceptance() {
     fi
 }
 
+# q. Baseline cleanup (M63) — remove stale baselines from prior runs
+_hook_baseline_cleanup() {
+    # shellcheck disable=SC2034  # exit_code used for hook interface
+    local exit_code="$1"
+    if command -v cleanup_stale_baselines &>/dev/null; then
+        cleanup_stale_baselines 2>/dev/null || true
+    fi
+}
+
+register_finalize_hook "_hook_baseline_cleanup"
 register_finalize_hook "_hook_note_acceptance"
 register_finalize_hook "_hook_final_checks"
 register_finalize_hook "_hook_drift_artifacts"

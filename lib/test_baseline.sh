@@ -119,7 +119,8 @@ capture_test_baseline() {
     timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
 
     local tmp_json="${baseline_json}.tmp.$$"
-    printf '{\n  "timestamp": "%s",\n  "milestone": "%s",\n  "exit_code": %d,\n  "output_hash": "%s",\n  "failure_hash": "%s",\n  "failure_count": %s\n}\n' \
+    printf '{\n  "run_id": "%s",\n  "timestamp": "%s",\n  "milestone": "%s",\n  "exit_code": %d,\n  "output_hash": "%s",\n  "failure_hash": "%s",\n  "failure_count": %s\n}\n' \
+        "${TIMESTAMP:-unknown}" \
         "$timestamp" \
         "$milestone" \
         "$test_exit" \
@@ -168,12 +169,44 @@ has_test_baseline() {
 
 # _should_capture_test_baseline
 # Returns 0 if a baseline should be captured, 1 if not needed.
+# Checks run_id to distinguish same-run resume from new-run stale baseline.
 _should_capture_test_baseline() {
     [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]] || return 1
     [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]] || return 1
-    # Don't re-capture if baseline already exists for this milestone (resume)
+
+    # No baseline file at all → capture
     # shellcheck disable=SC2119  # Uses default arg (milestone from global)
-    ! has_test_baseline 2>/dev/null
+    if ! has_test_baseline 2>/dev/null; then
+        return 0
+    fi
+
+    # Baseline exists — check run_id for staleness
+    local baseline_json
+    baseline_json=$(_test_baseline_json)
+    local baseline_run_id
+    baseline_run_id=$(grep -oP '"run_id"\s*:\s*"\K[^"]+' "$baseline_json" 2>/dev/null || echo "")
+
+    # Missing run_id → pre-M63 baseline, treat as stale (backward compat)
+    if [[ -z "$baseline_run_id" ]]; then
+        return 0
+    fi
+
+    # Same run → skip (resume within same run)
+    if [[ "$baseline_run_id" = "${TIMESTAMP:-}" ]]; then
+        return 1
+    fi
+
+    # Different run → stale, re-capture
+    return 0
+}
+
+# get_baseline_exit_code
+# Returns the exit code from the baseline JSON, or empty string if unavailable.
+get_baseline_exit_code() {
+    local baseline_json
+    baseline_json=$(_test_baseline_json)
+    [[ -f "$baseline_json" ]] || { echo ""; return 0; }
+    grep -oP '"exit_code"\s*:\s*\K[0-9]+' "$baseline_json" 2>/dev/null || echo ""
 }
 
 # --- Baseline comparison (Tier 1) --------------------------------------------
@@ -293,10 +326,62 @@ _check_acceptance_stuck() {
     fi
 
     if [[ "${TEST_BASELINE_PASS_ON_STUCK:-false}" = "true" ]]; then
+        # Never auto-pass if baseline was clean — all failures are new regressions
+        local _bl_exit
+        _bl_exit=$(get_baseline_exit_code)
+        if [[ "$_bl_exit" == "0" ]]; then
+            warn "Stuck detected but baseline was clean — all failures are new regressions. NOT auto-passing."
+            if command -v emit_event &>/dev/null; then
+                emit_event "stuck_test_detected" "pipeline" \
+                    "clean_baseline_block" \
+                    "" "" \
+                    "{\"hash\":\"${current_hash}\",\"baseline_exit\":0,\"consecutive\":${_ORCH_IDENTICAL_ACCEPTANCE_COUNT}}" \
+                    2>/dev/null || true
+            fi
+            return 1
+        fi
         warn "TEST_BASELINE_PASS_ON_STUCK=true — treating acceptance as PASSED."
         return 0
     else
         warn "Exiting to avoid burning more retries. Set TEST_BASELINE_PASS_ON_STUCK=true to auto-pass."
         return 2
+    fi
+}
+
+# --- Baseline cleanup --------------------------------------------------------
+
+# cleanup_stale_baselines
+# Removes TEST_BASELINE.json and TEST_BASELINE_OUTPUT.txt files whose run_id
+# does not match the current TIMESTAMP (stale from prior runs).
+# Called during finalization to prevent cross-run baseline leakage.
+cleanup_stale_baselines() {
+    local baseline_json
+    baseline_json=$(_test_baseline_json)
+    [[ -f "$baseline_json" ]] || return 0
+
+    local baseline_run_id
+    baseline_run_id=$(grep -oP '"run_id"\s*:\s*"\K[^"]+' "$baseline_json" 2>/dev/null || echo "")
+
+    # If run_id matches current run, keep it (potential resume)
+    if [[ "$baseline_run_id" = "${TIMESTAMP:-}" ]]; then
+        return 0
+    fi
+
+    # Stale baseline — remove
+    log "[baseline] Cleaning up stale baseline (run_id=${baseline_run_id:-missing}, current=${TIMESTAMP:-unknown})"
+    rm -f "$baseline_json"
+
+    local baseline_output
+    baseline_output=$(_test_baseline_output)
+    rm -f "$baseline_output"
+
+    # Also clean up acceptance output tmp file
+    rm -f "${PROJECT_DIR:-.}/.claude/test_acceptance_output.tmp"
+
+    if command -v emit_event &>/dev/null; then
+        emit_event "baseline_cleanup" "pipeline" \
+            "removed stale baseline (run_id=${baseline_run_id:-missing})" \
+            "" "" "" \
+            2>/dev/null || true
     fi
 }

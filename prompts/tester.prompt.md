@@ -30,6 +30,13 @@ cover the fix behavior (e.g., input validation, auth checks).
 {{SECURITY_FIXES_BLOCK}}
 {{ENDIF:SECURITY_FIXES_BLOCK}}
 
+{{IF:TEST_BASELINE_SUMMARY}}
+## Pre-Change Test Baseline
+{{TEST_BASELINE_SUMMARY}}
+Do NOT treat pre-existing failures as regressions from your test work.
+Focus on testing NEW functionality only.
+{{ENDIF:TEST_BASELINE_SUMMARY}}
+
 ## Context
 Task implemented: {{TASK}}
 

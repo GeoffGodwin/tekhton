@@ -175,6 +175,22 @@ run_stage_tester() {
             fi
         fi
 
+        # --- Test baseline summary for tester context (M63) -------------------
+        export TEST_BASELINE_SUMMARY=""
+        if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] \
+           && declare -f has_test_baseline &>/dev/null && has_test_baseline 2>/dev/null; then
+            local _bl_json
+            _bl_json=$(_test_baseline_json)
+            local _bl_exit _bl_failures
+            _bl_exit=$(grep -oP '"exit_code"\s*:\s*\K[0-9]+' "$_bl_json" 2>/dev/null || echo "")
+            _bl_failures=$(grep -oP '"failure_count"\s*:\s*\K[0-9]+' "$_bl_json" 2>/dev/null || echo "0")
+            if [[ -n "$_bl_exit" ]] && [[ "$_bl_exit" -ne 0 ]]; then
+                TEST_BASELINE_SUMMARY="Pre-existing test failures detected before your changes.
+${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are NOT caused by your work."
+                log "[test-baseline] Injecting baseline summary into tester context."
+            fi
+        fi
+
         # --- Context budget reporting ----------------------------------------
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
         _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
@@ -322,6 +338,19 @@ TESTER_EOF
                 _failure_output=$(grep -E '(FAIL|ERROR|error|failure|assert)' "$LOG_FILE" | tail -c "$_output_limit" || true)
                 if [[ -z "$_failure_output" ]]; then
                     _failure_output=$(tail -100 "$LOG_FILE" | tail -c "$_output_limit")
+                fi
+
+                # M63: Check baseline — skip fix if all failures are pre-existing
+                if [[ "${TEST_BASELINE_ENABLED:-false}" == "true" ]] \
+                   && declare -f has_test_baseline &>/dev/null \
+                   && declare -f compare_test_with_baseline &>/dev/null \
+                   && has_test_baseline 2>/dev/null; then
+                    local _tfix_comparison
+                    _tfix_comparison=$(compare_test_with_baseline "$_failure_output" "1")
+                    if [[ "$_tfix_comparison" == "pre_existing" ]]; then
+                        log "All test failures are pre-existing — skipping tester fix."
+                        return
+                    fi
                 fi
 
                 # Spawn fix run with incremented depth

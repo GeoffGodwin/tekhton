@@ -67,6 +67,37 @@ run_completion_gate() {
     if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
         log "Completion gate PASSED — coder self-reported COMPLETE."
         _warn_summary_drift
+
+        # --- Test enforcement (M63) ---
+        # Run TEST_CMD to verify tests still pass after coder changes.
+        if [[ "${COMPLETION_GATE_TEST_ENABLED:-true}" == "true" ]] \
+           && [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]]; then
+            log "Completion gate: running TEST_CMD for test integrity check..."
+            local _cg_output="" _cg_exit=0
+            _cg_output=$(bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
+
+            if [[ "$_cg_exit" -eq 0 ]]; then
+                log "Completion gate: TEST_CMD passed."
+            else
+                # Compare against baseline — pre-existing failures should not block
+                if declare -f compare_test_with_baseline &>/dev/null \
+                   && declare -f has_test_baseline &>/dev/null \
+                   && has_test_baseline 2>/dev/null; then
+                    local _cg_comparison
+                    _cg_comparison=$(compare_test_with_baseline "$_cg_output" "$_cg_exit")
+                    if [[ "$_cg_comparison" == "pre_existing" ]]; then
+                        log "Completion gate: test failures are pre-existing — passing."
+                    else
+                        warn "Completion gate FAILED — TEST_CMD exited ${_cg_exit} with new failures."
+                        return 1
+                    fi
+                else
+                    warn "Completion gate FAILED — TEST_CMD exited ${_cg_exit} (no baseline for comparison)."
+                    return 1
+                fi
+            fi
+        fi
+
         return 0
     fi
 

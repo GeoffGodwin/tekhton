@@ -31,6 +31,9 @@ source "${TEKHTON_HOME}/lib/test_baseline.sh"
 TEST_TMP=$(mktemp -d)
 trap 'rm -rf "$TEST_TMP"' EXIT
 
+# M63: Set TIMESTAMP globally for run_id tracking in baselines
+export TIMESTAMP="20260406_120000"
+
 # =============================================================================
 # Suite 1: _normalize_test_output
 # =============================================================================
@@ -426,6 +429,179 @@ if ! _should_capture_test_baseline; then
 else
     fail "7.4: Should return 1 when disabled"
 fi
+
+# =============================================================================
+# Suite 8: M63 — run_id tracking in _should_capture_test_baseline
+# =============================================================================
+
+echo ""
+echo "=== Suite 8: run_id tracking ==="
+
+# 8.1: New run re-captures baseline even when file exists (different TIMESTAMP)
+export PROJECT_DIR="$TEST_TMP/proj1"
+export _CURRENT_MILESTONE="42"
+export TEST_CMD="echo test"
+export TEST_BASELINE_ENABLED=true
+export TIMESTAMP="20260406_999999"  # Different from baseline's run_id
+if _should_capture_test_baseline; then
+    pass "8.1: Re-captures when TIMESTAMP differs from run_id"
+else
+    fail "8.1: Should re-capture for different TIMESTAMP"
+fi
+
+# 8.2: Resume within same run skips re-capture (same TIMESTAMP)
+export TIMESTAMP="20260406_120000"  # Matches baseline's run_id
+if ! _should_capture_test_baseline; then
+    pass "8.2: Skips re-capture when TIMESTAMP matches run_id"
+else
+    fail "8.2: Should skip when TIMESTAMP matches run_id"
+fi
+
+# 8.3: Baseline missing run_id treated as stale (backward compat)
+export PROJECT_DIR="$TEST_TMP/proj_legacy"
+mkdir -p "$PROJECT_DIR/.claude"
+# Write a legacy baseline without run_id field
+printf '{\n  "timestamp": "2026-01-01T00:00:00Z",\n  "milestone": "42",\n  "exit_code": 0,\n  "output_hash": "abc",\n  "failure_hash": "def",\n  "failure_count": 0\n}\n' \
+    > "$PROJECT_DIR/.claude/TEST_BASELINE.json"
+export _CURRENT_MILESTONE="42"
+export TIMESTAMP="20260406_120000"
+if _should_capture_test_baseline; then
+    pass "8.3: Re-captures when run_id field is missing (backward compat)"
+else
+    fail "8.3: Should treat missing run_id as stale"
+fi
+
+# 8.4: capture_test_baseline includes run_id in JSON
+export PROJECT_DIR="$TEST_TMP/proj_runid"
+mkdir -p "$PROJECT_DIR/.claude"
+export TEST_CMD="echo PASS"
+export TIMESTAMP="20260406_TEST_ID"
+export _CURRENT_MILESTONE="50"
+capture_test_baseline "50" 2>/dev/null
+run_id=$(grep -oP '"run_id"\s*:\s*"\K[^"]+' "$PROJECT_DIR/.claude/TEST_BASELINE.json" 2>/dev/null || echo "")
+if [[ "$run_id" == "20260406_TEST_ID" ]]; then
+    pass "8.4: Baseline JSON includes correct run_id"
+else
+    fail "8.4: Expected run_id '20260406_TEST_ID', got '$run_id'"
+fi
+
+# Restore TIMESTAMP for remaining tests
+export TIMESTAMP="20260406_120000"
+
+# =============================================================================
+# Suite 9: M63 — stuck detection with clean baseline
+# =============================================================================
+
+echo ""
+echo "=== Suite 9: stuck detection with clean baseline ==="
+
+# 9.1: Stuck detection with clean baseline (exit_code=0) never auto-passes
+export PROJECT_DIR="$TEST_TMP/proj2"   # proj2 has exit_code=0 baseline
+export TEST_BASELINE_STUCK_THRESHOLD=2
+export TEST_BASELINE_PASS_ON_STUCK=true
+_ORCH_LAST_ACCEPTANCE_HASH=""
+_ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
+save_acceptance_test_output "FAIL new regression" "1"
+_check_acceptance_stuck || true  # first
+save_acceptance_test_output "FAIL new regression" "1"
+local_result=0
+_check_acceptance_stuck || local_result=$?
+if [[ "$local_result" -eq 1 ]]; then
+    pass "9.1: Stuck + clean baseline returns 1 (NOT auto-pass)"
+else
+    fail "9.1: Expected 1 (blocked), got $local_result"
+fi
+
+# 9.2: Stuck detection with dirty baseline auto-passes when PASS_ON_STUCK=true
+export PROJECT_DIR="$TEST_TMP/proj1"   # proj1 has exit_code=1 baseline
+export TEST_BASELINE_STUCK_THRESHOLD=2
+export TEST_BASELINE_PASS_ON_STUCK=true
+_ORCH_LAST_ACCEPTANCE_HASH=""
+_ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
+save_acceptance_test_output "FAIL identical dirty" "1"
+_check_acceptance_stuck || true  # first
+save_acceptance_test_output "FAIL identical dirty" "1"
+local_result=0
+_check_acceptance_stuck || local_result=$?
+if [[ "$local_result" -eq 0 ]]; then
+    pass "9.2: Stuck + dirty baseline returns 0 (auto-pass)"
+else
+    fail "9.2: Expected 0 (auto-pass), got $local_result"
+fi
+
+# =============================================================================
+# Suite 10: M63 — get_baseline_exit_code
+# =============================================================================
+
+echo ""
+echo "=== Suite 10: get_baseline_exit_code ==="
+
+# 10.1: Returns exit code from baseline with failures
+export PROJECT_DIR="$TEST_TMP/proj1"
+result=$(get_baseline_exit_code)
+if [[ "$result" == "1" ]]; then
+    pass "10.1: Returns exit code 1 from failing baseline"
+else
+    fail "10.1: Expected '1', got '$result'"
+fi
+
+# 10.2: Returns exit code from passing baseline
+export PROJECT_DIR="$TEST_TMP/proj2"
+result=$(get_baseline_exit_code)
+if [[ "$result" == "0" ]]; then
+    pass "10.2: Returns exit code 0 from passing baseline"
+else
+    fail "10.2: Expected '0', got '$result'"
+fi
+
+# 10.3: Returns empty when no baseline file
+export PROJECT_DIR="$TEST_TMP/proj_nonexistent"
+result=$(get_baseline_exit_code)
+if [[ -z "$result" ]]; then
+    pass "10.3: Returns empty when no baseline file"
+else
+    fail "10.3: Expected empty, got '$result'"
+fi
+
+# =============================================================================
+# Suite 11: M63 — cleanup_stale_baselines
+# =============================================================================
+
+echo ""
+echo "=== Suite 11: cleanup_stale_baselines ==="
+
+# 11.1: Removes stale baseline (different run_id)
+export PROJECT_DIR="$TEST_TMP/proj_cleanup1"
+mkdir -p "$PROJECT_DIR/.claude"
+printf '{\n  "run_id": "OLD_RUN",\n  "milestone": "42",\n  "exit_code": 0\n}\n' \
+    > "$PROJECT_DIR/.claude/TEST_BASELINE.json"
+echo "old output" > "$PROJECT_DIR/.claude/TEST_BASELINE_OUTPUT.txt"
+export TIMESTAMP="NEW_RUN"
+cleanup_stale_baselines 2>/dev/null
+if [[ ! -f "$PROJECT_DIR/.claude/TEST_BASELINE.json" ]]; then
+    pass "11.1: Removes stale baseline with different run_id"
+else
+    fail "11.1: Stale baseline should have been removed"
+fi
+
+# 11.2: Keeps current baseline (matching run_id)
+export PROJECT_DIR="$TEST_TMP/proj_cleanup2"
+mkdir -p "$PROJECT_DIR/.claude"
+printf '{\n  "run_id": "CURRENT",\n  "milestone": "42",\n  "exit_code": 0\n}\n' \
+    > "$PROJECT_DIR/.claude/TEST_BASELINE.json"
+export TIMESTAMP="CURRENT"
+cleanup_stale_baselines 2>/dev/null
+if [[ -f "$PROJECT_DIR/.claude/TEST_BASELINE.json" ]]; then
+    pass "11.2: Keeps baseline with matching run_id"
+else
+    fail "11.2: Current baseline should have been kept"
+fi
+
+# 11.3: No-op when no baseline exists
+export PROJECT_DIR="$TEST_TMP/proj_cleanup_none"
+mkdir -p "$PROJECT_DIR/.claude"
+cleanup_stale_baselines 2>/dev/null
+pass "11.3: No error when no baseline exists"
 
 # =============================================================================
 # Summary

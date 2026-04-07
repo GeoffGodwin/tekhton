@@ -331,6 +331,9 @@ set -euo pipefail
 : "${TEST_BASELINE_STUCK_THRESHOLD:=2}"
 : "${TEST_BASELINE_PASS_ON_STUCK:=false}"
 
+# --- Completion gate test enforcement (Milestone 63) ---
+: "${COMPLETION_GATE_TEST_ENABLED:=true}"
+
 # --- Test audit defaults (Milestone 20) ---
 : "${TEST_AUDIT_ENABLED:=true}"
 : "${TEST_AUDIT_MAX_TURNS:=15}"

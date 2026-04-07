@@ -1,7 +1,7 @@
 # Milestone 63: Test Baseline Hygiene & Completion Gate Hardening
 <!-- milestone-meta
 id: "63"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
