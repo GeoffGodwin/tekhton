@@ -33,6 +33,7 @@
 #   dag_id_to_number          — m01 → 1, m02 → 2
 #   dag_number_to_id          — 1 → m01, 2 → m02
 #   dag_get_count             — number of milestones in manifest
+#   dag_get_id_at_index       — milestone ID at a given array index
 # =============================================================================
 set -euo pipefail
 
@@ -61,6 +62,17 @@ source "${TEKHTON_HOME}/lib/milestone_dag_io.sh"
 # Returns the number of milestones in the loaded manifest.
 dag_get_count() {
     echo "${#_DAG_IDS[@]}"
+}
+
+# dag_get_id_at_index INDEX
+# Returns the milestone ID at the given array index (0-based).
+# Returns 1 if the index is out of bounds.
+dag_get_id_at_index() {
+    local idx="$1"
+    if [[ "$idx" -lt 0 || "$idx" -ge "${#_DAG_IDS[@]}" ]]; then
+        return 1
+    fi
+    echo "${_DAG_IDS[$idx]}"
 }
 
 # dag_get_status ID

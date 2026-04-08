@@ -1,37 +1,37 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 15 test assertions
-Verdict: CONCERNS
+Tests audited: 1 file, 13 test cases (assert() calls)
+Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: Test 12 assertion matches pre-existing content, not Section 7 specifically
-- File: tests/test_prompt_isolation_guardrails.sh:113
-- Issue: `assert_contains` checks for pattern `"Severity: HIGH"` to verify that Section 7 marks isolation violations as HIGH severity. This exact string appears at TWO locations in `prompts/test_audit.prompt.md`: (1) line 86 in Section 7 (`is Severity: HIGH`) and (2) in the Required Output format template (`- Severity: HIGH | MEDIUM | LOW`). If the HIGH severity marking were removed from Section 7 but retained in the output format template, this test would still PASS, providing false assurance that Section 7 is correctly configured. The test description claims to verify Section 7 content but the assertion cannot distinguish between the two occurrences.
-- Severity: HIGH
-- Action: Replace the broad pattern with one unique to Section 7. Use the full phrase `"fixture isolation is Severity: HIGH"` which only appears in Section 7 and cannot match the output format template. Alternatively, use `assert_line_contains` with the `"^### 7\. Test Isolation"` header as the anchor and `"Severity: HIGH"` as the content check.
-
-#### INTEGRITY: Test 13 multi-name pattern fails on any reformatting
-- File: tests/test_prompt_isolation_guardrails.sh:119
-- Issue: Pattern `"CODER_SUMMARY.md.*REVIEWER_REPORT.md.*BUILD_ERRORS.md"` uses basic-regex `.*` which only matches when all three filenames appear on the same line. The content currently satisfies this (all three appear on one line in `test_audit.prompt.md`), but reformatting the example list across multiple lines for readability would silently break the test, producing a false failure. This fragility is disproportionate to what the assertion is trying to prove — it only needs to verify that the three example filenames are present in Section 7, not that they appear on one line.
-- Severity: MEDIUM
-- Action: Replace the single three-name pattern with three independent `assert_contains` calls, one per filename. This eliminates the line-ordering dependency while keeping the same intent.
-
-#### SCOPE: Test 15 verifies pre-existing content unrelated to this feature
-- File: tests/test_prompt_isolation_guardrails.sh:132
-- Issue: Test 15 checks that `TEST_AUDIT_CONTEXT` appears in `prompts/test_audit.prompt.md`. This variable reference was present in the file before this task — it is part of pre-existing template infrastructure. The test would pass against the unmodified file and adds no coverage for the new Section 7 isolation guardrail.
+#### COVERAGE: plan_milestone_review.sh call-site not directly tested
+- File: tests/test_dag_get_id_at_index.sh (overall scope)
+- Issue: The non-blocking note targeted `plan_milestone_review.sh:40` for accessing `_DAG_IDS[]` directly. The fix added `dag_get_id_at_index()` and updated `plan_milestone_review.sh` to call it. The tests thoroughly exercise the new public API but do not exercise the `plan_milestone_review.sh` call-site itself. A regression in the wiring (e.g., wrong arg, missing guard) would not be caught.
 - Severity: LOW
-- Action: Remove Test 15. Its absence does not reduce coverage of the feature. If a test for `TEST_AUDIT_CONTEXT` is desired for infrastructure reasons, note its pre-existing nature in the description and move it to a general prompt-structure test file rather than this isolation-specific one.
+- Action: Acceptable as-is — testing interactive planning UI code requires significant mock scaffolding. The new API function is comprehensively tested; the call-site change is a one-liner substitution. No action required.
 
-#### COVERAGE: No section-positioning tests; new content could be misplaced
-- File: tests/test_prompt_isolation_guardrails.sh
-- Issue: All 15 tests verify string presence anywhere in the target file. Tests 2–6 for `prompts/tester.prompt.md` would pass even if the new isolation rules were accidentally inserted outside the `CRITICAL: Test Integrity Rules` section (e.g., appended at the end of the file). Similarly, Test 8 confirms `"### 7. Test Isolation"` exists, but no test confirms it appears after `"### 6. Scope Alignment"`, so Section 7 content relocated to a different position would pass all tests.
+#### NAMING: Dead assignment before each comparison
+- File: tests/test_dag_get_id_at_index.sh:79, :85, :91, :97, :136, :191
+- Issue: Each happy-path test begins with `result=0` immediately before a `[[ ... ]] && result=0 || result=1` expression that unconditionally overwrites it. The initial `result=0` is always a dead assignment.
 - Severity: LOW
-- Action: Add one positional test per file. For the tester prompt: verify `"NEVER read live repo artifact files"` appears within the CRITICAL block (between `^## CRITICAL: Test Integrity Rules` and the next `^##` heading). For the audit prompt: verify `"### 7. Test Isolation"` appears after `"### 6. Scope Alignment"`.
+- Action: Remove the leading `result=0` before each `[[ ... ]] && result=0 || result=1` block. No behavioral change; purely cosmetic.
 
-#### COVERAGE: No negative tests
-- File: tests/test_prompt_isolation_guardrails.sh
-- Issue: All 15 assertions are presence-only checks. There are no tests verifying that deprecated or incomplete text is absent. A notable gap: no test verifies the audit prompt's rubric header now reads "Seven-Point" (or equivalent) rather than the original "Six-Point Audit Rubric". Adding a "Seven-Point" header or updating the section count could silently fail without a negative test.
+#### COVERAGE: No test for unloaded/empty manifest state
+- File: tests/test_dag_get_id_at_index.sh (overall scope)
+- Issue: All tests call `load_manifest` before invoking `dag_get_id_at_index`. The function's behavior when `_DAG_IDS` is empty (manifest never loaded) is not tested. The implementation at `milestone_dag.sh:72` handles this via `"${#_DAG_IDS[@]}"` — index 0 on an empty array correctly returns 1 — but this is unverified.
 - Severity: LOW
-- Action: Add a test verifying the old "Six-Point Audit Rubric" header no longer appears in `prompts/test_audit.prompt.md` (the heading was not changed but the rubric now has 7 points). If the header was updated, test that "Six-Point" is absent. If not changed, document that the heading is intentionally stale so future editors know.
+- Action: Consider adding a test case that calls `dag_get_id_at_index 0` before `load_manifest` (or after a manifest with zero data rows) and asserts an error return. Not blocking.
+
+### Rubric Evaluation
+
+| Criterion | Result | Notes |
+|-----------|--------|-------|
+| 1. Assertion Honesty | PASS | All assertions derive from fixture manifest data ("m01"–"m04") that match what `load_manifest` parses into `_DAG_IDS[]`. No hard-coded magic values unrelated to implementation logic. |
+| 2. Edge Case Coverage | PASS | Tests cover negative index, index-at-count, index-far-beyond-count, single-milestone manifest, and full-range iteration. Error paths well-represented relative to happy paths. |
+| 3. Implementation Exercise | PASS | Sources and calls the real `lib/milestone_dag.sh` implementation. No mocking of the function under test. `load_manifest` is the real parser, not a stub. |
+| 4. Test Weakening Detection | N/A | New test file only — no existing tests were modified. |
+| 5. Test Naming and Intent | PASS | Section headers and per-assert descriptions encode both scenario and expected outcome (e.g., "dag_get_id_at_index -1 returns error (exit code 1)"). |
+| 6. Scope Alignment | PASS | `dag_get_id_at_index()` exists at `milestone_dag.sh:70–76` exactly as tested. No orphaned or stale references. |
+| 7. Test Isolation | PASS | All fixtures created under `$(mktemp -d)` with `trap 'rm -rf "$TMPDIR"' EXIT`. No reads from mutable project files, pipeline logs, or repo state artifacts. |

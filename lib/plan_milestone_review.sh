@@ -37,8 +37,9 @@ _display_milestone_summary() {
         milestone_count=$(dag_get_count)
         if [[ "$milestone_count" -gt 0 ]]; then
             local i
-            for (( i = 0; i < ${#_DAG_IDS[@]}; i++ )); do
-                local id="${_DAG_IDS[$i]}"
+            for (( i = 0; i < milestone_count; i++ )); do
+                local id
+                id=$(dag_get_id_at_index "$i")
                 local title
                 title=$(dag_get_title "$id")
                 if [[ -n "$milestones" ]]; then

@@ -1,5 +1,5 @@
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 - None
@@ -8,10 +8,22 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `plan_milestone_review.sh:40` — the iteration loop accesses the internal `_DAG_IDS[]` array directly instead of going through a public API. No `dag_get_id_at_index()` exists so this is the pragmatic choice, but it creates a coupling to the private array name.
+- None
 
 ## Coverage Gaps
-- No test for "DAG enabled, manifest exists but contains zero entries" — the path where `load_manifest` succeeds but `dag_get_count` returns 0 (triggering fallback to inline) is not covered.
+- `dag_get_id_at_index()` in `lib/milestone_dag.sh` has no unit test. The existing DAG test suite covers `dag_get_count()` and related functions — a test for bounds-checking and valid-index retrieval would close this gap.
 
 ## Drift Observations
-- `lib/plan_milestone_review.sh:40` — direct access to `_DAG_IDS[]` bypasses the DAG public API boundary. All other callers use `dag_get_*` accessors. If the array is renamed, this site won't be caught by a grep for the public API name.
+- None
+
+---
+
+### Review Notes
+
+The fix correctly addresses the single open non-blocking note: encapsulating direct `_DAG_IDS[]` array access behind the `dag_get_id_at_index()` public API.
+
+**`lib/milestone_dag.sh`** — New `dag_get_id_at_index(idx)` function is clean: bounds-checked with `[[ "$idx" -lt 0 || "$idx" -ge "${#_DAG_IDS[@]}" ]]`, returns 1 on out-of-bounds, outputs via `echo`. Header comment updated. File is 263 lines (under 300-line ceiling). ✓
+
+**`lib/plan_milestone_review.sh`** — `_display_milestone_summary()` now checks the DAG manifest first when `MILESTONE_DAG_ENABLED=true`, iterates via `dag_get_id_at_index "$i"` rather than `${_DAG_IDS[$i]}`, and falls back to inline CLAUDE.md grep when no DAG milestones are found. Loop bounds are derived from `dag_get_count()` so the index passed to `dag_get_id_at_index` is always valid. File is 160 lines. ✓
+
+Shell quality: both files have `set -euo pipefail`, all variables quoted, `[[ ]]` for conditionals.
