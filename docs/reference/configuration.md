@@ -300,6 +300,8 @@ When running in `--milestone` mode, these values override the base turn limits:
 
 | Key | Default | Description |
 |-----|---------|-------------|
+| `SPECIALIST_SKIP_IRRELEVANT` | `true` | Skip specialists when the diff doesn't touch relevant files |
+| `REVIEW_SKIP_THRESHOLD` | `0` | Lines-changed below which review is skipped (`0` = always review) |
 | `SPECIALIST_SECURITY_ENABLED` | `false` | Toggle security specialist review |
 | `SPECIALIST_SECURITY_MODEL` | *(same as standard)* | Model for security specialist |
 | `SPECIALIST_SECURITY_MAX_TURNS` | `8` | Max turns for security specialist |
@@ -309,6 +311,59 @@ When running in `--milestone` mode, these values override the base turn limits:
 | `SPECIALIST_API_ENABLED` | `false` | Toggle API specialist review |
 | `SPECIALIST_API_MODEL` | *(same as standard)* | Model for API specialist |
 | `SPECIALIST_API_MAX_TURNS` | `8` | Max turns for API specialist |
+| `SPECIALIST_UI_ENABLED` | `auto` | Toggle UI/UX specialist review (`auto` enables when a UI platform is detected) |
+| `SPECIALIST_UI_MODEL` | *(same as standard)* | Model for UI/UX specialist |
+| `SPECIALIST_UI_MAX_TURNS` | `8` | Max turns for UI/UX specialist |
+
+## UI Platform Adapters
+
+When a UI project is detected, Tekhton selects a platform adapter that supplies
+detection logic, coder guidance, specialist checklists, and tester patterns. Each
+adapter lives in `${TEKHTON_HOME}/platforms/<name>/`.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `UI_PLATFORM` | `auto` | Platform: `auto`, `web`, `mobile_flutter`, `mobile_native_ios`, `mobile_native_android`, `game_web` |
+
+## Pre-flight Validation
+
+Pre-flight runs after config loading but BEFORE any agent invocation. It validates
+toolchain availability, dependency freshness, and service readiness, then
+auto-remediates safe issues via the M54 engine.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `PREFLIGHT_ENABLED` | `true` | Toggle pre-flight environment checks |
+| `PREFLIGHT_AUTO_FIX` | `true` | Allow auto-remediation of safe issues during pre-flight |
+| `PREFLIGHT_FAIL_ON_WARN` | `false` | Treat warnings as failures (strict mode) |
+| `PREFLIGHT_FIX_ENABLED` | `true` | Try a Jr Coder fix before falling through to a full pipeline retry |
+| `PREFLIGHT_FIX_MAX_ATTEMPTS` | `2` | Max fix attempts before giving up |
+| `PREFLIGHT_FIX_MODEL` | *(same as jr coder)* | Model for the pre-flight fix agent |
+| `PREFLIGHT_FIX_MAX_TURNS` | *(same as jr coder turns)* | Turn budget per fix attempt |
+
+### Auto-Remediation Engine
+
+The error pattern registry classifies build/test failures and runs `safe`-rated
+remediation commands automatically. These keys are environment overrides — the
+defaults are conservative.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `REMEDIATION_MAX_ATTEMPTS` | `2` | Max remediation attempts per build gate run |
+| `REMEDIATION_TIMEOUT` | `60` | Seconds before a single remediation command times out |
+
+## Tester & Final Fix
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `FINAL_FIX_ENABLED` | `true` | Spawn a fix agent when `TEST_CMD` fails in final checks |
+| `FINAL_FIX_MAX_ATTEMPTS` | `2` | Max fix attempts in final checks |
+| `FINAL_FIX_MAX_TURNS` | `CODER_MAX_TURNS / 3` | Turn budget per final-fix attempt |
+| `TESTER_FIX_ENABLED` | `false` | Auto-fix on test failure inside the tester stage (M64 surgical mode) |
+| `TESTER_FIX_MAX_DEPTH` | `1` | Max inline fix attempts per tester stage |
+| `TESTER_FIX_MAX_TURNS` | `CODER_MAX_TURNS / 3` | Turn budget per inline fix |
+| `TESTER_FIX_OUTPUT_LIMIT` | `4000` | Max chars of test output passed to the fix agent |
+| `COMPLETION_GATE_TEST_ENABLED` | `true` | Run `TEST_CMD` inside the completion gate (M63) instead of trusting the coder's "COMPLETE" claim |
 
 ## AI Artifact Detection
 

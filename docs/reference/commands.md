@@ -13,6 +13,7 @@ tekhton "Your task description"
 | Flag | Description |
 |------|-------------|
 | `--init` | Initialize Tekhton in the current project directory. Detects tech stack, creates `pipeline.conf`, agent roles, and dashboard. |
+| `--init --full` | Brownfield one-shot: chains `--init` and `--plan-from-index` so a single command produces a fully scaffolded `DESIGN.md` and `CLAUDE.md` from the project crawl. |
 | `--reinit` | Re-initialize, preserving existing configuration values while adding new defaults. |
 | `--plan` | Start the interactive planning phase. Produces `DESIGN.md` and `CLAUDE.md` with a milestone plan. |
 | `--plan --answers <file>` | Import pre-filled YAML answers (skip interview). |

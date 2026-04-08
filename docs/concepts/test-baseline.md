@@ -7,12 +7,36 @@ pipeline.
 
 ## How It Works
 
-1. **Capture** — Before the pipeline modifies any code, Tekhton runs `TEST_CMD`
-   and records which tests fail. This is the baseline.
-2. **Compare** — After the coder and tester stages, when acceptance criteria are
-   checked, test failures are compared against the baseline.
-3. **Filter** — Failures that match the baseline are classified as pre-existing
+1. **Capture** — At the start of every run, Tekhton runs `TEST_CMD` and
+   records which tests fail. This is the baseline. Baselines are captured
+   fresh per run — no cross-run pollution.
+2. **Inject** — The tester agent receives the baseline as context, so it can
+   distinguish failures it caused from failures that were already there before
+   the run started.
+3. **Compare** — After the coder and tester stages, when acceptance criteria
+   are checked, test failures are compared against the baseline.
+4. **Filter** — Failures that match the baseline are classified as pre-existing
    and excluded from acceptance evaluation.
+5. **Verify at completion** — The completion gate runs `TEST_CMD` itself rather
+   than trusting the coder's "COMPLETE" claim. Test enforcement at the gate is
+   on by default; toggle with `COMPLETION_GATE_TEST_ENABLED`.
+
+## Hardening Notes (M63)
+
+Earlier versions had three rough edges that M63 fixed:
+
+- **Cross-run baseline pollution** — Stale baselines from previous runs could
+  mark genuinely-new regressions as pre-existing. Baselines are now captured
+  fresh per run.
+- **Trusted "COMPLETE" claims** — The completion gate used to take the coder's
+  word that everything passed. It now runs `TEST_CMD` directly via the
+  `COMPLETION_GATE_TEST_ENABLED` switch (default: `true`).
+- **Tester baseline awareness** — The tester now receives baseline context, so
+  it can write "this failure was already failing before I started" in its
+  report instead of trying to fix tests it didn't break.
+- **`TEST_BASELINE_PASS_ON_STUCK` is now off by default** — The escape hatch
+  that auto-passed stuck runs hid more bugs than it helped. You can re-enable
+  it explicitly if your project genuinely needs it.
 
 ## Configuration
 
@@ -28,6 +52,9 @@ TEST_BASELINE_STUCK_THRESHOLD=2
 
 # What to do when stuck: auto-pass (true) or exit with diagnosis (false)
 TEST_BASELINE_PASS_ON_STUCK=false
+
+# Run TEST_CMD at the completion gate (instead of trusting "COMPLETE")
+COMPLETION_GATE_TEST_ENABLED=true
 ```
 
 ## Stuck Detection
@@ -49,6 +76,23 @@ When stuck is detected:
 - Projects with known test debt that you haven't fixed yet
 - Brownfield projects where some tests may be flaky or outdated
 - Multi-milestone projects where earlier milestones may have left test gaps
+
+## Surgical Tester Fix Mode (M64)
+
+When the tester finds genuine new failures (not pre-existing), Tekhton can
+fix them inline rather than spawning a full recursive pipeline run. Set
+`TESTER_FIX_ENABLED=true` to enable.
+
+Before M64, a tester failure recursively re-ran the entire pipeline (coder →
+reviewer → tester), which added 40+ minutes per failing test. The surgical fix
+agent now operates within the tester stage itself, mirroring the coder's
+build-fix retry pattern. It receives baseline context so it knows which
+failures it actually needs to fix.
+
+```bash
+TESTER_FIX_ENABLED=false        # Toggle inline fix on tester failures
+TESTER_FIX_MAX_DEPTH=1          # Max inline fix attempts per stage
+```
 
 ## Limitations
 

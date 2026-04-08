@@ -6,15 +6,20 @@ to committed code.
 ## Overview
 
 ```
-┌──────────┐    ┌───────┐    ┌───────┐    ┌──────────┐    ┌──────────┐    ┌────────┐    ┌────────┐
-│  Intake  │───▶│ Scout │───▶│ Coder │───▶│ Security │───▶│ Reviewer │───▶│ Tester │───▶│ Commit │
-└──────────┘    └───────┘    └───────┘    └──────────┘    └──────────┘    └────────┘    └────────┘
-                                               │               │
-                                               ▼               ▼
-                                          ┌─────────┐    ┌──────────┐
-                                          │ Sec Fix  │    │  Rework  │
-                                          └─────────┘    └──────────┘
+┌───────────┐   ┌────────┐   ┌───────┐   ┌───────┐   ┌──────────┐   ┌──────────┐   ┌────────┐   ┌────────┐
+│ Pre-flight│──▶│ Intake │──▶│ Scout │──▶│ Coder │──▶│ Security │──▶│ Reviewer │──▶│ Tester │──▶│ Commit │
+└───────────┘   └────────┘   └───────┘   └───────┘   └──────────┘   └──────────┘   └────────┘   └────────┘
+                                                          │               │
+                                                          ▼               ▼
+                                                     ┌─────────┐    ┌──────────┐
+                                                     │ Sec Fix │    │  Rework  │
+                                                     └─────────┘    └──────────┘
 ```
+
+The pre-flight stage runs before any agent and validates the environment
+(toolchain, dependencies, services). See the
+[Pre-flight Stage reference](../reference/stages.md#pre-flight-stage) for
+details.
 
 ## Two-Directory Model
 
@@ -50,8 +55,12 @@ After the coder finishes, a build gate runs:
 2. `BUILD_CHECK_CMD` (compile/build)
 3. Dependency constraint validation (if configured)
 
-If any step fails, errors are captured in `BUILD_ERRORS.md` and a build-fix
-agent attempts repairs. The gate runs again after fixes.
+If any step fails, errors are captured in `BUILD_ERRORS.md` and routed through
+the [auto-remediation engine](auto-remediation.md). Environment, service,
+toolchain, resource, and test-infrastructure issues are classified by the M53
+error pattern registry and auto-fixed when safe (e.g., `npx playwright
+install`, `npm install`, port cleanup). Only true code errors escalate to the
+build-fix agent. The gate runs again after fixes.
 
 ### Review-Rework Loop
 
@@ -115,5 +124,6 @@ Re-running `tekhton` (with no arguments) detects saved state and offers to resum
 ## What's Next?
 
 - [Pipeline Stages](../reference/stages.md) — Detailed stage reference
+- [Auto-Remediation](auto-remediation.md) — Pre-flight, error classification, and auto-fixes
 - [Context Budget](context-budget.md) — How prompts are sized
 - [Milestone DAG](milestone-dag.md) — Milestone dependency management

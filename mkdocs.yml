@@ -42,6 +42,7 @@ nav:
     - Monorepo Setup: guides/monorepo.md
     - Security Review: guides/security-review.md
     - Security Configuration: guides/security-config.md
+    - UI Platform Adapters: guides/platform-adapters.md
     - Watchtower Dashboard: guides/watchtower.md
     - Express Mode: guides/express-mode.md
     - TDD Mode: guides/tdd-mode.md
@@ -55,6 +56,7 @@ nav:
   - Concepts:
     - Pipeline Flow: concepts/pipeline-flow.md
     - Milestone DAG: concepts/milestone-dag.md
+    - Auto-Remediation: concepts/auto-remediation.md
     - Health Scoring: concepts/health-scoring.md
     - Context Budget: concepts/context-budget.md
     - Causal Event Log: concepts/causal-log.md

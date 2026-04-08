@@ -61,7 +61,10 @@ function names or framework patterns — the agents figure that out.
 | **Milestone DAG** | File-based milestones with dependency tracking. Tekhton determines what to work on next based on dependency satisfaction. |
 | **Intelligent Indexing** | Tree-sitter repo maps rank files by task relevance. Agents receive only the context they need. |
 | **Security Agent** | Dedicated security review stage catches vulnerabilities before they ship, with severity scoring and auto-remediation. |
-| **Watchtower Dashboard** | Browser-based dashboard shows pipeline progress, milestone map, health scores, and run history in real time. |
+| **Pre-flight Validation** | Catches missing toolchains, stale dependencies, and down services *before* any agent runs — and auto-fixes the safe ones. |
+| **Auto-Remediation** | When the build gate hits a known failure pattern (Playwright not installed, port in use, stale `node_modules`), Tekhton runs the fix and retries automatically. |
+| **UI Platform Adapters** | First-class support for web (Tailwind, MUI, shadcn), Flutter, iOS, Android, and browser game engines — each with its own coder guidance, specialist review, and tester patterns. |
+| **Watchtower Dashboard** | Browser-based dashboard shows pipeline progress, milestone map, health scores, and run history in real time, with hierarchical per-stage timing. |
 | **Health Scoring** | Automated project health assessment covering tests, quality, dependencies, and documentation. |
 | **Express Mode** | No `pipeline.conf`? No problem. Tekhton auto-detects your stack and runs. |
 | **TDD Support** | Run tests before coding with `PIPELINE_ORDER=test_first` — the tester writes a failing spec, then the coder makes it pass. |

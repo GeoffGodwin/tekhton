@@ -52,6 +52,15 @@ Run history with detailed breakdowns:
 - Stage-by-stage breakdown with turn counts
 - Error classification for failed runs
 
+#### Hierarchical Per-Stage Breakdown (M66)
+
+The Per-Stage Breakdown surfaces every timed step in the pipeline, not just
+the top-level stages. Security review, architect audits, cleanup sweeps,
+specialist reviews, rework cycles, and individual build-fix attempts all show
+up as expandable sub-rows. Sub-rows are collapsed by default — click a stage
+to drill down. This makes optimization concrete: you can see exactly which
+sub-step is eating wall-clock time instead of guessing.
+
 ### Trends
 
 Performance trends across your run history:
