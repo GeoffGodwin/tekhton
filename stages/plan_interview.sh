@@ -261,16 +261,25 @@ run_plan_interview() {
     fi
     local input_fd=3
 
-    # Initialize or resume answer file
-    if has_answer_file; then
+    # Initialize or resume answer file (skip init when answers were imported)
+    if [[ -n "${PLAN_ANSWERS_IMPORT:-}" ]]; then
+        # Answers were imported by import_answer_file() — never overwrite
+        if [[ -f "$PLAN_ANSWER_FILE" ]]; then
+            log "Using imported answers from: ${PLAN_ANSWERS_IMPORT}"
+        else
+            error "Answer file missing after import — expected ${PLAN_ANSWER_FILE}"
+            exec 3<&-
+            return 1
+        fi
+    elif has_answer_file; then
         log "Resuming from saved answers in ${PLAN_ANSWER_FILE}"
     else
         init_answer_file "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
     fi
 
-    # Mode selection (skip if PLAN_ANSWERS_FILE is set — file mode via --answers)
+    # Mode selection (skip when answers were imported via --answers)
     if [[ -n "${PLAN_ANSWERS_IMPORT:-}" ]]; then
-        log "Using answers from: ${PLAN_ANSWERS_IMPORT}"
+        : # Already logged above — skip mode selection
     else
         local mode
         if [[ -n "${PLAN_BROWSER_MODE:-}" ]]; then
