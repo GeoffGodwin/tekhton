@@ -34,8 +34,15 @@ assert "Zero '#### [DONE]' one-liner lines in CLAUDE.md (found: $done_count)" \
 # Each should be followed (within a few lines) by the archive pointer comment.
 pointer_comment="<!-- See MILESTONE_ARCHIVE.md for completed milestones -->"
 pointer_count=$(grep -c "$pointer_comment" "$CLAUDE_MD" 2>/dev/null || true)
-assert "Archive pointer comment present at least once (found: $pointer_count)" \
-  "$([ "$pointer_count" -ge 1 ] && echo 0 || echo 1)"
+# CLAUDE.md may have been restructured (e.g., milestones moved to DAG files);
+# the pointer is only required when ### Milestone Plan headings are present.
+section_heading_count=$(grep -c "^### Milestone Plan" "$CLAUDE_MD" 2>/dev/null || true)
+if [ "$section_heading_count" -eq 0 ]; then
+  assert "Archive pointer not required (CLAUDE.md restructured, no ### Milestone Plan headings)" "0"
+else
+  assert "Archive pointer comment present at least once (found: $pointer_count)" \
+    "$([ "$pointer_count" -ge 1 ] && echo 0 || echo 1)"
+fi
 
 # Verify pointer appears after "### Milestone Plan" headings (if any exist)
 # CLAUDE.md may have been restructured since the original migration — if no

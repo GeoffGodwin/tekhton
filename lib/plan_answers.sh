@@ -52,12 +52,15 @@ init_answer_file() {
     while IFS='|' read -r s_name s_req s_guide s_phase; do
         local section_id
         section_id=$(_slugify_section "$s_name")
+        local esc_name esc_guide
+        esc_name=$(_yaml_escape_dq "$s_name")
+        esc_guide=$(_yaml_escape_dq "${s_guide:-}")
         {
             echo "  ${section_id}:"
-            echo "    title: \"${s_name}\""
+            echo "    title: \"${esc_name}\""
             echo "    phase: ${s_phase:-1}"
             echo "    required: ${s_req:-false}"
-            echo "    guidance: \"${s_guide:-}\""
+            echo "    guidance: \"${esc_guide}\""
             echo "    answer: \"\""
         } >> "$tmp_file"
     done < <(_extract_template_sections "$template_path")
@@ -120,7 +123,9 @@ save_answer() {
                     echo "      ${aline}" >> "$tmp_file"
                 done <<< "$answer_text"
             else
-                echo "    answer: \"${answer_text}\"" >> "$tmp_file"
+                local esc_answer
+                esc_answer=$(_yaml_escape_dq "$answer_text")
+                echo "    answer: \"${esc_answer}\"" >> "$tmp_file"
             fi
             continue
         fi
@@ -200,7 +205,7 @@ load_all_answers() {
 
         # Title field
         if [[ "$line" =~ ^[[:space:]]{4}title:[[:space:]]*\"(.*)\"$ ]]; then
-            current_title="${BASH_REMATCH[1]}"
+            current_title=$(_yaml_unescape_dq "${BASH_REMATCH[1]}")
             in_answer=0
             continue
         fi
@@ -234,7 +239,7 @@ load_all_answers() {
 
         # Answer field — inline quoted
         if [[ "$line" =~ ^[[:space:]]{4}answer:[[:space:]]*\"(.*)\"$ ]]; then
-            current_answer="${BASH_REMATCH[1]}"
+            current_answer=$(_yaml_unescape_dq "${BASH_REMATCH[1]}")
             in_answer=0
             continue
         fi
@@ -306,7 +311,7 @@ _parse_answer_field() {
 
         # Inline quoted answer
         if [[ "$line" =~ ^[[:space:]]{4}answer:[[:space:]]*\"(.*)\"$ ]]; then
-            echo "${BASH_REMATCH[1]}"
+            _yaml_unescape_dq "${BASH_REMATCH[1]}"
             return 0
         fi
 
@@ -387,8 +392,10 @@ export_question_template() {
         while IFS='|' read -r s_name s_req s_guide s_phase; do
             local section_id
             section_id=$(_slugify_section "$s_name")
+            local esc_name
+            esc_name=$(_yaml_escape_dq "$s_name")
             echo "  ${section_id}:"
-            echo "    title: \"${s_name}\""
+            echo "    title: \"${esc_name}\""
             echo "    phase: ${s_phase:-1}"
             echo "    required: ${s_req:-false}"
             if [[ -n "${s_guide:-}" ]]; then
@@ -474,6 +481,27 @@ rename_answer_file_done() {
 }
 
 # --- Helpers ----------------------------------------------------------------
+
+# _yaml_escape_dq — Escape a string for use inside YAML double quotes.
+# Escapes backslashes first, then double quotes.
+# Args: $1 — raw string
+# Prints escaped string to stdout.
+_yaml_escape_dq() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    echo "$s"
+}
+
+# _yaml_unescape_dq — Reverse _yaml_escape_dq: unescape \" and \\.
+# Args: $1 — escaped string
+# Prints unescaped string to stdout.
+_yaml_unescape_dq() {
+    local s="$1"
+    s="${s//\\\"/\"}"
+    s="${s//\\\\/\\}"
+    echo "$s"
+}
 
 # _slugify_section — Convert section title to a YAML-safe key.
 # "Developer Philosophy & Constraints" → "developer_philosophy_constraints"

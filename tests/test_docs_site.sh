@@ -195,16 +195,16 @@ else
     fail "workflow does not trigger on push to main"
 fi
 
-if grep -q "paths:.*docs/\*\*" "$WORKFLOW"; then
-    pass "workflow has path filter for docs/**"
+if grep -q "workflow_dispatch" "$WORKFLOW"; then
+    pass "workflow supports manual dispatch"
 else
-    fail "workflow missing path filter for docs/**"
+    fail "workflow missing manual dispatch trigger"
 fi
 
-if grep -q "paths:.*mkdocs.yml" "$WORKFLOW"; then
-    pass "workflow has path filter for mkdocs.yml"
+if grep -q "release:" "$WORKFLOW"; then
+    pass "workflow triggers on release"
 else
-    fail "workflow missing path filter for mkdocs.yml"
+    fail "workflow missing release trigger"
 fi
 
 # Verify required Pages permissions

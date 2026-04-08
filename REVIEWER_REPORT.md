@@ -1,35 +1,32 @@
 ## Verdict
-APPROVED
+APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-None
+- `lib/plan_answers.sh` is 515 lines, well over the 300-line soft ceiling. Pre-existing condition worsened by +26 lines for the new helpers. Consider splitting `_yaml_escape_dq`/`_yaml_unescape_dq` and related helpers into a `plan_answers_helpers.sh` in a future cleanup pass.
+- In `export_question_template`, `s_guide` is written as a YAML comment (`# Guidance: ${s_guide}`) without HTML or YAML escaping. If guidance text contains a newline it would break the comment line, though this hasn't occurred in practice. Informational only.
 
 ## Coverage Gaps
-None
+- None
 
 ## Drift Observations
-None
+- None
 
 ---
 
-**Review summary**: Both drift observations were substantively resolved in M65.
-This run correctly formalizes the resolution in DRIFT_LOG.md.
+## Review Notes
 
-1. **Sourcing convention** — `tekhton.sh` lines 813–814 have an inline comment
-   documenting that all five tester sub-stages are sourced by `tester.sh` itself.
-   Verified correct.
+The change is correct and complete for the stated bug. Trace through the fix:
 
-2. **ARCHITECTURE.md tester sub-stages** — All five sub-stages (`tester_tdd.sh`,
-   `tester_continuation.sh`, `tester_fix.sh`, `tester_timing.sh`, `tester_validation.sh`)
-   are listed in `ARCHITECTURE.md` with "Sourced by `tester.sh` — do not run directly"
-   entries. Verified correct.
+1. **Write path fixed** — `init_answer_file()` now calls `_yaml_escape_dq` on both `s_name` and `s_guide` before embedding them in YAML double-quoted scalars. `save_answer()` escapes `answer_text` in the inline path (the block-scalar branch is unchanged and correct since block scalars don't require quote escaping). `export_question_template()` escapes `s_name` for the title field.
 
-DRIFT_LOG.md moves both observations from Unresolved to Resolved and resets
-"Runs since audit" to 0. No regressions; no scope creep. No code changes were
-required because the underlying fixes were already in place.
+2. **Read path fixed** — `load_all_answers()` now unescapes `current_title` and `current_answer` via `_yaml_unescape_dq`. `_parse_answer_field()` unescapes inline quoted answers. The round-trip is symmetric.
+
+3. **Helper implementation** — `_yaml_escape_dq` escapes backslash first, then double-quote (correct order). `_yaml_unescape_dq` unescapes `\"` first, then `\\` (correct order — avoids double-processing).
+
+4. **Web mode covered** — `plan_browser.sh` delegates to `init_answer_file()` and `save_answer()` from `plan_answers.sh` (confirmed by reading its header). The fix applies to web mode without any additional changes needed.

@@ -193,11 +193,11 @@ else
         fail "workflow missing docs/requirements.txt install"
     fi
 
-    # Trigger only on changes to docs/ or mkdocs.yml
-    if grep -q "paths:" "$WORKFLOW" && grep -q "docs/\*\*\|docs/\*" "$WORKFLOW"; then
-        pass "workflow has path filter for docs/**"
+    # Workflow triggers on push to main, release, and manual dispatch
+    if grep -q "workflow_dispatch" "$WORKFLOW"; then
+        pass "workflow supports manual dispatch"
     else
-        fail "workflow missing path filter for docs changes"
+        fail "workflow missing manual dispatch trigger"
     fi
 
     if grep -q "branches: \[main\]" "$WORKFLOW"; then

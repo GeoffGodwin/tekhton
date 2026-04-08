@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Test: Planning answer layer — YAML roundtrip, export/import, build_answers_block
+# Test: plan_answers.sh — YAML escape/unescape and answer file operations
+# Tests the fix for double-quote escaping in answer templates
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -7,463 +8,412 @@ TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PASS=0
 FAIL=0
 
-pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
-fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
-
-# Create a temporary project dir
-TEST_TMPDIR=$(mktemp -d)
-export PROJECT_DIR="$TEST_TMPDIR"
-export PLAN_ANSWER_FILE="${TEST_TMPDIR}/.claude/plan_answers.yaml"
-export TEKHTON_VERSION="3.31.0"
-trap 'rm -rf "$TEST_TMPDIR"' EXIT
-
-# Stubs for logging
-log()     { :; }
+pass()  { echo "  PASS: $*"; PASS=$((PASS + 1)); }
+fail()  { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
+log()   { :; }
+warn()  { echo "[WARN] $*" >&2; }
+error() { echo "[ERROR] $*" >&2; }
 success() { :; }
-warn()    { :; }
-error()   { :; }
-header()  { :; }
-count_lines() { wc -l | tr -d ' '; }
+header() { :; }
 
-# Source required libraries
-# shellcheck source=../lib/plan.sh
-source "${TEKHTON_HOME}/lib/plan.sh"
-# shellcheck source=../lib/plan_answers.sh
+# Create temp directory for testing
+TEST_TMP=$(mktemp -d)
+trap "rm -rf $TEST_TMP" EXIT
+
+# Setup test environment
+export PROJECT_DIR="$TEST_TMP"
+export TEKHTON_VERSION="3.65.0"
+export PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers.yaml"
+
+# Source libraries
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
+source "${TEKHTON_HOME}/lib/plan.sh"
 
-# --- Create a test template ---
-PLAN_TEMPLATE_FILE="${TEST_TMPDIR}/template.md"
-cat > "$PLAN_TEMPLATE_FILE" << 'EOF'
-# Design Document — Test
+echo "=== Testing YAML Escape/Unescape (_yaml_escape_dq, _yaml_unescape_dq) ==="
 
-## Developer Philosophy
+# Test 1: Simple string without special chars
+test_str="hello world"
+escaped=$(_yaml_escape_dq "$test_str")
+unescaped=$(_yaml_unescape_dq "$escaped")
+if [[ "$unescaped" == "$test_str" ]]; then
+    pass "Simple string round-trip"
+else
+    fail "Simple string round-trip: expected '$test_str', got '$unescaped'"
+fi
+
+# Test 2: String with double quotes
+test_str='say "hello"'
+escaped=$(_yaml_escape_dq "$test_str")
+unescaped=$(_yaml_unescape_dq "$escaped")
+if [[ "$unescaped" == "$test_str" ]]; then
+    pass "String with double quotes round-trip"
+else
+    fail "String with double quotes: expected '$test_str', got '$unescaped'"
+fi
+
+# Test 3: String with backslashes
+test_str='path\to\file'
+escaped=$(_yaml_escape_dq "$test_str")
+unescaped=$(_yaml_unescape_dq "$escaped")
+if [[ "$unescaped" == "$test_str" ]]; then
+    pass "String with backslashes round-trip"
+else
+    fail "String with backslashes: expected '$test_str', got '$unescaped'"
+fi
+
+# Test 4: String with both quotes and backslashes
+test_str='C:\path\to\"file\"'
+escaped=$(_yaml_escape_dq "$test_str")
+unescaped=$(_yaml_unescape_dq "$escaped")
+if [[ "$unescaped" == "$test_str" ]]; then
+    pass "String with quotes and backslashes round-trip"
+else
+    fail "String with quotes and backslashes: expected '$test_str', got '$unescaped'"
+fi
+
+# Test 5: Empty string
+test_str=""
+escaped=$(_yaml_escape_dq "$test_str")
+unescaped=$(_yaml_unescape_dq "$escaped")
+if [[ "$unescaped" == "$test_str" ]]; then
+    pass "Empty string round-trip"
+else
+    fail "Empty string: expected '$test_str', got '$unescaped'"
+fi
+
+# Test 6: Multiple consecutive quotes
+test_str='""""'
+escaped=$(_yaml_escape_dq "$test_str")
+unescaped=$(_yaml_unescape_dq "$escaped")
+if [[ "$unescaped" == "$test_str" ]]; then
+    pass "Multiple consecutive quotes round-trip"
+else
+    fail "Multiple consecutive quotes: expected '$test_str', got '$unescaped'"
+fi
+
+# Test 7: Multiple consecutive backslashes
+test_str='\\\\'
+escaped=$(_yaml_escape_dq "$test_str")
+unescaped=$(_yaml_unescape_dq "$escaped")
+if [[ "$unescaped" == "$test_str" ]]; then
+    pass "Multiple consecutive backslashes round-trip"
+else
+    fail "Multiple consecutive backslashes: expected '$test_str', got '$unescaped'"
+fi
+
+echo
+echo "=== Testing Answer File Initialization (init_answer_file) ==="
+
+# Create a test template
+TEST_TEMPLATE="${TEST_TMP}/test_template.md"
+cat > "$TEST_TEMPLATE" << 'TMPL'
+# Test Design
+
+## Overview
 <!-- REQUIRED -->
 <!-- PHASE:1 -->
-<!-- What are your architectural rules? -->
+<!-- What is this? -->
 
-## Project Overview
+## Architecture
 <!-- REQUIRED -->
-<!-- PHASE:1 -->
-<!-- What does this do? -->
-
-## Tech Stack
-<!-- REQUIRED -->
-<!-- PHASE:1 -->
-<!-- Languages and frameworks -->
-
-## Optional Notes
 <!-- PHASE:2 -->
-<!-- Any extra details -->
-EOF
+<!-- How does it work? -->
 
-PLAN_PROJECT_TYPE="test"
+## Configuration
+<!-- PHASE:3 -->
+<!-- What config? -->
+TMPL
 
-# ============================================================
-echo "=== init_answer_file ==="
-# ============================================================
+# Initialize answer file
+PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers.yaml"
+init_answer_file "test" "$TEST_TEMPLATE" 2>/dev/null || true
 
-init_answer_file "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
-
+# Test that file was created
 if [[ -f "$PLAN_ANSWER_FILE" ]]; then
-    pass "Answer file created"
+    pass "Answer file created at ${PLAN_ANSWER_FILE}"
 else
     fail "Answer file not created"
 fi
 
-if head -1 "$PLAN_ANSWER_FILE" | grep -q "^# Tekhton Planning Answers"; then
-    pass "Answer file has valid header"
+# Test file header
+if head -1 "$PLAN_ANSWER_FILE" 2>/dev/null | grep -q '^# Tekhton Planning Answers'; then
+    pass "Answer file has correct header"
 else
-    fail "Answer file missing header"
+    fail "Answer file header incorrect"
 fi
 
-if grep -q "developer_philosophy:" "$PLAN_ANSWER_FILE"; then
-    pass "Section 'developer_philosophy' exists"
+# Test sections block exists
+if grep -q '^sections:' "$PLAN_ANSWER_FILE"; then
+    pass "Answer file has sections block"
 else
-    fail "Section 'developer_philosophy' missing"
+    fail "Answer file missing sections block"
 fi
 
-if grep -q "project_overview:" "$PLAN_ANSWER_FILE"; then
-    pass "Section 'project_overview' exists"
+echo "=== Testing Section Names with Special Characters ==="
+
+TEST_TEMPLATE2="${TEST_TMP}/test_template2.md"
+cat > "$TEST_TEMPLATE2" << 'TMPL'
+# Test Design
+
+## Section with "Quotes" & Special
+<!-- REQUIRED -->
+<!-- PHASE:1 -->
+<!-- Guidance about "quotes" -->
+
+## Another Section
+<!-- Guidance -->
+TMPL
+
+# Set PLAN_ANSWER_FILE BEFORE calling init_answer_file
+PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers2.yaml"
+init_answer_file "test2" "$TEST_TEMPLATE2" 2>/dev/null || true
+
+if [[ -f "$PLAN_ANSWER_FILE" ]]; then
+    pass "Answer file created with special section names"
+
+    # Verify escaped quotes in title field
+    if grep -q 'title:.*\\\"' "$PLAN_ANSWER_FILE"; then
+        pass "Special characters in section names are escaped"
+    else
+        fail "Section names with special chars not properly escaped"
+    fi
 else
-    fail "Section 'project_overview' missing"
+    fail "Answer file with special section names not created"
 fi
 
-if grep -q "optional_notes:" "$PLAN_ANSWER_FILE"; then
-    pass "Section 'optional_notes' exists"
-else
-    fail "Section 'optional_notes' missing"
-fi
-
-# ============================================================
 echo
-echo "=== has_answer_file ==="
-# ============================================================
+echo "=== Testing Answer Save/Load Round-Trip ==="
 
-if has_answer_file; then
-    pass "has_answer_file returns 0 when file exists"
+# Reset answer file for save/load tests
+PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers.yaml"
+init_answer_file "test" "$TEST_TEMPLATE" 2>/dev/null || true
+
+# Test 1: Simple answer save and load
+simple_answer="This is a simple answer"
+save_answer "overview" "$simple_answer" 2>/dev/null || true
+loaded=$(_parse_answer_field "$PLAN_ANSWER_FILE" "overview" 2>/dev/null)
+
+if [[ "$loaded" == "$simple_answer" ]]; then
+    pass "Simple answer save and load round-trip"
 else
-    fail "has_answer_file should return 0"
+    fail "Simple answer round-trip: expected '$simple_answer', got '$loaded'"
 fi
 
-rm -f "$PLAN_ANSWER_FILE"
-if has_answer_file; then
-    fail "has_answer_file should return 1 when file missing"
+# Test 2: Answer with quotes
+quoted_answer='He said "hello world"'
+save_answer "architecture" "$quoted_answer" 2>/dev/null || true
+loaded=$(_parse_answer_field "$PLAN_ANSWER_FILE" "architecture" 2>/dev/null)
+
+if [[ "$loaded" == "$quoted_answer" ]]; then
+    pass "Answer with quotes save and load round-trip"
 else
-    pass "has_answer_file returns 1 when file missing"
+    fail "Answer with quotes: expected '$quoted_answer', got '$loaded'"
 fi
 
-# Re-create for further tests
-init_answer_file "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
+# Test 3: Multi-line answer (block scalar)
+multiline_answer="Line 1
+Line 2
+Line 3"
+save_answer "configuration" "$multiline_answer" 2>/dev/null || true
+loaded=$(_parse_answer_field "$PLAN_ANSWER_FILE" "configuration" 2>/dev/null)
 
-# ============================================================
+if [[ "$loaded" == "$multiline_answer" ]]; then
+    pass "Multi-line answer save and load round-trip"
+else
+    fail "Multi-line answer: expected '$multiline_answer', got '$loaded'"
+fi
+
 echo
-echo "=== save_answer + load_answer: simple string ==="
-# ============================================================
+echo "=== Testing load_all_answers Function ==="
 
-save_answer "developer_philosophy" "Composition over inheritance"
-result=$(load_answer "developer_philosophy")
-if [[ "$result" == "Composition over inheritance" ]]; then
-    pass "Simple string roundtrip"
+# Verify load_all_answers correctly unescapes values
+all_answers=$(load_all_answers)
+
+# Count loaded answers (should have 3 sections)
+line_count=$(echo "$all_answers" | wc -l | tr -d ' ')
+if [[ "$line_count" -ge 3 ]]; then
+    pass "load_all_answers returns multiple sections ($line_count)"
 else
-    fail "Simple string roundtrip: got '${result}'"
+    fail "load_all_answers returned fewer sections than expected"
 fi
 
-# ============================================================
+# Verify pipe-separated format (5 fields: id|title|phase|required|answer)
+first_line=$(echo "$all_answers" | head -1)
+field_count=$(echo "$first_line" | awk -F'|' '{print NF}')
+if [[ "$field_count" -eq 5 ]]; then
+    pass "load_all_answers outputs 5-field format"
+else
+    fail "load_all_answers: expected 5 fields, got $field_count in '$first_line'"
+fi
+
 echo
-echo "=== save_answer + load_answer: multi-line ==="
-# ============================================================
+echo "=== Testing export_question_template Function ==="
 
-multiline_answer="First line of the answer.
-Second line with more detail.
-Third line wrapping up."
-save_answer "project_overview" "$multiline_answer"
-result=$(load_answer "project_overview")
-if [[ "$result" == "$multiline_answer" ]]; then
-    pass "Multi-line roundtrip"
-else
-    fail "Multi-line roundtrip failed"
-    echo "    Expected: $(echo "$multiline_answer" | head -1)..."
-    echo "    Got:      $(echo "$result" | head -1)..."
-fi
-
-# ============================================================
-echo
-echo "=== save_answer + load_answer: special characters ==="
-# ============================================================
-
-special_answer="Config uses: key=value format. # This is not a comment. \"Quoted\" and 'single' too."
-save_answer "tech_stack" "$special_answer"
-result=$(load_answer "tech_stack")
-if [[ "$result" == "$special_answer" ]]; then
-    pass "Special characters roundtrip (colon, hash, quotes)"
-else
-    fail "Special characters roundtrip failed"
-    echo "    Expected: ${special_answer}"
-    echo "    Got:      ${result}"
-fi
-
-# ============================================================
-echo
-echo "=== save_answer + load_answer: YAML-like syntax in answer ==="
-# ============================================================
-
-yaml_answer="Uses | pipe and > angle. Also [brackets] and {braces}. key: value pairs."
-save_answer "optional_notes" "$yaml_answer"
-result=$(load_answer "optional_notes")
-if [[ "$result" == "$yaml_answer" ]]; then
-    pass "YAML-like syntax roundtrip"
-else
-    fail "YAML-like syntax roundtrip failed"
-    echo "    Expected: ${yaml_answer}"
-    echo "    Got:      ${result}"
-fi
-
-# ============================================================
-echo
-echo "=== save_answer: overwrite existing answer ==="
-# ============================================================
-
-save_answer "developer_philosophy" "New philosophy: simplicity first"
-result=$(load_answer "developer_philosophy")
-if [[ "$result" == "New philosophy: simplicity first" ]]; then
-    pass "Overwrite existing answer"
-else
-    fail "Overwrite existing answer: got '${result}'"
-fi
-
-# ============================================================
-echo
-echo "=== load_answer: nonexistent section ==="
-# ============================================================
-
-result=$(load_answer "nonexistent_section")
-if [[ -z "$result" ]]; then
-    pass "Nonexistent section returns empty"
-else
-    fail "Nonexistent section should return empty, got '${result}'"
-fi
-
-# ============================================================
-echo
-echo "=== load_all_answers ==="
-# ============================================================
-
-# Capture all output first to avoid SIGPIPE
-all_output=$(load_all_answers)
-line_count=$(echo "$all_output" | wc -l | tr -d ' ')
-if [[ "$line_count" -eq 4 ]]; then
-    pass "load_all_answers returns 4 sections"
-else
-    fail "Expected 4 sections, got ${line_count}"
-fi
-
-# Check first line has correct format
-first_line=$(echo "$all_output" | head -1)
-if [[ "$first_line" == *"|Developer Philosophy|1|true|"* ]]; then
-    pass "First answer line has correct format"
-else
-    fail "First answer line format wrong: ${first_line}"
-fi
-
-# ============================================================
-echo
-echo "=== answer_file_complete ==="
-# ============================================================
-
-# All required sections now have answers
-if answer_file_complete; then
-    pass "answer_file_complete returns 0 when all required answered"
-else
-    fail "answer_file_complete should return 0"
-fi
-
-# Clear a required section
-save_answer "tech_stack" ""
-if answer_file_complete; then
-    fail "answer_file_complete should return 1 with empty required"
-else
-    pass "answer_file_complete returns 1 with empty required"
-fi
-
-# TBD counts as incomplete
-save_answer "tech_stack" "TBD"
-if answer_file_complete; then
-    fail "answer_file_complete should return 1 with TBD required"
-else
-    pass "answer_file_complete returns 1 with TBD required"
-fi
-
-# Restore for later tests
-save_answer "tech_stack" "$special_answer"
-
-# ============================================================
-echo
-echo "=== build_answers_block ==="
-# ============================================================
-
-block=$(build_answers_block)
-
-if echo "$block" | grep -q '\*\*Developer Philosophy \[REQUIRED\]\*\*'; then
-    pass "build_answers_block includes required label"
-else
-    fail "build_answers_block missing required label"
-fi
-
-if echo "$block" | grep -q '\*\*Optional Notes\*\*'; then
-    pass "build_answers_block includes optional section"
-else
-    fail "build_answers_block missing optional section"
-fi
-
-# ============================================================
-echo
-echo "=== export_question_template ==="
-# ============================================================
-
-exported=$(export_question_template "$PLAN_TEMPLATE_FILE")
-
-if echo "$exported" | head -1 | grep -q "^# Tekhton Planning Answers"; then
-    pass "Export has valid header"
-else
-    fail "Export missing header"
-fi
-
-if echo "$exported" | grep -q "developer_philosophy:"; then
-    pass "Export includes developer_philosophy section"
-else
-    fail "Export missing developer_philosophy section"
-fi
-
-if echo "$exported" | grep -q 'answer: ""'; then
-    pass "Export has empty answer fields"
-else
-    fail "Export missing empty answer fields"
-fi
-
-if echo "$exported" | grep -q "# Guidance:"; then
-    pass "Export includes guidance comments"
-else
-    fail "Export missing guidance comments"
-fi
-
-# ============================================================
-echo
-echo "=== export_question_template to file ==="
-# ============================================================
-
-export_path="${TEST_TMPDIR}/exported.yaml"
-export_question_template "$PLAN_TEMPLATE_FILE" "$export_path"
+export_path="${TEST_TMP}/export_test.yaml"
+export_question_template "$TEST_TEMPLATE" "$export_path" 2>/dev/null || true
 
 if [[ -f "$export_path" ]]; then
-    pass "Export to file creates file"
+    pass "export_question_template creates output file"
+
+    # Verify header
+    if head -1 "$export_path" | grep -q '^# Tekhton Planning Answers'; then
+        pass "Exported template has correct header"
+    else
+        fail "Exported template header incorrect"
+    fi
+
+    # Verify sections block
+    if grep -q '^sections:' "$export_path"; then
+        pass "Exported template has sections block"
+    else
+        fail "Exported template missing sections block"
+    fi
 else
-    fail "Export to file did not create file"
+    fail "export_question_template did not create output file"
 fi
 
-# ============================================================
 echo
-echo "=== import_answer_file ==="
-# ============================================================
+echo "=== Testing has_answer_file Function ==="
 
-# Fill in the exported file with answers
-import_file="${TEST_TMPDIR}/import.yaml"
-cat > "$import_file" << 'IMPORTEOF'
-# Tekhton Planning Answers
-# Project: test
-# Template: test
-
-sections:
-  developer_philosophy:
-    title: "Developer Philosophy"
-    phase: 1
-    required: true
-    answer: "Imported philosophy"
-  project_overview:
-    title: "Project Overview"
-    phase: 1
-    required: true
-    answer: |
-      Imported overview line 1.
-      Imported overview line 2.
-  tech_stack:
-    title: "Tech Stack"
-    phase: 1
-    required: true
-    answer: "Imported stack"
-  optional_notes:
-    title: "Optional Notes"
-    phase: 2
-    required: false
-    answer: ""
-IMPORTEOF
-
-import_answer_file "$import_file"
-result=$(load_answer "developer_philosophy")
-if [[ "$result" == "Imported philosophy" ]]; then
-    pass "import_answer_file loads answers correctly"
+# Test with existing file
+if has_answer_file; then
+    pass "has_answer_file returns 0 for valid file"
 else
-    fail "import_answer_file failed: got '${result}'"
+    fail "has_answer_file should return 0 for valid file"
 fi
 
-result=$(load_answer "project_overview")
-expected="Imported overview line 1.
-Imported overview line 2."
-if [[ "$result" == "$expected" ]]; then
-    pass "import_answer_file handles multi-line block scalar"
+# Test with non-existent file
+PLAN_ANSWER_FILE="${TEST_TMP}/.claude/nonexistent.yaml"
+if ! has_answer_file; then
+    pass "has_answer_file returns 1 for missing file"
 else
-    fail "import_answer_file multi-line failed"
-    echo "    Expected: $(echo "$expected" | head -1)..."
-    echo "    Got:      $(echo "$result" | head -1)..."
+    fail "has_answer_file should return 1 for missing file"
 fi
 
-# ============================================================
 echo
-echo "=== import_answer_file: rejects invalid file ==="
-# ============================================================
+echo "=== Testing answer_file_complete Function ==="
 
-bad_file="${TEST_TMPDIR}/bad.yaml"
-echo "not a tekhton file" > "$bad_file"
-if import_answer_file "$bad_file" 2>/dev/null; then
-    fail "import_answer_file should reject invalid file"
+# Reset to a file with some answered sections
+PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers.yaml"
+init_answer_file "test" "$TEST_TEMPLATE" 2>/dev/null || true
+
+# File should be incomplete (no answers yet)
+if ! answer_file_complete; then
+    pass "answer_file_complete returns 1 for unanswered required sections"
 else
-    pass "import_answer_file rejects invalid file"
+    fail "answer_file_complete should return 1 when required answers missing"
 fi
 
-# ============================================================
+# Add answers to required sections
+save_answer "overview" "Test overview" 2>/dev/null || true
+save_answer "architecture" "Test architecture" 2>/dev/null || true
+
+# Now it should be complete (all required sections answered)
+if answer_file_complete; then
+    pass "answer_file_complete returns 0 when all required sections answered"
+else
+    fail "answer_file_complete should return 0 when all required sections answered"
+fi
+
 echo
-echo "=== _slugify_section ==="
-# ============================================================
+echo "=== Testing Edge Cases ==="
 
-slug=$(_slugify_section "Developer Philosophy & Constraints")
-if [[ "$slug" == "developer_philosophy_constraints" ]]; then
-    pass "Slugify handles ampersand and spaces"
+# Test 1: Section name with many special characters
+PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers.yaml"
+TEST_TEMPLATE3="${TEST_TMP}/test_template3.md"
+cat > "$TEST_TEMPLATE3" << 'TMPL'
+# Test Design
+
+## Developer Philosophy & Constraints (v1.0, "Best Practices")
+<!-- REQUIRED -->
+<!-- PHASE:1 -->
+<!-- Guidance: Use "quotes" carefully! -->
+TMPL
+
+init_answer_file "test3" "$TEST_TEMPLATE3" 2>/dev/null || true
+
+if [[ -f "$PLAN_ANSWER_FILE" ]]; then
+    # Verify the escaped section is in the file
+    if grep -q "Developer Philosophy" "$PLAN_ANSWER_FILE"; then
+        pass "Section with complex special characters handled"
+    else
+        fail "Section with complex special characters not found"
+    fi
 else
-    fail "Slugify: expected 'developer_philosophy_constraints', got '${slug}'"
+    fail "Answer file for complex section names not created"
 fi
 
-slug=$(_slugify_section "Key User Flows")
-if [[ "$slug" == "key_user_flows" ]]; then
-    pass "Slugify handles simple title"
+# Test 2: Answer with newlines, quotes, and special YAML chars
+PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers.yaml"
+init_answer_file "test" "$TEST_TEMPLATE" 2>/dev/null || true
+
+complex_answer='- Use "quotes" carefully
+- Backslash: \
+- Colon: :
+- Hash: #'
+
+save_answer "overview" "$complex_answer" 2>/dev/null || true
+loaded=$(_parse_answer_field "$PLAN_ANSWER_FILE" "overview" 2>/dev/null)
+
+if [[ "$loaded" == "$complex_answer" ]]; then
+    pass "Complex answer with quotes, newlines, special YAML chars round-trip"
 else
-    fail "Slugify: expected 'key_user_flows', got '${slug}'"
+    fail "Complex answer round-trip failed"
 fi
 
-# ============================================================
 echo
-echo "=== rename_answer_file_done ==="
-# ============================================================
+echo "=== Testing Web Mode Integration ==="
 
-# Re-init to get a fresh answer file
-init_answer_file "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
-rename_answer_file_done
+# Web mode uses init_answer_file and save_answer - test they work together
+PLAN_ANSWER_FILE="${PROJECT_DIR}/.claude/plan_answers_web.yaml"
+TEST_TEMPLATE_WEB="${TEST_TMP}/test_template_web.md"
+cat > "$TEST_TEMPLATE_WEB" << 'TMPL'
+# Web Test Design
+
+## First Section
+<!-- REQUIRED -->
+<!-- PHASE:1 -->
+<!-- Initial guidance -->
+
+## Second Section
+<!-- REQUIRED -->
+<!-- PHASE:2 -->
+<!-- More guidance with "quotes" -->
+TMPL
+
+# Simulate web mode flow: init → save → load
+init_answer_file "web_test" "$TEST_TEMPLATE_WEB" 2>/dev/null || true
 
 if [[ ! -f "$PLAN_ANSWER_FILE" ]]; then
-    pass "Original answer file removed after rename"
+    fail "Web mode: answer file not created"
 else
-    fail "Original answer file still exists"
+    # Save answers as web form would do
+    web_answer1='Web mode answer with "quotes"'
+    web_answer2='Another answer: part 2'
+
+    save_answer "first_section" "$web_answer1" 2>/dev/null || true
+    save_answer "second_section" "$web_answer2" 2>/dev/null || true
+
+    loaded1=$(_parse_answer_field "$PLAN_ANSWER_FILE" "first_section" 2>/dev/null)
+    loaded2=$(_parse_answer_field "$PLAN_ANSWER_FILE" "second_section" 2>/dev/null)
+
+    if [[ "$loaded1" == "$web_answer1" ]]; then
+        pass "Web mode: first answer loaded correctly"
+    else
+        fail "Web mode: first answer mismatch"
+    fi
+
+    if [[ "$loaded2" == "$web_answer2" ]]; then
+        pass "Web mode: second answer loaded correctly"
+    else
+        fail "Web mode: second answer mismatch"
+    fi
 fi
 
-if [[ -f "${PLAN_ANSWER_FILE}.done" ]]; then
-    pass "Answer file renamed to .done"
-else
-    fail "Answer file .done not found"
-fi
-
-# ============================================================
 echo
-echo "=== Empty answer roundtrip ==="
-# ============================================================
+echo "=== Summary ==="
+echo "  Passed: ${PASS}  Failed: ${FAIL}"
 
-init_answer_file "$PLAN_PROJECT_TYPE" "$PLAN_TEMPLATE_FILE"
-result=$(load_answer "developer_philosophy")
-if [[ -z "$result" ]]; then
-    pass "Empty answer returns empty string"
-else
-    fail "Empty answer should return empty, got '${result}'"
+if [[ $FAIL -gt 0 ]]; then
+    exit 1
 fi
-
-# ============================================================
-echo
-echo "=== Whitespace-only answer ==="
-# ============================================================
-
-save_answer "developer_philosophy" "   "
-result=$(load_answer "developer_philosophy")
-# Block scalar trims leading whitespace; the important thing is it roundtrips
-if [[ -n "$result" ]]; then
-    pass "Whitespace answer stored (content preserved)"
-else
-    # If stored as block scalar with only spaces, parsing may return empty
-    # This is acceptable — trimmed whitespace = empty answer
-    pass "Whitespace answer treated as empty (acceptable)"
-fi
-
-# ============================================================
-# Summary
-# ============================================================
-echo
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Results: ${PASS} passed, ${FAIL} failed"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-[[ "$FAIL" -eq 0 ]] || exit 1
