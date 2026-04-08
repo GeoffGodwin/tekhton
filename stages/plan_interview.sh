@@ -4,9 +4,8 @@ set -euo pipefail
 # stages/plan_interview.sh — Planning phase: shell-driven interview
 #
 # The shell presents each template section to the user in three phases,
-# reads the user's answer, then calls Claude in batch mode (no
-# --dangerously-skip-permissions) to synthesize a complete DESIGN.md.
-# The shell writes the resulting file.
+# reads the user's answer, then calls Claude in batch mode to synthesize
+# a complete DESIGN.md. The shell writes the resulting file.
 #
 # Answers are persisted to .claude/plan_answers.yaml via lib/plan_answers.sh
 # so that interrupted sessions can be resumed. Supports CLI mode (interactive)
@@ -221,7 +220,7 @@ _run_file_mode() {
 #
 # Presents each template section in three phases, reads answers (persisting
 # each to plan_answers.yaml), then calls Claude in batch mode to synthesize
-# a complete DESIGN.md. No --dangerously-skip-permissions. The shell writes
+# a complete DESIGN.md. The shell writes
 # DESIGN.md to PROJECT_DIR.
 #
 # Returns 0 if DESIGN.md was produced, 1 otherwise.

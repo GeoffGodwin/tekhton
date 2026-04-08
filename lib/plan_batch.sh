@@ -13,8 +13,10 @@ set -euo pipefail
 # _call_planning_batch — Call claude in batch mode and print text content to stdout.
 #
 # Uses --output-format text so the response is plain text with no JSON parsing.
-# Does NOT use --dangerously-skip-permissions — planning agents generate text
-# only; the caller (shell) is responsible for writing any files.
+# Uses --dangerously-skip-permissions to prevent Claude's permission system from
+# intercepting the prompt and returning a permission request message instead of
+# content. The caller (shell) is responsible for writing any files — Claude only
+# generates text output here.
 #
 # The response is tee'd to the log file and also passed through to stdout so
 # the caller can capture it with output=$(_call_planning_batch ...).
@@ -79,6 +81,7 @@ _call_planning_batch() {
         --model "$model" \
         --max-turns "$max_turns" \
         --output-format text \
+        --dangerously-skip-permissions \
         -p \
         < "$_prompt_file" \
         2>&1 | tee -a "$log_file"

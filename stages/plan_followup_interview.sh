@@ -28,7 +28,7 @@ set -euo pipefail
 # Shows existing section content before each question so the user can see
 # what was already written and add what's missing.
 # Calls Claude in batch mode to produce an updated complete DESIGN.md.
-# The shell writes the file. No --dangerously-skip-permissions.
+# The shell writes the file.
 #
 # Returns 0 if DESIGN.md was updated, 1 otherwise.
 run_plan_followup_interview() {

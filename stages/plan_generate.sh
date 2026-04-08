@@ -4,7 +4,7 @@
 #
 # Reads the completed DESIGN.md and generates a full CLAUDE.md with project
 # rules, milestone plan, architecture guidelines, and testing strategy.
-# Uses _call_planning_batch() — no --dangerously-skip-permissions.
+# Uses _call_planning_batch() to call Claude in batch mode.
 # The shell writes CLAUDE.md to disk.
 #
 # Sourced by tekhton.sh when --plan is passed. Do not run directly.
@@ -20,7 +20,7 @@ set -euo pipefail
 #
 # Reads DESIGN.md, renders the generation prompt, calls _call_planning_batch()
 # to get the CLAUDE.md content as text output, and writes it to disk.
-# No --dangerously-skip-permissions is used.
+# The shell captures text output and writes the file.
 #
 # Returns 0 if CLAUDE.md was produced, 1 otherwise.
 run_plan_generate() {
@@ -66,7 +66,7 @@ run_plan_generate() {
     } > "$log_file"
 
     # Call claude in batch mode — shell captures output and writes CLAUDE.md.
-    # No --dangerously-skip-permissions: claude outputs text only, shell writes the file.
+    # Claude outputs text only via _call_planning_batch(); shell writes the file.
     local claude_md_content=""
     local batch_exit=0
     claude_md_content=$(_call_planning_batch \
