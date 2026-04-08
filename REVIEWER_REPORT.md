@@ -1,17 +1,19 @@
+# Reviewer Report
+
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- `prompts/test_audit.prompt.md:34` — Section header still reads "Six-Point Audit Rubric" but the rubric now has seven points. Consider updating to "Seven-Point Audit Rubric" or "Audit Rubric" to avoid misleading the auditor agent.
+- `CODER_SUMMARY.md` was not written. The coder stage is expected to emit this file; its absence means `run_completion_gate()` and `resolve_human_notes()` may behave unexpectedly on downstream pipeline runs. For this trivial one-line fix the omission is low-risk, but the convention should be followed.
 
 ## Coverage Gaps
-- None
+None
 
 ## Drift Observations
-- None
+None

@@ -1,16 +1,10 @@
-## Planned Tests
-- [x] `tests/test_prompt_isolation_guardrails.sh` — verify test isolation rules in tester and audit prompts
+## Test Summary
+TESTER_REPORT.md was synthesized by the pipeline. The tester agent created
+test files but did not produce a report. Review the test files directly.
 
-## Test Run Results
-Passed: 15  Failed: 0
+## Test Files Created
+- [x] `TESTER_REPORT.md`
+- [x] `prompts/test_audit.prompt.md`
 
 ## Bugs Found
 None
-
-## Files Modified
-- [x] `tests/test_prompt_isolation_guardrails.sh`
-
-## Timing
-- Test executions: 1
-- Approximate total test execution time: 0.03s
-- Test files written: 1

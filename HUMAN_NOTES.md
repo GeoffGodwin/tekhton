@@ -14,7 +14,6 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 
 ## Features
-- [x] [FEAT] Add test isolation guardrails to prevent Tekhton from creating state-dependent tests. (1) `prompts/tester.prompt.md` — add to "CRITICAL: Test Integrity Rules": tests must never read live repo artifact files (build reports, logs, config state) directly; always create controlled fixtures in a temp directory. Tests that validate specific run outcomes belong in the commit message, not the test suite. (2) `prompts/test_audit.prompt.md` — add a 7th audit rubric point ("Test Isolation"): flag tests that read mutable project files without creating their own fixture copies. Severity: HIGH.
 
 ## Bugs
 

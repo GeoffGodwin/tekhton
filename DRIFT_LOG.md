@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-08
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
 - [2026-04-08 | "Address all 8 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `lib/plan_answers_helpers.sh:126` — `_generate_question_yaml()` is defined as a nested function inside `export_question_template()`. In bash, nested function definitions are not scoped: once `export_question_template()` is called for the first time, `_generate_question_yaml` becomes a global name. Prefer defining it at module level (prefixed `_`) to avoid accidental shadowing or later collision.

@@ -31,7 +31,7 @@ These files were intentionally removed. Tests that import them are orphaned.
 3. The test files listed in the audit context above
 4. The implementation files those tests exercise (to verify assertions test real behavior)
 
-## Six-Point Audit Rubric
+## Seven-Point Audit Rubric
 
 For each test file under audit, evaluate:
 
