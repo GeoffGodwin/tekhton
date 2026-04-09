@@ -120,6 +120,10 @@ run_plan_generate() {
         if [[ "$_disk_rescued" == "false" ]]; then
             printf '%s\n' "$claude_md_content" > "$claude_md"
         fi
+        # Append tekhton-managed marker for artifact detection
+        if ! grep -q '<!-- tekhton-managed -->' "$claude_md" 2>/dev/null; then
+            echo "<!-- tekhton-managed -->" >> "$claude_md"
+        fi
         local line_count
         line_count=$(count_lines < "$claude_md")
         if [[ "$_disk_rescued" == "true" ]]; then

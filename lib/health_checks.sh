@@ -172,8 +172,9 @@ _check_code_quality() {
     fi
 
     # Sub-score: TODO/FIXME density (0-20, inverse)
-    local todo_score=20
+    local todo_score=0
     if [[ -n "$sample_files" ]]; then
+        todo_score=20
         local total_lines=0 todo_count=0
         while IFS= read -r f; do
             [[ -z "$f" ]] && continue
@@ -198,8 +199,9 @@ _check_code_quality() {
     fi
 
     # Sub-score: magic number density (0-20, inverse)
-    local magic_score=20
+    local magic_score=0
     if [[ -n "$sample_files" ]]; then
+        magic_score=20
         local total_lines_m=0 magic_count=0
         # Common constants to exclude: 0, 1, -1, 2, 10, 100, 1000, 1024, 255, 256, 404, 200, 500
         local exclude_nums='^(0|1|2|3|10|16|32|64|100|128|200|255|256|404|500|1000|1024|8080|8443|3000|443|80)$'
@@ -254,8 +256,9 @@ _check_code_quality() {
     fi
 
     # Sub-score: function length (0-15)
-    local length_score=15
+    local length_score=0
     if [[ -n "$sample_files" ]]; then
+        length_score=15
         local long_funcs=0 total_funcs=0
         while IFS= read -r f; do
             [[ -z "$f" ]] && continue

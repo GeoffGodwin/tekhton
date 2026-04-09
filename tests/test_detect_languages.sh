@@ -217,6 +217,39 @@ bin_langs=$(detect_languages "$BIN_DIR")
 pass "detect_languages completes safely on binary-only non-git dir"
 
 # =============================================================================
+# detect_languages — CLAUDE.md fallback on greenfield project
+# =============================================================================
+echo "=== detect_languages: CLAUDE.md fallback ==="
+
+CLAUDE_DIR=$(make_proj "claude_fallback")
+cat > "$CLAUDE_DIR/CLAUDE.md" << 'EOF'
+# My Project
+
+### 1. Project Identity
+
+- TypeScript
+- A web application using React and Node.js
+
+### 2. Architecture
+
+Standard web app.
+EOF
+
+claude_langs=$(detect_languages "$CLAUDE_DIR")
+
+if [[ -n "$claude_langs" ]]; then
+    pass "CLAUDE.md fallback returns non-empty language output"
+else
+    fail "CLAUDE.md fallback returned empty output"
+fi
+
+if echo "$claude_langs" | grep -qi "typescript.*|low|CLAUDE.md"; then
+    pass "CLAUDE.md fallback detects TypeScript with low confidence"
+else
+    fail "CLAUDE.md fallback did not detect TypeScript|low|CLAUDE.md: $claude_langs"
+fi
+
+# =============================================================================
 # detect_frameworks — Next.js
 # =============================================================================
 echo "=== detect_frameworks: Next.js ==="

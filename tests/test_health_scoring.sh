@@ -310,6 +310,33 @@ doc_score=$(echo "$doc_result" | cut -d'|' -f2)
 assert_range "empty doc quality" 0 30 "$doc_score"
 
 # ============================================================================
+# Test 11: Greenfield code quality score is 0
+# ============================================================================
+
+quality_result=$(_check_code_quality "$EMPTY_DIR")
+quality_score_direct=$(echo "$quality_result" | cut -d'|' -f2)
+assert_eq "empty code_quality score" "0" "$quality_score_direct"
+
+# ============================================================================
+# Test 12: Greenfield dependency health score is 0
+# ============================================================================
+
+dep_result=$(_check_dependency_health "$EMPTY_DIR")
+dep_score_direct=$(echo "$dep_result" | cut -d'|' -f2)
+assert_eq "empty dependency_health score" "0" "$dep_score_direct"
+
+# ============================================================================
+# Test 13: Greenfield report contains Pre-code baseline callout
+# ============================================================================
+
+if grep -q "Pre-code baseline" "$EMPTY_DIR/HEALTH_REPORT.md" 2>/dev/null; then
+    PASS=$((PASS + 1))
+else
+    echo "FAIL: HEALTH_REPORT.md missing 'Pre-code baseline' callout for greenfield project" >&2
+    FAIL=$((FAIL + 1))
+fi
+
+# ============================================================================
 # Results
 # ============================================================================
 

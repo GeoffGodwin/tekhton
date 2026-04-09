@@ -72,18 +72,32 @@ emit_init_summary() {
     local attention_items=0
     local attention_lines=""
 
-    # Check ARCHITECTURE_FILE
-    if [[ ! -f "${project_dir}/ARCHITECTURE.md" ]]; then
-        attention_lines+="    ARCHITECTURE_FILE not detected — create one or set to \"\" to skip\n"
-        attention_items=$((attention_items + 1))
+    # Check ARCHITECTURE_FILE (skip on greenfield — no code to document yet)
+    if [[ "$file_count" -gt 0 ]]; then
+        local _arch_found=false
+        if [[ -f "${project_dir}/ARCHITECTURE.md" ]]; then
+            _arch_found=true
+        elif [[ -f "${project_dir}/.claude/pipeline.conf" ]]; then
+            local _conf_arch=""
+            _conf_arch=$(grep '^ARCHITECTURE_FILE=' "${project_dir}/.claude/pipeline.conf" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+            if [[ -n "$_conf_arch" ]] && [[ -f "${project_dir}/${_conf_arch}" ]]; then
+                _arch_found=true
+            fi
+        fi
+        if [[ "$_arch_found" != "true" ]]; then
+            attention_lines+="    ARCHITECTURE_FILE not detected — create one or set to \"\" to skip\n"
+            attention_items=$((attention_items + 1))
+        fi
     fi
 
-    # Check for pre-existing tests
-    local test_cmd
-    test_cmd=$(_best_command "$commands" "test" 2>/dev/null || true)
-    if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
-        attention_lines+="    No test command detected — tester will generate from scratch\n"
-        attention_items=$((attention_items + 1))
+    # Check for pre-existing tests (skip on greenfield — no tests expected yet)
+    if [[ "$file_count" -gt 0 ]]; then
+        local test_cmd
+        test_cmd=$(_best_command "$commands" "test" 2>/dev/null || true)
+        if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
+            attention_lines+="    No test command detected — tester will generate from scratch\n"
+            attention_items=$((attention_items + 1))
+        fi
     fi
 
     # Check for low-confidence commands
@@ -231,7 +245,7 @@ emit_init_report_file() {
         # Attention items
         echo "## Items Needing Review"
         echo ""
-        _report_attention_items "$project_dir" "$commands"
+        _report_attention_items "$project_dir" "$commands" "$file_count"
 
         # Summary stats
         echo "## Project Summary"
@@ -336,18 +350,33 @@ _report_config_decisions() {
 _report_attention_items() {
     local project_dir="$1"
     local commands="$2"
+    local file_count="${3:-0}"
     local has_items=false
 
-    if [[ ! -f "${project_dir}/ARCHITECTURE.md" ]]; then
-        echo "- ARCHITECTURE_FILE not detected — create one or set to \"\" in pipeline.conf"
-        has_items=true
+    if [[ "$file_count" -gt 0 ]]; then
+        local _arch_found=false
+        if [[ -f "${project_dir}/ARCHITECTURE.md" ]]; then
+            _arch_found=true
+        elif [[ -f "${project_dir}/.claude/pipeline.conf" ]]; then
+            local _conf_arch=""
+            _conf_arch=$(grep '^ARCHITECTURE_FILE=' "${project_dir}/.claude/pipeline.conf" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+            if [[ -n "$_conf_arch" ]] && [[ -f "${project_dir}/${_conf_arch}" ]]; then
+                _arch_found=true
+            fi
+        fi
+        if [[ "$_arch_found" != "true" ]]; then
+            echo "- ARCHITECTURE_FILE not detected — create one or set to \"\" in pipeline.conf"
+            has_items=true
+        fi
     fi
 
-    local test_cmd
-    test_cmd=$(echo "$commands" | grep "^test|" | head -1 | cut -d'|' -f2 || true)
-    if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
-        echo "- No test command detected — set TEST_CMD in pipeline.conf"
-        has_items=true
+    if [[ "$file_count" -gt 0 ]]; then
+        local test_cmd
+        test_cmd=$(echo "$commands" | grep "^test|" | head -1 | cut -d'|' -f2 || true)
+        if [[ -z "$test_cmd" ]] || [[ "$test_cmd" == "true" ]]; then
+            echo "- No test command detected — set TEST_CMD in pipeline.conf"
+            has_items=true
+        fi
     fi
 
     if [[ -n "$commands" ]]; then

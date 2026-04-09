@@ -286,6 +286,7 @@ _view_render_dependencies() {
     # Parse key dependencies
     local dep_count=0
     local in_deps=false
+    local used=${#output}
     while IFS= read -r line; do
         if [[ "$line" == *'"key_dependencies"'* ]]; then
             in_deps=true; continue
@@ -298,13 +299,14 @@ _view_render_dependencies() {
             local version
             version=$(printf '%s' "$line" | sed 's/.*"version":"\([^"]*\)".*/\1/')
             local dep_line="- ${name} ${version}"$'\n'
-            if [[ $(( ${#output} + ${#dep_line} )) -gt "$budget" ]]; then
+            if [[ $(( used + ${#dep_line} )) -gt "$budget" ]]; then
                 local skipped=$(( total_deps - dep_count ))
                 [[ "$skipped" -gt 0 ]] && \
                     output+="... and ${skipped} more dependencies"$'\n'
                 break
             fi
             output+="$dep_line"
+            used=$(( used + ${#dep_line} ))
             dep_count=$((dep_count + 1))
         fi
     done < "$dep_file"

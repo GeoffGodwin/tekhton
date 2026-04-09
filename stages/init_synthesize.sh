@@ -174,6 +174,8 @@ _synthesize_claude() {
     if [[ -n "$claude_content" ]]; then
         local claude_file="${project_dir}/CLAUDE.md"
         printf '%s\n' "$claude_content" > "$claude_file"
+        # Append tekhton-managed marker for artifact detection
+        echo "<!-- tekhton-managed -->" >> "$claude_file"
         local line_count
         line_count=$(wc -l < "$claude_file" | tr -d '[:space:]')
         success "CLAUDE.md synthesized (${line_count} lines)."

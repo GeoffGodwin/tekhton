@@ -285,8 +285,6 @@ _handle_tekhton_reinit() {
     local project_dir="$1"
     local group_artifacts="$2"
 
-    log "Prior Tekhton installation detected."
-
     local has_pipeline_conf=false
     local path atype confidence
     # shellcheck disable=SC2034  # confidence consumed by format, not code
@@ -295,7 +293,13 @@ _handle_tekhton_reinit() {
     done <<< "$group_artifacts"
 
     if [[ "$has_pipeline_conf" == "true" ]]; then
+        log "Prior Tekhton installation detected."
         success "pipeline.conf will be preserved during re-initialization."
         log "Agent roles will be regenerated with current templates."
+    elif [[ -f "${project_dir}/.claude/milestones/MANIFEST.cfg" ]] && \
+         [[ ! -f "${project_dir}/.claude/pipeline.conf" ]]; then
+        log "Found completed --plan output — proceeding with initialization."
+    else
+        log "Prior Tekhton installation detected."
     fi
 }

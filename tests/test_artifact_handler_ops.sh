@@ -391,6 +391,30 @@ fi
 success() { :; }
 
 # =============================================================================
+# _handle_tekhton_reinit — MANIFEST present, no pipeline.conf (post-plan)
+# =============================================================================
+echo "=== _handle_tekhton_reinit: MANIFEST present, no pipeline.conf ==="
+
+REINIT_PLAN_ONLY=$(make_proj "reinit_plan_only")
+mkdir -p "${REINIT_PLAN_ONLY}/.claude/milestones"
+echo "m01|Setup|pending||m01.md|" > "${REINIT_PLAN_ONLY}/.claude/milestones/MANIFEST.cfg"
+# No pipeline.conf — this simulates post-plan, pre-init state
+
+LOG_CALLED=""
+log() { LOG_CALLED+="$*"$'\n'; }
+
+_handle_tekhton_reinit "$REINIT_PLAN_ONLY" ".claude/milestones/|milestones|high"
+
+if echo "$LOG_CALLED" | grep -q "completed --plan output"; then
+    pass "_handle_tekhton_reinit emits post-plan message when MANIFEST exists without pipeline.conf"
+else
+    fail "_handle_tekhton_reinit should emit post-plan message for MANIFEST-only state"
+fi
+
+# Restore log stub
+log() { :; }
+
+# =============================================================================
 # _collect_dir_content — collects .md/.json/.yaml from directory
 # =============================================================================
 echo "=== _collect_dir_content: collects recognized file types ==="

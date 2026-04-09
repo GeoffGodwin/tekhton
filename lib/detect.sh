@@ -79,7 +79,8 @@ detect_languages() {
     for lang in "${!lang_manifest[@]}"; do all_langs[$lang]=1; done
     for lang in "${!lang_source_count[@]}"; do all_langs[$lang]=1; done
 
-    for lang in "${!all_langs[@]}"; do
+    local _detected_output=""
+    _detected_output=$(for lang in "${!all_langs[@]}"; do
         local has_manifest="${lang_manifest[$lang]:-}"
         local source_count="${lang_source_count[$lang]:-0}"
         local confidence="low"
@@ -100,7 +101,33 @@ detect_languages() {
     done | awk -F'|' '{
         rank = ($2 == "high" ? 1 : ($2 == "medium" ? 2 : 3))
         print rank "|" $0
-    }' | sort -t'|' -k1,1n -k3,3 | cut -d'|' -f2-
+    }' | sort -t'|' -k1,1n -k3,3 | cut -d'|' -f2-)
+
+    # Fallback: consult CLAUDE.md for tech stack when file-based detection is empty
+    if [[ -z "$_detected_output" ]] && [[ -f "${proj_dir}/CLAUDE.md" ]]; then
+        local _identity_block=""
+        _identity_block=$(sed -n '/^### 1\. Project Identity/,/^###/{/^### 1\./d;/^###/d;p;}' "${proj_dir}/CLAUDE.md" || true)
+        if [[ -n "$_identity_block" ]]; then
+            local _known_langs='TypeScript|JavaScript|Python|Go|Rust|Java|Kotlin|Swift|Dart|Ruby|PHP|C#|Elixir|Haskell'
+            local _claude_langs=""
+            _claude_langs=$(echo "$_identity_block" | grep -ioE "^[[:space:]]*-[[:space:]]+(${_known_langs})" | sed 's/^[[:space:]]*-[[:space:]]*//' || true)
+            if [[ -z "$_claude_langs" ]]; then
+                _claude_langs=$(echo "$_identity_block" | grep -oiE "(${_known_langs})" | sort -u || true)
+            fi
+            if [[ -n "$_claude_langs" ]]; then
+                local _lang_name _lower
+                while IFS= read -r _lang_name; do
+                    [[ -z "$_lang_name" ]] && continue
+                    _lower=$(echo "$_lang_name" | tr '[:upper:]' '[:lower:]')
+                    _detected_output+="${_lower}|low|CLAUDE.md"$'\n'
+                done <<< "$_claude_langs"
+            fi
+        fi
+    fi
+
+    if [[ -n "$_detected_output" ]]; then
+        printf '%s' "$_detected_output"
+    fi
 }
 
 # _has_source_files — Check if source files with given extensions exist (top 2 levels).

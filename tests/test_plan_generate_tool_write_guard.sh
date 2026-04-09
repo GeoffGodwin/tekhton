@@ -131,11 +131,11 @@ if [[ -f "$claude_md" ]]; then
         fail "CLAUDE.md first line is: $first_line (expected '# Tekhton CLAUDE.md')"
     fi
 
-    # Should have the full document (30 lines), not the summary
-    if [[ "$line_count" -eq 30 ]]; then
-        pass "CLAUDE.md has correct line count (30 lines)"
+    # Should have the full document (31 lines: 30 + tekhton-managed marker)
+    if [[ "$line_count" -eq 31 ]]; then
+        pass "CLAUDE.md has correct line count (31 lines)"
     else
-        fail "CLAUDE.md has $line_count lines (expected 30)"
+        fail "CLAUDE.md has $line_count lines (expected 31)"
     fi
 
     # Check that summary was NOT written

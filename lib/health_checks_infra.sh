@@ -82,7 +82,7 @@ _check_dependency_health() {
     fi
 
     # Sub-score: dependency count ratio (0-25)
-    local dep_ratio_score=25
+    local dep_ratio_score=0
     local dep_count=0 src_count=0
     if [[ -f "$proj_dir/package.json" ]]; then
         dep_count=$(grep -cE '"[^"]+"\s*:' "$proj_dir/package.json" 2>/dev/null || true)
@@ -127,6 +127,11 @@ _check_dependency_health() {
             break
         fi
     done
+
+    # Award dep_ratio default when manifest exists but ratio calc didn't fire
+    if [[ "$manifest_score" -gt 0 ]] && [[ "$dep_ratio_score" -eq 0 ]]; then
+        dep_ratio_score=25
+    fi
 
     score=$((lock_score + dep_ratio_score + vuln_score + manifest_score))
     [[ "$score" -gt 100 ]] && score=100

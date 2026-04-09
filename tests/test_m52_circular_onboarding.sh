@@ -295,6 +295,32 @@ EOF
     return 1
 }
 
+test10a_emit_init_summary_greenfield_suppresses_warnings() {
+    local PROJECT_DIR
+    PROJECT_DIR=$(mktemp -d)
+    trap "rm -rf $PROJECT_DIR" EXIT
+    export PROJECT_DIR
+
+    mkdir -p "${PROJECT_DIR}/.claude"
+
+    source "${TEKHTON_HOME}/lib/common.sh" >/dev/null 2>&1
+    source "${TEKHTON_HOME}/lib/init_report.sh" >/dev/null 2>&1
+
+    # Greenfield: file_count=0, no architecture, no test command
+    local output
+    output=$(emit_init_summary "$PROJECT_DIR" "" "" "" "custom" "0" 2>&1 || true)
+
+    # Should NOT show ARCHITECTURE_FILE warning on greenfield
+    if echo "$output" | grep -q "ARCHITECTURE_FILE"; then
+        return 1
+    fi
+    # Should NOT show test command warning on greenfield
+    if echo "$output" | grep -q "No test command"; then
+        return 1
+    fi
+    return 0
+}
+
 test10_emit_init_summary_large_project() {
     local PROJECT_DIR
     PROJECT_DIR=$(mktemp -d)
@@ -342,7 +368,8 @@ main() {
     test8_emit_init_summary_with_stub_claude_md && pass "--plan recommended with stub CLAUDE.md" || fail "--plan recommended with stub CLAUDE.md"
 
     echo ""
-    echo "Group 3: Large-project branch"
+    echo "Group 3: Greenfield and large-project branches"
+    test10a_emit_init_summary_greenfield_suppresses_warnings && pass "Greenfield (file_count=0) suppresses ARCHITECTURE and test warnings" || fail "Greenfield (file_count=0) suppresses ARCHITECTURE and test warnings"
     test10_emit_init_summary_large_project && pass "Uses --plan-from-index for file_count > 50" || fail "Uses --plan-from-index for file_count > 50"
 
     echo ""
