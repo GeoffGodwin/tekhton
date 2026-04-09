@@ -108,19 +108,27 @@ Replace from `## Required Output` through the paragraph before the skeleton with
 `CODER_SUMMARY.md` is your primary deliverable alongside your code changes.
 
 **Write-first rule:** Create `CODER_SUMMARY.md` with the IN PROGRESS skeleton as
-your VERY FIRST action — before reading files, before writing any code. The prompt's
-Step 1 controls this. If CODER_SUMMARY.md does not exist on disk after your run,
-the pipeline classifies your run as a failure regardless of what code you produced.
+your VERY FIRST action — before reading files, before writing any code. The
+execution order in the prompt controls this. If CODER_SUMMARY.md does not exist
+on disk after your run, the pipeline classifies your run as a failure regardless
+of what code you produced.
+```
 
+Then replace the post-skeleton paragraph (the paragraph starting with "Update the
+file throughout your work..." through "Required sections:") with:
+
+```markdown
 **Update continuously:** Update the file throughout your work as you complete items.
 As you implement, update `## What Was Implemented` and `## Files Modified` after each
 logical change. Do not batch updates to the end.
 
 **Finalize last:** As your final act, set `## Status` to `COMPLETE` (or leave
-`IN PROGRESS` if work remains) after passing the prompt's self-check step.
+`IN PROGRESS` if work remains) after passing the pre-completion self-check. Ensure
+all sections reflect what was actually done. Required sections:
 ```
 
-Keep the skeleton block and the required-sections list that follows unchanged.
+Keep the skeleton block between these two paragraphs unchanged. Keep the
+required-sections bullet list that follows the post-skeleton paragraph unchanged.
 The key phrases `before writing any code`, `IN PROGRESS skeleton`,
 `Update the file throughout your work`, `As your.*final act`,
 `set.*## Status.*to.*COMPLETE`, and `Do NOT set COMPLETE if any planned work is
@@ -159,6 +167,7 @@ Run `bash tests/test_coder_role_before_code.sh` and
       the new `templates/coder.md` text
 - [ ] `bash tests/test_coder_role_before_code.sh` passes (8/8)
 - [ ] `bash tests/test_coder_role_summary_structure.sh` passes (11/11)
+- [ ] `bash tests/test_coder_role_status_field.sh` passes (10/10)
 - [ ] `bash tests/run_tests.sh` passes with no new failures
 - [ ] `shellcheck` clean on any `.sh` files modified
 - [ ] No new template variables introduced
@@ -178,6 +187,13 @@ Run `bash tests/test_coder_role_before_code.sh` and
 - The `## Observed Issues (out of scope)` section in CODER_SUMMARY.md is
   informational only — no pipeline parser reads it. If a downstream consumer
   is added later (e.g., to auto-feed cleanup), that's a separate milestone.
+- The reviewer agent DOES read CODER_SUMMARY.md in full. Without guidance it
+  may flag items in `## Observed Issues` as things the coder should have fixed,
+  creating the exact non-blocker findings this milestone aims to prevent. A
+  follow-up milestone should add a one-liner to `prompts/reviewer.prompt.md`
+  telling the reviewer to ignore this section (it's routed to cleanup, not
+  review). Not in scope here — the section is new and the reviewer won't
+  encounter it until M70 ships.
 
 ## Seeds Forward
 
@@ -185,3 +201,9 @@ Run `bash tests/test_coder_role_before_code.sh` and
   building on the self-check approach established here.
 - The `## Observed Issues` section creates a structured channel that could
   feed the cleanup agent in a future milestone.
+- The self-check step lives in `coder.prompt.md` only. `coder_rework.prompt.md`
+  and `jr_coder.prompt.md` have no execution order and don't inherit it. A
+  future milestone could add a lightweight "verify your rework didn't introduce
+  file-length violations" step to the rework prompt.
+- A follow-up should add a one-liner to `prompts/reviewer.prompt.md` telling
+  the reviewer to ignore `## Observed Issues (out of scope)` in CODER_SUMMARY.md.

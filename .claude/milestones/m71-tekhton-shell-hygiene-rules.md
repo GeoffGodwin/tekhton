@@ -39,9 +39,12 @@ Add this section:
 These rules address the most common non-blocking findings from code review.
 Follow them to produce cleaner output that passes review without notes.
 
-- **grep/sed/awk under set -e:** Every `grep`, `sed`, or `awk` call where zero
-  matches is a valid (non-error) outcome must end with `|| true`. Otherwise
-  `set -e` aborts the script on zero matches. Pattern: `count=$(grep -c 'pat' file || true)`
+- **grep under set -e:** `grep` returns exit code 1 when zero lines match,
+  which kills `set -e`. Every `grep` call where zero matches is a valid
+  (non-error) outcome must end with `|| true`. Pattern:
+  `count=$(grep -c 'pat' file || true)`. Note: `sed` and `awk` return 0 on
+  zero matches — they do NOT need `|| true` for this reason. Only add
+  `|| true` to sed/awk when the command itself may fail (e.g., missing file).
 - **Local variable assignment:** Never combine `local` with command substitution
   on the same line — `local var=$(cmd)` masks the exit code (shellcheck SC2155).
   Use two lines: `local var; var=$(cmd)`.
@@ -68,7 +71,7 @@ a template or library), no tests should be affected.
 ## Acceptance Criteria
 
 - [ ] `.claude/agents/coder.md` has a `### Shell Hygiene` section
-- [ ] Section contains rules for: `|| true`, SC2155 two-line local, `--`
+- [ ] Section contains rules for: grep `|| true`, SC2155 two-line local, `--`
       option terminator, sourced file `set -euo`, stale references, file length
 - [ ] Each rule includes a concrete pattern/example
 - [ ] No changes to `templates/coder.md` (the reusable template)
@@ -91,6 +94,9 @@ a template or library), no tests should be affected.
   variables, `[ ]` vs `[[ ]]`). The existing "Shellcheck clean" rule handles
   those. The hygiene rules target patterns that shellcheck does NOT catch well
   or at all (like `|| true` on grep, or stale references after rename).
+- The `|| true` rule is specific to `grep`. Do NOT extend it to `sed` or `awk`
+  — those return 0 on zero matches. Blanket `|| true` on sed/awk masks real
+  errors (malformed expressions, missing files).
 - Keep the section concise. The role file is read at prompt start — excessive
   length reduces the coder's ability to retain later instructions.
 
