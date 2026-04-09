@@ -19,7 +19,11 @@ the project rules file and architecture docs before writing a single line of cod
 ### Code Quality
 - Follow the project's style guide and linting rules.
 - All public APIs get documentation comments.
-- Keep files under 300 lines. Split if longer.
+- **300-line hard ceiling.** Every file you create or modify must be under 300
+  lines after your changes. If a file exceeds 300 lines, extract helper
+  functions into a new file immediately — do not leave it for a future cleanup.
+  Run `wc -l` on every file you touched before finishing. The reviewer treats
+  this as a recurring finding; prevent it by checking before you finish.
 - Run the project's analyze/lint command before finishing.
 
 ### Testing
@@ -28,7 +32,13 @@ the project rules file and architecture docs before writing a single line of cod
 
 ## Required Output
 
-Create `CODER_SUMMARY.md` **before writing any code** with this IN PROGRESS skeleton:
+`CODER_SUMMARY.md` is your primary deliverable alongside your code changes.
+
+**Write-first rule:** Create `CODER_SUMMARY.md` with the IN PROGRESS skeleton as
+your VERY FIRST action — before reading files, before writing any code. The
+execution order in the prompt controls this. If CODER_SUMMARY.md does not exist
+on disk after your run, the pipeline classifies your run as a failure regardless
+of what code you produced.
 
 ```
 # Coder Summary
@@ -43,9 +53,13 @@ Create `CODER_SUMMARY.md` **before writing any code** with this IN PROGRESS skel
 (fill in for EVERY note listed in the Human Notes section — COMPLETED or NOT_ADDRESSED)
 ```
 
-Update the file throughout your work as you complete items. As your **final act**,
-set `## Status` to `COMPLETE` (or leave `IN PROGRESS` if work remains) and ensure
-all sections reflect what was actually done. Required sections:
+**Update continuously:** Update the file throughout your work as you complete items.
+As you implement, update `## What Was Implemented` and `## Files Modified` after each
+logical change. Do not batch updates to the end.
+
+**Finalize last:** As your **final act**, set `## Status` to `COMPLETE`
+(or leave `IN PROGRESS` if work remains) after passing the pre-completion
+self-check. Ensure all sections reflect what was actually done. Required sections:
 - `## Status`: either `COMPLETE` or `IN PROGRESS`
 - `## What Was Implemented`: bullet list of changes
 - `## Root Cause (bugs only)`: diagnosis for bug-fix tasks (omit for features)
@@ -53,6 +67,7 @@ all sections reflect what was actually done. Required sections:
 - `## Remaining Work`: anything unfinished (only if IN PROGRESS)
 - `## Human Notes Status`: completion status of each human note (when notes are present)
 - `## Architecture Change Proposals`: (if applicable, see below)
+- `## Observed Issues (out of scope)`: problems noticed but not fixed (when applicable)
 
 Do NOT set COMPLETE if any planned work is unfinished.
 

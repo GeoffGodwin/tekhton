@@ -133,6 +133,13 @@ Do not expand scope beyond what was requested — even if additional work seems 
 When non-blocking tech debt is injected below, the task description takes precedence
 over the "address what you can" guidance in the tech debt section.
 
+**Do NOT fix problems you discover outside your task scope.** If you notice bugs,
+style issues, missing error handling, or improvement opportunities in files you are
+reading that are unrelated to your task, record them in CODER_SUMMARY.md under
+`## Observed Issues (out of scope)` — one bullet per item with file path and brief
+description. The pipeline routes these to the appropriate cleanup mechanism. Fixing
+out-of-scope issues wastes review cycles and creates unnecessary non-blocking findings.
+
 ## Execution Order (mandatory — do not skip step 1)
 **Step 1:** Write `CODER_SUMMARY.md` immediately with this skeleton before touching any code:
 ```
@@ -150,7 +157,23 @@ over the "address what you can" guidance in the tech debt section.
 **Step 2:** Read only the files listed in the Scout Report (if present) or directly relevant to your task.
 **Step 3:** Diagnose / implement.
 **Step 4:** Run `{{ANALYZE_CMD}}` and `{{TEST_CMD}}`.
-**Step 5:** Update `CODER_SUMMARY.md` with final status, root cause, and files modified.
+**Step 5: Pre-Completion Self-Check (mandatory before setting COMPLETE).**
+Before updating CODER_SUMMARY.md to COMPLETE, verify each item. Fix violations
+NOW — do not leave them for the reviewer:
+- **File length:** Every file you created or modified must be under 300 lines
+  (`wc -l`). If any file exceeds 300 lines, extract functions into a new file
+  until it is under 300. Do not leave a file at 310 or 320 lines — the ceiling
+  is 300.
+- **Stale references:** If you renamed a function, variable, config key, or
+  constant, grep the project for the OLD name. Update any remaining references
+  in comments, docs, log messages, and error strings.
+- **Dead code:** Remove any variables you declared but never read, functions
+  you wrote but never call, and conditional branches that are unreachable.
+- **Consistency:** If you added a new file, verify it appears in
+  CODER_SUMMARY.md under `## Files Modified` with the annotation `(NEW)`.
+  If the project has a repository layout section in CLAUDE.md or
+  ARCHITECTURE.md, add the new file there.
+**Step 6:** Update `CODER_SUMMARY.md` with final status, root cause, and files modified.
 
 ## Required Reading
 1. `{{CODER_ROLE_FILE}}` — your role and rules
