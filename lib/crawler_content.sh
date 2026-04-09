@@ -146,7 +146,8 @@ _read_sampled_file() {
     printf '%s' "$content"
 }
 
-# --- Structured emitter — moved from crawler_emit.sh per M67 spec ------------
+# --- Structured emitter — moved here from crawler_emit.sh (size management; -------
+# --- M67 spec originally placed this in crawler_emit.sh) -----------------------
 
 # _emit_sampled_files — Writes individual sample files and a manifest.
 # Args: $1=project_dir, $2=file_list, $3=index_dir, $4=budget_chars

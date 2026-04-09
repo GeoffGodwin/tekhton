@@ -1,7 +1,7 @@
 # Milestone 68: Consumer Migration to Structured Index
 <!-- milestone-meta
 id: "68"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

@@ -35,6 +35,8 @@ run_synthesize_subshell() {
         source "${TEKHTON_HOME}/lib/common.sh"
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/context.sh"
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/index_reader.sh"
 
         # Mock compress_context — return first 100 chars (shorter than input)
         compress_context() {
@@ -227,23 +229,24 @@ fi
 
 # =============================================================================
 echo
-echo "=== _compress_synthesis_context: over budget → compresses PROJECT_INDEX_CONTENT ==="
+echo "=== _compress_synthesis_context: over budget → index unchanged (M68: reader bounds it) ==="
 
-# Generate ~500k chars to exceed 50% of 200k * 4 chars = 400k char budget
+# M68: _compress_synthesis_context no longer applies summarize_headings to
+# PROJECT_INDEX_CONTENT because read_index_summary already bounds it.
+# Index content should be left unchanged; other content gets compressed instead.
 result=$(run_synthesize_subshell "$proj_with_index" '
-    big=$(printf "%-500001s" "#" | tr " " "#")
-    export PROJECT_INDEX_CONTENT="$big"
-    export DETECTION_REPORT_CONTENT=""
-    export README_CONTENT=""
+    export PROJECT_INDEX_CONTENT="bounded index from reader"
+    export DETECTION_REPORT_CONTENT="$(printf "%-200001s" "D" | tr " " "D")"
+    export README_CONTENT="$(printf "line %d\n" $(seq 1 100))"
     export EXISTING_ARCHITECTURE_CONTENT=""
     export GIT_LOG_SUMMARY=""
     _compress_synthesis_context > /dev/null 2>&1
-    echo "${PROJECT_INDEX_CONTENT}" | head -1
+    echo "${PROJECT_INDEX_CONTENT}"
 ')
-if echo "$result" | grep -q "\[Context compressed"; then
-    pass "_compress_synthesis_context prepends '[Context compressed]' when over budget"
+if echo "$result" | grep -q "bounded index from reader"; then
+    pass "_compress_synthesis_context leaves index unchanged (M68: already bounded)"
 else
-    fail "expected '[Context compressed]' prefix after compression — got: '${result}'"
+    fail "expected index unchanged after compression — got: '${result}'"
 fi
 
 # =============================================================================
@@ -251,11 +254,13 @@ echo
 echo "=== _compress_synthesis_context: git log truncated to 10 entries when still over budget ==="
 
 result=$(run_synthesize_subshell "$proj_with_index" '
-    big=$(printf "%-500001s" "#" | tr " " "#")
+    # Use multiple large sections to exceed budget (M68: index is bounded, so
+    # use other content to push over the limit)
+    big=$(printf "%-300001s" "#" | tr " " "#")
     export PROJECT_INDEX_CONTENT="$big"
-    export DETECTION_REPORT_CONTENT=""
-    export README_CONTENT=""
-    export EXISTING_ARCHITECTURE_CONTENT=""
+    export DETECTION_REPORT_CONTENT="$(printf "%-200001s" "D" | tr " " "D")"
+    export README_CONTENT="$(printf "line %d\n" $(seq 1 100))"
+    export EXISTING_ARCHITECTURE_CONTENT="$(printf "line %d\n" $(seq 1 100))"
     # 20 git log entries
     export GIT_LOG_SUMMARY="$(printf "commit%02d message\n" $(seq 1 20))"
     _compress_synthesis_context > /dev/null 2>&1

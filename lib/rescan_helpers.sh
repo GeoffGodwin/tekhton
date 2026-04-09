@@ -137,13 +137,39 @@ _replace_section() {
 
 # --- Metadata management -----------------------------------------------------
 
-# _extract_scan_metadata — Reads a metadata field from PROJECT_INDEX.md header.
+# _extract_scan_metadata — Reads a metadata field from structured index or
+# PROJECT_INDEX.md header. Prefers .claude/index/meta.json (M68), falls back
+# to HTML comment parsing for legacy projects.
 # Args: $1 = index file path, $2 = field name (e.g., "Scan-Commit")
 # Output: Field value or empty string
 _extract_scan_metadata() {
     local index_file="$1"
     local field="$2"
+    local project_dir
+    project_dir=$(dirname "$index_file")
+    local meta_file="${project_dir}/.claude/index/meta.json"
 
+    # Prefer structured data (M68)
+    if [[ -f "$meta_file" ]]; then
+        local json_field=""
+        case "$field" in
+            Scan-Commit) json_field="scan_commit" ;;
+            Last-Scan)   json_field="scan_date" ;;
+            File-Count)  json_field="file_count" ;;
+            Total-Lines) json_field="total_lines" ;;
+        esac
+        if [[ -n "$json_field" ]]; then
+            local value
+            value=$(grep "\"${json_field}\"" "$meta_file" 2>/dev/null | \
+                sed 's/.*: *"\{0,1\}\([^",}]*\)"\{0,1\}.*/\1/' | tr -d '[:space:]' || true)
+            if [[ -n "$value" ]]; then
+                printf '%s' "$value"
+                return
+            fi
+        fi
+    fi
+
+    # Legacy fallback: parse HTML comments from markdown
     grep "<!-- ${field}:" "$index_file" 2>/dev/null | \
         sed "s/.*<!-- ${field}: *\(.*\) *-->.*/\1/" | \
         tr -d '[:space:]' || true
@@ -243,10 +269,23 @@ _is_config_file() {
 }
 
 # _extract_sampled_files — Lists file paths currently sampled in the index.
+# M68: prefers samples/manifest.json, falls back to legacy markdown parsing
+# with corrected regex (no backtick — headings are ### filename not ### `filename`).
 # Args: $1 = index file
 _extract_sampled_files() {
     local index_file="$1"
-    # Sample headings look like: ### `filename.ext`
-    grep '^### `' "$index_file" 2>/dev/null | \
-        sed "s/^### \`\(.*\)\`$/\1/" || true
+    local project_dir
+    project_dir=$(dirname "$index_file")
+    local manifest="${project_dir}/.claude/index/samples/manifest.json"
+
+    if [[ -f "$manifest" ]]; then
+        # Extract "original" field values from manifest JSON
+        grep '"original"' "$manifest" 2>/dev/null | \
+            sed 's/.*"original": *"\([^"]*\)".*/\1/' || true
+        return
+    fi
+
+    # Legacy fallback (fixed regex — no backtick; headings are ### filename)
+    grep '^### ' "$index_file" 2>/dev/null | \
+        sed 's/^### //' | sed 's/`//g' || true
 }

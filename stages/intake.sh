@@ -90,12 +90,13 @@ run_stage_intake() {
     # Prepare template variables
     export INTAKE_MILESTONE_CONTENT="$content"
 
-    # Load PROJECT_INDEX.md summary if available (capped to 8KB — intake only needs
-    # the overview, not full file listings). This prevents the intake agent from
-    # processing 500KB+ of project index for a simple clarity evaluation.
+    # Load project index summary via structured reader (M68). The reader produces
+    # a bounded summary within 8KB — intake only needs the overview, not full
+    # file listings. Uses structured .claude/index/ data when available, falls
+    # back to legacy PROJECT_INDEX.md for pre-M67 projects.
     export INTAKE_PROJECT_INDEX=""
-    if [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
-        INTAKE_PROJECT_INDEX=$(_safe_read_file "${PROJECT_DIR}/PROJECT_INDEX.md" "PROJECT_INDEX" 8192)
+    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
+        INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
     fi
 
     # Load intake history from structured run memory (M49), fall back to causal log
@@ -235,8 +236,8 @@ run_intake_create() {
     export INTAKE_ROLE_CONTENT=""
     export INTAKE_CREATE_MODE="true"
 
-    if [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
-        INTAKE_PROJECT_INDEX=$(_safe_read_file "${PROJECT_DIR}/PROJECT_INDEX.md" "PROJECT_INDEX" 8192)
+    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
+        INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
     fi
 
     local role_file="${PROJECT_DIR}/${INTAKE_ROLE_FILE}"

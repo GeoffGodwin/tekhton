@@ -39,16 +39,18 @@ _assemble_synthesis_context() {
     local project_dir="$1"
     local index_file="${project_dir}/PROJECT_INDEX.md"
 
-    if [[ ! -f "$index_file" ]]; then
+    if [[ ! -f "$index_file" ]] && [[ ! -f "${project_dir}/.claude/index/meta.json" ]]; then
         error "PROJECT_INDEX.md not found at ${index_file}"
         error "Run 'tekhton --init' first to generate the project index."
         return 1
     fi
 
-    # Load project index
+    # Load project index via structured reader (M68). The reader produces a
+    # bounded summary (60KB) — rich enough for synthesis but prevents unbounded
+    # context injection. Falls back to legacy PROJECT_INDEX.md for pre-M67 projects.
     export PROJECT_INDEX_CONTENT
-    PROJECT_INDEX_CONTENT=$(cat "$index_file")
-    log "Loaded PROJECT_INDEX.md ($(echo "$PROJECT_INDEX_CONTENT" | wc -c | tr -d '[:space:]') chars)"
+    PROJECT_INDEX_CONTENT=$(read_index_summary "$project_dir" 60000)
+    log "Loaded project index summary ($(echo "$PROJECT_INDEX_CONTENT" | wc -c | tr -d '[:space:]') chars)"
 
     # Generate detection report
     export DETECTION_REPORT_CONTENT
@@ -140,25 +142,9 @@ _compress_synthesis_context() {
 
     log "[synthesis] Over budget (${total_tokens} est. tokens) — applying compression"
 
-    # Compress sampled file content in index to headings only
-    local compressed_index
-    compressed_index=$(compress_context "$PROJECT_INDEX_CONTENT" "summarize_headings")
-    if [[ -n "$compressed_index" ]] && [[ ${#compressed_index} -lt ${#PROJECT_INDEX_CONTENT} ]]; then
-        local saved=$(( (${#PROJECT_INDEX_CONTENT} - ${#compressed_index}) / cpt ))
-        log "[synthesis] Compressed PROJECT_INDEX: saved ~${saved} tokens"
-        PROJECT_INDEX_CONTENT="[Context compressed: PROJECT_INDEX.md reduced to headings only]
-${compressed_index}"
-    fi
-
-    # Re-check
-    total_chars=$(( ${#PROJECT_INDEX_CONTENT} + ${#DETECTION_REPORT_CONTENT} \
-        + ${#README_CONTENT} + ${#EXISTING_ARCHITECTURE_CONTENT} \
-        + ${#GIT_LOG_SUMMARY} + ${#_merge_ctx} ))
-    total_tokens=$(( (total_chars + cpt - 1) / cpt ))
-    if check_context_budget "$total_tokens" "$SYNTHESIS_MODEL"; then
-        log "[synthesis] Under budget after index compression"
-        return
-    fi
+    # M68: PROJECT_INDEX_CONTENT is already bounded by read_index_summary().
+    # No summarize_headings compression needed — the reader produces prioritized,
+    # budget-aware output that preserves inventory and dependency details.
 
     # Truncate README
     if [[ -n "$README_CONTENT" ]]; then

@@ -14,11 +14,19 @@ set -euo pipefail
 # Output capped at ~200 lines of tree + 20 git log entries (fallback path).
 _generate_codebase_summary() {
     local index_file="${PROJECT_DIR}/PROJECT_INDEX.md"
+    local meta_file="${PROJECT_DIR}/.claude/index/meta.json"
 
-    # Prefer PROJECT_INDEX.md when available and reasonably current
-    if [[ -f "$index_file" ]]; then
-        local index_commit
-        index_commit=$(_extract_scan_metadata "$index_file" "Scan-Commit")
+    # Prefer structured index when available and reasonably current (M68)
+    if [[ -f "$meta_file" ]] || [[ -f "$index_file" ]]; then
+        local index_commit=""
+        # Read scan commit from meta.json (M68) or fall back to HTML comments
+        if [[ -f "$meta_file" ]]; then
+            index_commit=$(grep '"scan_commit"' "$meta_file" 2>/dev/null | \
+                sed 's/.*"scan_commit": *"\([^"]*\)".*/\1/' | tr -d '[:space:]' || true)
+        fi
+        if [[ -z "$index_commit" ]] && [[ -f "$index_file" ]]; then
+            index_commit=$(_extract_scan_metadata "$index_file" "Scan-Commit")
+        fi
 
         local is_current=false
         if [[ -n "$index_commit" ]] && [[ "$index_commit" != "non-git" ]]; then
@@ -35,11 +43,11 @@ _generate_codebase_summary() {
         fi
 
         if [[ "$is_current" == true ]]; then
-            log "Using PROJECT_INDEX.md for replan context (scan commit: ${index_commit:-n/a})"
-            cat "$index_file"
+            log "Using structured index for replan context (scan commit: ${index_commit:-n/a})"
+            read_index_summary "$PROJECT_DIR" 40000
             return 0
         else
-            log "PROJECT_INDEX.md exists but is stale — falling back to ad-hoc summary"
+            log "Project index exists but is stale — falling back to ad-hoc summary"
         fi
     fi
 

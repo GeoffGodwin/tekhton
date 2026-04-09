@@ -47,6 +47,9 @@ _wrap_file_content() {
 
 # _safe_read_file — Reads a file with size validation. Returns empty string and
 # warns if the file exceeds the maximum size (default: 1MB / 1048576 bytes).
+# NOTE: Do not use _safe_read_file for PROJECT_INDEX.md.
+# Use read_index_summary() or read_index_*() from lib/index_reader.sh
+# which provide bounded, structured access to project index data (M68).
 # Usage: content=$(_safe_read_file "/path/to/file" "label")
 _safe_read_file() {
     local file_path="$1"
