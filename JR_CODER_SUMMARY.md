@@ -1,16 +1,24 @@
-# JR_CODER_SUMMARY.md
-
-Generated: 2026-04-09 (M69 cycle 2)
+# Junior Coder Summary
 
 ## What Was Fixed
 
-- **tekhton.sh:465-486** — Added missing `source "${TEKHTON_HOME}/lib/index_view.sh"` after line 477 in the `--rescan` early-exit block. The `rescan_project()` function calls `generate_project_index_view()`, which is defined in `index_view.sh`. Without this source, `tekhton --rescan` would fail with "command not found". Fixed by sourcing the library immediately after `rescan.sh`.
+- **index_view.sh:261** — Removed unused `used=0` variable from `_view_render_dependencies` function declaration. The function uses `${#output}` directly for budget calculations and never reads the `used` variable, triggering SC2034 shellcheck warning.
 
 ## Files Modified
 
-- `tekhton.sh` — Added one source statement at line 478 (within the `--rescan` block)
+- `lib/index_view.sh` (line 261)
 
 ## Verification
 
-- `bash -n tekhton.sh` — Syntax check passed
-- `shellcheck tekhton.sh` — All SC1091 informational warnings (expected for sourced files)
+- ✓ Syntax check passed (`bash -n`)
+- ✓ No new shellcheck warnings introduced
+- ✓ Function behavior unchanged (budgeting logic unaffected)
+
+## Notes on Non-Blocking Log Items
+
+All 5 items from NON_BLOCKING_LOG.md are already resolved:
+- `crawler.sh:136` — Comment already updated (no longer references `_truncate_section`)
+- `tekhton.sh:779` — Comment already references correct files (`crawler_emit.sh`)
+- `index_view.sh:418-421` — Budget guard already uses consistent record-based approach
+- `index_view.sh:451` — Path traversal validation already implemented
+- `index_view.sh:205-208` — Field extraction already uses robust regex approach

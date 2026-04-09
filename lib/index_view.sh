@@ -201,11 +201,11 @@ _view_render_inventory() {
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
 
-        local path lines size dir
-        path=$(printf '%s' "$line" | sed 's/.*"path":"\([^"]*\)".*/\1/')
-        lines=$(printf '%s' "$line" | sed 's/.*"lines":\([0-9]*\).*/\1/')
-        size=$(printf '%s' "$line" | sed 's/.*"size":"\([^"]*\)".*/\1/')
-        dir=$(printf '%s' "$line" | sed 's/.*"dir":"\([^"]*\)".*/\1/')
+        local path="" lines="" size="" dir=""
+        [[ "$line" =~ \"path\":\"([^\"]*)\" ]] && path="${BASH_REMATCH[1]}"
+        [[ "$line" =~ \"lines\":([0-9]+) ]] && lines="${BASH_REMATCH[1]}"
+        [[ "$line" =~ \"size\":\"([^\"]*)\" ]] && size="${BASH_REMATCH[1]}"
+        [[ "$line" =~ \"dir\":\"([^\"]*)\" ]] && dir="${BASH_REMATCH[1]}"
 
         # Directory separator for readability
         local dir_line=""
@@ -258,7 +258,11 @@ _view_render_dependencies() {
         return
     fi
 
-    local output="" used=0
+    local output=""
+
+    # Pre-calculate total dependencies for later reference
+    local total_deps
+    total_deps=$(grep -c '"name"' "$dep_file" || true)
 
     # Parse manifests
     local in_manifests=false
@@ -295,8 +299,6 @@ _view_render_dependencies() {
             version=$(printf '%s' "$line" | sed 's/.*"version":"\([^"]*\)".*/\1/')
             local dep_line="- ${name} ${version}"$'\n'
             if [[ $(( ${#output} + ${#dep_line} )) -gt "$budget" ]]; then
-                local total_deps
-                total_deps=$(grep -c '"name"' "$dep_file" || true)
                 local skipped=$(( total_deps - dep_count ))
                 [[ "$skipped" -gt 0 ]] && \
                     output+="... and ${skipped} more dependencies"$'\n'
@@ -335,6 +337,10 @@ _view_render_configs() {
     local used=${#output}
     local count=0
 
+    # Pre-calculate total config files for later reference
+    local total
+    total=$(grep -c '"path"' "$cfg_file" || true)
+
     while IFS= read -r line; do
         if [[ "$line" =~ \"path\":\"([^\"]*)\" ]]; then
             local path="${BASH_REMATCH[1]}"
@@ -342,8 +348,6 @@ _view_render_configs() {
             purpose=$(printf '%s' "$line" | sed 's/.*"purpose":"\([^"]*\)".*/\1/')
             local cfg_line="| ${path} | ${purpose} |"$'\n'
             if [[ $(( used + ${#cfg_line} + 40 )) -gt "$budget" ]]; then
-                local total
-                total=$(grep -c '"path"' "$cfg_file" || true)
                 local remaining=$(( total - count ))
                 [[ "$remaining" -gt 0 ]] && \
                     output+="... and ${remaining} more config files"$'\n'
@@ -410,15 +414,14 @@ _view_render_tests() {
             local dir="${BASH_REMATCH[1]}"
             local cnt
             cnt=$(printf '%s' "$line" | sed 's/.*"file_count":\([0-9]*\).*/\1/')
-            output+="- ${dir} (${cnt} files)"$'\n'
+            local dir_line="- ${dir} (${cnt} files)"$'\n'
+            if [[ $(( ${#output} + ${#dir_line} )) -gt "$budget" ]]; then
+                output+="... and more test directories (see .claude/index/tests.json)"$'\n'
+                break
+            fi
+            output+="$dir_line"
         fi
     done < "$test_file"
-
-    # Budget check — tests section is typically small
-    if [[ ${#output} -gt "$budget" ]]; then
-        output="${output:0:$budget}"
-        output="${output%$'\n'*}"$'\n'
-    fi
 
     printf '%s' "$output"
 }
@@ -448,6 +451,10 @@ _view_render_samples() {
         local orig="${BASH_REMATCH[1]}"
         local stored
         stored=$(printf '%s' "$line" | sed 's/.*"stored":"\([^"]*\)".*/\1/')
+        # Reject path traversal characters
+        if [[ "$stored" == *".."* || "$stored" == *"/"* ]]; then
+            continue
+        fi
         local sample_file="${index_dir}/samples/${stored}"
         [[ ! -f "$sample_file" ]] && continue
 

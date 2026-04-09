@@ -777,7 +777,7 @@ source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
 source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
 # shellcheck disable=SC1091
 source "${TEKHTON_HOME}/platforms/_base.sh"    # UI platform adapter framework (Milestone 57)
-source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_deps.sh, crawler_emit.sh
+source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_emit.sh
 source "${TEKHTON_HOME}/lib/index_reader.sh"  # structured index reader API (M68)
 source "${TEKHTON_HOME}/lib/index_view.sh"   # markdown view generator (M69)
 source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # helpers only; full rescan.sh sourced in --rescan block

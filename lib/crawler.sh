@@ -133,7 +133,7 @@ _budget_allocator() {
 # --- Directory tree -----------------------------------------------------------
 
 # _crawl_directory_tree — Breadth-first traversal with purpose annotations.
-# M67: no head -500 truncation; _truncate_section handles display limits.
+# M67: no head -500 truncation; the view generator (index_view.sh) handles display limits.
 # Args: $1 = project directory, $2 = max depth (default: 6)
 _crawl_directory_tree() {
     local project_dir="$1"

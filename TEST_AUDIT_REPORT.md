@@ -1,37 +1,69 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 33 test functions (45 pass/fail assertions)
+Tests audited: 3 implementation files reviewed (lib/crawler.sh, tekhton.sh, lib/index_view.sh);
+0 new test functions written by tester; 2 related existing test suites cross-referenced
+(tests/test_index_structured.sh, tests/test_crawler_functions.sh)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: M69 migration trigger path in rescan_project never exercised
-- File: tests/test_rescan.sh:99–144
-- Issue: The M69 migration check at rescan.sh:51–55 (`if [[ ! -f "${project_dir}/.claude/index/meta.json" ]]`) is never directly exercised as its own test. The two tests modified for M69 (non-git dir, no Scan-Commit) both CREATE a meta.json to bypass this path and reach their intended code branches. The scenario "PROJECT_INDEX.md exists, meta.json absent → M69 migration full crawl" has no dedicated test.
+#### EXERCISE: No automated tests written — tester produced code review only
+- File: TESTER_REPORT.md (references lib/crawler.sh:136, tekhton.sh:780, lib/index_view.sh:205-208, lib/index_view.sh:414-418, lib/index_view.sh:451-453)
+- Issue: The tester produced no automated test functions. TESTER_REPORT.md is entirely
+  a code-review-style document confirming that fixes are present in the source. The
+  "Test Files Under Audit" listed in the audit context are implementation files, not
+  test files. For the two comment-only fixes (items 1 and 2), no automated test is
+  appropriate. For the three behavioral fixes (budget guard, path traversal validation,
+  field extraction), existing integration tests in tests/test_index_structured.sh
+  provide indirect coverage via generate_project_index_view, but the tester made no
+  attempt to add targeted unit tests for any of them.
 - Severity: MEDIUM
-- Action: Add a test with a PROJECT_INDEX.md but no `.claude/index/meta.json`. Assert `CRAWL_PROJECT_CALLED -ge 1`. Comment should note it exercises the M69 migration path specifically (rescan.sh:51–55).
+- Action: For future non-blocking notes that involve behavioral code changes, add at
+  minimum one targeted unit test per change. Comment-only fixes (items 1, 2) require
+  no test. The behavioral items (3–5) rely on integration coverage that predates this
+  task.
 
-#### COVERAGE: _extract_scan_metadata structured-data path (M69) not tested
-- File: tests/test_rescan.sh:338–381
-- Issue: `_extract_scan_metadata` prefers `.claude/index/meta.json` over HTML comment parsing (rescan_helpers.sh:122–139). Every test in this section creates its index file at `${TEST_TMPDIR}/meta_test_index.md`, so `project_dir = $TEST_TMPDIR`. No `.claude/index/meta.json` exists there, so all three assertions (Scan-Commit, File-Count, Last-Scan) exercise only the legacy fallback path. If the structured-data branch had a regression (wrong JSON key name, bad sed), these tests would not detect it.
+#### COVERAGE: Path traversal validation has no targeted test
+- File: lib/index_view.sh:451-453 (function _view_render_samples)
+- Issue: The path traversal guard (`if [[ "$stored" == *".."* || "$stored" == *"/"* ]]`)
+  is confirmed present. However, no test in the suite exercises the rejection path.
+  No test constructs a mock samples/manifest.json with ".." or "/" in the stored field
+  and verifies that entry is skipped. The existing integration test
+  (tests/test_index_structured.sh lines 189–197) calls generate_project_index_view with
+  real crawl output but never injects a crafted manifest entry. Grep for
+  "path traversal", "stored.*\.\.", and "_view_render_samples" across tests/ returns
+  zero matches.
 - Severity: MEDIUM
-- Action: Add a test that creates `${TEST_TMPDIR}/.claude/index/meta.json` with known values and verifies that `_extract_scan_metadata` reads `scan_commit`, `file_count`, and `scan_date` from it (the M69 preferred path). Existing legacy-path tests should remain unchanged.
+- Action: Add a unit test for _view_render_samples that creates a minimal
+  samples/manifest.json containing one entry with ".." in the stored field and one with
+  "/" and verifies neither is included in the output. A valid entry should still render
+  to confirm the guard does not over-reject.
 
-#### COVERAGE: _extract_sampled_files structured-data path (M69) not tested
-- File: tests/test_rescan.sh:386–441
-- Issue: `_extract_sampled_files` prefers `.claude/index/samples/manifest.json` (rescan_helpers.sh:203–208) and falls back to `grep '^### '` only when absent. Both tests place the index in `$TEST_TMPDIR` with no `samples/manifest.json`, so they exercise only the legacy grep path. The M69 manifest.json path is untested.
-- Severity: MEDIUM
-- Action: Add a test that creates `.claude/index/samples/manifest.json` with `"original"` entries and verifies that `_extract_sampled_files` correctly extracts them.
-
-#### COVERAGE: Incremental update path (_update_index_sections) not tested
-- File: tests/test_rescan.sh (no test present)
-- Issue: The incremental update branch of `rescan_project` — reached when significance is "trivial" or "moderate" and a valid scan commit exists — is never exercised. This calls `_update_index_sections` (rescan.sh:109), which drives M69 structured-file regeneration (`_emit_tree_txt`, `_emit_inventory_jsonl`, `_emit_dependencies_json`, etc.). Every `rescan_project` test triggers a full-crawl fallback, so this code path has zero coverage in the audited file.
-- Severity: MEDIUM
-- Action: Verify whether `tests/test_index_structured.sh` (new file visible in git status, not in audit scope) covers `_update_index_sections`. If not, add a test in `test_rescan.sh` that sets up a git repo, commits a known scan commit, introduces a trivial change, and asserts that `crawl_project` is NOT called and that the index is updated incrementally.
-
-#### SCOPE: Audit context lists test_rescan.sh twice; test_index_structured.sh omitted
-- File: (audit configuration)
-- Issue: The audit context lists `tests/test_rescan.sh` twice and does not list `tests/test_index_structured.sh`, which is a new file in the working tree likely covering M69 structured-index behavior. The coverage gaps above may be partially addressed by that file.
+#### COVERAGE: Field extraction regex not tested with special-character filenames
+- File: lib/index_view.sh:205-208 (function _view_render_inventory)
+- Issue: The fix replaces sequential sed calls with BASH_REMATCH regex matching to
+  avoid garbling filenames with regex-special characters. The fix is correct and
+  present. However, tests/test_index_structured.sh exercises the view generator only
+  with normal filenames (src/index.ts, src/utils.ts, etc.). No test constructs an
+  inventory.jsonl record with a filename containing "[", "]", "(", ")", or "." in a
+  directory component to confirm the fix works for the stated scenario.
 - Severity: LOW
-- Action: Re-run audit with `tests/test_index_structured.sh` included to determine if the MEDIUM coverage findings above are already covered elsewhere.
+- Action: Add one inventory record with a regex-special character in the path
+  (e.g., "src/lib[v2]/main.ts") to the integration fixture and assert it appears
+  correctly in the rendered table without garbling.
+
+#### SCOPE: JR_CODER_SUMMARY documents one change but tester verifies three files
+- File: JR_CODER_SUMMARY.md; lib/crawler.sh, tekhton.sh (working tree modified)
+- Issue: JR_CODER_SUMMARY.md documents exactly one code change: removal of the unused
+  `used=0` variable at lib/index_view.sh:261. It claims the other four non-blocking
+  items were "already resolved." Git status at conversation start shows lib/crawler.sh,
+  tekhton.sh, and lib/index_view.sh all modified in the working tree. The TESTER_REPORT
+  verifies fixes across all three files without referencing which commit introduced them
+  or running `git log` to confirm. The tester's code verification is factually accurate
+  (confirmed by reading the files), but the audit trail is incomplete — a future reader
+  cannot determine when or by whom the comment fixes were applied.
+- Severity: LOW
+- Action: No code changes required. JR_CODER_SUMMARY should reference the prior commit
+  (292e87c) that applied the other four fixes. Tester verification is factually correct;
+  the gap is documentation traceability only.
