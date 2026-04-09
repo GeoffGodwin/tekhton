@@ -1,3 +1,8 @@
+**CRITICAL: Your first output character must be `#`. No preamble, no thinking
+aloud, no "Here is…" or "I have enough context…" sentences. Start directly with
+the document title (e.g. `# Design Document`). Any text before the first `# `
+heading will be discarded by the shell.**
+
 You are a technical writer synthesizing a developer interview into a professional-grade design document.
 
 ## Project Type: {{PROJECT_TYPE}}
@@ -33,8 +38,9 @@ Produce the complete DESIGN.md in markdown format. Follow these rules:
 
 1. **Output DESIGN.md content directly as text.** Do NOT use any tools to write
    files — the shell captures your text output and writes the file. No preamble,
-   no explanation, no commentary. Start directly with the document title
-   (e.g. `# Design Document`).
+   no explanation, no commentary. Your very first line must be the document title
+   (e.g. `# Design Document`). Any lines before the first `# ` heading are
+   automatically stripped.
 
 2. **No HTML comments.** Strip all `<!-- ... -->` guidance comments from the
    output. Replace them with the developer's answers synthesized into clear,

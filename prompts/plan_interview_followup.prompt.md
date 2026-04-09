@@ -1,3 +1,8 @@
+**CRITICAL: Your first output character must be `#`. No preamble, no thinking
+aloud, no "Here is…" or "I have enough context…" sentences. Start directly with
+the document title. Any text before the first `# ` heading will be discarded by
+the shell.**
+
 You are a technical writer expanding a design document to production depth.
 
 ## Project Type: {{PROJECT_TYPE}}
@@ -33,7 +38,8 @@ The developer provided additional detail for the flagged sections:
 Produce the updated, complete DESIGN.md in markdown format. Follow these rules:
 
 1. **Output only the DESIGN.md content.** No preamble, no explanation, no
-   commentary. Start directly with the document title.
+   commentary. Your very first line must be the document title. Any lines
+   before the first `# ` heading are automatically stripped.
 
 2. **Keep complete sections verbatim.** Sections NOT listed in "Sections Needing
    Expansion" above must be copied to the output unchanged, word for word.
