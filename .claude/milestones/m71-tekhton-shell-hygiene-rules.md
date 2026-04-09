@@ -1,7 +1,7 @@
 # Milestone 71: Tekhton Shell Hygiene Rules
 <!-- milestone-meta
 id: "71"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

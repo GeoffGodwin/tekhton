@@ -5,10 +5,10 @@ PASS
 97
 
 ## Reasoning
-- Scope is exceptionally well-defined: exactly 2 files to modify, 4 named changes (A–D), explicit exclusion of pipeline infrastructure
-- Acceptance criteria are specific and testable: named test scripts with expected pass counts (8/8, 11/11, 10/10)
-- Ambiguity is near-zero: exact replacement text is provided for every change, including verbatim phrases that tests grep for
-- Watch For section proactively addresses the most likely implementation errors (checking all files vs. touched files, preserving skeleton block, preserved phrases)
-- No migration impact: CODER_SUMMARY.md section addition is backward-compatible and informational only; no pipeline parser reads it
-- UI testability not applicable — prompt-only changes, no UI components
-- Seeds Forward section scopes follow-on work out of this milestone cleanly
+- Scope is tightly defined: single file change to `.claude/agents/coder.md` with explicit exclusions for `templates/coder.md`, `prompts/coder.prompt.md`, all `lib/` and `stages/` files
+- Exact content to add is provided verbatim as a markdown code block — no interpretation required
+- Acceptance criteria are specific and mechanically verifiable (section exists, named rules present, concrete patterns included, no other files changed)
+- Watch For section is thorough and pre-empts likely implementation mistakes (grep vs sed/awk distinction, sourced-file rule applicability, avoiding shellcheck overlap)
+- No new config keys, template variables, or pipeline changes — no migration impact section needed
+- No UI components — UI testability criterion not applicable
+- `bash tests/run_tests.sh` as the verification step is concrete and sufficient given the single-file, non-library scope

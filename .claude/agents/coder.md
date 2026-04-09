@@ -30,6 +30,32 @@ from `prompts/` (using `{{VAR}}` substitution), and static templates from `templ
 - Quote all variable expansions: `"$var"` not `$var`
 - Use `[[ ]]` for conditionals, `$(...)` for command substitution
 
+### Shell Hygiene (prevents recurring reviewer findings)
+These rules address the most common non-blocking findings from code review.
+Follow them to produce cleaner output that passes review without notes.
+
+- **grep under set -e:** `grep` returns exit code 1 when zero lines match,
+  which kills `set -e`. Every `grep` call where zero matches is a valid
+  (non-error) outcome must end with `|| true`. Pattern:
+  `count=$(grep -c 'pat' file || true)`. Note: `sed` and `awk` return 0 on
+  zero matches — they do NOT need `|| true` for this reason. Only add
+  `|| true` to sed/awk when the command itself may fail (e.g., missing file).
+- **Local variable assignment:** Never combine `local` with command substitution
+  on the same line — `local var=$(cmd)` masks the exit code (shellcheck SC2155).
+  Use two lines: `local var; var=$(cmd)`.
+- **Option terminator:** Use `--` before arguments derived from variables in
+  `grep`, `sed`, `rm`, and `find` to prevent flag injection.
+  Pattern: `grep -- "$pattern" "$file"`
+- **Sourced files:** `.sh` files sourced into the pipeline (`lib/`, `stages/`)
+  must NOT have their own `set -euo pipefail` — they inherit the caller's
+  settings. Only standalone entry-point scripts need it.
+- **Stale references after rename:** When renaming a function or variable, use
+  `grep -rn 'old_name'` across the project to find all references — including
+  comments, log messages, error strings, and test fixtures. Update them all.
+- **File length:** After your changes, run `wc -l` on every file you created or
+  modified. If any exceeds 300 lines, extract functions into a new `_helpers.sh`
+  or similar companion file. Do not leave files at 310–320 lines.
+
 ### Architecture
 - **Zero execution pipeline changes** for the `--plan` feature. Do NOT modify
   existing files in `lib/`, `stages/`, or `prompts/` (except `tekhton.sh` for

@@ -1,69 +1,70 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 implementation files reviewed (lib/crawler.sh, tekhton.sh, lib/index_view.sh);
-0 new test functions written by tester; 2 related existing test suites cross-referenced
-(tests/test_index_structured.sh, tests/test_crawler_functions.sh)
+Tests audited: 1 file, 13 test assertions (linear script — no named test functions)
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: No automated tests written — tester produced code review only
-- File: TESTER_REPORT.md (references lib/crawler.sh:136, tekhton.sh:780, lib/index_view.sh:205-208, lib/index_view.sh:414-418, lib/index_view.sh:451-453)
-- Issue: The tester produced no automated test functions. TESTER_REPORT.md is entirely
-  a code-review-style document confirming that fixes are present in the source. The
-  "Test Files Under Audit" listed in the audit context are implementation files, not
-  test files. For the two comment-only fixes (items 1 and 2), no automated test is
-  appropriate. For the three behavioral fixes (budget guard, path traversal validation,
-  field extraction), existing integration tests in tests/test_index_structured.sh
-  provide indirect coverage via generate_project_index_view, but the tester made no
-  attempt to add targeted unit tests for any of them.
+#### COVERAGE: Rule 3 command-mention checks are document-wide, not section-scoped
+- File: tests/test_m71_shell_hygiene_rules.sh:76-82
+- Issue: The loop `for cmd in grep sed rm find` calls `grep -q "$cmd"` against the
+  entire `$CONTENT` of coder.md, not against the option terminator paragraph. The
+  pass message falsely reports "mentioned in option terminator context". For `grep`,
+  the word appears in at least 8 locations across coder.md (Rules 1, 5, Code Quality,
+  etc.). For `sed`, it appears in both Rule 1 and Rule 3. These assertions would pass
+  even if `grep` and `sed` were removed from the option terminator rule, as long as
+  they still appeared elsewhere in the document. `rm` and `find` happen to be unique
+  to Rule 3 in this file, so their assertions are accidentally specific.
 - Severity: MEDIUM
-- Action: For future non-blocking notes that involve behavioral code changes, add at
-  minimum one targeted unit test per change. Comment-only fixes (items 1, 2) require
-  no test. The behavioral items (3–5) rely on integration coverage that predates this
-  task.
+- Action: Scope the content match to the option terminator paragraph. Extract the
+  Shell Hygiene section (between `### Shell Hygiene` and the next `###` heading) and
+  run the command-presence checks against that substring, or tighten the pattern per
+  command: `grep -q "grep.*--\|-- grep"`, `grep -q "sed.*--\|-- sed"`, etc.
 
-#### COVERAGE: Path traversal validation has no targeted test
-- File: lib/index_view.sh:451-453 (function _view_render_samples)
-- Issue: The path traversal guard (`if [[ "$stored" == *".."* || "$stored" == *"/"* ]]`)
-  is confirmed present. However, no test in the suite exercises the rejection path.
-  No test constructs a mock samples/manifest.json with ".." or "/" in the stored field
-  and verifies that entry is skipped. The existing integration test
-  (tests/test_index_structured.sh lines 189–197) calls generate_project_index_view with
-  real crawl output but never injects a crafted manifest entry. Grep for
-  "path traversal", "stored.*\.\.", and "_view_render_samples" across tests/ returns
-  zero matches.
-- Severity: MEDIUM
-- Action: Add a unit test for _view_render_samples that creates a minimal
-  samples/manifest.json containing one entry with ".." in the stored field and one with
-  "/" and verifies neither is included in the output. A valid entry should still render
-  to confirm the guard does not over-reject.
-
-#### COVERAGE: Field extraction regex not tested with special-character filenames
-- File: lib/index_view.sh:205-208 (function _view_render_inventory)
-- Issue: The fix replaces sequential sed calls with BASH_REMATCH regex matching to
-  avoid garbling filenames with regex-special characters. The fix is correct and
-  present. However, tests/test_index_structured.sh exercises the view generator only
-  with normal filenames (src/index.ts, src/utils.ts, etc.). No test constructs an
-  inventory.jsonl record with a filename containing "[", "]", "(", ")", or "." in a
-  directory component to confirm the fix works for the stated scenario.
+#### NAMING: Pass message claims section-scoped verification when check is document-wide
+- File: tests/test_m71_shell_hygiene_rules.sh:78
+- Issue: `pass "Rule 3: ${cmd} mentioned in option terminator context"` misleads
+  future readers — the check does NOT verify the command appears within the option
+  terminator rule. This makes test output harder to trust and failures harder to
+  diagnose.
 - Severity: LOW
-- Action: Add one inventory record with a regex-special character in the path
-  (e.g., "src/lib[v2]/main.ts") to the integration fixture and assert it appears
-  correctly in the rendered table without garbling.
+- Action: Fix the message to accurately reflect the check's scope, or — better — fix
+  the underlying assertion per the COVERAGE finding above so the message becomes
+  accurate.
 
-#### SCOPE: JR_CODER_SUMMARY documents one change but tester verifies three files
-- File: JR_CODER_SUMMARY.md; lib/crawler.sh, tekhton.sh (working tree modified)
-- Issue: JR_CODER_SUMMARY.md documents exactly one code change: removal of the unused
-  `used=0` variable at lib/index_view.sh:261. It claims the other four non-blocking
-  items were "already resolved." Git status at conversation start shows lib/crawler.sh,
-  tekhton.sh, and lib/index_view.sh all modified in the working tree. The TESTER_REPORT
-  verifies fixes across all three files without referencing which commit introduced them
-  or running `git log` to confirm. The tester's code verification is factually accurate
-  (confirmed by reading the files), but the audit trail is incomplete — a future reader
-  cannot determine when or by whom the comment fixes were applied.
+#### SCOPE: No CODER_SUMMARY.md — implementation scope unverifiable through standard audit path
+- File: N/A (missing file)
+- Issue: The standard audit workflow reads CODER_SUMMARY.md to verify test/implementation
+  alignment. The file does not exist. The audit context states "Implementation Files
+  Changed: none", yet `git status` shows `.claude/agents/coder.md` as modified (M).
+  This inconsistency in pipeline reporting required direct inspection of coder.md to
+  verify scope alignment.
 - Severity: LOW
-- Action: No code changes required. JR_CODER_SUMMARY should reference the prior commit
-  (292e87c) that applied the other four fixes. Tester verification is factually correct;
-  the gap is documentation traceability only.
+- Action: No action needed in the test file. The coder agent should have emitted
+  CODER_SUMMARY.md per its role definition. Tests were verified against the live
+  coder.md and are correctly aligned with its content.
+
+### Positive Findings
+
+- **Assertion Honesty (PASS):** All assertions search the actual `coder.md` for
+  patterns derived from implementation content. Every pattern matches content that
+  genuinely exists in the file. No hard-coded values unrelated to the implementation,
+  no identity assertions, no `assertTrue(True)` patterns detected.
+- **Implementation Exercise (PASS):** Tests call no mocks. They read and search the
+  live implementation artifact (`.claude/agents/coder.md`), which is the correct
+  approach for content verification tests on a role-definition source file.
+- **Rules 1, 2, 4, 5, 6 — patterns are tight and specific (PASS):**
+  - Rule 1: `'grep.*||.*true\||| true'` and `'they do NOT need'` — both unique to the
+    grep-under-set-e rule in the document.
+  - Rule 2: `'SC2155'` — a unique identifier that cannot false-positive.
+  - Rule 4: `'must NOT have.*set -euo'` — matches coder.md:49 precisely.
+  - Rule 5: `'grep -rn'` — distinctive enough to anchor the stale-references rule.
+  - Rule 6: `'300 lines'` and `'_helpers.sh'` — both appear only in the file-length rule.
+- **Test Isolation (PASS):** The test reads `.claude/agents/coder.md`, a checked-in
+  source file that is the implementation artifact for M71, not a runtime pipeline
+  artifact (no CODER_SUMMARY.md, BUILD_ERRORS.md, or log files are read). This is the
+  correct approach for testing that a role-definition file was correctly updated.
+- **Section heading check (PASS):** The test explicitly verifies the `### Shell Hygiene`
+  heading is present before checking individual rules, and exits early if the file is
+  missing. Fail-fast ordering is correct.

@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-09
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-04-09 | "Address all 5 open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `index_view.sh` — `_view_render_dependencies` now uses `${#output}` inline for budget checks while sibling functions maintain a dedicated `used` running counter. Functionally equivalent, but the style inconsistency remains. Low priority; address in a future cleanup pass.
