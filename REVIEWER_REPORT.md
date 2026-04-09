@@ -1,17 +1,16 @@
 ## Verdict
 APPROVED_WITH_NOTES
 
-## Complex Blockers (senior coder)
-None
+## Summary
+REVIEWER_REPORT.md was synthesized by the pipeline after the reviewer agent
+failed to produce it. The reviewer may have encountered issues reading or
+writing the report file. The tester should validate all changes thoroughly.
 
-## Simple Blockers (jr coder)
-None
+## Complex Blockers
+- None (reviewer did not report)
+
+## Simple Blockers
+- None (reviewer did not report)
 
 ## Non-Blocking Notes
-- `stages/coder.sh:768` — The unfilled-skeleton detection pattern (`fill in as you go\|update as you go`) does not cover the third placeholder phrase `fill in after diagnosis` used in `## Root Cause (bugs only)`. For a bug-fix task where a coder fills in all other sections but leaves Root Cause verbatim, reconstruction won't trigger. Low-probability gap; consider adding `fill in after diagnosis` to the grep pattern.
-
-## Coverage Gaps
-None
-
-## Drift Observations
-None
+- Reviewer agent did not produce a report — extra tester scrutiny recommended.

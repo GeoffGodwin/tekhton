@@ -1,45 +1,31 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 39 test functions (check() calls)
+Tests audited: 2 files, 24 test assertions
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Missing negative assertion for removed conflicting language
-- File: tests/test_coder_role_before_code.sh (suite-wide gap)
-- Issue: The bug was that `templates/coder.md` said "when finished, write CODER_SUMMARY.md" — conflicting with the prompt's write-first Step 1. The fix removed that phrasing. No test asserts that the old text is absent. A future regression that re-introduces "when finished, write CODER_SUMMARY.md" alongside the new language would pass all 39 assertions. (Confirmed via grep: the old phrase is correctly absent now, but the test suite cannot detect its reintroduction.)
+#### EXERCISE: Detection condition is duplicated in tests rather than exercised through production code
+- File: tests/test_coder_placeholder_detection.sh:76-80, :141-144, :177-180
+- Issue: All three tests replicate the outer detection condition from `stages/coder.sh:768-773` verbatim (the `grep -q 'fill in as you go\|update as you go'` check) rather than calling through a named function. The component functions `is_substantive_work` and `_reconstruct_coder_summary` ARE exercised from the real implementation, so this is an improvement over the prior tautological tests. However, if the grep pattern at `stages/coder.sh:768` changes (e.g., a third placeholder variant is added), the tests will not detect the regression because each test uses its own copy of the pattern rather than the one in the production block.
 - Severity: MEDIUM
-- Action: Add to `test_coder_role_before_code.sh`: `! grep -q 'when finished.*write CODER_SUMMARY\|write CODER_SUMMARY.*when finished' "$CODER_ROLE"` labeled "Role file does not contain write-last pattern (regression guard)".
+- Action: Extract `stages/coder.sh:768-773` into a named function (e.g., `_check_and_reconstruct_placeholder`) and call it directly from the tests instead of duplicating the condition. This makes the tests sensitive to changes in the detection pattern.
 
-#### COVERAGE: Overly broad alternation regex allows false positives
-- File: tests/test_coder_role_before_code.sh:44, tests/test_coder_role_summary_structure.sh:64
-- Issue: Two tests use the patterns `'## Status.*COMPLETE\|IN PROGRESS'` (before_code.sh Test 6) and `'COMPLETE\|IN PROGRESS'` (structure.sh Test 11). In GNU grep, `\|` alternates the full left and right sides: `## Status.*COMPLETE\|IN PROGRESS` is equivalent to `(## Status.*COMPLETE)|(IN PROGRESS)`. The right alternative matches any line containing "IN PROGRESS" anywhere in the file — including the skeleton line `## Status: IN PROGRESS`. These tests pass, but would also pass for a file that documented the skeleton while omitting the bulleted Status requirements prose entirely. The test names imply a more specific assertion than is delivered.
+#### COVERAGE: No test for placeholder-detected-but-no-substantive-work path
+- File: tests/test_coder_placeholder_detection.sh (entire file)
+- Issue: Tests 1 and 2 verify reconstruction fires when both a placeholder AND substantive work exist. Test 3 verifies a properly filled summary is not touched. There is no test for the case where a placeholder is present but `is_substantive_work` returns false (i.e., the agent wrote the skeleton but did no real work). The production code at `stages/coder.sh:769` guards reconstruction behind `if is_substantive_work` specifically to handle this case — skipping reconstruction when there is nothing to reconstruct from. This guard is never exercised for its false (no-reconstruction) branch.
 - Severity: MEDIUM
-- Action: Tighten structure.sh Test 11 to `grep -q '## Status.*COMPLETE.*IN PROGRESS\|## Status.*IN PROGRESS.*COMPLETE' "$CODER_ROLE"`. Tighten before_code.sh Test 6 to `grep -q '## Status.*COMPLETE.*IN PROGRESS' "$CODER_ROLE"` so both values must appear on the same Status-documentation line.
+- Action: Add a test that creates a placeholder CODER_SUMMARY.md with fewer than 20 lines and no untracked/modified files, verifies `is_substantive_work` returns non-zero, and asserts CODER_SUMMARY.md still contains placeholder text after the detection block runs.
 
-#### NAMING: Comment-to-assertion mismatch in consistency test
-- File: tests/test_coder_prompt_role_consistency.sh:36, :39
-- Issue: The comment for Test 3 reads "Both mention the Status field" but the block contains only one assertion, against `$CODER_ROLE` — `$CODER_PROMPT` is never checked. The comment for Test 4 reads "Both mention the Files Modified section" but its second assertion (`grep -q 'CODER_SUMMARY' "$CODER_PROMPT"`) checks for `CODER_SUMMARY`, not `Files Modified`. These mismatches make the test intent opaque and are misleading for future maintainers.
+#### NAMING: Header comment in test_coder_summary_reconstruction.sh is incomplete and mislabeled
+- File: tests/test_coder_summary_reconstruction.sh:8-19
+- Issue: The header lists 10 tests ending with "10. Large number of files is truncated to 30". The actual file contains 13 tests. The real test 10 (line 249) verifies reconstruction documentation is present — it does not test file truncation. "Large number of files is truncated to 30" is actually test 12 (line 302). Tests 11 ("Multiple file modifications") and 13 ("Excluded files not listed") are not in the header at all. A developer reading the header to understand coverage will get a false picture.
 - Severity: LOW
-- Action: Rename Test 3 comment to "templates/coder.md has Status field section". Rename Test 4's second assertion comment to "coder.prompt.md references CODER_SUMMARY output" (distinct from the Files Modified check).
+- Action: Update lines 8-19 to list all 13 tests with correct descriptions matching the test bodies.
 
-#### COVERAGE: Redundant assertion inflates pass count without adding coverage
-- File: tests/test_coder_prompt_role_consistency.sh:43
-- Issue: Test 6 (`grep -q 'CODER_SUMMARY' "$CODER_PROMPT"`) is a strict superset of Test 1's first assertion (`grep -q 'CODER_SUMMARY.md' "$CODER_PROMPT"`). Any file that passes the more specific `.md` pattern will always pass the shorter pattern. The weaker assertion adds one pass count but catches no additional failure mode.
-- Severity: LOW
-- Action: Replace Test 6 with a distinct assertion. A useful replacement: verify the prompt's write-first instruction explicitly — `grep -q 'before touching any code\|before.*any code' "$CODER_PROMPT"` — which is a consistency claim not checked anywhere else.
-
-#### COVERAGE: Consistency suite does not cross-verify the core temporal instruction
-- File: tests/test_coder_prompt_role_consistency.sh (suite-wide gap)
-- Issue: The file is named "coder prompt role consistency" and is intended to confirm that the prompt and role file agree on the write-first pattern. Each test checks that a keyword appears in one or both files individually, but no test verifies that *both* files use "before" language for CODER_SUMMARY.md creation. A regression where the role file reverted to "when finished" while the prompt retained "before" would pass all 10 consistency assertions.
-- Severity: LOW
-- Action: Add a test that greps `"before writing any code\|before.*any code"` in both `$CODER_ROLE` and `$CODER_PROMPT`, asserting each passes independently, labeled "Both files establish write-before-code ordering for CODER_SUMMARY.md".
-
-### Notes
-
-- **CODER_SUMMARY.md absent**: The file does not exist in the working tree. The prior coder agent was required to create it as its first act (the very behavior this bug fix enforces). Absence does not affect test integrity — no test reads it — but is a process violation by the prior agent.
-- **Tester count claim verified**: The tester reported "Passed: 39 Failed: 0". Confirmed: 39 `check()` call sites across 4 files (11 + 8 + 10 + 10). Claim is accurate.
-- **Assertions are honest**: All 39 assertions use `grep -q` against real source files with patterns that match real content in the fixed implementation. No hard-coded fabricated values, no always-pass tautologies, no mock-only tests.
-- **Isolation is acceptable**: Tests read `templates/coder.md` and `prompts/coder.prompt.md`. These are version-controlled source files, not mutable pipeline artifacts. The isolation rule targets run-time state files (CODER_SUMMARY.md, BUILD_ERRORS.md, `.claude/logs/*`). No violation.
-- **Implementation file changed correctly**: Git status confirms `M templates/coder.md`. The fix is correctly applied. The audit context field "Implementation Files Changed: none" is incorrect metadata from the prior agent but does not affect test integrity.
+#### ISOLATION: Within-suite git state bleeds across tests in test_coder_summary_reconstruction.sh
+- File: tests/test_coder_summary_reconstruction.sh:55-57, :106, :186, :251
+- Issue: Tests 1, 4, 7, and 10 each modify or overwrite README.md without restoring it afterward. Starting from test 4, `_reconstruct_coder_summary` will always include README.md in its "Files Modified" section even for tests that don't intend to have tracked changes. Tests 5, 6, 7, and 8 silently inherit this artifact. The suite does not fail because the assertions in those tests do not check for the absence of README.md, but the test environment no longer reflects what the test author intended. Test 9's `git reset --hard HEAD -q` + `git clean -fd -q` provides a mid-suite reset that limits blast radius for tests 10–13.
+- Severity: MEDIUM
+- Action: After each test that modifies README.md, add `git checkout HEAD -- README.md 2>/dev/null || true` or restructure each test to call `git reset --hard HEAD -q` at its start (as test 4 already does) to guarantee a clean baseline.

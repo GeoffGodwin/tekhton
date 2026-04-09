@@ -11,6 +11,8 @@
 #   6. Tester stage: includes tester-specific instructions
 #   7. No summary file present: summary section is empty
 #   8. Context includes "do NOT redo completed work" instruction
+#   9. Different attempt numbers render correctly
+#  10. Placeholder-only CODER_SUMMARY.md triggers "placeholder" state
 # =============================================================================
 set -euo pipefail
 
@@ -270,6 +272,82 @@ if echo "$result2" | grep -q "150 turns total"; then
 else
     fail "9.3: Should show '150 turns total'"
 fi
+
+# =============================================================================
+# Test 10: Placeholder-only CODER_SUMMARY.md triggers "placeholder" state
+# =============================================================================
+echo "=== Test 10: Placeholder CODER_SUMMARY.md ==="
+
+# Write a skeleton with unfilled placeholders
+cat > CODER_SUMMARY.md << 'EOF'
+# Coder Summary
+## Status: IN PROGRESS
+## What Was Implemented
+(fill in as you go)
+## Root Cause (bugs only)
+(fill in after diagnosis)
+## Files Modified
+(fill in as you go)
+EOF
+
+result=$(build_continuation_context "coder" "1" "3" "50" "50")
+
+if echo "$result" | grep -q "CODER_SUMMARY.md is placeholder"; then
+    pass "10.1: Placeholder skeleton detected as 'placeholder' state"
+else
+    fail "10.1: Should detect placeholder skeleton — expected 'CODER_SUMMARY.md is placeholder'"
+fi
+
+if echo "$result" | grep -q "recreate it NOW"; then
+    pass "10.2: Placeholder state instructs to recreate NOW"
+else
+    fail "10.2: Placeholder state should instruct to recreate NOW"
+fi
+
+# Also verify the "update as you go" variant triggers placeholder detection
+cat > CODER_SUMMARY.md << 'EOF'
+# Coder Summary
+## Status: IN PROGRESS
+## What Was Implemented
+(update as you go)
+EOF
+
+result=$(build_continuation_context "coder" "1" "3" "50" "50")
+
+if echo "$result" | grep -q "CODER_SUMMARY.md is placeholder"; then
+    pass "10.3: 'update as you go' variant also detected as placeholder"
+else
+    fail "10.3: 'update as you go' variant should also be detected as placeholder"
+fi
+
+# Verify that a properly filled CODER_SUMMARY.md does NOT trigger placeholder
+cat > CODER_SUMMARY.md << 'EOF'
+# Coder Summary
+## Status: IN PROGRESS
+## What Was Implemented
+- Added input validation to the login form
+- Fixed edge case in date parsing
+## Files Modified
+- src/auth/login.ts
+- src/utils/date.ts
+EOF
+
+result=$(build_continuation_context "coder" "1" "3" "50" "50")
+
+if echo "$result" | grep -q "Read CODER_SUMMARY.md first"; then
+    pass "10.4: Properly filled summary uses normal 'exists' instructions"
+else
+    fail "10.4: Properly filled summary should use normal 'exists' instructions"
+fi
+
+# Ensure it does NOT say "is placeholder" or "is missing" for filled summary
+if echo "$result" | grep -q "CODER_SUMMARY.md is"; then
+    fail "10.5: Filled summary should NOT trigger placeholder/missing state"
+else
+    pass "10.5: Filled summary correctly avoids placeholder/missing path"
+fi
+
+rm -f CODER_SUMMARY.md
 
 # =============================================================================
 # Summary
