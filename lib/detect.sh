@@ -106,7 +106,7 @@ detect_languages() {
     # Fallback: consult CLAUDE.md for tech stack when file-based detection is empty
     if [[ -z "$_detected_output" ]] && [[ -f "${proj_dir}/CLAUDE.md" ]]; then
         local _identity_block=""
-        _identity_block=$(sed -n '/^### 1\. Project Identity/,/^###/{/^### 1\./d;/^###/d;p;}' "${proj_dir}/CLAUDE.md" || true)
+        _identity_block=$(sed -n '/^## 1\. Project Identity/,/^## [0-9]/{/^## 1\./d;/^## [0-9]/d;p;}' "${proj_dir}/CLAUDE.md" || true)
         if [[ -n "$_identity_block" ]]; then
             local _known_langs='TypeScript|JavaScript|Python|Go|Rust|Java|Kotlin|Swift|Dart|Ruby|PHP|C#|Elixir|Haskell'
             local _claude_langs=""
