@@ -1,83 +1,30 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 43 test functions
+Tests audited: 2 files, 16 test functions
 Verdict: PASS
-
-### Implementation Baseline Note
-`CODER_SUMMARY.md` is absent. The audit context states "Implementation Files Changed: none."
-Git history confirms `lib/detect.sh` was last modified in commit `4ce901d` (the immediately
-prior pipeline session, labeled as a health-scoring fix) — that commit added the CLAUDE.md
-fallback to `detect_languages()` at lines 107–126. The 4 new test files test that already-
-committed implementation. `tests/test_detect_languages.sh` (the committed baseline file)
-already contains a basic CLAUDE.md fallback test at lines 222–250.
 
 ---
 
 ### Findings
 
-#### SCOPE: Tester created 4 new files instead of adding to the specified file
-- File: tests/test_detect_languages_fallback_guard.sh, tests/test_detect_languages_multiple_langs.sh, tests/test_detect_languages_fallback_prose.sh, tests/test_detect_languages_edge_cases.sh
-- Issue: The task specification explicitly instructs: "Add a test case to
-  `tests/test_detect_languages.sh` (the existing language detection test file)." The tester
-  instead created 4 separate new files and did not touch `tests/test_detect_languages.sh`.
-  That existing file already contains a CLAUDE.md fallback section at lines 222–250 (committed
-  in a prior session) which satisfies the task's minimal requirement. The 4 new files provide
-  supplementary depth coverage and are not orphaned — they test real, committed behavior —
-  but the prescribed approach was not followed.
-- Severity: MEDIUM
-- Action: No changes required to the 4 new files; their content is valid. For future audit
-  traceability, add a comment to `tests/test_detect_languages.sh` pointing to the supplementary
-  files, e.g. `# Extended CLAUDE.md fallback coverage: see test_detect_languages_fallback_*.sh`
-
-#### NAMING: Misleading test name and mismatched fixture in prose fallback Test 4
-- File: tests/test_detect_languages_fallback_prose.sh:183
-- Issue: The test is titled "Case-insensitive extraction doesn't match partial words" and its
-  inline comment says "This section mentions 'python' in context but shouldn't match
-  'typescript' in 'typescript-like'" — but the CLAUDE.md fixture contains neither `python`
-  as a standalone word in prose nor the compound `typescript-like`. The actual fixture tests
-  that Go and Kotlin are detected from plain prose with no false positives from other language
-  names. The intent the name describes (partial-word guard) is untested. The assertions that
-  exist are correct against the actual fixture, but the test is misdescribed.
-- Severity: MEDIUM
-- Action: Either (a) rename to "prose_fallback_no_false_positives" and remove the misleading
-  comment, or (b) add a fixture line like "Uses a TypeScript-like syntax for macros." and
-  verify that TypeScript is or is not detected, to actually test the stated partial-word
-  scenario.
-
-#### COVERAGE: Dead `else` branch in prose fallback Test 4 false-positive check
-- File: tests/test_detect_languages_fallback_prose.sh:220–230
-- Issue: The false-positive assertion uses a two-layer conditional:
-    if grep -qE "^(typescript|python|...)"; then
-        unexpected=$(echo "$word_langs" | grep -vE "^(go|kotlin)")
-        if [[ -n "$unexpected" ]]; then fail; else pass; fi
-    else
-        pass
-    fi
-  The outer `grep` returns true only if an unexpected language is present. In that case, the
-  inner `$unexpected` will always be non-empty (the outer match is a subset of what `grep -v`
-  preserves). The inner `else pass` branch is dead code. The assertion is not wrong in
-  practice — the outer `else pass` is where real coverage lives — but the structure is
-  misleading about what is actually being checked.
+#### COVERAGE: Brownfield INIT_REPORT.md check verifies only one of two expected warnings
+- File: tests/test_init_report_greenfield_suppression.sh:204
+- Issue: `test_emit_init_report_file_brownfield_shows_warnings` only asserts that "ARCHITECTURE_FILE not detected" appears in INIT_REPORT.md when `file_count=10` and no architecture file exists. It does not assert that "No test command detected" also appears (the parallel path at `lib/init_report.sh:373–379` inside `_report_attention_items`). Test 7 (`test_emit_init_report_file_greenfield_no_warnings`) correctly checks that BOTH warnings are suppressed on greenfield, so the asymmetry is notable — suppress is fully tested, appear is half-tested for the report file path.
 - Severity: LOW
-- Action: Simplify to a single-layer check:
-    if echo "$word_langs" | grep -qE "^(typescript|python|ruby|php|haskell|elixir|dart|swift|rust|java|javascript)\|"; then
-        fail "Unexpected language detection: $word_langs"
-    else
-        pass "No false positive language detection"
-    fi
+- Action: Add a second `grep -q "No test command detected"` check in `test_emit_init_report_file_brownfield_shows_warnings` after the existing ARCHITECTURE_FILE assertion.
 
-#### NAMING: Hardcoded expected language count without cross-reference
-- File: tests/test_detect_languages_edge_cases.sh:231
-- Issue: `expected_count=14` is asserted against `wc -l` output with no connection to the
-  implementation. The comment (line 201) correctly lists all 14 languages from `_known_langs`
-  in `detect.sh`, but if the implementation ever adds or removes a language, this test fails
-  with "Expected 14 languages, got N" with no indication of which language changed.
-- Severity: LOW
-- Action: Add a comment on the `expected_count` line:
-  `expected_count=14  # sync with _known_langs at lib/detect.sh:111`
-  and consider listing the expected language names in a variable for a diff-friendly failure
-  message.
+---
+
+### Prior Audit Rework Verification
+
+All three findings from the prior audit cycle were addressed and verified:
+
+| Prior Finding | Status | Evidence |
+|---------------|--------|----------|
+| INTEGRITY: Test 8 (arch_config) had unconditional `pass` with no assertions | **FIXED** | Lines 277–295 now check `emit_init_summary` output for "ARCHITECTURE_FILE not detected" and separately call `_report_attention_items` with its own assertion. Both use conditional pass/fail, not unconditional pass. |
+| EXERCISE: `_best_command` not in scope when `emit_init_summary` is tested | **FIXED** | Both test files add `source "${TEKHTON_HOME}/lib/init_config.sh"` at line 10, placing `_best_command` (defined at `lib/init_config.sh:121`) in the test environment before any test function runs. |
+| COVERAGE: `_report_attention_items` not called for empty ARCHITECTURE_FILE case | **FIXED** | Test 8 of arch_config now calls `_report_attention_items "$project_dir" "" 10` at line 286 and asserts the warning appears in output (lines 289–295). |
 
 ---
 
@@ -85,52 +32,23 @@ already contains a basic CLAUDE.md fallback test at lines 222–250.
 
 | File | Assertions Honest | Fixtures Isolated | Calls Real Code | No Weakening | Verdict |
 |------|-------------------|-------------------|-----------------|--------------|---------|
-| test_detect_languages_fallback_guard.sh | PASS | PASS (mktemp + trap) | PASS (sources detect.sh) | n/a (new file) | PASS |
-| test_detect_languages_multiple_langs.sh | PASS | PASS (mktemp + trap) | PASS (sources detect.sh) | n/a (new file) | PASS |
-| test_detect_languages_fallback_prose.sh | PASS | PASS (mktemp + trap) | PASS (sources detect.sh) | n/a (new file) | PASS with notes |
-| test_detect_languages_edge_cases.sh | PASS | PASS (mktemp + trap) | PASS (sources detect.sh) | n/a (new file) | PASS |
+| test_init_report_greenfield_suppression.sh | PASS | PASS (mktemp + trap in Test 1; manual rm in Tests 7–8) | PASS (sources init_report.sh + init_config.sh) | n/a (new file) | PASS |
+| test_init_report_architecture_config.sh | PASS | PASS (mktemp + manual cleanup before every fail path) | PASS (sources init_report.sh + init_config.sh) | n/a (new file) | PASS |
 
-None of the 4 files read live project files, pipeline logs, or mutable state artifacts.
-All fixtures are constructed in temp directories with `trap 'rm -rf "$TEST_TMPDIR"' EXIT`.
-All assertions verify outputs from real `detect_languages()` calls against controlled inputs.
-No existing tests were modified.
+Neither file reads live pipeline artifacts, CODER_SUMMARY.md, REVIEWER_REPORT.md,
+BUILD_ERRORS.md, or any mutable project state. All fixtures are constructed in `mktemp -d`
+temp directories scoped to each test function.
 
-### Implementation Verification Summary
+---
 
-All assertions were traced against `lib/detect.sh` (lines 107–126, the CLAUDE.md fallback).
+### Implementation Verification
 
-**Fallback guard** (`test_detect_languages_fallback_guard.sh`): The guard condition
-`[[ -z "$_detected_output" ]]` at line 107 correctly suppresses the CLAUDE.md path when
-file-based detection produces output. The TypeScript detection in Test 1 is driven by
-`package.json` + `tsconfig.json` presence (lines 28–30) producing `lang_manifest[typescript]`,
-combined with `touch`-created `.ts` files counted by `_count_source_files`. With
-`has_manifest="package.json"` and `source_count=2`, the confidence formula at lines 89–90
-resolves to `high`. All assertions are derivable from implementation logic. ✓
+All assertions were traced against `lib/init_report.sh` (last modified commit `4ce901d`):
 
-**Multiple languages** (`test_detect_languages_multiple_langs.sh`): The bullet grep
-`grep -ioE "^[[:space:]]*-[[:space:]]+(${_known_langs})"` with `-o` outputs only the matching
-portion, correctly stripping parenthetical descriptions like `- TypeScript (tools)` down to
-`- TypeScript`. The subsequent `sed` strips the `- ` prefix. Case normalization via `tr` is
-applied after extraction. All assertions about output format (`lang|low|CLAUDE.md`) and
-case normalization are correct. ✓
+**Greenfield suppression (`test_init_report_greenfield_suppression.sh`):**
+The gate `[[ "$file_count" -gt 0 ]]` at lines 76 and 94 correctly suppresses both the ARCHITECTURE_FILE and test-command checks when `file_count=0`. Tests 1–2 (greenfield, suppress) and Tests 3–4 (brownfield, emit) are consistent with this implementation. Tests 5–6 target `_report_attention_items` directly and match the same gate at line 356. Tests 7–8 target `emit_init_report_file` and verify the `file_count` argument is correctly threaded through to `_report_attention_items` at line 248. The exact warning strings checked ("ARCHITECTURE_FILE not detected", "No test command detected") appear at lines 88, 98, 368, and 377 of the implementation. All 8 assertions are honest. ✓
 
-**Prose fallback** (`test_detect_languages_fallback_prose.sh`): The secondary grep
-`grep -oiE "(${_known_langs})" | sort -u` fires only when the bullet grep yields nothing.
-The `sort -u` correctly deduplicates repeated mentions (Test 3). The prose fallback in the
-mixed-format test (Test 2) is suppressed because the bullet grep succeeds on `- Kotlin for
-Android app` (the `-o` match stops at `Kotlin`, not the full bullet text). ✓
+**ARCHITECTURE_FILE config check (`test_init_report_architecture_config.sh`):**
+Tests 1–7 exercise the dual-check logic at lines 78–86: default `ARCHITECTURE.md` first, then `pipeline.conf` parsing. Quote stripping via `tr -d '"' | tr -d "'"` at line 82 is exercised by Tests 3 (single quotes) and 4 (double quotes). Test 5 (configured path doesn't exist) correctly expects the warning because the `[[ -f "${project_dir}/${_conf_arch}" ]]` check at line 83 fails. Test 6 targets `_report_attention_items` with the same dual-check logic at lines 357–366. Test 7 targets `emit_init_report_file`. Test 8 covers empty-string config: `[[ -n "" ]]` at line 83 is false so `_arch_found` stays false, causing the warning — both `emit_init_summary` and `_report_attention_items` paths are asserted. All 9 assertions across 8 test functions are honest. ✓
 
-**Edge cases** (`test_detect_languages_edge_cases.sh`): The `sed` range
-`/^### 1\. Project Identity/,/^###/` produces an empty `_identity_block` when the heading
-is absent (Test 2) or the section contains no language keywords (Tests 1, 3). The `C#`
-normalization test (Test 4) is correct: `grep -ioE` matches `C#` case-insensitively, `tr`
-lowercases it to `c#`, and the output is `c#|low|CLAUDE.md`. The 14-language fixture
-(Test 6) correctly exercises all entries in `_known_langs`. ✓
-
-**Assertion honesty (PASS):** No hard-coded values bypass actual function execution.
-No identity assertions or always-true checks found.
-
-**Test weakening (PASS):** No existing tests were modified. All 4 files are new.
-
-**Test isolation (PASS):** No test reads live pipeline artifacts, build reports, or
-project-state files outside the per-test temp directory.
+**Test weakening:** No existing tests were modified. TESTER_REPORT confirms all 312 pre-existing tests pass alongside the 16 new ones.
