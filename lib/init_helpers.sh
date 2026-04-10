@@ -10,7 +10,7 @@ set -euo pipefail
 # Provides: _display_detection_results(), _offer_monorepo_choice(),
 #           _correct_project_type(), _count_tracked_files(),
 #           _install_agent_roles(), _append_addenda(), _seed_claude_md(),
-#           _ensure_gitignore_entries()
+#           _ensure_init_gitignore()
 # =============================================================================
 
 # --- Display detection results -----------------------------------------------
@@ -255,32 +255,64 @@ MERGE_EOF
 STUB_EOF
 }
 
-# _ensure_gitignore_entries — Adds Tekhton runtime artifact patterns to .gitignore.
-# Creates .gitignore if absent. Skips entries already present.
-_ensure_gitignore_entries() {
+# _ensure_init_gitignore — Writes tech-stack, sensitive-file, and Tekhton
+# runtime artifact patterns to .gitignore. Idempotent: only appends missing
+# entries; never removes or overwrites existing content.
+# Args: $1 = project_dir, $2 = detected languages (pipe-delimited, optional)
+_ensure_init_gitignore() {
     local project_dir="${1:-${PROJECT_DIR:-.}}"
+    local languages="${2:-}"
     local gitignore="${project_dir}/.gitignore"
-    local -a entries=(
-        ".claude/PIPELINE.lock" ".claude/PIPELINE_STATE.md"
-        ".claude/MILESTONE_STATE.md" ".claude/CHECKPOINT_META.json"
-        ".claude/LAST_FAILURE_CONTEXT.json" ".claude/TEST_BASELINE.json"
-        ".claude/TEST_BASELINE_OUTPUT.txt" ".claude/test_acceptance_output.tmp"
-        ".claude/dashboard/data/" ".claude/logs/" ".claude/indexer-venv/"
-        ".claude/index/" ".claude/serena/" ".claude/dry_run_cache/"
-        ".claude/migration-backups/" ".claude/watchtower_inbox/"
-    )
-    [[ ! -f "$gitignore" ]] && touch "$gitignore"
-    local added=0
-    for entry in "${entries[@]}"; do
-        grep -qF "$entry" "$gitignore" 2>/dev/null && continue
-        if (( added == 0 )) && ! grep -qF "# Tekhton runtime artifacts" "$gitignore" 2>/dev/null; then
-            if [[ -s "$gitignore" ]] && [[ "$(tail -c1 "$gitignore" | wc -l)" -eq 0 ]]; then
-                printf '\n' >> "$gitignore"
-            fi
-            printf '\n# Tekhton runtime artifacts\n' >> "$gitignore"
+
+    # Helper: append entry under a section header if not already present.
+    _gi_append() {
+        local file="$1" header="$2" entry="$3"
+        grep -qF "$entry" "$file" 2>/dev/null && return 0
+        if ! grep -qF "$header" "$file" 2>/dev/null; then
+            [[ -s "$file" ]] && [[ "$(tail -c1 "$file" | wc -l)" -eq 0 ]] && printf '\n' >> "$file"
+            printf '\n%s\n' "$header" >> "$file"
         fi
-        printf '%s\n' "$entry" >> "$gitignore"
-        added=$(( added + 1 ))
+        printf '%s\n' "$entry" >> "$file"
+    }
+
+    # Ensure file exists before appending.
+    [[ ! -f "$gitignore" ]] && touch "$gitignore"
+
+    # Tech-stack patterns based on detected languages.
+    if [[ -n "$languages" ]]; then
+        local -A _seen=()
+        local lang _conf _manifest
+        while IFS='|' read -r lang _conf _manifest; do
+            [[ -n "${_seen[$lang]+x}" ]] && continue
+            _seen[$lang]=1
+            local -a _pats=()
+            case "$lang" in
+                typescript|javascript) _pats=("node_modules/" "dist/" ".next/" ".cache/") ;;
+                python) _pats=("__pycache__/" "*.pyc" ".venv/" "venv/" "*.egg-info/" ".pytest_cache/") ;;
+                rust)   _pats=("target/") ;;
+                go)     _pats=("vendor/") ;;
+                ruby)   _pats=(".bundle/" "vendor/bundle/") ;;
+                java|kotlin) _pats=("target/" "*.class" ".gradle/" "build/") ;;
+                dart)   _pats=(".dart_tool/" ".pub-cache/") ;;
+                csharp) _pats=("bin/" "obj/") ;;
+                swift)  _pats=(".build/" ".swiftpm/") ;;
+                php)    _pats=("vendor/") ;;
+            esac
+            local _p
+            for _p in "${_pats[@]}"; do
+                _gi_append "$gitignore" "# Tech-stack patterns" "$_p"
+            done
+        done <<< "$languages"
+    fi
+
+    # Common sensitive-file patterns (always).
+    local _sp
+    for _sp in ".env" "*.pem" "*.key" "id_rsa" ".DS_Store"; do
+        _gi_append "$gitignore" "# Sensitive files" "$_sp"
     done
-    (( added > 0 )) && success "Added ${added} Tekhton runtime artifact pattern(s) to .gitignore"
+
+    # Tekhton runtime entries (defined in common.sh, available everywhere).
+    _ensure_gitignore_entries "$project_dir"
+
+    unset -f _gi_append
 }

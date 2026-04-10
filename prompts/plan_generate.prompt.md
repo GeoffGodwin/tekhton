@@ -64,7 +64,16 @@ Your output MUST contain all of the following sections, in this order:
 ### 1. Project Identity
 - Project name (from DESIGN.md title or project name section)
 - One-paragraph description of what the project does and who it's for
-- Tech stack summary (languages, frameworks, key dependencies)
+- **Languages** — required as a bullet list, one language per line (NOT comma-separated prose):
+  ```
+  **Languages:**
+  - Python
+  - TypeScript
+  ```
+  Use only the canonical names (TypeScript, JavaScript, Python, Go, Rust, Java, Kotlin,
+  Swift, Dart, Ruby, PHP, C#, Elixir, Haskell). This list is machine-read by Tekhton
+  tooling — do not merge multiple languages onto one line.
+- Frameworks and key dependencies (prose is fine here)
 - Target platform(s) and deployment model
 - If DESIGN.md specifies a monetization model or license, include it
 

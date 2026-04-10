@@ -82,11 +82,13 @@ EOF
 
 no_identity_langs=$(detect_languages "$NO_IDENTITY_DIR")
 
-# Should return empty (fallback only looks at ### 1. Project Identity)
-if [[ -z "$no_identity_langs" ]]; then
-    pass "Missing Project Identity section returns no output"
+# Strategy 3 (whole-file word-boundary scan) will find languages mentioned anywhere in
+# the file, including the Tech Stack section's prose.  This is intentional — we want to
+# detect the project's languages even when ### 1. Project Identity is absent.
+if echo "$no_identity_langs" | grep -q "^typescript|" && echo "$no_identity_langs" | grep -q "^go|"; then
+    pass "Languages found via whole-file fallback when Project Identity section is missing"
 else
-    fail "Missing Project Identity section should return empty, got: $no_identity_langs"
+    fail "Expected TypeScript and Go via whole-file fallback, got: $no_identity_langs"
 fi
 
 # =============================================================================

@@ -100,6 +100,13 @@ contains "Milestone 1 should be the foundation" "milestone ordering: milestone 1
 contains "Seeds Forward" "milestone ordering section references Seeds Forward"
 
 echo
+echo "=== Project Identity Languages Format ==="
+
+contains '**Languages:**' "Project Identity instructs LLM to emit **Languages:** label"
+contains "machine-read" "Languages list noted as machine-read by Tekhton"
+contains "do not merge multiple languages onto one line" "Languages list prohibits multi-language lines"
+
+echo
 echo "=== Summary ==="
 echo "  Passed: ${PASS}  Failed: ${FAIL}"
 

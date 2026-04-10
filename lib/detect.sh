@@ -105,27 +105,59 @@ detect_languages() {
 
     # Fallback: consult CLAUDE.md for tech stack when file-based detection is empty
     if [[ -z "$_detected_output" ]] && [[ -f "${proj_dir}/CLAUDE.md" ]]; then
-        local _identity_block=""
-        # Match "## Project Identity", "## 1. Project Identity", or "### 1. Project Identity".
-        # Stop at the next ## heading. awk is used because the section number is optional.
-        _identity_block=$(awk '/^#+ .*Project Identity/{found=1;next} found && /^## /{exit} found{print}' "${proj_dir}/CLAUDE.md" || true)
-        if [[ -n "$_identity_block" ]]; then
-            local _known_langs='TypeScript|JavaScript|Python|Go|Rust|Java|Kotlin|Swift|Dart|Ruby|PHP|C#|Elixir|Haskell'
-            local _claude_langs=""
-            _claude_langs=$(echo "$_identity_block" | grep -ioE "^[[:space:]]*-[[:space:]]+(${_known_langs})" | sed 's/^[[:space:]]*-[[:space:]]*//' || true)
-            if [[ -z "$_claude_langs" ]]; then
-                _claude_langs=$(echo "$_identity_block" | grep -oiE "\b(${_known_langs})\b" | sort -u || true)
+        local _known_langs='TypeScript|JavaScript|Python|Go|Rust|Java|Kotlin|Swift|Dart|Ruby|PHP|C#|Elixir|Haskell'
+        local _claude_langs=""
+
+        # Strategy 1: Structured **Languages:** list (produced by --plan generator).
+        # Matches bullets directly under a "**Languages:**" label anywhere in the file,
+        # stopping at the first blank line or non-bullet line after the list starts.
+        local _in_langs_block=false
+        while IFS= read -r _line; do
+            if echo "$_line" | grep -qiE '^[[:space:]]*\*\*Languages(:|\*\*)'; then
+                _in_langs_block=true
+                continue
             fi
-            if [[ -n "$_claude_langs" ]]; then
-                local _lang_name _lower
-                while IFS= read -r _lang_name; do
-                    [[ -z "$_lang_name" ]] && continue
-                    _lower=$(echo "$_lang_name" | tr '[:upper:]' '[:lower:]')
-                    # Align C# identifier with file-based detection key
-                    [[ "$_lower" == "c#" ]] && _lower="csharp"
-                    _detected_output+="${_lower}|low|CLAUDE.md"$'\n'
-                done <<< "$_claude_langs"
+            if [[ "$_in_langs_block" == true ]]; then
+                if echo "$_line" | grep -qE '^[[:space:]]*-[[:space:]]+'; then
+                    local _bullet_text
+                    _bullet_text=$(echo "$_line" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/[[:space:]].*//')
+                    if echo "$_bullet_text" | grep -qiE "^(${_known_langs})$"; then
+                        _claude_langs+="${_bullet_text}"$'\n'
+                    fi
+                elif [[ -z "${_line// /}" ]]; then
+                    _in_langs_block=false
+                else
+                    _in_langs_block=false
+                fi
             fi
+        done < "${proj_dir}/CLAUDE.md" || true
+
+        # Strategy 2: Bullet starting with a language name in the Project Identity block.
+        if [[ -z "$_claude_langs" ]]; then
+            local _identity_block
+            # Stop at any heading at the same or higher level (## or ###) after the match.
+            _identity_block=$(awk '/^#+ .*Project Identity/{found=1;next} found && /^##/{exit} found{print}' "${proj_dir}/CLAUDE.md" || true)
+            if [[ -n "$_identity_block" ]]; then
+                _claude_langs=$(echo "$_identity_block" | grep -ioE "^[[:space:]]*-[[:space:]]+(${_known_langs})" | sed 's/^[[:space:]]*-[[:space:]]*//' || true)
+            fi
+        fi
+
+        # Strategy 3: Word-boundary scan of the entire CLAUDE.md (last resort).
+        if [[ -z "$_claude_langs" ]]; then
+            _claude_langs=$(grep -oiE "\b(${_known_langs})\b" "${proj_dir}/CLAUDE.md" | sort -u || true)
+        fi
+
+        if [[ -n "$_claude_langs" ]]; then
+            local _lang_name _lower
+            while IFS= read -r _lang_name; do
+                [[ -z "$_lang_name" ]] && continue
+                _lower=$(echo "$_lang_name" | tr '[:upper:]' '[:lower:]')
+                # Align C# identifier with file-based detection key
+                [[ "$_lower" == "c#" ]] && _lower="csharp"
+                # Deduplicate
+                echo "$_detected_output" | grep -qF "${_lower}|" && continue
+                _detected_output+="${_lower}|low|CLAUDE.md"$'\n'
+            done <<< "$_claude_langs"
         fi
     fi
 

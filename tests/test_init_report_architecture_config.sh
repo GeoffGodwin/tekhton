@@ -174,7 +174,8 @@ EOF
     output=$(emit_init_summary "$project_dir" "" "" "" "web-app" 10 2>&1)
 
     # ARCHITECTURE_FILE warning SHOULD appear (file doesn't exist)
-    if echo "$output" | grep -q "ARCHITECTURE_FILE not detected"; then
+    # New message format: ARCHITECTURE_FILE="<path>" not found
+    if echo "$output" | grep -q 'ARCHITECTURE_FILE.*not found'; then
         pass "Correctly warns when custom ARCHITECTURE_FILE path doesn't exist"
     else
         rm -rf "$project_dir"
@@ -255,7 +256,8 @@ EOF
 }
 
 # ============================================================================
-# Test 8: Empty ARCHITECTURE_FILE config value is treated as "not set"
+# Test 8: Empty ARCHITECTURE_FILE config value is treated as "not set" — no warning
+# Empty/unset means the default; agents create the file organically.
 # ============================================================================
 test_empty_architecture_file_config() {
     local project_dir
@@ -269,28 +271,27 @@ test_empty_architecture_file_config() {
 ARCHITECTURE_FILE=""
 EOF
 
-    # Test 1: emit_init_summary with file_count > 0 (no ARCHITECTURE.md or config path)
+    # Test 1: emit_init_summary — empty value is not a broken reference → no warning
     local output
     output=$(emit_init_summary "$project_dir" "" "" "" "web-app" 10 2>&1)
 
-    # With empty ARCHITECTURE_FILE and no ARCHITECTURE.md, warning SHOULD appear
-    if echo "$output" | grep -q "ARCHITECTURE_FILE not detected"; then
-        pass "Empty ARCHITECTURE_FILE correctly triggers warning in emit_init_summary (no doc configured)"
-    else
+    # Empty ARCHITECTURE_FILE is equivalent to unset — should NOT warn
+    if echo "$output" | grep -q 'ARCHITECTURE_FILE.*not found'; then
         rm -rf "$project_dir"
-        fail "Expected ARCHITECTURE_FILE warning when ARCHITECTURE_FILE is empty and no ARCHITECTURE.md exists"
+        fail "emit_init_summary should NOT warn when ARCHITECTURE_FILE is empty (not a broken reference)"
+    else
+        pass "Empty ARCHITECTURE_FILE correctly suppressed in emit_init_summary (not a broken reference)"
     fi
 
-    # Test 2: _report_attention_items also should warn on empty ARCHITECTURE_FILE
+    # Test 2: _report_attention_items — same: empty value should not trigger warning
     local report_output
     report_output=$(_report_attention_items "$project_dir" "" 10)
 
-    # With empty ARCHITECTURE_FILE and file_count > 0, warning SHOULD appear
-    if echo "$report_output" | grep -q "ARCHITECTURE_FILE"; then
-        pass "Empty ARCHITECTURE_FILE warning also appears in _report_attention_items"
-    else
+    if echo "$report_output" | grep -q 'ARCHITECTURE_FILE.*not found'; then
         rm -rf "$project_dir"
-        fail "Expected ARCHITECTURE_FILE warning in _report_attention_items for empty ARCHITECTURE_FILE"
+        fail "_report_attention_items should NOT warn when ARCHITECTURE_FILE is empty"
+    else
+        pass "Empty ARCHITECTURE_FILE correctly suppressed in _report_attention_items"
     fi
 
     rm -rf "$project_dir"

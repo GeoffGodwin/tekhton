@@ -141,7 +141,7 @@ run_smart_init() {
 
     # Phase 5: Agent role customization
     _install_agent_roles "$project_dir" "$tekhton_home" "$languages"
-    _ensure_gitignore_entries "$project_dir"
+    _ensure_init_gitignore "$project_dir" "$languages"
 
     # Phase 6: Stub CLAUDE.md
     if [[ ! -f "${project_dir}/CLAUDE.md" ]]; then

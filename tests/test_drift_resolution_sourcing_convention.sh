@@ -44,8 +44,11 @@ done
 
 # Test 3: Verify that only tester.sh is directly sourced after the comment (no direct sourcing of sub-stages)
 echo "Test 3: Verifying sourcing pattern after the convention documentation..."
-# Extract the section around the tester sourcing (allow some buffer for line number shifts)
-section=$(sed -n '810,825p' "${REPO_ROOT}/tekhton.sh")
+# Extract the section around tester.sh sourcing dynamically to avoid line-number brittleness.
+tester_line=$(grep -n 'source.*stages/tester\.sh' "${REPO_ROOT}/tekhton.sh" | head -1 | cut -d: -f1)
+start_line=$(( tester_line - 2 ))
+end_line=$(( tester_line + 6 ))
+section=$(sed -n "${start_line},${end_line}p" "${REPO_ROOT}/tekhton.sh")
 
 # Check that tester.sh is sourced
 if echo "$section" | grep -q 'source.*stages/tester\.sh'; then

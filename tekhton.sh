@@ -434,6 +434,8 @@ if [ "${1:-}" = "--plan" ] || [ "${1:-}" = "--plan-browser" ] || [ "${1:-}" = "-
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     run_plan || true
+    # Ensure .gitignore has Tekhton runtime entries after planning creates .claude/
+    [[ -d "${PROJECT_DIR}/.claude" ]] && _ensure_gitignore_entries "$PROJECT_DIR"
     exit 0
 fi
 
@@ -511,6 +513,8 @@ if [ "${1:-}" = "--plan-from-index" ]; then
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     run_project_synthesis "$PROJECT_DIR" || true
+    # Ensure .gitignore has Tekhton runtime entries after synthesis creates .claude/
+    [[ -d "${PROJECT_DIR}/.claude" ]] && _ensure_gitignore_entries "$PROJECT_DIR"
     exit 0
 fi
 

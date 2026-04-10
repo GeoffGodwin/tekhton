@@ -71,9 +71,11 @@ test_emit_init_summary_no_test_warning_on_greenfield() {
 }
 
 # ============================================================================
-# Test 3: emit_init_summary DOES show ARCHITECTURE_FILE warning on non-greenfield
+# Test 3: emit_init_summary does NOT falsely warn on brownfield when no explicit
+#          broken ARCHITECTURE_FILE reference exists in pipeline.conf.
+#          The default (empty/unset) means agents create the file organically.
 # ============================================================================
-test_emit_init_summary_shows_arch_warning_on_brownfield() {
+test_emit_init_summary_no_arch_warning_on_brownfield_without_explicit_ref() {
     local project_dir
     project_dir=$(mktemp -d)
     trap "rm -rf '$project_dir'" RETURN
@@ -84,11 +86,11 @@ test_emit_init_summary_shows_arch_warning_on_brownfield() {
     local output
     output=$(emit_init_summary "$project_dir" "" "" "" "web-app" 10 2>&1)
 
-    # On brownfield, ARCHITECTURE_FILE warning SHOULD appear
-    if echo "$output" | grep -q "ARCHITECTURE_FILE not detected"; then
-        pass "emit_init_summary correctly shows ARCHITECTURE_FILE warning on brownfield (file_count > 0)"
+    # Without an explicit broken reference, ARCHITECTURE_FILE warning should NOT appear
+    if echo "$output" | grep -q 'ARCHITECTURE_FILE.*not found'; then
+        fail "emit_init_summary should NOT warn about ARCHITECTURE_FILE on brownfield without an explicit broken reference"
     else
-        fail "emit_init_summary should show ARCHITECTURE_FILE warning on brownfield with file_count > 0"
+        pass "emit_init_summary correctly suppresses false ARCHITECTURE_FILE warning on brownfield (no explicit broken ref)"
     fi
 }
 
@@ -137,24 +139,25 @@ test_report_attention_items_file_count_parameter() {
 }
 
 # ============================================================================
-# Test 6: _report_attention_items shows warnings on non-greenfield
+# Test 6: _report_attention_items does NOT falsely warn on brownfield when no
+#          explicit broken ARCHITECTURE_FILE reference exists in pipeline.conf
 # ============================================================================
-test_report_attention_items_shows_warnings_on_brownfield() {
+test_report_attention_items_no_false_arch_warning_on_brownfield() {
     local project_dir
     project_dir=$(mktemp -d)
     trap "rm -rf '$project_dir'" RETURN
 
     source "${TEKHTON_HOME}/lib/init_report.sh"
 
-    # Call _report_attention_items with file_count=10 (brownfield)
+    # Call _report_attention_items with file_count=10 (brownfield), no pipeline.conf
     local output
     output=$(_report_attention_items "$project_dir" "" 10)
 
-    # With file_count > 0, ARCHITECTURE_FILE warning SHOULD appear
-    if echo "$output" | grep -q "ARCHITECTURE_FILE"; then
-        pass "_report_attention_items correctly shows ARCHITECTURE_FILE warning when file_count > 0"
+    # Without an explicit broken ARCHITECTURE_FILE reference, no arch warning should appear
+    if echo "$output" | grep -q 'ARCHITECTURE_FILE.*not found'; then
+        fail "_report_attention_items should NOT warn about ARCHITECTURE_FILE on brownfield without explicit broken ref"
     else
-        fail "_report_attention_items should show ARCHITECTURE_FILE warning when file_count > 0"
+        pass "_report_attention_items correctly suppresses false ARCHITECTURE_FILE warning on brownfield"
     fi
 }
 
@@ -199,15 +202,16 @@ test_emit_init_report_file_greenfield_no_warnings() {
 }
 
 # ============================================================================
-# Test 8: emit_init_report_file shows warnings on brownfield
+# Test 8: emit_init_report_file does NOT falsely warn on brownfield when no
+#          explicit broken ARCHITECTURE_FILE reference exists
 # ============================================================================
-test_emit_init_report_file_brownfield_shows_warnings() {
+test_emit_init_report_file_brownfield_no_false_arch_warning() {
     local project_dir
     project_dir=$(mktemp -d)
 
     source "${TEKHTON_HOME}/lib/init_report.sh"
 
-    # Generate INIT_REPORT.md with file_count=10 (brownfield)
+    # Generate INIT_REPORT.md with file_count=10 (brownfield), no pipeline.conf
     emit_init_report_file "$project_dir" "" "" "" "" "web-app" 10
 
     local report_file="${project_dir}/INIT_REPORT.md"
@@ -219,12 +223,12 @@ test_emit_init_report_file_brownfield_shows_warnings() {
     local report_content
     report_content=$(cat "$report_file")
 
-    # On brownfield with no ARCHITECTURE.md, warning SHOULD appear
-    if echo "$report_content" | grep -q "ARCHITECTURE_FILE not detected"; then
-        pass "INIT_REPORT.md correctly shows ARCHITECTURE_FILE warning on brownfield"
-    else
+    # Without an explicit broken ARCHITECTURE_FILE reference, no false warning should appear
+    if echo "$report_content" | grep -q 'ARCHITECTURE_FILE.*not found'; then
         rm -rf "$project_dir"
-        fail "INIT_REPORT.md should show ARCHITECTURE_FILE warning on brownfield (file_count > 0)"
+        fail "INIT_REPORT.md should NOT falsely warn about ARCHITECTURE_FILE on brownfield without explicit broken ref"
+    else
+        pass "INIT_REPORT.md correctly suppresses false ARCHITECTURE_FILE warning on brownfield"
     fi
 
     rm -rf "$project_dir"
@@ -235,12 +239,12 @@ test_emit_init_report_file_brownfield_shows_warnings() {
 # ============================================================================
 test_emit_init_summary_no_arch_warning_on_greenfield
 test_emit_init_summary_no_test_warning_on_greenfield
-test_emit_init_summary_shows_arch_warning_on_brownfield
+test_emit_init_summary_no_arch_warning_on_brownfield_without_explicit_ref
 test_emit_init_summary_shows_test_warning_on_brownfield
 test_report_attention_items_file_count_parameter
-test_report_attention_items_shows_warnings_on_brownfield
+test_report_attention_items_no_false_arch_warning_on_brownfield
 test_emit_init_report_file_greenfield_no_warnings
-test_emit_init_report_file_brownfield_shows_warnings
+test_emit_init_report_file_brownfield_no_false_arch_warning
 
 echo
 echo -e "${GREEN}All tests passed!${NC}"

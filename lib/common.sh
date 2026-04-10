@@ -291,3 +291,39 @@ report_orchestration_status() {
     echo -e "${BOLD}${CYAN}────────────────────────────────────────${NC}"
     echo
 }
+
+# --- Gitignore management -----------------------------------------------------
+
+# _ensure_gitignore_entries — Appends Tekhton runtime artifact patterns to
+# .gitignore. Creates the file if absent. Idempotent: skips present entries.
+# Args: $1 = project_dir (defaults to PROJECT_DIR or .)
+# Called from --plan (tekhton.sh) and from _ensure_init_gitignore (init_helpers.sh).
+_ensure_gitignore_entries() {
+    local _gi_dir="${1:-${PROJECT_DIR:-.}}"
+    local _gi_file="${_gi_dir}/.gitignore"
+    local -a _gi_entries=(
+        ".claude/PIPELINE.lock" ".claude/PIPELINE_STATE.md"
+        ".claude/MILESTONE_STATE.md" ".claude/CHECKPOINT_META.json"
+        ".claude/LAST_FAILURE_CONTEXT.json" ".claude/TEST_BASELINE.json"
+        ".claude/TEST_BASELINE_OUTPUT.txt" ".claude/test_acceptance_output.tmp"
+        ".claude/dashboard/data/" ".claude/logs/" ".claude/indexer-venv/"
+        ".claude/index/" ".claude/serena/" ".claude/dry_run_cache/"
+        ".claude/migration-backups/" ".claude/watchtower_inbox/"
+    )
+    [[ ! -f "$_gi_file" ]] && touch "$_gi_file"
+    local _gi_added=0
+    local _gi_entry
+    for _gi_entry in "${_gi_entries[@]}"; do
+        grep -qF "$_gi_entry" "$_gi_file" 2>/dev/null && continue
+        if (( _gi_added == 0 )) && ! grep -qF "# Tekhton runtime artifacts" "$_gi_file" 2>/dev/null; then
+            if [[ -s "$_gi_file" ]] && [[ "$(tail -c1 "$_gi_file" | wc -l)" -eq 0 ]]; then
+                printf '\n' >> "$_gi_file"
+            fi
+            printf '\n# Tekhton runtime artifacts\n' >> "$_gi_file"
+        fi
+        printf '%s\n' "$_gi_entry" >> "$_gi_file"
+        _gi_added=$(( _gi_added + 1 ))
+    done
+    (( _gi_added > 0 )) && success "Added ${_gi_added} Tekhton runtime artifact pattern(s) to .gitignore"
+    return 0
+}
