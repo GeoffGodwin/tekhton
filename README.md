@@ -548,9 +548,10 @@ Tekhton can index brownfield projects for context-aware operations:
 
 - **Tech stack detection** — automatically identifies languages, frameworks, entry
   points, and infers build/test/lint commands from manifest files and tooling
-- **Project crawler** — generates `PROJECT_INDEX.md` with file inventory, directory
-  tree, dependency analysis, and sampled key file content, bounded to a configurable
-  token budget
+- **Project crawler** — generates `.claude/index/` (structured data: `meta.json`,
+  `inventory.jsonl`, `dependencies.json`, `configs.json`, `tests.json`, per-file
+  `samples/`) and a bounded human-readable `PROJECT_INDEX.md` view, both configurable
+  via `PROJECT_INDEX_BUDGET`
 
 Used by `--init` to auto-populate `pipeline.conf` and by `--replan` to produce
 higher-quality document updates.
@@ -686,6 +687,34 @@ brew install shellcheck
 ```
 
 ## Changelog
+
+### v3.71.0 — Structured Project Index & Code Quality (April 2026)
+
+5 milestones (M67–M71) delivered after V3 feature-complete:
+
+**Structured Project Index (M67–M69)**
+- `crawl_project()` now emits a structured data layer to `.claude/index/` (`meta.json`,
+  `tree.txt`, `inventory.jsonl`, `dependencies.json`, `configs.json`, `tests.json`,
+  `samples/`) alongside the human-readable `PROJECT_INDEX.md` view. All writes are
+  atomic; `_list_tracked_files` is called exactly once per crawl (was 4×)
+- New `lib/index_reader.sh` with a bounded reader API consumed by intake, synthesis,
+  and replan — fixing three silent pre-existing bugs: intake was receiving empty project
+  context for any project >8KB; synthesis was compressing the index down to headings
+  only; replan was injecting the full raw 120KB+ file into the context window
+- New `lib/index_view.sh` generates `PROJECT_INDEX.md` from structured data via record
+  selection (not string truncation) — the `... (truncated to fit budget)` marker is
+  gone; the ARG_MAX-risk `_replace_section` and `_truncate_section` functions are
+  deleted; legacy projects auto-migrate on first rescan or crawl
+- `PROJECT_INDEX_BUDGET` config key replaces hardcoded `120000` at all call sites
+
+**Code Quality & Prompt Engineering (M70–M71)**
+- Mandatory Step 5 pre-completion self-check in `prompts/coder.prompt.md` — file
+  length (`wc -l` on every touched file), stale references after renames, dead code,
+  and new-file consistency checks. Targets the ~60% of non-blocking reviewer findings
+  the coder could catch itself
+- `.claude/agents/coder.md` gains a `### Shell Hygiene` section with concrete patterns:
+  `grep || true` under `set -e`, SC2155 two-line `local`, `--` option terminator,
+  sourced-file `set -euo pipefail` prohibition, and the 300-line file ceiling
 
 ### v3.66 — Context-Aware Pipeline (April 2026)
 

@@ -23,7 +23,11 @@ When Tekhton detects an existing codebase, initialization includes extra steps:
 4. **AI artifact detection** — Finds existing AI-generated configuration files
    (`.cursorrules`, `.github/copilot-instructions.md`, etc.) and offers to
    archive or merge them
-5. **Health baseline** — Runs an initial health assessment to establish a baseline
+5. **Project crawl** — Indexes the codebase into `.claude/index/` (structured data:
+   file inventory, dependency graph, config list, test infrastructure, content samples)
+   and generates a human-readable `PROJECT_INDEX.md` summary. Used by subsequent
+   pipeline stages for context-aware operations.
+6. **Health baseline** — Runs an initial health assessment to establish a baseline
    score
 
 ### AI Artifact Handling

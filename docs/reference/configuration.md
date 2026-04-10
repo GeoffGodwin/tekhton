@@ -277,6 +277,7 @@ When running in `--milestone` mode, these values override the base turn limits:
 
 | Key | Default | Description |
 |-----|---------|-------------|
+| `PROJECT_INDEX_BUDGET` | `120000` | Max chars for the `PROJECT_INDEX.md` view; does not cap the unbounded structured data in `.claude/index/` |
 | `REPO_MAP_ENABLED` | `false` | Toggle tree-sitter repo map generation |
 | `REPO_MAP_TOKEN_BUDGET` | `2048` | Max tokens for repo map output |
 | `REPO_MAP_CACHE_DIR` | `.claude/index` | Index cache directory |

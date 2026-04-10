@@ -1,5 +1,48 @@
 # Changelog
 
+## v3.71 — Structured Project Index & Code Quality (April 2026)
+
+5 milestones (M67–M71) delivered after V3 feature-complete:
+
+### Structured Project Index (M67–M69)
+
+- **Structured data layer (M67)** — `crawl_project()` now emits individual files to
+  `.claude/index/`: `meta.json` (scan metadata), `tree.txt` (complete directory tree,
+  no `head -500` truncation), `inventory.jsonl` (one record per file, unbounded),
+  `dependencies.json`, `configs.json`, `tests.json`, and `samples/<file>.txt` (per-file
+  content samples with a manifest). All writes are atomic (mktemp + mv).
+  `_list_tracked_files` is called exactly once per crawl (was 4×). `PROJECT_INDEX_BUDGET`
+  config key replaces hardcoded `120000` at all call sites.
+- **Consumer migration (M68)** — New `lib/index_reader.sh` provides `read_index_summary`,
+  `read_index_meta`, `read_index_inventory`, and related functions. Fixes three silent
+  pre-existing bugs: intake was receiving empty project context for any project >8KB
+  (`_safe_read_file` rejects files, not truncates); synthesis was compressing the index
+  via `summarize_headings` (keeping only headings, destroying the inventory table and all
+  sampled content); replan was injecting raw 120KB+ markdown with no budget gate. Also
+  fixes a broken regex in `_extract_sampled_files` that silently disabled sampled-file
+  change detection since M18. All reader functions fall back to legacy `PROJECT_INDEX.md`
+  parsing for projects that haven't re-crawled.
+- **View generator & rescan rewrite (M69)** — New `lib/index_view.sh` generates
+  `PROJECT_INDEX.md` from structured data using record selection (no truncation markers).
+  Rescan no longer does surgical markdown patching via `_replace_section` (eliminating
+  ARG_MAX risk on macOS). `_truncate_section` and `_replace_section` are deleted.
+  Legacy projects auto-migrate on the first rescan or crawl.
+
+### Code Quality & Prompt Engineering (M70–M71)
+
+- **Coder pre-completion self-check (M70)** — `prompts/coder.prompt.md` gains a mandatory
+  Step 5 self-check before COMPLETE: file length (`wc -l` on every touched file, 300-line
+  ceiling), stale reference detection after renames, dead code removal, and new-file
+  consistency checks. `templates/coder.md` strengthens the 300-line rule and adds
+  pipeline-failure consequence language. New `## Observed Issues (out of scope)` section
+  in CODER_SUMMARY.md gives coders a structured channel to record but not fix out-of-scope
+  problems. Targets ~60% of non-blocking reviewer findings.
+- **Tekhton shell hygiene rules (M71)** — `.claude/agents/coder.md` gains a
+  `### Shell Hygiene` section with concrete, project-specific bash patterns: `grep || true`
+  under `set -e`, SC2155 two-line `local`, `--` option terminator before variable arguments,
+  sourced-file `set -euo pipefail` prohibition, stale reference grep after renames, and
+  the 300-line file ceiling. No changes to reusable templates or pipeline infrastructure.
+
 ## v3.66 — Context-Aware Pipeline (April 2026)
 
 66 milestones delivered across the V3 initiative. Changes grouped by theme:
