@@ -106,13 +106,15 @@ detect_languages() {
     # Fallback: consult CLAUDE.md for tech stack when file-based detection is empty
     if [[ -z "$_detected_output" ]] && [[ -f "${proj_dir}/CLAUDE.md" ]]; then
         local _identity_block=""
-        _identity_block=$(sed -n '/^## 1\. Project Identity/,/^## [0-9]/{/^## 1\./d;/^## [0-9]/d;p;}' "${proj_dir}/CLAUDE.md" || true)
+        # Match "## Project Identity", "## 1. Project Identity", or "### 1. Project Identity".
+        # Stop at the next ## heading. awk is used because the section number is optional.
+        _identity_block=$(awk '/^#+ .*Project Identity/{found=1;next} found && /^## /{exit} found{print}' "${proj_dir}/CLAUDE.md" || true)
         if [[ -n "$_identity_block" ]]; then
             local _known_langs='TypeScript|JavaScript|Python|Go|Rust|Java|Kotlin|Swift|Dart|Ruby|PHP|C#|Elixir|Haskell'
             local _claude_langs=""
             _claude_langs=$(echo "$_identity_block" | grep -ioE "^[[:space:]]*-[[:space:]]+(${_known_langs})" | sed 's/^[[:space:]]*-[[:space:]]*//' || true)
             if [[ -z "$_claude_langs" ]]; then
-                _claude_langs=$(echo "$_identity_block" | grep -oiE "(${_known_langs})" | sort -u || true)
+                _claude_langs=$(echo "$_identity_block" | grep -oiE "\b(${_known_langs})\b" | sort -u || true)
             fi
             if [[ -n "$_claude_langs" ]]; then
                 local _lang_name _lower
