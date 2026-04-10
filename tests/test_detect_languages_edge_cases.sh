@@ -140,9 +140,9 @@ EOF
 
 csharp_langs=$(detect_languages "$CSHARP_DIR")
 
-# Should detect c# (normalized to lowercase)
-if echo "$csharp_langs" | grep -q "^c#|"; then
-    pass "C# detected and normalized to lowercase"
+# Should detect csharp (aligned with file-based detection key)
+if echo "$csharp_langs" | grep -q "^csharp|"; then
+    pass "C# detected and normalized to csharp"
 else
     fail "C# NOT detected or not normalized: $csharp_langs"
 fi

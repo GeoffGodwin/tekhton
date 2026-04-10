@@ -298,6 +298,7 @@ _handle_tekhton_reinit() {
         log "Agent roles will be regenerated with current templates."
     elif [[ -f "${project_dir}/.claude/milestones/MANIFEST.cfg" ]] && \
          [[ ! -f "${project_dir}/.claude/pipeline.conf" ]]; then
+        # has_pipeline_conf loop result unused in this branch
         log "Found completed --plan output — proceeding with initialization."
     else
         log "Prior Tekhton installation detected."

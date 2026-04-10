@@ -119,6 +119,8 @@ detect_languages() {
                 while IFS= read -r _lang_name; do
                     [[ -z "$_lang_name" ]] && continue
                     _lower=$(echo "$_lang_name" | tr '[:upper:]' '[:lower:]')
+                    # Align C# identifier with file-based detection key
+                    [[ "$_lower" == "c#" ]] && _lower="csharp"
                     _detected_output+="${_lower}|low|CLAUDE.md"$'\n'
                 done <<< "$_claude_langs"
             fi

@@ -272,14 +272,14 @@ _write_health_report() {
     local show_belt="${HEALTH_SHOW_BELT:-true}"
 
     # Extract source_files from test_detail JSON for greenfield detection
-    local _src_files_count=""
-    _src_files_count=$(echo "$test_detail" | grep -oE '"source_files":[0-9]+' | grep -oE '[0-9]+' || true)
+    local src_files_count=""
+    src_files_count=$(echo "$test_detail" | grep -oE '"source_files":[0-9]+' | grep -oE '[0-9]+' || true)
 
     local tmpfile="${report_file}.tmp.$$"
     {
         echo "# Project Health Report"
         echo
-        if [[ "${_src_files_count:-0}" -eq 0 ]]; then
+        if [[ "${src_files_count:-0}" -eq 0 ]]; then
             echo "> **Pre-code baseline** — scores reflect project setup only, not code quality."
             echo
         fi

@@ -173,6 +173,7 @@ NOW — do not leave them for the reviewer:
   CODER_SUMMARY.md under `## Files Modified` with the annotation `(NEW)`.
   If the project has a repository layout section in CLAUDE.md or
   ARCHITECTURE.md, add the new file there.
+
 **Step 6:** Update `CODER_SUMMARY.md` with final status, root cause, and files modified.
 
 ## Required Reading

@@ -243,7 +243,7 @@ else
     fail "CLAUDE.md fallback returned empty output"
 fi
 
-if echo "$claude_langs" | grep -qi "typescript.*|low|CLAUDE.md"; then
+if echo "$claude_langs" | grep -qi "typescript|low|CLAUDE.md"; then
     pass "CLAUDE.md fallback detects TypeScript with low confidence"
 else
     fail "CLAUDE.md fallback did not detect TypeScript|low|CLAUDE.md: $claude_langs"
