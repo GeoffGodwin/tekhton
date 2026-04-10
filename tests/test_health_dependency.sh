@@ -239,6 +239,33 @@ for key in "lock_file" "dep_ratio" "vuln_scanner" "manifest"; do
 done
 
 # ============================================================================
+# Test 14: Dep ratio boundary — ratio=50 scores 25, ratio>50 scores 20
+# ============================================================================
+
+# ratio=50: 1 dep, 2 source files → (1*100)/2 = 50 → dep_ratio_score=25
+RATIO50_DIR="$TMPDIR/ratio50"
+make_git_repo "$RATIO50_DIR"
+printf 'module test\n\nrequire (\n\texample.com/pkg v1.0.0\n)\n' > "$RATIO50_DIR/go.mod"
+echo 'package main' > "$RATIO50_DIR/main.go"
+echo 'package main' > "$RATIO50_DIR/util.go"
+git -C "$RATIO50_DIR" add . && git -C "$RATIO50_DIR" commit -q -m "init"
+
+result=$(_check_dependency_health "$RATIO50_DIR")
+dep_ratio=$(extract_sub "$result" "dep_ratio")
+assert_eq "ratio=50 boundary → dep_ratio 25" "25" "$dep_ratio"
+
+# ratio=100: 1 dep, 1 source file → (1*100)/1 = 100 → dep_ratio_score=20
+RATIO100_DIR="$TMPDIR/ratio100"
+make_git_repo "$RATIO100_DIR"
+printf 'module test\n\nrequire (\n\texample.com/pkg v1.0.0\n)\n' > "$RATIO100_DIR/go.mod"
+echo 'package main' > "$RATIO100_DIR/main.go"
+git -C "$RATIO100_DIR" add . && git -C "$RATIO100_DIR" commit -q -m "init"
+
+result=$(_check_dependency_health "$RATIO100_DIR")
+dep_ratio=$(extract_sub "$result" "dep_ratio")
+assert_eq "ratio=100 → dep_ratio 20" "20" "$dep_ratio"
+
+# ============================================================================
 # Results
 # ============================================================================
 

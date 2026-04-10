@@ -128,7 +128,7 @@ detect_languages() {
     fi
 
     if [[ -n "$_detected_output" ]]; then
-        printf '%s' "$_detected_output"
+        printf '%s' "${_detected_output%$'\n'}"
     fi
 }
 

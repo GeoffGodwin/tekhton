@@ -20,6 +20,8 @@ set -euo pipefail
 source "${TEKHTON_HOME:?}/lib/health_checks_infra.sh"
 # shellcheck source=lib/health_checks.sh
 source "${TEKHTON_HOME:?}/lib/health_checks.sh"
+# shellcheck source=lib/health_checks_hygiene.sh
+source "${TEKHTON_HOME:?}/lib/health_checks_hygiene.sh"
 
 # --- Belt system --------------------------------------------------------------
 

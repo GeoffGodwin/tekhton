@@ -76,6 +76,7 @@ tekhton/
 │   ├── health.sh           # Project health scoring orchestration
 │   ├── health_checks.sh    # Health check implementations
 │   ├── health_checks_infra.sh # Infrastructure health checks
+│   ├── health_checks_hygiene.sh # Project hygiene health check
 │   ├── dashboard.sh        # Watchtower dashboard data emission
 │   ├── dashboard_emitters.sh  # Dashboard data file writers
 │   ├── dashboard_parsers.sh   # Dashboard data parsers

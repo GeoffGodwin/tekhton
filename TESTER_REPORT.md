@@ -1,23 +1,20 @@
-# Tester Report
-
 ## Planned Tests
-None required (Coverage Gaps section of REVIEWER_REPORT.md is empty)
+- [x] `tests/test_detect_claude_md_fallback.sh` — Verify detect_languages() reads tech stack from CLAUDE.md when file-based detection is empty
+- [x] `tests/test_health_greenfield_baseline.sh` — Verify health scoring for greenfield projects and pre-code callout in report
+- [x] `tests/test_dep_ratio_boundary.sh` — Verify dependency ratio scoring is continuous at boundary (ratio=50 scores 25)
 
 ## Test Run Results
-Passed: 0  Failed: 0  No new tests added.
+Passed: 333 (shell) + 76 (Python)  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `NON_BLOCKING_LOG.md` — Removed duplicate `## Resolved` heading (empty section artifact)
+- [x] `tests/test_detect_claude_md_fallback.sh`
+- [x] `tests/test_health_greenfield_baseline.sh`
+- [x] `tests/test_dep_ratio_boundary.sh` — Fixed to extract dep_ratio sub-score from JSON details, added 6 boundary test cases covering all tiers
 
-## Summary
-
-The reviewer identified 2 non-blocking notes:
-
-1. **Missing CODER_SUMMARY.md** — This is a coder responsibility. The file should be produced by the coder stage (Step 6 of coder prompt). This is noted for the next coder run but is outside the scope of test coverage.
-
-2. **Duplicate `## Resolved` heading** — Fixed by removing the empty second heading.
-
-The `## Coverage Gaps` section of REVIEWER_REPORT.md is empty, indicating no test coverage gaps need to be addressed at this time.
+## Timing
+- Test executions: 1
+- Approximate total test execution time: ~45s
+- Test files written: 1 (fixed/completed)
