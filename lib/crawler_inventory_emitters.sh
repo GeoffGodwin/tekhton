@@ -32,10 +32,11 @@ _emit_inventory_jsonl() {
 
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
-        local count path
+        local count path rel_path
         count=$(printf '%s' "$line" | awk '{print $1}')
         path=$(printf '%s' "$line" | awk '{$1=""; print substr($0,2)}')
-        file_lines["${path#"${project_dir}/"}"]="$count"
+        rel_path="${path#"${project_dir}/"}"
+        file_lines[$rel_path]="$count"
     done <<< "$line_data"
 
     # Write JSONL — one record per file, directly to temp file
