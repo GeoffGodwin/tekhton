@@ -1,26 +1,23 @@
 # Coder Summary
-
 ## Status: COMPLETE
-
 ## What Was Implemented
-
-- Fixed `check_bash_version()` in `install.sh` (lines 122–141) to use the defined `fail()` helper instead of the undefined `error()` function
-- Restructured the function to print helpful instructions (Homebrew install steps for macOS, upgrade message for other platforms) before calling `fail()` which prints the error and exits with code 1
-- Updated version references from "bash 4+" to "bash 4.3+" in the error messages to match the actual Tekhton requirement
-- Removed the dead `exit 1` at the end of the if-block (now unreachable since `fail()` exits)
+- Clarified Express Mode "zero-config" description in README.md (two locations) to note that macOS users must still install bash 4.3+ via Homebrew before running Tekhton
+- Standardized bash version floor from "4+" to "4.3+" in docs/getting-started/installation.md (three locations: macOS warning note, Linux section, Windows section)
+- Standardized bash version floor from "4+" to "4.3+" in docs/troubleshooting/common-errors.md error message heading
 
 ## Root Cause (bugs only)
-
-`check_bash_version()` at install.sh:122 called `error()` (lines 127, 137) which was never defined. The defined helpers are `info()`, `ok()`, `warn()`, and `fail()` (lines 36–39). Under `set -euo pipefail`, the undefined command caused the script to crash with "error: command not found" instead of displaying the helpful macOS Homebrew instructions and cleanly exiting. The fix replaces `error()` with `fail()` (which prints a formatted error message to stderr and exits 1), with the informational messages printed before the `fail()` call so they're visible to the user.
+Express Mode was described as "zero-config execution" without noting that macOS users still require bash 4.3+ (via Homebrew) before anything will work — misleading macOS users into thinking no setup is needed. Additionally, several doc pages used "bash 4+" instead of the accurate "bash 4.3+" floor, inconsistent with README.md, CLAUDE.md, and install.sh which all specify 4.3+.
 
 ## Files Modified
-
-- `install.sh` — replaced undefined `error()` calls with `fail()` in `check_bash_version()`, updated version strings to "4.3+"
+- `README.md` — Added macOS caveat to both Express Mode mentions (lines 74 and 763)
+- `docs/getting-started/installation.md` — Standardized "bash 4+" → "bash 4.3+" in three places (macOS warning, Linux section, Windows section)
+- `docs/troubleshooting/common-errors.md` — Standardized error message heading from "bash 4+" to "bash 4.3+"
 
 ## Human Notes Status
-
-- COMPLETED: [BUG] README.md lies about macOS being zero-setup. Update — Verified: README.md:102 already says "Bash 4.3+" with macOS warning, `brew install bash`, and link to `docs/getting-started/installation.md#macos`. Quick Start callout at line 115 is present. Bash floor is consistently "4.3+" across README.md, CLAUDE.md, and docs/getting-started/installation.md. All items from this note were addressed in a prior run.
+No human notes were injected for this task.
 
 ## Observed Issues (out of scope)
-
-- `install.sh` is 558 lines, exceeding the 300-line ceiling. It was already over the limit before this change. A future milestone should split it into logical sections (e.g., extract platform detection, PATH setup, and download functions into separate files).
+- `.claude/agents/coder.md:14` — says "Bash 4+" instead of "Bash 4.3+"
+- `.claude/agents/coder.md:29` — says "Bash 4+ only — no bashisms beyond bash 4" instead of "4.3+"
+- `.claude/agents/architect.md:15` — says "Bash 4+" instead of "Bash 4.3+"
+- `.claude/agents/jr-coder.md:14` — says "Bash 4+" instead of "Bash 4.3+"

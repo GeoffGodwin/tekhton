@@ -15,7 +15,7 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 ## Features
 
 ## Bugs
-- [ ] [BUG] README.md lies about macOS being zero-setup. Update
+- [x] [BUG] README.md lies about macOS being zero-setup. Update
       README.md:102 Requirements line to flag that macOS needs
       `brew install bash`, with a link to
       docs/getting-started/installation.md#macos. Add a one-line

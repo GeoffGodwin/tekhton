@@ -49,7 +49,7 @@ After installing, verify the version:
 ```
 
 !!! warning "macOS Default Shell"
-    Even after installing bash 4+ via Homebrew, your default `/bin/bash` is still 3.2.
+    Even after installing bash 4.3+ via Homebrew, your default `/bin/bash` is still 3.2.
     Tekhton's shebang (`#!/usr/bin/env bash`) will pick up the Homebrew version
     automatically as long as it's on your PATH before `/bin`.
 
@@ -57,8 +57,8 @@ After installing, verify the version:
 
 ### Linux
 
-Most modern Linux distributions ship with bash 4+ out of the box. Ubuntu 18.04+,
-Debian 10+, Fedora, and Arch all include bash 4 or later.
+Most modern Linux distributions ship with bash 4.3+ out of the box. Ubuntu 18.04+,
+Debian 10+, Fedora, and Arch all include bash 4.3 or later.
 
 Check your version:
 
@@ -69,7 +69,7 @@ bash --version
 ### Windows
 
 Tekhton requires Windows Subsystem for Linux (WSL). Native Windows shells
-(PowerShell, cmd.exe) and Git Bash are **not supported** — they lack bash 4+
+(PowerShell, cmd.exe) and Git Bash are **not supported** — they lack bash 4.3+
 features that Tekhton depends on.
 
 **Install WSL:**
