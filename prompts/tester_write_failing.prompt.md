@@ -61,7 +61,7 @@ Task to be implemented: {{TASK}}
 - Do NOT fix or modify existing implementation code.
 
 ## Required Output Format
-Write `TESTER_PREFLIGHT.md` with this EXACT structure:
+Write `{{TDD_PREFLIGHT_FILE}}` with this EXACT structure:
 
 ```
 ## TDD Pre-Flight Tests
@@ -88,6 +88,6 @@ Any guidance for the coder about the test structure or conventions used.
 **Step 5:** Run `{{TEST_CMD}}` to confirm tests are loadable (they should fail, not error).
   - If tests fail to LOAD (syntax errors, missing imports for existing modules),
     fix the test setup. The tests should fail on assertions, not on loading.
-  - If a test unexpectedly PASSES, note it in TESTER_PREFLIGHT.md — it means
+  - If a test unexpectedly PASSES, note it in {{TDD_PREFLIGHT_FILE}} — it means
     the behavior already exists and does not need implementation.
-**Step 6:** Write TESTER_PREFLIGHT.md with the format above.
+**Step 6:** Write {{TDD_PREFLIGHT_FILE}} with the format above.

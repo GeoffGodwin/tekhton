@@ -12,7 +12,7 @@ set -euo pipefail
 # drain_pending_inbox added for pre-commit inbox processing.
 #
 # Processes files from .claude/watchtower_inbox/ at pipeline startup:
-#   - note_*.md   → appended to HUMAN_NOTES.md via add_human_note()
+#   - note_*.md   → appended to ${HUMAN_NOTES_FILE} via add_human_note()
 #   - manifest_append_*.cfg → validated and appended to MANIFEST.cfg
 #   - milestone_*.md → moved to MILESTONE_DIR
 #   - task_*.txt  → surfaced to user (not auto-executed)
@@ -87,7 +87,7 @@ _processed_dir() {
 }
 
 # _process_note FILE [INBOX_BASENAME]
-# Reads a note file from the inbox and appends it to HUMAN_NOTES.md.
+# Reads a note file from the inbox and appends it to ${HUMAN_NOTES_FILE}.
 # M40: Extracts full watchtower note structure (title, description, priority,
 # timestamp, source) and passes them to add_human_note with metadata.
 _process_note() {
@@ -142,7 +142,7 @@ _process_note() {
         add_human_note "$title" "$tag" "$priority" "$source" "$description" "$inbox_basename"
     else
         warn "Inbox: add_human_note not available, appending raw note"
-        echo "- [ ] [${tag}] ${title}" >> "${PROJECT_DIR:-.}/HUMAN_NOTES.md"
+        echo "- [ ] [${tag}] ${title}" >> "${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE}"
     fi
 }
 
@@ -299,7 +299,7 @@ process_watchtower_inbox() {
 }
 
 # drain_pending_inbox — Lightweight pre-commit inbox drain (M40).
-# Processes any new inbox note files that arrived mid-run into HUMAN_NOTES.md.
+# Processes any new inbox note files that arrived mid-run into ${HUMAN_NOTES_FILE}.
 # These notes are persisted in the committed file but won't be triaged or
 # executed in the current run.
 drain_pending_inbox() {

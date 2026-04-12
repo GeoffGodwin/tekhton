@@ -261,9 +261,9 @@ run_agent() {
         _has_file_changes=true
     fi
 
-    # CODER_SUMMARY.md newer than pre-run marker = completion signal
+    # ${CODER_SUMMARY_FILE} newer than pre-run marker = completion signal
     local _has_summary=false
-    local _summary_path="${PROJECT_DIR:-.}/CODER_SUMMARY.md"
+    local _summary_path="${PROJECT_DIR:-.}/${CODER_SUMMARY_FILE}"
     if [ -f "$_summary_path" ] && [ -f "$_prerun_marker" ]; then
         if [ "$_summary_path" -nt "$_prerun_marker" ]; then
             local _summary_lines

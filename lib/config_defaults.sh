@@ -7,6 +7,9 @@
 # =============================================================================
 set -euo pipefail
 
+# --- Tekhton artifact directory (must precede all _FILE defaults) ---
+: "${TEKHTON_DIR:=.tekhton}"
+
 # --- Express mode defaults ---
 : "${TEKHTON_EXPRESS_ENABLED:=true}"     # Auto-detect config when no pipeline.conf
 : "${EXPRESS_PERSIST_CONFIG:=true}"      # Write pipeline.conf on successful completion
@@ -55,7 +58,22 @@ set -euo pipefail
 : "${INLINE_CONTRACT_PATTERN:=}"
 : "${INLINE_CONTRACT_SEARCH_CMD:=}"
 : "${SEED_CONTRACTS_ENABLED:=false}"
-: "${DESIGN_FILE:=}"
+: "${DESIGN_FILE:=${TEKHTON_DIR}/DESIGN.md}"
+
+# --- Tekhton-managed file paths (reports, state, errors) ---
+: "${CODER_SUMMARY_FILE:=${TEKHTON_DIR}/CODER_SUMMARY.md}"
+: "${REVIEWER_REPORT_FILE:=${TEKHTON_DIR}/REVIEWER_REPORT.md}"
+: "${TESTER_REPORT_FILE:=${TEKHTON_DIR}/TESTER_REPORT.md}"
+: "${JR_CODER_SUMMARY_FILE:=${TEKHTON_DIR}/JR_CODER_SUMMARY.md}"
+: "${BUILD_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_ERRORS.md}"
+: "${BUILD_RAW_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+: "${UI_TEST_ERRORS_FILE:=${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
+: "${PREFLIGHT_ERRORS_FILE:=${TEKHTON_DIR}/PREFLIGHT_ERRORS.md}"
+: "${DIAGNOSIS_FILE:=${TEKHTON_DIR}/DIAGNOSIS.md}"
+: "${CLARIFICATIONS_FILE:=${TEKHTON_DIR}/CLARIFICATIONS.md}"
+: "${HUMAN_NOTES_FILE:=${TEKHTON_DIR}/HUMAN_NOTES.md}"
+: "${SPECIALIST_REPORT_FILE:=${TEKHTON_DIR}/SPECIALIST_REPORT.md}"
+: "${UI_VALIDATION_REPORT_FILE:=${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
 
 # --- Final check fix defaults (auto-fix on final check test failures) ---
 # Note: FINAL_FIX_* controls the inline fix agent in hooks.sh (final checks).
@@ -66,13 +84,13 @@ set -euo pipefail
 : "${FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
 
 # --- Drift detection defaults ---
-: "${ARCHITECTURE_LOG_FILE:=ARCHITECTURE_LOG.md}"
-: "${DRIFT_LOG_FILE:=DRIFT_LOG.md}"
-: "${HUMAN_ACTION_FILE:=HUMAN_ACTION_REQUIRED.md}"
+: "${ARCHITECTURE_LOG_FILE:=${TEKHTON_DIR}/ARCHITECTURE_LOG.md}"
+: "${DRIFT_LOG_FILE:=${TEKHTON_DIR}/DRIFT_LOG.md}"
+: "${HUMAN_ACTION_FILE:=${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md}"
 : "${DRIFT_OBSERVATION_THRESHOLD:=8}"
 : "${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD:=5}"
 : "${DRIFT_RESOLVED_KEEP_COUNT:=20}"      # Max resolved entries to retain in DRIFT_LOG.md
-: "${NON_BLOCKING_LOG_FILE:=NON_BLOCKING_LOG.md}"
+: "${NON_BLOCKING_LOG_FILE:=${TEKHTON_DIR}/NON_BLOCKING_LOG.md}"
 : "${NON_BLOCKING_INJECTION_THRESHOLD:=8}"
 
 # --- Architect agent defaults ---
@@ -112,7 +130,7 @@ set -euo pipefail
 
 # --- Milestone commit signatures ---
 : "${MILESTONE_TAG_ON_COMPLETE:=false}"
-: "${MILESTONE_ARCHIVE_FILE:=MILESTONE_ARCHIVE.md}"
+: "${MILESTONE_ARCHIVE_FILE:=${TEKHTON_DIR}/MILESTONE_ARCHIVE.md}"
 
 # --- Milestone DAG (file-based milestones with dependency tracking) ---
 : "${MILESTONE_DAG_ENABLED:=true}"
@@ -229,8 +247,8 @@ set -euo pipefail
 : "${SECURITY_OFFLINE_MODE:=auto}"
 : "${SECURITY_ONLINE_SOURCES:=}"
 : "${SECURITY_ROLE_FILE:=.claude/agents/security.md}"
-: "${SECURITY_NOTES_FILE:=SECURITY_NOTES.md}"
-: "${SECURITY_REPORT_FILE:=SECURITY_REPORT.md}"
+: "${SECURITY_NOTES_FILE:=${TEKHTON_DIR}/SECURITY_NOTES.md}"
+: "${SECURITY_REPORT_FILE:=${TEKHTON_DIR}/SECURITY_REPORT.md}"
 : "${SECURITY_WAIVER_FILE:=}"
 
 # --- Intake agent defaults (PM pre-stage gate) ---
@@ -242,7 +260,7 @@ set -euo pipefail
 : "${INTAKE_CONFIRM_TWEAKS:=false}"
 : "${INTAKE_AUTO_SPLIT:=false}"
 : "${INTAKE_ROLE_FILE:=.claude/agents/intake.md}"
-: "${INTAKE_REPORT_FILE:=INTAKE_REPORT.md}"
+: "${INTAKE_REPORT_FILE:=${TEKHTON_DIR}/INTAKE_REPORT.md}"
 
 # --- Project index budget (Milestone 67: structured index data layer) ---
 : "${PROJECT_INDEX_BUDGET:=120000}"        # Char budget for markdown view; structured data is unbounded
@@ -291,7 +309,7 @@ set -euo pipefail
 
 # --- Pipeline order defaults (Milestone 27: TDD support) ---
 : "${PIPELINE_ORDER:=standard}"                    # standard|test_first|auto (auto reserved for V4)
-: "${TDD_PREFLIGHT_FILE:=TESTER_PREFLIGHT.md}"    # Output file for TDD write-failing tester
+: "${TDD_PREFLIGHT_FILE:=${TEKHTON_DIR}/TESTER_PREFLIGHT.md}"    # Output file for TDD write-failing tester
 : "${TESTER_WRITE_FAILING_MAX_TURNS:=15}"          # Turn limit for write-failing tester (less than full tester)
 : "${CODER_TDD_TURN_MULTIPLIER:=1.2}"             # Multiplier for coder turns in test_first mode
 
@@ -344,7 +362,7 @@ set -euo pipefail
 : "${TEST_AUDIT_MAX_REWORK_CYCLES:=1}"
 : "${TEST_AUDIT_ORPHAN_DETECTION:=true}"
 : "${TEST_AUDIT_WEAKENING_DETECTION:=true}"
-: "${TEST_AUDIT_REPORT_FILE:=TEST_AUDIT_REPORT.md}"
+: "${TEST_AUDIT_REPORT_FILE:=${TEKHTON_DIR}/TEST_AUDIT_REPORT.md}"
 
 # --- Health scoring defaults (Milestone 15) ---
 : "${HEALTH_ENABLED:=true}"
@@ -358,7 +376,7 @@ set -euo pipefail
 : "${HEALTH_WEIGHT_HYGIENE:=15}"
 : "${HEALTH_SHOW_BELT:=true}"
 : "${HEALTH_BASELINE_FILE:=.claude/HEALTH_BASELINE.json}"
-: "${HEALTH_REPORT_FILE:=HEALTH_REPORT.md}"
+: "${HEALTH_REPORT_FILE:=${TEKHTON_DIR}/HEALTH_REPORT.md}"
 
 # --- Dashboard / Watchtower defaults (Milestone 13) ---
 : "${DASHBOARD_ENABLED:=true}"

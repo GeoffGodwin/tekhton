@@ -28,9 +28,9 @@ should_claim_notes() {
     return 1
 }
 
-# Reads HUMAN_NOTES.md and returns unchecked items count
+# Reads "${HUMAN_NOTES_FILE}" and returns unchecked items count
 count_human_notes() {
-    if [ ! -f "HUMAN_NOTES.md" ]; then
+    if [ ! -f "${HUMAN_NOTES_FILE}" ]; then
         echo "0"
         return
     fi
@@ -39,22 +39,22 @@ count_human_notes() {
         pattern="^- \[ \] \[${NOTES_FILTER}\]"
     fi
     local count
-    count=$(grep -c "$pattern" HUMAN_NOTES.md || true)
+    count=$(grep -c "$pattern" "${HUMAN_NOTES_FILE}" || true)
     echo "$count" | tr -d '[:space:]'
 }
 
 # Extracts unchecked human notes as a formatted block for injection into prompts.
 # Returns items with their tags but without the checkbox prefix or metadata comments.
 extract_human_notes() {
-    if [ ! -f "HUMAN_NOTES.md" ]; then
+    if [ ! -f "${HUMAN_NOTES_FILE}" ]; then
         return
     fi
     if [ -n "$NOTES_FILTER" ]; then
-        grep "^- \[ \] \[${NOTES_FILTER}\]" HUMAN_NOTES.md \
+        grep "^- \[ \] \[${NOTES_FILTER}\]" "${HUMAN_NOTES_FILE}" \
             | sed 's/^- \[ \] /- /' \
             | sed 's/ <!-- note:[^>]*-->//' || true
     else
-        grep "^- \[ \]" HUMAN_NOTES.md \
+        grep "^- \[ \]" "${HUMAN_NOTES_FILE}" \
             | sed 's/^- \[ \] /- /' \
             | sed 's/ <!-- note:[^>]*-->//' || true
     fi
@@ -63,7 +63,7 @@ extract_human_notes() {
 # claim_human_notes — Marks filtered [ ] items as [~] (in-scope for this run).
 # M40: Delegates to claim_notes_batch from notes_core.sh.
 claim_human_notes() {
-    if [ ! -f "HUMAN_NOTES.md" ]; then
+    if [ ! -f "${HUMAN_NOTES_FILE}" ]; then
         return
     fi
 
@@ -74,23 +74,23 @@ claim_human_notes() {
     claim_notes_batch "$filter" >/dev/null
 
     local claimed
-    claimed=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
+    claimed=$(grep -c "^- \[~\]" "${HUMAN_NOTES_FILE}" || true)
     if [ -n "$filter" ]; then
-        log "HUMAN_NOTES.md — ${claimed} [${filter}] item(s) marked in-progress [~]."
+        log "${HUMAN_NOTES_FILE} — ${claimed} [${filter}] item(s) marked in-progress [~]."
     else
-        log "HUMAN_NOTES.md — ${claimed} item(s) marked in-progress [~]."
+        log "${HUMAN_NOTES_FILE} — ${claimed} item(s) marked in-progress [~]."
     fi
 }
 
 # resolve_human_notes — Resolves [~] items based on pipeline outcome.
 # M40: Delegates to resolve_notes_batch from notes_core.sh using CLAIMED_NOTE_IDS.
 resolve_human_notes() {
-    if [ ! -f "HUMAN_NOTES.md" ]; then
+    if [ ! -f "${HUMAN_NOTES_FILE}" ]; then
         return
     fi
 
     local claimed_count
-    claimed_count=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
+    claimed_count=$(grep -c "^- \[~\]" "${HUMAN_NOTES_FILE}" || true)
     if [ "$claimed_count" -eq 0 ]; then
         return
     fi
@@ -101,34 +101,34 @@ resolve_human_notes() {
         local resolved
         if [[ "$exit_code" -eq 0 ]]; then
             resolved=$(echo "$CLAIMED_NOTE_IDS" | wc -w | tr -d '[:space:]')
-            log "HUMAN_NOTES.md — ${resolved} item(s) resolved via ID-based batch."
+            log "${HUMAN_NOTES_FILE} — ${resolved} item(s) resolved via ID-based batch."
         else
-            log "HUMAN_NOTES.md — ${claimed_count} item(s) reset to [ ] (pipeline failed)."
+            log "${HUMAN_NOTES_FILE} — ${claimed_count} item(s) reset to [ ] (pipeline failed)."
         fi
     fi
 
     # Safety: any remaining [~] items → resolve based on exit code
     local remaining
-    remaining=$(grep -c "^- \[~\]" HUMAN_NOTES.md || true)
+    remaining=$(grep -c "^- \[~\]" "${HUMAN_NOTES_FILE}" || true)
     if [ "$remaining" -gt 0 ]; then
         if [[ "$exit_code" -eq 0 ]]; then
-            sed -i 's/^- \[~\] /- [x] /' HUMAN_NOTES.md
-            log "HUMAN_NOTES.md — ${remaining} remaining [~] item(s) marked [x] (pipeline success)."
+            sed -i 's/^- \[~\] /- [x] /' "${HUMAN_NOTES_FILE}"
+            log "${HUMAN_NOTES_FILE} — ${remaining} remaining [~] item(s) marked [x] (pipeline success)."
         else
-            sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md
-            warn "HUMAN_NOTES.md — ${remaining} remaining [~] item(s) reset to [ ]."
+            sed -i 's/^- \[~\] /- [ ] /' "${HUMAN_NOTES_FILE}"
+            warn "${HUMAN_NOTES_FILE} — ${remaining} remaining [~] item(s) reset to [ ]."
         fi
     fi
 }
 
 # --- Single-note functions extracted to lib/notes_single.sh ---
 
-# clear_completed_human_notes — Removes [x] items from HUMAN_NOTES.md.
+# clear_completed_human_notes — Removes [x] items from "${HUMAN_NOTES_FILE}".
 # Called at the start of each pipeline run so completed notes from prior runs
 # do not accumulate. Non-interactive (no confirmation prompt).
 # Preserves description blocks (indented > lines below completed notes).
 clear_completed_human_notes() {
-    local notes_file="${PROJECT_DIR}/HUMAN_NOTES.md"
+    local notes_file="${PROJECT_DIR}/${HUMAN_NOTES_FILE}"
     if [ ! -f "$notes_file" ]; then
         return 0
     fi
@@ -171,10 +171,10 @@ clear_completed_human_notes() {
     local unchecked_after
     unchecked_after=$(grep -c '^- \[ \] ' "$notes_file" || true)
     if [ "$unchecked_after" -ne "$unchecked_before" ]; then
-        warn "HUMAN_NOTES.md unchecked count changed unexpectedly (${unchecked_before} → ${unchecked_after})"
+        warn "${HUMAN_NOTES_FILE} unchecked count changed unexpectedly (${unchecked_before} → ${unchecked_after})"
     fi
 
-    log "Cleared ${completed_count} completed [x] item(s) from HUMAN_NOTES.md."
+    log "Cleared ${completed_count} completed [x] item(s) from ${HUMAN_NOTES_FILE}."
 }
 
 # --- NON_BLOCKING_LOG batch functions extracted to lib/notes_cleanup.sh ---

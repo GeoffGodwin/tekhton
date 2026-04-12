@@ -2,7 +2,7 @@
 # =============================================================================
 # stages/plan_generate.sh — Planning phase: CLAUDE.md generation
 #
-# Reads the completed DESIGN.md and generates a full CLAUDE.md with project
+# Reads the completed ${DESIGN_FILE} and generates a full CLAUDE.md with project
 # rules, milestone plan, architecture guidelines, and testing strategy.
 # Uses _call_planning_batch() to call Claude in batch mode.
 # The shell writes CLAUDE.md to disk.
@@ -20,18 +20,18 @@ set -euo pipefail
 # plan_interview.sh — kept in sync as a named constant for easy tuning).
 _MIN_SUBSTANTIVE_LINES=20
 
-# run_plan_generate — Generate CLAUDE.md from DESIGN.md using a batch call.
+# run_plan_generate — Generate CLAUDE.md from ${DESIGN_FILE} using a batch call.
 #
-# Reads DESIGN.md, renders the generation prompt, calls _call_planning_batch()
+# Reads ${DESIGN_FILE}, renders the generation prompt, calls _call_planning_batch()
 # to get the CLAUDE.md content as text output, and writes it to disk.
 # The shell captures text output and writes the file.
 #
 # Returns 0 if CLAUDE.md was produced, 1 otherwise.
 run_plan_generate() {
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
 
     if [[ ! -f "$design_file" ]]; then
-        error "DESIGN.md not found at ${design_file} — cannot generate CLAUDE.md."
+        error "${DESIGN_FILE} not found at ${design_file} — cannot generate CLAUDE.md."
         return 1
     fi
 
@@ -55,7 +55,7 @@ run_plan_generate() {
     log "Max turns: ${PLAN_GENERATION_MAX_TURNS}"
     log "Log: ${log_file}"
     echo
-    log "Generating CLAUDE.md from DESIGN.md..."
+    log "Generating CLAUDE.md from ${DESIGN_FILE}..."
 
     # Write session metadata to log
     {

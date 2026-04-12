@@ -9,7 +9,7 @@ set -euo pipefail
 #
 # Provides:
 #   DIAGNOSE_RULES            — priority-ordered array of rule functions
-#   _rule_build_failure       — BUILD_ERRORS.md non-empty
+#   _rule_build_failure       — ${BUILD_ERRORS_FILE} non-empty
 #   _rule_review_loop         — 3+ review cycles with no approval
 #   _rule_security_halt       — Security HALT verdict (M09 guard)
 #   _rule_intake_clarity      — Intake pause for clarification (M10 guard)
@@ -34,9 +34,9 @@ DIAG_SUGGESTIONS=()      # Array of suggestion strings
 # --- Rule implementations --------------------------------------------------
 
 # _rule_build_failure
-# Detect BUILD_ERRORS.md non-empty.
+# Detect ${BUILD_ERRORS_FILE} non-empty.
 _rule_build_failure() {
-    local errors_file="${PROJECT_DIR:-.}/BUILD_ERRORS.md"
+    local errors_file="${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}"
     [[ -f "$errors_file" ]] || return 1
     [[ -s "$errors_file" ]] || return 1
 
@@ -52,15 +52,15 @@ _rule_build_failure() {
         fi
     fi
 
-    DIAG_SUGGESTIONS+=("Build failed. Errors in BUILD_ERRORS.md.")
+    DIAG_SUGGESTIONS+=("Build failed. Errors in ${BUILD_ERRORS_FILE}.")
     if [[ "$build_fix_attempted" = true ]]; then
         DIAG_SUGGESTIONS+=("Automatic build fix was attempted and failed.")
-        DIAG_SUGGESTIONS+=("The errors may require manual intervention. See BUILD_ERRORS.md.")
+        DIAG_SUGGESTIONS+=("The errors may require manual intervention. See ${BUILD_ERRORS_FILE}.")
     else
         DIAG_SUGGESTIONS+=("Fix the build errors manually, then run: tekhton --start-at coder")
         DIAG_SUGGESTIONS+=("Or let Tekhton retry: tekhton --milestone (it will attempt build fix)")
     fi
-    DIAG_SUGGESTIONS+=("See details: cat BUILD_ERRORS.md")
+    DIAG_SUGGESTIONS+=("See details: cat ${BUILD_ERRORS_FILE}")
     return 0
 }
 
@@ -89,7 +89,7 @@ _rule_review_loop() {
     fi
 
     # Check reviewer report for CHANGES_REQUIRED
-    local reviewer_file="${PROJECT_DIR:-.}/REVIEWER_REPORT.md"
+    local reviewer_file="${PROJECT_DIR:-.}/${REVIEWER_REPORT_FILE}"
     if [[ -f "$reviewer_file" ]]; then
         if ! grep -q 'CHANGES_REQUIRED\|REJECTED' "$reviewer_file" 2>/dev/null; then
             return 1
@@ -105,7 +105,7 @@ _rule_review_loop() {
         "Reviewer rejected the code ${cycle_count} times. The coder may be unable to address the feedback within the turn budget."
         "Options:"
         "  1. Increase MAX_REVIEW_CYCLES in pipeline.conf"
-        "  2. Read REVIEWER_REPORT.md and fix the issues manually"
+        "  2. Read ${REVIEWER_REPORT_FILE} and fix the issues manually"
         "  3. Run: tekhton --start-at review to retry review only"
     )
     return 0
@@ -114,7 +114,7 @@ _rule_review_loop() {
 # _rule_security_halt
 # Detect security stage HALT verdict (forward-compat: no-op until M09 exists).
 _rule_security_halt() {
-    local security_file="${PROJECT_DIR:-.}/SECURITY_REPORT.md"
+    local security_file="${PROJECT_DIR:-.}/${SECURITY_REPORT_FILE}"
     [[ -f "$security_file" ]] || return 1
 
     # Check for HALT verdict in security report
@@ -137,7 +137,7 @@ _rule_security_halt() {
 # _rule_intake_clarity
 # Detect intake pause for clarification (forward-compat: no-op until M10 exists).
 _rule_intake_clarity() {
-    local clarify_file="${PROJECT_DIR:-.}/CLARIFICATIONS.md"
+    local clarify_file="${PROJECT_DIR:-.}/${CLARIFICATIONS_FILE}"
     [[ -f "$clarify_file" ]] || return 1
     [[ -s "$clarify_file" ]] || return 1
 
@@ -160,7 +160,7 @@ _rule_intake_clarity() {
     DIAG_CONFIDENCE="high"
     DIAG_SUGGESTIONS=(
         "The PM agent needs clarification on this milestone."
-        "Questions are in CLARIFICATIONS.md. Answer them and re-run."
+        "Questions are in ${CLARIFICATIONS_FILE}. Answer them and re-run."
         "Or lower INTAKE_CLARITY_THRESHOLD if the gate is too aggressive."
     )
     return 0
@@ -300,7 +300,7 @@ _rule_transient_error() {
 # _rule_test_audit_failure
 # Detect test audit NEEDS_WORK verdict after max rework cycles.
 _rule_test_audit_failure() {
-    local audit_file="${PROJECT_DIR:-.}/${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+    local audit_file="${PROJECT_DIR:-.}/${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
     [[ -f "$audit_file" ]] || return 1
 
     # Check for NEEDS_WORK verdict
@@ -312,7 +312,7 @@ _rule_test_audit_failure() {
     DIAG_CONFIDENCE="high"
     DIAG_SUGGESTIONS=(
         "Test audit found integrity issues the tester couldn't fix."
-        "Review TEST_AUDIT_REPORT.md for specific findings."
+        "Review ${TEST_AUDIT_REPORT_FILE} for specific findings."
         "Options:"
         "  1. Fix flagged tests manually (see HIGH severity findings)"
         "  2. Remove orphaned tests that import deleted modules"

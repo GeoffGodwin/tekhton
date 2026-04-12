@@ -3,7 +3,7 @@ set -euo pipefail
 # =============================================================================
 # replan_brownfield.sh — Brownfield replanning (--replan CLI command)
 #
-# Delta-based updates to existing DESIGN.md and CLAUDE.md based on accumulated
+# Delta-based updates to existing ${DESIGN_FILE} and CLAUDE.md based on accumulated
 # drift and codebase evolution. Sourced by tekhton.sh for the --replan path.
 # Expects: common.sh, plan.sh (for _call_planning_batch), prompts.sh
 # =============================================================================
@@ -87,13 +87,13 @@ _generate_codebase_summary() {
 # Validates prerequisites, assembles context, calls the replan agent,
 # writes output to DESIGN_DELTA.md, and presents approval menu.
 run_replan() {
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     local claude_file="${PROJECT_DIR}/CLAUDE.md"
 
     header "Tekhton — Brownfield Replan"
 
     if [[ ! -f "$design_file" ]] && [[ ! -f "$claude_file" ]]; then
-        error "Neither DESIGN.md nor CLAUDE.md found at ${PROJECT_DIR}."
+        error "Neither ${DESIGN_FILE} nor CLAUDE.md found at ${PROJECT_DIR}."
         error "The --replan command requires an existing project created with --plan."
         error "Run 'tekhton --plan' first to create these files."
         return 1
@@ -113,7 +113,7 @@ run_replan() {
         DESIGN_CONTENT=$(_safe_read_file "$design_file" "DESIGN")
     else
         NO_DESIGN="true"
-        warn "No DESIGN.md found — replan will focus on CLAUDE.md only."
+        warn "No ${DESIGN_FILE} found — replan will focus on CLAUDE.md only."
     fi
 
     export CLAUDE_CONTENT=""
@@ -121,7 +121,7 @@ run_replan() {
 
     export DRIFT_LOG_CONTENT=""
     export NO_DRIFT_LOG=""
-    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE:-DRIFT_LOG.md}"
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE:-${DRIFT_LOG_FILE}}"
     if [[ -f "$drift_file" ]]; then
         DRIFT_LOG_CONTENT=$(_safe_read_file "$drift_file" "DRIFT_LOG")
     else
@@ -130,7 +130,7 @@ run_replan() {
 
     export ARCHITECTURE_LOG_CONTENT=""
     export NO_ARCHITECTURE_LOG=""
-    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE:-ARCHITECTURE_LOG.md}"
+    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE:-${ARCHITECTURE_LOG_FILE}}"
     if [[ -f "$adl_file" ]]; then
         ARCHITECTURE_LOG_CONTENT=$(_safe_read_file "$adl_file" "ARCHITECTURE_LOG")
     else
@@ -139,7 +139,7 @@ run_replan() {
 
     export HUMAN_ACTION_CONTENT=""
     export NO_HUMAN_ACTION=""
-    local action_file="${PROJECT_DIR}/${HUMAN_ACTION_FILE:-HUMAN_ACTION_REQUIRED.md}"
+    local action_file="${PROJECT_DIR}/${HUMAN_ACTION_FILE:-${HUMAN_ACTION_FILE}}"
     if [[ -f "$action_file" ]]; then
         HUMAN_ACTION_CONTENT=$(_safe_read_file "$action_file" "HUMAN_ACTION")
     else
@@ -222,7 +222,7 @@ _brownfield_approval_menu() {
         echo "  Review the proposed changes in REPLAN_DELTA.md"
         echo
         echo "  Options:"
-        echo "    [a] Apply   — merge changes into DESIGN.md and regenerate CLAUDE.md"
+        echo "    [a] Apply   — merge changes into ${DESIGN_FILE} and regenerate CLAUDE.md"
         echo "    [e] Edit    — open delta in \${EDITOR:-nano} before applying"
         echo "    [n] Reject  — discard delta"
         echo
@@ -251,10 +251,10 @@ _brownfield_approval_menu() {
     done
 }
 
-# _apply_brownfield_delta — Apply the replan delta to DESIGN.md and regenerate CLAUDE.md.
+# _apply_brownfield_delta — Apply the replan delta to ${DESIGN_FILE} and regenerate CLAUDE.md.
 _apply_brownfield_delta() {
     local delta_file="$1"
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     local claude_file="${PROJECT_DIR}/CLAUDE.md"
 
     if [[ ! -f "$delta_file" ]]; then
@@ -270,14 +270,14 @@ _apply_brownfield_delta() {
             echo ""
             cat "$delta_file"
         } >> "$design_file"
-        success "Delta appended to DESIGN.md."
+        success "Delta appended to ${DESIGN_FILE}."
     else
-        warn "No DESIGN.md to update — skipping DESIGN.md merge."
+        warn "No ${DESIGN_FILE} to update — skipping ${DESIGN_FILE} merge."
     fi
 
     if [[ -f "$design_file" ]]; then
         echo
-        log "Regenerating CLAUDE.md from updated DESIGN.md..."
+        log "Regenerating CLAUDE.md from updated ${DESIGN_FILE}..."
 
         local completed_milestones=""
         if [[ -f "$claude_file" ]]; then
@@ -327,7 +327,7 @@ _apply_brownfield_delta() {
     success "Brownfield replan complete!"
     log "Review the updated files:"
     if [[ -f "$design_file" ]]; then
-        log "  DESIGN.md — replan delta appended"
+        log "  ${DESIGN_FILE} — replan delta appended"
     fi
     log "  CLAUDE.md — regenerated from updated design"
     echo

@@ -17,7 +17,7 @@ set -euo pipefail
 
 # --- Architecture Decision Log -----------------------------------------------
 
-# _ensure_adl — Creates ARCHITECTURE_LOG.md with initial structure if missing.
+# _ensure_adl — Creates ${ARCHITECTURE_LOG_FILE} with initial structure if missing.
 _ensure_adl() {
     local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}"
     if [[ ! -f "$adl_file" ]]; then
@@ -87,7 +87,7 @@ EOF
 
 # --- Human Action Required ---------------------------------------------------
 
-# _ensure_human_action — Creates HUMAN_ACTION_REQUIRED.md if missing.
+# _ensure_human_action — Creates ${HUMAN_ACTION_FILE} if missing.
 _ensure_human_action() {
     local action_file="${PROJECT_DIR}/${HUMAN_ACTION_FILE}"
     if [[ ! -f "$action_file" ]]; then
@@ -103,7 +103,7 @@ EOF
     fi
 }
 
-# append_human_action — Adds an item to HUMAN_ACTION_REQUIRED.md.
+# append_human_action — Adds an item to ${HUMAN_ACTION_FILE}.
 # Usage: append_human_action "source_label" "description"
 append_human_action() {
     local source="$1"
@@ -172,10 +172,10 @@ process_drift_artifacts() {
     increment_runs_since_audit
 }
 
-# _process_design_observations — Reads CODER_SUMMARY.md for design observations
-# and adds them to HUMAN_ACTION_REQUIRED.md.
+# _process_design_observations — Reads ${CODER_SUMMARY_FILE} for design observations
+# and adds them to ${HUMAN_ACTION_FILE}.
 _process_design_observations() {
-    local summary="${PROJECT_DIR}/CODER_SUMMARY.md"
+    local summary="${PROJECT_DIR}/${CODER_SUMMARY_FILE}"
     if [[ ! -f "$summary" ]]; then
         return 0
     fi
@@ -251,7 +251,7 @@ clear_resolved_drift_observations() {
     done < "$drift_file"
 
     mv "$tmpfile" "$drift_file"
-    log "Cleared ${resolved_count} resolved item(s) from DRIFT_LOG.md."
+    log "Cleared ${resolved_count} resolved item(s) from ${DRIFT_LOG_FILE}."
 }
 
 # get_resolved_drift_observations — Returns text of resolved items from ## Resolved.

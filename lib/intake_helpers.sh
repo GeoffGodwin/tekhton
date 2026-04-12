@@ -41,7 +41,7 @@ _intake_save_hash() {
 
 # --- Report parsing ----------------------------------------------------------
 
-# _intake_parse_verdict — Extract verdict from INTAKE_REPORT.md
+# _intake_parse_verdict — Extract verdict from ${INTAKE_REPORT_FILE}
 _intake_parse_verdict() {
     local report="$1"
     if [[ ! -f "$report" ]]; then
@@ -58,7 +58,7 @@ _intake_parse_verdict() {
     esac
 }
 
-# _intake_parse_confidence — Extract confidence score from INTAKE_REPORT.md
+# _intake_parse_confidence — Extract confidence score from ${INTAKE_REPORT_FILE}
 _intake_parse_confidence() {
     local report="$1"
     if [[ ! -f "$report" ]]; then
@@ -75,7 +75,7 @@ _intake_parse_confidence() {
     fi
 }
 
-# _intake_parse_tweaks — Extract tweaked content block from INTAKE_REPORT.md
+# _intake_parse_tweaks — Extract tweaked content block from ${INTAKE_REPORT_FILE}
 _intake_parse_tweaks() {
     local report="$1"
     if [[ ! -f "$report" ]]; then
@@ -84,7 +84,7 @@ _intake_parse_tweaks() {
     awk '/^## Tweaked Content/{found=1; next} found && /^## (Verdict|Confidence|Reasoning|Split Recommendations|Questions)/{exit} found{print}' "$report" 2>/dev/null || true
 }
 
-# _intake_parse_questions — Extract questions from INTAKE_REPORT.md
+# _intake_parse_questions — Extract questions from ${INTAKE_REPORT_FILE}
 _intake_parse_questions() {
     local report="$1"
     if [[ ! -f "$report" ]]; then

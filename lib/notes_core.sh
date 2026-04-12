@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: common.sh sourced first (log, warn, error, success, color codes).
-# Expects: _NOTES_FILE from notes_cli.sh (or defaults to HUMAN_NOTES.md).
+# Expects: _NOTES_FILE from notes_cli.sh (or defaults to ${HUMAN_NOTES_FILE}).
 #
 # Provides:
 #   Tag registry:  _NOTE_TAG_SECTION, _NOTE_TAG_COLOR, _NOTE_TAG_PRIORITY
@@ -67,10 +67,10 @@ _valid_tags_string() {
 
 # _notes_file — Returns the notes file path.
 _notes_file() {
-    echo "${_NOTES_FILE:-HUMAN_NOTES.md}"
+    echo "${_NOTES_FILE:-${HUMAN_NOTES_FILE}}"
 }
 
-# _next_note_id — Scan HUMAN_NOTES.md for highest existing ID, return next.
+# _next_note_id — Scan ${HUMAN_NOTES_FILE} for highest existing ID, return next.
 # IDs are format nNN (n01, n02, ..., n99, n100, ...). Monotonic, never reused.
 _next_note_id() {
     local nf
@@ -281,7 +281,7 @@ claim_notes_batch() {
 
     # Archive pre-run snapshot
     if [[ -n "${LOG_DIR:-}" ]] && [[ -n "${TIMESTAMP:-}" ]] && [[ -d "${LOG_DIR:-}" ]]; then
-        cp "$nf" "${LOG_DIR}/${TIMESTAMP}_HUMAN_NOTES.md"
+        cp "$nf" "${LOG_DIR}/${TIMESTAMP}_${HUMAN_NOTES_FILE}"
     fi
 
     local claimed_ids=""

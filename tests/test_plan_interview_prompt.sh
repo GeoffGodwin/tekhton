@@ -48,11 +48,11 @@ fi
 echo
 echo "=== Interview Rule Content ==="
 
-# Must instruct agent to write DESIGN.md
-if grep -q 'DESIGN.md' "$PROMPT_FILE"; then
-    pass "mentions DESIGN.md (output file)"
+# Must instruct agent to write design file (DESIGN.md or {{DESIGN_FILE}})
+if grep -q 'DESIGN' "$PROMPT_FILE"; then
+    pass "mentions DESIGN file (output file)"
 else
-    fail "does not mention DESIGN.md"
+    fail "does not mention DESIGN file"
 fi
 
 # Must mention REQUIRED sections

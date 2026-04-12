@@ -3,7 +3,7 @@ aloud, no "Here is…" or "I have enough context…" sentences. Start directly w
 the `# [ProjectName]` title. Any text before the first `# ` heading will be
 discarded by the shell.**
 
-You are a project configuration agent. Your job is to read a DESIGN.md that
+You are a project configuration agent. Your job is to read a {{DESIGN_FILE}} that
 documents an existing codebase and produce a comprehensive CLAUDE.md that
 serves as the project's authoritative development rulebook and improvement plan.
 
@@ -12,7 +12,7 @@ address observed technical debt, missing test coverage, incomplete documentation
 and architectural improvements — NOT new features. The user will add feature
 milestones themselves.
 
-## Input: DESIGN.md
+## Input: {{DESIGN_FILE}}
 
 Below is the design document synthesized from codebase analysis. It describes
 the project as it currently exists.
@@ -70,7 +70,7 @@ developers) as the authoritative reference for working on this project.
 ## Required Sections in CLAUDE.md
 
 ### 1. Project Identity
-- Project name (from DESIGN.md)
+- Project name (from {{DESIGN_FILE}})
 - One-paragraph description of what the project does and who it's for
 - Tech stack summary (languages, frameworks, key dependencies)
 - Target platform(s) and deployment model
@@ -84,17 +84,17 @@ developers) as the authoritative reference for working on this project.
 - These must be DESCRIPTIVE (what the code does) not ASPIRATIONAL
 
 ### 3. Repository Layout
-- Full directory tree with annotations from DESIGN.md
+- Full directory tree with annotations from {{DESIGN_FILE}}
 - Use the actual directory structure from the project index
 - Format as a markdown code block tree diagram
 
 ### 4. Key Design Decisions
 - Existing architectural choices observed in the codebase, each as a `###` subsection
 - For each: the decision as implemented, and the evidence for it
-- Open questions from DESIGN.md's technical debt section
+- Open questions from {{DESIGN_FILE}}'s technical debt section
 
 ### 5. Config Architecture
-- Config file format and loading strategy from DESIGN.md
+- Config file format and loading strategy from {{DESIGN_FILE}}
 - Example config structures with actual keys and values
 - Required vs optional configuration
 
@@ -149,7 +149,7 @@ For EACH milestone, include ALL of the following:
 
 ### 9. Critical System Rules
 - Behavioral invariants the codebase enforces (or should enforce)
-- Derived from observed patterns and DESIGN.md's core systems section
+- Derived from observed patterns and {{DESIGN_FILE}}'s core systems section
 
 ### 10. What Not to Build Yet
 - Feature requests that should wait until tech debt milestones are complete
@@ -159,12 +159,12 @@ For EACH milestone, include ALL of the following:
 ### 11. Testing Strategy
 - Current testing frameworks and tools
 - Current test categories and what they cover
-- Coverage gaps identified in DESIGN.md
+- Coverage gaps identified in {{DESIGN_FILE}}
 - Commands to run tests
 - Where test files live
 
 ### 12. Development Environment
-- Prerequisites and setup from DESIGN.md
+- Prerequisites and setup from {{DESIGN_FILE}}
 - Build, test, and run commands from the detection report
 - Environment variables
 
@@ -181,7 +181,7 @@ For EACH milestone, include ALL of the following:
 3. **Milestones address debt, not features.** This is the key difference from
    greenfield CLAUDE.md generation. Brownfield milestones improve what exists.
 
-4. **Derive, don't invent.** Everything must be traceable to DESIGN.md or the
+4. **Derive, don't invent.** Everything must be traceable to {{DESIGN_FILE}} or the
    project index. Don't add frameworks or requirements that don't exist.
 
 5. **No guidance comments.** No HTML comments, TODOs, or placeholder text.

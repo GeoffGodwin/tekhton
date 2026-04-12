@@ -180,6 +180,11 @@ EOF
 _emit_paths() {
     local design_file="${1:-}"
     cat << EOF
+# --- Tekhton artifact directory ----------------------------------------------
+# All pipeline-managed files (reports, state, errors) live here.
+# CLAUDE.md stays at the project root — Claude Code requires it there.
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+
 # --- Pipeline file paths -----------------------------------------------------
 PIPELINE_STATE_FILE=".claude/PIPELINE_STATE.md"
 LOG_DIR=".claude/logs"
@@ -197,12 +202,12 @@ PROJECT_RULES_FILE="CLAUDE.md"
 DESIGN_FILE="${design_file}"
 
 # --- Drift detection ---------------------------------------------------------
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+DRIFT_LOG_FILE="${DRIFT_LOG_FILE}"
+ARCHITECTURE_LOG_FILE="${ARCHITECTURE_LOG_FILE}"
+HUMAN_ACTION_FILE="${HUMAN_ACTION_FILE}"
 DRIFT_OBSERVATION_THRESHOLD=8
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+NON_BLOCKING_LOG_FILE="${NON_BLOCKING_LOG_FILE}"
 
 # --- Dynamic turns -----------------------------------------------------------
 DYNAMIC_TURNS_ENABLED=true

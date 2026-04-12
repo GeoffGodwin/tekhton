@@ -16,8 +16,8 @@
 #   6. Route jr coder items (Staleness, Dead Code, Naming)
 #   7. Run build gate after coders
 #   8. Run expedited reviewer (single cycle, no rework loop)
-#   9. Mark addressed observations as RESOLVED in DRIFT_LOG.md
-#  10. Append Design Doc Observations to HUMAN_ACTION_REQUIRED.md
+#   9. Mark addressed observations as RESOLVED in ${DRIFT_LOG_FILE}
+#  10. Append Design Doc Observations to ${HUMAN_ACTION_FILE}
 #  11. Reset runs-since-audit counter
 run_stage_architect() {
     header "Pre-stage 2 — Architect Audit"

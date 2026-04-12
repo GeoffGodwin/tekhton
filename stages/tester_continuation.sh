@@ -72,7 +72,7 @@ _tester_run_continuations() {
         _tcumulative_turns=$((_tcumulative_turns + ${LAST_AGENT_TURNS:-0}))
 
         # --- M62: Accumulate tester self-reported timing from continuation ---
-        _parse_tester_timing "TESTER_REPORT.md" "accumulate"
+        _parse_tester_timing "${TESTER_REPORT_FILE}" "accumulate"
 
         # --- Tester diagnostics: continuation timing ----------------
         local _tcont_end
@@ -98,8 +98,8 @@ _tester_run_continuations() {
         fi
 
         # Re-check remaining tests
-        if [[ -f "TESTER_REPORT.md" ]]; then
-            REMAINING=$(grep -c "^- \[ \]" TESTER_REPORT.md || true)
+        if [[ -f "${TESTER_REPORT_FILE}" ]]; then
+            REMAINING=$(grep -c "^- \[ \]" "${TESTER_REPORT_FILE}" || true)
             REMAINING=$(echo "$REMAINING" | tr -d '[:space:]')
         fi
     done

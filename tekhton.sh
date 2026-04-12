@@ -13,26 +13,26 @@
 #
 # Flags:
 #   --init                Scaffold pipeline config + agent roles for a new project
-#   --plan                Interactive planning: build DESIGN.md + CLAUDE.md from scratch
+#   --plan                Interactive planning: build .tekhton/${DESIGN_FILE} + CLAUDE.md
 #   --plan --answers <f>  Import pre-filled YAML answers (skip interview)
 #   --plan-browser        Skip mode selection, go straight to browser form
 #   --export-questions    Export planning questions as YAML template to stdout
-#   --replan              Delta-based update to existing DESIGN.md + CLAUDE.md
+#   --replan              Delta-based update to existing .tekhton/${DESIGN_FILE} + CLAUDE.md
 #   --status              Print saved pipeline state and exit
 #   --milestone           Milestone mode: higher turn limits, more review cycles
 #   --start-at coder      Full pipeline from scratch (default)
-#   --start-at security   Skip coder; requires CODER_SUMMARY.md
-#   --start-at review     Skip coder + security; requires CODER_SUMMARY.md
-#   --start-at tester     Resume tester from existing TESTER_REPORT.md
-#   --start-at test       Skip coder + security + reviewer; requires REVIEWER_REPORT.md
+#   --start-at security   Skip coder; requires .tekhton/${CODER_SUMMARY_FILE}
+#   --start-at review     Skip coder + security; requires .tekhton/${CODER_SUMMARY_FILE}
+#   --start-at tester     Resume tester from existing .tekhton/${TESTER_REPORT_FILE}
+#   --start-at test       Skip coder + security + reviewer; requires .tekhton/${REVIEWER_REPORT_FILE}
 #   --skip-security       Bypass security stage for a single run
-#   --plan-from-index     Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md
+#   --plan-from-index     Synthesize .tekhton/${DESIGN_FILE} + CLAUDE.md from PROJECT_INDEX.md
 #   --rescan              Incrementally update PROJECT_INDEX.md from git changes
 #   --rescan --full       Force full re-crawl regardless of change volume
 #   --init --full         Run init + synthesis in one command
 #   --metrics             Print run metrics dashboard and exit
 #   --notes-filter X      Inject only [X] notes (BUG, FEAT, POLISH)
-#   --init-notes          Create blank HUMAN_NOTES.md template
+#   --init-notes          Create blank .tekhton/${HUMAN_NOTES_FILE} template
 #   --skip-audit          Skip architect audit even if threshold is reached
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
@@ -109,8 +109,8 @@ _tekhton_cleanup() {
         fi
 
         # Reset any in-progress [~] human notes back to [ ] so next run starts clean
-        if [ -f "HUMAN_NOTES.md" ]; then
-            sed -i 's/^- \[~\] /- [ ] /' HUMAN_NOTES.md 2>/dev/null || true
+        if [ -f "${HUMAN_NOTES_FILE:-${TEKHTON_DIR}/HUMAN_NOTES.md}" ]; then
+            sed -i 's/^- \[~\] /- [ ] /' "${HUMAN_NOTES_FILE:-${TEKHTON_DIR}/HUMAN_NOTES.md}" 2>/dev/null || true
             echo -e "\033[0;31m[✗] Reset in-progress [~] human notes back to [ ].\033[0m" >&2
         fi
     fi
@@ -136,7 +136,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.71.1"
+TEKHTON_VERSION="3.72.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -148,6 +148,11 @@ PROJECT_DIR="$(pwd)"
 
 export TEKHTON_HOME
 export PROJECT_DIR
+
+# TEKHTON_DIR: subdirectory under PROJECT_DIR for pipeline artifacts.
+# Set early so early-exit paths and config_defaults.sh can reference it.
+: "${TEKHTON_DIR:=.tekhton}"
+export TEKHTON_DIR
 
 # --- Per-session temp directory -----------------------------------------------
 # All temp files (agent FIFOs, exit codes, turn counts) are created inside this
@@ -554,7 +559,7 @@ if [ "${1:-}" = "--health" ]; then
     echo
     display_health_score "$local_score"
     echo
-    log "Report: ${PROJECT_DIR}/${HEALTH_REPORT_FILE:-HEALTH_REPORT.md}"
+    log "Report: ${PROJECT_DIR}/${HEALTH_REPORT_FILE:-${TEKHTON_DIR}/HEALTH_REPORT.md}"
     log "Baseline: ${PROJECT_DIR}/${HEALTH_BASELINE_FILE:-.claude/HEALTH_BASELINE.json}"
     exit 0
 fi
@@ -851,6 +856,9 @@ else
     apply_role_file_fallbacks
 fi
 
+# --- Ensure Tekhton artifact directory exists --------------------------------
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR}" 2>/dev/null || true
+
 usage() {
     local exit_code="${1:-0}"
     local show_all="${2:-false}"
@@ -866,11 +874,11 @@ usage() {
         echo "  --init                    Smart init: detect stack, generate config + agent roles"
         echo "  --reinit                  Re-initialize (destructive — overwrites existing config)"
         echo "  --init --full             Run init + synthesis in one command"
-        echo "  --plan                    Interactive planning: build DESIGN.md + CLAUDE.md"
+        echo "  --plan                    Interactive planning: build ${DESIGN_FILE} + CLAUDE.md"
         echo "  --plan --answers <file>   Import pre-filled YAML answers (skip interview)"
         echo "  --plan-browser            Go straight to browser-based planning form"
         echo "  --export-questions        Export planning questions as YAML template to stdout"
-        echo "  --plan-from-index         Synthesize DESIGN.md + CLAUDE.md from PROJECT_INDEX.md"
+        echo "  --plan-from-index         Synthesize ${DESIGN_FILE} + CLAUDE.md from PROJECT_INDEX.md"
         echo ""
         echo "Running:"
         echo "  \"task description\"        Run pipeline with task"
@@ -911,7 +919,7 @@ usage() {
         echo "  note --clear               Remove all completed notes"
         echo ""
         echo "Maintenance:"
-        echo "  --replan                  Delta-based update to existing DESIGN.md + CLAUDE.md"
+        echo "  --replan                  Delta-based update to existing ${DESIGN_FILE} + CLAUDE.md"
         echo "  --rescan [--full]         Update PROJECT_INDEX.md (incrementally or full re-crawl)"
         echo "  --migrate                 Upgrade project config to current Tekhton version"
         echo "  --migrate --check         Show what migrations would run without applying"
@@ -923,7 +931,7 @@ usage() {
         echo "  --fix-drift               Force architect audit to resolve drift observations"
         echo ""
         echo "Setup:"
-        echo "  --init-notes              Create blank HUMAN_NOTES.md template"
+        echo "  --init-notes              Create blank ${HUMAN_NOTES_FILE} template"
         echo "  --seed-contracts          Seed inline system contracts in source files"
         echo "  --setup-indexer           Set up Python virtualenv for tree-sitter indexer"
         echo "  --with-lsp                Also install Serena LSP server (with --setup-indexer)"
@@ -964,7 +972,7 @@ usage() {
         echo "  --audit-tests       Audit all tests for integrity issues"
         echo ""
         echo "Notes:"
-        echo "  note \"text\"         Add a note to HUMAN_NOTES.md"
+        echo "  note \"text\"         Add a note to ${HUMAN_NOTES_FILE}"
         echo "  note --list         List unchecked notes"
         echo "  note --done <N>     Complete a note"
         echo "  note --clear        Remove completed notes"
@@ -1152,10 +1160,12 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --init-notes)
-            if [ -f "HUMAN_NOTES.md" ]; then
-                warn "HUMAN_NOTES.md already exists. Edit it directly."
+            : "${HUMAN_NOTES_FILE:=${TEKHTON_DIR}/${HUMAN_NOTES_FILE}}"
+            mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR}" 2>/dev/null || true
+            if [ -f "$HUMAN_NOTES_FILE" ]; then
+                warn "${HUMAN_NOTES_FILE} already exists. Edit it directly."
             else
-                cat > HUMAN_NOTES.md << EOF
+                cat > "$HUMAN_NOTES_FILE" << EOF
 # Human Notes — ${PROJECT_NAME}
 
 Add your observations below as unchecked items. The pipeline will inject
@@ -1174,7 +1184,7 @@ Tag with [BUG], [FEAT], or [POLISH] to use --notes-filter.
 <!-- - [ ] [POLISH] Example: describe a UX improvement -->
 EOF
                 print_run_summary
-                success "Created HUMAN_NOTES.md — edit it, then run the pipeline normally."
+                success "Created ${HUMAN_NOTES_FILE} — edit it, then run the pipeline normally."
             fi
             exit 0
             ;;
@@ -1384,7 +1394,7 @@ if [[ "$FIX_NONBLOCKERS_MODE" = true ]]; then
         _TEKHTON_CLEAN_EXIT=true
         exit 0
     fi
-    TASK="Address all ${nb_count_pre} open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."
+    TASK="Address all ${nb_count_pre} open non-blocking notes in ${NON_BLOCKING_LOG_FILE}. Fix each item and note what you changed."
     log "Fix-nonblockers mode: ${nb_count_pre} open item(s) to address."
 fi
 
@@ -1417,13 +1427,13 @@ if [[ "$FIX_DRIFT_MODE" = true ]]; then
         _TEKHTON_CLEAN_EXIT=true
         exit 0
     fi
-    TASK="Resolve all ${drift_count_pre} unresolved architectural drift observations in DRIFT_LOG.md."
+    TASK="Resolve all ${drift_count_pre} unresolved architectural drift observations in ${DRIFT_LOG_FILE}."
     log "Fix-drift mode: ${drift_count_pre} unresolved observation(s) to address."
 fi
 
 # --- Watchtower inbox processing (Milestone 36) ------------------------------
 # Runs before --human note picking so that notes submitted via Watchtower
-# are available in HUMAN_NOTES.md when pick_next_note() executes.
+# are available in ${HUMAN_NOTES_FILE} when pick_next_note() executes.
 process_watchtower_inbox 2>/dev/null || true
 if [[ -n "${INBOX_TASK_DESCRIPTIONS:-}" ]]; then
     warn "Watchtower inbox: queued task(s) available:"
@@ -1483,9 +1493,9 @@ if [[ "$HUMAN_MODE" = true ]]; then
         fi
         if [[ -z "$CURRENT_NOTE_LINE" ]]; then
             if [[ -n "$HUMAN_NOTES_TAG" ]]; then
-                log "No unchecked [${HUMAN_NOTES_TAG}] notes in HUMAN_NOTES.md"
+                log "No unchecked [${HUMAN_NOTES_TAG}] notes in ${HUMAN_NOTES_FILE}"
             else
-                log "No unchecked notes in HUMAN_NOTES.md"
+                log "No unchecked notes in ${HUMAN_NOTES_FILE}"
             fi
             _TEKHTON_CLEAN_EXIT=true
             exit 0
@@ -1573,26 +1583,26 @@ if [ ! -f "$PROJECT_RULES_FILE" ]; then
 fi
 
 # Validate required files exist when skipping stages
-if [ "$START_AT" = "security" ] && [ ! -f "CODER_SUMMARY.md" ]; then
-    error "--start-at security requires CODER_SUMMARY.md to exist in the repo root."
+if [ "$START_AT" = "security" ] && [ ! -f "${CODER_SUMMARY_FILE}" ]; then
+    error "--start-at security requires ${CODER_SUMMARY_FILE} to exist in the repo root."
     error "Run the full pipeline or ensure the coder has already produced this file."
     exit 1
 fi
 
-if [ "$START_AT" = "review" ] && [ ! -f "CODER_SUMMARY.md" ]; then
-    error "--start-at review requires CODER_SUMMARY.md to exist in the repo root."
+if [ "$START_AT" = "review" ] && [ ! -f "${CODER_SUMMARY_FILE}" ]; then
+    error "--start-at review requires ${CODER_SUMMARY_FILE} to exist in the repo root."
     error "Run the full pipeline or ensure the coder has already produced this file."
     exit 1
 fi
 
-if [ "$START_AT" = "test" ] && [ ! -f "REVIEWER_REPORT.md" ]; then
-    error "--start-at test requires REVIEWER_REPORT.md to exist in the repo root."
+if [ "$START_AT" = "test" ] && [ ! -f "${REVIEWER_REPORT_FILE}" ]; then
+    error "--start-at test requires ${REVIEWER_REPORT_FILE} to exist in the repo root."
     error "Run the full pipeline or at least the review stage first."
     exit 1
 fi
 
-if [ "$START_AT" = "tester" ] && [ ! -f "TESTER_REPORT.md" ]; then
-    error "--start-at tester requires TESTER_REPORT.md to exist in the repo root."
+if [ "$START_AT" = "tester" ] && [ ! -f "${TESTER_REPORT_FILE}" ]; then
+    error "--start-at tester requires ${TESTER_REPORT_FILE} to exist in the repo root."
     error "Run --start-at test first to generate the planned tests list."
     exit 1
 fi
@@ -1638,7 +1648,7 @@ fi
 check_project_version
 
 # Watchtower inbox processing moved earlier (before --human note picking)
-# to ensure inbox notes land in HUMAN_NOTES.md before pick_next_note() runs.
+# to ensure inbox notes land in ${HUMAN_NOTES_FILE} before pick_next_note() runs.
 
 _phase_end "config_load"
 
@@ -1666,12 +1676,12 @@ HUMAN_NOTE_COUNT="${_PRE_CLAIM_NOTE_COUNT:-$(count_human_notes)}"
 if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
     echo
     if [ -n "$NOTES_FILTER" ]; then
-        warn "HUMAN_NOTES.md has ${HUMAN_NOTE_COUNT} unchecked [${NOTES_FILTER}] item(s) — will be injected into coder prompt."
+        warn "${HUMAN_NOTES_FILE} has ${HUMAN_NOTE_COUNT} unchecked [${NOTES_FILTER}] item(s) — will be injected into coder prompt."
     else
-        warn "HUMAN_NOTES.md has ${HUMAN_NOTE_COUNT} unchecked item(s) — will be injected into coder prompt."
+        warn "${HUMAN_NOTES_FILE} has ${HUMAN_NOTE_COUNT} unchecked item(s) — will be injected into coder prompt."
     fi
     extract_human_notes | sed 's/^/  /'
-    REMAINING_UNFILTERED=$(grep -c "^- \[ \]" HUMAN_NOTES.md || true)
+    REMAINING_UNFILTERED=$(grep -c "^- \[ \]" ${HUMAN_NOTES_FILE} || true)
     REMAINING_UNFILTERED=$(echo "$REMAINING_UNFILTERED" | tr -d '[:space:]')
     if [ -n "$NOTES_FILTER" ] && [ "$REMAINING_UNFILTERED" -gt "$HUMAN_NOTE_COUNT" ]; then
         log "  ($(( REMAINING_UNFILTERED - HUMAN_NOTE_COUNT )) note(s) with other tags deferred to future runs)"
@@ -1724,7 +1734,7 @@ fi
 
 # Only archive prior reports when starting fresh from the coder stage
 if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
-    for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md INTAKE_REPORT.md; do
+    for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ${INTAKE_REPORT_FILE}; do
         if [ -f "$f" ]; then
             ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_${f}"
             mkdir -p "${LOG_DIR}/archive"
@@ -1733,23 +1743,23 @@ if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
         fi
     done
 elif [ "$START_AT" = "review" ]; then
-    for f in REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md; do
+    for f in ${REVIEWER_REPORT_FILE} ${TESTER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE}; do
         if [ -f "$f" ]; then
             mv "$f" "${LOG_DIR}/${TIMESTAMP}_prev_${f}"
             log "Archived previous $f"
         fi
     done
-    log "Resuming with existing CODER_SUMMARY.md"
+    log "Resuming with existing ${CODER_SUMMARY_FILE}"
 elif [ "$START_AT" = "test" ]; then
-    if [ -f "TESTER_REPORT.md" ]; then
-        mv "TESTER_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_prev_TESTER_REPORT.md"
-        log "Archived previous TESTER_REPORT.md"
+    if [ -f "${TESTER_REPORT_FILE}" ]; then
+        mv "${TESTER_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_prev_${TESTER_REPORT_FILE}"
+        log "Archived previous ${TESTER_REPORT_FILE}"
     fi
-    log "Resuming with existing CODER_SUMMARY.md and REVIEWER_REPORT.md"
+    log "Resuming with existing ${CODER_SUMMARY_FILE} and ${REVIEWER_REPORT_FILE}"
 elif [ "$START_AT" = "tester" ]; then
-    log "Resuming tester from existing TESTER_REPORT.md"
+    log "Resuming tester from existing ${TESTER_REPORT_FILE}"
     log "Planned tests remaining:"
-    grep "^- \[ \]" TESTER_REPORT.md || log "(none found — may already be complete)"
+    grep "^- \[ \]" ${TESTER_REPORT_FILE} || log "(none found — may already be complete)"
 else
     log "Resuming at ${START_AT} — prior reports preserved for agent context"
 fi
@@ -1851,9 +1861,9 @@ fi
 create_run_checkpoint
 
 # --- Startup cleanup: clear completed/resolved items from logs ----------------
-# Remove [x] items from HUMAN_NOTES.md and NON_BLOCKING_LOG.md Open section,
-# [RESOLVED] items from DRIFT_LOG.md, and resolved entries from
-# NON_BLOCKING_LOG.md Resolved section. Commit messages already captured what
+# Remove [x] items from ${HUMAN_NOTES_FILE} and ${NON_BLOCKING_LOG_FILE} Open section,
+# [RESOLVED] items from ${DRIFT_LOG_FILE}, and resolved entries from
+# ${NON_BLOCKING_LOG_FILE} Resolved section. Commit messages already captured what
 # was resolved; these logs don't need to keep them across runs.
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
@@ -2020,9 +2030,9 @@ _run_pipeline_stages() {
                 emit_dashboard_run_state 2>/dev/null || true
             else
                 header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Coder (skipped)"
-                log "Using existing CODER_SUMMARY.md"
+                log "Using existing ${CODER_SUMMARY_FILE}"
                 if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
-                    warn "HUMAN_NOTES.md has unchecked items but coder stage was skipped."
+                    warn "${HUMAN_NOTES_FILE} has unchecked items but coder stage was skipped."
                     warn "Notes will NOT be injected this run. Include them in your next full run."
                 fi
             fi
@@ -2077,8 +2087,8 @@ _run_pipeline_stages() {
                 emit_dashboard_run_state 2>/dev/null || true
             else
                 header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Reviewer (skipped)"
-                log "Using existing REVIEWER_REPORT.md"
-                VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+                log "Using existing ${REVIEWER_REPORT_FILE}"
+                VERDICT=$(grep -m1 "^## Verdict" -A1 ${REVIEWER_REPORT_FILE} 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
                 log "Existing verdict: ${VERDICT}"
             fi
             ;;
@@ -2133,8 +2143,8 @@ _run_pipeline_stages() {
         esac
     done
 
-    if [ ! -f "TESTER_REPORT.md" ]; then
-        warn "Tester did not produce TESTER_REPORT.md. Tests may have been written but report is missing."
+    if [ ! -f "${TESTER_REPORT_FILE}" ]; then
+        warn "Tester did not produce ${TESTER_REPORT_FILE}. Tests may have been written but report is missing."
     fi
 }
 
@@ -2206,7 +2216,7 @@ _run_human_complete_loop() {
 
         # Re-read note line after triage — triage_before_claim may have added
         # metadata (triage:, est_turns:, text_hash:, triaged:) which changes
-        # the line in HUMAN_NOTES.md. claim_single_note uses exact string
+        # the line in ${HUMAN_NOTES_FILE}. claim_single_note uses exact string
         # matching, so it needs the current line, not the pre-triage version.
         if [[ -n "$CURRENT_NOTE_ID" ]]; then
             CURRENT_NOTE_LINE=$(_find_note_by_id "$CURRENT_NOTE_ID")
@@ -2220,7 +2230,7 @@ _run_human_complete_loop() {
 
         # Archive reports from previous iteration
         if [[ "$human_attempt" -gt 1 ]]; then
-            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+            for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE}; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
                     mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_human${human_attempt}_${f}"
@@ -2291,11 +2301,11 @@ _run_fix_nonblockers_loop() {
             break
         fi
 
-        TASK="Address all ${remaining} open non-blocking notes in NON_BLOCKING_LOG.md. Fix each item and note what you changed."
+        TASK="Address all ${remaining} open non-blocking notes in ${NON_BLOCKING_LOG_FILE}. Fix each item and note what you changed."
 
         # Archive reports from previous iteration
         if [[ "$nb_attempt" -gt 1 ]]; then
-            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md; do
+            for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE}; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
                     mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixnb${nb_attempt}_${f}"
@@ -2328,7 +2338,7 @@ _run_fix_nonblockers_loop() {
 # _run_fix_drift_loop — Force architect audit to resolve drift observations.
 # Each pass runs the full pipeline with FORCE_AUDIT=true, which triggers the
 # architect stage. The architect resolves observations and marks them in
-# DRIFT_LOG.md. Loop terminates when no unresolved observations remain or
+# ${DRIFT_LOG_FILE}. Loop terminates when no unresolved observations remain or
 # safety bounds hit.
 _run_fix_drift_loop() {
     : "${AUTONOMOUS_TIMEOUT:=7200}"
@@ -2360,11 +2370,11 @@ _run_fix_drift_loop() {
             break
         fi
 
-        TASK="Resolve all ${remaining} unresolved architectural drift observations in DRIFT_LOG.md."
+        TASK="Resolve all ${remaining} unresolved architectural drift observations in ${DRIFT_LOG_FILE}."
 
         # Archive reports from previous iteration
         if [[ "$drift_attempt" -gt 1 ]]; then
-            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md ARCHITECT_PLAN.md; do
+            for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ARCHITECT_PLAN.md; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
                     mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixdrift${drift_attempt}_${f}"

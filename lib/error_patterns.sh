@@ -141,7 +141,7 @@ classify_build_errors_all() {
 }
 
 # --- filter_code_errors -----------------------------------------------------
-# Filters BUILD_ERRORS.md content to extract only code-category errors.
+# Filters ${BUILD_ERRORS_FILE} content to extract only code-category errors.
 # Returns a markdown block with non-code errors summarized and code errors
 # preserved in full.
 #
@@ -192,12 +192,12 @@ filter_code_errors() {
 }
 
 # --- annotate_build_errors --------------------------------------------------
-# Takes raw error output and stage label, returns annotated BUILD_ERRORS.md
+# Takes raw error output and stage label, returns annotated ${BUILD_ERRORS_FILE}
 # content with classification headers.
 #
 # Usage: annotate_build_errors "$raw_output" "$stage_label"
 # NOTE: Raw error text is NOT included in output. Callers must write raw errors
-# separately (see gates.sh: BUILD_RAW_ERRORS.txt).
+# separately (see gates.sh: ${BUILD_RAW_ERRORS_FILE}).
 annotate_build_errors() {
     local raw_output="${1:-}"
     local stage_label="${2:-unknown}"

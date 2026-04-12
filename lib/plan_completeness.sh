@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck disable=SC2153
 # =============================================================================
 # plan_completeness.sh — Design document completeness checking
 #
-# Provides structural validation of DESIGN.md against required template
+# Provides structural validation of ${DESIGN_FILE} against required template
 # sections, and a follow-up interview loop for incomplete sections.
 # Extracted from lib/plan.sh to keep files under 300 lines.
 #
@@ -153,16 +154,16 @@ _is_section_shallow() {
     [[ "$score" -lt 2 ]]
 }
 
-# check_design_completeness — Validate DESIGN.md against required sections.
+# check_design_completeness — Validate ${DESIGN_FILE} against required sections.
 # Sets PLAN_INCOMPLETE_SECTIONS and returns 0 if all complete, 1 otherwise.
 check_design_completeness() {
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     local template_file="$PLAN_TEMPLATE_FILE"
 
     PLAN_INCOMPLETE_SECTIONS=""
 
     if [[ ! -f "$design_file" ]]; then
-        error "DESIGN.md not found at ${design_file}"
+        error "${DESIGN_FILE} not found at ${design_file}"
         return 1
     fi
 
@@ -178,7 +179,7 @@ check_design_completeness() {
     while IFS= read -r section_name; do
         [[ -z "$section_name" ]] && continue
 
-        # Check if section heading exists in DESIGN.md
+        # Check if section heading exists in ${DESIGN_FILE}
         if ! grep -q "^## ${section_name}$" "$design_file"; then
             warn "Missing section: ${section_name}"
             PLAN_INCOMPLETE_SECTIONS="${PLAN_INCOMPLETE_SECTIONS}${section_name}"$'\n'
@@ -212,10 +213,10 @@ check_design_completeness() {
 
 # run_plan_completeness_loop — Check completeness and run follow-up interviews.
 run_plan_completeness_loop() {
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
 
     if [[ ! -f "$design_file" ]]; then
-        warn "No DESIGN.md found — skipping completeness check."
+        warn "No ${DESIGN_FILE} found — skipping completeness check."
         return 1
     fi
 
@@ -242,7 +243,7 @@ run_plan_completeness_loop() {
 
         if [[ "$pass_num" -ge "$max_followups" ]]; then
             warn "Maximum follow-up passes (${max_followups}) reached."
-            warn "Continuing with incomplete sections. You can edit DESIGN.md manually."
+            warn "Continuing with incomplete sections. You can edit ${DESIGN_FILE} manually."
             return 0
         fi
 
@@ -256,7 +257,7 @@ run_plan_completeness_loop() {
         local choice
         while true; do
             printf "  [f] Follow-up interview on incomplete sections\n"
-            printf "  [s] Skip — continue with current DESIGN.md\n"
+            printf "  [s] Skip — continue with current %s\n" "${DESIGN_FILE}"
             printf "  Select [f/s]: "
             read -r choice < "$input_fd" || { log "End of input — skipping follow-up."; return 0; }
             choice="${choice//$'\r'/}"
@@ -268,7 +269,7 @@ run_plan_completeness_loop() {
                     break
                     ;;
                 s|S)
-                    log "Skipping follow-up. Continuing with current DESIGN.md."
+                    log "Skipping follow-up. Continuing with current ${DESIGN_FILE}."
                     return 0
                     ;;
                 *)

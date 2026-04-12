@@ -4,7 +4,7 @@ set -euo pipefail
 # stages/init_synthesize.sh — Agent-assisted project synthesis (Milestone 21)
 #
 # Uses PROJECT_INDEX.md + tech stack detection as input to an agent-assisted
-# synthesis pipeline that generates DESIGN.md and CLAUDE.md for brownfield
+# synthesis pipeline that generates ${DESIGN_FILE} and CLAUDE.md for brownfield
 # projects. The brownfield equivalent of --plan — reads existing code instead
 # of interviewing the user.
 #
@@ -35,12 +35,12 @@ source "${TEKHTON_HOME:-.}/lib/init_synthesize_ui.sh"
 export SYNTHESIS_MODEL="${SYNTHESIS_MODEL:-${PLAN_GENERATION_MODEL:-opus}}"
 export SYNTHESIS_MAX_TURNS="${SYNTHESIS_MAX_TURNS:-${PLAN_GENERATION_MAX_TURNS:-50}}"
 
-# --- DESIGN.md generation ----------------------------------------------------
+# --- ${DESIGN_FILE} generation ----------------------------------------------------
 
-# _synthesize_design — Generates DESIGN.md from project index and detection.
+# _synthesize_design — Generates ${DESIGN_FILE} from project index and detection.
 #
 # Args: $1 = project directory
-# Returns: 0 if DESIGN.md was produced, 1 otherwise
+# Returns: 0 if ${DESIGN_FILE} was produced, 1 otherwise
 _synthesize_design() {
     local project_dir="$1"
     local log_dir="${project_dir}/.claude/logs"
@@ -54,16 +54,16 @@ _synthesize_design() {
     local prompt
     prompt=$(render_prompt "init_synthesize_design")
 
-    header "DESIGN.md Synthesis"
+    header "${DESIGN_FILE} Synthesis"
     log "Model: ${SYNTHESIS_MODEL}"
     log "Max turns: ${SYNTHESIS_MAX_TURNS}"
     log "Log: ${log_file}"
     echo
-    log "Synthesizing DESIGN.md from project index..."
+    log "Synthesizing ${DESIGN_FILE} from project index..."
 
     # Write session metadata to log
     {
-        echo "=== Tekhton Project Synthesis (DESIGN.md) ==="
+        echo "=== Tekhton Project Synthesis (${DESIGN_FILE}) ==="
         echo "Date: $(date)"
         echo "Model: ${SYNTHESIS_MODEL}"
         echo "Max Turns: ${SYNTHESIS_MAX_TURNS}"
@@ -92,14 +92,14 @@ _synthesize_design() {
     fi
 
     if [[ -n "$design_content" ]]; then
-        local design_file="${project_dir}/DESIGN.md"
+        local design_file="${project_dir}/${DESIGN_FILE}"
         printf '%s\n' "$design_content" > "$design_file"
         local line_count
         line_count=$(wc -l < "$design_file" | tr -d '[:space:]')
-        success "DESIGN.md synthesized (${line_count} lines)."
+        success "${DESIGN_FILE} synthesized (${line_count} lines)."
         return 0
     else
-        warn "Synthesis produced no output — DESIGN.md was not created."
+        warn "Synthesis produced no output — ${DESIGN_FILE} was not created."
         [[ "$batch_exit" -ne 0 ]] && warn "Claude exited with code ${batch_exit}."
         return 1
     fi
@@ -107,16 +107,16 @@ _synthesize_design() {
 
 # --- CLAUDE.md generation ----------------------------------------------------
 
-# _synthesize_claude — Generates CLAUDE.md from DESIGN.md and project index.
+# _synthesize_claude — Generates CLAUDE.md from ${DESIGN_FILE} and project index.
 #
 # Args: $1 = project directory
 # Returns: 0 if CLAUDE.md was produced, 1 otherwise
 _synthesize_claude() {
     local project_dir="$1"
-    local design_file="${project_dir}/DESIGN.md"
+    local design_file="${project_dir}/${DESIGN_FILE}"
 
     if [[ ! -f "$design_file" ]]; then
-        error "DESIGN.md not found at ${design_file} — cannot generate CLAUDE.md."
+        error "${DESIGN_FILE} not found at ${design_file} — cannot generate CLAUDE.md."
         return 1
     fi
 
@@ -140,7 +140,7 @@ _synthesize_claude() {
     log "Max turns: ${SYNTHESIS_MAX_TURNS}"
     log "Log: ${log_file}"
     echo
-    log "Generating CLAUDE.md from DESIGN.md + project index..."
+    log "Generating CLAUDE.md from ${DESIGN_FILE} + project index..."
 
     {
         echo "=== Tekhton Project Synthesis (CLAUDE.md) ==="
@@ -195,7 +195,7 @@ _synthesize_claude() {
 #
 # Phases:
 #   1. Context assembly (load index, detection, README, etc.)
-#   2. DESIGN.md generation
+#   2. ${DESIGN_FILE} generation
 #   3. Completeness check + optional re-synthesis
 #   4. CLAUDE.md generation
 #   5. Human review menu
@@ -206,7 +206,7 @@ run_project_synthesis() {
     local project_dir="${1:-${PROJECT_DIR:-.}}"
 
     header "Tekhton — Project Synthesis"
-    log "Synthesizing DESIGN.md and CLAUDE.md from project index."
+    log "Synthesizing ${DESIGN_FILE} and CLAUDE.md from project index."
     log "Model: ${SYNTHESIS_MODEL} | Max turns: ${SYNTHESIS_MAX_TURNS}"
     echo
 
@@ -214,14 +214,14 @@ run_project_synthesis() {
     log "Phase 1: Assembling context..."
     _assemble_synthesis_context "$project_dir" || return 1
 
-    # Phase 2: DESIGN.md generation
+    # Phase 2: ${DESIGN_FILE} generation
     echo
-    log "Phase 2: Generating DESIGN.md..."
+    log "Phase 2: Generating ${DESIGN_FILE}..."
     _synthesize_design "$project_dir" || return 1
 
     # Phase 3: Completeness check
     echo
-    log "Phase 3: Checking DESIGN.md completeness..."
+    log "Phase 3: Checking ${DESIGN_FILE} completeness..."
     _check_synthesis_completeness "$project_dir"
 
     # Phase 4: CLAUDE.md generation

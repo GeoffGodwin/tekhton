@@ -58,7 +58,7 @@ AWKEOF
 
 # --- Drift Log ---------------------------------------------------------------
 
-# _ensure_drift_log — Creates DRIFT_LOG.md with initial structure if missing.
+# _ensure_drift_log — Creates ${DRIFT_LOG_FILE} with initial structure if missing.
 _ensure_drift_log() {
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
     if [ ! -f "$drift_file" ]; then
@@ -79,7 +79,7 @@ EOF
 # append_drift_observations — Reads reviewer report's drift section, appends to log.
 # Skips if section contains only "None" or is absent.
 append_drift_observations() {
-    local reviewer_report="${PROJECT_DIR}/REVIEWER_REPORT.md"
+    local reviewer_report="${PROJECT_DIR}/${REVIEWER_REPORT_FILE}"
     local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
 
     if [ ! -f "$reviewer_report" ]; then

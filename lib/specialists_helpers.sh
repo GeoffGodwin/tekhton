@@ -24,7 +24,7 @@ _extract_specialist_blockers() {
     grep "\[BLOCKER\]" "$findings_file" 2>/dev/null || true
 }
 
-# _append_specialist_notes — Reads [NOTE] items and appends to NON_BLOCKING_LOG.md.
+# _append_specialist_notes — Reads [NOTE] items and appends to ${NON_BLOCKING_LOG_FILE}.
 # Args: $1 = specialist name
 _append_specialist_notes() {
     local spec_name="$1"

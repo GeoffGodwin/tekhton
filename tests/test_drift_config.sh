@@ -62,12 +62,12 @@ assert_eq() {
     fi
 }
 
-assert_eq "ARCHITECTURE_LOG_FILE default" "ARCHITECTURE_LOG.md" "$ARCHITECTURE_LOG_FILE"
-assert_eq "DRIFT_LOG_FILE default" "DRIFT_LOG.md" "$DRIFT_LOG_FILE"
-assert_eq "HUMAN_ACTION_FILE default" "HUMAN_ACTION_REQUIRED.md" "$HUMAN_ACTION_FILE"
+assert_eq "ARCHITECTURE_LOG_FILE default" ".tekhton/ARCHITECTURE_LOG.md" "$ARCHITECTURE_LOG_FILE"
+assert_eq "DRIFT_LOG_FILE default" ".tekhton/DRIFT_LOG.md" "$DRIFT_LOG_FILE"
+assert_eq "HUMAN_ACTION_FILE default" ".tekhton/HUMAN_ACTION_REQUIRED.md" "$HUMAN_ACTION_FILE"
 assert_eq "DRIFT_OBSERVATION_THRESHOLD default" "8" "$DRIFT_OBSERVATION_THRESHOLD"
 assert_eq "DRIFT_RUNS_SINCE_AUDIT_THRESHOLD default" "5" "$DRIFT_RUNS_SINCE_AUDIT_THRESHOLD"
-assert_eq "DESIGN_FILE default" "" "$DESIGN_FILE"
+assert_eq "DESIGN_FILE default" ".tekhton/DESIGN.md" "$DESIGN_FILE"
 
 # --- Test 2: Custom values override defaults ---
 cat >> "${PROJECT_DIR}/.claude/pipeline.conf" << 'EOF'

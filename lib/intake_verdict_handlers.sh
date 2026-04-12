@@ -141,8 +141,8 @@ _intake_handle_needs_clarity() {
     questions=$(_intake_parse_questions "$report_file")
 
     if [[ -n "$questions" ]]; then
-        # Write questions to CLARIFICATIONS.md in structured ## Q: format
-        local clarify_file="${PROJECT_DIR}/CLARIFICATIONS.md"
+        # Write questions to ${CLARIFICATIONS_FILE} in structured ## Q: format
+        local clarify_file="${PROJECT_DIR}/${CLARIFICATIONS_FILE}"
         {
             echo ""
             echo "# Intake Clarifications — $(date '+%Y-%m-%d %H:%M:%S')"
@@ -162,11 +162,11 @@ _intake_handle_needs_clarity() {
         # In --complete (autonomous) mode, never attempt interactive
         # clarification — save state so the human can answer offline.
         if [[ "${COMPLETE_MODE:-false}" == "true" ]]; then
-            warn "Intake: questions written to CLARIFICATIONS.md."
+            warn "Intake: questions written to ${CLARIFICATIONS_FILE}."
             warn "Cannot collect answers in --complete mode (autonomous). Saving state."
             write_pipeline_state "intake" "needs_clarity" \
                 "--milestone --start-at coder" "$TASK" \
-                "Intake needs human clarification — answer CLARIFICATIONS.md and re-run" \
+                "Intake needs human clarification — answer ${CLARIFICATIONS_FILE} and re-run" \
                 "${_CURRENT_MILESTONE:-}"
             exit 1
         fi
@@ -187,7 +187,7 @@ _intake_handle_needs_clarity() {
             fi
             success "Clarifications recorded. Proceeding."
         else
-            warn "Intake: questions written to CLARIFICATIONS.md."
+            warn "Intake: questions written to ${CLARIFICATIONS_FILE}."
             warn "Answer the questions and re-run the pipeline."
             write_pipeline_state "intake" "needs_clarity" \
                 "--milestone --start-at coder" "$TASK" \

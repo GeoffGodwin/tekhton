@@ -36,7 +36,7 @@ the overview; LSP tools give you precision.
 
 ### Milestone Conflict Check
 If the feature you are implementing overlaps with any of the milestones listed
-above, note the overlap in CODER_SUMMARY.md under `## Milestone Overlap`.
+above, note the overlap in {{CODER_SUMMARY_FILE}} under `## Milestone Overlap`.
 Do not duplicate work that is scoped to a future milestone. If the feature
 directly conflicts with an in-progress milestone, flag it as a blocking concern.
 {{ENDIF:MILESTONE_BLOCK}}
@@ -87,11 +87,11 @@ These are **new feature requests**. Follow this workflow:
    system — never hardcode values that could vary.
 5. **Flag architectural concerns.** If the feature requires changes to existing
    interfaces, layer boundaries, or dependencies, document them as Architecture
-   Change Proposals in CODER_SUMMARY.md.
+   Change Proposals in {{CODER_SUMMARY_FILE}}.
 
-**DO NOT modify HUMAN_NOTES.md.** The pipeline manages note state (checkboxes)
+**DO NOT modify {{HUMAN_NOTES_FILE}}.** The pipeline manages note state (checkboxes)
 automatically. You may read it for context but must never write to it.
-Your completions are tracked via CODER_SUMMARY.md, not by editing the notes file.
+Your completions are tracked via {{CODER_SUMMARY_FILE}}, not by editing the notes file.
 
 {{IF:HUMAN_NOTES_BLOCK}}
 {{HUMAN_NOTES_BLOCK}}
@@ -107,7 +107,7 @@ Scope your work strictly to the task description above. Do not expand scope
 beyond what was requested — even if additional work seems useful.
 
 ## Execution Order (mandatory)
-**Step 1:** Write `CODER_SUMMARY.md` immediately with this skeleton:
+**Step 1:** Write `{{CODER_SUMMARY_FILE}}` immediately with this skeleton:
 ```
 # Coder Summary
 ## Status: IN PROGRESS
@@ -121,7 +121,7 @@ beyond what was requested — even if additional work seems useful.
 **Step 2:** Read `{{PROJECT_RULES_FILE}}` and the files identified by the scout.
 **Step 3:** Implement the feature following existing project patterns.
 **Step 4:** Run `{{ANALYZE_CMD}}` and `{{TEST_CMD}}`.
-**Step 5:** Update `CODER_SUMMARY.md` with final status.
+**Step 5:** Update `{{CODER_SUMMARY_FILE}}` with final status.
 
 ## Required Reading
 1. `{{CODER_ROLE_FILE}}` — your role and rules
@@ -133,7 +133,7 @@ beyond what was requested — even if additional work seems useful.
 
 If your implementation requires a structural change not described in the architecture
 documentation — a new dependency between systems, a different layer boundary, a changed
-interface contract — you MUST declare it in CODER_SUMMARY.md under a new section:
+interface contract — you MUST declare it in {{CODER_SUMMARY_FILE}} under a new section:
 
 ### `## Architecture Change Proposals`
 For each proposed change:
@@ -144,13 +144,13 @@ For each proposed change:
 - **ARCHITECTURE.md update needed**: Yes/No — specify which section
 
 ## Required Output
-When finished, update CODER_SUMMARY.md with:
+When finished, update {{CODER_SUMMARY_FILE}} with:
 - `## Status` set to either `COMPLETE` or `IN PROGRESS`
 - `## Remaining Work` listing anything not finished if IN PROGRESS
 - Do NOT set COMPLETE if any planned work is unfinished
 
 ## Human Notes Completion Tracking (mandatory)
-Add this section to CODER_SUMMARY.md:
+Add this section to {{CODER_SUMMARY_FILE}}:
 ```
 ## Human Notes Status
 - COMPLETED: [FEAT] exact note text here

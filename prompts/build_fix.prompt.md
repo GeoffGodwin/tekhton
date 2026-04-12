@@ -8,7 +8,7 @@ fixing build errors. **Prefer LSP tools over grep for symbol lookup.**
 
 ## URGENT: Build Errors to Fix
 The previous coder run left the project in a non-building state.
-Read BUILD_ERRORS.md (and UI_TEST_ERRORS.md if present) for the exact errors.
+Read {{BUILD_ERRORS_FILE}} (and {{UI_TEST_ERRORS_FILE}} if present) for the exact errors.
 Fix ONLY these errors — do not add features or refactor.
 
 ### Error Triage
@@ -26,6 +26,6 @@ If the error message tells you exactly what command to run (e.g.,
 "Please run: npx playwright install"), **run that command** before attempting
 any code fix.
 
-Update CODER_SUMMARY.md status to COMPLETE and list fixes under '## Build Fixes'.
+Update {{CODER_SUMMARY_FILE}} status to COMPLETE and list fixes under '## Build Fixes'.
 
 {{BUILD_ERRORS_CONTENT}}

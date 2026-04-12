@@ -119,7 +119,7 @@ assert_contains \
 # Test 13: Verify mutable project files are specifically listed
 assert_contains \
     "prompts/test_audit.prompt.md" \
-    "CODER_SUMMARY.md.*REVIEWER_REPORT.md.*BUILD_ERRORS.md" \
+    "CODER_SUMMARY_FILE.*REVIEWER_REPORT_FILE.*BUILD_ERRORS_FILE" \
     "Audit Section 7 lists example mutable project files"
 
 # Test 14: Verify isolation is listed as a category in the output rules

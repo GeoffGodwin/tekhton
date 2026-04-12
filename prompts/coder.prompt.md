@@ -67,7 +67,7 @@ your implementation — they are authoritative.
 ## Pre-Written Tests (TDD Mode)
 Tests have been written BEFORE your implementation. Your primary goal is to make
 ALL of these tests pass while also satisfying the acceptance criteria.
-Read the test files listed in TESTER_PREFLIGHT.md to understand the expected
+Read the test files listed in {{TDD_PREFLIGHT_FILE}} to understand the expected
 interface contracts. The tests define WHAT your code must do — you decide HOW.
 
 --- BEGIN FILE CONTENT: TESTER_PREFLIGHT ---
@@ -81,13 +81,13 @@ interface contracts. The tests define WHAT your code must do — you decide HOW.
 
 ## ⚠ Human Notes — MANDATORY WORK ITEMS
 These items are part of your required scope. You MUST implement each one and
-report completion status in CODER_SUMMARY.md. Do NOT set Status to COMPLETE
+report completion status in {{CODER_SUMMARY_FILE}}. Do NOT set Status to COMPLETE
 until every note below is either implemented or explicitly marked NOT_ADDRESSED
 with a reason. The pipeline will reject COMPLETE status if notes are unaccounted for.
 
-**DO NOT modify HUMAN_NOTES.md.** The pipeline manages note state (checkboxes)
+**DO NOT modify {{HUMAN_NOTES_FILE}}.** The pipeline manages note state (checkboxes)
 automatically. You may read it for context but must never write to it.
-Your completions are tracked via CODER_SUMMARY.md, not by editing the notes file.
+Your completions are tracked via {{CODER_SUMMARY_FILE}}, not by editing the notes file.
 {{HUMAN_NOTES_BLOCK}}
 {{ENDIF:HUMAN_NOTES_BLOCK}}
 
@@ -135,13 +135,13 @@ over the "address what you can" guidance in the tech debt section.
 
 **Do NOT fix problems you discover outside your task scope.** If you notice bugs,
 style issues, missing error handling, or improvement opportunities in files you are
-reading that are unrelated to your task, record them in CODER_SUMMARY.md under
+reading that are unrelated to your task, record them in {{CODER_SUMMARY_FILE}} under
 `## Observed Issues (out of scope)` — one bullet per item with file path and brief
 description. The pipeline routes these to the appropriate cleanup mechanism. Fixing
 out-of-scope issues wastes review cycles and creates unnecessary non-blocking findings.
 
 ## Execution Order (mandatory — do not skip step 1)
-**Step 1:** Write `CODER_SUMMARY.md` immediately with this skeleton before touching any code:
+**Step 1:** Write `{{CODER_SUMMARY_FILE}}` immediately with this skeleton before touching any code:
 ```
 # Coder Summary
 ## Status: IN PROGRESS
@@ -158,7 +158,7 @@ out-of-scope issues wastes review cycles and creates unnecessary non-blocking fi
 **Step 3:** Diagnose / implement.
 **Step 4:** Run `{{ANALYZE_CMD}}` and `{{TEST_CMD}}`.
 **Step 5: Pre-Completion Self-Check (mandatory before setting COMPLETE).**
-Before updating CODER_SUMMARY.md to COMPLETE, verify each item. Fix violations
+Before updating {{CODER_SUMMARY_FILE}} to COMPLETE, verify each item. Fix violations
 NOW — do not leave them for the reviewer:
 - **File length:** Every file you created or modified must be under 300 lines
   (`wc -l`). If any file exceeds 300 lines, extract functions into a new file
@@ -170,11 +170,11 @@ NOW — do not leave them for the reviewer:
 - **Dead code:** Remove any variables you declared but never read, functions
   you wrote but never call, and conditional branches that are unreachable.
 - **Consistency:** If you added a new file, verify it appears in
-  CODER_SUMMARY.md under `## Files Modified` with the annotation `(NEW)`.
+  {{CODER_SUMMARY_FILE}} under `## Files Modified` with the annotation `(NEW)`.
   If the project has a repository layout section in CLAUDE.md or
   ARCHITECTURE.md, add the new file there.
 
-**Step 6:** Update `CODER_SUMMARY.md` with final status, root cause, and files modified.
+**Step 6:** Update `{{CODER_SUMMARY_FILE}}` with final status, root cause, and files modified.
 
 ## Required Reading
 1. `{{CODER_ROLE_FILE}}` — your role and rules
@@ -197,7 +197,7 @@ This enables `grep -r 'System:'` to find all files in a system instantly.
 
 If your implementation requires a structural change not described in the architecture
 documentation — a new dependency between systems, a different layer boundary, a changed
-interface contract — you MUST declare it in CODER_SUMMARY.md under a new section:
+interface contract — you MUST declare it in {{CODER_SUMMARY_FILE}} under a new section:
 
 ### `## Architecture Change Proposals`
 For each proposed change:
@@ -217,7 +217,7 @@ If no architecture changes were needed, omit this section entirely.
 
 If you encounter anything in the design document ({{DESIGN_FILE}}) that contradicts
 what was decided in a prior Architecture Change Proposal, or that conflicts with
-current implementation reality, note it in CODER_SUMMARY.md:
+current implementation reality, note it in {{CODER_SUMMARY_FILE}}:
 
 ### `## Design Observations`
 - Brief description of the contradiction and which document sections are affected
@@ -229,7 +229,7 @@ Do not block your work on design contradictions.
 ## Clarification Protocol
 If you encounter a blocking ambiguity that prevents correct implementation — where
 guessing wrong would require significant rework — you may request clarification.
-Add a section to CODER_SUMMARY.md:
+Add a section to {{CODER_SUMMARY_FILE}}:
 
 ```
 ## Clarification Required
@@ -245,14 +245,14 @@ Rules:
 - Maximum 3 blocking questions per run — if you have more, narrow your scope
 
 ## Required Output
-When finished, update CODER_SUMMARY.md with:
+When finished, update {{CODER_SUMMARY_FILE}} with:
 - '## Status' set to either 'COMPLETE' or 'IN PROGRESS'
 - '## Remaining Work' listing anything not finished if IN PROGRESS
 - Do NOT set COMPLETE if any planned work is unfinished
 {{IF:HUMAN_NOTES_BLOCK}}
 
 ## Human Notes Completion Tracking (mandatory when human notes are present)
-Add this section to CODER_SUMMARY.md to report which human notes you addressed:
+Add this section to {{CODER_SUMMARY_FILE}} to report which human notes you addressed:
 ```
 ## Human Notes Status
 - COMPLETED: [TAG] exact note text here

@@ -121,13 +121,13 @@ validate_indexer_config() {
 
 # --- File list extraction helpers --------------------------------------------
 
-# extract_files_from_coder_summary — Parse file paths from CODER_SUMMARY.md.
+# extract_files_from_coder_summary — Parse file paths from ${CODER_SUMMARY_FILE}.
 # Looks for the "## Files Modified" or "## Files Created or Modified" section
 # and extracts file paths from bullet items.
 # Output: space-separated file paths on stdout
 # Returns: 0 always (empty output if no files found)
 extract_files_from_coder_summary() {
-    local summary_file="${1:-CODER_SUMMARY.md}"
+    local summary_file="${1:-${CODER_SUMMARY_FILE}}"
 
     if [[ ! -f "$summary_file" ]]; then
         return 0

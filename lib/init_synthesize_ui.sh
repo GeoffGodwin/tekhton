@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck disable=SC2153
 # =============================================================================
 # init_synthesize_ui.sh — UI functions for project synthesis review
 #
@@ -20,7 +21,7 @@ set -euo pipefail
 # Returns: 0 on accept, 1 on abort
 _synthesis_review_menu() {
     local project_dir="$1"
-    local design_file="${project_dir}/DESIGN.md"
+    local design_file="${project_dir}/${DESIGN_FILE}"
     local claude_file="${project_dir}/CLAUDE.md"
 
     # Use /dev/tty for interactive input when stdin is not a terminal
@@ -37,7 +38,7 @@ _synthesis_review_menu() {
         if [[ -f "$design_file" ]]; then
             local design_lines
             design_lines=$(wc -l < "$design_file" | tr -d '[:space:]')
-            log "DESIGN.md: ${design_lines} lines"
+            log "${DESIGN_FILE}: ${design_lines} lines"
         fi
 
         if [[ -f "$claude_file" ]]; then
@@ -50,8 +51,8 @@ _synthesis_review_menu() {
         echo
         echo "  [a] Accept — keep generated files"
         echo "  [e] Edit — open CLAUDE.md in \${EDITOR:-nano}"
-        echo "  [d] Edit DESIGN.md — open DESIGN.md in \${EDITOR:-nano}"
-        echo "  [r] Regenerate — re-run CLAUDE.md synthesis from DESIGN.md"
+        echo "  [d] Edit ${DESIGN_FILE} — open ${DESIGN_FILE} in \${EDITOR:-nano}"
+        echo "  [r] Regenerate — re-run CLAUDE.md synthesis from ${DESIGN_FILE}"
         echo "  [n] Abort — discard generated files"
         echo
         printf "  Select [a/e/d/r/n]: "
@@ -61,7 +62,7 @@ _synthesis_review_menu() {
         case "$choice" in
             a|A)
                 success "Files accepted at ${project_dir}:"
-                log "  DESIGN.md"
+                log "  ${DESIGN_FILE}"
                 log "  CLAUDE.md"
                 _print_synthesis_next_steps
                 return 0
@@ -76,20 +77,20 @@ _synthesis_review_menu() {
                 ;;
             d|D)
                 if [[ -f "$design_file" ]]; then
-                    log "Opening DESIGN.md in editor..."
+                    log "Opening ${DESIGN_FILE} in editor..."
                     "${EDITOR:-nano}" "$design_file" || warn "Editor exited with non-zero status"
                 else
-                    warn "DESIGN.md not found."
+                    warn "${DESIGN_FILE} not found."
                 fi
                 ;;
             r|R)
-                log "Re-generating CLAUDE.md from DESIGN.md..."
+                log "Re-generating CLAUDE.md from ${DESIGN_FILE}..."
                 _synthesize_claude "$project_dir" || warn "Re-generation failed."
                 ;;
             n|N)
                 warn "Aborted."
                 if [[ -f "$design_file" ]]; then
-                    warn "DESIGN.md preserved at: ${design_file}"
+                    warn "${DESIGN_FILE} preserved at: ${design_file}"
                 fi
                 if [[ -f "$claude_file" ]]; then
                     warn "CLAUDE.md preserved at: ${claude_file}"
@@ -109,7 +110,7 @@ _print_synthesis_next_steps() {
     success "Project synthesis complete!"
     echo
     log "Your files:"
-    log "  DESIGN.md  — project design document (synthesized from codebase)"
+    log "  ${DESIGN_FILE}  — project design document (synthesized from codebase)"
     log "  CLAUDE.md  — project rules and improvement plan"
     echo
     log "Next steps:"

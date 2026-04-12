@@ -40,7 +40,7 @@ _write_js_file() {
 }
 
 # _parse_security_report FILE
-# Extract findings from SECURITY_REPORT.md into JSON array.
+# Extract findings from ${SECURITY_REPORT_FILE} into JSON array.
 _parse_security_report() {
     local file="$1"
     [[ ! -f "$file" ]] && { echo "[]"; return 0; }
@@ -89,7 +89,7 @@ _parse_security_report() {
 }
 
 # _parse_intake_report FILE
-# Extract verdict and confidence from INTAKE_REPORT.md.
+# Extract verdict and confidence from ${INTAKE_REPORT_FILE}.
 # Handles two formats:
 #   Format A (inline): "Verdict: PASS"  /  "Confidence: 82"
 #   Format B (header):  "## Verdict\nPASS"  /  "## Confidence\n82"
@@ -125,7 +125,7 @@ _parse_intake_report() {
 }
 
 # _parse_coder_summary FILE
-# Extract status and file list from CODER_SUMMARY.md.
+# Extract status and file list from ${CODER_SUMMARY_FILE}.
 # Handles: "## Status: COMPLETE", "## Status\nCOMPLETE", "Status: IN PROGRESS"
 _parse_coder_summary() {
     local file="$1"
@@ -149,7 +149,7 @@ _parse_coder_summary() {
 }
 
 # _parse_reviewer_report FILE
-# Extract verdict from REVIEWER_REPORT.md.
+# Extract verdict from ${REVIEWER_REPORT_FILE}.
 _parse_reviewer_report() {
     local file="$1"
     [[ ! -f "$file" ]] && { echo "null"; return 0; }

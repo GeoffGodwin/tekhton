@@ -8,8 +8,7 @@ set -euo pipefail
 # Expects: render_prompt() from prompts.sh
 # =============================================================================
 
-# --- Clarification file path ------------------------------------------------
-CLARIFICATIONS_FILE="${PROJECT_DIR}/CLARIFICATIONS.md"
+# Clarification file path set by config_defaults.sh (CLARIFICATIONS_FILE)
 
 # detect_clarifications — Parse a report file for clarification items.
 #
@@ -21,7 +20,7 @@ CLARIFICATIONS_FILE="${PROJECT_DIR}/CLARIFICATIONS.md"
 #
 # Returns 0 if any clarifications found, 1 if none.
 #
-# Usage: detect_clarifications "CODER_SUMMARY.md"
+# Usage: detect_clarifications "${CODER_SUMMARY_FILE}"
 detect_clarifications() {
     local report_file="$1"
 
@@ -71,7 +70,7 @@ detect_clarifications() {
 # handle_clarifications — Pause for human input on blocking questions.
 #
 # Reads blocking items from the session temp file, presents each to the user,
-# collects answers via /dev/tty, and writes them to CLARIFICATIONS.md.
+# collects answers via /dev/tty, and writes them to ${CLARIFICATIONS_FILE}.
 # Non-blocking items are logged but do not pause the pipeline.
 #
 # Returns 0 on success, 1 if user aborts.
@@ -119,7 +118,7 @@ handle_clarifications() {
         return 1
     fi
 
-    # Initialize or append to CLARIFICATIONS.md
+    # Initialize or append to ${CLARIFICATIONS_FILE}
     local clarify_header
     clarify_header="# Clarifications — $(date '+%Y-%m-%d %H:%M:%S')"
     if [[ ! -f "$CLARIFICATIONS_FILE" ]]; then
@@ -172,11 +171,11 @@ handle_clarifications() {
         echo
     done < "$blocking_file"
 
-    success "All clarifications recorded in CLARIFICATIONS.md"
+    success "All clarifications recorded in ${CLARIFICATIONS_FILE}"
     return 0
 }
 
-# load_clarifications_content — Load CLARIFICATIONS.md into the export variable
+# load_clarifications_content — Load ${CLARIFICATIONS_FILE} into the export variable
 # CLARIFICATIONS_CONTENT for template injection.
 #
 # Usage: load_clarifications_content

@@ -21,12 +21,12 @@ check() {
     fi
 }
 
-# Test 1: Both files reference CODER_SUMMARY.md
-grep -q 'CODER_SUMMARY.md' "$CODER_PROMPT"
-check "coder.prompt.md references CODER_SUMMARY.md" $?
+# Test 1: Both files reference CODER_SUMMARY
+grep -q 'CODER_SUMMARY' "$CODER_PROMPT"
+check "coder.prompt.md references CODER_SUMMARY" $?
 
-grep -q 'CODER_SUMMARY.md' "$CODER_ROLE"
-check "templates/coder.md references CODER_SUMMARY.md" $?
+grep -q 'CODER_SUMMARY' "$CODER_ROLE"
+check "templates/coder.md references CODER_SUMMARY" $?
 
 # Test 2: Role file points to itself in the prompt
 grep -q '{{CODER_ROLE_FILE}}' "$CODER_PROMPT"

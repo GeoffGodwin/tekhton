@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# notes_migrate.sh — Lazy migration for legacy HUMAN_NOTES.md files
+# notes_migrate.sh — Lazy migration for legacy ${HUMAN_NOTES_FILE} files
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: notes_core.sh sourced first (_next_note_id, _build_metadata_comment).
@@ -13,10 +13,10 @@ set -euo pipefail
 
 _NOTES_FORMAT_MARKER="<!-- notes-format: v2 -->"
 
-# _needs_notes_migration — Returns 0 if HUMAN_NOTES.md exists and lacks the
+# _needs_notes_migration — Returns 0 if ${HUMAN_NOTES_FILE} exists and lacks the
 # v2 format marker, indicating migration is needed.
 _needs_notes_migration() {
-    local nf="${_NOTES_FILE:-HUMAN_NOTES.md}"
+    local nf="${_NOTES_FILE:-${HUMAN_NOTES_FILE}}"
     if [[ ! -f "$nf" ]]; then
         return 1
     fi
@@ -35,12 +35,12 @@ _needs_notes_migration() {
 # Creates a .v1-backup before modifying. Adds version marker at top.
 # Preserves all existing content (descriptions, comments, section headings).
 migrate_legacy_notes() {
-    local nf="${_NOTES_FILE:-HUMAN_NOTES.md}"
+    local nf="${_NOTES_FILE:-${HUMAN_NOTES_FILE}}"
     if ! _needs_notes_migration; then
         return 0
     fi
 
-    log "Migrating HUMAN_NOTES.md to v2 format (adding note IDs)..."
+    log "Migrating ${HUMAN_NOTES_FILE} to v2 format (adding note IDs)..."
 
     # Pre-migration backup
     cp "$nf" "${nf}.v1-backup"

@@ -13,7 +13,7 @@ set -euo pipefail
 #   _collect_audit_context    — Gather test files, implementation files, mappings
 #   _detect_orphaned_tests    — Shell-based orphan detection (no agent needed)
 #   _detect_test_weakening    — Shell-based weakening detection via git diff
-#   _parse_audit_verdict      — Extract verdict from TEST_AUDIT_REPORT.md
+#   _parse_audit_verdict      — Extract verdict from "${TEST_AUDIT_REPORT_FILE}"
 #   _route_audit_verdict      — Handle PASS/CONCERNS/NEEDS_WORK verdicts
 # =============================================================================
 
@@ -28,16 +28,16 @@ _collect_audit_context() {
     _AUDIT_IMPL_FILES=""
     _AUDIT_DELETED_FILES=""
 
-    # Extract test files from TESTER_REPORT.md (checked items = written/modified)
-    if [[ -f "TESTER_REPORT.md" ]]; then
+    # Extract test files from "${TESTER_REPORT_FILE}" (checked items = written/modified)
+    if [[ -f "${TESTER_REPORT_FILE}" ]]; then
         # shellcheck disable=SC2016  # Backtick is literal in grep pattern
-        _AUDIT_TEST_FILES=$(grep -oP '^\- \[x\] `\K[^`]+' TESTER_REPORT.md 2>/dev/null || true)
+        _AUDIT_TEST_FILES=$(grep -oP '^\- \[x\] `\K[^`]+' "${TESTER_REPORT_FILE}" 2>/dev/null || true)
     fi
 
-    # Extract implementation files from CODER_SUMMARY.md
-    if [[ -f "CODER_SUMMARY.md" ]]; then
+    # Extract implementation files from "${CODER_SUMMARY_FILE}"
+    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
         # shellcheck disable=SC2016  # Backtick is literal in grep pattern
-        _AUDIT_IMPL_FILES=$(grep -oP '`\K[^`]+(?=`)' CODER_SUMMARY.md 2>/dev/null \
+        _AUDIT_IMPL_FILES=$(grep -oP '`\K[^`]+(?=`)' "${CODER_SUMMARY_FILE}" 2>/dev/null \
             | grep -vE 'test|spec|Test|Spec' || true)
     fi
 
@@ -218,10 +218,10 @@ WEAKENING: ${test_file} — ${removed_tests} test function(s) removed"
 # --- Verdict parsing and routing ---------------------------------------------
 
 # _parse_audit_verdict
-# Extracts the verdict from TEST_AUDIT_REPORT.md.
+# Extracts the verdict from "${TEST_AUDIT_REPORT_FILE}".
 # Returns: PASS, CONCERNS, or NEEDS_WORK (defaults to PASS if unparseable)
 _parse_audit_verdict() {
-    local report_file="${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+    local report_file="${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
     if [[ ! -f "$report_file" ]]; then
         echo "PASS"
         return
@@ -241,11 +241,11 @@ _parse_audit_verdict() {
 # _route_audit_verdict VERDICT
 # Routes based on audit verdict:
 #   PASS       → continue (no action)
-#   CONCERNS   → log findings to NON_BLOCKING_LOG.md, continue
+#   CONCERNS   → log findings to "${NON_BLOCKING_LOG_FILE}", continue
 #   NEEDS_WORK → tester rework (bounded by TEST_AUDIT_MAX_REWORK_CYCLES)
 _route_audit_verdict() {
     local verdict="$1"
-    local report_file="${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+    local report_file="${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
 
     case "$verdict" in
         PASS)
@@ -253,13 +253,13 @@ _route_audit_verdict() {
             return 0
             ;;
         CONCERNS)
-            warn "Test audit raised concerns — logging to NON_BLOCKING_LOG.md."
+            warn "Test audit raised concerns — logging to ${NON_BLOCKING_LOG_FILE}."
             if [[ -f "$report_file" ]]; then
                 local findings
                 findings=$(grep -E '^\s*####\s+(INTEGRITY|SCOPE|COVERAGE|WEAKENING|NAMING)' "$report_file" 2>/dev/null || true)
                 if [[ -n "$findings" ]] && command -v _ensure_nonblocking_log &>/dev/null; then
                     _ensure_nonblocking_log
-                    local nb_file="${NON_BLOCKING_LOG_FILE:-NON_BLOCKING_LOG.md}"
+                    local nb_file="${NON_BLOCKING_LOG_FILE:-${NON_BLOCKING_LOG_FILE}}"
                     {
                         echo ""
                         echo "### Test Audit Concerns ($(date +%Y-%m-%d))"
@@ -389,8 +389,8 @@ ${_AUDIT_WEAKENING_FINDINGS}
             log "Test audit rework cycle ${rework_cycles}/${max_rework}..."
 
             export TEST_AUDIT_FINDINGS=""
-            if [[ -f "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" ]]; then
-                TEST_AUDIT_FINDINGS=$(_safe_read_file "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" "TEST_AUDIT_REPORT")
+            if [[ -f "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" ]]; then
+                TEST_AUDIT_FINDINGS=$(_safe_read_file "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" "TEST_AUDIT_REPORT")
             fi
 
             local rework_prompt
@@ -455,7 +455,7 @@ ${_AUDIT_WEAKENING_FINDINGS}
 
         # Exhausted rework cycles
         warn "Test audit NEEDS_WORK after ${max_rework} rework cycle(s). Escalating to human."
-        warn "Review TEST_AUDIT_REPORT.md and fix tests manually."
+        warn "Review ${TEST_AUDIT_REPORT_FILE} and fix tests manually."
         return 0  # Don't block pipeline — log and proceed
     fi
 
@@ -524,14 +524,14 @@ All test files are included regardless of current diff.
     echo "════════════════════════════════════════"
     echo "  Files audited: ${file_count}"
     echo "  Verdict:       ${verdict}"
-    if [[ -f "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" ]]; then
-        echo "  Report:        ${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+    if [[ -f "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" ]]; then
+        echo "  Report:        ${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
         echo
         # Show findings summary
         local high_count
-        high_count=$(grep -c 'Severity: HIGH' "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" 2>/dev/null || echo "0")
+        high_count=$(grep -c 'Severity: HIGH' "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" 2>/dev/null || echo "0")
         local medium_count
-        medium_count=$(grep -c 'Severity: MEDIUM' "${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}" 2>/dev/null || echo "0")
+        medium_count=$(grep -c 'Severity: MEDIUM' "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" 2>/dev/null || echo "0")
         echo "  HIGH findings:   ${high_count}"
         echo "  MEDIUM findings: ${medium_count}"
     fi

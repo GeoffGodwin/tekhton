@@ -25,7 +25,7 @@ count_unresolved_notes() {
 # Usage: select_cleanup_batch 5 "$modified_files"
 # Args:  $1 = batch size (default: 5)
 #        $2 = newline-separated list of modified file paths (optional, from caller)
-# Output: One note per line (full markdown line from NON_BLOCKING_LOG.md)
+# Output: One note per line (full markdown line from ${NON_BLOCKING_LOG_FILE})
 select_cleanup_batch() {
     local batch_size="${1:-5}"
     local modified_files="${2:-}"
@@ -97,7 +97,7 @@ select_cleanup_batch() {
     echo "$scored_notes"
 }
 
-# mark_note_resolved — Marks a specific open note as [x] in NON_BLOCKING_LOG.md.
+# mark_note_resolved — Marks a specific open note as [x] in ${NON_BLOCKING_LOG_FILE}.
 # Usage: mark_note_resolved "partial text to match"
 # Matches the first open note containing the given text.
 mark_note_resolved() {
@@ -121,7 +121,7 @@ mark_note_resolved() {
     return 1
 }
 
-# mark_note_deferred — Tags an open note as [DEFERRED] in NON_BLOCKING_LOG.md.
+# mark_note_deferred — Tags an open note as [DEFERRED] in ${NON_BLOCKING_LOG_FILE}.
 # Deferred notes are excluded from future cleanup batch selection.
 # Usage: mark_note_deferred "partial text to match"
 mark_note_deferred() {

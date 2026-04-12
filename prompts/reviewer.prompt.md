@@ -34,10 +34,10 @@ Review cycle: {{REVIEW_CYCLE}} of {{MAX_REVIEW_CYCLES}}
 
 ## Prior Blockers — RE-REVIEW MODE
 This is cycle {{REVIEW_CYCLE}} of {{MAX_REVIEW_CYCLES}}. Your ONLY job is to verify
-that blockers from the PREVIOUS REVIEWER_REPORT.md were fixed.
+that blockers from the PREVIOUS {{REVIEWER_REPORT_FILE}} were fixed.
 
 **STRICT RULES FOR RE-REVIEW:**
-1. Read the previous REVIEWER_REPORT.md first
+1. Read the previous {{REVIEWER_REPORT_FILE}} first
 2. For each prior blocker: verify FIXED or NOT FIXED with evidence
 3. If ALL prior blockers are fixed → APPROVED (or APPROVED_WITH_NOTES)
 4. If a prior blocker is NOT fixed → CHANGES_REQUIRED with only that blocker
@@ -66,14 +66,14 @@ Do not duplicate the UI specialist's work — focus on code quality and correctn
 
 ## Required Reading (read in this order, no more)
 1. `{{REVIEWER_ROLE_FILE}}` — your role and checklist
-2. `CODER_SUMMARY.md` — what was built and what files were touched
+2. `{{CODER_SUMMARY_FILE}}` — what was built and what files were touched
 {{IF:PRIOR_BLOCKERS_BLOCK}}
-3. Previous `REVIEWER_REPORT.md` — the blockers you must verify were resolved
+3. Previous `{{REVIEWER_REPORT_FILE}}` — the blockers you must verify were resolved
 {{ENDIF:PRIOR_BLOCKERS_BLOCK}}
-3. Only the files listed under 'Files created or modified' in CODER_SUMMARY.md
+3. Only the files listed under 'Files created or modified' in {{CODER_SUMMARY_FILE}}
 4. `{{PROJECT_RULES_FILE}}` — only if you need to verify a specific rule
 
-Do NOT read files not listed in CODER_SUMMARY.md.
+Do NOT read files not listed in {{CODER_SUMMARY_FILE}}.
 {{IF:INLINE_CONTRACT_PATTERN}}
 
 ## Additional Review Check: Inline Contracts
@@ -123,7 +123,7 @@ for the next cleanup pass?" If the code works correctly and the issue is cosmeti
 or organizational, it is a Non-Blocking Note.
 
 ## Required Output Format
-Your REVIEWER_REPORT.md MUST contain these exact section headings (even if a section is empty):
+Your {{REVIEWER_REPORT_FILE}} MUST contain these exact section headings (even if a section is empty):
 
 ```
 ## Verdict
@@ -160,7 +160,7 @@ Include a rationale paragraph after the verdict explaining WHY a replan is neede
 
 ## Architecture Change Proposal Evaluation
 
-If CODER_SUMMARY.md contains an `## Architecture Change Proposals` section,
+If {{CODER_SUMMARY_FILE}} contains an `## Architecture Change Proposals` section,
 you MUST evaluate each proposal:
 
 For each ACP, write one of:
@@ -169,7 +169,7 @@ For each ACP, write one of:
   This becomes a Complex Blocker.
 - **MODIFY** — Change is needed but approach should differ. Complex Blocker with guidance.
 
-Write your evaluations in REVIEWER_REPORT.md as an additional section:
+Write your evaluations in {{REVIEWER_REPORT_FILE}} as an additional section:
 
 ### `## ACP Verdicts`
 - ACP: [name] — ACCEPT / REJECT / MODIFY — [one-line rationale]
@@ -177,7 +177,7 @@ Write your evaluations in REVIEWER_REPORT.md as an additional section:
 ACPs that are REJECT or MODIFY count as Complex Blockers (code must be reworked).
 ACPs that are ACCEPT do not block — note them so the architecture doc can be updated.
 
-If there is no `## Architecture Change Proposals` section in CODER_SUMMARY.md,
+If there is no `## Architecture Change Proposals` section in {{CODER_SUMMARY_FILE}},
 omit the `## ACP Verdicts` section entirely.
 
 ## Drift Observations
@@ -191,7 +191,7 @@ blockers for THIS commit but suggest systemic issues. Examples:
 - Dead code (unreachable methods, unused parameters)
 - Test that tests outdated behavior
 
-Write observations in REVIEWER_REPORT.md under:
+Write observations in {{REVIEWER_REPORT_FILE}} under:
 
 ### `## Drift Observations`
 - [file:line or general area] — description of the observation
@@ -201,4 +201,4 @@ Or 'None' if nothing observed.
 These are NOT blockers. They accumulate in a log across runs and trigger a
 dedicated audit when enough have built up.
 
-Write `REVIEWER_REPORT.md`.
+Write `{{REVIEWER_REPORT_FILE}}`.

@@ -10,7 +10,7 @@ set -euo pipefail
 # Expects: PROJECT_DIR, Color codes (RED, GREEN, YELLOW, CYAN, BOLD, NC) (set by caller)
 #
 # Provides:
-#   generate_diagnosis_report     — write DIAGNOSIS.md
+#   generate_diagnosis_report     — write ${DIAGNOSIS_FILE}
 #   _list_relevant_files          — list files relevant to diagnosis
 #   print_diagnosis_summary       — terminal output with box formatting
 #   write_last_failure_context    — write LAST_FAILURE_CONTEXT.json
@@ -21,9 +21,9 @@ set -euo pipefail
 # --- Report generator --------------------------------------------------------
 
 # generate_diagnosis_report
-# Produces DIAGNOSIS.md with causal chain, classification, suggestions.
+# Produces ${DIAGNOSIS_FILE} with causal chain, classification, suggestions.
 generate_diagnosis_report() {
-    local report_file="${PROJECT_DIR:-.}/DIAGNOSIS.md"
+    local report_file="${PROJECT_DIR:-.}/${DIAGNOSIS_FILE}"
     local tmpfile="${report_file}.tmp.$$"
 
     {
@@ -106,13 +106,13 @@ generate_diagnosis_report() {
 # Lists files relevant to the diagnosis.
 _list_relevant_files() {
     local files=(
-        "BUILD_ERRORS.md"
-        "REVIEWER_REPORT.md"
-        "CODER_SUMMARY.md"
-        "TESTER_REPORT.md"
-        "SECURITY_REPORT.md"
-        "CLARIFICATIONS.md"
-        "HUMAN_ACTION_REQUIRED.md"
+        "${BUILD_ERRORS_FILE}"
+        "${REVIEWER_REPORT_FILE}"
+        "${CODER_SUMMARY_FILE}"
+        "${TESTER_REPORT_FILE}"
+        "${SECURITY_REPORT_FILE}"
+        "${CLARIFICATIONS_FILE}"
+        "${HUMAN_ACTION_FILE}"
         ".claude/PIPELINE_STATE.md"
         ".claude/logs/RUN_SUMMARY.json"
         ".claude/logs/CAUSAL_LOG.jsonl"
@@ -178,7 +178,7 @@ print_diagnosis_summary() {
     fi
 
     echo -e "${BOLD}║${NC}"
-    echo -e "${BOLD}║${NC}  Full report: DIAGNOSIS.md"
+    echo -e "${BOLD}║${NC}  Full report: ${DIAGNOSIS_FILE}"
     echo -e "${BOLD}╚══════════════════════════════════════════════════╝${NC}"
     echo ""
 }
@@ -246,9 +246,9 @@ print_crash_first_aid() {
     fi
 
     # Build failure
-    if [[ -f "${PROJECT_DIR:-.}/BUILD_ERRORS.md" ]] && [[ -s "${PROJECT_DIR:-.}/BUILD_ERRORS.md" ]]; then
+    if [[ -f "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}" ]] && [[ -s "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}" ]]; then
         echo -e "\033[1;33m[!] Build failure detected — run 'tekhton --diagnose' for detailed\033[0m" >&2
-        echo -e "\033[1;33m[!] analysis, or fix BUILD_ERRORS.md manually.\033[0m" >&2
+        echo -e "\033[1;33m[!] analysis, or fix ${BUILD_ERRORS_FILE} manually.\033[0m" >&2
         return 0
     fi
 
@@ -276,7 +276,7 @@ print_crash_first_aid() {
 # --- Dashboard integration ----------------------------------------------------
 
 # emit_dashboard_diagnosis
-# Reads DIAGNOSIS.md and generates data/diagnosis.js for Watchtower.
+# Reads ${DIAGNOSIS_FILE} and generates data/diagnosis.js for Watchtower.
 emit_dashboard_diagnosis() {
     if ! command -v is_dashboard_enabled &>/dev/null || ! is_dashboard_enabled; then
         return 0

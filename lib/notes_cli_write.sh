@@ -22,7 +22,7 @@ complete_human_note() {
     fi
 
     if [[ ! -f "$_NOTES_FILE" ]]; then
-        error "No HUMAN_NOTES.md found."
+        error "No ${HUMAN_NOTES_FILE} found."
         return 1
     fi
 
@@ -121,10 +121,10 @@ _mark_note_done() {
 }
 
 # clear_completed_notes
-# Removes all checked items from HUMAN_NOTES.md. Requires confirmation.
+# Removes all checked items from ${HUMAN_NOTES_FILE}. Requires confirmation.
 clear_completed_notes() {
     if [[ ! -f "$_NOTES_FILE" ]]; then
-        log "No HUMAN_NOTES.md found."
+        log "No ${HUMAN_NOTES_FILE} found."
         return 0
     fi
 

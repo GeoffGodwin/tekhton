@@ -73,7 +73,7 @@ These are **confirmed bugs**. Follow this workflow strictly:
    relevant files. Read THOSE files, not the whole project. Identify the root cause
    before writing any fix.
 2. **Document the root cause.** Write a `## Root Cause Analysis` section in
-   CODER_SUMMARY.md explaining what went wrong and why.
+   {{CODER_SUMMARY_FILE}} explaining what went wrong and why.
 3. **Fix the bug.** Apply the minimal change that addresses the root cause.
 4. **Write a regression test.** Every bug fix MUST include a test that reproduces
    the original bug and verifies the fix. If the project has no test framework,
@@ -81,9 +81,9 @@ These are **confirmed bugs**. Follow this workflow strictly:
 5. **Verify.** Run `{{ANALYZE_CMD}}` and `{{TEST_CMD}}` to confirm the fix works
    and nothing else broke.
 
-**DO NOT modify HUMAN_NOTES.md.** The pipeline manages note state (checkboxes)
+**DO NOT modify {{HUMAN_NOTES_FILE}}.** The pipeline manages note state (checkboxes)
 automatically. You may read it for context but must never write to it.
-Your completions are tracked via CODER_SUMMARY.md, not by editing the notes file.
+Your completions are tracked via {{CODER_SUMMARY_FILE}}, not by editing the notes file.
 
 {{IF:HUMAN_NOTES_BLOCK}}
 {{HUMAN_NOTES_BLOCK}}
@@ -99,7 +99,7 @@ Scope your work strictly to the task description above. Do not expand scope
 beyond what was requested. Fix the bugs, write regression tests, move on.
 
 ## Execution Order (mandatory)
-**Step 1:** Write `CODER_SUMMARY.md` immediately with this skeleton:
+**Step 1:** Write `{{CODER_SUMMARY_FILE}}` immediately with this skeleton:
 ```
 # Coder Summary
 ## Status: IN PROGRESS
@@ -113,10 +113,10 @@ beyond what was requested. Fix the bugs, write regression tests, move on.
 (fill in for EVERY note — COMPLETED or NOT_ADDRESSED)
 ```
 **Step 2:** Read the files identified in the Scout Report.
-**Step 3:** Diagnose the root cause. Write it in CODER_SUMMARY.md.
+**Step 3:** Diagnose the root cause. Write it in {{CODER_SUMMARY_FILE}}.
 **Step 4:** Implement the fix and write a regression test.
 **Step 5:** Run `{{ANALYZE_CMD}}` and `{{TEST_CMD}}`.
-**Step 6:** Update `CODER_SUMMARY.md` with final status.
+**Step 6:** Update `{{CODER_SUMMARY_FILE}}` with final status.
 
 ## Required Reading
 1. `{{CODER_ROLE_FILE}}` — your role and rules
@@ -124,14 +124,14 @@ beyond what was requested. Fix the bugs, write regression tests, move on.
 3. Only the files identified by the scout or directly named in the bug report
 
 ## Required Output
-When finished, update CODER_SUMMARY.md with:
+When finished, update {{CODER_SUMMARY_FILE}} with:
 - `## Status` set to either `COMPLETE` or `IN PROGRESS`
 - `## Root Cause Analysis` — what caused the bug and why the fix is correct
 - `## Remaining Work` listing anything not finished if IN PROGRESS
 - Do NOT set COMPLETE if any planned work is unfinished
 
 ## Human Notes Completion Tracking (mandatory)
-Add this section to CODER_SUMMARY.md:
+Add this section to {{CODER_SUMMARY_FILE}}:
 ```
 ## Human Notes Status
 - COMPLETED: [BUG] exact note text here

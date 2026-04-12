@@ -46,12 +46,12 @@ run_stage_cleanup() {
     log "Unresolved non-blocking notes: ${unresolved} (threshold: ${CLEANUP_TRIGGER_THRESHOLD:-5})"
     log "Selecting up to ${batch_size} items for cleanup..."
 
-    # Extract modified files from the primary pipeline's CODER_SUMMARY.md (if available)
+    # Extract modified files from the primary pipeline's ${CODER_SUMMARY_FILE} (if available)
     # so that select_cleanup_batch can prioritize notes overlapping with this run's work.
     local modified_files=""
-    if [ -f "${PROJECT_DIR}/CODER_SUMMARY.md" ]; then
+    if [ -f "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" ]; then
         modified_files=$(awk '/^## Files (Created|Modified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{print}' \
-            "${PROJECT_DIR}/CODER_SUMMARY.md" 2>/dev/null \
+            "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" 2>/dev/null \
             | sed 's/^[-*][[:space:]]*//' | sed 's/ .*//' | sort -u || true)
     fi
 
@@ -113,7 +113,7 @@ run_stage_cleanup() {
     local build_pass=true
     if ! run_build_gate "post-cleanup"; then
         warn "Build gate FAILED after cleanup sweep — reverting cleanup changes."
-        warn "Cleanup changes may have introduced issues. Review BUILD_ERRORS.md."
+        warn "Cleanup changes may have introduced issues. Review ${BUILD_ERRORS_FILE}."
         build_pass=false
 
         # Revert ONLY files that cleanup touched, preserving primary pipeline work.
@@ -133,7 +133,7 @@ run_stage_cleanup() {
 
     fi
 
-    # --- Parse cleanup results and update NON_BLOCKING_LOG.md ---
+    # --- Parse cleanup results and update ${NON_BLOCKING_LOG_FILE} ---
     _process_cleanup_results "$batch" "$build_pass"
 
     local resolved_count
@@ -174,8 +174,8 @@ _process_cleanup_results() {
         return 0
     fi
 
-    # Fallback: use file-change heuristic from CODER_SUMMARY.md
-    # (the cleanup agent writes to CODER_SUMMARY.md or similar)
+    # Fallback: use file-change heuristic from ${CODER_SUMMARY_FILE}
+    # (the cleanup agent writes to ${CODER_SUMMARY_FILE} or similar)
     _resolve_cleanup_by_file_changes "$batch"
 }
 
@@ -190,7 +190,7 @@ _process_cleanup_results() {
 #
 # NOTE: The "## Not Attempted" section is deliberately NOT parsed here.
 # Items the agent did not attempt remain as open `[ ]` entries in
-# NON_BLOCKING_LOG.md — no state change is needed. They will be
+# ${NON_BLOCKING_LOG_FILE} — no state change is needed. They will be
 # re-selected in future cleanup sweeps.
 _parse_cleanup_report() {
     local batch="$1"

@@ -104,13 +104,13 @@ print_run_report() {
 
     # Action items
     local action_count=0
-    if [[ -f "${PROJECT_DIR:-.}/HUMAN_ACTION_REQUIRED.md" ]] && [[ -s "${PROJECT_DIR:-.}/HUMAN_ACTION_REQUIRED.md" ]]; then
+    if [[ -f "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE}" ]] && [[ -s "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE}" ]]; then
         local ha_count
-        ha_count=$(grep -c '^- \[ \]' "${PROJECT_DIR:-.}/HUMAN_ACTION_REQUIRED.md" 2>/dev/null || echo "0")
+        ha_count=$(grep -c '^- \[ \]' "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE}" 2>/dev/null || echo "0")
         ha_count="${ha_count//[!0-9]/}"
         : "${ha_count:=0}"
         if [[ "$ha_count" -gt 0 ]]; then
-            echo -e "  ${YELLOW}Action items: ${ha_count} in HUMAN_ACTION_REQUIRED.md${NC}"
+            echo -e "  ${YELLOW}Action items: ${ha_count} in ${HUMAN_ACTION_FILE}${NC}"
             action_count=$(( action_count + ha_count ))
         fi
     fi
@@ -131,7 +131,7 @@ print_run_report() {
 # --- Per-stage report helpers -----------------------------------------------
 
 _report_stage_intake() {
-    local intake_file="${PROJECT_DIR:-.}/INTAKE_REPORT.md"
+    local intake_file="${PROJECT_DIR:-.}/${INTAKE_REPORT_FILE}"
     [[ -f "$intake_file" ]] || return 0
 
     local verdict
@@ -163,7 +163,7 @@ _report_stage_scout() {
 
 _report_stage_coder() {
     local summary_file="$1"
-    local coder_file="${PROJECT_DIR:-.}/CODER_SUMMARY.md"
+    local coder_file="${PROJECT_DIR:-.}/${CODER_SUMMARY_FILE}"
     [[ -f "$coder_file" ]] || return 0
 
     local status
@@ -192,7 +192,7 @@ _report_stage_coder() {
 
 _report_stage_security() {
     local summary_file="$1"
-    local security_file="${PROJECT_DIR:-.}/SECURITY_REPORT.md"
+    local security_file="${PROJECT_DIR:-.}/${SECURITY_REPORT_FILE}"
     [[ -f "$security_file" ]] || return 0
 
     local findings_count=0
@@ -208,12 +208,12 @@ _report_stage_security() {
     if [[ "$findings_count" -eq 0 ]]; then
         echo -e "  Security:  ${color}PASS (no findings)${NC}"
     else
-        echo -e "  Security:  ${color}${findings_count} finding(s) (see SECURITY_REPORT.md)${NC}"
+        echo -e "  Security:  ${color}${findings_count} finding(s) (see ${SECURITY_REPORT_FILE})${NC}"
     fi
 }
 
 _report_stage_reviewer() {
-    local reviewer_file="${PROJECT_DIR:-.}/REVIEWER_REPORT.md"
+    local reviewer_file="${PROJECT_DIR:-.}/${REVIEWER_REPORT_FILE}"
     [[ -f "$reviewer_file" ]] || return 0
 
     local verdict
@@ -227,7 +227,7 @@ _report_stage_reviewer() {
 }
 
 _report_stage_tester() {
-    local tester_file="${PROJECT_DIR:-.}/TESTER_REPORT.md"
+    local tester_file="${PROJECT_DIR:-.}/${TESTER_REPORT_FILE}"
     [[ -f "$tester_file" ]] || return 0
 
     local test_count

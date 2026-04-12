@@ -40,9 +40,9 @@ check_bug_acceptance() {
 }warn_no_test: Bug fix has no regression test coverage. Consider adding a test that reproduces the original bug."
     fi
 
-    # Check: does CODER_SUMMARY.md contain a Root Cause Analysis section?
-    if [[ -f "CODER_SUMMARY.md" ]]; then
-        if ! grep -qi "## Root Cause" CODER_SUMMARY.md 2>/dev/null; then
+    # Check: does "${CODER_SUMMARY_FILE}" contain a Root Cause Analysis section?
+    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
+        if ! grep -qi "## Root Cause" "${CODER_SUMMARY_FILE}" 2>/dev/null; then
             warnings="${warnings:+${warnings}
 }warn_no_rca: No root cause analysis provided. Future debugging may repeat the same investigation."
         fi
@@ -170,7 +170,7 @@ ${_staged_files}}"
 # --- Main entry point ---------------------------------------------------------
 
 # run_note_acceptance — Run tag-specific acceptance checks after coder completes.
-# Logs warnings to CODER_SUMMARY.md and stores results in note metadata.
+# Logs warnings to "${CODER_SUMMARY_FILE}" and stores results in note metadata.
 # Arguments: none (reads NOTES_FILTER global)
 # Returns: 0 always (warnings, not blockers)
 run_note_acceptance() {
@@ -207,8 +207,8 @@ run_note_acceptance() {
         _warning_codes="${_warning_codes:+${_warning_codes},}${_code}"
     done <<< "$warnings"
 
-    # Append warnings to CODER_SUMMARY.md
-    if [[ -f "CODER_SUMMARY.md" ]]; then
+    # Append warnings to "${CODER_SUMMARY_FILE}"
+    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
         {
             echo ""
             echo "## Acceptance Warnings"
@@ -217,7 +217,7 @@ run_note_acceptance() {
                 _msg="${w#*: }"
                 echo "- ${_msg}"
             done <<< "$warnings"
-        } >> CODER_SUMMARY.md
+        } >> "${CODER_SUMMARY_FILE}"
     fi
 
     # Store result in note metadata

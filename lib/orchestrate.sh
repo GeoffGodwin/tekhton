@@ -174,7 +174,7 @@ run_complete_loop() {
 
         # Archive reports from previous iteration (except first)
         if [[ "$_ORCH_ATTEMPT" -gt 1 ]]; then
-            for f in CODER_SUMMARY.md REVIEWER_REPORT.md JR_CODER_SUMMARY.md TESTER_REPORT.md INTAKE_REPORT.md PREFLIGHT_ERRORS.md; do
+            for f in "${CODER_SUMMARY_FILE}" "${REVIEWER_REPORT_FILE}" "${JR_CODER_SUMMARY_FILE}" "${TESTER_REPORT_FILE}" "${INTAKE_REPORT_FILE}" "${PREFLIGHT_ERRORS_FILE}"; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
                     mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_attempt${_ORCH_ATTEMPT}_${f}"
@@ -282,7 +282,7 @@ run_complete_loop() {
                             log_decision "Trying preflight fix" "${_preflight_exit} test failures detected" "FINAL_FIX_ENABLED=${FINAL_FIX_ENABLED:-true}"
                             if _try_preflight_fix "$_preflight_output" "$_preflight_exit"; then
                                 _PREFLIGHT_TESTS_PASSED=true
-                                [[ -f "PREFLIGHT_ERRORS.md" ]] && rm -f "PREFLIGHT_ERRORS.md"
+                                [[ -f "${PREFLIGHT_ERRORS_FILE}" ]] && rm -f "${PREFLIGHT_ERRORS_FILE}"
                                 log "Pre-finalization fix succeeded — proceeding to finalization."
                             else
                                 warn "Pre-finalization test gate failed (exit ${_preflight_exit}). Routing back to coder for fix."
@@ -295,8 +295,8 @@ run_complete_loop() {
                                     echo '```'
                                     printf '%s\n' "$_preflight_output" | tail -80
                                     echo '```'
-                                } > PREFLIGHT_ERRORS.md
-                                log "Wrote preflight test errors to PREFLIGHT_ERRORS.md"
+                                } > "${PREFLIGHT_ERRORS_FILE}"
+                                log "Wrote preflight test errors to ${PREFLIGHT_ERRORS_FILE}"
                                 record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
                                     "failed:final_check/test_failure" "$_iter_turns" "$_files_changed"
                                 START_AT="coder"
@@ -306,7 +306,7 @@ run_complete_loop() {
                     fi
                     _PREFLIGHT_TESTS_PASSED=true
                     # Clean up stale preflight errors from a prior failed iteration
-                    [[ -f "PREFLIGHT_ERRORS.md" ]] && rm -f "PREFLIGHT_ERRORS.md"
+                    [[ -f "${PREFLIGHT_ERRORS_FILE}" ]] && rm -f "${PREFLIGHT_ERRORS_FILE}"
                 fi
 
                 # --- SUCCESS ---

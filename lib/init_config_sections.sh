@@ -10,10 +10,7 @@ set -euo pipefail
 # Depends on: common.sh (log, warn)
 # =============================================================================
 
-# --- Section header helper ----------------------------------------------------
-
 # _emit_section_header — Prints a section header with separator.
-# Args: $1 = section number, $2 = title, $3 = description
 _emit_section_header() {
     local num="$1"
     local title="$2"
@@ -27,8 +24,6 @@ _emit_section_header() {
 
 EOF
 }
-
-# --- Sectioned config emitters ------------------------------------------------
 
 # _emit_section_essential — Section 1: Essential config (first ~20 lines).
 # Args: $1=project_name, $2=test_cmd, $3=test_conf, $4=analyze_cmd,
@@ -206,6 +201,7 @@ _emit_section_paths() {
         "File paths — rarely need changing"
 
     cat << EOF
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
 PIPELINE_STATE_FILE=".claude/PIPELINE_STATE.md"
 LOG_DIR=".claude/logs"
 CODER_ROLE_FILE=".claude/agents/coder.md"
@@ -213,14 +209,12 @@ REVIEWER_ROLE_FILE=".claude/agents/reviewer.md"
 TESTER_ROLE_FILE=".claude/agents/tester.md"
 JR_CODER_ROLE_FILE=".claude/agents/jr-coder.md"
 ARCHITECT_ROLE_FILE=".claude/agents/architect.md"
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${DRIFT_LOG_FILE}"
+ARCHITECTURE_LOG_FILE="${ARCHITECTURE_LOG_FILE}"
+HUMAN_ACTION_FILE="${HUMAN_ACTION_FILE}"
+NON_BLOCKING_LOG_FILE="${NON_BLOCKING_LOG_FILE}"
 EOF
 }
-
-# --- Workspace/structure section (conditional) --------------------------------
 
 # _emit_section_workspace — Emits project structure config if monorepo detected.
 _emit_section_workspace() {
@@ -262,8 +256,6 @@ _emit_section_workspace() {
         fi
     fi
 }
-
-# --- Main sectioned config generator -----------------------------------------
 
 # generate_sectioned_config — Produces the complete pipeline.conf with sections.
 # Args: $1=project_name, $2=test_cmd, $3=test_conf, $4=analyze_cmd,

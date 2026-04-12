@@ -184,7 +184,7 @@ _check_doc_quality() {
     done
 
     # Architecture docs (0-25)
-    for f in ARCHITECTURE.md docs/ARCHITECTURE.md DESIGN.md docs/design.md; do
+    for f in ARCHITECTURE.md docs/ARCHITECTURE.md ${DESIGN_FILE} docs/design.md; do
         if [[ -f "$proj_dir/$f" ]]; then
             arch_score=25
             break

@@ -20,7 +20,7 @@ run_triage_report() {
     local nf
     nf=$(_notes_file)
     if [[ ! -f "$nf" ]]; then
-        log "No HUMAN_NOTES.md found."
+        log "No ${HUMAN_NOTES_FILE} found."
         return 0
     fi
 

@@ -10,10 +10,10 @@
 set -euo pipefail
 
 # _run_tester_write_failing — TDD pre-flight: write tests that should fail.
-# Uses tester_write_failing.prompt.md. Outputs TESTER_PREFLIGHT.md.
+# Uses tester_write_failing.prompt.md. Outputs ${TDD_PREFLIGHT_FILE}.
 # Does NOT enforce test pass gate — tests are expected to fail.
 _run_tester_write_failing() {
-    local _preflight_file="${TDD_PREFLIGHT_FILE:-TESTER_PREFLIGHT.md}"
+    local _preflight_file="${TDD_PREFLIGHT_FILE:-${TDD_PREFLIGHT_FILE}}"
     local _max_turns="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
 
     # Architecture content for the prompt (M47: use cache)
@@ -95,7 +95,7 @@ _run_tester_write_failing() {
     if [[ -f "$_preflight_file" ]]; then
         success "TDD pre-flight complete — ${_preflight_file} written."
         # Archive for the run log
-        cp "$_preflight_file" "${LOG_DIR}/${TIMESTAMP}_TESTER_PREFLIGHT.md"
+        cp "$_preflight_file" "${LOG_DIR}/${TIMESTAMP}_${TDD_PREFLIGHT_FILE}"
     else
         warn "TDD tester did not produce ${_preflight_file}. Coder will proceed without pre-written tests."
     fi

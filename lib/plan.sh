@@ -174,7 +174,7 @@ run_plan() {
     fi
 
     header "Tekhton — Planning Phase"
-    log "This will guide you through creating DESIGN.md and CLAUDE.md for your project."
+    log "This will guide you through creating ${DESIGN_FILE} and CLAUDE.md for your project."
     echo
 
     # Handle --answers: import file mode

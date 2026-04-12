@@ -16,7 +16,7 @@ set -euo pipefail
 # they are injected into the coder prompt so they get addressed.
 # =============================================================================
 
-# _ensure_nonblocking_log — Creates NON_BLOCKING_LOG.md if missing.
+# _ensure_nonblocking_log — Creates ${NON_BLOCKING_LOG_FILE} if missing.
 _ensure_nonblocking_log() {
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
     if [ ! -f "$nb_file" ]; then
@@ -24,7 +24,7 @@ _ensure_nonblocking_log() {
 # Non-Blocking Notes Log
 
 Accumulated reviewer notes that were not blocking but should be addressed.
-Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
+Items are auto-collected from `## Non-Blocking Notes` in ${REVIEWER_REPORT_FILE}.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
@@ -35,10 +35,10 @@ EOF
     fi
 }
 
-# append_nonblocking_notes — Reads Non-Blocking Notes from REVIEWER_REPORT.md
-# and appends new items to NON_BLOCKING_LOG.md under ## Open.
+# append_nonblocking_notes — Reads Non-Blocking Notes from ${REVIEWER_REPORT_FILE}
+# and appends new items to ${NON_BLOCKING_LOG_FILE} under ## Open.
 append_nonblocking_notes() {
-    local reviewer_report="${PROJECT_DIR}/REVIEWER_REPORT.md"
+    local reviewer_report="${PROJECT_DIR}/${REVIEWER_REPORT_FILE}"
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
 
     if [ ! -f "$reviewer_report" ]; then
@@ -98,12 +98,12 @@ get_open_nonblocking_notes() {
 }
 
 # _resolve_addressed_nonblocking_notes — After a coder run, check if any open
-# notes were addressed (file/line referenced in CODER_SUMMARY.md). Simple
+# notes were addressed (file/line referenced in ${CODER_SUMMARY_FILE}). Simple
 # heuristic: if the coder's modified files list includes a file mentioned in
 # an open note, mark it [x].
 _resolve_addressed_nonblocking_notes() {
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
-    local summary="${PROJECT_DIR}/CODER_SUMMARY.md"
+    local summary="${PROJECT_DIR}/${CODER_SUMMARY_FILE}"
 
     if [ ! -f "$nb_file" ] || [ ! -f "$summary" ]; then
         return 0
@@ -230,7 +230,7 @@ clear_completed_nonblocking_notes() {
     fi
 
     mv "$tmpfile" "$nb_file"
-    log "Moved ${completed_count} completed item(s) from ## Open to ## Resolved in NON_BLOCKING_LOG.md."
+    log "Moved ${completed_count} completed item(s) from ## Open to ## Resolved in ${NON_BLOCKING_LOG_FILE}."
 }
 
 # get_completed_nonblocking_notes — Returns text of [x] items from ## Open.
@@ -245,7 +245,7 @@ get_completed_nonblocking_notes() {
 }
 
 # clear_resolved_nonblocking_notes — Empties the ## Resolved section of
-# NON_BLOCKING_LOG.md. Returns the cleared items on stdout for metrics capture.
+# ${NON_BLOCKING_LOG_FILE}. Returns the cleared items on stdout for metrics capture.
 # Only call on successful pipeline completion. Preserves the ## Resolved heading.
 clear_resolved_nonblocking_notes() {
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
@@ -296,6 +296,6 @@ clear_resolved_nonblocking_notes() {
     mv "$tmpfile" "$nb_file"
     local count
     count=$(echo "$resolved_items" | wc -l)
-    log "Cleared ${count} resolved item(s) from NON_BLOCKING_LOG.md ## Resolved section."
+    log "Cleared ${count} resolved item(s) from ${NON_BLOCKING_LOG_FILE} ## Resolved section."
 }
 

@@ -197,12 +197,12 @@ estimate_post_coder_turns() {
     local files_modified=0
     local diff_lines=0
 
-    # Count files modified from CODER_SUMMARY.md
+    # Count files modified from "${CODER_SUMMARY_FILE}"
     # Note: ERE alternation (|) in awk /pattern/ is gawk/mawk-compatible but not
     # strictly POSIX. Acceptable for this project's Linux/WSL target environment.
-    if [ -f "CODER_SUMMARY.md" ]; then
+    if [ -f "${CODER_SUMMARY_FILE}" ]; then
         files_modified=$(awk '/^## Files (Modified|created or modified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' \
-            CODER_SUMMARY.md 2>/dev/null || echo "0")
+            "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "0")
     fi
 
     # Count git diff stat lines (insertions + deletions)

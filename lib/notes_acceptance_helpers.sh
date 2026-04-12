@@ -53,7 +53,7 @@ ${_untracked}}"
     while IFS= read -r file; do
         [[ -z "$file" ]] && continue
         # Skip pipeline artifacts
-        [[ "$file" == CODER_SUMMARY.md ]] && continue
+        [[ "$file" == "${CODER_SUMMARY_FILE}" ]] && continue
         [[ "$file" =~ _REPORT\.md$ ]] && continue
         [[ "$file" =~ ^\.claude/ ]] && continue
 

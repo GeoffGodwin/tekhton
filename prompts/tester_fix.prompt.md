@@ -9,7 +9,7 @@ agent wrote or modified them.
 ## Test Files
 {{TESTER_FIX_TEST_FILES}}
 
-## Source Files (from CODER_SUMMARY.md)
+## Source Files (from {{CODER_SUMMARY_FILE}})
 {{TESTER_FIX_SOURCE_FILES}}
 
 {{IF:TEST_BASELINE_SUMMARY}}
@@ -26,9 +26,9 @@ You have LSP tools via MCP: `find_symbol`, `find_referencing_symbols`,
 ## Rules
 1. Fix the TEST code, not the implementation.
 2. If the implementation is genuinely wrong (tests are correct but code is
-   buggy), document the bug in TESTER_REPORT.md under "## Bugs Found" and
+   buggy), document the bug in {{TESTER_REPORT_FILE}} under "## Bugs Found" and
    do NOT attempt to fix the implementation.
 3. Do NOT modify files outside the test directory unless the test imports
    or fixtures require it.
 4. Run {{TEST_CMD}} to verify your fixes.
-5. Update TESTER_REPORT.md with what you fixed.
+5. Update {{TESTER_REPORT_FILE}} with what you fixed.

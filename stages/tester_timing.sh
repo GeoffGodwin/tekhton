@@ -15,13 +15,13 @@ _TESTER_TIMING_EXEC_APPROX_S=-1
 _TESTER_TIMING_FILES_WRITTEN=-1
 _TESTER_TIMING_WRITING_S=-1
 
-# _parse_tester_timing — Extract timing data from TESTER_REPORT.md.
+# _parse_tester_timing — Extract timing data from ${TESTER_REPORT_FILE}.
 # Reads the ## Timing section and populates _TESTER_TIMING_* globals.
 # If section is missing or unparseable, values remain -1.
-# Args: $1 = path to TESTER_REPORT.md (default: TESTER_REPORT.md)
+# Args: $1 = path to ${TESTER_REPORT_FILE} (default: ${TESTER_REPORT_FILE})
 #       $2 = "accumulate" to add to existing values (for continuations)
 _parse_tester_timing() {
-    local report="${1:-TESTER_REPORT.md}"
+    local report="${1:-${TESTER_REPORT_FILE}}"
     local mode="${2:-replace}"
 
     [[ -f "$report" ]] || return 0

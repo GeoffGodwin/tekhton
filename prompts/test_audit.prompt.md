@@ -26,8 +26,8 @@ These files were intentionally removed. Tests that import them are orphaned.
 {{ENDIF:CODER_DELETED_FILES}}
 
 ## Required Reading
-1. `CODER_SUMMARY.md` — what implementation files changed and why
-2. `TESTER_REPORT.md` — what the tester claims to have tested
+1. `{{CODER_SUMMARY_FILE}}` — what implementation files changed and why
+2. `{{TESTER_REPORT_FILE}}` — what the tester claims to have tested
 3. The test files listed in the audit context above
 4. The implementation files those tests exercise (to verify assertions test real behavior)
 
@@ -57,7 +57,7 @@ If the tester MODIFIED existing tests (not just added new ones), did the modific
 - Check: Removed assertions, broadened expected values
   (e.g., `assertEqual(x, 5)` → `assertTrue(x > 0)`)
 - Check: Removed edge case tests
-- Any weakening without clear justification in TESTER_REPORT.md is flagged as suspicious
+- Any weakening without clear justification in {{TESTER_REPORT_FILE}} is flagged as suspicious
 
 ### 5. Test Naming and Intent
 Are test names descriptive of what they verify?
@@ -67,7 +67,7 @@ Are test names descriptive of what they verify?
 
 ### 6. Scope Alignment
 Do tests still align with the current codebase?
-Cross-reference test imports/references against CODER_SUMMARY.md:
+Cross-reference test imports/references against {{CODER_SUMMARY_FILE}}:
 - If the coder DELETED a module and tests still import it → orphaned test
 - If the coder RENAMED a function/class and tests reference the old name → stale test
 - If the coder REMOVED a feature and tests exercise that feature → dead test
@@ -78,7 +78,7 @@ to satisfy the test. **Tests follow code, not the other way around.**
 ### 7. Test Isolation
 Do tests create their own fixtures or do they read mutable project files directly?
 - FLAG: Tests that read live build reports, pipeline logs, config state files, or
-  run artifacts (e.g., `CODER_SUMMARY.md`, `REVIEWER_REPORT.md`, `BUILD_ERRORS.md`,
+  run artifacts (e.g., `{{CODER_SUMMARY_FILE}}`, `{{REVIEWER_REPORT_FILE}}`, `{{BUILD_ERRORS_FILE}}`,
   `.claude/logs/*`) without first creating a controlled copy in a temp directory
 - FLAG: Tests whose pass/fail outcome depends on prior pipeline runs or repo state
 - GOOD: Tests that create their own fixture data in a temp directory, independent

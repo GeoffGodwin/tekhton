@@ -255,8 +255,8 @@ record_run_metrics() {
             intake_tweaks_applied="true"
         fi
         local intake_questions=0
-        if [[ "${INTAKE_VERDICT}" == "NEEDS_CLARITY" ]] && [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
-            intake_questions=$(awk '/^## Questions/{found=1; next} found && /^## /{exit} found && /^- /{count++} END{print count+0}' "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" 2>/dev/null || echo "0")
+        if [[ "${INTAKE_VERDICT}" == "NEEDS_CLARITY" ]] && [[ -f "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}" ]]; then
+            intake_questions=$(awk '/^## Questions/{found=1; next} found && /^## /{exit} found && /^- /{count++} END{print count+0}' "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}" 2>/dev/null || echo "0")
             intake_questions=$(echo "$intake_questions" | grep -oE '[0-9]+' | tail -1)
             intake_questions="${intake_questions:-0}"
         fi

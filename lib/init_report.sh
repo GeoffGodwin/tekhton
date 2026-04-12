@@ -151,7 +151,7 @@ emit_init_summary() {
         echo "    2. Run: tekhton \"Implement Milestone 1: <title>\""
     elif [[ "$file_count" -gt 50 ]]; then
         echo "    2. Start planning:  tekhton --plan-from-index"
-        echo "       (uses PROJECT_INDEX.md to synthesize DESIGN.md + CLAUDE.md)"
+        echo "       (uses PROJECT_INDEX.md to synthesize ${DESIGN_FILE} + CLAUDE.md)"
     else
         echo "    2. Start planning:  tekhton --plan \"Describe your project goals\""
     fi
