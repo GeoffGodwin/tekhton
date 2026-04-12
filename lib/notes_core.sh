@@ -281,7 +281,7 @@ claim_notes_batch() {
 
     # Archive pre-run snapshot
     if [[ -n "${LOG_DIR:-}" ]] && [[ -n "${TIMESTAMP:-}" ]] && [[ -d "${LOG_DIR:-}" ]]; then
-        cp "$nf" "${LOG_DIR}/${TIMESTAMP}_${HUMAN_NOTES_FILE}"
+        cp "$nf" "${LOG_DIR}/${TIMESTAMP}_$(basename "${HUMAN_NOTES_FILE}")"
     fi
 
     local claimed_ids=""

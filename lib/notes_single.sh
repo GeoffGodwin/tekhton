@@ -95,7 +95,7 @@ claim_single_note() {
 
     # Archive pre-run snapshot
     if [[ -n "${LOG_DIR:-}" ]] && [[ -n "${TIMESTAMP:-}" ]] && [[ -d "${LOG_DIR:-}" ]]; then
-        cp "${HUMAN_NOTES_FILE}" "${LOG_DIR}/${TIMESTAMP}_${HUMAN_NOTES_FILE}"
+        cp "${HUMAN_NOTES_FILE}" "${LOG_DIR}/${TIMESTAMP}_$(basename "${HUMAN_NOTES_FILE}")"
     else
         cp "${HUMAN_NOTES_FILE}" "${HUMAN_NOTES_FILE}.bak"
     fi
