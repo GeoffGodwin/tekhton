@@ -2333,7 +2333,7 @@ _run_fix_nonblockers_loop() {
             for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE}; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
-                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixnb${nb_attempt}_${f}"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixnb${nb_attempt}_$(basename "$f")"
                 fi
             done
         fi
@@ -2402,7 +2402,7 @@ _run_fix_drift_loop() {
             for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ARCHITECT_PLAN.md; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
-                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixdrift${drift_attempt}_${f}"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixdrift${drift_attempt}_$(basename "$f")"
                 fi
             done
         fi
