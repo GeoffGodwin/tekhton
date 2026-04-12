@@ -157,7 +157,7 @@ _is_section_shallow() {
 # check_design_completeness — Validate ${DESIGN_FILE} against required sections.
 # Sets PLAN_INCOMPLETE_SECTIONS and returns 0 if all complete, 1 otherwise.
 check_design_completeness() {
-    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE:-}"
     local template_file="$PLAN_TEMPLATE_FILE"
 
     PLAN_INCOMPLETE_SECTIONS=""

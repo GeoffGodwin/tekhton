@@ -184,7 +184,7 @@ _compress_synthesis_context() {
 # Returns: 0 always (best-effort — does not block on incomplete sections)
 _check_synthesis_completeness() {
     local project_dir="$1"
-    local design_file="${project_dir}/${DESIGN_FILE}"
+    local design_file="${project_dir}/${DESIGN_FILE:-}"
 
     if [[ ! -f "$design_file" ]]; then
         return 0

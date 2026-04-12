@@ -15,7 +15,7 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 ## Features
 
 ## Bugs
-- [ ] [BUG] Add early bash version guard in tekhton.sh. Insert a
+- [x] [BUG] Add early bash version guard in tekhton.sh. Insert a
       BASH_VERSINFO check immediately after `set -euo pipefail`
       (before the EXIT trap at line 131 and before common.sh is
       sourced at line 324). Must use bash-3.2-compatible syntax

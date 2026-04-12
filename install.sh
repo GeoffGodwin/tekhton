@@ -124,12 +124,9 @@ check_bash_version() {
 
     if [ "$major" -lt 4 ]; then
         if [ "$PLATFORM" = "macos" ]; then
-            warn "macOS ships with bash ${BASH_VERSION} (version 3.x)."
+            error "macOS ships with bash ${BASH_VERSION} (version 3.x)."
             echo ""
-            echo "Tekhton requires bash 4+. The installer will continue, but"
-            echo "you need bash 4+ to RUN Tekhton."
-            echo ""
-            echo "Install modern bash via Homebrew:"
+            echo "Tekhton requires bash 4+. Install modern bash via Homebrew:"
             echo "  brew install bash"
             echo ""
             echo "Then ensure /opt/homebrew/bin/bash (or /usr/local/bin/bash)"
@@ -137,9 +134,10 @@ check_bash_version() {
             echo "  export PATH=\"/opt/homebrew/bin:\$PATH\""
             echo ""
         else
-            warn "Bash ${BASH_VERSION} detected. Tekhton requires bash 4+."
+            error "Bash ${BASH_VERSION} detected. Tekhton requires bash 4+."
             echo "Please upgrade bash before running Tekhton."
         fi
+        exit 1
     fi
 }
 

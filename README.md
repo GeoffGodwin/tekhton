@@ -99,7 +99,7 @@ met, e.g. UI specialist on UI projects), and existing v2 workflows remain unchan
 
 ## Requirements
 
-- **Bash 4.3+** — Linux, WSL2, or macOS (macOS ships with bash 3.2 — run `brew install bash` first, see [installation notes](docs/getting-started/installation.md#macos))
+- **Bash 4.3+** — Linux and WSL2 ship with a compatible version. **macOS requires setup** — macOS ships with bash 3.2 which will not work. Run `brew install bash` and add the Homebrew bash to your PATH *before* running Tekhton. See [installation notes](docs/getting-started/installation.md#macos).
 - **Claude CLI** — authenticated and on `PATH` (`claude --version` should work)
 - **Git** — used for commit integration
 - **Python 3** — used for JSON parsing of agent output
