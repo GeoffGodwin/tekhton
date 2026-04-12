@@ -1,33 +1,78 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, ~339 total assertions (14 in test_plan_docs_section.sh; remainder in test_plan_templates.sh)
+Tests audited: 4 files (tests/test_notes_normalization.sh + 3 tracking/report documents),
+14 test assertions (all in test_notes_normalization.sh; the 3 documents contain no executable assertions)
 Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: test_plan_docs_section.sh implicitly depends on DESIGN_FILE from test runner
-- File: tests/test_plan_docs_section.sh:126,156
-- Issue: `check_design_completeness` resolves `design_file` as `"${PROJECT_DIR}/${DESIGN_FILE:-}"`. The test sets `PROJECT_DIR` to a temp dir and writes `DESIGN.md` there, but never explicitly sets `DESIGN_FILE`. When run via `run_tests.sh`, `DESIGN_FILE="DESIGN.md"` is exported (run_tests.sh:36), so the path resolves correctly. When run standalone, `DESIGN_FILE` is unset → `design_file` becomes `"${TEST_TMPDIR}/"` (a directory, not a file) → `check_design_completeness` returns 1 for "file not found" (not "missing section") → `PLAN_INCOMPLETE_SECTIONS` stays empty → the assertion at line 132 ("Documentation Strategy should be listed as incomplete") FAILS. The test only works correctly when invoked through the test runner.
+#### WEAKENING: Shell-detected weakening signal is a false positive — but left unaddressed by tester
+- File: NON_BLOCKING_LOG.md
+- Issue: The pre-verified weakening flag ("net loss of 3 assertion(s), removed 3, added 0")
+  is not real test weakening. `git diff HEAD~1 -- NON_BLOCKING_LOG.md` confirms: the coder
+  removed 4 open `[ ]` items from the Open section and moved all 4 to Resolved; 3 became
+  `[x]` (legitimately fixed) and 1 stayed `[ ]` (item 4, write-permission blocked). The
+  shell detector counted the 3 resolved Open items as "removed assertions." This is a
+  false positive — the detector conflates open-item resolution with test weakening.
+  However, TESTER_REPORT.md does not acknowledge or explain the pre-verified signal,
+  leaving it unaddressed.
+- Severity: LOW
+- Action: Add one sentence to TESTER_REPORT.md clarifying that the pre-verified
+  weakening flag represents 3 legitimately resolved Open items (install.sh guard,
+  tekhton.sh guard, normalize blank-before-fence) being moved to Resolved `[x]`, not
+  weakened test assertions.
+
+#### COVERAGE: Test 4.2 upper-bound assertion masks blank-before-fence regression
+- File: tests/test_notes_normalization.sh:209
+- Issue: Test 4.2 asserts `$outside_blanks -le 4` (upper bound) rather than `== 4`
+  (exact). The adjacent comment at line 208 documents the exact expected count:
+  "Before 'Some text.': 1, before fence: 1, inside fence: 1, after fence: 1 = 4 total."
+  Using `≤ 4` means a regression that re-introduces the blank-before-fence bug (dropping
+  that blank, yielding 3 total) still passes (3 ≤ 4 is true). The M74 fix exists
+  specifically to ensure that blank is preserved — yet the weakened bound would not
+  catch its removal. The TESTER_REPORT does not reference this assertion change, which
+  was made by the coder (per CODER_SUMMARY.md) and was not independently reviewed by
+  the tester before commit.
 - Severity: MEDIUM
-- Action: Add `export DESIGN_FILE="${DESIGN_FILE:-DESIGN.md}"` immediately after line 15 (`export PROJECT_DIR="$TEST_TMPDIR"`) so the test is self-contained when run standalone, consistent with how run_tests.sh already handles this variable.
+- Action: Change line 209 from `if [[ "$outside_blanks" -le 4 ]]; then` to
+  `if [[ "$outside_blanks" -eq 4 ]]; then` and update the pass message on line 210 to
+  "4.2 Exterior blank-line runs collapsed (exactly 4 total)". This turns the test into
+  a genuine regression guard for the specific bug fixed in this milestone.
 
-#### COVERAGE: milestone_acceptance.sh DOCS_STRICT_MODE acceptance check has no test coverage
-- File: tests/test_plan_docs_section.sh (absent)
-- Issue: The new check 4 in `check_milestone_acceptance` (`lib/milestone_acceptance.sh:149–158`) — which blocks milestone completion when `DOCS_STRICT_MODE=true` and the reviewer flagged missing doc updates — has no test coverage. This is the most operationally significant behavioral change in M74 (a pipeline-blocking gate), and a regression there would be invisible to the test suite.
+#### COVERAGE: No test coverage for lib/milestone_acceptance.sh grep pattern changes
+- File: .tekhton/TESTER_REPORT.md (absence of tests)
+- Issue: Items 1 and 2 from NON_BLOCKING_LOG.md changed `lib/milestone_acceptance.sh:152-155`
+  in two ways: (a) switched from BRE `\|` to `-E` extended regex for BSD/GNU portability,
+  and (b) broadened the doc-absence detection patterns and added `-i` for case-insensitive
+  matching. Neither change has test coverage in any file listed in the audit context.
+  TESTER_REPORT defers to "REVIEWER_REPORT shows 0 coverage gaps" without independent
+  verification. These are behavioral changes (new patterns, new flag) where a regression
+  — e.g., patterns that fail to match on BSD grep despite the -E fix — would be invisible.
 - Severity: LOW
-- Action: Add test cases to `test_plan_docs_section.sh` that stub the relevant globals, create a fake reviewer report containing "Docs Updated missing", set `DOCS_STRICT_MODE=true`, source `milestone_acceptance.sh` helpers, and assert the blocking grep returns > 0. Also verify the check is skipped when `DOCS_STRICT_MODE=false`.
+- Action: Add a targeted test (suitable for tests/test_milestone_acceptance.sh or a new
+  file) that creates a fixture reviewer-report file containing each intended-to-match phrase
+  ("documentation not updated", "docs absent", "Docs Updated: missing") and verifies the
+  grep expression matches, plus one fixture that should not match. No full pipeline
+  infrastructure required — direct invocation of the grep expression is sufficient.
 
-#### COVERAGE: grep -P (Perl regex) in test_plan_templates.sh is non-portable
-- File: tests/test_plan_templates.sh:171
-- Issue: `grep -oP '<!-- PHASE:\K[0-9]+'` uses PCRE syntax (`-P` flag + `\K` lookbehind). GNU grep on Linux supports this, but BSD/macOS grep does not. On macOS, the command silently produces empty output, `phases_found` is empty, and all 7 real-template PHASE-presence assertions (lines 172–176) would fail with misleading error messages. Since CLAUDE.md documents Linux as the target platform this is non-blocking in practice, but is a latent fragility.
-- Severity: LOW
-- Action: Replace with a POSIX-portable pipeline: `grep -o '<!-- PHASE:[0-9][0-9]* -->' "$tmpl" | grep -o '[0-9][0-9]*' | sort -u | tr '\n' ','`.
+### Notes
 
-#### None (other rubric categories)
-- Assertion Honesty: All assertions test real behavior. REQUIRED marker counts (cli-tool=11, web-app=10, api-service=10, mobile-app=10, web-game=11, custom=9, library=9) were verified against live `grep -c '<!-- REQUIRED -->'` output and match exactly. Config defaults (DOCS_ENFORCEMENT_ENABLED=true, DOCS_STRICT_MODE=false, DOCS_DIRS=docs/, DOCS_README_FILE=README.md) match lib/config_defaults.sh:412–415 exactly. No assertions use hard-coded values detached from implementation.
-- Implementation Exercise: Tests call real implementations — `_extract_required_sections` and `check_design_completeness` from lib/plan_completeness.sh, `_extract_template_sections` from lib/plan_batch.sh (via plan.sh), config defaults from lib/config_defaults.sh — with non-trivial fixture inputs. No excessive mocking.
-- Test Weakening: The REQUIRED marker count updates in test_plan_templates.sh (+1 per template) correctly reflect the new Documentation Strategy REQUIRED section added by M74. Prior counts are superseded, not weakened — the new values are strictly more accurate.
-- Test Naming: Descriptive and scenario-plus-outcome throughout (e.g., "Documentation Strategy is REQUIRED", "DESIGN.md missing Documentation Strategy fails completeness", "DOCS_ENFORCEMENT_ENABLED defaults to true", "_extract_template_sections outputs 4-field format").
-- Scope Alignment: All referenced symbols exist in the current codebase. `_extract_required_sections` is in lib/plan_completeness.sh; `_extract_template_sections` is in lib/plan_batch.sh (sourced via plan.sh); DOCS_* defaults are in lib/config_defaults.sh:412–415. No orphaned, stale, or renamed references detected.
-- Test Isolation: test_plan_docs_section.sh creates `TEST_TMPDIR=$(mktemp -d)` and writes all DESIGN.md fixture content there; trap cleans up on exit. test_plan_templates.sh reads checked-in source files (templates, lib/*.sh) — not mutable runtime artifacts. Neither test reads .tekhton/ run artifacts.
+**Isolation:** tests/test_notes_normalization.sh correctly isolates all fixtures in a
+`mktemp -d` temp directory, sets `PROJECT_DIR` and `TEKHTON_SESSION_DIR` to that temp
+directory (ensuring `mktemp` calls inside `_normalize_markdown_blank_runs` also land
+there), and traps `rm -rf "$TMPDIR"` on EXIT. No mutable project files are read.
+
+**Assertion honesty:** All 14 assertions in test_notes_normalization.sh test real function
+calls (`_normalize_markdown_blank_runs`, `clear_completed_human_notes`) with meaningful
+fixture inputs. No always-true assertions, no hard-coded return values detached from
+implementation logic.
+
+**Scope alignment:** The test file correctly sources the modified
+`lib/notes_core_normalize.sh`. The test for fenced block preservation (Test 4) exercises
+exactly the code path changed in M74. No orphaned or stale test references detected.
+`.tekhton/INTAKE_REPORT.md` was deleted by the coder; no test file references it.
+
+**Test naming:** All 14 assertions use scenario-plus-outcome naming (e.g.,
+"2.4 Exactly one blank line between surviving items", "4.1 Blank line inside fenced
+code block preserved"). No opaque names detected.

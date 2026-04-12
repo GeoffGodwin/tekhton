@@ -61,7 +61,7 @@ set -euo pipefail
 # bash 3.2 (macOS default) get a cryptic "declare: -g: invalid option" crash.
 # This check uses only bash 3.2-compatible syntax and runs before the EXIT trap
 # is installed, so it exits cleanly without triggering the crash banner.
-if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+if [ "${BASH_VERSINFO[0]}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 3 ]; }; then
     echo "" >&2
     echo "ERROR: Tekhton requires bash 4.3+ but found bash ${BASH_VERSION}." >&2
     echo "" >&2

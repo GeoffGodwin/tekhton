@@ -27,7 +27,10 @@ _normalize_markdown_blank_runs() {
     tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/norm_XXXXXXXX")
     awk '
         BEGIN { in_fence = 0; saw_content = 0; blank_pending = 0 }
-        /^```/ { in_fence = !in_fence; print; saw_content = 1; blank_pending = 0; next }
+        /^```/ {
+            if (blank_pending) { print ""; blank_pending = 0 }
+            in_fence = !in_fence; print; saw_content = 1; next
+        }
         in_fence { print; next }
         /^[[:space:]]*$/ {
             if (saw_content) { blank_pending = 1 }

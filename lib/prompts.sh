@@ -105,6 +105,9 @@ render_prompt() {
     # Process {{IF:VAR}} ... {{ENDIF:VAR}} blocks
     # If $VAR is non-empty, include the block contents; otherwise remove it.
     # Uses a loop to handle all conditional blocks.
+    # Nesting is supported: {{IF:A}}...{{IF:B}}...{{ENDIF:B}}...{{ENDIF:A}}
+    # works because each pair uses a distinct variable name and the loop
+    # processes one variable at a time (innermost-first via grep order).
     local max_iterations=50
     local i=0
     while echo "$content" | grep -q '{{IF:'; do

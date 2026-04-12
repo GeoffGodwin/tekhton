@@ -9,7 +9,7 @@
 #   curl ... | bash -s -- --uninstall
 #
 # This script must remain bash 3.2 compatible (macOS ships bash 3.2).
-# Tekhton itself requires bash 4+, but this installer runs BEFORE Tekhton.
+# Tekhton itself requires bash 4.3+, but this installer runs BEFORE Tekhton.
 # =============================================================================
 
 set -euo pipefail
@@ -94,7 +94,7 @@ detect_platform() {
             echo ""
             fail "Git Bash / MSYS / Cygwin is not supported.
 
-Tekhton requires bash 4+ features (associative arrays, etc.) that are
+Tekhton requires bash 4.3+ features (associative arrays, etc.) that are
 not available in Git Bash. Please install Windows Subsystem for Linux (WSL):
 
   1. Open PowerShell as Administrator
@@ -121,8 +121,9 @@ More info: https://learn.microsoft.com/en-us/windows/wsl/install"
 
 check_bash_version() {
     local major="${BASH_VERSINFO[0]:-0}"
+    local minor="${BASH_VERSINFO[1]:-0}"
 
-    if [ "$major" -lt 4 ]; then
+    if [ "$major" -lt 4 ] || { [ "$major" -eq 4 ] && [ "$minor" -lt 3 ]; }; then
         if [ "$PLATFORM" = "macos" ]; then
             echo ""
             echo "Tekhton requires bash 4.3+. Install modern bash via Homebrew:"

@@ -1,7 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-12 17:50:00
+Generated: 2026-04-12 18:51:54
 
 ## Non-Blocking Findings (MEDIUM/LOW)
-- [LOW] [category:A04] [lib/notes_core_normalize.sh:27-42] fixable:yes — No `trap` is set to remove `$tmpfile` on failure. If `awk` exits non-zero (e.g. disk full, SIGINT), the partial temp file containing notes content is left in `TEKHTON_SESSION_DIR` or `/tmp` and never cleaned up. Fix: add `trap 'rm -f "$tmpfile"' EXIT` immediately after the `mktemp` call and remove it on success.
-- [LOW] [category:A04] [lib/notes_core_normalize.sh:42] fixable:yes — `mv "$tmpfile" "$file"` replaces the original file without preserving its permissions. `mktemp` creates files with mode 0600; if the target file had wider permissions (e.g. 0644), the replacement silently tightens them. Fix: capture permissions with `stat` before writing and restore with `chmod` after `mv`, or use `install -m` instead.
+- [LOW] [category:A04] [lib/notes_core_normalize.sh:27] fixable:yes — The tempfile created by `mktemp` is not cleaned up if the process is interrupted after `mktemp` but before `mv "$tmpfile" "$file"` completes (e.g. SIGKILL or disk-full abort). The orphaned file in `TEKHTON_SESSION_DIR`/`/tmp` contains only markdown content — no credentials or sensitive data — making this a resource-leak concern rather than a data-exposure risk. Fix: add `trap 'rm -f "$tmpfile"' RETURN ERR` immediately after the `mktemp` call.
