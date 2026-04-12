@@ -87,7 +87,7 @@ _generate_codebase_summary() {
 # Validates prerequisites, assembles context, calls the replan agent,
 # writes output to DESIGN_DELTA.md, and presents approval menu.
 run_replan() {
-    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE:-}"
     local claude_file="${PROJECT_DIR}/CLAUDE.md"
 
     header "Tekhton — Brownfield Replan"

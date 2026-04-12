@@ -145,6 +145,21 @@ check_milestone_acceptance() {
         fi
     fi
 
+    # --- Automatable check 4: Docs strict mode — block on unresolved doc findings ---
+    if [[ "${DOCS_STRICT_MODE:-false}" = "true" ]] \
+       && [[ -f "${REVIEWER_REPORT_FILE:-}" ]]; then
+        # Use -E (extended regex) for portable alternation (BRE | is GNU-only).
+        # Patterns are intentionally broad to catch varied reviewer phrasing:
+        #   "Docs Updated: missing", "documentation not updated", "docs absent", etc.
+        local docs_block
+        docs_block=$(grep -ciE 'docs? (updated?|change|section).*missing|doc(umentation)? (not |un)updated?|doc(umentation|s)? absent|missing doc(umentation|s)? update' \
+            "${REVIEWER_REPORT_FILE}" 2>/dev/null || true)
+        if [[ "$docs_block" -gt 0 ]]; then
+            warn "DOCS_STRICT_MODE: reviewer flagged missing doc updates (${docs_block} finding(s))"
+            all_pass=false
+        fi
+    fi
+
     echo
 
     if [[ "$all_pass" = true ]]; then

@@ -96,6 +96,22 @@ This is a UI project. When reviewing changes to UI components, verify:
 - Accessibility attributes present (aria-label, role, alt text)
 {{ENDIF:UI_PROJECT_DETECTED}}
 
+{{IF:DOCS_ENFORCEMENT_ENABLED}}
+## Documentation Freshness Check
+Check whether this change touches a public surface described in the project's
+CLAUDE.md Documentation Responsibilities section. If so, confirm the coder updated
+the relevant doc by looking for a `## Docs Updated` section in `{{CODER_SUMMARY_FILE}}`.
+- If the section is present and lists doc files → docs requirement satisfied.
+- If the section says "None — no public-surface changes" → accept if you agree
+  no public surface was touched; otherwise note it as a Non-Blocking finding.
+- If the `## Docs Updated` section is missing entirely and public-surface code
+  changed → report at severity `WARN` (Non-Blocking Note).
+{{IF:DOCS_STRICT_MODE}}- **DOCS_STRICT_MODE is enabled.** Missing doc updates for public-surface changes
+  are a **Simple Blocker**, not a Non-Blocking Note.{{ENDIF:DOCS_STRICT_MODE}}
+- If the project has no Documentation Responsibilities section in CLAUDE.md,
+  skip this check — the project predates M74 doc enforcement.
+{{ENDIF:DOCS_ENFORCEMENT_ENABLED}}
+
 ## Blocker Classification — READ THIS CAREFULLY
 
 A **blocker** triggers a full rework cycle: the coder re-runs (up to {{MILESTONE_CODER_MAX_TURNS}} turns),

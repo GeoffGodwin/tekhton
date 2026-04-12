@@ -82,4 +82,9 @@ Produce the updated, complete {{DESIGN_FILE}} in markdown format. Follow these r
 9. **No code fences around the document.** Output raw markdown only, no
    ` ```markdown ``` ` wrapping.
 
+10. **Documentation Strategy.** If the flagged sections include
+    `Documentation Strategy`, probe for specifics: which files constitute the
+    project's documentation, who owns doc updates, what "public surface" means
+    for this project, and whether doc freshness should block merges or just warn.
+
 Begin with the document title now.

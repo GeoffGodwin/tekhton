@@ -408,6 +408,12 @@ set -euo pipefail
 : "${SPECIALIST_API_MODEL:=${CLAUDE_STANDARD_MODEL}}"
 : "${SPECIALIST_API_MAX_TURNS:=8}"
 
+# --- Documentation enforcement defaults (Milestone 74) ---
+: "${DOCS_ENFORCEMENT_ENABLED:=true}"    # Master toggle for doc-freshness behavior
+: "${DOCS_STRICT_MODE:=false}"           # Reviewer blocks on missing doc update (vs warn)
+: "${DOCS_DIRS:=docs/}"                  # Colon-separated list of doc directories
+: "${DOCS_README_FILE:=README.md}"       # Path to primary README (brownfield override)
+
 # --- UI platform adapter defaults (Milestone 57) ---
 : "${UI_PLATFORM:=auto}"
 : "${SPECIALIST_UI_ENABLED:=auto}"

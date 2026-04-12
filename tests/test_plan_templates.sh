@@ -13,13 +13,13 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 # Expected types → minimum required section count (from CODER_SUMMARY.md)
 declare -A EXPECTED_REQUIRED
-EXPECTED_REQUIRED["web-app"]=9
-EXPECTED_REQUIRED["web-game"]=10
-EXPECTED_REQUIRED["cli-tool"]=10
-EXPECTED_REQUIRED["api-service"]=9
-EXPECTED_REQUIRED["mobile-app"]=9
-EXPECTED_REQUIRED["library"]=8
-EXPECTED_REQUIRED["custom"]=8
+EXPECTED_REQUIRED["web-app"]=10
+EXPECTED_REQUIRED["web-game"]=11
+EXPECTED_REQUIRED["cli-tool"]=11
+EXPECTED_REQUIRED["api-service"]=10
+EXPECTED_REQUIRED["mobile-app"]=10
+EXPECTED_REQUIRED["library"]=9
+EXPECTED_REQUIRED["custom"]=9
 
 echo "=== Template Existence ==="
 

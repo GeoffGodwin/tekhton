@@ -71,7 +71,7 @@ met, e.g. UI specialist on UI projects), and existing v2 workflows remain unchan
 
 **Developer Experience**
 
-- **Express Mode** — zero-config execution when no `pipeline.conf` exists; Tekhton auto-detects your stack and runs
+- **Express Mode** — zero-config execution when no `pipeline.conf` exists; Tekhton auto-detects your stack and runs (macOS users must still install bash 4.3+ via Homebrew first — see [Requirements](#requirements))
 - **TDD Support** — `PIPELINE_ORDER=test_first` runs the tester before the coder, with a preflight test spec that guides implementation
 - **Browser Planning** — interactive `--plan-browser` mode opens a web form for the planning interview with answer persistence; YAML answer import via `--plan --answers`
 - **Dry-Run Preview** — `--dry-run` runs scout + intake only and shows what the pipeline would do without executing
@@ -99,7 +99,7 @@ met, e.g. UI specialist on UI projects), and existing v2 workflows remain unchan
 
 ## Requirements
 
-- **Bash 4.3+** — Linux, WSL2, or macOS (macOS ships with bash 3.2 — run `brew install bash` first, see [installation notes](docs/getting-started/installation.md#macos))
+- **Bash 4.3+** — Linux and WSL2 ship with a compatible version. **macOS requires setup** — macOS ships with bash 3.2 which will not work. Run `brew install bash` and add the Homebrew bash to your PATH *before* running Tekhton. See [installation notes](docs/getting-started/installation.md#macos).
 - **Claude CLI** — authenticated and on `PATH` (`claude --version` should work)
 - **Git** — used for commit integration
 - **Python 3** — used for JSON parsing of agent output
@@ -760,7 +760,7 @@ brew install shellcheck
 - Dry-run preview (`--dry-run`) and `--continue-preview`
 - Run safety net + `--rollback` for reverting pipeline runs
 - Human notes UX enhancement, `note` subcommand for managing HUMAN_NOTES.md from the CLI
-- Express mode — zero-config execution when no `pipeline.conf` exists
+- Express mode — zero-config execution when no `pipeline.conf` exists (bash 4.3+ still required; macOS needs Homebrew bash)
 - TDD support (`PIPELINE_ORDER=test_first`) — tester runs before coder
 - Onboarding flow fix — repaired the circular `--init` ↔ `--plan` handoff
 

@@ -75,4 +75,16 @@ Produce the complete {{DESIGN_FILE}} in markdown format. Follow these rules:
    values, include a fenced code block showing example config with actual keys,
    types, and default values.
 
+9. **Documentation Strategy (REQUIRED).** Every template includes a
+   `## Documentation Strategy` section. If the developer skips it, ask these
+   four questions to fill it in:
+   - Does this project ship user-facing documentation? (yes / no / just a
+     README / README + docs/ site)
+   - Where is documentation hosted? (GitHub README only, GitHub Pages,
+     ReadTheDocs, docs.rs, mkdocs Material, other)
+   - What must be updated on every feature change? (README + relevant
+     `docs/` page; README only; docs/ site only)
+   - Do you want Tekhton to enforce doc freshness during review?
+     (strict = block merge, warn = non-blocking finding, off)
+
 Begin with the document title now.

@@ -177,7 +177,7 @@ run_complete_loop() {
             for f in "${CODER_SUMMARY_FILE}" "${REVIEWER_REPORT_FILE}" "${JR_CODER_SUMMARY_FILE}" "${TESTER_REPORT_FILE}" "${INTAKE_REPORT_FILE}" "${PREFLIGHT_ERRORS_FILE}"; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
-                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_attempt${_ORCH_ATTEMPT}_${f}"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_attempt${_ORCH_ATTEMPT}_$(basename "$f")"
                 fi
             done
 

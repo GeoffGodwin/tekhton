@@ -115,6 +115,19 @@ This is a UI project. Follow these guidelines for visual implementation.
 {{UI_CODER_GUIDANCE}}
 {{ENDIF:UI_CODER_GUIDANCE}}
 
+{{IF:DOCS_ENFORCEMENT_ENABLED}}
+## Documentation Updates (mandatory when public surface changes)
+**Public-surface changes require doc updates.** If your change adds, removes, or
+changes the signature/behavior of something users can observe — as defined by your
+project's CLAUDE.md Documentation Responsibilities section (CLI flags, exported
+functions, config keys, REST endpoints, schemas, UI routes, etc.) — locate the
+existing README or `docs/` page that documents it and update that page in the same
+commit. If no such doc exists and the project's CLAUDE.md says docs are required,
+create one. Record every doc file you touched under a `## Docs Updated` subsection
+of `{{CODER_SUMMARY_FILE}}`. If you made no public-surface changes, write
+`## Docs Updated` followed by `None — no public-surface changes in this task.`
+{{ENDIF:DOCS_ENFORCEMENT_ENABLED}}
+
 ## Test Maintenance (mandatory)
 If your changes cause existing tests to fail, you MUST update those tests to
 match your new implementation — unless the failing test reveals a bug in YOUR

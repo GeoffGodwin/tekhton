@@ -95,7 +95,7 @@ _run_tester_write_failing() {
     if [[ -f "$_preflight_file" ]]; then
         success "TDD pre-flight complete — ${_preflight_file} written."
         # Archive for the run log
-        cp "$_preflight_file" "${LOG_DIR}/${TIMESTAMP}_${TDD_PREFLIGHT_FILE}"
+        cp "$_preflight_file" "${LOG_DIR}/${TIMESTAMP}_$(basename "${TDD_PREFLIGHT_FILE}")"
     else
         warn "TDD tester did not produce ${_preflight_file}. Coder will proceed without pre-written tests."
     fi

@@ -13,7 +13,7 @@ echo 'export PATH="$HOME/.tekhton:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### "Tekhton requires bash 4+. Current: 3.2.57"
+### "Tekhton requires bash 4.3+. Current: 3.2.57"
 
 Your bash version is too old. This is common on macOS.
 

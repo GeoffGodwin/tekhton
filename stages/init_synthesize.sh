@@ -54,12 +54,12 @@ _synthesize_design() {
     local prompt
     prompt=$(render_prompt "init_synthesize_design")
 
-    header "${DESIGN_FILE} Synthesis"
+    header "${DESIGN_FILE:-DESIGN.md} Synthesis"
     log "Model: ${SYNTHESIS_MODEL}"
     log "Max turns: ${SYNTHESIS_MAX_TURNS}"
     log "Log: ${log_file}"
     echo
-    log "Synthesizing ${DESIGN_FILE} from project index..."
+    log "Synthesizing ${DESIGN_FILE:-DESIGN.md} from project index..."
 
     # Write session metadata to log
     {

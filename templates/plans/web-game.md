@@ -211,6 +211,16 @@
 <!-- What is the config override hierarchy? (defaults → file → env → runtime) -->
 <!-- How do designers change values without touching code? -->
 
+## Documentation Strategy
+<!-- REQUIRED -->
+<!-- PHASE:2 -->
+<!-- What documentation does this project ship? (README only, README + docs/ site, wiki) -->
+<!-- Where is documentation hosted? (GitHub, GitHub Pages, itch.io page) -->
+<!-- What surfaces must be documented? (controls, game mechanics, config keys, modding API) -->
+<!-- On every feature change, which docs must be updated in the same commit? -->
+<!-- Is doc freshness strict (block the merge) or warn-only? -->
+<!-- Any auto-generation tooling? (typedoc, JSDoc) -->
+
 ## Developer & Debug Tools
 <!-- PHASE:3 -->
 <!-- What debug/dev tools are built into the game? -->

@@ -53,7 +53,7 @@ CLAUDE.md sections.
 
 ## Your Task
 
-Generate a complete `CLAUDE.md` file containing all 12 required sections below,
+Generate a complete `CLAUDE.md` file containing all 13 required sections below,
 in the specified order. This file will be used by AI coding agents (and human
 developers) as the authoritative reference for building this project.
 
@@ -228,6 +228,17 @@ and what is explicitly out of scope (deferred to later milestones).
 - Run commands: how to start the development server, CLI tool, or test suite
 - Environment variables required for development
 - IDE/editor recommendations (if specified in {{DESIGN_FILE}})
+
+### 13. Documentation Responsibilities
+- Which files/directories are the project's documentation sources
+  (README.md, docs/, etc.)
+- Who owns doc updates (the feature author, a docs owner, auto-generated)
+- When docs must be updated: per feature? per milestone? per release?
+- What "public surface" means for this project (exported API, CLI flags,
+  config keys, schema, UI routes, …)
+- Doc freshness policy: strict (block) / warn / off
+- If {{DESIGN_FILE}} has a Documentation Strategy section, derive all of the
+  above from it. If not, state reasonable defaults and flag it as a gap.
 
 ## Output Rules
 

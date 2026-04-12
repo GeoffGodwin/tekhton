@@ -32,6 +32,7 @@ set -euo pipefail
 #
 # Returns 0 if ${DESIGN_FILE} was updated, 1 otherwise.
 run_plan_followup_interview() {
+    # shellcheck disable=SC2153
     local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     local log_dir="${PROJECT_DIR}/.claude/logs"
     local timestamp

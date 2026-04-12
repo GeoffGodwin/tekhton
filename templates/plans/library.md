@@ -146,6 +146,7 @@
 <!-- Breaking change process: RFC, migration guide, codemods? -->
 
 ## Documentation Strategy
+<!-- REQUIRED -->
 <!-- PHASE:2 -->
 <!-- API reference: auto-generated from source (TypeDoc, Sphinx, rustdoc)? -->
 <!-- Guide/tutorial: getting started, common patterns, migration guides -->

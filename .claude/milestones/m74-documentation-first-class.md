@@ -1,7 +1,7 @@
 # Milestone 74: Documentation as a First-Class Pipeline Concern
 <!-- milestone-meta
 id: "74"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

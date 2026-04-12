@@ -176,6 +176,16 @@
 <!-- How are feature flags managed? (config file, LaunchDarkly, database) -->
 <!-- What config changes require a restart vs. are hot-reloaded? -->
 
+## Documentation Strategy
+<!-- REQUIRED -->
+<!-- PHASE:2 -->
+<!-- What documentation does this project ship? (README only, README + docs/ site, API reference) -->
+<!-- Where is documentation hosted? (GitHub, GitHub Pages, ReadTheDocs, Storybook) -->
+<!-- What surfaces must be documented? (REST endpoints, UI routes, config keys, environment variables) -->
+<!-- On every feature change, which docs must be updated in the same commit? -->
+<!-- Is doc freshness strict (block the merge) or warn-only? -->
+<!-- Any auto-generation tooling? (typedoc, Storybook, OpenAPI/Swagger) -->
+
 ## Testing Strategy
 <!-- PHASE:3 -->
 <!-- Unit tests: what gets unit tested? (business logic, utilities, validators) -->

@@ -56,6 +56,30 @@
 
 set -euo pipefail
 
+# --- Bash version guard (must precede all bash 4+ syntax) --------------------
+# lib/common.sh uses declare -gA (bash 4.2+). Without this guard, users on
+# bash 3.2 (macOS default) get a cryptic "declare: -g: invalid option" crash.
+# This check uses only bash 3.2-compatible syntax and runs before the EXIT trap
+# is installed, so it exits cleanly without triggering the crash banner.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 3 ]; }; then
+    echo "" >&2
+    echo "ERROR: Tekhton requires bash 4.3+ but found bash ${BASH_VERSION}." >&2
+    echo "" >&2
+    if [ "$(uname -s)" = "Darwin" ]; then
+        echo "macOS ships with bash 3.2 which is too old." >&2
+        echo "Install modern bash via Homebrew:" >&2
+        echo "  brew install bash" >&2
+        echo "" >&2
+        echo "Then ensure the Homebrew bash is first on your PATH:" >&2
+        echo "  export PATH=\"/opt/homebrew/bin:\$PATH\"  # Apple Silicon" >&2
+        echo "  export PATH=\"/usr/local/bin:\$PATH\"     # Intel Mac" >&2
+    else
+        echo "Please upgrade bash to 4.3 or later before running Tekhton." >&2
+    fi
+    echo "" >&2
+    exit 1
+fi
+
 # --- Crash diagnostics -------------------------------------------------------
 # Catch unexpected exits (from set -e, pipefail, or unset variables) and print
 # a diagnostic message pointing to the source. Fires on EXIT so it catches
@@ -136,7 +160,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.73.0"
+TEKHTON_VERSION="3.74.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -2234,7 +2258,7 @@ _run_human_complete_loop() {
             for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE}; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
-                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_human${human_attempt}_${f}"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_human${human_attempt}_$(basename "$f")"
                 fi
             done
         fi
@@ -2309,7 +2333,7 @@ _run_fix_nonblockers_loop() {
             for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE}; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
-                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixnb${nb_attempt}_${f}"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixnb${nb_attempt}_$(basename "$f")"
                 fi
             done
         fi
@@ -2378,7 +2402,7 @@ _run_fix_drift_loop() {
             for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ARCHITECT_PLAN.md; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
-                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixdrift${drift_attempt}_${f}"
+                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixdrift${drift_attempt}_$(basename "$f")"
                 fi
             done
         fi

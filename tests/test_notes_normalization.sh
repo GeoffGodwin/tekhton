@@ -205,11 +205,11 @@ fi
 
 # The two blank lines before/after the fence should be collapsed to one each
 outside_blanks=$(grep -c '^[[:space:]]*$' "$TEST_FILE" || true)
-# Inside fence: 1, before fence: 1, after fence: 1 = 3 total
-if [[ "$outside_blanks" -le 3 ]]; then
+# Before "Some text.": 1, before fence: 1, inside fence: 1, after fence: 1 = 4 total
+if [[ "$outside_blanks" -le 4 ]]; then
     pass "4.2 Exterior blank-line runs collapsed ($outside_blanks total)"
 else
-    fail "4.2 Expected at most 3 blank lines total, got $outside_blanks"
+    fail "4.2 Expected at most 4 blank lines total, got $outside_blanks"
 fi
 
 # =============================================================================
