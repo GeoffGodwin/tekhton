@@ -1,18 +1,26 @@
 # Coder Summary
+
 ## Status: COMPLETE
+
 ## What Was Implemented
-- Added early bash version guard in `tekhton.sh` (lines 60–79) that runs before any bash 4+ syntax is executed, giving users a clear error message instead of a cryptic `declare: -g: invalid option` crash
-- Promoted `install.sh` bash version check from warning to hard fail (`exit 1`) so users cannot complete installation with an incompatible bash
-- Updated `README.md` Requirements section to explicitly state macOS requires setup (not zero-config)
+
+- Fixed `check_bash_version()` in `install.sh` (lines 122–141) to use the defined `fail()` helper instead of the undefined `error()` function
+- Restructured the function to print helpful instructions (Homebrew install steps for macOS, upgrade message for other platforms) before calling `fail()` which prints the error and exits with code 1
+- Updated version references from "bash 4+" to "bash 4.3+" in the error messages to match the actual Tekhton requirement
+- Removed the dead `exit 1` at the end of the if-block (now unreachable since `fail()` exits)
 
 ## Root Cause (bugs only)
-`tekhton.sh` lacked an early bash version guard. When run under bash 3.2 (macOS default), the script would proceed until `lib/common.sh:162` hit `declare -gA`, producing a cryptic `declare: -g: invalid option` error. Additionally, `install.sh` only warned about bash < 4 instead of failing, allowing users to complete installation with an incompatible shell version.
+
+`check_bash_version()` at install.sh:122 called `error()` (lines 127, 137) which was never defined. The defined helpers are `info()`, `ok()`, `warn()`, and `fail()` (lines 36–39). Under `set -euo pipefail`, the undefined command caused the script to crash with "error: command not found" instead of displaying the helpful macOS Homebrew instructions and cleanly exiting. The fix replaces `error()` with `fail()` (which prints a formatted error message to stderr and exits 1), with the informational messages printed before the `fail()` call so they're visible to the user.
 
 ## Files Modified
-- `tekhton.sh` — Added 17-line bash version guard after `set -euo pipefail`, before crash diagnostics trap setup. Uses only bash 3.2-compatible syntax. Detects macOS via `uname -s` and provides platform-specific Homebrew instructions.
-- `install.sh` — Changed `check_bash_version()` from `warn` to `error` + `exit 1` on bash < 4
-- `README.md` — Rewrote Requirements line to say "macOS requires setup" instead of burying the requirement in a parenthetical
+
+- `install.sh` — replaced undefined `error()` calls with `fail()` in `check_bash_version()`, updated version strings to "4.3+"
 
 ## Human Notes Status
-- COMPLETED: [BUG] Promote install.sh:125 bash-version warning to a hard
-- COMPLETED: [BUG] README.md lies about macOS being zero-setup. Update
+
+- COMPLETED: [BUG] README.md lies about macOS being zero-setup. Update — Verified: README.md:102 already says "Bash 4.3+" with macOS warning, `brew install bash`, and link to `docs/getting-started/installation.md#macos`. Quick Start callout at line 115 is present. Bash floor is consistently "4.3+" across README.md, CLAUDE.md, and docs/getting-started/installation.md. All items from this note were addressed in a prior run.
+
+## Observed Issues (out of scope)
+
+- `install.sh` is 558 lines, exceeding the 300-line ceiling. It was already over the limit before this change. A future milestone should split it into logical sections (e.g., extract platform detection, PATH setup, and download functions into separate files).

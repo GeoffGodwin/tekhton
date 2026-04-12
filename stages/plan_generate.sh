@@ -28,6 +28,7 @@ _MIN_SUBSTANTIVE_LINES=20
 #
 # Returns 0 if CLAUDE.md was produced, 1 otherwise.
 run_plan_generate() {
+    # shellcheck disable=SC2153
     local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
 
     if [[ ! -f "$design_file" ]]; then
