@@ -26,7 +26,7 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
       macOS — currently crashes with "declare: -g: invalid
       option" at lib/common.sh:162 instead of a useful error.
 
-- [ ] [BUG] Promote install.sh:125 bash-version warning to a hard
+- [~] [BUG] Promote install.sh:125 bash-version warning to a hard
       fail on macOS. Currently warns but continues, letting users
       land in a broken state. `fail` (not `warn`) when
       BASH_VERSINFO[0] < 4 and PLATFORM=macos.

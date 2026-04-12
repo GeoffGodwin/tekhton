@@ -79,7 +79,7 @@ run_specialist_reviews() {
     # Archive any previous specialist report
     if [ -f "${SPECIALIST_REPORT_FILE}" ]; then
         if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ]; then
-            mv "${SPECIALIST_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_prev_${SPECIALIST_REPORT_FILE}" 2>/dev/null || true
+            mv "${SPECIALIST_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_prev_$(basename "${SPECIALIST_REPORT_FILE}")" 2>/dev/null || true
         else
             rm -f "${SPECIALIST_REPORT_FILE}"
         fi
