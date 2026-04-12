@@ -20,15 +20,15 @@ contradict this directive.
 Task implemented: {{TASK}}
 
 ## Required Reading (in order)
-1. `CODER_SUMMARY.md` — what was changed and which files were modified
-2. Only the files listed under 'Files created or modified' in CODER_SUMMARY.md
+1. `{{CODER_SUMMARY_FILE}}` — what was changed and which files were modified
+2. Only the files listed under 'Files created or modified' in {{CODER_SUMMARY_FILE}}
 3. `{{SECURITY_ROLE_FILE}}` — your role and vulnerability reference (ONLY if you need to cross-reference a specific pattern)
 
-Do NOT read files not listed in CODER_SUMMARY.md.
+Do NOT read files not listed in {{CODER_SUMMARY_FILE}}.
 Do NOT read the role file cover-to-cover — only reference specific sections as needed.
 
 ## Fast Evaluation
-**If CODER_SUMMARY.md shows fewer than 3 files changed AND none involve authentication,
+**If {{CODER_SUMMARY_FILE}} shows fewer than 3 files changed AND none involve authentication,
 cryptography, user input handling, or network communication**, your scan should be fast:
 read each file, check for obvious issues (hardcoded secrets, injection points, missing
 validation), write your report. Target: 3-5 tool calls total for simple changes.
@@ -48,7 +48,7 @@ For each changed file, analyze for:
 8. **Access control** — IDOR, broken object-level authorization, missing rate limiting
 
 ## Required Output Format
-Write `SECURITY_REPORT.md` with this EXACT structure:
+Write `{{SECURITY_REPORT_FILE}}` with this EXACT structure:
 
 ```
 ## Summary
@@ -90,4 +90,4 @@ None
 CLEAN
 ```
 
-Write `SECURITY_REPORT.md`.
+Write `{{SECURITY_REPORT_FILE}}`.

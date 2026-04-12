@@ -117,8 +117,8 @@ _run_midrun_replan() {
     fi
 
     local design_content=""
-    if [[ -f "${PROJECT_DIR}/DESIGN.md" ]]; then
-        design_content=$(_safe_read_file "${PROJECT_DIR}/DESIGN.md" "DESIGN")
+    if [[ -f "${PROJECT_DIR}/${DESIGN_FILE}" ]]; then
+        design_content=$(_safe_read_file "${PROJECT_DIR}/${DESIGN_FILE}" "DESIGN")
     fi
 
     local claude_content=""
@@ -127,7 +127,7 @@ _run_midrun_replan() {
     fi
 
     if [[ -z "$design_content" ]] && [[ -z "$claude_content" ]]; then
-        error "Cannot replan: neither DESIGN.md nor CLAUDE.md found."
+        error "Cannot replan: neither ${DESIGN_FILE} nor CLAUDE.md found."
         return 1
     fi
 
@@ -138,12 +138,12 @@ _run_midrun_replan() {
 
     # Use ${PROJECT_DIR}/ prefix for consistency with lib/drift.sh and brownfield path
     export DRIFT_LOG_CONTENT=""
-    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE:-DRIFT_LOG.md}"
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE:-${DRIFT_LOG_FILE}}"
     if [[ -f "$drift_file" ]]; then
         DRIFT_LOG_CONTENT=$(_safe_read_file "$drift_file" "DRIFT_LOG")
     fi
     export ARCHITECTURE_LOG_CONTENT=""
-    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE:-ARCHITECTURE_LOG.md}"
+    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE:-${ARCHITECTURE_LOG_FILE}}"
     if [[ -f "$adl_file" ]]; then
         ARCHITECTURE_LOG_CONTENT=$(_safe_read_file "$adl_file" "ARCHITECTURE_LOG")
     fi
@@ -161,7 +161,7 @@ needing a replan. Here is the context:
 Task: ${TASK}
 Rationale for replan: ${rationale}
 
-Current DESIGN.md:
+Current ${DESIGN_FILE}:
 ${design_content}
 
 Current CLAUDE.md:

@@ -4,7 +4,7 @@ aloud, no "Here is…" or "I have enough context…" sentences. Start directly w
 will be discarded by the shell.**
 
 You are a software architect analyzing an existing codebase. Your job is to
-produce a comprehensive DESIGN.md that accurately documents the project as it
+produce a comprehensive {{DESIGN_FILE}} that accurately documents the project as it
 exists today — its architecture, patterns, conventions, and current state.
 
 You are documenting what EXISTS, not what should be built. Describe the current
@@ -90,7 +90,7 @@ discrepancy in the Technical Debt section.
 {{IF:PLAN_INCOMPLETE_SECTIONS}}
 ## IMPORTANT: Re-Synthesis Pass — Expand Thin Sections
 
-A previous synthesis pass produced a DESIGN.md with the following sections that
+A previous synthesis pass produced a {{DESIGN_FILE}} with the following sections that
 are too thin (fewer than 3 substantive lines). You MUST expand these sections
 with detailed, evidence-based content from the project index and sampled files.
 Do NOT simply repeat the previous output — add significantly more detail to
@@ -100,14 +100,14 @@ each flagged section.
 
 {{PLAN_INCOMPLETE_SECTIONS}}
 
-Generate the COMPLETE DESIGN.md again, but focus your effort on making the
+Generate the COMPLETE {{DESIGN_FILE}} again, but focus your effort on making the
 flagged sections substantially more detailed. All other sections should remain
 at least as detailed as before.
 {{ENDIF:PLAN_INCOMPLETE_SECTIONS}}
 
 ## Your Task
 
-Generate a complete DESIGN.md that documents this project's current state.
+Generate a complete {{DESIGN_FILE}} that documents this project's current state.
 Follow the template structure below, populating each section from codebase
 evidence. Every claim must be traceable to something in the project index,
 detection report, or sampled files.
@@ -183,7 +183,7 @@ For each major subsystem or module:
 
 ## Output Rules
 
-1. **Output DESIGN.md content directly to stdout.** Do NOT use any tools to
+1. **Output {{DESIGN_FILE}} content directly to stdout.** Do NOT use any tools to
    write files. No preamble, no explanation, no commentary — your very first
    line must be `# [ProjectName] — Design Document`. Any lines before the
    first `# ` heading are automatically stripped.

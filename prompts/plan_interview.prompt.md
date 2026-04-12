@@ -34,9 +34,9 @@ answer "(skipped — write a placeholder)" should have a brief TBD placeholder.
 
 ## Your Task
 
-Produce the complete DESIGN.md in markdown format. Follow these rules:
+Produce the complete {{DESIGN_FILE}} in markdown format. Follow these rules:
 
-1. **Output DESIGN.md content directly as text.** Do NOT use any tools to write
+1. **Output {{DESIGN_FILE}} content directly as text.** Do NOT use any tools to write
    files — the shell captures your text output and writes the file. No preamble,
    no explanation, no commentary. Your very first line must be the document title
    (e.g. `# Design Document`). Any lines before the first `# ` heading are

@@ -28,8 +28,8 @@ You have LSP tools via MCP: `find_symbol`, `find_referencing_symbols`,
 {{ENDIF:SERENA_ACTIVE}}
 
 ## Required Reading
-1. `CODER_SUMMARY.md` — what was built and what files were touched
-2. Only the files listed under 'Files created or modified' in CODER_SUMMARY.md
+1. `{{CODER_SUMMARY_FILE}}` — what was built and what files were touched
+2. Only the files listed under 'Files created or modified' in {{CODER_SUMMARY_FILE}}
 3. `{{PROJECT_RULES_FILE}}` — only if checking a specific API contract rule
 {{IF:DESIGN_FILE}}
 4. `{{DESIGN_FILE}}` — only sections about API design, endpoints, or data contracts

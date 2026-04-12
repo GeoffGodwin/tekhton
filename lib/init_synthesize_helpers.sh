@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck disable=SC2153
 # =============================================================================
 # init_synthesize_helpers.sh — Helpers for project synthesis (--plan-from-index)
 #
@@ -13,7 +14,7 @@ set -euo pipefail
 # Provides:
 #   _assemble_synthesis_context   — load project artifacts into context vars
 #   _compress_synthesis_context   — budget-driven context compression
-#   _check_synthesis_completeness — validate synthesized DESIGN.md depth
+#   _check_synthesis_completeness — validate synthesized ${DESIGN_FILE} depth
 #   _get_section_content_simple   — extract section content between headings
 #
 # Sources: lib/init_synthesize_ui.sh for UI menu functions
@@ -174,16 +175,16 @@ _compress_synthesis_context() {
     fi
 }
 
-# --- Completeness check for synthesized DESIGN.md ----------------------------
+# --- Completeness check for synthesized ${DESIGN_FILE} ----------------------------
 
-# _check_synthesis_completeness — Validates synthesized DESIGN.md and re-synthesizes
+# _check_synthesis_completeness — Validates synthesized ${DESIGN_FILE} and re-synthesizes
 # thin sections if needed.
 #
 # Args: $1 = project directory
 # Returns: 0 always (best-effort — does not block on incomplete sections)
 _check_synthesis_completeness() {
     local project_dir="$1"
-    local design_file="${project_dir}/DESIGN.md"
+    local design_file="${project_dir}/${DESIGN_FILE}"
 
     if [[ ! -f "$design_file" ]]; then
         return 0
@@ -194,7 +195,7 @@ _check_synthesis_completeness() {
     section_count=$(grep -c '^## ' "$design_file" || true)
 
     if [[ "$section_count" -lt 5 ]]; then
-        warn "DESIGN.md has only ${section_count} sections — running re-synthesis pass"
+        warn "${DESIGN_FILE} has only ${section_count} sections — running re-synthesis pass"
     fi
 
     # Check individual section depth regardless of total section count
@@ -226,7 +227,7 @@ _check_synthesis_completeness() {
         # Clear after use
         unset PLAN_INCOMPLETE_SECTIONS
     else
-        success "DESIGN.md has ${section_count} sections — completeness OK."
+        success "${DESIGN_FILE} has ${section_count} sections — completeness OK."
     fi
 
     return 0

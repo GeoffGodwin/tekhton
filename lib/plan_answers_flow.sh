@@ -69,9 +69,9 @@ _run_plan_with_answers_file() {
     echo
     show_draft_review || return 1
 
-    # Synthesize DESIGN.md
+    # Synthesize ${DESIGN_FILE}
     echo
-    log "Synthesizing DESIGN.md from imported answers..."
+    log "Synthesizing ${DESIGN_FILE} from imported answers..."
     echo
     run_plan_interview || return 1
 

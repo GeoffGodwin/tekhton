@@ -167,7 +167,7 @@ _emit_remediation_event() {
 }
 
 # --- _route_to_human_action --------------------------------------------------
-# Writes non-automatable issues to HUMAN_ACTION_REQUIRED.md.
+# Writes non-automatable issues to ${HUMAN_ACTION_FILE}.
 _route_to_human_action() {
     local category="$1"
     local safety="$2"

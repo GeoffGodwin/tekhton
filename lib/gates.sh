@@ -34,7 +34,7 @@ _gate_effective_timeout() {
 
 # _gate_check_timeout STAGE_LABEL GATE_START GATE_TIMEOUT
 # Checks if the overall gate timeout has been exceeded.
-# If exceeded, writes BUILD_ERRORS.md and returns 1. Otherwise returns 0.
+# If exceeded, writes "${BUILD_ERRORS_FILE}" and returns 1. Otherwise returns 0.
 _gate_check_timeout() {
     local stage_label="$1"
     local gate_start="$2"
@@ -47,7 +47,7 @@ _gate_check_timeout() {
     if [[ "$elapsed" -ge "$gate_timeout" ]]; then
         warn "Build gate TIMED OUT after ${gate_timeout}s (${stage_label})."
         warn "This is a safety timeout — the build gate took too long."
-        cat > BUILD_ERRORS.md << EOF
+        cat > "${BUILD_ERRORS_FILE}" << EOF
 # Build Errors — $(date '+%Y-%m-%d %H:%M:%S')
 ## Stage
 ${stage_label}
@@ -83,7 +83,7 @@ _gate_try_remediation() {
 # Catches broken builds before wasting reviewer/tester turns on bad code
 #
 # Usage:  run_build_gate "post-coder"
-# Returns: 0 on pass, 1 on failure (writes BUILD_ERRORS.md on failure)
+# Returns: 0 on pass, 1 on failure (writes "${BUILD_ERRORS_FILE}" on failure)
 run_build_gate() {
     local stage_label="$1"  # "post-coder" or "post-jr-coder"
     local gate_timeout="${BUILD_GATE_TIMEOUT:-600}"
@@ -91,8 +91,8 @@ run_build_gate() {
     gate_start=$(date +%s)
 
     # Guarantee a clean slate — remove stale artifacts from previous runs
-    rm -f BUILD_RAW_ERRORS.txt
-    rm -f BUILD_ERRORS.md
+    rm -f "${BUILD_RAW_ERRORS_FILE}"
+    rm -f "${BUILD_ERRORS_FILE}"
 
     # Reset remediation state for this gate invocation (M54)
     if command -v reset_remediation_state &>/dev/null; then
@@ -155,8 +155,8 @@ run_build_gate() {
                 warn "Build gate FAILED (${stage_label}) — dependency constraint violations:"
                 echo "$constraint_output"
 
-                # Append or create BUILD_ERRORS.md
-                cat >> BUILD_ERRORS.md << EOF
+                # Append or create "${BUILD_ERRORS_FILE}"
+                cat >> "${BUILD_ERRORS_FILE}" << EOF
 
 ## Dependency Constraint Violations
 \`\`\`
@@ -190,17 +190,17 @@ EOF
     if command -v run_ui_validation &>/dev/null; then
         if ! run_ui_validation "$stage_label"; then
             warn "Build gate FAILED (${stage_label}) — UI validation detected rendering issues."
-            # Append UI validation report to BUILD_ERRORS.md so the build-fix
+            # Append UI validation report to "${BUILD_ERRORS_FILE}" so the build-fix
             # agent has full context about rendering failures.
-            if [[ -f "UI_VALIDATION_REPORT.md" ]]; then
+            if [[ -f "${UI_VALIDATION_REPORT_FILE}" ]]; then
                 {
                     echo ""
                     echo "## UI Validation Failures"
                     echo "The UI validation gate detected rendering issues."
                     echo "Fix these before the build gate can pass."
                     echo ""
-                    cat "UI_VALIDATION_REPORT.md"
-                } >> BUILD_ERRORS.md
+                    cat "${UI_VALIDATION_REPORT_FILE}"
+                } >> "${BUILD_ERRORS_FILE}"
             fi
             _phase_end "build_gate"
             return 1
@@ -209,8 +209,8 @@ EOF
 
     _phase_end "build_gate"
     log "Build gate PASSED (${stage_label})"
-    [ -f BUILD_ERRORS.md ] && rm BUILD_ERRORS.md
-    [ -f UI_TEST_ERRORS.md ] && rm UI_TEST_ERRORS.md
+    [ -f "${BUILD_ERRORS_FILE}" ] && rm "${BUILD_ERRORS_FILE}"
+    [ -f "${UI_TEST_ERRORS_FILE}" ] && rm "${UI_TEST_ERRORS_FILE}"
     return 0
 }
 

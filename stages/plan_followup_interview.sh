@@ -6,7 +6,7 @@ set -euo pipefail
 # Re-interviews the user for incomplete sections only. Shows existing section
 # content before each question so the user can see what was already written
 # and add what's missing. Calls Claude in batch mode to produce an updated
-# complete DESIGN.md. The shell writes the file.
+# complete ${DESIGN_FILE}. The shell writes the file.
 #
 # Updates the answer file via lib/plan_answers.sh so follow-up answers persist.
 #
@@ -27,12 +27,12 @@ set -euo pipefail
 # Reads PLAN_INCOMPLETE_SECTIONS and asks the user about only those sections.
 # Shows existing section content before each question so the user can see
 # what was already written and add what's missing.
-# Calls Claude in batch mode to produce an updated complete DESIGN.md.
+# Calls Claude in batch mode to produce an updated complete ${DESIGN_FILE}.
 # The shell writes the file.
 #
-# Returns 0 if DESIGN.md was updated, 1 otherwise.
+# Returns 0 if ${DESIGN_FILE} was updated, 1 otherwise.
 run_plan_followup_interview() {
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     local log_dir="${PROJECT_DIR}/.claude/logs"
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
@@ -152,7 +152,7 @@ run_plan_followup_interview() {
         echo
     done
 
-    log "Updating DESIGN.md with follow-up answers..."
+    log "Updating ${DESIGN_FILE} with follow-up answers..."
     echo
 
     # Set template variables for prompt rendering
@@ -196,19 +196,19 @@ run_plan_followup_interview() {
     {
         echo "=== Session End ==="
         echo "Exit code: ${batch_exit}"
-        echo "DESIGN.md: ${design_status}"
+        echo "${DESIGN_FILE}: ${design_status}"
         echo "Date: $(date)"
     } >> "$log_file"
 
     echo
 
     if [[ -n "$updated_content" ]]; then
-        success "DESIGN.md updated (${design_status})."
+        success "${DESIGN_FILE} updated (${design_status})."
         log "Log saved: ${log_file}"
         exec 3<&-
         return 0
     else
-        warn "Update produced no output — DESIGN.md was not changed."
+        warn "Update produced no output — ${DESIGN_FILE} was not changed."
         [[ "$batch_exit" -ne 0 ]] && warn "Claude exited with code ${batch_exit}."
         log "Log saved: ${log_file}"
         exec 3<&-

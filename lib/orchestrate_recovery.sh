@@ -167,7 +167,7 @@ _classify_failure() {
     fi
 
     # Build gate failure — check if rework already happened
-    if [[ -f "BUILD_ERRORS.md" ]] && [[ -s "BUILD_ERRORS.md" ]]; then
+    if [[ -f "${BUILD_ERRORS_FILE}" ]] && [[ -s "${BUILD_ERRORS_FILE}" ]]; then
         echo "retry_coder_build"
         return
     fi

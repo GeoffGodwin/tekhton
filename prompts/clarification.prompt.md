@@ -20,4 +20,4 @@ When incorporating these answers:
 1. Treat each answer as a definitive design decision
 2. If an answer contradicts a prior assumption, follow the answer
 3. If an answer says "skip", proceed with your best judgment on that question
-4. Note in CODER_SUMMARY.md which clarifications you incorporated
+4. Note in {{CODER_SUMMARY_FILE}} which clarifications you incorporated

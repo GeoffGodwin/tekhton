@@ -52,7 +52,7 @@ _match_pattern() {
 #   LAST_OUTPUT_FILE - Path to last agent output lines (optional, "" to skip)
 #   FILE_CHANGES     - Count of files changed (optional, default 0)
 #   TURNS            - Turn count from agent (optional, default 0)
-#   HAS_SUMMARY      - Whether CODER_SUMMARY.md was produced (0=no, 1=yes, default 0)
+#   HAS_SUMMARY      - Whether ${CODER_SUMMARY_FILE} was produced (0=no, 1=yes, default 0)
 
 classify_error() {
     local exit_code="${1:?classify_error requires exit_code}"

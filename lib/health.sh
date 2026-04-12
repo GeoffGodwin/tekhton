@@ -8,7 +8,7 @@ set -euo pipefail
 # Optional: detect_test_frameworks.sh, detect_ci.sh, detect_doc_quality.sh
 #
 # Provides:
-#   assess_project_health     — Full health assessment, writes HEALTH_REPORT.md
+#   assess_project_health     — Full health assessment, writes ${HEALTH_REPORT_FILE}
 #                                and HEALTH_BASELINE.json
 #   reassess_project_health   — Re-assessment with delta from baseline
 #   get_health_belt           — Maps score 0-100 to belt label
@@ -109,7 +109,7 @@ _run_dimension_checks() {
 
 # assess_project_health PROJECT_DIR
 # Runs all dimension checks and produces composite score.
-# Writes HEALTH_REPORT.md and HEALTH_BASELINE.json.
+# Writes ${HEALTH_REPORT_FILE} and HEALTH_BASELINE.json.
 # Returns: composite score on stdout.
 assess_project_health() {
     local proj_dir="${1:-${PROJECT_DIR:-.}}"
@@ -162,7 +162,7 @@ assess_project_health() {
 JSONEOF
     mv "$tmpfile" "$baseline_file"
 
-    # Write HEALTH_REPORT.md
+    # Write ${HEALTH_REPORT_FILE}
     _write_health_report "$proj_dir" "$composite" "$belt" "$subtitle" \
         "$test_score" "$quality_score" "$dep_score" "$doc_score" "$hygiene_score" \
         "$test_detail" "$quality_detail" "$dep_detail" "$doc_detail" "$hygiene_detail" \
@@ -270,7 +270,7 @@ _write_health_report() {
     shift 9
     local d_docs="${1:-}" d_hygiene="${2:-}"
 
-    local report_file="${proj_dir}/${HEALTH_REPORT_FILE:-HEALTH_REPORT.md}"
+    local report_file="${proj_dir}/${HEALTH_REPORT_FILE:-${HEALTH_REPORT_FILE}}"
     local show_belt="${HEALTH_SHOW_BELT:-true}"
 
     # Extract source_files from test_detail JSON for greenfield detection

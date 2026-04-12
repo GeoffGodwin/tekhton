@@ -29,7 +29,7 @@ set -euo pipefail
 
 # run_stage_intake
 # Pre-stage gate that evaluates task/milestone clarity.
-# Produces INTAKE_REPORT.md with verdict and confidence score.
+# Produces ${INTAKE_REPORT_FILE} with verdict and confidence score.
 run_stage_intake() {
     # Skip if disabled
     if [[ "${INTAKE_AGENT_ENABLED:-true}" != "true" ]]; then
@@ -49,7 +49,7 @@ run_stage_intake() {
     fi
 
     # Use cached intake results from dry-run if available (Milestone 23)
-    if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
+    if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}" ]]; then
         header "Pre-stage 1 — Task Intake (cached)"
         log "Intake: using cached results from dry-run."
         local _cached_verdict
@@ -131,7 +131,7 @@ run_stage_intake() {
 
     # Inject related human notes context (M25)
     export NOTES_CONTEXT_BLOCK=""
-    if [[ -f "HUMAN_NOTES.md" ]] && command -v extract_human_notes &>/dev/null; then
+    if [[ -f "${HUMAN_NOTES_FILE}" ]] && command -v extract_human_notes &>/dev/null; then
         local all_notes
         all_notes=$(NOTES_FILTER="" extract_human_notes 2>/dev/null || true)
         if [[ -n "$all_notes" ]]; then

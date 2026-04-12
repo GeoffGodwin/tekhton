@@ -39,11 +39,11 @@ _print_action_items() {
     local action_items=()
 
     # Check for tester bugs
-    if [[ -f "TESTER_REPORT.md" ]] && \
-       awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' TESTER_REPORT.md 2>/dev/null; then
+    if [[ -f "${TESTER_REPORT_FILE}" ]] && \
+       awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' "${TESTER_REPORT_FILE}" 2>/dev/null; then
         local bug_count
-        bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' TESTER_REPORT.md)
-        action_items+=("$(echo -e "${YELLOW}  ⚠ TESTER_REPORT.md — ${bug_count} bug(s) found (see ## Bugs Found)${NC}")")
+        bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' "${TESTER_REPORT_FILE}")
+        action_items+=("$(echo -e "${YELLOW}  ⚠ ${TESTER_REPORT_FILE} — ${bug_count} bug(s) found (see ## Bugs Found)${NC}")")
     fi
 
     # Check for test failures from final checks
@@ -92,7 +92,7 @@ _print_action_items() {
     fi
 
     # Check for unchecked human notes (M25) with progressive severity
-    if command -v get_notes_summary &>/dev/null && [[ -f "HUMAN_NOTES.md" ]]; then
+    if command -v get_notes_summary &>/dev/null && [[ -f "${HUMAN_NOTES_FILE}" ]]; then
         local notes_summary
         notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         local notes_unchecked
@@ -106,14 +106,14 @@ _print_action_items() {
                 "${HUMAN_NOTES_CRITICAL_THRESHOLD:-20}")
             case "$notes_severity" in
                 critical)
-                    action_items+=("$(echo -e "${RED}  ✗ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining [CRITICAL]${NC}")")
+                    action_items+=("$(echo -e "${RED}  ✗ ${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining [CRITICAL]${NC}")")
                     action_items+=("$(echo -e "${RED}    → Suggested: tekhton --human --complete${NC}")")
                     ;;
                 warning)
-                    action_items+=("$(echo -e "${YELLOW}  ⚠ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
+                    action_items+=("$(echo -e "${YELLOW}  ⚠ ${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining${NC}")")
                     ;;
                 *)
-                    action_items+=("$(echo -e "${CYAN}  ℹ HUMAN_NOTES.md — ${notes_unchecked} item(s) remaining${NC}")")
+                    action_items+=("$(echo -e "${CYAN}  ℹ ${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining${NC}")")
                     ;;
             esac
             # Shared tip for warning + normal severity (critical has its own)

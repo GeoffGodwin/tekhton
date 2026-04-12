@@ -7,9 +7,9 @@ You are a technical writer expanding a design document to production depth.
 
 ## Project Type: {{PROJECT_TYPE}}
 
-## Current DESIGN.md
+## Current {{DESIGN_FILE}}
 
-Here is the DESIGN.md as it stands. Sections that are complete, well-specified,
+Here is the {{DESIGN_FILE}} as it stands. Sections that are complete, well-specified,
 and structurally deep must be reproduced exactly as-is in your output.
 
 ---
@@ -35,9 +35,9 @@ The developer provided additional detail for the flagged sections:
 
 ## Your Task
 
-Produce the updated, complete DESIGN.md in markdown format. Follow these rules:
+Produce the updated, complete {{DESIGN_FILE}} in markdown format. Follow these rules:
 
-1. **Output only the DESIGN.md content.** No preamble, no explanation, no
+1. **Output only the {{DESIGN_FILE}} content.** No preamble, no explanation, no
    commentary. Your very first line must be the document title. Any lines
    before the first `# ` heading are automatically stripped.
 

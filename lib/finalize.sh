@@ -111,7 +111,7 @@ _hook_cleanup_resolved() {
 #    in CLAIMED_NOTE_IDS.
 _hook_resolve_notes() {
     local exit_code="$1"
-    if [[ ! -f "HUMAN_NOTES.md" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
         return 0
     fi
 
@@ -126,15 +126,15 @@ _hook_resolve_notes() {
     # Safety net: resolve orphaned [~] notes (M33 Bug 6, M42 fix).
     # On success → mark [x]; on failure → reset to [ ] for next run.
     local orphan_count
-    orphan_count=$(grep -c '^- \[~\]' HUMAN_NOTES.md 2>/dev/null || echo "0")
+    orphan_count=$(grep -c '^- \[~\]' "${HUMAN_NOTES_FILE}" 2>/dev/null || echo "0")
     orphan_count=$(echo "$orphan_count" | tr -d '[:space:]')
     if [[ "$orphan_count" -gt 0 ]]; then
         if [[ "$exit_code" -eq 0 ]]; then
             warn "Found ${orphan_count} orphaned in-progress note(s) — resolving as complete."
-            sed -i 's/^- \[~\]/- [x]/' HUMAN_NOTES.md
+            sed -i 's/^- \[~\]/- [x]/' "${HUMAN_NOTES_FILE}"
         else
             warn "Found ${orphan_count} orphaned in-progress note(s) — resetting for next run."
-            sed -i 's/^- \[~\]/- [ ]/' HUMAN_NOTES.md
+            sed -i 's/^- \[~\]/- [ ]/' "${HUMAN_NOTES_FILE}"
         fi
     fi
 }

@@ -42,10 +42,10 @@ _rm_extract_keywords() {
 }
 
 # _rm_extract_decisions
-# Best-effort extraction of decisions from CODER_SUMMARY.md.
+# Best-effort extraction of decisions from ${CODER_SUMMARY_FILE}.
 # Returns JSON array string.
 _rm_extract_decisions() {
-    local summary_file="${PROJECT_DIR:-.}/CODER_SUMMARY.md"
+    local summary_file="${PROJECT_DIR:-.}/${CODER_SUMMARY_FILE}"
     local arr="[]"
     [[ ! -f "$summary_file" ]] && printf '%s' "$arr" && return
 
@@ -81,10 +81,10 @@ _rm_extract_decisions() {
 }
 
 # _rm_extract_rework_reasons
-# Best-effort extraction from REVIEWER_REPORT.md.
+# Best-effort extraction from ${REVIEWER_REPORT_FILE}.
 # Returns JSON array string.
 _rm_extract_rework_reasons() {
-    local report_file="${PROJECT_DIR:-.}/REVIEWER_REPORT.md"
+    local report_file="${PROJECT_DIR:-.}/${REVIEWER_REPORT_FILE}"
     local arr="[]"
     [[ ! -f "$report_file" ]] && printf '%s' "$arr" && return
 
@@ -116,7 +116,7 @@ _rm_extract_rework_reasons() {
 # _rm_extract_test_outcomes
 # Returns JSON object with passed/failed/skipped counts.
 _rm_extract_test_outcomes() {
-    local tester_file="${PROJECT_DIR:-.}/TESTER_REPORT.md"
+    local tester_file="${PROJECT_DIR:-.}/${TESTER_REPORT_FILE}"
     local p=0 f=0 s=0
 
     if [[ -f "$tester_file" ]]; then

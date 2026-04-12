@@ -85,7 +85,7 @@ ${PIPELINE_ORDER:-standard}
 ${TESTER_MODE:-verify_passing}
 
 ## Files Present
-$(for f in CODER_SUMMARY.md REVIEWER_REPORT.md TESTER_REPORT.md JR_CODER_SUMMARY.md PREFLIGHT_ERRORS.md TESTER_PREFLIGHT.md; do
+$(for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${TESTER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${PREFLIGHT_ERRORS_FILE} ${TDD_PREFLIGHT_FILE}; do
     [ -f "$f" ] && echo "- $f ($(count_lines < "$f") lines)" || echo "- $f (missing)"
 done)
 

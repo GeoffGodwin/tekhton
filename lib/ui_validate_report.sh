@@ -13,10 +13,10 @@ set -euo pipefail
 
 # generate_ui_validation_report RESULTS...
 # Reads JSON output lines from ui_smoke_test.js and produces
-# UI_VALIDATION_REPORT.md with structured results.
+# ${UI_VALIDATION_REPORT_FILE} with structured results.
 generate_ui_validation_report() {
     local results=("$@")
-    local report_file="UI_VALIDATION_REPORT.md"
+    local report_file="${UI_VALIDATION_REPORT_FILE}"
     local pass_count=0
     local fail_count=0
     local warn_count=0

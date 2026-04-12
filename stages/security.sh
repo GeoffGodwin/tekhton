@@ -59,8 +59,8 @@ run_stage_security() {
         fi
 
         export SECURITY_REPORT_CONTENT=""
-        if [[ -f "${SECURITY_REPORT_FILE:-SECURITY_REPORT.md}" ]]; then
-            SECURITY_REPORT_CONTENT=$(cat "${SECURITY_REPORT_FILE:-SECURITY_REPORT.md}")
+        if [[ -f "${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE}}" ]]; then
+            SECURITY_REPORT_CONTENT=$(cat "${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE}}")
         fi
 
         SECURITY_SCAN_PROMPT=$(render_prompt "security_scan")
@@ -82,9 +82,9 @@ run_stage_security() {
         success "Security scan finished."
 
         # Parse findings
-        local report_file="${SECURITY_REPORT_FILE:-SECURITY_REPORT.md}"
+        local report_file="${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE}}"
         if ! _parse_security_findings "$report_file"; then
-            log "[security] No structured findings in SECURITY_REPORT.md. Proceeding."
+            log "[security] No structured findings in ${SECURITY_REPORT_FILE}. Proceeding."
             return 0
         fi
 
@@ -156,7 +156,7 @@ run_stage_security() {
 
     if [[ "$security_rework_cycle" -gt 0 ]]; then
         SECURITY_FIXES_BLOCK="Security rework applied ${security_rework_cycle} cycle(s). "
-        SECURITY_FIXES_BLOCK+="Review SECURITY_REPORT.md for details of findings and fixes."
+        SECURITY_FIXES_BLOCK+="Review ${SECURITY_REPORT_FILE} for details of findings and fixes."
     fi
 
     export SECURITY_REWORK_CYCLES_DONE="$security_rework_cycle"

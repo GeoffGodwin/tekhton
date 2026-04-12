@@ -11,13 +11,13 @@ set -euo pipefail
 # =============================================================================
 
 # --- _gate_write_analyze_errors -----------------------------------------------
-# Writes analyze errors to BUILD_ERRORS.md and BUILD_RAW_ERRORS.txt.
+# Writes analyze errors to "${BUILD_ERRORS_FILE}" and "${BUILD_RAW_ERRORS_FILE}".
 _gate_write_analyze_errors() {
     local analyze_errors="$1"
     local analyze_output="$2"
     local stage_label="$3"
 
-    printf '%s\n' "$analyze_errors" > BUILD_RAW_ERRORS.txt
+    printf '%s\n' "$analyze_errors" > "${BUILD_RAW_ERRORS_FILE}"
 
     {
         if command -v annotate_build_errors &>/dev/null; then
@@ -37,8 +37,8 @@ _gate_write_analyze_errors() {
         echo '```'
         echo "${analyze_output}"
         echo '```'
-    } > BUILD_ERRORS.md
-    log "Build errors written to BUILD_ERRORS.md"
+    } > "${BUILD_ERRORS_FILE}"
+    log "Build errors written to ${BUILD_ERRORS_FILE}"
 }
 
 # --- _gate_run_analyze --------------------------------------------------------
@@ -108,20 +108,20 @@ _gate_phase_analyze() {
 }
 
 # --- _gate_write_compile_errors -----------------------------------------------
-# Writes compile errors to BUILD_ERRORS.md.
+# Writes compile errors to "${BUILD_ERRORS_FILE}".
 _gate_write_compile_errors() {
     local compile_errors="$1"
     local stage_label="$2"
 
-    printf '%s\n' "$compile_errors" >> BUILD_RAW_ERRORS.txt
+    printf '%s\n' "$compile_errors" >> "${BUILD_RAW_ERRORS_FILE}"
 
-    if [[ ! -f BUILD_ERRORS.md ]]; then
+    if [[ ! -f "${BUILD_ERRORS_FILE}" ]]; then
         {
             echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
             echo "## Stage"
             echo "${stage_label}"
             echo ""
-        } >> BUILD_ERRORS.md
+        } >> "${BUILD_ERRORS_FILE}"
     fi
     {
         if command -v classify_build_errors_all &>/dev/null; then
@@ -137,7 +137,7 @@ _gate_write_compile_errors() {
         echo '```'
         echo "${compile_errors}"
         echo '```'
-    } >> BUILD_ERRORS.md
+    } >> "${BUILD_ERRORS_FILE}"
 }
 
 # --- _gate_run_compile --------------------------------------------------------

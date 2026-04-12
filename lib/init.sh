@@ -66,6 +66,7 @@ run_smart_init() {
     # Create directories
     mkdir -p "${conf_dir}/agents"
     mkdir -p "${conf_dir}/logs/archive"
+    mkdir -p "${project_dir}/${TEKHTON_DIR:-.tekhton}"
 
     # Phase 1.5: AI artifact detection
     if [[ "${ARTIFACT_DETECTION_ENABLED:-true}" == "true" ]]; then

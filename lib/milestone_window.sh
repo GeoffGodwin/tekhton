@@ -275,7 +275,7 @@ This is a milestone-sized task. Before writing any code:
 2. Check the Seeds forward annotations for architectural decisions
    that must be made now to avoid rework later
 3. Note any Watch for annotations and design those extension points into your implementation
-4. Document your architectural decisions in CODER_SUMMARY.md under Architecture Decisions
+4. Document your architectural decisions in ${CODER_SUMMARY_FILE} under Architecture Decisions
 WINDOW_HEADER
 
     MILESTONE_BLOCK="${_header}

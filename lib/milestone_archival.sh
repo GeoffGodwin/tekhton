@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# milestone_archival.sh — Milestone archival (CLAUDE.md → MILESTONE_ARCHIVE.md)
+# milestone_archival.sh — Milestone archival (CLAUDE.md → ${MILESTONE_ARCHIVE_FILE})
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: log(), warn(), success() from common.sh
@@ -23,14 +23,14 @@ set -euo pipefail
 source "${TEKHTON_HOME:-.}/lib/milestone_archival_helpers.sh"
 
 # archive_completed_milestone MILESTONE_NUM CLAUDE_MD_PATH
-# Moves a completed milestone definition to MILESTONE_ARCHIVE.md.
+# Moves a completed milestone definition to ${MILESTONE_ARCHIVE_FILE}.
 # In DAG mode: reads the milestone file directly via dag_get_file().
 # In inline mode: extracts from CLAUDE.md (original behavior).
 # Returns 0 on success, 1 if not found, already archived, or not done.
 archive_completed_milestone() {
     local num="$1"
     local claude_md="${2:-CLAUDE.md}"
-    local archive_file="${MILESTONE_ARCHIVE_FILE:-MILESTONE_ARCHIVE.md}"
+    local archive_file="${MILESTONE_ARCHIVE_FILE:-${MILESTONE_ARCHIVE_FILE}}"
 
     if ! is_milestone_done "$num" "$claude_md"; then
         return 1

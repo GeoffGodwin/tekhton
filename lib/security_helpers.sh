@@ -21,7 +21,7 @@ set -euo pipefail
 # _security_is_docs_only — Check if all changed files are non-code (docs, config,
 # assets). Returns 0 if security scan can be skipped, 1 otherwise.
 _security_is_docs_only() {
-    local summary_file="CODER_SUMMARY.md"
+    local summary_file="${CODER_SUMMARY_FILE}"
 
     if [[ ! -f "$summary_file" ]]; then
         return 1  # No summary = can't determine, scan anyway
@@ -53,11 +53,11 @@ _security_is_docs_only() {
 
 # --- Finding parser ----------------------------------------------------------
 
-# _parse_security_findings — Parse SECURITY_REPORT.md and extract findings.
+# _parse_security_findings — Parse ${SECURITY_REPORT_FILE} and extract findings.
 # Sets arrays: _SEC_SEVERITIES, _SEC_FIXABLES, _SEC_DESCRIPTIONS
 # Returns: 0 if findings parsed, 1 if no report or no findings
 _parse_security_findings() {
-    local report_file="${1:-SECURITY_REPORT.md}"
+    local report_file="${1:-${SECURITY_REPORT_FILE}}"
     _SEC_SEVERITIES=()
     _SEC_FIXABLES=()
     _SEC_DESCRIPTIONS=()
@@ -155,7 +155,7 @@ _build_unfixable_block() {
     echo "$result"
 }
 
-# _build_notes_block — Build a block of non-blocking findings for SECURITY_NOTES.md.
+# _build_notes_block — Build a block of non-blocking findings for ${SECURITY_NOTES_FILE}.
 _build_notes_block() {
     local block_severity="${SECURITY_BLOCK_SEVERITY:-HIGH}"
     local result=""
@@ -183,7 +183,7 @@ _handle_unfixable_findings() {
 
     case "$policy" in
         escalate)
-            log "[security] Escalating unfixable findings to HUMAN_ACTION_REQUIRED.md"
+            log "[security] Escalating unfixable findings to ${HUMAN_ACTION_FILE}"
             if command -v append_human_action &>/dev/null; then
                 append_human_action "security" "Unfixable security findings require human review:
 ${unfixable_block}"
@@ -192,11 +192,11 @@ ${unfixable_block}"
             ;;
         halt)
             error "[security] Pipeline halted — unfixable CRITICAL/HIGH security findings detected."
-            error "[security] Review SECURITY_REPORT.md and resolve manually."
+            error "[security] Review ${SECURITY_REPORT_FILE} and resolve manually."
             write_pipeline_state "security" "security_halt" \
                 "${MILESTONE_MODE:+--milestone }--start-at security" \
                 "$TASK" \
-                "Unfixable security findings with halt policy. Review SECURITY_REPORT.md."
+                "Unfixable security findings with halt policy. Review ${SECURITY_REPORT_FILE}."
             return 1
             ;;
         waiver)
@@ -214,12 +214,12 @@ ${unfixable_block}"
     esac
 }
 
-# --- Write SECURITY_NOTES.md ------------------------------------------------
+# --- Write ${SECURITY_NOTES_FILE} ------------------------------------------------
 
 _write_security_notes() {
     local notes_block="$1"
     local unfixable_block="$2"
-    local notes_file="${SECURITY_NOTES_FILE:-SECURITY_NOTES.md}"
+    local notes_file="${SECURITY_NOTES_FILE:-${SECURITY_NOTES_FILE}}"
 
     {
         echo "# Security Notes"

@@ -1,7 +1,7 @@
 # Milestone 72: Tidy Project Root — Move Tekhton Files into .tekhton/
 <!-- milestone-meta
 id: "72"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

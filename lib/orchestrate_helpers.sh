@@ -81,8 +81,8 @@ _try_preflight_fix() {
 
     # Gather changed files for context
     local _pf_changed_files=""
-    if [[ -f "CODER_SUMMARY.md" ]]; then
-        _pf_changed_files=$(sed -n '/^## Files/,/^## /p' CODER_SUMMARY.md | grep -E '^\s*[-*]' | head -30 || true)
+    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
+        _pf_changed_files=$(sed -n '/^## Files/,/^## /p' "${CODER_SUMMARY_FILE}" | grep -E '^\s*[-*]' | head -30 || true)
     fi
     if [[ -z "$_pf_changed_files" ]]; then
         _pf_changed_files=$(git diff --name-only HEAD 2>/dev/null | head -30 || true)

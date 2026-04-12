@@ -172,11 +172,11 @@ build_continuation_context() {
     local stage_label=""
     case "$stage" in
         coder)
-            summary_file="CODER_SUMMARY.md"
+            summary_file="${CODER_SUMMARY_FILE}"
             stage_label="Coder"
             ;;
         tester)
-            summary_file="TESTER_REPORT.md"
+            summary_file="${TESTER_REPORT_FILE}"
             stage_label="Tester"
             ;;
         *)
@@ -231,25 +231,25 @@ ${git_diff_stat}
 ### Instructions"
         if [[ "$_summary_state" != "exists" ]]; then
             context="${context}
-1. CODER_SUMMARY.md is ${_summary_state} — recreate it NOW with actual content from your work so far before doing anything else
+1. ${CODER_SUMMARY_FILE} is ${_summary_state} — recreate it NOW with actual content from your work so far before doing anything else
 2. Read the modified files listed above to understand current state
 3. Continue implementing only the REMAINING items
-4. Update CODER_SUMMARY.md with your additional progress
+4. Update ${CODER_SUMMARY_FILE} with your additional progress
 5. Set Status to COMPLETE when all work is done, or IN PROGRESS if more remains"
         else
             context="${context}
-1. Read CODER_SUMMARY.md first to see what was already implemented
+1. Read ${CODER_SUMMARY_FILE} first to see what was already implemented
 2. Read the modified files listed above to understand current state
 3. Continue implementing only the REMAINING items
-4. Update CODER_SUMMARY.md with your additional progress
+4. Update ${CODER_SUMMARY_FILE} with your additional progress
 5. Set Status to COMPLETE when all work is done, or IN PROGRESS if more remains"
         fi
     elif [[ "$stage" = "tester" ]]; then
         context="${context}
 ### Instructions
-1. Read TESTER_REPORT.md first to see which tests are already written
+1. Read ${TESTER_REPORT_FILE} first to see which tests are already written
 2. Continue writing the remaining unchecked test items
-3. Update TESTER_REPORT.md as you complete each test
+3. Update ${TESTER_REPORT_FILE} as you complete each test
 4. Run the test suite to verify all tests pass"
     fi
 
@@ -295,8 +295,8 @@ is_substantive_work() {
     fi
 
     # Check summary file lines
-    if [[ -f "CODER_SUMMARY.md" ]]; then
-        summary_lines=$(wc -l < "CODER_SUMMARY.md" 2>/dev/null | tr -d '[:space:]')
+    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
+        summary_lines=$(wc -l < "${CODER_SUMMARY_FILE}" 2>/dev/null | tr -d '[:space:]')
     fi
 
     # Check git diff size (tracked changes)

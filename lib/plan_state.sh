@@ -48,7 +48,7 @@ ${template_file}
 $([ -f "$_answer_file" ] && echo "${_answer_file}" || echo "(none)")
 
 ## Files Present
-$([ -f "${PROJECT_DIR}/DESIGN.md" ] && echo "- DESIGN.md ($(count_lines < "${PROJECT_DIR}/DESIGN.md") lines)" || echo "- DESIGN.md (missing)")
+$([ -f "${PROJECT_DIR}/${DESIGN_FILE}" ] && echo "- ${DESIGN_FILE} ($(count_lines < "${PROJECT_DIR}/${DESIGN_FILE}") lines)" || echo "- ${DESIGN_FILE} (missing)")
 $([ -f "${PROJECT_DIR}/CLAUDE.md" ] && echo "- CLAUDE.md ($(count_lines < "${PROJECT_DIR}/CLAUDE.md") lines)" || echo "- CLAUDE.md (missing)")
 $([ -f "$_answer_file" ] && echo "- plan_answers.yaml (present)" || echo "- plan_answers.yaml (missing)")
 EOF
@@ -95,12 +95,12 @@ _offer_plan_resume() {
     PLAN_RESUME_STAGE=""
 
     if ! read_plan_state; then
-        # No state file — also check for existing DESIGN.md without state
-        if [[ -f "${PROJECT_DIR}/DESIGN.md" ]]; then
+        # No state file — also check for existing ${DESIGN_FILE} without state
+        if [[ -f "${PROJECT_DIR}/${DESIGN_FILE}" ]]; then
             echo
-            warn "Found existing DESIGN.md but no saved planning state."
-            log "  [r] Resume from completeness check (use existing DESIGN.md)"
-            log "  [f] Start fresh (existing DESIGN.md will be overwritten)"
+            warn "Found existing ${DESIGN_FILE} but no saved planning state."
+            log "  [r] Resume from completeness check (use existing ${DESIGN_FILE})"
+            log "  [f] Start fresh (existing ${DESIGN_FILE} will be overwritten)"
             log "  [n] Abort"
             printf "  Select [r/f/n]: "
 

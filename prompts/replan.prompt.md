@@ -1,5 +1,5 @@
 You are a project planning agent performing a **brownfield replan** — updating an
-existing project's DESIGN.md and CLAUDE.md based on accumulated drift, completed
+existing project's {{DESIGN_FILE}} and CLAUDE.md based on accumulated drift, completed
 milestones, and codebase evolution. This is a **delta-based** update, not a full
 re-interview. You must preserve human edits and completed milestone history.
 
@@ -14,18 +14,18 @@ contradict this directive.
 
 Analyze the current state of the project — its design document, CLAUDE.md, drift log,
 architecture decisions, human action items, and codebase summary — and produce a
-**delta document** showing what should change in DESIGN.md and CLAUDE.md.
+**delta document** showing what should change in {{DESIGN_FILE}} and CLAUDE.md.
 
 ## Input Context
 
-### Current DESIGN.md
+### Current {{DESIGN_FILE}}
 {{IF:DESIGN_CONTENT}}
---- BEGIN FILE CONTENT: DESIGN.md ---
+--- BEGIN FILE CONTENT: {{DESIGN_FILE}} ---
 {{DESIGN_CONTENT}}
---- END FILE CONTENT: DESIGN.md ---
+--- END FILE CONTENT: {{DESIGN_FILE}} ---
 {{ENDIF:DESIGN_CONTENT}}
 {{IF:NO_DESIGN}}
-(No DESIGN.md found — the project may not have used the --plan flow.)
+(No {{DESIGN_FILE}} found — the project may not have used the --plan flow.)
 {{ENDIF:NO_DESIGN}}
 
 ### Current CLAUDE.md
@@ -81,8 +81,8 @@ A brief (3-5 bullet) assessment of what has changed since the documents were las
 written. Reference specific drift observations, architecture decisions, or codebase
 changes that drive each proposed update.
 
-### 2. DESIGN.md Delta
-For each section of DESIGN.md that needs updating:
+### 2. {{DESIGN_FILE}} Delta
+For each section of {{DESIGN_FILE}} that needs updating:
 
 ```
 #### Section: <section heading>
@@ -94,7 +94,7 @@ For each section of DESIGN.md that needs updating:
 > ...replacement text...
 ```
 
-If DESIGN.md does not exist, state "No DESIGN.md changes — file not present."
+If {{DESIGN_FILE}} does not exist, state "No {{DESIGN_FILE}} changes — file not present."
 
 ### 3. CLAUDE.md Delta
 For each section of CLAUDE.md that needs updating:
@@ -131,7 +131,7 @@ For milestone updates specifically:
    rather than a delta update. Mark these as `**Action**: NEEDS_REINTERVIEW`.
 6. **Preserve style.** Match the existing formatting, heading levels, and
    conventions used in the target documents.
-7. **Consolidation awareness.** Each replan cycle appends a delta to DESIGN.md,
+7. **Consolidation awareness.** Each replan cycle appends a delta to {{DESIGN_FILE}},
    causing the file to grow over time. If prior replan deltas exist (look for
    `## Replan Delta` sections), consolidate overlapping changes rather than
    duplicating them. Recommend a `**Action**: CONSOLIDATE` for sections that

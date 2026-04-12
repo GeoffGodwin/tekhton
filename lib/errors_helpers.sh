@@ -68,7 +68,7 @@ suggest_recovery() {
             ;;
         # M53: Pattern registry subcategories
         ENVIRONMENT/env_setup)
-            echo "Missing tool or binary. Install the required dependency (check BUILD_ERRORS.md for the exact command)."
+            echo "Missing tool or binary. Install the required dependency (check ${BUILD_ERRORS_FILE} for the exact command)."
             ;;
         ENVIRONMENT/service_dep)
             echo "A required service is not running (database, cache, or queue). Start it and re-run."

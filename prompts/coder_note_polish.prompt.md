@@ -49,15 +49,15 @@ These are **visual/UX polish items**. Follow these strict constraints:
 1. **Do not refactor surrounding code.** Touch only what the note describes.
 2. **Do not change logic.** If a polish item requires logic changes beyond
    trivial CSS class additions or config value tweaks, flag it as needing
-   re-categorization to FEAT in CODER_SUMMARY.md and skip it.
+   re-categorization to FEAT in {{CODER_SUMMARY_FILE}} and skip it.
 3. **Do not add features** beyond what the note describes.
 4. **Touch only the files necessary** for the visual/UX change.
 5. **Focus on UI files and config.** CSS, styles, templates, layout files,
    and configuration are your primary targets.
 
-**DO NOT modify HUMAN_NOTES.md.** The pipeline manages note state (checkboxes)
+**DO NOT modify {{HUMAN_NOTES_FILE}}.** The pipeline manages note state (checkboxes)
 automatically. You may read it for context but must never write to it.
-Your completions are tracked via CODER_SUMMARY.md, not by editing the notes file.
+Your completions are tracked via {{CODER_SUMMARY_FILE}}, not by editing the notes file.
 
 {{IF:HUMAN_NOTES_BLOCK}}
 {{HUMAN_NOTES_BLOCK}}
@@ -73,7 +73,7 @@ Scope your work strictly to the visual/UX changes described above. Do not
 expand scope. Polish items should be quick and self-contained.
 
 ## Execution Order (mandatory)
-**Step 1:** Write `CODER_SUMMARY.md` immediately with this skeleton:
+**Step 1:** Write `{{CODER_SUMMARY_FILE}}` immediately with this skeleton:
 ```
 # Coder Summary
 ## Status: IN PROGRESS
@@ -87,7 +87,7 @@ expand scope. Polish items should be quick and self-contained.
 **Step 2:** Read the files directly relevant to the polish items.
 **Step 3:** Apply the minimal changes needed.
 **Step 4:** Run `{{ANALYZE_CMD}}` and `{{TEST_CMD}}`.
-**Step 5:** Update `CODER_SUMMARY.md` with final status.
+**Step 5:** Update `{{CODER_SUMMARY_FILE}}` with final status.
 
 ## Required Reading
 1. `{{CODER_ROLE_FILE}}` — your role and rules
@@ -95,13 +95,13 @@ expand scope. Polish items should be quick and self-contained.
 Do NOT read architecture docs or project rules unless a specific decision requires it.
 
 ## Required Output
-When finished, update CODER_SUMMARY.md with:
+When finished, update {{CODER_SUMMARY_FILE}} with:
 - `## Status` set to either `COMPLETE` or `IN PROGRESS`
 - `## Remaining Work` listing anything not finished if IN PROGRESS
 - Do NOT set COMPLETE if any planned work is unfinished
 
 ## Human Notes Completion Tracking (mandatory)
-Add this section to CODER_SUMMARY.md:
+Add this section to {{CODER_SUMMARY_FILE}}:
 ```
 ## Human Notes Status
 - COMPLETED: [POLISH] exact note text here

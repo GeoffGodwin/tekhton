@@ -15,4 +15,4 @@ merging components, simplifying layers).
 - Do NOT touch items in other sections (Staleness, Dead Code, Naming — those go to jr coder)
 - Do NOT add new features or refactor beyond what the plan specifies
 - Keep changes bounded — each item should be a focused, reviewable change
-- Update `CODER_SUMMARY.md` with what you changed and why
+- Update `{{CODER_SUMMARY_FILE}}` with what you changed and why

@@ -51,7 +51,7 @@ to make every test pass. You are required to make every test HONEST and RELEVANT
 - Do NOT ignore findings — address every HIGH severity finding.
 
 ## Required Output
-Update `TESTER_REPORT.md` with a section:
+Update `{{TESTER_REPORT_FILE}}` with a section:
 
 ```
 ## Audit Rework

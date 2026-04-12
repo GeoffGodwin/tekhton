@@ -12,7 +12,7 @@ set -euo pipefail
 # _run_ui_test_phase STAGE_LABEL
 # Runs UI_TEST_CMD when configured. Retries once on failure (E2E flakiness).
 # Attempts registry-based auto-remediation for env_setup errors (M53).
-# Returns 0 on pass (or skip), 1 on failure. Writes BUILD_ERRORS.md on failure.
+# Returns 0 on pass (or skip), 1 on failure. Writes "${BUILD_ERRORS_FILE}" on failure.
 _run_ui_test_phase() {
     local stage_label="$1"
 
@@ -71,9 +71,9 @@ _run_ui_test_phase() {
     echo "$_ui_output" | tail -30
 
     # Write raw output so coder.sh bypass logic reads unadorned text
-    printf '%s\n' "$_ui_output" > BUILD_RAW_ERRORS.txt
+    printf '%s\n' "$_ui_output" > "${BUILD_RAW_ERRORS_FILE}"
 
-    cat > UI_TEST_ERRORS.md << UIEOF
+    cat > "${UI_TEST_ERRORS_FILE}" << UIEOF
 # UI Test Errors — $(date '+%Y-%m-%d %H:%M:%S')
 ## Stage
 ${stage_label}
@@ -89,17 +89,17 @@ ${_ui_exit}
 $(echo "$_ui_output" | tail -100)
 \`\`\`
 UIEOF
-    log "UI test errors written to UI_TEST_ERRORS.md"
+    log "UI test errors written to ${UI_TEST_ERRORS_FILE}"
 
-    # Append UI test errors to BUILD_ERRORS.md so the build-fix agent
-    # has full visibility (it only reads BUILD_ERRORS.md).
-    if [[ ! -f BUILD_ERRORS.md ]]; then
+    # Append UI test errors to "${BUILD_ERRORS_FILE}" so the build-fix agent
+    # has full visibility (it only reads "${BUILD_ERRORS_FILE}").
+    if [[ ! -f "${BUILD_ERRORS_FILE}" ]]; then
         {
             echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
             echo "## Stage"
             echo "${stage_label}"
             echo ""
-        } > BUILD_ERRORS.md
+        } > "${BUILD_ERRORS_FILE}"
     fi
     {
         echo "## UI Test Failures"
@@ -109,8 +109,8 @@ UIEOF
         echo "\`\`\`"
         echo "$_ui_output" | tail -100
         echo "\`\`\`"
-    } >> BUILD_ERRORS.md
-    log "UI test errors also appended to BUILD_ERRORS.md"
+    } >> "${BUILD_ERRORS_FILE}"
+    log "UI test errors also appended to ${BUILD_ERRORS_FILE}"
 
     _phase_end "build_gate_ui_test"
     return 1

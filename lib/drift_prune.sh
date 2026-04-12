@@ -2,7 +2,7 @@
 # =============================================================================
 # drift_prune.sh — Drift log resolved entry pruning
 #
-# Periodically archives old resolved entries from DRIFT_LOG.md to prevent
+# Periodically archives old resolved entries from ${DRIFT_LOG_FILE} to prevent
 # unbounded growth. Called by reset_runs_since_audit() in drift.sh post-audit.
 # Sourced by tekhton.sh after drift_cleanup.sh — do not run directly.
 # Expects: PROJECT_DIR, DRIFT_LOG_FILE, DRIFT_RESOLVED_KEEP_COUNT (set by config)
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 # prune_resolved_drift_entries — Keeps only N most-recent resolved entries
-# in DRIFT_LOG.md, archiving older ones to DRIFT_ARCHIVE.md.
+# in ${DRIFT_LOG_FILE}, archiving older ones to DRIFT_ARCHIVE.md.
 # Preserves the ## Resolved section heading.
 # Resolved entries are inserted at the TOP of the section (newest first),
 # so head = newest, tail = oldest.
@@ -59,7 +59,7 @@ prune_resolved_drift_entries() {
         cat > "$archive_file" << 'EOF'
 # Drift Log Archive
 
-Archived resolved drift observations from DRIFT_LOG.md.
+Archived resolved drift observations from ${DRIFT_LOG_FILE}.
 Entries are moved here when the resolved section exceeds the configured
 retention threshold (DRIFT_RESOLVED_KEEP_COUNT).
 
@@ -73,7 +73,7 @@ EOF
         echo "$excess_entries"
     } >> "$archive_file"
 
-    # Rewrite DRIFT_LOG.md with kept entries only
+    # Rewrite ${DRIFT_LOG_FILE} with kept entries only
     local tmpfile
     tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
     local in_resolved=false
@@ -101,5 +101,5 @@ EOF
     done < "$drift_file"
 
     mv "$tmpfile" "$drift_file"
-    log "Pruned ${excess_count} resolved entry(ies) from DRIFT_LOG.md to DRIFT_ARCHIVE.md."
+    log "Pruned ${excess_count} resolved entry(ies) from ${DRIFT_LOG_FILE} to DRIFT_ARCHIVE.md."
 }

@@ -35,8 +35,8 @@ components before flagging missing abstractions.
 {{ENDIF:DESIGN_SYSTEM}}
 
 ## Required Reading
-1. `CODER_SUMMARY.md` — what was built and what files were touched
-2. Only the files listed under 'Files created or modified' in CODER_SUMMARY.md
+1. `{{CODER_SUMMARY_FILE}}` — what was built and what files were touched
+2. Only the files listed under 'Files created or modified' in {{CODER_SUMMARY_FILE}}
    that have UI-related extensions (.tsx, .jsx, .vue, .svelte, .css, .scss,
    .html, .dart, .swift, .kt, or files in components/pages/views/screens/widgets
    directories)

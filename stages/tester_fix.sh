@@ -129,11 +129,11 @@ _run_tester_inline_fix() {
             TESTER_FIX_TEST_FILES="$_test_paths"
         fi
 
-        # Extract source files from CODER_SUMMARY.md
+        # Extract source files from ${CODER_SUMMARY_FILE}
         export TESTER_FIX_SOURCE_FILES=""
-        if [[ -f "CODER_SUMMARY.md" ]] \
+        if [[ -f "${CODER_SUMMARY_FILE}" ]] \
            && declare -f extract_files_from_coder_summary &>/dev/null; then
-            TESTER_FIX_SOURCE_FILES=$(extract_files_from_coder_summary "CODER_SUMMARY.md" 2>/dev/null || true)
+            TESTER_FIX_SOURCE_FILES=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}" 2>/dev/null || true)
         fi
 
         # Render scoped prompt and run inline agent

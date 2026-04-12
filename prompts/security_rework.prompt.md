@@ -3,7 +3,7 @@ You are the senior implementation agent for {{PROJECT_NAME}}. Your role definiti
 ## Security Rework Task
 Original task: {{TASK}}
 
-A security scan found fixable vulnerabilities that must be resolved. Read `SECURITY_REPORT.md`
+A security scan found fixable vulnerabilities that must be resolved. Read `{{SECURITY_REPORT_FILE}}`
 and fix **only the fixable CRITICAL/HIGH findings** listed below.
 
 ## Mandatory Fixes
@@ -15,9 +15,9 @@ and fix **only the fixable CRITICAL/HIGH findings** listed below.
 - Fix ONLY the findings listed above — do not refactor unrelated code
 - Verify each fix does not introduce new vulnerabilities
 - Do not weaken existing security controls to resolve a finding
-- Update `CODER_SUMMARY.md` to reflect security fixes applied
+- Update `{{CODER_SUMMARY_FILE}}` to reflect security fixes applied
 - If a finding cannot actually be fixed in code (false positive or requires
-  infrastructure change), note it in CODER_SUMMARY.md but do not ignore real findings
+  infrastructure change), note it in {{CODER_SUMMARY_FILE}} but do not ignore real findings
 
 ## Approach for Each Finding
 1. Read the file and line referenced in the finding

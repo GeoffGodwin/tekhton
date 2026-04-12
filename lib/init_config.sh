@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck disable=SC2153
 # =============================================================================
 # init_config.sh — Config generation helpers for Smart Init (Milestone 19)
 #
@@ -57,7 +58,7 @@ _generate_smart_config() {
 
     # Auto-detect DESIGN_FILE
     local design_file=""
-    [[ -f "${project_dir}/DESIGN.md" ]] && design_file="DESIGN.md"
+    [[ -f "${project_dir}/${DESIGN_FILE}" ]] && design_file="${DESIGN_FILE}"
 
     # Milestone 12: Adjust model based on doc quality
     if [[ -n "${_INIT_DOC_QUALITY:-}" ]]; then

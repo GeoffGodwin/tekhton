@@ -17,7 +17,11 @@ ANALYZE_CMD="echo 'No analyze command configured — set ANALYZE_CMD in pipeline
 BUILD_CHECK_CMD=""
 ARCHITECTURE_FILE="ARCHITECTURE.md"
 PROJECT_RULES_FILE="CLAUDE.md"
-DESIGN_FILE=""
+# DESIGN_FILE=".tekhton/DESIGN.md"
+
+# Tekhton artifact directory — all pipeline-managed files live here.
+# CLAUDE.md stays at the project root (Claude Code requires it there).
+# TEKHTON_DIR=".tekhton"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Section 2: Models & Turns
@@ -90,12 +94,12 @@ BUILD_ERROR_PATTERN="ERROR"
 NOTES_FILTER_CATEGORIES="BUG|FEAT|POLISH"
 
 # Drift detection
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+# DRIFT_LOG_FILE=".tekhton/DRIFT_LOG.md"
+# ARCHITECTURE_LOG_FILE=".tekhton/ARCHITECTURE_LOG.md"
+# HUMAN_ACTION_FILE=".tekhton/HUMAN_ACTION_REQUIRED.md"
 DRIFT_OBSERVATION_THRESHOLD=8
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+# NON_BLOCKING_LOG_FILE=".tekhton/NON_BLOCKING_LOG.md"
 NON_BLOCKING_INJECTION_THRESHOLD=8
 
 # Architect agent

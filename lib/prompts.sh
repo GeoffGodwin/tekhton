@@ -84,8 +84,8 @@ load_intake_template_vars() {
     export INTAKE_TWEAKS_BLOCK="${INTAKE_TWEAKS_BLOCK:-}"
     export INTAKE_HISTORY_BLOCK="${INTAKE_HISTORY_BLOCK:-}"
 
-    if [[ -f "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" ]]; then
-        INTAKE_REPORT_CONTENT=$(_safe_read_file "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}" "INTAKE_REPORT")
+    if [[ -f "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}" ]]; then
+        INTAKE_REPORT_CONTENT=$(_safe_read_file "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}" "INTAKE_REPORT")
     fi
 }
 

@@ -199,7 +199,7 @@ emit_dashboard_milestones() {
 # --- Security emission --------------------------------------------------------
 
 # emit_dashboard_security
-# Parses SECURITY_REPORT.md and generates data/security.js.
+# Parses ${SECURITY_REPORT_FILE} and generates data/security.js.
 emit_dashboard_security() {
     if ! is_dashboard_enabled; then return 0; fi
 
@@ -207,7 +207,7 @@ emit_dashboard_security() {
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
     local findings
-    findings=$(_parse_security_report "${SECURITY_REPORT_FILE:-SECURITY_REPORT.md}")
+    findings=$(_parse_security_report "${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE}}")
 
     local json="{\"findings\":${findings}}"
     _write_js_file "${dash_dir}/data/security.js" "TK_SECURITY" "$json"
@@ -224,15 +224,15 @@ emit_dashboard_reports() {
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
     local intake
-    intake=$(_parse_intake_report "${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}")
+    intake=$(_parse_intake_report "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}")
     local coder
-    coder=$(_parse_coder_summary "CODER_SUMMARY.md")
+    coder=$(_parse_coder_summary "${CODER_SUMMARY_FILE}")
     local reviewer
-    reviewer=$(_parse_reviewer_report "REVIEWER_REPORT.md")
+    reviewer=$(_parse_reviewer_report "${REVIEWER_REPORT_FILE}")
 
     # Test audit verdict (M20)
     local audit_verdict="skipped"
-    local audit_file="${TEST_AUDIT_REPORT_FILE:-TEST_AUDIT_REPORT.md}"
+    local audit_file="${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
     if [[ -f "$audit_file" ]]; then
         audit_verdict=$(grep -oiE 'Verdict:\s*(NEEDS_WORK|PASS|CONCERNS)' "$audit_file" 2>/dev/null \
             | head -1 | sed 's/.*:\s*//' | tr '[:lower:]' '[:upper:]' || echo "skipped")
@@ -252,7 +252,7 @@ emit_dashboard_reports() {
     # Notes backlog (M25)
     local backlog='{"total":0,"bug":0,"feat":0,"polish":0,"checked":0,"unchecked":0}'
     # Defensive: notes_cli.sh is unconditionally sourced, but we guard against sourcing-order edge cases or future refactors
-    if command -v get_notes_summary &>/dev/null && [[ -f "HUMAN_NOTES.md" ]]; then
+    if command -v get_notes_summary &>/dev/null && [[ -f "${HUMAN_NOTES_FILE}" ]]; then
         local ns
         ns=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         local n_total n_bug n_feat n_polish n_checked n_unchecked
@@ -270,9 +270,9 @@ emit_dashboard_reports() {
             [[ -z "$_tr_team" ]] && continue
             # Parse team-prefixed report files if they exist
             local _tr_intake _tr_coder _tr_reviewer
-            local _tr_intake_file="${INTAKE_REPORT_FILE:-INTAKE_REPORT.md}"
-            local _tr_coder_file="CODER_SUMMARY.md"
-            local _tr_reviewer_file="REVIEWER_REPORT.md"
+            local _tr_intake_file="${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}"
+            local _tr_coder_file="${CODER_SUMMARY_FILE}"
+            local _tr_reviewer_file="${REVIEWER_REPORT_FILE}"
             # In parallel mode, team reports use _<team> suffix
             local _tr_suffix="_${_tr_team}"
             if [[ -f "${_tr_intake_file%.md}${_tr_suffix}.md" ]]; then
@@ -481,7 +481,7 @@ emit_dashboard_action_items() {
     fi
 
     local hn_count=0 hn_severity="normal"
-    if command -v get_notes_summary &>/dev/null && [[ -f "${PROJECT_DIR:-.}/HUMAN_NOTES.md" ]]; then
+    if command -v get_notes_summary &>/dev/null && [[ -f "${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE}" ]]; then
         local notes_summary
         notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         IFS='|' read -r _ _ _ _ _ hn_count <<< "$notes_summary"
@@ -519,14 +519,14 @@ emit_dashboard_action_items() {
 
 # emit_dashboard_notes
 # Generates data/notes.js with per-note structured data (M40).
-# Reads HUMAN_NOTES.md, parses all notes with metadata, produces TK_NOTES array.
+# Reads ${HUMAN_NOTES_FILE}, parses all notes with metadata, produces TK_NOTES array.
 emit_dashboard_notes() {
     if ! is_dashboard_enabled; then return 0; fi
 
     local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
-    local nf="${PROJECT_DIR:-.}/HUMAN_NOTES.md"
+    local nf="${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE}"
     if [[ ! -f "$nf" ]]; then
         _write_js_file "${dash_dir}/data/notes.js" "TK_NOTES" '[]'
         return 0
@@ -639,7 +639,7 @@ emit_dashboard_notes() {
         # Check for RCA section presence (BUG notes)
         local rca_present="false"
         if [[ "$status" == "done" ]] && [[ "$tag" == "BUG" ]]; then
-            # We can't check CODER_SUMMARY.md per note at emit time;
+            # We can't check ${CODER_SUMMARY_FILE} per note at emit time;
             # rely on acceptance metadata instead
             if [[ -n "$acceptance_val" ]] && [[ "$acceptance_val" != *"warn_no_rca"* ]]; then
                 rca_present="true"

@@ -492,7 +492,7 @@ archive_completed_milestone "1" "$POINTER_MD"
 
 # Test 40: archive pointer comment is inserted after ### Milestone Plan
 assert "archive pointer comment is inserted after Milestone Plan heading" \
-    "$(grep -qF '<!-- See MILESTONE_ARCHIVE.md for completed milestones -->' "$POINTER_MD" && echo 0 || echo 1)"
+    "$(grep -qF "<!-- See ${MILESTONE_ARCHIVE_FILE} for completed milestones -->" "$POINTER_MD" && echo 0 || echo 1)"
 
 # Test 41: [DONE] heading is removed (not summarized)
 assert "archive removes [DONE] heading entirely with Milestone Plan present" \
@@ -529,7 +529,7 @@ EOF
 archive_completed_milestone "1" "$POINTER_MD2"
 archive_completed_milestone "2" "$POINTER_MD2"
 
-pointer_count=$(grep -cF '<!-- See MILESTONE_ARCHIVE.md for completed milestones -->' "$POINTER_MD2" || true)
+pointer_count=$(grep -cF "<!-- See ${MILESTONE_ARCHIVE_FILE} for completed milestones -->" "$POINTER_MD2" || true)
 assert "archive pointer comment appears exactly once after multiple archivals" \
     "$([ "$pointer_count" = "1" ] && echo 0 || echo 1)"
 
@@ -564,7 +564,7 @@ EOF
 archive_completed_milestone "1" "$CROSS_MD"
 archive_completed_milestone "10" "$CROSS_MD"
 
-cross_pointer_count=$(grep -cF '<!-- See MILESTONE_ARCHIVE.md for completed milestones -->' "$CROSS_MD" || true)
+cross_pointer_count=$(grep -cF "<!-- See ${MILESTONE_ARCHIVE_FILE} for completed milestones -->" "$CROSS_MD" || true)
 assert "cross-initiative: pointer comment inserted in both Milestone Plan sections" \
     "$([ "$cross_pointer_count" = "2" ] && echo 0 || echo 1)"
 

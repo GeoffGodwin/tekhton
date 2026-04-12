@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Runs opt-in specialist review passes (security, performance, API contract)
 # AFTER the main reviewer approves. Findings tagged [BLOCKER] re-enter the
-# rework loop; [NOTE] items go to NON_BLOCKING_LOG.md.
+# rework loop; [NOTE] items go to ${NON_BLOCKING_LOG_FILE}.
 # =============================================================================
 
 # run_specialist_reviews — Iterates over all enabled specialists.
@@ -77,16 +77,16 @@ run_specialist_reviews() {
     log "Running ${#specialists[@]} specialist review(s)..."
 
     # Archive any previous specialist report
-    if [ -f "SPECIALIST_REPORT.md" ]; then
+    if [ -f "${SPECIALIST_REPORT_FILE}" ]; then
         if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ]; then
-            mv "SPECIALIST_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_prev_SPECIALIST_REPORT.md" 2>/dev/null || true
+            mv "${SPECIALIST_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_prev_${SPECIALIST_REPORT_FILE}" 2>/dev/null || true
         else
-            rm -f "SPECIALIST_REPORT.md"
+            rm -f "${SPECIALIST_REPORT_FILE}"
         fi
     fi
 
     # Initialize combined report
-    cat > "SPECIALIST_REPORT.md" << 'EOF'
+    cat > "${SPECIALIST_REPORT_FILE}" << 'EOF'
 # Specialist Review Report
 
 EOF
@@ -102,7 +102,7 @@ EOF
             SPECIALIST_BLOCKERS="${SPECIALIST_BLOCKERS}${spec_blockers}"$'\n'
         fi
 
-        # Append notes to NON_BLOCKING_LOG.md
+        # Append notes to ${NON_BLOCKING_LOG_FILE}
         _append_specialist_notes "$spec_name"
     done
 
@@ -157,7 +157,7 @@ _run_single_specialist() {
     fi
 
     # Append to combined report
-    if [ -f "SPECIALIST_REPORT.md" ]; then
+    if [ -f "${SPECIALIST_REPORT_FILE}" ]; then
         {
             echo "## ${spec_name} Review"
             echo ""
@@ -168,7 +168,7 @@ _run_single_specialist() {
                 echo "(No structured findings file produced)"
             fi
             echo ""
-        } >> "SPECIALIST_REPORT.md"
+        } >> "${SPECIALIST_REPORT_FILE}"
     fi
 
     log "[Specialist ${spec_name}] Review complete."

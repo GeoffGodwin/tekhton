@@ -13,7 +13,7 @@ _route_specialist_rework() {
             echo ""
             echo "## Specialist Blockers"
             echo "$SPECIALIST_BLOCKERS"
-        } >> "REVIEWER_REPORT.md"
+        } >> "${REVIEWER_REPORT_FILE}"
     fi
 
     VERDICT="CHANGES_REQUIRED"
@@ -22,7 +22,7 @@ _route_specialist_rework() {
         error "Specialist blockers found but no review cycles remain."
         write_pipeline_state "review" "specialist_blockers" \
             "$(_build_resume_flag review)" \
-            "$TASK" "Specialist reviewers found blockers. See SPECIALIST_REPORT.md."
+            "$TASK" "Specialist reviewers found blockers. See ${SPECIALIST_REPORT_FILE}."
         exit 1
     fi
 
@@ -51,7 +51,7 @@ _route_specialist_rework() {
             error "Build gate failed again after specialist rework."
             write_pipeline_state "review" "specialist_build_failure" \
                 "$(_build_resume_flag review)" \
-                "$TASK" "Build broken after specialist rework. See BUILD_ERRORS.md."
+                "$TASK" "Build broken after specialist rework. See ${BUILD_ERRORS_FILE}."
             exit 1
         fi
     fi
@@ -69,10 +69,10 @@ _route_specialist_rework() {
         "$AGENT_TOOLS_REVIEWER"
     print_run_summary
 
-    if [[ -f "REVIEWER_REPORT.md" ]]; then
-        VERDICT=$(grep -m1 "^## Verdict" -A1 REVIEWER_REPORT.md 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+    if [[ -f "${REVIEWER_REPORT_FILE}" ]]; then
+        VERDICT=$(grep -m1 "^## Verdict" -A1 "${REVIEWER_REPORT_FILE}" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         if [[ -z "$VERDICT" || "$VERDICT" = "##Verdict" ]]; then
-            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" REVIEWER_REPORT.md 2>/dev/null | head -1 || true)
+            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" "${REVIEWER_REPORT_FILE}" 2>/dev/null | head -1 || true)
         fi
         log "Post-specialist reviewer verdict: ${BOLD}${VERDICT}${NC}"
     fi

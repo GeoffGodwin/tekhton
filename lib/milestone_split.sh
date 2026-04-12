@@ -373,8 +373,8 @@ handle_null_run_split() {
         diff_stat=$(git diff --stat HEAD 2>/dev/null | tail -1 || true)
     fi
 
-    if [[ -f "CODER_SUMMARY.md" ]]; then
-        summary_lines=$(wc -l < "CODER_SUMMARY.md" 2>/dev/null || echo "0")
+    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
+        summary_lines=$(wc -l < "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "0")
         summary_lines=$(echo "$summary_lines" | tr -d '[:space:]')
     fi
 

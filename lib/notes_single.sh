@@ -6,7 +6,7 @@ set -euo pipefail
 # Extracted from notes.sh to stay under the 300-line guideline.
 # Sourced by tekhton.sh after notes.sh and notes_core.sh — do not run directly.
 # Expects: LOG_DIR, TIMESTAMP from caller
-# Operates on HUMAN_NOTES.md in the current directory.
+# Operates on "${HUMAN_NOTES_FILE}" in the current directory.
 #
 # M40: _section_for_tag and _validate_tag now delegate to the tag registry
 # in notes_core.sh. pick_next_note uses _NOTE_TAG_PRIORITY for ordering.
@@ -29,20 +29,20 @@ _escape_sed_pattern() {
     printf '%s' "$1" | sed 's/[.[\*^$()+?{|/&]/\\&/g'
 }
 
-# _section_for_tag — Maps a tag filter to the HUMAN_NOTES.md section heading.
+# _section_for_tag — Maps a tag filter to the "${HUMAN_NOTES_FILE}" section heading.
 # M40: Delegates to the tag registry in notes_core.sh.
 _section_for_tag() {
     local tag="${1:-}"
     _section_for_tag_registry "$tag"
 }
 
-# pick_next_note — Returns the first unchecked note from HUMAN_NOTES.md in priority
+# pick_next_note — Returns the first unchecked note from "${HUMAN_NOTES_FILE}" in priority
 # order determined by _NOTE_TAG_PRIORITY array from the tag registry.
 # If tag_filter is set, only scans the corresponding section.
 pick_next_note() {
     local tag_filter="${1:-}"
 
-    if [[ ! -f "HUMAN_NOTES.md" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
         echo ""
         return 0
     fi
@@ -72,7 +72,7 @@ pick_next_note() {
             $0 == sect { in_section = 1; next }
             in_section && /^## / { exit }
             in_section && /^- \[ \] / { print; exit }
-        ' HUMAN_NOTES.md)
+        ' "${HUMAN_NOTES_FILE}")
         if [[ -n "$result" ]]; then
             echo "$result"
             return 0
@@ -83,21 +83,21 @@ pick_next_note() {
     return 0
 }
 
-# claim_single_note — Marks exactly ONE note from [ ] to [~] in HUMAN_NOTES.md.
+# claim_single_note — Marks exactly ONE note from [ ] to [~] in "${HUMAN_NOTES_FILE}".
 # M40: If the note line has an ID, also registers it in CLAIMED_NOTE_IDS.
 # Archives pre-run snapshot before modification.
 claim_single_note() {
     local note_line="$1"
 
-    if [[ ! -f "HUMAN_NOTES.md" ]] || [[ -z "$note_line" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]] || [[ -z "$note_line" ]]; then
         return 1
     fi
 
     # Archive pre-run snapshot
     if [[ -n "${LOG_DIR:-}" ]] && [[ -n "${TIMESTAMP:-}" ]] && [[ -d "${LOG_DIR:-}" ]]; then
-        cp "HUMAN_NOTES.md" "${LOG_DIR}/${TIMESTAMP}_HUMAN_NOTES.md"
+        cp "${HUMAN_NOTES_FILE}" "${LOG_DIR}/${TIMESTAMP}_${HUMAN_NOTES_FILE}"
     else
-        cp "HUMAN_NOTES.md" "HUMAN_NOTES.md.bak"
+        cp "${HUMAN_NOTES_FILE}" "${HUMAN_NOTES_FILE}.bak"
     fi
 
     # Extract ID if present for CLAIMED_NOTE_IDS tracking
@@ -116,8 +116,8 @@ claim_single_note() {
         else
             printf '%s\n' "$line"
         fi
-    done < "HUMAN_NOTES.md" > "$tmpfile"
-    mv "$tmpfile" "HUMAN_NOTES.md"
+    done < "${HUMAN_NOTES_FILE}" > "$tmpfile"
+    mv "$tmpfile" "${HUMAN_NOTES_FILE}"
 
     if [[ "$found" -eq 1 ]]; then
         # Track claimed ID for batch resolution
@@ -137,7 +137,7 @@ resolve_single_note() {
     local note_line="$1"
     local exit_code="${2:-1}"
 
-    if [[ ! -f "HUMAN_NOTES.md" ]] || [[ -z "$note_line" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]] || [[ -z "$note_line" ]]; then
         return 1
     fi
 
@@ -177,8 +177,8 @@ resolve_single_note() {
         else
             printf '%s\n' "$line"
         fi
-    done < "HUMAN_NOTES.md" > "$tmpfile"
-    mv "$tmpfile" "HUMAN_NOTES.md"
+    done < "${HUMAN_NOTES_FILE}" > "$tmpfile"
+    mv "$tmpfile" "${HUMAN_NOTES_FILE}"
 
     if [[ "$found" -eq 1 ]]; then
         return 0
@@ -197,12 +197,12 @@ extract_note_text() {
     echo "$text"
 }
 
-# count_unchecked_notes — Counts remaining [ ] lines in HUMAN_NOTES.md.
+# count_unchecked_notes — Counts remaining [ ] lines in "${HUMAN_NOTES_FILE}".
 # If tag_filter is set, counts only within the matching section.
 count_unchecked_notes() {
     local tag_filter="${1:-}"
 
-    if [[ ! -f "HUMAN_NOTES.md" ]]; then
+    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
         echo "0"
         return 0
     fi
@@ -221,11 +221,11 @@ count_unchecked_notes() {
             in_section && /^## / { exit }
             in_section && /^- \[ \] / { count++ }
             END { print count }
-        ' HUMAN_NOTES.md)
+        ' "${HUMAN_NOTES_FILE}")
         echo "$count"
     else
         local count
-        count=$(grep -c '^- \[ \] ' HUMAN_NOTES.md || true)
+        count=$(grep -c '^- \[ \] ' "${HUMAN_NOTES_FILE}" || true)
         echo "${count:-0}"
     fi
     return 0
