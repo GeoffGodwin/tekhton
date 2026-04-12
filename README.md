@@ -5,7 +5,7 @@
 
   <p><strong>One intent. Many hands.</strong></p>
 
-  <p><em>v3.71 — Context-Aware Pipeline</em></p>
+  <p><em>v3.71.1 — Context-Aware Pipeline</em></p>
 </div>
 
 Tekhton is a standalone, project-agnostic multi-agent development pipeline built on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-code/cli-usage).
