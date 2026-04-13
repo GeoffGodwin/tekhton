@@ -10,11 +10,35 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/changelog_helpers.sh:113-129` — The double-blank fix has a subtle formatting asymmetry: when the line immediately after `## [Unreleased]` is already blank, `next_line` is empty so no separator is emitted — the entry lands directly after the header (`## [Unreleased]\n- entry\n\nexisting`). When the next line is non-blank, a blank separator IS inserted. The symmetric fix is to always emit the blank and skip the existing blank via `tail -n +"$((line_num + 2))"`. Acceptable as-is since the entry is correctly placed; worth fixing before this path exercises CI.
-- `docs/getting-started/installation.md:26-32` — The security finding asked to document the expected sha256 alongside the versioned URL. The pinned tag URL was added but no sha256 verification guidance is included. The LOW finding is partially addressed; integrity verification step remains unimplemented.
+- `tests/test_readme_split.sh` is not wired into `tests/run_tests.sh`. The milestone spec's implementation plan explicitly says "Add to `tests/run_tests.sh` only if it's fast (< 1s) and doesn't depend on network" — both conditions are met. A one-line addition to run_tests.sh would integrate it into CI.
+- `tests/test_readme_split.sh` uses `grep -oP` (Perl-compatible regex), a GNU grep extension not available on macOS's BSD grep. The project targets Linux/WSL so this is not a blocker, but worth noting for future portability.
 
 ## Coverage Gaps
-- `lib/changelog_helpers.sh:_changelog_insert_after_unreleased` — No test exercises the new "skip extra blank when next line is already blank" branch. A fixture CHANGELOG.md with a pre-existing blank after `## [Unreleased]` would cover this path and catch the asymmetry noted above.
+- None — pure documentation reorganization; the new `tests/test_readme_split.sh` covers all structural assertions required by the milestone.
 
 ## Drift Observations
-- `lib/docs_agent.sh:70` — The sed delete predicate `/^## [^D]/` excludes only uppercase `D`. A CLAUDE.md with a closing `## documentation ...` header (lowercase `d`) would not be deleted from the extracted range. The range-start pattern uses `[Dd]` for case-insensitivity; the delete predicate should match with `[^Dd]` for consistency. Low risk in practice since CLAUDE.md headers are title-case.
+- None — all changed files are documentation or a test script. No shell code changes outside of the TEKHTON_VERSION bump.
+
+## Acceptance Criteria Verification
+
+All 15 acceptance criteria satisfied:
+
+- README.md is 196 lines (≤300 cap) ✓
+- Required sections present in order: Headline → What is Tekhton? → Install → 5-Minute Quickstart → How to Use Effectively → What's in docs/ → Requirements → Contributing → Changelog → License ✓
+- Install section retains curl|bash and brew one-liners from M78 ✓
+- "How to use effectively" narrative covers plan → run → notes → drift → ship ✓
+- docs/USAGE.md contains "How the Pipeline Works" + Autonomous Modes + Human Notes ✓
+- docs/cli-reference.md contains full CLI flags table ✓
+- docs/configuration.md contains pipeline.conf reference ✓
+- All 14 docs/<topic>.md files exist and are non-empty ✓
+- Each docs/ file has M79 history pointer header ✓
+- CHANGELOG.md contains historical entries (previously in README) ✓
+- README Changelog section is a two-line pointer to CHANGELOG.md ✓
+- tests/test_readme_split.sh exists with ≤300-line and link-resolve assertions ✓
+- TEKHTON_VERSION is 3.79.0 in tekhton.sh ✓
+- MANIFEST.cfg contains M79 row (depends_on=m78, group=devx) ✓
+- Backward-compatible anchor tags preserved in README for external links ✓
+
+Note: The `docs/changelog.md` referenced in CHANGELOG.md is a pre-existing file from M18's documentation site — not a broken link.
+
+Note: MANIFEST.cfg status remains `in_progress` (not yet `done`) — the coder flagged a permissions restriction; the pipeline's milestone marking mechanism handles the status transition.

@@ -1,95 +1,80 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 23 test functions
-(4 changelog_helpers + 7 docs_agent_helpers + 16 project_version_detect — counting
-numbered `pass`/`fail` sub-assertions: 8 + 13 + 16 = 37, matching the tester's claim)
-Verdict: PASS
+Tests audited: 1 file, 57 assertions (flat-script style, no named functions)
+Verdict: CONCERNS
+
+---
 
 ### Findings
 
-#### COVERAGE: Silent failure path skips FAIL counter in test_no_unreleased_header
-- File: tests/test_changelog_helpers.sh:110
-- Issue: `_changelog_insert_after_unreleased "$changelog" "- New feature" || return 1`
-  If the function exits non-zero for any unexpected reason, the test function returns
-  1 without incrementing `FAIL`. Under `set -e` the script exits non-zero (correct
-  CI signal), but the `PASS/FAIL` summary line printed before exit shows 0 failures,
-  which is misleading for local debugging.
+#### ISOLATION: Test reads live mutable project files without fixture isolation
+- File: tests/test_readme_split.sh:18–131
+- Issue: Every assertion in this test reads directly from live project files:
+  `README.md` (line 18), `docs/*.md` (lines 56–79), and `CHANGELOG.md` (line 83).
+  No fixture copies are created in a temp directory. The test's pass/fail outcome
+  is fully coupled to the current state of these files. Any future milestone that
+  legitimately grows README.md past 300 lines, reorganizes docs/, or changes the
+  Changelog section will cause spurious failures that have nothing to do with M79's
+  correctness. This is a regression risk, not just a style concern.
+- Severity: HIGH
+- Action: The test is a one-shot migration audit, not a general regression test.
+  Two options (in order of preference):
+  1. Add a comment block at the top of the file documenting that these are M79
+     migration checkpoints tied to the live repo state, and that future milestones
+     which intentionally change README.md or docs/ must update or retire the
+     relevant assertions. This acknowledges the coupling explicitly so it is not
+     a surprise to future maintainers.
+  2. For any assertions intended to be long-lived invariants (e.g., "all docs/
+     links in README must resolve"), copy the files to a mktemp directory and
+     assert against the copies. This protects those assertions from unrelated
+     project state changes while still exercising real content.
+  The test must NOT be deleted — its 57 assertions correctly document M79's
+  expected outcomes. Only the undocumented coupling to live mutable files needs
+  to be addressed.
+
+#### NAMING: Off-by-one in comment vs. array size
+- File: tests/test_readme_split.sh:38
+- Issue: Comment reads `# --- All 13 required docs/ files exist and are non-empty ---`
+  but the `required_docs` array directly below contains 14 entries (USAGE.md through
+  security.md). The CODER_SUMMARY also confirms 14 new docs files were created.
 - Severity: LOW
-- Action: Replace `|| return 1` with `|| { fail "Test 3: _changelog_insert_after_unreleased exited non-zero"; return; }`.
+- Action: Change the comment on line 38 from "13" to "14".
 
-#### COVERAGE: Test 1b uses fragile literal range anchor in sed
-- File: tests/test_changelog_helpers.sh:48
-- Issue: `sed -n '/^\## \[Unreleased\]/,/Some existing/p'` uses the literal substring
-  "Some existing" as the range endpoint. If the fixture content is ever edited so
-  that "Some existing" appears before line 3 of the fixture, the sed range silently
-  truncates and `sed -n '2p'` will check the wrong line.
+#### COVERAGE: Non-empty check uses byte count only
+- File: tests/test_readme_split.sh:59–62
+- Issue: The non-empty check `[[ "$size" -gt 0 ]]` passes for a file containing
+  a single space or a BOM marker. A docs file accidentally overwritten with only
+  whitespace would pass this assertion.
 - Severity: LOW
-- Action: Replace the range anchor with `\$` (to EOF) and trim the result:
-  `sed -n '/^\## \[Unreleased\]/,$p'`. The assertion on `sed -n '2p'` remains valid.
+- Action: Optional improvement — replace `wc -c` with `wc -w` (word count) to
+  require at least one word in the file. The current threshold is adequate for
+  the migration use case since all 14 docs files were verified to have substantive
+  content.
 
-#### COVERAGE: test_extract_case_insensitive covers only fully-lowercase header
-- File: tests/test_docs_agent_helpers.sh:71
-- Issue: The test name says "case-insensitive matching works" but only exercises a
-  fully-lowercase header (`## documentation responsibilities`). Mixed-case variants
-  (`## Documentation responsibilities` — uppercase D, lowercase r) are not tested.
-  The sed pattern `[Dd]ocumentation [Rr]esponsibilities` supports all four combos;
-  only two are covered across all tests.
-- Severity: LOW
-- Action: Either add a fixture with `## Documentation responsibilities` (lowercase R
-  only) or rename the test to `test_extract_fully_lowercase_header` to correctly
-  scope its claim.
+---
 
-### Assertion Honesty: PASS
-All assertions derive from real function invocations on fixture data. No hard-coded
-expected values appear disconnected from implementation logic:
-- `- New feature` in changelog tests traces directly to the argument passed to
-  `_changelog_insert_after_unreleased`.
-- `blank_line_count -eq 1` in test_preexisting_blank traces to the implementation
-  logic at `changelog_helpers.sh:123` (`[[ -n "$next_line" ]]` gate).
-- `1.0.0+1` in the pubspec test traces to `project_version.sh:44–46` (`yaml_version`
-  accessor: `grep -E '^version:\s*[0-9]'` then `tr -d '[:space:]'`).
-- Docs extraction assertions trace to the sed range at `docs_agent.sh:70`.
-No always-true assertions (`assertEqual(x, x)`, `assertTrue(True)`) detected.
+### Notes (Non-finding observations)
 
-### Test Weakening Detection: PASS
-The only modification to an existing test is `test_project_version_detect.sh:159`:
-`grep -q 'CURRENT_VERSION=1.0.0'` → `grep -qE 'CURRENT_VERSION=1\.0\.0\+1$'`
-This is a tightening: the regex requires the build suffix `+1` and anchors with `$`,
-preventing a future value of plain `1.0.0` from silently passing. No assertions were
-removed or broadened anywhere.
+**Assertion honesty:** All 57 assertions derive from real file reads against the
+implementation deliverables. No hardcoded expected values are disconnected from
+implementation logic; no trivially true comparisons detected. ✓
 
-### Implementation Exercise: PASS
-All three test files source the real implementation libraries and call the actual
-functions:
-- `test_changelog_helpers.sh` sources `lib/changelog_helpers.sh` and calls
-  `_changelog_insert_after_unreleased` directly.
-- `test_docs_agent_helpers.sh` sources `lib/docs_agent.sh` and calls
-  `_docs_extract_doc_responsibilities` directly.
-- `test_project_version_detect.sh` sources `lib/project_version.sh` and calls
-  `detect_project_version_files` and `parse_current_version`.
-Logging stubs (`log`, `warn`, `error`, `success`, `header`) are minimal and correct —
-they suppress output noise without replacing any logic under test.
+**Scope alignment:** No orphaned references. `.tekhton/JR_CODER_SUMMARY.md` was
+deleted by the coder; the test does not reference it. The `required_docs` array
+matches all 14 files listed in CODER_SUMMARY exactly. ✓
 
-### Scope Alignment: PASS
-The deleted file (`.tekhton/INTAKE_REPORT.md`) is not referenced by any test under
-audit. All functions targeted by the new tests remain present in the implementation:
-- `_changelog_insert_after_unreleased` in `lib/changelog_helpers.sh` ✓
-- `_docs_extract_doc_responsibilities` in `lib/docs_agent.sh` (newly extracted) ✓
-- `detect_project_version_files`, `parse_current_version` in `lib/project_version.sh` ✓
-Changes that have no unit tests (workflow YAML hardening, comment-only additions in
-`lib/project_version.sh` and `lib/finalize_version.sh`, docs update in
-`docs/getting-started/installation.md`) are correctly unaddressed by the test suite —
-these are not testable via bash unit tests in this framework.
+**Link resolution coverage:** The grep-based link extractor (line 36) correctly
+catches all `docs/` links in README including cross-directory paths
+(`docs/getting-started/installation.md`, `docs/index.md`). All those paths were
+verified to exist in the repo. The link-resolution loop is the most rigorous
+section of the test. ✓
 
-### Test Isolation: PASS
-All three test files create all fixtures exclusively inside `mktemp -d` temporary
-directories:
-- `test_changelog_helpers.sh`: per-function `tmpdir=$(mktemp -d)` with
-  `trap 'rm -rf "$tmpdir"' RETURN`. ✓
-- `test_docs_agent_helpers.sh`: same per-function pattern. ✓
-- `test_project_version_detect.sh`: shared `TEST_TMPDIR=$(mktemp -d)` with
-  `trap 'rm -rf "$TEST_TMPDIR"' EXIT`; isolated per-test subdirs via `make_proj`. ✓
-No test reads live pipeline logs, `.tekhton/` reports, `.claude/logs/`, or any other
-mutable project-state file. The only live files sourced are implementation libraries
-(`lib/*.sh`), which is the correct pattern.
+**Section ordering:** The ordered-section check (lines 97–124) verifies both
+presence and relative ordering — it does not merely grep for keywords in
+isolation. ✓
+
+**Assertion count verification:** The tester's claim of 57 assertions is accurate:
+1 (line count) + 17 (link resolution: 14 table links + 2× installation.md + 1×
+index.md) + 14 (file exists/non-empty) + 14 (M79 header present) + 1 (CHANGELOG
+exists) + 1 (README changelog pointer) + 9 (section order) = 57. ✓

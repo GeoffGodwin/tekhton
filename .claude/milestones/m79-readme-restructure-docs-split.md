@@ -1,7 +1,7 @@
 # Milestone 79: README Restructure + docs/ Split
 <!-- milestone-meta
 id: "79"
-status: "pending"
+status: "done"
 -->
 
 ## Overview
