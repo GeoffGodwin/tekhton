@@ -57,6 +57,37 @@ survey the relevant code. Focus on:
 
 Produce a 1-paragraph "state of the relevant code" summary.
 
+#### Impact Surface Scan
+
+Before proposing milestones, identify EVERY code site affected by the change.
+Do not rely solely on known variable names or expected patterns — discover
+empirically:
+
+1. **Shell code:** Run `Grep` for every file, variable, path, or literal string
+   the milestone will create, modify, move, or reference. Search `lib/`,
+   `stages/`, and `tekhton.sh`. Include both the target name AND any aliases,
+   abbreviations, or dynamic constructions (e.g., `${var}_FINDINGS.md`).
+2. **Prompt templates:** Run `Grep` on `prompts/` for the same patterns. Prompts
+   instruct agents to read and write files — a literal filename in a prompt is
+   a write-site that must be parameterized.
+3. **Test files:** Run `Grep` on `tests/` for affected paths. Tests that
+   hardcode paths may mask bugs if not updated.
+4. **Config files:** Check `lib/config_defaults.sh`, `templates/pipeline.conf.example`,
+   and the project's own `pipeline.conf` for variables or defaults that reference
+   affected paths. For path/file changes, also check whether existing config
+   overrides would defeat new defaults.
+5. **Dynamic patterns:** Search for string interpolation that constructs
+   affected filenames (e.g., `"${PREFIX}_${NAME}.md"`). These won't match a
+   literal grep but are still affected code sites.
+
+If the change involves file paths, run:
+```
+grep -rn '$PROJECT_DIR/[A-Z]' lib/ stages/
+grep -rn '"[A-Z][A-Z_]*\.\(md\|txt\|json\)"' lib/ stages/ prompts/
+```
+
+Document the complete hit count and list every affected file with site counts.
+
 ### Phase 3 — Propose
 
 [PHASE:PROPOSE]
@@ -114,8 +145,28 @@ status: "pending"
 ## Files Touched
 (### Added and ### Modified subsections with file paths)
 
+## Negative Space
+(Items explicitly NOT included in this milestone, with justification for each.
+If this milestone renames, moves, or parameterizes items, list every item of
+the same class that is intentionally left unchanged and explain why each
+exclusion is correct. An empty Negative Space section is a red flag — every
+non-trivial milestone has deliberate exclusions worth documenting.)
+
 ## Acceptance Criteria
 (Minimum 5 items as `- [ ] criterion`)
+
+**Required criterion types — every milestone must include:**
+- At least one **behavioral** criterion that verifies actual runtime behavior
+  (e.g., "running the pipeline produces no files at location X",
+  "command output contains Y"). Structural greps alone are insufficient.
+- At least one **structural** criterion that verifies code patterns
+  (e.g., "grep for X in lib/ stages/ returns zero hits").
+- For **refactor/migration** milestones: a **completeness** criterion that
+  searches for remaining un-migrated references using a broad pattern, not
+  just the known list of targets.
+- For **config/path** milestones: a **self-referential** criterion that checks
+  Tekhton's own pipeline.conf and any example configs for overrides that
+  defeat new defaults.
 ```
 
 {{IF:DRAFT_EXEMPLAR_MILESTONES}}
@@ -140,3 +191,15 @@ Match their style, depth, and structure:
 7. **Prefer linear dependency chains** — A → B → C, not parallel DAGs.
 8. **Keep individual milestones achievable in one pipeline run** — if a
    milestone would take more than ~200 turns, split it further.
+9. **Treat prompt templates as code sites.** Files in `prompts/*.prompt.md`
+   instruct agents to create, read, and write files. If a milestone changes
+   a file path or name, every prompt that references it must be updated.
+   Always grep `prompts/` alongside `lib/` and `stages/`.
+10. **Negative Space must be substantive.** For any milestone that modifies,
+    moves, or parameterizes a class of items (files, variables, patterns),
+    the Negative Space section must list every item of the same class that
+    is intentionally excluded, with a one-line justification for each.
+11. **Acceptance criteria must include behavioral checks.** At least one
+    criterion must verify actual runtime behavior (not just code patterns).
+    A grep that finds zero hits proves the code is clean; a runtime test
+    that observes zero unexpected files proves the feature works.
