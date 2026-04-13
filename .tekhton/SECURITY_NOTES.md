@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-13 11:05:38
+Generated: 2026-04-13 12:04:04
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [MEDIUM] [category:A08] [.github/workflows/brew-bump.yml:30] fixable:yes — GHA script injection: `${{ steps.sha.outputs.tag }}` is interpolated inline into a `sed` run command rather than passed via an `env:` block. Git tag names cannot contain `;`, `&`, or most shell metacharacters, so practical exploitation is constrained, but the pattern violates GitHub's own hardening guidance and could corrupt the formula if a tag containing a sed delimiter (e.g. `|`) were ever pushed. Fix: move the value into a step-level `env:` variable (e.g. `TAG: ${{ steps.sha.outputs.tag }}`) and reference it as `$TAG` in the shell command.
