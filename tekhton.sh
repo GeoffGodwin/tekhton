@@ -37,7 +37,8 @@
 #   --skip-audit          Skip architect audit even if threshold is reached
 #   --auto-advance        Auto-advance through milestones after acceptance
 #   --force-audit         Force architect audit regardless of threshold
-#   --add-milestone "desc" Create a scoped milestone via intake agent (no run)
+#   --draft-milestones [desc] Interactive milestone authoring: clarify, analyze, split, generate
+#   --add-milestone "desc"   (deprecated — alias for --draft-milestones)
 #   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
 #   --diagnose            Diagnose last failure and print recovery suggestions
 #   --report, report      Print one-screen summary of last pipeline run
@@ -161,7 +162,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.79.0"
+TEKHTON_VERSION="3.80.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -566,6 +567,28 @@ if [ "${1:-}" = "--audit-tests" ]; then
     exit 0
 fi
 
+# --- Early --draft-milestones check (runs before execution pipeline) --------
+
+if [ "${1:-}" = "--draft-milestones" ]; then
+    source "${TEKHTON_HOME}/lib/common.sh"
+    source "${TEKHTON_HOME}/lib/prompts.sh"
+    source "${TEKHTON_HOME}/lib/agent.sh"
+    source "${TEKHTON_HOME}/lib/config.sh"
+    source "${TEKHTON_HOME}/lib/draft_milestones.sh"
+    source "${TEKHTON_HOME}/lib/milestones.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag.sh"
+    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+    : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
+    export PROJECT_NAME
+    load_config
+    shift
+    local_seed="${1:-}"
+    [[ -n "$local_seed" ]] && shift
+    run_draft_milestones "$local_seed"
+    _TEKHTON_CLEAN_EXIT=true
+    exit 0
+fi
+
 # --- Early --health check (runs before execution pipeline) ------------------
 
 if [ "${1:-}" = "--health" ]; then
@@ -794,6 +817,7 @@ source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"
+source "${TEKHTON_HOME}/lib/draft_milestones.sh"
 source "${TEKHTON_HOME}/lib/context_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
@@ -920,7 +944,8 @@ usage() {
         echo "  --human [TAG]             Pick next unchecked note as task (BUG, FEAT, POLISH)"
         echo "  --with-notes              Force human notes injection regardless of task text"
         echo "  --notes-filter TAG        Inject only [TAG] notes (BUG, FEAT, POLISH)"
-        echo "  --add-milestone \"desc\"    Create a scoped milestone via intake agent (no run)"
+        echo "  --draft-milestones [desc] Interactive milestone authoring: clarify, analyze, split, generate"
+        echo "  --add-milestone \"desc\"    (deprecated — alias for --draft-milestones)"
         echo "  --triage [TAG]            Triage all unchecked notes (size estimate) without running"
         echo "  --dry-run                 Preview mode: run scout + intake only, show what would happen"
         echo "  --continue-preview        Resume from a previous --dry-run (uses cached results)"
@@ -1293,12 +1318,11 @@ EOF
         --continue-preview) CONTINUE_PREVIEW=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
         --add-milestone)
+            warn "--add-milestone is deprecated. Use --draft-milestones for the new interactive flow."
             shift
-            if [[ -z "${1:-}" ]]; then
-                error "--add-milestone requires a description string."
-                usage 1
-            fi
-            run_intake_create "$1"
+            local_seed="${1:-}"
+            [[ -n "$local_seed" ]] && shift
+            run_draft_milestones "$local_seed"
             _TEKHTON_CLEAN_EXIT=true
             exit 0
             ;;

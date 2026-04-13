@@ -1,4 +1,4 @@
-# Reviewer Report
+# Reviewer Report — M80 Draft Milestones Interactive Flow (Cycle 2)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,35 +10,16 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_readme_split.sh` is not wired into `tests/run_tests.sh`. The milestone spec's implementation plan explicitly says "Add to `tests/run_tests.sh` only if it's fast (< 1s) and doesn't depend on network" — both conditions are met. A one-line addition to run_tests.sh would integrate it into CI.
-- `tests/test_readme_split.sh` uses `grep -oP` (Perl-compatible regex), a GNU grep extension not available on macOS's BSD grep. The project targets Linux/WSL so this is not a blocker, but worth noting for future portability.
+- `prompts/draft_milestones.prompt.md:34-35` — Empty `{{IF:DRAFT_SEED_DESCRIPTION}}...{{ENDIF:DRAFT_SEED_DESCRIPTION}}` block is still present (dead code, likely a copy-paste residue). Remove for clarity.
+- `lib/draft_milestones.sh:87` — `head -"$count"` where `$count` comes from `DRAFT_MILESTONES_SEED_EXEMPLARS`. `_clamp_config_value` enforces an upper bound but does not enforce the value is an integer. A non-integer config value passes through to `head` as a malformed flag. Add `[[ "$count" =~ ^[0-9]+$ ]] || count=3` before the pipeline.
+- `tests/test_draft_milestones_next_id.sh:33` — `source ... 2>/dev/null || true` silently suppresses errors when loading `draft_milestones.sh`. A syntax error in that file would produce confusing "command not found" failures downstream. Remove the suppression so source errors surface clearly.
 
 ## Coverage Gaps
-- None — pure documentation reorganization; the new `tests/test_readme_split.sh` covers all structural assertions required by the milestone.
+- `draft_milestones_write_manifest()` has no automated test coverage. Tests cover `draft_milestones_next_id()` (5 cases) and `draft_milestones_validate_output()` (7 cases) but not the manifest write path. A test verifying the function appends correct pipe-delimited rows to a fixture MANIFEST.cfg (including the dependency-chaining logic) would protect against regressions.
+
+## Prior Blockers — Resolution Summary
+- FIXED: `set -euo pipefail` added to both `lib/draft_milestones.sh` (line 2) and `lib/draft_milestones_write.sh` (line 2).
+- FIXED: `title="${title//|/}"` added at `lib/draft_milestones_write.sh:136`, before the manifest row is written. Pipe characters in milestone titles can no longer corrupt `IFS='|'` parsing.
 
 ## Drift Observations
-- None — all changed files are documentation or a test script. No shell code changes outside of the TEKHTON_VERSION bump.
-
-## Acceptance Criteria Verification
-
-All 15 acceptance criteria satisfied:
-
-- README.md is 196 lines (≤300 cap) ✓
-- Required sections present in order: Headline → What is Tekhton? → Install → 5-Minute Quickstart → How to Use Effectively → What's in docs/ → Requirements → Contributing → Changelog → License ✓
-- Install section retains curl|bash and brew one-liners from M78 ✓
-- "How to use effectively" narrative covers plan → run → notes → drift → ship ✓
-- docs/USAGE.md contains "How the Pipeline Works" + Autonomous Modes + Human Notes ✓
-- docs/cli-reference.md contains full CLI flags table ✓
-- docs/configuration.md contains pipeline.conf reference ✓
-- All 14 docs/<topic>.md files exist and are non-empty ✓
-- Each docs/ file has M79 history pointer header ✓
-- CHANGELOG.md contains historical entries (previously in README) ✓
-- README Changelog section is a two-line pointer to CHANGELOG.md ✓
-- tests/test_readme_split.sh exists with ≤300-line and link-resolve assertions ✓
-- TEKHTON_VERSION is 3.79.0 in tekhton.sh ✓
-- MANIFEST.cfg contains M79 row (depends_on=m78, group=devx) ✓
-- Backward-compatible anchor tags preserved in README for external links ✓
-
-Note: The `docs/changelog.md` referenced in CHANGELOG.md is a pre-existing file from M18's documentation site — not a broken link.
-
-Note: MANIFEST.cfg status remains `in_progress` (not yet `done`) — the coder flagged a permissions restriction; the pipeline's milestone marking mechanism handles the status transition.
+- None

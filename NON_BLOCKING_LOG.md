@@ -5,8 +5,9 @@ Items are auto-collected from `## Non-Blocking Notes` in ${REVIEWER_REPORT_FILE}
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [x] [2026-04-13 | "M79"] `tests/test_readme_split.sh` is not wired into `tests/run_tests.sh`. The milestone spec's implementation plan explicitly says "Add to `tests/run_tests.sh` only if it's fast (< 1s) and doesn't depend on network" — both conditions are met. A one-line addition to run_tests.sh would integrate it into CI.
-- [x] [2026-04-13 | "M79"] `tests/test_readme_split.sh` uses `grep -oP` (Perl-compatible regex), a GNU grep extension not available on macOS's BSD grep. The project targets Linux/WSL so this is not a blocker, but worth noting for future portability.
+- [ ] [2026-04-13 | "M80"] `prompts/draft_milestones.prompt.md:34-35` — Empty `{{IF:DRAFT_SEED_DESCRIPTION}}...{{ENDIF:DRAFT_SEED_DESCRIPTION}}` block is still present (dead code, likely a copy-paste residue). Remove for clarity.
+- [ ] [2026-04-13 | "M80"] `lib/draft_milestones.sh:87` — `head -"$count"` where `$count` comes from `DRAFT_MILESTONES_SEED_EXEMPLARS`. `_clamp_config_value` enforces an upper bound but does not enforce the value is an integer. A non-integer config value passes through to `head` as a malformed flag. Add `[[ "$count" =~ ^[0-9]+$ ]] || count=3` before the pipeline.
+- [x] [2026-04-13 | "M80"] `tests/test_draft_milestones_next_id.sh:33` — `source ... 2>/dev/null || true` silently suppresses errors when loading `draft_milestones.sh`. A syntax error in that file would produce confusing "command not found" failures downstream. Remove the suppression so source errors surface clearly.
 <!-- Items added here by the pipeline. Mark [x] when addressed. -->
 
 ## Resolved

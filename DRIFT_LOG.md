@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-13
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
 - [2026-04-13 | "M79"] None — all changed files are documentation or a test script. No shell code changes outside of the TEKHTON_VERSION bump.

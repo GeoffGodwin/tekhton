@@ -669,3 +669,16 @@ emit_dashboard_notes() {
     json="${json}]"
     _write_js_file "${dash_dir}/data/notes.js" "TK_NOTES" "$json"
 }
+
+# --- Draft milestones data (M80 stub) ----------------------------------------
+
+# emit_draft_milestones_data
+# Emits draft milestone session data for Watchtower. Scans for pending draft
+# sessions and writes a summary JSON file. Full Watchtower UI integration
+# is a future V4 milestone — this stub ensures the data file exists.
+emit_draft_milestones_data() {
+    if ! is_dashboard_enabled; then return 0; fi
+    local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
+    [[ ! -d "${dash_dir}/data" ]] && return 0
+    _write_js_file "${dash_dir}/data/draft_milestones.js" "TK_DRAFT_MILESTONES" '[]'
+}

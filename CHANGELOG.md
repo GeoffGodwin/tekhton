@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.5] - 2026-04-13
+
+### Added
+- **`lib/draft_milestones.sh`** (NEW) — Interactive milestone authoring flow entry point. Contains `run_draft_milestones()`, `draft_milestones_next_id()`, and `draft_milestones_build_exemplars()`. Sources `draft_milestones_write.sh`. 223 lines. (M80)
 ## [0.1.4] - 2026-04-13
 
 ### Added
