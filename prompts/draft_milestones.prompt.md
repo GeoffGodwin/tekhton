@@ -57,6 +57,49 @@ survey the relevant code. Focus on:
 
 Produce a 1-paragraph "state of the relevant code" summary.
 
+#### Impact Surface Scan
+
+Before proposing milestones, identify EVERY code site affected by the change.
+Use a tiered approach — start with the cheapest, broadest tools and narrow
+with precision tools. Do not dump raw output; summarize affected files with
+site counts.
+
+**Tier 1 — Repo map (file-level scoping, cheapest):**
+If the repo map slice is available above, use it to identify which files are
+in the blast radius of the proposed change. The repo map ranks files by symbol
+relevance — files it highlights are likely affected. Note any files the repo
+map surfaces that you didn't expect.
+
+**Tier 2 — Serena LSP (symbol-level tracing, if available):**
+If Serena MCP tools are available (`find_referencing_symbols`,
+`get_symbol_definition`), use them to trace variable and function references.
+For changes that rename, move, or re-parameterize code symbols, LSP reference
+queries are more precise than grep — they follow the actual symbol graph, not
+string patterns. Use `find_referencing_symbols` on key functions and variables
+that the milestone will modify.
+
+**Tier 3 — Targeted grep (string-literal patterns, narrowest):**
+AST and LSP tools cannot see literal strings embedded in code or prompts.
+Use grep specifically for patterns invisible to Tier 1 and 2:
+
+1. **Hardcoded filenames in shell code:** Search `lib/`, `stages/`, and
+   `tekhton.sh` for literal `.md`, `.txt`, or `.json` filenames that are
+   created, read, or referenced by the milestone's change.
+2. **Prompt templates as write-sites:** Search `prompts/` for the same
+   patterns. Prompts instruct agents to create files — a literal filename
+   in a prompt is a write-site that must be parameterized.
+3. **Config overrides that defeat defaults:** Check `lib/config_defaults.sh`,
+   `templates/pipeline.conf.example`, and the project's own `pipeline.conf`
+   for values that would override the milestone's new defaults.
+4. **Dynamic construction:** Search for string interpolation that builds
+   affected filenames (e.g., `"${PREFIX}_${NAME}.md"`). These escape both
+   AST parsing and literal grep.
+5. **Test files:** Search `tests/` for affected paths. Tests that hardcode
+   values may mask bugs if not updated.
+
+Summarize the total affected-file count per tier. Do not paste raw grep
+output — list files with hit counts in a table.
+
 ### Phase 3 — Propose
 
 [PHASE:PROPOSE]
@@ -114,8 +157,28 @@ status: "pending"
 ## Files Touched
 (### Added and ### Modified subsections with file paths)
 
+## Negative Space
+(Items explicitly NOT included in this milestone, with justification for each.
+If this milestone renames, moves, or parameterizes items, list every item of
+the same class that is intentionally left unchanged and explain why each
+exclusion is correct. An empty Negative Space section is a red flag — every
+non-trivial milestone has deliberate exclusions worth documenting.)
+
 ## Acceptance Criteria
 (Minimum 5 items as `- [ ] criterion`)
+
+**Required criterion types — every milestone must include:**
+- At least one **behavioral** criterion that verifies actual runtime behavior
+  (e.g., "running the pipeline produces no files at location X",
+  "command output contains Y"). Structural greps alone are insufficient.
+- At least one **structural** criterion that verifies code patterns
+  (e.g., "grep for X in lib/ stages/ returns zero hits").
+- For **refactor/migration** milestones: a **completeness** criterion that
+  searches for remaining un-migrated references using a broad pattern, not
+  just the known list of targets.
+- For **config/path** milestones: a **self-referential** criterion that checks
+  Tekhton's own pipeline.conf and any example configs for overrides that
+  defeat new defaults.
 ```
 
 {{IF:DRAFT_EXEMPLAR_MILESTONES}}
@@ -140,3 +203,15 @@ Match their style, depth, and structure:
 7. **Prefer linear dependency chains** — A → B → C, not parallel DAGs.
 8. **Keep individual milestones achievable in one pipeline run** — if a
    milestone would take more than ~200 turns, split it further.
+9. **Treat prompt templates as code sites.** Files in `prompts/*.prompt.md`
+   instruct agents to create, read, and write files. If a milestone changes
+   a file path or name, every prompt that references it must be updated.
+   Always grep `prompts/` alongside `lib/` and `stages/`.
+10. **Negative Space must be substantive.** For any milestone that modifies,
+    moves, or parameterizes a class of items (files, variables, patterns),
+    the Negative Space section must list every item of the same class that
+    is intentionally excluded, with a one-line justification for each.
+11. **Acceptance criteria must include behavioral checks.** At least one
+    criterion must verify actual runtime behavior (not just code patterns).
+    A grep that finds zero hits proves the code is clean; a runtime test
+    that observes zero unexpected files proves the feature works.
