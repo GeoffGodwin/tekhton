@@ -70,6 +70,8 @@ tekhton/
 │   ├── milestone_dag.sh    # Milestone DAG infrastructure + manifest parser
 │   ├── milestone_dag_migrate.sh # Inline→file milestone migration
 │   ├── milestone_window.sh # Character-budgeted milestone sliding window
+│   ├── draft_milestones.sh # Interactive milestone authoring flow (--draft-milestones)
+│   ├── draft_milestones_write.sh # Validation and manifest writing for draft milestones
 │   ├── indexer.sh          # Repo map orchestration + Python tool invocation
 │   ├── indexer_helpers.sh  # Language detection, config validation, file extraction
 │   ├── indexer_history.sh  # Task→file association tracking (JSONL)
@@ -190,7 +192,8 @@ tekhton/
 │   ├── clarification.prompt.md           # Clarification integration prompt
 │   ├── specialist_security.prompt.md     # Security review prompt
 │   ├── specialist_performance.prompt.md  # Performance review prompt
-│   └── specialist_api.prompt.md          # API contract review prompt
+│   ├── specialist_api.prompt.md          # API contract review prompt
+│   └── draft_milestones.prompt.md       # Interactive milestone authoring prompt
 ├── templates/              # Templates copied into target projects by --init
 │   ├── pipeline.conf.example
 │   ├── coder.md
@@ -438,6 +441,10 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PROJECT_VERSION_DEFAULT_BUMP` | Fallback bump type when no rule matches (default: patch) |
 | `PROJECT_VERSION_TAG_ON_BUMP` | Create git tag vX.Y.Z on bump (default: false) |
 | `PROJECT_VERSION_AUTO_DETECT` | Auto-detect version files on first run (default: true) |
+| `DRAFT_MILESTONES_MODEL` | Model for draft milestones agent (default: CLAUDE_STANDARD_MODEL) |
+| `DRAFT_MILESTONES_MAX_TURNS` | Turn budget for draft milestones agent (default: 40) |
+| `DRAFT_MILESTONES_AUTO_WRITE` | Skip confirmation prompt before writing (default: false) |
+| `DRAFT_MILESTONES_SEED_EXEMPLARS` | Number of recent milestones shown as format examples (default: 3) |
 
 ## Testing
 

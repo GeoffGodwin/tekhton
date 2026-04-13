@@ -434,6 +434,12 @@ set -euo pipefail
 : "${CHANGELOG_FORMAT:=keep-a-changelog}"        # future: conventional-commits
 : "${CHANGELOG_INIT_IF_MISSING:=true}"
 
+# --- Draft milestones defaults (Milestone 80) ---
+: "${DRAFT_MILESTONES_MODEL:=${CLAUDE_STANDARD_MODEL}}"
+: "${DRAFT_MILESTONES_MAX_TURNS:=40}"
+: "${DRAFT_MILESTONES_AUTO_WRITE:=false}"
+: "${DRAFT_MILESTONES_SEED_EXEMPLARS:=3}"
+
 # --- UI platform adapter defaults (Milestone 57) ---
 : "${UI_PLATFORM:=auto}"
 : "${SPECIALIST_UI_ENABLED:=auto}"
@@ -493,6 +499,8 @@ _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
 _clamp_config_value SPECIALIST_UI_MAX_TURNS 50
 _clamp_config_value DOCS_AGENT_MAX_TURNS 50
+_clamp_config_value DRAFT_MILESTONES_MAX_TURNS 100
+_clamp_config_value DRAFT_MILESTONES_SEED_EXEMPLARS 10
 _clamp_config_value MAX_PIPELINE_ATTEMPTS 20
 _clamp_config_value FIX_NONBLOCKERS_MAX_PASSES 20
 _clamp_config_value FIX_DRIFT_MAX_PASSES 20

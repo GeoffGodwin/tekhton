@@ -1,7 +1,7 @@
 # Milestone 80: --draft-milestones — Interactive Milestone Authoring Flow
 <!-- milestone-meta
 id: "80"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

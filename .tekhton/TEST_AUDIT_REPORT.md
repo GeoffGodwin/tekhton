@@ -1,80 +1,87 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 57 assertions (flat-script style, no named functions)
-Verdict: CONCERNS
+Tests audited: 1 file, 7 test functions
+Verdict: PASS
 
 ---
 
 ### Findings
 
-#### ISOLATION: Test reads live mutable project files without fixture isolation
-- File: tests/test_readme_split.sh:18–131
-- Issue: Every assertion in this test reads directly from live project files:
-  `README.md` (line 18), `docs/*.md` (lines 56–79), and `CHANGELOG.md` (line 83).
-  No fixture copies are created in a temp directory. The test's pass/fail outcome
-  is fully coupled to the current state of these files. Any future milestone that
-  legitimately grows README.md past 300 lines, reorganizes docs/, or changes the
-  Changelog section will cause spurious failures that have nothing to do with M79's
-  correctness. This is a regression risk, not just a style concern.
-- Severity: HIGH
-- Action: The test is a one-shot migration audit, not a general regression test.
-  Two options (in order of preference):
-  1. Add a comment block at the top of the file documenting that these are M79
-     migration checkpoints tied to the live repo state, and that future milestones
-     which intentionally change README.md or docs/ must update or retire the
-     relevant assertions. This acknowledges the coupling explicitly so it is not
-     a surprise to future maintainers.
-  2. For any assertions intended to be long-lived invariants (e.g., "all docs/
-     links in README must resolve"), copy the files to a mktemp directory and
-     assert against the copies. This protects those assertions from unrelated
-     project state changes while still exercising real content.
-  The test must NOT be deleted — its 57 assertions correctly document M79's
-  expected outcomes. Only the undocumented coupling to live mutable files needs
-  to be addressed.
+#### COVERAGE: Octal bug fix not regression-tested in manifest writer
+- File: tests/test_draft_milestones_write_manifest.sh (no matching test)
+- Issue: The coder summary explicitly calls out an octal interpretation bug fixed
+  in `draft_milestones_write_manifest()` at `lib/draft_milestones_write.sh:107`
+  — zero-padded IDs like m08/m09 caused bash to interpret the numeric suffix as
+  invalid octal. The fix uses `(( 10#$num > max_existing ))`. None of the seven
+  tests exercise this code path: the populated manifest in Tests 2, 3, and 4
+  contains only m01, m02, and m10 — none of which trigger octal interpretation.
+  A regression from `$num` back to `(( num > max_existing ))` arithmetic would
+  not be caught by this suite.
+- Severity: MEDIUM
+- Action: Add a test case whose manifest contains entries like m08 and m09
+  (e.g. max entry is m09), then call `draft_milestones_write_manifest "10" "devx"`
+  and assert the new row's `depends_on` field is "m09". This directly exercises the
+  `10#$num` path. No implementation changes needed.
 
-#### NAMING: Off-by-one in comment vs. array size
-- File: tests/test_readme_split.sh:38
-- Issue: Comment reads `# --- All 13 required docs/ files exist and are non-empty ---`
-  but the `required_docs` array directly below contains 14 entries (USAGE.md through
-  security.md). The CODER_SUMMARY also confirms 14 new docs files were created.
+#### COVERAGE: depends_on field unverified when manifest is empty
+- File: tests/test_draft_milestones_write_manifest.sh:103-128
+- Issue: Test 1 uses an empty manifest (max_existing=0), causing `prev_dep="m0"`.
+  The test reads all six pipe-delimited fields into variables (`r_id`, `r_title`,
+  `r_status`, `r_dep`, `r_file`, `r_group`) but never asserts `r_dep`. The
+  behavior of `depends_on` when there are no prior milestones is not verified —
+  a regression that emits an empty or garbage value would not be caught.
 - Severity: LOW
-- Action: Change the comment on line 38 from "13" to "14".
+- Action: Add `if [[ "$r_dep" == "m0" ]]; then pass ...; else fail ...; fi`
+  after the existing field assertions in Test 1. Alternatively, if "m0" is not
+  the intended sentinel (e.g. empty string would be cleaner for first milestone),
+  correct both the implementation and the assertion together.
 
-#### COVERAGE: Non-empty check uses byte count only
-- File: tests/test_readme_split.sh:59–62
-- Issue: The non-empty check `[[ "$size" -gt 0 ]]` passes for a file containing
-  a single space or a BOM marker. A docs file accidentally overwritten with only
-  whitespace would pass this assertion.
+#### COVERAGE: Empty ID list edge case not tested
+- File: tests/test_draft_milestones_write_manifest.sh (no matching test)
+- Issue: `draft_milestones_write_manifest` accepts a space-separated ID list.
+  When called with an empty string or whitespace only, the `for id in $id_list`
+  loop does not execute and the function returns 0 with no writes. This graceful
+  no-op path is not tested. Callers (including `run_draft_milestones` when
+  `valid_ids` is empty) rely on this behavior.
 - Severity: LOW
-- Action: Optional improvement — replace `wc -c` with `wc -w` (word count) to
-  require at least one word in the file. The current threshold is adequate for
-  the migration use case since all 14 docs files were verified to have substantive
-  content.
+- Action: Add a test case that calls `draft_milestones_write_manifest "" "devx"`
+  on a populated manifest, then asserts the manifest is unchanged (same line
+  count) and the function returns 0.
 
 ---
 
-### Notes (Non-finding observations)
+### Positive Observations
 
-**Assertion honesty:** All 57 assertions derive from real file reads against the
-implementation deliverables. No hardcoded expected values are disconnected from
-implementation logic; no trivially true comparisons detected. ✓
+- **Isolation is sound.** All fixtures are created in a `mktemp -d` temp
+  directory with `trap 'rm -rf "$TMPDIR"' EXIT`. Each test uses its own
+  `local_dir` subdirectory under `$TMPDIR`. `PROJECT_DIR` is always pointed at
+  the temp directory. No pipeline logs, `.tekhton/` artifacts, or live project
+  files are read. ✓
 
-**Scope alignment:** No orphaned references. `.tekhton/JR_CODER_SUMMARY.md` was
-deleted by the coder; the test does not reference it. The `required_docs` array
-matches all 14 files listed in CODER_SUMMARY exactly. ✓
+- **Assertions derive from implementation logic.** All expected values ("m81",
+  "My New Feature", "pending", "m10", "m11", field count 6) are directly
+  traceable to `draft_milestones_write_manifest()` behavior — the pipe-delimited
+  row format at line 138, the max-existing scan at lines 103–110, and the title
+  sanitization at line 136. No disconnected magic values. ✓
 
-**Link resolution coverage:** The grep-based link extractor (line 36) correctly
-catches all `docs/` links in README including cross-directory paths
-(`docs/getting-started/installation.md`, `docs/index.md`). All those paths were
-verified to exist in the repo. The link-resolution loop is the most rigorous
-section of the test. ✓
+- **Real implementation is called.** The library is sourced and the actual
+  function is invoked against real temp-directory fixtures. Only the common.sh
+  logging stubs (`log`, `warn`, `error`, `success`, `header`) are replaced with
+  no-ops — appropriate since they produce side-effect output only and are not
+  under test. ✓
 
-**Section ordering:** The ordered-section check (lines 97–124) verifies both
-presence and relative ordering — it does not merely grep for keywords in
-isolation. ✓
+- **Linear dependency chain is tested end-to-end.** Test 3 calls
+  `draft_milestones_write_manifest "11 12" "devx"` and independently reads both
+  rows to verify m11→m10 and m12→m11. This exercises the `prev_dep` update
+  at line 139 that makes chaining work. ✓
 
-**Assertion count verification:** The tester's claim of 57 assertions is accurate:
-1 (line count) + 17 (link resolution: 14 table links + 2× installation.md + 1×
-index.md) + 14 (file exists/non-empty) + 14 (M79 header present) + 1 (CHANGELOG
-exists) + 1 (README changelog pointer) + 9 (section order) = 57. ✓
+- **Error path and sanitization paths are covered.** Tests 5 (missing file),
+  6 (pipe in title), and 7 (missing MANIFEST.cfg) cover three distinct failure
+  modes in addition to the happy-path tests. Test 7 verifies non-zero exit code;
+  Test 5 verifies silent skip; Test 6 verifies both content correctness and
+  structural field count. ✓
+
+- **Idempotency is verified.** Test 4 confirms no duplicate row is appended when
+  the ID already exists in the manifest, exercising the `grep -qE "^m${id}\|"`
+  guard at line 117. ✓
