@@ -52,17 +52,24 @@ validate_pipeline_order() {
 
 # get_pipeline_order — Echo the stage list for the active pipeline order.
 # Reads PIPELINE_ORDER global. Returns space-separated stage names.
+# When DOCS_AGENT_ENABLED=true, inserts "docs" between coder and security.
 get_pipeline_order() {
     local order="${PIPELINE_ORDER:-standard}"
+    local stages
     case "$order" in
         test_first)
-            echo "$PIPELINE_ORDER_TEST_FIRST"
+            stages="$PIPELINE_ORDER_TEST_FIRST"
             ;;
         *)
             # standard, auto (fallback), or any unrecognized value
-            echo "$PIPELINE_ORDER_STANDARD"
+            stages="$PIPELINE_ORDER_STANDARD"
             ;;
     esac
+    # Conditionally insert docs stage between coder and security
+    if [[ "${DOCS_AGENT_ENABLED:-false}" == "true" ]]; then
+        stages="${stages/coder security/coder docs security}"
+    fi
+    echo "$stages"
 }
 
 # get_stage_count — Return the number of *visible* stages in the active order.

@@ -138,6 +138,12 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 
 # AGENT_SKIP_PERMISSIONS=false
 
+# Docs agent stage — optional post-coder/pre-security stage
+# Uses Haiku to update README/docs/ based on the coder's diff
+# DOCS_AGENT_ENABLED=false
+# DOCS_AGENT_MODEL="claude-haiku-4-5-20251001"
+# DOCS_AGENT_MAX_TURNS=10
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Section 5: Features
 # Optional features — enable as needed

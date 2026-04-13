@@ -2,7 +2,7 @@
 # Milestone 75: Dedicated Docs Agent Stage (Optional, Haiku-Powered)
 <!-- milestone-meta
 id: "75"
-status: "done"
+status: "in_progress"
 -->
 <!-- PM-tweaked: 2026-04-12 -->
 
@@ -131,16 +131,15 @@ required.
 
 ## Migration Impact
 
-[PM: Added — milestone introduces 6 new config keys and a new CLI flag.]
+[PM: Added — milestone introduces 4 new config keys and a new CLI flag.]
 
 All changes are **backward-compatible**. No action is required for existing
 projects:
 
 - `DOCS_AGENT_ENABLED` defaults to `false` — the stage is a no-op unless
   explicitly opted in. Existing pipelines behave identically.
-- `DOCS_AGENT_MODEL`, `DOCS_AGENT_MAX_TURNS`, `DOCS_AGENT_REPORT_FILE`,
-  `DOCS_README_FILE`, and `DOCS_DIRS` are only read when
-  `DOCS_AGENT_ENABLED=true`. Unused otherwise.
+- `DOCS_AGENT_MODEL`, `DOCS_AGENT_MAX_TURNS`, `DOCS_AGENT_REPORT_FILE` are
+  only read when `DOCS_AGENT_ENABLED=true`. Unused otherwise.
 - `--skip-docs` is additive; existing CLI invocations are unaffected.
 - No `pipeline.conf` keys are renamed, removed, or given new semantics.
 - No existing stage positions or stage-count values change unless the new
@@ -158,7 +157,7 @@ DOCS_AGENT_ENABLED=true
 | New stage file | 1 | `stages/docs.sh` |
 | New prompt file | 1 | `prompts/docs_agent.prompt.md` |
 | New lib helpers | 1 | `lib/docs_agent.sh` — skip-path detection, public-surface parsing |
-| New config variables | 6 | `DOCS_AGENT_ENABLED`, `DOCS_AGENT_MODEL`, `DOCS_AGENT_MAX_TURNS`, `DOCS_AGENT_REPORT_FILE`, `DOCS_README_FILE`, `DOCS_DIRS` (`SKIP_DOCS` is a CLI-set runtime var, not in `config_defaults.sh`) |
+| New config variables | 4 | `DOCS_AGENT_ENABLED`, `DOCS_AGENT_MODEL`, `DOCS_AGENT_MAX_TURNS`, `DOCS_AGENT_REPORT_FILE` (`SKIP_DOCS` is a CLI-set runtime var, not in `config_defaults.sh`) |
 | Pipeline integration | 1 | `tekhton.sh` main loop — insert between build gate and security |
 | CLI flag | 1 | `--skip-docs` |
 | Tests added | 2 | `test_docs_agent_skip_path.sh`, `test_docs_agent_stage_smoke.sh` |
@@ -178,17 +177,9 @@ Edit `lib/config_defaults.sh`:
 : "${DOCS_AGENT_MODEL:=claude-haiku-4-5-20251001}"
 : "${DOCS_AGENT_MAX_TURNS:=10}"
 : "${DOCS_AGENT_REPORT_FILE:=${TEKHTON_DIR}/DOCS_AGENT_REPORT.md}"
-: "${DOCS_README_FILE:=${PROJECT_DIR}/README.md}"
-: "${DOCS_DIRS:=${PROJECT_DIR}/docs}"
 ```
 
-[PM: Added `DOCS_README_FILE` (default: `${PROJECT_DIR}/README.md`) and
-`DOCS_DIRS` (default: `${PROJECT_DIR}/docs`) — the prompt template (Step 3)
-references `{{DOCS_README_FILE}}` and `{{DOCS_DIRS}}` but neither had a
-config default or `lib/prompts.sh` registration entry. Without these, the
-rendered prompt would contain unresolved `{{VAR}}` tokens at runtime.]
-
-Edit `lib/prompts.sh` — register all six vars as template variables.
+Edit `lib/prompts.sh` — register all four vars as template variables.
 
 ### Step 2 — Skip-path detection helper
 
@@ -350,7 +341,7 @@ group `quality`.
 - `.claude/milestones/m75-docs-agent-stage.md` — this file
 
 ### Modified
-- `lib/config_defaults.sh` — six new `DOCS_AGENT_*` / `DOCS_*` vars
+- `lib/config_defaults.sh` — four new `DOCS_AGENT_*` vars
 - `lib/prompts.sh` — register new template variables
 - `tekhton.sh` — source `stages/docs.sh`, invoke `run_stage_docs`,
   add `--skip-docs` flag, update stage-count helper, bump version
@@ -364,11 +355,9 @@ group `quality`.
 - [ ] `prompts/docs_agent.prompt.md` exists and references `{{CODER_SUMMARY_FILE}}`,
       `{{DOCS_README_FILE}}`, `{{DOCS_DIRS}}`, `{{DOCS_AGENT_REPORT_FILE}}`
 - [ ] `lib/docs_agent.sh` defines `docs_agent_should_skip`
-- [ ] `lib/config_defaults.sh` defines all six new `DOCS_AGENT_*` / `DOCS_*` vars with the correct defaults
+- [ ] `lib/config_defaults.sh` defines all four new `DOCS_AGENT_*` vars with the correct defaults
 - [ ] `DOCS_AGENT_ENABLED` defaults to `false`
 - [ ] `DOCS_AGENT_MODEL` defaults to `claude-haiku-4-5-20251001`
-- [ ] `DOCS_README_FILE` defaults to `${PROJECT_DIR}/README.md`
-- [ ] `DOCS_DIRS` defaults to `${PROJECT_DIR}/docs`
 - [ ] `tekhton.sh` sources `stages/docs.sh` and invokes `run_stage_docs`
       between build gate and security stage
 - [ ] `tekhton.sh` supports `--skip-docs` flag and updates `--help` text
@@ -433,10 +422,6 @@ group `quality`.
 - **Model name is a moving target.** If the Haiku 4.5 model ID changes
   before this ships, update the default. Users can always override in
   pipeline.conf.
-- **`DOCS_README_FILE` and `DOCS_DIRS` are path defaults, not discovery.**
-  The docs agent must verify these paths exist before editing. If
-  `DOCS_README_FILE` doesn't exist or `DOCS_DIRS` is empty, the agent
-  should report "nothing to do" rather than fail.
 
 ## Seeds Forward
 

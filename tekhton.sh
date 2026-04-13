@@ -26,6 +26,7 @@
 #   --start-at tester     Resume tester from existing .tekhton/${TESTER_REPORT_FILE}
 #   --start-at test       Skip coder + security + reviewer; requires .tekhton/${REVIEWER_REPORT_FILE}
 #   --skip-security       Bypass security stage for a single run
+#   --skip-docs           Bypass docs agent stage for a single run
 #   --plan-from-index     Synthesize .tekhton/${DESIGN_FILE} + CLAUDE.md from PROJECT_INDEX.md
 #   --rescan              Incrementally update PROJECT_INDEX.md from git changes
 #   --rescan --full       Force full re-crawl regardless of change volume
@@ -160,7 +161,7 @@ trap _tekhton_cleanup EXIT
 #   MINOR = last completed milestone within this initiative (resets each major)
 #   PATCH = hotfixes between milestones
 # Updated on each milestone completion.
-TEKHTON_VERSION="3.74.0"
+TEKHTON_VERSION="3.75.0"
 export TEKHTON_VERSION
 
 # --- Path resolution ---------------------------------------------------------
@@ -233,6 +234,7 @@ CURRENT_NOTE_LINE="${CURRENT_NOTE_LINE:-}"
 HUMAN_SINGLE_NOTE="${HUMAN_SINGLE_NOTE:-false}"
 SKIP_AUDIT=false
 SKIP_SECURITY=false
+SKIP_DOCS=false
 FORCE_AUDIT=false
 FIX_NONBLOCKERS_MODE=false
 FIX_DRIFT_MODE=false
@@ -848,6 +850,8 @@ source "${TEKHTON_HOME}/lib/intake_verdict_handlers.sh"
 source "${TEKHTON_HOME}/stages/intake.sh"
 source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
+source "${TEKHTON_HOME}/lib/docs_agent.sh"
+source "${TEKHTON_HOME}/stages/docs.sh"
 source "${TEKHTON_HOME}/lib/security_helpers.sh"
 source "${TEKHTON_HOME}/stages/security.sh"
 source "${TEKHTON_HOME}/stages/review.sh"
@@ -919,6 +923,7 @@ usage() {
         echo "  --dry-run                 Preview mode: run scout + intake only, show what would happen"
         echo "  --continue-preview        Resume from a previous --dry-run (uses cached results)"
         echo "  --skip-security           Bypass security stage for a single run"
+        echo "  --skip-docs               Bypass docs agent stage for a single run"
         echo "  --skip-audit              Skip architect audit even if threshold is reached"
         echo "  --force-audit             Force architect audit regardless of threshold"
         echo "  --no-commit               Skip auto-commit for this run (prompt instead)"
@@ -1267,6 +1272,7 @@ EOF
         --no-commit) AUTO_COMMIT=false; _AUTO_COMMIT_EXPLICIT=true; shift ;;
         --skip-audit) SKIP_AUDIT=true; shift ;;
         --skip-security) SKIP_SECURITY=true; shift ;;
+        --skip-docs) SKIP_DOCS=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
         --fix-nonblockers|--fix-nb) FIX_NONBLOCKERS_MODE=true; shift ;;
         --fix-drift) FIX_DRIFT_MODE=true; shift ;;
@@ -2060,6 +2066,29 @@ _run_pipeline_stages() {
                     warn "${HUMAN_NOTES_FILE} has unchecked items but coder stage was skipped."
                     warn "Notes will NOT be injected this run. Include them in your next full run."
                 fi
+            fi
+            ;;
+
+        docs)
+            if should_run_stage "docs" "$START_AT"; then
+                CURRENT_STAGE="docs"
+                local _docs_start_evt
+                _docs_start_evt=$(emit_event "stage_start" "docs" "" "$_LAST_STAGE_EVT" "" "")
+                _STAGE_STATUS[docs]="active"
+                _STAGE_BUDGET[docs]="${DOCS_AGENT_MAX_TURNS:-10}"
+                _STAGE_START_TS[docs]="$SECONDS"
+                emit_dashboard_run_state 2>/dev/null || true
+                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Docs"
+                run_stage_docs
+                _LAST_STAGE_EVT=$(emit_event "stage_end" "docs" "" "$_docs_start_evt" "" \
+                    "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
+                _STAGE_STATUS[docs]="complete"
+                _STAGE_TURNS[docs]="${LAST_AGENT_TURNS:-0}"
+                _STAGE_DURATION[docs]="$(( SECONDS - ${_STAGE_START_TS[docs]:-$SECONDS} ))"
+                progress_outcome "Docs" "complete" "${_STAGE_DURATION[docs]}"
+                emit_dashboard_run_state 2>/dev/null || true
+            else
+                header "Stage ${_stage_idx} / ${PIPELINE_STAGE_COUNT} — Docs (skipped)"
             fi
             ;;
 

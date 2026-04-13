@@ -36,6 +36,7 @@ tekhton/
 │   ├── drift.sh            # Drift log, ADL, human action management
 │   ├── drift_artifacts.sh  # Drift artifact processing
 │   ├── drift_cleanup.sh    # Non-blocking log cleanup
+│   ├── docs_agent.sh       # Docs agent skip-path detection + public-surface parsing
 │   ├── detect.sh           # Tech stack detection engine
 │   ├── detect_commands.sh  # Build/test/lint command detection
 │   ├── detect_report.sh    # Detection report formatter
@@ -146,6 +147,7 @@ tekhton/
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate
 │   ├── coder.sh            # Scout + Coder + build gate
+│   ├── docs.sh             # Docs agent stage (optional, Haiku-powered)
 │   ├── security.sh         # Security review stage
 │   ├── review.sh           # Review loop + rework routing
 │   ├── tester.sh           # Test writing + validation
@@ -180,6 +182,7 @@ tekhton/
 │   ├── plan_interview_followup.prompt.md # Planning follow-up interview prompt
 │   ├── plan_generate.prompt.md           # CLAUDE.md generation prompt
 │   ├── cleanup.prompt.md                 # Debt sweep agent prompt
+│   ├── docs_agent.prompt.md             # Docs agent prompt (M75)
 │   ├── replan.prompt.md                  # Brownfield replan prompt
 │   ├── clarification.prompt.md           # Clarification integration prompt
 │   ├── specialist_security.prompt.md     # Security review prompt
@@ -420,6 +423,12 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PREFLIGHT_ENABLED` | Toggle pre-flight environment checks (default: true) |
 | `PREFLIGHT_AUTO_FIX` | Allow auto-remediation of safe issues in pre-flight (default: true) |
 | `PREFLIGHT_FAIL_ON_WARN` | Treat pre-flight warnings as failures (default: false) |
+| `DOCS_AGENT_ENABLED` | Toggle optional docs agent stage (default: false) |
+| `DOCS_AGENT_MODEL` | Model for docs agent (default: claude-haiku-4-5-20251001) |
+| `DOCS_AGENT_MAX_TURNS` | Turn budget for docs agent (default: 10) |
+| `DOCS_AGENT_REPORT_FILE` | Docs agent output report path (default: ${TEKHTON_DIR}/DOCS_AGENT_REPORT.md) |
+| `DOCS_README_FILE` | Primary README path (default: README.md) |
+| `DOCS_DIRS` | Documentation directories (default: docs/) |
 
 ## Testing
 

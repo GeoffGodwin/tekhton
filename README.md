@@ -460,6 +460,7 @@ After the main reviewer approves, focused specialist agents can run additional r
 
 **Opt-in:**
 
+- **Docs agent** — dedicated post-coder stage that reads the diff and updates README/docs/ using a Haiku-tier model. Runs between build gate and security. Enable with `DOCS_AGENT_ENABLED=true`.
 - **Performance** — N+1 queries, unbounded loops, memory leaks, expensive operations
 - **API contracts** — schema consistency, error format compliance, backward compatibility
 
@@ -583,6 +584,7 @@ higher-quality document updates.
 | `--continue-preview` | Resume from a previous `--dry-run` (uses cached results) |
 | `--start-at STAGE` | Resume from: `intake`, `coder`, `security`, `review`, `tester`, `test` |
 | `--skip-security` | Bypass security review stage for a single run |
+| `--skip-docs` | Bypass docs agent stage for a single run |
 | `--skip-audit` | Skip architect audit even if thresholds exceeded |
 | `--force-audit` | Run architect audit regardless of thresholds |
 | `--no-commit` | Skip auto-commit (prompt instead) |
@@ -645,6 +647,7 @@ Key configuration areas:
 | **Role files** | `CODER_ROLE_FILE=".claude/agents/coder.md"` | Agent persona definitions |
 | **Planning** | `PLAN_INTERVIEW_MODEL="opus"` | Planning phase model/turn config |
 | **Security agent** | `SECURITY_AGENT_ENABLED=true`, `SECURITY_BLOCK_SEVERITY=HIGH` | Dedicated security stage |
+| **Docs agent** | `DOCS_AGENT_ENABLED=false`, `DOCS_AGENT_MODEL=claude-haiku-4-5-20251001` | Optional docs maintenance stage |
 | **Intake agent** | `INTAKE_AGENT_ENABLED=true`, `INTAKE_CLARITY_THRESHOLD=40` | Task clarity/scope gate |
 | **Watchtower** | `DASHBOARD_ENABLED=true`, `DASHBOARD_REFRESH_INTERVAL=10` | Browser-based dashboard |
 | **Health** | `HEALTH_ENABLED=true`, `HEALTH_SHOW_BELT=true` | Project health scoring |

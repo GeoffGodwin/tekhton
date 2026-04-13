@@ -414,6 +414,12 @@ set -euo pipefail
 : "${DOCS_DIRS:=docs/}"                  # Colon-separated list of doc directories
 : "${DOCS_README_FILE:=README.md}"       # Path to primary README (brownfield override)
 
+# --- Docs agent stage defaults (Milestone 75) ---
+: "${DOCS_AGENT_ENABLED:=false}"                           # Optional post-coder/pre-security stage
+: "${DOCS_AGENT_MODEL:=claude-haiku-4-5-20251001}"         # Haiku by default — narrow, bounded task
+: "${DOCS_AGENT_MAX_TURNS:=10}"                            # Turn budget for docs agent
+: "${DOCS_AGENT_REPORT_FILE:=${TEKHTON_DIR}/DOCS_AGENT_REPORT.md}"  # Stage output report
+
 # --- UI platform adapter defaults (Milestone 57) ---
 : "${UI_PLATFORM:=auto}"
 : "${SPECIALIST_UI_ENABLED:=auto}"
@@ -472,6 +478,7 @@ _clamp_config_value SPECIALIST_SECURITY_MAX_TURNS 50
 _clamp_config_value SPECIALIST_PERFORMANCE_MAX_TURNS 50
 _clamp_config_value SPECIALIST_API_MAX_TURNS 50
 _clamp_config_value SPECIALIST_UI_MAX_TURNS 50
+_clamp_config_value DOCS_AGENT_MAX_TURNS 50
 _clamp_config_value MAX_PIPELINE_ATTEMPTS 20
 _clamp_config_value FIX_NONBLOCKERS_MAX_PASSES 20
 _clamp_config_value FIX_DRIFT_MAX_PASSES 20
