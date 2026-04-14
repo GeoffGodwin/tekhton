@@ -1,54 +1,28 @@
+# Coder Summary
 ## Status: COMPLETE
+## What Was Implemented
+- Created `lib/milestone_acceptance_lint.sh` with three lint checks: behavioral criterion detection, refactor completeness grep, config self-referential check
+- Integrated linter into `check_milestone_acceptance()` in `lib/milestone_acceptance.sh` — runs as pre-check, logs warnings to NON_BLOCKING_LOG
+- Fixed code-block ordering bug in `_lint_extract_criteria()`: moved `## heading` break check after code-block guard so `## headings` inside fenced code blocks no longer prematurely terminate criteria extraction
+- Removed erroneous `set -euo pipefail` from sourced library file
+- Improved code-block hash test sensitivity: behavioral keyword now appears only after the code block, so the test detects the extraction bug at the lint level (not just the extract level)
+- Sourced `milestone_acceptance_lint.sh` in `tekhton.sh` (line 821)
+- Updated ARCHITECTURE.md and CLAUDE.md with the new file
 
-## Summary
-.tekhton/CODER_SUMMARY.md was reconstructed by the pipeline after the coder agent
-failed to produce or maintain it. The following files were modified based
-on git state. The reviewer should assess actual changes directly.
+## Root Cause (bugs only)
+N/A — new feature. The code-block ordering bug was a pre-existing implementation defect where `_lint_extract_criteria` checked for `## heading` section breaks before checking code-block state, causing `## headings` inside fenced code blocks to prematurely end criteria extraction.
 
 ## Files Modified
-- .claude/milestones/MANIFEST.cfg
-- .claude/milestones/m84-complete-tekhton-dir-migration.md
-- .tekhton/CODER_SUMMARY.md
-- .tekhton/DRIFT_LOG.md
-- .tekhton/JR_CODER_SUMMARY.md
-- .tekhton/MILESTONE_ARCHIVE.md
-- .tekhton/NON_BLOCKING_LOG.md
-- .tekhton/REVIEWER_REPORT.md
-- .tekhton/TESTER_REPORT.md
-- .tekhton/TEST_AUDIT_REPORT.md
-- PREFLIGHT_REPORT.md
-- lib/agent.sh
-- lib/artifact_handler.sh
-- lib/artifact_handler_ops.sh
-- lib/common.sh
-- lib/config_defaults.sh
-- lib/context_cache.sh
-- lib/context_compiler.sh
-- lib/crawler.sh
-- lib/crawler_content.sh
-- lib/detect_report.sh
-- lib/diagnose_rules.sh
-- lib/drift_prune.sh
-- lib/dry_run.sh
-- lib/finalize_summary.sh
-- lib/health.sh
-- lib/index_reader.sh
-- lib/index_view.sh
-- lib/init.sh
-- lib/init_report.sh
+- `lib/milestone_acceptance_lint.sh` (NEW) — acceptance criteria quality linter
+- `lib/milestone_acceptance.sh` — integrated linter call before acceptance checks
+- `tests/test_milestone_acceptance_lint.sh` (NEW) — comprehensive linter tests (22 assertions)
+- `tests/test_milestone_acceptance_lint_codeblockhash.sh` (NEW) — code-block guard test (7 assertions)
+- `tekhton.sh` — sources new library file
+- `ARCHITECTURE.md` — documents new library
+- `CLAUDE.md` — documents new file in repository layout
 
-## New Files Created
-- tests/test_m84_tekhton_dir_complete.sh (new)
+## Human Notes Status
+No human notes for this task.
 
-## Git Diff Summary
-```
- tests/test_rescan_metadata.sh                      |  11 +
- tests/test_specialist_ui.sh                        |  20 +-
- tests/test_specialists.sh                          |  36 ++--
- tests/test_structured_index.sh                     |  11 +
- 84 files changed, 878 insertions(+), 490 deletions(-)
-```
-
-## Remaining Work
-Unable to determine — coder did not report remaining items.
-Review the task description against actual changes to identify gaps.
+## Docs Updated
+None — no public-surface changes in this task. The linter is internal pipeline infrastructure, not a user-facing CLI or config change.

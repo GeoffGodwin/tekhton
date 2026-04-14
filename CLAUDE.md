@@ -55,6 +55,7 @@ tekhton/
 │   ├── milestones.sh       # Milestone state machine + acceptance checking
 │   ├── milestone_ops.sh    # Milestone marking + disposition
 │   ├── milestone_acceptance.sh # Milestone acceptance criteria checking
+│   ├── milestone_acceptance_lint.sh # Acceptance criteria quality linter
 │   ├── milestone_archival.sh   # Milestone archival to MILESTONE_ARCHIVE.md
 │   ├── milestone_metadata.sh   # Milestone metadata HTML comments
 │   ├── milestone_split.sh  # Pre-flight milestone splitting

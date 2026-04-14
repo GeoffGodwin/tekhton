@@ -1,7 +1,7 @@
 # Milestone 85: Milestone Acceptance Criteria Linter
 <!-- milestone-meta
 id: "85"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

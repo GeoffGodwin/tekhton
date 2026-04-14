@@ -818,6 +818,7 @@ source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"  # DAG-aware wrappers (extracted from milestones.sh)
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
+source "${TEKHTON_HOME}/lib/milestone_acceptance_lint.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"

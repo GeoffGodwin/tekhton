@@ -1,14 +1,13 @@
 ## Planned Tests
-- [x] `tests/test_m84_tekhton_dir_complete.sh` — existing: config defaults, custom TEKHTON_DIR, migration list, migration_apply behavior
-- [x] `tests/test_m84_static_analysis.sh` — new: zero literal filenames in lib/stages/tekhton.sh/prompts (regression guard)
+- [x] `tests/test_milestone_acceptance_lint.sh` — linter unit + integration tests (22 assertions, coder-authored)
+- [x] `tests/test_milestone_acceptance_lint_codeblockhash.sh` — code-block guard ordering test (7 assertions, coder-authored)
 
 ## Test Run Results
-Passed: 363  Failed: 0
+Passed: 29  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_m84_static_analysis.sh`
-- [x] `tests/test_index_structured.sh`
-- [x] `tests/test_structured_index.sh`
+- [x] `tests/test_milestone_acceptance_lint.sh`
+- [x] `tests/test_milestone_acceptance_lint_codeblockhash.sh`
