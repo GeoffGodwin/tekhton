@@ -1,5 +1,3 @@
-# Reviewer Report — M82: Milestone Progress CLI & Run-Boundary Guidance (Cycle 2)
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,25 +8,20 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `_render_progress_bar` (milestone_progress_helpers.sh:176–180) still forks a subshell for every bar character — 40+ forks per render. Correct, low priority given display-only context; a `printf -v` approach would be faster.
-- `test_milestone_progress_display.sh` uses `grep -qP '[\xe2]'` to detect UTF-8 bytes. `grep -P` requires PCRE support which is not guaranteed on all platforms; if absent the test trivially passes without checking anything. A `printf | xxd` or POSIX-compatible pattern is safer.
-- `lib/common.sh` (334 lines) and `lib/diagnose_output.sh` (343 lines) remain over the 300-line ceiling — pre-existing, acknowledged by coder.
+- `_vc_is_noop_cmd()` regex `': $'` won't match bare `:` (colon without trailing space). Minor edge case unlikely to bite in practice. Carried from cycle 1.
+- The `--milestones`, `--all`, `--deps` flag additions in `tekhton.sh` are outside M83's stated scope (M83 scope: `--validate`, `validate_config.sh`, annotation threading), though the code is correct. Carried from cycle 1.
 
 ## Coverage Gaps
-- None
+- The `--milestones` command wiring (M82) has no dedicated integration smoke test for the new flag path. Carried from cycle 1.
+
+## ACP Verdicts
+None
 
 ## Drift Observations
-- `lib/common.sh` has no `set -euo pipefail` (long-standing omission), while `finalize_display.sh`, `diagnose_output.sh`, `milestone_progress.sh`, and `milestone_progress_helpers.sh` all do. The codebase has split conventions for sourced lib files. A cleanup pass to align all lib files would resolve the inconsistency.
+- `validate_config.sh:235-238`: `_vc_check_models()` emits a pass for "Model names recognized" even when all model vars are unset (all iterations `continue`). The pass message implies models were checked, but if none are configured the check is a no-op — cosmetically misleading. Carried from cycle 1.
+- `lib/init_config_sections.sh` scope: M83 milestone spec listed only `tekhton.sh`, `lib/init_config_emitters.sh`, `lib/express_persist.sh` — the addition of `init_config_sections.sh` is correct and required but the spec comment is stale. Carried from cycle 1.
 
 ---
+## Re-review Notes (cycle 2)
 
-## Blocker Verification (prior cycle)
-
-**Blocker 1 — `set -euo pipefail` missing from both new lib files**
-- `lib/milestone_progress.sh:2` — `set -euo pipefail` present. **FIXED.**
-- `lib/milestone_progress_helpers.sh:2` — `set -euo pipefail` present. **FIXED.**
-
-**Blocker 2 — `_diagnose_recovery_command` double-quote injection into displayed CLI string**
-- `lib/milestone_progress.sh:161` — `milestone="${milestone//\"/\\\"}"` applied before interpolation. **FIXED.**
-- `lib/milestone_progress.sh:166` — `task="${task//\"/\\\"}"` applied before interpolation. **FIXED.**
-- Both escaping operations are inside their respective `if` guards and applied before the variable is embedded into `cmd`.
+Prior blocker resolved: `lib/validate_config.sh` line 2 now has `set -euo pipefail` (confirmed at file read). Jr Coder made a targeted single-line fix; `bash -n` and shellcheck pass per JR_CODER_SUMMARY. No regressions introduced. All prior non-blocking notes and drift observations are preserved from cycle 1.

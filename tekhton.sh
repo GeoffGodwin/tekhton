@@ -244,6 +244,7 @@ FIX_NONBLOCKERS_MODE=false
 FIX_DRIFT_MODE=false
 DRY_RUN_MODE=false
 CONTINUE_PREVIEW=false
+VALIDATE_CONFIG_CMD=false
 _AUTO_COMMIT_EXPLICIT=false
 SKIP_FINAL_CHECKS=false
 TOTAL_TURNS=0
@@ -861,6 +862,7 @@ source "${TEKHTON_HOME}/lib/inbox.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
+source "${TEKHTON_HOME}/lib/validate_config.sh"
 source "${TEKHTON_HOME}/lib/update_check.sh"
 source "${TEKHTON_HOME}/lib/migrate.sh"
 source "${TEKHTON_HOME}/lib/migrate_cli.sh"
@@ -974,6 +976,7 @@ usage() {
         echo "  --diagnose                Diagnose last failure with recovery suggestions"
         echo "  --report, report          Print summary of last pipeline run"
         echo "  --health                  Run standalone project health assessment"
+        echo "  --validate                Check config health (placeholders, missing files, models)"
         echo "  --audit-tests             Audit ALL test files for integrity issues"
         echo ""
         echo "Notes:"
@@ -1035,6 +1038,7 @@ usage() {
         echo "  --diagnose          Diagnose last failure with recovery suggestions"
         echo "  --report            Summarize last run's results"
         echo "  --health            Run project health assessment"
+        echo "  --validate          Check config health"
         echo "  --audit-tests       Audit all tests for integrity issues"
         echo ""
         echo "Notes:"
@@ -1369,6 +1373,7 @@ EOF
             ;;
         --dry-run) DRY_RUN_MODE=true; shift ;;
         --continue-preview) CONTINUE_PREVIEW=true; shift ;;
+        --validate) VALIDATE_CONFIG_CMD=true; shift ;;
         --migrate-dag) MIGRATE_DAG=true; shift ;;
         --add-milestone)
             warn "--add-milestone is deprecated. Use --draft-milestones for the new interactive flow."
@@ -1395,6 +1400,14 @@ if [ "$MILESTONES_CMD" = true ]; then
     _render_milestone_progress "${_ms_args[@]+"${_ms_args[@]}"}"
     _TEKHTON_CLEAN_EXIT=true
     exit 0
+fi
+
+# --- Early --validate: config health check and exit (Milestone 83) ------------
+if [ "$VALIDATE_CONFIG_CMD" = true ]; then
+    validate_config
+    _vc_rc=$?
+    _TEKHTON_CLEAN_EXIT=true
+    exit "$_vc_rc"
 fi
 
 # --- Early --migrate-dag: convert inline milestones to DAG format and exit ----
@@ -2586,6 +2599,29 @@ run_preflight_checks || {
         "Pre-flight environment validation failed. See ${PREFLIGHT_REPORT_FILE}."
     exit 1
 }
+
+# --- First-run config validation hint (Milestone 83) --------------------------
+# On first pipeline run (no prior run artifacts), print a brief validation summary.
+_vc_run_summary="${LOG_DIR}/RUN_SUMMARY.json"
+if [[ ! -f "$_vc_run_summary" ]] && [[ ! -f "${CAUSAL_LOG_FILE:-}" ]]; then
+    if validate_config_summary; then
+        log "Config check: ${_VC_PASSES:-0} passed, ${_VC_WARNINGS:-0} warnings (run --validate for details)"
+    else
+        # Errors found — show full output and prompt
+        validate_config
+        if [[ -t 0 ]]; then
+            printf "Continue anyway? [y/N] "
+            read -r _vc_answer
+            if [[ "${_vc_answer}" != "y" ]] && [[ "${_vc_answer}" != "Y" ]]; then
+                log "Aborted. Fix config errors and re-run."
+                exit 1
+            fi
+        else
+            error "Config validation errors found. Run tekhton --validate for details."
+            exit 1
+        fi
+    fi
+fi
 
 # --- Pipeline execution (mode dispatch) --------------------------------------
 

@@ -27,13 +27,15 @@ EOF
 
 # _emit_section_essential — Section 1: Essential config (first ~20 lines).
 # Args: $1=project_name, $2=test_cmd, $3=test_conf, $4=analyze_cmd,
-#        $5=analyze_conf, $6=build_cmd, $7=build_conf, $8=design_file
+#        $5=analyze_conf, $6=build_cmd, $7=build_conf, $8=design_file,
+#        $9=test_source, $10=analyze_source, $11=build_source
 _emit_section_essential() {
     local project_name="$1"
     local test_cmd="$2" test_conf="$3"
     local analyze_cmd="$4" analyze_conf="$5"
     local build_cmd="$6" build_conf="$7"
     local design_file="${8:-}"
+    local test_source="${9:-}" analyze_source="${10:-}" build_source="${11:-}"
 
     local config_version="${TEKHTON_VERSION%.*}"
     config_version="${config_version:-3.0}"
@@ -43,26 +45,29 @@ _emit_section_essential() {
 # Review these — auto-detected values may need adjustment
 TEKHTON_CONFIG_VERSION="${config_version}"
 PROJECT_NAME="${project_name}"
+# Not auto-detected — fill in manually
+# PROJECT_DESCRIPTION="(fill in a one-line description)"
 EOF
 
     # TEST_CMD
     if [[ -n "$test_cmd" ]]; then
-        _emit_verified_line "TEST_CMD" "$test_cmd" "$test_conf"
+        _emit_verified_line "TEST_CMD" "$test_cmd" "$test_conf" "$test_source"
     else
-        echo '# No test command detected — set manually:'
+        echo '# Not auto-detected — fill in manually'
         echo 'TEST_CMD="true"'
     fi
 
     # ANALYZE_CMD
     if [[ -n "$analyze_cmd" ]]; then
-        _emit_verified_line "ANALYZE_CMD" "$analyze_cmd" "$analyze_conf"
+        _emit_verified_line "ANALYZE_CMD" "$analyze_cmd" "$analyze_conf" "$analyze_source"
     else
+        echo '# Not auto-detected — fill in manually'
         echo "ANALYZE_CMD=\"echo 'No analyze command configured'\""
     fi
 
     # BUILD_CHECK_CMD
     if [[ -n "$build_cmd" ]]; then
-        _emit_verified_line "BUILD_CHECK_CMD" "$build_cmd" "$build_conf"
+        _emit_verified_line "BUILD_CHECK_CMD" "$build_cmd" "$build_conf" "$build_source"
     else
         echo 'BUILD_CHECK_CMD=""'
     fi
@@ -76,16 +81,22 @@ EOF
     fi
 }
 
-# _emit_verified_line — Emits a config key with VERIFY marker if needed.
-# Args: $1=key, $2=value, $3=confidence
+# _emit_verified_line — Emits a config key with source annotation and VERIFY marker.
+# Args: $1=key, $2=value, $3=confidence, $4=source (optional)
 _emit_verified_line() {
-    local key="$1" val="$2" conf="$3"
+    local key="$1" val="$2" conf="$3" source="${4:-}"
+
+    # Emit source annotation if available
+    if [[ -n "$source" ]]; then
+        echo "# Detected from: ${source} (confidence: ${conf})"
+    fi
+
     case "$conf" in
         high)
             echo "${key}=\"${val}\""
             ;;
         medium)
-            echo "# VERIFY: detected with medium confidence"
+            [[ -z "$source" ]] && echo "# VERIFY: detected with medium confidence"
             echo "${key}=\"${val}\""
             ;;
         low)
@@ -262,7 +273,8 @@ _emit_section_workspace() {
 #        $5=analyze_conf, $6=build_cmd, $7=build_conf,
 #        $8=coder_model, $9=coder_turns, $10=jr_turns,
 #        $11=reviewer_turns, $12=tester_turns, $13=scout_turns,
-#        $14=required_tools, $15=design_file
+#        $14=required_tools, $15=design_file,
+#        $16=test_source, $17=analyze_source, $18=build_source
 # Output: complete config file content to stdout
 generate_sectioned_config() {
     local project_name="$1"
@@ -274,10 +286,12 @@ generate_sectioned_config() {
     local tester_turns="${12}" scout_turns="${13}"
     local required_tools="${14}"
     local design_file="${15:-}"
+    local test_source="${16:-}" analyze_source="${17:-}" build_source="${18:-}"
 
     _emit_section_essential "$project_name" \
         "$test_cmd" "$test_conf" "$analyze_cmd" "$analyze_conf" \
-        "$build_cmd" "$build_conf" "$design_file"
+        "$build_cmd" "$build_conf" "$design_file" \
+        "$test_source" "$analyze_source" "$build_source"
 
     _emit_section_models_turns "$coder_model" \
         "$coder_turns" "$jr_turns" "$reviewer_turns" "$tester_turns" "$scout_turns"

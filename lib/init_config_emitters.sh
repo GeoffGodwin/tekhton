@@ -75,28 +75,29 @@ _emit_commands() {
     local test_cmd="$1" test_conf="$2"
     local analyze_cmd="$3" analyze_conf="$4"
     local build_cmd="$5" build_conf="$6"
+    local test_source="${7:-}" analyze_source="${8:-}" build_source="${9:-}"
 
     echo "# --- Build / test / analyze commands ----------------------------------------"
 
     # TEST_CMD
     if [[ -n "$test_cmd" ]]; then
-        _emit_command_line "TEST_CMD" "$test_cmd" "$test_conf"
+        _emit_command_line "TEST_CMD" "$test_cmd" "$test_conf" "$test_source"
     else
-        echo '# No test command detected — set manually:'
+        echo '# Not auto-detected — fill in manually'
         echo 'TEST_CMD="true"'
     fi
 
     # ANALYZE_CMD
     if [[ -n "$analyze_cmd" ]]; then
-        _emit_command_line "ANALYZE_CMD" "$analyze_cmd" "$analyze_conf"
+        _emit_command_line "ANALYZE_CMD" "$analyze_cmd" "$analyze_conf" "$analyze_source"
     else
-        echo '# No analyze command detected — set manually:'
+        echo '# Not auto-detected — fill in manually'
         echo "ANALYZE_CMD=\"echo 'No analyze command configured'\""
     fi
 
     # BUILD_CHECK_CMD
     if [[ -n "$build_cmd" ]]; then
-        _emit_command_line "BUILD_CHECK_CMD" "$build_cmd" "$build_conf"
+        _emit_command_line "BUILD_CHECK_CMD" "$build_cmd" "$build_conf" "$build_source"
     else
         echo 'BUILD_CHECK_CMD=""'
     fi
@@ -104,18 +105,25 @@ _emit_commands() {
     echo
 }
 
-# _emit_command_line — Emits a config line with confidence annotation.
+# _emit_command_line — Emits a config line with confidence and source annotation.
+# Args: $1=key, $2=cmd, $3=confidence, $4=source (optional)
 _emit_command_line() {
     local key="$1"
     local cmd="$2"
     local conf="$3"
+    local source="${4:-}"
+
+    # Emit source annotation if available
+    if [[ -n "$source" ]]; then
+        echo "# Detected from: ${source} (confidence: ${conf})"
+    fi
 
     case "$conf" in
         high)
             echo "${key}=\"${cmd}\""
             ;;
         medium)
-            echo "# VERIFY: detected with medium confidence"
+            [[ -z "$source" ]] && echo "# VERIFY: detected with medium confidence"
             echo "${key}=\"${cmd}\""
             ;;
         low)

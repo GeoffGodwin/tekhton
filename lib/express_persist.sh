@@ -43,6 +43,9 @@ persist_express_config() {
     content="${content//\{\{BUILD_CHECK_CMD\}\}/${BUILD_CHECK_CMD:-}}"
     content="${content//\{\{CLAUDE_STANDARD_MODEL\}\}/${CLAUDE_STANDARD_MODEL}}"
 
+    # Inject source annotations from detection tuples (M83)
+    content=$(_inject_express_source_annotations "$content")
+
     # Write atomically (tmpfile + mv) with cleanup trap
     local tmpfile
     tmpfile=$(mktemp "${proj_dir}/.claude/express_conf_XXXXXX")
@@ -54,19 +57,67 @@ persist_express_config() {
     log "Express config saved to ${conf_path}"
 }
 
+# _inject_express_source_annotations — Injects detection source comments into config.
+# Reads _EXPRESS_COMMANDS global for CMD_TYPE|CMD|SOURCE|CONFIDENCE tuples.
+# Args: $1 = config content string
+# Output: config content with source annotations injected before matching keys
+_inject_express_source_annotations() {
+    local content="$1"
+    [[ -z "${_EXPRESS_COMMANDS:-}" ]] && { echo "$content"; return 0; }
+
+    local cmd_type _cmd source conf
+    while IFS='|' read -r cmd_type _cmd source conf; do
+        [[ -z "$cmd_type" ]] && continue
+        [[ -z "$source" ]] && continue
+        local key=""
+        case "$cmd_type" in
+            test)    key="TEST_CMD" ;;
+            analyze) key="ANALYZE_CMD" ;;
+            build)   key="BUILD_CHECK_CMD" ;;
+        esac
+        [[ -z "$key" ]] && continue
+        # Inject annotation comment before the key line
+        local annotation="# Detected from: ${source} (confidence: ${conf,,})"
+        content="${content//${key}=/${annotation}
+${key}=}"
+    done <<< "$_EXPRESS_COMMANDS"
+
+    echo "$content"
+}
+
 # _write_inline_express_config — Fallback: write config without template.
 _write_inline_express_config() {
     local conf_path="$1"
-    cat > "$conf_path" << CONFEOF
-# Auto-detected by Tekhton Express Mode.
-# Run 'tekhton --init' for full configuration with planning interview.
 
-PROJECT_NAME="${PROJECT_NAME}"
-CLAUDE_STANDARD_MODEL="${CLAUDE_STANDARD_MODEL}"
-TEST_CMD="${TEST_CMD}"
-ANALYZE_CMD="${ANALYZE_CMD}"
-BUILD_CHECK_CMD="${BUILD_CHECK_CMD:-}"
-CONFEOF
+    # Extract source annotations from _EXPRESS_COMMANDS if available
+    local test_ann="" analyze_ann="" build_ann=""
+    if [[ -n "${_EXPRESS_COMMANDS:-}" ]]; then
+        local cmd_type _cmd source conf
+        while IFS='|' read -r cmd_type _cmd source conf; do
+            [[ -z "$cmd_type" ]] && continue
+            [[ -z "$source" ]] && continue
+            local ann="# Detected from: ${source} (confidence: ${conf,,})"
+            case "$cmd_type" in
+                test)    test_ann="${ann}" ;;
+                analyze) analyze_ann="${ann}" ;;
+                build)   build_ann="${ann}" ;;
+            esac
+        done <<< "$_EXPRESS_COMMANDS"
+    fi
+
+    {
+        echo "# Auto-detected by Tekhton Express Mode."
+        echo "# Run 'tekhton --init' for full configuration with planning interview."
+        echo ""
+        echo "PROJECT_NAME=\"${PROJECT_NAME}\""
+        echo "CLAUDE_STANDARD_MODEL=\"${CLAUDE_STANDARD_MODEL}\""
+        [[ -n "$test_ann" ]] && echo "$test_ann"
+        echo "TEST_CMD=\"${TEST_CMD}\""
+        [[ -n "$analyze_ann" ]] && echo "$analyze_ann"
+        echo "ANALYZE_CMD=\"${ANALYZE_CMD}\""
+        [[ -n "$build_ann" ]] && echo "$build_ann"
+        echo "BUILD_CHECK_CMD=\"${BUILD_CHECK_CMD:-}\""
+    } > "$conf_path"
 }
 
 # persist_express_roles — Copy built-in role templates to project.

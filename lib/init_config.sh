@@ -32,12 +32,16 @@ _generate_smart_config() {
     # Extract detected commands by type (prefer highest confidence)
     local test_cmd analyze_cmd build_cmd
     local test_conf analyze_conf build_conf
+    local test_source analyze_source build_source
     test_cmd=$(_best_command "$commands" "test")
     test_conf=$(_best_confidence "$commands" "test")
+    test_source=$(_best_source "$commands" "test")
     analyze_cmd=$(_best_command "$commands" "analyze")
     analyze_conf=$(_best_confidence "$commands" "analyze")
+    analyze_source=$(_best_source "$commands" "analyze")
     build_cmd=$(_best_command "$commands" "build")
     build_conf=$(_best_confidence "$commands" "build")
+    build_source=$(_best_source "$commands" "build")
 
     # Detect required tools from languages
     local required_tools
@@ -81,24 +85,27 @@ _generate_smart_config() {
         ci_build=$(_extract_ci_command "${_INIT_CI_CONFIG}" "build" || true)
         ci_lint=$(_extract_ci_command "${_INIT_CI_CONFIG}" "lint" || true)
         # CI overrides heuristic when heuristic confidence < high
+        local ci_sys
+        ci_sys=$(echo "${_INIT_CI_CONFIG}" | head -1 | cut -d'|' -f1)
         if [[ -n "$ci_test" ]] && [[ "$test_conf" != "high" ]]; then
-            test_cmd="$ci_test"; test_conf="high"
+            test_cmd="$ci_test"; test_conf="high"; test_source="CI/${ci_sys}"
         fi
         if [[ -n "$ci_build" ]] && [[ "$build_conf" != "high" ]]; then
-            build_cmd="$ci_build"; build_conf="high"
+            build_cmd="$ci_build"; build_conf="high"; build_source="CI/${ci_sys}"
         fi
         if [[ -n "$ci_lint" ]] && [[ "$analyze_conf" != "high" ]]; then
-            analyze_cmd="$ci_lint"; analyze_conf="high"
+            analyze_cmd="$ci_lint"; analyze_conf="high"; analyze_source="CI/${ci_sys}"
         fi
     fi
 
-    # Write config file (Milestone 22: sectioned format)
+    # Write config file (Milestone 22: sectioned format, M83: source annotations)
     generate_sectioned_config "$project_name" \
         "$test_cmd" "$test_conf" "$analyze_cmd" "$analyze_conf" \
         "$build_cmd" "$build_conf" "$coder_model" \
         "$coder_turns" "$jr_turns" "$reviewer_turns" \
         "$tester_turns" "$scout_turns" "$required_tools" \
-        "$design_file" > "$conf_file"
+        "$design_file" \
+        "$test_source" "$analyze_source" "$build_source" > "$conf_file"
 }
 
 # _extract_ci_command — Extracts a specific command type from CI detection output.
@@ -132,6 +139,14 @@ _best_confidence() {
     local cmd_type="$2"
     [[ -z "$commands" ]] && return 0
     echo "$commands" | grep "^${cmd_type}|" | head -1 | cut -d'|' -f4 || true
+}
+
+# _best_source — Extracts the detection source of the best command of a given type.
+_best_source() {
+    local commands="$1"
+    local cmd_type="$2"
+    [[ -z "$commands" ]] && return 0
+    echo "$commands" | grep "^${cmd_type}|" | head -1 | cut -d'|' -f3 || true
 }
 
 # --- Required tools detection -------------------------------------------------

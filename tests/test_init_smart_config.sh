@@ -151,7 +151,9 @@ else
 fi
 
 # =============================================================================
-# Confidence annotations — medium confidence → # VERIFY:
+# Confidence annotations — medium confidence
+# M83 behavior: with source → emits "# Detected from:" (no VERIFY marker)
+#               without source → emits "# VERIFY:"
 # =============================================================================
 echo "=== Confidence annotation: medium ==="
 
@@ -160,10 +162,18 @@ MED_LANGS="python|medium|requirements.txt"
 MED_CMDS="$(printf 'test|pytest|requirements.txt|medium')"
 MED_CONF=$(make_conf "$MED_DIR" "$MED_LANGS" "" "$MED_CMDS" 5)
 
-if grep -q "# VERIFY:" "$MED_CONF"; then
-    pass "Medium confidence produces # VERIFY: comment in config"
+# M83: when detection source is known, the source annotation replaces VERIFY
+if grep -q "# Detected from: requirements.txt (confidence: medium)" "$MED_CONF"; then
+    pass "Medium confidence with source produces # Detected from: annotation"
 else
-    fail "Medium confidence should produce # VERIFY: comment — not found"
+    fail "Medium confidence with source should produce # Detected from: annotation — not found"
+fi
+
+# VERIFY should NOT appear when source is known (source annotation suffices)
+if ! grep -q "# VERIFY:" "$MED_CONF"; then
+    pass "Medium confidence with source omits # VERIFY: (redundant when source known)"
+else
+    fail "Medium confidence with source should not emit # VERIFY: when source is known"
 fi
 
 test_cmd=$(grep "^TEST_CMD=" "$MED_CONF" | cut -d= -f2 | tr -d '"')
