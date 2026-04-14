@@ -50,7 +50,8 @@ draft_milestones_validate_output() {
     # Required sections
     local section
     for section in "Overview" "Design Decisions" "Scope Summary" \
-                   "Implementation Plan" "Files Touched" "Acceptance Criteria"; do
+                   "Implementation Plan" "Files Touched" "Negative Space" \
+                   "Acceptance Criteria"; do
         if ! grep -qE "^## ${section}" "$file"; then
             echo "ERROR: Missing required section '## ${section}' in $(basename "$file")" >&2
             errors=$((errors + 1))

@@ -1,97 +1,88 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 29 test assertions
+Tests audited: 1 file, 8 test functions (Tests 1–7, with Test 2 comprising two assertions)
 Verdict: CONCERNS
 
 ### Findings
 
-#### ISOLATION: Live M72 milestone file read in integration test
-- File: tests/test_milestone_acceptance_lint.sh:97-108
-- Issue: The test reads `.claude/milestones/m72-tidy-project-root-tekhton-dir.md`
-  directly from the repo tree and asserts `wcount -ge 2` against its live content.
-  This couples the test's pass/fail to the content of a mutable project file: if
-  M72's criteria are ever revised to include behavioral keywords (e.g., as an
-  errata fix), the `>=2` assertion breaks with no change to the linter or test.
-  The M72 file is not a pipeline run artifact, but it is source-controlled project
-  state that evolves independently of the linter under audit.
-- Severity: HIGH
-- Action: Snapshot the M72 acceptance criteria text into a fixture string inside
-  TMPDIR (or as a heredoc in the test itself) rather than reading the live file.
-  This preserves the intent of "M72-style all-structural criteria should trigger
-  warnings" while decoupling pass/fail from future M72 edits. If a live-corpus
-  smoke test is also desired, keep it as a separate, clearly labelled integration
-  check that tolerates a SKIP when the file is absent or content has changed.
+#### COVERAGE: No targeted test for the M86 core feature — Negative Space enforcement
+- File: tests/test_draft_milestones_validate.sh (structural gap — no single line)
+- Issue: M86's sole behavioral change is adding "Negative Space" to the required
+  sections list in `draft_milestones_validate_output()` (`lib/draft_milestones_write.sh:52-59`).
+  There is no test that verifies a milestone file missing only `## Negative Space`
+  fails validation with an error mentioning "Negative Space."
 
-#### ISOLATION: Live M73-M83 milestone files read in false-positive loop
-- File: tests/test_milestone_acceptance_lint.sh:113-129
-- Issue: The false-positive sweep sources milestone files directly from
-  `${TEKHTON_HOME}/.claude/milestones/m${mnum}-*.md` for milestones 73 through
-  83. The test fails (not skips) if any file is missing. More importantly, if
-  any of those 11 milestone files is edited to use only structural criteria (e.g.,
-  during M87 TEKHTON_DIR work or future polish milestones), the test reports a
-  false-positive as a failure in the linter, when in fact the linter is working
-  correctly and the milestone criteria need improvement. The test's pass/fail is
-  thus coupled to the current criterion quality of 11 files that evolve
-  independently of the linter.
+  All seven existing tests pass even if "Negative Space" is silently removed from
+  the required-sections loop:
+  - Test 1 (well-formed, line 97): The fixture includes `## Negative Space` but
+    the assertion only checks the function exits 0 — it cannot detect that the
+    section is required.
+  - Tests 2–6 (single-failure cases): Exercise H1, meta block, AC count, and
+    non-existent-file paths. None involve the required-sections loop.
+  - Test 7 (threshold check, line 223): The minimal fixture omits all non-Overview
+    sections. With Negative Space enforced, the function emits 7 ERROR lines;
+    the assertion is `err_count -ge 5`. If Negative Space is removed from
+    required sections, the function emits 6 ERROR lines — still >= 5. Test 7
+    continues to pass. The regression is completely invisible.
+
+  A future refactor that drops "Negative Space" from the array passes every
+  existing test with no signal. The entire M86 feature is unprotected against
+  regression.
 - Severity: HIGH
-- Action: For the false-positive check, create purpose-built fixture files in
-  TMPDIR that contain representative acceptance criteria text (behavioral keywords,
-  refactor completeness lines, etc.) matching the patterns found in M73-M83 at
-  the time of this milestone. These fixtures remain stable regardless of how the
-  live milestone files evolve. The linter's correctness against "well-formed
-  criteria" can then be verified deterministically. The current live-corpus test
-  can be retained as an advisory integration check (non-blocking) if desired.
+- Action:
+  1. Add a dedicated Test 8 that:
+     - Writes a fixture identical to the well-formed file but with the
+       `## Negative Space` section removed (e.g., via grep -v or sed).
+     - Asserts `draft_milestones_validate_output` returns non-zero.
+     - Captures stderr (`2>&1 || true`) and asserts the output contains
+       "Negative Space".
+  2. Raise Test 7's threshold from `err_count -ge 5` to `err_count -ge 7`
+     (the exact count emitted by the minimal fixture when all 7 sections and
+     the AC-count check fire). The current slack (`>= 5` when actual is 7)
+     allows a full section to be silently dropped from required-sections
+     enforcement without detection.
+
+---
 
 ### No Further Findings
 
 #### Assertion Honesty — PASS
-All assertions test real outputs from real function calls. No hard-coded expected
-values appear that are disconnected from implementation logic. The `wcount -ge 2`
-assertion for M72 is connected to actual linter output (when supplied the real
-M72 text), and the unit-level assertions use fixture inputs and check for
-non-empty/empty output from the real functions.
+All assertions test real return values and real stderr content from calls to the
+actual `draft_milestones_validate_output()` implementation. No hardcoded sentinel
+values, no always-true comparisons (e.g., `assertTrue(true)` equivalents).
+The `err_count -ge 5` in Test 7 is derived from the structure of the minimal
+fixture against the real function, not plucked arbitrarily.
 
 #### Implementation Exercise — PASS
-Both test files source `lib/common.sh` and `lib/milestone_acceptance_lint.sh`
-and call the real implementation functions (`_lint_extract_criteria`,
-`_lint_has_behavioral_criterion`, `_lint_refactor_has_completeness_check`,
-`_lint_config_has_self_referential_check`, `lint_acceptance_criteria`). The
-integration section in test_milestone_acceptance_lint.sh sources the real DAG,
-milestone, and state libraries and calls `check_milestone_acceptance` with a
-fixture manifest — no mocking of the linter path itself.
+Tests source `lib/draft_milestones_write.sh` directly at line 36 and call
+`draft_milestones_validate_output()` with real file paths. Dependencies (log,
+warn, error, success, header) are stubbed to no-ops at lines 25–29, which is
+appropriate — those are display-only helpers with no effect on validation logic
+or return codes.
 
 #### Test Weakening — PASS
-These are entirely new test files. No prior tests were modified. There is no
-weakening to evaluate.
+Test 7's threshold was raised from 4 to 5. The actual error count for the
+minimal fixture increased from 6 to 7 with the new required section. Raising
+the lower bound from 4 to 5 is directionally correct and does not weaken the
+assertion. No existing assertions were removed or broadened.
 
 #### Naming and Intent — PASS
-Test names in the `pass()`/`fail()` calls are descriptive and encode both the
-scenario and the expected outcome (e.g., "Second criterion (after code block)
-is extracted", "Lint refactor warning appears in check_milestone_acceptance
-output"). File names are also specific to their scope.
+All test blocks carry descriptive pass()/fail() messages encoding both the
+scenario and expected outcome (e.g., "Missing Acceptance Criteria → fails",
+"Non-existent file → fails"). The header comment at lines 6–12 accurately
+catalogues all seven test cases.
 
 #### Scope Alignment — PASS
-All tests target the newly created `lib/milestone_acceptance_lint.sh` and the
-updated `lib/milestone_acceptance.sh`. No test imports or references a deleted
-or renamed function. The code-block guard fix in `_lint_extract_criteria`
-(ordering of the heading-break check vs. the in-block guard) is correctly
-exercised by test_milestone_acceptance_lint_codeblockhash.sh.
+`.tekhton/JR_CODER_SUMMARY.md` was deleted by the coder; it is not referenced
+in the test file. All function references target `draft_milestones_validate_output`
+which remains at `lib/draft_milestones_write.sh:20`. No orphaned imports or
+stale references detected.
 
-The codeblockhash test fixture for `lint_acceptance_criteria` (lines 88-112)
-is correctly sensitive to the code-block ordering bug: the behavioral keyword
-("emits") appears only in the criterion after the code block. A broken extractor
-that stops at the `##` heading inside the code block would drop that criterion,
-trigger a spurious lint warning, and cause the test to fail. This is a correct
-and well-targeted regression test for the specific defect described in the coder
-summary.
-
-#### Edge Case Coverage — LOW (non-blocking)
-The following paths in `lint_acceptance_criteria` are not tested:
-- Call with a nonexistent file (returns 0 at line 139) — trivial guard.
-- Call with a file containing no `## Acceptance Criteria` section (returns 0
-  at line 146) — trivial guard.
-- `_lint_infer_categories` in isolation (covered indirectly via
-  `lint_acceptance_criteria` integration but not unit-tested).
-These omissions are low-risk given the simplicity of the code paths and the
-comprehensive coverage of the primary logic branches.
+#### Test Isolation — PASS
+All fixture files are written to `$TMPDIR` (created via `mktemp -d` at line 17),
+with a `trap 'rm -rf "$TMPDIR"' EXIT` guard at line 18. Test 2 derives its
+fixture from the well-formed file via `sed` into `$TMPDIR/no_ac.md`; Test 3 via
+`grep -v` into `$TMPDIR/no_meta.md`; Test 4 via `sed` into `$TMPDIR/no_h1.md`.
+Tests 5 and 7 use inline heredocs written to `$TMPDIR`. No test reads live
+pipeline state files, build reports, MANIFEST.cfg, or any mutable repo artifact.

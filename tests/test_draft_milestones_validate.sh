@@ -75,6 +75,10 @@ Write the code.
 ### Modified
 - lib/example.sh
 
+## Negative Space
+
+No exclusions for this test milestone.
+
 ## Acceptance Criteria
 
 - [ ] First criterion
@@ -174,6 +178,10 @@ Do it.
 ### Added
 - file.sh
 
+## Negative Space
+
+None.
+
 ## Acceptance Criteria
 
 - [ ] Only one criterion
@@ -212,10 +220,10 @@ EOF
 
 err_output=$(draft_milestones_validate_output "$TMPDIR/minimal.md" 2>&1 || true)
 err_count=$(echo "$err_output" | grep -c "ERROR:" || true)
-if [[ "$err_count" -ge 4 ]]; then
+if [[ "$err_count" -ge 5 ]]; then
     pass "Missing multiple sections → reports ${err_count} errors"
 else
-    fail "Expected at least 4 errors for minimal file, got ${err_count}"
+    fail "Expected at least 5 errors for minimal file, got ${err_count}"
 fi
 
 # =============================================================================

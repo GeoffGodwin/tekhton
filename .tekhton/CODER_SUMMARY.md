@@ -1,28 +1,23 @@
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
-- Created `lib/milestone_acceptance_lint.sh` with three lint checks: behavioral criterion detection, refactor completeness grep, config self-referential check
-- Integrated linter into `check_milestone_acceptance()` in `lib/milestone_acceptance.sh` — runs as pre-check, logs warnings to NON_BLOCKING_LOG
-- Fixed code-block ordering bug in `_lint_extract_criteria()`: moved `## heading` break check after code-block guard so `## headings` inside fenced code blocks no longer prematurely terminate criteria extraction
-- Removed erroneous `set -euo pipefail` from sourced library file
-- Improved code-block hash test sensitivity: behavioral keyword now appears only after the code block, so the test detects the extraction bug at the lint level (not just the extract level)
-- Sourced `milestone_acceptance_lint.sh` in `tekhton.sh` (line 821)
-- Updated ARCHITECTURE.md and CLAUDE.md with the new file
+- Added "Negative Space" to the required sections list in `draft_milestones_validate_output()` so the validation function enforces M86's new section requirement
+- Updated test fixtures in `test_draft_milestones_validate.sh` to include `## Negative Space` sections in well-formed and partial milestone fixtures
+- Updated test 7's expected error threshold from 4 to 5 to account for the new required section
+
+All prompt-level changes (Impact Surface Scan, Negative Space template, behavioral acceptance criteria guidance, prompt template audit rule) were already present in `prompts/draft_milestones.prompt.md`. The linter in `lib/milestone_acceptance_lint.sh` already checks behavioral, refactor-completeness, and config self-referential criteria.
+
+The only gap was that the validation function in `draft_milestones_write.sh` did not enforce "Negative Space" as a required section — a generated milestone could omit it and still pass validation. This is now fixed.
 
 ## Root Cause (bugs only)
-N/A — new feature. The code-block ordering bug was a pre-existing implementation defect where `_lint_extract_criteria` checked for `## heading` section breaks before checking code-block state, causing `## headings` inside fenced code blocks to prematurely end criteria extraction.
+N/A — enhancement milestone
 
 ## Files Modified
-- `lib/milestone_acceptance_lint.sh` (NEW) — acceptance criteria quality linter
-- `lib/milestone_acceptance.sh` — integrated linter call before acceptance checks
-- `tests/test_milestone_acceptance_lint.sh` (NEW) — comprehensive linter tests (22 assertions)
-- `tests/test_milestone_acceptance_lint_codeblockhash.sh` (NEW) — code-block guard test (7 assertions)
-- `tekhton.sh` — sources new library file
-- `ARCHITECTURE.md` — documents new library
-- `CLAUDE.md` — documents new file in repository layout
+- `lib/draft_milestones_write.sh` — added "Negative Space" to required sections in `draft_milestones_validate_output()`
+- `tests/test_draft_milestones_validate.sh` — updated test fixtures with `## Negative Space` section; raised error count threshold in test 7
 
 ## Human Notes Status
-No human notes for this task.
+No human notes to address.
 
 ## Docs Updated
-None — no public-surface changes in this task. The linter is internal pipeline infrastructure, not a user-facing CLI or config change.
+None — no public-surface changes in this task.
