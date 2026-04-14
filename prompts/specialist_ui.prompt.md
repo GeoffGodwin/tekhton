@@ -48,7 +48,7 @@ Review the changed UI files against these criteria:
 {{UI_SPECIALIST_CHECKLIST}}
 
 ## Required Output
-Write `SPECIALIST_UI_FINDINGS.md` with this format:
+Write `{{SPECIALIST_FINDINGS_FILE}}` with this format:
 
 ```
 # UI/UX Review Findings

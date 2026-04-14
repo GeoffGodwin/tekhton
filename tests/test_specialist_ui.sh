@@ -14,6 +14,7 @@ export TEKHTON_HOME PROJECT_DIR TEKHTON_SESSION_DIR
 (cd "$PROJECT_DIR" && git init -q && git commit --allow-empty -m "init" -q)
 
 cd "$PROJECT_DIR"
+mkdir -p "${PROJECT_DIR}/.tekhton"
 
 # --- Source required libraries ---
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -43,7 +44,8 @@ TIMESTAMP="20260405_120000"
 LOG_DIR="${PROJECT_DIR}/.claude/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/test.log"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
+SPECIALIST_REPORT_FILE="${TEKHTON_DIR}/SPECIALIST_REPORT.md"
 CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 AGENT_TOOLS_REVIEWER="Read Glob Grep Write"
 BOLD=""
@@ -82,7 +84,7 @@ run_agent() {
     local label="$1"
     if [[ "$label" == *"Specialist (ui)"* ]]; then
         _specialist_ran_t1=true
-        cat > "${PROJECT_DIR}/SPECIALIST_UI_FINDINGS.md" << 'SEOF'
+        cat > "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md" << 'SEOF'
 # UI/UX Review Findings
 ## Blockers
 None
@@ -99,7 +101,7 @@ else
     fail "UI specialist runs when SPECIALIST_UI_ENABLED=true" "specialist did not run"
 fi
 
-rm -f "${PROJECT_DIR}/SPECIALIST_UI_FINDINGS.md" "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md" "${SPECIALIST_REPORT_FILE}"
 run_agent() { :; }
 
 # =============================================================================
@@ -113,7 +115,7 @@ run_agent() {
     local label="$1"
     if [[ "$label" == *"Specialist (ui)"* ]]; then
         _specialist_ran_t2=true
-        cat > "${PROJECT_DIR}/SPECIALIST_UI_FINDINGS.md" << 'SEOF'
+        cat > "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md" << 'SEOF'
 # UI/UX Review Findings
 ## Blockers
 None
@@ -130,7 +132,7 @@ else
     fail "UI specialist runs when auto + UI_PROJECT_DETECTED=true" "specialist did not run"
 fi
 
-rm -f "${PROJECT_DIR}/SPECIALIST_UI_FINDINGS.md" "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md" "${SPECIALIST_REPORT_FILE}"
 run_agent() { :; }
 
 # =============================================================================
@@ -154,7 +156,7 @@ else
     fail "UI specialist skipped when auto + UI_PROJECT_DETECTED unset" "specialist ran unexpectedly"
 fi
 
-rm -f "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+rm -f "${SPECIALIST_REPORT_FILE}"
 run_agent() { :; }
 
 # =============================================================================
@@ -178,7 +180,7 @@ else
     fail "UI specialist disabled when SPECIALIST_UI_ENABLED=false" "specialist ran unexpectedly"
 fi
 
-rm -f "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+rm -f "${SPECIALIST_REPORT_FILE}"
 run_agent() { :; }
 
 # =============================================================================
@@ -455,7 +457,7 @@ SPECIALIST_SKIP_IRRELEVANT=false
 run_agent() {
     local label="$1"
     if [[ "$label" == *"Specialist (ui)"* ]]; then
-        cat > "${PROJECT_DIR}/SPECIALIST_UI_FINDINGS.md" << 'SEOF'
+        cat > "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md" << 'SEOF'
 # UI/UX Review Findings
 ## Blockers
 None
@@ -482,7 +484,7 @@ else
     fail "UI_FINDINGS_BLOCK contains specialist findings content" "missing expected text"
 fi
 
-rm -f "${PROJECT_DIR}/SPECIALIST_UI_FINDINGS.md" "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md" "${SPECIALIST_REPORT_FILE}"
 run_agent() { :; }
 SPECIALIST_SKIP_IRRELEVANT=true
 

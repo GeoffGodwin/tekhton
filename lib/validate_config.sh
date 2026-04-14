@@ -221,20 +221,22 @@ _vc_check_manifest() {
 # _vc_check_models — Validates that model names follow recognized patterns.
 _vc_check_models() {
     local all_valid=true
+    local checked_count=0
     local model_var model_val
     for model_var in CLAUDE_STANDARD_MODEL CLAUDE_CODER_MODEL \
                      CLAUDE_JR_CODER_MODEL CLAUDE_REVIEWER_MODEL \
                      CLAUDE_TESTER_MODEL CLAUDE_SCOUT_MODEL; do
         model_val="${!model_var:-}"
         [[ -z "$model_val" ]] && continue
+        checked_count=$((checked_count + 1))
         if ! _vc_is_valid_model "$model_val"; then
             _vc_warn "${model_var}=\"${model_val}\" — unrecognized model name"
             warnings=$((warnings + 1))
             all_valid=false
         fi
     done
-    if [[ "$all_valid" == "true" ]]; then
-        _vc_pass "Model names recognized"
+    if [[ "$checked_count" -gt 0 ]] && [[ "$all_valid" == "true" ]]; then
+        _vc_pass "Model names recognized ($checked_count checked)"
         passes=$((passes + 1))
     fi
 }

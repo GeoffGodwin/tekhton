@@ -44,7 +44,7 @@ Review the changed files for:
 - **Missing caching**: repeated computation of identical results, re-reading unchanged files
 
 ## Required Output
-Write `SPECIALIST_PERFORMANCE_FINDINGS.md` with this format:
+Write `{{SPECIALIST_FINDINGS_FILE}}` with this format:
 
 ```
 # Performance Review Findings

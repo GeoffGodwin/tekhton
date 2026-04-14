@@ -22,6 +22,16 @@ error()   { :; }
 success() { :; }
 header()  { :; }
 
+# M84: Variable defaults (normally set by common.sh / config_defaults.sh)
+: "${TEKHTON_DIR:=.tekhton}"
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+
 # Source detect.sh first (provides _DETECT_EXCLUDE_DIRS + _extract_json_keys)
 # shellcheck source=../lib/detect.sh
 source "${TEKHTON_HOME}/lib/detect.sh"
@@ -155,10 +165,10 @@ SAMPJSON
     echo "$dir"
 }
 
-# Helper: create a legacy (pre-M67) project with only PROJECT_INDEX.md
+# Helper: create a legacy (pre-M67) project with only PROJECT_INDEX_FILE (no meta.json)
 make_legacy_project() {
     local dir="${TEST_TMPDIR}/${1}"
-    mkdir -p "${dir}/.claude" "${dir}/src"
+    mkdir -p "${dir}/.claude" "${dir}/${TEKHTON_DIR}" "${dir}/src"
     cd "$dir" && git init -q && git config user.email "test@test" && git config user.name "Test"
     printf 'console.log("hello");\n' > "${dir}/src/main.js"
     git -C "$dir" add -A && git -C "$dir" commit -q -m "init"
@@ -166,7 +176,7 @@ make_legacy_project() {
     local commit
     commit=$(git -C "$dir" rev-parse --short HEAD)
 
-    cat > "${dir}/PROJECT_INDEX.md" << LEGACY
+    cat > "${dir}/${PROJECT_INDEX_FILE}" << LEGACY
 # PROJECT_INDEX.md — legacy-project
 
 <!-- Last-Scan: 2026-01-15T00:00:00Z -->
@@ -536,7 +546,7 @@ fi
 
 echo "=== _extract_scan_metadata — legacy fallback ==="
 
-LSCAN=$(_extract_scan_metadata "${LPROJ}/PROJECT_INDEX.md" "Scan-Commit")
+LSCAN=$(_extract_scan_metadata "${LPROJ}/${PROJECT_INDEX_FILE}" "Scan-Commit")
 LEXPECTED=$(git -C "$LPROJ" rev-parse --short HEAD)
 if [[ "$LSCAN" == "$LEXPECTED" ]]; then
     pass "_extract_scan_metadata legacy reads from HTML comments"
@@ -544,7 +554,7 @@ else
     fail "_extract_scan_metadata legacy wrong commit (expected ${LEXPECTED}, got ${LSCAN})"
 fi
 
-LDATE=$(_extract_scan_metadata "${LPROJ}/PROJECT_INDEX.md" "Last-Scan")
+LDATE=$(_extract_scan_metadata "${LPROJ}/${PROJECT_INDEX_FILE}" "Last-Scan")
 if [[ "$LDATE" == "2026-01-15T00:00:00Z" ]]; then
     pass "_extract_scan_metadata legacy reads Last-Scan"
 else
@@ -575,7 +585,7 @@ fi
 
 echo "=== _extract_sampled_files — legacy fallback (fixed regex) ==="
 
-LSAMPLED=$(_extract_sampled_files "${LPROJ}/PROJECT_INDEX.md")
+LSAMPLED=$(_extract_sampled_files "${LPROJ}/${PROJECT_INDEX_FILE}")
 if echo "$LSAMPLED" | grep -q 'src/main.js'; then
     pass "_extract_sampled_files legacy fallback works (fixed regex)"
 else

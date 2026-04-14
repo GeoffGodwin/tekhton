@@ -27,6 +27,16 @@ prompt_artifact_menu(){ echo "ignore"; return 0; }
 # Stub color variables expected by artifact_handler display helpers
 BOLD="" CYAN="" GREEN="" YELLOW="" RED="" NC=""
 
+# M84: Variable defaults (normally set by common.sh / config_defaults.sh)
+: "${TEKHTON_DIR:=.tekhton}"
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+
 # Source required libs
 # shellcheck source=../lib/artifact_handler_ops.sh
 source "${TEKHTON_HOME}/lib/artifact_handler_ops.sh"
@@ -484,6 +494,8 @@ echo "=== _merge_artifact_group: render_prompt lazy-load guard ==="
 
 MERGE_PROJ=$(make_proj "merge_guard")
 mkdir -p "${MERGE_PROJ}/.cursor"
+# M84: MERGE_CONTEXT_FILE is now .tekhton/MERGE_CONTEXT.md — directory must exist
+mkdir -p "${MERGE_PROJ}/.tekhton"
 cat > "${MERGE_PROJ}/.cursor/rules.md" << 'EOF'
 # Cursor Rules
 Follow best practices.
@@ -510,14 +522,15 @@ _call_planning_batch() {
 _merge_artifact_group "$MERGE_PROJ" "Cursor" ".cursor/|config|high"
 
 # Verify MERGE_CONTEXT.md was created (proves render_prompt was called successfully)
-if [[ -f "${MERGE_PROJ}/MERGE_CONTEXT.md" ]]; then
+# M84: MERGE_CONTEXT_FILE is now .tekhton/MERGE_CONTEXT.md
+if [[ -f "${MERGE_PROJ}/${MERGE_CONTEXT_FILE}" ]]; then
     pass "_merge_artifact_group creates MERGE_CONTEXT.md when render_prompt lazy-load guard fires"
 else
     fail "_merge_artifact_group should create MERGE_CONTEXT.md"
 fi
 
 # Verify MERGE_CONTEXT.md contains the merge output
-if grep -q "Merge output" "${MERGE_PROJ}/MERGE_CONTEXT.md" 2>/dev/null; then
+if grep -q "Merge output" "${MERGE_PROJ}/${MERGE_CONTEXT_FILE}" 2>/dev/null; then
     pass "_merge_artifact_group appends merge output to MERGE_CONTEXT.md"
 else
     fail "_merge_artifact_group merge output not found in MERGE_CONTEXT.md"

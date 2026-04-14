@@ -9,11 +9,11 @@ set -euo pipefail
 # =============================================================================
 
 # _generate_codebase_summary — Produces a bounded directory tree + recent git log.
-# If PROJECT_INDEX.md exists and is recent (within 5 runs / current), use it
+# If $PROJECT_INDEX_FILE exists and is recent (within 5 runs / current), use it
 # instead of the ad-hoc tree+git-log generation for higher-quality replan context.
 # Output capped at ~200 lines of tree + 20 git log entries (fallback path).
 _generate_codebase_summary() {
-    local index_file="${PROJECT_DIR}/PROJECT_INDEX.md"
+    local index_file="${PROJECT_DIR}/${PROJECT_INDEX_FILE}"
     local meta_file="${PROJECT_DIR}/.claude/index/meta.json"
 
     # Prefer structured index when available and reasonably current (M68)
@@ -121,7 +121,7 @@ run_replan() {
 
     export DRIFT_LOG_CONTENT=""
     export NO_DRIFT_LOG=""
-    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE:-${DRIFT_LOG_FILE}}"
+    local drift_file="${PROJECT_DIR}/${DRIFT_LOG_FILE:-}"
     if [[ -f "$drift_file" ]]; then
         DRIFT_LOG_CONTENT=$(_safe_read_file "$drift_file" "DRIFT_LOG")
     else
@@ -130,7 +130,7 @@ run_replan() {
 
     export ARCHITECTURE_LOG_CONTENT=""
     export NO_ARCHITECTURE_LOG=""
-    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE:-${ARCHITECTURE_LOG_FILE}}"
+    local adl_file="${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE:-}"
     if [[ -f "$adl_file" ]]; then
         ARCHITECTURE_LOG_CONTENT=$(_safe_read_file "$adl_file" "ARCHITECTURE_LOG")
     else
@@ -139,7 +139,7 @@ run_replan() {
 
     export HUMAN_ACTION_CONTENT=""
     export NO_HUMAN_ACTION=""
-    local action_file="${PROJECT_DIR}/${HUMAN_ACTION_FILE:-${HUMAN_ACTION_FILE}}"
+    local action_file="${PROJECT_DIR}/${HUMAN_ACTION_FILE:-}"
     if [[ -f "$action_file" ]]; then
         HUMAN_ACTION_CONTENT=$(_safe_read_file "$action_file" "HUMAN_ACTION")
     else
@@ -196,11 +196,11 @@ run_replan() {
         return 1
     fi
 
-    local delta_file="${PROJECT_DIR}/REPLAN_DELTA.md"
+    local delta_file="${PROJECT_DIR}/${REPLAN_DELTA_FILE}"
     printf '%s\n' "$replan_output" > "$delta_file"
     local delta_lines
     delta_lines=$(wc -l < "$delta_file")
-    success "Replan delta written to REPLAN_DELTA.md (${delta_lines} lines)."
+    success "Replan delta written to ${REPLAN_DELTA_FILE} (${delta_lines} lines)."
     log "Log saved: ${log_file}"
 
     echo
@@ -219,7 +219,7 @@ _brownfield_approval_menu() {
     local choice
     while true; do
         header "Replan Delta Review"
-        echo "  Review the proposed changes in REPLAN_DELTA.md"
+        echo "  Review the proposed changes in ${REPLAN_DELTA_FILE}"
         echo
         echo "  Options:"
         echo "    [a] Apply   — merge changes into ${DESIGN_FILE} and regenerate CLAUDE.md"
@@ -297,7 +297,7 @@ _apply_brownfield_delta() {
                 source "${TEKHTON_HOME}/stages/plan_generate.sh"
             else
                 warn "Cannot regenerate CLAUDE.md: stages/plan_generate.sh not found."
-                warn "Apply the CLAUDE.md delta manually from REPLAN_DELTA.md."
+                warn "Apply the CLAUDE.md delta manually from ${REPLAN_DELTA_FILE}."
                 _archive_replan_delta "$delta_file"
                 return 0
             fi
@@ -341,5 +341,5 @@ _archive_replan_delta() {
     fi
     local archive_dir="${PROJECT_DIR}/.claude/logs/archive"
     mkdir -p "$archive_dir" 2>/dev/null || true
-    mv "$delta_file" "${archive_dir}/$(date +%Y%m%d_%H%M%S)_REPLAN_DELTA.md" 2>/dev/null || true
+    mv "$delta_file" "${archive_dir}/$(date +%Y%m%d_%H%M%S)_$(basename "${REPLAN_DELTA_FILE}")" 2>/dev/null || true
 }

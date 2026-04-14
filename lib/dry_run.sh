@@ -117,8 +117,10 @@ consume_dry_run_cache() {
     age_minutes=$(( (now - cached_timestamp) / 60 ))
 
     # Copy cached scout report
-    if [[ -f "${cache_dir}/SCOUT_REPORT.md" ]]; then
-        cp "${cache_dir}/SCOUT_REPORT.md" "SCOUT_REPORT.md"
+    local _scout_cache_name
+    _scout_cache_name=$(basename "${SCOUT_REPORT_FILE}")
+    if [[ -f "${cache_dir}/${_scout_cache_name}" ]]; then
+        cp "${cache_dir}/${_scout_cache_name}" "${SCOUT_REPORT_FILE}"
         SCOUT_CACHED=true
         export SCOUT_CACHED
     fi
@@ -159,8 +161,8 @@ _write_dry_run_cache() {
     mkdir -p "$cache_dir"
 
     # Copy reports if they exist
-    if [[ -f "SCOUT_REPORT.md" ]]; then
-        cp "SCOUT_REPORT.md" "${cache_dir}/SCOUT_REPORT.md"
+    if [[ -f "${SCOUT_REPORT_FILE}" ]]; then
+        cp "${SCOUT_REPORT_FILE}" "${cache_dir}/$(basename "${SCOUT_REPORT_FILE}")"
     fi
     if [[ -f "${INTAKE_REPORT_FILE}" ]]; then
         cp "${INTAKE_REPORT_FILE}" "${cache_dir}/$(basename "${INTAKE_REPORT_FILE}")"
@@ -236,7 +238,7 @@ _format_dry_run_preview() {
     echo
 }
 
-# _parse_scout_preview — Extract preview data from SCOUT_REPORT.md.
+# _parse_scout_preview — Extract preview data from scout report file.
 # Sets caller-scoped variables: _scout_file_count, _scout_summary,
 # _estimated_turns, _security_flag.
 _parse_scout_preview() {
@@ -371,11 +373,11 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         "$LOG_FILE" \
         "$_scout_tools"
 
-    if [[ -f "SCOUT_REPORT.md" ]]; then
+    if [[ -f "${SCOUT_REPORT_FILE}" ]]; then
         has_scout=true
         success "Scout completed."
     else
-        warn "Scout did not produce SCOUT_REPORT.md."
+        warn "Scout did not produce ${SCOUT_REPORT_FILE}."
     fi
 
     # --- Validate results --------------------------------------------------
@@ -394,7 +396,7 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
 
     local _scout_file_count=0 _scout_summary="" _estimated_turns="unknown" _security_flag="NO"
     if [[ "$has_scout" == true ]]; then
-        _parse_scout_preview "SCOUT_REPORT.md"
+        _parse_scout_preview "${SCOUT_REPORT_FILE}"
     fi
 
     _format_dry_run_preview \

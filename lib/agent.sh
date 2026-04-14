@@ -34,7 +34,7 @@ source "${TEKHTON_HOME}/lib/agent_helpers.sh"
 : "${STAGE_SUMMARY:=}"
 
 # --- Tool Profiles (--allowedTools per role, override with AGENT_SKIP_PERMISSIONS) ---
-# SCOUT: read-only + Write for SCOUT_REPORT.md (no path-scoped write restriction in CLI)
+# SCOUT: read-only + Write for scout report (no path-scoped write restriction in CLI)
 export AGENT_TOOLS_SCOUT="Read Glob Grep Bash(find:*) Bash(head:*) Bash(wc:*) Bash(cat:*) Bash(ls:*) Bash(tail:*) Bash(file:*) Write"
 export AGENT_TOOLS_CODER="Read Write Edit Glob Grep Bash"       # Full implementation
 export AGENT_TOOLS_JR_CODER="Read Write Edit Glob Grep Bash"    # Simpler tasks

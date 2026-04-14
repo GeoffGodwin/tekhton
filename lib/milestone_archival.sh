@@ -30,7 +30,7 @@ source "${TEKHTON_HOME:-.}/lib/milestone_archival_helpers.sh"
 archive_completed_milestone() {
     local num="$1"
     local claude_md="${2:-CLAUDE.md}"
-    local archive_file="${MILESTONE_ARCHIVE_FILE:-${MILESTONE_ARCHIVE_FILE}}"
+    local archive_file="${MILESTONE_ARCHIVE_FILE:-}"
 
     if ! is_milestone_done "$num" "$claude_md"; then
         return 1

@@ -47,7 +47,7 @@ Review the changed files for:
 - **Naming consistency**: endpoint/function names following project conventions, inconsistent casing
 
 ## Required Output
-Write `SPECIALIST_API_FINDINGS.md` with this format:
+Write `{{SPECIALIST_FINDINGS_FILE}}` with this format:
 
 ```
 # API Contract Review Findings

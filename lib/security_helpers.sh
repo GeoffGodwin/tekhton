@@ -219,7 +219,7 @@ ${unfixable_block}"
 _write_security_notes() {
     local notes_block="$1"
     local unfixable_block="$2"
-    local notes_file="${SECURITY_NOTES_FILE:-${SECURITY_NOTES_FILE}}"
+    local notes_file="${SECURITY_NOTES_FILE:-}"
 
     {
         echo "# Security Notes"

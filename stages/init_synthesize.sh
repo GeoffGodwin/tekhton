@@ -3,7 +3,7 @@ set -euo pipefail
 # =============================================================================
 # stages/init_synthesize.sh — Agent-assisted project synthesis (Milestone 21)
 #
-# Uses PROJECT_INDEX.md + tech stack detection as input to an agent-assisted
+# Uses $PROJECT_INDEX_FILE + tech stack detection as input to an agent-assisted
 # synthesis pipeline that generates ${DESIGN_FILE} and CLAUDE.md for brownfield
 # projects. The brownfield equivalent of --plan — reads existing code instead
 # of interviewing the user.

@@ -13,7 +13,7 @@ set -euo pipefail
 # Uses tester_write_failing.prompt.md. Outputs ${TDD_PREFLIGHT_FILE}.
 # Does NOT enforce test pass gate — tests are expected to fail.
 _run_tester_write_failing() {
-    local _preflight_file="${TDD_PREFLIGHT_FILE:-${TDD_PREFLIGHT_FILE}}"
+    local _preflight_file="${TDD_PREFLIGHT_FILE:-}"
     local _max_turns="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
 
     # Architecture content for the prompt (M47: use cache)

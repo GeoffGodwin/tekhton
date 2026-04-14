@@ -15,9 +15,12 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+TEKHTON_DIR=".tekhton"
+mkdir -p "${PROJECT_DIR}/.tekhton"
 
 # Config defaults that drift_prune.sh expects
 DRIFT_LOG_FILE="DRIFT_LOG.md"
+DRIFT_ARCHIVE_FILE="${TEKHTON_DIR}/DRIFT_ARCHIVE.md"
 DRIFT_RESOLVED_KEEP_COUNT=20  # Keep 20, archive excess
 
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -113,22 +116,22 @@ assert_file_not_contains "Entry 30 removed (oldest)" "${PROJECT_DIR}/DRIFT_LOG.m
 # ============================================================================
 # Test 5: Verify DRIFT_ARCHIVE.md exists and contains the 10 oldest entries
 # ============================================================================
-if [ ! -f "${PROJECT_DIR}/DRIFT_ARCHIVE.md" ]; then
+if [ ! -f "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" ]; then
     echo "FAIL: DRIFT_ARCHIVE.md not created"
     FAIL=1
 else
     # Count archived entries
-    local_archived_count=$(count_entries_in_section "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "Archived Entries")
+    local_archived_count=$(count_entries_in_section "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "Archived Entries")
     assert_eq "archived entries count" "10" "$local_archived_count"
 
     # Verify archived entries are the oldest (21-30)
-    assert_file_contains "Entry 21 archived (oldest kept+1)" "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "Entry 21 — resolved"
-    assert_file_contains "Entry 25 archived" "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "Entry 25 — resolved"
-    assert_file_contains "Entry 30 archived (oldest)" "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "Entry 30 — resolved"
+    assert_file_contains "Entry 21 archived (oldest kept+1)" "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "Entry 21 — resolved"
+    assert_file_contains "Entry 25 archived" "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "Entry 25 — resolved"
+    assert_file_contains "Entry 30 archived (oldest)" "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "Entry 30 — resolved"
 
     # Verify newest entries are NOT in archive (they should be in DRIFT_LOG.md)
-    assert_file_not_contains "Entry 1 not in archive (kept in log)" "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "Entry 1 — resolved"
-    assert_file_not_contains "Entry 20 not in archive (last kept)" "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "Entry 20 — resolved"
+    assert_file_not_contains "Entry 1 not in archive (kept in log)" "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "Entry 1 — resolved"
+    assert_file_not_contains "Entry 20 not in archive (last kept)" "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "Entry 20 — resolved"
 fi
 
 # ============================================================================
@@ -165,9 +168,9 @@ assert_eq "idempotent: still 20 entries after second prune" "20" "$local_count_a
 # ============================================================================
 # Test 9: DRIFT_ARCHIVE header exists and is well-formed
 # ============================================================================
-assert_file_contains "archive header" "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "# Drift Log Archive"
-assert_file_contains "archive purpose" "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "Archived resolved drift observations"
-assert_file_contains "archive threshold note" "${PROJECT_DIR}/DRIFT_ARCHIVE.md" "DRIFT_RESOLVED_KEEP_COUNT"
+assert_file_contains "archive header" "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "# Drift Log Archive"
+assert_file_contains "archive purpose" "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "Archived resolved drift observations"
+assert_file_contains "archive threshold note" "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}" "DRIFT_RESOLVED_KEEP_COUNT"
 
 # ============================================================================
 # Test 10: Edge case — no pruning when below threshold
@@ -193,7 +196,7 @@ EOF
 done
 
 # Remove archive to verify no new one is created for under-threshold case
-rm -f "${PROJECT_DIR}/DRIFT_ARCHIVE.md"
+rm -f "${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}"
 
 # Prune (should be no-op)
 prune_resolved_drift_entries

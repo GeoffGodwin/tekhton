@@ -28,27 +28,27 @@ source "${TEKHTON_HOME:-.}/lib/init_synthesize_ui.sh"
 
 # _assemble_synthesis_context — Builds agent prompt context from project artifacts.
 #
-# Loads PROJECT_INDEX.md, detection report, README, existing ARCHITECTURE.md,
+# Loads $PROJECT_INDEX_FILE, detection report, README, existing ARCHITECTURE.md,
 # and git log summary. Applies context budget — compresses if over budget.
 #
 # Sets exported variables: PROJECT_INDEX_CONTENT, DETECTION_REPORT_CONTENT,
 #   README_CONTENT, EXISTING_ARCHITECTURE_CONTENT, GIT_LOG_SUMMARY
 #
 # Args: $1 = project directory
-# Returns: 0 on success, 1 if PROJECT_INDEX.md is missing
+# Returns: 0 on success, 1 if $PROJECT_INDEX_FILE is missing
 _assemble_synthesis_context() {
     local project_dir="$1"
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
 
     if [[ ! -f "$index_file" ]] && [[ ! -f "${project_dir}/.claude/index/meta.json" ]]; then
-        error "PROJECT_INDEX.md not found at ${index_file}"
+        error "${PROJECT_INDEX_FILE} not found at ${index_file}"
         error "Run 'tekhton --init' first to generate the project index."
         return 1
     fi
 
     # Load project index via structured reader (M68). The reader produces a
     # bounded summary (60KB) — rich enough for synthesis but prevents unbounded
-    # context injection. Falls back to legacy PROJECT_INDEX.md for pre-M67 projects.
+    # context injection. Falls back to legacy $PROJECT_INDEX_FILE for pre-M67 projects.
     export PROJECT_INDEX_CONTENT
     PROJECT_INDEX_CONTENT=$(read_index_summary "$project_dir" 60000)
     log "Loaded project index summary ($(echo "$PROJECT_INDEX_CONTENT" | wc -c | tr -d '[:space:]') chars)"
@@ -88,11 +88,12 @@ _assemble_synthesis_context() {
         fi
     fi
 
-    # Load MERGE_CONTEXT.md if present (from artifact merge — Milestone 11)
+    # Load $MERGE_CONTEXT_FILE if present (from artifact merge — Milestone 11)
     export MERGE_CONTEXT=""
-    if [[ -f "${project_dir}/MERGE_CONTEXT.md" ]]; then
-        MERGE_CONTEXT=$(cat "${project_dir}/MERGE_CONTEXT.md")
-        log "Loaded MERGE_CONTEXT.md ($(echo "$MERGE_CONTEXT" | wc -c | tr -d '[:space:]') chars)"
+    local _mcf="${project_dir}/${MERGE_CONTEXT_FILE}"
+    if [[ -f "${_mcf}" ]]; then
+        MERGE_CONTEXT=$(cat "${_mcf}")
+        log "Loaded ${MERGE_CONTEXT_FILE} ($(echo "$MERGE_CONTEXT" | wc -c | tr -d '[:space:]') chars)"
     fi
 
     # Milestone 12: Doc quality score for synthesis calibration

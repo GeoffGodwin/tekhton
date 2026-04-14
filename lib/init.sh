@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Replaces the bare scaffold --init with an intelligent, interactive
 # initialization flow that uses tech stack detection and the project crawler
-# to auto-populate pipeline.conf, generate PROJECT_INDEX.md, and guide the
+# to auto-populate pipeline.conf, generate $PROJECT_INDEX_FILE, and guide the
 # user to the appropriate next step (--plan or --replan).
 #
 # Sourced by tekhton.sh — do not run directly.
@@ -125,7 +125,7 @@ run_smart_init() {
     tracked_file_count=$(_count_tracked_files "$project_dir")
     log "Crawling project (${tracked_file_count} files)..."
     crawl_project "$project_dir" "${PROJECT_INDEX_BUDGET:-120000}"
-    _INIT_FILES_WRITTEN+=("PROJECT_INDEX.md|structured project index")
+    _INIT_FILES_WRITTEN+=("$(basename "${PROJECT_INDEX_FILE}")|structured project index")
 
     # Phase 4: Config generation
     log "Generating pipeline.conf..."
@@ -157,8 +157,9 @@ run_smart_init() {
         local detection_report
         detection_report=$(format_detection_report "$project_dir")
         local merge_context=""
-        if [[ -f "${project_dir}/MERGE_CONTEXT.md" ]]; then
-            merge_context=$(cat "${project_dir}/MERGE_CONTEXT.md")
+        local _mcf="${project_dir}/${MERGE_CONTEXT_FILE}"
+        if [[ -f "${_mcf}" ]]; then
+            merge_context=$(cat "${_mcf}")
         fi
         _seed_claude_md "$project_dir" "$detection_report" "$project_type" "$merge_context"
         success "Created CLAUDE.md (seeded with detection results)"

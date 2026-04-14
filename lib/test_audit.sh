@@ -221,7 +221,7 @@ WEAKENING: ${test_file} — ${removed_tests} test function(s) removed"
 # Extracts the verdict from "${TEST_AUDIT_REPORT_FILE}".
 # Returns: PASS, CONCERNS, or NEEDS_WORK (defaults to PASS if unparseable)
 _parse_audit_verdict() {
-    local report_file="${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
+    local report_file="${TEST_AUDIT_REPORT_FILE:-}"
     if [[ ! -f "$report_file" ]]; then
         echo "PASS"
         return
@@ -245,7 +245,7 @@ _parse_audit_verdict() {
 #   NEEDS_WORK → tester rework (bounded by TEST_AUDIT_MAX_REWORK_CYCLES)
 _route_audit_verdict() {
     local verdict="$1"
-    local report_file="${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
+    local report_file="${TEST_AUDIT_REPORT_FILE:-}"
 
     case "$verdict" in
         PASS)
@@ -259,7 +259,7 @@ _route_audit_verdict() {
                 findings=$(grep -E '^\s*####\s+(INTEGRITY|SCOPE|COVERAGE|WEAKENING|NAMING)' "$report_file" 2>/dev/null || true)
                 if [[ -n "$findings" ]] && command -v _ensure_nonblocking_log &>/dev/null; then
                     _ensure_nonblocking_log
-                    local nb_file="${NON_BLOCKING_LOG_FILE:-${NON_BLOCKING_LOG_FILE}}"
+                    local nb_file="${NON_BLOCKING_LOG_FILE:-}"
                     {
                         echo ""
                         echo "### Test Audit Concerns ($(date +%Y-%m-%d))"
@@ -389,8 +389,8 @@ ${_AUDIT_WEAKENING_FINDINGS}
             log "Test audit rework cycle ${rework_cycles}/${max_rework}..."
 
             export TEST_AUDIT_FINDINGS=""
-            if [[ -f "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" ]]; then
-                TEST_AUDIT_FINDINGS=$(_safe_read_file "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" "TEST_AUDIT_REPORT")
+            if [[ -f "${TEST_AUDIT_REPORT_FILE:-}" ]]; then
+                TEST_AUDIT_FINDINGS=$(_safe_read_file "${TEST_AUDIT_REPORT_FILE:-}" "TEST_AUDIT_REPORT")
             fi
 
             local rework_prompt
@@ -524,14 +524,14 @@ All test files are included regardless of current diff.
     echo "════════════════════════════════════════"
     echo "  Files audited: ${file_count}"
     echo "  Verdict:       ${verdict}"
-    if [[ -f "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" ]]; then
-        echo "  Report:        ${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
+    if [[ -f "${TEST_AUDIT_REPORT_FILE:-}" ]]; then
+        echo "  Report:        ${TEST_AUDIT_REPORT_FILE:-}"
         echo
         # Show findings summary
         local high_count
-        high_count=$(grep -c 'Severity: HIGH' "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" 2>/dev/null || echo "0")
+        high_count=$(grep -c 'Severity: HIGH' "${TEST_AUDIT_REPORT_FILE:-}" 2>/dev/null || echo "0")
         local medium_count
-        medium_count=$(grep -c 'Severity: MEDIUM' "${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}" 2>/dev/null || echo "0")
+        medium_count=$(grep -c 'Severity: MEDIUM' "${TEST_AUDIT_REPORT_FILE:-}" 2>/dev/null || echo "0")
         echo "  HIGH findings:   ${high_count}"
         echo "  MEDIUM findings: ${medium_count}"
     fi

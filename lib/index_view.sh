@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# index_view.sh — Markdown view generator for PROJECT_INDEX.md (Milestone 69)
+# index_view.sh — Markdown view generator for project index (Milestone 69)
 #
 # Reads structured data from .claude/index/ and writes a bounded, human-readable
-# PROJECT_INDEX.md. Uses record selection (not truncation) when sections exceed
+# project index file. Uses record selection (not truncation) when sections exceed
 # their budget allocation.
 #
 # Sourced by tekhton.sh AFTER crawler.sh and index_reader.sh — do not run directly.
@@ -13,14 +13,14 @@ set -euo pipefail
 
 # --- Main entry point ---------------------------------------------------------
 
-# generate_project_index_view — Assembles PROJECT_INDEX.md from structured data.
+# generate_project_index_view — Assembles project index from structured data.
 # Args: $1 = project directory, $2 = budget in chars (default: PROJECT_INDEX_BUDGET)
-# Output: Writes PROJECT_INDEX.md to project directory
+# Output: Writes project index to project directory
 generate_project_index_view() {
     local project_dir="${1:-.}"
     local budget_chars="${2:-${PROJECT_INDEX_BUDGET:-120000}}"
     local index_dir="${project_dir}/.claude/index"
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
 
     if [[ ! -d "$index_dir" ]]; then
         warn "No structured index at ${index_dir} — cannot generate view"
@@ -69,7 +69,7 @@ generate_project_index_view() {
 
 # --- Section renderers --------------------------------------------------------
 
-# _view_render_header — Renders PROJECT_INDEX.md header from meta.json.
+# _view_render_header — Renders project index header from meta.json.
 _view_render_header() {
     local index_dir="$1"
     local meta_file="${index_dir}/meta.json"
@@ -103,7 +103,7 @@ _view_render_header() {
         dq_line=$'\n'"<!-- DOC_QUALITY_SCORE: ${dq_score} -->"
 
     cat <<EOF
-# PROJECT_INDEX.md — ${project_name}
+# $(basename "${PROJECT_INDEX_FILE}") — ${project_name}
 
 <!-- Last-Scan: ${scan_date} -->
 <!-- Scan-Commit: ${scan_commit} -->

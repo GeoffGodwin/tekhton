@@ -9,7 +9,7 @@ set -euo pipefail
 # Expects: log(), warn() from common.sh
 #
 # Provides:
-#   parse_scout_complexity  — read SCOUT_REPORT.md complexity section
+#   parse_scout_complexity  — read scout report complexity section
 #   apply_scout_turn_limits — set ADJUSTED_*_TURNS from scout recommendation
 #   estimate_review_turns   — estimate reviewer turns from coder output
 #   estimate_tester_turns   — estimate tester turns from coder output
@@ -32,12 +32,12 @@ clamp_turns() {
 
 # --- Parse scout complexity estimate -----------------------------------------
 
-# Reads SCOUT_REPORT.md and extracts complexity fields into global variables.
+# Reads the scout report and extracts complexity fields into global variables.
 # Sets: SCOUT_FILES_TO_MODIFY, SCOUT_LINES_OF_CHANGE, SCOUT_INTERCONNECTED,
 #       SCOUT_REC_CODER_TURNS, SCOUT_REC_REVIEWER_TURNS, SCOUT_REC_TESTER_TURNS
 # Returns 0 if complexity section was found and parsed, 1 otherwise.
 parse_scout_complexity() {
-    local report="${1:-SCOUT_REPORT.md}"
+    local report="${1:-${SCOUT_REPORT_FILE}}"
 
     SCOUT_FILES_TO_MODIFY=0
     SCOUT_LINES_OF_CHANGE=0
@@ -93,7 +93,7 @@ apply_scout_turn_limits() {
         return
     fi
 
-    local report="${1:-SCOUT_REPORT.md}"
+    local report="${1:-${SCOUT_REPORT_FILE}}"
     if ! parse_scout_complexity "$report"; then
         log "No scout complexity estimate found — using configured defaults."
         return

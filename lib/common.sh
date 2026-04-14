@@ -5,6 +5,20 @@
 # Sourced by tekhton.sh — do not run directly.
 # =============================================================================
 
+set -euo pipefail
+
+# --- M84: Transient artifact file path defaults -------------------------------
+# config_defaults.sh provides authoritative defaults via load_config(); these
+# fallbacks protect tests and scripts that source common.sh directly.
+: "${TEKHTON_DIR:=.tekhton}"
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+
 # --- Terminal colors ---------------------------------------------------------
 
 RED='\033[0;31m'

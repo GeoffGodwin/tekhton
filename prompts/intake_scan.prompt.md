@@ -37,7 +37,7 @@ with specific questions.
 --- END MILESTONE CONTENT ---
 
 {{IF:INTAKE_PROJECT_INDEX}}
-## Project Context (PROJECT_INDEX.md)
+## Project Context ({{PROJECT_INDEX_FILE}})
 {{INTAKE_PROJECT_INDEX}}
 {{ENDIF:INTAKE_PROJECT_INDEX}}
 

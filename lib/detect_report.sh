@@ -13,7 +13,7 @@ set -euo pipefail
 
 # format_detection_report — Renders all detection results as structured markdown.
 # Args: $1 = project directory (defaults to PROJECT_DIR)
-# Output: Markdown block suitable for inclusion in PROJECT_INDEX.md or agent prompts
+# Output: Markdown block suitable for inclusion in $PROJECT_INDEX_FILE or agent prompts
 format_detection_report() {
     local proj_dir="${1:-${PROJECT_DIR:-.}}"
 

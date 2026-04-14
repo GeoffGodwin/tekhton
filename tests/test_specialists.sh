@@ -15,6 +15,7 @@ export TEKHTON_HOME PROJECT_DIR TEKHTON_SESSION_DIR
 
 # cd into PROJECT_DIR since agents and specialists write files relative to cwd
 cd "$PROJECT_DIR"
+mkdir -p "${PROJECT_DIR}/.tekhton"
 
 # --- Source required libraries ---
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -47,7 +48,8 @@ TIMESTAMP="20260317_120000"
 LOG_DIR="${PROJECT_DIR}/.claude/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/test.log"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
+SPECIALIST_REPORT_FILE="${TEKHTON_DIR}/SPECIALIST_REPORT.md"
 CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 AGENT_TOOLS_REVIEWER="Read Glob Grep Write"
 BOLD=""
@@ -154,7 +156,7 @@ unset SPECIALIST_CUSTOM_BAR_ENABLED SPECIALIST_CUSTOM_BAR_PROMPT
 # =============================================================================
 # Test 6: _extract_specialist_blockers reads [BLOCKER] items
 # =============================================================================
-cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'EOF'
+cat > "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'EOF'
 # Security Review Findings
 
 ## Blockers
@@ -168,12 +170,12 @@ blockers=$(_extract_specialist_blockers "security")
 assert_contains "Blocker extracted" "[BLOCKER]" "$blockers"
 assert_contains "Blocker has file ref" "lib/config.sh:42" "$blockers"
 
-rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md"
 
 # =============================================================================
 # Test 7: _extract_specialist_blockers returns empty when no blockers
 # =============================================================================
-cat > "${PROJECT_DIR}/SPECIALIST_PERFORMANCE_FINDINGS.md" << 'EOF'
+cat > "${TEKHTON_DIR}/SPECIALIST_PERFORMANCE_FINDINGS.md" << 'EOF'
 # Performance Review Findings
 
 ## Blockers
@@ -186,12 +188,12 @@ EOF
 blockers=$(_extract_specialist_blockers "performance")
 assert_eq "No blockers returns empty" "" "$blockers"
 
-rm -f "${PROJECT_DIR}/SPECIALIST_PERFORMANCE_FINDINGS.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_PERFORMANCE_FINDINGS.md"
 
 # =============================================================================
 # Test 8: _append_specialist_notes adds [NOTE] items to NON_BLOCKING_LOG.md
 # =============================================================================
-cat > "${PROJECT_DIR}/SPECIALIST_API_FINDINGS.md" << 'EOF'
+cat > "${TEKHTON_DIR}/SPECIALIST_API_FINDINGS.md" << 'EOF'
 # API Contract Review Findings
 
 ## Notes
@@ -210,7 +212,7 @@ nb_content=$(cat "$nb_file")
 assert_contains "Note appended to log" "specialist:api" "$nb_content"
 assert_contains "Note text in log" "Missing validation" "$nb_content"
 
-rm -f "${PROJECT_DIR}/SPECIALIST_API_FINDINGS.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_API_FINDINGS.md"
 
 # =============================================================================
 # Test 9: Specialist reviews with security enabled runs the specialist
@@ -224,7 +226,7 @@ run_agent() {
     if [[ "$label" == *"Specialist"* ]]; then
         _specialist_ran=true
         # Create empty findings (no blockers)
-        cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'SEOF'
+        cat > "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'SEOF'
 # Security Review Findings
 
 ## Blockers
@@ -243,7 +245,7 @@ assert_eq "No blockers returns 0" "0" "$result"
 
 # Reset
 SPECIALIST_SECURITY_ENABLED=false
-rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${SPECIALIST_REPORT_FILE}"
 
 # Restore original stub
 run_agent() { :; }
@@ -259,7 +261,7 @@ run_agent() {
     if [[ "$label" == *"Specialist"* ]]; then
         _specialist_ran_t10=true
         # Create findings with a [BLOCKER] item
-        cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'SEOF'
+        cat > "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'SEOF'
 # Security Review Findings
 
 ## Blockers
@@ -282,7 +284,7 @@ assert_contains "Blocker path: SPECIALIST_BLOCKERS populated" "[BLOCKER]" "${SPE
 # Reset
 SPECIALIST_SECURITY_ENABLED=false
 SPECIALIST_BLOCKERS=""
-rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${SPECIALIST_REPORT_FILE}"
 
 # Restore original stub
 run_agent() { :; }
@@ -300,7 +302,7 @@ run_agent() {
     if [[ "$label" == *"Specialist"* ]]; then
         # Capture the AGENT_TOOLS_SPECIALIST that was set by run_specialist_reviews
         _captured_tools="$AGENT_TOOLS_SPECIALIST"
-        cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'SEOF'
+        cat > "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'SEOF'
 # Security Review Findings
 ## Blockers
 None
@@ -324,7 +326,7 @@ assert_eq "Call-time resolution: picks up updated AGENT_TOOLS_REVIEWER" \
 # Reset
 SPECIALIST_SECURITY_ENABLED=false
 AGENT_TOOLS_REVIEWER="Read Glob Grep Write"
-rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${PROJECT_DIR}/SPECIALIST_REPORT.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" "${SPECIALIST_REPORT_FILE}"
 
 # Restore original stub
 run_agent() { :; }
@@ -333,7 +335,7 @@ run_agent() { :; }
 # Test 12: _append_specialist_notes — backslash sequences are not interpreted
 # Regression test for the awk fix: sed -i would corrupt \n, \t in note text.
 # =============================================================================
-cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'EOF'
+cat > "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'EOF'
 # Security Review Findings
 
 ## Notes
@@ -350,12 +352,12 @@ nb_content=$(cat "${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}")
 assert_contains "Backslash-n literal preserved" 'Use \n instead of' "$nb_content"
 assert_contains "Windows path backslashes preserved" 'C:\Users\foo' "$nb_content"
 
-rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md"
 
 # =============================================================================
 # Test 13: _append_specialist_notes — note text with special chars (brackets, pipes)
 # =============================================================================
-cat > "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'EOF'
+cat > "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md" << 'EOF'
 # Security Review Findings
 
 ## Notes
@@ -370,7 +372,7 @@ nb_content=$(cat "${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}")
 assert_contains "Brackets preserved" '[user|admin]' "$nb_content"
 assert_contains "Ampersand preserved" '& escape pipes' "$nb_content"
 
-rm -f "${PROJECT_DIR}/SPECIALIST_SECURITY_FINDINGS.md"
+rm -f "${TEKHTON_DIR}/SPECIALIST_SECURITY_FINDINGS.md"
 
 # =============================================================================
 # Results

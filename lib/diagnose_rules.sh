@@ -300,7 +300,7 @@ _rule_transient_error() {
 # _rule_test_audit_failure
 # Detect test audit NEEDS_WORK verdict after max rework cycles.
 _rule_test_audit_failure() {
-    local audit_file="${PROJECT_DIR:-.}/${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
+    local audit_file="${PROJECT_DIR:-.}/${TEST_AUDIT_REPORT_FILE:-}"
     [[ -f "$audit_file" ]] || return 1
 
     # Check for NEEDS_WORK verdict

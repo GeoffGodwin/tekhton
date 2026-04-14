@@ -27,8 +27,8 @@
 #   --start-at test       Skip coder + security + reviewer; requires .tekhton/${REVIEWER_REPORT_FILE}
 #   --skip-security       Bypass security stage for a single run
 #   --skip-docs           Bypass docs agent stage for a single run
-#   --plan-from-index     Synthesize .tekhton/${DESIGN_FILE} + CLAUDE.md from PROJECT_INDEX.md
-#   --rescan              Incrementally update PROJECT_INDEX.md from git changes
+#   --plan-from-index     Synthesize .tekhton/${DESIGN_FILE} + CLAUDE.md from $PROJECT_INDEX_FILE
+#   --rescan              Incrementally update $PROJECT_INDEX_FILE from git changes
 #   --rescan --full       Force full re-crawl regardless of change volume
 #   --init --full         Run init + synthesis in one command
 #   --metrics             Print run metrics dashboard and exit
@@ -131,10 +131,10 @@ _tekhton_cleanup() {
         fi
 
         # --- Crash cleanup: archive transient artifacts -----------------------
-        # ARCHITECT_PLAN.md is a single-run artifact — archive it if it exists
-        if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ] && [ -f "ARCHITECT_PLAN.md" ]; then
-            mv "ARCHITECT_PLAN.md" "${LOG_DIR}/${TIMESTAMP}_ARCHITECT_PLAN.md" 2>/dev/null || true
-            echo -e "\033[0;31m[✗] Archived ARCHITECT_PLAN.md to logs before exit.\033[0m" >&2
+        # Architect plan is a single-run artifact — archive it if it exists
+        if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ] && [ -f "${ARCHITECT_PLAN_FILE:-}" ]; then
+            mv "${ARCHITECT_PLAN_FILE}" "${LOG_DIR}/${TIMESTAMP}_$(basename "${ARCHITECT_PLAN_FILE}")" 2>/dev/null || true
+            echo -e "\033[0;31m[✗] Archived architect plan to logs before exit.\033[0m" >&2
         fi
 
         # Reset any in-progress [~] human notes back to [ ] so next run starts clean
@@ -940,7 +940,7 @@ usage() {
         echo "  --plan --answers <file>   Import pre-filled YAML answers (skip interview)"
         echo "  --plan-browser            Go straight to browser-based planning form"
         echo "  --export-questions        Export planning questions as YAML template to stdout"
-        echo "  --plan-from-index         Synthesize ${DESIGN_FILE} + CLAUDE.md from PROJECT_INDEX.md"
+        echo "  --plan-from-index         Synthesize ${DESIGN_FILE} + CLAUDE.md from ${PROJECT_INDEX_FILE:-project index}"
         echo ""
         echo "Running:"
         echo "  \"task description\"        Run pipeline with task"
@@ -988,7 +988,7 @@ usage() {
         echo ""
         echo "Maintenance:"
         echo "  --replan                  Delta-based update to existing ${DESIGN_FILE} + CLAUDE.md"
-        echo "  --rescan [--full]         Update PROJECT_INDEX.md (incrementally or full re-crawl)"
+        echo "  --rescan [--full]         Update ${PROJECT_INDEX_FILE:-project index} (incrementally or full re-crawl)"
         echo "  --migrate                 Upgrade project config to current Tekhton version"
         echo "  --migrate --check         Show what migrations would run without applying"
         echo "  --migrate --status        Show config version vs running version"
@@ -1018,7 +1018,7 @@ usage() {
         echo "  --plan \"desc\"       Start interactive planning session"
         echo "  --plan-browser      Browser-based planning form"
         echo "  --export-questions  Export planning questions as YAML"
-        echo "  --plan-from-index   Generate plan from PROJECT_INDEX.md"
+        echo "  --plan-from-index   Generate plan from ${PROJECT_INDEX_FILE:-project index}"
         echo ""
         echo "Running:"
         echo "  \"task description\"  Run pipeline with task"
@@ -2530,7 +2530,7 @@ _run_fix_drift_loop() {
 
         # Archive reports from previous iteration
         if [[ "$drift_attempt" -gt 1 ]]; then
-            for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ARCHITECT_PLAN.md; do
+            for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ${ARCHITECT_PLAN_FILE}; do
                 if [[ -f "$f" ]]; then
                     mkdir -p "${LOG_DIR}/archive"
                     mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_fixdrift${drift_attempt}_$(basename "$f")"

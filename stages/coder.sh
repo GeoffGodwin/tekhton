@@ -98,6 +98,8 @@ run_stage_coder() {
     # --- Scout sub-agent (optional) ------------------------------------------
     BUG_SCOUT_CONTEXT=""
     SHOULD_SCOUT=false
+    local _scout_archive_name
+    _scout_archive_name="${TIMESTAMP}_$(basename "${SCOUT_REPORT_FILE}")"
 
     # Tag-specific scout behavior (M42): configurable per tag
     if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
@@ -149,17 +151,17 @@ run_stage_coder() {
     fi
 
     # Use cached scout results from dry-run if available (Milestone 23)
-    if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "SCOUT_REPORT.md" ]]; then
+    if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "${SCOUT_REPORT_FILE}" ]]; then
         SHOULD_SCOUT=false
         log_decision "Scout using cached results" "dry-run cache available" "SCOUT_CACHED=true"
-        apply_scout_turn_limits "SCOUT_REPORT.md"
+        apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
         BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat SCOUT_REPORT.md)
+$(cat "${SCOUT_REPORT_FILE}")
 "
         # Archive the cached report same as a live one
-        cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
-        rm "SCOUT_REPORT.md"
+        cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
+        rm "${SCOUT_REPORT_FILE}"
     fi
 
     if [ "$SHOULD_SCOUT" = true ]; then
@@ -223,16 +225,16 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             "$LOG_FILE" \
             "$_scout_tools"
 
-        if [ -f "SCOUT_REPORT.md" ]; then
+        if [ -f "${SCOUT_REPORT_FILE}" ]; then
             print_run_summary
             success "Scout agent finished. Relevant files located."
 
             # Parse complexity estimate before archiving the report
-            apply_scout_turn_limits "SCOUT_REPORT.md"
+            apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
 
             BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat SCOUT_REPORT.md)
+$(cat "${SCOUT_REPORT_FILE}")
 "
             # --- Pre-flight milestone sizing gate ---------------------------------
             # After scout estimates complexity, check if the milestone is oversized.
@@ -247,8 +249,8 @@ $(cat SCOUT_REPORT.md)
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                         # Archive original scout report and re-scout narrower scope
-                        cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
-                        rm "SCOUT_REPORT.md"
+                        cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
+                        rm "${SCOUT_REPORT_FILE}"
 
                         log "Re-running scout for narrower sub-milestone ${_CURRENT_MILESTONE}..."
 
@@ -261,18 +263,18 @@ $(cat SCOUT_REPORT.md)
                             "$LOG_FILE" \
                             "$_scout_tools"
 
-                        if [ -f "SCOUT_REPORT.md" ]; then
+                        if [ -f "${SCOUT_REPORT_FILE}" ]; then
                             print_run_summary
                             success "Post-split scout finished."
-                            apply_scout_turn_limits "SCOUT_REPORT.md"
+                            apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
                             BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat SCOUT_REPORT.md)
+$(cat "${SCOUT_REPORT_FILE}")
 "
-                            cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
-                            rm "SCOUT_REPORT.md"
+                            cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
+                            rm "${SCOUT_REPORT_FILE}"
                         else
-                            warn "Post-split scout did not produce SCOUT_REPORT.md — coder will explore independently."
+                            warn "Post-split scout did not produce ${SCOUT_REPORT_FILE} — coder will explore independently."
                         fi
                     else
                         warn "Milestone split failed — proceeding with original scope."
@@ -281,15 +283,15 @@ $(cat SCOUT_REPORT.md)
             fi
 
             # Archive scout report with the run
-            if [ -f "SCOUT_REPORT.md" ]; then
-                cp "SCOUT_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
-                rm "SCOUT_REPORT.md"
+            if [ -f "${SCOUT_REPORT_FILE}" ]; then
+                cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
+                rm "${SCOUT_REPORT_FILE}"
             fi
         elif was_null_run; then
             print_run_summary
             warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
         else
-            warn "Scout agent did not produce SCOUT_REPORT.md — coder will explore independently."
+            warn "Scout agent did not produce ${SCOUT_REPORT_FILE} — coder will explore independently."
         fi
         if declare -p _STAGE_STATUS &>/dev/null; then
             _STAGE_STATUS[scout]="complete"
@@ -308,8 +310,8 @@ $(cat SCOUT_REPORT.md)
         if [[ -n "$REPO_MAP_CONTENT" ]] && [[ -n "$BUG_SCOUT_CONTEXT" ]]; then
             # Extract file paths from the scout report context
             local _scout_files=""
-            if [[ -f "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md" ]]; then
-                _scout_files=$(extract_files_from_coder_summary "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md")
+            if [[ -f "${LOG_DIR}/${_scout_archive_name}" ]]; then
+                _scout_files=$(extract_files_from_coder_summary "${LOG_DIR}/${_scout_archive_name}")
             fi
             if [[ -n "$_scout_files" ]]; then
                 local _slice
@@ -329,7 +331,7 @@ $(cat SCOUT_REPORT.md)
 
     # --- Extract affected test files from scout report (M43) -----------------
     export AFFECTED_TEST_FILES=""
-    local _scout_archive="${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT.md"
+    local _scout_archive="${LOG_DIR}/${_scout_archive_name}"
     if [[ -f "$_scout_archive" ]]; then
         # Extract the "## Affected Test Files" section from the archived scout report
         AFFECTED_TEST_FILES=$(awk '
@@ -513,7 +515,7 @@ ${nb_notes}"
     # coder knows which tests to make pass.
     export TESTER_PREFLIGHT_CONTENT=""
     if [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]]; then
-        local _preflight_file="${TDD_PREFLIGHT_FILE:-${TDD_PREFLIGHT_FILE}}"
+        local _preflight_file="${TDD_PREFLIGHT_FILE:-}"
         if [[ -f "$_preflight_file" ]]; then
             TESTER_PREFLIGHT_CONTENT=$(_safe_read_file "$_preflight_file" "TESTER_PREFLIGHT")
             log "TDD mode: injecting ${_preflight_file} into coder context."
@@ -697,7 +699,7 @@ ${nb_notes}"
             "null_run" \
             "$(_build_resume_flag coder)" \
             "$TASK" \
-            "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a SCOUT_REPORT.md manually, or checking agent logs."
+            "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a ${SCOUT_REPORT_FILE} manually, or checking agent logs."
 
         error "State saved with exit reason 'null_run'. Check the log: ${LOG_FILE}"
         error "Re-run with a more specific task description or add context files."

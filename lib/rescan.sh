@@ -3,7 +3,7 @@ set -euo pipefail
 # =============================================================================
 # rescan.sh — Incremental rescan & index maintenance (Milestone 20)
 #
-# Updates PROJECT_INDEX.md incrementally using git diff since the last scan.
+# Updates project index incrementally using git diff since the last scan.
 # Falls back to full crawl when incremental is not possible.
 #
 # Sourced by tekhton.sh — do not run directly.
@@ -22,14 +22,14 @@ source "${_RESCAN_DIR}/rescan_helpers.sh"
 
 # --- Main entry point ---------------------------------------------------------
 
-# rescan_project — Incrementally update PROJECT_INDEX.md or fall back to full crawl.
+# rescan_project — Incrementally update project index or fall back to full crawl.
 # Args: $1 = project directory, $2 = budget in chars (default: 120000),
 #       $3 = "full" to force full crawl (optional)
 rescan_project() {
     local project_dir="${1:-.}"
     local budget_chars="${2:-${PROJECT_INDEX_BUDGET:-120000}}"
     local force_full="${3:-}"
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
 
     header "Tekhton — Project Rescan"
 
@@ -42,7 +42,7 @@ rescan_project() {
 
     # Fall back to full crawl if no existing index
     if [[ ! -f "$index_file" ]]; then
-        log "No existing PROJECT_INDEX.md — running full crawl..."
+        log "No existing ${PROJECT_INDEX_FILE} — running full crawl..."
         crawl_project "$project_dir" "$budget_chars"
         return $?
     fi
@@ -110,14 +110,14 @@ rescan_project() {
 
     local final_size
     final_size=$(wc -c < "$index_file" | tr -d '[:space:]')
-    success "PROJECT_INDEX.md updated incrementally (${final_size} chars)"
+    success "${PROJECT_INDEX_FILE} updated incrementally (${final_size} chars)"
     return 0
 }
 
 # --- Index section updates ----------------------------------------------------
 
 # _update_index_sections — Updates affected structured data files, then
-# regenerates PROJECT_INDEX.md view from structured data.
+# regenerates the project index view from structured data.
 # M69: replaces surgical markdown patching with structured data updates.
 # Args: $1 = index file, $2 = project dir, $3 = changed files, $4 = budget
 _update_index_sections() {

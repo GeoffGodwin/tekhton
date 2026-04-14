@@ -59,8 +59,8 @@ run_stage_security() {
         fi
 
         export SECURITY_REPORT_CONTENT=""
-        if [[ -f "${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE}}" ]]; then
-            SECURITY_REPORT_CONTENT=$(cat "${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE}}")
+        if [[ -f "${SECURITY_REPORT_FILE:-}" ]]; then
+            SECURITY_REPORT_CONTENT=$(cat "${SECURITY_REPORT_FILE:-}")
         fi
 
         SECURITY_SCAN_PROMPT=$(render_prompt "security_scan")
@@ -82,7 +82,7 @@ run_stage_security() {
         success "Security scan finished."
 
         # Parse findings
-        local report_file="${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE}}"
+        local report_file="${SECURITY_REPORT_FILE:-}"
         if ! _parse_security_findings "$report_file"; then
             log "[security] No structured findings in ${SECURITY_REPORT_FILE}. Proceeding."
             return 0

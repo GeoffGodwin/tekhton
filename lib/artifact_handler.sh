@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Presents detected AI artifacts to the user with interactive menu per group:
 #   (A) Archive — move to .claude/archived-ai-config/ with manifest
-#   (M) Merge   — extract useful content into MERGE_CONTEXT.md via agent
+#   (M) Merge   — extract useful content into $MERGE_CONTEXT_FILE via agent
 #   (T) Tidy    — remove files with confirmation and optional git commit
 #   (I) Ignore  — leave in place, proceed with warning
 #
@@ -26,7 +26,7 @@ source "${_HANDLER_DIR}/artifact_handler_ops.sh"
 #
 # Args: $1 = project directory, $2 = artifacts list (TOOL|PATH|TYPE|CONFIDENCE)
 # Returns: 0 always
-# Side effects: May move/delete files, may create MERGE_CONTEXT.md
+# Side effects: May move/delete files, may create $MERGE_CONTEXT_FILE
 handle_ai_artifacts() {
     local project_dir="$1"
     local artifacts_list="$2"

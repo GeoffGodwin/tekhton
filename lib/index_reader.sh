@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Reads from .claude/index/ structured data files and returns formatted content
 # for prompt injection. All functions accept a project directory argument and
-# gracefully fall back to legacy PROJECT_INDEX.md parsing when structured files
+# gracefully fall back to legacy project index parsing when structured files
 # don't exist (pre-M67 projects).
 #
 # Sourced by tekhton.sh AFTER crawler.sh — do not run directly.
@@ -38,8 +38,8 @@ read_index_meta() {
         return 0
     fi
 
-    # Legacy fallback: parse HTML comments from PROJECT_INDEX.md
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    # Legacy fallback: parse HTML comments from project index
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
     [[ ! -f "$index_file" ]] && return 0
 
     local scan_date scan_commit file_count total_lines project_name
@@ -51,7 +51,7 @@ read_index_meta() {
         sed 's/.*<!-- File-Count: *\(.*\) *-->.*/\1/' | tr -d '[:space:]' || true)
     total_lines=$(grep '<!-- Total-Lines:' "$index_file" 2>/dev/null | \
         sed 's/.*<!-- Total-Lines: *\(.*\) *-->.*/\1/' | tr -d '[:space:]' || true)
-    project_name=$(head -1 "$index_file" 2>/dev/null | sed 's/^# PROJECT_INDEX.md — //' || true)
+    project_name=$(head -1 "$index_file" 2>/dev/null | sed 's/^# [^ ]* — //' || true)
 
     [[ -n "$project_name" ]] && printf 'project_name=%s\n' "$project_name"
     [[ -n "$scan_date" ]] && printf 'scan_date=%s\n' "$scan_date"
@@ -77,8 +77,8 @@ read_index_tree() {
         return 0
     fi
 
-    # Legacy fallback: extract from PROJECT_INDEX.md
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    # Legacy fallback: extract from project index
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
     [[ ! -f "$index_file" ]] && return 0
 
     _index_extract_section "$index_file" "Directory Tree" "$max_lines"
@@ -134,8 +134,8 @@ read_index_inventory() {
         return 0
     fi
 
-    # Legacy fallback: extract from PROJECT_INDEX.md
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    # Legacy fallback: extract from project index
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
     [[ ! -f "$index_file" ]] && return
 
     local section
@@ -202,7 +202,7 @@ read_index_dependencies() {
     fi
 
     # Legacy fallback
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
     [[ ! -f "$index_file" ]] && return 0
     _index_extract_section "$index_file" "Key Dependencies" 0
 }
@@ -228,7 +228,7 @@ read_index_configs() {
     fi
 
     # Legacy fallback
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
     [[ ! -f "$index_file" ]] && return 0
     _index_extract_section "$index_file" "Configuration Files" 0
 }
@@ -275,7 +275,7 @@ read_index_tests() {
     fi
 
     # Legacy fallback
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
     [[ ! -f "$index_file" ]] && return 0
     _index_extract_section "$index_file" "Test Infrastructure" 0
 }
@@ -324,7 +324,7 @@ read_index_samples() {
     fi
 
     # Legacy fallback
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
     [[ ! -f "$index_file" ]] && return 0
     _index_extract_section "$index_file" "Sampled File Content" 0
 }
@@ -476,7 +476,7 @@ read_index_summary() {
 
 # --- Internal helpers ---------------------------------------------------------
 
-# _index_extract_section — Extract content of a ## section from PROJECT_INDEX.md.
+# _index_extract_section — Extract content of a ## section from project index file.
 # Args: $1 = file, $2 = section heading (without ##), $3 = max_lines (0=unlimited)
 _index_extract_section() {
     local file="$1"

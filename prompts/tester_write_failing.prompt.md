@@ -30,7 +30,7 @@ Task to be implemented: {{TASK}}
 
 ## Required Reading (in order)
 1. `{{TESTER_ROLE_FILE}}` — your role and conventions
-2. `SCOUT_REPORT.md` — the scout has identified relevant files and structure
+2. `{{SCOUT_REPORT_FILE}}` — the scout has identified relevant files and structure
 3. The acceptance criteria in the milestone or task description above
 
 ## Critical TDD Guidance
@@ -81,7 +81,7 @@ Any guidance for the coder about the test structure or conventions used.
 ```
 
 ## Execution Order (mandatory)
-**Step 1:** Read SCOUT_REPORT.md to understand the codebase structure.
+**Step 1:** Read {{SCOUT_REPORT_FILE}} to understand the codebase structure.
 **Step 2:** Read the acceptance criteria from the task/milestone description.
 **Step 3:** Identify existing test patterns in the project (framework, directory, naming).
 **Step 4:** Write test files that encode expected behavior from acceptance criteria.

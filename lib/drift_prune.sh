@@ -13,7 +13,7 @@
 set -euo pipefail
 
 # prune_resolved_drift_entries — Keeps only N most-recent resolved entries
-# in ${DRIFT_LOG_FILE}, archiving older ones to DRIFT_ARCHIVE.md.
+# in ${DRIFT_LOG_FILE}, archiving older ones to ${DRIFT_ARCHIVE_FILE}.
 # Preserves the ## Resolved section heading.
 # Resolved entries are inserted at the TOP of the section (newest first),
 # so head = newest, tail = oldest.
@@ -53,8 +53,8 @@ prune_resolved_drift_entries() {
     local kept_entries
     kept_entries=$(echo "$resolved_entries" | head -n "$keep_count")
 
-    # Append excess to DRIFT_ARCHIVE.md (create if missing)
-    local archive_file="${PROJECT_DIR}/DRIFT_ARCHIVE.md"
+    # Append excess to drift archive (create if missing)
+    local archive_file="${PROJECT_DIR}/${DRIFT_ARCHIVE_FILE}"
     if [ ! -f "$archive_file" ]; then
         cat > "$archive_file" << 'EOF'
 # Drift Log Archive
@@ -101,5 +101,5 @@ EOF
     done < "$drift_file"
 
     mv "$tmpfile" "$drift_file"
-    log "Pruned ${excess_count} resolved entry(ies) from ${DRIFT_LOG_FILE} to DRIFT_ARCHIVE.md."
+    log "Pruned ${excess_count} resolved entry(ies) from ${DRIFT_LOG_FILE} to ${DRIFT_ARCHIVE_FILE}."
 }

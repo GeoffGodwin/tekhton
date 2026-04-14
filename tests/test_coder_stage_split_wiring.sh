@@ -35,7 +35,7 @@ assert() {
 # =============================================================================
 
 export TEKHTON_HOME PROJECT_DIR="$TMPDIR_BASE"
-mkdir -p "${TMPDIR_BASE}/.claude/logs"
+mkdir -p "${TMPDIR_BASE}/.claude/logs" "${TMPDIR_BASE}/.tekhton"
 
 export LOG_FILE="${TMPDIR_BASE}/.claude/logs/test.log"
 export LOG_DIR="${TMPDIR_BASE}/.claude/logs"
@@ -45,7 +45,14 @@ mkdir -p "$TEKHTON_SESSION_DIR"
 
 export PIPELINE_STATE_FILE="${TMPDIR_BASE}/.claude/PIPELINE_STATE.md"
 export MILESTONE_STATE_FILE="${TMPDIR_BASE}/.claude/MILESTONE_STATE.md"
-export MILESTONE_ARCHIVE_FILE="${TMPDIR_BASE}/MILESTONE_ARCHIVE.md"
+export MILESTONE_ARCHIVE_FILE="${TMPDIR_BASE}/.tekhton/MILESTONE_ARCHIVE.md"
+export CODER_SUMMARY_FILE=".tekhton/CODER_SUMMARY.md"
+export REVIEWER_REPORT_FILE=".tekhton/REVIEWER_REPORT.md"
+export TESTER_REPORT_FILE=".tekhton/TESTER_REPORT.md"
+export JR_CODER_SUMMARY_FILE=".tekhton/JR_CODER_SUMMARY.md"
+export NON_BLOCKING_LOG_FILE=".tekhton/NON_BLOCKING_LOG.md"
+export HUMAN_NOTES_FILE=".tekhton/HUMAN_NOTES.md"
+export BUILD_ERRORS_FILE=".tekhton/BUILD_ERRORS.md"
 
 export NOTES_FILTER="FEAT"
 export HUMAN_NOTE_COUNT=0
@@ -110,6 +117,7 @@ log_decision()              { :; }
 progress_status()           { :; }
 invalidate_repo_map_run_cache() { :; }  # M61: stub for run cache invalidation
 extract_human_notes()       { echo ""; }
+should_claim_notes()        { return 1; }
 claim_human_notes()         { true; }
 resolve_human_notes()       { true; }
 count_open_nonblocking_notes() { echo "0"; }
@@ -158,10 +166,10 @@ run_agent() {
 
     case "$agent_name" in
         Scout*)
-            echo "## Complexity: Low" > SCOUT_REPORT.md
+            echo "## Complexity: Low" > "${SCOUT_REPORT_FILE}"
             ;;
         Coder*)
-            printf "## Status: COMPLETE\n- item 1\n- item 2\n- item 3\n- item 4\n" > CODER_SUMMARY.md
+            printf "## Status: COMPLETE\n- item 1\n- item 2\n- item 3\n- item 4\n" > "${CODER_SUMMARY_FILE}"
             ;;
     esac
 }
@@ -194,7 +202,7 @@ run_stage_coder() {
 # Helper: reset shared test state between tests
 # =============================================================================
 reset_test_state() {
-    rm -f SCOUT_REPORT.md CODER_SUMMARY.md CLAUDE.md \
+    rm -f "${SCOUT_REPORT_FILE}" "${CODER_SUMMARY_FILE}" CLAUDE.md \
         "${TMPDIR_BASE}/agent_calls.log" \
         "${TMPDIR_BASE}/state_calls.log" \
         "${TMPDIR_BASE}/recursive_state.txt" \
@@ -220,8 +228,8 @@ reset_test_state() {
         export LAST_AGENT_TURNS=10
         export LAST_AGENT_EXIT_CODE=0
         case "$agent_name" in
-            Scout*)  echo "## Complexity: Low" > SCOUT_REPORT.md ;;
-            Coder*)  printf "## Status: COMPLETE\n- item 1\n- item 2\n- item 3\n- item 4\n" > CODER_SUMMARY.md ;;
+            Scout*)  echo "## Complexity: Low" > "${SCOUT_REPORT_FILE}" ;;
+            Coder*)  printf "## Status: COMPLETE\n- item 1\n- item 2\n- item 3\n- item 4\n" > "${CODER_SUMMARY_FILE}" ;;
         esac
     }
     was_null_run() { return 1; }
@@ -358,7 +366,7 @@ run_agent() {
     export LAST_AGENT_TURNS=0    # coder does 0 turns → null run
     export LAST_AGENT_EXIT_CODE=0
     case "$agent_name" in
-        Scout*) echo "## Complexity: Low" > SCOUT_REPORT.md ;;
+        Scout*) echo "## Complexity: Low" > "${SCOUT_REPORT_FILE}" ;;
     esac
     # No CODER_SUMMARY.md — it's a null run
 }
@@ -391,7 +399,7 @@ run_agent() {
     export LAST_AGENT_TURNS=0
     export LAST_AGENT_EXIT_CODE=0
     case "$agent_name" in
-        Scout*) echo "## Complexity: Low" > SCOUT_REPORT.md ;;
+        Scout*) echo "## Complexity: Low" > "${SCOUT_REPORT_FILE}" ;;
     esac
 }
 
@@ -424,7 +432,7 @@ run_agent() {
     export LAST_AGENT_TURNS=0
     export LAST_AGENT_EXIT_CODE=0
     case "$agent_name" in
-        Scout*) echo "## Complexity: Low" > SCOUT_REPORT.md ;;
+        Scout*) echo "## Complexity: Low" > "${SCOUT_REPORT_FILE}" ;;
     esac
 }
 
@@ -465,8 +473,8 @@ run_agent() {
     export LAST_AGENT_TURNS=50
     export LAST_AGENT_EXIT_CODE=0
     case "$agent_name" in
-        Scout*) echo "## Complexity: Low" > SCOUT_REPORT.md ;;
-        Coder*) printf "## Status: IN PROGRESS\n- one item\n" > CODER_SUMMARY.md ;;
+        Scout*) echo "## Complexity: Low" > "${SCOUT_REPORT_FILE}" ;;
+        Coder*) printf "## Status: IN PROGRESS\n- one item\n" > "${CODER_SUMMARY_FILE}" ;;
     esac
 }
 
@@ -505,11 +513,11 @@ run_agent() {
     export LAST_AGENT_TURNS=50
     export LAST_AGENT_EXIT_CODE=0
     case "$agent_name" in
-        Scout*) echo "## Complexity: Low" > SCOUT_REPORT.md ;;
+        Scout*) echo "## Complexity: Low" > "${SCOUT_REPORT_FILE}" ;;
         Coder*)
-            printf "## Status: IN PROGRESS\n" > CODER_SUMMARY.md
+            printf "## Status: IN PROGRESS\n" > "${CODER_SUMMARY_FILE}"
             for i in 1 2 3 4 5; do
-                echo "- item $i" >> CODER_SUMMARY.md
+                echo "- item $i" >> "${CODER_SUMMARY_FILE}"
             done
             ;;
     esac
@@ -543,8 +551,8 @@ run_agent() {
     export LAST_AGENT_TURNS=50
     export LAST_AGENT_EXIT_CODE=0
     case "$agent_name" in
-        Scout*) echo "## Complexity: Low" > SCOUT_REPORT.md ;;
-        Coder*) printf "## Status: IN PROGRESS\n- one item\n" > CODER_SUMMARY.md ;;
+        Scout*) echo "## Complexity: Low" > "${SCOUT_REPORT_FILE}" ;;
+        Coder*) printf "## Status: IN PROGRESS\n- one item\n" > "${CODER_SUMMARY_FILE}" ;;
     esac
 }
 

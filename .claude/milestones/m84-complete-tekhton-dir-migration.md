@@ -1,7 +1,7 @@
 # Milestone 84: Complete TEKHTON_DIR Migration — Remaining Hardcoded Paths
 <!-- milestone-meta
 id: "84"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

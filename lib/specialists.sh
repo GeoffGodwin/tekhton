@@ -108,8 +108,8 @@ EOF
 
     # Populate UI_FINDINGS_BLOCK for downstream reviewer prompt injection
     export UI_FINDINGS_BLOCK=""
-    if [[ -f "SPECIALIST_UI_FINDINGS.md" ]]; then
-        UI_FINDINGS_BLOCK=$(cat "SPECIALIST_UI_FINDINGS.md")
+    if [[ -f "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md" ]]; then
+        UI_FINDINGS_BLOCK=$(cat "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md")
     fi
 
     if [ "$has_blockers" = true ]; then
@@ -131,8 +131,9 @@ _run_single_specialist() {
 
     log "Running specialist: ${spec_name} (model: ${model}, max turns: ${max_turns})"
 
-    # Export specialist name for prompt rendering
+    # Export specialist name and findings file path for prompt rendering
     export SPECIALIST_NAME="$spec_name"
+    export SPECIALIST_FINDINGS_FILE="${TEKHTON_DIR}/SPECIALIST_${spec_name^^}_FINDINGS.md"
 
     local spec_prompt
     spec_prompt=$(render_prompt "$prompt_template")
@@ -162,8 +163,8 @@ _run_single_specialist() {
             echo "## ${spec_name} Review"
             echo ""
             # Extract findings from the specialist's output file
-            if [ -f "SPECIALIST_${spec_name^^}_FINDINGS.md" ]; then
-                cat "SPECIALIST_${spec_name^^}_FINDINGS.md"
+            if [ -f "${TEKHTON_DIR}/SPECIALIST_${spec_name^^}_FINDINGS.md" ]; then
+                cat "${TEKHTON_DIR}/SPECIALIST_${spec_name^^}_FINDINGS.md"
             else
                 echo "(No structured findings file produced)"
             fi

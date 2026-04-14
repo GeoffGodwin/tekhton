@@ -4,7 +4,7 @@ set -euo pipefail
 # crawler.sh — Project crawler & index generator (Milestone 18, M67/M69)
 #
 # Breadth-first project crawler that produces structured data files in
-# .claude/index/ and generates PROJECT_INDEX.md from structured data.
+# .claude/index/ and generates the project index from structured data.
 #
 # Sourced by tekhton.sh — do not run directly.
 # Depends on: common.sh (log, warn, error), detect.sh (_DETECT_EXCLUDE_DIRS)
@@ -58,18 +58,19 @@ _CRAWL_EXCLUDE_DIRS="${_DETECT_EXCLUDE_DIRS:-node_modules|.git|__pycache__|.dart
 # --- Main entry point ---------------------------------------------------------
 
 # crawl_project — Writes structured data to .claude/index/ and generates
-# PROJECT_INDEX.md view from structured data (M69).
+# project index view from structured data (M69).
 # Args: $1 = project directory, $2 = budget in chars (default: PROJECT_INDEX_BUDGET)
 # Returns: 0 on success
 crawl_project() {
     local project_dir="${1:-.}"
     local budget_chars="${2:-${PROJECT_INDEX_BUDGET:-120000}}"
-    local index_file="${project_dir}/PROJECT_INDEX.md"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
     local index_dir="${project_dir}/.claude/index"
 
     log "Crawling project: ${project_dir} (budget: ${budget_chars} chars)"
 
     _ensure_index_dir "$index_dir"
+    mkdir -p "$(dirname "$index_file")"
 
     # Single file list call for all phases (M67 fix: was 4 separate calls)
     local file_list
@@ -97,7 +98,7 @@ crawl_project() {
 
     local final_size
     final_size=$(wc -c < "$index_file" | tr -d '[:space:]')
-    success "PROJECT_INDEX.md written (${final_size} chars, budget: ${budget_chars})"
+    success "${PROJECT_INDEX_FILE} written (${final_size} chars, budget: ${budget_chars})"
     return 0
 }
 

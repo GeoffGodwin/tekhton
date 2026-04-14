@@ -11,7 +11,7 @@
 #   1. Guard: verify drift threshold is actually exceeded (or --force-audit)
 #   2. Load drift log and architecture log content for prompt
 #   3. Invoke architect agent
-#   4. Parse ARCHITECT_PLAN.md sections
+#   4. Parse architect plan sections
 #   5. Route sr coder items (Simplification)
 #   6. Route jr coder items (Staleness, Dead Code, Naming)
 #   7. Run build gate after coders
@@ -91,13 +91,13 @@ run_stage_architect() {
 
     # --- Validate output -----------------------------------------------------
 
-    if [ ! -f "ARCHITECT_PLAN.md" ]; then
-        warn "Architect did not produce ARCHITECT_PLAN.md. Skipping remediation."
+    if [ ! -f "${ARCHITECT_PLAN_FILE}" ]; then
+        warn "Architect did not produce ${ARCHITECT_PLAN_FILE}. Skipping remediation."
         warn "Drift observations remain unresolved — will retry next audit cycle."
         return 0
     fi
 
-    log "ARCHITECT_PLAN.md produced. Parsing sections..."
+    log "${ARCHITECT_PLAN_FILE} produced. Parsing sections..."
 
     # --- Parse plan sections -------------------------------------------------
 
@@ -107,7 +107,7 @@ run_stage_architect() {
     # Check for non-empty Simplification section
     local simplification_content
     simplification_content=$(awk '/^## Simplification/{found=1; next} found && /^##/{exit} found{print}' \
-        ARCHITECT_PLAN.md 2>/dev/null || true)
+        "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
     if [ -n "$simplification_content" ] && ! echo "$simplification_content" | grep -qiE '^\s*-?\s*None\s*$'; then
         has_simplification=1
     fi
@@ -116,7 +116,7 @@ run_stage_architect() {
     for section in "Staleness Fixes" "Dead Code Removal" "Naming Normalization"; do
         local section_content
         section_content=$(awk -v sect="$section" '/^## /{if($0 ~ sect){found=1; next}else if(found){exit}} found{print}' \
-            ARCHITECT_PLAN.md 2>/dev/null || true)
+            "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
         if [ -n "$section_content" ] && ! echo "$section_content" | grep -qiE '^\s*-?\s*None\s*$'; then
             has_jr_work=1
             break
@@ -218,7 +218,7 @@ run_stage_architect() {
         # Extract Out of Scope items — these stay unresolved for next audit cycle
         local oos_section
         oos_section=$(awk '/^## Out of Scope/{found=1; next} found && /^##/{exit} found{print}' \
-            ARCHITECT_PLAN.md 2>/dev/null || true)
+            "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
 
         local oos_items=()
         if [ -n "$oos_section" ]; then
@@ -282,7 +282,7 @@ run_stage_architect() {
 
     local design_section
     design_section=$(awk '/^## Design Doc Observations/{found=1; next} found && /^##/{exit} found{print}' \
-        ARCHITECT_PLAN.md 2>/dev/null || true)
+        "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
 
     if [ -n "$design_section" ]; then
         # Join multi-line bullets, then filter out non-actionable entries.
@@ -345,9 +345,9 @@ run_stage_architect() {
 
     # --- Archive and clean up plan -------------------------------------------
 
-    if [ -f "ARCHITECT_PLAN.md" ]; then
-        mv "ARCHITECT_PLAN.md" "${LOG_DIR}/${TIMESTAMP}_ARCHITECT_PLAN.md"
-        log "ARCHITECT_PLAN.md archived and removed from working directory."
+    if [ -f "${ARCHITECT_PLAN_FILE}" ]; then
+        mv "${ARCHITECT_PLAN_FILE}" "${LOG_DIR}/${TIMESTAMP}_$(basename "${ARCHITECT_PLAN_FILE}")"
+        log "${ARCHITECT_PLAN_FILE} archived and removed from working directory."
     fi
 
     success "Architect audit complete."

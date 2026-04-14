@@ -72,7 +72,7 @@ preload_context_cache() {
 
     # --- Drift log ---
     export _CACHED_DRIFT_LOG_CONTENT=""
-    local _drift_file="${DRIFT_LOG_FILE:-${DRIFT_LOG_FILE}}"
+    local _drift_file="${DRIFT_LOG_FILE:-}"
     if [[ -f "$_drift_file" ]]; then
         local _drift_raw
         _drift_raw=$(_safe_read_file "$_drift_file" "DRIFT_LOG")
@@ -83,14 +83,14 @@ preload_context_cache() {
 
     # --- Clarifications ---
     export _CACHED_CLARIFICATIONS_CONTENT=""
-    local _clarify_file="${CLARIFICATIONS_FILE:-${CLARIFICATIONS_FILE}}"
+    local _clarify_file="${CLARIFICATIONS_FILE:-}"
     if [[ -f "$_clarify_file" ]] && [[ -s "$_clarify_file" ]]; then
         _CACHED_CLARIFICATIONS_CONTENT=$(_safe_read_file "$_clarify_file" "CLARIFICATIONS")
     fi
 
     # --- Architecture decision log ---
     export _CACHED_ARCHITECTURE_LOG_CONTENT=""
-    local _adl_file="${ARCHITECTURE_LOG_FILE:-${ARCHITECTURE_LOG_FILE}}"
+    local _adl_file="${ARCHITECTURE_LOG_FILE:-}"
     if [[ -f "$_adl_file" ]]; then
         local _adl_raw
         _adl_raw=$(_safe_read_file "$_adl_file" "ARCHITECTURE_LOG")
@@ -168,9 +168,9 @@ _get_cached_architecture_raw() {
 _get_cached_drift_log_content() {
     if [[ "${_CONTEXT_CACHE_LOADED:-false}" == "true" ]] && [[ -n "$_CACHED_DRIFT_LOG_CONTENT" ]]; then
         echo "$_CACHED_DRIFT_LOG_CONTENT"
-    elif [[ -f "${DRIFT_LOG_FILE:-${DRIFT_LOG_FILE}}" ]]; then
+    elif [[ -f "${DRIFT_LOG_FILE:-}" ]]; then
         local _raw
-        _raw=$(_safe_read_file "${DRIFT_LOG_FILE:-${DRIFT_LOG_FILE}}" "DRIFT_LOG")
+        _raw=$(_safe_read_file "${DRIFT_LOG_FILE:-}" "DRIFT_LOG")
         if [[ -n "$_raw" ]]; then
             _wrap_file_content "DRIFT_LOG" "$_raw"
         fi
@@ -182,7 +182,7 @@ _get_cached_clarifications_content() {
     if [[ "${_CONTEXT_CACHE_LOADED:-false}" == "true" ]]; then
         echo "$_CACHED_CLARIFICATIONS_CONTENT"
     else
-        local _file="${CLARIFICATIONS_FILE:-${CLARIFICATIONS_FILE}}"
+        local _file="${CLARIFICATIONS_FILE:-}"
         if [[ -f "$_file" ]] && [[ -s "$_file" ]]; then
             _safe_read_file "$_file" "CLARIFICATIONS"
         fi
@@ -193,9 +193,9 @@ _get_cached_clarifications_content() {
 _get_cached_architecture_log_content() {
     if [[ "${_CONTEXT_CACHE_LOADED:-false}" == "true" ]]; then
         echo "$_CACHED_ARCHITECTURE_LOG_CONTENT"
-    elif [[ -f "${ARCHITECTURE_LOG_FILE:-${ARCHITECTURE_LOG_FILE}}" ]]; then
+    elif [[ -f "${ARCHITECTURE_LOG_FILE:-}" ]]; then
         local _raw
-        _raw=$(_safe_read_file "${ARCHITECTURE_LOG_FILE:-${ARCHITECTURE_LOG_FILE}}" "ARCHITECTURE_LOG")
+        _raw=$(_safe_read_file "${ARCHITECTURE_LOG_FILE:-}" "ARCHITECTURE_LOG")
         if [[ -n "$_raw" ]]; then
             _wrap_file_content "ARCHITECTURE_LOG" "$_raw"
         fi

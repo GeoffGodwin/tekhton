@@ -23,6 +23,17 @@ error()   { :; }
 success() { :; }
 header()  { :; }
 
+# M84: Variable defaults (normally set by common.sh / config_defaults.sh)
+: "${TEKHTON_DIR:=.tekhton}"
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+: "${DESIGN_FILE:=${TEKHTON_DIR}/DESIGN.md}"
+
 # Source detect.sh first (provides _DETECT_EXCLUDE_DIRS + _extract_json_keys)
 # shellcheck source=../lib/detect.sh
 source "${TEKHTON_HOME}/lib/detect.sh"
@@ -333,19 +344,19 @@ else
 fi
 
 # =============================================================================
-# Test: Legacy PROJECT_INDEX.md is still generated
+# Test: PROJECT_INDEX.md is generated at ${PROJECT_INDEX_FILE} (M84: .tekhton/)
 # =============================================================================
-echo "=== Legacy backward compatibility ==="
+echo "=== M84: PROJECT_INDEX.md placement ==="
 
-if [[ -f "${PROJ}/PROJECT_INDEX.md" ]]; then
-    pass "PROJECT_INDEX.md is generated (legacy bridge)"
+if [[ -f "${PROJ}/${PROJECT_INDEX_FILE}" ]]; then
+    pass "PROJECT_INDEX.md generated at \${PROJECT_INDEX_FILE} (${PROJECT_INDEX_FILE})"
 else
-    fail "PROJECT_INDEX.md not generated — backward compatibility broken"
+    fail "PROJECT_INDEX.md not generated at ${PROJECT_INDEX_FILE}"
 fi
 
 # Verify it has expected sections
 for section in "Directory Tree" "File Inventory" "Key Dependencies" "Configuration Files" "Test Infrastructure" "Sampled File Content"; do
-    if grep -q "## ${section}" "${PROJ}/PROJECT_INDEX.md"; then
+    if grep -q "## ${section}" "${PROJ}/${PROJECT_INDEX_FILE}"; then
         pass "PROJECT_INDEX.md contains section: ${section}"
     else
         fail "PROJECT_INDEX.md missing section: ${section}"
@@ -360,7 +371,7 @@ echo "=== PROJECT_INDEX_BUDGET config key ==="
 PROJ2=$(make_test_project "budget_test")
 PROJECT_INDEX_BUDGET=5000 crawl_project "$PROJ2" "${PROJECT_INDEX_BUDGET:-5000}"
 
-size=$(wc -c < "${PROJ2}/PROJECT_INDEX.md" | tr -d '[:space:]')
+size=$(wc -c < "${PROJ2}/${PROJECT_INDEX_FILE}" | tr -d '[:space:]')
 # With a 5000 budget, the file should be notably smaller
 if [[ "$size" -le 6000 ]]; then
     pass "PROJECT_INDEX.md respects small budget (${size} chars <= 6000)"

@@ -76,6 +76,15 @@ set -euo pipefail
 : "${UI_VALIDATION_REPORT_FILE:=${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
 : "${PREFLIGHT_REPORT_FILE:=${TEKHTON_DIR}/PREFLIGHT_REPORT.md}"
 
+# --- Transient artifact file paths (M84: complete TEKHTON_DIR migration) ---
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+
 # --- Final check fix defaults (auto-fix on final check test failures) ---
 # Note: FINAL_FIX_* controls the inline fix agent in hooks.sh (final checks).
 #       TESTER_FIX_* controls the inline fix agent in stages/tester.sh (tester stage).

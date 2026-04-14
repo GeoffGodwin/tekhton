@@ -110,7 +110,7 @@ _hook_emit_run_summary() {
     # Test audit verdict (M20)
     local test_audit_verdict="skipped"
     if [[ "${TEST_AUDIT_ENABLED:-true}" = "true" ]]; then
-        local _audit_rpt="${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
+        local _audit_rpt="${TEST_AUDIT_REPORT_FILE:-}"
         if [[ -f "$_audit_rpt" ]]; then
             test_audit_verdict=$(grep -oiE 'Verdict:\s*(NEEDS_WORK|PASS|CONCERNS)' "$_audit_rpt" 2>/dev/null \
                 | head -1 | sed 's/.*:\s*//' | tr '[:lower:]' '[:upper:]' || echo "unknown")

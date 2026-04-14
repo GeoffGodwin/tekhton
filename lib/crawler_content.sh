@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# crawler_content.sh — File sampling for PROJECT_INDEX.md
+# crawler_content.sh — File sampling for $PROJECT_INDEX_FILE
 #
 # Sourced by crawler.sh — do not run directly.
 # Depends on: common.sh (log, warn), crawler.sh (_list_tracked_files)

@@ -20,7 +20,7 @@ and validate any extracted rules against the pipeline's established patterns and
 
 ## Your Task
 
-Produce a structured MERGE_CONTEXT.md that the Tekhton synthesis pipeline can
+Produce a structured {{MERGE_CONTEXT_FILE}} that the Tekhton synthesis pipeline can
 consume. Extract ONLY project-specific information — ignore generic boilerplate
 or tool-specific settings that don't carry over.
 
@@ -87,7 +87,7 @@ Files analyzed: [list of files]
 
 ## Output Rules
 
-1. Output the MERGE_CONTEXT.md content directly to stdout
+1. Output the {{MERGE_CONTEXT_FILE}} content directly to stdout
 2. Be conservative — better to under-extract than over-extract
 3. Every extracted item must be traceable to a specific source file
 4. Skip sections that have no relevant content (don't include empty sections)

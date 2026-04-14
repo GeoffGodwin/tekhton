@@ -60,4 +60,4 @@ Verify that the drift observations align with any layer violations shown here.
 {{ENDIF:DEPENDENCY_CONSTRAINTS_CONTENT}}
 
 ## Output
-Write `ARCHITECT_PLAN.md` following the format in your role definition.
+Write `{{ARCHITECT_PLAN_FILE}}` following the format in your role definition.

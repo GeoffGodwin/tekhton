@@ -208,8 +208,8 @@ _report_attention_items() {
     fi
 
     if [[ -n "$commands" ]]; then
-        local cmd_type cmd_val cmd_src cmd_conf
-        while IFS='|' read -r cmd_type cmd_val cmd_src cmd_conf; do
+        local cmd_type cmd_val _cmd_src cmd_conf
+        while IFS='|' read -r cmd_type cmd_val _cmd_src cmd_conf; do
             [[ -z "$cmd_type" ]] && continue
             if [[ "$cmd_conf" == "low" ]] || [[ "$cmd_conf" == "medium" ]]; then
                 echo "- ${cmd_type} command (\`${cmd_val}\`) detected with ${cmd_conf} confidence — verify before first run"

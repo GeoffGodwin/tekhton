@@ -107,7 +107,7 @@ _detect_significant_changes() {
 # --- Metadata management -----------------------------------------------------
 
 # _extract_scan_metadata — Reads a metadata field from structured index or
-# PROJECT_INDEX.md header. Prefers .claude/index/meta.json (M68), falls back
+# $PROJECT_INDEX_FILE header. Prefers .claude/index/meta.json (M68), falls back
 # to HTML comment parsing for legacy projects.
 # Args: $1 = index file path, $2 = field name (e.g., "Scan-Commit")
 # Output: Field value or empty string

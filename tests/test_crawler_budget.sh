@@ -21,6 +21,16 @@ error()   { :; }
 success() { :; }
 header()  { :; }
 
+# M84: Variable defaults (normally set by common.sh / config_defaults.sh)
+: "${TEKHTON_DIR:=.tekhton}"
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+
 # Source detect.sh for _DETECT_EXCLUDE_DIRS and _extract_json_keys
 # shellcheck source=../lib/detect.sh
 source "${TEKHTON_HOME}/lib/detect.sh"
@@ -112,6 +122,8 @@ echo "=== View generator: produces all 6 section headings ==="
 # Create a minimal structured index fixture
 VIEW_DIR="${TEST_TMPDIR}/view_proj"
 mkdir -p "${VIEW_DIR}/.claude/index/samples"
+# M84: generate_project_index_view writes to ${PROJECT_INDEX_FILE} = .tekhton/PROJECT_INDEX.md
+mkdir -p "${VIEW_DIR}/.tekhton"
 
 cat > "${VIEW_DIR}/.claude/index/meta.json" << 'JSON'
 {
@@ -184,13 +196,13 @@ JSON
 
 generate_project_index_view "$VIEW_DIR" 120000
 
-if [[ -f "${VIEW_DIR}/PROJECT_INDEX.md" ]]; then
+if [[ -f "${VIEW_DIR}/${PROJECT_INDEX_FILE}" ]]; then
     pass "View generator creates PROJECT_INDEX.md"
 else
     fail "View generator did not create PROJECT_INDEX.md"
 fi
 
-VIEW_CONTENT=$(cat "${VIEW_DIR}/PROJECT_INDEX.md")
+VIEW_CONTENT=$(cat "${VIEW_DIR}/${PROJECT_INDEX_FILE}")
 
 for heading in "Directory Tree" "File Inventory" "Key Dependencies" \
                "Configuration Files" "Test Infrastructure" "Sampled File Content"; do
@@ -208,7 +220,7 @@ echo "=== View generator: output fits within budget ==="
 
 for budget in 1000 10000 50000 120000; do
     generate_project_index_view "$VIEW_DIR" "$budget"
-    local_size=$(wc -c < "${VIEW_DIR}/PROJECT_INDEX.md" | tr -d '[:space:]')
+    local_size=$(wc -c < "${VIEW_DIR}/${PROJECT_INDEX_FILE}" | tr -d '[:space:]')
     if [[ "$local_size" -le "$budget" ]]; then
         pass "View fits within ${budget}-char budget (actual: ${local_size})"
     else
@@ -222,7 +234,7 @@ done
 echo "=== View generator: no truncation markers ==="
 
 generate_project_index_view "$VIEW_DIR" 120000
-if grep -q "truncated to fit budget" "${VIEW_DIR}/PROJECT_INDEX.md"; then
+if grep -q "truncated to fit budget" "${VIEW_DIR}/${PROJECT_INDEX_FILE}"; then
     fail "View contains legacy truncation marker"
 else
     pass "View does not contain legacy truncation markers"
@@ -236,6 +248,7 @@ echo "=== View generator: selection indicators for large data ==="
 # Create large inventory (100 files)
 LARGE_DIR="${TEST_TMPDIR}/large_proj"
 mkdir -p "${LARGE_DIR}/.claude/index/samples"
+mkdir -p "${LARGE_DIR}/.tekhton"
 cp "${VIEW_DIR}/.claude/index/meta.json" "${LARGE_DIR}/.claude/index/"
 cp "${VIEW_DIR}/.claude/index/tree.txt" "${LARGE_DIR}/.claude/index/"
 cp "${VIEW_DIR}/.claude/index/dependencies.json" "${LARGE_DIR}/.claude/index/"
@@ -253,7 +266,7 @@ cp "${VIEW_DIR}/.claude/index/samples/src__main.ts.txt" "${LARGE_DIR}/.claude/in
 
 # Use tiny budget to force selection
 generate_project_index_view "$LARGE_DIR" 2000
-if grep -q "more files" "${LARGE_DIR}/PROJECT_INDEX.md"; then
+if grep -q "more files" "${LARGE_DIR}/${PROJECT_INDEX_FILE}"; then
     pass "View shows selection indicator for large inventory"
 else
     fail "View missing selection indicator for large inventory"
@@ -266,6 +279,7 @@ echo "=== View generator: tree capped at 300 lines ==="
 
 TREE_DIR="${TEST_TMPDIR}/tree_proj"
 mkdir -p "${TREE_DIR}/.claude/index/samples"
+mkdir -p "${TREE_DIR}/.tekhton"
 cp "${VIEW_DIR}/.claude/index/meta.json" "${TREE_DIR}/.claude/index/"
 cp "${VIEW_DIR}/.claude/index/inventory.jsonl" "${TREE_DIR}/.claude/index/"
 cp "${VIEW_DIR}/.claude/index/dependencies.json" "${TREE_DIR}/.claude/index/"
@@ -282,7 +296,7 @@ cp "${VIEW_DIR}/.claude/index/samples/src__main.ts.txt" "${TREE_DIR}/.claude/ind
 } > "${TREE_DIR}/.claude/index/tree.txt"
 
 generate_project_index_view "$TREE_DIR" 120000
-if grep -q "more lines" "${TREE_DIR}/PROJECT_INDEX.md"; then
+if grep -q "more lines" "${TREE_DIR}/${PROJECT_INDEX_FILE}"; then
     pass "View shows indicator for deep tree"
 else
     fail "View missing indicator for deep tree"
@@ -294,7 +308,7 @@ fi
 echo "=== View generator: samples are complete (no mid-file cuts) ==="
 
 generate_project_index_view "$VIEW_DIR" 120000
-VIEW_CONTENT=$(cat "${VIEW_DIR}/PROJECT_INDEX.md")
+VIEW_CONTENT=$(cat "${VIEW_DIR}/${PROJECT_INDEX_FILE}")
 if echo "$VIEW_CONTENT" | grep -q 'console.log("hello")'; then
     pass "View includes complete sample content"
 else

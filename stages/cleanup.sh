@@ -148,7 +148,7 @@ run_stage_cleanup() {
     fi
 }
 
-# _process_cleanup_results — Parses CLEANUP_REPORT.md (if produced) or uses
+# _process_cleanup_results — Parses cleanup report (if produced) or uses
 # a heuristic to determine which items were addressed vs deferred.
 # Args: $1 = batch (original notes), $2 = build_pass (true/false)
 _process_cleanup_results() {
@@ -164,12 +164,12 @@ _process_cleanup_results() {
         return 0
     fi
 
-    # Check if the agent produced a CLEANUP_REPORT.md with structured output
-    if [ -f "CLEANUP_REPORT.md" ]; then
+    # Check if the agent produced a cleanup report with structured output
+    if [ -f "${CLEANUP_REPORT_FILE}" ]; then
         _parse_cleanup_report "$batch"
         # Archive the cleanup report
         if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ]; then
-            mv "CLEANUP_REPORT.md" "${LOG_DIR}/${TIMESTAMP}_CLEANUP_REPORT.md" 2>/dev/null || true
+            mv "${CLEANUP_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_$(basename "${CLEANUP_REPORT_FILE}")" 2>/dev/null || true
         fi
         return 0
     fi
@@ -179,7 +179,7 @@ _process_cleanup_results() {
     _resolve_cleanup_by_file_changes "$batch"
 }
 
-# _parse_cleanup_report — Reads CLEANUP_REPORT.md for structured results.
+# _parse_cleanup_report — Reads cleanup report for structured results.
 # Expected format:
 #   ## Resolved
 #   - <note text excerpt>
@@ -194,7 +194,7 @@ _process_cleanup_results() {
 # re-selected in future cleanup sweeps.
 _parse_cleanup_report() {
     local batch="$1"
-    local report="CLEANUP_REPORT.md"
+    local report="${CLEANUP_REPORT_FILE}"
 
     # Extract resolved items
     local resolved_section

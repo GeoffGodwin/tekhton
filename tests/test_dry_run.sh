@@ -23,6 +23,16 @@ success() { :; }
 header()  { :; }
 error()   { :; }
 
+# M84: Variable defaults (normally set by common.sh / config_defaults.sh)
+: "${TEKHTON_DIR:=.tekhton}"
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+
 # ── Source the module under test ─────────────────────────────────────────────
 # shellcheck source=../lib/dry_run.sh
 source "${TEKHTON_HOME}/lib/dry_run.sh"
@@ -74,6 +84,8 @@ export PROJECT_DIR="$TMPDIR_TEST"
 export DRY_RUN_CACHE_DIR="${TMPDIR_TEST}/.claude/dry_run_cache"
 export DRY_RUN_CACHE_TTL=3600
 export INTAKE_REPORT_FILE="${TMPDIR_TEST}/INTAKE_REPORT.md"
+# M84: SCOUT_REPORT_FILE is relative (.tekhton/SCOUT_REPORT.md); create the dir
+mkdir -p "${TMPDIR_TEST}/${TEKHTON_DIR}"
 
 TASK="implement feature X for dry-run test"
 
@@ -118,7 +130,7 @@ fi
 # ── 2. Roundtrip: _write_dry_run_cache → validate_dry_run_cache returns 0 ───
 # Both called from the tmpdir git repo so git rev-parse HEAD is consistent.
 rm -rf "${DRY_RUN_CACHE_DIR}"
-printf '## Files\n- src/auth.sh\n' > "${TMPDIR_TEST}/SCOUT_REPORT.md"
+printf '## Files\n- src/auth.sh\n' > "${TMPDIR_TEST}/${SCOUT_REPORT_FILE}"
 printf '## Verdict\n\nPASS\n' > "${INTAKE_REPORT_FILE}"
 
 pushd "$TMPDIR_TEST" > /dev/null
@@ -212,16 +224,16 @@ fi
 # ── 10. consume_dry_run_cache: scout report copied to working directory ──────
 rm -rf "${DRY_RUN_CACHE_DIR}"
 _write_test_cache "$TASK"
-rm -f "${TMPDIR_TEST}/SCOUT_REPORT.md"
+rm -f "${TMPDIR_TEST}/${SCOUT_REPORT_FILE}"
 
 pushd "$TMPDIR_TEST" > /dev/null
 consume_dry_run_cache
 popd > /dev/null
 
-if [[ -f "${TMPDIR_TEST}/SCOUT_REPORT.md" ]]; then
-    pass "consume: SCOUT_REPORT.md copied to working directory"
+if [[ -f "${TMPDIR_TEST}/${SCOUT_REPORT_FILE}" ]]; then
+    pass "consume: SCOUT_REPORT.md copied to working directory (.tekhton/)"
 else
-    fail "consume: SCOUT_REPORT.md not copied to working directory"
+    fail "consume: SCOUT_REPORT.md not copied to working directory (.tekhton/)"
 fi
 
 # ── 11. discard_dry_run_cache: removes cache directory ──────────────────────

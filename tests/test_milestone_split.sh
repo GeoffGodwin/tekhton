@@ -522,6 +522,23 @@ _define_coder_stubs() {
     load_clarifications_content() { CLARIFICATIONS_CONTENT=""; }
     detect_clarifications() { return 1; }
 
+    # M84: Tekhton-managed file path variables
+    CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+    REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
+    SCOUT_REPORT_FILE="${TEKHTON_DIR}/SCOUT_REPORT.md"
+    ARCHITECT_PLAN_FILE="${TEKHTON_DIR}/ARCHITECT_PLAN.md"
+
+    # Function stubs needed by coder.sh
+    _get_cached_architecture_raw() { echo ""; }
+    should_claim_notes() { return 1; }
+    run_repo_map() { :; }
+    get_repo_map_slice() { echo ""; }
+    extract_files_from_coder_summary() { :; }
+    record_task_file_association() { :; }
+    has_test_baseline() { return 1; }
+    _test_baseline_json() { echo ""; }
+    invalidate_repo_map_run_cache() { :; }
+
     # Progress stubs (M50)
     log_decision() { :; }
     progress_status() { :; }
@@ -574,7 +591,7 @@ _define_coder_stubs() {
     NON_BLOCKING_INJECTION_THRESHOLD=999
     TASK="Test task"
 
-    mkdir -p "${LOG_DIR}"
+    mkdir -p "${LOG_DIR}" "${TMPDIR}/${TEKHTON_DIR}"
 }
 
 # Test 1: Pre-flight gate triggers split_milestone and re-scout
@@ -611,10 +628,10 @@ _test_result=0
         _track "run_agent:$1"
         if [[ "$_agent_call_count" -le 2 ]]; then
             # Scout calls (original + post-split)
-            echo "## Scout Report" > SCOUT_REPORT.md
+            echo "## Scout Report" > "${SCOUT_REPORT_FILE}"
         else
-            # Coder call — create CODER_SUMMARY.md
-            cat > CODER_SUMMARY.md << 'EOF'
+            # Coder call — create CODER_SUMMARY
+            cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -670,7 +687,7 @@ _test_result=0
             # Second coder run (after split): success
             LAST_AGENT_NULL_RUN=false
             LAST_AGENT_TURNS=10
-            cat > CODER_SUMMARY.md << 'EOF'
+            cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -725,7 +742,7 @@ _test_result=0
         _track "run_agent:$1"
         if [[ "$_agent_call_count" -eq 1 ]]; then
             # First coder: IN PROGRESS with minimal output (≤3 summary lines)
-            cat > CODER_SUMMARY.md << 'EOF'
+            cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: IN PROGRESS
 ## What Was Implemented
@@ -733,7 +750,7 @@ _test_result=0
 EOF
         else
             # Post-split coder: success
-            cat > CODER_SUMMARY.md << 'EOF'
+            cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -797,11 +814,11 @@ _test_result=0
         _agent_call_count=$(( _agent_call_count + 1 ))
         _track "run_agent:$1"
         if [[ "$1" = "Scout" ]]; then
-            echo "## Scout Report" > SCOUT_REPORT.md
-            echo "Files: foo.sh" >> SCOUT_REPORT.md
+            echo "## Scout Report" > "${SCOUT_REPORT_FILE}"
+            echo "Files: foo.sh" >> "${SCOUT_REPORT_FILE}"
         else
-            # Coder call — create CODER_SUMMARY.md
-            cat > CODER_SUMMARY.md << 'INNEREOF'
+            # Coder call — create CODER_SUMMARY
+            cat > "${CODER_SUMMARY_FILE}" << 'INNEREOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -858,9 +875,9 @@ _test_result=0
     run_agent() {
         _track "run_agent:$1"
         if [[ "$1" = "Scout" ]]; then
-            echo "## Scout Report" > SCOUT_REPORT.md
+            echo "## Scout Report" > "${SCOUT_REPORT_FILE}"
         else
-            cat > CODER_SUMMARY.md << 'INNEREOF'
+            cat > "${CODER_SUMMARY_FILE}" << 'INNEREOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented

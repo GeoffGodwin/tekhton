@@ -200,8 +200,8 @@ build_context_packet() {
 
     # Extract keywords from task and available reference files (M47: cache per ref_file)
     local ref_file=""
-    if [[ -f "SCOUT_REPORT.md" ]]; then
-        ref_file="SCOUT_REPORT.md"
+    if [[ -f "${SCOUT_REPORT_FILE}" ]]; then
+        ref_file="${SCOUT_REPORT_FILE}"
     elif [[ -f "${CODER_SUMMARY_FILE}" ]]; then
         ref_file="${CODER_SUMMARY_FILE}"
     fi

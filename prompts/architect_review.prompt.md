@@ -5,7 +5,7 @@ This review validates changes made by the coder agents in response to
 an architect audit plan. This is an expedited single-pass review — no rework cycle.
 
 Read these files:
-1. `ARCHITECT_PLAN.md` — the remediation plan that was implemented
+1. `{{ARCHITECT_PLAN_FILE}}` — the remediation plan that was implemented
 2. `{{CODER_SUMMARY_FILE}}` — what the senior coder changed (Simplification items)
 3. `{{JR_CODER_SUMMARY_FILE}}` — what the jr coder changed (Staleness/Dead Code/Naming)
 4. `{{ARCHITECTURE_FILE}}` — verify any doc updates are accurate

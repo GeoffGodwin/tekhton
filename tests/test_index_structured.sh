@@ -22,6 +22,17 @@ error()   { :; }
 success() { :; }
 header()  { :; }
 
+# M84: Variable defaults (normally set by common.sh / config_defaults.sh)
+: "${TEKHTON_DIR:=.tekhton}"
+: "${SCOUT_REPORT_FILE:=${TEKHTON_DIR}/SCOUT_REPORT.md}"
+: "${ARCHITECT_PLAN_FILE:=${TEKHTON_DIR}/ARCHITECT_PLAN.md}"
+: "${CLEANUP_REPORT_FILE:=${TEKHTON_DIR}/CLEANUP_REPORT.md}"
+: "${DRIFT_ARCHIVE_FILE:=${TEKHTON_DIR}/DRIFT_ARCHIVE.md}"
+: "${PROJECT_INDEX_FILE:=${TEKHTON_DIR}/PROJECT_INDEX.md}"
+: "${REPLAN_DELTA_FILE:=${TEKHTON_DIR}/REPLAN_DELTA.md}"
+: "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
+: "${DESIGN_FILE:=${TEKHTON_DIR}/DESIGN.md}"
+
 # Source libraries
 # shellcheck source=../lib/detect.sh
 source "${TEKHTON_HOME}/lib/detect.sh"
@@ -147,7 +158,7 @@ fi
 # =============================================================================
 echo "=== crawl_project: PROJECT_INDEX.md contains all 6 sections ==="
 
-VIEW=$(cat "${PROJ}/PROJECT_INDEX.md")
+VIEW=$(cat "${PROJ}/${PROJECT_INDEX_FILE}")
 
 for heading in "Directory Tree" "File Inventory" "Key Dependencies" \
                "Configuration Files" "Test Infrastructure" "Sampled File Content"; do
@@ -163,7 +174,7 @@ done
 # =============================================================================
 echo "=== crawl_project: output fits within budget ==="
 
-VIEW_SIZE=$(wc -c < "${PROJ}/PROJECT_INDEX.md" | tr -d '[:space:]')
+VIEW_SIZE=$(wc -c < "${PROJ}/${PROJECT_INDEX_FILE}" | tr -d '[:space:]')
 if [[ "$VIEW_SIZE" -le 120000 ]]; then
     pass "PROJECT_INDEX.md within 120K budget (${VIEW_SIZE} chars)"
 else
@@ -175,7 +186,7 @@ fi
 # =============================================================================
 echo "=== crawl_project: no truncation markers ==="
 
-if grep -q "truncated to fit budget" "${PROJ}/PROJECT_INDEX.md"; then
+if grep -q "truncated to fit budget" "${PROJ}/${PROJECT_INDEX_FILE}"; then
     fail "PROJECT_INDEX.md contains legacy truncation marker"
 else
     pass "PROJECT_INDEX.md free of legacy truncation markers"
@@ -188,7 +199,7 @@ echo "=== view generator: budget compliance ==="
 
 for budget in 1000 10000 50000 120000; do
     generate_project_index_view "$PROJ" "$budget"
-    local_size=$(wc -c < "${PROJ}/PROJECT_INDEX.md" | tr -d '[:space:]')
+    local_size=$(wc -c < "${PROJ}/${PROJECT_INDEX_FILE}" | tr -d '[:space:]')
     if [[ "$local_size" -le "$budget" ]]; then
         pass "View fits within ${budget}-char budget (actual: ${local_size})"
     else
@@ -218,7 +229,7 @@ else
 fi
 
 # View should be regenerated
-if grep -q "config.ts" "${PROJ}/PROJECT_INDEX.md"; then
+if grep -q "config.ts" "${PROJ}/${PROJECT_INDEX_FILE}"; then
     pass "Rescan regenerates view with new file"
 else
     fail "Rescan view missing new file"
@@ -270,7 +281,7 @@ else
     fail "Rescan did not add lodash to dependencies.json"
 fi
 
-if grep -q "lodash" "${PROJ}/PROJECT_INDEX.md"; then
+if grep -q "lodash" "${PROJ}/${PROJECT_INDEX_FILE}"; then
     pass "Rescan view shows new dependency"
 else
     fail "Rescan view missing new dependency"
@@ -294,7 +305,7 @@ else
 fi
 
 # No truncation markers after forced crawl
-if grep -q "truncated to fit budget" "${PROJ}/PROJECT_INDEX.md"; then
+if grep -q "truncated to fit budget" "${PROJ}/${PROJECT_INDEX_FILE}"; then
     fail "Forced crawl left truncation markers"
 else
     pass "Forced crawl free of truncation markers"
@@ -366,7 +377,7 @@ else
     fail "Legacy migration did not create structured index"
 fi
 
-if grep -q "truncated to fit budget" "${LEGACY_DIR}/PROJECT_INDEX.md"; then
+if grep -q "truncated to fit budget" "${LEGACY_DIR}/${PROJECT_INDEX_FILE}"; then
     fail "Legacy migration left old truncation markers in view"
 else
     pass "Legacy migration produces clean view (no truncation markers)"

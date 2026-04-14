@@ -270,7 +270,7 @@ _write_health_report() {
     shift 9
     local d_docs="${1:-}" d_hygiene="${2:-}"
 
-    local report_file="${proj_dir}/${HEALTH_REPORT_FILE:-${HEALTH_REPORT_FILE}}"
+    local report_file="${proj_dir}/${HEALTH_REPORT_FILE:-}"
     local show_belt="${HEALTH_SHOW_BELT:-true}"
 
     # Extract source_files from test_detail JSON for greenfield detection

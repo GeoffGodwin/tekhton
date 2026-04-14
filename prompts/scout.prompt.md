@@ -63,7 +63,7 @@ Prefer LSP tools over grep for symbol-level queries.
 {{ENDIF:SERENA_ACTIVE}}
 
 ## Output
-Write a file called `SCOUT_REPORT.md` in this exact format.
+Write a file called `{{SCOUT_REPORT_FILE}}` in this exact format.
 The pipeline machine-parses the `## Complexity Estimate` section — field names
 must match EXACTLY as shown below. Do NOT use bold, bullets, tables, or any
 other formatting in the Complexity Estimate fields. Each value must be a single

@@ -44,7 +44,7 @@ Review the changed files for:
 - **Cryptographic issues**: weak algorithms, hardcoded IVs/salts, insecure random generation
 
 ## Required Output
-Write `SPECIALIST_SECURITY_FINDINGS.md` with this format:
+Write `{{SPECIALIST_FINDINGS_FILE}}` with this format:
 
 ```
 # Security Review Findings

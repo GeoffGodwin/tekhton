@@ -92,9 +92,9 @@ echo
 echo "=== _assemble_synthesis_context: PROJECT_INDEX.md present → PROJECT_INDEX_CONTENT set ==="
 
 proj_with_index="${TMPDIR_BASE}/with_index"
-mkdir -p "$proj_with_index"
-echo "# Project Index" > "${proj_with_index}/PROJECT_INDEX.md"
-echo "Some index content." >> "${proj_with_index}/PROJECT_INDEX.md"
+mkdir -p "${proj_with_index}/.tekhton"
+echo "# Project Index" > "${proj_with_index}/.tekhton/PROJECT_INDEX.md"
+echo "Some index content." >> "${proj_with_index}/.tekhton/PROJECT_INDEX.md"
 
 result=$(run_synthesize_subshell "$proj_with_index" '
     _assemble_synthesis_context "$PROJECT_DIR" > /dev/null 2>&1
@@ -125,8 +125,8 @@ echo
 echo "=== _assemble_synthesis_context: README.md present → README_CONTENT set ==="
 
 proj_with_readme="${TMPDIR_BASE}/with_readme"
-mkdir -p "$proj_with_readme"
-echo "# Project Index" > "${proj_with_readme}/PROJECT_INDEX.md"
+mkdir -p "${proj_with_readme}/.tekhton"
+echo "# Project Index" > "${proj_with_readme}/.tekhton/PROJECT_INDEX.md"
 echo "# My README" > "${proj_with_readme}/README.md"
 echo "Project description." >> "${proj_with_readme}/README.md"
 
@@ -159,8 +159,8 @@ echo
 echo "=== _assemble_synthesis_context: ARCHITECTURE.md present → EXISTING_ARCHITECTURE_CONTENT set ==="
 
 proj_with_arch="${TMPDIR_BASE}/with_arch"
-mkdir -p "$proj_with_arch"
-echo "# Project Index" > "${proj_with_arch}/PROJECT_INDEX.md"
+mkdir -p "${proj_with_arch}/.tekhton"
+echo "# Project Index" > "${proj_with_arch}/.tekhton/PROJECT_INDEX.md"
 echo "# Architecture" > "${proj_with_arch}/ARCHITECTURE.md"
 echo "Layer one depends on layer two." >> "${proj_with_arch}/ARCHITECTURE.md"
 
@@ -193,8 +193,8 @@ echo
 echo "=== _assemble_synthesis_context: README candidates tried in order ==="
 
 proj_rst="${TMPDIR_BASE}/with_rst"
-mkdir -p "$proj_rst"
-echo "# Project Index" > "${proj_rst}/PROJECT_INDEX.md"
+mkdir -p "${proj_rst}/.tekhton"
+echo "# Project Index" > "${proj_rst}/.tekhton/PROJECT_INDEX.md"
 echo "RST readme content." > "${proj_rst}/README.rst"
 
 result=$(run_synthesize_subshell "$proj_rst" '

@@ -25,7 +25,7 @@ Each item is a reviewer observation from a prior pipeline run:
 
 ## Required Output
 
-Write `CLEANUP_REPORT.md` with this exact structure:
+Write `{{CLEANUP_REPORT_FILE}}` with this exact structure:
 
 ```markdown
 # Cleanup Report

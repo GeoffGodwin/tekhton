@@ -49,7 +49,7 @@ run_stage_intake() {
     fi
 
     # Use cached intake results from dry-run if available (Milestone 23)
-    if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}" ]]; then
+    if [[ "${INTAKE_CACHED:-false}" == "true" ]] && [[ -f "${INTAKE_REPORT_FILE:-}" ]]; then
         header "Pre-stage 1 — Task Intake (cached)"
         log "Intake: using cached results from dry-run."
         local _cached_verdict
@@ -93,9 +93,9 @@ run_stage_intake() {
     # Load project index summary via structured reader (M68). The reader produces
     # a bounded summary within 8KB — intake only needs the overview, not full
     # file listings. Uses structured .claude/index/ data when available, falls
-    # back to legacy PROJECT_INDEX.md for pre-M67 projects.
+    # back to legacy $PROJECT_INDEX_FILE for pre-M67 projects.
     export INTAKE_PROJECT_INDEX=""
-    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
+    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/${PROJECT_INDEX_FILE}" ]]; then
         INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
     fi
 
@@ -236,7 +236,7 @@ run_intake_create() {
     export INTAKE_ROLE_CONTENT=""
     export INTAKE_CREATE_MODE="true"
 
-    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/PROJECT_INDEX.md" ]]; then
+    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/${PROJECT_INDEX_FILE}" ]]; then
         INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
     fi
 

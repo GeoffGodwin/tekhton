@@ -15,7 +15,7 @@ _extract_specialist_blockers() {
     local spec_name="$1"
     local upper_name
     upper_name=$(echo "$spec_name" | tr '[:lower:]' '[:upper:]')
-    local findings_file="SPECIALIST_${upper_name}_FINDINGS.md"
+    local findings_file="${TEKHTON_DIR}/SPECIALIST_${upper_name}_FINDINGS.md"
 
     if [ ! -f "$findings_file" ]; then
         return
@@ -30,7 +30,7 @@ _append_specialist_notes() {
     local spec_name="$1"
     local upper_name
     upper_name=$(echo "$spec_name" | tr '[:lower:]' '[:upper:]')
-    local findings_file="SPECIALIST_${upper_name}_FINDINGS.md"
+    local findings_file="${TEKHTON_DIR}/SPECIALIST_${upper_name}_FINDINGS.md"
 
     if [ ! -f "$findings_file" ]; then
         return
