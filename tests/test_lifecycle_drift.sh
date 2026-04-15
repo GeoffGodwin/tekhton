@@ -19,11 +19,12 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
-# Config — use low thresholds to make the test cycle short
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
+ARCHITECTURE_LOG_FILE="${TEKHTON_DIR}/ARCHITECTURE_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
 DRIFT_OBSERVATION_THRESHOLD=3
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
 TASK="lifecycle test run"
@@ -77,7 +78,7 @@ fi
 
 # --- Run 1: Reviewer finds 1 drift observation ---
 TASK="Run 1: feature X"
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -98,7 +99,7 @@ fi
 
 # --- Run 2: Reviewer finds 1 more observation ---
 TASK="Run 2: bug fix Y"
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 ## Verdict
 APPROVED
 
@@ -121,7 +122,7 @@ fi
 # Phase 3: Run 3 — observation threshold reached, audit trigger fires
 # =============================================================================
 TASK="Run 3: refactor Z"
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 ## Verdict
 APPROVED_WITH_NOTES
 

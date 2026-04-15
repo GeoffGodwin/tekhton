@@ -41,6 +41,9 @@ source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
 
+# Ensure TEKHTON_DIR exists for DESIGN_FILE writes
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
 # Mock _call_planning_batch — avoids real claude invocation.
 # Prints DESIGN.md content to stdout when CREATE_DESIGN=yes.
 _call_planning_batch() {
@@ -57,6 +60,8 @@ INNERSCRIPT
 
     TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$project_dir" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="web-app" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -193,7 +198,7 @@ project_f="${TMPDIR_BASE}/proj_f"
 mkdir -p "$project_f"
 run_interview 1 yes "$project_f" > /dev/null 2>&1 || true
 
-if [ -f "${project_f}/DESIGN.md" ]; then
+if [ -f "${project_f}/.tekhton/DESIGN.md" ]; then
     pass "DESIGN.md preserved on disk after interrupted session"
 else
     fail "DESIGN.md not found after interrupted session"

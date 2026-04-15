@@ -18,10 +18,13 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
+ARCHITECTURE_LOG_FILE="${TEKHTON_DIR}/ARCHITECTURE_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
 DRIFT_OBSERVATION_THRESHOLD=8
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
 TASK="human action lifecycle test"
@@ -64,7 +67,7 @@ fi
 # Phase 2: Coder design observations create action items
 # =============================================================================
 TASK="Run 1: implement wardens"
-cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -104,7 +107,7 @@ assert_file_contains "3.4 lodestone formula item" "$action_file" "Lodestone form
 # Phase 4: Second coder run — more items added without disturbing existing ones
 # =============================================================================
 TASK="Run 2: boss system"
-cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## Design Observations
@@ -167,7 +170,7 @@ fi
 # =============================================================================
 # Phase 8: No design observations → nothing added
 # =============================================================================
-cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented

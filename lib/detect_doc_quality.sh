@@ -105,7 +105,7 @@ assess_doc_quality() {
     # --- Architecture documentation (0-20 points) ---
     local arch_score=0
     for candidate in ARCHITECTURE.md docs/ARCHITECTURE.md docs/architecture.md \
-                     docs/design.md ${DESIGN_FILE}; do
+                     docs/design.md ${DESIGN_FILE:-}; do
         if [[ -f "$proj_dir/$candidate" ]]; then
             local lines
             lines=$(wc -l < "$proj_dir/$candidate" 2>/dev/null | tr -d '[:space:]')

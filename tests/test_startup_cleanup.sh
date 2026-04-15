@@ -12,11 +12,15 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
+ARCHITECTURE_LOG_FILE="${TEKHTON_DIR}/ARCHITECTURE_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
+HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
 DRIFT_OBSERVATION_THRESHOLD=8
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
 TASK="Test task"
@@ -69,7 +73,7 @@ assert_file_not_contains() {
 # ============================================================================
 echo "--- Test 1: HUMAN_NOTES.md [x] cleanup ---"
 
-cat > "$TMPDIR/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 # Human Notes
 
 ## Bugs
@@ -85,11 +89,11 @@ EOF
 
 clear_completed_human_notes
 
-assert_file_not_contains "No [x] items remain" "$TMPDIR/HUMAN_NOTES.md" '^\- \[x\] '
-assert_file_contains "Open bug preserved" "$TMPDIR/HUMAN_NOTES.md" '^\- \[ \] \[BUG\] Open bug two'
-assert_file_contains "In-progress bug preserved" "$TMPDIR/HUMAN_NOTES.md" '^\- \[~\] \[BUG\] In-progress bug three'
-assert_file_contains "Open feature preserved" "$TMPDIR/HUMAN_NOTES.md" '^\- \[ \] \[FEAT\] Open feature'
-assert_file_contains "Section headers preserved" "$TMPDIR/HUMAN_NOTES.md" '^## Bugs'
+assert_file_not_contains "No [x] items remain" "${TMPDIR}/${HUMAN_NOTES_FILE}" '^\- \[x\] '
+assert_file_contains "Open bug preserved" "${TMPDIR}/${HUMAN_NOTES_FILE}" '^\- \[ \] \[BUG\] Open bug two'
+assert_file_contains "In-progress bug preserved" "${TMPDIR}/${HUMAN_NOTES_FILE}" '^\- \[~\] \[BUG\] In-progress bug three'
+assert_file_contains "Open feature preserved" "${TMPDIR}/${HUMAN_NOTES_FILE}" '^\- \[ \] \[FEAT\] Open feature'
+assert_file_contains "Section headers preserved" "${TMPDIR}/${HUMAN_NOTES_FILE}" '^## Bugs'
 
 # ============================================================================
 # Test 2: clear_completed_human_notes is no-op when no [x] items
@@ -97,16 +101,16 @@ assert_file_contains "Section headers preserved" "$TMPDIR/HUMAN_NOTES.md" '^## B
 echo ""
 echo "--- Test 2: HUMAN_NOTES.md no-op when no completed items ---"
 
-cat > "$TMPDIR/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 # Human Notes
 
 ## Bugs
 - [ ] [BUG] Open bug
 EOF
 
-local_before=$(cat "$TMPDIR/HUMAN_NOTES.md")
+local_before=$(cat "${TMPDIR}/${HUMAN_NOTES_FILE}")
 clear_completed_human_notes
-local_after=$(cat "$TMPDIR/HUMAN_NOTES.md")
+local_after=$(cat "${TMPDIR}/${HUMAN_NOTES_FILE}")
 
 assert_eq "File unchanged when no [x] items" "$local_before" "$local_after"
 
@@ -116,7 +120,7 @@ assert_eq "File unchanged when no [x] items" "$local_before" "$local_after"
 echo ""
 echo "--- Test 3: HUMAN_NOTES.md no-op when file missing ---"
 
-rm -f "$TMPDIR/HUMAN_NOTES.md"
+rm -f "${TMPDIR}/${HUMAN_NOTES_FILE}"
 clear_completed_human_notes
 # If we get here without error, it passed
 echo "✓ PASS: No error when HUMAN_NOTES.md missing"
@@ -128,7 +132,7 @@ PASS=$((PASS + 1))
 echo ""
 echo "--- Test 4: NON_BLOCKING_LOG.md Resolved section cleanup ---"
 
-cat > "$TMPDIR/NON_BLOCKING_LOG.md" << 'EOF'
+cat > "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" << 'EOF'
 # Non-Blocking Notes Log
 
 ## Open
@@ -143,10 +147,10 @@ EOF
 
 clear_resolved_nonblocking_notes > /dev/null
 
-assert_file_contains "Open note one preserved" "$TMPDIR/NON_BLOCKING_LOG.md" 'Open note one'
-assert_file_contains "Open note two preserved" "$TMPDIR/NON_BLOCKING_LOG.md" 'Open note two'
-assert_file_not_contains "Resolved items removed" "$TMPDIR/NON_BLOCKING_LOG.md" '^- \[x\] Fixed item'
-assert_file_contains "Resolved heading preserved" "$TMPDIR/NON_BLOCKING_LOG.md" '^## Resolved'
+assert_file_contains "Open note one preserved" "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" 'Open note one'
+assert_file_contains "Open note two preserved" "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" 'Open note two'
+assert_file_not_contains "Resolved items removed" "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" '^- \[x\] Fixed item'
+assert_file_contains "Resolved heading preserved" "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" '^## Resolved'
 
 # ============================================================================
 # Test 5: clear_resolved_drift_observations clears DRIFT_LOG Resolved
@@ -154,7 +158,7 @@ assert_file_contains "Resolved heading preserved" "$TMPDIR/NON_BLOCKING_LOG.md" 
 echo ""
 echo "--- Test 5: DRIFT_LOG.md Resolved section cleanup ---"
 
-cat > "$TMPDIR/DRIFT_LOG.md" << 'EOF'
+cat > "${TMPDIR}/${DRIFT_LOG_FILE}" << 'EOF'
 # Drift Log
 
 ## Unresolved Observations
@@ -170,10 +174,10 @@ EOF
 
 clear_resolved_drift_observations
 
-assert_file_contains "Unresolved observation preserved" "$TMPDIR/DRIFT_LOG.md" 'Unresolved observation'
-assert_file_not_contains "Resolved items removed" "$TMPDIR/DRIFT_LOG.md" 'Old resolved item'
-assert_file_not_contains "Second resolved item removed" "$TMPDIR/DRIFT_LOG.md" 'Another resolved item'
-assert_file_contains "Resolved heading preserved" "$TMPDIR/DRIFT_LOG.md" '^## Resolved'
+assert_file_contains "Unresolved observation preserved" "${TMPDIR}/${DRIFT_LOG_FILE}" 'Unresolved observation'
+assert_file_not_contains "Resolved items removed" "${TMPDIR}/${DRIFT_LOG_FILE}" 'Old resolved item'
+assert_file_not_contains "Second resolved item removed" "${TMPDIR}/${DRIFT_LOG_FILE}" 'Another resolved item'
+assert_file_contains "Resolved heading preserved" "${TMPDIR}/${DRIFT_LOG_FILE}" '^## Resolved'
 
 # ============================================================================
 # Test 6: Combined cleanup of all three files
@@ -181,13 +185,13 @@ assert_file_contains "Resolved heading preserved" "$TMPDIR/DRIFT_LOG.md" '^## Re
 echo ""
 echo "--- Test 6: Combined cleanup of all three log files ---"
 
-cat > "$TMPDIR/HUMAN_NOTES.md" << 'EOF'
+cat > "${TMPDIR}/${HUMAN_NOTES_FILE}" << 'EOF'
 # Human Notes
 - [x] [BUG] Done
 - [ ] [BUG] Still open
 EOF
 
-cat > "$TMPDIR/NON_BLOCKING_LOG.md" << 'EOF'
+cat > "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" << 'EOF'
 # Non-Blocking Notes Log
 
 ## Open
@@ -198,7 +202,7 @@ cat > "$TMPDIR/NON_BLOCKING_LOG.md" << 'EOF'
 - [x] Resolved entry
 EOF
 
-cat > "$TMPDIR/DRIFT_LOG.md" << 'EOF'
+cat > "${TMPDIR}/${DRIFT_LOG_FILE}" << 'EOF'
 # Drift Log
 
 ## Unresolved Observations
@@ -214,13 +218,13 @@ clear_resolved_drift_observations
 clear_completed_human_notes
 clear_resolved_nonblocking_notes > /dev/null
 
-assert_file_not_contains "HUMAN_NOTES: no [x]" "$TMPDIR/HUMAN_NOTES.md" '^\- \[x\]'
-assert_file_contains "HUMAN_NOTES: [ ] preserved" "$TMPDIR/HUMAN_NOTES.md" 'Still open'
-assert_file_not_contains "NB_LOG: no [x] in Open" "$TMPDIR/NON_BLOCKING_LOG.md" '^\- \[x\]'
-assert_file_contains "NB_LOG: [ ] in Open preserved" "$TMPDIR/NON_BLOCKING_LOG.md" 'Still open note'
-assert_file_not_contains "NB_LOG: Resolved entries gone" "$TMPDIR/NON_BLOCKING_LOG.md" 'Resolved entry'
-assert_file_contains "DRIFT: unresolved preserved" "$TMPDIR/DRIFT_LOG.md" 'Still unresolved'
-assert_file_not_contains "DRIFT: resolved gone" "$TMPDIR/DRIFT_LOG.md" 'Done drift entry'
+assert_file_not_contains "HUMAN_NOTES: no [x]" "${TMPDIR}/${HUMAN_NOTES_FILE}" '^\- \[x\]'
+assert_file_contains "HUMAN_NOTES: [ ] preserved" "${TMPDIR}/${HUMAN_NOTES_FILE}" 'Still open'
+assert_file_not_contains "NB_LOG: no [x] in Open" "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" '^\- \[x\]'
+assert_file_contains "NB_LOG: [ ] in Open preserved" "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" 'Still open note'
+assert_file_not_contains "NB_LOG: Resolved entries gone" "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" 'Resolved entry'
+assert_file_contains "DRIFT: unresolved preserved" "${TMPDIR}/${DRIFT_LOG_FILE}" 'Still unresolved'
+assert_file_not_contains "DRIFT: resolved gone" "${TMPDIR}/${DRIFT_LOG_FILE}" 'Done drift entry'
 
 # ============================================================================
 # Summary

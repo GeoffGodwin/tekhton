@@ -69,6 +69,7 @@ assert_empty() {
 }
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # =============================================================================
 # Phase 1: Baseline — verify pick_next_note returns empty for [~]-only file
@@ -79,7 +80,7 @@ cd "$TMPDIR"
 # "No unchecked notes."
 # =============================================================================
 
-cat > HUMAN_NOTES.md << 'EOF'
+cat > "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
 - [~] [BUG] Fix login timeout on slow networks
 EOF
@@ -159,7 +160,7 @@ assert_eq "4.1 extract_note_text extracts task from env-restored note" \
 # Phase 5: FEAT tag variant — guard works for all tag types
 # =============================================================================
 
-cat > HUMAN_NOTES.md << 'EOF'
+cat > "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md" << 'EOF'
 ## Features
 - [~] [FEAT] Add dark mode toggle
 EOF
@@ -189,7 +190,7 @@ assert_empty "5.2 Without guard: FEAT [~]-only file returns empty" "$nogard"
 # the guard must NOT fire — pick_next_note must be called normally.
 # =============================================================================
 
-cat > HUMAN_NOTES.md << 'EOF'
+cat > "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
 - [ ] [BUG] Fresh unchecked bug
 EOF
@@ -215,7 +216,7 @@ assert_eq "6.1 Empty CURRENT_NOTE_LINE falls through to pick_next_note" \
 # note without accidentally picking a different [ ] note.
 # =============================================================================
 
-cat > HUMAN_NOTES.md << 'EOF'
+cat > "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md" << 'EOF'
 ## Bugs
 - [~] [BUG] Fix login timeout on slow networks
 - [ ] [BUG] Fix password reset email

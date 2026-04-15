@@ -40,6 +40,9 @@ source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
 
+# Ensure TEKHTON_DIR exists for DESIGN_FILE writes
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
 # Mock _call_planning_batch to simulate Claude writing DESIGN.md via tool
 # and returning only a summary as text output.
 _call_planning_batch() {
@@ -50,7 +53,7 @@ _call_planning_batch() {
 
     # If TOOL_WRITES_FILE=yes, write substantive content to DESIGN.md
     if [[ "$TOOL_WRITES_FILE" == "yes" ]]; then
-        local design_file="${PROJECT_DIR}/DESIGN.md"
+        local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
         mkdir -p "$(dirname "$design_file")"
 
         # Write a heading-started document with N lines
@@ -84,6 +87,8 @@ INNERSCRIPT
 
     TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$project_dir" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="web-app" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -102,7 +107,7 @@ mkdir -p "$proj_1"
 
 # Run with tool writing file + returning only summary
 exit_code=$(run_interview_with_tool_write "yes" "yes" 25 "$proj_1")
-design_file="${proj_1}/DESIGN.md"
+design_file="${proj_1}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_file" ]]; then
     first_line=$(head -1 "$design_file")
@@ -141,7 +146,7 @@ mkdir -p "$proj_2"
 
 # Run without tool writing, normal heading-started output
 exit_code=$(run_interview_with_tool_write "no" "no" 25 "$proj_2")
-design_file="${proj_2}/DESIGN.md"
+design_file="${proj_2}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_file" ]]; then
     first_line=$(head -1 "$design_file")
@@ -171,8 +176,11 @@ source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
 
+# Ensure TEKHTON_DIR exists for DESIGN_FILE writes
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
 _call_planning_batch() {
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     mkdir -p "$(dirname "$design_file")"
 
     # Write a SHORT document (10 lines only)
@@ -202,6 +210,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_3" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="web-app" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -209,7 +219,7 @@ exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     TEKHTON_TEST_MODE=1 \
     bash "$script_file" 2>/dev/null < /dev/null)
 
-design_file="${proj_3}/DESIGN.md"
+design_file="${proj_3}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_file" ]]; then
     content=$(cat "$design_file")
@@ -245,8 +255,11 @@ source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
 
+# Ensure TEKHTON_DIR exists for DESIGN_FILE writes
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
 _call_planning_batch() {
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     mkdir -p "$(dirname "$design_file")"
 
     # Write a document NOT starting with # (>20 lines)
@@ -287,6 +300,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_4" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="web-app" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -294,7 +309,7 @@ exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     TEKHTON_TEST_MODE=1 \
     bash "$script_file" 2>/dev/null < /dev/null)
 
-design_file="${proj_4}/DESIGN.md"
+design_file="${proj_4}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_file" ]]; then
     first_line=$(head -1 "$design_file")

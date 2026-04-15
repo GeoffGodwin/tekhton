@@ -80,6 +80,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_1" \
+    DESIGN_FILE="DESIGN.md" \
+    TEKHTON_DIR=".tekhton" \
     SYNTHESIS_MODEL="test-model" \
     SYNTHESIS_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -168,6 +170,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_2" \
+    DESIGN_FILE="DESIGN.md" \
+    TEKHTON_DIR=".tekhton" \
     SYNTHESIS_MODEL="test-model" \
     SYNTHESIS_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -245,6 +249,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_3" \
+    DESIGN_FILE="DESIGN.md" \
+    TEKHTON_DIR=".tekhton" \
     SYNTHESIS_MODEL="test-model" \
     SYNTHESIS_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -316,6 +322,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_4" \
+    DESIGN_FILE="DESIGN.md" \
+    TEKHTON_DIR=".tekhton" \
     SYNTHESIS_MODEL="test-model" \
     SYNTHESIS_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \

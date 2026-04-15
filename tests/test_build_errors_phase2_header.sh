@@ -32,6 +32,7 @@ classify_build_errors_all() {
 export -f classify_build_errors_all
 
 cd "$PROJECT_DIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # Source gates.sh after setup
 source "${TEKHTON_HOME}/lib/gates.sh"
@@ -45,13 +46,13 @@ if run_build_gate "test-phase2" 2>/dev/null; then
 fi
 
 # Verify BUILD_ERRORS.md exists
-if [[ ! -f BUILD_ERRORS.md ]]; then
+if [[ ! -f "${BUILD_ERRORS_FILE}" ]]; then
     echo "FAIL: BUILD_ERRORS.md was not created"
     exit 1
 fi
 
 # Check for canonical header — this is where the bug manifests
-if ! grep -q "^# Build Errors" BUILD_ERRORS.md; then
+if ! grep -q "^# Build Errors" "${BUILD_ERRORS_FILE}"; then
     # Bug confirmed: the header is NOT written because the file check
     # happens AFTER bash opens the file for appending (>>)
     echo "FAIL: Canonical '# Build Errors' header not written (implementation bug in gates.sh line 170)"
@@ -59,7 +60,7 @@ if ! grep -q "^# Build Errors" BUILD_ERRORS.md; then
 fi
 
 # The following checks should pass if the header is correctly written
-if ! grep -q "^## Stage" BUILD_ERRORS.md; then
+if ! grep -q "^## Stage" "${BUILD_ERRORS_FILE}"; then
     echo "FAIL: '## Stage' section not found"
     exit 1
 fi

@@ -17,6 +17,12 @@ RED='' GREEN='' YELLOW='' BOLD='' NC=''
 
 export TEKHTON_HOME
 
+# Define variables required by health library modules (normally set by run_tests.sh
+# or config_defaults.sh, but must be present when tests run standalone).
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+DESIGN_FILE="${DESIGN_FILE:-${TEKHTON_DIR}/DESIGN.md}"
+HEALTH_REPORT_FILE="${HEALTH_REPORT_FILE:-${TEKHTON_DIR}/HEALTH_REPORT.md}"
+
 # Source health modules
 source "${TEKHTON_HOME}/lib/health.sh"
 
@@ -62,7 +68,7 @@ assert_json_field() {
 
 # Greenfield: empty project with just git and README
 GREENFIELD_DIR="$TMPDIR/greenfield"
-mkdir -p "$GREENFIELD_DIR"
+mkdir -p "$GREENFIELD_DIR/${TEKHTON_DIR:-.tekhton}"
 cd "$GREENFIELD_DIR"
 git init -q
 git config user.email "test@test.com"
@@ -72,7 +78,7 @@ git add . && git commit -q -m "init"
 
 # Greenfield with manifest: no code but has package.json
 WITH_MANIFEST_DIR="$TMPDIR/with_manifest"
-mkdir -p "$WITH_MANIFEST_DIR"
+mkdir -p "$WITH_MANIFEST_DIR/${TEKHTON_DIR:-.tekhton}"
 cd "$WITH_MANIFEST_DIR"
 git init -q
 git config user.email "test@test.com"
@@ -92,7 +98,7 @@ export HEALTH_WEIGHT_HYGIENE=15
 export HEALTH_SHOW_BELT=true
 export HEALTH_RUN_TESTS=false
 export HEALTH_BASELINE_FILE=.claude/HEALTH_BASELINE.json
-export HEALTH_REPORT_FILE=HEALTH_REPORT.md
+export HEALTH_REPORT_FILE="${TEKHTON_DIR}/HEALTH_REPORT.md"
 export TEST_CMD=true
 
 # ============================================================================
@@ -165,7 +171,7 @@ fi
 # Test 5: Report contains "Pre-code baseline" callout for greenfield
 # ============================================================================
 
-report_file="$GREENFIELD_DIR/HEALTH_REPORT.md"
+report_file="$GREENFIELD_DIR/$HEALTH_REPORT_FILE"
 if grep -q "Pre-code baseline" "$report_file" 2>/dev/null; then
     PASS=$((PASS + 1))
 else
@@ -186,7 +192,7 @@ fi
 # ============================================================================
 
 with_manifest_score=$(assess_project_health "$WITH_MANIFEST_DIR")
-with_manifest_report="$WITH_MANIFEST_DIR/HEALTH_REPORT.md"
+with_manifest_report="$WITH_MANIFEST_DIR/$HEALTH_REPORT_FILE"
 
 # Since with_manifest has manifest (dep_score=50) but still no code (code_quality=0),
 # it will be higher but still mostly set-up focused
@@ -240,7 +246,7 @@ fi
 # ============================================================================
 
 PROGRESSING_DIR="$TMPDIR/progressing"
-mkdir -p "$PROGRESSING_DIR/src"
+mkdir -p "$PROGRESSING_DIR/src" "$PROGRESSING_DIR/${TEKHTON_DIR:-.tekhton}"
 cd "$PROGRESSING_DIR"
 git init -q
 git config user.email "test@test.com"

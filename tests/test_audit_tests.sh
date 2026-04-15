@@ -8,7 +8,9 @@ trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 PROJECT_DIR="$TMPDIR_TEST"
 TEKHTON_SESSION_DIR=$(mktemp -d "$TMPDIR_TEST/session_XXXXXXXX")
-export TEKHTON_HOME PROJECT_DIR TEKHTON_SESSION_DIR
+TEKHTON_DIR=".tekhton"
+mkdir -p "${TMPDIR_TEST}/${TEKHTON_DIR}"
+export TEKHTON_HOME PROJECT_DIR TEKHTON_SESSION_DIR TEKHTON_DIR
 
 # Initialize git repo
 (cd "$PROJECT_DIR" && git init -q && git commit --allow-empty -m "init" -q)
@@ -35,7 +37,7 @@ LOG_DIR="${PROJECT_DIR}/.claude/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/test.log"
 touch "$LOG_FILE"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
 CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 CLAUDE_REVIEWER_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-sonnet-4-6"
@@ -47,7 +49,7 @@ TEST_AUDIT_MAX_TURNS=8
 TEST_AUDIT_MAX_REWORK_CYCLES=1
 TEST_AUDIT_ORPHAN_DETECTION=true
 TEST_AUDIT_WEAKENING_DETECTION=true
-TEST_AUDIT_REPORT_FILE="TEST_AUDIT_REPORT.md"
+TEST_AUDIT_REPORT_FILE="${TEKHTON_DIR}/TEST_AUDIT_REPORT.md"
 BOLD=""
 NC=""
 
@@ -98,7 +100,7 @@ echo
 echo "--- _collect_audit_context ---"
 
 # Test with TESTER_REPORT.md having checked items
-cat > TESTER_REPORT.md << 'EOF'
+cat > "${TESTER_REPORT_FILE}" << 'EOF'
 ## Planned Tests
 - [x] `tests/test_auth.py` — auth tests
 - [x] `tests/test_api.py` — api tests
@@ -111,7 +113,7 @@ Passed: 5  Failed: 0
 None
 EOF
 
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## Files Modified
@@ -236,7 +238,7 @@ echo
 echo "--- _parse_audit_verdict ---"
 
 # PASS verdict
-cat > TEST_AUDIT_REPORT.md << 'EOF'
+cat > "${TEST_AUDIT_REPORT_FILE}" << 'EOF'
 ## Test Audit Report
 
 ### Audit Summary
@@ -251,7 +253,7 @@ result=$(_parse_audit_verdict)
 assert_eq "verdict: parses PASS" "PASS" "$result"
 
 # NEEDS_WORK verdict
-cat > TEST_AUDIT_REPORT.md << 'EOF'
+cat > "${TEST_AUDIT_REPORT_FILE}" << 'EOF'
 ## Test Audit Report
 
 ### Audit Summary
@@ -270,7 +272,7 @@ result=$(_parse_audit_verdict)
 assert_eq "verdict: parses NEEDS_WORK" "NEEDS_WORK" "$result"
 
 # CONCERNS verdict
-cat > TEST_AUDIT_REPORT.md << 'EOF'
+cat > "${TEST_AUDIT_REPORT_FILE}" << 'EOF'
 ## Test Audit Report
 
 ### Audit Summary
@@ -289,7 +291,7 @@ result=$(_parse_audit_verdict)
 assert_eq "verdict: parses CONCERNS" "CONCERNS" "$result"
 
 # Missing report file — defaults to PASS
-rm -f TEST_AUDIT_REPORT.md
+rm -f "${TEST_AUDIT_REPORT_FILE}"
 result=$(_parse_audit_verdict)
 assert_eq "verdict: defaults to PASS when no report" "PASS" "$result"
 
@@ -319,7 +321,7 @@ assert_eq "skip: disabled audit returns 0" "0" "$?"
 TEST_AUDIT_ENABLED=true
 
 # Test no test files written
-rm -f TESTER_REPORT.md
+rm -f "${TESTER_REPORT_FILE}"
 _AUDIT_TEST_FILES=""
 run_test_audit > /dev/null 2>&1
 assert_eq "skip: no test files returns 0" "0" "$?"
@@ -359,7 +361,7 @@ echo "--- _route_audit_verdict CONCERNS (no _ensure_nonblocking_log) ---"
 
 # Create a report with CONCERNS verdict and a heading that matches the grep pattern,
 # so that $findings is non-empty and the guard on _ensure_nonblocking_log is reached.
-cat > TEST_AUDIT_REPORT.md << 'EOF'
+cat > "${TEST_AUDIT_REPORT_FILE}" << 'EOF'
 ## Test Audit Report
 
 ### Audit Summary
@@ -400,7 +402,7 @@ echo "--- run_test_audit rework cycle ---"
 
 # Prepare a TESTER_REPORT.md with one checked test file so _collect_audit_context
 # populates _AUDIT_TEST_FILES (required for run_test_audit to proceed past the skip guard).
-cat > TESTER_REPORT.md << 'EOF'
+cat > "${TESTER_REPORT_FILE}" << 'EOF'
 ## Planned Tests
 - [x] `tests/test_calc.py` — calc tests
 

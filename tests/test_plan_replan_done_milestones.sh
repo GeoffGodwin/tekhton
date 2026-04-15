@@ -19,6 +19,8 @@ trap 'rm -rf "$TMPDIR_BASE"' EXIT
 
 # Source required libraries
 export TEKHTON_TEST_MODE=1
+DESIGN_FILE="${TEKHTON_DIR:-.tekhton}/DESIGN.md"
+REPLAN_DELTA_FILE="${TEKHTON_DIR:-.tekhton}/REPLAN_DELTA.md"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null

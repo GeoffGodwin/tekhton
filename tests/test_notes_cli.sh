@@ -58,8 +58,9 @@ assert_returns_nonzero() {
     fi
 }
 
-notes_file="${TMPDIR_TEST}/HUMAN_NOTES.md"
+notes_file="${TMPDIR_TEST}/${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 cd "$TMPDIR_TEST"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # =============================================================================
 # get_notes_summary — no file

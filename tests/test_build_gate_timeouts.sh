@@ -29,6 +29,7 @@ UI_TEST_CMD=""
 UI_VALIDATION_ENABLED="false"
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 PASS=0
 FAIL=0
@@ -201,13 +202,13 @@ else
 fi
 
 # Check diagnostic message was written
-if [[ -f BUILD_ERRORS.md ]] && grep -q "Gate Timeout" BUILD_ERRORS.md; then
+if [[ -f "${BUILD_ERRORS_FILE}" ]] && grep -q "Gate Timeout" "${BUILD_ERRORS_FILE}"; then
     pass "Gate timeout wrote diagnostic to BUILD_ERRORS.md"
 else
     fail "Gate timeout should write diagnostic to BUILD_ERRORS.md"
 fi
 
-rm -f BUILD_ERRORS.md
+rm -f "${BUILD_ERRORS_FILE}"
 ANALYZE_CMD="true"
 
 # --- Test 7: Build gate detects real analyze errors ---
@@ -227,9 +228,9 @@ else
     fail "Build gate should have failed on analyze error"
 fi
 
-if [[ -f BUILD_ERRORS.md ]]; then
+if [[ -f "${BUILD_ERRORS_FILE}" ]]; then
     pass "BUILD_ERRORS.md created on failure"
-    rm -f BUILD_ERRORS.md
+    rm -f "${BUILD_ERRORS_FILE}"
 else
     fail "BUILD_ERRORS.md should be created on failure"
 fi

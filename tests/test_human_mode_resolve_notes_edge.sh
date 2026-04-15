@@ -117,11 +117,12 @@ source "${TEKHTON_HOME}/lib/finalize.sh"
 # Helper: reset HUMAN_NOTES.md with given content for each test case
 # ---------------------------------------------------------------------------
 reset_notes() {
-    printf '%s\n' "$1" > "$WORK_DIR/HUMAN_NOTES.md"
+    printf '%s\n' "$1" > "${WORK_DIR}/${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 }
 
 # All notes functions operate on HUMAN_NOTES.md relative to CWD
 cd "$WORK_DIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # =============================================================================
 # Phase 1: Fall-through path — HUMAN_MODE=true, CURRENT_NOTE_LINE empty,
@@ -141,12 +142,12 @@ _hook_resolve_notes 0
 assert_file_contains \
     "1.1 orphaned [~] note resolved to [x] on success" \
     "- [x] [BUG] Orphaned note from crashed run" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 assert_file_not_contains \
     "1.2 [~] marker gone after orphan cleanup" \
     "- [~]" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 # =============================================================================
 # Phase 2: Fall-through path — HUMAN_MODE=true, CURRENT_NOTE_LINE/ID empty,
@@ -167,12 +168,12 @@ _hook_resolve_notes 1
 assert_file_contains \
     "2.1 [~] note reset to [ ] on failure in fall-through path" \
     "- [ ] [BUG] Orphaned note from crashed run" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 assert_file_not_contains \
     "2.2 [x] marker not written on failure" \
     "- [x]" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 # =============================================================================
 # Phase 3: Normal human-mode path (CURRENT_NOTE_LINE non-empty), success.
@@ -193,12 +194,12 @@ _hook_resolve_notes 0
 assert_file_contains \
     "3.1 targeted [~] note resolved to [x] via normal path" \
     "- [x] [BUG] Fix login timeout on slow networks" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 assert_file_contains \
     "3.2 unrelated [ ] note left untouched in normal path" \
     "- [ ] [BUG] Another open bug" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 # =============================================================================
 # Phase 4: Normal human-mode path (CURRENT_NOTE_LINE non-empty), failure.
@@ -216,12 +217,12 @@ _hook_resolve_notes 1
 assert_file_contains \
     "4.1 [~] note reset to [ ] on failure in normal path" \
     "- [ ] [BUG] Fix login timeout on slow networks" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 assert_file_not_contains \
     "4.2 [x] not written on failure in normal path" \
     "- [x]" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 # =============================================================================
 # Phase 5: Fall-through path — success, multiple orphaned [~] notes.
@@ -242,17 +243,17 @@ _hook_resolve_notes 0
 assert_file_contains \
     "5.1 first orphaned [~] resolved to [x]" \
     "- [x] [BUG] First orphaned note" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 assert_file_contains \
     "5.2 second orphaned [~] resolved to [x]" \
     "- [x] [BUG] Second orphaned note" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 assert_file_contains \
     "5.3 still-pending [ ] note not touched" \
     "- [ ] [BUG] Still-pending note" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 # =============================================================================
 # Phase 6: Fall-through path — HUMAN_MODE=false (standard mode), success.
@@ -272,7 +273,7 @@ _hook_resolve_notes 0
 assert_file_contains \
     "6.1 standard-mode [~] note resolved to [x] on success" \
     "- [x] [BUG] Claimed in standard mode" \
-    "HUMAN_NOTES.md"
+    "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 
 # =============================================================================
 # Done

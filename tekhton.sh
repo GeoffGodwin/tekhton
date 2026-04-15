@@ -596,6 +596,11 @@ fi
 # --- Early --health check (runs before execution pipeline) ------------------
 
 if [ "${1:-}" = "--health" ]; then
+    # Set defaults for variables normally provided by config_defaults.sh,
+    # which is not sourced in this early-exit path.
+    : "${HEALTH_REPORT_FILE:=${TEKHTON_DIR}/HEALTH_REPORT.md}"
+    : "${HEALTH_BASELINE_FILE:=.claude/HEALTH_BASELINE.json}"
+    mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR}" 2>/dev/null || true
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/detect.sh"
     source "${TEKHTON_HOME}/lib/detect_commands.sh"

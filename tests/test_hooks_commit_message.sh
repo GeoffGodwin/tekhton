@@ -8,12 +8,14 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+CODER_SUMMARY_FILE="${CODER_SUMMARY_FILE:-${TEKHTON_DIR}/CODER_SUMMARY.md}"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
-# Config defaults needed by drift.sh
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
+ARCHITECTURE_LOG_FILE="${TEKHTON_DIR}/ARCHITECTURE_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
 NON_BLOCKING_INJECTION_THRESHOLD=3
 DRIFT_OBSERVATION_THRESHOLD=8
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
@@ -57,6 +59,7 @@ DRIFT_FILE="${PROJECT_DIR}/${DRIFT_LOG_FILE}"
 # Test 1: no completed items, no resolved drift — no debt section
 # ============================================================
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 MSG=$(generate_commit_message "Implement feature X")
 assert_not_contains "no debt section when empty" "Non-blocking" "$MSG"
 assert_not_contains "no drift section when empty" "Drift observations" "$MSG"
@@ -142,7 +145,7 @@ assert_contains "feat prefix" "^feat:" "$MSG"
 # ============================================================
 # Test 6: CODER_SUMMARY.md body still included alongside debt section
 # ============================================================
-cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${TMPDIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented

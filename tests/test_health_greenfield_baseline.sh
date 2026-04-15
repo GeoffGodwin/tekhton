@@ -66,10 +66,10 @@ TEST3_DIR=$(mktemp -d)
 trap "rm -rf '$TEST1_DIR' '$TEST2_DIR' '$TEST3_DIR' '$TEMP_DIR'" EXIT
 
 cd "$TEST3_DIR" && git init -q
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
-# Call reassess_project_health which generates the report
 PROJECT_DIR="$TEST3_DIR"
-HEALTH_REPORT_FILE="HEALTH_REPORT.md"
+HEALTH_REPORT_FILE="${TEKHTON_DIR}/HEALTH_REPORT.md"
 reassess_project_health "$TEST3_DIR" >/dev/null 2>&1 || true
 
 REPORT_FILE="$TEST3_DIR/$HEALTH_REPORT_FILE"
@@ -93,6 +93,7 @@ TEST4_DIR=$(mktemp -d)
 trap "rm -rf '$TEST1_DIR' '$TEST2_DIR' '$TEST3_DIR' '$TEST4_DIR' '$TEMP_DIR'" EXIT
 
 cd "$TEST4_DIR" && git init -q
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 PROJECT_DIR="$TEST4_DIR"
 HEALTH_BASELINE_FILE=".claude/HEALTH_BASELINE.json"
@@ -123,13 +124,14 @@ TEST5_DIR=$(mktemp -d)
 trap "rm -rf '$TEST1_DIR' '$TEST2_DIR' '$TEST3_DIR' '$TEST4_DIR' '$TEST5_DIR' '$TEMP_DIR'" EXIT
 
 cd "$TEST5_DIR" && git init -q
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # Create a README but no code
 echo "# My Project" > "$TEST5_DIR/README.md"
 git add README.md 2>/dev/null || true
 
 PROJECT_DIR="$TEST5_DIR"
-HEALTH_REPORT_FILE="HEALTH_REPORT.md"
+HEALTH_REPORT_FILE="${TEKHTON_DIR}/HEALTH_REPORT.md"
 reassess_project_health "$TEST5_DIR" >/dev/null 2>&1 || true
 
 REPORT_FILE="$TEST5_DIR/$HEALTH_REPORT_FILE"

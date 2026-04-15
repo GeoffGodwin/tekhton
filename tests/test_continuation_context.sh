@@ -22,6 +22,10 @@ trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 # Change to the temp directory so relative file reads (CODER_SUMMARY.md etc.) work
 cd "$TMPDIR_TEST"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+TESTER_REPORT_FILE="${TEKHTON_DIR}/TESTER_REPORT.md"
+export CODER_SUMMARY_FILE TESTER_REPORT_FILE
 
 # agent_helpers.sh expects these globals
 LAST_AGENT_NULL_RUN=false

@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-14 10:44:28
+Generated: 2026-04-14 11:38:45
 
 ## Non-Blocking Findings (MEDIUM/LOW)
-- [LOW] [category:A03] [lib/milestone_progress.sh:159-165] fixable:yes — `_diagnose_recovery_command` embeds `$milestone` and `$task` read verbatim from `PIPELINE_STATE.md` into a quoted command string (`"${milestone}"`, `"${task}"`). If either field contains a double-quote character the displayed suggestion is syntactically broken. Since the output is only echoed (never `eval`'d) there is no injection risk, but the suggested command will be unusable. Fix: strip or escape embedded double-quotes before interpolation: `milestone="${milestone//\"/\\\"}"` and `task="${task//\"/\\\"}"`.
+- [LOW] [category:A03] [tests/test_human_workflow.sh:76] fixable:yes — `assert_exit_code()` uses `eval "$cmd"` to execute its command argument. All current call sites pass hardcoded string literals (e.g., `"pick_next_note ''"`, `"claim_single_note '$note'"`), so no external input can reach the eval. Risk is latent: a future contributor adding a test case that interpolates untrusted data into `$cmd` could introduce command injection. Prefer direct function calls or `bash -c "$cmd"` with explicit argument passing to remove the pattern.

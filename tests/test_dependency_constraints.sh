@@ -9,6 +9,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # --- Minimal pipeline environment ---
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -82,7 +83,7 @@ EOF
 DEPENDENCY_CONSTRAINTS_FILE="${TMPDIR}/constraints.yaml"
 run_build_gate "test-passing-constraints" > /dev/null 2>&1
 assert_eq "passing constraints — passes" "0" "$?"
-assert_file_not_exists "passing — no BUILD_ERRORS.md" "BUILD_ERRORS.md"
+assert_file_not_exists "passing — no BUILD_ERRORS.md" "${BUILD_ERRORS_FILE}"
 
 # =============================================================================
 # Test 4: Build gate fails when validation_command fails (exit 1)
@@ -100,10 +101,10 @@ local_exit=0
 run_build_gate "test-failing-constraints" > /dev/null 2>&1 || local_exit=$?
 assert_eq "failing constraints — fails" "1" "$local_exit"
 assert_file_contains "failing — BUILD_ERRORS.md has violations" \
-    "BUILD_ERRORS.md" "Dependency Constraint Violations"
+    "${BUILD_ERRORS_FILE}" "Dependency Constraint Violations"
 assert_file_contains "failing — BUILD_ERRORS.md has violation text" \
-    "BUILD_ERRORS.md" "engine/rules imports features"
-rm -f BUILD_ERRORS.md
+    "${BUILD_ERRORS_FILE}" "engine/rules imports features"
+rm -f "${BUILD_ERRORS_FILE}"
 
 # =============================================================================
 # Test 5: Build gate passes when validation_command is empty/omitted
@@ -175,9 +176,9 @@ layers: []
 EOF
 DEPENDENCY_CONSTRAINTS_FILE="${TMPDIR}/detail_constraints.yaml"
 run_build_gate "test-detail-capture" > /dev/null 2>&1 || true
-assert_file_contains "detail — line1 captured" "BUILD_ERRORS.md" "violation A"
-assert_file_contains "detail — line2 captured" "BUILD_ERRORS.md" "violation B"
-rm -f BUILD_ERRORS.md
+assert_file_contains "detail — line1 captured" "${BUILD_ERRORS_FILE}" "violation A"
+assert_file_contains "detail — line2 captured" "${BUILD_ERRORS_FILE}" "violation B"
+rm -f "${BUILD_ERRORS_FILE}"
 
 # =============================================================================
 # Test 10: Architect prompt includes constraints when file exists

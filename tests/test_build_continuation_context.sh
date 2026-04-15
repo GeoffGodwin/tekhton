@@ -14,6 +14,9 @@ trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 # Initialize test directory as a git repository
 cd "$TMPDIR_TEST"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+export CODER_SUMMARY_FILE
 git init -q
 git config user.email "test@example.com"
 git config user.name "Test User"
@@ -41,7 +44,7 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 echo "=== Test 1: Missing CODER_SUMMARY.md triggers recreation instruction ==="
 
 # Ensure file doesn't exist
-rm -f CODER_SUMMARY.md
+rm -f "${CODER_SUMMARY_FILE}"
 
 # Make a code change
 echo "code change" >> README.md
@@ -72,7 +75,7 @@ fi
 echo "=== Test 2: Placeholder CODER_SUMMARY.md triggers recreation instruction ==="
 
 # Create summary with placeholder
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 ## Status: IN PROGRESS
 ## What Was Implemented
 (fill in as you go)
@@ -107,7 +110,7 @@ else
     fail "2.2: Should identify summary as placeholder"
 fi
 
-rm -f CODER_SUMMARY.md src/index.ts
+rm -f "${CODER_SUMMARY_FILE}" src/index.ts
 
 # =============================================================================
 # Test 3: Proper CODER_SUMMARY.md — should instruct to read first
@@ -115,7 +118,7 @@ rm -f CODER_SUMMARY.md src/index.ts
 echo "=== Test 3: Proper CODER_SUMMARY.md instructs reading ==="
 
 # Create a properly filled summary
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 ## Status: IN PROGRESS
 ## What Was Implemented
 - Added authentication module
@@ -138,8 +141,8 @@ git commit -q -m "Update index"
 # Call build_continuation_context
 context=$(build_continuation_context "coder" "1" "3" "20" "15")
 
-# Check for read-first instruction
-if echo "$context" | grep -q 'Read CODER_SUMMARY.md first'; then
+# Check for read-first instruction (path may include .tekhton/ prefix)
+if echo "$context" | grep -q 'CODER_SUMMARY.md first'; then
     pass "3.1: Proper summary instructs reading first"
 else
     fail "3.1: Should instruct to read proper CODER_SUMMARY.md first"
@@ -152,7 +155,7 @@ else
     pass "3.2: Does not instruct recreation for proper summary"
 fi
 
-rm -f CODER_SUMMARY.md
+rm -f "${CODER_SUMMARY_FILE}"
 
 # =============================================================================
 # Test 4: Instructions include turn budget context
@@ -187,7 +190,7 @@ rm -f test.txt
 # =============================================================================
 echo "=== Test 5: 'update as you go' variant detected as placeholder ==="
 
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 ## Status: IN PROGRESS
 ## What Was Implemented
 (update as you go)
@@ -208,7 +211,7 @@ else
     fail "5.1: Should detect 'update as you go' as placeholder"
 fi
 
-rm -f CODER_SUMMARY.md file.txt
+rm -f "${CODER_SUMMARY_FILE}" file.txt
 
 # =============================================================================
 # Summary

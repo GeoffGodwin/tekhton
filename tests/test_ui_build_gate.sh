@@ -23,6 +23,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 PROJECT_DIR="$TMPDIR"
 
@@ -38,6 +39,10 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 UI_TEST_CMD=""
 UI_VALIDATION_ENABLED="true"
 UI_TEST_TIMEOUT="10"
+BUILD_ERRORS_FILE="${TEKHTON_DIR}/BUILD_ERRORS.md"
+BUILD_RAW_ERRORS_FILE="${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt"
+UI_TEST_ERRORS_FILE="${TEKHTON_DIR}/UI_TEST_ERRORS.md"
+UI_VALIDATION_REPORT_FILE="${TEKHTON_DIR}/UI_VALIDATION_REPORT.md"
 
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/error_patterns.sh"
@@ -104,7 +109,7 @@ UI_TEST_CMD=""
 UI_VALIDATION_ENABLED="true"
 gate_exit=$(run_gate "test-empty-cmd")
 assert_eq "1 gate passes when UI_TEST_CMD empty" "0" "$gate_exit"
-assert_file_not_exists "1 no UI_TEST_ERRORS.md when cmd empty" "UI_TEST_ERRORS.md"
+assert_file_not_exists "1 no UI_TEST_ERRORS.md when cmd empty" "${UI_TEST_ERRORS_FILE}"
 
 # =============================================================================
 # Test 2: Gate skipped when UI_VALIDATION_ENABLED=false
@@ -122,7 +127,7 @@ UI_TEST_CMD="$TMPDIR/fail_always.sh"
 UI_VALIDATION_ENABLED="false"
 gate_exit=$(run_gate "test-disabled")
 assert_eq "2 gate passes when UI_VALIDATION_ENABLED=false" "0" "$gate_exit"
-assert_file_not_exists "2 no UI_TEST_ERRORS.md when disabled" "UI_TEST_ERRORS.md"
+assert_file_not_exists "2 no UI_TEST_ERRORS.md when disabled" "${UI_TEST_ERRORS_FILE}"
 
 # Reset
 UI_VALIDATION_ENABLED="true"
@@ -135,7 +140,7 @@ UI_VALIDATION_ENABLED="true"
 
 gate_exit=$(run_gate "test-missing-binary")
 assert_eq "3 gate passes when binary not found (soft failure)" "0" "$gate_exit"
-assert_file_not_exists "3 no UI_TEST_ERRORS.md when binary missing" "UI_TEST_ERRORS.md"
+assert_file_not_exists "3 no UI_TEST_ERRORS.md when binary missing" "${UI_TEST_ERRORS_FILE}"
 
 # =============================================================================
 # Test 4: Gate passes when UI_TEST_CMD exits 0
@@ -153,7 +158,7 @@ rm -f UI_TEST_ERRORS.md
 
 gate_exit=$(run_gate "test-passing-ui")
 assert_eq "4 gate passes when UI test exits 0" "0" "$gate_exit"
-assert_file_not_exists "4 no UI_TEST_ERRORS.md on pass" "UI_TEST_ERRORS.md"
+assert_file_not_exists "4 no UI_TEST_ERRORS.md on pass" "${UI_TEST_ERRORS_FILE}"
 
 # =============================================================================
 # Test 5: Gate fails after retry when command always exits non-zero
@@ -168,7 +173,7 @@ assert_eq "5 gate fails when UI test always exits non-zero" "1" "$gate_exit"
 # Test 6: UI_TEST_ERRORS.md written on failure
 # =============================================================================
 # Already failed from test 5 — UI_TEST_ERRORS.md should exist
-assert_file_exists "6 UI_TEST_ERRORS.md written on failure" "UI_TEST_ERRORS.md"
+assert_file_exists "6 UI_TEST_ERRORS.md written on failure" "${UI_TEST_ERRORS_FILE}"
 rm -f UI_TEST_ERRORS.md
 
 # =============================================================================
@@ -176,8 +181,8 @@ rm -f UI_TEST_ERRORS.md
 # =============================================================================
 UI_TEST_CMD="$TMPDIR/fail_always.sh"
 run_build_gate "test-error-content" > /dev/null 2>&1 || true
-assert_file_contains "7 UI_TEST_ERRORS.md has stage label" "UI_TEST_ERRORS.md" "test-error-content"
-assert_file_contains "7 UI_TEST_ERRORS.md has command reference" "UI_TEST_ERRORS.md" "fail_always"
+assert_file_contains "7 UI_TEST_ERRORS.md has stage label" "${UI_TEST_ERRORS_FILE}" "test-error-content"
+assert_file_contains "7 UI_TEST_ERRORS.md has command reference" "${UI_TEST_ERRORS_FILE}" "fail_always"
 rm -f UI_TEST_ERRORS.md
 
 # =============================================================================
@@ -209,7 +214,7 @@ rm -f UI_TEST_ERRORS.md
 
 gate_exit=$(run_gate "test-retry-pass")
 assert_eq "8 gate passes when retry succeeds" "0" "$gate_exit"
-assert_file_not_exists "8 no UI_TEST_ERRORS.md when retry succeeds" "UI_TEST_ERRORS.md"
+assert_file_not_exists "8 no UI_TEST_ERRORS.md when retry succeeds" "${UI_TEST_ERRORS_FILE}"
 
 # =============================================================================
 # Test 9: npx commands are not checked for binary availability
@@ -271,12 +276,12 @@ rm -f "$TMPDIR/npm"
 # =============================================================================
 # Test 11: Overall gate pass removes BUILD_ERRORS.md
 # =============================================================================
-echo "# Stale errors" > BUILD_ERRORS.md
+echo "# Stale errors" > "${BUILD_ERRORS_FILE}"
 UI_TEST_CMD="$TMPDIR/pass_always.sh"
 
 gate_exit=$(run_gate "test-cleanup")
 assert_eq "11 gate passes with passing UI test" "0" "$gate_exit"
-assert_file_not_exists "11 BUILD_ERRORS.md removed on overall pass" "BUILD_ERRORS.md"
+assert_file_not_exists "11 BUILD_ERRORS.md removed on overall pass" "${BUILD_ERRORS_FILE}"
 
 # =============================================================================
 # Test 12: UI_TEST_ERRORS.md NOT written on gate pass
@@ -286,7 +291,7 @@ rm -f UI_TEST_ERRORS.md
 
 gate_exit=$(run_gate "test-no-errors-on-pass")
 assert_eq "12 gate passes" "0" "$gate_exit"
-assert_file_not_exists "12 UI_TEST_ERRORS.md NOT written on pass" "UI_TEST_ERRORS.md"
+assert_file_not_exists "12 UI_TEST_ERRORS.md NOT written on pass" "${UI_TEST_ERRORS_FILE}"
 
 # =============================================================================
 # Summary

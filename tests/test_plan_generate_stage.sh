@@ -53,6 +53,8 @@ INNERSCRIPT
 
     TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$project_dir" \
+    TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}" \
+    DESIGN_FILE="${TEKHTON_DIR:-.tekhton}/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="5" \
     PROJECT_NAME="test-project" \
@@ -79,9 +81,9 @@ echo
 echo "=== Log Directory and File Creation ==="
 
 project_b="${TMPDIR_BASE}/proj_b"
-mkdir -p "$project_b"
-echo "# My Project" > "${project_b}/DESIGN.md"
-echo "A test project." >> "${project_b}/DESIGN.md"
+mkdir -p "${project_b}/${TEKHTON_DIR:-.tekhton}"
+echo "# My Project" > "${project_b}/${TEKHTON_DIR:-.tekhton}/DESIGN.md"
+echo "A test project." >> "${project_b}/${TEKHTON_DIR:-.tekhton}/DESIGN.md"
 rm -rf "${project_b}/.claude"
 
 run_generate yes "$project_b" > /dev/null 2>&1 || true

@@ -31,6 +31,11 @@ run_synthesize_subshell() {
         export CONTEXT_BUDGET_PCT="${CONTEXT_BUDGET_PCT:-50}"
         export CONTEXT_BUDGET_ENABLED="${CONTEXT_BUDGET_ENABLED:-true}"
 
+        # M84: Ensure TEKHTON_DIR and _FILE variables are set
+        export TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+        export DESIGN_FILE="${DESIGN_FILE:-DESIGN.md}"
+        export PROJECT_INDEX_FILE="${PROJECT_INDEX_FILE:-${TEKHTON_DIR}/PROJECT_INDEX.md}"
+
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/common.sh"
         # shellcheck source=/dev/null

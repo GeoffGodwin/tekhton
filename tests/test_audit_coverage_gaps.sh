@@ -15,7 +15,9 @@ trap 'rm -rf "$TMPDIR_TEST" "$NON_GIT_DIR"' EXIT
 
 PROJECT_DIR="$TMPDIR_TEST"
 TEKHTON_SESSION_DIR=$(mktemp -d "$TMPDIR_TEST/session_XXXXXXXX")
-export TEKHTON_HOME PROJECT_DIR TEKHTON_SESSION_DIR
+TEKHTON_DIR=".tekhton"
+mkdir -p "${TMPDIR_TEST}/${TEKHTON_DIR}"
+export TEKHTON_HOME PROJECT_DIR TEKHTON_SESSION_DIR TEKHTON_DIR
 
 # Initialize git repo in PROJECT_DIR
 (cd "$PROJECT_DIR" && git init -q && git commit --allow-empty -m "init" -q)
@@ -42,7 +44,7 @@ LOG_DIR="${PROJECT_DIR}/.claude/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/test.log"
 touch "$LOG_FILE"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
 CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 CLAUDE_REVIEWER_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-sonnet-4-6"
@@ -54,7 +56,7 @@ TEST_AUDIT_MAX_TURNS=8
 TEST_AUDIT_MAX_REWORK_CYCLES=1
 TEST_AUDIT_ORPHAN_DETECTION=true
 TEST_AUDIT_WEAKENING_DETECTION=true
-TEST_AUDIT_REPORT_FILE="TEST_AUDIT_REPORT.md"
+TEST_AUDIT_REPORT_FILE="${TEKHTON_DIR}/TEST_AUDIT_REPORT.md"
 BOLD=""
 NC=""
 
@@ -116,7 +118,8 @@ if git -C "$NON_GIT_DIR" rev-parse --git-dir &>/dev/null; then
     echo "SKIP: NON_GIT_DIR is inside a git repo — cannot test non-git code path"
 else
     # Create report files in the non-git directory so those branches execute.
-    cat > "$NON_GIT_DIR/TESTER_REPORT.md" << 'EOF'
+    mkdir -p "$NON_GIT_DIR/.tekhton"
+    cat > "$NON_GIT_DIR/${TESTER_REPORT_FILE}" << 'EOF'
 ## Planned Tests
 - [x] `tests/test_foo.py` — foo tests
 - [x] `tests/test_bar.py` — bar tests
@@ -128,7 +131,7 @@ Passed: 2  Failed: 0
 None
 EOF
 
-    cat > "$NON_GIT_DIR/CODER_SUMMARY.md" << 'EOF'
+    cat > "$NON_GIT_DIR/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Files Modified
 - `src/foo.py` — foo module

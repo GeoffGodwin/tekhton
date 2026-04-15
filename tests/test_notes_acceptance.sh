@@ -24,6 +24,11 @@ header()  { echo "=== $* ==="; }
 
 RED="" CYAN="" YELLOW="" NC=""
 
+# Define TEKHTON_DIR and file paths before sourcing libraries that use them
+TEKHTON_DIR=".tekhton"
+HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+
 # Source required libraries
 # shellcheck source=../lib/notes_core.sh
 source "${TEKHTON_HOME}/lib/notes_core.sh"
@@ -37,6 +42,7 @@ echo "Suite 1: BUG acceptance — regression test detection"
 # --------------------------------------------------------------------------
 
 cd "$TEST_TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 git init --quiet
 echo "hello" > main.py
 git add -A && git commit -m "init" --quiet
@@ -45,7 +51,7 @@ git add -A && git commit -m "init" --quiet
 export NOTES_FILTER="BUG"
 echo "fix" >> main.py
 git add main.py
-cat > CODER_SUMMARY.md <<'EOF'
+cat > "${CODER_SUMMARY_FILE}" <<'EOF'
 ## Status: COMPLETE
 ## What Was Implemented
 - Fixed bug
@@ -71,7 +77,7 @@ git reset --hard HEAD --quiet 2>/dev/null
 # BUG with test file change — no warn_no_test
 echo "test" > test_main.py
 git add test_main.py
-cat > CODER_SUMMARY.md <<'EOF'
+cat > "${CODER_SUMMARY_FILE}" <<'EOF'
 ## Status: COMPLETE
 ## Root Cause Analysis
 X
@@ -85,7 +91,7 @@ fi
 git reset --hard HEAD --quiet 2>/dev/null
 
 # BUG without RCA section — should warn
-cat > CODER_SUMMARY.md <<'EOF'
+cat > "${CODER_SUMMARY_FILE}" <<'EOF'
 ## Status: COMPLETE
 ## What Was Implemented
 - Fixed bug
@@ -210,7 +216,7 @@ export NOTES_FILTER="BUG"
 cd "$TEST_TMPDIR"
 git reset --hard HEAD --quiet 2>/dev/null
 
-cat > CODER_SUMMARY.md <<'EOF'
+cat > "${CODER_SUMMARY_FILE}" <<'EOF'
 ## Status: COMPLETE
 ## What Was Implemented
 - Fixed bug

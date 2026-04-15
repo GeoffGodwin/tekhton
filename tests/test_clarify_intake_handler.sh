@@ -35,6 +35,10 @@ TASK="test task"
 COMPLETE_MODE="false"
 export MILESTONE_DAG_ENABLED MILESTONE_MODE _CURRENT_MILESTONE TASK COMPLETE_MODE
 
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+CLARIFICATIONS_FILE="${TEKHTON_DIR}/CLARIFICATIONS.md"
+export CLARIFICATIONS_FILE
+
 # Stub logging functions
 log()     { :; }
 warn()    { :; }
@@ -122,7 +126,7 @@ cat > "$REPORT_FILE" << 'EOF'
 - [BLOCKING] Should we cache responses?
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.write_state"
+rm -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" "${TMPDIR_TEST}/.write_state"
 
 RC=0
 run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?
@@ -135,10 +139,10 @@ else
 fi
 
 # CLARIFICATIONS.md should be created before the exit
-if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
+if [[ -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" ]]; then
     pass "Creates CLARIFICATIONS.md in COMPLETE_MODE"
 
-    CONTENT=$(cat "${PROJECT_DIR}/CLARIFICATIONS.md")
+    CONTENT=$(cat "${PROJECT_DIR}/${CLARIFICATIONS_FILE}")
     if echo "$CONTENT" | grep -q "Which database should we use?"; then
         pass "First question written to CLARIFICATIONS.md"
     else
@@ -172,7 +176,7 @@ cat > "$REPORT_FILE" << 'EOF'
 - [NON_BLOCKING] API rate limiting recommended
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.handle_clarifications_called"
+rm -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" "${TMPDIR_TEST}/.handle_clarifications_called"
 
 # NON_BLOCKING items ARE in ## Questions section, so they will be parsed.
 # But handle_clarifications will be called (interactive mode).
@@ -204,7 +208,7 @@ cat > "$REPORT_FILE" << 'EOF'
 - [BLOCKING] What's your preferred language?
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.handle_clarifications_called"
+rm -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" "${TMPDIR_TEST}/.handle_clarifications_called"
 
 RC=0
 run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?
@@ -238,7 +242,7 @@ cat > "$REPORT_FILE" << 'EOF'
 - [BLOCKING] Architecture decision needed?
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md" "${TMPDIR_TEST}/.write_state" "${TMPDIR_TEST}/.handle_clarifications_called"
+rm -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" "${TMPDIR_TEST}/.write_state" "${TMPDIR_TEST}/.handle_clarifications_called"
 
 RC=0
 run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?
@@ -273,13 +277,13 @@ cat > "$REPORT_FILE" << 'EOF'
 - [BLOCKING] Third question?
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
+rm -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}"
 
 run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || true
 
 # Check all questions made it to CLARIFICATIONS.md in ## Q: format
-if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
-    CONTENT=$(cat "${PROJECT_DIR}/CLARIFICATIONS.md")
+if [[ -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" ]]; then
+    CONTENT=$(cat "${PROJECT_DIR}/${CLARIFICATIONS_FILE}")
 
     Q_COUNT=$(echo "$CONTENT" | grep -c "^## Q:" || true)
     if [[ $Q_COUNT -eq 3 ]]; then
@@ -306,7 +310,7 @@ echo "=== _intake_handle_needs_clarity — appending ==="
 COMPLETE_MODE="true"
 export COMPLETE_MODE
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
+rm -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}"
 
 # First call
 REPORT1="${TMPDIR_TEST}/report_app1.md"
@@ -318,8 +322,8 @@ EOF
 
 run_in_subshell "_intake_handle_needs_clarity '$REPORT1'" || true
 
-if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
-    SIZE1=$(wc -c < "${PROJECT_DIR}/CLARIFICATIONS.md")
+if [[ -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" ]]; then
+    SIZE1=$(wc -c < "${PROJECT_DIR}/${CLARIFICATIONS_FILE}")
     pass "First run creates CLARIFICATIONS.md"
 else
     fail "First run should create CLARIFICATIONS.md"
@@ -336,8 +340,8 @@ EOF
 
 run_in_subshell "_intake_handle_needs_clarity '$REPORT2'" || true
 
-if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
-    SIZE2=$(wc -c < "${PROJECT_DIR}/CLARIFICATIONS.md")
+if [[ -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}" ]]; then
+    SIZE2=$(wc -c < "${PROJECT_DIR}/${CLARIFICATIONS_FILE}")
 
     if (( SIZE2 > SIZE1 )); then
         pass "Second run appends to CLARIFICATIONS.md (file grew)"
@@ -345,7 +349,7 @@ if [[ -f "${PROJECT_DIR}/CLARIFICATIONS.md" ]]; then
         fail "Second run should append (file should grow)"
     fi
 
-    CONTENT=$(cat "${PROJECT_DIR}/CLARIFICATIONS.md")
+    CONTENT=$(cat "${PROJECT_DIR}/${CLARIFICATIONS_FILE}")
     if echo "$CONTENT" | grep -q "Run 1 question"; then
         pass "Run 1 question still in appended file"
     else
@@ -373,7 +377,7 @@ cat > "$REPORT_FILE" << 'EOF'
 Nothing here
 EOF
 
-rm -f "${PROJECT_DIR}/CLARIFICATIONS.md"
+rm -f "${PROJECT_DIR}/${CLARIFICATIONS_FILE}"
 
 RC=0
 run_in_subshell "_intake_handle_needs_clarity '$REPORT_FILE'" || RC=$?

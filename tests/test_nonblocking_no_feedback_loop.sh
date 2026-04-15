@@ -11,11 +11,14 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
+ARCHITECTURE_LOG_FILE="${TEKHTON_DIR}/ARCHITECTURE_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
 DRIFT_OBSERVATION_THRESHOLD=8
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
 TASK="Test task"
@@ -43,7 +46,7 @@ assert_eq() {
 # Helper: create fixture files for a test run
 setup_fixtures() {
     # Reviewer report with both drift observations and non-blocking notes
-    cat > "$TMPDIR/REVIEWER_REPORT.md" << 'EOREVW'
+    cat > "${TMPDIR}/${REVIEWER_REPORT_FILE}" << 'EOREVW'
 # Reviewer Report
 
 ## Drift Observations
@@ -57,7 +60,7 @@ APPROVED_WITH_NOTES
 EOREVW
 
     # Empty coder summary (so _process_design_observations no-ops)
-    cat > "$TMPDIR/CODER_SUMMARY.md" << 'EOCODER'
+    cat > "${TMPDIR}/${CODER_SUMMARY_FILE}" << 'EOCODER'
 # Coder Summary
 
 ## Status
@@ -65,7 +68,7 @@ COMPLETE
 EOCODER
 
     # Drift log with standard structure (needed by increment_runs_since_audit)
-    cat > "$TMPDIR/DRIFT_LOG.md" << 'EODRIFT'
+    cat > "${TMPDIR}/${DRIFT_LOG_FILE}" << 'EODRIFT'
 # Architectural Drift Log
 
 ## Unresolved Observations
@@ -78,7 +81,7 @@ EOCODER
 EODRIFT
 
     # Non-blocking log with standard structure
-    cat > "$TMPDIR/NON_BLOCKING_LOG.md" << 'EONB'
+    cat > "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" << 'EONB'
 # Non-Blocking Notes Log
 
 ## Open

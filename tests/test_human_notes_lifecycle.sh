@@ -56,8 +56,9 @@ assert_file_not_contains() {
     fi
 }
 
-notes_file="${TMPDIR}/HUMAN_NOTES.md"
+notes_file="${TMPDIR}/${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # =============================================================================
 # Phase 1: No file — clean baseline

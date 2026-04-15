@@ -1,7 +1,7 @@
 # Milestone 87: Test Harness TEKHTON_DIR Parity
 <!-- milestone-meta
 id: "87"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

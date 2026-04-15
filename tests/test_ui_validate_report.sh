@@ -19,6 +19,10 @@ trap 'rm -rf "$TMPDIR"' EXIT
 PROJECT_DIR="$TMPDIR"
 export PROJECT_DIR TEKHTON_HOME
 
+# Override so generate_ui_validation_report writes to flat $TMPDIR path
+UI_VALIDATION_REPORT_FILE="${TMPDIR}/UI_VALIDATION_REPORT.md"
+export UI_VALIDATION_REPORT_FILE
+
 source "${TEKHTON_HOME}/lib/common.sh" 2>/dev/null
 source "${TEKHTON_HOME}/lib/ui_validate_report.sh" 2>/dev/null
 

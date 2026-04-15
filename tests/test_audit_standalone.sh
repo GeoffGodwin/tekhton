@@ -15,6 +15,7 @@ export TEKHTON_HOME PROJECT_DIR TEKHTON_SESSION_DIR
 (cd "$PROJECT_DIR" && git init -q && git commit --allow-empty -m "init" -q)
 
 cd "$PROJECT_DIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # --- Source required libraries ---
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -36,7 +37,7 @@ LOG_DIR="${PROJECT_DIR}/.claude/logs"
 mkdir -p "$LOG_DIR"
 LOG_FILE="${LOG_DIR}/test.log"
 touch "$LOG_FILE"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
 CLAUDE_STANDARD_MODEL="claude-sonnet-4-6"
 CLAUDE_REVIEWER_MODEL="claude-sonnet-4-6"
 CLAUDE_TESTER_MODEL="claude-sonnet-4-6"
@@ -48,7 +49,9 @@ TEST_AUDIT_MAX_TURNS=8
 TEST_AUDIT_MAX_REWORK_CYCLES=1
 TEST_AUDIT_ORPHAN_DETECTION=true
 TEST_AUDIT_WEAKENING_DETECTION=true
-TEST_AUDIT_REPORT_FILE="TEST_AUDIT_REPORT.md"
+TEST_AUDIT_REPORT_FILE="${TEKHTON_DIR}/TEST_AUDIT_REPORT.md"
+TESTER_REPORT_FILE="${TEKHTON_DIR}/TESTER_REPORT.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
 BOLD=""
 NC=""
 
@@ -188,7 +191,7 @@ run_agent() { :; }
 echo
 echo "--- emit_event guard: emit_event present ---"
 
-cat > TESTER_REPORT.md << 'EOF'
+cat > "${TESTER_REPORT_FILE}" << 'EOF'
 ## Planned Tests
 - [x] `tests/test_foo.sh` — foo tests
 

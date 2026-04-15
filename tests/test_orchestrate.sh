@@ -49,6 +49,7 @@ export MAX_REVIEW_CYCLES
 mkdir -p "$LOG_DIR" "$TMPDIR/.claude"
 touch "$LOG_FILE"
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 git init -q .
 git add -A >/dev/null 2>&1
 git commit -q -m "init" --allow-empty 2>/dev/null
@@ -60,6 +61,9 @@ source "${TEKHTON_HOME}/lib/common.sh"
 suggest_recovery() { echo "Check run log."; }
 redact_sensitive() { cat; }
 count_lines() { wc -l | tr -d '[:space:]'; }
+
+BUILD_ERRORS_FILE="${TEKHTON_DIR}/BUILD_ERRORS.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
 
 # Source the files under test
 source "${TEKHTON_HOME}/lib/orchestrate_recovery.sh"

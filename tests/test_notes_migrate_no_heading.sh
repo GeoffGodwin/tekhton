@@ -47,7 +47,9 @@ _run_migrate() {
     local proj_dir="$1"
     (
         cd "$proj_dir"
-        export PROJECT_DIR="$proj_dir"
+        mkdir -p "${TEKHTON_DIR:-.tekhton}"
+        HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
+        export PROJECT_DIR="$proj_dir" HUMAN_NOTES_FILE
         log()     { :; }
         warn()    { :; }
         error()   { :; }
@@ -69,8 +71,8 @@ _run_migrate() {
 
 # --- Test: no-heading file is non-empty after migration ----------------------
 PROJ1="${TEST_TMPDIR}/proj_no_heading"
-mkdir -p "$PROJ1"
-cat > "${PROJ1}/HUMAN_NOTES.md" << 'EOF'
+mkdir -p "${PROJ1}/.tekhton"
+cat > "${PROJ1}/.tekhton/HUMAN_NOTES.md" << 'EOF'
 - [ ] Fix the login bug
 - [ ] Add export feature
 EOF
@@ -78,7 +80,7 @@ EOF
 _run_migrate "$PROJ1"
 if [[ $? -eq 0 ]]; then
     # File must not be empty
-    if [[ -s "${PROJ1}/HUMAN_NOTES.md" ]]; then
+    if [[ -s "${PROJ1}/.tekhton/HUMAN_NOTES.md" ]]; then
         pass "no-heading file: non-empty after migration"
     else
         fail "no-heading file: HUMAN_NOTES.md is empty after migration (data-loss regression)"
@@ -88,38 +90,38 @@ else
 fi
 
 # --- Test: v2 marker is present after migration of no-heading file -----------
-if grep -qF "<!-- notes-format: v2 -->" "${PROJ1}/HUMAN_NOTES.md" 2>/dev/null; then
+if grep -qF "<!-- notes-format: v2 -->" "${PROJ1}/.tekhton/HUMAN_NOTES.md" 2>/dev/null; then
     pass "no-heading file: v2 format marker present after migration"
 else
     fail "no-heading file: v2 format marker missing after migration"
 fi
 
 # --- Test: original notes are preserved after migration ----------------------
-if grep -q "Fix the login bug" "${PROJ1}/HUMAN_NOTES.md" 2>/dev/null \
-   && grep -q "Add export feature" "${PROJ1}/HUMAN_NOTES.md" 2>/dev/null; then
+if grep -q "Fix the login bug" "${PROJ1}/.tekhton/HUMAN_NOTES.md" 2>/dev/null \
+   && grep -q "Add export feature" "${PROJ1}/.tekhton/HUMAN_NOTES.md" 2>/dev/null; then
     pass "no-heading file: original note text preserved after migration"
 else
     fail "no-heading file: original note text lost after migration"
 fi
 
 # --- Test: IDs assigned to notes in no-heading file --------------------------
-if grep -q "<!-- note:n" "${PROJ1}/HUMAN_NOTES.md" 2>/dev/null; then
+if grep -q "<!-- note:n" "${PROJ1}/.tekhton/HUMAN_NOTES.md" 2>/dev/null; then
     pass "no-heading file: note IDs assigned after migration"
 else
     fail "no-heading file: note IDs not assigned after migration"
 fi
 
 # --- Test: backup file created -----------------------------------------------
-if [[ -f "${PROJ1}/HUMAN_NOTES.md.v1-backup" ]]; then
+if [[ -f "${PROJ1}/.tekhton/HUMAN_NOTES.md.v1-backup" ]]; then
     pass "no-heading file: .v1-backup created"
 else
     fail "no-heading file: .v1-backup not created"
 fi
 
 # --- Test: migration is idempotent (second call is a no-op) ------------------
-checksum_before=$(md5sum "${PROJ1}/HUMAN_NOTES.md" 2>/dev/null || sha256sum "${PROJ1}/HUMAN_NOTES.md" | cut -d' ' -f1)
+checksum_before=$(md5sum "${PROJ1}/.tekhton/HUMAN_NOTES.md" 2>/dev/null || sha256sum "${PROJ1}/.tekhton/HUMAN_NOTES.md" | cut -d' ' -f1)
 _run_migrate "$PROJ1"
-checksum_after=$(md5sum "${PROJ1}/HUMAN_NOTES.md" 2>/dev/null || sha256sum "${PROJ1}/HUMAN_NOTES.md" | cut -d' ' -f1)
+checksum_after=$(md5sum "${PROJ1}/.tekhton/HUMAN_NOTES.md" 2>/dev/null || sha256sum "${PROJ1}/.tekhton/HUMAN_NOTES.md" | cut -d' ' -f1)
 if [[ "$checksum_before" == "$checksum_after" ]]; then
     pass "idempotency: second migration call does not modify already-migrated file"
 else
@@ -128,8 +130,8 @@ fi
 
 # --- Test: file with heading gets marker AFTER the heading -------------------
 PROJ2="${TEST_TMPDIR}/proj_with_heading"
-mkdir -p "$PROJ2"
-cat > "${PROJ2}/HUMAN_NOTES.md" << 'EOF'
+mkdir -p "${PROJ2}/.tekhton"
+cat > "${PROJ2}/.tekhton/HUMAN_NOTES.md" << 'EOF'
 # Human Notes
 
 - [ ] Fix button styling
@@ -139,8 +141,8 @@ EOF
 _run_migrate "$PROJ2"
 
 # Marker must appear after the heading, not before
-heading_line=$(grep -n "^# Human Notes" "${PROJ2}/HUMAN_NOTES.md" | cut -d: -f1 | head -1)
-marker_line=$(grep -n "notes-format: v2" "${PROJ2}/HUMAN_NOTES.md" | cut -d: -f1 | head -1)
+heading_line=$(grep -n "^# Human Notes" "${PROJ2}/.tekhton/HUMAN_NOTES.md" | cut -d: -f1 | head -1)
+marker_line=$(grep -n "notes-format: v2" "${PROJ2}/.tekhton/HUMAN_NOTES.md" | cut -d: -f1 | head -1)
 if [[ -n "$heading_line" ]] && [[ -n "$marker_line" ]] && [[ "$marker_line" -gt "$heading_line" ]]; then
     pass "with-heading file: marker appears after heading (not prepended)"
 else
@@ -152,7 +154,7 @@ PROJ3="${TEST_TMPDIR}/proj_absent"
 mkdir -p "$PROJ3"
 _run_migrate "$PROJ3"
 if [[ $? -eq 0 ]]; then
-    if [[ ! -f "${PROJ3}/HUMAN_NOTES.md" ]]; then
+    if [[ ! -f "${PROJ3}/.tekhton/HUMAN_NOTES.md" ]]; then
         pass "absent file: no file created, returns 0"
     else
         fail "absent file: unexpectedly created HUMAN_NOTES.md"
@@ -163,8 +165,8 @@ fi
 
 # --- Test: file with no note lines (only text) → returns 0 unchanged ---------
 PROJ4="${TEST_TMPDIR}/proj_no_notes"
-mkdir -p "$PROJ4"
-cat > "${PROJ4}/HUMAN_NOTES.md" << 'EOF'
+mkdir -p "${PROJ4}/.tekhton"
+cat > "${PROJ4}/.tekhton/HUMAN_NOTES.md" << 'EOF'
 # Human Notes
 
 Some descriptive text only.
@@ -172,7 +174,7 @@ No checkbox notes here.
 EOF
 _run_migrate "$PROJ4"
 # Should detect no notes to migrate and skip
-if grep -qF "<!-- notes-format: v2 -->" "${PROJ4}/HUMAN_NOTES.md" 2>/dev/null; then
+if grep -qF "<!-- notes-format: v2 -->" "${PROJ4}/.tekhton/HUMAN_NOTES.md" 2>/dev/null; then
     fail "no-notes file: v2 marker was written (should skip when no checkbox lines)"
 else
     pass "no-notes file: migration skipped when no checkbox note lines"

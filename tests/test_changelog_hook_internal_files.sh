@@ -83,7 +83,7 @@ source "${TEKHTON_HOME}/lib/changelog.sh"
 #   Initialises a minimal git repo with one committed project file.
 _make_repo() {
     local dir="$1"
-    mkdir -p "$dir"
+    mkdir -p "$dir/${TEKHTON_DIR}"
     git -C "$dir" init -q
     git -C "$dir" config user.email "test@test.com"
     git -C "$dir" config user.name "Test"
@@ -117,7 +117,7 @@ _commit_changelog() {
 #   Creates CODER_SUMMARY.md with a recognisable "What Was Implemented" line.
 _write_summary() {
     local dir="$1"
-    cat > "$dir/CODER_SUMMARY.md" <<'CSEOF'
+    cat > "$dir/${TEKHTON_DIR}/CODER_SUMMARY.md" <<'CSEOF'
 ## Status: COMPLETE
 
 ## What Was Implemented
@@ -135,8 +135,7 @@ _set_env() {
     FINAL_CHECK_RESULT=0
     TASK="feat: add pipeline features"
     _CURRENT_MILESTONE=""
-    CODER_SUMMARY_FILE="CODER_SUMMARY.md"
-    TEKHTON_DIR=".tekhton"
+    CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
 }
 
 # _call_hook DIR EXIT_CODE
@@ -224,16 +223,18 @@ _write_changelog "$P"
 _commit_changelog "$P"   # commit changelog → project code is fully clean
 
 # Simulate internal pipeline artifacts written by the run (not committed)
-_write_summary "$P"                                        # CODER_SUMMARY.md
-printf '## Verdict: APPROVED\n' > "$P/REVIEWER_REPORT.md"  # untracked
-printf '## Verdict: APPROVED\n' > "$P/TESTER_REPORT.md"    # untracked
+_write_summary "$P"                                                   # .tekhton/CODER_SUMMARY.md
+printf '## Verdict: APPROVED\n' > "$P/${TEKHTON_DIR}/REVIEWER_REPORT.md"  # untracked
+printf '## Verdict: APPROVED\n' > "$P/${TEKHTON_DIR}/TESTER_REPORT.md"    # untracked
 
 # Verify setup: git sees the internal files but not the project code
 status_output=$(git -C "$P" status --porcelain 2>/dev/null)
 
-echo "$status_output" | grep -q "CODER_SUMMARY.md" \
-    && pass "setup: CODER_SUMMARY.md appears in git status" \
-    || fail "setup: CODER_SUMMARY.md missing from git status (test setup error)"
+# git status --porcelain groups untracked files by directory, so look for
+# the .tekhton/ directory rather than individual files inside it.
+echo "$status_output" | grep -q "${TEKHTON_DIR}" \
+    && pass "setup: ${TEKHTON_DIR}/ appears in git status (contains CODER_SUMMARY.md)" \
+    || fail "setup: ${TEKHTON_DIR}/ missing from git status (test setup error)"
 
 echo "$status_output" | grep -q "README.md" \
     && fail "setup: README.md unexpectedly appears in git status" \

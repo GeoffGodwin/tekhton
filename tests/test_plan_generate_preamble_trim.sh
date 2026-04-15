@@ -16,10 +16,10 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 echo "=== Test 1: CLAUDE.md generation with preamble text trimmed ==="
 
 proj_1="${TMPDIR_BASE}/proj_preamble_trim"
-mkdir -p "$proj_1"
+mkdir -p "$proj_1/.tekhton"
 
 # Create a valid DESIGN.md
-cat > "${proj_1}/DESIGN.md" << 'EOF'
+cat > "${proj_1}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 
 ## Project Overview
@@ -85,6 +85,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_1" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -124,9 +126,9 @@ echo ""
 echo "=== Test 2: CLAUDE.md generation without preamble (normal case) ==="
 
 proj_2="${TMPDIR_BASE}/proj_no_preamble"
-mkdir -p "$proj_2"
+mkdir -p "$proj_2/.tekhton"
 
-cat > "${proj_2}/DESIGN.md" << 'EOF'
+cat > "${proj_2}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 ## Overview
 Test doc.
@@ -158,6 +160,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_2" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -180,9 +184,9 @@ echo ""
 echo "=== Test 3: Multi-line preamble followed by CLAUDE.md ==="
 
 proj_3="${TMPDIR_BASE}/proj_multiline_preamble"
-mkdir -p "$proj_3"
+mkdir -p "$proj_3/.tekhton"
 
-cat > "${proj_3}/DESIGN.md" << 'EOF'
+cat > "${proj_3}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 ## Content
 Test.
@@ -221,6 +225,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_3" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -258,9 +264,9 @@ echo ""
 echo "=== Test 4: CLAUDE.md with varied preamble phrases ==="
 
 proj_4="${TMPDIR_BASE}/proj_varied_preamble"
-mkdir -p "$proj_4"
+mkdir -p "$proj_4/.tekhton"
 
-cat > "${proj_4}/DESIGN.md" << 'EOF'
+cat > "${proj_4}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 ## Test
 Simple test design.
@@ -297,6 +303,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_4" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \

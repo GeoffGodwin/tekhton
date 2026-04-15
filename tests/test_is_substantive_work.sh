@@ -30,6 +30,10 @@ AGENT_ERROR_SUBCATEGORY=""
 AGENT_ERROR_TRANSIENT=""
 AGENT_ERROR_MESSAGE=""
 
+: "${TEKHTON_DIR:=.tekhton}"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+export TEKHTON_DIR CODER_SUMMARY_FILE
+
 # Helper: initialize a fresh git repo in a temp dir, returning the path
 _make_git_repo() {
     local repo
@@ -39,6 +43,7 @@ _make_git_repo() {
         git init -q .
         git config user.email "test@tekhton"
         git config user.name "Tekhton Test"
+        mkdir -p "${TEKHTON_DIR}"
         # Initial commit so HEAD exists
         echo "initial" > initial.txt
         git add .
@@ -92,7 +97,7 @@ REPO=$(_make_git_repo)
         for i in $(seq 1 20); do
             echo "- Implemented item $i"
         done
-    } > CODER_SUMMARY.md
+    } > "${CODER_SUMMARY_FILE}"
 )
 
 if _check_substantive "$REPO" 2>/dev/null; then
@@ -123,7 +128,7 @@ REPO=$(_make_git_repo)
     done > bigfile.txt
 
     # Short CODER_SUMMARY.md (< 20 lines)
-    printf "## Status: IN PROGRESS\n- item 1\n- item 2\n" > CODER_SUMMARY.md
+    printf "## Status: IN PROGRESS\n- item 1\n- item 2\n" > "${CODER_SUMMARY_FILE}"
 )
 
 if _check_substantive "$REPO" 2>/dev/null; then
@@ -145,7 +150,7 @@ REPO=$(_make_git_repo)
     echo "one line change" >> initial.txt
 
     # Short CODER_SUMMARY.md (< 20 lines)
-    printf "## Status: IN PROGRESS\n- item 1\n- item 2\n" > CODER_SUMMARY.md
+    printf "## Status: IN PROGRESS\n- item 1\n- item 2\n" > "${CODER_SUMMARY_FILE}"
 )
 
 if ! _check_substantive "$REPO" 2>/dev/null; then
@@ -169,7 +174,7 @@ REPO=$(_make_git_repo)
         for i in $(seq 1 30); do
             echo "- item $i"
         done
-    } > CODER_SUMMARY.md
+    } > "${CODER_SUMMARY_FILE}"
     # Do NOT modify any tracked file — only untracked files exist
 )
 
@@ -189,7 +194,7 @@ REPO=$(_make_git_repo)
 (
     cd "$REPO"
     # Small untracked file — below threshold (< 50 lines, no summary >= 20)
-    printf "## Status: IN PROGRESS\n- item 1\n" > CODER_SUMMARY.md
+    printf "## Status: IN PROGRESS\n- item 1\n" > "${CODER_SUMMARY_FILE}"
 )
 
 if ! _check_substantive "$REPO" 2>/dev/null; then
@@ -233,7 +238,7 @@ REPO=$(_make_git_repo)
     # Exactly 20 lines
     for i in $(seq 1 20); do
         echo "- item $i"
-    done > CODER_SUMMARY.md
+    done > "${CODER_SUMMARY_FILE}"
 )
 
 if _check_substantive "$REPO" 2>/dev/null; then
@@ -256,7 +261,7 @@ REPO=$(_make_git_repo)
     # 19 lines — below threshold
     for i in $(seq 1 19); do
         echo "- item $i"
-    done > CODER_SUMMARY.md
+    done > "${CODER_SUMMARY_FILE}"
 )
 
 if ! _check_substantive "$REPO" 2>/dev/null; then

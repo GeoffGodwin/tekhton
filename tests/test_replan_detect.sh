@@ -16,13 +16,12 @@ export TASK="Implement Milestone 4"
 export MILESTONE_MODE=""
 export PIPELINE_STATE_FILE="${TMPDIR}/.claude/PIPELINE_STATE.md"
 export LOG_DIR="${TMPDIR}/.claude/logs"
-# Bare filenames — mid-run code prepends ${PROJECT_DIR}/ (consistent with lib/drift.sh)
-export DRIFT_LOG_FILE="DRIFT_LOG.md"
-export ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
+export DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
+export ARCHITECTURE_LOG_FILE="${TEKHTON_DIR}/ARCHITECTURE_LOG.md"
 export REPLAN_MODEL="opus"
 export REPLAN_MAX_TURNS="5"
 
-mkdir -p "${TMPDIR}/.claude" "${LOG_DIR}"
+mkdir -p "${TMPDIR}/.claude" "${LOG_DIR}" "${TMPDIR}/${TEKHTON_DIR}"
 
 # Stub logging functions
 log()     { :; }

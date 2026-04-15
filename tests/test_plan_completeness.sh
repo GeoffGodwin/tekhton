@@ -22,6 +22,8 @@ warn()    { :; }
 error()   { :; }
 header()  { :; }
 
+DESIGN_FILE="${TEKHTON_DIR:-.tekhton}/DESIGN.md"
+
 # Source plan.sh (constants and config defaults) and plan_completeness.sh (check functions)
 # shellcheck source=../lib/plan.sh
 source "${TEKHTON_HOME}/lib/plan.sh"

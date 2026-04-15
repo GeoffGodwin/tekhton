@@ -9,6 +9,8 @@ trap 'rm -rf "$TMPDIR"' EXIT
 PROJECT_DIR="$TMPDIR"
 export TEKHTON_HOME PROJECT_DIR TEKHTON_TEST_MODE=1
 
+DESIGN_FILE="${TEKHTON_DIR:-.tekhton}/DESIGN.md"
+
 source "${TEKHTON_HOME}/lib/common.sh"
 
 # Set up state prerequisites

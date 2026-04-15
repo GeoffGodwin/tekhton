@@ -14,6 +14,11 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 FAIL=0
 
+# Define TEKHTON_DIR and HUMAN_NOTES_FILE before sourcing libraries that use them
+TEKHTON_DIR=".tekhton"
+HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+
 source "${TEKHTON_HOME}/lib/common.sh" 2>/dev/null || true
 source "${TEKHTON_HOME}/lib/notes_core.sh"
 source "${TEKHTON_HOME}/lib/notes.sh"
@@ -32,7 +37,8 @@ assert_eq() {
 # Create a HUMAN_NOTES.md with more notes than MAX_PIPELINE_ATTEMPTS
 setup_large_notes() {
     cd "$TMPDIR"
-    cat > HUMAN_NOTES.md << 'EOF'
+    mkdir -p "${TEKHTON_DIR:-.tekhton}"
+    cat > "${HUMAN_NOTES_FILE}" << 'EOF'
 # Human Notes — TestProject
 
 ## Bugs

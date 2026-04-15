@@ -26,6 +26,14 @@ PIPELINE_STATE_FILE="$TMPDIR/.claude/PIPELINE_STATE.md"
 export PROJECT_DIR LOG_DIR PIPELINE_STATE_FILE TEKHTON_HOME
 
 mkdir -p "$LOG_DIR/archive"
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+INTAKE_REPORT_FILE="${TEKHTON_DIR}/INTAKE_REPORT.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+SECURITY_REPORT_FILE="${TEKHTON_DIR}/SECURITY_REPORT.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
+TESTER_REPORT_FILE="${TEKHTON_DIR}/TESTER_REPORT.md"
 
 # --- Source dependencies -----------------------------------------------------
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -81,12 +89,12 @@ assert_exit0() {
 
 _reset_report_fixture() {
     rm -f "$TMPDIR/.claude/logs/RUN_SUMMARY.json"
-    rm -f "$TMPDIR/INTAKE_REPORT.md"
-    rm -f "$TMPDIR/REVIEWER_REPORT.md"
-    rm -f "$TMPDIR/TESTER_REPORT.md"
-    rm -f "$TMPDIR/CODER_SUMMARY.md"
-    rm -f "$TMPDIR/SECURITY_REPORT.md"
-    rm -f "$TMPDIR/HUMAN_ACTION_REQUIRED.md"
+    rm -f "$TMPDIR/${TEKHTON_DIR}/INTAKE_REPORT.md"
+    rm -f "$TMPDIR/${TEKHTON_DIR}/REVIEWER_REPORT.md"
+    rm -f "$TMPDIR/${TEKHTON_DIR}/TESTER_REPORT.md"
+    rm -f "$TMPDIR/${TEKHTON_DIR}/CODER_SUMMARY.md"
+    rm -f "$TMPDIR/${TEKHTON_DIR}/SECURITY_REPORT.md"
+    rm -f "$TMPDIR/${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
 }
 
 _create_run_summary() {
@@ -168,7 +176,7 @@ echo "=== Test Suite 4: Human action items ==="
 
 _reset_report_fixture
 _create_run_summary "success"
-cat > "$TMPDIR/HUMAN_ACTION_REQUIRED.md" << 'EOF'
+cat > "$TMPDIR/${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md" << 'EOF'
 - [ ] Update the API documentation
 - [ ] Review the database schema changes
 - [x] Already done item
@@ -179,7 +187,7 @@ assert_contains "4.1 action item count displayed" "Action items: 2" "$output"
 # No unchecked items
 _reset_report_fixture
 _create_run_summary "success"
-cat > "$TMPDIR/HUMAN_ACTION_REQUIRED.md" << 'EOF'
+cat > "$TMPDIR/${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md" << 'EOF'
 - [x] Already done
 EOF
 output=$(print_run_report 2>/dev/null)
@@ -192,7 +200,7 @@ echo "=== Test Suite 5: Reviewer stage ==="
 
 _reset_report_fixture
 _create_run_summary "success"
-cat > "$TMPDIR/REVIEWER_REPORT.md" << 'EOF'
+cat > "$TMPDIR/${TEKHTON_DIR}/REVIEWER_REPORT.md" << 'EOF'
 # Reviewer Report
 
 ## Verdict
@@ -207,7 +215,7 @@ assert_contains "5.2 reviewer verdict APPROVED shown" "APPROVED" "$output"
 
 _reset_report_fixture
 _create_run_summary "failure"
-cat > "$TMPDIR/REVIEWER_REPORT.md" << 'EOF'
+cat > "$TMPDIR/${TEKHTON_DIR}/REVIEWER_REPORT.md" << 'EOF'
 # Reviewer Report
 
 ## Verdict
@@ -228,7 +236,7 @@ _reset_report_fixture
 _create_run_summary "success"
 # Note: Tester section uses ## Tests Written heading for count (numbered list)
 # and ## Bugs Found for bug count - let's test with zero bugs
-cat > "$TMPDIR/TESTER_REPORT.md" << 'EOF'
+cat > "$TMPDIR/${TEKHTON_DIR}/TESTER_REPORT.md" << 'EOF'
 ## Planned Tests
 - [x] `tests/test_foo.sh` — foo tests
 
@@ -252,7 +260,7 @@ echo "=== Test Suite 7: Intake stage ==="
 
 _reset_report_fixture
 _create_run_summary "success"
-cat > "$TMPDIR/INTAKE_REPORT.md" << 'EOF'
+cat > "$TMPDIR/${TEKHTON_DIR}/INTAKE_REPORT.md" << 'EOF'
 # Intake Report
 
 ## Verdict

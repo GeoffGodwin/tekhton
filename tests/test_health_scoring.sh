@@ -16,6 +16,12 @@ RED='' GREEN='' YELLOW='' BOLD='' NC=''
 
 export TEKHTON_HOME
 
+# Define variables required by health library modules (normally set by run_tests.sh
+# or config_defaults.sh, but must be present when tests run standalone).
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+DESIGN_FILE="${DESIGN_FILE:-${TEKHTON_DIR}/DESIGN.md}"
+HEALTH_REPORT_FILE="${HEALTH_REPORT_FILE:-${TEKHTON_DIR}/HEALTH_REPORT.md}"
+
 # Source health modules
 source "${TEKHTON_HOME}/lib/health.sh"
 
@@ -64,7 +70,7 @@ assert_eq "belt 100" "Black Belt" "$(get_health_belt 100)"
 # ============================================================================
 
 EMPTY_DIR="$TMPDIR/empty_project"
-mkdir -p "$EMPTY_DIR"
+mkdir -p "$EMPTY_DIR/${TEKHTON_DIR:-.tekhton}"
 cd "$EMPTY_DIR"
 git init -q
 git config user.email "test@test.com"
@@ -82,7 +88,7 @@ HEALTH_WEIGHT_HYGIENE=15
 HEALTH_SHOW_BELT=true
 HEALTH_RUN_TESTS=false
 HEALTH_BASELINE_FILE=.claude/HEALTH_BASELINE.json
-HEALTH_REPORT_FILE=HEALTH_REPORT.md
+HEALTH_REPORT_FILE="${TEKHTON_DIR}/HEALTH_REPORT.md"
 TEST_CMD=true
 
 score=$(assess_project_health "$EMPTY_DIR")
@@ -98,10 +104,10 @@ else
 fi
 
 # Verify report file was written
-if [[ -f "$EMPTY_DIR/HEALTH_REPORT.md" ]]; then
+if [[ -f "$EMPTY_DIR/$HEALTH_REPORT_FILE" ]]; then
     PASS=$((PASS + 1))
 else
-    echo "FAIL: HEALTH_REPORT.md not created for empty project" >&2
+    echo "FAIL: $HEALTH_REPORT_FILE not created for empty project" >&2
     FAIL=$((FAIL + 1))
 fi
 
@@ -110,7 +116,7 @@ fi
 # ============================================================================
 
 GOOD_DIR="$TMPDIR/good_project"
-mkdir -p "$GOOD_DIR"/{src,tests,.github/workflows}
+mkdir -p "$GOOD_DIR"/{src,tests,.github/workflows,"${TEKHTON_DIR:-.tekhton}"}
 cd "$GOOD_DIR"
 git init -q
 git config user.email "test@test.com"
@@ -191,7 +197,7 @@ printf '# Contributing\n\nPlease follow the code style.\n' > "$GOOD_DIR/CONTRIBU
 git add . && git commit -q -m "init well-maintained project"
 
 HEALTH_BASELINE_FILE=.claude/HEALTH_BASELINE.json
-HEALTH_REPORT_FILE=HEALTH_REPORT.md
+HEALTH_REPORT_FILE="${TEKHTON_DIR}/HEALTH_REPORT.md"
 
 score=$(assess_project_health "$GOOD_DIR")
 assert_range "good project score" 60 100 "$score"
@@ -329,7 +335,7 @@ assert_eq "empty dependency_health score" "0" "$dep_score_direct"
 # Test 13: Greenfield report contains Pre-code baseline callout
 # ============================================================================
 
-if grep -q "Pre-code baseline" "$EMPTY_DIR/HEALTH_REPORT.md" 2>/dev/null; then
+if grep -q "Pre-code baseline" "$EMPTY_DIR/$HEALTH_REPORT_FILE" 2>/dev/null; then
     PASS=$((PASS + 1))
 else
     echo "FAIL: HEALTH_REPORT.md missing 'Pre-code baseline' callout for greenfield project" >&2

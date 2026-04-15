@@ -62,6 +62,8 @@ INNERSCRIPT
 
     TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$project_dir" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -71,10 +73,10 @@ INNERSCRIPT
 echo "=== Test 1: CLAUDE.md with preexisting marker (idempotency) ==="
 
 proj_1="${TMPDIR_BASE}/proj_existing_marker"
-mkdir -p "$proj_1"
+mkdir -p "$proj_1/.tekhton"
 
 # Create DESIGN.md
-cat > "${proj_1}/DESIGN.md" << 'EOF'
+cat > "${proj_1}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 
 ## Project Overview
@@ -154,10 +156,10 @@ echo ""
 echo "=== Test 2: Normal case — no preexisting marker ==="
 
 proj_2="${TMPDIR_BASE}/proj_no_preexisting_marker"
-mkdir -p "$proj_2"
+mkdir -p "$proj_2/.tekhton"
 
 # Create DESIGN.md
-cat > "${proj_2}/DESIGN.md" << 'EOF'
+cat > "${proj_2}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 
 ## Project Overview
@@ -201,10 +203,10 @@ echo ""
 echo "=== Test 3: CLAUDE.md with marker in middle (malformed) ==="
 
 proj_3="${TMPDIR_BASE}/proj_marker_in_middle"
-mkdir -p "$proj_3"
+mkdir -p "$proj_3/.tekhton"
 
 # Create DESIGN.md
-cat > "${proj_3}/DESIGN.md" << 'EOF'
+cat > "${proj_3}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 
 ## Project Overview

@@ -81,6 +81,8 @@ INNERSCRIPT
 
     TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$project_dir" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -93,10 +95,10 @@ INNERSCRIPT
 echo "=== Test 1: Guard detects tool-write and rescues on-disk CLAUDE.md ==="
 
 proj_1="${TMPDIR_BASE}/proj_generate_tool"
-mkdir -p "$proj_1"
+mkdir -p "$proj_1/.tekhton"
 
 # Create a valid DESIGN.md first
-cat > "${proj_1}/DESIGN.md" << 'EOF'
+cat > "${proj_1}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 
 ## Project Overview
@@ -152,10 +154,10 @@ echo ""
 echo "=== Test 2: Normal case (no tool-write, heading-started) ==="
 
 proj_2="${TMPDIR_BASE}/proj_generate_normal"
-mkdir -p "$proj_2"
+mkdir -p "$proj_2/.tekhton"
 
 # Create a valid DESIGN.md
-cat > "${proj_2}/DESIGN.md" << 'EOF'
+cat > "${proj_2}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 
 ## Project Overview
@@ -185,10 +187,10 @@ echo ""
 echo "=== Test 3: Guard does NOT fire for short documents <20 lines ==="
 
 proj_3="${TMPDIR_BASE}/proj_generate_short"
-mkdir -p "$proj_3"
+mkdir -p "$proj_3/.tekhton"
 
 # Create a valid DESIGN.md
-cat > "${proj_3}/DESIGN.md" << 'EOF'
+cat > "${proj_3}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 ## Project Overview
 Test doc.
@@ -233,6 +235,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_3" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -262,10 +266,10 @@ echo ""
 echo "=== Test 4: Guard does NOT fire for documents NOT starting with heading ==="
 
 proj_4="${TMPDIR_BASE}/proj_generate_no_heading"
-mkdir -p "$proj_4"
+mkdir -p "$proj_4/.tekhton"
 
 # Create a valid DESIGN.md
-cat > "${proj_4}/DESIGN.md" << 'EOF'
+cat > "${proj_4}/.tekhton/DESIGN.md" << 'EOF'
 # DESIGN.md
 ## Content
 Test.
@@ -321,6 +325,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_4" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_GENERATION_MODEL="test-model" \
     PLAN_GENERATION_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \

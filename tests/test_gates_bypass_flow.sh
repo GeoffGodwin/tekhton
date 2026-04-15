@@ -33,6 +33,11 @@ source "${TEKHTON_HOME}/lib/gates_ui.sh"
 TMPDIR_TEST=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
 cd "$TMPDIR_TEST"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
+
+BUILD_ERRORS_FILE="${TEKHTON_DIR}/BUILD_ERRORS.md"
+BUILD_RAW_ERRORS_FILE="${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt"
+export BUILD_ERRORS_FILE BUILD_RAW_ERRORS_FILE
 
 PASS=0
 FAIL=0
@@ -45,6 +50,8 @@ export BUILD_CHECK_CMD=""
 export UI_TEST_CMD=""
 export UI_VALIDATION_ENABLED=false
 export DEPENDENCY_CONSTRAINTS_FILE=""
+export UI_TEST_ERRORS_FILE="${TEKHTON_DIR}/UI_TEST_ERRORS.md"
+export UI_VALIDATION_REPORT_FILE="${TEKHTON_DIR}/UI_VALIDATION_REPORT.md"
 
 # =============================================================================
 # Test 1: Gate Phase 1 env error → BUILD_RAW_ERRORS.txt → bypass triggers
@@ -54,7 +61,7 @@ echo "=== Gate env error → raw file → bypass (has_only_noncode_errors return
 export ANALYZE_CMD="printf 'ECONNREFUSED 127.0.0.1:5432\n'"
 export ANALYZE_ERROR_PATTERN="ECONNREFUSED"
 
-rm -f BUILD_RAW_ERRORS.txt BUILD_ERRORS.md
+rm -f "${BUILD_RAW_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
 
 gate_exit=0
 run_build_gate "test-bypass-env" || gate_exit=$?
@@ -66,14 +73,14 @@ else
 fi
 
 # Verify BUILD_RAW_ERRORS.txt was produced by the gate
-if [[ -f BUILD_RAW_ERRORS.txt ]]; then
+if [[ -f "${BUILD_RAW_ERRORS_FILE}" ]]; then
     pass
 else
     fail "BUILD_RAW_ERRORS.txt must exist after Phase 1 env failure"
 fi
 
 # Simulate what coder.sh does: read BUILD_RAW_ERRORS.txt, call has_only_noncode_errors
-raw_from_gate=$(cat BUILD_RAW_ERRORS.txt)
+raw_from_gate=$(cat "${BUILD_RAW_ERRORS_FILE}")
 if has_only_noncode_errors "$raw_from_gate"; then
     pass  # All service_dep → bypass should trigger
 else
@@ -90,13 +97,13 @@ fi
 echo "=== Annotated BUILD_ERRORS.md markdown headers → no bypass (validates raw-file preference) ==="
 
 # BUILD_ERRORS.md was written by the gate in Test 1 with annotated format
-if [[ -f BUILD_ERRORS.md ]]; then
+if [[ -f "${BUILD_ERRORS_FILE}" ]]; then
     pass
 else
     fail "BUILD_ERRORS.md must exist from gate failure in Test 1"
 fi
 
-md_content=$(cat BUILD_ERRORS.md)
+md_content=$(cat "${BUILD_ERRORS_FILE}")
 
 # Markdown headers like "# Build Errors — ..." are unclassified → "code" fallback
 # so has_only_noncode_errors returns 1 — confirms raw file must be preferred
@@ -122,7 +129,7 @@ echo "=== Code error in raw file → no bypass (has_only_noncode_errors returns 
 export ANALYZE_CMD="printf 'error TS2304: Cannot find name foo\n'"
 export ANALYZE_ERROR_PATTERN="error TS"
 
-rm -f BUILD_RAW_ERRORS.txt BUILD_ERRORS.md
+rm -f "${BUILD_RAW_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
 
 gate_exit2=0
 run_build_gate "test-code-no-bypass" || gate_exit2=$?
@@ -133,8 +140,8 @@ else
     fail "Gate should fail on code errors"
 fi
 
-if [[ -f BUILD_RAW_ERRORS.txt ]]; then
-    raw_code=$(cat BUILD_RAW_ERRORS.txt)
+if [[ -f "${BUILD_RAW_ERRORS_FILE}" ]]; then
+    raw_code=$(cat "${BUILD_RAW_ERRORS_FILE}")
     if ! has_only_noncode_errors "$raw_code"; then
         pass  # Correctly: TypeScript error → no bypass
     else
@@ -152,7 +159,7 @@ echo "=== Mixed env+code errors → no bypass ==="
 export ANALYZE_CMD="printf 'ECONNREFUSED 127.0.0.1:5432\nerror TS2304: Cannot find name foo\n'"
 export ANALYZE_ERROR_PATTERN="ECONNREFUSED|error TS"
 
-rm -f BUILD_RAW_ERRORS.txt BUILD_ERRORS.md
+rm -f "${BUILD_RAW_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
 
 gate_exit3=0
 run_build_gate "test-mixed-no-bypass" || gate_exit3=$?
@@ -163,8 +170,8 @@ else
     fail "Gate should fail on mixed errors"
 fi
 
-if [[ -f BUILD_RAW_ERRORS.txt ]]; then
-    raw_mixed=$(cat BUILD_RAW_ERRORS.txt)
+if [[ -f "${BUILD_RAW_ERRORS_FILE}" ]]; then
+    raw_mixed=$(cat "${BUILD_RAW_ERRORS_FILE}")
     if ! has_only_noncode_errors "$raw_mixed"; then
         pass  # Mixed: code error present → bypass must NOT trigger
     else
@@ -173,6 +180,7 @@ if [[ -f BUILD_RAW_ERRORS.txt ]]; then
 else
     fail "BUILD_RAW_ERRORS.txt must exist after Phase 1 mixed failure"
 fi
+
 
 # =============================================================================
 # Test 5: Pure env multi-category content → bypass triggers

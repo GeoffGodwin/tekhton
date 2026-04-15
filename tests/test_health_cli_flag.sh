@@ -9,6 +9,11 @@ TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
+# Define variables referenced in test assertions (normally set by run_tests.sh
+# or config_defaults.sh, but must be present when tests run standalone).
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+HEALTH_REPORT_FILE="${HEALTH_REPORT_FILE:-${TEKHTON_DIR}/HEALTH_REPORT.md}"
+
 PASS=0
 FAIL=0
 
@@ -53,7 +58,7 @@ fi
 # Test 3: HEALTH_REPORT.md is created by --health
 # ============================================================================
 
-if [[ -f "${PROJ1}/HEALTH_REPORT.md" ]]; then
+if [[ -f "${PROJ1}/${HEALTH_REPORT_FILE}" ]]; then
     PASS=$((PASS + 1))
 else
     echo "FAIL: HEALTH_REPORT.md not created by --health" >&2
@@ -64,7 +69,7 @@ fi
 # Test 4: HEALTH_REPORT.md contains expected composite score heading
 # ============================================================================
 
-if grep -q "Composite Score:" "${PROJ1}/HEALTH_REPORT.md" 2>/dev/null; then
+if grep -q "Composite Score:" "${PROJ1}/${HEALTH_REPORT_FILE}" 2>/dev/null; then
     PASS=$((PASS + 1))
 else
     echo "FAIL: HEALTH_REPORT.md missing 'Composite Score:' heading" >&2
@@ -127,7 +132,7 @@ git -C "$PROJ2" add . && git -C "$PROJ2" commit -q -m "init"
 (cd "$PROJ2" && bash "${TEKHTON_HOME}/tekhton.sh" --health > /dev/null 2>&1)
 
 # Score should be in the report
-if [[ -f "${PROJ2}/HEALTH_REPORT.md" ]]; then
+if [[ -f "${PROJ2}/${HEALTH_REPORT_FILE}" ]]; then
     PASS=$((PASS + 1))
 else
     echo "FAIL: HEALTH_REPORT.md not created for good project" >&2

@@ -8,11 +8,13 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+TEKHTON_DIR=".tekhton"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
 # Set config defaults that drift.sh expects
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
+ARCHITECTURE_LOG_FILE="${TEKHTON_DIR}/ARCHITECTURE_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
 DRIFT_OBSERVATION_THRESHOLD=3
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
 TASK="Implement test feature"
@@ -52,10 +54,10 @@ assert_file_not_contains() {
 # Test 1: _ensure_drift_log creates file with correct structure
 # ============================================================
 _ensure_drift_log
-assert_file_contains "drift log created" "${PROJECT_DIR}/DRIFT_LOG.md" "# Drift Log"
-assert_file_contains "drift log metadata" "${PROJECT_DIR}/DRIFT_LOG.md" "Runs since audit: 0"
-assert_file_contains "drift log unresolved section" "${PROJECT_DIR}/DRIFT_LOG.md" "## Unresolved Observations"
-assert_file_contains "drift log resolved section" "${PROJECT_DIR}/DRIFT_LOG.md" "## Resolved"
+assert_file_contains "drift log created" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "# Drift Log"
+assert_file_contains "drift log metadata" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "Runs since audit: 0"
+assert_file_contains "drift log unresolved section" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "## Unresolved Observations"
+assert_file_contains "drift log resolved section" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "## Resolved"
 
 # ============================================================
 # Test 2: count_drift_observations returns 0 on empty log
@@ -65,7 +67,7 @@ assert_eq "empty drift count" "0" "$(count_drift_observations)"
 # ============================================================
 # Test 3: append_drift_observations adds entries
 # ============================================================
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -79,14 +81,14 @@ EOF
 
 append_drift_observations
 assert_eq "drift count after append" "2" "$(count_drift_observations)"
-assert_file_contains "first observation" "${PROJECT_DIR}/DRIFT_LOG.md" "duplicate rank lookup"
-assert_file_contains "second observation" "${PROJECT_DIR}/DRIFT_LOG.md" "naming inconsistency"
-assert_file_contains "task tag in observation" "${PROJECT_DIR}/DRIFT_LOG.md" "Implement test feature"
+assert_file_contains "first observation" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "duplicate rank lookup"
+assert_file_contains "second observation" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "naming inconsistency"
+assert_file_contains "task tag in observation" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "Implement test feature"
 
 # ============================================================
 # Test 4: append_drift_observations skips "None"
 # ============================================================
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 ## Verdict
 APPROVED
 
@@ -100,7 +102,7 @@ assert_eq "drift count unchanged for None" "2" "$(count_drift_observations)"
 # ============================================================
 # Test 5: append_drift_observations skips missing section
 # ============================================================
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 ## Verdict
 APPROVED
 EOF
@@ -123,7 +125,7 @@ assert_eq "runs after 3 increments" "3" "$(get_runs_since_audit)"
 # ============================================================
 reset_runs_since_audit
 assert_eq "runs after reset" "0" "$(get_runs_since_audit)"
-assert_file_not_contains "last audit not never" "${PROJECT_DIR}/DRIFT_LOG.md" "Last audit: never"
+assert_file_not_contains "last audit not never" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "Last audit: never"
 
 # ============================================================
 # Test 8: should_trigger_audit — observation threshold
@@ -135,7 +137,7 @@ if should_trigger_audit; then
 fi
 
 # Add one more observation to hit threshold (3)
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 ## Drift Observations
 - config.dart — unused field "spectral_enabled"
 EOF
@@ -152,7 +154,7 @@ fi
 # Test 9: should_trigger_audit — run count threshold
 # ============================================================
 # Reset observations by replacing drift log, test run count
-cat > "${PROJECT_DIR}/DRIFT_LOG.md" << 'EOF'
+cat > "${PROJECT_DIR}/${DRIFT_LOG_FILE}" << 'EOF'
 # Drift Log
 
 ## Metadata
@@ -184,7 +186,7 @@ fi
 # Test 10: resolve_drift_observations
 # ============================================================
 # Rebuild a drift log with known observations
-cat > "${PROJECT_DIR}/DRIFT_LOG.md" << 'EOF'
+cat > "${PROJECT_DIR}/${DRIFT_LOG_FILE}" << 'EOF'
 # Drift Log
 
 ## Metadata
@@ -201,12 +203,12 @@ EOF
 assert_eq "pre-resolve count" "2" "$(count_drift_observations)"
 resolve_drift_observations "file_a.dart"
 assert_eq "post-resolve count" "1" "$(count_drift_observations)"
-assert_file_contains "resolved entry" "${PROJECT_DIR}/DRIFT_LOG.md" "RESOLVED.*duplicate pattern"
+assert_file_contains "resolved entry" "${PROJECT_DIR}/${DRIFT_LOG_FILE}" "RESOLVED.*duplicate pattern"
 
 # ============================================================
 # Test 11: ADL — get_next_adl_number on empty/missing file
 # ============================================================
-rm -f "${PROJECT_DIR}/ARCHITECTURE_LOG.md"
+rm -f "${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}"
 assert_eq "first ADL number" "1" "$(get_next_adl_number)"
 
 # ============================================================
@@ -215,26 +217,26 @@ assert_eq "first ADL number" "1" "$(get_next_adl_number)"
 ACCEPTED_ACPS="- ACP: Layer boundary change — ACCEPT — Needed for cross-system access"
 append_architecture_decision
 
-assert_file_contains "ADL entry created" "${PROJECT_DIR}/ARCHITECTURE_LOG.md" "ADL-1"
-assert_file_contains "ADL name" "${PROJECT_DIR}/ARCHITECTURE_LOG.md" "Layer boundary change"
+assert_file_contains "ADL entry created" "${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}" "ADL-1"
+assert_file_contains "ADL name" "${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}" "Layer boundary change"
 assert_eq "next ADL number" "2" "$(get_next_adl_number)"
 
 # Append a second
 ACCEPTED_ACPS="- ACP: Config restructure — ACCEPT — Simplifies loading"
 append_architecture_decision
-assert_file_contains "ADL-2 created" "${PROJECT_DIR}/ARCHITECTURE_LOG.md" "ADL-2"
+assert_file_contains "ADL-2 created" "${PROJECT_DIR}/${ARCHITECTURE_LOG_FILE}" "ADL-2"
 assert_eq "next ADL number after 2" "3" "$(get_next_adl_number)"
 
 # ============================================================
 # Test 13: Human Action — append + count
 # ============================================================
-rm -f "${PROJECT_DIR}/HUMAN_ACTION_REQUIRED.md"
+rm -f "${PROJECT_DIR}/${HUMAN_ACTION_FILE}"
 assert_eq "no actions initially" "0" "$(count_human_actions)"
 
 append_human_action "coder" "GDD says X but code does Y"
 assert_eq "1 action after append" "1" "$(count_human_actions)"
-assert_file_contains "action content" "${PROJECT_DIR}/HUMAN_ACTION_REQUIRED.md" "GDD says X but code does Y"
-assert_file_contains "action source" "${PROJECT_DIR}/HUMAN_ACTION_REQUIRED.md" "Source: coder"
+assert_file_contains "action content" "${PROJECT_DIR}/${HUMAN_ACTION_FILE}" "GDD says X but code does Y"
+assert_file_contains "action source" "${PROJECT_DIR}/${HUMAN_ACTION_FILE}" "Source: coder"
 
 append_human_action "reviewer" "Architecture doc section 3.2 is stale"
 assert_eq "2 actions after second append" "2" "$(count_human_actions)"
@@ -247,7 +249,7 @@ if ! has_human_actions; then
     FAIL=1
 fi
 
-rm -f "${PROJECT_DIR}/HUMAN_ACTION_REQUIRED.md"
+rm -f "${PROJECT_DIR}/${HUMAN_ACTION_FILE}"
 if has_human_actions; then
     echo "FAIL: has_human_actions should return false with no file"
     FAIL=1
@@ -256,7 +258,7 @@ fi
 # ============================================================
 # Test 15: _process_design_observations
 # ============================================================
-cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -270,8 +272,8 @@ EOF
 
 _process_design_observations
 assert_eq "2 actions from design obs" "2" "$(count_human_actions)"
-assert_file_contains "design obs 1" "${PROJECT_DIR}/HUMAN_ACTION_REQUIRED.md" "danger zone"
-assert_file_contains "design obs 2" "${PROJECT_DIR}/HUMAN_ACTION_REQUIRED.md" "timer mechanic"
+assert_file_contains "design obs 1" "${PROJECT_DIR}/${HUMAN_ACTION_FILE}" "danger zone"
+assert_file_contains "design obs 2" "${PROJECT_DIR}/${HUMAN_ACTION_FILE}" "timer mechanic"
 
 # ============================================================
 # Summary

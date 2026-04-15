@@ -2,13 +2,14 @@
 PASS
 
 ## Confidence
-92
+88
 
 ## Reasoning
-- Scope is tightly bounded: exactly one file modified (`prompts/draft_milestones.prompt.md`)
-- Implementation plan provides verbatim markdown content for all four additions — no guessing required
-- Acceptance criteria are specific and mechanically verifiable (grep, shellcheck, test suite)
-- The behavioral criterion (AC #7) is concrete: checks for `PROJECT_DIR.*\.md` grep patterns as a proxy for M72-class blind spots
-- No new config keys, CLI flags, or user-facing formats — no migration impact section needed
-- Not a UI milestone — UI testability N/A
-- Step 5 (shellcheck + tests) is a routine gate with no ambiguity
+- Scope is precisely defined: 11 test files to modify plus 1 to create, all named explicitly
+- Before/after code examples eliminate ambiguity about what "use ${TEKHTON_DIR}/ prefix" means
+- Acceptance criteria are mechanical and checkable (grep-verifiable or runnable)
+- Step-by-step implementation plan leaves no room for developer interpretation
+- The root cleanliness test spec is detailed enough to write without further guidance
+- Prior FAIL likely reflects implementation friction (hidden test dependencies), not ambiguity — the milestone doc is clear
+- No migration impact needed (internal test infrastructure only, no user-facing config changes)
+- No UI testing concerns (pure shell test harness work)

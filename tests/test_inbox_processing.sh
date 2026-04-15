@@ -14,6 +14,10 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 TEST_TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
 
+TEKHTON_DIR=".tekhton"
+HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
+export TEKHTON_DIR HUMAN_NOTES_FILE
+
 # =============================================================================
 # Section 1: Syntax and static analysis gates
 # =============================================================================
@@ -105,6 +109,7 @@ EOF
 (
     cd "$PROJ_NOTE"
     export PROJECT_DIR="$PROJ_NOTE"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     # shellcheck source=../lib/common.sh
     source "${TEKHTON_HOME}/lib/common.sh"
@@ -115,7 +120,7 @@ EOF
     process_watchtower_inbox
     [[ ! -f ".claude/watchtower_inbox/note_1234_BUG.md" ]] || { echo "original not moved" >&2; exit 1; }
     [[ -f ".claude/watchtower_inbox/processed/note_1234_BUG.md" ]] || { echo "processed file missing" >&2; exit 1; }
-    grep -q "^- \[ \] \[BUG\] Login page crashes on empty password" HUMAN_NOTES.md || { echo "entry not in HUMAN_NOTES" >&2; exit 1; }
+    grep -q "^- \[ \] \[BUG\] Login page crashes on empty password" .tekhton/HUMAN_NOTES.md || { echo "entry not in HUMAN_NOTES" >&2; exit 1; }
 )
 if [[ $? -eq 0 ]]; then
     pass "note file: title appended to HUMAN_NOTES.md as unchecked BUG entry, file moved to processed"
@@ -134,6 +139,7 @@ EOF
 (
     cd "$PROJ_FEAT"
     export PROJECT_DIR="$PROJ_FEAT"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
@@ -141,7 +147,7 @@ EOF
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
-    grep -q "^- \[ \] \[FEAT\] Add dark mode toggle" HUMAN_NOTES.md || { echo "FEAT entry missing" >&2; exit 1; }
+    grep -q "^- \[ \] \[FEAT\] Add dark mode toggle" .tekhton/HUMAN_NOTES.md || { echo "FEAT entry missing" >&2; exit 1; }
 )
 if [[ $? -eq 0 ]]; then
     pass "FEAT-tagged note appended with correct checkbox format"
@@ -160,6 +166,7 @@ EOF
 (
     cd "$PROJ_MALFORMED"
     export PROJECT_DIR="$PROJ_MALFORMED"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
@@ -170,8 +177,8 @@ EOF
     # Malformed note must stay in inbox (failed processing, not moved)
     [[ ! -f ".claude/watchtower_inbox/processed/note_bad.md" ]] || { echo "malformed note wrongly moved to processed" >&2; exit 1; }
     # No checkbox entries should have been added
-    if [[ -f "HUMAN_NOTES.md" ]]; then
-        if grep -q "^- \[ \]" HUMAN_NOTES.md 2>/dev/null; then
+    if [[ -f ".tekhton/HUMAN_NOTES.md" ]]; then
+        if grep -q "^- \[ \]" .tekhton/HUMAN_NOTES.md 2>/dev/null; then
             echo "malformed note text appeared in HUMAN_NOTES.md" >&2; exit 1
         fi
     fi
@@ -192,6 +199,7 @@ EOF
 (
     cd "$PROJ_TASK"
     export PROJECT_DIR="$PROJ_TASK"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
@@ -217,6 +225,7 @@ mkdir -p "${PROJ_EMPTY}/.claude/watchtower_inbox"
 (
     cd "$PROJ_EMPTY"
     export PROJECT_DIR="$PROJ_EMPTY"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
@@ -224,8 +233,8 @@ mkdir -p "${PROJ_EMPTY}/.claude/watchtower_inbox"
     source "${TEKHTON_HOME}/lib/notes_cli.sh"
     source "${TEKHTON_HOME}/lib/inbox.sh"
     process_watchtower_inbox
-    if [[ -f "HUMAN_NOTES.md" ]]; then
-        if grep -q "^- \[ \]" HUMAN_NOTES.md 2>/dev/null; then
+    if [[ -f ".tekhton/HUMAN_NOTES.md" ]]; then
+        if grep -q "^- \[ \]" .tekhton/HUMAN_NOTES.md 2>/dev/null; then
             echo "HUMAN_NOTES.md has unexpected entries" >&2; exit 1
         fi
     fi
@@ -243,6 +252,7 @@ mkdir -p "$PROJ_ABSENT"
 (
     cd "$PROJ_ABSENT"
     export PROJECT_DIR="$PROJ_ABSENT"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
@@ -273,6 +283,7 @@ EOF
     cd "$PROJ_MS"
     export PROJECT_DIR="$PROJ_MS"
     export MILESTONE_DIR="$MS_DIR"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
@@ -305,6 +316,7 @@ EOF
     export PROJECT_DIR="$PROJ_MANIFEST"
     export MILESTONE_DIR="$MS_DIR2"
     export MILESTONE_MANIFEST="MANIFEST.cfg"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
@@ -338,6 +350,7 @@ EOF
     export PROJECT_DIR="$PROJ_COLLISION"
     export MILESTONE_DIR="$MS_DIR3"
     export MILESTONE_MANIFEST="MANIFEST.cfg"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
@@ -373,6 +386,7 @@ EOF
     export PROJECT_DIR="$PROJ_MISSDEP"
     export MILESTONE_DIR="$MS_DIR4"
     export MILESTONE_MANIFEST="MANIFEST.cfg"
+    mkdir -p .tekhton
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }
     source "${TEKHTON_HOME}/lib/common.sh"
     log() { :; }; success() { :; }; warn() { :; }; error() { :; }; header() { :; }

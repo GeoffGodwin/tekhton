@@ -8,6 +8,7 @@ TMPDIR_BASE="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_BASE"' EXIT
 
 cd "$TMPDIR_BASE"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # Minimal git repo so any git calls don't fail
 git init -q .
@@ -37,6 +38,9 @@ assert() {
 export TEKHTON_HOME PROJECT_DIR="$TMPDIR_BASE"
 mkdir -p "${TMPDIR_BASE}/.claude/logs"
 
+REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
+export REVIEWER_REPORT_FILE
+
 export LOG_FILE="${TMPDIR_BASE}/.claude/logs/test.log"
 export LOG_DIR="${TMPDIR_BASE}/.claude/logs"
 export TIMESTAMP="20260406_120000"
@@ -65,6 +69,10 @@ export INDEXER_AVAILABLE=true
 export REPO_MAP_ENABLED=true
 export REPO_MAP_CONTENT=""
 
+export CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+export JR_CODER_SUMMARY_FILE="${TEKHTON_DIR}/JR_CODER_SUMMARY.md"
+export BUILD_ERRORS_FILE="${TEKHTON_DIR}/BUILD_ERRORS.md"
+export SPECIALIST_REPORT_FILE="${TEKHTON_DIR}/SPECIALIST_REPORT.md"
 export CODER_MAX_TURNS=50
 export JR_CODER_MAX_TURNS=20
 export CLAUDE_CODER_MODEL="claude-test"

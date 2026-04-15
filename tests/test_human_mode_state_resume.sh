@@ -234,9 +234,11 @@ assert_eq "11.2 HUMAN_SINGLE_NOTE=true round-trips correctly" "true" "$saved_sin
 # =============================================================================
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # 12.1: pick_next_note returns the note when it's [ ]
-cat > HUMAN_NOTES.md << 'EOF'
+HUMAN_NOTES_FILE="${HUMAN_NOTES_FILE:-${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md}"
+cat > "${HUMAN_NOTES_FILE}" << 'EOF'
 ## Bugs
 - [ ] [BUG] Fix login timeout on slow networks
 EOF
@@ -261,7 +263,7 @@ assert_eq "12.2 pick_next_note returns empty for [~] note (crash-resume gap)" ""
 # should export before re-entering the loop.
 export CURRENT_NOTE_LINE="- [ ] [BUG] Fix login timeout on slow networks"
 claimed_version="${CURRENT_NOTE_LINE/\[ \]/[~]}"
-if grep -qF -- "$claimed_version" HUMAN_NOTES.md 2>/dev/null; then
+if grep -qF -- "$claimed_version" "${HUMAN_NOTES_FILE}" 2>/dev/null; then
     echo "PASS: 12.3 claimed [~] note is in file; CURRENT_NOTE_LINE env is recovery anchor" >&3
 else
     echo "FAIL: 12.3 claimed note not found in [~] state — claim_single_note may have failed" >&3

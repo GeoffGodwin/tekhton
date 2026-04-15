@@ -16,8 +16,11 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 export TEKHTON_HOME
 export PROJECT_DIR="$TMPDIR"
+export TEKHTON_DIR=".tekhton"
+export DESIGN_FILE="${TEKHTON_DIR}/DESIGN.md"
 
 mkdir -p "${TMPDIR}/.claude/logs"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
 source "${TEKHTON_HOME}/lib/common.sh"
 
@@ -99,8 +102,8 @@ Follow bash conventions.
 echo "--- Test: Happy path — DAG enabled, milestones extracted after generation ---"
 
 # Set up DESIGN.md
-echo "# Design Document" > "${TMPDIR}/DESIGN.md"
-echo "This is the design." >> "${TMPDIR}/DESIGN.md"
+echo "# Design Document" > "${TMPDIR}/${DESIGN_FILE}"
+echo "This is the design." >> "${TMPDIR}/${DESIGN_FILE}"
 
 # Stub _call_planning_batch to return CLAUDE.md content with inline milestones
 _call_planning_batch() {

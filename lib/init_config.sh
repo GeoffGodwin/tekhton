@@ -62,7 +62,11 @@ _generate_smart_config() {
 
     # Auto-detect DESIGN_FILE
     local design_file=""
-    [[ -f "${project_dir}/${DESIGN_FILE:-}" ]] && design_file="${DESIGN_FILE}"
+    if [[ -n "${DESIGN_FILE:-}" ]] && [[ -f "${project_dir}/${DESIGN_FILE}" ]]; then
+        design_file="${DESIGN_FILE}"
+    elif [[ -f "${project_dir}/DESIGN.md" ]]; then
+        design_file="DESIGN.md"
+    fi
 
     # Milestone 12: Adjust model based on doc quality
     if [[ -n "${_INIT_DOC_QUALITY:-}" ]]; then

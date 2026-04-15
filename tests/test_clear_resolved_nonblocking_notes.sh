@@ -17,7 +17,9 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 # --- Minimal pipeline globals ------------------------------------------------
 PROJECT_DIR="$TMPDIR"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+TEKHTON_DIR=".tekhton"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
 TEKHTON_SESSION_DIR="$TMPDIR"
 
 source "${TEKHTON_HOME}/lib/common.sh"

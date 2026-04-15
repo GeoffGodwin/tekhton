@@ -20,6 +20,9 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+CODER_SUMMARY_FILE="${CODER_SUMMARY_FILE:-${TEKHTON_DIR}/CODER_SUMMARY.md}"
+mkdir -p "${TEKHTON_DIR}"
 git init -q
 git config user.email "test@tekhton.test"
 git config user.name "Tekhton Test"
@@ -115,7 +118,7 @@ echo "✓ Test 2: working tree change falls back to git diff --stat"
 git checkout -q -- committed_file.txt
 
 # Write CODER_SUMMARY with file count
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 ## What Was Implemented
 - Added a feature
 
@@ -136,7 +139,7 @@ echo "✓ Test 3: no git diff falls back to CODER_SUMMARY file count"
 # Test 4: --cached takes priority over working tree changes
 # If both staged AND unstaged changes exist, --cached wins
 # =============================================================================
-rm -f CODER_SUMMARY.md
+rm -f "${CODER_SUMMARY_FILE}"
 
 echo "staged content" > staged_only.txt
 echo "unstaged content" > unstaged_only.txt

@@ -29,7 +29,11 @@ run_plan_followup_interview() {
 TEST_TMPDIR=$(mktemp -d)
 export PROJECT_DIR="$TEST_TMPDIR"
 export TEKHTON_TEST_MODE=1
+export TEKHTON_DIR=".tekhton"
+export DESIGN_FILE="${TEKHTON_DIR}/DESIGN.md"
 trap 'rm -rf "$TEST_TMPDIR"' EXIT
+
+mkdir -p "${TEST_TMPDIR}/${TEKHTON_DIR}"
 
 # Source plan.sh (defines _is_section_incomplete, check_design_completeness,
 # run_plan_completeness_loop, etc.)
@@ -64,7 +68,7 @@ EOF
 
 # Helper: write a DESIGN.md where all required sections are filled (deep content)
 make_complete_design() {
-    cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+    cat > "${TEST_TMPDIR}/${TEKHTON_DIR}/DESIGN.md" << 'EOF'
 # Design Document
 
 ## Overview
@@ -89,7 +93,7 @@ EOF
 
 # Helper: write a DESIGN.md with one incomplete section (TBD placeholder)
 make_incomplete_design() {
-    cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+    cat > "${TEST_TMPDIR}/${TEKHTON_DIR}/DESIGN.md" << 'EOF'
 # Design Document
 
 ## Overview
@@ -232,7 +236,7 @@ fi
 echo
 echo "=== run_plan_completeness_loop — missing DESIGN.md ==="
 
-rm -f "${TEST_TMPDIR}/DESIGN.md"
+rm -f "${TEST_TMPDIR}/${TEKHTON_DIR}/DESIGN.md"
 FOLLOWUP_CALL_COUNT=0
 result=0
 run_plan_completeness_loop < /dev/null > /dev/null 2>&1 || result=$?
@@ -256,7 +260,7 @@ echo "=== run_plan_completeness_loop — shallow section passes depth on pass 2,
 # Pass 2 must exit cleanly without calling the follow-up again.
 
 # Write shallow DESIGN.md: 3 lines, no sub-headings, no tables, no code blocks → score 0
-cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF'
+cat > "${TEST_TMPDIR}/${TEKHTON_DIR}/DESIGN.md" << 'EOF'
 # Design Document
 
 ## Overview
@@ -274,7 +278,7 @@ EOF
 _shallow_to_deep_followup() {
     FOLLOWUP_CALL_COUNT=$((FOLLOWUP_CALL_COUNT + 1))
     # Overwrite DESIGN.md with deep content that will pass depth check
-    cat > "${TEST_TMPDIR}/DESIGN.md" << 'EOF2'
+    cat > "${TEST_TMPDIR}/${TEKHTON_DIR}/DESIGN.md" << 'EOF2'
 # Design Document
 
 ## Overview

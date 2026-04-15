@@ -66,6 +66,8 @@ INNERSCRIPT
 
     TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$project_dir" \
+    DESIGN_FILE="DESIGN.md" \
+    TEKHTON_DIR=".tekhton" \
     SYNTHESIS_MODEL="test-model" \
     SYNTHESIS_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -227,6 +229,8 @@ INNERSCRIPT
 
 TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_2" \
+    DESIGN_FILE="DESIGN.md" \
+    TEKHTON_DIR=".tekhton" \
     SYNTHESIS_MODEL="test-model" \
     SYNTHESIS_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \
@@ -329,6 +333,8 @@ INNERSCRIPT
 
 TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_3" \
+    DESIGN_FILE="DESIGN.md" \
+    TEKHTON_DIR=".tekhton" \
     SYNTHESIS_MODEL="test-model" \
     SYNTHESIS_MAX_TURNS="1" \
     TEKHTON_TEST_MODE=1 \

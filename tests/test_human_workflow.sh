@@ -19,6 +19,8 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 # --- Minimal pipeline globals ------------------------------------------------
 PROJECT_DIR="$TMPDIR"
+TEKHTON_DIR=".tekhton"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 LOG_DIR=""
 TIMESTAMP=""
 
@@ -129,7 +131,7 @@ echo ""
 echo "=== Section 2: pick_next_note ==="
 
 # Setup: Create a realistic HUMAN_NOTES.md
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Fix login form validation
 - [x] [BUG] Session timeout handling (resolved)
@@ -172,7 +174,7 @@ assert_contains "Skips resolved/in-progress" "$result" "[ ]"
 
 test_case "pick_next_note returns empty when all notes resolved"
 # Create file with only resolved notes
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [x] [BUG] Already fixed
 
@@ -186,7 +188,7 @@ result=$(pick_next_note "")
 assert_empty "All resolved returns empty" "$result"
 
 test_case "pick_next_note handles missing file gracefully"
-rm "$TMPDIR/HUMAN_NOTES.md"
+rm "$TMPDIR/.tekhton/HUMAN_NOTES.md"
 result=$(pick_next_note "")
 assert_empty "Missing file returns empty" "$result"
 # Verify it doesn't error
@@ -198,7 +200,7 @@ echo ""
 echo "=== Section 3: claim_single_note ==="
 
 # Recreate test file
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Fix login form validation
 - [ ] [BUG] API error message formatting
@@ -211,13 +213,13 @@ test_case "claim_single_note marks exactly one note [~]"
 note="- [ ] [BUG] Fix login form validation"
 claim_single_note "$note"
 # Verify the exact line is marked
-assert_contains "Line marked [~]" "$(cat HUMAN_NOTES.md)" "- [~] [BUG] Fix login form validation"
+assert_contains "Line marked [~]" "$(cat .tekhton/HUMAN_NOTES.md)" "- [~] [BUG] Fix login form validation"
 # Verify other notes unchanged
-assert_contains "Other notes unchanged" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] API error"
+assert_contains "Other notes unchanged" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] API error"
 
 test_case "claim_single_note creates backup file"
 # Check that backup was created (either in LOG_DIR or as .bak)
-if [[ -f "$TMPDIR/HUMAN_NOTES.md.bak" ]]; then
+if [[ -f "$TMPDIR/.tekhton/HUMAN_NOTES.md.bak" ]]; then
     assert_equals "Backup created" "1" "1"
 else
     echo "    FAIL: Backup file not found"
@@ -225,7 +227,7 @@ else
 fi
 
 test_case "claim_single_note with special characters in note"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Fix regex pattern: `^[a-z]+(\.\d+)?$`
 - [ ] [BUG] Handle [brackets] in JSON
@@ -240,10 +242,10 @@ if [[ "$_special_rc" -gt 1 ]]; then
 fi
 # File must not be corrupted (still contains the BUG note text)
 assert_contains "Special chars: HUMAN_NOTES.md not corrupted" \
-    "$(cat "$TMPDIR/HUMAN_NOTES.md")" "BUG"
+    "$(cat "$TMPDIR/.tekhton/HUMAN_NOTES.md")" "BUG"
 
 test_case "claim_single_note returns 0 on success"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Test note
 EOF
@@ -251,7 +253,7 @@ note="- [ ] [BUG] Test note"
 assert_exit_code "Return 0 on success" 0 "claim_single_note '$note'"
 
 test_case "claim_single_note returns non-zero when note not found"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Different note
 EOF
@@ -263,7 +265,7 @@ if claim_single_note "$note" 2>/dev/null; then
 fi
 
 test_case "claim_single_note handles missing file gracefully"
-rm "$TMPDIR/HUMAN_NOTES.md"
+rm "$TMPDIR/.tekhton/HUMAN_NOTES.md"
 note="- [ ] [BUG] Some note"
 assert_exit_code "Missing file returns 1" 1 "claim_single_note '$note'"
 
@@ -273,27 +275,27 @@ echo ""
 echo "=== Section 4: resolve_single_note ==="
 
 test_case "resolve_single_note with exit_code=0 marks [x]"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
 - [ ] [BUG] API error message formatting
 EOF
 note="- [ ] [BUG] Fix login form validation"
 resolve_single_note "$note" 0
-assert_contains "Marked [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Marked [x]" "$(cat .tekhton/HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
 
 test_case "resolve_single_note with exit_code=1 resets to [ ]"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
 - [ ] [BUG] API error message formatting
 EOF
 note="- [ ] [BUG] Fix login form validation"
 resolve_single_note "$note" 1
-assert_contains "Reset to [ ]" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+assert_contains "Reset to [ ]" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
 
 test_case "resolve_single_note leaves other notes unchanged"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] First note
 - [ ] [BUG] Second note
@@ -302,11 +304,11 @@ EOF
 note="- [ ] [BUG] First note"
 resolve_single_note "$note" 0
 # Verify other notes untouched
-assert_contains "Second note unchanged" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Second note"
-assert_contains "Third note unchanged" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Third note"
+assert_contains "Second note unchanged" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] Second note"
+assert_contains "Third note unchanged" "$(cat .tekhton/HUMAN_NOTES.md)" "- [x] [BUG] Third note"
 
 test_case "resolve_single_note returns 0 on success"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Test
 EOF
@@ -314,7 +316,7 @@ note="- [ ] [BUG] Test"
 assert_exit_code "Return 0 on success" 0 "resolve_single_note '$note' 0"
 
 test_case "resolve_single_note returns non-zero when note not found"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Different note
 EOF
@@ -326,12 +328,12 @@ if resolve_single_note "$note" 0 2>/dev/null; then
 fi
 
 test_case "resolve_single_note handles missing file gracefully"
-rm "$TMPDIR/HUMAN_NOTES.md"
+rm "$TMPDIR/.tekhton/HUMAN_NOTES.md"
 note="- [ ] [BUG] Some note"
 assert_exit_code "Missing file returns 1" 1 "resolve_single_note '$note' 0"
 
 test_case "resolve_single_note accepts non-zero exit codes"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Test
 EOF
@@ -344,26 +346,26 @@ echo ""
 echo "=== Section 4b: resolve_single_note fallback when [~] clobbered back to [ ] ==="
 
 test_case "resolve_single_note fallback: marks [x] when agent clobbered [~] to [ ]"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Fix login form validation
 - [ ] [BUG] API error message formatting
 EOF
 note="- [ ] [BUG] Fix login form validation"
 resolve_single_note "$note" 0
-assert_contains "Fallback marked [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Fallback marked [x]" "$(cat .tekhton/HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
 
 test_case "resolve_single_note fallback: resets to [ ] on failure when clobbered"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Fix login form validation
 EOF
 note="- [ ] [BUG] Fix login form validation"
 resolve_single_note "$note" 1
-assert_contains "Fallback reset to [ ]" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+assert_contains "Fallback reset to [ ]" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
 
 test_case "resolve_single_note fallback: leaves other notes unchanged"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] First note
 - [ ] [BUG] Second note
@@ -371,11 +373,11 @@ cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
 EOF
 note="- [ ] [BUG] First note"
 resolve_single_note "$note" 0
-assert_contains "Fallback second unchanged" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Second note"
-assert_contains "Fallback third unchanged" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Third note"
+assert_contains "Fallback second unchanged" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] Second note"
+assert_contains "Fallback third unchanged" "$(cat .tekhton/HUMAN_NOTES.md)" "- [x] [BUG] Third note"
 
 test_case "resolve_single_note fallback: returns 0 on success"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Test
 EOF
@@ -383,7 +385,7 @@ note="- [ ] [BUG] Test"
 assert_exit_code "Fallback return 0" 0 "resolve_single_note '$note' 0"
 
 test_case "resolve_single_note prefers [~] match over [ ] fallback"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
 - [ ] [BUG] Fix login form validation
@@ -391,8 +393,8 @@ EOF
 note="- [ ] [BUG] Fix login form validation"
 resolve_single_note "$note" 0
 # Should match the [~] line (primary), leaving [ ] line untouched
-assert_contains "Primary [~] matched" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
-assert_contains "Fallback [ ] untouched" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+assert_contains "Primary [~] matched" "$(cat .tekhton/HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Fallback [ ] untouched" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
 
 # --- Section 5: extract_note_text ---
 
@@ -437,7 +439,7 @@ echo ""
 echo "=== Section 6: count_unchecked_notes ==="
 
 test_case "count_unchecked_notes counts all [ ] notes"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] First bug
 - [x] [BUG] Second bug (resolved)
@@ -467,7 +469,7 @@ assert_equals "POLISH count" "1" "$result"
 
 test_case "count_unchecked_notes ignores [x] and [~] notes"
 # Already tested above but explicit check
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [x] [BUG] Done
 - [~] [BUG] In progress
@@ -477,7 +479,7 @@ result=$(count_unchecked_notes "")
 assert_equals "Ignores non-[ ] notes" "1" "$result"
 
 test_case "count_unchecked_notes returns 0 when no unchecked notes"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [x] [BUG] All resolved
 - [x] [BUG] Also resolved
@@ -486,12 +488,12 @@ result=$(count_unchecked_notes "")
 assert_equals "No unchecked returns 0" "0" "$result"
 
 test_case "count_unchecked_notes returns 0 for missing file"
-rm "$TMPDIR/HUMAN_NOTES.md"
+rm "$TMPDIR/.tekhton/HUMAN_NOTES.md"
 result=$(count_unchecked_notes "")
 assert_equals "Missing file returns 0" "0" "$result"
 
 test_case "count_unchecked_notes returns 0 for invalid tag"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Some bug
 EOF
@@ -504,7 +506,7 @@ echo ""
 echo "=== Section 7: Priority ordering in pick_next_note ==="
 
 test_case "pick_next_note prioritizes Bugs over Features"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Bug item
 
@@ -518,7 +520,7 @@ result=$(pick_next_note "")
 assert_contains "Bugs first" "$result" "[BUG]"
 
 test_case "pick_next_note prioritizes Features over Polish"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [x] [BUG] Done
 
@@ -532,7 +534,7 @@ result=$(pick_next_note "")
 assert_contains "Features second" "$result" "[FEAT]"
 
 test_case "pick_next_note returns Polish when Bugs/Features done"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [x] [BUG] Done
 
@@ -551,7 +553,7 @@ echo ""
 echo "=== Section 8: Integration tests ==="
 
 test_case "Full workflow: pick → claim → resolve (success)"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Test bug
 
@@ -565,15 +567,15 @@ echo "Picked: $picked"
 # Claim it
 claim_single_note "$picked"
 # Verify it's [~]
-assert_contains "After claim" "$(cat HUMAN_NOTES.md)" "- [~] [BUG] Test bug"
+assert_contains "After claim" "$(cat .tekhton/HUMAN_NOTES.md)" "- [~] [BUG] Test bug"
 
 # Resolve it (success)
 resolve_single_note "$picked" 0
 # Verify it's [x]
-assert_contains "After resolve (success)" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Test bug"
+assert_contains "After resolve (success)" "$(cat .tekhton/HUMAN_NOTES.md)" "- [x] [BUG] Test bug"
 
 test_case "Full workflow: pick → claim → resolve (failure)"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Test bug
 EOF
@@ -586,7 +588,7 @@ claim_single_note "$picked"
 # Resolve it (failure)
 resolve_single_note "$picked" 1
 # Verify it's back to [ ]
-assert_contains "After resolve (failure)" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Test bug"
+assert_contains "After resolve (failure)" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] Test bug"
 
 # --- Section 9: Edge cases ---
 
@@ -594,7 +596,7 @@ echo ""
 echo "=== Section 9: Edge cases ==="
 
 test_case "Functions handle multiline note content gracefully"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] First line
 - [ ] [BUG] Second line has special chars: $@#
@@ -603,7 +605,7 @@ count=$(count_unchecked_notes "BUG")
 assert_equals "Multiline handling" "2" "$count"
 
 test_case "pick_next_note handles section with no unchecked items"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [x] [BUG] All done
 
@@ -617,7 +619,7 @@ result=$(pick_next_note "")
 assert_contains "Skips empty section" "$result" "[FEAT]"
 
 test_case "claim_single_note is idempotent (marks same note twice)"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [ ] [BUG] Test
 EOF
@@ -627,7 +629,7 @@ claim_single_note "$note"
 # This should fail (return 1) since the line is now [~]
 claim_single_note "$note" 2>/dev/null || true
 # File should still have [~]
-assert_contains "Idempotent behavior" "$(cat HUMAN_NOTES.md)" "- [~] [BUG] Test"
+assert_contains "Idempotent behavior" "$(cat .tekhton/HUMAN_NOTES.md)" "- [~] [BUG] Test"
 
 # --- Section 10: Flag validation (--human rejects invalid combos) ---
 
@@ -707,9 +709,9 @@ AUTO_COMMIT=false
 _CURRENT_MILESTONE=""
 START_AT="N/A"
 VERDICT="APPROVED"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
-DRIFT_LOG_FILE="DRIFT_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
 _TEKHTON_LOCK_FILE=""
 TEKHTON_SESSION_DIR="$TMPDIR"
 WITH_NOTES=false
@@ -723,7 +725,7 @@ export TEKHTON_SESSION_DIR WITH_NOTES NOTES_FILTER
 # We need to test with real resolve_single_note from notes.sh
 
 test_case "_hook_resolve_notes in HUMAN_MODE resolves single note [x]"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
 - [ ] [BUG] API error message formatting
@@ -755,11 +757,11 @@ count_open_nonblocking_notes() { echo "0"; }
 source "${TEKHTON_HOME}/lib/finalize.sh"
 
 _hook_resolve_notes 0
-assert_contains "Single note marked [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
-assert_contains "Other note unchanged" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] API error message formatting"
+assert_contains "Single note marked [x]" "$(cat .tekhton/HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+assert_contains "Other note unchanged" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] API error message formatting"
 
 test_case "_hook_resolve_notes in HUMAN_MODE with failure resets note to [ ]"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
 EOF
@@ -768,10 +770,10 @@ CURRENT_NOTE_LINE="- [ ] [BUG] Fix login form validation"
 export HUMAN_MODE CURRENT_NOTE_LINE
 _hook_resolve_notes 1
 # On failure, resolve_single_note resets [~] → [ ]
-assert_contains "Note reset to [ ] on failure" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+assert_contains "Note reset to [ ] on failure" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
 
 test_case "_hook_resolve_notes in non-HUMAN_MODE resolves [~] notes via orphan safety net"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
 EOF
@@ -779,15 +781,15 @@ HUMAN_MODE=false
 CURRENT_NOTE_LINE=""
 export HUMAN_MODE CURRENT_NOTE_LINE
 # Create CODER_SUMMARY.md with COMPLETE status for the bulk fallback
-cat > "$TMPDIR/CODER_SUMMARY.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/CODER_SUMMARY.md" <<'EOF'
 ## Status: COMPLETE
 ## What Was Implemented
 - Fixed the thing
 EOF
 _hook_resolve_notes 0
 # Bulk resolve_human_notes with COMPLETE status marks all [~] → [x]
-assert_contains "Orphan safety net marks [x]" "$(cat HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
-rm -f "$TMPDIR/CODER_SUMMARY.md"
+assert_contains "Orphan safety net marks [x]" "$(cat .tekhton/HUMAN_NOTES.md)" "- [x] [BUG] Fix login form validation"
+rm -f "$TMPDIR/.tekhton/CODER_SUMMARY.md"
 
 # Clean up
 HUMAN_MODE=false
@@ -796,7 +798,7 @@ export HUMAN_MODE CURRENT_NOTE_LINE
 rm -f "${TMPDIR}/HUMAN_NOTES.md"
 
 test_case "_hook_resolve_notes integration: failure in HUMAN_MODE resets file to [ ]"
-cat > "$TMPDIR/HUMAN_NOTES.md" <<'EOF'
+cat > "$TMPDIR/.tekhton/HUMAN_NOTES.md" <<'EOF'
 ## Bugs
 - [~] [BUG] Fix login form validation
 - [ ] [BUG] API error message formatting
@@ -806,8 +808,8 @@ CURRENT_NOTE_LINE="- [ ] [BUG] Fix login form validation"
 export HUMAN_MODE CURRENT_NOTE_LINE
 _hook_resolve_notes 1
 # After failure, the [~] note must be reset to [ ] in the actual file
-assert_contains "Note reset to [ ] after failure" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
-assert_contains "Other note unchanged after failure" "$(cat HUMAN_NOTES.md)" "- [ ] [BUG] API error message formatting"
+assert_contains "Note reset to [ ] after failure" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] Fix login form validation"
+assert_contains "Other note unchanged after failure" "$(cat .tekhton/HUMAN_NOTES.md)" "- [ ] [BUG] API error message formatting"
 
 # Clean up
 HUMAN_MODE=false

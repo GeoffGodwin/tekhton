@@ -137,14 +137,14 @@ export ANALYZE_CMD=""
 LOG_DIR="${TMPDIR}/.claude/logs"
 export MILESTONE_DIR=".claude/milestones"
 export MILESTONE_DAG_ENABLED=true
-export NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+export NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
 export PIPELINE_STATE_FILE="${TMPDIR}/.claude/PIPELINE_STATE.md"
 export MILESTONE_STATE_FILE="${TMPDIR}/.claude/MILESTONE_STATE.md"
 export DOCS_STRICT_MODE=false
 export PROJECT_RULES_FILE="CLAUDE.md"
-export REVIEWER_REPORT_FILE="REVIEWER_REPORT.md"
+export REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
 
-mkdir -p "${TMPDIR}/.claude/milestones" "${LOG_DIR}"
+mkdir -p "${TMPDIR}/.claude/milestones" "${LOG_DIR}" "${TMPDIR}/${TEKHTON_DIR}"
 
 # Test milestone: refactor with only structural criteria
 cat > "${TMPDIR}/.claude/milestones/m99-test-move-files.md" << 'EOF'
@@ -163,7 +163,7 @@ cat > "${TMPDIR}/.claude/milestones/MANIFEST.cfg" << 'EOF'
 m99|Test Move Files|pending||m99-test-move-files.md|
 EOF
 
-cat > "${TMPDIR}/NON_BLOCKING_LOG.md" << 'EOF'
+cat > "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" << 'EOF'
 # Non-Blocking Notes Log
 
 ## Open
@@ -204,7 +204,7 @@ else
     fail "Refactor lint warning should appear in output"
 fi
 
-if grep -q 'Lint:' "${TMPDIR}/NON_BLOCKING_LOG.md" 2>/dev/null; then
+if grep -q 'Lint:' "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" 2>/dev/null; then
     pass "Lint warnings logged to NON_BLOCKING_LOG"
 else
     fail "Lint warnings should be logged to NON_BLOCKING_LOG"

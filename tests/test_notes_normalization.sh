@@ -14,7 +14,9 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # --- Minimal pipeline globals ------------------------------------------------
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
-HUMAN_NOTES_FILE="HUMAN_NOTES.md"
+TEKHTON_DIR=".tekhton"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
+HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
 NOTES_FILTER=""
 LOG_DIR="$TMPDIR"
 TIMESTAMP="test"

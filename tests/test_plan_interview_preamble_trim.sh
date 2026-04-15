@@ -28,6 +28,9 @@ source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
 
+# Ensure TEKHTON_DIR exists for DESIGN_FILE writes
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
 # Mock _call_planning_batch to return DESIGN.md with preamble
 _call_planning_batch() {
     cat << 'DESIGNEND'
@@ -60,6 +63,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_1" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="web-app" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -67,7 +72,7 @@ exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     TEKHTON_TEST_MODE=1 \
     bash "$script_file" 2>/dev/null < /dev/null)
 
-design_md="${proj_1}/DESIGN.md"
+design_md="${proj_1}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_md" ]]; then
     first_line=$(head -1 "$design_md")
@@ -110,6 +115,9 @@ source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
 
+# Ensure TEKHTON_DIR exists for DESIGN_FILE writes
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
 # Return DESIGN.md that already starts with heading (no preamble)
 _call_planning_batch() {
     cat << 'DESIGNEND'
@@ -132,6 +140,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_2" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="api-service" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -139,7 +149,7 @@ exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     TEKHTON_TEST_MODE=1 \
     bash "$script_file" 2>/dev/null < /dev/null)
 
-design_md="${proj_2}/DESIGN.md"
+design_md="${proj_2}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_md" ]]; then
     first_line=$(head -1 "$design_md")
@@ -168,6 +178,9 @@ source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
 
+# Ensure TEKHTON_DIR exists for DESIGN_FILE writes
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
 # Return DESIGN.md with multi-line preamble
 _call_planning_batch() {
     cat << 'DESIGNEND'
@@ -195,6 +208,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_3" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="mobile-app" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -202,7 +217,7 @@ exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     TEKHTON_TEST_MODE=1 \
     bash "$script_file" 2>/dev/null < /dev/null)
 
-design_md="${proj_3}/DESIGN.md"
+design_md="${proj_3}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_md" ]]; then
     first_line=$(head -1 "$design_md")
@@ -239,6 +254,9 @@ source "${TEKHTON_HOME}/lib/plan_state.sh"
 source "${TEKHTON_HOME}/lib/plan.sh"
 source "${TEKHTON_HOME}/lib/plan_answers.sh"
 
+# Ensure TEKHTON_DIR exists for DESIGN_FILE writes
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+
 # Return DESIGN.md with various Claude preamble phrases
 _call_planning_batch() {
     cat << 'DESIGNEND'
@@ -263,6 +281,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_4" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="web-game" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -270,7 +290,7 @@ exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     TEKHTON_TEST_MODE=1 \
     bash "$script_file" 2>/dev/null < /dev/null)
 
-design_md="${proj_4}/DESIGN.md"
+design_md="${proj_4}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_md" ]]; then
     first_line=$(head -1 "$design_md")
@@ -302,7 +322,7 @@ source "${TEKHTON_HOME}/lib/plan_answers.sh"
 # Mock Claude writing via tool AND returning summary
 _call_planning_batch() {
     # Write substantive DESIGN.md to disk (tool-write)
-    local design_file="${PROJECT_DIR}/DESIGN.md"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     mkdir -p "$(dirname "$design_file")"
     {
         echo "# CLITool — Design Document"
@@ -329,6 +349,8 @@ INNERSCRIPT
 
 exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     PROJECT_DIR="$proj_5" \
+    TEKHTON_DIR=".tekhton" \
+    DESIGN_FILE=".tekhton/DESIGN.md" \
     PLAN_TEMPLATE_FILE="${TEKHTON_HOME}/tests/fixtures/plan_test_template.md" \
     PLAN_PROJECT_TYPE="cli-tool" \
     PLAN_INTERVIEW_MODEL="test-model" \
@@ -336,7 +358,7 @@ exit_code=$(TEKHTON_HOME="$TEKHTON_HOME" \
     TEKHTON_TEST_MODE=1 \
     bash "$script_file" 2>/dev/null < /dev/null)
 
-design_md="${proj_5}/DESIGN.md"
+design_md="${proj_5}/.tekhton/DESIGN.md"
 
 if [[ -f "$design_md" ]]; then
     first_line=$(head -1 "$design_md")

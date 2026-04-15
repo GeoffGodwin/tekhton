@@ -13,6 +13,9 @@ trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 # Initialize test directory as a git repository
 cd "$TMPDIR_TEST"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+export CODER_SUMMARY_FILE
 git init -q
 git config user.email "test@example.com"
 git config user.name "Test User"
@@ -42,7 +45,7 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 echo "=== Test 1: Placeholder + substantive work triggers reconstruction ==="
 
 # Create a large placeholder summary (20+ lines to trigger is_substantive_work)
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 ## Status: IN PROGRESS
 ## What Was Implemented
 (fill in as you go)
@@ -73,34 +76,34 @@ mkdir -p src
 echo "function test() { return 42; }" > src/test.ts
 
 # Simulate the detection logic from stages/coder.sh:768-773
-if [[ -f "CODER_SUMMARY.md" ]] && grep -q 'fill in as you go\|update as you go' "CODER_SUMMARY.md" 2>/dev/null; then
+if [[ -f "${CODER_SUMMARY_FILE}" ]] && grep -q 'fill in as you go\|update as you go' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
     if is_substantive_work; then
         _reconstruct_coder_summary
     fi
 fi
 
 # Verify reconstruction happened: file should no longer contain placeholder text
-if ! grep -q 'fill in as you go\|update as you go' CODER_SUMMARY.md 2>/dev/null; then
+if ! grep -q 'fill in as you go\|update as you go' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
     pass "1.1: Placeholder text removed after reconstruction"
 else
     fail "1.1: Placeholder text should be removed after reconstruction"
 fi
 
 # Verify reconstructed summary contains "reconstructed by the pipeline"
-if grep -q 'reconstructed by the pipeline' CODER_SUMMARY.md 2>/dev/null; then
+if grep -q 'reconstructed by the pipeline' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
     pass "1.2: Reconstructed summary contains reconstruction marker"
 else
     fail "1.2: Reconstructed summary should contain reconstruction marker"
 fi
 
 # Verify actual file changes are listed
-if grep -q 'src/test.ts' CODER_SUMMARY.md 2>/dev/null; then
+if grep -q 'src/test.ts' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
     pass "1.3: Modified files are listed in reconstructed summary"
 else
     fail "1.3: Modified files should be listed in reconstructed summary"
 fi
 
-rm -f CODER_SUMMARY.md src/test.ts
+rm -f "${CODER_SUMMARY_FILE}" src/test.ts
 
 # =============================================================================
 # Test 2: Placeholder with "update as you go" variant also triggers reconstruction
@@ -108,7 +111,7 @@ rm -f CODER_SUMMARY.md src/test.ts
 echo "=== Test 2: 'update as you go' variant triggers reconstruction ==="
 
 # Create a larger placeholder (20+ lines to trigger is_substantive_work)
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 ## Status: IN PROGRESS
 ## What Was Implemented
 (update as you go)
@@ -138,26 +141,26 @@ EOF
 echo "const x = 1;" > index.ts
 
 # Trigger detection
-if [[ -f "CODER_SUMMARY.md" ]] && grep -q 'fill in as you go\|update as you go' "CODER_SUMMARY.md" 2>/dev/null; then
+if [[ -f "${CODER_SUMMARY_FILE}" ]] && grep -q 'fill in as you go\|update as you go' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
     if is_substantive_work; then
         _reconstruct_coder_summary
     fi
 fi
 
-if ! grep -q 'fill in as you go\|update as you go' CODER_SUMMARY.md 2>/dev/null; then
+if ! grep -q 'fill in as you go\|update as you go' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
     pass "2.1: 'update as you go' variant triggers reconstruction"
 else
     fail "2.1: 'update as you go' variant should trigger reconstruction"
 fi
 
-rm -f CODER_SUMMARY.md index.ts
+rm -f "${CODER_SUMMARY_FILE}" index.ts
 
 # =============================================================================
 # Test 3: Properly filled summary is NOT reconstructed
 # =============================================================================
 echo "=== Test 3: Properly filled summary is not reconstructed ==="
 
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 ## Status: IN PROGRESS
 ## What Was Implemented
 - Added input validation
@@ -173,13 +176,13 @@ git add another.ts
 git commit -q -m "Add another"
 
 # Trigger detection logic
-original_content=$(cat CODER_SUMMARY.md)
-if [[ -f "CODER_SUMMARY.md" ]] && grep -q 'fill in as you go\|update as you go' "CODER_SUMMARY.md" 2>/dev/null; then
+original_content=$(cat "${CODER_SUMMARY_FILE}")
+if [[ -f "${CODER_SUMMARY_FILE}" ]] && grep -q 'fill in as you go\|update as you go' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
     if is_substantive_work; then
         _reconstruct_coder_summary
     fi
 fi
-new_content=$(cat CODER_SUMMARY.md)
+new_content=$(cat "${CODER_SUMMARY_FILE}")
 
 if [[ "$original_content" == "$new_content" ]]; then
     pass "3.1: Properly filled summary is not modified"
@@ -187,7 +190,7 @@ else
     fail "3.1: Properly filled summary should not be modified"
 fi
 
-rm -f CODER_SUMMARY.md another.ts
+rm -f "${CODER_SUMMARY_FILE}" another.ts
 
 # =============================================================================
 # Summary

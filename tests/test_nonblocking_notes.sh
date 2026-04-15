@@ -8,12 +8,14 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
-# Set config defaults
-DRIFT_LOG_FILE="DRIFT_LOG.md"
-ARCHITECTURE_LOG_FILE="ARCHITECTURE_LOG.md"
-HUMAN_ACTION_FILE="HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
+ARCHITECTURE_LOG_FILE="${TEKHTON_DIR}/ARCHITECTURE_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
 NON_BLOCKING_INJECTION_THRESHOLD=3
 DRIFT_OBSERVATION_THRESHOLD=8
 DRIFT_RUNS_SINCE_AUDIT_THRESHOLD=5
@@ -64,7 +66,7 @@ assert_eq "empty count" "0" "$COUNT"
 # Phase 3: append_nonblocking_notes from reviewer report
 # ============================================================
 
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 # Review Report
 
 ## Verdict
@@ -91,7 +93,7 @@ assert_file_contains "tagged with task" "$NB_FILE" "Test task"
 # ============================================================
 
 TASK="Second task"
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 # Review Report
 
 ## Verdict
@@ -122,7 +124,7 @@ assert_eq "4 lines of notes" "4" "$LINE_COUNT"
 # Phase 6: _resolve_addressed_nonblocking_notes marks files
 # ============================================================
 
-cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -143,7 +145,7 @@ assert_file_contains "baz resolved" "$NB_FILE" '\[x\].*baz.dart'
 # Phase 7: "None" non-blocking notes are skipped
 # ============================================================
 
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 # Review Report
 
 ## Verdict
@@ -164,7 +166,7 @@ assert_eq "None skipped" "$COUNT_BEFORE" "$COUNT_AFTER"
 # Phase 8: Missing reviewer report is safe
 # ============================================================
 
-rm -f "${PROJECT_DIR}/REVIEWER_REPORT.md"
+rm -f "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}"
 COUNT_BEFORE=$(count_open_nonblocking_notes)
 append_nonblocking_notes
 COUNT_AFTER=$(count_open_nonblocking_notes)

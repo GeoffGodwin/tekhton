@@ -33,7 +33,11 @@ _run_drain() {
     local proj_dir="$1"
     (
         cd "$proj_dir"
+        TEKHTON_DIR=".tekhton"
+        mkdir -p "${TEKHTON_DIR}"
         export PROJECT_DIR="$proj_dir"
+        HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
+        export HUMAN_NOTES_FILE
         log()     { :; }
         warn()    { :; }
         error()   { :; }
@@ -72,7 +76,7 @@ PROJ2="${TEST_TMPDIR}/proj_empty"
 mkdir -p "${PROJ2}/.claude/watchtower_inbox"
 _run_drain "$PROJ2"
 if [[ $? -eq 0 ]]; then
-    if [[ ! -f "${PROJ2}/HUMAN_NOTES.md" ]] || ! grep -q "^- \[ \]" "${PROJ2}/HUMAN_NOTES.md" 2>/dev/null; then
+    if [[ ! -f "${PROJ2}/.tekhton/HUMAN_NOTES.md" ]] || ! grep -q "^- \[ \]" "${PROJ2}/.tekhton/HUMAN_NOTES.md" 2>/dev/null; then
         pass "empty inbox: no notes created, returns 0"
     else
         fail "empty inbox: unexpected entries in HUMAN_NOTES.md"
@@ -90,7 +94,7 @@ cat > "${PROJ3}/.claude/watchtower_inbox/note_mid_run_BUG.md" << 'EOF'
 EOF
 _run_drain "$PROJ3"
 if [[ $? -eq 0 ]]; then
-    if grep -q "Mid-run bug discovered by watchtower" "${PROJ3}/HUMAN_NOTES.md" 2>/dev/null; then
+    if grep -q "Mid-run bug discovered by watchtower" "${PROJ3}/.tekhton/HUMAN_NOTES.md" 2>/dev/null; then
         pass "note file: title appended to HUMAN_NOTES.md"
     else
         fail "note file: title not found in HUMAN_NOTES.md"
@@ -152,7 +156,7 @@ if [[ ! -f "${PROJ6}/.claude/watchtower_inbox/processed/note_bad.md" ]]; then
 else
     fail "malformed note: wrongly moved to processed/"
 fi
-if [[ ! -f "${PROJ6}/HUMAN_NOTES.md" ]] || ! grep -q "^- \[ \]" "${PROJ6}/HUMAN_NOTES.md" 2>/dev/null; then
+if [[ ! -f "${PROJ6}/.tekhton/HUMAN_NOTES.md" ]] || ! grep -q "^- \[ \]" "${PROJ6}/.tekhton/HUMAN_NOTES.md" 2>/dev/null; then
     pass "malformed note: no entry in HUMAN_NOTES.md"
 else
     fail "malformed note: unexpected entry in HUMAN_NOTES.md"
@@ -170,7 +174,7 @@ cat > "${PROJ7}/.claude/watchtower_inbox/note_b_FEAT.md" << 'EOF'
 - [ ] [FEAT] Second mid-run note
 EOF
 _run_drain "$PROJ7"
-note_count=$(grep -c "^- \[ \]" "${PROJ7}/HUMAN_NOTES.md" 2>/dev/null || echo 0)
+note_count=$(grep -c "^- \[ \]" "${PROJ7}/.tekhton/HUMAN_NOTES.md" 2>/dev/null || echo 0)
 if [[ "$note_count" -ge 2 ]]; then
     pass "multiple notes: both appended to HUMAN_NOTES.md (${note_count} entries)"
 else
@@ -191,7 +195,7 @@ cat > "${PROJ8}/.claude/watchtower_inbox/note_feat.md" << 'EOF'
 - [ ] [FEAT] Enable dark mode
 EOF
 _run_drain "$PROJ8"
-if grep -q "\[FEAT\].*Enable dark mode" "${PROJ8}/HUMAN_NOTES.md" 2>/dev/null; then
+if grep -q "\[FEAT\].*Enable dark mode" "${PROJ8}/.tekhton/HUMAN_NOTES.md" 2>/dev/null; then
     pass "FEAT note: tag preserved in HUMAN_NOTES.md"
 else
     fail "FEAT note: tag or text missing from HUMAN_NOTES.md"

@@ -16,6 +16,11 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 FAIL=0
 
+# Define TEKHTON_DIR and HUMAN_NOTES_FILE before sourcing libraries that use them
+TEKHTON_DIR=".tekhton"
+HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+
 # Source just the libraries we need for testing
 source "${TEKHTON_HOME}/lib/common.sh" 2>/dev/null || true
 source "${TEKHTON_HOME}/lib/notes_core.sh"
@@ -37,7 +42,8 @@ assert_eq() {
 # Create a realistic HUMAN_NOTES.md in a temp dir
 setup_notes() {
     cd "$TMPDIR"
-    cat > HUMAN_NOTES.md << 'EOF'
+    mkdir -p "${TEKHTON_DIR:-.tekhton}"
+    cat > "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md" << 'EOF'
 # Human Notes — TestProject
 
 ## Bugs
@@ -119,16 +125,16 @@ note="- [ ] [BUG] Fix login timeout on slow networks"
 claim_single_note "$note"
 
 # Verify first bug is claimed
-claimed_count=$(grep -c '^\- \[~\]' HUMAN_NOTES.md)
+claimed_count=$(grep -c '^\- \[~\]' "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md")
 assert_eq "6.1 claim_single_note marks exactly one note" "1" "$claimed_count"
 
 # Verify it's the right note
-claimed_line=$(grep '^\- \[~\]' HUMAN_NOTES.md)
+claimed_line=$(grep '^\- \[~\]' "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md")
 assert_eq "6.2 claim_single_note marks the correct note" \
     "- [~] [BUG] Fix login timeout on slow networks" "$claimed_line"
 
 # Verify second bug is still unclaimed
-second_bug=$(grep 'Fix crash on empty input' HUMAN_NOTES.md)
+second_bug=$(grep 'Fix crash on empty input' "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md")
 assert_eq "6.3 second bug still unchecked" \
     "- [ ] [BUG] Fix crash on empty input" "$second_bug"
 
@@ -143,7 +149,7 @@ claim_single_note "- [ ] [BUG] Fix login timeout on slow networks"
 
 resolve_single_note "- [ ] [BUG] Fix login timeout on slow networks" 0
 
-resolved_line=$(grep 'Fix login timeout' HUMAN_NOTES.md)
+resolved_line=$(grep 'Fix login timeout' "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md")
 assert_eq "7.1 resolve_single_note success marks [x]" \
     "- [x] [BUG] Fix login timeout on slow networks" "$resolved_line"
 
@@ -158,7 +164,7 @@ claim_single_note "- [ ] [BUG] Fix login timeout on slow networks"
 
 resolve_single_note "- [ ] [BUG] Fix login timeout on slow networks" 1
 
-reset_line=$(grep 'Fix login timeout' HUMAN_NOTES.md)
+reset_line=$(grep 'Fix login timeout' "${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md")
 assert_eq "8.1 resolve_single_note failure resets to [ ]" \
     "- [ ] [BUG] Fix login timeout on slow networks" "$reset_line"
 
@@ -184,7 +190,8 @@ assert_eq "9.4 count_unchecked_notes POLISH" "1" "$polish_count"
 # =============================================================================
 
 cd "$TMPDIR"
-cat > HUMAN_NOTES.md << 'EOF'
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
+cat > "${HUMAN_NOTES_FILE}" << 'EOF'
 # Human Notes — TestProject
 
 ## Bugs
@@ -245,7 +252,8 @@ assert_eq "12.1 --human + --milestone validation" \
 # =============================================================================
 
 cd "$TMPDIR"
-rm -f HUMAN_NOTES.md
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
+rm -f "${HUMAN_NOTES_FILE}"
 rc=0
 claim_single_note "- [ ] nonexistent" || rc=$?
 assert_eq "13.1 claim_single_note returns 1 when no file" "1" "$rc"
@@ -304,7 +312,7 @@ note5=$(pick_next_note "$HUMAN_NOTES_TAG")
 assert_eq "15.5 no more notes after all processed" "" "$note5"
 
 # Verify all 4 original unchecked notes are now [x]
-done_count=$(grep -c '^\- \[x\]' HUMAN_NOTES.md)
+done_count=$(grep -c '^\- \[x\]' "${HUMAN_NOTES_FILE}")
 assert_eq "15.6 all 4 notes resolved + 1 pre-existing = 5 [x]" "5" "$done_count"
 
 # =============================================================================

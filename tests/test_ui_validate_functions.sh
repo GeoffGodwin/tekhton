@@ -14,6 +14,10 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 export PROJECT_DIR TEKHTON_HOME
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR}"
+
+CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+export CODER_SUMMARY_FILE
 
 source "${TEKHTON_HOME}/lib/common.sh" 2>/dev/null
 
@@ -131,7 +135,7 @@ fi
 cd "$TMPDIR"
 
 # Create a CODER_SUMMARY.md with HTML and non-HTML files
-cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${TMPDIR}/${CODER_SUMMARY_FILE:-${TEKHTON_DIR:-.tekhton}/CODER_SUMMARY.md}" << 'EOF'
 ## Status
 COMPLETE
 
@@ -165,7 +169,7 @@ else
 fi
 
 # Without CODER_SUMMARY.md, output should be empty (non-git dir produces no git diff)
-rm -f "${TMPDIR}/CODER_SUMMARY.md"
+rm -f "${TMPDIR}/${CODER_SUMMARY_FILE}"
 result=$(cd "$TMPDIR" && _detect_ui_targets 2>/dev/null || true)
 if [[ -z "$result" ]]; then
     pass "_detect_ui_targets: empty output when no CODER_SUMMARY.md and no git diff"
@@ -174,7 +178,7 @@ else
 fi
 
 # Only non-UI files in CODER_SUMMARY.md should produce no targets
-cat > "${TMPDIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${TMPDIR}/${CODER_SUMMARY_FILE:-${TEKHTON_DIR:-.tekhton}/CODER_SUMMARY.md}" << 'EOF'
 ## Files Modified
 - `lib/gates.sh` — gate logic
 - `lib/config.sh` — config loading

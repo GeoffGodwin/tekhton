@@ -45,6 +45,8 @@ TOTAL_TURNS=0
 TOTAL_TIME=0
 STAGE_SUMMARY=""
 
+CODER_SUMMARY_FILE="${TEKHTON_DIR:-.tekhton}/CODER_SUMMARY.md"
+
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"
@@ -53,6 +55,7 @@ source "${TEKHTON_HOME}/lib/metrics_calibration.sh"
 source "${TEKHTON_HOME}/lib/turns.sh"
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 git init -q .
 echo "init" > init.txt && git add -A && git commit -q -m "init"
 

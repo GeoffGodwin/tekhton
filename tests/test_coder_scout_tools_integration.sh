@@ -16,6 +16,7 @@ TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
 cd "$TMPDIR"
+mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 # --- Set up a minimal git repo so git commands inside coder.sh don't fail ----
 git init -q .

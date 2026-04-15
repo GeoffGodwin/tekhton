@@ -24,6 +24,9 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 # Set up a git repo in TMPDIR (generate_commit_message calls git diff --stat)
 cd "$TMPDIR"
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+CODER_SUMMARY_FILE="${CODER_SUMMARY_FILE:-${TEKHTON_DIR}/CODER_SUMMARY.md}"
+mkdir -p "${TEKHTON_DIR}"
 git init -q
 git config user.email "test@tekhton.test"
 git config user.name "Tekhton Test"
@@ -61,7 +64,7 @@ assert_not_contains() {
 
 write_coder_summary() {
     local root_cause="$1"
-    cat > CODER_SUMMARY.md << EOF
+    cat > "${CODER_SUMMARY_FILE}" << EOF
 ## What Was Implemented
 - Fixed the null pointer dereference in the login handler
 
@@ -145,7 +148,7 @@ echo "✓ Test 6: root cause = '(fill in...)' → not included"
 # Test 7: no CODER_SUMMARY.md → no "Root cause:" section
 # =============================================================================
 
-rm -f CODER_SUMMARY.md
+rm -f "${CODER_SUMMARY_FILE}"
 MSG=$(generate_commit_message "fix: missing summary file")
 
 assert_not_contains "no-summary: Root cause NOT present" "Root cause:" "$MSG"

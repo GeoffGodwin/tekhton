@@ -41,7 +41,7 @@ _crawl_sample_files() {
         "go.mod" "Gemfile" "pubspec.yaml" "composer.json"
     # Priority 4: Architecture docs
     _add_candidate candidates "$file_list" "ARCHITECTURE.md" "CONTRIBUTING.md" \
-        "${DESIGN_FILE}" "docs/ARCHITECTURE.md" "docs/design.md"
+        "${DESIGN_FILE:-}" "docs/ARCHITECTURE.md" "docs/design.md"
     # Priority 5: Representative test (first match)
     local test_file
     test_file=$(echo "$file_list" | grep -E '\.(test|spec)\.[^.]+$|_test\.[^.]+$' | head -1 || true)
@@ -175,7 +175,7 @@ _emit_sampled_files() {
     _add_candidate candidates "$file_list" "package.json" "Cargo.toml" "pyproject.toml" \
         "go.mod" "Gemfile" "pubspec.yaml" "composer.json"
     _add_candidate candidates "$file_list" "ARCHITECTURE.md" "CONTRIBUTING.md" \
-        "${DESIGN_FILE}" "docs/ARCHITECTURE.md" "docs/design.md"
+        "${DESIGN_FILE:-}" "docs/ARCHITECTURE.md" "docs/design.md"
     local test_file
     test_file=$(echo "$file_list" | grep -E '\.(test|spec)\.[^.]+$|_test\.[^.]+$' | head -1 || true)
     [[ -n "$test_file" ]] && candidates+=("$test_file")

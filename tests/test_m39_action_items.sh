@@ -150,6 +150,11 @@ _json_escape() {
     printf '%s' "$s"
 }
 
+HUMAN_NOTES_FILE="${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR:-.tekhton}/NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR:-.tekhton}/DRIFT_LOG.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR:-.tekhton}/HUMAN_ACTION_REQUIRED.md"
+
 # Source parsers (provides _write_js_file, _to_js_timestamp)
 # shellcheck source=../lib/dashboard_parsers.sh
 source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"

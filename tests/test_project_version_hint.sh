@@ -32,8 +32,8 @@ source "${TEKHTON_HOME}/lib/project_version_bump.sh"
 echo "=== get_version_bump_hint: Breaking Changes ==="
 
 PROJ="${TEST_TMPDIR}/breaking"
-mkdir -p "$PROJ"
-cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
+mkdir -p "$PROJ/${TEKHTON_DIR}"
+cat > "$PROJ/${TEKHTON_DIR}/CODER_SUMMARY.md" <<'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -44,7 +44,7 @@ cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
 - src/api.ts
 EOF
 
-result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="CODER_SUMMARY.md" get_version_bump_hint)
+result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md" get_version_bump_hint)
 if [[ "$result" == "major" ]]; then pass "Breaking Changes → major"; else fail "Breaking Changes: got $result"; fi
 
 # =============================================================================
@@ -53,8 +53,8 @@ if [[ "$result" == "major" ]]; then pass "Breaking Changes → major"; else fail
 echo "=== get_version_bump_hint: New Public Surface ==="
 
 PROJ="${TEST_TMPDIR}/minor"
-mkdir -p "$PROJ"
-cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
+mkdir -p "$PROJ/${TEKHTON_DIR}"
+cat > "$PROJ/${TEKHTON_DIR}/CODER_SUMMARY.md" <<'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -66,7 +66,7 @@ cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
 - lib/project_version.sh (NEW)
 EOF
 
-result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="CODER_SUMMARY.md" get_version_bump_hint)
+result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md" get_version_bump_hint)
 if [[ "$result" == "minor" ]]; then pass "New Public Surface → minor"; else fail "New Public Surface: got $result"; fi
 
 # =============================================================================
@@ -75,8 +75,8 @@ if [[ "$result" == "minor" ]]; then pass "New Public Surface → minor"; else fa
 echo "=== get_version_bump_hint: default patch ==="
 
 PROJ="${TEST_TMPDIR}/patch"
-mkdir -p "$PROJ"
-cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
+mkdir -p "$PROJ/${TEKHTON_DIR}"
+cat > "$PROJ/${TEKHTON_DIR}/CODER_SUMMARY.md" <<'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -85,7 +85,7 @@ cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
 - lib/parser.sh
 EOF
 
-result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="CODER_SUMMARY.md" get_version_bump_hint)
+result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md" get_version_bump_hint)
 if [[ "$result" == "patch" ]]; then pass "no match → patch"; else fail "default: got $result"; fi
 
 # =============================================================================
@@ -94,15 +94,15 @@ if [[ "$result" == "patch" ]]; then pass "no match → patch"; else fail "defaul
 echo "=== get_version_bump_hint: custom default ==="
 
 PROJ="${TEST_TMPDIR}/custom"
-mkdir -p "$PROJ"
-cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
+mkdir -p "$PROJ/${TEKHTON_DIR}"
+cat > "$PROJ/${TEKHTON_DIR}/CODER_SUMMARY.md" <<'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
 - Minor cleanup
 EOF
 
-result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="CODER_SUMMARY.md" \
+result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md" \
     PROJECT_VERSION_DEFAULT_BUMP="minor" get_version_bump_hint)
 if [[ "$result" == "minor" ]]; then pass "custom default → minor"; else fail "custom default: got $result"; fi
 
@@ -112,9 +112,9 @@ if [[ "$result" == "minor" ]]; then pass "custom default → minor"; else fail "
 echo "=== get_version_bump_hint: missing summary ==="
 
 PROJ="${TEST_TMPDIR}/missing"
-mkdir -p "$PROJ"
+mkdir -p "$PROJ/${TEKHTON_DIR}"
 
-result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="CODER_SUMMARY.md" get_version_bump_hint)
+result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md" get_version_bump_hint)
 if [[ "$result" == "patch" ]]; then pass "missing summary → patch"; else fail "missing summary: got $result"; fi
 
 # =============================================================================
@@ -123,8 +123,8 @@ if [[ "$result" == "patch" ]]; then pass "missing summary → patch"; else fail 
 echo "=== get_version_bump_hint: priority ==="
 
 PROJ="${TEST_TMPDIR}/priority"
-mkdir -p "$PROJ"
-cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
+mkdir -p "$PROJ/${TEKHTON_DIR}"
+cat > "$PROJ/${TEKHTON_DIR}/CODER_SUMMARY.md" <<'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## Breaking Changes
@@ -133,7 +133,7 @@ cat > "$PROJ/CODER_SUMMARY.md" <<'EOF'
 - Added configure()
 EOF
 
-result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="CODER_SUMMARY.md" get_version_bump_hint)
+result=$(PROJECT_DIR="$PROJ" CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md" get_version_bump_hint)
 if [[ "$result" == "major" ]]; then pass "breaking takes priority over minor"; else fail "priority: got $result"; fi
 
 # =============================================================================
