@@ -20,7 +20,7 @@
 | `--auto-advance` | Chain milestones autonomously (implies `--milestone`) |
 | `--add-milestone "desc"` | Create a scoped milestone via the intake agent (no run) |
 | `--human [TAG]` | Pick next note from HUMAN_NOTES.md as task (optional: BUG, FEAT, POLISH) |
-| `--with-notes` | Force human notes injection regardless of task text |
+| `--with-notes` | *(deprecated)* Force human notes injection regardless of task text |
 | `--notes-filter TAG` | Inject only notes matching TAG (BUG, FEAT, POLISH) |
 | `--triage [TAG]` | Triage all unchecked notes (size estimate) without running |
 | `--dry-run` | Preview mode — run scout + intake only, show what would happen |
@@ -34,16 +34,17 @@
 | `--usage-threshold N` | Pause if session usage exceeds N% |
 | `--rollback` | Revert the last pipeline run (clean git operations; `--check` to preview) |
 | `--status` | Print saved pipeline state (includes rollback availability) |
+| `--progress` | Show milestone progress at a glance (`--all` to include done, `--deps` for dependency edges) |
 | `--metrics` | Print run metrics dashboard and exit |
 | `--diagnose` | Analyze last failure and suggest recovery steps |
 | `--report` | Print summary of the last pipeline run |
 | `--health` | Run standalone project health assessment |
 | `--audit-tests` | Audit ALL test files for integrity issues |
-| `--fix-nonblockers` | Address all open non-blocking notes |
-| `--fix-drift` | Force architect audit to resolve drift observations |
+| `--fix nb` | Address all open non-blocking notes in loop mode |
+| `--fix drift` | Force architect audit to resolve drift observations |
 | `--rescan` | Update PROJECT_INDEX.md incrementally (add `--full` for full re-crawl) |
-| `--migrate` | Upgrade project config to current Tekhton version (`--check`, `--status`, `--rollback`) |
-| `--migrate-dag` | Convert inline milestones to DAG file format |
+| `--migrate` | Upgrade project config to current Tekhton version (`--check`, `--status`, `--rollback`, `--dag`) |
+| `--migrate --dag` | Convert inline milestones to DAG file format |
 | `--setup-indexer` | Install Python virtualenv for tree-sitter indexer (`--with-lsp` for Serena) |
 | `--setup-completion` | Install shell completions for your shell |
 | `--update` | Check for and install updates (`--check` to report only) |

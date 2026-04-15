@@ -9,7 +9,7 @@ set -euo pipefail
 # Expects: MILESTONE_DAG_ENABLED, MILESTONE_DIR, MILESTONE_MANIFEST from config.
 #
 # Provides:
-#   _render_milestone_progress  — progress bar + milestone list for --milestones
+#   _render_milestone_progress  — progress bar + milestone list for --progress
 #   _compute_next_action        — single guidance line for post-run output
 #   _diagnose_recovery_command  — concrete CLI recovery command from state
 # =============================================================================

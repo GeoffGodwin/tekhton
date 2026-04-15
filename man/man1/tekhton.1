@@ -54,6 +54,20 @@ to exist.
 .B \-\-status
 Print the saved pipeline state and exit without running.
 Shows the stage, task, and resume command from the last interrupted run.
+Also shows milestone progress summary when a milestone manifest exists.
+.TP
+.B \-\-progress
+Show milestone progress at a glance and exit.
+Displays a progress bar, done/ready/blocked status for each milestone, and the recommended next command.
+Accepts sub-flags:
+.RS
+.TP
+.B \-\-all
+Include completed milestones in the output.
+.TP
+.B \-\-deps
+Show dependency edges for each milestone.
+.RE
 .TP
 .B \-\-version
 Print the version string and exit.
@@ -103,10 +117,41 @@ Has no effect if the file already exists.
 .SS "Audit Flags"
 .TP
 .B \-\-skip\-audit
-Skip the architect audit stage even if the configured observation threshold is reached.
+Skip the architect audit stage (even if drift thresholds are exceeded).
 .TP
 .B \-\-force\-audit
-Force an architect audit regardless of whether the threshold has been reached.
+Force the architect audit to run (even if thresholds aren't met).
+.SS "Fix Flags"
+.TP
+\fB\-\-fix\fR \fBnb\fR
+Address all open non-blocking notes accumulated in
+.I NON_BLOCKING_LOG.md
+in a loop using the jr-coder model.
+Runs until all items are resolved or the configured pass limit is reached.
+.TP
+\fB\-\-fix\fR \fBdrift\fR
+Force the architect audit to run in remediation mode and resolve all open drift observations.
+.SS "Migrate Flags"
+.TP
+.B \-\-migrate
+Upgrade the project config to the current Tekhton version format.
+In interactive mode prompts for confirmation.
+Sub-options:
+.RS
+.TP
+.B \-\-check
+Show what migrations would run without applying them.
+.TP
+.B \-\-status
+Show config version vs running Tekhton version.
+.TP
+.B \-\-rollback
+Restore from the pre-migration backup.
+.TP
+.B \-\-dag
+Convert inline milestones from CLAUDE.md to the DAG file format
+(individual files in .claude/milestones/ + MANIFEST.cfg).
+.RE
 .SS "Advanced Flags"
 .TP
 .B \-\-seed\-contracts
@@ -242,6 +287,23 @@ Inject only bug notes this run:
 .RS 4
 .nf
 tekhton \-\-notes\-filter BUG "Fix reported bugs"
+.fi
+.RE
+.PP
+Show milestone progress:
+.PP
+.RS 4
+.nf
+tekhton \-\-progress
+tekhton \-\-progress \-\-all
+.fi
+.RE
+.PP
+Address accumulated non-blocking notes:
+.PP
+.RS 4
+.nf
+tekhton \-\-fix nb
 .fi
 .RE
 .PP

@@ -39,12 +39,12 @@
 #   --force-audit         Force architect audit regardless of threshold
 #   --draft-milestones [desc] Interactive milestone authoring: clarify, analyze, split, generate
 #   --add-milestone "desc"   (deprecated — alias for --draft-milestones)
-#   --migrate-dag         Convert inline CLAUDE.md milestones to DAG file format
-#   --milestones          Show milestone progress at a glance
-#   --milestones --all    Include completed milestones
-#   --milestones --deps   Show dependency edges
+#   --migrate --dag       Convert inline CLAUDE.md milestones to DAG file format
+#   --progress            Show milestone progress at a glance
+#   --progress --all      Include completed milestones
+#   --progress --deps     Show dependency edges
 #   --diagnose            Diagnose last failure and print recovery suggestions
-#   --report, report      Print one-screen summary of last pipeline run
+#   --report              Print one-screen summary of last pipeline run
 #   --health              Run standalone project health assessment and exit
 #   --setup-indexer        Set up Python virtualenv for tree-sitter indexer
 #   --with-lsp            Also install Serena LSP server (use with --setup-indexer)
@@ -667,6 +667,39 @@ if [ "${1:-}" = "--migrate" ]; then
     fi
 
     shift
+    # --migrate --dag: convert inline CLAUDE.md milestones to DAG format
+    if [[ "${1:-}" == "--dag" ]]; then
+        if ! [ -f "CLAUDE.md" ]; then
+            error "CLAUDE.md not found in the current directory."
+            _TEKHTON_CLEAN_EXIT=true
+            exit 1
+        fi
+        if has_milestone_manifest; then
+            warn "Milestone manifest already exists at $(_dag_manifest_path)"
+            warn "Remove it first if you want to re-migrate."
+            _TEKHTON_CLEAN_EXIT=true
+            exit 0
+        fi
+        if ! parse_milestones "CLAUDE.md" >/dev/null 2>&1; then
+            error "No inline milestones found in CLAUDE.md."
+            _TEKHTON_CLEAN_EXIT=true
+            exit 1
+        fi
+        log "Migrating inline milestones to DAG file format..."
+        _dag_mdir="$(_dag_milestone_dir)"
+        if migrate_inline_milestones "CLAUDE.md" "$_dag_mdir"; then
+            _insert_milestone_pointer "CLAUDE.md" "$_dag_mdir"
+            success "Migration complete. Milestones written to ${_dag_mdir}/"
+            success "Manifest: $(_dag_manifest_path)"
+        else
+            error "Migration failed."
+            _TEKHTON_CLEAN_EXIT=true
+            exit 1
+        fi
+        _TEKHTON_CLEAN_EXIT=true
+        exit 0
+    fi
+
     run_migrate_command "$@"
     _TEKHTON_CLEAN_EXIT=true
     exit 0
@@ -726,6 +759,7 @@ fi
 
 if [ "${1:-}" = "--report" ] || [ "${1:-}" = "report" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
+    [[ "${1:-}" = "report" ]] && warn "'report' as a bare word is deprecated. Use: tekhton --report"
     source "${TEKHTON_HOME}/lib/report.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
@@ -955,7 +989,7 @@ usage() {
         echo "  --complete                Loop mode: repeat pipeline until done or bounds hit"
         echo "  --start-at STAGE          Resume from: intake, coder, security, review, tester, test"
         echo "  --human [TAG]             Pick next unchecked note as task (BUG, FEAT, POLISH)"
-        echo "  --with-notes              Force human notes injection regardless of task text"
+        echo "  --with-notes              (deprecated — use --human or run with a task)"
         echo "  --notes-filter TAG        Inject only [TAG] notes (BUG, FEAT, POLISH)"
         echo "  --draft-milestones [desc] Interactive milestone authoring: clarify, analyze, split, generate"
         echo "  --add-milestone \"desc\"    (deprecated — alias for --draft-milestones)"
@@ -975,12 +1009,12 @@ usage() {
         echo ""
         echo "Inspection:"
         echo "  --status                  Print saved pipeline state (includes rollback availability)"
-        echo "  --milestones              Show milestone progress at a glance"
-        echo "  --milestones --all        Include completed milestones"
-        echo "  --milestones --deps       Show dependency edges"
+        echo "  --progress                Show milestone progress at a glance"
+        echo "  --progress --all          Include completed milestones"
+        echo "  --progress --deps         Show dependency edges"
         echo "  --metrics                 Print run metrics dashboard"
         echo "  --diagnose                Diagnose last failure with recovery suggestions"
-        echo "  --report, report          Print summary of last pipeline run"
+        echo "  --report                  Print summary of last pipeline run"
         echo "  --health                  Run standalone project health assessment"
         echo "  --validate                Check config health (placeholders, missing files, models)"
         echo "  --audit-tests             Audit ALL test files for integrity issues"
@@ -999,10 +1033,10 @@ usage() {
         echo "  --migrate --check         Show what migrations would run without applying"
         echo "  --migrate --status        Show config version vs running version"
         echo "  --migrate --rollback      Restore from pre-migration backup"
-        echo "  --migrate-dag             Convert inline milestones to DAG file format"
+        echo "  --migrate --dag           Convert inline milestones to DAG file format"
         echo "  --update [--check]        Check for and install updates (--check: report only)"
-        echo "  --fix-nonblockers         Address all open non-blocking notes (loop mode)"
-        echo "  --fix-drift               Force architect audit to resolve drift observations"
+        echo "  --fix nb                  Address all open non-blocking notes (loop mode)"
+        echo "  --fix drift               Force architect audit to resolve drift observations"
         echo ""
         echo "Setup:"
         echo "  --init-notes              Create blank ${HUMAN_NOTES_FILE} template"
@@ -1039,7 +1073,7 @@ usage() {
         echo ""
         echo "Inspection:"
         echo "  --status            Show pipeline state + rollback availability"
-        echo "  --milestones        Show milestone progress at a glance"
+        echo "  --progress          Show milestone progress at a glance"
         echo "  --metrics           Show run metrics dashboard"
         echo "  --diagnose          Diagnose last failure with recovery suggestions"
         echo "  --report            Summarize last run's results"
@@ -1159,22 +1193,27 @@ fi
 # --- Argument parsing --------------------------------------------------------
 
 START_AT="coder"  # default
-MILESTONES_CMD=false
-MILESTONES_ALL=false
-MILESTONES_DEPS=false
+PROGRESS_CMD=false
+PROGRESS_ALL=false
+PROGRESS_DEPS=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --progress)
+            PROGRESS_CMD=true
+            shift
+            ;;
         --milestones)
-            MILESTONES_CMD=true
+            warn "--milestones is deprecated. Use: tekhton --progress"
+            PROGRESS_CMD=true
             shift
             ;;
         --all)
-            MILESTONES_ALL=true
+            PROGRESS_ALL=true
             shift
             ;;
         --deps)
-            MILESTONES_DEPS=true
+            PROGRESS_DEPS=true
             shift
             ;;
         --status)
@@ -1341,7 +1380,9 @@ EOF
                 usage 0
             fi
             ;;
-        --with-notes) WITH_NOTES=true; shift ;;
+        --with-notes)
+            warn "--with-notes is deprecated and will be removed in a future release."
+            WITH_NOTES=true; shift ;;
         --human)
             HUMAN_MODE=true
             shift
@@ -1364,8 +1405,20 @@ EOF
         --skip-security) SKIP_SECURITY=true; shift ;;
         --skip-docs) SKIP_DOCS=true; shift ;;
         --force-audit) FORCE_AUDIT=true; shift ;;
-        --fix-nonblockers|--fix-nb) FIX_NONBLOCKERS_MODE=true; shift ;;
-        --fix-drift) FIX_DRIFT_MODE=true; shift ;;
+        --fix)
+            shift
+            case "${1:-}" in
+                nb|nonblockers) FIX_NONBLOCKERS_MODE=true; shift ;;
+                drift) FIX_DRIFT_MODE=true; shift ;;
+                *) error "Unknown --fix subcommand: '${1:-}'. Valid values: nb, drift"; usage 1 ;;
+            esac
+            ;;
+        --fix-nonblockers|--fix-nb)
+            warn "--fix-nonblockers is deprecated. Use: tekhton --fix nb"
+            FIX_NONBLOCKERS_MODE=true; shift ;;
+        --fix-drift)
+            warn "--fix-drift is deprecated. Use: tekhton --fix drift"
+            FIX_DRIFT_MODE=true; shift ;;
         --triage)
             shift
             TRIAGE_FILTER=""
@@ -1380,7 +1433,9 @@ EOF
         --dry-run) DRY_RUN_MODE=true; shift ;;
         --continue-preview) CONTINUE_PREVIEW=true; shift ;;
         --validate) VALIDATE_CONFIG_CMD=true; shift ;;
-        --migrate-dag) MIGRATE_DAG=true; shift ;;
+        --migrate-dag)
+            warn "--migrate-dag is deprecated. Use: tekhton --migrate --dag"
+            MIGRATE_DAG=true; shift ;;
         --add-milestone)
             warn "--add-milestone is deprecated. Use --draft-milestones for the new interactive flow."
             shift
@@ -1398,11 +1453,11 @@ EOF
     esac
 done
 
-# --- Early --milestones: show milestone progress and exit ----------------------
-if [ "$MILESTONES_CMD" = true ]; then
+# --- Early --progress: show milestone progress and exit -----------------------
+if [ "$PROGRESS_CMD" = true ]; then
     _ms_args=()
-    [[ "$MILESTONES_ALL" == "true" ]] && _ms_args+=(--all)
-    [[ "$MILESTONES_DEPS" == "true" ]] && _ms_args+=(--deps)
+    [[ "$PROGRESS_ALL" == "true" ]] && _ms_args+=(--all)
+    [[ "$PROGRESS_DEPS" == "true" ]] && _ms_args+=(--deps)
     _render_milestone_progress "${_ms_args[@]+"${_ms_args[@]}"}"
     _TEKHTON_CLEAN_EXIT=true
     exit 0

@@ -9,12 +9,12 @@ _tekhton() {
 
     # All flags
     opts="--init --reinit --plan --replan --plan-from-index --rescan
-          --status --diagnose --report --metrics --version --docs --help
-          --milestone --auto-advance --add-milestone --complete --dry-run --continue-preview
+          --status --progress --diagnose --report --metrics --version --docs --help
+          --milestone --auto-advance --draft-milestones --complete --dry-run --continue-preview
           --start-at --skip-security --no-commit --skip-audit --force-audit
-          --notes-filter --init-notes --seed-contracts --human --with-notes
-          --usage-threshold --fix-nonblockers --fix-nb --fix-drift
-          --migrate-dag --setup-indexer --with-lsp --health
+          --notes-filter --init-notes --seed-contracts --human
+          --usage-threshold --fix
+          --migrate --setup-indexer --with-lsp --health
           --setup-completion --update --uninstall"
 
     case "$prev" in
@@ -28,6 +28,14 @@ _tekhton() {
             ;;
         --human)
             COMPREPLY=( $(compgen -W "BUG FEAT POLISH" -- "$cur") )
+            return 0
+            ;;
+        --fix)
+            COMPREPLY=( $(compgen -W "nb drift" -- "$cur") )
+            return 0
+            ;;
+        --migrate)
+            COMPREPLY=( $(compgen -W "--check --status --rollback --dag" -- "$cur") )
             return 0
             ;;
         --rescan)

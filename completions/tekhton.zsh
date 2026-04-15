@@ -30,6 +30,7 @@ _tekhton() {
         '--plan-from-index[Synthesize docs from PROJECT_INDEX.md]' \
         '--rescan[Incrementally update PROJECT_INDEX.md]' \
         '--status[Print saved pipeline state]' \
+        '--progress[Show milestone progress at a glance]' \
         '--diagnose[Diagnose last failure with recovery suggestions]' \
         '--report[Print summary of last pipeline run]' \
         '--metrics[Print run metrics dashboard]' \
@@ -38,7 +39,7 @@ _tekhton() {
         '(--help -h)'{--help,-h}'[Show help]' \
         '--milestone[Milestone mode: higher turn limits]' \
         '--auto-advance[Auto-advance through milestones]' \
-        '--add-milestone[Create a scoped milestone]:description:' \
+        '--draft-milestones[Interactive milestone authoring flow]:description:' \
         '--complete[Loop mode: repeat until done or bounds hit]' \
         '--start-at[Resume from specific stage]:stage:(($start_at_values))' \
         '--skip-security[Bypass security stage for this run]' \
@@ -49,12 +50,9 @@ _tekhton() {
         '--init-notes[Create blank HUMAN_NOTES.md template]' \
         '--seed-contracts[Seed inline system contracts]' \
         '--human[Pick next unchecked note as task]:tag:(($filter_values))' \
-        '--with-notes[Force human notes injection]' \
         '--usage-threshold[Pause if session usage exceeds N%]:percent:' \
-        '--fix-nonblockers[Address all open non-blocking notes]' \
-        '--fix-nb[Address all open non-blocking notes]' \
-        '--fix-drift[Force drift audit + resolution]' \
-        '--migrate-dag[Convert inline milestones to DAG format]' \
+        "--fix[Run fix subcommand]:subcommand:((nb\:'Address non-blocking notes' drift\:'Resolve drift observations'))" \
+        '--migrate[Migrate or inspect project config]:subcommand:((--check --status --rollback --dag))' \
         '--setup-indexer[Set up Python virtualenv for indexer]' \
         '--with-lsp[Also install Serena LSP server]' \
         '--health[Run project health assessment]' \

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Test: --milestones flag path in tekhton.sh (M82 coverage gap)
+# Test: --progress flag path in tekhton.sh (M82 coverage gap)
 #
 # Covers:
-#   - --milestones exits 0 and shows progress header
-#   - --milestones with no manifest shows graceful "No milestones found"
-#   - --milestones --all includes completed milestones
-#   - --milestones --deps shows dependency edges
+#   - --progress exits 0 and shows progress header
+#   - --progress with no manifest shows graceful "No milestones found"
+#   - --progress --all includes completed milestones
+#   - --progress --deps shows dependency edges
 #   - PIPELINE.lock is NOT left behind (clean exit path)
 set -euo pipefail
 
@@ -54,8 +54,8 @@ EOF
     done
 }
 
-# ── Test 1: --milestones exits 0 and shows progress with a manifest ───────────
-echo "Test 1: --milestones exits 0 and shows progress header"
+# ── Test 1: --progress exits 0 and shows progress with a manifest ───────────
+echo "Test 1: --progress exits 0 and shows progress header"
 
 PROJ1="${TMPDIR}/proj_with_manifest"
 mkdir -p "$PROJ1"
@@ -63,84 +63,84 @@ make_proj "$PROJ1"
 write_manifest "$PROJ1"
 
 rc=0
-output=$(cd "$PROJ1" && bash "${TEKHTON_HOME}/tekhton.sh" --milestones 2>/dev/null) || rc=$?
+output=$(cd "$PROJ1" && bash "${TEKHTON_HOME}/tekhton.sh" --progress 2>/dev/null) || rc=$?
 
 if [[ "$rc" -eq 0 ]]; then
-    pass "--milestones exits 0"
+    pass "--progress exits 0"
 else
-    fail "--milestones exited $rc (expected 0)"
+    fail "--progress exited $rc (expected 0)"
 fi
 if echo "$output" | grep -q "Milestones:"; then
-    pass "--milestones shows progress header"
+    pass "--progress shows progress header"
 else
-    fail "--milestones missing 'Milestones:' header (got: ${output})"
+    fail "--progress missing 'Milestones:' header (got: ${output})"
 fi
 if echo "$output" | grep -q "Feature Alpha"; then
-    pass "--milestones shows pending milestone name"
+    pass "--progress shows pending milestone name"
 else
-    fail "--milestones missing pending milestone name 'Feature Alpha'"
+    fail "--progress missing pending milestone name 'Feature Alpha'"
 fi
 
-# ── Test 2: --milestones with no manifest shows graceful message ──────────────
-echo "Test 2: --milestones with no manifest shows 'No milestones found'"
+# ── Test 2: --progress with no manifest shows graceful message ──────────────
+echo "Test 2: --progress with no manifest shows 'No milestones found'"
 
 PROJ2="${TMPDIR}/proj_no_manifest"
 mkdir -p "$PROJ2"
 make_proj "$PROJ2"
 
 rc=0
-output=$(cd "$PROJ2" && bash "${TEKHTON_HOME}/tekhton.sh" --milestones 2>/dev/null) || rc=$?
+output=$(cd "$PROJ2" && bash "${TEKHTON_HOME}/tekhton.sh" --progress 2>/dev/null) || rc=$?
 
 if [[ "$rc" -eq 0 ]]; then
-    pass "--milestones exits 0 with no manifest"
+    pass "--progress exits 0 with no manifest"
 else
-    fail "--milestones exited $rc with no manifest (expected 0)"
+    fail "--progress exited $rc with no manifest (expected 0)"
 fi
 if echo "$output" | grep -q "No milestones found"; then
-    pass "--milestones shows 'No milestones found' when no manifest"
+    pass "--progress shows 'No milestones found' when no manifest"
 else
-    fail "--milestones missing 'No milestones found' message (got: ${output})"
+    fail "--progress missing 'No milestones found' message (got: ${output})"
 fi
 
-# ── Test 3: --milestones --all shows completed milestones ─────────────────────
-echo "Test 3: --milestones --all shows completed milestones"
+# ── Test 3: --progress --all shows completed milestones ─────────────────────
+echo "Test 3: --progress --all shows completed milestones"
 
 rc=0
-output=$(cd "$PROJ1" && bash "${TEKHTON_HOME}/tekhton.sh" --milestones --all 2>/dev/null) || rc=$?
+output=$(cd "$PROJ1" && bash "${TEKHTON_HOME}/tekhton.sh" --progress --all 2>/dev/null) || rc=$?
 
 if [[ "$rc" -eq 0 ]]; then
-    pass "--milestones --all exits 0"
+    pass "--progress --all exits 0"
 else
-    fail "--milestones --all exited $rc (expected 0)"
+    fail "--progress --all exited $rc (expected 0)"
 fi
 if echo "$output" | grep -q "Foundation Work"; then
-    pass "--milestones --all shows done milestone 'Foundation Work'"
+    pass "--progress --all shows done milestone 'Foundation Work'"
 else
-    fail "--milestones --all missing done milestone 'Foundation Work' (got: ${output})"
+    fail "--progress --all missing done milestone 'Foundation Work' (got: ${output})"
 fi
 
-# ── Test 4: --milestones --deps shows dependency edges ────────────────────────
-echo "Test 4: --milestones --deps shows dependency info"
+# ── Test 4: --progress --deps shows dependency edges ────────────────────────
+echo "Test 4: --progress --deps shows dependency info"
 
 rc=0
-output=$(cd "$PROJ1" && bash "${TEKHTON_HOME}/tekhton.sh" --milestones --deps 2>/dev/null) || rc=$?
+output=$(cd "$PROJ1" && bash "${TEKHTON_HOME}/tekhton.sh" --progress --deps 2>/dev/null) || rc=$?
 
 if [[ "$rc" -eq 0 ]]; then
-    pass "--milestones --deps exits 0"
+    pass "--progress --deps exits 0"
 else
-    fail "--milestones --deps exited $rc (expected 0)"
+    fail "--progress --deps exited $rc (expected 0)"
 fi
 if echo "$output" | grep -q "depends:"; then
-    pass "--milestones --deps shows 'depends:' edge info"
+    pass "--progress --deps shows 'depends:' edge info"
 else
-    fail "--milestones --deps missing 'depends:' line (got: ${output})"
+    fail "--progress --deps missing 'depends:' line (got: ${output})"
 fi
 
 # ── Test 5: PIPELINE.lock is cleaned up (clean exit path) ─────────────────────
-echo "Test 5: PIPELINE.lock not left behind after --milestones"
+echo "Test 5: PIPELINE.lock not left behind after --progress"
 
 if [[ ! -f "${PROJ1}/.claude/PIPELINE.lock" ]]; then
-    pass "PIPELINE.lock cleaned up after --milestones"
+    pass "PIPELINE.lock cleaned up after --progress"
 else
     fail "PIPELINE.lock was left behind — clean exit not reached"
 fi

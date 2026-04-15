@@ -34,7 +34,7 @@ tekhton "Your task description"
 | `--complete` | Loop mode: keep running the pipeline until the task is done or limits are reached. |
 | `--start-at STAGE` | Resume from a specific stage. Valid stages: `intake`, `coder`, `security`, `review`, `tester`, `test`. |
 | `--human [TAG]` | Pick the next unchecked note from `HUMAN_NOTES.md`. Optional tag filter: `BUG`, `FEAT`, `POLISH`. |
-| `--with-notes` | Force human notes injection into the coder prompt (even if threshold isn't met). |
+| `--with-notes` | *(deprecated)* Force human notes injection into the coder prompt. |
 | `--dry-run` | Preview mode: run scout + intake only, show what the pipeline would do without executing. |
 | `--continue-preview` | Resume from a previous `--dry-run` (uses cached scout/intake results). |
 | `--no-commit` | Skip the auto-commit prompt at the end of the pipeline. |
@@ -55,8 +55,9 @@ tekhton "Your task description"
 
 | Flag | Description |
 |------|-------------|
-| `--status` | Print the saved pipeline state (stage, task, resume point, rollback availability). |
-| `--report`, `report` | Print a one-screen summary of the last pipeline run. |
+| `--status` | Print the saved pipeline state (stage, task, resume point, rollback availability). Also shows milestone progress when a manifest is present. |
+| `--progress` | Show milestone progress at a glance and exit. Flags: `--all` (include completed), `--deps` (show dependency edges). |
+| `--report` | Print a one-screen summary of the last pipeline run. |
 | `--metrics` | Print the run metrics dashboard (timing, turns, success rates). |
 | `--health` | Run a standalone project health assessment and print the report. |
 | `--diagnose` | Analyze the last pipeline failure and suggest recovery steps. |
@@ -78,8 +79,8 @@ tekhton "Your task description"
 
 | Flag | Description |
 |------|-------------|
-| `--fix-nonblockers`, `--fix-nb` | Address all non-blocking notes accumulated in `NON_BLOCKING_LOG.md`. |
-| `--fix-drift` | Force an architect audit to resolve drift observations. |
+| `--fix nb` | Address all non-blocking notes accumulated in `NON_BLOCKING_LOG.md`. |
+| `--fix drift` | Force an architect audit to resolve drift observations. |
 | `--replan` | Delta-based update to `DESIGN.md` and `CLAUDE.md` based on current codebase state. |
 | `--rescan` | Update `PROJECT_INDEX.md` incrementally (only changed files). |
 | `--rescan --full` | Full re-crawl of the project for `PROJECT_INDEX.md`. |
@@ -87,7 +88,7 @@ tekhton "Your task description"
 | `--migrate --check` | Show what migrations would run without applying. |
 | `--migrate --status` | Show config version vs running Tekhton version. |
 | `--migrate --rollback` | Restore from pre-migration backup. |
-| `--migrate-dag` | Convert inline milestones in `CLAUDE.md` to DAG format (individual files + `MANIFEST.cfg`). |
+| `--migrate --dag` | Convert inline milestones in `CLAUDE.md` to DAG format (individual files + `MANIFEST.cfg`). |
 | `--update [--check]` | Check for and install Tekhton updates (`--check`: report only). |
 | `--init-notes` | Create a blank `HUMAN_NOTES.md` template. |
 | `--seed-contracts` | Seed inline system contracts into library files. |
