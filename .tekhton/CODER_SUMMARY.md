@@ -1,16 +1,28 @@
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
-Fixed 5 remaining failing shell tests with stale file path expectations after the b3b6aff CLI flag refactor moved pipeline artifacts from project root into `.tekhton/` subdirectory.
+- Verified all 16 M88 acceptance criteria are satisfied
+- Marked M88 as `done` in `.claude/milestones/m88-test-symbol-map.md` (status meta field)
+- Marked M88 as `done` in `.claude/milestones/MANIFEST.cfg`
+- Bumped `TEKHTON_VERSION` from `3.87.0` to `3.88.0` in `tekhton.sh`
+
+## Verification Results
+- `bash tests/test_audit_symbol_orphan.sh` — 8 passed, 0 failed
+- `python -m pytest tools/tests/test_repo_map.py -k TestEmitTestMap` — 4 passed
+- `python -m pytest tools/tests/` — 87 passed
+- `bash tests/run_tests.sh` — 370 shell passed, 87 Python passed, 0 failures
+- `shellcheck lib/indexer.sh lib/test_audit.sh lib/test_audit_symbols.sh` — clean
+
 ## Root Cause (bugs only)
-Tests referenced old file paths (e.g., `${PROJECT_DIR}/DESIGN.md`, `${PROJECT_DIR}/CODER_SUMMARY.md`, `REVIEWER_REPORT.md`) that were relocated to `${TEKHTON_DIR}` (`.tekhton/`) by the b3b6aff refactor.
+N/A — verification and status update task
+
 ## Files Modified
-- tests/test_plan_generate_stage.sh — DESIGN.md paths updated to `.tekhton/`
-- tests/test_plan_replan_done_milestones.sh — DESIGN.md paths and content read updated to `.tekhton/`
-- tests/test_plan_state_resume_offer.sh — DESIGN.md paths updated to `.tekhton/`
-- tests/test_review_cache_invalidation.sh — REVIEWER_REPORT.md write/cleanup paths updated to use `${REVIEWER_REPORT_FILE}`
-- tests/test_run_memory_emission.sh — CODER_SUMMARY.md and REVIEWER_REPORT.md paths updated to use `${CODER_SUMMARY_FILE}` and `${REVIEWER_REPORT_FILE}`
+- `.claude/milestones/m88-test-symbol-map.md` — status: in_progress → done
+- `.claude/milestones/MANIFEST.cfg` — m88 status: in_progress → done
+- `tekhton.sh` — TEKHTON_VERSION: 3.87.0 → 3.88.0
+
 ## Human Notes Status
-No human notes provided.
+No human notes to address.
+
 ## Docs Updated
 None — no public-surface changes in this task.

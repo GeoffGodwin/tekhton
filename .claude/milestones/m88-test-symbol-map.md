@@ -1,7 +1,7 @@
 # Milestone 88: Test Symbol Map — Indexer Extension for Stale-Reference Detection
 <!-- milestone-meta
 id: "88"
-status: "in_progress"
+status: "done"
 -->
 
 ## Overview
