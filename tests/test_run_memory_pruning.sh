@@ -36,6 +36,9 @@ _json_escape() {
 
 export LOG_DIR PROJECT_DIR
 
+# Need to source common.sh first to get file defaults
+source "${TEKHTON_HOME}/lib/common.sh"
+
 # shellcheck source=../lib/run_memory.sh
 source "${TEKHTON_HOME}/lib/run_memory.sh"
 

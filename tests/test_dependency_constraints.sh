@@ -9,7 +9,12 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 cd "$TMPDIR"
-mkdir -p "${TEKHTON_DIR:-.tekhton}"
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+mkdir -p "${TEKHTON_DIR}"
+
+# Set default file paths
+BUILD_ERRORS_FILE="${BUILD_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_ERRORS.md}"
+export TEKHTON_DIR BUILD_ERRORS_FILE
 
 # --- Minimal pipeline environment ---
 source "${TEKHTON_HOME}/lib/common.sh"

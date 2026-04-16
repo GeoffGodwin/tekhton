@@ -184,7 +184,7 @@ run_complete_loop() {
             # Update log file for new iteration
             TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
             local task_slug
-            task_slug=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
+            task_slug=$(echo "$TASK" | head -1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
             # shellcheck disable=SC2034  # global used by run_agent/finalize
             LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${task_slug}.log"
         fi

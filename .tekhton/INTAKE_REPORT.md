@@ -2,14 +2,12 @@
 PASS
 
 ## Confidence
-88
+95
 
 ## Reasoning
-- Scope is precisely defined: 11 test files to modify plus 1 to create, all named explicitly
-- Before/after code examples eliminate ambiguity about what "use ${TEKHTON_DIR}/ prefix" means
-- Acceptance criteria are mechanical and checkable (grep-verifiable or runnable)
-- Step-by-step implementation plan leaves no room for developer interpretation
-- The root cleanliness test spec is detailed enough to write without further guidance
-- Prior FAIL likely reflects implementation friction (hidden test dependencies), not ambiguity — the milestone doc is clear
-- No migration impact needed (internal test infrastructure only, no user-facing config changes)
-- No UI testing concerns (pure shell test harness work)
+- Scope is tightly bounded: only files under `tests/` may be modified
+- Root cause is named explicitly: stale test expectations from the `b3b6aff` CLI flag refactor
+- Quantity is stated: 10 failing tests
+- Acceptance criterion is binary and machine-verifiable: `bash run_tests.sh` exits 0
+- No source file changes, no migration impact, no UI surface — nothing ambiguous
+- Historical patterns show similar scoped bug-fix tasks pass cleanly in one cycle

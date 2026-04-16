@@ -19,6 +19,11 @@ TEKHTON_DIR=".tekhton"
 mkdir -p "${TMPDIR_TEST}/${TEKHTON_DIR}"
 export TEKHTON_HOME PROJECT_DIR TEKHTON_SESSION_DIR TEKHTON_DIR
 
+# Set default file paths
+TESTER_REPORT_FILE="${TESTER_REPORT_FILE:-${TEKHTON_DIR}/TESTER_REPORT.md}"
+CODER_SUMMARY_FILE="${CODER_SUMMARY_FILE:-${TEKHTON_DIR}/CODER_SUMMARY.md}"
+export TESTER_REPORT_FILE CODER_SUMMARY_FILE
+
 # Initialize git repo in PROJECT_DIR
 (cd "$PROJECT_DIR" && git init -q && git commit --allow-empty -m "init" -q)
 

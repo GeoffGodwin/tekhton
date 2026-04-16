@@ -212,6 +212,7 @@ run_repo_map() {
 
     # M61: Save to run cache after successful generation
     _save_repo_map_run_cache
+    emit_test_symbol_map
 
     return 0
 }

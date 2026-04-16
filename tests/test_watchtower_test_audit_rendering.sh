@@ -87,6 +87,9 @@ _parse_security_report() {
     echo "[]"
 }
 
+# Source common.sh to get file defaults
+source "${TEKHTON_HOME}/lib/common.sh"
+
 # Source the library under test
 source "${TEKHTON_HOME}/lib/dashboard_emitters.sh"
 

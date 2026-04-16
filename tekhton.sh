@@ -562,6 +562,7 @@ if [ "${1:-}" = "--audit-tests" ]; then
     source "${TEKHTON_HOME}/lib/agent.sh"
     source "${TEKHTON_HOME}/lib/config.sh"
     source "${TEKHTON_HOME}/lib/test_audit.sh"
+    source "${TEKHTON_HOME}/lib/test_audit_symbols.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     load_config
@@ -930,6 +931,7 @@ source "${TEKHTON_HOME}/stages/security.sh"
 source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/review_helpers.sh"
 source "${TEKHTON_HOME}/lib/test_audit.sh"
+source "${TEKHTON_HOME}/lib/test_audit_symbols.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
 # Note: tester sub-stages (tester_tdd.sh, tester_continuation.sh, tester_fix.sh,
 # tester_timing.sh, tester_validation.sh) are sourced by tester.sh itself.
@@ -1802,7 +1804,7 @@ if [ "$START_AT" = "tester" ] && [ ! -f "${TESTER_REPORT_FILE}" ]; then
 fi
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-TASK_SLUG=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
+TASK_SLUG=$(echo "$TASK" | head -1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
 LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
 
 mkdir -p "$LOG_DIR"
@@ -2457,7 +2459,7 @@ _run_human_complete_loop() {
 
         # Update log file for this note
         TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-        TASK_SLUG=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
+        TASK_SLUG=$(echo "$TASK" | head -1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
         LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log"
 
         # Reset start-at for each note (always full pipeline)

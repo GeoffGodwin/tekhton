@@ -177,8 +177,8 @@ echo
 echo "=== Exit Code: DESIGN.md present + CLAUDE.md created → return 0 ==="
 
 project_c="${TMPDIR_BASE}/proj_c"
-mkdir -p "$project_c"
-echo "# My Project" > "${project_c}/DESIGN.md"
+mkdir -p "${project_c}/${TEKHTON_DIR:-.tekhton}"
+echo "# My Project" > "${project_c}/${TEKHTON_DIR:-.tekhton}/DESIGN.md"
 
 result=$(run_generate yes "$project_c")
 if [ "$result" = "0" ]; then
@@ -192,8 +192,8 @@ echo
 echo "=== Exit Code: DESIGN.md present + CLAUDE.md not created → return 1 ==="
 
 project_d="${TMPDIR_BASE}/proj_d"
-mkdir -p "$project_d"
-echo "# My Project" > "${project_d}/DESIGN.md"
+mkdir -p "${project_d}/${TEKHTON_DIR:-.tekhton}"
+echo "# My Project" > "${project_d}/${TEKHTON_DIR:-.tekhton}/DESIGN.md"
 
 result=$(run_generate no "$project_d")
 if [ "$result" = "1" ]; then
@@ -207,8 +207,8 @@ echo
 echo "=== CLAUDE.md Exists on Disk After Success ==="
 
 project_e="${TMPDIR_BASE}/proj_e"
-mkdir -p "$project_e"
-echo "# My Project" > "${project_e}/DESIGN.md"
+mkdir -p "${project_e}/${TEKHTON_DIR:-.tekhton}"
+echo "# My Project" > "${project_e}/${TEKHTON_DIR:-.tekhton}/DESIGN.md"
 run_generate yes "$project_e" > /dev/null 2>&1 || true
 
 if [ -f "${project_e}/CLAUDE.md" ]; then
@@ -222,9 +222,9 @@ echo
 echo "=== DESIGN_CONTENT Loaded from DESIGN.md ==="
 
 project_f="${TMPDIR_BASE}/proj_f"
-mkdir -p "$project_f"
-echo "# Unique Marker XYZ789" > "${project_f}/DESIGN.md"
-echo "Some project details." >> "${project_f}/DESIGN.md"
+mkdir -p "${project_f}/${TEKHTON_DIR:-.tekhton}"
+echo "# Unique Marker XYZ789" > "${project_f}/${TEKHTON_DIR:-.tekhton}/DESIGN.md"
+echo "Some project details." >> "${project_f}/${TEKHTON_DIR:-.tekhton}/DESIGN.md"
 run_generate yes "$project_f" > /dev/null 2>&1 || true
 
 log_f=$(find "${project_f}/.claude/logs" -name "*plan-generate.log" | head -1)

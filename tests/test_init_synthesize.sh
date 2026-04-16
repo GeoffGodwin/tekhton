@@ -33,7 +33,7 @@ run_synthesize_subshell() {
 
         # M84: Ensure TEKHTON_DIR and _FILE variables are set
         export TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
-        export DESIGN_FILE="${DESIGN_FILE:-DESIGN.md}"
+        export DESIGN_FILE="${DESIGN_FILE:-${TEKHTON_DIR}/DESIGN.md}"
         export PROJECT_INDEX_FILE="${PROJECT_INDEX_FILE:-${TEKHTON_DIR}/PROJECT_INDEX.md}"
 
         # shellcheck source=/dev/null
@@ -345,8 +345,8 @@ echo
 echo "=== _check_synthesis_completeness: 5+ sections → completeness OK ==="
 
 proj_good_design="${TMPDIR_BASE}/good_design"
-mkdir -p "$proj_good_design"
-cat > "${proj_good_design}/DESIGN.md" << 'EOF'
+mkdir -p "${proj_good_design}/.tekhton"
+cat > "${proj_good_design}/.tekhton/DESIGN.md" << 'EOF'
 ## Overview
 Line 1 of overview.
 Line 2 of overview.
@@ -388,8 +388,8 @@ echo
 echo "=== _check_synthesis_completeness: < 5 sections → warns and sets PLAN_INCOMPLETE_SECTIONS ==="
 
 proj_thin_design="${TMPDIR_BASE}/thin_design"
-mkdir -p "$proj_thin_design"
-cat > "${proj_thin_design}/DESIGN.md" << 'EOF'
+mkdir -p "${proj_thin_design}/.tekhton"
+cat > "${proj_thin_design}/.tekhton/DESIGN.md" << 'EOF'
 ## Overview
 Short.
 
@@ -420,8 +420,8 @@ echo
 echo "=== _check_synthesis_completeness: thin section detected and PLAN_INCOMPLETE_SECTIONS formatted ==="
 
 proj_thin2="${TMPDIR_BASE}/thin2"
-mkdir -p "$proj_thin2"
-cat > "${proj_thin2}/DESIGN.md" << 'EOF'
+mkdir -p "${proj_thin2}/.tekhton"
+cat > "${proj_thin2}/.tekhton/DESIGN.md" << 'EOF'
 ## Overview
 Short.
 

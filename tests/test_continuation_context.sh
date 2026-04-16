@@ -94,7 +94,7 @@ fi
 # =============================================================================
 echo "=== Test 3: Coder stage includes summary file content ==="
 
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 ## Status: IN PROGRESS
 
 ## What Was Implemented
@@ -119,7 +119,7 @@ else
     fail "3.2: Remaining items should be included"
 fi
 
-rm -f CODER_SUMMARY.md
+rm -f "${CODER_SUMMARY_FILE}"
 
 # =============================================================================
 # Test 4: Coder stage includes coder-specific instructions
@@ -140,7 +140,7 @@ else
     fail "4.2: Should instruct to continue REMAINING items"
 fi
 
-if echo "$result" | grep -q "Update CODER_SUMMARY.md"; then
+if echo "$result" | grep -q "Update.*CODER_SUMMARY.md"; then
     pass "4.3: Coder instruction to update CODER_SUMMARY.md"
 else
     fail "4.3: Should instruct to update CODER_SUMMARY.md"
@@ -157,7 +157,7 @@ fi
 # =============================================================================
 echo "=== Test 5: Tester stage includes report file content ==="
 
-cat > TESTER_REPORT.md << 'EOF'
+cat > "${TESTER_REPORT_FILE}" << 'EOF'
 ## Planned Tests
 - [x] `tests/test_foo.sh` — test foo
 - [ ] `tests/test_bar.sh` — test bar still needed
@@ -180,7 +180,7 @@ else
     fail "5.2: Already-completed test should be visible in context"
 fi
 
-rm -f TESTER_REPORT.md
+rm -f "${TESTER_REPORT_FILE}"
 
 # =============================================================================
 # Test 6: Tester stage includes tester-specific instructions
@@ -189,7 +189,7 @@ echo "=== Test 6: Tester stage has tester-specific instructions ==="
 
 result=$(build_continuation_context "tester" "1" "3" "30" "30")
 
-if echo "$result" | grep -q "Read TESTER_REPORT.md first"; then
+if echo "$result" | grep -q "Read.*TESTER_REPORT.md first"; then
     pass "6.1: Tester instruction to read TESTER_REPORT.md"
 else
     fail "6.1: Should instruct to read TESTER_REPORT.md"
@@ -201,7 +201,7 @@ else
     fail "6.2: Should mention 'remaining unchecked test items'"
 fi
 
-if echo "$result" | grep -q "Update TESTER_REPORT.md"; then
+if echo "$result" | grep -q "Update.*TESTER_REPORT.md"; then
     pass "6.3: Tester instruction to update TESTER_REPORT.md"
 else
     fail "6.3: Should instruct to update TESTER_REPORT.md"
@@ -212,7 +212,7 @@ fi
 # =============================================================================
 echo "=== Test 7: No summary file present ==="
 
-rm -f CODER_SUMMARY.md
+rm -f "${CODER_SUMMARY_FILE}"
 
 result=$(build_continuation_context "coder" "1" "3" "50" "50")
 
@@ -245,7 +245,7 @@ fi
 result=$(build_continuation_context "tester" "1" "3" "30" "30")
 
 # The tester context should also mention "read" before continuing
-if echo "$result" | grep -q "Read TESTER_REPORT.md first"; then
+if echo "$result" | grep -q "Read.*TESTER_REPORT.md first"; then
     pass "8.2: Tester context starts with read-first instruction"
 else
     fail "8.2: Tester context should start with read-first instruction"
@@ -283,7 +283,7 @@ fi
 echo "=== Test 10: Placeholder CODER_SUMMARY.md ==="
 
 # Write a skeleton with unfilled placeholders
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: IN PROGRESS
 ## What Was Implemented
@@ -309,7 +309,7 @@ else
 fi
 
 # Also verify the "update as you go" variant triggers placeholder detection
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: IN PROGRESS
 ## What Was Implemented
@@ -325,7 +325,7 @@ else
 fi
 
 # Verify that a properly filled CODER_SUMMARY.md does NOT trigger placeholder
-cat > CODER_SUMMARY.md << 'EOF'
+cat > "${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: IN PROGRESS
 ## What Was Implemented
@@ -338,7 +338,7 @@ EOF
 
 result=$(build_continuation_context "coder" "1" "3" "50" "50")
 
-if echo "$result" | grep -q "Read CODER_SUMMARY.md first"; then
+if echo "$result" | grep -q "Read.*CODER_SUMMARY.md first"; then
     pass "10.4: Properly filled summary uses normal 'exists' instructions"
 else
     fail "10.4: Properly filled summary should use normal 'exists' instructions"
@@ -351,7 +351,7 @@ else
     pass "10.5: Filled summary correctly avoids placeholder/missing path"
 fi
 
-rm -f CODER_SUMMARY.md
+rm -f "${CODER_SUMMARY_FILE}"
 
 # =============================================================================
 # Summary

@@ -155,10 +155,10 @@ assert_eq "1.9 REPLAN_REQUIRED → save_exit" "save_exit" "$result"
 
 # Build gate failure → retry_coder_build
 VERDICT=""
-echo "Build errors here" > BUILD_ERRORS.md
+echo "Build errors here" > "${BUILD_ERRORS_FILE}"
 result=$(_classify_failure)
 assert_eq "1.10 build errors → retry_coder_build" "retry_coder_build" "$result"
-rm -f BUILD_ERRORS.md
+rm -f "${BUILD_ERRORS_FILE}"
 
 # Unclassified → save_exit
 AGENT_ERROR_CATEGORY=""

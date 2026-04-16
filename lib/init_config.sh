@@ -64,6 +64,8 @@ _generate_smart_config() {
     local design_file=""
     if [[ -n "${DESIGN_FILE:-}" ]] && [[ -f "${project_dir}/${DESIGN_FILE}" ]]; then
         design_file="${DESIGN_FILE}"
+    elif [[ -f "${project_dir}/.tekhton/DESIGN.md" ]]; then
+        design_file=".tekhton/DESIGN.md"
     elif [[ -f "${project_dir}/DESIGN.md" ]]; then
         design_file="DESIGN.md"
     fi

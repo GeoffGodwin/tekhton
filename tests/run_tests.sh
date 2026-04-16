@@ -49,6 +49,7 @@ export REPLAN_DELTA_FILE="${REPLAN_DELTA_FILE:-${TEKHTON_DIR}/REPLAN_DELTA.md}"
 export MERGE_CONTEXT_FILE="${MERGE_CONTEXT_FILE:-${TEKHTON_DIR}/MERGE_CONTEXT.md}"
 PASS=0
 FAIL=0
+FAILED_TESTS=()
 
 # Disable commit signing for all test subprocesses — tests create temporary
 # git repos that inherit the global signing config, causing failures in
@@ -78,6 +79,7 @@ run_test() {
         PASS=$((PASS + 1))
     else
         echo -e "${RED}FAIL${NC} ${test_name}"
+        FAILED_TESTS+=("$test_name")
         # Re-run with output for debugging
         echo "  --- output ---"
         bash "$test_file" < /dev/null 2>&1 | sed 's/^/  /' || true
@@ -121,7 +123,6 @@ if [ -d "$PYTHON_TESTS_DIR" ]; then
         else
             echo -e "  ${RED}Python tests failed${NC}"
             PYTHON_FAIL=1
-            FAIL=$((FAIL + 1))
         fi
     elif command -v python3 &>/dev/null; then
         echo
@@ -140,6 +141,12 @@ echo "════════════════════════�
 echo "  Final Summary"
 echo "════════════════════════════════════════"
 echo -e "  Shell:  Passed: ${GREEN}${PASS}${NC}  Failed: ${RED}${FAIL}${NC}"
+if [ "${#FAILED_TESTS[@]}" -gt 0 ]; then
+    echo "  Failed shell tests:"
+    for t in "${FAILED_TESTS[@]}"; do
+        echo -e "    ${RED}-${NC} ${t}"
+    done
+fi
 if [ "$PYTHON_PASS" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
     if [ "$PYTHON_FAIL" -gt 0 ]; then
         echo -e "  Python: ${RED}FAILED${NC}"
@@ -148,6 +155,6 @@ if [ "$PYTHON_PASS" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
     fi
 fi
 
-if [ "$FAIL" -gt 0 ]; then
+if [ "$FAIL" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
     exit 1
 fi

@@ -49,6 +49,17 @@ _STOP_WORDS = frozenset(
     "make build run test check".split()
 )
 
+NOISE_SYMBOLS = frozenset({
+    "__init__", "setUp", "tearDown", "self", "cls", "test",
+    "mock", "patch", "Mock", "MagicMock", "call", "ANY",
+    "assert", "assertTrue", "assertEqual", "expect", "describe",
+    "it", "beforeEach", "afterEach",
+})
+
+_TEST_FILE_PATTERN = re.compile(
+    r"(^tests?/|/__tests__/|_test\.|\.test\.|\.spec\.|_spec\.|test_)"
+)
+
 
 def _extract_task_keywords(task: str) -> list[str]:
     """Extract meaningful keywords from a task description."""
@@ -653,6 +664,50 @@ def _build_output(
     return "\n\n".join(entries) + "\n" if entries else ""
 
 
+# --- Test symbol map (Milestone 88) ------------------------------------------
+
+
+def _is_test_file(filepath: str) -> bool:
+    """Return True if filepath matches common test file patterns."""
+    return bool(_TEST_FILE_PATTERN.search(filepath))
+
+
+def _build_test_symbol_map(
+    root: str, all_files: list[str], cache: TagCache
+) -> dict[str, list[str]]:
+    """Build a map of test files to their referenced symbol names."""
+    result: dict[str, list[str]] = {}
+    for filepath in all_files:
+        if not _is_test_file(filepath):
+            continue
+        tags = _extract_tags(filepath, root, cache)
+        if tags is None:
+            continue
+        refs = tags.get("references", [])
+        symbols = sorted(set(
+            r["name"] for r in refs
+            if r.get("name") and r["name"] not in NOISE_SYMBOLS
+        ))
+        if symbols:
+            result[filepath] = symbols
+    return result
+
+
+def _write_test_map(test_map: dict[str, list[str]], path: str) -> None:
+    """Write test symbol map JSON atomically."""
+    from datetime import datetime, timezone
+    output = {
+        "version": 1,
+        "generated": datetime.now(timezone.utc).isoformat(),
+        "files": test_map,
+    }
+    tmp_path = path + ".tmp"
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, indent=2)
+    os.replace(tmp_path, path)
+
+
 # --- Main --------------------------------------------------------------------
 
 
@@ -679,6 +734,10 @@ def main() -> int:
     parser.add_argument(
         "--stats", action="store_true",
         help="Print cache statistics as JSON to stderr after run"
+    )
+    parser.add_argument(
+        "--emit-test-map", default="",
+        help="Path to write test symbol map JSON (M88)"
     )
 
     args = parser.parse_args()
@@ -723,6 +782,9 @@ def main() -> int:
                     file=sys.stderr,
                 )
         cache.save()
+        if args.emit_test_map:
+            test_map = _build_test_symbol_map(root, files, cache)
+            _write_test_map(test_map, args.emit_test_map)
         if args.stats:
             print(json.dumps(cache.stats_dict()), file=sys.stderr)
         return 0
@@ -748,6 +810,10 @@ def main() -> int:
 
     # Save cache after extraction
     cache.save()
+
+    if args.emit_test_map:
+        test_map = _build_test_symbol_map(root, files, cache)
+        _write_test_map(test_map, args.emit_test_map)
 
     if not all_tags:
         print("Warning: no files could be parsed", file=sys.stderr)

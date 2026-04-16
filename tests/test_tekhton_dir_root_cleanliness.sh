@@ -21,7 +21,7 @@ pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 # Source config_defaults.sh in a subshell with minimal stubs
-_file_vars=$(
+_output=$(
     _clamp_config_value() { :; }
     _clamp_config_float() { :; }
     export -f _clamp_config_value _clamp_config_float
@@ -33,14 +33,19 @@ _file_vars=$(
     ARCHITECT_MAX_TURNS=25
     # shellcheck disable=SC1091
     source "${TEKHTON_HOME}/lib/config_defaults.sh"
-    # Emit all *_FILE variables with their values.
+    # Emit TEKHTON_DIR (to verify the default) then all *_FILE variables.
     # Exclude underscore-prefixed names (_FOO_FILE) — those are internal
     # pipeline state variables set at runtime (e.g. _REPO_MAP_CACHE_FILE
     # from indexer.sh), not config defaults.
+    echo "TEKHTON_DIR_DEFAULT=${TEKHTON_DIR}"
     compgen -v | grep '_FILE$' | grep -v '^_' | while read -r varname; do
         echo "${varname}=${!varname}"
     done
 )
+
+# Extract the TEKHTON_DIR default from config_defaults.sh
+TEKHTON_DIR_DEFAULT=$(echo "$_output" | grep '^TEKHTON_DIR_DEFAULT=' | cut -d'=' -f2)
+_file_vars=$(echo "$_output" | grep -v '^TEKHTON_DIR_DEFAULT=')
 
 # Files intentionally at project root or under .claude/ (not .tekhton/)
 declare -A EXCLUDED=(
@@ -67,7 +72,6 @@ declare -A EXCLUDED=(
 
 # Patterns that are not file paths
 declare -A NOT_PATHS=(
-    [POLISH_LOGIC_FILE_PATTERNS]=1
 )
 
 while IFS='=' read -r varname value; do
@@ -79,10 +83,10 @@ while IFS='=' read -r varname value; do
     # Skip empty defaults (optional user-configured files)
     [[ -z "$value" ]] && continue
 
-    if [[ "$value" == .tekhton/* ]]; then
+    if [[ "$value" == "${TEKHTON_DIR_DEFAULT}"/* ]]; then
         pass "${varname}=${value} resolves under TEKHTON_DIR"
     else
-        fail "${varname}=${value} does NOT resolve under .tekhton/"
+        fail "${varname}=${value} does NOT resolve under ${TEKHTON_DIR_DEFAULT}/"
     fi
 done <<< "$_file_vars"
 

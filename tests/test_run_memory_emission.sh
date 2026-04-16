@@ -51,7 +51,7 @@ _json_escape() {
 }
 
 # Create a CODER_SUMMARY.md with decisions
-cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
+cat > "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" << 'EOF'
 # Coder Summary
 ## Status: COMPLETE
 ## What Was Implemented
@@ -62,7 +62,7 @@ cat > "${PROJECT_DIR}/CODER_SUMMARY.md" << 'EOF'
 EOF
 
 # Create a REVIEWER_REPORT.md with blockers
-cat > "${PROJECT_DIR}/REVIEWER_REPORT.md" << 'EOF'
+cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
 # Reviewer Report
 ## Verdict: CHANGES_REQUIRED
 ## Blockers
@@ -217,7 +217,7 @@ fi
 # =============================================================================
 echo "=== Test 9: missing reports produce empty arrays ==="
 
-rm -f "${PROJECT_DIR}/CODER_SUMMARY.md" "${PROJECT_DIR}/REVIEWER_REPORT.md"
+rm -f "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}"
 rm -f "$memory_file"
 _hook_emit_run_memory 0
 line=$(head -1 "$memory_file")

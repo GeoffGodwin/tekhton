@@ -43,6 +43,9 @@ _ORCH_ELAPSED=10
 _ORCH_AGENT_CALLS=1
 TIMESTAMP="20260401_120000"
 
+# Need to source common.sh first to get file defaults
+source "${TEKHTON_HOME}/lib/common.sh"
+
 # shellcheck source=../lib/run_memory.sh
 source "${TEKHTON_HOME}/lib/run_memory.sh"
 

@@ -308,6 +308,9 @@ run_test_audit() {
     if [[ "${TEST_AUDIT_ORPHAN_DETECTION:-true}" == "true" ]]; then
         _detect_orphaned_tests
     fi
+    if command -v _detect_stale_symbol_refs &>/dev/null; then
+        _detect_stale_symbol_refs
+    fi
     if [[ "${TEST_AUDIT_WEAKENING_DETECTION:-true}" == "true" ]]; then
         _detect_test_weakening
     fi
@@ -408,6 +411,9 @@ ${_AUDIT_WEAKENING_FINDINGS}
             _collect_audit_context
             if [[ "${TEST_AUDIT_ORPHAN_DETECTION:-true}" == "true" ]]; then
                 _detect_orphaned_tests
+            fi
+            if command -v _detect_stale_symbol_refs &>/dev/null; then
+                _detect_stale_symbol_refs
             fi
             if [[ "${TEST_AUDIT_WEAKENING_DETECTION:-true}" == "true" ]]; then
                 _detect_test_weakening

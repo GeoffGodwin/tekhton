@@ -67,7 +67,8 @@ rm -f "$INPUT_FILE"
 
 # Test 5: DESIGN.md exists without state file, user chooses [r] (resume from completeness)
 rm -f "$PLAN_STATE_FILE"
-touch "${PROJECT_DIR}/DESIGN.md"
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+touch "${PROJECT_DIR}/${DESIGN_FILE}"
 # Mock select_project_type to just set PLAN_PROJECT_TYPE
 select_project_type() {
     PLAN_PROJECT_TYPE="api-service"
@@ -85,7 +86,8 @@ rm -f "$INPUT_FILE"
 
 # Test 6: DESIGN.md exists without state file, user chooses [f] (fresh start)
 rm -f "$PLAN_STATE_FILE"  # Clean up previous test
-touch "${PROJECT_DIR}/DESIGN.md"
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+touch "${PROJECT_DIR}/${DESIGN_FILE}"
 rc=0
 INPUT_FILE=$(mktemp)
 echo "f" > "$INPUT_FILE"
@@ -95,7 +97,8 @@ rm -f "$INPUT_FILE"
 
 # Test 7: DESIGN.md exists without state file, user chooses [n] (abort)
 rm -f "$PLAN_STATE_FILE"  # Clean up previous test
-touch "${PROJECT_DIR}/DESIGN.md"
+mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
+touch "${PROJECT_DIR}/${DESIGN_FILE}"
 rc=0
 INPUT_FILE=$(mktemp)
 echo "n" > "$INPUT_FILE"

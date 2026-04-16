@@ -11,6 +11,14 @@ TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="$(mktemp -d)"
 trap 'rm -rf "$PROJECT_DIR"' EXIT
 
+# Set default file paths
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
+BUILD_ERRORS_FILE="${BUILD_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_ERRORS.md}"
+BUILD_RAW_ERRORS_FILE="${BUILD_RAW_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+UI_TEST_ERRORS_FILE="${UI_TEST_ERRORS_FILE:-${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
+UI_VALIDATION_REPORT_FILE="${UI_VALIDATION_REPORT_FILE:-${TEKHTON_DIR}/UI_VALIDATION_REPORT.md}"
+export TEKHTON_DIR BUILD_ERRORS_FILE BUILD_RAW_ERRORS_FILE UI_TEST_ERRORS_FILE UI_VALIDATION_REPORT_FILE
+
 # Source required libraries
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/error_patterns.sh"
@@ -40,6 +48,7 @@ source "${TEKHTON_HOME}/lib/gates_phases.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 # Test: Run build gate with Phase 1 passing and Phase 2 failing
+# Note: We don't use timeout directly on the function, as timeout cannot invoke bash functions directly
 if run_build_gate "test-phase2" 2>/dev/null; then
     echo "FAIL: Expected build gate to fail but it passed"
     exit 1

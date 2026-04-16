@@ -142,8 +142,7 @@ invalidate_repo_map_run_cache() {
 
 make_reviewer_report() {
     local verdict="$1"
-    # CWD is TMPDIR_BASE — write directly to cwd so pipeline can find it
-    cat > REVIEWER_REPORT.md <<EOF
+    cat > "${REVIEWER_REPORT_FILE}" <<EOF
 ## Verdict
 ${verdict}
 
@@ -171,7 +170,7 @@ reset_test_state() {
     rm -f "${TMPDIR_BASE}/agent_calls.log" \
           "${TMPDIR_BASE}/state_calls.log" \
           "${TMPDIR_BASE}/invalidate_calls.log" \
-          REVIEWER_REPORT.md
+          "${REVIEWER_REPORT_FILE}"
 
     AGENT_CALL_COUNT=0
     INDEXER_AVAILABLE=true

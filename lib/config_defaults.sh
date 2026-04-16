@@ -373,6 +373,7 @@ set -euo pipefail
 : "${TEST_AUDIT_ORPHAN_DETECTION:=true}"
 : "${TEST_AUDIT_WEAKENING_DETECTION:=true}"
 : "${TEST_AUDIT_REPORT_FILE:=${TEKHTON_DIR}/TEST_AUDIT_REPORT.md}"
+: "${TEST_AUDIT_SYMBOL_MAP_ENABLED:=true}"
 
 # --- Health scoring defaults (Milestone 15) ---
 : "${HEALTH_ENABLED:=true}"

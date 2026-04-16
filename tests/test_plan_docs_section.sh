@@ -64,7 +64,8 @@ PLAN_TEMPLATE_FILE="${TEMPLATES_DIR}/cli-tool.md"  # used by plan_completeness.s
 export PLAN_TEMPLATE_FILE
 
 # DESIGN.md without Documentation Strategy section
-cat > "${TEST_TMPDIR}/DESIGN.md" << 'DESIGN_EOF'
+mkdir -p "${TEST_TMPDIR}/${TEKHTON_DIR:-.tekhton}"
+cat > "${TEST_TMPDIR}/${DESIGN_FILE}" << 'DESIGN_EOF'
 # Design Document — CLI Tool
 
 ## Developer Philosophy & Constraints
@@ -141,7 +142,7 @@ echo
 echo "=== Completeness checker passes when Documentation Strategy is populated ==="
 
 # Add a populated Documentation Strategy section
-cat >> "${TEST_TMPDIR}/DESIGN.md" << 'DESIGN_EOF'
+cat >> "${TEST_TMPDIR}/${DESIGN_FILE}" << 'DESIGN_EOF'
 
 ## Documentation Strategy
 ### Project Documentation

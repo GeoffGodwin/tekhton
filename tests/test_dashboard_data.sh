@@ -29,6 +29,9 @@ warn() { :; }
 error() { :; }
 success() { :; }
 
+# Source common.sh to get file defaults
+source "${TEKHTON_HOME}/lib/common.sh"
+
 # Source modules under test
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/dashboard.sh"

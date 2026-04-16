@@ -16,6 +16,10 @@ from repo_map import (
     _rank_files,
     _build_output,
     _format_file_entry,
+    _is_test_file,
+    _build_test_symbol_map,
+    _write_test_map,
+    NOISE_SYMBOLS,
 )
 
 
@@ -175,3 +179,102 @@ class TestOutputFormatting:
         }
         output = _build_output([("big.py", 1.0)], {"big.py": tags}, token_budget=1)
         assert "## big.py" in output
+
+
+class TestEmitTestMap:
+    def test_emit_test_map_creates_file(self, tmp_path):
+        """--emit-test-map creates a valid JSON file at the given path."""
+        from tag_cache import TagCache
+
+        root = str(tmp_path)
+        test_dir = tmp_path / "tests"
+        test_dir.mkdir()
+        test_file = test_dir / "test_sample.py"
+        test_file.write_text("def test_foo():\n    result = calculate()\n    assert result\n")
+
+        cache = TagCache(str(tmp_path / "tags.json"))
+        cache.load()
+
+        out_path = str(tmp_path / "test_map.json")
+        test_map = _build_test_symbol_map(root, ["tests/test_sample.py"], cache)
+        _write_test_map(test_map, out_path)
+
+        assert os.path.exists(out_path)
+        import json
+        with open(out_path) as f:
+            data = json.load(f)
+        assert "version" in data
+        assert data["version"] == 1
+        assert "files" in data
+
+    def test_emit_test_map_captures_references(self, tmp_path):
+        """Fixture test file calling a known function has that name in the map."""
+        from tag_cache import TagCache
+
+        root = str(tmp_path)
+        test_dir = tmp_path / "tests"
+        test_dir.mkdir()
+        test_file = test_dir / "test_calc.py"
+        test_file.write_text(
+            "from calc import multiply\n"
+            "def test_multiply():\n"
+            "    result = multiply(2, 3)\n"
+            "    assert result == 6\n"
+        )
+
+        cache = TagCache(str(tmp_path / "tags.json"))
+        cache.load()
+
+        test_map = _build_test_symbol_map(root, ["tests/test_calc.py"], cache)
+        syms = test_map.get("tests/test_calc.py", [])
+        assert "multiply" in syms
+
+    def test_emit_test_map_excludes_noise(self, tmp_path):
+        """Noise symbols like setUp/tearDown are excluded from the map."""
+        from tag_cache import TagCache
+
+        root = str(tmp_path)
+        test_dir = tmp_path / "tests"
+        test_dir.mkdir()
+        test_file = test_dir / "test_noisy.py"
+        test_file.write_text(
+            "import unittest\n"
+            "class TestNoisy(unittest.TestCase):\n"
+            "    def setUp(self):\n"
+            "        pass\n"
+            "    def tearDown(self):\n"
+            "        pass\n"
+            "    def test_thing(self):\n"
+            "        self.assertEqual(1, 1)\n"
+        )
+
+        cache = TagCache(str(tmp_path / "tags.json"))
+        cache.load()
+
+        test_map = _build_test_symbol_map(root, ["tests/test_noisy.py"], cache)
+        syms = test_map.get("tests/test_noisy.py", [])
+        for noise in ("setUp", "tearDown", "self", "assertEqual"):
+            assert noise not in syms, f"noise symbol {noise!r} should be excluded"
+
+    def test_emit_test_map_only_test_files(self, tmp_path):
+        """Source files in the same fixture are NOT included in the test map."""
+        from tag_cache import TagCache
+
+        root = str(tmp_path)
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        src_file = src_dir / "calc.py"
+        src_file.write_text("def multiply(a, b):\n    return a * b\n")
+
+        test_dir = tmp_path / "tests"
+        test_dir.mkdir()
+        test_file = test_dir / "test_calc.py"
+        test_file.write_text("def test_it():\n    multiply(1, 2)\n")
+
+        cache = TagCache(str(tmp_path / "tags.json"))
+        cache.load()
+
+        test_map = _build_test_symbol_map(
+            root, ["src/calc.py", "tests/test_calc.py"], cache
+        )
+        assert "src/calc.py" not in test_map

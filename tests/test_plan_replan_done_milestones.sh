@@ -97,7 +97,8 @@ Not done yet.
 CLAUDE_EOF
 
 # Create DESIGN.md and delta file
-echo "# Existing Design" > "${proj}/DESIGN.md"
+mkdir -p "${proj}/${TEKHTON_DIR:-.tekhton}"
+echo "# Existing Design" > "${proj}/${DESIGN_FILE}"
 echo "Delta content here." > "${proj}/REPLAN_DELTA.md"
 
 _apply_brownfield_delta "${proj}/REPLAN_DELTA.md"
@@ -126,7 +127,8 @@ echo "=== Test: multiple [DONE] milestones ==="
 proj=$(new_project_dir)
 export PROJECT_DIR="$proj"
 write_claude_md "$proj"
-echo "# Existing Design" > "${proj}/DESIGN.md"
+mkdir -p "${proj}/${TEKHTON_DIR:-.tekhton}"
+echo "# Existing Design" > "${proj}/${DESIGN_FILE}"
 echo "Delta content." > "${proj}/REPLAN_DELTA.md"
 
 _apply_brownfield_delta "${proj}/REPLAN_DELTA.md"
@@ -171,7 +173,8 @@ Not done.
 Also not done.
 CLAUDE_EOF
 
-echo "# Design" > "${proj}/DESIGN.md"
+mkdir -p "${proj}/${TEKHTON_DIR:-.tekhton}"
+echo "# Design" > "${proj}/${DESIGN_FILE}"
 echo "Delta." > "${proj}/REPLAN_DELTA.md"
 
 _apply_brownfield_delta "${proj}/REPLAN_DELTA.md"
@@ -199,7 +202,8 @@ Some more text.
 This should not appear.
 CLAUDE_EOF
 
-echo "# Design" > "${proj}/DESIGN.md"
+mkdir -p "${proj}/${TEKHTON_DIR:-.tekhton}"
+echo "# Design" > "${proj}/${DESIGN_FILE}"
 echo "Delta." > "${proj}/REPLAN_DELTA.md"
 
 _apply_brownfield_delta "${proj}/REPLAN_DELTA.md"
@@ -229,12 +233,13 @@ cat > "${proj}/CLAUDE.md" << 'CLAUDE_EOF'
 Complete.
 CLAUDE_EOF
 
-echo "# Original Design Content" > "${proj}/DESIGN.md"
+mkdir -p "${proj}/${TEKHTON_DIR:-.tekhton}"
+echo "# Original Design Content" > "${proj}/${DESIGN_FILE}"
 echo "New delta information." > "${proj}/REPLAN_DELTA.md"
 
 _apply_brownfield_delta "${proj}/REPLAN_DELTA.md"
 
-design_content=$(cat "${proj}/DESIGN.md")
+design_content=$(cat "${proj}/${DESIGN_FILE}")
 
 if [[ "$design_content" == *"# Original Design Content"* ]]; then
     pass "original DESIGN.md content is preserved"
@@ -267,7 +272,8 @@ cat > "${proj}/CLAUDE.md" << 'CLAUDE_EOF'
 Complete.
 CLAUDE_EOF
 
-echo "# Design" > "${proj}/DESIGN.md"
+mkdir -p "${proj}/${TEKHTON_DIR:-.tekhton}"
+echo "# Design" > "${proj}/${DESIGN_FILE}"
 echo "Delta to archive." > "${proj}/REPLAN_DELTA.md"
 
 _apply_brownfield_delta "${proj}/REPLAN_DELTA.md"
@@ -305,7 +311,8 @@ This milestone laid the groundwork.
 Not yet implemented.
 CLAUDE_EOF
 
-echo "# Design" > "${proj}/DESIGN.md"
+mkdir -p "${proj}/${TEKHTON_DIR:-.tekhton}"
+echo "# Design" > "${proj}/${DESIGN_FILE}"
 echo "Delta content for regeneration test." > "${proj}/REPLAN_DELTA.md"
 
 _apply_brownfield_delta "${proj}/REPLAN_DELTA.md"

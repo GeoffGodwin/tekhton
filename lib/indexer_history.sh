@@ -78,6 +78,7 @@ warm_index_cache() {
         return 1
     fi
 
+    emit_test_symbol_map
     return 0
 }
 
@@ -224,4 +225,42 @@ get_indexer_stats() {
 
     echo "{}"
     return 1
+}
+
+# =============================================================================
+# Test symbol map emission (Milestone 88)
+# =============================================================================
+
+TEST_SYMBOL_MAP_FILE=""
+export TEST_SYMBOL_MAP_FILE
+
+emit_test_symbol_map() {
+    if [[ "${TEST_AUDIT_SYMBOL_MAP_ENABLED:-true}" != "true" ]]; then
+        return 0
+    fi
+    if [[ "${REPO_MAP_ENABLED:-false}" != "true" ]]; then
+        return 0
+    fi
+    if [[ "$INDEXER_AVAILABLE" != "true" ]]; then
+        return 0
+    fi
+
+    local venv_python cache_dir test_map_file
+    venv_python=$(_indexer_find_venv_python) || return 0
+    cache_dir=$(_indexer_resolve_cache_dir)
+    test_map_file="${cache_dir}/test_map.json"
+
+    "$venv_python" "${TEKHTON_HOME}/tools/repo_map.py" \
+        --root "$PROJECT_DIR" \
+        --cache-dir "$cache_dir" \
+        --languages "${REPO_MAP_LANGUAGES:-auto}" \
+        --emit-test-map "$test_map_file" \
+        > /dev/null 2>&1 || {
+        warn "[indexer] Failed to emit test symbol map (non-fatal)."
+        return 0
+    }
+
+    TEST_SYMBOL_MAP_FILE="$test_map_file"
+    export TEST_SYMBOL_MAP_FILE
+    log "[indexer] Test symbol map written to ${test_map_file}."
 }
