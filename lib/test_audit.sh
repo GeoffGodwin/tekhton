@@ -276,6 +276,56 @@ _route_audit_verdict() {
     esac
 }
 
+# --- Audit context assembly --------------------------------------------------
+
+# _build_test_audit_context
+# Assembles TEST_AUDIT_CONTEXT and CODER_DELETED_FILES from the audit globals.
+# Renders modified-this-run and freshness-sample (M89) test files in separate
+# labeled sections so the audit agent can apply scope-alignment scrutiny to
+# sampled files without assuming recent coder changes caused any issues.
+_build_test_audit_context() {
+    local _ctx="## Test Files Under Audit (modified this run)
+"
+    if [[ -n "${_AUDIT_TEST_FILES:-}" ]]; then
+        # shellcheck disable=SC2001  # sed needed for multiline prefix
+        _ctx="${_ctx}$(echo "$_AUDIT_TEST_FILES" | sed 's/^/- /')
+"
+    else
+        _ctx="${_ctx}- (none)
+"
+    fi
+
+    if [[ -n "${_AUDIT_SAMPLE_FILES:-}" ]]; then
+        # shellcheck disable=SC2001  # sed needed for multiline prefix
+        _ctx="${_ctx}
+## Test Files Under Audit (freshness sample — may be stale)
+$(echo "$_AUDIT_SAMPLE_FILES" | sed 's/^/- /')
+"
+    fi
+
+    # shellcheck disable=SC2001  # sed needed for multiline prefix
+    _ctx="${_ctx}
+## Implementation Files Changed
+$(echo "${_AUDIT_IMPL_FILES:-none}" | sed 's/^/- /')
+"
+
+    if [[ -n "${_AUDIT_ORPHAN_FINDINGS:-}" ]]; then
+        _ctx="${_ctx}
+## Shell-Detected Orphans (pre-verified)
+${_AUDIT_ORPHAN_FINDINGS}
+"
+    fi
+    if [[ -n "${_AUDIT_WEAKENING_FINDINGS:-}" ]]; then
+        _ctx="${_ctx}
+## Shell-Detected Weakening (pre-verified)
+${_AUDIT_WEAKENING_FINDINGS}
+"
+    fi
+
+    export TEST_AUDIT_CONTEXT="$_ctx"
+    export CODER_DELETED_FILES="${_AUDIT_DELETED_FILES:-}"
+}
+
 # --- Main audit function (pipeline integration) ------------------------------
 
 # run_test_audit
@@ -296,13 +346,23 @@ run_test_audit() {
     # Step 1: Collect context
     _collect_audit_context
 
-    # Skip audit if no test files were written
-    if [[ -z "$_AUDIT_TEST_FILES" ]]; then
-        log "No test files written this run — skipping audit."
+    # Rolling freshness sample (M89): K oldest-audited tests get re-evaluated.
+    # Sampler is in lib/test_audit_sampler.sh (optional companion module).
+    if [[ "${TEST_AUDIT_ROLLING_ENABLED:-true}" == "true" ]] \
+        && command -v _sample_unaudited_test_files &>/dev/null; then
+        _sample_unaudited_test_files
+    fi
+
+    # Skip audit only when neither modified nor sampled files are available
+    if [[ -z "$_AUDIT_TEST_FILES" ]] && [[ -z "${_AUDIT_SAMPLE_FILES:-}" ]]; then
+        log "No test files written this run and no sample available — skipping audit."
         return 0
     fi
 
-    log "Auditing $(echo "$_AUDIT_TEST_FILES" | grep -c '.' || echo 0) test file(s)..."
+    local _modified_count _sample_count
+    _modified_count=$(echo "${_AUDIT_TEST_FILES:-}" | grep -c '.' || echo 0)
+    _sample_count=$(echo "${_AUDIT_SAMPLE_FILES:-}" | grep -c '.' || echo 0)
+    log "Auditing ${_modified_count} modified + ${_sample_count} sampled test file(s)..."
 
     # Step 2: Shell-based detection (instant, no agent needed)
     if [[ "${TEST_AUDIT_ORPHAN_DETECTION:-true}" == "true" ]]; then
@@ -330,32 +390,7 @@ run_test_audit() {
     fi
 
     # Step 3: Build audit context for the agent prompt
-    export TEST_AUDIT_CONTEXT=""
-    local _ctx=""
-    # shellcheck disable=SC2001  # sed needed for multiline prefix addition
-    _ctx="## Test Files Under Audit
-$(echo "$_AUDIT_TEST_FILES" | sed 's/^/- /')
-
-## Implementation Files Changed
-$(echo "${_AUDIT_IMPL_FILES:-none}" | sed 's/^/- /')
-"
-
-    if [[ -n "${_AUDIT_ORPHAN_FINDINGS:-}" ]]; then
-        _ctx="${_ctx}
-## Shell-Detected Orphans (pre-verified)
-${_AUDIT_ORPHAN_FINDINGS}
-"
-    fi
-
-    if [[ -n "${_AUDIT_WEAKENING_FINDINGS:-}" ]]; then
-        _ctx="${_ctx}
-## Shell-Detected Weakening (pre-verified)
-${_AUDIT_WEAKENING_FINDINGS}
-"
-    fi
-
-    TEST_AUDIT_CONTEXT="$_ctx"
-    export CODER_DELETED_FILES="${_AUDIT_DELETED_FILES:-}"
+    _build_test_audit_context
 
     # Step 4: Invoke audit agent
     local audit_prompt
@@ -380,6 +415,15 @@ ${_AUDIT_WEAKENING_FINDINGS}
         emit_event "test_audit" "tester" "verdict=${verdict}" "" "" \
             "{\"verdict\":\"${verdict}\",\"orphans\":\"${_AUDIT_ORPHAN_FINDINGS:+found}\",\"weakening\":\"${_AUDIT_WEAKENING_FINDINGS:+found}\"}" \
             2>/dev/null || true
+    fi
+
+    if [[ "$verdict" != "NEEDS_WORK" ]]; then
+        # PASS or CONCERNS — record audit history for files we evaluated.
+        # NEEDS_WORK records only after a successful rework cycle (below).
+        if command -v _record_audit_history &>/dev/null; then
+            _record_audit_history "${_AUDIT_TEST_FILES:-}
+${_AUDIT_SAMPLE_FILES:-}"
+        fi
     fi
 
     if ! _route_audit_verdict "$verdict"; then
@@ -419,27 +463,8 @@ ${_AUDIT_WEAKENING_FINDINGS}
                 _detect_test_weakening
             fi
 
-            # Rebuild context
-            # shellcheck disable=SC2001  # sed needed for multiline prefix addition
-            TEST_AUDIT_CONTEXT="## Test Files Under Audit
-$(echo "$_AUDIT_TEST_FILES" | sed 's/^/- /')
-
-## Implementation Files Changed
-$(echo "${_AUDIT_IMPL_FILES:-none}" | sed 's/^/- /')
-"
-            if [[ -n "${_AUDIT_ORPHAN_FINDINGS:-}" ]]; then
-                TEST_AUDIT_CONTEXT="${TEST_AUDIT_CONTEXT}
-## Shell-Detected Orphans (pre-verified)
-${_AUDIT_ORPHAN_FINDINGS}
-"
-            fi
-            if [[ -n "${_AUDIT_WEAKENING_FINDINGS:-}" ]]; then
-                TEST_AUDIT_CONTEXT="${TEST_AUDIT_CONTEXT}
-## Shell-Detected Weakening (pre-verified)
-${_AUDIT_WEAKENING_FINDINGS}
-"
-            fi
-            CODER_DELETED_FILES="${_AUDIT_DELETED_FILES:-}"
+            # Rebuild context (sample is preserved across rework — same files)
+            _build_test_audit_context
 
             audit_prompt=$(render_prompt "test_audit")
             run_agent \
@@ -454,6 +479,10 @@ ${_AUDIT_WEAKENING_FINDINGS}
             log "Test audit re-check verdict: ${verdict}"
 
             if [[ "$verdict" != "NEEDS_WORK" ]]; then
+                if command -v _record_audit_history &>/dev/null; then
+                    _record_audit_history "${_AUDIT_TEST_FILES:-}
+${_AUDIT_SAMPLE_FILES:-}"
+                fi
                 _route_audit_verdict "$verdict"
                 return 0
             fi

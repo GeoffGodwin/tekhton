@@ -563,6 +563,7 @@ if [ "${1:-}" = "--audit-tests" ]; then
     source "${TEKHTON_HOME}/lib/config.sh"
     source "${TEKHTON_HOME}/lib/test_audit.sh"
     source "${TEKHTON_HOME}/lib/test_audit_symbols.sh"
+    source "${TEKHTON_HOME}/lib/test_audit_sampler.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     load_config
@@ -932,6 +933,7 @@ source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/review_helpers.sh"
 source "${TEKHTON_HOME}/lib/test_audit.sh"
 source "${TEKHTON_HOME}/lib/test_audit_symbols.sh"
+source "${TEKHTON_HOME}/lib/test_audit_sampler.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
 # Note: tester sub-stages (tester_tdd.sh, tester_continuation.sh, tester_fix.sh,
 # tester_timing.sh, tester_validation.sh) are sourced by tester.sh itself.

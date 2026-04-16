@@ -68,6 +68,9 @@ declare -A EXCLUDED=(
     [DOCS_README_FILE]=1
     [CHANGELOG_FILE]=1
     [LOG_FILE]=1
+    # Runtime variable set by indexer_history.sh — lives in .claude/index/ by design,
+    # not a config default from config_defaults.sh.
+    [TEST_SYMBOL_MAP_FILE]=1
 )
 
 # Patterns that are not file paths

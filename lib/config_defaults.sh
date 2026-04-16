@@ -375,6 +375,11 @@ set -euo pipefail
 : "${TEST_AUDIT_REPORT_FILE:=${TEKHTON_DIR}/TEST_AUDIT_REPORT.md}"
 : "${TEST_AUDIT_SYMBOL_MAP_ENABLED:=true}"
 
+# --- Rolling test audit sampler (Milestone 89) ---
+: "${TEST_AUDIT_ROLLING_ENABLED:=true}"
+: "${TEST_AUDIT_ROLLING_SAMPLE_K:=3}"
+: "${TEST_AUDIT_HISTORY_MAX_RECORDS:=500}"
+
 # --- Health scoring defaults (Milestone 15) ---
 : "${HEALTH_ENABLED:=true}"
 : "${HEALTH_REASSESS_ON_COMPLETE:=false}"
@@ -536,6 +541,8 @@ _clamp_config_value CAUSAL_LOG_MAX_EVENTS 10000
 _clamp_config_value RUN_MEMORY_MAX_ENTRIES 500
 _clamp_config_value TEST_AUDIT_MAX_TURNS 50
 _clamp_config_value TEST_AUDIT_MAX_REWORK_CYCLES 5
+_clamp_config_value TEST_AUDIT_ROLLING_SAMPLE_K 20
+_clamp_config_value TEST_AUDIT_HISTORY_MAX_RECORDS 2000
 _clamp_config_value AUTO_FIX_MAX_DEPTH 5
 _clamp_config_value AUTO_FIX_OUTPUT_LIMIT 16000
 _clamp_config_value PREFLIGHT_FIX_MAX_ATTEMPTS 10

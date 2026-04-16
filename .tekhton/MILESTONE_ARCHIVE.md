@@ -18552,3 +18552,648 @@ shellcheck tests/*.sh
 - [ ] **Behavioral:** `bash tests/run_tests.sh` passes with zero failures
 - [ ] **Behavioral:** Adding a new `_FILE` variable to config_defaults.sh with a root-relative default would cause the root cleanliness test to fail
 - [ ] No shellcheck warnings on modified test files
+
+---
+
+## Archived: 2026-04-15 — Unknown Initiative
+
+# Milestone 88: Test Symbol Map — Indexer Extension for Stale-Reference Detection
+<!-- milestone-meta
+id: "88"
+status: "done"
+-->
+
+## Overview
+
+The M20 test audit closes the loop on tests written or modified in the current
+run — orphan detection fires when the *file* a test imports was deleted this run.
+But it has a structural blind spot: a test file that nobody touches never gets
+re-evaluated, and a deleted/renamed *symbol* (function, class) inside a still-present
+module is invisible to file-level import analysis.
+
+The canonical example is a migration test: `test_migrate_v2_to_v3.py` imports
+`migrations.v2`, the module still exists on disk (migrations don't get deleted),
+but the function `apply_migration()` it calls was refactored away three milestones
+ago. `_detect_orphaned_tests` misses it because the file is not deleted and the
+test wasn't touched this run.
+
+This milestone adds a deterministic, zero-agent-cost mechanism to catch that class
+of stale reference:
+
+1. **Test symbol map** — extend `repo_map.py` with `--emit-test-map PATH`: walk
+   test files, extract their *reference* tags (call targets, imports), write a
+   JSON map of `{test_file: [referenced_symbol, ...]}`. The file is mtime-tracked
+   and cached — zero cost on unchanged tests.
+
+2. **Symbol-level orphan detection** — upgrade `_detect_orphaned_tests` to
+   cross-reference each test file's symbol list (from `test_map.json`) against
+   the existing `tags.json` definitions. Symbols that appear in no source file
+   definition → candidate orphan finding, annotated `STALE-SYM`.
+
+Both pieces are purely deterministic (no agent turns); the LLM audit in M20 then
+gets pre-verified `STALE-SYM` entries injected into its context, giving it
+better signal with zero extra cost.
+
+## Design Decisions
+
+### 1. Separate test_map.json from tags.json
+
+Test files reference the same tree-sitter reference tags already captured during
+normal indexing. Keeping a separate file avoids polluting the source definition
+map (which drives repo map ranking) with test-only references, and lets the map
+be invalidated/regenerated independently of source tags.
+
+### 2. Reference tags, not import paths
+
+Import paths (`from migrations.v2 import apply_migration`) contain module-path
+strings that don't match the symbol names in `tags.json` (`apply_migration`).
+Tree-sitter's `call_expression` and `import_statement` reference nodes already
+give us the bare symbol names. Cross-referencing name-to-name is O(n) with a
+simple grep or set intersection.
+
+### 3. Soft orphan signal, not hard block
+
+A symbol present in `test_map.json` but absent from `tags.json` is a *candidate*
+— it could be a standard library call, an external package, or a locally-defined
+helper not captured by tree-sitter. The finding is emitted as `STALE-SYM` and
+fed to the existing M20 LLM audit as pre-computed context. The LLM makes the
+final call; the shell narrows the search space.
+
+### 4. Gated by REPO_MAP_ENABLED
+
+The test symbol map requires the Python indexer. When `REPO_MAP_ENABLED=false`,
+`_detect_orphaned_tests` silently skips symbol-level detection and falls back to
+the existing file-level check. No behavior change for projects without the indexer.
+
+### 5. Filter common noise symbols
+
+High-frequency generic names (`__init__`, `setUp`, `tearDown`, `self`, `cls`,
+`test`, `mock`, `patch`) are excluded from the symbol cross-reference. They
+appear in every test file and match nothing meaningful in source tags.
+
+## Scope Summary
+
+| Area | Count | Notes |
+|------|-------|-------|
+| Python files modified | 1 | `tools/repo_map.py` — add `--emit-test-map` |
+| Shell files modified | 2 | `lib/test_audit.sh`, `lib/indexer.sh` |
+| Config modified | 1 | `lib/config_defaults.sh` — new key |
+| Python tests added | 1 | `tools/tests/test_repo_map.py` — test map tests |
+| Shell tests added | 1 | `tests/test_audit_symbol_orphan.sh` |
+
+## Implementation Plan
+
+### Step 1 — tools/repo_map.py: add --emit-test-map
+
+Add a new CLI flag `--emit-test-map PATH`. When set:
+
+1. After the normal file walk, perform a second pass over test files only
+   (matched by the same patterns as `_discover_all_test_files` in `test_audit.sh`:
+   `tests?/`, `__tests__/`, `_test.`, `.test.`, `.spec.`, `_spec.`, `test_`).
+2. For each test file, call `_extract_tags()` (reuses cache — free if already
+   warm). Collect the `references` list from the returned tags.
+3. Filter reference names through a noise-symbol exclusion list:
+   `NOISE_SYMBOLS = {"__init__", "setUp", "tearDown", "self", "cls", "test",
+   "mock", "patch", "Mock", "MagicMock", "call", "ANY", "assert", "assertTrue",
+   "assertEqual", "expect", "describe", "it", "beforeEach", "afterEach"}`.
+4. Build output dict: `{relative_path: [name, ...]}` — only files with at least
+   one non-noise reference are included.
+5. Write atomically to PATH (write to `.tmp`, `os.replace`).
+
+The flag does not affect normal stdout output — it is additive.
+
+```python
+if args.emit_test_map:
+    test_map = _build_test_symbol_map(root, files, cache)
+    _write_test_map(test_map, args.emit_test_map)
+```
+
+New function `_build_test_symbol_map(root, all_files, cache)`:
+- Filters `all_files` to test files by path pattern
+- Calls `_extract_tags` for each, collects `references`
+- Returns `{filepath: [name, ...]}` after noise filtering
+
+New function `_write_test_map(test_map, path)`:
+- Writes JSON atomically
+- Includes metadata: `{"version": 1, "generated": ISO_TIMESTAMP, "files": {...}}`
+
+### Step 2 — lib/indexer.sh: emit_test_symbol_map()
+
+Add `emit_test_symbol_map()` function:
+
+```bash
+emit_test_symbol_map() {
+    if [[ "${TEST_AUDIT_SYMBOL_MAP_ENABLED:-true}" != "true" ]]; then
+        return 0
+    fi
+    if [[ "${REPO_MAP_ENABLED:-false}" != "true" ]]; then
+        return 0
+    fi
+    if [[ "$INDEXER_AVAILABLE" != "true" ]]; then
+        return 0
+    fi
+
+    local venv_python cache_dir test_map_file
+    venv_python=$(_indexer_find_venv_python) || return 0
+    cache_dir=$(_indexer_resolve_cache_dir)
+    test_map_file="${cache_dir}/test_map.json"
+
+    "$venv_python" "${TEKHTON_HOME}/tools/repo_map.py" \
+        --root "$PROJECT_DIR" \
+        --cache-dir "$cache_dir" \
+        --languages "${REPO_MAP_LANGUAGES:-auto}" \
+        --emit-test-map "$test_map_file" \
+        > /dev/null 2>&1 || {
+        warn "[indexer] Failed to emit test symbol map (non-fatal)."
+        return 0
+    }
+
+    log "[indexer] Test symbol map written to ${test_map_file}."
+}
+```
+
+Call `emit_test_symbol_map` from `run_repo_map()` after the main invocation,
+and from `warm_index_cache()` in `lib/indexer_history.sh` after cache warming.
+
+Export `TEST_SYMBOL_MAP_FILE` so `test_audit.sh` can locate it without
+duplicating the cache-dir resolution logic.
+
+### Step 3 — lib/test_audit.sh: symbol-level orphan detection
+
+Add `_detect_stale_symbol_refs()` — called from `_detect_orphaned_tests` when
+the symbol map is available:
+
+```bash
+_detect_stale_symbol_refs() {
+    local test_map_file="${TEST_SYMBOL_MAP_FILE:-}"
+    local tags_file  # resolved from cache dir
+
+    [[ -z "$test_map_file" ]] && return
+    [[ ! -f "$test_map_file" ]] && return
+    [[ -z "${_AUDIT_TEST_FILES:-}" ]] && return
+
+    # Resolve tags.json (sibling to test_map.json)
+    tags_file="$(dirname "$test_map_file")/tags.json"
+    [[ ! -f "$tags_file" ]] && return
+
+    while IFS= read -r test_file; do
+        [[ -z "$test_file" ]] && continue
+
+        # Extract referenced symbols for this file from test_map.json
+        local symbols
+        symbols=$(python3 -c "
+import json, sys
+data = json.load(open('${test_map_file}'))
+files = data.get('files', data)
+syms = files.get('${test_file}', [])
+print('\n'.join(syms))
+" 2>/dev/null || true)
+
+        [[ -z "$symbols" ]] && continue
+
+        while IFS= read -r sym; do
+            [[ -z "$sym" ]] && continue
+            # Check if sym appears as a definition name in tags.json
+            if ! grep -qF "\"name\": \"${sym}\"" "$tags_file" 2>/dev/null; then
+                _AUDIT_ORPHAN_FINDINGS="${_AUDIT_ORPHAN_FINDINGS}
+STALE-SYM: ${test_file} references '${sym}' not found in any source definition"
+            fi
+        done <<< "$symbols"
+    done <<< "$_AUDIT_TEST_FILES"
+}
+```
+
+Call `_detect_stale_symbol_refs` at the end of `_detect_orphaned_tests` when
+`TEST_AUDIT_SYMBOL_MAP_ENABLED=true`.
+
+Update `_AUDIT_ORPHAN_FINDINGS` string to include `STALE-SYM` prefix so the
+M20 LLM audit prompt sees it as a distinct pre-verified signal.
+
+### Step 4 — lib/config_defaults.sh
+
+Add one new key adjacent to the existing `TEST_AUDIT_*` block:
+
+```bash
+: "${TEST_AUDIT_SYMBOL_MAP_ENABLED:=true}"
+```
+
+Add to the validation block in `lib/config.sh` (boolean check alongside
+`TEST_AUDIT_ENABLED`).
+
+### Step 5 — Python tests
+
+Extend `tools/tests/test_repo_map.py` with a `TestEmitTestMap` class:
+
+- `test_emit_test_map_creates_file` — run with `--emit-test-map`, verify JSON
+  file is created
+- `test_emit_test_map_captures_references` — fixture test file calling a known
+  function; assert function name in map output
+- `test_emit_test_map_excludes_noise` — fixture test file using `setUp`/`tearDown`;
+  assert those names excluded
+- `test_emit_test_map_only_test_files` — source file in same fixture; assert it
+  is NOT in the map output
+
+### Step 6 — Shell tests
+
+Create `tests/test_audit_symbol_orphan.sh`:
+
+- `test_stale_sym_detected` — construct a fake `test_map.json` referencing `OldFunc`
+  and a `tags.json` where `OldFunc` is absent; run `_detect_stale_symbol_refs`;
+  assert `_AUDIT_ORPHAN_FINDINGS` contains `STALE-SYM`
+- `test_live_sym_not_flagged` — same setup but `NewFunc` present in `tags.json`;
+  assert no `STALE-SYM` finding
+- `test_skips_when_no_map` — no `test_map.json` present; assert no finding
+  and no error
+- `test_skips_when_map_disabled` — `TEST_AUDIT_SYMBOL_MAP_ENABLED=false`; assert
+  `_detect_stale_symbol_refs` returns without populating findings
+
+## Files Touched
+
+### Added
+- `tests/test_audit_symbol_orphan.sh` — shell tests for symbol-level detection
+
+### Modified
+- `tools/repo_map.py` — `--emit-test-map PATH` flag + `_build_test_symbol_map()` +
+  `_write_test_map()`
+- `lib/indexer.sh` — `emit_test_symbol_map()` + call sites after warm/generate
+- `lib/test_audit.sh` — `_detect_stale_symbol_refs()` called from
+  `_detect_orphaned_tests`
+- `lib/config_defaults.sh` — `TEST_AUDIT_SYMBOL_MAP_ENABLED=true`
+- `lib/config.sh` — boolean validation for new key
+- `tools/tests/test_repo_map.py` — `TestEmitTestMap` class
+
+## Acceptance Criteria
+
+- [ ] `repo_map.py --emit-test-map PATH` creates a valid JSON file at PATH
+- [ ] The JSON contains entries only for test files (no source files)
+- [ ] Each entry is a list of referenced symbol names, noise symbols excluded
+- [ ] `emit_test_symbol_map()` runs without error when `REPO_MAP_ENABLED=true`
+  and the indexer is available
+- [ ] `emit_test_symbol_map()` exits 0 (non-fatal) when indexer is unavailable
+- [ ] `TEST_SYMBOL_MAP_FILE` is exported so test_audit.sh can locate the map
+- [ ] `_detect_stale_symbol_refs` flags a test referencing a symbol absent from
+  `tags.json` with a `STALE-SYM:` prefixed finding
+- [ ] `_detect_stale_symbol_refs` does NOT flag a test referencing a symbol
+  present in `tags.json`
+- [ ] `_detect_stale_symbol_refs` is silently skipped when
+  `TEST_AUDIT_SYMBOL_MAP_ENABLED=false`
+- [ ] `_detect_stale_symbol_refs` is silently skipped when `test_map.json`
+  does not exist (REPO_MAP_ENABLED=false projects)
+- [ ] **Behavioral:** In the Tekhton test fixture, `_detect_stale_symbol_refs`
+  produces zero false positives against current source tags
+- [ ] `python -m pytest tools/tests/test_repo_map.py -k TestEmitTestMap` passes
+- [ ] `bash tests/test_audit_symbol_orphan.sh` passes
+- [ ] `bash tests/run_tests.sh` passes (no regressions)
+- [ ] `shellcheck lib/indexer.sh lib/test_audit.sh` reports zero warnings
+- [ ] `python -m pytest tools/tests/` passes (no Python regressions)
+- [ ] No change in behavior when `REPO_MAP_ENABLED=false`
+
+## Watch For
+
+- The `tags.json` grep for `"name": "sym"` is intentionally simple but prone to
+  false negatives on symbols containing regex-special characters. Symbols like
+  `__init__` are already filtered by noise exclusion; the remaining set is
+  identifiers that are safe for substring grep. If edge cases appear, switch to
+  `python3 -c "import json; ..."` for the source-side check too.
+- False positives are the key risk. A referenced symbol that is genuinely
+  external (stdlib, third-party package) will appear in the test map but not in
+  `tags.json`. The noise filter covers the most common cases; the LLM audit has
+  context to dismiss the rest. Prefer false positives (LLM dismisses) over false
+  negatives (stale test survives).
+- `_detect_stale_symbol_refs` calls `python3` directly for JSON parsing. This
+  assumes Python 3 is available in `$PATH` when the indexer is enabled (safe
+  assumption: the indexer venv requires Python 3.8+). Use the venv python for
+  the JSON read to avoid any path mismatch.
+
+## Seeds Forward
+
+- M89 (Rolling Test Audit Sampler) consumes `test_map.json` to identify which
+  test files are candidates for freshness sampling — files whose symbol sets have
+  changed since last audit become priority candidates.
+- The test symbol map is the foundation for a future "dead symbol" detector:
+  symbols defined in source but referenced nowhere (not even in tests) are strong
+  candidates for removal.
+- The noise exclusion list is project-agnostic today. A future enhancement lets
+  `pipeline.conf` extend it with project-specific utility names.
+
+---
+
+## Archived: 2026-04-16 — Unknown Initiative
+
+# Milestone 89: Rolling Test Audit Sampler
+<!-- milestone-meta
+id: "89"
+status: "done"
+-->
+
+## Overview
+
+The M20 per-run audit is scoped to `_AUDIT_TEST_FILES` — tests written or
+modified by the tester this run. A stale test that nobody touches never enters
+that set and is never re-scrutinized.
+
+M88 closes this gap for *symbol-level* drift (renamed/removed symbols) with a
+deterministic shell check. This milestone closes the complementary gap at the
+*LLM rubric* level: scope alignment, assertion honesty, and naming quality
+issues that the shell cannot catch deterministically.
+
+The mechanism is a rolling sampler: each pipeline run, a small K-file sample
+of "least-recently-audited" test files from the full suite is appended to
+`_AUDIT_TEST_FILES` before the audit agent is invoked. The agent already runs;
+its input context grows by K files. No new agent calls, no new stages.
+
+Across ~ceil(N/K) runs, every test file in a project with N tests gets
+re-evaluated. For K=3 and a typical project with 30 test files, the full suite
+rotates through in ~10 runs. The audit agent never sees more than `K` extra
+files per run and the token cost is bounded.
+
+## Design Decisions
+
+### 1. JSONL audit history, same pattern as task_history.jsonl
+
+Each entry records `{"ts": "...", "file": "tests/test_foo.py"}` when a file was
+last audited. The sampler reads this file, finds test files absent from the
+history or with the oldest timestamps, and selects K of them. Pruning follows
+the `_prune_task_history` pattern: keep the last `TEST_AUDIT_HISTORY_MAX_RECORDS`
+entries. Stored at `${REPO_MAP_CACHE_DIR}/test_audit_history.jsonl`.
+
+### 2. Sample K oldest, not random
+
+Deterministic selection (oldest-last-audited first) ensures every file
+eventually gets audited — pure random sampling can leave files unaudited
+indefinitely. Files never seen in history (new files, files predating M89) are
+treated as having been audited at epoch 0 (oldest possible) and sampled first.
+
+### 3. Sampled files are clearly distinguished in audit context
+
+The context block passed to the audit agent labels sampled files separately from
+tester-modified files:
+
+```
+## Test Files Under Audit (modified this run)
+- tests/test_new_feature.py
+
+## Test Files Under Audit (freshness sample)
+- tests/test_legacy_auth.py
+- tests/test_old_migration.py
+```
+
+This tells the agent to apply scope-alignment scrutiny to the sampled files
+(they may be stale) without assuming recent coder changes caused any issues.
+
+### 4. History update is best-effort, non-blocking
+
+Audit history writes are append-only JSONL with atomic file operations (same
+`echo >> file` pattern as `record_task_file_association`). A write failure
+warns but never blocks the pipeline.
+
+### 5. Sampler is independent of REPO_MAP_ENABLED
+
+Unlike M88 (requires indexer), the sampler is pure shell — it only needs
+`_discover_all_test_files()` (already exists in `test_audit.sh`) and a JSONL
+file. It works in any project regardless of indexer configuration.
+
+### 6. Sampler skips when tester wrote no tests
+
+If `_AUDIT_TEST_FILES` is empty (tester ran but wrote no new test files), the
+sampler still populates up to K files so the audit agent has something to
+evaluate. This handles the case where the coder refactored and the tester only
+ran existing tests without creating new ones.
+
+## Scope Summary
+
+| Area | Count | Notes |
+|------|-------|-------|
+| Shell files modified | 1 | `lib/test_audit.sh` |
+| Config modified | 1 | `lib/config_defaults.sh` — 2 new keys |
+| Shell tests added | 1 | `tests/test_audit_sampler.sh` |
+| New data file (runtime) | 1 | `${REPO_MAP_CACHE_DIR}/test_audit_history.jsonl` |
+
+## Implementation Plan
+
+### Step 1 — lib/test_audit.sh: audit history management
+
+Add `_TEST_AUDIT_HISTORY_FILE` resolution (analogous to `_TASK_HISTORY_FILE`):
+
+```bash
+_TEST_AUDIT_HISTORY_FILE=""
+
+_ensure_test_audit_history_file() {
+    if [[ -n "$_TEST_AUDIT_HISTORY_FILE" ]]; then return; fi
+    local cache_dir="${REPO_MAP_CACHE_DIR:-${PROJECT_DIR}/.claude/index}"
+    mkdir -p "${PROJECT_DIR}/${cache_dir}" 2>/dev/null || true
+    _TEST_AUDIT_HISTORY_FILE="${PROJECT_DIR}/${cache_dir}/test_audit_history.jsonl"
+}
+```
+
+Add `_record_audit_history FILES`:
+```bash
+_record_audit_history() {
+    local files="$1"
+    _ensure_test_audit_history_file
+    local ts
+    ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        local safe_f
+        safe_f=$(printf '%s' "$f" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        echo "{\"ts\":\"${ts}\",\"file\":\"${safe_f}\"}" \
+            >> "$_TEST_AUDIT_HISTORY_FILE" 2>/dev/null || true
+    done <<< "$files"
+    _prune_audit_history
+}
+```
+
+Add `_prune_audit_history`:
+- Keep last `TEST_AUDIT_HISTORY_MAX_RECORDS` lines (default: 500)
+- Same atomic `tail -n N > tmp && mv tmp original` pattern as `_prune_task_history`
+
+### Step 2 — lib/test_audit.sh: sampler
+
+Add `_sample_unaudited_test_files`:
+
+```bash
+_sample_unaudited_test_files() {
+    local k="${TEST_AUDIT_ROLLING_SAMPLE_K:-3}"
+    _ensure_test_audit_history_file
+
+    # Get all test files in the project
+    local all_tests
+    all_tests=$(_discover_all_test_files)
+    [[ -z "$all_tests" ]] && return
+
+    # Build set of already-in-audit-files to avoid duplicates
+    local current_set="${_AUDIT_TEST_FILES:-}"
+
+    # Read history: most-recently-audited file per path
+    # (history may have duplicates — last entry for a path wins)
+    declare -A last_seen
+    if [[ -f "$_TEST_AUDIT_HISTORY_FILE" ]]; then
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+            local f ts
+            f=$(echo "$line" | sed 's/.*"file":"\([^"]*\)".*/\1/')
+            ts=$(echo "$line" | sed 's/.*"ts":"\([^"]*\)".*/\1/')
+            last_seen["$f"]="$ts"
+        done < "$_TEST_AUDIT_HISTORY_FILE"
+    fi
+
+    # Score each test file: epoch for unseen, ISO timestamp for seen
+    # Sort ascending (oldest first), take K, skip already-included
+    local sampled=0
+    local sample_list=""
+    while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        # Skip if already in this run's audit set
+        if echo "$current_set" | grep -qxF "$f" 2>/dev/null; then
+            continue
+        fi
+        [[ "$sampled" -ge "$k" ]] && break
+        sample_list="${sample_list}${f}
+"
+        sampled=$((sampled + 1))
+    done < <(
+        while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            echo "${last_seen[$f]:-0000-00-00T00:00:00Z} $f"
+        done <<< "$all_tests" | sort | awk '{print $2}'
+    )
+
+    # Append sampled files to global
+    if [[ -n "$sample_list" ]]; then
+        export _AUDIT_SAMPLE_FILES="$sample_list"
+    fi
+}
+```
+
+### Step 3 — lib/test_audit.sh: integrate into run_test_audit()
+
+In `run_test_audit()`, after `_collect_audit_context`, add the sampler call:
+
+```bash
+# Rolling freshness sample
+if [[ "${TEST_AUDIT_ROLLING_ENABLED:-true}" == "true" ]]; then
+    _sample_unaudited_test_files
+fi
+```
+
+Update `TEST_AUDIT_CONTEXT` assembly to label the two groups separately:
+
+```
+## Test Files Under Audit (modified this run)
+<_AUDIT_TEST_FILES>
+
+## Test Files Under Audit (freshness sample — may be stale)
+<_AUDIT_SAMPLE_FILES>
+```
+
+The agent prompt already instructs scope-alignment checks; the "may be stale"
+label primes the agent to look for drift rather than assuming recency.
+
+After `_route_audit_verdict` succeeds (PASS or CONCERNS), record audit history
+for all files that were audited (both modified and sampled):
+
+```bash
+_record_audit_history "${_AUDIT_TEST_FILES}
+${_AUDIT_SAMPLE_FILES:-}"
+```
+
+History is recorded only on non-NEEDS_WORK verdicts. If the audit triggers
+rework, history is recorded after the rework cycle resolves.
+
+### Step 4 — lib/config_defaults.sh
+
+Add two keys adjacent to `TEST_AUDIT_*`:
+
+```bash
+: "${TEST_AUDIT_ROLLING_ENABLED:=true}"
+: "${TEST_AUDIT_ROLLING_SAMPLE_K:=3}"
+: "${TEST_AUDIT_HISTORY_MAX_RECORDS:=500}"
+```
+
+Add clamp in the validation block:
+```bash
+_clamp_config_value TEST_AUDIT_ROLLING_SAMPLE_K 20
+_clamp_config_value TEST_AUDIT_HISTORY_MAX_RECORDS 2000
+```
+
+### Step 5 — Shell tests
+
+Create `tests/test_audit_sampler.sh`:
+
+- `test_sampler_returns_k_files` — pool of 10 test files, empty history, assert
+  `_AUDIT_SAMPLE_FILES` contains exactly K=3 entries
+- `test_sampler_skips_recently_audited` — inject history entries for 7 files,
+  assert only the 3 un-historied files are sampled
+- `test_sampler_oldest_first` — history with varied timestamps, assert file
+  with oldest timestamp is included in sample
+- `test_sampler_deduplicates_with_current_set` — file already in
+  `_AUDIT_TEST_FILES`; assert it does not appear again in sample
+- `test_sampler_disabled` — `TEST_AUDIT_ROLLING_ENABLED=false`; assert
+  `_AUDIT_SAMPLE_FILES` is empty
+- `test_record_audit_history_appends` — call `_record_audit_history` with 2
+  files; assert both appear in JSONL file
+- `test_prune_audit_history` — insert `TEST_AUDIT_HISTORY_MAX_RECORDS + 10`
+  entries; assert file is pruned to max records
+
+## Files Touched
+
+### Added
+- `tests/test_audit_sampler.sh` — shell tests for sampler and history
+
+### Modified
+- `lib/test_audit.sh` — `_ensure_test_audit_history_file`, `_record_audit_history`,
+  `_prune_audit_history`, `_sample_unaudited_test_files`, integrate into
+  `run_test_audit()`; update `TEST_AUDIT_CONTEXT` assembly
+- `lib/config_defaults.sh` — `TEST_AUDIT_ROLLING_ENABLED`, `TEST_AUDIT_ROLLING_SAMPLE_K`,
+  `TEST_AUDIT_HISTORY_MAX_RECORDS`
+
+## Acceptance Criteria
+
+- [ ] `_sample_unaudited_test_files` returns exactly `TEST_AUDIT_ROLLING_SAMPLE_K`
+  files (or fewer if the project has fewer test files than K)
+- [ ] Sampled files are distinct from `_AUDIT_TEST_FILES` (no duplicates)
+- [ ] Files absent from audit history are selected before files with older timestamps
+- [ ] Files with the oldest audit timestamps are selected before more recently audited ones
+- [ ] Sampled files appear in `TEST_AUDIT_CONTEXT` under "freshness sample" label,
+  separate from modified-this-run files
+- [ ] Audit history is updated after a PASS or CONCERNS verdict (not after
+  NEEDS_WORK, which may indicate the files need further work)
+- [ ] `_record_audit_history` writes valid JSONL entries
+- [ ] History is pruned when it exceeds `TEST_AUDIT_HISTORY_MAX_RECORDS`
+- [ ] `TEST_AUDIT_ROLLING_ENABLED=false` causes sampler to skip with no side effects
+- [ ] **Behavioral:** After M89 is implemented, running the Tekhton pipeline 4+ times
+  causes test files not modified in any run to appear at least once in a
+  "freshness sample" audit section (verify via run logs)
+- [ ] `bash tests/test_audit_sampler.sh` passes
+- [ ] `bash tests/run_tests.sh` passes (no regressions)
+- [ ] `shellcheck lib/test_audit.sh` reports zero warnings
+- [ ] No additional agent turns per run (sampler only enlarges the existing
+  audit agent's input context)
+
+## Watch For
+
+- The `declare -A` associative array in `_sample_unaudited_test_files` requires
+  Bash 4.0+. The project baseline is Bash 4.3+ so this is safe, but declare it
+  local to the function to avoid polluting the global environment. Use
+  `local -A last_seen` syntax.
+- ISO timestamp sort (`sort` on `YYYY-MM-DDTHH:MM:SSZ` strings) is
+  lexicographically correct. No `date` parsing needed.
+- The sampler calls `_discover_all_test_files()` which uses `git ls-files`.
+  In projects with thousands of test files, this is still fast (sub-second).
+  The sort over the result set is O(N log N) but N is test-file count, not
+  total file count.
+- History records the *file path* as a relative path (matching
+  `_discover_all_test_files` output). Ensure the path format is consistent
+  between the sampler and the history recorder.
+
+## Seeds Forward
+
+- The audit history JSONL is the foundation for a future health metric: "% of
+  test suite audited in the last N runs." Surfaceable in Watchtower.
+- M88's `test_map.json` can feed into the sampler as a priority signal: test
+  files whose symbol sets changed since their last audit get elevated sampling
+  priority, even if their timestamp is recent. This combines both milestones
+  into a fully adaptive freshness system.
+- `TEST_AUDIT_ROLLING_SAMPLE_K` can become adaptive (like `METRICS_ADAPTIVE_TURNS`):
+  increase K when the audit returns CONCERNS findings to accelerate suite coverage.

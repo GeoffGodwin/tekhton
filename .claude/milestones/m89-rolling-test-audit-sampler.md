@@ -1,7 +1,7 @@
 # Milestone 89: Rolling Test Audit Sampler
 <!-- milestone-meta
 id: "89"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

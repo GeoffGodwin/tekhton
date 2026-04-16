@@ -16,4 +16,6 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 ## Bugs
 
+- [ ] [BUG] `tests/run_tests.sh` `run_test()` runs each failing test **twice** — exit code from Run 1 (silent) determines PASS/FAIL, but the debug output shown is from an independent Run 2 (re-run). If `set -euo pipefail` aborts Run 1 early (e.g. SIGPIPE from `head -20` inside a `$()` capture, or a bare `grep` with no match), Run 2 starts clean and can produce all-PASS output, yielding a false "FAIL ... Passed: N  Failed: 0" in the log. Fix: capture output and exit code in one run — `output=$(bash "$test_file" < /dev/null 2>&1); rc=$?` — then branch on `$rc` and print `$output` only when non-zero. Remove the second `bash "$test_file"` invocation entirely. File: `tests/run_tests.sh`, function `run_test()`.
+
 ## Polish
