@@ -171,13 +171,16 @@ _render_progress_bar() {
         bar_ch="\xe2\x94\x81"  # ━
     fi
 
+    local decoded_ch decoded_empty
+    printf -v decoded_ch '%b' "$bar_ch"
+    printf -v decoded_empty '%b' "$bar_empty"
     local bar=""
     local k
     for (( k = 0; k < filled; k++ )); do
-        bar="${bar}$(printf '%b' "$bar_ch")"
+        bar="${bar}${decoded_ch}"
     done
     for (( k = 0; k < empty; k++ )); do
-        bar="${bar}$(printf '%b' "$bar_empty")"
+        bar="${bar}${decoded_empty}"
     done
     echo -e "${GREEN}${bar}${NC}"
 }

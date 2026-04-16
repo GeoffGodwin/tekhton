@@ -130,6 +130,24 @@ fi
 TEST_CMD="npm test"
 
 echo ""
+echo "=== validate_config: bare colon TEST_CMD is a warning ==="
+
+TEST_CMD=":"
+rc=0
+output=$(validate_config 2>/dev/null) || rc=$?
+if [[ "$rc" -eq 0 ]]; then
+    pass "Bare colon TEST_CMD is only a warning (exit 0)"
+else
+    fail "Bare colon TEST_CMD caused error (exit $rc)"
+fi
+if echo "$output" | grep -q "TEST_CMD is no-op"; then
+    pass "Bare colon TEST_CMD warning message present"
+else
+    fail "Bare colon TEST_CMD warning message missing"
+fi
+TEST_CMD="npm test"
+
+echo ""
 echo "=== validate_config: missing role files is an error ==="
 
 CODER_ROLE_FILE=".claude/agents/nonexistent.md"

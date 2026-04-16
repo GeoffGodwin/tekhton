@@ -44,7 +44,7 @@ _vc_is_placeholder() {
 _vc_is_noop_cmd() {
     local val="$1"
     [[ -z "$val" ]] && return 0
-    echo "$val" | grep -qE '^(echo |true$|: $|exit 0$)' && return 0
+    echo "$val" | grep -qE '^(echo |true$|:( .*)?$|exit 0$)' && return 0
     return 1
 }
 
