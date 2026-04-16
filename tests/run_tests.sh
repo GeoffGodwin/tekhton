@@ -67,6 +67,7 @@ NC='\033[0m'
 run_test() {
     local test_name="$1"
     local test_file="${TESTS_DIR}/${test_name}"
+    local output rc=0
 
     if [ ! -f "$test_file" ]; then
         echo -e "${RED}MISSING${NC} ${test_name}"
@@ -74,15 +75,21 @@ run_test() {
         return
     fi
 
-    if bash "$test_file" < /dev/null > /dev/null 2>&1; then
+    # Single invocation — capture output and exit code together so the FAIL
+    # branch reports the same run that produced the non-zero exit code.
+    # Re-running the test for debug output can yield divergent results when
+    # `set -euo pipefail` aborts the first run early (SIGPIPE inside `$()`,
+    # bare grep with no match, etc.) but the second run starts clean.
+    output=$(bash "$test_file" < /dev/null 2>&1) || rc=$?
+
+    if [ "$rc" -eq 0 ]; then
         echo -e "${GREEN}PASS${NC} ${test_name}"
         PASS=$((PASS + 1))
     else
         echo -e "${RED}FAIL${NC} ${test_name}"
         FAILED_TESTS+=("$test_name")
-        # Re-run with output for debugging
         echo "  --- output ---"
-        bash "$test_file" < /dev/null 2>&1 | sed 's/^/  /' || true
+        printf '%s\n' "$output" | sed 's/^/  /'
         echo "  --- end ---"
         FAIL=$((FAIL + 1))
     fi

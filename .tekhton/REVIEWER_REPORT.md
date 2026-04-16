@@ -1,27 +1,29 @@
-# Reviewer Report — M89 Rolling Test Audit Sampler (Cycle 2)
+# Reviewer Report
 
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- The three new config keys (`TEST_AUDIT_ROLLING_ENABLED`, `TEST_AUDIT_ROLLING_SAMPLE_K`, `TEST_AUDIT_HISTORY_MAX_RECORDS`) are not documented in the Template Variables table in `CLAUDE.md`. Other `TEST_AUDIT_*` keys are also absent from that table, so this continues an existing gap rather than introducing a new regression. Worth a future pass to add all `TEST_AUDIT_*` keys.
+- `tests/test_run_tests_single_invocation.sh:47` — The `awk` range pattern `'/^run_test\(\) \{/,/^}/'` terminates at the first line starting with `}` in the file after the opening. Currently correct because all interior `}` (closing `if` blocks) are indented, but if a future edit adds a `}` at column 0 inside the function body the extraction would silently truncate. Consider anchoring more tightly (e.g. matching the specific closing `^}$` or extracting via a function-aware tool) if the function grows more complex.
 
 ## Coverage Gaps
-None
+- None
 
 ## Drift Observations
-- `lib/test_audit.sh` is 574 lines — well over the 300-line soft ceiling. The sampler extraction into `lib/test_audit_sampler.sh` was the right call, but the parent file still warrants a dedicated refactor milestone to split it further.
+- None
 
 ---
 
-## Prior Blocker Resolution
+### Review Notes
 
-**Blocker (cycle 1):** `lib/test_audit_sampler.sh` missing `set -euo pipefail`.
+The fix is correct and minimal. The two-invocation pattern is gone; `output=$(bash "$test_file" < /dev/null 2>&1) || rc=$?` captures both the output and exit code in a single run and the `|| rc=$?` prevents the runner's own `set -e` from aborting on a failing test. `< /dev/null` avoids stdin inheritance. `printf '%s\n' "$output"` is safer than `echo` for arbitrary captured content.
 
-**Status: FIXED** — `set -euo pipefail` is present on line 2 of `lib/test_audit_sampler.sh`. No regressions introduced by the fix.
+The regression test is well-constructed: the stateful fixture (counter file, exits 1 on run 1 / 0 on run 2) directly exercises the double-invocation failure mode, the counter check asserts exactly one invocation, and the passing-fixture sanity check verifies the happy path is unaffected. The coder verified the test fails on the pre-fix code — a strong signal it exercises the right behaviour.
+
+Both files: `set -euo pipefail` present, under 300 lines, variables quoted, no hardcoded values.
