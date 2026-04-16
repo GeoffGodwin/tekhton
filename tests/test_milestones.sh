@@ -268,9 +268,11 @@ echo "=== should_auto_advance ==="
 
 AUTO_ADVANCE_ENABLED=false
 AUTO_ADVANCE_LIMIT=3
+unset _AA_SESSION_ADVANCES
 assert "Auto-advance disabled returns false" "$(! should_auto_advance && echo 0 || echo 1)"
 
 AUTO_ADVANCE_ENABLED=true
+unset _AA_SESSION_ADVANCES
 init_milestone_state 1 4
 write_milestone_disposition "COMPLETE_AND_CONTINUE"
 should_auto_advance > /dev/null 2>&1; _sa_rc=$?
@@ -280,16 +282,50 @@ write_milestone_disposition "INCOMPLETE_REWORK"
 should_auto_advance > /dev/null 2>&1 && _sa_rc=0 || _sa_rc=$?
 assert "Auto-advance with INCOMPLETE_REWORK returns false" "$([ "$_sa_rc" -ne 0 ] && echo 0 || echo 1)"
 
-# Test limit enforcement
-AUTO_ADVANCE_LIMIT=2
+# Limit enforcement uses _AA_SESSION_ADVANCES (in-memory counter), not the state file.
+AUTO_ADVANCE_LIMIT=3
 init_milestone_state 1 4
 write_milestone_disposition "COMPLETE_AND_CONTINUE"
-advance_milestone 1 2
-write_milestone_disposition "COMPLETE_AND_CONTINUE"
-advance_milestone 2 3
-write_milestone_disposition "COMPLETE_AND_CONTINUE"
+
+_AA_SESSION_ADVANCES=0
 should_auto_advance > /dev/null 2>&1 && _sa_rc=0 || _sa_rc=$?
-assert "Auto-advance at limit returns false" "$([ "$_sa_rc" -ne 0 ] && echo 0 || echo 1)"
+assert "Auto-advance with _AA_SESSION_ADVANCES=0 (limit 3) returns true" "$_sa_rc"
+
+_AA_SESSION_ADVANCES=3
+should_auto_advance > /dev/null 2>&1 && _sa_rc=0 || _sa_rc=$?
+assert "Auto-advance with _AA_SESSION_ADVANCES=3 (limit 3) returns false" "$([ "$_sa_rc" -ne 0 ] && echo 0 || echo 1)"
+
+# State file absence: should_auto_advance must NOT consult disposition (the
+# call site after finalize_run has the file deleted but already owns the
+# advance decision).
+_AA_SESSION_ADVANCES=0
+clear_milestone_state
+should_auto_advance > /dev/null 2>&1 && _sa_rc=0 || _sa_rc=$?
+assert "Auto-advance with state file absent returns true (no disposition check)" "$_sa_rc"
+
+# Limit still enforced when state file absent
+_AA_SESSION_ADVANCES=3
+should_auto_advance > /dev/null 2>&1 && _sa_rc=0 || _sa_rc=$?
+assert "Auto-advance limit enforced even when state file absent" "$([ "$_sa_rc" -ne 0 ] && echo 0 || echo 1)"
+
+unset _AA_SESSION_ADVANCES
+
+# --- Test: advance_milestone uses _AA_SESSION_ADVANCES for banner -----------
+
+echo "=== advance_milestone with _AA_SESSION_ADVANCES ==="
+
+init_milestone_state 5 10
+_AA_SESSION_ADVANCES=2
+advance_milestone 5 6 > /dev/null
+written_count=$(get_milestones_completed_this_session)
+assert "advance_milestone writes _AA_SESSION_ADVANCES (2) to state file when set" "$([ "$written_count" = "2" ] && echo 0 || echo 1)"
+
+# When _AA_SESSION_ADVANCES is unset, falls back to state file count + 1
+unset _AA_SESSION_ADVANCES
+init_milestone_state 5 10
+advance_milestone 5 6 > /dev/null
+written_count=$(get_milestones_completed_this_session)
+assert "advance_milestone falls back to state file +1 when _AA_SESSION_ADVANCES unset" "$([ "$written_count" = "1" ] && echo 0 || echo 1)"
 
 # --- Test: clear_milestone_state ----------------------------------------------
 

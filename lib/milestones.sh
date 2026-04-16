@@ -236,9 +236,17 @@ advance_milestone() {
         return 1
     fi
 
+    # Prefer the in-memory session counter (set by _run_auto_advance_chain) so
+    # the banner reflects the correct count even though MILESTONE_STATE_FILE
+    # was just re-initialised (counter resets to 0). Fall back to the state
+    # file count + 1 when the counter is unset (callers outside the chain).
     local completed_count
-    completed_count=$(get_milestones_completed_this_session)
-    completed_count=$(( completed_count + 1 ))
+    if [[ -n "${_AA_SESSION_ADVANCES:-}" ]]; then
+        completed_count="${_AA_SESSION_ADVANCES}"
+    else
+        completed_count=$(get_milestones_completed_this_session)
+        completed_count=$(( completed_count + 1 ))
+    fi
 
     local to_title
     to_title=$(get_milestone_title "$to_num")

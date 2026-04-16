@@ -1,48 +1,95 @@
 # Coder Summary
 ## Status: COMPLETE
 
-## Root Cause Analysis
-`tests/run_tests.sh` `run_test()` ran each failing test **twice** in two
-independent `bash "$test_file"` invocations:
-
-1. Line 77 — silent first run inside an `if` to determine PASS/FAIL exit code.
-2. Line 85 — second run, with output piped through `sed` for the debug section
-   that's printed only when the first run failed.
-
-When the first run aborts under `set -euo pipefail` for a reason that does not
-recur on a clean re-run — SIGPIPE from a downstream consumer of `$(cmd | head)`,
-a bare `grep` returning 1 on zero matches, a process-substitution race — the
-second run can produce all-PASS output. The user then sees the runner report
-`FAIL` followed by debug output that contains "Passed: N  Failed: 0", which is
-both confusing and actively misleading: it makes the failure look like a runner
-artifact when it is actually a real `set -e` abort in the test.
-
-The fix captures stdout/stderr and the exit code from a **single** invocation
-and only prints the captured output when the captured exit code is non-zero.
-Because `output=$(...)` would otherwise trigger `set -e` in the parent on a
-failing test, the failure is rerouted via `|| rc=$?`, leaving `rc=0` on success.
-
 ## What Was Implemented
-- Refactored `run_test()` to invoke each test exactly once and reuse the
-  captured output for the FAIL debug section.
-- Added a regression test (`tests/test_run_tests_single_invocation.sh`) that
-  builds a stateful fixture (counter file, exits 1 on first run and 0 on
-  subsequent runs) and asserts: FAIL marker present, debug section contains
-  `INVOCATION_1` (not `INVOCATION_2`), counter file ends at `1`, plus a passing
-  fixture sanity check. The test fails on the pre-fix code and passes on the
-  fixed code (verified by reverting and re-running).
+
+Milestone 90 — Auto-Advance Fix. Two independent bugs in `--auto-advance` are fixed:
+
+1. **CLI count argument:** `--auto-advance N "task"` now accepts an optional bare
+   integer immediately after the flag and uses it as `AUTO_ADVANCE_LIMIT` for
+   this invocation. If the next token is not an integer, it is left for normal
+   task-string parsing — so `--auto-advance "M05"` continues to behave exactly
+   as before.
+
+2. **State-file lifecycle:** The advance chain previously short-circuited because
+   `finalize_run` deletes `MILESTONE_STATE_FILE` before
+   `_run_auto_advance_chain` calls `should_auto_advance`. The fix introduces an
+   in-memory session counter `_AA_SESSION_ADVANCES` that:
+   - Initializes to `0` in `tekhton.sh` when `--auto-advance` is set (and is exported).
+   - Is the source of truth for limit checking in `should_auto_advance`.
+   - Is incremented inside `_run_auto_advance_chain` before each advance.
+   - Is preferred by `advance_milestone` for the banner count when present
+     (falls back to state-file-based count + 1 when unset, preserving the
+     standalone-call contract used by tests).
+
+   `should_auto_advance` now skips the disposition check when the state file is
+   absent — the only call site that hits this path is `_run_auto_advance_chain`,
+   which already owns the advance decision. When the state file exists (the
+   pre-finalize call site in `run_complete_loop`), the disposition check still
+   runs.
+
+   `_run_auto_advance_chain` re-creates the state file via `init_milestone_state`
+   for the new milestone before invoking `advance_milestone`, so each advance
+   begins with a fresh, valid state file just like a first run.
+
+   Removed two `write_milestone_disposition "COMPLETE_AND_WAIT"` calls in the
+   chain's break paths — they were no-ops after `finalize_run` deleted the state
+   file (the function warned and returned 1).
+
+Help text updated in both grouped and full `--help` outputs to document the new
+`[N]` argument. CLI reference docs also updated.
+
+## Root Cause (bugs only)
+
+- **No CLI count:** the `--auto-advance` case in `tekhton.sh` did not peek at
+  the next argument, so any integer following it was silently swallowed by the
+  task-string parser.
+- **Short-circuit advance:** `finalize_run`'s `_hook_clear_state` removes
+  `MILESTONE_STATE_FILE` after `should_auto_advance` is called once. The cached
+  `_should_advance=true` triggered `_run_auto_advance_chain`, but its `while`
+  guard called `should_auto_advance` again — which read the (deleted) state file
+  via `get_milestone_disposition` (returns `"NONE"`) and exited the loop on the
+  very first iteration without ever advancing.
 
 ## Files Modified
-- `tests/run_tests.sh` — `run_test()` refactored to single-invocation.
-- `tests/test_run_tests_single_invocation.sh` — new regression test.
 
-## Verification
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — clean (exit 0).
-- `shellcheck tests/run_tests.sh tests/test_run_tests_single_invocation.sh` —
-  only pre-existing SC2155 on `run_tests.sh` line 11 (unchanged by this work).
-- `bash tests/run_tests.sh` — 373 shell tests pass, 87 Python tests pass.
-- Reverting the `run_tests.sh` fix and re-running the new test produces
-  3 of 6 assertion failures, confirming the test exercises the fixed behavior.
+- `tekhton.sh` — `--auto-advance` parser peeks at next arg for optional integer;
+  `_AA_SESSION_ADVANCES=0` initialized and exported when `AUTO_ADVANCE=true`;
+  help text in two `--help` blocks updated to `--auto-advance [N]`.
+- `lib/milestone_ops.sh` — `should_auto_advance` reads `_AA_SESSION_ADVANCES`
+  for limit and conditionally checks disposition (only when state file present).
+- `lib/orchestrate_helpers.sh` — `_run_auto_advance_chain` increments
+  `_AA_SESSION_ADVANCES`, calls `init_milestone_state` to recreate the state
+  file before `advance_milestone`, and removes dead
+  `write_milestone_disposition` calls in break paths.
+- `lib/milestones.sh` — `advance_milestone` prefers `_AA_SESSION_ADVANCES` for
+  the banner/state-file count; falls back to state-file count + 1 when unset.
+- `tests/test_milestones.sh` — replaced the state-file-based limit test with
+  in-memory counter tests (`_AA_SESSION_ADVANCES=0` returns true, `=3` returns
+  false, state-file-absent returns true, limit still enforced when state file
+  absent); added new test block exercising `advance_milestone`'s
+  `_AA_SESSION_ADVANCES`-vs-fallback path.
+- `tests/test_milestones_flag_smoke.sh` — added Test 6 (help text documents
+  `[N]`) and Test 7 (`--auto-advance 5 --help` exits 0; `--auto-advance --help`
+  also works without an integer).
+- `docs/cli-reference.md` — updated row for `--auto-advance` to `--auto-advance [N]`.
+- `docs/reference/commands.md` — updated row for `--auto-advance` to `--auto-advance [N]`
+  with description of the `N` override.
+
+## Docs Updated
+
+- `docs/cli-reference.md` — added `[N]` argument to `--auto-advance` row.
+- `docs/reference/commands.md` — added `[N]` argument and behavior note.
 
 ## Human Notes Status
-- COMPLETED: [BUG] `tests/run_tests.sh` `run_test()` runs each failing test **twice** — exit code from Run 1 (silent) determines PASS/FAIL, but the debug output shown is from an independent Run 2 (re-run). If `set -euo pipefail` aborts Run 1 early (e.g. SIGPIPE from `head -20` inside a `$()` capture, or a bare `grep` with no match), Run 2 starts clean and can produce all-PASS output, yielding a false "FAIL ... Passed: N  Failed: 0" in the log. Fix: capture output and exit code in one run — `output=$(bash "$test_file" < /dev/null 2>&1); rc=$?` — then branch on `$rc` and print `$output` only when non-zero. Remove the second `bash "$test_file"` invocation entirely. File: `tests/run_tests.sh`, function `run_test()`.
+
+No human notes were listed for this task.
+
+## Verification
+
+- `shellcheck -e SC1091` on the four modified shell files: no warnings introduced
+  on lines I touched (pre-existing warnings on lines 1416, 1417, 1830, 1832, 1833,
+  1889, 1967, 2353, 2420 are unrelated to this change).
+- `bash tests/test_milestones.sh`: 75 passed, 0 failed.
+- `bash tests/test_milestones_flag_smoke.sh`: 14 passed, 0 failed.
+- `bash tests/run_tests.sh`: shell 374 passed, 0 failed; python 87 passed.

@@ -30,7 +30,7 @@ tekhton "Your task description"
 | Flag | Description |
 |------|-------------|
 | `--milestone` | Run in milestone mode: higher turn limits, more review cycles, upgraded tester model. Picks the next pending milestone automatically. |
-| `--auto-advance` | After completing a milestone, automatically advance to the next one. Use with `--milestone`. |
+| `--auto-advance [N]` | After completing a milestone, automatically advance to the next one (implies `--milestone`). Optional `N` overrides `AUTO_ADVANCE_LIMIT` for this invocation. |
 | `--complete` | Loop mode: keep running the pipeline until the task is done or limits are reached. |
 | `--start-at STAGE` | Resume from a specific stage. Valid stages: `intake`, `coder`, `security`, `review`, `tester`, `test`. |
 | `--human [TAG]` | Pick the next unchecked note from `HUMAN_NOTES.md`. Optional tag filter: `BUG`, `FEAT`, `POLISH`. |

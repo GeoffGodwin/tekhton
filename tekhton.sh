@@ -989,7 +989,7 @@ usage() {
         echo "Running:"
         echo "  \"task description\"        Run pipeline with task"
         echo "  --milestone               Milestone mode: higher turn limits, more review cycles"
-        echo "  --auto-advance            Auto-advance through milestones after acceptance"
+        echo "  --auto-advance [N]        Auto-advance through milestones after acceptance (N overrides AUTO_ADVANCE_LIMIT)"
         echo "  --complete                Loop mode: repeat pipeline until done or bounds hit"
         echo "  --start-at STAGE          Resume from: intake, coder, security, review, tester, test"
         echo "  --human [TAG]             Pick next unchecked note as task (BUG, FEAT, POLISH)"
@@ -1067,7 +1067,7 @@ usage() {
         echo "Running:"
         echo "  \"task description\"  Run pipeline with task"
         echo "  --milestone         Run in milestone mode (higher turn budgets)"
-        echo "  --auto-advance      Auto-advance through milestones"
+        echo "  --auto-advance [N]  Auto-advance through milestones (N = limit override)"
         echo "  --complete          Loop until done or bounds hit"
         echo "  --dry-run           Preview what the pipeline would do"
         echo "  --human [TAG]       Pick next note as task (BUG, FEAT, POLISH)"
@@ -1321,6 +1321,13 @@ while [[ $# -gt 0 ]]; do
             MILESTONE_MODE=true
             apply_milestone_overrides
             shift
+            # Optional bare integer immediately after the flag overrides
+            # AUTO_ADVANCE_LIMIT for this invocation. If the next token isn't
+            # a bare integer it is left for normal task-string parsing.
+            if [[ $# -gt 0 ]] && [[ "$1" =~ ^[0-9]+$ ]]; then
+                AUTO_ADVANCE_LIMIT="$1"
+                shift
+            fi
             ;;
         --init-notes)
             : "${HUMAN_NOTES_FILE:=${TEKHTON_DIR}/${HUMAN_NOTES_FILE}}"
@@ -1998,6 +2005,9 @@ if [ "$AUTO_ADVANCE" = true ]; then
     # Without this, the config default of false blocks the while loop.
     AUTO_ADVANCE_ENABLED=true
     export AUTO_ADVANCE_ENABLED
+    # In-memory session counter — survives finalize_run deleting MILESTONE_STATE_FILE.
+    _AA_SESSION_ADVANCES=0
+    export _AA_SESSION_ADVANCES
     if [ -n "$_CURRENT_MILESTONE" ]; then
         _total_milestones=$(get_milestone_count "CLAUDE.md")
         init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"

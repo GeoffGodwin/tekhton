@@ -1,7 +1,7 @@
 # Milestone 90: Auto-Advance Fix — Count Argument & State-File Lifecycle
 <!-- milestone-meta
 id: "90"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

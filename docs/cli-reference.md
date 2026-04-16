@@ -17,7 +17,7 @@
 | `--replan` | Delta-based update of DESIGN.md and CLAUDE.md from current codebase |
 | `--complete` | Autonomous loop — retry pipeline until task passes or bounds exhausted |
 | `--milestone` | Milestone mode — higher turns, extra review, acceptance checking |
-| `--auto-advance` | Chain milestones autonomously (implies `--milestone`) |
+| `--auto-advance [N]` | Chain milestones autonomously (implies `--milestone`); optional `N` overrides `AUTO_ADVANCE_LIMIT` |
 | `--add-milestone "desc"` | Create a scoped milestone via the intake agent (no run) |
 | `--human [TAG]` | Pick next note from HUMAN_NOTES.md as task (optional: BUG, FEAT, POLISH) |
 | `--with-notes` | *(deprecated)* Force human notes injection regardless of task text |

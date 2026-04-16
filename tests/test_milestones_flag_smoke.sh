@@ -145,6 +145,52 @@ else
     fail "PIPELINE.lock was left behind — clean exit not reached"
 fi
 
+# ── Test 6: --auto-advance documented with optional count argument ──────────
+echo "Test 6: --help and --help --all document --auto-advance [N]"
+
+PROJ_HELP="${TMPDIR}/proj_help"
+mkdir -p "$PROJ_HELP"
+make_proj "$PROJ_HELP"
+
+rc=0
+help_grouped=$(cd "$PROJ_HELP" && bash "${TEKHTON_HOME}/tekhton.sh" --help 2>/dev/null) || rc=$?
+if [[ "$rc" -eq 0 ]] && echo "$help_grouped" | grep -q -- "--auto-advance \[N\]"; then
+    pass "--help shows --auto-advance [N] in grouped output"
+else
+    fail "--help missing '--auto-advance [N]' in grouped output"
+fi
+
+rc=0
+help_all=$(cd "$PROJ_HELP" && bash "${TEKHTON_HOME}/tekhton.sh" --help --all 2>/dev/null) || rc=$?
+if [[ "$rc" -eq 0 ]] && echo "$help_all" | grep -q -- "--auto-advance \[N\]"; then
+    pass "--help --all shows --auto-advance [N] in full flag list"
+else
+    fail "--help --all missing '--auto-advance [N]' in full flag list"
+fi
+
+# ── Test 7: --auto-advance accepts an optional integer without erroring ─────
+echo "Test 7: --auto-advance N parsing consumes the integer (does not break --help)"
+
+# The integer immediately following --auto-advance must be consumed by the flag
+# parser; the loop should then continue to --help and exit cleanly. If the int
+# were left on the arg stack as a task, the parser would error out.
+rc=0
+out=$(cd "$PROJ_HELP" && bash "${TEKHTON_HOME}/tekhton.sh" --auto-advance 5 --help 2>&1) || rc=$?
+if [[ "$rc" -eq 0 ]]; then
+    pass "--auto-advance 5 --help exits 0 (integer consumed by flag)"
+else
+    fail "--auto-advance 5 --help exited $rc (expected 0; got: ${out})"
+fi
+
+# Without an integer, the flag should still work and --help still exits cleanly
+rc=0
+out=$(cd "$PROJ_HELP" && bash "${TEKHTON_HOME}/tekhton.sh" --auto-advance --help 2>&1) || rc=$?
+if [[ "$rc" -eq 0 ]]; then
+    pass "--auto-advance --help (no integer) exits 0"
+else
+    fail "--auto-advance --help exited $rc (expected 0; got: ${out})"
+fi
+
 # ── Results ───────────────────────────────────────────────────────────────────
 echo
 echo "Results: ${PASS} passed, ${FAIL} failed"

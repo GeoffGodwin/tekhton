@@ -15,7 +15,6 @@ _run_auto_advance_chain() {
         next_ms=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
         if [[ -z "$next_ms" ]]; then
             log "No more milestones to advance to."
-            write_milestone_disposition "COMPLETE_AND_WAIT"
             break
         fi
 
@@ -25,10 +24,20 @@ _run_auto_advance_chain() {
         if [[ "${AUTO_ADVANCE_CONFIRM:-true}" = "true" ]]; then
             if ! prompt_auto_advance_confirm "$next_ms" "$next_title"; then
                 log "Auto-advance declined by user."
-                write_milestone_disposition "COMPLETE_AND_WAIT"
                 break
             fi
         fi
+
+        # Bump the in-memory session counter BEFORE the advance so the banner
+        # and limit check see the correct count.
+        _AA_SESSION_ADVANCES=$(( ${_AA_SESSION_ADVANCES:-0} + 1 ))
+        export _AA_SESSION_ADVANCES
+
+        # finalize_run already deleted MILESTONE_STATE_FILE; recreate it for the
+        # new milestone before advance_milestone reads/writes it.
+        local _total
+        _total=$(get_milestone_count "CLAUDE.md")
+        init_milestone_state "$next_ms" "$_total"
 
         advance_milestone "$_CURRENT_MILESTONE" "$next_ms"
         _CURRENT_MILESTONE="$next_ms"
@@ -53,7 +62,7 @@ _run_auto_advance_chain() {
         # Re-enter the complete loop for the new milestone.
         # Recursion depth is bounded by AUTO_ADVANCE_LIMIT (default 3) — the
         # should_auto_advance() guard at the top of this while loop exits once
-        # the session count reaches the limit.
+        # the in-memory _AA_SESSION_ADVANCES counter reaches the limit.
         run_complete_loop
         return $?
     done

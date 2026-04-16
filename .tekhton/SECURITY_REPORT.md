@@ -1,5 +1,5 @@
 ## Summary
-This change updates stale file path expectations in 5 test files following the b3b6aff CLI flag refactor. The modifications are purely cosmetic path reference updates (`${PROJECT_DIR}/DESIGN.md` → `${TEKHTON_DIR:-.tekhton}/DESIGN.md`, `REVIEWER_REPORT.md` → `${REVIEWER_REPORT_FILE}`, etc.) in test-only code. No authentication, cryptography, user input handling, or network communication is involved. All temp directory usage follows established safe patterns (`mktemp -d` + `trap` cleanup). No security-relevant logic was introduced or modified.
+M90 fixes two bugs in `--auto-advance`: adding an optional bare-integer CLI argument (validated with `^[0-9]+$` regex before use) and introducing an in-memory session counter (`_AA_SESSION_ADVANCES`) that is explicitly initialized to `0` and only modified via integer arithmetic. All changes are confined to argument parsing, integer arithmetic, and state-file lifecycle management in four shell scripts and two test files, plus two doc updates. No authentication, cryptography, network communication, or external user-data handling is involved. The overall security posture is sound.
 
 ## Findings
 None
