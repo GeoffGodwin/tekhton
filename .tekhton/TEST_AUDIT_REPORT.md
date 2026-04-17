@@ -1,42 +1,87 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 15 test functions (6 in test_run_tests_single_invocation.sh, 13 in test_run_tests_output_capture.sh)
+Tests audited: 1 file, 14 assertions across 7 suites
 Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: stdin isolation test always passes regardless of implementation
-- File: tests/test_run_tests_output_capture.sh:112-131 (Test 5)
-- Issue: The fixture uses `read -t 1 line < /dev/stdin 2>/dev/null` inside `if timeout 1 read ...`. When stdin is `/dev/null`, `read` gets immediate EOF and returns 1 (false), so the fixture exits 0. When stdin is a terminal (no `< /dev/null` in run_test), `read -t 1` waits 1 second, times out, and also returns 1 (false), so the fixture still exits 0. In both cases `run_test` reports PASS and the assertion fires. The test is non-discriminating — it passes identically on a pre-fix implementation without `< /dev/null`. It is claiming to verify stdin isolation when it cannot actually detect whether isolation is in place.
+#### COVERAGE: lib/orchestrate.sh pre-finalization gate not tested
+- File: tests/test_pristine_state_enforcement.sh (no corresponding suite)
+- Issue: The coder summary identifies three sites where `pre_existing` formerly
+  auto-passed: `milestone_acceptance.sh` (Suites 2/3), `gates_completion.sh`
+  (Suite 6), and `lib/orchestrate.sh`'s pre-finalization test gate. Only the
+  first two are tested. The coder's acceptance criteria comment claims Suites 2
+  and 6 cover all three, but `lib/orchestrate.sh` has no dedicated test
+  exercising its `PASS_ON_PREEXISTING` branch.
 - Severity: MEDIUM
-- Action: Replace the fixture so the two cases produce different exit codes. One workable approach: have the fixture write a sentinel byte (using `dd if=/dev/stdin bs=1 count=1 2>/dev/null`) and assert it reads nothing (zero bytes) — `/dev/null` gives immediate zero-read, a live stdin would supply data. Alternatively, stat `/proc/self/fd/0` inside the fixture (Linux-only) and assert it resolves to `/dev/null`. The current `read -t 1` timeout design cannot distinguish the two code paths.
+- Action: Add a Suite 8 that stubs `compare_test_with_baseline`, sources
+  `lib/orchestrate.sh` (or isolates the pre-finalization gate function), and
+  asserts it returns non-zero for `pre_existing+PASS=false` and 0 for
+  `PASS=true`. Pattern is identical to Suite 6.
 
-#### COVERAGE: Regression test does not cover stderr in the captured FAIL output
-- File: tests/test_run_tests_single_invocation.sh (absence of test case)
-- Issue: The stateful fixture only emits stdout (`echo "INVOCATION_$n"`). The fix captures both stdout and stderr (`2>&1`). No assertion in this file verifies that stderr from the failing run appears in the debug section. This is not a gap in the overall suite — test_run_tests_output_capture.sh Test 2 covers combined stream capture.
+#### COVERAGE: Orphaned-symbol reports are shell builtins (false positives)
+- File: tests/test_pristine_state_enforcement.sh (all lines)
+- Issue: The static-analysis pre-check flagged `cat`, `cd`, `chmod`, `dirname`,
+  `echo`, `eval`, `exit`, `mkdir`, `mktemp`, `pwd`, `return`, `rm`, `set`,
+  `source`, `touch`, `trap`, and `:` as "not found in any source definition."
+  All are standard POSIX shell builtins or system utilities — the scanner is
+  looking for custom function definitions rather than recognizing built-ins.
+  These are false positives; no actual orphaned references exist.
 - Severity: LOW
-- Action: No change required. Coverage is satisfied at the suite level by Test 2 in the companion file.
+- Action: No change to the test file needed. Consider adding the known-builtin
+  list to the orphan-detector's allowlist so future runs don't report noise.
 
-### Passing Criteria Verified
+### Detailed Suite Assessment
 
-**Assertion Honesty — PASS**
-Both files derive expected values from real fixture execution: counter file reads, captured output grep, array membership checks. No hard-coded magic values. The stateful fixture design in test_run_tests_single_invocation.sh is particularly strong — it exits 1 on invocation 1 and 0 on invocation 2, making the INVOCATION_1-vs-INVOCATION_2 and counter-equals-1 assertions genuinely discriminating. The coder confirmed that reverting the fix produces 3/6 assertion failures, establishing that the test catches regressions.
+**Suite 1 — Config defaults (lines 26–36)**
+Stubs `_clamp_config_value`/`_clamp_config_float` as no-ops, then sources
+`lib/config_defaults.sh`. Asserts the four new/changed keys. Cross-checked
+against `config_defaults.sh:373–380`: actual values are `false`, `true`, `20`,
+`1` — matching assertions exactly. Honest, not hard-coded.
 
-**Implementation Exercise — PASS**
-Both files extract the live `run_test()` source via `awk '/^run_test\(\) \{/,/^}/'` and `eval` it into the test shell, then call it directly. The function's side effects (`PASS`, `FAIL`, `FAILED_TESTS` array) operate on the outer shell's globals, making Tests 8 and 9 valid behavioral checks against real counter and array state.
+**Suites 2 & 3 — Milestone acceptance gate (lines 38–82)**
+Mocks `compare_test_with_baseline` → `"pre_existing"` and `has_test_baseline`
+→ 0. Sources `lib/milestone_acceptance.sh`. Verifies non-zero return for
+`PASS=false` and zero return for `PASS=true`. Traced against
+`milestone_acceptance.sh:96–111`: branch logic matches assertions. Correct.
 
-**Edge Case Coverage — PASS**
-The suite collectively covers: failing test (single invocation), passing test, multiline output, mixed stdout/stderr, exit codes 0/1/2/5/127, empty output on failure, FAILED_TESTS population, and counter increments. Error paths are well-represented relative to happy paths.
+**Suite 4 — Pre-run sweep disabled (lines 84–115)**
+Sources `stages/coder_prerun.sh` with mocked `run_agent`. Sets
+`PRE_RUN_CLEAN_ENABLED=false`. Asserts `run_agent` never called. Matches
+`coder_prerun.sh:107–109`: early return on `!= "true"`. Correct.
 
-**Test Weakening Detection — N/A**
-Neither file modifies existing tests. Both are new additions.
+**Suite 5 — Baseline recaptured after successful fix (lines 117–150)**
+Uses a two-phase flaky script: first execution writes a state file and exits 1;
+second execution sees the state file and exits 0. `TEST_TMP` is exported before
+the script runs, so `${TEST_TMP:-/tmp}` expands correctly in the subshell.
+Mocked `run_agent` (returns 0) simulates fix; the real verification call to
+`bash -c "$TEST_CMD"` then succeeds (second call). Asserts both
+`_MOCK_CAPTURE_CALLS -ge 1` and `_MOCK_RUN_AGENT_CALLS -ge 1`. Traced against
+`coder_prerun.sh:125–135`: success path deletes baseline JSON and calls
+`capture_test_baseline`. Correct.
 
-**Test Naming and Intent — PASS**
-Both file names encode the scenario under test. Internal `pass()`/`fail()` messages include the condition being checked and the actual captured output on failure. No opaque `test_1`-style names.
+**Suite 6 — Completion gate strictness (lines 152–193)**
+Valid `CODER_SUMMARY_FILE` with `## Status: COMPLETE`. Mocks
+`compare_test_with_baseline` → `"pre_existing"`. Sources `gates_completion.sh`;
+redefines `_warn_summary_drift` as no-op before calling the gate. Tests both
+`PASS=false` (non-zero) and `PASS=true` (zero). Traced against
+`gates_completion.sh:88–95`: branch logic matches. Correct.
 
-**Scope Alignment — PASS**
-Both files target `tests/run_tests.sh` `run_test()` exclusively. No references to `.tekhton/INTAKE_REPORT.md` or `.tekhton/JR_CODER_SUMMARY.md` (the deleted files noted in the audit context). No orphaned imports.
+**Suite 7 — Graceful fallthrough on fix failure (lines 195–221)**
+`run_agent` mock returns 1 (always fails). `always_fail.sh` exits 1 on every
+call. Asserts `run_prerun_clean_sweep` returns 0, `capture_test_baseline` never
+called, and `run_agent` called at least once. Traced against
+`coder_prerun.sh:136–140`: when `_run_prerun_fix_agent` returns 1, function
+warns and returns 0. Correct.
 
-**Test Isolation — PASS**
-Both files create all fixtures in `$(mktemp -d)` and register `trap 'rm -rf "$tmpdir"' EXIT`. Neither reads mutable project files (`.tekhton/*`, `.claude/logs/*`, pipeline state). Pass/fail outcome is fully independent of prior pipeline runs or repo state.
+### Rubric Scores
+| Dimension | Score | Notes |
+|-----------|-------|-------|
+| Assertion Honesty | PASS | All assertions verify real sourced variable/function state |
+| Edge Case Coverage | PASS | Both `PASS=false` and `PASS=true` paths covered; fix success and failure both tested |
+| Implementation Exercise | PASS | Real functions called; only external deps mocked |
+| Test Weakening | N/A | New file, no existing tests modified |
+| Naming | PASS | Suite names and assertion labels encode scenario + expected outcome |
+| Scope Alignment | PASS | All references resolve to current implementations |
+| Isolation | PASS | All scratch files written to `$TEST_TMP`; no mutable project files read |

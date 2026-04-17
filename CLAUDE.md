@@ -410,9 +410,12 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `CAUSAL_LOG_MAX_EVENTS` | Max events per run before eviction (default: 2000) |
 | `INTAKE_HISTORY_BLOCK` | Historical verdict/rework data from causal log (injected by lib/prompts.sh) |
 | `TEST_BASELINE_ENABLED` | Enable pre-existing test failure detection (default: true) |
-| `TEST_BASELINE_PASS_ON_PREEXISTING` | Auto-pass acceptance when all failures are pre-existing (default: true) |
+| `TEST_BASELINE_PASS_ON_PREEXISTING` | Auto-pass acceptance when all failures are pre-existing (default: false — M92 flipped from true) |
 | `TEST_BASELINE_STUCK_THRESHOLD` | Consecutive identical acceptance failures before stuck detection (default: 2) |
 | `TEST_BASELINE_PASS_ON_STUCK` | Auto-pass on stuck detection vs exit with diagnosis (default: false) |
+| `PRE_RUN_CLEAN_ENABLED` | Spawn pre-coder fix agent when tests fail before coder runs (default: true) |
+| `PRE_RUN_FIX_MAX_TURNS` | Turn budget for pre-coder fix agent (default: 20) |
+| `PRE_RUN_FIX_MAX_ATTEMPTS` | Max pre-coder fix attempts before proceeding (default: 1) |
 | `FINAL_FIX_ENABLED` | Spawn fix agent when TEST_CMD fails in final checks (default: true) |
 | `FINAL_FIX_MAX_ATTEMPTS` | Max fix attempts in final checks before giving up (default: 2) |
 | `FINAL_FIX_MAX_TURNS` | Turn budget per fix attempt in final checks (default: CODER_MAX_TURNS/3) |

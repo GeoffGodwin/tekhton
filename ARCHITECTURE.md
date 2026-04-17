@@ -30,6 +30,7 @@ Each stage is a single function sourced by `tekhton.sh`:
   - Skipped entirely when `--skip-audit` is passed
 
 - **`stages/coder.sh`** → `run_stage_coder()`
+  - Runs pre-coder clean sweep (M92) — restores pristine test state before agent work
   - Runs scout agent if HUMAN_NOTES.md has unchecked items
   - Injects architecture, glossary, milestone, prior context into coder prompt
   - Invokes senior coder agent
@@ -37,6 +38,11 @@ Each stage is a single function sourced by `tekhton.sh`:
   - Runs build gate → escalates to build-fix agents on failure
   - Runs analyze cleanup as a completion gate
   - Archives human notes on success
+  - Sources sub-stages: `coder_prerun.sh`
+
+- **`stages/coder_prerun.sh`** — Pre-coder clean sweep (M92)
+  - Sourced by `coder.sh` — do not run directly
+  - Provides: `run_prerun_clean_sweep()` and `_run_prerun_fix_agent()` — spawns restricted fix agent when tests fail before the coder runs; re-captures baseline on success, warns and proceeds on failure
 
 - **`stages/review.sh`** → `run_stage_review()`
   - Iterates up to `MAX_REVIEW_CYCLES`
@@ -157,6 +163,7 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/preflight_services.sh`** — Service readiness probing for pre-flight validation (Milestone 56). `_preflight_check_services()` orchestrates service detection and port probing. `_preflight_check_docker()` validates Docker daemon availability. `_preflight_check_dev_server()` detects dev server dependencies from Playwright config. `_pf_emit_services_report()` renders the services section of `PREFLIGHT_REPORT.md`. Sourced by `tekhton.sh` after `preflight.sh`.
 - **`lib/preflight_services_infer.sh`** — Service inference from project manifests. `_pf_infer_from_compose()` parses docker-compose for service images and port mappings. `_pf_infer_from_packages()` checks package manifests (Node, Python, Go) for database client libraries. `_pf_infer_from_env()` scans `.env.example` for service-related variable patterns. Sourced by `tekhton.sh` after `preflight_services.sh`.
 - **`lib/mcp.sh`** — MCP server lifecycle management for Serena LSP integration (v3 Milestone 6). `start_mcp_server()`, `stop_mcp_server()`, `check_mcp_health()`, `get_mcp_config_path()`. Claude CLI manages the actual server process; this module handles config generation and availability tracking. Consumed by `agent.sh` to add `--mcp-config` flag.
+- **`lib/orchestrate_preflight.sh`** — Pre-finalization preflight fix retry. `_try_preflight_fix()` spawns a Jr Coder pass when TEST_CMD fails before the main pipeline runs. Sourced by `orchestrate.sh` after `orchestrate_helpers.sh`.
 
 ### Layer 4: Prompt Templates (`prompts/*.prompt.md`)
 Declarative agent instructions with `{{VAR}}` placeholders. Rendered by `lib/prompts.sh`.

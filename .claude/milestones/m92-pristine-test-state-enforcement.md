@@ -1,7 +1,7 @@
 # Milestone 92: Pristine Test State Enforcement
 <!-- milestone-meta
 id: "92"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

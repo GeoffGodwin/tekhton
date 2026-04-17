@@ -95,16 +95,17 @@ check_milestone_acceptance() {
 
             case "$_baseline_assessment" in
                 pre_existing)
-                    if [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-true}" = "true" ]]; then
+                    if [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-false}" = "true" ]]; then
                         warn "Tests FAILED (exit ${test_exit}) — ALL failures match pre-existing baseline"
-                        warn "Treating as PASS for acceptance (pre-existing failures)"
+                        warn "Treating as PASS for acceptance (PASS_ON_PREEXISTING=true opt-in)"
                         if command -v emit_event &>/dev/null; then
                             emit_event "acceptance_preexisting_pass" "acceptance" \
                                 "test_exit=${test_exit}, assessment=pre_existing" \
                                 "" "" "" 2>/dev/null || true
                         fi
                     else
-                        warn "Tests FAILED (exit ${test_exit}) — pre-existing, but PASS_ON_PREEXISTING=false"
+                        warn "Tests FAILED (exit ${test_exit}) — pre-existing failures no longer auto-pass (M92)"
+                        warn "All tests must pass. Set TEST_BASELINE_PASS_ON_PREEXISTING=true to opt out."
                         echo "$test_output" | tail -20
                         all_pass=false
                     fi

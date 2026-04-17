@@ -31,6 +31,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_recovery.sh"
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_helpers.sh"
 
+# Source preflight fix helper (extracted from orchestrate_helpers.sh for 300-line ceiling)
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_preflight.sh"
+
 # Source test baseline helpers (pre-existing failure detection)
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/test_baseline.sh"
@@ -288,9 +292,9 @@ run_complete_loop() {
                         fi
 
                         if [[ "$_preflight_baseline" = "pre_existing" ]] && \
-                           [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-true}" = "true" ]]; then
+                           [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-false}" = "true" ]]; then
                             warn "Pre-finalization test gate failed (exit ${_preflight_exit}) — ALL failures match pre-existing baseline."
-                            warn "Treating as PASS for pre-finalization gate (pre-existing failures)."
+                            warn "Treating as PASS (PASS_ON_PREEXISTING=true opt-in)."
                         else
                             # M44: Try cheap Jr Coder fix before expensive full retry
                             log_decision "Trying preflight fix" "${_preflight_exit} test failures detected" "FINAL_FIX_ENABLED=${FINAL_FIX_ENABLED:-true}"
@@ -327,7 +331,7 @@ run_complete_loop() {
                 local _should_advance=false
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     local _next_ms
-                    _next_ms=$(find_next_milestone "$_CURRENT_MILESTONE" "CLAUDE.md")
+                    _next_ms=$(find_next_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}")
                     if [[ -n "$_next_ms" ]]; then
                         write_milestone_disposition "COMPLETE_AND_CONTINUE"
                     else

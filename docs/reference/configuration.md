@@ -390,9 +390,12 @@ defaults are conservative.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `TEST_BASELINE_ENABLED` | `true` | Toggle pre-existing failure detection |
-| `TEST_BASELINE_PASS_ON_PREEXISTING` | `true` | Auto-pass when all failures are pre-existing |
+| `TEST_BASELINE_PASS_ON_PREEXISTING` | `false` | Auto-pass when all failures are pre-existing (M92: default flipped to `false` so broken tests cannot accumulate silently) |
 | `TEST_BASELINE_STUCK_THRESHOLD` | `2` | Consecutive identical failures before stuck detection |
 | `TEST_BASELINE_PASS_ON_STUCK` | `false` | Auto-pass on stuck vs exit with diagnosis |
+| `PRE_RUN_CLEAN_ENABLED` | `true` | Spawn a fix agent if tests fail before the coder runs (M92) |
+| `PRE_RUN_FIX_MAX_TURNS` | `20` | Turn budget for the pre-coder fix agent |
+| `PRE_RUN_FIX_MAX_ATTEMPTS` | `1` | Max fix attempts before proceeding with a non-pristine state |
 
 ## Structured Run Memory
 

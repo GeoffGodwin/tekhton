@@ -220,6 +220,17 @@ SEED_CONTRACTS_ENABLED=false
 # TESTER_FIX_OUTPUT_LIMIT=4000      # Max chars of test output in fix task string
 
 # TEST_BASELINE_ENABLED=true
+# TEST_BASELINE_PASS_ON_PREEXISTING=false   # M92: default — pre-existing failures no longer auto-pass.
+                                            # Set to true only if you genuinely cannot fix some tests (masks failures).
+
+# --- Pre-coder clean sweep (M92) ---
+# Before the coder runs, check if tests pass. If not, spawn a restricted fix
+# agent to restore a clean baseline. The fix is non-fatal — if it cannot
+# clean the suite, the coder proceeds and the stricter post-run gates surface
+# the breakage. Disable for projects with intentionally failing tests.
+# PRE_RUN_CLEAN_ENABLED=true
+# PRE_RUN_FIX_MAX_TURNS=20
+# PRE_RUN_FIX_MAX_ATTEMPTS=1
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Section 6: Quotas & Autonomy

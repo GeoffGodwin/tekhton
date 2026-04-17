@@ -34,7 +34,7 @@ deep engineering knowledge. The tool builds software but doesn't help manage
 software projects.
 
 **Enterprise blind spots.** No audit trail beyond git commits. No integration
-with corporate tooling (GitHub Issues, Slack, DataDog, Splunk). No identity
+with corporate tooling (GitHub Issues, Slack, DataDog, Splunk, Jira, Confluence). No identity
 management. No non-functional requirement enforcement (performance budgets,
 accessibility gates, SLAs). No structured logging suitable for enterprise
 observability platforms. Tekhton works on a developer's laptop but not in a

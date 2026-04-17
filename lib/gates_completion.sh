@@ -86,7 +86,13 @@ run_completion_gate() {
                     local _cg_comparison
                     _cg_comparison=$(compare_test_with_baseline "$_cg_output" "$_cg_exit")
                     if [[ "$_cg_comparison" == "pre_existing" ]]; then
-                        log "Completion gate: test failures are pre-existing — passing."
+                        if [[ "${TEST_BASELINE_PASS_ON_PREEXISTING:-false}" = "true" ]]; then
+                            log "Completion gate: pre-existing failures accepted (PASS_ON_PREEXISTING=true)."
+                        else
+                            warn "Completion gate FAILED — pre-existing failures no longer auto-pass (M92)."
+                            warn "Set TEST_BASELINE_PASS_ON_PREEXISTING=true to opt out."
+                            return 1
+                        fi
                     else
                         warn "Completion gate FAILED — TEST_CMD exited ${_cg_exit} with new failures."
                         return 1

@@ -31,6 +31,9 @@ source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 
+# Prevent environment leakage from prior tekhton.sh --auto-advance runs
+unset _AA_SESSION_ADVANCES 2>/dev/null || true
+
 # cd to TMPDIR so relative CLAUDE.md paths resolve correctly (matches production behavior)
 cd "$TMPDIR"
 

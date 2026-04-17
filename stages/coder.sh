@@ -6,6 +6,10 @@
 # Expects all pipeline globals to be set (TASK, LOG_FILE, TIMESTAMP, etc.)
 # =============================================================================
 
+# Source pre-coder clean sweep (M92)
+# shellcheck source=stages/coder_prerun.sh
+source "${TEKHTON_HOME}/stages/coder_prerun.sh"
+
 # _switch_to_sub_milestone — After a milestone split, update state to target
 # the first sub-milestone (N.1). Sets _CURRENT_MILESTONE, TASK, and milestone
 # state. Must be called in the same scope (not a subshell) so variable
@@ -94,6 +98,12 @@ run_stage_coder() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-1}"
     header "Stage ${_stage_pos} / ${_stage_count} — Coder"
+
+    # --- Pre-coder clean sweep (M92) -----------------------------------------
+    # If tests are failing before the coder runs, spawn a restricted fix agent
+    # to restore a clean baseline. Non-fatal: a failed fix falls through to
+    # the coder, which will still face the stricter post-run gates.
+    run_prerun_clean_sweep || true
 
     # --- Scout sub-agent (optional) ------------------------------------------
     BUG_SCOUT_CONTEXT=""

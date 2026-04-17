@@ -366,10 +366,18 @@ set -euo pipefail
 : "${TESTER_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
 
 # --- Test baseline defaults (pre-existing failure detection) ---
+# Pristine test state (M92): PASS_ON_PREEXISTING defaults to false so broken
+# tests cannot accumulate silently. Projects that genuinely cannot fix some
+# tests can opt back in via pipeline.conf.
 : "${TEST_BASELINE_ENABLED:=true}"
-: "${TEST_BASELINE_PASS_ON_PREEXISTING:=true}"
+: "${TEST_BASELINE_PASS_ON_PREEXISTING:=false}"
 : "${TEST_BASELINE_STUCK_THRESHOLD:=2}"
 : "${TEST_BASELINE_PASS_ON_STUCK:=false}"
+
+# --- Pre-coder clean sweep (M92): restore a clean test baseline before coder ---
+: "${PRE_RUN_CLEAN_ENABLED:=true}"
+: "${PRE_RUN_FIX_MAX_TURNS:=20}"
+: "${PRE_RUN_FIX_MAX_ATTEMPTS:=1}"
 
 # --- Completion gate test enforcement (Milestone 63) ---
 : "${COMPLETION_GATE_TEST_ENABLED:=true}"

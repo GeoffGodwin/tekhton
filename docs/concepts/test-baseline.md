@@ -44,8 +44,10 @@ Earlier versions had three rough edges that M63 fixed:
 # Toggle test baseline detection
 TEST_BASELINE_ENABLED=true
 
-# Auto-pass acceptance when ALL failures are pre-existing
-TEST_BASELINE_PASS_ON_PREEXISTING=true
+# Auto-pass acceptance when ALL failures are pre-existing.
+# M92 default: false — pre-existing failures are no longer silently accepted.
+# Set to true only if you genuinely cannot fix some tests (masks failures).
+TEST_BASELINE_PASS_ON_PREEXISTING=false
 
 # Consecutive identical acceptance failures before stuck detection
 TEST_BASELINE_STUCK_THRESHOLD=2

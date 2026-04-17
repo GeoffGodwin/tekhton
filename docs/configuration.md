@@ -44,7 +44,8 @@ Key configuration areas:
 | **Milestone DAG** | `MILESTONE_DAG_ENABLED=true`, `MILESTONE_WINDOW_PCT=30` | File-based milestones |
 | **Repo map** | `REPO_MAP_ENABLED=false`, `REPO_MAP_TOKEN_BUDGET=2048` | Tree-sitter indexing |
 | **Causal log** | `CAUSAL_LOG_ENABLED=true` | Structured event logging |
-| **Test baseline** | `TEST_BASELINE_ENABLED=true`, `TEST_BASELINE_PASS_ON_PREEXISTING=true` | Pre-existing failure detection + completion gate hardening |
+| **Test baseline** | `TEST_BASELINE_ENABLED=true`, `TEST_BASELINE_PASS_ON_PREEXISTING=false` | Pre-existing failure detection + pristine-state gate. Set `PASS_ON_PREEXISTING=true` only if you genuinely cannot fix some tests — it masks failures. |
+| **Pre-coder clean sweep** | `PRE_RUN_CLEAN_ENABLED=true`, `PRE_RUN_FIX_MAX_TURNS=20`, `PRE_RUN_FIX_MAX_ATTEMPTS=1` | Spawn a fix agent if tests fail before the coder runs. Set `PRE_RUN_CLEAN_ENABLED=false` for projects with intentionally failing tests. |
 | **Tester fix** | `TESTER_FIX_ENABLED=false`, `FINAL_FIX_ENABLED=true`, `FINAL_FIX_MAX_ATTEMPTS=2` | Surgical fix mode on test failures |
 | **Pre-flight** | `PREFLIGHT_ENABLED=true`, `PREFLIGHT_AUTO_FIX=true`, `PREFLIGHT_FAIL_ON_WARN=false` | Environment validation + auto-remediation |
 | **UI specialist** | `SPECIALIST_UI_ENABLED=auto`, `UI_PLATFORM=auto` | Auto-on for UI projects; platform adapter selection |

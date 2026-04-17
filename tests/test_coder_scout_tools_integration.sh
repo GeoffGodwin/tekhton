@@ -79,6 +79,10 @@ export LAST_AGENT_TURNS=10
 export LAST_AGENT_EXIT_CODE=0
 export BUILD_GATE_RETRY=0
 
+# Disable M92 pre-coder sweep — this test targets scout tool reduction, not
+# baseline enforcement, and the run_agent mock only captures the Scout call.
+export PRE_RUN_CLEAN_ENABLED=false
+
 touch "$LOG_FILE"
 
 # --- Source common.sh for log/warn/header ------------------------------------
