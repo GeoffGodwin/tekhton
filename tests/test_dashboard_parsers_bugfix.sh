@@ -137,6 +137,8 @@ touch "$TMPDIR/REVIEWER_REPORT.md"
 # (This exercises the grep -c || true pattern in the actual function)
 export TEST_AUDIT_REPORT_FILE="$TMPDIR/TEST_AUDIT_REPORT.md"
 export INTAKE_REPORT_FILE="$TMPDIR/INTAKE_REPORT.md"
+export CODER_SUMMARY_FILE="$TMPDIR/CODER_SUMMARY.md"
+export REVIEWER_REPORT_FILE="$TMPDIR/REVIEWER_REPORT.md"
 export DASHBOARD_DIR=".claude/dashboard"
 
 emit_dashboard_reports
