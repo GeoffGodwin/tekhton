@@ -303,7 +303,7 @@ split_milestone() {
         if command -v emit_event &>/dev/null; then
             emit_event "milestone_split" "pipeline" "Split milestone ${milestone_num} into ${sub_count} subs" \
                 "${_LAST_STAGE_EVT:-}" "" \
-                "{\"milestone\":\"$(_json_escape "$milestone_num")\",\"sub_count\":${sub_count}}" 2>/dev/null || true
+                "{\"milestone\":\"$(_json_escape "$milestone_num")\",\"sub_count\":${sub_count}}" >/dev/null 2>&1 || true
         fi
         if command -v emit_dashboard_milestones &>/dev/null; then
             emit_dashboard_milestones 2>/dev/null || true
@@ -325,7 +325,7 @@ split_milestone() {
     if command -v emit_event &>/dev/null; then
         emit_event "milestone_split" "pipeline" "Split milestone ${milestone_num} into ${sub_count} subs" \
             "${_LAST_STAGE_EVT:-}" "" \
-            "{\"milestone\":\"$(_json_escape "$milestone_num")\",\"sub_count\":${sub_count}}" 2>/dev/null || true
+            "{\"milestone\":\"$(_json_escape "$milestone_num")\",\"sub_count\":${sub_count}}" >/dev/null 2>&1 || true
     fi
     return 0
 }

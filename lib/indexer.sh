@@ -98,9 +98,9 @@ check_indexer_available() {
     if command -v check_serena_available &>/dev/null; then
         if check_serena_available 2>/dev/null; then
             SERENA_INSTALL_AVAILABLE=true
-            log "[indexer] Serena LSP: installed"
+            log_verbose "[indexer] Serena LSP: installed"
         else
-            log "[indexer] Serena LSP: not installed (optional — run --setup-indexer --with-lsp)"
+            log_verbose "[indexer] Serena LSP: not installed (optional — run --setup-indexer --with-lsp)"
         fi
     fi
 
@@ -129,7 +129,7 @@ run_repo_map() {
     if [[ "$force_refresh" != "true" ]] && _load_repo_map_run_cache; then
         REPO_MAP_CONTENT="$_CACHED_REPO_MAP_CONTENT"
         _REPO_MAP_CACHE_HITS=$(( _REPO_MAP_CACHE_HITS + 1 ))
-        log "[indexer] Repo map loaded from run cache (hit #${_REPO_MAP_CACHE_HITS})."
+        log_verbose "[indexer] Repo map loaded from run cache (hit #${_REPO_MAP_CACHE_HITS})."
         return 0
     fi
 

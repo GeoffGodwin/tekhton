@@ -51,7 +51,17 @@ _rule_stuck_loop() {
 
 # _rule_turn_exhaustion
 # Detect agent hit max turns without completing (fallback when _rule_max_turns
-# doesn't match — kept for backward-compatibility).
+# doesn't match — kept for backward-compatibility with pre-M93 runs).
+#
+# PRE-M93 COMPATIBILITY:
+# Versions prior to M93 did not consistently write LAST_FAILURE_CONTEXT.json,
+# so _rule_max_turns (position 2 in DIAGNOSE_RULES) would not fire, and this
+# rule (position 8) was the only turn-exhaustion detector for those runs.
+#
+# SAFE TO REMOVE WHEN:
+# All active projects have been run at least once with M93+, ensuring every
+# project's .claude/ directory contains LAST_FAILURE_CONTEXT.json. After that,
+# _rule_max_turns will always match first, and this function becomes dead code.
 _rule_turn_exhaustion() {
     local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.md}"
     [[ -f "$state_file" ]] || return 1

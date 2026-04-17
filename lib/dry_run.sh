@@ -56,7 +56,7 @@ validate_dry_run_cache() {
     local meta_file="${cache_dir}/DRY_RUN_META.json"
 
     if [[ ! -d "$cache_dir" ]] || [[ ! -f "$meta_file" ]]; then
-        log "Dry-run cache: no cache found."
+        log_verbose "Dry-run cache: no cache found."
         return 1
     fi
 

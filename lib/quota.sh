@@ -89,7 +89,7 @@ enter_quota_pause() {
         emit_event "quota_pause" "pipeline" "${pause_reason}" \
             "" "" \
             "{\"pause_count\":${_QUOTA_PAUSE_COUNT},\"retry_interval\":${QUOTA_RETRY_INTERVAL:-300}}" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
     fi
     if command -v emit_dashboard_run_state &>/dev/null; then
         # shellcheck disable=SC2034
@@ -189,7 +189,7 @@ exit_quota_pause() {
         emit_event "quota_resume" "pipeline" "Quota refreshed — resuming" \
             "" "" \
             "{\"pause_count\":${_QUOTA_PAUSE_COUNT},\"total_pause_time\":${_QUOTA_TOTAL_PAUSE_TIME}}" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
     fi
     if command -v emit_dashboard_run_state &>/dev/null; then
         # shellcheck disable=SC2034

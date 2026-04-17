@@ -249,7 +249,8 @@ fi
 echo
 echo "=== log_context_report ==="
 
-# log_context_report writes a context breakdown to the log (stdout)
+# log_context_report writes a context breakdown via log_verbose (M96: NR3).
+# VERBOSE_OUTPUT=true restores the lines to stdout so we can assert content.
 report_output=$(
     # shellcheck source=/dev/null
     source "${TEKHTON_HOME}/lib/common.sh"
@@ -261,6 +262,7 @@ report_output=$(
     _add_context_component "Architecture" "hello world"
     CONTEXT_BUDGET_PCT=50
     CONTEXT_BUDGET_ENABLED=true
+    VERBOSE_OUTPUT=true
     log_context_report "coder" "claude-sonnet" 2>&1 || true
 )
 

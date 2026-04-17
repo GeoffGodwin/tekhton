@@ -278,5 +278,5 @@ _hook_emit_run_summary() {
     local ts="${TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}"
     cp "$summary_file" "${summary_dir}/RUN_SUMMARY_${ts}.json" 2>/dev/null || true
 
-    log "Run summary written to ${summary_file}"
+    log_verbose "Run summary written to ${summary_file}"
 }

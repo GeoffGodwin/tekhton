@@ -49,6 +49,6 @@ cleanup_stale_baselines() {
         emit_event "baseline_cleanup" "pipeline" \
             "removed stale baseline (run_id=${baseline_run_id:-missing})" \
             "" "" "" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
     fi
 }

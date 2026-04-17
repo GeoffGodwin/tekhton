@@ -222,6 +222,10 @@ _hook_commit() {
             echo -e "  Milestone: ${YELLOW}${BOLD}${ms_num} — PARTIAL${NC}"
         fi
     fi
+    # Project version bump (M96 IA2) — exposed by bump_version_files
+    if [[ -n "${_BUMPED_VERSION_OLD:-}" ]] && [[ -n "${_BUMPED_VERSION_NEW:-}" ]]; then
+        echo -e "  Version:   ${BOLD}${_BUMPED_VERSION_OLD} → ${_BUMPED_VERSION_NEW}${NC} (${_BUMPED_VERSION_TYPE:-patch})"
+    fi
     # Health score delta (Milestone 15)
     if [[ -n "${HEALTH_SCORE:-}" ]] && command -v display_health_score &>/dev/null; then
         display_health_score "$HEALTH_SCORE" "${HEALTH_PREV_SCORE:-}"
@@ -273,6 +277,7 @@ _hook_commit() {
             _tag_milestone_if_complete
             print_run_summary
             success "Committed. Open a PR and squash-merge to main when ready."
+            _print_next_action
             ;;
         e|E)
             local tmpfile
@@ -291,11 +296,13 @@ _hook_commit() {
             _tag_milestone_if_complete
             print_run_summary
             success "Committed. Open a PR and squash-merge to main when ready."
+            _print_next_action
             ;;
         *)
             log "Skipped commit. When ready:"
             echo "  git add -A && git commit -m '${COMMIT_MSG%%$'\n'*}'"
             _COMMIT_SUCCEEDED=false
+            _print_next_action
             ;;
     esac
 }
@@ -340,7 +347,7 @@ _hook_causal_log_finalize() {
             "${_PIPELINE_START_EVT:-}" \
             "" \
             "{\"status\":\"${status}\",\"total_turns\":${TOTAL_TURNS:-0},\"total_time\":${TOTAL_TIME:-0}}" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
     fi
 
     # Update dashboard with final state

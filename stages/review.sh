@@ -9,7 +9,7 @@ set -euo pipefail
 run_stage_review() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-3}"
-    header "Stage ${_stage_pos} / ${_stage_count} — Reviewer"
+    stage_header "${_stage_pos}" "${_stage_count}" "Reviewer"
 
     # Polish reviewer skip heuristic (M42): if all changed files are non-logic,
     # skip the review cycle entirely. Tests still run in the tester stage.
@@ -268,7 +268,9 @@ REVIEW_EOF
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_CODER"
                     _phase_end "rework_agent"
-                    print_run_summary
+                    # M96 (IA1): suppress print_run_summary after sub-agent
+                    # completions; the next Reviewer pass will print the
+                    # summary for the cycle that covers this rework.
                     success "Senior coder rework finished."
                     if [ "$HAS_SIMPLE" -gt 0 ]; then
                         log "Simple blockers remain. Invoking jr coder..."
@@ -284,7 +286,9 @@ REVIEW_EOF
                             "$JR_REWORK_PROMPT" \
                             "$LOG_FILE" \
                             "$AGENT_TOOLS_JR_CODER"
-                        print_run_summary
+                        # M96 (IA1): suppress print_run_summary after sub-agent
+                        # completions (jr coder after senior); next Reviewer
+                        # pass covers the combined cycle.
                         success "Jr coder cleanup finished."
                     fi
 
@@ -301,7 +305,8 @@ REVIEW_EOF
                         "$JR_REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_JR_CODER"
-                    print_run_summary
+                    # M96 (IA1): suppress print_run_summary after sub-agent
+                    # completions (jr coder); next Reviewer pass covers it.
                     success "Jr coder cleanup finished."
                 fi
                 if ! run_build_gate "post-fix-pass"; then
@@ -348,7 +353,9 @@ REVIEW_EOF
         fi
     fi
 
-    print_run_summary
+    # M96 (IA1): the cycle-end print_run_summary at line 117 already ran for
+    # the reviewer pass that produced this verdict; the final Pipeline
+    # Complete banner also prints a summary. Don't print a third time.
     success "Review passed (verdict: ${VERDICT})."
 }
 

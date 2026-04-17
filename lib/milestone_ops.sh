@@ -242,7 +242,7 @@ mark_milestone_done() {
         if command -v emit_event &>/dev/null; then
             emit_event "milestone_advance" "pipeline" "Milestone ${milestone_num} done" \
                 "${_LAST_STAGE_EVT:-}" "" \
-                "{\"milestone\":\"$(_json_escape "$milestone_num")\"}" 2>/dev/null || true
+                "{\"milestone\":\"$(_json_escape "$milestone_num")\"}" >/dev/null 2>&1 || true
         fi
         if command -v emit_dashboard_milestones &>/dev/null; then
             emit_dashboard_milestones 2>/dev/null || true

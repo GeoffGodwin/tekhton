@@ -11,8 +11,9 @@ pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 # Minimal stubs
-warn() { echo "[WARN] $*" >&2; }
-log()  { echo "[LOG] $*" >&2; }
+warn()        { echo "[WARN] $*" >&2; }
+log()         { echo "[LOG] $*" >&2; }
+log_verbose() { :; }
 
 PROJECT_DIR="/tmp"
 export PROJECT_DIR

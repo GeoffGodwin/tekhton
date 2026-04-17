@@ -44,7 +44,7 @@ _save_repo_map_run_cache() {
         echo "$REPO_MAP_CONTENT"
     } > "$cache_file"
     _REPO_MAP_CACHE_FILE="$cache_file"
-    log "[indexer] Run cache saved: ${cache_file}"
+    log_verbose "[indexer] Run cache saved: ${cache_file}"
 }
 
 # _load_repo_map_run_cache — Load repo map from run-scoped cache if valid.

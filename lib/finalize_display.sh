@@ -169,14 +169,19 @@ _print_action_items() {
         echo -e "${CYAN}  Run 'tekhton --diagnose' for recovery suggestions.${NC}"
         echo
     fi
+}
 
-    # Next-action guidance (M82)
-    if command -v _compute_next_action &>/dev/null; then
-        local next_action
-        next_action=$(_compute_next_action 2>/dev/null || echo "")
-        if [[ -n "$next_action" ]]; then
-            echo -e "${BOLD}${next_action}${NC}"
-            echo
-        fi
+# _print_next_action
+# Prints the M82 "What's next" guidance line. M96 IA3: extracted from
+# _print_action_items so it can be emitted as the final line, after the
+# commit confirmation rather than buried before the commit prompt.
+_print_next_action() {
+    command -v _compute_next_action &>/dev/null || return 0
+    local next_action
+    next_action=$(_compute_next_action 2>/dev/null || echo "")
+    if [[ -n "$next_action" ]]; then
+        echo
+        echo -e "${BOLD}${next_action}${NC}"
+        echo
     fi
 }

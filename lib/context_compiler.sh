@@ -222,7 +222,7 @@ build_context_packet() {
         return
     fi
 
-    log "[context-compiler] Extracted keywords: $(echo "$keywords" | tr '\n' ', ' | sed 's/,$//')"
+    log_verbose "[context-compiler] Extracted keywords: $(echo "$keywords" | tr '\n' ', ' | sed 's/,$//')"
 
     # --- Stage-specific filtering ---
 

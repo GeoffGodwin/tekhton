@@ -1,7 +1,7 @@
 # Milestone 96: CLI Output Hygiene
 <!-- milestone-meta
 id: "96"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

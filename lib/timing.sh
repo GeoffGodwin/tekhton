@@ -257,5 +257,5 @@ Agent calls: ${agent_calls} (of ${max_calls} max)
 ${repo_map_line}
 EOF
 
-    log "Timing report written to ${report_file}"
+    log_verbose "Timing report written to ${report_file}"
 }

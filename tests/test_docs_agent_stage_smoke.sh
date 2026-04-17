@@ -42,6 +42,8 @@ emit_dashboard_run_state() { :; }
 emit_dashboard_reports() { :; }
 progress_status() { :; }
 progress_outcome() { :; }
+stage_header() { :; }
+log_verbose() { :; }
 render_prompt() { echo "rendered prompt for $1"; }
 _safe_read_file() { cat "$1" 2>/dev/null || true; }
 

@@ -97,7 +97,7 @@ RECON_EOF
 run_stage_coder() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-1}"
-    header "Stage ${_stage_pos} / ${_stage_count} — Coder"
+    stage_header "${_stage_pos}" "${_stage_count}" "Coder"
 
     # --- Pre-coder clean sweep (M92) -----------------------------------------
     # If tests are failing before the coder runs, spawn a restricted fix agent
@@ -236,7 +236,8 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             "$_scout_tools"
 
         if [ -f "${SCOUT_REPORT_FILE}" ]; then
-            print_run_summary
+            # M96 (IA1): scout one-liner status below is sufficient — skip
+            # the cumulative run summary after a normal scout run.
             success "Scout agent finished. Relevant files located."
 
             # Parse complexity estimate before archiving the report
@@ -274,7 +275,8 @@ $(cat "${SCOUT_REPORT_FILE}")
                             "$_scout_tools"
 
                         if [ -f "${SCOUT_REPORT_FILE}" ]; then
-                            print_run_summary
+                            # M96 (IA1): post-split scout is still a scout
+                            # sub-agent; skip the cumulative summary.
                             success "Post-split scout finished."
                             apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
                             BUG_SCOUT_CONTEXT="
@@ -298,7 +300,7 @@ $(cat "${SCOUT_REPORT_FILE}")
                 rm "${SCOUT_REPORT_FILE}"
             fi
         elif was_null_run; then
-            print_run_summary
+            # M96 (IA1): scout null-run — skip cumulative summary; warn is sufficient.
             warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
         else
             warn "Scout agent did not produce ${SCOUT_REPORT_FILE} — coder will explore independently."

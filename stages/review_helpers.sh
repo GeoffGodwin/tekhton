@@ -34,7 +34,6 @@ _route_specialist_rework() {
         "$REWORK_PROMPT" \
         "$LOG_FILE" \
         "$AGENT_TOOLS_CODER"
-    print_run_summary
     success "Specialist rework finished."
 
     if ! run_build_gate "post-specialist-rework"; then

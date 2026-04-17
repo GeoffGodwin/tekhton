@@ -1,64 +1,44 @@
-# Coder Summary
-
 ## Status: COMPLETE
 
-## What Was Implemented
+## Summary
+Senior coder rework cycle for M96 (CLI Output Hygiene). The reviewer's three
+remaining Complex Blockers are now resolved:
 
-Milestone 94 — Failure Recovery CLI Guidance & `--diagnose` Overhaul.
-
-**Tier 1 — Inline recovery block.**
-`_print_recovery_block()` renders a WHAT HAPPENED / WHAT TO DO NEXT block
-with a runnable `tekhton` resume command at every terminal exit path. It is
-invoked from `_save_orchestration_state` after `write_pipeline_state`, so it
-fires for every orchestration failure. Outcomes supported: `max_attempts`,
-`timeout`, `agent_cap`, `pre_existing_failure`, and a fallback that echoes
-the provided detail string. Colors guarded with `${BOLD:-}` / `${NC:-}` so
-the block renders in test contexts.
-
-**Tier 2 — `--diagnose` overhaul.**
-Added `_rule_max_turns` — fires when `LAST_FAILURE_CONTEXT.json` has
-`AGENT_SCOPE/max_turns`, `PIPELINE_STATE.md` Exit Reason contains
-`complete_loop_max_attempts`, or Notes contains `max_turns`. Registered
-before `_rule_review_loop` (more specific). All remaining rule suggestions
-now include `_DIAG_PIPELINE_TASK` in their runnable commands (with
-`${TASK:-<task not recorded>}` fallback). `_read_diagnostic_context` now
-reads `LAST_FAILURE_CONTEXT.json` eagerly and extracts the `classification`
-field — `RUN_SUMMARY.json` is enrichment only.
-
-## Root Cause (bugs only)
-
-N/A — new feature (M94).
+1. **IA2 — Version bump in Pipeline Complete banner.** `bump_version_files`
+   now exports `_BUMPED_VERSION_OLD`, `_BUMPED_VERSION_NEW`, and
+   `_BUMPED_VERSION_TYPE` after a successful bump. `_hook_commit` reads them
+   and emits a `Version: <old> → <new> (<type>)` line directly under the
+   Milestone line in the banner. No display when no bump occurred.
+2. **IA3 — `What's next:` promoted to final printed line.** Removed the
+   `_compute_next_action` block from `_print_action_items` and added a small
+   helper `_print_next_action` in `lib/finalize_display.sh`. `_hook_commit`
+   invokes it after each terminal `print_run_summary` + commit-confirmation
+   path (commit, edit-then-commit, and skip).
+3. **Coverage gap closed.** `tests/test_cli_output_hygiene.sh` now exists.
+   Two assertions: (a) runtime smoke — sourcing causality.sh and calling
+   `emit_event >/dev/null` produces no event ID on stdout; (b) static —
+   every `emit_event` call site in `lib/` and `stages/` either captures via
+   command substitution or redirects stdout (a bare `2>/dev/null` is rejected,
+   confirmed by manual regression-injection).
 
 ## Files Modified
+- `lib/finalize.sh` — Added Version line in banner; added `_print_next_action`
+  call after each commit/skip case.
+- `lib/finalize_display.sh` — Removed the inline next-action block from
+  `_print_action_items`; added `_print_next_action` helper.
+- `lib/project_version_bump.sh` — Export `_BUMPED_VERSION_*` after bump so
+  the banner can read them.
 
-- `lib/orchestrate_recovery.sh` — Added `_print_recovery_block()` helper
-  (placed here rather than orchestrate_helpers.sh to stay under the 300-line
-  ceiling; orchestrate_recovery.sh is sourced first so the symbol is in scope).
-- `lib/orchestrate_helpers.sh` — Call `_print_recovery_block` at the end of
-  `_save_orchestration_state`.
-- `lib/diagnose_rules.sh` — Added `_rule_max_turns`; updated all primary-rule
-  DIAG_SUGGESTIONS to include runnable `tekhton` commands with
-  `_DIAG_PIPELINE_TASK` substitution; removed 7 secondary rules that were
-  extracted into `diagnose_rules_extra.sh`; sources the new sibling file;
-  `DIAGNOSE_RULES` array grew from 13 to 14 entries with `_rule_max_turns`
-  at index 1.
-- `lib/diagnose_rules_extra.sh` **(NEW)** — Holds the 7 secondary rules
-  (`_rule_stuck_loop`, `_rule_turn_exhaustion`, `_rule_split_depth`,
-  `_rule_transient_error`, `_rule_test_audit_failure`, `_rule_migration_crash`,
-  `_rule_version_mismatch`) with task-substituted runnable commands. Split
-  out to keep `diagnose_rules.sh` under 300 lines.
-- `lib/diagnose.sh` — `_read_diagnostic_context` now reads
-  `LAST_FAILURE_CONTEXT.json` before `RUN_SUMMARY.json`, extracts
-  `classification` into `_DIAG_LAST_CLASSIFICATION`, and captures
-  `## Exit Reason` into `_DIAG_EXIT_REASON`.
-- `tests/test_diagnose.sh` — Updated rule-count assertions (13 → 14),
-  repositioned the priority checks, added Test Suite 2b for `_rule_max_turns`
-  (fires from failure_ctx, Notes, and Exit Reason; no-match on unrelated
-  fixtures); widened `_reset_fixture` to clear the new state vars.
-- `tests/test_recovery_block.sh` **(NEW)** — Tests the recovery block's
-  format and runnable-command content across `max_attempts`, `timeout`,
-  `pre_existing_failure`, and fallback outcomes.
+## New Files Created
+- `tests/test_cli_output_hygiene.sh` — Hygiene contract test (M96 AC-1).
 
-## Human Notes Status
+## Tests Run
+- `tests/test_cli_output_hygiene.sh` — 2/2 PASS
+- `tests/test_finalize_run.sh` — 106/106 PASS
+- `tests/test_next_action_computation.sh` — 8/8 PASS
+- `tests/test_project_version_bump.sh` — 22/22 PASS
+- `shellcheck lib/finalize.sh lib/finalize_display.sh lib/project_version_bump.sh tests/test_cli_output_hygiene.sh` — clean
 
-No human notes in scope for this task.
+## Remaining Work
+None for this rework. Reviewer's non-blocking notes (NR2 archival under-emission,
+IA4/IA5 deferral) are out of scope for this cycle per the report.

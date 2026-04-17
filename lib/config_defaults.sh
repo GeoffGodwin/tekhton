@@ -15,6 +15,9 @@ set -euo pipefail
 : "${EXPRESS_PERSIST_CONFIG:=true}"      # Write pipeline.conf on successful completion
 : "${EXPRESS_PERSIST_ROLES:=false}"      # Copy role templates to project on completion
 
+# --- CLI output hygiene (M96) ---
+: "${VERBOSE_OUTPUT:=false}"             # Restore log_verbose() diagnostics to stdout
+
 # --- Context budget defaults (set early — used by planning + execution) ---
 : "${CONTEXT_BUDGET_PCT:=50}"            # Max % of context window for prompt
 : "${CHARS_PER_TOKEN:=4}"                # Conservative char-to-token ratio

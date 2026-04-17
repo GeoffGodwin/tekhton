@@ -36,8 +36,9 @@ mkdir -p "$CACHE_DIR"
 
 _CAPTURED_LOG=""
 _CAPTURED_WARN=""
-log()  { _CAPTURED_LOG="${_CAPTURED_LOG}${*}"$'\n'; }
-warn() { _CAPTURED_WARN="${_CAPTURED_WARN}${*}"$'\n'; }
+log()         { _CAPTURED_LOG="${_CAPTURED_LOG}${*}"$'\n'; }
+log_verbose() { _CAPTURED_LOG="${_CAPTURED_LOG}${*}"$'\n'; }
+warn()        { _CAPTURED_WARN="${_CAPTURED_WARN}${*}"$'\n'; }
 
 # Initial stubs — will be overridden per-test below.
 _indexer_find_venv_python() { return 1; }

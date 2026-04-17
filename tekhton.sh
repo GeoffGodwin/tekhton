@@ -1866,6 +1866,11 @@ _phase_end "config_load"
 # --- Pre-flight --------------------------------------------------------------
 
 header "Tekhton — ${PROJECT_NAME} — Starting at: ${START_AT}"
+# M96 (NR6): emit any buffered role-template fallback warnings underneath
+# the startup banner rather than orphaned above it.
+if declare -f flush_role_template_warnings &>/dev/null; then
+    flush_role_template_warnings
+fi
 log "Task: ${BOLD}${TASK}${NC}"
 log "Log:  ${LOG_FILE}"
 log "Senior Coder Model: ${CLAUDE_CODER_MODEL}"
@@ -1900,28 +1905,42 @@ if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
 fi
 echo
 
-# Pre-flight: indexer availability check
+# Pre-flight: indexer + Serena MCP availability (M96: collapsed to 1 line)
+# Emits a single consolidated status after both availability checks complete.
+_indexer_ready=false
+_mcp_ready=false
+_mcp_lang_servers=""
+
 if [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
     if ! validate_indexer_config; then
         error "Invalid indexer configuration. Fix the values in pipeline.conf."
         exit 1
     fi
     if check_indexer_available; then
-        log "Indexer: available (repo map enabled)"
+        _indexer_ready=true
+        log_verbose "Indexer: available (repo map enabled)"
     else
         warn "REPO_MAP_ENABLED=true but indexer not available — falling back to 2.0 behavior."
         warn "Run 'tekhton --setup-indexer' to install dependencies."
     fi
 fi
 
-# Pre-flight: Serena MCP server startup (when enabled)
 if [[ "${SERENA_ENABLED:-false}" == "true" ]]; then
     if start_mcp_server; then
-        log "Serena: MCP integration active"
+        _mcp_ready=true
+        _mcp_lang_servers="${SERENA_LANGUAGE_SERVERS:-auto}"
+        log_verbose "Serena: MCP integration active"
     else
-        warn "SERENA_ENABLED=true but Serena not available — continuing without LSP tools."
+        warn "[!] Serena MCP unavailable — falling back to v2 context"
     fi
 fi
+
+if [[ "$_indexer_ready" == "true" ]] && [[ "$_mcp_ready" == "true" ]]; then
+    success "Indexer + Serena MCP ready  (${_mcp_lang_servers})"
+elif [[ "$_indexer_ready" == "true" ]]; then
+    success "Indexer ready (repo map enabled)"
+fi
+unset _indexer_ready _mcp_ready _mcp_lang_servers
 
 # Pre-flight drift threshold check
 if should_trigger_audit 2>/dev/null; then
@@ -1950,32 +1969,38 @@ _ARCHIVED_REVIEWER_REPORT_PATH=""
 _ARCHIVED_TESTER_REPORT_PATH=""
 export _ARCHIVED_REVIEWER_REPORT_PATH _ARCHIVED_TESTER_REPORT_PATH
 
-# Only archive prior reports when starting fresh from the coder stage
+# Only archive prior reports when starting fresh from the coder stage.
+# M96: emit a single summary count instead of one log line per file.
+_archived_count=0
 if [ "$START_AT" = "coder" ] || [ "$START_AT" = "intake" ]; then
     for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${TESTER_REPORT_FILE} ${INTAKE_REPORT_FILE}; do
         if [ -f "$f" ]; then
             ARCHIVE_NAME="${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_$(basename "$f")"
             mkdir -p "${LOG_DIR}/archive"
             mv "$f" "$ARCHIVE_NAME"
-            log "Archived previous ${f}"
+            log_verbose "Archived previous ${f}"
+            _archived_count=$(( _archived_count + 1 ))
             case "$f" in
                 *REVIEWER_REPORT*) _ARCHIVED_REVIEWER_REPORT_PATH="$ARCHIVE_NAME" ;;
                 *TESTER_REPORT*)   _ARCHIVED_TESTER_REPORT_PATH="$ARCHIVE_NAME" ;;
             esac
         fi
     done
+    [ "$_archived_count" -gt 0 ] && log "Archived ${_archived_count} previous report(s)"
 elif [ "$START_AT" = "review" ]; then
     for f in ${REVIEWER_REPORT_FILE} ${TESTER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE}; do
         if [ -f "$f" ]; then
             mv "$f" "${LOG_DIR}/${TIMESTAMP}_prev_$(basename "$f")"
-            log "Archived previous $f"
+            log_verbose "Archived previous $f"
+            _archived_count=$(( _archived_count + 1 ))
         fi
     done
+    [ "$_archived_count" -gt 0 ] && log "Archived ${_archived_count} previous report(s)"
     log "Resuming with existing ${CODER_SUMMARY_FILE}"
 elif [ "$START_AT" = "test" ]; then
     if [ -f "${TESTER_REPORT_FILE}" ]; then
         mv "${TESTER_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_prev_$(basename "${TESTER_REPORT_FILE}")"
-        log "Archived previous ${TESTER_REPORT_FILE}"
+        log "Archived 1 previous report"
     fi
     log "Resuming with existing ${CODER_SUMMARY_FILE} and ${REVIEWER_REPORT_FILE}"
 elif [ "$START_AT" = "tester" ]; then
@@ -1985,6 +2010,7 @@ elif [ "$START_AT" = "tester" ]; then
 else
     log "Resuming at ${START_AT} — prior reports preserved for agent context"
 fi
+unset _archived_count
 
 # --- Milestone number parsing ------------------------------------------------
 # Parse milestone number from task for both --milestone and --auto-advance modes.
@@ -2241,7 +2267,6 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[coder]="${CODER_MAX_TURNS:-50}"
                 _STAGE_START_TS[coder]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
-                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Coder"
                 run_stage_coder
                 local _coder_files_changed
                 _coder_files_changed=$(git diff --name-only HEAD 2>/dev/null | wc -l | tr -d '[:space:]' || echo "0")
@@ -2272,7 +2297,6 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[docs]="${DOCS_AGENT_MAX_TURNS:-10}"
                 _STAGE_START_TS[docs]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
-                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Docs"
                 run_stage_docs
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "docs" "" "$_docs_start_evt" "" \
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
@@ -2295,7 +2319,6 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[security]="${SECURITY_MAX_TURNS:-15}"
                 _STAGE_START_TS[security]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
-                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Security"
                 run_stage_security
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "security" "" "$_sec_start_evt" "" \
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
@@ -2319,7 +2342,6 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[reviewer]="${REVIEWER_MAX_TURNS:-15}"
                 _STAGE_START_TS[reviewer]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
-                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Reviewer"
                 run_stage_review
                 local _review_verdict_json="null"
                 if [[ -n "${VERDICT:-}" ]]; then
@@ -2352,7 +2374,6 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[tester_write]="${TESTER_WRITE_FAILING_MAX_TURNS:-10}"
                 _STAGE_START_TS[tester_write]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
-                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Tester" "TDD write-failing"
                 run_stage_tester
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "tester_write" "" "$_tw_start_evt" "" \
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")
@@ -2375,7 +2396,6 @@ _run_pipeline_stages() {
                 _STAGE_BUDGET[tester]="${TESTER_MAX_TURNS:-30}"
                 _STAGE_START_TS[tester]="$SECONDS"
                 emit_dashboard_run_state 2>/dev/null || true
-                progress_status "$_stage_idx" "$PIPELINE_STAGE_COUNT" "Tester"
                 run_stage_tester
                 _LAST_STAGE_EVT=$(emit_event "stage_end" "tester" "" "$_tester_start_evt" "" \
                     "{\"turns_used\":${LAST_AGENT_TURNS:-0}}")

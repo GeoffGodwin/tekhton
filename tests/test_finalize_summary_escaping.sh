@@ -49,11 +49,12 @@ export _ORCH_REVIEW_BUMPED AUTONOMOUS_TIMEOUT AGENT_ERROR_CATEGORY AGENT_ERROR_S
 export CONTINUATION_ATTEMPTS LAST_AGENT_RETRY_COUNT REVIEW_CYCLE MILESTONE_CURRENT_SPLIT_DEPTH
 
 # Stub logging
-log()     { :; }
-warn()    { :; }
-error()   { :; }
-success() { :; }
-header()  { :; }
+log()         { :; }
+warn()        { :; }
+error()       { :; }
+success()     { :; }
+header()      { :; }
+log_verbose() { :; }
 
 # Mock git to avoid actual git operations — returns non-zero so changed_files stays empty
 git() { return 1; }

@@ -156,6 +156,8 @@ emit_dashboard_run_state()       { :; }
 emit_event()                     { :; }
 log_decision()                   { :; }
 progress_status()                { :; }
+stage_header()                   { :; }
+log_verbose()                    { :; }
 _safe_read_file()                { echo ""; }
 _wrap_file_content()             { echo ""; }
 _phase_start()                   { :; }

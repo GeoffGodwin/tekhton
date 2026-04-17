@@ -117,7 +117,7 @@ preload_context_cache() {
     export _CONTEXT_CACHE_LOADED
 
     _phase_end "context_cache_preload"
-    log "[context-cache] Preloaded context cache (arch=${#_CACHED_ARCHITECTURE_CONTENT}, drift=${#_CACHED_DRIFT_LOG_CONTENT}, clarify=${#_CACHED_CLARIFICATIONS_CONTENT}, adl=${#_CACHED_ARCHITECTURE_LOG_CONTENT}, milestone=${#_CACHED_MILESTONE_BLOCK})"
+    log_verbose "[context-cache] Preloaded context cache (arch=${#_CACHED_ARCHITECTURE_CONTENT}, drift=${#_CACHED_DRIFT_LOG_CONTENT}, clarify=${#_CACHED_CLARIFICATIONS_CONTENT}, adl=${#_CACHED_ARCHITECTURE_LOG_CONTENT}, milestone=${#_CACHED_MILESTONE_BLOCK})"
 }
 
 # invalidate_drift_cache — Clears cached drift log content.
@@ -125,7 +125,7 @@ preload_context_cache() {
 invalidate_drift_cache() {
     _CACHED_DRIFT_LOG_CONTENT=""
     export _CACHED_DRIFT_LOG_CONTENT
-    log "[context-cache] Drift log cache invalidated"
+    log_verbose "[context-cache] Drift log cache invalidated"
 }
 
 # invalidate_milestone_cache — Clears cached milestone window.
@@ -133,7 +133,7 @@ invalidate_drift_cache() {
 invalidate_milestone_cache() {
     _CACHED_MILESTONE_BLOCK=""
     export _CACHED_MILESTONE_BLOCK
-    log "[context-cache] Milestone window cache invalidated"
+    log_verbose "[context-cache] Milestone window cache invalidated"
 }
 
 # _get_cached_architecture_content — Returns wrapped architecture content.

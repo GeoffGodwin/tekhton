@@ -286,6 +286,6 @@ ${window_content}"
     # Integrate with context accounting
     _add_context_component "Milestone Window" "$MILESTONE_BLOCK"
 
-    log "[milestone_window] Included ${included_count} milestone(s), ${budget} budget, ${remaining} remaining"
+    log_verbose "[milestone_window] Included ${included_count} milestone(s), ${budget} budget, ${remaining} remaining"
     return 0
 }

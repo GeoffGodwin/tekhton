@@ -170,7 +170,7 @@ start_mcp_server() {
         return 1
     fi
 
-    log "[mcp] Starting Serena MCP server..."
+    log_verbose "[mcp] Starting Serena MCP server..."
 
     # Verify Claude CLI supports --mcp-config
     if ! _cli_supports_mcp_config; then
@@ -193,7 +193,7 @@ start_mcp_server() {
         return 1
     fi
 
-    log "[mcp] MCP config: ${_MCP_CONFIG_PATH}"
+    log_verbose "[mcp] MCP config: ${_MCP_CONFIG_PATH}"
 
     # Claude CLI manages the MCP server lifecycle based on the config file.
     # We don't need to start Serena ourselves — Claude starts it when it sees
@@ -203,9 +203,9 @@ start_mcp_server() {
     SERENA_MCP_AVAILABLE=true
     SERENA_ACTIVE="true"
 
-    log "[mcp] Serena MCP integration enabled."
-    log "[mcp] Serena path: ${_SERENA_DIR}"
-    log "[mcp] Language servers: ${SERENA_LANGUAGE_SERVERS:-auto}"
+    log_verbose "[mcp] Serena MCP integration enabled."
+    log_verbose "[mcp] Serena path: ${_SERENA_DIR}"
+    log_verbose "[mcp] Language servers: ${SERENA_LANGUAGE_SERVERS:-auto}"
 
     return 0
 }
@@ -227,7 +227,7 @@ stop_mcp_server() {
     SERENA_ACTIVE=""
     _MCP_SERVER_PID=""
 
-    log "[mcp] Serena MCP integration stopped."
+    log_verbose "[mcp] Serena MCP integration stopped."
     return 0
 }
 

@@ -30,11 +30,12 @@ TASK="Make Scout identify affected test files"
 TIMESTAMP="20260331_143022"
 
 # Stub functions
-log()     { :; }
-warn()    { :; }
-error()   { :; }
-success() { :; }
-header()  { :; }
+log()         { :; }
+warn()        { :; }
+error()       { :; }
+success()     { :; }
+header()      { :; }
+log_verbose() { :; }
 
 # Mock git to return some changed files
 git() { printf 'prompts/scout.prompt.md\nstages/coder.sh\n'; }

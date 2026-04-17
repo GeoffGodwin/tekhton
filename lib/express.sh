@@ -140,6 +140,11 @@ generate_express_config() {
 
 # --- Role file fallback ------------------------------------------------------
 
+# M96 (NR6): role template fallback warnings are buffered here and flushed
+# by flush_role_template_warnings() after the startup banner, so they no
+# longer appear orphaned above it.
+_ROLE_TEMPLATE_WARNINGS=()
+
 # resolve_role_file — Returns the project role file if it exists, otherwise
 # falls back to the built-in template in TEKHTON_HOME/templates/.
 # Args: $1 = role file path (relative to PROJECT_DIR), $2 = template basename
@@ -161,13 +166,24 @@ resolve_role_file() {
     else
         local fallback="${TEKHTON_HOME}/templates/${template_name}"
         if [[ -f "$fallback" ]]; then
-            log "Using built-in role template for ${template_name%.md} (no project-specific role file found)." >&2
+            _ROLE_TEMPLATE_WARNINGS+=("Using built-in role template for ${template_name%.md} (no project-specific role file found).")
             echo "$fallback"
         else
             # Last resort: return original (agent will get a read error)
             echo "$role_file"
         fi
     fi
+}
+
+# flush_role_template_warnings — Emit any buffered role-template warnings,
+# intended to be called immediately after the startup banner so warnings
+# appear beneath it rather than before it.
+flush_role_template_warnings() {
+    local msg
+    for msg in "${_ROLE_TEMPLATE_WARNINGS[@]:-}"; do
+        [[ -n "$msg" ]] && log "$msg"
+    done
+    _ROLE_TEMPLATE_WARNINGS=()
 }
 
 # apply_role_file_fallbacks — Check all role file variables and apply fallback

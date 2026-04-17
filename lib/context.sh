@@ -105,13 +105,17 @@ log_context_report() {
         pct_used=$(( _CONTEXT_TOTAL_TOKENS * 100 / window ))
     fi
 
-    log "[context] ${stage} context breakdown:"
+    # M96 (NR3): per-row context breakdown suppressed from stdout. The total
+    # tokens/pct are stored on LAST_CONTEXT_TOKENS / LAST_CONTEXT_PCT and
+    # folded into the agent completion line by agent.sh. The full breakdown
+    # still lands in the log file for post-mortem inspection.
+    log_verbose "[context] ${stage} context breakdown:"
     if [[ -n "${_CONTEXT_REPORT}" ]]; then
         while IFS= read -r line; do
-            [[ -n "$line" ]] && log "$line"
+            [[ -n "$line" ]] && log_verbose "$line"
         done <<< "${_CONTEXT_REPORT}"
     fi
-    log "  Total: ${_CONTEXT_TOTAL_CHARS} chars (~${_CONTEXT_TOTAL_TOKENS} tokens, ${pct_used}% of ${window} window)"
+    log_verbose "  Total: ${_CONTEXT_TOTAL_CHARS} chars (~${_CONTEXT_TOTAL_TOKENS} tokens, ${pct_used}% of ${window} window)"
 
     if [[ "$_CONTEXT_TOTAL_TOKENS" -gt "$budget_tokens" ]]; then
         warn "[context] Over budget: ${_CONTEXT_TOTAL_TOKENS} tokens > ${budget_tokens} budget (${budget_pct}% of ${window})"

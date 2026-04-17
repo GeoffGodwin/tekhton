@@ -142,6 +142,12 @@ bump_version_files() {
     # Update cache
     _write_version_config "CURRENT_VERSION" "$next_version"
 
+    # Expose bump details for the Pipeline Complete banner (M96 IA2).
+    _BUMPED_VERSION_OLD="$cached_version"
+    _BUMPED_VERSION_NEW="$next_version"
+    _BUMPED_VERSION_TYPE="$bump_type"
+    export _BUMPED_VERSION_OLD _BUMPED_VERSION_NEW _BUMPED_VERSION_TYPE
+
     if command -v log &>/dev/null; then
         log "Bumped project version: ${cached_version} → ${next_version} (${bump_type})"
     fi

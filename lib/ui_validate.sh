@@ -597,6 +597,6 @@ _emit_ui_validation_event() {
         emit_event "ui_validation" "gate" "status=${status}" \
             "" "" \
             "{\"status\":\"${status}\",\"reason\":\"${reason}\",\"browser\":\"${_UI_BROWSER_CMD:-none}\"}" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
     fi
 }

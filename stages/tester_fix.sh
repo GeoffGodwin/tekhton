@@ -152,7 +152,8 @@ _run_tester_inline_fix() {
         # Log fix attempt in causal log
         if declare -f emit_event &>/dev/null; then
             emit_event "tester_fix_attempt" "tester" \
-                "attempt=${_fix_attempt} exit=${LAST_AGENT_EXIT_CODE:-0} turns=${LAST_AGENT_TURNS:-0}"
+                "attempt=${_fix_attempt} exit=${LAST_AGENT_EXIT_CODE:-0} turns=${LAST_AGENT_TURNS:-0}" \
+                >/dev/null 2>&1 || true
         fi
 
         # Check if fix succeeded — re-run test command

@@ -117,6 +117,8 @@ fi
 
 log_decision()              { :; }
 progress_status()           { :; }
+stage_header()              { :; }
+log_verbose()               { :; }
 invalidate_repo_map_run_cache() { :; }  # M61: stub for run cache invalidation
 extract_human_notes()       { echo ""; }
 should_claim_notes()        { return 1; }

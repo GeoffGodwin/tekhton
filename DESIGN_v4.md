@@ -49,10 +49,14 @@ Tekhton deployable in professional environments.
 
 ## Design Philosophy
 
-1. **Provider freedom, not provider agnosticism for its own sake.** The goal is
-   user choice, not abstract purity. Anthropic via `claude` CLI remains the
-   optimized fast path. Other providers work through the bridge. Users can mix
-   providers per stage. The system never forces a provider choice.
+1. **Multi-provider is foundational, not optional.** Enterprise deployability
+   requires provider choice because some enterprises cannot use specific providers
+   for regulatory, contractual, or sovereignty reasons. V4 treats provider choice
+   as the default assumption; all project context, agent invocation, and
+   documentation conventions are provider-neutral by construction. Anthropic via
+   the `claude` CLI remains an optimized fast path for deployments that choose it,
+   but the system never forces a provider choice and never assumes one. Users can
+   mix providers per stage through the bridge.
 
 2. **The user is a project owner.** Tekhton's audience expands from "engineer
    who codes" to "person who ships products." Task intake accepts natural language.
@@ -82,9 +86,16 @@ Tekhton deployable in professional environments.
    work. Tekhton's own test suite is held to the same standard as the tests it
    writes for target projects.
 
-7. **Backward compatible.** All V3 workflows work unchanged. New features are
-   additive or opt-in. Users who run `tekhton "fix bug"` with a single Anthropic
-   model see identical behavior to V3 unless they enable V4 features.
+7. **One-way migration, not backward compatibility.** V4 introduces breaking
+   changes in directory layout, context file conventions, NFR vocabulary, provider
+   configuration defaults, and scope declaration schema that taken together would
+   be compromised by maintaining V3 compatibility. Instead, V4 ships with a
+   one-time migration tool that detects V3 projects, surfaces the migration scope,
+   and either completes the migration or exits without modification. Post-migration,
+   projects are V4-only; V3 Tekhton running against a V4 project produces a clear
+   error directing the operator to upgrade their Tekhton CLI. This tradeoff
+   privileges architectural clarity over compatibility, which is the right call
+   when the architectural step is as substantial as V3 → V4.
 
 8. **Self-applicable.** Tekhton builds Tekhton. Complex features are sequenced
    later so the pipeline is more capable by the time it builds them. Each
@@ -92,23 +103,82 @@ Tekhton deployable in professional environments.
 
 ## Target User
 
-V4 expands the target user from V3:
+V4 defines five personas as deployment dependencies rather than as customer segments. Each persona produces specific architectural requirements that Tekhton's design accounts for; meeting those requirements is what makes the personas' convergence structural rather than aspirational (see the Architectural Thesis section following).
 
-**Primary: The Product Builder.** A person with a product idea and basic technical
-literacy (can install tools, edit config files, read a dashboard) but who does
-not need to be a professional software engineer. They describe what they want,
-Tekhton decomposes it into milestones, builds it, and reports progress in terms
-they understand. They approve demos and release notes, not diffs.
+**Primary: The Product Builder.** A person with a product idea and basic technical literacy (can install tools, edit config files, read a dashboard) but who does not need to be a professional software engineer. They describe what they want, Tekhton decomposes it into milestones, builds it, and reports progress in terms they understand. They approve demos and release notes, not diffs. Their primary inbound surfaces are Natural Language Task Intake and Watchtower Interactive Controls; their primary outbound surfaces are Business-Metric Progress Reporting, Cost Forecasting, and Deliverable Artifact Packages.
 
-**Secondary: The Professional Developer.** Same as V3 — experienced developers
-who use Tekhton to accelerate their workflow. They benefit from parallel execution,
-multi-provider support, and cost optimization. They use verbose/debug output and
-fine-tune per-stage model assignments.
+**Secondary: The Designer.** A design practitioner who feeds Tekhton design concepts ranging from thin descriptions of UI look-and-feel to complex specifications of user interactions. Designers typically tweak existing tools with their eye for detail and sometimes build POCs and demos from scratch. They author Figma files, screenshots, CSS/HTML mocks, and SVG exports rather than writing code directly. Their primary inbound surface is Design Artifact Intake (Figma adapter, screenshot analysis via vision-capable models, CSS/HTML mock parsing); their primary outbound surfaces are Deliverable Artifact Packages with visual diff summaries and accessibility-category NFR violations they can act on.
 
-**Tertiary: The Enterprise Team.** Organizations deploying Tekhton as part of
-their development toolchain. They need audit trails, identity integration,
-structured logging for their observability stack, and NFR enforcement. They run
-Tekhton in CI/CD pipelines and across multiple projects.
+**Secondary: The Professional Developer.** Experienced developers who use Tekhton to accelerate their workflow. They benefit from parallel execution, multi-provider support, and cost optimization. They use verbose/debug output and fine-tune per-stage model assignments. They author Goldprints, set NFR thresholds in collaboration with enterprise scopes, use interactive controls, and can submit design artifacts when working full-stack. Their outbound consumption leans toward technical detail rather than non-technical summaries.
+
+**Tertiary: The Enterprise Team (catch-all for vertical slices).** A grouping that spans business analysts, data engineers, software architects, cybersecurity specialists, and compliance officers. Each vertical has distinct concerns but shares the characteristic of requiring Tekhton to comprehend and deliver based on their input. Compliance officers own cost and license thresholds; cybersecurity specialists own vulnerability and security policy thresholds; software architects own performance and SLA budgets; business analysts submit natural language task intake against business requirements; data engineers feed contextual signals from the organization's data systems. Enterprise Team personas' primary inbound surface is the NFR Framework with MoSCoW criticality; their outbound surfaces are filtered views of all three outbound mechanisms, scoped to their vertical's concerns via RBAC.
+
+**Quaternary: The Internal AI Champion (deployment dependency).** A mid-to-senior technical leader (Staff Engineer, Principal Engineer, Engineering Manager, Director of Platform Engineering, or Chief Architect) inside a large organization who has both the technical depth to evaluate Tekhton on architectural merit and the organizational access to advocate for its adoption. They bridge the gap between capability and organizational readiness, navigating procurement, satisfying security review, building internal consensus, and translating Tekhton's value into language that resonates with budget holders. This persona is structurally distinct from the first four in that they typically are also one of the other personas (most often a Professional Developer or Enterprise Team member) with the organizational dimension layered on top. Tekhton doesn't adopt itself; the Champion is the person who bridges capability to organizational readiness, and the architecture accounts for their specific needs through the ROI Analytics view, compliance summary generation, executive-ready report templates, case study artifact generation, and pilot program scaffolding described in M38.
+
+## Architectural Thesis: The Product-Owner Convergence Model
+
+V4's architecture creates structural convergence between product, design, engineering, and enterprise personas, not through aspiration but through specific mechanisms that pull each persona toward a shared operational center. This section names the convergence thesis explicitly and shows how the system design sections that follow implement it. The thesis is descriptive rather than rhetorical: every mechanism named here maps to a concrete component with a file path, a data source, a transformation step, and a storage location. The argument is that naming these components together, as a coordinated system rather than as scattered features, reveals a structural property of Tekhton that isn't visible when the components are described in isolation.
+
+### Bidirectional Translation: Two Categories of Mechanism
+
+Convergence requires translation flowing in both directions. Mechanisms that only translate engineering outputs into non-engineer-legible artifacts describe transparency, which is a weaker claim. True convergence means persona constraints and contributions flow inward to shape execution, and execution state flows outward to inform decisions. V4's architecture provides both.
+
+**Inbound mechanisms** translate persona input into executable infrastructure. They take something a human creates (a natural language description, a compliance policy, a mid-run correction, a codified engineering pattern, a design artifact) and render it as something Tekhton's pipeline can act on directly.
+
+**Outbound mechanisms** translate execution state into persona-legible artifacts. They take what the pipeline produces (stage reports, cost ledger entries, event logs, git diffs) and render it as something a non-engineer can review, approve, or plan against.
+
+V4 includes five inbound mechanisms and three outbound mechanisms, each with concrete architectural grounding:
+
+**Inbound Mechanisms:**
+
+1. **Natural Language Task Intake** (M15). Source: Product Builder input via CLI, Watchtower task form, or V5 inbox integrations. Transformation: PM agent decomposes NL input into milestones grounded in AGENT.md and DESIGN.md project context. Manifestation: structured milestones written to `.tekhton/milestones/` and MANIFEST.cfg in proper DAG format.
+2. **NFR Framework** (M24, M25, M26). Source: enterprise persona policy inputs including compliance cost ceilings, cybersecurity vulnerability thresholds, architect performance budgets, design leadership accessibility standards, legal license constraints, and enterprise model governance policies. Transformation: policy thresholds encoded as config keys that map to scheduled checks at defined pipeline points, with MoSCoW criticality determining enforcement severity. Manifestation: runtime gates emitting `nfr.check` and `nfr.violation` events consumable by enterprise observability stacks.
+3. **Watchtower Interactive Controls** (M12, M13). Source: Product Builder, Designer, and Enterprise persona input via the dashboard UI for task submissions, human notes, milestone creation and modification, and pipeline control. Transformation: HTTP POST requests to `/api/v1/tasks`, `/api/v1/notes`, `/api/v1/milestones`, and `/api/v1/control` written to the inbox or control channels. Manifestation: live corrections applied to running pipelines with WebSocket-propagated state.
+4. **Goldprints** (M18 subsystem, M32 Context Graph bridge). Source: software architects and senior engineers authoring institutional engineering knowledge with LLM assistance. Transformation: markdown + frontmatter files resolved against the Context Graph for domain and adoption filtering, rendered into role-specific prompt sections, and enforced as hard-rule contracts when applicable. Manifestation: agent pipelines produce production code in validated patterns with contractual NFR registrations (see System Design: Goldprints).
+5. **Design Artifact Intake** (M16). Source: Designer submissions across Figma files, screenshots (PNG/JPG), CSS/HTML mocks, and SVG exports. Transformation: each format path produces a normalized design spec that the PM agent consumes alongside NL context; screenshots use vision-capable models, Figma uses API extraction, CSS/HTML uses markup parsing. Manifestation: design spec attached to milestone context drives acceptance criteria that include visual match requirements.
+
+**Outbound Mechanisms:**
+
+6. **Business-Metric Progress Reporting** (M14, M19). Source: causal event log, run summary JSON, git diffs, cost ledger, stage reports. Transformation: raw engineering artifacts reframed into milestones completed, cost incurred, duration, what-was-built, and what-to-review. Manifestation: terminal completion banner, Watchtower's dashboard tabs (Live Run, Milestone Map, Reports, Trends), release notes in Keep a Changelog format.
+7. **Cost Forecasting from Historical Data** (M20, extended by M34 and M35 for cross-project enrichment). Source: per-project cost ledger, scout complexity estimates, global knowledge at `~/.tekhton/global_knowledge/cost_benchmarks.jsonl`. Transformation: historical per-milestone averages complexity-weighted against scout estimates; first-run forecasts degrade gracefully when history is absent. Manifestation: completion banner cost line, Watchtower API endpoint `GET /api/v1/costs/forecast`, release notes cost section, `cost_report.json` in deliverables.
+8. **Deliverable Artifact Packages** (M19, M20). Source: reviewer and tester stage reports, git diffs, milestone specs, cost data, provenance metadata, SBOM. Transformation: engineering artifacts rewritten as reviewable, non-technical documents. Manifestation: file bundle in `.tekhton/deliverables/` containing summary, release notes, changelog entry, cost report, test report, diff summary, SBOM, and provenance.
+
+### Watchtower as the Convergence Meta-Surface
+
+Watchtower isn't a ninth mechanism; it's the operational surface on which the other eight become visible as a unified system rather than as scattered features. Every mechanism eventually surfaces through Watchtower's served-mode interface: the Task Submission Panel (M13) is the surface for Natural Language Task Intake, Watchtower Interactive Controls, and Design Artifact Intake attachments; the Cost Dashboard (M14) surfaces Business-Metric Progress Reporting and Cost Forecasting; the Reports tab surfaces Deliverable Artifact Packages; NFR violations surface in Live Run and the NFR policy view; Goldprint-generated milestones appear in the Milestone Map traceable to their originating Goldprint; the Goldprint UI (M18) surfaces browsing, authoring, promotion workflow, and adoption dashboards; the Organizational Context tab (M33) surfaces overlap detection and historical precedent. Without Watchtower, the mechanisms would be technically present but operationally scattered. Watchtower collapses them into a single interface where all personas meet, which is the operational manifestation of the convergence claim.
+
+### The Context Graph as Convergence Substrate
+
+Where Watchtower is the meta-surface above the outbound mechanisms, the Context Graph (M31-M33, detailed in System Design: Contextual Awareness Layer) is the substrate beneath the inbound mechanisms. Natural Language Task Intake consults the graph for overlap detection before decomposing a new task. NFR Framework threshold authoring surfaces sibling-project policy context. Watchtower Interactive Controls display cross-team awareness alongside the project-local view. Goldprints integrate bidirectionally with the graph through the V4 Goldprint-to-graph bridge (M32) so authoring and consumption events become visible as Artifact nodes and `consumes` edges, and Goldprint resolution queries the graph for domain filtering and adoption metadata. Design Artifact Intake can reference previously-used design assets across the organization. The substrate/surface parallel isn't decorative. It's the architectural reason the convergence claim is structural rather than superficial: persona input enters through inbound mechanisms that sit on top of a shared substrate, execution produces outbound mechanisms that render on a shared surface, and everything in between is Tekhton's actual delivery pipeline.
+
+### RBAC Integration with the Convergence Model
+
+The bidirectional framing makes the RBAC conversation sharper because it clarifies what needs to be authorized where. Inbound mechanisms require persona-specific authorization at their write surfaces; outbound mechanisms require persona-specific filtering at their read surfaces.
+
+**Write surface authorization for inbound mechanisms:**
+
+- Natural Language Task Intake: any authenticated user within a project scope; high-cost tasks may require budget approval scope
+- NFR Framework: `compliance` scope for compliance-category thresholds, `cybersec` for security-category, `architect` for performance and SLA, `designer` for accessibility standards; criticality changes (Must vs Should vs Could vs Won't) require elevated scope
+- Watchtower Interactive Controls: broad task submission; pipeline control gated by `operator` scope; milestone DAG modification by `project_lead`
+- Goldprints: authoring requires `architect` or `senior_engineer` scope; consumption open within project scope
+- Design Artifact Intake: `designer` scope or equivalent design team membership
+
+**Read surface filtering for outbound mechanisms:**
+
+- Business-Metric Progress Reporting: cost visibility filtered by scope (finance/exec sees full, engineering sees technical plus aggregate, product and designer see milestone-level without per-turn breakdowns)
+- Cost Forecasting: raw historical data restricted to admin scope; aggregates visible broadly; cross-project benchmarks require explicit opt-in per project
+- Deliverable Artifact Packages: scoped by project membership first, then by artifact type (compliance sees audit-relevant, security sees vulnerability scans, product sees release notes, designer sees visual diffs)
+- Watchtower dashboards: tab-level and field-level filtering; NFR policy view visible only to scopes with modify access; pipeline control surfaces visible to operator scope
+
+**Enterprise identity integration.** V4 federates with existing enterprise identity infrastructure rather than managing users directly. OIDC is the primary authentication protocol with SAML 2.0 as fallback; supported IdPs include Okta, PingID/PingOne, Microsoft Entra ID, Google Workspace, and AWS IAM Identity Center. IdP groups (examples: `tekhton_compliance`, `tekhton_architects`, `tekhton_designers`, `tekhton_operators`, `tekhton_senior_engineers`, `tekhton_project_leads`, `tekhton_cybersec`, `tekhton_context_admins`, `tekhton_context_viewers`, `tekhton_context_contributors`) map to Tekhton scopes declared in `.tekhton/auth.conf`. V4 delivers OIDC stub with scope declaration schema and advisory enforcement (M30); V5 adds SCIM 2.0 provisioning and strict enforcement.
+
+**Audit trail as convergence byproduct.** One consequence of persona-aware authorization across both inbound and outbound surfaces is that the event log becomes a complete audit record of who touched what, when, and why. Every NFR modification carries the identity of the compliance officer or architect who made it. Every Goldprint authoring event carries the senior engineer's identity. Every pipeline control action, every deliverable package access, every design artifact upload: all attributed, all timestamped, all queryable. This isn't a separate audit system; it's a byproduct of the convergence model being implemented with identity-aware authorization. Log shipping (M23) delivers the event log to enterprise SIEM systems for retention and correlation.
+
+### Why This Isn't Marketing Copy
+
+The convergence argument is defensible because each mechanism is already infrastructure, not aspiration. It's the difference between saying "Tekhton helps product owners" (value prop) and saying "Tekhton's intake stage accepts natural language input at `stages/intake.sh` and produces MANIFEST.cfg entries that the execution pipeline consumes without modification, while the NFR engine at `lib/nfr.sh` reads compliance thresholds from `.tekhton/nfr.conf` and enforces them as pipeline gates" (architectural claim). The second statement is auditable against the codebase. The first is rhetoric.
+
+The bidirectional framing also makes the claim more defensible because it acknowledges what convergence actually requires. Outbound-only mechanisms describe transparency, which any good observability stack provides. Inbound-only mechanisms describe configurability, which any enterprise tool provides. Convergence requires both, and naming them as a paired system is what distinguishes Tekhton's architecture from a well-instrumented pipeline that happens to have a good dashboard. The RBAC integration further separates Tekhton from the pattern where convergence is talked about but never enforced, because the same identity and scope infrastructure that gates inbound writes filters outbound reads, producing an audit trail as a structural byproduct rather than as a bolted-on compliance feature.
 
 ## Current Architecture (3.0 Baseline)
 
@@ -270,7 +340,7 @@ openai` runs a one-time calibration:
 - Validates output structure (format markers, constraint compliance)
 - Records any necessary prompt adjustments (e.g., "needs explicit JSON format
   instructions," "shorter system prompts perform better")
-- Stores profile in `.claude/bridge/profiles/openai.json`
+- Stores profile in `.tekhton/bridge/profiles/openai.json`
 - Takes ~5 minutes, runs once per provider configuration
 
 At failover time, the bridge loads the profile and applies adjustments
@@ -278,7 +348,7 @@ automatically. No intelligence required at failover time.
 
 **Cost ledger:**
 
-Every agent invocation records to `.claude/bridge/cost_ledger.jsonl`:
+Every agent invocation records to `.tekhton/bridge/cost_ledger.jsonl`:
 ```json
 {
   "timestamp": "2026-04-01T10:23:45Z",
@@ -337,14 +407,14 @@ If provider is `anthropic`, use existing `claude` CLI path. Otherwise, invoke
 
 ```bash
 # Provider configuration
-BRIDGE_ENABLED=false                    # Enable multi-provider support
+BRIDGE_ENABLED=true                     # Multi-provider is foundational (tenet 1)
 BRIDGE_DEFAULT_PROVIDER=anthropic       # Default when model name is ambiguous
 BRIDGE_FAILOVER_ENABLED=false           # Enable automatic provider failover
 BRIDGE_FAILOVER_PROVIDER=""             # Secondary provider for failover
 BRIDGE_COST_TRACKING=true               # Enable cost ledger
 BRIDGE_MCP_GATEWAY=true                 # Enable MCP for non-Anthropic providers
-BRIDGE_PROFILE_DIR=".claude/bridge/profiles"
-BRIDGE_COST_LEDGER=".claude/bridge/cost_ledger.jsonl"
+BRIDGE_PROFILE_DIR=".tekhton/bridge/profiles"
+BRIDGE_COST_LEDGER=".tekhton/bridge/cost_ledger.jsonl"
 
 # Per-stage provider override (empty = use stage's model default)
 BRIDGE_SCOUT_PROVIDER=""
@@ -410,7 +480,7 @@ glance what happened or whether it succeeded.
 User-facing (stderr)          Log file (always debug)        Structured (JSONL)
 ┌─────────────────┐          ┌──────────────────────┐       ┌─────────────────┐
 │ default/verbose/ │          │ Full debug output     │       │ Machine-readable │
-│ debug (flag)     │          │ .claude/logs/run.log  │       │ .claude/logs/    │
+│ debug (flag)     │          │ .tekhton/logs/run.log  │       │ .tekhton/logs/    │
 │                  │          │                       │       │ events.jsonl     │
 │ Controls what    │          │ ALWAYS written        │       │                  │
 │ the user SEES    │          │ regardless of flag    │       │ ALWAYS written   │
@@ -534,18 +604,16 @@ _stage_complete() {
 
 **Log file management:**
 
-- Debug log: `.claude/logs/run_<RUN_ID>.log` (rotated, last 50 retained)
-- Event log: `.claude/logs/run_<RUN_ID>.events.jsonl` (same retention)
-- Symlinks: `.claude/logs/latest.log` → most recent run
-- The causal event log (`CAUSAL_LOG.jsonl`) is superseded by the structured
-  event stream — both continue to be written for backward compatibility, but
-  the events.jsonl format is the canonical machine-readable output.
+- Debug log: `.tekhton/logs/run_<RUN_ID>.log` (rotated, last 50 retained)
+- Event log: `.tekhton/logs/run_<RUN_ID>.events.jsonl` (same retention)
+- Symlinks: `.tekhton/logs/latest.log` → most recent run
+- The causal event log (`CAUSAL_LOG.jsonl`) from V3 is superseded by the structured events.jsonl format as the canonical machine-readable output. The V3 → V4 migration tool transforms existing CAUSAL_LOG data into the events.jsonl format as part of the one-time migration.
 
 ### Config Keys
 
 ```bash
 TEKHTON_LOG_LEVEL=default              # default | verbose | debug
-TEKHTON_LOG_DIR=".claude/logs"         # Directory for log files
+TEKHTON_LOG_DIR=".tekhton/logs"         # Directory for log files
 TEKHTON_LOG_RETENTION=50               # Number of run logs to retain
 TEKHTON_STRUCTURED_EVENTS=true         # Emit structured JSONL events
 TEKHTON_LOG_COST_EVENTS=true           # Include cost events in JSONL
@@ -658,7 +726,7 @@ A new test runner mode: `bash tests/run_tests.sh --flake-check N`
 
 - Runs each test N times (default: 5)
 - Any test that produces inconsistent results is flagged
-- Flaky tests are recorded in `.claude/test_flakiness.json`
+- Flaky tests are recorded in `.tekhton/test_flakiness.json`
 - Pipeline can be configured to quarantine known-flaky tests
 
 **Test quarantine:**
@@ -666,7 +734,7 @@ A new test runner mode: `bash tests/run_tests.sh --flake-check N`
 ```bash
 # pipeline.conf
 TEST_QUARANTINE_ENABLED=true           # Enable self-test quarantine
-TEST_QUARANTINE_FILE=".claude/test_quarantine.json"
+TEST_QUARANTINE_FILE=".tekhton/test_quarantine.json"
 ```
 
 When a self-test is quarantined:
@@ -712,7 +780,7 @@ _check_zombies() {
 
 ```bash
 TEST_QUARANTINE_ENABLED=true
-TEST_QUARANTINE_FILE=".claude/test_quarantine.json"
+TEST_QUARANTINE_FILE=".tekhton/test_quarantine.json"
 TEST_FLAKE_CHECK_RUNS=5               # Runs per test in flake-check mode
 TEST_ISOLATION_PORTS=true              # Use port allocator
 TEST_ZOMBIE_CHECK=true                 # Pre/post zombie detection
@@ -760,12 +828,12 @@ read-only analysis.
 Parallel Execution Engine (lib/parallel.sh)
     │
     ├── Team 1: Milestone B
-    │   ├── git worktree: .claude/worktrees/team-1/
+    │   ├── git worktree: .tekhton/worktrees/team-1/
     │   ├── Coder → Reviewer → Tester (full pipeline)
     │   └── Merge back to main branch on success
     │
     ├── Team 2: Milestone C
-    │   ├── git worktree: .claude/worktrees/team-2/
+    │   ├── git worktree: .tekhton/worktrees/team-2/
     │   ├── Coder → Reviewer → Tester (full pipeline)
     │   └── Merge back to main branch on success
     │
@@ -784,7 +852,7 @@ Each parallel team operates in its own git worktree:
 ```bash
 _create_team_worktree() {
     local team_id="$1" milestone_id="$2"
-    local worktree_dir=".claude/worktrees/team-${team_id}"
+    local worktree_dir=".tekhton/worktrees/team-${team_id}"
     local branch="tekhton/parallel/${milestone_id}"
 
     git worktree add "$worktree_dir" -b "$branch" HEAD
@@ -906,7 +974,7 @@ run_parallel_execution() {
 **Progress tracking:**
 
 Each team writes progress to its own status file:
-`.claude/worktrees/team-N/TEAM_STATUS.json`
+`.tekhton/worktrees/team-N/TEAM_STATUS.json`
 
 The coordinator reads these for Watchtower integration:
 ```json
@@ -922,19 +990,17 @@ The coordinator reads these for Watchtower integration:
 }
 ```
 
-**Serial fallback:**
+**Serial as degenerate case:**
 
-When `PARALLEL_MAX_TEAMS=1` (default for V4 initial release), the parallel
-engine degenerates to serial execution — identical to V3 behavior. This ensures
-backward compatibility and lets users opt in to parallelism when ready.
+When `PARALLEL_MAX_TEAMS=1`, the parallel engine degenerates to serial execution (one team running at a time). This is the degenerate case of the parallel architecture rather than a V3 compatibility mode; serial remains legitimate for local development, constrained environments, or projects where milestone dependencies preclude parallelism. V4 defaults `PARALLEL_MAX_TEAMS` to a value greater than 1 appropriate for the deployment's resource budget.
 
 ### Config Keys
 
 ```bash
-PARALLEL_ENABLED=false                  # Enable parallel milestone execution
+PARALLEL_ENABLED=true                   # Parallel by default (tenet 4); serial is a degenerate case
 PARALLEL_MAX_TEAMS=3                    # Max concurrent teams
 PARALLEL_QUOTA_STRATEGY=equal           # equal | weighted | priority
-PARALLEL_WORKTREE_DIR=".claude/worktrees"
+PARALLEL_WORKTREE_DIR=".tekhton/worktrees"
 PARALLEL_CONFLICT_STRATEGY=sequential   # sequential | human | abort
 PARALLEL_SHARED_GATE=true               # Build gate after group merge
 PARALLEL_BISECT_ON_FAILURE=true         # Identify breaking team on gate fail
@@ -952,10 +1018,8 @@ PARALLEL_BISECT_ON_FAILURE=true         # Identify breaking team on gate fail
 - **Conflict detection before merge** prevents silent corruption. The escalation
   path (auto-merge → sequential fallback → human resolution) handles progressively
   harder cases.
-- **PARALLEL_MAX_TEAMS=1 as default** means zero behavior change on upgrade.
-  Users explicitly opt in to parallelism.
-- **V3's DAG infrastructure** (frontier detection, parallel groups, dependency
-  edges) is consumed directly. No data model changes needed.
+- **PARALLEL_MAX_TEAMS defaults to the deployment's resource budget** rather than hardcoded to 1. Operator explicitly sets it to 1 only when serial execution is specifically desired (resource-constrained environments, debugging, or milestone dependencies that preclude parallelism).
+- **V3's DAG infrastructure** (frontier detection, parallel groups, dependency edges) is transformed during the one-time migration into V4's parallel coordinator schema. No V3 compatibility layer is maintained.
 
 ---
 
@@ -978,16 +1042,16 @@ primary interface for most users, with the CLI as the power-user path.
 **Dual-mode Watchtower:**
 
 ```
-Mode 1: Static (V3 default, still supported)
-    watchtower.html reads .claude/watchtower/*.json files
+Mode 1: Static (fallback mode for air-gapped or read-only deployments)
+    watchtower.html reads .tekhton/watchtower/*.json files
     Auto-refresh via polling
     Read-only
 
-Mode 2: Served (V4 default when configured)
-    tekhton --watchtower-serve  (or WATCHTOWER_SERVE_ENABLED=true)
+Mode 2: Served (V4 default)
+    tekhton --watchtower-serve  (or WATCHTOWER_SERVE_ENABLED=true by default)
     Python HTTP server on localhost:PORT
     WebSocket push for real-time updates
-    Interactive controls (task submission, milestone management)
+    Interactive controls (task submission, milestone management, Goldprint authoring, NFR configuration)
     REST API for external tool integration
 ```
 
@@ -1016,8 +1080,8 @@ tools/watchtower_server.py
     │   └── Cost accumulation updates
     │
     └── File Watcher
-        ├── Monitors .claude/watchtower/*.json for changes
-        ├── Monitors .claude/logs/events.jsonl for new events
+        ├── Monitors .tekhton/watchtower/*.json for changes
+        ├── Monitors .tekhton/logs/events.jsonl for new events
         └── Pushes updates via WebSocket on change
 ```
 
@@ -1028,7 +1092,7 @@ tools/watchtower_server.py
    - Milestone selector (run against specific milestone or auto-detect)
    - Model/provider selector (dropdown populated from bridge config)
    - "Dry Run" toggle
-   - Submit button → writes to `.claude/inbox/task_<timestamp>.json`
+   - Submit button → writes to `.tekhton/inbox/task_<timestamp>.json`
 
 2. **Milestone Manager**
    - Visual DAG editor (drag-drop to reorder, draw dependency edges)
@@ -1056,12 +1120,12 @@ tools/watchtower_server.py
 
 **Inbox pattern (V3 M36 foundation):**
 
-Watchtower writes task/note/control files to `.claude/inbox/`. The pipeline
+Watchtower writes task/note/control files to `.tekhton/inbox/`. The pipeline
 checks the inbox at startup and between stages:
 
 ```bash
 _process_inbox() {
-    local inbox_dir="${PROJECT_DIR}/.claude/inbox"
+    local inbox_dir="${PROJECT_DIR}/.tekhton/inbox"
     [[ -d "$inbox_dir" ]] || return 0
 
     for item in "$inbox_dir"/*.json; do
@@ -1092,11 +1156,11 @@ _watchtower_serve() {
     local port="${WATCHTOWER_PORT:-8420}"
     python3 "${TEKHTON_HOME}/tools/watchtower_server.py" \
         --port "$port" \
-        --data-dir "${PROJECT_DIR}/.claude/watchtower" \
-        --log-dir "${PROJECT_DIR}/.claude/logs" \
-        --inbox-dir "${PROJECT_DIR}/.claude/inbox" &
+        --data-dir "${PROJECT_DIR}/.tekhton/watchtower" \
+        --log-dir "${PROJECT_DIR}/.tekhton/logs" \
+        --inbox-dir "${PROJECT_DIR}/.tekhton/inbox" &
     local pid=$!
-    echo "$pid" > "${PROJECT_DIR}/.claude/watchtower.pid"
+    echo "$pid" > "${PROJECT_DIR}/.tekhton/watchtower.pid"
     log_default "Watchtower serving at http://localhost:${port}"
 }
 ```
@@ -1104,12 +1168,12 @@ _watchtower_serve() {
 ### Config Keys
 
 ```bash
-WATCHTOWER_SERVE_ENABLED=false         # Auto-start served Watchtower
+WATCHTOWER_SERVE_ENABLED=true          # Watchtower is the primary interface (full UI/UX suite in V4)
 WATCHTOWER_PORT=8420                    # Server port
 WATCHTOWER_API_ENABLED=true            # Enable REST API
 WATCHTOWER_WS_ENABLED=true             # Enable WebSocket push
 WATCHTOWER_INBOX_ENABLED=true          # Enable file-based inbox
-WATCHTOWER_INBOX_DIR=".claude/inbox"   # Inbox directory
+WATCHTOWER_INBOX_DIR=".tekhton/inbox"   # Inbox directory
 WATCHTOWER_COST_DASHBOARD=true         # Show cost panel
 WATCHTOWER_PARALLEL_VIEW=true          # Show parallel team view
 ```
@@ -1173,8 +1237,7 @@ PM Agent output:
     Tests: reset request, token expiry, password update
 ```
 
-The PM agent uses the project's existing CLAUDE.md and DESIGN.md context to
-ground the decomposition in the project's architecture and conventions.
+The PM agent uses the project's existing AGENT.md and DESIGN.md context (with optional provider-specific overlays such as CLAUDE.md layering on top of AGENT.md) to ground the decomposition in the project's architecture and conventions.
 
 **Progress reporting for project owners:**
 
@@ -1211,7 +1274,7 @@ After milestone completion, Tekhton generates human-readable release notes:
 ```bash
 _generate_release_notes() {
     local milestone_id="$1"
-    local notes_file="${PROJECT_DIR}/.claude/releases/release_${milestone_id}.md"
+    local notes_file="${PROJECT_DIR}/.tekhton/releases/release_${milestone_id}.md"
 
     # Extract: what changed, why, what to test, known limitations
     # Sources: git diff, milestone spec, reviewer report, tester report
@@ -1276,7 +1339,7 @@ Watchtower's cost dashboard displays:
 
 **Deliverable artifacts:**
 
-Every completed run produces a summary package in `.claude/deliverables/`:
+Every completed run produces a summary package in `.tekhton/deliverables/`:
 - `summary.md` — plain-language summary of what was done
 - `release_notes.md` — formatted release notes
 - `changelog_entry.md` — entry for CHANGELOG.md
@@ -1291,7 +1354,7 @@ RELEASE_NOTES_ENABLED=true             # Generate release notes per milestone
 CHANGELOG_ENABLED=true                 # Auto-update CHANGELOG.md
 CHANGELOG_FILE="CHANGELOG.md"          # Changelog path
 COST_FORECAST_ENABLED=true             # Enable cost forecasting
-DELIVERABLES_DIR=".claude/deliverables"
+DELIVERABLES_DIR=".tekhton/deliverables"
 DELIVERABLES_SUMMARY=true              # Generate plain-language summary
 PM_NATURAL_LANGUAGE=true               # Accept non-technical task descriptions
 PM_AUTO_DECOMPOSE=true                 # Auto-decompose into milestones
@@ -1408,7 +1471,7 @@ _integration_datadog_ship() {
 }
 
 # Option 2: File-based (agent picks up)
-# DataDog/Splunk agents monitor .claude/logs/events.jsonl directly
+# DataDog/Splunk agents monitor .tekhton/logs/events.jsonl directly
 # No custom code needed — just configure the agent's log path
 
 # Option 3: Syslog forwarding
@@ -1536,10 +1599,10 @@ scales to enterprise use, NFR enforcement becomes a hard requirement.
 
 **NFR specification:**
 
-NFRs are declared in `pipeline.conf` or a dedicated `.claude/nfr.conf`:
+NFRs are declared in `pipeline.conf` or a dedicated `.tekhton/nfr.conf`:
 
 ```bash
-# .claude/nfr.conf
+# .tekhton/nfr.conf
 
 # Performance budgets
 NFR_PERF_ENABLED=true
@@ -1597,11 +1660,12 @@ run_nfr_checks() {
             ((violations++))
             emit_event "nfr.violation" "\"check\":\"$check\",\"detail\":\"$result\""
 
-            case "$(_nfr_violation_policy "$check")" in
-                block)  log_default "   NFR VIOLATION (blocking): $check — $result"
+            case "$(_nfr_criticality "$check")" in
+                must)   log_default "   NFR VIOLATION (Must, blocking): $check — $result"
                         return 1 ;;
-                warn)   log_default "   NFR WARNING: $check — $result" ;;
-                log)    log_verbose "   NFR note: $check — $result" ;;
+                should) log_default "   NFR WARNING (Should): $check — $result" ;;
+                could)  log_verbose "   NFR note (Could): $check — $result" ;;
+                wont)   : ;;  # Explicit waiver; no enforcement. Rationale recorded elsewhere.
             esac
         fi
     done
@@ -1623,21 +1687,23 @@ run_nfr_checks() {
 | License compliance | After dependency changes detected |
 | Bundle size | After build gate |
 
-**Violation policies:**
+**MoSCoW Criticality Levels:**
 
-Each NFR check has a configurable violation policy:
-- `block` — Pipeline stops. Rework required.
-- `warn` — Pipeline continues. Warning in output and Watchtower.
-- `log` — Recorded in event log. No user-visible warning.
+Each NFR check has a configurable MoSCoW criticality level that determines enforcement severity. The criticality framework is shared across the NFR Framework, Goldprint NFR registrations, and any deployability-related thresholds; see the Goldprints section for the full treatment of how criticality propagates through Goldprint contracts.
+
+- `must` — Mandatory and blocking. Pipeline stops on violation; remediation required before the milestone can proceed. Hard guardrails in the strictest sense.
+- `should` — Strongly expected but not blocking. Violations surface as prominent warnings in Watchtower at elevated severity; pipeline continues.
+- `could` — Desirable nice-to-haves. Violations are logged with standard severity and appear as low-priority notes.
+- `wont` — Explicit non-enforcement. The threshold is consciously waived for this scope with an audit-trail rationale; distinguished from "not configured" to preserve the record of the deliberate choice.
 
 ```bash
-# Default policies (overridable per-check)
-NFR_POLICY_COST=block                   # Cost overruns block
-NFR_POLICY_SLA=warn                     # SLA violations warn
-NFR_POLICY_PERF=warn                    # Performance budget violations warn
-NFR_POLICY_A11Y=warn                    # Accessibility violations warn
-NFR_POLICY_COVERAGE=warn                # Coverage shortfalls warn
-NFR_POLICY_LICENSE=block                # License violations block
+# Default criticality (overridable per-check)
+NFR_CRITICALITY_COST=must               # Cost overruns block
+NFR_CRITICALITY_SLA=should              # SLA violations warn prominently
+NFR_CRITICALITY_PERF=should             # Performance budget violations warn prominently
+NFR_CRITICALITY_A11Y=should             # Accessibility violations warn prominently
+NFR_CRITICALITY_COVERAGE=should         # Coverage shortfalls warn prominently
+NFR_CRITICALITY_LICENSE=must            # License violations block
 ```
 
 **Out-of-band behavior detection:**
@@ -1663,9 +1729,7 @@ Historical baselines are computed from the metrics database (V3 M15).
 - **Check timing** is stage-aware — expensive checks (perf, a11y) run only after
   build, not on every invocation. Cost checks run on every invocation because
   they're cheap (read the ledger).
-- **Three-tier violation policies** prevent NFRs from being either ignored (too
-  permissive) or pipeline-blocking (too strict). Project owners configure the
-  balance.
+- **MoSCoW criticality** (must/should/could/wont) gives engineering teams a semantic vocabulary they already know from requirements management. Must blocks, Should warns prominently, Could logs, Won't waives explicitly with an audit-trail rationale. This prevents NFRs from being either ignored (too permissive) or pipeline-blocking (too strict), and the Won't level distinguishes deliberate exclusion from accidental omission.
 - **Anomaly detection** catches emergent problems (stuck loops, cost spirals)
   that aren't covered by static thresholds.
 
@@ -1689,7 +1753,7 @@ without architectural changes.
 **Identity model:**
 
 ```bash
-# .claude/auth.conf
+# .tekhton/auth.conf
 
 AUTH_ENABLED=false                      # Enable identity layer
 AUTH_PROVIDER=local                     # local | oidc | env
@@ -1796,7 +1860,7 @@ produce better agent outcomes. Failure patterns aren't recognized across runs.
 **Historical knowledge base:**
 
 ```
-.claude/knowledge/
+.tekhton/knowledge/
     run_history.jsonl          # Summary of each run (cost, duration, outcome)
     stage_performance.jsonl    # Per-stage metrics across runs
     failure_patterns.jsonl     # Classified failure modes + resolutions
@@ -1844,7 +1908,7 @@ _classify_failure() {
                 "\"pattern\":\"$category\",\"resolution\":\"$resolution\""
             return 0
         fi
-    done < "${TEKHTON_HOME}/.claude/knowledge/failure_patterns.jsonl"
+    done < "${TEKHTON_HOME}/.tekhton/knowledge/failure_patterns.jsonl"
 
     # Unknown pattern — record for future recognition
     _record_new_failure "$error_output"
@@ -1871,7 +1935,7 @@ _record_prompt_effectiveness() {
     effectiveness_score=$(_compute_effectiveness "$turns_used" "$rework_count" "$outcome")
 
     echo "{\"stage\":\"$stage\",\"prompt_hash\":\"$prompt_hash\",\"score\":$effectiveness_score}" \
-        >> ".claude/knowledge/prompt_effectiveness.jsonl"
+        >> ".tekhton/knowledge/prompt_effectiveness.jsonl"
 }
 ```
 
@@ -2067,56 +2131,555 @@ LANGUAGE_CONVENTIONS_IN_CODER=true      # Inject conventions into coder prompt
 
 ---
 
+## System Design: Storage Abstraction Layer
+
+### Problem
+
+V3 locks Tekhton's working files and source materials to filesystem-only storage. Enterprise deployments operate in environments where centralized, query-able, access-controlled storage is the norm: PostgreSQL clusters for structured data, S3-compatible object stores for content, git repositories with CODEOWNERS enforcement for versioned artifacts. V4 introduces subsystems that need to participate in these existing infrastructure patterns rather than force enterprises to fit Tekhton into a filesystem-only model. Goldprints particularly need flexible storage: project-tier Goldprints benefit from git-backed PR review flow, org-tier Goldprints benefit from centralized database storage, and enterprise-tier Goldprints may need object-store scale with metadata indexing.
+
+### Design
+
+The storage abstraction layer defines a backend-agnostic interface that V4 subsystems use to persist and retrieve content. The abstraction itself is designed to be Tekhton-wide, but V4 scopes its consumption to Goldprints as the first consumer; V5 migrates design artifacts, releases, deliverables, and Watchtower data files to the same abstraction.
+
+**Interface (`lib/storage/`):**
+
+```bash
+# lib/storage/storage.sh
+
+_storage_list() {
+    # list(path, filter) — enumerate items at a logical path, optionally filtered by metadata
+}
+
+_storage_get() {
+    # get(path) — retrieve content and metadata for a single item
+}
+
+_storage_put() {
+    # put(path, content, metadata) — store or update an item
+}
+
+_storage_delete() {
+    # delete(path, version) — remove an item or specific version
+}
+
+_storage_watch() {
+    # watch(path) — subscribe to changes (cache invalidation, Watchtower live updates)
+}
+
+_storage_query() {
+    # query(criteria) — structured query (database backends); filesystem/object-store fall back to list-and-filter
+}
+```
+
+Each backend adapter implements this interface against its native storage mechanism:
+
+**`git://`**: git repository backend for project-tier Goldprints (stored in the project repo under `.tekhton/goldprints/`) and for deployments that prefer git-backed enterprise or org Goldprint storage with protected branches and CODEOWNERS enforcement. Preserves PR-based review flow, full version history, and existing git-based access control.
+
+**`postgres://`**: PostgreSQL backend, using the same database instance as the Context Graph's Apache AGE when co-located. Content and metadata in relational tables; native structured queries via `query(criteria)`; version history via temporal columns. Recommended for enterprise deployments that want centralized storage and already operate PostgreSQL.
+
+**`s3://`**: S3 and S3-compatible object storage (MinIO, Cloudflare R2, Backblaze B2). Content stored as objects; metadata stored as object tags plus a sidecar index in PostgreSQL or a separate metadata file. Recommended for deployments that want object-store semantics or are already invested in S3-compatible storage.
+
+**Per-tier storage configuration example:**
+
+```bash
+# Project tier: each project's own repo
+GOLDPRINTS_PROJECT_BACKEND=git://.tekhton/goldprints/
+
+# Org tier: centralized database
+GOLDPRINTS_ORG_BACKEND=postgres://tekhton-enterprise-db/goldprints
+
+# Enterprise tier: S3 for scale with postgres-backed metadata
+GOLDPRINTS_ENTERPRISE_BACKEND=s3://tekhton-enterprise-goldprints/
+GOLDPRINTS_ENTERPRISE_METADATA_BACKEND=postgres://tekhton-enterprise-db/goldprint_metadata
+```
+
+Different tiers can use different backends without changing the authoring or consumption experience. A project-tier Goldprint authored in Watchtower and stored in `git://project-repo/.tekhton/goldprints/` gets committed back to the project repo via PR. An enterprise Goldprint authored in Watchtower and stored in `postgres://enterprise-db/goldprints` goes through the database's transaction model. Different backends, unified UX.
+
+**Metadata envelope:**
+
+Every stored item carries a common metadata schema regardless of backend:
+
+- `id`, `version`, `content_type` (goldprint, design_artifact, release, etc.)
+- `created_at`, `updated_at`, `created_by`, `updated_by` (identity from RBAC)
+- `scope` (enterprise, org, project expression)
+- `tags` (domain tags, custom labels)
+- `parent_id`, `supersedes`, `depends_on` (relationships)
+- `backend_native` (backend-specific metadata preserved for round-trips without loss)
+
+Adapters translate bidirectionally between the envelope and the backend's native metadata mechanism (git commit metadata plus sidecar YAML for git; JSONB column for postgres; object tags plus sidecar for S3).
+
+### Config Keys
+
+```bash
+STORAGE_BACKEND=git                        # Default backend if per-content-type not set
+STORAGE_URL=                                # Backend connection URL
+STORAGE_GOLDPRINTS_PROJECT_BACKEND=git://.tekhton/goldprints/
+STORAGE_GOLDPRINTS_ORG_BACKEND=
+STORAGE_GOLDPRINTS_ENTERPRISE_BACKEND=
+STORAGE_METADATA_BACKEND=                   # Sidecar metadata store for S3 adapter
+STORAGE_CACHE_TTL=300                       # In-memory cache TTL (seconds)
+```
+
+### Why This Design
+
+- **Pluggable backends** let each enterprise deployment use infrastructure it already operates; no mandate to introduce new storage systems to adopt Tekhton
+- **Per-content-type backend selection** matches the reality that different content has different storage needs: git for versioned project code, postgres for queryable enterprise data, S3 for large binary artifacts
+- **Metadata envelope abstraction** means adapters translate but the consumer experience stays uniform; Goldprint authoring in Watchtower works the same regardless of whether storage is git or postgres
+- **V4-scoped consumer (Goldprints only)** is deliberate discipline: ship the abstraction proven against one consumer, then migrate other subsystems in V5 as usage patterns justify it
+
+---
+
+## System Design: Contextual Awareness Layer
+
+### Problem
+
+The enterprise integration phase (M21-M23) connects Tekhton to external systems (Jira, Confluence, GitHub), but connectivity alone doesn't produce contextual intelligence. Being connected to Jira isn't the same as understanding why a ticket was filed, what architectural decision preceded it, or what production anomaly triggered the work. More critically, at enterprise scale the real problem is not single-project context but organizational context: teams in large organizations compete for stakeholder visibility, work in parallel without knowing what other teams are doing, and regularly ship redundant or conflicting solutions to the same problem. Hundreds to thousands of engineers operate in tree-structured organizations all working to deliver value, and nobody has the full picture. The waste compounds in ways that are invisible until production collisions become obvious. V4 needs Tekhton to know what is being built across the organization, by whom, when, and with what intent, so that when a team submits a new task, Tekhton can recognize overlap before code gets written.
+
+### Design
+
+The architectural response is a temporal knowledge graph: the Context Graph Service (CGS). Nodes represent projects, milestones, teams, domains, and artifacts. Edges represent ownership, dependency, conflict, supersession, and contribution. Every node and edge carries a lifecycle (created, active, deprecated, completed, abandoned) so the graph answers both "what is happening now" and "what has happened before and why did it end."
+
+**Node types (V4 baseline):**
+
+- **Project**: a distinct deliverable effort with an owning team, business objective, and lifecycle status
+- **Milestone**: a defined unit of work within a project with acceptance criteria, dependencies, and status
+- **Team**: the group accountable for one or more projects, with scope membership linked to the RBAC model
+- **Domain**: a capability area (authentication, billing, search, notifications) that projects address
+- **Artifact**: a concrete output (repo, service, Goldprint, NFR policy set, design artifact) produced by a project
+
+**Edge types (V4 baseline):** `owned_by`, `belongs_to`, `addresses`, `depends_on`, `supersedes`/`superseded_by`, `conflicts_with`, `produces`, `consumes`.
+
+**Temporal metadata on every node and edge:** `created_at`, `updated_at`, `status_changed_at`, `status`, `last_signal_at` (freshness indicator).
+
+**Two Modes: Vertical Feature and Horizontal Concern**
+
+Contextual awareness is built as both a vertical feature (a named architectural subsystem with its own milestones) and a horizontal concern (integration touchpoints threaded through every other subsystem). This dual framing is the key architectural commitment: the other V4 subsystems are designed with context consultation points from the start rather than retrofitted.
+
+**Vertical**: The Context Graph Service (M31-M33) is a dedicated subsystem with its own storage layer (Apache AGE on PostgreSQL as primary backend, Kuzu embedded for single-node deployments), its own ingestion pipelines, its own query API, its own Watchtower surface (Organizational Context tab), and its own milestones in V4.
+
+**Horizontal**: Every Tekhton stage that could benefit from organizational context consults the CGS at defined touchpoints. V4 wires four horizontal touchpoints (intake, architect, scout, finalize); V5 extends to coder, reviewer, tester, and NFR Framework.
+
+**Storage Backend Decision**
+
+Apache AGE is the primary V4 backend because PostgreSQL is already operationally mature in virtually every enterprise deployment. Apache AGE adds Cypher query support as a PostgreSQL extension, inheriting PostgreSQL's access controls, replication, and HA story. Kuzu (MIT, embedded) is the secondary backend for development environments and single-node deployments where PostgreSQL operational overhead isn't warranted. Alternatives considered and rejected: Neo4j Community Edition (GPL v3), JanusGraph (overkill at V4 scale with Cassandra/HBase operational dependencies), Dgraph (adds another language runtime), SurrealDB and Memgraph (BSL licensing concerns), TerminusDB (unfamiliar operational patterns), XTDB (MPL 2.0 weak copyleft).
+
+**Ingestion sources (V4 adapters):**
+
+- **Jira** (or equivalent): ticket hierarchy, epic/story/task structure, assignees, timelines, domain tags, status transitions. Primary feed for project and milestone nodes.
+- **Confluence** (or equivalent): architectural decision records, RFCs, design documents. Primary feed for domain metadata, rationale, constraints.
+- **GitHub/GitLab**: repositories, PRs, ownership (CODEOWNERS), commit history. Feeds artifact nodes and team membership edges.
+- **Tekhton-internal** (from `~/.tekhton/global_knowledge/`): failure patterns, cost benchmarks, provider profiles, Goldprint adoption. Feeds internally-generated nodes.
+
+**Query patterns:**
+
+- **Overlap detection**: active or recently completed projects in the same domain; triggers warning if similarity score exceeds threshold
+- **Historical precedent**: prior decisions in the same domain with outcomes and rationale
+- **Dependency mapping**: downstream consumers of a proposed change across the organization
+- **Freshness and confidence**: every response includes metadata about source recency so agents don't treat stale data as authoritative
+
+**The Goldprint-to-Graph Bridge**
+
+The CGS and Goldprints integrate bidirectionally from V4 (not V5) so the substrate claim in the Architectural Thesis holds uniformly across inbound mechanisms. When a Goldprint is authored, the CGS receives an event that creates an Artifact node with the Goldprint's identifier, domain tags, authoring team, and lifecycle timestamp. When a project's milestone execution invokes a Goldprint, the CGS receives an event that creates a `consumes` edge from the Project node to the Goldprint's Artifact node. Over time, this produces an adoption signal visible to any graph query, and Goldprint resolution (M18) queries the CGS for domain filtering and adoption metadata rather than relying on local storage alone.
+
+**Privacy, access, and organizational boundaries:**
+
+Enterprise teams have legitimate reasons for limiting cross-team visibility: legal holds, M&A confidentiality, regulatory segregation, customer data isolation. The access model integrates with the RBAC system and extends it with context-specific scopes:
+
+- **Default**: project-scoped visibility only
+- **Anonymized visibility**: cross-team queries return "a project exists in this domain, owned by Team X, in status Y" without specific milestone details
+- **Full visibility**: explicit opt-in at the project level makes full details queryable by authorized scopes
+- **Compartmented projects**: projects with legal or regulatory constraints excluded from the graph entirely, or included only at the anonymized tier
+- **Audit trail**: every cross-team context query logged with querying identity, target project, and data returned tier
+
+Scope additions: `context_viewer` (query anonymized cross-team context), `context_contributor` (project published into the organizational graph), `context_admin` (query full context across participating projects).
+
+**Build posture: in-tree with extraction discipline.**
+
+The CGS is plausibly its own product long-term, but V4 builds it in-tree with clean boundaries rather than extracting prematurely. The `lib/context/` and `tools/context_graph/` directories treat themselves like a separate project: no direct imports of Tekhton-specific libraries beyond logging and config, REST API boundary with Tekhton callers, own database instance, containerizable as standalone process. Built this way, V5 extraction becomes a weekend of repo surgery rather than a multi-month disruption, and the optionality stays open without distorting V4 delivery.
+
+### Config Keys
+
+```bash
+CONTEXT_GRAPH_ENABLED=true
+CONTEXT_GRAPH_BACKEND=apache_age            # apache_age | kuzu
+CONTEXT_GRAPH_URL=
+CONTEXT_GRAPH_API_KEY=
+CONTEXT_OVERLAP_THRESHOLD=0.75
+CONTEXT_DEFAULT_VISIBILITY=project          # project | anonymized | full
+CONTEXT_INGESTION_SCHEDULE_JIRA="0 * * * *"
+CONTEXT_INGESTION_SCHEDULE_GITHUB="0 * * * *"
+CONTEXT_INGESTION_SCHEDULE_CONFLUENCE="0 */6 * * *"
+CONTEXT_INGESTION_SCHEDULE_INTERNAL="event"
+CONTEXT_INTAKE_OVERLAP_ENABLED=true
+CONTEXT_ARCHITECT_PRECEDENT_ENABLED=true
+CONTEXT_SCOUT_ORG_BASELINE_ENABLED=true
+CONTEXT_FINALIZE_RELATED_EFFORTS_ENABLED=true
+```
+
+### Why This Design
+
+- **Temporal knowledge graph** matches the data shape of enterprise engineering work: things evolve, supersede each other, and have lifecycles that matter for decision-making
+- **Horizontal concern** framing means V4 milestones are designed with context consultation points from the start rather than retrofitted later; retrofitting is substantially more expensive
+- **Apache AGE on PostgreSQL** leverages operational maturity enterprises already have, avoiding the introduction of a new graph database dependency in most deployments
+- **Three-tier visibility** is the only access model that survives enterprise IT security review; naive "every team sees everything" gets rejected immediately in regulated industries
+- **Goldprint-to-graph bridge as V4 scope** rather than V5 ensures the substrate claim in the Architectural Thesis holds uniformly from V4 onward
+
+---
+
+## System Design: Goldprints
+
+### Problem
+
+Institutional engineering knowledge is the hardest thing for any organization to retain and scale. Senior engineers carry patterns in their heads: "when building a new microservice endpoint that touches PII, use this authentication pattern, this data-access layer structure, this logging configuration, and this test scaffold." These patterns encode hard-won judgment about what works in production, what regulatory concerns apply, and what common mistakes to avoid. When the senior engineer leaves, the pattern goes with them. When new teams start adjacent work, they reinvent the pattern, often incompletely. At enterprise scale this translates to inconsistent implementations across teams, repeated mistakes, and the slow erosion of institutional engineering capital. Ramp's Dojo product demonstrates the potential of encoded organizational knowledge (350+ shared skills), but Dojo's skills teach an AI how to help a human complete a task faster. Tekhton needs something categorically more powerful: institutional engineering knowledge encoded as executable configuration that produces production code in a specific, validated pattern.
+
+### Design
+
+**Goldprints** are reusable engineering configuration primitives. The name marries "golden paths" (the platform engineering term for the opinionated, well-paved route a team wants its engineers to take) with "blueprints" (the formalized, reproducible structure that directs construction). Goldprints are both: opinionated about the right way to solve a recurring engineering problem, and structured enough that Tekhton's agents execute them with full contextual adaptation.
+
+**Authoring and governance**
+
+Software architects, senior engineers, and the broader technical staff author Goldprints with modern LLM assistance (the assistance is provided through the Watchtower authoring UI with a context-aware chat panel). Engineers own the final content, review for architectural soundness, validate against production experience, and attach the judgment calls that turn a draft into a Goldprint. This is a deliberate choice: automating the encoder removes the judgment that makes Goldprints valuable in the first place.
+
+Promotion from experimental to production tier requires technical consensus between qualified technical staff and Tekhton itself, with neither party able to unilaterally override the other. The consensus mechanism combines three signals: human technical approval (N reviewers with `architect` or `senior_engineer` scope, where N is tier-specific), Tekhton contextual signal (adoption data from the Context Graph, outcome correlation, conflict detection, NFR compliance), and NFR compliance check. A human approver cannot override a Tekhton "conflict detected" signal without explicit conflict-resolution action; Tekhton cannot promote without human approval regardless of how clean the contextual signals are.
+
+**Scope hierarchy**
+
+V4 ships three scope tiers as a flexible scope expression that preserves V5 optionality for team-scope or custom-scope extensions:
+
+- **Enterprise**: global, maintained by engineering leadership in partnership with security, compliance, risk, and infrastructure leadership. Default `rule_type: hard_rule`.
+- **Org**: scoped to a division, line of business, or major organizational unit. Default `rule_type: advisory`.
+- **Project**: scoped to a single project. Default `rule_type: advisory`.
+
+Resolution order is most-specific-first (project → org → enterprise) with conflict resolution rules: enterprise hard-rule Goldprints always apply, enterprise advisory Goldprints can be superseded by more-specific tiers with `supersedes` metadata, org Goldprints can be superseded by project Goldprints.
+
+**Goldprint file format**
+
+Goldprints are authored as markdown files with YAML frontmatter:
+
+```markdown
+---
+id: GP-001
+version: 2.3.0
+tier: production
+scope: enterprise
+rule_type: hard_rule
+domain: [microservices, pii, authentication]
+author: enterprise-arch-team
+reviewers: [arch-lead, security-lead]
+created_at: 2026-01-15
+promoted_at: 2026-03-22
+nfr_registrations:
+  - category: security
+    key: NFR_SEC_PII_ENCRYPTION
+    value: true
+    criticality: must
+    rationale: "Enterprise PII encryption standard."
+  - category: coverage
+    key: NFR_COVERAGE_MIN_LINE_PCT
+    value: 90
+    criticality: must
+    rationale: "Sensitive data handling requires elevated coverage."
+depends_on: [GP-005]
+supersedes: [GP-045]
+agent_config_hints:
+  coder:
+    min_model_tier: high
+    temperature: 0.2
+---
+
+# Microservice Endpoint with PII
+
+## Pattern Summary
+One or two sentences. Shown in the manifest summary card.
+
+## Implementation Details
+[For the coder agent]
+
+## Test Scaffold
+[For the tester agent]
+
+## Validation Criteria
+[For the reviewer agent and the enforcer]
+
+## Security Notes
+[For the security agent]
+
+## Adaptation Notes
+[For all agents]
+```
+
+**Four-layer agent integration**
+
+The efficient answer to how Goldprints plug into Tekhton's agent architecture is that they plug in at multiple layers, not one. A single-point integration fails on one or both of the two criteria that matter: semantic completeness (does the agent know what pattern to apply?) and enforcement guarantee (does the pattern actually get applied?). The layered design:
+
+**Layer 1 — Context Compiler Injection (primary channel):** When a stage calls `run_agent()`, the context compiler first calls the Goldprint resolver to identify applicable Goldprints for the task domain, scope, and role. The resolver returns a ranked list with metadata. The context compiler allocates a configurable portion of the context budget (default 20%) to Goldprint content and renders the Goldprints into a structured section the agent sees alongside the milestone window, repo map, and task context. This is how the agent learns what patterns to apply.
+
+**Layer 2 — Agent Configuration Override:** Some Goldprints carry execution hints that belong in agent invocation parameters rather than the prompt: specific model choices, turn budgets, tool access permissions, temperature settings. Before `run_agent()` invokes the provider, `lib/goldprints/config_override.sh` extracts these hints from applicable Goldprints and merges them with the stage's default configuration.
+
+**Layer 3 — Stage-Level Enforcement:** Context injection gets the agent to apply the pattern most of the time, but agents are probabilistic and hard-rule Goldprints require correctness guarantees. The reviewer stage consults `lib/goldprints/enforcer.sh` after the coder agent returns output. The enforcer validates the output against applicable hard-rule Goldprints using both static checks (pattern matching) and agent-assisted checks. Violations block the milestone and route back to coder with specific violation details.
+
+**Layer 4 — Progressive Disclosure (token efficiency):** The full content of every applicable Goldprint cannot always fit in the context budget. The main context includes a Goldprint manifest with summary cards (title, tier, rule type, one-sentence pattern summary, adoption count), and the agent can request full content of any specific Goldprint via an MCP tool call (`get_goldprint(id)`). Hard-rule Goldprints are always fully rendered regardless of budget; advisory Goldprints appear as summary cards unless the agent explicitly fetches them.
+
+**Role-based rendering**
+
+Each agent role gets only the sections relevant to its function:
+
+- **Coder**: Pattern Summary + Implementation Details + Adaptation Notes
+- **Reviewer**: Pattern Summary + Validation Criteria + Adaptation Notes
+- **Tester**: Pattern Summary + Test Scaffold + Adaptation Notes
+- **Architect**: Pattern Summary + Implementation Details (high-level) + dependency graph
+- **Security**: Pattern Summary + Security Notes + `nfr_registrations` + Validation Criteria (security-tagged subset)
+- **Jr Coder**: same as Coder with additional "common mistakes" guidance
+
+**NFR coupling as building code**
+
+NFRs registered by a Goldprint are the building code of the pattern. They're test criteria the produced work must meet or surpass per the MoSCoW criticality assigned to each requirement. Different NFRs have different enforcement severity (Must blocks, Should warns, Could logs, Won't is explicit waiver), but all are formally part of the pattern's contract.
+
+Merge rules follow building-code logic (stricter wins, tightening-only). A lower-scope layer cannot downgrade criticality or loosen thresholds from higher-scope values; it can only tighten or register Won't for NFR categories higher scopes didn't address. Won't at a lower scope cannot waive a Must, Should, or Could from a higher scope.
+
+An advisory Goldprint's NFR registrations still function as part of the pattern's contract at their registered criticality levels. The advisory nature governs whether to use the Goldprint at all; once the pattern is applied, its building code applies with it, including Must registrations that block violations just as they would from a hard_rule Goldprint.
+
+**Watchtower UI**
+
+With Watchtower growing into a full UI/UX suite across V4, Goldprint browsing and authoring live inside Watchtower (M18) rather than requiring a dedicated tool. V4 views: Browser (filtering by tier, domain, lifecycle status, scope, rule type), Detail (full content with metadata sidebar and adoption graph), Author/Edit (markdown editor with live preview, frontmatter form, and LLM assistance chat panel), Promotion Workflow (approval status, Tekhton signal, NFR compliance), Adoption Dashboard (portfolio-level health view for engineering leadership).
+
+### Config Keys
+
+```bash
+GOLDPRINTS_ENABLED=true
+GOLDPRINTS_ENTERPRISE_REPO=
+GOLDPRINTS_ORG_REPOS=
+GOLDPRINTS_LOCAL_DIR=.tekhton/goldprints/
+GOLDPRINTS_CONTEXT_BUDGET_PCT=20
+GOLDPRINTS_PROGRESSIVE_DISCLOSURE=true
+GOLDPRINTS_ENFORCE_HARD_RULES=true
+GOLDPRINTS_EXPERIMENTAL_OPT_IN=false
+```
+
+### Why This Design
+
+- **Engineers as authors with LLM assistance** preserves the institutional judgment that makes Goldprints valuable; automating the encoder would erode the judgment
+- **Four-layer agent integration** addresses both semantic completeness (context injection) and enforcement guarantee (stage-level validation), because either alone is insufficient
+- **Role-based rendering** is cognitive efficiency for the agent: a tester agent doesn't need implementation details when its job is to verify behavior
+- **MoSCoW criticality on NFR registrations** matches how engineering teams actually think about requirements (Must vs Should vs Could vs Won't) rather than the flat block/warn/log vocabulary
+- **Storage abstraction allows per-tier backend choice** matching the actual operational patterns enterprises use: git for project-tier, postgres for org-tier, S3 for enterprise-tier scale
+
+---
+
+## Enterprise Deployability
+
+### Problem
+
+V4 is the first version of Tekhton that even attempts to be enterprise-deployable. V3 solves a fundamentally different problem from the one V4 is solving. Framing the deployability gap as "V4 filling holes in V3" misreads the situation; V4 is the inflection point where Tekhton transitions from "agentic pipeline for a developer's laptop" to "agentic delivery engine for enterprise environments," and the deployability domains are the work that transition requires. Once Tekhton operates at the V4 scope (parallelization, multi-provider, Context Graph connectivity, Goldprints, organizational awareness), enterprise deployability stops being optional.
+
+### Design
+
+Ten deployability domains categorized by whether they were in the original five or emerge from regulated-industry requirements. For each domain, V4 delivers a specific commitment while V5 adds the certification and enforcement layer. The V4/V5 split is calibrated to match design philosophy tenet 5: V4 delivers "auditable in practice," V5 delivers "formal certification."
+
+**Original five domains:**
+
+**SSO/OIDC Integration.** V3: no federation, no identity attribution, no scope model. V4 (M29, M30): OIDC stub validating tokens against configured IdP (Okta, PingID, Entra ID, Google Workspace, AWS IAM Identity Center), persona-to-scope mapping schema, SAML 2.0 fallback, identity attribution in causal event log. V5: full OAuth redirect flow, SCIM 2.0 provisioning, formal certification pathways.
+
+**Secret Management.** V3: environment variables only. V4 (M27): secret manager abstraction in `lib/secrets/` with HashiCorp Vault and AWS Secrets Manager adapters; declarative secret resolution at invocation time with short-lived caching; env variable fallback remains for development. V5: Azure Key Vault, Google Secret Manager, CyberArk adapters; automated secret rotation integration; full secret lifecycle in audit trail.
+
+**Network Egress Controls.** V3: no controls. V4 (M28): configurable network policy with declarative allowlist/denylist for provider endpoints, integration endpoints, and Context Graph ingestion endpoints; TLS 1.2+ enforcement; every network call logged. V5: full network policy engine with traffic shaping, quota management, service mesh integration, per-scope egress policy.
+
+**Audit Logging.** V3: causal event log (JSONL) and run summary JSON but no identity attribution. V4 (M23, M29-M30): identity attribution on every event via OIDC stub; enterprise SIEM log shipping (M23) for DataDog, Splunk, syslog forwarding; three log classes with consistent schema (pipeline, identity, policy events). V5: cryptographic tamper-evidence (hash chains, signed segments), formal retention policy, compliance-specific log formats, forensic-grade integrity verification.
+
+**RBAC.** V3: no access control. V4 (M30): persona-to-scope mapping schema, scope declaration on every inbound mechanism and outbound surface, scope evaluation advisory mode (events log decisions but don't enforce). V5: hard enforcement across sensitive surfaces, SCIM-driven automated scope assignment, attribute-based access control, scope-aware encryption.
+
+**Five additional domains from regulated-industry convergence:**
+
+**Model Governance.** V3: nothing. V4 (M26): model allowlist/denylist at enterprise, org, and project scope via new `NFR_MODEL_*` NFR category; model version attribution on every invocation; output governance hooks in reviewer stage. V5: full policy engine with training data transparency, cryptographic attestation of model integrity, regulatory-specific qualification workflows (FDA SaMD, etc.).
+
+**Supply Chain Security.** V3: no SBOM, no scanner integration, no provenance. V4 (M20 extension): SBOM generation in SPDX and CycloneDX formats attached to deliverable packages (JS/TS and Python baseline); integration points for dependency vulnerability scanners (Snyk, GitHub Dependabot, Sonatype Nexus IQ, JFrog Xray). V5: SLSA compliance at level 3+ with in-toto provenance chains; additional language ecosystems; automatic remediation workflows.
+
+**Code Provenance and Agentic Authorship.** V3: commits as configured git user with no agent attribution. V4 (M19 extension): structured provenance metadata on every commit and event including agent role, Goldprint id, user identity, milestone and run identifiers, model and provider version; Watchtower Milestone Map surfaces provenance chain. V5: cryptographic attestation with signed commit trailers and verifiable provenance chains; formal agent accountability frameworks for regulated work.
+
+**Data Residency and Sovereignty.** V3: goes wherever Anthropic's API routes. V4 (M04, M32): region selection in `tekhton-bridge` provider configuration; integration adapter region awareness; Context Graph storage region configuration; declarative residency policy at enterprise scope. V5: automatic region-aware routing based on data classification; formal geofencing at infrastructure layer; multi-region failover with residency constraints.
+
+**Encryption at Rest and in Transit.** V3: TLS inherited from claude CLI only; no at-rest encryption. V4 (M17, M28): TLS 1.2+ required across all network communication; storage abstraction backends delegate at-rest encryption to native mechanisms (PostgreSQL TDE, S3 SSE-KMS, git-crypt); `NFR_SECURITY_ENCRYPTION_AT_REST` surfaces encryption posture. V5: Tekhton-managed encryption with enterprise KMS integration (AWS KMS, Azure Key Vault, Google KMS, Vault transit); end-to-end encryption for agent payloads.
+
+**Domains deliberately excluded (environment responsibility, not Tekhton's):**
+
+- Data classification and handling (PII, PHI, PCI tagging) — project-level responsibility; Tekhton respects classification metadata but does not classify
+- Retention and deletion policies — organizational lifecycle concerns; Tekhton's artifacts participate via storage abstraction but policies are organizational
+- Change management, incident response, business continuity, third-party risk management — organizational process concerns; Tekhton contributes data but does not own the process
+- Ethical AI and bias monitoring — substantial concern warranting its own architectural treatment in V5 or beyond
+
+**V4 Critical Path (must ship for deployability to be credible):**
+
+SSO/OIDC stub with identity attribution (M29-M30), secret management via Vault and AWS Secrets Manager (M27), network egress policy with logging (M28), audit logging with identity attribution and SIEM shipping (M23), RBAC scope declaration schema (M30), code provenance metadata on commits and events (M19 extension), TLS 1.2+ enforcement, `tekhton-bridge` region selection (M04).
+
+**V4 Stretch Goals (deliver if parallel execution velocity permits):**
+
+SBOM generation across more language ecosystems beyond JS/TS and Python (M20 extension), model allowlist/denylist policy layer with administrative UI (M26), dependency vulnerability scanner adapters beyond reference integration, storage abstraction at-rest encryption posture documentation.
+
+**V5 Despite Appearing in V4 Discussion:**
+
+Hard enforcement of RBAC scope checks, SCIM 2.0 provisioning, cryptographic tamper-evidence on audit logs, full network policy engine, SLSA attestation, cryptographic agentic authorship attestation, automatic region-aware routing, Tekhton-managed encryption with KMS, SCIM-driven scope lifecycle.
+
+### Strategic Sequencing Framing
+
+The language for describing V5 deferrals already exists in design philosophy tenet 5: "Enterprise is a spectrum. V4 delivers 'auditable in practice'. V5 delivers formal certification." V4 "auditable in practice" means enterprises running V4 can answer the audit questions that matter for day-to-day operational governance: who did what (identity attribution on every event), what accessed what (scope declarations and evaluations logged), what went where (network policy decisions, region metadata, provider invocations recorded), what produced the work (code provenance metadata), what the results are (comprehensive causal event log shipped to enterprise SIEM). V5 "formal certification" moves from this baseline to certifiable implementation: enforcing rather than declaring, making guarantees cryptographic, automating lifecycle, delivering regulation-specific features.
+
+This progression is the actual design intent, not a limitation. V4 is the deployable baseline; V5 is the certifiable implementation. Both are legitimate stopping points for different enterprises at different points in their Tekhton adoption journey. Phrasing patterns for describing V5 deferrals consistently: "V4 delivers the auditable baseline for X; formal certification lands in V5" rather than "V4 is missing X"; "V4 declares and attributes; V5 enforces" rather than "V4 doesn't enforce"; "V4 ships the audit trail; V5 ships the cryptographic tamper-evidence that makes the trail forensically defensible" rather than "V4 has no tamper-evidence."
+
+---
+
 ## Scope Boundaries
 
 ### In Scope (4.0)
 
+**Foundational architecture:**
+- V3 → V4 one-time migration tool with detect, surface, prompt, execute, validate, version-marker flow
 - Provider abstraction layer (tekhton-bridge) with Anthropic, OpenAI, Ollama adapters
 - MCP gateway for non-Anthropic providers
 - Provider failover with pre-computed profiles
 - Cost ledger and per-stage cost tracking
 - Per-stage model/provider assignment
+- Region selection in tekhton-bridge for data residency compliance
+
+**Observability and testing:**
 - Three-tier structured logging (default/verbose/debug)
 - Structured JSONL event stream for enterprise log ingestion
 - Stage banners with clean default output
 - Test isolation framework (temp dirs, port allocation, process tracking)
 - Test quarantine and flakiness detection
+
+**Execution engine:**
 - Parallel milestone execution via git worktrees
 - Resource budgeting and conflict detection for parallel teams
 - Shared build gate after parallel merge
+
+**Watchtower as full UI/UX suite:**
 - Watchtower served mode with WebSocket push and REST API
 - Interactive controls (task submission, milestone manager, run control)
 - Cost dashboard in Watchtower
+- Organizational Context tab with overlap detection and historical precedent views
+- Goldprint UI (browser, detail, author/edit with LLM assistance, promotion workflow, adoption dashboard)
+- ROI and Adoption Analytics view for Champion tooling
+- Compliance summary generation from audit trail
+- Executive-ready report templates
+- Pilot program scaffolding project templates
+
+**Project owner experience:**
 - Natural language task intake and milestone decomposition
+- Design artifact intake (Figma, screenshots PNG/JPG, CSS/HTML mocks, SVG)
 - Release notes and changelog generation
 - Cost forecasting
 - Deliverable artifact packages
+- Code provenance metadata in commits and events (agent role, Goldprint id, user, milestone, model version)
+- SBOM generation in SPDX and CycloneDX formats for JS/TS and Python baseline
+
+**Enterprise integrations:**
 - GitHub integration (issues, PRs, releases)
 - Slack/Teams notifications
 - Log shipping (DataDog, Splunk via file-based + direct API)
 - Webhook support (generic)
 - CI/CD integration mode (GitHub Actions)
-- NFR framework (performance, cost, SLA, coverage, license, accessibility)
-- NFR violation policies (block/warn/log)
+
+**Enterprise deployability:**
+- NFR framework (performance, cost, SLA, coverage, license, accessibility, model governance)
+- NFR violation criticality (MoSCoW: must/should/could/wont)
 - Pipeline anomaly detection
+- Secret manager abstraction with HashiCorp Vault and AWS Secrets Manager adapters
+- Network egress policy (declarative allowlist/denylist with event log attribution)
+- TLS 1.2+ enforcement across all network calls
 - Auth abstraction layer with local/env/OIDC-stub modes
+- OIDC token validation with persona-to-scope mapping schema
+- RBAC scope declaration schema (declaration and attribution in V4; hard enforcement in V5)
 - Audit trail with identity enrichment
+
+**Substrate and goldprints:**
+- Context Graph subsystem on Apache AGE (PostgreSQL) primary, Kuzu embedded alternative
+- Context Graph schema (five node types, eight edge types, temporal metadata)
+- Context Graph ingestion adapters (Jira, GitHub, Confluence, Tekhton-internal) with Goldprint-to-graph bridge
+- Horizontal Context Graph consultation touchpoints (intake, architect, scout, finalize stages)
+- Three-tier visibility model (project-scoped default, anonymized cross-team, full visibility deferred to V5 full-mode governance)
+- Goldprints subsystem with four-layer agent integration (context compiler injection, agent configuration override, stage-level enforcement, progressive disclosure via MCP tool)
+- Goldprint file format (markdown with YAML frontmatter)
+- Goldprint role-based rendering across all six agent roles
+- Goldprint promotion workflow (technical consensus + Tekhton contextual signal + NFR compliance check)
+- Goldprint scope hierarchy (enterprise, org, project with flexible scope expression for V5 extensibility)
+- Storage abstraction layer with git, PostgreSQL, and S3/S3-compatible backends
+
+**Learning and intelligence:**
 - Learning subsystem (history, scout calibration, failure patterns)
 - Cross-project local knowledge sharing
 - Language profiles with domain-specific intelligence
 - Frontend/backend awareness in all pipeline stages
 - Language-specific pitfall injection in reviews
 
+**Project conventions:**
+- AGENT.md as primary provider-neutral project context file; optional provider-specific overlays (CLAUDE.md for Anthropic-specific quirks, etc.)
+- `.tekhton/` directory for all project-scoped Tekhton data
+- Persona set: Product Builder, Designer, Professional Developer, Enterprise Team (catch-all for compliance, cybersec, architect, data engineer, business analyst), Internal AI Champion (deployment dependency)
+
 ### Out of Scope (V5)
 
-- Full OAuth flow for SSO providers (V4 stubs token validation only)
-- Role-based access control enforcement (V4 records roles, V5 enforces)
+**Auth and RBAC enforcement:**
+- Hard enforcement of RBAC scope checks at sensitive surfaces (V4 declares and attributes; V5 enforces)
+- SCIM 2.0 provisioning for automated user lifecycle
+- Full OAuth redirect/consent/exchange flow for SSO providers (V4 stubs token validation only)
+- Attribute-based access control beyond scope membership
+- Scope-aware encryption of sensitive data at rest
+
+**Cryptographic guarantees:**
+- Cryptographic tamper-evidence on audit logs (hash chains, signed segments)
+- SLSA attestation at level 3+ with in-toto provenance chains
+- Cryptographic agentic authorship attestation (signed commit trailers, verifiable provenance)
+- Tekhton-managed encryption with enterprise KMS integration (AWS KMS, Azure Key Vault, Google KMS, Vault transit)
+- End-to-end encryption for agent invocation payloads
+
+**Network and residency:**
+- Full network policy engine with traffic shaping, quota management, integration with service mesh or egress proxies
+- Per-scope egress policy (project-level provider restrictions)
+- Automatic region-aware routing based on data classification
+- Formal geofencing controls at infrastructure layer
+- Multi-region failover policies with residency constraints
+
+**Context Graph expansion:**
+- DataDog, Splunk, and additional observability platform adapters
+- Slack, Microsoft Teams, and communication platform adapters
+- Additional issue tracker, SCM, and doc platform adapters (Linear, Azure DevOps, GitLab, Bitbucket, Notion, SharePoint, Google Docs)
+- Remaining horizontal context touchpoints (coder, reviewer, tester, NFR Framework integration)
+- Full visibility mode with granular opt-in governance
+- Advanced graph queries: semantic similarity for overlap detection (pgvector), predictive conflict detection, automated domain tagging
+- Cross-organization federation
+- Standalone extraction of Context Graph Service as separate open-source project
+
+**Goldprints expansion:**
+- Semantic similarity for Goldprint recommendation (pgvector embeddings)
+- Predictive adoption modeling
+- Failure/success rate analytics correlating Goldprint consumption with milestone outcomes
+- Cross-organization Goldprint discovery
+- Advanced Watchtower Goldprint UI: conflict resolution UI, semantic similarity recommendations, pattern suggestion from graph analysis
+- Additional agent role renderings beyond the V4 six roles
+- Per-team scope tier (scope expression reserves the slot; implementation deferred)
+- Public Goldprint marketplace (deliberately out of scope due to trust and governance implications)
+
+**Storage abstraction expansion:**
+- Azure Blob Storage, Google Cloud Storage, and filesystem-plus-sync backends
+- Migration of design artifacts, releases, deliverables, and Watchtower data files to the storage abstraction
+- Federated storage with policy-based routing
+- Storage-level encryption integration with enterprise KMS
+
+**Deployability and compliance:**
+- Additional secret manager adapters (Azure Key Vault, Google Secret Manager, CyberArk)
+- Automated secret rotation integration
+- Additional dependency vulnerability scanner adapters beyond the V4 reference integration
+- Full SBOM coverage across all major language ecosystems (V4 ships JS/TS and Python baseline)
+- Full model governance policy engine with training data transparency and regulatory-specific qualification
+- Ethical AI and bias monitoring subsystem
+- Compliance-specific log formats (PCI DSS event types, HIPAA audit log requirements)
+- Formal compliance certification pathways (SOC 2 Type II, HIPAA, PCI DSS, FDA SaMD)
+
+**Other V5 commitments:**
 - Prompt auto-tuning from effectiveness data (V4 collects, V5 acts)
 - Stage-level parallelism within a milestone (except Scout + Security pre-scan)
 - Cloud-hosted Watchtower for team visibility
 - Team knowledge bases (shared learning across users/machines)
-- SOC 2 / compliance certification
-- Semantic similarity for task→file matching (vs keyword-based)
 - Containerized pipeline execution with permission levels
 - Deployment, monitoring, and maintenance automation (the "Maximum" scope)
 - Multi-tenancy with RBAC
@@ -2128,10 +2691,26 @@ LANGUAGE_CONVENTIONS_IN_CODER=true      # Inject conventions into coder prompt
 - Automatic `parallel_group` inference from file overlap analysis
 - Provider cost comparison mode (same task, multiple providers, compare quality)
 - Visual regression testing integration in frontend domain
+- Additional Goldprint SBOM language ecosystems beyond JS/TS and Python baseline
+- Administrative Watchtower UI for model governance policy configuration
+- Declarative enforcement that storage backend at-rest encryption is verified before startup
 
 ---
 
 ## New Files Summary
+
+**tools/migration/ (Python — V3 → V4 migration tool):**
+- `__init__.py` — Package init
+- `migrate.py` — CLI entry point (`tekhton migrate`)
+- `detect.py` — V3 project detection
+- `transform/__init__.py` — transformation registry
+- `transform/directory.py` — `.claude/` → `.tekhton/` directory rename
+- `transform/context_files.py` — `CLAUDE.md` → `AGENT.md` split with Anthropic overlay
+- `transform/nfr_config.py` — NFR_POLICY_* (block/warn/log) → NFR_CRITICALITY_* (must/should/could/wont)
+- `transform/pipeline_conf.py` — provider defaults, bridge enablement, storage abstraction config
+- `validate.py` — post-migration self-check
+- `report.py` — migration scope surfacing and consent prompt
+- `tests/test_migration.py` — Python migration tool tests
 
 **tools/bridge/ (Python — provider abstraction):**
 - `__init__.py` — Package init
@@ -2140,11 +2719,39 @@ LANGUAGE_CONVENTIONS_IN_CODER=true      # Inject conventions into coder prompt
 - `cost.py` — Cost calculation, ledger management, pricing tables
 - `mcp_gateway.py` — MCP client for non-Anthropic providers
 - `calibration.py` — Provider profile calibration
+- `auth_oidc.py` — OIDC discovery, JWT validation, SAML 2.0 fallback
 - `providers/anthropic.py` — Direct Anthropic SDK adapter
 - `providers/openai.py` — OpenAI SDK adapter
 - `providers/ollama.py` — Ollama REST API adapter
 - `providers/openai_compat.py` — Generic OpenAI-compatible adapter
 - `requirements.txt` — Bridge Python dependencies
+
+**tools/context_graph/ (Python — Context Graph service):**
+- `__init__.py` — Package init
+- `api.py` — REST API server (`/api/v1/context/*`)
+- `schema.py` — node types, edge types, temporal metadata
+- `storage/__init__.py` — storage backend abstraction
+- `storage/apache_age.py` — Apache AGE on PostgreSQL backend (primary)
+- `storage/kuzu.py` — Kuzu embedded backend (secondary)
+- `queries.py` — canonical query implementations (overlap, precedent, dependency, freshness)
+
+**tools/sbom/ (Python — SBOM generation):**
+- `__init__.py` — Package init
+- `generate.py` — SPDX and CycloneDX format generation
+- `scanners/js.py` — JavaScript/TypeScript SBOM scanner
+- `scanners/python.py` — Python SBOM scanner
+
+**tools/storage/ (Python helpers for storage backends):**
+- `postgres.py` — PostgreSQL storage backend helpers (psycopg2 wrapper)
+- `s3.py` — S3 and S3-compatible storage backend helpers (boto3 wrapper)
+
+**tools/secrets/ (Python helpers for secret manager backends):**
+- `vault.py` — HashiCorp Vault API client
+- `aws_secrets.py` — AWS Secrets Manager API client
+
+**tools/goldprint_cache.py** — Pre-rendered Goldprint caching by (goldprint_id, version, role) hash
+
+**tools/mcp/goldprint_fetch.py** — MCP tool implementation for `get_goldprint(id)` on-demand fetches
 
 **tools/watchtower_server.py** — Watchtower HTTP/WebSocket server
 
@@ -2157,80 +2764,201 @@ LANGUAGE_CONVENTIONS_IN_CODER=true      # Inject conventions into coder prompt
 - `parallel_budget.sh` — Resource budgeting across teams
 - `nfr.sh` — NFR check engine
 - `nfr_checks.sh` — Individual NFR check implementations
+- `nfr_model.sh` — Model governance NFR category
 - `auth.sh` — Identity abstraction layer
+- `rbac.sh` — Scope declaration, scope check hooks, persona-to-scope mapping
 - `learning.sh` — Historical knowledge base, calibration, failure patterns
 - `language.sh` — Language profile loading, domain detection, prompt enrichment
+- `provenance.sh` — Code provenance metadata generation (commit trailers, event enrichment)
+- `sbom.sh` — SBOM generation orchestration, per-language toolchain dispatch
+- `cost_forecast.sh` — Historical cost analysis and forecasting
+- `design_intake.sh` — Design artifact resolution and normalization
+- `network_policy.sh` — Network egress allowlist/denylist enforcement
 - `integrations/github.sh` — GitHub integration adapter
 - `integrations/slack.sh` — Slack/Teams notification adapter
 - `integrations/logging_ship.sh` — Log shipping adapter
 - `integrations/webhook.sh` — Generic webhook adapter
 - `integrations/ci.sh` — CI/CD mode adapter
+- `integrations/figma_adapter.sh` — Figma REST API client for design intake
+- `integrations/design_file_adapter.sh` — CSS/HTML/SVG mock parsing, screenshot handling
 - `test_harness.sh` — Test isolation framework
 
+**lib/context/ (Context Graph client library):**
+- `client.sh` — Context Graph REST API client
+- `consult.sh` — `_consult_context(role, domain, query_type, params)` helper
+- `ingestion.sh` — Ingestion scheduler
+- `adapters/jira.sh` — Jira ingestion adapter
+- `adapters/github.sh` — GitHub ingestion adapter
+- `adapters/confluence.sh` — Confluence ingestion adapter
+- `adapters/tekhton_internal.sh` — Tekhton-internal adapter (from global knowledge base)
+- `adapters/goldprints.sh` — Goldprint-to-graph bridge adapter
+
+**lib/goldprints/ (Goldprint subsystem):**
+- `resolver.sh` — Domain/scope-filtered Goldprint resolution
+- `renderer.sh` — Role-based markdown-to-prompt rendering
+- `config_override.sh` — Agent configuration hint extraction and merging
+- `enforcer.sh` — Hard-rule validation after agent output
+- `loader.sh` — Parse markdown + frontmatter Goldprint files
+
+**lib/storage/ (Storage abstraction):**
+- `storage.sh` — Backend-agnostic interface
+- `metadata.sh` — Common metadata envelope
+- `adapters/git.sh` — Git repository backend
+- `adapters/postgres.sh` — PostgreSQL backend
+- `adapters/s3.sh` — S3 and S3-compatible backend
+
+**lib/secrets/ (Secret manager abstraction):**
+- `secrets.sh` — Backend-agnostic secret resolution interface
+- `adapters/vault.sh` — HashiCorp Vault adapter
+- `adapters/aws_secrets.sh` — AWS Secrets Manager adapter
+- `adapters/env.sh` — Environment variable fallback adapter
+
+**lib/champion/ (Internal AI Champion tooling):**
+- `roi.sh` — ROI and adoption analytics derivation
+- `compliance.sh` — Compliance summary generation from audit trail
+- `executive_report.sh` — Condensed executive-ready report generation
+- `case_study.sh` — Structured pilot outcome records
+- `pilot_scaffolding.sh` — Project template initialization
+
+**templates/:**
+- `pilot_scaffolds/` — Pilot project template directory (microservice-pii, design-to-production, compliance-work, research-spike scenarios)
+
+**prompts/:**
+- `goldprints_section.partial.md` — Goldprint section prompt template fragment
+- `design_intake.prompt.md` — Design artifact intake prompts for vision models
+
 **tests/:**
+- `test_migration.sh` — V3 → V4 migration scenarios, V3 protection
 - `test_bridge.sh` — Bridge invocation tests
 - `test_logging.sh` — Three-tier logging tests
 - `test_parallel.sh` — Parallel execution tests
+- `test_design_intake.sh` — Design artifact intake tests
+- `test_storage.sh` — Storage abstraction interface tests
+- `test_goldprints.sh` — Goldprint subsystem tests
+- `test_provenance.sh` — Code provenance metadata tests
+- `test_sbom.sh` — SBOM generation tests
 - `test_nfr.sh` — NFR framework tests
+- `test_nfr_checks.sh` — Individual NFR check tests
+- `test_nfr_model.sh` — NFR model governance tests
+- `test_secrets.sh` — Secret manager adapter tests
+- `test_network_policy.sh` — Network egress policy tests
 - `test_auth.sh` — Auth abstraction tests
+- `test_auth_oidc.sh` — OIDC mode integration tests
+- `test_rbac.sh` — RBAC scope declaration and check hooks
+- `test_context_graph_client.sh` — Context Graph shell client tests
+- `test_context_adapters.sh` — Context Graph ingestion adapter tests
+- `test_context_consult.sh` — Stage integration with Context Graph
 - `test_learning.sh` — Learning subsystem tests
 - `test_language.sh` — Language profile tests
 - `test_integrations.sh` — Integration adapter tests
 - `test_harness.sh` — Test harness self-tests
+- `test_champion_roi.sh`, `test_champion_compliance.sh`, `test_champion_reports.sh`, `test_champion_pilot.sh` — Champion tooling tests
 
 **Python tests:**
+- `tools/tests/test_migration.py` — Python migration tool tests
 - `tools/tests/test_bridge.py` — Bridge unit tests
 - `tools/tests/test_providers.py` — Provider adapter tests
 - `tools/tests/test_mcp_gateway.py` — MCP gateway tests
 - `tools/tests/test_cost.py` — Cost calculation tests
 - `tools/tests/test_calibration.py` — Provider calibration tests
+- `tools/tests/test_auth_oidc.py` — JWT validation, claims parsing, SAML fallback
+- `tools/tests/test_figma_adapter.py` — Figma API contract tests
+- `tools/tests/test_context_graph_schema.py` — Graph schema tests
+- `tools/tests/test_context_graph_storage.py` — Apache AGE and Kuzu backend tests
+- `tools/tests/test_storage_postgres.py` — PostgreSQL storage backend tests
+- `tools/tests/test_storage_s3.py` — S3 storage backend tests
+- `tools/tests/test_secrets_vault.py` — Vault adapter tests
+- `tools/tests/test_secrets_aws.py` — AWS Secrets Manager adapter tests
+- `tools/tests/test_goldprint_cache.py` — Cache hit/miss and version invalidation
+- `tools/tests/test_goldprint_bridge.py` — End-to-end Goldprint authoring and consumption
+
+**Project-level:**
+- `.tekhton/` — Primary Tekhton data directory (replaces V3's `.claude/`)
+- `.tekhton/version` — V4 version marker file that V3 Tekhton recognizes
+- `.tekhton/goldprints/` — Project-tier Goldprints (when git storage backend used for project tier)
+- `.tekhton/nfr.conf` — Per-project NFR configuration with MoSCoW criticality
+- `.tekhton/auth.conf` — Per-project auth and scope mapping configuration
+- `.tekhton/nfr_model.conf` — Model governance policy per scope
+- `.tekhton/network_policy.conf` — Network egress allowlist/denylist
+- `.tekhton/design_artifacts/` — Design artifact originals and normalized specs
 
 ## Modified Files Summary
 
-- `lib/agent.sh` — Provider routing in `run_agent()`, cost recording
+- `lib/agent.sh` — Provider routing in `run_agent()`, cost recording, Goldprint config override, provenance emission, model governance check, network egress check
 - `lib/common.sh` — Replace single-tier logging with three-tier system
-- `lib/config.sh` — Load new config sections (bridge, nfr, auth, learning, etc.)
+- `lib/config.sh` — Load new config sections (bridge, nfr, auth, learning, secrets, storage, goldprints, context_graph, network_policy, champion, etc.)
 - `lib/config_defaults.sh` — All new config keys + defaults + clamps
-- `lib/finalize.sh` — Release notes + changelog generation hooks
-- `lib/finalize_summary.sh` — Enhanced RUN_SUMMARY.json with cost + identity
-- `lib/finalize_display.sh` — Project-owner-friendly completion banner
+- `lib/context_compiler.sh` — Extended to call into `lib/goldprints/` for Goldprint section rendering within the context budget
+- `lib/finalize.sh` — Release notes + changelog + provenance + SBOM generation hooks
+- `lib/finalize_summary.sh` — Enhanced RUN_SUMMARY.json with cost + identity + provenance
+- `lib/finalize_display.sh` — Project-owner-friendly completion banner with provenance summary
 - `lib/orchestrate.sh` — Parallel execution integration, inbox processing
 - `lib/orchestrate_helpers.sh` — Parallel team coordination
-- `lib/gates.sh` — NFR check integration in build gate
+- `lib/orchestrate_recovery.sh` — Failure classification hooks for learning subsystem
+- `lib/gates.sh` — NFR check integration in build gate (with MoSCoW criticality)
 - `lib/milestones.sh` — Parallel team status tracking
 - `lib/milestone_ops.sh` — Parallel-aware milestone completion
-- `lib/intake_helpers.sh` — Natural language decomposition
-- `lib/prompts.sh` — Language profile template variable injection
+- `lib/intake_helpers.sh` — Natural language + design artifact decomposition
+- `lib/prompts.sh` — Language profile template variable injection, Goldprint section framing
+- `lib/release.sh` — Release notes + cost forecasting + SBOM integration
 - `lib/detect.sh` — Language domain detection (frontend/backend)
 - `lib/dashboard.sh` — Watchtower served mode lifecycle
-- `lib/causality.sh` — Identity enrichment in events
-- `stages/coder.sh` — Language convention injection
-- `stages/review.sh` — Language pitfall injection
-- `stages/tester.sh` — Domain-aware test strategy
-- `stages/security.sh` — Domain-aware security focus
-- `templates/watchtower/` — Interactive UI, cost dashboard, parallel view
-- `templates/pipeline.conf.example` — New config sections
+- `lib/causality.sh` — Identity enrichment, provenance metadata, scope check event enrichment in events
+- `lib/goldprints/resolver.sh` — Extended to query Context Graph for domain filtering and adoption metadata (not just storage)
+- `lib/goldprints/loader.sh` — Emit `goldprint.authored` events consumed by Context Graph bridge
+- `stages/intake.sh` — Design artifact detection, `_consult_context()` for overlap detection, NL + design blend
+- `stages/architect.sh` — `_consult_context()` for historical precedent
+- `stages/coder.sh` — Language convention injection, Goldprint context consumption, provenance commit trailers
+- `stages/review.sh` — Language pitfall injection, Goldprint hard-rule enforcement
+- `stages/tester.sh` — Domain-aware test strategy, Goldprint test scaffold consumption
+- `stages/security.sh` — Domain-aware security focus, model governance output hooks
+- `templates/watchtower/` — Interactive UI, cost dashboard, parallel view, Organizational Context tab, Goldprint UI (Browser, Detail, Author/Edit, Promotion Workflow, Adoption Dashboard), Champion tooling (ROI, Compliance Summary, Executive Reports)
+- `templates/pipeline.conf.example` — New config sections for all V4 subsystems
 - `prompts/*.prompt.md` — Language profile conditional blocks
-- `tekhton.sh` — Source new modules, bridge init, parallel mode, served watchtower
+- `prompts/intake.prompt.md` — NL decomposition with design artifact context
+- `tekhton.sh` — Source new modules, detect V3 projects and invoke migration tool, bridge init, parallel mode, served watchtower
 - `tests/run_tests.sh` — Test harness integration, quarantine support
 
-## Backward Compatibility
+## V3 to V4 Migration
 
-| Feature | Default | Opt-in Mechanism | V3 Behavior When Off |
-|---------|---------|-----------------|---------------------|
-| Provider bridge | `BRIDGE_ENABLED=false` | Config toggle | claude CLI only |
-| Three-tier logging | `TEKHTON_LOG_LEVEL=default` | Config or flag | Current output |
-| Test harness | Auto-detected | New test files use it | Old tests unchanged |
-| Parallel execution | `PARALLEL_ENABLED=false` | Config toggle | Serial (V3) |
-| Watchtower served | `WATCHTOWER_SERVE_ENABLED=false` | Config or flag | Static HTML (V3) |
-| Release notes | `RELEASE_NOTES_ENABLED=true` | Config toggle | No release notes |
-| NFR framework | `NFR_*_ENABLED=false` (each) | Config per-check | No NFR checks |
-| Auth | `AUTH_ENABLED=false` | Config toggle | No identity |
-| Learning | `LEARNING_ENABLED=true` | Config toggle | No learning |
-| Language profiles | `LANGUAGE_PROFILES_ENABLED=true` | Config toggle | Generic prompts |
-| Integrations | Each `_ENABLED=false` | Config per-integration | No integrations |
+V4 introduces breaking changes substantial enough that maintaining backward compatibility would compromise the design. The breaking changes include: directory rename (`.claude/` → `.tekhton/`), project context file split (`CLAUDE.md` → `AGENT.md` as the primary provider-neutral context file, with optional `CLAUDE.md` remaining as an Anthropic-specific overlay for provider-specific quirks), NFR vocabulary migration (`NFR_POLICY_*` with `block/warn/log` → `NFR_CRITICALITY_*` with MoSCoW `must/should/could/wont` values), multi-provider configuration defaults where provider choice is the foundational assumption rather than an opt-in, new RBAC scope declaration schema, storage abstraction layer defaults, and Context Graph project-local cache setup.
 
-All V3 workflows work unchanged with default configuration. No breaking changes.
+### Migration Tool
+
+V4 ships a one-time-use migration tool (milestone in early Phase 1) that:
+
+1. **Detects V3 projects** by scanning for `.claude/` directory, `CLAUDE.md` without corresponding `AGENT.md`, V3 `NFR_POLICY_*` config keys, or absence of a `.tekhton/version` marker
+2. **Surfaces the full migration scope** to the operator running the upgrade (a developer setting up Tekhton on their machine, or an enterprise upgrade lead managing organizational rollout), showing exactly what will change
+3. **Prompts for explicit consent**: migrate the project to V4 (irreversible) or exit without modification. No partial migrations, no silent transformations.
+4. **Executes the migration** atomically: directory rename, context file split with provider-neutral content moving to AGENT.md and genuinely Claude-specific content remaining in CLAUDE.md as an overlay, NFR config transformation (`block → must`, `warn → should`, `log → could`, with no V3 equivalent for `wont`), provider config defaults reset to multi-provider-foundational, scope declaration schema written, storage abstraction config applied, Context Graph project-local cache initialized
+5. **Validates the migration** by running a post-migration self-check before writing the `.tekhton/version` marker
+6. **Writes the version marker** (`.tekhton/version`) that V3 Tekhton recognizes and refuses to run against, preventing accidental V3 reversion
+
+Post-migration, projects are V4-only. V3 Tekhton running against a V4 project produces a clear error directing the operator to upgrade their Tekhton CLI. There is no downgrade path; the migration is one-way by design.
+
+### Feature Configuration Defaults
+
+V4 defaults reflect the multi-provider-foundational architecture and enterprise deployability baseline. Where features default to disabled, the rationale is the feature's nature (privacy-sensitive, per-project opt-in, or local-development-appropriate), not V3 compatibility:
+
+| Feature | V4 Default | Rationale |
+|---------|-----------|-----------|
+| Provider bridge | `BRIDGE_ENABLED=true` | Multi-provider is foundational (tenet 1) |
+| Three-tier logging | `TEKHTON_LOG_LEVEL=default` | Default user experience; verbose/debug opt-in |
+| Test harness | Active | Infrastructure is mandatory (tenet 6) |
+| Parallel execution | `PARALLEL_ENABLED=true` | Parallel by default (tenet 4); degenerate case is serial |
+| Watchtower served | `WATCHTOWER_SERVE_ENABLED=true` | Primary interface (Watchtower is a full UI/UX suite in V4) |
+| Release notes | `RELEASE_NOTES_ENABLED=true` | Project owner deliverable (tenet 2) |
+| NFR framework | Per-check opt-in via `NFR_*_ENABLED` | Projects enable the NFR categories relevant to their domain |
+| Auth | `AUTH_ENABLED` per deployment | Enterprise deployments enable; local dev may not |
+| Learning (local) | `LEARNING_ENABLED=true` | Cross-run intelligence improves over time |
+| Learning (global) | `LEARNING_GLOBAL_ENABLED=false` | Privacy-sensitive; opt-in per project |
+| Language profiles | `LANGUAGE_PROFILES_ENABLED=true` | Language-aware stages are enterprise-grade default |
+| Integrations | Per-integration opt-in via `INTEGRATION_*_ENABLED` | Each integration requires separate credentials and access approval |
+| Goldprints | `GOLDPRINTS_ENABLED=true` | Institutional engineering knowledge substrate |
+| Context Graph | `CONTEXT_GRAPH_ENABLED=true` | Substrate beneath the convergence inbound mechanisms |
+| Storage abstraction | Backend configured per deployment | Deployment-specific (git / postgres / s3) |
+
+Features that default to disabled in V4 do so for architectural, privacy, or operational reasons, not to preserve V3 behavior.
 
 ---
 
@@ -2298,38 +3026,45 @@ The following capabilities are explicitly designed for but not built in V4:
 
 ### Overview
 
-27 milestones across 4 phases. Each milestone is scoped for a single
-`tekhton --milestone` run. Dogfood checkpoints mark optimal points to replace
-the working Tekhton copy with the latest V4 build.
+38 milestones across 4 phases. Each milestone is scoped for a single
+`tekhton --milestone` run. Dogfood checkpoints mark validation points for
+the one-way V4 migration; V4 migration is irreversible per tenet 7, so each
+checkpoint is a go/no-go validation boundary rather than a rollback option.
 
 ```
-Phase 1: Foundations (M01-M07)     — Test, logging, provider abstraction
-Phase 2: Core (M08-M16)           — Parallel execution, Watchtower, owner UX
-Phase 3: Enterprise (M17-M23)     — Integrations, NFRs, auth
-Phase 4: Intelligence (M24-M27)   — Learning, language awareness
+Phase 1: Foundations (M01-M08)     — Test, logging, migration tool, provider abstraction
+Phase 2: Core (M09-M20)            — Parallel execution, Watchtower, owner UX, design intake, storage abstraction, Goldprints
+Phase 3: Enterprise (M21-M33)      — Integrations, deployability, NFRs, auth, Context Graph
+Phase 4: Intelligence (M34-M38)    — Learning, language awareness, Champion tooling
 ```
 
 ### Dependency Graph (Simplified)
 
 ```
 M01 ─────────────────────────────────────────────────────────────────────
-M02 ──┬──── M03 ──┬── M04 ──┬── M06 ──┬── M10 ── M13
-      │           └── M05 ──┘    │     └── M16
-      │                └── M07   │     └── M20 ── M21
-      ├──── M08 ── M09 ─────────┘          └── M24 ── M25
-      ├──── M11 ── M12 ─────────────── M13
-      ├──── M14
-      ├──── M15 ──┬── M16
-      │           └── M17
-      ├──── M18
-      ├──── M19
-      ├──── M22 ── M23
-      └──── M26 ── M27
+M02 ──┬──── M03 (migration tool) ──┬── (shift numbers +1 for bridge work) ──
+      │                            │
+      ├──── M04 ──┬── M05 ──┬── M07 ──┬── M11 ── M14
+      │           └── M06 ──┘    │     └── M18 (Goldprints)
+      │                └── M08   │     └── M24 ── M25
+      ├──── M09 ── M10 ─────────┘          └── M34 ── M35
+      ├──── M12 ── M13 ─────────────── M14
+      ├──── M15
+      ├──── M16 (design intake) ──┬── M18 (Goldprints; requires storage abstraction M17)
+      │                           └── M17 (storage abstraction)
+      ├──── M19 (release notes + provenance)
+      ├──── M20 (cost forecasting + SBOM)
+      ├──── M21-M23 (integrations) ──┬── M32 (Context Graph ingestion)
+      ├──── M24-M26 (NFR) ───────────┤
+      ├──── M27 (secret manager) ────┤
+      ├──── M28 (network egress) ────┤
+      ├──── M29-M30 (auth + RBAC schema) ── M31 (Context Graph core) ── M32 (ingestion + bridge) ── M33 (horizontal + tab)
+      └──── M37 (language stages) ── M38 (Champion tooling)
 ```
 
 ---
 
-### Phase 1: Foundations (M01-M07)
+### Phase 1: Foundations (M01-M08)
 
 #### Milestone 1: Test Harness & Isolation Framework
 
@@ -2349,7 +3084,7 @@ Acceptance criteria:
 - `_allocate_port` / `_release_port` prevent port conflicts across concurrent tests
 - `_spawn_tracked` registers PIDs; teardown kills all tracked processes
 - `--flake-check 5` runs each test 5 times, reports inconsistent results
-- Quarantine file (`.claude/test_quarantine.json`) excludes quarantined tests
+- Quarantine file (`.tekhton/test_quarantine.json`) excludes quarantined tests
   from blocking pipeline while still running and reporting them
 - Test categories (`unit`, `integration`, `browser`, `network`, `e2e`) parsed
   from `# test_category:` comment in each test file
@@ -2367,8 +3102,8 @@ Watch For:
 
 Seeds Forward:
 - Every subsequent milestone's tests use the harness automatically
-- Flakiness data feeds into the Learning subsystem (M24)
-- Quarantine status is displayed in Watchtower Reports tab (M13)
+- Flakiness data feeds into the Learning subsystem (M34)
+- Quarantine status is displayed in Watchtower Reports tab (M14)
 
 ---
 
@@ -2392,9 +3127,9 @@ Acceptance criteria:
   tagged debug lines)
 - `TEKHTON_LOG_LEVEL=verbose` adds context economics and model details
 - `TEKHTON_LOG_LEVEL=debug` shows everything (identical to current V3 output)
-- Debug log always written to `.claude/logs/run_<RUN_ID>.log` regardless of level
-- Structured events always written to `.claude/logs/run_<RUN_ID>.events.jsonl`
-- Symlink `.claude/logs/latest.log` points to most recent run
+- Debug log always written to `.tekhton/logs/run_<RUN_ID>.log` regardless of level
+- Structured events always written to `.tekhton/logs/run_<RUN_ID>.events.jsonl`
+- Symlink `.tekhton/logs/latest.log` points to most recent run
 - Log rotation retains last `TEKHTON_LOG_RETENTION` runs (default 50)
 - `emit_event()` produces valid JSONL with `ts`, `type`, `run_id`, `data` fields
 - Stage banners render consistently: `── Stage ──── Stage N/M` format
@@ -2412,9 +3147,9 @@ Watch For:
 
 Seeds Forward:
 - Every subsequent milestone emits structured events automatically
-- Watchtower server (M11) reads the events.jsonl stream
-- Log shipping (M19) forwards the events.jsonl to DataDog/Splunk
-- NFR checks (M20) emit `nfr.check` / `nfr.violation` events
+- Watchtower server (M12) reads the events.jsonl stream
+- Log shipping (M23) forwards the events.jsonl to DataDog/Splunk
+- NFR checks (M24) emit `nfr.check` / `nfr.violation` events
 
 ---
 
@@ -2424,24 +3159,67 @@ Seeds Forward:
 
 **What's new:**
 - Test harness ensures self-tests are more robust (no more zombie processes)
-- Three-tier logging means building M03+ produces cleaner default output
+- Three-tier logging means building M04+ (bridge and subsequent phases) produces cleaner default output
 - Debug log always captured to disk for post-mortem analysis
 
 **What to verify after upgrade:**
 - `bash tests/run_tests.sh` passes with new harness
 - Default CLI output shows stage banners (not debug tags)
-- `.claude/logs/` directory populates with run logs
+- `.tekhton/logs/` directory populates with run logs
 
-**Safe rollback:** `git checkout v3.XX.0 -- tekhton.sh lib/ stages/` restores
-V3 behavior. New files (`lib/logging.sh`, `lib/test_harness.sh`) are harmless
-if unused.
+**Dogfood validation:** Run the Tekhton self-tests against this build to confirm the new test harness and logging infrastructure are operating correctly before proceeding to M03. If validation fails, abort the checkpoint and investigate before proceeding; V4 migration is one-way per tenet 7, so pre-checkpoint validation is the safety boundary rather than post-hoc rollback.
 
-**Risk:** Low — purely additive improvements to existing infrastructure. No
-behavioral changes to agent invocation or pipeline flow.
+**Risk:** Low — infrastructure additions to test harness and logging. Primarily affects internal observability rather than pipeline behavior.
 
 ---
 
-#### Milestone 3: Bridge Core Architecture & Shell Routing
+#### Milestone 3: V3 → V4 Migration Tool
+
+**Parallel group:** foundation | **Depends on:** M01, M02
+
+Files to create/modify:
+- Create `tools/migration/__init__.py`
+- Create `tools/migration/migrate.py` — CLI entry point (`tekhton migrate`)
+- Create `tools/migration/detect.py` — V3 project detection (`.claude/` directory, `CLAUDE.md` without `AGENT.md`, absence of `.tekhton/version`, legacy `NFR_POLICY_*` config keys)
+- Create `tools/migration/transform/__init__.py` — transformation registry
+- Create `tools/migration/transform/directory.py` — `.claude/` → `.tekhton/` directory rename
+- Create `tools/migration/transform/context_files.py` — `CLAUDE.md` → `AGENT.md` split (provider-neutral content to AGENT.md, Anthropic-specific content remaining in CLAUDE.md as overlay)
+- Create `tools/migration/transform/nfr_config.py` — `NFR_POLICY_*` with `block/warn/log` → `NFR_CRITICALITY_*` with `must/should/could`
+- Create `tools/migration/transform/pipeline_conf.py` — provider defaults, bridge enablement, storage abstraction config
+- Create `tools/migration/validate.py` — post-migration self-check
+- Create `tools/migration/report.py` — migration scope surfacing and consent prompt
+- Modify `tekhton.sh` — detect V3 project on startup, invoke migration tool with consent prompt
+- Modify `lib/config_defaults.sh` — add `TEKHTON_VERSION` marker config
+- Create `tests/test_migration.sh` — V3 → V4 migration scenarios, V3 protection check
+- Create `tools/tests/test_migration.py` — Python migration tool tests
+
+Acceptance criteria:
+- Migration tool detects V3 projects via filesystem probe and config inspection
+- `tekhton migrate --dry-run` surfaces the full migration scope without modification
+- `tekhton migrate` prompts the operator with the migration scope and requires explicit "yes" to proceed; any other input exits without modification
+- All transformations execute atomically; partial migration on error is rolled back
+- Post-migration validation runs automatically before the version marker is written
+- `.tekhton/version` marker file is written with V4 version identifier and migration timestamp
+- V3 Tekhton running against a migrated project detects the version marker and produces a clear error directing the operator to upgrade their Tekhton CLI
+- Migration is idempotent: running the tool on an already-migrated project is a no-op
+- The subsequent milestones M04+ add their own transform modules to `tools/migration/transform/` as new V4 schemas land, registered via the transformation registry
+- All existing tests pass
+- `shellcheck tools/migration/migrate.sh` and `python -m mypy tools/migration/` pass
+
+Watch For:
+- The migration tool must run without Tekhton bridge or provider adapters being initialized (bridge comes in M04+); it operates purely on filesystem and config transformation
+- The `.claude/mcp_servers.json` file is Claude CLI's config and must be preserved under `.claude/` even after the directory migration (this is the one deliberate exception per the Design Philosophy notes)
+- Transformations that write new files must use atomic rename patterns so a crash mid-migration leaves the project in a recoverable state (either fully V3 or fully V4, never mixed)
+- The consent prompt must be explicit and non-defaultable; operators running in automation contexts should set `TEKHTON_MIGRATE_CONFIRM=yes` environment variable rather than rely on piped input
+
+Seeds Forward:
+- Each subsequent V4 milestone that introduces a new schema adds a corresponding transform module to `tools/migration/transform/`
+- The migration tool's event log records what transformed, in what order, and at what time, providing an audit trail for enterprise compliance
+- Post-V4, the migration tool pattern is reusable for V4 → V5 migration when V5 introduces further breaking changes
+
+---
+
+#### Milestone 4: Bridge Core Architecture & Shell Routing
 
 **Parallel group:** bridge | **Depends on:** M02
 
@@ -2466,9 +3244,9 @@ Acceptance criteria:
 - `_resolve_provider("opus")` returns `anthropic`
 - `_resolve_provider("gpt-4o")` returns `openai`
 - `_resolve_provider("ollama/llama3")` returns `ollama`
-- When `BRIDGE_ENABLED=false`, all calls go through `claude` CLI (V3 behavior)
-- When `BRIDGE_ENABLED=true` and provider is `anthropic`, still uses `claude` CLI
+- When `BRIDGE_ENABLED=true` (V4 default, per tenet 1) and provider is `anthropic`, still uses `claude` CLI as the optimized fast path
 - When `BRIDGE_ENABLED=true` and provider is non-anthropic, calls `tekhton-bridge`
+- When `BRIDGE_ENABLED=false` (explicit opt-out for specific local-development reasons), all calls go through `claude` CLI; this is an operator override, not the default
 - `tekhton-bridge call --help` shows usage without errors
 - `ProviderAdapter` base class defines: `call()`, `count_tokens()`,
   `list_models()`, `supports_tool_use()`, `supports_mcp()`, `health_check()`
@@ -2486,16 +3264,16 @@ Watch For:
   could map to multiple providers.
 
 Seeds Forward:
-- M04 and M05 implement concrete adapters against this base
-- M06 adds failover logic to the bridge core
-- M07 adds MCP gateway capability
-- M14 (NL task decomposition) uses bridge for non-Anthropic PM agents
+- M05 and M06 implement concrete adapters against this base
+- M07 adds failover logic to the bridge core
+- M08 adds MCP gateway capability
+- M15 (NL task decomposition) uses bridge for non-Anthropic PM agents
 
 ---
 
-#### Milestone 4: Anthropic Direct API Adapter
+#### Milestone 5: Anthropic Direct API Adapter
 
-**Parallel group:** bridge | **Depends on:** M03
+**Parallel group:** bridge | **Depends on:** M04
 
 Files to create/modify:
 - Create `tools/bridge/providers/anthropic.py` — Anthropic SDK adapter
@@ -2529,15 +3307,15 @@ Watch For:
   count after-the-fact from the final output.
 
 Seeds Forward:
-- M06 uses this adapter as the failover target when claude CLI is throttled
+- M07 uses this adapter as the failover target when claude CLI is throttled
 - The adapter validates the bridge architecture before adding more providers
 - Direct API access enables future features (batching, prompt caching control)
 
 ---
 
-#### Milestone 5: OpenAI & Ollama Adapters
+#### Milestone 6: OpenAI & Ollama Adapters
 
-**Parallel group:** bridge | **Depends on:** M03
+**Parallel group:** bridge | **Depends on:** M04
 
 Files to create/modify:
 - Create `tools/bridge/providers/openai.py` — OpenAI SDK adapter
@@ -2576,15 +3354,15 @@ Watch For:
   status, not crash.
 
 Seeds Forward:
-- M06 uses these adapters for failover targets
-- M07 adds MCP gateway capability to these adapters
+- M07 uses these adapters for failover targets
+- M08 adds MCP gateway capability to these adapters
 - Users can immediately start using OpenAI or local models for any stage
 
 ---
 
-#### Milestone 6: Provider Failover, Calibration & Cost Ledger
+#### Milestone 7: Provider Failover, Calibration & Cost Ledger
 
-**Parallel group:** bridge | **Depends on:** M04, M05
+**Parallel group:** bridge | **Depends on:** M05, M06
 
 Files to create/modify:
 - Create `tools/bridge/failover.py` — failover logic, provider health monitoring,
@@ -2593,7 +3371,7 @@ Files to create/modify:
   adjustment recording, validation
 - Create `tools/bridge/cost.py` — cost calculation, pricing tables, ledger
   management, `update-pricing` command
-- Create `.claude/bridge/` directory structure (profiles/, cost_ledger.jsonl)
+- Create `.tekhton/bridge/` directory structure (profiles/, cost_ledger.jsonl)
 - Modify `tools/bridge/bridge.py` — integrate failover, calibration, cost tracking
 - Modify `lib/config_defaults.sh` — add `BRIDGE_FAILOVER_ENABLED`,
   `BRIDGE_FAILOVER_PROVIDER`, `BRIDGE_COST_TRACKING`
@@ -2604,7 +3382,7 @@ Files to create/modify:
 
 Acceptance criteria:
 - `tekhton-bridge calibrate --provider openai` runs representative prompts,
-  stores profile in `.claude/bridge/profiles/openai.json`
+  stores profile in `.tekhton/bridge/profiles/openai.json`
 - Provider profile contains prompt adjustments (if any), quality score, and
   validation timestamp
 - When primary provider returns rate limit error and failover is enabled, bridge
@@ -2631,16 +3409,16 @@ Watch For:
 - Cost ledger JSONL must be append-only and never rewritten (data integrity).
 
 Seeds Forward:
-- M10 (parallel budgeting) distributes quota using cost ledger data
-- M13 (Watchtower cost dashboard) reads the cost ledger
-- M16 (cost forecasting) uses historical cost data for predictions
-- M20 (NFR cost checks) validates against cost ceilings from the ledger
+- M11 (parallel budgeting) distributes quota using cost ledger data
+- M14 (Watchtower cost dashboard) reads the cost ledger
+- M20 (cost forecasting) uses historical cost data for predictions
+- M24 (NFR cost checks) validates against cost ceilings from the ledger
 
 ---
 
-#### Milestone 7: MCP Gateway for Non-Anthropic Providers
+#### Milestone 8: MCP Gateway for Non-Anthropic Providers
 
-**Parallel group:** bridge | **Depends on:** M05
+**Parallel group:** bridge | **Depends on:** M06
 
 Files to create/modify:
 - Create `tools/bridge/mcp_gateway.py` — MCP client implementation (JSON-RPC),
@@ -2653,7 +3431,7 @@ Files to create/modify:
 
 Acceptance criteria:
 - MCP gateway connects to configured MCP servers using same config format as
-  claude CLI (`.claude/mcp_servers.json` or equivalent)
+  claude CLI (`.claude/mcp_servers.json` or equivalent — this file is Claude CLI's own config, so it stays under `.claude/`)
 - MCP tool definitions are translated to OpenAI function calling format for
   OpenAI adapter
 - MCP tool definitions are translated to prompt-based tool injection for models
@@ -2682,7 +3460,7 @@ Seeds Forward:
 
 ---
 
-### DOGFOOD CHECKPOINT 2: Bridge Complete (After M07)
+### DOGFOOD CHECKPOINT 2: Bridge Complete (After M08)
 
 **Action:** Replace the working Tekhton copy with the latest V4 build.
 
@@ -2697,19 +3475,17 @@ Seeds Forward:
 - `tekhton-bridge call --provider anthropic --model sonnet --prompt-file /tmp/test.md`
   works (validates bridge installation)
 - Optional: configure `BRIDGE_FAILOVER_PROVIDER=openai` for resilience
-- `.claude/bridge/cost_ledger.jsonl` populates after a run
+- `.tekhton/bridge/cost_ledger.jsonl` populates after a run
 
-**Safe rollback:** Set `BRIDGE_ENABLED=false` — all calls revert to claude CLI.
-Bridge code is dormant when disabled.
+**Dogfood validation:** Run Tekhton against the test suite with both Anthropic and at least one non-Anthropic provider configured. The Anthropic path through the claude CLI is preserved as the optimized fast path (B2 architecture); non-Anthropic providers exercise the bridge end-to-end. If validation fails, abort the checkpoint before proceeding; the Phase 1 checkpoint is the safety boundary per tenet 7.
 
-**Risk:** Medium — bridge is new code, but the Anthropic path through claude CLI
-is unchanged (B2 architecture). Failover is opt-in.
+**Risk:** Medium — bridge is substantial new code. Anthropic fast path is unchanged; non-Anthropic paths are first-time execution against the bridge.
 
 ---
 
-### Phase 2: Core Capabilities (M08-M16)
+### Phase 2: Core Capabilities (M09-M20)
 
-#### Milestone 8: Parallel Coordinator & Worktree Lifecycle
+#### Milestone 9: Parallel Coordinator & Worktree Lifecycle
 
 **Parallel group:** parallel | **Depends on:** M02
 
@@ -2726,14 +3502,14 @@ Files to create/modify:
 
 Acceptance criteria:
 - `_create_team_worktree(1, "m05")` creates a git worktree at
-  `.claude/worktrees/team-1/` on branch `tekhton/parallel/m05`
+  `.tekhton/worktrees/team-1/` on branch `tekhton/parallel/m05`
 - Team status files (`TEAM_STATUS.json`) written with: team_id, milestone_id,
   stage, started_at, status
 - Coordinator reads DAG frontier, groups by parallel_group, spawns teams up to
   `PARALLEL_MAX_TEAMS`
 - Each team runs a full pipeline (coder → reviewer → tester) in its worktree
 - `_remove_team_worktree()` cleans up worktree and branch
-- `PARALLEL_ENABLED=false` (default) gives identical V3 serial behavior
+- `PARALLEL_ENABLED=false` is an explicit operator override for serial execution; the V4 default is `true` (parallel by default per tenet 4)
 - `PARALLEL_MAX_TEAMS=1` gives serial behavior through the parallel engine
 - All existing tests pass
 - `bash -n lib/parallel.sh lib/parallel_teams.sh` passes
@@ -2754,9 +3530,9 @@ Seeds Forward:
 
 ---
 
-#### Milestone 9: Parallel Conflict Detection & Merge
+#### Milestone 10: Parallel Conflict Detection & Merge
 
-**Parallel group:** parallel | **Depends on:** M08
+**Parallel group:** parallel | **Depends on:** M09
 
 Files to create/modify:
 - Modify `lib/parallel.sh` — merge orchestration after teams complete
@@ -2784,7 +3560,7 @@ Watch For:
 - Sequential fallback means re-running an entire milestone — this could be
   expensive. Log the cost clearly so users can decide if parallelism is worth it.
 - Three-way merges can produce unexpected results with generated code. Consider
-  a post-merge build gate (M10) as the safety net.
+  a post-merge build gate (M11) as the safety net.
 
 Seeds Forward:
 - M10 adds shared build gate after merge to catch subtle merge issues
@@ -2792,9 +3568,9 @@ Seeds Forward:
 
 ---
 
-#### Milestone 10: Parallel Resource Budgeting & Shared Build Gate
+#### Milestone 11: Parallel Resource Budgeting & Shared Build Gate
 
-**Parallel group:** parallel | **Depends on:** M06, M09
+**Parallel group:** parallel | **Depends on:** M07, M10
 
 Files to create/modify:
 - Create `lib/parallel_budget.sh` — quota distribution strategies (equal,
@@ -2815,7 +3591,7 @@ Acceptance criteria:
   combined result
 - If shared gate fails, `_bisect_build_failure()` identifies which team's
   changes broke the build (binary search on team merge order)
-- Budget tracking integrates with cost ledger (M06) for actual cost data
+- Budget tracking integrates with cost ledger (M07) for actual cost data
 - All existing tests pass
 
 Watch For:
@@ -2833,7 +3609,7 @@ Seeds Forward:
 
 ---
 
-#### Milestone 11: Watchtower Server Mode & WebSocket
+#### Milestone 12: Watchtower Server Mode & WebSocket
 
 **Parallel group:** watchtower | **Depends on:** M02
 
@@ -2859,10 +3635,10 @@ Acceptance criteria:
 - `GET /api/v1/milestones` returns milestone DAG and statuses
 - WebSocket at `/ws` pushes real-time events as they occur
 - SSE at `/api/v1/events/stream` provides alternative to WebSocket
-- File watcher monitors `.claude/watchtower/*.json` and `.claude/logs/events.jsonl`
+- File watcher monitors `.tekhton/watchtower/*.json` and `.tekhton/logs/events.jsonl`
 - Dashboard auto-detects server vs static mode (WebSocket vs polling)
 - `tekhton --watchtower-stop` cleanly shuts down server
-- Server PID tracked in `.claude/watchtower.pid`
+- Server PID tracked in `.tekhton/watchtower.pid`
 - All existing tests pass
 
 Watch For:
@@ -2874,14 +3650,14 @@ Watch For:
 
 Seeds Forward:
 - M12 adds interactive controls through the REST API
-- M13 adds cost dashboard and parallel team views
+- M14 adds cost dashboard and parallel team views
 - M19 CI/CD mode may disable served Watchtower (headless environment)
 
 ---
 
-#### Milestone 12: Watchtower Interactive Controls
+#### Milestone 13: Watchtower Interactive Controls
 
-**Parallel group:** watchtower | **Depends on:** M11
+**Parallel group:** watchtower | **Depends on:** M12
 
 Files to create/modify:
 - Modify `tools/watchtower_server.py` — add POST endpoints for task submission,
@@ -2898,11 +3674,11 @@ Files to create/modify:
 
 Acceptance criteria:
 - Task submission form in Watchtower creates
-  `.claude/inbox/task_<timestamp>.json`
-- Note submission form creates `.claude/inbox/note_<timestamp>.json`
-- Run control (pause/resume/abort) creates `.claude/inbox/control_<timestamp>.json`
+  `.tekhton/inbox/task_<timestamp>.json`
+- Note submission form creates `.tekhton/inbox/note_<timestamp>.json`
+- Run control (pause/resume/abort) creates `.tekhton/inbox/control_<timestamp>.json`
 - `_process_inbox()` reads and processes inbox files at pipeline checkpoints
-- Processed files moved to `.claude/inbox/processed/`
+- Processed files moved to `.tekhton/inbox/processed/`
 - Milestone manager allows: status override, title editing, dependency editing
 - POST endpoints validate input and return appropriate HTTP status codes
 - Pause/resume uses a flag file that stages check between operations
@@ -2918,15 +3694,15 @@ Watch For:
   AND the manifest. Use existing `save_manifest()` for atomicity.
 
 Seeds Forward:
-- M13 adds cost and parallel views to the interactive UI
+- M14 adds cost and parallel views to the interactive UI
 - M14 (NL task decomposition) can be triggered from Watchtower's task form
 - M17 (GitHub integration) can sync issues to Watchtower's task queue
 
 ---
 
-#### Milestone 13: Watchtower Cost Dashboard & Parallel Team View
+#### Milestone 14: Watchtower Cost Dashboard & Parallel Team View
 
-**Parallel group:** watchtower | **Depends on:** M06, M10, M12
+**Parallel group:** watchtower | **Depends on:** M07, M11, M13
 
 Files to create/modify:
 - Modify `tools/watchtower_server.py` — add `GET /api/v1/costs` (cost ledger
@@ -2943,8 +3719,8 @@ Acceptance criteria:
 - Budget alerts display when cost exceeds configurable threshold percentage
 - Parallel team view shows: team cards with stage progress, unified timeline
   with team swimlanes, conflict alerts, merge status
-- Cost data sourced from `.claude/bridge/cost_ledger.jsonl`
-- Team data sourced from `.claude/worktrees/team-N/TEAM_STATUS.json`
+- Cost data sourced from `.tekhton/bridge/cost_ledger.jsonl`
+- Team data sourced from `.tekhton/worktrees/team-N/TEAM_STATUS.json`
 - Dashboard gracefully handles missing data (no cost ledger = no cost panel,
   no parallel teams = no team view)
 - Test quarantine status (from M01) displayed in Reports tab
@@ -2959,12 +3735,12 @@ Watch For:
   bar charts and simple SVG are sufficient for V4.
 
 Seeds Forward:
-- M16 (cost forecasting) adds prediction data to the cost dashboard
+- M20 (cost forecasting) adds prediction data to the cost dashboard
 - V5's cloud-hosted Watchtower reuses these API endpoints and UI components
 
 ---
 
-### DOGFOOD CHECKPOINT 3: Parallel Ready (After M10)
+### DOGFOOD CHECKPOINT 3: Parallel Ready (After M11)
 
 **Action:** Optionally enable parallel execution for remaining milestones.
 
@@ -2976,18 +3752,17 @@ Seeds Forward:
 **What to verify after upgrade:**
 - `PARALLEL_ENABLED=true` and `PARALLEL_MAX_TEAMS=2` in pipeline.conf
 - Run two independent milestones — verify both complete and merge cleanly
-- Check `.claude/worktrees/` cleanup after run
+- Check `.tekhton/worktrees/` cleanup after run
 
-**Safe rollback:** Set `PARALLEL_ENABLED=false` — reverts to serial execution.
+**Dogfood validation:** Run Tekhton on a multi-milestone project with `PARALLEL_MAX_TEAMS=2` to validate parallel execution behavior before moving to the full parallel ceiling. The operator override `PARALLEL_ENABLED=false` remains available for specific local-development scenarios where serial execution is preferred, but the V4 default is parallel.
 
-**Risk:** Higher — parallel execution is complex. Start with `PARALLEL_MAX_TEAMS=2`
-to limit blast radius. If unstable, revert to serial for remaining milestones.
+**Risk:** Higher — parallel execution is complex. Start with `PARALLEL_MAX_TEAMS=2` to limit blast radius during validation.
 
 ---
 
-#### Milestone 14: Natural Language Task Decomposition
+#### Milestone 15: Natural Language Task Decomposition
 
-**Parallel group:** owner | **Depends on:** M03
+**Parallel group:** owner | **Depends on:** M04
 
 Files to create/modify:
 - Modify `lib/intake_helpers.sh` — extend PM agent to accept natural language
@@ -3004,13 +3779,13 @@ Acceptance criteria:
   and social sign-in" and decomposes into concrete milestones
 - Each generated milestone has: title, description, file list, acceptance
   criteria, test requirements
-- Decomposition uses project context (CLAUDE.md, DESIGN.md, detected stack) to
+- Decomposition uses project context (AGENT.md, DESIGN.md, optional provider overlays, detected stack) to
   ground milestones in the project's architecture
-- Generated milestones are written to `.claude/milestones/` and MANIFEST.cfg
+- Generated milestones are written to `.tekhton/milestones/` and MANIFEST.cfg
   in proper DAG format
 - `PM_AUTO_DECOMPOSE=true` automatically generates milestones from NL input
 - `PM_AUTO_DECOMPOSE=false` presents proposed milestones for user approval
-- Existing precise engineering task descriptions still work (backward compatible)
+- Precise engineering task descriptions flow through the same intake path as natural language input, producing the same milestone decomposition schema
 - All existing tests pass
 
 Watch For:
@@ -3022,39 +3797,185 @@ Watch For:
   milestones get IDs after the highest existing one.
 
 Seeds Forward:
-- Watchtower's task form (M12) triggers NL decomposition when user submits
+- Watchtower's task form (M13) triggers NL decomposition when user submits
   natural language
 - V5's "Maximum" scope builds on this for full product requirement → deployment
 
 ---
 
-#### Milestone 15: Release Notes & Changelog Automation
+#### Milestone 16: Design Artifact Intake
+
+**Parallel group:** owner | **Depends on:** M08, M13, M15
+
+Files to create/modify:
+- Create `lib/design_intake.sh` — design artifact resolution, normalization, attachment to milestone context
+- Create `lib/integrations/figma_adapter.sh` — Figma REST API client (personal access token or OAuth)
+- Create `lib/integrations/design_file_adapter.sh` — CSS/HTML/SVG mock parsing, screenshot handling
+- Modify `stages/intake.sh` — detect attached design artifacts, route through `lib/design_intake.sh`, blend with NL input
+- Create `prompts/design_intake.prompt.md` — vision-model prompts for screenshot analysis
+- Modify `lib/config_defaults.sh` — add `DESIGN_INTAKE_ENABLED`, `FIGMA_API_TOKEN`, `FIGMA_OAUTH_CLIENT_ID`, `DESIGN_INTAKE_VISION_MODEL`, `DESIGN_ARTIFACT_DIR`, `DESIGN_INTAKE_FORMATS`
+- Modify `tools/watchtower_server.py` — add `POST /api/v1/design_artifacts` endpoint, integrate file upload with task form
+- Modify `templates/watchtower/` — task submission panel accepts design artifact attachments (Figma URLs, file uploads)
+- Create `tests/test_design_intake.sh` — format detection, Figma extraction, screenshot analysis, CSS/HTML parsing, normalized spec generation
+- Create `tools/tests/test_figma_adapter.py` — Figma API contract tests with recorded fixtures
+
+Acceptance criteria:
+- Figma intake: given a Figma file URL and valid token, `lib/integrations/figma_adapter.sh` extracts component tree, layout metadata, design tokens (color, spacing, typography), text content, and prototype interaction links
+- Screenshot intake: given a PNG or JPG, the vision-capable model (configured via `DESIGN_INTAKE_VISION_MODEL`) extracts layout description, identifies UI elements, captures color and text content, and infers interaction intent
+- CSS/HTML mock intake: given HTML and linked stylesheets, parser extracts component structure and style tokens
+- SVG intake: given an SVG file, parser extracts elements, text content, and basic visual structure
+- All format paths produce a normalized design spec following a common schema
+- The design spec attaches to the milestone context and drives acceptance criteria that include visual match requirements
+- Milestones generated from design artifacts reference the originating artifact by path in `.tekhton/design_artifacts/<artifact-id>/`
+- Originals are preserved alongside normalized specs for traceability
+- `DESIGN_INTAKE_ENABLED=false` bypasses the path entirely with no impact on NL-only intake
+- Watchtower task form surfaces design artifact attachment UI and handles upload to `POST /api/v1/design_artifacts`
+- All existing tests pass
+- `shellcheck lib/design_intake.sh lib/integrations/figma_adapter.sh lib/integrations/design_file_adapter.sh` passes
+- `python -m mypy tools/bridge/` passes for any vision-model integration code
+
+Watch For:
+- Figma API rate limits: batch requests where possible, cache the extracted spec with Figma's version id, re-pull only when the file changes
+- Vision-model screenshot analysis accuracy varies by model capability; the `DESIGN_INTAKE_VISION_MODEL` config should default to a capable model (Claude 3+ or GPT-4V equivalent) but allow override for cost-sensitive deployments
+- Large design files (Figma documents with thousands of nodes) can produce oversized specs; the adapter must support selective extraction (specific frames, specific pages) via URL fragment or config
+- CSS/HTML mocks sometimes reference external assets the adapter can't fetch; the parser must degrade gracefully and note missing references in the spec rather than failing
+- Design artifact uploads through Watchtower require size limits and content-type validation; follow the existing `POST /api/v1/tasks` pattern but with file upload support
+
+Seeds Forward:
+- M18 Goldprints can register pattern-matching for design artifacts (e.g., "this Figma component matches the standard card pattern; apply card Goldprint")
+- M33 Context Graph horizontal integration consults the design artifact references when surfacing related project work in the Organizational Context tab
+- V5 adds Sketch, Adobe XD, and Framer adapters against the same interface; the adapter registry in `lib/integrations/design_file_adapter.sh` is designed for extension
+
+---
+
+#### Milestone 17: Storage Abstraction Layer
+
+**Parallel group:** owner | **Depends on:** M02
+
+Files to create/modify:
+- Create `lib/storage/storage.sh` — backend-agnostic interface (`list`, `get`, `put`, `delete`, `watch`, `query`)
+- Create `lib/storage/adapters/git.sh` — git repository backend, supporting local clone and remote repository references
+- Create `lib/storage/adapters/postgres.sh` — PostgreSQL backend with JSONB metadata columns and content column or blob
+- Create `lib/storage/adapters/s3.sh` — S3 and S3-compatible object storage backend (MinIO, Cloudflare R2, Backblaze B2)
+- Create `lib/storage/metadata.sh` — common metadata envelope (id, version, content_type, created_at/by, updated_at/by, scope, tags, parent_id, supersedes, depends_on, backend_native)
+- Create `tools/storage/` Python helpers for postgres and s3 backends that need client libraries (psycopg2, boto3)
+- Modify `lib/config_defaults.sh` — add `STORAGE_BACKEND`, `STORAGE_URL`, per-content-type backend selection
+- Create `tests/test_storage.sh` — interface contract tests, round-trip tests across backends
+- Create `tools/tests/test_storage_postgres.py` — PostgreSQL backend tests with ephemeral DB
+- Create `tools/tests/test_storage_s3.py` — S3 backend tests with MinIO fixture
+
+Acceptance criteria:
+- The storage abstraction defines and enforces the interface contract across all three V4 backends
+- `git://` backend supports PR-based review flow, full version history, and CODEOWNERS integration; content is stored as files in the configured git repository, metadata in sidecar YAML
+- `postgres://` backend stores content and metadata in relational tables; supports structured queries via `query(criteria)` returning matching items; version history via temporal columns
+- `s3://` backend stores content as objects; metadata as object tags plus a sidecar index in PostgreSQL (if configured) or a separate metadata file in the same bucket
+- Round-trip tests demonstrate `put` → `get` returns identical content and metadata across all three backends
+- `watch(path)` emits change notifications for cache invalidation and Watchtower live updates; filesystem backends use inotify/FSEvents, database backends use LISTEN/NOTIFY, S3 backends use bucket event notifications
+- Configuration supports per-content-type backend selection (project-tier Goldprints in git, enterprise-tier in postgres, design artifacts in s3, etc.)
+- Metadata envelope is consistent across backends; backend-native fields preserved for round-trips without loss
+- All existing tests pass
+- `shellcheck lib/storage/*.sh` passes
+- `python -m mypy tools/storage/` passes
+
+Watch For:
+- Git backend performance on large repositories: use sparse checkout for enterprise-scale deployments, avoid full-history operations on hot paths
+- PostgreSQL backend transaction semantics: `put` operations must be atomic; `watch` must use LISTEN/NOTIFY rather than polling
+- S3 backend eventual consistency: some S3-compatible services have eventual consistency on reads after writes; the adapter must detect and handle this (read-after-write retry with backoff, or document the limitation per service)
+- Metadata envelope versioning: future V5 additions to the envelope must not break V4 backends; the `backend_native` field is the escape hatch for backend-specific metadata that V5 generalizes later
+- Storage backend URL format must support authentication: `postgres://user:password@host:port/db` with credentials pulled from the M27 secret manager, not plaintext in config
+
+Seeds Forward:
+- M18 Goldprints are the V4 consumer of the storage abstraction; per-tier configuration drives where Goldprints physically live
+- V5 migrates design artifacts, releases, deliverables, and Watchtower data files to the storage abstraction
+- V5 adds Azure Blob Storage, Google Cloud Storage, and filesystem-plus-sync backends against the same interface
+
+---
+
+#### Milestone 18: Goldprints Subsystem + Watchtower UI
+
+**Parallel group:** owner | **Depends on:** M17, M15
+
+Files to create/modify:
+- Create `lib/goldprints/resolver.sh` — domain-and-scope-filtered Goldprint resolution
+- Create `lib/goldprints/renderer.sh` — role-based markdown-to-prompt rendering for all six agent roles
+- Create `lib/goldprints/config_override.sh` — extraction and merging of `agent_config_hints` from applicable Goldprints
+- Create `lib/goldprints/enforcer.sh` — hard-rule validation after agent output; coordinates with reviewer stage
+- Create `lib/goldprints/loader.sh` — parses markdown + frontmatter Goldprint files from tier-specific storage
+- Modify `lib/context_compiler.sh` — call Goldprint resolver and renderer, allocate Goldprint section budget, render into context
+- Create `prompts/goldprints_section.partial.md` — prompt template fragment for the Goldprint section
+- Create `tools/goldprint_cache.py` — pre-rendered Goldprint caching by (goldprint_id, version, role) hash
+- Create `tools/mcp/goldprint_fetch.py` — MCP tool implementation for `get_goldprint(id)` on-demand fetches
+- Modify `tools/watchtower_server.py` — add Goldprint endpoints (`GET /api/v1/goldprints`, `GET /api/v1/goldprints/:id`, `POST /api/v1/goldprints`, `PUT /api/v1/goldprints/:id`, `POST /api/v1/goldprints/:id/promote`)
+- Modify `templates/watchtower/` — Goldprint Browser, Detail, Author/Edit (with LLM assistance chat panel), Promotion Workflow, Adoption Dashboard views
+- Modify `lib/config_defaults.sh` — add `GOLDPRINTS_ENABLED`, `GOLDPRINTS_ENTERPRISE_REPO`, `GOLDPRINTS_ORG_REPOS`, `GOLDPRINTS_LOCAL_DIR`, `GOLDPRINTS_CONTEXT_BUDGET_PCT`, `GOLDPRINTS_PROGRESSIVE_DISCLOSURE`, `GOLDPRINTS_ENFORCE_HARD_RULES`, `GOLDPRINTS_EXPERIMENTAL_OPT_IN`
+- Create `tests/test_goldprints.sh` — resolver, renderer, enforcer, config override, promotion workflow
+- Create `tools/tests/test_goldprint_cache.py` — cache hit/miss semantics, version invalidation
+
+Acceptance criteria:
+- Resolver queries the storage abstraction (M17) for applicable Goldprints filtered by domain tags and scope hierarchy (project → org → enterprise), returning a ranked list with metadata
+- Renderer produces role-specific prompt fragments for coder, reviewer, tester, architect, security, and jr coder based on the Goldprint file's section structure
+- Context compiler integration: default 20% of the context budget is allocated to Goldprints; hard-rule Goldprints always fully rendered; advisory Goldprints appear as summary cards when budget-constrained
+- Config override: `agent_config_hints` from applicable Goldprints are extracted and merged with the stage's default agent config before `run_agent()` fires; hard-rule hints override advisory hints
+- Enforcer: after the coder agent returns, the reviewer stage consults `lib/goldprints/enforcer.sh` with the set of applicable hard-rule Goldprints; violations produce `goldprint.violated` events and route back to coder with specific violation metadata
+- Progressive disclosure: the Goldprint manifest in the main context includes summary cards for advisory Goldprints; the agent can fetch full content via the `get_goldprint(id)` MCP tool call
+- Watchtower Goldprint Browser supports filtering by tier, domain, lifecycle status, scope, and rule type; adoption count is displayed per Goldprint
+- Watchtower Goldprint Detail view shows full content with metadata sidebar (author, reviewers, versions, timestamps, supersession chain, NFR registrations, dependencies)
+- Watchtower Goldprint Author/Edit view provides markdown editor with live preview, frontmatter form, and LLM assistance chat panel with context-aware actions (draft new, refine section, generate test scaffold, check frontmatter)
+- Watchtower Promotion Workflow view surfaces approval status, Tekhton contextual signal, and NFR compliance check; promote action writes audit log entry
+- Cache invalidation triggered on version bump; cache hit rates target ≥90% for repeated milestone runs on the same project
+- All existing tests pass
+- `shellcheck lib/goldprints/*.sh` and `python -m mypy tools/` pass
+
+Watch For:
+- Resolver performance: the domain-tag filter must happen in the storage backend (SQL query or git-grep) before the Goldprints are loaded into memory; naive "load all then filter" does not scale past a few hundred Goldprints
+- Context budget allocation: the 20% default is a starting point; deployments with small context windows (e.g., Ollama local models) may need a smaller Goldprint budget, configurable via `GOLDPRINTS_CONTEXT_BUDGET_PCT`
+- Progressive disclosure round-trip cost: the `get_goldprint(id)` MCP tool call adds latency on each fetch; the agent should batch fetches where possible
+- Enforcer validation severity: static pattern matching (regex over source files) catches most violations cheaply; agent-assisted validation (asking the reviewer agent to confirm Goldprint compliance) should be used sparingly to avoid token cost
+- Goldprint Author/Edit LLM chat panel must not accidentally leak the project's secrets or sensitive code into the assistant context; the chat panel's context is the Goldprint being edited plus sibling Goldprints, not the full project
+
+Seeds Forward:
+- M32 Goldprint-to-graph bridge adapter (`lib/context/adapters/goldprints.sh`) records authoring and consumption events into the Context Graph
+- V5 adds semantic similarity for Goldprint recommendation via pgvector, predictive adoption modeling, failure/success correlation
+- V5 adds advanced Watchtower Goldprint UI: conflict resolution, semantic similarity recommendations, pattern suggestion from graph analysis
+
+---
+
+#### Milestone 19: Release Notes & Changelog Automation + Code Provenance
 
 **Parallel group:** owner | **Depends on:** M02
 
 Files to create/modify:
 - Create `lib/release.sh` — `_generate_release_notes()`,
   `_update_changelog()`, `_generate_deliverable_summary()`
-- Modify `lib/finalize.sh` — call release note generation after milestone
-  completion
+- Create `lib/provenance.sh` — code provenance metadata generation; commit trailer formatting; structured event enrichment with provenance fields
+- Modify `lib/finalize.sh` — call release note generation and provenance attachment after milestone completion
 - Modify `lib/finalize_display.sh` — project-owner-friendly completion banner
-  (what was built, what to review, files changed, tests status)
+  (what was built, what to review, files changed, tests status, provenance summary)
+- Modify `lib/agent.sh` — emit `agent.invoked` events with agent role, Goldprint ids, user identity, milestone id, model/provider version
+- Modify `lib/causality.sh` — enrich all events with the provenance metadata envelope
+- Modify git commit generation in `stages/coder.sh`, `stages/tester.sh`, `stages/security.sh` — add commit trailer lines with provenance metadata (agent role, Goldprint ids consumed, user identity, milestone id, run id, model/provider version)
+- Modify `templates/watchtower/` — Milestone Map tab surfaces the provenance chain per milestone
 - Modify `lib/config_defaults.sh` — add `RELEASE_NOTES_ENABLED`,
-  `CHANGELOG_ENABLED`, `CHANGELOG_FILE`, `DELIVERABLES_DIR`
+  `CHANGELOG_ENABLED`, `CHANGELOG_FILE`, `DELIVERABLES_DIR`, `PROVENANCE_ENABLED`, `PROVENANCE_COMMIT_TRAILERS`
 - Create `tests/test_release.sh` — release note format, changelog format,
   deliverable package contents
+- Create `tests/test_provenance.sh` — commit trailer formatting, event enrichment, Milestone Map surfacing
 
 Acceptance criteria:
 - After milestone completion, release notes generated at
-  `.claude/deliverables/release_<milestone_id>.md`
+  `.tekhton/deliverables/release_<milestone_id>.md`
 - Release notes contain: what's new (non-technical), setup required, technical
-  details (files changed, tests added)
+  details (files changed, tests added), provenance section (which agents produced which changes, which Goldprints guided the work, which user initiated the run)
 - Changelog entry appended to CHANGELOG.md in Keep a Changelog format
 - Completion banner shows plain-language summary: task, status, duration, cost
-  (if available), what was built, what to review
-- Deliverable package (`.claude/deliverables/`) contains: summary.md,
-  release_notes.md, changelog_entry.md, test_report.md, diff_summary.md
-- `RELEASE_NOTES_ENABLED=false` skips generation (backward compatible)
+  (if available), what was built, what to review, provenance summary (agent role counts, Goldprints consumed)
+- Deliverable package (`.tekhton/deliverables/`) contains: summary.md,
+  release_notes.md, changelog_entry.md, test_report.md, diff_summary.md, provenance.json
+- Every commit produced by Tekhton includes provenance trailer lines in the format: `Tekhton-Agent-Role: coder`, `Tekhton-Goldprint: GP-001@2.3.0`, `Tekhton-User: user@example.com`, `Tekhton-Milestone: M18`, `Tekhton-Run-Id: <run-id>`, `Tekhton-Model: anthropic/claude-4.6-sonnet`
+- Causal event log events all carry a `provenance` sub-object with these fields
+- Watchtower's Milestone Map tab surfaces the provenance chain per milestone, grouping changes by agent role and Goldprint
+- `RELEASE_NOTES_ENABLED=false` is an explicit operator override for deployments that don't want release notes generated (e.g., ephemeral CI runs); the V4 default is `true` since release notes are a project owner deliverable per tenet 2
+- `PROVENANCE_ENABLED=false` disables commit trailer and event enrichment; the V4 default is `true` since provenance is part of the enterprise deployability baseline (see the Enterprise Deployability section for the architectural rationale)
 - All existing tests pass
 
 Watch For:
@@ -3063,17 +3984,21 @@ Watch For:
   added later.
 - CHANGELOG.md must be appended to, not overwritten. Check for existing content.
 - The completion banner must fit in a standard terminal width (80 chars).
+- Commit trailer format must be compatible with git's trailer parsing conventions (`-c trailer.separators=:`); avoid characters that git treats as separators within trailer values
+- Provenance metadata must not include sensitive data (no API keys, no user PII beyond identity attribution); the event log will be shipped to SIEM systems, so provenance payloads are treated as auditable but not confidential
+- Multi-author commits (when multiple agent roles contribute to a single change) list all contributing roles in the trailer, preserving the provenance chain
 
 Seeds Forward:
-- M16 adds cost data to release notes and deliverables
-- M17 (GitHub integration) uses release notes for GitHub Releases
-- Watchtower Reports tab can display deliverable summaries
+- M20 adds cost data to release notes and deliverables
+- M21 (GitHub integration) uses release notes for GitHub Releases and uses provenance trailers for Co-Authored-By lines (with the Tekhton agent role attribution)
+- Watchtower Reports tab displays deliverable summaries; Milestone Map tab surfaces provenance chain
+- V5 adds cryptographic signing of commit trailers and verifiable provenance chains on top of the V4 structured metadata baseline
 
 ---
 
-#### Milestone 16: Cost Forecasting & Deliverable Packages
+#### Milestone 20: Cost Forecasting & Deliverable Packages + SBOM Generation
 
-**Parallel group:** owner | **Depends on:** M06, M15
+**Parallel group:** owner | **Depends on:** M07, M19
 
 Files to create/modify:
 - Modify `lib/release.sh` — add `_forecast_cost()`, integrate cost data into
@@ -3082,8 +4007,15 @@ Files to create/modify:
 - Modify `lib/finalize_display.sh` — add cost summary to completion banner
 - Create `lib/cost_forecast.sh` — historical analysis, per-milestone averaging,
   complexity-weighted prediction
-- Modify `lib/config_defaults.sh` — add `COST_FORECAST_ENABLED`
+- Create `lib/sbom.sh` — SBOM generation orchestration, per-language toolchain dispatch
+- Create `tools/sbom/` — Python helpers for SBOM format generation and dependency extraction
+- Create `tools/sbom/generate.py` — SPDX and CycloneDX format generation
+- Create `tools/sbom/scanners/js.py` — JavaScript/TypeScript SBOM via `npm` package-lock or `yarn.lock`
+- Create `tools/sbom/scanners/python.py` — Python SBOM via `pip-licenses` or equivalent
+- Modify `lib/finalize.sh` — invoke SBOM generation as part of the deliverable packaging step
+- Modify `lib/config_defaults.sh` — add `COST_FORECAST_ENABLED`, `SBOM_ENABLED`, `SBOM_FORMATS`, `SBOM_LANGUAGES`, `SBOM_VULNERABILITY_SCANNER`
 - Create `tests/test_cost_forecast.sh` — forecast accuracy, edge cases
+- Create `tests/test_sbom.sh` — SBOM generation for JS/TS and Python fixtures, format validation
 
 Acceptance criteria:
 - `_forecast_cost()` estimates remaining project cost from: historical
@@ -3096,7 +4028,12 @@ Acceptance criteria:
   estimated total project cost, cost trend (per-milestone)
 - Forecast accuracy improves with more historical data (first run uses
   scout estimates only, subsequent runs blend actuals)
-- `COST_FORECAST_ENABLED=false` disables forecasting
+- SBOM generation: after each milestone completion, SPDX and CycloneDX format SBOMs are generated and attached to the deliverable artifact package
+- SBOM covers JavaScript/TypeScript (via package-lock.json or yarn.lock) and Python (via requirements.txt, pyproject.toml, or installed packages) as the V4 language baseline
+- SBOM includes package name, version, license, and dependency relationships in both SPDX 2.3 and CycloneDX 1.5 formats
+- SBOM validation: generated files pass `spdx-tools` (or equivalent) validation for schema correctness
+- Optional dependency vulnerability scanning integration point: if `SBOM_VULNERABILITY_SCANNER` is configured (candidates: Snyk, GitHub Dependabot, Sonatype Nexus IQ, JFrog Xray), scan results are attached to the deliverable package alongside the SBOM
+- `COST_FORECAST_ENABLED=false` disables forecasting; `SBOM_ENABLED=false` disables SBOM generation (both as explicit operator overrides)
 - All existing tests pass
 
 Watch For:
@@ -3104,14 +4041,19 @@ Watch For:
   confidence indicators ("estimated" vs "based on N prior runs").
 - Cost data may not be available if `BRIDGE_COST_TRACKING=false`. Forecast
   must degrade gracefully (show "cost tracking disabled" not an error).
+- SBOM generation must not fail the milestone on scanner errors; log the error, include a note in the deliverable package, and continue
+- SBOM format validation is strict; malformed SBOMs fail enterprise supply-chain review, so the generator must produce schema-valid output with all required fields
+- Dependency vulnerability scanner output formats vary; the adapter interface normalizes to a common format before attaching to the deliverable package
 
 Seeds Forward:
-- M13 (Watchtower cost dashboard) displays forecast alongside actuals
-- M20 (NFR cost checks) uses forecast data for budget ceiling warnings
+- M14 (Watchtower cost dashboard) displays forecast alongside actuals
+- M24 (NFR cost checks) uses forecast data for budget ceiling warnings
+- V5 extends SBOM language coverage to additional ecosystems (Go, Rust, Java, C#, Ruby, PHP)
+- V5 adds SLSA attestation at level 3+ with in-toto provenance chains on top of the V4 SBOM baseline
 
 ---
 
-### DOGFOOD CHECKPOINT 4: Core Complete (After M16)
+### DOGFOOD CHECKPOINT 4: Core Complete (After M20)
 
 **Action:** Replace the working Tekhton copy with the latest V4 build.
 
@@ -3125,21 +4067,19 @@ Seeds Forward:
 - Watchtower served mode active (`WATCHTOWER_SERVE_ENABLED=true`)
 - Submit a test task via Watchtower UI — verify inbox processing
 - Check cost dashboard after a run — verify ledger data flows through
-- Release notes generated in `.claude/deliverables/`
+- Release notes generated in `.tekhton/deliverables/`
 
-**Safe rollback:** Disable individual features via config. Each feature has its
-own `_ENABLED=false` toggle. No all-or-nothing dependency.
+**Dogfood validation:** Submit a test task via Watchtower's task form, verify NL decomposition runs, and confirm release notes and cost tracking populate as expected. Individual features retain per-feature `_ENABLED` toggles for operator-level configuration of what's active in a given deployment, but the V4 defaults have all Phase 2 features enabled as the enterprise-grade baseline.
 
-**Risk:** Low — Watchtower improvements don't affect pipeline execution. Release
-notes and cost tracking are additive outputs.
+**Risk:** Low — Watchtower improvements don't affect pipeline execution. Release notes and cost tracking are additive outputs.
 
 ---
 
-### Phase 3: Enterprise & Integration (M17-M23)
+### Phase 3: Enterprise & Integration (M21-M33)
 
-#### Milestone 17: GitHub Integration
+#### Milestone 21: GitHub Integration
 
-**Parallel group:** integration | **Depends on:** M02, M15
+**Parallel group:** integration | **Depends on:** M02, M19
 
 Files to create/modify:
 - Create `lib/integrations/github.sh` — `_integration_github_init()`,
@@ -3158,7 +4098,7 @@ Acceptance criteria:
 - On `milestone.complete`: creates PR with milestone changes (if configured)
 - On `milestone.complete`: comments on linked GitHub issue with summary
 - On `pipeline.fail`: comments on linked issue with failure details
-- On `release.ready`: creates GitHub Release with release notes (from M15)
+- On `release.ready`: creates GitHub Release with release notes (from M19)
 - `_integration_github_pull_issues()` fetches issues with configurable label
   filter (default: "tekhton") and queues them as tasks
 - Integration uses `gh` CLI or GitHub API directly (curl) — whichever is available
@@ -3185,7 +4125,7 @@ Seeds Forward:
 
 ---
 
-#### Milestone 18: Slack/Teams & Webhook Notifications
+#### Milestone 22: Slack/Teams & Webhook Notifications
 
 **Parallel group:** integration | **Depends on:** M02
 
@@ -3224,7 +4164,7 @@ Seeds Forward:
 
 ---
 
-#### Milestone 19: Log Shipping & CI/CD Mode
+#### Milestone 23: Log Shipping & CI/CD Mode
 
 **Parallel group:** integration | **Depends on:** M02
 
@@ -3243,7 +4183,7 @@ Files to create/modify:
 
 Acceptance criteria:
 - `INTEGRATION_LOG_SHIPPING=file` (default): structured events written to
-  `.claude/logs/events.jsonl` for external agent pickup (DataDog/Splunk agents)
+  `.tekhton/logs/events.jsonl` for external agent pickup (DataDog/Splunk agents)
 - `INTEGRATION_LOG_SHIPPING=datadog`: events batched and POSTed to DataDog
   Logs API with source=tekhton tag
 - `INTEGRATION_LOG_SHIPPING=splunk`: events sent to Splunk HEC endpoint
@@ -3270,9 +4210,9 @@ Seeds Forward:
 
 ---
 
-#### Milestone 20: NFR Engine & Cost/SLA Checks
+#### Milestone 24: NFR Engine & Cost/SLA Checks
 
-**Parallel group:** nfr | **Depends on:** M02, M06
+**Parallel group:** nfr | **Depends on:** M02, M07
 
 Files to create/modify:
 - Create `lib/nfr.sh` — `run_nfr_checks()`, check engine, violation policy
@@ -3282,21 +4222,21 @@ Files to create/modify:
   SLA timeout checks continuously
 - Modify `lib/config_defaults.sh` — add all `NFR_*` config keys (cost, SLA,
   policy defaults)
-- Create `.claude/nfr.conf.example` — example NFR configuration
-- Create `tests/test_nfr.sh` — check engine, violation policies, cost/SLA checks
+- Create `.tekhton/nfr.conf.example` — example NFR configuration
+- Create `tests/test_nfr.sh` — check engine, MoSCoW criticality, cost/SLA checks
 
 Acceptance criteria:
 - `run_nfr_checks("post-build")` runs all enabled checks for that timing point
 - Cost ceiling check: blocks pipeline when actual cost exceeds
-  `NFR_COST_MAX_PER_MILESTONE` (if policy=block)
+  `NFR_COST_MAX_PER_MILESTONE` (if criticality=must)
 - Cost alert: warns when cost exceeds `NFR_COST_ALERT_PCT` of ceiling
 - SLA check: warns when milestone duration exceeds `NFR_SLA_MILESTONE_TIMEOUT_S`
 - Stage timeout: warns when stage exceeds `NFR_SLA_STAGE_TIMEOUT_S`
-- Violation policies: `block` stops pipeline, `warn` logs warning, `log` records silently
+- MoSCoW criticality: `must` stops pipeline, `should` logs prominent warning, `could` logs at standard severity, `wont` records explicit waiver with rationale
 - `_check_pipeline_anomalies()` detects: stage 3x longer than historical average,
   cost per turn 2x higher than normal, max turns hit 3 consecutive times
 - NFR events emitted: `nfr.check`, `nfr.violation`, `nfr.anomaly`
-- All NFR checks disabled by default (`NFR_*_ENABLED=false`) — opt-in
+- NFR checks are per-category opt-in via `NFR_*_ENABLED`; projects enable the categories relevant to their domain (e.g., PII-handling projects enable security and coverage; performance-sensitive projects enable perf and SLA)
 - All existing tests pass
 - `shellcheck lib/nfr.sh` passes
 
@@ -3309,13 +4249,13 @@ Watch For:
 
 Seeds Forward:
 - M21 adds expensive NFR checks (performance, accessibility, coverage)
-- M24 (learning) feeds anomaly patterns into the knowledge base
+- M34 (learning) feeds anomaly patterns into the knowledge base
 
 ---
 
-#### Milestone 21: NFR Performance, Accessibility, Coverage & License Checks
+#### Milestone 25: NFR Performance, Accessibility, Coverage & License Checks
 
-**Parallel group:** nfr | **Depends on:** M20
+**Parallel group:** nfr | **Depends on:** M24
 
 Files to create/modify:
 - Create `lib/nfr_checks.sh` — individual check implementations for performance
@@ -3355,7 +4295,123 @@ Seeds Forward:
 
 ---
 
-### DOGFOOD CHECKPOINT 5: Enterprise NFR Active (After M21)
+#### Milestone 26: NFR Model Governance Category
+
+**Parallel group:** nfr | **Depends on:** M04, M24
+
+Files to create/modify:
+- Modify `lib/nfr.sh` — register `NFR_MODEL_*` category checks at post-invocation timing point
+- Create `lib/nfr_model.sh` — model allowlist/denylist enforcement, model version attribution validation, output governance hooks
+- Modify `lib/agent.sh` — call model governance checks before invoking the bridge for non-allowlisted model requests
+- Modify `lib/config_defaults.sh` — add `NFR_MODEL_ENABLED`, `NFR_MODEL_ALLOWLIST`, `NFR_MODEL_DENYLIST`, `NFR_MODEL_CRITICALITY`, `NFR_MODEL_OUTPUT_GOVERNANCE_HOOK`
+- Create `.tekhton/nfr_model.conf.example` — example model governance configuration with per-scope allowlist/denylist patterns
+- Create `tests/test_nfr_model.sh` — allowlist enforcement, denylist enforcement, MoSCoW criticality on violations, output governance hook invocation
+
+Acceptance criteria:
+- `NFR_MODEL_ALLOWLIST` config declares which provider/model combinations are permitted at the given scope tier (enterprise, org, project); e.g., `anthropic/claude-4.6-sonnet,openai/gpt-4.1,ollama/llama-3-70b`
+- `NFR_MODEL_DENYLIST` config declares which provider/model combinations are explicitly blocked; denylist takes precedence over allowlist
+- Model governance check runs before each `run_agent()` invocation; if the configured model is not allowlisted or is denylisted, the check fires at the configured MoSCoW criticality
+- Model version attribution is verified: every successful invocation records the actual provider/model version to the causal event log, allowing downstream audit to confirm policy compliance
+- Output governance hook: if `NFR_MODEL_OUTPUT_GOVERNANCE_HOOK` is configured, invoke the hook with the agent output before deliverable packaging; hooks that return non-zero block the milestone with an audit trail entry
+- MoSCoW criticality on violations: `must` blocks the invocation pre-flight, `should` warns prominently and records the invocation with a warning event, `could` logs, `wont` records explicit waiver
+- Scope hierarchy respected: org allowlist must be a subset of enterprise allowlist unless the project has explicit opt-out; project allowlist must be a subset of org allowlist
+- NFR events emitted: `nfr.model.check`, `nfr.model.violation`, `nfr.model.output_governance`
+- All existing tests pass
+- `shellcheck lib/nfr_model.sh` passes
+
+Watch For:
+- The allowlist check happens pre-invocation, which adds latency to every agent call; the implementation must be cheap (config lookup, string match)
+- Output governance hooks may be expensive (running a review agent); they should only fire at milestone boundaries, not per-invocation
+- Denylist takes precedence over allowlist: a model in both lists is denied; this matches enterprise intuition where denials are stronger than permissions
+- The model version recorded in the event log comes from the bridge's response, which is the authoritative source; don't trust the config value since the provider may substitute a different version
+
+Seeds Forward:
+- V5 adds full model governance policy engine with training data transparency, cryptographic model integrity attestation, and regulatory-specific qualification workflows (FDA SaMD, etc.)
+- V5 adds the Watchtower administrative UI for model policy configuration; V4 stays with config-file-driven administration
+
+---
+
+#### Milestone 27: Secret Manager Abstraction
+
+**Parallel group:** deployability | **Depends on:** M02
+
+Files to create/modify:
+- Create `lib/secrets/secrets.sh` — backend-agnostic secret resolution interface (`_secret_get`, `_secret_list`, `_secret_rotate_stub`)
+- Create `lib/secrets/adapters/vault.sh` — HashiCorp Vault adapter; KV v2 engine support; token authentication and AppRole authentication
+- Create `lib/secrets/adapters/aws_secrets.sh` — AWS Secrets Manager adapter; IAM-role-based authentication preferred over access keys
+- Create `lib/secrets/adapters/env.sh` — environment variable fallback adapter for development and air-gapped deployments
+- Modify `lib/config.sh` — resolve secret references at invocation time (syntax `{{secret:path/to/key}}` in config values)
+- Modify `lib/causality.sh` — emit `secret.accessed` events with identity attribution and the secret path (never the value)
+- Modify `lib/config_defaults.sh` — add `SECRETS_BACKEND`, `SECRETS_BACKEND_URL`, `SECRETS_CACHE_TTL`, `SECRETS_AUTH_METHOD`
+- Create `tools/secrets/` Python helpers for Vault and AWS Secrets Manager API clients
+- Create `tests/test_secrets.sh` — adapter interface tests, secret resolution tests, event emission tests
+- Create `tools/tests/test_secrets_vault.py` — Vault adapter tests with dev-mode Vault fixture
+- Create `tools/tests/test_secrets_aws.py` — AWS Secrets Manager adapter tests with moto fixture
+
+Acceptance criteria:
+- `_secret_get("path/to/key")` resolves the secret via the configured backend with short-lived caching (`SECRETS_CACHE_TTL` default 300 seconds)
+- Vault adapter supports token authentication (for local dev) and AppRole authentication (for production); token and role_id/secret_id are pulled from environment variables or the OS keychain, not plaintext config
+- AWS Secrets Manager adapter uses the AWS SDK's credential chain (environment, shared config, IAM instance role) and does not accept plaintext keys
+- Environment variable fallback: `SECRETS_BACKEND=env` resolves `_secret_get("path/to/key")` by looking up `TEKHTON_SECRET_PATH_TO_KEY` (slashes converted to underscores, uppercased)
+- Config references: any config value matching the `{{secret:path/to/key}}` pattern is replaced with the resolved secret at invocation time, never written to disk in resolved form
+- Cache invalidation: secrets cached for `SECRETS_CACHE_TTL` seconds; the cache is process-local and cleared on process exit
+- Every `secret.accessed` event includes the resolving identity (from M30 when available, otherwise anonymous), the secret path, the backend used, and the resolution outcome (success/denied/error); secret values are never logged
+- All existing tests pass
+- `shellcheck lib/secrets/*.sh` passes
+- `python -m mypy tools/secrets/` passes
+
+Watch For:
+- Secret values must never appear in event logs, deliverable packages, or commit metadata; the secret path and backend are logged, the value never is
+- Vault token expiration requires renewal; the adapter must handle 401/403 responses by re-authenticating via the configured method, not by prompting for new credentials
+- AWS Secrets Manager has per-secret cost; the cache TTL default of 300 seconds balances cost against freshness
+- The environment variable fallback is for development and air-gapped deployments only; production deployments should use Vault or AWS Secrets Manager; document this explicitly in the config example
+
+Seeds Forward:
+- V5 adds Azure Key Vault, Google Secret Manager, CyberArk, and additional enterprise vault adapters against the same interface
+- V5 adds automated secret rotation integration with lifecycle tracking in the audit trail
+- V5 adds scope-aware secret policies: which scopes can read which secret paths, enforced at resolution time
+
+---
+
+#### Milestone 28: Network Egress Policy
+
+**Parallel group:** deployability | **Depends on:** M04
+
+Files to create/modify:
+- Create `lib/network_policy.sh` — declarative allowlist/denylist enforcement; policy decision function called before every outbound network call
+- Modify `lib/agent.sh` — invoke network policy check before bridge calls
+- Modify all `lib/integrations/*.sh` — invoke network policy check before integration endpoint calls
+- Modify `lib/context/adapters/*.sh` (inserted in M32) — invoke network policy check before Context Graph ingestion calls
+- Modify `lib/config_defaults.sh` — add `NETWORK_EGRESS_POLICY`, `NETWORK_EGRESS_ALLOWLIST`, `NETWORK_EGRESS_DENYLIST`, `NETWORK_EGRESS_CRITICALITY`, `NETWORK_EGRESS_TLS_MIN_VERSION`
+- Modify `lib/causality.sh` — emit `network.policy.check` events with source, destination, and policy decision
+- Create `.tekhton/network_policy.conf.example` — example policy configuration
+- Create `tests/test_network_policy.sh` — allowlist enforcement, denylist enforcement, TLS minimum version enforcement, event emission
+
+Acceptance criteria:
+- `NETWORK_EGRESS_ALLOWLIST` and `NETWORK_EGRESS_DENYLIST` declare permitted and blocked destinations; patterns support exact host match and wildcard subdomain match (`*.anthropic.com`)
+- Denylist takes precedence over allowlist; if a destination matches both, it is denied
+- TLS 1.2+ enforcement: all outbound HTTPS calls reject TLS versions below `NETWORK_EGRESS_TLS_MIN_VERSION` (default 1.2); the check is applied at the socket layer, not relying on server capability
+- Every network call logs a `network.policy.check` event with source component (bridge, integration adapter, Context Graph adapter), destination hostname, method (GET/POST/etc.), policy decision (allow/deny/warn), and timing
+- Blocked calls raise a `NetworkEgressBlocked` error with the policy decision in the message; calling code handles this gracefully rather than crashing the pipeline
+- MoSCoW criticality on violations: `must` blocks and fails the milestone, `should` blocks and warns without failing, `could` allows with warning, `wont` allows without logging
+- Per-scope policy: enterprise, org, and project scopes each contribute to the effective policy; more-specific scope can tighten but not loosen the allowlist (see deployability section)
+- All existing tests pass
+- `shellcheck lib/network_policy.sh` passes
+
+Watch For:
+- The allowlist check must be cheap; use a simple hash-set lookup for exact matches and a pre-compiled regex for wildcards, not a full regex engine per call
+- TLS version enforcement at the socket layer requires careful client configuration across curl (used by shell adapters) and Python (used by bridge and Context Graph); ensure both paths honor the config
+- The network policy log stream will be high-volume; ensure events are append-only and don't block the calling code on I/O
+- Some enterprise deployments operate behind egress proxies that handle their own allowlist; the policy must support pass-through mode (`NETWORK_EGRESS_POLICY=proxy_delegated`) that logs but doesn't enforce, deferring to the enterprise proxy
+
+Seeds Forward:
+- V5 adds a full network policy engine with traffic shaping, quota management, and integration with service mesh or dedicated egress proxies (Squid, cloud-native equivalents)
+- V5 adds per-scope egress quotas (e.g., project X is limited to $100/month of provider traffic)
+- V5 integrates with zero-trust networking patterns for workload identity and mutual TLS
+
+---
+
+### DOGFOOD CHECKPOINT 5: Enterprise Deployability Active (After M28)
 
 **Action:** Enable NFR checks for remaining milestone development.
 
@@ -3369,14 +4425,13 @@ Seeds Forward:
   `NFR_SLA_MILESTONE_TIMEOUT_S=7200`)
 - Run a milestone — verify NFR events in structured log
 
-**Safe rollback:** Set `NFR_*_ENABLED=false` — all checks disabled.
+**Dogfood validation:** With `NFR_COST_ENABLED=true` and `NFR_SLA_ENABLED=true`, run a milestone and verify NFR events emit with proper MoSCoW criticality in the structured log. Projects retain per-NFR `_ENABLED` toggles for selecting which categories apply to their domain; this is scope-appropriate per-project configuration rather than V3 compatibility.
 
-**Risk:** Low — NFR policies default to `warn`, not `block`. Pipeline continues
-even if thresholds are exceeded.
+**Risk:** Low — NFR categories default to `should` criticality rather than `must`, so non-critical violations warn prominently but don't block. Projects elevate specific categories to `must` when they want blocking enforcement.
 
 ---
 
-#### Milestone 22: Auth Abstraction & Local/Env Modes
+#### Milestone 29: Auth Abstraction & Local/Env Modes
 
 **Parallel group:** auth | **Depends on:** M02
 
@@ -3387,7 +4442,7 @@ Files to create/modify:
   to include identity in structured events
 - Modify `lib/config_defaults.sh` — add `AUTH_ENABLED`, `AUTH_PROVIDER`,
   `AUTH_USER_ID`, `AUTH_ENV_USER_VAR`, `AUTH_AUDIT_IDENTITY`
-- Create `.claude/auth.conf.example` — example auth configuration
+- Create `.tekhton/auth.conf.example` — example auth configuration
 - Create `tests/test_auth.sh` — identity resolution, event enrichment
 
 Acceptance criteria:
@@ -3396,7 +4451,7 @@ Acceptance criteria:
   `AUTH_ENV_ROLE_VAR`)
 - `_auth_get_identity()` returns JSON: `{"id":"...","provider":"...","role":"..."}`
 - When `AUTH_AUDIT_IDENTITY=true`, all structured events include `user` field
-- When `AUTH_ENABLED=false`, no identity enrichment (V3 behavior)
+- When `AUTH_ENABLED=false` (local development or unauthenticated CI runs), no identity enrichment flows into events; enterprise deployments set `AUTH_ENABLED=true` per the deployability baseline
 - Identity is recorded in RUN_SUMMARY.json
 - Auth init validates configuration and reports missing/invalid settings clearly
 - All existing tests pass
@@ -3405,7 +4460,7 @@ Acceptance criteria:
 Watch For:
 - `$USER` may not be set in all environments (some containers, CI). Fall back
   to `$(whoami)` or `unknown`.
-- Auth config should be in a separate file (`.claude/auth.conf`) not
+- Auth config should be in a separate file (`.tekhton/auth.conf`) not
   `pipeline.conf` — auth settings are sensitive and may have different
   access controls.
 
@@ -3416,30 +4471,39 @@ Seeds Forward:
 
 ---
 
-#### Milestone 23: OIDC Token Validation Stub
+#### Milestone 30: OIDC Token Validation Stub + RBAC Scope Declaration Schema
 
-**Parallel group:** auth | **Depends on:** M22
+**Parallel group:** auth | **Depends on:** M29
 
 Files to create/modify:
 - Modify `lib/auth.sh` — add OIDC provider mode, JWT validation, issuer
-  discovery, token file reading
+  discovery, token file reading, group-to-scope mapping
+- Create `lib/rbac.sh` — scope declaration, scope check hooks, persona-to-scope mapping evaluation
 - Modify `lib/config_defaults.sh` — add `AUTH_OIDC_ISSUER`,
-  `AUTH_OIDC_CLIENT_ID`, `AUTH_OIDC_TOKEN_FILE`
+  `AUTH_OIDC_CLIENT_ID`, `AUTH_OIDC_TOKEN_FILE`, `AUTH_OIDC_GROUP_CLAIM`, `RBAC_ENFORCEMENT_MODE` (default `advisory` in V4, `strict` in V5)
 - Create `tools/bridge/auth_oidc.py` — OIDC discovery, JWT signature
-  validation, claims extraction (Python for crypto)
-- Create `tools/tests/test_auth_oidc.py` — JWT validation, claims parsing
+  validation, claims extraction (Python for crypto), SAML 2.0 fallback parser
+- Create `.tekhton/auth.conf.example` — example auth + scope mapping configuration with IdP group examples (`tekhton_compliance`, `tekhton_architects`, `tekhton_designers`, `tekhton_operators`, `tekhton_senior_engineers`, `tekhton_project_leads`, `tekhton_cybersec`, `tekhton_context_admins`, `tekhton_context_viewers`, `tekhton_context_contributors`)
+- Modify `lib/causality.sh` — enrich events with the full scope set (not just identity) for the requesting user
+- Modify mechanisms at each sensitive inbound/outbound surface — call `_scope_check()` helper with required scope; in advisory mode, log the decision; in strict mode (V5), enforce
+- Create `tools/tests/test_auth_oidc.py` — JWT validation, claims parsing, SAML fallback
 - Create `tests/test_auth_oidc.sh` — OIDC mode integration
+- Create `tests/test_rbac.sh` — scope declaration and check hooks across all sensitive surfaces
 
 Acceptance criteria:
 - `AUTH_PROVIDER=oidc` reads JWT from `AUTH_OIDC_TOKEN_FILE`
 - Token validation: checks signature against issuer's JWKS, validates expiry,
   validates audience (`AUTH_OIDC_CLIENT_ID`)
-- Claims extracted: `sub` (user ID), `email`, `groups` or `roles`
+- Claims extracted: `sub` (user ID), `email`, `groups` or `roles` (configurable via `AUTH_OIDC_GROUP_CLAIM`)
 - OIDC discovery fetches `.well-known/openid-configuration` from issuer URL
-- Works with: Okta, Auth0, Microsoft Entra ID, PingID (all implement OIDC)
+- SAML 2.0 fallback for older enterprise IdPs that haven't adopted OIDC: parse SAML assertion, extract user and group attributes
+- Works with: Okta, PingID/PingOne, Microsoft Entra ID, Google Workspace, AWS IAM Identity Center
 - Expired tokens produce clear error message with re-auth instructions
 - Invalid tokens produce clear error (not a stack trace)
-- V4 does NOT implement OAuth redirect flow — user provides pre-obtained token
+- Group-to-scope mapping: IdP groups declared in `.tekhton/auth.conf` map to Tekhton scopes (`compliance`, `cybersec`, `architect`, `senior_engineer`, `operator`, `project_lead`, `designer`, `context_viewer`, `context_contributor`, `context_admin`); mapping supports both direct group membership and claim-based derivation
+- RBAC schema is complete: every sensitive inbound surface (NFR modification, pipeline control, milestone DAG modification, Goldprint authoring, design artifact intake) declares its required scope; every outbound surface declares its filter rules
+- Advisory mode (V4 default): scope checks log the decision (allowed/denied) to the causal event log but do not block; the audit trail records who attempted what, even for denied requests
+- V4 does NOT implement OAuth redirect flow or hard scope enforcement — user provides pre-obtained token; enforcement is V5
 - `python3 -m pytest tools/tests/test_auth_oidc.py` passes
 - All existing tests pass
 
@@ -3449,25 +4513,162 @@ Watch For:
 - Token file must be read-protected (0600 permissions). Warn if permissions
   are too open.
 - Different OIDC providers put roles in different claims (`groups`, `roles`,
-  `custom:roles`). Make the role claim name configurable.
+  `custom:roles`). Make the role claim name configurable via `AUTH_OIDC_GROUP_CLAIM`.
+- The scope declaration schema must be exhaustive — every write surface and every read filter gets a scope declaration before V5 can enforce. Missing declarations become silent security holes when enforcement lands.
+- Advisory mode still emits events; downstream SIEM integration will see attempts to perform unauthorized actions. This is the auditable-in-practice baseline that tenet 5 describes.
 
 Seeds Forward:
 - V5 implements full OAuth redirect flow (consent, token exchange, refresh)
-- V5 enforces RBAC based on roles extracted from OIDC claims
+- V5 enforces RBAC based on scopes derived from OIDC claims
+- V5 adds SCIM 2.0 provisioning for automated user lifecycle management
 
 ---
 
-### Phase 4: Intelligence (M24-M27)
+#### Milestone 31: Context Graph Core — Storage & Schema
 
-#### Milestone 24: Knowledge Base & Failure Pattern Recognition
+**Parallel group:** context_graph | **Depends on:** M02, M17
 
-**Parallel group:** learning | **Depends on:** M02, M06
+Files to create/modify:
+- Create `tools/context_graph/__init__.py`
+- Create `tools/context_graph/api.py` — REST API server exposing `/api/v1/context/*` endpoints (ingest, query, stats)
+- Create `tools/context_graph/schema.py` — node types (Project, Milestone, Team, Domain, Artifact), edge types (owned_by, belongs_to, addresses, depends_on, supersedes, superseded_by, conflicts_with, produces, consumes), temporal metadata fields
+- Create `tools/context_graph/storage/__init__.py` — storage backend abstraction
+- Create `tools/context_graph/storage/apache_age.py` — Apache AGE on PostgreSQL backend (primary); Cypher query translation; JSONB node/edge properties
+- Create `tools/context_graph/storage/kuzu.py` — Kuzu embedded backend (secondary for development and single-node deployments)
+- Create `tools/context_graph/queries.py` — canonical query implementations (overlap detection, historical precedent, dependency mapping, freshness)
+- Create `lib/context/client.sh` — shell client library that calls the Context Graph REST API
+- Modify `lib/config_defaults.sh` — add `CONTEXT_GRAPH_ENABLED`, `CONTEXT_GRAPH_BACKEND` (values: `apache_age`, `kuzu`), `CONTEXT_GRAPH_URL`, `CONTEXT_GRAPH_API_KEY`, `CONTEXT_OVERLAP_THRESHOLD`, `CONTEXT_DEFAULT_VISIBILITY` (values: `project`, `anonymized`, `full`)
+- Create `tools/tests/test_context_graph_schema.py` — node and edge type validation, temporal metadata, schema migrations
+- Create `tools/tests/test_context_graph_storage.py` — Apache AGE and Kuzu backend contract tests
+- Create `tests/test_context_graph_client.sh` — shell client contract tests
+
+Acceptance criteria:
+- Schema defines five node types (Project, Milestone, Team, Domain, Artifact) with temporal metadata (`created_at`, `updated_at`, `status_changed_at`, `status`, `last_signal_at`)
+- Schema defines nine edge types (`owned_by`, `belongs_to`, `addresses`, `depends_on`, `supersedes`, `superseded_by`, `conflicts_with`, `produces`, `consumes`)
+- Apache AGE backend uses PostgreSQL's Apache AGE extension; graph data stored as AGE graph structures with JSONB property bags
+- Kuzu backend uses the embedded database for single-node deployments; schema stored as Kuzu's native graph tables
+- REST API endpoints: `POST /api/v1/context/nodes`, `POST /api/v1/context/edges`, `GET /api/v1/context/query?cypher=<...>`, `GET /api/v1/context/stats`
+- Query API supports Cypher syntax for Apache AGE; Kuzu backend translates from a subset of Cypher to its native query language for the V4 query patterns (overlap detection, historical precedent, dependency mapping)
+- Three-tier visibility model: project-scoped (default), anonymized cross-team, full visibility — enforced at the query API layer via scope check (advisory in V4 per M30 RBAC schema)
+- Audit trail: every query logged with querying identity, target project, data returned tier (`context.query.executed` events)
+- Documentation names the storage abstraction's role: the Context Graph uses its own PostgreSQL or Kuzu instance, not the storage abstraction from M17 (which is for content like Goldprints and project artifacts)
+- All existing tests pass
+- `python -m mypy tools/context_graph/` passes
+- `shellcheck lib/context/client.sh` passes
+
+Watch For:
+- Apache AGE is a PostgreSQL extension; enterprise deployments may need to install and enable it explicitly; document the setup prerequisite
+- Kuzu's embedded nature means it's a single-process database; not suitable for multi-process Tekhton deployments, which the config default (`apache_age`) steers away from
+- Query translation for Kuzu covers the V4 query patterns; novel Cypher queries may not translate cleanly, so the client documents which backends support which query classes
+- Temporal metadata must be consistent across nodes and edges; any node or edge created without the temporal fields fails schema validation
+
+Seeds Forward:
+- M32 populates the graph via ingestion adapters and the Goldprint bridge
+- M33 integrates the graph's query API with Tekhton stages at the horizontal touchpoints
+- V5 adds semantic similarity for overlap detection via pgvector alongside Apache AGE
+- V5 extends the schema with additional node/edge types (Deployment, Incident, Release) for operational context
+- V5 considers extracting the Context Graph as a standalone open-source service
+
+---
+
+#### Milestone 32: Context Graph Ingestion Adapters + Goldprint Bridge
+
+**Parallel group:** context_graph | **Depends on:** M31, M18, M21, M22, M23
+
+Files to create/modify:
+- Create `lib/context/adapters/jira.sh` — Jira ingestion; pulls epics/stories/tasks, assignees, timelines, domain tags, status transitions; maps to Project and Milestone nodes
+- Create `lib/context/adapters/github.sh` — GitHub ingestion; pulls repositories, CODEOWNERS, PR activity, commit history; maps to Team and Artifact nodes
+- Create `lib/context/adapters/confluence.sh` — Confluence ingestion; pulls architectural decision records, RFCs, design documents; enriches Domain metadata and Project rationale
+- Create `lib/context/adapters/tekhton_internal.sh` — Tekhton-internal adapter; ingests from the global knowledge base at `~/.tekhton/global_knowledge/` (failure patterns, cost benchmarks, provider profiles); maps to internal Artifact nodes
+- Create `lib/context/adapters/goldprints.sh` — Goldprint-to-graph bridge; on Goldprint authoring events, create Artifact node; on consumption events, create `consumes` edge; on deprecation, mark node as deprecated with temporal update
+- Create `lib/context/ingestion.sh` — ingestion scheduler; invokes adapters on configured schedule (hourly default for most, continuous for Tekhton-internal)
+- Modify `lib/config_defaults.sh` — add `CONTEXT_INGESTION_SCHEDULE_JIRA`, `CONTEXT_INGESTION_SCHEDULE_GITHUB`, `CONTEXT_INGESTION_SCHEDULE_CONFLUENCE`, `CONTEXT_INGESTION_SCHEDULE_INTERNAL`, plus adapter-specific credentials (via secret manager references)
+- Modify `lib/goldprints/loader.sh` — emit `goldprint.authored` events that the bridge adapter consumes
+- Modify `lib/goldprints/resolver.sh` — query the Context Graph for domain-filtered Goldprint discovery and adoption metadata (not just storage abstraction)
+- Create `tests/test_context_adapters.sh` — ingestion contract tests; mock API fixtures
+- Create `tools/tests/test_goldprint_bridge.py` — end-to-end Goldprint authoring and consumption flow through the bridge
+
+Acceptance criteria:
+- Jira adapter: given valid API credentials and project keys, pulls all tickets from the configured projects and creates/updates Project and Milestone nodes with domain tags from Jira labels
+- GitHub adapter: given valid credentials and org/repo list, pulls CODEOWNERS, PR metadata, commit history; creates/updates Team and Artifact nodes with `owned_by` and `produces` edges
+- Confluence adapter: given valid credentials and space keys, pulls architectural decision records; enriches existing Domain nodes with rationale metadata
+- Tekhton-internal adapter: on every V4 milestone completion, ingests from `~/.tekhton/global_knowledge/`; creates internal Artifact nodes representing past Tekhton-built artifacts across projects
+- Goldprint bridge: every `goldprint.authored` event triggers creation of an Artifact node with the Goldprint's id, domain tags, authoring team, lifecycle status; every `goldprint.consumed` event triggers a `consumes` edge from Project to Artifact
+- Goldprint resolution queries the Context Graph (not just local storage) for domain filtering and adoption count; adoption count is visible in resolver responses and Watchtower Goldprint UI
+- Ingestion cadence: Jira hourly, GitHub hourly, Confluence every 6 hours, Tekhton-internal on milestone completion (event-driven); all configurable
+- All adapter credentials resolved through the M27 secret manager — no plaintext API tokens in config
+- Every adapter call flows through the M28 network egress policy check
+- All existing tests pass
+- `shellcheck lib/context/adapters/*.sh` passes
+
+Watch For:
+- API rate limits vary by platform; adapters must implement exponential backoff with respect for `Retry-After` headers
+- Ingestion deduplication: re-ingesting the same source data (e.g., re-running Jira hourly) must update existing nodes, not create duplicates; use source-derived stable ids (`jira:<issue-key>`, `github:<org>/<repo>/pull/<number>`)
+- Goldprint bridge event handling is eventually consistent; a Goldprint consumption event may fire before the Goldprint's Artifact node exists (authoring event lost or delayed); adapter handles this by creating a placeholder node and updating on authoring event arrival
+- Confluence and Jira schemas vary across Cloud and Data Center deployments; adapters must detect the variant and adjust
+
+Seeds Forward:
+- M33 integrates the populated graph with Tekhton stages at the horizontal touchpoints
+- V5 adds DataDog, Splunk, Slack, Microsoft Teams, Linear, Azure DevOps, GitLab, Bitbucket, Notion, SharePoint, Google Docs adapters
+- V5 adds advanced Goldprint analytics (semantic similarity, predictive adoption, failure/success correlation) on top of the V4 structural integration
+
+---
+
+#### Milestone 33: Context Graph Horizontal Integration + Organizational Context Tab
+
+**Parallel group:** context_graph | **Depends on:** M32, M14, M15, M25
+
+Files to create/modify:
+- Modify `stages/intake.sh` — add `_consult_context()` call at task-entry timing point; query for overlap detection; surface warnings if overlap threshold exceeded
+- Modify `stages/architect.sh` — add `_consult_context()` call for historical precedent; query Goldprint adoption in this domain, past architectural decisions from Confluence
+- Modify `lib/cost_forecast.sh` — add `_consult_context()` call for organizational cost baselines across similar projects
+- Modify `lib/finalize.sh` — add `_consult_context()` call for related efforts citation in deliverable packages
+- Create `lib/context/consult.sh` — `_consult_context(role, domain, query_type, params)` helper; wraps Context Graph API calls with error handling and result formatting
+- Modify `templates/watchtower/` — add Organizational Context tab with two V4 views: Overlap Detection (active and recent projects in the same domain) and Historical Precedent (prior decisions and outcomes)
+- Modify `tools/watchtower_server.py` — add `GET /api/v1/context/overlap?task_description=...&domain=...` and `GET /api/v1/context/precedent?domain=...&decision_type=...` endpoints as thin proxies to the Context Graph API
+- Modify `lib/config_defaults.sh` — add `CONTEXT_INTAKE_OVERLAP_ENABLED`, `CONTEXT_ARCHITECT_PRECEDENT_ENABLED`, `CONTEXT_SCOUT_ORG_BASELINE_ENABLED`, `CONTEXT_FINALIZE_RELATED_EFFORTS_ENABLED`
+- Create `tests/test_context_consult.sh` — stage integration tests; mock Context Graph responses; verify stage behavior with empty graph, populated graph, and error conditions
+- Create `templates/watchtower/views/organizational_context.html` — the tab content
+- Create `templates/watchtower/static/js/organizational_context.js` — client-side rendering and live updates
+
+Acceptance criteria:
+- Intake stage: when a new NL task is submitted, `_consult_context()` queries the graph for active or recently completed projects in the same domain; if similarity score exceeds `CONTEXT_OVERLAP_THRESHOLD`, a warning is surfaced in Watchtower and an `nfr.overlap_warning` event is emitted
+- Architect stage: queries the graph for past architectural decisions in the target domain; surfaces supersession chains and decision rationale to the architect agent's context
+- Cost forecasting: in addition to per-project history, queries organizational cost baselines across similar projects; blended forecast weights by similarity confidence
+- Finalize stage: queries the graph for related efforts across the organization; includes "See also" section in the deliverable package and release notes
+- Watchtower Organizational Context tab: Overlap Detection view lists active projects per domain with status indicators; Historical Precedent view shows decision timelines with outcomes
+- Query performance: each `_consult_context()` call completes within 2 seconds against a graph with 10k nodes; if it exceeds this threshold, the stage proceeds without the context but emits a `context.consult.timeout` event
+- Graceful degradation: if the Context Graph is unavailable (service down, credentials invalid), stages continue without context consultation and emit `context.consult.unavailable` events
+- All four horizontal touchpoints are configurable via per-touchpoint `_ENABLED` flags; deployments can enable only the touchpoints that match their integration state
+- Scope filtering: three-tier visibility enforced at query time; anonymized queries return project count per domain without exposing specific milestone details; full queries require `context_admin` scope (advisory in V4)
+- All existing tests pass
+- `shellcheck lib/context/consult.sh` passes
+
+Watch For:
+- The intake stage runs frequently; overlap detection queries must be cheap and cached where possible (task description hash → cached result with TTL)
+- Organizational context can surface politically sensitive information (another team is building something similar); the anonymized tier should be the default for cross-team queries unless the project has explicitly opted into full visibility
+- Stage timeouts on context queries must not create a dependency on Context Graph availability; stages degrade gracefully but emit visibility events so operators can diagnose repeated degradation
+- The Watchtower tab relies on live updates from the Context Graph; WebSocket connection management should follow the pattern established in M12 for consistent UX
+
+Seeds Forward:
+- V5 adds remaining horizontal touchpoints (coder, reviewer, tester, NFR Framework integration for cross-team policy coherence)
+- V5 adds advanced graph queries (semantic similarity, predictive conflict detection, automated domain tagging) accessible through the same `_consult_context()` interface
+- V5 adds cross-organization federation for enterprises with subsidiary structures
+- V5 adds the Watchtower administrative UI for Context Graph visibility policy configuration
+
+---
+
+### Phase 4: Intelligence (M34-M38)
+
+#### Milestone 34: Knowledge Base & Failure Pattern Recognition
+
+**Parallel group:** learning | **Depends on:** M02, M07
 
 Files to create/modify:
 - Create `lib/learning.sh` — `_learning_init()`, `_record_run()`,
   `_calibrate_scout_estimate()`, `_classify_failure()`,
   `_record_new_failure()`, knowledge base file management
-- Create `.claude/knowledge/` directory structure (run_history.jsonl,
+- Create `.tekhton/knowledge/` directory structure (run_history.jsonl,
   stage_performance.jsonl, failure_patterns.jsonl, task_complexity.jsonl)
 - Modify `lib/finalize_summary.sh` — call `_record_run()` after each run
 - Modify `lib/agent.sh` — call `_record_stage_performance()` after each stage
@@ -3491,8 +4692,8 @@ Acceptance criteria:
 - Pattern promoted to "known" after `LEARNING_FAILURE_PROMOTE_THRESHOLD`
   occurrences (default: 3) with a successful resolution
 - Knowledge base files rotated at `LEARNING_HISTORY_MAX_RUNS` (default: 100)
-- `LEARNING_ENABLED=false` disables all learning (V3 behavior)
-- Cost data from bridge cost ledger (M06) included in run history
+- `LEARNING_ENABLED=false` is an explicit operator override for deployments that don't want learning (e.g., air-gapped environments); the V4 default is `true` since cross-run intelligence is part of the enterprise-grade baseline
+- Cost data from bridge cost ledger (M07) included in run history
 - All existing tests pass
 - `shellcheck lib/learning.sh` passes
 
@@ -3505,15 +4706,15 @@ Watch For:
   not the oldest. Use tail-based rotation.
 
 Seeds Forward:
-- M25 adds prompt effectiveness tracking and cross-project sharing
+- M35 adds prompt effectiveness tracking and cross-project sharing
 - V5's prompt auto-tuning consumes the calibration data
 - Watchtower Trends tab can display learning metrics (calibration accuracy)
 
 ---
 
-#### Milestone 25: Prompt Tracking & Cross-Project Knowledge
+#### Milestone 35: Prompt Tracking & Cross-Project Knowledge
 
-**Parallel group:** learning | **Depends on:** M24
+**Parallel group:** learning | **Depends on:** M34
 
 Files to create/modify:
 - Modify `lib/learning.sh` — add `_record_prompt_effectiveness()`,
@@ -3553,7 +4754,7 @@ Seeds Forward:
 
 ---
 
-#### Milestone 26: Language Profiles & Domain Detection
+#### Milestone 36: Language Profiles & Domain Detection
 
 **Parallel group:** language | **Depends on:** M02
 
@@ -3595,18 +4796,18 @@ Watch For:
 - Domain detection may be ambiguous (React app with Express backend). Default
   to fullstack when both frontend and backend indicators are present.
 - Profile directory must support user overrides (custom profiles in
-  `.claude/language_profiles/` take precedence over shipped profiles).
+  `.tekhton/language_profiles/` take precedence over shipped profiles).
 
 Seeds Forward:
-- M27 integrates language profiles into all pipeline stages
+- M37 integrates language profiles into all pipeline stages
 - V5 adds semantic similarity for profile matching (not just keyword indicators)
 - Community contributions: new language profiles are a single JSON file
 
 ---
 
-#### Milestone 27: Language-Aware Pipeline Stages
+#### Milestone 37: Language-Aware Pipeline Stages
 
-**Parallel group:** language | **Depends on:** M26
+**Parallel group:** language | **Depends on:** M36
 
 Files to create/modify:
 - Modify `prompts/coder.prompt.md` — add `{{IF:LANGUAGE_CONVENTIONS}}`
@@ -3642,12 +4843,55 @@ Watch For:
 - Existing prompt templates have carefully balanced instructions. Language
   blocks must enhance, not override, existing guidance.
 - Test the prompts with multiple models — language-specific instructions may
-  need different phrasing for different providers (via bridge profiles from M06).
+  need different phrasing for different providers (via bridge profiles from M07).
 
 Seeds Forward:
 - V5 uses language profiles for automated code review scoring
 - V5 adds language-specific refactoring patterns
 - Community can contribute domain-specific review checklists
+
+---
+
+#### Milestone 38: Champion Tooling (ROI Analytics, Compliance Summary, Executive Reports, Pilot Scaffolding)
+
+**Parallel group:** champion | **Depends on:** M14, M19, M33
+
+Files to create/modify:
+- Modify `templates/watchtower/` — add ROI and Adoption Analytics view (dedicated top-level tab or section); Compliance Summary generation UI; Executive Reports dashboard with export
+- Modify `tools/watchtower_server.py` — add `GET /api/v1/champion/roi`, `GET /api/v1/champion/compliance_summary`, `POST /api/v1/champion/executive_report`, `GET /api/v1/champion/case_studies` endpoints
+- Create `lib/champion/roi.sh` — ROI and adoption analytics derivation from Context Graph cross-project data and cost ledger; per-project, per-team, per-domain aggregations
+- Create `lib/champion/compliance.sh` — compliance summary generation from the causal event log (identity attribution, scope decisions, network policy logs, code provenance metadata, NFR violation history, Goldprint adoption); produces structured evidence suitable for IT security review
+- Create `lib/champion/executive_report.sh` — condensed weekly/monthly aggregates from Watchtower data; exports as HTML, PDF, and Markdown for executive briefings
+- Create `lib/champion/case_study.sh` — structured pilot outcome records from deliverable artifact packages and Context Graph historical data; formats for non-engineering audiences
+- Create `lib/champion/pilot_scaffolding.sh` — project template initialization for common pilot scenarios (new microservice, design-to-production flow, NFR-enforced compliance work, regulated-industry prototype); templates include pre-configured success criteria, NFR thresholds, and integration hooks
+- Create `templates/pilot_scaffolds/` — pilot project template directory with scenario-specific skeletons
+- Modify `lib/release.sh` — integrate with `lib/champion/executive_report.sh` for automatic monthly roll-up generation when operator-configured
+- Modify `lib/config_defaults.sh` — add `CHAMPION_ROI_ENABLED`, `CHAMPION_COMPLIANCE_SUMMARY_ENABLED`, `CHAMPION_EXECUTIVE_REPORT_SCHEDULE`, `CHAMPION_CASE_STUDY_ENABLED`, `CHAMPION_PILOT_TEMPLATES_DIR`
+- Create `tests/test_champion_roi.sh`, `tests/test_champion_compliance.sh`, `tests/test_champion_reports.sh`, `tests/test_champion_pilot.sh`
+
+Acceptance criteria:
+- ROI view in Watchtower displays: Tekhton usage across projects (count, frequency, growth); cost per milestone and per project; duration per milestone; business-metric outcomes trended over time; adoption over time per team
+- Compliance Summary generation: operator clicks "Generate Summary" in the Watchtower UI and receives a structured document with identity attribution, scope audit, network policy audit, code provenance chain, NFR violation history, Goldprint adoption evidence, and time-range filter; the summary format is reviewer-ready (suitable for IT security review handoff)
+- Executive Reports: condensed weekly and monthly aggregates showing milestone completion counts, cost trajectory, quality metrics (test coverage trend, NFR violation trend), and business outcomes (features shipped, time-to-ship); exportable in HTML, PDF (via a headless browser render), and Markdown
+- Case Study Generation: given a completed pilot project, produces a structured case study with problem statement, approach, Tekhton milestones used, Goldprints consumed, outcomes achieved, cost incurred, timeline, and lessons learned; format suitable for internal evangelism
+- Pilot Scaffolding: `tekhton pilot init --scenario=microservice-pii --project=my-pilot` creates a project skeleton pre-configured with scenario-appropriate NFR thresholds, applicable Goldprints (linked from enterprise tier), and acceptance criteria templates; scenarios cover microservice-pii, design-to-production, compliance-work, research-spike
+- Cross-project adoption graph visualization: Watchtower view sourced from Context Graph cross-project data; displays which projects consume which Goldprints, which teams adopt Tekhton for which domains, and adoption velocity trends
+- All Champion-facing features gracefully degrade when upstream substrate is unavailable (Context Graph down → ROI view shows per-project data with a "partial data" notice; cost ledger empty → "no data yet")
+- Persona attribution: Champion-facing surfaces declare their required scope (`operator` or equivalent elevated scope) per the M30 RBAC schema
+- All existing tests pass
+- `shellcheck lib/champion/*.sh` passes
+
+Watch For:
+- Executive report generation can be expensive if run on every milestone completion; schedule-based generation (weekly/monthly) with on-demand trigger is the right model, not auto-fire
+- Compliance summary generation reads the causal event log across potentially long time windows; use indexed queries on the event log (by timestamp range, by event type) to keep generation time bounded
+- Pilot scaffolding templates reference enterprise-tier Goldprints by id; if the referenced Goldprints don't exist in the target deployment, the pilot init should fail cleanly with a message pointing to which Goldprints are missing
+- Case study generation is narrative-heavy; V4 uses deterministic template-based rendering, not an agent call, to keep generation cheap; V5 can add an optional agent polish pass
+
+Seeds Forward:
+- V5 adds Watchtower administrative UI for pilot template authoring and curation
+- V5 adds automated Champion dashboards for executive audiences with per-executive customization
+- V5 adds compliance summary export directly to enterprise GRC platforms (Archer, ServiceNow GRC, OneTrust)
+- V5 adds ROI attribution models that quantify business-metric outcomes against Tekhton usage
 
 ---
 
@@ -3661,56 +4905,70 @@ Seeds Forward:
 m01|Test Harness & Isolation Framework|pending||m01-test-harness.md|foundation
 m02|Three-Tier Logging & Structured Events|pending||m02-structured-logging.md|foundation
 # --- DOGFOOD CHECKPOINT 1 ---
-m03|Bridge Core Architecture & Shell Routing|pending|m02|m03-bridge-core.md|bridge
-m04|Anthropic Direct API Adapter|pending|m03|m04-anthropic-adapter.md|bridge
-m05|OpenAI & Ollama Adapters|pending|m03|m05-openai-ollama-adapters.md|bridge
-m06|Provider Failover Calibration & Cost Ledger|pending|m04,m05|m06-failover-cost.md|bridge
-m07|MCP Gateway for Non-Anthropic Providers|pending|m05|m07-mcp-gateway.md|bridge
+m03|V3 to V4 Migration Tool|pending|m01,m02|m03-migration-tool.md|foundation
+m04|Bridge Core Architecture & Shell Routing|pending|m02|m04-bridge-core.md|bridge
+m05|Anthropic Direct API Adapter|pending|m04|m05-anthropic-adapter.md|bridge
+m06|OpenAI & Ollama Adapters|pending|m04|m06-openai-ollama-adapters.md|bridge
+m07|Provider Failover Calibration & Cost Ledger|pending|m05,m06|m07-failover-cost.md|bridge
+m08|MCP Gateway for Non-Anthropic Providers|pending|m06|m08-mcp-gateway.md|bridge
 # --- DOGFOOD CHECKPOINT 2 ---
 
 # Phase 2: Core Capabilities
-m08|Parallel Coordinator & Worktree Lifecycle|pending|m02|m08-parallel-coordinator.md|parallel
-m09|Parallel Conflict Detection & Merge|pending|m08|m09-parallel-merge.md|parallel
-m10|Parallel Resource Budgeting & Shared Gate|pending|m06,m09|m10-parallel-budget.md|parallel
+m09|Parallel Coordinator & Worktree Lifecycle|pending|m02|m09-parallel-coordinator.md|parallel
+m10|Parallel Conflict Detection & Merge|pending|m09|m10-parallel-merge.md|parallel
+m11|Parallel Resource Budgeting & Shared Gate|pending|m07,m10|m11-parallel-budget.md|parallel
 # --- DOGFOOD CHECKPOINT 3 ---
-m11|Watchtower Server Mode & WebSocket|pending|m02|m11-watchtower-server.md|watchtower
-m12|Watchtower Interactive Controls|pending|m11|m12-watchtower-interactive.md|watchtower
-m13|Watchtower Cost Dashboard & Parallel View|pending|m06,m10,m12|m13-watchtower-cost-parallel.md|watchtower
-m14|Natural Language Task Decomposition|pending|m03|m14-nl-decomposition.md|owner
-m15|Release Notes & Changelog Automation|pending|m02|m15-release-notes.md|owner
-m16|Cost Forecasting & Deliverable Packages|pending|m06,m15|m16-cost-forecast.md|owner
+m12|Watchtower Server Mode & WebSocket|pending|m02|m12-watchtower-server.md|watchtower
+m13|Watchtower Interactive Controls|pending|m12|m13-watchtower-interactive.md|watchtower
+m14|Watchtower Cost Dashboard & Parallel View|pending|m07,m11,m13|m14-watchtower-cost-parallel.md|watchtower
+m15|Natural Language Task Decomposition|pending|m04|m15-nl-decomposition.md|owner
+m16|Design Artifact Intake|pending|m08,m13,m15|m16-design-intake.md|owner
+m17|Storage Abstraction Layer|pending|m02|m17-storage-abstraction.md|owner
+m18|Goldprints Subsystem + Watchtower UI|pending|m17,m15|m18-goldprints.md|owner
+m19|Release Notes & Changelog Automation + Code Provenance|pending|m02|m19-release-notes-provenance.md|owner
+m20|Cost Forecasting & Deliverable Packages + SBOM Generation|pending|m07,m19|m20-cost-forecast-sbom.md|owner
 # --- DOGFOOD CHECKPOINT 4 ---
 
 # Phase 3: Enterprise & Integration
-m17|GitHub Integration|pending|m02,m15|m17-github-integration.md|integration
-m18|Slack Teams & Webhook Notifications|pending|m02|m18-slack-webhook.md|integration
-m19|Log Shipping & CI/CD Mode|pending|m02|m19-log-shipping-ci.md|integration
-m20|NFR Engine & Cost SLA Checks|pending|m02,m06|m20-nfr-engine.md|nfr
-m21|NFR Performance A11y Coverage & License|pending|m20|m21-nfr-checks.md|nfr
+m21|GitHub Integration|pending|m02,m19|m21-github-integration.md|integration
+m22|Slack Teams & Webhook Notifications|pending|m02|m22-slack-webhook.md|integration
+m23|Log Shipping & CI/CD Mode|pending|m02|m23-log-shipping-ci.md|integration
+m24|NFR Engine & Cost SLA Checks|pending|m02,m07|m24-nfr-engine.md|nfr
+m25|NFR Performance A11y Coverage & License|pending|m24|m25-nfr-checks.md|nfr
+m26|NFR Model Governance Category|pending|m04,m24|m26-nfr-model.md|nfr
+m27|Secret Manager Abstraction|pending|m02|m27-secret-manager.md|deployability
+m28|Network Egress Policy|pending|m04|m28-network-egress.md|deployability
 # --- DOGFOOD CHECKPOINT 5 ---
-m22|Auth Abstraction & Local Env Modes|pending|m02|m22-auth-local.md|auth
-m23|OIDC Token Validation Stub|pending|m22|m23-auth-oidc.md|auth
+m29|Auth Abstraction & Local Env Modes|pending|m02|m29-auth-local.md|auth
+m30|OIDC Token Validation Stub + RBAC Scope Declaration Schema|pending|m29|m30-auth-oidc-rbac.md|auth
+m31|Context Graph Core - Storage & Schema|pending|m02,m17|m31-context-graph-core.md|context_graph
+m32|Context Graph Ingestion Adapters + Goldprint Bridge|pending|m31,m18,m21,m22,m23|m32-context-graph-ingestion.md|context_graph
+m33|Context Graph Horizontal Integration + Org Context Tab|pending|m32,m14,m15,m25|m33-context-graph-horizontal.md|context_graph
 
 # Phase 4: Intelligence
-m24|Knowledge Base & Failure Pattern Recognition|pending|m02,m06|m24-knowledge-base.md|learning
-m25|Prompt Tracking & Cross-Project Knowledge|pending|m24|m25-prompt-tracking.md|learning
-m26|Language Profiles & Domain Detection|pending|m02|m26-language-profiles.md|language
-m27|Language-Aware Pipeline Stages|pending|m26|m27-language-stages.md|language
+m34|Knowledge Base & Failure Pattern Recognition|pending|m02,m07|m34-knowledge-base.md|learning
+m35|Prompt Tracking & Cross-Project Knowledge|pending|m34|m35-prompt-tracking.md|learning
+m36|Language Profiles & Domain Detection|pending|m02|m36-language-profiles.md|language
+m37|Language-Aware Pipeline Stages|pending|m36|m37-language-stages.md|language
+m38|Champion Tooling (ROI, Compliance, Reports, Pilots)|pending|m14,m19,m33|m38-champion-tooling.md|champion
 ```
 
 ### Parallel Execution Opportunities
 
-When V4's own parallel engine is active (after M10), these milestones can
+When V4's own parallel engine is active (after M11), these milestones can
 run concurrently within their parallel groups:
 
 | Wave | Milestones (concurrent) | Prerequisite |
 |------|------------------------|-------------|
 | 1 | M01 + M02 | None |
-| 2 | M03 + M08 + M11 + M15 + M18 + M19 + M22 + M26 | M02 |
-| 3 | M04 + M05 + M09 + M12 + M14 | M03, M08, M11 |
-| 4 | M06 + M07 + M17 + M23 + M27 | M04, M05, M22, M26 |
-| 5 | M10 + M13 + M16 + M20 + M24 | M06, M09, M12 |
-| 6 | M21 + M25 | M20, M24 |
+| 2 | M03 + M04 + M09 + M12 + M17 + M19 + M22 + M23 + M27 + M29 + M36 | M01, M02 |
+| 3 | M05 + M06 + M10 + M13 + M15 + M28 | M04, M09, M12 |
+| 4 | M07 + M08 + M14 + M20 + M21 + M30 + M34 + M37 | M05, M06, M19, M29, M36 |
+| 5 | M11 + M16 + M18 + M24 + M31 + M35 | M07, M10, M13, M15, M17 |
+| 6 | M25 + M26 + M32 + M38 | M24, M18, M31, M14 |
+| 7 | M33 | M32, M25 |
 
 In practice, API quota and team count limits will constrain concurrency.
-But the DAG permits up to 8 milestones in a single wave (Wave 2).
+The DAG permits up to 11 milestones in a single wave (Wave 2), but deployment
+throughput is realistically bounded by the parallel team count configured in
+`PARALLEL_MAX_TEAMS` and the rate limits of the configured providers.

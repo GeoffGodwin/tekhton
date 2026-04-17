@@ -224,7 +224,14 @@ run_agent() {
         fi
         _retry_suffix=" (after ${LAST_AGENT_RETRY_COUNT} ${_retry_word})"
     fi
-    log "[$label] Turns: ${turns_display} | Time: ${mins}m${secs}s${_retry_suffix}"
+    # M96 (NR3): fold context total into completion line when available.
+    local _ctx_suffix=""
+    if [[ -n "${LAST_CONTEXT_TOKENS:-}" ]] && [[ "${LAST_CONTEXT_TOKENS}" -gt 0 ]] 2>/dev/null; then
+        local _ctx_k=$(( LAST_CONTEXT_TOKENS / 1000 ))
+        local _ctx_frac=$(( (LAST_CONTEXT_TOKENS % 1000) / 100 ))
+        _ctx_suffix=" | Context: ~${_ctx_k}.${_ctx_frac}k tokens (${LAST_CONTEXT_PCT:-0}%)"
+    fi
+    log "[$label] Turns: ${turns_display} | Time: ${mins}m${secs}s${_ctx_suffix}${_retry_suffix}"
 
     TOTAL_TURNS=$(( TOTAL_TURNS + turns_used ))
     TOTAL_TIME=$(( TOTAL_TIME + elapsed ))

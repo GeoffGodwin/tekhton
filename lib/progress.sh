@@ -158,6 +158,43 @@ progress_status() {
     log "$line"
 }
 
+# _format_estimate_compact SECONDS
+# Compact estimate suitable for inline header use: "(est. 2m)" or "" when none.
+_format_estimate_compact() {
+    local est="${1:-}"
+    if [[ -z "$est" ]] || [[ "$est" -eq 0 ]]; then
+        printf ''
+        return
+    fi
+    if [[ "$est" -ge 60 ]]; then
+        printf '(est. %dm)' "$(( est / 60 ))"
+    else
+        printf '(est. %ds)' "$est"
+    fi
+}
+
+# stage_header STAGE_POS STAGE_COUNT STAGE_NAME [SUFFIX]
+# Renders the stage banner with the estimate folded into the header line.
+# Replaces the prior pattern of `progress_status … ; header "Stage N/M — name"`.
+# SUFFIX (e.g. "(skipped)") is appended after the stage name.
+stage_header() {
+    local pos="$1"
+    local count="$2"
+    local name="$3"
+    local suffix="${4:-}"
+
+    local title="Stage ${pos} / ${count} — ${name}"
+    [[ -n "$suffix" ]] && title="${title} ${suffix}"
+
+    local est_secs
+    est_secs=$(_estimate_stage_time "$name" 2>/dev/null || true)
+    local est_str
+    est_str=$(_format_estimate_compact "${est_secs:-}")
+    [[ -n "$est_str" ]] && title="${title}                ${est_str}"
+
+    header "$title"
+}
+
 # progress_outcome STAGE_NAME RESULT ELAPSED_SECS [NEXT_ACTION]
 # Prints a human-readable outcome line after an agent completes.
 progress_outcome() {

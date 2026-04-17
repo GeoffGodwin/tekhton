@@ -206,7 +206,7 @@ _hook_emit_run_memory() {
     # Prune if over limit
     _prune_run_memory "$memory_file"
 
-    log "Run memory appended to ${memory_file}"
+    log_verbose "Run memory appended to ${memory_file}"
 }
 
 # --- Pruning ------------------------------------------------------------------

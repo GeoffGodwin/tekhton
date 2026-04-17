@@ -1,5 +1,3 @@
-# Reviewer Report — M94: Failure Recovery CLI Guidance
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,12 +8,29 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `_rule_max_turns` reads the Exit Reason section from the state file directly (its own `awk` call) even though `_read_diagnostic_context` already populates `_DIAG_EXIT_REASON` for that purpose. Minor duplication — not a bug, but `_DIAG_EXIT_REASON` could be used instead to keep rule reads consistent with the module contract.
-- In `test_diagnose.sh` test 2b.6, `sed -i 's/## Notes/## Notes\nHit max_turns in coder/'` inserts via GNU sed newline syntax — correct for WSL/Linux but would silently fail on BSD sed. Low risk given the platform, but worth noting for portability.
+- `lib/finalize.sh` is 559 lines — well over the 300-line soft ceiling. Pre-existed this rework (this cycle added ~10 lines). Candidate for extraction in a future cleanup pass.
+- NR2 archival under-emission (archive_reports() emits 0 lines) — unchanged from prior cycle, acceptable per prior report.
+- IA4 and IA5 (prefix semantics, commit diff truncation) — unchanged, still deferred, remain non-blocking.
 
 ## Coverage Gaps
-- `test_recovery_block.sh` covers `max_attempts`, `timeout`, `pre_existing_failure`, and the fallback but does not test the `agent_cap` outcome. The case branch exists in `_print_recovery_block` (uses `MAX_AUTONOMOUS_AGENT_CALLS` in `what_happened`) and should be exercised.
+- None
+
+## ACP Verdicts
+
+No `## Architecture Change Proposals` section in CODER_SUMMARY.md.
 
 ## Drift Observations
-- `tests/test_diagnose.sh` is 666 lines — well over the 300-line soft ceiling. This was pre-existing before M94 (M94 added ~50 lines for suite 2b). Worth tracking; the fixture/helper functions could eventually be extracted into a shared test helper.
-- `_rule_turn_exhaustion` in `diagnose_rules_extra.sh` reads `AGENT_SCOPE/max_turns` from the pipeline state file and is now superseded by `_rule_max_turns` whenever `LAST_FAILURE_CONTEXT.json` is present (which is the normal post-M93 path). Kept for backward-compatibility per coder note, but it is effectively dead code for post-M93 runs. Worth a comment or eventual removal.
+- None
+
+---
+
+## Prior Blocker Verification
+
+**IA2 — Version bump in Pipeline Complete banner: FIXED**
+`lib/project_version_bump.sh:145-149` now exports `_BUMPED_VERSION_OLD`, `_BUMPED_VERSION_NEW`, and `_BUMPED_VERSION_TYPE` after a successful bump. `lib/finalize.sh:225-228` reads those variables and emits `Version: <old> → <new> (<type>)` in the banner. Hook ordering is correct: `_hook_project_version_bump` (line 525) registered before `_hook_commit` (line 527).
+
+**IA3 — `What's next:` promoted to final printed line: FIXED**
+`_compute_next_action` block removed from `_print_action_items` entirely (no call present in `finalize_display.sh:38-172`). New `_print_next_action` helper at `finalize_display.sh:174-187` calls `_compute_next_action` behind a `command -v` guard with error suppression. It is invoked at `finalize.sh:280` (commit), `finalize.sh:299` (edit-then-commit), and `finalize.sh:305` (skip) — in all three terminal paths, after the final `print_run_summary` / `log` line.
+
+**Coverage gap — `tests/test_cli_output_hygiene.sh`: FIXED**
+File exists at `tests/test_cli_output_hygiene.sh`. Contains two assertions: (1) runtime smoke — redirected `emit_event` call produces no event ID on stdout; (2) static analysis — every `emit_event` call site in `lib/` and `stages/` either captures via `$(...)` or redirects stdout (pattern correctly distinguishes `>/dev/null`/`1>/dev/null`/`&>/dev/null` from stderr-only `2>/dev/null`).

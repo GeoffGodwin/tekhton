@@ -101,6 +101,8 @@ _phase_end()   { :; }
 # General pipeline stubs
 log_decision()                  { :; }
 progress_status()               { :; }
+stage_header()                  { :; }
+log_verbose()                   { :; }
 estimate_post_coder_turns()     { :; }
 _get_cached_architecture_content() { echo ""; }
 build_context_packet()          { :; }

@@ -109,7 +109,7 @@ run_test_audit() {
     if command -v emit_event &>/dev/null; then
         emit_event "test_audit" "tester" "verdict=${verdict}" "" "" \
             "{\"verdict\":\"${verdict}\",\"orphans\":\"${_AUDIT_ORPHAN_FINDINGS:+found}\",\"weakening\":\"${_AUDIT_WEAKENING_FINDINGS:+found}\"}" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
     fi
 
     if [[ "$verdict" != "NEEDS_WORK" ]]; then

@@ -143,7 +143,7 @@ capture_test_baseline() {
             "exit=${test_exit}, failures=${failure_count}" \
             "" "" \
             "{\"exit_code\":${test_exit},\"failure_count\":${failure_count},\"output_hash\":\"${output_hash}\",\"failure_hash\":\"${failure_hash}\"}" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
     fi
 
     return 0
@@ -313,7 +313,7 @@ _check_acceptance_stuck() {
             "identical_failures=${_ORCH_IDENTICAL_ACCEPTANCE_COUNT}" \
             "" "" \
             "{\"hash\":\"${current_hash}\",\"consecutive\":${_ORCH_IDENTICAL_ACCEPTANCE_COUNT}}" \
-            2>/dev/null || true
+            >/dev/null 2>&1 || true
     fi
 
     if [[ "${TEST_BASELINE_PASS_ON_STUCK:-false}" = "true" ]]; then
@@ -327,7 +327,7 @@ _check_acceptance_stuck() {
                     "clean_baseline_block" \
                     "" "" \
                     "{\"hash\":\"${current_hash}\",\"baseline_exit\":0,\"consecutive\":${_ORCH_IDENTICAL_ACCEPTANCE_COUNT}}" \
-                    2>/dev/null || true
+                    >/dev/null 2>&1 || true
             fi
             return 1
         fi

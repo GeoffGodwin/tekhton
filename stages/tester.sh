@@ -39,7 +39,9 @@ source "${TEKHTON_HOME}/stages/tester_fix.sh"
 run_stage_tester() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-$_stage_count}"
-    header "Stage ${_stage_pos} / ${_stage_count} — Tester${TESTER_MODE:+ (${TESTER_MODE})}"
+    local _tester_suffix=""
+    [[ -n "${TESTER_MODE:-}" ]] && _tester_suffix="(${TESTER_MODE})"
+    stage_header "${_stage_pos}" "${_stage_count}" "Tester" "${_tester_suffix}"
 
     # --- TDD write_failing mode (Milestone 27) --------------------------------
     # In test_first pipeline order, the first tester pass writes failing tests.
@@ -147,12 +149,12 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     local _tester_prompt_chars=${#TESTER_PROMPT}
     local _tester_prompt_tokens=$(( (_tester_prompt_chars + 3) / 4 ))
     local _tester_turn_budget="${EFFECTIVE_TESTER_MAX_TURNS:-${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}}"
-    log "[tester-diag] Prompt: ${_tester_prompt_chars} chars (~${_tester_prompt_tokens} tokens)"
-    log "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL}"
+    log_verbose "[tester-diag] Prompt: ${_tester_prompt_chars} chars (~${_tester_prompt_tokens} tokens)"
+    log_verbose "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL}"
     if [[ "$START_AT" = "tester" ]]; then
-        log "[tester-diag] Mode: RESUME (tester_resume prompt)"
+        log_verbose "[tester-diag] Mode: RESUME (tester_resume prompt)"
     else
-        log "[tester-diag] Mode: FRESH (full tester prompt)"
+        log_verbose "[tester-diag] Mode: FRESH (full tester prompt)"
     fi
 
     log "Invoking tester agent (max ${_tester_turn_budget} turns)..."

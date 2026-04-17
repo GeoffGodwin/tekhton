@@ -68,6 +68,19 @@ warn()   { echo -e "${YELLOW}[!]${NC} $*"; }
 error()  { echo -e "${RED}[✗]${NC} $*"; }
 header() { echo -e "\n${BOLD}${CYAN}══════════════════════════════════════${NC}"; echo -e "${BOLD}${CYAN}  $*${NC}"; echo -e "${BOLD}${CYAN}══════════════════════════════════════${NC}\n"; }
 
+# log_verbose — write an informational diagnostic line that stays off stdout
+# unless VERBOSE_OUTPUT=true. The message is always appended to ${LOG_FILE}
+# when set, preserving post-mortem visibility. Use for internal diagnostics
+# (cache hits, keyword extraction, breakdown tables) that the human doesn't
+# need to see scrolling past in real time.
+log_verbose() {
+    if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
+        echo -e "${CYAN}[tekhton]${NC} $*"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '[tekhton] %s\n' "$*" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+}
+
 # --- Line counting (portable) ------------------------------------------------
 
 # count_lines — Reads stdin and prints the line count with no leading whitespace.
@@ -321,6 +334,7 @@ report_orchestration_status() {
     local attempt="$1"
     local max="$2"
     local elapsed="$3"
+    # shellcheck disable=SC2034  # agent_calls kept in signature for orchestrate.sh caller
     local agent_calls="$4"
 
     local elapsed_min=$(( elapsed / 60 ))
@@ -330,10 +344,6 @@ report_orchestration_status() {
     echo -e "${BOLD}${CYAN}── Orchestration Loop ──────────────────${NC}"
     echo -e "  Attempt:     ${BOLD}${attempt}${NC} / ${max}"
     echo -e "  Elapsed:     ${elapsed_min}m ${elapsed_sec}s"
-    # MAX_AUTONOMOUS_AGENT_CALLS is read as a global here (set by config/orchestrate.sh)
-    # rather than passed as a parameter, since this function's signature matches the
-    # four values tracked by the orchestration loop itself (attempt, max, elapsed, calls).
-    echo -e "  Agent calls: ${agent_calls} / ${MAX_AUTONOMOUS_AGENT_CALLS:-20}"
     echo -e "${BOLD}${CYAN}────────────────────────────────────────${NC}"
     echo
 }

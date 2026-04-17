@@ -17,7 +17,7 @@ set -euo pipefail
 run_stage_security() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-2}"
-    header "Stage ${_stage_pos} / ${_stage_count} — Security"
+    stage_header "${_stage_pos}" "${_stage_count}" "Security"
 
     # Skip if disabled
     if [[ "${SECURITY_AGENT_ENABLED:-true}" != "true" ]]; then
@@ -78,7 +78,8 @@ run_stage_security() {
             _STAGE_DURATION["security_scan"]="$(( SECONDS - _sec_scan_start ))"
             _STAGE_TURNS["security_scan"]="${LAST_AGENT_TURNS:-0}"
         fi
-        print_run_summary
+        # M96 (IA1): status line below is sufficient for security — skip
+        # the full cumulative run summary after the scan.
         success "Security scan finished."
 
         # Parse findings
@@ -130,7 +131,8 @@ run_stage_security() {
                 _STAGE_DURATION["security_rework_${security_rework_cycle}"]="$(( SECONDS - _sec_rework_start ))"
                 _STAGE_TURNS["security_rework_${security_rework_cycle}"]="${LAST_AGENT_TURNS:-0}"
             fi
-            print_run_summary
+            # M96 (IA1): security rework is a sub-agent completion — skip
+            # the cumulative run summary here.
 
             # Post-rework build gate
             if ! run_build_gate "security-rework"; then

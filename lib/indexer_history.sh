@@ -262,5 +262,5 @@ emit_test_symbol_map() {
 
     TEST_SYMBOL_MAP_FILE="$test_map_file"
     export TEST_SYMBOL_MAP_FILE
-    log "[indexer] Test symbol map written to ${test_map_file}."
+    log_verbose "[indexer] Test symbol map written to ${test_map_file}."
 }

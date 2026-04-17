@@ -101,7 +101,7 @@ check_milestone_acceptance() {
                         if command -v emit_event &>/dev/null; then
                             emit_event "acceptance_preexisting_pass" "acceptance" \
                                 "test_exit=${test_exit}, assessment=pre_existing" \
-                                "" "" "" 2>/dev/null || true
+                                "" "" "" >/dev/null 2>&1 || true
                         fi
                     else
                         warn "Tests FAILED (exit ${test_exit}) — pre-existing failures no longer auto-pass (M92)"

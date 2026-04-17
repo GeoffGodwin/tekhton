@@ -2,13 +2,20 @@
 PASS
 
 ## Confidence
-92
+90
 
 ## Reasoning
-- Scope is tightly defined: 3 modified files, 1 modified test, 1 new test — no ambiguity about what's in/out
-- Pseudocode skeletons for both `_print_recovery_block()` and `_rule_max_turns()` eliminate interpretation drift
-- Acceptance criteria are fully testable: shell test files named, classification string specified (`MAX_TURNS_EXHAUSTED`), shellcheck pass required
-- Design decisions section explicitly resolves the two non-obvious architectural choices (where to call the block, priority ordering of LAST_FAILURE_CONTEXT.json vs RUN_SUMMARY.json)
-- Watch For section pre-empts the two most likely implementation bugs (unset color vars in test context, empty `_DIAG_PIPELINE_TASK`)
-- No new config keys or user-facing file formats introduced — no Migration Impact section required
-- No UI components — UI testability criterion not applicable
+- Scope is tightly defined: three named bugs, six noise-reduction items, five
+  information-architecture changes, each with explicit before/after output examples
+- Affected files are enumerated in the Scope Summary table (~12 files)
+- Acceptance criteria are specific and mechanically testable (string-presence
+  assertions, line-count limits, ordering constraints)
+- New config keys (`VERBOSE_OUTPUT`) are named with defaults and noted for
+  `lib/config_defaults.sh` and `CLAUDE.md`
+- Shell test to add (`tests/test_cli_output_hygiene.sh`) is described with
+  clear pass/fail logic (pipeline stub + stdout grep)
+- No architectural changes; no new external dependencies — low-risk, high-clarity
+- Minor: `stages/review_helpers.sh` is central to Bug 2 but absent from the
+  Scope Summary file list; implementor should add it. Workable without flagging.
+- Minor: no formal "Migration impact" section, but new config keys and their
+  defaults are documented inline — sufficient for a display-only change

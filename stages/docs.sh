@@ -18,7 +18,7 @@ set -euo pipefail
 run_stage_docs() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-5}"
     local _stage_pos="${PIPELINE_STAGE_POS:-2}"
-    header "Stage ${_stage_pos} / ${_stage_count} — Docs"
+    stage_header "${_stage_pos}" "${_stage_count}" "Docs"
 
     # Gate: disabled
     if [[ "${DOCS_AGENT_ENABLED:-false}" != "true" ]]; then
