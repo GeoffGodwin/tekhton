@@ -122,6 +122,11 @@ tui_stop() {
         wait "$_TUI_PID" 2>/dev/null || true
     fi
     _TUI_PID=""
+    # Safety net: restore terminal state in case the sidecar exited without
+    # cleaning up (e.g. SIGKILL before rich could send RMCUP / cnorm).
+    # These are no-ops if the terminal is already in normal mode.
+    tput rmcup 2>/dev/null || true
+    tput cnorm 2>/dev/null || true
 }
 
 # tui_complete VERDICT — mark complete, give sidecar a final tick, then stop.

@@ -2623,6 +2623,10 @@ _run_fix_nonblockers_loop() {
 
         log "Fix-nonblockers pass ${nb_attempt}: ${remaining} item(s) remaining."
 
+        # Re-arm TUI sidecar for this pass (tui_complete from the previous
+        # pass will have stopped it; tui_start is a no-op if TUI is inactive).
+        if declare -f tui_start &>/dev/null; then tui_start; fi
+
         _run_pipeline_stages
         finalize_run 0
 
@@ -2691,6 +2695,10 @@ _run_fix_drift_loop() {
         fi
 
         log "Fix-drift pass ${drift_attempt}: ${remaining} observation(s) remaining."
+
+        # Re-arm TUI sidecar for this pass (tui_complete from the previous
+        # pass will have stopped it; tui_start is a no-op if TUI is inactive).
+        if declare -f tui_start &>/dev/null; then tui_start; fi
 
         _run_pipeline_stages
         finalize_run 0
