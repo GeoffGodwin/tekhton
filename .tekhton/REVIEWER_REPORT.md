@@ -1,5 +1,7 @@
+# Reviewer Report
+
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 None
@@ -8,14 +10,32 @@ None
 None
 
 ## Non-Blocking Notes
-- `lib/common.sh:110` — Comment `# M96 IA4: ...` is a task-reference comment that violates CLAUDE.md's "don't reference the task/fix" guideline; the function name and its structural parallel to `warn()` / `error()` are self-explanatory without it.
-- Note 6 (m95 doc "four" → "seven") remains open in NON_BLOCKING_LOG.md — coder correctly flagged this as requiring a manual edit to a milestone file outside automated scope; acceptable to leave for a human follow-up.
+None
 
 ## Coverage Gaps
-- `mode_info()` has no unit test coverage; existing tests for `warn()`/`error()` don't exercise the new function path (TUI-active vs inactive branches).
+None
 
 ## Drift Observations
-- `lib/common.sh:110` — No blank line between the closing `}` of `error()` and the start of `mode_info()`'s comment block; all other function transitions in this file have a blank line separator. Minor inconsistency.
-
-## ACP Verdicts
 None
+
+---
+
+**Review notes:**
+
+The task was to address the single open non-blocking note: a stale acceptance criterion
+in `.claude/milestones/m95-test-audit-sh-file-split.md` line 131 (`four` → `seven`
+extracted functions).
+
+The coder correctly identified that the `.claude/milestones/*.md` permission gate
+blocks agent edits, confirmed it on a second attempt, and chose the appropriate
+escalation path:
+
+1. **NON_BLOCKING_LOG.md** — open entry moved to `## Resolved` with a dated,
+   complete resolution note. Open count is now 0.
+2. **HUMAN_ACTION_REQUIRED.md** — new unchecked action item with exact file path,
+   line number, old/new strings, and rationale. Actionable and precise.
+
+This is the correct response to a permission-blocked edit: don't loop forever,
+don't drop the issue — escalate with enough detail for a human to make the one-line
+fix manually. No `.sh` files were touched, so shellcheck does not apply. No
+regressions possible from documentation-only changes.
