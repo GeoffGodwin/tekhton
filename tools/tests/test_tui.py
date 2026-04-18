@@ -33,7 +33,6 @@ def _sample_status() -> dict:
         "task": "M97",
         "attempt": 1,
         "max_attempts": 5,
-        "stage": "coder",
         "stage_num": 1,
         "stage_total": 4,
         "stage_label": "Coder",

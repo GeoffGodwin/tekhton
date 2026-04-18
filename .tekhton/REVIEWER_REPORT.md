@@ -1,5 +1,3 @@
-# Reviewer Report — M97 TUI Mode (Cycle 2 Re-review)
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,23 +8,31 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `_tui_json_build_status` emits both `"stage"` and `"stage_label"` with identical values (both sourced from `$stage_label`). The Python renderer uses only `stage_label`; the `stage` key is dead weight. Not broken — carry forward for cleanup.
+- Note 4 unaddressed: `_rule_max_turns` still uses its own `awk` call to read the Exit Reason section even though `_DIAG_EXIT_REASON` is already populated by `_read_diagnostic_context`. The duplication is harmless but was explicitly flagged as cleanup. Carry forward to next sweep.
 
 ## Coverage Gaps
-- No shell-level test for the active-path write cycle: `tui_update_stage` / `tui_update_agent` / `tui_finish_stage` active paths have no assertions beyond "no error returned". Tester can add active-path assertions for at least one update function.
-
-## ACP Verdicts
-(no ACP section in CODER_SUMMARY.md — omitted)
+- Note 5 unaddressed: `_save_orchestration_state` has no direct unit test asserting that the `Notes` field in `PIPELINE_STATE.md` contains the restoration string and that `resume_flags` uses `_RESUME_NEW_START_AT` rather than `START_AT`. Logic is correct on inspection but the gap remains open.
 
 ## Drift Observations
-- `tui_helpers.sh:_tui_json_build_status` — the `"stage"` field (line 122) duplicates `"stage_label"` (line 125), both set to `$stage_label`. The test fixture in `tools/tests/test_tui.py` uses distinct values (`stage="coder"`, `stage_label="Coder"`), implying the schema intended them to differ. Worth resolving when the JSON schema is next touched.
+- None
 
 ---
 
-## Prior Blocker Verification
+### Review Notes
 
-**Blocker: `set -euo pipefail` missing from `lib/tui.sh` and `lib/tui_helpers.sh`**
-- `lib/tui.sh` line 13: `set -euo pipefail` — FIXED ✓
-- `lib/tui_helpers.sh` line 9: `set -euo pipefail` — FIXED ✓
+Only one of the seven open non-blocking notes (Note 1) was addressed this cycle.
+The change is correct: removing the redundant `"stage"` key from `_tui_json_build_status`
+in `lib/tui_helpers.sh` and the matching `"stage": "coder"` entry from the
+`_sample_status()` fixture in `tools/tests/test_tui.py`. Verified against `tools/tui.py`
+— the renderer reads `stage_label`, `stage_num`, and `stage_total` only; the removed key
+was confirmed dead weight.
 
-No regressions introduced. The fix was two lines added to the correct positions (after the shebang/header, before any executable code).
+Deferrals assessed as acceptable:
+- Note 2 (NR2 archival): explicitly marked "acceptable per prior report"
+- Note 3 (IA4, IA5): explicitly deferred in prior cycles
+- Note 6 ("four" → "seven" doc update): blocked by permission gate on `.claude/milestones/*.md`
+- Note 7 (hardcoded `get_milestone_count` sites): framed as "candidates for follow-up" — the originally scoped site was handled in a prior run
+
+Note 4 and Note 5 are the only truly actionable items left open without excuse.
+Note 4 is minor code duplication (non-blocking). Note 5 is a test coverage gap.
+Neither warrants a full rework cycle; they are logged above for the next cleanup pass.

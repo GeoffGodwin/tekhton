@@ -119,7 +119,6 @@ _tui_json_build_status() {
     printf '"task":"%s",' "$(_tui_escape "$task")"
     printf '"attempt":%s,' "$attempt"
     printf '"max_attempts":%s,' "$max_attempts"
-    printf '"stage":"%s",' "$(_tui_escape "$stage_label")"
     printf '"stage_num":%s,' "$stage_num"
     printf '"stage_total":%s,' "$stage_total"
     printf '"stage_label":"%s",' "$(_tui_escape "$stage_label")"
