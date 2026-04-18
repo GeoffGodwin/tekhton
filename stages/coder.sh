@@ -256,7 +256,7 @@ $(cat "${SCOUT_REPORT_FILE}")
 
                     if split_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                         # Update to target the first sub-milestone
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                         # Archive original scout report and re-scout narrower scope
@@ -694,7 +694,7 @@ ${nb_notes}"
         if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
             if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
                 # Split succeeded — update state and re-run from scout
-                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                 invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                 # Recursive call to run_stage_coder creates nested call frames up to
@@ -740,7 +740,7 @@ ${nb_notes}"
             # Attempt milestone split before giving up
             if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                 if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                     invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                     local _depth
                     _depth=$(get_split_depth "$_CURRENT_MILESTONE")
@@ -950,7 +950,7 @@ ${nb_notes}"
                 # Escalate: milestone mode -> try auto-split, otherwise save state
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
                         _depth=$(get_split_depth "$_CURRENT_MILESTONE")
@@ -1010,7 +1010,7 @@ ${GIT_DIFF_STAT}
                 # Minimal output — try auto-split in milestone mode
                 if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
                     if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"
+                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
                         _depth=$(get_split_depth "$_CURRENT_MILESTONE")

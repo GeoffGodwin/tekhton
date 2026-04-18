@@ -86,9 +86,15 @@ _rule_max_turns() {
         _sub=$(grep -oP '"subcategory"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
     fi
 
-    local _exit_reason="" _state_notes=""
+    # Use _DIAG_EXIT_REASON populated by _read_diagnostic_context (module contract).
+    # Fall back to reading from state file directly so this rule also works when
+    # called outside the full diagnose flow (e.g., unit tests).
+    local _exit_reason="${_DIAG_EXIT_REASON:-}"
+    local _state_notes=""
     if [[ -f "$state_file" ]]; then
-        _exit_reason=$(awk '/^## Exit Reason$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+        if [[ -z "$_exit_reason" ]]; then
+            _exit_reason=$(awk '/^## Exit Reason$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+        fi
         _state_notes=$(awk '/^## Notes$/{f=1;next} /^## /{f=0} f' "$state_file" 2>/dev/null || true)
     fi
 

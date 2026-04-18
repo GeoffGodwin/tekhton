@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [0.1.28] - 2026-04-18
+
+### Added
+- Bug 1 — "TestTimeout" text flickering at the TUI border (agent.sh:170) The spinner subshell in run_agent() was unconditionally writing printf '\r...' > /dev/tty, which conflicts with rich's alternate screen buffer. Now guarded by [[ "${_TUI_ACTIVE:-false}" != "true" ]] — the spinner still ticks tui_update_agent (so the TUI gets turn updates) but no longer writes text to the terminal itself.
 
 ## [0.1.27] - 2026-04-17
 

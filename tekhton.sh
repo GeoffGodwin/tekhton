@@ -2062,7 +2062,7 @@ if [ "$AUTO_ADVANCE" = true ]; then
     _AA_SESSION_ADVANCES=0
     export _AA_SESSION_ADVANCES
     if [ -n "$_CURRENT_MILESTONE" ]; then
-        _total_milestones=$(get_milestone_count "CLAUDE.md")
+        _total_milestones=$(get_milestone_count "${PROJECT_RULES_FILE:-CLAUDE.md}")
         init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
         log "Auto-advance starting at milestone ${_CURRENT_MILESTONE} of ${_total_milestones}"
     else
@@ -2075,7 +2075,7 @@ if [ "$AUTO_ADVANCE" = true ]; then
 elif [ "$MILESTONE_MODE" = true ] && [ -n "$_CURRENT_MILESTONE" ]; then
     # Single-run milestone mode: initialize state for commit signatures
     # and acceptance checking (no auto-advance loop)
-    _total_milestones=$(get_milestone_count "CLAUDE.md")
+    _total_milestones=$(get_milestone_count "${PROJECT_RULES_FILE:-CLAUDE.md}")
     init_milestone_state "$_CURRENT_MILESTONE" "$_total_milestones"
     log "Milestone mode: targeting milestone ${_CURRENT_MILESTONE}"
 fi
@@ -2269,7 +2269,7 @@ _run_pipeline_stages() {
         # M97: notify TUI sidecar of stage change (no-op when TUI inactive).
         if declare -f tui_update_stage &>/dev/null; then
             local _tui_stage_label
-            _tui_stage_label="$(echo "$_stage_name" | sed 's/_/ /g')"
+            _tui_stage_label="${_stage_name//_/ }"
             tui_update_stage "$_stage_idx" "$PIPELINE_STAGE_COUNT" "$_tui_stage_label" "${CLAUDE_STANDARD_MODEL:-}"
         fi
 
@@ -2430,7 +2430,7 @@ _run_pipeline_stages() {
         # M97: mark stage complete in TUI sidecar (no-op when TUI inactive).
         if declare -f tui_finish_stage &>/dev/null; then
             local _tui_finish_label _tui_finish_dur
-            _tui_finish_label="$(echo "$_stage_name" | sed 's/_/ /g')"
+            _tui_finish_label="${_stage_name//_/ }"
             _tui_finish_dur="${_STAGE_DURATION[$_stage_name]:-0}s"
             tui_finish_stage "$_tui_finish_label" "${CLAUDE_STANDARD_MODEL:-}" \
                 "${_STAGE_TURNS[$_stage_name]:-0}/${_STAGE_BUDGET[$_stage_name]:-0}" \
