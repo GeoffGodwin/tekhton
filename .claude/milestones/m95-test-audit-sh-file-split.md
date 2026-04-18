@@ -128,7 +128,7 @@ resolve all warnings before marking done.
 - [ ] `lib/test_audit_detection.sh` exists and defines `_detect_orphaned_tests` and `_detect_test_weakening`
 - [ ] `lib/test_audit_verdict.sh` exists and defines `_parse_audit_verdict` and `_route_audit_verdict`
 - [ ] `tekhton.sh` sources the new files before `lib/test_audit.sh`
-- [ ] All four extracted functions pass a direct call test in `tests/test_test_audit_split.sh`
+- [ ] All seven extracted functions pass a direct call test in `tests/test_test_audit_split.sh`
 - [ ] `shellcheck` is clean on all modified and created `.sh` files
 - [ ] ARCHITECTURE.md lists the new companion modules
 - [ ] Existing test suite passes unchanged
