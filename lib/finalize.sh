@@ -213,7 +213,7 @@ _hook_commit() {
     header "Tekhton — Pipeline Complete"
     echo -e "  Task:      ${BOLD}${TASK}${NC}"
     echo -e "  Started:   ${BOLD}${START_AT}${NC}"
-    echo -e "  Verdict:   ${GREEN}${BOLD}${verdict}${NC}"
+    echo -e "  Verdict:   ${GREEN}${BOLD}${VERDICT:-APPROVED}${NC}"
     echo -e "  Log:       ${LOG_FILE}"
     if [[ -n "$ms_num" ]]; then
         if [[ "$ms_disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$ms_disposition" == COMPLETE_AND_WAIT ]]; then
