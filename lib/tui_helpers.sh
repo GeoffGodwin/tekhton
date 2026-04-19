@@ -141,12 +141,15 @@ _tui_json_build_status() {
     local task="${TASK:-}"
     # M99: Output Bus owns the attempt counter. Fall back to "1" if the bus
     # hasn't been initialised yet (standalone TUI tests source this file
-    # without common.sh/output.sh).
+    # without common.sh/output.sh). M103: max_attempts follows the same path
+    # for symmetry, with MAX_PIPELINE_ATTEMPTS as the ultimate fallback so
+    # production (which seeds both) behaves identically to pre-M103.
     local attempt="1"
+    local max_attempts="${MAX_PIPELINE_ATTEMPTS:-1}"
     if declare -p _OUT_CTX &>/dev/null; then
         attempt="${_OUT_CTX[attempt]:-1}"
+        max_attempts="${_OUT_CTX[max_attempts]:-${max_attempts}}"
     fi
-    local max_attempts="${MAX_PIPELINE_ATTEMPTS:-1}"
     local stage_label="${_TUI_CURRENT_STAGE_LABEL:-}"
     local stage_num="${_TUI_CURRENT_STAGE_NUM:-0}"
     local stage_total="${_TUI_CURRENT_STAGE_TOTAL:-0}"

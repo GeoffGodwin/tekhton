@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-04-19
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
+- [2026-04-19 | "Implement Milestone 103: Output Bus Tests + Integration Validation"] `lib/tui_helpers.sh:_tui_escape` and the `_out_json_escape` function in `lib/output_format.sh` (flagged in M102) implement the same JSON string escaping logic independently. Now that M103 adds tests that exercise both paths, this divergence is more visible — a future bug fix to one that misses the other will produce inconsistent escaping between CLI and TUI paths. Candidate for consolidation in a cleanup pass.
 - [2026-04-19 | "Implement Milestone 102: TUI-Aware Finalize + Completion Flow"] `lib/output_format.sh:_out_json_escape` and `lib/tui_helpers.sh:_tui_escape` implement identical JSON string escape logic (backslash doubling, quote escaping, newline/CR/tab). As the output bus matures these should be consolidated into a single authoritative function rather than maintained in parallel — a future edit to one that isn't mirrored in the other will produce inconsistent escaping between CLI and TUI paths.
 - [2026-04-19 | "Implement Milestone 102: TUI-Aware Finalize + Completion Flow"] `lib/finalize.sh:532-534` — comment references milestone numbers (M97, M102) inline. These rotate as the history of the file extends. The load-bearing observation (action_items accumulate in `_hook_commit` so `_hook_tui_complete` must run last) should be expressed as a causal statement rather than a changelog entry.
 - [2026-04-19 | "M101"] `lib/init_helpers_display.sh` was extracted from `init_helpers.sh` to keep `init_helpers.sh` under the 300-line ceiling, but the new file itself uses `echo -e` with aliased ANSI locals — a pattern that the lint test was designed to eliminate. The extraction preserved the old style rather than converting it, creating a latent gap in lint coverage.

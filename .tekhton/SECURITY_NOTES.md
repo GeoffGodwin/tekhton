@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-19 17:07:36
+Generated: 2026-04-19 18:47:41
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [LOW] [category:A03] [lib/output_format.sh:237] fixable:yes — `_out_json_escape` does not escape JSON control characters U+0000–U+0008, U+000B, U+000C, U+000E–U+001F. If a message string contains raw control characters (e.g. from a coder agent that embeds terminal control bytes in its output), `_OUT_CTX[action_items]` will contain invalid JSON that could cause the TUI Python sidecar to fail silently. Fix: add a `tr -d '\x00-\x08\x0b\x0c\x0e-\x1f'` pass or strip individual ranges with bash parameter expansion.
