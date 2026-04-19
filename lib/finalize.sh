@@ -530,13 +530,14 @@ register_finalize_hook "_hook_update_check"
 register_finalize_hook "_hook_final_dashboard_status"
 
 # M97: stop the TUI sidecar cleanly as the very last hook.
+# M102: routes through out_complete so the action_items accumulated by
+# _hook_commit (via _print_action_items) are visible in the JSON status
+# when the sidecar reads it for its hold-on-complete screen.
 _hook_tui_complete() {
     local exit_code="${1:-0}"
-    if declare -f tui_complete &>/dev/null; then
-        local verdict="SUCCESS"
-        [[ "$exit_code" -ne 0 ]] && verdict="FAIL"
-        tui_complete "$verdict" 2>/dev/null || true
-    fi
+    local verdict="SUCCESS"
+    [[ "$exit_code" -ne 0 ]] && verdict="FAIL"
+    out_complete "$verdict" 2>/dev/null || true
 }
 register_finalize_hook "_hook_tui_complete"
 # --- Orchestrator ---

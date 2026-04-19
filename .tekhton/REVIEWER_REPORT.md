@@ -1,4 +1,4 @@
-# Reviewer Report — M101 Eliminate Direct ANSI Output
+# Reviewer Report — M102: TUI-Aware Finalize + Completion Flow
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,16 +10,13 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/init_helpers_display.sh:34,43,53` still uses `echo -e` with ANSI-containing local variables (`${icon}`, `${_g}`, `${_nc}`) rather than the new structured formatters. `NO_COLOR` is handled correctly via `_out_color` calls at the top of the function, but the pattern is inconsistent with the migration goal and bypasses the formatter's TUI routing. The lint test misses it because `test_output_lint.sh` only matches `${BOLD|RED|GREEN|YELLOW|CYAN|NC}` literals, not local-variable aliases. Security agent already flagged these lines as LOW/fixable (`echo -e` on filesystem-derived data); fix by switching the three `echo -e` lines to `printf '%s\n'` calls with the pre-computed `${_g}`/`${_nc}` values.
-- `test_output_lint.sh` regex gap: any new file that aliases `BOLD`/`RED` etc. to a local variable before calling `echo -e` will bypass the lint guard. Consider adding a broader pattern or a `printf '%b'` check alongside the current pattern to harden the enforcement for M103+.
-- The `_out_color` implementation emits `printf ''` (no-op printf) in the NO_COLOR branch. Functionally correct (subshell capture returns ""), but `printf ''` is a more opaque idiom than a plain `return 0` or a `printf '%s' ""`. Not worth changing, but noting for future readability.
+- `lib/finalize.sh` is 571 lines — well above the 300-line ceiling. M102 adds only ~7 lines (the `_hook_tui_complete` function + registration call); the overage predates this milestone. Log for next cleanup pass.
+- `lib/output_format.sh:227` — `$sev` is embedded unescaped into the JSON fragment in `_out_append_action_item`. Already flagged by the security agent (LOW/fixable); current callers only pass hardcoded literals so the risk is latent, but it should be routed through `_out_json_escape` before the first computed-severity caller lands.
+- `lib/output_format.sh:237` — `_out_json_escape` does not strip JSON control characters U+0000–U+001F (excluding the explicitly handled `\n`, `\r`, `\t`). Already flagged LOW/fixable by the security agent. Add a `tr -d` pass or bash parameter expansion strip before the function returns.
 
 ## Coverage Gaps
-- `out_msg()` TUI path (routes to `_tui_notify` + log file) has no unit test. All 68 assertions in `test_output_format.sh` force `_TUI_ACTIVE=false`, so the TUI-mode branch of every formatter is untested. Acceptable scope deferral — TUI integration tests are complex — but worth adding in M102 when TUI hold-screen consumption of `_OUT_CTX[action_items]` is exercised.
-
-## ACP Verdicts
 - None
 
 ## Drift Observations
-- `lib/init_helpers_display.sh` was extracted from `init_helpers.sh` to keep `init_helpers.sh` under the 300-line ceiling, but the new file itself uses `echo -e` with aliased ANSI locals — a pattern that the lint test was designed to eliminate. The extraction preserved the old style rather than converting it, creating a latent gap in lint coverage.
-- `test_output_lint.sh` checks `lib/` and `stages/` but excludes only `lib/common.sh`, `lib/output.sh`, `lib/output_format.sh`. If `lib/output_format.sh` itself ever exceeds 300 lines and is split, the exclusion list will need updating — a fragile coupling between file layout and lint configuration.
+- `lib/output_format.sh:_out_json_escape` and `lib/tui_helpers.sh:_tui_escape` implement identical JSON string escape logic (backslash doubling, quote escaping, newline/CR/tab). As the output bus matures these should be consolidated into a single authoritative function rather than maintained in parallel — a future edit to one that isn't mirrored in the other will produce inconsistent escaping between CLI and TUI paths.
+- `lib/finalize.sh:532-534` — comment references milestone numbers (M97, M102) inline. These rotate as the history of the file extends. The load-bearing observation (action_items accumulate in `_hook_commit` so `_hook_tui_complete` must run last) should be expressed as a causal statement rather than a changelog entry.

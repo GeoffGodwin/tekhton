@@ -33,15 +33,15 @@ _CURRENT_MILESTONE=""
 TEKHTON_SESSION_DIR="$TMPDIR"
 START_AT="N/A"
 VERDICT="APPROVED"
-HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
-NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
-DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
-HUMAN_NOTES_FILE="${TEKHTON_DIR}/HUMAN_NOTES.md"
-CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
-REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
-TESTER_REPORT_FILE="${TEKHTON_DIR}/TESTER_REPORT.md"
-SECURITY_REPORT_FILE="${TEKHTON_DIR}/SECURITY_REPORT.md"
-SECURITY_NOTES_FILE="${TEKHTON_DIR}/SECURITY_NOTES.md"
+HUMAN_ACTION_FILE="${TEKHTON_DIR:-.tekhton}/HUMAN_ACTION_REQUIRED.md"
+NON_BLOCKING_LOG_FILE="${TEKHTON_DIR:-.tekhton}/NON_BLOCKING_LOG.md"
+DRIFT_LOG_FILE="${TEKHTON_DIR:-.tekhton}/DRIFT_LOG.md"
+HUMAN_NOTES_FILE="${TEKHTON_DIR:-.tekhton}/HUMAN_NOTES.md"
+CODER_SUMMARY_FILE="${TEKHTON_DIR:-.tekhton}/CODER_SUMMARY.md"
+REVIEWER_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/REVIEWER_REPORT.md"
+TESTER_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/TESTER_REPORT.md"
+SECURITY_REPORT_FILE="${TEKHTON_DIR:-.tekhton}/SECURITY_REPORT.md"
+SECURITY_NOTES_FILE="${TEKHTON_DIR:-.tekhton}/SECURITY_NOTES.md"
 _TEKHTON_LOCK_FILE=""
 WITH_NOTES=false
 HUMAN_MODE=false
@@ -202,6 +202,10 @@ persist_express_config() {
 }
 persist_express_roles() {
     _mock_called[persist_express_roles]=1
+    return 0
+}
+out_complete() {
+    _mock_called[out_complete]=1
     return 0
 }
 has_human_actions() {
@@ -833,6 +837,7 @@ assert "14.6 check_for_updates called on success (finalize_run 0)" \
 # Test _hook_final_checks directly with SKIP_FINAL_CHECKS=false
 _reset_mocks
 SKIP_FINAL_CHECKS=false
+_PREFLIGHT_TESTS_PASSED=false  # isolate from pipeline env
 _hook_final_checks 0
 assert "14.5 run_final_checks called when SKIP_FINAL_CHECKS=false" \
     "$([ -n "${_mock_called[run_final_checks]:-}" ] && echo 0 || echo 1)"
@@ -843,6 +848,7 @@ echo "=== Test Suite 15: finalize_run 1 skips success-only hooks ==="
 
 _reset_mocks
 SKIP_FINAL_CHECKS=false
+_PREFLIGHT_TESTS_PASSED=false  # isolate from pipeline env
 finalize_run 1
 
 # Hooks a, b, c, f always run

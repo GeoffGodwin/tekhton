@@ -2,9 +2,11 @@
 
 ## Metadata
 - Last audit: 2026-04-19
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-04-19 | "Implement Milestone 102: TUI-Aware Finalize + Completion Flow"] `lib/output_format.sh:_out_json_escape` and `lib/tui_helpers.sh:_tui_escape` implement identical JSON string escape logic (backslash doubling, quote escaping, newline/CR/tab). As the output bus matures these should be consolidated into a single authoritative function rather than maintained in parallel — a future edit to one that isn't mirrored in the other will produce inconsistent escaping between CLI and TUI paths.
+- [2026-04-19 | "Implement Milestone 102: TUI-Aware Finalize + Completion Flow"] `lib/finalize.sh:532-534` — comment references milestone numbers (M97, M102) inline. These rotate as the history of the file extends. The load-bearing observation (action_items accumulate in `_hook_commit` so `_hook_tui_complete` must run last) should be expressed as a causal statement rather than a changelog entry.
 - [2026-04-19 | "M101"] `lib/init_helpers_display.sh` was extracted from `init_helpers.sh` to keep `init_helpers.sh` under the 300-line ceiling, but the new file itself uses `echo -e` with aliased ANSI locals — a pattern that the lint test was designed to eliminate. The extraction preserved the old style rather than converting it, creating a latent gap in lint coverage.
 - [2026-04-19 | "M101"] `test_output_lint.sh` checks `lib/` and `stages/` but excludes only `lib/common.sh`, `lib/output.sh`, `lib/output_format.sh`. If `lib/output_format.sh` itself ever exceeds 300 lines and is split, the exclusion list will need updating — a fragile coupling between file layout and lint configuration.
 - [2026-04-19 | "architect audit"] **OBS-1 and OBS-2** (both entries from the 2026-04-18 audit): Both were already self-annotated "Verified stale. No action required." by the prior architect pass. Confirmed by direct file inspection:

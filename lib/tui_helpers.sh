@@ -116,6 +116,21 @@ _tui_stage_order_json() {
     printf ']'
 }
 
+# _tui_action_items_json — emit the JSON array of action items from the
+# Output Bus. M102 routes out_action_item through _OUT_CTX[action_items],
+# which already holds a serialised JSON array (built by _out_append_action_item).
+# An empty/unset value maps to an empty array.
+_tui_action_items_json() {
+    if declare -p _OUT_CTX &>/dev/null; then
+        local raw="${_OUT_CTX[action_items]:-}"
+        if [[ -n "$raw" ]]; then
+            printf '%s' "$raw"
+            return 0
+        fi
+    fi
+    printf '[]'
+}
+
 # _tui_json_build_status ELAPSED_SECS — emit full status JSON to stdout.
 # Reads state from _TUI_* globals set by lib/tui.sh.
 _tui_json_build_status() {
@@ -181,7 +196,7 @@ _tui_json_build_status() {
     printf '"stage_order":%s,' "$(_tui_stage_order_json)"
     printf '"last_event":"%s",' "$(_tui_escape "$last_event")"
     printf '"recent_events":%s,' "$(_tui_recent_events_json)"
-    printf '"action_items":[],'
+    printf '"action_items":%s,' "$(_tui_action_items_json)"
     printf '"verdict":%s,' "$verdict_json"
     printf '"complete":%s' "$complete"
     printf '}'

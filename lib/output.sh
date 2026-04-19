@@ -109,6 +109,18 @@ out_error()   { _out_emit error   "$*"; }
 out_success() { _out_emit success "$*"; }
 out_header()  { _out_emit header  "$*"; }
 
+# out_complete VERDICT — signal end-of-run to the display layer.
+# In TUI mode, delegates to tui_complete which flips complete=true in the
+# JSON status (triggering the sidecar's hold-on-complete screen), then waits
+# for Enter + tears the sidecar down. In CLI mode this is a no-op — the
+# finalize banner already prints via out_ primitives.
+out_complete() {
+    local verdict="${1:-}"
+    if declare -f tui_complete &>/dev/null; then
+        tui_complete "$verdict"
+    fi
+}
+
 # Initialise the context store at source time. Every entry point into the
 # pipeline sources common.sh (which sources this file), so _OUT_CTX is
 # guaranteed populated before any out_set_context / out_ctx caller runs.

@@ -1,7 +1,7 @@
 # M102 — TUI-Aware Finalize + Completion Flow
 <!-- milestone-meta
 id: "102"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

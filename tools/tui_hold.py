@@ -57,6 +57,21 @@ def _hold_on_complete(status: dict[str, Any], console: Console) -> None:
             console.print(f"  [dim]{ts}[/dim]  [{style}]{msg}[/{style}]")
         console.print()
 
+    action_items = status.get("action_items") or []
+    if action_items:
+        console.print("[bold]Action items:[/bold]", style="dim")
+        for item in action_items:
+            msg = item.get("msg", "")
+            sev = item.get("severity", "normal")
+            if sev == "critical":
+                prefix, style, suffix = "\u2717", "red", " [CRITICAL]"
+            elif sev == "warning":
+                prefix, style, suffix = "\u26a0", "yellow", ""
+            else:
+                prefix, style, suffix = "\u2139", "cyan", ""
+            console.print(f"  [{style}]{prefix} {msg}{suffix}[/{style}]")
+        console.print()
+
     try:
         tty_in = open("/dev/tty", "r")
     except OSError:

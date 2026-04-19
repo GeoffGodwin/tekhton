@@ -415,6 +415,146 @@ def test_hold_on_complete_non_interactive(tmp_path, monkeypatch):
 
 
 # =============================================================================
+# _hold_on_complete action items rendering tests (M102)
+# =============================================================================
+
+def _make_console() -> tuple:
+    """Return (console, sio) for capturing _hold_on_complete output as plain text."""
+    import io
+    from rich.console import Console
+    sio = io.StringIO()
+    console = Console(file=sio, force_terminal=False, width=80)
+    return console, sio
+
+
+def _no_tty(monkeypatch) -> None:
+    """Monkeypatch /dev/tty to unavailable so _hold_on_complete uses sleep fallback."""
+    import builtins
+    real_open = builtins.open
+
+    def fake_open(path, *args, **kwargs):
+        if str(path) == "/dev/tty":
+            raise OSError("no tty in test env")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    monkeypatch.setattr("tui_hold.time.sleep", lambda _s: None)
+
+
+def test_hold_on_complete_critical_action_item(monkeypatch):
+    """Critical action item renders ✗ icon and '[CRITICAL]' suffix."""
+    _no_tty(monkeypatch)
+    console, sio = _make_console()
+
+    status = _sample_status()
+    status["complete"] = True
+    status["verdict"] = "SUCCESS"
+    status["action_items"] = [{"msg": "DB migration required", "severity": "critical"}]
+
+    tui._hold_on_complete(status, console)
+    output = sio.getvalue()
+
+    assert "\u2717" in output, "Critical icon ✗ not found in output"
+    assert "DB migration required" in output
+    assert "[CRITICAL]" in output
+
+
+def test_hold_on_complete_warning_action_item(monkeypatch):
+    """Warning action item renders ⚠ icon; no '[CRITICAL]' suffix."""
+    _no_tty(monkeypatch)
+    console, sio = _make_console()
+
+    status = _sample_status()
+    status["complete"] = True
+    status["verdict"] = "SUCCESS"
+    status["action_items"] = [{"msg": "Review drift log", "severity": "warning"}]
+
+    tui._hold_on_complete(status, console)
+    output = sio.getvalue()
+
+    assert "\u26a0" in output, "Warning icon ⚠ not found in output"
+    assert "Review drift log" in output
+    assert "[CRITICAL]" not in output
+
+
+def test_hold_on_complete_normal_action_item(monkeypatch):
+    """Normal action item renders ℹ icon; no '[CRITICAL]' suffix."""
+    _no_tty(monkeypatch)
+    console, sio = _make_console()
+
+    status = _sample_status()
+    status["complete"] = True
+    status["verdict"] = "SUCCESS"
+    status["action_items"] = [{"msg": "Open a PR", "severity": "normal"}]
+
+    tui._hold_on_complete(status, console)
+    output = sio.getvalue()
+
+    assert "\u2139" in output, "Normal icon ℹ not found in output"
+    assert "Open a PR" in output
+    assert "[CRITICAL]" not in output
+
+
+def test_hold_on_complete_empty_action_items_no_header(monkeypatch):
+    """Empty action_items list suppresses the 'Action items:' header entirely."""
+    _no_tty(monkeypatch)
+    console, sio = _make_console()
+
+    status = _sample_status()
+    status["complete"] = True
+    status["verdict"] = "SUCCESS"
+    status["action_items"] = []
+
+    tui._hold_on_complete(status, console)
+    output = sio.getvalue()
+
+    assert "Action items:" not in output
+
+
+def test_hold_on_complete_null_action_items_no_header(monkeypatch):
+    """None/missing action_items suppresses the 'Action items:' header."""
+    _no_tty(monkeypatch)
+    console, sio = _make_console()
+
+    status = _sample_status()
+    status["complete"] = True
+    status["verdict"] = "SUCCESS"
+    status["action_items"] = None
+
+    tui._hold_on_complete(status, console)
+    output = sio.getvalue()
+
+    assert "Action items:" not in output
+
+
+def test_hold_on_complete_multiple_action_items(monkeypatch):
+    """All action items are rendered when multiple items present."""
+    _no_tty(monkeypatch)
+    console, sio = _make_console()
+
+    status = _sample_status()
+    status["complete"] = True
+    status["verdict"] = "SUCCESS"
+    status["action_items"] = [
+        {"msg": "Fix schema migration", "severity": "critical"},
+        {"msg": "Update CHANGELOG", "severity": "warning"},
+        {"msg": "Open a PR", "severity": "normal"},
+    ]
+
+    tui._hold_on_complete(status, console)
+    output = sio.getvalue()
+
+    assert "Action items:" in output
+    assert "Fix schema migration" in output
+    assert "Update CHANGELOG" in output
+    assert "Open a PR" in output
+    assert "[CRITICAL]" in output
+    assert "\u2717" in output   # critical icon
+    assert "\u26a0" in output   # warning icon
+    assert "\u2139" in output   # normal icon
+
+
+# =============================================================================
 # Watchdog CLI argument tests
 # =============================================================================
 
