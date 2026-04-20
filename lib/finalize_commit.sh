@@ -18,6 +18,7 @@
 #   _tag_milestone_if_complete  — create milestone tag post-commit (helper)
 #   _hook_commit                — interactive/auto commit finalize hook
 # =============================================================================
+set -euo pipefail
 
 # _do_git_commit MSG
 # Stages all changes, runs gitignore safety check, commits with MSG.

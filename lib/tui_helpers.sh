@@ -7,6 +7,7 @@
 # =============================================================================
 
 set -euo pipefail
+# shellcheck source=lib/tui.sh
 
 # _tui_escape STRING — minimal JSON string escape. Delegates to the canonical
 # implementation in lib/output_format.sh (sourced via lib/common.sh ahead of

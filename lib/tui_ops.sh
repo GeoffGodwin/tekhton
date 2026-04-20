@@ -8,6 +8,7 @@
 # wrapper introduced in M104.
 # =============================================================================
 set -euo pipefail
+# shellcheck source=lib/tui.sh
 
 # Operation label for the JSON status file (empty outside a run_op call).
 _TUI_OPERATION_LABEL=""

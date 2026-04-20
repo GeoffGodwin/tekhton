@@ -107,7 +107,7 @@ _check_callsite() {
 
 _check_callsite "4.1 milestone_acceptance"  "lib/milestone_acceptance.sh"
 _check_callsite "4.2 gates_completion"      "lib/gates_completion.sh"
-_check_callsite "4.3 orchestrate"           "lib/orchestrate.sh"
+_check_callsite "4.3 orchestrate_loop"      "lib/orchestrate_loop.sh"
 _check_callsite "4.4 orchestrate_preflight" "lib/orchestrate_preflight.sh"
 _check_callsite "4.5 hooks_final_checks"    "lib/hooks_final_checks.sh"
 

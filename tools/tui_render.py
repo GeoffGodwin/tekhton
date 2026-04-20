@@ -2,7 +2,7 @@
 
 Exports:
     _fmt_duration, _build_logo, _build_simple_logo, _build_header_bar,
-    _build_events_panel
+    _build_events_panel, _build_timings_panel
 
 Imported by tui.py which re-exports these symbols for test discovery.
 """
@@ -16,19 +16,9 @@ from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
+from tui_render_common import _SPIN_CHARS, _fmt_duration  # noqa: F401
 from tui_render_logo import _build_logo, _build_simple_logo  # noqa: F401
-
-
-def _fmt_duration(secs: int) -> str:
-    if secs <= 0:
-        return "0s"
-    hours, rem = divmod(int(secs), 3600)
-    mins, s = divmod(rem, 60)
-    if hours:
-        return f"{hours}h{mins}m{s}s"
-    if mins:
-        return f"{mins}m{s}s"
-    return f"{s}s"
+from tui_render_timings import _build_timings_panel  # noqa: F401
 
 
 # ---- Stage pills ------------------------------------------------------------
@@ -88,9 +78,6 @@ def _model_short(model: str) -> str:
     if not model:
         return ""
     return model[len("claude-"):] if model.startswith("claude-") else model
-
-
-_SPIN_CHARS = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
 
 
 def _build_working_bar(status: dict[str, Any]) -> Table:

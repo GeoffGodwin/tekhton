@@ -6,6 +6,7 @@
 # Expects: TOTAL_TURNS, TOTAL_TIME, STAGE_SUMMARY (set by caller)
 # Expects: log(), success(), warn(), error() from common.sh
 # =============================================================================
+set -euo pipefail
 
 # Source platform detection (Windows/WSL interop, timeout flags, _kill_agent_windows)
 # shellcheck source=lib/agent_monitor_platform.sh

@@ -9,6 +9,7 @@
 #
 # Note: Transient retry envelope functions are in lib/agent_retry.sh
 # =============================================================================
+set -euo pipefail
 
 # --- Run summary -------------------------------------------------------------
 

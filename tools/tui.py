@@ -7,9 +7,10 @@ when the parent kills it (SIGTERM/SIGINT). On complete, exits the Live
 alternate screen and dumps the final event log via tui_hold._hold_on_complete
 so the user can read the full run history before the finalize banner prints.
 
-Layout (M98): size=8 header panel (logo + run context + stage pills +
-active-stage bar) above a ratio=1 events panel that fills the rest of the
-terminal. See .claude/milestones/m98-tui-redesign-layout-context-logo-completion.md.
+Layout (M108): size=8 header panel (logo + run context + stage pills +
+active-stage bar) above a ratio=1 body that splits horizontally into a
+ratio=2 events panel (left) and a ratio=1 stage-timings panel (right).
+See .claude/milestones/m108-tui-stage-timings-column.md.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from tui_render import (  # noqa: F401 — re-exports for tests
     _build_header_bar,
     _build_logo,
     _build_simple_logo,
+    _build_timings_panel,
     _fmt_duration,
 )
 from tui_hold import _hold_on_complete  # noqa: F401 — re-export for tests
@@ -76,6 +78,7 @@ def _empty_status() -> dict[str, Any]:
         "pipeline_elapsed_secs": 0,
         "stages_complete": [],
         "current_agent_status": "idle",
+        "current_operation": "",
         "recent_events": [],
         "run_mode": "task",
         "cli_flags": "",
@@ -88,10 +91,15 @@ def _build_layout(status: dict[str, Any], event_lines: int) -> Layout:
     layout = Layout()
     layout.split_column(
         Layout(name="header", size=8),
-        Layout(name="events", ratio=1),
+        Layout(name="body", ratio=1),
+    )
+    layout["body"].split_row(
+        Layout(name="events", ratio=2),
+        Layout(name="timings", ratio=1),
     )
     layout["header"].update(_build_header_bar(status))
     layout["events"].update(_build_events_panel(status, event_lines))
+    layout["timings"].update(_build_timings_panel(status))
     return layout
 
 

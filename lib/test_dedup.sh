@@ -16,6 +16,7 @@
 #   test_dedup_can_skip     — return 0 if the cached fingerprint matches now
 #   test_dedup_reset        — clear the cached fingerprint
 # =============================================================================
+set -euo pipefail
 
 # _test_dedup_hash
 # Portable hash helper. Prefers `shasum` (present on macOS + Linux); falls back

@@ -1,77 +1,133 @@
-# Coder Summary
+# Coder Summary — M108: TUI Stage Timings Column
 
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-M107 wires every pipeline stage into the M106 TUI protocol API
-(`tui_stage_begin` / `tui_stage_end`) so the sidecar's pill bar reflects
-real stage progression instead of showing grey/missing pills for the
-intake, scout, rework, and wrap-up stages.
+Implemented the M108 design: the bottom of the TUI now splits into a
+two-column body — events (left, ratio=2) and stage timings (right, ratio=1).
+The timings column lists every completed stage with elapsed time and turn
+count, plus a yellow live row for the actively running stage / shell op.
 
-Changes:
+### §1 — `_build_timings_panel` (new function)
 
-1. **`lib/pipeline_order.sh`** — `get_display_stage_order` now always
-   suffixes `wrap-up` as the final pill; finalize activates it.
-2. **`tekhton.sh`** —
-   - Main pipeline loop before/after blocks now route through
-     `get_stage_display_label` and call `tui_stage_begin` /
-     `tui_stage_end` (replacing the raw-internal-name path).
-   - Intake pre-stage is bracketed with explicit `tui_stage_begin
-     "intake"` / `tui_stage_end "intake" ... "$_intake_verdict"` so the
-     intake pill activates even though intake runs before the main loop.
-3. **`stages/coder.sh`** — scout `run_agent` call is bracketed with
-   `tui_stage_begin "scout"` / `tui_stage_end "scout"` so the scout
-   pill ticks inside `run_stage_coder` (scout is intentionally
-   suppressed as a standalone pipeline-loop stage).
-4. **`stages/review.sh`** — both rework paths (Sr coder and Jr-only)
-   bracket their `run_agent` calls with `tui_stage_begin "rework"` /
-   `tui_stage_end "rework"` using the model that actually ran. Two
-   cycles produce one deduped pill plus two `stages_complete` entries.
-   The Jr-after-Sr pill-sharing path is deliberately left unwired per
-   spec.
-5. **`lib/finalize.sh`** — `finalize_run` now emits
-   `tui_stage_begin "wrap-up"` as its first action, covering every
-   finalize call site with a single hook.
-6. **`lib/finalize_dashboard_hooks.sh`** — `_hook_tui_complete` now
-   emits `tui_stage_end "wrap-up" ... "$verdict"` just before
-   `out_complete`, so all commit/archive/version-bump hooks have
-   finished before the wrap-up pill closes and the sidecar flips into
-   hold-on-complete.
-7. **`tests/test_tui_stage_wiring.sh`** (new) — 21 integration checks:
-   intake label emission, `test_verify` raw-name regression guard,
-   two-rework-cycles → 1 pill + 2 completions, wrap-up verdict
-   propagation, `get_display_stage_order` ends with `wrap-up` across
-   4 configurations (standard / test_first / security disabled /
-   docs enabled), and `get_stage_display_label` correctness for all 11
-   canonical stage names.
+Reads `stages_complete` for finished rows and the `stage_label` /
+`current_agent_status` / `stage_start_ts` / `agent_turns_max` /
+`current_operation` keys for the live row. Behaviour matches the milestone
+spec exactly:
 
-## Root Cause (bugs only)
+- Empty + idle → `(no stages yet)` placeholder.
+- Each completed stage → `✓ <label>` (green) or `✗ <label>` (red) for
+  verdicts in `{FAIL, FAILED, BLOCKED, REJECT}`.
+- Live row only when `current_agent_status` is `running` or `working`. For
+  `working`, the label comes from `current_operation` so the visible row
+  reflects the actual shell op rather than the prior agent stage.
+- Live elapsed is recomputed each tick from `stage_start_ts`; live turns are
+  always `--/max` because the Claude CLI only reports the final turn count
+  on agent exit (documented as an intentional asymmetry in the milestone).
 
-N/A — this is a wiring milestone, not a bug fix. The M106 protocol API
-was already in place; stages simply had no call sites yet.
+### §2 — Layout split in `tools/tui.py`
+
+`_build_layout` now produces a `header` + `body` column, with `body`
+horizontally split into `events` (ratio=2) and `timings` (ratio=1). The
+header layer is unchanged.
+
+### §3 — Re-export for tests
+
+`tools/tui.py` re-exports `_build_timings_panel` alongside the existing
+render helpers so tests calling `tui._build_timings_panel(...)` resolve.
+`_empty_status()` gained a `current_operation: ""` key so the new tests can
+build status dicts without locally redefining the empty-state shape.
+
+### §4 — `tui_hold.py`
+
+Untouched (out of scope per milestone §4).
+
+### §5 — Tests
+
+Added the five tests called out in the milestone, plus the existing 56 tests
+all continue to pass:
+
+- `test_timings_panel_empty`
+- `test_timings_panel_completed_stages` (also asserts ✓ icon and time strings)
+- `test_timings_panel_live_running_row` (asserts `--/70` live turns)
+- `test_timings_panel_fail_verdict` (asserts ✗ icon)
+- `test_layout_has_timings_column` (asserts both names in
+  `layout["body"].children`)
+
+## Architectural Notes
+
+The new `_build_timings_panel` is large enough that adding it directly to
+`tui_render.py` would push that file from 240 → ~300+ lines (over the
+project ceiling). To stay under the ceiling I followed the existing pattern
+used for `tui_render_logo.py` and extracted the new function into
+`tui_render_timings.py`. To avoid code duplication and a circular import
+between `tui_render` and `tui_render_timings` (both need `_fmt_duration` and
+`_SPIN_CHARS`), I created a small shared module `tui_render_common.py` that
+both render modules import from. `tui_render.py` re-imports the symbols
+from common with `# noqa: F401` so external callers of
+`tui_render._fmt_duration` / `tui_render._SPIN_CHARS` continue to work.
+
+This is a structural reorganization, not an API change — every public
+symbol is still reachable at its original import path, and `tui.py`'s
+re-export block is unchanged in shape (only the new symbol added).
 
 ## Files Modified
 
-- `lib/pipeline_order.sh` — append `wrap-up` to display order (1 line).
-- `tekhton.sh` — intake pre-stage wiring + pipeline loop
-  display-label routing (3 edits).
-- `stages/coder.sh` — bracket scout `run_agent` with tui stage calls.
-- `stages/review.sh` — bracket both rework paths with tui stage calls.
-- `lib/finalize.sh` — `tui_stage_begin "wrap-up"` at top of
-  `finalize_run`.
-- `lib/finalize_dashboard_hooks.sh` — `tui_stage_end "wrap-up"` in
-  `_hook_tui_complete` before `out_complete`.
-- `tests/test_tui_stage_wiring.sh` — NEW, 236-line integration test.
-- `tests/test_pipeline_order.sh` — updated Phase 12 expectations to
-  include the trailing `wrap-up` entry now appended by
-  `get_display_stage_order`.
+| File | Status | Purpose |
+|------|--------|---------|
+| `tools/tui_render_common.py` | NEW (23 lines) | Shared `_fmt_duration` + `_SPIN_CHARS` to break the import cycle between render modules |
+| `tools/tui_render_timings.py` | NEW (79 lines) | Holds `_build_timings_panel(status)` |
+| `tools/tui_render.py` | MODIFIED (227 lines, was 240) | Imports `_fmt_duration` + `_SPIN_CHARS` from common; re-exports `_build_timings_panel` from timings module |
+| `tools/tui.py` | MODIFIED (204 lines, was 196) | Layout split into `body → events + timings`; re-exports `_build_timings_panel`; `_empty_status()` adds `current_operation` |
+| `tools/tests/test_tui.py` | MODIFIED (848 lines, was 767) | Adds 5 M108 tests at bottom |
+
+All modified Python files are under the 300-line ceiling. The existing
+test file is over the limit but is explicitly out of scope for this
+milestone (per the prior reviewer report's non-blocking note: "Python test
+file line count" is an out-of-scope item).
 
 ## Docs Updated
 
-None — no public-surface changes. All changes are internal wiring
-between the pipeline and the pre-existing M106 TUI protocol API.
+None — no public-surface changes in this task. The TUI sidecar JSON
+schema gained no new keys (every key consumed by the timings panel was
+already populated by M97/M104/M106/M107). `_empty_status()` adding
+`current_operation: ""` brings it in line with the keys the shell side
+already writes (it was previously omitted only because the empty-state
+fallback never needed it before this milestone). No CLI flags, no
+config keys, no public functions changed.
 
 ## Human Notes Status
 
-No human notes in scope for this milestone.
+No human notes were provided in this run.
+
+## Test Verification
+
+- `python -m pytest tools/tests/test_tui.py -q` → 61 passed (56 existing + 5 new)
+- `python -m pytest tools/tests/` → 150 passed (full Python suite)
+- `bash tests/run_tests.sh` → 408 shell passed, 0 failed; 150 Python passed
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` → exit 0, no output
+
+## Acceptance Criteria Verification
+
+All criteria from the milestone are satisfied:
+
+- [x] Bottom panel has two visible columns: events (left) + Stage timings (right)
+- [x] Empty state shows `(no stages yet)` (verified by `test_timings_panel_empty`)
+- [x] Completed stages render with ✓, elapsed, turns ratio
+  (verified by `test_timings_panel_completed_stages`)
+- [x] BLOCKED/FAIL/REJECT verdicts render with ✗ in red
+  (verified by `test_timings_panel_fail_verdict`; verdict set in `_FAIL_VERDICTS`)
+- [x] Live yellow row updates each tick with elapsed (computed from
+  `stage_start_ts` like `_build_active_bar`) and `--/max` turns
+  (verified by `test_timings_panel_live_running_row`)
+- [x] Sub-stages appear automatically because M107 wires them to
+  `tui_stage_end` → `stages_complete` (no special handling needed)
+- [x] `working` status uses `current_operation` for the live label (handled
+  in the `if agent_status == "working"` branch)
+- [x] Layout renders without exceptions on representative widths (existing
+  `test_build_layout_full` covers this; new layout asserted by
+  `test_layout_has_timings_column`)
+- [x] Five new tests pass
+- [x] All existing TUI tests pass
+- [x] `shellcheck` clean (no `.sh` files modified)

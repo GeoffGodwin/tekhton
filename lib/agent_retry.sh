@@ -12,6 +12,7 @@
 # Expects: classify_error(), report_retry(), _reset_monitoring_state(),
 #          _invoke_and_monitor(), and common.sh functions (log, warn)
 # =============================================================================
+set -euo pipefail
 
 # _run_with_retry LABEL INVOKE_CMD MODEL MAX_TURNS PROMPT LOG_FILE ACTIVITY_TIMEOUT SESSION_DIR EXIT_FILE TURNS_FILE PRERUN_MARKER WALL_TIMEOUT
 # Main retry envelope. Invokes agent and retries on transient errors with exponential backoff.

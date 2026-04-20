@@ -1,13 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_tui_stage_wiring.sh` — verify TUI stage wiring: intake/scout/rework/wrap-up label emission, regression guard, rework dedup, wrap-up verdict, display order suffix, get_stage_display_label
-- [x] `tests/test_pipeline_order.sh` — verify Phase 12 expectations include trailing wrap-up
+- [x] `tools/tests/test_tui.py` — add test_timings_panel_working_row: verify "working" branch uses current_operation as live label instead of stage_label
 
 ## Test Run Results
-Passed: 407  Failed: 1 (pre-existing: test_watchtower_parallel_groups_datalist.sh)
+Passed: 1  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_tui_stage_wiring.sh`
-- [x] `tests/test_pipeline_order.sh`
+- [x] `tools/tests/test_tui.py`

@@ -7,6 +7,7 @@
 # Expects: PROJECT_DIR, DRIFT_LOG_FILE, NON_BLOCKING_LOG_FILE (set by config)
 # Uses: _awk_join_bullets() from drift.sh (sourced before this file)
 # =============================================================================
+set -euo pipefail
 
 # =============================================================================
 # NON-BLOCKING NOTES ACCUMULATION

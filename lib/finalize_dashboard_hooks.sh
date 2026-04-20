@@ -15,6 +15,7 @@
 #   _hook_final_dashboard_status   — last-chance dashboard run_state write
 #   _hook_tui_complete             — out_complete() for the TUI sidecar
 # =============================================================================
+set -euo pipefail
 
 # d. Emit pipeline_end event and archive causal log (Milestone 13)
 _hook_causal_log_finalize() {

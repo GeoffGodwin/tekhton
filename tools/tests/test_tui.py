@@ -765,3 +765,102 @@ def test_watchdog_disabled_when_secs_zero(tmp_path):
         and time_mod.monotonic() - last_mtime_time > watchdog_secs
     )
     assert not watchdog_should_fire, "Watchdog must not fire when secs=0 (disabled)"
+
+
+# =============================================================================
+# M108: stage timings panel
+# =============================================================================
+
+import time as _time  # noqa: E402
+
+
+def test_timings_panel_empty():
+    """Empty stages_complete + idle → shows '(no stages yet)'."""
+    status = {**tui._empty_status(), "current_operation": ""}
+    panel = tui._build_timings_panel(status)
+    rendered = _render(panel)
+    assert "(no stages yet)" in rendered
+
+
+def test_timings_panel_completed_stages():
+    """Completed stages render with ✓ icon, elapsed, and turns."""
+    status = {
+        **tui._empty_status(),
+        "current_operation": "",
+        "stages_complete": [
+            {"label": "intake", "model": "", "turns": "3/10",
+             "time": "8s", "verdict": None},
+            {"label": "scout", "model": "", "turns": "5/10",
+             "time": "12s", "verdict": None},
+        ],
+    }
+    panel = tui._build_timings_panel(status)
+    rendered = _render(panel)
+    assert "intake" in rendered
+    assert "scout" in rendered
+    assert "8s" in rendered
+    assert "12s" in rendered
+    assert "\u2713" in rendered  # ✓ for non-fail verdicts
+
+
+def test_timings_panel_live_running_row():
+    """Running stage appears as a live yellow row below completed stages."""
+    status = {
+        **tui._empty_status(),
+        "current_operation": "",
+        "stages_complete": [
+            {"label": "intake", "model": "", "turns": "3/10",
+             "time": "8s", "verdict": None},
+        ],
+        "stage_label": "coder",
+        "current_agent_status": "running",
+        "stage_start_ts": int(_time.time()) - 30,
+        "agent_turns_max": 70,
+    }
+    panel = tui._build_timings_panel(status)
+    rendered = _render(panel)
+    assert "coder" in rendered
+    # Turns are unknown until agent exits — live row always shows --/max.
+    assert "--/70" in rendered
+
+
+def test_timings_panel_fail_verdict():
+    """Failed stage renders with ✗ icon."""
+    status = {
+        **tui._empty_status(),
+        "current_operation": "",
+        "stages_complete": [
+            {"label": "security", "model": "", "turns": "8/15",
+             "time": "45s", "verdict": "BLOCKED"},
+        ],
+    }
+    panel = tui._build_timings_panel(status)
+    rendered = _render(panel)
+    assert "security" in rendered
+    assert "\u2717" in rendered  # ✗
+
+
+def test_layout_has_timings_column():
+    """Layout includes both 'events' and 'timings' regions in the body."""
+    layout = tui._build_layout(tui._empty_status(), event_lines=20)
+    names = [child.name for child in layout["body"].children]
+    assert "events" in names
+    assert "timings" in names
+
+
+def test_timings_panel_working_row():
+    """Working state: live label comes from current_operation, not stage_label."""
+    status = {
+        **tui._empty_status(),
+        "stage_label": "coder",
+        "current_operation": "running lint checks",
+        "current_agent_status": "working",
+        "stage_start_ts": int(_time.time()) - 5,
+        "agent_turns_max": 40,
+    }
+    panel = tui._build_timings_panel(status)
+    rendered = _render(panel)
+    # The shell-op label must appear as the live row label.
+    assert "running lint checks" in rendered
+    # The prior agent stage label must NOT appear (current_operation takes over).
+    assert "coder" not in rendered
