@@ -108,8 +108,10 @@ tekhton/
 │   ├── init_config.sh      # Init config generation
 │   ├── init_config_emitters.sh # Init config section emitters
 │   ├── init_config_sections.sh # Init config section builders
+│   ├── init_config_workspace.sh # Init config workspace/service section emitter
 │   ├── init_helpers.sh     # Init helper functions
 │   ├── init_report.sh      # Init report generation
+│   ├── init_wizard.sh      # Init feature wizard (M109: Python feature prompts)
 │   ├── init_synthesize_helpers.sh # Init synthesis helpers
 │   ├── init_synthesize_ui.sh # Init synthesis UI
 │   ├── intake_helpers.sh   # Intake agent helpers

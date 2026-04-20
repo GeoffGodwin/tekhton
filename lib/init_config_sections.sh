@@ -173,14 +173,36 @@ EOF
 }
 
 # _emit_section_features — Section 5: Features.
+# When the M109 wizard set _WIZARD_*_ENABLED env vars, those features are
+# emitted as uncommented active lines; otherwise they remain commented out
+# (today's behavior). DASHBOARD_ENABLED is always emitted active.
 _emit_section_features() {
     _emit_section_header "5" "Features" \
         "Optional features — enable as needed"
 
+    if [[ "${_WIZARD_TUI_ENABLED:-}" == "true" ]]; then
+        echo "TUI_ENABLED=true"
+    elif [[ "${_WIZARD_TUI_ENABLED:-}" == "auto" ]]; then
+        echo "TUI_ENABLED=auto"
+    else
+        echo "# TUI_ENABLED=auto"
+    fi
+
+    if [[ "${_WIZARD_REPO_MAP_ENABLED:-}" == "true" ]]; then
+        echo "REPO_MAP_ENABLED=true"
+    else
+        echo "# REPO_MAP_ENABLED=false"
+    fi
+
+    if [[ "${_WIZARD_SERENA_ENABLED:-}" == "true" ]]; then
+        echo "SERENA_ENABLED=true"
+    else
+        echo "# SERENA_ENABLED=false"
+    fi
+
+    echo "DASHBOARD_ENABLED=true"
+
     cat << EOF
-# REPO_MAP_ENABLED=false
-# SERENA_ENABLED=false
-# DASHBOARD_ENABLED=true
 # CLEANUP_ENABLED=false
 # SEED_CONTRACTS_ENABLED=false
 # INTAKE_AGENT_ENABLED=true
@@ -227,46 +249,8 @@ NON_BLOCKING_LOG_FILE="${NON_BLOCKING_LOG_FILE:-${TEKHTON_DIR:-.tekhton}/NON_BLO
 EOF
 }
 
-# _emit_section_workspace — Emits project structure config if monorepo detected.
-_emit_section_workspace() {
-    local workspaces="${_INIT_WORKSPACES:-}"
-    local services="${_INIT_SERVICES:-}"
-    local workspace_scope="${_INIT_WORKSPACE_SCOPE:-}"
-
-    local project_structure="single"
-    if [[ -n "$workspaces" ]]; then
-        project_structure="monorepo"
-    elif [[ -n "$services" ]]; then
-        local svc_count
-        svc_count=$(echo "$services" | grep -c '.' || echo "0")
-        [[ "$svc_count" -gt 1 ]] && project_structure="multi-service"
-    fi
-
-    # Only emit if non-trivial structure detected
-    if [[ "$project_structure" != "single" ]]; then
-        echo ""
-        echo "# --- Project structure -------------------------------------------------------"
-        echo "PROJECT_STRUCTURE=\"${project_structure}\""
-
-        if [[ -n "$workspaces" ]]; then
-            local ws_type
-            ws_type=$(echo "$workspaces" | head -1 | cut -d'|' -f1)
-            echo "WORKSPACE_TYPE=\"${ws_type}\""
-            if [[ -n "$workspace_scope" ]] && [[ "$workspace_scope" != "root" ]]; then
-                echo "# WORKSPACE_SCOPE=\"${workspace_scope}\""
-            fi
-        fi
-
-        if [[ -n "$services" ]]; then
-            echo "# Detected services:"
-            local name dir tech source
-            while IFS='|' read -r name dir tech source; do
-                [[ -z "$name" ]] && continue
-                echo "# SERVICE: ${name} -> ${dir} (${tech}, detected from ${source})"
-            done <<< "$services"
-        fi
-    fi
-}
+# shellcheck source=init_config_workspace.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/init_config_workspace.sh"
 
 # generate_sectioned_config — Produces the complete pipeline.conf with sections.
 # Args: $1=project_name, $2=test_cmd, $3=test_conf, $4=analyze_cmd,

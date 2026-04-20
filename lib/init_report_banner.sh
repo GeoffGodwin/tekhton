@@ -19,11 +19,11 @@ fi
 # --- Recommendation heuristic ------------------------------------------------
 
 # _init_pick_recommendation — Pure function: returns one recommended command.
-# Args: $1=file_count, $2=has_manifest(true/false), $3=has_pending(true/false)
+# Args: $1=file_count, $2=has_manifest(true/false, reserved), $3=has_pending(true/false)
 # Output: CMD|DESCRIPTION|ALT1|ALT2
 _init_pick_recommendation() {
     local file_count="$1"
-    local has_manifest="$2"
+    # $2 (has_manifest) reserved — not used in current heuristic
     local has_pending="$3"
 
     if [[ "$has_pending" == "true" ]]; then
@@ -121,6 +121,10 @@ _init_collect_attention() {
                 echo "    ${bullet} ${cmd_type} command needs verification (${cmd_conf})"
             fi
         done <<< "$commands"
+    fi
+
+    if declare -f _wizard_attention_lines &>/dev/null; then
+        _wizard_attention_lines "$bullet"
     fi
 }
 
@@ -254,100 +258,5 @@ _emit_learned_section() {
     fi
 }
 
-# _emit_next_section — Renders the "What's next" block with recommendation.
-_emit_next_section() {
-    local project_dir="$1"
-    local file_count="$2"
-    local commands="$3"
-    local bullet="$4"
-    local arrow="$5"
-
-    # Detect milestone state
-    local has_manifest=false has_pending=false
-    local _milestone_dir="${project_dir}/.claude/milestones"
-    local _claude_md="${project_dir}/CLAUDE.md"
-    if [[ -f "${_milestone_dir}/MANIFEST.cfg" ]] \
-        && grep -q '|' "${_milestone_dir}/MANIFEST.cfg" 2>/dev/null; then
-        has_manifest=true
-        if grep -qE '\|pending\||\|in_progress\|' "${_milestone_dir}/MANIFEST.cfg" 2>/dev/null; then
-            has_pending=true
-        fi
-    elif [[ -f "$_claude_md" ]] \
-        && ! grep -q '<!-- TODO:.*--plan' "$_claude_md" 2>/dev/null \
-        && grep -q '^#### Milestone' "$_claude_md" 2>/dev/null; then
-        has_manifest=true
-        has_pending=true
-    fi
-
-    local rec_line
-    rec_line=$(_init_pick_recommendation "$file_count" "$has_manifest" "$has_pending")
-    local rec_cmd rec_desc alt1 alt2
-    rec_cmd=$(echo "$rec_line" | cut -d'|' -f1)
-    rec_desc=$(echo "$rec_line" | cut -d'|' -f2)
-    alt1=$(echo "$rec_line" | cut -d'|' -f3)
-    alt2=$(echo "$rec_line" | cut -d'|' -f4)
-
-    out_section "What's next"
-    local bold nc green cyan
-    bold=$(_out_color "${BOLD:-}")
-    nc=$(_out_color "${NC:-}")
-    green=$(_out_color "${GREEN:-}")
-    cyan=$(_out_color "${CYAN:-}")
-    out_msg "    ${green}${arrow}${nc}  ${bold}${rec_cmd}${nc}   (${rec_desc})"
-    [[ -n "$alt1" ]] && out_msg "       or ${alt1}"
-    [[ -n "$alt2" ]] && out_msg "       or ${alt2}"
-    out_msg ""
-
-    # Report pointer
-    if _is_watchtower_enabled; then
-        out_msg "  Full report: ${cyan}.claude/dashboard/index.html${nc}"
-    else
-        out_msg "  Full report: ${cyan}INIT_REPORT.md${nc}"
-    fi
-    out_msg "  Run ${cyan}tekhton --help${nc} for all commands."
-    out_msg ""
-}
-
-# _emit_auto_prompt — Optional auto-prompt to run recommended command.
-_emit_auto_prompt() {
-    local project_dir="$1"
-    local file_count="$2"
-
-    [[ "${INIT_AUTO_PROMPT:-false}" != "true" ]] && return 0
-    [[ ! -t 0 ]] && return 0
-    [[ ! -t 1 ]] && return 0
-
-    # Re-derive recommendation (mirrors logic in _emit_next_section)
-    local has_manifest=false has_pending=false
-    local _milestone_dir="${project_dir}/.claude/milestones"
-    local _claude_md="${project_dir}/CLAUDE.md"
-    if [[ -f "${_milestone_dir}/MANIFEST.cfg" ]] \
-        && grep -q '|' "${_milestone_dir}/MANIFEST.cfg" 2>/dev/null; then
-        has_manifest=true
-        if grep -qE '\|pending\||\|in_progress\|' "${_milestone_dir}/MANIFEST.cfg" 2>/dev/null; then
-            has_pending=true
-        fi
-    elif [[ -f "$_claude_md" ]] \
-        && ! grep -q '<!-- TODO:.*--plan' "$_claude_md" 2>/dev/null \
-        && grep -q '^#### Milestone' "$_claude_md" 2>/dev/null; then
-        has_manifest=true
-        has_pending=true
-    fi
-
-    local rec_line
-    rec_line=$(_init_pick_recommendation "$file_count" "$has_manifest" "$has_pending")
-    local rec_cmd
-    rec_cmd=$(echo "$rec_line" | cut -d'|' -f1)
-
-    local _reply
-    read -r -p "  Run ${rec_cmd} now? [Y/n] " _reply </dev/tty || return 0
-    case "${_reply:-Y}" in
-        y|Y|yes|Yes|YES|"")
-            # Split rec_cmd into array to properly handle multi-word commands
-            local _cmd_array
-            read -ra _cmd_array <<< "$rec_cmd"
-            exec "${_cmd_array[@]}"
-            ;;
-        *) : ;;
-    esac
-}
+# shellcheck source=init_report_banner_next.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/init_report_banner_next.sh"

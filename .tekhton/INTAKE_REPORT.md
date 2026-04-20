@@ -2,13 +2,12 @@
 PASS
 
 ## Confidence
-93
+92
 
 ## Reasoning
-- Scope is precisely defined: three files modified, one function added, explicit out-of-scope declaration (tui_hold.py untouched)
-- Complete Python implementation is provided verbatim for both `_build_timings_panel` and the layout split — no guessing required
-- Five test cases are spelled out with exact assertions; all acceptance criteria are mechanically verifiable
-- Key design asymmetry (live turns always `--/max`, elapsed from local clock) is explicitly documented with rationale
-- Edge cases covered: narrow terminals, `working` vs `running` agent status, empty stages list, failed verdicts
-- No new shell config keys or user-facing format changes; no migration impact section required
-- Historical pattern: similar TUI milestones (M97, M96) passed first attempt; risk profile is low
+- Scope is precisely defined: new file `lib/init_wizard.sh`, four modified files, exact function names and signatures specified
+- Acceptance criteria are specific and testable — env var values, shellcheck pass, venv setup behavior, reinit no-op, non-interactive path all covered
+- Edge cases are handled explicitly: Python not found, reinit skip, non-interactive mode (with the subtle `auto` vs `true` TUI distinction explained and justified), venv setup failure degradation
+- 9 concrete test cases with exact verification steps
+- Design rationale is provided (why duplicate vs source `setup_indexer.sh`, why `auto` instead of `true` for TUI in non-interactive mode)
+- One minor implementation note: CLAUDE.md repo layout lists `lib/init_report.sh` but the milestone references `lib/init_report_banner.sh` — developer should verify the actual filename before editing; trivially resolvable without guidance

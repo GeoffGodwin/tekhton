@@ -1,7 +1,7 @@
 # M109 — Init Feature Wizard
 <!-- milestone-meta
 id: "109"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

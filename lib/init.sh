@@ -30,6 +30,8 @@ source "${_INIT_DIR}/init_report.sh"
 source "${_INIT_DIR}/init_config_sections.sh"
 # shellcheck source=lib/prompts_interactive.sh
 source "${_INIT_DIR}/prompts_interactive.sh"
+# shellcheck source=lib/init_wizard.sh
+source "${_INIT_DIR}/init_wizard.sh"
 # shellcheck source=lib/detect_ai_artifacts.sh
 source "${_INIT_DIR}/detect_ai_artifacts.sh"
 # shellcheck source=lib/artifact_handler.sh
@@ -127,6 +129,11 @@ run_smart_init() {
     crawl_project "$project_dir" "${PROJECT_INDEX_BUDGET:-120000}"
     _INIT_FILES_WRITTEN+=("$(basename "${PROJECT_INDEX_FILE}")|structured project index")
 
+    # Phase 3.5: Feature wizard (M109) — runs after detection so guidance is
+    # informed by tech stack, before config generation so answers flow into
+    # _emit_section_features() via env vars.
+    run_feature_wizard "${reinit_mode:-}"
+
     # Phase 4: Config generation
     log "Generating pipeline.conf..."
     # Export M12 detection results for config generation
@@ -146,6 +153,11 @@ run_smart_init() {
         success "Created ${conf_file}"
     fi
     _INIT_FILES_WRITTEN+=(".claude/pipeline.conf|primary config — edit this first")
+
+    # Phase 4.5: Python venv setup (M109) — runs only when wizard enabled a
+    # Python feature interactively. Failure is non-fatal: features degrade
+    # gracefully at runtime and the user can retry with --setup-indexer.
+    _run_wizard_venv_setup "$project_dir" "$tekhton_home" "$conf_dir"
 
     # Phase 5: Agent role customization
     _install_agent_roles "$project_dir" "$tekhton_home" "$languages"

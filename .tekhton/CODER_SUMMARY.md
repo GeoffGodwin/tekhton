@@ -1,133 +1,146 @@
-# Coder Summary — M108: TUI Stage Timings Column
-
+# Coder Summary
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-Implemented the M108 design: the bottom of the TUI now splits into a
-two-column body — events (left, ratio=2) and stage timings (right, ratio=1).
-The timings column lists every completed stage with elapsed time and turn
-count, plus a yellow live row for the actively running stage / shell op.
+M109 — Init Feature Wizard. Adds a guided feature wizard step to `tekhton --init`
+that detects Python 3.8+ and asks the user three questions about Python-dependent
+features (TUI, tree-sitter repo maps, Serena LSP), then writes the answers as
+**uncommented active config lines** in pipeline.conf Section 5 and triggers
+inline venv setup.
 
-### §1 — `_build_timings_panel` (new function)
+### §1 — `lib/init_wizard.sh` (new, 225 lines)
 
-Reads `stages_complete` for finished rows and the `stage_label` /
-`current_agent_status` / `stage_start_ts` / `agent_turns_max` /
-`current_operation` keys for the live row. Behaviour matches the milestone
-spec exactly:
+Single-purpose wizard module providing:
 
-- Empty + idle → `(no stages yet)` placeholder.
-- Each completed stage → `✓ <label>` (green) or `✗ <label>` (red) for
-  verdicts in `{FAIL, FAILED, BLOCKED, REJECT}`.
-- Live row only when `current_agent_status` is `running` or `working`. For
-  `working`, the label comes from `current_operation` so the visible row
-  reflects the actual shell op rather than the prior agent stage.
-- Live elapsed is recomputed each tick from `stage_start_ts`; live turns are
-  always `--/max` because the Claude CLI only reports the final turn count
-  on agent exit (documented as an intentional asymmetry in the milestone).
+- `_wizard_find_python3()` — Locates Python 3.8+ on PATH using a corrected
+  version comparison (`major > 3 OR (major == 3 AND minor >= 8)`). Returns the
+  python command name on stdout, exit 1 if not found.
+- `_wizard_emit_no_python_advisory()` — Prints the advisory message naming all
+  three enhanced features and pointing at `docs/getting-started/installation.md`.
+- `_wizard_reset_state()` — Clears all `_WIZARD_*` env vars (used by tests and
+  reentrant calls).
+- `run_feature_wizard(reinit_mode)` — Main entry point. Handles three paths:
+  reinit (no-op), non-interactive (sets feature config but skips venv setup),
+  and interactive (three `prompt_confirm` questions, each marked recommended).
+- `_wizard_attention_lines(bullet)` — Emits init banner attention bullets
+  reflecting the wizard outcome (called from `_init_collect_attention()`).
+- `_wizard_run_setup_script()` + `_run_wizard_venv_setup()` — Drive
+  `tools/setup_indexer.sh` and (if Serena selected) `tools/setup_serena.sh`
+  with summarized or verbose output. Failure is non-fatal — config remains
+  valid and features degrade at runtime.
 
-### §2 — Layout split in `tools/tui.py`
+Exported state for downstream consumers:
 
-`_build_layout` now produces a `header` + `body` column, with `body`
-horizontally split into `events` (ratio=2) and `timings` (ratio=1). The
-header layer is unchanged.
+| Variable | Values |
+|----------|--------|
+| `_WIZARD_TUI_ENABLED` | `true` / `auto` / unset |
+| `_WIZARD_REPO_MAP_ENABLED` | `true` / unset |
+| `_WIZARD_SERENA_ENABLED` | `true` / unset |
+| `_WIZARD_NEEDS_VENV` | `true` / unset |
+| `_WIZARD_PYTHON_FOUND` | `true` / `false` |
 
-### §3 — Re-export for tests
+### §2 — `lib/init.sh` integration
 
-`tools/tui.py` re-exports `_build_timings_panel` alongside the existing
-render helpers so tests calling `tui._build_timings_panel(...)` resolve.
-`_empty_status()` gained a `current_operation: ""` key so the new tests can
-build status dicts without locally redefining the empty-state shape.
+- Added `source "${_INIT_DIR}/init_wizard.sh"` to the companion sourcing block.
+- Inserted Phase 3.5 (`run_feature_wizard "${reinit_mode:-}"`) between crawl
+  and config generation so wizard answers flow into `_emit_section_features()`
+  via env vars.
+- Inserted Phase 4.5 (`_run_wizard_venv_setup ...`) after config generation
+  so venv setup happens after pipeline.conf is on disk.
 
-### §4 — `tui_hold.py`
+### §3 — `lib/init_config_sections.sh` Section 5 emission
 
-Untouched (out of scope per milestone §4).
+`_emit_section_features()` now reads `_WIZARD_*_ENABLED` and emits the matching
+keys as active uncommented lines (or commented defaults when unset). New
+behaviour vs prior:
 
-### §5 — Tests
+- **`TUI_ENABLED` is now emitted** (commented `# TUI_ENABLED=auto` by default,
+  or active `TUI_ENABLED=true|auto` when wizard set it). Prior code never
+  emitted a TUI line.
+- **`DASHBOARD_ENABLED=true` is now uncommented** (was previously
+  `# DASHBOARD_ENABLED=true`). Reflects the design decision that Watchtower is
+  always-on by default with effectively zero cost. Reinit merge keys preserve
+  existing user values.
 
-Added the five tests called out in the milestone, plus the existing 56 tests
-all continue to pass:
+### §4 — `lib/init_report_banner.sh` attention items
 
-- `test_timings_panel_empty`
-- `test_timings_panel_completed_stages` (also asserts ✓ icon and time strings)
-- `test_timings_panel_live_running_row` (asserts `--/70` live turns)
-- `test_timings_panel_fail_verdict` (asserts ✗ icon)
-- `test_layout_has_timings_column` (asserts both names in
-  `layout["body"].children`)
+`_init_collect_attention()` calls `_wizard_attention_lines` (when defined) so
+the post-init "What Tekhton learned" section reports either:
 
-## Architectural Notes
+- `✓ Enhanced features enabled: TUI, repo maps[, Serena]` (Python found and
+  features selected), or
+- `ℹ Install Python 3.8+ to enable enhanced features ...` (Python not found).
 
-The new `_build_timings_panel` is large enough that adding it directly to
-`tui_render.py` would push that file from 240 → ~300+ lines (over the
-project ceiling). To stay under the ceiling I followed the existing pattern
-used for `tui_render_logo.py` and extracted the new function into
-`tui_render_timings.py`. To avoid code duplication and a circular import
-between `tui_render` and `tui_render_timings` (both need `_fmt_duration` and
-`_SPIN_CHARS`), I created a small shared module `tui_render_common.py` that
-both render modules import from. `tui_render.py` re-imports the symbols
-from common with `# noqa: F401` so external callers of
-`tui_render._fmt_duration` / `tui_render._SPIN_CHARS` continue to work.
+### §5 — File-size hygiene splits
 
-This is a structural reorganization, not an API change — every public
-symbol is still reachable at its original import path, and `tui.py`'s
-re-export block is unchanged in shape (only the new symbol added).
+`init_config_sections.sh` and `init_report_banner.sh` were both pushed close to
+or past the 300-line ceiling by the wizard work. Extracted:
+
+- `lib/init_config_workspace.sh` (49 lines, NEW) — `_emit_section_workspace()`
+  alone. Sourced from `init_config_sections.sh`.
+- `lib/init_report_banner_next.sh` (102 lines, NEW) — `_emit_next_section`,
+  `_emit_auto_prompt`, and the new `_banner_detect_milestone_state` helper that
+  consolidates the duplicated milestone-state probe used by both. Sourced from
+  `init_report_banner.sh`.
+
+Final line counts: init_wizard.sh 225, init.sh 218, init_config_sections.sh
+294, init_config_workspace.sh 49, init_report_banner.sh 262,
+init_report_banner_next.sh 103, tests/test_init_wizard.sh 204. All under the
+300-line ceiling.
+
+### §6 — Test coverage
+
+`tests/test_init_wizard.sh` (NEW) — nine test cases covering:
+
+1. Python not found → advisory printed, flags unset.
+2. All three features selected → all `_WIZARD_*_ENABLED=true`,
+   `_WIZARD_NEEDS_VENV=true`.
+3. All three declined → flags remain unset, no venv trigger.
+4. Mixed answers (yes/no/yes via call-counter mock) → only selected flags set.
+5. `reinit` mode → wizard is a no-op.
+6. Non-interactive with Python → TUI=auto, repo_map=true, serena=true,
+   `_WIZARD_NEEDS_VENV` deliberately unset.
+7. Non-interactive without Python → all flags unset / PYTHON_FOUND=false.
+8. `_emit_section_features` with wizard vars → confirms uncommented lines for
+   selected features and `DASHBOARD_ENABLED=true` always uncommented.
+9. `_emit_section_features` without wizard vars → confirms today's commented
+   defaults still emitted.
+
+All 39 assertions pass. `shellcheck tekhton.sh lib/*.sh stages/*.sh` clean.
+Full `bash tests/run_tests.sh` reports 409 shell tests passing and 151 Python
+tests passing — no regressions.
+
+## Root Cause (bugs only)
+N/A — feature work.
 
 ## Files Modified
 
-| File | Status | Purpose |
-|------|--------|---------|
-| `tools/tui_render_common.py` | NEW (23 lines) | Shared `_fmt_duration` + `_SPIN_CHARS` to break the import cycle between render modules |
-| `tools/tui_render_timings.py` | NEW (79 lines) | Holds `_build_timings_panel(status)` |
-| `tools/tui_render.py` | MODIFIED (227 lines, was 240) | Imports `_fmt_duration` + `_SPIN_CHARS` from common; re-exports `_build_timings_panel` from timings module |
-| `tools/tui.py` | MODIFIED (204 lines, was 196) | Layout split into `body → events + timings`; re-exports `_build_timings_panel`; `_empty_status()` adds `current_operation` |
-| `tools/tests/test_tui.py` | MODIFIED (848 lines, was 767) | Adds 5 M108 tests at bottom |
-
-All modified Python files are under the 300-line ceiling. The existing
-test file is over the limit but is explicitly out of scope for this
-milestone (per the prior reviewer report's non-blocking note: "Python test
-file line count" is an out-of-scope item).
+- `lib/init_wizard.sh` (NEW) — feature wizard module
+- `lib/init.sh` — source wizard, add Phase 3.5 and Phase 4.5 hooks
+- `lib/init_config_sections.sh` — `_emit_section_features` reads wizard vars,
+  adds TUI line, uncomments DASHBOARD_ENABLED; sources init_config_workspace.sh
+- `lib/init_config_workspace.sh` (NEW) — extracted workspace section emitter
+- `lib/init_report_banner.sh` — calls `_wizard_attention_lines`; sources
+  init_report_banner_next.sh; cleaned up unused `has_manifest` local in
+  `_init_pick_recommendation` (pre-existing latent issue)
+- `lib/init_report_banner_next.sh` (NEW) — extracted "What's next" + auto-prompt
+  + shared `_banner_detect_milestone_state` helper
+- `tests/test_init_wizard.sh` (NEW) — wizard + emission test coverage
+- `CLAUDE.md` — repo layout updated to include both `lib/init_wizard.sh`
+  (already present from a prior partial run) and the newly extracted
+  `lib/init_config_workspace.sh`
+- `.claude/milestones/MANIFEST.cfg` — m109 status set to `in_progress`
+- `.claude/milestones/m109-init-feature-wizard.md` — milestone meta status
+  updated to `in_progress`
 
 ## Docs Updated
 
-None — no public-surface changes in this task. The TUI sidecar JSON
-schema gained no new keys (every key consumed by the timings panel was
-already populated by M97/M104/M106/M107). `_empty_status()` adding
-`current_operation: ""` brings it in line with the keys the shell side
-already writes (it was previously omitted only because the empty-state
-fallback never needed it before this milestone). No CLI flags, no
-config keys, no public functions changed.
+None — no public-surface changes in this task. Section 5 emission tweaks are
+internal to `--init`'s generated `pipeline.conf` (a per-project artifact, not a
+user-facing CLI surface). The wizard's three prompts are interactive
+output, not a documented public API. `CLAUDE.md` repo layout already lists the
+new `lib/init_wizard.sh` file so future contributors can locate it.
 
 ## Human Notes Status
-
-No human notes were provided in this run.
-
-## Test Verification
-
-- `python -m pytest tools/tests/test_tui.py -q` → 61 passed (56 existing + 5 new)
-- `python -m pytest tools/tests/` → 150 passed (full Python suite)
-- `bash tests/run_tests.sh` → 408 shell passed, 0 failed; 150 Python passed
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh` → exit 0, no output
-
-## Acceptance Criteria Verification
-
-All criteria from the milestone are satisfied:
-
-- [x] Bottom panel has two visible columns: events (left) + Stage timings (right)
-- [x] Empty state shows `(no stages yet)` (verified by `test_timings_panel_empty`)
-- [x] Completed stages render with ✓, elapsed, turns ratio
-  (verified by `test_timings_panel_completed_stages`)
-- [x] BLOCKED/FAIL/REJECT verdicts render with ✗ in red
-  (verified by `test_timings_panel_fail_verdict`; verdict set in `_FAIL_VERDICTS`)
-- [x] Live yellow row updates each tick with elapsed (computed from
-  `stage_start_ts` like `_build_active_bar`) and `--/max` turns
-  (verified by `test_timings_panel_live_running_row`)
-- [x] Sub-stages appear automatically because M107 wires them to
-  `tui_stage_end` → `stages_complete` (no special handling needed)
-- [x] `working` status uses `current_operation` for the live label (handled
-  in the `if agent_status == "working"` branch)
-- [x] Layout renders without exceptions on representative widths (existing
-  `test_build_layout_full` covers this; new layout asserted by
-  `test_layout_has_timings_column`)
-- [x] Five new tests pass
-- [x] All existing TUI tests pass
-- [x] `shellcheck` clean (no `.sh` files modified)
+None listed in task input.
