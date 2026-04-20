@@ -1,7 +1,7 @@
 # M106 — TUI Stage Label Registry & Protocol API
 <!-- milestone-meta
 id: "106"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

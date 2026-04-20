@@ -1,5 +1,3 @@
-# Reviewer Report
-
 ## Verdict
 APPROVED_WITH_NOTES
 
@@ -10,11 +8,15 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_output_tui_sync.sh` TC-TUI-04 still uses glob substring matching (`[[ "$json" == *'"..."'* ]]`) for action item assertions; TC-TUI-03 was upgraded to `assert_json_array_contains` but TC-TUI-04 was not — minor inconsistency, low risk since action item keys are stable
-- `lib/finalize_commit.sh` and `lib/finalize_dashboard_hooks.sh` lack `set -euo pipefail` after the shebang; functionally correct (they inherit from finalize.sh), but CLAUDE.md Non-Negotiable Rule #2 requires it in all .sh files — defer to a dedicated cleanup pass with the other sourced-lib files in the same state
+- `lib/agent_spinner.sh` and `tools/tui_render_logo.py` are new files not listed in CLAUDE.md's repository layout section or in the architecture description of `lib/agent.sh`. Both should be added so the layout stays accurate.
+- `get_stage_display_label`'s `*` fallback uses underscore-to-hyphen replacement (`${1//_/-}`) while `get_display_stage_order`'s `*` case passes internal names unmodified. A future stage added only to the pipeline order will produce different labels from each function until explicitly mapped in both.
 
 ## Coverage Gaps
-- None
+- No bash tests for `get_stage_display_label` in `tests/test_tui_active_path.sh` or any other test file (AC-1 through AC-4 are untested).
+- No tests for spinner PID routing behavior (AC-13, AC-14, AC-15): none of the bash tests verify that `_spinner_pid` is empty in TUI mode or that `_tui_updater_pid` is non-empty in TUI mode.
+
+## ACP Verdicts
+No ACPs in this rework pass.
 
 ## Drift Observations
-- `lib/agent.sh`, `lib/agent_helpers.sh`, `lib/agent_retry.sh`, `lib/drift_cleanup.sh`, `lib/test_dedup.sh`, `lib/finalize_commit.sh`, `lib/finalize_dashboard_hooks.sh` — seven sourced-only lib files lack `set -euo pipefail`, drifting from CLAUDE.md Non-Negotiable Rule #2; all inherit the setting from their parent, so no functional impact, but the gap is growing and warrants a sweep milestone
+- `tools/tests/test_tui.py` is now ~768 lines, well over the 300-line soft ceiling. Not a blocker (test files grow naturally), but worth tracking for eventual split.

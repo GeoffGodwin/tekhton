@@ -115,3 +115,48 @@ run_op() {
 
     return "$_rc"
 }
+
+# --- Protocol API: stage lifecycle wrappers (M106) ---------------------------
+
+# tui_stage_begin DISPLAY_LABEL [MODEL]
+# Begin a stage: ensure its pill exists in the bar, mark it running.
+# DISPLAY_LABEL must come from get_stage_display_label(); callers must not
+# pass raw internal stage names.
+# NOTE: _TUI_STAGE_ORDER is a single-writer array (main process only). When
+# parallel stages are introduced in a future milestone, this will require a
+# lock or a migration to an atomic update via the JSON status file.
+tui_stage_begin() {
+    [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    local label="${1:-}"
+    local model="${2:-}"
+    local _found=false
+    local _s
+    for _s in "${_TUI_STAGE_ORDER[@]:-}"; do
+        [[ "$_s" == "$label" ]] && { _found=true; break; }
+    done
+    [[ "$_found" == "false" ]] && _TUI_STAGE_ORDER+=("$label")
+    local _idx=0 _i
+    for _i in "${!_TUI_STAGE_ORDER[@]}"; do
+        [[ "${_TUI_STAGE_ORDER[$_i]}" == "$label" ]] && { _idx=$((_i + 1)); break; }
+    done
+    tui_update_stage "$_idx" "${#_TUI_STAGE_ORDER[@]}" "$label" "$model"
+}
+
+# tui_stage_end DISPLAY_LABEL [MODEL] [TURNS_STR] [TIME_STR] [VERDICT]
+# End a stage: freeze the timer and mark it complete.
+# DISPLAY_LABEL must match what was passed to tui_stage_begin.
+tui_stage_end() {
+    [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    local label="${1:-}"
+    local model="${2:-}"
+    local turns="${3:-}"
+    local time_str="${4:-}"
+    local verdict="${5:-}"
+    local _final_elapsed=0
+    if [[ "${_TUI_STAGE_START_TS:-0}" -gt 0 ]]; then
+        _final_elapsed=$(( $(date +%s) - _TUI_STAGE_START_TS ))
+    fi
+    _TUI_STAGE_START_TS=0
+    _TUI_AGENT_ELAPSED_SECS="$_final_elapsed"
+    tui_finish_stage "$label" "$model" "$turns" "$time_str" "$verdict"
+}

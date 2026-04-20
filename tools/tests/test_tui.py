@@ -251,6 +251,70 @@ def test_stage_state_case_insensitive():
     assert _stage_state("coder", done, "", "idle") == "complete"
 
 
+def test_stage_state_running_priority_over_history():
+    """M106: Running state must take priority over completed history
+    (multi-rework scenario: stage was complete, now running again)."""
+    done = [{"label": "rework", "verdict": None}]
+    assert _stage_state("rework", done, "rework", "running") == "running"
+
+
+def test_stage_state_fail_verdict_reject():
+    """M106: REJECT verdict is also treated as fail (reviewer rejections)."""
+    done = [{"label": "review", "verdict": "REJECT"}]
+    assert _stage_state("review", done, "", "idle") == "fail"
+
+
+# =============================================================================
+# _build_active_bar — M106 frozen-elapsed display
+# =============================================================================
+
+from tui_render import _build_active_bar  # noqa: E402
+
+
+def _render(renderable) -> str:
+    """Render a Rich renderable into a plain string for assertion."""
+    import io
+
+    from rich.console import Console
+    buf = io.StringIO()
+    Console(file=buf, width=120, force_terminal=False).print(renderable)
+    return buf.getvalue()
+
+
+def test_build_active_bar_frozen_complete():
+    """M106: idle + agent_elapsed_secs > 0 + stage_start_ts == 0
+    renders '✓ Complete' with the frozen elapsed value."""
+    status = {
+        "stage_label": "tester",
+        "agent_model": "claude-haiku-4-5",
+        "agent_turns_used": 3,
+        "agent_turns_max": 10,
+        "stage_start_ts": 0,
+        "agent_elapsed_secs": 45,
+        "current_agent_status": "idle",
+    }
+    text = _render(_build_active_bar(status))
+    assert "\u2713 Complete" in text
+    assert "45s" in text
+
+
+def test_build_active_bar_idle_no_elapsed():
+    """M106: idle + agent_elapsed_secs == 0 + stage_start_ts == 0
+    renders 'idle' and suppresses the '0s' elapsed display."""
+    status = {
+        "stage_label": "\u2014",
+        "agent_model": "",
+        "agent_turns_used": 0,
+        "agent_turns_max": 0,
+        "stage_start_ts": 0,
+        "agent_elapsed_secs": 0,
+        "current_agent_status": "idle",
+    }
+    text = _render(_build_active_bar(status))
+    assert "idle" in text
+    assert "\u2713 Complete" not in text
+
+
 # =============================================================================
 # _build_stage_pills direct unit tests (M98 coverage gap)
 # =============================================================================

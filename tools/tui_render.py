@@ -16,6 +16,8 @@ from rich.progress_bar import ProgressBar
 from rich.table import Table
 from rich.text import Text
 
+from tui_render_logo import _build_logo, _build_simple_logo  # noqa: F401
+
 
 def _fmt_duration(secs: int) -> str:
     if secs <= 0:
@@ -27,78 +29,6 @@ def _fmt_duration(secs: int) -> str:
     if mins:
         return f"{mins}m{s}s"
     return f"{s}s"
-
-
-# ---- Logo constants ---------------------------------------------------------
-# Five 12-char rows representing a semicircular arch. Row 0 is the keystone
-# zone (animates through ghost → floating → seated states); rows 1–4 are the
-# arch walls and always present. See milestone doc §5 for the SVG mapping.
-
-_ARCH_WALLS: list[tuple[str, str]] = [
-    ("   \u258c    \u2590   ", "white"),    # row 1 crown — voussoir faces
-    ("  \u2588\u2588    \u2588\u2588  ", "white"),  # row 2 mid-upper
-    (" \u2588\u2588      \u2588\u2588 ", "white"),  # row 3 mid-lower
-    ("\u2588\u2588        \u2588\u2588", "white"),  # row 4 base
-]
-_LOGO_FRAMES: list[tuple[str, str]] = [
-    ("    \u2591\u2591\u2591\u2591    ", "dim cyan"),               # ghost
-    ("    \u2588\u2588\u2588\u2588    ", "bold bright_cyan"),       # floating
-    ("            ", ""),                                           # seated (row 0 empty)
-]
-_LOGO_FRAME2_CROWN = ("   \u258c\u2588\u2588\u2588\u2588\u2590   ", "bold white")
-_LOGO_COMPLETE_ROW0 = ("            ", "")
-_LOGO_COMPLETE_CROWN = ("   \u258c\u2588\u2588\u2588\u2588\u2590   ", "bold yellow")
-_LOGO_COMPLETE_WALL_STYLE = "yellow"
-_LOGO_IDLE_ROW0 = ("            ", "")
-_LOGO_IDLE_CROWN = ("   \u258c\u2588\u2588\u2588\u2588\u2590   ", "dim white")
-_LOGO_IDLE_WALL_STYLE = "dim white"
-
-_SIMPLE_LOGO_LINES = [
-    "     /\\     ",
-    "    /  \\    ",
-    "   / () \\   ",
-    "  /______\\  ",
-    " |        | ",
-]
-
-
-def _rows_to_text(rows: list[tuple[str, str]]) -> Text:
-    text = Text()
-    for i, (chars, style) in enumerate(rows):
-        if i > 0:
-            text.append("\n")
-        if style:
-            text.append(chars, style=style)
-        else:
-            text.append(chars)
-    return text
-
-
-def _build_simple_logo(status: dict[str, Any]) -> Text:
-    style = "yellow" if status.get("complete") else "white"
-    text = Text()
-    for i, line in enumerate(_SIMPLE_LOGO_LINES):
-        if i > 0:
-            text.append("\n")
-        text.append(line, style=style)
-    return text
-
-
-def _build_logo(status: dict[str, Any]) -> Text:
-    if status.get("simple_logo"):
-        return _build_simple_logo(status)
-    if status.get("complete"):
-        rows = [_LOGO_COMPLETE_ROW0, _LOGO_COMPLETE_CROWN,
-                *[(c, _LOGO_COMPLETE_WALL_STYLE) for c, _ in _ARCH_WALLS[1:]]]
-    elif (status.get("current_agent_status") or "idle") == "idle":
-        rows = [_LOGO_IDLE_ROW0, _LOGO_IDLE_CROWN,
-                *[(c, _LOGO_IDLE_WALL_STYLE) for c, _ in _ARCH_WALLS[1:]]]
-    else:
-        # "running" (agent) and "working" (shell op) both animate identically.
-        frame = int(time.time() * 0.6) % 3
-        crown = _LOGO_FRAME2_CROWN if frame == 2 else _ARCH_WALLS[0]
-        rows = [_LOGO_FRAMES[frame], crown, *_ARCH_WALLS[1:]]
-    return _rows_to_text(rows)
 
 
 # ---- Stage pills ------------------------------------------------------------
@@ -113,13 +43,16 @@ _STAGE_PILL_SPEC = {
 
 def _stage_state(stage: str, stages_complete: list[dict[str, Any]],
                  current_label: str, current_status: str) -> str:
-    for s in stages_complete:
-        if (s.get("label") or "").lower() == stage.lower():
-            v = (s.get("verdict") or "").upper()
-            return "fail" if v in ("FAIL", "FAILED", "BLOCKED") else "complete"
+    # Running state takes priority over history; a stage may have prior
+    # completed entries (multiple rework cycles) and still be running again.
     if stage.lower() == (current_label or "").lower():
         if current_status == "running":
             return "running"
+    for s in stages_complete:
+        if (s.get("label") or "").lower() == stage.lower():
+            v = (s.get("verdict") or "").upper()
+            return "fail" if v in ("FAIL", "FAILED", "BLOCKED", "REJECT") else "complete"
+    if stage.lower() == (current_label or "").lower():
         if current_status == "complete":
             return "complete"
     return "pending"
@@ -176,10 +109,12 @@ def _build_active_bar(status: dict[str, Any]) -> Table:
     used = int(status.get("agent_turns_used", 0) or 0)
     maxt = int(status.get("agent_turns_max", 0) or 0)
     stage_start_ts = int(status.get("stage_start_ts", 0) or 0)
+    elapsed_secs = int(status.get("agent_elapsed_secs", 0) or 0)
+
     if stage_start_ts > 0:
-        elapsed = max(0, int(time.time()) - stage_start_ts)
+        elapsed = max(0, int(time.time()) - stage_start_ts)   # live clock
     else:
-        elapsed = int(status.get("agent_elapsed_secs", 0) or 0)
+        elapsed = elapsed_secs                                 # frozen at completion
     agent_status = status.get("current_agent_status") or "idle"
 
     # M104: shell-op "working" state shows only the operation label + spinner.
@@ -198,8 +133,14 @@ def _build_active_bar(status: dict[str, Any]) -> Table:
         spinner = Text(f"{char} Running", style="yellow")
     elif agent_status == "complete":
         spinner = Text("\u2713 Complete", style="green")
+    elif agent_status == "idle" and elapsed > 0:
+        # idle + elapsed > 0 = stage finished (tui_stage_end was called).
+        # Note: tui_finish_stage always sets status to "idle", never "complete";
+        # the presence of a frozen elapsed value is the signal that a stage ended.
+        spinner = Text("\u2713 Complete", style="green")
     else:
         spinner = Text("idle", style="dim")
+        elapsed = 0  # suppress "0s" for the initial pre-stage idle state
 
     turns_str = f"{used}/{maxt}" if maxt else f"{used}"
     grid.add_row(

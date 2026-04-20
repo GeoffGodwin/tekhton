@@ -283,6 +283,119 @@ assert stages[0]['verdict'] is None, f'expected null verdict, got {stages[0][\"v
 " 2>/dev/null && pass "empty verdict produces null in stages_complete JSON" \
     || fail "empty verdict JSON" "$(python3 -c "import json; d=json.load(open('$_TUI_STATUS_FILE')); print(d.get('stages_complete'))" 2>/dev/null)"
 
+# =============================================================================
+echo "=== Test 6: tui_stage_begin appends a new label to _TUI_STAGE_ORDER ==="
+_activate_tui
+_TUI_STAGE_ORDER=("intake" "coder" "tester")
+
+tui_stage_begin "rework" "claude-opus-4-7"
+
+if [[ "${#_TUI_STAGE_ORDER[@]}" -eq 4 ]]; then
+    pass "tui_stage_begin appended new label (length 4)"
+else
+    fail "_TUI_STAGE_ORDER length" "expected 4, got ${#_TUI_STAGE_ORDER[@]}"
+fi
+
+if [[ "${_TUI_STAGE_ORDER[3]}" == "rework" ]]; then
+    pass "tui_stage_begin appended 'rework' at end"
+else
+    fail "_TUI_STAGE_ORDER[3]" "expected rework, got ${_TUI_STAGE_ORDER[3]}"
+fi
+
+if [[ "$_TUI_CURRENT_STAGE_NUM" -eq 4 ]]; then
+    pass "tui_stage_begin set stage_num to 1-based index (4)"
+else
+    fail "_TUI_CURRENT_STAGE_NUM" "expected 4, got $_TUI_CURRENT_STAGE_NUM"
+fi
+
+if [[ "$_TUI_CURRENT_STAGE_LABEL" == "rework" ]]; then
+    pass "tui_stage_begin set label to 'rework'"
+else
+    fail "_TUI_CURRENT_STAGE_LABEL" "expected rework, got $_TUI_CURRENT_STAGE_LABEL"
+fi
+
+# =============================================================================
+echo "=== Test 7: tui_stage_begin does not duplicate existing label ==="
+_activate_tui
+_TUI_STAGE_ORDER=("intake" "coder")
+
+tui_stage_begin "coder" "claude-opus-4-7"
+
+if [[ "${#_TUI_STAGE_ORDER[@]}" -eq 2 ]]; then
+    pass "tui_stage_begin did not duplicate existing label"
+else
+    fail "_TUI_STAGE_ORDER length" "expected 2, got ${#_TUI_STAGE_ORDER[@]}"
+fi
+
+if [[ "$_TUI_CURRENT_STAGE_NUM" -eq 2 ]]; then
+    pass "tui_stage_begin returned correct 1-based index for existing label"
+else
+    fail "_TUI_CURRENT_STAGE_NUM" "expected 2, got $_TUI_CURRENT_STAGE_NUM"
+fi
+
+# =============================================================================
+echo "=== Test 8: tui_stage_end freezes timer and stores elapsed ==="
+_activate_tui
+_TUI_STAGE_ORDER=("coder")
+tui_stage_begin "coder" "claude-opus-4-7"
+# Simulate 3 seconds of elapsed time
+_TUI_STAGE_START_TS=$(( $(date +%s) - 3 ))
+
+tui_stage_end "coder" "claude-opus-4-7" "5/10" "3s" "PASS"
+
+if [[ "$_TUI_STAGE_START_TS" -eq 0 ]]; then
+    pass "tui_stage_end zeroed _TUI_STAGE_START_TS"
+else
+    fail "_TUI_STAGE_START_TS after end" "expected 0, got $_TUI_STAGE_START_TS"
+fi
+
+if [[ "$_TUI_AGENT_ELAPSED_SECS" -ge 3 ]]; then
+    pass "tui_stage_end stored positive elapsed (${_TUI_AGENT_ELAPSED_SECS}s)"
+else
+    fail "_TUI_AGENT_ELAPSED_SECS" "expected >= 3, got $_TUI_AGENT_ELAPSED_SECS"
+fi
+
+if [[ "${#_TUI_STAGES_COMPLETE[@]}" -eq 1 ]]; then
+    pass "tui_stage_end delegated to tui_finish_stage (stages_complete length=1)"
+else
+    fail "_TUI_STAGES_COMPLETE length after end" "expected 1, got ${#_TUI_STAGES_COMPLETE[@]}"
+fi
+
+# =============================================================================
+echo "=== Test 9: repeat tui_stage_begin after tui_stage_end does not duplicate ==="
+_activate_tui
+_TUI_STAGE_ORDER=()
+tui_stage_begin "rework" "claude-opus-4-7"
+tui_stage_end "rework" "claude-opus-4-7" "3/10" "5s" "PASS"
+tui_stage_begin "rework" "claude-opus-4-7"
+
+if [[ "${#_TUI_STAGE_ORDER[@]}" -eq 1 ]]; then
+    pass "second tui_stage_begin with same label did not duplicate"
+else
+    fail "_TUI_STAGE_ORDER length (multi-rework)" "expected 1, got ${#_TUI_STAGE_ORDER[@]}"
+fi
+
+# =============================================================================
+echo "=== Test 10: tui_stage_begin is a no-op when _TUI_ACTIVE=false ==="
+_activate_tui
+_TUI_ACTIVE=false
+rm -f "$_TUI_STATUS_FILE"
+_TUI_STAGE_ORDER=()
+
+tui_stage_begin "rework" "claude-opus-4-7"
+
+if [[ ! -f "$_TUI_STATUS_FILE" ]]; then
+    pass "tui_stage_begin no-op when _TUI_ACTIVE=false (no status file write)"
+else
+    fail "tui_stage_begin" "wrote status file despite _TUI_ACTIVE=false"
+fi
+
+if [[ "${#_TUI_STAGE_ORDER[@]}" -eq 0 ]]; then
+    pass "tui_stage_begin no-op did not mutate _TUI_STAGE_ORDER"
+else
+    fail "_TUI_STAGE_ORDER inactive" "expected 0, got ${#_TUI_STAGE_ORDER[@]}"
+fi
+
 echo ""
 echo "=== Summary: ${PASS} passed, ${FAIL} failed ==="
 [[ "$FAIL" -eq 0 ]]

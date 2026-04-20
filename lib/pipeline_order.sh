@@ -201,3 +201,30 @@ get_display_stage_order() {
 
     echo "$display"
 }
+
+# get_stage_display_label NAME
+# Returns the display label used in the TUI pill bar for a given internal stage name.
+# This is the single extension point: add new stage mappings HERE ONLY.
+# Both get_display_stage_order() and all tui_stage_begin/end call sites depend on
+# this function. When a new stage is added to the pipeline, add its mapping here
+# first; the pill bar, timings column, and stage-complete records all update automatically.
+get_stage_display_label() {
+    case "${1:-}" in
+        intake)          echo "intake" ;;
+        scout)           echo "scout" ;;
+        coder)           echo "coder" ;;
+        test_write)      echo "tester-write" ;;
+        test_verify)     echo "tester" ;;
+        security)        echo "security" ;;
+        review)          echo "review" ;;
+        docs)            echo "docs" ;;
+        rework)          echo "rework" ;;
+        wrap_up|wrap-up) echo "wrap-up" ;;
+        # Fallback: replace underscores with hyphens. New stages MUST be added
+        # above; this catch-all prevents hard failures during development but
+        # will not produce a label that matches get_display_stage_order() output.
+        # NOTE: get_display_stage_order()'s * case passes internal names unmodified
+        # (no hyphenation). Both must be updated in tandem when a new stage is added.
+        *)               echo "${1//_/-}" ;;
+    esac
+}

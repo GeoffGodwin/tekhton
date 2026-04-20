@@ -27,6 +27,10 @@ source "${TEKHTON_HOME}/lib/agent_retry.sh"
 # shellcheck source=lib/agent_helpers.sh
 source "${TEKHTON_HOME}/lib/agent_helpers.sh"
 
+# Source spinner subshell management (non-TUI + TUI paths separated)
+# shellcheck source=lib/agent_spinner.sh
+source "${TEKHTON_HOME}/lib/agent_spinner.sh"
+
 # --- Metrics accumulators (initialize if not already set) --------------------
 
 : "${TOTAL_TURNS:=0}"
@@ -142,71 +146,16 @@ run_agent() {
     fi
 
     _IM_PERM_FLAGS=("${_perm_flags[@]}")  # Pass to monitor
+    local _spinner_pid="" _tui_updater_pid=""
+    IFS=: read -r _spinner_pid _tui_updater_pid < <(_start_agent_spinner "$label" "$_turns_file" "$max_turns")
 
-    # --- CLI activity indicator (spinner) — shows which agent is working --------
-    # Enhanced for Milestone 13: shows turn count and triggers dashboard refresh.
-    local _spinner_pid=""
-    if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]]; then
-        (
-            trap 'exit 0' INT TERM
-            chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-            start_ts=$(date +%s)
-            _last_refresh=0
-            _refresh_interval="${DASHBOARD_REFRESH_INTERVAL:-10}"
-            i=0
-            while true; do
-                now=$(date +%s)
-                elapsed=$(( now - start_ts ))
-                mins=$(( elapsed / 60 ))
-                secs=$(( elapsed % 60 ))
-                # Read turns from turns file — only populated after agent exits
-                _turns_display="--"
-                if [[ -f "$_turns_file" ]]; then
-                    _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "")
-                    [[ "$_cur_turns" =~ ^[0-9]+$ ]] && _turns_display="$_cur_turns"
-                fi
-                # Suppress direct-to-tty output when TUI sidecar is active —
-                # the sidecar owns the terminal; writing here causes artifacts.
-                if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
-                    printf '\r\033[0;36m[tekhton]\033[0m %s %s (%dm%02ds, %s/%s turns) ' \
-                        "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" \
-                        "$_turns_display" "$max_turns" > /dev/tty
-                fi
-                i=$(( i + 1 ))
-                # Dashboard heartbeat: refresh run_state.js periodically
-                if (( elapsed - _last_refresh >= _refresh_interval )); then
-                    if command -v emit_dashboard_run_state &>/dev/null; then
-                        emit_dashboard_run_state 2>/dev/null || true
-                    fi
-                    _last_refresh=$elapsed
-                fi
-                # M97: TUI sidecar tick — update turns / elapsed on status file.
-                if declare -f tui_update_agent &>/dev/null; then
-                    _tui_turns=0
-                    [[ "$_turns_display" =~ ^[0-9]+$ ]] && _tui_turns="$_turns_display"
-                    tui_update_agent "$_tui_turns" "$max_turns" "$elapsed" 2>/dev/null || true
-                fi
-                sleep 0.2
-            done
-        ) &
-        _spinner_pid=$!
-    fi
-
-    # --- Transient error retry envelope (13.2.1) --------------------------------
     # Delegates invocation + classification + retry to _run_with_retry() in
-    # agent_retry.sh. Stages do not know about retries — they see success or
-    # final failure. Results come back via globals: AGENT_ERROR_*, LAST_AGENT_RETRY_COUNT,
-    # _RWR_EXIT, _RWR_TURNS, _RWR_WAS_ACTIVITY_TIMEOUT.
+    # agent_retry.sh. Results come back via globals: AGENT_ERROR_*,
+    # LAST_AGENT_RETRY_COUNT, _RWR_EXIT, _RWR_TURNS, _RWR_WAS_ACTIVITY_TIMEOUT.
     _run_with_retry "$label" "$_invoke" "$model" "$max_turns" "$prompt" \
         "$log_file" "$_activity_timeout" "$_session_dir" "$_exit_file" "$_turns_file" \
         "$_prerun_marker" "$_timeout"
-
-    # Stop spinner
-    if [[ -n "${_spinner_pid:-}" ]]; then
-        kill "$_spinner_pid" 2>/dev/null || true
-        wait "$_spinner_pid" 2>/dev/null || true
-        printf '\r\033[K' > /dev/tty 2>/dev/null || true
-    fi
+    _stop_agent_spinner "$_spinner_pid" "$_tui_updater_pid"
 
     local agent_exit="$_RWR_EXIT"
     local _was_activity_timeout="$_RWR_WAS_ACTIVITY_TIMEOUT"
