@@ -4,99 +4,76 @@
 
 ## What Was Implemented
 
-M111 — Fix Milestone Splitting for DAG Mode. Three compounding bugs that prevented
-`split_milestone` and `handle_null_run_split` from working end-to-end in DAG mode
-have been fixed. The large monolithic split logic has also been extracted into two
-companion files to keep `milestone_split.sh` under the 300-line ceiling.
+M112 — Pre-Run Dedup Coverage Hardening.
 
-**Bug 1 — DAG-aware extraction (`lib/milestone_split.sh:122-142`).**
-`split_milestone()` now detects DAG mode once before extraction. When the manifest
-is present and DAG is enabled, it calls `_split_read_dag_milestone` (reads from
-`.claude/milestones/<file>`) instead of `_extract_milestone_block` (which only
-reads flat CLAUDE.md). Falls back to the old path when inline mode is active.
+### Goal 1 — Cover highest-value missed test paths
+Added `test_dedup_can_skip` / `test_dedup_record_pass` guards to three previously
+uncached TEST_CMD invocations, following the pattern used by existing call sites
+(milestone_acceptance, gates_completion, orchestrate_loop, orchestrate_preflight,
+hooks_final_checks):
 
-**Bug 2 — Splice sub-milestones after parent (`lib/milestone_split_dag.sh`).**
-`_split_apply_dag()` parses sub-milestones from the agent output, then rebuilds
-all six `_DAG_*` parallel arrays by inserting the new entries immediately after
-`parent_idx + 1`. `_DAG_IDX` is recomputed for every entry. This ensures
-`save_manifest` writes sub-milestones in their correct sequential position
-(right after the parent, not at the end of the file), so `dag_find_next`
-schedules them next.
+1. `run_prerun_clean_sweep()` — initial pre-coder test check
+   (`stages/coder_prerun.sh`). When dedup can skip, logs a `test_dedup_skip`
+   event and treats the cached pass as success so the coder starts from a
+   clean state without re-running TEST_CMD. Records pass on exit 0.
+2. `_run_prerun_fix_agent()` — post-attempt shell verification
+   (`stages/coder_prerun.sh`). Same skip/record treatment: if nothing
+   observable changed, the fix's effect is already captured.
+3. `_run_tester_inline_fix()` — retest loop after each fix attempt
+   (`stages/tester_fix.sh`). Same pattern; emits skip events to `$LOG_FILE`.
 
-**Bug 3 — Skip `split` status in frontier (`lib/milestone_dag.sh:162-172`).**
-`dag_get_frontier()` now treats `split` as terminal alongside `done`. Before this
-fix, a parent marked `split` would re-enter the frontier and compete with its
-own sub-milestones — causing the pipeline to re-run the original unsplit
-milestone.
+All new sites emit `test_dedup_skip` through the existing `emit_event` pathway
+so dashboards and the causal log continue to observe dedup activity. All new
+sites honor `TEST_DEDUP_ENABLED=false` via the central policy in
+`lib/test_dedup.sh` — no parallel skip mechanism was introduced.
+
+### Goal 2 — Strengthen fingerprint identity (HEAD inclusion)
+
+`_test_dedup_fingerprint()` now hashes `git rev-parse HEAD` alongside
+`git status --porcelain` and `cmd:${TEST_CMD}`. A clean working tree at a
+different commit therefore never matches a prior pass fingerprint, preventing
+false skips across commits. Fallback behavior for non-git directories is
+unchanged (always returns "must run").
+
+### Goal 3 — Baseline / acceptance behavior preserved
+
+No change to baseline capture, comparison, or acceptance semantics. Pass
+fingerprints are still only recorded on exit 0. Failed-state fingerprints are
+never cached. Existing dedup-enabled gates continue to behave unchanged (tests
+confirm).
+
+### Goal 4 — Policy centralization
+
+No new config keys, no new skip mechanism. Reused `lib/test_dedup.sh` as the
+single policy source. `test_dedup_reset` is still called once at orchestration
+loop entry (`lib/orchestrate.sh`), which is sufficient for the new call sites.
 
 ## Root Cause (bugs only)
-
-All three bugs stem from `milestone_split.sh` being originally written for inline
-milestones (flat CLAUDE.md sections). When M01 made the manifest + individual
-files the default, the splitting code path was never exercised end-to-end:
-- Extraction only read CLAUDE.md (`_extract_milestone_block`).
-- The DAG path appended sub-milestones via `_DAG_IDS+=` to the end of the arrays.
-- `dag_get_frontier` only skipped `done`, letting a `split` parent back in.
+N/A — this is a feature milestone (coverage expansion + fingerprint
+strengthening), not a bug fix.
 
 ## Files Modified
 
-- `lib/milestone_split.sh` — refactored to detect DAG mode once, delegate to
-  helper files for DAG apply and null-run handling; shrunk from monolithic
-  ~400-line block to 247 lines.
-- `lib/milestone_split_dag.sh` (NEW, 150 lines) — DAG-mode helpers
-  `_split_read_dag_milestone()` and `_split_apply_dag()` with correct array
-  splicing after parent index.
-- `lib/milestone_split_nullrun.sh` (NEW, 84 lines) — extracted
-  `handle_null_run_split()` with substantive-work detection (git diff + summary
-  lines > 20) that preserves partial progress rather than splitting.
-- `lib/milestone_dag.sh` — `dag_get_frontier()` skips `split` status.
-- `tests/test_m111_dag_split_bugs.sh` (NEW, 303 lines) — 22 assertions covering
-  all three bugs plus null-run substantive-work edge cases.
-- `CLAUDE.md` — repo layout section updated to list the two new lib files.
-- `ARCHITECTURE.md` — added entries for `milestone_split_dag.sh` and
-  `milestone_split_nullrun.sh`; updated `milestone_split.sh` entry to note the
-  new source relationship.
+| File | Change |
+|------|--------|
+| `lib/test_dedup.sh` | `_test_dedup_fingerprint` now includes `git rev-parse HEAD` in the hashed input. Doc comment updated. |
+| `stages/coder_prerun.sh` | `run_prerun_clean_sweep` gains a can_skip guard on the initial pre-coder check and a record_pass call on exit 0. `_run_prerun_fix_agent` gains the same guard/record pair around the shell verification after each fix attempt. |
+| `stages/tester_fix.sh` | `_run_tester_inline_fix` retest loop gains a can_skip guard and record_pass on exit 0. |
+| `tests/test_dedup.sh` | New Suites 4.5 and 4.6: HEAD-identity invalidation across commits and `record_pass` no-op when `TEST_DEDUP_ENABLED=false`. |
+| `tests/test_dedup_callsites.sh` | Suite 4 extended to check the two new call sites (`stages/coder_prerun.sh`, `stages/tester_fix.sh`). New Suite 4.8 asserts coder_prerun has ≥2 can_skip and ≥2 record_pass calls (both initial and fix-loop paths). |
 
 ## Human Notes Status
-
-No unchecked human notes were present for this task.
+No human notes were injected in this run.
 
 ## Docs Updated
+None — no public-surface changes. Only internal logic (fingerprint composition
+and internal call-site additions). The pre-existing `TEST_DEDUP_ENABLED`
+config key is already documented in CLAUDE.md and its contract is unchanged.
 
-- `CLAUDE.md` — added two new lib files to the repository layout tree.
-- `ARCHITECTURE.md` — added library descriptions for `milestone_split_dag.sh`
-  and `milestone_split_nullrun.sh`, noted the source chain from
-  `milestone_split.sh`.
-
-## Acceptance Criteria Verification
-
-All 9 M111 acceptance criteria are met:
-
-- DAG-mode extraction reads the milestone file rather than CLAUDE.md — covered
-  by `_split_read_dag_milestone` path in `split_milestone`.
-- Sub-milestone files written to `.claude/milestones/` — confirmed in
-  `_split_apply_dag`.
-- Manifest sub-milestone rows immediately after parent — verified by test Path
-  "sub-milestone insertion position" (lines 4 and 5 before line 6).
-- Parent status = `split` after split — verified by test (Bug 3 fixture).
-- Parent with `split` status excluded from frontier — verified by test Bug 3.
-- Sub-milestones execute in radix order — dependency chaining preserved: first
-  sub inherits parent deps, later subs depend on previous sub.
-- Inline (non-DAG) path unaffected — existing `_replace_milestone_block` branch
-  reached when `in_dag=false`.
-- Null-run auto-split works in DAG mode — `handle_null_run_split` → splits via
-  the same DAG-aware `split_milestone`; 5 edge cases (Paths A–E) pass.
-- Oversized pre-flight split works — `check_milestone_size` → `split_milestone`
-  uses the same DAG-aware code path.
-
-## Test Results
-
-- `tests/test_m111_dag_split_bugs.sh`: 22/22 pass
-- `bash tests/run_tests.sh`: 421/421 shell + 177/177 python pass
-- `shellcheck` on all modified files: clean (only pre-existing SC1091 info on
-  the lazy `lib/plan.sh` source at line 159 — carried forward from the
-  original).
-
-## Observed Issues (out of scope)
-
-None.
+## Verification
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — clean on all modified files
+  (one pre-existing SC1091 info-level note in `lib/pipeline_order.sh`, unrelated
+  to this milestone).
+- `bash tests/run_tests.sh` — 422 shell tests passed, 0 failed; 177 Python
+  tests passed. All M105 tests still green; M112 additions green.
+- All modified files are under 300 lines (largest: 245).

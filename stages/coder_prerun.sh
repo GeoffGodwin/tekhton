@@ -64,7 +64,20 @@ _run_prerun_fix_agent() {
         log "[coder/prerun] Shell verifying with ${TEST_CMD}..."
         local _pr_verify_exit=0
         local _pr_verify_output=""
-        _pr_verify_output=$(bash -c "${TEST_CMD}" 2>&1) || _pr_verify_exit=$?
+        if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+            log "[dedup] Tests passed with no file changes since last run — skipping"
+            if command -v emit_event &>/dev/null; then
+                emit_event "test_dedup_skip" "${_CURRENT_STAGE:-prerun_fix}" \
+                    "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+            fi
+            _pr_verify_output="[dedup] Cached pass — no files changed since last successful test run"
+            _pr_verify_exit=0
+        else
+            _pr_verify_output=$(bash -c "${TEST_CMD}" 2>&1) || _pr_verify_exit=$?
+            if [[ "$_pr_verify_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
+                test_dedup_record_pass
+            fi
+        fi
         printf '%s\n' "$_pr_verify_output" >> "$LOG_FILE"
 
         if [[ "$_pr_verify_exit" -eq 0 ]]; then
@@ -114,9 +127,21 @@ run_prerun_clean_sweep() {
     log "[coder/prerun] Checking pre-coder test state..."
     local _prerun_exit=0
     local _prerun_output=""
+    if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
+        log "[dedup] Tests passed with no file changes since last run — skipping"
+        if command -v emit_event &>/dev/null; then
+            emit_event "test_dedup_skip" "${_CURRENT_STAGE:-prerun_check}" \
+                "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+        fi
+        log "[coder/prerun] Tests pass (cached) — coder will work from a clean state."
+        return 0
+    fi
     _prerun_output=$(bash -c "${TEST_CMD}" 2>&1) || _prerun_exit=$?
 
     if [[ "$_prerun_exit" -eq 0 ]]; then
+        if declare -f test_dedup_record_pass &>/dev/null; then
+            test_dedup_record_pass
+        fi
         log "[coder/prerun] Tests pass — coder will work from a clean state."
         return 0
     fi

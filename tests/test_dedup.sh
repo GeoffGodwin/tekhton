@@ -154,6 +154,49 @@ else
 fi
 
 # =============================================================================
+# Suite 4.5: M112 — fingerprint includes HEAD identity
+# =============================================================================
+echo ""
+echo "=== Suite 4.5: HEAD identity in fingerprint (M112) ==="
+
+# Cache should be invalidated when HEAD changes even if the working tree is
+# clean, so a different commit never reuses a prior pass fingerprint.
+test_dedup_reset
+test_dedup_record_pass
+echo "second-file" > second.txt
+git add second.txt
+git commit -q -m "second commit"
+# Clean working tree at a different HEAD — must NOT match prior fingerprint.
+if test_dedup_can_skip; then
+    fail "4.5.1: Should NOT skip across commits with clean working tree"
+else
+    pass "4.5.1: Different HEAD invalidates prior pass fingerprint"
+fi
+# Record at new HEAD, then confirm skip works at the same HEAD.
+test_dedup_record_pass
+if test_dedup_can_skip; then
+    pass "4.5.2: Skips at same HEAD after record_pass"
+else
+    fail "4.5.2: Should skip with identical HEAD + clean tree after record_pass"
+fi
+
+# =============================================================================
+# Suite 4.6: M112 — record_pass is a no-op when TEST_DEDUP_ENABLED=false
+# =============================================================================
+echo ""
+echo "=== Suite 4.6: record_pass honors TEST_DEDUP_ENABLED (M112) ==="
+
+test_dedup_reset
+TEST_DEDUP_ENABLED=false
+test_dedup_record_pass
+TEST_DEDUP_ENABLED=true
+if [[ -f "${TEKHTON_DIR}/test_dedup.fingerprint" ]]; then
+    fail "4.6.1: record_pass wrote fingerprint despite TEST_DEDUP_ENABLED=false"
+else
+    pass "4.6.1: record_pass is a no-op when TEST_DEDUP_ENABLED=false"
+fi
+
+# =============================================================================
 # Suite 5: non-git directory graceful degradation
 # =============================================================================
 echo ""

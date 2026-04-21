@@ -36,19 +36,27 @@ _test_dedup_hash() {
 }
 
 # _test_dedup_fingerprint
-# Emits a stable hash of the working-tree state plus the active TEST_CMD.
-# In a non-git directory (or if git fails), emits a unique value per call so
-# callers can never match a previous fingerprint — dedup degrades gracefully
-# to "always re-run". The fallback must never repeat within a run; `$RANDOM`
-# plus PID + seconds works on both macOS and Linux (unlike `date +%s%N`,
-# which is GNU-only).
+# Emits a stable hash of HEAD identity + working-tree state + the active
+# TEST_CMD. Including HEAD prevents clean-tree collisions across different
+# commits (M112). In a non-git directory (or if git fails), emits a unique
+# value per call so callers can never match a previous fingerprint — dedup
+# degrades gracefully to "always re-run". The fallback must never repeat
+# within a run; `$RANDOM` plus PID + seconds works on both macOS and Linux
+# (unlike `date +%s%N`, which is GNU-only).
 _test_dedup_fingerprint() {
     if command -v git &>/dev/null \
        && git rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
+        local head_sha
+        head_sha=$(git rev-parse HEAD 2>/dev/null || echo "no-head")
         # git status --porcelain covers modified, staged, untracked, deleted.
         # Including TEST_CMD ensures a config change invalidates the cache.
-        { git status --porcelain 2>/dev/null; echo "cmd:${TEST_CMD:-}"; } \
-            | _test_dedup_hash
+        # Including HEAD ensures a clean tree at a different commit does not
+        # match a prior pass fingerprint.
+        {
+            echo "head:${head_sha}"
+            git status --porcelain 2>/dev/null
+            echo "cmd:${TEST_CMD:-}"
+        } | _test_dedup_hash
     else
         echo "no-git-$$-$(date +%s)-${RANDOM}${RANDOM}"
     fi

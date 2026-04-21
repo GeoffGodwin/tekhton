@@ -110,6 +110,33 @@ _check_callsite "4.2 gates_completion"      "lib/gates_completion.sh"
 _check_callsite "4.3 orchestrate_loop"      "lib/orchestrate_loop.sh"
 _check_callsite "4.4 orchestrate_preflight" "lib/orchestrate_preflight.sh"
 _check_callsite "4.5 hooks_final_checks"    "lib/hooks_final_checks.sh"
+# M112: new call sites — pre-coder initial check, pre-coder fix verification,
+# tester-fix retest loop.
+_check_callsite "4.6 coder_prerun"          "stages/coder_prerun.sh"
+_check_callsite "4.7 tester_fix"            "stages/tester_fix.sh"
+
+# =============================================================================
+# Suite 4.8: M112 — coder_prerun has BOTH paths covered
+# (initial check + fix-loop verification)
+# =============================================================================
+echo ""
+echo "=== Suite 4.8: coder_prerun has both dedup call sites (M112) ==="
+
+prerun_file="${TEKHTON_HOME}/stages/coder_prerun.sh"
+prerun_skip_count=$(grep -c 'test_dedup_can_skip' "$prerun_file" || echo "0")
+prerun_record_count=$(grep -c 'test_dedup_record_pass' "$prerun_file" || echo "0")
+
+if [[ "$prerun_skip_count" -ge 2 ]]; then
+    pass "4.8.1: coder_prerun.sh has ${prerun_skip_count} can_skip calls (initial + fix-loop)"
+else
+    fail "4.8.1: coder_prerun.sh should have >=2 can_skip calls, found ${prerun_skip_count}"
+fi
+
+if [[ "$prerun_record_count" -ge 2 ]]; then
+    pass "4.8.2: coder_prerun.sh has ${prerun_record_count} record_pass calls (initial + fix-loop)"
+else
+    fail "4.8.2: coder_prerun.sh should have >=2 record_pass calls, found ${prerun_record_count}"
+fi
 
 # =============================================================================
 # Suite 5: orchestrate.sh — test_dedup_reset at loop entry
