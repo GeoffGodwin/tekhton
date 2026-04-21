@@ -20,6 +20,15 @@ M108 introduced the stage timings column. Live runs now show a deeper mismatch:
    stages (observed review/tester resetting to `0s` after counting up).
 - Completed-row duration string format can drift across states (live vs completed
    rows show different notations for equivalent elapsed values).
+- Completion recap lines are injected into the event stream with new timestamps,
+   making historical metadata (for example `Started: coder`) appear after
+   `Pipeline Complete` as if it were a new runtime event.
+- Action-item payload in hold view can become stale across multi-pass runs
+   (for example fix-nonblockers), showing observations that were already
+   resolved in the same invocation.
+- After hold-on-complete Enter in multi-pass modes, control-flow can look like
+   an unintended rerun (new pass starts without clear boundary and sometimes
+   without expected TUI re-arm visibility).
 - The active bar, stage pills, and timings rows do not share a single lifecycle
   contract, so they can drift apart.
 
@@ -172,8 +181,60 @@ Implement in this order to reduce risk:
    before `tui_stage_end` (prevent alias-key default-to-zero regressions).
 5. Wire architect and architect-remediation call sites to explicit protocol stages.
 6. Replace fragile end/begin pairs with transition helper on scout->coder path.
-7. Keep existing APIs as wrappers during migration; remove old direct patterns only
+7. Add event-stream phase typing so completion recap fields are rendered as
+    summary metadata, not chronological runtime events.
+8. Add per-pass output-bus/TUI state reset hooks for multi-pass modes
+   (`fix-nb`, `fix-drift`, `complete` loop variants as needed).
+9. Keep existing APIs as wrappers during migration; remove old direct patterns only
    after tests pass.
+
+### 8) Event Stream Chronology and Completion Summary Boundaries
+
+The TUI currently uses a single recent-events ring where both runtime events and
+finalize recap output are appended. Because recap fields are emitted late, they
+receive late timestamps and can appear semantically out of order (for example a
+"Started" field after "Pipeline Complete").
+
+Required model:
+
+- Runtime events: chronological activity records (stage start/end, warnings,
+   gate transitions).
+- Summary metadata: immutable run facts (task, started-at stage, verdict, log,
+   version, timing breakdown).
+
+Rules:
+
+- Summary metadata must be rendered in a dedicated summary block in hold view,
+   not inserted into runtime `recent_events`.
+- `Pipeline Complete` is terminal for runtime event chronology in that run.
+- Any post-complete output must be typed as summary/epilogue and visually
+   separated from runtime events.
+- Existing output helpers may still be reused, but routing must preserve event
+   type so hold rendering cannot interleave recap facts with runtime chronology.
+
+### 9) Multi-Pass State Isolation (fix-nb / fix-drift)
+
+Multi-pass modes re-enter pipeline/finalize loops within a single process. TUI
+state and output-bus payloads must be reset at pass boundaries to avoid stale UI
+artifacts.
+
+Required reset boundaries:
+
+- Clear `_OUT_CTX[action_items]` at start of each pass before new action-item
+   collection.
+- Reset per-pass summary metadata (task/log/version/time-breakdown payload) before
+   finalize emits recap fields.
+- Reset/rehydrate TUI run context before each pass (`attempt`, `task`, stage plan,
+   and active lifecycle owner).
+
+Control-flow clarity rules:
+
+- After hold-on-complete Enter, if another pass is required, emit an explicit
+   `Starting pass N+1` boundary event before stage events.
+- If no work remains (for example non-blocking count is 0), no new pipeline pass
+   may start; loop must terminate with a clear terminal message.
+- TUI re-arm on subsequent passes must be deterministic and observable (either
+   sidecar starts or explicit reason is emitted when disabled).
 
 ## Files Modified
 
@@ -189,6 +250,10 @@ Implement in this order to reduce risk:
 | `stages/review.sh` | Policy-driven rework lifecycle wiring |
 | `stages/architect.sh` | Explicit architect and remediation lifecycle ownership |
 | `tools/tui_render.py` | Policy-aware live row and timings rendering |
+| `tools/tui_hold.py` | Separate runtime event log from completion summary metadata |
+| `lib/output_format.sh` | Route recap fields with explicit summary event type |
+| `lib/output.sh` | Add per-pass action-item reset helper for Output Bus context |
+| `tekhton.sh` | Enforce multi-pass boundary events and no-work terminal break |
 | `tools/tests/test_tui.py` | Unit tests for lifecycle invariants and rendering |
 | `tests/test_tui_stage_wiring.sh` | Integration tests for transitions and no-regression behavior |
 
@@ -211,6 +276,16 @@ Implement in this order to reduce risk:
    reset to `0s` after completion.
 - [ ] Completed-row duration notation is consistent with live-row notation for
    equivalent elapsed values.
+- [ ] Completion recap fields (Task, Started, Verdict, Log, Version, breakdown)
+   do not appear as late chronological runtime events in the hold event log.
+- [ ] Runtime event chronology remains monotonic, and `Pipeline Complete` is
+   treated as terminal for runtime-event ordering.
+- [ ] Action Items in hold view reflect only the current pass/run state and do
+   not persist resolved items from prior passes in the same process.
+- [ ] In fix-nonblockers/fix-drift modes, pressing Enter on hold view cannot
+   trigger an extra pass when remaining work count is zero.
+- [ ] If another pass is required, the UI emits an explicit new-pass boundary and
+   re-arms TUI context before stage events begin.
 - [ ] Protocol enforces no stale-label reactivation even under spinner updates.
 - [ ] Existing M108 timings column still renders completed stage rows correctly.
 - [ ] New and updated tests cover architect pre-stage flow, scout->coder transition,
