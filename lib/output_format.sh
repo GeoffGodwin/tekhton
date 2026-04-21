@@ -128,6 +128,30 @@ out_kv() {
         esac
         return 0
     fi
+    _out_kv_print "$label" "$value" "$sev"
+}
+
+# --- out_summary_kv ------------------------------------------------------------
+# out_summary_kv LABEL VALUE
+# Like out_kv, but TUI mode routes the event as type="summary" so the hold view
+# renders the line in a dedicated recap block rather than as a late runtime
+# chronology event (M110). CLI mode is identical to out_kv.
+out_summary_kv() {
+    local label="${1:-}" value="${2:-}"
+    if [[ "${_TUI_ACTIVE:-false}" == "true" ]]; then
+        if declare -f tui_append_summary_event &>/dev/null; then
+            tui_append_summary_event "info" "${label}: ${value}"
+        else
+            out_log "${label}: ${value}"
+        fi
+        return 0
+    fi
+    _out_kv_print "$label" "$value" "normal"
+}
+
+# _out_kv_print LABEL VALUE SEV — shared CLI renderer for out_kv/out_summary_kv.
+_out_kv_print() {
+    local label="$1" value="$2" sev="$3"
     local bold nc color suffix=""
     bold=$(_out_color "${BOLD:-}")
     nc=$(_out_color "${NC:-}")

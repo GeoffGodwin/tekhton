@@ -1909,11 +1909,17 @@ if declare -f tui_start &>/dev/null; then
     out_set_context milestone       "${_CURRENT_MILESTONE:-}"
     out_set_context milestone_title "${MILESTONE_TITLE:-}"
 
-    # M100: build the stage-pill display from get_pipeline_order() + runtime
-    # skip flags, so SKIP_SECURITY / DOCS_AGENT_ENABLED / PIPELINE_ORDER all
-    # flow into both _OUT_CTX[stage_order] and _TUI_STAGE_ORDER from a single
-    # authoritative source.
-    _display_order=$(get_display_stage_order)
+    # M100/M110: build the stage-pill display deterministically via
+    # get_run_stage_plan, which honors PREFLIGHT_ENABLED, INTAKE_AGENT_ENABLED,
+    # architect promotion (FORCE_AUDIT / drift thresholds), SKIP_SECURITY,
+    # DOCS_AGENT_ENABLED, and PIPELINE_ORDER. Pills are seeded once from this
+    # authoritative plan so stage_order never shifts mid-run from ad-hoc
+    # tui_stage_begin call sites.
+    if declare -f get_run_stage_plan &>/dev/null; then
+        _display_order=$(get_run_stage_plan)
+    else
+        _display_order=$(get_display_stage_order)
+    fi
     out_set_context stage_order "$_display_order"
 
     if declare -f tui_set_context &>/dev/null; then
@@ -2237,20 +2243,26 @@ _run_pipeline_stages() {
     _PIPELINE_START_EVT=$(emit_event "pipeline_start" "pipeline" "$TASK" "" "" "")
     _LAST_STAGE_EVT="$_PIPELINE_START_EVT"
 
-    # M100: refresh the stage-pill display from the *now-resolved* runtime
-    # skip flags (SKIP_SECURITY, SKIP_DOCS, *_AGENT_ENABLED). This re-runs
-    # after config/CLI are fully applied so the TUI reflects the pipeline
-    # about to execute — not the pre-config defaults.
-    if declare -f get_display_stage_order &>/dev/null \
-       && declare -f out_set_context &>/dev/null; then
-        local _pl_display_order
-        _pl_display_order=$(get_display_stage_order)
-        out_set_context stage_order "$_pl_display_order"
-        if declare -f tui_set_context &>/dev/null; then
-            # shellcheck disable=SC2206
-            local -a _pl_stage_arr=($_pl_display_order)
-            tui_set_context "${_TUI_RUN_MODE:-task}" "${_TUI_CLI_FLAGS:-}" \
-                "${_pl_stage_arr[@]}"
+    # M100/M110: refresh the deterministic stage plan from the *now-resolved*
+    # runtime skip flags + architect-promotion signals. Prefer get_run_stage_plan
+    # (which includes preflight/intake/architect when enabled) over the legacy
+    # display-only resolver so _OUT_CTX[stage_order] and the TUI pill row stay
+    # in lockstep with the actual execution path.
+    if declare -f out_set_context &>/dev/null; then
+        local _pl_display_order=""
+        if declare -f get_run_stage_plan &>/dev/null; then
+            _pl_display_order=$(get_run_stage_plan)
+        elif declare -f get_display_stage_order &>/dev/null; then
+            _pl_display_order=$(get_display_stage_order)
+        fi
+        if [[ -n "$_pl_display_order" ]]; then
+            out_set_context stage_order "$_pl_display_order"
+            if declare -f tui_set_context &>/dev/null; then
+                # shellcheck disable=SC2206
+                local -a _pl_stage_arr=($_pl_display_order)
+                tui_set_context "${_TUI_RUN_MODE:-task}" "${_TUI_CLI_FLAGS:-}" \
+                    "${_pl_stage_arr[@]}"
+            fi
         fi
     fi
 
@@ -2504,14 +2516,26 @@ _run_pipeline_stages() {
             ;;
         esac
 
-        # M107: mark stage complete in TUI sidecar via the M106 protocol API.
+        # M107/M110: mark stage complete in TUI sidecar via the M106 protocol API.
         # Only end pills we began — skipped stages never entered running state.
+        # Case bodies above write _STAGE_*[reviewer|tester|tester_write] while
+        # $_stage_name here is review|test_verify|test_write — translate via an
+        # inline map so the timings column reads non-zero durations/turns. The
+        # canonical metric keys used by lib/metrics.sh (reviewer, tester) must
+        # continue to match; this dispatch-local map is the single translation
+        # layer between internal pipeline names and the stage-metrics keys.
         if [[ "$_tui_will_run_stage" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
-            local _tui_display_label _tui_finish_dur
+            local _tui_display_label _tui_finish_dur _tui_metrics_key
             _tui_display_label=$(get_stage_display_label "$_stage_name")
-            _tui_finish_dur="${_STAGE_DURATION[$_stage_name]:-0}s"
+            case "$_stage_name" in
+                review)      _tui_metrics_key="reviewer" ;;
+                test_verify) _tui_metrics_key="tester" ;;
+                test_write)  _tui_metrics_key="tester_write" ;;
+                *)           _tui_metrics_key="$_stage_name" ;;
+            esac
+            _tui_finish_dur="${_STAGE_DURATION[$_tui_metrics_key]:-0}s"
             tui_stage_end "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}" \
-                "${_STAGE_TURNS[$_stage_name]:-0}/${_STAGE_BUDGET[$_stage_name]:-0}" \
+                "${_STAGE_TURNS[$_tui_metrics_key]:-0}/${_STAGE_BUDGET[$_tui_metrics_key]:-0}" \
                 "$_tui_finish_dur" ""
         fi
     done
@@ -2653,12 +2677,22 @@ _run_fix_nonblockers_loop() {
 
     while true; do
         nb_attempt=$((nb_attempt + 1))
+        # M110 §9: clear per-pass display state (action_items, current_stage)
+        # so the hold view on pass N+1 never carries resolved items from pass N.
+        if declare -f out_reset_pass &>/dev/null; then
+            out_reset_pass
+        fi
         out_set_context attempt "$nb_attempt"
 
         local remaining
         remaining=$(count_open_nonblocking_notes)
         if [[ "$remaining" -eq 0 ]]; then
             success "All non-blocking notes resolved."
+            # M110 §9: terminal boundary event so the runtime chronology
+            # shows a clean loop-exit marker when no work remains.
+            if declare -f tui_append_event &>/dev/null; then
+                tui_append_event "info" "No remaining work — exiting" "runtime" 2>/dev/null || true
+            fi
             break
         fi
 
@@ -2707,6 +2741,12 @@ _run_fix_nonblockers_loop() {
         # pass will have stopped it; tui_start is a no-op if TUI is inactive).
         if declare -f tui_start &>/dev/null; then tui_start; fi
 
+        # M110 §9: pass-boundary event for passes ≥2 so the runtime chronology
+        # in the hold view shows a clear "Starting pass N" marker between passes.
+        if [[ "$nb_attempt" -ge 2 ]] && declare -f tui_append_event &>/dev/null; then
+            tui_append_event "info" "Starting pass ${nb_attempt}" "runtime" 2>/dev/null || true
+        fi
+
         _run_pipeline_stages
         finalize_run 0
 
@@ -2727,12 +2767,22 @@ _run_fix_drift_loop() {
 
     while true; do
         drift_attempt=$((drift_attempt + 1))
+        # M110 §9: clear per-pass display state (action_items, current_stage)
+        # so the hold view on pass N+1 never carries resolved items from pass N.
+        if declare -f out_reset_pass &>/dev/null; then
+            out_reset_pass
+        fi
         out_set_context attempt "$drift_attempt"
 
         local remaining
         remaining=$(count_drift_observations)
         if [[ "$remaining" -eq 0 ]]; then
             success "All drift observations resolved."
+            # M110 §9: terminal boundary event so the runtime chronology
+            # shows a clean loop-exit marker when no work remains.
+            if declare -f tui_append_event &>/dev/null; then
+                tui_append_event "info" "No remaining work — exiting" "runtime" 2>/dev/null || true
+            fi
             break
         fi
 
@@ -2781,6 +2831,12 @@ _run_fix_drift_loop() {
         # pass will have stopped it; tui_start is a no-op if TUI is inactive).
         if declare -f tui_start &>/dev/null; then tui_start; fi
 
+        # M110 §9: pass-boundary event for passes ≥2 so the runtime chronology
+        # in the hold view shows a clear "Starting pass N" marker between passes.
+        if [[ "$drift_attempt" -ge 2 ]] && declare -f tui_append_event &>/dev/null; then
+            tui_append_event "info" "Starting pass ${drift_attempt}" "runtime" 2>/dev/null || true
+        fi
+
         _run_pipeline_stages
         finalize_run 0
 
@@ -2822,11 +2878,23 @@ fi
 # --- Pre-flight environment validation (Milestone 55) -------------------------
 # Runs fast, deterministic checks BEFORE any agent invocation. Catches stale
 # deps, missing tools, env var gaps, version mismatches. Only during task runs.
-run_preflight_checks || {
+# M110: represent pre-flight as a distinct pre-stage lifecycle owner so the
+# pill row never shows preflight stuck at pending.
+if declare -f tui_stage_begin &>/dev/null; then
+    tui_stage_begin "preflight" "${CLAUDE_STANDARD_MODEL:-}"
+fi
+if run_preflight_checks; then
+    if declare -f tui_stage_end &>/dev/null; then
+        tui_stage_end "preflight" "${CLAUDE_STANDARD_MODEL:-}" "" "" "pass"
+    fi
+else
+    if declare -f tui_stage_end &>/dev/null; then
+        tui_stage_end "preflight" "${CLAUDE_STANDARD_MODEL:-}" "" "" "FAILED"
+    fi
     write_pipeline_state "preflight" "env_failure" "" "$TASK" \
         "Pre-flight environment validation failed. See ${PREFLIGHT_REPORT_FILE}."
     exit 1
-}
+fi
 
 # --- First-run config validation hint (Milestone 83) --------------------------
 # On first pipeline run (no prior run artifacts), print a brief validation summary.

@@ -16,6 +16,9 @@ _tui_escape() { _out_json_escape "$@"; }
 
 # _tui_json_stage LABEL MODEL TURNS TIME VERDICT
 # Emits one JSON object describing a completed stage (no surrounding comma).
+# M110: embeds the lifecycle id recorded in _TUI_CURRENT_LIFECYCLE_ID at
+# time-of-call so timings rows key off lifecycle id, not label, and repeated
+# cycles of the same label (e.g. rework#1 vs rework#2) remain distinguishable.
 _tui_json_stage() {
     local label="${1:-}"
     local model="${2:-}"
@@ -26,8 +29,10 @@ _tui_json_stage() {
     if [[ -n "$verdict" ]]; then
         verdict_json="\"$(_tui_escape "$verdict")\""
     fi
-    printf '{"label":"%s","model":"%s","turns":"%s","time":"%s","verdict":%s}' \
+    local lifecycle_id="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+    printf '{"label":"%s","lifecycle_id":"%s","model":"%s","turns":"%s","time":"%s","verdict":%s}' \
         "$(_tui_escape "$label")" \
+        "$(_tui_escape "$lifecycle_id")" \
         "$(_tui_escape "$model")" \
         "$(_tui_escape "$turns")" \
         "$(_tui_escape "$time_str")" \
@@ -35,24 +40,42 @@ _tui_json_stage() {
 }
 
 # _tui_recent_events_json — emit JSON array built from _TUI_RECENT_EVENTS.
-# Each entry is "ts|level|msg"; split on the first two pipe characters.
+# Each entry is "ts|level|type|msg"; backward compatible with the legacy
+# "ts|level|msg" 3-field shape (older entries default to type="runtime").
+# M110: type ∈ runtime | summary. Summary entries carry run-epilogue metadata
+# (task, started, verdict, log, version, timing breakdown) and must be
+# rendered in a dedicated block by the hold view — never interleaved with
+# runtime chronology.
 _tui_recent_events_json() {
     printf '['
-    local first=1 entry ts level msg rest
+    local first=1 entry ts level type msg rest rest2
     for entry in "${_TUI_RECENT_EVENTS[@]:-}"; do
         [[ -z "$entry" ]] && continue
         ts="${entry%%|*}"
         rest="${entry#*|}"
         level="${rest%%|*}"
-        msg="${rest#*|}"
+        rest2="${rest#*|}"
+        # Detect 4-field vs 3-field shape by checking for another pipe.
+        if [[ "$rest2" == *"|"* ]]; then
+            type="${rest2%%|*}"
+            msg="${rest2#*|}"
+            case "$type" in
+                runtime|summary) ;;
+                *) msg="$rest2"; type="runtime" ;;
+            esac
+        else
+            type="runtime"
+            msg="$rest2"
+        fi
         if (( first )); then
             first=0
         else
             printf ','
         fi
-        printf '{"ts":"%s","level":"%s","msg":"%s"}' \
+        printf '{"ts":"%s","level":"%s","type":"%s","msg":"%s"}' \
             "$(_tui_escape "$ts")" \
             "$(_tui_escape "$level")" \
+            "$(_tui_escape "$type")" \
             "$(_tui_escape "$msg")"
     done
     printf ']'
@@ -182,6 +205,7 @@ _tui_json_build_status() {
     printf '"stage_num":%s,' "$stage_num"
     printf '"stage_total":%s,' "$stage_total"
     printf '"stage_label":"%s",' "$(_tui_escape "$stage_label")"
+    printf '"current_lifecycle_id":"%s",' "$(_tui_escape "${_TUI_CURRENT_LIFECYCLE_ID:-}")"
     printf '"agent_turns_used":%s,' "$turns_used"
     printf '"agent_turns_max":%s,' "$turns_max"
     printf '"agent_elapsed_secs":%s,' "$agent_elapsed"

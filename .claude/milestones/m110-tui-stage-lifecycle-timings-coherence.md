@@ -1,7 +1,7 @@
 # M110 - TUI Stage Lifecycle Semantics and Timings Coherence
 <!-- milestone-meta
 id: "110"
-status: "pending"
+status: "done"
 -->
 
 ## Overview

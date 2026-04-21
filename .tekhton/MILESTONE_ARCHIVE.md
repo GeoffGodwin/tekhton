@@ -37432,3 +37432,3631 @@ Add `tests/test_init_wizard.sh` with:
 - [ ] `shellcheck lib/init_wizard.sh` passes with zero warnings.
 - [ ] `CLAUDE.md` repo layout includes `lib/init_wizard.sh`.
 - [ ] `tests/run_tests.sh` discovers and runs `test_init_wizard.sh`.
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M99 — Output Bus Core + Context Store
+<!-- milestone-meta
+id: "99"
+status: "done"
+-->
+
+## Overview
+
+Tekhton's run-context state (mode, attempt counter, task, milestone) is tracked in
+scattered globals across `tekhton.sh`, `lib/orchestrate.sh`, and three separate fix
+loops. The TUI sidecar reads these opportunistically — including `PIPELINE_ATTEMPT`
+(line 107 of `lib/tui_helpers.sh`), a variable that is **never set anywhere** in the
+codebase and always evaluates to `1`. The result: the TUI header shows `Pass 1/N`
+throughout every run, regardless of which retry attempt is actually in progress.
+
+Additionally, the output routing logic (terminal echo vs. log-file write vs. TUI
+event forward) is duplicated six times in `lib/common.sh` — once each for `log()`,
+`warn()`, `error()`, `success()`, `mode_info()`, and `header()`.
+
+This milestone introduces `lib/output.sh` — the **Output Bus** foundation — which
+provides:
+1. A single context store (`_OUT_CTX`) as the truth for all run-state that affects display
+2. A unified routing function (`_out_emit`) that eliminates the six-way duplication
+3. Fixes for the `PIPELINE_ATTEMPT` ghost variable at all four attempt-counter sites
+
+This is the foundation that M100 (stage order), M101 (ANSI migration), and M102
+(TUI-aware finalize) build on.
+
+## Design
+
+### §1 — `lib/output.sh`: Context Store and Emit Core
+
+New file. All content is sourced by `lib/common.sh` immediately before the existing
+logging functions are defined.
+
+**Associative array:** `declare -gA _OUT_CTX` — holds all run-state that affects
+user-facing display. Keys and their sources:
+
+| Key | Source | Example value |
+|-----|--------|---------------|
+| `mode` | `tekhton.sh` startup | `task`, `milestone`, `complete`, `fix-nb`, `fix-drift`, `human` |
+| `attempt` | Each attempt loop (§4) | `2` |
+| `max_attempts` | `tekhton.sh` startup | `5` |
+| `task` | `tekhton.sh` startup | `"Add OAuth2 login"` |
+| `milestone` | Milestone loop | `"99"` |
+| `milestone_title` | Milestone loop | `"Output Bus Core"` |
+| `stage_order` | M100 (placeholder for now) | `"scout coder security review test_verify"` |
+| `cli_flags` | `tekhton.sh` startup | `"--auto-advance --skip-security"` |
+| `current_stage` | Stage transitions | `"coder"` |
+| `current_model` | Stage transitions | `"claude-opus-4-7"` |
+| `action_items` | M102 (placeholder for now) | `""` (JSON array built in M102) |
+
+**`out_init`** — called once at `tekhton.sh` startup after `output.sh` is sourced.
+Sets safe defaults for all keys so that any call to `out_ctx KEY` before
+`out_set_context` has been called returns an empty string rather than unbound-variable
+errors.
+
+**`out_set_context KEY VALUE`** — store a key in `_OUT_CTX`. Always succeeds.
+
+**`out_ctx KEY`** — retrieve a key from `_OUT_CTX`. Prints the value (or empty string
+if unset) to stdout. Used by `tui_helpers.sh` and M101/M102 formatters.
+
+**`_out_emit LEVEL MSG...`** — the unified routing core. Implements the same branching
+logic currently duplicated in `log()`, `warn()`, etc.:
+
+```bash
+_out_emit() {
+    local level="$1"; shift
+    local msg="$*"
+    local prefix style
+    case "$level" in
+        info)    prefix="[tekhton]"; style="${CYAN}" ;;
+        warn)    prefix="[!]";       style="${YELLOW}" ;;
+        error)   prefix="[✗]";       style="${RED}" ;;
+        success) prefix="[✓]";       style="${GREEN}" ;;
+        header)  prefix="";          style="${BOLD}${CYAN}" ;;
+        *)       prefix="[tekhton]"; style="${CYAN}" ;;
+    esac
+
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        if [[ "$level" == "header" ]]; then
+            echo -e "\n${style}══════════════════════════════════════${NC}"
+            echo -e "${style}  ${msg}${NC}"
+            echo -e "${style}══════════════════════════════════════${NC}\n"
+        else
+            echo -e "${style}${prefix}${NC} ${msg}"
+        fi
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        if [[ "$level" == "header" ]]; then
+            printf '\n=== %s ===\n' "$(_tui_strip_ansi "$msg")" >> "$LOG_FILE" 2>/dev/null || true
+        else
+            printf '%s %s\n' "$prefix" "$(_tui_strip_ansi "$msg")" >> "$LOG_FILE" 2>/dev/null || true
+        fi
+    fi
+    _tui_notify "$level" "${prefix:+${prefix} }${msg}"
+}
+```
+
+`_out_emit` depends on `_tui_strip_ansi` and `_tui_notify`, which are defined earlier
+in `lib/common.sh`. The `source lib/output.sh` line in `common.sh` must appear
+**after** those two functions are defined.
+
+### §2 — Public Out-Functions (New Namespace)
+
+Convenience wrappers for new code. Callers that prefer the shorter names may use
+these instead of calling `_out_emit` directly.
+
+```bash
+out_log()     { _out_emit info    "$*"; }
+out_warn()    { _out_emit warn    "$*"; }
+out_error()   { _out_emit error   "$*"; }
+out_success() { _out_emit success "$*"; }
+out_header()  { _out_emit header  "$*"; }
+```
+
+### §3 — `lib/common.sh`: Collapse Duplicate Routing
+
+The six existing output functions currently each contain 8–12 lines of identical
+`_TUI_ACTIVE` branching logic. Replace each with a one-line wrapper.
+
+**Before** (six functions, ~60 lines total, `common.sh:82–131`):
+```bash
+log() {
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        echo -e "${CYAN}[tekhton]${NC} $*"
+    elif [[ -n "${LOG_FILE:-}" ]]; then
+        printf '[tekhton] %s\n' "$(_tui_strip_ansi "$*")" >> "$LOG_FILE" 2>/dev/null || true
+    fi
+    _tui_notify info "$*"
+}
+# ... (same pattern repeated for warn, error, success, mode_info, header) ...
+```
+
+**After** (six one-line wrappers):
+```bash
+log()       { _out_emit info    "[tekhton] $*"; }
+warn()      { _out_emit warn    "[!] $*"; }
+error()     { _out_emit error   "[✗] $*"; }
+success()   { _out_emit success "[✓] $*"; }
+mode_info() { _out_emit info    "[~] $*"; }
+header()    { _out_emit header  "$*"; }
+```
+
+Add `# shellcheck source=lib/output.sh` before the source line. The source line
+must appear after `_tui_strip_ansi` and `_tui_notify` definitions (line ~80).
+
+### §4 — Fix the `PIPELINE_ATTEMPT` Ghost Variable
+
+`lib/tui_helpers.sh` line 107 currently reads:
+```bash
+local attempt="${PIPELINE_ATTEMPT:-1}"
+```
+
+`PIPELINE_ATTEMPT` is never set anywhere in the codebase. This causes the TUI to
+always display `Pass 1/N`.
+
+**Fix** (single-line change to `tui_helpers.sh:107`):
+```bash
+local attempt="${_OUT_CTX[attempt]:-1}"
+```
+
+### §5 — Wire `out_set_context` at All Four Attempt-Counter Sites
+
+Each execution loop tracks its own local counter. Add `out_set_context attempt`
+immediately after each increment so the TUI stays in sync.
+
+**`lib/orchestrate.sh` — `run_complete_loop()` (line ~136):**
+```bash
+_ORCH_ATTEMPT=$(( _ORCH_ATTEMPT + 1 ))
+out_set_context attempt "$_ORCH_ATTEMPT"
+out_set_context max_attempts "${MAX_PIPELINE_ATTEMPTS:-5}"
+```
+
+**`tekhton.sh` — `_run_human_complete_loop()` (line ~2487):**
+```bash
+human_attempt=$((human_attempt + 1))
+out_set_context attempt "$human_attempt"
+```
+
+**`tekhton.sh` — `_run_fix_nonblockers_loop()` (line ~2596):**
+```bash
+nb_attempt=$((nb_attempt + 1))
+out_set_context attempt "$nb_attempt"
+```
+
+**`tekhton.sh` — `_run_fix_drift_loop()` (line ~2669):**
+```bash
+drift_attempt=$((drift_attempt + 1))
+out_set_context attempt "$drift_attempt"
+```
+
+### §6 — Wire Startup Context in `tekhton.sh`
+
+Immediately before the existing `tui_set_context` call (which is unchanged in this
+milestone), add the corresponding `out_set_context` calls:
+
+```bash
+# Derive _tui_run_mode and _tui_cli_flags (existing logic, unchanged)
+...
+
+# Wire output bus context
+out_set_context mode         "$_tui_run_mode"
+out_set_context task         "${TASK:-}"
+out_set_context cli_flags    "$_tui_cli_flags"
+out_set_context max_attempts "${MAX_PIPELINE_ATTEMPTS:-5}"
+out_set_context attempt      1
+
+# Existing tui_set_context call remains unchanged here
+if declare -f tui_set_context &>/dev/null; then
+    tui_set_context "$_tui_run_mode" "$_tui_cli_flags" \
+        "intake" "scout" "coder" "security" "review" "tester"
+fi
+```
+
+For milestone context, add near the existing `_CURRENT_MILESTONE` and
+`MILESTONE_TITLE` assignments:
+```bash
+out_set_context milestone       "${_CURRENT_MILESTONE:-}"
+out_set_context milestone_title "${MILESTONE_TITLE:-}"
+```
+
+### §7 — `out_init` Initialization
+
+`out_init` must be called once before any `out_set_context` or `_out_emit` call.
+Place the call in `tekhton.sh` right after `lib/output.sh` is sourced (via
+`lib/common.sh`). `out_init` sets all `_OUT_CTX` keys to empty strings, preventing
+unbound-variable errors from `set -u` when any key is read before being set.
+
+```bash
+out_init() {
+    declare -gA _OUT_CTX
+    _OUT_CTX[mode]=""
+    _OUT_CTX[attempt]="1"
+    _OUT_CTX[max_attempts]="1"
+    _OUT_CTX[task]=""
+    _OUT_CTX[milestone]=""
+    _OUT_CTX[milestone_title]=""
+    _OUT_CTX[stage_order]=""
+    _OUT_CTX[cli_flags]=""
+    _OUT_CTX[current_stage]=""
+    _OUT_CTX[current_model]=""
+    _OUT_CTX[action_items]=""
+}
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/output.sh` | **New.** `_OUT_CTX` array, `out_init`, `out_set_context`, `out_ctx`, `_out_emit`, `out_log/warn/error/success/header` (~200 lines) |
+| `lib/common.sh` | `source lib/output.sh` (after `_tui_notify`); collapse six logging functions to one-line wrappers |
+| `lib/tui_helpers.sh` | Line 107: change `PIPELINE_ATTEMPT` → `_OUT_CTX[attempt]` |
+| `lib/orchestrate.sh` | Add `out_set_context attempt` + `out_set_context max_attempts` after `_ORCH_ATTEMPT` increment |
+| `tekhton.sh` | `out_init` call at startup; `out_set_context` for mode/task/cli_flags/max_attempts/attempt/milestone at four sites |
+
+## Acceptance Criteria
+
+- [ ] `lib/output.sh` exists and passes `shellcheck` with zero warnings
+- [ ] `declare -gA _OUT_CTX` is defined in `lib/output.sh`; `out_init` sets all
+      keys to safe defaults so no `set -u` unbound-variable errors occur
+- [ ] `out_set_context mode "fix-nb"` followed by `out_ctx mode` prints `fix-nb`
+- [ ] `out_ctx missing_key` prints an empty string (does not error under `set -u`)
+- [ ] `_out_emit info "hello"` with `_TUI_ACTIVE=false` writes
+      `[tekhton] hello` (with ANSI color) to stdout
+- [ ] `_out_emit warn "problem"` with `_TUI_ACTIVE=true` and `LOG_FILE` set writes
+      `[!] problem` (no ANSI) to the log file and calls `_tui_notify`; produces no
+      stdout output
+- [ ] `log()`, `warn()`, `error()`, `success()`, `mode_info()`, `header()` produce
+      byte-for-byte identical terminal output to the pre-M99 implementations
+      (colors, prefixes, surrounding newlines for `header`)
+- [ ] `PIPELINE_ATTEMPT` removed from `lib/tui_helpers.sh`; `grep -r PIPELINE_ATTEMPT lib/ tekhton.sh` returns zero matches
+- [ ] TUI JSON status file shows correct `attempt` value (e.g., `"attempt":2`) when
+      the orchestrate loop is on its second iteration — verified by inspecting
+      `.tekhton/tui_status.json` mid-run or in a test
+- [ ] TUI header shows correct `run_mode` for: plain task run (`task`), milestone
+      run (`milestone`), `--fix nb` (`fix-nb`), `--fix drift` (`fix-drift`)
+- [ ] `shellcheck` passes on all modified `.sh` files with zero new warnings
+- [ ] All existing tests pass (`bash tests/run_tests.sh`)
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M100 — Dynamic Stage Order + TUI Sync
+<!-- milestone-meta
+id: "100"
+status: "done"
+-->
+
+## Overview
+
+The TUI stage-pill row shows `intake ✓ scout ▶ coder ○ security ○ review ○ tester`
+with the order and set of stages hardcoded in `tekhton.sh`. Three sources of stage
+information now disagree:
+
+1. **`lib/pipeline_order.sh`** — authoritative execution order; produces
+   `scout coder security review test_verify` (standard) or inserts `docs` when
+   `DOCS_AGENT_ENABLED=true`.
+2. **`tekhton.sh` `tui_set_context` call** — hardcodes
+   `"intake" "scout" "coder" "security" "review" "tester"` regardless of config.
+3. **`tools/tui.py`** — has its own fallback stage list used when `stage_order` is
+   absent from the JSON status file.
+
+The result: `--skip-security`, `DOCS_AGENT_ENABLED=true`, and `PIPELINE_ORDER=test_first`
+all produce TUI stage pills that don't reflect reality. The `tui.py` fallback is dead
+code that could silently mask future regressions.
+
+This milestone makes the stage-pill display dynamically accurate by building it from
+`get_pipeline_order()` and storing it in `_OUT_CTX[stage_order]`.
+
+## Design
+
+### §1 — Stage Name Mapping
+
+`get_pipeline_order()` returns internal stage identifiers; the TUI display uses
+human-readable labels. A mapping function normalises them:
+
+| Internal name | Display label | Notes |
+|---------------|---------------|-------|
+| `scout` | `scout` | unchanged |
+| `coder` | `coder` | unchanged |
+| `security` | `security` | unchanged |
+| `review` | `review` | unchanged |
+| `test_verify` | `tester` | standard tester pass |
+| `test_write` | `tester-write` | TDD: write-failing-tests pass |
+| `docs` | `docs` | optional docs agent |
+
+`intake` is prepended separately when `INTAKE_AGENT_ENABLED=true` (default). It
+is not returned by `get_pipeline_order()` because it runs before the main pipeline
+loop, but it is a visible stage in the TUI.
+
+### §2 — New Helper: `get_display_stage_order` in `lib/pipeline_order.sh`
+
+Add a new function to `lib/pipeline_order.sh` that composes the full TUI-visible
+stage list:
+
+```bash
+# get_display_stage_order — Echo the space-separated display stage labels for the TUI.
+# Prepends "intake" when INTAKE_AGENT_ENABLED=true (default).
+# Maps internal names (test_verify, test_write) to display labels.
+# Output: space-separated string, e.g. "intake scout coder docs security review tester"
+get_display_stage_order() {
+    local stages display=""
+
+    # Prepend intake if enabled (runs before the main pipeline)
+    if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]]; then
+        display="intake"
+    fi
+
+    # Get the execution-order stages and map to display names
+    stages=$(get_pipeline_order)
+    local s
+    for s in $stages; do
+        case "$s" in
+            test_verify) display="${display:+$display }tester" ;;
+            test_write)  display="${display:+$display }tester-write" ;;
+            *)           display="${display:+$display }$s" ;;
+        esac
+    done
+
+    echo "$display"
+}
+```
+
+### §3 — Replace Hardcoded `tui_set_context` Call in `tekhton.sh`
+
+**Before:**
+```bash
+if declare -f tui_set_context &>/dev/null; then
+    tui_set_context "$_tui_run_mode" "$_tui_cli_flags" \
+        "intake" "scout" "coder" "security" "review" "tester"
+fi
+```
+
+**After:**
+```bash
+# Build dynamic stage display order from pipeline config
+_display_order=$(get_display_stage_order)
+out_set_context stage_order "$_display_order"
+
+if declare -f tui_set_context &>/dev/null; then
+    # shellcheck disable=SC2086
+    IFS=' ' read -ra _stage_arr <<< "$_display_order"
+    tui_set_context "$_tui_run_mode" "$_tui_cli_flags" "${_stage_arr[@]}"
+fi
+```
+
+This ensures both `_OUT_CTX[stage_order]` and `_TUI_STAGE_ORDER` (used by
+`tui_helpers.sh`) are populated from the same source.
+
+### §4 — Dynamic Update on Stage Skip
+
+When a stage is skipped at runtime (e.g., security disabled mid-run via
+`SKIP_SECURITY=true`), `_OUT_CTX[stage_order]` must be refreshed. Add a call to
+`out_set_context stage_order "$(get_display_stage_order)"` at the point in
+`tekhton.sh` where skip decisions are applied (just before `_run_pipeline_stages`
+starts iterating). This ensures that if `SKIP_SECURITY` or `DOCS_AGENT_ENABLED`
+is determined at runtime rather than at startup, the TUI reflects the actual order.
+
+Additionally, update `_TUI_STAGE_ORDER` via `tui_set_context` at the same point:
+```bash
+_display_order=$(get_display_stage_order)
+out_set_context stage_order "$_display_order"
+IFS=' ' read -ra _stage_arr <<< "$_display_order"
+# tui_set_context preserves run_mode and cli_flags, updates stage_order only
+if declare -f tui_set_context &>/dev/null; then
+    tui_set_context "${_OUT_CTX[mode]:-task}" "${_OUT_CTX[cli_flags]:-}" "${_stage_arr[@]}"
+fi
+```
+
+### §5 — Remove `tui.py` Hardcoded Fallback
+
+`tools/tui.py` contains a fallback stage list used when `stage_order` is missing or
+empty in the JSON. After M99+M100, `stage_order` is always populated before the TUI
+starts. Remove the fallback entirely. If `stage_order` is empty, derive a minimal
+display from `stage_num` / `stage_total` instead (e.g., `Stage N of M`) rather than
+showing a hardcoded list.
+
+Search for the fallback in `tui.py` (likely near the `_build_header_bar` or
+`_build_stage_pills` function) and replace the hardcoded list with:
+
+```python
+stage_order = status.get("stage_order") or []
+if not stage_order and (stage_total := status.get("stage_total", 0)):
+    # Minimal fallback: numbered placeholders when stage_order not yet populated
+    stage_order = [f"stage-{i+1}" for i in range(stage_total)]
+```
+
+### §6 — `tui_helpers.sh`: Read `stage_order` from `_OUT_CTX`
+
+`_tui_stage_order_json()` already reads from `_TUI_STAGE_ORDER` array (set by
+`tui_set_context`). No change needed there — §3 above ensures `_TUI_STAGE_ORDER` is
+always built from `get_display_stage_order()`.
+
+However, for the M101+ path where `tui_set_context` may be replaced by `out_set_context`
+alone, add a fallback in `_tui_stage_order_json()`:
+
+```bash
+_tui_stage_order_json() {
+    # Prefer _TUI_STAGE_ORDER array; fall back to _OUT_CTX[stage_order] string
+    local src=("${_TUI_STAGE_ORDER[@]:-}")
+    if [[ "${#src[@]}" -eq 0 ]] && [[ -n "${_OUT_CTX[stage_order]:-}" ]]; then
+        IFS=' ' read -ra src <<< "${_OUT_CTX[stage_order]}"
+    fi
+    printf '['
+    local first=1 s
+    for s in "${src[@]:-}"; do
+        [[ -z "$s" ]] && continue
+        (( first )) && first=0 || printf ','
+        printf '"%s"' "$(_tui_escape "$s")"
+    done
+    printf ']'
+}
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/pipeline_order.sh` | Add `get_display_stage_order()` function |
+| `tekhton.sh` | Replace hardcoded `tui_set_context` stage list with `get_display_stage_order()` output; add `out_set_context stage_order`; add runtime-skip refresh call |
+| `lib/tui_helpers.sh` | `_tui_stage_order_json()`: add `_OUT_CTX[stage_order]` fallback when `_TUI_STAGE_ORDER` is empty |
+| `tools/tui.py` | Remove hardcoded fallback stage list; use numbered placeholders when `stage_order` absent |
+
+## Acceptance Criteria
+
+- [ ] `get_display_stage_order` function exists in `lib/pipeline_order.sh` and
+      passes `shellcheck`
+- [ ] Standard run (no flags): TUI stage pills show
+      `intake scout coder security review tester` in that order
+- [ ] `INTAKE_AGENT_ENABLED=false`: pills show `scout coder security review tester`
+      (no `intake`)
+- [ ] `DOCS_AGENT_ENABLED=true`: pills show
+      `intake scout coder docs security review tester`
+- [ ] `PIPELINE_ORDER=test_first`: pills show
+      `intake scout tester-write coder security review tester`
+- [ ] `SKIP_SECURITY=true` (runtime skip): pills update to exclude `security`
+      after the skip decision is applied — verified by inspecting `tui_status.json`
+- [ ] `tools/tui.py` contains no hardcoded stage list; if `stage_order` is absent
+      from JSON, the pills panel falls back gracefully (numbered placeholders or empty)
+      rather than showing a stale hardcoded list
+- [ ] `_tui_stage_order_json()` reads from `_OUT_CTX[stage_order]` when
+      `_TUI_STAGE_ORDER` is empty — verified by unit test
+- [ ] `shellcheck` passes on all modified `.sh` files with zero new warnings
+- [ ] All existing tests pass (`bash tests/run_tests.sh`)
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M101 — Eliminate Direct ANSI Output
+<!-- milestone-meta
+id: "101"
+status: "done"
+-->
+
+## Overview
+
+After M99 unified the routing logic for `log()`/`warn()` etc., 91 direct
+`echo -e ... ${BOLD} / ${RED} / ${GREEN} / ${YELLOW} / ${CYAN}` calls remain
+scattered across 10 library files. These calls bypass the output bus entirely:
+they always write to stdout whether or not the TUI is active, they cannot be
+routed to the log file, and they produce ANSI escape sequences that corrupt the
+TUI's alternate screen buffer.
+
+This milestone introduces `lib/output_format.sh` — a library of structured
+display formatters — and migrates all 91 direct ANSI calls to use these
+formatters. On completion, a grep-based lint check enforces that no new direct
+ANSI calls are introduced.
+
+**Affected files (10):**
+`lib/finalize_display.sh`, `lib/finalize.sh`, `lib/clarify.sh`,
+`lib/init_report_banner.sh`, `lib/report.sh`, `lib/milestone_progress_helpers.sh`,
+`lib/diagnose_output.sh`, `lib/init_helpers.sh`, `lib/artifact_handler.sh`,
+`lib/diagnose.sh`
+
+## Design
+
+### §1 — `lib/output_format.sh`: Public API
+
+New file, sourced by `lib/common.sh` after `lib/output.sh`. All functions
+respect `NO_COLOR` (defined in `common.sh`) and route through `_out_emit` so
+that TUI-mode callers get event-feed entries instead of raw stdout.
+
+---
+
+**`out_banner TITLE [KEY VALUE ...]`**
+
+Renders a boxed header with an optional key-value table beneath it.
+In CLI mode: ANSI box with `═` borders. In TUI mode: emits title as a
+`header` event and each key-value pair as an `info` event; no box drawing.
+
+```bash
+# Usage:
+out_banner "Pipeline Complete" \
+    "Task"    "Add OAuth2 login" \
+    "Verdict" "SUCCESS" \
+    "Time"    "4m12s"
+```
+
+CLI output:
+```
+══════════════════════════════════════
+  Pipeline Complete
+  Task:     Add OAuth2 login
+  Verdict:  SUCCESS
+  Time:     4m12s
+══════════════════════════════════════
+```
+
+---
+
+**`out_section TITLE`**
+
+Prints a dim separator line with a centered title. Used to divide major
+sections within a report.
+
+```bash
+out_section "Action Items"
+```
+
+CLI output: `──── Action Items ────────────────────`
+
+---
+
+**`out_kv LABEL VALUE [SEVERITY]`**
+
+Prints a single key-value line. SEVERITY controls color:
+- `normal` (default): white value
+- `warn`: yellow value
+- `error`: red value + `[CRITICAL]` suffix
+
+```bash
+out_kv "Open bugs"      "3"  warn
+out_kv "Test failures"  "1"  error
+out_kv "Drift items"    "2"
+```
+
+---
+
+**`out_hr [LABEL]`**
+
+Prints a horizontal rule (full terminal width). Optional LABEL is printed
+inline, dim. Used between sections in reports.
+
+---
+
+**`out_progress LABEL CURRENT MAX`**
+
+Prints a progress bar with counts. Used by `lib/milestone_progress_helpers.sh`.
+
+```bash
+out_progress "Milestones" 72 103
+```
+
+CLI output: `Milestones  [████████████░░░░░]  72/103`
+
+---
+
+**`out_action_item MSG SEVERITY`**
+
+Prints a single action item line to terminal (CLI mode). In TUI mode, does
+NOT print to stdout; instead, appends to `_OUT_CTX[action_items]` as a
+JSON fragment for later use by M102's hold screen.
+
+SEVERITY: `normal` (cyan ℹ), `warning` (yellow ⚠), `critical` (red ✗).
+
+```bash
+out_action_item "Review ARCHITECTURE_LOG.md — 3 open drift items" warning
+out_action_item "Fix 2 security findings before next deploy" critical
+```
+
+`_OUT_CTX[action_items]` accumulates as a JSON array of objects:
+```json
+[{"msg":"Review ARCHITECTURE_LOG.md — 3 open drift items","severity":"warning"},
+ {"msg":"Fix 2 security findings before next deploy","severity":"critical"}]
+```
+
+This key is read by M102's `tui_helpers.sh` change to populate `action_items`
+in the JSON status file.
+
+### §2 — `NO_COLOR` Handling
+
+All formatters check `${NO_COLOR:-}` at call time (not at source time), since
+`NO_COLOR` may be set after `common.sh` is sourced:
+
+```bash
+_out_color() {
+    # Returns the color code or empty string if NO_COLOR is set
+    local code="$1"
+    [[ -n "${NO_COLOR:-}" ]] && echo "" || echo "$code"
+}
+```
+
+All `echo -e "${BOLD}..."` patterns in the formatters use `$(_out_color "$BOLD")`
+so that `NO_COLOR=1` produces clean plaintext with no escape sequences.
+
+### §3 — Migration Strategy
+
+Migrate one file at a time. After each file: run `shellcheck` on it, run
+`bash tests/run_tests.sh`, and visually verify CLI output is unchanged.
+**Do not batch multiple files into one commit.**
+
+**Migration order** (simplest first, most complex last):
+
+1. `lib/clarify.sh` — small; few echo calls
+2. `lib/artifact_handler.sh` — small; ANSI notices
+3. `lib/init_helpers.sh` — init-phase progress messages
+4. `lib/diagnose.sh` — diagnostic headers
+5. `lib/diagnose_output.sh` — diagnosis report
+6. `lib/init_report_banner.sh` — init summary banner
+7. `lib/report.sh` — run report
+8. `lib/milestone_progress_helpers.sh` — progress bars (uses new `out_progress`)
+9. `lib/finalize.sh` — completion gate echoes
+10. `lib/finalize_display.sh` — action items (uses new `out_action_item`; most complex)
+
+### §4 — `lib/finalize_display.sh` Migration Detail
+
+This is the most complex migration. The current file builds an `action_items=()`
+bash array and prints each item with severity-colored `echo -e`. The refactored
+version calls `out_action_item MSG SEVERITY` instead. The severity mapping
+(currently done by `_severity_for_count()`) is preserved as-is; only the output
+call changes.
+
+**Before (pattern, repeated ~8 times):**
+```bash
+echo -e "${RED}✗ ${count} test failure(s) detected — fix before shipping${NC} [CRITICAL]"
+```
+
+**After:**
+```bash
+out_action_item "${count} test failure(s) detected — fix before shipping" critical
+```
+
+The `out_action_item` function handles the prefix symbol (✗/⚠/ℹ) and severity
+color internally, so callers pass only the message text and severity string.
+
+### §5 — Lint Enforcement
+
+Add to `tests/test_output_lint.sh` (created in this milestone, not M103):
+
+```bash
+# Fail if any direct ANSI echo calls exist outside the output module
+count=$(grep -rn \
+    'echo -e.*\${\(BOLD\|RED\|GREEN\|YELLOW\|CYAN\|NC\)}' \
+    lib/ stages/ \
+    --include="*.sh" \
+    | grep -v 'lib/common\.sh\|lib/output\.sh\|lib/output_format\.sh' \
+    | wc -l)
+
+if [[ "$count" -gt 0 ]]; then
+    echo "FAIL: ${count} direct ANSI echo calls found outside output module:"
+    grep -rn \
+        'echo -e.*\${\(BOLD\|RED\|GREEN\|YELLOW\|CYAN\|NC\)}' \
+        lib/ stages/ \
+        --include="*.sh" \
+        | grep -v 'lib/common\.sh\|lib/output\.sh\|lib/output_format\.sh'
+    exit 1
+fi
+echo "PASS: No direct ANSI echo calls outside output module"
+```
+
+This test is run as part of M103's full test suite but exists as a standalone
+file that can be run independently.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/output_format.sh` | **New.** `out_banner`, `out_section`, `out_kv`, `out_hr`, `out_progress`, `out_action_item`, `_out_color` (~250 lines) |
+| `lib/common.sh` | `source lib/output_format.sh` after `source lib/output.sh` |
+| `lib/clarify.sh` | Replace direct ANSI echoes with `out_section`/`out_kv` |
+| `lib/artifact_handler.sh` | Replace direct ANSI echoes with `out_warn`/`out_section` |
+| `lib/init_helpers.sh` | Replace direct ANSI echoes with `out_log`/`out_section` |
+| `lib/diagnose.sh` | Replace direct ANSI echoes with `out_header`/`out_section` |
+| `lib/diagnose_output.sh` | Replace direct ANSI echoes with `out_banner`/`out_section`/`out_kv` |
+| `lib/init_report_banner.sh` | Replace direct ANSI echoes with `out_banner` |
+| `lib/report.sh` | Replace direct ANSI echoes with `out_banner`/`out_kv` |
+| `lib/milestone_progress_helpers.sh` | Replace direct ANSI echoes with `out_progress`/`out_section` |
+| `lib/finalize.sh` | Replace direct ANSI echoes with `out_log`/`out_success` |
+| `lib/finalize_display.sh` | Replace `echo -e` action-item calls with `out_action_item`; preserve severity logic |
+| `tests/test_output_lint.sh` | **New.** Grep-based lint check (see §5) |
+
+## Acceptance Criteria
+
+- [ ] `lib/output_format.sh` exists and passes `shellcheck` with zero warnings
+- [ ] `out_banner "Test" "Key" "Value"` produces a boxed header with key-value row
+      in CLI mode; in TUI mode produces a `header` event followed by an `info` event
+      (no stdout box-drawing chars that would corrupt the alternate screen)
+- [ ] `out_action_item "fix this" critical` in CLI mode prints `✗ fix this [CRITICAL]`
+      in red to stdout; in TUI mode produces no stdout output and appends a JSON
+      object to `_OUT_CTX[action_items]`
+- [ ] `NO_COLOR=1` before sourcing: all formatter functions produce no ANSI escape
+      sequences — verified by piping output through `cat -v` and confirming no `^[`
+- [ ] `tests/test_output_lint.sh` passes: zero direct `echo -e` ANSI calls in
+      `lib/` and `stages/` outside `common.sh`, `output.sh`, `output_format.sh`
+- [ ] Each of the 10 migrated files passes `shellcheck` individually after its migration
+- [ ] CLI output of `--diagnose`, `--init`, `--progress`, and `tekhton.sh` finalize
+      banner is visually unchanged from pre-M101 (same text, same colors) — spot-
+      checked manually
+- [ ] `bash tests/run_tests.sh` passes after all 10 files are migrated
+- [ ] `shellcheck` passes on all new and modified `.sh` files with zero warnings
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M102 — TUI-Aware Finalize + Completion Flow
+<!-- milestone-meta
+id: "102"
+status: "done"
+-->
+
+## Overview
+
+When the TUI sidecar is active, the finalize banner (printed by `lib/finalize.sh`
+and `lib/finalize_display.sh`) currently races against the TUI's alternate screen
+buffer. The TUI owns the screen via `rich.Live`; the finalize code writes to stdout
+via the normal terminal scroll. Whichever wins the race determines what the user
+sees — typically a garbled mix of TUI border fragments and banner text.
+
+Additionally, the `action_items` field in the TUI JSON status has been hardcoded
+as `[]` since M97. The M98 hold-on-complete screen (in `tools/tui_hold.py`) already
+has a placeholder to display action items, but nothing populates them.
+
+After M101, `out_action_item` calls in `lib/finalize_display.sh` accumulate action
+items in `_OUT_CTX[action_items]`. This milestone wires those items into the TUI
+JSON and ensures the completion sequence is race-free:
+
+1. `lib/finalize_display.sh` calls `out_action_item` (M101) → items in `_OUT_CTX`
+2. `out_complete VERDICT` writes the final JSON (with action items) and signals the sidecar
+3. Sidecar exits `Live` → prints hold screen (event log + action items + Enter prompt)
+4. User presses Enter → sidecar exits → `tui_stop` returns → finalize banner prints in normal scroll
+
+## Design
+
+### §1 — `out_complete VERDICT` in `lib/output.sh`
+
+New public function added to `lib/output.sh`. Replaces the direct `tui_complete`
+call at the end of `finalize_run`.
+
+```bash
+out_complete() {
+    local verdict="${1:-}"
+    # Update context
+    _OUT_CTX[mode]="${_OUT_CTX[mode]:-task}"  # preserve existing mode
+    # Delegate to tui_complete if TUI is active
+    if declare -f tui_complete &>/dev/null; then
+        tui_complete "$verdict"
+    fi
+}
+```
+
+`tui_complete` (in `lib/tui.sh`) already handles the full hold-and-wait sequence
+introduced in M98. `out_complete` is a thin wrapper that ensures the verdict flows
+through the context store (for future M103 tests) before delegating.
+
+### §2 — Populate `action_items` in TUI JSON
+
+`lib/tui_helpers.sh` line 157 currently hardcodes `'"action_items":[],'`. Replace
+this with a read from `_OUT_CTX[action_items]`:
+
+**Before (`tui_helpers.sh:157`):**
+```bash
+printf '"action_items":[],'
+```
+
+**After:**
+```bash
+local action_items_json
+action_items_json="${_OUT_CTX[action_items]:-[]}"
+# Ensure it's valid JSON array (non-empty string defaults to empty array)
+[[ "$action_items_json" == "" ]] && action_items_json="[]"
+printf '"action_items":%s,' "$action_items_json"
+```
+
+`_OUT_CTX[action_items]` is built by `out_action_item` (M101) as a JSON array
+string. It starts empty (`""`) and grows as items are appended:
+
+```bash
+# In lib/output_format.sh — out_action_item internal append logic:
+out_action_item() {
+    local msg="$1" severity="${2:-normal}"
+    # CLI mode: print directly
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        local prefix style
+        case "$severity" in
+            critical) prefix="✗"; style="${RED}" ;;
+            warning)  prefix="⚠"; style="${YELLOW}" ;;
+            *)        prefix="ℹ"; style="${CYAN}" ;;
+        esac
+        local suffix=""
+        [[ "$severity" == "critical" ]] && suffix=" [CRITICAL]"
+        echo -e "${style}${prefix} ${msg}${NC}${suffix}"
+        return
+    fi
+    # TUI mode: accumulate JSON, suppress stdout
+    local escaped_msg
+    escaped_msg=$(printf '%s' "$msg" | sed 's/"/\\"/g; s/\\/\\\\/g')
+    local item="{\"msg\":\"${escaped_msg}\",\"severity\":\"${severity}\"}"
+    local current="${_OUT_CTX[action_items]:-}"
+    if [[ -z "$current" ]] || [[ "$current" == "[]" ]]; then
+        _OUT_CTX[action_items]="[${item}]"
+    else
+        # Insert before closing bracket
+        _OUT_CTX[action_items]="${current%]},${item}]"
+    fi
+}
+```
+
+**JSON element schema:**
+```json
+{"msg": "<human-readable text>", "severity": "<normal|warning|critical>"}
+```
+
+### §3 — `tools/tui_hold.py`: Render Action Items
+
+`tools/tui_hold.py` already defines `_hold_on_complete()` (M98). Add action-item
+rendering between the event log and the Enter prompt:
+
+```python
+# After printing event log, before the Enter prompt:
+action_items = status.get("action_items") or []
+if action_items:
+    console.print()
+    console.print("[bold]Action items:[/bold]", style="dim")
+    severity_styles = {
+        "critical": ("✗", "bold red"),
+        "warning":  ("⚠", "yellow"),
+        "normal":   ("ℹ", "cyan"),
+    }
+    for item in action_items:
+        msg      = item.get("msg", "")
+        severity = item.get("severity", "normal")
+        icon, style = severity_styles.get(severity, ("ℹ", "cyan"))
+        suffix = "  [CRITICAL]" if severity == "critical" else ""
+        console.print(f"  [{style}]{icon} {msg}{suffix}[/{style}]")
+    console.print()
+```
+
+### §4 — Guard Finalize Banner When TUI Is Active
+
+`lib/finalize.sh` currently calls `_print_action_items` and other display functions
+directly after `tui_complete`. After M101, these calls go through `out_action_item`
+(TUI: suppressed to `_OUT_CTX[action_items]`). But any remaining direct stdout
+writes in `lib/finalize.sh` must be guarded.
+
+The ordering is now:
+```bash
+# lib/finalize.sh — finalize_run() end sequence
+_print_action_items       # uses out_action_item → accumulates in _OUT_CTX (TUI mode)
+                          # or prints directly (CLI mode)
+out_complete "$verdict"   # signals TUI; TUI prints hold screen + action items; waits for Enter
+                          # (CLI mode: no-op on TUI side, just returns)
+_print_finalize_banner    # prints in normal scroll — safe in both modes because:
+                          # TUI mode: alternate screen already restored by tui_complete
+                          # CLI mode: prints to stdout as before
+```
+
+Verify that `_print_action_items` is called **before** `out_complete` so that items
+are in `_OUT_CTX[action_items]` when the sidecar reads the final JSON.
+
+### §5 — CLI-Mode Regression Contract
+
+When `_TUI_ACTIVE=false`:
+- `out_action_item` prints directly to stdout with ANSI color (unchanged from M101)
+- `out_complete` is a no-op on the TUI path (no sidecar running)
+- `_print_finalize_banner` prints normally
+- Overall behavior: byte-for-byte identical to pre-M102 CLI output
+
+This must be verified explicitly in the acceptance criteria (no regression path
+can be assumed correct without a test).
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/output.sh` | Add `out_complete VERDICT` function |
+| `lib/tui_helpers.sh` | Line 157: read `action_items` from `_OUT_CTX[action_items]` instead of hardcoded `[]` |
+| `lib/output_format.sh` | `out_action_item` TUI branch: accumulate JSON into `_OUT_CTX[action_items]` (M101 adds the function; M102 adds the TUI accumulation branch) |
+| `lib/finalize.sh` | Call `out_complete "$verdict"` in place of direct `tui_complete`; ensure `_print_action_items` is called before `out_complete` |
+| `tools/tui_hold.py` | Render `action_items` array with severity icons and colors |
+
+## Acceptance Criteria
+
+- [ ] `out_complete "SUCCESS"` exists in `lib/output.sh` and delegates to
+      `tui_complete` when the function is defined
+- [ ] In TUI mode: `out_action_item "fix tests" critical` appends
+      `{"msg":"fix tests","severity":"critical"}` to `_OUT_CTX[action_items]`;
+      produces no stdout output
+- [ ] In CLI mode: `out_action_item "fix tests" critical` prints
+      `✗ fix tests [CRITICAL]` (red) to stdout; does NOT modify `_OUT_CTX`
+- [ ] TUI JSON `action_items` field contains the full list of items emitted
+      by `lib/finalize_display.sh` during a complete run — verified by
+      inspecting `.tekhton/tui_status.json` after `out_complete` is called
+- [ ] `tools/tui_hold.py` hold screen displays action items with correct
+      severity icons (✗ red for critical, ⚠ yellow for warning, ℹ cyan for normal)
+- [ ] No stdout output races the TUI alternate screen: when TUI is active, the
+      finalize banner appears in normal terminal scroll **after** the user presses
+      Enter on the hold screen (verified manually or via timeout test)
+- [ ] CLI-only mode (no TUI): finalize output is byte-for-byte identical to
+      pre-M102 — same action item lines, same colors, same banner text
+- [ ] `grep -n 'action_items.*\[\]' lib/tui_helpers.sh` returns zero matches
+      (hardcoded empty array is gone)
+- [ ] `shellcheck` passes on all modified `.sh` files with zero new warnings
+- [ ] All existing tests pass (`bash tests/run_tests.sh`)
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M103 — Output Bus Tests + Integration Validation
+<!-- milestone-meta
+id: "103"
+status: "done"
+-->
+
+## Overview
+
+M99–M102 introduced `lib/output.sh`, `lib/output_format.sh`, changes to
+`lib/tui_helpers.sh`, and a new completion sequence. None of these have dedicated
+automated tests yet (M101 added a lint check, but not behavioral tests). This
+milestone closes that gap with:
+
+1. **Unit tests** for the context store and emit routing
+2. **Integration tests** verifying TUI JSON correctness across all six execution modes
+3. **Regression tests** for CLI output (NO_COLOR, backward compat)
+4. **Lint enforcement** as a required test (the file from M101 is run here as part of
+   the full suite)
+5. **Python tests** for `tui_hold.py` action-item rendering
+
+## Design
+
+### §1 — Test File Layout
+
+All new tests follow the existing Tekhton convention: bash test files in `tests/`,
+Python tests in `tools/tests/`. Tests are discovered by `tests/run_tests.sh`.
+
+```
+tests/
+  test_output_bus.sh         # Unit: _OUT_CTX, _out_emit, out_set_context, out_ctx
+  test_output_tui_sync.sh    # Integration: TUI JSON fields for all 6 run modes
+  test_output_lint.sh        # Lint: zero direct ANSI echoes outside output module
+                             # (created in M101; verified to exist and pass here)
+tools/tests/
+  test_tui_action_items.py   # Python unit: action_items rendering in tui_hold.py
+```
+
+### §2 — `tests/test_output_bus.sh`: Context Store Unit Tests
+
+Source `lib/output.sh` (and `lib/common.sh` for `_tui_strip_ansi`) in a test
+harness. Use the existing test helper pattern from other test files in `tests/`.
+
+**Test cases:**
+
+```bash
+# TC-OB-01: out_init populates all keys with safe defaults
+out_init
+assert_eq "" "$(out_ctx mode)"        "mode default is empty"
+assert_eq "1" "$(out_ctx attempt)"    "attempt default is 1"
+assert_eq "1" "$(out_ctx max_attempts)" "max_attempts default is 1"
+
+# TC-OB-02: out_set_context / out_ctx round-trip
+out_set_context mode "fix-nb"
+assert_eq "fix-nb" "$(out_ctx mode)"  "set and get mode"
+
+# TC-OB-03: out_ctx on unset key returns empty, no error under set -u
+out_init
+result=$(out_ctx nonexistent_key 2>&1)
+assert_eq "" "$result"                 "missing key returns empty"
+assert_eq "0" "$?"                     "missing key does not error"
+
+# TC-OB-04: out_set_context overwrites previous value
+out_set_context attempt 1
+out_set_context attempt 3
+assert_eq "3" "$(out_ctx attempt)"    "overwrite works"
+
+# TC-OB-05: _out_emit in CLI mode (TUI inactive) writes to stdout
+_TUI_ACTIVE=false
+output=$(LOG_FILE="" _out_emit info "hello" 2>/dev/null)
+assert_contains "[tekhton]" "$output"  "_out_emit info has prefix"
+assert_contains "hello" "$output"     "_out_emit info has message"
+
+# TC-OB-06: _out_emit in TUI mode writes nothing to stdout
+_TUI_ACTIVE=true
+tmplog=$(mktemp)
+LOG_FILE="$tmplog" output=$(_out_emit info "hello" 2>/dev/null)
+assert_eq "" "$output"                 "TUI mode: no stdout"
+assert_contains "hello" "$(cat "$tmplog")"  "TUI mode: message in log"
+rm -f "$tmplog"
+_TUI_ACTIVE=false
+
+# TC-OB-07: log() wrapper produces same output as pre-M99 (backward compat)
+_TUI_ACTIVE=false
+output=$(LOG_FILE="" log "test message" 2>/dev/null)
+assert_contains "[tekhton]" "$output"  "log() prefix preserved"
+assert_contains "test message" "$output" "log() message preserved"
+
+# TC-OB-08: warn() wrapper produces [!] prefix
+_TUI_ACTIVE=false
+output=$(LOG_FILE="" warn "bad thing" 2>/dev/null)
+assert_contains "[!]" "$output"        "warn() prefix preserved"
+
+# TC-OB-09: header() produces surrounding newlines and border
+_TUI_ACTIVE=false
+output=$(LOG_FILE="" header "Section" 2>/dev/null)
+assert_contains "══" "$output"         "header() has border"
+assert_contains "Section" "$output"   "header() has title"
+```
+
+### §3 — `tests/test_output_tui_sync.sh`: TUI JSON Integration Tests
+
+These tests simulate each execution mode by calling `out_set_context` with the
+appropriate values, then calling `_tui_json_build_status 0` (exported from
+`lib/tui_helpers.sh`) and asserting the JSON fields.
+
+**The six execution modes and their expected `run_mode` values:**
+
+| Mode | Trigger | Expected `run_mode` |
+|------|---------|---------------------|
+| Plain task | default | `task` |
+| Milestone run | `MILESTONE_MODE=true` | `milestone` |
+| `--complete` loop | `COMPLETE_MODE=true` | `complete` |
+| `--fix nb` | `FIX_NONBLOCKERS_MODE=true` | `fix-nb` |
+| `--fix drift` | `FIX_DRIFT_MODE=true` | `fix-drift` |
+| `--human` | `HUMAN_MODE=true` | `human` |
+
+**Test cases:**
+
+```bash
+# TC-TUI-01: run_mode=task (default)
+out_init
+out_set_context mode "task"
+out_set_context attempt 1
+json=$(_tui_json_build_status 0)
+assert_json_field "task" "run_mode" "$json"   "default run_mode is task"
+
+# TC-TUI-02: run_mode=fix-nb shows correct attempt counter
+out_set_context mode "fix-nb"
+out_set_context attempt 2
+out_set_context max_attempts 3
+json=$(_tui_json_build_status 0)
+assert_json_field "fix-nb" "run_mode" "$json"  "fix-nb run_mode"
+assert_json_field "2" "attempt" "$json"         "attempt counter synced"
+assert_json_field "3" "max_attempts" "$json"    "max_attempts synced"
+
+# TC-TUI-03: stage_order reflects get_display_stage_order output (M100)
+out_set_context stage_order "intake scout coder security review tester"
+json=$(_tui_json_build_status 0)
+# stage_order JSON array should contain "intake" as first element
+assert_contains '"intake"' "$json"             "stage_order includes intake"
+assert_contains '"tester"' "$json"             "stage_order includes tester"
+
+# TC-TUI-04: action_items populated from _OUT_CTX (M102)
+_OUT_CTX[action_items]='[{"msg":"fix tests","severity":"critical"}]'
+json=$(_tui_json_build_status 0)
+assert_contains '"fix tests"' "$json"          "action_items appear in JSON"
+assert_contains '"critical"' "$json"           "severity appears in JSON"
+
+# TC-TUI-05: attempt reads from _OUT_CTX, not PIPELINE_ATTEMPT
+unset PIPELINE_ATTEMPT 2>/dev/null || true
+out_set_context attempt 4
+json=$(_tui_json_build_status 0)
+assert_json_field "4" "attempt" "$json"        "_OUT_CTX[attempt] used, not PIPELINE_ATTEMPT"
+```
+
+**Helper `assert_json_field EXPECTED FIELD JSON`** — extracts the field value with
+`grep`/`sed` (no jq dependency, consistent with the existing test harness):
+
+```bash
+assert_json_field() {
+    local expected="$1" field="$2" json="$3"
+    local actual
+    actual=$(printf '%s' "$json" | sed -n "s/.*\"${field}\":\(\"[^\"]*\"\|[0-9]*\).*/\1/p" | tr -d '"')
+    if [[ "$actual" != "$expected" ]]; then
+        echo "FAIL: expected ${field}=${expected}, got ${actual}"
+        return 1
+    fi
+}
+```
+
+### §4 — `tests/test_output_lint.sh` (from M101): Verify It Passes
+
+M101 created this file. M103 verifies it exists and passes as part of the suite:
+
+```bash
+# In tests/run_tests.sh or test_output_lint.sh itself:
+bash tests/test_output_lint.sh
+```
+
+The lint check must return exit 0. If it fails, output identifies the offending lines.
+
+### §5 — `tests/test_output_bus.sh`: NO_COLOR Regression
+
+```bash
+# TC-OB-10: NO_COLOR=1 suppresses all ANSI in _out_emit output
+NO_COLOR=1
+_TUI_ACTIVE=false
+output=$(LOG_FILE="" _out_emit info "hello" 2>/dev/null)
+# Verify no ESC bytes in output
+if printf '%s' "$output" | grep -qP '\x1b'; then
+    echo "FAIL: ANSI escape found in output with NO_COLOR=1"
+    exit 1
+fi
+echo "PASS TC-OB-10: NO_COLOR=1 produces clean output"
+unset NO_COLOR
+```
+
+### §6 — `tools/tests/test_tui_action_items.py`: Python Unit Tests
+
+Tests for the action-item rendering added to `_hold_on_complete` in M102.
+
+```python
+# tools/tests/test_tui_action_items.py
+from unittest.mock import MagicMock, patch
+import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from tui_hold import _hold_on_complete
+
+def make_status(action_items):
+    return {
+        "complete": True,
+        "verdict": "SUCCESS",
+        "task": "test task",
+        "milestone": "103",
+        "pipeline_elapsed_secs": 60,
+        "recent_events": [],
+        "action_items": action_items,
+    }
+
+def test_action_items_rendered(capsys):
+    console = MagicMock()
+    with patch("builtins.open", MagicMock()), \
+         patch("tui_hold.open", MagicMock(return_value=MagicMock(readline=lambda: "\n"))):
+        _hold_on_complete(make_status([
+            {"msg": "fix tests", "severity": "critical"},
+            {"msg": "review drift", "severity": "warning"},
+        ]), console, 60)
+    # Verify console.print was called with critical item text
+    calls = [str(c) for c in console.print.call_args_list]
+    assert any("fix tests" in c for c in calls), "critical item not rendered"
+    assert any("review drift" in c for c in calls), "warning item not rendered"
+
+def test_empty_action_items_no_section(capsys):
+    console = MagicMock()
+    with patch("builtins.open", MagicMock()), \
+         patch("tui_hold.open", MagicMock(return_value=MagicMock(readline=lambda: "\n"))):
+        _hold_on_complete(make_status([]), console, 60)
+    calls = [str(c) for c in console.print.call_args_list]
+    assert not any("Action items" in c for c in calls), \
+        "Action items header shown when list is empty"
+```
+
+### §7 — Update Existing TUI Tests
+
+`tools/tests/test_tui.py` was added in M97/M98. Update it to reflect:
+- `_build_header_bar` now reads `run_mode`/`attempt`/`stage_order` from the JSON
+  that is sourced from `_OUT_CTX` — existing tests may hardcode these fields; ensure
+  they still pass
+- Add test: `action_items=[]` in status → `_hold_on_complete` skips the
+  "Action items:" section (already covered by §6 `test_empty_action_items_no_section`)
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `tests/test_output_bus.sh` | **New.** Unit tests for context store, emit routing, backward compat, NO_COLOR |
+| `tests/test_output_tui_sync.sh` | **New.** Integration tests for TUI JSON correctness across 6 run modes |
+| `tests/test_output_lint.sh` | Already created in M101; verified to exist and pass here |
+| `tools/tests/test_tui_action_items.py` | **New.** Python unit tests for action-item rendering in `tui_hold.py` |
+| `tools/tests/test_tui.py` | Update existing tests to match M102 changes; add empty-action-items test |
+
+## Acceptance Criteria
+
+- [ ] `bash tests/test_output_bus.sh` passes all 10 test cases (TC-OB-01 through TC-OB-10)
+- [ ] `bash tests/test_output_tui_sync.sh` passes all 5 test cases (TC-TUI-01 through TC-TUI-05)
+- [ ] `bash tests/test_output_lint.sh` passes: zero direct ANSI `echo -e` calls
+      outside the output module
+- [ ] `pytest tools/tests/test_tui_action_items.py` passes both test functions
+- [ ] `PIPELINE_ATTEMPT` appears zero times in `grep -r PIPELINE_ATTEMPT lib/ tekhton.sh`
+- [ ] `NO_COLOR=1 bash tests/test_output_bus.sh` passes TC-OB-10 (no ANSI in output)
+- [ ] `bash tests/run_tests.sh` passes with all existing and new tests included —
+      no regressions from M99–M103 changes
+- [ ] `shellcheck` passes on all new `.sh` test files with zero warnings
+- [ ] `tools/tests/test_tui.py` passes with any updates applied
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M104 — TUI Operation Liveness: Heartbeat & Activity Indicator
+<!-- milestone-meta
+id: "104"
+status: "done"
+-->
+
+## Overview
+
+During long-running shell operations — test baseline capture, build gate analysis,
+completion tests, final hooks — the TUI displays a static dim arch logo and a silent
+active-stage bar. From the user's perspective the application has hung; only the
+clock in the header corner continues to tick. A 10-minute test suite looks identical
+to a crashed process.
+
+The root cause is that `current_agent_status` only has three values: `"idle"`,
+`"running"` (set by `run_agent()`), and `"complete"`. There is no value for "the
+shell is running a command." The logo and spinner both gate on `"running"`; during
+all other work they are visually inert.
+
+A secondary risk: the TUI watchdog fires after 300 s of status-file inactivity
+when `current_agent_status == "idle"` and an agent has previously run. A long test
+suite in the tester or completion-gate stages can silently kill the sidecar
+mid-run.
+
+This milestone introduces `run_op LABEL CMD...` — a single wrapper function,
+modelled on the existing spinner-subprocess pattern in `lib/agent.sh` — that:
+
+1. Sets `current_agent_status = "working"` and `current_operation = LABEL` in the
+   JSON status file before the command starts.
+2. Spawns a lightweight heartbeat subprocess that re-writes the status file every
+   10 seconds, keeping the watchdog satisfied for arbitrarily long operations.
+3. Restores `current_agent_status = "idle"` and kills the heartbeat when the
+   command finishes (pass or fail).
+4. Falls back to a transparent passthrough when the TUI is not active — zero
+   overhead for non-TUI users.
+
+On the Python side, the sidecar animates the logo and shows a spinner for
+`"working"` status, and the active-stage bar displays the `current_operation` label.
+
+## Design
+
+### §1 — New `current_agent_status` Value: `"working"`
+
+Add `"working"` as a first-class status alongside `"idle"`, `"running"`, and
+`"complete"`. It means: a shell command is in progress; no Claude agent is running.
+
+**JSON schema addition** (`lib/tui_helpers.sh`):
+
+```json
+"current_agent_status": "working",
+"current_operation":    "Running test baseline"
+```
+
+Add `current_operation` as a new top-level JSON field immediately after
+`current_agent_status`. Empty string when not in a `run_op` call.
+
+In `_tui_json_build_status` (`lib/tui_helpers.sh`), add:
+```bash
+local op_label="${_TUI_OPERATION_LABEL:-}"
+# (after the existing current_agent_status printf)
+printf '"current_operation":"%s",' "$(_tui_escape "$op_label")"
+```
+
+Add the corresponding global at the top of `lib/tui.sh`:
+```bash
+_TUI_OPERATION_LABEL=""
+```
+
+### §2 — `run_op LABEL CMD...` in `lib/tui.sh`
+
+```bash
+# run_op LABEL CMD [ARGS...] — run CMD with TUI "working" state and heartbeat.
+# Falls back to a transparent passthrough when TUI is not active.
+# Preserves CMD exit code. Safe under set -euo pipefail.
+run_op() {
+    local _label="$1"; shift
+    if [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+        "$@"
+        return
+    fi
+
+    _TUI_AGENT_STATUS="working"
+    _TUI_OPERATION_LABEL="$_label"
+    _tui_write_status 2>/dev/null || true
+
+    # Heartbeat subprocess: re-writes status file every 10 s so the watchdog
+    # timer never expires during long-running commands. Uses TERM trap so
+    # kill() returns immediately without leaving a sleeping child behind.
+    (
+        trap 'exit 0' TERM INT
+        while true; do
+            sleep 10 &
+            wait $!
+            _tui_write_status 2>/dev/null || true
+        done
+    ) &
+    local _hb_pid=$!
+
+    local _rc=0
+    "$@" || _rc=$?
+
+    kill "$_hb_pid" 2>/dev/null || true
+    wait "$_hb_pid" 2>/dev/null || true
+
+    _TUI_AGENT_STATUS="idle"
+    _TUI_OPERATION_LABEL=""
+    _tui_write_status 2>/dev/null || true
+
+    return "$_rc"
+}
+```
+
+**Design notes:**
+
+- `trap 'exit 0' TERM INT` inside the heartbeat subshell means `kill "$_hb_pid"`
+  causes an immediate clean exit. The running `sleep 10 & wait $!` pattern ensures
+  the trap fires without waiting for the full sleep interval.
+- `"$@" || _rc=$?` captures the exit code without triggering `set -e`, so cleanup
+  always runs even when the command fails.
+- `wait "$_hb_pid"` after kill prevents zombie processes.
+- The function is intentionally pipe-compatible: when called as
+  `run_op "label" cmd | tee file`, it runs in a bash subshell (left side of pipe).
+  Since all state updates go through the status FILE, not shell variables, the
+  sidecar still sees them correctly.
+
+### §3 — Stub in `lib/common.sh`
+
+Add a one-line passthrough stub to `lib/common.sh` so that any file that sources
+only `common.sh` (e.g., test harnesses) can call `run_op` without guards:
+
+```bash
+# Stub — lib/tui.sh redefines with full TUI implementation when TUI is active.
+run_op() { local _l="$1"; shift; "$@"; }
+```
+
+Place after the existing logging functions (before `log_verbose`). `lib/tui.sh` is
+sourced after `lib/common.sh` in `tekhton.sh` and redefines `run_op` with the full
+implementation. The stub is only used by scripts that source `common.sh` in
+isolation.
+
+### §4 — Python: Animate Logo and Spinner for `"working"`
+
+**`tools/tui_render.py` — `_build_logo`:**
+
+Current condition:
+```python
+elif agent_status == "idle":
+    # dim static (idle state)
+else:
+    # animated (running state)
+```
+
+Updated condition — treat `"working"` the same as `"running"` for animation:
+```python
+elif agent_status == "idle":
+    # dim static
+else:  # "running" or "working"
+    frame = int(time.time() * 0.6) % 3
+    ...
+```
+
+No other logo changes needed; the three-frame arch animation is appropriate for
+both agent work and shell work.
+
+**`tools/tui_render.py` — `_build_active_bar`:**
+
+Add a branch for `"working"` before (or alongside) the existing `"running"` branch.
+When `agent_status == "working"`, show the operation label and a spinner; suppress
+the model / turns / elapsed fields (they don't apply to shell commands):
+
+```python
+if agent_status in ("running", "working"):
+    if agent_status == "working":
+        op_label = status.get("current_operation") or "Working…"
+        spin_chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        spinner_char = spin_chars[int(time.time() * 10) % len(spin_chars)]
+        bar = Text()
+        bar.append(op_label, style="bold white")
+        bar.append(f"  {spinner_char} Working", style="yellow")
+        return Panel(bar, style="dim")
+    # existing "running" branch follows ...
+```
+
+### §5 — Watchdog: No Change Needed
+
+The watchdog in `tools/tui.py` fires when `current_agent_status == "idle"`. Since
+`run_op` sets status to `"working"`, the watchdog condition is naturally false during
+any `run_op` call. Additionally, the 10-second heartbeat keeps the file mtime fresh
+as a second line of defence. No watchdog code changes are required.
+
+### §6 — Wiring: 13 Long-Running Sites Across 9 Files
+
+All sites use command substitution to capture output into a variable. The wrapping
+pattern is identical for each: add `run_op LABEL` between the `$(` opener and the
+`bash -c` call, keeping the exit-code capture (`|| var=$?`) outside.
+
+```bash
+# Before (universal pattern):
+output=$(bash -c "${CMD}" 2>&1) || exit_code=$?
+
+# After:
+output=$(run_op "Human-readable label" bash -c "${CMD}" 2>&1) || exit_code=$?
+```
+
+`run_op` passes the wrapped command's stdout through (captured by `$(...)`),
+returns the exit code of the wrapped command, and handles all TUI state transitions
+internally. The `|| exit_code=$?` outside is unchanged.
+
+**`lib/test_baseline.sh:90`** (pre-coder baseline, potentially 10+ minutes):
+```bash
+# Before:
+test_output=$(bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+# After:
+test_output=$(run_op "Running test baseline" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+```
+
+**`lib/milestone_acceptance.sh:77`** (acceptance gate):
+```bash
+test_output=$(run_op "Running acceptance tests" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+```
+
+**`lib/gates_completion.sh:77`** (completion gate):
+```bash
+_cg_output=$(run_op "Running completion tests" bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
+```
+
+**`lib/orchestrate.sh:287`** (pre-finalize test verification):
+```bash
+_preflight_output=$(run_op "Verifying tests before finalizing" bash -c "${TEST_CMD}" 2>&1) || _preflight_exit=$?
+```
+
+**`lib/orchestrate_preflight.sh:78`** (pre-run test gate):
+```bash
+_pf_verify_output=$(run_op "Running pre-run test check" bash -c "${TEST_CMD}" 2>&1) || _pf_verify_exit=$?
+```
+
+**`lib/hooks_final_checks.sh:25`** (final analysis pass):
+```bash
+ANALYZE_OUTPUT=$(run_op "Running final static analysis" bash -c "${ANALYZE_CMD}" 2>&1)
+```
+
+**`lib/hooks_final_checks.sh:75`** (analysis with pipe to tee + grep — requires
+restructuring; cannot directly wrap a pipeline used as an `if` condition):
+```bash
+# Before:
+if bash -c "${ANALYZE_CMD}" 2>&1 | tee -a "$log_file" | grep -qE "^  (error|warning)"; then
+
+# After — capture first, then filter:
+_analyze_out=$(run_op "Running static analysis" bash -c "${ANALYZE_CMD}" 2>&1)
+printf '%s\n' "$_analyze_out" | tee -a "$log_file" > /dev/null
+if printf '%s\n' "$_analyze_out" | grep -qE "^  (error|warning)"; then
+```
+
+**`lib/hooks_final_checks.sh:90`** (final test check pass 1):
+```bash
+test_output=$(run_op "Running final test check" bash -c "${TEST_CMD}" 2>&1)
+```
+
+**`lib/hooks_final_checks.sh:127`** (final test check pass 2):
+```bash
+test_output=$(run_op "Running final test check" bash -c "${TEST_CMD}" 2>&1)
+```
+
+**`lib/gates_phases.sh:51`** (static analysis gate with timeout):
+```bash
+ANALYZE_OUTPUT=$(run_op "Running static analysis" timeout "$effective_timeout" bash -c "${ANALYZE_CMD}" 2>&1) || analyze_exit=$?
+```
+
+**`lib/gates_phases.sh:150`** (build/compile check with timeout):
+```bash
+COMPILE_OUTPUT=$(run_op "Running build check" timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD}" 2>&1) || compile_exit=$?
+```
+
+**`lib/gates.sh:146`** (dependency constraint validation with timeout):
+```bash
+constraint_output=$(run_op "Validating dependency constraints" timeout "$effective_timeout" bash -c "$validation_cmd" 2>&1) || constraint_exit=$?
+```
+
+**`lib/gates_ui.sh:44,52,60`** (UI test gate — three invocations, same pattern):
+```bash
+_ui_output=$(run_op "Running UI tests" timeout "$_ui_timeout" bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+```
+
+### §7 — Updated JSON Schema
+
+Full set of fields affected by M104 (new fields marked `[NEW]`):
+
+```json
+{
+  "current_agent_status": "working",
+  "current_operation":    "Running test baseline"
+}
+```
+
+`current_operation` is an empty string when `current_agent_status` is not
+`"working"`. The Python sidecar ignores it in all other states.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/tui.sh` | Add `_TUI_OPERATION_LABEL=""` global; add `run_op()` implementation |
+| `lib/tui_helpers.sh` | Add `current_operation` JSON field after `current_agent_status` in `_tui_json_build_status` |
+| `lib/common.sh` | Add `run_op()` passthrough stub (after `mode_info`, before `log_verbose`) |
+| `tools/tui_render.py` | `_build_logo`: animate for `"working"` in the `else` branch; `_build_active_bar`: add `"working"` branch showing `current_operation` label + spinner |
+| `lib/test_baseline.sh` | Wrap `bash -c "${TEST_CMD}"` at line 90 |
+| `lib/milestone_acceptance.sh` | Wrap `bash -c "${TEST_CMD}"` at line 77 |
+| `lib/gates_completion.sh` | Wrap `bash -c "${TEST_CMD}"` at line 77 |
+| `lib/orchestrate.sh` | Wrap `bash -c "${TEST_CMD}"` at line 287 |
+| `lib/orchestrate_preflight.sh` | Wrap `bash -c "${TEST_CMD}"` at line 78 |
+| `lib/hooks_final_checks.sh` | Wrap `ANALYZE_CMD` at line 25; restructure pipe at line 75; wrap `TEST_CMD` at lines 90 and 127 |
+| `lib/gates_phases.sh` | Wrap `ANALYZE_CMD` at line 51; wrap `BUILD_CHECK_CMD` at line 150 |
+| `lib/gates.sh` | Wrap dependency constraint validation `bash -c "$validation_cmd"` at line 146 |
+| `lib/gates_ui.sh` | Wrap `bash -c "$UI_TEST_CMD"` at lines 44, 52, and 60 |
+
+## Acceptance Criteria
+
+- [ ] `run_op` is defined in `lib/tui.sh` and passes `shellcheck` with zero warnings
+- [ ] `run_op "label" true` with `_TUI_ACTIVE=false` executes `true` and returns 0;
+      no status file is written; the label argument is consumed and not passed to `true`
+- [ ] `run_op "label" false` with `_TUI_ACTIVE=false` returns exit code 1 (exit code
+      of the wrapped command is preserved)
+- [ ] With `_TUI_ACTIVE=true`: `run_op "Running test baseline" sleep 0.1` sets
+      `current_agent_status` to `"working"` in the status file during execution,
+      then restores it to `"idle"` after — verified by reading the status file
+      before, during (from a parallel subshell), and after the call
+- [ ] With `_TUI_ACTIVE=true`: `run_op "label" false` returns exit code 1 AND still
+      restores `current_agent_status` to `"idle"` and kills the heartbeat
+      (no orphaned background process)
+- [ ] TUI logo animates (three-frame arch cycle) when `current_agent_status` is
+      `"working"` — same behaviour as `"running"`
+- [ ] Active-stage bar shows `{current_operation} · ⠏ Working` (with braille
+      spinner) when `current_agent_status` is `"working"`
+- [ ] Active-stage bar does NOT show model / turns / elapsed fields during
+      `"working"` state (these are agent-only concepts)
+- [ ] The heartbeat subprocess writes to the status file every ~10 s; file mtime
+      stays fresh throughout a 30-second `run_op "label" sleep 30` call
+- [ ] The heartbeat is always cleaned up: `run_op "label" sleep 0` leaves no
+      background processes behind (`jobs` is empty after the call)
+- [ ] The passthrough stub in `lib/common.sh` is overridden by the full
+      implementation in `lib/tui.sh` in normal pipeline execution — verified by
+      confirming `declare -f run_op` shows the TUI implementation body after both
+      files are sourced in order
+- [ ] `grep -rn 'bash -c.*TEST_CMD\|bash -c.*ANALYZE_CMD\|bash -c.*BUILD_CHECK_CMD\|bash -c.*UI_TEST_CMD' lib/` shows
+      only lines that contain `run_op` — no bare unguarded invocations remain
+- [ ] `shellcheck` passes on all modified `.sh` files with zero new warnings
+- [ ] All existing tests pass (`bash tests/run_tests.sh`)
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M105 — Test Run Deduplication: Skip Redundant TEST_CMD Executions
+<!-- milestone-meta
+id: "105"
+status: "done"
+-->
+
+## Overview
+
+On a successful milestone run, `TEST_CMD` executes back-to-back at two points with
+zero code changes between them:
+
+1. **Milestone acceptance** (`lib/milestone_acceptance.sh:77`) — validates acceptance
+   criteria. Tests pass.
+2. **Build gate** (`lib/gates_phases.sh:51`) — runs `ANALYZE_CMD` only (shellcheck/lint).
+   No files are modified.
+3. **Pre-finalization gate** (`lib/orchestrate.sh:287`) — runs `TEST_CMD` again.
+   Identical result — nothing changed since #1.
+
+The existing `_PREFLIGHT_TESTS_PASSED` flag already deduplicates between the
+pre-finalization gate and `_hook_final_checks` in `lib/finalize.sh`. This milestone
+extends that idea to the full pipeline using a **working-tree fingerprint** that
+tracks whether any files have changed since the last successful test run.
+
+**Impact:** Saves one full test suite execution (~9 minutes in observed runs) on
+every successful milestone completion. Non-disruptive — the dedup is purely
+skip-on-match with a conservative fallback to always re-run.
+
+## Design
+
+### §1 — Working-Tree Fingerprint
+
+A fingerprint is a hash of the current working-tree state. If the fingerprint has
+not changed since the last time `TEST_CMD` exited 0, the result is provably
+identical and the run can be skipped.
+
+**Fingerprint computation** (`lib/test_dedup.sh`):
+
+```bash
+_test_dedup_fingerprint() {
+    if command -v git &>/dev/null && git rev-parse --is-inside-work-tree &>/dev/null 2>&1; then
+        # git status --porcelain covers: modified, staged, untracked, deleted
+        # Include TEST_CMD itself so a config change invalidates the cache
+        { git status --porcelain 2>/dev/null; echo "cmd:${TEST_CMD:-}"; } \
+            | md5sum | cut -d' ' -f1
+    else
+        # No git — always re-run (return unique value each time)
+        echo "no-git-$(date +%s%N)"
+    fi
+}
+```
+
+Using `git status --porcelain` is fast (<50 ms on most repos), captures all
+relevant changes (modified, staged, untracked, deleted), and is deterministic.
+Including `TEST_CMD` in the hash ensures a config change invalidates the cache.
+
+**Storage:** `${TEKHTON_DIR}/test_dedup.fingerprint` — a single line containing
+the md5 hash from the last successful `TEST_CMD` execution. Cleared at pipeline
+start.
+
+### §2 — Core Functions
+
+```bash
+# Record a successful test pass with the current fingerprint.
+test_dedup_record_pass() {
+    [[ "${TEST_DEDUP_ENABLED:-true}" = "true" ]] || return 0
+    local fp
+    fp=$(_test_dedup_fingerprint)
+    local fp_file="${TEKHTON_DIR}/test_dedup.fingerprint"
+    mkdir -p "$(dirname "$fp_file")"
+    echo "$fp" > "$fp_file"
+}
+
+# Check if tests can be skipped. Returns 0 (skip) or 1 (must run).
+test_dedup_can_skip() {
+    [[ "${TEST_DEDUP_ENABLED:-true}" = "true" ]] || return 1
+    local fp_file="${TEKHTON_DIR}/test_dedup.fingerprint"
+    [[ -f "$fp_file" ]] || return 1
+    local current previous
+    current=$(_test_dedup_fingerprint)
+    previous=$(cat "$fp_file")
+    [[ "$current" = "$previous" ]]
+}
+
+# Clear dedup state. Called once at pipeline start.
+test_dedup_reset() {
+    rm -f "${TEKHTON_DIR}/test_dedup.fingerprint" 2>/dev/null || true
+}
+```
+
+### §3 — Call-Site Integration
+
+Each `TEST_CMD` call site wraps with a check-and-record pattern. The dedup only
+applies to **pass results** — failed tests always re-run (a failure invalidates
+nothing since nothing was cached for it).
+
+**Sites that participate in dedup:**
+
+| Site | File:Line | Role | Record pass? | Check skip? |
+|------|-----------|------|-------------|-------------|
+| Completion gate | `lib/gates_completion.sh:77` | After coder, verify tests still pass | Yes | Yes |
+| Milestone acceptance | `lib/milestone_acceptance.sh:77` | Acceptance criteria validation | Yes | Yes |
+| Pre-finalization gate | `lib/orchestrate.sh:287` | Final pre-finalize verification | Yes | Yes |
+| Pre-run check | `lib/orchestrate_preflight.sh:78` | Post Jr-Coder fix verification | Yes | Yes |
+| Final checks (pass 1) | `lib/hooks_final_checks.sh:90` | Finalization hook | Yes | Yes |
+| Final checks (pass 2) | `lib/hooks_final_checks.sh:127` | Post-fix re-verification | Yes | No (fix just ran) |
+
+**Sites explicitly excluded from dedup:**
+
+| Site | File:Line | Reason |
+|------|-----------|--------|
+| Test baseline capture | `lib/test_baseline.sh:90` | Baseline must always capture current state |
+
+**Wrapping pattern** (example: `lib/milestone_acceptance.sh:77`):
+
+```bash
+# Before:
+test_output=$(bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+
+# After:
+if test_dedup_can_skip; then
+    log "[dedup] Tests passed with no file changes since last run — skipping"
+    test_output="[dedup] Cached pass — no files changed since last successful test run"
+    test_exit=0
+else
+    test_output=$(bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+    if [[ "$test_exit" -eq 0 ]]; then
+        test_dedup_record_pass
+    fi
+fi
+```
+
+Each site follows this exact pattern, varying only the local variable names
+(`test_output`/`test_exit` vs `_cg_output`/`_cg_exit` vs
+`_preflight_output`/`_preflight_exit`).
+
+### §4 — Pipeline Reset
+
+Add `test_dedup_reset` to the orchestration loop entry point so that stale
+fingerprints from a previous run don't carry over. In `lib/orchestrate.sh`, call
+`test_dedup_reset` once at the top of the orchestration function, before the first
+pipeline attempt.
+
+### §5 — Configuration
+
+Add to `lib/config_defaults.sh` after the `TEST_BASELINE_*` block (~line 388):
+
+```bash
+# --- Test run deduplication (M105) ---
+: "${TEST_DEDUP_ENABLED:=true}"
+```
+
+Default `true` — the fingerprint-based dedup is provably safe (only skips when
+the working tree is byte-identical to when tests last passed). Users who want to
+force every test run (e.g., for non-deterministic test suites) can set
+`TEST_DEDUP_ENABLED=false`.
+
+### §6 — Causal Event Logging
+
+When a test run is skipped via dedup, emit a causal event so Watchtower and
+diagnostics can surface it:
+
+```bash
+if test_dedup_can_skip; then
+    if command -v emit_event &>/dev/null; then
+        emit_event "test_dedup_skip" "${_CURRENT_STAGE:-unknown}" \
+            "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
+    fi
+    ...
+fi
+```
+
+### §7 — Interaction with `_PREFLIGHT_TESTS_PASSED`
+
+The existing `_PREFLIGHT_TESTS_PASSED` flag in `lib/finalize.sh:69` remains
+unchanged. The dedup is an independent layer that fires earlier — at the
+`test_dedup_can_skip` check. If pre-finalization is skipped via dedup, it still
+sets `_PREFLIGHT_TESTS_PASSED=true` so `_hook_final_checks` continues to skip as
+before. The two mechanisms are complementary, not competing.
+
+### §8 — Interaction with M104
+
+M104 wraps `TEST_CMD` invocations with `run_op` for TUI liveness. If M104 lands
+first, the dedup wrapping goes around the `run_op` line:
+
+```bash
+if test_dedup_can_skip; then
+    ...
+else
+    test_output=$(run_op "Running acceptance tests" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+    ...
+fi
+```
+
+If M105 lands first, M104 adds `run_op` inside the `else` branch. Either order
+works — the edits are structurally compatible.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| **NEW** `lib/test_dedup.sh` | Core functions: `_test_dedup_fingerprint`, `test_dedup_record_pass`, `test_dedup_can_skip`, `test_dedup_reset` |
+| `lib/config_defaults.sh` | Add `TEST_DEDUP_ENABLED` default (~line 388) |
+| `tekhton.sh` | Source `lib/test_dedup.sh` (after `lib/gates_completion.sh`, before `lib/hooks.sh`) |
+| `lib/orchestrate.sh` | Call `test_dedup_reset` at loop entry; wrap pre-finalization TEST_CMD at line 287 |
+| `lib/milestone_acceptance.sh` | Wrap TEST_CMD at line 77 |
+| `lib/gates_completion.sh` | Wrap TEST_CMD at line 77 |
+| `lib/hooks_final_checks.sh` | Wrap TEST_CMD at lines 90 and 127 |
+| `lib/orchestrate_preflight.sh` | Wrap TEST_CMD at line 78 |
+
+## Acceptance Criteria
+
+- [ ] `test_dedup_can_skip` returns 1 (must run) when no fingerprint file exists
+- [ ] `test_dedup_can_skip` returns 1 (must run) when `TEST_DEDUP_ENABLED=false`
+- [ ] After `test_dedup_record_pass`, `test_dedup_can_skip` returns 0 (skip) when
+      no files have changed
+- [ ] After `test_dedup_record_pass`, modifying any file causes
+      `test_dedup_can_skip` to return 1 (must run)
+- [ ] After `test_dedup_record_pass`, adding an untracked file causes
+      `test_dedup_can_skip` to return 1 (must run)
+- [ ] `test_dedup_reset` removes the fingerprint file and causes subsequent
+      `test_dedup_can_skip` to return 1
+- [ ] Changing `TEST_CMD` between calls invalidates the fingerprint (returns
+      must-run) even with no file changes
+- [ ] On a successful milestone run, the pre-finalization gate at
+      `lib/orchestrate.sh:287` logs a dedup skip message when acceptance tests
+      at `lib/milestone_acceptance.sh:77` already passed with no intervening
+      code changes
+- [ ] `test_baseline.sh:90` (baseline capture) does NOT participate in dedup —
+      it always runs `TEST_CMD` unconditionally
+- [ ] The causal event `test_dedup_skip` is emitted when a test run is skipped
+- [ ] `_PREFLIGHT_TESTS_PASSED` is still set to `true` when the pre-finalization
+      gate is skipped via dedup (so `_hook_final_checks` continues to skip)
+- [ ] In a non-git directory, `test_dedup_can_skip` always returns 1 (dedup
+      disabled gracefully)
+- [ ] `shellcheck` passes on all modified `.sh` files with zero new warnings
+- [ ] All existing tests pass (`bash tests/run_tests.sh`)
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M106 — TUI Stage Label Registry & Protocol API
+<!-- milestone-meta
+id: "106"
+status: "done"
+-->
+
+## Overview
+
+The TUI stage-pill bar is unreliable. Intake, scout, and tester pills stay grey
+through an entire run. After tester finishes its elapsed timer keeps counting
+upward indefinitely. The spinner text `[tekhton] ⠹ Stage (0m12s, --/10 turns)`
+appears at the bottom-left corner of the TUI overlaid on the layout.
+
+These are three distinct bugs sharing one root cause: there is no canonical bridge
+between Tekhton's internal stage names (`test_verify`, `scout`, `intake`) and the
+display labels the pill bar renders (`tester`, `scout`, `intake`). Every call site
+that updates the TUI derives its label with an ad-hoc `${name//_/ }` substitution
+that doesn't match what `get_display_stage_order()` emits. Additionally the spinner
+subprocess in `lib/agent.sh` and the TUI sidecar write to `/dev/tty` concurrently
+without a clean separation of responsibilities, and `tui_finish_stage` never stops
+the live elapsed clock.
+
+This milestone builds the structural foundation that M107 (wiring) and M108
+(timings column) depend on. Nothing is user-visible yet; correctness comes from
+wiring in the next milestone.
+
+## Design
+
+### §1 — Stage Label Registry: `get_stage_display_label` in `lib/pipeline_order.sh`
+
+Add a single function that is the **only** authoritative mapping from internal
+pipeline stage name to TUI display label. Every call site that communicates a stage
+transition to the TUI MUST call this function rather than performing any manual
+string transformation.
+
+```bash
+# get_stage_display_label NAME
+# Returns the display label used in the TUI pill bar for a given internal stage name.
+# This is the single extension point: add new stage mappings HERE ONLY.
+# Both get_display_stage_order() and all tui_stage_begin/end call sites depend on
+# this function. When a new stage is added to the pipeline, add its mapping here
+# first; the pill bar, timings column, and stage-complete records all update automatically.
+get_stage_display_label() {
+    case "${1:-}" in
+        intake)          echo "intake" ;;
+        scout)           echo "scout" ;;
+        coder)           echo "coder" ;;
+        test_write)      echo "tester-write" ;;
+        test_verify)     echo "tester" ;;
+        security)        echo "security" ;;
+        review)          echo "review" ;;
+        docs)            echo "docs" ;;
+        rework)          echo "rework" ;;
+        wrap_up|wrap-up) echo "wrap-up" ;;
+        # Fallback: replace underscores with hyphens. New stages MUST be added
+        # above; this catch-all prevents hard failures during development but
+        # will not produce a label that matches get_display_stage_order() output.
+        # NOTE: get_display_stage_order()'s * case passes internal names unmodified
+        # (no hyphenation). Both must be updated in tandem when a new stage is added.
+        *)               echo "${1//_/-}" ;;
+    esac
+}
+```
+
+Place this function immediately after `get_display_stage_order()` and before the
+closing of the file.
+
+### §2 — Protocol API: `tui_stage_begin` / `tui_stage_end` in `lib/tui_ops.sh`
+
+These two functions are the new public contract for stage lifecycle notifications.
+They wrap the existing low-level primitives (`tui_update_stage`, `tui_finish_stage`)
+and add three behaviours that callers must not duplicate:
+
+1. **Dynamic pill insertion** (`tui_stage_begin`): if the display label is not
+   already in `_TUI_STAGE_ORDER` (e.g., the first rework cycle), append it before
+   calling the low-level update. This ensures the pill appears the moment a
+   previously-unknown sub-stage starts, without requiring callers to pre-register
+   anything.
+
+2. **Timer freeze** (`tui_stage_end`): compute the final elapsed seconds, zero
+   `_TUI_STAGE_START_TS`, and store the frozen value in `_TUI_AGENT_ELAPSED_SECS`
+   before delegating. The Python sidecar then uses the frozen value for display
+   instead of computing `time.time() - stage_start_ts`.
+
+3. **No-op when TUI is inactive**: identical guard pattern to existing functions.
+
+```bash
+# tui_stage_begin DISPLAY_LABEL [MODEL]
+# Begin a stage: ensure its pill exists in the bar, mark it running.
+# DISPLAY_LABEL must come from get_stage_display_label(); callers must not
+# pass raw internal stage names.
+# NOTE: _TUI_STAGE_ORDER is a single-writer array (main process only). When
+# parallel stages are introduced in a future milestone, this will require a
+# lock or a migration to an atomic update via the JSON status file.
+tui_stage_begin() {
+    [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    local label="${1:-}"
+    local model="${2:-}"
+    # Dynamic pill insertion: append if not already present
+    local _found=false
+    local _s
+    for _s in "${_TUI_STAGE_ORDER[@]:-}"; do
+        [[ "$_s" == "$label" ]] && { _found=true; break; }
+    done
+    [[ "$_found" == "false" ]] && _TUI_STAGE_ORDER+=("$label")
+    # Compute label's 1-based index within _TUI_STAGE_ORDER for stage_num.
+    local _idx=0 _i
+    for _i in "${!_TUI_STAGE_ORDER[@]}"; do
+        [[ "${_TUI_STAGE_ORDER[$_i]}" == "$label" ]] && { _idx=$((_i + 1)); break; }
+    done
+    tui_update_stage "$_idx" "${#_TUI_STAGE_ORDER[@]}" \
+        "$label" "$model"
+}
+
+# tui_stage_end DISPLAY_LABEL [MODEL] [TURNS_STR] [TIME_STR] [VERDICT]
+# End a stage: freeze the timer and mark it complete.
+# DISPLAY_LABEL must match what was passed to tui_stage_begin.
+tui_stage_end() {
+    [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    local label="${1:-}"
+    local model="${2:-}"
+    local turns="${3:-}"
+    local time_str="${4:-}"
+    local verdict="${5:-}"
+    # Freeze timer: store final elapsed, zero the live timestamp
+    local _final_elapsed=0
+    if [[ "${_TUI_STAGE_START_TS:-0}" -gt 0 ]]; then
+        _final_elapsed=$(( $(date +%s) - _TUI_STAGE_START_TS ))
+    fi
+    _TUI_STAGE_START_TS=0
+    _TUI_AGENT_ELAPSED_SECS="$_final_elapsed"
+    tui_finish_stage "$label" "$model" "$turns" "$time_str" "$verdict"
+}
+```
+
+Place these two functions at the end of `lib/tui_ops.sh`, after `run_op`.
+
+### §3 — Frozen Timer Display in `tools/tui_render.py`
+
+**Fix `_build_active_bar`:**
+
+The current code always computes elapsed as `time.time() - stage_start_ts` when
+`stage_start_ts > 0`. After `tui_stage_end` zeroes `stage_start_ts`, the
+`agent_elapsed_secs` field holds the frozen final elapsed.
+
+Update the elapsed derivation:
+
+```python
+stage_start_ts = int(status.get("stage_start_ts", 0) or 0)
+elapsed_secs   = int(status.get("agent_elapsed_secs", 0) or 0)
+
+if stage_start_ts > 0:
+    elapsed = max(0, int(time.time()) - stage_start_ts)   # live clock
+else:
+    elapsed = elapsed_secs                                  # frozen at completion
+```
+
+Update the spinner/status display:
+
+```python
+if agent_status == "running":
+    char = _SPIN_CHARS[int(time.time() * 10) % len(_SPIN_CHARS)]
+    spinner = Text(f"{char} Running", style="yellow")
+elif agent_status == "idle" and elapsed > 0:
+    # idle + elapsed > 0 = stage finished (tui_stage_end was called).
+    # Note: tui_finish_stage always sets status to "idle", never "complete";
+    # the presence of a frozen elapsed value is the signal that a stage ended.
+    spinner = Text("\u2713 Complete", style="green")
+else:
+    spinner = Text("idle", style="dim")
+    elapsed = 0  # suppress "0s" for the initial pre-stage idle state
+```
+
+**Fix `_stage_state`:**
+
+The current implementation scans `stages_complete` before checking
+`current_label`. This causes a rework pill to show "complete" (from the first
+cycle's history) even while a second rework cycle is actively running.
+
+Check `current_label` **first**:
+
+```python
+def _stage_state(stage: str, stages_complete: list[dict[str, Any]],
+                 current_label: str, current_status: str) -> str:
+    # Running state takes priority over history; a stage may have prior
+    # completed entries (multiple rework cycles) and still be running again.
+    if stage.lower() == (current_label or "").lower():
+        if current_status == "running":
+            return "running"
+    # Then check completion history
+    for s in stages_complete:
+        if (s.get("label") or "").lower() == stage.lower():
+            v = (s.get("verdict") or "").upper()
+            return "fail" if v in ("FAIL", "FAILED", "BLOCKED", "REJECT") else "complete"
+    # Between stages: current stage not yet in history but marked done
+    if stage.lower() == (current_label or "").lower():
+        if current_status == "complete":
+            return "complete"
+    return "pending"
+```
+
+### §4 — Spinner Isolation in `lib/agent.sh`
+
+**Root cause:** the spinner subshell and the TUI sidecar both write to `/dev/tty`
+without clean separation. The inner guard `[[ "${_TUI_ACTIVE:-false}" != "true" ]]`
+suppresses the formatted output in TUI mode, but:
+
+1. The guard is inside the `while true` loop of an always-spawned subshell, creating
+   a race-condition class between a mutable environment variable and an already-forked
+   process.
+2. The `printf '\r\033[K'` cleanup at the end of the stop block writes to `/dev/tty`
+   unconditionally — no TUI check — corrupting the sidecar's alternate screen.
+
+**Fix:** split the single subshell into two clearly-separated code paths. The
+non-TUI path handles terminal output. The TUI path only calls `tui_update_agent`.
+Neither path can accidentally write to `/dev/tty` for the other's use case.
+
+Replace the entire spinner block (from `local _spinner_pid=""` through the stop
+block) with:
+
+```bash
+local _spinner_pid=""
+local _tui_updater_pid=""
+
+if [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ -e /dev/tty ]] \
+   && [[ "${_TUI_ACTIVE:-false}" != "true" ]]; then
+    # Non-TUI: spinner writes progress to terminal and runs dashboard heartbeat.
+    (
+        trap 'exit 0' INT TERM
+        chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+        start_ts=$(date +%s)
+        i=0
+        _last_refresh=0
+        _refresh_interval="${DASHBOARD_REFRESH_INTERVAL:-10}"
+        while true; do
+            now=$(date +%s)
+            elapsed=$(( now - start_ts ))
+            mins=$(( elapsed / 60 ))
+            secs=$(( elapsed % 60 ))
+            _turns_display="--"
+            if [[ -f "$_turns_file" ]]; then
+                _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "")
+                [[ "$_cur_turns" =~ ^[0-9]+$ ]] && _turns_display="$_cur_turns"
+            fi
+            printf '\r\033[0;36m[tekhton]\033[0m %s %s (%dm%02ds, %s/%s turns) ' \
+                "${chars:i%${#chars}:1}" "$label" "$mins" "$secs" \
+                "$_turns_display" "$max_turns" > /dev/tty
+            i=$(( i + 1 ))
+            if (( elapsed - _last_refresh >= _refresh_interval )); then
+                if command -v emit_dashboard_run_state &>/dev/null; then
+                    emit_dashboard_run_state 2>/dev/null || true
+                fi
+                _last_refresh=$elapsed
+            fi
+            sleep 0.2
+        done
+    ) &
+    _spinner_pid=$!
+
+elif [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ "${_TUI_ACTIVE:-false}" == "true" ]] \
+     && declare -f tui_update_agent &>/dev/null; then
+    # TUI active: lightweight updater pushes turn count to the sidecar.
+    # No terminal writes of any kind in this path.
+    # Guard on _TUI_ACTIVE to avoid spawning a useless subshell when TUI
+    # functions are loaded but TUI was not activated (e.g., non-TTY).
+    (
+        trap 'exit 0' INT TERM
+        start_ts=$(date +%s)
+        while true; do
+            elapsed=$(( $(date +%s) - start_ts ))
+            _turns_display="--"
+            _tui_turns=0
+            if [[ -f "$_turns_file" ]]; then
+                _cur_turns=$(cat "$_turns_file" 2>/dev/null || echo "")
+                [[ "$_cur_turns" =~ ^[0-9]+$ ]] && _turns_display="$_cur_turns"
+            fi
+            [[ "$_turns_display" =~ ^[0-9]+$ ]] && _tui_turns="$_turns_display"
+            tui_update_agent "$_tui_turns" "$max_turns" "$elapsed" 2>/dev/null || true
+            sleep 0.2
+        done
+    ) &
+    _tui_updater_pid=$!
+fi
+```
+
+Replace the stop block:
+
+```bash
+# Stop spinner (non-TUI path)
+if [[ -n "${_spinner_pid:-}" ]]; then
+    kill "$_spinner_pid" 2>/dev/null || true
+    wait "$_spinner_pid" 2>/dev/null || true
+    printf '\r\033[K' > /dev/tty 2>/dev/null || true  # safe: only set when !TUI
+fi
+# Stop TUI updater (TUI path)
+if [[ -n "${_tui_updater_pid:-}" ]]; then
+    kill "$_tui_updater_pid" 2>/dev/null || true
+    wait "$_tui_updater_pid" 2>/dev/null || true
+fi
+```
+
+**Note:** the dashboard heartbeat (`emit_dashboard_run_state`) is only in the
+non-TUI path. The Watchtower dashboard and the TUI sidecar are independent output
+channels; there is no need to run the dashboard heartbeat when the TUI is already
+keeping the watchdog alive via `tui_update_agent`. **Tradeoff:** if a user has the
+Watchtower web dashboard open while TUI is active, Watchtower data will be stale
+(updated only at stage transitions, not every 10s). This is acceptable because TUI
+and Watchtower serve the same purpose — live run visibility — and using both
+simultaneously is not a supported workflow.
+
+### §5 — Test Coverage
+
+Extend `tests/test_tui_active_path.sh`:
+
+- `tui_stage_begin` with a label not in `_TUI_STAGE_ORDER` appends it
+- `tui_stage_begin` with a label already in `_TUI_STAGE_ORDER` does not duplicate it
+- `tui_stage_end` sets `_TUI_STAGE_START_TS=0` and sets `_TUI_AGENT_ELAPSED_SECS` to
+  a positive value
+- After `tui_stage_end`, a second `tui_stage_begin` with the same label does not
+  duplicate the pill (regression test for multi-rework scenario)
+
+Add a Python unit test in `tools/tests/test_tui.py`:
+
+- `_stage_state("rework", [{"label":"rework","verdict":None}], "rework", "running")`
+  returns `"running"` (not `"complete"` — tests the priority-fix in §3)
+- `_build_active_bar` with `stage_start_ts=0`, `agent_elapsed_secs=45`,
+  `current_agent_status="idle"` renders `"✓ Complete"` with `"45s"` elapsed
+- `_build_active_bar` with `stage_start_ts=0`, `agent_elapsed_secs=0`,
+  `current_agent_status="idle"` renders `"idle"` with no elapsed shown
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/pipeline_order.sh` | Add `get_stage_display_label()` after `get_display_stage_order()` |
+| `lib/tui_ops.sh` | Add `tui_stage_begin()` and `tui_stage_end()` at end of file |
+| `tools/tui_render.py` | Fix `_build_active_bar` frozen-elapsed display; fix `_stage_state` priority order |
+| `lib/agent.sh` | Replace unified spinner block with two separate non-TUI / TUI paths |
+| `tests/test_tui_active_path.sh` | Extend with `tui_stage_begin`/`tui_stage_end` tests |
+| `tools/tests/test_tui.py` | Add `_stage_state` priority test and frozen-elapsed bar tests |
+
+## Acceptance Criteria
+
+- [ ] `get_stage_display_label "test_verify"` echoes `"tester"`
+- [ ] `get_stage_display_label "test_write"` echoes `"tester-write"`
+- [ ] `get_stage_display_label "wrap_up"` and `get_stage_display_label "wrap-up"` both echo `"wrap-up"`
+- [ ] `get_stage_display_label "unknown_stage"` echoes `"unknown-stage"` (fallback)
+- [ ] `tui_stage_begin "rework"` with `_TUI_ACTIVE=false` is a no-op (no status file write)
+- [ ] `tui_stage_begin "newstage"` appends `"newstage"` to `_TUI_STAGE_ORDER` when not present
+- [ ] `tui_stage_begin "newstage"` called twice does not produce a duplicate in `_TUI_STAGE_ORDER`
+- [ ] `tui_stage_begin` passes the label's 1-based index (not array length) as stage_num to `tui_update_stage`
+- [ ] `tui_stage_end` sets `_TUI_STAGE_START_TS=0` and stores a positive value in `_TUI_AGENT_ELAPSED_SECS`
+- [ ] `_stage_state("rework", [{"label":"rework","verdict":None}], "rework", "running")` returns `"running"`
+- [ ] `_build_active_bar` shows `"✓ Complete"` when `stage_start_ts=0`, `agent_elapsed_secs=45`, `agent_status="idle"`
+- [ ] `_build_active_bar` shows `"idle"` (no elapsed) when `stage_start_ts=0`, `agent_elapsed_secs=0`, `agent_status="idle"`
+- [ ] With `_TUI_ACTIVE=true`: spinner subshell (`_spinner_pid`) is NOT set; `_tui_updater_pid` IS set
+- [ ] With `_TUI_ACTIVE=false`: spinner subshell (`_spinner_pid`) IS set; `_tui_updater_pid` is NOT set
+- [ ] `printf '\r\033[K'` cleanup only executes when `_spinner_pid` is non-empty (i.e., never in TUI mode)
+- [ ] `shellcheck` passes on all modified `.sh` files with zero new warnings
+- [ ] All existing tests pass (`bash tests/run_tests.sh`)
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M107 — TUI Stage Wiring: All Stages Instrumented
+<!-- milestone-meta
+id: "107"
+status: "done"
+-->
+
+## Overview
+
+M106 built the registry and protocol API. This milestone wires every stage in the
+pipeline to that protocol, eliminating all the grey-pill bugs the user sees in
+practice.
+
+Stages currently missing TUI lifecycle notifications:
+
+| Stage | Where | Why missing |
+|---|---|---|
+| `intake` | Pre-stage in `tekhton.sh` | Runs before the pipeline loop; no TUI calls |
+| `scout` | Inside `stages/coder.sh` | Loop skips it with `continue`; runs hidden |
+| `tester`/`tester-write` | Pipeline loop | Wrong label (`"test verify"` ≠ `"tester"`) |
+| Sr/Jr coder rework | `stages/review.sh` | Sub-stage; no TUI calls anywhere |
+| wrap-up | Finalization | Stage doesn't exist yet |
+
+Additionally, the pipeline loop still uses the broken `${_stage_name//_/ }` label
+derivation for coder, security, review, and docs stages. These happen to work
+today (the spaces match the expected labels), but they are fragile — any future
+stage rename will silently break pill tracking again. The fix locks them to
+`get_stage_display_label`.
+
+## Design
+
+### §1 — `get_display_stage_order`: Add "wrap-up" and Remove Redundant "scout"
+
+**Add "wrap-up"** as the permanent final pill in `get_display_stage_order()`. It
+is always visible from the moment the run starts, setting the user's expectation
+that finalization is the last step of every pipeline run.
+
+Insert these two lines immediately before the final `echo "$display"` in
+`get_display_stage_order()` (`lib/pipeline_order.sh`):
+
+```bash
+    # wrap-up is always the final pill; it activates during finalize_run().
+    display="${display:+$display }wrap-up"
+
+    echo "$display"
+}
+```
+
+No other changes to the function body. The existing case mappings and
+conditional filtering remain unchanged.
+
+### §2 — Fix Pipeline Loop Label Derivation in `tekhton.sh`
+
+Replace both `tui_update_stage`/`tui_finish_stage` call sites in the pipeline
+loop with `tui_stage_begin`/`tui_stage_end` using `get_stage_display_label`.
+
+**Before each stage case block** (currently at `tekhton.sh:2328`):
+
+```bash
+# Before:
+if declare -f tui_update_stage &>/dev/null; then
+    local _tui_stage_label
+    _tui_stage_label="${_stage_name//_/ }"
+    tui_update_stage "$_stage_idx" "$PIPELINE_STAGE_COUNT" "$_tui_stage_label" "${CLAUDE_STANDARD_MODEL:-}"
+fi
+
+# After:
+if declare -f tui_stage_begin &>/dev/null; then
+    local _tui_display_label
+    _tui_display_label=$(get_stage_display_label "$_stage_name")
+    tui_stage_begin "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}"
+fi
+```
+
+**After each stage case block** (currently at `tekhton.sh:2489`):
+
+```bash
+# Before:
+if declare -f tui_finish_stage &>/dev/null; then
+    local _tui_finish_label _tui_finish_dur
+    _tui_finish_label="${_stage_name//_/ }"
+    _tui_finish_dur="${_STAGE_DURATION[$_stage_name]:-0}s"
+    tui_finish_stage "$_tui_finish_label" "${CLAUDE_STANDARD_MODEL:-}" \
+        "${_STAGE_TURNS[$_stage_name]:-0}/${_STAGE_BUDGET[$_stage_name]:-0}" \
+        "$_tui_finish_dur" ""
+fi
+
+# After:
+if declare -f tui_stage_end &>/dev/null; then
+    local _tui_display_label _tui_finish_dur
+    _tui_display_label=$(get_stage_display_label "$_stage_name")
+    _tui_finish_dur="${_STAGE_DURATION[$_stage_name]:-0}s"
+    tui_stage_end "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}" \
+        "${_STAGE_TURNS[$_stage_name]:-0}/${_STAGE_BUDGET[$_stage_name]:-0}" \
+        "$_tui_finish_dur" ""
+fi
+```
+
+### §3 — Intake Pre-Stage Wiring in `tekhton.sh`
+
+The intake pre-stage block (around `tekhton.sh:2256`) runs before the pipeline
+loop. Add protocol calls immediately around `run_stage_intake`:
+
+```bash
+if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
+    CURRENT_STAGE="intake"
+    _STAGE_STATUS[intake]="active"
+    _STAGE_BUDGET[intake]="${INTAKE_MAX_TURNS:-10}"
+    _STAGE_START_TS[intake]="$SECONDS"
+    emit_dashboard_run_state 2>/dev/null || true
+    local _intake_start_evt
+    _intake_start_evt=$(emit_event "stage_start" "intake" "" "$_LAST_STAGE_EVT" "" "")
+    if declare -f tui_stage_begin &>/dev/null; then          # ← ADD
+        tui_stage_begin "intake" "${CLAUDE_STANDARD_MODEL:-}"
+    fi
+    run_stage_intake
+    _LAST_STAGE_EVT=$(emit_event "stage_end" "intake" "${INTAKE_VERDICT:-pass}" "$_intake_start_evt" "" \
+        "{\"confidence\":${INTAKE_CONFIDENCE:-0}}")
+    _STAGE_STATUS[intake]="complete"
+    _STAGE_TURNS[intake]="${LAST_AGENT_TURNS:-0}"
+    _STAGE_DURATION[intake]="$(( SECONDS - ${_STAGE_START_TS[intake]:-$SECONDS} ))"
+    if declare -f tui_stage_end &>/dev/null; then             # ← ADD
+        tui_stage_end "intake" "${CLAUDE_STANDARD_MODEL:-}" \
+            "${_STAGE_TURNS[intake]:-0}/${_STAGE_BUDGET[intake]:-0}" \
+            "${_STAGE_DURATION[intake]:-0}s" "${INTAKE_VERDICT:-}"
+    fi
+    emit_dashboard_run_state 2>/dev/null || true
+    ...
+fi
+```
+
+### §4 — Scout Wiring in `stages/coder.sh`
+
+Scout runs as a sub-invocation of `run_stage_coder`. Locate the `run_agent` call
+for the Scout agent inside that function and bracket it with protocol calls.
+
+The display label is `"scout"` (matches `get_stage_display_label "scout"`).
+
+```bash
+if declare -f tui_stage_begin &>/dev/null; then
+    tui_stage_begin "scout" "${CLAUDE_STANDARD_MODEL:-}"
+fi
+run_agent "Scout" "$CLAUDE_STANDARD_MODEL" "$SCOUT_MAX_TURNS" \
+    "$SCOUT_PROMPT" "$SCOUT_LOG" "$AGENT_TOOLS_SCOUT"
+if declare -f tui_stage_end &>/dev/null; then
+    tui_stage_end "scout" "${CLAUDE_STANDARD_MODEL:-}" \
+        "${LAST_AGENT_TURNS:-0}/${SCOUT_MAX_TURNS:-10}" \
+        "${LAST_AGENT_ELAPSED:-0}s" ""
+fi
+```
+
+Because `"scout"` is already present in `_TUI_STAGE_ORDER` (from
+`get_display_stage_order()`), `tui_stage_begin` will not duplicate it — it will
+just activate the existing pill.
+
+**Note on dual elapsed values:** `tui_stage_end` internally computes a frozen
+elapsed from `_TUI_STAGE_START_TS` (M106 §2) for the active bar display, while
+the explicit `time_str` argument (`"${LAST_AGENT_ELAPSED:-0}s"`) is stored in the
+`stages_complete` JSON entry (via `tui_finish_stage` → `_tui_json_stage`). These
+serve different purposes: the frozen value drives the active-bar "✓ Complete"
+display; the `time_str` field appears in the timings column (M108). They may
+differ by 1–2 seconds due to the timing gap between `run_agent` returning and
+`tui_stage_end` executing; this is cosmetic and acceptable.
+
+### §5 — Rework Sub-Stage Wiring in `stages/review.sh`
+
+Two rework paths exist: Sr coder rework (around line 260) and Jr-only rework
+(around line 299). Both call `run_agent` for a coder variant. Bracket each with
+protocol calls using label `"rework"`.
+
+**Sr coder rework path:**
+
+```bash
+if declare -f tui_stage_begin &>/dev/null; then
+    tui_stage_begin "rework" "${CLAUDE_CODER_MODEL:-}"
+fi
+run_agent "Coder (rework cycle ${REVIEW_CYCLE})" \
+    "$CLAUDE_CODER_MODEL" ...
+if declare -f tui_stage_end &>/dev/null; then
+    tui_stage_end "rework" "${CLAUDE_CODER_MODEL:-}" \
+        "${LAST_AGENT_TURNS:-0}/${CODER_MAX_TURNS:-70}" \
+        "${LAST_AGENT_ELAPSED:-0}s" ""
+fi
+```
+
+**Jr coder rework path** (same pattern, different model variable):
+
+```bash
+if declare -f tui_stage_begin &>/dev/null; then
+    tui_stage_begin "rework" "${CLAUDE_JR_CODER_MODEL:-}"
+fi
+run_agent ... "$CLAUDE_JR_CODER_MODEL" \
+    "${EFFECTIVE_JR_CODER_MAX_TURNS:-$JR_CODER_MAX_TURNS}" ...
+if declare -f tui_stage_end &>/dev/null; then
+    tui_stage_end "rework" "${CLAUDE_JR_CODER_MODEL:-}" \
+        "${LAST_AGENT_TURNS:-0}/${JR_CODER_MAX_TURNS:-30}" \
+        "${LAST_AGENT_ELAPSED:-0}s" ""
+fi
+```
+
+On the first rework call, `tui_stage_begin "rework"` appends `"rework"` to
+`_TUI_STAGE_ORDER` (the dynamic pill insertion from M106 §2). Subsequent cycles
+reuse the same pill: the pill cycles active → complete → active → complete as
+cycles proceed.
+
+### §6 — Wrap-Up Wiring in `lib/finalize.sh`
+
+**Begin wrap-up inside `finalize_run()`**, as the very first action, before any
+hooks execute. This covers all call sites of `finalize_run` with a single change:
+
+```bash
+finalize_run() {
+    local pipeline_exit_code="${1:-0}"
+
+    # Notify TUI that finalization has begun (wrap-up stage)
+    if declare -f tui_stage_begin &>/dev/null; then
+        tui_stage_begin "wrap-up" "" 2>/dev/null || true
+    fi
+
+    # State shared between hooks
+    FINAL_CHECK_RESULT=0
+    ...
+```
+
+**End wrap-up inside `_hook_tui_complete()`** in `lib/finalize.sh`, just before
+`out_complete`. This is the natural endpoint: all commit, archive, and version-bump
+hooks have already run:
+
+```bash
+_hook_tui_complete() {
+    local exit_code="${1:-0}"
+    local verdict="SUCCESS"
+    [[ "$exit_code" -ne 0 ]] && verdict="FAIL"
+    # Mark wrap-up complete before signalling TUI sidecar to enter hold-on-complete
+    if declare -f tui_stage_end &>/dev/null; then
+        tui_stage_end "wrap-up" "" "" "" "$verdict" 2>/dev/null || true
+    fi
+    out_complete "$verdict" 2>/dev/null || true
+}
+```
+
+This design has one `tui_stage_begin` site and one `tui_stage_end` site for
+wrap-up, regardless of how many `finalize_run` call sites exist. No changes needed
+at those call sites.
+
+### §7 — Test Coverage
+
+Add `tests/test_tui_stage_wiring.sh` (new integration test):
+
+Test each label the pipeline emits under the new wiring:
+
+- Simulate intake block: call `tui_stage_begin "intake"` then `tui_stage_end "intake"`;
+  confirm `stages_complete` JSON contains an entry with `"label":"intake"`.
+- Confirm that when `tui_stage_begin "test_verify"` is called with the OLD broken
+  label, it does NOT create a pill matching `"tester"`. Instead it creates a pill
+  labeled `"test_verify"` (raw name) which does not match any entry from
+  `get_display_stage_order()`. (Regression guard — callers must use
+  `get_stage_display_label`, not raw names.)
+- Simulate two rework cycles: call `tui_stage_begin "rework"` / `tui_stage_end "rework"`
+  twice; confirm `_TUI_STAGE_ORDER` contains exactly one `"rework"` entry but
+  `_TUI_STAGES_COMPLETE` contains two `"rework"` entries.
+- Confirm `get_display_stage_order` output ends with `"wrap-up"`.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/pipeline_order.sh` | Append `wrap-up` at end of `get_display_stage_order()` |
+| `tekhton.sh` | Pipeline loop: replace `tui_update_stage`/`tui_finish_stage` with `tui_stage_begin`/`tui_stage_end` via `get_stage_display_label`; add intake pre-stage TUI calls |
+| `stages/coder.sh` | Add `tui_stage_begin`/`tui_stage_end` around scout `run_agent` call |
+| `stages/review.sh` | Add `tui_stage_begin`/`tui_stage_end` around both Sr and Jr rework `run_agent` calls |
+| `lib/finalize.sh` | Add `tui_stage_begin "wrap-up"` at start of `finalize_run()`; add `tui_stage_end "wrap-up"` in `_hook_tui_complete()` before `out_complete` |
+| `tests/test_tui_stage_wiring.sh` | New integration test for all wired labels |
+
+## Acceptance Criteria
+
+- [ ] After a full pipeline run, the pill bar shows all stages in sequence (intake → scout → coder → security → review → tester → wrap-up)
+- [ ] Intake pill turns yellow (▶) when intake runs and green (✓) when it completes
+- [ ] Scout pill turns yellow (▶) briefly during the scout phase inside coder; turns green (✓) before coder begins
+- [ ] Tester pill turns yellow (▶) when tester runs and green (✓) when it completes; elapsed timer freezes (does not count up after completion)
+- [ ] When a reviewer triggers rework, a `"rework"` pill appears dynamically in the pill bar, turns yellow (▶) during the rework agent, and turns green (✓) when it finishes
+- [ ] A second rework cycle reuses the same `"rework"` pill (bar has one pill, not two); the pill turns yellow again for the second cycle
+- [ ] The wrap-up pill is visible from run start as grey (○), turns yellow (▶) when `finalize_run` begins, and turns green (✓) when `_hook_tui_complete` fires
+- [ ] The active-stage bar shows the correct label for each of intake, scout, rework, and wrap-up (not a raw internal name like `"test verify"`)
+- [ ] The two-rework integration test confirms one pill entry but two `stages_complete` entries
+- [ ] `get_display_stage_order` output ends with `"wrap-up"` in all pipeline configurations (standard, test_first, with/without security/docs)
+- [ ] `shellcheck` passes on all modified `.sh` files with zero new warnings
+- [ ] All existing tests pass (`bash tests/run_tests.sh`)
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M108 — TUI Stage Timings Column
+<!-- milestone-meta
+id: "108"
+status: "done"
+-->
+
+## Overview
+
+When the CLI output mode was replaced by the TUI sidecar, per-stage timing
+summaries were lost. The old CLI printed after every stage:
+
+```
+[Coder]   Turns: 28/70 | Time: 3m12s
+[Tester]  Turns: 14/30 | Time: 1m44s
+```
+
+These repeated on every line but gave the user a clear sense of progress and cost.
+The TUI has `stages_complete` in its JSON (populated since M97/M106), but nothing
+renders that data anywhere.
+
+This milestone splits the bottom panel into two columns:
+- **Left (ratio=2):** Recent events — existing, unchanged.
+- **Right (ratio=1):** Stage timings — a growing list of completed stages with
+  elapsed time and turns, plus the currently-running stage with a live clock.
+
+Sub-stages (scout, rework) appear as their own rows since they are first-class
+entries in `stages_complete` after M107. The panel grows naturally as each stage
+completes; no special handling per stage type is required.
+
+## Design
+
+### §1 — `_build_timings_panel` in `tools/tui_render.py`
+
+The timings panel reads from two sources in the status JSON:
+
+1. `stages_complete`: list of completed stage objects — used for finished rows.
+2. `stage_label` + `current_agent_status` + `stage_start_ts` / `agent_elapsed_secs`
+   + `agent_turns_used` / `agent_turns_max` — used for the live "current" row.
+
+**Prerequisites:** `time` is already imported in `tui_render.py` (used by
+`_build_active_bar`). No new import needed for `time.time()` calls below.
+
+```python
+def _build_timings_panel(status: dict[str, Any]) -> Panel:
+    stages_complete = status.get("stages_complete") or []
+    current_label   = status.get("stage_label") or ""
+    agent_status    = status.get("current_agent_status") or "idle"
+    stage_start_ts  = int(status.get("stage_start_ts", 0) or 0)
+    elapsed_secs    = int(status.get("agent_elapsed_secs", 0) or 0)
+    turns_used      = int(status.get("agent_turns_used", 0) or 0)
+    turns_max       = int(status.get("agent_turns_max", 0) or 0)
+
+    grid = Table.grid(padding=(0, 1))
+    grid.add_column(no_wrap=True)                      # icon + label
+    grid.add_column(no_wrap=True, justify="right")     # elapsed
+    grid.add_column(no_wrap=True, justify="right")     # turns
+
+    if not stages_complete and not (current_label and agent_status in ("running", "working")):
+        grid.add_row("", Text("(no stages yet)", style="dim italic"), "")
+    else:
+        for stage in stages_complete:
+            label      = stage.get("label") or "?"
+            time_str   = stage.get("time") or ""
+            turns_str  = stage.get("turns") or ""
+            verdict    = (stage.get("verdict") or "").upper()
+            if verdict in ("FAIL", "FAILED", "BLOCKED", "REJECT"):
+                icon, style = "\u2717", "red"      # ✗
+            else:
+                icon, style = "\u2713", "green"    # ✓
+            grid.add_row(
+                Text(f"{icon} {label}", style=style),
+                Text(time_str, style="dim"),
+                Text(turns_str, style="dim"),
+            )
+
+        # Live "current" row: shown while a stage is actively running.
+        # Elapsed updates every tick (computed from stage_start_ts in Python).
+        # Turns always show "--/max" during execution because the Claude CLI only
+        # reports the final turn count when the agent exits; there is no live
+        # turn-by-turn stream available to the shell side during the run.
+        if current_label and agent_status in ("running", "working"):
+            if stage_start_ts > 0:
+                live_elapsed = max(0, int(time.time()) - stage_start_ts)
+            else:
+                live_elapsed = elapsed_secs
+            # Turns are unknown until agent exit: always show "--/max"
+            live_turns = f"--/{turns_max}" if turns_max else "--"
+            char = _SPIN_CHARS[int(time.time() * 10) % len(_SPIN_CHARS)]
+            grid.add_row(
+                Text(f"{char} {current_label}", style="yellow bold"),
+                Text(_fmt_duration(live_elapsed), style="yellow"),
+                Text(live_turns, style="yellow dim"),
+            )
+
+    return Panel(grid, title="Stage timings", border_style="cyan", padding=(0, 1))
+```
+
+**Design notes:**
+
+- The `"working"` status (shell ops via `run_op`) also shows a live row, since
+  long-running shell operations like test baseline capture are meaningful progress.
+  The `current_label` during `"working"` comes from `current_operation`.
+  
+  Update the live-row condition in the implementation to also show `current_operation`
+  for the `"working"` case:
+  ```python
+  if agent_status == "working":
+      display_label = status.get("current_operation") or current_label
+  else:
+      display_label = current_label
+  ```
+
+- Sub-stages (scout, rework) appear as normal rows because M107 wires them to
+  `tui_stage_end`, which appends to `stages_complete`. No special handling needed.
+
+- The `time_str` column uses whatever the shell side stored in the stage record
+  (e.g., `"45s"`, `"2m10s"`). The live row uses `_fmt_duration(live_elapsed)` for
+  consistency.
+
+- **Turns are only available after agent exit.** The Claude CLI does not stream
+  turn counts during execution; `_turns_file` is only written when the agent
+  process terminates. The live row therefore always shows `--/max` for turns.
+  Completed rows in `stages_complete` always have the real final count (e.g.,
+  `"28/70"`), because `tui_stage_end` is called after `run_agent` returns. This
+  asymmetry is intentional and correct: elapsed is a local clock computation,
+  while turns require the agent to report back.
+
+### §2 — Layout Split in `tools/tui.py`
+
+Replace the single `events` layout with a horizontal body split:
+
+```python
+def _build_layout(status: dict[str, Any], event_lines: int) -> Layout:
+    layout = Layout()
+    layout.split_column(
+        Layout(name="header", size=8),
+        Layout(name="body", ratio=1),
+    )
+    layout["body"].split_row(
+        Layout(name="events", ratio=2),
+        Layout(name="timings", ratio=1),
+    )
+    layout["header"].update(_build_header_bar(status))
+    layout["events"].update(_build_events_panel(status, event_lines))
+    layout["timings"].update(_build_timings_panel(status))
+    return layout
+```
+
+### §3 — Re-export `_build_timings_panel` for Tests
+
+`tools/tui.py` re-exports render helpers from `tui_render` so that test files
+importing `tui` can access them. Add `_build_timings_panel` to the existing
+re-export block:
+
+```python
+from tui_render import (  # noqa: F401 — re-exports for tests
+    _build_events_panel,
+    _build_header_bar,
+    _build_logo,
+    _build_simple_logo,
+    _build_timings_panel,   # ← ADD
+    _fmt_duration,
+)
+```
+
+### §4 — `hold_on_complete` Event Log: Out of Scope
+
+The `_hold_on_complete` function in `tools/tui_hold.py` already prints a full
+event log to the terminal after the TUI exits. A future milestone may refine
+this to surface `stages_complete` timing rows and reduce duplication with the
+new timings column. **No changes to `tui_hold.py` in this milestone.**
+
+### §5 — Test Coverage in `tools/tests/test_tui.py`
+
+Add tests covering:
+
+```python
+# Use tui._empty_status() from tools/tui.py (re-exported for tests).
+# If _empty_status() is missing "current_operation", add it there as part
+# of this milestone rather than redefining a local copy.
+
+
+def test_timings_panel_empty():
+    """Empty stages_complete + idle → shows '(no stages yet)'"""
+    status = {**tui._empty_status(), "current_operation": ""}
+    panel = tui._build_timings_panel(status)
+    assert "(no stages yet)" in str(panel.renderable)
+
+def test_timings_panel_completed_stages():
+    """Completed stages render with ✓ icon, elapsed, and turns"""
+    status = {**tui._empty_status(), "current_operation": "", "stages_complete": [
+        {"label": "intake", "model": "", "turns": "3/10", "time": "8s", "verdict": None},
+        {"label": "scout",  "model": "", "turns": "5/10", "time": "12s", "verdict": None},
+    ]}
+    panel = tui._build_timings_panel(status)
+    rendered = str(panel.renderable)
+    assert "intake" in rendered
+    assert "scout" in rendered
+
+def test_timings_panel_live_running_row():
+    """Running stage appears as a live yellow row below completed stages"""
+    status = {**tui._empty_status(),
+              "current_operation": "",
+              "stages_complete": [{"label": "intake", "model": "",
+                                   "turns": "3/10", "time": "8s", "verdict": None}],
+              "stage_label": "coder",
+              "current_agent_status": "running",
+              "stage_start_ts": int(time.time()) - 30,
+              "agent_turns_max": 70}
+    panel = tui._build_timings_panel(status)
+    rendered = str(panel.renderable)
+    assert "coder" in rendered
+    assert "--/70" in rendered  # turns unknown until agent exits; live row always shows --/max
+
+def test_timings_panel_fail_verdict():
+    """Failed stage renders with ✗ icon in red"""
+    status = {**tui._empty_status(), "current_operation": "", "stages_complete": [
+        {"label": "security", "model": "", "turns": "8/15", "time": "45s",
+         "verdict": "BLOCKED"},
+    ]}
+    panel = tui._build_timings_panel(status)
+    rendered = str(panel.renderable)
+    assert "security" in rendered
+
+def test_layout_has_timings_column():
+    """Layout includes both 'events' and 'timings' regions"""
+    layout = tui._build_layout(tui._empty_status(), event_lines=20)
+    names = [child.name for child in layout["body"].children]
+    assert "events" in names
+    assert "timings" in names
+```
+
+### §6 — Minimum Terminal Width
+
+The timings column needs approximately 28 characters minimum (icon+label ≈ 14,
+elapsed ≈ 7, turns ≈ 7). With ratio=1 of the body, on an 80-column terminal the
+timings panel gets ~26 columns after borders, which is tight but renders without
+hard wrapping because all columns use `no_wrap=True`.
+
+Rich clips overflowing text gracefully on narrow terminals. No special minimum-width
+guard is required. If the user's terminal is narrower than 60 columns, both panels
+compress and content is clipped — consistent with existing Rich behaviour in the
+header panel.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `tools/tui_render.py` | Add `_build_timings_panel(status)` |
+| `tools/tui.py` | Restructure `_build_layout` to split body into events+timings; add `_build_timings_panel` to re-export block; add `current_operation` key to `_empty_status()` |
+| `tools/tests/test_tui.py` | Add five new tests covering the timings panel and layout split |
+
+## Acceptance Criteria
+
+- [ ] Bottom panel has two visible columns: "Recent events" on the left, "Stage timings" on the right
+- [ ] When no stages have run yet, the timings column shows `(no stages yet)`
+- [ ] As each stage completes, its row appears in the timings column with a ✓ icon, elapsed time, and turns ratio
+- [ ] A stage with verdict BLOCKED, FAIL, or REJECT shows a ✗ icon in red
+- [ ] While a stage is running, a yellow live row appears at the bottom of the timings column with the current elapsed and turn count; it updates on each TUI tick
+- [ ] Sub-stages (scout, rework) appear as their own rows in the timings column
+- [ ] During a `run_op` shell operation (`current_agent_status == "working"`), the live row shows the operation label from `current_operation` with the working spinner
+- [ ] The layout renders without Python exceptions on 80-column and 120-column terminals (test via `console.width` override in tests)
+- [ ] All five new tests in `test_tui.py` pass
+- [ ] All existing TUI tests continue to pass (`python -m pytest tools/tests/`)
+- [ ] `shellcheck` passes on any modified `.sh` files with zero new warnings (none expected for this milestone)
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M109 — Init Feature Wizard
+<!-- milestone-meta
+id: "109"
+status: "done"
+-->
+
+## Overview
+
+When `tekhton --init` creates a project config, Python-dependent features (TUI,
+tree-sitter repo maps, Serena LSP) are emitted as commented-out lines in Section 5
+of `pipeline.conf`. Users must know these exist, manually uncomment them, and
+separately run `tekhton --setup-indexer` to install the Python venv. This gap
+between "smart detection" and "feature discovery" means most users never enable
+the features that make Tekhton significantly more capable.
+
+This milestone adds a **feature wizard step** to `--init` that:
+
+1. Detects whether Python 3.8+ is available on PATH.
+2. If Python is available, asks three guided questions (TUI, repo maps, Serena)
+   with each option marked **(recommended)**.
+3. Writes the answers as **uncommented active config lines** in Section 5.
+4. Triggers venv setup inline if any Python feature was selected.
+5. If Python is not found, prints a clear message naming the enhanced features
+   and pointing to `docs/getting-started/installation.md`.
+
+The wizard runs on fresh `--init` only. On `--reinit`, the user's existing feature
+choices are preserved by the existing `_merge_preserved_values()` mechanism.
+Dashboard/Watchtower remains always-on by default — no question needed.
+
+## Design
+
+### §1 — New File: `lib/init_wizard.sh`
+
+Single-purpose file sourced by `init.sh`. Provides one exported function and one
+internal helper.
+
+```
+lib/init_wizard.sh
+  ├─ _wizard_find_python3()     # Returns python3 path or returns 1
+  └─ run_feature_wizard()       # Runs the interactive wizard; exports results
+```
+
+**`_wizard_find_python3()`** — Locates Python 3.8+ on PATH. Same logic as
+`tools/setup_indexer.sh`'s `find_python3()` but extracted into a function that
+can be called from init without invoking the full setup script. Prints the
+python executable path to stdout, returns 1 if not found.
+
+> **Why duplicate instead of sourcing `setup_indexer.sh`?** That script is a
+> standalone executable: it runs `set -euo pipefail` at top level, immediately
+> calls `find_python3`, and `exit 1`s on failure. Sourcing it from init would
+> abort the entire init flow when Python is absent. Extracting the ~15-line
+> helper is the safe, shellcheck-clean path.
+
+Use a corrected version comparison that handles hypothetical Python 4.x:
+```bash
+if (( major > MIN_PYTHON_MAJOR || (major == MIN_PYTHON_MAJOR && minor >= MIN_PYTHON_MINOR) )); then
+```
+The existing `setup_indexer.sh` check (`-ge 3 && -ge 8`) would reject Python 4.0
+(minor=0 < 8). Since we're writing a new function, use the correct comparison
+from the start.
+
+**`run_feature_wizard()`** — Entry point called from `run_smart_init()`.
+
+Flow:
+
+```
+run_feature_wizard()
+  ├─ Call _wizard_find_python3()
+  │   ├─ NOT FOUND → print advisory message, export defaults, return
+  │   └─ FOUND → continue
+  ├─ Print: "Python 3.x found — enhanced features available."
+  ├─ Ask: "Enable Rich TUI? (recommended) [Y/n]"      → _WIZARD_TUI_ENABLED
+  ├─ Ask: "Enable tree-sitter repo maps? (recommended) [Y/n]" → _WIZARD_REPO_MAP_ENABLED
+  ├─ Ask: "Enable Serena LSP intelligence? (recommended) [Y/n]" → _WIZARD_SERENA_ENABLED
+  └─ Set: _WIZARD_NEEDS_VENV=true if any of the three are true
+```
+
+All three questions use `prompt_confirm()` from `prompts_interactive.sh` with
+default `"y"`. Non-interactive mode is handled by a dedicated early-return path
+in §7 — see below for details.
+
+**Exported environment variables** (consumed by `_emit_section_features()`):
+
+| Variable | Values | Default (no Python / non-interactive) |
+|----------|--------|---------------------------------------|
+| `_WIZARD_TUI_ENABLED` | `true` / `auto` / unset | unset |
+| `_WIZARD_REPO_MAP_ENABLED` | `true` / unset | unset |
+| `_WIZARD_SERENA_ENABLED` | `true` / unset | unset |
+| `_WIZARD_NEEDS_VENV` | `true` / unset | unset |
+| `_WIZARD_PYTHON_FOUND` | `true` / `false` | `false` |
+
+When `_WIZARD_*` vars are unset, `_emit_section_features()` falls back to the
+existing commented-out emission — identical behavior to today.
+
+**Python-not-found message:**
+
+```
+  ℹ Python 3.8+ was not found on PATH.
+
+    Enhanced features require Python and are not available right now:
+      • Rich TUI — interactive live dashboard during pipeline runs
+      • Tree-sitter repo maps — intelligent code context via PageRank
+      • Serena LSP — language-server-powered code intelligence
+
+    Install Python 3.8+ and run 'tekhton --setup-indexer' to enable them later.
+    See: https://tekhton.dev/getting-started/installation/
+```
+
+### §2 — Integration Point in `lib/init.sh`
+
+The wizard runs between Phase 3 (crawl) and Phase 4 (config generation).
+
+```bash
+    # Phase 3: Crawl
+    ...
+
+    # Phase 3.5: Feature wizard (M109)
+    run_feature_wizard
+
+    # Phase 4: Config generation
+    ...
+```
+
+Why here:
+- **After detection** — we know the user's tech stack and can give informed context.
+- **Before config generation** — answers flow into `_emit_section_features()` via
+  env vars. No post-hoc file editing needed.
+- **Before summary** — the init report banner can reference what was enabled.
+
+Source line added to the companion file block at the top of `init.sh`:
+
+```bash
+# shellcheck source=lib/init_wizard.sh
+source "${_INIT_DIR}/init_wizard.sh"
+```
+
+### §3 — Venv Setup Trigger in `lib/init.sh`
+
+After Phase 4 (config generation), if `_WIZARD_NEEDS_VENV=true`:
+
+```bash
+    # Phase 4.5: Python venv setup (M109)
+    if [[ "${_WIZARD_NEEDS_VENV:-}" == "true" ]]; then
+        log "Setting up Python environment for enhanced features..."
+        mkdir -p "${conf_dir}/logs" 2>/dev/null || true
+        local _setup_script="${tekhton_home}/tools/setup_indexer.sh"
+        local _venv_dir="${REPO_MAP_VENV_DIR:-.claude/indexer-venv}"
+        if [[ -f "$_setup_script" ]]; then
+            if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
+                bash "$_setup_script" "$project_dir" "$_venv_dir"
+            else
+                # Summarized output: capture, show only success/failure
+                if bash "$_setup_script" "$project_dir" "$_venv_dir" \
+                        > "${conf_dir}/logs/indexer_setup.log" 2>&1; then
+                    success "Python environment ready"
+                else
+                    warn "Python environment setup failed (see .claude/logs/indexer_setup.log)"
+                    warn "You can retry later with: tekhton --setup-indexer"
+                fi
+            fi
+
+            # Serena on top if selected
+            if [[ "${_WIZARD_SERENA_ENABLED:-}" == "true" ]]; then
+                local _serena_script="${tekhton_home}/tools/setup_serena.sh"
+                if [[ -f "$_serena_script" ]]; then
+                    if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
+                        bash "$_serena_script" "$project_dir" "${SERENA_PATH:-.claude/serena}"
+                    else
+                        if bash "$_serena_script" "$project_dir" "${SERENA_PATH:-.claude/serena}" \
+                                >> "${conf_dir}/logs/indexer_setup.log" 2>&1; then
+                            success "Serena LSP ready"
+                        else
+                            warn "Serena setup failed (see .claude/logs/indexer_setup.log)"
+                            warn "You can retry later with: tekhton --setup-indexer --with-lsp"
+                        fi
+                    fi
+                fi
+            fi
+            _INIT_FILES_WRITTEN+=(".claude/indexer-venv/|Python environment for enhanced features")
+        else
+            warn "setup_indexer.sh not found — run 'tekhton --setup-indexer' after init"
+        fi
+    fi
+```
+
+If setup fails, the user still has a working `pipeline.conf` with the features
+enabled. At runtime, each feature degrades gracefully:
+- TUI: falls back to standard CLI output (logs reason to `_TUI_DISABLED_REASON`)
+- Repo map: logs warning, falls back to v2 context injection
+- Serena: skipped with warning
+
+The user can always retry with `tekhton --setup-indexer [--with-lsp]`.
+
+### §4 — Config Emission Changes in `lib/init_config_sections.sh`
+
+`_emit_section_features()` reads the wizard env vars. If set, those features are
+emitted as uncommented active lines. All other features remain as they are.
+
+```bash
+_emit_section_features() {
+    _emit_section_header "5" "Features" \
+        "Optional features — enable as needed"
+
+    # TUI (M109: wizard-driven)
+    if [[ "${_WIZARD_TUI_ENABLED:-}" == "true" ]]; then
+        echo "TUI_ENABLED=true"
+    else
+        echo "# TUI_ENABLED=auto"
+    fi
+
+    # Repo map (M109: wizard-driven)
+    if [[ "${_WIZARD_REPO_MAP_ENABLED:-}" == "true" ]]; then
+        echo "REPO_MAP_ENABLED=true"
+    else
+        echo "# REPO_MAP_ENABLED=false"
+    fi
+
+    # Serena (M109: wizard-driven)
+    if [[ "${_WIZARD_SERENA_ENABLED:-}" == "true" ]]; then
+        echo "SERENA_ENABLED=true"
+    else
+        echo "# SERENA_ENABLED=false"
+    fi
+
+    # Dashboard: always on (no wizard question — effectively zero cost)
+    echo "DASHBOARD_ENABLED=true"
+
+    cat << EOF
+# CLEANUP_ENABLED=false
+# SEED_CONTRACTS_ENABLED=false
+# INTAKE_AGENT_ENABLED=true
+# MILESTONE_DAG_ENABLED=true
+# MILESTONE_SPLIT_ENABLED=true
+# TEST_BASELINE_ENABLED=true
+EOF
+}
+```
+
+**Behavior changes from today's emission (both intentional):**
+
+1. **`TUI_ENABLED` is new to Section 5.** Today's `_emit_section_features()` has
+   no TUI line at all. This milestone adds it — either as an active uncommented
+   `TUI_ENABLED=true` (wizard selected) or as `# TUI_ENABLED=auto` (default).
+
+2. **`DASHBOARD_ENABLED=true` is now uncommented.** Today it's emitted as
+   `# DASHBOARD_ENABLED=true` (commented suggestion). This milestone changes it
+   to an active uncommented line, reflecting the design decision that Watchtower
+   is always-on by default with effectively zero cost. On `--reinit`, the
+   existing `_merge_preserved_values()` key-based merge sees the key already
+   present (commented or not) and preserves the user's value — so this is safe.
+
+### §5 — Banner Update in `lib/init_report_banner.sh`
+
+The "What Tekhton learned" section of the init summary should mention Python
+feature status. Add to `_init_collect_attention()`:
+
+- If `_WIZARD_PYTHON_FOUND=true` and features were enabled:
+  `"✓ Enhanced features enabled: TUI, repo maps[, Serena]"`
+- If `_WIZARD_PYTHON_FOUND=false`:
+  `"ℹ Install Python 3.8+ to enable enhanced features (TUI, repo maps, Serena)"`
+
+### §6 — Reinit Behavior
+
+No changes to `_preserve_user_config()` or `_merge_preserved_values()` are needed.
+
+On `--reinit`:
+1. `run_feature_wizard()` checks for `reinit_mode` and returns early (no-op).
+   The wizard only runs on fresh init.
+2. Existing `TUI_ENABLED=true`, `REPO_MAP_ENABLED=true`, etc. are preserved by
+   the key-based merge already in place.
+3. If the user wants to re-run the wizard, they can do a full `--init` on a fresh
+   project or manually edit their config.
+
+Implementation: `run_feature_wizard()` accepts an optional `$1` argument for
+reinit mode. If `"reinit"`, it returns immediately.
+
+```bash
+run_feature_wizard() {
+    local reinit_mode="${1:-}"
+    if [[ "$reinit_mode" == "reinit" ]]; then
+        return 0
+    fi
+    ...
+}
+```
+
+The call site in `init.sh` passes `$reinit_mode`:
+
+```bash
+run_feature_wizard "${reinit_mode:-}"
+```
+
+**Note on empty-string safety:** When `reinit_mode` is unset, the expansion
+`"${reinit_mode:-}"` passes `""` (empty string) to the function. The check
+`[[ "$reinit_mode" == "reinit" ]]` correctly fails on empty string — the wizard
+proceeds normally. Do not change this to a `-n` null check.
+
+### §7 — Non-Interactive Fallback
+
+When `TEKHTON_NON_INTERACTIVE=true` or `_can_prompt()` returns false,
+`prompt_confirm()` uses its default. The wizard uses default `"y"` for all three
+questions, so non-interactive mode with Python present enables all features.
+
+This is the correct behavior: if a CI system runs `tekhton --init` and Python is
+available, it gets the recommended features. If no Python, the wizard skips
+gracefully and emits commented-out defaults.
+
+**Exception:** Non-interactive mode should NOT trigger venv setup (it could fail
+in constrained CI environments and block the pipeline). The wizard sets
+`_WIZARD_NEEDS_VENV=true` only when interactive prompting actually occurred.
+Non-interactive paths set the config values but skip venv setup — the user (or CI
+script) can run `tekhton --setup-indexer` separately.
+
+**Critical:** The non-interactive path must still check for Python before setting
+feature flags. Without this guard, a CI system without Python would get
+`REPO_MAP_ENABLED=true` and `SERENA_ENABLED=true` in its config, causing noisy
+warnings on every pipeline run.
+
+Also note: TUI uses `"auto"` rather than `"true"` in non-interactive mode.
+Setting `true` without a venv forces the TUI on and causes an immediate fallback
+with a warning log on every run. `auto` lets the TUI self-detect the venv at
+runtime and "just work" once the user runs `--setup-indexer`.
+
+```bash
+if [[ "${TEKHTON_NON_INTERACTIVE:-}" == "true" ]] || ! _can_prompt; then
+    # Non-interactive: check Python, enable features in config, skip venv setup
+    if _wizard_find_python3 >/dev/null 2>&1; then
+        _WIZARD_TUI_ENABLED="auto"      # auto-detect venv at runtime
+        _WIZARD_REPO_MAP_ENABLED="true"
+        _WIZARD_SERENA_ENABLED="true"
+        _WIZARD_PYTHON_FOUND="true"
+    else
+        _WIZARD_PYTHON_FOUND="false"
+    fi
+    # Deliberately do NOT set _WIZARD_NEEDS_VENV
+    return 0
+fi
+```
+
+### §8 — Test Coverage
+
+Add `tests/test_init_wizard.sh` with:
+
+1. **`test_wizard_python_not_found`** — Mock `_wizard_find_python3` to fail.
+   Verify wizard exports `_WIZARD_PYTHON_FOUND=false` and no `_WIZARD_NEEDS_VENV`.
+   Verify advisory message is printed to stderr.
+
+2. **`test_wizard_all_yes`** — Mock `_wizard_find_python3` to succeed, mock
+   `prompt_confirm` to return 0 (yes). Verify all three `_WIZARD_*_ENABLED=true`
+   and `_WIZARD_NEEDS_VENV=true`.
+
+3. **`test_wizard_all_no`** — Mock `prompt_confirm` to return 1 (no). Verify
+   all three `_WIZARD_*_ENABLED` are unset and `_WIZARD_NEEDS_VENV` is unset.
+
+4. **`test_wizard_mixed`** — TUI yes, repo map yes, Serena no. Verify
+   `_WIZARD_NEEDS_VENV=true` (TUI needs venv).
+
+5. **`test_wizard_reinit_skipped`** — Call `run_feature_wizard "reinit"`. Verify
+   all `_WIZARD_*` vars remain unset. Wizard is a no-op.
+
+6. **`test_wizard_non_interactive`** — Set `TEKHTON_NON_INTERACTIVE=true`, mock
+   `_wizard_find_python3` to succeed. Verify `_WIZARD_TUI_ENABLED=auto` (not
+   `true`), `_WIZARD_REPO_MAP_ENABLED=true`, `_WIZARD_SERENA_ENABLED=true`,
+   `_WIZARD_PYTHON_FOUND=true`, and `_WIZARD_NEEDS_VENV` unset.
+
+7. **`test_wizard_non_interactive_no_python`** — Set
+   `TEKHTON_NON_INTERACTIVE=true`, mock `_wizard_find_python3` to fail. Verify
+   `_WIZARD_PYTHON_FOUND=false` and all `_WIZARD_*_ENABLED` vars remain unset.
+   Config should emit commented-out defaults (same as no-Python interactive).
+
+8. **`test_emit_section_features_with_wizard`** — Set `_WIZARD_TUI_ENABLED=true`
+   and `_WIZARD_REPO_MAP_ENABLED=true`. Capture `_emit_section_features` output.
+   Verify `TUI_ENABLED=true` and `REPO_MAP_ENABLED=true` are uncommented active
+   lines. Verify `SERENA_ENABLED` remains commented. Verify
+   `DASHBOARD_ENABLED=true` is always uncommented.
+
+9. **`test_emit_section_features_without_wizard`** — All `_WIZARD_*` unset.
+   Verify Section 5 looks like today's output (all features commented except
+   Dashboard).
+
+## Files Changed
+
+| File | Change |
+|------|--------|
+| `lib/init_wizard.sh` | **New** — wizard function + Python detection |
+| `lib/init.sh` | Source wizard, call between Phase 3–4, trigger venv after Phase 4 |
+| `lib/init_config_sections.sh` | `_emit_section_features()` adds `TUI_ENABLED` (new), reads wizard env vars, uncomments `DASHBOARD_ENABLED` |
+| `lib/init_report_banner.sh` | Show feature status in init summary |
+| `tests/test_init_wizard.sh` | **New** — wizard + emission tests |
+| `CLAUDE.md` | Add `lib/init_wizard.sh` to repo layout listing |
+| `tests/run_tests.sh` | Add `test_init_wizard.sh` to test discovery (if explicit list) |
+
+## Acceptance Criteria
+
+- [ ] `tekhton --init` on a system with Python 3.8+ presents three feature
+      questions, each marked "(recommended)", defaulting to Yes.
+- [ ] Answering Yes to any Python feature triggers inline venv setup with
+      summarized output (full output when `VERBOSE_OUTPUT=true`).
+- [ ] `pipeline.conf` Section 5 contains uncommented `TUI_ENABLED=true`,
+      `REPO_MAP_ENABLED=true`, and/or `SERENA_ENABLED=true` matching the user's
+      answers.
+- [ ] `DASHBOARD_ENABLED=true` is always emitted as an active uncommented line.
+- [ ] `tekhton --init` on a system without Python prints an advisory message
+      naming the three features and referencing `docs/getting-started/installation.md`,
+      then proceeds normally with all features commented out.
+- [ ] `tekhton --reinit` skips the wizard entirely; existing feature config
+      values are preserved.
+- [ ] Non-interactive mode (`TEKHTON_NON_INTERACTIVE=true`) with Python available
+      enables features in config (TUI as `auto`, repo map + Serena as `true`)
+      but does not trigger venv setup.
+- [ ] Non-interactive mode without Python available leaves all features commented
+      out (identical to interactive no-Python path).
+- [ ] Venv setup failure does not block init — config is written, banner shows
+      retry instructions, features degrade gracefully at runtime.
+- [ ] All tests in `tests/test_init_wizard.sh` pass.
+- [ ] `shellcheck lib/init_wizard.sh` passes with zero warnings.
+- [ ] `CLAUDE.md` repo layout includes `lib/init_wizard.sh`.
+- [ ] `tests/run_tests.sh` discovers and runs `test_init_wizard.sh`.
+
+---
+
+## Archived: 2026-04-20 — Unknown Initiative
+
+# M110 - TUI Stage Lifecycle Semantics and Timings Coherence
+<!-- milestone-meta
+id: "110"
+status: "done"
+-->
+
+## Overview
+
+M106 and M107 introduced a stage protocol (`tui_stage_begin`/`tui_stage_end`) and
+M108 introduced the stage timings column. Live runs now show a deeper mismatch:
+
+- Completed stages can become active again (intake turned yellow during architect work).
+- Intake ordering can drift in the pill row (observed rendering with intake at end
+   instead of the front of pre-stages).
+- Pre-stage and sub-stage work is not modeled consistently (architect and architect
+  remediation activity has no coherent stage ownership).
+- Scout-to-coder handoff can briefly regress the coder pill to pending (grey)
+  between `tui_stage_end("scout")` and coder begin.
+- Completed-row timing output is inconsistent and can regress to zero for some
+   stages (observed review/tester resetting to `0s` after counting up).
+- Completed-row duration string format can drift across states (live vs completed
+   rows show different notations for equivalent elapsed values).
+- Completion recap lines are injected into the event stream with new timestamps,
+   making historical metadata (for example `Started: coder`) appear after
+   `Pipeline Complete` as if it were a new runtime event.
+- Action-item payload in hold view can become stale across multi-pass runs
+   (for example fix-nonblockers), showing observations that were already
+   resolved in the same invocation.
+- After hold-on-complete Enter in multi-pass modes, control-flow can look like
+   an unintended rerun (new pass starts without clear boundary and sometimes
+   without expected TUI re-arm visibility).
+- The active bar, stage pills, and timings rows do not share a single lifecycle
+  contract, so they can drift apart.
+
+This milestone defines and implements one canonical lifecycle model that all TUI
+surfaces follow, while minimizing debt by centralizing behavior in protocol
+helpers instead of adding stage-specific patches at call sites.
+
+## Design
+
+### 1) Canonical Stage Taxonomy
+
+Define five activity classes and keep them explicit in protocol state:
+
+1. Pipeline stage: top-level ordered work unit shown in pill row and timings
+   (scout/coder/security/review/docs/test_verify/test_write).
+2. Pre-stage: run-level gate before the pipeline loop; visible in active bar and
+   timings, optional in pills by configuration. `preflight`, `intake`, and
+   conditional `architect` audit are separate pre-stages and must never be
+   conflated with each other or with pipeline stages.
+3. Post-stage: run-level gate after the pipeline loop (currently `wrap-up`),
+   which activates during `finalize_run()` and must own the active bar and a
+   timings row until the run terminates.
+4. Sub-stage: child phase owned by a parent stage (for example scout under coder,
+   rework under review, architect-remediation under architect); visibility is
+   policy-driven, not ad-hoc.
+5. Operation: long shell operation (`run_op`) shown only as active-bar work.
+   Operations never produce pill-row state and never add timings rows.
+
+Scope rule:
+- Every active status update must belong to exactly one declared class.
+- Spinner updates must target the currently declared lifecycle owner, never the
+  previously completed stage or the stage that just ended.
+- A class change requires a new lifecycle entry; you cannot mutate a pipeline
+  stage into a sub-stage or vice versa.
+
+### 2) Stage Ownership Policy (single source of truth)
+
+Add a central policy lookup in `lib/pipeline_order.sh`, co-located with
+`get_stage_display_label`, that returns rendering rules per stage name. Encoding
+rule (keep the shell footprint small to minimize rewrite cost): one function
+`get_stage_policy NAME` implemented as a single `case` statement that echoes a
+fixed-shape record `"class|pill|timings|active|parent"` where:
+
+- `class`    ∈ `pipeline | pre | post | sub`
+- `pill`     ∈ `yes | no | conditional`
+- `timings`  ∈ `yes | no`
+- `active`   ∈ `yes | no`
+- `parent`   ∈ stage name or `-`
+
+One function, one record shape, no associative arrays, no registry layer.
+Call sites never read fields directly; they call protocol helpers which call
+the policy lookup. This keeps the portable surface to ~25 lines of shell.
+
+Initial policy (authoritative — any disagreement elsewhere in the doc defers
+to this table):
+
+| Stage                    | class    | pill        | timings | active | parent    |
+|--------------------------|----------|-------------|---------|--------|-----------|
+| preflight                | pre      | yes         | yes     | yes    | -         |
+| intake                   | pre      | yes         | yes     | yes    | -         |
+| architect                | pre      | conditional | yes     | yes    | -         |
+| architect-remediation    | sub      | no          | yes     | yes    | architect |
+| scout                    | sub      | no          | yes     | yes    | coder     |
+| coder                    | pipeline | yes         | yes     | yes    | -         |
+| security                 | pipeline | yes         | yes     | yes    | -         |
+| review                   | pipeline | yes         | yes     | yes    | -         |
+| docs                     | pipeline | yes         | yes     | yes    | -         |
+| test_write / tester-write| pipeline | yes         | yes     | yes    | -         |
+| test_verify / tester     | pipeline | yes         | yes     | yes    | -         |
+| rework                   | sub      | no          | yes     | yes    | review    |
+| wrap-up                  | post     | yes         | yes     | yes    | -         |
+| run_op operations        | op       | no          | no      | yes    | -         |
+
+`conditional` pills are rendered by the planner (§3), not by live protocol
+traffic. Call sites pass only the stage name; the helper resolves the class
+and visibility rules. Test coverage for this lookup is mandatory (§10).
+
+### 3) Deterministic Run Stage Plan (precomputed pills)
+
+Before the run starts, compute a deterministic stage plan for this invocation and
+use it to seed the pill row. This prevents both ghost pills (stages that never
+run) and missing pills (conditional stages that do run).
+
+Inputs to the planner:
+
+- run mode and entrypoint (`--milestone`, bare task, `--fix-nonblockers`,
+   `--fix-drift`, `--start-at`)
+- stage toggles (`SKIP_SECURITY`, `SKIP_DOCS`, agent-enabled flags)
+- pipeline order mode (standard vs test_first)
+- deterministic pre-stage conditions (for example intake enabled)
+- gated/conditional stages represented as `possible` at plan-time and upgraded to
+   `scheduled` only when predicates resolve true (for example architect audit)
+
+Planner output:
+
+- `planned_pills`: ordered list shown in grey at run start
+- `possible_pills`: conditional placeholders (optional style) for gates that may run
+- `lifecycle_policy`: resolved visibility rules consumed by protocol helpers
+
+Ordering guarantees:
+
+- Pre-stage order is deterministic and stable: `preflight` -> `intake` -> optional
+   `architect` (when scheduled/possible).
+- A stage cannot move later in the row due to late protocol registration.
+- Dynamic insertion is allowed only for policy-approved conditional placeholders,
+   preserving deterministic relative order.
+
+Architect handling (binds §2 and §3):
+
+- Architect's policy is `pill=conditional`. The planner decides at startup
+  whether to promote the placeholder to `scheduled` based on:
+  `FORCE_AUDIT=true`, pending drift observations above
+  `DRIFT_OBSERVATION_THRESHOLD`, or `runs_since_audit >= DRIFT_RUNS_SINCE_AUDIT_THRESHOLD`.
+- When promoted to `scheduled`, architect appears in the pill row in the
+  pre-stage slot (after intake, before pipeline stages) and owns the active bar
+  and a timings row during execution.
+- When not promoted, architect is suppressed from the pill row entirely for
+  this run — no placeholder is shown. Timings/active ownership are still
+  reserved so any late activation is well-formed rather than stale-label.
+- Rationale: rendering a persistent grey "maybe architect" pill on every run
+  was rejected; it adds visual noise for the common case where audit does not
+  run. Defer any distinctive rendering for possible-but-not-scheduled
+  placeholders until a concrete need arises.
+
+This planner lives in one shell-layer function (`get_run_stage_plan()` in
+`lib/pipeline_order.sh`) and feeds both `_OUT_CTX[stage_order]` and the TUI
+bootstrap. No per-stage caller is permitted to manually patch stage order.
+
+### 4) Atomic Transition API (remove grey-gap regressions)
+
+Introduce a transition helper in `lib/tui_ops.sh` for immediate handoffs:
+
+- `tui_stage_transition FROM TO [MODEL]`
+
+Behavior:
+- Ends `FROM` and begins `TO` in one status-file transaction (single write).
+- Prevents brief idle/pending gaps that currently appear between scout and coder.
+- Preserves elapsed freeze for `FROM` and immediate running status for `TO`.
+
+Any same-owner handoff path (scout -> coder, coder -> completion gate phase,
+rework cycle transitions) should use transition instead of separate end/begin calls.
+
+### 5) Lifecycle Invariants Enforced in Protocol Layer
+
+Lifecycle identity contract:
+
+- Every `tui_stage_begin` allocates a lifecycle id of the form
+  `"<stage>#<cycle>"` where `<cycle>` is a per-stage monotonic counter
+  maintained in a shell associative array `_TUI_STAGE_CYCLE` (e.g. first
+  rework is `rework#1`, second is `rework#2`).
+- The current owner is tracked as two fields in the status file:
+  `current_lifecycle_id` and `current_stage_label`.
+- Every `tui_update_agent` / spinner call resolves to `current_lifecycle_id`
+  and is silently dropped if the id has changed since the call was queued
+  (guards against late updates leaking into the next stage).
+- Completed stage records in `stages_complete[]` carry their lifecycle id
+  verbatim. Timings rows key off lifecycle id, not label.
+- Lifecycle ids are strings, not structs; the shell surface stays portable.
+
+Invariants enforced in the protocol layer (single code path — `lib/tui_ops.sh`):
+
+1. No stale reactivation: once a lifecycle id is marked complete, no further
+   updates to that id are accepted. Reusing a label requires allocating a new
+   id (`rework#2`, not `rework#1` again).
+2. Parent consistency: a sub-stage begin must resolve to an open parent
+   lifecycle id per the policy table (§2). If the parent is not open, fail
+   closed to a neutral active label (never the last completed stage).
+3. Monotonic pill state: `pending → running → complete|fail`. Any transition
+   from `complete` back to `running` for the same label is only legal when a
+   new lifecycle id has been allocated for that label.
+4. Timings ownership: each timings row has a stable lifecycle id; elapsed and
+   turns attach to that id, not to mutable current-label globals.
+
+### 6) Timings Column Compatibility
+
+Stage timings must remain compatible with M108 behavior while reflecting the new
+ownership model:
+
+- Rows remain append-only for completed lifecycle ids.
+- Child rows include a deterministic display label (for example `coder/scout` or
+  `architect/sr-remediation`) derived from policy.
+- Live row always reflects the current lifecycle owner selected by protocol,
+  including architect and sub-stage phases.
+- No duplicate rows for the same lifecycle id; repeated labels are allowed only
+  when they represent separate cycles.
+
+Timing integrity rules:
+
+- Completed rows must never reset elapsed to `0s` unless true elapsed is zero.
+- Stage-duration lookup must use a canonical key resolver, not raw loop labels
+  where aliases differ. The resolver lives next to `get_stage_display_label`
+  and must normalize all known aliases to their display key before any metric
+  lookup. Known alias pairs that must be covered (verified against call sites
+  in `stages/*.sh` and `lib/metrics*.sh`):
+
+  | Internal / metric key | Display label (canonical) |
+  |-----------------------|---------------------------|
+  | `reviewer`            | `review`                  |
+  | `test_verify`         | `tester`                  |
+  | `test_write`          | `tester-write`            |
+  | `wrap_up`             | `wrap-up`                 |
+  | `jr_coder`            | `rework` (sub-stage)      |
+
+  The resolver must be a single function `get_stage_metrics_key NAME` that
+  accepts either side and returns the canonical display label. Any new stage
+  or alias added in future work must extend this one function.
+
+- Completed and live rows must use the same formatter contract (`_fmt_duration`
+  in `tools/tui_render_common.py`) for human-readable consistency. No ad-hoc
+  duration formatting is permitted elsewhere in the render tree.
+- Raw seconds may be stored in status payload, but rendering must normalize via
+  the one formatter path. The status-file schema should store both raw seconds
+  (`elapsed_secs`) and the canonical lifecycle id so the renderer can recompute
+  if needed without trusting mutable label globals.
+- On `tui_stage_end`, duration and turns must be resolved via the canonical
+  key resolver *before* the status record is written. Missing metric lookups
+  must not silently default to `0s` — they must log a warning and inherit the
+  last observed elapsed for the open lifecycle id.
+
+### 7) Integration Plan (minimal churn)
+
+Implement in this order to reduce risk. The whole M110 implementation must be
+gated by a `TUI_LIFECYCLE_V2` config flag (default `true` once merged, with a
+documented fallback to the pre-M110 path for one release cycle). This
+preserves a cheap rollback if a field regression surfaces post-merge.
+
+1. Add canonical stage-metrics key resolver (`get_stage_metrics_key`) in
+   `lib/pipeline_order.sh` alongside `get_stage_display_label`. This is
+   foundational — every subsequent step relies on it.
+2. Add stage policy lookup (`get_stage_policy`) in `lib/pipeline_order.sh`.
+   Pure function, no side effects, tested in isolation.
+3. Add lifecycle-id allocation and `current_lifecycle_id` tracking in
+   `lib/tui_ops.sh` and `lib/tui_helpers.sh`. Extend status-file JSON schema
+   to include `lifecycle_id` on `current` and `stages_complete[]` entries.
+4. Add deterministic stage planner (`get_run_stage_plan`) in
+   `lib/pipeline_order.sh` and feed it into `_OUT_CTX[stage_order]` and the
+   TUI bootstrap (replacing the direct `get_display_stage_order` call at run
+   start).
+5. Update `tools/tui_render.py` and `tools/tui_render_timings.py` to render
+   policy-driven labels and lifecycle-id-keyed current row selection. Keep
+   `_fmt_duration` as the single formatter entry point.
+6. Add `tui_stage_transition FROM TO [MODEL]` to `lib/tui_ops.sh`. Single
+   status-file write (end `FROM`, begin `TO`, one atomic swap).
+7. Wire architect and architect-remediation call sites in `stages/architect.sh`
+   to explicit protocol stages.
+8. Replace the scout→coder end/begin pair in `stages/coder.sh` with
+   `tui_stage_transition`.
+9. Add event-stream phase typing (`runtime` vs `summary`) in
+   `lib/tui_helpers.sh` (event record) and route recap fields through
+   `lib/output_format.sh` as `summary` events. Update `tools/tui_hold.py` to
+   render a separate summary block.
+10. Add per-pass output-bus/TUI state reset helper (`out_reset_pass`) in
+    `lib/output.sh` and invoke it from the `_run_fix_nonblockers_loop` and
+    `_run_fix_drift_loop` functions in `tekhton.sh` before each iteration.
+11. Emit explicit `pass_boundary` events before each pass ≥ 2 and a terminal
+    `loop_terminal` event when remaining work is zero.
+12. Keep pre-M110 code paths alive behind the `TUI_LIFECYCLE_V2` flag during
+    migration; remove the legacy paths only after a full release cycle with
+    the flag defaulting to on.
+
+### 8) Event Stream Chronology and Completion Summary Boundaries
+
+The TUI currently uses a single recent-events ring where both runtime events and
+finalize recap output are appended. Because recap fields are emitted late, they
+receive late timestamps and can appear semantically out of order (for example a
+"Started" field after "Pipeline Complete").
+
+Required model:
+
+- Runtime events: chronological activity records (stage start/end, warnings,
+   gate transitions).
+- Summary metadata: immutable run facts (task, started-at stage, verdict, log,
+   version, timing breakdown).
+
+Rules:
+
+- Summary metadata must be rendered in a dedicated summary block in hold view,
+   not inserted into runtime `recent_events`.
+- `Pipeline Complete` is terminal for runtime event chronology in that run.
+- Any post-complete output must be typed as summary/epilogue and visually
+   separated from runtime events.
+- Existing output helpers may still be reused, but routing must preserve event
+   type so hold rendering cannot interleave recap facts with runtime chronology.
+
+### 9) Multi-Pass State Isolation (fix-nb / fix-drift)
+
+Multi-pass modes re-enter pipeline/finalize loops within a single process. TUI
+state and output-bus payloads must be reset at pass boundaries to avoid stale UI
+artifacts.
+
+Required reset boundaries:
+
+- Clear `_OUT_CTX[action_items]` at start of each pass before new action-item
+   collection.
+- Reset per-pass summary metadata (task/log/version/time-breakdown payload) before
+   finalize emits recap fields.
+- Reset/rehydrate TUI run context before each pass (`attempt`, `task`, stage plan,
+   and active lifecycle owner).
+
+Control-flow clarity rules:
+
+- After hold-on-complete Enter, the decision whether to start another pass
+  must live in the parent shell loop (`_run_fix_nonblockers_loop` /
+  `_run_fix_drift_loop` in `tekhton.sh`), not in `tools/tui_hold.py`. The
+  sidecar's only responsibility is to unblock on Enter; the shell then
+  evaluates remaining-work count and either terminates or continues.
+- If another pass is required, the shell must emit an explicit
+  `Starting pass N+1` boundary event (typed as `runtime`) before any stage
+  events and re-arm the TUI sidecar for the new pass.
+- If no work remains (for example non-blocking count is 0), no new pipeline
+  pass may start; the loop must emit a terminal event and exit cleanly.
+- TUI re-arm on subsequent passes must be deterministic and observable:
+  either the sidecar starts (visible in logs), or an explicit reason event is
+  emitted when disabled (`TUI_ENABLED=false` or missing venv).
+
+### 10) Testing & Rollout
+
+Given the blast radius (15 files, 17 acceptance items), the test matrix must
+cover each new contract explicitly, not merely the end-to-end behavior:
+
+Unit tests (`tools/tests/test_tui.py`, shell-side via bats or fixture scripts):
+
+- `get_stage_policy` returns correct record shape for every stage in the §2
+  table; unknown stages fall back to a defined `op` record.
+- `get_stage_metrics_key` normalizes every alias pair listed in §6 and is
+  idempotent when called on a canonical key.
+- `get_run_stage_plan` output for each run mode:
+  - bare task (`INTAKE_AGENT_ENABLED=true`, no flags)
+  - bare task with `SKIP_SECURITY=true`
+  - bare task with `DOCS_AGENT_ENABLED=true`
+  - `--milestone` mode
+  - `--fix nb` mode
+  - `--fix drift` mode (architect promoted to `scheduled`)
+  - `--start-at review`
+- Lifecycle-id monotonicity: repeated `tui_stage_begin "rework"` calls
+  allocate `rework#1`, `rework#2`, ... never reuse a completed id.
+- Spinner updates against a closed lifecycle id are dropped.
+- `tui_stage_transition` produces exactly one status-file write.
+- Event type routing: `out_kv "Task" ...` produces a `summary` event, not
+  `runtime`.
+- `out_reset_pass` clears `_OUT_CTX[action_items]` and per-pass summary keys
+  but preserves run-invariant keys (`mode`, `task`, `cli_flags`).
+
+Integration tests (`tests/test_tui_stage_wiring.sh`):
+
+- Scout → coder transition: zero grey-gap frames in captured status-file
+  sequence (no status frame has `current_stage_label=""` between the two).
+- Rework cycle: two successive rework entries both appear in timings with
+  distinct lifecycle ids, no pill regression.
+- Architect promotion: with drift observations seeded above threshold,
+  architect pill appears and owns active bar during execution; with no
+  drift, no architect pill is rendered.
+- Multi-pass reset: `_run_fix_nonblockers_loop` with 2 passes shows cleared
+  action items between passes; pass-boundary event is emitted between them.
+- Hold → no-work Enter: synthetic hold view Enter with remaining-work=0
+  exits cleanly without starting a new pass.
+
+Rollout:
+
+- Merge with `TUI_LIFECYCLE_V2=true` as default. Document the flag in
+  `CLAUDE.md` template-variables table and `pipeline.conf.example`.
+- Keep the legacy code path reachable for one release cycle (one completed
+  post-V3 initiative milestone). Remove only after a clean field report.
+- Post-merge: run the full self-test suite (`bash tests/run_tests.sh`) plus
+  a manual smoke test against a small target project covering bare task,
+  `--fix nb`, and `--fix drift`.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/pipeline_order.sh` | Add `get_stage_policy`, `get_stage_metrics_key`, `get_run_stage_plan` (policy + canonical key resolver + planner) |
+| `lib/tui_ops.sh` | Add lifecycle-id allocation, `tui_stage_transition`, `TUI_LIFECYCLE_V2` gating |
+| `lib/tui_helpers.sh` | Emit `lifecycle_id` and `current_lifecycle_id` in status JSON; add `type` field to events (`runtime` / `summary`) |
+| `lib/output.sh` | Add `out_reset_pass` helper (clears `_OUT_CTX[action_items]` and per-pass summary keys) |
+| `lib/output_format.sh` | Route recap fields through `summary` event type; no chronological ts on summary metadata |
+| `stages/coder.sh` | Replace scout end/begin pair with `tui_stage_transition "scout" "coder"` |
+| `stages/review.sh` | Route rework wiring through policy (sub-stage with `parent=review`) |
+| `stages/architect.sh` | Explicit architect and architect-remediation lifecycle wiring (currently has no TUI protocol calls) |
+| `stages/tester.sh`, `stages/tester_tdd.sh`, `stages/tester_fix.sh` | Route through `get_stage_metrics_key` so `test_verify`/`test_write`/`tester` alias resolution is consistent with renderer |
+| `tekhton.sh` | Pre-stage wiring (preflight/intake/architect), consume `get_run_stage_plan` at bootstrap, call `out_reset_pass` in `_run_fix_nonblockers_loop` + `_run_fix_drift_loop`, emit pass-boundary + loop-terminal events |
+| `tools/tui_render.py`, `tools/tui_render_timings.py` | Lifecycle-id-keyed row selection; policy-driven label rendering; single `_fmt_duration` path |
+| `tools/tui_hold.py` | Separate runtime event log from summary metadata block; Enter only unblocks — no pass-decision logic |
+| `tools/tests/test_tui.py` | Unit tests for lifecycle invariants, policy lookup, alias resolver, planner output |
+| `tests/test_tui_stage_wiring.sh` | Integration tests for transitions, multi-pass reset, repeated-cycle rework, no stale-label regression |
+
+## Acceptance Criteria
+
+- [ ] Intake no longer reactivates during architect or architect remediation work.
+- [ ] Pre-flight and Intake are represented as distinct stages in lifecycle state,
+      with deterministic pre-stage ordering.
+- [ ] Intake does not appear at the end of the pill row in any run mode.
+- [ ] Pill row is computed deterministically before stage execution begins and
+   includes only scheduled/possible stages for this run mode.
+- [ ] No pills appear for stages that cannot run in the active invocation mode.
+- [ ] Conditional stages (for example architect audit) are represented without
+   causing stale-label reactivation when they activate.
+- [ ] Architect work is visible as an active lifecycle owner and appears in timings.
+- [ ] Scout-to-coder handoff has no visible grey/pending regression gap.
+- [ ] Active bar, pill row, and timings row always reference the same current
+      lifecycle owner.
+- [ ] Review and tester completed rows preserve real elapsed duration and do not
+   reset to `0s` after completion.
+- [ ] Completed-row duration notation is consistent with live-row notation for
+   equivalent elapsed values.
+- [ ] Completion recap fields (Task, Started, Verdict, Log, Version, breakdown)
+   do not appear as late chronological runtime events in the hold event log.
+- [ ] Runtime event chronology remains monotonic, and `Pipeline Complete` is
+   treated as terminal for runtime-event ordering.
+- [ ] Action Items in hold view reflect only the current pass/run state and do
+   not persist resolved items from prior passes in the same process.
+- [ ] In fix-nonblockers/fix-drift modes, pressing Enter on hold view cannot
+   trigger an extra pass when remaining work count is zero.
+- [ ] If another pass is required, the UI emits an explicit new-pass boundary and
+   re-arms TUI context before stage events begin.
+- [ ] Protocol enforces no stale-label reactivation even under spinner updates.
+- [ ] Existing M108 timings column still renders completed stage rows correctly.
+- [ ] New and updated tests cover architect pre-stage flow, scout->coder transition,
+      and repeated-cycle behavior (rework) without false regressions.

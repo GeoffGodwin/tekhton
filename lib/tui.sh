@@ -54,6 +54,14 @@ _TUI_RUN_MODE="task"
 _TUI_CLI_FLAGS=""
 declare -a _TUI_STAGE_ORDER=()
 
+# M110 lifecycle identity: per-label monotonic cycle counter + current owner id.
+# Keys are canonical display labels (from get_stage_display_label). Values are
+# the last allocated cycle number. Every tui_stage_begin increments the counter
+# for its label and records "<label>#<cycle>" as the current owner.
+declare -gA _TUI_STAGE_CYCLE=()
+_TUI_CURRENT_LIFECYCLE_ID=""
+declare -gA _TUI_CLOSED_LIFECYCLE_IDS=()
+
 # --- Activation check --------------------------------------------------------
 
 # _tui_should_activate — returns 0 when TUI should spawn, 1 otherwise.

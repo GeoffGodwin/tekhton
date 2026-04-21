@@ -78,22 +78,24 @@ _hook_commit() {
     # Generate commit message
     COMMIT_MSG=$(generate_commit_message "$TASK" "$ms_num" "$ms_disposition" || echo "feat: ${TASK}")
 
-    # Print completion banner
+    # Print completion banner. Recap fields route through out_summary_kv so
+    # the TUI hold view renders them in a dedicated summary block rather than
+    # interleaved with runtime chronology events (M110).
     out_banner "Tekhton — Pipeline Complete"
-    out_kv "Task"      "$TASK"
-    out_kv "Started"   "$START_AT"
-    out_kv "Verdict"   "${VERDICT:-APPROVED}"
-    out_kv "Log"       "$LOG_FILE"
+    out_summary_kv "Task"      "$TASK"
+    out_summary_kv "Started"   "$START_AT"
+    out_summary_kv "Verdict"   "${VERDICT:-APPROVED}"
+    out_summary_kv "Log"       "$LOG_FILE"
     if [[ -n "$ms_num" ]]; then
         if [[ "$ms_disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$ms_disposition" == COMPLETE_AND_WAIT ]]; then
-            out_kv "Milestone" "${ms_num} — COMPLETE"
+            out_summary_kv "Milestone" "${ms_num} — COMPLETE"
         else
             out_kv "Milestone" "${ms_num} — PARTIAL" warn
         fi
     fi
     # Project version bump (M96 IA2) — exposed by bump_version_files
     if [[ -n "${_BUMPED_VERSION_OLD:-}" ]] && [[ -n "${_BUMPED_VERSION_NEW:-}" ]]; then
-        out_kv "Version" "${_BUMPED_VERSION_OLD} → ${_BUMPED_VERSION_NEW} (${_BUMPED_VERSION_TYPE:-patch})"
+        out_summary_kv "Version" "${_BUMPED_VERSION_OLD} → ${_BUMPED_VERSION_NEW} (${_BUMPED_VERSION_TYPE:-patch})"
     fi
     # Health score delta (Milestone 15)
     if [[ -n "${HEALTH_SCORE:-}" ]] && command -v display_health_score &>/dev/null; then

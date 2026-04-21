@@ -36,6 +36,17 @@ out_init() {
     _OUT_CTX[action_items]=""
 }
 
+# out_reset_pass — Clear per-pass display state so multi-pass loops
+# (--fix nb, --fix drift, --human --complete) start each pass with a fresh
+# Action Items list and no stale current-stage carry-over. Preserves run
+# identity (mode, task, cli_flags, max_attempts, milestone*, stage_order)
+# and the attempt counter, which the caller owns and advances itself.
+out_reset_pass() {
+    _OUT_CTX[action_items]=""
+    _OUT_CTX[current_stage]=""
+    _OUT_CTX[current_model]=""
+}
+
 # out_set_context KEY VALUE — store a key in _OUT_CTX.
 out_set_context() {
     local key="${1:-}"

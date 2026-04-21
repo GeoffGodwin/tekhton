@@ -44,10 +44,22 @@ tui_finish_stage() {
     _tui_write_status
 }
 
-# tui_update_agent TURNS_USED TURNS_MAX ELAPSED_SECS — tick update from spinner.
-# Safe to call at high frequency; writes atomically.
+# tui_update_agent TURNS_USED TURNS_MAX ELAPSED_SECS [LIFECYCLE_ID] — tick from spinner.
+# Safe to call at high frequency; writes atomically. Under TUI_LIFECYCLE_V2, an
+# optional 4th arg carries the caller's captured lifecycle id; if it no longer
+# matches the current owner (stage ended / transitioned), the update is dropped
+# so late ticks cannot leak into the next stage.
 tui_update_agent() {
     [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    if [[ "${TUI_LIFECYCLE_V2:-true}" == "true" ]]; then
+        local _cap_id="${4:-}"
+        if [[ -n "$_cap_id" && "$_cap_id" != "${_TUI_CURRENT_LIFECYCLE_ID:-}" ]]; then
+            return 0
+        fi
+        if [[ -n "$_cap_id" && -n "${_TUI_CLOSED_LIFECYCLE_IDS[$_cap_id]:-}" ]]; then
+            return 0
+        fi
+    fi
     _TUI_AGENT_TURNS_USED="${1:-0}"
     _TUI_AGENT_TURNS_MAX="${2:-0}"
     _TUI_AGENT_ELAPSED_SECS="${3:-0}"
@@ -55,21 +67,32 @@ tui_update_agent() {
     _tui_write_status
 }
 
-# tui_append_event LEVEL MSG — append to ring buffer and flush status.
+# tui_append_event LEVEL MSG [TYPE] — append to ring buffer and flush status.
 # LEVEL: info | warn | error | success
+# TYPE: runtime (default) | summary. Summary events carry run-epilogue
+# metadata that the hold view renders in a separate block so recap fields
+# never appear as late chronological runtime events (M110).
 tui_append_event() {
     [[ "$_TUI_ACTIVE" == "true" ]] || return 0
     local level="${1:-info}"
     local msg="${2:-}"
+    local type="${3:-runtime}"
+    case "$type" in runtime|summary) ;; *) type="runtime" ;; esac
     local ts
     ts=$(date +"%H:%M:%S")
-    _TUI_RECENT_EVENTS+=("${ts}|${level}|${msg}")
+    _TUI_RECENT_EVENTS+=("${ts}|${level}|${type}|${msg}")
     local max="${TUI_EVENT_LINES:-60}"
     local overflow=$(( ${#_TUI_RECENT_EVENTS[@]} - max ))
     if (( overflow > 0 )); then
         _TUI_RECENT_EVENTS=("${_TUI_RECENT_EVENTS[@]:overflow}")
     fi
     _tui_write_status
+}
+
+# tui_append_summary_event LEVEL MSG — convenience wrapper that routes the
+# message as a summary (epilogue) event rather than runtime chronology.
+tui_append_summary_event() {
+    tui_append_event "${1:-info}" "${2:-}" "summary"
 }
 
 # --- run_op: long-running-command wrapper (M104) ------------------------------
@@ -117,12 +140,28 @@ run_op() {
     return "$_rc"
 }
 
-# --- Protocol API: stage lifecycle wrappers (M106) ---------------------------
+# --- Protocol API: stage lifecycle wrappers (M106, M110 lifecycle IDs) -------
+
+# _tui_alloc_lifecycle_id LABEL — allocate next "<label>#<cycle>" id and set
+# as current owner. Keyed off _TUI_STAGE_CYCLE (per-label monotonic).
+_tui_alloc_lifecycle_id() {
+    local label="${1:-}"
+    [[ -z "$label" ]] && return 0
+    local cur="${_TUI_STAGE_CYCLE[$label]:-0}"
+    cur=$((cur + 1))
+    _TUI_STAGE_CYCLE[$label]=$cur
+    _TUI_CURRENT_LIFECYCLE_ID="${label}#${cur}"
+}
+
+# tui_current_lifecycle_id — echo the current owner's lifecycle id.
+# Used by spinners to capture an id before sleeping so late updates can be
+# rejected when the id has since closed or advanced.
+tui_current_lifecycle_id() { printf '%s' "${_TUI_CURRENT_LIFECYCLE_ID:-}"; }
 
 # tui_stage_begin DISPLAY_LABEL [MODEL]
-# Begin a stage: ensure its pill exists in the bar, mark it running.
-# DISPLAY_LABEL must come from get_stage_display_label(); callers must not
-# pass raw internal stage names.
+# Begin a stage: allocate a fresh lifecycle id, ensure its pill exists, mark
+# it running. DISPLAY_LABEL must come from get_stage_display_label(); callers
+# must not pass raw internal stage names.
 # NOTE: _TUI_STAGE_ORDER is a single-writer array (main process only). When
 # parallel stages are introduced in a future milestone, this will require a
 # lock or a migration to an atomic update via the JSON status file.
@@ -130,22 +169,49 @@ tui_stage_begin() {
     [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
     local label="${1:-}"
     local model="${2:-}"
-    local _found=false
-    local _s
-    for _s in "${_TUI_STAGE_ORDER[@]:-}"; do
-        [[ "$_s" == "$label" ]] && { _found=true; break; }
-    done
-    [[ "$_found" == "false" ]] && _TUI_STAGE_ORDER+=("$label")
+    _tui_alloc_lifecycle_id "$label"
+    # Append to _TUI_STAGE_ORDER only when the stage's policy has pill=yes.
+    # Sub-stages (scout, architect-remediation, rework) are invisible in the
+    # pill row by design; their begin calls still allocate a lifecycle id and
+    # drive the active-stage frame, but must not mutate the pill-row array
+    # that was seeded deterministically at bootstrap (M110).
+    local _pill="yes"
+    if declare -f get_stage_policy &>/dev/null; then
+        local _pol
+        _pol=$(get_stage_policy "$label")
+        _pill="${_pol#*|}"
+        _pill="${_pill%%|*}"
+    fi
+    if [[ "$_pill" == "yes" ]]; then
+        local _found=false
+        local _s
+        for _s in "${_TUI_STAGE_ORDER[@]:-}"; do
+            [[ "$_s" == "$label" ]] && { _found=true; break; }
+        done
+        [[ "$_found" == "false" ]] && _TUI_STAGE_ORDER+=("$label")
+    elif [[ "$_pill" == "conditional" ]]; then
+        # Architect is conditional: include only if already seeded by the
+        # deterministic plan (which happens when promoted via FORCE_AUDIT or
+        # drift thresholds).
+        :
+    fi
     local _idx=0 _i
     for _i in "${!_TUI_STAGE_ORDER[@]}"; do
         [[ "${_TUI_STAGE_ORDER[$_i]}" == "$label" ]] && { _idx=$((_i + 1)); break; }
     done
+    # When the stage is not in the pill row (sub), use the existing active
+    # index so the header stays anchored on the parent pipeline stage rather
+    # than jumping to 0/N.
+    if (( _idx == 0 )); then
+        _idx="${_TUI_CURRENT_STAGE_NUM:-0}"
+    fi
     tui_update_stage "$_idx" "${#_TUI_STAGE_ORDER[@]}" "$label" "$model"
 }
 
 # tui_stage_end DISPLAY_LABEL [MODEL] [TURNS_STR] [TIME_STR] [VERDICT]
-# End a stage: freeze the timer and mark it complete.
-# DISPLAY_LABEL must match what was passed to tui_stage_begin.
+# End a stage: freeze the timer, mark the lifecycle id closed so late spinner
+# updates drop, and append a completion record. DISPLAY_LABEL must match what
+# was passed to tui_stage_begin.
 tui_stage_end() {
     [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
     local label="${1:-}"
@@ -159,5 +225,73 @@ tui_stage_end() {
     fi
     _TUI_STAGE_START_TS=0
     _TUI_AGENT_ELAPSED_SECS="$_final_elapsed"
+    local _closing_id="${_TUI_CURRENT_LIFECYCLE_ID:-}"
     tui_finish_stage "$label" "$model" "$turns" "$time_str" "$verdict"
+    if [[ -n "$_closing_id" ]]; then
+        _TUI_CLOSED_LIFECYCLE_IDS[$_closing_id]=1
+    fi
+    _TUI_CURRENT_LIFECYCLE_ID=""
+    _tui_write_status
+}
+
+# tui_stage_transition FROM_LABEL TO_LABEL [MODEL]
+# Atomic handoff: mark FROM complete and TO running in a single status-file
+# write so no frame observes current_stage_label="". Use for same-owner
+# handoffs (scout → coder, rework cycle transitions) where a grey-gap frame
+# between separate end/begin calls would regress the pill row.
+tui_stage_transition() {
+    [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    local from_label="${1:-}"
+    local to_label="${2:-}"
+    local model="${3:-}"
+    local _final_elapsed=0
+    if [[ "${_TUI_STAGE_START_TS:-0}" -gt 0 ]]; then
+        _final_elapsed=$(( $(date +%s) - _TUI_STAGE_START_TS ))
+    fi
+    # Close FROM silently (finalize entry without flushing an intermediate state).
+    # Preserve the FROM stage's own model in the completion record rather than
+    # leaking the TO stage's model into FROM's metadata.
+    local _from_id="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+    local _from_model="${_TUI_CURRENT_STAGE_MODEL:-}"
+    if [[ -n "$from_label" ]]; then
+        local _final_str="${_final_elapsed}s"
+        local _entry
+        _entry=$(_tui_json_stage "$from_label" "$_from_model" "" "$_final_str" "")
+        _TUI_STAGES_COMPLETE+=("$_entry")
+        [[ -n "$_from_id" ]] && _TUI_CLOSED_LIFECYCLE_IDS[$_from_id]=1
+    fi
+    # Open TO with a fresh lifecycle id. Append to _TUI_STAGE_ORDER only for
+    # pill=yes stages so sub-stage transitions (coder→scout etc.) never mutate
+    # the deterministic pill row seeded at bootstrap.
+    _tui_alloc_lifecycle_id "$to_label"
+    local _to_pill="yes"
+    if declare -f get_stage_policy &>/dev/null; then
+        local _to_pol
+        _to_pol=$(get_stage_policy "$to_label")
+        _to_pill="${_to_pol#*|}"
+        _to_pill="${_to_pill%%|*}"
+    fi
+    if [[ "$_to_pill" == "yes" ]]; then
+        local _found=false _s
+        for _s in "${_TUI_STAGE_ORDER[@]:-}"; do
+            [[ "$_s" == "$to_label" ]] && { _found=true; break; }
+        done
+        [[ "$_found" == "false" ]] && _TUI_STAGE_ORDER+=("$to_label")
+    fi
+    local _idx=0 _i
+    for _i in "${!_TUI_STAGE_ORDER[@]}"; do
+        [[ "${_TUI_STAGE_ORDER[$_i]}" == "$to_label" ]] && { _idx=$((_i + 1)); break; }
+    done
+    if (( _idx == 0 )); then
+        _idx="${_TUI_CURRENT_STAGE_NUM:-0}"
+    fi
+    _TUI_CURRENT_STAGE_NUM="$_idx"
+    _TUI_CURRENT_STAGE_TOTAL="${#_TUI_STAGE_ORDER[@]}"
+    _TUI_CURRENT_STAGE_LABEL="$to_label"
+    _TUI_CURRENT_STAGE_MODEL="$model"
+    _TUI_AGENT_STATUS="running"
+    _TUI_AGENT_TURNS_USED=0
+    _TUI_AGENT_ELAPSED_SECS=0
+    _TUI_STAGE_START_TS=$(date +%s)
+    _tui_write_status
 }

@@ -1,79 +1,72 @@
-# Coder Summary
-
 ## Status: COMPLETE
 
-## What Was Implemented
-Addressed all 6 open non-blocking notes from `.tekhton/NON_BLOCKING_LOG.md`.
+## Summary
+M110 senior-coder rework cycle: addressed three Complex Blockers from
+`.tekhton/REVIEWER_REPORT.md` covering multi-pass per-pass state reset,
+hold-view runtime-vs-summary event separation, and pre-flight stage
+lifecycle wiring.
 
-1. **Serena log collision** (`lib/init_wizard.sh:208–219`): `setup_serena.sh` now
-   writes to `logs/serena_setup.log` instead of sharing `indexer_setup.log` with
-   `setup_indexer.sh`. Indexer failure output is no longer overwritten by the
-   subsequent Serena run.
+## Files Modified (rework cycle)
 
-2. **Redundant `return $?`** (`lib/init_wizard.sh:175–177`): Replaced `return $?`
-   with bare `return` in the VERBOSE branch of `_wizard_run_setup_script`. `return`
-   without an argument already propagates the last command's exit status.
+### `tekhton.sh`
 
-3. **Cross-module array mutation** (`lib/init_wizard.sh:224`): `_run_wizard_venv_setup`
-   no longer writes to `_INIT_FILES_WRITTEN` directly. It now exports
-   `_WIZARD_VENV_CREATED=true` after a venv setup attempt, and `lib/init.sh`
-   appends to its own `_INIT_FILES_WRITTEN` array based on that signal. Ownership
-   of the bookkeeping array stays in `init.sh`. Also added `_WIZARD_VENV_CREATED`
-   to `_wizard_reset_state` so repeated calls start clean.
+1. **Blocker 2 — multi-pass reset (§9).** `_run_fix_nonblockers_loop` and
+   `_run_fix_drift_loop` now:
+   - Call `out_reset_pass` at the top of each iteration (before remaining-work
+     check) so `_OUT_CTX[action_items]` and the current-stage/current-model
+     carry-over are cleared before the new pass accumulates state.
+   - Emit a `tui_append_event "info" "Starting pass ${N}" "runtime"` boundary
+     event for passes ≥2, placed after the sidecar re-arm so the event
+     lands in the fresh sidecar's status file.
+   - Emit a terminal `tui_append_event "info" "No remaining work — exiting"
+     "runtime"` event when the loop breaks on zero remaining work, providing
+     the explicit loop-exit marker required by §9.
+   - All three wrapped in `declare -f` guards so non-TUI runs (no sidecar)
+     remain no-ops.
 
-4. **Mid-file import** (`tools/tests/test_tui.py:774`): Hoisted
-   `import time as _time` to the module-level import block. The `# noqa: E402`
-   suppression is no longer needed and was removed. The three function-local
-   `import time as time_mod` statements are pre-existing and out of scope.
+2. **Blocker 4 — preflight lifecycle (§2, §3 pre-stage ordering).**
+   `run_preflight_checks` at line 2886 is now wrapped in explicit
+   `tui_stage_begin "preflight"` / `tui_stage_end "preflight"` calls matching
+   the intake wiring pattern. The failure branch calls
+   `tui_stage_end "preflight" "" "" "" "FAILED"` before `exit 1`, so the pill
+   and timings row are correctly closed on pre-flight rejection rather than
+   stranded at `pending`. This makes pre-flight a first-class pre-stage
+   lifecycle owner, satisfying the acceptance criterion "Pre-flight and Intake
+   are represented as distinct stages in lifecycle state".
 
-5. **TUI pill flash on resume** (`tekhton.sh`): Wrapped the `tui_stage_begin` and
-   `tui_stage_end` calls in `should_run_stage` guards. On `--start-at review`,
-   upstream pills (coder, docs, security) no longer flash active→complete with
-   0/0 turns; they remain in their pre-run state instead. The paired
-   `_tui_will_run_stage` variable tracks the guard so `tui_stage_end` only fires
-   for stages whose `tui_stage_begin` actually ran.
+### `tools/tui_hold.py`
 
-6. **Stage label fallback divergence** (`lib/pipeline_order.sh`):
-   `get_display_stage_order` now routes every stage name through
-   `get_stage_display_label` instead of duplicating the mapping inline. Pill-row
-   output and `tui_stage_begin/end` call sites now share a single canonical label
-   registry — a new stage added only to the pipeline order will still produce
-   matching labels via the shared fallback. The comment on the fallback in
-   `get_stage_display_label` was updated to reflect the new single-source-of-truth.
+3. **Blocker 3 — summary vs runtime event split (§8).** The event-log rendering
+   loop in `_hold_on_complete` now partitions `recent_events` into two lists
+   by the `type` field (default `runtime` for backward compatibility with
+   pre-M110 status payloads):
+   - `runtime_events` render in the existing `[bold]Event log:[/bold]` block
+     with timestamps (unchanged behavior).
+   - `summary_events` render in a new `[bold]Run summary:[/bold]` block
+     positioned after Action Items. Timestamps are suppressed because
+     summary events are run-facts (Task, Started, Verdict, Log, Version,
+     breakdown), not chronological moments.
+   - This satisfies the acceptance criterion "Completion recap fields
+     (Task, Started, Verdict, Log, Version, breakdown) do not appear as
+     late chronological runtime events in the hold event log."
 
-## Root Cause (bugs only)
-Not bug fixes — all six were non-blocking code-quality improvements flagged by
-reviewers in prior milestone runs (M106–M109).
+## Architecture Change Proposals
 
-## Files Modified
-- `lib/init_wizard.sh` — Notes 1, 2, 3: serena log separation, bare `return`,
-  `_WIZARD_VENV_CREATED` signal
-- `lib/init.sh` — Note 3: append to `_INIT_FILES_WRITTEN` when
-  `_WIZARD_VENV_CREATED=true`
-- `tools/tests/test_tui.py` — Note 4: hoisted `import time as _time` to top of
-  file, removed mid-file import and `# noqa: E402`
-- `tekhton.sh` — Note 5: `tui_stage_begin`/`tui_stage_end` gated on
-  `should_run_stage` via `_tui_will_run_stage` local
-- `lib/pipeline_order.sh` — Note 6: `get_display_stage_order` delegates label
-  mapping to `get_stage_display_label`; updated fallback comment
+None — all changes sit inside the existing M110 design (§2 pre-stage policy,
+§8 event-type routing, §9 multi-pass state reset). No new protocol surface
+introduced.
 
-## Docs Updated
-None — no public-surface changes in this task. All edits are internal
-refactors to existing private functions (`_run_wizard_venv_setup`,
-`_wizard_run_setup_script`, `get_display_stage_order`) or minor code-hygiene
-fixes in tests and the pipeline loop. No CLI flags, config keys, or template
-variables changed.
+## Verification
 
-## Human Notes Status
-- Note 1 (`lib/init_wizard.sh:208–219` serena log collision): COMPLETED
-- Note 2 (`lib/init_wizard.sh:175–177` redundant `return $?`): COMPLETED
-- Note 3 (`lib/init_wizard.sh:224` cross-module array mutation): COMPLETED
-- Note 4 (`tools/tests/test_tui.py:774` mid-file import): COMPLETED
-- Note 5 (`tui_stage_begin` called before `should_run_stage` check): COMPLETED
-- Note 6 (`get_stage_display_label` vs `get_display_stage_order` fallback): COMPLETED
+- `bash -n tekhton.sh` — syntax OK.
+- `shellcheck -S warning tekhton.sh` — no new warnings introduced (existing
+  SC2034 notes unrelated to this rework).
+- `python3 -m py_compile tools/tui_hold.py` — OK.
+- `python3 -c "import tui_hold"` (with `tools/` on path) — imports cleanly.
 
-## Validation
-- `shellcheck tekhton.sh lib/init_wizard.sh lib/init.sh lib/pipeline_order.sh`
-  passes with only pre-existing SC1091 info messages (sourcing external files)
-  and one pre-existing SC2086 info on unrelated lines.
-- `bash tests/run_tests.sh`: 410 shell tests pass, 151 Python tests pass.
+## Remaining Work
+
+None for the rework cycle. Simple Blockers were empty. Non-blocking notes
+(dead `_policy_field`, `pipeline_order.sh` line count, duplicate inline
+metrics-key map in `tekhton.sh:2530`) are explicitly out of scope per rework
+instructions — left for a later cleanup pass.

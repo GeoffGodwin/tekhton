@@ -71,6 +71,17 @@ run_stage_architect() {
     ARCHITECT_PROMPT=$(render_prompt "architect")
 
     log "Invoking architect agent (${DRIFT_OBSERVATION_COUNT} observations, max ${architect_turns} turns)..."
+
+    # M110: make the architect pre-stage visible to the TUI lifecycle protocol.
+    # The pill row includes "architect" only when promoted by get_run_stage_plan
+    # (FORCE_AUDIT or drift thresholds); the lifecycle id allows late spinner
+    # ticks to be rejected after the stage ends.
+    local _architect_started=false
+    if declare -f tui_stage_begin &>/dev/null; then
+        tui_stage_begin "architect" "$architect_model"
+        _architect_started=true
+    fi
+
     run_agent \
         "Architect" \
         "$architect_model" \
@@ -86,6 +97,9 @@ run_stage_architect() {
     if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
         warn "Architect hit an API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
         warn "Drift observations remain unresolved — will retry next audit cycle."
+        if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+            tui_stage_end "architect" "$architect_model" "" "" "UPSTREAM_ERROR"
+        fi
         return 0
     fi
 
@@ -94,6 +108,9 @@ run_stage_architect() {
     if [ ! -f "${ARCHITECT_PLAN_FILE}" ]; then
         warn "Architect did not produce ${ARCHITECT_PLAN_FILE}. Skipping remediation."
         warn "Drift observations remain unresolved — will retry next audit cycle."
+        if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+            tui_stage_end "architect" "$architect_model" "" "" "NO_PLAN"
+        fi
         return 0
     fi
 
@@ -124,6 +141,21 @@ run_stage_architect() {
     done
 
     # --- Route to coders -----------------------------------------------------
+
+    # M110: architect-remediation is a sub-stage of architect (policy: pill=no,
+    # timings=yes). Open it only when remediation work will actually run so
+    # the timings column does not log an empty sub-stage entry.
+    local _remediation_started=false
+    if [ "$has_simplification" -eq 1 ] || [ "$has_jr_work" -eq 1 ]; then
+        if declare -f tui_stage_transition &>/dev/null && [[ "$_architect_started" == "true" ]]; then
+            tui_stage_transition "architect" "architect-remediation" "$architect_model"
+            _remediation_started=true
+            _architect_started=false
+        elif declare -f tui_stage_begin &>/dev/null; then
+            tui_stage_begin "architect-remediation" "$architect_model"
+            _remediation_started=true
+        fi
+    fi
 
     if [ "$has_simplification" -eq 1 ]; then
         log "Simplification items found — routing to senior coder..."
@@ -181,6 +213,9 @@ run_stage_architect() {
                 warn "Build still broken after architect remediation. Skipping review."
                 warn "Drift observations NOT resolved — will retry next audit cycle."
                 reset_runs_since_audit
+                if [[ "$_remediation_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+                    tui_stage_end "architect-remediation" "$architect_model" "" "" "BUILD_BROKEN"
+                fi
                 return 0
             fi
         fi
@@ -348,6 +383,16 @@ run_stage_architect() {
     if [ -f "${ARCHITECT_PLAN_FILE}" ]; then
         mv "${ARCHITECT_PLAN_FILE}" "${LOG_DIR}/${TIMESTAMP}_$(basename "${ARCHITECT_PLAN_FILE}")"
         log "${ARCHITECT_PLAN_FILE} archived and removed from working directory."
+    fi
+
+    # M110: close whichever stage is still open (remediation if it ran,
+    # otherwise architect itself).
+    if declare -f tui_stage_end &>/dev/null; then
+        if [[ "$_remediation_started" == "true" ]]; then
+            tui_stage_end "architect-remediation" "$architect_model" "" "" ""
+        elif [[ "$_architect_started" == "true" ]]; then
+            tui_stage_end "architect" "$architect_model" "" "" ""
+        fi
     fi
 
     success "Architect audit complete."

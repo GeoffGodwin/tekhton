@@ -171,6 +171,7 @@ set -euo pipefail
 : "${TUI_COMPLETE_HOLD_TIMEOUT:=120}"     # max secs to hold sidecar after complete before SIGKILL
 : "${TUI_SIMPLE_LOGO:=false}"             # use ASCII fallback instead of block-char arch logo
 : "${TUI_WATCHDOG_TIMEOUT:=300}"          # secs of status-file inactivity before self-terminating when idle (0=disabled)
+: "${TUI_LIFECYCLE_V2:=true}"             # M110 lifecycle semantics (policy-driven pills, lifecycle-ids, summary/runtime split). false falls back to pre-M110 behavior.
 
 # --- Serena LSP / MCP defaults (optional, future Milestone 6) ---
 : "${SERENA_ENABLED:=false}"

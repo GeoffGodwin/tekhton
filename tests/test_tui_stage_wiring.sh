@@ -31,6 +31,14 @@ source "${TEKHTON_HOME}/lib/tui.sh"
 # shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/pipeline_order.sh"
 
+# M110: source output.sh for out_reset_pass and _OUT_CTX.
+# Stubs required by output.sh (normally provided by common.sh).
+_tui_strip_ansi() { printf '%s' "${1:-}"; }
+_tui_notify()     { :; }
+CYAN="" RED="" GREEN="" YELLOW="" BOLD="" NC=""
+# shellcheck disable=SC1091
+source "${TEKHTON_HOME}/lib/output.sh"
+
 PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1 — $2"; FAIL=$((FAIL+1)); }
@@ -99,7 +107,11 @@ else
 fi
 
 # =============================================================================
-echo "=== Test 3: two rework cycles → one pill entry, two stages_complete ==="
+echo "=== Test 3: two rework cycles → zero pill entries, two stages_complete ==="
+# M110: rework is a sub-stage (pill=no per §2 policy table). tui_stage_begin
+# now consults get_stage_policy and only adds pill=yes stages to _TUI_STAGE_ORDER.
+# Rework must NOT appear in the pill row even after two cycles; it is invisible
+# as a pill but still emits completion records in stages_complete (timings).
 _activate
 tui_stage_begin "rework" "claude-opus-4-7"
 tui_stage_end   "rework" "claude-opus-4-7" "20/70" "90s" ""
@@ -111,11 +123,11 @@ for _s in "${_TUI_STAGE_ORDER[@]}"; do
     [[ "$_s" == "rework" ]] && rework_pill_count=$((rework_pill_count + 1))
 done
 
-if [[ "$rework_pill_count" -eq 1 ]]; then
-    pass "_TUI_STAGE_ORDER contains exactly one 'rework' entry after two cycles"
+if [[ "$rework_pill_count" -eq 0 ]]; then
+    pass "_TUI_STAGE_ORDER has no 'rework' pill (sub-stage, pill=no per M110 §2)"
 else
-    fail "_TUI_STAGE_ORDER rework count" \
-         "expected 1, got $rework_pill_count (order=${_TUI_STAGE_ORDER[*]})"
+    fail "_TUI_STAGE_ORDER rework pill count" \
+         "expected 0 (sub-stage, no pill), got $rework_pill_count (order=${_TUI_STAGE_ORDER[*]:-})"
 fi
 
 rework_complete_count=0
@@ -230,6 +242,343 @@ _check_label "docs"        "docs"
 _check_label "rework"      "rework"
 _check_label "wrap_up"     "wrap-up"
 _check_label "wrap-up"     "wrap-up"
+
+# =============================================================================
+# M110 Tests: lifecycle-id monotonicity, transition atomicity, multi-pass reset
+# =============================================================================
+
+# _activate_m110: clean baseline for M110 lifecycle tests.
+# Uses _TUI_STATUS_FILE="" so _tui_write_status is a no-op (no file writes).
+# This keeps the tests fast and avoids JSON-file race conditions between tests.
+_activate_m110() {
+    _TUI_ACTIVE=true
+    _TUI_STATUS_FILE=""        # no-op writes
+    _TUI_STATUS_TMP=""
+    _TUI_PIPELINE_START_TS=$(date +%s)
+    _TUI_RECENT_EVENTS=()
+    _TUI_STAGES_COMPLETE=()
+    _TUI_STAGE_ORDER=()
+    _TUI_CURRENT_STAGE_LABEL=""
+    _TUI_CURRENT_STAGE_MODEL=""
+    _TUI_CURRENT_STAGE_NUM=0
+    _TUI_CURRENT_STAGE_TOTAL=0
+    _TUI_AGENT_TURNS_USED=0
+    _TUI_AGENT_TURNS_MAX=0
+    _TUI_AGENT_ELAPSED_SECS=0
+    _TUI_STAGE_START_TS=0
+    _TUI_AGENT_STATUS="idle"
+    _TUI_COMPLETE=false
+    _TUI_VERDICT=""
+    _TUI_STAGE_CYCLE=()
+    _TUI_CURRENT_LIFECYCLE_ID=""
+    _TUI_CLOSED_LIFECYCLE_IDS=()
+    TUI_LIFECYCLE_V2=true
+}
+
+# =============================================================================
+echo "=== Test M110-1: lifecycle-id monotonicity via _tui_alloc_lifecycle_id ==="
+
+_activate_m110
+
+_tui_alloc_lifecycle_id "rework"
+if [[ "${_TUI_CURRENT_LIFECYCLE_ID:-}" == "rework#1" ]]; then
+    pass "M110-1a: first alloc → rework#1"
+else
+    fail "M110-1a: first alloc" "expected rework#1, got '${_TUI_CURRENT_LIFECYCLE_ID:-}'"
+fi
+
+if [[ "${_TUI_STAGE_CYCLE[rework]:-}" == "1" ]]; then
+    pass "M110-1b: cycle counter after first alloc = 1"
+else
+    fail "M110-1b: cycle counter" "expected 1, got '${_TUI_STAGE_CYCLE[rework]:-}'"
+fi
+
+_tui_alloc_lifecycle_id "rework"
+if [[ "${_TUI_CURRENT_LIFECYCLE_ID:-}" == "rework#2" ]]; then
+    pass "M110-1c: second alloc → rework#2 (never reuses rework#1)"
+else
+    fail "M110-1c: second alloc" "expected rework#2, got '${_TUI_CURRENT_LIFECYCLE_ID:-}'"
+fi
+
+_tui_alloc_lifecycle_id "coder"
+if [[ "${_TUI_CURRENT_LIFECYCLE_ID:-}" == "coder#1" ]]; then
+    pass "M110-1d: independent label starts at #1"
+else
+    fail "M110-1d: independent label" "expected coder#1, got '${_TUI_CURRENT_LIFECYCLE_ID:-}'"
+fi
+
+# =============================================================================
+echo "=== Test M110-2: tui_stage_begin/end allocates distinct lifecycle ids ==="
+
+_activate_m110
+
+tui_stage_begin "rework"
+lid1="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+if [[ "$lid1" == "rework#1" ]]; then
+    pass "M110-2a: first tui_stage_begin → rework#1"
+else
+    fail "M110-2a: first begin" "expected rework#1, got '${lid1}'"
+fi
+
+tui_stage_end "rework"
+if [[ "${_TUI_CURRENT_LIFECYCLE_ID:-}" == "" ]]; then
+    pass "M110-2b: tui_stage_end clears current lifecycle id"
+else
+    fail "M110-2b: lifecycle id after end" "expected empty, got '${_TUI_CURRENT_LIFECYCLE_ID:-}'"
+fi
+if [[ -n "${_TUI_CLOSED_LIFECYCLE_IDS["rework#1"]:-}" ]]; then
+    pass "M110-2c: rework#1 added to closed set after stage_end"
+else
+    fail "M110-2c: closed set" "rework#1 missing from _TUI_CLOSED_LIFECYCLE_IDS"
+fi
+
+tui_stage_begin "rework"
+lid2="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+if [[ "$lid2" == "rework#2" ]]; then
+    pass "M110-2d: second tui_stage_begin → rework#2"
+else
+    fail "M110-2d: second begin" "expected rework#2, got '${lid2}'"
+fi
+if [[ "$lid1" != "$lid2" ]]; then
+    pass "M110-2e: first and second lifecycle ids are distinct"
+else
+    fail "M110-2e: distinct ids" "both ids are '${lid1}' — lifecycle counter stuck"
+fi
+
+# =============================================================================
+echo "=== Test M110-3: tui_update_agent drops updates to a closed lifecycle id ==="
+
+_activate_m110
+
+tui_stage_begin "coder"
+coder_lid="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+tui_stage_end "coder"
+
+# Baseline: turns_used is 0 after reset
+_TUI_AGENT_TURNS_USED=0
+
+# Update with the now-closed id — must be silently dropped
+tui_update_agent 99 200 500 "$coder_lid"
+if [[ "${_TUI_AGENT_TURNS_USED:-0}" -eq 0 ]]; then
+    pass "M110-3a: update with closed lifecycle id is dropped (turns_used stays 0)"
+else
+    fail "M110-3a: update drop" "expected turns_used=0, got ${_TUI_AGENT_TURNS_USED:-0}"
+fi
+
+# =============================================================================
+echo "=== Test M110-4: tui_update_agent proceeds when id matches current owner ==="
+
+_activate_m110
+
+tui_stage_begin "coder"
+active_lid="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+_TUI_AGENT_TURNS_USED=0
+
+tui_update_agent 7 20 30 "$active_lid"
+if [[ "${_TUI_AGENT_TURNS_USED:-0}" -eq 7 ]]; then
+    pass "M110-4a: update with current lifecycle id proceeds (turns_used=7)"
+else
+    fail "M110-4a: update with current id" "expected 7, got ${_TUI_AGENT_TURNS_USED:-0}"
+fi
+
+# =============================================================================
+echo "=== Test M110-5: tui_stage_transition — FROM closed, TO open, no label gap ==="
+
+_activate_m110
+
+tui_stage_begin "scout"
+scout_lid="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+
+tui_stage_transition "scout" "coder"
+
+if [[ -n "${_TUI_CLOSED_LIFECYCLE_IDS["${scout_lid}"]:-}" ]]; then
+    pass "M110-5a: FROM (scout#1) is closed after transition"
+else
+    fail "M110-5a: FROM closed" "scout#1 missing from _TUI_CLOSED_LIFECYCLE_IDS"
+fi
+if [[ "${_TUI_CURRENT_STAGE_LABEL:-}" == "coder" ]]; then
+    pass "M110-5b: current stage label is 'coder' after transition (no empty gap)"
+else
+    fail "M110-5b: TO label" "expected coder, got '${_TUI_CURRENT_STAGE_LABEL:-}'"
+fi
+if [[ "${_TUI_CURRENT_LIFECYCLE_ID:-}" == "coder#1" ]]; then
+    pass "M110-5c: TO lifecycle id = coder#1 after transition"
+else
+    fail "M110-5c: TO lifecycle id" "expected coder#1, got '${_TUI_CURRENT_LIFECYCLE_ID:-}'"
+fi
+
+# =============================================================================
+echo "=== Test M110-6: tui_stage_transition adds FROM completion record ==="
+
+_activate_m110
+
+tui_stage_begin "scout"
+tui_stage_transition "scout" "coder"
+
+found_scout=false
+for entry in "${_TUI_STAGES_COMPLETE[@]:-}"; do
+    if [[ "$entry" == *'"label":"scout"'* ]]; then
+        found_scout=true
+        break
+    fi
+done
+if [[ "$found_scout" == "true" ]]; then
+    pass "M110-6a: FROM (scout) has a completion record in stages_complete"
+else
+    fail "M110-6a: FROM completion record" "no scout entry in _TUI_STAGES_COMPLETE"
+fi
+
+# =============================================================================
+echo "=== Test M110-7: out_reset_pass clears per-pass keys ==="
+
+out_init
+out_set_context action_items '[{"msg":"unresolved item","severity":"medium"}]'
+out_set_context current_stage "coder"
+out_set_context current_model "claude-opus-4-7"
+
+out_reset_pass
+
+if [[ "${_OUT_CTX[action_items]:-}" == "" ]]; then
+    pass "M110-7a: out_reset_pass: action_items cleared"
+else
+    fail "M110-7a: action_items clear" "expected empty, got '${_OUT_CTX[action_items]:-}'"
+fi
+if [[ "${_OUT_CTX[current_stage]:-}" == "" ]]; then
+    pass "M110-7b: out_reset_pass: current_stage cleared"
+else
+    fail "M110-7b: current_stage clear" "expected empty, got '${_OUT_CTX[current_stage]:-}'"
+fi
+if [[ "${_OUT_CTX[current_model]:-}" == "" ]]; then
+    pass "M110-7c: out_reset_pass: current_model cleared"
+else
+    fail "M110-7c: current_model clear" "expected empty, got '${_OUT_CTX[current_model]:-}'"
+fi
+
+# =============================================================================
+echo "=== Test M110-8: out_reset_pass preserves run-identity keys ==="
+
+out_init
+out_set_context mode "task"
+out_set_context task "add login feature"
+out_set_context cli_flags "--fix nb"
+out_set_context attempt "2"
+out_set_context max_attempts "3"
+# Per-pass keys (should be cleared)
+out_set_context action_items '[{"msg":"item","severity":"low"}]'
+out_set_context current_stage "review"
+
+out_reset_pass
+
+if [[ "${_OUT_CTX[mode]:-}" == "task" ]]; then
+    pass "M110-8a: out_reset_pass: mode preserved"
+else
+    fail "M110-8a: mode preserved" "expected task, got '${_OUT_CTX[mode]:-}'"
+fi
+if [[ "${_OUT_CTX[task]:-}" == "add login feature" ]]; then
+    pass "M110-8b: out_reset_pass: task preserved"
+else
+    fail "M110-8b: task preserved" "expected 'add login feature', got '${_OUT_CTX[task]:-}'"
+fi
+if [[ "${_OUT_CTX[cli_flags]:-}" == "--fix nb" ]]; then
+    pass "M110-8c: out_reset_pass: cli_flags preserved"
+else
+    fail "M110-8c: cli_flags preserved" "expected '--fix nb', got '${_OUT_CTX[cli_flags]:-}'"
+fi
+if [[ "${_OUT_CTX[attempt]:-}" == "2" ]]; then
+    pass "M110-8d: out_reset_pass: attempt counter preserved"
+else
+    fail "M110-8d: attempt preserved" "expected 2, got '${_OUT_CTX[attempt]:-}'"
+fi
+
+# =============================================================================
+echo "=== Test M110-9: tui_append_event stores runtime type in ring buffer ==="
+
+_activate_m110
+
+tui_append_event "info" "coder started" "runtime"
+if [[ "${#_TUI_RECENT_EVENTS[@]}" -gt 0 ]]; then
+    _last_event="${_TUI_RECENT_EVENTS[$(( ${#_TUI_RECENT_EVENTS[@]} - 1 ))]}"
+    if [[ "$_last_event" == *"|runtime|coder started" ]]; then
+        pass "M110-9a: runtime event stored with correct type field"
+    else
+        fail "M110-9a: runtime event format" "entry: '${_last_event}'"
+    fi
+else
+    fail "M110-9a: runtime event stored" "_TUI_RECENT_EVENTS empty after append"
+fi
+
+# =============================================================================
+echo "=== Test M110-10: tui_append_event stores summary type in ring buffer ==="
+
+_activate_m110
+
+tui_append_event "info" "Task: add login feature" "summary"
+if [[ "${#_TUI_RECENT_EVENTS[@]}" -gt 0 ]]; then
+    _last_event="${_TUI_RECENT_EVENTS[$(( ${#_TUI_RECENT_EVENTS[@]} - 1 ))]}"
+    if [[ "$_last_event" == *"|summary|Task: add login feature" ]]; then
+        pass "M110-10a: summary event stored with correct type field"
+    else
+        fail "M110-10a: summary event format" "entry: '${_last_event}'"
+    fi
+else
+    fail "M110-10a: summary event stored" "_TUI_RECENT_EVENTS empty after append"
+fi
+
+# =============================================================================
+echo "=== Test M110-11: tui_append_event with invalid type defaults to runtime ==="
+
+_activate_m110
+
+tui_append_event "warn" "some warning" "badtype"
+if [[ "${#_TUI_RECENT_EVENTS[@]}" -gt 0 ]]; then
+    _last_event="${_TUI_RECENT_EVENTS[$(( ${#_TUI_RECENT_EVENTS[@]} - 1 ))]}"
+    if [[ "$_last_event" == *"|runtime|"* ]]; then
+        pass "M110-11a: invalid event type defaults to runtime"
+    else
+        fail "M110-11a: invalid type default" "expected '|runtime|' in: '${_last_event}'"
+    fi
+else
+    fail "M110-11a: invalid type event stored" "_TUI_RECENT_EVENTS empty after append"
+fi
+
+# =============================================================================
+echo "=== Test M110-12: two rework cycles get distinct lifecycle ids ==="
+
+_activate_m110
+
+tui_stage_begin "review"
+
+# First rework cycle
+tui_stage_begin "rework"
+rework_lid_1="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+tui_stage_end "rework"
+
+# Second rework cycle
+tui_stage_begin "rework"
+rework_lid_2="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+tui_stage_end "rework"
+
+if [[ "$rework_lid_1" != "$rework_lid_2" ]]; then
+    pass "M110-12a: two rework cycles have distinct lifecycle ids"
+else
+    fail "M110-12a: distinct rework ids" "both ids are '${rework_lid_1}'"
+fi
+if [[ "$rework_lid_1" == "rework#1" && "$rework_lid_2" == "rework#2" ]]; then
+    pass "M110-12b: rework cycles are rework#1 and rework#2 in order"
+else
+    fail "M110-12b: rework sequence" "expected rework#1/rework#2, got '${rework_lid_1}'/'${rework_lid_2}'"
+fi
+if [[ -n "${_TUI_CLOSED_LIFECYCLE_IDS["rework#1"]:-}" && \
+      -n "${_TUI_CLOSED_LIFECYCLE_IDS["rework#2"]:-}" ]]; then
+    pass "M110-12c: both rework cycles are in the closed lifecycle id set"
+else
+    fail "M110-12c: closed rework ids" "one or both rework ids missing from closed set"
+fi
+if [[ "${_TUI_STAGE_CYCLE[review]:-0}" -eq 1 ]]; then
+    pass "M110-12d: review cycle counter = 1 (not mutated by sub-stage rework cycles)"
+else
+    fail "M110-12d: review counter" "expected 1, got ${_TUI_STAGE_CYCLE[review]:-0}"
+fi
 
 echo ""
 echo "=== Summary: ${PASS} passed, ${FAIL} failed ==="

@@ -47,9 +47,15 @@ def _hold_on_complete(status: dict[str, Any], console: Console) -> None:
     console.print()
 
     events = status.get("recent_events") or []
-    if events:
+    # M110 §8: split runtime chronology from run-summary metadata. Entries
+    # without a type field default to runtime for backward compatibility with
+    # pre-M110 status payloads.
+    runtime_events = [ev for ev in events if ev.get("type", "runtime") == "runtime"]
+    summary_events = [ev for ev in events if ev.get("type") == "summary"]
+
+    if runtime_events:
         console.print("[bold]Event log:[/bold]", style="dim")
-        for ev in events:
+        for ev in runtime_events:
             ts = ev.get("ts", "")
             level = ev.get("level", "info")
             msg = ev.get("msg", "")
@@ -70,6 +76,18 @@ def _hold_on_complete(status: dict[str, Any], console: Console) -> None:
             else:
                 prefix, style, suffix = "\u2139", "cyan", ""
             console.print(f"  [{style}]{prefix} {msg}{suffix}[/{style}]")
+        console.print()
+
+    # M110 §8: summary (recap) metadata is immutable run facts, not runtime
+    # chronology. Timestamps are suppressed here so fields like "Started: coder"
+    # never read as late runtime events after "Pipeline Complete".
+    if summary_events:
+        console.print("[bold]Run summary:[/bold]", style="dim")
+        for ev in summary_events:
+            level = ev.get("level", "info")
+            msg = ev.get("msg", "")
+            style = _EVENT_LEVEL_STYLES.get(level, "white")
+            console.print(f"  [{style}]{msg}[/{style}]")
         console.print()
 
     try:
