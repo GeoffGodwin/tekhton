@@ -4,73 +4,76 @@
 
 ## What Was Implemented
 
-Milestone 115 — `run_op` migration onto the M113 substage API and full
-retirement of the `_TUI_OPERATION_LABEL` bash global + `current_operation`
-JSON field.
+M116 — Migrating rework + architect-remediation onto the M113 substage API,
+then deleting the `tui_stage_transition` helper and its M110 wiring tests.
 
-- `run_op` in `lib/tui_ops.sh` now calls `tui_substage_begin "$_label"` /
-  `tui_substage_end "$_label" PASS|FAIL` around the wrapped command, letting
-  the M113 substage globals (`_TUI_CURRENT_SUBSTAGE_LABEL`,
-  `_TUI_CURRENT_SUBSTAGE_START_TS`) carry the op label into the status JSON.
-  Heartbeat subprocess, passthrough-on-inactive, and exit-code preservation
-  are all unchanged.
-- `_tui_json_build_status` in `lib/tui_helpers.sh` no longer emits the
-  `current_operation` field. `_empty_status()` in `tools/tui.py` also drops it.
-- The Python renderer (`tools/tui_render.py:_build_working_bar` and
-  `tools/tui_render_timings.py:_build_timings_panel`) now sources the working-
-  row label from `current_substage_label` via the M114 breadcrumb path, so
-  shell ops and in-agent substages render through a single code path. The
-  turns column is blanked during `working` state and during any `running`
-  state with an active substage (shell ops do not use turns; parent counter
-  is stale during an agent substage).
-- `run_op` does NOT mutate `stage_label` or append to `stages_complete` —
-  the parent pipeline stage stays on screen and its pill remains in the
-  running state while the sub-op executes.
-- JSON schema compatibility: new-bash → old-Python tolerates the missing
-  `current_operation`; old-bash → new-Python tolerates the missing
-  `current_substage_label` (both renderers use `.get(...) or ""`).
+- **Rework migration (`stages/review.sh`).** Both rework call sites (the
+  complex-blocker branch and the simple-blocker branch) now open rework via
+  `tui_substage_begin "rework" "$model"` and close it via
+  `tui_substage_end "rework" ""`. The enclosing review `tui_stage_begin`/end
+  pair is untouched, so review remains the sole pipeline-stage lifecycle
+  owner for each review cycle. Rework is now a breadcrumb, not a timeline
+  entry — no more `rework` entries in `stages_complete`.
+- **Architect-remediation migration (`stages/architect.sh`).** Replaced the
+  `tui_stage_transition "architect" "architect-remediation"` call with
+  `tui_substage_begin "architect-remediation" "$architect_model"`. The
+  architect stage now stays open for the entire audit: it is opened once at
+  the top, closed once at the bottom, and architect-remediation is a
+  substage that records as a breadcrumb inside it. The BUILD_BROKEN early
+  return now closes the substage first (with a verdict) and then also closes
+  the enclosing architect stage — previously the transition had already
+  closed architect, so only the substage needed closing; now architect is
+  the open pipeline stage and must be closed on that path too.
+- **`tui_stage_transition` deletion (`lib/tui_ops.sh`).** Removed the
+  function entirely after all callers migrated (scout in M114, run_op in
+  M115, rework + architect-remediation in M116). `grep -rn
+  tui_stage_transition lib/ stages/ tests/ tekhton.sh` returns empty. The
+  historical milestone docs under `.claude/milestones/` still reference the
+  name, which is permitted by the acceptance criteria.
+- **M110-5 and M110-6 test deletion (`tests/test_tui_stage_wiring.sh`).**
+  Removed the two tests that directly exercised `tui_stage_transition`.
+  Every other test in the file (lifecycle-id allocation, stage_begin/end
+  invariants, rework cycle counting, out_reset_pass, ring-buffer event
+  typing, intake-at-end regression guard) continues to pass.
 
 ## Root Cause (bugs only)
 
-N/A — milestone implementation, not a bug fix.
+N/A — refactor milestone, not a bug fix.
 
 ## Files Modified
 
 | File | Change |
 |------|--------|
-| `lib/tui_ops.sh` | Dropped `_TUI_OPERATION_LABEL` global; rewrote `run_op` on the M113 substage API. |
-| `lib/tui_helpers.sh` | Removed `current_operation` from `_tui_json_build_status` output. |
-| `tools/tui.py` | Dropped `current_operation` from `_empty_status()`. |
-| `tools/tui_render.py` | `_build_working_bar` now renders `"{stage} » {substage}"` breadcrumb from `current_substage_label`. |
-| `tools/tui_render_timings.py` | Removed working-state override; substage breadcrumb + blanked turns apply to both `running` and `working`. |
-| `tests/test_run_op_lifecycle.sh` | Full rewrite onto substage contract: 18 tests (passthrough, idle/working/idle transitions, substage label in JSON, parent stage label preserved, stages_complete not appended, exit-code preservation on success/failure, heartbeat cleanup, stub overrides). |
-| `tools/tests/test_tui.py` | Dropped `current_operation` stubs from timings panel tests; rewrote `test_timings_panel_working_row` to assert the substage breadcrumb + blank turns column. |
-| `tools/tests/test_tui_render_timings.py` | `test_live_stage_working` now exercises the substage path; inverted `test_substage_ignored_in_working_state` → `test_substage_breadcrumb_in_working_state` (working state now DOES render the breadcrumb under M115). |
+| `stages/review.sh` | Two `tui_stage_begin/end "rework"` pairs → `tui_substage_begin/end "rework"`. |
+| `stages/architect.sh` | `tui_stage_transition "architect" "architect-remediation"` → `tui_substage_begin "architect-remediation"`; BUILD_BROKEN early return now closes substage + architect stage (instead of only architect-remediation); end-of-function close now clears substage first, then architect. |
+| `lib/tui_ops.sh` | Removed `tui_stage_transition` function (lines ~239–297 in pre-M116). |
+| `tests/test_tui_stage_wiring.sh` | Removed Tests M110-5 and M110-6 (the two that called `tui_stage_transition` directly). |
 | `.tekhton/CODER_SUMMARY.md` | This file. |
 
 ## Acceptance Criteria Self-Check
 
-- [x] `run_op` wraps its body in `tui_substage_begin` / `tui_substage_end`
-      with the call-site label (verified by test_run_op_lifecycle.sh Tests
-      6–15 and `declare -f run_op` assertion in Test 17).
-- [x] `_TUI_OPERATION_LABEL` global removed — `grep -rn _TUI_OPERATION_LABEL
-      lib/ stages/ tests/` returns empty.
-- [x] `current_operation` JSON field removed — verified by Test 6
-      (asserts absence in `_tui_json_build_status` output).
-- [x] TUI renderer sources the working-row label from
-      `current_substage_label` via the M114 breadcrumb path.
-- [x] `run_op` preserves parent `stage_label` (Test 9) and does not append
-      to `stages_complete` (Test 10).
-- [x] Exit code preservation (Tests 1–5 passthrough, Test 14 TUI-active
-      failure path).
-- [x] Backwards-compat for old-bash → new-Python: `_build_timings_panel`
-      and `_build_working_bar` both tolerate missing `current_substage_label`
-      (verified by `test_missing_substage_keys_tolerated`).
-- [x] All files under 300-line ceiling: `tui_ops.sh`=299, `tui_helpers.sh`=227,
-      `tui_render.py`=241, `tui_render_timings.py`=115, `tui.py`=203.
-- [x] shellcheck clean on `tekhton.sh lib/*.sh stages/*.sh`.
-- [x] Full bash test suite: 424 passed, 0 failed.
-- [x] Full Python test suite: 183 passed.
+- [x] `tui_stage_transition` absent from all `.sh` files under `lib/`,
+      `stages/`, `tekhton.sh`, and `tests/` (milestone docs under
+      `.claude/milestones/` retain historical references, permitted by AC).
+- [x] Rework in review: `tui_substage_begin/end` pair per cycle; no pill
+      allocation; no `rework` record in `stages_complete` (the policy in
+      `pipeline_order_policy.sh` already declared rework as `sub|no|yes|yes|review`
+      — this now flows through the substage API that doesn't touch
+      `_TUI_STAGES_COMPLETE`).
+- [x] Architect-remediation: one architect `tui_stage_begin/end` pair owns
+      the pipeline-stage lifecycle; remediation flows through
+      `tui_substage_begin/end` and does not append to `stages_complete`.
+- [x] All three architect-remediation call sites (formerly at lines 151,
+      155/217, 392) now use the substage API with matched begin/end.
+- [x] `tests/test_tui_stage_wiring.sh` passes after M110-5 and M110-6 removal
+      (49 passed / 0 failed when run standalone).
+- [x] Shellcheck clean: `stages/review.sh`, `stages/architect.sh`,
+      `lib/tui_ops.sh` all produce zero warnings. (Pre-existing SC2034
+      warnings in `tests/test_tui_stage_wiring.sh` are unchanged; they were
+      already on HEAD before M116 and are out of scope.)
+- [x] Non-goals respected: no changes to rework retry limits, review cycle
+      caps, architect retry thresholds, label names, or
+      `pipeline_order_policy.sh` records.
 
 ## Human Notes Status
 

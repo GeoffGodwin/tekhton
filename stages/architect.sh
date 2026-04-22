@@ -142,17 +142,14 @@ run_stage_architect() {
 
     # --- Route to coders -----------------------------------------------------
 
-    # M110: architect-remediation is a sub-stage of architect (policy: pill=no,
-    # timings=yes). Open it only when remediation work will actually run so
-    # the timings column does not log an empty sub-stage entry.
+    # M116: architect-remediation is a substage of architect — it records as a
+    # breadcrumb inside the architect stage without opening its own pill or
+    # mutating the architect start timestamp. Begin it only when remediation
+    # work will actually run so the timings row does not log an empty entry.
     local _remediation_started=false
     if [ "$has_simplification" -eq 1 ] || [ "$has_jr_work" -eq 1 ]; then
-        if declare -f tui_stage_transition &>/dev/null && [[ "$_architect_started" == "true" ]]; then
-            tui_stage_transition "architect" "architect-remediation" "$architect_model"
-            _remediation_started=true
-            _architect_started=false
-        elif declare -f tui_stage_begin &>/dev/null; then
-            tui_stage_begin "architect-remediation" "$architect_model"
+        if declare -f tui_substage_begin &>/dev/null; then
+            tui_substage_begin "architect-remediation" "$architect_model"
             _remediation_started=true
         fi
     fi
@@ -213,8 +210,11 @@ run_stage_architect() {
                 warn "Build still broken after architect remediation. Skipping review."
                 warn "Drift observations NOT resolved — will retry next audit cycle."
                 reset_runs_since_audit
-                if [[ "$_remediation_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
-                    tui_stage_end "architect-remediation" "$architect_model" "" "" "BUILD_BROKEN"
+                if [[ "$_remediation_started" == "true" ]] && declare -f tui_substage_end &>/dev/null; then
+                    tui_substage_end "architect-remediation" "BUILD_BROKEN"
+                fi
+                if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+                    tui_stage_end "architect" "$architect_model" "" "" "BUILD_BROKEN"
                 fi
                 return 0
             fi
@@ -385,14 +385,13 @@ run_stage_architect() {
         log "${ARCHITECT_PLAN_FILE} archived and removed from working directory."
     fi
 
-    # M110: close whichever stage is still open (remediation if it ran,
-    # otherwise architect itself).
-    if declare -f tui_stage_end &>/dev/null; then
-        if [[ "$_remediation_started" == "true" ]]; then
-            tui_stage_end "architect-remediation" "$architect_model" "" "" ""
-        elif [[ "$_architect_started" == "true" ]]; then
-            tui_stage_end "architect" "$architect_model" "" "" ""
-        fi
+    # M116: close architect-remediation substage (if it ran) then architect
+    # stage. architect is the sole pipeline-stage owner for this audit.
+    if [[ "$_remediation_started" == "true" ]] && declare -f tui_substage_end &>/dev/null; then
+        tui_substage_end "architect-remediation" ""
+    fi
+    if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+        tui_stage_end "architect" "$architect_model" "" "" ""
     fi
 
     success "Architect audit complete."

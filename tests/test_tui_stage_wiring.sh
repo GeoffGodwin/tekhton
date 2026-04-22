@@ -382,53 +382,6 @@ else
 fi
 
 # =============================================================================
-echo "=== Test M110-5: tui_stage_transition — FROM closed, TO open, no label gap ==="
-
-_activate_m110
-
-tui_stage_begin "scout"
-scout_lid="${_TUI_CURRENT_LIFECYCLE_ID:-}"
-
-tui_stage_transition "scout" "coder"
-
-if [[ -n "${_TUI_CLOSED_LIFECYCLE_IDS["${scout_lid}"]:-}" ]]; then
-    pass "M110-5a: FROM (scout#1) is closed after transition"
-else
-    fail "M110-5a: FROM closed" "scout#1 missing from _TUI_CLOSED_LIFECYCLE_IDS"
-fi
-if [[ "${_TUI_CURRENT_STAGE_LABEL:-}" == "coder" ]]; then
-    pass "M110-5b: current stage label is 'coder' after transition (no empty gap)"
-else
-    fail "M110-5b: TO label" "expected coder, got '${_TUI_CURRENT_STAGE_LABEL:-}'"
-fi
-if [[ "${_TUI_CURRENT_LIFECYCLE_ID:-}" == "coder#1" ]]; then
-    pass "M110-5c: TO lifecycle id = coder#1 after transition"
-else
-    fail "M110-5c: TO lifecycle id" "expected coder#1, got '${_TUI_CURRENT_LIFECYCLE_ID:-}'"
-fi
-
-# =============================================================================
-echo "=== Test M110-6: tui_stage_transition adds FROM completion record ==="
-
-_activate_m110
-
-tui_stage_begin "scout"
-tui_stage_transition "scout" "coder"
-
-found_scout=false
-for entry in "${_TUI_STAGES_COMPLETE[@]:-}"; do
-    if [[ "$entry" == *'"label":"scout"'* ]]; then
-        found_scout=true
-        break
-    fi
-done
-if [[ "$found_scout" == "true" ]]; then
-    pass "M110-6a: FROM (scout) has a completion record in stages_complete"
-else
-    fail "M110-6a: FROM completion record" "no scout entry in _TUI_STAGES_COMPLETE"
-fi
-
-# =============================================================================
 echo "=== Test M110-7: out_reset_pass clears per-pass keys ==="
 
 out_init
