@@ -186,7 +186,9 @@ run_preflight_checks() {
     elif [[ "$_PF_WARN" -gt 0 ]]; then
         warn "$summary"
     else
-        success "$summary"
+        # M118: Defer success line to caller so the TUI pill flips green BEFORE
+        # the success line lands in Recent Events. Caller emits and unsets.
+        _PREFLIGHT_SUMMARY="$summary"
     fi
 
     # Emit causal event

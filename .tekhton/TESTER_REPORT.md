@@ -1,11 +1,13 @@
 ## Planned Tests
-- [x] `tests/test_tui_attribution.sh` — M117 substage attribution: source field populated, log-file isolation, ring-buffer depth, pipe-char round-trip, opt-out
+- [x] `tests/test_m118_preflight_deferred_emit.sh` — verify _PREFLIGHT_SUMMARY is set on PASS path, unset on WARN/FAIL/disabled, and success() not called directly
+- [x] `tests/test_m118_intake_deferred_emit.sh` — verify _INTAKE_PASS_EMIT=true on PASS verdict, unset on disabled/HUMAN_MODE/empty-content paths, success() not called directly
 
 ## Test Run Results
-Passed: 11  Failed: 0
+Passed: 433  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_tui_attribution.sh`
+- [x] `tests/test_m118_preflight_deferred_emit.sh`
+- [x] `tests/test_m118_intake_deferred_emit.sh`

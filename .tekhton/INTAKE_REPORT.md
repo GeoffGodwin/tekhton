@@ -2,15 +2,14 @@
 PASS
 
 ## Confidence
-92
+93
 
 ## Reasoning
-- Scope is precisely defined: six files listed with specific change descriptions for each
-- Non-goals are explicit and well-chosen (no retroactive attribution, no log-file changes, no per-stage coloring)
-- Design section provides conceptual code and documents all edge cases (pre-stage events, opt-out, fallback to stage-only label)
-- Acceptance criteria are specific and mechanically testable: JSON field structure, pytest command, bash test script, opt-out behavior
-- Attribution is additive (new `source` JSON field) — no breaking changes to existing consumers
-- No new user-facing config keys introduced, so no migration section needed
-- TUI testability covered by `test_tui_render.py` pytest cases that verify rendered output format
-- All five historical analogues (M105, M113, M114, M115, non-blocking notes sweep) passed on first attempt; M113 is the direct predecessor and passed cleanly
-- The globals `_TUI_CURRENT_SUBSTAGE_LABEL` and `_TUI_CURRENT_STAGE_LABEL` and the `TUI_LIFECYCLE_V2` guard are established by M113–M116, making implementation straightforward
+- Scope is tightly bounded: four specific file/location changes with line numbers provided as anchors
+- Design section evaluates three options and commits to one with clear rationale — no ambiguity about approach
+- Acceptance criteria are specific and machine-verifiable (ordering of `stages_complete` vs events ring-buffer in sequential `tui_status.json` snapshots, message content identity, shellcheck, existing test suite)
+- Non-PASS intake paths are explicitly called out as untouched, preventing accidental over-scope
+- Non-goals section explicitly excludes related-but-separate concerns (unclosed-lifecycle at intake_verdict_handlers.sh:171, other stage reorderings)
+- No new config keys, no user-facing format changes, no migration impact needed
+- The single new global (`_PREFLIGHT_SUMMARY`) is scoped, named, and its cleanup requirement is an explicit acceptance criterion
+- Historical pattern shows similar mechanical shell reordering milestones (M87–M91) pass in one cycle; no rework risk indicators

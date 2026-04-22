@@ -195,7 +195,14 @@ run_stage_intake() {
     # Handle verdict
     case "$verdict" in
         PASS)
-            success "Intake: task is clear. Proceeding."
+            # M118: PASS success line is deferred to the caller in tekhton.sh
+            # so the TUI pill flips green BEFORE the success line lands in
+            # Recent Events. The caller emits after tui_stage_end. We use a
+            # dedicated flag (not INTAKE_VERDICT) because the early-exit paths
+            # at the top of this function also set INTAKE_VERDICT="PASS"
+            # without running intake (HUMAN_MODE, disabled, no content) and
+            # those must remain silent.
+            export _INTAKE_PASS_EMIT="true"
             ;;
 
         TWEAKED)

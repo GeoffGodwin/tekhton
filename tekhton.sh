@@ -2298,6 +2298,14 @@ _run_pipeline_stages() {
                 "${_STAGE_TURNS[intake]:-0}/${_STAGE_BUDGET[intake]:-0}" \
                 "${_STAGE_DURATION[intake]:-0}s" "${INTAKE_VERDICT:-}"
         fi
+        # M118: emit deferred PASS success line AFTER pill flips green so
+        # Recent Events ordering matches pill state. Flag is set only on the
+        # PASS branch of run_stage_intake (not on early-exit paths like
+        # HUMAN_MODE / disabled / cached, which were silent pre-M118).
+        if [[ "${_INTAKE_PASS_EMIT:-}" == "true" ]]; then
+            success "Intake: task is clear. Proceeding."
+            unset _INTAKE_PASS_EMIT
+        fi
         emit_dashboard_run_state 2>/dev/null || true
         # If START_AT was "intake", advance to "coder" for subsequent stages
         if [ "$START_AT" = "intake" ]; then
@@ -2876,6 +2884,13 @@ fi
 if run_preflight_checks; then
     if declare -f tui_stage_end &>/dev/null; then
         tui_stage_end "preflight" "${CLAUDE_STANDARD_MODEL:-}" "" "" "pass"
+    fi
+    # M118: emit deferred success line AFTER pill flips green so Recent Events
+    # ordering matches pill state. _PREFLIGHT_SUMMARY is set inside
+    # run_preflight_checks only on the PASS path.
+    if [[ -n "${_PREFLIGHT_SUMMARY:-}" ]]; then
+        success "$_PREFLIGHT_SUMMARY"
+        unset _PREFLIGHT_SUMMARY
     fi
 else
     if declare -f tui_stage_end &>/dev/null; then
