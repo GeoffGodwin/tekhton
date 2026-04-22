@@ -1,4 +1,4 @@
-# Reviewer Report — M112: Pre-Run Dedup Coverage Hardening
+# Reviewer Report — M110: TUI Stage Lifecycle Semantics and Timings Coherence
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,10 +10,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `stages/coder_prerun.sh:69` and `stages/tester_fix.sh:164` — new dedup skip-event guards use `command -v emit_event &>/dev/null` while every other emit_event check in both files uses `declare -f emit_event &>/dev/null`. Both succeed for bash functions but `declare -f` is canonical and is the pattern used throughout the codebase. Align for consistency.
+- [lib/milestone_split_dag.sh:77-78] Security agent flagged a LOW path-traversal risk: `sub_file` is written without an explicit `*/*` guard, relying solely on `_slugify` to sanitize LLM-generated content. The fix is one line (`[[ "$sub_file" == */* ]] && return 1`). Pre-existing from M111; surfaced here for cleanup-pass tracking.
+- [stages/coder_prerun.sh:69, stages/tester_fix.sh:164] Mixed `emit_event` guard idiom (`command -v` vs `declare -f`). Introduced in M112, carried forward from the M112 review. Cleanup stage owns the resolution.
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `stages/coder_prerun.sh:69`, `stages/tester_fix.sh:164` — `command -v` used to guard a shell function call; all other guard sites in the same files use `declare -f`. Mixed idioms for the same pattern accumulate over time and signal an implicit convention question worth resolving in a cleanup pass.
+- [CLAUDE.md repository layout] `lib/pipeline_order_policy.sh` is not listed in the repository layout table. The file was introduced by M110 and is sourced by `lib/pipeline_order.sh` at load time. The table is the primary navigation reference; it should include this file.

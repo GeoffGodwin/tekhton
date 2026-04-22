@@ -1,7 +1,7 @@
 ## Planned Tests
-- [x] `tests/test_dedup.sh` — verify Suites 4.5 (HEAD identity invalidation) and 4.6 (record_pass no-op when disabled) pass
-- [x] `tests/test_dedup_callsites.sh` — verify Suites 4.6–4.8 (new call-site wiring for coder_prerun.sh and tester_fix.sh) pass
-- [x] Full suite — confirm no regressions from M112 changes
+- [x] `tests/test_tui_stage_wiring.sh` — verify M110 lifecycle invariants, transition atomicity, stale-id guard, runtime vs summary event typing, out_reset_pass, intake-not-at-end regression (M110-1 through M110-13)
+- [x] `tests/test_pipeline_order_policy.sh` — verify get_stage_policy record shape for all §2 stages, get_stage_metrics_key alias normalization, get_run_stage_plan for all run modes
+- [x] `tests/test_pipeline_order_m110.sh` — verify get_run_stage_plan FORCE_AUDIT, drift thresholds, INTAKE disabled, fix-drift+SKIP_SECURITY, and start-at scenarios
 
 ## Test Run Results
 Passed: 422  Failed: 0
@@ -10,5 +10,6 @@ Passed: 422  Failed: 0
 None
 
 ## Files Modified
-- [x] `tests/test_dedup.sh`
-- [x] `tests/test_dedup_callsites.sh`
+- [x] `tests/test_tui_stage_wiring.sh`
+- [x] `tests/test_pipeline_order_policy.sh`
+- [x] `tests/test_pipeline_order_m110.sh`
