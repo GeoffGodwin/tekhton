@@ -40,28 +40,45 @@ _tui_json_stage() {
 }
 
 # _tui_recent_events_json — emit JSON array built from _TUI_RECENT_EVENTS.
-# Each entry is "ts|level|type|msg"; backward compatible with the legacy
-# "ts|level|msg" 3-field shape (older entries default to type="runtime").
+# Each entry is "ts|level|type|source|msg" (M117 5-field shape). Backward
+# compatible with earlier shapes:
+#   - M110 4-field "ts|level|type|msg" — source defaults to empty
+#   - Pre-M110 3-field "ts|level|msg" — type defaults to "runtime"
 # M110: type ∈ runtime | summary. Summary entries carry run-epilogue metadata
 # (task, started, verdict, log, version, timing breakdown) and must be
 # rendered in a dedicated block by the hold view — never interleaved with
 # runtime chronology.
+# M117: source is a TUI-only attribution breadcrumb ("stage » substage" or
+# "stage") produced by _tui_compute_source(); empty string means no
+# attribution. Serialised as the "source" JSON field; absent in JSON when empty.
 _tui_recent_events_json() {
     printf '['
-    local first=1 entry ts level type msg rest rest2
+    local first=1 entry ts level type source msg rest rest2 after_type
     for entry in "${_TUI_RECENT_EVENTS[@]:-}"; do
         [[ -z "$entry" ]] && continue
         ts="${entry%%|*}"
         rest="${entry#*|}"
         level="${rest%%|*}"
         rest2="${rest#*|}"
-        # Detect 4-field vs 3-field shape by checking for another pipe.
+        source=""
         if [[ "$rest2" == *"|"* ]]; then
             type="${rest2%%|*}"
-            msg="${rest2#*|}"
+            after_type="${rest2#*|}"
             case "$type" in
-                runtime|summary) ;;
-                *) msg="$rest2"; type="runtime" ;;
+                runtime|summary)
+                    # Modern 5-field has "source|msg" in after_type. Detect
+                    # 4-field legacy by absence of an additional pipe.
+                    if [[ "$after_type" == *"|"* ]]; then
+                        source="${after_type%%|*}"
+                        msg="${after_type#*|}"
+                    else
+                        msg="$after_type"
+                    fi
+                    ;;
+                *)
+                    msg="$rest2"
+                    type="runtime"
+                    ;;
             esac
         else
             type="runtime"
@@ -72,11 +89,20 @@ _tui_recent_events_json() {
         else
             printf ','
         fi
-        printf '{"ts":"%s","level":"%s","type":"%s","msg":"%s"}' \
-            "$(_tui_escape "$ts")" \
-            "$(_tui_escape "$level")" \
-            "$(_tui_escape "$type")" \
-            "$(_tui_escape "$msg")"
+        if [[ -n "$source" ]]; then
+            printf '{"ts":"%s","level":"%s","type":"%s","source":"%s","msg":"%s"}' \
+                "$(_tui_escape "$ts")" \
+                "$(_tui_escape "$level")" \
+                "$(_tui_escape "$type")" \
+                "$(_tui_escape "$source")" \
+                "$(_tui_escape "$msg")"
+        else
+            printf '{"ts":"%s","level":"%s","type":"%s","msg":"%s"}' \
+                "$(_tui_escape "$ts")" \
+                "$(_tui_escape "$level")" \
+                "$(_tui_escape "$type")" \
+                "$(_tui_escape "$msg")"
+        fi
     done
     printf ']'
 }

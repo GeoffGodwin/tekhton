@@ -138,10 +138,11 @@ for _ in 1 2 3; do
     _hook_tui_complete 0
 done
 
-# Count summary events — format is "ts|level|summary|msg"
+# Count summary events — M117 5-field shape is "ts|level|summary|source|msg";
+# source is empty for events emitted outside any open stage/substage.
 summary_count=0
 for ev in "${_TUI_RECENT_EVENTS[@]}"; do
-    if [[ "$ev" == *"|summary|Pass complete: SUCCESS" ]]; then
+    if [[ "$ev" == *"|summary|"*"|Pass complete: SUCCESS" ]]; then
         summary_count=$((summary_count + 1))
     fi
 done
@@ -162,9 +163,11 @@ tui_stage_begin "wrap-up"; _hook_tui_complete 1  # FAIL
 tui_stage_begin "wrap-up"; _hook_tui_complete 0  # SUCCESS
 
 success_count=0; fail_count=0
+# M117 5-field shape: "ts|level|type|source|msg" — source empty for
+# events emitted outside any open stage/substage.
 for ev in "${_TUI_RECENT_EVENTS[@]}"; do
-    [[ "$ev" == *"|success|summary|Pass complete: SUCCESS" ]] && success_count=$((success_count + 1))
-    [[ "$ev" == *"|error|summary|Pass complete: FAIL"    ]] && fail_count=$((fail_count + 1))
+    [[ "$ev" == *"|success|summary|"*"|Pass complete: SUCCESS" ]] && success_count=$((success_count + 1))
+    [[ "$ev" == *"|error|summary|"*"|Pass complete: FAIL"    ]] && fail_count=$((fail_count + 1))
 done
 
 if [[ "$success_count" -eq 2 ]] && [[ "$fail_count" -eq 1 ]]; then

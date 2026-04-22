@@ -167,7 +167,7 @@ tekhton/
 │   ├── preflight.sh        # Pre-flight environment validation
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
-│   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers
+│   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers; run_op uses M113 substage API (M115)
 │   └── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)

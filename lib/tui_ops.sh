@@ -68,20 +68,25 @@ tui_update_agent() {
     _tui_write_status
 }
 
-# tui_append_event LEVEL MSG [TYPE] — append to ring buffer and flush status.
+# tui_append_event LEVEL MSG [TYPE] [SOURCE] — append to ring buffer and flush status.
 # LEVEL: info | warn | error | success
 # TYPE: runtime (default) | summary. Summary events carry run-epilogue
 # metadata that the hold view renders in a separate block so recap fields
 # never appear as late chronological runtime events (M110).
+# SOURCE (M117): optional breadcrumb attribution of the form
+# "stage » substage" or "stage", computed by _tui_compute_source() in
+# lib/common.sh. Empty string (or omitted) means the event is unattributed.
+# Msg is serialised last in the entry string so it may contain '|' safely.
 tui_append_event() {
     [[ "$_TUI_ACTIVE" == "true" ]] || return 0
     local level="${1:-info}"
     local msg="${2:-}"
     local type="${3:-runtime}"
+    local source="${4:-}"
     case "$type" in runtime|summary) ;; *) type="runtime" ;; esac
     local ts
     ts=$(date +"%H:%M:%S")
-    _TUI_RECENT_EVENTS+=("${ts}|${level}|${type}|${msg}")
+    _TUI_RECENT_EVENTS+=("${ts}|${level}|${type}|${source}|${msg}")
     local max="${TUI_EVENT_LINES:-60}"
     local overflow=$(( ${#_TUI_RECENT_EVENTS[@]} - max ))
     if (( overflow > 0 )); then

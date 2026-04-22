@@ -236,6 +236,17 @@ def _build_events_panel(status: dict[str, Any], max_lines: int) -> Panel:
             ts = ev.get("ts", "")
             level = ev.get("level", "info")
             msg = ev.get("msg", "")
+            source = ev.get("source", "") or ""
             style = _EVENT_LEVEL_STYLES.get(level, "white")
-            grid.add_row(ts, Text(msg, style=style))
+            # M117: render attribution as a dim bracketed prefix so substage
+            # breadcrumbs ("coder » scout") are visually distinct from the
+            # message body without disrupting the existing level-coloured
+            # styling. Events without a source render unchanged.
+            if source:
+                line = Text()
+                line.append(f"[{source}] ", style="dim")
+                line.append(msg, style=style)
+                grid.add_row(ts, line)
+            else:
+                grid.add_row(ts, Text(msg, style=style))
     return Panel(grid, title="Recent events", border_style="cyan", padding=(0, 1))

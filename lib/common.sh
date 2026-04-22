@@ -75,10 +75,34 @@ _tui_strip_ansi() {
         | sed $'s/\x1b\\[[0-9;]*[a-zA-Z]//g' \
         | sed 's/\\033\[[0-9;]*[a-zA-Z]//g'
 }
+# M117: compute a TUI-only source attribution for Recent Events. Consults the
+# M113 substage label and the current pipeline stage label; returns the
+# breadcrumb form "stage » substage" when both are set, the stage label alone
+# when no substage is active, or an empty string before any stage is open.
+# Skipped when TUI_LIFECYCLE_V2=false so the opt-out flag suppresses the
+# whole attribution surface (matches M113's no-op substage behavior).
+_tui_compute_source() {
+    if [[ "${TUI_LIFECYCLE_V2:-true}" == "false" ]]; then
+        printf ''
+        return 0
+    fi
+    local stage="${_TUI_CURRENT_STAGE_LABEL:-}"
+    local sub="${_TUI_CURRENT_SUBSTAGE_LABEL:-}"
+    if [[ -n "$stage" && -n "$sub" ]]; then
+        printf '%s » %s' "$stage" "$sub"
+    elif [[ -n "$sub" ]]; then
+        printf '%s' "$sub"
+    elif [[ -n "$stage" ]]; then
+        printf '%s' "$stage"
+    fi
+}
+
 _tui_notify() {
     local level="$1"; shift
     if declare -f tui_append_event &>/dev/null; then
-        tui_append_event "$level" "$(_tui_strip_ansi "$*")" 2>/dev/null || true
+        local _src
+        _src=$(_tui_compute_source)
+        tui_append_event "$level" "$(_tui_strip_ansi "$*")" "runtime" "$_src" 2>/dev/null || true
     fi
 }
 

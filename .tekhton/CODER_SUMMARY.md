@@ -1,124 +1,80 @@
-# Coder Summary
+# Coder Summary — M117 Recent Events Substage Attribution
 
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-Addressed all 12 open non-blocking notes in `.tekhton/NON_BLOCKING_LOG.md`. Several
-notes were duplicates (M115/M116 restated the same `run_op` ordering issue;
-M110/M111 restated the same path-traversal guard request; M110/M112 restated the
-same `emit_event` guard idiom). Two notes (5 and 10/11) were informational and
-required no code change — the first acknowledges a harmless convention, and the
-second was already fixed in M113 (ce43fb8) before the notes were recorded. All
-other items produced code or test changes.
+**Goal.** Recent Events log entries in the TUI now carry a `source` field that
+reflects the active pipeline stage (and substage, if any), so a user watching
+the Recent Events panel sees `[coder » scout] scanning repo map` instead of
+bare `scanning repo map`.
 
-### Code changes
+**Attribution pipeline.**
+- `lib/common.sh` — new `_tui_compute_source()` helper consults
+  `_TUI_CURRENT_STAGE_LABEL` and `_TUI_CURRENT_SUBSTAGE_LABEL`. Returns
+  `"stage » substage"` when both are set, the single label otherwise, or
+  empty string when no pipeline stage is open (banner events, pre-stage
+  noise). Short-circuits to empty under `TUI_LIFECYCLE_V2=false` (M113 opt-out).
+  `_tui_notify()` now passes the computed source as the 4th positional
+  argument to `tui_append_event`.
+- `lib/tui_ops.sh` — `tui_append_event` gained an optional `SOURCE` arg
+  (positional slot 4). Ring buffer entry shape extended from 4-field
+  `ts|level|type|msg` to 5-field `ts|level|type|source|msg`. `msg` is still
+  the last field so it can contain `|` unconditionally.
+- `lib/tui_helpers.sh` — `_tui_recent_events_json` parses the 5-field shape,
+  falling back to legacy 4-field and 3-field shapes for robustness. Emits
+  `source` as a JSON field only when non-empty; absent field means the
+  renderer should render unprefixed.
+- `tools/tui_render.py` — `_build_events_panel` prepends `[<source>] ` (dim
+  style) to the message body when the event has a non-empty `source`;
+  otherwise renders exactly as pre-M117.
 
-1. **`run_op` ordering (notes 1 and 2)** — `lib/tui_ops.sh:run_op` now sets
-   `_TUI_AGENT_STATUS="idle"` **before** calling `tui_substage_end` so the
-   substage-end flush already carries the final idle status, removing the
-   transitional "Working…" frame.
-
-2. **`tui_substage_begin` unused MODEL arg (note 6)** — `lib/tui_ops_substage.sh`
-   now binds `local _model="${2:-}"` with a `: "$_model"` reference. Future
-   readers see the arg is intentional and linters no longer flag it.
-
-3. **`tui_substage_end` unused LABEL/VERDICT args (note 7)** — same treatment
-   as note 6: explicit `local _label` and `local _verdict` binds with a
-   `: "$_label" "$_verdict"` reference.
-
-4. **`tui_stage_end` triple-write consolidation (note 8)** — added
-   `_TUI_SUPPRESS_WRITE` semaphore in `lib/tui.sh` (checked at top of
-   `_tui_write_status`). `tui_stage_end` now bumps the semaphore before the
-   auto-close + finish_stage path and issues a single coherent status-file
-   write at the end instead of three.
-
-5. **Path-traversal guard in `_split_flush_sub_entry` (notes 9 and 12)** —
-   `lib/milestone_split_dag.sh` now rejects any `sub_file` value with a `/`
-   separator immediately before the write, independent of `_slugify`'s current
-   behaviour. An `error` log is emitted and the flush returns 1.
-
-### Test changes
-
-6. **`test_substage_blanks_turns_column` (note 3)** — added a direct positive
-   assertion on the grid's live-row turns cell (`grid.columns[2]._cells[-1]`)
-   with plain-text extraction, complementing the existing `--/50 not in`
-   inverse check.
-
-7. **`test_parent_timer_continues_across_substage_boundary` (note 4)** —
-   replaced the `panel_str.split("(", 1)[0]` substring check with direct
-   inspection of the live-row time cell (`grid.columns[1]._cells[-1]`). No
-   longer vulnerable to false negatives if rich ever injects a `(` into the
-   label column.
-
-### Informational items (no code change)
-
-8. **Double-guard acknowledgement (note 5)** — the `declare -f tui_substage_begin`
-   guard in `stages/coder.sh:236` is slightly redundant given the internal
-   `_TUI_ACTIVE` gate, but it follows the established codebase convention and
-   matches how every other lib function call is guarded. No change required.
-
-9. **`emit_event` guard idiom (notes 10 and 11)** — verified both
-   `stages/coder_prerun.sh:69` and `stages/tester_fix.sh:164` already use
-   `declare -f emit_event &>/dev/null`. The notes were filed against M112
-   state; the fix landed in M113 (commit ce43fb8) before the non-blocking
-   notes were collected. Nothing to do.
-
-## Root Cause (bugs only)
-
-N/A — all items were cleanup / quality-of-implementation notes, not bugs.
+**Log-file isolation.** Attribution is a TUI-only concern. `_out_emit` writes
+to stdout / `LOG_FILE` with the unprefixed `notify_msg`; only the
+`_tui_notify` leg threads source through to the ring buffer. Verified by test
+M117-6 (grep `LOG_FILE` for the breadcrumb — must not be present).
 
 ## Files Modified
 
-- `lib/tui.sh` — added `_TUI_SUPPRESS_WRITE` global and the semaphore check
-  inside `_tui_write_status`.
-- `lib/tui_ops.sh` — `run_op` now sets idle before `tui_substage_end`;
-  `tui_stage_end` wraps intermediate mutations in the write-suppression
-  semaphore and issues a single final write.
-- `lib/tui_ops_substage.sh` — `tui_substage_begin` binds the unused MODEL
-  arg; `tui_substage_end` binds the unused LABEL and VERDICT args.
-- `lib/milestone_split_dag.sh` — `_split_flush_sub_entry` rejects filenames
-  containing `/` before writing.
-- `tools/tests/test_tui_render_timings.py` — strengthened
-  `test_substage_blanks_turns_column` and
-  `test_parent_timer_continues_across_substage_boundary` with direct
-  inspection of the rich grid cells instead of substring checks on the
-  rendered string.
-
-## Observed Issues (out of scope)
-
-- `tools/tests/test_tui_render_timings.py` is 512 lines (was 480 before my
-  ~30-line additions), exceeding the 300-line ceiling. Pre-existing. Splitting
-  this test file is a separate cleanup concern and outside the scope of a
-  non-blocking-notes sweep.
-
-## Docs Updated
-
-None — no public-surface changes in this task. All modifications are internal
-to the TUI status-writer flow, substage API bookkeeping, the milestone-split
-helper, and test assertions. No config keys, CLI flags, or exported contracts
-changed.
+- `lib/common.sh` — Added `_tui_compute_source()`; extended `_tui_notify()`.
+- `lib/tui_ops.sh` — Extended `tui_append_event()` signature and serialisation.
+- `lib/tui_helpers.sh` — Extended `_tui_recent_events_json()` parser.
+- `tools/tui_render.py` — Added source-prefix rendering in `_build_events_panel`.
+- `tools/tests/test_tui.py` — Added 5 renderer cases (substage prefix,
+  stage-only, unattributed, empty-source, mixed).
+- `tests/test_tui_attribution.sh` (NEW) — 11 assertions covering substage
+  attribution, stage-only, unattributed, opt-out (`TUI_LIFECYCLE_V2=false`),
+  log-file isolation, ring-buffer depth, and `|`-containing msg round-trip.
+- `tests/test_tui_stage_wiring.sh` — Updated M110-9 / M110-10 assertions to
+  match new 5-field shape (`|runtime||msg` / `|summary||msg` — empty source).
+- `tests/test_tui_multipass_lifecycle.sh` — Updated Test 4 / Test 5 ring-buffer
+  pattern globs to account for the extra empty-source segment.
 
 ## Human Notes Status
 
-- Note 1 (run_op idle ordering, M116 restatement) — COMPLETED (lib/tui_ops.sh).
-- Note 2 (run_op idle ordering, M115) — COMPLETED (same fix as note 1).
-- Note 3 (test_substage_blanks_turns_column strengthening) — COMPLETED
-  (tools/tests/test_tui_render_timings.py).
-- Note 4 (test_parent_timer_continues_across_substage_boundary strengthening)
-  — COMPLETED (tools/tests/test_tui_render_timings.py).
-- Note 5 (double-guard acknowledgement) — COMPLETED (informational; no change
-  needed; documented above).
-- Note 6 (tui_substage_begin MODEL arg) — COMPLETED (lib/tui_ops_substage.sh).
-- Note 7 (tui_substage_end LABEL/VERDICT args) — COMPLETED
-  (lib/tui_ops_substage.sh).
-- Note 8 (tui_stage_end triple-write consolidation) — COMPLETED (lib/tui.sh +
-  lib/tui_ops.sh).
-- Note 9 (path-traversal guard, M110 restatement) — COMPLETED
-  (lib/milestone_split_dag.sh).
-- Note 10 (emit_event guard idiom, M110 restatement) — COMPLETED
-  (already fixed in M113; verified).
-- Note 11 (emit_event guard idiom, M112 restatement) — COMPLETED
-  (already fixed in M113; verified).
-- Note 12 (path-traversal guard, M111 restatement) — COMPLETED (same fix as
-  note 9).
+No human notes for this task.
+
+## Observed Issues (out of scope)
+
+- `lib/common.sh` is 445 lines after this change (was 421 before — pre-existing
+  over-ceiling). M117 added ~24 lines for the attribution helper and call site.
+  Splitting common.sh below 300 lines would require extracting colors,
+  box-drawing, phase timing, or gitignore helpers into their own module and
+  touching every source site — clearly a separate cleanup milestone. The net
+  addition here is small and fully localised to the logging surface it serves.
+
+## Test Results
+
+- Shell tests: `431 passed, 0 failed` (up from 8 pre-existing failures in
+  baseline; baseline failures were unrelated to M117 surfaces).
+- Python tests: `188 passed`.
+- New shell test `test_tui_attribution.sh`: 11 passed, 0 failed.
+- Shellcheck: clean across `tekhton.sh`, `lib/*.sh`, `stages/*.sh`, and the
+  new test file.
+
+## Docs Updated
+
+None — no public-surface changes in this task. The `tui_append_event`
+signature gained an optional positional argument, but all existing callers
+continue to work unchanged and no user-facing config key or CLI flag was
+added. The ring-buffer entry format is an internal serialisation concern.

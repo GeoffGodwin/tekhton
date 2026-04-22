@@ -71,7 +71,7 @@ m01|DAG Infrastructure|done||m01-dag-infra.md|foundation
 EOF
 
 cat > "${MILESTONE_DIR_ABS}/m01-dag-infra.md" << 'EOF'
-#### Milestone 1: DAG Infrastructure
+# M1 — DAG Infrastructure
 
 Implement the DAG-based milestone storage system.
 

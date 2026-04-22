@@ -136,6 +136,81 @@ def test_build_events_panel_with_levels():
     assert panel is not None
 
 
+# =============================================================================
+# M117: Recent Events substage attribution — renderer prefix behaviour
+# =============================================================================
+
+
+def test_events_panel_renders_substage_breadcrumb_prefix():
+    """Event with source='coder » scout' renders '[coder » scout] <msg>'."""
+    status = _sample_status()
+    status["recent_events"] = [
+        {"ts": "t1", "level": "info",
+         "source": "coder » scout", "msg": "scanning repo map"},
+    ]
+    panel = tui._build_events_panel(status, max_lines=8)
+    rendered = _render(panel)
+    assert "[coder » scout] scanning repo map" in rendered
+
+
+def test_events_panel_renders_stage_only_prefix():
+    """Event with source='coder' (no substage) renders '[coder] <msg>'."""
+    status = _sample_status()
+    status["recent_events"] = [
+        {"ts": "t1", "level": "info", "source": "coder", "msg": "coder starting"},
+    ]
+    panel = tui._build_events_panel(status, max_lines=8)
+    rendered = _render(panel)
+    assert "[coder] coder starting" in rendered
+
+
+def test_events_panel_unattributed_event_has_no_prefix():
+    """Event with no source field renders unprefixed (pre-M117 behaviour)."""
+    status = _sample_status()
+    status["recent_events"] = [
+        {"ts": "t1", "level": "info", "msg": "startup banner"},
+    ]
+    panel = tui._build_events_panel(status, max_lines=8)
+    rendered = _render(panel)
+    assert "startup banner" in rendered
+    # No bracketed prefix may appear before the msg body. Any '[' would
+    # indicate stray attribution leak; the line should render as plain msg.
+    assert "[startup banner]" not in rendered
+    assert "] startup banner" not in rendered
+
+
+def test_events_panel_empty_source_treated_as_unattributed():
+    """Event with explicit source='' renders unprefixed."""
+    status = _sample_status()
+    status["recent_events"] = [
+        {"ts": "t1", "level": "info", "source": "", "msg": "neutral"},
+    ]
+    panel = tui._build_events_panel(status, max_lines=8)
+    rendered = _render(panel)
+    assert "neutral" in rendered
+    assert "] neutral" not in rendered
+
+
+def test_events_panel_mixed_attribution():
+    """Panel correctly renders a mix of attributed and unattributed events."""
+    status = _sample_status()
+    status["recent_events"] = [
+        {"ts": "t1", "level": "info", "msg": "banner"},
+        {"ts": "t2", "level": "info", "source": "intake", "msg": "intake running"},
+        {"ts": "t3", "level": "info",
+         "source": "coder » scout", "msg": "scouting"},
+        {"ts": "t4", "level": "warn", "source": "coder", "msg": "build warn"},
+    ]
+    panel = tui._build_events_panel(status, max_lines=8)
+    rendered = _render(panel)
+    assert "banner" in rendered
+    assert "[intake] intake running" in rendered
+    assert "[coder » scout] scouting" in rendered
+    assert "[coder] build warn" in rendered
+    # The unattributed banner must not be prefixed.
+    assert "[] banner" not in rendered
+
+
 def test_panels_removed():
     """Stage/pipeline panels were folded into header bar in M98."""
     assert not hasattr(tui, "_build_stage_panel")

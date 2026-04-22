@@ -451,7 +451,8 @@ _activate_m110
 tui_append_event "info" "coder started" "runtime"
 if [[ "${#_TUI_RECENT_EVENTS[@]}" -gt 0 ]]; then
     _last_event="${_TUI_RECENT_EVENTS[$(( ${#_TUI_RECENT_EVENTS[@]} - 1 ))]}"
-    if [[ "$_last_event" == *"|runtime|coder started" ]]; then
+    # M117 5-field shape: "ts|level|type|source|msg"; source empty here.
+    if [[ "$_last_event" == *"|runtime||coder started" ]]; then
         pass "M110-9a: runtime event stored with correct type field"
     else
         fail "M110-9a: runtime event format" "entry: '${_last_event}'"
@@ -468,7 +469,8 @@ _activate_m110
 tui_append_event "info" "Task: add login feature" "summary"
 if [[ "${#_TUI_RECENT_EVENTS[@]}" -gt 0 ]]; then
     _last_event="${_TUI_RECENT_EVENTS[$(( ${#_TUI_RECENT_EVENTS[@]} - 1 ))]}"
-    if [[ "$_last_event" == *"|summary|Task: add login feature" ]]; then
+    # M117 5-field shape: "ts|level|type|source|msg"; source empty here.
+    if [[ "$_last_event" == *"|summary||Task: add login feature" ]]; then
         pass "M110-10a: summary event stored with correct type field"
     else
         fail "M110-10a: summary event format" "entry: '${_last_event}'"
