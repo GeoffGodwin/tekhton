@@ -139,6 +139,74 @@ No behavioral change to:
 The change is invisible to users whose configs are already correct and
 is self-healing for users whose configs have the landmine.
 
+### Goal 4 — Context-aware end-of-init guidance
+
+`--init` currently runs detection, writes `pipeline.conf`, and exits
+silently. A user who just ran it has no signal about whether their next
+step is `tekhton --plan` (greenfield) or `tekhton "task description"`
+(brownfield). Issue #179's reporter hit the bug because they followed
+the greenfield path assuming it was the intended flow — and it was —
+but nothing in init told them that. Conversely, a brownfield user with
+an existing codebase and their own docs shouldn't be pushed toward
+`--plan`; they should just know Tekhton is ready to run tasks.
+
+Add a branch-aware hint printed at the end of `run_init` (after
+`generate_sectioned_config` writes `pipeline.conf`). Three branches:
+
+1. **Design doc detected** (any of `${DESIGN_FILE:-}`,
+   `.tekhton/DESIGN.md`, `DESIGN.md` exists): silent. Current behavior.
+
+2. **Greenfield signal** (no design detected AND all of: `file_count
+   <= 5` source files, no test/build/analyze command auto-detected,
+   `_INIT_DOC_QUALITY` absent or low-score): print a greenfield hint.
+   ```
+   Next step — no design document detected, and this looks like a
+   fresh project.
+     → Run `tekhton --plan` to create DESIGN.md + CLAUDE.md through
+       a guided interview.
+   ```
+
+3. **Brownfield signal** (no design detected AND any of: existing
+   source files, detected commands, or documented doc quality): print
+   a brownfield hint.
+   ```
+   Tekhton is ready. No design document was auto-detected — that's
+   fine, Tekhton runs without one. If you keep a design doc
+   elsewhere, set DESIGN_FILE in .claude/pipeline.conf to point at it.
+   You can also run `tekhton --plan` later if you want to add a
+   formal design document.
+   ```
+
+Heuristic implementation in `lib/init_helpers.sh` (new helper
+`_classify_project_maturity` returning `greenfield|brownfield|has_design`):
+
+```bash
+_classify_project_maturity() {
+    local project_dir="$1"
+    local design_file="$2"   # already-resolved design_file from init_config
+    local file_count="$3"
+    local has_commands="$4"  # 1 if any of test/build/analyze detected
+
+    if [[ -n "$design_file" ]]; then
+        echo "has_design"; return 0
+    fi
+    if [[ "$file_count" -le 5 ]] && [[ "$has_commands" -eq 0 ]]; then
+        echo "greenfield"; return 0
+    fi
+    echo "brownfield"
+}
+```
+
+The hint is printed by a new `_print_init_next_step` helper called at
+the end of `run_init`. Pure presentational code; no side effects
+beyond stdout.
+
+This goal is **additive** to Goals 1-3. Goals 1-3 fix correctness;
+Goal 4 closes the UX gap that let the original bug go undiagnosed by
+new users ("did the command even do anything?"). Critically, the
+brownfield branch ensures users with existing codebases are *not*
+pushed toward `--plan` when it's inappropriate for them.
+
 ## Files Modified
 
 | File | Change |
@@ -147,6 +215,8 @@ is self-healing for users whose configs have the landmine.
 | `lib/common.sh` | Replace inline default block (lines 13-40) with `source "${TEKHTON_HOME:-$(dirname "${BASH_SOURCE[0]}")/..}/lib/artifact_defaults.sh"`. Zero behavior change for existing callers. |
 | `lib/plan.sh` | Immediately after the `load_plan_config` call at line 67, source `lib/artifact_defaults.sh`. Re-defaults any artifact path that was overwritten with an empty string by pipeline.conf. |
 | `lib/init_config_sections.sh` | In `_emit_section_essential` (lines 77-81), replace the `else` branch that emits `DESIGN_FILE=""` with `echo 'DESIGN_FILE=".tekhton/DESIGN.md"'`, plus a comment line explaining the placeholder. |
+| `lib/init_helpers.sh` | Add `_classify_project_maturity` and `_print_init_next_step` helpers per Goal 4. |
+| `lib/init.sh` (or wherever `run_init` lives) | Call `_print_init_next_step` at the end of `run_init` with the project-maturity classification. |
 
 ## Acceptance Criteria
 
@@ -183,8 +253,24 @@ is self-healing for users whose configs have the landmine.
       produces a non-empty `.tekhton/DESIGN.md` on disk. (Requires a
       pre-built answers YAML fixture; reuse an existing one from the
       test suite.)
+- [ ] **Brownfield safety check**: in a directory with an existing
+      non-trivial codebase (at least one source file + a detected
+      test command) but no design doc, running `tekhton --init`
+      followed by `tekhton "add feature X"` (execution pipeline, not
+      `--plan`) completes without errors or prompts. The pipeline
+      must behave identically to pre-M120 for brownfield projects
+      that never touch planning mode.
+- [ ] Goal 4: running `tekhton --init` in a truly empty directory
+      prints the **greenfield** next-step hint suggesting `--plan`.
+- [ ] Goal 4: running `tekhton --init` in a directory with source
+      files + detected commands but no design doc prints the
+      **brownfield** hint (no `--plan` push; optional guidance).
+- [ ] Goal 4: running `tekhton --init` in a directory with an
+      existing `DESIGN.md` prints **no** next-step hint (silent, as
+      today).
 - [ ] Shellcheck clean for `lib/artifact_defaults.sh`, `lib/common.sh`,
-      `lib/plan.sh`, `lib/init_config_sections.sh`.
+      `lib/plan.sh`, `lib/init_config_sections.sh`, `lib/init_helpers.sh`,
+      and whichever file hosts `run_init`.
 - [ ] All existing tests continue to pass with no edits.
 
 ## Non-Goals
@@ -202,3 +288,11 @@ is self-healing for users whose configs have the landmine.
 - Supporting `DESIGN_FILE=""` as a user-intentional "disable" signal
   (not a current use case; if needed in future, a separate
   `DESIGN_FILE_ENABLED=false` flag would be the right shape).
+- Interactive prompts during `--init` (rejected in favor of Goal 4's
+  non-blocking branch-aware hint — prompts interrupt brownfield users
+  who just want to get to work).
+- Chaining `--init` automatically into `--plan` (keeps the two
+  commands architecturally separate; the greenfield hint tells the
+  user what to run next without removing their agency).
+- Pushing brownfield users toward `--plan`. Goal 4 explicitly
+  distinguishes brownfield from greenfield so this never happens.

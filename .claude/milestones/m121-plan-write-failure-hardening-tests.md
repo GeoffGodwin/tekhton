@@ -127,22 +127,27 @@ non-zero).
 
 `lib/validate_config.sh:120-131` already has a soft check for
 `DESIGN_FILE` (warns if set but file-not-found; passes if unset). Add
-two stricter checks before the existing ones:
+two stricter checks before the existing ones. Wording is deliberately
+self-heal-aware: the validator runs for both plan-mode and execution-
+pipeline users, and brownfield users with a pre-M120 `pipeline.conf`
+(literal `DESIGN_FILE=""`) should not feel scolded — M120 already
+self-heals the empty value at runtime, so the message is informational.
 
 ```bash
-# Check 6a: DESIGN_FILE is not explicitly empty
+# Check 6a: DESIGN_FILE is explicitly empty
 if [[ -n "${DESIGN_FILE+set}" ]] && [[ -z "${DESIGN_FILE}" ]]; then
-    _vc_warn "DESIGN_FILE is set to empty string in pipeline.conf. Remove the line or set it to '.tekhton/DESIGN.md' (default)."
+    _vc_warn "DESIGN_FILE is an empty string in pipeline.conf. Tekhton will fall back to the default (.tekhton/DESIGN.md) when needed — you can safely remove the line, set it to the default explicitly, or point it at your existing design doc if you keep one elsewhere."
 fi
 
-# Check 6b: DESIGN_FILE does not end with '/'
+# Check 6b: DESIGN_FILE ends in '/' (not a file path)
 if [[ -n "${DESIGN_FILE:-}" ]] && [[ "${DESIGN_FILE}" == */ ]]; then
-    _vc_warn "DESIGN_FILE ends in '/' (directory path, not a file): ${DESIGN_FILE}"
+    _vc_warn "DESIGN_FILE ends in '/' (directory path, not a file): ${DESIGN_FILE}. This will cause planning-mode writes to fail. Fix: remove the trailing slash or point the key at a markdown file."
 fi
 ```
 
-These surface the landmine at `tekhton --validate` time for any legacy
-user who hasn't re-run `--init` after M120.
+These surface the landmine at `tekhton --validate` time but frame it
+as informational for check 6a (brownfield-safe) and actionable for
+check 6b (truly broken).
 
 ### Goal 4 — Integration test: `--init` → `--plan` empty slate
 
@@ -228,6 +233,20 @@ ensure they pass under the self-test harness.
       containing `DESIGN_FILE=""` (6a) and for one containing
       `DESIGN_FILE="some/dir/"` (6b). Does not warn for
       `DESIGN_FILE=".tekhton/DESIGN.md"` or for an unset key.
+- [ ] **Brownfield safety — no new blocking behavior in execution
+      pipeline**: in a project with `DESIGN_FILE=""` in pipeline.conf
+      and no `.tekhton/DESIGN.md` on disk, `tekhton "some task"`
+      (execution pipeline, not `--plan`) runs to completion without
+      any new assertion firing. Specifically verified:
+      `_assert_design_file_usable` is NOT called from any
+      execution-pipeline stage (coder, reviewer, tester, security,
+      intake, preflight). Assertions are confined to `--plan`,
+      `--replan`, `--plan-from-index` call sites listed in Goal 1.
+- [ ] **Brownfield safety — validator warnings are not blocking**:
+      running `tekhton --validate` against a pipeline.conf with
+      `DESIGN_FILE=""` prints a warning but exits 0 (matching
+      existing soft-check behavior at `lib/validate_config.sh`).
+      Warnings do not promote to errors.
 - [ ] `tests/test_plan_empty_slate.sh` passes: fresh-dir `--init` →
       `--plan` produces `.tekhton/DESIGN.md` with non-zero content.
 - [ ] `tests/test_plan_empty_slate.sh` negative case passes: crafted
