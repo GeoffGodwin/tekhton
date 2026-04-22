@@ -5,6 +5,10 @@ Exports:
     _build_events_panel, _build_timings_panel
 
 Imported by tui.py which re-exports these symbols for test discovery.
+
+Lifecycle model: see docs/tui-lifecycle-model.md for stage classes, pill/
+timings/events ownership, and the source-attribution flow used by the
+events panel.
 """
 from __future__ import annotations
 

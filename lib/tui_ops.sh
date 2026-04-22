@@ -10,6 +10,10 @@
 # M115: run_op is now built on the M113 substage API. The label a run_op
 # registers travels through the substage globals and is rendered by the
 # breadcrumb logic in tui_render_timings.py.
+#
+# Lifecycle model: see docs/tui-lifecycle-model.md for stage classes,
+# pill/timings/events ownership, and the auto-close-and-warn rule. Invariants
+# are enforced by tests/test_tui_lifecycle_invariants.sh.
 # =============================================================================
 set -euo pipefail
 # shellcheck source=lib/tui.sh

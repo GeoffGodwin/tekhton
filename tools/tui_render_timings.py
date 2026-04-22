@@ -2,6 +2,9 @@
 
 Extracted to keep tui_render.py under the 300-line ceiling. Exports
 _build_timings_panel.
+
+Lifecycle model: see docs/tui-lifecycle-model.md for stage classes, the
+live-row vs completed-row split, and substage breadcrumb rendering.
 """
 from __future__ import annotations
 

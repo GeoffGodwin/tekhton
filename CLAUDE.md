@@ -482,6 +482,8 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `TUI_SIMPLE_LOGO` | Use 5-line ASCII fallback logo instead of Unicode block-char arch (default: false) |
 | `TUI_WATCHDOG_TIMEOUT` | Seconds of status-file inactivity before sidecar self-terminates when pipeline is idle; prevents infinite hang when parent shell blocks before sending complete signal (default: 300, 0 = disabled) |
 
+**TUI lifecycle model.** See [`docs/tui-lifecycle-model.md`](docs/tui-lifecycle-model.md) for the authoritative description of stage classes, pill / timings / events ownership, the substage API, the auto-close-and-warn rule, and checklists for adding new stages, sub-stages, or `run_op` call sites. Invariants are enforced by `tests/test_tui_lifecycle_invariants.sh`.
+
 ## Testing
 
 ```bash
