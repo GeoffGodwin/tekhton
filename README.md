@@ -5,7 +5,7 @@
 
   <p><strong>One intent. Many hands.</strong></p>
 
-  <p><em>v3.79.0 — Context-Aware Pipeline</em></p>
+  <p><em>v3.119.0 — Context-Aware Pipeline</em></p>
 </div>
 
 ## What is Tekhton?
