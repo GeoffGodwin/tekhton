@@ -394,7 +394,7 @@ _ensure_gitignore_entries() {
         ".claude/dashboard/data/" ".claude/logs/" ".claude/indexer-venv/"
         ".claude/index/" ".claude/serena/" ".claude/dry_run_cache/"
         ".claude/migration-backups/" ".claude/watchtower_inbox/"
-        ".claude/tui_sidecar.pid"
+        ".claude/tui_sidecar.pid" ".claude/worktrees/"
     )
     [[ ! -f "$_gi_file" ]] && touch "$_gi_file"
     local _gi_added=0

@@ -4,20 +4,16 @@
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- `lib/tui_ops.sh:165` — The function-level comment enumerates what is *cleared* but not what is *preserved* (specifically `_TUI_STAGE_CYCLE` and `_TUI_CLOSED_LIFECYCLE_IDS`). When a future developer adds a new TUI global they need to decide which category it falls into, and naming the preserved globals explicitly would make the decision criteria self-documenting. Low priority.
-- `lib/tui_ops.sh:180` — `tui_reset_for_next_milestone` silently zeros `_TUI_CURRENT_SUBSTAGE_LABEL` without going through `_tui_autoclose_substage_if_open`, so if a substage is somehow still open at milestone transition, the auto-close warn event is not emitted. In practice this cannot happen (the substage is always closed inside `tui_stage_end` before the milestone boundary), but the silent path differs from the normal close protocol. No action needed; worth a one-line note in the comment.
+- `tests/test_ensure_gitignore_entries.sh:72` — Section 3 comment says "All 16 Tekhton runtime patterns" but `EXPECTED_ENTRIES` now has 17 entries. Stale count; the test logic is correct but the comment will mislead the next person to update this test.
 
 ## Coverage Gaps
-- `tests/test_tui_multipass_lifecycle.sh` — No test for the edge case where `tui_reset_for_next_milestone` is invoked with `_TUI_CURRENT_SUBSTAGE_LABEL` non-empty (substage still open at transition). The production call site makes this impossible, but a test that confirms the substage fields are zeroed even in that state would document the deliberate silent-clear contract and guard against future regression if the call site ever moves.
-
-## ACP Verdicts
-None
+- `tests/test_ensure_gitignore_entries.sh` — `.claude/tui_sidecar.pid` is present in `_gi_entries` (common.sh:397) but absent from `EXPECTED_ENTRIES`. The test does not verify this pattern gets written. Pre-existing gap, not introduced here.
 
 ## Drift Observations
-None
+- `lib/common.sh:389-397` vs `.gitignore:38-54` — `_gi_entries` carries 18 patterns (including `.claude/tui_sidecar.pid` and `.claude/watchtower_inbox/`), but the top-level `.gitignore` "Pipeline runtime artifacts" section has only 16. `.claude/watchtower_inbox/` is captured in a separate section at the bottom; `.claude/tui_sidecar.pid` does not appear in `.gitignore` at all. The two lists have drifted and will continue to diverge with each new pattern addition. Low urgency, but a future cleanup pass should either auto-generate `.gitignore` from `_gi_entries` or unify them into one canonical source.

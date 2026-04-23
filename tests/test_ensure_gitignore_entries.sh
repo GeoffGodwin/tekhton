@@ -87,6 +87,7 @@ declare -a EXPECTED_ENTRIES=(
     ".claude/dry_run_cache/"
     ".claude/migration-backups/"
     ".claude/watchtower_inbox/"
+    ".claude/worktrees/"
 )
 
 for entry in "${EXPECTED_ENTRIES[@]}"; do

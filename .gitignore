@@ -51,6 +51,7 @@ service-account*.json
 .claude/serena/
 .claude/dry_run_cache/
 .claude/migration-backups/
+.claude/worktrees/
 
 # Test artifacts
 /tmp/

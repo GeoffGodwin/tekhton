@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.122.3] - 2026-04-23
+
+### Added
+- Fixed the GitHub Actions checkout failure caused by an untracked-but-committed
 
 ## [3.122.2] - 2026-04-23
 

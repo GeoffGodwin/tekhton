@@ -1,83 +1,39 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 11 test functions (12 pass-points — Test 1 has two assertions)
+Tests audited: 2 files, 26 test functions
 Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: _activate_tui() does not reset cycle/closed-lifecycle maps
-- File: tests/test_tui_multipass_lifecycle.sh:44–62
-- Issue: `_activate_tui()` reinitialises most TUI globals but leaves
-  `_TUI_STAGE_CYCLE` and `_TUI_CLOSED_LIFECYCLE_IDS` untouched. Both are declared
-  `declare -gA` in `lib/tui.sh` and accumulate across test functions within the
-  same shell process. Test 8 works around this by explicitly zeroing them
-  (`_TUI_STAGE_CYCLE=(); _TUI_CLOSED_LIFECYCLE_IDS=()`) before its assertions,
-  but Tests 7, 10, and 11 call `tui_stage_begin` without that reset. Currently
-  not causing failures because those tests do not assert specific lifecycle-ID
-  values; however, if a new test is added that relies on a known cycle baseline
-  it will silently inherit counts from prior tests.
+#### INTEGRITY: Unconditional pass() with no assertion (approved-gitlink case)
+- File: tests/test_gitlink_ci_guard_logic.sh:137
+- Issue: `pass "approved gitlink: logic accepts approved path (exit code validates it)"` is called unconditionally before any assertion executes. The inline comment claims the exit-code block below provides validation, but this specific `pass()` invocation always increments PASS regardless of guard behavior — it is a `assertTrue(True)` equivalent. The real assertion (exit-code check) lives in the separate block at lines 139–145 and generates its own honest pass/fail. Line 137 inflates the passed count by 1 and implies coverage that isn't actually being asserted at that line.
 - Severity: MEDIUM
-- Action: Add `_TUI_STAGE_CYCLE=(); _TUI_CLOSED_LIFECYCLE_IDS=()` to
-  `_activate_tui()` so every test starts from a clean associative-array state.
-  The explicit resets in Test 8 can be kept or removed once _activate_tui
-  handles them — either is acceptable.
+- Action: Remove the standalone unconditional `pass()` at line 137. The exit-code assertion at lines 139–145 is sufficient and honest coverage for the approved-gitlink case.
 
-#### COVERAGE: Test 7 omits several reset-field assertions
-- File: tests/test_tui_multipass_lifecycle.sh:208–217
-- Issue: `tui_reset_for_next_milestone()` resets twelve fields in
-  `lib/tui_ops.sh:165–182`. Test 7's compound condition verifies eight of them
-  (`_TUI_STAGES_COMPLETE`, `_TUI_RECENT_EVENTS`, `_TUI_ACTIVE`, `_TUI_STAGE_ORDER`,
-  `_TUI_CURRENT_STAGE_LABEL`, `_TUI_CURRENT_STAGE_NUM`, `_TUI_AGENT_STATUS`,
-  `_TUI_AGENT_TURNS_USED`) but omits `_TUI_AGENT_TURNS_MAX`,
-  `_TUI_AGENT_ELAPSED_SECS`, `_TUI_STAGE_START_TS`, `_TUI_CURRENT_LIFECYCLE_ID`,
-  and `_TUI_CURRENT_STAGE_TOTAL`. A regression where one of those fields is
-  accidentally preserved would pass Test 7 undetected.
+#### COVERAGE: Synthetic git ls-files format inserts spurious "commit" field
+- File: tests/test_gitlink_ci_guard_logic.sh:83,108,155,184,217
+- Issue: The synthetic `git ls-files --stage` input uses the format `"160000 commit abc123  <path>"`, inserting the word "commit" as a second field. The real command emits `<mode> <hash> <stage>\t<path>` (three fields before the path), so awk field $4 is the path in both the real and synthetic formats — tests pass for the right reason. However, the synthetic format misrepresents the real output, and a maintainer editing the awk expression could introduce a field-index mismatch that goes unnoticed because the tests would still pass against the wrong synthetic data.
 - Severity: LOW
-- Action: Extend the Test 7 condition to include the missing fields, or add a
-  targeted Test 12 that sets them to non-zero/non-empty sentinel values before
-  the reset and asserts they are zeroed afterward.
+- Action: Update synthetic input strings to match the real `git ls-files --stage` format, e.g. `"160000 abc123 0\t.claude/worktrees/agent-a049075c"`. This documents the correct format and makes the awk field-selection robust against future editing errors.
 
-#### NAMING: File banner describes only the M111 regression scope
-- File: tests/test_tui_multipass_lifecycle.sh:1–17
-- Issue: The block comment describes the M111 sidecar-lifecycle regression
-  exclusively. Tests 7–11 cover a different concern — the M122-125 auto-advance
-  per-milestone TUI state-leak and the `tui_reset_for_next_milestone` contract —
-  which is not mentioned in the banner. Future readers may not realise the file
-  covers both areas.
+#### COVERAGE: Section 4 mode-160000 assertion is trivially true without the mitigation
+- File: tests/test_worktree_gitignore_coverage.sh:100-108
+- Issue: Section 4 runs `git add .claude/worktrees/` and asserts no mode 160000 (gitlink) entries appear in the index. Mode 160000 entries only arise when `git add` encounters a path that is itself a git repository (containing a `.git` file or directory). The test fixture at that point contains only regular files inside `.claude/worktrees/test-worktree-1/` — no nested git repo — so `git add` would never produce a gitlink entry regardless of whether the `.gitignore` pattern exists. The no-gitlink assertion is trivially satisfied even if the `.claude/worktrees/` entry were absent from `.gitignore`. The actual prevention is already validated correctly by `git check-ignore` tests in sections 2, 5, and 8.
 - Severity: LOW
-- Action: Append a second banner block (or extend the existing one) describing
-  the M122-125 scope: "Tests 7–11 cover per-milestone TUI state isolation
-  (tui_reset_for_next_milestone) added for the auto-advance state-leak fix."
+- Action: Either annotate the check as belt-and-suspenders (noting the `check-ignore` sections own the real proof), or replace the fixture with `git init .claude/worktrees/test-worktree-1` to construct a genuine nested-repo scenario that would produce a mode 160000 entry if the `.gitignore` pattern were absent.
 
 ### Additional Observations (no action required)
 
-**STALE-SYM flags are all false positives.** Every flagged symbol
-(`awk`, `break`, `cd`, `dirname`, `echo`, `eval`, `exit`, `mkdir`, `mktemp`,
-`pwd`, `set`, `source`, `trap`, `:`) is a bash builtin or POSIX utility. The
-shell symbol scanner has no model of builtins. Ignore.
+**Assertion honesty: PASS.** With the exception of the unconditional `pass()` at line 137 noted above, all assertions are derived from real function calls and real git commands. The guard logic in `test_gitlink_ci_guard_logic.sh` is taken verbatim from `release.yml`/`docs.yml` (lines 15–32 / 30–47), with only `git ls-files --stage` replaced by synthetic stdin injection — `git config --file .gitmodules --get-regexp`, `grep -qxF`, and the `::error::` annotation text all execute against live state. The `::error::` string in assertions matches the exact text in both workflow files. No hard-coded magic values unrelated to implementation logic were found.
 
-**Assertion honesty: PASS.** All assertions are derived from real function
-calls. `_hook_tui_complete` is awk-extracted from `lib/finalize_dashboard_hooks.sh`
-at runtime (not hand-stubbed). The hook intentionally skips `out_complete`, so
-`_TUI_ACTIVE` stays `true` and `_TUI_COMPLETE` stays `false` — both confirmed in
-the implementation (finalize_dashboard_hooks.sh:150–162). The reset assertions in
-Tests 7–9 trace directly to `tui_reset_for_next_milestone()` in
-`lib/tui_ops.sh:165–182`. The cycle-advance math in Test 8 (`coder#1` → reset →
-`coder#2`) is driven by `_tui_alloc_lifecycle_id()` at `lib/tui_ops.sh:188–195`.
-No hard-coded magic values unrelated to implementation logic were found.
+**Test isolation: PASS.** Both test files create all fixtures in `mktemp -d` temp directories cleaned up by `trap 'rm -rf ...' EXIT`. No mutable project files (`.tekhton/CODER_SUMMARY.md`, pipeline logs, `.claude/logs/`, `pipeline.conf`, run artifacts) are read or depended upon for pass/fail outcome.
 
-**Test isolation: PASS.** All tests use `TMPDIR=$(mktemp -d)` with an EXIT trap.
-Status files are written under `$TMPDIR`. No mutable project files
-(`.tekhton/CODER_SUMMARY.md`, pipeline logs, `pipeline.conf`, run artifacts,
-`.claude/logs/`) are read or depended upon for pass/fail outcome.
+**Weakening check: PASS.** Both files are new; no pre-existing tests were modified by the tester.
 
-**Weakening check: PASS.** Tests 1–6 are pre-existing. Their structure,
-assertion counts, and expected values are unchanged. No weakening detected.
+**Scope alignment: PASS.** Tests reference the guard logic added to `.github/workflows/release.yml` and `.github/workflows/docs.yml`, and the `.claude/worktrees/` gitignore pattern added to `.gitignore` and `lib/common.sh:_ensure_gitignore_entries()`. No orphaned imports or stale function names detected. The separately-modified `tests/test_ensure_gitignore_entries.sh` (which tests `_ensure_gitignore_entries()` directly) is not under audit here; the tester's report confirms it passes 41/41.
 
-**Test exercise: PASS.** Tests source `lib/tui.sh` which transitively sources
-`lib/tui_ops.sh`, `lib/tui_ops_substage.sh`, `lib/tui_helpers.sh`, and
-`lib/output_format.sh`. All calls go to production code. No dependency is mocked
-beyond suppressing the Python sidecar spawn (by not calling `tui_start`) and
-setting `_TUI_STATUS_FILE` to a temp-dir path so `_tui_write_status` has a
-writable target.
+**Test naming: PASS.** Names encode scenario and expected outcome throughout both files (e.g. "rogue without .gitmodules: emits error annotation", "git check-ignore reports files within worktree as ignored").
+
+**Test exercise: PASS.** `test_gitlink_ci_guard_logic.sh` exercises real `git init`, `git config --file`, and shell parsing logic from the production CI scripts. `test_worktree_gitignore_coverage.sh` exercises real `git check-ignore`, `git ls-files`, `git add`, and `git commit` against a live temp repository. No dependency is mocked beyond the `git ls-files --stage` stdin injection in the guard logic tests.
