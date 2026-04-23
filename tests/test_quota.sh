@@ -313,6 +313,79 @@ assert "disabled causal log returns 1" "$([ "$rc" -ne 0 ] && echo 0 || echo 1)"
 CAUSAL_LOG_ENABLED=true
 
 # =============================================================================
+echo "=== M124: enter_quota_pause calls TUI helpers ==="
+# =============================================================================
+
+# Stub TUI helpers as counting shell functions and a stub _quota_probe that
+# always reports rate-limited so the loop runs to the max-duration timeout.
+_TUI_ENTER_CALLS=0
+_TUI_UPDATE_CALLS=0
+_TUI_EXIT_CALLS=0
+_TUI_EXIT_RESULT=""
+tui_enter_pause()  { _TUI_ENTER_CALLS=$(( _TUI_ENTER_CALLS + 1 )); }
+tui_update_pause() { _TUI_UPDATE_CALLS=$(( _TUI_UPDATE_CALLS + 1 )); }
+tui_exit_pause()   {
+    _TUI_EXIT_CALLS=$(( _TUI_EXIT_CALLS + 1 ))
+    _TUI_EXIT_RESULT="${1:-}"
+}
+_quota_probe() { return 1; }
+
+# Tight bounds so the loop terminates fast.
+QUOTA_RETRY_INTERVAL=1
+QUOTA_MAX_PAUSE_DURATION=2
+# shellcheck disable=SC2034  # Read inside _quota_sleep_chunked
+QUOTA_SLEEP_CHUNK=1
+_QUOTA_PAUSE_COUNT=0
+_QUOTA_TOTAL_PAUSE_TIME=0
+_QUOTA_PAUSED=false
+
+# enter_quota_pause should return 1 on max-duration timeout.
+rc=0; enter_quota_pause "test rate limit" || rc=$?
+
+assert "enter_quota_pause returns 1 on timeout" \
+    "$([ "$rc" -eq 1 ] && echo 0 || echo 1)"
+assert "tui_enter_pause called exactly once" \
+    "$([ "$_TUI_ENTER_CALLS" -eq 1 ] && echo 0 || echo 1)"
+assert "tui_update_pause called >= 1 time" \
+    "$([ "$_TUI_UPDATE_CALLS" -ge 1 ] && echo 0 || echo 1)"
+assert "tui_exit_pause called exactly once" \
+    "$([ "$_TUI_EXIT_CALLS" -eq 1 ] && echo 0 || echo 1)"
+assert "tui_exit_pause result is 'timeout'" \
+    "$([ "$_TUI_EXIT_RESULT" = "timeout" ] && echo 0 || echo 1)"
+
+# Restore probe behaviour so subsequent tests aren't affected.
+unset -f _quota_probe
+unset -f tui_enter_pause tui_update_pause tui_exit_pause
+QUOTA_RETRY_INTERVAL=300
+QUOTA_MAX_PAUSE_DURATION=14400
+_QUOTA_PAUSE_COUNT=0
+_QUOTA_TOTAL_PAUSE_TIME=0
+_QUOTA_PAUSED=false
+
+# =============================================================================
+echo "=== M124: enter_quota_pause does not error when TUI helpers absent ==="
+# =============================================================================
+
+# No tui_* helpers defined — `command -v` guards must keep enter_quota_pause
+# safe. Use the same tight loop bounds + always-fail probe.
+_quota_probe() { return 1; }
+QUOTA_RETRY_INTERVAL=1
+QUOTA_MAX_PAUSE_DURATION=2
+# shellcheck disable=SC2034  # Read inside _quota_sleep_chunked
+QUOTA_SLEEP_CHUNK=1
+
+rc=0; enter_quota_pause "test rate limit (no tui)" || rc=$?
+assert "enter_quota_pause exits cleanly without TUI helpers" \
+    "$([ "$rc" -eq 1 ] && echo 0 || echo 1)"
+
+unset -f _quota_probe
+QUOTA_RETRY_INTERVAL=300
+QUOTA_MAX_PAUSE_DURATION=14400
+_QUOTA_PAUSE_COUNT=0
+_QUOTA_TOTAL_PAUSE_TIME=0
+_QUOTA_PAUSED=false
+
+# =============================================================================
 echo "=== Config defaults ==="
 # =============================================================================
 

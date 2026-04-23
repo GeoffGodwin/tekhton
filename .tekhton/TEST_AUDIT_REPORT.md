@@ -1,51 +1,39 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files (tests/test_indexer_audit_shell.sh, tests/test_repo_map_fixtures.sh), plus 2 freshness-sample files read for scope alignment (tests/test_indexer.sh, tests/test_indexer_extract_files.sh)
+Tests audited: 2 files, 27 assertions across 15 sections
 Verdict: PASS
-
----
 
 ### Findings
 
-#### EXERCISE: detect_repo_languages output discarded without assertion
-- File: tests/test_repo_map_fixtures.sh:84
-- Issue: `detect_repo_languages "$FIXTURE_DIR"` is called and its result stored in `langs`, but `langs` is suppressed via `# shellcheck disable=SC2034` and never asserted. The test falls back to separate `find`-based checks for Python, JS, and Bash. The function is exercised (a non-zero exit would fail the script under `set -euo pipefail`), but its output contract for the fixture project is not validated.
+#### NAMING: Header comment claims a behaviour that does not exist in the implementation
+- File: tests/test_quota_sleep_chunked.sh:13-14
+- Issue: Line 14 of the header comment lists "Silently skips tui_update_pause when _pause_start is 0" as a verified behaviour. The implementation in `lib/quota_sleep.sh:35-36` never skips the call: when `pause_start=0` the guard `[[ "$pause_start" -gt 0 ]]` simply leaves `_el=0`, but `tui_update_pause "$remaining" "0"` is still invoked. No test section exercises a skip (correctly, since the skip does not exist). The assertions themselves are all correct; only the documented intent in the header is wrong.
 - Severity: LOW
-- Action: Either assert that `langs` contains expected language names (e.g. `echo "$langs" | grep -q "python"`), or remove the call and note that `detect_repo_languages` coverage lives in `tests/test_indexer.sh`. As-is the call exercises the code path but provides no regression protection for its output.
+- Action: Remove line 14 from the file's header comment block. If the intent was to document that elapsed is reported as 0 when pause_start is 0, replace it with: `#   - Reports elapsed=0 when _pause_start is 0 (tui_update_pause still called)`
 
-#### COVERAGE: M123 new-language fixture files not verified by the multi-language detection section
-- File: tests/test_repo_map_fixtures.sh:87-107
-- Issue: The "multi-language detection" section checks Python, JS, and Bash presence only. The five new M123 fixtures (Go, Rust, Java, C++, Ruby) are verified by path in the explicit loop at lines 67-78, which is adequate for regression protection, but no extension-level check exists for the new languages in the detection section.
+#### COVERAGE: Callback-failure path does not assert that pause was called
+- File: tests/test_agent_retry_pause.sh:122-139
+- Issue: The callback-failure section resets `_PAUSE_CALLS=0` (line 123) before calling `_retry_pause_spinner_around_quota` with `_cb_fail`, but never asserts that `_PAUSE_CALLS` was incremented. The full contract for the failure path is "pause happened, resume did NOT" — the "did NOT resume" half is verified via the empty-nameref check (lines 135–139), but the "pause DID happen" half is unverified. A future refactor that accidentally skips `_pause_agent_spinner` on a failing callback would not be caught.
 - Severity: LOW
-- Action: Optional improvement — no fix required for PASS. If `detect_repo_languages` is later extended to return per-extension results, assertions for the M123 languages should be added here.
+- Action: After line 133 (the `_RETRY_QP_RC` assertion), add: `[[ "$_PAUSE_CALLS" -eq 1 ]] && pass "failure: _pause_agent_spinner was still called once" || fail "_PAUSE_CALLS" "expected 1, got $_PAUSE_CALLS"`
 
-#### SCOPE: tools/tests/test_extract_tags_integration.py modified by coder but absent from audit scope
-- File: tools/tests/test_extract_tags_integration.py (not listed in audit context "modified this run")
-- Issue: Git status shows `M tools/tests/test_extract_tags_integration.py`. CODER_SUMMARY lists this as modified ("Added a parametrized fixture test across Go/Rust/Java/C++/Ruby"). The TESTER_REPORT does not list it as a modified test file, and it is absent from the audit context. The coder, not the tester, appears to be the sole author of the M123 additions. The file was read during this audit; the additions are coherent and honest — the `pytest.importorskip` guard + `result is not None` + key-presence assertions match the milestone spec's stated intent. No integrity violations found. However, there was no independent tester review.
+#### COVERAGE: No test for QUOTA_SLEEP_CHUNK=0 edge case
+- File: tests/test_quota_sleep_chunked.sh (no existing section)
+- Issue: The implementation guard in `lib/quota_sleep.sh:21` is `[[ "$chunk" =~ ^[0-9]+$ ]] && [[ "$chunk" -gt 0 ]] || chunk=5`. The value `0` satisfies the regex but fails the `-gt 0` check, triggering the fallback — a distinct code branch from the non-numeric case already tested at lines 73–79. Non-numeric and unset fallbacks are covered; zero is not.
 - Severity: LOW
-- Action: Human should confirm that `tools/tests/test_audit_grammars.py` (4 new tests, coder-authored) and the M123 additions to `test_extract_tags_integration.py` are included in the next audit scope, or explicitly acknowledge that coder-authored Python unit tests are acceptable without tester review for this milestone.
-
-#### STALE-SYM: Orphan detector false positives — dismissed
-- File: tests/test_repo_map_fixtures.sh (all reported symbols)
-- Issue: The orphan detector flagged `cd`, `dirname`, `echo`, `exit`, `find`, `head`, `mktemp`, `pwd`, `set`, `source`, `trap`, `wc`, `:` as "not found in any source definition." All are POSIX shell builtins or standard external programs, not user-defined functions. The detector's grep-based analysis has no visibility into the shell's built-in command namespace.
-- Severity: LOW (false positive — no action required)
-- Action: Dismiss. No code changes needed.
+- Action: Add a section `QUOTA_SLEEP_CHUNK=0` with total=10 and assert 2 calls (same expected output as the non-numeric and unset sections).
 
 ---
 
-### Additional Observations (no action required)
+### Rubric Summary
 
-**Assertion honesty: PASS.** All assertions in `test_indexer_audit_shell.sh` are grounded in specific strings emitted by the real implementation: `.ts`, `tree_sitter_typescript`, `AttributeError`, `Grammar module missing`, `subprocess failed`, `no output`, `Grammars:`. These are derived from the exact warn/log_verbose messages in `lib/indexer_audit.sh:69,74,82,85,88`, not invented constants. No `assertTrue(True)` equivalents found.
-
-**Test isolation: PASS.** `test_indexer_audit_shell.sh` creates all test artifacts (fake Python stubs, response file) in `TEST_TMP=$(mktemp -d)` cleaned by `trap`. `test_repo_map_fixtures.sh` creates `TMPDIR=$(mktemp -d)` for `PROJECT_DIR`; fixture files read are from the committed `tests/fixtures/indexer_project/` tree, not mutable pipeline state. Neither file reads `.tekhton/`, `.claude/logs/`, pipeline reports, or any run-time-generated artifacts.
-
-**Implementation exercise: PASS.** `test_indexer_audit_shell.sh` sources the real `lib/indexer_audit.sh` and calls `_indexer_run_startup_audit()` directly. The fake Python subprocess outputs real tab-separated classification data, so the entire bash parsing loop (`while IFS=$'\t' read -r status f2 f3 f4 f5`) runs against realistic input. All four code branches (LOADED, MISSING, MISMATCH, SUMMARY) are exercised along with all four guard-return paths.
-
-**Weakening check: PASS.** Both files are new. `test_repo_map_fixtures.sh` was extended (upper file-count bound bumped from 10 to 20 to accommodate M123 fixtures); the comment at line 55-57 documents the rationale and the range remains a meaningful correctness bound.
-
-**Scope alignment: PASS.** All symbols referenced in the tests exist in the current codebase. The `command -v _indexer_run_startup_audit` guard in `lib/indexer.sh:97` means that `test_indexer.sh` (freshness sample), which sources `indexer.sh` without `indexer_audit.sh`, continues to work correctly — `check_indexer_available()` silently skips the audit when the function is not defined. No stale references found in freshness-sample files.
-
-**Test naming: PASS.** Section echo headers in both files encode the scenario and expected outcome. Pass/fail messages include the relevant extension, function, or config key name for traceability.
-
-**Config default verified: PASS.** `test_indexer_audit_shell.sh:314-319` sources `lib/config_defaults.sh` with required stubs and asserts `INDEXER_STARTUP_AUDIT == "true"`. The actual value is at `lib/config_defaults.sh:165` — confirmed match.
+| Dimension | test_quota_sleep_chunked.sh | test_agent_retry_pause.sh |
+|---|---|---|
+| Assertion Honesty | PASS — all expected values (call counts, remaining sequences) derived from implementation loop arithmetic | PASS — PID values, label strings, and RC are all derived from stubs and implementation logic; no hard-coded magic numbers |
+| Edge Case Coverage | GOOD — zero total, partial final chunk, invalid/unset config covered; minor gap on chunk=0 | GOOD — empty PIDs, live PID kill, success path, failure path, absent module covered; failure branch missing one assert |
+| Implementation Exercise | PASS — sources and directly calls `_quota_sleep_chunked`; only `sleep` and `tui_update_pause` are stubbed | PASS — sources real `agent_spinner.sh` and `agent_retry_pause.sh`; bracket logic tested via counters, process management tested with a live subshell |
+| Test Weakening | N/A — new file | N/A — new file |
+| Test Naming | PASS — section echo headers encode scenario and expected outcome explicitly | PASS — section headers include function name, scenario, and expected outcome |
+| Scope Alignment | PASS — all references match `lib/quota_sleep.sh` as implemented | PASS — function signatures, argument shapes, and nameref semantics all match `lib/agent_retry_pause.sh` and `lib/agent_spinner.sh` |
+| Test Isolation | PASS — no reads of mutable project files; entirely in-memory stubs and global counters | PASS — no project-state reads; single controlled `sleep 9999` subprocess killed within the same test section |

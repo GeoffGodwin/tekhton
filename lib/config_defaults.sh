@@ -260,6 +260,7 @@ set -euo pipefail
 : "${QUOTA_RESERVE_PCT:=10}"              # Proactive pause threshold (Tier 2 only)
 : "${CLAUDE_QUOTA_CHECK_CMD:=}"           # Optional external script for proactive checking
 : "${QUOTA_MAX_PAUSE_DURATION:=14400}"    # Max seconds to wait in pause (4 hours)
+: "${QUOTA_SLEEP_CHUNK:=5}"               # M124: chunk size for chunked sleep during pause (Ctrl-C responsiveness)
 
 # --- Metrics defaults ---
 : "${METRICS_ENABLED:=true}"
@@ -612,3 +613,4 @@ _clamp_config_value HEALTH_SAMPLE_SIZE 100
 _clamp_config_value QUOTA_RETRY_INTERVAL 3600
 _clamp_config_value QUOTA_RESERVE_PCT 50
 _clamp_config_value QUOTA_MAX_PAUSE_DURATION 86400
+_clamp_config_value QUOTA_SLEEP_CHUNK 60

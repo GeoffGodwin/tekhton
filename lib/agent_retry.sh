@@ -14,8 +14,18 @@
 # =============================================================================
 set -euo pipefail
 
-# _run_with_retry LABEL INVOKE_CMD MODEL MAX_TURNS PROMPT LOG_FILE ACTIVITY_TIMEOUT SESSION_DIR EXIT_FILE TURNS_FILE PRERUN_MARKER WALL_TIMEOUT
-# Main retry envelope. Invokes agent and retries on transient errors with exponential backoff.
+# Spinner pause/resume helpers used to wrap enter_quota_pause (M124).
+# shellcheck source=lib/agent_retry_pause.sh
+source "${TEKHTON_HOME}/lib/agent_retry_pause.sh"
+
+# _run_with_retry LABEL INVOKE_CMD MODEL MAX_TURNS PROMPT LOG_FILE ACTIVITY_TIMEOUT SESSION_DIR EXIT_FILE TURNS_FILE PRERUN_MARKER WALL_TIMEOUT [SPINNER_PID_VAR] [TUI_UPDATER_PID_VAR]
+# Main retry envelope. Invokes agent and retries on transient errors with
+# exponential backoff. M124: optional nameref args (variable NAMES, not
+# values) carry the caller's local spinner-pid vars so that, around an
+# enter_quota_pause call, we can pause/resume the heartbeat subshells and
+# rewrite the names back to the current generation. Without these names,
+# the spinner keeps reporting "running" through the pause and the caller
+# eventually tries to kill stale PIDs.
 _run_with_retry() {
     local label="$1"
     local invoke_cmd="$2"
@@ -29,6 +39,8 @@ _run_with_retry() {
     local turns_file="${10}"
     local prerun_marker="${11}"
     local wall_timeout="${12}"
+    local _spinner_pid_var="${13:-}"
+    local _tui_updater_pid_var="${14:-}"
 
     LAST_AGENT_RETRY_COUNT=0
     local _retry_attempt=0
@@ -76,7 +88,10 @@ _run_with_retry() {
             if is_rate_limit_error "$_RWR_EXIT" "$_stderr_path"; then
                 if command -v enter_quota_pause &>/dev/null; then
                     warn "[$label] Rate limit detected — entering quota pause."
-                    if enter_quota_pause "Rate limited (agent: ${label})"; then
+                    _retry_pause_spinner_around_quota _enter_qp_rate "$label" \
+                        "$max_turns" "$turns_file" \
+                        "$_spinner_pid_var" "$_tui_updater_pid_var"
+                    if [[ "$_RETRY_QP_RC" -eq 0 ]]; then
                         # Quota refreshed — retry without incrementing counter
                         _reset_monitoring_state "$session_dir"
                         rm -f "$exit_file" "$turns_file"
@@ -103,10 +118,11 @@ _run_with_retry() {
                 local _remaining
                 _remaining=$(check_quota_remaining)
                 warn "[$label] Quota at ${_remaining}% — below reserve threshold. Entering proactive pause."
-                if enter_quota_pause "Paused at ${_remaining}% remaining (reserve threshold)"; then
-                    # Continue to error classification — the current call may have succeeded
-                    true
-                fi
+                _retry_pause_spinner_around_quota _enter_qp_proactive "$label" \
+                    "$max_turns" "$turns_file" \
+                    "$_spinner_pid_var" "$_tui_updater_pid_var" "$_remaining"
+                # Continue to error classification — the current call may
+                # have succeeded; pause-rc is informational here.
             fi
         fi
 

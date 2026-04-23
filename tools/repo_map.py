@@ -750,6 +750,12 @@ def main() -> int:
         help="Print grammar load status as JSON to stdout and exit 0. "
              "Does not walk the project or touch the cache."
     )
+    parser.add_argument(
+        "--audit-grammars-tsv", action="store_true",
+        help="Print grammar load status as LOADED/MISSING/MISMATCH-classified "
+             "TSV rows to stdout (columns: status, ext, module, lang_name, error), "
+             "terminated by a SUMMARY row, and exit 0."
+    )
 
     args = parser.parse_args()
 
@@ -757,6 +763,26 @@ def main() -> int:
     # root validation or cache setup so the audit stays side-effect-free.
     if args.audit_grammars:
         print(json.dumps(audit_grammars(), indent=2, default=str))
+        return 0
+
+    if args.audit_grammars_tsv:
+        data = audit_grammars()
+        loaded = missing = mismatch = 0
+        for ext, info in data.items():
+            if info.get("language_loaded"):
+                status = "LOADED"
+                loaded += 1
+            elif info.get("module_importable"):
+                status = "MISMATCH"
+                mismatch += 1
+            else:
+                status = "MISSING"
+                missing += 1
+            print("\t".join([
+                status, ext, info.get("module") or "",
+                info.get("lang_name") or "", info.get("error") or "",
+            ]))
+        print(f"SUMMARY\t{loaded}\t{missing}\t{mismatch}\t{len(data)}")
         return 0
 
     if not args.root:

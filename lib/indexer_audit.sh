@@ -39,33 +39,7 @@ _indexer_run_startup_audit() {
     fi
 
     local classification
-    classification=$(PYTHONPATH="$tools_dir" "$venv_python" -c '
-import sys
-try:
-    from tree_sitter_languages import audit_grammars
-except Exception:
-    sys.exit(1)
-try:
-    data = audit_grammars()
-except Exception:
-    sys.exit(1)
-loaded = missing = mismatch = 0
-for ext, info in data.items():
-    if info.get("language_loaded"):
-        status = "LOADED"
-        loaded += 1
-    elif info.get("module_importable"):
-        status = "MISMATCH"
-        mismatch += 1
-    else:
-        status = "MISSING"
-        missing += 1
-    print("\t".join([
-        status, ext, info.get("module") or "",
-        info.get("lang_name") or "", info.get("error") or "",
-    ]))
-print(f"SUMMARY\t{loaded}\t{missing}\t{mismatch}\t{len(data)}")
-' 2>/dev/null) || {
+    classification=$("$venv_python" "$tools_dir/repo_map.py" --audit-grammars-tsv 2>/dev/null) || {
         log_verbose "[indexer] Grammar audit subprocess failed; skipping."
         return 0
     }

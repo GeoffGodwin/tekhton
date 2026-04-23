@@ -24,6 +24,7 @@ tekhton/
 │   ├── agent_monitor_helpers.sh  # Monitor support functions
 │   ├── agent_monitor_platform.sh # Platform-specific monitor code
 │   ├── agent_retry.sh      # Transient error retry logic
+│   ├── agent_retry_pause.sh # M124 spinner pause/resume bracket for enter_quota_pause
 │   ├── gates.sh            # Build gate + completion gate
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── finalize.sh         # Hook-based finalization sequence
@@ -164,11 +165,13 @@ tekhton/
 │   ├── metrics_dashboard.sh # Metrics dashboard formatting
 │   ├── drift_prune.sh      # Drift log pruning
 │   ├── quota.sh            # API quota management
+│   ├── quota_sleep.sh      # M124 chunked-sleep helper for enter_quota_pause
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
 │   ├── preflight.sh        # Pre-flight environment validation
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
 │   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers; run_op uses M113 substage API (M115)
+│   ├── tui_ops_pause.sh    # M124 quota-pause TUI API (tui_enter/update/exit_pause)
 │   └── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
@@ -241,6 +244,7 @@ tekhton/
 │   ├── serena_config_template.json  # MCP config template
 │   ├── tui.py              # TUI sidecar main — rich.live loop + layout assembly
 │   ├── tui_render.py       # TUI render helpers — logo, header bar, stage pills, events
+│   ├── tui_render_pause.py # M124 quota-pause active-bar renderer
 │   ├── tui_hold.py         # TUI hold-on-complete — final event log dump + Enter wait
 │   └── tests/              # Python unit tests
 │       ├── conftest.py
@@ -482,7 +486,8 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `TUI_VENV_DIR` | Python venv for sidecar (default: shares `REPO_MAP_VENV_DIR`) |
 | `TUI_COMPLETE_HOLD_TIMEOUT` | Max seconds to hold sidecar at completion waiting for Enter before SIGKILL (default: 120) |
 | `TUI_SIMPLE_LOGO` | Use 5-line ASCII fallback logo instead of Unicode block-char arch (default: false) |
-| `TUI_WATCHDOG_TIMEOUT` | Seconds of status-file inactivity before sidecar self-terminates when pipeline is idle; prevents infinite hang when parent shell blocks before sending complete signal (default: 300, 0 = disabled) |
+| `TUI_WATCHDOG_TIMEOUT` | Seconds of status-file inactivity before sidecar self-terminates when pipeline is idle or paused; prevents infinite hang when parent shell blocks before sending complete signal (default: 300, 0 = disabled) |
+| `QUOTA_SLEEP_CHUNK` | M124. Internal chunk size (seconds) for the chunked sleep inside `enter_quota_pause`; bounds Ctrl-C / SIGTERM responsiveness during a quota pause and drives the TUI countdown refresh cadence. (default: 5, max: 60) |
 
 **TUI lifecycle model.** See [`docs/tui-lifecycle-model.md`](docs/tui-lifecycle-model.md) for the authoritative description of stage classes, pill / timings / events ownership, the substage API, the auto-close-and-warn rule, and checklists for adding new stages, sub-stages, or `run_op` call sites. Invariants are enforced by `tests/test_tui_lifecycle_invariants.sh`.
 

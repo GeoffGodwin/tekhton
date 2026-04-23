@@ -97,6 +97,15 @@ enter_quota_pause() {
         emit_dashboard_run_state 2>/dev/null || true
     fi
 
+    # M124: surface the pause to the TUI sidecar so the active stage stops
+    # rendering as "running" while bash is sleeping. Guarded so quota.sh
+    # remains usable when sourced without the TUI layer (unit tests).
+    if command -v tui_enter_pause &>/dev/null; then
+        tui_enter_pause "${pause_reason}" \
+            "${QUOTA_RETRY_INTERVAL:-300}" \
+            "${QUOTA_MAX_PAUSE_DURATION:-14400}" 2>/dev/null || true
+    fi
+
     warn "Pipeline paused — ${pause_reason}. Waiting for quota refresh (checking every ${QUOTA_RETRY_INTERVAL:-300}s, max ${QUOTA_MAX_PAUSE_DURATION:-14400}s)."
     printf '\a' 2>/dev/null || true  # terminal bell
 
@@ -109,11 +118,14 @@ enter_quota_pause() {
             _finalize_quota_pause "$pause_start"
             _QUOTA_PAUSED=false
             rm -f "$marker_file" 2>/dev/null || true
+            if command -v tui_exit_pause &>/dev/null; then
+                tui_exit_pause "timeout" 2>/dev/null || true
+            fi
             return 1
         fi
 
         log "Quota probe attempt $((retry_count + 1)) — sleeping ${QUOTA_RETRY_INTERVAL:-300}s..."
-        sleep "${QUOTA_RETRY_INTERVAL:-300}"
+        _quota_sleep_chunked "${QUOTA_RETRY_INTERVAL:-300}" "$pause_start"
         retry_count=$(( retry_count + 1 ))
 
         # Lightweight probe: minimal claude call to test quota
@@ -121,12 +133,20 @@ enter_quota_pause() {
             log "Quota refreshed after ${elapsed}s (${retry_count} probes)."
             _finalize_quota_pause "$pause_start"
             exit_quota_pause "$marker_file"
+            if command -v tui_exit_pause &>/dev/null; then
+                tui_exit_pause "refreshed" 2>/dev/null || true
+            fi
             return 0
         fi
 
         log "Quota still exhausted (probe ${retry_count}, ${elapsed}s elapsed)."
     done
 }
+
+# Chunked-sleep helper lives in quota_sleep.sh (M124, kept separate to
+# keep this file under the 300-line ceiling).
+# shellcheck source=lib/quota_sleep.sh
+source "${TEKHTON_HOME}/lib/quota_sleep.sh"
 
 # _quota_probe
 # Lightweight single-turn claude call to test if quota has refreshed.

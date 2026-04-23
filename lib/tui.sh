@@ -72,6 +72,19 @@ declare -gA _TUI_CLOSED_LIFECYCLE_IDS=()
 _TUI_CURRENT_SUBSTAGE_LABEL=""
 _TUI_CURRENT_SUBSTAGE_START_TS=0
 
+# M124 quota-pause awareness. Populated by tui_enter_pause / tui_update_pause
+# while enter_quota_pause is blocking on a Claude usage-limit refresh.
+# All five fields are emitted in every status snapshot (empty/0 when not
+# paused) so the JSON shape stays stable for the sidecar consumer.
+# _TUI_AGENT_STATUS reverts to "paused" while a pause is active; the
+# spinner subshell is stopped before the pause and respawned on resume,
+# so no other writer is racing for that field.
+_TUI_PAUSE_REASON=""
+_TUI_PAUSE_RETRY_INTERVAL=0
+_TUI_PAUSE_MAX_DURATION=0
+_TUI_PAUSE_STARTED_AT=0
+_TUI_PAUSE_NEXT_PROBE_AT=0
+
 # Batched-write semaphore: bump to coalesce multiple mutations into one
 # status-file write. _tui_write_status returns early when > 0.
 _TUI_SUPPRESS_WRITE=0

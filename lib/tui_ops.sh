@@ -17,6 +17,8 @@
 # =============================================================================
 set -euo pipefail
 # shellcheck source=lib/tui.sh
+# shellcheck source=lib/tui_ops_pause.sh
+source "${TEKHTON_HOME}/lib/tui_ops_pause.sh"
 
 # --- Update functions --------------------------------------------------------
 

@@ -71,7 +71,10 @@ def _build_logo(status: dict[str, Any]) -> Text:
     if status.get("complete"):
         rows = [_LOGO_COMPLETE_ROW0, _LOGO_COMPLETE_CROWN,
                 *[(c, _LOGO_COMPLETE_WALL_STYLE) for c, _ in _ARCH_WALLS[1:]]]
-    elif (status.get("current_agent_status") or "idle") == "idle":
+    elif (status.get("current_agent_status") or "idle") in ("idle", "paused"):
+        # M124: paused state shares the idle logo — the pipeline has
+        # stopped, not crunching, so the running arch animation would
+        # mislead the user about the run actually doing work.
         rows = [_LOGO_IDLE_ROW0, _LOGO_IDLE_CROWN,
                 *[(c, _LOGO_IDLE_WALL_STYLE) for c, _ in _ARCH_WALLS[1:]]]
     else:
