@@ -1,15 +1,13 @@
-# Tester Report
-
 ## Planned Tests
-- [x] `tests/test_gitlink_ci_guard_logic.sh` — Validate CI guard detects rogue vs approved gitlinks
-- [x] `tests/test_worktree_gitignore_coverage.sh` — Verify `.claude/worktrees/` entries are ignored by git
+- [x] `tests/test_indexer_audit_shell.sh` — _indexer_run_startup_audit() behavior: MISMATCH→warn, MISSING→log_verbose, disabled/guard paths, subprocess failure, config default
+- [x] `tests/test_repo_map_fixtures.sh` — Add M123 fixture file existence checks (Go, Rust, Java, C++, Ruby)
 
 ## Test Run Results
-Passed: 26  Failed: 0
+Passed: 446  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_gitlink_ci_guard_logic.sh`
-- [x] `tests/test_worktree_gitignore_coverage.sh`
+- [x] `tests/test_indexer_audit_shell.sh`
+- [x] `tests/test_repo_map_fixtures.sh`

@@ -1,39 +1,51 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 26 test functions
+Tests audited: 2 files (tests/test_indexer_audit_shell.sh, tests/test_repo_map_fixtures.sh), plus 2 freshness-sample files read for scope alignment (tests/test_indexer.sh, tests/test_indexer_extract_files.sh)
 Verdict: PASS
+
+---
 
 ### Findings
 
-#### INTEGRITY: Unconditional pass() with no assertion (approved-gitlink case)
-- File: tests/test_gitlink_ci_guard_logic.sh:137
-- Issue: `pass "approved gitlink: logic accepts approved path (exit code validates it)"` is called unconditionally before any assertion executes. The inline comment claims the exit-code block below provides validation, but this specific `pass()` invocation always increments PASS regardless of guard behavior — it is a `assertTrue(True)` equivalent. The real assertion (exit-code check) lives in the separate block at lines 139–145 and generates its own honest pass/fail. Line 137 inflates the passed count by 1 and implies coverage that isn't actually being asserted at that line.
-- Severity: MEDIUM
-- Action: Remove the standalone unconditional `pass()` at line 137. The exit-code assertion at lines 139–145 is sufficient and honest coverage for the approved-gitlink case.
-
-#### COVERAGE: Synthetic git ls-files format inserts spurious "commit" field
-- File: tests/test_gitlink_ci_guard_logic.sh:83,108,155,184,217
-- Issue: The synthetic `git ls-files --stage` input uses the format `"160000 commit abc123  <path>"`, inserting the word "commit" as a second field. The real command emits `<mode> <hash> <stage>\t<path>` (three fields before the path), so awk field $4 is the path in both the real and synthetic formats — tests pass for the right reason. However, the synthetic format misrepresents the real output, and a maintainer editing the awk expression could introduce a field-index mismatch that goes unnoticed because the tests would still pass against the wrong synthetic data.
+#### EXERCISE: detect_repo_languages output discarded without assertion
+- File: tests/test_repo_map_fixtures.sh:84
+- Issue: `detect_repo_languages "$FIXTURE_DIR"` is called and its result stored in `langs`, but `langs` is suppressed via `# shellcheck disable=SC2034` and never asserted. The test falls back to separate `find`-based checks for Python, JS, and Bash. The function is exercised (a non-zero exit would fail the script under `set -euo pipefail`), but its output contract for the fixture project is not validated.
 - Severity: LOW
-- Action: Update synthetic input strings to match the real `git ls-files --stage` format, e.g. `"160000 abc123 0\t.claude/worktrees/agent-a049075c"`. This documents the correct format and makes the awk field-selection robust against future editing errors.
+- Action: Either assert that `langs` contains expected language names (e.g. `echo "$langs" | grep -q "python"`), or remove the call and note that `detect_repo_languages` coverage lives in `tests/test_indexer.sh`. As-is the call exercises the code path but provides no regression protection for its output.
 
-#### COVERAGE: Section 4 mode-160000 assertion is trivially true without the mitigation
-- File: tests/test_worktree_gitignore_coverage.sh:100-108
-- Issue: Section 4 runs `git add .claude/worktrees/` and asserts no mode 160000 (gitlink) entries appear in the index. Mode 160000 entries only arise when `git add` encounters a path that is itself a git repository (containing a `.git` file or directory). The test fixture at that point contains only regular files inside `.claude/worktrees/test-worktree-1/` — no nested git repo — so `git add` would never produce a gitlink entry regardless of whether the `.gitignore` pattern exists. The no-gitlink assertion is trivially satisfied even if the `.claude/worktrees/` entry were absent from `.gitignore`. The actual prevention is already validated correctly by `git check-ignore` tests in sections 2, 5, and 8.
+#### COVERAGE: M123 new-language fixture files not verified by the multi-language detection section
+- File: tests/test_repo_map_fixtures.sh:87-107
+- Issue: The "multi-language detection" section checks Python, JS, and Bash presence only. The five new M123 fixtures (Go, Rust, Java, C++, Ruby) are verified by path in the explicit loop at lines 67-78, which is adequate for regression protection, but no extension-level check exists for the new languages in the detection section.
 - Severity: LOW
-- Action: Either annotate the check as belt-and-suspenders (noting the `check-ignore` sections own the real proof), or replace the fixture with `git init .claude/worktrees/test-worktree-1` to construct a genuine nested-repo scenario that would produce a mode 160000 entry if the `.gitignore` pattern were absent.
+- Action: Optional improvement — no fix required for PASS. If `detect_repo_languages` is later extended to return per-extension results, assertions for the M123 languages should be added here.
+
+#### SCOPE: tools/tests/test_extract_tags_integration.py modified by coder but absent from audit scope
+- File: tools/tests/test_extract_tags_integration.py (not listed in audit context "modified this run")
+- Issue: Git status shows `M tools/tests/test_extract_tags_integration.py`. CODER_SUMMARY lists this as modified ("Added a parametrized fixture test across Go/Rust/Java/C++/Ruby"). The TESTER_REPORT does not list it as a modified test file, and it is absent from the audit context. The coder, not the tester, appears to be the sole author of the M123 additions. The file was read during this audit; the additions are coherent and honest — the `pytest.importorskip` guard + `result is not None` + key-presence assertions match the milestone spec's stated intent. No integrity violations found. However, there was no independent tester review.
+- Severity: LOW
+- Action: Human should confirm that `tools/tests/test_audit_grammars.py` (4 new tests, coder-authored) and the M123 additions to `test_extract_tags_integration.py` are included in the next audit scope, or explicitly acknowledge that coder-authored Python unit tests are acceptable without tester review for this milestone.
+
+#### STALE-SYM: Orphan detector false positives — dismissed
+- File: tests/test_repo_map_fixtures.sh (all reported symbols)
+- Issue: The orphan detector flagged `cd`, `dirname`, `echo`, `exit`, `find`, `head`, `mktemp`, `pwd`, `set`, `source`, `trap`, `wc`, `:` as "not found in any source definition." All are POSIX shell builtins or standard external programs, not user-defined functions. The detector's grep-based analysis has no visibility into the shell's built-in command namespace.
+- Severity: LOW (false positive — no action required)
+- Action: Dismiss. No code changes needed.
+
+---
 
 ### Additional Observations (no action required)
 
-**Assertion honesty: PASS.** With the exception of the unconditional `pass()` at line 137 noted above, all assertions are derived from real function calls and real git commands. The guard logic in `test_gitlink_ci_guard_logic.sh` is taken verbatim from `release.yml`/`docs.yml` (lines 15–32 / 30–47), with only `git ls-files --stage` replaced by synthetic stdin injection — `git config --file .gitmodules --get-regexp`, `grep -qxF`, and the `::error::` annotation text all execute against live state. The `::error::` string in assertions matches the exact text in both workflow files. No hard-coded magic values unrelated to implementation logic were found.
+**Assertion honesty: PASS.** All assertions in `test_indexer_audit_shell.sh` are grounded in specific strings emitted by the real implementation: `.ts`, `tree_sitter_typescript`, `AttributeError`, `Grammar module missing`, `subprocess failed`, `no output`, `Grammars:`. These are derived from the exact warn/log_verbose messages in `lib/indexer_audit.sh:69,74,82,85,88`, not invented constants. No `assertTrue(True)` equivalents found.
 
-**Test isolation: PASS.** Both test files create all fixtures in `mktemp -d` temp directories cleaned up by `trap 'rm -rf ...' EXIT`. No mutable project files (`.tekhton/CODER_SUMMARY.md`, pipeline logs, `.claude/logs/`, `pipeline.conf`, run artifacts) are read or depended upon for pass/fail outcome.
+**Test isolation: PASS.** `test_indexer_audit_shell.sh` creates all test artifacts (fake Python stubs, response file) in `TEST_TMP=$(mktemp -d)` cleaned by `trap`. `test_repo_map_fixtures.sh` creates `TMPDIR=$(mktemp -d)` for `PROJECT_DIR`; fixture files read are from the committed `tests/fixtures/indexer_project/` tree, not mutable pipeline state. Neither file reads `.tekhton/`, `.claude/logs/`, pipeline reports, or any run-time-generated artifacts.
 
-**Weakening check: PASS.** Both files are new; no pre-existing tests were modified by the tester.
+**Implementation exercise: PASS.** `test_indexer_audit_shell.sh` sources the real `lib/indexer_audit.sh` and calls `_indexer_run_startup_audit()` directly. The fake Python subprocess outputs real tab-separated classification data, so the entire bash parsing loop (`while IFS=$'\t' read -r status f2 f3 f4 f5`) runs against realistic input. All four code branches (LOADED, MISSING, MISMATCH, SUMMARY) are exercised along with all four guard-return paths.
 
-**Scope alignment: PASS.** Tests reference the guard logic added to `.github/workflows/release.yml` and `.github/workflows/docs.yml`, and the `.claude/worktrees/` gitignore pattern added to `.gitignore` and `lib/common.sh:_ensure_gitignore_entries()`. No orphaned imports or stale function names detected. The separately-modified `tests/test_ensure_gitignore_entries.sh` (which tests `_ensure_gitignore_entries()` directly) is not under audit here; the tester's report confirms it passes 41/41.
+**Weakening check: PASS.** Both files are new. `test_repo_map_fixtures.sh` was extended (upper file-count bound bumped from 10 to 20 to accommodate M123 fixtures); the comment at line 55-57 documents the rationale and the range remains a meaningful correctness bound.
 
-**Test naming: PASS.** Names encode scenario and expected outcome throughout both files (e.g. "rogue without .gitmodules: emits error annotation", "git check-ignore reports files within worktree as ignored").
+**Scope alignment: PASS.** All symbols referenced in the tests exist in the current codebase. The `command -v _indexer_run_startup_audit` guard in `lib/indexer.sh:97` means that `test_indexer.sh` (freshness sample), which sources `indexer.sh` without `indexer_audit.sh`, continues to work correctly — `check_indexer_available()` silently skips the audit when the function is not defined. No stale references found in freshness-sample files.
 
-**Test exercise: PASS.** `test_gitlink_ci_guard_logic.sh` exercises real `git init`, `git config --file`, and shell parsing logic from the production CI scripts. `test_worktree_gitignore_coverage.sh` exercises real `git check-ignore`, `git ls-files`, `git add`, and `git commit` against a live temp repository. No dependency is mocked beyond the `git ls-files --stage` stdin injection in the guard logic tests.
+**Test naming: PASS.** Section echo headers in both files encode the scenario and expected outcome. Pass/fail messages include the relevant extension, function, or config key name for traceability.
+
+**Config default verified: PASS.** `test_indexer_audit_shell.sh:314-319` sources `lib/config_defaults.sh` with required stubs and asserts `INDEXER_STARTUP_AUDIT == "true"`. The actual value is at `lib/config_defaults.sh:165` — confirmed match.

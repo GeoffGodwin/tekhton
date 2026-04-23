@@ -80,6 +80,7 @@ tekhton/
 │   ├── milestone_progress.sh # Milestone progress CLI + next-action guidance
 │   ├── milestone_progress_helpers.sh # Rendering helpers for milestone progress
 │   ├── indexer.sh          # Repo map orchestration + Python tool invocation
+│   ├── indexer_audit.sh    # Startup grammar audit (M123)
 │   ├── indexer_helpers.sh  # Language detection, config validation, file extraction
 │   ├── indexer_history.sh  # Task→file association tracking (JSONL)
 │   ├── causality.sh        # Causal event log infrastructure + query layer
@@ -418,6 +419,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `REPO_MAP_SLICE` | Task-relevant subset of repo map (per-stage) |
 | `REPO_MAP_HISTORY_ENABLED` | Track task→file associations (default: true) |
 | `REPO_MAP_HISTORY_MAX_RECORDS` | Max history entries before pruning (default: 200) |
+| `INDEXER_STARTUP_AUDIT` | Run grammar audit in `check_indexer_available` and warn on API-mismatch extensions (default: true) |
 | `SERENA_ENABLED` | Enable Serena LSP via MCP (default: false) |
 | `SERENA_PATH` | Serena installation directory (default: .claude/serena) |
 | `SERENA_CONFIG_PATH` | Path to generated MCP config (auto-generated) |

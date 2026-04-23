@@ -399,6 +399,7 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
 
     # Warm indexer cache if available (M7)
     source "${TEKHTON_HOME}/lib/indexer.sh"
+    source "${TEKHTON_HOME}/lib/indexer_audit.sh"
     source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
     source "${TEKHTON_HOME}/lib/indexer_cache.sh"
     source "${TEKHTON_HOME}/lib/indexer_history.sh"
@@ -881,6 +882,7 @@ source "${TEKHTON_HOME}/lib/milestone_progress_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_progress.sh"
 source "${TEKHTON_HOME}/lib/context_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
+source "${TEKHTON_HOME}/lib/indexer_audit.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
 source "${TEKHTON_HOME}/lib/indexer_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer_history.sh"

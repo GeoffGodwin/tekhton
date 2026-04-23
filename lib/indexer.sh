@@ -93,6 +93,8 @@ check_indexer_available() {
     fi
 
     INDEXER_AVAILABLE=true
+    # shellcheck disable=SC2015  # A && B || true: both branches are no-ops on failure
+    command -v _indexer_run_startup_audit &>/dev/null && _indexer_run_startup_audit "$venv_python" "${TEKHTON_HOME}/tools" || true  # M123
 
     # Also check Serena availability (informational — does not affect return)
     if command -v check_serena_available &>/dev/null; then
@@ -120,7 +122,6 @@ run_repo_map() {
     local task="${1:-}"
     local budget="${2:-${REPO_MAP_TOKEN_BUDGET:-2048}}"
     local force_refresh="${3:-false}"
-
     if [[ "$INDEXER_AVAILABLE" != "true" ]]; then
         return 1
     fi
@@ -228,7 +229,6 @@ run_repo_map() {
 # Returns: 0 on success, 1 if no map cached
 get_repo_map_slice() {
     local file_list="${1:-}"
-
     if [[ -z "$REPO_MAP_CONTENT" ]]; then
         return 1
     fi

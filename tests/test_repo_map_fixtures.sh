@@ -51,12 +51,31 @@ else
     fail "fixture missing scripts/setup.sh"
 fi
 
+# Upper bound bumped from 10 → 20 in M123 to cover the added Go/Rust/Java/
+# C++/Ruby fixtures. Keep this generous so future language fixtures don't
+# churn this test, but tight enough to flag accidental bloat.
 file_count=$(find "$FIXTURE_DIR" -type f | wc -l)
-if [[ "$file_count" -ge 5 ]] && [[ "$file_count" -le 10 ]]; then
-    pass "fixture has 5-10 files (got: $file_count)"
+if [[ "$file_count" -ge 5 ]] && [[ "$file_count" -le 20 ]]; then
+    pass "fixture has 5-20 files (got: $file_count)"
 else
-    fail "fixture should have 5-10 files (got: $file_count)"
+    fail "fixture should have 5-20 files (got: $file_count)"
 fi
+
+# =============================================================================
+echo "=== Fixture project: M123 new language fixtures exist ==="
+
+for fixture_path in \
+    "services/server.go" \
+    "services/handler.rs" \
+    "services/Worker.java" \
+    "native/engine.cpp" \
+    "scripts/helper.rb"; do
+    if [[ -f "${FIXTURE_DIR}/${fixture_path}" ]]; then
+        pass "M123 fixture exists: ${fixture_path}"
+    else
+        fail "M123 fixture missing: ${fixture_path}"
+    fi
+done
 
 # =============================================================================
 echo "=== Fixture project: multi-language detection ==="

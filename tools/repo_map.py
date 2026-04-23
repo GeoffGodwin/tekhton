@@ -34,7 +34,13 @@ except ImportError:
     pathspec = None  # type: ignore[assignment]
 
 from tag_cache import TagCache
-from tree_sitter_languages import get_parser, supported_extensions, ext_to_language_name, extensions_for_languages
+from tree_sitter_languages import (
+    audit_grammars,
+    get_parser,
+    supported_extensions,
+    ext_to_language_name,
+    extensions_for_languages,
+)
 
 # Characters per token estimate (conservative, matches v2 CHARS_PER_TOKEN)
 CHARS_PER_TOKEN = 4
@@ -715,7 +721,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate a ranked repo map using tree-sitter."
     )
-    parser.add_argument("--root", required=True, help="Project root directory")
+    parser.add_argument("--root", default="", help="Project root directory (required except in --audit-grammars mode)")
     parser.add_argument("--task", default="", help="Task description for ranking")
     parser.add_argument("--budget", type=int, default=2048, help="Token budget")
     parser.add_argument("--cache-dir", default=".cache", help="Cache directory")
@@ -739,8 +745,24 @@ def main() -> int:
         "--emit-test-map", default="",
         help="Path to write test symbol map JSON (M88)"
     )
+    parser.add_argument(
+        "--audit-grammars", action="store_true",
+        help="Print grammar load status as JSON to stdout and exit 0. "
+             "Does not walk the project or touch the cache."
+    )
 
     args = parser.parse_args()
+
+    # Diagnostic mode: audit grammar loadability and exit. Must run before any
+    # root validation or cache setup so the audit stays side-effect-free.
+    if args.audit_grammars:
+        print(json.dumps(audit_grammars(), indent=2, default=str))
+        return 0
+
+    if not args.root:
+        print("Error: --root is required (except with --audit-grammars)", file=sys.stderr)
+        return 2
+
     root = os.path.abspath(args.root)
 
     if not os.path.isdir(root):

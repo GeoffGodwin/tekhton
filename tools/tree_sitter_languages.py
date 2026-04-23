@@ -115,3 +115,57 @@ def ext_to_language_name(ext: str) -> Optional[str]:
 def extensions_for_languages(requested: set[str]) -> set[str]:
     """Return the set of file extensions for the requested language names."""
     return {ext for ext, (_, lang) in _EXT_TO_LANG.items() if lang in requested}
+
+
+def audit_grammars() -> dict[str, dict[str, object]]:
+    """Probe every (module, lang_name) pair in _EXT_TO_LANG.
+
+    Returns a dict keyed by extension with:
+      - "module": module name attempted
+      - "lang_name": language name attempted
+      - "module_importable": bool
+      - "language_loaded": bool
+      - "error": str | None (ClassName: message if load failed)
+
+    Intended for startup diagnostics, not for hot paths. Does not raise.
+    """
+    result: dict[str, dict[str, object]] = {}
+    for ext, (module_name, lang_name) in _EXT_TO_LANG.items():
+        entry: dict[str, object] = {
+            "module": module_name,
+            "lang_name": lang_name,
+            "module_importable": False,
+            "language_loaded": False,
+            "error": None,
+        }
+        try:
+            mod = importlib.import_module(module_name)
+        except Exception as e:  # noqa: BLE001 — report any import failure
+            entry["error"] = f"{type(e).__name__}: {e}"
+            result[ext] = entry
+            continue
+
+        entry["module_importable"] = True
+
+        try:
+            lang_fn = getattr(mod, f"language_{lang_name}", None)
+            if lang_fn is None:
+                lang_fn = getattr(mod, "language", None)
+            if lang_fn is None:
+                lang_fn = getattr(mod, "LANGUAGE", None)
+            if lang_fn is None:
+                entry["error"] = (
+                    f"AttributeError: no language_{lang_name}, language, "
+                    f"or LANGUAGE export found on {module_name}"
+                )
+                result[ext] = entry
+                continue
+            lang = lang_fn() if callable(lang_fn) else lang_fn
+            if tree_sitter is not None and not isinstance(lang, tree_sitter.Language):
+                lang = tree_sitter.Language(lang)
+            entry["language_loaded"] = True
+        except Exception as e:  # noqa: BLE001 — surface any load failure
+            entry["error"] = f"{type(e).__name__}: {e}"
+
+        result[ext] = entry
+    return result

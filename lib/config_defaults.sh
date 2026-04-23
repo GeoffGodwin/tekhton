@@ -162,6 +162,7 @@ set -euo pipefail
 : "${REPO_MAP_HISTORY_ENABLED:=true}"
 : "${REPO_MAP_HISTORY_MAX_RECORDS:=200}"
 : "${SCOUT_REPO_MAP_TOOLS_ONLY:=true}"    # Reduce scout tools when repo map available
+: "${INDEXER_STARTUP_AUDIT:=true}"        # M123: run grammar audit in check_indexer_available
 
 # --- TUI mode (M97: rich.live sidecar display; M98: layout redesign) ---
 : "${TUI_ENABLED:=auto}"                  # auto | true | false
