@@ -35,7 +35,8 @@ TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init >/dev/null
 DESIGN_FILE_VALUE=$(grep "^DESIGN_FILE=" "${PROJECT_DIR}/.claude/pipeline.conf" | cut -d= -f2 | tr -d '"')
 [ "$DESIGN_FILE_VALUE" = "DESIGN.md" ] || { echo "FAIL: DESIGN_FILE should be 'DESIGN.md', got '$DESIGN_FILE_VALUE'"; exit 1; }
 
-# Test 2: --init without DESIGN.md should leave DESIGN_FILE=""
+# Test 2: --init without any design doc should emit the canonical default
+# DESIGN_FILE=".tekhton/DESIGN.md" (M120: no longer emits empty-string landmine)
 TMPDIR2=$(mktemp -d)
 trap 'rm -rf "$TMPDIR2"' EXIT
 
@@ -50,8 +51,8 @@ TEKHTON_NON_INTERACTIVE=true bash "${TEKHTON_HOME}/tekhton.sh" --init >/dev/null
 # Check that pipeline.conf was created
 [ -f "${PROJECT_DIR}/.claude/pipeline.conf" ] || { echo "FAIL: pipeline.conf not created"; exit 1; }
 
-# Check that DESIGN_FILE is empty
+# Check that DESIGN_FILE is set to the canonical default (M120)
 DESIGN_FILE_VALUE=$(grep "^DESIGN_FILE=" "${PROJECT_DIR}/.claude/pipeline.conf" | cut -d= -f2 | tr -d '"')
-[ "$DESIGN_FILE_VALUE" = "" ] || { echo "FAIL: DESIGN_FILE should be empty, got '$DESIGN_FILE_VALUE'"; exit 1; }
+[ "$DESIGN_FILE_VALUE" = ".tekhton/DESIGN.md" ] || { echo "FAIL: DESIGN_FILE should be '.tekhton/DESIGN.md' (M120 default), got '$DESIGN_FILE_VALUE'"; exit 1; }
 
 echo "PASS: DESIGN_FILE auto-set tests passed"

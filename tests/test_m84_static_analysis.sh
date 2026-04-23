@@ -37,15 +37,19 @@ fail() { FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1)); echo "FAIL: $*"; }
 # =============================================================================
 # Suite 1: lib/**/*.sh — zero literal M84 filenames outside default definitions
 #
-# config_defaults.sh and common.sh are excluded: both intentionally carry the
-# "${VAR:=${TEKHTON_DIR}/FILENAME.md}" default assignments. All other lib/
-# files must use the config variable, not the literal filename.
+# config_defaults.sh and artifact_defaults.sh are excluded: both intentionally
+# carry the "${VAR:=${TEKHTON_DIR}/FILENAME.md}" default assignments. common.sh
+# sources artifact_defaults.sh so it carries no literals of its own.
+# All other lib/ files must use the config variable, not the literal filename.
+# M120: Extracted the default block from common.sh into artifact_defaults.sh
+# so planning mode can re-source it to self-heal empty values (issue #179).
 # =============================================================================
 echo "--- Suite 1: lib/**/*.sh — zero literal filenames (excl. default files) ---"
 
 for fname in "${M84_FILES[@]}"; do
     matches=$(grep -r --include="*.sh" \
         --exclude="config_defaults.sh" \
+        --exclude="artifact_defaults.sh" \
         --exclude="common.sh" \
         "$fname" "${TEKHTON_HOME}/lib" 2>/dev/null || true)
     if [[ -z "$matches" ]]; then
@@ -147,24 +151,25 @@ else
 fi
 
 # =============================================================================
-# Suite 6: common.sh defaults use ${TEKHTON_DIR}/ prefix (not bare filenames)
+# Suite 6: artifact_defaults.sh defaults use ${TEKHTON_DIR}/ prefix (not bare)
 #
-# The duplicate defaults in common.sh must follow the same pattern as
-# config_defaults.sh: "${VAR:=${TEKHTON_DIR}/FILENAME.md}".
+# The duplicate defaults (M120: moved from common.sh to artifact_defaults.sh so
+# plan.sh can re-source them after load_plan_config) must follow the same
+# pattern as config_defaults.sh: "${VAR:=${TEKHTON_DIR}/FILENAME.md}".
 # This verifies the duplicates are correct, not bare path assignments.
 # =============================================================================
-echo "--- Suite 6: common.sh M84 defaults use \${TEKHTON_DIR}/ prefix ---"
+echo "--- Suite 6: artifact_defaults.sh M84 defaults use \${TEKHTON_DIR}/ prefix ---"
 
-common_sh="${TEKHTON_HOME}/lib/common.sh"
+artifact_defaults_sh="${TEKHTON_HOME}/lib/artifact_defaults.sh"
 
 for fname in "${M84_FILES[@]}"; do
     TOTAL=$((TOTAL + 1))
     # The line must contain both the filename AND TEKHTON_DIR (as a default assignment)
-    if grep -q "TEKHTON_DIR.*${fname}" "$common_sh" 2>/dev/null; then
+    if grep -q "TEKHTON_DIR.*${fname}" "$artifact_defaults_sh" 2>/dev/null; then
         PASS=$((PASS + 1))
     else
         FAIL=$((FAIL + 1))
-        echo "FAIL: 6.x common.sh: '${fname}' default does not use \${TEKHTON_DIR}/ prefix"
+        echo "FAIL: 6.x artifact_defaults.sh: '${fname}' default does not use \${TEKHTON_DIR}/ prefix"
     fi
 done
 

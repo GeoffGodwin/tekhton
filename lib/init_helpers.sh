@@ -16,6 +16,9 @@ set -euo pipefail
 # shellcheck source=init_helpers_display.sh disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/init_helpers_display.sh"
 
+# shellcheck source=init_helpers_maturity.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/init_helpers_maturity.sh"
+
 # --- Monorepo routing (Milestone 12) ------------------------------------------
 
 _offer_monorepo_choice() {

@@ -2,13 +2,14 @@
 PASS
 
 ## Confidence
-87
+95
 
 ## Reasoning
-- Scope is precisely bounded: two deliverables (test suite + doc), one linking pass, zero production code changes, explicit non-goals list
-- Nine invariants are individually named and their semantics described in enough detail that two developers would implement them the same way
-- Acceptance criteria are all mechanically verifiable: file exists, bash tests run clean, shellcheck passes, pytest passes, grep finds/misses specific strings
-- Files-modified table is complete and matches the acceptance criteria line-by-line
-- No new user-facing config keys or format changes → no Migration Impact section needed
-- No web/mobile UI components → UI testability rubric does not apply
-- One minor note: `tools/tui_render_timings.py` appears in both the files table and acceptance criteria but is not listed in the CLAUDE.md tools inventory (which was last updated around M110). This is almost certainly a new file added in M113–M118 that wasn't back-ported to CLAUDE.md; the developer should verify the file exists before starting, and if so, update the CLAUDE.md tools listing as part of this milestone's CLAUDE.md edit. This does not block implementation.
+- Scope is precisely defined: 6 numbered goals, exact files to modify, and a detailed Non-Goals section leave no ambiguity about what is in and out of scope
+- Acceptance criteria are specific and testable — each criterion names a concrete condition, expected return value, or observable output (error message text, exit code, file size check)
+- Code snippets are provided for every proposed change, removing interpretation risk for the implementation
+- Brownfield safety is explicitly addressed with two dedicated acceptance criteria, covering both the execution pipeline and validator exit-code behavior
+- Dependency on M120 is declared upfront and its interaction with M121's assertions is clearly explained (assertions won't fire on a correctly-functioning M120 pipeline)
+- No new user-facing config keys are introduced, so no Migration impact section is required
+- Not a UI milestone; UI testability criterion is not applicable
+- No existing tests require edits (stated as an acceptance criterion), reducing regression risk

@@ -47,6 +47,7 @@ source "${TEKHTON_HOME}/stages/plan_interview_helpers.sh"
 #
 # Returns 0 if ${DESIGN_FILE} was produced, 1 otherwise.
 run_plan_interview() {
+    _assert_design_file_usable || return $?
     local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     local log_dir="${PROJECT_DIR}/.claude/logs"
     local timestamp
@@ -192,7 +193,17 @@ run_plan_interview() {
     local design_status="not created"
     if [[ -n "$design_content" ]]; then
         if [[ "$_disk_rescued" == "false" ]]; then
-            printf '%s\n' "$design_content" > "$design_file"
+            if ! printf '%s\n' "$design_content" > "$design_file" 2>/dev/null; then
+                error "Failed to write ${DESIGN_FILE} to ${design_file}."
+                error "Check that the path is a file (not a directory) and the parent directory is writable."
+                exec 3<&- 2>/dev/null || true
+                return 1
+            fi
+        fi
+        if [[ ! -s "$design_file" ]]; then
+            error "${DESIGN_FILE} write appeared to succeed but the file is empty or missing at ${design_file}."
+            exec 3<&- 2>/dev/null || true
+            return 1
         fi
         local line_count
         line_count=$(count_lines < "$design_file")

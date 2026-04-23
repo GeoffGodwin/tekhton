@@ -117,6 +117,24 @@ validate_config() {
         passes=$((passes + 1))
     fi
 
+    # Check 6a (M121): DESIGN_FILE explicitly empty in pipeline.conf.
+    # config_defaults.sh's `:=` self-heals an empty value before validate
+    # runs, so we inspect the raw pipeline.conf to surface the legacy line.
+    # Informational only — brownfield-safe (M120 handles the runtime fix).
+    local _pipe_conf="${PROJECT_DIR}/.claude/pipeline.conf"
+    if [[ -f "$_pipe_conf" ]] && \
+       grep -qE '^[[:space:]]*DESIGN_FILE[[:space:]]*=[[:space:]]*("[[:space:]]*"|'"''"'|)[[:space:]]*(#.*)?$' "$_pipe_conf"; then
+        _vc_warn "DESIGN_FILE is an empty string in pipeline.conf. Tekhton will fall back to the default (.tekhton/DESIGN.md) when needed — you can safely remove the line, set it to the default explicitly, or point it at your existing design doc if you keep one elsewhere."
+        warnings=$((warnings + 1))
+    fi
+
+    # Check 6b (M121): DESIGN_FILE ends in '/' (directory path, not a file).
+    # Survives config_defaults.sh because `:=` does not override non-empty values.
+    if [[ -n "${DESIGN_FILE:-}" ]] && [[ "${DESIGN_FILE}" == */ ]]; then
+        _vc_warn "DESIGN_FILE ends in '/' (directory path, not a file): ${DESIGN_FILE}. This will cause planning-mode writes to fail. Fix: remove the trailing slash or point the key at a markdown file."
+        warnings=$((warnings + 1))
+    fi
+
     # Check 6: DESIGN_FILE exists on disk (if set)
     if [[ -n "${DESIGN_FILE:-}" ]]; then
         if [[ -f "${PROJECT_DIR}/${DESIGN_FILE}" ]]; then

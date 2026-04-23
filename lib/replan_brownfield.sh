@@ -87,6 +87,7 @@ _generate_codebase_summary() {
 # Validates prerequisites, assembles context, calls the replan agent,
 # writes output to DESIGN_DELTA.md, and presents approval menu.
 run_replan() {
+    _assert_design_file_usable || return $?
     local design_file="${PROJECT_DIR}/${DESIGN_FILE:-}"
     local claude_file="${PROJECT_DIR}/CLAUDE.md"
 
@@ -253,6 +254,7 @@ _brownfield_approval_menu() {
 
 # _apply_brownfield_delta — Apply the replan delta to ${DESIGN_FILE} and regenerate CLAUDE.md.
 _apply_brownfield_delta() {
+    _assert_design_file_usable || return $?
     local delta_file="$1"
     local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
     local claude_file="${PROJECT_DIR}/CLAUDE.md"

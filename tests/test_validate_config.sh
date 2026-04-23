@@ -240,6 +240,65 @@ else
 fi
 
 echo ""
+echo "=== validate_config M121 check 6a: DESIGN_FILE=\"\" in pipeline.conf warns ==="
+
+# Create a pipeline.conf with a literal DESIGN_FILE="" entry so check 6a fires.
+_pipe_conf_6a="${TEST_TMPDIR}/.claude/pipeline.conf"
+printf 'DESIGN_FILE=""\n' > "$_pipe_conf_6a"
+DESIGN_FILE=""  # env var empty — not a trailing slash, so 6b stays quiet
+rc=0
+output=$(validate_config 2>/dev/null) || rc=$?
+if [[ "$rc" -eq 0 ]]; then
+    pass "6a: pipeline.conf DESIGN_FILE=\"\" is only a warning (exit 0)"
+else
+    fail "6a: pipeline.conf DESIGN_FILE=\"\" caused error (exit $rc, expected 0)"
+fi
+if echo "$output" | grep -q "DESIGN_FILE is an empty string"; then
+    pass "6a: warning message present for empty DESIGN_FILE in pipeline.conf"
+else
+    fail "6a: warning message missing; output: $(echo "$output" | grep -i design | head -2)"
+fi
+rm -f "$_pipe_conf_6a"
+
+echo ""
+echo "=== validate_config M121 check 6b: DESIGN_FILE ending in '/' warns ==="
+
+# No pipeline.conf — only the in-memory value triggers 6b.
+DESIGN_FILE="docs/design/"
+rc=0
+output=$(validate_config 2>/dev/null) || rc=$?
+if [[ "$rc" -eq 0 ]]; then
+    pass "6b: trailing-slash DESIGN_FILE is only a warning (exit 0)"
+else
+    fail "6b: trailing-slash DESIGN_FILE caused error (exit $rc, expected 0)"
+fi
+if echo "$output" | grep -q "ends in '/'"; then
+    pass "6b: warning message present for trailing-slash DESIGN_FILE"
+else
+    fail "6b: warning message missing; output: $(echo "$output" | grep -i design | head -2)"
+fi
+DESIGN_FILE=""
+
+echo ""
+echo "=== validate_config M121: valid DESIGN_FILE does not trigger 6a/6b ==="
+
+# Valid path — neither grep-in-file (6a) nor trailing-slash (6b) should fire.
+DESIGN_FILE=".tekhton/DESIGN.md"
+rc=0
+output=$(validate_config 2>/dev/null) || rc=$?
+if ! echo "$output" | grep -q "DESIGN_FILE is an empty string"; then
+    pass "6a: no false-positive for valid DESIGN_FILE"
+else
+    fail "6a: false-positive warning fired for valid DESIGN_FILE"
+fi
+if ! echo "$output" | grep -q "ends in '/'"; then
+    pass "6b: no false-positive for valid DESIGN_FILE"
+else
+    fail "6b: false-positive warning fired for valid DESIGN_FILE"
+fi
+DESIGN_FILE=""
+
+echo ""
 echo "════════════════════════════════════════"
 echo "  Results: ${PASS} passed, ${FAIL} failed"
 echo "════════════════════════════════════════"

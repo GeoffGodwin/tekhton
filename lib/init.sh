@@ -218,4 +218,22 @@ CHANGELOG_EOF
     header "Init Complete"
     emit_init_summary "$project_dir" "$languages" "$frameworks" \
         "$commands" "$project_type" "$tracked_file_count"
+
+    # M120 Goal 4: branch-aware next-step hint.
+    # has_design → silent; greenfield → push --plan; brownfield → no --plan push.
+    local _m120_design_file=""
+    if [[ -f "${project_dir}/.tekhton/DESIGN.md" ]]; then
+        _m120_design_file=".tekhton/DESIGN.md"
+    elif [[ -f "${project_dir}/DESIGN.md" ]]; then
+        _m120_design_file="DESIGN.md"
+    fi
+    local _m120_has_commands=0
+    if [[ -n "$commands" ]]; then
+        _m120_has_commands=1
+    fi
+    local _m120_classification
+    _m120_classification=$(_classify_project_maturity \
+        "$project_dir" "$_m120_design_file" \
+        "$tracked_file_count" "$_m120_has_commands")
+    _print_init_next_step "$_m120_classification"
 }

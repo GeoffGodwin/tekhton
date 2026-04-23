@@ -51,6 +51,10 @@ source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 # Source plan_batch.sh for _trim_document_preamble helper used by plan_generate.sh
 source "${TEKHTON_HOME}/lib/plan_batch.sh"
 
+# M121: Stub _assert_design_file_usable (normally provided by lib/plan.sh).
+# DESIGN_FILE is set to a valid path above, so the stub just returns 0.
+_assert_design_file_usable() { return 0; }
+
 # Source plan_generate.sh itself (defines run_plan_generate and _insert_milestone_pointer)
 source "${TEKHTON_HOME}/stages/plan_generate.sh"
 

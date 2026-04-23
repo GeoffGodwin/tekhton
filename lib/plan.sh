@@ -66,6 +66,31 @@ load_plan_config() {
 # Load config if available, then apply defaults for anything not set.
 load_plan_config
 
+# M120: Re-apply artifact path defaults. pipeline.conf files generated before
+# M120 contain a literal `DESIGN_FILE=""` line that overwrites the in-memory
+# default installed by common.sh. Re-sourcing artifact_defaults.sh uses `:=`,
+# which self-heals empty or unset values without clobbering user overrides.
+# shellcheck source=artifact_defaults.sh disable=SC1091
+source "${TEKHTON_HOME}/lib/artifact_defaults.sh"
+
+# --- Fail-loud DESIGN_FILE guard (M121) --------------------------------------
+# Called at the top of every --plan / --replan / --plan-from-index consumer
+# before composing a path from DESIGN_FILE. Guards against empty or directory-
+# valued DESIGN_FILE. With M120 in place this should never fire on a correctly
+# configured project; without M120 it aborts loudly instead of silently writing
+# to a directory path.
+_assert_design_file_usable() {
+    if [[ -z "${DESIGN_FILE:-}" ]]; then
+        error "DESIGN_FILE is empty. Check pipeline.conf — the value should point to a markdown file (default: .tekhton/DESIGN.md)."
+        return 1
+    fi
+    if [[ "${DESIGN_FILE}" == */ ]]; then
+        error "DESIGN_FILE ends in '/' (directory path, not a file): ${DESIGN_FILE}"
+        return 1
+    fi
+    return 0
+}
+
 # --- Planning config defaults ------------------------------------------------
 # Overridable via environment variables or pipeline.conf.
 

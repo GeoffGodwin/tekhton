@@ -77,7 +77,12 @@ EOF
     if [[ -n "$design_file" ]]; then
         echo "DESIGN_FILE=\"${design_file}\""
     else
-        echo 'DESIGN_FILE=""'
+        # M120: Emit the canonical default, not "". An empty value overwrites
+        # the in-memory default during --plan mode and causes design-file paths
+        # to resolve to the project root (issue #179).
+        echo '# --plan will synthesize the design document at this path.'
+        echo '# Leave as-is unless you already keep a design doc elsewhere.'
+        echo 'DESIGN_FILE=".tekhton/DESIGN.md"'
     fi
 }
 
