@@ -10,12 +10,14 @@
 # =============================================================================
 set -euo pipefail
 
-# _enter_qp_rate LABEL — invoke enter_quota_pause for a rate-limit. Wrapper
-# kept tiny so _retry_pause_spinner_around_quota is the single place where
-# spinner pause/resume bracketing lives.
+# _enter_qp_rate LABEL [RETRY_AFTER] — invoke enter_quota_pause for a
+# rate-limit. Wrapper kept tiny so _retry_pause_spinner_around_quota is the
+# single place where spinner pause/resume bracketing lives. M125 threads
+# Retry-After through as the second arg when present.
 _enter_qp_rate() {
-    local label="$1"
-    enter_quota_pause "Rate limited (agent: ${label})"
+    local label="$1"; shift
+    local retry_after="${1:-}"
+    enter_quota_pause "Rate limited (agent: ${label})" "$retry_after"
 }
 
 # _enter_qp_proactive LABEL REMAINING — proactive Tier-2 pause variant.

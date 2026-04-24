@@ -145,9 +145,14 @@ start ts all stay intact, so the run resumes the same lifecycle on
 refresh.
 
 - **Owner.** `lib/tui_ops_pause.sh` exposes the public API:
-  `tui_enter_pause REASON RETRY_INTERVAL MAX_DURATION`,
+  `tui_enter_pause REASON RETRY_INTERVAL MAX_DURATION [FIRST_PROBE_DELAY]`,
   `tui_update_pause NEXT_PROBE_IN_SECS [ELAPSED_SECS]`, and
-  `tui_exit_pause [refreshed|timeout|cancelled]`.
+  `tui_exit_pause [refreshed|timeout|cancelled]`. The optional
+  `FIRST_PROBE_DELAY` argument (M125) overrides the default
+  `RETRY_INTERVAL` for the initial countdown when the original
+  rate-limit error carried a `Retry-After` header — so the countdown
+  starts at the upstream-provided value rather than the flat probe
+  cadence.
 - **Caller.** Only `enter_quota_pause` invokes these helpers, guarded by
   `command -v tui_enter_pause &>/dev/null` so quota.sh remains usable
   when the TUI layer is not loaded (unit tests, smoke scripts).
@@ -157,11 +162,18 @@ refresh.
   successful refresh the spinner is restarted via `_resume_agent_spinner`
   and the caller's spinner-pid local vars are rewritten via nameref so
   the trailing `_stop_agent_spinner` kills the new generation.
-- **Lifetime.** Capped at `QUOTA_MAX_PAUSE_DURATION` (default 4h).
-  Internal sleeping uses `_quota_sleep_chunked` (chunk size from
-  `QUOTA_SLEEP_CHUNK`, default 5s) so SIGINT/SIGTERM is responsive
+- **Lifetime.** Capped at `QUOTA_MAX_PAUSE_DURATION` (default 5h15m as
+  of M125 — matches Anthropic's 5h rolling window plus clock-skew
+  buffer). Internal sleeping uses `_quota_sleep_chunked` (chunk size
+  from `QUOTA_SLEEP_CHUNK`, default 5s) so SIGINT/SIGTERM is responsive
   within ~chunk seconds and so `tui_update_pause` can refresh the
-  countdown on a sub-minute cadence.
+  countdown on a sub-minute cadence. Probe cadence is separate from the
+  sleep cadence: the first probe fires at `Retry-After` (when present,
+  clamped to `[QUOTA_PROBE_MIN_INTERVAL, QUOTA_MAX_PAUSE_DURATION]`);
+  subsequent probes use mild 1.5× exponential back-off with ±10%
+  jitter, capped by `QUOTA_PROBE_MAX_INTERVAL` (M125). The paused-bar
+  countdown reflects this Retry-After-informed next-probe delay, not a
+  hardcoded interval.
 - **Watchdog.** `tools/tui.py` extends watchdog eligibility to
   `current_agent_status` ∈ {`idle`, `paused`}. The mtime-staleness
   check still gates the timeout — an active pause keeps the file fresh

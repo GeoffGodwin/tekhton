@@ -27,14 +27,24 @@
 set -euo pipefail
 # shellcheck source=lib/tui.sh
 
-# tui_enter_pause REASON [RETRY_INTERVAL_SECS] [MAX_DURATION_SECS]
+# tui_enter_pause REASON [RETRY_INTERVAL_SECS] [MAX_DURATION_SECS] [FIRST_PROBE_DELAY_SECS]
+# M125: FIRST_PROBE_DELAY_SECS overrides the default RETRY_INTERVAL_SECS for
+# the initial countdown when the original rate-limit error carried a
+# Retry-After header. Empty/zero/non-numeric falls back to RETRY_INTERVAL.
 tui_enter_pause() {
     [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
     local reason="${1:-Rate limited}"
     local retry_interval="${2:-0}"
     local max_duration="${3:-0}"
+    local first_probe_delay="${4:-}"
     [[ "$retry_interval" =~ ^[0-9]+$ ]] || retry_interval=0
     [[ "$max_duration" =~ ^[0-9]+$ ]] || max_duration=0
+
+    local initial_delay="$retry_interval"
+    if [[ -n "$first_probe_delay" ]] && [[ "$first_probe_delay" =~ ^[0-9]+$ ]] \
+       && [[ "$first_probe_delay" -gt 0 ]]; then
+        initial_delay="$first_probe_delay"
+    fi
 
     local now
     now=$(date +%s)
@@ -42,7 +52,7 @@ tui_enter_pause() {
     _TUI_PAUSE_RETRY_INTERVAL="$retry_interval"
     _TUI_PAUSE_MAX_DURATION="$max_duration"
     _TUI_PAUSE_STARTED_AT="$now"
-    _TUI_PAUSE_NEXT_PROBE_AT=$(( now + retry_interval ))
+    _TUI_PAUSE_NEXT_PROBE_AT=$(( now + initial_delay ))
     _TUI_AGENT_STATUS="paused"
     if declare -f tui_append_event &>/dev/null; then
         tui_append_event "warn" "Quota pause: ${reason}"

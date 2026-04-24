@@ -166,6 +166,7 @@ tekhton/
 │   ├── drift_prune.sh      # Drift log pruning
 │   ├── quota.sh            # API quota management
 │   ├── quota_sleep.sh      # M124 chunked-sleep helper for enter_quota_pause
+│   ├── quota_probe.sh      # M125 layered probe (version/zero_turn/fallback) + back-off/jitter helpers
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
 │   ├── preflight.sh        # Pre-flight environment validation
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
@@ -488,6 +489,9 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `TUI_SIMPLE_LOGO` | Use 5-line ASCII fallback logo instead of Unicode block-char arch (default: false) |
 | `TUI_WATCHDOG_TIMEOUT` | Seconds of status-file inactivity before sidecar self-terminates when pipeline is idle or paused; prevents infinite hang when parent shell blocks before sending complete signal (default: 300, 0 = disabled) |
 | `QUOTA_SLEEP_CHUNK` | M124. Internal chunk size (seconds) for the chunked sleep inside `enter_quota_pause`; bounds Ctrl-C / SIGTERM responsiveness during a quota pause and drives the TUI countdown refresh cadence. (default: 5, max: 60) |
+| `QUOTA_MAX_PAUSE_DURATION` | M125. Hard cap (seconds) on how long `enter_quota_pause` will wait for a quota refresh before giving up. Should match the upstream quota window plus clock-skew buffer. (default: 18900 = 5h15m, max: 86400) |
+| `QUOTA_PROBE_MIN_INTERVAL` | M125. Floor (seconds) on how often a real-cost probe may fire. Clamps Retry-After values below this to keep the fallback probe mode from dominating the paused budget. (default: 600 = 10m, max: 3600) |
+| `QUOTA_PROBE_MAX_INTERVAL` | M125. Cap (seconds) on the 1.5× exponential back-off applied to subsequent probes after the first. Keeps the TUI countdown predictable. (default: 1800 = 30m, max: 3600) |
 
 **TUI lifecycle model.** See [`docs/tui-lifecycle-model.md`](docs/tui-lifecycle-model.md) for the authoritative description of stage classes, pill / timings / events ownership, the substage API, the auto-close-and-warn rule, and checklists for adding new stages, sub-stages, or `run_op` call sites. Invariants are enforced by `tests/test_tui_lifecycle_invariants.sh`.
 

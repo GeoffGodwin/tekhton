@@ -53,8 +53,12 @@ is_rate_limit_error() {
 
 # --- Pause/resume state machine ----------------------------------------------
 
-# enter_quota_pause
+# enter_quota_pause REASON [RETRY_AFTER_SECONDS]
 # Pauses pipeline execution and enters a retry loop waiting for quota refresh.
+# When RETRY_AFTER_SECONDS is supplied (M125), the first probe is scheduled at
+# that delay (clamped to [QUOTA_PROBE_MIN_INTERVAL, QUOTA_MAX_PAUSE_DURATION])
+# instead of QUOTA_RETRY_INTERVAL. Subsequent probes use mild exponential
+# back-off with jitter (see _quota_next_probe_delay).
 # Returns 0 when quota refreshes, 1 if max pause duration exceeded.
 enter_quota_pause() {
     local pause_start
@@ -62,6 +66,19 @@ enter_quota_pause() {
     _QUOTA_PAUSED=true
     _QUOTA_PAUSE_COUNT=$(( _QUOTA_PAUSE_COUNT + 1 ))
     local pause_reason="${1:-Rate limited}"
+    local retry_after="${2:-}"
+    local max_dur="${QUOTA_MAX_PAUSE_DURATION:-18900}"
+    local floor="${QUOTA_PROBE_MIN_INTERVAL:-600}"
+    local base_interval="${QUOTA_RETRY_INTERVAL:-300}"
+
+    # Clamp retry_after into [floor, max_dur]. Empty/non-numeric → use base.
+    local first_delay="$base_interval"
+    if [[ -n "$retry_after" ]] && [[ "$retry_after" =~ ^[0-9]+$ ]]; then
+        first_delay="$retry_after"
+        [[ "$first_delay" -lt "$floor" ]] && first_delay="$floor"
+        [[ "$first_delay" -gt "$max_dur" ]] && first_delay="$max_dur"
+        log "Anthropic said retry in $(_quota_fmt_duration "$retry_after") — waiting that long before first probe."
+    fi
 
     # Save timeout state
     _QUOTA_SAVED_ACTIVITY_TIMEOUT="${AGENT_ACTIVITY_TIMEOUT:-600}"
@@ -70,25 +87,23 @@ enter_quota_pause() {
         _QUOTA_SAVED_AUTONOMOUS_REMAINING=$(( ${AUTONOMOUS_TIMEOUT:-7200} - elapsed ))
     fi
 
-    # Disable activity timeout during pause
     AGENT_ACTIVITY_TIMEOUT=0
     export AGENT_ACTIVITY_TIMEOUT
 
-    # Write marker file for external visibility
     local marker_file="${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED"
     mkdir -p "$(dirname "$marker_file")" 2>/dev/null || true
     {
         echo "paused_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
         echo "reason=${pause_reason}"
-        echo "retry_interval=${QUOTA_RETRY_INTERVAL:-300}"
-        echo "max_duration=${QUOTA_MAX_PAUSE_DURATION:-14400}"
+        echo "retry_interval=${base_interval}"
+        echo "max_duration=${max_dur}"
+        echo "first_probe_delay=${first_delay}"
     } > "$marker_file"
 
-    # Log to Watchtower
     if command -v emit_event &>/dev/null; then
         emit_event "quota_pause" "pipeline" "${pause_reason}" \
             "" "" \
-            "{\"pause_count\":${_QUOTA_PAUSE_COUNT},\"retry_interval\":${QUOTA_RETRY_INTERVAL:-300}}" \
+            "{\"pause_count\":${_QUOTA_PAUSE_COUNT},\"retry_interval\":${base_interval},\"first_probe_delay\":${first_delay}}" \
             >/dev/null 2>&1 || true
     fi
     if command -v emit_dashboard_run_state &>/dev/null; then
@@ -97,24 +112,23 @@ enter_quota_pause() {
         emit_dashboard_run_state 2>/dev/null || true
     fi
 
-    # M124: surface the pause to the TUI sidecar so the active stage stops
-    # rendering as "running" while bash is sleeping. Guarded so quota.sh
-    # remains usable when sourced without the TUI layer (unit tests).
+    # M124/M125: surface the pause to the TUI sidecar. first_probe_delay is
+    # passed as the 4th argument so the countdown starts at the Retry-After-
+    # informed value rather than the default interval.
     if command -v tui_enter_pause &>/dev/null; then
-        tui_enter_pause "${pause_reason}" \
-            "${QUOTA_RETRY_INTERVAL:-300}" \
-            "${QUOTA_MAX_PAUSE_DURATION:-14400}" 2>/dev/null || true
+        tui_enter_pause "${pause_reason}" "$base_interval" "$max_dur" "$first_delay" \
+            2>/dev/null || true
     fi
 
-    warn "Pipeline paused — ${pause_reason}. Waiting for quota refresh (checking every ${QUOTA_RETRY_INTERVAL:-300}s, max ${QUOTA_MAX_PAUSE_DURATION:-14400}s)."
+    warn "Pipeline paused — ${pause_reason}. Waiting up to $(_quota_fmt_duration "$max_dur") for quota refresh (probing every $(_quota_fmt_duration "$base_interval"))."
     printf '\a' 2>/dev/null || true  # terminal bell
 
-    # Retry loop
     local retry_count=0
+    local probe_delay="$first_delay"
     while true; do
         local elapsed=$(( $(date +%s) - pause_start ))
-        if [[ "$elapsed" -ge "${QUOTA_MAX_PAUSE_DURATION:-14400}" ]]; then
-            warn "Quota pause exceeded QUOTA_MAX_PAUSE_DURATION (${QUOTA_MAX_PAUSE_DURATION:-14400}s). Giving up."
+        if [[ "$elapsed" -ge "$max_dur" ]]; then
+            warn "Quota pause exceeded QUOTA_MAX_PAUSE_DURATION ($(_quota_fmt_duration "$max_dur")). Giving up."
             _finalize_quota_pause "$pause_start"
             _QUOTA_PAUSED=false
             rm -f "$marker_file" 2>/dev/null || true
@@ -124,13 +138,16 @@ enter_quota_pause() {
             return 1
         fi
 
-        log "Quota probe attempt $((retry_count + 1)) — sleeping ${QUOTA_RETRY_INTERVAL:-300}s..."
-        _quota_sleep_chunked "${QUOTA_RETRY_INTERVAL:-300}" "$pause_start"
+        log "Quota probe attempt $((retry_count + 1)) — sleeping $(_quota_fmt_duration "$probe_delay")..."
+        if command -v tui_update_pause &>/dev/null; then
+            tui_update_pause "$probe_delay" "$elapsed" 2>/dev/null || true
+        fi
+        _quota_sleep_chunked "$probe_delay" "$pause_start"
         retry_count=$(( retry_count + 1 ))
 
-        # Lightweight probe: minimal claude call to test quota
         if _quota_probe; then
-            log "Quota refreshed after ${elapsed}s (${retry_count} probes)."
+            elapsed=$(( $(date +%s) - pause_start ))
+            log "Quota refreshed after $(_quota_fmt_duration "$elapsed") (${retry_count} probes)."
             _finalize_quota_pause "$pause_start"
             exit_quota_pause "$marker_file"
             if command -v tui_exit_pause &>/dev/null; then
@@ -139,39 +156,18 @@ enter_quota_pause() {
             return 0
         fi
 
-        log "Quota still exhausted (probe ${retry_count}, ${elapsed}s elapsed)."
+        log "Quota still exhausted (probe ${retry_count}, $(_quota_fmt_duration "$elapsed") elapsed)."
+        probe_delay=$(_quota_next_probe_delay $(( retry_count + 1 )) "$probe_delay")
     done
 }
 
-# Chunked-sleep helper lives in quota_sleep.sh (M124, kept separate to
-# keep this file under the 300-line ceiling).
+# Chunked-sleep helper lives in quota_sleep.sh (M124).
 # shellcheck source=lib/quota_sleep.sh
 source "${TEKHTON_HOME}/lib/quota_sleep.sh"
 
-# _quota_probe
-# Lightweight single-turn claude call to test if quota has refreshed.
-# Returns 0 if successful (quota available), 1 if still rate-limited.
-_quota_probe() {
-    local probe_stderr
-    probe_stderr=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/quota_probe_XXXXXX.txt")
-
-    local probe_exit=0
-    # Minimal call — single turn, trivial prompt
-    timeout 30 claude --max-turns 1 --output-format json \
-        -p "respond with OK" \
-        < /dev/null > /dev/null 2>"$probe_stderr" || probe_exit=$?
-
-    local result=0
-    if [[ "$probe_exit" -ne 0 ]]; then
-        if is_rate_limit_error "$probe_exit" "$probe_stderr"; then
-            result=1
-        fi
-        # Non-rate-limit errors mean quota may be available
-    fi
-
-    rm -f "$probe_stderr" 2>/dev/null || true
-    return "$result"
-}
+# Layered probe + back-off helpers (M125).
+# shellcheck source=lib/quota_probe.sh
+source "${TEKHTON_HOME}/lib/quota_probe.sh"
 
 # _finalize_quota_pause PAUSE_START
 # Accumulates pause time into total.

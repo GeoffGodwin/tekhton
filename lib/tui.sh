@@ -282,6 +282,11 @@ _tui_write_status() {
     now=$(date +%s)
     elapsed=$(( now - _TUI_PIPELINE_START_TS ))
 
+    # Ensure parent directory exists before attempting to write
+    local parent_dir
+    parent_dir=$(dirname "$_TUI_STATUS_TMP")
+    [[ ! -d "$parent_dir" ]] && return 0
+
     _tui_json_build_status "$elapsed" >"$_TUI_STATUS_TMP" 2>/dev/null || return 0
     mv -f "$_TUI_STATUS_TMP" "$_TUI_STATUS_FILE" 2>/dev/null || true
 }

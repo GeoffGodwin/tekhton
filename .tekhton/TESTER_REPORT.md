@@ -1,13 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_quota_sleep_chunked.sh` — _quota_sleep_chunked chunk math: correct loop count, tui_update_pause calls, edge cases (zero total, invalid chunk, absent helper)
-- [x] `tests/test_agent_retry_pause.sh` — _retry_pause_spinner_around_quota: happy path (namrefs updated), failure path (no resume), absent spinner module; _pause_agent_spinner with live/empty PIDs
+- [x] `tests/test_quota.sh` — Fix QUOTA_MAX_PAUSE_DURATION default assertion (14400→18900) + add fallback-mode throttle and probe-mode cache-reuse coverage gaps
 
 ## Test Run Results
-Passed: 27  Failed: 0
+Passed: 74  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_quota_sleep_chunked.sh`
-- [x] `tests/test_agent_retry_pause.sh`
+- [x] `tests/test_quota.sh`
