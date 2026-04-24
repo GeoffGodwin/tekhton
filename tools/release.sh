@@ -127,23 +127,9 @@ ok "Tag pushed to origin."
 if command -v gh >/dev/null 2>&1; then
     info "Creating GitHub Release via gh CLI..."
 
-    # Determine if this should be marked as Latest. We mark Latest only when
-    # the version is the highest stable semver tag in the repo (no pre-release
-    # suffix, and no other tag with a higher semver exists).
-    LATEST_FLAG=""
-    HIGHEST_TAG="$(git tag -l 'v*.*.*' | sort -V | tail -1)"
-    if [ "$HIGHEST_TAG" = "$VERSION" ]; then
-        LATEST_FLAG="--latest"
-        info "This is the highest semver tag — will mark as Latest."
-    else
-        LATEST_FLAG="--latest=false"
-        info "Higher tag exists ($HIGHEST_TAG) — will NOT mark as Latest."
-    fi
-
     if gh release create "$VERSION" \
         --title "$VERSION — $(head -1 "$NOTES_FILE" | sed 's/^#* *//')" \
-        --notes-file "$NOTES_FILE" \
-        $LATEST_FLAG; then
+        --notes-file "$NOTES_FILE"; then
         ok "GitHub Release created."
         gh release view "$VERSION" --web 2>/dev/null || true
     else
