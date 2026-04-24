@@ -128,8 +128,11 @@ for mnum in 73 74 75 76 77 78 79 80 81 82 83; do
     fi
 done
 
-# ============= Integration: check_milestone_acceptance logs warnings =============
-echo "--- Integration: check_milestone_acceptance ---"
+# ============= Integration: check_milestone_acceptance does NOT lint =============
+# Lint was moved from end-of-run acceptance (where warnings are non-actionable)
+# to authoring time (draft_milestones_validate_output). The acceptance gate
+# must stay focused on pass/fail criteria only.
+echo "--- Integration: check_milestone_acceptance (no lint) ---"
 
 # Variables consumed by sourced libraries (milestone_acceptance.sh, milestones.sh, etc.)
 export TEST_CMD=""
@@ -146,7 +149,8 @@ export REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
 
 mkdir -p "${TMPDIR}/.claude/milestones" "${LOG_DIR}" "${TMPDIR}/${TEKHTON_DIR}"
 
-# Test milestone: refactor with only structural criteria
+# Test milestone: refactor with only structural criteria (would trigger lint
+# at authoring time, but must NOT trigger it at acceptance time).
 cat > "${TMPDIR}/.claude/milestones/m99-test-move-files.md" << 'EOF'
 # Milestone 99: Test Move Files
 
@@ -192,22 +196,16 @@ load_manifest 2>/dev/null || true
 
 check_output=$(check_milestone_acceptance "99" "CLAUDE.md" 2>&1) || true
 
-if echo "$check_output" | grep -q 'Lint:.*behavioral'; then
-    pass "Lint behavioral warning appears in check_milestone_acceptance output"
+if echo "$check_output" | grep -q 'Lint:'; then
+    fail "Lint warnings must NOT appear in check_milestone_acceptance output (moved to authoring)"
 else
-    fail "Lint warning should appear in output"
-fi
-
-if echo "$check_output" | grep -q 'Lint:.*refactor.*completeness'; then
-    pass "Lint refactor warning appears in check_milestone_acceptance output"
-else
-    fail "Refactor lint warning should appear in output"
+    pass "check_milestone_acceptance does not emit lint warnings"
 fi
 
 if grep -q 'Lint:' "${TMPDIR}/${NON_BLOCKING_LOG_FILE}" 2>/dev/null; then
-    pass "Lint warnings logged to NON_BLOCKING_LOG"
+    fail "Lint warnings must NOT be logged to NON_BLOCKING_LOG from acceptance gate"
 else
-    fail "Lint warnings should be logged to NON_BLOCKING_LOG"
+    pass "check_milestone_acceptance does not write to NON_BLOCKING_LOG"
 fi
 
 echo

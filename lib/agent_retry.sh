@@ -14,8 +14,18 @@
 # =============================================================================
 set -euo pipefail
 
-# _run_with_retry LABEL INVOKE_CMD MODEL MAX_TURNS PROMPT LOG_FILE ACTIVITY_TIMEOUT SESSION_DIR EXIT_FILE TURNS_FILE PRERUN_MARKER WALL_TIMEOUT
-# Main retry envelope. Invokes agent and retries on transient errors with exponential backoff.
+# Spinner pause/resume helpers used to wrap enter_quota_pause (M124).
+# shellcheck source=lib/agent_retry_pause.sh
+source "${TEKHTON_HOME}/lib/agent_retry_pause.sh"
+
+# _run_with_retry LABEL INVOKE_CMD MODEL MAX_TURNS PROMPT LOG_FILE ACTIVITY_TIMEOUT SESSION_DIR EXIT_FILE TURNS_FILE PRERUN_MARKER WALL_TIMEOUT [SPINNER_PID_VAR] [TUI_UPDATER_PID_VAR]
+# Main retry envelope. Invokes agent and retries on transient errors with
+# exponential backoff. M124: optional nameref args (variable NAMES, not
+# values) carry the caller's local spinner-pid vars so that, around an
+# enter_quota_pause call, we can pause/resume the heartbeat subshells and
+# rewrite the names back to the current generation. Without these names,
+# the spinner keeps reporting "running" through the pause and the caller
+# eventually tries to kill stale PIDs.
 _run_with_retry() {
     local label="$1"
     local invoke_cmd="$2"
@@ -29,6 +39,8 @@ _run_with_retry() {
     local turns_file="${10}"
     local prerun_marker="${11}"
     local wall_timeout="${12}"
+    local _spinner_pid_var="${13:-}"
+    local _tui_updater_pid_var="${14:-}"
 
     LAST_AGENT_RETRY_COUNT=0
     local _retry_attempt=0
@@ -75,8 +87,15 @@ _run_with_retry() {
             local _stderr_path="${session_dir}/agent_stderr.txt"
             if is_rate_limit_error "$_RWR_EXIT" "$_stderr_path"; then
                 if command -v enter_quota_pause &>/dev/null; then
+                    # M125: thread Retry-After from the original error into the
+                    # pause loop so the first probe respects upstream's hint.
+                    local _ra=""
+                    _ra=$(_extract_retry_after_seconds "$session_dir" || true)
                     warn "[$label] Rate limit detected — entering quota pause."
-                    if enter_quota_pause "Rate limited (agent: ${label})"; then
+                    _retry_pause_spinner_around_quota _enter_qp_rate "$label" \
+                        "$max_turns" "$turns_file" \
+                        "$_spinner_pid_var" "$_tui_updater_pid_var" "$_ra"
+                    if [[ "$_RETRY_QP_RC" -eq 0 ]]; then
                         # Quota refreshed — retry without incrementing counter
                         _reset_monitoring_state "$session_dir"
                         rm -f "$exit_file" "$turns_file"
@@ -103,10 +122,11 @@ _run_with_retry() {
                 local _remaining
                 _remaining=$(check_quota_remaining)
                 warn "[$label] Quota at ${_remaining}% — below reserve threshold. Entering proactive pause."
-                if enter_quota_pause "Paused at ${_remaining}% remaining (reserve threshold)"; then
-                    # Continue to error classification — the current call may have succeeded
-                    true
-                fi
+                _retry_pause_spinner_around_quota _enter_qp_proactive "$label" \
+                    "$max_turns" "$turns_file" \
+                    "$_spinner_pid_var" "$_tui_updater_pid_var" "$_remaining"
+                # Continue to error classification — the current call may
+                # have succeeded; pause-rc is informational here.
             fi
         fi
 
@@ -209,11 +229,7 @@ _should_retry_transient() {
     case "${AGENT_ERROR_SUBCATEGORY}" in
         api_rate_limit)
             local _retry_after=""
-            if [[ -f "${session_dir}/agent_last_output.txt" ]]; then
-                _retry_after=$(grep -oiE '"retry.after"[[:space:]]*:[[:space:]]*"?[0-9]+"?' \
-                    "${session_dir}/agent_last_output.txt" 2>/dev/null \
-                    | grep -oE '[0-9]+' | head -1)
-            fi
+            _retry_after=$(_extract_retry_after_seconds "$session_dir" || true)
             if [[ -n "${_retry_after:-}" ]] && [[ "$_retry_after" -gt "$_delay" ]] 2>/dev/null; then
                 _delay="$_retry_after"
             elif [[ "$_delay" -lt 60 ]]; then
@@ -239,4 +255,35 @@ _should_retry_transient() {
     rm -f "$exit_file" "$turns_file"
 
     return 0
+}
+
+# _extract_retry_after_seconds SESSION_DIR
+# M125: parse a Retry-After value (in seconds) from the agent's captured
+# output files. Checks agent_last_output.txt (structured JSON form from the
+# CLI) and agent_stderr.txt (plain-text form logged when the CLI prints
+# the error before writing structured output). Prints the numeric value on
+# stdout and returns 0 when found, returns 1 when absent or malformed.
+_extract_retry_after_seconds() {
+    local session_dir="${1:-}"
+    [[ -n "$session_dir" ]] || return 1
+
+    local f secs=""
+    for f in "${session_dir}/agent_last_output.txt" "${session_dir}/agent_stderr.txt"; do
+        [[ -f "$f" ]] || continue
+        # JSON form: "retry_after": 47, "retry-after": "47", retry_after: 47
+        secs=$(grep -oiE '"?retry[._-]?after"?[[:space:]]*:[[:space:]]*"?[0-9]+' "$f" 2>/dev/null \
+               | grep -oE '[0-9]+' | head -1 || true)
+        if [[ -z "$secs" ]]; then
+            # Plain-text stderr form: "Retry after 180 seconds", "Retry-After 180"
+            secs=$(grep -oiE 'retry[-[:space:]]+after[[:space:]]+[0-9]+' "$f" 2>/dev/null \
+                   | grep -oE '[0-9]+' | head -1 || true)
+        fi
+        [[ -n "$secs" ]] && break
+    done
+
+    if [[ -n "$secs" ]] && [[ "$secs" =~ ^[0-9]+$ ]]; then
+        echo "$secs"
+        return 0
+    fi
+    return 1
 }

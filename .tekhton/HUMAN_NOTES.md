@@ -16,5 +16,4 @@ Prefix each note with a priority tag so the pipeline can scope runs correctly:
 
 ## Bugs
 
-- [ ] [BUG] Move acceptance-criteria quality lint warning out of end-of-run acceptance path; run in draft milestone flow or pre-run authoring checks where it is actionable. <!-- note:n01 created:2026-04-21 priority:medium source:cli -->
 ## Polish

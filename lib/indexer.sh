@@ -93,6 +93,8 @@ check_indexer_available() {
     fi
 
     INDEXER_AVAILABLE=true
+    # shellcheck disable=SC2015  # A && B || true: both branches are no-ops on failure
+    command -v _indexer_run_startup_audit &>/dev/null && _indexer_run_startup_audit "$venv_python" "${TEKHTON_HOME}/tools" || true  # M123
 
     # Also check Serena availability (informational — does not affect return)
     if command -v check_serena_available &>/dev/null; then
@@ -120,7 +122,6 @@ run_repo_map() {
     local task="${1:-}"
     local budget="${2:-${REPO_MAP_TOKEN_BUDGET:-2048}}"
     local force_refresh="${3:-false}"
-
     if [[ "$INDEXER_AVAILABLE" != "true" ]]; then
         return 1
     fi
@@ -189,7 +190,8 @@ run_repo_map() {
         fi
     fi
 
-    # Parse cache stats from stderr (last line is JSON if --stats was passed)
+    # Parse cache stats from stderr (last line is JSON if --stats was passed).
+    # Stderr file is preserved until after the fatal-exit warning below fires.
     if [[ -f "$stderr_output" ]]; then
         local stats_line
         stats_line=$(grep -E '^\{' "$stderr_output" | tail -1 2>/dev/null || true)
@@ -197,20 +199,20 @@ run_repo_map() {
             INDEXER_CACHE_HIT_RATE=$(echo "$stats_line" | \
                 grep -oE '"hit_rate":[0-9.]+' | grep -oE '[0-9.]+$' || true)
         fi
-        rm -f "$stderr_output" 2>/dev/null || true
     fi
 
     if [[ "$exit_code" -eq 2 ]] || [[ -z "$REPO_MAP_CONTENT" ]]; then
         warn "[indexer] repo_map.py failed — falling back to no repo map."
+        _indexer_emit_stderr_tail "$stderr_output"
+        rm -f "$stderr_output" 2>/dev/null || true
         REPO_MAP_CONTENT=""
         return 1
     fi
+    rm -f "$stderr_output" 2>/dev/null || true
 
     if [[ "$exit_code" -eq 1 ]]; then
         log "[indexer] Partial repo map generated (some files could not be parsed)."
     fi
-
-    # M61: Save to run cache after successful generation
     _save_repo_map_run_cache
     emit_test_symbol_map
 
@@ -227,7 +229,6 @@ run_repo_map() {
 # Returns: 0 on success, 1 if no map cached
 get_repo_map_slice() {
     local file_list="${1:-}"
-
     if [[ -z "$REPO_MAP_CONTENT" ]]; then
         return 1
     fi
@@ -295,5 +296,4 @@ invalidate_repo_map_cache() {
     fi
     return 0
 }
-
 # Intra-run cache functions: see lib/indexer_cache.sh (M61)

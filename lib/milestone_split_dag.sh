@@ -76,9 +76,11 @@ _split_apply_dag() {
         sub_slug=$(_slugify "$sub_title")
         local sub_file="${sub_id}-${sub_slug}.md"
         # Path-traversal guard: reject any filename that has survived slugging
-        # with a path separator. Keeps write safety independent of _slugify's
-        # current behaviour.
-        if [[ "$sub_file" == */* ]]; then
+        # with a path separator or that is the bare ".." traversal token.
+        # Keeps write safety independent of _slugify's current behaviour, and
+        # makes the defensive intent self-documenting even though the OS would
+        # reject a bare ".." write path anyway.
+        if [[ "$sub_file" == */* ]] || [[ "$sub_file" == ".." ]]; then
             error "Refusing to write milestone file with path separator: ${sub_file}"
             return 1
         fi

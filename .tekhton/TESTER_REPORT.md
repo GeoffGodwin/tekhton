@@ -1,15 +1,33 @@
+# Tester Report
+
 ## Planned Tests
-- [x] `tests/test_plan_config_loader.sh` — Verify existing 6/6 pass (empty self-heal, custom preservation, no-conf default, _assert_design_file_usable ×3)
-- [x] `tests/test_plan_empty_slate.sh` — Verify existing 8/8 pass (--init canonical default, round-trip write, self-heal round-trip)
-- [x] `tests/test_validate_config.sh` — Add M121 coverage: 6a warning (pipeline.conf DESIGN_FILE=""), 6b warning (trailing slash), no-false-positive on valid/unset, both are warnings-only (exit 0)
+- [x] Verify the resolved non-blocking note: `tests/test_draft_milestones_validate_lint.sh` fixture count matches documentation
 
 ## Test Run Results
-Passed: 38  Failed: 0
+Passed: 1  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_plan_config_loader.sh`
-- [x] `tests/test_plan_empty_slate.sh`
-- [x] `tests/test_validate_config.sh`
+- [x] `.tekhton/TESTER_REPORT.md`
+
+---
+
+## Verification Summary
+
+**Task Scope:** Address all 1 open non-blocking note in `.tekhton/NON_BLOCKING_LOG.md`.
+
+**Coder Work Completed:** The coder successfully addressed the single unchecked item (the "four scenarios" discrepancy) by:
+1. Marking it `[x]` in the log
+2. Adding a detailed resolution annotation verifying that `tests/test_draft_milestones_validate_lint.sh` has exactly three `# --- Fixture:` blocks (not four)
+3. Confirming no surviving references to the stale "four scenarios" exist in the codebase
+
+**Reviewer Status:** APPROVED — no coverage gaps identified.
+
+**Verification Performed:**
+- Confirmed `tests/test_draft_milestones_validate_lint.sh:36, 114, 170` contain exactly three fixture blocks
+- Verified coder's claim that the test fixtures match each documented behavior (refactor-only, behavioral-criteria, lint helper unavailable)
+- Confirmed no code changes were required; resolution was purely documentary
+
+**Result:** All non-blocking notes are now marked `[x]` in the log. The `[ ]` → `[x]` → next-run sweep into `## Resolved` flow is preserved.

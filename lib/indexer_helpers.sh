@@ -5,7 +5,7 @@
 # Sourced by tekhton.sh — do not run directly.
 # Provides: _indexer_resolve_cache_dir(), detect_repo_languages(),
 #           validate_indexer_config(), extract_files_from_coder_summary(),
-#           infer_test_counterparts()
+#           infer_test_counterparts(), _indexer_emit_stderr_tail()
 #
 # Extracted from indexer.sh to stay under the 300-line ceiling.
 #
@@ -27,6 +27,25 @@ _indexer_resolve_cache_dir() {
     fi
     mkdir -p "$cache_dir" 2>/dev/null || true
     echo "$cache_dir"
+}
+
+# --- Fatal-exit diagnostic surfacing ------------------------------------------
+
+# Emit the last few lines of repo_map.py stderr as warnings so users can
+# self-diagnose fatal failures (missing grammars, parse errors, etc.).
+# Args: $1 — path to stderr capture file
+_indexer_emit_stderr_tail() {
+    local stderr_output="$1"
+    [[ -s "$stderr_output" ]] || return 0
+    local stderr_tail
+    stderr_tail=$(tail -n 5 "$stderr_output" 2>/dev/null | \
+        sed 's/^/[indexer]   /')
+    [[ -n "$stderr_tail" ]] || return 0
+    warn "[indexer] Last lines of repo_map.py stderr:"
+    local _line
+    while IFS= read -r _line; do
+        warn "$_line"
+    done <<< "$stderr_tail"
 }
 
 # --- Language auto-detection --------------------------------------------------

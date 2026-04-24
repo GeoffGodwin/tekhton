@@ -399,6 +399,7 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
 
     # Warm indexer cache if available (M7)
     source "${TEKHTON_HOME}/lib/indexer.sh"
+    source "${TEKHTON_HOME}/lib/indexer_audit.sh"
     source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
     source "${TEKHTON_HOME}/lib/indexer_cache.sh"
     source "${TEKHTON_HOME}/lib/indexer_history.sh"
@@ -881,6 +882,7 @@ source "${TEKHTON_HOME}/lib/milestone_progress_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_progress.sh"
 source "${TEKHTON_HOME}/lib/context_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer.sh"
+source "${TEKHTON_HOME}/lib/indexer_audit.sh"
 source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
 source "${TEKHTON_HOME}/lib/indexer_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer_history.sh"
@@ -1845,9 +1847,12 @@ declare -A _STAGE_TURNS=()
 declare -A _STAGE_BUDGET=()
 declare -A _STAGE_DURATION=()
 declare -A _STAGE_START_TS=()
+# shellcheck disable=SC2034  # used by dashboard and finalization hooks
 PIPELINE_STATUS="running"
 CURRENT_STAGE="initializing"
+# shellcheck disable=SC2034  # used by dashboard and finalization hooks
 START_AT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")
+# shellcheck disable=SC2034  # used by dashboard and finalization hooks
 WAITING_FOR=""
 
 # Dashboard lifecycle: create if enabled + missing, cleanup if disabled + exists
@@ -1959,7 +1964,7 @@ if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
         warn "${HUMAN_NOTES_FILE} has ${HUMAN_NOTE_COUNT} unchecked item(s) — will be injected into coder prompt."
     fi
     extract_human_notes | sed 's/^/  /'
-    REMAINING_UNFILTERED=$(grep -c "^- \[ \]" ${HUMAN_NOTES_FILE} || true)
+    REMAINING_UNFILTERED=$(grep -c "^- \[ \]" "${HUMAN_NOTES_FILE}" || true)
     REMAINING_UNFILTERED=$(echo "$REMAINING_UNFILTERED" | tr -d '[:space:]')
     if [ -n "$NOTES_FILTER" ] && [ "$REMAINING_UNFILTERED" -gt "$HUMAN_NOTE_COUNT" ]; then
         log "  ($(( REMAINING_UNFILTERED - HUMAN_NOTE_COUNT )) note(s) with other tags deferred to future runs)"
@@ -2068,7 +2073,7 @@ elif [ "$START_AT" = "test" ]; then
 elif [ "$START_AT" = "tester" ]; then
     log "Resuming tester from existing ${TESTER_REPORT_FILE}"
     log "Planned tests remaining:"
-    grep "^- \[ \]" ${TESTER_REPORT_FILE} || log "(none found — may already be complete)"
+    grep "^- \[ \]" "${TESTER_REPORT_FILE}" || log "(none found — may already be complete)"
 else
     log "Resuming at ${START_AT} — prior reports preserved for agent context"
 fi
@@ -2274,6 +2279,7 @@ _run_pipeline_stages() {
     # Runs once per milestone/task before any other stage. Skipped when
     # START_AT is past coder (resuming from review/test).
     if [ "$START_AT" = "intake" ] || [ "$START_AT" = "coder" ]; then
+        # shellcheck disable=SC2034  # used by dashboard and finalization hooks
         CURRENT_STAGE="intake"
         _STAGE_STATUS[intake]="active"
         _STAGE_BUDGET[intake]="${INTAKE_MAX_TURNS:-10}"
@@ -2383,6 +2389,7 @@ _run_pipeline_stages() {
 
         coder)
             if should_run_stage "coder" "$START_AT"; then
+                # shellcheck disable=SC2034  # used by dashboard and finalization hooks
                 CURRENT_STAGE="coder"
                 local _coder_start_evt
                 _coder_start_evt=$(emit_event "stage_start" "coder" "$TASK" "$_LAST_STAGE_EVT" "" "")
@@ -2413,6 +2420,7 @@ _run_pipeline_stages() {
 
         docs)
             if should_run_stage "docs" "$START_AT"; then
+                # shellcheck disable=SC2034  # used by dashboard and finalization hooks
                 CURRENT_STAGE="docs"
                 local _docs_start_evt
                 _docs_start_evt=$(emit_event "stage_start" "docs" "" "$_LAST_STAGE_EVT" "" "")
@@ -2435,6 +2443,7 @@ _run_pipeline_stages() {
 
         security)
             if should_run_stage "security" "$START_AT"; then
+                # shellcheck disable=SC2034  # used by dashboard and finalization hooks
                 CURRENT_STAGE="security"
                 local _sec_start_evt
                 _sec_start_evt=$(emit_event "stage_start" "security" "" "$_LAST_STAGE_EVT" "" "")
@@ -2458,6 +2467,7 @@ _run_pipeline_stages() {
 
         review)
             if should_run_stage "review" "$START_AT"; then
+                # shellcheck disable=SC2034  # used by dashboard and finalization hooks
                 CURRENT_STAGE="reviewer"
                 local _review_start_evt
                 _review_start_evt=$(emit_event "stage_start" "reviewer" "" "$_LAST_STAGE_EVT" "" "")
@@ -2489,6 +2499,7 @@ _run_pipeline_stages() {
         test_write)
             # TDD pre-flight: write failing tests (only in test_first order)
             if should_run_stage "test_write" "$START_AT"; then
+                # shellcheck disable=SC2034  # used by dashboard and finalization hooks
                 CURRENT_STAGE="tester"
                 export TESTER_MODE="write_failing"
                 local _tw_start_evt
@@ -2511,6 +2522,7 @@ _run_pipeline_stages() {
 
         test_verify)
             if should_run_stage "test_verify" "$START_AT"; then
+                # shellcheck disable=SC2034  # used by dashboard and finalization hooks
                 CURRENT_STAGE="tester"
                 export TESTER_MODE="verify_passing"
                 local _tester_start_evt
@@ -2594,7 +2606,6 @@ _run_human_complete_loop() {
         fi
 
         # Reset claimed IDs so finalization only resolves the current iteration's note.
-        CLAIMED_NOTE_IDS=""
 
         # Drain any watchtower inbox notes that arrived since the last iteration
         # so they're available to pick_next_note (e.g. notes submitted mid-run).

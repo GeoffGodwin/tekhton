@@ -25,49 +25,8 @@ check_milestone_acceptance() {
 
     local all_pass=true
 
-    # --- Lint check: acceptance criteria quality warnings (M85) ---
-    if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
-       && declare -f has_milestone_manifest &>/dev/null \
-       && has_milestone_manifest \
-       && declare -f lint_acceptance_criteria &>/dev/null; then
-        local _lint_file=""
-        if [[ "${_DAG_LOADED:-false}" != "true" ]]; then
-            load_manifest 2>/dev/null || true
-        fi
-        local _lint_id
-        _lint_id=$(dag_number_to_id "$milestone_num" 2>/dev/null) || true
-        if [[ -n "$_lint_id" ]]; then
-            local _lint_fname
-            _lint_fname=$(dag_get_file "$_lint_id" 2>/dev/null) || true
-            if [[ -n "$_lint_fname" ]]; then
-                local _lint_dir
-                _lint_dir=$(_dag_milestone_dir)
-                _lint_file="${_lint_dir}/${_lint_fname}"
-            fi
-        fi
-        if [[ -n "$_lint_file" ]] && [[ -f "$_lint_file" ]]; then
-            local _lint_warnings
-            _lint_warnings=$(lint_acceptance_criteria "$_lint_file")
-            if [[ -n "$_lint_warnings" ]]; then
-                warn "Acceptance criteria quality warnings:"
-                while IFS= read -r _lint_line; do
-                    [[ -n "$_lint_line" ]] && warn "  ${_lint_line}"
-                done <<< "$_lint_warnings"
-                # Append to non-blocking log
-                if [[ -n "${NON_BLOCKING_LOG_FILE:-}" ]]; then
-                    local _nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
-                    if [[ -f "$_nb_file" ]]; then
-                        {
-                            echo ""
-                            echo "### Milestone ${milestone_num} — Acceptance Lint ($(date +%Y-%m-%d))"
-                            echo "$_lint_warnings"
-                        } >> "$_nb_file"
-                    fi
-                fi
-                echo
-            fi
-        fi
-    fi
+    # Acceptance lint moved to authoring time (see draft_milestones_validate_output
+    # in lib/draft_milestones_write.sh). Runtime acceptance checking is pass/fail only.
 
     # --- Automatable check 1: Test command passes ---
     if [[ -n "${TEST_CMD:-}" ]]; then

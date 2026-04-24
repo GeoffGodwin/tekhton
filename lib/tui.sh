@@ -72,6 +72,19 @@ declare -gA _TUI_CLOSED_LIFECYCLE_IDS=()
 _TUI_CURRENT_SUBSTAGE_LABEL=""
 _TUI_CURRENT_SUBSTAGE_START_TS=0
 
+# M124 quota-pause awareness. Populated by tui_enter_pause / tui_update_pause
+# while enter_quota_pause is blocking on a Claude usage-limit refresh.
+# All five fields are emitted in every status snapshot (empty/0 when not
+# paused) so the JSON shape stays stable for the sidecar consumer.
+# _TUI_AGENT_STATUS reverts to "paused" while a pause is active; the
+# spinner subshell is stopped before the pause and respawned on resume,
+# so no other writer is racing for that field.
+_TUI_PAUSE_REASON=""
+_TUI_PAUSE_RETRY_INTERVAL=0
+_TUI_PAUSE_MAX_DURATION=0
+_TUI_PAUSE_STARTED_AT=0
+_TUI_PAUSE_NEXT_PROBE_AT=0
+
 # Batched-write semaphore: bump to coalesce multiple mutations into one
 # status-file write. _tui_write_status returns early when > 0.
 _TUI_SUPPRESS_WRITE=0
@@ -268,6 +281,11 @@ _tui_write_status() {
     local now elapsed
     now=$(date +%s)
     elapsed=$(( now - _TUI_PIPELINE_START_TS ))
+
+    # Ensure parent directory exists before attempting to write
+    local parent_dir
+    parent_dir=$(dirname "$_TUI_STATUS_TMP")
+    [[ ! -d "$parent_dir" ]] && return 0
 
     _tui_json_build_status "$elapsed" >"$_TUI_STATUS_TMP" 2>/dev/null || return 0
     mv -f "$_TUI_STATUS_TMP" "$_TUI_STATUS_FILE" 2>/dev/null || true

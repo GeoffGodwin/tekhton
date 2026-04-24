@@ -25,6 +25,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate no rogue gitlinks
+        run: |
+          rogue=$(git ls-files --stage | awk '$1 == "160000" {print $4}')
+          if [ -z "$rogue" ]; then
+            echo "OK: no gitlinks in tree"
+            exit 0
+          fi
+          approved=""
+          if [ -f .gitmodules ]; then
+            approved=$(git config --file .gitmodules --get-regexp 'submodule\..*\.path' 2>/dev/null | awk '{print $2}' || true)
+          fi
+          failed=0
+          while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            if ! printf '%s\n' "$approved" | grep -qxF "$p"; then
+              echo "::error::Rogue gitlink (mode 160000) at '$p' — not declared in .gitmodules. This breaks 'actions/checkout' with 'no url found for submodule path'."
+              failed=1
+            fi
+          done <<< "$rogue"
+          exit "$failed"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'

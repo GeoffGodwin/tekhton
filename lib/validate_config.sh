@@ -135,7 +135,7 @@ validate_config() {
         warnings=$((warnings + 1))
     fi
 
-    # Check 6: DESIGN_FILE exists on disk (if set)
+    # Check 7: DESIGN_FILE exists on disk (if set)
     if [[ -n "${DESIGN_FILE:-}" ]]; then
         if [[ -f "${PROJECT_DIR}/${DESIGN_FILE}" ]]; then
             _vc_pass "DESIGN_FILE exists (${DESIGN_FILE})"
@@ -149,16 +149,16 @@ validate_config() {
         passes=$((passes + 1))
     fi
 
-    # Check 7: Agent role files exist
+    # Check 8: Agent role files exist
     _vc_check_role_files
 
-    # Check 8: Milestone manifest valid (if exists)
+    # Check 9: Milestone manifest valid (if exists)
     _vc_check_manifest
 
-    # Check 9: Model names recognized
+    # Check 10: Model names recognized
     _vc_check_models
 
-    # Check 10: TEKHTON_CONFIG_VERSION present
+    # Check 11: TEKHTON_CONFIG_VERSION present
     if [[ -n "${TEKHTON_CONFIG_VERSION:-}" ]]; then
         _vc_pass "TEKHTON_CONFIG_VERSION set (${TEKHTON_CONFIG_VERSION})"
         passes=$((passes + 1))
@@ -167,7 +167,7 @@ validate_config() {
         warnings=$((warnings + 1))
     fi
 
-    # Check 11: No stale PIPELINE_STATE.md
+    # Check 12: No stale PIPELINE_STATE.md
     if [[ -f "${PIPELINE_STATE_FILE:-}" ]]; then
         _vc_warn "PIPELINE_STATE.md exists — a previous run may need resuming"
         warnings=$((warnings + 1))

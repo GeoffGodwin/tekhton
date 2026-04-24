@@ -934,3 +934,111 @@ def test_timings_panel_working_row():
     # Turns column is blanked during working state — there is no agent turn
     # counter to report for a shell op.
     assert "--/40" not in rendered
+
+
+# =============================================================================
+# M124: quota-pause renderer + watchdog eligibility
+# =============================================================================
+
+
+def test_build_active_bar_renders_paused_status():
+    """M124: agent_status='paused' renders the dedicated paused bar with
+    a PAUSED label and an mm:ss next-probe countdown."""
+    from tui_render import _build_active_bar as _bab
+    now = int(_time.time())
+    status = {
+        **tui._empty_status(),
+        "stage_label": "coder",
+        "current_agent_status": "paused",
+        "pause_reason": "Rate limited (agent: Coder)",
+        "pause_started_at": now - 30,
+        "pause_next_probe_at": now + 90,
+        "pause_retry_interval": 300,
+        "pause_max_duration": 14400,
+    }
+    bar = _bab(status)
+    rendered = _render(bar)
+    assert "PAUSED" in rendered
+    assert "1m30s" in rendered
+    assert "coder" in rendered
+
+
+def test_build_active_bar_paused_handles_zero_next_probe():
+    """If pause_next_probe_at is 0 the bar shows the awaiting-refresh
+    fallback string rather than crashing."""
+    from tui_render import _build_active_bar as _bab
+    status = {
+        **tui._empty_status(),
+        "stage_label": "coder",
+        "current_agent_status": "paused",
+        "pause_reason": "Rate limited",
+        "pause_started_at": int(_time.time()),
+        "pause_next_probe_at": 0,
+    }
+    bar = _bab(status)
+    rendered = _render(bar)
+    assert "PAUSED" in rendered
+    assert "awaiting refresh" in rendered
+
+
+def test_paused_logo_uses_idle_frame():
+    """M124: paused state renders the idle (dim) logo, not the running
+    arch animation — the run is not crunching, it's blocked."""
+    status = tui._empty_status()
+    status["current_agent_status"] = "paused"
+    logo = tui._build_logo(status)
+    # Idle logo rows carry the dim style.
+    rendered = "".join(
+        s.style if isinstance(s.style, str) else "" for s in logo.spans
+    )
+    assert "dim" in rendered.lower()
+
+
+def test_watchdog_condition_fires_when_paused_and_stale(tmp_path):
+    """M124: watchdog eligibility extends to 'paused'. When the parent
+    shell dies during a quota pause and the status file goes stale, the
+    watchdog must trip exactly as it does for 'idle'."""
+    status_file = tmp_path / "tui_status.json"
+    paused_status = tui._empty_status()
+    paused_status["current_agent_status"] = "paused"
+    paused_status["agent_turns_used"] = 5
+    paused_status["complete"] = False
+    status_file.write_text(json.dumps(paused_status))
+
+    watchdog_secs = 1
+    last_mtime_time = _time.monotonic() - (watchdog_secs + 0.1)
+
+    status = tui._read_status(status_file)
+    assert status is not None
+
+    watchdog_should_fire = (
+        watchdog_secs > 0
+        and status.get("current_agent_status") in ("idle", "paused")
+        and status.get("agent_turns_used", 0) > 0
+        and _time.monotonic() - last_mtime_time > watchdog_secs
+    )
+    assert watchdog_should_fire, "Watchdog must fire for paused+stale status"
+
+
+def test_watchdog_does_not_fire_when_paused_and_fresh(tmp_path):
+    """When the pause is heartbeating (mtime fresh), the watchdog stays
+    quiet even though current_agent_status is 'paused'."""
+    status_file = tmp_path / "tui_status.json"
+    paused_status = tui._empty_status()
+    paused_status["current_agent_status"] = "paused"
+    paused_status["agent_turns_used"] = 5
+    status_file.write_text(json.dumps(paused_status))
+
+    watchdog_secs = 5
+    last_mtime_time = _time.monotonic()  # just touched
+
+    status = tui._read_status(status_file)
+    assert status is not None
+
+    watchdog_should_fire = (
+        watchdog_secs > 0
+        and status.get("current_agent_status") in ("idle", "paused")
+        and status.get("agent_turns_used", 0) > 0
+        and _time.monotonic() - last_mtime_time > watchdog_secs
+    )
+    assert not watchdog_should_fire, "Watchdog must not fire while pause heartbeats"

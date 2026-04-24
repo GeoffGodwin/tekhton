@@ -100,3 +100,32 @@ _stop_agent_spinner() {
         wait "$tui_updater_pid" 2>/dev/null || true
     fi
 }
+
+# _pause_agent_spinner SPINNER_PID TUI_UPDATER_PID  (M124)
+# Symmetric with _stop_agent_spinner but does NOT clear /dev/tty — the
+# alt-screen / pill row must survive an externally-imposed pause so the
+# resume can repaint over the existing layout. Used by _run_with_retry
+# around enter_quota_pause so the TUI updater stops reporting "running"
+# while the bash process is sleeping.
+_pause_agent_spinner() {
+    local spinner_pid="${1:-}"
+    local tui_updater_pid="${2:-}"
+    if [[ -n "$spinner_pid" ]]; then
+        kill "$spinner_pid" 2>/dev/null || true
+        wait "$spinner_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$tui_updater_pid" ]]; then
+        kill "$tui_updater_pid" 2>/dev/null || true
+        wait "$tui_updater_pid" 2>/dev/null || true
+    fi
+}
+
+# _resume_agent_spinner LABEL TURNS_FILE MAX_TURNS  (M124)
+# Re-spawn the spinner subshell after a quota pause completes. Echoes the
+# new "<spinner_pid>:<tui_updater_pid>" pair (same shape as
+# _start_agent_spinner). Caller is expected to read the output back into
+# the local PID vars so the trailing _stop_agent_spinner call sees the
+# current generation.
+_resume_agent_spinner() {
+    _start_agent_spinner "$@"
+}

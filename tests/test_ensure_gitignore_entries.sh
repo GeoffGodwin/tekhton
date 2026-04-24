@@ -67,7 +67,7 @@ else
 fi
 
 # =============================================================================
-# Section 3: All 16 Tekhton runtime patterns are written
+# Section 3: All 18 Tekhton runtime patterns are written
 # =============================================================================
 
 declare -a EXPECTED_ENTRIES=(
@@ -87,6 +87,8 @@ declare -a EXPECTED_ENTRIES=(
     ".claude/dry_run_cache/"
     ".claude/migration-backups/"
     ".claude/watchtower_inbox/"
+    ".claude/tui_sidecar.pid"
+    ".claude/worktrees/"
 )
 
 for entry in "${EXPECTED_ENTRIES[@]}"; do

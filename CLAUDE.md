@@ -24,6 +24,7 @@ tekhton/
 │   ├── agent_monitor_helpers.sh  # Monitor support functions
 │   ├── agent_monitor_platform.sh # Platform-specific monitor code
 │   ├── agent_retry.sh      # Transient error retry logic
+│   ├── agent_retry_pause.sh # M124 spinner pause/resume bracket for enter_quota_pause
 │   ├── gates.sh            # Build gate + completion gate
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── finalize.sh         # Hook-based finalization sequence
@@ -80,6 +81,7 @@ tekhton/
 │   ├── milestone_progress.sh # Milestone progress CLI + next-action guidance
 │   ├── milestone_progress_helpers.sh # Rendering helpers for milestone progress
 │   ├── indexer.sh          # Repo map orchestration + Python tool invocation
+│   ├── indexer_audit.sh    # Startup grammar audit (M123)
 │   ├── indexer_helpers.sh  # Language detection, config validation, file extraction
 │   ├── indexer_history.sh  # Task→file association tracking (JSONL)
 │   ├── causality.sh        # Causal event log infrastructure + query layer
@@ -163,11 +165,14 @@ tekhton/
 │   ├── metrics_dashboard.sh # Metrics dashboard formatting
 │   ├── drift_prune.sh      # Drift log pruning
 │   ├── quota.sh            # API quota management
+│   ├── quota_sleep.sh      # M124 chunked-sleep helper for enter_quota_pause
+│   ├── quota_probe.sh      # M125 layered probe (version/zero_turn/fallback) + back-off/jitter helpers
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
 │   ├── preflight.sh        # Pre-flight environment validation
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
 │   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers; run_op uses M113 substage API (M115)
+│   ├── tui_ops_pause.sh    # M124 quota-pause TUI API (tui_enter/update/exit_pause)
 │   └── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
@@ -240,6 +245,7 @@ tekhton/
 │   ├── serena_config_template.json  # MCP config template
 │   ├── tui.py              # TUI sidecar main — rich.live loop + layout assembly
 │   ├── tui_render.py       # TUI render helpers — logo, header bar, stage pills, events
+│   ├── tui_render_pause.py # M124 quota-pause active-bar renderer
 │   ├── tui_hold.py         # TUI hold-on-complete — final event log dump + Enter wait
 │   └── tests/              # Python unit tests
 │       ├── conftest.py
@@ -418,6 +424,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `REPO_MAP_SLICE` | Task-relevant subset of repo map (per-stage) |
 | `REPO_MAP_HISTORY_ENABLED` | Track task→file associations (default: true) |
 | `REPO_MAP_HISTORY_MAX_RECORDS` | Max history entries before pruning (default: 200) |
+| `INDEXER_STARTUP_AUDIT` | Run grammar audit in `check_indexer_available` and warn on API-mismatch extensions (default: true) |
 | `SERENA_ENABLED` | Enable Serena LSP via MCP (default: false) |
 | `SERENA_PATH` | Serena installation directory (default: .claude/serena) |
 | `SERENA_CONFIG_PATH` | Path to generated MCP config (auto-generated) |
@@ -480,7 +487,11 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `TUI_VENV_DIR` | Python venv for sidecar (default: shares `REPO_MAP_VENV_DIR`) |
 | `TUI_COMPLETE_HOLD_TIMEOUT` | Max seconds to hold sidecar at completion waiting for Enter before SIGKILL (default: 120) |
 | `TUI_SIMPLE_LOGO` | Use 5-line ASCII fallback logo instead of Unicode block-char arch (default: false) |
-| `TUI_WATCHDOG_TIMEOUT` | Seconds of status-file inactivity before sidecar self-terminates when pipeline is idle; prevents infinite hang when parent shell blocks before sending complete signal (default: 300, 0 = disabled) |
+| `TUI_WATCHDOG_TIMEOUT` | Seconds of status-file inactivity before sidecar self-terminates when pipeline is idle or paused; prevents infinite hang when parent shell blocks before sending complete signal (default: 300, 0 = disabled) |
+| `QUOTA_SLEEP_CHUNK` | M124. Internal chunk size (seconds) for the chunked sleep inside `enter_quota_pause`; bounds Ctrl-C / SIGTERM responsiveness during a quota pause and drives the TUI countdown refresh cadence. (default: 5, max: 60) |
+| `QUOTA_MAX_PAUSE_DURATION` | M125. Hard cap (seconds) on how long `enter_quota_pause` will wait for a quota refresh before giving up. Should match the upstream quota window plus clock-skew buffer. (default: 18900 = 5h15m, max: 86400) |
+| `QUOTA_PROBE_MIN_INTERVAL` | M125. Floor (seconds) on how often a real-cost probe may fire. Clamps Retry-After values below this to keep the fallback probe mode from dominating the paused budget. (default: 600 = 10m, max: 3600) |
+| `QUOTA_PROBE_MAX_INTERVAL` | M125. Cap (seconds) on the 1.5× exponential back-off applied to subsequent probes after the first. Keeps the TUI countdown predictable. (default: 1800 = 30m, max: 3600) |
 
 **TUI lifecycle model.** See [`docs/tui-lifecycle-model.md`](docs/tui-lifecycle-model.md) for the authoritative description of stage classes, pill / timings / events ownership, the substage API, the auto-close-and-warn rule, and checklists for adding new stages, sub-stages, or `run_op` call sites. Invariants are enforced by `tests/test_tui_lifecycle_invariants.sh`.
 

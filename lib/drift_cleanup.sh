@@ -31,7 +31,50 @@ The coder is prompted to address these when the count exceeds the threshold.
 
 ## Resolved
 EOF
+        return 0
     fi
+
+    local has_open has_resolved
+    has_open=$(grep -c '^## Open' "$nb_file" 2>/dev/null || true)
+    has_resolved=$(grep -c '^## Resolved' "$nb_file" 2>/dev/null || true)
+
+    if [ "$has_open" -gt 0 ] && [ "$has_resolved" -gt 0 ]; then
+        return 0
+    fi
+
+    local tmpfile
+    tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
+    cp "$nb_file" "$tmpfile"
+
+    if [ "$has_open" -eq 0 ]; then
+        local with_open
+        with_open=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/drift_XXXXXXXX")
+        awk '
+            BEGIN { inserted=0 }
+            /^## Resolved/ && inserted==0 {
+                print "## Open"
+                print "<!-- Items added here by the pipeline. Mark [x] when addressed. -->"
+                print ""
+                inserted=1
+            }
+            { print }
+            END {
+                if (inserted==0) {
+                    print ""
+                    print "## Open"
+                    print "<!-- Items added here by the pipeline. Mark [x] when addressed. -->"
+                }
+            }
+        ' "$tmpfile" > "$with_open"
+        mv "$with_open" "$tmpfile"
+    fi
+
+    if [ "$has_resolved" -eq 0 ]; then
+        printf '\n## Resolved\n' >> "$tmpfile"
+    fi
+
+    mv "$tmpfile" "$nb_file"
+    log "Repaired ${NON_BLOCKING_LOG_FILE} structure (restored missing section heading)."
 }
 
 # append_nonblocking_notes — Reads Non-Blocking Notes from ${REVIEWER_REPORT_FILE}
@@ -249,9 +292,7 @@ get_completed_nonblocking_notes() {
 # Only call on successful pipeline completion. Preserves the ## Resolved heading.
 clear_resolved_nonblocking_notes() {
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
-    if [ ! -f "$nb_file" ]; then
-        return 0
-    fi
+    _ensure_nonblocking_log
 
     # Count non-blank content lines in ## Resolved section.
     # Use /^## [^#]/ as section boundary to avoid matching ### subheadings.

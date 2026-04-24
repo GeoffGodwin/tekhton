@@ -22,6 +22,11 @@ _classify_project_maturity() {
 
     # Design doc already present (either pipeline.conf points at one, or a
     # canonical name is on disk) → no next-step push.
+    # NOTE: the disk-file checks below are redundant when the caller in
+    # init.sh (see _m120_design_file computation) has already resolved those
+    # same paths, but we keep them so this function stays usable from other
+    # call sites where design_file may be unset. The $design_file argument
+    # short-circuits the common case.
     if [[ -n "$design_file" ]] \
         || [[ -f "${project_dir}/.tekhton/DESIGN.md" ]] \
         || [[ -f "${project_dir}/DESIGN.md" ]]; then

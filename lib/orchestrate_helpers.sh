@@ -59,6 +59,12 @@ _run_auto_advance_chain() {
             emit_dashboard_milestones 2>/dev/null || true
         fi
 
+        # Clear per-milestone TUI completion data so the next milestone starts
+        # with grey pills instead of inheriting the prior milestone's green row.
+        if declare -f tui_reset_for_next_milestone &>/dev/null; then
+            tui_reset_for_next_milestone
+        fi
+
         # Re-enter the complete loop for the new milestone.
         # Recursion depth is bounded by AUTO_ADVANCE_LIMIT (default 3) — the
         # should_auto_advance() guard at the top of this while loop exits once

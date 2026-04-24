@@ -17,6 +17,8 @@
 # =============================================================================
 set -euo pipefail
 # shellcheck source=lib/tui.sh
+# shellcheck source=lib/tui_ops_pause.sh
+source "${TEKHTON_HOME}/lib/tui_ops_pause.sh"
 
 # --- Update functions --------------------------------------------------------
 
@@ -152,6 +154,44 @@ run_op() {
     _tui_write_status 2>/dev/null || true
 
     return "$_rc"
+}
+
+# --- Per-milestone reset -----------------------------------------------------
+
+# tui_reset_for_next_milestone — clear per-milestone completion + progress
+# state on auto-advance transitions so pills start grey for the next
+# milestone. Cleared globals are listed by the function body below.
+# Preserved (sidecar-lifetime): _TUI_ACTIVE, _TUI_STAGE_CYCLE (per-label
+# monotonic lifecycle-id counter), _TUI_CLOSED_LIFECYCLE_IDS (seen-and-closed
+# set), stage-order pill list, overall pipeline start ts. These must stay
+# intact across the whole sidecar session so stale late spinner ticks from
+# prior milestones continue to be dropped. When adding a new TUI global,
+# decide whether its scope is per-milestone (clear here) or sidecar-lifetime
+# (preserve here, document above).
+# NOTE: _TUI_CURRENT_SUBSTAGE_LABEL is zeroed directly rather than via
+# _tui_autoclose_substage_if_open. In practice the substage is always closed
+# inside tui_stage_end before the milestone boundary, so no auto-close warn
+# event is expected; the silent path is deliberately asymmetric from the
+# normal close protocol. If a caller ever crosses a milestone boundary with
+# a substage still open, reroute through the auto-close helper.
+# Safe no-op when inactive.
+tui_reset_for_next_milestone() {
+    [[ "${_TUI_ACTIVE:-false}" == "true" ]] || return 0
+    _TUI_STAGES_COMPLETE=()
+    _TUI_RECENT_EVENTS=()
+    _TUI_CURRENT_STAGE_LABEL=""
+    _TUI_CURRENT_STAGE_MODEL=""
+    _TUI_CURRENT_STAGE_NUM=0
+    _TUI_CURRENT_STAGE_TOTAL=0
+    _TUI_AGENT_TURNS_USED=0
+    _TUI_AGENT_TURNS_MAX=0
+    _TUI_AGENT_ELAPSED_SECS=0
+    _TUI_AGENT_STATUS="idle"
+    _TUI_STAGE_START_TS=0
+    _TUI_CURRENT_LIFECYCLE_ID=""
+    _TUI_CURRENT_SUBSTAGE_LABEL=""
+    _TUI_CURRENT_SUBSTAGE_START_TS=0
+    _tui_write_status
 }
 
 # --- Protocol API: stage lifecycle wrappers (M106, M110 lifecycle IDs) -------

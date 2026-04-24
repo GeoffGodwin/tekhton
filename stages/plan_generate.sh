@@ -120,7 +120,15 @@ run_plan_generate() {
 
     if [[ -n "$claude_md_content" ]]; then
         if [[ "$_disk_rescued" == "false" ]]; then
-            printf '%s\n' "$claude_md_content" > "$claude_md"
+            if ! printf '%s\n' "$claude_md_content" > "$claude_md" 2>/dev/null; then
+                error "Failed to write CLAUDE.md to ${claude_md}."
+                error "Check that the path is a file (not a directory) and the parent directory is writable."
+                return 1
+            fi
+        fi
+        if [[ ! -s "$claude_md" ]]; then
+            error "CLAUDE.md write appeared to succeed but the file is empty or missing at ${claude_md}."
+            return 1
         fi
         # Append tekhton-managed marker for artifact detection
         if ! grep -q '<!-- tekhton-managed -->' "$claude_md" 2>/dev/null; then

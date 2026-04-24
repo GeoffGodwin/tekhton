@@ -1,56 +1,32 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 18 test functions
-Verdict: PASS
+Tests audited: 4 files (1 tester report, 3 freshness-sample test files)
+- `.tekhton/TESTER_REPORT.md` (modified this run)
+- `tests/helpers/retry_after_extract.sh` (freshness sample)
+- `tests/test_indexer_typescript_smoke.sh` (freshness sample)
+- `tests/test_init_addenda_dedup.sh` (freshness sample)
 
----
+Cross-referenced: `tests/test_draft_milestones_validate_lint.sh` (fixture count independently verified)
+
+Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: Dead code block with contradictory comment in test 3.1
-- File: tests/test_m120_init_maturity.sh:142-155
-- Issue: Lines 142–155 contain a subshell block whose output is printed to
-  stdout but is never captured or passed to `pass`/`fail`. The block
-  contributes nothing to the PASS/FAIL counters and is dead code from an
-  assertion standpoint. More importantly, the comment on lines 148–149
-  states `":= should NOT fire (DESIGN_FILE is set, just empty)"`, which is
-  factually incorrect — the `:=` operator fires on both unset AND empty
-  strings. Line 150 then correctly says "only fires if the variable is UNSET
-  or empty", creating an internal contradiction. The actual assertion at
-  lines 156–162 is correct and expects `.tekhton/DESIGN.md` (self-healing
-  fires, as it should), so no false pass is produced. The risk is that a
-  future reader, seeing the dead block's comment, believes the test validates
-  non-healing behavior for empty strings.
+#### COVERAGE: Tester reports "Passed: 1" for a manual verification, not automated test execution
+- File: .tekhton/TESTER_REPORT.md:7
+- Issue: The single planned test ("Verify the resolved non-blocking note: tests/test_draft_milestones_validate_lint.sh fixture count matches documentation") was fulfilled by reading the file and counting fixture blocks, not by invoking the test suite. "Passed: 1 Failed: 0" implies automated runner output but no test binary was executed. For a purely documentary task (marking one log item [x] with no code change), manual verification is the appropriate procedure. Independent audit confirms the tester's claims are factually accurate: `# --- Fixture:` blocks appear at lines 36, 114, and 170 of `test_draft_milestones_validate_lint.sh` — exactly three, matching the three documented behaviors (refactor-only, behavioral-criteria, lint-helper-unavailable). No regression risk exists because no implementation changed.
 - Severity: LOW
-- Action: Remove the dead subshell block (lines 142–155). The captured
-  subshell at lines 156–162 already verifies the correct behavior. If the
-  `:=` semantics warrant documentation, add a single accurate comment above
-  the captured subshell (e.g. `# := fires on both unset and empty`).
+- Action: No fix required for this run. For future tasks of this category, the tester report template could distinguish "manual verification" from "automated test run" to prevent ambiguity in pipeline metrics.
 
-#### COVERAGE: Suite 3 tests only DESIGN_FILE from artifact_defaults.sh
-- File: tests/test_m120_init_maturity.sh:138-191 (Suite 3)
-- Issue: `lib/artifact_defaults.sh` defines ~30 variables using the same `:=`
-  idiom. Suite 3 exercises only `DESIGN_FILE`. The self-healing behavior for
-  other artifact paths and the `TEKHTON_DIR` chaining (e.g.
-  `CODER_SUMMARY_FILE=${TEKHTON_DIR}/CODER_SUMMARY.md`) goes untested.
-  Acceptable for the M120-scoped fix, but the pattern coverage is thin if
-  the file is later extended.
+#### SCOPE: `tests/helpers/retry_after_extract.sh` duplicates production code with silent-divergence risk
+- File: tests/helpers/retry_after_extract.sh:1-32
+- Issue: The file copies `_extract_retry_after_seconds` verbatim from `lib/agent_retry.sh` to avoid pulling in the full agent monitoring stack during tests. The in-file comment acknowledges the risk and mandates lockstep updates, but there is no automated guard to catch a divergence. This was the exact staleness concern flagged in NON_BLOCKING_LOG.md (item 26) for two inlined copies in `test_quota.sh` and `test_quota_retry_after_integration.sh`; this shared helper was created to consolidate those copies, which is the correct resolution. The risk now lives in one place, which is an improvement, but is not eliminated.
 - Severity: LOW
-- Action: Optional. Add one additional variable check — e.g. verify that
-  an unset `CODER_SUMMARY_FILE` also resolves via the `TEKHTON_DIR` default —
-  to validate the chaining mechanism for the remaining ~29 variables.
+- Action: No immediate change required. If `lib/agent_retry.sh:_extract_retry_after_seconds` is modified, update `tests/helpers/retry_after_extract.sh` in the same commit. Adding a comment at the canonical definition site pointing back to this helper file would close the notification loop.
 
----
+#### None: `tests/test_indexer_typescript_smoke.sh` — clean
+- Both previously open NON_BLOCKING_LOG notes against this file are resolved in the current revision: `TMPDIR` shadowing (now `TEST_TMPDIR` throughout) and the double-definition of `_indexer_find_venv_python` (now defined exactly once, after source calls, per the explanatory comment). Assertions test real behavior: positive path verifies `REPO_MAP_CONTENT` is non-empty and contains `src/` file headings; negative path verifies the fallback warning and stderr-tail diagnostic surface correctly. Fixture isolation uses `mktemp -d` with `trap rm -rf`. All sourced libraries (`indexer_helpers.sh`, `indexer_cache.sh`, `indexer_history.sh`, `indexer.sh`) confirmed present on disk. No findings.
 
-### Rubric Results
-
-| Criterion | Result |
-|-----------|--------|
-| 1. Assertion Honesty | PASS — All expected values are derived from real implementation outputs; no hard-coded magic values disconnected from logic |
-| 2. Edge Case Coverage | PASS — Boundary tests at file_count=5/6, has_commands=0/1; unknown classification fallback; empty/unset/non-empty/double-source for DESIGN_FILE |
-| 3. Implementation Exercise | PASS — `init_helpers_maturity.sh` and `artifact_defaults.sh` sourced directly; stubs for `out_section`/`out_msg` are minimal and appropriate (avoids full common.sh chain) |
-| 4. Test Weakening | N/A — New test file; no existing tests modified |
-| 5. Test Naming | PASS — Names encode scenario and expected outcome (e.g. `1.5 5 files, no commands → greenfield`, `3.1 empty DESIGN_FILE self-heals to .tekhton/DESIGN.md`) |
-| 6. Scope Alignment | PASS — Tests exercise only the two new files introduced by M120; no references to deleted or renamed symbols |
-| 7. Test Isolation | PASS — Filesystem tests use `mktemp -d` with EXIT trap; variable-only tests run in subshells to avoid leaking state to the outer shell |
+#### None: `tests/test_init_addenda_dedup.sh` — clean
+- Five scenarios cover the full behavioral surface of `_append_addenda`: single language, duplicate language entries, two distinct languages, missing addendum file, and empty language string. Each scenario uses a freshly created `mktemp`-isolated target file. Sentinel-based assertions verify actual file contents written by the real implementation — no mocks substitute for `_append_addenda` itself. Edge-case coverage is strong (includes no-op and crash-free cases). No findings.

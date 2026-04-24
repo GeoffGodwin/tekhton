@@ -38,11 +38,11 @@ fail() { FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1)); echo "FAIL: $*"; }
 # Suite 1: lib/**/*.sh — zero literal M84 filenames outside default definitions
 #
 # config_defaults.sh and artifact_defaults.sh are excluded: both intentionally
-# carry the "${VAR:=${TEKHTON_DIR}/FILENAME.md}" default assignments. common.sh
-# sources artifact_defaults.sh so it carries no literals of its own.
+# carry the "${VAR:=${TEKHTON_DIR}/FILENAME.md}" default assignments.
 # All other lib/ files must use the config variable, not the literal filename.
 # M120: Extracted the default block from common.sh into artifact_defaults.sh
 # so planning mode can re-source it to self-heal empty values (issue #179).
+# common.sh no longer carries these literals and is no longer excluded.
 # =============================================================================
 echo "--- Suite 1: lib/**/*.sh — zero literal filenames (excl. default files) ---"
 
@@ -50,7 +50,6 @@ for fname in "${M84_FILES[@]}"; do
     matches=$(grep -r --include="*.sh" \
         --exclude="config_defaults.sh" \
         --exclude="artifact_defaults.sh" \
-        --exclude="common.sh" \
         "$fname" "${TEKHTON_HOME}/lib" 2>/dev/null || true)
     if [[ -z "$matches" ]]; then
         pass

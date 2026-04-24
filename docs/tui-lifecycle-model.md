@@ -135,6 +135,57 @@ helper become no-ops — no globals set, no status-file writes, no events.
 The opt-out is currently retained for safety; retirement is a separate
 follow-up milestone (see M119 Non-Goals).
 
+### 3.8 Paused state (M124)
+
+A *paused* state is a lateral transition that overlays an already-open
+pipeline stage while `lib/quota.sh:enter_quota_pause` is blocking on a
+Claude usage-limit refresh. It is *not* a stage class and does not enter
+`_TUI_STAGES_COMPLETE` — the parent stage's lifecycle id, label, and
+start ts all stay intact, so the run resumes the same lifecycle on
+refresh.
+
+- **Owner.** `lib/tui_ops_pause.sh` exposes the public API:
+  `tui_enter_pause REASON RETRY_INTERVAL MAX_DURATION [FIRST_PROBE_DELAY]`,
+  `tui_update_pause NEXT_PROBE_IN_SECS [ELAPSED_SECS]`, and
+  `tui_exit_pause [refreshed|timeout|cancelled]`. The optional
+  `FIRST_PROBE_DELAY` argument (M125) overrides the default
+  `RETRY_INTERVAL` for the initial countdown when the original
+  rate-limit error carried a `Retry-After` header — so the countdown
+  starts at the upstream-provided value rather than the flat probe
+  cadence.
+- **Caller.** Only `enter_quota_pause` invokes these helpers, guarded by
+  `command -v tui_enter_pause &>/dev/null` so quota.sh remains usable
+  when the TUI layer is not loaded (unit tests, smoke scripts).
+- **Spinner coordination.** Before entering the pause, `_run_with_retry`
+  in `lib/agent_retry.sh` calls `_pause_agent_spinner` so the heartbeat
+  subshell stops reporting `current_agent_status="running"`. On
+  successful refresh the spinner is restarted via `_resume_agent_spinner`
+  and the caller's spinner-pid local vars are rewritten via nameref so
+  the trailing `_stop_agent_spinner` kills the new generation.
+- **Lifetime.** Capped at `QUOTA_MAX_PAUSE_DURATION` (default 5h15m as
+  of M125 — matches Anthropic's 5h rolling window plus clock-skew
+  buffer). Internal sleeping uses `_quota_sleep_chunked` (chunk size
+  from `QUOTA_SLEEP_CHUNK`, default 5s) so SIGINT/SIGTERM is responsive
+  within ~chunk seconds and so `tui_update_pause` can refresh the
+  countdown on a sub-minute cadence. Probe cadence is separate from the
+  sleep cadence: the first probe fires at `Retry-After` (when present,
+  clamped to `[QUOTA_PROBE_MIN_INTERVAL, QUOTA_MAX_PAUSE_DURATION]`);
+  subsequent probes use mild 1.5× exponential back-off with ±10%
+  jitter, capped by `QUOTA_PROBE_MAX_INTERVAL` (M125). The paused-bar
+  countdown reflects this Retry-After-informed next-probe delay, not a
+  hardcoded interval.
+- **Watchdog.** `tools/tui.py` extends watchdog eligibility to
+  `current_agent_status` ∈ {`idle`, `paused`}. The mtime-staleness
+  check still gates the timeout — an active pause keeps the file fresh
+  via `tui_update_pause` calls every chunk, so the watchdog only fires
+  when the parent shell has actually died and no one is updating the
+  status anymore.
+- **Renderer.** The active-stage bar branches on `paused` *before* the
+  `working`/`running` cases (see `tui_render.py:_build_active_bar` and
+  `tui_render_pause.py:_build_paused_bar`). The logo reverts to the
+  idle frame; the timings panel treats `paused` like `idle` (no live
+  ticker — the active bar already owns the countdown).
+
 ---
 
 ## 4. Status file schema
@@ -163,7 +214,12 @@ unknown/missing keys to safe values).
 | `agent_model`               | string    | Model id for the active stage. |
 | `pipeline_elapsed_secs`     | int       | Wall-clock elapsed since pipeline start. |
 | `stages_complete`           | array     | One JSON object per finished stage (label, lifecycle_id, model, turns, time, verdict). |
-| `current_agent_status`      | string    | `idle | running | working | complete`. |
+| `current_agent_status`      | string    | `idle | running | working | complete | paused` (paused is M124, lateral). |
+| `pause_reason`              | string    | M124. Human-readable pause cause; empty when not paused. |
+| `pause_retry_interval`      | int       | M124. Seconds between probe attempts; 0 when not paused. |
+| `pause_max_duration`        | int       | M124. Hard ceiling on pause length; 0 when not paused. |
+| `pause_started_at`          | int       | M124. Unix ts pause began; 0 when not paused. |
+| `pause_next_probe_at`       | int       | M124. Unix ts of next probe; 0 when not paused. |
 | `run_mode`                  | string    | `task | milestone | complete | …`. |
 | `cli_flags`                 | string    | Pretty-printed non-default CLI flags. |
 | `stage_order`               | array     | Pill row order (stable for the run). |

@@ -270,6 +270,22 @@ else
 fi
 
 # =============================================================================
+# Test 10: Malformed log repair (missing ## Open heading)
+# =============================================================================
+
+cat > "$NB_FILE" << 'EOF'
+# Non-Blocking Notes Log
+
+## Resolved
+- [x] stale resolved item
+EOF
+
+clear_resolved_nonblocking_notes > /dev/null
+assert_file_contains "10.1 Open heading restored" "$NB_FILE" "^## Open"
+assert_file_contains "10.2 Resolved heading preserved" "$NB_FILE" "^## Resolved"
+assert_file_not_contains "10.3 resolved item cleared" "$NB_FILE" "stale resolved item"
+
+# =============================================================================
 
 if [ "$FAIL" -ne 0 ]; then
     exit 1

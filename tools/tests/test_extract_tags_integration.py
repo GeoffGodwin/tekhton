@@ -121,3 +121,94 @@ class TestExtractTagsIntegration:
         # Should return a valid (possibly empty) result, not None
         assert result is not None
         assert result["definitions"] == []
+
+
+class TestExtractTagsTypescript:
+    """Integration tests for .ts / .tsx extraction via the multi-grammar loader.
+
+    Skipped entirely when tree_sitter_typescript isn't installed — these
+    tests exercise the fix for issue #181 and require the real grammar.
+    """
+
+    def _fixture_root(self):
+        return os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "tests",
+                         "fixtures", "indexer_project")
+        )
+
+    def test_extract_tags_typescript_file(self, tmp_path):
+        pytest.importorskip("tree_sitter_typescript")
+        # Clear cache so we actually exercise the loader, not cached tags.
+        import tree_sitter_languages as ts_lang
+        ts_lang._lang_cache.clear()
+
+        root = self._fixture_root()
+        cache = TagCache(str(tmp_path / "tags.json"))
+
+        result = _extract_tags("web/client.ts", root, cache)
+
+        assert result is not None, "Expected _extract_tags to return tags for a TS file"
+        assert "definitions" in result
+        names = [d["name"] for d in result["definitions"]]
+        assert "fetchUser" in names, f"fetchUser not in {names}"
+
+    def test_extract_tags_tsx_file(self, tmp_path):
+        pytest.importorskip("tree_sitter_typescript")
+        import tree_sitter_languages as ts_lang
+        ts_lang._lang_cache.clear()
+
+        root = self._fixture_root()
+        cache = TagCache(str(tmp_path / "tags.json"))
+
+        result = _extract_tags("web/component.tsx", root, cache)
+
+        assert result is not None, "Expected _extract_tags to return tags for a TSX file"
+        assert "definitions" in result
+        names = [d["name"] for d in result["definitions"]]
+        assert "Greeting" in names, f"Greeting not in {names}"
+
+
+# M123: parametrized fixture coverage across commonly-installed grammars.
+# Each entry is (relative fixture path, grammar module). The test asserts
+# that _extract_tags returns non-None when the grammar is installed — this
+# proves the loader probe works across all commonly-supported grammars.
+# Definition extraction is walker-dependent and covered elsewhere; this
+# test is specifically about the grammar load + parse path.
+_M123_FIXTURES = [
+    ("services/server.go", "tree_sitter_go"),
+    ("services/handler.rs", "tree_sitter_rust"),
+    ("services/Worker.java", "tree_sitter_java"),
+    ("native/engine.cpp", "tree_sitter_cpp"),
+    ("scripts/helper.rb", "tree_sitter_ruby"),
+]
+
+
+def _m123_fixture_root():
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "tests",
+                     "fixtures", "indexer_project")
+    )
+
+
+@pytest.mark.parametrize("rel_path,grammar_module", _M123_FIXTURES)
+def test_m123_fixture_parses_if_grammar_installed(
+    rel_path, grammar_module, tmp_path
+):
+    """If the grammar is installed, _extract_tags must succeed for the fixture.
+
+    Skipped when the grammar module is not installed — the M123 audit alone
+    is enough regression protection for platforms where a grammar is absent.
+    """
+    pytest.importorskip(grammar_module)
+    import tree_sitter_languages as ts_lang
+    ts_lang._lang_cache.clear()
+
+    root = _m123_fixture_root()
+    cache = TagCache(str(tmp_path / "tags.json"))
+
+    result = _extract_tags(rel_path, root, cache)
+    assert result is not None, (
+        f"_extract_tags({rel_path!r}) returned None even though {grammar_module} "
+        f"is installed — the loader probe may be broken for this grammar"
+    )
+    assert "definitions" in result and "references" in result

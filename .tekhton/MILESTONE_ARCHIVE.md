@@ -29511,3 +29511,1009 @@ ensure they pass under the self-test harness.
   (keep them warnings; users running on older configs shouldn't be
   locked out).
 - Changing the visual or log format of `error` / `success` calls.
+
+---
+
+## Archived: 2026-04-23 — Unknown Initiative
+
+# M122 - Indexer Multi-Grammar Package Support + Diagnostic Plumbing (TypeScript Fix)
+
+<!-- milestone-meta
+id: "122"
+status: "done"
+-->
+
+## Overview
+
+Issue #181 reports that the indexer silently produces no repo map on
+projects where most/all source files are `.ts` or `.tsx`. The only log
+line the user sees is:
+
+```
+[!] [indexer] repo_map.py failed — falling back to no repo map.
+```
+
+The pipeline then proceeds without a repo map, and every downstream
+stage that expects `REPO_MAP_CONTENT` degrades to v2 fallback behavior.
+TS/TSX projects are a large share of real-world Tekhton targets, so
+this bug has been silently hollowing out the indexer's value there.
+
+Two compounding defects produce the silent failure:
+
+1. **Multi-grammar packages aren't recognized.** `tools/tree_sitter_languages.py:63-81`
+   calls `getattr(mod, "language")` / `getattr(mod, "LANGUAGE")` on each
+   grammar package, but `tree_sitter_typescript` bundles two grammars
+   and exposes them as `language_typescript()` and `language_tsx()` —
+   no generic `language` export. `get_language()` therefore returns
+   `None` for every `.ts`/`.tsx` file, `_extract_tags` in
+   `tools/repo_map.py:160-162` returns `None`, `all_tags` stays empty,
+   and `repo_map.py` exits 2 with `Warning: no files could be parsed`.
+   The `lang_name` already unpacked from `_EXT_TO_LANG` is never used
+   in the lookup. Verified on the installed package:
+
+   ```
+   $ python -c "import tree_sitter_typescript as m; print([a for a in dir(m) if not a.startswith('_')])"
+   ['language_tsx', 'language_typescript']
+   ```
+
+2. **The real error never reaches the user.** `lib/indexer.sh:193-201`
+   parses stats from `$stderr_output` and then calls
+   `rm -f "$stderr_output"`. The fatal-exit warning on line 204 fires
+   *after* the file is gone, so the actual diagnostic
+   (`Warning: no files could be parsed`) is lost. Users see only the
+   generic "falling back" line and cannot self-diagnose.
+
+M122 is the narrow, atomic fix for #181: make the loader multi-grammar
+aware, and make the fallback diagnostic actually surface the Python
+tool's last words. M123 handles the defence-in-depth work (per-grammar
+load audit, coverage tests, and regression prevention for future
+grammar packages that adopt the same multi-export convention).
+
+## Design
+
+### Goal 1 — Factory-function probe in `get_language()`
+
+Change `tools/tree_sitter_languages.py:63-71` to try a grammar-specific
+factory first, using the `lang_name` field already unpacked from
+`_EXT_TO_LANG`. This handles the multi-grammar convention
+(`tree_sitter_typescript.language_typescript()`, `...language_tsx()`)
+without regressing single-grammar packages that only export `language`
+or `LANGUAGE`.
+
+Current code:
+
+```python
+mod = importlib.import_module(module_name)
+lang_fn = getattr(mod, "language", None)
+if lang_fn is None:
+    lang_fn = getattr(mod, "LANGUAGE", None)
+if lang_fn is None:
+    return None
+```
+
+New code:
+
+```python
+mod = importlib.import_module(module_name)
+# Multi-grammar packages (e.g. tree_sitter_typescript) expose grammar-
+# specific factories like language_typescript() / language_tsx(). Probe
+# the specific name first, then fall back to the single-grammar
+# conventions.
+lang_fn = getattr(mod, f"language_{lang_name}", None)
+if lang_fn is None:
+    lang_fn = getattr(mod, "language", None)
+if lang_fn is None:
+    lang_fn = getattr(mod, "LANGUAGE", None)
+if lang_fn is None:
+    return None
+```
+
+No change to the rest of the function: the PyCapsule → `tree_sitter.Language`
+wrap, caching of the resolved `Language` object, and the `(ImportError,
+OSError, AttributeError)` catch-all all continue to work unchanged. The
+cache key (`f"{module_name}.{lang_name}"`) already disambiguates
+`typescript` vs `tsx` within the same module, so two separate
+`Language` objects are cached correctly.
+
+### Goal 2 — Preserve stderr until the warning has fired
+
+In `lib/indexer.sh`, two changes inside `run_repo_map` (~lines 167-207):
+
+**Change A** — move the `rm -f "$stderr_output"` out of the stats-parse
+block. Delete it from line 200 and place it at the end of the function,
+after both the fatal-exit path and the partial-exit path have had a
+chance to inspect it.
+
+**Change B** — on fatal exit, append the tail of stderr to the warning
+so the user sees the actionable Python-side error:
+
+```bash
+if [[ "$exit_code" -eq 2 ]] || [[ -z "$REPO_MAP_CONTENT" ]]; then
+    warn "[indexer] repo_map.py failed — falling back to no repo map."
+    if [[ -s "$stderr_output" ]]; then
+        # Surface the last few lines of Python stderr so users can
+        # self-diagnose (missing grammars, parse errors, etc.).
+        local stderr_tail
+        stderr_tail=$(tail -n 5 "$stderr_output" 2>/dev/null | \
+            sed 's/^/[indexer]   /')
+        if [[ -n "$stderr_tail" ]]; then
+            warn "[indexer] Last lines of repo_map.py stderr:"
+            while IFS= read -r _line; do
+                warn "$_line"
+            done <<< "$stderr_tail"
+        fi
+    fi
+    rm -f "$stderr_output" 2>/dev/null || true
+    REPO_MAP_CONTENT=""
+    return 1
+fi
+
+# Partial exit / success path also cleans up.
+if [[ "$exit_code" -eq 1 ]]; then
+    log "[indexer] Partial repo map generated (some files could not be parsed)."
+fi
+rm -f "$stderr_output" 2>/dev/null || true
+```
+
+Keep the existing stats-parse (`grep -E '^\{' "$stderr_output"`) at its
+current location — it already reads the file before these exit
+branches. Just remove the inner `rm -f` and rely on the single
+end-of-function cleanup.
+
+### Goal 3 — Unit tests: TypeScript / TSX grammar loading
+
+Extend `tools/tests/test_tree_sitter_languages.py` with:
+
+- `test_get_language_typescript_returns_object` — calls
+  `get_language(".ts")` and asserts the result is a non-None object
+  with the `tree_sitter.Language` attribute path expected by
+  `tree_sitter.Parser(lang)`. Skip with `pytest.importorskip` if
+  `tree_sitter_typescript` isn't installed (keeps the test suite
+  green in minimal environments).
+- `test_get_language_tsx_returns_object` — same for `.tsx`, asserting
+  the returned object is *not* the same cached instance as the `.ts`
+  one (different factories → different `Language` objects).
+- `test_get_language_typescript_tsx_are_distinct` — explicit assertion
+  that `get_language(".ts") is not get_language(".tsx")`.
+- `test_get_parser_typescript_parses_simple_source` — acquire the
+  parser, feed it a trivial `const x: number = 1;` snippet, assert the
+  resulting tree's root node has no ERROR node at the top level.
+
+All four tests gate on `importorskip("tree_sitter_typescript")` so the
+default `tools/tests/` run still succeeds on machines without the TS
+grammar installed.
+
+### Goal 4 — Fixture coverage: TS/TSX files
+
+`tests/fixtures/indexer_project/` today contains only `.py`, `.js`, and
+`.sh` files — a TS regression would not be caught by any integration
+test. Add two small files:
+
+- `tests/fixtures/indexer_project/web/client.ts` — a minimal TypeScript
+  module with an exported function (`export function fetchUser(id:
+  string): Promise<User>`) and a simple `interface User`. Enough AST
+  structure that `_walk_tree` produces at least one definition and one
+  reference.
+- `tests/fixtures/indexer_project/web/component.tsx` — a minimal React
+  component with a typed prop, enough to exercise the TSX parser
+  independently from the plain-TS parser.
+
+Then add one integration test in `tools/tests/test_extract_tags_integration.py`:
+
+- `test_extract_tags_typescript_file` — runs `_extract_tags` on
+  `web/client.ts` against the fixture project, asserts the returned
+  `tags` dict has at least one definition with name `fetchUser`. Skip
+  with `importorskip` if `tree_sitter_typescript` is missing.
+- `test_extract_tags_tsx_file` — same for `web/component.tsx`, asserting
+  the component name appears as a definition.
+
+The existing `test_repo_map.py` tests that enumerate all fixture files
+will pick up the new `.ts`/`.tsx` files automatically — no list edits
+needed.
+
+### Goal 5 — End-to-end smoke: TS-only project doesn't silently fail
+
+One new bash-level test in `tests/test_indexer_typescript_smoke.sh`:
+
+1. Create a temp directory with three `.ts` files and a `.gitignore`
+   (no other supported extensions).
+2. `git init` + `git add` so `git ls-files` has something to emit.
+3. Source `lib/indexer.sh` with a stub `PROJECT_DIR` pointing at the
+   temp dir, and with the test venv's `tree_sitter_typescript` on
+   path.
+4. Invoke `run_repo_map "some task" 2048 false`.
+5. Assert exit code 0, `REPO_MAP_CONTENT` non-empty, and at least one
+   `## web/...` heading in the output.
+6. Negative path: replace the `get_language` call path with a
+   deliberately-broken grammar (e.g. monkey-patch `_EXT_TO_LANG` in a
+   subprocess to point `.ts` at a non-existent module). Assert that
+   `run_repo_map` returns non-zero **and** that the warning includes
+   the `[indexer] Last lines of repo_map.py stderr:` block from Goal 2.
+
+Gate the whole test on `command -v python` plus availability of
+`tree_sitter_typescript` in the indexer venv; skip cleanly (exit 0,
+print SKIP line) if the grammar isn't present.
+
+### Goal 6 — Register new tests
+
+- `tools/tests/test_tree_sitter_languages.py` and
+  `tools/tests/test_extract_tags_integration.py` are already picked up
+  by pytest discovery; no registration needed.
+- `tests/test_indexer_typescript_smoke.sh` must be added to
+  `tests/run_tests.sh`.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `tools/tree_sitter_languages.py` | In `get_language()`, probe `language_<lang_name>` before falling back to `language` / `LANGUAGE`. |
+| `lib/indexer.sh` | In `run_repo_map()`, move `rm -f "$stderr_output"` out of the stats block to a single end-of-function cleanup; on fatal exit, emit a tail-of-stderr warning before cleanup. |
+| `tools/tests/test_tree_sitter_languages.py` | Add four TS/TSX loader tests gated on `importorskip("tree_sitter_typescript")`. |
+| `tools/tests/test_extract_tags_integration.py` | Add `_extract_tags` tests for the new `.ts` and `.tsx` fixtures. |
+| `tests/fixtures/indexer_project/web/client.ts` | **New file.** Minimal TS module with an exported function and an interface. |
+| `tests/fixtures/indexer_project/web/component.tsx` | **New file.** Minimal TSX React component with a typed prop. |
+| `tests/test_indexer_typescript_smoke.sh` | **New file.** End-to-end smoke test for a TS-only project + negative path asserting the stderr-tail warning is visible. |
+| `tests/run_tests.sh` | Register the new smoke test. |
+
+## Acceptance Criteria
+
+- [ ] `get_language(".ts")` and `get_language(".tsx")` return non-None
+      `tree_sitter.Language` objects when `tree_sitter_typescript` is
+      installed. Prior behavior (returning `None` on missing grammar)
+      is preserved when the module is absent.
+- [ ] `get_language(".ts") is not get_language(".tsx")` — distinct
+      cached `Language` objects, so a `.ts` file and a `.tsx` file
+      produce independently-parsed ASTs.
+- [ ] All other declared extensions (`.py`, `.js`, `.go`, `.rs`,
+      `.java`, `.c`, `.cpp`, `.rb`, `.sh`, `.dart`, `.swift`, `.kt`,
+      `.cs`) continue to load via their existing `language()` /
+      `LANGUAGE` fallbacks. Verified by a parametrized "all grammars
+      that import cleanly return a Language" test.
+- [ ] Running `tekhton` on a TS-only project (three+ `.ts` files, no
+      other supported languages) produces a non-empty repo map on
+      stdout via `REPO_MAP_CONTENT`, exits 0 from `run_repo_map`, and
+      does not emit the "falling back to no repo map" warning.
+- [ ] When `run_repo_map` encounters a fatal exit (exit 2 or empty
+      content), the warning block includes a `[indexer] Last lines of
+      repo_map.py stderr:` section with the Python tool's actual
+      diagnostic output. Hand-test: point `REPO_MAP_LANGUAGES` at a
+      non-existent language, rerun, confirm the new block appears with
+      the `Warning: no files could be parsed` line.
+- [ ] `$stderr_output` is cleaned up exactly once, at the end of
+      `run_repo_map`, regardless of which branch (fatal / partial /
+      success) was taken. No stale files accumulate under `/tmp`.
+- [ ] `tools/tests/test_tree_sitter_languages.py` passes all new TS/TSX
+      cases when `tree_sitter_typescript` is installed. Cases
+      `pytest.skip` cleanly when it isn't.
+- [ ] `tools/tests/test_extract_tags_integration.py` passes the new
+      `.ts` and `.tsx` fixture tests, with at least one definition
+      extracted from each file.
+- [ ] `tests/test_indexer_typescript_smoke.sh` passes both the
+      positive path (repo map generated) and the negative path
+      (stderr-tail block visible on failure). Registered in
+      `tests/run_tests.sh` and picked up by the runner.
+- [ ] Shellcheck clean for `lib/indexer.sh` and the new smoke test.
+- [ ] No existing tests need edits to continue passing.
+
+## Non-Goals
+
+- Auditing every installed grammar package at startup, or refusing to
+  start when one is broken. That's M123.
+- Adding fixture files for every extension in `_EXT_TO_LANG`. M122
+  adds only `.ts` and `.tsx` — the two extensions whose regression is
+  documented in issue #181. Broader fixture coverage is M123.
+- Changing the shape of `_EXT_TO_LANG` (e.g. to a dataclass or to
+  include per-package import hints). The two-tuple layout works once
+  the loader knows to use the second field.
+- Rewriting `_walk_tree` to handle TypeScript-specific AST node types
+  (`type_alias_declaration`, `interface_declaration`, etc.) beyond what
+  the existing definition / reference rules already pick up. The
+  existing `class_declaration`, `function_declaration`, and
+  `arrow_function` handlers already produce useful tags for the common
+  TS idioms; specialized TS-only extraction is a separate concern if
+  it ever proves necessary.
+- Changing the "falling back to no repo map" wording or the severity
+  level (`warn`). M122 only augments the message with the stderr tail.
+
+---
+
+## Archived: 2026-04-23 — Unknown Initiative
+
+# M123 - Indexer Grammar Coverage Audit & Silent-Failure Prevention
+
+<!-- milestone-meta
+id: "123"
+status: "done"
+-->
+
+## Overview
+
+M122 fixes the specific TypeScript bug in issue #181: the loader learns
+to call `language_typescript()` / `language_tsx()`, and the indexer
+fallback warning stops eating the Python tool's stderr. But the
+underlying bug class is broader — it's a *silent-failure* class:
+
+- `tools/tree_sitter_languages.py:get_language()` catches
+  `(ImportError, OSError, AttributeError)` and returns `None`. There's
+  no distinction between "grammar package is not installed" (expected,
+  benign), "grammar package's API doesn't match the loader's
+  assumptions" (the #181 bug), and "grammar is broken in some other
+  way" (unknown, unobserved).
+- `_extract_tags` in `tools/repo_map.py:160-162` silently drops any
+  file whose parser is `None`, and the run-level aggregation only
+  raises its voice when **every** file failed (`if not all_tags:`).
+  Single-language projects happen to produce the loud "no files could
+  be parsed" signal; mixed-language projects with one broken grammar
+  just quietly lose fidelity.
+- No test in the repo exercises all declared extensions in
+  `_EXT_TO_LANG`. A future grammar package that adopts the multi-export
+  convention (or any other API drift) will reproduce #181 exactly.
+
+M123 is the defence-in-depth pass. Goal: the *next* grammar package
+that doesn't fit our loader's assumptions surfaces loudly at install /
+test / startup time — not silently at repo-map time on an end user's
+project.
+
+M123 depends on M122 semantically: the audit in Goal 1 would light up
+`.ts` / `.tsx` in red if M122 hasn't landed yet. Land M122 first, then
+M123 flips the audit from "shiny new diagnostic that documents an
+existing bug" to "regression gate against future bugs of the same
+shape".
+
+## Design
+
+### Goal 1 — Grammar audit helper in `tree_sitter_languages.py`
+
+Add a new public function in `tools/tree_sitter_languages.py`:
+
+```python
+def audit_grammars() -> dict[str, dict[str, object]]:
+    """Probe every (module, lang_name) pair in _EXT_TO_LANG.
+
+    Returns a dict keyed by extension with:
+      - "module": module name attempted
+      - "lang_name": language name attempted
+      - "module_importable": bool
+      - "language_loaded": bool
+      - "error": str | None  (class + message if load failed)
+
+    Intended for startup diagnostics, not for hot paths. Does not raise.
+    """
+```
+
+Implementation: iterate `_EXT_TO_LANG.items()`, try `importlib.import_module`,
+then try the same three-way probe as `get_language` (factory first,
+then `language`, then `LANGUAGE`). Capture failure reasons with
+`type(e).__name__: str(e)` so the downstream reporter can distinguish
+"module missing" (benign, grammar just not installed) from "module
+imported but no language factory found" (the M122-class bug).
+
+Unit-test the helper in `tools/tests/test_tree_sitter_languages.py`:
+
+- `test_audit_grammars_returns_entry_per_extension` — asserts the
+  returned dict has exactly `len(_EXT_TO_LANG)` keys.
+- `test_audit_grammars_marks_missing_module_cleanly` — monkey-patch
+  `_EXT_TO_LANG` with a fake extension pointing at a non-existent
+  module, assert `module_importable=False` and `error` contains
+  `ImportError` or `ModuleNotFoundError`.
+- `test_audit_grammars_marks_bad_api_cleanly` — inject a fake module
+  (via `sys.modules`) with no `language*` exports, assert
+  `module_importable=True`, `language_loaded=False`, and `error`
+  mentions `AttributeError` or equivalent.
+- `test_audit_grammars_all_installed_grammars_load` — for every
+  extension where `module_importable` is true, assert `language_loaded`
+  is also true. This is the regression gate that catches future
+  multi-grammar packages.
+
+### Goal 2 — CLI surface: `repo_map.py --audit-grammars`
+
+Add a new flag to `tools/repo_map.py`:
+
+```
+--audit-grammars     Print grammar load status as JSON to stdout and exit 0.
+                     Does not walk the project. Intended for diagnostics.
+```
+
+In `main()`, when `args.audit_grammars` is set, call `audit_grammars()`,
+dump the result as JSON to stdout, and return 0. No side effects, no
+cache touched, no project walk. This is the machine-readable surface
+for shell-level consumers.
+
+### Goal 3 — Shell surface: `check_indexer_available` runs the audit
+
+Extend `lib/indexer.sh:check_indexer_available` (~line 69) so that
+*after* the `tree_sitter` / `networkx` availability checks pass, it
+runs `python repo_map.py --audit-grammars`, parses the JSON, and:
+
+- At verbose log level, emits a one-line summary
+  (`[indexer] Grammars: 14/18 loaded (4 modules missing)`).
+- At warn level, emits one line per extension whose
+  `module_importable=True` but `language_loaded=False` — this is the
+  "API mismatch" class that #181 belongs to, and it should never be
+  silent. Message format:
+
+  ```
+  [indexer] Grammar API mismatch: .ts ({module}) imported but no language factory found ({error}). Run 'tekhton --setup-indexer' to reinstall, or report this as a bug.
+  ```
+
+- At verbose log level, emits one line per extension whose module is
+  missing. These are benign (grammar isn't installed, project
+  presumably doesn't need it), so they stay at verbose.
+
+The audit adds one additional subprocess call at startup (~50ms cold).
+Gate it behind a new config key `INDEXER_STARTUP_AUDIT` (default:
+`true`) for users who want to skip it. The audit's cost amortizes over
+the whole run and catches the #181-class bug before the user sees a
+single repo-map-failed warning.
+
+Add the new key to `lib/config_defaults.sh` and document it in the
+template table in `CLAUDE.md`.
+
+### Goal 4 — Fixture coverage: at least one file per commonly-installed grammar
+
+Today `tests/fixtures/indexer_project/` has `.py`, `.js`, and `.sh`.
+M122 adds `.ts` and `.tsx`. M123 expands this to cover the
+commonly-installed grammars so the integration tests catch any future
+API drift:
+
+- `tests/fixtures/indexer_project/services/server.go` — small Go file
+  with an exported function.
+- `tests/fixtures/indexer_project/services/handler.rs` — small Rust
+  file with a struct and an impl block.
+- `tests/fixtures/indexer_project/services/Worker.java` — small Java
+  file with a class and a method.
+- `tests/fixtures/indexer_project/native/engine.cpp` — small C++ file
+  with a class.
+- `tests/fixtures/indexer_project/scripts/helper.rb` — small Ruby
+  file.
+
+Do *not* add `.swift` / `.kt` / `.dart` / `.cs` fixtures — those
+grammars are more fragile across platforms and CI environments, and
+M122's coverage proves the multi-grammar fix works; the broader audit
+(Goal 1) is enough regression protection for those.
+
+Extend `tools/tests/test_extract_tags_integration.py` with a
+parametrized test that iterates every fixture file and asserts
+`_extract_tags` returns non-None when the corresponding grammar module
+is importable (`pytest.importorskip` per file). This is one small
+parametrized function, not one test per extension.
+
+### Goal 5 — Bash-level regression test for the audit
+
+New file `tests/test_indexer_grammar_audit.sh`:
+
+1. Invoke `python tools/repo_map.py --audit-grammars` via the venv
+   Python.
+2. Parse the JSON with `jq` (gate the whole test on `command -v jq`).
+3. Assert every extension in `_EXT_TO_LANG` has an audit entry.
+4. Assert that for extensions where `module_importable` is true,
+   `language_loaded` is also true. A failure here means a newly-added
+   grammar has a novel API convention and needs a loader update.
+5. Register in `tests/run_tests.sh`.
+
+This test is the CI-level regression gate. If a future grammar
+package's release changes its API, this test fails loudly with the
+offending extension + error message, instead of users seeing silent
+no-repo-map behavior weeks later.
+
+### Goal 6 — Documentation
+
+Update `CLAUDE.md` template-variables table to include
+`INDEXER_STARTUP_AUDIT`. Add a short note in the indexer docs
+(`docs/` — whichever page currently describes `--setup-indexer`)
+explaining that a grammar API mismatch will now surface at startup
+with an actionable warning, and pointing users at
+`--audit-grammars` for manual diagnosis.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `tools/tree_sitter_languages.py` | Add `audit_grammars()` public function. |
+| `tools/repo_map.py` | Add `--audit-grammars` flag that prints JSON and exits 0. |
+| `lib/indexer.sh` | In `check_indexer_available`, run the audit after tree-sitter/networkx checks. Warn on API-mismatch extensions, log verbose on missing-module extensions. |
+| `lib/config_defaults.sh` | Add `INDEXER_STARTUP_AUDIT` default (`true`). |
+| `CLAUDE.md` | Document `INDEXER_STARTUP_AUDIT` in the template-variables table. |
+| `tools/tests/test_tree_sitter_languages.py` | Add four `audit_grammars` unit tests. |
+| `tools/tests/test_extract_tags_integration.py` | Add parametrized fixture-file test gated per-grammar. |
+| `tests/fixtures/indexer_project/services/server.go` | **New file.** Minimal Go fixture. |
+| `tests/fixtures/indexer_project/services/handler.rs` | **New file.** Minimal Rust fixture. |
+| `tests/fixtures/indexer_project/services/Worker.java` | **New file.** Minimal Java fixture. |
+| `tests/fixtures/indexer_project/native/engine.cpp` | **New file.** Minimal C++ fixture. |
+| `tests/fixtures/indexer_project/scripts/helper.rb` | **New file.** Minimal Ruby fixture. |
+| `tests/test_indexer_grammar_audit.sh` | **New file.** Bash-level CI gate against API-mismatch regressions. |
+| `tests/run_tests.sh` | Register the new grammar-audit test. |
+
+## Acceptance Criteria
+
+- [ ] `audit_grammars()` returns a dict with one entry per extension
+      in `_EXT_TO_LANG`. Each entry has the four documented fields
+      populated, with `error` being `None` on success and a
+      `ClassName: message` string on failure.
+- [ ] `audit_grammars()` distinguishes three cases cleanly: (a) module
+      not importable → `module_importable=False`, `language_loaded=False`,
+      `error` mentions `ImportError`/`ModuleNotFoundError`; (b) module
+      importable but no language factory → `module_importable=True`,
+      `language_loaded=False`, `error` mentions `AttributeError`; (c)
+      success → both booleans true, `error` is `None`.
+- [ ] `python repo_map.py --audit-grammars` prints valid JSON to
+      stdout and exits 0 without walking the project, without touching
+      the cache, and without any stderr output on the success path.
+- [ ] `check_indexer_available` emits a `warn`-level line for every
+      extension where `module_importable=True` and `language_loaded=False`,
+      containing the extension, the module name, and the captured
+      error class/message. Hand-test: temporarily revert M122, run
+      `tekhton --validate` or any command that triggers
+      `check_indexer_available`, confirm a warning for `.ts` and
+      `.tsx` appears.
+- [ ] `check_indexer_available` emits only verbose-level lines for
+      extensions whose grammar module is simply not installed — no
+      warnings for the benign case.
+- [ ] Setting `INDEXER_STARTUP_AUDIT=false` in `pipeline.conf` skips
+      the audit entirely; `check_indexer_available` behaves exactly
+      as it did pre-M123. No subprocess spawned.
+- [ ] The five new fixture files exist and are parseable by their
+      respective grammars when those grammars are installed. Missing
+      grammars cause `pytest.skip` (not failure) in the parametrized
+      integration test.
+- [ ] `tests/test_indexer_grammar_audit.sh` passes: every extension
+      whose module is importable also reports `language_loaded=True`.
+      Test fails loudly (with the offending extension + error
+      message) if a future grammar package introduces an API drift.
+- [ ] `CLAUDE.md` documents `INDEXER_STARTUP_AUDIT` in the template-
+      variables table with its default value.
+- [ ] Shellcheck clean for `lib/indexer.sh` and the new grammar-audit
+      shell test.
+- [ ] No existing tests need edits to continue passing.
+- [ ] Startup cost overhead measured: audit adds ≤ 200ms on a warm
+      venv. If measured cost exceeds that, land with the audit behind
+      a lazy wrapper that only runs when `check_indexer_available`
+      has not run in the last 10 minutes (cache result in a state file
+      under `.tekhton/`).
+
+## Non-Goals
+
+- Auto-reinstalling broken grammars. The audit warns and points users
+  at `tekhton --setup-indexer`; it does not mutate the venv.
+- Adding fixtures for `.swift`, `.kt`, `.dart`, `.cs`. Those grammars
+  are less portable across CI environments; the audit alone is
+  sufficient regression protection, and the loader is already shape-
+  correct for them thanks to M122's factory probe.
+- Changing `get_language()` to surface errors instead of returning
+  `None`. The hot-path contract ("None on any failure") is used by
+  `_extract_tags` and has to stay that way. The audit is a separate,
+  cold-path diagnostic surface.
+- Distinguishing "grammar version pinned wrong in `requirements.txt`"
+  from "grammar's API changed upstream" in the warning message. Both
+  resolve to the same user action (`--setup-indexer`), so the warning
+  lumps them together.
+- Expanding `_EXT_TO_LANG` to cover new languages. If a new language
+  needs to be added, it's a separate milestone; M123 is purely about
+  preventing silent failures for the languages we already claim to
+  support.
+
+---
+
+## Archived: 2026-04-23 — Unknown Initiative
+
+# M124 - TUI Quota-Pause Awareness & Spinner Coordination
+
+<!-- milestone-meta
+id: "124"
+status: "done"
+-->
+
+## Overview
+
+Issue #180 reports that when the pipeline hits a Claude usage-limit
+rate error, the TUI gets stuck displaying a fake "running" state for
+hours while the bash process is actually asleep in `enter_quota_pause`.
+Three compounding defects produce the illusion that a stage is still
+running:
+
+1. **The spinner/updater subshell keeps heartbeating during the pause.**
+   `run_agent` in `lib/agent.sh:150-159` starts the spinner *before*
+   calling `_run_with_retry`, and only calls `_stop_agent_spinner`
+   *after* it returns. When `_run_with_retry` (lib/agent_retry.sh:74-97)
+   detects a rate-limit error and calls `enter_quota_pause`, control
+   stays inside that loop — the TUI-updater subshell in
+   `lib/agent_spinner.sh:62-83` keeps writing `current_agent_status`
+   `="running"` with incrementing elapsed into `tui_status.json` at
+   5 Hz for the entire pause window.
+
+2. **`enter_quota_pause` has zero TUI awareness.**
+   `lib/quota.sh:59-128` calls `emit_event "quota_pause"` and
+   `emit_dashboard_run_state` but never `tui_append_event`,
+   `tui_update_agent`, or any other TUI helper. `grep -r quota
+   lib/tui*.sh tools/tui*.py` returns nothing — the pause is completely
+   invisible to the sidecar.
+
+3. **The TUI watchdog cannot save the user.**
+   `tools/tui.py:176-190` self-terminates only when
+   `current_agent_status=="idle"` AND the status-file mtime is stale
+   beyond `TUI_WATCHDOG_TIMEOUT` (default 300s). The heartbeating
+   spinner pins `current_agent_status="running"` and bumps mtime every
+   200 ms, so both conditions are permanently false. The watchdog only
+   covers the "parent shell blocked before sending complete" failure
+   mode it was designed for.
+
+User-visible symptom: a stage pill stuck on "Coder ▶ running — 8
+turns, 02:47:32…" while the bash process is blocked in
+`sleep "${QUOTA_RETRY_INTERVAL:-300}"` with no way to know the pipeline
+is actually quota-paused — short of Ctrl-C'ing and checking
+`.claude/QUOTA_PAUSED`. Because `QUOTA_MAX_PAUSE_DURATION` defaults to
+4 hours, this state can persist for up to 4h before the pause gives up
+and the run dies.
+
+M124 is the TUI-visibility half of the fix: make the pause observable
+in the sidecar and keep the existing watchdog / abandon flows
+functional. M125 (follow-up) handles the quota-refresh correctness
+issues separately — pause-duration tuning, probe cost, and
+Retry-After propagation.
+
+## Design
+
+### Goal 1 — Pause the spinner before entering quota pause, restart after
+
+Add a helper pair in `lib/agent_spinner.sh` that `_run_with_retry` can
+call around `enter_quota_pause`:
+
+```bash
+# _pause_agent_spinner SPINNER_PID TUI_UPDATER_PID
+# Temporarily stop the heartbeat subshell so tui_status.json does not
+# keep reporting "running" during an externally-imposed pause.
+# Symmetric with _stop_agent_spinner but does NOT clear /dev/tty
+# (the alt-screen / pill row must survive the pause).
+
+# _resume_agent_spinner LABEL TURNS_FILE MAX_TURNS
+# Respawn the subshell with the same arguments the stage originally
+# used. Echoes the new "<spinner_pid>:<tui_updater_pid>" pair.
+```
+
+`_pause_agent_spinner` is implementation-wise identical to
+`_stop_agent_spinner` minus the `/dev/tty` clear. `_resume_agent_spinner`
+is a thin wrapper around `_start_agent_spinner`. Keep both in
+`agent_spinner.sh` so the state machine lives in one file.
+
+In `lib/agent_retry.sh`, thread the spinner PIDs into `_run_with_retry`
+so it can pause/resume the heartbeat around `enter_quota_pause`:
+
+- Add two new trailing parameters: `spinner_pid_var`, `tui_pid_var`.
+  These are **variable names** (passed by reference via `declare -n`),
+  not values — `run_agent` allocates the locals, and the retry loop
+  rewrites them after each restart so the caller's
+  `_stop_agent_spinner` at the end still sees the current PIDs.
+- Before calling `enter_quota_pause`, call
+  `_pause_agent_spinner "$_spinner_pid" "$_tui_updater_pid"`.
+- After a successful return from `enter_quota_pause`, call
+  `_resume_agent_spinner "$label" "$turns_file" "$max_turns"` and
+  update the referenced vars.
+- If `enter_quota_pause` returns non-zero (pause timed out, fatal
+  path), **do not** resume. The caller's `_stop_agent_spinner` will
+  still run and be a no-op since the PIDs are empty.
+
+`run_agent` in `lib/agent.sh` changes are minimal: declare
+`_spinner_pid` / `_tui_updater_pid` (already present), pass their
+names to `_run_with_retry`, keep the trailing `_stop_agent_spinner`
+call.
+
+### Goal 2 — Add a `paused` agent status to the TUI protocol
+
+Extend the `_TUI_AGENT_STATUS` enum with a fourth value: `paused`.
+Current values are `idle | running | working | complete`
+(grep `_TUI_AGENT_STATUS` across `lib/tui*.sh` confirms the set).
+
+New helpers in `lib/tui_ops.sh`:
+
+```bash
+# tui_enter_pause REASON [RETRY_INTERVAL_SECS] [MAX_DURATION_SECS]
+#   Sets _TUI_AGENT_STATUS="paused", writes pause metadata globals,
+#   appends a warn-level event, flushes status.
+# tui_update_pause NEXT_PROBE_IN_SECS [ELAPSED_SECS]
+#   Refresh the countdown without appending new events; rate-limit
+#   safe (no event every loop iteration).
+# tui_exit_pause [RESULT=refreshed|timeout|cancelled]
+#   Clears pause globals, appends a summary event, sets status back
+#   to whatever agent status the pause interrupted (default: idle —
+#   the spinner restart in Goal 1 will re-set "running").
+```
+
+Add matching state globals in `lib/tui.sh` (near the other
+`_TUI_*`): `_TUI_PAUSE_REASON`, `_TUI_PAUSE_RETRY_INTERVAL`,
+`_TUI_PAUSE_MAX_DURATION`, `_TUI_PAUSE_STARTED_AT`,
+`_TUI_PAUSE_NEXT_PROBE_AT`.
+
+Extend `_tui_write_status` (lib/tui_helpers.sh:222-252) to emit
+these fields:
+
+```
+"pause_reason":"...",
+"pause_retry_interval":300,
+"pause_max_duration":14400,
+"pause_started_at":1714000000,
+"pause_next_probe_at":1714000300,
+```
+
+Keys are always present; empty string / 0 when not paused. This
+keeps the JSON shape stable so the sidecar's `_read_status` path
+never sees a schema change.
+
+### Goal 3 — Wire the TUI helpers into `enter_quota_pause`
+
+In `lib/quota.sh:59-128`, inject TUI calls at the three transition
+points. All guarded with `command -v tui_enter_pause &>/dev/null`
+so quota.sh stays usable without the TUI layer (unit tests, non-TUI
+runs):
+
+- At the top of `enter_quota_pause`, after the marker file is
+  written, call `tui_enter_pause "${pause_reason}"
+  "${QUOTA_RETRY_INTERVAL:-300}" "${QUOTA_MAX_PAUSE_DURATION:-14400}"`.
+- Inside the retry loop, before each `sleep`, call
+  `tui_update_pause "$seconds_until_next_probe" "$elapsed"` so the
+  sidecar can render a live countdown.
+- On the two exit paths (successful refresh → `exit_quota_pause`;
+  max-duration timeout → `return 1`), call
+  `tui_exit_pause "refreshed"` / `tui_exit_pause "timeout"`.
+
+The existing `emit_event` / `emit_dashboard_run_state` calls stay as
+they are — Watchtower dashboard consumers rely on them. The new TUI
+calls are additive.
+
+### Goal 4 — Sidecar renderer: draw the paused state distinctly
+
+`tools/tui_render.py:_build_active_bar` currently branches on
+`agent_status in ("working", "running", "complete", "idle")`
+(lines 123-148). Add a `paused` branch above the others:
+
+```python
+if agent_status == "paused":
+    return _build_paused_bar(status)
+```
+
+New `_build_paused_bar` in `tools/tui_render.py`:
+
+- Label: stage name from `status.get("stage_label")` (unchanged).
+- Body: amber "⏸ PAUSED — quota refresh" text.
+- Countdown: derive `next_probe_in = max(0,
+  pause_next_probe_at - time.time())`; format as `mm:ss`. If
+  `pause_next_probe_at == 0` fall back to the bare reason string.
+- Total-paused timer: `time.time() - pause_started_at` formatted
+  via `_fmt_duration`.
+- Reason: short form of `pause_reason` truncated to one line.
+
+Style uses `yellow` / `bold yellow` (already registered — matches
+existing "Working" spinner style) to distinguish from green complete
+and dim idle without introducing a new colour key.
+
+Update `tools/tui_render_logo.py:74` so the idle logo frame is used
+when `current_agent_status` is `idle` *or* `paused`. The running
+arch animation is reserved for active work; the pause should feel
+like the pipeline has stopped, not like it's crunching.
+
+Update `tools/tui_render_timings.py:45-106` so `paused` is treated
+like `idle` for the "has live row" check (i.e. no live ticker for
+the currently-paused stage — the active bar already owns the
+countdown).
+
+### Goal 5 — Make the watchdog work during pause
+
+`tools/tui.py:184-189` currently treats only `idle` as eligible for
+watchdog self-termination. Extend the check to `idle` *or* `paused`:
+
+```python
+if (
+    status.get("current_agent_status") in ("idle", "paused")
+    and status.get("agent_turns_used", 0) > 0
+    and time.monotonic() - _last_mtime_time > watchdog_secs
+):
+    break
+```
+
+The mtime-staleness check still protects against false positives:
+`tui_update_pause` is called once per `sleep` iteration
+(~`QUOTA_RETRY_INTERVAL` = 300s by default) so the status file
+*will* be updated within the 300s watchdog window during an active
+pause — the watchdog will not fire while the pause is progressing.
+It will only fire if the parent shell has actually died and the
+pause loop is no longer heartbeating, which is the case the
+watchdog was designed for.
+
+**Alternative considered:** keep the spinner running but have it
+emit `paused` instead of `running`. Rejected: that still means the
+spinner subshell burns CPU/fork overhead and writes status files
+during the entire pause, and the state machine has two owners for
+the same field. Goal 1's pause-the-spinner approach gives a single
+writer (`enter_quota_pause` via `tui_update_pause`) for pause state,
+which is simpler and matches the existing `tui_stage_begin` /
+`tui_stage_end` single-owner pattern.
+
+### Goal 6 — Chunked sleep for responsiveness
+
+Replace the single `sleep "${QUOTA_RETRY_INTERVAL:-300}"` in
+`lib/quota.sh:116` with a helper that sleeps in small steps so
+SIGINT / SIGTERM is responsive and so `tui_update_pause` can refresh
+the countdown on a sub-minute cadence:
+
+```bash
+_quota_sleep_chunked() {
+    local total="$1"
+    local chunk="${QUOTA_SLEEP_CHUNK:-5}"
+    local remaining="$total"
+    while [[ "$remaining" -gt 0 ]]; do
+        local step=$(( remaining < chunk ? remaining : chunk ))
+        sleep "$step"
+        remaining=$(( remaining - step ))
+        if command -v tui_update_pause &>/dev/null; then
+            tui_update_pause "$remaining" "$(( $(date +%s) - pause_start ))"
+        fi
+    done
+}
+```
+
+This gives ~5s Ctrl-C responsiveness vs. the current up-to-300s
+wait, and a smooth live countdown. No new public config key beyond
+`QUOTA_SLEEP_CHUNK` (internal, not documented in pipeline.conf —
+added to `lib/config_defaults.sh` with a 5s default and the usual
+`_clamp_config_value` bound of 60).
+
+### Goal 7 — Preserve non-TUI behaviour
+
+Every new TUI call in `lib/quota.sh` is guarded with
+`command -v tui_* &>/dev/null`. The spinner pause/resume in
+`_run_with_retry` runs regardless of whether the TUI is active:
+when `_TUI_ACTIVE=false` the non-TUI (`/dev/tty`) spinner subshell
+was still writing progress lines at 5 Hz during pauses, which is
+equally wrong (the terminal prints a "running" spinner while bash
+is sleeping). Pausing it fixes that path too. The `/dev/tty` clear
+happens once at final `_stop_agent_spinner` time, unchanged.
+
+`TEKHTON_TEST_MODE=true` runs never start a spinner (see
+`lib/agent_spinner.sh:29`), so the pause/resume helpers are no-ops
+and test fixtures keep working without edits.
+
+### Goal 8 — Tests
+
+Unit-level (extend `tests/test_quota.sh`):
+
+- `test_enter_quota_pause_calls_tui_helpers` — stub
+  `tui_enter_pause`, `tui_update_pause`, `tui_exit_pause` as
+  counting shell functions. Run `enter_quota_pause "test"` with
+  `QUOTA_RETRY_INTERVAL=1 QUOTA_MAX_PAUSE_DURATION=2` and a stub
+  `_quota_probe` that always fails. Assert `tui_enter_pause`
+  called exactly once, `tui_update_pause` called ≥1 time,
+  `tui_exit_pause "timeout"` called once.
+- `test_enter_quota_pause_tui_absent_no_error` — same flow without
+  the stub functions. Assert clean exit, no "command not found".
+
+New bash test `tests/test_tui_quota_pause.sh`:
+
+- Source `lib/tui.sh`, `lib/tui_ops.sh`, `lib/tui_helpers.sh`,
+  `lib/quota.sh` with `_TUI_ACTIVE=true` and a writable status
+  file path.
+- Call `tui_enter_pause "rate limit" 300 14400`. Assert the written
+  JSON contains `"current_agent_status":"paused"`,
+  `"pause_reason":"rate limit"`, `"pause_retry_interval":300`,
+  and `"pause_max_duration":14400`.
+- Call `tui_update_pause 120 180`. Assert pause_next_probe_at
+  drifts accordingly. Assert `recent_events` was NOT appended (the
+  update path is rate-limited).
+- Call `tui_exit_pause "refreshed"`. Assert
+  `current_agent_status` reverts to `idle`, pause fields clear.
+
+New Python test in `tools/tests/test_tui.py`:
+
+- `test_build_active_bar_renders_paused_status` — construct a
+  status dict with `current_agent_status="paused"`,
+  `pause_next_probe_at=time.time()+90`,
+  `pause_started_at=time.time()-30`. Render and assert the output
+  text contains "PAUSED" and a `1m30s`-style countdown.
+- `test_watchdog_fires_on_paused_with_stale_mtime` — drive the
+  sidecar's main-loop logic (extract into a testable helper if
+  needed) with `current_agent_status="paused"` + a stale
+  `_last_mtime_time`. Assert it breaks out of the loop.
+
+Register the new shell test in `tests/run_tests.sh`.
+
+### Goal 9 — Documentation
+
+Update `docs/tui-lifecycle-model.md` (referenced from CLAUDE.md) to
+add a "Paused" section: when it fires, who owns state (quota.sh +
+tui_ops.sh), how long it can last, how the watchdog interacts with
+it. One new subsection, ~15 lines; no other structural change.
+
+Update `CLAUDE.md` template-variable table to add
+`QUOTA_SLEEP_CHUNK` (Internal default 5s, max 60s).
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/agent_spinner.sh` | Add `_pause_agent_spinner` and `_resume_agent_spinner` helpers. |
+| `lib/agent_retry.sh` | Accept spinner-PID var names; pause/resume around `enter_quota_pause`. |
+| `lib/agent.sh` | Thread `_spinner_pid` / `_tui_updater_pid` var names into `_run_with_retry`. |
+| `lib/quota.sh` | Call `tui_enter_pause` / `tui_update_pause` / `tui_exit_pause`; chunked sleep via `_quota_sleep_chunked`. |
+| `lib/tui.sh` | Declare `_TUI_PAUSE_*` globals; reset them in `tui_stop`. |
+| `lib/tui_ops.sh` | Add `tui_enter_pause`, `tui_update_pause`, `tui_exit_pause`. |
+| `lib/tui_helpers.sh` | Emit `pause_reason` / `pause_retry_interval` / `pause_max_duration` / `pause_started_at` / `pause_next_probe_at` in `_tui_write_status`. |
+| `lib/config_defaults.sh` | Add `QUOTA_SLEEP_CHUNK:=5` with clamp bound 60. |
+| `tools/tui.py` | Extend watchdog eligibility to `idle` OR `paused`. |
+| `tools/tui_render.py` | Add `_build_paused_bar`; branch in `_build_active_bar` on `paused`. |
+| `tools/tui_render_logo.py` | Use idle logo when `current_agent_status` is `idle` or `paused`. |
+| `tools/tui_render_timings.py` | Treat `paused` like `idle` for live-row check. |
+| `tests/test_quota.sh` | Add `test_enter_quota_pause_calls_tui_helpers` and absent-helpers test. |
+| `tests/test_tui_quota_pause.sh` | **New file.** End-to-end pause state in status JSON. |
+| `tests/run_tests.sh` | Register `test_tui_quota_pause.sh`. |
+| `tools/tests/test_tui.py` | Add paused-bar and paused-watchdog tests. |
+| `docs/tui-lifecycle-model.md` | Add "Paused" subsection describing state ownership. |
+| `CLAUDE.md` | Add `QUOTA_SLEEP_CHUNK` to template-variable table. |
+
+## Acceptance Criteria
+
+- [ ] When `enter_quota_pause` is entered, the agent spinner /
+      TUI-updater subshell is stopped; `tui_status.json` stops
+      reporting `current_agent_status="running"` within one
+      status-write tick of the pause starting.
+- [ ] While paused, `tui_status.json` reports
+      `current_agent_status="paused"` with non-empty
+      `pause_reason`, non-zero `pause_started_at`, and
+      `pause_next_probe_at` that advances on each retry interval.
+- [ ] The TUI renders a distinct paused state: amber "⏸ PAUSED"
+      label on the active-stage bar, a `mm:ss` countdown to the
+      next probe, and a total-paused timer. The stage pill does
+      NOT flip to "complete" / "failed" — it reverts to pending /
+      idle while paused, then resumes running on refresh.
+- [ ] Idle logo is drawn while paused (no running arch animation).
+- [ ] Ctrl-C during a quota pause returns control to the shell
+      within ≤ `QUOTA_SLEEP_CHUNK` seconds (default 5), not the
+      full `QUOTA_RETRY_INTERVAL` (default 300).
+- [ ] `TUI_WATCHDOG_TIMEOUT` fires from the `paused` state if the
+      parent shell has died (status file mtime stale beyond the
+      timeout). Verified by disabling `tui_update_pause` in a
+      test stub and letting the watchdog trip.
+- [ ] On successful quota refresh, the spinner is restarted; the
+      active bar returns to `running`; `tui_status.json` clears
+      all `pause_*` fields; one summary event
+      (`Quota refreshed — resumed`) is appended.
+- [ ] On max-duration timeout, the spinner is NOT restarted;
+      `tui_exit_pause "timeout"` leaves `current_agent_status`
+      unchanged for the caller's failure path; the run dies via
+      the existing `AGENT_ERROR_CATEGORY=UPSTREAM` flow with no
+      regression.
+- [ ] When the TUI is inactive (`_TUI_ACTIVE=false`), the
+      non-TUI `/dev/tty` spinner is also paused during the quota
+      wait — the terminal no longer shows a spinning indicator
+      while bash is sleeping. The final `_stop_agent_spinner`
+      clears `/dev/tty` exactly once as before.
+- [ ] `lib/quota.sh` continues to work when sourced without the
+      TUI layer present (unit tests, smoke scripts): all new
+      `tui_*` call sites are guarded by `command -v`.
+- [ ] `tests/test_quota.sh` and the new `tests/test_tui_quota_pause.sh`
+      pass. Existing TUI invariant tests
+      (`test_tui_lifecycle_invariants.sh`,
+      `test_tui_stage_wiring.sh`) pass with no edits.
+- [ ] Shellcheck clean for `lib/agent_spinner.sh`,
+      `lib/agent_retry.sh`, `lib/agent.sh`, `lib/quota.sh`,
+      `lib/tui_ops.sh`, `lib/tui_helpers.sh`, and the new shell
+      test.
+
+## Non-Goals
+
+- Fixing `QUOTA_MAX_PAUSE_DURATION` default being shorter than
+  Anthropic's 5h rolling window, `_quota_probe` itself consuming
+  quota, and `Retry-After` propagation from `lib/agent_retry.sh`
+  into `lib/quota.sh`. All three are M125.
+- Adding a user-facing "cancel pause and exit" keybinding to the
+  TUI. The watchdog + Ctrl-C responsiveness (Goals 5 and 6) are
+  sufficient for clean abandonment in this milestone.
+- Refactoring `_TUI_AGENT_STATUS` into a proper enum type. The
+  informal "idle | running | working | complete | paused" set
+  already works everywhere it's consumed.
+- Rewriting the spinner subshells to a single long-lived process
+  with mode switches. The pause/resume pattern reuses the existing
+  fork/exec model.
+- Integrating the pause countdown into the Watchtower dashboard
+  (separate output surface, its own lifecycle already via
+  `emit_dashboard_run_state`).
+- Surfacing the pause state to `RUN_SUMMARY.json` beyond the
+  existing `quota_pause` stats. `format_quota_pause_summary`
+  already covers post-run reporting.

@@ -57,6 +57,9 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
     grid.add_column(no_wrap=True, justify="right")
     grid.add_column(no_wrap=True, justify="right")
 
+    # M124: paused is treated like idle for the live-row check — the
+    # active-stage bar already owns the pause countdown, so the timings
+    # column should not also render a live ticker for the paused stage.
     has_live_row = bool(current_label) and agent_status in ("running", "working")
 
     if not stages_complete and not has_live_row:

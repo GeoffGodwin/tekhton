@@ -190,6 +190,120 @@ else
     fail "inactive hook" "_TUI_ACTIVE=$_TUI_ACTIVE events=${#_TUI_RECENT_EVENTS[@]}"
 fi
 
+# =============================================================================
+# Per-milestone state isolation — tui_reset_for_next_milestone is called by
+# _run_auto_advance_chain before re-entering run_complete_loop so milestone 2+
+# start with grey pills instead of inheriting the prior milestone's green row.
+# =============================================================================
+echo "=== Test 7: reset clears per-milestone completion + progress state ==="
+_activate_tui
+_TUI_STAGE_ORDER=("intake" "coder" "review" "tester" "wrap-up")
+for label in intake coder review tester wrap-up; do
+    tui_stage_begin "$label"
+    tui_stage_end "$label" "" "" "" "PASS"
+done
+pre_complete=${#_TUI_STAGES_COMPLETE[@]}
+tui_reset_for_next_milestone
+
+if [[ "$pre_complete" -ge 5 ]] && [[ "${#_TUI_STAGES_COMPLETE[@]}" -eq 0 ]] \
+   && [[ "${#_TUI_RECENT_EVENTS[@]}" -eq 0 ]] && [[ "$_TUI_ACTIVE" == "true" ]] \
+   && [[ "${#_TUI_STAGE_ORDER[@]}" -eq 5 ]] && [[ -z "$_TUI_CURRENT_STAGE_LABEL" ]] \
+   && [[ "$_TUI_CURRENT_STAGE_NUM" -eq 0 ]] && [[ "$_TUI_AGENT_STATUS" == "idle" ]] \
+   && [[ "$_TUI_AGENT_TURNS_USED" -eq 0 ]]; then
+    pass "reset clears stages_complete+events+progress, keeps sidecar+pill list"
+else
+    fail "reset invariants" \
+         "stages=${#_TUI_STAGES_COMPLETE[@]} events=${#_TUI_RECENT_EVENTS[@]} active=$_TUI_ACTIVE order=${#_TUI_STAGE_ORDER[@]} label='$_TUI_CURRENT_STAGE_LABEL' num=$_TUI_CURRENT_STAGE_NUM status='$_TUI_AGENT_STATUS'"
+fi
+
+# =============================================================================
+echo "=== Test 8: reset preserves monotonic lifecycle-id counter ==="
+_activate_tui
+# Clear the cross-test global so cycle numbers start from a known baseline.
+_TUI_STAGE_CYCLE=()
+_TUI_CLOSED_LIFECYCLE_IDS=()
+_TUI_STAGE_ORDER=("coder")
+tui_stage_begin "coder"; tui_stage_end "coder" "" "" "" "PASS"
+cycle_before="${_TUI_STAGE_CYCLE[coder]:-0}"
+
+tui_reset_for_next_milestone
+cycle_after_reset="${_TUI_STAGE_CYCLE[coder]:-0}"
+
+tui_stage_begin "coder"
+next_id="${_TUI_CURRENT_LIFECYCLE_ID:-}"
+
+if [[ "$cycle_before" -eq 1 ]] && [[ "$cycle_after_reset" -eq 1 ]] \
+   && [[ "$next_id" == "coder#2" ]]; then
+    pass "reset retains counter at 1; next begin allocates coder#2"
+else
+    fail "cycle advance" \
+         "before=$cycle_before after_reset=$cycle_after_reset next='$next_id' (expected 1,1,coder#2)"
+fi
+
+# =============================================================================
+echo "=== Test 9: reset is a no-op when _TUI_ACTIVE=false ==="
+_activate_tui
+_TUI_STAGES_COMPLETE=('{"label":"coder"}')
+_TUI_RECENT_EVENTS=("12:00:00|info|runtime||hello")
+_TUI_ACTIVE=false
+tui_reset_for_next_milestone
+
+if [[ "${#_TUI_STAGES_COMPLETE[@]}" -eq 1 ]] && [[ "${#_TUI_RECENT_EVENTS[@]}" -eq 1 ]]; then
+    pass "inactive reset does not clear state"
+else
+    fail "inactive noop" "stages=${#_TUI_STAGES_COMPLETE[@]} events=${#_TUI_RECENT_EVENTS[@]} (expected 1 + 1)"
+fi
+
+# =============================================================================
+echo "=== Test 10: auto-advance simulation — pills reset across milestones ==="
+_activate_tui
+_TUI_STAGE_ORDER=("intake" "coder" "review" "tester" "wrap-up")
+
+# Milestone 1: run all stages to completion (mirrors a real pipeline pass)
+for label in intake coder review tester; do
+    tui_stage_begin "$label"
+    tui_stage_end "$label" "" "" "" "PASS"
+done
+tui_stage_begin "wrap-up"
+_hook_tui_complete 0
+m1_count=${#_TUI_STAGES_COMPLETE[@]}
+
+# Transition: _run_auto_advance_chain calls this before re-entering
+# run_complete_loop for milestone 2.
+tui_reset_for_next_milestone
+
+# Milestone 2: intake starts — pills must be grey, not inherit M1's green row.
+tui_stage_begin "intake"
+
+if [[ "$m1_count" -ge 5 ]] && [[ "${#_TUI_STAGES_COMPLETE[@]}" -eq 0 ]] \
+   && [[ "$_TUI_CURRENT_STAGE_LABEL" == "intake" ]]; then
+    pass "M1 recorded ${m1_count} stages; M2 starts fresh with active stage=intake"
+else
+    fail "auto-advance isolation" \
+         "m1=$m1_count m2_stages=${#_TUI_STAGES_COMPLETE[@]} m2_label='$_TUI_CURRENT_STAGE_LABEL'"
+fi
+
+# =============================================================================
+echo "=== Test 11: reset silently clears substage even if still open at transition ==="
+_activate_tui
+_TUI_STAGE_ORDER=("coder")
+tui_stage_begin "coder"
+# Simulate a substage still open at milestone transition (production impossible
+# but guards against regression if call site moves). Contract: silent clear,
+# not emitted as auto-close warn event.
+tui_substage_begin "scout"
+_TUI_RECENT_EVENTS=()  # Clear events so we can verify reset doesn't emit warn
+
+tui_reset_for_next_milestone
+
+if [[ -z "$_TUI_CURRENT_SUBSTAGE_LABEL" ]] && [[ "$_TUI_CURRENT_SUBSTAGE_START_TS" -eq 0 ]] \
+   && [[ "${#_TUI_RECENT_EVENTS[@]}" -eq 0 ]]; then
+    pass "reset silently zeroes substage without emitting auto-close warn"
+else
+    fail "silent substage clear" \
+         "label='$_TUI_CURRENT_SUBSTAGE_LABEL' ts=$_TUI_CURRENT_SUBSTAGE_START_TS events=${#_TUI_RECENT_EVENTS[@]} (expected empty)"
+fi
+
 echo ""
 echo "=== Summary: ${PASS} passed, ${FAIL} failed ==="
 [[ "$FAIL" -eq 0 ]]

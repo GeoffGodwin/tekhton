@@ -155,7 +155,7 @@ run_agent() {
     # LAST_AGENT_RETRY_COUNT, _RWR_EXIT, _RWR_TURNS, _RWR_WAS_ACTIVITY_TIMEOUT.
     _run_with_retry "$label" "$_invoke" "$model" "$max_turns" "$prompt" \
         "$log_file" "$_activity_timeout" "$_session_dir" "$_exit_file" "$_turns_file" \
-        "$_prerun_marker" "$_timeout"
+        "$_prerun_marker" "$_timeout" "_spinner_pid" "_tui_updater_pid"
     _stop_agent_spinner "$_spinner_pid" "$_tui_updater_pid"
 
     local agent_exit="$_RWR_EXIT"
@@ -287,6 +287,7 @@ run_agent() {
         if [ "$_has_file_changes" = true ] || [ "$_has_summary" = true ]; then
             warn "[$label] 0 turns reported but agent modified ${_changed_count} file(s) — NOT a null run."
         else
+            # shellcheck disable=SC2034  # used by agent_helpers.sh
             LAST_AGENT_NULL_RUN=true
             warn "[$label] NULL RUN DETECTED — agent used 0 turns."
         fi

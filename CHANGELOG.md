@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.125.2] - 2026-04-24
+
+### Added
+- Resolved the single open non-blocking note in `.tekhton/NON_BLOCKING_LOG.md`
+## [3.125.1] - 2026-04-24
+
+### Added
+- Fixed NON_BLOCKING_LOG and put the log back.
+
+## [3.125.0] - 2026-04-23
+
+### Added
+- M125 — Quota Pause Refresh Accuracy & Probe Budget. Three correctness fixes (M125)
+## [3.124.0] - 2026-04-23
+
+### Added
+- M124 — TUI Quota-Pause Awareness & Spinner Coordination. Issue #180: (M124)
+
+## [3.123.0] - 2026-04-23
+
+### Added
+- M123 — Indexer Grammar Coverage Audit & Silent-Failure Prevention. Defence- (M123)
+## [3.122.3] - 2026-04-23
+
+### Added
+- Fixed the GitHub Actions checkout failure caused by an untracked-but-committed
+
+## [3.122.2] - 2026-04-23
+
+### Added
+- Added `tui_reset_for_next_milestone()` in `lib/tui_ops.sh` and wired it into
+## [3.122.1] - 2026-04-23
+
+### Added
+- Moved acceptance-criteria quality lint from end-of-run acceptance checking
+
+## [3.122.0] - 2026-04-23
+
+### Added
+- M122 — Indexer Multi-Grammar Package Support + Diagnostic Plumbing (M122)
 ## [3.121.0] - 2026-04-22
 
 ### Added

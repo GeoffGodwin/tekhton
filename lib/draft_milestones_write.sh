@@ -79,6 +79,20 @@ draft_milestones_validate_output() {
         errors=$((errors + 1))
     fi
 
+    # Acceptance criteria quality lint (non-blocking; emitted during authoring
+    # so warnings are actionable before the milestone is run). See
+    # lib/milestone_acceptance_lint.sh for the rule set.
+    if [[ "$errors" -eq 0 ]] && declare -f lint_acceptance_criteria &>/dev/null; then
+        local lint_warnings
+        lint_warnings=$(lint_acceptance_criteria "$file" 2>/dev/null || true)
+        if [[ -n "$lint_warnings" ]]; then
+            echo "LINT: $(basename "$file") — acceptance criteria warnings:" >&2
+            while IFS= read -r lint_line; do
+                [[ -n "$lint_line" ]] && echo "  ${lint_line}" >&2
+            done <<< "$lint_warnings"
+        fi
+    fi
+
     [[ "$errors" -eq 0 ]]
 }
 

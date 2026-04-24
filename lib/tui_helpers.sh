@@ -68,6 +68,14 @@ _tui_recent_events_json() {
                 runtime|summary)
                     # Modern 5-field has "source|msg" in after_type. Detect
                     # 4-field legacy by absence of an additional pipe.
+                    # NOTE: legacy detection is defensive-only. The ring
+                    # buffer is in-memory, reset each run, and fully owned
+                    # by tui_append_event (which always serialises 5-field
+                    # entries post-M117). A crafted old-format entry whose
+                    # message body contained a literal "|" would misparse as
+                    # 5-field, but no such entry can exist at runtime. Do
+                    # not attempt to exercise this branch with synthetic
+                    # old-format inputs.
                     if [[ "$after_type" == *"|"* ]]; then
                         source="${after_type%%|*}"
                         msg="${after_type#*|}"
@@ -248,6 +256,14 @@ _tui_json_build_status() {
     printf '"recent_events":%s,' "$(_tui_recent_events_json)"
     printf '"action_items":%s,' "$(_tui_action_items_json)"
     printf '"verdict":%s,' "$verdict_json"
+    # M124: quota pause fields. Always emitted (empty/0 when not paused)
+    # so the consumer can rely on key presence and never has to handle a
+    # schema gap when the pause begins or ends mid-render.
+    printf '"pause_reason":"%s",' "$(_tui_escape "${_TUI_PAUSE_REASON:-}")"
+    printf '"pause_retry_interval":%s,' "${_TUI_PAUSE_RETRY_INTERVAL:-0}"
+    printf '"pause_max_duration":%s,' "${_TUI_PAUSE_MAX_DURATION:-0}"
+    printf '"pause_started_at":%s,' "${_TUI_PAUSE_STARTED_AT:-0}"
+    printf '"pause_next_probe_at":%s,' "${_TUI_PAUSE_NEXT_PROBE_AT:-0}"
     printf '"complete":%s' "$complete"
     printf '}'
 }

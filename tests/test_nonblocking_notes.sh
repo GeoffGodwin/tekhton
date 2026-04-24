@@ -8,6 +8,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 PROJECT_DIR="$TMPDIR"
 TEKHTON_SESSION_DIR="$TMPDIR"
+TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
 mkdir -p "${TMPDIR}/${TEKHTON_DIR}"
 
 DRIFT_LOG_FILE="${TEKHTON_DIR}/DRIFT_LOG.md"
@@ -56,14 +57,30 @@ assert_file_contains "has Open section" "$NB_FILE" "^## Open"
 assert_file_contains "has Resolved section" "$NB_FILE" "^## Resolved"
 
 # ============================================================
-# Phase 2: count_open_nonblocking_notes — empty file returns 0
+# Phase 2: _ensure_nonblocking_log repairs malformed file
+# ============================================================
+
+cat > "$NB_FILE" << 'EOF'
+# Non-Blocking Notes Log
+
+Accumulated reviewer notes that were not blocking but should be addressed.
+
+## Resolved
+EOF
+
+_ensure_nonblocking_log
+assert_file_contains "repair restores Open section" "$NB_FILE" "^## Open"
+assert_file_contains "repair keeps Resolved section" "$NB_FILE" "^## Resolved"
+
+# ============================================================
+# Phase 3: count_open_nonblocking_notes — empty file returns 0
 # ============================================================
 
 COUNT=$(count_open_nonblocking_notes)
 assert_eq "empty count" "0" "$COUNT"
 
 # ============================================================
-# Phase 3: append_nonblocking_notes from reviewer report
+# Phase 4: append_nonblocking_notes from reviewer report
 # ============================================================
 
 cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
@@ -89,7 +106,7 @@ assert_file_contains "note 2 present" "$NB_FILE" "Consider renaming variable"
 assert_file_contains "tagged with task" "$NB_FILE" "Test task"
 
 # ============================================================
-# Phase 4: append more notes from a second run
+# Phase 5: append more notes from a second run
 # ============================================================
 
 TASK="Second task"
@@ -113,7 +130,7 @@ assert_eq "total 4 notes" "4" "$COUNT"
 assert_file_contains "new note tagged" "$NB_FILE" "Second task"
 
 # ============================================================
-# Phase 5: get_open_nonblocking_notes returns text
+# Phase 6: get_open_nonblocking_notes returns text
 # ============================================================
 
 NOTES=$(get_open_nonblocking_notes)
@@ -121,7 +138,7 @@ LINE_COUNT=$(echo "$NOTES" | wc -l | tr -d '[:space:]')
 assert_eq "4 lines of notes" "4" "$LINE_COUNT"
 
 # ============================================================
-# Phase 6: _resolve_addressed_nonblocking_notes marks files
+# Phase 7: _resolve_addressed_nonblocking_notes marks files
 # ============================================================
 
 cat > "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" << 'EOF'
@@ -142,7 +159,7 @@ assert_file_contains "foo resolved" "$NB_FILE" '\[x\].*foo.dart'
 assert_file_contains "baz resolved" "$NB_FILE" '\[x\].*baz.dart'
 
 # ============================================================
-# Phase 7: "None" non-blocking notes are skipped
+# Phase 8: "None" non-blocking notes are skipped
 # ============================================================
 
 cat > "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}" << 'EOF'
@@ -163,7 +180,7 @@ COUNT_AFTER=$(count_open_nonblocking_notes)
 assert_eq "None skipped" "$COUNT_BEFORE" "$COUNT_AFTER"
 
 # ============================================================
-# Phase 8: Missing reviewer report is safe
+# Phase 9: Missing reviewer report is safe
 # ============================================================
 
 rm -f "${PROJECT_DIR}/${REVIEWER_REPORT_FILE}"

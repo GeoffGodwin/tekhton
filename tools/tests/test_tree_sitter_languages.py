@@ -170,6 +170,58 @@ class TestGetParser:
         assert parser is None or hasattr(parser, 'parse')
 
 
+class TestTypescriptGrammarLoading:
+    """Test multi-grammar package loading for tree_sitter_typescript.
+
+    These tests are gated on tree_sitter and tree_sitter_typescript being
+    installed. They verify the fix for issue #181 where .ts and .tsx files
+    silently failed because the loader only probed generic `language` /
+    `LANGUAGE` exports, missing the multi-grammar factories.
+    """
+
+    def setup_method(self):
+        # Clear the module-level cache so each test probes the loader fresh.
+        import tree_sitter_languages as mod
+        mod._lang_cache.clear()
+
+    def test_get_language_typescript_returns_object(self):
+        pytest.importorskip("tree_sitter")
+        pytest.importorskip("tree_sitter_typescript")
+        lang = get_language(".ts")
+        assert lang is not None
+        # Must be a tree_sitter.Language-compatible object usable by Parser.
+        import tree_sitter
+        assert isinstance(lang, tree_sitter.Language)
+
+    def test_get_language_tsx_returns_object(self):
+        pytest.importorskip("tree_sitter")
+        pytest.importorskip("tree_sitter_typescript")
+        lang = get_language(".tsx")
+        assert lang is not None
+        import tree_sitter
+        assert isinstance(lang, tree_sitter.Language)
+
+    def test_get_language_typescript_tsx_are_distinct(self):
+        pytest.importorskip("tree_sitter")
+        pytest.importorskip("tree_sitter_typescript")
+        ts = get_language(".ts")
+        tsx = get_language(".tsx")
+        assert ts is not None
+        assert tsx is not None
+        assert ts is not tsx
+
+    def test_get_parser_typescript_parses_simple_source(self):
+        pytest.importorskip("tree_sitter")
+        pytest.importorskip("tree_sitter_typescript")
+        parser = get_parser(".ts")
+        assert parser is not None
+        tree = parser.parse(b"const x: number = 1;\n")
+        root = tree.root_node
+        # Top-level nodes should not be ERROR for valid TS source.
+        for child in root.children:
+            assert child.type != "ERROR", f"Unexpected ERROR node parsing TS source: {child}"
+
+
 class TestLanguageMappingCompleteness:
     """Test that the language mapping is complete and consistent."""
 
@@ -194,6 +246,45 @@ class TestLanguageMappingCompleteness:
         for lang in languages:
             found_exts = extensions_for_languages({lang})
             assert len(found_exts) > 0, f"Language {lang} has no extensions via extensions_for_languages"
+
+
+import tree_sitter_languages as _tsl_mod
+
+# Build parametrize data at module load so pytest can collect test IDs cleanly.
+_ALL_EXT_PARAMS = [
+    (ext, info[0], info[1])
+    for ext, info in sorted(_tsl_mod._EXT_TO_LANG.items())
+]
+
+
+class TestAllGrammarsLoadIfInstalled:
+    """Parametrized regression test: the multi-grammar probe order in get_language()
+    must not break single-grammar packages that expose only language() / LANGUAGE.
+
+    For each declared extension, skip if tree_sitter or the grammar module is not
+    installed. If both are present, assert get_language() returns a real Language.
+
+    This is acceptance criterion AC-3 from M122: 'All other declared extensions
+    continue to load via their existing language() / LANGUAGE fallbacks.'
+    """
+
+    def setup_method(self):
+        _tsl_mod._lang_cache.clear()
+
+    @pytest.mark.parametrize("ext,module_name,lang_name", _ALL_EXT_PARAMS)
+    def test_grammar_loads_if_installed(self, ext, module_name, lang_name):
+        pytest.importorskip("tree_sitter")
+        pytest.importorskip(module_name)
+        import tree_sitter
+
+        result = get_language(ext)
+        assert result is not None, (
+            f"get_language({ext!r}) returned None even though {module_name} "
+            f"is installed — the probe order may have broken the {lang_name!r} grammar"
+        )
+        assert isinstance(result, tree_sitter.Language), (
+            f"get_language({ext!r}) returned {type(result)!r}, expected tree_sitter.Language"
+        )
 
 
 if __name__ == "__main__":

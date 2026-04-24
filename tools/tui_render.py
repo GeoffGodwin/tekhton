@@ -22,6 +22,7 @@ from rich.text import Text
 
 from tui_render_common import _SPIN_CHARS, _fmt_duration  # noqa: F401
 from tui_render_logo import _build_logo, _build_simple_logo  # noqa: F401
+from tui_render_pause import _build_paused_bar  # noqa: F401
 from tui_render_timings import _build_timings_panel  # noqa: F401
 
 
@@ -121,6 +122,13 @@ def _build_active_bar(status: dict[str, Any]) -> Table:
     else:
         elapsed = elapsed_secs                                 # frozen at completion
     agent_status = status.get("current_agent_status") or "idle"
+
+    # M124: paused branch takes precedence over working / running so a
+    # quota pause that lands inside a run_op or active agent call still
+    # renders the pause UI instead of the stale "Working\u2026" or running
+    # frame.
+    if agent_status == "paused":
+        return _build_paused_bar(status)
 
     # M104: shell-op "working" state shows only the operation label + spinner.
     # Model / turns / elapsed are agent-only concepts and don't apply here.

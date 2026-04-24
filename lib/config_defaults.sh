@@ -162,6 +162,7 @@ set -euo pipefail
 : "${REPO_MAP_HISTORY_ENABLED:=true}"
 : "${REPO_MAP_HISTORY_MAX_RECORDS:=200}"
 : "${SCOUT_REPO_MAP_TOOLS_ONLY:=true}"    # Reduce scout tools when repo map available
+: "${INDEXER_STARTUP_AUDIT:=true}"        # M123: run grammar audit in check_indexer_available
 
 # --- TUI mode (M97: rich.live sidecar display; M98: layout redesign) ---
 : "${TUI_ENABLED:=auto}"                  # auto | true | false
@@ -254,11 +255,14 @@ set -euo pipefail
 : "${FIX_NONBLOCKERS_MAX_PASSES:=3}"     # Hard limit on --fix-nonblockers loop iterations
 : "${FIX_DRIFT_MAX_PASSES:=3}"           # Hard limit on --fix-drift loop iterations
 
-# --- Quota management defaults (Milestone 16) ---
+# --- Quota management defaults (Milestone 16, M125) ---
 : "${QUOTA_RETRY_INTERVAL:=300}"          # Seconds between quota refresh checks (5 min)
 : "${QUOTA_RESERVE_PCT:=10}"              # Proactive pause threshold (Tier 2 only)
 : "${CLAUDE_QUOTA_CHECK_CMD:=}"           # Optional external script for proactive checking
-: "${QUOTA_MAX_PAUSE_DURATION:=14400}"    # Max seconds to wait in pause (4 hours)
+: "${QUOTA_MAX_PAUSE_DURATION:=18900}"    # M125: max pause (5h15m, matches 5h rolling window + skew buffer)
+: "${QUOTA_SLEEP_CHUNK:=5}"               # M124: chunk size for chunked sleep during pause (Ctrl-C responsiveness)
+: "${QUOTA_PROBE_MIN_INTERVAL:=600}"      # M125: min seconds between real-cost probes (fallback-mode floor)
+: "${QUOTA_PROBE_MAX_INTERVAL:=1800}"     # M125: cap on exponential back-off between probes
 
 # --- Metrics defaults ---
 : "${METRICS_ENABLED:=true}"
@@ -611,3 +615,6 @@ _clamp_config_value HEALTH_SAMPLE_SIZE 100
 _clamp_config_value QUOTA_RETRY_INTERVAL 3600
 _clamp_config_value QUOTA_RESERVE_PCT 50
 _clamp_config_value QUOTA_MAX_PAUSE_DURATION 86400
+_clamp_config_value QUOTA_SLEEP_CHUNK 60
+_clamp_config_value QUOTA_PROBE_MIN_INTERVAL 3600
+_clamp_config_value QUOTA_PROBE_MAX_INTERVAL 3600

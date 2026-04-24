@@ -181,8 +181,16 @@ def main() -> int:
                         _last_mtime_time = time.monotonic()
                 except OSError:
                     pass
+                # M124: extend eligibility to "paused" so the watchdog can
+                # save the user when the parent shell dies during a quota
+                # pause. The mtime-staleness check still protects against
+                # false positives — tui_update_pause is called once per
+                # chunked sleep tick (default 5s) and once per probe
+                # interval (default 300s) so an active pause keeps the
+                # mtime fresh; the watchdog only fires when no one is
+                # touching the file at all (parent shell dead).
                 if (
-                    status.get("current_agent_status") == "idle"
+                    status.get("current_agent_status") in ("idle", "paused")
                     and status.get("agent_turns_used", 0) > 0
                     and time.monotonic() - _last_mtime_time > watchdog_secs
                 ):
