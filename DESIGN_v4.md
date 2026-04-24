@@ -526,6 +526,7 @@ Invoking tester agent (max 35 turns)...
 
 **Implementation in `lib/common.sh`:**
 
+{% raw %}
 ```bash
 # Log levels: 0=default, 1=verbose, 2=debug
 declare -g _LOG_LEVEL=0
@@ -549,6 +550,7 @@ emit_event() {
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$event_type" "$*" >> "$_EVENT_FILE"
 }
 ```
+{% endraw %}
 
 **Structured event format** (for DataDog/Splunk ingestion):
 
