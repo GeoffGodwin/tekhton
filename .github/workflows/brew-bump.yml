@@ -32,10 +32,26 @@ jobs:
           TARBALL_SHA: ${{ steps.sha.outputs.sha256 }}
         run: |
           cd tap
-          sed -i -E \
-            -e "s|url \".*\"|url \"https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz\"|" \
-            -e "s|sha256 \".*\"|sha256 \"${TARBALL_SHA}\"|" \
-            Formula/tekhton.rb
+          cat > Formula/tekhton.rb <<EOF
+          class Tekhton < Formula
+            desc "Multi-agent development pipeline built on Claude CLI"
+            homepage "https://github.com/geoffgodwin/tekhton"
+            url "https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${TAG}.tar.gz"
+            sha256 "${TARBALL_SHA}"
+            license "MIT"
+
+            depends_on "bash"
+
+            def install
+              libexec.install Dir["*"]
+              (bin/"tekhton").write_env_script libexec/"tekhton.sh", PATH: "#{Formula[\"bash\"].opt_bin}:#{ENV[\"PATH\"]}"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/tekhton --version")
+            end
+          end
+          EOF
 
       - name: Commit and push
         env:
@@ -59,22 +75,13 @@ jobs:
           eval "$(brew shellenv)"
           brew tap geoffgodwin/tekhton
           brew install tekhton
-          brew install bash
-
-          brew_bash="$(brew --prefix bash)/bin/bash"
-          [ -x "$brew_bash" ] || {
-            echo "::error::Expected Homebrew bash at $brew_bash, but it is not executable"
-            exit 1
-          }
 
           echo "PATH=$PATH"
           echo "bash on PATH: $(command -v bash)"
           bash --version | head -1
-          echo "brew bash: $brew_bash"
-          "$brew_bash" --version | head -1
 
           set +e
-          out=$($brew_bash -lc 'tekhton --version' 2>&1)
+          out=$(tekhton --version 2>&1)
           status=$?
           set -e
 
