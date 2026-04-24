@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.125.3] - 2026-04-24
+
+### Fixed
+- `gh release create` failure due to unsupported `--latest` flag; removed flag, GitHub handles latest promotion automatically.
+- Jekyll GitHub Pages build failure caused by unguarded `{%s}` printf format string in `DESIGN_v4.md` being parsed as an unterminated Liquid tag; wrapped block in `{% raw %}...{% endraw %}`.
+- Missing `{% endraw %}` closing tag that would have caused the raw block to consume the rest of the document.
+
 ## [3.125.2] - 2026-04-24
 
 ### Added
