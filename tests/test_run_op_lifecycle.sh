@@ -334,8 +334,8 @@ fi
 echo "=== Test 18: stub in common.sh alone provides transparent passthrough ==="
 
 # Source common.sh fresh (without tui.sh). The stub must work as a passthrough.
-(
-    # Subshell to avoid polluting globals
+# Command substitution creates a subshell; no filesystem dependency.
+stub_result=$(
     _TUI_ACTIVE=false
     # Stub functions common.sh expects from earlier in the chain
     _out_json_escape() { printf '%s' "$*"; }
@@ -348,9 +348,8 @@ echo "=== Test 18: stub in common.sh alone provides transparent passthrough ==="
     else
         echo "STUB_FAIL:rc=$rc:out=$output"
     fi
-)> "$TMPDIR_TEST/stub_result.txt"
+)
 
-stub_result=$(cat "$TMPDIR_TEST/stub_result.txt")
 if [[ "$stub_result" == "STUB_PASS" ]]; then
     pass "common.sh stub: run_op is a transparent passthrough when common.sh sourced alone"
 else

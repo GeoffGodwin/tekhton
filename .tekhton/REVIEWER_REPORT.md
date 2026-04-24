@@ -1,25 +1,31 @@
+# Reviewer Report
+
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
-- None
+None
 
 ## Simple Blockers (jr coder)
-- None
+None
 
 ## Non-Blocking Notes
-- `lib/milestone_split_dag.sh:87` — `echo "$sub_block" > ...` should be `printf '%s\n' "$sub_block" > ...` (security agent LOW/fixable finding: bash `echo` interprets `-n`/`-e` flags on agent-generated content, potentially truncating or corrupting a milestone file). Carried forward from cycle 1 — not addressed in rework, still valid.
-- `tests/test_ensure_gitignore_entries.sh` — comment says "All 17 Tekhton runtime patterns" but `common.sh` defines 18 entries; `EXPECTED_ENTRIES` omits `.claude/tui_sidecar.pid`. Update array and comment to 18. Carried forward from cycle 1.
-- CLAUDE.md repository layout section does not document the four new lib files: `common_box.sh`, `common_timing.sh`, `replan_brownfield_apply.sh`, `init_helpers_maturity.sh`. `ARCHITECTURE.md` was updated; CLAUDE.md should follow for canonical file inventory accuracy. Carried forward from cycle 1.
+- `lib/milestone_split_dag.sh:87` — Security agent flagged `echo "$sub_block" > "${milestone_dir}/${sub_file}"` (LOW, fixable:yes): if `$sub_block` begins with `-n` or `-e`, bash `echo` will misinterpret them as flags, potentially producing a truncated or escape-expanded milestone file. Not introduced by this task; should migrate to the non-blocking log so it is addressed in a future cleanup pass (fix: `printf '%s\n' "$sub_block" > ...`).
 
 ## Coverage Gaps
-- `lib/validate_config.sh` — branches for empty DESIGN_FILE string (6a) and DESIGN_FILE ending in `/` (6b) have no dedicated test.
-- `lib/common_box.sh` — box-drawing edge cases (UTF-8 vs ASCII fallback, wide content) are not exercised by any test.
+None
 
 ## Drift Observations
-- `tests/test_quota.sh:415–434` inline-defines `_extract_retry_after_seconds`; `tests/helpers/retry_after_extract.sh` defines the same function with matching logic but `test_quota.sh` does not source that helper. If the helper exists for reuse, source it to prevent logic drift between the two definitions.
+None
 
-## Re-review Verification
-- **Blocker 1 fixed**: `lib/common_box.sh` — `set -euo pipefail` present on line 2. ✓
-- **Blocker 2 fixed**: `lib/common_timing.sh` — `set -euo pipefail` present on line 2. ✓
-- **Blocker 3 fixed**: `lib/replan_brownfield_apply.sh` — `set -euo pipefail` present on line 2. ✓
+---
+
+## Review Notes
+
+**Scope:** One doc-hygiene item — mark the last open non-blocking note `[x]` with a resolution annotation.
+
+**Investigation verified:** `tests/test_draft_milestones_validate_lint.sh` has exactly three `# --- Fixture:` blocks (lines 36, 114, 170). No surviving "four scenarios" reference exists anywhere in the working tree outside `.tekhton/`. The coder's factual claims are correct.
+
+**Log state is correct:** All 19 `## Open` items are now `[x]`; `## Resolved` is empty. The `[ ]` → `[x]` → next-run sweep into `## Resolved` flow (via `clear_completed_nonblocking_notes`) is preserved.
+
+**No shell code was changed**, so shell quality, shellcheck, and architecture boundary checks are not applicable to this diff.

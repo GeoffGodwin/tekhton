@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-23
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-04-24 | "Address all 19 open non-blocking notes in .tekhton/NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `tests/test_quota.sh:415–434` inline-defines `_extract_retry_after_seconds`; `tests/helpers/retry_after_extract.sh` defines the same function with matching logic but `test_quota.sh` does not source that helper. If the helper exists for reuse, source it to prevent logic drift between the two definitions.
