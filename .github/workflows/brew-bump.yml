@@ -56,10 +56,26 @@ jobs:
         env:
           HOMEBREW_NO_AUTO_UPDATE: "1"
         run: |
+          eval "$(brew shellenv)"
           brew tap geoffgodwin/tekhton
           brew install tekhton
+
+          echo "PATH=$PATH"
+          echo "bash on PATH: $(command -v bash)"
+          bash --version | head -1
+
+          set +e
           out=$(tekhton --version 2>&1)
+          status=$?
+          set -e
+
+          echo "tekhton --version exit=$status"
           echo "tekhton --version output: $out"
+          [ "$status" -eq 0 ] || {
+            echo "::error::tekhton --version failed after install"
+            exit 1
+          }
+
           echo "$out" | grep -q "${GITHUB_REF_NAME#v}" || {
             echo "::error::Version mismatch — expected ${GITHUB_REF_NAME#v} in output: $out"
             exit 1
