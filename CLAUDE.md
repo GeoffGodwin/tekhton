@@ -297,6 +297,13 @@ agent roles.
 7. **Python is optional.** The `tools/` directory requires Python 3.8+ and tree-sitter
    for intelligent indexing (repo map, tag cache). Tekhton remains fully functional
    without Python — the pipeline gracefully falls back to v2 context injection.
+8. **300-line file ceiling.** Every `.sh` file you create or modify must be under 300
+   lines after your changes. If a file exceeds 300 lines, extract helpers into a new
+   `_helpers.sh` (or domain-split) file. **Exemption — data-only files:** files that
+   contain only assignments (e.g. `:=` defaults), constant declarations, and calls to
+   shared clamp/validation helpers (no function bodies of their own, no conditional
+   logic) are exempt. Such files exist to declare values, and splitting them buys no
+   readability. Example: `lib/config_defaults.sh`.
 
 ## Versioning
 
