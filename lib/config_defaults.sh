@@ -70,6 +70,8 @@ set -euo pipefail
 : "${JR_CODER_SUMMARY_FILE:=${TEKHTON_DIR}/JR_CODER_SUMMARY.md}"
 : "${BUILD_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_ERRORS.md}"
 : "${BUILD_RAW_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+: "${BUILD_ROUTING_DIAGNOSIS_FILE:=${TEKHTON_DIR}/BUILD_ROUTING_DIAGNOSIS.md}"
+: "${BUILD_FIX_REPORT_FILE:=${TEKHTON_DIR}/BUILD_FIX_REPORT.md}"
 : "${UI_TEST_ERRORS_FILE:=${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
 : "${PREFLIGHT_ERRORS_FILE:=${TEKHTON_DIR}/PREFLIGHT_ERRORS.md}"
 : "${DIAGNOSIS_FILE:=${TEKHTON_DIR}/DIAGNOSIS.md}"
@@ -95,6 +97,16 @@ set -euo pipefail
 : "${FINAL_FIX_ENABLED:=true}"              # Spawn fix agent when TEST_CMD fails in final checks
 : "${FINAL_FIX_MAX_ATTEMPTS:=2}"            # Max fix attempts before giving up
 : "${FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
+
+# --- Build-fix continuation loop defaults (M128) ---
+# Controls the in-loop budget and progress-gating behavior for the
+# coder-stage build-fix sub-loop driven by stages/coder_buildfix.sh.
+: "${BUILD_FIX_ENABLED:=true}"              # Master toggle for the build-fix loop
+: "${BUILD_FIX_MAX_ATTEMPTS:=3}"            # Max attempts inside the loop
+: "${BUILD_FIX_BASE_TURN_DIVISOR:=3}"       # base = max(8, EFFECTIVE_CODER_MAX_TURNS / DIVISOR)
+: "${BUILD_FIX_MAX_TURN_MULTIPLIER:=100}"   # Upper-bound multiplier × base, integer ×100 (100 = 1.0)
+: "${BUILD_FIX_REQUIRE_PROGRESS:=true}"     # Halt loop when no measurable progress
+: "${BUILD_FIX_TOTAL_TURN_CAP:=120}"        # Cumulative cap across all attempts
 
 # --- Drift detection defaults ---
 : "${ARCHITECTURE_LOG_FILE:=${TEKHTON_DIR}/ARCHITECTURE_LOG.md}"
@@ -591,6 +603,10 @@ _clamp_config_value PREFLIGHT_FIX_MAX_ATTEMPTS 10
 _clamp_config_value PREFLIGHT_FIX_MAX_TURNS 500
 _clamp_config_value FINAL_FIX_MAX_ATTEMPTS 10
 _clamp_config_value FINAL_FIX_MAX_TURNS 500
+_clamp_config_value BUILD_FIX_MAX_ATTEMPTS 10
+_clamp_config_value BUILD_FIX_BASE_TURN_DIVISOR 100
+_clamp_config_value BUILD_FIX_MAX_TURN_MULTIPLIER 500
+_clamp_config_value BUILD_FIX_TOTAL_TURN_CAP 1000
 _clamp_config_value TESTER_FIX_MAX_DEPTH 5
 _clamp_config_value TESTER_FIX_MAX_TURNS 100
 _clamp_config_value TESTER_FIX_OUTPUT_LIMIT 16000

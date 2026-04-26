@@ -179,7 +179,8 @@ tekhton/
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate
 │   ├── coder.sh            # Scout + Coder + build gate
-│   ├── coder_buildfix.sh   # M127 confidence-based build-fix routing (sub-stage)
+│   ├── coder_buildfix.sh   # M127 routing + M128 build-fix continuation loop (sub-stage)
+│   ├── coder_buildfix_helpers.sh  # M128 pure helpers (budget, progress signal, report writer, stats export)
 │   ├── docs.sh             # Docs agent stage (optional, Haiku-powered)
 │   ├── security.sh         # Security review stage
 │   ├── review.sh           # Review loop + rework routing
@@ -456,6 +457,13 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `FINAL_FIX_ENABLED` | Spawn fix agent when TEST_CMD fails in final checks (default: true) |
 | `FINAL_FIX_MAX_ATTEMPTS` | Max fix attempts in final checks before giving up (default: 2) |
 | `FINAL_FIX_MAX_TURNS` | Turn budget per fix attempt in final checks (default: CODER_MAX_TURNS/3) |
+| `BUILD_FIX_ENABLED` | M128. Master toggle for the build-fix continuation loop (default: true) |
+| `BUILD_FIX_MAX_ATTEMPTS` | M128. Max attempts inside the loop. Set to 1 for pre-M128 single-attempt behavior (default: 3) |
+| `BUILD_FIX_BASE_TURN_DIVISOR` | M128. Base turn budget = `EFFECTIVE_CODER_MAX_TURNS / DIVISOR`, floored at 8 (default: 3) |
+| `BUILD_FIX_MAX_TURN_MULTIPLIER` | M128. Upper-bound multiplier × base, expressed as integer percent (100 = 1.0×) (default: 100) |
+| `BUILD_FIX_REQUIRE_PROGRESS` | M128. Halt loop on attempt N≥2 if progress signal is `unchanged` or `worsened` (default: true) |
+| `BUILD_FIX_TOTAL_TURN_CAP` | M128. Cumulative turn budget across all attempts; below the 8-turn floor the loop exits (default: 120) |
+| `BUILD_FIX_REPORT_FILE` | M128. Per-attempt postmortem artifact path (default: `${TEKHTON_DIR}/BUILD_FIX_REPORT.md`) |
 | `TESTER_FIX_ENABLED` | Auto-seed fix run when tester stage tests fail (default: false) |
 | `TESTER_FIX_MAX_DEPTH` | Max recursive fix attempts in tester stage (default: 1) |
 | `TESTER_FIX_OUTPUT_LIMIT` | Max chars of test output in tester fix task string (default: 4000) |

@@ -6,10 +6,11 @@ set -euo pipefail
 #   1. _bf_read_raw_errors fallback: when BUILD_RAW_ERRORS_FILE is absent, the
 #      function must fall back to BUILD_ERRORS_FILE (documented skew risk).
 #
-#   2. _run_buildfix_routing noncode_dominant arm: verifies that write_pipeline_state
-#      is called with exit_reason="env_failure" AND that exit 1 fires.  The
-#      routing token itself is tested in test_m127_routing.sh; this file covers
-#      the terminal orchestrator behavior that was not previously asserted.
+#   2. run_build_fix_loop noncode_dominant arm (M128 superseded M127's
+#      _run_buildfix_routing): verifies that write_pipeline_state is called
+#      with exit_reason="env_failure" AND that exit 1 fires. The routing
+#      token itself is tested in test_m127_routing.sh; this file covers the
+#      terminal orchestrator behavior that was not previously asserted.
 # =============================================================================
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -81,11 +82,11 @@ else
 fi
 
 # =============================================================================
-# _run_buildfix_routing — noncode_dominant arm exits 1
+# run_build_fix_loop — noncode_dominant arm exits 1 (M128 superseded M127)
 # Reviewer gap: "no test verifies that write_pipeline_state is called with
 # env_failure and that exit 1 fires."
 # =============================================================================
-echo "=== _run_buildfix_routing: noncode_dominant arm exits 1 ==="
+echo "=== run_build_fix_loop: noncode_dominant arm exits 1 ==="
 
 _capture="${_TMP}/wps_args"
 
@@ -111,8 +112,9 @@ subshell_rc=0
 
     export TASK="test task"
     export BUILD_ERRORS_FILE="${_TMP}/BUILD_ERRORS.md"
+    export BUILD_FIX_ENABLED=true
 
-    _run_buildfix_routing
+    run_build_fix_loop
 ) || subshell_rc=$?
 
 if [[ "$subshell_rc" -eq 1 ]]; then
@@ -122,9 +124,9 @@ else
 fi
 
 # =============================================================================
-# _run_buildfix_routing — noncode_dominant records env_failure pipeline state
+# run_build_fix_loop — noncode_dominant records env_failure pipeline state
 # =============================================================================
-echo "=== _run_buildfix_routing: noncode_dominant records env_failure state ==="
+echo "=== run_build_fix_loop: noncode_dominant records env_failure state ==="
 
 if [[ -f "$_capture" ]] && grep -q "env_failure" "$_capture"; then
     pass

@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-04-26
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-04-26 | "Implement Milestone 128: Build-Fix Continuation Loop & Adaptive Turn Budgeting"] `stages/coder.sh` is 1131 lines, far over the 300-line ceiling. Pre-existing and noted by the coder. `run_stage_coder` is the primary offender; splitting into discrete sub-stage orchestrators would address this debt in a future milestone.
 - [2026-04-26 | "Implement Milestone 127: Mixed-Log Classification Hardening & Confidence-Based Routing"] `lib/error_patterns_classify.sh:69`: ANSI stripping uses `sed -E 's/[[0-9;]*[a-zA-Z]//g'`. The `` hex escape is GNU sed-specific, not POSIX `sed -E`; silently fails on macOS BSD sed without a GNU shim. Low risk given Linux deployment target.
 - [2026-04-26 | "Implement Milestone 127: Mixed-Log Classification Hardening & Confidence-Based Routing"] `lib/error_patterns_classify.sh` — `load_error_patterns` is called redundantly across three exported functions. The `_EP_LOADED` guard prevents overhead, but the pattern is inconsistent with single-call usage elsewhere.
 - [2026-04-26 | "architect audit"] **`lib/gates_ui.sh:172` `_ui_detect_framework` redundant call** — Pure cosmetic micro-optimization in a non-hot path. Reviewer judgment: not worth a rework cycle. No action this audit.

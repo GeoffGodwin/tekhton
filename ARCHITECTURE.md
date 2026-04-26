@@ -38,15 +38,20 @@ Each stage is a single function sourced by `tekhton.sh`:
   - Runs build gate → escalates to build-fix agents on failure
   - Runs analyze cleanup as a completion gate
   - Archives human notes on success
-  - Sources sub-stages: `coder_prerun.sh`, `coder_buildfix.sh`
+  - Sources sub-stages: `coder_prerun.sh`, `coder_buildfix.sh` (sources `coder_buildfix_helpers.sh`)
+  - Resets the four `BUILD_FIX_*` Goal-7 env vars (M128) at stage entry so M132's `_collect_build_fix_stats_json` always sees a stable shape
 
 - **`stages/coder_prerun.sh`** — Pre-coder clean sweep (M92)
   - Sourced by `coder.sh` — do not run directly
   - Provides: `run_prerun_clean_sweep()` and `_run_prerun_fix_agent()` — spawns restricted fix agent when tests fail before the coder runs; re-captures baseline on success, warns and proceeds on failure
 
-- **`stages/coder_buildfix.sh`** — Confidence-based build-fix routing (M127)
+- **`stages/coder_buildfix.sh`** — M127 routing + M128 build-fix continuation loop
   - Sourced by `coder.sh` — do not run directly
-  - Provides: `_run_buildfix_routing()`, `_bf_emit_routing_diagnosis()`, `_bf_invoke_build_fix()`. Replaces the legacy binary `has_only_noncode_errors` bypass with a four-token routing decision (`code_dominant`, `noncode_dominant`, `mixed_uncertain`, `unknown_only`) emitted by `lib/error_patterns_classify.sh`. Re-exports `LAST_BUILD_CLASSIFICATION` after capturing the routing token so downstream M128/M130 consumers see it.
+  - Provides: `run_build_fix_loop()` (M128 top-level entry), `_bf_read_raw_errors()`, `_bf_invoke_build_fix()`. Routes via the four M127 tokens (`code_dominant`, `noncode_dominant`, `mixed_uncertain`, `unknown_only`) emitted by `lib/error_patterns_classify.sh`. The M128 loop wraps dispatch in an attempt-bounded retry (default 3) with adaptive turn budgets (1.0× / 1.5× / 2.0× of `EFFECTIVE_CODER_MAX_TURNS / BUILD_FIX_BASE_TURN_DIVISOR`), a cumulative turn cap (`BUILD_FIX_TOTAL_TURN_CAP`), and a progress gate (error-count delta + last-20-line tail). Always exports the four Goal-7 stats vars (`BUILD_FIX_OUTCOME`, `BUILD_FIX_ATTEMPTS`, `BUILD_FIX_TURN_BUDGET_USED`, `BUILD_FIX_PROGRESS_GATE_FAILURES`). On terminal failure paths exports `SECONDARY_ERROR_*` (or calls `set_secondary_cause` if M129 is deployed) for M129 cause-context integration. Re-exports `LAST_BUILD_CLASSIFICATION` after capturing the routing token so M130 consumers see it.
+
+- **`stages/coder_buildfix_helpers.sh`** — Pure helpers for the M128 build-fix loop
+  - Sourced by `coder_buildfix.sh` — do not run directly
+  - Provides: `_compute_build_fix_budget()` (adaptive schedule + clamps + cumulative-cap math), `_build_fix_progress_signal()` (improved/unchanged/worsened truth table), `_bf_count_errors()`, `_bf_get_error_tail()`, `_append_build_fix_report()` (writes `BUILD_FIX_REPORT_FILE`), `_export_build_fix_stats()`, `_build_fix_set_secondary_cause()`, `_build_fix_terminal_class()`, plus the M127 helpers `_bf_emit_routing_diagnosis()` and `_bf_extra_context_for_decision()`. All functions are pure (or write a single artifact file) so they can be unit-tested without stubbing the agent or pipeline state.
 
 - **`stages/review.sh`** → `run_stage_review()`
   - Iterates up to `MAX_REVIEW_CYCLES`

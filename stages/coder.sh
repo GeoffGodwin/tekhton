@@ -102,6 +102,11 @@ run_stage_coder() {
     local _stage_pos="${PIPELINE_STAGE_POS:-1}"
     stage_header "${_stage_pos}" "${_stage_count}" "Coder"
 
+    # M128: reset Goal-7 BUILD_FIX_* stats — must be set on every exit path
+    # so M132's _collect_build_fix_stats_json sees a stable shape.
+    export BUILD_FIX_ATTEMPTS=0 BUILD_FIX_TURN_BUDGET_USED=0 \
+        BUILD_FIX_PROGRESS_GATE_FAILURES=0 BUILD_FIX_OUTCOME="not_run"
+
     # --- Pre-coder clean sweep (M92) -----------------------------------------
     # If tests are failing before the coder runs, spawn a restricted fix agent
     # to restore a clean baseline. Non-fatal: a failed fix falls through to
@@ -1107,10 +1112,11 @@ ${GIT_DIFF_STAT}
     if ! run_build_gate "post-coder"; then
         if [ "$BUILD_GATE_RETRY" -lt 1 ]; then
             BUILD_GATE_RETRY=1
-            # M127: confidence-based routing replaces the legacy binary
-            # has_only_noncode_errors bypass. Token vocabulary is a contract
-            # consumed by M128/M130 — see lib/error_patterns_classify.sh.
-            _run_buildfix_routing
+            # M127 classifies routing (LAST_BUILD_CLASSIFICATION); M128 wraps
+            # dispatch in an attempt-bounded loop with adaptive budgets and
+            # progress gating. The loop exports the four Goal-7 BUILD_FIX_*
+            # stats vars on every exit path for M132 consumption.
+            run_build_fix_loop
         fi
     fi
 

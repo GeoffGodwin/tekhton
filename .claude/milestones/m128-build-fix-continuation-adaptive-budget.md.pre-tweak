@@ -1,22 +1,3 @@
-## Verdict
-PASS
-
-## Confidence
-94
-
-## Reasoning
-- Scope is precisely defined: files to modify are listed with specific line references; the boundary ("only upgrades the coder-stage build-fix sub-loop") is explicit
-- All gaps from the prior TWEAKED run are already resolved in the current milestone: Migration Impact section is present, and the Files Modified table has the explicit PM note "Do NOT recreate it from scratch. ADD the five new functions alongside M127's existing functions"
-- Acceptance criteria are fully testable — each maps to a concrete observable behavior (integer arithmetic schedule, turn clamp values, exact env var names/vocabulary)
-- Test matrix (T1–T10) specifies truth-table inputs, stub patterns, and exact assertions on exported vars
-- Watch For section addresses every likely pitfall: float arithmetic ban, double-counting agent calls, M132 token vocabulary freeze, file-size ceiling
-- Cross-milestone contracts (M127 read-only, M129 forward seed, M132 frozen vocab) are explicit and actionable
-- Migration Impact section is present with accurate description of six new optional config keys and one new artifact
-- No UI components — UI testability criterion not applicable
-- Historical pattern shows similar-scoped milestones (M97–M101) passing on first attempt
-
-## Prior Tweaked Content (already incorporated into milestone)
-
 # M128 - Build-Fix Continuation Loop & Adaptive Turn Budgeting
 
 <!-- milestone-meta
@@ -340,7 +321,7 @@ network. Reuse the `RETRY_STATE` counter pattern established by
 | File | Change |
 |------|--------|
 | `stages/coder.sh` | Replace the inline block at lines 1101-1170 with a single call to `run_build_fix_loop` (sourced from new `coder_build_fix.sh`). Remove the inline build-fix code path. |
-| `stages/coder_build_fix.sh` | **Extend existing file** (created by M127 for confidence-based routing). [PM: This file already exists from M127 (`stages/coder_build_fix.sh # M127 confidence-based build-fix routing`). Do NOT recreate it from scratch. ADD the five new functions (`run_build_fix_loop`, `_compute_build_fix_budget`, `_build_fix_progress_signal`, `_append_build_fix_report`, `_export_build_fix_stats`) alongside M127's existing functions. Verify the combined file stays under 300 lines; if M127's content plus M128's additions would exceed the ceiling, extract one of the two concerns into a sibling helper (e.g. `stages/coder_build_fix_helpers.sh`).] |
+| `stages/coder_build_fix.sh` | **New file.** Houses `run_build_fix_loop`, `_compute_build_fix_budget`, `_build_fix_progress_signal`, `_append_build_fix_report`, `_export_build_fix_stats`. Must stay under 300 lines. |
 | `lib/config_defaults.sh` | Add six build-fix config defaults (`BUILD_FIX_ENABLED`, `BUILD_FIX_MAX_ATTEMPTS`, `BUILD_FIX_BASE_TURN_DIVISOR`, `BUILD_FIX_MAX_TURN_MULTIPLIER`, `BUILD_FIX_REQUIRE_PROGRESS`, `BUILD_FIX_TOTAL_TURN_CAP`) and corresponding `_clamp_config_value` calls (see existing pattern at line 567). |
 | `lib/artifact_defaults.sh` | Add `: "${BUILD_FIX_REPORT_FILE:=${TEKHTON_DIR}/BUILD_FIX_REPORT.md}"` alongside the existing artifact paths (lines 16-50). |
 | `lib/state.sh` | No signature change. Build-fix loop calls `write_pipeline_state` with the existing 5-arg form, passing the structured summary string as `extra_notes` (5th arg). The function body at line 30 is unchanged. |
@@ -349,21 +330,6 @@ network. Reuse the `RETRY_STATE` counter pattern established by
 | `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_build_fix_loop.sh` is picked up by filename convention. |
 | `docs/resilience.md` | Document build-fix continuation policy, caps, and early-stop criteria. |
 | `docs/reference/configuration.md` | Document the six new build-fix config keys with defaults. |
-
-## Migration Impact
-
-[PM: Added — milestone introduces six new config keys and one new artifact file.]
-
-All six new config keys (`BUILD_FIX_ENABLED`, `BUILD_FIX_MAX_ATTEMPTS`,
-`BUILD_FIX_BASE_TURN_DIVISOR`, `BUILD_FIX_MAX_TURN_MULTIPLIER`,
-`BUILD_FIX_REQUIRE_PROGRESS`, `BUILD_FIX_TOTAL_TURN_CAP`) are
-**optional** with safe defaults. No change to `pipeline.conf` is
-required. Existing behavior is preserved when `BUILD_FIX_MAX_ATTEMPTS=1`.
-
-`BUILD_FIX_REPORT_FILE` is a new artifact written under `${TEKHTON_DIR}/`
-on every run that exercises the build-fix path. Pre-M128 pipelines will
-not have this file; its absence should not be treated as an error by
-any downstream tooling.
 
 ## Acceptance Criteria
 
@@ -382,13 +348,6 @@ any downstream tooling.
 
 ## Watch For
 
-- **`stages/coder_build_fix.sh` already exists from M127.** The CLAUDE.md
-  repo layout lists this file as an M127 artifact (`# M127 confidence-based
-  build-fix routing (sub-stage)`). Extend it — do not recreate it from
-  scratch. Verify M127's existing routing functions remain intact after
-  M128's additions are appended. If the combined file would exceed 300
-  lines, extract one concern into a sibling helper rather than discarding
-  either milestone's code.
 - **`BUILD_FIX_OUTCOME` token vocabulary is a cross-milestone contract.**
   M132's `_collect_build_fix_stats_json` (`m132-run-summary-causal-fidelity-enrichment.md`)
   branches on the exact strings `passed | exhausted | no_progress | not_run`.
