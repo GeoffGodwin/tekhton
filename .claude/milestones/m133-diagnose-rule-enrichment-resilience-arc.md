@@ -194,8 +194,8 @@ single-cause advice.
 1. `LAST_FAILURE_CONTEXT.json` contains either:
    - `classification = MIXED_UNCERTAIN`
    - `primary_cause.signal = mixed_uncertain_classification`
-2. `RUN_SUMMARY.json` `error_classes_encountered` contains either
-   `mixed_uncertain` or `MIXED_UNCERTAIN`
+2. `RUN_SUMMARY.json` has
+  - `causal_context.primary_signal = "mixed_uncertain_classification"`
 
 **Confidence:** always `low`
 

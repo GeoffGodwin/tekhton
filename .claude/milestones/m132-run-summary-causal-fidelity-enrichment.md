@@ -735,8 +735,10 @@ the four new top-level fields by name; pin the names and shapes here.
     `preflight_ui.reporter_auto_patched` (`true`/`false`),
     `preflight_ui.interactive_config_rule`, and
     `preflight_ui.interactive_config_file`.
-  - `_rule_mixed_classification` greps `error_classes_encountered` for
-    `MIXED_UNCERTAIN` and the `root:` prefix.
+  - `_rule_mixed_classification` reads
+    `causal_context.primary_signal == "mixed_uncertain_classification"`
+    and may use any `root:` entry in `error_classes_encountered` as
+    supplemental context when present.
   → Do not rename or restructure any of the four new top-level keys
   after this milestone lands. m133 will be merged with byte-exact key
   names hard-coded.

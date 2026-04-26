@@ -40,7 +40,7 @@ and routing layers can reason over stable signal.
 
 ### Goal 1 — Add a deterministic UI gate command normalizer
 
-Add two small helpers in `lib/gates_ui.sh` (or `lib/gates_ui_helpers.sh`
+Add three small helpers in `lib/gates_ui.sh` (or `lib/gates_ui_helpers.sh`
 if the file would otherwise exceed the 300-line ceiling — see
 "Files Modified" note).
 
@@ -55,6 +55,12 @@ if the file would otherwise exceed the 300-line ceiling — see
 #   when invoking UI_TEST_CMD. HARDENED=1 forces the most aggressive profile
 #   (used only by the hardened-rerun branch from Goal 3); default is the
 #   normal-run profile.
+
+# _normalize_ui_gate_env HARDENED?
+#   Thin owner hook that materializes the subprocess env list by calling
+#   _ui_deterministic_env_list. Later milestones patch this wrapper for
+#   logging and adapter dispatch; _ui_deterministic_env_list remains the
+#   pure helper that decides which KEY=VALUE lines are emitted.
 ```
 
 Normalization rules for this milestone:
@@ -77,7 +83,7 @@ Normalization rules for this milestone:
    mutates the parent shell:
    ```bash
    local _env_list=()
-   mapfile -t _env_list < <(_ui_deterministic_env_list)
+  mapfile -t _env_list < <(_normalize_ui_gate_env)
    _ui_output=$(run_op "Running UI tests" \
        env "${_env_list[@]}" timeout "$_ui_timeout" \
        bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
@@ -94,11 +100,12 @@ Normalization rules for this milestone:
    and behave exactly as today.
 
 > **Extension point — m57 (UI Platform Adapter Framework):**
-> `_normalize_ui_gate_env` is the per-adapter hook that m57 will extend
+> `_normalize_ui_gate_env` is the public owner hook that m57 will extend
 > when Cypress, Selenium, and other frameworks need their own non-interactive
-> env profiles. In m57's model, each adapter registers its own
-> `_ui_gate_env_<framework>()` function; `_normalize_ui_gate_env` dispatches
-> to the registered adapter or falls back to the Playwright path.
+> env profiles. In M126 it stays thin and delegates the Playwright-specific
+> env selection to `_ui_deterministic_env_list`. In m57's model, each adapter
+> registers its own `_ui_gate_env_<framework>()` function; `_normalize_ui_gate_env`
+> dispatches to the registered adapter or falls back to the Playwright path.
 > **Do not add `if [[ "$framework" == "cypress" ]]` branches here** — use
 > the m57 adapter registration instead.
 
@@ -319,7 +326,7 @@ Add at minimum:
 
 | File | Change |
 |------|--------|
-| `lib/gates_ui.sh` | Add deterministic env normalization, interactive-report timeout signature detection, hardened rerun branch, and diagnosis metadata emission. Currently 117 lines; estimated +120-160 LOC. If the result exceeds the 300-line ceiling (CLAUDE.md non-negotiable rule 8), extract the new helpers (`_ui_detect_framework`, `_ui_deterministic_env_list`, `_ui_timeout_signature`, diagnosis writers) into `lib/gates_ui_helpers.sh` and source it from `gates_ui.sh`. |
+| `lib/gates_ui.sh` | Add deterministic env normalization, interactive-report timeout signature detection, hardened rerun branch, and diagnosis metadata emission. Currently 117 lines; estimated +120-160 LOC. If the result exceeds the 300-line ceiling (CLAUDE.md non-negotiable rule 8), extract the new helpers (`_ui_detect_framework`, `_ui_deterministic_env_list`, `_normalize_ui_gate_env`, `_ui_timeout_signature`, diagnosis writers) into `lib/gates_ui_helpers.sh` and source it from `gates_ui.sh`. |
 | `tests/test_ui_build_gate.sh` | Add seven deterministic-mode tests (see Goal 5). Update the header comment block and the final "All UI build gate tests passed (12/12)" summary to the new total. Currently 305 lines; well under the test-file budget. |
 | `docs/reference/stages.md` | Update the build-gate description (around line 105–110) to note that the UI gate phase now applies a deterministic env profile for Playwright (`PLAYWRIGHT_HTML_OPEN=never`) and recovers once via a hardened rerun if it detects an interactive-report timeout signature. |
 | `docs/troubleshooting/common-errors.md` | Add a new entry under `## Pipeline Errors` titled `### "UI tests timed out with interactive report serving"` covering the symptom (`Serving HTML report at ... Press Ctrl+C to quit` in the captured output, exit 124), the automatic recovery, and how to permanently fix it in the project's playwright config or `UI_TEST_CMD`. |

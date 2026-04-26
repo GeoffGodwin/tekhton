@@ -150,13 +150,15 @@ Actions:
   1. Run _run_ui_test_phase "coder"
   2. Assert `_ui_timeout_signature 124 "$captured_output"` returns `interactive_report`
   3. Assert second gate run uses env with PLAYWRIGHT_HTML_OPEN=never
-  4. Assert AGENT_ERROR_CATEGORY set to "ENVIRONMENT" on final failure
-  5. Assert AGENT_ERROR_SUBCATEGORY set to "test_infra"
+  4. If the hardened rerun still fails, assert the terminal diagnosis block
+     records `Timeout class: interactive_report`
+  5. Assert the failure path is classified as the interactive-reporter case,
+     not the generic-timeout case
 
 Expected result:
   - Interactive reporter detected from output
   - Hardened retry attempted with correct env
-  - Causal classification reflects ENVIRONMENT/test_infra (not generic timeout)
+  - Terminal diagnosis remains `interactive_report`, not `generic_timeout`
 ```
 
 #### S2.2 — Gate times out without interactive signature → regular timeout path
@@ -169,7 +171,7 @@ Actions:
   1. Run _run_ui_test_phase "coder"
   2. Assert `_ui_timeout_signature 124 "$captured_output"` returns `generic_timeout`
   3. Assert no hardened retry attempted (standard exit)
-  4. Assert AGENT_ERROR_SUBCATEGORY is NOT "test_infra"
+  4. If terminal diagnosis is written, assert it records `Timeout class: generic_timeout`
 ```
 
 ### Scenario group 3 — Log classification → build-fix routing (m127 + m128)
@@ -182,7 +184,7 @@ Setup:
     (lines matching known code-error patterns from m53 registry)
 
 Actions:
-  1. Run _classify_build_log (m127 classifier)
+  1. Run `classify_routing_decision` on the raw `${BUILD_RAW_ERRORS_FILE}` content
   2. Assert LAST_BUILD_CLASSIFICATION="code_dominant"
   3. Call build-fix loop entry point with BUILD_FIX_MAX_ATTEMPTS=2
   4. Assert loop runs up to max_attempts
@@ -197,27 +199,29 @@ Expected result:
 
 ```
 Setup:
-  - ${BUILD_RAW_ERRORS_FILE} containing only environment noise lines
-    (e.g., "warning: .cache directory not found", "info: connecting to...")
+  - ${BUILD_RAW_ERRORS_FILE} containing only explicit non-code matches
+    (e.g., `Error: connect ECONNREFUSED 127.0.0.1:3000`,
+    `browserType.launch: Executable doesn't exist`) plus optional ignorable noise lines
 
 Actions:
-  1. Run _classify_build_log
+  1. Run `classify_routing_decision` on the raw `${BUILD_RAW_ERRORS_FILE}` content
   2. Assert LAST_BUILD_CLASSIFICATION="noncode_dominant"
   3. Verify build-fix loop returns immediately with BUILD_FIX_ATTEMPTS=0
 
 Expected result:
-  - Environment-noise log prevents futile build-fix attempts
+  - Explicit non-code signal prevents futile build-fix attempts
 ```
 
 #### S3.3 — mixed_uncertain classification → one retry allowed, then stops
 
 ```
 Setup:
-  - ${BUILD_RAW_ERRORS_FILE} with 40% code errors and 60% environment lines
-    (or whichever ratio triggers mixed_uncertain in the m127 classifier)
+  - ${BUILD_RAW_ERRORS_FILE} with both explicit code-error matches and
+    explicit non-code matches; once both classes are present,
+    m127 should route `mixed_uncertain`
 
 Actions:
-  1. Run _classify_build_log
+  1. Run `classify_routing_decision` on the raw `${BUILD_RAW_ERRORS_FILE}` content
   2. Assert LAST_BUILD_CLASSIFICATION="mixed_uncertain"
   3. Confirm first build-fix attempt is allowed
   4. Set _ORCH_MIXED_BUILD_RETRIED=1 and call _classify_failure

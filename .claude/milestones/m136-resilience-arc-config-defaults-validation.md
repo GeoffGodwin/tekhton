@@ -56,7 +56,7 @@ No changes to arc runtime logic. Config-layer only.
 
 ## Design
 
-### Goal 1 — Declare all eleven vars in `lib/config_defaults.sh`
+### Goal 1 — Declare all thirteen vars in `lib/config_defaults.sh`
 
 Add a new section block immediately after the `# --- Pre-flight environment
 validation defaults (Milestone 55) ---` block. Follow

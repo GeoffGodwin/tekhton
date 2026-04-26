@@ -29,7 +29,7 @@ status: pending
 | m133 | Diagnose rule enrichment |
 | m134 | Integration test suite |
 | m135 | Artifact lifecycle management |
-| m136 | Config defaults & validation — declares all 12 arc vars including `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0` |
+| m136 | Config defaults & validation — declares all 13 arc vars including `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0` |
 | m137 | V3.2 migration script |
 | **m138** | **Runtime CI auto-detection — zero-config non-interactive mode in CI** |
 
@@ -199,7 +199,8 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 log()          { :; }
 warn()         { :; }
 log_verbose()  { :; }
-_clamp_arc_config_values() { :; }   # stub the m136 clamp function
+_clamp_config_value() { :; }        # stub m136's existing clamp helper
+_clamp_config_float() { :; }        # stub m136's existing clamp helper
 
 # Source only config_defaults.sh — it defines _detect_runtime_ci_environment
 # shellcheck source=../lib/config_defaults.sh
@@ -333,6 +334,6 @@ Because the current live template does not yet contain the m136 arc subsection, 
 
 - **m134 integration suite extension:** m134 already calls out CI-runtime scenarios. Keep the helper names and env signal vocabulary stable so the integration suite can add CI cases without rediscovering m138 internals.
 - **m135 artifact lifecycle:** recovered CI auto-detect behavior should remain success-path quiet. Do not introduce new persisted artifacts for this milestone beyond normal gate diagnostics on terminal failure paths.
-- **m137 migration consistency:** migrated pre-arc projects should surface the same `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` comment text as freshly initialized ones. m137 should reuse the final wording here, not fork its own explanation.
+- **m137 migration consistency:** if a follow-up amends m137's migrated arc block or a later migration re-renders that section, reuse the final `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` wording here rather than introducing a third variant.
 - **Future observability/health work:** `TEKHTON_CI_ENVIRONMENT_DETECTED` is intentionally diagnostic. Keep it binary and stable so later health or dashboard milestones can read it without parsing logs.
 - **Future CI-platform-specific tuning:** if a later milestone needs platform-specific behavior, extend `_get_ci_platform_name`/`_detect_runtime_ci_environment` rather than teaching downstream gate code to infer platforms independently.
