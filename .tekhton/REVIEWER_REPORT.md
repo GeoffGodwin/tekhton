@@ -1,4 +1,4 @@
-# Reviewer Report — M128 Build-Fix Continuation Loop & Adaptive Turn Budgeting
+# Reviewer Report — Milestone 129: Failure Context Schema Hardening & Primary/Secondary Cause Fidelity (Cycle 2)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,17 +10,22 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `stages/coder.sh:1111-1121`: `BUILD_GATE_RETRY=0` and the inner `if [ "$BUILD_GATE_RETRY" -lt 1 ]` guard are vestigial from the pre-M128 single-retry pattern. The inner condition is always true, and setting `BUILD_GATE_RETRY=1` serves no purpose now that `run_build_fix_loop` owns all retry logic. Safe to remove in a future cleanup pass.
-- `stages/coder.sh:1109`: comment still reads "with one retry" but retry depth is now config-driven via `BUILD_FIX_MAX_ATTEMPTS`. Minor doc rot.
-- `lib/config_defaults.sh:74` and `lib/artifact_defaults.sh:25`: `BUILD_FIX_REPORT_FILE` default is declared in both files. The artifact_defaults.sh placement is per-spec; the config_defaults.sh one is redundant (`:=` is a no-op if already set). Remove the config_defaults.sh duplicate in a cleanup pass.
-- `tests/build_fix_loop_fixtures.sh:41`: `filter_code_errors() { cat; }` stub reads stdin instead of its positional argument, returning empty string rather than passing `$raw` through. Comment says "pass-through" but it isn't. Doesn't break any current test since none assert on prompt content. Fix: `filter_code_errors() { printf '%s\n' "${1:-}"; }`.
-- `BUILD_FIX_TURN_BUDGET_USED` tracks allocated budget per attempt (full `budget` value), not actual `LAST_AGENT_TURNS`. Conservative (prevents cap overrun) but the name implies "turns spent." M132 consumers should treat this as an upper-bound count.
-- Acceptance criterion "stages/coder.sh lines decreased" is technically unmet (+6 lines net). The coder's explanation is accurate — M127 had already extracted the inline block; M128 adds only the Goal-7 reset exports. Non-issue.
+- `lib/diagnose_output.sh` header `Provides:` block (lines 17–18) still lists `print_crash_first_aid` and `emit_dashboard_diagnosis` even though both functions were extracted to `lib/diagnose_output_extra.sh` under M129. Clean up in a future pass.
+- `lib/milestone_split_dag.sh:87` — `echo "$sub_block" > ...` (pre-existing, not introduced by M129). Security agent flagged this as LOW/fixable: replace with `printf '%s\n' "$sub_block"` to avoid `echo` flag interpretation. File was not touched by M129; log for next cleanup pass.
 
 ## Coverage Gaps
-- `BUILD_FIX_ENABLED=false` path (T9d) verifies `OUTCOME=not_run` but does not assert that `write_pipeline_state` is called and `exit 1` fires, unlike the analogous coverage in `test_m127_buildfix_routing.sh`. Low priority given the path is short and unambiguous.
-
-## ACP Verdicts
+- None
 
 ## Drift Observations
-- `stages/coder.sh` is 1131 lines, far over the 300-line ceiling. Pre-existing and noted by the coder. `run_stage_coder` is the primary offender; splitting into discrete sub-stage orchestrators would address this debt in a future milestone.
+- `lib/diagnose_output.sh:12–18` — `Provides:` comment header lists functions that now live in `lib/diagnose_output_extra.sh`. Stale after the M129 extraction. Suggests the "Provides" header pattern in sourced-only files needs a lightweight update process when functions move.
+
+---
+
+## Prior Blocker Resolution
+
+**Blocker (Cycle 1):** Three new lib files (`lib/failure_context.sh`, `lib/diagnose_output_extra.sh`, `lib/finalize_aux.sh`) used `# shellcheck shell=bash` as their second line instead of `set -euo pipefail`, violating Non-Negotiable Rule #2.
+
+**Status: FIXED.** All three files now have `set -euo pipefail` on line 2:
+- `lib/failure_context.sh:2` — `set -euo pipefail` ✓
+- `lib/diagnose_output_extra.sh:2` — `set -euo pipefail` ✓
+- `lib/finalize_aux.sh:2` — `set -euo pipefail` ✓

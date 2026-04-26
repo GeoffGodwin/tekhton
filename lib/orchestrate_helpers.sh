@@ -267,6 +267,13 @@ _save_orchestration_state() {
         _state_notes="${_state_notes} | Restored ${_RESUME_RESTORED_ARTIFACT}"
     fi
 
+    # M129: append primary/secondary causal summary when slots populated.
+    if declare -f format_failure_cause_summary &>/dev/null; then
+        local _cause_summary
+        _cause_summary=$(format_failure_cause_summary)
+        [[ -n "$_cause_summary" ]] && _state_notes="${_state_notes}"$'\n'"${_cause_summary}"
+    fi
+
     write_pipeline_state \
         "${START_AT}" \
         "complete_loop_${outcome}" \

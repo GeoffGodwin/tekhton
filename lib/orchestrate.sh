@@ -151,6 +151,13 @@ run_complete_loop() {
         out_set_context max_attempts "${MAX_PIPELINE_ATTEMPTS:-5}"
         _ORCH_ELAPSED=$(( $(date +%s) - _ORCH_START_TIME ))
 
+        # M129: clear failure-context slots so a stale primary/secondary cause
+        # from a prior iteration cannot bleed into this attempt's
+        # LAST_FAILURE_CONTEXT.json. Parallels m130's _reset_orch_recovery_state.
+        if declare -f reset_failure_cause_context &>/dev/null; then
+            reset_failure_cause_context
+        fi
+
         # Capture causal log baseline for this iteration (M16 fix: restrict
         # progress detection to events emitted during THIS attempt only)
         if [[ "${CAUSAL_LOG_ENABLED:-true}" = "true" ]] && [[ -f "${CAUSAL_LOG_FILE:-}" ]]; then

@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-04-26
-- Runs since audit: 2
+- Runs since audit: 3
 
 ## Unresolved Observations
+- [2026-04-26 | "Implement Milestone 129: Failure Context Schema Hardening & Primary/Secondary Cause Fidelity"] `lib/diagnose_output.sh:12–18` — `Provides:` comment header lists functions that now live in `lib/diagnose_output_extra.sh`. Stale after the M129 extraction. Suggests the "Provides" header pattern in sourced-only files needs a lightweight update process when functions move.
 - [2026-04-26 | "Implement Milestone 128: Build-Fix Continuation Loop & Adaptive Turn Budgeting"] `stages/coder.sh` is 1131 lines, far over the 300-line ceiling. Pre-existing and noted by the coder. `run_stage_coder` is the primary offender; splitting into discrete sub-stage orchestrators would address this debt in a future milestone.
 - [2026-04-26 | "Implement Milestone 127: Mixed-Log Classification Hardening & Confidence-Based Routing"] `lib/error_patterns_classify.sh:69`: ANSI stripping uses `sed -E 's/[[0-9;]*[a-zA-Z]//g'`. The `` hex escape is GNU sed-specific, not POSIX `sed -E`; silently fails on macOS BSD sed without a GNU shim. Low risk given Linux deployment target.
 - [2026-04-26 | "Implement Milestone 127: Mixed-Log Classification Hardening & Confidence-Based Routing"] `lib/error_patterns_classify.sh` — `load_error_patterns` is called redundantly across three exported functions. The `_EP_LOADED` guard prevents overhead, but the pattern is inconsistent with single-call usage elsewhere.

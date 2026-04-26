@@ -1,13 +1,13 @@
 ## Planned Tests
-- [x] `tests/test_m127_buildfix_routing.sh` — _bf_read_raw_errors fallback path and noncode_dominant terminal behavior (exit 1 + write_pipeline_state env_failure)
-- [x] `tests/test_build_fix_loop.sh` — T9d-ext: assert write_pipeline_state(coder, build_failure) and exit 1 on BUILD_FIX_ENABLED=false
+- [x] `tests/test_failure_context_schema.sh` — M129 schema v2 writer, reader, alias precedence, reset, summary formatter (T1–T8, 45 assertions)
+- [x] `tests/test_finalize_run.sh` — hook registry updated: hook count 26, `_hook_failure_context_reset` at index 25
 
 ## Test Run Results
-Passed: 458  Failed: 0
+Passed: 459  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_m127_buildfix_routing.sh`
-- [x] `tests/test_build_fix_loop.sh`
+- [x] `tests/test_failure_context_schema.sh`
+- [x] `tests/test_finalize_run.sh`

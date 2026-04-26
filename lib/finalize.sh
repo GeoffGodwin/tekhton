@@ -173,40 +173,16 @@ _hook_clear_state() {
     fi
 }
 
-# o. Express mode: persist auto-detected config on success
-_hook_express_persist() {
-    local exit_code="$1"
-    [[ "$exit_code" -ne 0 ]] && return 0
-    [[ "${EXPRESS_MODE_ACTIVE:-false}" != "true" ]] && return 0
-
-    if [[ "${EXPRESS_PERSIST_CONFIG:-true}" == "true" ]]; then
-        persist_express_config "${PROJECT_DIR}"
-    fi
-    if [[ "${EXPRESS_PERSIST_ROLES:-false}" == "true" ]]; then
-        persist_express_roles "${PROJECT_DIR}"
-        log "Built-in role templates copied to .claude/agents/."
-    fi
-}
-
-# o2. Note acceptance checks (M42) — before final checks
-_hook_note_acceptance() {
-    local exit_code="$1"
-    [[ "$exit_code" -ne 0 ]] && return 0
-    if command -v run_note_acceptance &>/dev/null; then
-        run_note_acceptance || true
-    fi
-}
-
-# q. Baseline cleanup (M63) — remove stale baselines from prior runs
-_hook_baseline_cleanup() {
-    # shellcheck disable=SC2034  # exit_code used for hook interface
-    local exit_code="$1"
-    if command -v cleanup_stale_baselines &>/dev/null; then
-        cleanup_stale_baselines 2>/dev/null || true
-    fi
-}
+# Express persist, note acceptance, baseline cleanup, and the M129
+# failure-context reset live in finalize_aux.sh — extracted to keep this file
+# under the 300-line ceiling.
 
 # --- Source extension hooks (order matters for the registration list below) -
+
+# Auxiliary hooks (M129 extraction): express persist, note acceptance,
+# baseline cleanup, failure-context reset.
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/finalize_aux.sh"
 
 # Commit flow (_do_git_commit, _tag_milestone_if_complete, _hook_commit)
 # shellcheck source=/dev/null
@@ -264,6 +240,7 @@ register_finalize_hook "_hook_project_version_tag"
 register_finalize_hook "_hook_update_check"
 register_finalize_hook "_hook_final_dashboard_status"
 register_finalize_hook "_hook_tui_complete"
+register_finalize_hook "_hook_failure_context_reset"
 
 # --- Orchestrator -----------------------------------------------------------
 

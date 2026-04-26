@@ -254,3 +254,36 @@ _rule_version_mismatch() {
     )
     return 0
 }
+
+# _rule_quota_exhausted
+# Detect rate limit pause. Moved from diagnose_rules.sh under M129 to keep
+# the primary file under the 300-line ceiling.
+_rule_quota_exhausted() {
+    local quota_marker="${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED"
+    [[ -f "$quota_marker" ]] || return 1
+
+    DIAG_CLASSIFICATION="QUOTA_EXHAUSTED"
+    DIAG_CONFIDENCE="high"
+    DIAG_SUGGESTIONS=(
+        "Pipeline paused waiting for quota refresh."
+        "It will resume automatically. No action needed."
+        "If you need it sooner, wait for your 5-hour window to refresh."
+    )
+    return 0
+}
+
+# _rule_unknown
+# Fallback catch-all — always matches. Moved from diagnose_rules.sh under M129.
+_rule_unknown() {
+    # shellcheck disable=SC2034
+    DIAG_CLASSIFICATION="UNKNOWN"
+    # shellcheck disable=SC2034
+    DIAG_CONFIDENCE="low"
+    # shellcheck disable=SC2034
+    DIAG_SUGGESTIONS=(
+        "No specific failure pattern identified."
+        "Check the latest agent output in .claude/logs/"
+        "Re-run with DASHBOARD_VERBOSITY=verbose for more detail"
+    )
+    return 0
+}

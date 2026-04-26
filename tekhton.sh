@@ -644,6 +644,8 @@ if [ "${1:-}" = "--diagnose" ]; then
     source "${TEKHTON_HOME}/lib/causality.sh"
     source "${TEKHTON_HOME}/lib/causality_query.sh"
     source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
+    # M129: load slot helpers before diagnose_output.sh (writer needs them).
+    source "${TEKHTON_HOME}/lib/failure_context.sh"
     source "${TEKHTON_HOME}/lib/diagnose.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
@@ -919,6 +921,9 @@ source "${TEKHTON_HOME}/lib/dashboard.sh"
 source "${TEKHTON_HOME}/lib/tui.sh"           # M97 — rich.live sidecar manager (also sources tui_helpers.sh)
 source "${TEKHTON_HOME}/lib/inbox.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
+# M129: failure-context slot helpers must load before diagnose_output.sh so
+# the writer's emit_cause_objects_json / resolve_alias_* helpers exist.
+source "${TEKHTON_HOME}/lib/failure_context.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
 source "${TEKHTON_HOME}/lib/validate_config.sh"
@@ -984,6 +989,13 @@ fi
 
 # --- Ensure Tekhton artifact directory exists --------------------------------
 mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR}" 2>/dev/null || true
+
+# M129: clear any stale failure-context slots inherited from a prior same-shell
+# run. The writer/reader rely on these vars being either empty or set by the
+# current run — never on whatever the previous invocation left behind.
+if declare -f reset_failure_cause_context &>/dev/null; then
+    reset_failure_cause_context
+fi
 
 usage() {
     local exit_code="${1:-0}"

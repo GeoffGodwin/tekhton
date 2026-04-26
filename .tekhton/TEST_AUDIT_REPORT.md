@@ -1,97 +1,43 @@
----
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 17 test functions
-  - tests/test_m127_buildfix_routing.sh — 8 assertions across 4 test sections (M128 update: function rename only)
-  - tests/test_build_fix_loop.sh — 9 test cases (T3–T10 + T9d-ext) covering the new M128 continuation loop
+Tests audited: 2 files, ~70 test assertions across 16 suites (T1–T8 schema tests + Suites 1–16 finalize tests)
 Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: _safe_read_file sourced optionally in test_m127_buildfix_routing.sh (pre-existing from M127)
-- File: tests/test_m127_buildfix_routing.sh:25
-- Issue: lib/prompts.sh is sourced with 2>/dev/null || true (graceful / optional), but
-  _bf_read_raw_errors() — called directly in test sections 1 and 2 — delegates to
-  _safe_read_file, which is defined in lib/prompts.sh. If prompts.sh fails to load for
-  any reason, those two test sections crash with "command not found" under set -euo pipefail
-  rather than reporting a clean test failure. M128 did not introduce this issue; it is carried
-  forward from M127. By contrast, tests/build_fix_loop_fixtures.sh correctly stubs
-  _safe_read_file for the new test_build_fix_loop.sh, so the M128 tests do not have this gap.
-- Severity: MEDIUM
-- Action: Add a one-line stub in test_m127_buildfix_routing.sh after the prompts.sh source
-  line (line 25): _safe_read_file() { [[ -f "$1" ]] && cat "$1"; } — matches the fixture
-  stub in build_fix_loop_fixtures.sh:33 and makes the test environment-independent.
-
-#### COVERAGE: mixed_uncertain routing arm not exercised by test_build_fix_loop.sh
-- File: tests/test_build_fix_loop.sh (all T3–T10)
-- Issue: reset_state() in build_fix_loop_fixtures.sh:121 always restores
-  STUB_ROUTING="code_dominant". No test sets STUB_ROUTING="mixed_uncertain", so the
-  if [[ "$decision" == "mixed_uncertain" ]] branch in run_build_fix_loop
-  (coder_buildfix.sh:143-145) and the _bf_emit_routing_diagnosis call site are never
-  reached. The BUILD_ROUTING_DIAGNOSIS_FILE is never written during any test run.
-  The loop behavior after that branch is identical to code_dominant, but the branch
-  itself and the diagnosis file emission go unexercised.
-- Severity: MEDIUM
-- Action: Add a sub-case (e.g., T11) that sets STUB_ROUTING="mixed_uncertain", calls
-  reset_state + run_loop_capture, and asserts: (1) OUTCOME is a valid token, and (2)
-  BUILD_ROUTING_DIAGNOSIS_FILE exists. classify_build_errors_with_stats is already
-  stubbed to : so the file will be created with the header and empty diagnoses —
-  sufficient to verify the write path.
-
-#### COVERAGE: unknown_only routing arm not exercised
-- File: tests/test_build_fix_loop.sh (all T3–T10)
-- Issue: No test sets STUB_ROUTING="unknown_only". The _bf_extra_context_for_decision("unknown_only")
-  branch (coder_buildfix_helpers.sh:214-218) returns a non-empty low-confidence note string;
-  the code_dominant path returns empty. The branching goes unexercised, though since run_agent
-  is stubbed the extra_context difference does not affect loop termination outcomes.
+#### NAMING: Stale hook-count in test_finalize_run.sh header comment
+- File: tests/test_finalize_run.sh:8
+- Issue: The file header says "Hook registration order (20 hooks in deterministic sequence)" but Suite 1 now asserts 26 hooks (correct). The comment was not updated when M129 added `_hook_failure_context_reset`. Does not affect test correctness — all 26 name/index assertions match finalize.sh exactly.
 - Severity: LOW
-- Action: A STUB_ROUTING="unknown_only" sub-case alongside T11 is sufficient. Assert loop
-  completes with a valid OUTCOME.
+- Action: Update the comment to read "(26 hooks in deterministic sequence)".
 
-#### NAMING: T9d-ext uses a non-standard capture pattern without explanation
-- File: tests/test_build_fix_loop.sh:241-261
-- Issue: T9d-ext creates a hand-rolled subshell with a custom write_pipeline_state stub
-  rather than the standard reset_state -> run_loop_capture -> field pattern used by all
-  other sub-tests. It does not call reset_state() before the subshell. This is correct
-  (the export BUILD_FIX_ENABLED=false inside the subshell is authoritative, and the
-  environment inherited from T9d is already clean), but the asymmetry is unexplained.
+#### COVERAGE: No behavioral test for `_hook_failure_context_reset`
+- File: tests/test_finalize_run.sh (Suite 1 only covers position)
+- Issue: M129 introduced `_hook_failure_context_reset` (finalize_aux.sh:48–54). This hook has a non-trivial exit-code guard — it is a no-op when exit_code != 0 and calls `reset_failure_cause_context` only on success. Suite 1 asserts the hook is at index 25 in the registry, but no suite directly invokes the hook and checks its guards. Compare: all other success-only hooks added in prior milestones received dedicated guard suites (7, 9, 10, 11, 12, 16). The underlying `reset_failure_cause_context` is well-tested by T7 in test_failure_context_schema.sh, so the gap is only in the hook wrapper behavior.
+- Severity: MEDIUM
+- Action: Add a Suite 16b that exercises `_hook_failure_context_reset` directly. Set all eight PRIMARY_*/SECONDARY_* vars via `set_primary_cause`/`set_secondary_cause` (functions available after sourcing failure_context.sh, which is already loaded transitively through finalize_aux.sh via finalize.sh), then: (a) call `_hook_failure_context_reset 1` and assert the vars remain populated, (b) call `_hook_failure_context_reset 0` and assert all eight vars are empty.
+
+#### COVERAGE: No test for consecutive_count increment on classification repeat
+- File: tests/test_failure_context_schema.sh (T1 only tests first write)
+- Issue: `write_last_failure_context` in diagnose_output.sh:226–234 reads the prior `LAST_FAILURE_CONTEXT.json` and increments `consecutive_count` when the classification matches, resets to 1 otherwise. T1 only covers the initial write (no prior file → count=1). The increment path and the reset-on-different-classification path are unexercised.
 - Severity: LOW
-- Action: Add a one-line comment before the subshell explaining why run_loop_capture is
-  not used: run_loop_capture captures only the NOTES field (5th positional arg via
-  WROTE_STATE_NOTES), but T9d-ext asserts individual arg positions (arg1="coder",
-  arg2="build_failure") — the direct printf approach is the right tool here.
+- Action: Extend T1 or add a T1b: after the existing T1 write, call `write_last_failure_context` again with the same classification and assert `consecutive_count` is 2; then call with a different classification and assert it resets to 1.
+
+#### SCOPE: STALE-SYM entries are bash builtins — no action needed
+- File: tests/test_finalize_run.sh (all STALE-SYM entries)
+- Issue: The shell-based orphan detector flagged `cat`, `cd`, `dirname`, `echo`, `exit`, `grep`, `mkdir`, `mktemp`, `pwd`, `return`, `rm`, `set`, `source`, `touch`, `trap` as missing from source definitions. All are POSIX external utilities or bash builtins. The detector cannot distinguish these from user-defined functions.
+- Severity: LOW (false positive — no action required)
+- Action: None.
 
 ### Rubric Notes
 
-Assertion Honesty — CLEAR: Sentinel strings in _bf_read_raw_errors tests are written
-by the test itself; assertions verify real function outputs. T3–T10 outcome assertions derive
-from real execution through run_build_fix_loop, _compute_build_fix_budget,
-_build_fix_progress_signal, and _append_build_fix_report. No hard-coded values that
-bypass implementation logic were found. Budget math for T6 was independently verified: with
-EFFECTIVE_CODER_MAX_TURNS=80 and BUILD_FIX_TOTAL_TURN_CAP=40, attempt 1 budget=26,
-attempt 2 budget=min(39, remaining=14)=14, attempt 3 returns 0 from _compute_build_fix_budget
-(cumulative cap reached), yielding ATTEMPTS=2 and USED=40 — within the asserted bounds.
+**Assertion Honesty — CLEAR.** All assertions in test_failure_context_schema.sh derive from real function calls (set_primary_cause → write_last_failure_context → file output; _read_diagnostic_context → _DIAG_* vars; _rule_max_turns → DIAG_SUGGESTIONS array). No hard-coded sentinel values that bypass implementation logic were found. The `_write_v2_fixture` hand-writes a JSON file that is byte-compatible with what `write_last_failure_context` produces, deliberately so — the fixture is a stable contract anchor for downstream m130/m132/m133 parser tests. T3's pretty-print canary tests `grep -n '"primary_cause": {$'` against the actual emitted file, not a stub. All 26 hook-position assertions in test_finalize_run.sh Suite 1 were verified against the `register_finalize_hook` call sequence in finalize.sh:218–243; all match.
 
-Test Weakening — CLEAR: The only modification to test_m127_buildfix_routing.sh was
-renaming _run_buildfix_routing -> run_build_fix_loop per CODER_SUMMARY.md. All
-behavioral assertions are preserved. No removed assertions, broadened checks, or removed
-edge-case tests detected.
+**Test Weakening — CLEAR.** The only modification to test_finalize_run.sh was adding one count assertion (25→26), adding one name assertion for `_hook_failure_context_reset` at index 25, and shifting four pre-existing index assertions by one. No assertions were removed, no expected values were broadened, no edge-case tests were deleted.
 
-Implementation Exercise — CLEAR: The noncode_dominant test exercises the real
-classify_routing_decision (loaded via lib/error_patterns.sh:25 -> error_patterns_classify.sh:180).
-The literal input "ECONNREFUSED 127.0.0.1:5432" genuinely triggers the noncode_dominant path
-per the 60% noncode threshold rule. For test_build_fix_loop.sh, stubs are minimal and
-targeted — only side-effectful helpers (run_agent, run_build_gate, write_pipeline_state,
-append_human_action) are replaced; all loop logic, budget arithmetic, progress signaling,
-and report writing execute through real implementation code.
+**Implementation Exercise — CLEAR.** Both test files source real implementation code. test_failure_context_schema.sh sources `lib/failure_context.sh` and `lib/diagnose.sh` (which transitively sources diagnose_rules.sh, diagnose_helpers.sh, diagnose_output.sh, diagnose_output_extra.sh). The real `_diag_parse_cause_block`, `_rule_max_turns`, `write_last_failure_context`, and `format_failure_cause_summary` all execute through live implementation paths. test_finalize_run.sh sources `lib/finalize.sh` (which sources all extension hook files) and exercises real hook guards — mocks are limited to side-effectful external calls (git, agent invocations, dashboard writes).
 
-Scope Alignment — CLEAR: All function references in both test files resolve to current
-symbols in stages/coder_buildfix.sh and stages/coder_buildfix_helpers.sh. The old name
-_run_buildfix_routing does not appear in either file. No orphaned, stale, or dead references.
+**Scope Alignment — CLEAR.** All function and variable references in both test files resolve to current symbols in the M129 implementation. `_hook_failure_context_reset` is defined in finalize_aux.sh:48–54 and registered in finalize.sh:243. The eight `PRIMARY_ERROR_*`/`SECONDARY_ERROR_*` variables tested in T7 are exactly the eight vars declared and exported by failure_context.sh:26–37. `_DIAG_PRIMARY_*`/`_DIAG_SECONDARY_*`/`_DIAG_SCHEMA_VERSION` tested in T4–T5 are declared in diagnose.sh:64–72.
 
-Test Isolation — CLEAR: Both files use mktemp -d for all I/O. No live pipeline artifacts,
-.tekhton/ state files, .claude/logs/*, or run-time reports are read without fixture setup.
-reset_state() properly clears all relevant state and removes artifact files between sub-tests.
-The state_log.txt accumulation from the write_pipeline_state stub is benign — no assertion
-reads it.
+**Test Isolation — CLEAR.** Both test files create a `mktemp -d` temp directory and route all file I/O through `PROJECT_DIR="$TMPDIR"`. test_failure_context_schema.sh writes `LAST_FAILURE_CONTEXT.json` to `$TMPDIR/.claude/` and mocks `is_dashboard_enabled`, `_write_js_file`, and `_to_js_timestamp` to prevent any project-dir writes. test_finalize_run.sh runs `cd "$TMPDIR"` so relative paths (HUMAN_NOTES_FILE, TEKHTON_DIR) resolve inside the temp dir. All files written in Suites 8/8b are written to and read from `$TMPDIR`-relative paths. Both files register `trap 'rm -rf "$TMPDIR"' EXIT`.

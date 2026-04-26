@@ -4,176 +4,243 @@
 
 ## What Was Implemented
 
-Milestone 128 — Build-Fix Continuation Loop & Adaptive Turn Budgeting.
-
-The pre-M128 build-fix flow gave the coder one short attempt (`base/3` turns)
-plus one re-run of the gate. On real UI/test-infra failures, that single
-attempt was too brittle: triage and partial remediation could exhaust the
-budget without yielding a meaningful second pass. M128 wraps the post-coder
-build-gate retry in an attempt-bounded loop with adaptive turn budgets,
-progress gating, a cumulative turn cap, and a stable env-var contract for
-M132's RUN_SUMMARY enrichment.
+Milestone 129 — Failure Context Schema Hardening & Primary/Secondary Cause
+Fidelity. Introduces a normalized failure-context schema (v2) with explicit
+primary/secondary cause slots so root cause is no longer masked by
+secondary failure symptoms in `--diagnose` and downstream rules.
 
 Implementation summary:
 
-1. **`stages/coder_buildfix.sh`** (260 lines): added `run_build_fix_loop` —
-   the new top-level entry replacing M127's `_run_buildfix_routing`. The
-   loop reads `LAST_BUILD_CLASSIFICATION` (M127 contract) once at entry,
-   short-circuits on `noncode_dominant` (preserves M127 behavior), emits
-   `BUILD_ROUTING_DIAGNOSIS.md` once on `mixed_uncertain`, and then iterates
-   up to `BUILD_FIX_MAX_ATTEMPTS` times with adaptive turn budgets and a
-   progress gate that halts on stalled attempts (N≥2). All four Goal-7
-   stats env vars are exported on every exit path; `SECONDARY_ERROR_*` is
-   exported (or `set_secondary_cause` is called when M129 is present) on
-   terminal loop failure paths.
+1. **`lib/failure_context.sh`** (NEW, 208 lines): module-level
+   `PRIMARY_*`/`SECONDARY_*` slot vars (8 exported strings),
+   `reset_failure_cause_context`, `set_primary_cause`,
+   `set_secondary_cause`, `format_failure_cause_summary` (0/1/2-line
+   plain-text summary for state-file Notes), `emit_cause_objects_json`
+   (pretty-printed nested JSON fragments — Goal 1 contract), plus
+   internal `_fc_emit_cause_object` and writer-side
+   `resolve_alias_category`/`resolve_alias_subcategory` helpers used by
+   the writer's alias-precedence path.
 
-2. **`stages/coder_buildfix_helpers.sh`** (NEW, 238 lines): pure helpers
-   `_compute_build_fix_budget` (1.0× / 1.5× / 2.0× schedule with integer
-   arithmetic, lower-floor 8, upper-clamp `EFFECTIVE_CODER_MAX_TURNS *
-   BUILD_FIX_MAX_TURN_MULTIPLIER / 100`, cumulative-cap math),
-   `_build_fix_progress_signal` (improved/unchanged/worsened truth table
-   with explicit tail-equality semantics for the count-equal case),
-   `_bf_count_errors`, `_bf_get_error_tail` (last 20 non-blank lines),
-   `_append_build_fix_report`, `_export_build_fix_stats`,
-   `_build_fix_set_secondary_cause`, `_build_fix_terminal_class`. The
-   M127 helpers `_bf_emit_routing_diagnosis` and
-   `_bf_extra_context_for_decision` were moved here to keep both files
-   under the 300-line ceiling.
+2. **`lib/diagnose_output.sh`**: rewrote `write_last_failure_context`
+   to emit schema v2 — adds `schema_version: 2`, top-level
+   `category`/`subcategory` aliases (mirroring secondary slot or
+   `AGENT_ERROR_*` env vars), and pretty-printed nested
+   `primary_cause` / `secondary_cause` objects via
+   `emit_cause_objects_json`. Crash first-aid + dashboard-diagnosis
+   functions extracted to `diagnose_output_extra.sh` to bring
+   `diagnose_output.sh` from 332 → 282 lines (under the ceiling).
 
-3. **`stages/coder.sh`**: replaced `_run_buildfix_routing` call site with
-   `run_build_fix_loop`. Added the Goal-7 reset block at stage entry (4
-   exports condensed to a single line-continuation export per CLAUDE.md
-   line-budget guidance).
+3. **`lib/diagnose_output_extra.sh`** (NEW, 98 lines):
+   `print_crash_first_aid` and `emit_dashboard_diagnosis` extracted
+   verbatim from `diagnose_output.sh` (no behavioral change).
 
-4. **`lib/config_defaults.sh`**: six new defaults — `BUILD_FIX_ENABLED=true`,
-   `BUILD_FIX_MAX_ATTEMPTS=3`, `BUILD_FIX_BASE_TURN_DIVISOR=3`,
-   `BUILD_FIX_MAX_TURN_MULTIPLIER=100` (integer percent: 100 = 1.0×),
-   `BUILD_FIX_REQUIRE_PROGRESS=true`, `BUILD_FIX_TOTAL_TURN_CAP=120` —
-   plus matching `_clamp_config_value` calls. `BUILD_FIX_REPORT_FILE` and
-   `BUILD_ROUTING_DIAGNOSIS_FILE` defaults moved here for consistency
-   with the artifact-default placement convention.
+4. **`lib/diagnose.sh`**: added 8 new `_DIAG_PRIMARY_*` / `_DIAG_SECONDARY_*`
+   module-state vars + `_DIAG_SCHEMA_VERSION`. `_read_diagnostic_context`
+   now calls `_diag_parse_cause_block` (defined in `diagnose_helpers.sh`)
+   to populate them when v2 schema is detected. Reader fallback order is
+   documented inline: v2 nested objects → top-level alias keys → legacy
+   `AGENT_ERROR_*` env vars (handled per-rule).
 
-5. **`lib/artifact_defaults.sh`**: added `BUILD_FIX_REPORT_FILE` default
-   (`${TEKHTON_DIR}/BUILD_FIX_REPORT.md`).
+5. **`lib/diagnose_helpers.sh`**: added `_diag_parse_cause_block`
+   (line-based parser mirroring m130's `_load_failure_cause_context` —
+   no `jq` dependency, relies on the writer's pretty-print contract).
 
-6. **Tests**:
-   - `tests/test_build_fix_loop.sh` (NEW, 271 lines) — T3–T10 integration
-     tests for `run_build_fix_loop` (retry-to-pass, exhausted, no_progress
-     early stop, total turn cap, report writer, pipeline state notes,
-     stats export contract on all four exit paths, single-attempt
-     compatibility mode).
-   - `tests/test_build_fix_helpers.sh` (NEW, 87 lines) — T1–T2 pure-function
-     unit tests for `_build_fix_progress_signal` and
-     `_compute_build_fix_budget`. Split from the loop tests so neither
-     file exceeds 300 lines.
-   - `tests/build_fix_loop_fixtures.sh` (NEW, 174 lines) — shared stub
-     fixtures + `run_loop_capture` + `field` helpers. Sourced by the loop
-     tests; not auto-discovered by `tests/run_tests.sh` (no `test_` prefix).
-   - `tests/test_m127_buildfix_routing.sh` — updated function-name
-     references from `_run_buildfix_routing` to `run_build_fix_loop`
-     (the M127 noncode_dominant arm test still validates the same
-     env_failure-state-and-exit-1 behavior, now under the M128 loop).
+6. **`lib/diagnose_rules.sh`**: `_rule_max_turns` now consumes
+   `_DIAG_SECONDARY_*` first (with legacy alias fallback). When primary
+   cause is non-agent and secondary is `max_turns`, the suggestion
+   array gets a "secondary symptom" line that names the primary cause
+   (`{cat}/{sub} ({signal})`). m133 will fully replace this with a
+   dedicated `MAX_TURNS_ENV_ROOT` classification — m129 only adds the
+   guard. `_rule_quota_exhausted` and `_rule_unknown` moved to
+   `diagnose_rules_extra.sh` to keep diagnose_rules.sh under 300.
 
-7. **Docs**:
-   - `docs/resilience.md` — new "Build-fix continuation loop (M128)"
-     section documenting the routing token interaction, adaptive
-     budgets, cumulative cap, progress gate, and the frozen four-token
-     `BUILD_FIX_OUTCOME` vocabulary.
-   - `docs/reference/configuration.md` — new "Build-Fix Continuation
-     Loop (M128)" config table with all six new keys + the report file.
-   - `ARCHITECTURE.md` — entries for `coder_buildfix.sh` (updated
-     description) and `coder_buildfix_helpers.sh` (new). Documents the
-     Goal-7 export contract and M129/M132 cross-milestone interactions.
-   - `CLAUDE.md` — repository layout updated for the new helpers file
-     and template variables table extended with the seven new M128 keys.
+7. **`lib/finalize_dashboard_hooks.sh`**: `_hook_failure_context` now
+   opportunistically calls `set_secondary_cause` from the symptom-level
+   `AGENT_ERROR_*` env vars when no stage has populated the secondary
+   slot. This means orchestrate's state-file Notes write (which calls
+   `format_failure_cause_summary` after `finalize_run`) sees the
+   populated slots even if the failing stage didn't call
+   `set_secondary_cause` directly.
+
+8. **`lib/finalize.sh` + `lib/finalize_aux.sh`** (NEW, 54 lines): added
+   `_hook_failure_context_reset` (registered last, runs only on
+   exit_code==0) that calls `reset_failure_cause_context`. Three
+   small auxiliary hooks (express persist, note acceptance, baseline
+   cleanup) extracted to `finalize_aux.sh` so finalize.sh stays at
+   280 lines (was 303 before M129 — already over the ceiling).
+
+9. **`lib/orchestrate.sh`**: `run_complete_loop` calls
+   `reset_failure_cause_context` at the top of each iteration so a
+   stale primary/secondary cause from a prior attempt cannot bleed
+   into this iteration's `LAST_FAILURE_CONTEXT.json`. Parallels
+   m130's `_reset_orch_recovery_state` reset point.
+
+10. **`lib/orchestrate_helpers.sh`**: `_save_orchestration_state` (the
+    failure-path `write_pipeline_state` site) appends
+    `format_failure_cause_summary` output to the Notes string when
+    non-empty. Empty when neither slot is set, so legacy state-file
+    shape is preserved.
+
+11. **`tekhton.sh`**: sourcing of `lib/failure_context.sh` added to both
+    the main pipeline (line 926, before `diagnose.sh`) and the early
+    `--diagnose` exit (line 648). `reset_failure_cause_context` invoked
+    after argument parsing so a same-shell second run starts clean.
+
+12. **`stages/coder.sh` / `stages/coder_buildfix*.sh`**: no new code
+    here — M128 already shipped `_build_fix_set_secondary_cause` which
+    prefers `set_secondary_cause` when defined. Once
+    `lib/failure_context.sh` is sourced (M129), that helper now wires
+    the slot variables on the build-fix exhausted/no_progress paths.
+
+13. **Tests**:
+    - `tests/test_failure_context_schema.sh` (NEW, 235 lines, 45
+      assertions across T1–T8): writer schema v2, alias precedence,
+      pretty-print canary (T3 — guards downstream m130/m132/m133
+      parsers), v2 reader, legacy fallback, `_rule_max_turns`
+      secondary-symptom message, `reset` clears all eight vars,
+      `format_failure_cause_summary` partial population.
+    - `tests/test_finalize_run.sh`: hook-count assertion bumped 25 →
+      26, new assertion for `_hook_failure_context_reset` at index
+      25, register-additional-hooks indices shifted to match.
+
+14. **Docs**:
+    - `docs/troubleshooting/diagnose.md`: added "Failure Context
+      Schema (v2)" section with the full v2 example, primary vs.
+      secondary semantics, the signal vocabulary table (verbatim
+      from the milestone for cross-reference by m126/m127/m128/
+      m131 implementers), and reader fallback order.
+    - `CLAUDE.md`: added `failure_context.sh`,
+      `diagnose_output_extra.sh`, `diagnose_rules_extra.sh`, and
+      `finalize_aux.sh` to the repo layout.
+
+15. **`VERSION`**: 3.128.0 → 3.129.0.
 
 ## Root Cause (bugs only)
 
-N/A — feature milestone, not a bug fix.
+N/A — feature milestone, not a bug fix. The Watch For section flagged a
+latent bug (the prior writer emitted no `category`/`subcategory` keys, so
+`_rule_max_turns`'s JSON-driven match path silently never fired); the new
+writer's top-level alias keys close that gap, so the JSON path now fires
+correctly. Existing test 2b.2 already validates that path.
 
 ## Files Modified
 
-- `stages/coder_buildfix.sh` — replaced `_run_buildfix_routing` with
-  `run_build_fix_loop`; added per-attempt loop, adaptive budget call,
-  progress gating, secondary cause exports, BUILD_FIX_REPORT_FILE write.
-- `stages/coder_buildfix_helpers.sh` (NEW) — pure helpers for budget,
-  progress signal, error count/tail, report writer, stats export,
-  terminal class. M127 helpers moved here to keep both files <300 lines.
-- `stages/coder.sh` — `_run_buildfix_routing` → `run_build_fix_loop`
-  swap; Goal-7 stats reset at stage entry.
-- `lib/config_defaults.sh` — six new BUILD_FIX_* defaults + clamps;
-  BUILD_ROUTING_DIAGNOSIS_FILE / BUILD_FIX_REPORT_FILE artifact defaults.
-- `lib/artifact_defaults.sh` — BUILD_FIX_REPORT_FILE default.
-- `tests/test_build_fix_loop.sh` (NEW) — T3–T10 integration tests.
-- `tests/test_build_fix_helpers.sh` (NEW) — T1–T2 pure-function tests.
-- `tests/build_fix_loop_fixtures.sh` (NEW) — shared test fixtures
-  (stubs, reset_state, run_loop_capture, field).
-- `tests/test_m127_buildfix_routing.sh` — function-name update only
-  (`_run_buildfix_routing` → `run_build_fix_loop`); same behavioral
-  assertions retained.
-- `docs/resilience.md` — new M128 section.
-- `docs/reference/configuration.md` — new M128 config table.
-- `ARCHITECTURE.md` — coder_buildfix.sh entry updated, helpers entry
-  added.
-- `CLAUDE.md` — layout + template-variable table updated.
+- `lib/failure_context.sh` (NEW) — slot vars, setters, reset, summary
+  formatter, JSON fragment emitter, alias resolver helpers.
+- `lib/diagnose_output.sh` — schema v2 writer; pretty-print contract;
+  alias precedence.
+- `lib/diagnose_output_extra.sh` (NEW) — extracted crash first-aid +
+  dashboard-diagnosis to keep diagnose_output.sh under 300 lines.
+- `lib/diagnose.sh` — 9 new `_DIAG_*` slot vars; v2 cause-block parsing
+  in `_read_diagnostic_context` with documented fallback order.
+- `lib/diagnose_helpers.sh` — added `_diag_parse_cause_block` line-based
+  parser (mirrors m130's parser shape, no `jq` dependency).
+- `lib/diagnose_rules.sh` — `_rule_max_turns` consumes secondary cause +
+  emits secondary-symptom guard suggestion when primary is non-agent.
+  `_rule_quota_exhausted` / `_rule_unknown` moved to extras.
+- `lib/diagnose_rules_extra.sh` — moved-in `_rule_quota_exhausted` /
+  `_rule_unknown` (with `# shellcheck disable=SC2034` for
+  `DIAG_SUGGESTIONS` array assignment).
+- `lib/finalize.sh` — registered `_hook_failure_context_reset`. Three
+  aux hooks moved to `finalize_aux.sh` to stay under 300 lines.
+- `lib/finalize_aux.sh` (NEW) — express_persist, note_acceptance,
+  baseline_cleanup, and the M129 reset hook.
+- `lib/finalize_dashboard_hooks.sh` — opportunistic
+  `set_secondary_cause` from `AGENT_ERROR_*` before
+  `write_last_failure_context`.
+- `lib/orchestrate.sh` — `reset_failure_cause_context` at iteration top.
+- `lib/orchestrate_helpers.sh` — append `format_failure_cause_summary`
+  output to state-file Notes in `_save_orchestration_state`.
+- `tekhton.sh` — source `failure_context.sh` early; reset slots after
+  argument parsing.
+- `tests/test_failure_context_schema.sh` (NEW) — T1–T8 schema/reader
+  tests, 45 assertions.
+- `tests/test_finalize_run.sh` — hook-count + new-hook-position
+  assertions updated for the new `_hook_failure_context_reset`.
+- `docs/troubleshooting/diagnose.md` — schema v2 section + signal
+  vocabulary table.
+- `CLAUDE.md` — repo layout updated for new lib files.
+- `VERSION` — 3.128.0 → 3.129.0.
 
 ## Human Notes Status
 
-No unchecked human notes were attached to this task (HUMAN_NOTES.md
-items not surfaced in the milestone prompt).
+No HUMAN_NOTES items were attached to this milestone task.
 
 ## Docs Updated
 
-- `docs/resilience.md` — added "Build-fix continuation loop (M128)"
-  section with the four-token outcome vocabulary table and progress-gate
-  semantics.
-- `docs/reference/configuration.md` — added the M128 build-fix config
-  table.
-- `ARCHITECTURE.md` — added `coder_buildfix_helpers.sh` entry and
-  updated `coder_buildfix.sh` description for the M128 loop.
-- `CLAUDE.md` — added the new helpers file to the repo layout and added
-  seven new template-variable rows for the M128 config keys.
+- `docs/troubleshooting/diagnose.md` — added "Failure Context Schema
+  (v2)" with the full v2 example, primary/secondary semantics, the
+  signal vocabulary table, and reader fallback order.
+- `CLAUDE.md` — added `failure_context.sh`,
+  `diagnose_output_extra.sh`, `diagnose_rules_extra.sh`, and
+  `finalize_aux.sh` to the repository layout.
 
 ## Architecture Decisions
 
-- **Helpers extracted to a sibling file.** `stages/coder_buildfix.sh`
-  with M127 + M128 logic combined would exceed the 300-line ceiling.
-  Per the milestone Watch For ("If the combined file would exceed 300
-  lines, extract one concern into a sibling helper"), the M128 pure
-  helpers (and the M127 routing helpers `_bf_emit_routing_diagnosis`
-  and `_bf_extra_context_for_decision`) live in the new
-  `stages/coder_buildfix_helpers.sh`. Both files are now well under
-  the ceiling (260 / 238).
-- **`BUILD_FIX_MAX_TURN_MULTIPLIER` as integer percent.** Bash has no
-  floating-point math (Watch For); rather than mix a float-formatted
-  config with `awk` arithmetic, the multiplier is expressed as integer
-  basis points (×100): `100` = 1.0×, `200` = 2.0×. Documented in the
-  config reference.
-- **Test fixtures extracted to a non-test_*.sh file.**
-  `tests/build_fix_loop_fixtures.sh` holds shared stubs and the
-  `run_loop_capture` subshell wrapper. Filename is intentionally
-  prefix-less so `tests/run_tests.sh`'s discovery loop
-  (`for test_file in "${TESTS_DIR}"/test_*.sh`) skips it. Sourced by
-  `tests/test_build_fix_loop.sh` only.
-- **`run_loop_capture` uses FD 5 for the capture record.** The loop
-  emits log/warn/error noise on stdout/stderr. To suppress that without
-  losing the capture record, the test exit-override writes to FD 5
-  (redirected to a sidecar file via `exec 5>>"$capture_file"`). This
-  pattern lets the tests assert on Goal-7 env vars across the
-  exit-1 terminal-failure paths (exhausted, no_progress) without the
-  subshell tearing down before the capture happens.
+- **Slot helpers extracted to a new `lib/failure_context.sh`** rather
+  than appended to `lib/diagnose_output.sh`. Per the milestone Goal 5:
+  diagnose_output.sh was already 332 lines (over the 300-line
+  ceiling); appending the writer changes plus the helpers would have
+  pushed it further over budget. The clean split moves all
+  primary/secondary cause logic out (slot vars, setters, reset,
+  summary formatter, JSON emitter, alias resolvers), leaving
+  diagnose_output.sh focused on report rendering + writer entrypoint.
+  diagnose_output.sh is now 282 lines.
+- **Crash first-aid + dashboard-diagnosis extracted to
+  `diagnose_output_extra.sh`**. Goal 5 extraction alone wasn't enough
+  budget once the schema v2 writer body grew. Splitting these two
+  unrelated functions (crash first-aid, dashboard JSON emitter) into a
+  sibling file is the cleanest concern split with no behavior change.
+- **Auxiliary finalize hooks extracted to `lib/finalize_aux.sh`**.
+  finalize.sh was already 303 lines pre-M129 (over the ceiling) and
+  adding `_hook_failure_context_reset` would have pushed it to 315.
+  Moving express_persist + note_acceptance + baseline_cleanup +
+  the new reset hook into a sibling brings finalize.sh to 280 lines.
+- **`_diag_parse_cause_block` placed in `diagnose_helpers.sh`** (not
+  diagnose.sh) to keep diagnose.sh under 300 lines. The parser is a
+  helper, not a top-level diagnostic function, so the placement is
+  semantically correct.
+- **Two diagnose_rules.sh extractions** (`_rule_quota_exhausted` and
+  `_rule_unknown`) moved to diagnose_rules_extra.sh per the milestone
+  Watch For ("Currently 299 lines — keep under 300; if the patch
+  grows, extract the rule helper to diagnose_rules_extra.sh"). The
+  rule registry order is unchanged (registry lives in
+  diagnose_rules.sh; the extras file is sourced before the registry).
+- **`_hook_failure_context_reset` runs LAST in the registration list**,
+  after `_hook_tui_complete`. This is intentional — the reset must
+  happen after every other hook has finished reading the slot state
+  for its own purposes, otherwise hooks running later in the order
+  would see cleared values.
+- **Top-level alias precedence rule** — when secondary slot is set, the
+  alias mirrors it; otherwise the alias mirrors `AGENT_ERROR_*`;
+  otherwise the keys are omitted entirely. Empty-string aliases are
+  never emitted (T2.5 enforces this). The writer uses
+  `resolve_alias_category` / `resolve_alias_subcategory` from
+  failure_context.sh so the precedence logic isn't duplicated.
 
 ## Observed Issues (out of scope)
 
-- `stages/coder.sh` is 1131 lines — well over the 300 ceiling. The
-  M128 milestone acceptance criterion ("stages/coder.sh lines
-  decreased") was written assuming the M127 inline block was still
-  present; that block was already extracted by M127's
-  `_run_buildfix_routing` move. M128's net contribution is +6 lines (4
-  exports condensed to one continuation export, plus a 2-line comment).
-  A larger refactor splitting `run_stage_coder` into discrete sub-stage
-  orchestrators would pay this debt down but is beyond M128's scope.
-- `tests/test_m127_buildfix_routing.sh:69` has a pre-existing SC2034
-  warning (`BUILD_RAW_ERRORS_FILE appears unused`) on a line M128 did
-  not modify. Resolving requires either a `# shellcheck disable=SC2034`
-  directive or an `export` keyword; deferred to avoid scope creep.
+- `tekhton.sh` is 3026 lines (pre-existing) — far over the 300-line
+  ceiling. M129 added 7 lines (two `source` lines and a 5-line
+  reset block); splitting tekhton.sh is a major refactor far beyond
+  M129's scope.
+- `tests/test_finalize_run.sh` is 964 lines (pre-existing) — over the
+  ceiling. M129 added 1 assertion for the new hook plus updated 4
+  assertions for shifted indices. Splitting that test file would be a
+  separate dedicated cleanup.
+- `stages/coder.sh` is still 1131 lines (pre-existing — M128 noted
+  this same observation). M129 makes no changes to coder.sh; the
+  build-fix secondary-cause integration goes through M128's
+  `_build_fix_set_secondary_cause` helper which now wires the
+  M129 slot vars automatically.
+- `lib/diagnose_output.sh` lines 17–19 (the file header "Provides:"
+  block) still list `print_crash_first_aid` and
+  `emit_dashboard_diagnosis` despite those functions having moved to
+  `diagnose_output_extra.sh`. Minor doc rot — non-blocking; clean up
+  in a future pass.
+- 4 pre-existing failures in `tests/test_diagnose.sh` (Suite 17.1,
+  19.1, 19.2, 19.3) were present before M129 and remain after. They
+  fail because the test harness calls `print_crash_first_aid` /
+  `run_diagnose` outside an Output Bus context, so `warn` and `log`
+  produce no captured output. Verified pre-existing via `git stash`.
+  Not caused by M129.

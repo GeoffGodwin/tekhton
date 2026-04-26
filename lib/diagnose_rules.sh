@@ -80,8 +80,11 @@ _rule_max_turns() {
     local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
     local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.md}"
 
-    local _cat="" _sub=""
-    if [[ -f "$failure_ctx" ]]; then
+    # M129: prefer secondary cause from v2 schema, fall back to top-level
+    # alias category/subcategory (writer compat layer).
+    local _cat="${_DIAG_SECONDARY_CATEGORY:-}"
+    local _sub="${_DIAG_SECONDARY_SUBCATEGORY:-}"
+    if [[ -z "$_cat" ]] && [[ -f "$failure_ctx" ]]; then
         _cat=$(grep -oP '"category"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
         _sub=$(grep -oP '"subcategory"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
     fi
@@ -119,6 +122,17 @@ _rule_max_turns() {
     DIAG_SUGGESTIONS=(
         "The ${_stage} agent hit its turn limit (${_limit} turns) on consecutive attempts."
         "The task scope is likely too large for the current turn budget."
+    )
+    # M129 secondary-symptom guard: if primary cause is non-agent and secondary
+    # is max_turns, surface that this is downstream — fully replaced by m133's
+    # MAX_TURNS_ENV_ROOT classification when that lands.
+    local _pcat="${_DIAG_PRIMARY_CATEGORY:-}"
+    if [[ -n "$_pcat" ]] && [[ "$_pcat" != "AGENT_SCOPE" ]]; then
+        DIAG_SUGGESTIONS+=(
+            "Note: max_turns may be a secondary symptom — primary cause is ${_pcat}/${_DIAG_PRIMARY_SUBCATEGORY:-?} (${_DIAG_PRIMARY_SIGNAL:-unknown signal})."
+        )
+    fi
+    DIAG_SUGGESTIONS+=(
         "Options:"
         "  1. Resume from test (if reviewer report is already present):"
         "     tekhton --complete --milestone --start-at test \"${_task}\""
@@ -239,36 +253,8 @@ _rule_intake_clarity() {
     return 0
 }
 
-# _rule_quota_exhausted
-# Detect rate limit pause.
-_rule_quota_exhausted() {
-    local quota_marker="${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED"
-    [[ -f "$quota_marker" ]] || return 1
-
-    DIAG_CLASSIFICATION="QUOTA_EXHAUSTED"
-    DIAG_CONFIDENCE="high"
-    DIAG_SUGGESTIONS=(
-        "Pipeline paused waiting for quota refresh."
-        "It will resume automatically. No action needed."
-        "If you need it sooner, wait for your 5-hour window to refresh."
-    )
-    return 0
-}
-
-# _rule_unknown
-# Fallback catch-all — always matches.
-_rule_unknown() {
-    # shellcheck disable=SC2034
-    DIAG_CLASSIFICATION="UNKNOWN"
-    # shellcheck disable=SC2034
-    DIAG_CONFIDENCE="low"
-    DIAG_SUGGESTIONS=(
-        "No specific failure pattern identified."
-        "Check the latest agent output in .claude/logs/"
-        "Re-run with DASHBOARD_VERBOSITY=verbose for more detail"
-    )
-    return 0
-}
+# _rule_quota_exhausted and _rule_unknown moved to diagnose_rules_extra.sh
+# under M129 to keep this file under the 300-line ceiling.
 
 # --- Source secondary rules --------------------------------------------------
 # Extra rules live in a sibling file to keep this file under the 300-line ceiling.
