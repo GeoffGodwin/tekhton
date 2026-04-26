@@ -351,7 +351,7 @@ and document the vocabulary so those milestones don't drift.
 | `tekhton.sh` | Source `lib/failure_context.sh` early (before `lib/diagnose_output.sh`); call `reset_failure_cause_context` after argument parsing. Bump `TEKHTON_VERSION`. |
 | `tests/test_failure_context_schema.sh` | **New file.** Schema writer/reader compatibility tests T1–T8. |
 | `tests/test_diagnose.sh` | Update fixtures/assertions to validate v2 schema handling and secondary-symptom max-turns messaging. |
-| `tests/run_tests.sh` | Register `test_failure_context_schema.sh`. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_failure_context_schema.sh` is picked up by filename convention. |
 | `docs/troubleshooting/diagnose.md` | Document failure-context schema v2 and interpretation of primary vs secondary causes. |
 | `.claude/milestones/MANIFEST.cfg` | Mark m129 `done` (during finalize). |
 

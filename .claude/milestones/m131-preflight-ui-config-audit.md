@@ -527,7 +527,7 @@ Expect:  All PF counters at zero; function returns 0 immediately
 | `lib/preflight.sh` | Add `_preflight_check_ui_test_config` call in `run_preflight_checks` immediately after `_preflight_check_tools`. No other change. |
 | `lib/gates_ui.sh` (or `gates_ui_helpers.sh`) | In `_ui_deterministic_env_list`: when `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1`, set the hardened env profile (add `CI=1`) on the *first* gate run rather than only on retry. `PLAYWRIGHT_HTML_OPEN=never` is already on every run per m126 — only the `CI=1` escalation moves earlier. |
 | `tests/test_preflight_ui_config.sh` | **New file.** Test cases T1–T10 as described in Goal 7. |
-| `tests/run_tests.sh` | Register `test_preflight_ui_config.sh` in the active test list. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_preflight_ui_config.sh` is picked up by filename convention. |
 | `docs/troubleshooting/preflight.md` | Add "UI Test Framework Config Audit" section documenting rules PW-1 through PW-3, CY-1, CY-2, JV-1 with remediation steps. |
 
 **Config knobs read by m131 (declared in m136, default-true here for forward compat):**
@@ -576,7 +576,9 @@ Only the Playwright html reporter is auto-patched. The decision matrix:
 Backup files go under `PROJECT_DIR/.claude/preflight_bak/` — inside the
 `.claude/` directory that Tekhton already owns. This keeps backups
 adjacent to other Tekhton artifacts, avoids polluting the project root,
-and is already `.gitignore`'d by Tekhton's `init` command.
+and keeps the operational state in one place. m135 later adds
+`.claude/preflight_bak/` to Tekhton's gitignore helper so the backups do
+not appear as untracked files.
 
 ### Interaction with m126 first-run determinism
 
@@ -609,7 +611,7 @@ is deployed. Together they eliminate the timeout entirely on first run.
 - [ ] When no fail-class rule fires, none of the four `PREFLIGHT_UI_*` contract vars is set in the environment seen by downstream consumers.
 - [ ] PW-1 auto-patch path emits the `preflight_ui_config_patch` causal event with rule, file, and action fields.
 - [ ] PW-1 auto-patch path calls `_trim_preflight_bak_dir "$bak_dir"` if the helper is defined (m135-shipped); the call is a no-op when m135 has not yet shipped.
-- [ ] All 10 test cases in `test_preflight_ui_config.sh` pass; `tests/run_tests.sh` includes the new test file.
+- [ ] All 10 test cases in `test_preflight_ui_config.sh` pass; the file is auto-discovered by `./tests/run_tests.sh` via the existing `test_*.sh` glob.
 - [ ] M126's `_ui_deterministic_env_list` adds `CI=1` to the *first* gate run env (not only on retry) when `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1`. `PLAYWRIGHT_HTML_OPEN=never` is unchanged from m126's existing every-run application.
 - [ ] `shellcheck` clean for `lib/preflight_checks_ui.sh`, `lib/preflight.sh`, `lib/gates_ui.sh` (or its helpers file), and `tests/test_preflight_ui_config.sh`.
 - [ ] `docs/troubleshooting/preflight.md` updated with UI config audit section covering PW-1 through PW-3, CY-1, CY-2, JV-1.

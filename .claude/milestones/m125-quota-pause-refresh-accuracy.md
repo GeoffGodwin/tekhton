@@ -263,7 +263,8 @@ One new shell test `tests/test_quota_retry_after_integration.sh`:
 4. Assert `get_quota_stats_json` reports `pause_count=1` and
    `total_pause_time_s` within the expected window.
 
-Add to `tests/run_tests.sh`.
+No `tests/run_tests.sh` edit is required; the runner already
+auto-discovers `tests/test_*.sh`.
 
 Expand the existing `tests/test_quota.sh` with:
 
@@ -283,7 +284,7 @@ Expand the existing `tests/test_quota.sh` with:
 | `lib/agent_retry.sh` | Extract `_extract_retry_after_seconds` helper (reads both stdout and stderr); pass the value into `enter_quota_pause`. |
 | `tests/test_quota.sh` | Add Retry-After parsing tests, probe-mode detection tests, pause scheduling tests. |
 | `tests/test_quota_retry_after_integration.sh` | **New file.** End-to-end test with a synthetic `claude` shim returning Retry-After payload. |
-| `tests/run_tests.sh` | Register the new integration test. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_quota_retry_after_integration.sh` is picked up by filename convention. |
 | `CLAUDE.md` | Update `QUOTA_MAX_PAUSE_DURATION` row; add `QUOTA_PROBE_MIN_INTERVAL`, `QUOTA_PROBE_MAX_INTERVAL` rows. |
 | `docs/tui-lifecycle-model.md` | Note that M124's paused countdown reflects the Retry-After-informed next-probe delay. |
 

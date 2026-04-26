@@ -179,12 +179,18 @@ Proposed routing policy:
     context section listing non-code categories found.
 
 - `unknown_only`:
-  - Do not auto-route to build-fix coder.
-  - Fail as `env_failure` with explicit message:
-    `No recognized error signatures detected; manual triage required.`
+  - Preserve `LAST_BUILD_CLASSIFICATION=unknown_only` for downstream
+    consumers and diagnostics.
+  - Route through the existing bounded build-fix path so the
+    pre-M127 "one retry on unresolved build errors" behavior is
+    preserved.
+  - Attach low-confidence guidance noting that no recognized error
+    signatures were detected and manual triage may still be required if
+    the retry fails.
 
-This prevents blind code-repair attempts on logs that have no explicit
-code evidence.
+This prevents blind code-repair attempts on clearly non-code failures
+while preserving a bounded fallback when the classifier has no
+recognized signal.
 
 #### Input contract
 
@@ -257,7 +263,13 @@ Add tests:
 6. `test_coder_stage_runs_build_fix_on_code_dominant`
    - Assert build-fix invocation preserved.
 
-7. `test_filter_does_not_drop_failure_lines`
+7. `test_coder_stage_runs_build_fix_on_unknown_only`
+  - Fixture with only unknown/noise lines
+  - Assert build-fix invocation still occurs and
+    `LAST_BUILD_CLASSIFICATION=unknown_only` is preserved for
+    downstream consumers.
+
+8. `test_filter_does_not_drop_failure_lines`
    - Ensure `_is_non_diagnostic_line` never suppresses lines containing
      `error`, `failed`, `timeout`, `TS[0-9]+`, `ECONNREFUSED`.
 
@@ -271,7 +283,7 @@ Add tests:
 | `tests/test_gates_bypass_flow.sh` | Extend integration assertions to validate new routing semantics in noisy mixed-output scenarios. |
 | `tests/fixtures/ui_timeout_noisy_output.txt` | **New file.** Realistic noisy timeout fixture for classification/routing tests. |
 | `docs/concepts/auto-remediation.md` | Update routing description to explain confidence-based mixed-log handling and unknown-only outcomes. |
-| `docs/troubleshooting/common-errors.md` | Add diagnosis path for `unknown_only` classification and manual triage workflow. |
+| `docs/troubleshooting/common-errors.md` | Add diagnosis path for `unknown_only` classification and low-confidence fallback / manual triage workflow. |
 
 ## Acceptance Criteria
 
@@ -279,7 +291,7 @@ Add tests:
 - [ ] Unknown/unmatched lines no longer automatically become code evidence in multi-line routing logic.
 - [ ] Explicit code-pattern matches still route to `code_dominant` and invoke build-fix coder.
 - [ ] `mixed_uncertain` path writes `BUILD_ROUTING_DIAGNOSIS.md` and includes both code and non-code context in build-fix prompt input.
-- [ ] `unknown_only` path does not invoke build-fix coder and exits with manual-triage guidance.
+- [ ] `unknown_only` path preserves the `unknown_only` export token and still takes the existing bounded build-fix path, with guidance that manual triage may still be required if the retry fails.
 - [ ] Existing M53/M54 exported functions remain available; no call-site breakage in current pipeline.
 - [ ] New fixture-driven tests pass for all four routing outcomes (`code_dominant`, `noncode_dominant`, `mixed_uncertain`, `unknown_only`).
 - [ ] Existing classification tests continue to pass after migration (or, where a fixture exercised the bifl-tracker class of input that M127 explicitly fixes, the assertion has been updated to reflect the corrected behavior with a comment pointing at this milestone).

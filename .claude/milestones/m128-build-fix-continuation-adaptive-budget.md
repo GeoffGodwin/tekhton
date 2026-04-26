@@ -258,10 +258,11 @@ currently source helpers) and replaces the inline block with a single
 
 ### Goal 9 - Test matrix for continuation semantics
 
-Create `tests/test_build_fix_loop.sh` and register in
-`tests/run_tests.sh`. All tests use shell stubs only — no real coder
-agent invocation, no network. Reuse the `RETRY_STATE` counter pattern
-established by `tests/test_ui_build_gate.sh` Test 8.
+Create `tests/test_build_fix_loop.sh`. No `tests/run_tests.sh` edit is
+required because the runner already auto-discovers `tests/test_*.sh`.
+All tests use shell stubs only — no real coder agent invocation, no
+network. Reuse the `RETRY_STATE` counter pattern established by
+`tests/test_ui_build_gate.sh` Test 8.
 
 1. **`unit_progress_signal_truth_table`** (pure-function unit test)
    Call `_build_fix_progress_signal` directly with crafted args:
@@ -326,7 +327,7 @@ established by `tests/test_ui_build_gate.sh` Test 8.
 | `lib/state.sh` | No signature change. Build-fix loop calls `write_pipeline_state` with the existing 5-arg form, passing the structured summary string as `extra_notes` (5th arg). The function body at line 30 is unchanged. |
 | `lib/prompts.sh` | Register `BUILD_FIX_REPORT_FILE` and the six new config keys as template variables (consistent with how other artifact and config vars are exposed). |
 | `tests/test_build_fix_loop.sh` | **New file.** Test cases T1–T10 above. |
-| `tests/run_tests.sh` | Register the new test file. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_build_fix_loop.sh` is picked up by filename convention. |
 | `docs/resilience.md` | Document build-fix continuation policy, caps, and early-stop criteria. |
 | `docs/reference/configuration.md` | Document the six new build-fix config keys with defaults. |
 

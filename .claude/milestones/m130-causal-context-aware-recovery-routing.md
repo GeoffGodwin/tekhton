@@ -190,15 +190,23 @@ branch:
 
 ```bash
 # Amendment A (M130): primary cause env/test_infra is recoverable by
-# re-running with deterministic gate profile (M126). Do NOT save_exit.
+# re-running with deterministic gate profile (M126) unless the user
+# explicitly opted out via pipeline.conf. Do NOT save_exit.
 if [[ "$_ORCH_PRIMARY_CAT" = "ENVIRONMENT" ]] &&
    [[ "$_ORCH_PRIMARY_SUB" = "test_infra"  ]] &&
-   [[ "${_ORCH_ENV_GATE_RETRIED:-0}" -ne 1 ]]; then
+  [[ "${_ORCH_ENV_GATE_RETRIED:-0}" -ne 1 ]] &&
+  { [[ " ${_CONF_KEYS_SET:-} " != *" TEKHTON_UI_GATE_FORCE_NONINTERACTIVE "* ]] ||
+    [[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-0}" != "0" ]]; }; then
     _ORCH_ENV_GATE_RETRIED=1
     echo "retry_ui_gate_env"
     return
 fi
 ```
+
+If `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` is explicitly present in
+`pipeline.conf` (detected via `_CONF_KEYS_SET`), treat that as a user
+opt-out and fall through to the normal `ENVIRONMENT -> save_exit`
+behavior.
 
 `_ORCH_ENV_GATE_RETRIED` is a module-level flag initialized to `0` at
 run start. It prevents infinite loops: the second failure with the same
@@ -216,7 +224,9 @@ Insert immediately before the `AGENT_SCOPE/max_turns → split` branch:
 if [[ "$error_cat"           = "AGENT_SCOPE"    ]] &&
    [[ "$error_sub"           = "max_turns"      ]] &&
    [[ "$_ORCH_PRIMARY_CAT"   = "ENVIRONMENT"    ]] &&
-   [[ "${_ORCH_ENV_GATE_RETRIED:-0}" -ne 1      ]]; then
+  [[ "${_ORCH_ENV_GATE_RETRIED:-0}" -ne 1      ]] &&
+  { [[ " ${_CONF_KEYS_SET:-} " != *" TEKHTON_UI_GATE_FORCE_NONINTERACTIVE "* ]] ||
+    [[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-0}" != "0" ]]; }; then
     _ORCH_ENV_GATE_RETRIED=1
     echo "retry_ui_gate_env"
     return
@@ -226,6 +236,11 @@ fi
 If `_ORCH_ENV_GATE_RETRIED` is already set (the env retry itself hit
 max_turns), fall through to the existing `split` branch — something
 deeper is wrong and split is then appropriate.
+
+If the user explicitly set
+`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` in `pipeline.conf`, the same
+opt-out applies here: do not schedule `retry_ui_gate_env`; fall through
+to the existing non-retry branch instead.
 
 #### Amendment C — Build-gate retry only when classification is code-dominant
 
@@ -238,8 +253,10 @@ Replace the current unconditional `BUILD_ERRORS_FILE` check:
 #     return
 # fi
 
-# M130: only retry if classification confidence is code_dominant or unset.
-# mixed_uncertain or noncode_dominant → save_exit (retrying won't help).
+# M130: build-confidence routing.
+# code_dominant or unknown_only → retry_coder_build.
+# mixed_uncertain → retry once, then save_exit.
+# noncode_dominant → save_exit.
 # Kill-switch: BUILD_FIX_CLASSIFICATION_REQUIRED=false bypasses the gating
 # entirely and falls back to pre-M130 behavior.
 if [[ -f "${BUILD_ERRORS_FILE}" ]] && [[ -s "${BUILD_ERRORS_FILE}" ]]; then
@@ -308,9 +325,11 @@ first:
 retry_ui_gate_env)
     # M130: retry from coder stage with TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
     # so m126's framework-detection Priority 0 forces the hardened env profile
-    # on the next gate run. Idempotency is enforced by _classify_failure via
-    # the _ORCH_ENV_GATE_RETRIED guard — second env-class failure falls through
-    # to save_exit there, not here.
+  # on the next gate run. _classify_failure only returns this branch when the
+  # user has not explicitly opted out with
+  # TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0 in pipeline.conf. Idempotency is
+  # enforced by _classify_failure via the _ORCH_ENV_GATE_RETRIED guard —
+  # second env-class failure falls through to save_exit there, not here.
     export TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
     _ORCH_RECOVERY_ROUTE_TAKEN="retry_ui_gate_env"   # m132 read site
     warn "Retrying from coder stage with non-interactive UI gate env (M130)."
@@ -500,6 +519,7 @@ Add `tests/test_orchestrate_recovery.sh` with the following test cases:
 ```bash
 # Fixture: LAST_FAILURE_CONTEXT.json v2 with primary=ENVIRONMENT/test_infra
 # Inputs:  AGENT_ERROR_CATEGORY=ENVIRONMENT AGENT_ERROR_SUBCATEGORY=test_infra
+#          no explicit pipeline.conf opt-out
 # Expect:  _classify_failure → "retry_ui_gate_env"
 ```
 
@@ -510,11 +530,20 @@ Add `tests/test_orchestrate_recovery.sh` with the following test cases:
 # Expect:  _classify_failure → "save_exit"
 ```
 
+#### T2b — explicit pipeline.conf opt-out suppresses env retry
+
+```bash
+# Same fixture + _CONF_KEYS_SET contains TEKHTON_UI_GATE_FORCE_NONINTERACTIVE
+#          TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0
+# Expect:  _classify_failure → "save_exit"
+```
+
 #### T3 — max_turns with env primary → retry_ui_gate_env, not split
 
 ```bash
 # Fixture: v2, primary=ENVIRONMENT/test_infra, secondary=AGENT_SCOPE/max_turns
 # Inputs:  AGENT_ERROR_CATEGORY=AGENT_SCOPE AGENT_ERROR_SUBCATEGORY=max_turns
+#          no explicit pipeline.conf opt-out
 # Expect:  _classify_failure → "retry_ui_gate_env"
 ```
 
@@ -602,7 +631,7 @@ Add `tests/test_orchestrate_recovery.sh` with the following test cases:
 | `lib/orchestrate.sh` | Call `_reset_orch_recovery_state` once at the top of `run_complete_loop`, immediately after the existing `_ORCH_BUILD_RETRIED=false` line (line ~94). Do **not** insert per-iteration. |
 | `lib/orchestrate_helpers.sh` | In `_save_orchestration_state` (line ~231), assemble `_cause_summary` from loader output and pass as the new fifth argument to `_print_recovery_block`. |
 | `tests/test_orchestrate_recovery.sh` | **New file.** Fixture-backed tests T1–T11 plus T8b/T8c covering all new routing branches. Tests use `ORCH_CONTEXT_FILE_OVERRIDE` to point the loader at fixture JSON. |
-| `tests/run_tests.sh` | Register `test_orchestrate_recovery.sh` in the active test list (mirrors how other resilience-arc tests are added). |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_orchestrate_recovery.sh` is picked up by filename convention. |
 | `docs/troubleshooting/recovery-routing.md` | **New file.** Document the causal-context routing table (primary cause → action mapping), the retry-once guards, and the `BUILD_FIX_CLASSIFICATION_REQUIRED` kill switch. |
 
 ## Implementation Notes
@@ -638,10 +667,11 @@ for the why). This means:
 
 If permanent suppression is needed (user manually confirmed the gate is
 not an interactive-report issue), the user can set
-`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` in `pipeline.conf` to
-short-circuit m126's normalizer, which prevents m130's env-gate retry
-from ever doing anything useful and causes it to fall through to
-`save_exit` on the second failure as normal. Alternatively
+`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` in `pipeline.conf`.
+Amendments A and B must check `_CONF_KEYS_SET` plus the current value
+before returning `retry_ui_gate_env`; when that explicit opt-out is
+present, the classifier falls through to the ordinary non-retry branch
+instead of scheduling a forced env rerun. Alternatively
 `BUILD_FIX_CLASSIFICATION_REQUIRED=false` (see Amendment C) reverts
 the build-side gating to pre-M130 behavior.
 
@@ -665,15 +695,16 @@ pre-m127 retry behavior so m130 can be deployed independently.
 - [ ] `_load_failure_cause_context` correctly populates `_ORCH_PRIMARY_*` and `_ORCH_SECONDARY_*` from v2 schema JSON.
 - [ ] `_load_failure_cause_context` degrades safely with v1 schema (no crash, secondary vars populated from top-level fields).
 - [ ] `_load_failure_cause_context` is a no-op (all vars empty) when `LAST_FAILURE_CONTEXT.json` is absent.
-- [ ] `_classify_failure` returns `retry_ui_gate_env` when primary cause is `ENVIRONMENT/test_infra` and env gate has not yet been retried.
+- [ ] `_classify_failure` returns `retry_ui_gate_env` when primary cause is `ENVIRONMENT/test_infra`, env gate has not yet been retried, and `pipeline.conf` has not explicitly set `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0`.
 - [ ] `_classify_failure` returns `save_exit` (not `retry_ui_gate_env`) on second environment failure.
+- [ ] `_classify_failure` does not return `retry_ui_gate_env` when `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` is explicitly set in `pipeline.conf` (key present in `_CONF_KEYS_SET`); it falls through to the existing non-retry branch instead.
 - [ ] `_classify_failure` returns `retry_ui_gate_env` (not `split`) when `AGENT_SCOPE/max_turns` and primary cause is `ENVIRONMENT/test_infra`.
 - [ ] `_classify_failure` returns `retry_coder_build` for `code_dominant`, `unknown_only`, or `mixed_uncertain` (first time) classifications.
 - [ ] `_classify_failure` returns `save_exit` for `noncode_dominant` build errors.
 - [ ] `BUILD_FIX_CLASSIFICATION_REQUIRED=false` reverts Amendment C to pre-M130 behavior (always `retry_coder_build` on non-empty `BUILD_ERRORS_FILE`).
 - [ ] `_print_recovery_block` prints "Root cause: ..." when fifth arg is non-empty.
-- [ ] All test cases in `test_orchestrate_recovery.sh` pass (T1–T11 plus T8b unknown_only and T8c kill-switch).
-- [ ] `tests/run_tests.sh` registers `test_orchestrate_recovery.sh`.
+- [ ] All test cases in `test_orchestrate_recovery.sh` pass (T1–T11 plus T2b opt-out, T8b unknown_only, and T8c kill-switch).
+- [ ] `test_orchestrate_recovery.sh` is auto-discovered by `./tests/run_tests.sh` via the existing `test_*.sh` glob.
 - [ ] No regression on pre-existing routing cases (T9 and T10 specifically confirm v1 and absent-context paths).
 - [ ] `_reset_orch_recovery_state` is called exactly once per `run_complete_loop` invocation (at the top), not per iteration. Verified by inspection at `lib/orchestrate.sh:~94`.
 - [ ] `lib/orchestrate_recovery.sh` ends ≤ 300 lines after the changes (CLAUDE.md non-negotiable rule 8). If the file would exceed 300, the extraction described in "Files Modified" has been performed and `lib/orchestrate_recovery_causal.sh` is in place and sourced.
@@ -719,6 +750,12 @@ pre-m127 retry behavior so m130 can be deployed independently.
   but the gate ignores it — the second iteration then fails the same
   way and the `_ORCH_ENV_GATE_RETRIED` guard correctly routes to
   `save_exit`, but the recovery never had a chance to work.
+- **Respect explicit `pipeline.conf` opt-out for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE`.**
+  `_CONF_KEYS_SET` is already populated by config parsing. If the key is
+  explicitly present with value `0`, Amendments A and B must not return
+  `retry_ui_gate_env`; otherwise the dispatcher overwrites the user's
+  configuration and breaks the explicit-value-wins contract shared with
+  m126 and m138.
 - **`LAST_BUILD_CLASSIFICATION` may not be exported pre-m127.** The
   Amendment C default (`${LAST_BUILD_CLASSIFICATION:-code_dominant}`)
   preserves pre-m127 behavior, so m130 can be deployed before m127
