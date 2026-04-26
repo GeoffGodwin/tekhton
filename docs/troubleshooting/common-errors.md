@@ -70,6 +70,42 @@ Options:
 - Fix remaining issues manually and resume: `tekhton --start-at tester "..."`
 - Check if the reviewer's role definition is too strict for the task
 
+### "UI tests timed out with interactive report serving"
+
+**Symptom.** The UI test phase of the build gate fails after `UI_TEST_TIMEOUT`
+seconds and the captured output contains:
+
+```
+Serving HTML report at http://localhost:9323
+Press Ctrl+C to quit.
+```
+
+The exit code is `124`. This means the command finished its tests but stayed
+alive serving the HTML report — Playwright's default behavior when run outside
+CI mode.
+
+**Automatic recovery.** Tekhton classifies this as the `interactive_report`
+timeout class. M54 registry remediation and the generic flakiness retry are
+both skipped (they would just hang again). A single hardened rerun is performed
+with `PLAYWRIGHT_HTML_OPEN=never` and `CI=1` injected via `env(1)` at a reduced
+timeout (`UI_GATE_ENV_RETRY_TIMEOUT_FACTOR`, default `0.5 × UI_TEST_TIMEOUT`).
+On success, the gate logs `UI tests passed after deterministic reporter
+hardening.` and clears the error files.
+
+**Permanent fix.** When the hardened rerun also fails, both `BUILD_ERRORS.md`
+and `UI_TEST_ERRORS.md` contain a `## UI Gate Diagnosis` section pointing here.
+Configure the gate to disable report serving by either:
+
+- Adding `--reporter=line` (or another non-HTML reporter) to `UI_TEST_CMD` in
+  `pipeline.conf`.
+- Setting `reporter: [['html', { open: 'never' }]]` in your project's
+  `playwright.config.{ts,js}`.
+- Exporting `PLAYWRIGHT_HTML_OPEN=never` in the CI environment.
+
+To suppress the hardened rerun entirely, set `UI_GATE_ENV_RETRY_ENABLED=false`
+in `pipeline.conf`; the gate will still classify the failure and emit
+diagnosis, but it will not perform the rerun.
+
 ### "Agent null run detected"
 
 The agent used very few turns and produced no meaningful output. Common causes:

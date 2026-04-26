@@ -1,29 +1,11 @@
 ## Planned Tests
-- [x] `tools/tests/test_truncate_function.py` — Unit tests for `_truncate()` function behavior
-- [x] `tools/tests/test_tui_render_timings_label_truncation.py` — Integration tests for label truncation in timings panel
+- [x] `tests/test_ui_build_gate.sh` — Test 20: UI_GATE_ENV_RETRY_ENABLED=false skips hardened rerun, falls through to terminal-failure path, and preserves diagnosis content
 
 ## Test Run Results
-Passed: 28  Failed: 0
-
-### Test Summary
-- `test_truncate_function.py`: 13 tests covering `_truncate()` function behavior
-  - Empty strings, short strings, strings at limit, strings exceeding limit
-  - Real-world breadcrumbs like "wrap-up » running final static analyzer"
-  - Unicode boundary handling and special characters
-  
-- `test_tui_render_timings_label_truncation.py`: 15 tests covering panel integration
-  - Completed-stage label truncation (short, medium, long, very long labels)
-  - Live-row label truncation
-  - Substage breadcrumb truncation
-  - Edge cases (exact 32 chars, 33 chars, special characters)
-  - Column alignment verification (time/turns columns remain visible)
-
-- All existing `test_tui_render_timings.py` tests continue to pass (32 tests)
-- Total test coverage: 67 tests across truncation and timings modules
+Passed: 20  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tools/tests/test_truncate_function.py`
-- [x] `tools/tests/test_tui_render_timings_label_truncation.py`
+- [x] `tests/test_ui_build_gate.sh`

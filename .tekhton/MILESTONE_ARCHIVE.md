@@ -30517,3 +30517,776 @@ Update `CLAUDE.md` template-variable table to add
 - Surfacing the pause state to `RUN_SUMMARY.json` beyond the
   existing `quota_pause` stats. `format_quota_pause_summary`
   already covers post-run reporting.
+
+---
+
+## Archived: 2026-04-25 — Unknown Initiative
+
+# M125 - Quota Pause Refresh Accuracy & Probe Budget
+
+<!-- milestone-meta
+id: "125"
+status: "done"
+-->
+
+## Overview
+
+Issue #180 surfaces three correctness defects in the quota-pause
+subsystem that are independent of the TUI-visibility fix in M124.
+Even with the pause fully observable, a user can still end up with a
+failed run because:
+
+1. **`QUOTA_MAX_PAUSE_DURATION` default (4h, 14400s) is shorter than
+   Anthropic's 5h rolling usage window.** When a Claude Pro/Max
+   subscription hits the cap, the quota refreshes on a rolling 5h
+   window. `lib/quota.sh:107` gives up at 4h, so a legitimate refresh
+   one hour later never gets attempted — the pause exits with
+   `AGENT_ERROR_CATEGORY=UPSTREAM`, `AGENT_ERROR_SUBCATEGORY=quota_exhausted`,
+   and the run dies having burned four hours of wall-clock time.
+
+2. **`_quota_probe` itself consumes quota.** `lib/quota.sh:140` runs
+   `claude --max-turns 1 --output-format json -p "respond with OK"`
+   every `QUOTA_RETRY_INTERVAL` seconds. Each probe generates a few
+   tokens of input + output that count against the rolling window. On
+   a just-refreshed quota that's sitting right at the cap boundary,
+   one probe can push it right back over — the probe succeeds, the
+   pipeline resumes, the first real agent call hits the cap again,
+   and the pause re-enters. In the worst case the probe cadence
+   prevents the quota from ever settling below the threshold.
+
+3. **`Retry-After` headers from the original rate-limit error are
+   parsed but never propagated to the pause loop.**
+   `lib/agent_retry.sh:210-221` extracts a `"retry_after":N` value
+   from `agent_last_output.txt` when the error subcategory is
+   `api_rate_limit`, but that path only applies to transient-retry
+   delays — not to `enter_quota_pause`. The pause loop always uses
+   the flat `QUOTA_RETRY_INTERVAL` (default 300s), even when
+   Anthropic's own response told us exactly when the quota resets.
+   First probe fires at 5 minutes regardless of whether the server
+   said "retry in 47 minutes".
+
+M125 is the correctness pass. It matches the pause window to the
+real refresh window, lowers the probe's token cost to near-zero, and
+threads the `Retry-After` signal from the initial error through to
+the first probe's scheduling so the pause actually respects
+upstream's explicit guidance.
+
+M125 depends on M124 semantically: the `tui_update_pause` countdown
+from M124 will show the correct "next probe in Nm" number only once
+M125's Retry-After propagation lands. Land M124 first so the
+visibility exists to validate M125's timing behaviour by eye.
+
+## Design
+
+### Goal 1 — Match `QUOTA_MAX_PAUSE_DURATION` to the 5h rolling window
+
+Change the default in `lib/config_defaults.sh:261` from `14400` (4h)
+to `18900` (5h 15m). The extra 15-minute buffer handles clock skew
+between the local machine and Anthropic's quota-reset edge plus
+natural drift between when the pause starts and when the window
+anchor was set server-side.
+
+The existing `_clamp_config_value QUOTA_MAX_PAUSE_DURATION 86400`
+(24h upper bound) stays. Users who want a stricter cap can still set
+a lower value in `pipeline.conf`; only the built-in default shifts.
+
+Update `CLAUDE.md`'s template-variable table row for
+`QUOTA_MAX_PAUSE_DURATION` to reflect the new default
+(`18900` / 5h 15m) and note that the value should match the
+upstream quota window.
+
+Add a log line at pause entry that tells the user up front how long
+the pause can last in plain English, rather than a raw seconds
+count: `"Pipeline paused — <reason>. Waiting up to 5h15m for quota
+refresh (probing every 5m)."`. Format the durations via the
+existing `_fmt_duration` helper in `lib/common.sh` (or a local
+bash equivalent if that helper lives in Python-only code — grep
+first).
+
+### Goal 2 — Make `_quota_probe` cost (effectively) zero tokens
+
+The current probe in `lib/quota.sh:134-154` invokes a real
+`claude -p "respond with OK"` call that generates input + output
+tokens. Replace it with a layered probe that tries cheap options
+first and only falls back to the real call when necessary.
+
+Preferred order, each gated behind a feature-detection check:
+
+1. **One-time local sanity check.** Before selecting an actual probe
+  mode, invoke `timeout 10 claude --version` once at pause entry.
+  This completes without authenticating against the API at all — it
+  exits 0 if the binary is present and runnable. It is explicitly
+  **not** a quota probe and must never resume the pipeline by
+  itself; its only purpose is to distinguish local CLI breakage
+  (`claude` binary removed, PATH broken) from quota exhaustion.
+
+2. **Empty-prompt probe.** Invoke `timeout 10 claude --max-turns 0
+   --output-format text -p ""` (or the nearest equivalent depending
+   on the installed CLI version — test via `claude --help | grep`
+   at startup to detect support). `--max-turns 0` forbids any tool
+   turn from executing; the call either exits with a structural
+   "nothing to do" message at ~zero tokens, or returns the same
+   rate-limit error as a real call. Either way, quota state is
+   observable without burning meaningful budget.
+
+3. **Current path as fallback.** If (2) is unsupported by the
+   supported by the installed CLI version, keep the existing
+   `claude --max-turns 1 -p "respond with OK"` flow but cap the
+   probe to once every `QUOTA_PROBE_MIN_INTERVAL` seconds
+   (default 600s = 10m) regardless of `QUOTA_RETRY_INTERVAL`, so
+   the probe cost can never dominate the paused budget even on
+   old CLIs.
+
+The one-time `claude --version` sanity result is logged separately and
+never stored as a probe mode. Actual probe-mode detection runs once per
+pipeline invocation at first pause and caches the result in
+`_QUOTA_PROBE_MODE` (values: `zero_turn` / `fallback`). Log the chosen
+mode once at info level so operators can confirm whether their CLI is
+on a cheap probe path.
+
+If `is_rate_limit_error` on the probe's stderr returns true, the
+probe correctly concludes "still exhausted" regardless of which
+mode it used. If the probe exits 0 (zero-turn mode) or exits non-zero
+with a non-rate-limit error (also zero-turn mode), treat quota as
+possibly-available and let the pipeline do one real attempt — which
+either succeeds or re-enters `enter_quota_pause` with the fresh
+`Retry-After` header parsed by the next path. A successful
+`claude --version` check alone is never evidence that quota refreshed.
+
+Add a new config key `QUOTA_PROBE_MIN_INTERVAL` to
+`lib/config_defaults.sh` (default 600, clamped to 3600 upper
+bound). Keep `QUOTA_RETRY_INTERVAL` as the wake-up / countdown
+cadence; introduce the probe cadence as a separate knob so the
+TUI can display a live countdown on `QUOTA_RETRY_INTERVAL` without
+those wake-ups necessarily triggering a real probe.
+
+### Goal 3 — Propagate `Retry-After` from the original error
+
+`lib/agent_retry.sh:210-221` already extracts a Retry-After numeric
+value from `agent_last_output.txt` when the error subcategory is
+`api_rate_limit`. M125 makes that value visible to the quota pause.
+
+Extract the parsing into a reusable helper in
+`lib/agent_retry.sh`:
+
+```bash
+# _extract_retry_after_seconds SESSION_DIR
+# Returns 0 with the number of seconds to stdout, or 1 if not found.
+_extract_retry_after_seconds() {
+    local session_dir="$1"
+    local out="${session_dir}/agent_last_output.txt"
+    local err="${session_dir}/agent_stderr.txt"
+    local secs=""
+    for f in "$out" "$err"; do
+        [[ -f "$f" ]] || continue
+        secs=$(grep -oiE '"?retry.after"?[[:space:]]*:[[:space:]]*"?[0-9]+"?' "$f" 2>/dev/null \
+               | grep -oE '[0-9]+' | head -1)
+        [[ -n "$secs" ]] && break
+    done
+    if [[ -n "$secs" ]] && [[ "$secs" =~ ^[0-9]+$ ]]; then
+        echo "$secs"
+        return 0
+    fi
+    return 1
+}
+```
+
+Note the helper also checks `agent_stderr.txt` — the CLI sometimes
+logs Retry-After to stderr rather than the structured JSON output,
+depending on the error mode. The existing `_should_retry_transient`
+call site keeps working with the unchanged regex and falls back on
+the helper's return value.
+
+In `lib/agent_retry.sh` at the rate-limit branch (lines 74-97),
+compute `_retry_after` before calling `enter_quota_pause` and pass
+it through:
+
+```bash
+if is_rate_limit_error "$_RWR_EXIT" "$_stderr_path"; then
+    local _ra=""
+    _ra=$(_extract_retry_after_seconds "$session_dir" || true)
+    if command -v enter_quota_pause &>/dev/null; then
+        warn "[$label] Rate limit detected — entering quota pause."
+        if enter_quota_pause "Rate limited (agent: ${label})" "$_ra"; then
+            ...
+```
+
+Change `enter_quota_pause`'s signature to accept an optional
+second argument: `retry_after_seconds`. Default is empty (current
+behaviour). Inside the function:
+
+- If `retry_after_seconds` is present and numeric, clamp it to
+  `[1, QUOTA_MAX_PAUSE_DURATION]` when the chosen probe mode is the
+  cheap `zero_turn` path, and to
+  `[QUOTA_PROBE_MIN_INTERVAL, QUOTA_MAX_PAUSE_DURATION]` only when the
+  chosen probe mode is the quota-spending `fallback` path. Then sleep
+  for that duration before the first probe instead of
+  `QUOTA_RETRY_INTERVAL`.
+- After the first Retry-After-scheduled probe, if it still reports
+  exhausted, fall back to the normal `QUOTA_RETRY_INTERVAL` cadence
+  for subsequent probes.
+- Log the decision at info level: `"Anthropic said retry in
+  <HHh MMm> — waiting that long before first probe."`
+- Forward the value to `tui_enter_pause` as a fourth argument
+  (`first_probe_delay`) so M124's countdown starts at the right
+  number rather than the default interval.
+
+Tests in `tests/test_quota.sh`:
+
+- `test_extract_retry_after_parses_json_output` — write a fixture
+  JSON with `"retry_after": 47` to a temp session dir, assert the
+  helper returns `47`.
+- `test_extract_retry_after_parses_stderr_message` — fixture with
+  plain text `Rate limited. Retry after 180 seconds.` on stderr,
+  assert the helper returns `180` (update regex if needed).
+- `test_enter_quota_pause_honours_retry_after` — stub `_quota_probe`
+  to track wall-clock between calls, invoke with `retry_after=8`,
+  `QUOTA_PROBE_MIN_INTERVAL=1`, and `QUOTA_RETRY_INTERVAL=2`,
+  assert the first probe fires ~8s later, the second ~2s after
+  that.
+- `test_enter_quota_pause_clamps_retry_after_floor` — stub, invoke
+  with `retry_after=1`, `QUOTA_PROBE_MIN_INTERVAL=5`, and forced
+  `fallback` mode, assert the first probe waits at least 5s.
+
+### Goal 4 — Probe back-off with jitter
+
+With Retry-After guiding the first probe, subsequent probes still
+fire on `QUOTA_RETRY_INTERVAL`. If the first probe fails (quota
+still exhausted), replace flat cadence with mild exponential
+back-off, capped so the TUI countdown remains predictable:
+
+- Probe 1: `Retry-After` (if present) or `QUOTA_RETRY_INTERVAL`.
+- Probe 2: `QUOTA_RETRY_INTERVAL`.
+- Probe 3: `min(QUOTA_RETRY_INTERVAL * 1.5, QUOTA_PROBE_MAX_INTERVAL)`.
+- Probe N (N>3): same formula applied to the previous delay.
+
+Add `QUOTA_PROBE_MAX_INTERVAL` to `lib/config_defaults.sh` with a
+default of 1800 (30 minutes, half the pre-M125 flat cadence cap)
+and a clamp bound of 3600.
+
+Add ±10% uniform jitter on each computed delay so many pipelines
+refreshing against the same window don't thundering-herd the API.
+Implementation: `_delay=$(( _delay * (90 + RANDOM % 21) / 100 ))`.
+
+Update the `tui_update_pause` call site in `_quota_sleep_chunked`
+(introduced in M124) to pass the next-probe delay from this
+back-off rather than a hardcoded `QUOTA_RETRY_INTERVAL` — so the
+TUI countdown reflects reality across probes.
+
+### Goal 5 — Additional integration tests
+
+One new shell test `tests/test_quota_retry_after_integration.sh`:
+
+1. Stage a fake `claude` shim on PATH that writes a synthetic
+   rate-limit payload with `"retry_after": 6` to the output file
+   on first invocation, then succeeds on the second.
+2. Source `lib/agent.sh` and run a minimal `run_agent` call.
+3. Assert `enter_quota_pause` was entered, the first probe was
+   scheduled ~6s after entry (±2s), the probe succeeded, and
+   `AGENT_ERROR_CATEGORY` is empty on return.
+4. Assert `get_quota_stats_json` reports `pause_count=1` and
+   `total_pause_time_s` within the expected window.
+
+No `tests/run_tests.sh` edit is required; the runner already
+auto-discovers `tests/test_*.sh`.
+
+Expand the existing `tests/test_quota.sh` with:
+
+- `test_probe_mode_detection_prefers_zero_turn` — stub a modern
+  `claude --help` / `--max-turns 0` surface, assert
+  `_QUOTA_PROBE_MODE=zero_turn` after first `_quota_probe` call.
+- `test_probe_mode_fallback_when_flags_unsupported` — stub
+  `claude --help` output without `--max-turns`, assert fallback
+  mode is selected and `QUOTA_PROBE_MIN_INTERVAL` is enforced.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/config_defaults.sh` | Bump `QUOTA_MAX_PAUSE_DURATION` default to 18900 (5h 15m); add `QUOTA_PROBE_MIN_INTERVAL:=600`, `QUOTA_PROBE_MAX_INTERVAL:=1800`; add clamp bounds for both. |
+| `lib/quota.sh` | Accept optional `retry_after_seconds` in `enter_quota_pause`; one-time `claude --version` local sanity check plus layered probe (`zero_turn` → `fallback`) with cached `_QUOTA_PROBE_MODE`; exponential back-off + jitter; forward `first_probe_delay` to `tui_enter_pause`. |
+| `lib/agent_retry.sh` | Extract `_extract_retry_after_seconds` helper (reads both stdout and stderr); pass the value into `enter_quota_pause`. |
+| `tests/test_quota.sh` | Add Retry-After parsing tests, probe-mode detection tests, pause scheduling tests. |
+| `tests/test_quota_retry_after_integration.sh` | **New file.** End-to-end test with a synthetic `claude` shim returning Retry-After payload. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_quota_retry_after_integration.sh` is picked up by filename convention. |
+| `CLAUDE.md` | Update `QUOTA_MAX_PAUSE_DURATION` row; add `QUOTA_PROBE_MIN_INTERVAL`, `QUOTA_PROBE_MAX_INTERVAL` rows. |
+| `docs/tui-lifecycle-model.md` | Note that M124's paused countdown reflects the Retry-After-informed next-probe delay. |
+
+## Acceptance Criteria
+
+- [ ] Default `QUOTA_MAX_PAUSE_DURATION` is 18900s; a paused run
+      with a 4h45m actual refresh delay resumes successfully
+      rather than giving up with `quota_exhausted`.
+- [ ] The pause-entry log line reports the duration in plain
+      English (`5h15m`, `47m`, etc.) rather than raw seconds.
+- [ ] When the original rate-limit error carries a Retry-After
+  value, the first probe fires after that delay, clamped to
+  the fallback-probe floor only when the selected probe mode is
+  `fallback`, and otherwise clamped only by
+  `QUOTA_MAX_PAUSE_DURATION` — verified via the integration
+  test with a synthetic `claude` shim.
+- [ ] When Retry-After is absent, behaviour matches pre-M125:
+      first probe fires at `QUOTA_RETRY_INTERVAL` with no
+      regression.
+- [ ] `_extract_retry_after_seconds` returns the correct value
+      from both `agent_last_output.txt` (JSON form) and
+      `agent_stderr.txt` (plain-text form). Missing / malformed
+      values return non-zero without aborting.
+- [ ] `_quota_probe` selects a probe mode at first use and caches
+  it in `_QUOTA_PROBE_MODE`. On modern Claude CLIs that support
+  `--max-turns 0`, the mode is `zero_turn`; token cost per
+  probe is near-zero. The one-time `claude --version` sanity
+  check never counts as quota evidence or as a probe mode.
+- [ ] Falling back to the pre-M125 `claude -p "respond with OK"`
+      path is rate-limited to at most one call per
+      `QUOTA_PROBE_MIN_INTERVAL` seconds regardless of
+      `QUOTA_RETRY_INTERVAL`.
+- [ ] Subsequent probes (after the Retry-After-scheduled first
+      one) use an exponential back-off with ±10% jitter, capped
+      by `QUOTA_PROBE_MAX_INTERVAL`. Countdown rendered by M124's
+      `tui_update_pause` matches the computed delay within one
+      chunk interval.
+- [ ] M124's paused-bar countdown shows the correct first-probe
+      delay when a Retry-After is present (visual parity test
+      with the synthetic shim).
+- [ ] All existing `tests/test_quota.sh` assertions continue to
+      pass. New tests in `test_quota.sh` and the new
+      `test_quota_retry_after_integration.sh` pass in under 60s.
+- [ ] Shellcheck clean for `lib/quota.sh`, `lib/agent_retry.sh`,
+      and the new integration test.
+- [ ] Running a real pipeline against a quota-exhausted
+      subscription now refreshes on the first natural refresh
+      opportunity (documented manual test: exhaust quota, run
+      Tekhton, confirm resume at the server's retry-after time).
+
+## Non-Goals
+
+- TUI visibility for the pause (stage pill, countdown,
+  watchdog). All of that is M124.
+- Exposing `/usage`-style remaining-quota telemetry. As noted in
+  issue #180, `/usage` is not accessible via the Claude API on
+  subscriptions and is flaky via the CLI. `should_pause_proactively`
+  still depends on users configuring their own
+  `CLAUDE_QUOTA_CHECK_CMD`; M125 does not change that surface.
+- Cross-run quota budgeting (remembering how much was burned in
+  the last N runs to preempt a pause). Belongs to a separate
+  metrics milestone.
+- Migrating `_QUOTA_PAUSE_COUNT` / `_QUOTA_TOTAL_PAUSE_TIME`
+  accounting into `lib/run_memory.sh`. Current in-process globals
+  plus `RUN_SUMMARY.json` emission are sufficient.
+- Adding a `--no-quota-pause` CLI flag that aborts immediately on
+  rate-limit errors. The TUI visibility from M124 plus M125's
+  correct pause duration make that unnecessary; Ctrl-C is the
+  documented abandon path.
+- Rewriting the probe as an HTTP `HEAD` or other non-claude-CLI
+  request. Keeping everything behind `claude` means we don't need
+  separate auth handling or API-key sourcing.
+
+---
+
+## Archived: 2026-04-26 — Unknown Initiative
+
+# M126 - Deterministic UI Gate Execution & Non-Interactive Reporter Control
+
+<!-- milestone-meta
+id: "126"
+status: "done"
+-->
+
+## Overview
+
+The bifl-tracker M03 failure exposed a repeatable gate-level defect:
+`UI_TEST_CMD` can enter a long-lived interactive report server mode
+and never terminate on its own, which causes Tekhton to hit
+`UI_TEST_TIMEOUT` and return exit code 124. In that state, the gate
+knows only that the process timed out; it does not distinguish:
+
+1. Real test execution slowness (legitimate long run), versus
+2. Interactive reporter serving mode (command completed tests but
+   stayed alive waiting for Ctrl+C), versus
+3. Dev-server readiness drift where tests never got to meaningful
+   assertions.
+
+In the failing run, Playwright output included:
+`Serving HTML report at http://localhost:9323. Press Ctrl+C to quit.`
+That line is definitive evidence the command entered an interactive
+tail mode that is incompatible with deterministic build gates.
+
+M126 makes UI gate execution deterministic by design. The gate will:
+
+- Normalize known E2E commands into non-interactive execution mode.
+- Detect interactive-report signatures when timeout still occurs.
+- Re-run once with a hardened, non-interactive command profile.
+- Emit a structured diagnosis when deterministic mode still fails.
+
+This milestone does not redesign full error taxonomy scoring
+(planned for follow-up milestones). It only ensures gate execution
+semantics are deterministic and reproducible so later classification
+and routing layers can reason over stable signal.
+
+## Design
+
+### Goal 1 — Add a deterministic UI gate command normalizer
+
+Add three small helpers in `lib/gates_ui.sh` (or `lib/gates_ui_helpers.sh`
+if the file would otherwise exceed the 300-line ceiling — see
+"Files Modified" note).
+
+```bash
+# _ui_detect_framework
+#   Reads UI_FRAMEWORK, UI_TEST_CMD, and PROJECT_DIR. Echoes one of:
+#   playwright | cypress | selenium | puppeteer | testing-library | detox | none
+#   M126 only branches on `playwright`; other values short-circuit to "none-acting".
+
+# _ui_deterministic_env_list HARDENED?
+#   Echoes zero or more KEY=VALUE lines (one per line) to be passed to `env`
+#   when invoking UI_TEST_CMD. HARDENED=1 forces the most aggressive profile
+#   (used only by the hardened-rerun branch from Goal 3); default is the
+#   normal-run profile.
+
+# _normalize_ui_gate_env HARDENED?
+#   Thin owner hook that materializes the subprocess env list by calling
+#   _ui_deterministic_env_list. Later milestones patch this wrapper for
+#   logging and adapter dispatch; _ui_deterministic_env_list remains the
+#   pure helper that decides which KEY=VALUE lines are emitted.
+```
+
+Normalization rules for this milestone:
+
+1. Preserve configured `UI_TEST_CMD` verbatim as the primary command.
+   M126 does not rewrite arguments or replace reporter flags — env-only
+   hardening avoids package-manager argument-parsing drift.
+2. When `_ui_detect_framework` returns `playwright`, the **normal-run**
+   profile injects:
+   - `PLAYWRIGHT_HTML_OPEN=never` (the single env var that prevents
+     report serving regardless of reporter config)
+3. The **hardened-rerun** profile (HARDENED=1) additionally injects:
+   - `CI=1` (forces non-interactive Playwright behavior in case the
+     project's playwright.config overrides `host: 'open'` directly).
+   `CI=1` is scoped to the hardened rerun only because it changes more
+   than reporter behavior (forces `--forbid-only`, increases default
+   retries) — we want that hammer only when the first deterministic
+   run already failed with an interactive-report signature.
+4. Env injection mechanism — apply env at the `env` boundary so it never
+   mutates the parent shell:
+   ```bash
+   local _env_list=()
+  mapfile -t _env_list < <(_normalize_ui_gate_env)
+   _ui_output=$(run_op "Running UI tests" \
+       env "${_env_list[@]}" timeout "$_ui_timeout" \
+       bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+   ```
+   When `_env_list` is empty, `env` with no `KEY=VAL` args is a no-op
+   passthrough and is safe.
+5. Apply the normal-run env to **every** UI subprocess invocation in
+   `_run_ui_test_phase` — not just the first run. That includes the
+   M54 registry-remediation rerun, the hardened rerun, and the existing
+   generic flakiness retry. The env is purely about reporter mode; no
+   path benefits from omitting it.
+6. Framework-specific command rewrites for Cypress/Detox/etc. are
+   explicitly deferred. They return `none` from `_ui_detect_framework`
+   and behave exactly as today.
+
+> **Extension point — m57 (UI Platform Adapter Framework):**
+> `_normalize_ui_gate_env` is the public owner hook that m57 will extend
+> when Cypress, Selenium, and other frameworks need their own non-interactive
+> env profiles. In M126 it stays thin and delegates the Playwright-specific
+> env selection to `_ui_deterministic_env_list`. In m57's model, each adapter
+> registers its own `_ui_gate_env_<framework>()` function; `_normalize_ui_gate_env`
+> dispatches to the registered adapter or falls back to the Playwright path.
+> **Do not add `if [[ "$framework" == "cypress" ]]` branches here** — use
+> the m57 adapter registration instead.
+
+Framework detection priority (first match wins):
+
+1. `UI_FRAMEWORK=playwright` in config (already validated by
+   `lib/config.sh:188-193`).
+2. `UI_TEST_CMD` matches the regex `(^|[[:space:]/])playwright([[:space:]]|$)`
+   (word-boundary match — avoids false positives on paths like
+   `./test-playwright-helper.sh` or arg substrings).
+3. Presence of `playwright.config.{ts,js,mjs,cjs}` in `$PROJECT_DIR`.
+
+If any of the above match, apply the Playwright deterministic env.
+
+### Goal 2 — Add timeout signature detection for interactive report serving
+
+Add a pure parser helper in `lib/gates_ui.sh` (or the helpers file from
+Goal 1):
+
+```bash
+# _ui_timeout_signature EXIT_CODE OUTPUT
+# Prints one of: interactive_report | generic_timeout | none
+# Pure function — no side effects, no logging. Easy to unit-test directly.
+```
+
+Detection logic (order matters — first match wins):
+
+- If `EXIT_CODE == 124` AND `OUTPUT` contains either of:
+  - `Serving HTML report at`
+  - `Press Ctrl+C to quit`
+  classify as `interactive_report`. The exit-124 guard ensures we only
+  treat this as the pathology when `timeout` actually fired; a normal
+  exit-0 run that printed the same line during shutdown is not the bug
+  we're solving.
+- Else if `EXIT_CODE == 124`, classify as `generic_timeout`.
+- Else `none`.
+
+Call this helper only on the failure path (`_ui_exit != 0`).
+
+### Goal 3 — Deterministic re-run branch, mutually exclusive with generic retry
+
+The existing flow in `lib/gates_ui.sh:42-61` is:
+
+```
+run #1 (raw UI_TEST_CMD)
+  └─ if fail: M54 registry remediation (env_setup auto-fix) → rerun on success
+       └─ if still fail: generic flakiness retry (one extra run)
+```
+
+M126 inserts a deterministic-recovery branch and reuses run slots
+rather than stacking them. The replacement flow in `_run_ui_test_phase`:
+
+```
+run #1 (UI_TEST_CMD with normal-run deterministic env)
+  └─ pass → return 0
+  └─ fail → classify with _ui_timeout_signature
+       │
+       ├─ signature == interactive_report:
+       │     SKIP M54 remediation (not an env_setup error)
+       │     SKIP generic flakiness retry (same hang would recur)
+       │     Run hardened rerun (HARDENED=1 env profile)
+       │       └─ pass → log
+       │           "UI tests passed after deterministic reporter hardening."
+       │           return 0
+       │       └─ fail → write diagnosis, return 1
+       │
+       └─ signature in {generic_timeout, none}:
+             Existing M54 remediation path runs unchanged
+             (with normal-run env applied to the rerun)
+             then existing generic flakiness retry runs unchanged
+             (also with normal-run env applied)
+             then existing failure artifact path with diagnosis block
+```
+
+Rationale for mutual exclusion:
+
+- **`interactive_report` path:** M54 remediation only fires for
+  classified env_setup errors (browser-not-installed, etc.); an
+  interactive-report hang produces no such classification, so the
+  remediation branch would be a no-op. A generic retry of the same
+  command without env hardening would just hang again. Worst-case
+  invocation count stays at 2 (run #1 + hardened rerun), bounded by
+  `2 × UI_TEST_TIMEOUT`.
+- **Other failures:** preserve current behavior exactly. No regression
+  in M53/M54 auto-remediation or in flakiness mitigation.
+
+This avoids the current pathology where two identical interactive
+commands time out back-to-back, while not stacking 3-4 subprocess
+invocations on every failure.
+
+Two inline-fallback knobs are introduced for this deterministic-retry
+branch and formalized later by M136 in `config_defaults.sh`:
+
+- `UI_GATE_ENV_RETRY_ENABLED` (default `true`) — when `false`, skip the
+  hardened rerun entirely and write terminal diagnosis immediately on an
+  `interactive_report` signature.
+- `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` (default `0.5`) — the hardened rerun
+  gets `UI_TEST_TIMEOUT * factor`, clamped to at least 1 second and at
+  most the original `UI_TEST_TIMEOUT`, so the non-interactive retry fails
+  faster than the original hung command when the env hardening does not
+  help.
+
+On the `interactive_report` path, the hardened rerun therefore becomes:
+
+```
+run #2 (HARDENED=1 env profile, timeout = UI_TEST_TIMEOUT * UI_GATE_ENV_RETRY_TIMEOUT_FACTOR)
+```
+
+When `UI_GATE_ENV_RETRY_ENABLED=false`, the branch still classifies as
+`interactive_report` and writes diagnosis, but it performs no rerun.
+
+### Goal 4 — Emit structured gate diagnosis for timeout classes
+
+Diagnosis is written **only on terminal gate failure** — never on a
+recovered pass. Both `UI_TEST_ERRORS_FILE` and the appended block in
+`BUILD_ERRORS_FILE` get the same `## UI Gate Diagnosis` section,
+appended **after** the existing `## Output (last N lines)` and
+`## UI Test Failures` blocks (so the build-fix agent sees raw output
+first, then the diagnosis pointing at the suspected class).
+
+Section format:
+
+```markdown
+## UI Gate Diagnosis
+- Timeout class: interactive_report | generic_timeout | none
+- Deterministic env applied: yes (normal) | yes (hardened) | no
+- Hardened rerun attempted: yes | no
+- Suggested action: <single actionable sentence>
+```
+
+Suggested action mapping:
+
+- `interactive_report` →
+  `Command stays alive serving the HTML report; configure the gate to disable report serving (PLAYWRIGHT_HTML_OPEN=never) or pass --reporter=line to UI_TEST_CMD.`
+- `generic_timeout` →
+  `Increase UI_TEST_TIMEOUT only after confirming the command is non-interactive and any required dev server is healthy.`
+- `none` →
+  `UI tests failed without a recognized timeout signature; inspect the captured output for the underlying assertion or runtime error.`
+
+Suppress the diagnosis when the gate ultimately passes (recovered run,
+hardened-rerun success). The clean-state contract from
+`run_build_gate` (`gates.sh:212-213` removes `BUILD_ERRORS_FILE` and
+`UI_TEST_ERRORS_FILE` on overall pass) already handles cleanup — do
+not duplicate that logic in `gates_ui.sh`.
+
+### Goal 5 — Add focused tests for deterministic UI execution
+
+Expand `tests/test_ui_build_gate.sh` (currently 12 tests passing — see
+its header) with deterministic-mode coverage. Existing tests must
+continue to pass unchanged.
+
+All new tests use shell stubs only — no real Playwright, no network,
+no real browsers. Reuse the state-file pattern from existing Test 8
+(`fail_then_pass.sh` with `RETRY_STATE` counter) for invocation-count
+assertions.
+
+Add at minimum:
+
+1. **`unit_signature_parser`** (pure-function unit test)
+   Call `_ui_timeout_signature` directly with crafted arg pairs —
+   no gate invocation. Cover the truth table:
+   - `(124, "...Serving HTML report at...")` → `interactive_report`
+   - `(124, "...Press Ctrl+C to quit")` → `interactive_report`
+   - `(0,   "...Serving HTML report at...")` → `none`
+     (exit-0 guard prevents false positive on shutdown chatter)
+   - `(124, "Test timeout exceeded")` → `generic_timeout`
+   - `(1,   "AssertionError")` → `none`
+
+2. **`deterministic_playwright_env_applied`**
+   Fixture: `UI_TEST_CMD` is a stub script that writes
+   `${TMPDIR}/seen_env.txt` with the value of `$PLAYWRIGHT_HTML_OPEN`
+   then exits 0. Set `UI_FRAMEWORK=playwright`. After running the
+   gate, assert `seen_env.txt` contains `never`. Also assert
+   `$PLAYWRIGHT_HTML_OPEN` is **unset** in the parent shell after the
+   gate returns (no env mutation leaks).
+
+3. **`framework_detection_word_boundary`**
+   Fixture: `UI_FRAMEWORK=""` (force regex/file-based detection),
+   `UI_TEST_CMD="./test-playwright-helper.sh"` where the script is
+   not actually playwright. Assert `_ui_detect_framework` returns
+   `none` (regex must require word boundary, not substring).
+
+4. **`hardened_rerun_executed_once_on_interactive_report`**
+   Fixture: stub script that on its first invocation prints
+   `Serving HTML report at http://localhost:9323. Press Ctrl+C to quit.`
+   and exits 124, on its second invocation prints `ok` and exits 0.
+   Track invocation count via `RETRY_STATE` file. Assert:
+   - Gate returns 0
+   - Stub was invoked exactly **2** times (run #1 + hardened rerun;
+     M54 remediation and generic retry must be skipped)
+   - Log line `UI tests passed after deterministic reporter hardening.`
+     was emitted
+
+5. **`generic_timeout_preserves_existing_retry_path`**
+   Fixture: stub script that prints `Test timeout exceeded` and
+   exits 124 on every invocation (no interactive-report signature).
+   Assert:
+   - Gate returns 1
+   - Stub was invoked exactly **2** times (run #1 + existing
+     generic flakiness retry — same as today)
+   - No hardened rerun happened
+
+6. **`diagnosis_block_written_on_terminal_failure`**
+   Fixture: same as Test 4 but stub stays interactive-report on the
+   hardened rerun too. Assert `UI_TEST_ERRORS.md` and
+   `BUILD_ERRORS.md` both contain:
+   - Literal heading `## UI Gate Diagnosis`
+   - `Timeout class: interactive_report`
+   - `Hardened rerun attempted: yes`
+   - The full `Suggested action:` sentence for `interactive_report`
+
+7. **`diagnosis_suppressed_on_recovered_pass`**
+   Fixture: same as Test 4 (recovers on hardened rerun). Assert
+   neither `UI_TEST_ERRORS.md` nor `BUILD_ERRORS.md` exists (the
+   existing `gates.sh:212-213` cleanup must still fire).
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/gates_ui.sh` | Add deterministic env normalization, interactive-report timeout signature detection, hardened rerun branch, and diagnosis metadata emission. Currently 117 lines; estimated +120-160 LOC. If the result exceeds the 300-line ceiling (CLAUDE.md non-negotiable rule 8), extract the new helpers (`_ui_detect_framework`, `_ui_deterministic_env_list`, `_normalize_ui_gate_env`, `_ui_timeout_signature`, diagnosis writers) into `lib/gates_ui_helpers.sh` and source it from `gates_ui.sh`. |
+| `tests/test_ui_build_gate.sh` | Add seven deterministic-mode tests (see Goal 5). Update the header comment block and the final "All UI build gate tests passed (12/12)" summary to the new total. Currently 305 lines; well under the test-file budget. |
+| `docs/reference/stages.md` | Update the build-gate description (around line 105–110) to note that the UI gate phase now applies a deterministic env profile for Playwright (`PLAYWRIGHT_HTML_OPEN=never`) and recovers once via a hardened rerun if it detects an interactive-report timeout signature. |
+| `docs/troubleshooting/common-errors.md` | Add a new entry under `## Pipeline Errors` titled `### "UI tests timed out with interactive report serving"` covering the symptom (`Serving HTML report at ... Press Ctrl+C to quit` in the captured output, exit 124), the automatic recovery, and how to permanently fix it in the project's playwright config or `UI_TEST_CMD`. |
+
+## Acceptance Criteria
+
+- [ ] When `_ui_detect_framework` returns `playwright`, the UI gate subprocess sees `PLAYWRIGHT_HTML_OPEN=never` in its environment, and `$PLAYWRIGHT_HTML_OPEN` remains unset in the parent shell after the gate returns (no env leak).
+- [ ] The hardened-rerun profile additionally sets `CI=1`; the normal-run profile does not.
+- [ ] `_ui_detect_framework` returns `playwright` for `UI_FRAMEWORK=playwright`, for `UI_TEST_CMD` matching the word-boundary regex, and when `playwright.config.{ts,js,mjs,cjs}` exists in `$PROJECT_DIR`. It returns `none` for the false-positive case `./test-playwright-helper.sh`.
+- [ ] `_ui_timeout_signature` is a pure function (no side effects, no logging) and produces the truth table specified in Goal 5 Test 1.
+- [ ] When the first run fails with `interactive_report` signature, Tekhton invokes `UI_TEST_CMD` exactly **2** times total (run #1 + hardened rerun); M54 remediation and the existing generic flakiness retry are skipped on this branch.
+- [ ] When the first run fails with `generic_timeout` or `none` signature, the existing M54 remediation path and the existing generic flakiness retry both run unchanged (with the normal-run env applied to every invocation).
+- [ ] If the hardened rerun succeeds, the gate returns 0, no diagnosis or error file is left on disk (existing `gates.sh:212-213` cleanup), and the log contains the line `UI tests passed after deterministic reporter hardening.`.
+- [ ] `UI_GATE_ENV_RETRY_ENABLED=false` suppresses the hardened rerun on the `interactive_report` branch without changing classification or diagnosis content.
+- [ ] `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` scales only the hardened-rerun timeout; it never mutates the configured primary `UI_TEST_TIMEOUT` in the parent shell.
+- [ ] If the hardened rerun fails, both `UI_TEST_ERRORS.md` and `BUILD_ERRORS.md` contain a `## UI Gate Diagnosis` section with the four bullet fields from Goal 4 populated.
+- [ ] All 12 existing `tests/test_ui_build_gate.sh` tests still pass; the seven new tests from Goal 5 also pass; the summary line and header comment block reflect the new total.
+- [ ] New tests run with no network access and no real Playwright/browser invocation.
+- [ ] `shellcheck` reports zero warnings on every modified `.sh` file.
+- [ ] Every modified `.sh` file is under the 300-line ceiling, or the extraction described in the Files Modified note has been performed.
+
+## Watch For
+
+- **`PLAYWRIGHT_HTML_OPEN` and `CI` must not leak into the parent
+  shell.** Goal 5 Test 2 asserts the parent shell environment is
+  unmodified after the gate returns. Apply env at the
+  `env KEY=VAL ...` boundary on the subprocess invocation; never
+  `export` either var in `lib/gates_ui.sh`.
+- **`_ui_timeout_signature` is a pure function.** No `log`, no `warn`,
+  no file writes. The unit test (Goal 5 Test 1) calls it directly; any
+  side effect breaks the test and complicates downstream reuse from
+  the diagnose stage.
+- **Word-boundary regex in `_ui_detect_framework`.** Goal 5 Test 3
+  covers the false-positive case `./test-playwright-helper.sh`. Use
+  `(^|[[:space:]/])playwright([[:space:]]|$)`, not a substring match.
+- **Diagnosis is suppression-on-pass.** The recovered-pass path
+  (hardened rerun succeeds) must leave no `BUILD_ERRORS.md` or
+  `UI_TEST_ERRORS.md` on disk. The existing `gates.sh:212-213` cleanup
+  handles this — do not duplicate cleanup logic in `gates_ui.sh`.
+- **Worst-case invocation budget is 2.** On the `interactive_report`
+  branch, the M54 remediation and the generic flakiness retry are
+  both skipped. Stacking them would burn `4 × UI_TEST_TIMEOUT` per
+  failure.
+- **300-line ceiling.** `lib/gates_ui.sh` is 117 lines today; +120-160
+  LOC will exceed 300. Extract helpers into `lib/gates_ui_helpers.sh`
+  if needed (already noted in Files Modified).
+
+## Seeds Forward
+
+- **M127 — Mixed-log classification hardening.** M127's classifier
+  reads the same UI-gate output that M126 produces. Deterministic gate
+  execution is the precondition for cleaner classification: without
+  M126, even legitimate `noncode_dominant` outputs are contaminated by
+  the interactive-reporter banner and timeout chatter, producing
+  inconsistent routing decisions. M127 also adds an explicit
+  non-diagnostic filter for the report-serving lines — they are the
+  symptom M126 fixes at the source.
+- **M129 — Failure context schema v2.** The `## UI Gate Diagnosis`
+  block written on terminal failure (Goal 4) is a natural source for
+  `primary_cause.signal` — for example `ui_timeout_interactive_report`
+  for the `interactive_report` class. Keep the timeout-class token
+  vocabulary in `_ui_timeout_signature` stable (`interactive_report`,
+  `generic_timeout`, `none`) so M129 can map it 1:1 without a
+  translation layer.
+- **M130 — Causal-context-aware recovery routing.** M130 introduces a
+  `retry_ui_gate_env` recovery action that exports
+  `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1` and re-runs the UI gate.
+  M126 does not yet honor this knob, but the cleanest place to wire it
+  in is the framework-detection priority added in Goal 1. Consider
+  adding a Priority 0 rule: `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1`
+  → apply hardened env regardless of detected framework, and
+  `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` → short-circuit the
+  normalizer entirely (user override). If M126 ships without this
+  hook, M130 will need a follow-up patch to either implement it itself
+  or invoke a different mechanism, so addressing it here costs less.

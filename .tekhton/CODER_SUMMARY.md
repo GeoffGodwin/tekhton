@@ -1,50 +1,113 @@
 # Coder Summary
-
 ## Status: COMPLETE
 
 ## What Was Implemented
-Truncated long stage labels in the TUI Stage Timings panel so a substage
-breadcrumb like "wrap-up » running final static analyzer" no longer pushes
-the right-aligned time/turns columns off-screen.
+M126 — Deterministic UI Gate Execution & Non-Interactive Reporter Control.
+The UI test phase of the build gate now applies a deterministic env profile
+to every subprocess invocation, classifies failure timeouts into a stable
+token vocabulary, and recovers from interactive-report hangs without burning
+the existing M54 / generic-retry slots.
 
-- Promoted `_truncate(s, limit)` from `tools/tui_render.py` into
-  `tools/tui_render_common.py` so it can be reused by sibling render modules
-  without creating a circular import through `tui_render`.
-- Updated `tools/tui_render.py` to import `_truncate` from
-  `tui_render_common` (re-exported via the existing `# noqa: F401` line so
-  `tui_hold.py`'s `from tui_render import ... _truncate` continues to work
-  unchanged).
-- Imported `_truncate` in `tools/tui_render_timings.py` and applied a
-  32-char cap (`_LABEL_MAX_CHARS`) to both completed-stage labels and the
-  live-row `display_label` (which holds the breadcrumb form
-  `f"{current_label} » {substage_label}"`). The column's existing
-  `overflow="fold"` setting still acts as a backstop on narrow terminals.
+Concrete changes:
+
+- `lib/gates_ui_helpers.sh` (NEW). Five pure helpers plus one writer:
+  - `_ui_detect_framework` — priority order: `UI_FRAMEWORK=playwright`,
+    word-boundary regex `(^|[[:space:]/])playwright([[:space:]]|$)` on
+    `UI_TEST_CMD`, then `playwright.config.{ts,js,mjs,cjs}` in
+    `$PROJECT_DIR`. Returns `playwright` or `none`.
+  - `_ui_deterministic_env_list HARDENED?` — emits `PLAYWRIGHT_HTML_OPEN=never`
+    on the normal-run profile; adds `CI=1` only when HARDENED=1.
+  - `_normalize_ui_gate_env` — owner hook that delegates to the env list
+    helper. M57 will extend this for additional adapters; do not add
+    framework branches inline.
+  - `_ui_timeout_signature EXIT_CODE OUTPUT` — pure classifier returning
+    `interactive_report` | `generic_timeout` | `none`. No logging, no
+    file writes. Exit-124 guard prevents false positives on shutdown
+    chatter.
+  - `_ui_hardened_timeout BASE FACTOR` — clamps to `[1, BASE]` so the
+    hardened rerun never exceeds the original `UI_TEST_TIMEOUT`.
+  - `_ui_write_gate_diagnosis` — appends `## UI Gate Diagnosis` to both
+    `UI_TEST_ERRORS_FILE` and `BUILD_ERRORS_FILE` after the existing
+    raw-output blocks.
+
+- `lib/gates_ui.sh`. Refactored `_run_ui_test_phase`:
+  - Every subprocess invocation runs through a new `_ui_run_cmd` wrapper
+    that materializes the env list via `mapfile` and passes it at the
+    `env(1)` boundary — no env mutation leaks into the parent shell.
+  - On failure, `_ui_timeout_signature` classifies the run.
+  - `interactive_report` branch skips M54 remediation and the generic
+    flakiness retry; performs a single hardened rerun under the
+    `UI_GATE_ENV_RETRY_*` knobs (inline `${VAR:-default}` fallbacks —
+    M136 will formalize these in `config_defaults.sh`).
+  - `generic_timeout` and `none` branches run the existing M54
+    remediation and generic flakiness retry exactly as before.
+  - Diagnosis is written only on terminal failure; `gates.sh:212-213`
+    cleanup handles suppression on recovered pass.
+
+- `tests/test_ui_build_gate.sh`. Added 7 tests (13–19) covering: pure
+  signature classifier truth table, deterministic env reaches subprocess
+  while parent stays unset, word-boundary framework detection,
+  hardened-rerun invocation count and success log line, generic-timeout
+  retry path preserved, diagnosis block format on terminal failure, and
+  diagnosis suppression on recovered pass. Header comment block and
+  summary line updated to 19/19. Added `unset _TUI_ACTIVE` early so
+  `log()` output is deterministic regardless of caller environment.
+
+- `tekhton.sh`. Added `source "${TEKHTON_HOME}/lib/gates_ui_helpers.sh"`
+  immediately after `gates_phases.sh` and before `gates_ui.sh` so the
+  consumer sees the helpers at parse time.
+
+- Docs:
+  - `docs/reference/stages.md` — Build gate section now describes the
+    deterministic UI test phase, env profile, hardened rerun, and
+    diagnosis emission.
+  - `docs/troubleshooting/common-errors.md` — New entry under
+    `## Pipeline Errors`: "UI tests timed out with interactive report
+    serving" with symptom, automatic recovery, and permanent fixes.
+  - `ARCHITECTURE.md` — Added `lib/gates_ui_helpers.sh` to the Layer 3
+    library catalog with helper-by-helper signatures and source-order
+    note.
 
 ## Root Cause (bugs only)
-The Stage Timings panel sits in a ratio=1 child of the body (≈1/3 of the
-screen). The first grid column was set to `no_wrap=False, overflow="fold"`
-so wrapping would engage when content exceeded the available width, but in
-practice Rich's `Table.grid` content-based allocation gave the long label
-column whatever it asked for, pushing the right-justified time/turns
-columns off the visible width before wrapping triggered. Capping the label
-text at 32 chars before it reaches the grid keeps the row at one printable
-line and leaves room for the time/turns cells.
+N/A — feature implementation, not a bug fix. The motivating defect
+(bifl-tracker M03 hang) is described in the milestone overview; this
+milestone makes gate execution deterministic so future classification
+and routing layers (M127–M130) can reason over stable signal.
 
 ## Files Modified
-- `tools/tui_render_common.py` — added `_truncate(s, limit)` helper.
-- `tools/tui_render.py` — removed the local `_truncate` definition; now
-  imports it from `tui_render_common` (re-exported for `tui_hold`).
-- `tools/tui_render_timings.py` — imported `_truncate`, added
-  `_LABEL_MAX_CHARS = 32`, and applied truncation to both the completed-row
-  label and the live-row `display_label` (substage breadcrumb).
+- `lib/gates_ui_helpers.sh` (NEW) — 163 lines.
+- `lib/gates_ui.sh` — refactored to apply deterministic env on every
+  invocation, branch on timeout signature, emit diagnosis. 183 lines.
+- `tests/test_ui_build_gate.sh` — added 7 tests (13–19), refreshed
+  header and summary, unset `_TUI_ACTIVE` for deterministic logging.
+  490 lines.
+- `tekhton.sh` — sources the new helpers between `gates_phases.sh` and
+  `gates_ui.sh` (one line added).
+- `ARCHITECTURE.md` — added catalog entry for `lib/gates_ui_helpers.sh`.
+- `docs/reference/stages.md` — added UI test phase paragraph to Build
+  gate section.
+- `docs/troubleshooting/common-errors.md` — new entry for the
+  interactive-report timeout class.
 
 ## Docs Updated
-None — no public-surface changes in this task. `_truncate` and
-`_LABEL_MAX_CHARS` are internal renderer helpers; no CLI flag, config key,
-JSON schema, or exported function signature changed.
+- `docs/reference/stages.md` — documents the new deterministic UI gate
+  behavior (env profile, hardened rerun, diagnosis).
+- `docs/troubleshooting/common-errors.md` — new troubleshooting entry
+  for the interactive_report timeout class with permanent-fix guidance.
+- `ARCHITECTURE.md` — catalog entry for the new helpers file.
 
 ## Human Notes Status
-None — no human notes were listed for this task.
+No human notes were attached to this task (HUMAN_NOTES.md contained
+only the boilerplate template).
+
+## Verification
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — zero warnings.
+- `bash tests/run_tests.sh` — 454/454 shell tests pass, 247/247 Python
+  tests pass.
+- `bash tests/test_ui_build_gate.sh` — 19/19 tests pass (12 baseline +
+  7 new M126 tests).
+- File length: every modified `.sh` file under the 300-line ceiling
+  (gates_ui.sh: 183, gates_ui_helpers.sh: 163).
 
 ## Observed Issues (out of scope)
 None.
