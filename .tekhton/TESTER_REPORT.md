@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_ui_build_gate.sh` — Test 20: UI_GATE_ENV_RETRY_ENABLED=false skips hardened rerun, falls through to terminal-failure path, and preserves diagnosis content
+- [x] `tests/test_m127_buildfix_routing.sh` — _bf_read_raw_errors fallback path and noncode_dominant terminal behavior (exit 1 + write_pipeline_state env_failure)
 
 ## Test Run Results
-Passed: 20  Failed: 0
+Passed: 7  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_ui_build_gate.sh`
+- [x] `tests/test_m127_buildfix_routing.sh`

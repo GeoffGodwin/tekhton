@@ -843,6 +843,8 @@ rm -rf "$_TEST_TMPDIR"
 # =============================================================================
 
 echo
+# M127 routing tests live in tests/test_m127_routing.sh.
+
 echo "--------------------------------------"
 echo "  Passed: ${PASS}  Failed: ${FAIL}"
 echo "--------------------------------------"

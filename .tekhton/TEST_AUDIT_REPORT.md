@@ -1,39 +1,73 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 20 test functions
+Tests audited: 1 file (tests/test_m127_buildfix_routing.sh), 7 assertions across 4 test sections
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: _ui_hardened_timeout boundary clamps not directly tested
-- File: tests/test_ui_build_gate.sh (gap — no specific line)
-- Issue: `_ui_hardened_timeout` is a pure function with two explicit clamp invariants: result ≥ 1 and result ≤ BASE. Neither boundary is exercised directly. The function is only reachable via tests 16 and 18, both of which use the default factor (0.5) and `UI_TEST_TIMEOUT=10`, producing 5 — well within bounds. A future regression that mis-orders or removes either clamp would pass undetected.
-- Severity: LOW
-- Action: Add a focused unit test calling `_ui_hardened_timeout` with FACTOR=2.0 (should clamp down to BASE) and FACTOR=0.0 (should clamp up to 1). Pure function calls; no gate setup required.
-
-#### COVERAGE: Test 17 implicitly depends on error-pattern registry not matching "Test timeout exceeded"
-- File: tests/test_ui_build_gate.sh:427
-- Issue: Test 17 asserts exactly 2 stub invocations (run #1 + generic flakiness retry). The implementation (`gates_ui.sh:104-115`) calls `_gate_try_remediation` first; if it returns 0 a remediation re-run fires, making the total 3. The test silently relies on `classify_build_errors_all` returning empty for the output "Test timeout exceeded". That is true today — the pattern registry targets env_setup errors — but the dependency is undocumented. If a future milestone extends the registry to classify timeout messages, test 17 will fail with count=3 rather than 2.
+#### ISOLATION: _safe_read_file sourced optionally but called unconditionally
+- File: tests/test_m127_buildfix_routing.sh:24
+- Issue: `lib/prompts.sh` is sourced with `2>/dev/null || true` (graceful / optional),
+  but `_bf_read_raw_errors()` — called directly in test sections 1 and 2 — delegates
+  to `_safe_read_file`, which is defined in `lib/prompts.sh`. If prompts.sh fails to
+  load for any reason (e.g., new unmet dependency, CI environment difference), the
+  two `_bf_read_raw_errors` test sections crash with "command not found" under
+  `set -euo pipefail` rather than reporting a clean test failure. Every other test
+  file in this repo that sources a stage using `_safe_read_file` defines an explicit
+  stub (e.g., test_docs_agent_stage_smoke.sh:48, test_audit_tests.sh:33,
+  test_clarify_handle.sh:28). This file does not.
 - Severity: MEDIUM
-- Action: Make the dependency explicit: set `REMEDIATION_MAX_ATTEMPTS=0` before the test and restore it afterwards, or temporarily override `attempt_remediation` with a no-op stub. Either approach pins the invocation-count assertion to the generic-retry path without relying on registry behavior.
+- Action: Add an explicit stub immediately after the prompts.sh source line:
+  `_safe_read_file() { cat "$1" 2>/dev/null || true; }`
+  This makes tests 1 and 2 environment-independent without changing their behavior
+  when prompts.sh is available.
 
-#### ISOLATION: TEKHTON_DIR not pinned in test file; ambient value can redirect error-file writes
-- File: tests/test_ui_build_gate.sh:35-59
-- Issue: Line 35 creates the runtime directory via `${TEKHTON_DIR:-.tekhton}` (with fallback), but lines 56-59 derive `BUILD_ERRORS_FILE`, `UI_TEST_ERRORS_FILE`, etc. from `${TEKHTON_DIR}` without a fallback. If a caller exports `TEKHTON_DIR` pointing to the real project's `.tekhton/` directory (e.g., from an enclosing pipeline run), error-file writes and `assert_file_exists` / `assert_file_contains` checks in tests 14–20 target live project state rather than the temp fixture. All new M126 tests pre-clean expected files with `rm -f`, which mitigates read-state pollution, but not write-side contamination. This harness design predates M126.
+#### COVERAGE: mixed_uncertain and unknown_only routing arms lack terminal behavior assertions
+- File: tests/test_m127_buildfix_routing.sh (file-level)
+- Issue: The file covers the noncode_dominant arm (exit 1 + write_pipeline_state env_failure)
+  and the _bf_read_raw_errors primary/fallback paths. The mixed_uncertain arm
+  (_bf_emit_routing_diagnosis + _bf_invoke_build_fix with extra context) and the
+  unknown_only arm (_bf_invoke_build_fix with low-confidence guidance) have no
+  orchestrator-level terminal behavior test in either test_m127_buildfix_routing.sh
+  or test_m127_routing.sh. Token routing for those arms is verified in
+  test_m127_routing.sh, but what happens after the token is dispatched (diagnosis
+  file written, build-fix invoked) is untested at the _run_buildfix_routing level.
+  The tester explicitly scoped to reviewer-flagged gaps; this is a future coverage
+  debt, not a defect in the current tests.
 - Severity: LOW
-- Action: Add `TEKHTON_DIR="${TMPDIR}/.tekhton"` immediately after `PROJECT_DIR="$TMPDIR"` (line 37), matching the explicit pinning pattern used in `tests/test_docs_agent_stage_smoke.sh:18` and `tests/test_dedup_callsites.sh:198`. Zero-cost change that eliminates the ambient-export risk.
+- Action: In a future cycle, add two subshell tests mirroring the noncode_dominant
+  test: one for mixed_uncertain (verify _bf_emit_routing_diagnosis is called + exit
+  code from _bf_invoke_build_fix), one for unknown_only (verify _bf_invoke_build_fix
+  receives the low-confidence extra_context block).
 
-### No Issues Found In
+#### None (remaining rubric points)
 
-**Assertion Honesty (PASS):** All assertions in tests 13–20 are derived from the implementation logic in `lib/gates_ui_helpers.sh` and `lib/gates_ui.sh`. The truth-table values in test 13 (`interactive_report`, `generic_timeout`, `none`) map exactly to `_ui_timeout_signature`'s branch conditions (`exit_code == 124` guard, banner substring checks). The invocation counts in tests 16, 17, and 20 match the implementation's branching structure. No hard-coded magic values that are absent from the implementation were found.
+Assertion honesty — CLEAR: SENTINEL values are written by the test itself; exit codes
+come from real function execution through the real classify_routing_decision call chain;
+the write_pipeline_state arg capture tests real positional argument ordering
+(arg1="coder", arg2="env_failure") matching the implementation at
+stages/coder_buildfix.sh:139-144.
 
-**Implementation Exercise (PASS):** Tests 13 and 15 call `_ui_timeout_signature` and `_ui_detect_framework` directly against real implementations. Tests 14 and 16–20 drive the full `run_build_gate` path, exercising `_ui_run_cmd`, `_normalize_ui_gate_env`, and `_ui_write_gate_diagnosis` through real code. No function under test is mocked.
+Weakening — CLEAR: The test_gates_bypass_flow.sh Test 2 assertion flip (was "returns 1",
+now "returns 0") is documented inline with a pointer to M127 and correctly reflects
+the intentional semantic change to has_only_noncode_errors — unmatched/noise lines
+no longer silently coerce to code. This is a legitimate update, not weakening.
 
-**Weakening Detection (PASS):** The coder added tests 13–19; the tester added test 20. No pre-existing assertions were removed, broadened, or replaced. The `unset _TUI_ACTIVE` guard added at line 43 improves log-output determinism without weakening any assertion.
+Implementation exercise — CLEAR: The noncode_dominant subshell test exercises the
+real classify_routing_decision → load_error_patterns → pattern-registry path with
+a live "ECONNREFUSED 127.0.0.1:5432" input that genuinely matches the service_dep
+pattern (error_patterns_registry.sh:53), producing the expected noncode_dominant
+token via pure integer arithmetic. Mocks are minimal and targeted: only the four
+side-effectful helpers (write_pipeline_state, append_human_action, _build_resume_flag,
+run_build_gate) are stubbed.
 
-**Scope Alignment (PASS):** The only deleted file (`.tekhton/JR_CODER_SUMMARY.md`) is a runtime data artifact with no test imports. All sourced files (`gates_ui_helpers.sh`, `gates_ui.sh`, `gates.sh`, `gates_phases.sh`, `error_patterns.sh`, `error_patterns_remediation.sh`) exist and match the implementation under test. No stale references to renamed or removed functions were found.
+Scope alignment — CLEAR: All function references (_bf_read_raw_errors,
+_run_buildfix_routing, classify_routing_decision, has_only_noncode_errors) resolve
+to current code in lib/error_patterns_classify.sh and stages/coder_buildfix.sh.
+No orphaned or stale references detected.
 
-**Test Naming (PASS):** All new assertion labels encode both the scenario and the expected outcome (e.g., "13c exit-0 with banner classifies as none (not interactive_report)", "16 stub invoked exactly 2 times (run #1 + hardened rerun)", "20 stub invoked exactly 1 time (no hardened rerun)"). No opaque or tautological names found.
-
-**Stale Symbols (PASS):** All shell-detected orphans (`cat`, `cd`, `chmod`, `cp`, etc.) are POSIX built-ins. The static orphan detector does not have visibility into built-in commands; these are false positives. No references to deleted or renamed library functions were found.
+Freshness samples (test_init_synthesize.sh, test_init_synthesize_marker_appending.sh,
+test_init_synthesize_preamble_trim.sh) — UNAFFECTED: M127 does not touch
+init_synthesize and these files reference no error-classification symbols. No
+staleness risk.

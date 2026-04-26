@@ -38,11 +38,15 @@ Each stage is a single function sourced by `tekhton.sh`:
   - Runs build gate → escalates to build-fix agents on failure
   - Runs analyze cleanup as a completion gate
   - Archives human notes on success
-  - Sources sub-stages: `coder_prerun.sh`
+  - Sources sub-stages: `coder_prerun.sh`, `coder_buildfix.sh`
 
 - **`stages/coder_prerun.sh`** — Pre-coder clean sweep (M92)
   - Sourced by `coder.sh` — do not run directly
   - Provides: `run_prerun_clean_sweep()` and `_run_prerun_fix_agent()` — spawns restricted fix agent when tests fail before the coder runs; re-captures baseline on success, warns and proceeds on failure
+
+- **`stages/coder_buildfix.sh`** — Confidence-based build-fix routing (M127)
+  - Sourced by `coder.sh` — do not run directly
+  - Provides: `_run_buildfix_routing()`, `_bf_emit_routing_diagnosis()`, `_bf_invoke_build_fix()`. Replaces the legacy binary `has_only_noncode_errors` bypass with a four-token routing decision (`code_dominant`, `noncode_dominant`, `mixed_uncertain`, `unknown_only`) emitted by `lib/error_patterns_classify.sh`. Re-exports `LAST_BUILD_CLASSIFICATION` after capturing the routing token so downstream M128/M130 consumers see it.
 
 - **`stages/review.sh`** → `run_stage_review()`
   - Iterates up to `MAX_REVIEW_CYCLES`
@@ -167,6 +171,7 @@ Each stage is a single function sourced by `tekhton.sh`:
 - **`lib/indexer.sh`** — Repo map orchestration and Python tool invocation (v3). `check_indexer_available()`, `run_repo_map()`, `get_repo_map_slice()`. Gracefully degrades when Python/tree-sitter is unavailable. Sources `indexer_helpers.sh`.
 - **`lib/indexer_audit.sh`** — Startup grammar audit (Milestone 123). `_indexer_run_startup_audit()` invokes `audit_grammars()` from the Python loader, classifies each declared extension as LOADED / MISSING / MISMATCH, and emits `warn` for API-mismatch extensions (the #181 bug class). Gated by `INDEXER_STARTUP_AUDIT`. Sourced by `tekhton.sh` after `indexer.sh` — do not run directly.
 - **`lib/error_patterns_remediation.sh`** — Auto-remediation engine for classified build/test errors (Milestone 54). `attempt_remediation()` executes safe-rated remediation commands from the error pattern registry, with blocklist enforcement, deduplication, and max-attempt limits. Routes non-automatable issues to `HUMAN_ACTION_REQUIRED.md`. All actions logged to causal event log. Sourced by `tekhton.sh` after `error_patterns.sh`.
+- **`lib/error_patterns_classify.sh`** — Confidence-based mixed-log classifier (Milestone 127). `_is_non_diagnostic_line()` filters npm warnings, progress lines, ANSI/whitespace-only, and report-serving banners with allow-list-first failure-term precedence. `classify_build_errors_with_stats()` emits per-record category counts plus `total_matched`/`total_lines`/`unmatched_lines` summaries — unmatched lines are explicitly unknown, never silently coerced to `code`. `has_explicit_code_errors()` returns true only when a code-category pattern matches. `classify_routing_decision()` emits one of `code_dominant | noncode_dominant | mixed_uncertain | unknown_only` and exports `LAST_BUILD_CLASSIFICATION` (cross-milestone contract — read by M128 build-fix continuation loop and M130 causal-context recovery routing). Sourced by `error_patterns.sh`.
 - **`lib/gates_phases.sh`** — Extracted build gate phase functions with remediation loops (Milestone 54). `_gate_phase_analyze()` and `_gate_phase_compile()` run static analysis and compile checks respectively, each with auto-remediation retry on failure. Sourced by `tekhton.sh` after `gates.sh`.
 - **`lib/gates_ui_helpers.sh`** — Deterministic UI gate execution helpers (Milestone 126). `_ui_detect_framework()` resolves the framework via `UI_FRAMEWORK`, a word-boundary regex on `UI_TEST_CMD`, or a `playwright.config.{ts,js,mjs,cjs}` file. `_ui_deterministic_env_list HARDENED?` and the owner-hook `_normalize_ui_gate_env HARDENED?` emit the env list applied at the `env(1)` boundary on every UI subprocess invocation. `_ui_timeout_signature EXIT_CODE OUTPUT` is a pure classifier (`interactive_report` | `generic_timeout` | `none`). `_ui_hardened_timeout BASE FACTOR` and `_ui_write_gate_diagnosis` round out the helpers consumed by `gates_ui.sh`. Sourced by `tekhton.sh` after `gates_phases.sh` and before `gates_ui.sh`.
 - **`lib/preflight_services.sh`** — Service readiness probing for pre-flight validation (Milestone 56). `_preflight_check_services()` orchestrates service detection and port probing. `_preflight_check_docker()` validates Docker daemon availability. `_preflight_check_dev_server()` detects dev server dependencies from Playwright config. `_pf_emit_services_report()` renders the services section of `PREFLIGHT_REPORT.md`. Sourced by `tekhton.sh` after `preflight.sh`.

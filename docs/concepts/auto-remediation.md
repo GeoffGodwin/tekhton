@@ -78,6 +78,37 @@ The cap is intentional. If `npm install` failed twice in a row, automation
 isn't going to fix it on the third try — something deeper is wrong and the
 human should look.
 
+## Confidence-Based Routing for Mixed Logs (M127)
+
+Real build output is rarely uniform. UI test logs especially mix Playwright
+timeouts, npm warnings, progress lines, ANSI bars, and report-serving banners.
+Pre-M127, every line that didn't match a registry pattern was implicitly
+classified as `code`, so even one unmatched line could force the build-fix
+agent to chase a phantom code error in an environment-only failure.
+
+M127 replaces the binary "all-noncode-or-bust" decision with a four-token
+confidence model. The classifier now runs a noise filter before pattern
+matching and decides routing based on signal counts:
+
+| Token | When | Routing |
+|-------|------|---------|
+| `code_dominant` | Code matches outnumber non-code matches | Run build-fix agent (legacy path) |
+| `noncode_dominant` | Pure non-code matches at ≥60% of considered lines | Skip build-fix; route to `HUMAN_ACTION_REQUIRED.md` |
+| `mixed_uncertain` | Both signals present, code is outnumbered | Write `BUILD_ROUTING_DIAGNOSIS.md`, then run build-fix with mixed-context guidance |
+| `unknown_only` | No recognized signatures (or low-confidence non-code) | Run bounded build-fix with low-confidence guidance — manual triage may still be required |
+
+The noise filter applies an **allow-list before deny-list** rule: a line
+containing `error`, `failed`, `timeout`, `ECONNREFUSED`, or `TS[0-9]+` is
+always kept, even if its shape would otherwise look like noise (e.g. `npm warn:
+TS2304 detected`). Only lines that fail the allow-list AND match a deny-list
+pattern (npm warnings, progress counters like `[1/8]`, `Serving HTML report
+at`, ANSI-only lines) are excluded from classification statistics.
+
+The decision token is exported as `LAST_BUILD_CLASSIFICATION` for downstream
+consumers. M128's build-fix continuation loop reads it to detect when routing
+remains `noncode_dominant` across attempts; M130's recovery router branches on
+the four tokens directly.
+
 ## Pre-flight Validation (M55)
 
 The build gate is reactive: it sees errors only after the coder has spent turns

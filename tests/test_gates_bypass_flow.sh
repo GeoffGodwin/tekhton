@@ -88,13 +88,18 @@ else
 fi
 
 # =============================================================================
-# Test 2: Annotated BUILD_ERRORS.md (written by gate) → markdown headers
-#         cause unclassified fallback → has_only_noncode_errors returns 1.
-#         This validates that the raw file path is always preferred over
-#         BUILD_ERRORS.md (Phase 4 now writes BUILD_RAW_ERRORS.txt, so this
-#         fallback only fires if raw file is missing for an unforeseen reason).
+# Test 2: Annotated BUILD_ERRORS.md (written by gate) — the file embeds the
+#         raw error lines under "## Analyze Errors" so noncode signals are
+#         present in the markdown form too.
+#
+#         Post-M127, unmatched markdown header lines no longer fall back to
+#         "code" — they are explicit unknowns. With the raw ECONNREFUSED lines
+#         still present in the body, the markdown therefore correctly
+#         classifies as noncode-only and bypass triggers. This is the M127
+#         fix to the bifl-tracker class of input (env failure + unmatched
+#         noise) — see m127-mixed-log-classification-hardening.md Watch For.
 # =============================================================================
-echo "=== Annotated BUILD_ERRORS.md markdown headers → no bypass (validates raw-file preference) ==="
+echo "=== Annotated BUILD_ERRORS.md (M127): noncode signal in body → bypass ==="
 
 # BUILD_ERRORS.md was written by the gate in Test 1 with annotated format
 if [[ -f "${BUILD_ERRORS_FILE}" ]]; then
@@ -105,18 +110,19 @@ fi
 
 md_content=$(cat "${BUILD_ERRORS_FILE}")
 
-# Markdown headers like "# Build Errors — ..." are unclassified → "code" fallback
-# so has_only_noncode_errors returns 1 — confirms raw file must be preferred
-if ! has_only_noncode_errors "$md_content"; then
-    pass  # Expected: markdown headers prevent bypass — raw file is the correct input
+# M127 (was: returned 1 because unmatched → code fallback). The annotated
+# markdown contains the raw ECONNREFUSED line in its body; with explicit
+# unknown semantics, noncode dominates and bypass triggers.
+if has_only_noncode_errors "$md_content"; then
+    pass
 else
-    fail "has_only_noncode_errors on annotated BUILD_ERRORS.md should return 1 (markdown headers → code fallback)"
+    fail "has_only_noncode_errors on annotated BUILD_ERRORS.md should return 0 (M127: noncode body signal triggers bypass)"
 fi
 
-# Cross-check: if we strip markdown and pass only the raw error line, bypass DOES trigger
+# Cross-check: bare raw line still bypasses (unchanged from pre-M127).
 raw_only="ECONNREFUSED 127.0.0.1:5432"
 if has_only_noncode_errors "$raw_only"; then
-    pass  # Confirms: the raw error alone would bypass; it's the markdown overhead that blocks it
+    pass
 else
     fail "has_only_noncode_errors on bare ECONNREFUSED line should return 0"
 fi
@@ -224,6 +230,9 @@ if has_only_noncode_errors "$resource_raw"; then
 else
     fail "Resource-only errors (EADDRINUSE) should trigger bypass"
 fi
+
+# M127 routing tests (decision tokens, diagnosis emission, build-fix sub-stage)
+# live in tests/test_m127_routing.sh.
 
 # =============================================================================
 # Summary

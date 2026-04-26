@@ -1,113 +1,185 @@
 # Coder Summary
+
 ## Status: COMPLETE
 
 ## What Was Implemented
-M126 — Deterministic UI Gate Execution & Non-Interactive Reporter Control.
-The UI test phase of the build gate now applies a deterministic env profile
-to every subprocess invocation, classifies failure timeouts into a stable
-token vocabulary, and recovers from interactive-report hangs without burning
-the existing M54 / generic-retry slots.
 
-Concrete changes:
+Milestone 127 — Mixed-Log Classification Hardening & Confidence-Based Routing.
 
-- `lib/gates_ui_helpers.sh` (NEW). Five pure helpers plus one writer:
-  - `_ui_detect_framework` — priority order: `UI_FRAMEWORK=playwright`,
-    word-boundary regex `(^|[[:space:]/])playwright([[:space:]]|$)` on
-    `UI_TEST_CMD`, then `playwright.config.{ts,js,mjs,cjs}` in
-    `$PROJECT_DIR`. Returns `playwright` or `none`.
-  - `_ui_deterministic_env_list HARDENED?` — emits `PLAYWRIGHT_HTML_OPEN=never`
-    on the normal-run profile; adds `CI=1` only when HARDENED=1.
-  - `_normalize_ui_gate_env` — owner hook that delegates to the env list
-    helper. M57 will extend this for additional adapters; do not add
-    framework branches inline.
-  - `_ui_timeout_signature EXIT_CODE OUTPUT` — pure classifier returning
-    `interactive_report` | `generic_timeout` | `none`. No logging, no
-    file writes. Exit-124 guard prevents false positives on shutdown
-    chatter.
-  - `_ui_hardened_timeout BASE FACTOR` — clamps to `[1, BASE]` so the
-    hardened rerun never exceeds the original `UI_TEST_TIMEOUT`.
-  - `_ui_write_gate_diagnosis` — appends `## UI Gate Diagnosis` to both
-    `UI_TEST_ERRORS_FILE` and `BUILD_ERRORS_FILE` after the existing
-    raw-output blocks.
+The pre-M127 build-fix pipeline had a single binary decision
+(`has_only_noncode_errors`) and treated every unmatched line in the build
+output as a `code` classification. Real UI logs are noisy: a single npm
+warning, ANSI bar, or progress line could force the bypass to fail and route
+the run into a build-fix coder pass even when the dominant failure was test
+infrastructure or environment. M127 replaces that with a four-token
+confidence model.
 
-- `lib/gates_ui.sh`. Refactored `_run_ui_test_phase`:
-  - Every subprocess invocation runs through a new `_ui_run_cmd` wrapper
-    that materializes the env list via `mapfile` and passes it at the
-    `env(1)` boundary — no env mutation leaks into the parent shell.
-  - On failure, `_ui_timeout_signature` classifies the run.
-  - `interactive_report` branch skips M54 remediation and the generic
-    flakiness retry; performs a single hardened rerun under the
-    `UI_GATE_ENV_RETRY_*` knobs (inline `${VAR:-default}` fallbacks —
-    M136 will formalize these in `config_defaults.sh`).
-  - `generic_timeout` and `none` branches run the existing M54
-    remediation and generic flakiness retry exactly as before.
-  - Diagnosis is written only on terminal failure; `gates.sh:212-213`
-    cleanup handles suppression on recovered pass.
+Implementation summary:
 
-- `tests/test_ui_build_gate.sh`. Added 7 tests (13–19) covering: pure
-  signature classifier truth table, deterministic env reaches subprocess
-  while parent stays unset, word-boundary framework detection,
-  hardened-rerun invocation count and success log line, generic-timeout
-  retry path preserved, diagnosis block format on terminal failure, and
-  diagnosis suppression on recovered pass. Header comment block and
-  summary line updated to 19/19. Added `unset _TUI_ACTIVE` early so
-  `log()` output is deterministic regardless of caller environment.
+1. **New library `lib/error_patterns_classify.sh`** (234 lines, sourced from
+   `lib/error_patterns.sh`):
+   - `_is_non_diagnostic_line` — allow-list-first noise filter. The allow-list
+     keeps lines containing failure terms (`error|failed|timeout|ECONNREFUSED|TS[0-9]+`)
+     even when they would match a deny-list noise pattern; only after the
+     allow-list passes do we apply the deny-list (npm warnings, progress
+     counters like `[1/8]`, `Serving HTML report at`, ANSI/whitespace-only).
+     Acceptance criterion test_filter_does_not_drop_failure_lines and its
+     inversion variants are covered.
+   - `classify_build_errors_with_stats` — multi-line stats classifier with
+     explicit unknown semantics. Unmatched lines are counted under
+     `UNMATCHED_LINES`, never silently coerced to `code`. Each emitted record
+     carries its own count plus the run-wide `TOTAL_MATCHED|TOTAL_LINES|
+     UNMATCHED_LINES` summary so any single record gives a downstream
+     consumer the full shape (8 fields per record).
+   - `has_explicit_code_errors` — true only when a line matches a
+     `category=code` pattern. Used by the refactored
+     `has_only_noncode_errors` and indirectly by the routing decision.
+   - `classify_routing_decision` — emits one of `code_dominant |
+     noncode_dominant | mixed_uncertain | unknown_only` and exports
+     `LAST_BUILD_CLASSIFICATION`. Decision rules ordered per the milestone
+     Watch For (Rule 1 fires before Rule 3); the 60% noncode threshold uses
+     pure integer arithmetic (no `bc` dependency).
 
-- `tekhton.sh`. Added `source "${TEKHTON_HOME}/lib/gates_ui_helpers.sh"`
-  immediately after `gates_phases.sh` and before `gates_ui.sh` so the
-  consumer sees the helpers at parse time.
+2. **`lib/error_patterns.sh`**: sources the new classifier; refactors
+   `has_only_noncode_errors` to delegate to the new helpers (semantic shift
+   documented inline). Legacy `classify_build_error`,
+   `classify_build_errors_all`, and `annotate_build_errors` are intentionally
+   unchanged per Watch For.
 
-- Docs:
-  - `docs/reference/stages.md` — Build gate section now describes the
-    deterministic UI test phase, env profile, hardened rerun, and
-    diagnosis emission.
-  - `docs/troubleshooting/common-errors.md` — New entry under
-    `## Pipeline Errors`: "UI tests timed out with interactive report
-    serving" with symptom, automatic recovery, and permanent fixes.
-  - `ARCHITECTURE.md` — Added `lib/gates_ui_helpers.sh` to the Layer 3
-    library catalog with helper-by-helper signatures and source-order
-    note.
+3. **`lib/artifact_defaults.sh`**: adds `BUILD_ROUTING_DIAGNOSIS_FILE` default
+   (`${TEKHTON_DIR}/BUILD_ROUTING_DIAGNOSIS.md`).
+
+4. **New sub-stage `stages/coder_buildfix.sh`** (180 lines, sourced from
+   `stages/coder.sh`):
+   - `_run_buildfix_routing` — orchestrator. Reads raw errors from
+     `BUILD_RAW_ERRORS_FILE` (preserving the existing precedence:
+     `stages/coder.sh:1110-1115` pre-extraction), calls
+     `classify_routing_decision`, then dispatches per token:
+     - `noncode_dominant` → skip build-fix, route to
+       `HUMAN_ACTION_REQUIRED.md`, save `env_failure` state and exit.
+     - `code_dominant` → run build-fix coder with code-filtered errors
+       (legacy path).
+     - `mixed_uncertain` → emit `BUILD_ROUTING_DIAGNOSIS.md`, then run
+       build-fix with code-filtered errors plus a non-code context block.
+     - `unknown_only` → run bounded build-fix with low-confidence guidance,
+       preserving pre-M127 fallback semantics.
+   - `_bf_emit_routing_diagnosis` — writes `BUILD_ROUTING_DIAGNOSIS.md` with
+     a simple schema (header, line stats, top three diagnoses) for downstream
+     parsers.
+   - `_bf_invoke_build_fix` — shared build-fix invocation helper, accepts an
+     `extra_context` block appended to `BUILD_ERRORS_CONTENT`.
+   - The orchestrator re-exports `LAST_BUILD_CLASSIFICATION` after capturing
+     the routing token via command substitution; the function-internal
+     export is bound to the cmd-sub subshell, so the explicit re-export is
+     required for downstream M128/M130 consumers running later in the
+     parent shell.
+
+5. **`stages/coder.sh`**: build-fix branch reduced to a single
+   `_run_buildfix_routing` call (~60 lines removed; net file size
+   1180 → 1125). Coder.sh remains over the 300-line ceiling — that is
+   pre-existing tech debt out of scope for M127, but my net contribution
+   reduces it.
+
+6. **Tests**:
+   - `tests/fixtures/ui_timeout_noisy_output.txt` — realistic noisy UI
+     timeout fixture (npm warnings, progress lines, multiple Playwright
+     timeouts, report-serving banners, plus deliberate unmatched lines).
+     Sized so noncode matches (4) hit ≥60% of considered lines (4 / 6 =
+     66.6%) → routes `noncode_dominant`.
+   - `tests/test_m127_routing.sh` — 288 lines, 41 assertions covering all
+     four routing tokens, allow-list-before-deny-list precedence,
+     `has_explicit_code_errors`, `classify_build_errors_with_stats` field
+     count and unmatched-counter invariants, the bifl-tracker bypass shape,
+     `BUILD_ROUTING_DIAGNOSIS.md` emission, and the
+     `LAST_BUILD_CLASSIFICATION` export contract.
+   - `tests/test_gates_bypass_flow.sh` — Test 2 assertion updated to
+     reflect the bifl-tracker class behavior change with an inline pointer
+     to this milestone (per Watch For: "if any case now flips, update the
+     assertion").
+   - `tests/test_error_patterns.sh` — unchanged (M127 portions extracted to
+     the dedicated file above to keep my net contribution off the
+     already-oversize legacy file).
+
+7. **Docs**:
+   - `docs/concepts/auto-remediation.md` — new "Confidence-Based Routing for
+     Mixed Logs (M127)" section documenting the four-token model and the
+     allow-list-before-deny-list rule.
+   - `docs/troubleshooting/common-errors.md` — new "Build errors classified
+     as unknown_only" entry with manual-triage guidance and a mention of the
+     `noncode_dominant` skip path.
+   - `ARCHITECTURE.md` — adds entries for `error_patterns_classify.sh` and
+     `coder_buildfix.sh` plus the LAST_BUILD_CLASSIFICATION cross-milestone
+     contract.
+   - `CLAUDE.md` — repository layout entries added for the two new files.
 
 ## Root Cause (bugs only)
-N/A — feature implementation, not a bug fix. The motivating defect
-(bifl-tracker M03 hang) is described in the milestone overview; this
-milestone makes gate execution deterministic so future classification
-and routing layers (M127–M130) can reason over stable signal.
+
+N/A — feature milestone, not a bug fix.
 
 ## Files Modified
-- `lib/gates_ui_helpers.sh` (NEW) — 163 lines.
-- `lib/gates_ui.sh` — refactored to apply deterministic env on every
-  invocation, branch on timeout signature, emit diagnosis. 183 lines.
-- `tests/test_ui_build_gate.sh` — added 7 tests (13–19), refreshed
-  header and summary, unset `_TUI_ACTIVE` for deterministic logging.
-  490 lines.
-- `tekhton.sh` — sources the new helpers between `gates_phases.sh` and
-  `gates_ui.sh` (one line added).
-- `ARCHITECTURE.md` — added catalog entry for `lib/gates_ui_helpers.sh`.
-- `docs/reference/stages.md` — added UI test phase paragraph to Build
-  gate section.
-- `docs/troubleshooting/common-errors.md` — new entry for the
-  interactive-report timeout class.
 
-## Docs Updated
-- `docs/reference/stages.md` — documents the new deterministic UI gate
-  behavior (env profile, hardened rerun, diagnosis).
-- `docs/troubleshooting/common-errors.md` — new troubleshooting entry
-  for the interactive_report timeout class with permanent-fix guidance.
-- `ARCHITECTURE.md` — catalog entry for the new helpers file.
+- `lib/error_patterns_classify.sh` (NEW, 234 lines) — confidence classifier.
+- `lib/error_patterns.sh` — sources new classifier; refactors
+  `has_only_noncode_errors`.
+- `lib/artifact_defaults.sh` — adds `BUILD_ROUTING_DIAGNOSIS_FILE` default.
+- `stages/coder_buildfix.sh` (NEW, 180 lines) — confidence-based routing
+  sub-stage.
+- `stages/coder.sh` — replaces the legacy bypass block with
+  `_run_buildfix_routing` invocation; sources new sub-stage.
+- `tests/fixtures/ui_timeout_noisy_output.txt` (NEW) — realistic noisy
+  fixture.
+- `tests/test_m127_routing.sh` (NEW, 288 lines) — M127 test coverage.
+- `tests/test_gates_bypass_flow.sh` — Test 2 assertion updated for
+  bifl-tracker class flip; M127-specific tests extracted to the dedicated
+  file.
+- `tests/test_error_patterns.sh` — M127 tests extracted to dedicated file
+  (no net new content here).
+- `docs/concepts/auto-remediation.md` — new M127 routing section.
+- `docs/troubleshooting/common-errors.md` — new unknown_only / non-code
+  diagnosis entry.
+- `ARCHITECTURE.md` — new file entries + cross-milestone contract note.
+- `CLAUDE.md` — repository layout updates.
 
 ## Human Notes Status
-No human notes were attached to this task (HUMAN_NOTES.md contained
-only the boilerplate template).
 
-## Verification
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — zero warnings.
-- `bash tests/run_tests.sh` — 454/454 shell tests pass, 247/247 Python
-  tests pass.
-- `bash tests/test_ui_build_gate.sh` — 19/19 tests pass (12 baseline +
-  7 new M126 tests).
-- File length: every modified `.sh` file under the 300-line ceiling
-  (gates_ui.sh: 183, gates_ui_helpers.sh: 163).
+No unchecked human notes were attached to this task.
+
+## Docs Updated
+
+- `docs/concepts/auto-remediation.md` — new "Confidence-Based Routing for
+  Mixed Logs (M127)" section.
+- `docs/troubleshooting/common-errors.md` — new "Build errors classified as
+  unknown_only" entry.
+- `ARCHITECTURE.md` — new layer-3 entries for `error_patterns_classify.sh`
+  and `coder_buildfix.sh` plus the LAST_BUILD_CLASSIFICATION
+  cross-milestone contract documentation.
+- `CLAUDE.md` — repository layout updated for the two new lib/stages files.
+
+## Architecture Decisions
+
+- **`LAST_BUILD_CLASSIFICATION` re-export pattern.** The function exports
+  the variable internally, but command-substitution callers receive only
+  stdout — the export is bound to the subshell. The orchestrator
+  (`_run_buildfix_routing`) explicitly re-exports after capturing the
+  token. Documented inline so future call sites understand the requirement.
+- **M127 tests in a dedicated file.** Both `test_error_patterns.sh` and
+  `test_gates_bypass_flow.sh` were already oversize before M127. Rather
+  than swelling them further, the M127 unit + integration coverage was
+  consolidated in `tests/test_m127_routing.sh`. The discovery loop in
+  `tests/run_tests.sh` (`for test_file in "${TESTS_DIR}"/test_*.sh`) picks
+  it up automatically.
+- **Sub-stage extraction (`stages/coder_buildfix.sh`).** Following the
+  established pattern of `stages/coder_prerun.sh`, the M127 routing logic
+  lives in its own sub-stage. This keeps `stages/coder.sh` from growing
+  further and isolates the M127 contract behind a single
+  `_run_buildfix_routing` call site.
 
 ## Observed Issues (out of scope)
-None.
+
+- `stages/coder.sh` is 1125 lines (was 1180) — well over the 300-line
+  ceiling. M127 reduces it but does not bring it under. A dedicated
+  refactor splitting `run_stage_coder` into discrete sub-stage
+  orchestrators would pay this debt down.
+- `tests/test_error_patterns.sh` (855 lines) and several other test files
+  exceed the ceiling. Would benefit from per-feature splits similar to
+  what M127 did with `test_m127_routing.sh`.

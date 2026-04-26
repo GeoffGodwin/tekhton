@@ -106,6 +106,30 @@ To suppress the hardened rerun entirely, set `UI_GATE_ENV_RETRY_ENABLED=false`
 in `pipeline.conf`; the gate will still classify the failure and emit
 diagnosis, but it will not perform the rerun.
 
+### "Build errors classified as unknown_only"
+
+**Symptom.** The build gate fails and the run log shows
+`Build-fix routing decision: unknown_only`. `BUILD_ERRORS.md` contains output
+that did not match any signature in the M53 error-pattern registry — usually a
+new tool, a custom error format, or output that was scrambled by ANSI/progress
+artifacts.
+
+**Automatic recovery.** The pipeline still runs the bounded build-fix coder
+once on the unknown_only path (this preserves the pre-M127 fallback). If that
+attempt fails, the gate exits with `build_failure` state saved.
+
+**Manual triage.** Open `BUILD_ERRORS.md` and look at `## Full Analyze Output`
+or `## Full Compile Output`. If the failure root cause is a recognizable
+pattern (missing dependency, environment problem, service down) that the
+registry doesn't yet know about, add it to
+`lib/error_patterns_registry.sh` so future runs route correctly. Otherwise,
+fix the underlying issue manually and re-run.
+
+If the run log shows `Build-fix routing decision: noncode_dominant` instead,
+the gate skipped build-fix entirely because the signal was pure environment.
+Check `HUMAN_ACTION_REQUIRED.md` for the diagnosis and remediate the
+environment before re-running.
+
 ### "Agent null run detected"
 
 The agent used very few turns and produced no meaningful output. Common causes:

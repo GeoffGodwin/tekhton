@@ -168,6 +168,7 @@ tekhton/
 │   ├── quota_sleep.sh      # M124 chunked-sleep helper for enter_quota_pause
 │   ├── quota_probe.sh      # M125 layered probe (version/zero_turn/fallback) + back-off/jitter helpers
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
+│   ├── error_patterns_classify.sh # M127 confidence-based mixed-log classifier + routing decision
 │   ├── preflight.sh        # Pre-flight environment validation
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
@@ -178,6 +179,7 @@ tekhton/
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate
 │   ├── coder.sh            # Scout + Coder + build gate
+│   ├── coder_buildfix.sh   # M127 confidence-based build-fix routing (sub-stage)
 │   ├── docs.sh             # Docs agent stage (optional, Haiku-powered)
 │   ├── security.sh         # Security review stage
 │   ├── review.sh           # Review loop + rework routing

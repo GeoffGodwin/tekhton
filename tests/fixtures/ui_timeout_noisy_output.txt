@@ -1,0 +1,15 @@
+npm warn deprecated some-pkg@1.0.0: please upgrade
+npm warn config production Use `--omit=dev` instead
+[1/8] Installing playwright
+[2/8] Resolving dependencies
+Running 8 tests using 4 workers
+
+Some informational banner that does not match any pattern
+
+Test timeout of 30000ms exceeded while waiting for selector ".hero-title"
+Test timeout of 30000ms exceeded waiting for response on /dashboard
+TIMEOUT waiting for page load on /settings
+Test timeout of 30000ms exceeded while waiting for navigation to /profile
+
+Serving HTML report at http://localhost:9323
+Press Ctrl+C to quit.

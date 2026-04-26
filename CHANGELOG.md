@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.127.0] - 2026-04-26
+
+### Added
+- Milestone 127 — Mixed-Log Classification Hardening & Confidence-Based Routing. (M127)
 ## [3.126.0] - 2026-04-26
 
 ### Added

@@ -18,6 +18,11 @@ set -euo pipefail
 
 # Source registry data
 source "${TEKHTON_HOME:?}/lib/error_patterns_registry.sh"
+# Source confidence-based classifier (M127). Provides _is_non_diagnostic_line,
+# classify_build_errors_with_stats, has_explicit_code_errors, and
+# classify_routing_decision. Sourced after registry so its functions can call
+# load_error_patterns().
+source "${TEKHTON_HOME:?}/lib/error_patterns_classify.sh"
 
 # --- Pattern storage (parallel arrays) --------------------------------------
 _EP_PATTERNS=()
@@ -250,22 +255,33 @@ annotate_build_errors() {
 }
 
 # --- has_only_noncode_errors ------------------------------------------------
-# Returns 0 if ALL classifications are non-code, 1 otherwise.
+# Legacy bypass predicate (M53). Returns 0 when the raw output contains at
+# least one non-code match AND no explicit code-pattern matches.
+#
+# M127 semantic shift: this helper now delegates to the new stats classifier,
+# so unmatched/noise lines no longer count as code evidence. Inputs that were
+# previously blocked from bypass purely because they contained unmatched
+# noise (the bifl-tracker class) will now correctly bypass.
+#
+# Prefer classify_routing_decision() for new call sites — it returns the
+# four-token vocabulary used by M128/M130. has_only_noncode_errors is kept
+# for backward compatibility with M53/M54 call sites and existing fixtures.
 #
 # Usage: has_only_noncode_errors "$raw_error_output"
 has_only_noncode_errors() {
     local raw_output="${1:-}"
     [[ -z "$raw_output" ]] && return 1
 
-    local classifications
-    classifications=$(classify_build_errors_all "$raw_output")
+    if has_explicit_code_errors "$raw_output"; then
+        return 1
+    fi
 
-    while IFS='|' read -r cat _safety _remed _diag; do
-        [[ -z "$cat" ]] && continue
-        if [[ "$cat" == "code" ]]; then
-            return 1
-        fi
-    done <<< "$classifications"
+    local stats
+    stats=$(classify_build_errors_with_stats "$raw_output")
+    if [[ -z "$stats" ]]; then
+        # No matches at all (pure unknown / noise). Not a non-code-only signal.
+        return 1
+    fi
 
     return 0
 }
