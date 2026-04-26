@@ -302,16 +302,15 @@ if [[ -n "${AGENT_ERROR_CATEGORY:-}" ]]; then
 fi
 # Primary cause (from m129/m130 context loader — populate via _load_failure_cause_context)
 # _ORCH_PRIMARY_CAT and _ORCH_PRIMARY_SUB are already set if m130 ran.
-# If not, read from LAST_FAILURE_CONTEXT.json directly.
+# If not, refresh them via _load_failure_cause_context. Do not grep for
+# "primary_cause" and "category" on the same line — m129's pretty-print
+# contract puts them on separate lines.
 local _fc_primary_cat="${_ORCH_PRIMARY_CAT:-}"
 local _fc_primary_sub="${_ORCH_PRIMARY_SUB:-}"
-if [[ -z "$_fc_primary_cat" ]]; then
-    # Fallback: parse from file (may not have called _load_failure_cause_context)
-    local _ctx_file="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
-    if [[ -f "$_ctx_file" ]]; then
-        _fc_primary_cat=$(grep -oP '"primary_cause".*?"category"\s*:\s*"\K[^"]+' "$_ctx_file" 2>/dev/null | head -1 || true)
-        _fc_primary_sub=$(grep -oP '"primary_cause".*?"subcategory"\s*:\s*"\K[^"]+' "$_ctx_file" 2>/dev/null | head -1 || true)
-    fi
+if [[ -z "$_fc_primary_cat" ]] && declare -F _load_failure_cause_context >/dev/null 2>&1; then
+  _load_failure_cause_context
+  _fc_primary_cat="${_ORCH_PRIMARY_CAT:-}"
+  _fc_primary_sub="${_ORCH_PRIMARY_SUB:-}"
 fi
 if [[ -n "$_fc_primary_cat" ]] && [[ "${_fc_primary_cat}/${_fc_primary_sub:-unknown}" != "${symptom_class:-}" ]]; then
     ec_items+=("\"root:${_fc_primary_cat}/${_fc_primary_sub:-unknown}\"")

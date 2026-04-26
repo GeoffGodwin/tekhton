@@ -196,10 +196,10 @@ idempotency guard.
 
 #### Sub-task C — `_032_create_preflight_bak_dir`
 
-Creates `.claude/preflight_bak/` with a `.gitkeep` so the directory
-exists before the first preflight auto-fix, and git-tracks it correctly
-(the directory itself is gitignored via `preflight_bak/` but the
-`.gitkeep` is exempt).
+Creates `.claude/preflight_bak/` so the backup path exists in the
+working tree before the first preflight auto-fix. This is a local
+convenience only — the backup directory is intentionally ignored by
+`.gitignore` and is not treated as a tracked asset.
 
 ```bash
 _032_create_preflight_bak_dir() {
@@ -209,22 +209,15 @@ _032_create_preflight_bak_dir() {
     [[ -d "$bak_dir" ]] && return 0  # Already exists
 
     mkdir -p "$bak_dir"
-    # .gitkeep is NOT gitignored — the entry in .gitignore covers the
-    # directory contents but the dir itself needs to be tracked.
-    # Use an empty .gitkeep to satisfy git's no-empty-directory rule.
-    touch "${bak_dir}/.gitkeep"
     log "Created .claude/preflight_bak/ for preflight auto-fix backups."
     return 0
 }
 ```
 
-**Why `.gitkeep` is not affected by the `.gitignore` entry:** The entry
-added to `.gitignore` is `.claude/preflight_bak/` — trailing slash
-means it applies to the directory contents only (files within it), not
-to the directory itself or `.gitkeep`. This is standard git behaviour.
-If the project's `.gitignore` uses a pattern without trailing slash
-(e.g. `preflight_bak`), it would affect `.gitkeep` too — but our entry
-includes the full `.claude/preflight_bak/` path with trailing slash.
+**Why no `.gitkeep`:** The entry added to `.gitignore` is
+`.claude/preflight_bak/`, which intentionally ignores the backup tree.
+Because the directory is operational state rather than a repository
+asset, the migration must not rely on a tracked sentinel file inside it.
 
 ### Complete migration script
 
@@ -313,9 +306,9 @@ T8: migration_apply called twice (idempotency) → second call returns 1 (migrat
     conf does not contain duplicate BUILD_FIX_ENABLED entries
 T9: migration_apply on conf with existing "# Tekhton runtime artifacts" section →
     new gitignore entries appear after it, not in a second header block
-T10: .claude/preflight_bak/ created with .gitkeep on fresh project
+T10: .claude/preflight_bak/ directory created on fresh project
 T11: .claude/preflight_bak/ already exists → migration_apply does not fail,
-     no .gitkeep duplication
+    no duplicate sentinel or failure
 T12: migration_apply on project with no .gitignore → creates .gitignore with entries
 ```
 
@@ -356,7 +349,7 @@ No changes to any `lib/` files. Migration scripts are self-contained.
 - [ ] `.gitignore` gains `.tekhton/BUILD_FIX_REPORT.md` after migration.
 - [ ] `.gitignore` gains `.claude/preflight_bak/` after migration.
 - [ ] Calling `migration_apply` twice does not produce duplicate `BUILD_FIX_ENABLED` lines.
-- [ ] `.claude/preflight_bak/.gitkeep` exists after migration on a fresh project.
+- [ ] `.claude/preflight_bak/` exists after migration on a fresh project.
 - [ ] `migration_apply` is a no-op (returns `0`) when `preflight_bak/` already exists.
 - [ ] The migration chains correctly after `003_to_031.sh` (V3.0 → V3.1 → V3.2) on a V3.0 project.
 - [ ] `shellcheck` clean for `migrations/031_to_032.sh`.
@@ -371,7 +364,7 @@ No changes to any `lib/` files. Migration scripts are self-contained.
 - **Private helper prefix `_032_` is load-order critical.** During a V3.0 → V3.1 → V3.2 chain, `002_to_003.sh` and `003_to_031.sh` are also sourced into the same shell session. All helper functions must carry the `_032_` prefix to prevent name collision with `_031_*` or `_003_*` helpers from those scripts.
 - **Sentinel key must be the first line emitted.** `BUILD_FIX_ENABLED=true` must appear as the first line in `_032_append_arc_config_section`'s heredoc. If the order is rearranged and the sentinel moves after another key, `migration_check` still works (grep matches anywhere in the file), but the stated design rationale breaks and future readers will be confused.
 - **Heredoc boundary blank lines.** The `cat >> "$conf_file" << 'EOF'` block begins with a blank line and ends with a blank line before `EOF`. This ensures exactly one blank line between the last existing content and the new section header, and one trailing blank line after the block. Do not remove either boundary line.
-- **`.gitignore` trailing-slash semantics.** The entry `.claude/preflight_bak/` (with trailing slash) gitignores directory *contents* but not the directory itself or the `.gitkeep` file. Omitting the trailing slash (e.g. `.claude/preflight_bak`) would also ignore `.gitkeep`, preventing the directory from being tracked. The trailing slash must be preserved.
+- **`.gitignore` trailing-slash semantics.** The entry `.claude/preflight_bak/` (with trailing slash) intentionally ignores the backup directory tree. Preserve the trailing slash so the ignored path stays the directory itself rather than an over-broad filename pattern, and do not rely on a tracked sentinel file inside that tree.
 - **No changes to `lib/migrate.sh`.** The migration runner auto-discovers scripts by version; placing `031_to_032.sh` in the `migrations/` directory is all that is required. Do not modify the runner, `detect_config_version`, or `_write_config_version`.
 
 ## Seeds Forward

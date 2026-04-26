@@ -129,9 +129,10 @@ _pf_uitest_playwright() {
     local issues_found=0
 
     # --- Rule PW-1: html reporter (FAIL) ------------------------------------
-    # Detect: reporter: 'html' or reporter: [['html', ...]] or reporter: ["html", ...]
-    # The grep pattern is intentionally simple; it matches the overwhelming
-    # majority of real-world configs and avoids TypeScript AST parsing.
+    # Detect: reporter: 'html' or reporter: ['html'] / ["html"].
+    # Nested tuple forms such as [['html', ...]] are intentionally left to
+    # m126's gate-level timeout detection; this scanner stays conservative
+    # so the auto-fix only rewrites simple, reviewable shapes.
     if grep -qP "reporter\s*:\s*['\"]html['\"]|reporter\s*:\s*\[\s*['\"]html['\"]" "$cfg_file" 2>/dev/null; then
         _pf_uitest_playwright_fix_reporter "$cfg_file" "$proj"
         issues_found=1
@@ -225,14 +226,15 @@ the config file automatically."
     mkdir -p "$bak_dir"
     cp "$cfg_file" "$bak_file"
 
-    # In-place sed replacement — handles both scalar and single-entry array
+    # In-place sed replacement — handles only scalar and single-entry array
     # forms using either quote style.
     # Replaces:
     #   reporter: 'html'
     #   reporter: "html"
     #   reporter: ['html']
     #   reporter: ["html"]
-    # with the CI-guarded scalar form.
+    # with the CI-guarded scalar form. Nested tuple reporters are left
+    # unchanged and fall back to m126's runtime detection path.
     if sed -i \
         "s|reporter: 'html'|reporter: process.env.CI ? 'dot' : 'html'|g;
        s|reporter: \"html\"|reporter: process.env.CI ? 'dot' : 'html'|g;
@@ -650,12 +652,13 @@ is deployed. Together they eliminate the timeout entirely on first run.
   means a user who has set `PREFLIGHT_AUTO_FIX=false` historically
   still gets the auto-patch behavior they explicitly disabled.
 - **Grep patterns are deliberately conservative.** PW-1's regex
-  matches the 95% case (`reporter: 'html'`, `reporter: ["html", ...]`)
-  but does **not** match conditional, programmatic, or spread-config
-  forms. Don't try to widen them — false-positive auto-patches on
-  programmatic configs would corrupt files that m131 then can't undo.
-  The 5% gap is caught by m126 at the gate level via timeout-signature
-  detection. Preflight is a fast-path optimisation, not a guarantee.
+  matches the common simple forms (`reporter: 'html'`, `reporter: ['html']`,
+  `reporter: ["html"]`) but does **not** match nested tuple arrays,
+  conditional, programmatic, or spread-config forms. Don't try to widen
+  them — false-positive auto-patches on programmatic configs would
+  corrupt files that m131 then can't undo. The remaining gap is caught
+  by m126 at the gate level via timeout-signature detection. Preflight
+  is a fast-path optimisation, not a guarantee.
 - **`_pf_uitest_playwright_fix_reporter` calls `_trim_preflight_bak_dir`
   *defensively*.** Wrap the call in `declare -f _trim_preflight_bak_dir`
   so m131 ships cleanly when m135 has not yet landed. Do not source

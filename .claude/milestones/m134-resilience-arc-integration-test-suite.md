@@ -114,7 +114,7 @@ Expected result:
   - PREFLIGHT_UI_REPORTER_PATCHED=1 propagated to gate normalizer
 ```
 
-#### S1.3 — No playwright.config → preflight silent; gate runs plain
+#### S1.3 — No playwright.config → preflight silent; command-based detection still hardens the gate
 
 ```
 Setup:
@@ -125,7 +125,13 @@ Actions:
   1. Run _preflight_check_ui_test_config
   2. Assert PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED is unset or 0
   3. Call _ui_deterministic_env_list
-  4. Assert output does NOT include PLAYWRIGHT_HTML_OPEN (no signal to act on)
+  4. Assert output includes "PLAYWRIGHT_HTML_OPEN=never"
+  5. Assert output does NOT include "CI=1" (no preflight signal / hardened escalation)
+
+Expected result:
+  - Preflight stays silent because there is no config file to audit
+  - Gate still applies the normal Playwright deterministic env because
+    `UI_TEST_CMD` itself identifies the framework (m126 Goal 1)
 ```
 
 ### Scenario group 2 — Gate timeout → interactive signature detection → hardened retry (m126)
@@ -425,7 +431,7 @@ Assertions:
 
 ### Scenario group 7 — State reset between iterations (no cross-contamination)
 
-#### S7.1 — _reset_orch_recovery_state zeroes all arc vars between attempts
+#### S7.1 — _reset_orch_recovery_state zeroes persistent retry guards only
 
 ```
 Setup:
@@ -433,11 +439,11 @@ Setup:
 
 Actions:
   1. Call _reset_orch_recovery_state
-  2. Assert _ORCH_PRIMARY_CAT=""
-  3. Assert _ORCH_ENV_GATE_RETRIED=0
-  4. Assert _ORCH_MIXED_BUILD_RETRIED=0
-  5. Assert _ORCH_RECOVERY_ROUTE_TAKEN=""
-  6. Assert _ORCH_SCHEMA_VERSION=0
+  2. Assert _ORCH_ENV_GATE_RETRIED=0
+  3. Assert _ORCH_MIXED_BUILD_RETRIED=0
+  4. Assert _ORCH_RECOVERY_ROUTE_TAKEN=""
+  5. Assert _ORCH_PRIMARY_CAT is unchanged (cause vars are loader-owned)
+  6. Assert _ORCH_SCHEMA_VERSION is unchanged (loader-owned)
 ```
 
 #### S7.2 — PREFLIGHT_UI_* vars persist within run, reset at new-run boundary
@@ -447,9 +453,10 @@ Setup:
   - PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1 from first attempt
 
 Actions:
-  1. Simulate a new run_complete_loop iteration (call _reset_orch_recovery_state)
+  1. Simulate a later run_complete_loop iteration without re-running preflight
   2. Assert PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED remains 1 for this run
-  3. Start a fresh run boundary and assert PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED resets before preflight runs
+  3. Start a fresh run boundary and assert `_preflight_check_ui_test_config`
+     resets the contract vars before emitting new findings
 
 Note: PREFLIGHT_* vars are set by preflight which runs ONCE per run, not per
 iteration. They must NOT be reset between loop iterations — only at run start.
@@ -625,7 +632,7 @@ exit 0
 - [ ] S6.1 ("bifl-tracker M03 golden path") produces `UI_GATE_INTERACTIVE_REPORTER` with no "CODER_MAX_TURNS" advice.
 - [ ] S4.1–S4.4 validate the full write→read→route chain for failure context schema.
 - [ ] S5.1 validates all four new RUN_SUMMARY.json fields are present and correctly populated.
-- [ ] S7.1 confirms `_reset_orch_recovery_state` zeroes all arc vars.
+- [ ] S7.1 confirms `_reset_orch_recovery_state` zeroes the persistent retry guards without clobbering loader-owned cause vars.
 - [ ] S7.2 asserts the PREFLIGHT_* contract explicitly: no reset between iterations, reset at new-run boundary.
 - [ ] `_setup_bifl_tracker_m03_fixture` is reusable — used by at least two scenarios.
 - [ ] `test_resilience_arc_integration.sh` is auto-discovered by `./tests/run_tests.sh` via the existing `test_*.sh` glob.
@@ -636,7 +643,7 @@ exit 0
 - Keep assertions behavior-first, not implementation-fragile. Prefer checking routed outcomes and emitted classifications over internal variable names unless the variable itself is the contract.
 - Use artifact path vars (`BUILD_RAW_ERRORS_FILE`, `BUILD_ERRORS_FILE`, `BUILD_FIX_REPORT_FILE`) in fixtures and assertions; do not hardcode `.tekhton/...` or root-level filenames.
 - Avoid shell options that break sourced library contracts. Test files can use `set -euo pipefail`, but helper stubs should avoid masking real failures from arc functions.
-- Preserve one-run vs one-iteration semantics. `_ORCH_*` reset per iteration; `PREFLIGHT_*` reset per run start.
+- Preserve one-run vs one-iteration semantics. Persistent `_ORCH_*` retry guards reset at new-run boundary; loader-owned cause vars refresh when `_load_failure_cause_context` runs; `PREFLIGHT_*` reset at preflight start for each run.
 - Keep diagnose assertions resilient to wording drift. Assert required tokens/classifications, not full sentence equality in suggestions.
 - Guard scenarios by function presence only where needed. Over-guarding can hide regressions once the full arc is implemented.
 
