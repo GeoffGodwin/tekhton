@@ -7,8 +7,8 @@ status: "pending"
 
 ## Overview
 
-The eight resilience arc milestones (m126–m133) introduced eleven new
-config variables that control their behaviour. None of these variables
+Resilience arc milestones m126, m128-m131, and m135 introduced eleven
+operator-facing config variables that control arc behaviour. None of these variables
 are declared in `lib/config_defaults.sh` today, which means:
 
 1. They cannot be overridden via `pipeline.conf` the normal way — a
@@ -57,7 +57,7 @@ No changes to arc runtime logic. Config-layer only.
 ### Goal 1 — Declare all eleven vars in `lib/config_defaults.sh`
 
 Add a new section block immediately after the `# --- Pre-flight environment
-validation defaults (Milestone 55) ---` block (lines ~367–370). Follow
+validation defaults (Milestone 55) ---` block. Follow
 the exact `:=` idiom and comment format used throughout the file.
 
 ```bash
@@ -86,7 +86,7 @@ the exact `:=` idiom and comment format used throughout the file.
 **Derivation safety for `BUILD_FIX_MAX_TURNS_PER_ATTEMPT`:** The
 expression `$(( CODER_MAX_TURNS / 2 ))` is evaluated at source time.
 `CODER_MAX_TURNS` is guaranteed set before this block because it appears
-earlier in `config_defaults.sh` (`:="${CODER_MAX_TURNS:=80}"`). The `:=`
+earlier in `config_defaults.sh` (`: "${CODER_MAX_TURNS:=80}"`). The `:=`
 operator prevents re-evaluation if `BUILD_FIX_MAX_TURNS_PER_ATTEMPT`
 was already set in `pipeline.conf`. This mirrors the exact pattern used
 by `FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))` already in the file.
@@ -100,7 +100,7 @@ that convention for consistency.
 
 Add a new helper function `_vc_check_resilience_arc` called at the end
 of `validate_config()`, between Check 12 and the summary line. The
-function runs seven checks and increments `passes`/`warnings`/`errors`
+function runs six checks and increments `passes`/`warnings`/`errors`
 via the standard `_vc_pass`/`_vc_warn`/`_vc_fail` helpers.
 
 The integration in `validate_config()`:
@@ -110,29 +110,22 @@ The integration in `validate_config()`:
     ...
 
     # Check 13: Resilience arc config sanity (m136)
-    _vc_check_resilience_arc passes warnings errors
+    _vc_check_resilience_arc
 
     echo ""
     echo "${passes} passed, ${warnings} warnings, ${errors} errors"
 ```
 
-Because bash doesn't support pass-by-reference for integers, use the
-existing approach: `_vc_check_resilience_arc` writes directly to the
-caller's `passes`/`warnings`/`errors` vars via `declare -g` or
-`nameref`. Look at how `_vc_check_role_files` updates `found`/`total`
-in the current code — it uses direct var mutation because it is called
-from within `validate_config`'s scope. Follow the same pattern: the
-function uses `local -n` (nameref, bash ≥4.3) to mutate the counters.
+Follow the existing helper pattern in this file (`_vc_check_role_files`,
+`_vc_check_manifest`, `_vc_check_models`): mutate `passes`/`warnings`/
+`errors` directly via shell dynamic scope. Do not introduce namerefs or
+`declare -g` here; the current file does not need them.
 
 ```bash
-# _vc_check_resilience_arc P_REF W_REF E_REF
-# Validates resilience arc config values. Mutates the caller's pass/warn/error
-# counters via namerefs.
+# _vc_check_resilience_arc
+# Validates resilience arc config values. Mutates validate_config()
+# counters directly (same style as existing helper checks).
 _vc_check_resilience_arc() {
-    local -n _arc_p="$1"  # nameref to passes counter
-    local -n _arc_w="$2"  # nameref to warnings counter
-    local -n _arc_e="$3"  # nameref to errors counter
-
     echo ""
     echo "  [Resilience Arc]"
 
@@ -140,20 +133,20 @@ _vc_check_resilience_arc() {
     local bfa="${BUILD_FIX_MAX_ATTEMPTS:-3}"
     if [[ "$bfa" =~ ^[0-9]+$ ]] && (( bfa >= 1 && bfa <= 20 )); then
         _vc_pass "BUILD_FIX_MAX_ATTEMPTS=${bfa} (valid)"
-        _arc_p=$(( _arc_p + 1 ))
+        passes=$((passes + 1))
     else
         _vc_fail "BUILD_FIX_MAX_ATTEMPTS=${bfa} — must be integer 1–20"
-        _arc_e=$(( _arc_e + 1 ))
+        errors=$((errors + 1))
     fi
 
     # Check B: BUILD_FIX_MAX_TURNS_PER_ATTEMPT must be a positive integer
     local bft="${BUILD_FIX_MAX_TURNS_PER_ATTEMPT:-40}"
     if [[ "$bft" =~ ^[0-9]+$ ]] && (( bft >= 1 )); then
         _vc_pass "BUILD_FIX_MAX_TURNS_PER_ATTEMPT=${bft} (valid)"
-        _arc_p=$(( _arc_p + 1 ))
+        passes=$((passes + 1))
     else
         _vc_fail "BUILD_FIX_MAX_TURNS_PER_ATTEMPT=${bft} — must be positive integer"
-        _arc_e=$(( _arc_e + 1 ))
+        errors=$((errors + 1))
     fi
 
     # Check C: UI_GATE_ENV_RETRY_TIMEOUT_FACTOR must be a decimal 0.1–1.0
@@ -163,39 +156,39 @@ _vc_check_resilience_arc() {
     rtf_ok=$(awk -v v="$rtf" 'BEGIN { print (v+0 >= 0.1 && v+0 <= 1.0) ? "ok" : "fail" }')
     if [[ "$rtf_ok" == "ok" ]]; then
         _vc_pass "UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=${rtf} (valid, 0.1–1.0)"
-        _arc_p=$(( _arc_p + 1 ))
+        passes=$((passes + 1))
     else
         _vc_warn "UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=${rtf} — expected decimal 0.1–1.0; using 0.5"
-        _arc_w=$(( _arc_w + 1 ))
+        warnings=$((warnings + 1))
     fi
 
     # Check D: TEKHTON_UI_GATE_FORCE_NONINTERACTIVE must be 0 or 1
     local fni="${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-0}"
     if [[ "$fni" == "0" || "$fni" == "1" ]]; then
         _vc_pass "TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=${fni} (valid)"
-        _arc_p=$(( _arc_p + 1 ))
+        passes=$((passes + 1))
     else
         _vc_warn "TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=${fni} — expected 0 or 1"
-        _arc_w=$(( _arc_w + 1 ))
+        warnings=$((warnings + 1))
     fi
 
     # Check E: PREFLIGHT_BAK_RETAIN_COUNT must be non-negative integer
     local pbr="${PREFLIGHT_BAK_RETAIN_COUNT:-5}"
     if [[ "$pbr" =~ ^[0-9]+$ ]]; then
         _vc_pass "PREFLIGHT_BAK_RETAIN_COUNT=${pbr} (valid)"
-        _arc_p=$(( _arc_p + 1 ))
+        passes=$((passes + 1))
     else
         _vc_fail "PREFLIGHT_BAK_RETAIN_COUNT=${pbr} — must be non-negative integer (0 = keep all)"
-        _arc_e=$(( _arc_e + 1 ))
+        errors=$((errors + 1))
     fi
 
-    # Check F (formerly G): Warn when UI_TEST_CMD is set but UI_GATE_ENV_RETRY_ENABLED is false
+    # Check F: Warn when UI_TEST_CMD is set but UI_GATE_ENV_RETRY_ENABLED is false
     if [[ -n "${UI_TEST_CMD:-}" ]] && [[ "${UI_GATE_ENV_RETRY_ENABLED:-true}" == "false" ]]; then
         _vc_warn "UI_GATE_ENV_RETRY_ENABLED=false with UI_TEST_CMD set — interactive reporter timeouts will not be auto-retried"
-        _arc_w=$(( _arc_w + 1 ))
+        warnings=$((warnings + 1))
     else
         _vc_pass "UI gate retry configuration consistent"
-        _arc_p=$(( _arc_p + 1 ))
+        passes=$((passes + 1))
     fi
 }
 ```
@@ -205,15 +198,16 @@ floating-point natively. `awk` is universally available (POSIX), is
 already used elsewhere in the codebase (e.g. `gates_ui.sh`), and avoids
 the `bc` dependency which is not guaranteed on all CI images.
 
-**Why Check G is `warn` not `fail`:** Turning off the retry is a valid
+**Why Check F is `warn` not `fail`:** Turning off the retry is a valid
 project choice (e.g., for performance test suites that always take the
 full `UI_TEST_TIMEOUT`). The warning is informational.
 
 ### Goal 3 — Document arc vars in `templates/pipeline.conf.example`
 
-Add a new commented section at the end of the existing `# Section 2:
-Testing` block (after `UI_TEST_TIMEOUT`), immediately before `# Section 3:
-Pipeline Behavior`. This keeps all test-related config together.
+Add a new commented section immediately after the existing `# UI_TEST_TIMEOUT=120`
+line inside the `# --- UI Testing (Milestone 28) ---` block. In today's template,
+that block lives in Section 5 (Features), so use the `UI_TEST_TIMEOUT` line as
+the stable insertion anchor instead of section-number headings.
 
 ```conf
 # ─── Resilience arc (m126–m131): UI gate robustness & build-fix recovery ─────
@@ -259,60 +253,33 @@ Pipeline Behavior`. This keeps all test-related config together.
 ```
 
 Placement: find `# UI_TEST_TIMEOUT=120` in `pipeline.conf.example` and
-insert the new block immediately after it (before the blank line that
-precedes the Section 3 header).
+insert the new block immediately after it.
 
-### Goal 4 — Hard upper-bound clamps for numeric arc vars
+### Goal 4 — Reuse existing clamp infrastructure for numeric arc vars
 
-`config_defaults.sh` already applies hard clamps for some numeric vars
-using arithmetic assignment:
-
-```bash
-# M-existing pattern from FINAL_FIX_MAX_TURNS:
-: "${FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"
-```
-
-For arc vars, the clamps happen in the `:=` expressions themselves
-where safe, and in a new `_clamp_arc_config_values` function called at
-the end of `config_defaults.sh`'s execution for values that need
-cross-variable constraints:
+`config_defaults.sh` already applies hard upper bounds at the bottom of
+the file via `_clamp_config_value` and `_clamp_config_float`. Extend that
+existing clamp table for resilience-arc numeric knobs; do not add a new
+special-purpose clamp function.
 
 ```bash
-# _clamp_arc_config_values — Applies hard upper-bound clamps on resilience arc
-# numeric config. Called at the end of config_defaults.sh after all vars are set.
-# Prevents obviously dangerous values (e.g., 9999 build-fix attempts).
-_clamp_arc_config_values() {
-    # BUILD_FIX_MAX_ATTEMPTS: hard ceiling = 10
-    if [[ "${BUILD_FIX_MAX_ATTEMPTS:-3}" =~ ^[0-9]+$ ]] && \
-       (( BUILD_FIX_MAX_ATTEMPTS > 10 )); then
-        BUILD_FIX_MAX_ATTEMPTS=10
-        warn "[config] BUILD_FIX_MAX_ATTEMPTS clamped to 10 (maximum allowed)"
-    fi
-
-    # BUILD_FIX_MAX_TURNS_PER_ATTEMPT: hard ceiling = CODER_MAX_TURNS_CAP
-    local bft_cap="${CODER_MAX_TURNS_CAP:-200}"
-    if [[ "${BUILD_FIX_MAX_TURNS_PER_ATTEMPT:-40}" =~ ^[0-9]+$ ]] && \
-       (( BUILD_FIX_MAX_TURNS_PER_ATTEMPT > bft_cap )); then
-        BUILD_FIX_MAX_TURNS_PER_ATTEMPT="$bft_cap"
-        warn "[config] BUILD_FIX_MAX_TURNS_PER_ATTEMPT clamped to ${bft_cap} (CODER_MAX_TURNS_CAP)"
-    fi
-}
-
-# Call clamp at end of config_defaults.sh
-_clamp_arc_config_values
+# near the existing "# --- Clamp values to hard upper bounds ---" section
+_clamp_config_value BUILD_FIX_MAX_ATTEMPTS 20
+_clamp_config_value BUILD_FIX_MAX_TURNS_PER_ATTEMPT 500
+_clamp_config_value BUILD_FIX_PROGRESS_GATE_FAILURES_MAX 20
+_clamp_config_float UI_GATE_ENV_RETRY_TIMEOUT_FACTOR 0.1 1.0
+_clamp_config_value PREFLIGHT_BAK_RETAIN_COUNT 1000
 ```
 
-**Why a function call at the bottom of the file:** `config_defaults.sh`
-is sourced, not executed. A function call at the end runs in the
-sourcing shell's scope, which is the same pattern used by nothing today —
-but `config_defaults.sh` is a pure assignment file so this is the cleanest
-integration point without touching `config.sh`. If the project convention
-changes to prohibit side effects in `config_defaults.sh`, the clamp can
-be moved to `config.sh` after `load_config()` returns.
+**Why this change:** the project already has a single clamp mechanism and
+centralized clamp block. Reusing it keeps behavior consistent and avoids
+introducing new side-effect ordering concerns in `config_defaults.sh`.
 
 ### Goal 5 — Extend test coverage in `tests/test_validate_config.sh`
 
-Add six new tests covering the new `_vc_check_resilience_arc` checks:
+Add six new tests covering the new `_vc_check_resilience_arc` checks.
+Keep tests in `tests/test_validate_config.sh` focused on validator output
+and return codes; clamp behavior belongs to config-defaults/unit coverage.
 
 ```bash
 # Test: BUILD_FIX_MAX_ATTEMPTS=abc → error
@@ -323,17 +290,6 @@ if echo "$output" | grep -q "BUILD_FIX_MAX_ATTEMPTS=abc — must be integer"; th
     pass "Non-integer BUILD_FIX_MAX_ATTEMPTS triggers error"
 else
     fail "Expected validation error for BUILD_FIX_MAX_ATTEMPTS=abc: $output"
-fi
-unset BUILD_FIX_MAX_ATTEMPTS
-
-# Test: BUILD_FIX_MAX_ATTEMPTS=25 → clamped to 10
-echo "Test: BUILD_FIX_MAX_ATTEMPTS=25 → clamped to 10 at load time"
-BUILD_FIX_MAX_ATTEMPTS=25
-_clamp_arc_config_values
-if [[ "$BUILD_FIX_MAX_ATTEMPTS" == "10" ]]; then
-    pass "BUILD_FIX_MAX_ATTEMPTS clamped to 10"
-else
-    fail "Expected BUILD_FIX_MAX_ATTEMPTS=10, got $BUILD_FIX_MAX_ATTEMPTS"
 fi
 unset BUILD_FIX_MAX_ATTEMPTS
 
@@ -371,19 +327,29 @@ else
 fi
 unset UI_TEST_CMD UI_GATE_ENV_RETRY_ENABLED
 
-# Test: all defaults → all arc checks pass
-echo "Test: All arc defaults → all checks pass"
+# Test: PREFLIGHT_BAK_RETAIN_COUNT=abc → error
+echo "Test: PREFLIGHT_BAK_RETAIN_COUNT non-integer → validate error"
+PREFLIGHT_BAK_RETAIN_COUNT="abc"
+output=$(validate_config 2>&1)
+if echo "$output" | grep -q "PREFLIGHT_BAK_RETAIN_COUNT=abc"; then
+    pass "Non-integer PREFLIGHT_BAK_RETAIN_COUNT triggers error"
+else
+    fail "Expected validation error for PREFLIGHT_BAK_RETAIN_COUNT=abc: $output"
+fi
+unset PREFLIGHT_BAK_RETAIN_COUNT
+
+# Test: all defaults → arc checks pass
+echo "Test: All arc defaults → arc checks pass"
 unset BUILD_FIX_MAX_ATTEMPTS BUILD_FIX_MAX_TURNS_PER_ATTEMPT \
       UI_GATE_ENV_RETRY_TIMEOUT_FACTOR TEKHTON_UI_GATE_FORCE_NONINTERACTIVE \
-      PREFLIGHT_BAK_RETAIN_COUNT \
-      UI_GATE_ENV_RETRY_ENABLED UI_TEST_CMD
+      PREFLIGHT_BAK_RETAIN_COUNT UI_GATE_ENV_RETRY_ENABLED UI_TEST_CMD
 source "${TEKHTON_HOME}/lib/config_defaults.sh"  # re-apply defaults
-passes_before=$PASS
-validate_config 2>/dev/null
-if (( PASS > passes_before )); then
+output=$(validate_config 2>&1)
+if echo "$output" | grep -q "\[Resilience Arc\]" && \
+   echo "$output" | grep -q "0 errors"; then
     pass "Arc defaults produce passing checks"
 else
-    fail "Expected arc default checks to pass"
+    fail "Expected arc default checks to pass cleanly: $output"
 fi
 ```
 
@@ -391,24 +357,40 @@ fi
 
 | File | Change |
 |------|--------|
-| `lib/config_defaults.sh` | New section block with 12 `:=` declarations; new `_clamp_arc_config_values` function called at the end. |
+| `lib/config_defaults.sh` | New section block with 11 `:=` declarations; add arc numeric keys to existing hard-clamp table. |
 | `lib/validate_config.sh` | New `_vc_check_resilience_arc` function; call it as "Check 13" in `validate_config()`. |
 | `templates/pipeline.conf.example` | New commented arc section after `UI_TEST_TIMEOUT=120` line (14 commented keys with descriptions). |
-| `tests/test_validate_config.sh` | Six new test cases for arc config validation checks and clamping. |
+| `tests/test_validate_config.sh` | Six new test cases for arc config validation behavior. |
 
 No changes to runtime arc logic (m126–m135 code paths unchanged).
 
+## Watch For
+
+- Keep `LAST_FAILURE_CONTEXT_SCHEMA_VERSION` out of `config_defaults.sh` even though migration docs may show it as a commented key for visibility. It is a schema contract, not a user tuning knob.
+- In `lib/validate_config.sh`, do not pass counters as parameters or use namerefs; follow the current helper style that mutates `passes`/`warnings`/`errors` from function scope.
+- `templates/pipeline.conf.example` layout evolves over time; anchor insertion by the literal `# UI_TEST_TIMEOUT=120` line, not by section-number comments.
+- Avoid introducing new clamp helper functions unless absolutely required. Extending the existing clamp table is lower risk and easier to review.
+- Keep check severity stable: invalid integers should fail; compatibility and operator-intent mismatches (like retry disabled with `UI_TEST_CMD`) should warn.
+
+## Seeds Forward
+
+- **m137 (V3.2 migration)**: migration script should append the same 11 user-facing arc keys in `pipeline.conf` comments/active defaults so pre-arc projects become discoverable and consistent after migration.
+- **m138 (runtime CI env auto-detect)**: relies on `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` being formally declared and validated here.
+- **Future arc observability milestone**: the new `[Resilience Arc]` validation output block can be reused for dashboard/health summarization without additional parsing formats.
+- **Future config-doc sync automation**: this milestone establishes a single canonical list of arc knobs across defaults, validator, and template, which is a prerequisite for drift-check tooling.
+
 ## Acceptance Criteria
 
-- [ ] All 12 arc variables declared in `config_defaults.sh` with `:=` and sensible defaults.
+- [ ] All 11 arc variables declared in `config_defaults.sh` with `:=` and sensible defaults.
 - [ ] `BUILD_FIX_MAX_TURNS_PER_ATTEMPT` derived from `CODER_MAX_TURNS / 2` at source time, following existing `FINAL_FIX_MAX_TURNS` pattern.
 - [ ] `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` defaults to `0` (not `false`) to match its binary flag convention.
-- [ ] `_clamp_arc_config_values` clamps `BUILD_FIX_MAX_ATTEMPTS` to ≤10 and `BUILD_FIX_MAX_TURNS_PER_ATTEMPT` to ≤`CODER_MAX_TURNS_CAP`.
+- [ ] Arc numeric keys are added to the existing hard-clamp table (`_clamp_config_value` / `_clamp_config_float`) with no new clamp helper function.
 - [ ] `validate_config` runs Check 13 (`_vc_check_resilience_arc`) and its results appear in the pass/warn/error summary totals.
 - [ ] `BUILD_FIX_MAX_ATTEMPTS=abc` produces a `fail` line in `validate_config` output.
 - [ ] `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=2.5` produces a `warn` line in `validate_config` output.
 - [ ] `UI_TEST_CMD` set + `UI_GATE_ENV_RETRY_ENABLED=false` produces a `warn` line.
 - [ ] All arc vars appear in the `pipeline.conf.example` commented section with descriptions.
+- [ ] Milestone includes explicit `Watch For` and `Seeds Forward` sections that call out m137/m138 integration points.
 - [ ] `shellcheck` clean for all modified files.
 - [ ] Six new test cases in `tests/test_validate_config.sh` pass.
 - [ ] Sourcing `config_defaults.sh` twice (idempotent source) does not change any arc var value.

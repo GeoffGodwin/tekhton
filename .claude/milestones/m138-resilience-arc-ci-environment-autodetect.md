@@ -13,7 +13,7 @@ status: pending
 | **Gap** | `detect_ci.sh` (m12) parses CI *config files* to discover build/test commands. No code anywhere detects whether the current Tekhton *process* is running inside a CI environment at runtime (i.e. by inspecting well-known CI environment variables such as `$GITHUB_ACTIONS`, `$CI`, `$JENKINS_URL`, etc.). |
 | **m138 fills** | When Tekhton starts inside a recognised CI environment and `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` has not been explicitly set in `pipeline.conf`, automatically set it to `1`. This makes the arc's non-interactive path the default for CI without any per-project configuration change. Explicit `pipeline.conf` values — including `=0` — are always honoured first. |
 | **Depends on** | m126 (gate reads the variable), m136 (formal variable declaration) |
-| **Files changed** | `lib/config_defaults.sh`, `lib/gates_ui.sh`, `tests/test_ci_environment_detection.sh`, `templates/pipeline.conf.example` |
+| **Files changed** | `lib/config_defaults.sh`, the file that owns `_normalize_ui_gate_env` after m126 lands (expected to be `lib/gates_ui.sh`), `tests/test_ci_environment_detection.sh`, `templates/pipeline.conf.example` |
 
 ### Prior arc context
 
@@ -36,6 +36,13 @@ status: pending
 ---
 
 ## Design
+
+### Sequencing note
+
+This milestone is specified against the **post-m126/post-m136** code shape, not the current live tree. Two consequences matter for the implementer:
+
+1. If `_normalize_ui_gate_env` lives somewhere other than `lib/gates_ui.sh` on the branch being implemented, patch the file that actually defines the function rather than forcing a move.
+2. If the m136 arc subsection has not landed yet in `templates/pipeline.conf.example`, m138 must either land after m136 or co-edit that subsection in the same change. Do not add a second parallel comment block elsewhere in the template.
 
 ### Goal 1 — `_detect_runtime_ci_environment` in `lib/config_defaults.sh`
 
@@ -101,7 +108,7 @@ _get_ci_platform_name() {
 
 ---
 
-### Goal 2 — CI-aware `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` default in `lib/config_defaults.sh`
+### Goal 2 — `_apply_ci_ui_gate_defaults` in `lib/config_defaults.sh`
 
 m136 adds:
 
@@ -109,38 +116,41 @@ m136 adds:
 : "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}" # 0=auto 1=always force non-interactive gate env
 ```
 
-m138 **replaces** that simple `:=` with a CI-aware conditional block. The key invariant: **if the user set `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` explicitly in `pipeline.conf`, respect it unconditionally** — including if they set it to `0` to explicitly opt out of the auto-override.
+m138 **replaces** that simple `:=` with a small helper function plus a one-line invocation at source time. The key invariant: **if the user set `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` explicitly in `pipeline.conf`, respect it unconditionally** — including if they set it to `0` to explicitly opt out of the auto-override.
 
 `_CONF_KEYS_SET` (populated by `_parse_config_file` before `config_defaults.sh` is sourced) is the authoritative list of keys the user has explicitly configured. Check membership in that set before applying the CI override.
 
 ```bash
-# CI auto-detection: elevate TEKHTON_UI_GATE_FORCE_NONINTERACTIVE to 1 when
-# running inside a recognised CI environment and the user has not set it
-# explicitly in pipeline.conf.
+# _apply_ci_ui_gate_defaults
+# Applies the m138 source-time defaulting rule for
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE.
 #
 # Invariant: explicit pipeline.conf values (including =0) always win.
 # _CONF_KEYS_SET is populated by _parse_config_file before config_defaults.sh
 # is sourced, so it contains exactly the keys the user wrote.
-if [[ " ${_CONF_KEYS_SET:-} " != *" TEKHTON_UI_GATE_FORCE_NONINTERACTIVE "* ]] && \
-   _detect_runtime_ci_environment; then
-    TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
-    export TEKHTON_CI_ENVIRONMENT_DETECTED=1
-    # Log only when VERBOSE_OUTPUT is on — no noise in normal CI log streams.
-    # log_verbose may not be loaded yet at this point in the sourcing order,
-    # so fall back to a direct stderr echo gated on VERBOSE_OUTPUT.
-    # _get_ci_platform_name is inlined in the subshell here; no local var
-    # needed (config_defaults.sh is a pure-declarations file — no locals).
-    if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
-        echo "[tekhton] CI environment detected ($(_get_ci_platform_name)) — TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1 (auto)" >&2
+_apply_ci_ui_gate_defaults() {
+    if [[ " ${_CONF_KEYS_SET:-} " != *" TEKHTON_UI_GATE_FORCE_NONINTERACTIVE "* ]] && \
+       _detect_runtime_ci_environment; then
+        TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
+        TEKHTON_CI_ENVIRONMENT_DETECTED=1
+        if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
+            echo "[tekhton] CI environment detected ($(_get_ci_platform_name)) — TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1 (auto)" >&2
+        fi
+    else
+        : "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}"
+        TEKHTON_CI_ENVIRONMENT_DETECTED=0
     fi
-else
-    : "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}"
-    export TEKHTON_CI_ENVIRONMENT_DETECTED=0
-fi
-export TEKHTON_UI_GATE_FORCE_NONINTERACTIVE
+
+    export TEKHTON_UI_GATE_FORCE_NONINTERACTIVE
+    export TEKHTON_CI_ENVIRONMENT_DETECTED
+}
+
+_apply_ci_ui_gate_defaults
 ```
 
-**Why no `local` variable for the platform name:** `config_defaults.sh` is a pure-declarations file that contains zero `local` statements by convention. Introducing `local` would be the first and would break sourcing from any context that is not already inside a function. The platform name is used only once, in the verbose echo, so it is inlined as a subshell call `$(_get_ci_platform_name)` directly in the string. The subshell cost is paid only when `VERBOSE_OUTPUT=true`, which is a developer debugging path — not the default.
+**Why use a helper instead of a raw source-time block:** it eliminates logic duplication in the tests, keeps the source-time behavior easy to re-run in isolation, and gives future arc milestones a single function to call if they need to recompute the default after config mutation in a harness.
+
+**Why no `local` variable for the platform name:** `config_defaults.sh` is sourced at top level, so top-level logic must stay declaration-safe. Keeping the platform lookup inside a helper avoids that constraint for future refactors, but there is still no need to add a local variable here because the name is used exactly once and only on the verbose path.
 
 **`TEKHTON_CI_ENVIRONMENT_DETECTED`** is exported as `1` or `0`. It is a diagnostic-only signal consumed by:
 - `_normalize_ui_gate_env` in `lib/gates_ui.sh` (Goal 3 below) for verbose logging
@@ -149,11 +159,11 @@ export TEKHTON_UI_GATE_FORCE_NONINTERACTIVE
 
 ---
 
-### Goal 3 — Verbose log annotation in `lib/gates_ui.sh`
+### Goal 3 — Verbose log annotation in the `_normalize_ui_gate_env` owner file
 
 `_normalize_ui_gate_env` (introduced by m126) already logs the value of `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE`. m138 adds a one-liner to that function's verbose output section that includes the CI detection source, making it easy to see *why* the variable was set:
 
-**Location:** inside `_normalize_ui_gate_env`, immediately after the block that exports `PLAYWRIGHT_BROWSERS_PATH` / `CI` / etc. — in the verbose log block that already describes the normalised env.
+**Location:** inside `_normalize_ui_gate_env`, immediately after the block that exports `PLAYWRIGHT_BROWSERS_PATH` / `CI` / etc. — in the verbose log block that already describes the normalised env. On the expected m126 landing shape this is `lib/gates_ui.sh`; if m126 landed elsewhere, patch the actual owner file and keep the change local.
 
 ```bash
 # Within _normalize_ui_gate_env's verbose section (after the env-export block):
@@ -175,8 +185,8 @@ New test file. 10 scenarios. Uses a minimal inline harness (same pattern as `tes
 ```bash
 #!/usr/bin/env bash
 # Test: Runtime CI environment auto-detection (m138)
-# Tests _detect_runtime_ci_environment(), _get_ci_platform_name(), and the
-# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE auto-elevation logic in config_defaults.sh.
+# Tests _detect_runtime_ci_environment(), _get_ci_platform_name(), and
+# _apply_ci_ui_gate_defaults() in config_defaults.sh.
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -220,20 +230,8 @@ unset TEKHTON_UI_GATE_FORCE_NONINTERACTIVE TEKHTON_CI_ENVIRONMENT_DETECTED
 export GITHUB_ACTIONS=true
 _CONF_KEYS_SET=""   # key not in user's pipeline.conf
 
-# Re-run the conditional block that config_defaults.sh executes at source time.
-# We call it explicitly here because config_defaults.sh is already sourced;
-# we replicate the conditional block logic as a sub-function for isolated testing.
-_run_ci_autodetect_block() {
-    if [[ " ${_CONF_KEYS_SET:-} " != *" TEKHTON_UI_GATE_FORCE_NONINTERACTIVE "* ]] && \
-       _detect_runtime_ci_environment; then
-        TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
-        TEKHTON_CI_ENVIRONMENT_DETECTED=1
-    else
-        : "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}"
-        TEKHTON_CI_ENVIRONMENT_DETECTED=0
-    fi
-}
-_run_ci_autodetect_block
+# Re-run the same helper that config_defaults.sh invokes at source time.
+_apply_ci_ui_gate_defaults
 
 [[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE}" == "1" ]] && \
     pass "T7: TEKHTON_UI_GATE_FORCE_NONINTERACTIVE auto-elevated to 1" || \
@@ -253,7 +251,7 @@ unset TEKHTON_UI_GATE_FORCE_NONINTERACTIVE TEKHTON_CI_ENVIRONMENT_DETECTED
 export GITHUB_ACTIONS=true
 TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0    # user explicitly set this
 _CONF_KEYS_SET="PROJECT_NAME TEKHTON_UI_GATE_FORCE_NONINTERACTIVE TEST_CMD"
-_run_ci_autodetect_block
+_apply_ci_ui_gate_defaults
 
 [[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE}" == "0" ]] && \
     pass "T8: explicit =0 honoured (auto-elevation suppressed)" || \
@@ -291,23 +289,26 @@ m138 expands it to:
 
 This change is made inside the arc subsection's comment block, keeping the example self-documenting for operators who read it.
 
+Because the current live template does not yet contain the m136 arc subsection, the implementation rule is: anchor this edit to the `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` line inside that subsection once m136 lands. If m136 has not landed on the branch, land the subsection first and then expand the comment in place.
+
 ---
 
 ## Files Modified
 
 | File | Change type | Description |
 |------|------------|-------------|
-| `lib/config_defaults.sh` | Add + modify | `_detect_runtime_ci_environment()`, `_get_ci_platform_name()`, CI-aware `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` conditional block replacing the simple `:=0` default from m136 |
-| `lib/gates_ui.sh` | Add (2 lines) | Verbose log annotation in `_normalize_ui_gate_env` when `TEKHTON_CI_ENVIRONMENT_DETECTED=1` |
-| `tests/test_ci_environment_detection.sh` | Create | 10-scenario test file for both helper functions and the auto-elevation logic |
+| `lib/config_defaults.sh` | Add + modify | `_detect_runtime_ci_environment()`, `_get_ci_platform_name()`, `_apply_ci_ui_gate_defaults()`, and source-time invocation replacing the simple `:=0` default from m136 |
+| `_normalize_ui_gate_env` owner file | Add (2 lines) | Verbose log annotation when `TEKHTON_CI_ENVIRONMENT_DETECTED=1`; expected file is `lib/gates_ui.sh` after m126 lands |
+| `tests/test_ci_environment_detection.sh` | Create | 10-scenario test file for both helper functions and the auto-elevation logic via `_apply_ci_ui_gate_defaults()` |
 | `templates/pipeline.conf.example` | Modify | Expand 1-line comment to 4-line self-documenting block for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` |
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `_detect_runtime_ci_environment` returns `0` for each of the 10 supported platforms when the corresponding env var is set, and returns `1` when none are set.
+- [ ] `_detect_runtime_ci_environment` returns `0` for each named CI signal plus the generic `CI=true` fallback, and returns `1` when none are set.
 - [ ] `_get_ci_platform_name` returns the correct human-readable string for each platform; returns `"unknown"` when none are set.
+- [ ] `_apply_ci_ui_gate_defaults` is the only place that implements the CI auto-elevation rule; the source-time code path invokes that helper directly rather than duplicating its logic inline.
 - [ ] When Tekhton starts with `GITHUB_ACTIONS=true` (or any other recognised CI signal) and `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` is **not** in `pipeline.conf`, the variable is set to `1` and `TEKHTON_CI_ENVIRONMENT_DETECTED=1` is exported.
 - [ ] When `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` is **explicitly present** in `pipeline.conf` (i.e. its key appears in `_CONF_KEYS_SET`), the value `0` is preserved even inside CI — no auto-elevation.
 - [ ] When `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1` is explicitly present in `pipeline.conf`, the value `1` is preserved (`:=` is a no-op).
@@ -318,3 +319,20 @@ This change is made inside the arc subsection's comment block, keeping the examp
 - [ ] `test_validate_config.sh` continues to pass unchanged (no regression in the Check D `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` validation path from m136, which validates `0` or `1`; auto-detected `1` is still valid).
 - [ ] The `templates/pipeline.conf.example` comment for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` explains the CI auto-detection behaviour in four lines.
 - [ ] `_detect_runtime_ci_environment` and `_get_ci_platform_name` are pure bash: no subshells (`$()`), no external commands, no file reads. Verified by `declare -f` inspection showing only `[[` tests and `return`.
+
+## Watch For
+
+- `config_defaults.sh` is sourced after `_parse_config_file`, so `_CONF_KEYS_SET` is available here. Do not re-parse `pipeline.conf` or add file I/O to recompute explicit-key membership.
+- Keep the runtime-CI logic in one helper. Re-implementing the conditional block inline in tests or in adjacent milestones invites drift.
+- The current live repo does not yet contain the m136 arc subsection in `templates/pipeline.conf.example`. Land m136's subsection first or co-land it here; do not scatter CI override comments into unrelated template sections.
+- The current live repo also does not yet expose `_normalize_ui_gate_env` in `lib/gates_ui.sh`. Patch the file that actually owns the function on the implementation branch; the function definition is the anchor, not the filename.
+- `CI=true` is a fallback, not the preferred identity. Check named CI signals first so logs and future health surfaces can report a specific platform when available.
+- `tests/run_tests.sh` already auto-discovers `tests/test_*.sh`. Adding `tests/test_ci_environment_detection.sh` should not require editing the runner unless the naming convention changes.
+
+## Seeds Forward
+
+- **m134 integration suite extension:** m134 already calls out CI-runtime scenarios. Keep the helper names and env signal vocabulary stable so the integration suite can add CI cases without rediscovering m138 internals.
+- **m135 artifact lifecycle:** recovered CI auto-detect behavior should remain success-path quiet. Do not introduce new persisted artifacts for this milestone beyond normal gate diagnostics on terminal failure paths.
+- **m137 migration consistency:** migrated pre-arc projects should surface the same `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` comment text as freshly initialized ones. m137 should reuse the final wording here, not fork its own explanation.
+- **Future observability/health work:** `TEKHTON_CI_ENVIRONMENT_DETECTED` is intentionally diagnostic. Keep it binary and stable so later health or dashboard milestones can read it without parsing logs.
+- **Future CI-platform-specific tuning:** if a later milestone needs platform-specific behavior, extend `_get_ci_platform_name`/`_detect_runtime_ci_environment` rather than teaching downstream gate code to infer platforms independently.

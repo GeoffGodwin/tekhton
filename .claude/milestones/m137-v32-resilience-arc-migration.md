@@ -35,7 +35,7 @@ script that automates all of the above safely and idempotently.
 
 ### Migration script convention (follow existing pattern exactly)
 
-Every migration script exposes three mandatory functions:
+Every migration script exposes four functions (three mandatory; `migration_description` has a runner fallback but should always be implemented):
 
 | Function | Signature | Contract |
 |----------|-----------|---------|
@@ -342,6 +342,8 @@ EOF
 |------|--------|
 | `migrations/031_to_032.sh` | **New file.** Complete migration script with all four functions and three sub-tasks. |
 | `tests/test_migrate_032.sh` (or `tests/test_migrate.sh`) | 12 new test cases. |
+| `tekhton.sh` | Bump `TEKHTON_VERSION` to `3.137.0`. |
+| `.claude/milestones/MANIFEST.cfg` | Add M137 row (`depends_on=m135,m136`, group `resilience`). |
 
 No changes to any `lib/` files. Migration scripts are self-contained.
 
@@ -352,7 +354,7 @@ No changes to any `lib/` files. Migration scripts are self-contained.
 - [ ] `migration_check` returns `1` on a conf already containing `BUILD_FIX_ENABLED=`.
 - [ ] `migration_check` returns `1` when `pipeline.conf` does not exist.
 - [ ] `migration_apply` appends the V3.2 section with `BUILD_FIX_ENABLED=true` as the first line.
-- [ ] All twelve arc vars are present in the appended section (7 active or commented).
+- [ ] All twelve arc vars are present in the appended section (1 active: `BUILD_FIX_ENABLED=true`; 11 commented).
 - [ ] `.gitignore` gains `.claude/BUILD_FIX_REPORT.md` after migration.
 - [ ] `.gitignore` gains `.claude/preflight_bak/` after migration.
 - [ ] Calling `migration_apply` twice does not produce duplicate `BUILD_FIX_ENABLED` lines.
@@ -361,3 +363,20 @@ No changes to any `lib/` files. Migration scripts are self-contained.
 - [ ] The migration chains correctly after `003_to_031.sh` (V3.0 → V3.1 → V3.2) on a V3.0 project.
 - [ ] `shellcheck` clean for `migrations/031_to_032.sh`.
 - [ ] All 12 test cases pass.
+- [ ] `tekhton.sh` `TEKHTON_VERSION` is `3.137.0`.
+- [ ] `.claude/milestones/MANIFEST.cfg` contains the M137 row (`depends_on=m135,m136`, group `resilience`).
+
+## Watch For
+
+- **`migration_check` return codes are counter-intuitive.** `return 0` means the migration *is needed* and the runner will proceed. `return 1` means already applied or not applicable — the runner skips. This is the inverse of typical "success = 0" bash convention. The `run_migrations` loop reads `if ! migration_check "$project_dir"; then log "Already applied"` — the `!` inverts as expected. Do not swap the codes.
+- **`set -euo pipefail` propagates to the caller.** The script is `source`d (not run in a subshell) by `lib/migrate.sh`. `set -euo pipefail` at the top of the sourced script modifies the calling shell's options. This is the established pattern (`002_to_003.sh` and `003_to_031.sh` do the same) — follow it exactly, and do not add a balancing `set +euo pipefail` at the end.
+- **Private helper prefix `_032_` is load-order critical.** During a V3.0 → V3.1 → V3.2 chain, `002_to_003.sh` and `003_to_031.sh` are also sourced into the same shell session. All helper functions must carry the `_032_` prefix to prevent name collision with `_031_*` or `_003_*` helpers from those scripts.
+- **Sentinel key must be the first line emitted.** `BUILD_FIX_ENABLED=true` must appear as the first line in `_032_append_arc_config_section`'s heredoc. If the order is rearranged and the sentinel moves after another key, `migration_check` still works (grep matches anywhere in the file), but the stated design rationale breaks and future readers will be confused.
+- **Heredoc boundary blank lines.** The `cat >> "$conf_file" << 'EOF'` block begins with a blank line and ends with a blank line before `EOF`. This ensures exactly one blank line between the last existing content and the new section header, and one trailing blank line after the block. Do not remove either boundary line.
+- **`.gitignore` trailing-slash semantics.** The entry `.claude/preflight_bak/` (with trailing slash) gitignores directory *contents* but not the directory itself or the `.gitkeep` file. Omitting the trailing slash (e.g. `.claude/preflight_bak`) would also ignore `.gitkeep`, preventing the directory from being tracked. The trailing slash must be preserved.
+- **No changes to `lib/migrate.sh`.** The migration runner auto-discovers scripts by version; placing `031_to_032.sh` in the `migrations/` directory is all that is required. Do not modify the runner, `detect_config_version`, or `_write_config_version`.
+
+## Seeds Forward
+
+- **m138 — Runtime CI environment auto-detection.** The next arc milestone adds `_detect_runtime_ci_environment` and `_get_ci_platform_name` to `lib/config_defaults.sh`, executed before the `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` `:=` default. When a CI environment is detected and the variable is unset, m138 sets it to `1` automatically. m137's migration leaves `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` as a commented key in `pipeline.conf`; operators who uncomment and set it explicitly will have their value honoured by m138's logic. No file conflict.
+- **Future migration scripts (V3.3+).** The naming convention (`NNN_to_NNN.sh`), the `_NNN_*` private helper prefix, the sentinel-key idempotency pattern, and the four-function contract established here are the canonical template for subsequent migration scripts. Follow them.
