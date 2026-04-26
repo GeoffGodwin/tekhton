@@ -139,7 +139,7 @@ current run passed.
 - where to read the report: `${BUILD_FIX_REPORT_FILE}`
 - where to read the build errors: `${BUILD_ERRORS_FILE}`
 - the two knobs that materially change behaviour:
-  `BUILD_FIX_MAX_ATTEMPTS` and `BUILD_FIX_MAX_TURNS_PER_ATTEMPT`
+  `BUILD_FIX_MAX_ATTEMPTS` and `BUILD_FIX_TOTAL_TURN_CAP`
 
 **Contract note:** use `${BUILD_FIX_REPORT_FILE}` from the artifact defaults.
 Do not hardcode `.tekhton/BUILD_FIX_REPORT.md`; m128 explicitly froze the
@@ -381,7 +381,7 @@ Do not try to cram all new fixtures into the legacy file.
   artifact names or report headings M133 matches.
 - **m136 - Config Defaults & Validation.** M133 introduces no new config. Its
   suggestions may mention existing knobs such as `PREFLIGHT_UI_CONFIG_AUTO_FIX`,
-  `BUILD_FIX_MAX_ATTEMPTS`, and `BUILD_FIX_MAX_TURNS_PER_ATTEMPT`, but it must
+  `BUILD_FIX_MAX_ATTEMPTS`, and `BUILD_FIX_TOTAL_TURN_CAP`, but it must
   not require new defaults or validation work from m136.
 - **m137 - V3.2 Migration.** Because M133 adds diagnose-only behaviour, there
   should be no migration burden beyond documentation. If the implementation ends

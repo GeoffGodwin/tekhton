@@ -7,7 +7,7 @@ status: "pending"
 
 ## Overview
 
-Resilience arc milestones m126, m128-m131, and m135 introduced eleven
+Resilience arc milestones m126, m128-m131, and m135 introduced thirteen
 operator-facing config variables that control arc behaviour. None of these variables
 are declared in `lib/config_defaults.sh` today, which means:
 
@@ -26,10 +26,12 @@ The missing variables are:
 
 | Variable | Introduced by | Default | Description |
 |----------|---------------|---------|-------------|
-| `BUILD_FIX_MAX_ATTEMPTS` | m128 | `3` | Max build-fix continuation attempts per pipeline cycle |
-| `BUILD_FIX_MAX_TURNS_PER_ATTEMPT` | m128 | `CODER_MAX_TURNS / 2` | Turn budget per build-fix attempt |
 | `BUILD_FIX_ENABLED` | m128 | `true` | Toggle build-fix continuation loop entirely |
-| `BUILD_FIX_PROGRESS_GATE_FAILURES_MAX` | m128 | `2` | Max consecutive no-progress gates before abandoning |
+| `BUILD_FIX_MAX_ATTEMPTS` | m128 | `3` | Max build-fix continuation attempts per pipeline cycle |
+| `BUILD_FIX_BASE_TURN_DIVISOR` | m128 | `3` | Baseline divisor used to derive attempt-1 build-fix budget |
+| `BUILD_FIX_MAX_TURN_MULTIPLIER` | m128 | `1.0` | Cap multiplier applied against `EFFECTIVE_CODER_MAX_TURNS` |
+| `BUILD_FIX_REQUIRE_PROGRESS` | m128 | `true` | Stop continuation when repeated attempts show no measurable progress |
+| `BUILD_FIX_TOTAL_TURN_CAP` | m128 | `120` | Cumulative turn cap across the whole build-fix loop |
 | `UI_GATE_ENV_RETRY_ENABLED` | m126 | `true` | Enable non-interactive env retry on gate timeout |
 | `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` | m126 | `0.5` | Fraction of original `UI_TEST_TIMEOUT` for retry run |
 | `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` | m126 | `0` | Override: force non-interactive env on every gate run |
@@ -46,7 +48,7 @@ The missing variables are:
 > v2 and retains the v1 flat fields (`category`, `subcategory`) at the
 > top level for backward compatibility with any external tooling.
 
-M136 registers all eleven variables in `config_defaults.sh`,
+M136 registers all thirteen variables in `config_defaults.sh`,
 adds six new `--validate-config` checks in `validate_config.sh`,
 and documents them in a new subsection of `pipeline.conf.example`.
 
@@ -71,8 +73,10 @@ the exact `:=` idiom and comment format used throughout the file.
 # Build-fix continuation loop (m128)
 : "${BUILD_FIX_ENABLED:=true}"                 # Enable build-fix continuation loop
 : "${BUILD_FIX_MAX_ATTEMPTS:=3}"               # Max fix attempts per pipeline cycle
-: "${BUILD_FIX_MAX_TURNS_PER_ATTEMPT:=$(( CODER_MAX_TURNS / 2 ))}"  # Turn budget per attempt
-: "${BUILD_FIX_PROGRESS_GATE_FAILURES_MAX:=2}" # No-progress gates before abandoning loop
+: "${BUILD_FIX_BASE_TURN_DIVISOR:=3}"          # Attempt-1 budget = EFFECTIVE_CODER_MAX_TURNS / divisor
+: "${BUILD_FIX_MAX_TURN_MULTIPLIER:=1.0}"      # Upper cap multiplier against EFFECTIVE_CODER_MAX_TURNS
+: "${BUILD_FIX_REQUIRE_PROGRESS:=true}"        # Require measurable progress for continuation
+: "${BUILD_FIX_TOTAL_TURN_CAP:=120}"           # Cumulative turn cap across all attempts
 
 # Causal recovery routing (m130)
 : "${BUILD_FIX_CLASSIFICATION_REQUIRED:=true}" # Require code_dominant classification for build-fix loop
@@ -83,13 +87,12 @@ the exact `:=` idiom and comment format used throughout the file.
 : "${PREFLIGHT_BAK_RETAIN_COUNT:=5}"           # Max backups to keep in .claude/preflight_bak/
 ```
 
-**Derivation safety for `BUILD_FIX_MAX_TURNS_PER_ATTEMPT`:** The
-expression `$(( CODER_MAX_TURNS / 2 ))` is evaluated at source time.
-`CODER_MAX_TURNS` is guaranteed set before this block because it appears
-earlier in `config_defaults.sh` (`: "${CODER_MAX_TURNS:=80}"`). The `:=`
-operator prevents re-evaluation if `BUILD_FIX_MAX_TURNS_PER_ATTEMPT`
-was already set in `pipeline.conf`. This mirrors the exact pattern used
-by `FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))` already in the file.
+**Build-fix default-shape note:** These defaults deliberately mirror the
+M128 runtime contract rather than introducing a second operator-facing
+surface. `BUILD_FIX_BASE_TURN_DIVISOR`, `BUILD_FIX_MAX_TURN_MULTIPLIER`,
+`BUILD_FIX_REQUIRE_PROGRESS`, and `BUILD_FIX_TOTAL_TURN_CAP` are the
+same names M128 uses in its loop design, so later milestones and
+operator docs do not drift.
 
 **Why `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` defaults to `0` not `false`:**
 The m126 implementation reads it with `[[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-0}" == "1" ]]`
@@ -139,13 +142,13 @@ _vc_check_resilience_arc() {
         errors=$((errors + 1))
     fi
 
-    # Check B: BUILD_FIX_MAX_TURNS_PER_ATTEMPT must be a positive integer
-    local bft="${BUILD_FIX_MAX_TURNS_PER_ATTEMPT:-40}"
-    if [[ "$bft" =~ ^[0-9]+$ ]] && (( bft >= 1 )); then
-        _vc_pass "BUILD_FIX_MAX_TURNS_PER_ATTEMPT=${bft} (valid)"
+    # Check B: BUILD_FIX_BASE_TURN_DIVISOR must be a positive integer
+    local bfd="${BUILD_FIX_BASE_TURN_DIVISOR:-3}"
+    if [[ "$bfd" =~ ^[0-9]+$ ]] && (( bfd >= 1 && bfd <= 20 )); then
+        _vc_pass "BUILD_FIX_BASE_TURN_DIVISOR=${bfd} (valid)"
         passes=$((passes + 1))
     else
-        _vc_fail "BUILD_FIX_MAX_TURNS_PER_ATTEMPT=${bft} — must be positive integer"
+        _vc_fail "BUILD_FIX_BASE_TURN_DIVISOR=${bfd} — must be integer 1–20"
         errors=$((errors + 1))
     fi
 
@@ -231,11 +234,18 @@ the stable insertion anchor instead of section-number headings.
 # Maximum number of build-fix attempts per pipeline cycle.
 # BUILD_FIX_MAX_ATTEMPTS=3
 
-# Turn budget per build-fix attempt (defaults to CODER_MAX_TURNS/2).
-# BUILD_FIX_MAX_TURNS_PER_ATTEMPT=40
+# Attempt-1 budget divisor. M128 computes the base budget as
+# EFFECTIVE_CODER_MAX_TURNS / BUILD_FIX_BASE_TURN_DIVISOR.
+# BUILD_FIX_BASE_TURN_DIVISOR=3
 
-# Max consecutive no-progress gates before the loop abandons.
-# BUILD_FIX_PROGRESS_GATE_FAILURES_MAX=2
+# Cap the adaptive schedule at EFFECTIVE_CODER_MAX_TURNS * multiplier.
+# BUILD_FIX_MAX_TURN_MULTIPLIER=1.0
+
+# Require measurable progress before continuing to later build-fix attempts.
+# BUILD_FIX_REQUIRE_PROGRESS=true
+
+# Cumulative cap across the whole build-fix loop.
+# BUILD_FIX_TOTAL_TURN_CAP=120
 
 # Require log classification to be code_dominant before allowing build-fix loop.
 # Set to false to attempt build-fix even on mixed/uncertain logs (not recommended).
@@ -265,8 +275,9 @@ special-purpose clamp function.
 ```bash
 # near the existing "# --- Clamp values to hard upper bounds ---" section
 _clamp_config_value BUILD_FIX_MAX_ATTEMPTS 20
-_clamp_config_value BUILD_FIX_MAX_TURNS_PER_ATTEMPT 500
-_clamp_config_value BUILD_FIX_PROGRESS_GATE_FAILURES_MAX 20
+_clamp_config_value BUILD_FIX_BASE_TURN_DIVISOR 20
+_clamp_config_float BUILD_FIX_MAX_TURN_MULTIPLIER 1.0 5.0
+_clamp_config_value BUILD_FIX_TOTAL_TURN_CAP 1000
 _clamp_config_float UI_GATE_ENV_RETRY_TIMEOUT_FACTOR 0.1 1.0
 _clamp_config_value PREFLIGHT_BAK_RETAIN_COUNT 1000
 ```
@@ -292,6 +303,17 @@ else
     fail "Expected validation error for BUILD_FIX_MAX_ATTEMPTS=abc: $output"
 fi
 unset BUILD_FIX_MAX_ATTEMPTS
+
+# Test: BUILD_FIX_BASE_TURN_DIVISOR=0 → error
+echo "Test: BUILD_FIX_BASE_TURN_DIVISOR=0 → validate error"
+BUILD_FIX_BASE_TURN_DIVISOR="0"
+output=$(validate_config 2>&1)
+if echo "$output" | grep -q "BUILD_FIX_BASE_TURN_DIVISOR=0"; then
+    pass "Invalid BUILD_FIX_BASE_TURN_DIVISOR triggers error"
+else
+    fail "Expected validation error for BUILD_FIX_BASE_TURN_DIVISOR=0: $output"
+fi
+unset BUILD_FIX_BASE_TURN_DIVISOR
 
 # Test: UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=2.5 → warning
 echo "Test: UI_GATE_ENV_RETRY_TIMEOUT_FACTOR out of range → warning"
@@ -340,7 +362,7 @@ unset PREFLIGHT_BAK_RETAIN_COUNT
 
 # Test: all defaults → arc checks pass
 echo "Test: All arc defaults → arc checks pass"
-unset BUILD_FIX_MAX_ATTEMPTS BUILD_FIX_MAX_TURNS_PER_ATTEMPT \
+unset BUILD_FIX_MAX_ATTEMPTS BUILD_FIX_BASE_TURN_DIVISOR \
       UI_GATE_ENV_RETRY_TIMEOUT_FACTOR TEKHTON_UI_GATE_FORCE_NONINTERACTIVE \
       PREFLIGHT_BAK_RETAIN_COUNT UI_GATE_ENV_RETRY_ENABLED UI_TEST_CMD
 source "${TEKHTON_HOME}/lib/config_defaults.sh"  # re-apply defaults
@@ -357,9 +379,9 @@ fi
 
 | File | Change |
 |------|--------|
-| `lib/config_defaults.sh` | New section block with 11 `:=` declarations; add arc numeric keys to existing hard-clamp table. |
+| `lib/config_defaults.sh` | New section block with 13 `:=` declarations; add arc numeric keys to existing hard-clamp table. |
 | `lib/validate_config.sh` | New `_vc_check_resilience_arc` function; call it as "Check 13" in `validate_config()`. |
-| `templates/pipeline.conf.example` | New commented arc section after `UI_TEST_TIMEOUT=120` line (14 commented keys with descriptions). |
+| `templates/pipeline.conf.example` | New commented arc section after `UI_TEST_TIMEOUT=120` line (13 commented keys with descriptions). |
 | `tests/test_validate_config.sh` | Six new test cases for arc config validation behavior. |
 
 No changes to runtime arc logic (m126–m135 code paths unchanged).
@@ -374,15 +396,15 @@ No changes to runtime arc logic (m126–m135 code paths unchanged).
 
 ## Seeds Forward
 
-- **m137 (V3.2 migration)**: migration script should append the same 11 user-facing arc keys in `pipeline.conf` comments/active defaults so pre-arc projects become discoverable and consistent after migration.
+- **m137 (V3.2 migration)**: migration script should append the same 13 user-facing arc keys in `pipeline.conf` comments/active defaults so pre-arc projects become discoverable and consistent after migration.
 - **m138 (runtime CI env auto-detect)**: relies on `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` being formally declared and validated here.
 - **Future arc observability milestone**: the new `[Resilience Arc]` validation output block can be reused for dashboard/health summarization without additional parsing formats.
 - **Future config-doc sync automation**: this milestone establishes a single canonical list of arc knobs across defaults, validator, and template, which is a prerequisite for drift-check tooling.
 
 ## Acceptance Criteria
 
-- [ ] All 11 arc variables declared in `config_defaults.sh` with `:=` and sensible defaults.
-- [ ] `BUILD_FIX_MAX_TURNS_PER_ATTEMPT` derived from `CODER_MAX_TURNS / 2` at source time, following existing `FINAL_FIX_MAX_TURNS` pattern.
+- [ ] All 13 arc variables declared in `config_defaults.sh` with `:=` and sensible defaults.
+- [ ] `BUILD_FIX_BASE_TURN_DIVISOR`, `BUILD_FIX_MAX_TURN_MULTIPLIER`, `BUILD_FIX_REQUIRE_PROGRESS`, and `BUILD_FIX_TOTAL_TURN_CAP` are declared with the same names M128 uses in its runtime loop design.
 - [ ] `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` defaults to `0` (not `false`) to match its binary flag convention.
 - [ ] Arc numeric keys are added to the existing hard-clamp table (`_clamp_config_value` / `_clamp_config_float`) with no new clamp helper function.
 - [ ] `validate_config` runs Check 13 (`_vc_check_resilience_arc`) and its results appear in the pass/warn/error summary totals.

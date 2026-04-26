@@ -14,7 +14,7 @@ status: "pending"
 | Trigger condition | `TEKHTON_CONFIG_VERSION` < `3.2` in project's `pipeline.conf` |
 | Files produced | `migrations/031_to_032.sh` |
 
-The resilience arc (m126–m136) introduced twelve new config variables,
+The resilience arc (m126–m136) introduced thirteen new config variables,
 two new runtime artifact paths, new gitignore entries, and a new
 `pipeline.conf` section. A project that was initialized before the arc
 landed — the common case for all existing bifl-tracker-style projects —
@@ -22,7 +22,7 @@ gets none of this automatically. The `--migrate` command is the standard
 Tekhton upgrade path for such projects.
 
 Without m137, an operator upgrading their Tekhton installation must:
-1. Manually identify which of the twelve new vars their project needs.
+1. Manually identify which of the thirteen new vars their project needs.
 2. Manually add gitignore entries for the two new artifact paths.
 3. Know that `PREFLIGHT_UI_CONFIG_AUTO_FIX` exists (it is not in their
    config file and not visible in `--validate-config` output on pre-arc
@@ -122,8 +122,10 @@ _032_append_arc_config_section() {
 # === Build-Fix Continuation Loop (m128) ===
 BUILD_FIX_ENABLED=true
 # BUILD_FIX_MAX_ATTEMPTS=3          # Max fix attempts per pipeline cycle
-# BUILD_FIX_MAX_TURNS_PER_ATTEMPT=40  # Turn budget per attempt (default: CODER_MAX_TURNS/2)
-# BUILD_FIX_PROGRESS_GATE_FAILURES_MAX=2  # No-progress gates before aborting loop
+# BUILD_FIX_BASE_TURN_DIVISOR=3     # Attempt-1 budget divisor
+# BUILD_FIX_MAX_TURN_MULTIPLIER=1.0  # Upper cap multiplier against EFFECTIVE_CODER_MAX_TURNS
+# BUILD_FIX_REQUIRE_PROGRESS=true   # Stop continuation when attempts show no progress
+# BUILD_FIX_TOTAL_TURN_CAP=120      # Cumulative turn cap across the build-fix loop
 # BUILD_FIX_CLASSIFICATION_REQUIRED=true  # Require code_dominant classification
 
 # === UI Gate Non-Interactive Enforcement (m126) ===
@@ -135,9 +137,6 @@ BUILD_FIX_ENABLED=true
 # PREFLIGHT_UI_CONFIG_AUDIT_ENABLED=true  # Scan test framework configs for interactive-mode
 # PREFLIGHT_UI_CONFIG_AUTO_FIX=true  # Auto-patch reporter: 'html' to CI-guarded form
 # PREFLIGHT_BAK_RETAIN_COUNT=5       # Backup files to keep in .claude/preflight_bak/
-
-# === Failure Context Schema (m129) ===
-# LAST_FAILURE_CONTEXT_SCHEMA_VERSION=2  # 2=primary/secondary causes, 1=legacy flat
 EOF
 }
 ```
@@ -166,7 +165,7 @@ _032_update_gitignore() {
 
     local _added=0
     local -a _new_entries=(
-        ".claude/BUILD_FIX_REPORT.md"
+        ".tekhton/BUILD_FIX_REPORT.md"
         ".claude/preflight_bak/"
     )
     local entry
@@ -238,7 +237,6 @@ includes the full `.claude/preflight_bak/` path with trailing slash.
 #   - Build-fix continuation loop keys
 #   - UI gate non-interactive enforcement keys
 #   - Preflight UI config audit keys
-#   - Failure context schema version key
 # Updates .gitignore with new arc artifact paths.
 # Creates .claude/preflight_bak/ directory.
 #
@@ -309,7 +307,7 @@ T2: migration_check on a conf with BUILD_FIX_ENABLED= → returns 1 (already mig
 T3: migration_check with no pipeline.conf → returns 1 (skip — express mode)
 T4: migration_apply on V3.1 conf → conf now contains BUILD_FIX_ENABLED=true
 T5: migration_apply on V3.1 conf → conf contains # BUILD_FIX_MAX_ATTEMPTS (commented)
-T6: migration_apply on V3.1 conf → .gitignore gains .claude/BUILD_FIX_REPORT.md
+T6: migration_apply on V3.1 conf → .gitignore gains .tekhton/BUILD_FIX_REPORT.md
 T7: migration_apply on V3.1 conf → .gitignore gains .claude/preflight_bak/
 T8: migration_apply called twice (idempotency) → second call returns 1 (migration_check),
     conf does not contain duplicate BUILD_FIX_ENABLED entries
@@ -354,8 +352,8 @@ No changes to any `lib/` files. Migration scripts are self-contained.
 - [ ] `migration_check` returns `1` on a conf already containing `BUILD_FIX_ENABLED=`.
 - [ ] `migration_check` returns `1` when `pipeline.conf` does not exist.
 - [ ] `migration_apply` appends the V3.2 section with `BUILD_FIX_ENABLED=true` as the first line.
-- [ ] All twelve arc vars are present in the appended section (1 active: `BUILD_FIX_ENABLED=true`; 11 commented).
-- [ ] `.gitignore` gains `.claude/BUILD_FIX_REPORT.md` after migration.
+- [ ] All thirteen arc vars are present in the appended section (1 active: `BUILD_FIX_ENABLED=true`; 12 commented).
+- [ ] `.gitignore` gains `.tekhton/BUILD_FIX_REPORT.md` after migration.
 - [ ] `.gitignore` gains `.claude/preflight_bak/` after migration.
 - [ ] Calling `migration_apply` twice does not produce duplicate `BUILD_FIX_ENABLED` lines.
 - [ ] `.claude/preflight_bak/.gitkeep` exists after migration on a fresh project.

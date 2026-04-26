@@ -192,7 +192,7 @@ If the helpers `set_secondary_cause`/`reset_failure_cause_context`
 already exist (M129 deployed), call them instead of raw exports. Detect
 with `command -v set_secondary_cause &>/dev/null`.
 
-### Goal 6 - Guardrails for budget, agent calls, and dominant non-code routing
+### Goal 6 - Guardrails for budget and agent calls
 
 1. **Cumulative turn cap.**
    - `BUILD_FIX_TOTAL_TURN_CAP=120` (default).
@@ -201,16 +201,7 @@ with `command -v set_secondary_cause &>/dev/null`.
      cumulative cap is reached. The next attempt's adaptive budget is
      clamped to `cap - used` if positive, else loop exits.
 
-2. **Repeated `noncode_dominant` short-circuit.**
-   - Read M127's exported `LAST_BUILD_CLASSIFICATION` after each gate.
-   - If two consecutive attempts produce `noncode_dominant`, stop the
-     loop and emit human-action guidance via `append_human_action`
-     (already imported by `stages/coder.sh:1123`).
-   - This is the existing `has_only_noncode_errors` short-circuit
-     promoted to a loop-level guard. M127 owns the single-attempt
-     short-circuit; M128 owns the multi-attempt one.
-
-3. **Autonomous-agent accounting (no new code needed).**
+2. **Autonomous-agent accounting (no new code needed).**
    - `run_agent` (`lib/agent.sh`) already increments `_ORCH_AGENT_CALLS`
      and the `MAX_AUTONOMOUS_AGENT_CALLS=200` cap fires from
      `lib/orchestrate.sh:177`. Build-fix attempts MUST go through
@@ -306,27 +297,21 @@ established by `tests/test_ui_build_gate.sh` Test 8.
    `BUILD_FIX_TOTAL_TURN_CAP`. Assert loop exits when cumulative cap
    reached even before max attempts.
 
-7. **`noncode_dominant_double_short_circuit`**
-   Stub: `LAST_BUILD_CLASSIFICATION=noncode_dominant` on consecutive
-   gate calls. Assert loop stops, `append_human_action` called,
-   `BUILD_FIX_OUTCOME=exhausted` (not `passed`), and the env_failure
-   path is taken via existing flow.
-
-8. **`report_written`**
+7. **`report_written`**
    Verify `${BUILD_FIX_REPORT_FILE}` is created, contains one block per
    attempt, and includes turn budget / terminal class / gate result /
    progress / classification fields.
 
-9. **`pipeline_state_notes_include_build_fix_summary`**
+8. **`pipeline_state_notes_include_build_fix_summary`**
    Verify `PIPELINE_STATE.md` notes on `build_failure` exit include
    attempt count and `${BUILD_FIX_REPORT_FILE}` pointer.
 
-10. **`stats_exported_on_every_exit_path`**
+9. **`stats_exported_on_every_exit_path`**
     Verify the four Goal 7 vars are non-empty after success path,
     exhausted path, no-progress path, and `not_run` path. Specifically
     assert `BUILD_FIX_OUTCOME` is one of the four allowed tokens.
 
-11. **`single_attempt_compat_mode`**
+10. **`single_attempt_compat_mode`**
     Set `BUILD_FIX_MAX_ATTEMPTS=1` and verify behavior matches
     pre-M128: one attempt then exit. (Rollback safety.)
 
@@ -340,7 +325,7 @@ established by `tests/test_ui_build_gate.sh` Test 8.
 | `lib/artifact_defaults.sh` | Add `: "${BUILD_FIX_REPORT_FILE:=${TEKHTON_DIR}/BUILD_FIX_REPORT.md}"` alongside the existing artifact paths (lines 16-50). |
 | `lib/state.sh` | No signature change. Build-fix loop calls `write_pipeline_state` with the existing 5-arg form, passing the structured summary string as `extra_notes` (5th arg). The function body at line 30 is unchanged. |
 | `lib/prompts.sh` | Register `BUILD_FIX_REPORT_FILE` and the six new config keys as template variables (consistent with how other artifact and config vars are exposed). |
-| `tests/test_build_fix_loop.sh` | **New file.** Test cases T1–T11 above. |
+| `tests/test_build_fix_loop.sh` | **New file.** Test cases T1–T10 above. |
 | `tests/run_tests.sh` | Register the new test file. |
 | `docs/resilience.md` | Document build-fix continuation policy, caps, and early-stop criteria. |
 | `docs/reference/configuration.md` | Document the six new build-fix config keys with defaults. |
@@ -351,7 +336,6 @@ established by `tests/test_ui_build_gate.sh` Test 8.
 - [ ] Turn budget increases per attempt according to the 1.0× / 1.5× / 2.0× schedule using integer arithmetic; respects 8-turn lower bound and `EFFECTIVE_CODER_MAX_TURNS * BUILD_FIX_MAX_TURN_MULTIPLIER` upper bound.
 - [ ] Continuation beyond attempt 1 is blocked when `BUILD_FIX_REQUIRE_PROGRESS=true` and `_build_fix_progress_signal` returns `unchanged` or `worsened`.
 - [ ] Cumulative build-fix turns are capped by `BUILD_FIX_TOTAL_TURN_CAP=120`.
-- [ ] Two consecutive `LAST_BUILD_CLASSIFICATION=noncode_dominant` results stop the loop and trigger `append_human_action`.
 - [ ] `${BUILD_FIX_REPORT_FILE}` is created under `${TEKHTON_DIR}/` and records every attempt with budget / terminal class / gate result / progress / classification.
 - [ ] On terminal `build_failure`, `PIPELINE_STATE.md` notes include attempt count and report pointer.
 - [ ] On every exit path (including the `not_run` path), the four env vars `BUILD_FIX_ATTEMPTS`, `BUILD_FIX_OUTCOME`, `BUILD_FIX_TURN_BUDGET_USED`, `BUILD_FIX_PROGRESS_GATE_FAILURES` are exported with valid values; `BUILD_FIX_OUTCOME` is one of `passed | exhausted | no_progress | not_run`.
@@ -405,8 +389,8 @@ established by `tests/test_ui_build_gate.sh` Test 8.
   flips edge-case classifications and breaks the truth-table test.
 - **Pre-flight backwards-compat: `has_only_noncode_errors` is M127's
   responsibility.** Do not call it from inside the loop; M127's single-
-  attempt short-circuit fires *before* the loop entry. M128 only adds
-  the *multi-attempt* `noncode_dominant` short-circuit on top.
+  attempt short-circuit fires *before* the loop entry. Additional
+  non-code dominant routing is handled by M130 at recovery dispatch.
 - **`BUILD_FIX_TOTAL_TURN_CAP` interacts with adaptive budgets.** When
   `cap - used` becomes smaller than 8, the next attempt would request
   a sub-floor budget. Treat that as "cap reached" and exit the loop;
@@ -427,11 +411,11 @@ established by `tests/test_ui_build_gate.sh` Test 8.
 - **M130 — Causal-context-aware recovery routing.** M130 reads
   `LAST_BUILD_CLASSIFICATION` to decide whether to route
   `retry_coder_build` (`code_dominant` / `mixed_uncertain` first
-  attempt) or `save_exit` (`noncode_dominant`). M128's loop runs
-  **inside** the coder stage, before M130's outer-loop classifier
-  fires; the two are independent. M130's `_ORCH_MIXED_BUILD_RETRIED`
-  gate is at outer-loop level, not per-attempt — do not try to
-  coordinate them.
+  attempt) or `save_exit` (`noncode_dominant`). Keep ownership clear:
+  M130 owns non-code dominant recovery dispatch, while M128 owns
+  in-loop budget and progress gates after a retry has been selected.
+  M130's `_ORCH_MIXED_BUILD_RETRIED` gate is at outer-loop level, not
+  per-attempt — do not try to coordinate them.
 - **M132 — RUN_SUMMARY causal fidelity enrichment.** Hard contract.
   M132's `_collect_build_fix_stats_json` reads exactly the four env
   vars from Goal 7 with exactly the four `BUILD_FIX_OUTCOME` tokens.

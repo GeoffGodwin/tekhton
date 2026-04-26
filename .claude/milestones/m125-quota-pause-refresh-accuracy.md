@@ -88,12 +88,13 @@ first and only falls back to the real call when necessary.
 
 Preferred order, each gated behind a feature-detection check:
 
-1. **`claude --version` probe.** Invoking `timeout 10 claude
-   --version` completes without authenticating against the API at
-   all — it exits 0 if the binary is present and runnable. This
-   alone doesn't verify quota, but combined with (2) it rules out
-   local environment regressions (`claude` binary removed, PATH
-   broken) that would otherwise masquerade as unrefreshed quota.
+1. **One-time local sanity check.** Before selecting an actual probe
+  mode, invoke `timeout 10 claude --version` once at pause entry.
+  This completes without authenticating against the API at all — it
+  exits 0 if the binary is present and runnable. It is explicitly
+  **not** a quota probe and must never resume the pipeline by
+  itself; its only purpose is to distinguish local CLI breakage
+  (`claude` binary removed, PATH broken) from quota exhaustion.
 
 2. **Empty-prompt probe.** Invoke `timeout 10 claude --max-turns 0
    --output-format text -p ""` (or the nearest equivalent depending
@@ -104,7 +105,7 @@ Preferred order, each gated behind a feature-detection check:
    rate-limit error as a real call. Either way, quota state is
    observable without burning meaningful budget.
 
-3. **Current path as fallback.** If neither (1) nor (2) is
+3. **Current path as fallback.** If (2) is unsupported by the
    supported by the installed CLI version, keep the existing
    `claude --max-turns 1 -p "respond with OK"` flow but cap the
    probe to once every `QUOTA_PROBE_MIN_INTERVAL` seconds
@@ -112,18 +113,21 @@ Preferred order, each gated behind a feature-detection check:
    the probe cost can never dominate the paused budget even on
    old CLIs.
 
-The probe detection runs once per pipeline invocation at first
-pause and caches the result in `_QUOTA_PROBE_MODE` (values:
-`version` / `zero_turn` / `fallback`). Log the chosen mode once at
-info level so operators can confirm their CLI is on a cheap mode.
+The one-time `claude --version` sanity result is logged separately and
+never stored as a probe mode. Actual probe-mode detection runs once per
+pipeline invocation at first pause and caches the result in
+`_QUOTA_PROBE_MODE` (values: `zero_turn` / `fallback`). Log the chosen
+mode once at info level so operators can confirm whether their CLI is
+on a cheap probe path.
 
 If `is_rate_limit_error` on the probe's stderr returns true, the
 probe correctly concludes "still exhausted" regardless of which
-mode it used. If the probe exits 0 (version mode) or exits non-zero
-with a non-rate-limit error (zero-turn mode), treat quota as
-possibly-available and let the pipeline do one real attempt —
-which either succeeds or re-enters `enter_quota_pause` with the
-fresh `Retry-After` header parsed by the next path.
+mode it used. If the probe exits 0 (zero-turn mode) or exits non-zero
+with a non-rate-limit error (also zero-turn mode), treat quota as
+possibly-available and let the pipeline do one real attempt — which
+either succeeds or re-enters `enter_quota_pause` with the fresh
+`Retry-After` header parsed by the next path. A successful
+`claude --version` check alone is never evidence that quota refreshed.
 
 Add a new config key `QUOTA_PROBE_MIN_INTERVAL` to
 `lib/config_defaults.sh` (default 600, clamped to 3600 upper
@@ -188,7 +192,10 @@ second argument: `retry_after_seconds`. Default is empty (current
 behaviour). Inside the function:
 
 - If `retry_after_seconds` is present and numeric, clamp it to
-  `[QUOTA_PROBE_MIN_INTERVAL, QUOTA_MAX_PAUSE_DURATION]` and sleep
+  `[1, QUOTA_MAX_PAUSE_DURATION]` when the chosen probe mode is the
+  cheap `zero_turn` path, and to
+  `[QUOTA_PROBE_MIN_INTERVAL, QUOTA_MAX_PAUSE_DURATION]` only when the
+  chosen probe mode is the quota-spending `fallback` path. Then sleep
   for that duration before the first probe instead of
   `QUOTA_RETRY_INTERVAL`.
 - After the first Retry-After-scheduled probe, if it still reports
@@ -209,12 +216,13 @@ Tests in `tests/test_quota.sh`:
   plain text `Rate limited. Retry after 180 seconds.` on stderr,
   assert the helper returns `180` (update regex if needed).
 - `test_enter_quota_pause_honours_retry_after` — stub `_quota_probe`
-  to track wall-clock between calls, invoke with `retry_after=8`
-  and `QUOTA_RETRY_INTERVAL=2`, assert the first probe fires ~8s
-  later, the second ~2s after that.
+  to track wall-clock between calls, invoke with `retry_after=8`,
+  `QUOTA_PROBE_MIN_INTERVAL=1`, and `QUOTA_RETRY_INTERVAL=2`,
+  assert the first probe fires ~8s later, the second ~2s after
+  that.
 - `test_enter_quota_pause_clamps_retry_after_floor` — stub, invoke
-  with `retry_after=1` and `QUOTA_PROBE_MIN_INTERVAL=5`, assert
-  the first probe waits at least 5s.
+  with `retry_after=1`, `QUOTA_PROBE_MIN_INTERVAL=5`, and forced
+  `fallback` mode, assert the first probe waits at least 5s.
 
 ### Goal 4 — Probe back-off with jitter
 
@@ -259,9 +267,9 @@ Add to `tests/run_tests.sh`.
 
 Expand the existing `tests/test_quota.sh` with:
 
-- `test_probe_mode_detection_prefers_version` — stub a
-  `claude --version` shim that exits 0, assert
-  `_QUOTA_PROBE_MODE=version` after first `_quota_probe` call.
+- `test_probe_mode_detection_prefers_zero_turn` — stub a modern
+  `claude --help` / `--max-turns 0` surface, assert
+  `_QUOTA_PROBE_MODE=zero_turn` after first `_quota_probe` call.
 - `test_probe_mode_fallback_when_flags_unsupported` — stub
   `claude --help` output without `--max-turns`, assert fallback
   mode is selected and `QUOTA_PROBE_MIN_INTERVAL` is enforced.
@@ -271,7 +279,7 @@ Expand the existing `tests/test_quota.sh` with:
 | File | Change |
 |------|--------|
 | `lib/config_defaults.sh` | Bump `QUOTA_MAX_PAUSE_DURATION` default to 18900 (5h 15m); add `QUOTA_PROBE_MIN_INTERVAL:=600`, `QUOTA_PROBE_MAX_INTERVAL:=1800`; add clamp bounds for both. |
-| `lib/quota.sh` | Accept optional `retry_after_seconds` in `enter_quota_pause`; layered probe (version → zero-turn → fallback) with cached `_QUOTA_PROBE_MODE`; exponential back-off + jitter; forward `first_probe_delay` to `tui_enter_pause`. |
+| `lib/quota.sh` | Accept optional `retry_after_seconds` in `enter_quota_pause`; one-time `claude --version` local sanity check plus layered probe (`zero_turn` → `fallback`) with cached `_QUOTA_PROBE_MODE`; exponential back-off + jitter; forward `first_probe_delay` to `tui_enter_pause`. |
 | `lib/agent_retry.sh` | Extract `_extract_retry_after_seconds` helper (reads both stdout and stderr); pass the value into `enter_quota_pause`. |
 | `tests/test_quota.sh` | Add Retry-After parsing tests, probe-mode detection tests, pause scheduling tests. |
 | `tests/test_quota_retry_after_integration.sh` | **New file.** End-to-end test with a synthetic `claude` shim returning Retry-After payload. |
@@ -287,10 +295,11 @@ Expand the existing `tests/test_quota.sh` with:
 - [ ] The pause-entry log line reports the duration in plain
       English (`5h15m`, `47m`, etc.) rather than raw seconds.
 - [ ] When the original rate-limit error carries a Retry-After
-      value, the first probe fires after that delay (within
-      `QUOTA_PROBE_MIN_INTERVAL` floor and
-      `QUOTA_MAX_PAUSE_DURATION` ceiling) — verified via the
-      integration test with a synthetic `claude` shim.
+  value, the first probe fires after that delay, clamped to
+  the fallback-probe floor only when the selected probe mode is
+  `fallback`, and otherwise clamped only by
+  `QUOTA_MAX_PAUSE_DURATION` — verified via the integration
+  test with a synthetic `claude` shim.
 - [ ] When Retry-After is absent, behaviour matches pre-M125:
       first probe fires at `QUOTA_RETRY_INTERVAL` with no
       regression.
@@ -299,9 +308,10 @@ Expand the existing `tests/test_quota.sh` with:
       `agent_stderr.txt` (plain-text form). Missing / malformed
       values return non-zero without aborting.
 - [ ] `_quota_probe` selects a probe mode at first use and caches
-      it in `_QUOTA_PROBE_MODE`. On modern Claude CLIs that
-      support `--version`, the mode is `version`; token cost per
-      probe is zero.
+  it in `_QUOTA_PROBE_MODE`. On modern Claude CLIs that support
+  `--max-turns 0`, the mode is `zero_turn`; token cost per
+  probe is near-zero. The one-time `claude --version` sanity
+  check never counts as quota evidence or as a probe mode.
 - [ ] Falling back to the pre-M125 `claude -p "respond with OK"`
       path is rate-limited to at most one call per
       `QUOTA_PROBE_MIN_INTERVAL` seconds regardless of

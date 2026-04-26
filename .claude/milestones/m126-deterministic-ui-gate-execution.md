@@ -189,6 +189,27 @@ This avoids the current pathology where two identical interactive
 commands time out back-to-back, while not stacking 3-4 subprocess
 invocations on every failure.
 
+Two inline-fallback knobs are introduced for this deterministic-retry
+branch and formalized later by M136 in `config_defaults.sh`:
+
+- `UI_GATE_ENV_RETRY_ENABLED` (default `true`) — when `false`, skip the
+  hardened rerun entirely and write terminal diagnosis immediately on an
+  `interactive_report` signature.
+- `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` (default `0.5`) — the hardened rerun
+  gets `UI_TEST_TIMEOUT * factor`, clamped to at least 1 second and at
+  most the original `UI_TEST_TIMEOUT`, so the non-interactive retry fails
+  faster than the original hung command when the env hardening does not
+  help.
+
+On the `interactive_report` path, the hardened rerun therefore becomes:
+
+```
+run #2 (HARDENED=1 env profile, timeout = UI_TEST_TIMEOUT * UI_GATE_ENV_RETRY_TIMEOUT_FACTOR)
+```
+
+When `UI_GATE_ENV_RETRY_ENABLED=false`, the branch still classifies as
+`interactive_report` and writes diagnosis, but it performs no rerun.
+
 ### Goal 4 — Emit structured gate diagnosis for timeout classes
 
 Diagnosis is written **only on terminal gate failure** — never on a
@@ -312,6 +333,8 @@ Add at minimum:
 - [ ] When the first run fails with `interactive_report` signature, Tekhton invokes `UI_TEST_CMD` exactly **2** times total (run #1 + hardened rerun); M54 remediation and the existing generic flakiness retry are skipped on this branch.
 - [ ] When the first run fails with `generic_timeout` or `none` signature, the existing M54 remediation path and the existing generic flakiness retry both run unchanged (with the normal-run env applied to every invocation).
 - [ ] If the hardened rerun succeeds, the gate returns 0, no diagnosis or error file is left on disk (existing `gates.sh:212-213` cleanup), and the log contains the line `UI tests passed after deterministic reporter hardening.`.
+- [ ] `UI_GATE_ENV_RETRY_ENABLED=false` suppresses the hardened rerun on the `interactive_report` branch without changing classification or diagnosis content.
+- [ ] `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` scales only the hardened-rerun timeout; it never mutates the configured primary `UI_TEST_TIMEOUT` in the parent shell.
 - [ ] If the hardened rerun fails, both `UI_TEST_ERRORS.md` and `BUILD_ERRORS.md` contain a `## UI Gate Diagnosis` section with the four bullet fields from Goal 4 populated.
 - [ ] All 12 existing `tests/test_ui_build_gate.sh` tests still pass; the seven new tests from Goal 5 also pass; the summary line and header comment block reflect the new total.
 - [ ] New tests run with no network access and no real Playwright/browser invocation.

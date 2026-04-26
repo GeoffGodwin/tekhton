@@ -225,12 +225,19 @@ the config file automatically."
     mkdir -p "$bak_dir"
     cp "$cfg_file" "$bak_file"
 
-    # In-place sed replacement — handles both single and double-quote variants.
-    # Replaces `reporter: 'html'` or `reporter: "html"` with the CI guard form.
-    # Uses a two-pass approach: simple string reporter first, array form second.
+    # In-place sed replacement — handles both scalar and single-entry array
+    # forms using either quote style.
+    # Replaces:
+    #   reporter: 'html'
+    #   reporter: "html"
+    #   reporter: ['html']
+    #   reporter: ["html"]
+    # with the CI-guarded scalar form.
     if sed -i \
         "s|reporter: 'html'|reporter: process.env.CI ? 'dot' : 'html'|g;
-         s|reporter: \"html\"|reporter: process.env.CI ? 'dot' : 'html'|g" \
+       s|reporter: \"html\"|reporter: process.env.CI ? 'dot' : 'html'|g;
+       s|reporter: \['html'\]|reporter: process.env.CI ? 'dot' : 'html'|g;
+       s|reporter: \[\"html\"\]|reporter: process.env.CI ? 'dot' : 'html'|g" \
         "$cfg_file" 2>/dev/null; then
         _pf_record "fixed" "UI Config (Playwright) — html reporter" \
 "Auto-patched reporter: 'html' → CI-guarded form in ${cfg_file##*/}.
@@ -398,6 +405,19 @@ review:
 These four var names are public contract consumed by m132's
 `_collect_preflight_ui_json`, m133's `_rule_preflight_interactive_config`,
 m134's S1.x scenarios, and m126's `_ui_deterministic_env_list`. Renaming
+On fail-level exits that stop preflight (PW-1 when auto-fix is disabled,
+PW-1 when auto-patch fails, and JV-1), if `set_primary_cause` is
+available, call:
+
+```bash
+set_primary_cause ENVIRONMENT test_infra ui_interactive_config_preflight preflight
+```
+
+Do **not** set this primary cause on `fixed` paths. A successful
+auto-patch should remain observable through `PREFLIGHT_UI_*` and the
+`preflight_ui.*` summary fields without contaminating an unrelated later
+failure in the same run.
+
 them post-merge silently breaks every downstream consumer.
 
 **Wire-through to the gate normalizer.** M126's normalizer already

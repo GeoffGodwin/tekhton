@@ -142,7 +142,7 @@ Setup:
 
 Actions:
   1. Run _run_ui_test_phase "coder"
-  2. Assert _detect_interactive_reporter_timeout returns true
+  2. Assert `_ui_timeout_signature 124 "$captured_output"` returns `interactive_report`
   3. Assert second gate run uses env with PLAYWRIGHT_HTML_OPEN=never
   4. Assert AGENT_ERROR_CATEGORY set to "ENVIRONMENT" on final failure
   5. Assert AGENT_ERROR_SUBCATEGORY set to "test_infra"
@@ -161,7 +161,7 @@ Setup:
 
 Actions:
   1. Run _run_ui_test_phase "coder"
-  2. Assert _detect_interactive_reporter_timeout returns false
+  2. Assert `_ui_timeout_signature 124 "$captured_output"` returns `generic_timeout`
   3. Assert no hardened retry attempted (standard exit)
   4. Assert AGENT_ERROR_SUBCATEGORY is NOT "test_infra"
 ```
