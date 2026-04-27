@@ -1,74 +1,82 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 30 test functions (16 in test_m132_run_summary_enrichment.sh,
-4 in test_finalize_summary_tester_guard.sh, 10 in test_m62_fixes_integration.sh)
+Tests audited: 2 files, 26 test functions (test_diagnose_rules_resilience.sh)
++ 20 test suites (test_diagnose.sh, Suites 1–20)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Two remaining hard-coded line-number lookups not converted by M132 maintenance
-- File: tests/test_m62_fixes_integration.sh:82 and tests/test_m62_fixes_integration.sh:89
-- Issue: M132 maintenance converted Test 8's `sed -n '165p'` to a `grep -q` pattern
-  lookup. Tests 9 and 10 still use `sed -n '138p' lib/timing.sh` and
-  `sed -n '41p' stages/review.sh` respectively. Neither `timing.sh` nor `review.sh`
-  was modified by M132, so both tests currently pass. However, any future insertion or
-  removal of lines before line 138 in timing.sh (or line 41 in review.sh) will silently
-  test the wrong line or fail on a vacuous non-match — the exact fragility that prompted
-  the Test 8 fix. The coder addressed the immediate breakage without completing the
-  pattern fix across the whole file.
-- Severity: MEDIUM
-- Action: Replace `sed -n '138p' "${TEKHTON_HOME}/lib/timing.sh"` (Test 9) with:
-  `grep -q 'if \[\[ "$_spk" == "${_pfx}"\* \]\]; then' "${TEKHTON_HOME}/lib/timing.sh"`
-  Replace `sed -n '41p' "${TEKHTON_HOME}/stages/review.sh"` (Test 10) with:
-  `grep -q 'global.*tested externally' "${TEKHTON_HOME}/stages/review.sh"`
-  Both assertions are already pattern-based; only the line-number coupling needs removal.
-
-#### NAMING: Silent-skip pattern hides dependent test outcomes on guard-line failure
-- File: tests/test_finalize_summary_tester_guard.sh:32, :42, :52
-- Issue: Tests 2, 3, and 4 are wrapped in `if [[ -n "$guard_line" ]]; then ... fi`
-  with no `else` branch. If Test 1 fails to locate the guard line, Tests 2–4 execute
-  neither `pass` nor `fail` — they are silently skipped. The final tally would report
-  1 failure (from Test 1) rather than 4, obscuring which assertions did not run. In the
-  current codebase this cannot trigger because the guard pattern exists, but if a
-  future refactor renames the condition and Test 1 fails, the dependent test count
-  will be invisible.
+#### COVERAGE: _rule_ui_gate_interactive_reporter source-4 path (RUN_SUMMARY correlation) has no test
+- File: tests/test_diagnose_rules_resilience.sh (no covering scenario)
+- Issue: `_rule_ui_gate_interactive_reporter` has four detection sources; T1 covers
+  source 1 (v2 primary signal), T2 covers source 3 (raw log), but source 4
+  (RUN_SUMMARY.json `causal_context.primary_signal + recovery_routing.route_taken =
+  retry_ui_gate_env`) has no test. The implementation path (lines 66–74 of
+  diagnose_rules_resilience.sh) is reachable when neither source 1/2/3 fires but
+  a recovered run left a RUN_SUMMARY. A regression in the JSON field names or
+  awk extraction would pass silently.
 - Severity: LOW
-- Action: Add a short-circuit after Test 1 — e.g., `[[ -n "$guard_line" ]] ||
-  { fail "guard not found — cannot run Tests 2-4"; exit 1; }` — so the full
-  impact of a missed guard is explicit in the summary.
+- Action: Add a T2b scenario that creates only a RUN_SUMMARY.json with
+  `"primary_signal": "ui_timeout_interactive_report"` and
+  `"route_taken": "retry_ui_gate_env"` (no failure_ctx, no raw_errors), calls
+  `classify_failure_diag`, and asserts `UI_GATE_INTERACTIVE_REPORTER` with
+  `medium` confidence.
 
-#### COVERAGE: Dashboard parser sed-fallback path not covered by M132 tests
-- File: tests/test_m132_run_summary_enrichment.sh (absent coverage for fallback)
-- Issue: T10 validates the `_hook_emit_run_summary` output and the python3 JSON-parse
-  path. The `lib/dashboard_parsers_runs_files.sh` sed-fallback branch (lines 82–89)
-  — which extracts `recovery_route` and `build_fix_outcome` when python3 is
-  unavailable — has no corresponding test. This fallback uses bracket-expression sed
-  patterns that differ from the python3 extraction logic and could diverge silently.
-  The CODER_SUMMARY explicitly identifies this fallback as part of Goal 9 scope.
+#### COVERAGE: _rule_preflight_interactive_config only tests source 1 of three detection sources
+- File: tests/test_diagnose_rules_resilience.sh:289 (T7)
+- Issue: T7 covers source 1 (RUN_SUMMARY.json `preflight_ui` section). Sources 2
+  and 3 are untested: source 2 is the PREFLIGHT_REPORT.md heading sentinel
+  (`UI Config (Playwright) — html reporter` + fail entry); source 3 is
+  LAST_FAILURE_CONTEXT.json with `classification = PREFLIGHT_INTERACTIVE_CONFIG`
+  or `primary_cause.signal = ui_interactive_config_preflight`. If the m131-frozen
+  PREFLIGHT_REPORT.md heading string drifts or source 3's JSON field names change,
+  no test would catch it.
 - Severity: LOW
-- Action: Add a T11 case that writes a RUN_SUMMARY_*.json fixture to a tmpdir and
-  calls `_parse_run_summaries_from_files` with python3 shadowed by a stub that returns
-  empty, then asserts `recovery_route` and `build_fix_outcome` extract correctly via
-  the sed path. Not blocking for M132 but recommended before M134 consumes these fields.
+- Action: Add a T7b scenario writing only PREFLIGHT_REPORT.md with the frozen
+  heading and a "FAIL" line (no RUN_SUMMARY), and assert
+  `PREFLIGHT_INTERACTIVE_CONFIG`. Add a T7c scenario writing only
+  LAST_FAILURE_CONTEXT.json with
+  `"classification": "PREFLIGHT_INTERACTIVE_CONFIG"`, and assert the same outcome.
+
+#### ISOLATION: _reset_fixture in resilience test leaves several _DIAG_* variables uncleared
+- File: tests/test_diagnose_rules_resilience.sh:93
+- Issue: `_reset_fixture` explicitly clears `_DIAG_PRIMARY_*`, `_DIAG_SECONDARY_*`,
+  and `_DIAG_SCHEMA_VERSION`, but does not clear `_DIAG_CAUSAL_EVENTS`,
+  `_DIAG_CAUSE_CHAIN`, `_DIAG_CAUSE_CHAIN_SHORT`, `_DIAG_TERMINAL_EVENT`,
+  `_DIAG_REVIEW_CYCLES`, or `_DIAG_RECURRING_COUNT`. If `_read_diagnostic_context`
+  only writes these variables when their source files exist (rather than
+  unconditionally resetting them), stale values from a prior test scenario could
+  affect a later one. Currently no test in this file populates those variables
+  (no causal log is created anywhere in the file), so no test failure results in
+  practice. The risk is latent: adding a new scenario that creates a causal log
+  without adding the corresponding resets could cause hidden ordering dependence.
+- Severity: LOW
+- Action: Add the missing resets to `_reset_fixture`:
+  `_DIAG_CAUSAL_EVENTS=""; _DIAG_CAUSE_CHAIN=""; _DIAG_CAUSE_CHAIN_SHORT="";`
+  `_DIAG_TERMINAL_EVENT=""; _DIAG_REVIEW_CYCLES=0; _DIAG_RECURRING_COUNT=0`
 
 ### Notes
-- The STALE-SYM warnings for `cd`, `dirname`, `echo`, `grep`, `pwd`, `sed`, `set` are
-  shell builtins and POSIX utilities, not source-file-defined functions. They are false
-  positives from the symbol-level orphan detector and require no action.
-- `test_m132_run_summary_enrichment.sh` is well-structured: proper tmpdir isolation
-  with trap cleanup, a mock `_load_failure_cause_context` that mirrors the real
-  contract without overriding it (sourced collectors only call it via `declare -f`
-  guard), and assertions that check values derived from actual function output. T3's
-  sentinel check `{"schema_version":0}` matches the exact literal returned by
-  `_collect_causal_context_json` when the context file is absent — a spec-defined
-  sentinel documented in the CODER_SUMMARY, not a hard-coded magic value. T7's
-  exact-match `'["ENVIRONMENT/test_infra"]'` correctly verifies the no-duplicate
-  invariant by asserting array length via string equality.
-- The `_load_failure_cause_context` mock in the test (lines 71–128) is a faithful
-  reconstruction of the real implementation in `orchestrate_recovery_causal.sh:64`.
-  Both share the same v2 block-parser and v1 flat-sed fallback logic, and both honor
-  `ORCH_CONTEXT_FILE_OVERRIDE`. The mock does not weaken the contract under test.
-- `test_finalize_summary_tester_guard.sh` correctly uses `grep -n` dynamic line
-  lookup after M132 shifted file offsets. The upgrade from hard-coded `sed -n '165p'`
-  to offset-arithmetic is the right approach and cleanly handles future line shifts.
+- **Assertion honesty (all scenarios):** Every assert_eq and assert_contains value
+  is derived from strings that appear verbatim in the implementation (verified
+  against lib/diagnose_rules_resilience.sh, lib/diagnose_rules_extra.sh, and
+  lib/diagnose_rules.sh). No hard-coded magic values or tautologies detected.
+- **test_diagnose.sh Suites 2–20:** None were weakened. The only edits were to
+  Suite 1 (rule-count 14→18 and position assertions for indices 0–4, 17). All
+  updated index assertions match the literal DIAGNOSE_RULES array in
+  diagnose_rules.sh. Suite 13's `BUILD_FAILURE > STUCK_LOOP` priority assertion
+  remains correct under the new registry (positions 3 vs 9).
+- **T9 direct-call design:** T9 calls `_rule_max_turns` directly instead of
+  `classify_failure_diag` to test the env-root upgrade path in isolation, explicitly
+  noting that `_rule_ui_gate_interactive_reporter` would win in the full run. This is
+  intentional and honest — the comment at line 339 documents the rationale.
+- **STALE-SYM warnings:** All 17 flagged symbols (`cat`, `cd`, `dirname`, `echo`,
+  `grep`, `mkdir`, `mktemp`, `printf`, `pwd`, `return`, `rm`, `sed`, `set`,
+  `source`, `touch`, `trap`, `true`) are POSIX shell builtins and utilities, not
+  source-file-defined functions. They are false positives from the symbol-level
+  orphan detector and require no action.
+- **T5 stale-report guard:** This is the only negative-path test for
+  `_rule_build_fix_exhausted`. It directly exercises the `has_artifacts` guard that
+  prevents stale BUILD_FIX_REPORT from producing false positives on clean runs.
+  The assertion `r=1` (does not match) is verified against the implementation's
+  early-return at `[[ "$has_artifacts" = true ]] || return 1`.

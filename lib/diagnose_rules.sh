@@ -5,21 +5,13 @@ set -euo pipefail
 #
 # Sourced by lib/diagnose.sh — do not run directly.
 # Expects: _DIAG_* module state populated by _read_diagnostic_context()
-# Expects: PROJECT_DIR (set by caller)
 #
-# Provides (primary rules):
-#   DIAGNOSE_RULES         — priority-ordered array of rule functions
-#   _rule_build_failure    — ${BUILD_ERRORS_FILE} non-empty
-#   _rule_max_turns        — Agent hit max_turns (fast-path from state files)
-#   _rule_review_loop      — 3+ review cycles with no approval
-#   _rule_security_halt    — Security HALT verdict
-#   _rule_intake_clarity   — Intake pause for clarification
-#   _rule_quota_exhausted  — Rate limit pause
-#   _rule_unknown          — Fallback catch-all
+# Provides (primary rules): _rule_build_failure, _rule_max_turns,
+#   _rule_review_loop, _rule_security_halt, _rule_intake_clarity,
+#   _rule_quota_exhausted, _rule_unknown, plus DIAGNOSE_RULES priority array.
 #
-# Secondary rules (stuck_loop, turn_exhaustion, split_depth, transient_error,
-# test_audit_failure, migration_crash, version_mismatch) live in
-# lib/diagnose_rules_extra.sh — sourced at the end of this file.
+# Secondary rules live in lib/diagnose_rules_extra.sh; M133 resilience-arc
+# rules live in lib/diagnose_rules_resilience.sh — both sourced below.
 # =============================================================================
 
 # --- Shared state for matched rule -----------------------------------------
@@ -117,22 +109,34 @@ _rule_max_turns() {
     local _limit="${CODER_MAX_TURNS:-80}"
     local _bumped=$(( _limit + 40 ))
 
+    # M133: when v2 primary is non-agent (typically ENVIRONMENT/test_infra),
+    # max_turns is the cascading symptom — emit MAX_TURNS_ENV_ROOT instead.
+    # v1 fixtures and AGENT_SCOPE primaries fall through to the legacy branch.
+    local _pcat="${_DIAG_PRIMARY_CATEGORY:-}"
+    local _schema="${_DIAG_SCHEMA_VERSION:-0}"
+    [[ "$_schema" =~ ^[0-9]+$ ]] || _schema=0
+    if [[ "$_schema" -ge 2 ]] && [[ -n "$_pcat" ]] && [[ "$_pcat" != "AGENT_SCOPE" ]]; then
+        DIAG_CLASSIFICATION="MAX_TURNS_ENV_ROOT"
+        DIAG_CONFIDENCE="high"
+        DIAG_SUGGESTIONS=(
+            "The ${_stage} agent hit its turn limit (${_limit} turns) — but max_turns was the secondary symptom."
+            "Primary cause: ${_pcat}/${_DIAG_PRIMARY_SUBCATEGORY:-?} (${_DIAG_PRIMARY_SIGNAL:-unknown signal})."
+            "Adding more turns or splitting scope is unlikely to help until the root cause is fixed."
+            "Read the root-cause artifact:"
+            "  cat .claude/LAST_FAILURE_CONTEXT.json"
+            "Re-run preflight if the failure looks environmental:"
+            "  tekhton --preflight"
+            "Then resume from coder once the root cause is resolved:"
+            "  tekhton --complete --milestone --start-at coder \"${_task}\""
+        )
+        return 0
+    fi
+
     DIAG_CLASSIFICATION="MAX_TURNS_EXHAUSTED"
     DIAG_CONFIDENCE="high"
     DIAG_SUGGESTIONS=(
         "The ${_stage} agent hit its turn limit (${_limit} turns) on consecutive attempts."
         "The task scope is likely too large for the current turn budget."
-    )
-    # M129 secondary-symptom guard: if primary cause is non-agent and secondary
-    # is max_turns, surface that this is downstream — fully replaced by m133's
-    # MAX_TURNS_ENV_ROOT classification when that lands.
-    local _pcat="${_DIAG_PRIMARY_CATEGORY:-}"
-    if [[ -n "$_pcat" ]] && [[ "$_pcat" != "AGENT_SCOPE" ]]; then
-        DIAG_SUGGESTIONS+=(
-            "Note: max_turns may be a secondary symptom — primary cause is ${_pcat}/${_DIAG_PRIMARY_SUBCATEGORY:-?} (${_DIAG_PRIMARY_SIGNAL:-unknown signal})."
-        )
-    fi
-    DIAG_SUGGESTIONS+=(
         "Options:"
         "  1. Resume from test (if reviewer report is already present):"
         "     tekhton --complete --milestone --start-at test \"${_task}\""
@@ -261,13 +265,22 @@ _rule_intake_clarity() {
 # shellcheck source=lib/diagnose_rules_extra.sh
 source "${TEKHTON_HOME:?}/lib/diagnose_rules_extra.sh"
 
+# M133 resilience-arc primary rules
+# (UI gate interactive reporter, build-fix exhausted, preflight interactive cfg).
+# shellcheck source=lib/diagnose_rules_resilience.sh
+source "${TEKHTON_HOME:?}/lib/diagnose_rules_resilience.sh"
+
 # --- Rule registry -----------------------------------------------------------
 # Priority-ordered array. classify_failure_diag() applies rules top-down,
-# stops at the first match. _rule_max_turns fires before _rule_review_loop
-# because max_turns is more specific.
+# stops at the first match. M133 ordering: the three resilience-arc primary
+# rules must beat generic build failure and max_turns; mixed_classification
+# remains a low-confidence secondary rule; _rule_unknown remains last.
 
 # shellcheck disable=SC2034  # Used by lib/diagnose.sh
 DIAGNOSE_RULES=(
+    "_rule_ui_gate_interactive_reporter"
+    "_rule_preflight_interactive_config"
+    "_rule_build_fix_exhausted"
     "_rule_build_failure"
     "_rule_max_turns"
     "_rule_review_loop"
@@ -275,6 +288,7 @@ DIAGNOSE_RULES=(
     "_rule_intake_clarity"
     "_rule_quota_exhausted"
     "_rule_stuck_loop"
+    "_rule_mixed_classification"
     "_rule_turn_exhaustion"
     "_rule_split_depth"
     "_rule_transient_error"

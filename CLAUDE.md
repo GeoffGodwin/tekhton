@@ -112,6 +112,8 @@ tekhton/
 │   ├── diagnose_output_extra.sh # Crash first-aid + dashboard-diagnosis (M129)
 │   ├── diagnose_rules.sh   # Diagnostic rule definitions
 │   ├── diagnose_rules_extra.sh # Secondary diagnostic rules
+│   ├── diagnose_rules_migration.sh # Migration & version-mismatch rules
+│   ├── diagnose_rules_resilience.sh # M133 resilience-arc primary rules
 │   ├── failure_context.sh  # M129 primary/secondary cause slot helpers
 │   ├── express.sh          # Express mode (zero-config execution)
 │   ├── express_persist.sh  # Express mode configuration persistence
