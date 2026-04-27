@@ -12,7 +12,14 @@ set -euo pipefail
 #
 # Provides:
 #   _hook_emit_run_summary — writes RUN_SUMMARY.json to LOG_DIR
+#
+# m132 collectors (causal/build-fix/recovery/preflight-ui) live in the
+# sibling file finalize_summary_collectors.sh — kept separate so this file
+# stays under the 300-line ceiling.
 # =============================================================================
+
+# shellcheck source=lib/finalize_summary_collectors.sh
+source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary_collectors.sh"
 
 # k. Emit RUN_SUMMARY.json (runs on BOTH success and failure)
 _hook_emit_run_summary() {
@@ -56,29 +63,13 @@ _hook_emit_run_summary() {
         files_json="${files_json}]"
     fi
 
-    # Collect error classes encountered
-    local error_classes="[]"
-    if [[ -n "${AGENT_ERROR_CATEGORY:-}" ]]; then
-        error_classes="[\"${AGENT_ERROR_CATEGORY}/${AGENT_ERROR_SUBCATEGORY:-unknown}\"]"
-    fi
-
-    # Collect recovery actions taken
-    local recovery_actions="[]"
-    local ra_items=()
-    if [[ "${_ORCH_REVIEW_BUMPED:-false}" = true ]]; then
-        ra_items+=("\"review_cycle_bump\"")
-    fi
-    if [[ "${CONTINUATION_ATTEMPTS:-0}" -gt 0 ]]; then
-        ra_items+=("\"continuation\"")
-    fi
-    if [[ "${LAST_AGENT_RETRY_COUNT:-0}" -gt 0 ]]; then
-        ra_items+=("\"transient_retry\"")
-    fi
-    if [[ ${#ra_items[@]} -gt 0 ]]; then
-        local joined
-        joined=$(printf ',%s' "${ra_items[@]}")
-        recovery_actions="[${joined:1}]"
-    fi
+    # M132: error_classes_encountered (symptom + root cause) and
+    # recovery_actions_taken (legacy event flags + m130 route) are assembled
+    # by helpers in finalize_summary_collectors.sh.
+    local error_classes
+    error_classes=$(_collect_error_classes_json)
+    local recovery_actions
+    recovery_actions=$(_collect_recovery_actions_json)
 
     # Rework cycles and split depth
     local rework_cycles="${REVIEW_CYCLE:-0}"
@@ -236,8 +227,18 @@ _hook_emit_run_summary() {
         remediations_json=$(get_remediation_log)
     fi
 
+    # --- M132 enrichment fields ---
+    local causal_ctx_json
+    causal_ctx_json=$(_collect_causal_context_json)
+    local build_fix_json
+    build_fix_json=$(_collect_build_fix_stats_json)
+    local recovery_routing_json
+    recovery_routing_json=$(_collect_recovery_routing_json)
+    local preflight_ui_json
+    preflight_ui_json=$(_collect_preflight_ui_json)
+
     # Write JSON via printf (proper escaping, no heredoc variable issues)
-    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "team": "%s",\n  "parallel_group": "%s",\n  "concurrent_teams": %d,\n  "decisions": %s,\n  "timing_breakdown": %s,\n  "remediations": %s,\n  "timestamp": "%s"\n}\n' \
+    printf '{\n  "milestone": "%s",\n  "outcome": "%s",\n  "attempts": %d,\n  "total_agent_calls": %d,\n  "wall_clock_seconds": %d,\n  "total_turns": %d,\n  "total_time_s": %d,\n  "run_type": "%s",\n  "task_label": "%s",\n  "stages": %s,\n  "files_changed": %s,\n  "error_classes_encountered": %s,\n  "recovery_actions_taken": %s,\n  "rework_cycles": %d,\n  "split_depth": %d,\n  "security_findings_count": %d,\n  "security_rework_cycles": %d,\n  "intake_verdict": "%s",\n  "intake_confidence": %d,\n  "quota": %s,\n  "test_baseline_status": "%s",\n  "test_audit_verdict": "%s",\n  "ui_validation": {"pass": %d, "fail": %d, "warn": %d},\n  "team": "%s",\n  "parallel_group": "%s",\n  "concurrent_teams": %d,\n  "decisions": %s,\n  "timing_breakdown": %s,\n  "remediations": %s,\n  "causal_context": %s,\n  "build_fix_stats": %s,\n  "recovery_routing": %s,\n  "preflight_ui": %s,\n  "timestamp": "%s"\n}\n' \
         "$safe_milestone" \
         "$outcome" \
         "${_ORCH_ATTEMPT:-1}" \
@@ -269,6 +270,10 @@ _hook_emit_run_summary() {
         "$decisions_json" \
         "$timing_json" \
         "$remediations_json" \
+        "$causal_ctx_json" \
+        "$build_fix_json" \
+        "$recovery_routing_json" \
+        "$preflight_ui_json" \
         "$timestamp_iso" \
         > "$summary_file"
 

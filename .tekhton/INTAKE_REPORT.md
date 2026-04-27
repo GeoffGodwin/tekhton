@@ -5,13 +5,13 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely defined: one new file (`lib/preflight_checks_ui.sh`), four modified files, one new test file, one doc update — each with exact change descriptions
-- Acceptance criteria are specific and binary: 17 checkboxes, each independently verifiable
-- Ten test cases (T1–T10) have exact fixture shapes, env var settings, and expected counter states — no interpretation required
-- Function signatures, grep patterns, env var names, backup filename format, and sed replacement strings are all spelled out verbatim
-- Auto-fix decision matrix is normative and complete; no guessing about which rules get auto-patch
-- Forward-compat guards (`declare -f _trim_preflight_bak_dir`, `command -v emit_event`) are explicit and correctly motivated
-- Inter-milestone contracts (m126, m132–m138) are documented in Seeds Forward with byte-level precision — a developer knows exactly what names must not change
-- Migration impact is not required: the three config knobs are intentionally not added to `config_defaults.sh` (m136 owns that); the inline `${...:-...}` fallback pattern is specified and justified
-- Historical pass rate for similarly-scoped infrastructure milestones (M98–M104) is 100% with no rework cycles
+- Scope is precisely defined: a "Files Modified" table lists every affected file with specific changes, line references, and LOC budgets
+- Acceptance criteria are specific and machine-verifiable (line counts, JSON key presence, exact field values, no `grep -oP`)
+- 10 test cases (T1–T10) each state exact inputs and expected outputs — no ambiguity about what "pass" means
+- "Watch For" section pre-empts all major confusion points: variable ownership (`_ORCH_RECOVERY_ROUTE_TAKEN` is m130's, not m132's), correct call site (`orchestrate_loop.sh:199` not `orchestrate.sh`), frozen token vocabulary, portability constraint on dashboard parser
+- Hard dependencies (m128/m129/m130/m131) are declared in MANIFEST.cfg and fallback behavior for each absent dependency is specified inline
+- Best-effort scope (badge rendering) is explicitly bounded with two concrete options and a decision rule — developers know what to skip
+- The additive-only guarantee for RUN_SUMMARY.json backward compatibility is stated explicitly; no migration impact for existing consumers
+- No new pipeline.conf config keys introduced — no Migration Impact section required
+- "Seeds Forward" section locks down the downstream contract (m133/m134/m135 key names), preventing premature renaming
 - No UI components produced; UI testability criterion is not applicable

@@ -70,8 +70,9 @@ else
     fail "Tester timing initialization missing _TESTER_TIMING_WRITING_S"
 fi
 
-# Test 8: Verify finalize_summary.sh uses the tester guard correctly
-if sed -n '165p' "${TEKHTON_HOME}/lib/finalize_summary.sh" | grep -q 'if \[\[ "$_stg" == "tester" \]\]; then'; then
+# Test 8: Verify finalize_summary.sh uses the tester guard correctly.
+# Locate dynamically — M132 enrichment shifted the file's line numbering.
+if grep -q 'if \[\[ "$_stg" == "tester" \]\]; then' "${TEKHTON_HOME}/lib/finalize_summary.sh"; then
     pass "Finalize summary uses correct tester guard"
 else
     fail "Finalize summary tester guard is incorrect"

@@ -44,7 +44,14 @@ try:
         'task_label': d.get('task_label', ''),
         'timestamp': d.get('timestamp', ''),
         'team': d.get('team', ''),
-        'stages': d.get('stages', {})
+        'stages': d.get('stages', {}),
+        'causal_primary_category': d.get('causal_context', {}).get('primary_category', ''),
+        'causal_primary_subcategory': d.get('causal_context', {}).get('primary_subcategory', ''),
+        'build_fix_outcome': d.get('build_fix_stats', {}).get('outcome', 'not_run'),
+        'build_fix_attempts': d.get('build_fix_stats', {}).get('attempts', 0),
+        'recovery_route': d.get('recovery_routing', {}).get('route_taken', 'save_exit'),
+        'preflight_ui_detected': d.get('preflight_ui', {}).get('interactive_config_detected', False),
+        'preflight_ui_patched': d.get('preflight_ui', {}).get('reporter_auto_patched', False)
     }))
 except: pass
 " "$summary_file" 2>/dev/null || true)
@@ -72,7 +79,14 @@ except: pass
             local task_label
             task_label=$(sed -n 's/.*"task_label"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
             : "${task_label:=}"
-            json_content="{\"outcome\":\"$(_json_escape "${outcome}")\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"$(_json_escape "${milestone}")\",\"run_type\":\"$(_json_escape "${run_type}")\",\"task_label\":\"$(_json_escape "${task_label}")\",\"stages\":{}}"
+            # M132: extract enrichment fields via portable sed (no grep -oP)
+            local recovery_route
+            recovery_route=$(sed -n 's/.*"route_taken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
+            : "${recovery_route:=save_exit}"
+            local build_fix_outcome
+            build_fix_outcome=$(sed -n 's/.*"outcome"[[:space:]]*:[[:space:]]*"\(passed\|exhausted\|no_progress\|not_run\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
+            : "${build_fix_outcome:=not_run}"
+            json_content="{\"outcome\":\"$(_json_escape "${outcome}")\",\"total_turns\":${turns},\"total_time_s\":${time_s},\"milestone\":\"$(_json_escape "${milestone}")\",\"run_type\":\"$(_json_escape "${run_type}")\",\"task_label\":\"$(_json_escape "${task_label}")\",\"stages\":{},\"recovery_route\":\"$(_json_escape "${recovery_route}")\",\"build_fix_outcome\":\"$(_json_escape "${build_fix_outcome}")\"}"
         fi
 
         if [[ -n "$json_content" ]]; then

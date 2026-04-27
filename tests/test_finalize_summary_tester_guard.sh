@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
 # test_finalize_summary_tester_guard.sh — Verify simplified tester guard
-# condition in lib/finalize_summary.sh:164
+# condition in lib/finalize_summary.sh. Uses grep -n to locate the guard
+# rather than hard-coded line numbers (M132 enrichment shifted offsets).
 # =============================================================================
 set -euo pipefail
 
@@ -17,36 +18,49 @@ FINALIZE_FILE="${TEKHTON_HOME}/lib/finalize_summary.sh"
 
 echo "=== test_finalize_summary_tester_guard.sh ==="
 
-# Test 1: Verify guard at line 165 is simplified to single condition
-if sed -n '165p' "$FINALIZE_FILE" | grep -q 'if \[\[ "$_stg" == "tester" \]\]; then'; then
-    pass "Guard at line 165 is simplified single condition for tester"
+# Locate the guard line dynamically (the simplified single-condition tester guard)
+guard_line=$(grep -n 'if \[\[ "$_stg" == "tester" \]\]; then' "$FINALIZE_FILE" | head -1 | cut -d: -f1)
+
+# Test 1: Verify the simplified guard exists in the file
+if [[ -n "$guard_line" ]]; then
+    pass "Simplified tester guard found at line ${guard_line}"
 else
-    fail "Guard at line 165 is not the expected simplified condition"
+    fail "Simplified tester guard not found in finalize_summary.sh"
 fi
 
-# Test 2: Verify _stg_extra is initialized before the guard
-if sed -n '164,166p' "$FINALIZE_FILE" | grep -q '_stg_extra=""'; then
-    pass "_stg_extra is initialized before guard"
-else
-    fail "_stg_extra initialization missing"
+# Test 2: Verify _stg_extra is initialized one line before the guard
+if [[ -n "$guard_line" ]]; then
+    init_line=$((guard_line - 1))
+    if sed -n "${init_line}p" "$FINALIZE_FILE" | grep -q '_stg_extra=""'; then
+        pass "_stg_extra is initialized before guard"
+    else
+        fail "_stg_extra initialization missing"
+    fi
 fi
 
-# Test 3: Verify the guard properly sets _stg_extra with tester timing fields
-if sed -n '165,167p' "$FINALIZE_FILE" | grep -q 'test_execution_count'; then
-    pass "Guard sets test_execution_count field for tester"
-else
-    fail "Guard does not set test_execution_count"
+# Test 3: Verify the guard body sets _stg_extra with test_execution_count
+if [[ -n "$guard_line" ]]; then
+    body_line=$((guard_line + 1))
+    if sed -n "${body_line}p" "$FINALIZE_FILE" | grep -q 'test_execution_count'; then
+        pass "Guard sets test_execution_count field for tester"
+    else
+        fail "Guard does not set test_execution_count"
+    fi
 fi
 
-# Test 4: Verify all three tester timing fields are included
-fields_present=0
-[[ $(sed -n '165,167p' "$FINALIZE_FILE" | grep -c "test_execution_count") -gt 0 ]] && fields_present=$((fields_present + 1))
-[[ $(sed -n '165,167p' "$FINALIZE_FILE" | grep -c "test_execution_approx_s") -gt 0 ]] && fields_present=$((fields_present + 1))
-[[ $(sed -n '165,167p' "$FINALIZE_FILE" | grep -c "test_writing_approx_s") -gt 0 ]] && fields_present=$((fields_present + 1))
-if [[ $fields_present -eq 3 ]]; then
-    pass "All three tester timing fields are included"
-else
-    fail "Not all tester timing fields present (found $fields_present of 3)"
+# Test 4: Verify all three tester timing fields are included in the guard body
+if [[ -n "$guard_line" ]]; then
+    body_line=$((guard_line + 1))
+    body=$(sed -n "${body_line}p" "$FINALIZE_FILE")
+    fields_present=0
+    [[ "$body" == *test_execution_count* ]]    && fields_present=$((fields_present + 1))
+    [[ "$body" == *test_execution_approx_s* ]] && fields_present=$((fields_present + 1))
+    [[ "$body" == *test_writing_approx_s* ]]   && fields_present=$((fields_present + 1))
+    if [[ $fields_present -eq 3 ]]; then
+        pass "All three tester timing fields are included"
+    else
+        fail "Not all tester timing fields present (found $fields_present of 3)"
+    fi
 fi
 
 echo "=== Summary ==="

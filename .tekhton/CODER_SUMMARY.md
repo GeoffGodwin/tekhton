@@ -1,140 +1,172 @@
-# Coder Summary — M131 Preflight Test Framework Config Audit & Interactive-Mode Detection
+# Coder Summary — M132 RUN_SUMMARY Causal Fidelity Enrichment
 
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-All seven milestone goals plus mandatory extras:
+All ten goals from the milestone spec, plus the mandatory doc surface and
+CLAUDE.md layout updates:
 
-1. **Goal 1 — Dispatcher** (`lib/preflight_checks_ui.sh:_preflight_check_ui_test_config`):
-   resets the four `PREFLIGHT_UI_*` contract vars, honors
-   `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED` (inline `${...:-true}` default — m131
-   does not declare in `config_defaults.sh` per layering rules), short-circuits
-   when `UI_TEST_CMD` is unset/empty/`true`, then dispatches to three scanners.
+1. **Goal 1 — `_collect_causal_context_json`** (`lib/finalize_summary_collectors.sh`):
+   reads `LAST_FAILURE_CONTEXT.json` via m130's `_load_failure_cause_context`
+   loader and emits the cause object. Returns the absent-file sentinel
+   `{"schema_version":0}` when the file is missing (m135 success-run cleanup
+   relies on this). Honors `ORCH_CONTEXT_FILE_OVERRIDE` so tests can swap
+   in fixtures without manipulating `$PROJECT_DIR`.
 
-2. **Goal 2 — Playwright scanner** (`_pf_uitest_playwright`):
-   - PW-1 (html reporter) → calls `_pf_uitest_playwright_fix_reporter`
-   - PW-2 (video on/retain-on-failure) → `warn`, no patch
-   - PW-3 (reuseExistingServer: false) → `warn`, no patch
-   - Conservative grep covers `'html'`, `"html"`, `['html']`, `["html"]`;
-     CI-guarded `process.env.CI ? 'dot' : 'html'` does NOT match (T9).
+2. **Goal 2 — `_collect_build_fix_stats_json`**: reads the four
+   `BUILD_FIX_*` exports (m128 contract). Returns `outcome=not_run /
+   enabled=false` when no attempts ran. Numeric inputs are validated
+   against `^[0-9]+$` before being passed to `printf '%d'` so a corrupted
+   env var can't crash the finalize hook.
 
-3. **Goal 2b — PW-1 auto-fix helper** (`_pf_uitest_playwright_fix_reporter`):
-   - Auto-fix gating: `PREFLIGHT_UI_CONFIG_AUTO_FIX:-${PREFLIGHT_AUTO_FIX:-true}`
-     so the m136 specific knob takes precedence over the legacy m55 knob.
-   - Backup filename `<YYYYMMDD_HHMMSS>_<basename>` (m135 retention contract).
-   - Sed-rewrites all four simple forms; nested tuples fall through to m126.
-   - `cp` failure path emits `fail` and skips sed.
-   - Sed failure path emits `fail`. Both backup-fail and sed-fail paths still
-     export the contract triple (`DETECTED=1`, `RULE=PW-1`, `FILE=<basename>`,
-     `REPORTER_PATCHED=0`).
-   - Success path emits `fixed`, exports `REPORTER_PATCHED=1`, fires
-     `preflight_ui_config_patch` causal event, and defensively calls
-     `_trim_preflight_bak_dir` via `declare -f` (no-op pre-m135).
+3. **Goal 3 — `_collect_recovery_routing_json`**: reads m130 module-level
+   recovery vars (`_ORCH_RECOVERY_ROUTE_TAKEN`, `_ORCH_ENV_GATE_RETRIED`,
+   `_ORCH_MIXED_BUILD_RETRIED`, `_ORCH_SCHEMA_VERSION`). Default
+   `route_taken="save_exit"` keeps the success-run shape stable.
 
-4. **Goal 3 — Cypress scanner** (`_pf_uitest_cypress`): CY-1 (video: true) and
-   CY-2 (mochawesome reporter without `--exit` in `UI_TEST_CMD`). Both `warn`,
-   no auto-patch.
+4. **Goal 4 — `_collect_preflight_ui_json`**: reads the four
+   `PREFLIGHT_UI_*` env vars (m131 contract) plus `_PF_FAIL` /
+   `_PF_WARN`. JSON-escapes the rule and file basename strings.
 
-5. **Goal 4 — Jest/Vitest watch-mode scanner** (`_pf_uitest_jest_watch`): JV-1
-   (`watch: true` / `watchAll: true`) → `fail`. Never auto-patched (changes DX
-   for every contributor; the milestone explicitly excludes this from auto-fix).
-   Exports the contract triple with `RULE=JV-1`.
+5. **Goal 5 — `error_classes_encountered` enrichment** (extracted to
+   `_collect_error_classes_json` so `finalize_summary.sh` stays under
+   300 lines): returns `[symptom]` when `AGENT_ERROR_CATEGORY` is set,
+   appends `"root:CAT/SUB"` when m130's primary cause differs from
+   the symptom, and skips the root suffix when they match (no
+   duplicate). Calls `_load_failure_cause_context` to refresh
+   `_ORCH_PRIMARY_*` if not already populated by the caller.
 
-6. **Goal 5 — Wired into `run_preflight_checks`**: Added the call between
-   `_preflight_check_tools` and `_preflight_check_generated_code` in
-   `lib/preflight.sh:154`. Source line for the new file added to `tekhton.sh`
-   adjacent to the existing `preflight_checks_env.sh` source.
+6. **Goal 6 — `recovery_actions_taken` enrichment** (extracted to
+   `_collect_recovery_actions_json`): preserves the legacy event flags
+   (`review_cycle_bump`, `continuation`, `transient_retry`) and appends
+   `_ORCH_RECOVERY_ROUTE_TAKEN` when non-default (`save_exit` and empty
+   are no-op defaults).
 
-7. **Goal 6 — `PREFLIGHT_UI_*` contract**: All four env vars are exported at
-   every fail-class path (PW-1 fail-no-patch, PW-1 patched, PW-1 sed-failed,
-   PW-1 backup-failed, JV-1) per the spec table. The dispatcher `unset`s them
-   at function entry so a same-shell re-invocation produces a clean state, but
-   they persist across `run_complete_loop` iterations (S7.2 contract).
+7. **Goal 7 — Four new top-level fields**: `causal_context`,
+   `build_fix_stats`, `recovery_routing`, `preflight_ui` slotted into
+   the printf format string immediately before `timestamp`. Always
+   present on success and failure runs.
 
-8. **Goal 7 — Tests** (`tests/test_preflight_ui_config.sh`): T1 (a/b/c) through
-   T10 (a/b/c) — 46 assertions, all pass. Auto-discovered by
-   `tests/run_tests.sh` via the `test_*.sh` glob; no runner change required.
+8. **Goal 8 — Per-iteration recovery route capture**
+   (`lib/orchestrate_loop.sh`): added
+   `_ORCH_RECOVERY_ROUTE_TAKEN="$recovery"` immediately after
+   `recovery=$(_classify_failure)` so the route is captured for every
+   recovery action, not only `retry_ui_gate_env`. m130's case-branch
+   assignments (e.g., `split_escalated`) still run after this and
+   specialize the value where appropriate. m130's `Lifetime B`
+   declaration in `orchestrate_recovery_causal.sh` was already in place
+   (per its hard-dependency status in MANIFEST.cfg) so no new declaration
+   was needed here.
 
-### Mandatory extras
+9. **Goal 9 — Dashboard parser extension**
+   (`lib/dashboard_parsers_runs_files.sh`): extended the
+   `python3 -c 'import json; ...'` dict with seven new fields
+   (`causal_primary_category`, `causal_primary_subcategory`,
+   `build_fix_outcome`, `build_fix_attempts`, `recovery_route`,
+   `preflight_ui_detected`, `preflight_ui_patched`). Added matching
+   `sed -n` bracket-expression fallback lines for `recovery_route` and
+   `build_fix_outcome` (no `grep -oP` introduced — preserves BSD
+   portability per the existing style). Renderer-side badge work
+   deferred per Goal 9 option 1 — no `_build_run_badge*` helper exists
+   in the codebase, m134 S5.1 doesn't gate on badges, and inventing one
+   would scope-creep into Watchtower polish.
 
-- **First-run env hardening hook** in `lib/gates_ui_helpers.sh:
-  _ui_deterministic_env_list`: when `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1`,
-  the function escalates `hardened=1` so the gate's first run gets
-  `CI=1` (in addition to `PLAYWRIGHT_HTML_OPEN=never`). M126's existing
-  hardened-retry behavior is preserved exactly. Existing m130 P0-T6 test
-  still passes (`CI=1` is in the hardened list whether triggered by
-  preflight detection or by the explicit hardened argument).
-- **`docs/troubleshooting/preflight.md`** (NEW) documents PW-1..3, CY-1..2,
-  JV-1, the four config knobs, and the gate-normalizer interaction.
-- **`CLAUDE.md`** repository layout updated to list the new
-  `lib/preflight_checks_ui.sh`.
+10. **Goal 10 — Tests** (`tests/test_m132_run_summary_enrichment.sh`):
+    16 assertions covering T1–T10 as scoped in the milestone (T1 v2
+    fixture, T2 v1 fixture, T3 absent-file, T4 m128 vars, T5 no vars,
+    T6 root-prefix on distinct primary, T7 no-duplicate when primary
+    matches symptom, T8 route appended when non-default, T9 save_exit
+    excluded, T10 full RUN_SUMMARY.json emitted with all four keys +
+    empty-state assertions for M134 S5.2 contract + python json
+    validity check). All 16 pass.
 
 ### Test maintenance
 
-Two existing tests broke when I added the new check call to
-`run_preflight_checks`:
-- `tests/test_preflight.sh` — sources individual preflight libs directly.
-- `tests/test_m118_preflight_deferred_emit.sh` — same, plus has stub helpers
-  that override every `_preflight_check_*`. I added the new file to the source
-  list and added `_preflight_check_ui_test_config(){ :; }` to all stub blocks
-  (4 occurrences). Both tests now pass.
+Two existing tests had hard-coded `sed -n '165p'` line-number assertions
+that broke when the M132 enrichment shifted offsets (the source line for
+the collectors file moved everything down). Fixed both to locate the
+guard via `grep -n` so they stay resilient to future drift:
 
-### File-size ceiling
+- `tests/test_finalize_summary_tester_guard.sh` — replaced four
+  brittle `sed -n '<n>p'` calls with a `grep -n` line lookup + offset
+  arithmetic. Now passes 4/4.
+- `tests/test_m62_fixes_integration.sh` — replaced one `sed -n '165p'`
+  with a plain `grep -q`. Now passes 10/10.
 
-- `lib/preflight_checks_ui.sh`: 297 lines (NEW; under 300)
-- `lib/preflight.sh`: 204 lines (modified; under 300)
-- `lib/gates_ui_helpers.sh`: 178 lines (modified; under 300)
+### Pre-Completion Self-Check
 
-Test files are exempt by project convention (existing tests routinely exceed
-300 lines; my touches to `test_preflight.sh` and `test_m118_preflight_deferred_emit.sh`
-were 2-line and 4-line additions respectively).
+- **File length:** all touched lib files under 300 lines
+  (`finalize_summary.sh`: 287; `finalize_summary_collectors.sh`: 171;
+  `orchestrate_loop.sh`: 286; `dashboard_parsers_runs_files.sh`: 105).
+- **Stale references:** none. New file added to CLAUDE.md repository
+  layout. No renamed identifiers.
+- **Dead code:** none. All helpers in
+  `finalize_summary_collectors.sh` are called by the printf composition
+  in `_hook_emit_run_summary`.
+- **Consistency:** new file
+  `lib/finalize_summary_collectors.sh` listed in `## Files Modified`
+  with `(NEW)` annotation; CLAUDE.md repository layout updated to
+  include it under the `lib/` subtree.
 
 ## Root Cause (bugs only)
-N/A — feature work per milestone spec.
+
+N/A — feature work per the M132 spec.
 
 ## Files Modified
 
 | File | Change |
 |------|--------|
-| `lib/preflight_checks_ui.sh` (NEW) | All five m131 functions: dispatcher, three scanners, PW-1 auto-fix helper. 297 lines. |
-| `lib/preflight.sh` | Added `_preflight_check_ui_test_config` call between `_preflight_check_tools` and `_preflight_check_generated_code` in `run_preflight_checks`. |
-| `lib/gates_ui_helpers.sh` | `_ui_deterministic_env_list` now escalates to hardened (`CI=1`) on first run when `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1`. |
-| `tekhton.sh` | Added `source "${TEKHTON_HOME}/lib/preflight_checks_ui.sh"` adjacent to existing preflight checks sources. |
-| `tests/test_preflight_ui_config.sh` (NEW) | T1–T10 plus sub-cases — 46 assertions, all pass. |
-| `tests/test_preflight.sh` | Added source line for `preflight_checks_ui.sh` so the run_preflight_checks call resolves. |
-| `tests/test_m118_preflight_deferred_emit.sh` | Added source line plus `_preflight_check_ui_test_config(){ :; }` to all four stub blocks. |
-| `docs/troubleshooting/preflight.md` (NEW) | UI test framework config audit reference; documents PW-1..3, CY-1..2, JV-1, four config knobs, gate interaction. |
-| `CLAUDE.md` | Repository layout updated with `lib/preflight_checks_ui.sh` entry. |
+| `lib/finalize_summary_collectors.sh` (NEW) | Six collectors: `_collect_causal_context_json`, `_collect_build_fix_stats_json`, `_collect_recovery_routing_json`, `_collect_preflight_ui_json`, `_collect_error_classes_json`, `_collect_recovery_actions_json`. 171 lines. |
+| `lib/finalize_summary.sh` | Sources `finalize_summary_collectors.sh`. Replaced inline `error_classes_encountered` and `recovery_actions_taken` building blocks with calls to the collectors. Added four new top-level fields (`causal_context`, `build_fix_stats`, `recovery_routing`, `preflight_ui`) to the printf format string and arg list. 287 lines (was 282 — net +5 after extraction). |
+| `lib/orchestrate_loop.sh` | Added `_ORCH_RECOVERY_ROUTE_TAKEN="$recovery"` immediately after `recovery=$(_classify_failure)` in `_handle_pipeline_failure` so every recovery route (not only `retry_ui_gate_env`) is captured. One-line change plus 4 lines of comment context. |
+| `lib/dashboard_parsers_runs_files.sh` | Extended the `python3 -c` JSON dict with seven new fields. Added `sed -n` fallback extractions for `recovery_route` and `build_fix_outcome` using bracket-expression patterns (no `grep -oP` introduced). |
+| `tests/test_m132_run_summary_enrichment.sh` (NEW) | T1–T10 + sub-cases — 16 assertions, all pass. Auto-discovered by `tests/run_tests.sh`. |
+| `tests/test_finalize_summary_tester_guard.sh` | Replaced hard-coded `sed -n '165p'` with `grep -n` lookup + offset arithmetic so the test stays resilient to file-offset shifts. 4/4 pass. |
+| `tests/test_m62_fixes_integration.sh` | Replaced hard-coded `sed -n '165p'` with `grep -q`. 10/10 pass. |
+| `docs/reference/run-summary-schema.md` (NEW) | Documents the four enrichment fields, updated `error_classes_encountered` / `recovery_actions_taken` contracts, empty-state variants, and backward-compatibility guarantee. |
+| `CLAUDE.md` | Repository layout updated with `lib/finalize_summary_collectors.sh` entry. |
 
 ## Docs Updated
 
-- `docs/troubleshooting/preflight.md` (NEW) — public surface: documents the
-  six new preflight findings (PW-1, PW-2, PW-3, CY-1, CY-2, JV-1) and four
-  configuration knobs (`PREFLIGHT_UI_CONFIG_AUDIT_ENABLED`,
-  `PREFLIGHT_UI_CONFIG_AUTO_FIX`, `PREFLIGHT_AUTO_FIX` legacy fallback,
-  `PREFLIGHT_BAK_DIR`).
-- `CLAUDE.md` — repository layout listing updated to include
-  `lib/preflight_checks_ui.sh`.
+- `docs/reference/run-summary-schema.md` (NEW) — public surface: documents
+  the four new top-level RUN_SUMMARY.json fields (`causal_context`,
+  `build_fix_stats`, `recovery_routing`, `preflight_ui`), the updated
+  `error_classes_encountered` / `recovery_actions_taken` contracts, the
+  empty-state variants emitted on success runs (M134 S5.2 contract), and
+  the backward-compatibility additive-only guarantee for external
+  dashboard consumers.
+- `CLAUDE.md` — repository layout listing updated with
+  `lib/finalize_summary_collectors.sh`.
 
 ## Human Notes Status
-None — milestone-driven work, no human notes specified.
+
+None — milestone-driven work, no human notes specified for this run.
 
 ## Architecture Change Proposals
 
-None. The new file follows the existing `preflight.sh` / `preflight_checks.sh` /
-`preflight_checks_env.sh` extraction pattern; the gates_ui_helpers hook is a
-small addition to an existing helper that already supports the hardened
-profile. No layer boundaries crossed.
+None. The new `lib/finalize_summary_collectors.sh` follows the existing
+`finalize_*.sh` extraction pattern (e.g., `finalize_aux.sh`,
+`finalize_commit.sh`, `finalize_dashboard_hooks.sh`). The `printf`
+extension to `_hook_emit_run_summary` is purely additive — keys at the
+end, empty-state variants emitted on success runs to keep the JSON shape
+stable. The dashboard parser extension reuses the existing python3 + sed
+two-track style (no new portability assumptions). The
+`lib/orchestrate_loop.sh` line is a single capture-point addition that
+preserves m130's case-branch specialization semantics.
 
 ## Verification
 
-- `shellcheck lib/preflight_checks_ui.sh lib/preflight.sh lib/gates_ui_helpers.sh tests/test_preflight_ui_config.sh` → clean.
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh` → no new warnings (excluding
-  pre-existing SC1091 source-not-followed informationals).
-- `bash tests/test_preflight_ui_config.sh` → 46/46 assertions pass.
-- `bash tests/test_preflight.sh` → 54/54 pass.
-- `bash tests/test_m118_preflight_deferred_emit.sh` → 11/11 pass.
-- `bash tests/test_ui_gate_force_noninteractive.sh` → 8/8 pass (no regression).
-- `bash tests/run_tests.sh` → 462/462 shell, 247 Python pass.
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` → clean (exit 0).
+- `bash tests/test_m132_run_summary_enrichment.sh` → 16/16 pass.
+- `bash tests/test_finalize_summary_tester_guard.sh` → 4/4 pass.
+- `bash tests/test_m62_fixes_integration.sh` → 10/10 pass.
+- `bash tests/test_finalize_summary_escaping.sh` → all assertions pass
+  (no regression — base RUN_SUMMARY.json shape unchanged for legacy
+  consumers).
+- `bash tests/run_tests.sh` → 464 shell pass / 0 fail; 247 Python pass.
 - File-size ceiling: every modified `lib/` file is under 300 lines.
+
+## Docs Updated
+
+- `README.md` — added reference to `docs/reference/run-summary-schema.md` in the "What's in `docs/`" table, positioned after metrics documentation since RUN_SUMMARY.json is consumed by metrics dashboards and external integrations.

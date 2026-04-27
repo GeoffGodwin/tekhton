@@ -33,6 +33,7 @@ tekhton/
 │   ├── finalize_dashboard_hooks.sh # Dashboard/causal-log/TUI finalize hooks
 │   ├── finalize_display.sh # Completion banner + action items
 │   ├── finalize_summary.sh # RUN_SUMMARY.json emitter
+│   ├── finalize_summary_collectors.sh # M132 RUN_SUMMARY enrichment collectors (causal/build-fix/recovery/preflight-ui)
 │   ├── finalize_version.sh # Project version bump finalize hooks
 │   ├── project_version.sh  # Target-project version file detection
 │   ├── project_version_bump.sh # Version bump logic + file writes

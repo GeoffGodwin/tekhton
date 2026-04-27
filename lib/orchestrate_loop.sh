@@ -197,6 +197,11 @@ _handle_pipeline_failure() {
 
     local recovery
     recovery=$(_classify_failure)
+    # M132: capture the route for every recovery action so RUN_SUMMARY.json's
+    # recovery_routing.route_taken reflects the final routing decision (not
+    # only the m130 retry_ui_gate_env case branch). Case branches below may
+    # specialize this to a more specific token (e.g., "split_escalated").
+    _ORCH_RECOVERY_ROUTE_TAKEN="$recovery"
     log_decision "Recovery: ${recovery}" "failure class ${AGENT_ERROR_CATEGORY:-unknown}/${AGENT_ERROR_SUBCATEGORY:-unknown}" ""
 
     case "$recovery" in
