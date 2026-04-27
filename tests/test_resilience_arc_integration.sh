@@ -25,6 +25,12 @@ export TMPDIR_TOP
 # Disable any inherited TUI state so log() reaches stdout.
 unset _TUI_ACTIVE 2>/dev/null || true
 
+# m135: clear any inherited PROJECT_DIR / PREFLIGHT_BAK_DIR so artifact_defaults.sh
+# (sourced via common.sh below) does not bake a parent-shell value into
+# PREFLIGHT_BAK_DIR. Each scenario sets its own PROJECT_DIR; m131 resolves
+# the bak dir via its `${PREFLIGHT_BAK_DIR:-${proj}/.claude/preflight_bak}` fallback.
+unset PROJECT_DIR PREFLIGHT_BAK_DIR 2>/dev/null || true
+
 # Default artifact paths used by the arc modules. Tests set PROJECT_DIR per
 # scenario and the modules resolve these relative to it.
 export BUILD_RAW_ERRORS_FILE="${BUILD_RAW_ERRORS_FILE:-${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
@@ -588,6 +594,195 @@ if declare -f _preflight_check_ui_test_config &>/dev/null; then
     fi
 else
     skip "S7.2 — _preflight_check_ui_test_config not yet implemented"
+fi
+
+# =============================================================================
+# Scenario group 8 — Artifact lifecycle (m135)
+# =============================================================================
+_arc_source "lib/preflight_checks.sh"
+
+echo "=== S8.T3: success run → LAST_FAILURE_CONTEXT.json removed ==="
+if declare -f _hook_emit_run_summary &>/dev/null \
+   && declare -f _clear_arc_artifacts_on_success &>/dev/null; then
+    PROJECT_DIR=$(_arc_setup_scenario_dir); export PROJECT_DIR
+    LOG_DIR="${PROJECT_DIR}/.claude/logs"
+    export LOG_DIR
+    _arc_reset_orch_state
+    _arc_write_v1_failure_context "$PROJECT_DIR" "ENVIRONMENT" "ENVIRONMENT" "test_infra"
+    _hook_emit_run_summary 0 >/dev/null 2>&1
+    if [[ ! -f "${PROJECT_DIR}/.claude/LAST_FAILURE_CONTEXT.json" ]]; then
+        pass "S8.T3 LAST_FAILURE_CONTEXT.json removed on success"
+    else
+        fail "S8.T3 LAST_FAILURE_CONTEXT.json was not removed on success"
+    fi
+else
+    skip "S8.T3 — _clear_arc_artifacts_on_success not yet implemented"
+fi
+
+echo "=== S8.T4: success run → BUILD_FIX_REPORT.md removed ==="
+if declare -f _hook_emit_run_summary &>/dev/null \
+   && declare -f _clear_arc_artifacts_on_success &>/dev/null; then
+    PROJECT_DIR=$(_arc_setup_scenario_dir); export PROJECT_DIR
+    LOG_DIR="${PROJECT_DIR}/.claude/logs"
+    export LOG_DIR
+    _arc_reset_orch_state
+    bf_report="${PROJECT_DIR}/${BUILD_FIX_REPORT_FILE}"
+    raw_errors="${PROJECT_DIR}/${BUILD_RAW_ERRORS_FILE}"
+    mkdir -p "$(dirname "$bf_report")" "$(dirname "$raw_errors")"
+    echo "## Attempt 1" > "$bf_report"
+    echo "src/foo.ts(1,1): error TS2304: x" > "$raw_errors"
+    _hook_emit_run_summary 0 >/dev/null 2>&1
+    if [[ ! -f "$bf_report" ]]; then
+        pass "S8.T4 BUILD_FIX_REPORT.md removed on success"
+    else
+        fail "S8.T4 BUILD_FIX_REPORT.md was not removed on success"
+    fi
+    if [[ ! -f "$raw_errors" ]]; then
+        pass "S8.T4 BUILD_RAW_ERRORS.txt removed on success"
+    else
+        fail "S8.T4 BUILD_RAW_ERRORS.txt was not removed on success"
+    fi
+else
+    skip "S8.T4 — _clear_arc_artifacts_on_success not yet implemented"
+fi
+
+echo "=== S8.T5: failure run → LAST_FAILURE_CONTEXT.json retained ==="
+if declare -f _hook_emit_run_summary &>/dev/null \
+   && declare -f _clear_arc_artifacts_on_success &>/dev/null; then
+    PROJECT_DIR=$(_arc_setup_scenario_dir); export PROJECT_DIR
+    LOG_DIR="${PROJECT_DIR}/.claude/logs"
+    export LOG_DIR
+    _arc_reset_orch_state
+    _arc_write_v1_failure_context "$PROJECT_DIR" "ENVIRONMENT" "ENVIRONMENT" "test_infra"
+    _hook_emit_run_summary 1 >/dev/null 2>&1
+    if [[ -f "${PROJECT_DIR}/.claude/LAST_FAILURE_CONTEXT.json" ]]; then
+        pass "S8.T5 LAST_FAILURE_CONTEXT.json retained on failure"
+    else
+        fail "S8.T5 LAST_FAILURE_CONTEXT.json was incorrectly removed on failure"
+    fi
+else
+    skip "S8.T5 — _clear_arc_artifacts_on_success not yet implemented"
+fi
+
+echo "=== S8.T6: preflight_bak with 7 files, retain=5 → 2 oldest removed ==="
+if declare -f _trim_preflight_bak_dir &>/dev/null; then
+    PROJECT_DIR=$(_arc_setup_scenario_dir); export PROJECT_DIR
+    bak_dir="${PROJECT_DIR}/.claude/preflight_bak"
+    mkdir -p "$bak_dir"
+    for ts in 20260101_010101 20260102_010101 20260103_010101 20260104_010101 \
+              20260105_010101 20260106_010101 20260107_010101; do
+        echo "backup-${ts}" > "${bak_dir}/${ts}_playwright.config.ts"
+    done
+    _trim_preflight_bak_dir "$bak_dir" 5
+    remaining=$(find "$bak_dir" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')
+    assert_eq "S8.T6 5 backups remain after trim" "5" "$remaining"
+    if [[ ! -f "${bak_dir}/20260101_010101_playwright.config.ts" ]] \
+       && [[ ! -f "${bak_dir}/20260102_010101_playwright.config.ts" ]]; then
+        pass "S8.T6 oldest 2 backups removed"
+    else
+        fail "S8.T6 oldest backups not removed"
+    fi
+    if [[ -f "${bak_dir}/20260107_010101_playwright.config.ts" ]] \
+       && [[ -f "${bak_dir}/20260103_010101_playwright.config.ts" ]]; then
+        pass "S8.T6 newest 5 backups retained"
+    else
+        fail "S8.T6 newest backups not retained"
+    fi
+else
+    skip "S8.T6 — _trim_preflight_bak_dir not yet implemented"
+fi
+
+echo "=== S8.T7: preflight_bak with 3 files, retain=5 → no files removed ==="
+if declare -f _trim_preflight_bak_dir &>/dev/null; then
+    PROJECT_DIR=$(_arc_setup_scenario_dir); export PROJECT_DIR
+    bak_dir="${PROJECT_DIR}/.claude/preflight_bak"
+    mkdir -p "$bak_dir"
+    for ts in 20260101_010101 20260102_010101 20260103_010101; do
+        echo "backup-${ts}" > "${bak_dir}/${ts}_playwright.config.ts"
+    done
+    _trim_preflight_bak_dir "$bak_dir" 5
+    remaining=$(find "$bak_dir" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')
+    assert_eq "S8.T7 3 backups remain (no trim)" "3" "$remaining"
+else
+    skip "S8.T7 — _trim_preflight_bak_dir not yet implemented"
+fi
+
+echo "=== S8.T8: PREFLIGHT_BAK_RETAIN_COUNT=0 → no files removed (keep all) ==="
+if declare -f _trim_preflight_bak_dir &>/dev/null; then
+    PROJECT_DIR=$(_arc_setup_scenario_dir); export PROJECT_DIR
+    bak_dir="${PROJECT_DIR}/.claude/preflight_bak"
+    mkdir -p "$bak_dir"
+    for ts in 20260101_010101 20260102_010101 20260103_010101 20260104_010101 \
+              20260105_010101 20260106_010101 20260107_010101; do
+        echo "backup-${ts}" > "${bak_dir}/${ts}_playwright.config.ts"
+    done
+    PREFLIGHT_BAK_RETAIN_COUNT=0 _trim_preflight_bak_dir "$bak_dir"
+    remaining=$(find "$bak_dir" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')
+    assert_eq "S8.T8 retain=0 keeps all 7 backups" "7" "$remaining"
+else
+    skip "S8.T8 — _trim_preflight_bak_dir not yet implemented"
+fi
+
+echo "=== S8.T9: _trim_preflight_bak_dir on missing dir is a no-op ==="
+if declare -f _trim_preflight_bak_dir &>/dev/null; then
+    if _trim_preflight_bak_dir "/nonexistent-path-m135" 5; then
+        pass "S8.T9 missing dir → no-op (return 0)"
+    else
+        fail "S8.T9 missing dir → unexpected non-zero exit"
+    fi
+else
+    skip "S8.T9 — _trim_preflight_bak_dir not yet implemented"
+fi
+
+echo "=== S8.T10: auto-patch triggers _trim_preflight_bak_dir via declare -f guard ==="
+# Closes the integration coverage gap noted by the reviewer: the declare -f guard
+# in _pf_uitest_playwright_fix_reporter (preflight_checks_ui.sh:185) is the call
+# site that was untested. Runs the full _preflight_check_ui_test_config → fix →
+# backup-write → trim chain with 7 pre-existing overflow backups so that the trim
+# is observable (8 total → 5 retained = 3 deleted).
+if declare -f _preflight_check_ui_test_config &>/dev/null \
+   && declare -f _trim_preflight_bak_dir &>/dev/null; then
+    PROJECT_DIR=$(_arc_setup_scenario_dir); export PROJECT_DIR
+    _arc_reset_preflight_state
+    export UI_TEST_CMD="npx playwright test"
+    _arc_write_playwright_html "$PROJECT_DIR"
+
+    # Pre-populate preflight_bak with 7 old-timestamped backups.
+    # 7 old + 1 new (written by fix helper) = 8 total; default retain=5 → 3 removed.
+    bak_dir="${PROJECT_DIR}/.claude/preflight_bak"
+    mkdir -p "$bak_dir"
+    for ts in 20250101_010101 20250102_010101 20250103_010101 20250104_010101 \
+              20250105_010101 20250106_010101 20250107_010101; do
+        echo "old-backup-${ts}" > "${bak_dir}/${ts}_playwright.config.ts"
+    done
+
+    unset PREFLIGHT_BAK_RETAIN_COUNT  # use default (5)
+    PREFLIGHT_UI_CONFIG_AUTO_FIX=true _preflight_check_ui_test_config
+
+    # Auto-fix must have succeeded — otherwise the trim call site was never reached.
+    assert_eq "S8.T10 reporter patched by auto-fix" "1" "${PREFLIGHT_UI_REPORTER_PATCHED:-}"
+
+    # The bak dir should now hold exactly 5 files (trim enforced default retain=5).
+    remaining=$(find "$bak_dir" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')
+    assert_eq "S8.T10 bak_dir trimmed to retain count (5)" "5" "$remaining"
+
+    # The 3 lexicographically-oldest backups must have been removed.
+    if [[ ! -f "${bak_dir}/20250101_010101_playwright.config.ts" ]] \
+       && [[ ! -f "${bak_dir}/20250102_010101_playwright.config.ts" ]] \
+       && [[ ! -f "${bak_dir}/20250103_010101_playwright.config.ts" ]]; then
+        pass "S8.T10 3 oldest overflow backups removed"
+    else
+        fail "S8.T10 oldest overflow backups were not removed"
+    fi
+
+    # The newest pre-existing backup must be retained.
+    if [[ -f "${bak_dir}/20250107_010101_playwright.config.ts" ]]; then
+        pass "S8.T10 newest pre-existing backup retained"
+    else
+        fail "S8.T10 newest pre-existing backup was incorrectly removed"
+    fi
+else
+    skip "S8.T10 — _preflight_check_ui_test_config or _trim_preflight_bak_dir not yet implemented"
 fi
 
 # =============================================================================

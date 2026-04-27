@@ -15,10 +15,10 @@ set -euo pipefail
 # Detects test framework config patterns that would cause Tekhton's gated
 # subprocess execution to hang on an interactive serve-and-wait loop or
 # never-terminating watch mode. The four PREFLIGHT_UI_* env vars exported
-# below are public contract consumed by m126 (gate normalizer), m132
-# (RUN_SUMMARY enrichment), m133 (diagnose rules), and m134 (integration
-# scenarios). Renaming or changing value semantics breaks downstream
-# consumers silently — see Watch For in m131 milestone definition.
+# below are public contract consumed by the UI gate normalizer, RUN_SUMMARY
+# enrichment, diagnose rules, and integration tests. Renaming or changing
+# value semantics breaks downstream consumers silently — see Watch For in
+# m131 milestone definition.
 # =============================================================================
 
 # =============================================================================
@@ -28,11 +28,11 @@ _preflight_check_ui_test_config() {
     local proj="${PROJECT_DIR:-.}"
 
     # Reset module state so a re-invocation in the same shell starts clean.
-    # PREFLIGHT_UI_* vars are public contract consumed by m126/m132/m133/m134;
+    # PREFLIGHT_UI_* vars are public contract consumed by downstream consumers;
     # they must reflect this preflight run only, not stale values from a prior
-    # run in the same shell. Per m134 S7.2, do NOT reset between iterations of
-    # run_complete_loop — only here at the top of preflight, which itself runs
-    # once per pipeline invocation.
+    # run in the same shell. Preflight runs once per pipeline invocation — do NOT
+    # reset between iterations of run_complete_loop — only here at the top of
+    # preflight.
     unset PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED \
           PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE \
           PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE \

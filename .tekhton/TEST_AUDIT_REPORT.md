@@ -1,105 +1,146 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file (`tests/test_resilience_arc_loop.sh`), 4 scenarios, 14 assertion calls
+Tests audited: 2 files, 12 test scenarios (S3.4–S3.7 in test_resilience_arc_loop.sh;
+S8.T3–S8.T10 in test_resilience_arc_integration.sh)
 Verdict: PASS
-
-Notes on scope:
-- The audit context lists `tests/test_resilience_arc_loop.sh` twice; this is a metadata
-  duplication — only one file was modified by the tester.
-- `tests/test_resilience_arc_integration.sh` was modified by the coder this run
-  (S5.1 rewired to use `_setup_bifl_tracker_m03_fixture`). It does not appear in the
-  tester's "modified" list and is therefore not formally audited here. Spot-checks of
-  the S5.1 assertions against `lib/finalize_summary_collectors.sh` found no issues.
-- Freshness samples (`test_m62_resume_cumulative_overcount.sh`,
-  `test_m62_tester_timing.sh`, `test_m65_prompt_tool_awareness.sh`) were not modified
-  this run and are not flagged.
 
 ---
 
 ### Findings
 
-#### COVERAGE: noncode_dominant short-circuit path untested in loop file
-- File: tests/test_resilience_arc_loop.sh (no line — absent scenario)
-- Issue: `run_build_fix_loop` exits before the attempt counter increments when
-  `classify_routing_decision` returns `noncode_dominant`. This path invokes
-  `append_human_action`, `write_pipeline_state`, and `exit 1` — distinct from the
-  exhaustion path. Both `append_human_action` and `write_pipeline_state` are already
-  stubbed in this file, so infrastructure exists for the test. The M127 classification
-  (S3.2 in the integration suite) is tested separately but the loop's response is not.
+#### NAMING: Tester report undersells integration coverage scope
+- File: .tekhton/TESTER_REPORT.md (planned-tests section)
+- Issue: The tester report entry for `test_resilience_arc_integration.sh` names only
+  "S8.T10: full integration." The file actually received eight new scenarios (T3–T10).
+  T3–T9 are the core M135 acceptance tests: artifact removal on success (T3, T4),
+  retention on failure (T5), over-limit trim (T6), under-limit no-op (T7), retain=0
+  disable (T8), and missing-dir no-op (T9). T10 is the integration capstone. Listing
+  only T10 obscures which acceptance criteria were verified and makes pre-accept review
+  harder.
 - Severity: LOW
-- Action: Add an S3.8 scenario: supply 3+ `ECONNREFUSED` lines in the errors fixture
-  (guarantees `noncode_dominant` classification), call `run_build_fix_loop` in a
-  subshell, assert `exit code=1` and `BUILD_FIX_ATTEMPTS=0` (loop never incremented).
+- Action: Update the planned-tests entry to enumerate S8.T3–S8.T10 individually. No
+  test code changes required.
 
-#### COVERAGE: BUILD_FIX_ENABLED=false toggle path untested
-- File: tests/test_resilience_arc_loop.sh (no line — absent scenario)
-- Issue: The top of `run_build_fix_loop` short-circuits with `exit 1` when
-  `BUILD_FIX_ENABLED=false`, using a different `write_pipeline_state` message and
-  emitting no attempt stats. This documented pipeline config option has a distinct
-  code path that is not exercised anywhere in the test suite.
+#### NAMING: Tester pass count scope is ambiguous
+- File: .tekhton/TESTER_REPORT.md (Test Run Results section)
+- Issue: "Passed: 18  Failed: 0" appears to count only new assertions added this run,
+  not the full file totals. The coder's verification records 71 passed for the full
+  integration file and 467 + 247 for the full suite. The ambiguity makes it impossible
+  to tell from the report whether the count means "18 new scenarios passed" or
+  "18 total assertions in the modified files."
 - Severity: LOW
-- Action: Add a scenario that exports `BUILD_FIX_ENABLED=false`, calls
-  `run_build_fix_loop` in a subshell, and asserts `exit code=1` and `ATTEMPTS=0`.
+- Action: Annotate the count with scope ("18 new assertions across both files, full
+  suite: 467 shell + 247 Python") or use full-file counts.
+
+#### SCOPE: test_resilience_arc_loop.sh tests M128 loop, not M135 features
+- File: tests/test_resilience_arc_loop.sh:1 (file header)
+- Issue: The file header reads "M134 coverage gap" and the tester report labels S3.4–S3.7
+  as covering a reviewer gap from M134. All four scenarios exercise `run_build_fix_loop`
+  from `stages/coder_buildfix.sh` (M128). No M135 features (`_clear_arc_artifacts_on_success`,
+  `_trim_preflight_bak_dir`, `PREFLIGHT_BAK_DIR` default) appear in this file. The tests
+  are correct and beneficial, but they are deferred M134 regression tests, not M135
+  acceptance tests. Mislabeling complicates traceability.
+- Severity: LOW
+- Action: Update the tester report to label these as "M134 coverage debt (deferred)" with
+  a note that they were added during the M135 tester pass. No test code changes needed.
 
 ---
 
 ### Rubric Detail
 
 **1. Assertion Honesty — PASS**
-All `assert_eq` targets are derived directly from the implementation:
-- `"passed"` / `"exhausted"` / `"no_progress"` are the exact `BUILD_FIX_OUTCOME`
-  tokens from `stages/coder_buildfix_helpers.sh:_export_build_fix_stats` (lines 133–138).
-- Attempt counts match the loop's `BUILD_FIX_ATTEMPTS="$attempt"` bookkeeping,
-  including the `attempt=$(( attempt - 1 ))` decrement on turn-cap hit (S3.7).
-- Report-section counts use `grep -c '^## Attempt'` against `BUILD_FIX_REPORT_FILE`,
-  whose `## Attempt N` header is written by `_append_build_fix_report` (line 118 of
-  `coder_buildfix_helpers.sh`).
-- S3.4's `BUILD_FIX_TURN_BUDGET_USED > 0` is correct: with `EFFECTIVE_CODER_MAX_TURNS=80`
-  and default divisor 3, the attempt-1 budget is 26 turns, which the loop accumulates
-  into `BUILD_FIX_TURN_BUDGET_USED` before the gate check.
-No tautological assertions or hard-coded magic constants found.
 
-**2. Edge Case Coverage — ADEQUATE**
-Four distinct behavioral paths covered: success on attempt 1 (S3.4), exhaustion at
-`MAX_ATTEMPTS=2` (S3.5), no-progress halt at attempt 2 (S3.6), cumulative turn cap
-below the 8-turn floor before first attempt (S3.7). The two missing paths
-(`noncode_dominant` short-circuit, `BUILD_FIX_ENABLED=false`) are LOW severity only
-— neither rises to a regression risk in isolation.
+test_resilience_arc_loop.sh: All `assert_eq` targets are derived from the implementation.
+`"passed"` / `"exhausted"` / `"no_progress"` are the exact `BUILD_FIX_OUTCOME` tokens
+written by `_export_build_fix_stats` in `stages/coder_buildfix_helpers.sh`. Attempt
+counts match the loop's `BUILD_FIX_ATTEMPTS` bookkeeping including the
+`attempt=$(( attempt - 1 ))` decrement on turn-cap-below-floor exit (S3.7). The
+report-section count (`grep -c '^## Attempt'`) is verified against the `## Attempt N`
+header written by `_append_build_fix_report`. S3.4's `TURN_BUDGET_USED > 0` check is
+correct: with `EFFECTIVE_CODER_MAX_TURNS=80` and default divisor 3, the attempt-1 budget
+is 26 turns, which the loop accumulates before the gate.
+
+test_resilience_arc_integration.sh S8: Artifact path construction in T3–T5 matches
+`_clear_arc_artifacts_on_success`'s path resolution exactly: the function uses
+`"${_p}/${BUILD_FIX_REPORT_FILE}"` with `_p="${PROJECT_DIR:-.}"` and the same
+`BUILD_FIX_REPORT_FILE` variable the test creates the fixture under. File-count assertions
+in T6–T10 derive from arithmetic on fixture inputs (7 files − retain 5 = 2 removed; 3 ≤ 5
+so no removal; retain=0 so no removal; 7 + 1 new = 8 then retain 5 → 3 removed).
+No tautological or hard-coded-for-its-own-sake assertions found.
+
+**2. Edge Case Coverage — PASS**
+
+test_resilience_arc_loop.sh covers four distinct behavioral paths: success on attempt 1,
+max-attempts exhaustion, no-progress halt, and turn-cap-below-floor pre-loop exit. This
+covers all four documented exit conditions from `run_build_fix_loop`.
+
+test_resilience_arc_integration.sh S8 covers: success artifact removal (T3, T4), failure
+retention symmetry (T5), over-limit trim (T6), under-limit no-op (T7), retain=0
+disable-trimming (T8), missing-dir no-op (T9), and the full declare-f integration chain
+(T10). Both success and failure branches of `_hook_emit_run_summary` are exercised.
 
 **3. Implementation Exercise — PASS**
-`run_build_fix_loop` is called directly with only four targeted stubs:
-`_bf_invoke_build_fix` (agent call), `run_build_gate` (gate subprocess),
-`write_pipeline_state` (state I/O), `_build_resume_flag` (state string builder).
-All loop internals run through real code: `_compute_build_fix_budget`,
-`_build_fix_progress_signal`, `_bf_count_errors`, `_bf_get_error_tail`,
-`_append_build_fix_report`, `_build_fix_set_secondary_cause`,
-`_build_fix_terminal_class`, and `classify_routing_decision`. Correct minimal-stub
-strategy.
+
+test_resilience_arc_loop.sh: `run_build_fix_loop` is called directly. Only four stubs are
+used: `_bf_invoke_build_fix` (agent call), `run_build_gate` (gate subprocess),
+`write_pipeline_state` (state I/O), `_build_resume_flag` (state string). All loop
+internals run through real code: `_compute_build_fix_budget`, `_build_fix_progress_signal`,
+`_bf_count_errors`, `_bf_get_error_tail`, `_append_build_fix_report`,
+`_build_fix_terminal_class`, and `classify_routing_decision`. Correct minimal-stub strategy.
+
+test_resilience_arc_integration.sh S8: `_hook_emit_run_summary` is called with real exit
+codes, exercising `_clear_arc_artifacts_on_success` through its actual call site in
+`finalize_summary.sh:37`. `_trim_preflight_bak_dir` is called directly in T6–T9 and
+through the `declare -f` guard at `preflight_checks_ui.sh:185` in T10 — the exact
+production call site that was previously untested (noted by the reviewer, verified here).
 
 **4. Test Weakening — N/A**
-No existing tests were modified; all four scenarios are new additions.
+
+Both files received only additions. No existing assertions were removed or broadened.
 
 **5. Naming and Intent — PASS**
-Each scenario is headed by a descriptive `echo "=== ... ==="` line encoding both the
-scenario ID (S3.4–S3.7) and the expected outcome. Per-assertion labels in `assert_eq`
-further specify the field under test (e.g., `"S3.5 OUTCOME=exhausted"`,
-`"S3.5 report has 2 attempt sections"`). This is consistent with the integration test
-suite's naming convention.
+
+test_resilience_arc_loop.sh: Each scenario is labeled with `echo "=== S3.N: ... ==="` lines
+that encode scenario ID and expected outcome. Per-assertion labels in `assert_eq` specify the
+field under test (e.g., `"S3.5 OUTCOME=exhausted"`, `"S3.5 report has 2 attempt sections"`).
+
+test_resilience_arc_integration.sh S8: Scenario headers encode the scenario ID, the
+condition, and the expected outcome (e.g., "S8.T6: preflight_bak with 7 files, retain=5
+→ 2 oldest removed"). Sub-assertions within each scenario are self-describing
+(`"S8.T6 oldest 2 backups removed"`, `"S8.T6 newest 5 backups retained"`).
 
 **6. Scope Alignment — PASS**
-The deleted file `.tekhton/JR_CODER_SUMMARY.md` is not referenced by any assertion or
-import in the test. All function references are live: `run_build_fix_loop` (in
-`stages/coder_buildfix.sh`), `classify_routing_decision` (in
-`lib/error_patterns_classify.sh`), `_arc_reset_orch_state` and `_setup_loop_scenario`
-(both defined in the test file itself or `tests/resilience_arc_fixtures.sh`).
-`_safe_read_file` (called by `_bf_read_raw_errors`) is defined in `lib/prompts.sh`,
-which is sourced via `_arc_source "lib/prompts.sh"` before the test runs.
+
+All function references are live in the current codebase:
+- `run_build_fix_loop` exists in `stages/coder_buildfix.sh`
+- `_clear_arc_artifacts_on_success` was added to `lib/finalize_summary_collectors.sh`
+- `_trim_preflight_bak_dir` was added to `lib/preflight_checks.sh`
+- `_hook_emit_run_summary` exists in `lib/finalize_summary.sh` and calls
+  `_clear_arc_artifacts_on_success` on its success branch (verified at line 37)
+- `_preflight_check_ui_test_config` exists in `lib/preflight_checks_ui.sh` and invokes
+  `_trim_preflight_bak_dir` via `declare -f` guard at lines 185–186
+
+No references to deleted or renamed symbols found. The M135 hermeticity fix
+(`unset PROJECT_DIR PREFLIGHT_BAK_DIR` at the top of the integration test file) is
+correctly placed and motivated by the new `:=` default in `artifact_defaults.sh:58`.
 
 **7. Test Isolation — PASS**
-`_setup_loop_scenario` creates a fresh `mktemp -d` directory under `$TMPDIR_TOP` per
-scenario and sets `BUILD_RAW_ERRORS_FILE`, `BUILD_ERRORS_FILE`, `BUILD_FIX_REPORT_FILE`,
-and `BUILD_ROUTING_DIAGNOSIS_FILE` to absolute paths within it. The top-level EXIT trap
-cleans `$TMPDIR_TOP`. `_arc_reset_orch_state` unsets all loop stat vars between
-scenarios. No mutable project-workspace files (`.tekhton/`, `.claude/`) are read or
-written by any scenario.
+
+Both files create `TMPDIR_TOP=$(mktemp -d)` with `trap 'rm -rf "$TMPDIR_TOP"' EXIT`.
+Each scenario allocates its own subdirectory via `_arc_setup_scenario_dir` (integration)
+or `_setup_loop_scenario` (loop), exporting all artifact paths as absolute paths under
+that subdirectory. `_arc_reset_orch_state` and `_arc_reset_preflight_state` are called
+between scenarios. No mutable workspace files (`.tekhton/`, `.claude/logs/`) are read
+without first creating a fixture copy in the per-scenario temp directory.
+
+---
+
+### STALE-SYM Warning Disposition
+
+All 17 STALE-SYM warnings in `test_resilience_arc_integration.sh` reference POSIX shell
+builtins (`return`, `set`, `source`, `trap`, `true`) or standard external utilities
+(`cat`, `cd`, `command`, `dirname`, `echo`, `find`, `grep`, `head`, `mkdir`, `mktemp`,
+`pwd`, `rm`). The shell-based symbol detector cannot distinguish these from Tekhton-internal
+function references. No orphaned test symbol references are present. All are detector
+artifacts requiring no action.

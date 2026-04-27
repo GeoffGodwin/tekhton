@@ -2,14 +2,14 @@
 PASS
 
 ## Confidence
-95
+92
 
 ## Reasoning
-- Scope is precisely defined: one new file (`tests/test_resilience_arc_integration.sh`), zero production changes, auto-discovered by existing `test_*.sh` glob
-- All 20 scenario tests are fully specified with explicit setup, ordered actions, and concrete assertions — no vague acceptance criteria
-- Fixture helper design, conditional sourcing strategy (`_arc_source`), and mock command pattern are all provided with ready-to-use code skeletons
-- Guard pattern (`declare -f ... &>/dev/null`) cleanly handles milestone-pending scenarios by emitting `SKIP` rather than `FAIL`, making the file safe to land before all arc milestones are complete
-- No user-facing config, no file format changes, no migration impact section required (test-only)
-- No UI components produced; UI testability dimension is not applicable
-- Watch For section covers the key implementation pitfalls (behavior-first assertions, artifact path vars, one-run vs one-iteration semantics)
-- `_setup_bifl_tracker_m03_fixture` reuse requirement is explicit and verifiable against acceptance criteria
+- Scope is tightly defined: four discrete goals, all files listed in the modification table, no ambiguity about what is in or out of scope
+- Acceptance criteria are fully testable: each criterion is a binary pass/fail, and T1–T8 map one-to-one to the stated goals
+- Design section provides exact function bodies, integration points, and placement instructions — two developers would arrive at the same implementation
+- Watch For section pre-empts the three most likely mistakes (`BUILD_FIX_REPORT_FILE` double-declaration, relative vs. absolute path mixing, `retain=0` guard)
+- The `declare -f` guard pattern (m131 calls `_trim_preflight_bak_dir` once it exists) is clearly documented — no call-site changes are needed here
+- No UI components; UI testability criterion is not applicable
+- `PREFLIGHT_BAK_RETAIN_COUNT` uses a safe `:-5` fallback so no migration impact before M136 registers it formally
+- Historical pattern shows all recent related milestones PASS on first attempt; scope size and style are consistent with those

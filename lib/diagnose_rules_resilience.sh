@@ -95,8 +95,11 @@ _rule_ui_gate_interactive_reporter() {
         fi
     fi
 
+    # shellcheck disable=SC2034
     DIAG_CLASSIFICATION="UI_GATE_INTERACTIVE_REPORTER"
+    # shellcheck disable=SC2034
     DIAG_CONFIDENCE="$confidence"
+    # shellcheck disable=SC2034
     DIAG_SUGGESTIONS=(
         "The UI gate timed out because Playwright opened an interactive HTML reporter."
         "Reporter 'html' starts a serve-and-wait loop that never returns to the gate."
@@ -203,8 +206,11 @@ _rule_build_fix_exhausted() {
     local errors_path="${BUILD_ERRORS_FILE:-${TEKHTON_DIR:-.tekhton}/BUILD_ERRORS.md}"
     local report_path="${BUILD_FIX_REPORT_FILE:-${TEKHTON_DIR:-.tekhton}/BUILD_FIX_REPORT.md}"
 
+    # shellcheck disable=SC2034
     DIAG_CLASSIFICATION="BUILD_FIX_EXHAUSTED"
+    # shellcheck disable=SC2034
     DIAG_CONFIDENCE="high"
+    # shellcheck disable=SC2034
     if [[ "$outcome" = "no_progress" ]]; then
         DIAG_SUGGESTIONS=(
             "Build-fix loop halted after ${attempts} attempt(s) with no measurable progress."
@@ -278,7 +284,7 @@ _rule_preflight_interactive_config() {
     [[ "$matched" = true ]] || return 1
     local _task="${_DIAG_PIPELINE_TASK:-${TASK:-<task not recorded>}}"
     local cfg_label="${cfg_file:-playwright.config.ts}"
-    # shellcheck disable=SC2034  # DIAG_* globals read by lib/diagnose.sh
+    # shellcheck disable=SC2034
     DIAG_CLASSIFICATION="PREFLIGHT_INTERACTIVE_CONFIG"
     # shellcheck disable=SC2034
     DIAG_CONFIDENCE="high"

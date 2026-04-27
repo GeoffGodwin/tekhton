@@ -22,6 +22,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/finalize_summary_collectors.sh"
 
 # k. Emit RUN_SUMMARY.json (runs on BOTH success and failure)
+# _clear_arc_artifacts_on_success (m135) lives in finalize_summary_collectors.sh
+# to keep this file under the 300-line ceiling, mirroring the m132 collectors.
 _hook_emit_run_summary() {
     local exit_code="$1"
 
@@ -32,6 +34,7 @@ _hook_emit_run_summary() {
     # Determine outcome
     local outcome="unknown"
     if [[ "$exit_code" -eq 0 ]]; then
+        _clear_arc_artifacts_on_success
         outcome="success"
     elif [[ -n "${_ORCH_ATTEMPT:-}" ]] && [[ "${_ORCH_ELAPSED:-0}" -ge "${AUTONOMOUS_TIMEOUT:-7200}" ]]; then
         outcome="timeout"

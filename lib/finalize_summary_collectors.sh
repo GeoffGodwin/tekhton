@@ -28,7 +28,7 @@ _collect_causal_context_json() {
         printf '{"schema_version":0}'
         return
     fi
-    if declare -f _load_failure_cause_context >/dev/null 2>&1; then
+    if declare -F _load_failure_cause_context >/dev/null 2>&1; then
         _load_failure_cause_context
     fi
     printf '{"schema_version":%d,"primary_category":"%s","primary_subcategory":"%s","primary_signal":"%s","secondary_category":"%s","secondary_subcategory":"%s","secondary_signal":"%s"}' \
@@ -140,6 +140,25 @@ _collect_error_classes_json() {
     local joined
     joined=$(printf ',%s' "${ec_items[@]}")
     printf '[%s]' "${joined:1}"
+}
+
+# _clear_arc_artifacts_on_success (m135)
+# Removes transient resilience-arc failure artifacts on success runs so stale
+# context cannot contaminate the next --diagnose. Failure runs preserve them
+# — they are the primary input to recovery routing and diagnose rules.
+# Targets use absolute paths because BUILD_FIX_REPORT_FILE / BUILD_RAW_ERRORS_FILE
+# are stored as project-relative strings in artifact_defaults.sh.
+_clear_arc_artifacts_on_success() {
+    local _p="${PROJECT_DIR:-.}" _f _c=0
+    for _f in "${_p}/.claude/LAST_FAILURE_CONTEXT.json" \
+              "${_p}/${BUILD_FIX_REPORT_FILE:-.tekhton/BUILD_FIX_REPORT.md}" \
+              "${_p}/${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}"; do
+        if [[ -f "$_f" ]] && rm -f "$_f" 2>/dev/null; then
+            _c=$((_c+1))
+        fi
+    done
+    (( _c > 0 )) && log_verbose "[artifact lifecycle] Cleared ${_c} stale failure artifact(s) on success"
+    return 0
 }
 
 # _collect_recovery_actions_json
