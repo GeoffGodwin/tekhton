@@ -1,8 +1,8 @@
 ## Summary
-M131 adds a UI test framework config audit to the pre-flight pipeline: a new dispatcher (`lib/preflight_checks_ui.sh`) with three scanners (Playwright, Cypress, Jest/Vitest), a PW-1 auto-fix helper that backs up and `sed`-patches the Playwright config, and a small escalation hook in `lib/gates_ui_helpers.sh`. The changes involve no authentication, cryptography, credentials, or network calls. All file paths are properly double-quoted; grep and sed patterns are hardcoded (no user-controlled pattern input). No security issues were found.
+M134 introduces two new test-only files (`tests/test_resilience_arc_integration.sh` and `tests/resilience_arc_fixtures.sh`). No production code was modified. The change has a minimal security surface: temp directories are created with `mktemp -d` and cleaned via a quoted `trap 'rm -rf'` on EXIT, no credentials or secrets are present, sourced lib paths are resolved from hardcoded relative strings under `TEKHTON_HOME`, and all external commands receive quoted arguments. One low-severity finding is noted in the fixture JSON writers.
 
 ## Findings
-None
+- [LOW] [category:A03] [tests/resilience_arc_fixtures.sh:88-109] fixable:yes — `_arc_write_v2_failure_context` and `_arc_write_v1_failure_context` interpolate shell variables directly into JSON heredocs without escaping. Values containing `"` or `\` would produce malformed JSON and could cause assertion false-positives in future callers that pass dynamic input. All current callers use hardcoded string literals, so there is no runtime exploit path; the risk is confined to future misuse. Fix: use a `_json_escape` helper (already used in other test files in this repo) before interpolating into the heredoc.
 
 ## Verdict
-CLEAN
+FINDINGS_PRESENT

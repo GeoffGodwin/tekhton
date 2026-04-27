@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-04-26
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-04-27 | "Implement Milestone 133: Diagnose Rule Enrichment for Resilience Arc Failure Modes"] `diagnose_rules.sh:280–299` — The `DIAGNOSE_RULES` array grew from 14 to 18 entries in this milestone alone. If growth continues at this rate, the primary-rule file will require re-splitting before M134. Consider a thin registry file (`diagnose_rules_registry.sh`) to decouple rule ordering from the primary-rule bodies, matching the `pipeline_order_policy.sh` precedent.
@@ -12,11 +12,3 @@
 - [2026-04-26 | "architect audit"] **Observation 4 — `load_error_patterns` per-function calls in `error_patterns_classify.sh`** `error_patterns_classify.sh` is sourced *inside* `error_patterns.sh` at line 25, before `_EP_LOADED` is initialized and before the pattern arrays are populated. A module-level call to `load_error_patterns()` at source time would therefore be a no-op at best and a silent error at worst. The per-function call pattern is the only safe option given this sourcing order, and `error_patterns.sh` itself uses the identical pattern across all five of its own exported functions. The observation describes this as "inconsistent with single-call usage elsewhere" but the evidence does not support that claim — the pattern is consistent within both files. No action. **Observation 5 — `gates_ui.sh:172` `_ui_detect_framework` redundant call** Drift log verdict at observation creation: "Pure cosmetic micro-optimization in a non-hot path. Reviewer judgment: not worth a rework cycle. No action this audit." Rationale stands. No contradicting evidence. **Observation 6 — `quota.sh` source ordering** Drift log verdict: "Self-deferred in the drift entry. Execution semantics are correct. No action." Rationale stands. **Observation 7 — Prior audit deferrals** Drift log verdict: "All three sub-items have standing written rationale; no contradicting evidence has emerged. No action." Rationale stands.
 
 ## Resolved
-- [RESOLVED 2026-04-26] `lib/diagnose_output.sh:12–18` — `Provides:` comment header lists functions that now live in `lib/diagnose_output_extra.sh`. Stale after the M129 extraction. Suggests the "Provides" header pattern in sourced-only files needs a lightweight update process when functions move.
-- [RESOLVED 2026-04-26] `stages/coder.sh` is 1131 lines, far over the 300-line ceiling. Pre-existing and noted by the coder. `run_stage_coder` is the primary offender; splitting into discrete sub-stage orchestrators would address this debt in a future milestone.
-- [RESOLVED 2026-04-26] `lib/error_patterns_classify.sh:69`: ANSI stripping uses `sed -E 's/[[0-9;]*[a-zA-Z]//g'`. The `` hex escape is GNU sed-specific, not POSIX `sed -E`; silently fails on macOS BSD sed without a GNU shim. Low risk given Linux deployment target.
-- [RESOLVED 2026-04-26] `lib/error_patterns_classify.sh` — `load_error_patterns` is called redundantly across three exported functions. The `_EP_LOADED` guard prevents overhead, but the pattern is inconsistent with single-call usage elsewhere.
-- [RESOLVED 2026-04-26] **`lib/gates_ui.sh:172` `_ui_detect_framework` redundant call** — Pure cosmetic micro-optimization in a non-hot path. Reviewer judgment: not worth a rework cycle. No action this audit.
-- [RESOLVED 2026-04-26] **`quota.sh` source ordering (Obs 5)** — Self-deferred in the drift entry. Execution semantics are correct. No action.
-- [RESOLVED 2026-04-26] **Prior audit deferrals (Obs 6)** — All three sub-items have standing written rationale; no contradicting evidence has emerged. No action.
-- [RESOLVED 2026-04-26] **Acceptance notes in DRIFT_LOG.md** — Noise from drift accumulation, not architectural drift. Should be pruned from the drift log directly (manual operation), not addressed via a coder pipeline stage.
