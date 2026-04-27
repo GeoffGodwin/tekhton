@@ -2,16 +2,16 @@
 PASS
 
 ## Confidence
-95
+92
 
 ## Reasoning
-- Scope is precisely defined: four specific gaps in `_classify_failure` / `_print_recovery_block`, one new recovery action (`retry_ui_gate_env`), and an explicit exclusion ("thin variant of existing pattern, not a new orchestration mechanism")
-- All modified files are enumerated with current line counts, estimated LOC additions, and explicit notes about the 300-line ceiling with extraction plan to `lib/orchestrate_recovery_causal.sh`
-- Acceptance criteria are fully testable: 13+ test cases (T1–T11 plus T2b, T8b, T8c) each with explicit fixture shapes, input env vars, and expected return values
-- Exact code is provided for all four amendments (A–D), the new function `_load_failure_cause_context`, `_reset_orch_recovery_state`, the `retry_ui_gate_env` dispatcher branch, and the `_print_recovery_block` signature extension
-- Module-level var lifetimes (Lifetime A vs Lifetime B) are explicitly distinguished and their reset semantics documented with the "Watch For" cross-check
-- Backward compatibility is explicitly handled: absent file → empty vars, v1 schema → graceful fallback, `LAST_BUILD_CLASSIFICATION` absent → `:-code_dominant` default, `BUILD_FIX_CLASSIFICATION_REQUIRED` absent → `:-true` default
-- Downstream dependency contracts (m132, m133, m134, m135, m136) are documented with specific field names and string literals that must remain stable
-- "Watch For" covers all non-obvious failure modes: wrong file for dispatcher, per-iteration vs per-invocation reset, `grep -oP` PCRE requirement, m126 hook dependency, opt-out precedence, 300-line ceiling
-- No UI components; UI Testability dimension is not applicable
-- No new user-facing config keys introduced by this milestone (m136 owns `BUILD_FIX_CLASSIFICATION_REQUIRED` declaration); no Migration Impact section required
+- Scope is precisely defined: one new file (`lib/preflight_checks_ui.sh`), four modified files, one new test file, one doc update — each with exact change descriptions
+- Acceptance criteria are specific and binary: 17 checkboxes, each independently verifiable
+- Ten test cases (T1–T10) have exact fixture shapes, env var settings, and expected counter states — no interpretation required
+- Function signatures, grep patterns, env var names, backup filename format, and sed replacement strings are all spelled out verbatim
+- Auto-fix decision matrix is normative and complete; no guessing about which rules get auto-patch
+- Forward-compat guards (`declare -f _trim_preflight_bak_dir`, `command -v emit_event`) are explicit and correctly motivated
+- Inter-milestone contracts (m126, m132–m138) are documented in Seeds Forward with byte-level precision — a developer knows exactly what names must not change
+- Migration impact is not required: the three config knobs are intentionally not added to `config_defaults.sh` (m136 owns that); the inline `${...:-...}` fallback pattern is specified and justified
+- Historical pass rate for similarly-scoped infrastructure milestones (M98–M104) is 100% with no rework cycles
+- No UI components produced; UI testability criterion is not applicable

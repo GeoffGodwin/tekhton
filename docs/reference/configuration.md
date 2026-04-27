@@ -342,6 +342,19 @@ auto-remediates safe issues via the M54 engine.
 | `PREFLIGHT_FIX_MODEL` | *(same as jr coder)* | Model for the pre-flight fix agent |
 | `PREFLIGHT_FIX_MAX_TURNS` | *(same as jr coder turns)* | Turn budget per fix attempt |
 
+### UI Test Framework Config Audit (M131)
+
+When `UI_TEST_CMD` is configured, pre-flight scans test framework configs for settings
+that produce interactive or non-terminating test runs. See
+[troubleshooting/preflight.md](../troubleshooting/preflight.md#ui-test-framework-config-audit)
+for detailed findings and fixes.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED` | `true` | Master toggle for UI test framework config audit |
+| `PREFLIGHT_UI_CONFIG_AUTO_FIX` | `true` | Auto-patch Playwright html reporter (PW-1). Falls back to `PREFLIGHT_AUTO_FIX` when unset. |
+| `PREFLIGHT_BAK_DIR` | `.claude/preflight_bak` | Directory for backups of auto-patched config files |
+
 ### Auto-Remediation Engine
 
 The error pattern registry classifies build/test failures and runs `safe`-rated

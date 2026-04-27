@@ -26,6 +26,8 @@ source "${TEKHTON_HOME}/lib/preflight_checks.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight_checks_env.sh"
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/preflight_checks_ui.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight_services.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/preflight_services_infer.sh"
@@ -56,6 +58,7 @@ _cleanup() {
 _stub_all_pass() {
     _preflight_check_dependencies() { _pf_record pass "Deps" "All clear"; }
     _preflight_check_tools()         { :; }
+    _preflight_check_ui_test_config(){ :; }
     _preflight_check_generated_code(){ :; }
     _preflight_check_env_vars()      { :; }
     _preflight_check_runtime_version(){ :; }
@@ -66,6 +69,7 @@ _stub_all_pass() {
 _stub_all_warn() {
     _preflight_check_dependencies() { _pf_record warn "Deps" "Something advisory"; }
     _preflight_check_tools()         { :; }
+    _preflight_check_ui_test_config(){ :; }
     _preflight_check_generated_code(){ :; }
     _preflight_check_env_vars()      { :; }
     _preflight_check_runtime_version(){ :; }
@@ -76,6 +80,7 @@ _stub_all_warn() {
 _stub_all_fail() {
     _preflight_check_dependencies() { _pf_record fail "Deps" "Something broken"; }
     _preflight_check_tools()         { :; }
+    _preflight_check_ui_test_config(){ :; }
     _preflight_check_generated_code(){ :; }
     _preflight_check_env_vars()      { :; }
     _preflight_check_runtime_version(){ :; }
@@ -276,6 +281,7 @@ unset _PREFLIGHT_SUMMARY 2>/dev/null || true
 # Override all checks as true no-ops (produce no records → total=0 → early return)
 _preflight_check_dependencies() { :; }
 _preflight_check_tools()         { :; }
+_preflight_check_ui_test_config(){ :; }
 _preflight_check_generated_code(){ :; }
 _preflight_check_env_vars()      { :; }
 _preflight_check_runtime_version(){ :; }

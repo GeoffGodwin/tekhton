@@ -52,12 +52,19 @@ _ui_detect_framework() {
 
 # _ui_deterministic_env_list HARDENED?
 # Echoes zero or more KEY=VALUE lines (one per line) for `env` to consume.
-# HARDENED=1 forces the most aggressive non-interactive profile.
+# HARDENED=1 forces the most aggressive non-interactive profile. M131:
+# preflight detection (PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1) escalates
+# to the hardened profile on the *first* gate run, not just retry — so a
+# project with a known-bad reporter config never burns a UI_TEST_TIMEOUT.
 # Pure helper — no side effects.
 _ui_deterministic_env_list() {
     local hardened="${1:-0}"
     local framework
     framework=$(_ui_detect_framework)
+
+    if [[ "${PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED:-}" == "1" ]]; then
+        hardened=1
+    fi
 
     case "$framework" in
         playwright)

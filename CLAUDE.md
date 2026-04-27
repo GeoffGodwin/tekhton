@@ -177,6 +177,7 @@ tekhton/
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
 │   ├── error_patterns_classify.sh # M127 confidence-based mixed-log classifier + routing decision
 │   ├── preflight.sh        # Pre-flight environment validation
+│   ├── preflight_checks_ui.sh # M131 UI test framework config audit (Playwright/Cypress/Jest/Vitest)
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
 │   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers; run_op uses M113 substage API (M115)
@@ -491,6 +492,9 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PREFLIGHT_ENABLED` | Toggle pre-flight environment checks (default: true) |
 | `PREFLIGHT_AUTO_FIX` | Allow auto-remediation of safe issues in pre-flight (default: true) |
 | `PREFLIGHT_FAIL_ON_WARN` | Treat pre-flight warnings as failures (default: false) |
+| `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED` | Toggle UI test framework config audit (default: true) |
+| `PREFLIGHT_UI_CONFIG_AUTO_FIX` | Auto-patch Playwright html reporter config (default: true, falls back to `PREFLIGHT_AUTO_FIX` when unset) |
+| `PREFLIGHT_BAK_DIR` | Directory for backups of patched config files (default: ${PROJECT_DIR}/.claude/preflight_bak) |
 | `DOCS_AGENT_ENABLED` | Toggle optional docs agent stage (default: false) |
 | `DOCS_AGENT_MODEL` | Model for docs agent (default: claude-haiku-4-5-20251001) |
 | `DOCS_AGENT_MAX_TURNS` | Turn budget for docs agent (default: 10) |
