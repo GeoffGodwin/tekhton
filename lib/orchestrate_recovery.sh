@@ -8,9 +8,16 @@ set -euo pipefail
 #
 # Provides:
 #   _classify_failure   — diagnose pipeline failure and return recovery action
+#                         (M130: causal-context-aware, may return retry_ui_gate_env)
 #   _check_progress     — detect stuck loops via git diff comparison
 #   _compute_diff_hash  — content hash of working tree changes
+#   _print_recovery_block — terminal recovery block (M94, M130 cause_summary)
+#
+# (M130 causal-context state + loader live in orchestrate_recovery_causal.sh.)
 # =============================================================================
+
+# shellcheck source=lib/orchestrate_recovery_causal.sh
+source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_recovery_causal.sh"
 
 # --- Progress detection --------------------------------------------------------
 
@@ -112,13 +119,35 @@ _check_progress_causal_log() {
 #   Unclassified            → save_exit (never retry unknown errors)
 
 _classify_failure() {
+    _load_failure_cause_context  # M130: refresh _ORCH_PRIMARY_*/SECONDARY_* vars
+
     local error_cat="${AGENT_ERROR_CATEGORY:-}"
     local error_sub="${AGENT_ERROR_SUBCATEGORY:-}"
+
+    # NOTE: _classify_failure is invoked via `recovery=$(_classify_failure)` from
+    # the dispatcher (subshell). Any state mutations made here are LOST when the
+    # function returns. Persistent guards (_ORCH_ENV_GATE_RETRIED,
+    # _ORCH_MIXED_BUILD_RETRIED, _ORCH_RECOVERY_ROUTE_TAKEN) are written by the
+    # dispatcher case branches in orchestrate_loop.sh:_handle_pipeline_failure.
+    # This function only READS them.
 
     # Transient upstream errors — already retried by M13. If still failing,
     # it's a sustained outage. Save state and exit.
     if [[ "$error_cat" = "UPSTREAM" ]]; then
         echo "save_exit"
+        return
+    fi
+
+    # M130 Amendment B: max_turns with primary cause ENVIRONMENT/test_infra
+    # is a *symptom* — splitting hands more turns to the same broken gate.
+    # Re-run the gate with the hardened env profile (M126) instead.
+    if [[ "$error_cat"         = "AGENT_SCOPE"  ]] \
+       && [[ "$error_sub"         = "max_turns"    ]] \
+       && [[ "$_ORCH_PRIMARY_CAT" = "ENVIRONMENT"  ]] \
+       && [[ "$_ORCH_PRIMARY_SUB" = "test_infra"   ]] \
+       && [[ "${_ORCH_ENV_GATE_RETRIED:-0}" -ne 1 ]] \
+       && _causal_env_retry_allowed; then
+        echo "retry_ui_gate_env"
         return
     fi
 
@@ -138,6 +167,17 @@ _classify_failure() {
     # Activity timeout
     if [[ "$error_cat" = "AGENT_SCOPE" ]] && [[ "$error_sub" = "activity_timeout" ]]; then
         echo "save_exit"
+        return
+    fi
+
+    # M130 Amendment A: env/test_infra primary cause is recoverable by
+    # re-running with the deterministic gate profile (M126) — unless the
+    # user has explicitly opted out via pipeline.conf.
+    if [[ "$_ORCH_PRIMARY_CAT" = "ENVIRONMENT" ]] \
+       && [[ "$_ORCH_PRIMARY_SUB" = "test_infra" ]] \
+       && [[ "${_ORCH_ENV_GATE_RETRIED:-0}" -ne 1 ]] \
+       && _causal_env_retry_allowed; then
+        echo "retry_ui_gate_env"
         return
     fi
 
@@ -166,77 +206,39 @@ _classify_failure() {
         return
     fi
 
-    # Build gate failure — check if rework already happened
-    if [[ -f "${BUILD_ERRORS_FILE}" ]] && [[ -s "${BUILD_ERRORS_FILE}" ]]; then
-        echo "retry_coder_build"
-        return
+    # M130 Amendment C: build-gate routing is gated by the M127 confidence
+    # classification token. The kill-switch BUILD_FIX_CLASSIFICATION_REQUIRED=false
+    # reverts to pre-M130 behavior (always retry on non-empty BUILD_ERRORS_FILE).
+    if [[ -f "${BUILD_ERRORS_FILE:-/dev/null}" ]] && [[ -s "${BUILD_ERRORS_FILE:-/dev/null}" ]]; then
+        if [[ "${BUILD_FIX_CLASSIFICATION_REQUIRED:-true}" != "true" ]]; then
+            echo "retry_coder_build"
+            return
+        fi
+        local build_confidence="${LAST_BUILD_CLASSIFICATION:-code_dominant}"
+        case "$build_confidence" in
+            code_dominant|unknown_only|"")
+                echo "retry_coder_build"
+                return
+                ;;
+            mixed_uncertain)
+                if [[ "${_ORCH_MIXED_BUILD_RETRIED:-0}" -ne 1 ]]; then
+                    echo "retry_coder_build"
+                    return
+                fi
+                echo "save_exit"
+                return
+                ;;
+            noncode_dominant)
+                echo "save_exit"
+                return
+                ;;
+        esac
     fi
 
     # Unclassified — never retry unknown errors
     echo "save_exit"
 }
 
-# --- Inline recovery block (M94) -----------------------------------------------
-#
-# _print_recovery_block OUTCOME DETAIL RESUME_CMD TASK
-# Prints a "WHAT HAPPENED / WHAT TO DO NEXT" block to stdout so the user sees
-# exact runnable commands at the terminal exit path. Called by
-# _save_orchestration_state after write_pipeline_state. Colors use ${BOLD:-} /
-# ${NC:-} so the block prints cleanly in test contexts without terminal colors.
-
-_print_recovery_block() {
-    local outcome="${1:-unknown}"
-    local detail="${2:-}"
-    local resume_cmd="${3:-}"
-    local task="${4:-}"
-
-    local _cur_turns="${EFFECTIVE_CODER_MAX_TURNS:-${CODER_MAX_TURNS:-80}}"
-    local _bump_turns=$(( _cur_turns + 40 ))
-    local _base_flags="--complete"
-    [[ "${MILESTONE_MODE:-false}" = "true" ]] && _base_flags="--complete --milestone"
-
-    local what_happened=""
-    case "$outcome" in
-        max_attempts)
-            what_happened="Pipeline hit ${MAX_PIPELINE_ATTEMPTS:-5} consecutive failing attempts. Current coder turn budget: ${_cur_turns}."
-            ;;
-        timeout)
-            what_happened="Pipeline exceeded the autonomous timeout (${AUTONOMOUS_TIMEOUT:-7200}s)."
-            ;;
-        agent_cap)
-            what_happened="Pipeline exceeded the max agent-call cap (${MAX_AUTONOMOUS_AGENT_CALLS:-20})."
-            ;;
-        pre_existing_failure)
-            what_happened="Tests were failing before the coder ran. Pre-existing test failures detected."
-            ;;
-        *)
-            what_happened="${detail:-Pipeline stopped with no additional detail.}"
-            ;;
-    esac
-
-    local _sep="══════════════════════════════════════════════════"
-    echo
-    echo -e "${BOLD:-}${_sep}${NC:-}"
-    echo -e "${BOLD:-}  WHAT HAPPENED${NC:-}"
-    echo -e "${BOLD:-}${_sep}${NC:-}"
-    echo "  ${what_happened}"
-    echo
-    echo -e "${BOLD:-}${_sep}${NC:-}"
-    echo -e "${BOLD:-}  WHAT TO DO NEXT${NC:-}"
-    echo -e "${BOLD:-}${_sep}${NC:-}"
-    echo "  1. RESUME     -> ${resume_cmd}"
-
-    case "$outcome" in
-        max_attempts)
-            echo "  2. MORE TURNS -> edit pipeline.conf: CODER_MAX_TURNS=${_bump_turns}"
-            echo "                  then: tekhton ${_base_flags} \"${task}\""
-            ;;
-        pre_existing_failure)
-            echo "  2. DISABLE    -> set PRE_RUN_CLEAN_ENABLED=false in pipeline.conf"
-            ;;
-    esac
-
-    echo "  3. DIAGNOSE   -> tekhton --diagnose"
-    echo -e "${BOLD:-}${_sep}${NC:-}"
-    echo
-}
+# _print_recovery_block lives in orchestrate_recovery_print.sh — sourced below.
+# shellcheck source=lib/orchestrate_recovery_print.sh
+source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_recovery_print.sh"

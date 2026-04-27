@@ -15,10 +15,18 @@ set -euo pipefail
 
 # _ui_detect_framework
 # Echoes one of: playwright | none
-# Priority: UI_FRAMEWORK config → UI_TEST_CMD word-boundary regex →
-#           playwright.config.{ts,js,mjs,cjs} in PROJECT_DIR
+# Priority 0 (M130): TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1 forces playwright
+#   regardless of detected framework, so the M130 retry_ui_gate_env recovery
+#   branch reliably triggers the hardened env profile on the next gate run.
+# Priority 1+: UI_FRAMEWORK config → UI_TEST_CMD word-boundary regex →
+#              playwright.config.{ts,js,mjs,cjs} in PROJECT_DIR
 # M126 only branches on `playwright`; other values short-circuit to "none".
 _ui_detect_framework() {
+    if [[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-}" = "1" ]]; then
+        echo "playwright"
+        return 0
+    fi
+
     if [[ "${UI_FRAMEWORK:-}" == "playwright" ]]; then
         echo "playwright"
         return 0

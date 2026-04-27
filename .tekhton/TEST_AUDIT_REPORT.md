@@ -1,43 +1,61 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, ~70 test assertions across 16 suites (T1–T8 schema tests + Suites 1–16 finalize tests)
+Tests audited: 5 files, 39 test functions
+(Primary: test_orchestrate_recovery.sh, test_ui_gate_force_noninteractive.sh;
+Freshness sample: test_intake_report_edge_cases.sh, test_intake_report_json_escape.sh, test_intake_report_rendering.sh)
 Verdict: PASS
 
 ### Findings
 
-#### NAMING: Stale hook-count in test_finalize_run.sh header comment
-- File: tests/test_finalize_run.sh:8
-- Issue: The file header says "Hook registration order (20 hooks in deterministic sequence)" but Suite 1 now asserts 26 hooks (correct). The comment was not updated when M129 added `_hook_failure_context_reset`. Does not affect test correctness — all 26 name/index assertions match finalize.sh exactly.
+#### COVERAGE: T2b.2 assertion is tautologically true
+- File: tests/test_orchestrate_recovery.sh:167
+- Issue: `assert_eq "T2b.2 _ORCH_ENV_GATE_RETRIED untouched" "0" "${_ORCH_ENV_GATE_RETRIED}"` cannot detect a bug. `_reset_test_state` sets the guard to 0, then `_classify_failure` runs in a subshell via `out=$(_classify_failure)`. Subshells structurally cannot mutate parent shell variables, so `_ORCH_ENV_GATE_RETRIED` will always read 0 regardless of what `_classify_failure` does internally. The assertion documents an architectural invariant (guards are written by the dispatcher in the parent shell, never by `_classify_failure` itself) rather than testing behavior that could actually fail. T2b.1 — the routing decision — is the meaningful assertion and is solid.
 - Severity: LOW
-- Action: Update the comment to read "(26 hooks in deterministic sequence)".
+- Action: Either remove the assertion and add a prose comment explaining the invariant, or replace it with a test that verifies the dispatcher in `orchestrate_loop.sh` does NOT write `_ORCH_ENV_GATE_RETRIED` in the opt-out branch. No implementation changes needed.
 
-#### COVERAGE: No behavioral test for `_hook_failure_context_reset`
-- File: tests/test_finalize_run.sh (Suite 1 only covers position)
-- Issue: M129 introduced `_hook_failure_context_reset` (finalize_aux.sh:48–54). This hook has a non-trivial exit-code guard — it is a no-op when exit_code != 0 and calls `reset_failure_cause_context` only on success. Suite 1 asserts the hook is at index 25 in the registry, but no suite directly invokes the hook and checks its guards. Compare: all other success-only hooks added in prior milestones received dedicated guard suites (7, 9, 10, 11, 12, 16). The underlying `reset_failure_cause_context` is well-tested by T7 in test_failure_context_schema.sh, so the gap is only in the hook wrapper behavior.
-- Severity: MEDIUM
-- Action: Add a Suite 16b that exercises `_hook_failure_context_reset` directly. Set all eight PRIMARY_*/SECONDARY_* vars via `set_primary_cause`/`set_secondary_cause` (functions available after sourcing failure_context.sh, which is already loaded transitively through finalize_aux.sh via finalize.sh), then: (a) call `_hook_failure_context_reset 1` and assert the vars remain populated, (b) call `_hook_failure_context_reset 0` and assert all eight vars are empty.
+### No other findings.
 
-#### COVERAGE: No test for consecutive_count increment on classification repeat
-- File: tests/test_failure_context_schema.sh (T1 only tests first write)
-- Issue: `write_last_failure_context` in diagnose_output.sh:226–234 reads the prior `LAST_FAILURE_CONTEXT.json` and increments `consecutive_count` when the classification matches, resets to 1 otherwise. T1 only covers the initial write (no prior file → count=1). The increment path and the reset-on-different-classification path are unexercised.
-- Severity: LOW
-- Action: Extend T1 or add a T1b: after the existing T1 write, call `write_last_failure_context` again with the same classification and assert `consecutive_count` is 2; then call with a different classification and assert it resets to 1.
+---
 
-#### SCOPE: STALE-SYM entries are bash builtins — no action needed
-- File: tests/test_finalize_run.sh (all STALE-SYM entries)
-- Issue: The shell-based orphan detector flagged `cat`, `cd`, `dirname`, `echo`, `exit`, `grep`, `mkdir`, `mktemp`, `pwd`, `return`, `rm`, `set`, `source`, `touch`, `trap` as missing from source definitions. All are POSIX external utilities or bash builtins. The detector cannot distinguish these from user-defined functions.
-- Severity: LOW (false positive — no action required)
-- Action: None.
+### Per-file Detail
 
-### Rubric Notes
+#### tests/test_orchestrate_recovery.sh (25 assertions, T1–T11 + T2b/T8b/T8c)
 
-**Assertion Honesty — CLEAR.** All assertions in test_failure_context_schema.sh derive from real function calls (set_primary_cause → write_last_failure_context → file output; _read_diagnostic_context → _DIAG_* vars; _rule_max_turns → DIAG_SUGGESTIONS array). No hard-coded sentinel values that bypass implementation logic were found. The `_write_v2_fixture` hand-writes a JSON file that is byte-compatible with what `write_last_failure_context` produces, deliberately so — the fixture is a stable contract anchor for downstream m130/m132/m133 parser tests. T3's pretty-print canary tests `grep -n '"primary_cause": {$'` against the actual emitted file, not a stub. All 26 hook-position assertions in test_finalize_run.sh Suite 1 were verified against the `register_finalize_hook` call sequence in finalize.sh:218–243; all match.
+**Assertion Honesty — CLEAR.** All routing assertions call the real `_classify_failure` with meaningful fixture state and verify the returned action string against documented implementation branches. `_load_failure_cause_context` calls (T1.2/T1.3, T9.2–T9.4, T10.2–T10.4) use direct (non-subshell) invocation so Lifetime A state mutations are visible in the parent shell. No hard-coded values bypass implementation logic.
 
-**Test Weakening — CLEAR.** The only modification to test_finalize_run.sh was adding one count assertion (25→26), adding one name assertion for `_hook_failure_context_reset` at index 25, and shifting four pre-existing index assertions by one. No assertions were removed, no expected values were broadened, no edge-case tests were deleted.
+**Edge Case Coverage — STRONG.** v1 schema compatibility (T9), missing context file (T10), explicit opt-out via `_CONF_KEYS_SET` (T2b), kill-switch `BUILD_FIX_CLASSIFICATION_REQUIRED=false` (T8c), `unknown_only` classification (T8b), `mixed_uncertain` first-vs-second attempt (T7/T8), negative cause_summary suppression (T11.3). Ratio of error-path to happy-path tests is approximately 1:1.
 
-**Implementation Exercise — CLEAR.** Both test files source real implementation code. test_failure_context_schema.sh sources `lib/failure_context.sh` and `lib/diagnose.sh` (which transitively sources diagnose_rules.sh, diagnose_helpers.sh, diagnose_output.sh, diagnose_output_extra.sh). The real `_diag_parse_cause_block`, `_rule_max_turns`, `write_last_failure_context`, and `format_failure_cause_summary` all execute through live implementation paths. test_finalize_run.sh sources `lib/finalize.sh` (which sources all extension hook files) and exercises real hook guards — mocks are limited to side-effectful external calls (git, agent invocations, dashboard writes).
+**Implementation Exercise — CLEAR.** Tests source the real `orchestrate_recovery.sh`, which transitively sources `orchestrate_recovery_causal.sh` and `orchestrate_recovery_print.sh`. Only `warn`/`log`/`error` are stubbed — appropriate since logging is not under test. All routing decisions and loader behaviors execute through live code paths.
 
-**Scope Alignment — CLEAR.** All function and variable references in both test files resolve to current symbols in the M129 implementation. `_hook_failure_context_reset` is defined in finalize_aux.sh:48–54 and registered in finalize.sh:243. The eight `PRIMARY_ERROR_*`/`SECONDARY_ERROR_*` variables tested in T7 are exactly the eight vars declared and exported by failure_context.sh:26–37. `_DIAG_PRIMARY_*`/`_DIAG_SECONDARY_*`/`_DIAG_SCHEMA_VERSION` tested in T4–T5 are declared in diagnose.sh:64–72.
+**Test Weakening — N/A.** New file; no prior version exists.
 
-**Test Isolation — CLEAR.** Both test files create a `mktemp -d` temp directory and route all file I/O through `PROJECT_DIR="$TMPDIR"`. test_failure_context_schema.sh writes `LAST_FAILURE_CONTEXT.json` to `$TMPDIR/.claude/` and mocks `is_dashboard_enabled`, `_write_js_file`, and `_to_js_timestamp` to prevent any project-dir writes. test_finalize_run.sh runs `cd "$TMPDIR"` so relative paths (HUMAN_NOTES_FILE, TEKHTON_DIR) resolve inside the temp dir. All files written in Suites 8/8b are written to and read from `$TMPDIR`-relative paths. Both files register `trap 'rm -rf "$TMPDIR"' EXIT`.
+**Test Naming — CLEAR.** All names encode scenario and expected outcome (e.g., `T2b.1 explicit opt-out routes save_exit`, `T8c.1 kill switch forces retry_coder_build`). No opaque identifiers.
+
+**Scope Alignment — CLEAR.** All referenced functions (`_classify_failure`, `_load_failure_cause_context`, `_reset_orch_recovery_state`, `_causal_env_retry_allowed`, `_print_recovery_block`) exist in the current M130 implementation at the locations the coder summary specifies. The subshell-isolation comment in the test header (lines 126–129) accurately describes the architecture. No orphaned or stale references.
+
+**Test Isolation — CLEAR.** All fixture JSON files are written to `$TMPDIR` via `_write_v2_env_primary`, `_write_v1_legacy`, and `_make_build_errors_present`. `ORCH_CONTEXT_FILE_OVERRIDE` redirects the loader to fixtures rather than `$PROJECT_DIR`. `_reset_test_state` fully resets all module-level vars before each case. No mutable project state is read.
+
+---
+
+#### tests/test_ui_gate_force_noninteractive.sh (8 assertions, P0-T1–P0-T6)
+
+**Assertion Honesty — CLEAR.** All assertions call the real `_ui_detect_framework` and `_ui_deterministic_env_list`. P0-T6 correctly passes `hardened=1` to exercise the conditional `CI=1` emission path, then asserts both `PLAYWRIGHT_HTML_OPEN=never` (unconditional for playwright) and `CI=1` (hardened-only). The two asserted values appear in the implementation at `gates_ui_helpers.sh:64` and `gates_ui_helpers.sh:66` exactly.
+
+**Edge Case Coverage — GOOD.** Three Priority 0 activation cases (plain, with `UI_FRAMEWORK` override, with empty `PROJECT_DIR` preventing file detection), two negative cases (unset variable, value=0), one env-list integration case.
+
+**Implementation Exercise — CLEAR.** Sources real `gates_ui_helpers.sh`. No mocking. `_clear_detection_vars` resets env state only, leaving the implementation untouched.
+
+**Test Weakening — N/A.** New file.
+
+**Test Naming — CLEAR.** All names encode priority level, trigger condition, and expected outcome.
+
+**Scope Alignment — CLEAR.** `_ui_detect_framework` Priority 0 hook is at `lib/gates_ui_helpers.sh:25–28` exactly as tested. `_ui_deterministic_env_list` is at `lib/gates_ui_helpers.sh:57–73`. No stale references.
+
+**Test Isolation — CLEAR.** `PROJECT_DIR="$TMPDIR"` (empty temp dir) prevents file-based playwright detection from triggering. `_clear_detection_vars` resets all detection inputs between test cases. No mutable project state is read.
+
+---
+
+#### Freshness Samples (test_intake_report_edge_cases.sh, test_intake_report_json_escape.sh, test_intake_report_rendering.sh)
+
+**Scope Alignment check — CLEAR.** All three files source `lib/dashboard_parsers.sh` and test `_parse_intake_report`. M130 changed `lib/orchestrate_recovery*.sh` and `lib/gates_ui_helpers.sh` — no overlap with these test files. No orphaned, stale, or misaligned references to M130-changed code detected. Freshness samples remain valid.

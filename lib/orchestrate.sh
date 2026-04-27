@@ -92,6 +92,13 @@ run_complete_loop() {
     _ORCH_MAX_TURNS_STAGE=""
     unset EFFECTIVE_CODER_MAX_TURNS EFFECTIVE_JR_CODER_MAX_TURNS EFFECTIVE_TESTER_MAX_TURNS
     _ORCH_BUILD_RETRIED=false
+    # M130: reset persistent retry guards once per --complete invocation.
+    # NOT per iteration — the retry-once semantic relies on these surviving across
+    # iterations within the same loop. (Cause vars are owned by
+    # _load_failure_cause_context and refreshed every call there.)
+    if declare -f _reset_orch_recovery_state &>/dev/null; then
+        _reset_orch_recovery_state
+    fi
 
     # Restore orchestration state from prior run (resume support)
     if [[ -f "${PIPELINE_STATE_FILE:-}" ]]; then

@@ -2,21 +2,16 @@
 PASS
 
 ## Confidence
-94
+95
 
 ## Reasoning
-- Scope is precisely defined: 1 new file (`lib/failure_context.sh`), 1 new test file, and 11 files to modify are enumerated in a table with per-file change descriptions
-- Acceptance criteria are specific and testable — 12 checkboxes, each objectively verifiable (schema key presence, pretty-print line format, function names, shellcheck clean, 300-line ceiling)
-- Eight numbered test cases specified with exact fixture shape and assertion targets; no ambiguity about what "passing" means
-- Pretty-print contract is fully specified with a reference shape, rationale (downstream parsers use `grep -oP` not `jq`), and a named canary test (`writes_pretty_printed_one_key_per_line`)
-- Writer precedence rules (primary vars → AGENT_ERROR_* → classification fallback) are ordered unambiguously
-- Signal vocabulary table gives exact strings, owners, and consuming milestones — no ad-hoc naming
-- Three mandatory `reset_failure_cause_context` call sites are enumerated and the consequence of missing any one is documented
-- The 300-line ceiling compliance path is explicit: Goal 5 extraction covers the shrink budget for `diagnose_output.sh` (currently 332 lines)
-- Top-level alias precedence (secondary > AGENT_ERROR_* > omit) is documented with the "never emit empty string" rule
-- Reader fallback order (`_DIAG_*` state: primary > secondary > legacy top-level > legacy env vars) is specified
-- Seeds Forward section documents downstream dependencies (m130, m131, m132, m133, m134) with enough specificity that parallel milestone work can proceed without coordination
-- v2 fixture shape is spelled out byte-for-byte and explicitly aligned with m134's integration fixtures
-- No UI components; UI testability criterion is not applicable
-- Migration impact: schema change is internal pipeline state, not user-facing config; backward compatibility is by design (v1 callers see unchanged keys); no separate migration section needed
-- Historical pattern shows similar-scope schema/infra milestones (M97–M102) passing on first attempt
+- Scope is precisely defined: four specific gaps in `_classify_failure` / `_print_recovery_block`, one new recovery action (`retry_ui_gate_env`), and an explicit exclusion ("thin variant of existing pattern, not a new orchestration mechanism")
+- All modified files are enumerated with current line counts, estimated LOC additions, and explicit notes about the 300-line ceiling with extraction plan to `lib/orchestrate_recovery_causal.sh`
+- Acceptance criteria are fully testable: 13+ test cases (T1–T11 plus T2b, T8b, T8c) each with explicit fixture shapes, input env vars, and expected return values
+- Exact code is provided for all four amendments (A–D), the new function `_load_failure_cause_context`, `_reset_orch_recovery_state`, the `retry_ui_gate_env` dispatcher branch, and the `_print_recovery_block` signature extension
+- Module-level var lifetimes (Lifetime A vs Lifetime B) are explicitly distinguished and their reset semantics documented with the "Watch For" cross-check
+- Backward compatibility is explicitly handled: absent file → empty vars, v1 schema → graceful fallback, `LAST_BUILD_CLASSIFICATION` absent → `:-code_dominant` default, `BUILD_FIX_CLASSIFICATION_REQUIRED` absent → `:-true` default
+- Downstream dependency contracts (m132, m133, m134, m135, m136) are documented with specific field names and string literals that must remain stable
+- "Watch For" covers all non-obvious failure modes: wrong file for dispatcher, per-iteration vs per-invocation reset, `grep -oP` PCRE requirement, m126 hook dependency, opt-out precedence, 300-line ceiling
+- No UI components; UI Testability dimension is not applicable
+- No new user-facing config keys introduced by this milestone (m136 owns `BUILD_FIX_CLASSIFICATION_REQUIRED` declaration); no Migration Impact section required

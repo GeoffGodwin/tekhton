@@ -66,8 +66,8 @@ _is_non_diagnostic_line() {
     fi
 
     # ANSI-only after stripping escape sequences → noise.
-    local stripped
-    stripped=$(printf '%s' "$line" | sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g')
+    local stripped _esc=$'\033'
+    stripped=$(printf '%s' "$line" | sed -E "s/${_esc}\[[0-9;]*[a-zA-Z]//g")
     if [[ -z "${stripped//[[:space:]]/}" ]]; then
         return 0
     fi

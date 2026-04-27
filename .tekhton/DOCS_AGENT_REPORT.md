@@ -1,30 +1,32 @@
-# Docs Agent Report
+# Docs Agent Report — M130 Causal-Context-Aware Recovery Routing
 
-## Analysis
-
-Reviewed the coder's changes to the TUI Stage Timings panel truncation fix.
-
-### Changes Made
-- **`tools/tui_render_common.py`**: Extracted `_truncate(s, limit)` helper function (private, starts with underscore)
-- **`tools/tui_render.py`**: Refactored to import `_truncate` from `tui_render_common` instead of defining it locally
-- **`tools/tui_render_timings.py`**: Applied truncation to stage labels via the new `_LABEL_MAX_CHARS = 32` constant
-
-### Public-Surface Impact
-**None.** These are internal implementation details in the Python renderer layer:
-- `_truncate` and `_LABEL_MAX_CHARS` are private (prefixed with `_`)
-- No CLI flags added or changed
-- No config keys added or changed
-- No JSON schema changes
-- No exported function signatures changed
-- The truncation is a visual UX improvement in the TUI; no behavioral API change
-
-### Documentation Review
-- **README.md**: No updates needed — documents user-facing features only
-- **docs/** directory: Searched all markdown files — none document internal Python renderer helpers
-- **docs/tui-lifecycle-model.md** (TUI-specific docs): Covers lifecycle and ownership model; internal refactoring doesn't affect its content
+## Summary
+Updated CLAUDE.md to document two new configuration variables introduced by M130.
+The coder already created `docs/troubleshooting/recovery-routing.md` with comprehensive recovery action and retry-guard documentation.
 
 ## Files Updated
-None — no documentation updates needed.
+- **CLAUDE.md** (Template Variables section, lines 474-475)
+  - Added `BUILD_FIX_CLASSIFICATION_REQUIRED` (M130) — controls whether build-gate failures use classification-based routing vs. always-retry behavior
+  - Added `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` (M130) — allows users to opt out of env-gate recovery retries via pipeline.conf
 
-## Conclusion
-The coder's assessment is correct: this is a pure refactoring of internal TUI renderer code with no public-surface changes. Documentation is already accurate.
+## Public-Surface Coverage
+
+| Change | Documented In | Notes |
+|--------|---------------|----|
+| `retry_ui_gate_env` recovery action | docs/troubleshooting/recovery-routing.md | Created by coder; covers when/why this action is chosen |
+| `BUILD_FIX_CLASSIFICATION_REQUIRED` config | CLAUDE.md + docs/troubleshooting/recovery-routing.md | Template variables + troubleshooting guide |
+| `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` config | CLAUDE.md + docs/troubleshooting/recovery-routing.md | Template variables + opt-out reference |
+| Retry guards (one-shot semantics) | docs/troubleshooting/recovery-routing.md | Comprehensive table of guards and lifecycle |
+| Decision tree (Amendments A–D) | docs/troubleshooting/recovery-routing.md | Full routing logic and routing table |
+
+## No Update Needed
+- **README.md**: High-level content unchanged; users referred to docs/USAGE.md and docs/configuration.md
+- **docs/configuration.md**: Summary table of categories; new variables are configuration details covered in recovery-routing.md
+- **docs/cli-reference.md**: No new CLI flags introduced
+- **ARCHITECTURE.md**: No new exported functions or public APIs (recovery routing is in lib/ only)
+
+## Implementation Notes
+- M130 recovery routing is fully implemented in `lib/orchestrate_recovery*.sh` (internal modules)
+- The new recovery-routing.md file serves as the authoritative troubleshooting guide
+- Both new config variables have sensible defaults that preserve backward compatibility
+- No breaking changes to the public API

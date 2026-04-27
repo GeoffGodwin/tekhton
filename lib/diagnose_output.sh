@@ -14,8 +14,7 @@ set -euo pipefail
 #   _list_relevant_files          — list files relevant to diagnosis
 #   print_diagnosis_summary       — terminal output with box formatting
 #   write_last_failure_context    — write LAST_FAILURE_CONTEXT.json
-#   print_crash_first_aid         — quick first-aid checks for terminal
-#   emit_dashboard_diagnosis      — generate data/diagnosis.js for Watchtower
+#   (print_crash_first_aid, emit_dashboard_diagnosis → diagnose_output_extra.sh)
 # =============================================================================
 
 # --- Report generator --------------------------------------------------------

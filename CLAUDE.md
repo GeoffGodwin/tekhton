@@ -67,7 +67,10 @@ tekhton/
 │   ├── milestone_split_nullrun.sh # Null-run auto-split handler
 │   ├── orchestrate.sh      # Outer orchestration loop (--complete)
 │   ├── orchestrate_helpers.sh  # Orchestration support functions
+│   ├── orchestrate_state_save.sh # _save_orchestration_state + recovery-block glue
 │   ├── orchestrate_recovery.sh # Failure classification + recovery
+│   ├── orchestrate_recovery_causal.sh # M130 causal-context loader + retry guards
+│   ├── orchestrate_recovery_print.sh  # M94/M130 inline recovery block printer
 │   ├── clarify.sh          # Clarification protocol + replan trigger
 │   ├── specialists.sh      # Specialist review framework
 │   ├── metrics.sh          # Run metrics collection + adaptive calibration
@@ -468,6 +471,8 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `BUILD_FIX_REQUIRE_PROGRESS` | M128. Halt loop on attempt N≥2 if progress signal is `unchanged` or `worsened` (default: true) |
 | `BUILD_FIX_TOTAL_TURN_CAP` | M128. Cumulative turn budget across all attempts; below the 8-turn floor the loop exits (default: 120) |
 | `BUILD_FIX_REPORT_FILE` | M128. Per-attempt postmortem artifact path (default: `${TEKHTON_DIR}/BUILD_FIX_REPORT.md`) |
+| `BUILD_FIX_CLASSIFICATION_REQUIRED` | M130. Toggle amendment C: build-gate classification-based routing. When true (default), mixed-uncertain classifications retry once then save_exit; when false, always retry. Set to false to revert pre-M130 behavior. (default: true) |
+| `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` | M130. Set to 0 in pipeline.conf to opt out of env-gate recovery retries. Pipeline sets this to 1 when dispatching `retry_ui_gate_env`. (default: not set) |
 | `TESTER_FIX_ENABLED` | Auto-seed fix run when tester stage tests fail (default: false) |
 | `TESTER_FIX_MAX_DEPTH` | Max recursive fix attempts in tester stage (default: 1) |
 | `TESTER_FIX_OUTPUT_LIMIT` | Max chars of test output in tester fix task string (default: 4000) |
