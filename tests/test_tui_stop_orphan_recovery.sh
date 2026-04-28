@@ -23,6 +23,12 @@ error()       { :; }
 success()     { :; }
 header()      { :; }
 log_verbose() { :; }
+# Defense-in-depth: even though tui_stop no longer issues terminal-restore
+# escape sequences, stub tput/stty here so any future regression cannot leak
+# RMCUP / cnorm / icrnl to the parent shell's TTY when this test runs inside
+# a live tekhton pipeline (which keeps a rich.live alt-screen open).
+tput()        { :; }
+stty()        { :; }
 
 # shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/tui.sh"

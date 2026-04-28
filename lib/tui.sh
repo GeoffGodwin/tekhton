@@ -218,8 +218,12 @@ tui_stop() {
     fi
     _TUI_PID=""
     rm -f "$pidfile" 2>/dev/null || true
-    # Safety net: restore terminal state if the sidecar exited without
-    # cleaning up (e.g. SIGKILL before rich could send RMCUP / cnorm).
+}
+
+# _tui_restore_terminal — Recover terminal state if rich crashed before
+# clean-up. Owned by tekhton.sh's EXIT trap; kept out of tui_stop so tests
+# that source this file can't leak escape sequences to the parent's TTY.
+_tui_restore_terminal() {
     tput rmcup 2>/dev/null || true
     tput cnorm 2>/dev/null || true
     stty icrnl 2>/dev/null || true

@@ -148,6 +148,12 @@ _tekhton_cleanup() {
     if command -v tui_stop &>/dev/null; then
         tui_stop 2>/dev/null || true
     fi
+    # Restore terminal state only on real interactive exit. Kept out of
+    # tui_stop so tests that source lib/tui.sh do not leak escape sequences
+    # to the parent shell's TTY.
+    if command -v _tui_restore_terminal &>/dev/null; then
+        _tui_restore_terminal 2>/dev/null || true
+    fi
 
     # --- MCP server cleanup: stop Serena if running ----------------------------
     if command -v stop_mcp_server &>/dev/null; then
@@ -2197,6 +2203,9 @@ create_run_checkpoint
 # [RESOLVED] items from ${DRIFT_LOG_FILE}, and resolved entries from
 # ${NON_BLOCKING_LOG_FILE} Resolved section. Commit messages already captured what
 # was resolved; these logs don't need to keep them across runs.
+# Merge a stale root-level HUMAN_ACTION_REQUIRED.md into the canonical
+# .tekhton/ location before any cleanup or write logic touches either file.
+consolidate_legacy_human_action
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
 clear_completed_human_notes

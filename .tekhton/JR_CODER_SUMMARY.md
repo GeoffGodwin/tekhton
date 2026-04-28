@@ -1,14 +1,14 @@
-# Junior Coder Summary — Milestone 138: Resilience Arc Runtime CI Environment Auto-Detection
+# JR Coder Summary
 
 ## What Was Fixed
 
-- **Missing `set -euo pipefail` directive**: Added `set -euo pipefail` on line 2 of `lib/config_defaults_ci.sh` immediately after the shebang, per CLAUDE.md non-negotiable rule #2 ("All scripts use `set -euo pipefail`"). This ensures the new M138 configuration defaults file adheres to project standards, matching all other lib/*.sh files.
+- **tests/test_tui_orphan_lifecycle_integration.sh:202** — Added missing `</dev/null` redirection to the watchdog test spawn. The second `tools/tui.py` spawn (lines 196–202) now includes `</dev/null` before `>/dev/null 2>&1 &`, matching the pattern from the first spawn at line 112. This prevents the test-spawned tui.py process from acquiring the parent shell's controlling TTY, which was causing the TUI sidecar to leak terminal escape sequences.
 
 ## Files Modified
 
-- `lib/config_defaults_ci.sh` — Added `set -euo pipefail` on line 2
+- `tests/test_tui_orphan_lifecycle_integration.sh` — Added `</dev/null` to line 202
 
 ## Verification
 
-- ✓ Syntax check: `bash -n lib/config_defaults_ci.sh` passes
-- ✓ Shellcheck: `shellcheck lib/config_defaults_ci.sh` passes (zero warnings)
+- ✓ Syntax check: `bash -n` passed
+- ✓ Shellcheck: passed with no warnings

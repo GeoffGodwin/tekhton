@@ -87,6 +87,36 @@ EOF
 
 # --- Human Action Required ---------------------------------------------------
 
+# consolidate_legacy_human_action — Merge a stale root-level
+# HUMAN_ACTION_REQUIRED.md into the canonical ${HUMAN_ACTION_FILE} location
+# and delete the root copy. Covers pre-v3.1 projects whose migration didn't
+# run and pipeline.conf overrides that bypass the .tekhton/ default. No-op
+# when HUMAN_ACTION_FILE itself resolves to the root path.
+consolidate_legacy_human_action() {
+    local legacy="${PROJECT_DIR}/HUMAN_ACTION_REQUIRED.md"
+    [[ -f "$legacy" ]] || return 0
+    local canonical="${PROJECT_DIR}/${HUMAN_ACTION_FILE}"
+    if [[ "$legacy" == "$canonical" ]]; then
+        return 0
+    fi
+    if [[ ! -f "$canonical" ]]; then
+        mkdir -p -- "$(dirname -- "$canonical")"
+        mv -- "$legacy" "$canonical"
+        log "Moved stale HUMAN_ACTION_REQUIRED.md (root) → ${HUMAN_ACTION_FILE}."
+        return 0
+    fi
+    local merged=0
+    while IFS= read -r line; do
+        [[ "$line" == "- [ ]"* ]] || continue
+        if ! grep -Fxq -- "$line" "$canonical" 2>/dev/null; then
+            printf '%s\n' "$line" >> "$canonical"
+            merged=$((merged + 1))
+        fi
+    done < "$legacy"
+    rm -f -- "$legacy"
+    log "Consolidated stale HUMAN_ACTION_REQUIRED.md (root) → ${HUMAN_ACTION_FILE} (${merged} item(s) merged)."
+}
+
 # _ensure_human_action — Creates ${HUMAN_ACTION_FILE} if missing.
 _ensure_human_action() {
     local action_file="${PROJECT_DIR}/${HUMAN_ACTION_FILE}"

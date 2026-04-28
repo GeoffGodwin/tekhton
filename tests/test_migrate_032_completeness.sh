@@ -114,16 +114,19 @@ else
 fi
 
 # =============================================================================
-# Section 4: VERSION file is 3.137.0
+# Section 4: VERSION file is at least 3.137.0 (M137 or later)
 # =============================================================================
 
 version_file="${TEKHTON_HOME}/VERSION"
 if [[ -f "$version_file" ]]; then
     ver=$(tr -d '[:space:]' < "$version_file")
-    if [[ "$ver" == "3.137.0" ]]; then
-        pass "VER: VERSION file contains '3.137.0'"
+    # Extract major.minor version (e.g., "3.137" from "3.137.0")
+    ver_major_minor="${ver%.*}"
+    expected_major_minor="3.137"
+    if [[ "$ver_major_minor" > "$expected_major_minor" ]] || [[ "$ver_major_minor" == "$expected_major_minor" ]]; then
+        pass "VER: VERSION file contains '${ver}' (>= 3.137.0)"
     else
-        fail "VER: VERSION file contains '${ver}' (expected '3.137.0')"
+        fail "VER: VERSION file contains '${ver}' (expected >= 3.137.0)"
     fi
 else
     fail "VER: VERSION file does not exist"

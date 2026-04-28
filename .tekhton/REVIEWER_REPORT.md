@@ -1,4 +1,4 @@
-# Reviewer Report — Milestone 138: Resilience Arc Runtime CI Environment Auto-Detection
+# Reviewer Report
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,15 +10,19 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `_apply_ci_ui_gate_defaults` else-branch unconditionally sets `TEKHTON_CI_ENVIRONMENT_DETECTED=0` for both the "user explicitly set the key" case and the "no CI signals present" case. The diagnostic flag cannot distinguish "genuinely not in CI" from "in CI but user-overridden." This is the behaviour specified by the milestone (T8 tests it explicitly), but future diagnostic consumers will need to re-detect CI independently if they need to distinguish the two states.
+- `lib/tui.sh:139,210` — `_tui_kill_stale` and `tui_stop` pass raw pidfile content to `kill` without integer validation (e.g. `[[ "$target_pid" =~ ^[1-9][0-9]*$ ]]`). A pidfile containing `-1` or `0` would cause `kill -0 -1` to return true and `kill -1` to SIGHUP all owned processes. Low-severity pre-existing; carried forward for cleanup.
+- `tests/test_tui_stop_silent_fds.sh:148–160` — Test 5 calls `tui_stop` three times in one shell without resetting `_TUI_ACTIVE`/`_TUI_PID` between the first and second call. Sound as written (the first call leaves both in a reset state), but the lack of an explicit `_TUI_ACTIVE=false; _TUI_PID=""` reset between calls makes the intent fragile if someone inserts state changes between them.
 
 ## Coverage Gaps
-- No test exercises the `VERBOSE_OUTPUT=true` stderr diagnostic path inside `_apply_ci_ui_gate_defaults` (the `echo "[tekhton] CI environment detected …" >&2` branch). All 10 tests leave `VERBOSE_OUTPUT` at its default (`false`).
-- No test covers the `log_verbose` annotation added to `_normalize_ui_gate_env` (the `TEKHTON_CI_ENVIRONMENT_DETECTED=1` branch in `gates_ui_helpers.sh:97-99`).
+- None
 
 ## Drift Observations
 - None
 
-## Prior Blocker Resolution
+---
 
-**FIXED:** `lib/config_defaults_ci.sh` now has `set -euo pipefail` on line 2, immediately after the shebang. The single prior blocker from cycle 1 is resolved.
+## Prior Blocker Verification
+
+**Blocker (cycle 1):** `tests/test_tui_orphan_lifecycle_integration.sh:202` — second `tools/tui.py` spawn missing `</dev/null`, leaving stdin connected to the parent's controlling terminal.
+
+**Status: FIXED.** Line 202 now reads `</dev/null >/dev/null 2>&1 &`, matching the pattern on line 112. Verified by direct read of the file.
