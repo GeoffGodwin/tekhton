@@ -382,6 +382,29 @@ set -euo pipefail
 : "${PREFLIGHT_AUTO_FIX:=true}"                 # Allow auto-remediation of safe issues
 : "${PREFLIGHT_FAIL_ON_WARN:=false}"            # Treat warnings as failures
 
+# --- Resilience arc defaults (m126/m130/m131/m135: UI gate, classification, preflight backups) ---
+# Note: M128 build-fix continuation loop vars (BUILD_FIX_ENABLED,
+# BUILD_FIX_MAX_ATTEMPTS, BUILD_FIX_BASE_TURN_DIVISOR,
+# BUILD_FIX_MAX_TURN_MULTIPLIER, BUILD_FIX_REQUIRE_PROGRESS,
+# BUILD_FIX_TOTAL_TURN_CAP) are declared in their own M128 block above.
+# LAST_FAILURE_CONTEXT_SCHEMA_VERSION is intentionally excluded — it is a
+# writer/reader contract, not an operator tuning knob.
+
+# UI gate deterministic execution (m126)
+: "${UI_GATE_ENV_RETRY_ENABLED:=true}"          # Retry gate with non-interactive env on timeout
+: "${UI_GATE_ENV_RETRY_TIMEOUT_FACTOR:=0.5}"    # Retry timeout = original * this factor (0.1–1.0)
+: "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}"  # 0=auto, 1=always force non-interactive gate env
+
+# Causal recovery routing (m130)
+: "${BUILD_FIX_CLASSIFICATION_REQUIRED:=true}"  # Require code_dominant classification for build-fix loop
+
+# Preflight UI config audit (m131)
+: "${PREFLIGHT_UI_CONFIG_AUDIT_ENABLED:=true}"  # Scan test framework configs for interactive-mode settings
+: "${PREFLIGHT_UI_CONFIG_AUTO_FIX:=true}"       # Auto-patch detected interactive reporter config
+
+# Preflight backup retention (m131/m135)
+: "${PREFLIGHT_BAK_RETAIN_COUNT:=5}"            # Max backups to keep in .claude/preflight_bak/ (0=keep all)
+
 # --- Pre-finalization fix defaults (cheap Jr Coder fix before full retry) ---
 : "${PREFLIGHT_FIX_ENABLED:=true}"                          # Try Jr Coder fix before full pipeline retry
 : "${PREFLIGHT_FIX_MAX_ATTEMPTS:=2}"                        # Max fix attempts before falling through
@@ -607,6 +630,8 @@ _clamp_config_value BUILD_FIX_MAX_ATTEMPTS 10
 _clamp_config_value BUILD_FIX_BASE_TURN_DIVISOR 100
 _clamp_config_value BUILD_FIX_MAX_TURN_MULTIPLIER 500
 _clamp_config_value BUILD_FIX_TOTAL_TURN_CAP 1000
+_clamp_config_float UI_GATE_ENV_RETRY_TIMEOUT_FACTOR 0.1 1.0
+_clamp_config_value PREFLIGHT_BAK_RETAIN_COUNT 1000
 _clamp_config_value TESTER_FIX_MAX_DEPTH 5
 _clamp_config_value TESTER_FIX_MAX_TURNS 100
 _clamp_config_value TESTER_FIX_OUTPUT_LIMIT 16000

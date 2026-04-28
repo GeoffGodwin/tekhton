@@ -174,6 +174,55 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 # UI_VALIDATION_ENABLED=true      # Enable UI validation gate when UI detected
 # UI_TEST_TIMEOUT=120             # Seconds before UI test gate times out
 
+# ─── Resilience arc (m126–m131): UI gate robustness & build-fix recovery ─────
+
+# UI gate non-interactive enforcement
+# Enable auto-retry with non-interactive env when gate times out (interactive reporter detection).
+# UI_GATE_ENV_RETRY_ENABLED=true
+
+# Fraction of UI_TEST_TIMEOUT to allow for the non-interactive retry run (0.1–1.0).
+# Lower values fail faster when the fix didn't work; higher values allow longer retry.
+# UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=0.5
+
+# Force non-interactive env on every UI gate run (0=auto, 1=always).
+# Set to 1 in CI environments that never want the interactive reporter.
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0
+
+# Build-fix continuation loop
+# Enable the build-fix continuation loop (attempts to fix build errors automatically).
+# BUILD_FIX_ENABLED=true
+
+# Maximum number of build-fix attempts per pipeline cycle.
+# BUILD_FIX_MAX_ATTEMPTS=3
+
+# Attempt-1 budget divisor. M128 computes the base budget as
+# EFFECTIVE_CODER_MAX_TURNS / BUILD_FIX_BASE_TURN_DIVISOR.
+# BUILD_FIX_BASE_TURN_DIVISOR=3
+
+# Cap the adaptive schedule at EFFECTIVE_CODER_MAX_TURNS * multiplier.
+# Encoded as integer percent (100 = 1.0×) to match the M128 runtime contract.
+# BUILD_FIX_MAX_TURN_MULTIPLIER=100
+
+# Require measurable progress before continuing to later build-fix attempts.
+# BUILD_FIX_REQUIRE_PROGRESS=true
+
+# Cumulative cap across the whole build-fix loop.
+# BUILD_FIX_TOTAL_TURN_CAP=120
+
+# Require log classification to be code_dominant before allowing build-fix loop.
+# Set to false to attempt build-fix even on mixed/uncertain logs (not recommended).
+# BUILD_FIX_CLASSIFICATION_REQUIRED=true
+
+# Preflight UI config audit
+# Scan test framework config files (playwright.config.ts, etc.) for interactive-mode settings.
+# PREFLIGHT_UI_CONFIG_AUDIT_ENABLED=true
+
+# Auto-patch detected interactive reporter config (e.g. reporter: 'html' → CI-guarded form).
+# PREFLIGHT_UI_CONFIG_AUTO_FIX=true
+
+# Maximum number of backup files to keep in .claude/preflight_bak/ (0 = keep all).
+# PREFLIGHT_BAK_RETAIN_COUNT=5
+
 # --- UI Validation (Milestone 29: headless browser smoke tests) ---
 # UI_SERVE_CMD=""                    # Dev server command (e.g., "npm run dev")
 # UI_SERVE_PORT=3000                 # Dev server port

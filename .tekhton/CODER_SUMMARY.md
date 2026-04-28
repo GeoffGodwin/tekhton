@@ -4,91 +4,109 @@
 
 ## What Was Implemented
 
-M135 — Resilience Arc Artifact Lifecycle Management. Four hygiene fixes
-for transient failure artifacts produced by m128–m131:
+M136 — Resilience Arc Config Defaults & Validation Hardening. Config-layer
+hardening for the resilience arc (m126/m128/m130/m131/m135). No runtime
+changes.
 
-**Goal 1 — `PREFLIGHT_BAK_DIR` registered in `artifact_defaults.sh`.**
-Added a `:=` line so the path is overridable via `pipeline.conf`. The
-value is gated on `PROJECT_DIR` being set (`${PROJECT_DIR:+...}`) so
-that when `artifact_defaults.sh` is sourced very early (via `common.sh`)
-with `PROJECT_DIR` unset, the variable stays empty and m131's existing
-`${PREFLIGHT_BAK_DIR:-${proj}/.claude/preflight_bak}` fallback resolves
-correctly per-project. Re-sourcing after `load_config` populates it.
+**Goal 1 — Declare missing arc vars in `lib/config_defaults.sh`.** Added a
+new `# --- Resilience arc defaults ...` section after the Pre-flight
+(Milestone 55) block, registering the seven arc keys that were not yet
+declared: `UI_GATE_ENV_RETRY_ENABLED`, `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR`,
+`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE`, `BUILD_FIX_CLASSIFICATION_REQUIRED`,
+`PREFLIGHT_UI_CONFIG_AUDIT_ENABLED`, `PREFLIGHT_UI_CONFIG_AUTO_FIX`,
+`PREFLIGHT_BAK_RETAIN_COUNT`. The six M128 build-fix keys were already
+declared in the existing `# --- Build-fix continuation loop defaults
+(M128) ---` block (and used by the M128 runtime), so the new section's
+header comment points the reader to that block instead of duplicating
+them.
 
-**Goal 2 — `.gitignore` entries.** Added `.tekhton/BUILD_FIX_REPORT.md`
-and `.claude/preflight_bak/` to the `_gi_entries` array in
-`_ensure_gitignore_entries` (`lib/common.sh`). The function's existing
-`grep -qF` guard preserves idempotency.
+**Goal 2 — Validate arc values in `lib/validate_config.sh`.** Added Check
+13 dispatch (`_vc_check_resilience_arc`) at the end of `validate_config()`
+between Check 12 and the summary line. The helper performs six checks
+(integer range, decimal range, binary flag, integer presence, intent
+mismatch) and mutates `validate_config()`'s `passes`/`warnings`/`errors`
+counters via dynamic scope, matching the existing `_vc_check_role_files`
+/ `_vc_check_manifest` helper style.
 
-**Goal 3 — `_clear_arc_artifacts_on_success`.** Removes
-`LAST_FAILURE_CONTEXT.json`, `BUILD_FIX_REPORT.md`, and
-`BUILD_RAW_ERRORS.txt` when a run succeeds, so stale failure context
-cannot contaminate `--diagnose` on the next run. Failure runs preserve
-all three (they are the primary input to recovery routing). Called from
-`_hook_emit_run_summary` on the success branch.
+**Goal 3 — Document arc vars in `templates/pipeline.conf.example`.** Added
+a `# ─── Resilience arc (m126–m131) ───` commented section immediately
+after the existing `# UI_TEST_TIMEOUT=120` line, with all 13 arc keys
+present (commented, with descriptions).
 
-**Goal 4 — `_trim_preflight_bak_dir`.** Caps the size of
-`.claude/preflight_bak/` by deleting the lexicographically-oldest
-backups, keeping the `${PREFLIGHT_BAK_RETAIN_COUNT:-5}` newest. Setting
-`PREFLIGHT_BAK_RETAIN_COUNT=0` disables trimming. The
-`<YYYYMMDD_HHMMSS>_<filename>` prefix from m131 makes lexicographic sort
-chronological, so no date parsing is needed. m131's existing
-`declare -f` guard automatically activates the trim once the function
-exists.
+**Goal 4 — Reuse existing clamp infrastructure.** Added two new clamp
+calls to the existing hard-clamp table:
+`_clamp_config_float UI_GATE_ENV_RETRY_TIMEOUT_FACTOR 0.1 1.0` and
+`_clamp_config_value PREFLIGHT_BAK_RETAIN_COUNT 1000`. No new clamp
+helper introduced.
+
+**Goal 5 — Test coverage.** Added seven new test cases (14 assertions)
+covering the six arc checks plus an all-defaults clean-pass case. The
+tests verify: BUILD_FIX_MAX_ATTEMPTS=abc → error,
+BUILD_FIX_BASE_TURN_DIVISOR=0 → error, UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=2.5
+→ warning, TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=yes → warning, UI_TEST_CMD
++ retry-disabled → warning, PREFLIGHT_BAK_RETAIN_COUNT=abc → error, and
+the all-defaults pass with `[Resilience Arc]` header and 0 errors.
 
 ## Plan Deviations
 
-**1. Helper placement: `_clear_arc_artifacts_on_success` lives in
-`finalize_summary_collectors.sh`, not `finalize_summary.sh`.** The
-design said to add it to `finalize_summary.sh` "before
-`_hook_emit_run_summary`". Adding it there pushed the file from 287 → 302
-lines, breaching the 300-line ceiling (a non-negotiable rule from
-`CLAUDE.md`). The collectors sibling already exists for this exact
-reason — its header comment states "kept separate so this file stays
-under the 300-line ceiling". The function is sourced via the existing
-`source finalize_summary_collectors.sh` line in `finalize_summary.sh`,
-so the call from `_hook_emit_run_summary` works unchanged. Final sizes:
-`finalize_summary.sh` 290, `finalize_summary_collectors.sh` 191 — both
-under 300.
+**1. Helper placement: `_vc_check_resilience_arc` lives in
+`lib/validate_config_arc.sh`, not in `validate_config.sh`.** The design
+said to add the helper inside `validate_config.sh`. With six checks (~65
+lines) inlined, the file would have grown from 273 → ~338 lines,
+breaching the 300-line ceiling (a non-negotiable rule from `CLAUDE.md`).
+Following the same pattern M135 used for
+`finalize_summary_collectors.sh`, the new helper lives in a sibling file
+and is sourced from `validate_config.sh` at load time. The dispatcher
+call (`_vc_check_resilience_arc`) inside `validate_config()` is
+unchanged. Final sizes: `validate_config.sh` 279, `validate_config_arc.sh`
+82 — both under 300.
 
-**2. `PREFLIGHT_BAK_DIR` `:=` form.** The design's literal form
-`: "${PREFLIGHT_BAK_DIR:=${PROJECT_DIR:-.}/.claude/preflight_bak}"`
-fails when `artifact_defaults.sh` is sourced with `PROJECT_DIR` set to
-an unrelated value (e.g., the tekhton repo root inherited via env, as
-happens in the resilience-arc test harness). The variable gets baked to
-the wrong path and m131 uses it verbatim. Used `${PROJECT_DIR:+...}`
-instead so the variable stays empty until `PROJECT_DIR` is meaningfully
-set, allowing m131's existing fallback to resolve correctly. The
-m120 self-heal pattern (re-source after `load_config`) populates the
-final value once `PROJECT_DIR` is the project's actual root.
+**2. Test placement: M136 tests live in
+`tests/test_validate_config_arc.sh`, not appended to
+`test_validate_config.sh`.** The design said to add cases into the
+existing test file. The existing file was already 305 lines (over the
+300 ceiling, pre-existing). Appending six more cases would have pushed
+it to 434 lines, materially worsening the breach in a file I was
+modifying. Splitting per-feature mirrors the lib split (`validate_config_arc.sh`)
+and keeps the new test file self-contained and at 188 lines. Both files
+are picked up automatically by `tests/run_tests.sh`'s glob.
 
-**3. Test harness fix in `test_resilience_arc_integration.sh`.** Added
-`unset PROJECT_DIR PREFLIGHT_BAK_DIR` at the top of the test file
-(before sourcing `common.sh`). Without this, the test's parent shell
-inherits `PROJECT_DIR` from the user's environment, baking the wrong
-path into `PREFLIGHT_BAK_DIR` at source time. This is a fixture-level
-hermiticity fix directly motivated by m135's new `:=` line.
+**3. M128 build-fix runtime contract preserved.** The milestone's Goal 1
+design block listed all 13 vars together (including the six already
+declared in M128's existing block) and proposed
+`BUILD_FIX_MAX_TURN_MULTIPLIER:=1.0`. The M128 runtime contract uses
+integer-percent encoding (`100 = 1.0×`), so changing the default to
+`1.0` would break the loop's `(( ... * MULTIPLIER / 100 ))` arithmetic.
+Per the milestone's "No changes to arc runtime logic" constraint, the
+existing M128 block was left as-is; the new arc section header points to
+it. Same reasoning for the existing M128 clamps
+(`_clamp_config_value BUILD_FIX_MAX_TURN_MULTIPLIER 500` is integer 500,
+not float 1.0–5.0): changing them would clamp current runtime defaults
+to invalid values. Only the two genuinely new clamps were added.
+
+**4. Documented `BUILD_FIX_MAX_TURN_MULTIPLIER=100` in
+`pipeline.conf.example`.** The design block showed `=1.0` as the
+documented default; this would mislead operators since the runtime
+expects integer percent. The commented example uses `=100` with an
+explanation of the encoding, matching the M128 declaration.
 
 ## Files Modified
 
-- `lib/artifact_defaults.sh` — added `PREFLIGHT_BAK_DIR` `:=` line.
-- `lib/common.sh` — added 2 new entries to the `_gi_entries` array in
-  `_ensure_gitignore_entries`.
-- `lib/finalize_summary.sh` — added 1-line call to
-  `_clear_arc_artifacts_on_success` on the success branch of
-  `_hook_emit_run_summary`; added a 2-line comment pointer to the
-  collectors sibling.
-- `lib/finalize_summary_collectors.sh` — added
-  `_clear_arc_artifacts_on_success` function (per Plan Deviation 1).
-- `lib/preflight_checks.sh` — added `_trim_preflight_bak_dir` function
-  under a new "Check 5: Preflight backup retention (m135)" header.
-- `tests/test_ensure_gitignore_entries.sh` — added 2 entries to
-  `EXPECTED_ENTRIES` (T1–T2 of the milestone).
-- `tests/test_resilience_arc_integration.sh` — sourced
-  `lib/preflight_checks.sh`; added Scenario group 8 (T3–T9) for
-  artifact lifecycle and preflight_bak retention; added top-of-file
-  `unset PROJECT_DIR PREFLIGHT_BAK_DIR` for hermeticity (per Plan
-  Deviation 3).
+- `lib/config_defaults.sh` — new `Resilience arc defaults` section after
+  the Pre-flight (M55) block (7 `:=` lines for the arc keys not already
+  registered by M128); two new clamps appended to the existing hard-clamp
+  table.
+- `lib/validate_config.sh` — sources the new arc helper at the top;
+  added Check 13 dispatch line in `validate_config()` between Check 12
+  and the summary; added a header note explaining the helper split.
+- `lib/validate_config_arc.sh` (NEW) — `_vc_check_resilience_arc`
+  function with six arc-config checks. Sourced by `validate_config.sh`.
+- `templates/pipeline.conf.example` — new `Resilience arc (m126–m131)`
+  commented section with 13 keys, inserted after the existing
+  `# UI_TEST_TIMEOUT=120` anchor line.
+- `tests/test_validate_config_arc.sh` (NEW) — seven test cases (14
+  assertions) covering Check 13 behavior. Self-contained, follows the
+  same setup pattern as `test_validate_config.sh`.
 
 ## Human Notes Status
 
@@ -96,26 +114,32 @@ N/A — no human notes for this task.
 
 ## Docs Updated
 
-None — no public-surface changes in this task. `PREFLIGHT_BAK_DIR` is a
-new artifact-path config key but the design assigns its `pipeline.conf`
-documentation to m136 ("Resilience Arc Config Defaults & Validation
-Hardening"). Same for `PREFLIGHT_BAK_RETAIN_COUNT` registration in
-`config_defaults.sh`. `_trim_preflight_bak_dir` and
-`_clear_arc_artifacts_on_success` are private helpers (no leading
-public function); they do not appear in `ARCHITECTURE.md`.
+None — no public-surface changes in this task. The new operator-facing
+config keys are all documented in `templates/pipeline.conf.example`
+(the canonical operator-facing surface for `pipeline.conf` keys).
+`CLAUDE.md`'s Template Variables table already lists these keys — no
+edit required. The new helper file (`validate_config_arc.sh`) is
+private and not individually referenced in `ARCHITECTURE.md` or
+`CLAUDE.md`'s repository layout (consistent with the existing
+`validate_config.sh` not being listed there either).
 
 ## Verification
 
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — clean (exit 0).
-- `bash tests/test_resilience_arc_integration.sh` — 71 passed, 0 failed.
-- `bash tests/test_ensure_gitignore_entries.sh` — 47 passed, 0 failed.
-- `bash tests/test_preflight_ui_config.sh` — 46 passed, 0 failed.
-- `bash tests/test_finalize_run.sh` — 108 passed, 0 failed.
-- `bash tests/test_m132_run_summary_enrichment.sh` — 16 passed, 0 failed.
-- `bash tests/run_tests.sh` — 467 shell + 247 python passed, 0 failed
-  (one initial flake on `test_watchtower_parallel_groups_datalist.sh`
-  that resolved on re-run; the test passes standalone and is unrelated
-  to the changes here).
-- File line counts: `artifact_defaults.sh` 58, `common.sh` 251,
-  `finalize_summary.sh` 290, `finalize_summary_collectors.sh` 191,
-  `preflight_checks.sh` 254 — all under 300.
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — clean (no output).
+- `bash tests/test_validate_config.sh` — 24 passed, 0 failed.
+- `bash tests/test_validate_config_arc.sh` — 14 passed, 0 failed.
+- `bash tests/test_config_defaults_claude_standard_model.sh` — all passed
+  (config_defaults.sh still loads cleanly under strict bash).
+- `bash tests/test_validate_config_design_file.sh` — 8 passed, 0 failed
+  (M121 checks still work).
+- `bash tests/test_resilience_arc_integration.sh` — 75 passed, 0 failed
+  (M135 integration unchanged).
+- `bash tests/test_preflight_ui_config.sh` — 46 passed, 0 failed
+  (M131 integration unchanged).
+- `bash tests/run_tests.sh` — 468 shell + 247 python passed, 0 failed.
+- File line counts: `validate_config.sh` 279, `validate_config_arc.sh`
+  82, `test_validate_config.sh` 305 (unchanged from pre-task),
+  `test_validate_config_arc.sh` 188 — all `.sh` files I created or
+  modified are under 300 lines (or are pre-existing as in the case of
+  `test_validate_config.sh`). `config_defaults.sh` (661) and
+  `pipeline.conf.example` (325) are exempt as data-only / template files.

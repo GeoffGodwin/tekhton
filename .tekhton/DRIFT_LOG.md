@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-04-27
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-04-27 | "Implement Milestone 136: Resilience Arc Config Defaults & Validation Hardening"] The acceptance criterion "Six new test cases in `tests/test_validate_config.sh` pass" names a specific file, but the implementation places the tests in a sibling file. If future milestones follow this pattern without updating the milestone's acceptance criteria wording, the record of "which file contains which tests" will diverge from reality and make file-targeted acceptance checking unreliable. Consider updating the milestone acceptance criteria to reference `test_validate_config_arc.sh` so the milestone record stays accurate.
 - [2026-04-27 | "Implement Milestone 135: Resilience Arc Artifact Lifecycle Management"] `lib/preflight_checks.sh:247-250` — `find | sort | head | xargs rm -f` is fragile for filenames containing spaces or newlines. In practice, m131's `YYYYMMDD_HHMMSS_<name>` prefix makes this safe for all current callers, but `find -exec rm -f {} +` would be more robust if the bak dir naming convention ever changes.
 - [2026-04-27 | "architect audit"] **The 2026-04-26 architect audit batch (Obs 5 in the drift log)** — All four sub-items carry written rationale from prior audits:
 - [2026-04-27 | "architect audit"] *Obs 4* — `error_patterns_classify.sh` per-function `load_error_patterns` calls: the per-function pattern is the only safe option given the sourcing order (sourced inside `error_patterns.sh` before `_EP_LOADED` is initialized). Rationale stands.

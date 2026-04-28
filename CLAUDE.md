@@ -477,6 +477,8 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `BUILD_FIX_REPORT_FILE` | M128. Per-attempt postmortem artifact path (default: `${TEKHTON_DIR}/BUILD_FIX_REPORT.md`) |
 | `BUILD_FIX_CLASSIFICATION_REQUIRED` | M130. Toggle amendment C: build-gate classification-based routing. When true (default), mixed-uncertain classifications retry once then save_exit; when false, always retry. Set to false to revert pre-M130 behavior. (default: true) |
 | `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` | M130. Set to 0 in pipeline.conf to opt out of env-gate recovery retries. Pipeline sets this to 1 when dispatching `retry_ui_gate_env`. (default: not set) |
+| `UI_GATE_ENV_RETRY_ENABLED` | M126. Enable auto-retry with non-interactive env when UI gate times out (default: true) |
+| `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` | M126. Fraction of UI_TEST_TIMEOUT to allow for the non-interactive retry run (0.1–1.0) (default: 0.5) |
 | `TESTER_FIX_ENABLED` | Auto-seed fix run when tester stage tests fail (default: false) |
 | `TESTER_FIX_MAX_DEPTH` | Max recursive fix attempts in tester stage (default: 1) |
 | `TESTER_FIX_OUTPUT_LIMIT` | Max chars of test output in tester fix task string (default: 4000) |
@@ -498,6 +500,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED` | Toggle UI test framework config audit (default: true) |
 | `PREFLIGHT_UI_CONFIG_AUTO_FIX` | Auto-patch Playwright html reporter config (default: true, falls back to `PREFLIGHT_AUTO_FIX` when unset) |
 | `PREFLIGHT_BAK_DIR` | Directory for backups of patched config files (default: ${PROJECT_DIR}/.claude/preflight_bak) |
+| `PREFLIGHT_BAK_RETAIN_COUNT` | M136. Maximum number of backup files to keep in PREFLIGHT_BAK_DIR; 0 = keep all (default: 10) |
 | `DOCS_AGENT_ENABLED` | Toggle optional docs agent stage (default: false) |
 | `DOCS_AGENT_MODEL` | Model for docs agent (default: claude-haiku-4-5-20251001) |
 | `DOCS_AGENT_MAX_TURNS` | Turn budget for docs agent (default: 10) |

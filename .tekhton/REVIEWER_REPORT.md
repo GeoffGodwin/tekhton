@@ -1,7 +1,10 @@
-# Reviewer Report — M135: Resilience Arc Artifact Lifecycle Management
+# Reviewer Report — M136: Resilience Arc Config Defaults & Validation Hardening (Cycle 2)
 
 ## Verdict
 APPROVED_WITH_NOTES
+
+## Prior Blocker Disposition
+- FIXED: `lib/validate_config_arc.sh` now has `set -euo pipefail` on line 2, immediately after the shebang, exactly as required. No other changes were introduced by the rework.
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,27 +13,11 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `tests/test_ensure_gitignore_entries.sh:72` — Section comment says "All 18 Tekhton runtime patterns" but the `EXPECTED_ENTRIES` array now has 20 entries. Stale count.
-- `tests/resilience_arc_fixtures.sh:88-109` — Security agent LOW: `_arc_write_v2_failure_context` and `_arc_write_v1_failure_context` interpolate shell variables directly into JSON heredocs without escaping. No current exploit path (all callers use hardcoded literals), but a `_json_escape` helper guard would prevent future misuse.
+- `_clamp_config_value BUILD_FIX_MAX_ATTEMPTS 20` was not added to the hard-clamp table. Goal 4 of the design spec listed it alongside the other arc numeric keys. Validation Check A protects the runtime via the validator (errors on values > 20), so there is no functional gap — the missing clamp is a defensive-layer redundancy gap only. Log for cleanup.
+- Test cases were placed in `tests/test_validate_config_arc.sh` rather than `tests/test_validate_config.sh` as the acceptance criteria specifies. The coder's reasoning is sound (existing file was already 305 lines). Tests exist, pass (14/14), and are picked up by `run_tests.sh`'s glob. Worth confirming the acceptance checker runs against `run_tests.sh` output rather than a file-specific grep against `test_validate_config.sh`.
 
 ## Coverage Gaps
-- No test verifies that `_trim_preflight_bak_dir` is actually invoked from the preflight flow. Tests S8.T6–T9 cover the function in isolation but not the integration: the coder's claim that "m131's existing `declare -f` guard automatically activates the trim" is untested here. A scenario that runs `_preflight_check_ui_test_config` on a dir with more than N backups and then asserts the bak dir was trimmed would close this gap.
+- None
 
 ## Drift Observations
-- `lib/preflight_checks.sh:247-250` — `find | sort | head | xargs rm -f` is fragile for filenames containing spaces or newlines. In practice, m131's `YYYYMMDD_HHMMSS_<name>` prefix makes this safe for all current callers, but `find -exec rm -f {} +` would be more robust if the bak dir naming convention ever changes.
-
----
-
-### Review Notes
-
-**Goal 1 (`PREFLIGHT_BAK_DIR` registration):** The `${PROJECT_DIR:+...}` form is the correct deviation from the design's literal `:=` form. Baking the path at source time from an inherited `PROJECT_DIR` would produce the wrong value inside the test harness (and any other early-source context). The deviation rationale is sound and documented.
-
-**Goal 2 (`.gitignore` entries):** Both `.tekhton/BUILD_FIX_REPORT.md` and `.claude/preflight_bak/` are present in the `_gi_entries` array and covered by updated assertions in `test_ensure_gitignore_entries.sh`. Idempotency guards are intact.
-
-**Goal 3 (`_clear_arc_artifacts_on_success`):** Placement in `finalize_summary_collectors.sh` is the correct resolution for the 300-line ceiling (file would have gone 287 → 302 lines). The call site in `_hook_emit_run_summary` on the success branch is correct. Path construction — `"${_p}/${BUILD_FIX_REPORT_FILE:-.tekhton/BUILD_FIX_REPORT.md}"` — is consistent with the relative-path contract in `artifact_defaults.sh` and matches how S8.T4 sets up its fixture.
-
-**Goal 4 (`_trim_preflight_bak_dir`):** The function is correct. `(( retain == 0 ))` disables trimming; `(( total <= retain ))` short-circuits when no deletion is needed; lexicographic sort equals chronological order because the `YYYYMMDD_HHMMSS_` prefix is left-padded. The `wc -l | tr -d '[:space:]'` idiom matches `count_lines` in `common.sh`. Coverage gap noted above is the only concern.
-
-**Test hermeticity fix (`unset PROJECT_DIR PREFLIGHT_BAK_DIR`):** Correct and necessary. Without it the test inherits the caller's `PROJECT_DIR` and bakes the wrong `PREFLIGHT_BAK_DIR` at `common.sh` source time — the exact scenario the `:=` change introduced.
-
-**File sizes:** All modified files are under the 300-line ceiling: `common.sh` 251, `finalize_summary.sh` 290, `finalize_summary_collectors.sh` 191, `preflight_checks.sh` 254. `artifact_defaults.sh` at 58 lines is exempt as a data-only file.
+- The acceptance criterion "Six new test cases in `tests/test_validate_config.sh` pass" names a specific file, but the implementation places the tests in a sibling file. If future milestones follow this pattern without updating the milestone's acceptance criteria wording, the record of "which file contains which tests" will diverge from reality and make file-targeted acceptance checking unreliable. Consider updating the milestone acceptance criteria to reference `test_validate_config_arc.sh` so the milestone record stays accurate.

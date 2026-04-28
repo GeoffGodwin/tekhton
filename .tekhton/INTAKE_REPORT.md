@@ -2,14 +2,16 @@
 PASS
 
 ## Confidence
-92
+93
 
 ## Reasoning
-- Scope is tightly defined: four discrete goals, all files listed in the modification table, no ambiguity about what is in or out of scope
-- Acceptance criteria are fully testable: each criterion is a binary pass/fail, and T1–T8 map one-to-one to the stated goals
-- Design section provides exact function bodies, integration points, and placement instructions — two developers would arrive at the same implementation
-- Watch For section pre-empts the three most likely mistakes (`BUILD_FIX_REPORT_FILE` double-declaration, relative vs. absolute path mixing, `retain=0` guard)
-- The `declare -f` guard pattern (m131 calls `_trim_preflight_bak_dir` once it exists) is clearly documented — no call-site changes are needed here
-- No UI components; UI testability criterion is not applicable
-- `PREFLIGHT_BAK_RETAIN_COUNT` uses a safe `:-5` fallback so no migration impact before M136 registers it formally
-- Historical pattern shows all recent related milestones PASS on first attempt; scope size and style are consistent with those
+- Scope is tightly bounded: config-layer only, 4 files, no runtime logic changes
+- All 13 variables are named, their introducing milestones cited, defaults specified, and rationale given (including why `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` defaults to `0` not `false`)
+- Exact code blocks provided for all four goals — `config_defaults.sh` `:=` section, `_vc_check_resilience_arc` function body, `pipeline.conf.example` commented block, and all seven test cases
+- Acceptance criteria are specific and mechanically verifiable (exact output substrings, zero `shellcheck` warnings, idempotent-source check)
+- Insertion anchors for both `config_defaults.sh` (after M55 pre-flight block) and `pipeline.conf.example` (after `# UI_TEST_TIMEOUT=120`) are stable and unique
+- Watch For section covers the key risks: schema version exclusion, counter mutation style, section-anchor fragility, clamp reuse vs. new function
+- Seeds Forward explicitly names m137 migration and m138 env-detect integration points
+- Historical pattern of similar-scope milestones all passing on first attempt gives high confidence
+- No UI components touched; UI testability criterion not applicable
+- Migration impact is adequately handled via Seeds Forward (m137 owns the `pipeline.conf` backfill for pre-arc projects); no dedicated section needed since these are net-new keys with no existing operator usage to migrate
