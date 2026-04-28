@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.137.0] - 2026-04-27
+
+### Added
+- M137 — Resilience Arc V3.2 Migration Script. Created the V3.1 → V3.2 (M137)
 ## [3.136.0] - 2026-04-27
 
 ### Added

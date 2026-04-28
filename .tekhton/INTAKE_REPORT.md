@@ -5,13 +5,15 @@ PASS
 93
 
 ## Reasoning
-- Scope is tightly bounded: config-layer only, 4 files, no runtime logic changes
-- All 13 variables are named, their introducing milestones cited, defaults specified, and rationale given (including why `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` defaults to `0` not `false`)
-- Exact code blocks provided for all four goals — `config_defaults.sh` `:=` section, `_vc_check_resilience_arc` function body, `pipeline.conf.example` commented block, and all seven test cases
-- Acceptance criteria are specific and mechanically verifiable (exact output substrings, zero `shellcheck` warnings, idempotent-source check)
-- Insertion anchors for both `config_defaults.sh` (after M55 pre-flight block) and `pipeline.conf.example` (after `# UI_TEST_TIMEOUT=120`) are stable and unique
-- Watch For section covers the key risks: schema version exclusion, counter mutation style, section-anchor fragility, clamp reuse vs. new function
-- Seeds Forward explicitly names m137 migration and m138 env-detect integration points
-- Historical pattern of similar-scope milestones all passing on first attempt gives high confidence
-- No UI components touched; UI testability criterion not applicable
-- Migration impact is adequately handled via Seeds Forward (m137 owns the `pipeline.conf` backfill for pre-arc projects); no dedicated section needed since these are net-new keys with no existing operator usage to migrate
+- Scope is unambiguous: one new file (`migrations/031_to_032.sh`), one new test file, one version bump, one MANIFEST row — all listed in a Files Modified table
+- Complete function bodies are provided in the design; the developer is largely transcribing reviewed logic, not inventing it
+- Acceptance criteria are binary and specific (16 items), directly mapping to the 12 test cases (T1–T12)
+- The "Watch For" section explicitly addresses the three highest-risk pitfalls: counter-intuitive return codes (0=needed, 1=skip), `set -euo pipefail` propagation across `source`, and `_032_` prefix collision prevention — all would cause silent failures without explicit callout
+- Return code semantics are explained with the exact runner call-site (`if ! migration_check`) so there is no room for misinterpretation
+- Sentinel key rationale is documented and cross-referenced against the same pattern in two prior migration scripts (`002_to_003.sh`, `003_to_031.sh`)
+- Thirteen arc vars are enumerated (1 active + 12 commented) and the acceptance criterion verifies the count — no developer guesswork required
+- Idempotency is handled by `migration_check` (runner responsibility), so `migration_apply` sub-tasks are free to assume they only run once; this separation is explicitly stated
+- Edge cases covered inline: no `.gitignore`, file missing trailing newline, existing "# Tekhton runtime artifacts" header, `preflight_bak/` already exists
+- Migration impact is N/A — this milestone is itself the migration mechanism
+- UI testability is N/A — no UI components
+- Historical pass rate for comparably scoped milestones is strong (M103–M109 all single-pass)
