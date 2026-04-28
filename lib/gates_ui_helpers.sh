@@ -83,8 +83,20 @@ _ui_deterministic_env_list() {
 # Owner hook that materializes the subprocess env list. Later milestones
 # (m57 adapter framework) extend this to dispatch to per-framework env
 # functions; for now it delegates to the Playwright-aware helper.
+#
+# The function's stdout is consumed by `mapfile` in _ui_run_cmd, so any
+# diagnostic output must be redirected to stderr (>&2) — otherwise it would
+# corrupt the KEY=VALUE env list. log_verbose's only side channel is stdout,
+# hence the explicit >&2 redirect on the m138 annotation below.
 _normalize_ui_gate_env() {
     _ui_deterministic_env_list "${1:-0}"
+
+    # M138: annotate when TEKHTON_UI_GATE_FORCE_NONINTERACTIVE was set
+    # automatically by CI auto-detection. Diagnostic only — does not change
+    # the emitted env list.
+    if [[ "${TEKHTON_CI_ENVIRONMENT_DETECTED:-0}" == "1" ]]; then
+        log_verbose "[gate-env] TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1 was set automatically (CI auto-detect)" >&2
+    fi
 }
 
 # _ui_timeout_signature EXIT_CODE OUTPUT

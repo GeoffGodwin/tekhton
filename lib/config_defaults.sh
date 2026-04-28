@@ -390,10 +390,22 @@ set -euo pipefail
 # LAST_FAILURE_CONTEXT_SCHEMA_VERSION is intentionally excluded — it is a
 # writer/reader contract, not an operator tuning knob.
 
+# M138: CI auto-detection helpers must be sourced BEFORE the
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE default is applied, so that
+# _apply_ci_ui_gate_defaults can elevate the value to 1 in CI environments
+# before any ":=" no-op fixes it at 0. Resolve the helper relative to this
+# file rather than via TEKHTON_HOME — config_defaults.sh is also sourced
+# standalone by tests that do not export TEKHTON_HOME.
+# shellcheck source=lib/config_defaults_ci.sh
+source "$(dirname "${BASH_SOURCE[0]}")/config_defaults_ci.sh"
+
 # UI gate deterministic execution (m126)
 : "${UI_GATE_ENV_RETRY_ENABLED:=true}"          # Retry gate with non-interactive env on timeout
 : "${UI_GATE_ENV_RETRY_TIMEOUT_FACTOR:=0.5}"    # Retry timeout = original * this factor (0.1–1.0)
-: "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}"  # 0=auto, 1=always force non-interactive gate env
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE: m138 auto-elevates to 1 inside CI
+# unless explicitly set in pipeline.conf. _apply_ci_ui_gate_defaults owns
+# the rule; do not add a parallel ":=0" default here.
+_apply_ci_ui_gate_defaults
 
 # Causal recovery routing (m130)
 : "${BUILD_FIX_CLASSIFICATION_REQUIRED:=true}"  # Require code_dominant classification for build-fix loop

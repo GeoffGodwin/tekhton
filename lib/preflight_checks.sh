@@ -244,10 +244,10 @@ _trim_preflight_bak_dir() {
     (( total <= retain )) && return 0
 
     local to_delete=$(( total - retain ))
-    find "$bak_dir" -maxdepth 1 -type f \
-        | sort \
-        | head -n "$to_delete" \
-        | xargs rm -f 2>/dev/null || true
+    find "$bak_dir" -maxdepth 1 -type f -print0 \
+        | sort -z \
+        | head -z -n "$to_delete" \
+        | xargs -0 rm -f 2>/dev/null || true
 
     log_verbose "[artifact lifecycle] Trimmed preflight_bak: removed ${to_delete} old backup(s), kept ${retain}"
     return 0

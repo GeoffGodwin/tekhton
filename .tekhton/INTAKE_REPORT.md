@@ -5,15 +5,14 @@ PASS
 93
 
 ## Reasoning
-- Scope is unambiguous: one new file (`migrations/031_to_032.sh`), one new test file, one version bump, one MANIFEST row — all listed in a Files Modified table
-- Complete function bodies are provided in the design; the developer is largely transcribing reviewed logic, not inventing it
-- Acceptance criteria are binary and specific (16 items), directly mapping to the 12 test cases (T1–T12)
-- The "Watch For" section explicitly addresses the three highest-risk pitfalls: counter-intuitive return codes (0=needed, 1=skip), `set -euo pipefail` propagation across `source`, and `_032_` prefix collision prevention — all would cause silent failures without explicit callout
-- Return code semantics are explained with the exact runner call-site (`if ! migration_check`) so there is no room for misinterpretation
-- Sentinel key rationale is documented and cross-referenced against the same pattern in two prior migration scripts (`002_to_003.sh`, `003_to_031.sh`)
-- Thirteen arc vars are enumerated (1 active + 12 commented) and the acceptance criterion verifies the count — no developer guesswork required
-- Idempotency is handled by `migration_check` (runner responsibility), so `migration_apply` sub-tasks are free to assume they only run once; this separation is explicitly stated
-- Edge cases covered inline: no `.gitignore`, file missing trailing newline, existing "# Tekhton runtime artifacts" header, `preflight_bak/` already exists
-- Migration impact is N/A — this milestone is itself the migration mechanism
+- Scope is precisely defined: four files with change types and descriptions listed in a table
+- Design Goals 1–5 are each fully specified with code samples, placement anchors, and edge-case invariants
+- Acceptance criteria are specific and binary — 13 checkboxes with exact expected values, not vague aspirations
+- T1–T10 test scenarios include exact setup, expected outcome, and two full fixture listings (T7, T8)
+- The sequencing note explicitly handles the "m126/m136 not yet landed" case, giving the implementer a clear decision rule rather than leaving it as an implicit assumption
+- The `_CONF_KEYS_SET` dependency is documented with its source (`_parse_config_file`) and timing constraint (must be populated before `config_defaults.sh` is sourced), so no guessing is required
+- Watch For section covers the top risks (file I/O prohibition, avoiding logic duplication, template anchor strategy)
+- Seeds Forward section is forward-looking documentation, not scope creep — it helps future milestones without adding work here
+- No formal "Migration Impact" section, but the migration behavior is embedded throughout: auto-elevation is additive, respects explicit pipeline.conf values (including `=0`), and the template comment update documents the opt-out path — practical impact is zero for users with explicit configs
+- Historical pattern: similar scoped milestones (M102–M109) all passed first cycle; nothing here is unusually risky
 - UI testability is N/A — no UI components
-- Historical pass rate for comparably scoped milestones is strong (M103–M109 all single-pass)

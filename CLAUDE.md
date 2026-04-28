@@ -18,6 +18,7 @@ tekhton/
 │   ├── common.sh           # Colors, logging, prerequisite checks
 │   ├── config.sh           # Config loader + validation
 │   ├── config_defaults.sh  # Default values for all config keys
+│   ├── config_defaults_ci.sh # M138 runtime CI environment auto-detection helpers
 │   ├── agent.sh            # Agent wrapper, metrics, run_agent()
 │   ├── agent_helpers.sh    # Agent invocation helpers
 │   ├── agent_monitor.sh    # Agent monitoring, activity detection, process management

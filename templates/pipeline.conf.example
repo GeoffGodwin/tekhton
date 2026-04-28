@@ -184,9 +184,11 @@ DEPENDENCY_CONSTRAINTS_FILE=""
 # Lower values fail faster when the fix didn't work; higher values allow longer retry.
 # UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=0.5
 
-# Force non-interactive env on every UI gate run (0=auto, 1=always).
-# Set to 1 in CI environments that never want the interactive reporter.
 # TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0
+# ^ Auto-set to 1 when running inside CI (GitHub Actions, GitLab CI, CircleCI,
+#   Jenkins, Azure DevOps, Buildkite, TeamCity, Bitbucket, Travis, CI=true).
+#   Uncomment and set to 0 to suppress the auto-override in CI.
+#   Uncomment and set to 1 to force non-interactive mode locally.
 
 # Build-fix continuation loop
 # Enable the build-fix continuation loop (attempts to fix build errors automatically).

@@ -1,6 +1,6 @@
 <!-- milestone-meta
-id: m138
-status: pending
+id: "138"
+status: "done"
 -->
 
 # m138 — Resilience Arc: Runtime CI Environment Auto-Detection

@@ -4,94 +4,166 @@
 
 ## What Was Implemented
 
-M137 — Resilience Arc V3.2 Migration Script. Created the V3.1 → V3.2
-migration script that automates upgrade of a pre-arc project to the
-resilience arc (m126–m136) configuration surface. No runtime changes
-to any `lib/`, `stages/`, or `prompts/` files. The migration runner
-auto-discovers the new script via `_list_migration_scripts` — no
-changes to `lib/migrate.sh` were needed.
+Milestone 138 — Resilience Arc: Runtime CI Environment Auto-Detection. When
+Tekhton starts inside a recognised CI environment and the user has not set
+`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` in `pipeline.conf`, the variable is
+auto-elevated to `1` so the m126 hardened UI gate path becomes the default
+in CI without per-project YAML edits. Explicit `pipeline.conf` values
+(including `=0`) are honoured unconditionally.
 
-**Sub-task A — `_032_append_arc_config_section`.** Appends a
-commented `V3.2 Resilience Arc` section to `pipeline.conf` with all
-13 arc keys. `BUILD_FIX_ENABLED=true` is the first emitted key (active,
-not commented) and serves as the idempotency sentinel for
-`migration_check`. The other 12 keys are commented `# KEY=value` lines
-so the operator can discover and tune them; the live runtime values
-come from `lib/config_defaults.sh` (registered by M136).
+**Goal 1 + 2 — `lib/config_defaults_ci.sh` (NEW).** Three helpers:
 
-**Sub-task B — `_032_update_gitignore`.** Adds the two new arc
-artifact paths (`.tekhton/BUILD_FIX_REPORT.md`,
-`.claude/preflight_bak/`) to `.gitignore` if not already present.
-Mirrors the idempotent grep-then-append pattern used by
-`_ensure_gitignore_entries` in `lib/common.sh`. Reuses an existing
-`# Tekhton runtime artifacts` header if present (e.g., on projects
-that ran `--init` after M135 landed) and only emits the V3.2-tagged
-header when no Tekhton runtime artifacts header exists yet.
+- `_detect_runtime_ci_environment` — pure-bash probe of the named-platform
+  signals (`GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `TRAVIS`, `BUILDKITE`,
+  `JENKINS_URL`, `TF_BUILD`, `TEAMCITY_VERSION`, `BITBUCKET_BUILD_NUMBER`)
+  with `CI=true` as the generic last-resort fallback. No subshells, no file
+  I/O, no external commands.
+- `_get_ci_platform_name` — returns the human-readable platform name or
+  `"unknown"`. Same precedence order so callers can log the specific
+  platform when one is identifiable.
+- `_apply_ci_ui_gate_defaults` — the single owner of the m138 rule.
+  Membership check on `_CONF_KEYS_SET` (populated by `_parse_config_file`
+  before `config_defaults.sh` is sourced) is the authoritative
+  "user-set?" test. Exports `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` and
+  `TEKHTON_CI_ENVIRONMENT_DETECTED` (diagnostic-only). Emits a single
+  stderr line via `echo … >&2` when `VERBOSE_OUTPUT=true` and
+  auto-elevation fired.
 
-**Sub-task C — `_032_create_preflight_bak_dir`.** Creates
-`.claude/preflight_bak/` so the backup tree exists before the first
-preflight auto-fix attempt. Idempotent: returns 0 immediately if the
-directory is already present.
+**Goal 1 + 2 wiring — `lib/config_defaults.sh`.** The m136 simple
+`: "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}"` line was replaced with
+two operations:
+1. `source "$(dirname "${BASH_SOURCE[0]}")/config_defaults_ci.sh"` —
+   resolved relative to the file rather than via `TEKHTON_HOME` so tests
+   that source `config_defaults.sh` standalone (e.g. `test_m72_tekhton_dir.sh`,
+   `test_m84_tekhton_dir_complete.sh`) keep working without exporting
+   `TEKHTON_HOME`.
+2. `_apply_ci_ui_gate_defaults` — invokes the source-time defaulter.
 
-## Plan Deviations
+The helpers live in their own file so `config_defaults.sh` remains data-only
+under the project's 300-line exemption (no function bodies of its own;
+function bodies + conditional logic would have broken that exemption).
 
-**1. `BUILD_FIX_MAX_TURN_MULTIPLIER` documented as `100` in the
-appended section, not `1.0`.** The design block in the milestone
-showed `# BUILD_FIX_MAX_TURN_MULTIPLIER=1.0`, but the M128 runtime
-contract (preserved by M136) uses integer-percent encoding
-(`100 = 1.0×`) — the build-fix loop performs
-`(( ... * MULTIPLIER / 100 ))` arithmetic. Documenting `1.0` would
-mislead any operator who uncomments the line. Used `100` with an
-inline comment explaining the encoding, matching the existing
-documentation in `templates/pipeline.conf.example` (where M136 also
-uses `100` for the same key for the same reason). This same
-correction was made by M136 for the example file; M137 follows the
-established precedent.
+**Goal 3 — `lib/gates_ui_helpers.sh`.** Added a guarded
+`log_verbose "[gate-env] TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1 was set
+automatically (CI auto-detect)" >&2` line at the end of
+`_normalize_ui_gate_env`. The `>&2` redirect is required because the
+function's stdout is consumed by `mapfile` in `_ui_run_cmd`; an unredirected
+`log_verbose` call would inject a bogus KEY=VALUE line into the env list
+when `VERBOSE_OUTPUT=true`. Documented the constraint in the function's
+header comment so future editors don't drop the redirect.
 
-**2. `PREFLIGHT_BAK_RETAIN_COUNT` documented as `10` in the
-appended section, not `5`.** The design block showed `=5`, but the
-runtime default registered by M136 in `lib/config_defaults.sh` is
-`10`. Using `5` in the migrated file would mislead the operator
-about what the actual default is when the line is commented.
+**Goal 4 — `tests/test_ci_environment_detection.sh` (NEW).** All 10 scenarios
+from the milestone implemented (19 individual assertions), all passing:
+T1–T6 unit-test `_detect_runtime_ci_environment` + `_get_ci_platform_name`
+across platform signals; T7–T10 exercise `_apply_ci_ui_gate_defaults` with
+`_CONF_KEYS_SET` membership variations to verify the auto-elevate /
+explicit-=0 / explicit-=1 / no-CI default-0 paths. The test stubs out
+`log`/`warn`/`log_verbose` and the m136 clamp helpers so it can source
+`config_defaults.sh` standalone without dragging in `common.sh` or
+`config.sh`. A `_clear_all_ci_vars` helper resets every named-platform
+signal between scenarios, so inherited shell state cannot poison T1 / T6 /
+T10 — tests run identically locally and inside GitHub Actions.
+
+**Goal 5 — `templates/pipeline.conf.example`.** Replaced the m136 two-line
+comment for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` with the four-line
+self-documenting block from the milestone, anchored to the same line in the
+m136 arc subsection (no parallel comment block created elsewhere).
+
+## Acceptance Criteria
+
+- [x] `_detect_runtime_ci_environment` returns 0 for each named CI signal +
+  generic `CI=true` fallback; returns 1 when none set (T1–T6).
+- [x] `_get_ci_platform_name` returns the correct human-readable string per
+  platform; returns `"unknown"` when none set.
+- [x] `_apply_ci_ui_gate_defaults` is the only place that implements the
+  CI auto-elevation rule. The source-time path in `config_defaults.sh`
+  invokes the helper instead of duplicating the conditional inline.
+- [x] Auto-elevation fires when `GITHUB_ACTIONS=true` and the key is absent
+  from `_CONF_KEYS_SET` (T7).
+- [x] Explicit `=0` in `pipeline.conf` is preserved inside CI (T8).
+- [x] Explicit `=1` in `pipeline.conf` is preserved (T9).
+- [x] Outside CI, the value defaults to `0` and `TEKHTON_CI_ENVIRONMENT_DETECTED=0` (T10).
+- [x] `_normalize_ui_gate_env` emits a `log_verbose` line mentioning
+  "CI auto-detect" when `TEKHTON_CI_ENVIRONMENT_DETECTED=1`. Redirected to
+  stderr to preserve mapfile-captured stdout.
+- [x] `VERBOSE_OUTPUT=true` + CI signal prints a diagnostic to stderr
+  during config loading; default `VERBOSE_OUTPUT=false` is silent.
+- [x] All 10 tests in `tests/test_ci_environment_detection.sh` pass.
+- [x] `tests/test_validate_config.sh` — passes unchanged (24/24).
+- [x] `tests/test_validate_config_arc.sh` — passes unchanged (16/16).
+- [x] Full shell suite: 471 passed, 0 failed (was 468 + 3 pre-existing
+  failures from M137 baseline; the 3 — `test_m72_tekhton_dir.sh`,
+  `test_m84_tekhton_dir_complete.sh`, `test_tui_lifecycle_invariants.sh` —
+  initially broke because they source `config_defaults.sh` standalone with
+  no `TEKHTON_HOME` exported. Switched the source line to a
+  `BASH_SOURCE`-relative path; all three now pass).
+- [x] `templates/pipeline.conf.example` comment expanded to the 4-line
+  self-documenting block specified in Goal 5.
+- [x] `_detect_runtime_ci_environment` and `_get_ci_platform_name` are
+  pure bash — only `[[ ]]` tests + `return`/`echo`. No subshells or
+  external commands.
 
 ## Files Modified
 
-- `migrations/031_to_032.sh` (NEW) — V3.1 → V3.2 migration script,
-  128 lines. Implements all four required functions (`migration_version`,
-  `migration_description`, `migration_check`, `migration_apply`) and
-  the three sub-tasks (`_032_append_arc_config_section`,
-  `_032_update_gitignore`, `_032_create_preflight_bak_dir`). Uses the
-  `_032_*` private helper prefix to prevent collision with `_031_*` /
-  `_003_*` helpers when chained migrations source into the same shell.
-- `tests/test_migrate_032.sh` (NEW) — 257 lines, 18 assertions across
-  the 12 specified test cases (T1–T12, several with `a/b` sub-asserts).
-  Self-contained: stubs out `log`/`warn`/`success`/`error`/`header`
-  before sourcing the migration script, builds V3.1 fixtures with
-  `_make_v31_project`, and verifies idempotency, gitignore handling,
-  and pre-existing state.
-- `VERSION` — bumped from `3.136.0` to `3.137.0` per acceptance
-  criteria.
-
-The M137 row in `.claude/milestones/MANIFEST.cfg` was already in place
-from a previous run (status `in_progress`); the milestone framework
-will mark it `done` on successful completion.
-
-## Human Notes Status
-
-N/A — no human notes for this task.
-
-## Docs Updated
-
-- `README.md` — Updated version tagline from v3.125.4 to v3.137.0
+- `lib/config_defaults_ci.sh` (NEW, 84 lines) — three M138 helpers.
+- `lib/config_defaults.sh` — sources the new helper file via
+  `BASH_SOURCE`-relative path; replaces the m136 `:=0` line with a call to
+  `_apply_ci_ui_gate_defaults`. File remains data-only (no function bodies),
+  preserving the 300-line exemption.
+- `lib/gates_ui_helpers.sh` — adds the m138 verbose annotation inside
+  `_normalize_ui_gate_env` with `>&2` redirect; expands the function header
+  comment to document the mapfile-stdout constraint.
+- `tests/test_ci_environment_detection.sh` (NEW, 168 lines) — 10-scenario
+  test file (19 assertions) exercising all three helpers.
+- `templates/pipeline.conf.example` — comment for
+  `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` expanded from 2 to 4 lines.
+- `CLAUDE.md` — added `lib/config_defaults_ci.sh` to the Repository Layout
+  tree.
+- `ARCHITECTURE.md` — added one-line entry for `lib/config_defaults_ci.sh`
+  immediately after `lib/config_defaults.sh`; appended a sentence to the
+  `lib/config_defaults.sh` description noting the m138 chain.
 
 ## Verification
 
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh migrations/*.sh` —
-  clean (no output, exit 0).
-- `bash tests/test_migrate_032.sh` — 18 passed, 0 failed.
-- `bash tests/run_tests.sh` — 469 shell tests passed (up from 468
-  pre-task — the new test file was picked up by `run_tests.sh`'s
-  `test_*.sh` glob without modification), 0 failed; 247 Python tests
-  passed, 14 skipped, 0 failed.
-- File line counts: `migrations/031_to_032.sh` 128,
-  `tests/test_migrate_032.sh` 257 — both under the 300-line ceiling.
+- `shellcheck --severity=warning tekhton.sh lib/*.sh stages/*.sh tests/test_ci_environment_detection.sh` → clean.
+- `bash tests/test_ci_environment_detection.sh` → 19 passed, 0 failed.
+- `bash tests/test_validate_config.sh` → 24 passed, 0 failed.
+- `bash tests/test_validate_config_arc.sh` → 16 passed, 0 failed.
+- `bash tests/test_m72_tekhton_dir.sh` → 83/83 passed.
+- `bash tests/test_m84_tekhton_dir_complete.sh` → 36/36 passed.
+- `bash tests/test_tui_lifecycle_invariants.sh` → 17 passed.
+- `bash tests/run_tests.sh` → 471 shell tests passed, 0 failed; Python 247 passed.
+
+## File Lengths (300-line ceiling check)
+
+- `lib/config_defaults.sh` — 673 lines (data-only — exempt; no function bodies introduced).
+- `lib/config_defaults_ci.sh` — 84 lines.
+- `lib/gates_ui_helpers.sh` — 190 lines.
+- `tests/test_ci_environment_detection.sh` — 168 lines.
+
+## Architecture Change Proposals
+
+None — the milestone's Sequencing Note specifies that `_normalize_ui_gate_env`
+should be patched in its actual owner file, which is `lib/gates_ui_helpers.sh`
+on this branch (m126's helper-extraction landing). No new layer boundary or
+interface contract was introduced. The decision to put the three helpers in
+their own file (`config_defaults_ci.sh`) rather than inline in
+`config_defaults.sh` is an internal-organization choice that preserves the
+data-only exemption documented in CLAUDE.md — observable behaviour is identical.
+
+## Human Notes Status
+
+N/A — no `HUMAN_NOTES.md` items injected for this milestone.
+
+## Docs Updated
+
+- `CLAUDE.md` — Repository Layout tree now lists `lib/config_defaults_ci.sh`.
+- `ARCHITECTURE.md` — added a `lib/config_defaults_ci.sh` entry and noted the
+  chain from `lib/config_defaults.sh` to it.
+
+The new config keys in this milestone are diagnostic-only
+(`TEKHTON_CI_ENVIRONMENT_DETECTED`) and exported behaviour
+(`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` auto-elevation), which the milestone
+itself documents as the canonical reference. The
+`templates/pipeline.conf.example` comment update (Goal 5) is the
+operator-facing doc update for the public-surface change.

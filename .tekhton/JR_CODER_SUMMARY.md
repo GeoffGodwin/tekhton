@@ -1,14 +1,14 @@
-# Junior Coder Summary — M136: Resilience Arc Config Defaults & Validation Hardening
+# Junior Coder Summary — Milestone 138: Resilience Arc Runtime CI Environment Auto-Detection
 
 ## What Was Fixed
 
-- Added `set -euo pipefail` directive to `lib/validate_config_arc.sh` on line 2, immediately after the shebang. This brings the file into compliance with CLAUDE.md Non-Negotiable Rule 2 (all `.sh` files must carry this directive). The file was the sole exception in the codebase (225/225 other `lib/*.sh` files already had it).
+- **Missing `set -euo pipefail` directive**: Added `set -euo pipefail` on line 2 of `lib/config_defaults_ci.sh` immediately after the shebang, per CLAUDE.md non-negotiable rule #2 ("All scripts use `set -euo pipefail`"). This ensures the new M138 configuration defaults file adheres to project standards, matching all other lib/*.sh files.
 
 ## Files Modified
 
-- `lib/validate_config_arc.sh` (added line 2: `set -euo pipefail`)
+- `lib/config_defaults_ci.sh` — Added `set -euo pipefail` on line 2
 
 ## Verification
 
-✓ `bash -n` — syntax check passed  
-✓ `shellcheck` — validation passed
+- ✓ Syntax check: `bash -n lib/config_defaults_ci.sh` passes
+- ✓ Shellcheck: `shellcheck lib/config_defaults_ci.sh` passes (zero warnings)
