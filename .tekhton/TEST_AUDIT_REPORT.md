@@ -1,90 +1,112 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, ~181 test functions
-(test_output_format.sh: ~70 assertions; test_report.sh: ~33 assertions; test_tui.py: ~78 functions)
+Tests audited: 3 files, 24 test functions
 Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: test_report.sh uses TEKHTON_DIR before common.sh is sourced
-- File: tests/test_report.sh:31–36
-- Issue: Lines 31–36 assign `HUMAN_ACTION_FILE`, `INTAKE_REPORT_FILE`,
-  `CODER_SUMMARY_FILE`, `SECURITY_REPORT_FILE`, `REVIEWER_REPORT_FILE`, and
-  `TESTER_REPORT_FILE` using bare `${TEKHTON_DIR}` without a default:
-  ```
-  HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
-  ```
-  `TEKHTON_DIR` is only initialised by `lib/artifact_defaults.sh`, which is
-  sourced when `lib/common.sh` runs at line 39 — after these assignments. Under
-  `set -u` (active at line 15), a truly unset `TEKHTON_DIR` aborts the script
-  before any test runs. The suite passes in the pipeline environment because
-  TEKHTON_DIR is already exported there, but the file cannot be run correctly
-  in a plain `bash tests/test_report.sh` invocation in a fresh shell. This is a
-  pre-existing pattern present in Suites 1–8; the new Suites 9 and 10 follow
-  the same convention without worsening it.
+#### EXERCISE: test_human_complete_loop_resets.sh does not call _run_human_complete_loop
+- File: tests/test_human_complete_loop_resets.sh:1-276
+- Issue: The test suite's stated goal is to "Verify per-iteration resets in
+  `_run_human_complete_loop`," but `_run_human_complete_loop` (tekhton.sh:2606)
+  is never sourced or called. What the tests actually verify is that the
+  component functions (`tui_reset_for_next_milestone`, `out_reset_pass`) behave
+  correctly in isolation. The integration point — the declaration-guarded calls
+  at tekhton.sh:2634-2644 that constitute the actual bug fix — goes untested.
+  If those lines were deleted, every test in this file would still pass.
+  `test_sequential_resets` (lines 196-229) simulates the call pattern with a
+  hand-rolled `declare -f ... && call` block rather than exercising the real
+  loop, which means the guard condition itself is untested.
+  Note: the original task description acknowledged this limitation ("No new tests
+  required beyond the manual repro — the failure mode is timing-dependent and not
+  amenable to a deterministic unit test in the current TUI harness"), so the
+  tester made a justified design choice. The gap is real but accepted.
 - Severity: MEDIUM
-- Action: Add `: "${TEKHTON_DIR:=.tekhton}"` before line 31, or move the
-  `source lib/common.sh` call above the file-path variable block. Either fix
-  makes the script runnable in isolation and is consistent with how
-  `lib/artifact_defaults.sh` sets the canonical default.
+- Action: Add a smoke test that sources tekhton.sh in stub mode (with mocked
+  `pick_next_note` and `process_watchtower_inbox`) and confirms that after one
+  iteration of `_run_human_complete_loop`, `_TUI_AGENT_TURNS_USED` is 0 and the
+  status-file mtime was refreshed. Alternatively, document the accepted coverage
+  gap in the test file header so future auditors understand the constraint.
 
-#### COVERAGE: Suite 10 regression fixture omits the security findings > 0 branch
-- File: tests/test_report.sh:329–376
-- Issue: The regression fixture provides an empty `SECURITY_REPORT.md` and
-  omits `security_findings_count` from `RUN_SUMMARY.json`, so
-  `_report_stage_security` always takes the zero-findings branch
-  (`${GREEN}PASS (no findings)${NC}`). The non-zero-findings branch
-  (`${YELLOW}N finding(s)...${NC}`) is not exercised. Both branches route
-  through `out_msg` with `_out_color`-generated codes, so the literal-escape
-  regression guard would catch a leak in either branch — but the non-zero path
-  is unverified.
+#### SCOPE: test_reset_functions_exist validates the mock, not the real out_reset_pass
+- File: tests/test_human_complete_loop_resets.sh:39-51
+- Issue: `lib/common.sh` sources `lib/output.sh` which defines the real
+  `out_reset_pass`. The test file then overrides it with a tracking mock at
+  line 35. `test_reset_functions_exist` (line 40) calls `declare -f out_reset_pass`
+  and passes — but it is finding the mock, not verifying the real function exists
+  at its expected location in `lib/output.sh`. If the real `out_reset_pass` were
+  deleted from `lib/output.sh`, this test would still pass (the mock would still
+  be defined). The test therefore does not guard against the real function being
+  removed.
+- Severity: MEDIUM
+- Action: Split the existence check from the mock declaration: capture
+  `declare -f out_reset_pass` before defining the mock (to verify the real
+  function was loaded from output.sh), then define the mock. Or rename the test
+  to `test_mock_reset_functions_callable` to accurately reflect what it asserts.
+
+#### ISOLATION: Dead-PID assumption relies on default kernel.pid_max
+- File: tests/test_tui_liveness_probe.sh:54, 73, 88, 109; tests/test_tui_liveness_sampling.sh:52, 84, 118, 141
+- Issue: Multiple tests use PID `99999` (and `88888`) as a "definitely dead"
+  process. This holds reliably on Linux systems where `kernel.pid_max = 32768`
+  (the default) since 99999 exceeds the maximum allocatable PID. On systems with
+  a raised `pid_max` (Linux supports up to 4,194,304; some container environments
+  set higher values), PID 99999 could be a live process, flipping the detection
+  logic and causing `test_probe_detects_dead_sidecar`, `test_probe_clears_pid`,
+  `test_probe_removes_pidfile`, and the sampling boundary tests to produce false
+  failures or false passes depending on the process state at test time.
 - Severity: LOW
-- Action: Add a second fixture variant with `"security_findings_count": 2` in
-  `RUN_SUMMARY.json` and assert the rendered output is free of literal `\033[`.
+- Action: Replace the hardcoded PID with a reliably-dead PID obtained by spawning
+  and reaping a subprocess:
+  ```bash
+  ( exit 0 ) & dead_pid=$! ; wait "$dead_pid"
+  # dead_pid is now guaranteed not to exist
+  ```
+  This is portable, cheap, and eliminates the assumption about pid_max.
+
+#### NAMING: Misleading inline comment in test_probe_sampling_interval
+- File: tests/test_tui_liveness_probe.sh:131
+- Issue: The comment reads "First call should NOT trigger check (counter still 0
+  after increment)" but after `_tui_check_sidecar_liveness` increments the
+  counter the value is 1, not 0. The assertion (`_TUI_ACTIVE == "true"`) is
+  correct — the probe does not fire on the first call — but the comment describes
+  the wrong counter value and could mislead a maintainer.
+- Severity: LOW
+- Action: Change the comment to "counter is 1 after first call (1 < 20), probe
+  does not fire" to accurately reflect the post-call counter state.
 
 ### Clean Findings (no issues)
 
-**Assertion honesty — PASS.** All expected values are derived from real
-implementation calls, not hand-coded literals:
-- `test_output_format.sh` test 2 computes `expected=$(printf '%b' "${BOLD}")` and
-  compares against the actual return of `_out_color "${BOLD}"`, both of which call
-  `printf '%b'` internally after the fix.
-- `test_report.sh` Suite 9 computes `GREEN_E=$(printf '%b' "${GREEN}")` (and
-  similarly RED_E, YELLOW_E, NC_E) then asserts `_report_colorize` returns the
-  matching interpreted value — an honest round-trip through the real function.
-- `test_report.sh` Suite 10 calls `print_run_report` against controlled fixtures
-  and greps for `\033[` as a fixed string — the grep checks actual output bytes,
-  not a stub.
-- All three new `_build_context` tests in `test_tui.py` call the real
-  `_build_context` from `tui_render.py`, render through `rich.console.Console`,
-  and assert on the resulting string.
+**Assertion honesty — PASS.** No hard-coded expected values that don't derive
+from implementation logic:
+- Sampling boundary assertions (fire at N, not-fire at N-1) match the
+  `_TUI_WRITE_COUNT_SINCE_LIVENESS < _TUI_LIVENESS_INTERVAL` branch in
+  `tui_liveness.sh:59`.
+- `_TUI_ACTIVE=false` / `_TUI_PID=""` / pidfile-removed assertions match the
+  exact state mutations in `tui_liveness.sh:66-70`.
+- `_TUI_AGENT_TURNS_USED=0` assertion in `test_tui_reset_zeros_turns` mirrors
+  `tui_ops.sh:186`.
+- `test_default_interval` asserts `_TUI_LIVENESS_INTERVAL == 20` which is the
+  literal declaration at `tui_liveness.sh:24` — a contract test, not a magic
+  number.
 
-**Implementation exercise — PASS.** No test under audit mocks the function it
-claims to verify. `_out_color`, `_report_colorize`, `print_run_report`, and
-`_build_context` are all invoked against real code paths.
+**Implementation exercise — PASS.** `_tui_check_sidecar_liveness` and
+`tui_reset_for_next_milestone` are called directly against their real
+implementations sourced from `lib/tui_liveness.sh` and `lib/tui_ops.sh`. No test
+replaces these functions with stubs. `_tui_write_status` is exercised indirectly
+through `tui_reset_for_next_milestone`, confirming the mtime-refresh behavior
+through the real atomic-write path in `tui_liveness.sh:47-48`.
 
-**Test weakening — PASS / none detected.** Suite 9 was strengthened: expected
-values previously compared against literal backslash-octal strings; they now
-compare against `printf '%b'` interpretations. The `_out_color` passthrough
-test (test_output_format.sh test 2) gained two additional assertions
-(`contains_ansi` and `assert_not_contains '\033'`) on top of the equality check.
+**Test weakening — PASS / none detected.** No existing tests were modified.
+All three files are new additions.
 
-**Test naming — PASS.** All names encode scenario and expected outcome:
-`"_out_color: emits interpreted ESC bytes when NO_COLOR unset"`,
-`"9.1 PASS maps to GREEN"`,
-`"10.1 rendered output free of literal '\\033[' substring"`,
-`test_build_context_renders_project_dir_when_set`,
-`test_build_context_omits_project_dir_when_empty`,
-`test_build_context_omits_project_dir_when_absent`.
+**Test naming — PASS.** Function names are descriptive:
+`test_probe_noop_when_inactive`, `test_probe_detects_dead_sidecar`,
+`test_no_check_before_interval`, `test_probe_fires_at_interval`,
+`test_tui_reset_zeros_turns`, `test_tui_reset_refreshes_mtime`, etc. All names
+encode the scenario and the expected outcome.
 
-**Scope alignment — PASS.** `.tekhton/JR_CODER_SUMMARY.md` was deleted by the
-coder. No test file references `JR_CODER_SUMMARY_FILE` or imports from that
-path. The STALE-SYM entries in the orphan list are all bash builtins (`bash`,
-`echo`, `printf`, `source`, etc.) and Python stdlib modules — false positives
-from the shell-level static analyser, not real orphans.
-
-**Test isolation — PASS (with the one MEDIUM note above).** All shell suites
-create fixtures in `mktemp -d` directories and set `PROJECT_DIR` to that temp
-dir via the `trap` guard at line 19. No test reads live `.tekhton/` artifacts
-or pipeline run state. The Python tests use `tmp_path` fixtures throughout.
+**Test isolation — PASS.** All three test files create a `mktemp -d` temp
+directory bound to `PROJECT_DIR` with a `trap '...' EXIT` cleanup guard. Pidfiles
+and status-file fixtures are written inside this temp directory. No test reads
+live `.tekhton/` artifacts, pipeline state, or run logs.

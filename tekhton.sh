@@ -2628,7 +2628,20 @@ _run_human_complete_loop() {
             break
         fi
 
-        # Reset claimed IDs so finalization only resolves the current iteration's note.
+        # Per-pass display reset (matches _run_fix_nonblockers_loop) so the
+        # hold view doesn't carry stale Action Items / current_stage between
+        # notes.
+        if declare -f out_reset_pass &>/dev/null; then
+            out_reset_pass
+        fi
+        # Per-pass TUI reset (matches _run_auto_advance_chain). Zeros
+        # _TUI_AGENT_TURNS_USED and refreshes the status-file mtime so the
+        # Python watchdog's idle-and-stale preconditions cannot accumulate
+        # across the inter-note quiet window (inbox drain, triage, archive
+        # moves, log rotation, threshold checks, quota-probe sleeps).
+        if declare -f tui_reset_for_next_milestone &>/dev/null; then
+            tui_reset_for_next_milestone
+        fi
 
         # Drain any watchtower inbox notes that arrived since the last iteration
         # so they're available to pick_next_note (e.g. notes submitted mid-run).

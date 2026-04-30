@@ -23,6 +23,8 @@ source "${TEKHTON_HOME}/lib/tui_ops.sh"
 
 # shellcheck source=lib/tui_ops_substage.sh
 source "${TEKHTON_HOME}/lib/tui_ops_substage.sh"
+# shellcheck source=lib/tui_liveness.sh
+source "${TEKHTON_HOME}/lib/tui_liveness.sh"
 
 # --- Activation state --------------------------------------------------------
 
@@ -274,26 +276,4 @@ tui_set_context() {
         shift "$#"
     fi
     _TUI_STAGE_ORDER=("$@")
-}
-
-# --- Atomic status file writer -----------------------------------------------
-
-_tui_write_status() {
-    [[ -z "$_TUI_STATUS_FILE" ]] && return 0
-    # Batched-write suppression: callers that issue multiple state mutations
-    # in sequence (e.g. tui_stage_end auto-closing a substage) bump the
-    # counter before the first mutation and decrement after, producing a
-    # single coherent write instead of one per mutation.
-    (( ${_TUI_SUPPRESS_WRITE:-0} > 0 )) && return 0
-    local now elapsed
-    now=$(date +%s)
-    elapsed=$(( now - _TUI_PIPELINE_START_TS ))
-
-    # Ensure parent directory exists before attempting to write
-    local parent_dir
-    parent_dir=$(dirname "$_TUI_STATUS_TMP")
-    [[ ! -d "$parent_dir" ]] && return 0
-
-    _tui_json_build_status "$elapsed" >"$_TUI_STATUS_TMP" 2>/dev/null || return 0
-    mv -f "$_TUI_STATUS_TMP" "$_TUI_STATUS_FILE" 2>/dev/null || true
 }
