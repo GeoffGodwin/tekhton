@@ -186,7 +186,8 @@ tekhton/
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
 │   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers; run_op uses M113 substage API (M115)
 │   ├── tui_ops_pause.sh    # M124 quota-pause TUI API (tui_enter/update/exit_pause)
-│   └── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
+│   ├── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
+│   └── tui_liveness.sh     # Atomic status-file writer + sampled sidecar liveness probe
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate

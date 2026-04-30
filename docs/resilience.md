@@ -14,6 +14,7 @@ Tekhton uses FIFO-isolated agent invocation with multiple layers of fault tolera
 - **Null-run detection** — Agents that die during discovery (<=2 turns, non-zero exit) are flagged. Combined with file-change detection to distinguish real null runs from silent completions. API failures are never misclassified as null runs.
 - **Error taxonomy** — Structured error classification (UPSTREAM, ENVIRONMENT, AGENT_SCOPE, PIPELINE) with transience detection, recovery suggestions, and sensitive data redaction. Errors are displayed in formatted boxes with actionable next steps.
 - **Windows compatibility** — Detects Windows-native `claude.exe` running via WSL interop or Git Bash and uses `taskkill.exe` for cleanup (Windows processes ignore POSIX signals).
+- **TUI sidecar health monitoring** — When the Python TUI sidecar unexpectedly exits (e.g., watchdog timeout), the parent pipeline detects it within ~10 status updates, emits a warning, and continues in CLI mode. This prevents the pipeline from stalling while writing status to a dead process.
 
 ## Build-fix continuation loop (M128)
 

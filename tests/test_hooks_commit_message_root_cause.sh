@@ -42,6 +42,10 @@ get_milestone_commit_body() { echo ""; }
 
 source "${TEKHTON_HOME}/lib/hooks.sh"
 
+# Stub drift functions to prevent reading from project HUMAN_NOTES.md
+get_completed_nonblocking_notes() { return 0; }
+get_resolved_drift_observations() { return 0; }
+
 FAIL=0
 
 assert_contains() {

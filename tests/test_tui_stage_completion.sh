@@ -5,11 +5,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-# Setup test environment
-TMPDIR=$(mktemp -d)
-trap "rm -rf '$TMPDIR'" EXIT
+TEKHTON_HOME="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_DIR="$(mktemp -d)"
+trap "rm -rf '$PROJECT_DIR'" EXIT
 
 pass() {
     echo "✓ PASS: $1"
@@ -22,8 +20,8 @@ fail() {
 }
 
 # Create a minimal mock project structure
-mkdir -p "$TMPDIR/.claude/logs"
-cat > "$TMPDIR/.claude/pipeline.conf" << 'EOF'
+mkdir -p "$PROJECT_DIR/.claude/logs"
+cat > "$PROJECT_DIR/.claude/pipeline.conf" << 'EOF'
 PROJECT_NAME="test-project"
 ANALYZE_CMD="echo 'OK'"
 BUILD_CHECK_CMD="echo 'OK'"
@@ -33,24 +31,24 @@ REVIEWER_ROLE_FILE=".claude/agents/reviewer.md"
 TESTER_ROLE_FILE=".claude/agents/tester.md"
 EOF
 
-mkdir -p "$TMPDIR/.claude/agents"
-touch "$TMPDIR/.claude/agents/coder.md"
-touch "$TMPDIR/.claude/agents/reviewer.md"
-touch "$TMPDIR/.claude/agents/tester.md"
+mkdir -p "$PROJECT_DIR/.claude/agents"
+touch "$PROJECT_DIR/.claude/agents/coder.md"
+touch "$PROJECT_DIR/.claude/agents/reviewer.md"
+touch "$PROJECT_DIR/.claude/agents/tester.md"
 
 # Source required libraries
 # shellcheck disable=SC1090
-source "$PROJECT_DIR/lib/common.sh" || fail "Failed to source common.sh"
+source "$TEKHTON_HOME/lib/common.sh" || fail "Failed to source common.sh"
 # shellcheck disable=SC1090
-source "$PROJECT_DIR/lib/tui_helpers.sh" || fail "Failed to source tui_helpers.sh"
+source "$TEKHTON_HOME/lib/tui_helpers.sh" || fail "Failed to source tui_helpers.sh"
 # shellcheck disable=SC1090
-source "$PROJECT_DIR/lib/tui.sh" || fail "Failed to source tui.sh"
+source "$TEKHTON_HOME/lib/tui.sh" || fail "Failed to source tui.sh"
 # shellcheck disable=SC1090
-source "$PROJECT_DIR/lib/tui_ops.sh" || fail "Failed to source tui_ops.sh"
+source "$TEKHTON_HOME/lib/tui_ops.sh" || fail "Failed to source tui_ops.sh"
 
 # Test 1: tui_stage_end computes elapsed time from wall-clock _TUI_STAGE_START_TS
 test_tui_stage_end_elapsed_secs() {
-    local status_file="$TMPDIR/tui_status.json"
+    local status_file="$PROJECT_DIR/tui_status.json"
 
     # Initialize TUI state
     _TUI_ACTIVE="true"
@@ -79,7 +77,7 @@ test_tui_stage_end_elapsed_secs() {
 
 # Test 2: tui_stage_end records turns correctly
 test_tui_stage_end_turns() {
-    local status_file="$TMPDIR/tui_status2.json"
+    local status_file="$PROJECT_DIR/tui_status2.json"
 
     # Initialize TUI state
     _TUI_ACTIVE="true"
@@ -106,7 +104,7 @@ test_tui_stage_end_turns() {
 
 # Test 3: Multiple stages recorded in sequence
 test_tui_multiple_stages_recorded() {
-    local status_file="$TMPDIR/tui_status3.json"
+    local status_file="$PROJECT_DIR/tui_status3.json"
 
     # Initialize TUI state
     _TUI_ACTIVE="true"
@@ -137,7 +135,7 @@ test_tui_multiple_stages_recorded() {
 
 # Test 4: Stage metrics arrays are correctly passed through to TUI JSON
 test_tui_stage_metrics_arrays() {
-    local status_file="$TMPDIR/tui_status4.json"
+    local status_file="$PROJECT_DIR/tui_status4.json"
 
     # Initialize TUI state
     _TUI_ACTIVE="true"
@@ -181,7 +179,7 @@ test_tui_stage_metrics_arrays() {
 
 # Test 5: Stage with empty turns
 test_tui_stage_empty_turns() {
-    local status_file="$TMPDIR/tui_status5.json"
+    local status_file="$PROJECT_DIR/tui_status5.json"
 
     # Initialize TUI state
     _TUI_ACTIVE="true"

@@ -138,6 +138,7 @@ _tui_kill_stale() {
     local stale_pid
     stale_pid=$(cat "$pidfile" 2>/dev/null) || return 0
     [[ -n "$stale_pid" ]] || return 0
+    [[ "$stale_pid" =~ ^[1-9][0-9]*$ ]] || return 0
     if kill -0 "$stale_pid" 2>/dev/null; then
         kill "$stale_pid" 2>/dev/null || true
         for _ in 1 2 3 4 5; do
@@ -209,6 +210,7 @@ tui_stop() {
         target_pid=$(cat "$pidfile" 2>/dev/null) || target_pid=""
     fi
     _TUI_ACTIVE=false
+    [[ "$target_pid" =~ ^[1-9][0-9]*$ ]] || target_pid=""
     if [[ -n "$target_pid" ]] && kill -0 "$target_pid" 2>/dev/null; then
         kill "$target_pid" 2>/dev/null || true
         for _ in 1 2 3 4 5; do
