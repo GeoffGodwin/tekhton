@@ -19,9 +19,13 @@ set -euo pipefail
 
 # _out_color CODE — return the given ANSI code, or empty when NO_COLOR is set.
 # Evaluated at call time so callers can export NO_COLOR after common.sh sources.
+# Uses %b (not %s) so single-quoted color literals like RED='\033[0;31m' from
+# common.sh are emitted as actual ESC bytes. Without this, callers that route
+# colors through plain-text printers like out_msg (printf '%s\n') would print
+# the literal 7-character backslash-octal form to the terminal.
 _out_color() {
     [[ -n "${NO_COLOR:-}" ]] && return 0
-    printf '%s' "${1:-}"
+    printf '%b' "${1:-}"
 }
 
 # _out_term_width — usable terminal width with a conservative default.

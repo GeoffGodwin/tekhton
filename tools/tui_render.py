@@ -177,6 +177,7 @@ def _build_context(status: dict[str, Any]) -> Table:
     attempt = status.get("attempt", 1) or 1
     max_attempts = status.get("max_attempts", 1) or 1
     cli_flags = status.get("cli_flags") or ""
+    project_dir = status.get("project_dir") or ""
 
     grid = Table.grid(expand=True)
     grid.add_column(no_wrap=False)
@@ -192,6 +193,8 @@ def _build_context(status: dict[str, Any]) -> Table:
     meta = Text(style="dim")
     meta.append(run_mode)
     meta.append(f"  \u00b7  Pass {attempt}/{max_attempts}")
+    if project_dir:
+        meta.append(f"  \u00b7  /{project_dir}")
     if cli_flags:
         meta.append(f"  \u00b7  {cli_flags}")
     grid.add_row(meta)

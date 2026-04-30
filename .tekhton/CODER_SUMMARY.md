@@ -2,61 +2,61 @@
 ## Status: COMPLETE
 
 ## What Was Implemented
-Added a regression test (`tests/test_tui_stop_silent_fds.sh`) that asserts
-`tui_stop()` emits zero bytes on fd 1 and fd 2 across every reachable path:
-no pidfile / no `_TUI_PID`, stale dead pidfile, orphan with `_TUI_ACTIVE=false`
-+ live pid, and the normal `_TUI_ACTIVE=true` teardown. The test stubs
-`tput`/`stty` with markers (`TPUT_LEAK:` / `STTY_LEAK:`) so any future
-re-introduction of the old safety-net path inside `tui_stop` will be
-detectable on the captured stream — verified by temporarily reinstating
-the buggy lines, which made all 5 cases fail.
-
-The runtime fix that this test guards is already in place from prior commits:
-- `lib/tui.sh:223-230` — `_tui_restore_terminal()` extracted; owns the three
-  `tput rmcup`, `tput cnorm`, `stty icrnl` lines that previously lived inside
-  `tui_stop`.
-- `lib/tui.sh:203-221` — `tui_stop()` no longer touches the terminal.
-- `tekhton.sh:147-156` — EXIT trap calls `tui_stop` and then
-  `_tui_restore_terminal` separately, so terminal restoration only runs at
-  the real interactive exit point (never from a child shell sourcing `lib/tui.sh`).
-- `tests/test_tui_stop_orphan_recovery.sh:30-31` — `tput`/`stty` no-op stubs
-  added before sourcing `lib/tui.sh` (defense-in-depth against future
-  regressions).
-- `tests/test_tui_orphan_lifecycle_integration.sh:28-29,112` — same stubs +
-  `</dev/null` on the spawned `tools/tui.py` subprocess so it cannot grab the
-  parent's `/dev/tty` and render a competing alt-screen.
+- Fixed the BUG where `tekhton --report` printed literal `\033[...]` strings on
+  the Outcome / Coder / Security / Reviewer / Tester lines instead of colorized
+  text. Took the proposed Option 1 fix (lowest-blast-radius): `_out_color` in
+  `lib/output_format.sh` now uses `printf '%b'` instead of `printf '%s'`, so it
+  always emits real ESC bytes regardless of how the caller prints them. Other
+  helpers (`out_banner`, `out_section`, `out_kv`, `out_progress`,
+  `out_action_item`) keep working because `%b`-formatted real ESC bytes pass
+  through `echo -e` and `printf '%b'` unchanged.
+- Added the POLISH human note: the TUI top status bar now shows the project
+  directory next to the Pass count. `_tui_json_build_status` in
+  `lib/tui_helpers.sh` emits a new `project_dir` field
+  (`basename "$PROJECT_DIR"`); `tools/tui_render.py` `_build_context` appends
+  `· /<project_dir>` after `Pass N/M`.
+- Updated `tests/test_output_format.sh` test 2 to assert that `_out_color`
+  output contains an actual ESC byte (0x1b) and is free of the literal
+  `\033` substring.
+- Updated `tests/test_report.sh` Test Suite 9 to compare `_report_colorize`
+  against the interpreted-form colors (`printf '%b'`).
+- Added Test Suite 10 in `tests/test_report.sh` — regression for the bug:
+  fixtures all stages, runs `print_run_report`, `grep -F`s the output for
+  literal `\033[` and `\e[`, both must be zero matches.
 
 ## Root Cause (bugs only)
-Commit 5876c91 ("TUI sidecar orphaned after build-gate-failure exit") added
-three terminal-restore lines (`tput rmcup`, `tput cnorm`, `stty icrnl`)
-inside `tui_stop` and two new tests that call `tui_stop` directly. When
-those tests run inside `tests/run_tests.sh` while a parent tekhton pipeline
-is rendering a `rich.live` alt-screen, the escape sequences write straight
-to the shared `/dev/tty`, switching the parent terminal out of alt-screen
-mode every time the test fires `tui_stop`. The user-visible symptom is the
-"TUI keeps exiting" flicker during the coder-stage build-gate's
-"Running completion tests" substage — the alt-screen drops, exposing
-`print_run_summary` output and other stdout writes from the running
-pipeline, then `rich.live` repaints on the next tick. The fix isolates the
-terminal-restore lines to a separate `_tui_restore_terminal()` invoked only
-from `tekhton.sh`'s EXIT trap (a context that only fires once, at real
-process exit), and stubs `tput`/`stty` in the two tests as defense-in-depth.
+Color constants in `lib/common.sh` are stored as single-quoted literal strings
+(e.g. `RED='\033[0;31m'`), which means the variable holds a 7-character backslash
+sequence — not actual ESC bytes. `_out_color` previously called
+`printf '%s'`, which copies the literal characters verbatim. Reports rendered
+through `out_msg "  Outcome:   ${color}${val}${nc}"` were then printed via
+`out_msg`'s `printf '%s\n'`, which also doesn't interpret escape sequences, so
+the literal `\033[...]` characters reached the terminal unchanged. The other
+formatters (`out_banner`, `out_kv`, `out_progress`, `out_action_item`) avoided
+the bug because they used `echo -e` or `printf '%b...'` which interpret the
+sequences. Fixing at `_out_color` interprets the escapes once at the boundary
+where color is resolved, so every consumer — `%s`, `%b`, or `echo -e` — sees
+real ESC bytes and renders correctly.
 
 ## Files Modified
-- `tests/test_tui_stop_silent_fds.sh` (NEW) — regression test asserting
-  `tui_stop()` is byte-silent on fd 1 / fd 2 across all reachable paths
-  and never invokes `tput`/`stty`.
-
-(The runtime files — `lib/tui.sh`, `tekhton.sh`,
-`tests/test_tui_stop_orphan_recovery.sh`,
-`tests/test_tui_orphan_lifecycle_integration.sh` — were already modified on
-this branch by prior commits per the Scout Report's "Implementation Status";
-this run only adds the regression test that locks the fix in place.)
+- `lib/output_format.sh` — `_out_color` switched from `printf '%s'` to
+  `printf '%b'`; comment updated to explain why.
+- `lib/tui_helpers.sh` — `_tui_json_build_status` computes
+  `basename "$PROJECT_DIR"` and emits a new `project_dir` field in the status
+  JSON.
+- `tools/tui_render.py` — `_build_context` reads the new `project_dir` field
+  and renders `· /<project_dir>` after `Pass N/M`.
+- `tests/test_output_format.sh` — updated test 2 (`_out_color` passthrough)
+  to assert interpreted ESC bytes plus absence of literal `\033`.
+- `tests/test_report.sh` — Test Suite 9 now compares against `printf '%b'`
+  expansions of the color vars. New Test Suite 10 grep-asserts the rendered
+  report output is free of literal `\033[` / `\e[` substrings (regression
+  guard for the original bug).
 
 ## Docs Updated
-None — no public-surface changes in this task. The fix is internal to the
-TUI sidecar lifecycle; no CLI flags, config keys, exported functions, or
-prompt variables were added or renamed.
+None — no public-surface changes in this task. The TUI status JSON gains a
+`project_dir` field, but the schema is internal to the sidecar and not
+documented as a stable contract; renderer change is purely visual.
 
 ## Human Notes Status
-No human notes injected.
+- COMPLETED: [POLISH] The top status bar of Tekhton currently lists the mode (milestone, nb, drift), the pass number (1/5) and the Task. What it doesn't show is the current directory it's working in (project). Let's add the immediate directory name it's being run from next to the Pass count so that we go from the form "fix-nb  ·  Pass 1/5" to the form "fix-nb  ·  Pass 1/5  ·  /name-of-folder"

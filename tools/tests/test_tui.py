@@ -529,6 +529,45 @@ def test_build_context_no_raise_missing_keys():
     _build_context({})  # should not raise
 
 
+def test_build_context_renders_project_dir_when_set():
+    """When project_dir is set, it renders as · /<project_dir> after pass count."""
+    status = _sample_status()
+    status["project_dir"] = "my-project"
+    ctx = _build_context(status)
+    rendered = _render(ctx)
+    # Should contain the project dir and bullet separator
+    assert "/my-project" in rendered
+    assert "Pass 1/5" in rendered
+    # Verify the bullet and project dir appear in the meta line
+    assert "·" in rendered and "/my-project" in rendered
+
+
+def test_build_context_omits_project_dir_when_empty():
+    """When project_dir is empty, it does not appear in the rendered context."""
+    status = _sample_status()
+    status["project_dir"] = ""
+    ctx = _build_context(status)
+    rendered = _render(ctx)
+    # Should not contain the project_dir segment
+    assert "· /" not in rendered
+    # But the pass count should still be there
+    assert "Pass 1/5" in rendered
+
+
+def test_build_context_omits_project_dir_when_absent():
+    """When project_dir is absent from status, it does not appear in context."""
+    status = _sample_status()
+    # Don't set project_dir at all
+    if "project_dir" in status:
+        del status["project_dir"]
+    ctx = _build_context(status)
+    rendered = _render(ctx)
+    # Should not contain the project_dir segment
+    assert "· /" not in rendered
+    # But the pass count should still be there
+    assert "Pass 1/5" in rendered
+
+
 def test_hold_on_complete_non_interactive(tmp_path, monkeypatch):
     """_hold_on_complete should not raise when /dev/tty is unavailable."""
     import io

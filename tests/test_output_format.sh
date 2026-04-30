@@ -104,10 +104,20 @@ echo "=== test_output_format.sh ==="
 result=$(NO_COLOR=1 _out_color "${BOLD}")
 assert_eq "_out_color: empty when NO_COLOR=1" "" "$result"
 
-# 2. Returns the ANSI code when NO_COLOR is not set.
+# 2. Returns the ANSI code as actual ESC bytes when NO_COLOR is not set.
+# _out_color uses printf '%b' so single-quoted color literals from common.sh
+# (e.g. BOLD='\033[1m') are emitted as real ESC sequences, not the literal
+# 4-character backslash-octal form.
 unset NO_COLOR
 result=$(_out_color "${BOLD}")
-assert_eq "_out_color: passthrough when NO_COLOR unset" "${BOLD}" "$result"
+expected=$(printf '%b' "${BOLD}")
+assert_eq "_out_color: emits interpreted ESC bytes when NO_COLOR unset" "$expected" "$result"
+if contains_ansi "$result"; then
+    pass "_out_color: result contains real ESC byte (0x1b)"
+else
+    fail "_out_color: result missing real ESC byte (got literal '${result}')"
+fi
+assert_not_contains "_out_color: result has no literal \\\\033" '\033' "$result"
 
 # 3. Returns empty string for empty input (no crash).
 result=$(_out_color "")

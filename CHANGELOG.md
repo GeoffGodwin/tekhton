@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.138.1] - 2026-04-30
+
+### Added
+- Fixed the BUG where `tekhton --report` printed literal `\033[...]` strings on
 ## [3.138.0] - 2026-04-28
 
 ### Added

@@ -1,43 +1,90 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 25 test assertions
-Verdict: CONCERNS
-
----
+Tests audited: 3 files, ~181 test functions
+(test_output_format.sh: ~70 assertions; test_report.sh: ~33 assertions; test_tui.py: ~78 functions)
+Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: VERSION file assertion reads live mutable repo state
-- File: tests/test_migrate_032_completeness.sh:120-130
-- Issue: Section 4 reads `${TEKHTON_HOME}/VERSION` directly and asserts `[[ "$ver" == "3.137.0" ]]`. This is a hard-coded snapshot assertion against a committed file that is mutated by every milestone. The test will fail as soon as M138 bumps VERSION to `3.138.0` — at that point it produces a false negative against a fully-correct implementation. There is no fixture copy of VERSION in `$TEST_TMPDIR`; pass/fail depends entirely on current repo state.
-- Severity: HIGH
-- Action: Remove the VERSION assertion from this file. Milestone acceptance is already tracked via MANIFEST.cfg status. If a version smoke-check is needed, assert that the version is lexicographically greater than the prior milestone (`[[ "$ver" > "3.136.0" ]]`) rather than pinning an exact value.
-
-#### ISOLATION: MANIFEST.cfg checks read a live project file
-- File: tests/test_migrate_032_completeness.sh:136-159
-- Issue: Sections MAN1–MAN3 read `${TEKHTON_HOME}/.claude/milestones/MANIFEST.cfg` directly without copying it to `$TEST_TMPDIR`. The specific assertions on M137's row (`depends_on=m135,m136`, `group=resilience`) are stable properties that will not change, but the test is formally coupled to live repo state. A structural reformat of MANIFEST.cfg or a format-version bump would break these assertions for reasons unrelated to the migration script under test.
+#### ISOLATION: test_report.sh uses TEKHTON_DIR before common.sh is sourced
+- File: tests/test_report.sh:31–36
+- Issue: Lines 31–36 assign `HUMAN_ACTION_FILE`, `INTAKE_REPORT_FILE`,
+  `CODER_SUMMARY_FILE`, `SECURITY_REPORT_FILE`, `REVIEWER_REPORT_FILE`, and
+  `TESTER_REPORT_FILE` using bare `${TEKHTON_DIR}` without a default:
+  ```
+  HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
+  ```
+  `TEKHTON_DIR` is only initialised by `lib/artifact_defaults.sh`, which is
+  sourced when `lib/common.sh` runs at line 39 — after these assignments. Under
+  `set -u` (active at line 15), a truly unset `TEKHTON_DIR` aborts the script
+  before any test runs. The suite passes in the pipeline environment because
+  TEKHTON_DIR is already exported there, but the file cannot be run correctly
+  in a plain `bash tests/test_report.sh` invocation in a fresh shell. This is a
+  pre-existing pattern present in Suites 1–8; the new Suites 9 and 10 follow
+  the same convention without worsening it.
 - Severity: MEDIUM
-- Action: Copy MANIFEST.cfg to `$TEST_TMPDIR` at the start of Section 5 and read from the copy; or annotate the test block as a one-time acceptance check explicitly excluded from the ongoing regression suite.
+- Action: Add `: "${TEKHTON_DIR:=.tekhton}"` before line 31, or move the
+  `source lib/common.sh` call above the file-path variable block. Either fix
+  makes the script runnable in isolation and is consistent with how
+  `lib/artifact_defaults.sh` sets the canonical default.
 
-#### SCOPE: VERSION and MANIFEST checks verify coder deliverables, not migration script behavior
-- File: tests/test_migrate_032_completeness.sh:120-159
-- Issue: `031_to_032.sh` does not touch VERSION or MANIFEST.cfg. Sections 4 and 5 verify acceptance criteria for M137 as a whole (coder bumped VERSION, MANIFEST row was authored correctly). These checks will produce misleading failures in CI after M138 that look like migration regressions when the migration script itself is unchanged.
+#### COVERAGE: Suite 10 regression fixture omits the security findings > 0 branch
+- File: tests/test_report.sh:329–376
+- Issue: The regression fixture provides an empty `SECURITY_REPORT.md` and
+  omits `security_findings_count` from `RUN_SUMMARY.json`, so
+  `_report_stage_security` always takes the zero-findings branch
+  (`${GREEN}PASS (no findings)${NC}`). The non-zero-findings branch
+  (`${YELLOW}N finding(s)...${NC}`) is not exercised. Both branches route
+  through `out_msg` with `_out_color`-generated codes, so the literal-escape
+  regression guard would catch a leak in either branch — but the non-zero path
+  is unverified.
 - Severity: LOW
-- Action: Move VERSION and MANIFEST.cfg checks to a dedicated one-shot acceptance script (e.g., `tests/test_m137_acceptance.sh`) documented as milestone-locked and excluded from the ongoing regression glob, or remove Section 4 entirely (Section 5 assertions are stable and lower-risk).
-
----
+- Action: Add a second fixture variant with `"security_findings_count": 2` in
+  `RUN_SUMMARY.json` and assert the rendered output is free of literal `\033[`.
 
 ### Clean Findings (no issues)
 
-**Assertion Honesty — PASS.** All assertions in Sections 1–3 and 6 are derived from actual implementation content. The 12 commented-key patterns in `_assert_var_present` exactly match strings emitted by `_032_append_arc_config_section` (verified against `migrations/031_to_032.sh:68–83`). The plan-deviation guards (V2–V5) correctly check that `100` and `10` appear while `1.0` and `5` do not — matching the implementation at lines 70 and 83. No tautological or fabricated assertions found.
+**Assertion honesty — PASS.** All expected values are derived from real
+implementation calls, not hand-coded literals:
+- `test_output_format.sh` test 2 computes `expected=$(printf '%b' "${BOLD}")` and
+  compares against the actual return of `_out_color "${BOLD}"`, both of which call
+  `printf '%b'` internally after the fix.
+- `test_report.sh` Suite 9 computes `GREEN_E=$(printf '%b' "${GREEN}")` (and
+  similarly RED_E, YELLOW_E, NC_E) then asserts `_report_colorize` returns the
+  matching interpreted value — an honest round-trip through the real function.
+- `test_report.sh` Suite 10 calls `print_run_report` against controlled fixtures
+  and greps for `\033[` as a fixed string — the grep checks actual output bytes,
+  not a stub.
+- All three new `_build_context` tests in `test_tui.py` call the real
+  `_build_context` from `tui_render.py`, render through `rich.console.Console`,
+  and assert on the resulting string.
 
-**Implementation Exercise — PASS.** The test sources `migrations/031_to_032.sh` directly and invokes `migration_apply`, `migration_check`, and `migration_description` with real fixtures in `$TEST_TMPDIR`. Nothing under test is mocked.
+**Implementation exercise — PASS.** No test under audit mocks the function it
+claims to verify. `_out_color`, `_report_colorize`, `print_run_report`, and
+`_build_context` are all invoked against real code paths.
 
-**Edge Case Coverage — PASS.** Plan-deviation negative guards (V4, V5) and the chain migration (Section 6) provide meaningful non-happy-path coverage beyond `test_migrate_032.sh`'s T1–T12.
+**Test weakening — PASS / none detected.** Suite 9 was strengthened: expected
+values previously compared against literal backslash-octal strings; they now
+compare against `printf '%b'` interpretations. The `_out_color` passthrough
+test (test_output_format.sh test 2) gained two additional assertions
+(`contains_ansi` and `assert_not_contains '\033'`) on top of the equality check.
 
-**Test Weakening — N/A.** No existing tests were modified; this is a new additive file.
+**Test naming — PASS.** All names encode scenario and expected outcome:
+`"_out_color: emits interpreted ESC bytes when NO_COLOR unset"`,
+`"9.1 PASS maps to GREEN"`,
+`"10.1 rendered output free of literal '\\033[' substring"`,
+`test_build_context_renders_project_dir_when_set`,
+`test_build_context_omits_project_dir_when_empty`,
+`test_build_context_omits_project_dir_when_absent`.
 
-**Test Naming — PASS.** Labels (V1–V5, D1, VER, MAN1–3, CHAIN1–3) encode both scenario and expected outcome. All names are descriptive.
+**Scope alignment — PASS.** `.tekhton/JR_CODER_SUMMARY.md` was deleted by the
+coder. No test file references `JR_CODER_SUMMARY_FILE` or imports from that
+path. The STALE-SYM entries in the orphan list are all bash builtins (`bash`,
+`echo`, `printf`, `source`, etc.) and Python stdlib modules — false positives
+from the shell-level static analyser, not real orphans.
 
-**Test Isolation (Sections 1–3, 6) — PASS.** Project fixtures are created in `$TEST_TMPDIR` with a `trap 'rm -rf "$TEST_TMPDIR"' EXIT` guard. Logging functions are stubbed before sourcing. The chain test applies the 3.1 migration in a subshell to prevent function-name collisions with the already-sourced 3.2 functions. `migrations/003_to_031.sh` (sourced at line 187) is confirmed present.
+**Test isolation — PASS (with the one MEDIUM note above).** All shell suites
+create fixtures in `mktemp -d` directories and set `PROJECT_DIR` to that temp
+dir via the `trap` guard at line 19. No test reads live `.tekhton/` artifacts
+or pipeline run state. The Python tests use `tmp_path` fixtures throughout.

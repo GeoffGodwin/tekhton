@@ -218,6 +218,10 @@ _tui_json_build_status() {
     fi
     local run_mode="${_TUI_RUN_MODE:-task}"
     local cli_flags="${_TUI_CLI_FLAGS:-}"
+    local project_dir_name=""
+    if [[ -n "${PROJECT_DIR:-}" ]]; then
+        project_dir_name="$(basename "$PROJECT_DIR")"
+    fi
 
     local last_event=""
     local n="${#_TUI_RECENT_EVENTS[@]}"
@@ -251,6 +255,7 @@ _tui_json_build_status() {
     printf '"current_agent_status":"%s",' "$(_tui_escape "$agent_status")"
     printf '"run_mode":"%s",' "$(_tui_escape "$run_mode")"
     printf '"cli_flags":"%s",' "$(_tui_escape "$cli_flags")"
+    printf '"project_dir":"%s",' "$(_tui_escape "$project_dir_name")"
     printf '"stage_order":%s,' "$(_tui_stage_order_json)"
     printf '"last_event":"%s",' "$(_tui_escape "$last_event")"
     printf '"recent_events":%s,' "$(_tui_recent_events_json)"

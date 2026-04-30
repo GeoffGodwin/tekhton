@@ -290,12 +290,13 @@ assert_contains "8.3 unknown outcome shown when no summary" "unknown" "$output"
 # =============================================================================
 echo "=== Test Suite 9: _report_colorize ==="
 
-# _report_colorize now uses _out_color (printf '%s' passthrough), so compare
-# against the literal variable value — not the echo-e-expanded ANSI sequence.
-GREEN_E="${GREEN}"
-RED_E="${RED}"
-YELLOW_E="${YELLOW}"
-NC_E="${NC}"
+# _report_colorize delegates to _out_color, which uses printf '%b' so the
+# returned color code is an interpreted ESC sequence — not the literal
+# backslash-octal form stored in the GREEN/RED/YELLOW/NC variables.
+GREEN_E=$(printf '%b' "${GREEN}")
+RED_E=$(printf '%b' "${RED}")
+YELLOW_E=$(printf '%b' "${YELLOW}")
+NC_E=$(printf '%b' "${NC}")
 
 result=$(_report_colorize "PASS")
 assert_eq "9.1 PASS maps to GREEN" "$GREEN_E" "$result"
@@ -314,6 +315,65 @@ assert_eq "9.5 CHANGES_REQUIRED maps to YELLOW" "$YELLOW_E" "$result"
 
 result=$(_report_colorize "UNKNOWN_STATUS")
 assert_eq "9.6 unknown status maps to NC" "$NC_E" "$result"
+
+# =============================================================================
+# Test Suite 10: No literal \033 escapes leak into rendered output
+# =============================================================================
+echo "=== Test Suite 10: rendered output has no literal \\033 ==="
+
+# Regression for the bug where _out_color returned the 7-character literal
+# string '\033[0;32m' (etc.), and out_msg's printf '%s\n' then printed it
+# verbatim — so the terminal showed "\033[0;32msuccess\033[0m" instead of
+# colorized text. After the fix _out_color must emit interpreted ESC bytes,
+# meaning grep for the literal substring "\033[" should never match.
+_reset_report_fixture
+_create_run_summary "success" "17"
+cat > "$TMPDIR/${TEKHTON_DIR}/INTAKE_REPORT.md" << 'EOF'
+# Intake Report
+
+## Verdict
+PASS
+
+Confidence: 95
+EOF
+cat > "$TMPDIR/${TEKHTON_DIR}/CODER_SUMMARY.md" << 'EOF'
+# Coder Summary
+## Status
+COMPLETE
+EOF
+cat > "$TMPDIR/${TEKHTON_DIR}/SECURITY_REPORT.md" << 'EOF'
+# Security Report
+EOF
+cat > "$TMPDIR/${TEKHTON_DIR}/REVIEWER_REPORT.md" << 'EOF'
+# Reviewer Report
+
+## Verdict
+APPROVED
+EOF
+cat > "$TMPDIR/${TEKHTON_DIR}/TESTER_REPORT.md" << 'EOF'
+## Tests Written
+1. test_foo.sh
+
+## Bugs Found
+None
+EOF
+output=$(print_run_report 2>/dev/null)
+
+if printf '%s' "$output" | grep -qF '\033['; then
+    echo "  FAIL: 10.1 rendered output contains literal '\\033[' substring"
+    FAIL=$((FAIL + 1))
+else
+    echo "  PASS: 10.1 rendered output free of literal '\\033[' substring"
+    PASS=$((PASS + 1))
+fi
+
+if printf '%s' "$output" | grep -qF '\e['; then
+    echo "  FAIL: 10.2 rendered output contains literal '\\e[' substring"
+    FAIL=$((FAIL + 1))
+else
+    echo "  PASS: 10.2 rendered output free of literal '\\e[' substring"
+    PASS=$((PASS + 1))
+fi
 
 # =============================================================================
 # Summary

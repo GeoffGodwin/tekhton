@@ -10,19 +10,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/tui.sh:139,210` — `_tui_kill_stale` and `tui_stop` pass raw pidfile content to `kill` without integer validation (e.g. `[[ "$target_pid" =~ ^[1-9][0-9]*$ ]]`). A pidfile containing `-1` or `0` would cause `kill -0 -1` to return true and `kill -1` to SIGHUP all owned processes. Low-severity pre-existing; carried forward for cleanup.
-- `tests/test_tui_stop_silent_fds.sh:148–160` — Test 5 calls `tui_stop` three times in one shell without resetting `_TUI_ACTIVE`/`_TUI_PID` between the first and second call. Sound as written (the first call leaves both in a reset state), but the lack of an explicit `_TUI_ACTIVE=false; _TUI_PID=""` reset between calls makes the intent fragile if someone inserts state changes between them.
+- `tests/test_output_format.sh` is 407 lines; `tests/test_report.sh` is 387 lines — both exceed the 300-line `.sh` file ceiling. Both were already near-limit before this change; new tests pushed them over. Log for a future split into `test_output_format_color.sh` / `test_output_format_layout.sh` etc.
 
 ## Coverage Gaps
-- None
+- No Python unit test for the new `project_dir` field in `_build_context` (`tools/tui_render.py`). The existing `tools/tests/test_tui.py` covers `_build_context` but was not updated to assert the new `· /<project_dir>` segment appears when `project_dir` is set, or is absent when it is empty.
 
 ## Drift Observations
 - None
-
----
-
-## Prior Blocker Verification
-
-**Blocker (cycle 1):** `tests/test_tui_orphan_lifecycle_integration.sh:202` — second `tools/tui.py` spawn missing `</dev/null`, leaving stdin connected to the parent's controlling terminal.
-
-**Status: FIXED.** Line 202 now reads `</dev/null >/dev/null 2>&1 &`, matching the pattern on line 112. Verified by direct read of the file.
