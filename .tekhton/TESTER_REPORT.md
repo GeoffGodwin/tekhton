@@ -1,22 +1,18 @@
+# Tester Report
+
 ## Planned Tests
-- [x] `tools/tests/test_tui.py` — Add Python test for project_dir field in _build_context
-- [x] `tests/test_output_format.sh` — Verify ANSI escape sequence fix (70 tests)
-- [x] `tests/test_report.sh` — Verify Test Suite 9 and 10 (regression for ANSI bug)
+- [x] `tests/test_tui_project_dir_display.sh` — verify project directory name is included in TUI status bar
 
 ## Test Run Results
-- Python (tui): Passed: 78  Failed: 0
-- Python (full suite): Passed: 250  Failed: 0
-- Shell (full suite): Passed: 475  Failed: 0
-
-## Coverage Verification
-- ✓ New `project_dir` field in JSON (Bash: `_tui_json_build_status`)
-- ✓ Rendering of `project_dir` in TUI context when set
-- ✓ Omission of `project_dir` when empty or absent
-- ✓ ANSI escape sequences rendered as real ESC bytes (no literal `\033` in output)
-- ✓ Color code interpretation via `printf '%b'` in `_out_color`
+Passed: 6  Failed: 0
 
 ## Bugs Found
-None
+- BUG: [tests/test_tui_project_dir_display.sh:13-14] Post-increment in arithmetic context returns 0, causing pass()/fail() functions to fail when counters start at 0
 
 ## Files Modified
-- [x] `tools/tests/test_tui.py`
+- [x] `tests/test_tui_project_dir_display.sh`
+
+## Timing
+- Test executions: 1 (full suite)
+- Approximate total test execution time: 801s (full suite: 476 shell + 250 Python tests)
+- Test files written: 1 (fixed existing test)

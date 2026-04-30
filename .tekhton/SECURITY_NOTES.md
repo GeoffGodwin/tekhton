@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-04-30 09:14:06
+Generated: 2026-04-30 10:47:55
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [LOW] [category:A01] [tests/test_tui_orphan_lifecycle_integration.sh:202] fixable:yes — The second `tools/tui.py` spawn (watchdog bonus test, lines 196–202) is missing `</dev/null` on stdin. The first spawn at line 112 correctly uses `</dev/null >/dev/null 2>&1 &`, preventing the child from acquiring the parent's controlling terminal as stdin. The second spawn uses only `>/dev/null 2>&1 &`, leaving stdin connected. When this test runs inside a live pipeline sharing a TTY with an active TUI sidecar, the spawned `tui.py` could open the controlling terminal for input, partially undoing the fix for the very scenario this test validates. Fix: add `</dev/null` before `>/dev/null 2>&1 &` to match line 112.
