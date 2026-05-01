@@ -84,7 +84,7 @@ _split_apply_dag() {
             error "Refusing to write milestone file with path separator: ${sub_file}"
             return 1
         fi
-        echo "$sub_block" > "${milestone_dir}/${sub_file}"
+        printf '%s\n' "$sub_block" > "${milestone_dir}/${sub_file}"
 
         local sub_deps="$prev_sub_id"
         [[ -z "$sub_deps" ]] && sub_deps="$parent_deps"

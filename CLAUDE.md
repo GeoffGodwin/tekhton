@@ -115,6 +115,7 @@ tekhton/
 │   ├── diagnose_rules_extra.sh # Secondary diagnostic rules
 │   ├── diagnose_rules_migration.sh # Migration & version-mismatch rules
 │   ├── diagnose_rules_resilience.sh # M133 resilience-arc primary rules
+│   ├── diagnose_rules_resilience_preflight.sh # M131/M133 preflight-config rule (extracted)
 │   ├── failure_context.sh  # M129 primary/secondary cause slot helpers
 │   ├── express.sh          # Express mode (zero-config execution)
 │   ├── express_persist.sh  # Express mode configuration persistence
@@ -519,6 +520,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `DRAFT_MILESTONES_MAX_TURNS` | Turn budget for draft milestones agent (default: 40) |
 | `DRAFT_MILESTONES_AUTO_WRITE` | Skip confirmation prompt before writing (default: false) |
 | `DRAFT_MILESTONES_SEED_EXEMPLARS` | Number of recent milestones shown as format examples (default: 3) |
+| `INIT_AUTO_PROMPT` | M81. Toggle for the brownfield `--init` auto-prompt block at the end of the report banner. Gated on TTY check; only fires when stdin and stdout are both attached to a terminal (default: false) |
 | `TUI_ENABLED` | TUI sidecar: auto (on interactive TTY + venv), true, or false (default: auto) |
 | `TUI_TICK_MS` | Sidecar status-file poll interval in ms (default: 500) |
 | `TUI_EVENT_LINES` | Ring-buffer depth of recent events retained for the events panel (default: 60) |

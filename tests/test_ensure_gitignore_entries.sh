@@ -67,7 +67,7 @@ else
 fi
 
 # =============================================================================
-# Section 3: All 18 Tekhton runtime patterns are written
+# Section 3: All 20 Tekhton runtime patterns are written
 # =============================================================================
 
 declare -a EXPECTED_ENTRIES=(

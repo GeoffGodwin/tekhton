@@ -22,6 +22,13 @@ set -euo pipefail
 # coordination.
 # =============================================================================
 
+# --- Routing thresholds ------------------------------------------------------
+# Minimum noncode-line confidence (% of total matched + unmatched lines)
+# required to route a code-free log to noncode_dominant. Below this, fall
+# through to unknown_only so the build-fix loop still gets a chance to run
+# with low-confidence guidance.
+_NONCODE_CONFIDENCE_THRESHOLD=60
+
 # --- Noise-line denylist ----------------------------------------------------
 # Patterns whose lines should be excluded from classification statistics
 # UNLESS the line also contains a failure term (allow-list precedence).
@@ -217,10 +224,11 @@ classify_routing_decision() {
     # Rule 1: any code evidence + dominates non-code → code_dominant.
     if (( matched_code > 0 && matched_code >= matched_noncode )); then
         token="code_dominant"
-    # Rule 2: pure noncode at >= 60% confidence. Integer arithmetic: bash has
-    # no floating-point math; do not introduce a `bc` dependency.
+    # Rule 2: pure noncode at >= _NONCODE_CONFIDENCE_THRESHOLD%. Integer
+    # arithmetic: bash has no floating-point math; do not introduce a `bc`
+    # dependency.
     elif (( matched_noncode > 0 && matched_code == 0 && total > 0 )) \
-         && (( matched_noncode * 100 / total >= 60 )); then
+         && (( matched_noncode * 100 / total >= _NONCODE_CONFIDENCE_THRESHOLD )); then
         token="noncode_dominant"
     # Rule 3: both signals present but code is outnumbered → mixed_uncertain.
     elif (( matched_code > 0 && matched_noncode > 0 )); then

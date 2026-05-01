@@ -144,6 +144,15 @@ run_build_fix_loop() {
         _bf_emit_routing_diagnosis "$raw_errors"
     fi
 
+    # Surface unrecognized tokens. Known tokens (code_dominant, mixed_uncertain,
+    # unknown_only) all fall through to the build-fix loop; an unknown token
+    # also falls through, but we emit a warn line so reviewer / dashboard /
+    # diagnose can spot a routing classifier drift between M127, M128 and M130.
+    case "$decision" in
+        code_dominant|mixed_uncertain|unknown_only) ;;
+        *) warn "Build-fix loop received unrecognized routing token '${decision}'; treating as code_dominant." ;;
+    esac
+
     local extra_context
     extra_context=$(_bf_extra_context_for_decision "$decision")
 

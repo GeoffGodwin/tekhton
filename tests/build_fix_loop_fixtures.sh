@@ -37,8 +37,9 @@ _safe_read_file() {
     fi
 }
 
-# stub: filter_code_errors — pass-through
-filter_code_errors() { cat; }
+# stub: filter_code_errors — pass-through. Real signature is
+# `filter_code_errors RAW`, so echo the positional arg rather than reading stdin.
+filter_code_errors() { printf '%s\n' "${1:-}"; }
 
 # stub: classify_routing_decision — controllable via STUB_ROUTING
 classify_routing_decision() {

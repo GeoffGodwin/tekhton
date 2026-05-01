@@ -1106,18 +1106,14 @@ ${GIT_DIFF_STAT}
         fi
     fi
 
-    # --- Build gate (with one retry) -----------------------------------------
+    # --- Build gate (retry depth driven by BUILD_FIX_MAX_ATTEMPTS) -----------
 
-    BUILD_GATE_RETRY=0
     if ! run_build_gate "post-coder"; then
-        if [ "$BUILD_GATE_RETRY" -lt 1 ]; then
-            BUILD_GATE_RETRY=1
-            # M127 classifies routing (LAST_BUILD_CLASSIFICATION); M128 wraps
-            # dispatch in an attempt-bounded loop with adaptive budgets and
-            # progress gating. The loop exports the four Goal-7 BUILD_FIX_*
-            # stats vars on every exit path for M132 consumption.
-            run_build_fix_loop
-        fi
+        # M127 classifies routing (LAST_BUILD_CLASSIFICATION); M128 wraps
+        # dispatch in an attempt-bounded loop with adaptive budgets and
+        # progress gating. The loop exports the four Goal-7 BUILD_FIX_*
+        # stats vars on every exit path for M132 consumption.
+        run_build_fix_loop
     fi
 
     # --- Record task→file association for personalized ranking (M7) ----------

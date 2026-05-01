@@ -75,6 +75,10 @@ draft_milestones_next_id() {
 # format exemplars for the prompt. N = DRAFT_MILESTONES_SEED_EXEMPLARS.
 draft_milestones_build_exemplars() {
     local count="${DRAFT_MILESTONES_SEED_EXEMPLARS:-3}"
+    # _clamp_config_value enforces the upper bound but does not enforce that
+    # the value is an integer. A non-integer would pass through to head as a
+    # malformed flag — fall back to the documented default.
+    [[ "$count" =~ ^[0-9]+$ ]] || count=3
     local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR}"
     local exemplars=""
 

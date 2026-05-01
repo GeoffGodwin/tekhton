@@ -56,6 +56,9 @@ _rule_ui_gate_interactive_reporter() {
         fi
     fi
     if [[ "$matched" != true ]] && [[ -d "$logs_dir" ]]; then
+        # Recursive scan with no depth/file-count cap: acceptable because
+        # diagnose is a manually-invoked tool. Large log archives may incur
+        # a one-time cost; rotation is the operator's responsibility.
         if grep -rqlE 'Serving HTML report at|Press Ctrl\+C to quit' "$logs_dir" 2>/dev/null; then
             matched=true
             confidence="medium"
@@ -135,11 +138,12 @@ _rule_ui_gate_interactive_reporter() {
 # its budget". More specific than generic BUILD_FAILURE — must be ordered
 # before _rule_build_failure.
 #
-# Detection sources:
-#   1. ${BUILD_FIX_REPORT_FILE} exists with multi-attempt evidence
-#   2. RUN_SUMMARY.json build_fix_stats.outcome = exhausted|no_progress
-#      AND build_fix_stats.attempts >= 2
-#   3. LAST_FAILURE_CONTEXT.json secondary signal `build_fix_budget_exhausted`
+# Detection sources, listed in evaluation order (highest-confidence first):
+#   1. RUN_SUMMARY.json build_fix_stats.outcome = exhausted|no_progress
+#      AND build_fix_stats.attempts >= 2 — most reliable when present.
+#   2. ${BUILD_FIX_REPORT_FILE} exists with multi-attempt evidence
+#      (counts ## Attempt headings; falls back when RUN_SUMMARY is absent).
+#   3. LAST_FAILURE_CONTEXT.json secondary signal `build_fix_budget_exhausted`.
 #
 # Required guard: at least one build-error artifact (BUILD_ERRORS_FILE or
 # BUILD_RAW_ERRORS_FILE) must be non-empty so a stale historical report does
@@ -159,7 +163,7 @@ _rule_build_fix_exhausted() {
     local outcome=""
     local attempts=0
 
-    # Source 2: RUN_SUMMARY.json build_fix_stats — most reliable when present.
+    # Source 1: RUN_SUMMARY.json build_fix_stats — most reliable when present.
     if [[ -f "$summary_file" ]]; then
         local section
         section=$(awk '/"build_fix_stats"[[:space:]]*:/{f=1} f{print; if(/\}/){exit}}' "$summary_file" 2>/dev/null || true)
@@ -176,7 +180,7 @@ _rule_build_fix_exhausted() {
         fi
     fi
 
-    # Source 1: BUILD_FIX_REPORT.md — count attempts and infer no_progress.
+    # Source 2: BUILD_FIX_REPORT.md — count attempts and infer no_progress.
     if [[ -z "$outcome" ]] && [[ -f "$report" ]]; then
         local rep_attempts
         rep_attempts=$(grep -c '^## Attempt ' "$report" 2>/dev/null || true)
@@ -235,70 +239,7 @@ _rule_build_fix_exhausted() {
     return 0
 }
 
-# _rule_preflight_interactive_config
-# Diagnose the case where preflight already detected an interactive
-# Playwright reporter configuration but the gate-level evidence isn't
-# strong enough for _rule_ui_gate_interactive_reporter to fire. Fallback,
-# not preferred match — must be ordered after the gate-level rule.
-_rule_preflight_interactive_config() {
-    local summary_file="${PROJECT_DIR:-.}/.claude/logs/RUN_SUMMARY.json"
-    local preflight_report="${PROJECT_DIR:-.}/${TEKHTON_DIR:-.tekhton}/PREFLIGHT_REPORT.md"
-    local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
-
-    local matched=false
-    local cfg_file=""
-
-    # Source 1: RUN_SUMMARY.json preflight_ui section.
-    if [[ -f "$summary_file" ]]; then
-        local section
-        section=$(awk '/"preflight_ui"[[:space:]]*:/{f=1} f{print; if(/\}/){exit}}' "$summary_file" 2>/dev/null || true)
-        if [[ -n "$section" ]]; then
-            local detected patched
-            detected=$(printf '%s' "$section" | grep -oP '"interactive_config_detected"\s*:\s*\K(true|false)' | head -1 || true)
-            patched=$(printf '%s' "$section" | grep -oP '"reporter_auto_patched"\s*:\s*\K(true|false)' | head -1 || true)
-            cfg_file=$(printf '%s' "$section" | grep -oP '"interactive_config_file"\s*:\s*"\K[^"]*' | head -1 || true)
-            if [[ "$detected" = "true" ]] && [[ "$patched" = "false" ]]; then
-                matched=true
-            fi
-        fi
-    fi
-
-    # Source 2: PREFLIGHT_REPORT.md fail entry (m131 frozen heading).
-    if [[ "$matched" != true ]] && [[ -f "$preflight_report" ]]; then
-        if grep -qF 'UI Config (Playwright) — html reporter' "$preflight_report" 2>/dev/null \
-           && grep -qiE '(^|[^a-z])(fail|FAIL)([^a-z]|$)' "$preflight_report" 2>/dev/null; then
-            matched=true
-        fi
-    fi
-
-    # Source 3: LAST_FAILURE_CONTEXT.json explicit preflight-config signal.
-    if [[ "$matched" != true ]] && [[ "${_DIAG_PRIMARY_SIGNAL:-}" = "ui_interactive_config_preflight" ]]; then
-        matched=true
-    fi
-    if [[ "$matched" != true ]] && [[ -f "$failure_ctx" ]]; then
-        if grep -q '"classification"\s*:\s*"PREFLIGHT_INTERACTIVE_CONFIG"' "$failure_ctx" 2>/dev/null; then
-            matched=true
-        fi
-    fi
-
-    [[ "$matched" = true ]] || return 1
-    local _task="${_DIAG_PIPELINE_TASK:-${TASK:-<task not recorded>}}"
-    local cfg_label="${cfg_file:-playwright.config.ts}"
-    # shellcheck disable=SC2034
-    DIAG_CLASSIFICATION="PREFLIGHT_INTERACTIVE_CONFIG"
-    # shellcheck disable=SC2034
-    DIAG_CONFIDENCE="high"
-    # shellcheck disable=SC2034
-    DIAG_SUGGESTIONS=(
-        "Preflight detected an interactive Playwright reporter configuration."
-        "${cfg_label} sets reporter: 'html', which would hang the UI gate."
-        "Manual fix in ${cfg_label}:"
-        "  Change:  reporter: 'html'"
-        "  To:      reporter: process.env.CI ? 'dot' : 'html'"
-        "Or enable auto-fix (pipeline.conf):"
-        "  PREFLIGHT_UI_CONFIG_AUTO_FIX=true"
-        "Then re-run:"
-        "  tekhton --complete --milestone \"${_task}\""
-    )
-    return 0
-}
+# _rule_preflight_interactive_config lives in a sibling file to keep this
+# file under the 300-line ceiling.
+# shellcheck source=lib/diagnose_rules_resilience_preflight.sh
+source "${TEKHTON_HOME:?}/lib/diagnose_rules_resilience_preflight.sh"

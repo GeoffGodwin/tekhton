@@ -74,6 +74,21 @@ _arc_reset_preflight_state() {
           PREFLIGHT_UI_REPORTER_PATCHED
 }
 
+# _arc_json_escape STR — minimal JSON string escape (backslash, quote, control chars).
+# Mirrors lib/output_format.sh::_out_json_escape. Used by the failure-context
+# writers below to keep heredocs valid even if a future caller passes dynamic
+# input containing quotes, backslashes, or newlines.
+_arc_json_escape() {
+    local s="$*"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    s=$(printf '%s' "$s" | LC_ALL=C tr -d '\000-\010\013\014\016-\037')
+    printf '%s' "$s"
+}
+
 # _arc_write_v2_failure_context DIR PRIMARY_CAT PRIMARY_SUB PRIMARY_SIG \
 #                              SECONDARY_CAT SECONDARY_SUB SECONDARY_SIG \
 #                              [CLASSIFICATION]
@@ -81,9 +96,14 @@ _arc_reset_preflight_state() {
 # layout matches the m129 writer contract (one inner key per line).
 _arc_write_v2_failure_context() {
     local dir="$1"
-    local p_cat="$2" p_sub="$3" p_sig="$4"
-    local s_cat="$5" s_sub="$6" s_sig="$7"
-    local classification="${8:-FAILURE}"
+    local p_cat p_sub p_sig s_cat s_sub s_sig classification
+    p_cat=$(_arc_json_escape "$2")
+    p_sub=$(_arc_json_escape "$3")
+    p_sig=$(_arc_json_escape "$4")
+    s_cat=$(_arc_json_escape "$5")
+    s_sub=$(_arc_json_escape "$6")
+    s_sig=$(_arc_json_escape "$7")
+    classification=$(_arc_json_escape "${8:-FAILURE}")
     mkdir -p "${dir}/.claude"
     cat > "${dir}/.claude/LAST_FAILURE_CONTEXT.json" <<EOF
 {
@@ -114,14 +134,15 @@ EOF
 # scenarios (S4.4, S6.4).
 _arc_write_v1_failure_context() {
     local dir="$1"
-    local classification="$2"
-    local cat="$3"
-    local sub="$4"
+    local classification category sub
+    classification=$(_arc_json_escape "$2")
+    category=$(_arc_json_escape "$3")
+    sub=$(_arc_json_escape "$4")
     mkdir -p "${dir}/.claude"
     cat > "${dir}/.claude/LAST_FAILURE_CONTEXT.json" <<EOF
 {
   "classification": "${classification}",
-  "category": "${cat}",
+  "category": "${category}",
   "subcategory": "${sub}"
 }
 EOF

@@ -31,9 +31,6 @@ Since this is a batch run, make your best assessment based on the seed
 description and codebase analysis. State your assumptions explicitly.
 {{ENDIF:DRAFT_SEED_DESCRIPTION}}
 
-{{IF:DRAFT_SEED_DESCRIPTION}}
-{{ENDIF:DRAFT_SEED_DESCRIPTION}}
-
 If no seed description was provided, analyze the project state (open
 non-blocking notes, recent milestones, TODO items) to identify the most
 valuable next milestone(s).
