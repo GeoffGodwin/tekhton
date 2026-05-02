@@ -18,6 +18,7 @@ tekhton/
 │   ├── common.sh           # Colors, logging, prerequisite checks
 │   ├── config.sh           # Config loader + validation
 │   ├── config_defaults.sh  # Default values for all config keys
+│   ├── config_defaults_ci.sh # M138 runtime CI environment auto-detection helpers
 │   ├── agent.sh            # Agent wrapper, metrics, run_agent()
 │   ├── agent_helpers.sh    # Agent invocation helpers
 │   ├── agent_monitor.sh    # Agent monitoring, activity detection, process management
@@ -29,9 +30,11 @@ tekhton/
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── finalize.sh         # Hook-based finalization sequence
 │   ├── finalize_commit.sh  # Commit hook + _do_git_commit helpers
+│   ├── finalize_aux.sh     # Aux finalize hooks (express, baseline, M129 reset)
 │   ├── finalize_dashboard_hooks.sh # Dashboard/causal-log/TUI finalize hooks
 │   ├── finalize_display.sh # Completion banner + action items
 │   ├── finalize_summary.sh # RUN_SUMMARY.json emitter
+│   ├── finalize_summary_collectors.sh # M132 RUN_SUMMARY enrichment collectors (causal/build-fix/recovery/preflight-ui)
 │   ├── finalize_version.sh # Project version bump finalize hooks
 │   ├── project_version.sh  # Target-project version file detection
 │   ├── project_version_bump.sh # Version bump logic + file writes
@@ -66,7 +69,10 @@ tekhton/
 │   ├── milestone_split_nullrun.sh # Null-run auto-split handler
 │   ├── orchestrate.sh      # Outer orchestration loop (--complete)
 │   ├── orchestrate_helpers.sh  # Orchestration support functions
+│   ├── orchestrate_state_save.sh # _save_orchestration_state + recovery-block glue
 │   ├── orchestrate_recovery.sh # Failure classification + recovery
+│   ├── orchestrate_recovery_causal.sh # M130 causal-context loader + retry guards
+│   ├── orchestrate_recovery_print.sh  # M94/M130 inline recovery block printer
 │   ├── clarify.sh          # Clarification protocol + replan trigger
 │   ├── specialists.sh      # Specialist review framework
 │   ├── metrics.sh          # Run metrics collection + adaptive calibration
@@ -103,8 +109,14 @@ tekhton/
 │   ├── dashboard_parsers.sh   # Dashboard data parsers
 │   ├── diagnose.sh         # Pipeline diagnostics engine
 │   ├── diagnose_helpers.sh # Diagnostic helper functions
-│   ├── diagnose_output.sh  # Diagnostic output formatting
+│   ├── diagnose_output.sh  # Diagnostic output formatting (writer, report)
+│   ├── diagnose_output_extra.sh # Crash first-aid + dashboard-diagnosis (M129)
 │   ├── diagnose_rules.sh   # Diagnostic rule definitions
+│   ├── diagnose_rules_extra.sh # Secondary diagnostic rules
+│   ├── diagnose_rules_migration.sh # Migration & version-mismatch rules
+│   ├── diagnose_rules_resilience.sh # M133 resilience-arc primary rules
+│   ├── diagnose_rules_resilience_preflight.sh # M131/M133 preflight-config rule (extracted)
+│   ├── failure_context.sh  # M129 primary/secondary cause slot helpers
 │   ├── express.sh          # Express mode (zero-config execution)
 │   ├── express_persist.sh  # Express mode configuration persistence
 │   ├── dry_run.sh          # Dry-run preview mode
@@ -168,16 +180,21 @@ tekhton/
 │   ├── quota_sleep.sh      # M124 chunked-sleep helper for enter_quota_pause
 │   ├── quota_probe.sh      # M125 layered probe (version/zero_turn/fallback) + back-off/jitter helpers
 │   ├── error_patterns.sh   # Error pattern registry + classification engine
+│   ├── error_patterns_classify.sh # M127 confidence-based mixed-log classifier + routing decision
 │   ├── preflight.sh        # Pre-flight environment validation
+│   ├── preflight_checks_ui.sh # M131 UI test framework config audit (Playwright/Cypress/Jest/Vitest)
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
 │   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers; run_op uses M113 substage API (M115)
 │   ├── tui_ops_pause.sh    # M124 quota-pause TUI API (tui_enter/update/exit_pause)
-│   └── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
+│   ├── tui_ops_substage.sh # M113 hierarchical substage API (tui_substage_begin/end)
+│   └── tui_liveness.sh     # Atomic status-file writer + sampled sidecar liveness probe
 ├── stages/                 # Stage implementations (sourced by tekhton.sh)
 │   ├── architect.sh        # Pre-stage: Architect audit (conditional)
 │   ├── intake.sh           # Task intake / PM gate
 │   ├── coder.sh            # Scout + Coder + build gate
+│   ├── coder_buildfix.sh   # M127 routing + M128 build-fix continuation loop (sub-stage)
+│   ├── coder_buildfix_helpers.sh  # M128 pure helpers (budget, progress signal, report writer, stats export)
 │   ├── docs.sh             # Docs agent stage (optional, Haiku-powered)
 │   ├── security.sh         # Security review stage
 │   ├── review.sh           # Review loop + rework routing
@@ -454,6 +471,17 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `FINAL_FIX_ENABLED` | Spawn fix agent when TEST_CMD fails in final checks (default: true) |
 | `FINAL_FIX_MAX_ATTEMPTS` | Max fix attempts in final checks before giving up (default: 2) |
 | `FINAL_FIX_MAX_TURNS` | Turn budget per fix attempt in final checks (default: CODER_MAX_TURNS/3) |
+| `BUILD_FIX_ENABLED` | M128. Master toggle for the build-fix continuation loop (default: true) |
+| `BUILD_FIX_MAX_ATTEMPTS` | M128. Max attempts inside the loop. Set to 1 for pre-M128 single-attempt behavior (default: 3) |
+| `BUILD_FIX_BASE_TURN_DIVISOR` | M128. Base turn budget = `EFFECTIVE_CODER_MAX_TURNS / DIVISOR`, floored at 8 (default: 3) |
+| `BUILD_FIX_MAX_TURN_MULTIPLIER` | M128. Upper-bound multiplier × base, expressed as integer percent (100 = 1.0×) (default: 100) |
+| `BUILD_FIX_REQUIRE_PROGRESS` | M128. Halt loop on attempt N≥2 if progress signal is `unchanged` or `worsened` (default: true) |
+| `BUILD_FIX_TOTAL_TURN_CAP` | M128. Cumulative turn budget across all attempts; below the 8-turn floor the loop exits (default: 120) |
+| `BUILD_FIX_REPORT_FILE` | M128. Per-attempt postmortem artifact path (default: `${TEKHTON_DIR}/BUILD_FIX_REPORT.md`) |
+| `BUILD_FIX_CLASSIFICATION_REQUIRED` | M130. Toggle amendment C: build-gate classification-based routing. When true (default), mixed-uncertain classifications retry once then save_exit; when false, always retry. Set to false to revert pre-M130 behavior. (default: true) |
+| `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` | M130. Set to 0 in pipeline.conf to opt out of env-gate recovery retries. Pipeline sets this to 1 when dispatching `retry_ui_gate_env`. (default: not set) |
+| `UI_GATE_ENV_RETRY_ENABLED` | M126. Enable auto-retry with non-interactive env when UI gate times out (default: true) |
+| `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` | M126. Fraction of UI_TEST_TIMEOUT to allow for the non-interactive retry run (0.1–1.0) (default: 0.5) |
 | `TESTER_FIX_ENABLED` | Auto-seed fix run when tester stage tests fail (default: false) |
 | `TESTER_FIX_MAX_DEPTH` | Max recursive fix attempts in tester stage (default: 1) |
 | `TESTER_FIX_OUTPUT_LIMIT` | Max chars of test output in tester fix task string (default: 4000) |
@@ -472,6 +500,10 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `PREFLIGHT_ENABLED` | Toggle pre-flight environment checks (default: true) |
 | `PREFLIGHT_AUTO_FIX` | Allow auto-remediation of safe issues in pre-flight (default: true) |
 | `PREFLIGHT_FAIL_ON_WARN` | Treat pre-flight warnings as failures (default: false) |
+| `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED` | Toggle UI test framework config audit (default: true) |
+| `PREFLIGHT_UI_CONFIG_AUTO_FIX` | Auto-patch Playwright html reporter config (default: true, falls back to `PREFLIGHT_AUTO_FIX` when unset) |
+| `PREFLIGHT_BAK_DIR` | Directory for backups of patched config files (default: ${PROJECT_DIR}/.claude/preflight_bak) |
+| `PREFLIGHT_BAK_RETAIN_COUNT` | M136. Maximum number of backup files to keep in PREFLIGHT_BAK_DIR; 0 = keep all (default: 10) |
 | `DOCS_AGENT_ENABLED` | Toggle optional docs agent stage (default: false) |
 | `DOCS_AGENT_MODEL` | Model for docs agent (default: claude-haiku-4-5-20251001) |
 | `DOCS_AGENT_MAX_TURNS` | Turn budget for docs agent (default: 10) |
@@ -488,6 +520,7 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `DRAFT_MILESTONES_MAX_TURNS` | Turn budget for draft milestones agent (default: 40) |
 | `DRAFT_MILESTONES_AUTO_WRITE` | Skip confirmation prompt before writing (default: false) |
 | `DRAFT_MILESTONES_SEED_EXEMPLARS` | Number of recent milestones shown as format examples (default: 3) |
+| `INIT_AUTO_PROMPT` | M81. Toggle for the brownfield `--init` auto-prompt block at the end of the report banner. Gated on TTY check; only fires when stdin and stdout are both attached to a terminal (default: false) |
 | `TUI_ENABLED` | TUI sidecar: auto (on interactive TTY + venv), true, or false (default: auto) |
 | `TUI_TICK_MS` | Sidecar status-file poll interval in ms (default: 500) |
 | `TUI_EVENT_LINES` | Ring-buffer depth of recent events retained for the events panel (default: 60) |

@@ -8,7 +8,13 @@ set -euo pipefail
 #             milestone_dag.sh (has_milestone_manifest, load_manifest, validate_manifest)
 #             config_defaults.sh (all config variables loaded)
 # Provides: validate_config(), validate_config_summary()
+#
+# M136: resilience-arc checks (Check 13) live in lib/validate_config_arc.sh,
+# which is sourced below to keep this file under the 300-line ceiling.
 # =============================================================================
+
+# shellcheck source=lib/validate_config_arc.sh
+source "$(dirname "${BASH_SOURCE[0]}")/validate_config_arc.sh"
 
 # --- Symbol selection (respects NO_COLOR and terminal capabilities) ----------
 
@@ -175,6 +181,9 @@ validate_config() {
         _vc_pass "No stale pipeline state"
         passes=$((passes + 1))
     fi
+
+    # Check 13: Resilience arc config sanity (m136)
+    _vc_check_resilience_arc
 
     echo ""
     echo "${passes} passed, ${warnings} warnings, ${errors} errors"

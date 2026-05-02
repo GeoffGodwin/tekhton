@@ -61,11 +61,11 @@ def _build_timings_panel(status: dict[str, Any]) -> Panel:
     substage_label = status.get("current_substage_label") or ""
 
     grid = Table.grid(padding=(0, 1))
-    # Label column wraps onto additional lines for long substage breadcrumbs
-    # (e.g. "wrap-up » running final static analyzer") so the time/turns
-    # columns are never pushed off-screen. With no_wrap=True the long label
-    # used to take all available width and squash the right columns to "1…",
-    # making the timings unreadable.
+    # Long substage breadcrumbs (e.g. "wrap-up » running final static analyzer")
+    # are truncated by the row builder before they reach the grid; that's the
+    # primary mechanism keeping the time/turns columns on-screen. The
+    # no_wrap=False, overflow="fold" pair is the backstop that wraps any
+    # remaining over-width label rather than squashing the right columns.
     grid.add_column(no_wrap=False, overflow="fold")
     grid.add_column(no_wrap=True, justify="right")
     grid.add_column(no_wrap=True, justify="right")

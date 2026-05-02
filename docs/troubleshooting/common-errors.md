@@ -70,6 +70,66 @@ Options:
 - Fix remaining issues manually and resume: `tekhton --start-at tester "..."`
 - Check if the reviewer's role definition is too strict for the task
 
+### "UI tests timed out with interactive report serving"
+
+**Symptom.** The UI test phase of the build gate fails after `UI_TEST_TIMEOUT`
+seconds and the captured output contains:
+
+```
+Serving HTML report at http://localhost:9323
+Press Ctrl+C to quit.
+```
+
+The exit code is `124`. This means the command finished its tests but stayed
+alive serving the HTML report — Playwright's default behavior when run outside
+CI mode.
+
+**Automatic recovery.** Tekhton classifies this as the `interactive_report`
+timeout class. M54 registry remediation and the generic flakiness retry are
+both skipped (they would just hang again). A single hardened rerun is performed
+with `PLAYWRIGHT_HTML_OPEN=never` and `CI=1` injected via `env(1)` at a reduced
+timeout (`UI_GATE_ENV_RETRY_TIMEOUT_FACTOR`, default `0.5 × UI_TEST_TIMEOUT`).
+On success, the gate logs `UI tests passed after deterministic reporter
+hardening.` and clears the error files.
+
+**Permanent fix.** When the hardened rerun also fails, both `BUILD_ERRORS.md`
+and `UI_TEST_ERRORS.md` contain a `## UI Gate Diagnosis` section pointing here.
+Configure the gate to disable report serving by either:
+
+- Adding `--reporter=line` (or another non-HTML reporter) to `UI_TEST_CMD` in
+  `pipeline.conf`.
+- Setting `reporter: [['html', { open: 'never' }]]` in your project's
+  `playwright.config.{ts,js}`.
+- Exporting `PLAYWRIGHT_HTML_OPEN=never` in the CI environment.
+
+To suppress the hardened rerun entirely, set `UI_GATE_ENV_RETRY_ENABLED=false`
+in `pipeline.conf`; the gate will still classify the failure and emit
+diagnosis, but it will not perform the rerun.
+
+### "Build errors classified as unknown_only"
+
+**Symptom.** The build gate fails and the run log shows
+`Build-fix routing decision: unknown_only`. `BUILD_ERRORS.md` contains output
+that did not match any signature in the M53 error-pattern registry — usually a
+new tool, a custom error format, or output that was scrambled by ANSI/progress
+artifacts.
+
+**Automatic recovery.** The pipeline still runs the bounded build-fix coder
+once on the unknown_only path (this preserves the pre-M127 fallback). If that
+attempt fails, the gate exits with `build_failure` state saved.
+
+**Manual triage.** Open `BUILD_ERRORS.md` and look at `## Full Analyze Output`
+or `## Full Compile Output`. If the failure root cause is a recognizable
+pattern (missing dependency, environment problem, service down) that the
+registry doesn't yet know about, add it to
+`lib/error_patterns_registry.sh` so future runs route correctly. Otherwise,
+fix the underlying issue manually and re-run.
+
+If the run log shows `Build-fix routing decision: noncode_dominant` instead,
+the gate skipped build-fix entirely because the signal was pure environment.
+Check `HUMAN_ACTION_REQUIRED.md` for the diagnosis and remediate the
+environment before re-running.
+
 ### "Agent null run detected"
 
 The agent used very few turns and produced no meaningful output. Common causes:

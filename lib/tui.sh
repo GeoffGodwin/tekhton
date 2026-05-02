@@ -23,6 +23,8 @@ source "${TEKHTON_HOME}/lib/tui_ops.sh"
 
 # shellcheck source=lib/tui_ops_substage.sh
 source "${TEKHTON_HOME}/lib/tui_ops_substage.sh"
+# shellcheck source=lib/tui_liveness.sh
+source "${TEKHTON_HOME}/lib/tui_liveness.sh"
 
 # --- Activation state --------------------------------------------------------
 
@@ -136,6 +138,7 @@ _tui_kill_stale() {
     local stale_pid
     stale_pid=$(cat "$pidfile" 2>/dev/null) || return 0
     [[ -n "$stale_pid" ]] || return 0
+    [[ "$stale_pid" =~ ^[1-9][0-9]*$ ]] || return 0
     if kill -0 "$stale_pid" 2>/dev/null; then
         kill "$stale_pid" 2>/dev/null || true
         for _ in 1 2 3 4 5; do
@@ -207,6 +210,7 @@ tui_stop() {
         target_pid=$(cat "$pidfile" 2>/dev/null) || target_pid=""
     fi
     _TUI_ACTIVE=false
+    [[ "$target_pid" =~ ^[1-9][0-9]*$ ]] || target_pid=""
     if [[ -n "$target_pid" ]] && kill -0 "$target_pid" 2>/dev/null; then
         kill "$target_pid" 2>/dev/null || true
         for _ in 1 2 3 4 5; do
@@ -218,8 +222,12 @@ tui_stop() {
     fi
     _TUI_PID=""
     rm -f "$pidfile" 2>/dev/null || true
-    # Safety net: restore terminal state if the sidecar exited without
-    # cleaning up (e.g. SIGKILL before rich could send RMCUP / cnorm).
+}
+
+# _tui_restore_terminal — Recover terminal state if rich crashed before
+# clean-up. Owned by tekhton.sh's EXIT trap; kept out of tui_stop so tests
+# that source this file can't leak escape sequences to the parent's TTY.
+_tui_restore_terminal() {
     tput rmcup 2>/dev/null || true
     tput cnorm 2>/dev/null || true
     stty icrnl 2>/dev/null || true
@@ -270,26 +278,4 @@ tui_set_context() {
         shift "$#"
     fi
     _TUI_STAGE_ORDER=("$@")
-}
-
-# --- Atomic status file writer -----------------------------------------------
-
-_tui_write_status() {
-    [[ -z "$_TUI_STATUS_FILE" ]] && return 0
-    # Batched-write suppression: callers that issue multiple state mutations
-    # in sequence (e.g. tui_stage_end auto-closing a substage) bump the
-    # counter before the first mutation and decrement after, producing a
-    # single coherent write instead of one per mutation.
-    (( ${_TUI_SUPPRESS_WRITE:-0} > 0 )) && return 0
-    local now elapsed
-    now=$(date +%s)
-    elapsed=$(( now - _TUI_PIPELINE_START_TS ))
-
-    # Ensure parent directory exists before attempting to write
-    local parent_dir
-    parent_dir=$(dirname "$_TUI_STATUS_TMP")
-    [[ ! -d "$parent_dir" ]] && return 0
-
-    _tui_json_build_status "$elapsed" >"$_TUI_STATUS_TMP" 2>/dev/null || return 0
-    mv -f "$_TUI_STATUS_TMP" "$_TUI_STATUS_FILE" 2>/dev/null || true
 }

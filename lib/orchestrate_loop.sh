@@ -197,6 +197,11 @@ _handle_pipeline_failure() {
 
     local recovery
     recovery=$(_classify_failure)
+    # M132: capture the route for every recovery action so RUN_SUMMARY.json's
+    # recovery_routing.route_taken reflects the final routing decision (not
+    # only the m130 retry_ui_gate_env case branch). Case branches below may
+    # specialize this to a more specific token (e.g., "split_escalated").
+    _ORCH_RECOVERY_ROUTE_TAKEN="$recovery"
     log_decision "Recovery: ${recovery}" "failure class ${AGENT_ERROR_CATEGORY:-unknown}/${AGENT_ERROR_SUBCATEGORY:-unknown}" ""
 
     case "$recovery" in
@@ -208,8 +213,26 @@ _handle_pipeline_failure() {
             fi
             MAX_REVIEW_CYCLES=$(( MAX_REVIEW_CYCLES + 2 ))
             _ORCH_REVIEW_BUMPED=true
+            _ORCH_RECOVERY_ROUTE_TAKEN="bump_review"
             warn "Bumping MAX_REVIEW_CYCLES to ${MAX_REVIEW_CYCLES} (one-time)"
             START_AT="review"
+            return 0
+            ;;
+        retry_ui_gate_env)
+            # M130: re-run from coder stage with TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
+            # so M126's framework-detection Priority 0 hook forces the hardened env
+            # profile on the next gate run. _classify_failure only returns this
+            # branch when the user has not opted out via pipeline.conf and the
+            # _ORCH_ENV_GATE_RETRIED guard has not yet fired. Setting the guard
+            # here (parent shell) is what prevents an infinite loop on the next
+            # iteration — _classify_failure runs in a `recovery=$(...)` subshell
+            # so its own mutations would be lost.
+            _ORCH_ENV_GATE_RETRIED=1
+            _ORCH_RECOVERY_ROUTE_TAKEN="retry_ui_gate_env"
+            export TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
+            warn "Retrying from coder stage with non-interactive UI gate env (M130)."
+            # shellcheck disable=SC2034  # global used by loop iteration
+            START_AT="coder"
             return 0
             ;;
         retry_coder_build)
@@ -219,6 +242,13 @@ _handle_pipeline_failure() {
                 return 11
             fi
             _ORCH_BUILD_RETRIED=true
+            _ORCH_RECOVERY_ROUTE_TAKEN="retry_coder_build"
+            # M130: track mixed_uncertain retries separately so a second
+            # mixed-class failure routes save_exit even if some other branch
+            # resets _ORCH_BUILD_RETRIED first (defense-in-depth).
+            if [[ "${LAST_BUILD_CLASSIFICATION:-}" = "mixed_uncertain" ]]; then
+                _ORCH_MIXED_BUILD_RETRIED=1
+            fi
             warn "Retrying from coder stage with build errors context."
             # shellcheck disable=SC2034  # global used by loop iteration
             START_AT="coder"
@@ -232,9 +262,11 @@ _handle_pipeline_failure() {
                && [[ "$_ORCH_CONSECUTIVE_MAX_TURNS" -gt 0 ]] \
                && _can_escalate_further; then
                 _apply_turn_escalation "$_ORCH_CONSECUTIVE_MAX_TURNS"
+                _ORCH_RECOVERY_ROUTE_TAKEN="split_escalated"
                 START_AT="${_ORCH_MAX_TURNS_STAGE:-coder}"
                 return 0
             fi
+            _ORCH_RECOVERY_ROUTE_TAKEN="split"
             warn "Split/continuation exhausted. Saving state."
             _save_orchestration_state "split_exhausted" "Turn exhaustion or null run after recovery attempts"
             return 11
@@ -242,6 +274,7 @@ _handle_pipeline_failure() {
         save_exit|*)
             # Unclassified, upstream sustained, environment, pipeline internal,
             # REPLAN_REQUIRED — all save state and exit.
+            _ORCH_RECOVERY_ROUTE_TAKEN="save_exit"
             local reason="${AGENT_ERROR_CATEGORY:-unclassified}/${AGENT_ERROR_SUBCATEGORY:-unknown}"
             if [[ "${VERDICT:-}" = "REPLAN_REQUIRED" ]]; then
                 reason="replan_required"

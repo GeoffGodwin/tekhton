@@ -1,30 +1,26 @@
 # Docs Agent Report
 
-## Analysis
-
-Reviewed the coder's changes to the TUI Stage Timings panel truncation fix.
-
-### Changes Made
-- **`tools/tui_render_common.py`**: Extracted `_truncate(s, limit)` helper function (private, starts with underscore)
-- **`tools/tui_render.py`**: Refactored to import `_truncate` from `tui_render_common` instead of defining it locally
-- **`tools/tui_render_timings.py`**: Applied truncation to stage labels via the new `_LABEL_MAX_CHARS = 32` constant
-
-### Public-Surface Impact
-**None.** These are internal implementation details in the Python renderer layer:
-- `_truncate` and `_LABEL_MAX_CHARS` are private (prefixed with `_`)
-- No CLI flags added or changed
-- No config keys added or changed
-- No JSON schema changes
-- No exported function signatures changed
-- The truncation is a visual UX improvement in the TUI; no behavioral API change
-
-### Documentation Review
-- **README.md**: No updates needed — documents user-facing features only
-- **docs/** directory: Searched all markdown files — none document internal Python renderer helpers
-- **docs/tui-lifecycle-model.md** (TUI-specific docs): Covers lifecycle and ownership model; internal refactoring doesn't affect its content
-
 ## Files Updated
-None — no documentation updates needed.
+None.
 
-## Conclusion
-The coder's assessment is correct: this is a pure refactoring of internal TUI renderer code with no public-surface changes. Documentation is already accurate.
+## No Update Needed
+
+This run implements a defensive observability fix (liveness probe for TUI sidecar)
+that consists entirely of internal refactoring:
+
+- `lib/tui_liveness.sh` (NEW) — internal utility, sourced by `lib/tui.sh`
+- `_tui_check_sidecar_liveness` — internal sampled probe (no exported function)
+- `_tui_write_status` — moved from `lib/tui.sh` to `lib/tui_liveness.sh` (internal)
+- Per-iteration `out_reset_pass` + `tui_reset_for_next_milestone` calls in
+  `_run_human_complete_loop` (internal control flow)
+
+**No public-surface changes:** No new CLI flags, configuration keys, exported
+functions, or API signatures. The user sees no change in behavior — the fix is
+transparent. From the user's perspective, the TUI sidecar now gracefully detects
+its own death and emits a `warn` line instead of silently failing.
+
+Documentation (`README.md`, `docs/`) remains accurate. The `.sh` files already
+document their own internals in header comments.
+
+## Open Questions
+None.

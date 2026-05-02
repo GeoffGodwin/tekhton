@@ -141,3 +141,42 @@ _collect_agent_log_tails() {
         _DIAG_AGENT_LOG_TAILS="${_DIAG_AGENT_LOG_TAILS}$(tail -20 "$logfile" 2>/dev/null || true)"$'\n'
     done <<< "$latest_logs"
 }
+
+# --- v2 cause-block parser (M129) -------------------------------------------
+# Line-based parser for the multi-line nested cause objects in
+# LAST_FAILURE_CONTEXT.json. Mirrors m130's _load_failure_cause_context — both
+# rely on the writer's pretty-print contract: one inner key per line, the
+# block opening with `"primary_cause": {` (or secondary) and closing with `}`.
+# Avoids `jq` so callers without jq still work.
+#
+# _diag_parse_cause_block FILE BLOCK_KEY OUT_CAT OUT_SUB OUT_SIG OUT_SRC
+_diag_parse_cause_block() {
+    local file="$1" block_key="$2"
+    local _out_cat="$3" _out_sub="$4" _out_sig="$5" _out_src="$6"
+    local cat="" sub="" sig="" src="" inside=0
+    local line key val
+    while IFS= read -r line; do
+        if (( inside == 0 )); then
+            if [[ "$line" =~ \"${block_key}\"[[:space:]]*:[[:space:]]*\{ ]]; then
+                inside=1
+            fi
+            continue
+        fi
+        if [[ "$line" =~ ^[[:space:]]*\} ]]; then
+            inside=0
+            break
+        fi
+        key=$(printf '%s' "$line" | grep -oP '"\K[a-z_]+(?=")' | head -1 || true)
+        val=$(printf '%s' "$line" | grep -oP '"[a-z_]+"\s*:\s*"\K[^"]*' | head -1 || true)
+        case "$key" in
+            category)    cat="$val" ;;
+            subcategory) sub="$val" ;;
+            signal)      sig="$val" ;;
+            source)      src="$val" ;;
+        esac
+    done < "$file"
+    printf -v "$_out_cat" '%s' "$cat"
+    printf -v "$_out_sub" '%s' "$sub"
+    printf -v "$_out_sig" '%s' "$sig"
+    printf -v "$_out_src" '%s' "$src"
+}

@@ -54,6 +54,8 @@ service-account*.json
 .claude/tui_sidecar.pid
 .claude/worktrees/
 .claude/settings.local.json
+.claude/HEALTH_BASELINE.json
+.tekhton/HEALTH_REPORT.md
 
 # Test artifacts
 /tmp/

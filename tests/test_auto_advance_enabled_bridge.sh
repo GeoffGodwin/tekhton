@@ -79,7 +79,8 @@ AUTO_ADVANCE_ENABLED=false
 export AUTO_ADVANCE_ENABLED
 AUTO_ADVANCE_LIMIT=3
 AUTO_ADVANCE_CONFIRM=false
-_ADVANCE_COUNT=0
+_AA_SESSION_ADVANCES=0
+export _AA_SESSION_ADVANCES
 
 if should_auto_advance 2>/dev/null; then
     echo "FAIL: should_auto_advance should return false when AUTO_ADVANCE_ENABLED=false"
@@ -90,7 +91,8 @@ fi
 # (assuming advance count is within limit and disposition is COMPLETE_AND_CONTINUE)
 AUTO_ADVANCE_ENABLED=true
 export AUTO_ADVANCE_ENABLED
-_ADVANCE_COUNT=0
+_AA_SESSION_ADVANCES=0
+export _AA_SESSION_ADVANCES
 
 # Create a milestone state file with the expected disposition
 cat > "${TMPDIR}/.claude/MILESTONE_STATE.md" <<'STATE_EOF'

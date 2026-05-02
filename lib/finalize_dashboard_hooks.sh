@@ -97,6 +97,22 @@ _hook_failure_context() {
     local exit_code="$1"
     [[ "$exit_code" -eq 0 ]] && return 0
 
+    # M129: opportunistically populate the SECONDARY_* slots from the
+    # symptom-level AGENT_ERROR_* env vars when no stage has set them
+    # explicitly. Goal-2 writer precedence: slot vars > AGENT_ERROR_* > none.
+    # Doing it here means downstream consumers (orchestrate state-file Notes,
+    # writer's alias resolution) all see populated slots even when the failing
+    # stage didn't call set_secondary_cause directly.
+    if declare -f set_secondary_cause &>/dev/null; then
+        if [[ -z "${SECONDARY_ERROR_CATEGORY:-}" ]] && [[ -n "${AGENT_ERROR_CATEGORY:-}" ]]; then
+            set_secondary_cause \
+                "${AGENT_ERROR_CATEGORY:-}" \
+                "${AGENT_ERROR_SUBCATEGORY:-}" \
+                "" \
+                "${CURRENT_STAGE:-unknown}_agent"
+        fi
+    fi
+
     if command -v write_last_failure_context &>/dev/null; then
         local stage="${CURRENT_STAGE:-unknown}"
         local classification="UNKNOWN"

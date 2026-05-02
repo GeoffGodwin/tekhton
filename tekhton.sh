@@ -148,6 +148,12 @@ _tekhton_cleanup() {
     if command -v tui_stop &>/dev/null; then
         tui_stop 2>/dev/null || true
     fi
+    # Restore terminal state only on real interactive exit. Kept out of
+    # tui_stop so tests that source lib/tui.sh do not leak escape sequences
+    # to the parent shell's TTY.
+    if command -v _tui_restore_terminal &>/dev/null; then
+        _tui_restore_terminal 2>/dev/null || true
+    fi
 
     # --- MCP server cleanup: stop Serena if running ----------------------------
     if command -v stop_mcp_server &>/dev/null; then
@@ -644,6 +650,8 @@ if [ "${1:-}" = "--diagnose" ]; then
     source "${TEKHTON_HOME}/lib/causality.sh"
     source "${TEKHTON_HOME}/lib/causality_query.sh"
     source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
+    # M129: load slot helpers before diagnose_output.sh (writer needs them).
+    source "${TEKHTON_HOME}/lib/failure_context.sh"
     source "${TEKHTON_HOME}/lib/diagnose.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
@@ -850,10 +858,12 @@ source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
 source "${TEKHTON_HOME}/lib/preflight.sh"
 source "${TEKHTON_HOME}/lib/preflight_checks.sh"
 source "${TEKHTON_HOME}/lib/preflight_checks_env.sh"
+source "${TEKHTON_HOME}/lib/preflight_checks_ui.sh"
 source "${TEKHTON_HOME}/lib/preflight_services.sh"
 source "${TEKHTON_HOME}/lib/preflight_services_infer.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/gates_phases.sh"
+source "${TEKHTON_HOME}/lib/gates_ui_helpers.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
 source "${TEKHTON_HOME}/lib/gates_completion.sh"
 source "${TEKHTON_HOME}/lib/test_dedup.sh"
@@ -918,6 +928,9 @@ source "${TEKHTON_HOME}/lib/dashboard.sh"
 source "${TEKHTON_HOME}/lib/tui.sh"           # M97 — rich.live sidecar manager (also sources tui_helpers.sh)
 source "${TEKHTON_HOME}/lib/inbox.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
+# M129: failure-context slot helpers must load before diagnose_output.sh so
+# the writer's emit_cause_objects_json / resolve_alias_* helpers exist.
+source "${TEKHTON_HOME}/lib/failure_context.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
 source "${TEKHTON_HOME}/lib/validate_config.sh"
@@ -983,6 +996,13 @@ fi
 
 # --- Ensure Tekhton artifact directory exists --------------------------------
 mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR}" 2>/dev/null || true
+
+# M129: clear any stale failure-context slots inherited from a prior same-shell
+# run. The writer/reader rely on these vars being either empty or set by the
+# current run — never on whatever the previous invocation left behind.
+if declare -f reset_failure_cause_context &>/dev/null; then
+    reset_failure_cause_context
+fi
 
 usage() {
     local exit_code="${1:-0}"
@@ -2183,6 +2203,9 @@ create_run_checkpoint
 # [RESOLVED] items from ${DRIFT_LOG_FILE}, and resolved entries from
 # ${NON_BLOCKING_LOG_FILE} Resolved section. Commit messages already captured what
 # was resolved; these logs don't need to keep them across runs.
+# Merge a stale root-level HUMAN_ACTION_REQUIRED.md into the canonical
+# .tekhton/ location before any cleanup or write logic touches either file.
+consolidate_legacy_human_action
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
 clear_completed_human_notes
@@ -2605,7 +2628,20 @@ _run_human_complete_loop() {
             break
         fi
 
-        # Reset claimed IDs so finalization only resolves the current iteration's note.
+        # Per-pass display reset (matches _run_fix_nonblockers_loop) so the
+        # hold view doesn't carry stale Action Items / current_stage between
+        # notes.
+        if declare -f out_reset_pass &>/dev/null; then
+            out_reset_pass
+        fi
+        # Per-pass TUI reset (matches _run_auto_advance_chain). Zeros
+        # _TUI_AGENT_TURNS_USED and refreshes the status-file mtime so the
+        # Python watchdog's idle-and-stale preconditions cannot accumulate
+        # across the inter-note quiet window (inbox drain, triage, archive
+        # moves, log rotation, threshold checks, quota-probe sleeps).
+        if declare -f tui_reset_for_next_milestone &>/dev/null; then
+            tui_reset_for_next_milestone
+        fi
 
         # Drain any watchtower inbox notes that arrived since the last iteration
         # so they're available to pick_next_note (e.g. notes submitted mid-run).

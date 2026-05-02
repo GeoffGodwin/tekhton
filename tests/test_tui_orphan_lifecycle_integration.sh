@@ -23,6 +23,10 @@ error()       { :; }
 success()     { :; }
 header()      { :; }
 log_verbose() { :; }
+# Defense-in-depth: prevent terminal-restore escape sequences from leaking to
+# the parent shell's TTY when this test runs inside a live tekhton pipeline.
+tput()        { :; }
+stty()        { :; }
 
 # shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/tui.sh"
@@ -105,7 +109,7 @@ python3 "$TEKHTON_HOME/tools/tui.py" \
     --event-lines 10 \
     --watchdog-secs 2 \
     --simple-logo \
-    >/dev/null 2>&1 &
+    </dev/null >/dev/null 2>&1 &
 
 SIDECAR_PID=$!
 
@@ -195,7 +199,7 @@ if [[ "$FAIL" -eq 0 ]]; then
         --event-lines 10 \
         --watchdog-secs 1 \
         --simple-logo \
-        >/dev/null 2>&1 &
+        </dev/null >/dev/null 2>&1 &
 
     WATCHDOG_PID=$!
     echo "$WATCHDOG_PID" > "$PROJECT_DIR/.claude/tui_sidecar.pid"

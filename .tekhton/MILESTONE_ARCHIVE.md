@@ -30517,3 +30517,6691 @@ Update `CLAUDE.md` template-variable table to add
 - Surfacing the pause state to `RUN_SUMMARY.json` beyond the
   existing `quota_pause` stats. `format_quota_pause_summary`
   already covers post-run reporting.
+
+---
+
+## Archived: 2026-04-25 — Unknown Initiative
+
+# M125 - Quota Pause Refresh Accuracy & Probe Budget
+
+<!-- milestone-meta
+id: "125"
+status: "done"
+-->
+
+## Overview
+
+Issue #180 surfaces three correctness defects in the quota-pause
+subsystem that are independent of the TUI-visibility fix in M124.
+Even with the pause fully observable, a user can still end up with a
+failed run because:
+
+1. **`QUOTA_MAX_PAUSE_DURATION` default (4h, 14400s) is shorter than
+   Anthropic's 5h rolling usage window.** When a Claude Pro/Max
+   subscription hits the cap, the quota refreshes on a rolling 5h
+   window. `lib/quota.sh:107` gives up at 4h, so a legitimate refresh
+   one hour later never gets attempted — the pause exits with
+   `AGENT_ERROR_CATEGORY=UPSTREAM`, `AGENT_ERROR_SUBCATEGORY=quota_exhausted`,
+   and the run dies having burned four hours of wall-clock time.
+
+2. **`_quota_probe` itself consumes quota.** `lib/quota.sh:140` runs
+   `claude --max-turns 1 --output-format json -p "respond with OK"`
+   every `QUOTA_RETRY_INTERVAL` seconds. Each probe generates a few
+   tokens of input + output that count against the rolling window. On
+   a just-refreshed quota that's sitting right at the cap boundary,
+   one probe can push it right back over — the probe succeeds, the
+   pipeline resumes, the first real agent call hits the cap again,
+   and the pause re-enters. In the worst case the probe cadence
+   prevents the quota from ever settling below the threshold.
+
+3. **`Retry-After` headers from the original rate-limit error are
+   parsed but never propagated to the pause loop.**
+   `lib/agent_retry.sh:210-221` extracts a `"retry_after":N` value
+   from `agent_last_output.txt` when the error subcategory is
+   `api_rate_limit`, but that path only applies to transient-retry
+   delays — not to `enter_quota_pause`. The pause loop always uses
+   the flat `QUOTA_RETRY_INTERVAL` (default 300s), even when
+   Anthropic's own response told us exactly when the quota resets.
+   First probe fires at 5 minutes regardless of whether the server
+   said "retry in 47 minutes".
+
+M125 is the correctness pass. It matches the pause window to the
+real refresh window, lowers the probe's token cost to near-zero, and
+threads the `Retry-After` signal from the initial error through to
+the first probe's scheduling so the pause actually respects
+upstream's explicit guidance.
+
+M125 depends on M124 semantically: the `tui_update_pause` countdown
+from M124 will show the correct "next probe in Nm" number only once
+M125's Retry-After propagation lands. Land M124 first so the
+visibility exists to validate M125's timing behaviour by eye.
+
+## Design
+
+### Goal 1 — Match `QUOTA_MAX_PAUSE_DURATION` to the 5h rolling window
+
+Change the default in `lib/config_defaults.sh:261` from `14400` (4h)
+to `18900` (5h 15m). The extra 15-minute buffer handles clock skew
+between the local machine and Anthropic's quota-reset edge plus
+natural drift between when the pause starts and when the window
+anchor was set server-side.
+
+The existing `_clamp_config_value QUOTA_MAX_PAUSE_DURATION 86400`
+(24h upper bound) stays. Users who want a stricter cap can still set
+a lower value in `pipeline.conf`; only the built-in default shifts.
+
+Update `CLAUDE.md`'s template-variable table row for
+`QUOTA_MAX_PAUSE_DURATION` to reflect the new default
+(`18900` / 5h 15m) and note that the value should match the
+upstream quota window.
+
+Add a log line at pause entry that tells the user up front how long
+the pause can last in plain English, rather than a raw seconds
+count: `"Pipeline paused — <reason>. Waiting up to 5h15m for quota
+refresh (probing every 5m)."`. Format the durations via the
+existing `_fmt_duration` helper in `lib/common.sh` (or a local
+bash equivalent if that helper lives in Python-only code — grep
+first).
+
+### Goal 2 — Make `_quota_probe` cost (effectively) zero tokens
+
+The current probe in `lib/quota.sh:134-154` invokes a real
+`claude -p "respond with OK"` call that generates input + output
+tokens. Replace it with a layered probe that tries cheap options
+first and only falls back to the real call when necessary.
+
+Preferred order, each gated behind a feature-detection check:
+
+1. **One-time local sanity check.** Before selecting an actual probe
+  mode, invoke `timeout 10 claude --version` once at pause entry.
+  This completes without authenticating against the API at all — it
+  exits 0 if the binary is present and runnable. It is explicitly
+  **not** a quota probe and must never resume the pipeline by
+  itself; its only purpose is to distinguish local CLI breakage
+  (`claude` binary removed, PATH broken) from quota exhaustion.
+
+2. **Empty-prompt probe.** Invoke `timeout 10 claude --max-turns 0
+   --output-format text -p ""` (or the nearest equivalent depending
+   on the installed CLI version — test via `claude --help | grep`
+   at startup to detect support). `--max-turns 0` forbids any tool
+   turn from executing; the call either exits with a structural
+   "nothing to do" message at ~zero tokens, or returns the same
+   rate-limit error as a real call. Either way, quota state is
+   observable without burning meaningful budget.
+
+3. **Current path as fallback.** If (2) is unsupported by the
+   supported by the installed CLI version, keep the existing
+   `claude --max-turns 1 -p "respond with OK"` flow but cap the
+   probe to once every `QUOTA_PROBE_MIN_INTERVAL` seconds
+   (default 600s = 10m) regardless of `QUOTA_RETRY_INTERVAL`, so
+   the probe cost can never dominate the paused budget even on
+   old CLIs.
+
+The one-time `claude --version` sanity result is logged separately and
+never stored as a probe mode. Actual probe-mode detection runs once per
+pipeline invocation at first pause and caches the result in
+`_QUOTA_PROBE_MODE` (values: `zero_turn` / `fallback`). Log the chosen
+mode once at info level so operators can confirm whether their CLI is
+on a cheap probe path.
+
+If `is_rate_limit_error` on the probe's stderr returns true, the
+probe correctly concludes "still exhausted" regardless of which
+mode it used. If the probe exits 0 (zero-turn mode) or exits non-zero
+with a non-rate-limit error (also zero-turn mode), treat quota as
+possibly-available and let the pipeline do one real attempt — which
+either succeeds or re-enters `enter_quota_pause` with the fresh
+`Retry-After` header parsed by the next path. A successful
+`claude --version` check alone is never evidence that quota refreshed.
+
+Add a new config key `QUOTA_PROBE_MIN_INTERVAL` to
+`lib/config_defaults.sh` (default 600, clamped to 3600 upper
+bound). Keep `QUOTA_RETRY_INTERVAL` as the wake-up / countdown
+cadence; introduce the probe cadence as a separate knob so the
+TUI can display a live countdown on `QUOTA_RETRY_INTERVAL` without
+those wake-ups necessarily triggering a real probe.
+
+### Goal 3 — Propagate `Retry-After` from the original error
+
+`lib/agent_retry.sh:210-221` already extracts a Retry-After numeric
+value from `agent_last_output.txt` when the error subcategory is
+`api_rate_limit`. M125 makes that value visible to the quota pause.
+
+Extract the parsing into a reusable helper in
+`lib/agent_retry.sh`:
+
+```bash
+# _extract_retry_after_seconds SESSION_DIR
+# Returns 0 with the number of seconds to stdout, or 1 if not found.
+_extract_retry_after_seconds() {
+    local session_dir="$1"
+    local out="${session_dir}/agent_last_output.txt"
+    local err="${session_dir}/agent_stderr.txt"
+    local secs=""
+    for f in "$out" "$err"; do
+        [[ -f "$f" ]] || continue
+        secs=$(grep -oiE '"?retry.after"?[[:space:]]*:[[:space:]]*"?[0-9]+"?' "$f" 2>/dev/null \
+               | grep -oE '[0-9]+' | head -1)
+        [[ -n "$secs" ]] && break
+    done
+    if [[ -n "$secs" ]] && [[ "$secs" =~ ^[0-9]+$ ]]; then
+        echo "$secs"
+        return 0
+    fi
+    return 1
+}
+```
+
+Note the helper also checks `agent_stderr.txt` — the CLI sometimes
+logs Retry-After to stderr rather than the structured JSON output,
+depending on the error mode. The existing `_should_retry_transient`
+call site keeps working with the unchanged regex and falls back on
+the helper's return value.
+
+In `lib/agent_retry.sh` at the rate-limit branch (lines 74-97),
+compute `_retry_after` before calling `enter_quota_pause` and pass
+it through:
+
+```bash
+if is_rate_limit_error "$_RWR_EXIT" "$_stderr_path"; then
+    local _ra=""
+    _ra=$(_extract_retry_after_seconds "$session_dir" || true)
+    if command -v enter_quota_pause &>/dev/null; then
+        warn "[$label] Rate limit detected — entering quota pause."
+        if enter_quota_pause "Rate limited (agent: ${label})" "$_ra"; then
+            ...
+```
+
+Change `enter_quota_pause`'s signature to accept an optional
+second argument: `retry_after_seconds`. Default is empty (current
+behaviour). Inside the function:
+
+- If `retry_after_seconds` is present and numeric, clamp it to
+  `[1, QUOTA_MAX_PAUSE_DURATION]` when the chosen probe mode is the
+  cheap `zero_turn` path, and to
+  `[QUOTA_PROBE_MIN_INTERVAL, QUOTA_MAX_PAUSE_DURATION]` only when the
+  chosen probe mode is the quota-spending `fallback` path. Then sleep
+  for that duration before the first probe instead of
+  `QUOTA_RETRY_INTERVAL`.
+- After the first Retry-After-scheduled probe, if it still reports
+  exhausted, fall back to the normal `QUOTA_RETRY_INTERVAL` cadence
+  for subsequent probes.
+- Log the decision at info level: `"Anthropic said retry in
+  <HHh MMm> — waiting that long before first probe."`
+- Forward the value to `tui_enter_pause` as a fourth argument
+  (`first_probe_delay`) so M124's countdown starts at the right
+  number rather than the default interval.
+
+Tests in `tests/test_quota.sh`:
+
+- `test_extract_retry_after_parses_json_output` — write a fixture
+  JSON with `"retry_after": 47` to a temp session dir, assert the
+  helper returns `47`.
+- `test_extract_retry_after_parses_stderr_message` — fixture with
+  plain text `Rate limited. Retry after 180 seconds.` on stderr,
+  assert the helper returns `180` (update regex if needed).
+- `test_enter_quota_pause_honours_retry_after` — stub `_quota_probe`
+  to track wall-clock between calls, invoke with `retry_after=8`,
+  `QUOTA_PROBE_MIN_INTERVAL=1`, and `QUOTA_RETRY_INTERVAL=2`,
+  assert the first probe fires ~8s later, the second ~2s after
+  that.
+- `test_enter_quota_pause_clamps_retry_after_floor` — stub, invoke
+  with `retry_after=1`, `QUOTA_PROBE_MIN_INTERVAL=5`, and forced
+  `fallback` mode, assert the first probe waits at least 5s.
+
+### Goal 4 — Probe back-off with jitter
+
+With Retry-After guiding the first probe, subsequent probes still
+fire on `QUOTA_RETRY_INTERVAL`. If the first probe fails (quota
+still exhausted), replace flat cadence with mild exponential
+back-off, capped so the TUI countdown remains predictable:
+
+- Probe 1: `Retry-After` (if present) or `QUOTA_RETRY_INTERVAL`.
+- Probe 2: `QUOTA_RETRY_INTERVAL`.
+- Probe 3: `min(QUOTA_RETRY_INTERVAL * 1.5, QUOTA_PROBE_MAX_INTERVAL)`.
+- Probe N (N>3): same formula applied to the previous delay.
+
+Add `QUOTA_PROBE_MAX_INTERVAL` to `lib/config_defaults.sh` with a
+default of 1800 (30 minutes, half the pre-M125 flat cadence cap)
+and a clamp bound of 3600.
+
+Add ±10% uniform jitter on each computed delay so many pipelines
+refreshing against the same window don't thundering-herd the API.
+Implementation: `_delay=$(( _delay * (90 + RANDOM % 21) / 100 ))`.
+
+Update the `tui_update_pause` call site in `_quota_sleep_chunked`
+(introduced in M124) to pass the next-probe delay from this
+back-off rather than a hardcoded `QUOTA_RETRY_INTERVAL` — so the
+TUI countdown reflects reality across probes.
+
+### Goal 5 — Additional integration tests
+
+One new shell test `tests/test_quota_retry_after_integration.sh`:
+
+1. Stage a fake `claude` shim on PATH that writes a synthetic
+   rate-limit payload with `"retry_after": 6` to the output file
+   on first invocation, then succeeds on the second.
+2. Source `lib/agent.sh` and run a minimal `run_agent` call.
+3. Assert `enter_quota_pause` was entered, the first probe was
+   scheduled ~6s after entry (±2s), the probe succeeded, and
+   `AGENT_ERROR_CATEGORY` is empty on return.
+4. Assert `get_quota_stats_json` reports `pause_count=1` and
+   `total_pause_time_s` within the expected window.
+
+No `tests/run_tests.sh` edit is required; the runner already
+auto-discovers `tests/test_*.sh`.
+
+Expand the existing `tests/test_quota.sh` with:
+
+- `test_probe_mode_detection_prefers_zero_turn` — stub a modern
+  `claude --help` / `--max-turns 0` surface, assert
+  `_QUOTA_PROBE_MODE=zero_turn` after first `_quota_probe` call.
+- `test_probe_mode_fallback_when_flags_unsupported` — stub
+  `claude --help` output without `--max-turns`, assert fallback
+  mode is selected and `QUOTA_PROBE_MIN_INTERVAL` is enforced.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/config_defaults.sh` | Bump `QUOTA_MAX_PAUSE_DURATION` default to 18900 (5h 15m); add `QUOTA_PROBE_MIN_INTERVAL:=600`, `QUOTA_PROBE_MAX_INTERVAL:=1800`; add clamp bounds for both. |
+| `lib/quota.sh` | Accept optional `retry_after_seconds` in `enter_quota_pause`; one-time `claude --version` local sanity check plus layered probe (`zero_turn` → `fallback`) with cached `_QUOTA_PROBE_MODE`; exponential back-off + jitter; forward `first_probe_delay` to `tui_enter_pause`. |
+| `lib/agent_retry.sh` | Extract `_extract_retry_after_seconds` helper (reads both stdout and stderr); pass the value into `enter_quota_pause`. |
+| `tests/test_quota.sh` | Add Retry-After parsing tests, probe-mode detection tests, pause scheduling tests. |
+| `tests/test_quota_retry_after_integration.sh` | **New file.** End-to-end test with a synthetic `claude` shim returning Retry-After payload. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_quota_retry_after_integration.sh` is picked up by filename convention. |
+| `CLAUDE.md` | Update `QUOTA_MAX_PAUSE_DURATION` row; add `QUOTA_PROBE_MIN_INTERVAL`, `QUOTA_PROBE_MAX_INTERVAL` rows. |
+| `docs/tui-lifecycle-model.md` | Note that M124's paused countdown reflects the Retry-After-informed next-probe delay. |
+
+## Acceptance Criteria
+
+- [ ] Default `QUOTA_MAX_PAUSE_DURATION` is 18900s; a paused run
+      with a 4h45m actual refresh delay resumes successfully
+      rather than giving up with `quota_exhausted`.
+- [ ] The pause-entry log line reports the duration in plain
+      English (`5h15m`, `47m`, etc.) rather than raw seconds.
+- [ ] When the original rate-limit error carries a Retry-After
+  value, the first probe fires after that delay, clamped to
+  the fallback-probe floor only when the selected probe mode is
+  `fallback`, and otherwise clamped only by
+  `QUOTA_MAX_PAUSE_DURATION` — verified via the integration
+  test with a synthetic `claude` shim.
+- [ ] When Retry-After is absent, behaviour matches pre-M125:
+      first probe fires at `QUOTA_RETRY_INTERVAL` with no
+      regression.
+- [ ] `_extract_retry_after_seconds` returns the correct value
+      from both `agent_last_output.txt` (JSON form) and
+      `agent_stderr.txt` (plain-text form). Missing / malformed
+      values return non-zero without aborting.
+- [ ] `_quota_probe` selects a probe mode at first use and caches
+  it in `_QUOTA_PROBE_MODE`. On modern Claude CLIs that support
+  `--max-turns 0`, the mode is `zero_turn`; token cost per
+  probe is near-zero. The one-time `claude --version` sanity
+  check never counts as quota evidence or as a probe mode.
+- [ ] Falling back to the pre-M125 `claude -p "respond with OK"`
+      path is rate-limited to at most one call per
+      `QUOTA_PROBE_MIN_INTERVAL` seconds regardless of
+      `QUOTA_RETRY_INTERVAL`.
+- [ ] Subsequent probes (after the Retry-After-scheduled first
+      one) use an exponential back-off with ±10% jitter, capped
+      by `QUOTA_PROBE_MAX_INTERVAL`. Countdown rendered by M124's
+      `tui_update_pause` matches the computed delay within one
+      chunk interval.
+- [ ] M124's paused-bar countdown shows the correct first-probe
+      delay when a Retry-After is present (visual parity test
+      with the synthetic shim).
+- [ ] All existing `tests/test_quota.sh` assertions continue to
+      pass. New tests in `test_quota.sh` and the new
+      `test_quota_retry_after_integration.sh` pass in under 60s.
+- [ ] Shellcheck clean for `lib/quota.sh`, `lib/agent_retry.sh`,
+      and the new integration test.
+- [ ] Running a real pipeline against a quota-exhausted
+      subscription now refreshes on the first natural refresh
+      opportunity (documented manual test: exhaust quota, run
+      Tekhton, confirm resume at the server's retry-after time).
+
+## Non-Goals
+
+- TUI visibility for the pause (stage pill, countdown,
+  watchdog). All of that is M124.
+- Exposing `/usage`-style remaining-quota telemetry. As noted in
+  issue #180, `/usage` is not accessible via the Claude API on
+  subscriptions and is flaky via the CLI. `should_pause_proactively`
+  still depends on users configuring their own
+  `CLAUDE_QUOTA_CHECK_CMD`; M125 does not change that surface.
+- Cross-run quota budgeting (remembering how much was burned in
+  the last N runs to preempt a pause). Belongs to a separate
+  metrics milestone.
+- Migrating `_QUOTA_PAUSE_COUNT` / `_QUOTA_TOTAL_PAUSE_TIME`
+  accounting into `lib/run_memory.sh`. Current in-process globals
+  plus `RUN_SUMMARY.json` emission are sufficient.
+- Adding a `--no-quota-pause` CLI flag that aborts immediately on
+  rate-limit errors. The TUI visibility from M124 plus M125's
+  correct pause duration make that unnecessary; Ctrl-C is the
+  documented abandon path.
+- Rewriting the probe as an HTTP `HEAD` or other non-claude-CLI
+  request. Keeping everything behind `claude` means we don't need
+  separate auth handling or API-key sourcing.
+
+---
+
+## Archived: 2026-04-26 — Unknown Initiative
+
+# M126 - Deterministic UI Gate Execution & Non-Interactive Reporter Control
+
+<!-- milestone-meta
+id: "126"
+status: "done"
+-->
+
+## Overview
+
+The bifl-tracker M03 failure exposed a repeatable gate-level defect:
+`UI_TEST_CMD` can enter a long-lived interactive report server mode
+and never terminate on its own, which causes Tekhton to hit
+`UI_TEST_TIMEOUT` and return exit code 124. In that state, the gate
+knows only that the process timed out; it does not distinguish:
+
+1. Real test execution slowness (legitimate long run), versus
+2. Interactive reporter serving mode (command completed tests but
+   stayed alive waiting for Ctrl+C), versus
+3. Dev-server readiness drift where tests never got to meaningful
+   assertions.
+
+In the failing run, Playwright output included:
+`Serving HTML report at http://localhost:9323. Press Ctrl+C to quit.`
+That line is definitive evidence the command entered an interactive
+tail mode that is incompatible with deterministic build gates.
+
+M126 makes UI gate execution deterministic by design. The gate will:
+
+- Normalize known E2E commands into non-interactive execution mode.
+- Detect interactive-report signatures when timeout still occurs.
+- Re-run once with a hardened, non-interactive command profile.
+- Emit a structured diagnosis when deterministic mode still fails.
+
+This milestone does not redesign full error taxonomy scoring
+(planned for follow-up milestones). It only ensures gate execution
+semantics are deterministic and reproducible so later classification
+and routing layers can reason over stable signal.
+
+## Design
+
+### Goal 1 — Add a deterministic UI gate command normalizer
+
+Add three small helpers in `lib/gates_ui.sh` (or `lib/gates_ui_helpers.sh`
+if the file would otherwise exceed the 300-line ceiling — see
+"Files Modified" note).
+
+```bash
+# _ui_detect_framework
+#   Reads UI_FRAMEWORK, UI_TEST_CMD, and PROJECT_DIR. Echoes one of:
+#   playwright | cypress | selenium | puppeteer | testing-library | detox | none
+#   M126 only branches on `playwright`; other values short-circuit to "none-acting".
+
+# _ui_deterministic_env_list HARDENED?
+#   Echoes zero or more KEY=VALUE lines (one per line) to be passed to `env`
+#   when invoking UI_TEST_CMD. HARDENED=1 forces the most aggressive profile
+#   (used only by the hardened-rerun branch from Goal 3); default is the
+#   normal-run profile.
+
+# _normalize_ui_gate_env HARDENED?
+#   Thin owner hook that materializes the subprocess env list by calling
+#   _ui_deterministic_env_list. Later milestones patch this wrapper for
+#   logging and adapter dispatch; _ui_deterministic_env_list remains the
+#   pure helper that decides which KEY=VALUE lines are emitted.
+```
+
+Normalization rules for this milestone:
+
+1. Preserve configured `UI_TEST_CMD` verbatim as the primary command.
+   M126 does not rewrite arguments or replace reporter flags — env-only
+   hardening avoids package-manager argument-parsing drift.
+2. When `_ui_detect_framework` returns `playwright`, the **normal-run**
+   profile injects:
+   - `PLAYWRIGHT_HTML_OPEN=never` (the single env var that prevents
+     report serving regardless of reporter config)
+3. The **hardened-rerun** profile (HARDENED=1) additionally injects:
+   - `CI=1` (forces non-interactive Playwright behavior in case the
+     project's playwright.config overrides `host: 'open'` directly).
+   `CI=1` is scoped to the hardened rerun only because it changes more
+   than reporter behavior (forces `--forbid-only`, increases default
+   retries) — we want that hammer only when the first deterministic
+   run already failed with an interactive-report signature.
+4. Env injection mechanism — apply env at the `env` boundary so it never
+   mutates the parent shell:
+   ```bash
+   local _env_list=()
+  mapfile -t _env_list < <(_normalize_ui_gate_env)
+   _ui_output=$(run_op "Running UI tests" \
+       env "${_env_list[@]}" timeout "$_ui_timeout" \
+       bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+   ```
+   When `_env_list` is empty, `env` with no `KEY=VAL` args is a no-op
+   passthrough and is safe.
+5. Apply the normal-run env to **every** UI subprocess invocation in
+   `_run_ui_test_phase` — not just the first run. That includes the
+   M54 registry-remediation rerun, the hardened rerun, and the existing
+   generic flakiness retry. The env is purely about reporter mode; no
+   path benefits from omitting it.
+6. Framework-specific command rewrites for Cypress/Detox/etc. are
+   explicitly deferred. They return `none` from `_ui_detect_framework`
+   and behave exactly as today.
+
+> **Extension point — m57 (UI Platform Adapter Framework):**
+> `_normalize_ui_gate_env` is the public owner hook that m57 will extend
+> when Cypress, Selenium, and other frameworks need their own non-interactive
+> env profiles. In M126 it stays thin and delegates the Playwright-specific
+> env selection to `_ui_deterministic_env_list`. In m57's model, each adapter
+> registers its own `_ui_gate_env_<framework>()` function; `_normalize_ui_gate_env`
+> dispatches to the registered adapter or falls back to the Playwright path.
+> **Do not add `if [[ "$framework" == "cypress" ]]` branches here** — use
+> the m57 adapter registration instead.
+
+Framework detection priority (first match wins):
+
+1. `UI_FRAMEWORK=playwright` in config (already validated by
+   `lib/config.sh:188-193`).
+2. `UI_TEST_CMD` matches the regex `(^|[[:space:]/])playwright([[:space:]]|$)`
+   (word-boundary match — avoids false positives on paths like
+   `./test-playwright-helper.sh` or arg substrings).
+3. Presence of `playwright.config.{ts,js,mjs,cjs}` in `$PROJECT_DIR`.
+
+If any of the above match, apply the Playwright deterministic env.
+
+### Goal 2 — Add timeout signature detection for interactive report serving
+
+Add a pure parser helper in `lib/gates_ui.sh` (or the helpers file from
+Goal 1):
+
+```bash
+# _ui_timeout_signature EXIT_CODE OUTPUT
+# Prints one of: interactive_report | generic_timeout | none
+# Pure function — no side effects, no logging. Easy to unit-test directly.
+```
+
+Detection logic (order matters — first match wins):
+
+- If `EXIT_CODE == 124` AND `OUTPUT` contains either of:
+  - `Serving HTML report at`
+  - `Press Ctrl+C to quit`
+  classify as `interactive_report`. The exit-124 guard ensures we only
+  treat this as the pathology when `timeout` actually fired; a normal
+  exit-0 run that printed the same line during shutdown is not the bug
+  we're solving.
+- Else if `EXIT_CODE == 124`, classify as `generic_timeout`.
+- Else `none`.
+
+Call this helper only on the failure path (`_ui_exit != 0`).
+
+### Goal 3 — Deterministic re-run branch, mutually exclusive with generic retry
+
+The existing flow in `lib/gates_ui.sh:42-61` is:
+
+```
+run #1 (raw UI_TEST_CMD)
+  └─ if fail: M54 registry remediation (env_setup auto-fix) → rerun on success
+       └─ if still fail: generic flakiness retry (one extra run)
+```
+
+M126 inserts a deterministic-recovery branch and reuses run slots
+rather than stacking them. The replacement flow in `_run_ui_test_phase`:
+
+```
+run #1 (UI_TEST_CMD with normal-run deterministic env)
+  └─ pass → return 0
+  └─ fail → classify with _ui_timeout_signature
+       │
+       ├─ signature == interactive_report:
+       │     SKIP M54 remediation (not an env_setup error)
+       │     SKIP generic flakiness retry (same hang would recur)
+       │     Run hardened rerun (HARDENED=1 env profile)
+       │       └─ pass → log
+       │           "UI tests passed after deterministic reporter hardening."
+       │           return 0
+       │       └─ fail → write diagnosis, return 1
+       │
+       └─ signature in {generic_timeout, none}:
+             Existing M54 remediation path runs unchanged
+             (with normal-run env applied to the rerun)
+             then existing generic flakiness retry runs unchanged
+             (also with normal-run env applied)
+             then existing failure artifact path with diagnosis block
+```
+
+Rationale for mutual exclusion:
+
+- **`interactive_report` path:** M54 remediation only fires for
+  classified env_setup errors (browser-not-installed, etc.); an
+  interactive-report hang produces no such classification, so the
+  remediation branch would be a no-op. A generic retry of the same
+  command without env hardening would just hang again. Worst-case
+  invocation count stays at 2 (run #1 + hardened rerun), bounded by
+  `2 × UI_TEST_TIMEOUT`.
+- **Other failures:** preserve current behavior exactly. No regression
+  in M53/M54 auto-remediation or in flakiness mitigation.
+
+This avoids the current pathology where two identical interactive
+commands time out back-to-back, while not stacking 3-4 subprocess
+invocations on every failure.
+
+Two inline-fallback knobs are introduced for this deterministic-retry
+branch and formalized later by M136 in `config_defaults.sh`:
+
+- `UI_GATE_ENV_RETRY_ENABLED` (default `true`) — when `false`, skip the
+  hardened rerun entirely and write terminal diagnosis immediately on an
+  `interactive_report` signature.
+- `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` (default `0.5`) — the hardened rerun
+  gets `UI_TEST_TIMEOUT * factor`, clamped to at least 1 second and at
+  most the original `UI_TEST_TIMEOUT`, so the non-interactive retry fails
+  faster than the original hung command when the env hardening does not
+  help.
+
+On the `interactive_report` path, the hardened rerun therefore becomes:
+
+```
+run #2 (HARDENED=1 env profile, timeout = UI_TEST_TIMEOUT * UI_GATE_ENV_RETRY_TIMEOUT_FACTOR)
+```
+
+When `UI_GATE_ENV_RETRY_ENABLED=false`, the branch still classifies as
+`interactive_report` and writes diagnosis, but it performs no rerun.
+
+### Goal 4 — Emit structured gate diagnosis for timeout classes
+
+Diagnosis is written **only on terminal gate failure** — never on a
+recovered pass. Both `UI_TEST_ERRORS_FILE` and the appended block in
+`BUILD_ERRORS_FILE` get the same `## UI Gate Diagnosis` section,
+appended **after** the existing `## Output (last N lines)` and
+`## UI Test Failures` blocks (so the build-fix agent sees raw output
+first, then the diagnosis pointing at the suspected class).
+
+Section format:
+
+```markdown
+## UI Gate Diagnosis
+- Timeout class: interactive_report | generic_timeout | none
+- Deterministic env applied: yes (normal) | yes (hardened) | no
+- Hardened rerun attempted: yes | no
+- Suggested action: <single actionable sentence>
+```
+
+Suggested action mapping:
+
+- `interactive_report` →
+  `Command stays alive serving the HTML report; configure the gate to disable report serving (PLAYWRIGHT_HTML_OPEN=never) or pass --reporter=line to UI_TEST_CMD.`
+- `generic_timeout` →
+  `Increase UI_TEST_TIMEOUT only after confirming the command is non-interactive and any required dev server is healthy.`
+- `none` →
+  `UI tests failed without a recognized timeout signature; inspect the captured output for the underlying assertion or runtime error.`
+
+Suppress the diagnosis when the gate ultimately passes (recovered run,
+hardened-rerun success). The clean-state contract from
+`run_build_gate` (`gates.sh:212-213` removes `BUILD_ERRORS_FILE` and
+`UI_TEST_ERRORS_FILE` on overall pass) already handles cleanup — do
+not duplicate that logic in `gates_ui.sh`.
+
+### Goal 5 — Add focused tests for deterministic UI execution
+
+Expand `tests/test_ui_build_gate.sh` (currently 12 tests passing — see
+its header) with deterministic-mode coverage. Existing tests must
+continue to pass unchanged.
+
+All new tests use shell stubs only — no real Playwright, no network,
+no real browsers. Reuse the state-file pattern from existing Test 8
+(`fail_then_pass.sh` with `RETRY_STATE` counter) for invocation-count
+assertions.
+
+Add at minimum:
+
+1. **`unit_signature_parser`** (pure-function unit test)
+   Call `_ui_timeout_signature` directly with crafted arg pairs —
+   no gate invocation. Cover the truth table:
+   - `(124, "...Serving HTML report at...")` → `interactive_report`
+   - `(124, "...Press Ctrl+C to quit")` → `interactive_report`
+   - `(0,   "...Serving HTML report at...")` → `none`
+     (exit-0 guard prevents false positive on shutdown chatter)
+   - `(124, "Test timeout exceeded")` → `generic_timeout`
+   - `(1,   "AssertionError")` → `none`
+
+2. **`deterministic_playwright_env_applied`**
+   Fixture: `UI_TEST_CMD` is a stub script that writes
+   `${TMPDIR}/seen_env.txt` with the value of `$PLAYWRIGHT_HTML_OPEN`
+   then exits 0. Set `UI_FRAMEWORK=playwright`. After running the
+   gate, assert `seen_env.txt` contains `never`. Also assert
+   `$PLAYWRIGHT_HTML_OPEN` is **unset** in the parent shell after the
+   gate returns (no env mutation leaks).
+
+3. **`framework_detection_word_boundary`**
+   Fixture: `UI_FRAMEWORK=""` (force regex/file-based detection),
+   `UI_TEST_CMD="./test-playwright-helper.sh"` where the script is
+   not actually playwright. Assert `_ui_detect_framework` returns
+   `none` (regex must require word boundary, not substring).
+
+4. **`hardened_rerun_executed_once_on_interactive_report`**
+   Fixture: stub script that on its first invocation prints
+   `Serving HTML report at http://localhost:9323. Press Ctrl+C to quit.`
+   and exits 124, on its second invocation prints `ok` and exits 0.
+   Track invocation count via `RETRY_STATE` file. Assert:
+   - Gate returns 0
+   - Stub was invoked exactly **2** times (run #1 + hardened rerun;
+     M54 remediation and generic retry must be skipped)
+   - Log line `UI tests passed after deterministic reporter hardening.`
+     was emitted
+
+5. **`generic_timeout_preserves_existing_retry_path`**
+   Fixture: stub script that prints `Test timeout exceeded` and
+   exits 124 on every invocation (no interactive-report signature).
+   Assert:
+   - Gate returns 1
+   - Stub was invoked exactly **2** times (run #1 + existing
+     generic flakiness retry — same as today)
+   - No hardened rerun happened
+
+6. **`diagnosis_block_written_on_terminal_failure`**
+   Fixture: same as Test 4 but stub stays interactive-report on the
+   hardened rerun too. Assert `UI_TEST_ERRORS.md` and
+   `BUILD_ERRORS.md` both contain:
+   - Literal heading `## UI Gate Diagnosis`
+   - `Timeout class: interactive_report`
+   - `Hardened rerun attempted: yes`
+   - The full `Suggested action:` sentence for `interactive_report`
+
+7. **`diagnosis_suppressed_on_recovered_pass`**
+   Fixture: same as Test 4 (recovers on hardened rerun). Assert
+   neither `UI_TEST_ERRORS.md` nor `BUILD_ERRORS.md` exists (the
+   existing `gates.sh:212-213` cleanup must still fire).
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/gates_ui.sh` | Add deterministic env normalization, interactive-report timeout signature detection, hardened rerun branch, and diagnosis metadata emission. Currently 117 lines; estimated +120-160 LOC. If the result exceeds the 300-line ceiling (CLAUDE.md non-negotiable rule 8), extract the new helpers (`_ui_detect_framework`, `_ui_deterministic_env_list`, `_normalize_ui_gate_env`, `_ui_timeout_signature`, diagnosis writers) into `lib/gates_ui_helpers.sh` and source it from `gates_ui.sh`. |
+| `tests/test_ui_build_gate.sh` | Add seven deterministic-mode tests (see Goal 5). Update the header comment block and the final "All UI build gate tests passed (12/12)" summary to the new total. Currently 305 lines; well under the test-file budget. |
+| `docs/reference/stages.md` | Update the build-gate description (around line 105–110) to note that the UI gate phase now applies a deterministic env profile for Playwright (`PLAYWRIGHT_HTML_OPEN=never`) and recovers once via a hardened rerun if it detects an interactive-report timeout signature. |
+| `docs/troubleshooting/common-errors.md` | Add a new entry under `## Pipeline Errors` titled `### "UI tests timed out with interactive report serving"` covering the symptom (`Serving HTML report at ... Press Ctrl+C to quit` in the captured output, exit 124), the automatic recovery, and how to permanently fix it in the project's playwright config or `UI_TEST_CMD`. |
+
+## Acceptance Criteria
+
+- [ ] When `_ui_detect_framework` returns `playwright`, the UI gate subprocess sees `PLAYWRIGHT_HTML_OPEN=never` in its environment, and `$PLAYWRIGHT_HTML_OPEN` remains unset in the parent shell after the gate returns (no env leak).
+- [ ] The hardened-rerun profile additionally sets `CI=1`; the normal-run profile does not.
+- [ ] `_ui_detect_framework` returns `playwright` for `UI_FRAMEWORK=playwright`, for `UI_TEST_CMD` matching the word-boundary regex, and when `playwright.config.{ts,js,mjs,cjs}` exists in `$PROJECT_DIR`. It returns `none` for the false-positive case `./test-playwright-helper.sh`.
+- [ ] `_ui_timeout_signature` is a pure function (no side effects, no logging) and produces the truth table specified in Goal 5 Test 1.
+- [ ] When the first run fails with `interactive_report` signature, Tekhton invokes `UI_TEST_CMD` exactly **2** times total (run #1 + hardened rerun); M54 remediation and the existing generic flakiness retry are skipped on this branch.
+- [ ] When the first run fails with `generic_timeout` or `none` signature, the existing M54 remediation path and the existing generic flakiness retry both run unchanged (with the normal-run env applied to every invocation).
+- [ ] If the hardened rerun succeeds, the gate returns 0, no diagnosis or error file is left on disk (existing `gates.sh:212-213` cleanup), and the log contains the line `UI tests passed after deterministic reporter hardening.`.
+- [ ] `UI_GATE_ENV_RETRY_ENABLED=false` suppresses the hardened rerun on the `interactive_report` branch without changing classification or diagnosis content.
+- [ ] `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` scales only the hardened-rerun timeout; it never mutates the configured primary `UI_TEST_TIMEOUT` in the parent shell.
+- [ ] If the hardened rerun fails, both `UI_TEST_ERRORS.md` and `BUILD_ERRORS.md` contain a `## UI Gate Diagnosis` section with the four bullet fields from Goal 4 populated.
+- [ ] All 12 existing `tests/test_ui_build_gate.sh` tests still pass; the seven new tests from Goal 5 also pass; the summary line and header comment block reflect the new total.
+- [ ] New tests run with no network access and no real Playwright/browser invocation.
+- [ ] `shellcheck` reports zero warnings on every modified `.sh` file.
+- [ ] Every modified `.sh` file is under the 300-line ceiling, or the extraction described in the Files Modified note has been performed.
+
+## Watch For
+
+- **`PLAYWRIGHT_HTML_OPEN` and `CI` must not leak into the parent
+  shell.** Goal 5 Test 2 asserts the parent shell environment is
+  unmodified after the gate returns. Apply env at the
+  `env KEY=VAL ...` boundary on the subprocess invocation; never
+  `export` either var in `lib/gates_ui.sh`.
+- **`_ui_timeout_signature` is a pure function.** No `log`, no `warn`,
+  no file writes. The unit test (Goal 5 Test 1) calls it directly; any
+  side effect breaks the test and complicates downstream reuse from
+  the diagnose stage.
+- **Word-boundary regex in `_ui_detect_framework`.** Goal 5 Test 3
+  covers the false-positive case `./test-playwright-helper.sh`. Use
+  `(^|[[:space:]/])playwright([[:space:]]|$)`, not a substring match.
+- **Diagnosis is suppression-on-pass.** The recovered-pass path
+  (hardened rerun succeeds) must leave no `BUILD_ERRORS.md` or
+  `UI_TEST_ERRORS.md` on disk. The existing `gates.sh:212-213` cleanup
+  handles this — do not duplicate cleanup logic in `gates_ui.sh`.
+- **Worst-case invocation budget is 2.** On the `interactive_report`
+  branch, the M54 remediation and the generic flakiness retry are
+  both skipped. Stacking them would burn `4 × UI_TEST_TIMEOUT` per
+  failure.
+- **300-line ceiling.** `lib/gates_ui.sh` is 117 lines today; +120-160
+  LOC will exceed 300. Extract helpers into `lib/gates_ui_helpers.sh`
+  if needed (already noted in Files Modified).
+
+## Seeds Forward
+
+- **M127 — Mixed-log classification hardening.** M127's classifier
+  reads the same UI-gate output that M126 produces. Deterministic gate
+  execution is the precondition for cleaner classification: without
+  M126, even legitimate `noncode_dominant` outputs are contaminated by
+  the interactive-reporter banner and timeout chatter, producing
+  inconsistent routing decisions. M127 also adds an explicit
+  non-diagnostic filter for the report-serving lines — they are the
+  symptom M126 fixes at the source.
+- **M129 — Failure context schema v2.** The `## UI Gate Diagnosis`
+  block written on terminal failure (Goal 4) is a natural source for
+  `primary_cause.signal` — for example `ui_timeout_interactive_report`
+  for the `interactive_report` class. Keep the timeout-class token
+  vocabulary in `_ui_timeout_signature` stable (`interactive_report`,
+  `generic_timeout`, `none`) so M129 can map it 1:1 without a
+  translation layer.
+- **M130 — Causal-context-aware recovery routing.** M130 introduces a
+  `retry_ui_gate_env` recovery action that exports
+  `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1` and re-runs the UI gate.
+  M126 does not yet honor this knob, but the cleanest place to wire it
+  in is the framework-detection priority added in Goal 1. Consider
+  adding a Priority 0 rule: `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1`
+  → apply hardened env regardless of detected framework, and
+  `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` → short-circuit the
+  normalizer entirely (user override). If M126 ships without this
+  hook, M130 will need a follow-up patch to either implement it itself
+  or invoke a different mechanism, so addressing it here costs less.
+
+---
+
+## Archived: 2026-04-26 — Unknown Initiative
+
+# M127 - Mixed-Log Classification Hardening & Confidence-Based Routing
+
+<!-- milestone-meta
+id: "127"
+status: "done"
+-->
+
+## Overview
+
+M126 makes UI gate execution deterministic; M127 fixes the next weak
+link: mixed-output classification still over-escalates to code fixes.
+
+Today, `classify_build_errors_all` classifies per line and defaults
+every unmatched line to `code|code||Unclassified build error`.
+Large test outputs contain many unmatched lines (npm warnings, runner
+status lines, ANSI fragments, report banners), so the presence of
+even one unmatched line can force `has_only_noncode_errors` to fail,
+which drives the pipeline into build-fix coder routing even when the
+dominant failure is test infrastructure or environment.
+
+The bifl-tracker incident is a canonical example: timeout-dominated UI
+output with noisy unmatched lines produced a code-escalation path,
+consuming build-fix turns and ending in `build_failure` without
+improving root cause signal.
+
+M127 introduces a confidence-based mixed-log classifier that:
+
+1. Separates matched signal from unmatched noise,
+2. Preserves conservative safety (real code errors still route to coder),
+3. Prevents unknown/noise lines from automatically becoming code,
+4. Adds deterministic routing policy based on category confidence.
+
+This milestone depends on M53 and M54 and should run after M126 so UI
+gate output is already deterministic and easier to classify.
+
+## Design
+
+### Goal 1 - Introduce explicit unknown classification (no implicit code fallback)
+
+Current behavior in `lib/error_patterns.sh`:
+
+- `classify_build_error` unmatched -> `code|code||Unclassified build error`
+- `classify_build_errors_all` unmatched line -> same code fallback
+
+Replace this with explicit unknown-class semantics for multi-line
+classification while keeping single-line API backward compatibility.
+
+Implementation detail:
+
+1. Keep `classify_build_error` fallback as-is for backward compatibility
+   with tests and legacy call sites.
+2. Add new function:
+
+```bash
+# classify_build_errors_with_stats RAW_OUTPUT
+# Emits machine-readable records:
+# CAT|SAFETY|REMED|DIAG|MATCH_COUNT|TOTAL_MATCHED|TOTAL_LINES|UNMATCHED_LINES
+```
+
+3. In this new function, unmatched lines are counted as unknown/noise,
+   not emitted as code.
+4. Add helper:
+
+```bash
+# has_explicit_code_errors RAW_OUTPUT
+# Returns 0 only when a line matched an explicit code-category pattern.
+```
+
+This separates true code evidence from unknown lines.
+
+### Goal 2 - Add line pre-filtering for non-diagnostic noise
+
+Before pattern matching, normalize and filter high-noise lines that do
+not represent actionable failures.
+
+Create helper in `lib/error_patterns.sh`:
+
+```bash
+# _is_non_diagnostic_line LINE
+# returns 0 when line should be ignored for classification statistics
+```
+
+Initial filter set (regex-based, case-insensitive):
+
+- npm/pnpm/yarn warnings unrelated to failure root cause
+  (for example `npm warn`, progress counters, audit hints)
+- test runner progress lines (`[1/8]`, spinner/progress updates)
+- ANSI-only or whitespace-only lines
+- report-serving status lines already diagnosed in M126
+  (`Serving HTML report at`, `Press Ctrl+C to quit`)
+
+Important constraint:
+
+- Filters must not drop lines that include known failure signatures
+  such as `timeout`, `error`, `failed`, `ECONNREFUSED`, `TSxxxx`.
+- For safety, apply deny-list filter only after quick allow-list check
+  for obvious failure terms.
+
+### Goal 3 - Add confidence scoring for routing decisions
+
+Add a routing helper in `lib/error_patterns.sh`:
+
+```bash
+# classify_routing_decision RAW_OUTPUT
+# Outputs one token:
+# code_dominant | noncode_dominant | mixed_uncertain | unknown_only
+```
+
+Scoring model (simple and deterministic):
+
+- `matched_code_lines`: lines matching `category=code`
+- `matched_noncode_lines`: lines matching env_setup/service_dep/toolchain/resource/test_infra
+- `unmatched_lines`: non-filtered lines with no match
+- `total_considered = matched_code_lines + matched_noncode_lines + unmatched_lines`
+
+Decision rules:
+
+1. If `matched_code_lines > 0` and
+   `matched_code_lines >= matched_noncode_lines` -> `code_dominant`
+2. If `matched_noncode_lines > 0` and
+   `matched_code_lines == 0` and
+   `matched_noncode_lines / total_considered >= 0.6` -> `noncode_dominant`
+3. If `matched_code_lines > 0` and `matched_noncode_lines > 0` -> `mixed_uncertain`
+4. If no matched lines after filtering -> `unknown_only`
+
+These thresholds intentionally bias toward safety: any explicit code
+evidence keeps code routing possible, but unknown noise alone cannot
+force code routing.
+
+Implementation note — bash has no native floating-point math. Implement
+the 0.6 threshold as integer arithmetic:
+
+```bash
+(( matched_noncode_lines * 100 / total_considered >= 60 ))
+```
+
+Do not introduce a `bc` dependency in orchestration code paths.
+
+#### Output and export contract
+
+`classify_routing_decision` must do two things, not one:
+
+1. Echo the routing token to stdout:
+   `code_dominant | noncode_dominant | mixed_uncertain | unknown_only`.
+2. Export `LAST_BUILD_CLASSIFICATION=<token>` so downstream consumers
+   (M128 build-fix continuation loop, M130 causal-context recovery
+   routing) can read the most recent classification without re-parsing
+   build artifacts.
+
+The export is a cross-milestone integration point. M130's
+`_classify_failure` reads `${LAST_BUILD_CLASSIFICATION:-code_dominant}`
+and branches on the exact four tokens above (see
+`m130-causal-context-aware-recovery-routing.md`, "LAST_BUILD_CLASSIFICATION
+export contract" section). Renaming the variable, changing the token
+vocabulary, or skipping the export on early-return paths silently breaks
+M130 — the default `code_dominant` makes M130's amendments invisible
+rather than producing a loud error.
+
+### Goal 4 - Wire confidence routing into coder build-fix branch
+
+Update `stages/coder.sh` build-fix branch to use confidence decision,
+not `has_only_noncode_errors` alone.
+
+Proposed routing policy:
+
+- `noncode_dominant`:
+  - Skip build-fix coder
+  - Write env/test-infra failure state with diagnosis summary
+  - Append human action guidance
+
+- `code_dominant`:
+  - Existing behavior: run build-fix coder with filtered code errors
+
+- `mixed_uncertain`:
+  - New lightweight diagnosis step before build-fix:
+    write `BUILD_ROUTING_DIAGNOSIS.md` with category counts and top
+    matched diagnoses.
+  - Then run build-fix coder with code-only content plus a short
+    context section listing non-code categories found.
+
+- `unknown_only`:
+  - Preserve `LAST_BUILD_CLASSIFICATION=unknown_only` for downstream
+    consumers and diagnostics.
+  - Route through the existing bounded build-fix path so the
+    pre-M127 "one retry on unresolved build errors" behavior is
+    preserved.
+  - Attach low-confidence guidance noting that no recognized error
+    signatures were detected and manual triage may still be required if
+    the retry fails.
+
+This prevents blind code-repair attempts on clearly non-code failures
+while preserving a bounded fallback when the classifier has no
+recognized signal.
+
+#### Input contract
+
+The new routing path in `stages/coder.sh` must feed
+`classify_routing_decision` the **raw** error stream — the same content
+currently passed to `has_only_noncode_errors` at `stages/coder.sh:1117-1119`.
+Use `BUILD_RAW_ERRORS_FILE` when present and fall back to
+`BUILD_ERRORS_FILE` only when the raw file is absent (preserve the
+existing precedence at `stages/coder.sh:1110-1115`).
+
+Feeding the annotated `BUILD_ERRORS.md` to the new classifier instead
+would let its own markdown headers (`## Classified as Code Error`,
+`## Already Handled`, etc.) match the `code` patterns and skew the
+decision toward `code_dominant` — the opposite of the M127 fix.
+
+### Goal 5 - Keep backward compatibility for M53/M54 interfaces
+
+Do not remove existing exported functions in M127:
+
+- `classify_build_error`
+- `classify_build_errors_all`
+- `has_only_noncode_errors`
+
+Instead:
+
+1. Mark `has_only_noncode_errors` as legacy behavior in comments.
+2. Refactor it to call the new stats helper but preserve return values
+   for existing tests where practical.
+3. New routing in `stages/coder.sh` uses only
+   `classify_routing_decision`.
+
+This allows incremental migration without breaking older test fixtures.
+
+### Goal 6 - Expand test harness with real noisy fixtures
+
+Add new fixture file derived from real incident shape:
+
+- `tests/fixtures/ui_timeout_noisy_output.txt`
+
+Content should include:
+
+- Progress lines,
+- npm warnings,
+- Playwright timeout lines,
+- report-serving lines,
+- at least one unmatched non-diagnostic line.
+
+Add tests:
+
+1. `test_classify_routing_noncode_dominant_noisy_timeout`
+   - Input fixture above
+   - Expect `noncode_dominant`
+
+2. `test_classify_routing_code_dominant_mixed`
+   - Fixture with TS errors plus noise
+   - Expect `code_dominant`
+
+3. `test_classify_routing_mixed_uncertain`
+   - Fixture with explicit code + explicit service_dep
+   - Expect `mixed_uncertain`
+
+4. `test_classify_routing_unknown_only`
+   - Fixture with only unknown/noise lines
+   - Expect `unknown_only`
+
+5. `test_coder_stage_skips_build_fix_on_noncode_dominant`
+   - Extend `tests/test_gates_bypass_flow.sh` or new integration test
+   - Assert no build-fix invocation.
+
+6. `test_coder_stage_runs_build_fix_on_code_dominant`
+   - Assert build-fix invocation preserved.
+
+7. `test_coder_stage_runs_build_fix_on_unknown_only`
+  - Fixture with only unknown/noise lines
+  - Assert build-fix invocation still occurs and
+    `LAST_BUILD_CLASSIFICATION=unknown_only` is preserved for
+    downstream consumers.
+
+8. `test_filter_does_not_drop_failure_lines`
+   - Ensure `_is_non_diagnostic_line` never suppresses lines containing
+     `error`, `failed`, `timeout`, `TS[0-9]+`, `ECONNREFUSED`.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/error_patterns.sh` | Add stats-based classifier, noise-line filter helper, explicit code-evidence helper, and confidence routing decision function. Preserve legacy APIs. **Currently 271 lines; estimated +120-160 LOC will exceed the 300-line ceiling (CLAUDE.md non-negotiable rule 8).** Plan from the start to extract the new symbols (`classify_build_errors_with_stats`, `_is_non_diagnostic_line`, `has_explicit_code_errors`, `classify_routing_decision`, plus the noise-line denylist) into a new `lib/error_patterns_classify.sh`, mirroring the existing `error_patterns_registry.sh` / `error_patterns_remediation.sh` split, and source it from `error_patterns.sh`. |
+| `stages/coder.sh` | Replace binary `has_only_noncode_errors` decision with confidence-based routing policy (`code_dominant`, `noncode_dominant`, `mixed_uncertain`, `unknown_only`). |
+| `tests/test_error_patterns.sh` | Add unit tests for new stats classifier, routing decisions, and filter safety constraints. |
+| `tests/test_gates_bypass_flow.sh` | Extend integration assertions to validate new routing semantics in noisy mixed-output scenarios. |
+| `tests/fixtures/ui_timeout_noisy_output.txt` | **New file.** Realistic noisy timeout fixture for classification/routing tests. |
+| `docs/concepts/auto-remediation.md` | Update routing description to explain confidence-based mixed-log handling and unknown-only outcomes. |
+| `docs/troubleshooting/common-errors.md` | Add diagnosis path for `unknown_only` classification and low-confidence fallback / manual triage workflow. |
+
+## Acceptance Criteria
+
+- [ ] Mixed noisy UI timeout output (including report-serving lines and npm warnings) classifies as `noncode_dominant`, not implicit code.
+- [ ] Unknown/unmatched lines no longer automatically become code evidence in multi-line routing logic.
+- [ ] Explicit code-pattern matches still route to `code_dominant` and invoke build-fix coder.
+- [ ] `mixed_uncertain` path writes `BUILD_ROUTING_DIAGNOSIS.md` and includes both code and non-code context in build-fix prompt input.
+- [ ] `unknown_only` path preserves the `unknown_only` export token and still takes the existing bounded build-fix path, with guidance that manual triage may still be required if the retry fails.
+- [ ] Existing M53/M54 exported functions remain available; no call-site breakage in current pipeline.
+- [ ] New fixture-driven tests pass for all four routing outcomes (`code_dominant`, `noncode_dominant`, `mixed_uncertain`, `unknown_only`).
+- [ ] Existing classification tests continue to pass after migration (or, where a fixture exercised the bifl-tracker class of input that M127 explicitly fixes, the assertion has been updated to reflect the corrected behavior with a comment pointing at this milestone).
+- [ ] `classify_routing_decision` exports `LAST_BUILD_CLASSIFICATION=<token>` in addition to echoing the token, with values restricted to the four-token vocabulary (`code_dominant | noncode_dominant | mixed_uncertain | unknown_only`).
+- [ ] New routing in `stages/coder.sh` reads the raw error stream from `BUILD_RAW_ERRORS_FILE` (falling back to `BUILD_ERRORS_FILE` only when absent), matching the existing precedence at `stages/coder.sh:1110-1115`.
+- [ ] `_is_non_diagnostic_line` applies its allow-list check (failure terms: `error`, `failed`, `timeout`, `ECONNREFUSED`, `TS[0-9]+`) **before** its deny-list check, and `test_filter_does_not_drop_failure_lines` covers the inversion case.
+- [ ] If `lib/error_patterns.sh` exceeds 300 lines after the additions, the new symbols have been extracted into `lib/error_patterns_classify.sh` and sourced from `error_patterns.sh`.
+- [ ] `shellcheck` clean for modified shell files.
+
+## Watch For
+
+- **`LAST_BUILD_CLASSIFICATION` export is a cross-milestone contract.**
+  M130's `_classify_failure` (Amendment C) reads
+  `${LAST_BUILD_CLASSIFICATION:-code_dominant}` and routes
+  `noncode_dominant` to `save_exit`, `mixed_uncertain` to one retry then
+  `save_exit`, and `code_dominant`/empty to `retry_coder_build`. Do not
+  rename the variable, do not change the token vocabulary, and do not
+  skip the export on early-return paths. The default-to-`code_dominant`
+  fallback in M130 is for the pre-deployment window — it is not a
+  silent OK to omit the export.
+- **Use integer arithmetic for the 0.6 threshold.** Bash does not do
+  floating-point math; write the ratio check as
+  `(( matched_noncode_lines * 100 / total_considered >= 60 ))`. Do not
+  introduce a `bc` dependency for orchestration code.
+- **Feed the classifier the raw error stream, not the annotated
+  markdown.** `BUILD_ERRORS.md` contains classification headers that
+  themselves match `code` patterns. Routing must read
+  `BUILD_RAW_ERRORS_FILE` (see existing precedence at
+  `stages/coder.sh:1110-1115`).
+- **`annotate_build_errors` is intentionally unchanged in M127.** It
+  will continue to write `code` rows for unmatched lines into
+  `BUILD_ERRORS.md`. Routing decisions read the new classifier, not the
+  markdown. Do not refactor `annotate_build_errors` to consume the new
+  stats helper as part of M127 — that is a follow-up cleanup with its
+  own test exposure.
+- **`has_only_noncode_errors` semantics shift.** After M127, the helper
+  is driven by the stats helper rather than per-line code-fallback. The
+  bifl-tracker class of input (env-only failure plus unmatched noise)
+  will newly return 0 (bypass), which is the M127 fix. Some existing
+  fixtures in `tests/test_gates_bypass_flow.sh` exercise this exact
+  pathway — re-run that test file early; if any case now flips, update
+  the assertion to reflect the corrected behavior, do not patch the
+  helper to preserve the bug.
+- **Allow-list before deny-list in `_is_non_diagnostic_line`.** The
+  deny-list filter must run only after a quick allow-list check for
+  failure terms. Inverting the order silently drops real failure signal.
+- **`classify_build_error` (single-line API) is not migrated.** Its
+  `code|code||Unclassified build error` fallback must remain for legacy
+  callers (`filter_code_errors`, `annotate_build_errors`, M53 single-line
+  tests). Only the multi-line stats path gets the new unknown semantics.
+- **Decision-rule order matters.** Rule 1 (`code_dominant`) must fire
+  before Rule 3 (`mixed_uncertain`) — once a line matches an explicit
+  code pattern, code routing is preserved unless non-code clearly
+  dominates. Inverting yields the opposite of the M127 design.
+- **300-line ceiling.** `lib/error_patterns.sh` is 271 lines today;
+  adding four helpers plus the noise-line denylist will exceed the
+  ceiling. Plan the split into `lib/error_patterns_classify.sh` from
+  the start; do not let line count creep close to the limit before
+  splitting.
+- **`BUILD_ROUTING_DIAGNOSIS.md` placement.** Goal 4 introduces this
+  artifact on the `mixed_uncertain` path. Place it under `${TEKHTON_DIR}/`
+  (alongside `BUILD_ERRORS.md`) and add a default in
+  `lib/artifact_defaults.sh` so its path is configurable, not hardcoded.
+
+## Seeds Forward
+
+- **M128 — Build-fix continuation loop.** Reads M127's routing
+  decision twice: (1) Goal 6 stops the build-fix loop early when
+  routing remains `noncode_dominant` for two consecutive attempts;
+  (2) per-attempt diagnostics in `BUILD_FIX_REPORT.md` are expected to
+  record the routing token. Keep the token strings stable.
+- **M129 — Failure context schema v2.** Will populate `primary_cause`
+  and `secondary_cause` slots in `LAST_FAILURE_CONTEXT.json` from the
+  M127 routing decision plus matched diagnoses. The token vocabulary
+  chosen here becomes the primary-cause subcategory shorthand (for
+  example `noncode_dominant` -> `ENVIRONMENT/test_infra`). Keep
+  per-pattern diagnoses descriptive enough to feed an
+  `LAST_FAILURE_CONTEXT.primary_cause.signal` field (e.g.
+  `ui_timeout_interactive_report`, `econnrefused_dev_server`).
+- **M130 — Causal-context-aware recovery routing.** Hard contract:
+  M130 reads `LAST_BUILD_CLASSIFICATION` directly. Amendment C in M130
+  hinges on the four-token vocabulary. Keep the export, do not rename,
+  do not collapse `unknown_only` into `code_dominant` at the export
+  site — M130 explicitly chose to treat `unknown_only` as
+  `code_dominant` *inside* its router; that decision belongs to the
+  consumer, not the producer.
+- **`BUILD_ROUTING_DIAGNOSIS.md` (mixed_uncertain path).** New artifact
+  introduced by Goal 4. Future milestones (notes pipeline, watchtower)
+  may want to surface this; keep the schema simple — header + category
+  counts + top three diagnoses — so downstream parsers stay trivial.
+
+---
+
+## Archived: 2026-04-26 — Unknown Initiative
+
+
+# M128 - Build-Fix Continuation Loop & Adaptive Turn Budgeting
+
+<!-- milestone-meta
+id: "128"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-04-26 -->
+
+## Overview
+
+After M126 (deterministic UI execution) and M127 (confidence-based
+classification/routing), one major recovery gap remains:
+
+- Build-fix currently gets one short attempt (`base/3` turns,
+  `stages/coder.sh:1148-1155`),
+- The stage immediately re-runs the gate (`stages/coder.sh:1158`),
+- On failure it exits the pipeline with `build_failure`
+  (`stages/coder.sh:1160-1167`).
+
+In real failures, especially UI/test-infra-adjacent code fixes,
+single-attempt build-fix is too brittle. A short budget can exhaust on
+triage and partial remediation, yielding no meaningful second attempt
+even when progress exists.
+
+M128 introduces a bounded build-fix continuation loop with adaptive
+budgets and progress gating. The goal is to retain deterministic
+termination while allowing enough recovery depth to avoid premature
+pipeline exits.
+
+This milestone does not alter reviewer/tester stage iteration policy;
+it only upgrades the coder-stage build-fix sub-loop.
+
+## Design
+
+### Goal 1 - Replace single build-fix attempt with bounded continuation loop
+
+Current flow at `stages/coder.sh:1101-1170`:
+
+1. run build gate,
+2. if fail -> M127 routing decision (skip if `noncode_dominant`),
+3. one build-fix coder call at `base/3` turns,
+4. rerun gate once,
+5. if fail -> exit `build_failure`.
+
+Replace with a loop:
+
+```text
+attempt = 1..BUILD_FIX_MAX_ATTEMPTS
+  classify routing via M127 (LAST_BUILD_CLASSIFICATION)
+  if classification rules reject continuation -> break
+  run build-fix coder (adaptive turns)
+  run build gate
+  if gate passes -> success
+  if no progress -> break early
+end
+if still failing -> exit build_failure with structured notes
+```
+
+New config knobs (defaults in `lib/config_defaults.sh`):
+
+- `BUILD_FIX_ENABLED=true`
+- `BUILD_FIX_MAX_ATTEMPTS=3`
+- `BUILD_FIX_BASE_TURN_DIVISOR=3` (preserves current baseline)
+- `BUILD_FIX_MAX_TURN_MULTIPLIER=1.0` (cap at full coder budget)
+- `BUILD_FIX_REQUIRE_PROGRESS=true`
+- `BUILD_FIX_TOTAL_TURN_CAP=120` (cumulative cap, see Goal 6)
+
+### Goal 2 - Adaptive turn budget per build-fix attempt
+
+Base budget remains aligned with current behavior:
+
+```bash
+base_turns = max(8, EFFECTIVE_CODER_MAX_TURNS / BUILD_FIX_BASE_TURN_DIVISOR)
+```
+
+(`EFFECTIVE_CODER_MAX_TURNS` is the existing precedence-resolved budget
+used at `stages/coder.sh:1148`.)
+
+Adaptive schedule (attempt-indexed):
+
+- Attempt 1: `1.0 * base_turns`
+- Attempt 2: `1.5 * base_turns` (integer arithmetic: `base_turns * 3 / 2`)
+- Attempt 3: `2.0 * base_turns`
+
+Clamp all attempts to:
+
+- Lower bound: 8 turns
+- Upper bound: `EFFECTIVE_CODER_MAX_TURNS * BUILD_FIX_MAX_TURN_MULTIPLIER`
+
+Use integer arithmetic only — bash has no native floating-point math
+(see M127's note about avoiding `bc` in orchestration paths). Multiplier
+of `1.0` is implemented as `* 100 / 100`.
+
+Rationale:
+
+- First attempt stays lightweight,
+- Later attempts permit deeper edits only when earlier passes fail,
+- Hard cap prevents runaway cost.
+
+### Goal 3 - Progress-gated continuation (avoid blind repeated retries)
+
+Continuation beyond attempt 1 must be contingent on progress.
+
+Add helper in the extracted file from Goal 8:
+
+```bash
+# _build_fix_progress_signal PREV_ERROR_COUNT NEW_ERROR_COUNT PREV_TAIL NEW_TAIL
+# Pure function. Returns one of: improved | unchanged | worsened
+# - improved   when NEW_ERROR_COUNT < PREV_ERROR_COUNT
+# - worsened   when NEW_ERROR_COUNT > PREV_ERROR_COUNT
+# - unchanged  when counts equal AND PREV_TAIL == NEW_TAIL (last 20 non-blank lines)
+# - improved   when counts equal but tails differ (some signal moved)
+```
+
+Inputs are computed inside `stages/coder_build_fix.sh` from
+`BUILD_RAW_ERRORS_FILE` (or `BUILD_ERRORS_FILE` fallback, matching
+existing precedence at `stages/coder.sh:1110-1115`):
+
+- **Error count**: line count of `BUILD_RAW_ERRORS_FILE` after each gate
+  run. No diffstat or git inspection — keep the helper pure and fast.
+- **Tail**: last 20 non-blank lines of `BUILD_RAW_ERRORS_FILE`.
+
+If `BUILD_FIX_REQUIRE_PROGRESS=true` and result is `unchanged` or
+`worsened` on attempt N (N >= 2), abort loop early with:
+
+`Build-fix halted early: no measurable progress after attempt N.`
+
+When the loop terminates this way, increment
+`BUILD_FIX_PROGRESS_GATE_FAILURES` (see export contract below).
+
+### Goal 4 - Persist build-fix attempt diagnostics for postmortem clarity
+
+Add new artifact:
+
+- `BUILD_FIX_REPORT_FILE="${TEKHTON_DIR}/BUILD_FIX_REPORT.md"`
+
+Add the default to `lib/artifact_defaults.sh` alongside the other
+`${TEKHTON_DIR}/` paths (see lines 16-50). Do **not** hardcode
+`.tekhton/` — every other artifact uses the variable.
+
+Per attempt, append:
+
+- Attempt number
+- Turn budget used
+- Agent terminal class (success / max_turns / error)
+- Gate result after attempt (pass / fail)
+- Progress signal (improved / unchanged / worsened)
+- Error-count delta (PREV → NEW)
+- M127 routing classification at start of attempt (`LAST_BUILD_CLASSIFICATION`)
+
+When the loop exits unsuccessfully, the report path is referenced in
+`PIPELINE_STATE.md` notes and exposed via the env var contract below.
+
+### Goal 5 - Integrate with existing error taxonomy and state writing
+
+When build-fix loop exhausts attempts:
+
+- Keep exit reason `build_failure` for backward compatibility.
+- Pass extra notes to `write_pipeline_state` (`lib/state.sh:30`) including:
+  - total attempts,
+  - final progress signal,
+  - last agent classification,
+  - pointer to `${BUILD_FIX_REPORT_FILE}`.
+
+When loop aborts early due to no progress:
+
+- Still `build_failure`,
+- Note `terminated_early_no_progress=true` for diagnose tooling.
+
+#### M129 cause-context seed (forward integration)
+
+When this milestone lands before M129, set the following env vars on
+**every terminal failure path** of the build-fix loop so M129's
+`write_last_failure_context` (Goal 2 of m129) can persist them without
+modifying this code again:
+
+```bash
+export PRIMARY_ERROR_CATEGORY="${PRIMARY_ERROR_CATEGORY:-}"
+export PRIMARY_ERROR_SUBCATEGORY="${PRIMARY_ERROR_SUBCATEGORY:-}"
+export SECONDARY_ERROR_CATEGORY="AGENT_SCOPE"
+export SECONDARY_ERROR_SUBCATEGORY="max_turns"
+export SECONDARY_ERROR_SIGNAL="build_fix_budget_exhausted"
+export SECONDARY_ERROR_SOURCE="coder_build_fix"
+```
+
+Primary cause is left empty here — M127's classifier provides the
+primary signal via `LAST_BUILD_CLASSIFICATION` and pattern matches; if
+the loop has access to a derived primary token (e.g. `noncode_dominant`
+mapping to `ENVIRONMENT/test_infra`) it MAY set primary fields, but is
+not required to for M128 to be complete. M129 will fill the gap.
+
+If the helpers `set_secondary_cause`/`reset_failure_cause_context`
+already exist (M129 deployed), call them instead of raw exports. Detect
+with `command -v set_secondary_cause &>/dev/null`.
+
+### Goal 6 - Guardrails for budget and agent calls
+
+1. **Cumulative turn cap.**
+   - `BUILD_FIX_TOTAL_TURN_CAP=120` (default).
+   - Track cumulative budget used across attempts in
+     `BUILD_FIX_TURN_BUDGET_USED`. Stop additional attempts once
+     cumulative cap is reached. The next attempt's adaptive budget is
+     clamped to `cap - used` if positive, else loop exits.
+
+2. **Autonomous-agent accounting (no new code needed).**
+   - `run_agent` (`lib/agent.sh`) already increments `_ORCH_AGENT_CALLS`
+     and the `MAX_AUTONOMOUS_AGENT_CALLS=200` cap fires from
+     `lib/orchestrate.sh:177`. Build-fix attempts MUST go through
+     `run_agent`; do not invoke the agent CLI directly.
+
+### Goal 7 - Build-fix env var export contract (for M132)
+
+The build-fix loop MUST export the following four env vars at every
+exit path (success, exhausted attempts, early no-progress stop). These
+are read verbatim by M132's `_collect_build_fix_stats_json`:
+
+| Variable | Type | Values |
+|----------|------|--------|
+| `BUILD_FIX_ATTEMPTS` | integer | 0..`BUILD_FIX_MAX_ATTEMPTS` |
+| `BUILD_FIX_OUTCOME` | enum | `passed` \| `exhausted` \| `no_progress` \| `not_run` |
+| `BUILD_FIX_TURN_BUDGET_USED` | integer | cumulative turns spent in build-fix |
+| `BUILD_FIX_PROGRESS_GATE_FAILURES` | integer | times progress gate aborted (0 unless `no_progress`) |
+
+`BUILD_FIX_OUTCOME` token vocabulary is **frozen** by this milestone —
+M132 dashboards branch on these exact strings. Do not introduce
+additional tokens; do not rename. If a new outcome class is needed,
+introduce it as a separate field, not a vocabulary extension.
+
+`not_run` means the loop never executed (gate passed first time, or
+`BUILD_FIX_ENABLED=false`, or M127 short-circuited via single-attempt
+`noncode_dominant`). On these paths the four vars must still be set
+(to `0` / `not_run` / `0` / `0`) so M132 sees a stable shape.
+
+Reset all four vars at the start of every coder stage invocation.
+
+### Goal 8 - File-size hygiene: extract build-fix loop helpers
+
+`stages/coder.sh` is currently 1180 lines (verified via `wc -l`). The
+new loop, helpers, and report writer add an estimated 150-200 LOC,
+which would push the file past the CLAUDE.md non-negotiable rule 8
+ceiling (300 lines) **and** materially worsen an already-large file.
+
+Plan from the start to extract into a new file:
+
+- `stages/coder_build_fix.sh`
+
+Containing:
+
+- `run_build_fix_loop` (top-level entry replacing the inline block at
+  `stages/coder.sh:1101-1170`)
+- `_compute_build_fix_budget ATTEMPT BASE_TURNS USED`
+- `_build_fix_progress_signal PREV_COUNT NEW_COUNT PREV_TAIL NEW_TAIL`
+- `_append_build_fix_report ATTEMPT BUDGET TERMINAL_CLASS GATE_RESULT PROGRESS DELTA CLASSIFICATION`
+- `_export_build_fix_stats OUTCOME` (sets the four Goal 7 vars)
+
+`stages/coder.sh` sources the new file (consistent with how stages
+currently source helpers) and replaces the inline block with a single
+`run_build_fix_loop` call.
+
+### Goal 9 - Test matrix for continuation semantics
+
+Create `tests/test_build_fix_loop.sh`. No `tests/run_tests.sh` edit is
+required because the runner already auto-discovers `tests/test_*.sh`.
+All tests use shell stubs only — no real coder agent invocation, no
+network. Reuse the `RETRY_STATE` counter pattern established by
+`tests/test_ui_build_gate.sh` Test 8.
+
+1. **`unit_progress_signal_truth_table`** (pure-function unit test)
+   Call `_build_fix_progress_signal` directly with crafted args:
+   - `(10, 5, "tail-A", "tail-B")` → `improved`
+   - `(5, 10, ..., ...)` → `worsened`
+   - `(7, 7, "x", "x")` → `unchanged`
+   - `(7, 7, "x", "y")` → `improved`
+
+2. **`unit_compute_budget_clamps`** (pure-function unit test)
+   Verify adaptive schedule: attempt=1 → 1.0×, attempt=2 → 1.5×,
+   attempt=3 → 2.0×. Clamp at lower 8 and upper
+   `EFFECTIVE_CODER_MAX_TURNS * MULTIPLIER`. Verify cumulative-cap
+   clamp returns 0 when used >= cap.
+
+3. **`retries_until_pass`**
+   Stub: gate fails twice then passes. Assert exactly **2** build-fix
+   attempts executed; `BUILD_FIX_OUTCOME=passed`,
+   `BUILD_FIX_ATTEMPTS=2`.
+
+4. **`stops_at_max_attempts`**
+   Stub: perpetual failure with strictly decreasing error counts (so
+   progress gate does not trip). Assert
+   `BUILD_FIX_ATTEMPTS == BUILD_FIX_MAX_ATTEMPTS`,
+   `BUILD_FIX_OUTCOME=exhausted`.
+
+5. **`early_stop_no_progress`**
+   Stub: identical errors and identical tail across attempts. Assert
+   loop stops at attempt 2; `BUILD_FIX_OUTCOME=no_progress`,
+   `BUILD_FIX_PROGRESS_GATE_FAILURES=1`.
+
+6. **`total_turn_cap_enforced`**
+   Synthetic large `EFFECTIVE_CODER_MAX_TURNS`, low
+   `BUILD_FIX_TOTAL_TURN_CAP`. Assert loop exits when cumulative cap
+   reached even before max attempts.
+
+7. **`report_written`**
+   Verify `${BUILD_FIX_REPORT_FILE}` is created, contains one block per
+   attempt, and includes turn budget / terminal class / gate result /
+   progress / classification fields.
+
+8. **`pipeline_state_notes_include_build_fix_summary`**
+   Verify `PIPELINE_STATE.md` notes on `build_failure` exit include
+   attempt count and `${BUILD_FIX_REPORT_FILE}` pointer.
+
+9. **`stats_exported_on_every_exit_path`**
+    Verify the four Goal 7 vars are non-empty after success path,
+    exhausted path, no-progress path, and `not_run` path. Specifically
+    assert `BUILD_FIX_OUTCOME` is one of the four allowed tokens.
+
+10. **`single_attempt_compat_mode`**
+    Set `BUILD_FIX_MAX_ATTEMPTS=1` and verify behavior matches
+    pre-M128: one attempt then exit. (Rollback safety.)
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `stages/coder.sh` | Replace the inline block at lines 1101-1170 with a single call to `run_build_fix_loop` (sourced from new `coder_build_fix.sh`). Remove the inline build-fix code path. |
+| `stages/coder_build_fix.sh` | **Extend existing file** (created by M127 for confidence-based routing). [PM: This file already exists from M127 (`stages/coder_build_fix.sh # M127 confidence-based build-fix routing`). Do NOT recreate it from scratch. ADD the five new functions (`run_build_fix_loop`, `_compute_build_fix_budget`, `_build_fix_progress_signal`, `_append_build_fix_report`, `_export_build_fix_stats`) alongside M127's existing functions. Verify the combined file stays under 300 lines; if M127's content plus M128's additions would exceed the ceiling, extract one of the two concerns into a sibling helper (e.g. `stages/coder_build_fix_helpers.sh`).] |
+| `lib/config_defaults.sh` | Add six build-fix config defaults (`BUILD_FIX_ENABLED`, `BUILD_FIX_MAX_ATTEMPTS`, `BUILD_FIX_BASE_TURN_DIVISOR`, `BUILD_FIX_MAX_TURN_MULTIPLIER`, `BUILD_FIX_REQUIRE_PROGRESS`, `BUILD_FIX_TOTAL_TURN_CAP`) and corresponding `_clamp_config_value` calls (see existing pattern at line 567). |
+| `lib/artifact_defaults.sh` | Add `: "${BUILD_FIX_REPORT_FILE:=${TEKHTON_DIR}/BUILD_FIX_REPORT.md}"` alongside the existing artifact paths (lines 16-50). |
+| `lib/state.sh` | No signature change. Build-fix loop calls `write_pipeline_state` with the existing 5-arg form, passing the structured summary string as `extra_notes` (5th arg). The function body at line 30 is unchanged. |
+| `lib/prompts.sh` | Register `BUILD_FIX_REPORT_FILE` and the six new config keys as template variables (consistent with how other artifact and config vars are exposed). |
+| `tests/test_build_fix_loop.sh` | **New file.** Test cases T1–T10 above. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_build_fix_loop.sh` is picked up by filename convention. |
+| `docs/resilience.md` | Document build-fix continuation policy, caps, and early-stop criteria. |
+| `docs/reference/configuration.md` | Document the six new build-fix config keys with defaults. |
+
+## Migration Impact
+
+[PM: Added — milestone introduces six new config keys and one new artifact file.]
+
+All six new config keys (`BUILD_FIX_ENABLED`, `BUILD_FIX_MAX_ATTEMPTS`,
+`BUILD_FIX_BASE_TURN_DIVISOR`, `BUILD_FIX_MAX_TURN_MULTIPLIER`,
+`BUILD_FIX_REQUIRE_PROGRESS`, `BUILD_FIX_TOTAL_TURN_CAP`) are
+**optional** with safe defaults. No change to `pipeline.conf` is
+required. Existing behavior is preserved when `BUILD_FIX_MAX_ATTEMPTS=1`.
+
+`BUILD_FIX_REPORT_FILE` is a new artifact written under `${TEKHTON_DIR}/`
+on every run that exercises the build-fix path. Pre-M128 pipelines will
+not have this file; its absence should not be treated as an error by
+any downstream tooling.
+
+## Acceptance Criteria
+
+- [ ] Build-fix flow supports up to `BUILD_FIX_MAX_ATTEMPTS` attempts, stopping early on success.
+- [ ] Turn budget increases per attempt according to the 1.0× / 1.5× / 2.0× schedule using integer arithmetic; respects 8-turn lower bound and `EFFECTIVE_CODER_MAX_TURNS * BUILD_FIX_MAX_TURN_MULTIPLIER` upper bound.
+- [ ] Continuation beyond attempt 1 is blocked when `BUILD_FIX_REQUIRE_PROGRESS=true` and `_build_fix_progress_signal` returns `unchanged` or `worsened`.
+- [ ] Cumulative build-fix turns are capped by `BUILD_FIX_TOTAL_TURN_CAP=120`.
+- [ ] `${BUILD_FIX_REPORT_FILE}` is created under `${TEKHTON_DIR}/` and records every attempt with budget / terminal class / gate result / progress / classification.
+- [ ] On terminal `build_failure`, `PIPELINE_STATE.md` notes include attempt count and report pointer.
+- [ ] On every exit path (including the `not_run` path), the four env vars `BUILD_FIX_ATTEMPTS`, `BUILD_FIX_OUTCOME`, `BUILD_FIX_TURN_BUDGET_USED`, `BUILD_FIX_PROGRESS_GATE_FAILURES` are exported with valid values; `BUILD_FIX_OUTCOME` is one of `passed | exhausted | no_progress | not_run`.
+- [ ] On terminal failure paths, `SECONDARY_ERROR_CATEGORY=AGENT_SCOPE`, `SECONDARY_ERROR_SUBCATEGORY=max_turns`, `SECONDARY_ERROR_SIGNAL=build_fix_budget_exhausted` are exported (or, when M129 helpers are present, `set_secondary_cause` is called with the same args).
+- [ ] `BUILD_FIX_MAX_ATTEMPTS=1` reproduces pre-M128 single-attempt behavior (rollback safety).
+- [ ] `stages/coder.sh` lines decreased (inline block extracted) and `stages/coder_build_fix.sh` is below 300 lines.
+- [ ] All build-fix loop tests pass; all existing coder-stage and gate-bypass tests remain green.
+- [ ] `shellcheck` clean for `stages/coder.sh`, `stages/coder_build_fix.sh`, `lib/config_defaults.sh`, `lib/artifact_defaults.sh`.
+
+## Watch For
+
+- **`stages/coder_build_fix.sh` already exists from M127.** The CLAUDE.md
+  repo layout lists this file as an M127 artifact (`# M127 confidence-based
+  build-fix routing (sub-stage)`). Extend it — do not recreate it from
+  scratch. Verify M127's existing routing functions remain intact after
+  M128's additions are appended. If the combined file would exceed 300
+  lines, extract one concern into a sibling helper rather than discarding
+  either milestone's code.
+- **`BUILD_FIX_OUTCOME` token vocabulary is a cross-milestone contract.**
+  M132's `_collect_build_fix_stats_json` (`m132-run-summary-causal-fidelity-enrichment.md`)
+  branches on the exact strings `passed | exhausted | no_progress | not_run`.
+  Renaming, abbreviating, or adding tokens silently breaks the dashboard.
+  If a new state is needed, introduce a new exported field instead.
+- **Export the four Goal 7 vars on `not_run` paths too.** When the gate
+  passes first time or `BUILD_FIX_ENABLED=false`, M132 still expects to
+  read `BUILD_FIX_OUTCOME=not_run`, `BUILD_FIX_ATTEMPTS=0`. Skipping
+  the export silently drives M132's `_collect_build_fix_stats_json`
+  into "absent → enabled:false" inference, which is the wrong default.
+- **Read `LAST_BUILD_CLASSIFICATION` (M127), do not re-classify.** M127
+  exports the routing token after every gate run. The build-fix loop
+  reads it directly; do not re-invoke `classify_routing_decision`. The
+  four-token vocabulary (`code_dominant | noncode_dominant |
+  mixed_uncertain | unknown_only`) is M127's contract — M128 only
+  needs to *consume* it.
+- **Do not double-count agent calls.** Build-fix attempts must invoke
+  `run_agent` (`lib/agent.sh`), which already increments
+  `_ORCH_AGENT_CALLS` and respects `MAX_AUTONOMOUS_AGENT_CALLS=200`
+  (`lib/orchestrate.sh:177`). Do not bump the counter manually; do not
+  call the agent CLI directly.
+- **Bash has no floating-point math.** The 1.5× multiplier is integer
+  arithmetic: `base_turns * 3 / 2`. The 1.0 multiplier is `* 100 / 100`.
+  Do not introduce a `bc` dependency in orchestration paths (see M127
+  Watch For for the same constraint).
+- **State writer is `lib/state.sh`, not `lib/pipeline_state_io.sh`.**
+  The function is `write_pipeline_state` at `lib/state.sh:30`. The
+  5th positional argument is `extra_notes`. No signature change is
+  required by this milestone — pass the structured summary as a string.
+- **`${BUILD_FIX_REPORT_FILE}` placement.** Use the variable everywhere;
+  do not hardcode `.tekhton/`. `lib/artifact_defaults.sh:16` sets
+  `TEKHTON_DIR` and every artifact path derives from it (M84
+  migration).
+- **300-line ceiling on `stages/coder_build_fix.sh`.** The new file
+  must stay under the limit. Five helpers plus a top-level loop
+  function is feasible; do not put the prompt template render inline
+  (use the existing `render_prompt "build_fix"` indirection).
+- **Progress signal compares last 20 non-blank lines.** The exact
+  count is part of the unit test fixture. Changing the window size
+  flips edge-case classifications and breaks the truth-table test.
+- **Pre-flight backwards-compat: `has_only_noncode_errors` is M127's
+  responsibility.** Do not call it from inside the loop; M127's single-
+  attempt short-circuit fires *before* the loop entry. Additional
+  non-code dominant routing is handled by M130 at recovery dispatch.
+- **`BUILD_FIX_TOTAL_TURN_CAP` interacts with adaptive budgets.** When
+  `cap - used` becomes smaller than 8, the next attempt would request
+  a sub-floor budget. Treat that as "cap reached" and exit the loop;
+  do not invoke an agent with budget < 8.
+
+## Seeds Forward
+
+- **M129 — Failure context schema v2.** M129 reads
+  `LAST_FAILURE_CONTEXT.json` and explicitly states (Goal 2) that
+  "coder build-gate/build-fix exit path (`stages/coder.sh`)" is
+  immediate mandatory integration for primary/secondary cause vars.
+  M128's exports of `SECONDARY_ERROR_*` (Goal 5) cover the secondary
+  slot; primary slot is filled by M127's classifier translation in
+  M129. If M128 lands first, leave the primary vars empty rather than
+  guessing — M129's writer handles the empty case. If M129 lands
+  first and provides `set_secondary_cause`, prefer that helper over
+  raw exports.
+- **M130 — Causal-context-aware recovery routing.** M130 reads
+  `LAST_BUILD_CLASSIFICATION` to decide whether to route
+  `retry_coder_build` (`code_dominant` / `mixed_uncertain` first
+  attempt) or `save_exit` (`noncode_dominant`). Keep ownership clear:
+  M130 owns non-code dominant recovery dispatch, while M128 owns
+  in-loop budget and progress gates after a retry has been selected.
+  M130's `_ORCH_MIXED_BUILD_RETRIED` gate is at outer-loop level, not
+  per-attempt — do not try to coordinate them.
+- **M132 — RUN_SUMMARY causal fidelity enrichment.** Hard contract.
+  M132's `_collect_build_fix_stats_json` reads exactly the four env
+  vars from Goal 7 with exactly the four `BUILD_FIX_OUTCOME` tokens.
+  Keep the names, types, and vocabulary stable. Watchtower badges and
+  dashboard run-row rendering depend on this.
+- **`${BUILD_FIX_REPORT_FILE}` (new artifact).** Future milestones
+  (notes pipeline, watchtower run detail) may want to surface the
+  per-attempt history. Keep the schema simple — one section per
+  attempt with the seven fields listed in Goal 4 — so downstream
+  parsers stay trivial. If a future milestone needs structured access,
+  emit a sibling JSON artifact rather than parsing the markdown.
+- **Adaptive schedule generalization.** The 1.0× / 1.5× / 2.0×
+  schedule is hardcoded. If a future milestone wants attempt-N
+  budgets to be data-driven (e.g. learned from M46 metrics), the
+  cleanest hook is `_compute_build_fix_budget` — keep it pure so it
+  can be replaced without touching the loop body.
+
+---
+
+## Archived: 2026-04-27 — Unknown Initiative
+
+# M130 - Causal-Context-Aware Recovery Routing
+
+<!-- milestone-meta
+id: "130"
+status: "done"
+-->
+
+## Overview
+
+The m126–m129 series produces progressively richer failure intelligence:
+
+| Milestone | What it adds |
+|-----------|-------------|
+| m126 | Deterministic UI gate execution; interactive-reporter timeout detection |
+| m127 | Confidence-based log classification; distinguishes code vs environment signals |
+| m128 | Bounded build-fix loop; progress-gated retry |
+| m129 | Schema v2 `LAST_FAILURE_CONTEXT.json`; explicit `primary_cause` / `secondary_cause` objects |
+
+None of that intelligence yet reaches the top-level recovery decision
+tree. `_classify_failure` in `lib/orchestrate_recovery.sh` branches
+only on the flat `AGENT_ERROR_CATEGORY` / `AGENT_ERROR_SUBCATEGORY`
+pair. Gaps:
+
+1. **`ENVIRONMENT` always routes `save_exit`.**  
+   After m126/m129, an `ENVIRONMENT/test_infra` failure with signal
+   `ui_timeout_interactive_report` is a *deterministically recoverable*
+   condition: re-run the gate with the non-interactive env profile.
+   The current router discards that knowledge and exits.
+
+2. **`AGENT_SCOPE/max_turns` always routes `split`.**  
+   When m129 shows primary cause is `ENVIRONMENT/test_infra` and
+   secondary is `AGENT_SCOPE/max_turns`, the max_turns event is a
+   *symptom*, not the root cause. Splitting the milestone hands a larger
+   context window to the same unresolvable gate condition — still no fix.
+   The correct action is to re-run the gate with environment remediation
+   applied first.
+
+3. **Build-gate failures bypass the causal schema entirely.**  
+   The existing `retry_coder_build` branch fires whenever
+   `BUILD_ERRORS_FILE` is non-empty, regardless of whether the
+   classification system has high or low confidence. A
+   `mixed_uncertain` classification from m127 should not trigger the
+   same aggressive retry as a `code_dominant` one.
+
+4. **`_print_recovery_block` cannot produce cause-specific guidance.**  
+   It only branches on `outcome` (max_attempts, timeout, etc.) and
+   prints generic `--diagnose` as the escalation path. With primary/
+   secondary cause available, it can print the actual cause in plain
+   English and suggest the most targeted follow-up.
+
+M130 upgrades `_classify_failure` and `_print_recovery_block` to
+consume the v2 failure context schema and produce cause-specific
+routing decisions. One new recovery *action* is added —
+`retry_ui_gate_env` — but it is implemented as a thin variant of the
+existing `retry_coder_build` pattern (export env, re-loop), not as a
+new orchestration mechanism. The goal is to route *existing* actions
+more accurately and stop actions that cannot help.
+
+## Where the relevant code lives (verified at write time)
+
+- `_classify_failure` and `_print_recovery_block` live in
+  `lib/orchestrate_recovery.sh` (currently 242 lines — see "300-line
+  ceiling" in Watch For).
+- The recovery-action `case` dispatcher that consumes
+  `_classify_failure`'s return is in
+  `lib/orchestrate_loop.sh:_handle_pipeline_failure` (lines ~187–253),
+  **not** in `lib/orchestrate.sh:run_complete_loop`. `run_complete_loop`
+  delegates to `_handle_pipeline_failure` via the
+  `_handle_pipeline_failure "$_iter_turns" "$_files_changed"` call at
+  `lib/orchestrate.sh:251`.
+- The persistent retry guard pattern this milestone follows is
+  `_ORCH_BUILD_RETRIED` — declared at `lib/orchestrate.sh:57`, reset
+  once at `run_complete_loop` start (`lib/orchestrate.sh:94`), set true
+  in the `retry_coder_build` case branch
+  (`lib/orchestrate_loop.sh:221`). Mirror that lifecycle for
+  `_ORCH_ENV_GATE_RETRIED` and `_ORCH_MIXED_BUILD_RETRIED`. Do **not**
+  reset them per-iteration — that breaks the retry-once semantic.
+- `_print_recovery_block`'s only caller in the failure path is
+  `lib/orchestrate_helpers.sh:_save_orchestration_state` (line ~231).
+  That's where cause_summary must be assembled and passed.
+- The m126 `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1` Priority 0
+  framework-detection rule (m126 "Seeds Forward") is the mechanism by
+  which `retry_ui_gate_env` actually re-runs the gate with hardened
+  env. If m126 ships without that hook, this milestone must add the
+  one-liner check in `lib/gates_ui.sh:_ui_detect_framework` before the
+  new action becomes useful — see "Watch For" below.
+
+## Design
+
+### Goal 1 — Add a context loader for failure cause schema v2
+
+Add a new helper at the top of `lib/orchestrate_recovery.sh`:
+
+```bash
+# _load_failure_cause_context
+# Reads LAST_FAILURE_CONTEXT.json (schema v1 or v2) and populates:
+#   _ORCH_PRIMARY_CAT, _ORCH_PRIMARY_SUB, _ORCH_PRIMARY_SIGNAL,
+#   _ORCH_SECONDARY_CAT, _ORCH_SECONDARY_SUB, _ORCH_SECONDARY_SIGNAL,
+#   _ORCH_SCHEMA_VERSION (1 or 2)
+#
+# Degrades gracefully when the file is absent or has v1 shape:
+#   - v1 shape: populates _ORCH_SECONDARY_* from top-level category/subcategory,
+#     leaves _ORCH_PRIMARY_* empty.
+#   - File absent: all vars empty, _ORCH_SCHEMA_VERSION=0.
+#
+# Must be called before _classify_failure. Safe to call multiple times
+# (idempotent — reads file once, cached in module vars).
+_load_failure_cause_context() {
+    _ORCH_PRIMARY_CAT=""
+    _ORCH_PRIMARY_SUB=""
+    _ORCH_PRIMARY_SIGNAL=""
+    _ORCH_SECONDARY_CAT=""
+    _ORCH_SECONDARY_SUB=""
+    _ORCH_SECONDARY_SIGNAL=""
+    _ORCH_SCHEMA_VERSION=0
+
+    local ctx_file="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
+    [[ -f "$ctx_file" ]] || return 0
+
+    _ORCH_SCHEMA_VERSION=$(grep -oP '"schema_version"\s*:\s*\K[0-9]+' "$ctx_file" 2>/dev/null || echo "1")
+
+    if [[ "$_ORCH_SCHEMA_VERSION" -ge 2 ]]; then
+        # v2: read primary_cause and secondary_cause objects
+        # Use a simple line-by-line scan; avoid jq dependency in orchestration path
+        local in_primary=0 in_secondary=0
+        while IFS= read -r line; do
+            [[ "$line" =~ '"primary_cause"'   ]] && in_primary=1   && in_secondary=0 && continue
+            [[ "$line" =~ '"secondary_cause"' ]] && in_secondary=1 && in_primary=0   && continue
+            if [[ "$in_primary" -eq 1 ]]; then
+                [[ "$line" =~ '"category"'    ]] && _ORCH_PRIMARY_CAT=$(grep -oP '"category"\s*:\s*"\K[^"]+' <<< "$line")
+                [[ "$line" =~ '"subcategory"' ]] && _ORCH_PRIMARY_SUB=$(grep -oP '"subcategory"\s*:\s*"\K[^"]+' <<< "$line")
+                [[ "$line" =~ '"signal"'      ]] && _ORCH_PRIMARY_SIGNAL=$(grep -oP '"signal"\s*:\s*"\K[^"]+' <<< "$line")
+                [[ "$line" =~ "}" ]] && in_primary=0
+            fi
+            if [[ "$in_secondary" -eq 1 ]]; then
+                [[ "$line" =~ '"category"'    ]] && _ORCH_SECONDARY_CAT=$(grep -oP '"category"\s*:\s*"\K[^"]+' <<< "$line")
+                [[ "$line" =~ '"subcategory"' ]] && _ORCH_SECONDARY_SUB=$(grep -oP '"subcategory"\s*:\s*"\K[^"]+' <<< "$line")
+                [[ "$line" =~ '"signal"'      ]] && _ORCH_SECONDARY_SIGNAL=$(grep -oP '"signal"\s*:\s*"\K[^"]+' <<< "$line")
+                [[ "$line" =~ "}" ]] && in_secondary=0
+            fi
+        done < "$ctx_file"
+    else
+        # v1 compat: treat top-level category/subcategory as secondary (symptom-level)
+        _ORCH_SECONDARY_CAT=$(grep -oP '"category"\s*:\s*"\K[^"]+' "$ctx_file" 2>/dev/null || true)
+        _ORCH_SECONDARY_SUB=$(grep -oP '"subcategory"\s*:\s*"\K[^"]+' "$ctx_file" 2>/dev/null || true)
+    fi
+}
+```
+
+**Caching note:** `_load_failure_cause_context` zeroes the six cause
+vars at the top of every call, then re-reads the file. It is **not**
+idempotent across attempts in the strict sense — it always reflects
+the current on-disk state of `LAST_FAILURE_CONTEXT.json`. This is
+intentional: the file may be rewritten between iterations by m129's
+`write_last_failure_context`, and the router needs the latest cause
+data each time `_classify_failure` runs. Do not add a "first call
+wins" cache.
+
+**Test-mode override:** Honor an `ORCH_CONTEXT_FILE_OVERRIDE` env var
+so the test harness can point the loader at a fixture without
+manipulating `$PROJECT_DIR`. The existing line:
+
+```bash
+local ctx_file="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
+```
+
+becomes:
+
+```bash
+local ctx_file="${ORCH_CONTEXT_FILE_OVERRIDE:-${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json}"
+```
+
+This is the contract `tests/test_orchestrate_recovery.sh` (Goal 6)
+relies on.
+
+The cause-var reset is owned by the loader. The persistent retry
+guards (`_ORCH_ENV_GATE_RETRIED`, `_ORCH_MIXED_BUILD_RETRIED`) are
+managed separately — see Goal 5.
+
+### Goal 2 — Upgrade `_classify_failure` with causal-context branches
+
+The existing flat decision tree in `_classify_failure` is preserved
+intact **except** for four targeted amendments. Apply them as guarded
+early-return clauses inserted *before* the existing branches:
+
+#### Amendment A — Environment/test_infra re-route
+
+Insert immediately before the `if [[ "$error_cat" = "ENVIRONMENT" ]]`
+branch:
+
+```bash
+# Amendment A (M130): primary cause env/test_infra is recoverable by
+# re-running with deterministic gate profile (M126) unless the user
+# explicitly opted out via pipeline.conf. Do NOT save_exit.
+if [[ "$_ORCH_PRIMARY_CAT" = "ENVIRONMENT" ]] &&
+   [[ "$_ORCH_PRIMARY_SUB" = "test_infra"  ]] &&
+  [[ "${_ORCH_ENV_GATE_RETRIED:-0}" -ne 1 ]] &&
+  { [[ " ${_CONF_KEYS_SET:-} " != *" TEKHTON_UI_GATE_FORCE_NONINTERACTIVE "* ]] ||
+    [[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-0}" != "0" ]]; }; then
+    _ORCH_ENV_GATE_RETRIED=1
+    echo "retry_ui_gate_env"
+    return
+fi
+```
+
+If `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` is explicitly present in
+`pipeline.conf` (detected via `_CONF_KEYS_SET`), treat that as a user
+opt-out and fall through to the normal `ENVIRONMENT -> save_exit`
+behavior.
+
+`_ORCH_ENV_GATE_RETRIED` is a module-level flag initialized to `0` at
+run start. It prevents infinite loops: the second failure with the same
+primary cause falls through to the existing `ENVIRONMENT → save_exit`
+branch as before.
+
+#### Amendment B — max_turns with env primary cause
+
+Insert immediately before the `AGENT_SCOPE/max_turns → split` branch:
+
+```bash
+# Amendment B (M130): if primary cause is ENVIRONMENT (not agent failure)
+# and secondary is max_turns, do not split — split cannot fix an env issue.
+# Retry with env gate fix (once) then save_exit.
+if [[ "$error_cat"           = "AGENT_SCOPE"    ]] &&
+   [[ "$error_sub"           = "max_turns"      ]] &&
+   [[ "$_ORCH_PRIMARY_CAT"   = "ENVIRONMENT"    ]] &&
+  [[ "${_ORCH_ENV_GATE_RETRIED:-0}" -ne 1      ]] &&
+  { [[ " ${_CONF_KEYS_SET:-} " != *" TEKHTON_UI_GATE_FORCE_NONINTERACTIVE "* ]] ||
+    [[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-0}" != "0" ]]; }; then
+    _ORCH_ENV_GATE_RETRIED=1
+    echo "retry_ui_gate_env"
+    return
+fi
+```
+
+If `_ORCH_ENV_GATE_RETRIED` is already set (the env retry itself hit
+max_turns), fall through to the existing `split` branch — something
+deeper is wrong and split is then appropriate.
+
+If the user explicitly set
+`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` in `pipeline.conf`, the same
+opt-out applies here: do not schedule `retry_ui_gate_env`; fall through
+to the existing non-retry branch instead.
+
+#### Amendment C — Build-gate retry only when classification is code-dominant
+
+Replace the current unconditional `BUILD_ERRORS_FILE` check:
+
+```bash
+# Original (before M130):
+# if [[ -f "${BUILD_ERRORS_FILE}" ]] && [[ -s "${BUILD_ERRORS_FILE}" ]]; then
+#     echo "retry_coder_build"
+#     return
+# fi
+
+# M130: build-confidence routing.
+# code_dominant or unknown_only → retry_coder_build.
+# mixed_uncertain → retry once, then save_exit.
+# noncode_dominant → save_exit.
+# Kill-switch: BUILD_FIX_CLASSIFICATION_REQUIRED=false bypasses the gating
+# entirely and falls back to pre-M130 behavior.
+if [[ -f "${BUILD_ERRORS_FILE}" ]] && [[ -s "${BUILD_ERRORS_FILE}" ]]; then
+    if [[ "${BUILD_FIX_CLASSIFICATION_REQUIRED:-true}" != "true" ]]; then
+        # Pre-M130 behavior: always retry on non-empty BUILD_ERRORS_FILE
+        echo "retry_coder_build"
+        return
+    fi
+    local build_confidence="${LAST_BUILD_CLASSIFICATION:-code_dominant}"
+    case "$build_confidence" in
+        code_dominant|unknown_only|"")
+            # unknown_only: m127 explicitly chose to treat this as
+            # code_dominant in the consumer (m130's router) — see m127
+            # "Seeds Forward" — so unclassified errors still get one
+            # build-fix attempt.
+            echo "retry_coder_build"
+            return
+            ;;
+        mixed_uncertain)
+            # Retry once; coder will see the mixed signal in the error content
+            if [[ "${_ORCH_MIXED_BUILD_RETRIED:-0}" -ne 1 ]]; then
+                _ORCH_MIXED_BUILD_RETRIED=1
+                echo "retry_coder_build"
+                return
+            fi
+            echo "save_exit"
+            return
+            ;;
+        noncode_dominant)
+            # Non-code dominant signal: code change won't fix this
+            echo "save_exit"
+            return
+            ;;
+    esac
+fi
+```
+
+`LAST_BUILD_CLASSIFICATION` is exported by the m127 confidence-based
+classifier. When absent (pre-m127 deployment) the default `code_dominant`
+preserves current behavior.
+
+`BUILD_FIX_CLASSIFICATION_REQUIRED` is declared in `config_defaults.sh`
+by m136 (defaulted to `true`). When m130 lands before m136, the
+`${BUILD_FIX_CLASSIFICATION_REQUIRED:-true}` default in this branch
+makes the knob effective even without `config_defaults.sh` registration —
+m136 only adds the explicit declaration and a `--validate-config` check.
+
+#### Amendment D — Call `_load_failure_cause_context` at function start
+
+Add as the very first line of `_classify_failure`:
+
+```bash
+_load_failure_cause_context  # M130: populate _ORCH_PRIMARY_*/SECONDARY_* vars
+```
+
+### Goal 3 — Add `retry_ui_gate_env` as an actionable recovery path
+
+`_classify_failure` can now return a new action string
+`retry_ui_gate_env`. The **caller** is the `case "$recovery"`
+dispatcher in `lib/orchestrate_loop.sh:_handle_pipeline_failure`
+(lines ~202–252). Add the new case branch immediately above the
+existing `retry_coder_build)` branch so the env-aware path is checked
+first:
+
+```bash
+retry_ui_gate_env)
+    # M130: retry from coder stage with TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
+    # so m126's framework-detection Priority 0 forces the hardened env profile
+  # on the next gate run. _classify_failure only returns this branch when the
+  # user has not explicitly opted out with
+  # TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0 in pipeline.conf. Idempotency is
+  # enforced by _classify_failure via the _ORCH_ENV_GATE_RETRIED guard —
+  # second env-class failure falls through to save_exit there, not here.
+    export TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
+    _ORCH_RECOVERY_ROUTE_TAKEN="retry_ui_gate_env"   # m132 read site
+    warn "Retrying from coder stage with non-interactive UI gate env (M130)."
+    START_AT="coder"
+    return 0
+    ;;
+```
+
+This deliberately mirrors the existing `retry_coder_build` shape
+already in `lib/orchestrate_loop.sh:215-226`:
+
+```bash
+# Existing pattern — kept here for reference, not modified by this milestone
+retry_coder_build)
+    if [[ "${_ORCH_BUILD_RETRIED:-false}" = true ]]; then
+        warn "Build fix already retried. Saving state and exiting."
+        _save_orchestration_state "build_exhausted" "Build failure persists after retry"
+        return 11
+    fi
+    _ORCH_BUILD_RETRIED=true
+    warn "Retrying from coder stage with build errors context."
+    START_AT="coder"
+    return 0
+    ;;
+```
+
+The dispatcher's job is to set up the next iteration; the next
+iteration's `_run_pipeline_stages` re-enters the coder stage and the
+build gate, where m126's deterministic env normalizer picks up
+`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1` from the environment. **Do
+not** call `run_ui_test_gate` (or any other gate function) inline
+from the dispatcher — that bypasses the iteration's
+`record_pipeline_attempt`, progress detection, agent-call accounting,
+and TUI stage transitions, all of which assume one-stage-call-per-iteration.
+
+**M126 contract requirement.** This branch is only useful if m126's
+`_ui_detect_framework` (or the equivalent normalizer entry point)
+treats `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1` as a Priority 0 rule
+that forces the hardened env profile regardless of detected framework.
+m126's "Seeds Forward" already lists this as a recommended hook. If
+m126 ships without it, m130 must add the four-line check in
+`lib/gates_ui.sh:_ui_detect_framework` before the dispatcher branch
+is meaningful — see "Watch For".
+
+**No `_retry_ui_gate_env` helper.** Earlier drafts added a separate
+function that ran the gate inline with a halved timeout. That has
+been removed: it duplicated stage-management logic already provided
+by the next iteration, and it leaked tight-timeout side effects onto
+the parent `UI_TEST_TIMEOUT`. The simpler "set env, re-loop" pattern
+matches every other recovery action in the dispatcher.
+
+### Goal 4 — Enrich `_print_recovery_block` with causal-context messaging
+
+The function already receives `outcome` and `detail`. Extend it to
+also accept an optional fifth argument `cause_summary` (plain-text
+one-liner generated from primary/secondary cause vars):
+
+```bash
+_print_recovery_block() {
+    local outcome="${1:-unknown}"
+    local detail="${2:-}"
+    local resume_cmd="${3:-}"
+    local task="${4:-}"
+    local cause_summary="${5:-}"   # NEW: M130 causal context line
+    ...
+```
+
+Callers already pass 4 args; the fifth is optional and defaults to
+empty, so existing call sites are unaffected.
+
+When `cause_summary` is non-empty, insert it into the `WHAT HAPPENED`
+block immediately after `what_happened`:
+
+```bash
+if [[ -n "$cause_summary" ]]; then
+    echo "  Root cause: ${cause_summary}"
+fi
+```
+
+Generate `cause_summary` at the call site. The only caller of
+`_print_recovery_block` is
+`lib/orchestrate_helpers.sh:_save_orchestration_state` (around line
+231). Insert the assembly immediately before the existing
+`_print_recovery_block` invocation:
+
+```bash
+# In lib/orchestrate_helpers.sh:_save_orchestration_state, just before
+# _print_recovery_block "$outcome" "$detail" "$resume_cmd" "$task":
+
+_load_failure_cause_context  # M130: refresh _ORCH_PRIMARY_*/SECONDARY_* from disk
+local _cause_summary=""
+if [[ -n "$_ORCH_PRIMARY_CAT" ]]; then
+    _cause_summary="${_ORCH_PRIMARY_CAT}/${_ORCH_PRIMARY_SUB}"
+    [[ -n "$_ORCH_PRIMARY_SIGNAL" ]] && _cause_summary+=" (${_ORCH_PRIMARY_SIGNAL})"
+    if [[ -n "$_ORCH_SECONDARY_CAT" ]]; then
+        _cause_summary+="; secondary: ${_ORCH_SECONDARY_CAT}/${_ORCH_SECONDARY_SUB}"
+    fi
+fi
+_print_recovery_block "$outcome" "$detail" "$resume_cmd" "$task" "$_cause_summary"
+```
+
+`_save_orchestration_state` already sources `orchestrate_recovery.sh`
+transitively (it lives in the same file family), so `_load_failure_cause_context`
+is in scope without additional sourcing changes.
+
+### Goal 5 — Module-level var declarations and reset semantics
+
+There are **two** lifetimes for the new module-level state, and they
+need different reset hooks.
+
+**Lifetime A — refreshed every call to `_classify_failure`:**
+
+| Var | Why per-call |
+|-----|--------------|
+| `_ORCH_PRIMARY_CAT`, `_ORCH_PRIMARY_SUB`, `_ORCH_PRIMARY_SIGNAL` | Re-read from disk; the file may be rewritten between iterations |
+| `_ORCH_SECONDARY_CAT`, `_ORCH_SECONDARY_SUB`, `_ORCH_SECONDARY_SIGNAL` | Same |
+| `_ORCH_SCHEMA_VERSION` | Same |
+
+These are zeroed at the top of `_load_failure_cause_context` (already
+specified in Goal 1) and immediately repopulated from the file. No
+external reset hook is needed.
+
+**Lifetime B — persistent across iterations within one `run_complete_loop` call:**
+
+| Var | Why persistent |
+|-----|---------------|
+| `_ORCH_ENV_GATE_RETRIED` | Enforces the "retry env gate at most once per `--complete` invocation" semantic |
+| `_ORCH_MIXED_BUILD_RETRIED` | Enforces the "retry mixed_uncertain build at most once" semantic |
+| `_ORCH_RECOVERY_ROUTE_TAKEN` | Captures the last action chosen for m132's RUN_SUMMARY enrichment |
+
+These mirror the existing `_ORCH_BUILD_RETRIED` / `_ORCH_REVIEW_BUMPED`
+lifecycle: declare at module scope, reset **once** at the top of
+`run_complete_loop` (around `lib/orchestrate.sh:94` where
+`_ORCH_BUILD_RETRIED=false` is reset), and **never** reset
+per-iteration. A per-iteration reset would always make the guard `0`
+when `_classify_failure` checks it, breaking the retry-once semantic.
+
+Declarations at the top of `lib/orchestrate_recovery.sh` (alongside
+the existing `_ORCH_*` vars):
+
+```bash
+# M130: causal-context module state
+_ORCH_PRIMARY_CAT=""
+_ORCH_PRIMARY_SUB=""
+_ORCH_PRIMARY_SIGNAL=""
+_ORCH_SECONDARY_CAT=""
+_ORCH_SECONDARY_SUB=""
+_ORCH_SECONDARY_SIGNAL=""
+_ORCH_SCHEMA_VERSION=0
+_ORCH_ENV_GATE_RETRIED=0
+_ORCH_MIXED_BUILD_RETRIED=0
+_ORCH_RECOVERY_ROUTE_TAKEN=""
+```
+
+Add `_reset_orch_recovery_state` that zeroes only the persistent
+(Lifetime B) guards (the cause vars are owned by
+`_load_failure_cause_context` and zeroed there):
+
+```bash
+# Reset the persistent retry guards. Called once per --complete
+# invocation, NOT per iteration. The cause vars are reset by
+# _load_failure_cause_context on every call.
+_reset_orch_recovery_state() {
+    _ORCH_ENV_GATE_RETRIED=0
+    _ORCH_MIXED_BUILD_RETRIED=0
+    _ORCH_RECOVERY_ROUTE_TAKEN=""
+}
+```
+
+**Insertion point for the reset call:** in `lib/orchestrate.sh`,
+inside `run_complete_loop`, immediately after the existing
+`_ORCH_BUILD_RETRIED=false` line (line ~94). The neighborhood is the
+canonical place for one-time per-invocation initialization.
+
+If m132 lands first (it also adds `_ORCH_RECOVERY_ROUTE_TAKEN` per
+its Goal 8), m130 keeps the var declaration here as authoritative —
+m132 documents that it consumes the value m130 owns. Pick whichever
+milestone lands first to physically add the declaration; the other
+verifies and proceeds.
+
+### Goal 6 — Tests: fixture-backed routing decision coverage
+
+Add `tests/test_orchestrate_recovery.sh` with the following test cases:
+
+#### T1 — env/test_infra primary → retry_ui_gate_env
+
+```bash
+# Fixture: LAST_FAILURE_CONTEXT.json v2 with primary=ENVIRONMENT/test_infra
+# Inputs:  AGENT_ERROR_CATEGORY=ENVIRONMENT AGENT_ERROR_SUBCATEGORY=test_infra
+#          no explicit pipeline.conf opt-out
+# Expect:  _classify_failure → "retry_ui_gate_env"
+```
+
+#### T2 — second env failure → save_exit (not infinite loop)
+
+```bash
+# Same fixture + _ORCH_ENV_GATE_RETRIED=1
+# Expect:  _classify_failure → "save_exit"
+```
+
+#### T2b — explicit pipeline.conf opt-out suppresses env retry
+
+```bash
+# Same fixture + _CONF_KEYS_SET contains TEKHTON_UI_GATE_FORCE_NONINTERACTIVE
+#          TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0
+# Expect:  _classify_failure → "save_exit"
+```
+
+#### T3 — max_turns with env primary → retry_ui_gate_env, not split
+
+```bash
+# Fixture: v2, primary=ENVIRONMENT/test_infra, secondary=AGENT_SCOPE/max_turns
+# Inputs:  AGENT_ERROR_CATEGORY=AGENT_SCOPE AGENT_ERROR_SUBCATEGORY=max_turns
+#          no explicit pipeline.conf opt-out
+# Expect:  _classify_failure → "retry_ui_gate_env"
+```
+
+#### T4 — max_turns with env primary, already retried → split
+
+```bash
+# Same + _ORCH_ENV_GATE_RETRIED=1
+# Expect:  _classify_failure → "split"
+```
+
+#### T5 — build gate code_dominant → retry_coder_build
+
+```bash
+# LAST_BUILD_CLASSIFICATION=code_dominant + BUILD_ERRORS_FILE non-empty
+# Expect:  _classify_failure → "retry_coder_build"
+```
+
+#### T6 — build gate noncode_dominant → save_exit
+
+```bash
+# LAST_BUILD_CLASSIFICATION=noncode_dominant + BUILD_ERRORS_FILE non-empty
+# Expect:  _classify_failure → "save_exit"
+```
+
+#### T7 — build gate mixed_uncertain, first attempt → retry_coder_build
+
+```bash
+# LAST_BUILD_CLASSIFICATION=mixed_uncertain, _ORCH_MIXED_BUILD_RETRIED=0
+# Expect:  _classify_failure → "retry_coder_build"
+```
+
+#### T8 — build gate mixed_uncertain, already retried → save_exit
+
+```bash
+# LAST_BUILD_CLASSIFICATION=mixed_uncertain, _ORCH_MIXED_BUILD_RETRIED=1
+# Expect:  _classify_failure → "save_exit"
+```
+
+#### T8b — build gate unknown_only → retry_coder_build (treated as code)
+
+```bash
+# LAST_BUILD_CLASSIFICATION=unknown_only, BUILD_ERRORS_FILE non-empty
+# Expect:  _classify_failure → "retry_coder_build"
+# Rationale: m127 spec says unknown_only is treated as code_dominant
+# for routing — unclassified errors still get one build-fix attempt.
+```
+
+#### T8c — kill switch: BUILD_FIX_CLASSIFICATION_REQUIRED=false → always retry
+
+```bash
+# LAST_BUILD_CLASSIFICATION=noncode_dominant + BUILD_FIX_CLASSIFICATION_REQUIRED=false
+# Expect:  _classify_failure → "retry_coder_build"
+# Rationale: pre-m130 fallback path; the m136 knob can disable Amendment C entirely.
+```
+
+#### T9 — v1 schema compat: flat ENVIRONMENT still routes save_exit
+
+```bash
+# Fixture: v1 LAST_FAILURE_CONTEXT.json (no schema_version, no primary_cause)
+# Inputs:  AGENT_ERROR_CATEGORY=ENVIRONMENT AGENT_ERROR_SUBCATEGORY=disk_full
+# Expect:  _classify_failure → "save_exit"
+```
+
+#### T10 — no failure context file: original decision tree unchanged
+
+```bash
+# No LAST_FAILURE_CONTEXT.json present
+# Inputs:  AGENT_ERROR_CATEGORY=UPSTREAM
+# Expect:  _classify_failure → "save_exit"
+```
+
+#### T11 — cause_summary in recovery block
+
+```bash
+# Call _print_recovery_block with cause_summary="ENVIRONMENT/test_infra (ui_timeout_interactive_report)"
+# Expect:  output contains "Root cause: ENVIRONMENT/test_infra"
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/orchestrate_recovery.sh` | Add `_load_failure_cause_context`, `_reset_orch_recovery_state`; module state vars (Lifetime A + Lifetime B from Goal 5); amendments A–D in `_classify_failure`; enriched `_print_recovery_block` signature (5th optional arg). **Currently 242 lines; estimated +110-130 LOC will exceed the 300-line ceiling (CLAUDE.md non-negotiable rule 8).** Plan from the start to extract the new symbols (`_load_failure_cause_context`, `_reset_orch_recovery_state`, the four amendment helpers if any factor out cleanly, the module state vars block) into a new `lib/orchestrate_recovery_causal.sh` and source it from `orchestrate_recovery.sh`. Mirrors the established `_helpers.sh` / domain-split pattern used by `gates_ui` / `error_patterns` after their respective resilience-arc milestones. |
+| `lib/orchestrate_loop.sh` | Add `retry_ui_gate_env` case branch in `_handle_pipeline_failure` immediately above the existing `retry_coder_build)` branch (lines ~215–226). Currently 253 lines; addition is ~12 LOC — comfortably under 300. |
+| `lib/orchestrate.sh` | Call `_reset_orch_recovery_state` once at the top of `run_complete_loop`, immediately after the existing `_ORCH_BUILD_RETRIED=false` line (line ~94). Do **not** insert per-iteration. |
+| `lib/orchestrate_helpers.sh` | In `_save_orchestration_state` (line ~231), assemble `_cause_summary` from loader output and pass as the new fifth argument to `_print_recovery_block`. |
+| `tests/test_orchestrate_recovery.sh` | **New file.** Fixture-backed tests T1–T11 plus T8b/T8c covering all new routing branches. Tests use `ORCH_CONTEXT_FILE_OVERRIDE` to point the loader at fixture JSON. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_orchestrate_recovery.sh` is picked up by filename convention. |
+| `docs/troubleshooting/recovery-routing.md` | **New file.** Document the causal-context routing table (primary cause → action mapping), the retry-once guards, and the `BUILD_FIX_CLASSIFICATION_REQUIRED` kill switch. |
+
+## Implementation Notes
+
+### Parser safety for LAST_FAILURE_CONTEXT.json
+
+`_load_failure_cause_context` uses line-by-line `grep -oP` instead of
+`jq` so orchestration code never takes on a runtime dependency on a
+JSON tool that may not be available in target environments. The tradeoff
+is the parser is sensitive to JSON pretty-print formatting. Mitigation:
+
+- `write_last_failure_context` (m129) must guarantee one-key-per-line
+  output for all primary/secondary cause fields (not minified). m129
+  enshrines this in its "Pretty-print contract — NON-NEGOTIABLE"
+  section, with `writes_pretty_printed_one_key_per_line` as the canary
+  test.
+- `_load_failure_cause_context` honors `ORCH_CONTEXT_FILE_OVERRIDE` (see
+  Goal 1) so tests can point the loader at fixture JSON without
+  manipulating `$PROJECT_DIR`.
+
+### Loop safety for `retry_ui_gate_env`
+
+The `_ORCH_ENV_GATE_RETRIED` guard is a module-level var, reset once
+at the start of `run_complete_loop` (not per iteration — see Goal 5
+for the why). This means:
+
+- Within a single `--complete` invocation: at most one env-gate retry.
+- On a fresh `--complete` resume (new shell, new `run_complete_loop`
+  call): the guard starts at 0 again, so the retry is re-allowed.
+  This is intentional — the prior run's env state is unknown; allowing
+  one more retry costs one gate run and is better than permanently
+  refusing it.
+
+If permanent suppression is needed (user manually confirmed the gate is
+not an interactive-report issue), the user can set
+`TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` in `pipeline.conf`.
+Amendments A and B must check `_CONF_KEYS_SET` plus the current value
+before returning `retry_ui_gate_env`; when that explicit opt-out is
+present, the classifier falls through to the ordinary non-retry branch
+instead of scheduling a forced env rerun. Alternatively
+`BUILD_FIX_CLASSIFICATION_REQUIRED=false` (see Amendment C) reverts
+the build-side gating to pre-M130 behavior.
+
+### `LAST_BUILD_CLASSIFICATION` export contract
+
+`LAST_BUILD_CLASSIFICATION` is exported by the m127 classification
+engine after each build-gate run. Its values are:
+
+- `code_dominant` — majority of log lines matched known code-error patterns
+- `noncode_dominant` — majority of log lines matched non-code patterns
+- `mixed_uncertain` — neither category dominates
+- `unknown_only` — no patterns matched at all (treated as `code_dominant`
+  for routing purposes — unclassified errors should still be attempted)
+
+When m127 is not yet deployed, this var will be absent; the
+`${LAST_BUILD_CLASSIFICATION:-code_dominant}` default preserves the
+pre-m127 retry behavior so m130 can be deployed independently.
+
+## Acceptance Criteria
+
+- [ ] `_load_failure_cause_context` correctly populates `_ORCH_PRIMARY_*` and `_ORCH_SECONDARY_*` from v2 schema JSON.
+- [ ] `_load_failure_cause_context` degrades safely with v1 schema (no crash, secondary vars populated from top-level fields).
+- [ ] `_load_failure_cause_context` is a no-op (all vars empty) when `LAST_FAILURE_CONTEXT.json` is absent.
+- [ ] `_classify_failure` returns `retry_ui_gate_env` when primary cause is `ENVIRONMENT/test_infra`, env gate has not yet been retried, and `pipeline.conf` has not explicitly set `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0`.
+- [ ] `_classify_failure` returns `save_exit` (not `retry_ui_gate_env`) on second environment failure.
+- [ ] `_classify_failure` does not return `retry_ui_gate_env` when `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` is explicitly set in `pipeline.conf` (key present in `_CONF_KEYS_SET`); it falls through to the existing non-retry branch instead.
+- [ ] `_classify_failure` returns `retry_ui_gate_env` (not `split`) when `AGENT_SCOPE/max_turns` and primary cause is `ENVIRONMENT/test_infra`.
+- [ ] `_classify_failure` returns `retry_coder_build` for `code_dominant`, `unknown_only`, or `mixed_uncertain` (first time) classifications.
+- [ ] `_classify_failure` returns `save_exit` for `noncode_dominant` build errors.
+- [ ] `BUILD_FIX_CLASSIFICATION_REQUIRED=false` reverts Amendment C to pre-M130 behavior (always `retry_coder_build` on non-empty `BUILD_ERRORS_FILE`).
+- [ ] `_print_recovery_block` prints "Root cause: ..." when fifth arg is non-empty.
+- [ ] All test cases in `test_orchestrate_recovery.sh` pass (T1–T11 plus T2b opt-out, T8b unknown_only, and T8c kill-switch).
+- [ ] `test_orchestrate_recovery.sh` is auto-discovered by `./tests/run_tests.sh` via the existing `test_*.sh` glob.
+- [ ] No regression on pre-existing routing cases (T9 and T10 specifically confirm v1 and absent-context paths).
+- [ ] `_reset_orch_recovery_state` is called exactly once per `run_complete_loop` invocation (at the top), not per iteration. Verified by inspection at `lib/orchestrate.sh:~94`.
+- [ ] `lib/orchestrate_recovery.sh` ends ≤ 300 lines after the changes (CLAUDE.md non-negotiable rule 8). If the file would exceed 300, the extraction described in "Files Modified" has been performed and `lib/orchestrate_recovery_causal.sh` is in place and sourced.
+- [ ] `shellcheck` clean for every modified shell file (`lib/orchestrate_recovery.sh`, `lib/orchestrate_recovery_causal.sh` if extracted, `lib/orchestrate_loop.sh`, `lib/orchestrate.sh`, `lib/orchestrate_helpers.sh`).
+
+## Watch For
+
+- **Recovery dispatcher lives in `orchestrate_loop.sh`, not
+  `orchestrate.sh`.** The `case "$recovery"` block this milestone
+  extends is in `_handle_pipeline_failure`
+  (`lib/orchestrate_loop.sh:202-252`). `run_complete_loop`
+  (`orchestrate.sh:79-264`) only delegates to it. Putting the new
+  case in the wrong file looks correct in isolation but never fires.
+- **`_reset_orch_recovery_state` is per-invocation, not per-iteration.**
+  The retry-once guards (`_ORCH_ENV_GATE_RETRIED`,
+  `_ORCH_MIXED_BUILD_RETRIED`) need to persist across iterations so
+  `_classify_failure` can see the prior attempt happened. Resetting
+  per-iteration always makes them `0` and breaks the retry-once
+  semantic. This mirrors how `_ORCH_BUILD_RETRIED` is handled today
+  (`lib/orchestrate.sh:94`). The cause vars are owned by
+  `_load_failure_cause_context` and refreshed every call there —
+  don't reset those externally either.
+- **Pretty-print contract is load-bearing.** `_load_failure_cause_context`
+  parses `LAST_FAILURE_CONTEXT.json` with `grep -oP` line scans, not
+  `jq`. m129's `writes_pretty_printed_one_key_per_line` test is the
+  canary; if the writer ever emits minified or single-line nested
+  objects, m130 silently mis-classifies every routing decision. Do
+  not add `jq` as a runtime dependency to bypass this — orchestration
+  code paths must work in environments without `jq`.
+- **`grep -oP` requires GNU grep with PCRE.** macOS default `grep`
+  does not support `-P`. The whole resilience arc (m126/m127/m129/m130/m132/m133)
+  assumes GNU grep is present. If a CI lane targets BSD grep, that's
+  out of scope for this milestone, but the failure mode is silent
+  empty matches — not loud errors — so flag it during review of any
+  arc-related test failures.
+- **`retry_ui_gate_env` requires the m126 Priority 0 hook.** The new
+  dispatcher branch exports `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1`
+  and re-loops. m126's `_ui_detect_framework` must treat that env var
+  as the highest-priority "force hardened env" rule (m126 "Seeds
+  Forward" lists this as recommended; if not yet implemented, m130
+  must add the four-line check in `lib/gates_ui.sh:_ui_detect_framework`
+  before merging). Without that hook, the env retry exports the var
+  but the gate ignores it — the second iteration then fails the same
+  way and the `_ORCH_ENV_GATE_RETRIED` guard correctly routes to
+  `save_exit`, but the recovery never had a chance to work.
+- **Respect explicit `pipeline.conf` opt-out for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE`.**
+  `_CONF_KEYS_SET` is already populated by config parsing. If the key is
+  explicitly present with value `0`, Amendments A and B must not return
+  `retry_ui_gate_env`; otherwise the dispatcher overwrites the user's
+  configuration and breaks the explicit-value-wins contract shared with
+  m126 and m138.
+- **`LAST_BUILD_CLASSIFICATION` may not be exported pre-m127.** The
+  Amendment C default (`${LAST_BUILD_CLASSIFICATION:-code_dominant}`)
+  preserves pre-m127 behavior, so m130 can be deployed before m127
+  lands. But if m127 ships in the same release, verify the
+  classifier exports the var on **every** classify path — m127's
+  "Watch For" already calls this out. The default makes silent
+  omissions invisible rather than loud errors.
+- **300-line ceiling on `lib/orchestrate_recovery.sh`.** Currently
+  242 lines; the additions are ~110-130 LOC. The extraction to
+  `lib/orchestrate_recovery_causal.sh` listed in "Files Modified" is
+  mandatory, not optional, just to land cleanly under CLAUDE.md
+  non-negotiable rule 8. Run `wc -l lib/orchestrate_recovery*.sh`
+  before committing.
+- **Don't conflate cause vars with retry guards.** `_ORCH_PRIMARY_*`
+  and `_ORCH_SECONDARY_*` are *snapshots of disk state* — read by
+  `_load_failure_cause_context` from the JSON file. The retry guards
+  (`_ORCH_ENV_GATE_RETRIED` etc.) are *router state* — written by
+  `_classify_failure` itself. Conflating their lifetimes (e.g. a
+  single reset that touches both) introduces hard-to-trace
+  cross-attempt bugs. m134's S4.x integration scenarios will catch
+  this, but failing locally first is cheaper.
+- **`unknown_only` is a `code_dominant` synonym in the router.** m127
+  exports `unknown_only` for "no patterns matched at all"; the m127
+  spec explicitly says the consumer (m130) decides how to treat it.
+  Amendment C collapses it to `code_dominant` so unclassified errors
+  still get one build-fix attempt. Don't remove `unknown_only` from
+  the case branch — pre-m127 callers won't emit it, but post-m127
+  callers will.
+- **`_print_recovery_block` 5th arg is optional and additive.** The
+  signature change must keep all four existing positional args
+  unchanged. Existing callers pass exactly four args; the fifth
+  defaults to empty and the "Root cause:" line is suppressed when
+  empty. Don't reorder args, and don't make the fifth required —
+  that would break every other call site in the file family.
+
+## Seeds Forward
+
+This milestone closes the inner loop of the resilience arc — the
+router that consumes m129's schema and produces actions consumed by
+m132/m133/m134. Downstream milestones depend on the contracts pinned
+here:
+
+- **m132 — RUN_SUMMARY Causal Fidelity Enrichment.** Hard contract:
+  `_collect_recovery_routing_json` reads `_ORCH_RECOVERY_ROUTE_TAKEN`,
+  `_ORCH_ENV_GATE_RETRIED`, `_ORCH_MIXED_BUILD_RETRIED`, and
+  `_ORCH_SCHEMA_VERSION` directly. Do not rename these vars after this
+  milestone lands. m132's Goal 8 also adds `_ORCH_RECOVERY_ROUTE_TAKEN`
+  declarations — whichever milestone lands first owns the canonical
+  declaration; the other verifies and proceeds. → Keep var names
+  stable; they are the public interface to the finalize layer.
+
+- **m133 — Diagnose Rule Enrichment.** `_rule_max_turns_env_root`
+  (m133's renamed `_rule_max_turns` extension) reads the same
+  `LAST_FAILURE_CONTEXT.json` via the m129 schema, then cross-checks
+  `RUN_SUMMARY.json` `recovery_routing.route_taken == "retry_ui_gate_env"`
+  for confidence boosting. The exact string `retry_ui_gate_env` must
+  not change — m133 will grep for it byte-for-byte. → Keep action
+  string vocabulary frozen.
+
+- **m134 — Resilience Arc Integration Test Suite.** Scenario group 4
+  (S4.x — "Failure context write → recovery routing") exercises
+  `_load_failure_cause_context` directly, then drives `_classify_failure`
+  through every Amendment A–C path. The test fixture JSON is the same
+  byte-for-byte shape m129's `test_failure_context_schema.sh` writes;
+  m134 hard-codes it. → Don't change the parser line-state-machine
+  (in/out brace tracking) without coordinating fixture updates with
+  m134.
+
+- **m135 — Resilience Arc Artifact Lifecycle.** m130 itself produces
+  no new artifacts (it consumes `LAST_FAILURE_CONTEXT.json`, doesn't
+  write it), so m135 does not need to add cleanup hooks for this
+  milestone. But m135 does cover `LAST_FAILURE_CONTEXT.json`
+  cleanup-on-success — which removes the file m130's loader reads.
+  m130's "absent file → empty cause vars → unchanged routing"
+  fallback (Acceptance Criterion 3) is exactly what makes m135's
+  cleanup safe. → Keep the absent-file degrade path working; m135
+  relies on it.
+
+- **m136 — Resilience Arc Config Defaults & Validation.** Declares
+  `BUILD_FIX_CLASSIFICATION_REQUIRED:=true` in `config_defaults.sh`
+  and adds a `--validate-config` check for it. m130 reads the var
+  with a `:-true` default in Amendment C, so m136 is purely additive
+  — it formalizes the declaration and adds validation, but m130 works
+  without it. → Don't add the declaration to `config_defaults.sh`
+  yourself in m130; leave that to m136 to keep the layering clean.
+
+- **Watchtower run-detail badges.** m132 introduces
+  `[env-gate-retry]` and `[preflight-patch]` badges driven off
+  `recovery_routing.route_taken == "retry_ui_gate_env"`. The badge
+  string is m132's call, but the underlying token is m130's. → If a
+  future redesign collapses or renames `retry_ui_gate_env`, update
+  m132 in the same change.
+
+- **Future: env-class taxonomy beyond `test_infra`.** Amendment A
+  fires only on `ENVIRONMENT/test_infra`. Other env subcategories
+  (`disk_full`, `network_outage`, `cred_missing`) still route
+  `save_exit` as before. If future work adds recoverable env classes
+  (e.g. transient network → wait + retry), it can layer in additional
+  amendments at the same insertion point without re-architecting the
+  router. The `_ORCH_PRIMARY_SUB` discrimination is the natural
+  hook. → Pattern is established; keep new env-class amendments as
+  guarded early-returns rather than rebuilding the decision tree.
+
+---
+
+## Archived: 2026-04-27 — Unknown Initiative
+
+# M131 - Preflight Test Framework Config Audit & Interactive-Mode Detection
+
+<!-- milestone-meta
+id: "131"
+status: "done"
+-->
+
+## Overview
+
+M126 makes UI gate execution deterministic *reactively* — when the gate
+times out with an interactive-reporter signature, it re-runs with a
+hardened, non-interactive env profile. M130 ensures a correct recovery
+action is selected when that happens. Both milestones assume the failure
+has already occurred.
+
+M131 completes the circuit by moving detection *before* the first gate
+run: the preflight layer scans the project's test framework config files
+for settings that are known to produce interactive or non-deterministic
+execution inside Tekhton's gated environment, warns the user (or
+auto-patches where safe), and emits a structured preflight finding that
+downstream layers (m126, m130) can use to short-cut recovery.
+
+The canonical bifl-tracker failure pattern:
+
+```
+// playwright.config.ts
+reporter: 'html',   // Opens serve-and-wait loop when not in CI
+```
+
+That one line is sufficient to cause the gate timeout that consumed four
+hours in the original M03 run. M131 catches it in the first second of
+the pipeline before any agent turn is consumed.
+
+Three additional interactive-mode footguns are addressed at the same
+time, because each has the same root structure (a test framework config
+key whose value changes behavior from "exit 0/1" to "stay alive"):
+
+| Framework | Config file | Key | Bad value | Why it blocks |
+|-----------|-------------|-----|-----------|---------------|
+| Playwright | `playwright.config.{ts,js,mjs,cjs}` | `reporter` | `'html'` or `['html']` | Launches `playwright show-report --port` and waits for Ctrl+C |
+| Playwright | same | `use.video` | `'on'` or `'retain-on-failure'` | Not blocking, but produces gigabyte artifacts without `fullyParallel`; WARN only |
+| Playwright | same | `webServer.reuseExistingServer` | `false` when a dev server is already running | Causes test runner hang waiting for port to free |
+| Cypress | `cypress.config.{ts,js,mjs}` | `video` | `true` (default) in headless | Not blocking; bloats artifacts by default. WARN only |
+| Cypress | same | `reporter` | `'mochawesome'` without `--exit` flag | Can orphan reporter process; WARN only |
+| Jest / Vitest | `vitest.config.{ts,js}` / `jest.config.{ts,js}` | `watch` or `watchAll` | `true` | Launches watch mode — never terminates |
+
+M131 does not attempt exhaustive config analysis. The rule set is
+deliberately minimal: only the patterns that have produced confirmed
+gate hangs in practice (Playwright html reporter, Jest/Vitest watch
+mode) are `fail`-level findings. All others are `warn`-level. The
+underlying `_pf_record` and `_pf_try_fix` infrastructure from m55 is
+reused unchanged.
+
+## Design
+
+### Goal 1 — Add a new preflight check function: `_preflight_check_ui_test_config`
+
+**File placement.** Add to a **new file `lib/preflight_checks_ui.sh`**, mirroring
+the existing `lib/preflight_checks_env.sh` split. `lib/preflight_checks.sh` is
+already 224 lines; the four new scanner functions plus the dispatcher and the
+auto-fix helper add ~200 LOC, which would put `preflight_checks.sh` at ~424
+lines and violate CLAUDE.md non-negotiable rule 8 (300-line ceiling). Splitting
+from the start is cheaper than splitting after the fact.
+
+`tekhton.sh` already sources `preflight_checks.sh` and `preflight_checks_env.sh`
+adjacent to each other; add a `source "${TEKHTON_HOME}/lib/preflight_checks_ui.sh"`
+line in the same neighborhood. The new file uses the same `set -euo pipefail`
+header and the same `_pf_record` / `_pf_try_fix` helpers from `preflight.sh`
+(no new infrastructure).
+
+The function is invoked from `run_preflight_checks` in `lib/preflight.sh`
+after `_preflight_check_tools`. It only runs when `UI_TEST_CMD` is configured,
+non-empty, and not the no-op default `true`.
+
+High-level structure:
+
+```bash
+# =============================================================================
+# Check N: UI Test Framework Config Compatibility (M131)
+# =============================================================================
+_preflight_check_ui_test_config() {
+    local proj="${PROJECT_DIR:-.}"
+
+    # Reset module state so a re-invocation in the same shell starts clean.
+    # PREFLIGHT_UI_* vars are public contract consumed by m126 (gate) and m132
+    # (RUN_SUMMARY); they must reflect this preflight run only, not stale
+    # values from a previous run in the same shell session. Per m134 S7.2 they
+    # must NOT be reset between iterations of run_complete_loop — only here at
+    # the start of preflight, which itself runs once per pipeline invocation.
+    unset PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED \
+          PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE \
+          PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE \
+          PREFLIGHT_UI_REPORTER_PATCHED
+
+    # Honor the m136 enable knob (declared in m136 config_defaults.sh; m131
+    # uses the inline :- default so it works without m136 deployed).
+    [[ "${PREFLIGHT_UI_CONFIG_AUDIT_ENABLED:-true}" == "true" ]] || return 0
+
+    # Only run when a UI test command is configured
+    [[ -z "${UI_TEST_CMD:-}" || "${UI_TEST_CMD}" == "true" ]] && return 0
+
+    # Dispatch to framework-specific scanners
+    _pf_uitest_playwright "$proj"
+    _pf_uitest_cypress    "$proj"
+    _pf_uitest_jest_watch "$proj"
+}
+```
+
+### Goal 2 — Playwright config scanner: `_pf_uitest_playwright`
+
+```bash
+_pf_uitest_playwright() {
+    local proj="$1"
+    local cfg_file=""
+
+    # Locate the config file; try common variants in order
+    local candidates=(
+        "${proj}/playwright.config.ts"
+        "${proj}/playwright.config.js"
+        "${proj}/playwright.config.mjs"
+        "${proj}/playwright.config.cjs"
+    )
+    for f in "${candidates[@]}"; do
+        [[ -f "$f" ]] && cfg_file="$f" && break
+    done
+
+    [[ -z "$cfg_file" ]] && return 0  # No Playwright config; skip
+
+    local issues_found=0
+
+    # --- Rule PW-1: html reporter (FAIL) ------------------------------------
+    # Detect: reporter: 'html' or reporter: ['html'] / ["html"].
+    # Nested tuple forms such as [['html', ...]] are intentionally left to
+    # m126's gate-level timeout detection; this scanner stays conservative
+    # so the auto-fix only rewrites simple, reviewable shapes.
+    if grep -qP "reporter\s*:\s*['\"]html['\"]|reporter\s*:\s*\[\s*['\"]html['\"]" "$cfg_file" 2>/dev/null; then
+        _pf_uitest_playwright_fix_reporter "$cfg_file" "$proj"
+        issues_found=1
+    fi
+
+    # --- Rule PW-2: video on (WARN) -----------------------------------------
+    if grep -qP "video\s*:\s*['\"]on['\"]|video\s*:\s*['\"]retain-on-failure['\"]" "$cfg_file" 2>/dev/null; then
+        _pf_record "warn" "UI Config (Playwright) — video recording" \
+"playwright.config video='on' or 'retain-on-failure' produces large artifacts.
+Consider: video: process.env.CI ? 'off' : 'retain-on-failure'"
+        issues_found=1
+    fi
+
+    # --- Rule PW-3: webServer.reuseExistingServer: false (WARN) -------------
+    if grep -qP "reuseExistingServer\s*:\s*false" "$cfg_file" 2>/dev/null; then
+        _pf_record "warn" "UI Config (Playwright) — reuseExistingServer: false" \
+"playwright.config webServer.reuseExistingServer=false can cause the test runner
+to hang if the dev server port is already in use.
+Consider: reuseExistingServer: !process.env.CI"
+        issues_found=1
+    fi
+
+    [[ "$issues_found" -eq 0 ]] && _pf_record "pass" "UI Config (Playwright)" \
+        "No interactive-mode config issues detected in ${cfg_file##*/}."
+}
+```
+
+#### Sub-helper: `_pf_uitest_playwright_fix_reporter`
+
+Auto-patch when auto-fix is enabled. The gating order is
+`PREFLIGHT_UI_CONFIG_AUTO_FIX` (m136-specific knob) → `PREFLIGHT_AUTO_FIX`
+(legacy m55 knob) → default `true`; the m136 knob takes precedence so a
+user who has historically set `PREFLIGHT_AUTO_FIX=false` keeps their
+explicit choice, while m136 deployments get the more specific knob.
+Because the patch modifies a source file that will be committed (not a
+generated or ephemeral file), it must:
+
+1. Make a backup at `${PREFLIGHT_BAK_DIR}/<YYYYMMDD_HHMMSS>_<basename>`
+   — timestamp prefix is m135's contract for lexicographic-sort retention.
+2. Replace only the reporter expression, not the whole file.
+3. Emit a `fail`-level finding with manual-fix instructions and the
+   `PREFLIGHT_UI_*` contract triple set, when auto-fix is disabled.
+4. Emit a `fixed`-level finding with the backup path, the contract
+   triple, `PREFLIGHT_UI_REPORTER_PATCHED=1`, and the
+   `preflight_ui_config_patch` causal event when auto-fix succeeds.
+5. Call `_trim_preflight_bak_dir "$bak_dir"` (m135) defensively via
+   `declare -f` so the patch path ships cleanly before m135 lands.
+
+```bash
+_pf_uitest_playwright_fix_reporter() {
+    local cfg_file="$1"
+    local proj="$2"
+    # PREFLIGHT_BAK_DIR is declared by m136 in config_defaults.sh; the inline
+    # :- default keeps m131 functional pre-m136. m135 reads the same var via
+    # the same fallback in _trim_preflight_bak_dir.
+    local bak_dir="${PREFLIGHT_BAK_DIR:-${proj}/.claude/preflight_bak}"
+    # Filename format: <YYYYMMDD_HHMMSS>_<original-basename>
+    # NOT <basename>.<timestamp>.bak — m135's _trim_preflight_bak_dir relies on
+    # the timestamp prefix so plain lexicographic sort == chronological sort.
+    # Format mismatch silently breaks m135's retention trim ordering.
+    local bak_file="${bak_dir}/$(date +%Y%m%d_%H%M%S)_$(basename "$cfg_file")"
+
+    # PREFLIGHT_UI_CONFIG_AUTO_FIX (m136) is the specific knob; fall back to
+    # the legacy PREFLIGHT_AUTO_FIX (m55) so existing user configs still work.
+    if [[ "${PREFLIGHT_UI_CONFIG_AUTO_FIX:-${PREFLIGHT_AUTO_FIX:-true}}" != "true" ]]; then
+        _pf_record "fail" "UI Config (Playwright) — html reporter" \
+"${cfg_file##*/} sets reporter: 'html'. Playwright's HTML reporter launches an
+interactive serve-and-wait loop that is incompatible with Tekhton's timed gates.
+
+REQUIRED MANUAL FIX:
+  Change:  reporter: 'html'
+  To:      reporter: process.env.CI ? 'dot' : 'html'
+
+Or, in tekhton pipeline.conf:
+  PLAYWRIGHT_HTML_OPEN=never
+  CI=1  (forces non-interactive mode without changing source)
+
+Auto-fix is disabled (PREFLIGHT_UI_CONFIG_AUTO_FIX=false, or legacy
+PREFLIGHT_AUTO_FIX=false). Set either to true to allow Tekhton to patch
+the config file automatically."
+        # Even when not patched, the detection itself is signal m132/m133/m134
+        # depend on; export the contract triple regardless of patch outcome.
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE="PW-1"
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE="${cfg_file##*/}"
+        export PREFLIGHT_UI_REPORTER_PATCHED=0
+        return
+    fi
+
+    # Make backup directory
+    mkdir -p "$bak_dir"
+    cp "$cfg_file" "$bak_file"
+
+    # In-place sed replacement — handles only scalar and single-entry array
+    # forms using either quote style.
+    # Replaces:
+    #   reporter: 'html'
+    #   reporter: "html"
+    #   reporter: ['html']
+    #   reporter: ["html"]
+    # with the CI-guarded scalar form. Nested tuple reporters are left
+    # unchanged and fall back to m126's runtime detection path.
+    if sed -i \
+        "s|reporter: 'html'|reporter: process.env.CI ? 'dot' : 'html'|g;
+       s|reporter: \"html\"|reporter: process.env.CI ? 'dot' : 'html'|g;
+       s|reporter: \['html'\]|reporter: process.env.CI ? 'dot' : 'html'|g;
+       s|reporter: \[\"html\"\]|reporter: process.env.CI ? 'dot' : 'html'|g" \
+        "$cfg_file" 2>/dev/null; then
+        _pf_record "fixed" "UI Config (Playwright) — html reporter" \
+"Auto-patched reporter: 'html' → CI-guarded form in ${cfg_file##*/}.
+Original saved to: ${bak_file##"$proj"/}
+The gate will use 'dot' reporter in CI mode (no interactive server).
+Review and commit the change when satisfied."
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE="PW-1"
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE="${cfg_file##*/}"
+        export PREFLIGHT_UI_REPORTER_PATCHED=1
+        # Emit causal event so diagnose and watchtower know this happened
+        if command -v emit_event &>/dev/null; then
+            emit_event "preflight_ui_config_patch" "preflight" \
+                "{\"file\":\"${cfg_file##*/}\",\"rule\":\"PW-1\",\"action\":\"reporter_ci_guard\"}" 2>/dev/null || true
+        fi
+        # m135 contract: trim old backups to PREFLIGHT_BAK_RETAIN_COUNT.
+        # Helper is defined by m135; guard with `declare -f` so m131 ships
+        # cleanly before m135 lands (no-op when the helper is absent).
+        if declare -f _trim_preflight_bak_dir >/dev/null 2>&1; then
+            _trim_preflight_bak_dir "$bak_dir"
+        fi
+    else
+        # sed failed — fall back to fail-level report
+        _pf_record "fail" "UI Config (Playwright) — html reporter" \
+"Failed to auto-patch ${cfg_file##*/}. See manual fix instructions above.
+Backup (if created): ${bak_file##"$proj"/}"
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE="PW-1"
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE="${cfg_file##*/}"
+        export PREFLIGHT_UI_REPORTER_PATCHED=0
+    fi
+}
+```
+
+### Goal 3 — Cypress config scanner: `_pf_uitest_cypress`
+
+```bash
+_pf_uitest_cypress() {
+    local proj="$1"
+    local cfg_file=""
+
+    local candidates=(
+        "${proj}/cypress.config.ts"
+        "${proj}/cypress.config.js"
+        "${proj}/cypress.config.mjs"
+    )
+    for f in "${candidates[@]}"; do
+        [[ -f "$f" ]] && cfg_file="$f" && break
+    done
+
+    [[ -z "$cfg_file" ]] && return 0
+
+    local issues_found=0
+
+    # --- Rule CY-1: video: true (WARN) -------------------------------------
+    # Cypress records video by default. It's not blocking, but produces large
+    # CI artifacts. Only warn, do not auto-patch.
+    if grep -qP "video\s*:\s*true" "$cfg_file" 2>/dev/null; then
+        _pf_record "warn" "UI Config (Cypress) — video: true" \
+"cypress.config has video: true (default). Video recording produces large artifacts.
+Consider: video: !!process.env.CI === false"
+        issues_found=1
+    fi
+
+    # --- Rule CY-2: mochawesome reporter without --exit (WARN) --------------
+    if grep -qP "reporter\s*:\s*['\"]mochawesome['\"]" "$cfg_file" 2>/dev/null; then
+        if ! echo "${UI_TEST_CMD:-}" | grep -q -- "--exit"; then
+            _pf_record "warn" "UI Config (Cypress) — mochawesome reporter" \
+"cypress.config uses mochawesome reporter. Without --exit in UI_TEST_CMD, the
+reporter process may not terminate.
+Consider adding: --exit to UI_TEST_CMD in pipeline.conf"
+            issues_found=1
+        fi
+    fi
+
+    [[ "$issues_found" -eq 0 ]] && _pf_record "pass" "UI Config (Cypress)" \
+        "No interactive-mode config issues detected in ${cfg_file##*/}."
+}
+```
+
+### Goal 4 — Jest / Vitest watch mode scanner: `_pf_uitest_jest_watch`
+
+```bash
+_pf_uitest_jest_watch() {
+    local proj="$1"
+    local cfg_file=""
+
+    # Check vitest first, then jest
+    local candidates=(
+        "${proj}/vitest.config.ts"
+        "${proj}/vitest.config.js"
+        "${proj}/jest.config.ts"
+        "${proj}/jest.config.js"
+        "${proj}/jest.config.mjs"
+    )
+    for f in "${candidates[@]}"; do
+        [[ -f "$f" ]] && cfg_file="$f" && break
+    done
+
+    [[ -z "$cfg_file" ]] && return 0
+
+    local issues_found=0
+
+    # --- Rule JV-1: watch: true / watchAll: true (FAIL) --------------------
+    # Any watch mode in the config (not flag, but the config property) means
+    # the test process will never terminate unless Ctrl+C'd.
+    if grep -qP "^\s*(watch|watchAll)\s*:\s*true" "$cfg_file" 2>/dev/null; then
+        _pf_record "fail" "UI Config (Jest/Vitest) — watch mode enabled" \
+"${cfg_file##*/} has watch: true or watchAll: true. Watch mode causes the test
+process to run indefinitely, which will always trigger Tekhton's UI_TEST_TIMEOUT.
+
+REQUIRED FIX — choose one:
+  a) Remove watch: true from ${cfg_file##*/}
+  b) Add --run flag to TEST_CMD in pipeline.conf (Vitest: vitest run ...)
+  c) Set CI=true in the environment (disables watch in most frameworks)
+
+Tekhton does not auto-patch watch mode config. This requires deliberate choice."
+        # Same downstream contract as PW-1 — m132/m133 read these env vars.
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE="JV-1"
+        export PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE="${cfg_file##*/}"
+        export PREFLIGHT_UI_REPORTER_PATCHED=0
+        issues_found=1
+    fi
+
+    [[ "$issues_found" -eq 0 ]] && _pf_record "pass" "UI Config (Jest/Vitest)" \
+        "No watch-mode config issues detected in ${cfg_file##*/}."
+}
+```
+
+Note: Jest/Vitest watch mode is **not** auto-patched. Unlike the
+Playwright reporter (a purely cosmetic difference between dot and html
+output), disabling watch mode in the config changes the developer
+experience for everyone working on the project. The failure message
+shows three options; the developer must pick one deliberately.
+
+### Goal 5 — Wire `_preflight_check_ui_test_config` into `run_preflight_checks`
+
+Edit `lib/preflight.sh` in `run_preflight_checks` to call the new check
+after `_preflight_check_tools`:
+
+```bash
+# In run_preflight_checks(), after the existing _preflight_check_tools call:
+_preflight_check_ui_test_config  # M131: interactive-mode config audit
+```
+
+The check is guarded internally on `UI_TEST_CMD` being set, so it is a
+no-op for projects that do not configure a UI test command.
+
+### Goal 6 — Emit a structured preflight finding consumable by m126/m132/m133
+
+The four `PREFLIGHT_UI_*` env vars are exported inline at every rule
+firing (PW-1 fail-no-patch, PW-1 patched, PW-1 sed-failed, JV-1) — see
+the `_pf_uitest_playwright_fix_reporter` and `_pf_uitest_jest_watch`
+function bodies above. The export contract is consolidated here for
+review:
+
+| Var | Set when | Values |
+|-----|----------|--------|
+| `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED` | Any fail-class rule fires (PW-1, JV-1) | `1` (always — absent means not detected) |
+| `PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE` | Same | `PW-1` or `JV-1` |
+| `PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE` | Same | basename of the offending config file |
+| `PREFLIGHT_UI_REPORTER_PATCHED` | PW-1 only | `1` if the source was auto-patched, `0` if not |
+
+These four var names are public contract consumed by m132's
+`_collect_preflight_ui_json`, m133's `_rule_preflight_interactive_config`,
+m134's S1.x scenarios, and m126's `_ui_deterministic_env_list`. Renaming
+On fail-level exits that stop preflight (PW-1 when auto-fix is disabled,
+PW-1 when auto-patch fails, and JV-1), if `set_primary_cause` is
+available, call:
+
+```bash
+set_primary_cause ENVIRONMENT test_infra ui_interactive_config_preflight preflight
+```
+
+Do **not** set this primary cause on `fixed` paths. A successful
+auto-patch should remain observable through `PREFLIGHT_UI_*` and the
+`preflight_ui.*` summary fields without contaminating an unrelated later
+failure in the same run.
+
+them post-merge silently breaks every downstream consumer.
+
+**Wire-through to the gate normalizer.** M126's normalizer already
+injects `PLAYWRIGHT_HTML_OPEN=never` for Playwright projects on every
+gate run (m126 Goal 1, item 5), so first-run mitigation is in place
+regardless of m131. M131's contribution to first-run determinism is to
+let m126 escalate to the **hardened** env profile (`CI=1`, normally
+reserved for retry only) on the first run when preflight has already
+proven the project has the issue. The Files Modified table below
+records the corresponding small change in `lib/gates_ui.sh`.
+
+### Goal 7 — Tests: fixture-backed coverage for all scanners
+
+Add `tests/test_preflight_ui_config.sh` with the following test cases:
+
+#### T1 — `_pf_uitest_playwright` detects `reporter: 'html'` → fail or fixed
+
+```
+Fixture: minimal playwright.config.ts with reporter: 'html'
+PREFLIGHT_UI_CONFIG_AUTO_FIX=false → assert _PF_FAIL incremented, message contains "REQUIRED MANUAL FIX",
+                                     PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1, RULE=PW-1, REPORTER_PATCHED=0
+PREFLIGHT_UI_CONFIG_AUTO_FIX=true  → assert _PF_REMEDIATED incremented, backup file created with
+                                     <YYYYMMDD_HHMMSS>_<basename> format, config file no longer contains
+                                     reporter: 'html', PREFLIGHT_UI_REPORTER_PATCHED=1
+Legacy fallback: with PREFLIGHT_UI_CONFIG_AUTO_FIX unset and PREFLIGHT_AUTO_FIX=false →
+                                     same outcome as PREFLIGHT_UI_CONFIG_AUTO_FIX=false
+```
+
+#### T2 — `_pf_uitest_playwright` does not false-positive on `reporter: 'dot'`
+
+```
+Fixture: playwright.config.ts with reporter: 'dot'
+Expect:  _PF_PASS incremented, no fail/warn
+```
+
+#### T3 — `_pf_uitest_playwright` detects `video: 'on'` → warn only
+
+```
+Fixture: playwright.config.ts with use: { video: 'on' }
+Expect:  _PF_WARN incremented, no fail
+```
+
+#### T4 — `_pf_uitest_playwright` detects `reuseExistingServer: false` → warn
+
+```
+Fixture: playwright.config.ts with webServer: { reuseExistingServer: false }
+Expect:  _PF_WARN incremented
+```
+
+#### T5 — No playwright.config → no finding emitted
+
+```
+Fixture: project dir with no playwright.config.{ts,js,mjs,cjs}
+Expect:  _PF_PASS/_PF_WARN/_PF_FAIL all zero for playwright check
+```
+
+#### T6 — `_pf_uitest_jest_watch` detects `watch: true` → fail (no auto-fix)
+
+```
+Fixture: vitest.config.ts with watch: true
+Expect:  _PF_FAIL incremented; PREFLIGHT_UI_CONFIG_AUTO_FIX=true does NOT change the file
+         (watch mode is never auto-patched);
+         PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1, RULE=JV-1, REPORTER_PATCHED=0
+```
+
+#### T7 — `_pf_uitest_cypress` detects `video: true` → warn only
+
+```
+Fixture: cypress.config.ts with video: true
+Expect:  _PF_WARN incremented
+```
+
+#### T8 — Full `PREFLIGHT_UI_*` contract triple exported when PW-1 fires
+
+```
+Fixture: playwright.config.ts with reporter: 'html'
+Expect:  After running _preflight_check_ui_test_config:
+           PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1
+           PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE=PW-1
+           PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE=playwright.config.ts
+           PREFLIGHT_UI_REPORTER_PATCHED=1 (auto-fix on) or =0 (auto-fix off)
+```
+
+#### T9 — `_pf_uitest_playwright` backup survives when config already CI-guarded
+
+```
+Fixture: playwright.config.ts with reporter: process.env.CI ? 'dot' : 'html'
+Expect:  grep pattern does NOT match (correctly reports pass, no patch attempted)
+         (validates that the grep pattern is narrow enough)
+```
+
+#### T10 — `UI_TEST_CMD` unset → `_preflight_check_ui_test_config` is a no-op
+
+```
+Fixture: playwright.config.ts with reporter: 'html', but UI_TEST_CMD=""
+Expect:  All PF counters at zero; function returns 0 immediately
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/preflight_checks_ui.sh` | **New file.** Contains `_preflight_check_ui_test_config`, `_pf_uitest_playwright`, `_pf_uitest_playwright_fix_reporter`, `_pf_uitest_cypress`, `_pf_uitest_jest_watch`. Mirrors the `preflight_checks_env.sh` split pattern. New file (rather than appending to `preflight_checks.sh`) is mandatory: the additions are ~200 LOC and `preflight_checks.sh` is already 224 lines, so an append violates CLAUDE.md non-negotiable rule 8 (300-line ceiling). |
+| `tekhton.sh` | Add `source "${TEKHTON_HOME}/lib/preflight_checks_ui.sh"` in the same neighborhood as the existing `preflight_checks.sh` / `preflight_checks_env.sh` source lines. |
+| `lib/preflight.sh` | Add `_preflight_check_ui_test_config` call in `run_preflight_checks` immediately after `_preflight_check_tools`. No other change. |
+| `lib/gates_ui.sh` (or `gates_ui_helpers.sh`) | In `_ui_deterministic_env_list` (consumed by m126's thin `_normalize_ui_gate_env` wrapper): when `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1`, set the hardened env profile (add `CI=1`) on the *first* gate run rather than only on retry. `PLAYWRIGHT_HTML_OPEN=never` is already on every run per m126 — only the `CI=1` escalation moves earlier. |
+| `tests/test_preflight_ui_config.sh` | **New file.** Test cases T1–T10 as described in Goal 7. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_preflight_ui_config.sh` is picked up by filename convention. |
+| `docs/troubleshooting/preflight.md` | Add "UI Test Framework Config Audit" section documenting rules PW-1 through PW-3, CY-1, CY-2, JV-1 with remediation steps. |
+
+**Config knobs read by m131 (declared in m136, default-true here for forward compat):**
+
+| Var | Default in m131 | Owner / declarer |
+|-----|-----------------|------------------|
+| `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED` | `true` (inline `${...:-true}`) | m136 declares in `config_defaults.sh` |
+| `PREFLIGHT_UI_CONFIG_AUTO_FIX` | `true`, falling back to legacy `PREFLIGHT_AUTO_FIX`, then `true` | m136 declares; m55's `PREFLIGHT_AUTO_FIX` remains the legacy fallback |
+| `PREFLIGHT_BAK_DIR` | `${PROJECT_DIR}/.claude/preflight_bak` | m135 declares; m131 reads via inline `${...:-...}` |
+
+m131 deliberately does **not** add these to `lib/config_defaults.sh` —
+that is m136's exclusive scope. The inline defaults make m131
+deployable independently of m136.
+
+## Implementation Notes
+
+### Grep pattern conservatism
+
+The grep patterns in the scanners are deliberately *not* exhaustive TypeScript
+parsers. They cover the 95% case of real configs written by hand or scaffolded
+by `npm init playwright`. The remaining 5% (conditional expressions, spread
+configs, programmatic reporter arrays) are not false-negatives — they simply
+won't be caught at preflight and will instead be caught at the gate level by
+m126's timeout-signature detection. This is acceptable: preflight is a
+fast-path optimisation, not a guarantee.
+
+Each scanner function name starts with `_pf_uitest_` (not `_preflight_uitest_`)
+to distinguish them from the top-level check functions while keeping them
+co-located with the check dispatch in `preflight_checks.sh`.
+
+### Auto-fix scope boundary
+
+Only the Playwright html reporter is auto-patched. The decision matrix:
+
+| Rule | Auto-patch? | Rationale |
+|------|-------------|-----------|
+| PW-1 (html reporter) | Yes | Pure behavior change: `dot` vs `html` output. No effect on what is tested. Easily reviewed. |
+| PW-2 (video on) | No | Trade-off decision; developer may want video in some environments |
+| PW-3 (reuseExistingServer) | No | Depends on project's port-conflict risk; developer must decide |
+| CY-1 (cypress video) | No | Developer preference |
+| CY-2 (mochawesome) | No | Requires `pipeline.conf` edit, not config-file edit |
+| JV-1 (jest/vitest watch) | No | Changes DX for all contributors; requires deliberate decision |
+
+### Backup directory placement
+
+Backup files go under `PROJECT_DIR/.claude/preflight_bak/` — inside the
+`.claude/` directory that Tekhton already owns. This keeps backups
+adjacent to other Tekhton artifacts, avoids polluting the project root,
+and keeps the operational state in one place. m135 later adds
+`.claude/preflight_bak/` to Tekhton's gitignore helper so the backups do
+not appear as untracked files.
+
+### Interaction with m126 first-run determinism
+
+Without m131: m126 runs the gate, waits for timeout, detects the
+interactive-reporter signature, then applies the non-interactive env
+profile for the retry. Cost: one full `UI_TEST_TIMEOUT` burn.
+
+With m131: preflight sets `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1`
+*before* any gate run. M126's `_ui_deterministic_env_list` reads the
+flag and includes `PLAYWRIGHT_HTML_OPEN=never` and `CI=1` in the
+*first* run's env, not just the retry. Cost: zero timeout burns.
+
+The two milestones are independent: m126 works without m131 (reactive
+mode), and m131 produces correct preflight findings whether or not m126
+is deployed. Together they eliminate the timeout entirely on first run.
+
+## Acceptance Criteria
+
+- [ ] `lib/preflight_checks_ui.sh` exists, sourced from `tekhton.sh`, and is ≤ 300 lines (CLAUDE.md non-negotiable rule 8).
+- [ ] `_preflight_check_ui_test_config` is called by `run_preflight_checks` when `UI_TEST_CMD` is set, immediately after `_preflight_check_tools`.
+- [ ] `_preflight_check_ui_test_config` is a no-op when `UI_TEST_CMD` is empty, unset, or the no-op default `true`.
+- [ ] `_preflight_check_ui_test_config` is a no-op when `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED=false`.
+- [ ] `_preflight_check_ui_test_config` `unset`s the four `PREFLIGHT_UI_*` contract vars at function start so a same-shell re-invocation produces a clean state.
+- [ ] PW-1 (Playwright html reporter) produces a `fail` record when `PREFLIGHT_UI_CONFIG_AUTO_FIX=false` (or legacy `PREFLIGHT_AUTO_FIX=false`).
+- [ ] PW-1 with auto-fix enabled produces a `fixed` record, creates a backup file named `<YYYYMMDD_HHMMSS>_<basename>` in `${PREFLIGHT_BAK_DIR:-.claude/preflight_bak}/`, and leaves the config file without `reporter: 'html'`.
+- [ ] PW-1 does not match `reporter: process.env.CI ? 'dot' : 'html'` (already-guarded form).
+- [ ] PW-2 and PW-3 produce `warn` records only; no auto-patch.
+- [ ] JV-1 (watch: true) produces a `fail` record and is never auto-patched even when auto-fix is enabled.
+- [ ] When PW-1 or JV-1 fires, all four contract vars are exported: `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1`, `PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE` (= `PW-1` or `JV-1`), `PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE` (basename), and `PREFLIGHT_UI_REPORTER_PATCHED` (`1` only when sed succeeded; `0` otherwise).
+- [ ] When no fail-class rule fires, none of the four `PREFLIGHT_UI_*` contract vars is set in the environment seen by downstream consumers.
+- [ ] PW-1 auto-patch path emits the `preflight_ui_config_patch` causal event with rule, file, and action fields.
+- [ ] PW-1 auto-patch path calls `_trim_preflight_bak_dir "$bak_dir"` if the helper is defined (m135-shipped); the call is a no-op when m135 has not yet shipped.
+- [ ] All 10 test cases in `test_preflight_ui_config.sh` pass; the file is auto-discovered by `./tests/run_tests.sh` via the existing `test_*.sh` glob.
+- [ ] M126's `_ui_deterministic_env_list` adds `CI=1` to the *first* gate run env (not only on retry) when `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1`. `PLAYWRIGHT_HTML_OPEN=never` is unchanged from m126's existing every-run application.
+- [ ] `shellcheck` clean for `lib/preflight_checks_ui.sh`, `lib/preflight.sh`, `lib/gates_ui.sh` (or its helpers file), and `tests/test_preflight_ui_config.sh`.
+- [ ] `docs/troubleshooting/preflight.md` updated with UI config audit section covering PW-1 through PW-3, CY-1, CY-2, JV-1.
+
+## Watch For
+
+- **The four `PREFLIGHT_UI_*` env vars are public contract.** m132's
+  `_collect_preflight_ui_json`, m133's `_rule_preflight_interactive_config`,
+  m134's S1.x scenarios, and m126's `_ui_deterministic_env_list` all
+  read these names byte-for-byte. Renaming, splitting, or
+  re-prefixing any of `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED`,
+  `PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE`,
+  `PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE`, or
+  `PREFLIGHT_UI_REPORTER_PATCHED` silently breaks every downstream
+  consumer with no shellcheck signal. Treat these as the public
+  interface to the resilience arc finalize layer.
+- **Reset the contract vars at preflight start, NOT per iteration.**
+  m134 S7.2 documents this contract explicitly: `PREFLIGHT_*` vars are
+  set by preflight which runs once per pipeline invocation. They must
+  persist across `run_complete_loop` iterations so m126/m130 see the
+  detection signal on every gate retry. Reset only at the top of
+  `_preflight_check_ui_test_config` (same-shell re-invocation safety),
+  never per iteration.
+- **Backup file format is `<timestamp>_<filename>`, not `<filename>.<timestamp>.bak`.**
+  m135's `_trim_preflight_bak_dir` relies on `find | sort | head` —
+  the YYYYMMDD_HHMMSS prefix makes lexicographic sort chronological.
+  Any other format silently breaks retention ordering: oldest files
+  may be retained while newest are trimmed.
+- **Read `PREFLIGHT_BAK_DIR` via inline `${...:-...}`, do not declare in
+  `config_defaults.sh`.** m136 is the exclusive declarer of all three
+  m131 config knobs (`PREFLIGHT_UI_CONFIG_AUDIT_ENABLED`,
+  `PREFLIGHT_UI_CONFIG_AUTO_FIX`, `PREFLIGHT_BAK_RETAIN_COUNT`/
+  `PREFLIGHT_BAK_DIR`). m131 reading them inline keeps m136 purely
+  additive; declaring them in m131 forces m136 to do migration work it
+  was designed to avoid.
+- **Auto-fix gating order matters.** Use
+  `PREFLIGHT_UI_CONFIG_AUTO_FIX:-${PREFLIGHT_AUTO_FIX:-true}` — the
+  m136-specific knob takes precedence, the legacy m55 knob is the
+  fallback, and `true` is the ultimate default. Reversing this order
+  means a user who has set `PREFLIGHT_AUTO_FIX=false` historically
+  still gets the auto-patch behavior they explicitly disabled.
+- **Grep patterns are deliberately conservative.** PW-1's regex
+  matches the common simple forms (`reporter: 'html'`, `reporter: ['html']`,
+  `reporter: ["html"]`) but does **not** match nested tuple arrays,
+  conditional, programmatic, or spread-config forms. Don't try to widen
+  them — false-positive auto-patches on programmatic configs would
+  corrupt files that m131 then can't undo. The remaining gap is caught
+  by m126 at the gate level via timeout-signature detection. Preflight
+  is a fast-path optimisation, not a guarantee.
+- **`_pf_uitest_playwright_fix_reporter` calls `_trim_preflight_bak_dir`
+  *defensively*.** Wrap the call in `declare -f _trim_preflight_bak_dir`
+  so m131 ships cleanly when m135 has not yet landed. Do not source
+  `preflight_checks.sh` from the new file just to pull in m135's helper —
+  the shell-builtin `declare` check is the simplest decoupling.
+- **Cypress and Jest/Vitest scanners do not auto-patch.** Only PW-1 is
+  pure-cosmetic enough to safely rewrite. CY-1, CY-2, PW-2, PW-3
+  represent trade-offs; JV-1 changes the developer experience for
+  every contributor. The decision matrix in "Auto-fix scope boundary"
+  below is normative — do not extend auto-patch to other rules in
+  this milestone.
+- **JV-1 is scoped to UI projects via `UI_TEST_CMD`.** Watch mode is
+  a footgun for any project using Jest/Vitest, including pure
+  backend ones using `TEST_CMD`. The current scope intentionally
+  bounds detection to `UI_TEST_CMD` users to keep the milestone
+  reviewable; broadening to `TEST_CMD` is left to a future milestone
+  (the same scanner can be reused — keep `_pf_uitest_jest_watch`
+  parameter-light to make that future call easy).
+- **300-line ceiling on the new file.** The combined LOC of all five
+  scanner functions plus the dispatcher is ~200 lines. Stay below
+  300 in `lib/preflight_checks_ui.sh`. If wording the inline
+  remediation messages pushes the file over, extract the message
+  strings to functions or hereldocs — do not split into a third
+  preflight file.
+
+## Seeds Forward
+
+This milestone produces three artifact classes consumed by every
+downstream resilience-arc milestone. The contracts pinned here must
+remain stable through m138.
+
+- **m132 — RUN_SUMMARY Causal Fidelity Enrichment.** Hard contract:
+  `_collect_preflight_ui_json` reads exactly these four env vars
+  (`PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED`,
+  `PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE`,
+  `PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE`,
+  `PREFLIGHT_UI_REPORTER_PATCHED`) plus the preflight `_PF_FAIL` /
+  `_PF_WARN` counters from `lib/preflight.sh`. m132 emits a
+  `preflight_ui` top-level key in `RUN_SUMMARY.json`. Renaming any
+  of these four vars or breaking the `0/1` value convention silently
+  breaks RUN_SUMMARY emission. → Keep var names and value semantics
+  frozen.
+
+- **m133 — Diagnose Rule Enrichment.** `_rule_preflight_interactive_config`
+  reads `PREFLIGHT_REPORT.md` looking for the literal heading
+  `### ✗ UI Config (Playwright) — html reporter`. The exact unicode
+  cross + space + heading text is generated by `_pf_record "fail" "UI Config (Playwright) — html reporter" ...`
+  — the prefix comes from `lib/preflight.sh` `_pf_record` (not under
+  m131's control), but the **heading text** "UI Config (Playwright) — html reporter"
+  is m131's wording. m133 will grep for it byte-for-byte. → Do not
+  reword the `_pf_record` name strings without coordinating with m133.
+
+- **m134 — Resilience Arc Integration Test Suite.** Scenario group 1
+  (S1.x) drives `_preflight_check_ui_test_config` directly with fixture
+  configs and asserts every `PREFLIGHT_UI_*` env-var transition: detect
+  (S1.1), detect-and-patch (S1.2), no-detection (S1.3). S7.2 asserts
+  the per-iteration non-reset semantic documented above. The fixture
+  shape (one playwright.config.ts per scenario) is byte-for-byte the
+  same as `tests/test_preflight_ui_config.sh` — m134 reuses them. →
+  Keep T1–T10 fixtures stable and parseable; m134's helpers will copy
+  them.
+
+- **m135 — Resilience Arc Artifact Lifecycle.** Adds
+  `_trim_preflight_bak_dir` to `lib/preflight_checks.sh` and `.gitignore`
+  entries for `.claude/preflight_bak/`. m131's
+  `_pf_uitest_playwright_fix_reporter` calls `_trim_preflight_bak_dir`
+  immediately after `PREFLIGHT_UI_REPORTER_PATCHED=1` (guarded by
+  `declare -f` for backwards compat). The backup filename format
+  `<YYYYMMDD_HHMMSS>_<basename>` is m135's contract; deviating produces
+  silent retention ordering bugs. → Keep filename format frozen.
+
+- **m136 — Resilience Arc Config Defaults & Validation.** Declares
+  `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED:=true`,
+  `PREFLIGHT_UI_CONFIG_AUTO_FIX:=true`, and `PREFLIGHT_BAK_RETAIN_COUNT:=5`
+  in `config_defaults.sh`, plus `--validate-config` checks. m131 reads
+  all three via inline `${...:-...}` defaults so m136 is purely
+  additive. → m131 must NOT add these to `config_defaults.sh` itself;
+  leave declaration to m136 to keep the layering clean.
+
+- **m137 — V3.2 Migration Script.** Surfaces the new
+  `PREFLIGHT_UI_CONFIG_AUTO_FIX` knob in user-facing migration output so
+  existing projects know it exists. The exact knob name (with
+  `_UI_CONFIG_` infix, not `_UI_` directly) is what m137 substring-matches
+  for. → Do not rename to `PREFLIGHT_UI_AUTO_FIX` or similar; keep the
+  `_CONFIG_` infix.
+
+- **m138 — CI Environment Auto-Detection.** Lists m131 in its scope
+  table as a feeder of preflight signal. m138 may layer additional
+  CI-detection logic on top of `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED`
+  to short-circuit the auto-patch when the project is already in CI
+  (the patch isn't visible to a developer in CI mode, so the source
+  rewrite is wasted churn). m131 itself does not need to do this; the
+  hook for m138 is simply the existing `PREFLIGHT_UI_CONFIG_AUTO_FIX`
+  knob. → Keep auto-fix gating idempotent and side-effect-free when
+  the source already has the CI-guarded form (T9 already verifies this).
+
+- **Future: cypress / jest auto-patch.** This milestone caps auto-fix
+  at PW-1 (Playwright html reporter) per the decision matrix. Future
+  milestones may extend auto-patch to CY-1 (cypress video) or JV-1
+  (jest/vitest watch) once the trade-off cost is well-understood. The
+  pattern established here — backup, sed-based replacement,
+  defensive `_trim_preflight_bak_dir` call, env-var triple export —
+  is reusable. → Keep `_pf_uitest_playwright_fix_reporter` shaped
+  so a future `_pf_uitest_cypress_fix_video` is a copy-paste with
+  message swaps, not a redesign.
+
+---
+
+## Archived: 2026-04-27 — Unknown Initiative
+
+# M132 - RUN_SUMMARY Causal Fidelity Enrichment
+
+<!-- milestone-meta
+id: "132"
+status: "done"
+-->
+
+## Overview
+
+The m126–m131 arc generates substantially richer failure intelligence at
+runtime:
+
+| Milestone | Runtime signal produced |
+|-----------|------------------------|
+| m128 | `BUILD_FIX_ATTEMPTS`, `BUILD_FIX_OUTCOME`, `BUILD_FIX_REPORT.md` |
+| m129 | `LAST_FAILURE_CONTEXT.json` schema v2 with `primary_cause` / `secondary_cause` objects |
+| m130 | `_ORCH_RECOVERY_ROUTE_TAKEN`, `_ORCH_ENV_GATE_RETRIED`, `_ORCH_MIXED_BUILD_RETRIED` |
+| m131 | `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED`, `PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE`, preflight fail/warn counts |
+
+None of this reaches `RUN_SUMMARY.json`. The current writer in
+`lib/finalize_summary.sh` emits a flat
+`"error_classes_encountered": ["AGENT_SCOPE/max_turns"]` and a boolean
+`recovery_actions_taken` list. Watchtower, the historical dashboard, and
+any external tooling consuming the summary log see only the symptom, not
+the root cause.
+
+Two concrete failure modes that result:
+
+1. **Dashboard shows "AGENT_SCOPE/max_turns" for every UI-gate-triggered
+   failure** even after m129 has correctly tagged it as
+   `ENVIRONMENT/test_infra (primary)`. The accuracy metric for the error
+   classification system looks worse than it actually is.
+
+2. **Build-fix loop statistics are lost.** Whether the pipeline burned
+   3 build-fix attempts or 0 before exiting is invisible in the
+   historical record. The only way to know is to open the raw log.
+
+M132 adds four new top-level fields to `RUN_SUMMARY.json` on failure
+runs, enriches the existing `error_classes_encountered` and
+`recovery_actions_taken` fields, and updates the Watchtower dashboard
+parser to surface the new data in the run detail view.
+
+## Where the relevant code lives (verified at write time)
+
+- `_hook_emit_run_summary` lives in `lib/finalize_summary.sh` (currently
+  **282 lines**). The single multi-field `printf` that writes
+  `RUN_SUMMARY.json` is at line 240; the format string is one logical
+  line. New fields are inserted between `"remediations"` and
+  `"timestamp"`. **Adding ~80–100 LOC of helpers will push the file
+  over the 300-line CLAUDE.md ceiling — plan helper extraction to a
+  sibling file from the start (see "Files Modified").**
+- The summary file path is `${LOG_DIR:-${PROJECT_DIR}/.claude/logs}/RUN_SUMMARY.json`
+  (`lib/finalize_summary.sh:21-23`) — **`.claude/logs/`, not `.claude/`**.
+  Helpers do not need to know this; they return JSON fragments that the
+  writer composes.
+- `LAST_FAILURE_CONTEXT.json` is at `${PROJECT_DIR}/.claude/LAST_FAILURE_CONTEXT.json`,
+  written by `write_last_failure_context` (`lib/diagnose_output.sh:209`).
+  m132 helpers read from the same path.
+- `_classify_failure` lives in `lib/orchestrate_recovery.sh:114`. Its
+  single call site is `_handle_pipeline_failure` in
+  `lib/orchestrate_loop.sh:199` — **not** `run_complete_loop` in
+  `lib/orchestrate.sh`. The `_ORCH_RECOVERY_ROUTE_TAKEN` capture wrap
+  (Goal 8) goes in `orchestrate_loop.sh` around the existing
+  `recovery=$(_classify_failure)` line.
+- `_ORCH_RECOVERY_ROUTE_TAKEN` is **declared by m130** (m130 Goal 5,
+  alongside `_ORCH_ENV_GATE_RETRIED` etc.) and reset by
+  `_reset_orch_recovery_state`. m130 sets it on the `retry_ui_gate_env)`
+  branch only. m130 is a hard dependency in MANIFEST.cfg, so the
+  declaration is in place when m132 lands; **do not re-declare** —
+  m132's contribution is to capture the value for *every* recovery
+  route, not only `retry_ui_gate_env` (see Goal 8).
+- `_load_failure_cause_context` is added by m130 (also a hard
+  dependency). It populates `_ORCH_PRIMARY_CAT/SUB/SIGNAL` and
+  `_ORCH_SECONDARY_CAT/SUB/SIGNAL` from `LAST_FAILURE_CONTEXT.json`
+  using a line-state-machine parser. m132's `_collect_causal_context_json`
+  should **call this loader and read the `_ORCH_*` vars** rather than
+  re-implementing the parser — collapses the helper to ~15 lines and
+  enforces m129's pretty-print contract in one place. (See
+  "Implementation Notes" for the fallback if m130 has not yet shipped.)
+- The dashboard parser is `lib/dashboard_parsers_runs_files.sh`
+  (currently **92 lines**). The canonical path uses
+  `python3 -c 'import json; ...'`; the fallback uses `sed -n` with
+  bracket-expression patterns. **Neither uses `grep -oP`** — the
+  pseudocode in Goal 9 must be adapted to the existing style (extend
+  the python `print(json.dumps({...}))` dictionary; add matching
+  `sed -n` fallbacks).
+- No `_build_run_badge*` function exists anywhere in `lib/` or
+  `tools/`. The badge rendering work in Goal 9 is therefore
+  scope-bounded — the parser changes are required; the renderer hooks
+  are best-effort and may be deferred to a follow-up Watchtower polish
+  milestone.
+
+## Design
+
+### Goal 1 — Collect causal context at finalize time
+
+Add a new helper in `lib/finalize_summary.sh` that reads
+`LAST_FAILURE_CONTEXT.json` (schema v1 or v2) and returns a populated
+JSON fragment:
+
+```bash
+# _collect_causal_context_json
+# Returns a JSON object for embedding in RUN_SUMMARY.json.
+# Reads LAST_FAILURE_CONTEXT.json if present; returns null object on absence.
+#
+# Output shape (schema_version=2):
+# {
+#   "schema_version": 2,
+#   "primary_category": "ENVIRONMENT",
+#   "primary_subcategory": "test_infra",
+#   "primary_signal": "ui_timeout_interactive_report",
+#   "secondary_category": "AGENT_SCOPE",
+#   "secondary_subcategory": "max_turns",
+#   "secondary_signal": "build_fix_budget_exhausted"
+# }
+#
+# Output shape (schema_version=1 or absent):
+# {
+#   "schema_version": 1,
+#   "primary_category": "",
+#   "primary_subcategory": "",
+#   "primary_signal": "",
+#   "secondary_category": "ENVIRONMENT",
+#   "secondary_subcategory": "test_infra",
+#   "secondary_signal": ""
+# }
+#
+# When file absent:
+# {"schema_version": 0}
+_collect_causal_context_json() { ... }
+```
+
+**Preferred implementation: reuse m130's loader.** m130 (a hard
+dependency) defines `_load_failure_cause_context` in
+`lib/orchestrate_recovery.sh`, which already populates the cause vars
+from `LAST_FAILURE_CONTEXT.json` using a line-state-machine parser.
+`_collect_causal_context_json` should call it and read the `_ORCH_*`
+vars rather than duplicate the parser:
+
+```bash
+_collect_causal_context_json() {
+    local ctx_file="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
+    if [[ ! -f "$ctx_file" ]]; then
+        printf '{"schema_version":0}'
+        return
+    fi
+    # Refresh from disk via m130's loader (idempotent — re-reads the file)
+    _load_failure_cause_context
+    printf '{"schema_version":%d,"primary_category":"%s","primary_subcategory":"%s","primary_signal":"%s","secondary_category":"%s","secondary_subcategory":"%s","secondary_signal":"%s"}' \
+        "${_ORCH_SCHEMA_VERSION:-0}" \
+        "${_ORCH_PRIMARY_CAT:-}" "${_ORCH_PRIMARY_SUB:-}" "${_ORCH_PRIMARY_SIGNAL:-}" \
+        "${_ORCH_SECONDARY_CAT:-}" "${_ORCH_SECONDARY_SUB:-}" "${_ORCH_SECONDARY_SIGNAL:-}"
+}
+```
+
+This is ~15 lines, leverages a single canonical parser, and inherits
+m129's pretty-print contract enforcement automatically.
+
+**Fallback (if m130 has not yet shipped — should not happen given the
+MANIFEST.cfg dependency):** duplicate m130's line-state-machine parser
+inline. m130's "Implementation Notes" describes the shape; copy
+verbatim and consolidate later when m130 lands.
+
+### Goal 2 — Collect build-fix loop stats at finalize time
+
+Add a second helper:
+
+```bash
+# _collect_build_fix_stats_json
+# Reads exported vars from the m128 build-fix loop and returns a JSON object.
+#
+# Output:
+# {
+#   "enabled": true,
+#   "attempts": 2,
+#   "max_attempts": 3,
+#   "outcome": "exhausted",
+#   "turn_budget_used": 60,
+#   "progress_gate_failures": 1
+# }
+#
+# "outcome" values: "passed" | "exhausted" | "no_progress" | "not_run"
+# "not_run" when BUILD_FIX_ATTEMPTS=0 or env var absent.
+_collect_build_fix_stats_json() {
+    local attempts="${BUILD_FIX_ATTEMPTS:-0}"
+    local max_attempts="${BUILD_FIX_MAX_ATTEMPTS:-3}"
+    local outcome="${BUILD_FIX_OUTCOME:-not_run}"
+    local turn_budget_used="${BUILD_FIX_TURN_BUDGET_USED:-0}"
+    local pg_failures="${BUILD_FIX_PROGRESS_GATE_FAILURES:-0}"
+    local enabled="true"
+
+    if [[ "$attempts" -eq 0 ]]; then
+        outcome="not_run"
+        enabled="false"
+    fi
+
+    printf '{"enabled":%s,"attempts":%d,"max_attempts":%d,"outcome":"%s","turn_budget_used":%d,"progress_gate_failures":%d}' \
+        "$enabled" "$attempts" "$max_attempts" "$outcome" "$turn_budget_used" "$pg_failures"
+}
+```
+
+The exported vars (`BUILD_FIX_ATTEMPTS`, `BUILD_FIX_OUTCOME`,
+`BUILD_FIX_TURN_BUDGET_USED`, `BUILD_FIX_PROGRESS_GATE_FAILURES`) are
+populated by the m128 build-fix loop in `stages/coder.sh`. When m128 is
+not yet deployed, all four vars are absent; the helper defaults to
+`"not_run"` and emits a `"enabled": false` object.
+
+### Goal 3 — Collect recovery routing stats
+
+Add a third helper:
+
+```bash
+# _collect_recovery_routing_json
+# Reads m130 module-level recovery vars and returns a JSON object.
+#
+# Output:
+# {
+#   "route_taken": "retry_ui_gate_env",
+#   "env_gate_retried": true,
+#   "mixed_build_retried": false,
+#   "causal_schema_version": 2
+# }
+_collect_recovery_routing_json() {
+    local route="${_ORCH_RECOVERY_ROUTE_TAKEN:-save_exit}"
+    local env_retried="${_ORCH_ENV_GATE_RETRIED:-0}"
+    local mixed_retried="${_ORCH_MIXED_BUILD_RETRIED:-0}"
+    local schema_ver="${_ORCH_SCHEMA_VERSION:-0}"
+
+    local env_bool="false"
+    [[ "$env_retried" -eq 1 ]] && env_bool="true"
+    local mixed_bool="false"
+    [[ "$mixed_retried" -eq 1 ]] && mixed_bool="true"
+
+    printf '{"route_taken":"%s","env_gate_retried":%s,"mixed_build_retried":%s,"causal_schema_version":%d}' \
+        "$route" "$env_bool" "$mixed_bool" "$schema_ver"
+}
+```
+
+`_ORCH_RECOVERY_ROUTE_TAKEN` is a new module var in
+`lib/orchestrate_recovery.sh` (added by this milestone — see Goal 5).
+It is set at the point where `_classify_failure` returns its action
+string, so the finalize hook captures the final routing decision.
+
+### Goal 4 — Collect preflight UI finding stats
+
+Add a fourth helper:
+
+```bash
+# _collect_preflight_ui_json
+# Reads m131 env vars and returns a JSON object.
+#
+# Output:
+# {
+#   "interactive_config_detected": true,
+#   "interactive_config_rule": "PW-1",
+#   "interactive_config_file": "playwright.config.ts",
+#   "reporter_auto_patched": true,
+#   "fail_count": 1,
+#   "warn_count": 2
+# }
+_collect_preflight_ui_json() {
+    local detected="${PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED:-0}"
+    local rule="${PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE:-}"
+    local file="${PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE:-}"
+    local patched="${PREFLIGHT_UI_REPORTER_PATCHED:-0}"
+    local pf_fail="${_PF_FAIL:-0}"
+    local pf_warn="${_PF_WARN:-0}"
+
+    local det_bool="false"
+    [[ "$detected" -eq 1 ]] && det_bool="true"
+    local pat_bool="false"
+    [[ "$patched" -eq 1 ]] && pat_bool="true"
+
+    # Escape rule/file for JSON
+    rule=$(printf '%s' "$rule" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    file=$(printf '%s' "$file" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+    printf '{"interactive_config_detected":%s,"interactive_config_rule":"%s","interactive_config_file":"%s","reporter_auto_patched":%s,"fail_count":%d,"warn_count":%d}' \
+        "$det_bool" "$rule" "$file" "$pat_bool" "$pf_fail" "$pf_warn"
+}
+```
+
+### Goal 5 — Enrich `error_classes_encountered` with causal labels
+
+Currently this field is written as:
+
+```bash
+if [[ -n "${AGENT_ERROR_CATEGORY:-}" ]]; then
+    error_classes="[\"${AGENT_ERROR_CATEGORY}/${AGENT_ERROR_SUBCATEGORY:-unknown}\"]"
+fi
+```
+
+Replace with a two-element array that includes both the surface symptom
+and the primary root cause when available:
+
+```bash
+local ec_items=()
+# Symptom (always present when classification fired)
+if [[ -n "${AGENT_ERROR_CATEGORY:-}" ]]; then
+    local symptom_class="${AGENT_ERROR_CATEGORY}/${AGENT_ERROR_SUBCATEGORY:-unknown}"
+    ec_items+=("\"${symptom_class}\"")
+fi
+# Primary cause (from m129/m130 context loader — populate via _load_failure_cause_context)
+# _ORCH_PRIMARY_CAT and _ORCH_PRIMARY_SUB are already set if m130 ran.
+# If not, refresh them via _load_failure_cause_context. Do not grep for
+# "primary_cause" and "category" on the same line — m129's pretty-print
+# contract puts them on separate lines.
+local _fc_primary_cat="${_ORCH_PRIMARY_CAT:-}"
+local _fc_primary_sub="${_ORCH_PRIMARY_SUB:-}"
+if [[ -z "$_fc_primary_cat" ]] && declare -F _load_failure_cause_context >/dev/null 2>&1; then
+  _load_failure_cause_context
+  _fc_primary_cat="${_ORCH_PRIMARY_CAT:-}"
+  _fc_primary_sub="${_ORCH_PRIMARY_SUB:-}"
+fi
+if [[ -n "$_fc_primary_cat" ]] && [[ "${_fc_primary_cat}/${_fc_primary_sub:-unknown}" != "${symptom_class:-}" ]]; then
+    ec_items+=("\"root:${_fc_primary_cat}/${_fc_primary_sub:-unknown}\"")
+fi
+# Assemble
+if [[ ${#ec_items[@]} -gt 0 ]]; then
+    local joined_ec
+    joined_ec=$(printf ',%s' "${ec_items[@]}")
+    error_classes="[${joined_ec:1}]"
+fi
+```
+
+The `root:` prefix on the second element distinguishes root cause from
+surface classification and makes dashboard queries unambiguous.
+
+### Goal 6 — Enrich `recovery_actions_taken` with routing detail
+
+The existing `recovery_actions` array appends string labels. Extend it
+with the m130 route when non-default:
+
+```bash
+# After the existing ra_items build block:
+local _route="${_ORCH_RECOVERY_ROUTE_TAKEN:-save_exit}"
+if [[ "$_route" != "save_exit" ]] && [[ -n "$_route" ]]; then
+    ra_items+=("\"${_route}\"")
+fi
+```
+
+This means a run where m130 fired `retry_ui_gate_env` will emit:
+`"recovery_actions_taken": ["retry_ui_gate_env"]`
+instead of the previous `[]`.
+
+### Goal 7 — Add four new top-level fields to the JSON output
+
+In the `printf` call that writes `RUN_SUMMARY.json`, add four new fields
+after `"remediations"`:
+
+```
+"causal_context": %s,
+"build_fix_stats": %s,
+"recovery_routing": %s,
+"preflight_ui": %s,
+```
+
+Collect them before the printf:
+
+```bash
+# M132 enrichment fields
+local causal_ctx_json
+causal_ctx_json=$(_collect_causal_context_json)
+local build_fix_json
+build_fix_json=$(_collect_build_fix_stats_json)
+local recovery_routing_json
+recovery_routing_json=$(_collect_recovery_routing_json)
+local preflight_ui_json
+preflight_ui_json=$(_collect_preflight_ui_json)
+```
+
+The `printf` format string gains four additional `%s` slots and four
+additional arguments. The fields are always present; on success runs
+they emit the zero/null variants of each object (schema_version=0,
+attempts=0/not_run, etc.). This keeps the JSON shape stable across run
+outcomes.
+
+### Goal 8 — Capture `_ORCH_RECOVERY_ROUTE_TAKEN` for every recovery route
+
+`_ORCH_RECOVERY_ROUTE_TAKEN` is **declared and reset by m130** (m130
+Goal 5, alongside the other Lifetime-B retry guards in
+`lib/orchestrate_recovery.sh`). m130 also sets it inside the
+`retry_ui_gate_env)` case branch in `_handle_pipeline_failure`. m132
+must **not re-declare** the var.
+
+m132's contribution is to capture the route for **every** recovery
+action (not only `retry_ui_gate_env`) so `_collect_recovery_routing_json`
+sees the actual action chosen each run. Since `_classify_failure` uses
+`echo`-and-return, the cleanest place to capture is at the call site
+in `lib/orchestrate_loop.sh:199`:
+
+```bash
+# In _handle_pipeline_failure (lib/orchestrate_loop.sh:187), the existing line is:
+recovery=$(_classify_failure)
+# Add immediately after:
+_ORCH_RECOVERY_ROUTE_TAKEN="$recovery"
+```
+
+This single addition captures the route once per failure iteration. The
+m130 case-branch assignment for `retry_ui_gate_env` becomes redundant
+but is harmless — the wrap above runs first and writes the same value.
+Do not remove m130's case-branch assignment in this milestone; it's
+m130's contract and may be coordinated separately.
+
+**Coordination if order inverts (should not happen — m130 is a hard
+dependency in MANIFEST.cfg):** if m132 lands before m130, also add the
+declaration `_ORCH_RECOVERY_ROUTE_TAKEN=""` at module scope of
+`lib/orchestrate_recovery.sh` and zero it in `_reset_orch_recovery_state`.
+m130 then verifies and proceeds.
+
+### Goal 9 — Update Watchtower dashboard parser for new fields
+
+**This goal has two layers; the data layer is required, the renderer
+layer is best-effort.**
+
+**Data layer (required).** `lib/dashboard_parsers_runs_files.sh`
+(currently 92 lines) reads `RUN_SUMMARY.json` to populate per-run rows.
+The canonical extraction path uses `python3 -c 'import json; ...'` and
+the fallback uses `sed -n` — **neither uses `grep -oP`**. Extend the
+existing dict comprehension and add matching `sed -n` lines:
+
+```python
+# In the python3 -c block (around line 38), extend the print(json.dumps({...})) dict:
+'causal_primary_category': d.get('causal_context', {}).get('primary_category', ''),
+'causal_primary_subcategory': d.get('causal_context', {}).get('primary_subcategory', ''),
+'build_fix_outcome': d.get('build_fix_stats', {}).get('outcome', 'not_run'),
+'build_fix_attempts': d.get('build_fix_stats', {}).get('attempts', 0),
+'recovery_route': d.get('recovery_routing', {}).get('route_taken', 'save_exit'),
+'preflight_ui_detected': d.get('preflight_ui', {}).get('interactive_config_detected', False),
+'preflight_ui_patched':  d.get('preflight_ui', {}).get('reporter_auto_patched', False),
+```
+
+```bash
+# In the sed -n fallback block (around lines 56–74), add matching extractions
+# using the existing bracket-expression pattern (no -P required for portability):
+local recovery_route
+recovery_route=$(sed -n 's/.*"route_taken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
+: "${recovery_route:=save_exit}"
+local build_fix_outcome
+build_fix_outcome=$(sed -n 's/.*"build_fix_stats".*"outcome"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$summary_file" 2>/dev/null | head -1)
+: "${build_fix_outcome:=not_run}"
+# Append to json_content alongside the existing fields.
+```
+
+Match the existing style: `: "${VAR:=default}"` for defaults,
+`bracket-expression` not PCRE. The python path is preferred when
+`python3` is available; the sed fallback handles environments without
+python.
+
+**Renderer layer (best-effort).** `grep -r "_build_run_badge\|run.*badge"
+lib/ tools/ tests/` returns zero matches at write time — there is no
+existing badge helper to extend. Two options for the implementing
+agent:
+
+1. **Defer badges to a follow-up.** Land the data-layer changes only;
+   note in the milestone close-out that Watchtower badge rendering for
+   `[env-gate-retry]` and `[preflight-patch]` is queued for a future
+   Watchtower polish milestone. m134 S5.1 validates the JSON fields
+   directly — badges are not on its acceptance path.
+2. **Add a minimal badge string to the parser output.** Compose a
+   `badges` field in the json_content (e.g.
+   `"badges":["env-gate-retry","preflight-patch"]`) so any current or
+   future renderer can read it without a separate extraction pass. This
+   is purely additive and does not require touching any TUI/HTML
+   rendering code.
+
+Pick option 1 if the Watchtower render path cannot be located in a
+single `grep`; pick option 2 if a small, surgical addition to the
+parser output keeps the contract forward-compatible. Do not invent a
+badge-rendering helper from scratch in this milestone — that's outside
+the resilience-arc scope.
+
+### Goal 10 — Tests
+
+Add test cases to `tests/test_finalize_summary.sh` (extend existing file
+rather than creating new one):
+
+#### T1 — `_collect_causal_context_json` with v2 fixture
+
+```
+Feed a v2 LAST_FAILURE_CONTEXT.json fixture.
+Expect: output contains "primary_category":"ENVIRONMENT", "secondary_category":"AGENT_SCOPE"
+```
+
+#### T2 — `_collect_causal_context_json` with v1 fixture
+
+```
+Feed a v1 fixture (no schema_version, no primary_cause).
+Expect: schema_version=1, primary fields empty, secondary from top-level keys.
+```
+
+#### T3 — `_collect_causal_context_json` when file absent
+
+```
+No LAST_FAILURE_CONTEXT.json in PROJECT_DIR.
+Expect: {"schema_version": 0}
+```
+
+#### T4 — `_collect_build_fix_stats_json` with m128 vars set
+
+```
+BUILD_FIX_ATTEMPTS=2 BUILD_FIX_OUTCOME=exhausted BUILD_FIX_TURN_BUDGET_USED=40
+Expect: "attempts":2, "outcome":"exhausted", "enabled":true
+```
+
+#### T5 — `_collect_build_fix_stats_json` with no vars (pre-m128)
+
+```
+No BUILD_FIX_* vars in env.
+Expect: "attempts":0, "outcome":"not_run", "enabled":false
+```
+
+#### T6 — `error_classes_encountered` contains root: prefix on failure with primary cause
+
+```
+AGENT_ERROR_CATEGORY=AGENT_SCOPE AGENT_ERROR_SUBCATEGORY=max_turns
+_ORCH_PRIMARY_CAT=ENVIRONMENT _ORCH_PRIMARY_SUB=test_infra
+Expect: error_classes contains "AGENT_SCOPE/max_turns" AND "root:ENVIRONMENT/test_infra"
+```
+
+#### T7 — `error_classes_encountered` has no root: duplicate when primary matches symptom
+
+```
+AGENT_ERROR_CATEGORY=ENVIRONMENT _ORCH_PRIMARY_CAT=ENVIRONMENT (same)
+Expect: error_classes has exactly one entry (no duplicate)
+```
+
+#### T8 — `recovery_actions_taken` includes route when non-default
+
+```
+_ORCH_RECOVERY_ROUTE_TAKEN=retry_ui_gate_env
+Expect: "recovery_actions_taken" contains "retry_ui_gate_env"
+```
+
+#### T9 — `recovery_actions_taken` does not include save_exit (default)
+
+```
+_ORCH_RECOVERY_ROUTE_TAKEN=save_exit (or unset)
+Expect: "retry" entry absent from recovery_actions array
+```
+
+#### T10 — Full RUN_SUMMARY.json emitted with all four new fields present
+
+```
+Run _hook_emit_run_summary with minimal env.
+Assert: output JSON contains "causal_context", "build_fix_stats",
+        "recovery_routing", "preflight_ui" top-level keys.
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/finalize_summary_collectors.sh` | **New file.** Houses the four collector helpers (`_collect_causal_context_json`, `_collect_build_fix_stats_json`, `_collect_recovery_routing_json`, `_collect_preflight_ui_json`). New file (rather than appending to `lib/finalize_summary.sh`) is mandatory: `finalize_summary.sh` is currently 282 lines and the additions are ~80–100 LOC, which would push it over CLAUDE.md non-negotiable rule 8 (300-line ceiling). Keep the file ≤ 300 lines. |
+| `lib/finalize_summary.sh` | Source `finalize_summary_collectors.sh` near the top; add four new top-level fields to the `printf` format string at line 240 (insert between `"remediations"` and `"timestamp"`); enrich `error_classes_encountered` and `recovery_actions_taken` as described in Goals 5–6. Verify the file ends ≤ 300 lines after changes (currently 282; budget ~18 LOC for the enrichments + 4 collector calls + 4 new printf args). |
+| `lib/orchestrate_loop.sh` | In `_handle_pipeline_failure` at line 199, immediately after `recovery=$(_classify_failure)`, add `_ORCH_RECOVERY_ROUTE_TAKEN="$recovery"` to capture the route for every recovery action (not just `retry_ui_gate_env`). One-line change. |
+| `lib/orchestrate_recovery.sh` | **No change in m132.** `_ORCH_RECOVERY_ROUTE_TAKEN` is declared and reset by m130; `_load_failure_cause_context` is added by m130. Both are hard dependencies. (Forward-compat fallback: if m132 ships before m130, also add the declaration here — see Goal 8 coordination note.) |
+| `lib/dashboard_parsers_runs_files.sh` | Extend the existing `python3 -c` JSON dict (around line 38) with `causal_primary_category`, `causal_primary_subcategory`, `build_fix_outcome`, `build_fix_attempts`, `recovery_route`, `preflight_ui_detected`, `preflight_ui_patched`. Add matching `sed -n` bracket-expression fallback lines (around lines 56–74). **Do not introduce `grep -oP`** — the file uses python3 + sed only for portability. See Goal 9 for code shape. |
+| Watchtower TUI/HTML renderer | **Best-effort, may defer.** No `_build_run_badge*` helper exists at write time; `grep -r "_build_run_badge\|run.*badge" lib/ tools/ tests/` returns zero matches. Pick option 1 (defer to follow-up Watchtower polish milestone, document in close-out) or option 2 (compose a `badges` field in parser output) per Goal 9. m134 S5.1 acceptance does not require badge rendering. |
+| `tests/test_finalize_summary.sh` | Extend with test cases T1–T10. |
+| `docs/reference/run-summary-schema.md` | Document the four new top-level fields and updated `error_classes_encountered` format. If this file does not exist, create it (the `docs/reference/` directory exists with `agents.md`, `commands.md`, `configuration.md`, `stages.md`, `template-variables.md` already present). |
+
+## Implementation Notes
+
+### Parser reuse between m130 and m132
+
+Both `_load_failure_cause_context` (m130, in `orchestrate_recovery.sh`)
+and `_collect_causal_context_json` (m132, in `finalize_summary.sh`)
+parse the same JSON file with the same line-by-line grep approach. To
+avoid duplication, the shared parse logic can be extracted to
+`lib/diagnose_output.sh` as:
+
+```bash
+# _read_failure_cause_fields ctx_file
+# Populates _FC_PRIMARY_CAT, _FC_PRIMARY_SUB, _FC_PRIMARY_SIGNAL,
+#           _FC_SECONDARY_CAT, _FC_SECONDARY_SUB, _FC_SECONDARY_SIGNAL,
+#           _FC_SCHEMA_VERSION
+# Caller is responsible for unsetting/re-using these globals.
+```
+
+Both m130 and m132 source `diagnose_output.sh` (it's already in the
+dependency chain for both `orchestrate_recovery.sh` and
+`finalize_summary.sh`). The extraction is a non-breaking refactor.
+If implementing m132 before m130 is fully deployed, duplicate the
+parser inline first — it can be consolidated when m130 lands.
+
+### JSON shape stability guarantee
+
+The four new fields are **always** emitted regardless of run outcome.
+On success runs:
+
+```json
+"causal_context":    {"schema_version": 0},
+"build_fix_stats":   {"enabled": false, "attempts": 0, "max_attempts": 3, "outcome": "not_run", ...},
+"recovery_routing":  {"route_taken": "save_exit", "env_gate_retried": false, ...},
+"preflight_ui":      {"interactive_config_detected": false, ...}
+```
+
+Dashboard parsers must treat `schema_version: 0` in `causal_context`
+as "no causal data available" and render nothing rather than empty
+strings. This prevents future `null`-vs-missing bugs.
+
+### Backward compatibility for existing RUN_SUMMARY consumers
+
+Existing consumers (Watchtower TUI, HTML dashboard, `tekhton --diagnose`)
+read named fields from `RUN_SUMMARY.json` by key, not by positional
+index. Adding new top-level fields is backward-compatible: old consumers
+ignore unknown keys. The only breaking change would be removing or
+renaming an existing key — this milestone does neither.
+
+The `error_classes_encountered` change is additive (adds a second element
+to the array). Existing consumers that read `error_classes_encountered[0]`
+for the surface-level error class continue to work. New consumers that
+want the root cause check for a `"root:"` prefix.
+
+## Watch For
+
+- **300-line ceiling on `lib/finalize_summary.sh`.** Currently 282
+  lines. The four new collector helpers must live in
+  `lib/finalize_summary_collectors.sh` (a new file) — appending in
+  place would push `finalize_summary.sh` over the CLAUDE.md non-negotiable
+  rule 8 ceiling. Run `wc -l lib/finalize_summary*.sh` before committing.
+- **`_ORCH_RECOVERY_ROUTE_TAKEN` is m130's variable.** m130 declares it
+  at module scope of `lib/orchestrate_recovery.sh` and zeroes it in
+  `_reset_orch_recovery_state`. Goal 8 of m132 is **not** to declare
+  it — it is to ensure the variable captures the route for *every*
+  recovery action, not only `retry_ui_gate_env`. The wrap goes around
+  `recovery=$(_classify_failure)` in `lib/orchestrate_loop.sh:199`. If
+  m132 lands first (it should not — m130 is a hard dependency in
+  MANIFEST.cfg), add the declaration as a forward-compat measure.
+- **`_classify_failure` call site lives in `orchestrate_loop.sh`, not
+  `orchestrate.sh`.** Earlier drafts of this milestone pointed at
+  `run_complete_loop` in `lib/orchestrate.sh`. The actual call site is
+  `_handle_pipeline_failure` at `lib/orchestrate_loop.sh:199`.
+  `run_complete_loop` only delegates to it via
+  `_handle_pipeline_failure "$_iter_turns" "$_files_changed"` at
+  `lib/orchestrate.sh:251`. Putting the wrap in the wrong file looks
+  correct in isolation but never fires. (m130's "Watch For" calls out
+  the same trap.)
+- **`BUILD_FIX_OUTCOME` token vocabulary is frozen by m128.** The four
+  values are `passed | exhausted | no_progress | not_run`.
+  `_collect_build_fix_stats_json` branches on those exact strings; do
+  not normalize, abbreviate, or extend. m128's "Watch For" pins this
+  identically — both ends of the contract are documented.
+- **The four `PREFLIGHT_UI_*` env vars are m131's contract.** Names:
+  `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED` (`0`/`1`),
+  `PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE` (`PW-1`/`JV-1`/...),
+  `PREFLIGHT_UI_INTERACTIVE_CONFIG_FILE` (basename),
+  `PREFLIGHT_UI_REPORTER_PATCHED` (`0`/`1`). Read with the
+  `${VAR:-default}` idiom — they may be unset on success runs and on
+  pre-m131 deployments.
+- **Pretty-print contract for `LAST_FAILURE_CONTEXT.json`.** m129 emits
+  the file with one key per line and multi-line nested cause objects;
+  m130's `_load_failure_cause_context` parser depends on this. Calling
+  m130's loader (per Goal 1) keeps the parser concentrated in one
+  place — do not add a second copy that could drift.
+- **`schema_version: 0` is the absent-file sentinel.** When
+  `LAST_FAILURE_CONTEXT.json` is missing, `_collect_causal_context_json`
+  returns `{"schema_version": 0}` — not `null`, not omitted. Dashboard
+  parsers branch on `schema_version == 0` to render "no causal data
+  available". m134 S5.2 asserts on this convention; do not change it.
+- **JSON shape is stable across all run outcomes.** All four new
+  top-level fields are emitted on success runs too, with their
+  zero/null-ish variants documented in "Implementation Notes". This is
+  what makes m134 S5.2 pass and keeps Watchtower's per-run row layout
+  consistent. Do not skip emission on success — emit the empty-state
+  variants instead.
+- **`error_classes_encountered` is now a 1-or-2 element array.**
+  Element 0 is the symptom (existing behavior, e.g.
+  `AGENT_SCOPE/max_turns`). Element 1 — when present — is `root:`
+  prefixed (e.g. `root:ENVIRONMENT/test_infra`). The prefix is the
+  discriminator, not the array index — never assume index 1 is always
+  root cause; check for the prefix. m133's `_rule_max_turns` extension
+  uses the same convention.
+- **`recovery_actions_taken` adds the route only when non-default.**
+  When `_ORCH_RECOVERY_ROUTE_TAKEN` is empty or `save_exit`, the route
+  is NOT appended (default case has no action worth surfacing). When
+  any other route fired, append it as a string element — example:
+  `["transient_retry", "retry_ui_gate_env"]`. This is intentional
+  duplication with `recovery_routing.route_taken` (a new top-level
+  field): the array gives a chronological history; the top-level field
+  gives the final routing decision.
+- **`lib/dashboard_parsers_runs_files.sh` does not use `grep -oP`.**
+  It uses `python3 -c 'import json; ...'` for the canonical path and
+  `sed -n` with bracket-expression patterns for the fallback. Adding
+  `grep -oP` here breaks the existing portability story (BSD `grep`
+  does not support `-P`). The Goal 9 pseudocode follows the existing
+  python3 + sed style — match it.
+- **Watchtower badge rendering is best-effort scope.** No
+  `_build_run_badge*` function currently exists in `lib/` or
+  `tools/`. The parser-side changes (Goal 9 data layer) are required.
+  The renderer-side changes (badges) may be deferred to a follow-up
+  Watchtower polish milestone if the badge entry point cannot be
+  located in a single grep — flag and proceed without blocking on it.
+- **`grep -oP` requires GNU grep with PCRE.** macOS default `grep`
+  does not support `-P`. The whole resilience arc (m126/m127/m129/m130/m132/m133)
+  assumes GNU grep is present for parsing `LAST_FAILURE_CONTEXT.json`.
+  m132's collector helpers inherit this assumption; the dashboard
+  parser deliberately uses `sed` (not `grep -oP`) precisely to keep
+  the historical-data read path BSD-portable.
+
+## Acceptance Criteria
+
+- [ ] `lib/finalize_summary_collectors.sh` exists, is sourced by `lib/finalize_summary.sh`, and is ≤ 300 lines.
+- [ ] `lib/finalize_summary.sh` ends ≤ 300 lines after the printf and enrichment changes (currently 282; budget ~18 LOC for the changes).
+- [ ] `RUN_SUMMARY.json` emitted after a failure run with m128–m131 active contains `causal_context`, `build_fix_stats`, `recovery_routing`, and `preflight_ui` top-level keys.
+- [ ] `RUN_SUMMARY.json` emitted on a *success* run also contains all four new keys with their empty-state variants (`causal_context.schema_version=0`, `build_fix_stats.outcome="not_run"`, `recovery_routing.route_taken="save_exit"`, `preflight_ui.interactive_config_detected=false`). Shape stability is non-negotiable.
+- [ ] `causal_context.primary_category` correctly reflects the primary cause from `LAST_FAILURE_CONTEXT.json` schema v2 (not the symptom).
+- [ ] `causal_context.schema_version` = 0 when `LAST_FAILURE_CONTEXT.json` is absent.
+- [ ] `build_fix_stats.outcome` = `"not_run"` / `"enabled": false` when no `BUILD_FIX_*` vars are set.
+- [ ] `error_classes_encountered` contains a `"root:"` prefixed entry distinct from the symptom entry when primary cause differs from surface classification.
+- [ ] `error_classes_encountered` does not duplicate entries when primary cause equals symptom category.
+- [ ] `recovery_routing.route_taken` reflects the actual action returned by `_classify_failure` at run end (verified via the call-site wrap in `lib/orchestrate_loop.sh:199`, not only the m130 `retry_ui_gate_env)` case branch).
+- [ ] `preflight_ui.interactive_config_detected` = `true` when PW-1 fired during preflight.
+- [ ] `lib/dashboard_parsers_runs_files.sh` extracts the new fields via the existing `python3 -c` dict (canonical) and matching `sed -n` lines (fallback). No `grep -oP` introduced.
+- [ ] Watchtower run list renders `[env-gate-retry]` badge when `recovery_routing.route_taken` = `retry_ui_gate_env` **OR** the close-out note documents that badge rendering is deferred and the data is available in the parser output for a future renderer.
+- [ ] All 10 test cases in `test_finalize_summary.sh` pass.
+- [ ] Existing `RUN_SUMMARY.json` test cases remain green (backward-compatible shape — additive only).
+- [ ] `shellcheck` clean for `lib/finalize_summary.sh`, `lib/finalize_summary_collectors.sh`, `lib/orchestrate_loop.sh`, `lib/dashboard_parsers_runs_files.sh`.
+
+## Seeds Forward
+
+This milestone is the **finalize-layer publication point** for the
+resilience arc's runtime intelligence. Every downstream milestone reads
+the four new top-level fields by name; pin the names and shapes here.
+
+- **m133 — Diagnose Rule Enrichment.** Hard contract:
+  - `_rule_ui_gate_interactive_reporter` reads
+    `recovery_routing.route_taken` (`== "retry_ui_gate_env"`) and
+    `causal_context.primary_subcategory` (`== "test_infra"`).
+  - `_rule_build_fix_exhausted` reads `build_fix_stats.outcome`
+    (`exhausted` / `no_progress`) and `build_fix_stats.attempts` (≥ 2).
+  - `_rule_preflight_interactive_config` reads
+    `preflight_ui.interactive_config_detected` (`true`),
+    `preflight_ui.reporter_auto_patched` (`true`/`false`),
+    `preflight_ui.interactive_config_rule`, and
+    `preflight_ui.interactive_config_file`.
+  - `_rule_mixed_classification` reads
+    `causal_context.primary_signal == "mixed_uncertain_classification"`
+    and may use any `root:` entry in `error_classes_encountered` as
+    supplemental context when present.
+  → Do not rename or restructure any of the four new top-level keys
+  after this milestone lands. m133 will be merged with byte-exact key
+  names hard-coded.
+
+- **m134 — Resilience Arc Integration Test Suite.** Scenario S5.1
+  ("RUN_SUMMARY enrichment — full chain") drives `_hook_emit_run_summary`
+  end-to-end and asserts:
+  - `causal_context` key present with `primary_category="ENVIRONMENT"`.
+  - `build_fix_stats` key present with `outcome="exhausted"` and
+    `attempts=2`.
+  - `recovery_routing` key present with `route_taken="retry_ui_gate_env"`.
+  - `preflight_ui` key present with `interactive_config_detected=true`.
+
+  Scenario S5.2 ("RUN_SUMMARY shape on success") asserts the
+  empty-state variants documented in this milestone:
+  - `causal_context.schema_version=0`
+  - `build_fix_stats.outcome="not_run"`, `enabled=false`
+  - `recovery_routing.route_taken="save_exit"` (default)
+  - `preflight_ui.interactive_config_detected=false`
+
+  → Keep these contract values stable; m134 hard-codes them. The
+  empty-state variants in particular are easy to overlook; the JSON
+  shape stability acceptance criterion above is the canary.
+
+- **m135 — Resilience Arc Artifact Lifecycle.** m135 adds
+  `_clear_arc_artifacts_on_success` which removes
+  `LAST_FAILURE_CONTEXT.json` on outcome=success.
+  `_collect_causal_context_json` must degrade gracefully when the file
+  is absent (return `{"schema_version": 0}`). m135 explicitly relies
+  on this degrade path so success runs don't carry stale failure
+  context into `RUN_SUMMARY.json`.
+  → Keep the absent-file degrade path working; m135 depends on it.
+
+- **m136 — Resilience Arc Config Defaults & Validation.** No direct
+  contract with m132 — m136 declares the m126/m128/m130/m131 config
+  knobs but does not affect `RUN_SUMMARY.json` shape. Listed for
+  completeness; m132 has no work to defer.
+
+- **m137 — V3.2 Migration Script.** No direct contract — m137 migrates
+  `pipeline.conf` and `.gitignore` for the new arc config and artifact
+  paths. `RUN_SUMMARY.json` shape is consumer-side, not config-side,
+  so m137 does not touch m132's output.
+
+- **m138 — Runtime CI Environment Auto-Detection.** Lists m132 in its
+  prior-arc context table as "RUN_SUMMARY causal fidelity". No direct
+  contract; m138's CI-detection logic doesn't read `RUN_SUMMARY.json`.
+
+- **Watchtower run-detail badges (future polish).** Goal 9 introduces
+  `[env-gate-retry]` and `[preflight-patch]` badges driven off
+  `recovery_routing.route_taken == "retry_ui_gate_env"` and
+  `preflight_ui.reporter_auto_patched == true`. The strings are m132's
+  call; the underlying tokens are m130's and m131's respectively.
+  → If a future redesign collapses or renames `retry_ui_gate_env` or
+  the `PREFLIGHT_UI_*` vocabulary, update the badge mapping here at
+  the same time.
+
+- **External dashboard consumers.** Tools outside Tekhton (CI
+  dashboards, custom analytics) that ingest `RUN_SUMMARY.json` get the
+  four new top-level fields automatically. The additive-only guarantee
+  documented in "Implementation Notes" (existing keys unchanged, only
+  new keys added) is the contract for those consumers.
+  → Don't ever remove or rename existing `RUN_SUMMARY.json` keys; only
+  add new ones.
+
+---
+
+## Archived: 2026-04-27 — Unknown Initiative
+
+# M133 - Diagnose Rule Enrichment for Resilience Arc Failure Modes
+
+<!-- milestone-meta
+id: "133"
+status: "done"
+-->
+<!-- PM-tweaked: 2026-04-25 -->
+
+## Overview
+
+Milestones m126–m132 make Tekhton materially better at detecting and
+classifying resilience-arc failures, but `tekhton --diagnose` still mostly
+reports the old coarse classes:
+
+| Failure mode | Arc source | Current diagnose result | Desired result |
+|---|---|---|---|
+| Interactive Playwright reporter timeout | m126 + m131 | `BUILD_FAILURE` or `MAX_TURNS_EXHAUSTED` | `UI_GATE_INTERACTIVE_REPORTER` |
+| Build-fix loop exhausted / no progress | m128 | generic `BUILD_FAILURE` | `BUILD_FIX_EXHAUSTED` |
+| Preflight detected interactive reporter config before the gate ran | m131 + m132 | generic `BUILD_FAILURE` / `UNKNOWN` | `PREFLIGHT_INTERACTIVE_CONFIG` |
+| Mixed-uncertain build classification | m127 + m130 | generic build or unknown guidance | `MIXED_UNCERTAIN_CLASSIFICATION` |
+| Max-turns was only the symptom; root cause was env/test infra | m129 + m130 | `MAX_TURNS_EXHAUSTED` with "task too large" advice | `MAX_TURNS_ENV_ROOT` |
+
+This milestone is intentionally diagnose-only. It must not change gate
+behaviour, preflight behaviour, failure-context writing, or recovery routing.
+It consumes the artifacts/contracts already established by m126–m132 and turns
+them into more specific user guidance.
+
+## Scope Boundary
+
+M133 adds four new diagnose rules and upgrades one existing rule:
+
+1. `_rule_ui_gate_interactive_reporter`
+2. `_rule_build_fix_exhausted`
+3. `_rule_preflight_interactive_config`
+4. `_rule_mixed_classification`
+5. Upgrade `_rule_max_turns` so it can emit `MAX_TURNS_ENV_ROOT`
+
+M133 does **not** add new config vars, new runtime artifacts, or new causal-log
+events. If a needed signal is absent from the contracts frozen by m128–m132,
+that is a problem for the earlier milestone, not a reason to widen M133.
+
+## Design
+
+### Goal 1 - Keep the implementation local to the diagnose layer
+
+Primary rule changes belong in `lib/diagnose_rules.sh`.
+Secondary / long-tail rule changes belong in `lib/diagnose_rules_extra.sh`.
+
+Do **not** widen `lib/diagnose.sh` just to cache more JSON fields unless the
+implementation becomes unreadable without it. The current diagnose contract is
+already sufficient:
+
+- `_read_diagnostic_context` populates pipeline stage, task, outcome,
+  review-cycle count, `_DIAG_LAST_CLASSIFICATION`, and `_DIAG_EXIT_REASON`.
+- Rules are already allowed to parse `LAST_FAILURE_CONTEXT.json` and
+  `RUN_SUMMARY.json` directly.
+
+That keeps M133 reviewable and avoids a cross-file refactor whose only benefit
+would be minor grep deduplication.
+
+### Goal 2 - New primary rule: `_rule_ui_gate_interactive_reporter`
+
+**Location:** `lib/diagnose_rules.sh`
+
+**Order:** first in `DIAGNOSE_RULES`, before `_rule_build_failure` and before
+`_rule_max_turns`. This rule is the most specific diagnose outcome in the arc.
+
+**Purpose:** identify the case where the UI gate timed out because Playwright
+opened an interactive HTML reporter (`reporter: 'html'`) or equivalent.
+
+**Detection sources** (highest-confidence first):
+
+1. `LAST_FAILURE_CONTEXT.json` schema v2:
+   `primary_cause.signal = ui_timeout_interactive_report`
+2. `LAST_FAILURE_CONTEXT.json` schema v1/v2:
+   `classification = UI_INTERACTIVE_REPORTER`
+3. Current-run raw log evidence in either `${BUILD_RAW_ERRORS_FILE}` or a file
+   under `.claude/logs/` containing either:
+   - `Serving HTML report at`
+   - `Press Ctrl+C to quit`
+4. `RUN_SUMMARY.json` showing both:
+   - `causal_context.primary_signal = "ui_timeout_interactive_report"`
+   - `recovery_routing.route_taken = "retry_ui_gate_env"`
+
+**Confidence:**
+
+- `high` for failure-context signal or classification
+- `medium` for raw-log-only or summary-only matches
+
+**Suggestions must include:**
+
+- the concrete Playwright config fix when a config file exists
+- a no-source-edit workaround (`CI=1`)
+- a normal rerun path (`tekhton --complete --milestone ...`)
+
+**Implementation notes:**
+
+- Detect config files in this order:
+  `playwright.config.ts`, `playwright.config.js`, `playwright.config.mjs`,
+  `playwright.config.cjs`
+- If the config is already CI-guarded (`process.env.CI ? 'dot' : 'html'`), do
+  not tell the user to make the same edit again; say the config already looks
+  patched and the failure may have come from stale artifacts or an alternate
+  config surface.
+- This rule should preempt both generic build failure and generic max-turns.
+
+### Goal 3 - New primary rule: `_rule_build_fix_exhausted`
+
+**Location:** `lib/diagnose_rules.sh`
+
+**Order:** before `_rule_build_failure`. The exhausted build-fix loop is a more
+specific explanation of a build failure, so it cannot sit after the generic
+rule.
+
+**Purpose:** distinguish "build failed and Tekhton already spent its build-fix
+budget" from ordinary build failures.
+
+**Detection sources:**
+
+1. `${BUILD_FIX_REPORT_FILE}` exists and reports `outcome: exhausted` or
+   `outcome: no_progress`
+2. `RUN_SUMMARY.json` has:
+   - `build_fix_stats.outcome = "exhausted"` or `"no_progress"`
+   - `build_fix_stats.attempts >= 2`
+3. `LAST_FAILURE_CONTEXT.json` secondary signal is
+   `build_fix_budget_exhausted`
+
+**Required guard:** only fire if the run still has actual build-failure
+artifacts, meaning at least one of these is non-empty:
+
+- `${BUILD_ERRORS_FILE}`
+- `${BUILD_RAW_ERRORS_FILE}`
+
+That guard prevents false positives when a historical report exists but the
+current run passed.
+
+**Suggestions must include:**
+
+- where to read the report: `${BUILD_FIX_REPORT_FILE}`
+- where to read the build errors: `${BUILD_ERRORS_FILE}`
+- the two knobs that materially change behaviour:
+  `BUILD_FIX_MAX_ATTEMPTS` and `BUILD_FIX_TOTAL_TURN_CAP`
+
+**Contract note:** use `${BUILD_FIX_REPORT_FILE}` from the artifact defaults.
+Do not hardcode `.tekhton/BUILD_FIX_REPORT.md`; m128 explicitly froze the
+artifact-path variable for this reason.
+
+### Goal 4 - New primary rule: `_rule_preflight_interactive_config`
+
+**Location:** `lib/diagnose_rules.sh`
+
+**Order:** after `_rule_ui_gate_interactive_reporter`, before
+`_rule_build_failure`.
+
+**Purpose:** diagnose the case where preflight already found an interactive
+Playwright reporter configuration, but there is not enough gate-level evidence
+for `_rule_ui_gate_interactive_reporter` to fire.
+
+This is the fallback, not the preferred match.
+
+**Detection sources:**
+
+1. `RUN_SUMMARY.json` has:
+   - `preflight_ui.interactive_config_detected = true`
+   - `preflight_ui.reporter_auto_patched = false`
+2. `${TEKHTON_DIR}/PREFLIGHT_REPORT.md` contains the m131-frozen heading text
+   for the fail entry:
+   `UI Config (Playwright) — html reporter`
+3. `LAST_FAILURE_CONTEXT.json` classification or signal explicitly marks the
+   preflight interactive-config path, if such a signal is present
+
+**Suggestions must include:**
+
+- the manual config change (`reporter: 'html'` -> CI-guarded form)
+- the config knob `PREFLIGHT_UI_CONFIG_AUTO_FIX=true`
+- a rerun path after enabling the auto-fix
+
+**Important:** this rule exists because m131 and m132 already froze the
+preflight env-var / summary contracts. It must consume those contracts as-is.
+Do not rename fields, reinterpret booleans, or require extra m131 output.
+
+### Goal 5 - New secondary rule: `_rule_mixed_classification`
+
+**Location:** `lib/diagnose_rules_extra.sh`
+
+**Order:** after `_rule_stuck_loop`, before `_rule_turn_exhaustion`.
+
+**Purpose:** give a cautious explanation when the underlying failure was tagged
+`mixed_uncertain` by the resilience arc and therefore does not deserve strong,
+single-cause advice.
+
+**Detection sources:**
+
+1. `LAST_FAILURE_CONTEXT.json` contains either:
+   - `classification = MIXED_UNCERTAIN`
+   - `primary_cause.signal = mixed_uncertain_classification`
+2. `RUN_SUMMARY.json` has
+  - `causal_context.primary_signal = "mixed_uncertain_classification"`
+
+**Confidence:** always `low`
+
+**Suggestions should bias toward inspection, not automation:**
+
+- inspect `${BUILD_RAW_ERRORS_FILE}` first
+- look for the first causal error, not the last cascade
+- re-run preflight if the first failure smells environmental
+
+This rule must not over-claim. A mixed classification means the system itself
+was uncertain.
+
+### Goal 6 - Upgrade `_rule_max_turns` to understand env-root failures
+
+Do **not** create a separate `_rule_max_turns_env_root` rule. The existing
+`_rule_max_turns` should stay the canonical owner of max-turns detection and
+branch its message based on v2 cause context when available.
+
+**Behaviour:**
+
+- If max-turns matched and the primary cause is absent or is `AGENT_SCOPE`,
+  keep today's behaviour and emit `MAX_TURNS_EXHAUSTED`.
+- If max-turns matched and `LAST_FAILURE_CONTEXT.json` schema v2 shows a
+  non-agent primary cause (for this arc, typically `ENVIRONMENT/test_infra`),
+  emit `MAX_TURNS_ENV_ROOT` instead.
+
+**Env-root message requirements:**
+
+- explicitly say max-turns was the secondary symptom
+- explicitly say adding more turns or splitting scope is unlikely to help
+- point the user to the root-cause artifact (`LAST_FAILURE_CONTEXT.json`,
+  preflight, or the relevant config/log artifact)
+
+**Backward compatibility:** v1 failure-context fixtures must still classify as
+`MAX_TURNS_EXHAUSTED`.
+
+### Goal 7 - Rule registry ordering
+
+After M133, the rule order should be:
+
+```bash
+DIAGNOSE_RULES=(
+    "_rule_ui_gate_interactive_reporter"
+    "_rule_preflight_interactive_config"
+    "_rule_build_fix_exhausted"
+    "_rule_build_failure"
+    "_rule_max_turns"
+    "_rule_review_loop"
+    "_rule_security_halt"
+    "_rule_intake_clarity"
+    "_rule_quota_exhausted"
+    "_rule_stuck_loop"
+    "_rule_mixed_classification"
+    "_rule_turn_exhaustion"
+    "_rule_split_depth"
+    "_rule_transient_error"
+    "_rule_test_audit_failure"
+    "_rule_migration_crash"
+    "_rule_version_mismatch"
+    "_rule_unknown"
+)
+```
+
+Rationale:
+
+- the three new primary rules must beat generic build failure
+- `max_turns` still beats the older turn-exhaustion fallback
+- `mixed_classification` remains a secondary/low-confidence rule
+- `_rule_unknown` remains last
+
+### Goal 8 - Tests
+
+Add a focused new test file instead of further bloating `tests/test_diagnose.sh`:
+
+- `tests/test_diagnose_rules_resilience.sh`
+
+That file should own the new resilience-arc fixtures. Keep
+`tests/test_diagnose.sh` for baseline rule-engine invariants and ordering.
+
+#### Required resilience tests
+
+1. Interactive reporter fires from `primary_cause.signal=ui_timeout_interactive_report`
+2. Interactive reporter fires from raw log evidence only
+3. Interactive reporter does not fire on unrelated timeout text
+4. Build-fix exhausted fires from `${BUILD_FIX_REPORT_FILE}`
+5. Build-fix exhausted does not fire when both build-error artifacts are empty
+6. Build-fix exhausted `no_progress` variant includes the no-progress guidance
+7. Preflight interactive config fires from `RUN_SUMMARY.json preflight_ui.*`
+8. Mixed classification fires at low confidence
+9. Max-turns env-root emits `MAX_TURNS_ENV_ROOT`
+10. Max-turns v1 fixture remains `MAX_TURNS_EXHAUSTED`
+11. Full-chain priority test: interactive reporter beats build failure
+12. Full-chain priority test: build-fix exhausted beats build failure
+
+#### Existing test updates
+
+`tests/test_diagnose.sh` must be updated for:
+
+- the new `DIAGNOSE_RULES` length
+- the first few rule-order assertions
+
+Do not try to cram all new fixtures into the legacy file.
+
+## Files Modified
+
+| File | Change |
+|---|---|
+| `lib/diagnose_rules.sh` | Add `_rule_ui_gate_interactive_reporter`, `_rule_build_fix_exhausted`, `_rule_preflight_interactive_config`; upgrade `_rule_max_turns`; update registry ordering. |
+| `lib/diagnose_rules_extra.sh` | Add `_rule_mixed_classification` after `_rule_stuck_loop`. |
+| `tests/test_diagnose.sh` | Update rule-count and rule-order assertions only. |
+| `tests/test_diagnose_rules_resilience.sh` | New focused resilience diagnose fixtures and assertions. |
+| `docs/troubleshooting/diagnose.md` | Document the five resilience-arc diagnose outcomes and when each one fires. |
+
+## Acceptance Criteria
+
+- [ ] `--diagnose` on a v2 failure-context fixture with
+      `primary_cause.signal = ui_timeout_interactive_report` produces
+      `UI_GATE_INTERACTIVE_REPORTER`.
+- [ ] `--diagnose` on a raw-log-only fixture containing `Serving HTML report at`
+      or `Press Ctrl+C to quit` produces `UI_GATE_INTERACTIVE_REPORTER` at
+      `medium` confidence.
+- [ ] `--diagnose` on a build-fix exhausted fixture produces
+      `BUILD_FIX_EXHAUSTED`, not `BUILD_FAILURE`.
+- [ ] `--diagnose` on a preflight-only interactive-config fixture produces
+      `PREFLIGHT_INTERACTIVE_CONFIG`.
+- [ ] `--diagnose` on a mixed-uncertain fixture produces
+      `MIXED_UNCERTAIN_CLASSIFICATION` at `low` confidence.
+- [ ] `--diagnose` on a max-turns fixture whose schema-v2 primary cause is
+      `ENVIRONMENT/test_infra` produces `MAX_TURNS_ENV_ROOT`, not
+      `MAX_TURNS_EXHAUSTED`.
+- [ ] A v1 `LAST_FAILURE_CONTEXT.json` fixture with flat
+      `category=AGENT_SCOPE`, `subcategory=max_turns` still produces
+      `MAX_TURNS_EXHAUSTED`.
+- [ ] `_rule_build_fix_exhausted` is ordered before `_rule_build_failure`.
+- [ ] `_rule_ui_gate_interactive_reporter` is ordered before
+      `_rule_build_failure` and `_rule_max_turns`.
+- [ ] `tests/test_diagnose_rules_resilience.sh` passes all required cases.
+- [ ] Existing `tests/test_diagnose.sh` remains green after its rule-order
+      assertions are updated.
+- [ ] `shellcheck` is clean for the modified shell files.
+
+## Watch For
+
+- **Use the frozen artifact vars, not hardcoded paths.** m128 and the artifact
+  defaults already define `BUILD_FIX_REPORT_FILE`, `BUILD_ERRORS_FILE`, and
+  `BUILD_RAW_ERRORS_FILE`. Hardcoding `.tekhton/...` here creates silent drift
+  on any project whose artifact paths moved with `TEKHTON_DIR`.
+- **`RUN_SUMMARY.json` field names are already frozen by m132.** The keys this
+  milestone may rely on are `causal_context.primary_signal`,
+  `causal_context.primary_category`, `causal_context.primary_subcategory`,
+  `build_fix_stats.*`, `preflight_ui.*`, and `recovery_routing.route_taken`.
+  Do not invent alternate spellings such as `primary_cause.signal` inside
+  `RUN_SUMMARY.json`; that object shape belongs to `LAST_FAILURE_CONTEXT.json`.
+- **Do not put `_rule_build_fix_exhausted` after `_rule_build_failure`.** That
+  ordering bug would make the new rule effectively dead code whenever the build
+  artifact exists, which is exactly when it is supposed to help.
+- **Do not widen `lib/diagnose.sh` unless clearly necessary.** The diagnose
+  reader does not need five more `_DIAG_*` globals just to land M133. Local
+  parsing inside the new rules is acceptable and keeps the milestone smaller.
+- **Respect the m129 pretty-print contract.** `LAST_FAILURE_CONTEXT.json`
+  remains line-oriented, multi-line JSON because m130/m132/m133 all parse it
+  with shell text tools. M133 is a consumer of that contract, not an excuse to
+  change it.
+- **The m131 preflight names are public interface.** `PREFLIGHT_UI_*` env vars,
+  the `preflight_ui.*` summary fields, and the fail-entry wording for
+  `UI Config (Playwright) — html reporter` are already seeded forward. Consume
+  them byte-for-byte.
+- **Keep confidence conservative.** Only failure-context signal/classification
+  matches deserve `high`. Summary-only or raw-log-only matches should stay
+  `medium`, and mixed classification must stay `low`.
+- **This milestone is diagnose-only.** If the implementation starts modifying
+  gate code, preflight code, failure-context writers, or routing code, it has
+  drifted out of scope.
+
+## Seeds Forward
+
+- **m134 - Resilience Arc Integration Test Suite.** M134 should treat these
+  five classifications as the diagnose-layer contract for the arc. Its diagnose
+  scenarios should reuse M133's fixtures rather than invent a second vocabulary.
+- **m135 - Artifact Lifecycle.** M133 is read-only with respect to artifacts,
+  but it depends on stable names and retention of `${BUILD_FIX_REPORT_FILE}` and
+  preflight artifacts. If m135 changes retention logic, it must not change the
+  artifact names or report headings M133 matches.
+- **m136 - Config Defaults & Validation.** M133 introduces no new config. Its
+  suggestions may mention existing knobs such as `PREFLIGHT_UI_CONFIG_AUTO_FIX`,
+  `BUILD_FIX_MAX_ATTEMPTS`, and `BUILD_FIX_TOTAL_TURN_CAP`, but it must
+  not require new defaults or validation work from m136.
+- **m137 - V3.2 Migration.** Because M133 adds diagnose-only behaviour, there
+  should be no migration burden beyond documentation. If the implementation ends
+  up requiring new config keys or new artifacts, it has violated scope.
+- **m138 - CI Environment Auto-Detection.** CI auto-detection reduces how often
+  the interactive-reporter failure occurs, but when it does occur M133's
+  `UI_GATE_INTERACTIVE_REPORTER` guidance must still be correct. Keep the
+  wording CI-aware: `CI=1` is both a workaround and, in later milestones, a
+  likely automatically supplied condition.
+- **Future diagnose/dashboard polish.** These classifications are suitable for
+  future dashboard summarisation or recurring-failure aggregation. Keep the
+  output tokens stable: `UI_GATE_INTERACTIVE_REPORTER`,
+  `BUILD_FIX_EXHAUSTED`, `PREFLIGHT_INTERACTIVE_CONFIG`,
+  `MIXED_UNCERTAIN_CLASSIFICATION`, and `MAX_TURNS_ENV_ROOT` should be treated
+  as public diagnose vocabulary once this milestone lands.
+
+---
+
+## Archived: 2026-04-27 — Unknown Initiative
+
+# M134 - Resilience Arc Integration Test Suite & Cross-Cutting Regression Harness
+
+<!-- milestone-meta
+id: "134"
+status: "done"
+-->
+
+## Overview
+
+Milestones m126–m133 form an eight-milestone resilience arc. Each
+milestone has its own unit tests that validate individual functions
+in isolation, but no test currently exercises the full chain as a system:
+
+```
+preflight scan → gate env normalization → timeout detection →
+log classification → build-fix loop → failure context write →
+recovery routing → RUN_SUMMARY enrichment → --diagnose output
+```
+
+This matters because cross-cutting integration bugs — bugs that only
+manifest when two or more arc components interact — cannot be caught by
+unit tests. Concrete examples of bugs that existing tests would miss:
+
+- m131 sets `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1` but m126's
+  `_ui_deterministic_env_list` is never called because the env var
+  name was mistyped in one of them.
+- m129 writes `primary_cause.signal` as `ui_timeout_interactive_report`
+  but m133's `_rule_ui_gate_interactive_reporter` reads `signal` from
+  the wrong JSON object and always misses it.
+- m132's `_collect_causal_context_json` reads `primary_cause.category`
+  correctly but m130's `_ORCH_RECOVERY_ROUTE_TAKEN` was never assigned
+  because the var name in `orchestrate.sh` does not match the one
+  declared in `orchestrate_recovery.sh`.
+- m127's `LAST_BUILD_CLASSIFICATION=noncode_dominant` is exported but
+  m130's `Amendment C` reads `${LAST_BUILD_CLASSIFICATION}` with a
+  default of `code_dominant` because the export happened in a subshell.
+
+M134 creates `tests/test_resilience_arc_integration.sh` — a
+scenario-driven integration test file that exercises each of the eight
+cross-cutting paths using fully controlled fixtures (no live agent, no
+real Playwright, no real build tools). It is the regression harness
+for the entire resilience arc.
+
+## Design
+
+### Test infrastructure pattern (follow existing convention)
+
+All tests follow the pattern established in `test_quota.sh`,
+`test_diagnose_recovery_command.sh`, and similar files:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+PROJECT_DIR="$TMPDIR"
+export TEKHTON_HOME PROJECT_DIR
+
+# source minimal common.sh stubs, then arc modules under test
+```
+
+Each scenario function:
+1. Creates a fresh sub-directory under `$TMPDIR` as `PROJECT_DIR`.
+2. Writes the fixture files needed (config, state, logs, etc.).
+3. Sets env vars to the scenario's starting conditions.
+4. Calls the function(s) under test.
+5. Asserts expected state, outputs, or file contents.
+6. Cleans up by unsetting scenario-local env vars.
+
+`pass`/`fail` helpers follow the exact same pattern as all other test
+files — no new test framework, no third-party tools.
+
+### Scenario group 1 — Preflight → Gate first-run determinism (m131 + m126)
+
+#### S1.1 — Preflight detects html reporter; gate gets non-interactive env on first run
+
+```
+Setup:
+  - playwright.config.ts: reporter: 'html'
+  - UI_TEST_CMD="npx playwright test"
+  - PREFLIGHT_UI_CONFIG_AUTO_FIX=false (detection only)
+
+Actions:
+  1. Run _preflight_check_ui_test_config
+  2. Assert PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1
+  3. Call _ui_deterministic_env_list (m126 helper)
+  4. Assert output contains "PLAYWRIGHT_HTML_OPEN=never"
+  5. Assert output contains "CI=1"
+  6. Assert PREFLIGHT_UI_REPORTER_PATCHED stays 0 (auto-fix disabled)
+
+Expected result:
+  - Gate first-run env includes non-interactive vars
+  - No config file modification
+```
+
+#### S1.2 — Preflight auto-patches html reporter; gate sees CI-guarded config
+
+```
+Setup:
+  - playwright.config.ts: reporter: 'html'
+  - PREFLIGHT_UI_CONFIG_AUTO_FIX=true
+
+Actions:
+  1. Run _preflight_check_ui_test_config
+  2. Assert playwright.config.ts no longer contains reporter: 'html'
+  3. Assert playwright.config.ts contains process.env.CI ? 'dot' : 'html'
+  4. Assert PREFLIGHT_UI_REPORTER_PATCHED=1
+  5. Assert backup exists in .claude/preflight_bak/
+
+Expected result:
+  - Source file patched in-place
+  - PREFLIGHT_UI_REPORTER_PATCHED=1 propagated to gate normalizer
+```
+
+#### S1.3 — No playwright.config → preflight silent; command-based detection still hardens the gate
+
+```
+Setup:
+  - No playwright.config.* in PROJECT_DIR
+  - UI_TEST_CMD="npx playwright test"
+
+Actions:
+  1. Run _preflight_check_ui_test_config
+  2. Assert PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED is unset or 0
+  3. Call _ui_deterministic_env_list
+  4. Assert output includes "PLAYWRIGHT_HTML_OPEN=never"
+  5. Assert output does NOT include "CI=1" (no preflight signal / hardened escalation)
+
+Expected result:
+  - Preflight stays silent because there is no config file to audit
+  - Gate still applies the normal Playwright deterministic env because
+    `UI_TEST_CMD` itself identifies the framework (m126 Goal 1)
+```
+
+### Scenario group 2 — Gate timeout → interactive signature detection → hardened retry (m126)
+
+#### S2.1 — Gate times out with interactive reporter output; hardened retry applied
+
+```
+Setup:
+  - Mock UI_TEST_CMD that:
+      * exits 124 (timeout)
+      * writes "Serving HTML report at http://localhost:9323. Press Ctrl+C to quit."
+        to its stdout
+  - PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=0 (no preflight signal)
+
+Actions:
+  1. Run _run_ui_test_phase "coder"
+  2. Assert `_ui_timeout_signature 124 "$captured_output"` returns `interactive_report`
+  3. Assert second gate run uses env with PLAYWRIGHT_HTML_OPEN=never
+  4. If the hardened rerun still fails, assert the terminal diagnosis block
+     records `Timeout class: interactive_report`
+  5. Assert the failure path is classified as the interactive-reporter case,
+     not the generic-timeout case
+
+Expected result:
+  - Interactive reporter detected from output
+  - Hardened retry attempted with correct env
+  - Terminal diagnosis remains `interactive_report`, not `generic_timeout`
+```
+
+#### S2.2 — Gate times out without interactive signature → regular timeout path
+
+```
+Setup:
+  - Mock UI_TEST_CMD that exits 124 with no interactive reporter output
+
+Actions:
+  1. Run _run_ui_test_phase "coder"
+  2. Assert `_ui_timeout_signature 124 "$captured_output"` returns `generic_timeout`
+  3. Assert no hardened retry attempted (standard exit)
+  4. If terminal diagnosis is written, assert it records `Timeout class: generic_timeout`
+```
+
+### Scenario group 3 — Log classification → build-fix routing (m127 + m128)
+
+#### S3.1 — code_dominant classification → build-fix loop runs
+
+```
+Setup:
+  - ${BUILD_RAW_ERRORS_FILE} containing TypeScript type errors
+    (lines matching known code-error patterns from m53 registry)
+
+Actions:
+  1. Run `classify_routing_decision` on the raw `${BUILD_RAW_ERRORS_FILE}` content
+  2. Assert LAST_BUILD_CLASSIFICATION="code_dominant"
+  3. Call build-fix loop entry point with BUILD_FIX_MAX_ATTEMPTS=2
+  4. Assert loop runs up to max_attempts
+  5. Assert BUILD_FIX_ATTEMPTS exported and equals actual loop count
+
+Expected result:
+  - code_dominant signal gates loop entry correctly
+  - Attempt counter matches expectations
+```
+
+#### S3.2 — noncode_dominant classification → build-fix loop skipped
+
+```
+Setup:
+  - ${BUILD_RAW_ERRORS_FILE} containing only explicit non-code matches
+    (e.g., `Error: connect ECONNREFUSED 127.0.0.1:3000`,
+    `browserType.launch: Executable doesn't exist`) plus optional ignorable noise lines
+
+Actions:
+  1. Run `classify_routing_decision` on the raw `${BUILD_RAW_ERRORS_FILE}` content
+  2. Assert LAST_BUILD_CLASSIFICATION="noncode_dominant"
+  3. Verify build-fix loop returns immediately with BUILD_FIX_ATTEMPTS=0
+
+Expected result:
+  - Explicit non-code signal prevents futile build-fix attempts
+```
+
+#### S3.3 — mixed_uncertain classification → one retry allowed, then stops
+
+```
+Setup:
+  - ${BUILD_RAW_ERRORS_FILE} with both explicit code-error matches and
+    explicit non-code matches; once both classes are present,
+    m127 should route `mixed_uncertain`
+
+Actions:
+  1. Run `classify_routing_decision` on the raw `${BUILD_RAW_ERRORS_FILE}` content
+  2. Assert LAST_BUILD_CLASSIFICATION="mixed_uncertain"
+  3. Confirm first build-fix attempt is allowed
+  4. Set _ORCH_MIXED_BUILD_RETRIED=1 and call _classify_failure
+  5. Assert result is "save_exit" (no second mixed retry)
+```
+
+### Scenario group 4 — Failure context write → recovery routing (m129 + m130)
+
+#### S4.1 — ENVIRONMENT/test_infra primary → retry_ui_gate_env routed
+
+```
+Setup:
+  - AGENT_ERROR_CATEGORY=ENVIRONMENT
+  - AGENT_ERROR_SUBCATEGORY=test_infra
+  - PRIMARY_ERROR_CATEGORY=ENVIRONMENT
+  - PRIMARY_ERROR_SUBCATEGORY=test_infra
+  - PRIMARY_ERROR_SIGNAL=ui_timeout_interactive_report
+
+Actions:
+  1. Call write_last_failure_context (m129 writer)
+  2. Assert LAST_FAILURE_CONTEXT.json exists and schema_version=2
+  3. Assert primary_cause.category="ENVIRONMENT" in the file
+  4. Call _load_failure_cause_context (m130 reader)
+  5. Assert _ORCH_PRIMARY_CAT="ENVIRONMENT"
+  6. Call _classify_failure
+  7. Assert return value is "retry_ui_gate_env"
+
+Expected result:
+  - Full write→read→route chain works end-to-end
+  - The route correctly identifies the env retry path
+```
+
+#### S4.2 — AGENT_SCOPE/max_turns with env primary → retry_ui_gate_env, not split
+
+```
+Setup:
+  - AGENT_ERROR_CATEGORY=AGENT_SCOPE
+  - AGENT_ERROR_SUBCATEGORY=max_turns
+  - PRIMARY_ERROR_CATEGORY=ENVIRONMENT (set by stage before writing context)
+  - SECONDARY_ERROR_CATEGORY=AGENT_SCOPE
+  - _ORCH_ENV_GATE_RETRIED=0
+
+Actions:
+  1. Call write_last_failure_context
+  2. Assert schema_version=2, secondary_cause.subcategory="max_turns"
+  3. Call _classify_failure
+  4. Assert return value is "retry_ui_gate_env" (NOT "split")
+
+Expected result:
+  - max_turns secondary symptom does not trigger split
+  - Env root cause correctly dominates routing
+```
+
+#### S4.3 — Second env failure → save_exit (loop guard works)
+
+```
+Setup:
+  - Same as S4.1 but _ORCH_ENV_GATE_RETRIED=1 (already tried once)
+
+Actions:
+  1. Call _classify_failure
+  2. Assert return value is "save_exit"
+
+Expected result:
+  - _ORCH_ENV_GATE_RETRIED guard prevents infinite retry loop
+```
+
+#### S4.4 — v1 schema compat: flat ENVIRONMENT → save_exit (pre-m129 run)
+
+```
+Setup:
+  - Write LAST_FAILURE_CONTEXT.json with v1 shape:
+    {"classification":"ENVIRONMENT","category":"ENVIRONMENT","subcategory":"disk_full"}
+  - AGENT_ERROR_CATEGORY=ENVIRONMENT
+
+Actions:
+  1. Call _load_failure_cause_context
+  2. Assert _ORCH_PRIMARY_CAT="" (no primary_cause in v1)
+  3. Call _classify_failure
+  4. Assert return value is "save_exit" (existing behavior preserved)
+```
+
+### Scenario group 5 — RUN_SUMMARY enrichment (m132)
+
+#### S5.1 — Full enrichment: all four new fields present on failure run
+
+```
+Setup:
+  - BUILD_FIX_ATTEMPTS=2 BUILD_FIX_OUTCOME=exhausted
+  - _ORCH_PRIMARY_CAT=ENVIRONMENT _ORCH_PRIMARY_SUB=test_infra
+  - _ORCH_RECOVERY_ROUTE_TAKEN=retry_ui_gate_env
+  - PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1 PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE=PW-1
+  - Write minimal LAST_FAILURE_CONTEXT.json v2 fixture
+
+Actions:
+  1. Run _hook_emit_run_summary 1
+  2. Parse the output RUN_SUMMARY.json
+
+Assertions:
+  - "causal_context" key present and primary_category="ENVIRONMENT"
+  - "build_fix_stats" key present and outcome="exhausted" and attempts=2
+  - "recovery_routing" key present and route_taken="retry_ui_gate_env"
+  - "preflight_ui" key present and interactive_config_detected=true
+  - "error_classes_encountered" contains "root:ENVIRONMENT/test_infra"
+  - "recovery_actions_taken" contains "retry_ui_gate_env"
+```
+
+#### S5.2 — Success run: four new fields present with zero/null variants
+
+```
+Setup:
+  - All BUILD_FIX_* and _ORCH_* vars unset or at default
+
+Actions:
+  1. Run _hook_emit_run_summary 0
+
+Assertions:
+  - causal_context.schema_version=0
+  - build_fix_stats.outcome="not_run" and enabled=false
+  - recovery_routing.route_taken="save_exit" (default)
+  - preflight_ui.interactive_config_detected=false
+  - JSON is valid (no truncated fields, no syntax errors from absent vars)
+```
+
+### Scenario group 6 — `--diagnose` end-to-end classification (m133)
+
+#### S6.1 — Full bifl-tracker scenario: correct diagnosis from state files
+
+This is the "golden path" scenario — the exact failure pattern from the
+bifl-tracker M03 run that motivated the entire arc.
+
+```
+Setup (replicate bifl-tracker M03 state):
+  - LAST_FAILURE_CONTEXT.json v2:
+      primary_cause: {category: ENVIRONMENT, subcategory: test_infra,
+                      signal: ui_timeout_interactive_report}
+      secondary_cause: {category: AGENT_SCOPE, subcategory: max_turns}
+      classification: UI_INTERACTIVE_REPORTER
+  - PIPELINE_STATE.md:
+      Exit Stage: coder
+      Exit Reason: complete_loop_max_attempts
+      Notes: "Primary cause: ENVIRONMENT/test_infra ..."
+  - Log file containing: "Serving HTML report at http://localhost:9323."
+  - playwright.config.ts: reporter: 'html'
+  - ${BUILD_RAW_ERRORS_FILE}: non-empty (some TypeScript errors from the run)
+
+Actions:
+  1. Run _read_diagnostic_context
+  2. Run classify_failure_diag (full rule chain)
+
+Assertions:
+  - DIAG_CLASSIFICATION = "UI_GATE_INTERACTIVE_REPORTER" (not MAX_TURNS_EXHAUSTED)
+  - DIAG_CONFIDENCE = "high"
+  - DIAG_SUGGESTIONS contains "reporter: 'html'"
+  - DIAG_SUGGESTIONS contains "reporter: process.env.CI ? 'dot' : 'html'"
+  - DIAG_SUGGESTIONS does NOT contain "CODER_MAX_TURNS" (wrong advice suppressed)
+  - DIAG_SUGGESTIONS does NOT contain "Split the milestone" (wrong advice suppressed)
+```
+
+#### S6.2 — Build-fix exhausted scenario: BUILD_FIX_EXHAUSTED fires, not BUILD_FAILURE
+
+```
+Setup:
+  - ${BUILD_FIX_REPORT_FILE}: outcome: exhausted, attempts: 3
+  - ${BUILD_RAW_ERRORS_FILE}: non-empty
+  - No interactive reporter signals
+
+Actions:
+  1. Run classify_failure_diag
+
+Assertions:
+  - DIAG_CLASSIFICATION = "BUILD_FIX_EXHAUSTED"
+  - DIAG_SUGGESTIONS contains "BUILD_FIX_MAX_ATTEMPTS"
+  - _rule_build_failure did NOT fire first (ordering maintained)
+```
+
+#### S6.3 — max_turns with env primary: MAX_TURNS_ENV_ROOT fires
+
+```
+Setup:
+  - LAST_FAILURE_CONTEXT.json v2 with primary=ENVIRONMENT/test_infra,
+    secondary=AGENT_SCOPE/max_turns
+  - PIPELINE_STATE.md Exit Reason: complete_loop_max_attempts
+  - No ${BUILD_FIX_REPORT_FILE}, no interactive reporter log evidence
+
+Actions:
+  1. Run classify_failure_diag
+
+Assertions:
+  - DIAG_CLASSIFICATION = "MAX_TURNS_ENV_ROOT"
+  - DIAG_SUGGESTIONS contains "primary cause"
+  - DIAG_SUGGESTIONS does NOT contain "CODER_MAX_TURNS="
+```
+
+#### S6.4 — v1 schema with max_turns: original MAX_TURNS_EXHAUSTED preserved
+
+```
+Setup:
+  - LAST_FAILURE_CONTEXT.json v1:
+    {"classification":"MAX_TURNS_EXHAUSTED","category":"AGENT_SCOPE","subcategory":"max_turns"}
+  - No ${BUILD_FIX_REPORT_FILE}
+
+Actions:
+  1. Run classify_failure_diag
+
+Assertions:
+  - DIAG_CLASSIFICATION = "MAX_TURNS_EXHAUSTED"
+  - DIAG_SUGGESTIONS contains "CODER_MAX_TURNS"
+  - Backward compatibility with pre-m129 runs confirmed
+```
+
+### Scenario group 7 — State reset between iterations (no cross-contamination)
+
+#### S7.1 — _reset_orch_recovery_state zeroes persistent retry guards only
+
+```
+Setup:
+  - Set all _ORCH_* vars to non-default values (from a previous iteration)
+
+Actions:
+  1. Call _reset_orch_recovery_state
+  2. Assert _ORCH_ENV_GATE_RETRIED=0
+  3. Assert _ORCH_MIXED_BUILD_RETRIED=0
+  4. Assert _ORCH_RECOVERY_ROUTE_TAKEN=""
+  5. Assert _ORCH_PRIMARY_CAT is unchanged (cause vars are loader-owned)
+  6. Assert _ORCH_SCHEMA_VERSION is unchanged (loader-owned)
+```
+
+#### S7.2 — PREFLIGHT_UI_* vars persist within run, reset at new-run boundary
+
+```
+Setup:
+  - PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1 from first attempt
+
+Actions:
+  1. Simulate a later run_complete_loop iteration without re-running preflight
+  2. Assert PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED remains 1 for this run
+  3. Start a fresh run boundary and assert `_preflight_check_ui_test_config`
+     resets the contract vars before emitting new findings
+
+Note: PREFLIGHT_* vars are set by preflight which runs ONCE per run, not per
+iteration. They must NOT be reset between loop iterations — only at run start.
+This test documents and asserts that behavior explicitly.
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `tests/test_resilience_arc_integration.sh` | **New file.** All scenario groups S1.1–S7.2 (approx. 20 scenario tests) with fixture helpers and the `pass`/`fail` accounting pattern. |
+| `tests/run_tests.sh` | **No change required.** Runner auto-discovers `tests/test_*.sh`; `test_resilience_arc_integration.sh` is picked up automatically by filename convention. |
+
+No production code changes in this milestone. Test-only.
+
+## Implementation Notes
+
+### Fixture helper design
+
+Each scenario group gets a dedicated fixture setup helper to avoid
+repetitive boilerplate:
+
+```bash
+# _setup_bifl_tracker_m03_fixture  PROJECT_DIR
+# Writes the minimal set of files that reproduce the bifl-tracker M03 state.
+# Used by S6.1 and any subsequent regression tests.
+_setup_bifl_tracker_m03_fixture() {
+    local dir="$1"
+    mkdir -p "${dir}/.claude/logs" "${dir}/.tekhton"
+
+    # LAST_FAILURE_CONTEXT.json — v2 schema
+    cat > "${dir}/.claude/LAST_FAILURE_CONTEXT.json" << 'EOF'
+{
+  "schema_version": 2,
+  "classification": "UI_INTERACTIVE_REPORTER",
+  "stage": "coder",
+  "outcome": "failure",
+  "task": "M03",
+  "consecutive_count": 1,
+  "primary_cause": {
+    "category": "ENVIRONMENT",
+    "subcategory": "test_infra",
+    "signal": "ui_timeout_interactive_report",
+    "source": "build_gate"
+  },
+  "secondary_cause": {
+    "category": "AGENT_SCOPE",
+    "subcategory": "max_turns",
+    "signal": "build_fix_budget_exhausted",
+    "source": "coder_build_fix"
+  }
+}
+EOF
+    # PIPELINE_STATE.md
+    cat > "${dir}/.claude/PIPELINE_STATE.md" << 'EOF'
+## Exit Stage
+coder
+## Exit Reason
+complete_loop_max_attempts
+## Task
+M03
+## Notes
+Primary cause: ENVIRONMENT/test_infra (ui_timeout_interactive_report)
+Secondary cause: AGENT_SCOPE/max_turns (build_fix_budget_exhausted)
+EOF
+    # Log with interactive reporter evidence
+    mkdir -p "${dir}/.claude/logs"
+    echo "Serving HTML report at http://localhost:9323. Press Ctrl+C to quit." \
+        > "${dir}/.claude/logs/20260425_182710_m03.log"
+
+    # playwright.config.ts
+    cat > "${dir}/playwright.config.ts" << 'EOF'
+import { defineConfig } from '@playwright/test';
+export default defineConfig({
+  reporter: 'html',
+  testDir: './tests',
+});
+EOF
+    # BUILD_RAW_ERRORS_FILE (non-empty, contains TS errors)
+    local raw_errors_file="${dir}/${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}"
+    mkdir -p "$(dirname "${raw_errors_file}")"
+    cat > "${raw_errors_file}" << 'EOF'
+src/app/page.tsx(12,5): error TS2304: Cannot find name 'undefined'.
+src/lib/db.ts(8,3): error TS2339: Property 'query' does not exist.
+EOF
+}
+```
+
+Each scenario's `PROJECT_DIR` is a sub-directory of `$TMPDIR` so
+parallel test isolation is possible and the global `trap 'rm -rf ...'`
+handles all cleanup.
+
+### Sourcing strategy for arc modules
+
+Not all arc modules will exist before their milestones are implemented.
+Use conditional sourcing so the test file itself can be added to the
+repo now and expands as milestones land:
+
+```bash
+# Source arc modules — skip with a warn if not yet implemented
+_arc_source() {
+    local lib_file="${TEKHTON_HOME}/lib/$1"
+    if [[ -f "$lib_file" ]]; then
+        source "$lib_file"
+    else
+        echo "  SKIP (not yet implemented): lib/$1"
+    fi
+}
+
+_arc_source "gates_ui.sh"               # m126
+_arc_source "orchestrate_recovery.sh"   # m130 (already exists; gains new functions)
+_arc_source "preflight_checks.sh"       # m131 (already exists; gains new function)
+_arc_source "finalize_summary.sh"       # m132 (already exists; gains new fields)
+_arc_source "diagnose_rules.sh"         # m133 (already exists; gains new rules)
+```
+
+When a module file exists but the specific function doesn't yet (because
+the milestone is pending), individual test assertions are guarded with:
+
+```bash
+if declare -f _preflight_check_ui_test_config &>/dev/null; then
+    # run the test
+    ...
+else
+    echo "  SKIP S1.1: _preflight_check_ui_test_config not yet implemented (m131)"
+fi
+```
+
+This means the test file is useful immediately: it documents exactly
+which functions are expected from each milestone and reports `SKIP`
+until they exist, then automatically activates when the milestone lands.
+
+### Mock command pattern
+
+For scenarios that need to simulate `UI_TEST_CMD` behavior, create a
+temporary mock script in `$TMPDIR`:
+
+```bash
+# Create a mock UI_TEST_CMD that exits 124 with interactive reporter output
+cat > "${TMPDIR}/mock_playwright.sh" << 'EOF'
+#!/usr/bin/env bash
+echo "Running 3 tests..."
+echo "Serving HTML report at http://localhost:9323. Press Ctrl+C to quit."
+exit 124
+EOF
+chmod +x "${TMPDIR}/mock_playwright.sh"
+UI_TEST_CMD="${TMPDIR}/mock_playwright.sh"
+export UI_TEST_CMD
+```
+
+### Test count and pass rate requirement
+
+Target: all implemented scenarios pass on `main`. All unimplemented
+scenarios (milestone pending) show `SKIP`. No `FAIL` entries on a clean
+implementation.
+
+The test runner at the bottom follows the standard pattern:
+
+```bash
+echo
+echo "Results: ${PASS} passed, ${FAIL} failed, ${SKIP} skipped"
+if [[ "$FAIL" -gt 0 ]]; then
+    exit 1
+fi
+exit 0
+```
+
+## Acceptance Criteria
+
+- [ ] `tests/test_resilience_arc_integration.sh` exists and runs without error from the Tekhton test suite.
+- [ ] All implemented scenario assertions pass (no `FAIL` on a completed arc implementation).
+- [ ] Unimplemented scenario assertions show `SKIP` rather than `FAIL` (milestone-pending guard).
+- [ ] S6.1 ("bifl-tracker M03 golden path") produces `UI_GATE_INTERACTIVE_REPORTER` with no "CODER_MAX_TURNS" advice.
+- [ ] S4.1–S4.4 validate the full write→read→route chain for failure context schema.
+- [ ] S5.1 validates all four new RUN_SUMMARY.json fields are present and correctly populated.
+- [ ] S7.1 confirms `_reset_orch_recovery_state` zeroes the persistent retry guards without clobbering loader-owned cause vars.
+- [ ] S7.2 asserts the PREFLIGHT_* contract explicitly: no reset between iterations, reset at new-run boundary.
+- [ ] `_setup_bifl_tracker_m03_fixture` is reusable — used by at least two scenarios.
+- [ ] `test_resilience_arc_integration.sh` is auto-discovered by `./tests/run_tests.sh` via the existing `test_*.sh` glob.
+- [ ] `shellcheck` clean for the new test file.
+
+## Watch For
+
+- Keep assertions behavior-first, not implementation-fragile. Prefer checking routed outcomes and emitted classifications over internal variable names unless the variable itself is the contract.
+- Use artifact path vars (`BUILD_RAW_ERRORS_FILE`, `BUILD_ERRORS_FILE`, `BUILD_FIX_REPORT_FILE`) in fixtures and assertions; do not hardcode `.tekhton/...` or root-level filenames.
+- Avoid shell options that break sourced library contracts. Test files can use `set -euo pipefail`, but helper stubs should avoid masking real failures from arc functions.
+- Preserve one-run vs one-iteration semantics. Persistent `_ORCH_*` retry guards reset at new-run boundary; loader-owned cause vars refresh when `_load_failure_cause_context` runs; `PREFLIGHT_*` reset at preflight start for each run.
+- Keep diagnose assertions resilient to wording drift. Assert required tokens/classifications, not full sentence equality in suggestions.
+- Guard scenarios by function presence only where needed. Over-guarding can hide regressions once the full arc is implemented.
+
+## Seeds Forward
+
+- **m135 (artifact lifecycle):** Integration fixtures should remain compatible after success-path cleanup. Failure-path scenarios must continue to set required artifacts explicitly so tests do not rely on stale files.
+- **m136 (config defaults + validation):** Add at least one scenario that runs with defaults only (no explicit arc vars), confirming integration behavior with declared defaults.
+- **m137 (v3.2 migration):** Include a migrated-project fixture path (legacy `pipeline.conf` upgraded) to ensure arc integration tests still pass with migration-produced config shape.
+- **m138 (runtime CI auto-detection):** Extend S1/S2 with CI-runtime cases where non-interactive behavior is auto-enabled without explicit `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1`.
+- **Future diagnose/dashboard work:** Treat M134 scenario IDs (`S1.1`…`S7.2`) as stable references for regression tracking in future arc milestones and health reports.
+
+---
+
+## Archived: 2026-04-27 — Unknown Initiative
+
+# M135 - Resilience Arc Artifact Lifecycle Management
+
+<!-- milestone-meta
+id: "135"
+status: "done"
+-->
+
+## Overview
+
+| Prior arc milestone | Artifact(s) created | Current cleanup |
+|---------------------|---------------------|-----------------|
+| m128 (Build-Fix Continuation Loop) | `.tekhton/BUILD_FIX_REPORT.md` | None |
+| m129 (Failure Context Schema) | `.claude/LAST_FAILURE_CONTEXT.json` | None on success; file persists across runs |
+| m131 (Preflight UI Config Audit) | `.claude/preflight_bak/<timestamp>_<file>` (one per auto-fix) | None |
+| m53 (existing) | `${BUILD_RAW_ERRORS_FILE}` (`BUILD_RAW_ERRORS.txt`) | Overwritten per gate run but not removed on success |
+
+Three concrete problems that fall through today:
+
+1. **Stale failure context contaminates fresh success runs.** If a project
+   had an interactive-reporter failure, `LAST_FAILURE_CONTEXT.json` on
+   disk reflects that run. On the next run (which succeeds), `--diagnose`
+   still reads the old file and reports "UI_GATE_INTERACTIVE_REPORTER"
+   — a completely wrong diagnosis for a succeeding project.
+
+2. **`preflight_bak/` grows without bound.** Every `tekhton --run` that
+   applies the preflight auto-fix creates another timestamped backup.
+   After 50 runs a project has 50 backup files nobody will ever read.
+   Disk usage is small but the directory becomes visual noise and slows
+   `find`/`ls` in the `.claude/` tree.
+
+3. **`.gitignore` is incomplete for arc artifacts.** `_ensure_gitignore_entries`
+   in `lib/common.sh` covers `.claude/LAST_FAILURE_CONTEXT.json` but
+   not `.tekhton/BUILD_FIX_REPORT.md` or `.claude/preflight_bak/`. Both
+   will appear in `git status` as untracked files after the first run
+   that exercises the arc, surprising developers who use `git add -A`.
+
+4. **`artifact_defaults.sh` does not declare the new arc artifact paths.**
+   `BUILD_FIX_REPORT_FILE` and `PREFLIGHT_BAK_DIR` have no `:=` defaults,
+   so they cannot be overridden in `pipeline.conf` the way all other
+   Tekhton artifact paths can.
+
+M135 fixes all four problems:
+- Adds `.tekhton/BUILD_FIX_REPORT.md` and `.claude/preflight_bak/` to
+  `_ensure_gitignore_entries`.
+- Declares `PREFLIGHT_BAK_DIR` in `artifact_defaults.sh`. (`BUILD_FIX_REPORT_FILE`
+  was already declared by m128 to live in `${TEKHTON_DIR}/`.)
+- Adds `_clear_arc_artifacts_on_success` to `lib/finalize_summary.sh`,
+  called when the run outcome is `"success"`.
+- Adds `_trim_preflight_bak_dir` to `lib/preflight_checks.sh`, called
+  at the end of every auto-fix. Keeps the `N` most-recent backups
+  (default 5, overridable via `PREFLIGHT_BAK_RETAIN_COUNT`).
+
+No changes to the recovery arc logic, RUN_SUMMARY schema, or test
+framework. This is purely lifecycle hygiene.
+
+## Design
+
+### Goal 1 — Register `PREFLIGHT_BAK_DIR` in `artifact_defaults.sh`
+
+**`BUILD_FIX_REPORT_FILE` was already declared by m128.** `lib/artifact_defaults.sh`
+already has `: "${BUILD_FIX_REPORT_FILE:=${TEKHTON_DIR}/BUILD_FIX_REPORT.md}"` from
+m128. Do **not** add it again — `:=` is a no-op when the variable is already set and
+would create confusing duplication.
+
+Add one new `:=` line to `lib/artifact_defaults.sh` after the existing `.tekhton/`
+defaults block. Use `.claude/` not `.tekhton/` because `preflight_bak/` is transient
+operational state (not a human-readable artifact), consistent with
+`LAST_FAILURE_CONTEXT.json` and `PIPELINE_STATE.md`.
+
+```bash
+# --- Resilience arc operational artifacts (m131) ----------------------------
+: "${PREFLIGHT_BAK_DIR:=${PROJECT_DIR:-.}/.claude/preflight_bak}"
+```
+
+**Why `.claude/` not `.tekhton/`:** `.tekhton/` holds files the human is
+meant to read between runs (DESIGN.md, CODER_SUMMARY.md, etc.). The
+`preflight_bak/` directory is transient operational state. It belongs in
+`.claude/` alongside `LAST_FAILURE_CONTEXT.json` and `PIPELINE_STATE.md`.
+
+**Why `PROJECT_DIR:-.`:** `artifact_defaults.sh` may be sourced before
+`PROJECT_DIR` is populated (e.g., in planning mode). The `:-.` fallback
+keeps the assignment safe; callers that need the absolute path set
+`PROJECT_DIR` before sourcing.
+
+**Absolute vs. relative:** Unlike the `TEKHTON_DIR`-based paths (which are
+relative strings like `.tekhton/BUILD_FIX_REPORT.md`), `PREFLIGHT_BAK_DIR`
+is an absolute path when `PROJECT_DIR` is set. Use it verbatim — do **not**
+prefix with `${PROJECT_DIR}` at the call site.
+
+### Goal 2 — Add missing patterns to `_ensure_gitignore_entries`
+
+In `lib/common.sh`, the `_gi_entries` array in `_ensure_gitignore_entries`
+gains two new entries appended after the existing `.claude/` entries:
+
+```bash
+".tekhton/BUILD_FIX_REPORT.md"
+".claude/preflight_bak/"
+```
+
+Exact placement (after `.claude/worktrees/` which is the last
+existing `.claude/` entry):
+
+```bash
+local -a _gi_entries=(
+    ".claude/PIPELINE.lock" ".claude/PIPELINE_STATE.md"
+    ".claude/MILESTONE_STATE.md" ".claude/CHECKPOINT_META.json"
+    ".claude/LAST_FAILURE_CONTEXT.json" ".claude/TEST_BASELINE.json"
+    ".claude/TEST_BASELINE_OUTPUT.txt" ".claude/test_acceptance_output.tmp"
+    ".claude/dashboard/data/" ".claude/logs/" ".claude/indexer-venv/"
+    ".claude/index/" ".claude/serena/" ".claude/dry_run_cache/"
+    ".claude/migration-backups/" ".claude/watchtower_inbox/"
+    ".claude/tui_sidecar.pid" ".claude/worktrees/"
+    ".tekhton/BUILD_FIX_REPORT.md"       # m128 build-fix continuation loop
+    ".claude/preflight_bak/"             # m131 preflight auto-fix backups
+)
+```
+
+The function is idempotent: the `grep -qF` guard at the top of the loop
+means adding entries to `_gi_entries` is always safe on already-initialized
+projects.
+
+### Goal 3 — Success-path artifact cleanup in `lib/finalize_summary.sh`
+
+Add `_clear_arc_artifacts_on_success` after the last existing helper
+function in `lib/finalize_summary.sh`, before `_hook_emit_run_summary`.
+
+```bash
+# _clear_arc_artifacts_on_success
+# Removes transient resilience-arc failure artifacts when a run completes
+# successfully. Prevents stale failure context from contaminating --diagnose
+# on the next run.
+#
+# Artifacts cleared (each rm is guarded — silently skipped if absent):
+#   .claude/LAST_FAILURE_CONTEXT.json  — failure cause from m129
+#   .tekhton/BUILD_FIX_REPORT.md       — build-fix loop summary from m128
+#   ${BUILD_RAW_ERRORS_FILE}           — raw build errors (default .tekhton/BUILD_RAW_ERRORS.txt)
+#
+# NOT cleared on success:
+#   .claude/preflight_bak/             — retained for audit trail; trimmed by
+#                                        _trim_preflight_bak_dir separately
+#   .claude/logs/RUN_SUMMARY.json      — always kept (success run is useful history)
+#   .tekhton/DIAGNOSIS.md              — kept to show last successful run diagnosis
+#
+# Called only when outcome == "success" (exit_code 0) inside
+# _hook_emit_run_summary.
+_clear_arc_artifacts_on_success() {
+    local _proj="${PROJECT_DIR:-.}"
+    local _cleared=0
+
+    local -a _targets=(
+        "${_proj}/.claude/LAST_FAILURE_CONTEXT.json"
+        "${_proj}/${BUILD_FIX_REPORT_FILE:-.tekhton/BUILD_FIX_REPORT.md}"
+        "${_proj}/${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}"
+    )
+    for _f in "${_targets[@]}"; do
+        if [[ -f "$_f" ]]; then
+            rm -f "$_f" 2>/dev/null && _cleared=$(( _cleared + 1 )) || true
+        fi
+    done
+
+    (( _cleared > 0 )) && log_verbose \
+        "[artifact lifecycle] Cleared ${_cleared} stale failure artifact(s) on success"
+    return 0
+}
+```
+
+**Integration point in `_hook_emit_run_summary`:**
+
+`_hook_emit_run_summary` already receives `exit_code` as `$1`. The call
+is at the top of the success branch, before the final `log` call:
+
+```bash
+_hook_emit_run_summary() {
+    local exit_code="$1"
+    ...
+    if [[ "$exit_code" -eq 0 ]]; then
+        _clear_arc_artifacts_on_success    # <— new call (m135)
+        local outcome="success"
+    else
+        local outcome="failure"
+    fi
+    ...
+}
+```
+
+**Why only on success:** On failure, `LAST_FAILURE_CONTEXT.json` is
+precious — it is the primary input to `--diagnose`. Clearing it on failure
+would break `--diagnose` for the most important case.
+
+**Why `log_verbose` not `log`:** Success-path cleanup is invisible
+maintenance. It should not appear on the terminal during normal runs.
+Users can see it with `VERBOSE_OUTPUT=true`.
+
+### Goal 4 — Preflight backup retention cap in `lib/preflight_checks.sh`
+
+Add `_trim_preflight_bak_dir` to `lib/preflight_checks.sh`, called at
+the end of `_pf_uitest_playwright_fix_reporter` (the m131 auto-fix
+function) immediately after the `PREFLIGHT_UI_REPORTER_PATCHED=1` export.
+
+```bash
+# _trim_preflight_bak_dir  BAK_DIR  [RETAIN_COUNT]
+# Removes oldest timestamped backups from BAK_DIR keeping only the RETAIN_COUNT
+# most recent files. Silently skips if BAK_DIR does not exist.
+#
+# Backup files written by _pf_uitest_playwright_fix_reporter have the form:
+#   <YYYYMMDD_HHMMSS>_<original-filename>
+# e.g.: 20260425_182710_playwright.config.ts
+#
+# Files are sorted lexicographically — YYYYMMDD_HHMMSS prefix ensures
+# chronological sort == lexicographic sort. No date parsing needed.
+#
+# Args:
+#   $1 = bak_dir  — directory containing backup files
+#   $2 = retain   — number of most-recent files to keep (default: PREFLIGHT_BAK_RETAIN_COUNT or 5)
+_trim_preflight_bak_dir() {
+    local bak_dir="$1"
+    local retain="${2:-${PREFLIGHT_BAK_RETAIN_COUNT:-5}}"
+
+    [[ -d "$bak_dir" ]] || return 0
+    (( retain == 0 )) && return 0      # 0 = disabled, keep all backups
+
+    # Count all backup files (any file directly in bak_dir — no subdirs expected)
+    local total
+    total=$(find "$bak_dir" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')
+
+    (( total <= retain )) && return 0
+
+    # Sort ascending (oldest first), delete all but the $retain newest
+    local to_delete=$(( total - retain ))
+    find "$bak_dir" -maxdepth 1 -type f \
+        | sort \
+        | head -n "$to_delete" \
+        | xargs rm -f 2>/dev/null || true
+
+    log_verbose "[artifact lifecycle] Trimmed preflight_bak: removed ${to_delete} old backup(s), kept ${retain}"
+    return 0
+}
+```
+
+**Calling convention:** m131's `_pf_uitest_playwright_fix_reporter` already
+calls `_trim_preflight_bak_dir` via a `declare -f` guard (see m131's design):
+
+```bash
+if declare -f _trim_preflight_bak_dir >/dev/null 2>&1; then
+    _trim_preflight_bak_dir "$bak_dir"
+fi
+```
+
+No changes to the `_pf_uitest_playwright_fix_reporter` call site are needed.
+Implementing the function in `lib/preflight_checks.sh` is sufficient — the
+guard in m131 ensures it is invoked automatically once the function exists.
+
+**Why `find | sort | head | xargs`:** no `jq`, no `python`, no `awk`
+date arithmetic. The YYYYMMDD_HHMMSS prefix makes plain lexicographic
+sort chronological — same zero-dependency philosophy as the rest of the
+codebase.
+
+**Why default retain=5:** Five backups covering five auto-fix events is
+a generous audit trail. In a project that auto-patches on every run
+(unlikely — the patch is idempotent after first application), five runs
+means one week of daily runs.
+
+**`PREFLIGHT_BAK_RETAIN_COUNT` in `pipeline.conf`:** Because
+`PREFLIGHT_BAK_RETAIN_COUNT` is read with `${PREFLIGHT_BAK_RETAIN_COUNT:-5}`,
+it can be set in `pipeline.conf` without any additional registration.
+Set to `0` to disable trimming and keep all backups (the function includes
+an explicit `(( retain == 0 )) && return 0` early-exit for this case).
+Set to `1` to keep only the most recent.
+
+### Goal 5 — Validate with `_ensure_gitignore_entries` audit test
+
+Extend `tests/test_ensure_gitignore_entries.sh` (the dedicated test file
+for `_ensure_gitignore_entries`) with two assertions:
+
+```
+T1: After calling _ensure_gitignore_entries on a fresh .gitignore,
+    the file contains ".tekhton/BUILD_FIX_REPORT.md"
+
+T2: After calling _ensure_gitignore_entries on a fresh .gitignore,
+    the file contains ".claude/preflight_bak/"
+```
+
+These are one-liners using the existing `pass`/`fail` harness pattern:
+
+```bash
+echo "Test: BUILD_FIX_REPORT.md in gitignore"
+_ensure_gitignore_entries "$TMPDIR" 2>/dev/null
+if grep -qF ".tekhton/BUILD_FIX_REPORT.md" "${TMPDIR}/.gitignore"; then
+    pass "BUILD_FIX_REPORT.md added to .gitignore"
+else
+    fail "BUILD_FIX_REPORT.md missing from .gitignore"
+fi
+
+echo "Test: preflight_bak/ in gitignore"
+if grep -qF ".claude/preflight_bak/" "${TMPDIR}/.gitignore"; then
+    pass "preflight_bak/ added to .gitignore"
+else
+    fail "preflight_bak/ missing from .gitignore"
+fi
+```
+
+Also add to `tests/test_resilience_arc_integration.sh` (m134):
+
+```
+T3: Success run → LAST_FAILURE_CONTEXT.json removed
+T4: Success run → BUILD_FIX_REPORT.md removed
+T5: Failure run → LAST_FAILURE_CONTEXT.json retained
+T6: preflight_bak/ with 7 files and retain=5 → 2 oldest removed
+T7: preflight_bak/ with 3 files and retain=5 → no files removed
+T8: PREFLIGHT_BAK_RETAIN_COUNT=0 → no files removed (keep all)
+```
+
+Test T3–T5 plug into the existing `_hook_emit_run_summary` mock in
+`test_resilience_arc_integration.sh`. T6–T8 call `_trim_preflight_bak_dir`
+directly with fixture directories.
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/artifact_defaults.sh` | Add `PREFLIGHT_BAK_DIR` `:=` default. (`BUILD_FIX_REPORT_FILE` was already added by m128 and should not be re-declared.) |
+| `lib/common.sh` | Add `.tekhton/BUILD_FIX_REPORT.md` and `.claude/preflight_bak/` to `_gi_entries` array in `_ensure_gitignore_entries`. |
+| `lib/finalize_summary.sh` | Add `_clear_arc_artifacts_on_success` function; call it from `_hook_emit_run_summary` on success branch. |
+| `lib/preflight_checks.sh` | Add `_trim_preflight_bak_dir` function. (m131 already calls it via `declare -f` guard; no call-site changes needed here.) |
+| `tests/test_ensure_gitignore_entries.sh` | Add T1–T2 for new gitignore entries. |
+| `tests/test_resilience_arc_integration.sh` | Add T3–T8 for success-path cleanup and preflight_bak trimming. |
+
+## Acceptance Criteria
+
+- [ ] `artifact_defaults.sh` declares `PREFLIGHT_BAK_DIR` with `:=` and `.claude/preflight_bak` path. (`BUILD_FIX_REPORT_FILE` was already declared by m128 under `.tekhton/` — do not add it again.)
+- [ ] `_ensure_gitignore_entries` adds `.tekhton/BUILD_FIX_REPORT.md` and `.claude/preflight_bak/` to a fresh `.gitignore`.
+- [ ] `_ensure_gitignore_entries` remains idempotent: calling it twice does not add duplicate lines.
+- [ ] On a successful run completion, `LAST_FAILURE_CONTEXT.json` is removed if present.
+- [ ] On a successful run completion, `BUILD_FIX_REPORT.md` is removed if present.
+- [ ] On a failure run, `LAST_FAILURE_CONTEXT.json` is NOT removed.
+- [ ] `_clear_arc_artifacts_on_success` is a no-op (no error) when none of the target files exist.
+- [ ] `_trim_preflight_bak_dir` with 7 backups and retain=5 removes exactly the 2 lexicographically-oldest files.
+- [ ] `_trim_preflight_bak_dir` with 3 backups and retain=5 removes nothing.
+- [ ] `PREFLIGHT_BAK_RETAIN_COUNT=0` disables trimming (all backups kept).
+- [ ] `_trim_preflight_bak_dir` is a no-op when the directory does not exist (no error).
+- [ ] `log_verbose` (not `log`) used for all cleanup messages — no terminal noise on normal runs.
+- [ ] Tests T1–T8 pass.
+- [ ] `shellcheck` clean for all modified files.
+
+## Watch For
+
+- **`BUILD_FIX_REPORT_FILE` is already declared by m128.** `lib/artifact_defaults.sh`
+  will already have `: "${BUILD_FIX_REPORT_FILE:=${TEKHTON_DIR}/BUILD_FIX_REPORT.md}"`
+  from m128. Adding a second `:=` line here is a silent no-op (`:=` won't
+  overwrite an already-set variable) that creates confusing duplication. Add
+  only `PREFLIGHT_BAK_DIR` in Goal 1.
+
+- **Relative vs. absolute paths in `_clear_arc_artifacts_on_success`.** `BUILD_FIX_REPORT_FILE`
+  and `BUILD_RAW_ERRORS_FILE` are **relative** strings (e.g., `.tekhton/BUILD_FIX_REPORT.md`).
+  They must be prefixed with `${_proj}/` to resolve correctly when the function runs
+  outside the project directory. `LAST_FAILURE_CONTEXT.json` is hardcoded with the full
+  `${_proj}/.claude/` prefix for the same reason. Do not mix styles — all three entries
+  in `_targets` must use `${_proj}` as the base.
+
+- **`_pf_uitest_playwright_fix_reporter` call site is owned by m131, not here.** m131's
+  design already calls `_trim_preflight_bak_dir` via a `declare -f` guard. Do not add
+  a second unconditional call from this milestone. Simply implement the function — the
+  guard in m131 will activate it.
+
+- **`PREFLIGHT_BAK_RETAIN_COUNT=0` requires an explicit guard.** The
+  `(( total <= retain ))` early-return is only true when both are 0. Without the
+  `(( retain == 0 )) && return 0` guard, setting `PREFLIGHT_BAK_RETAIN_COUNT=0`
+  would delete every backup file instead of keeping all. The guard is already
+  in the design — do not remove it.
+
+- **Test file is `test_ensure_gitignore_entries.sh`, not `test_validate_config.sh`.**
+  The dedicated test file already exists at `tests/test_ensure_gitignore_entries.sh`.
+  Add T1–T2 there; follow the existing `pass`/`fail` harness pattern.
+
+- **`test_resilience_arc_integration.sh` is created by m134** (a dependency of this
+  milestone). Before implementing T3–T8, read the mock structure m134 established
+  for `_hook_emit_run_summary` to ensure new scenarios fit the existing scaffold.
+
+## Seeds Forward
+
+- **M136 — Resilience Arc Config Defaults & Validation Hardening.** m136 registers
+  `PREFLIGHT_BAK_RETAIN_COUNT` in `config_defaults.sh` with a default of `5` and
+  documents it in `pipeline.conf.example`. Keep the fallback default in
+  `_trim_preflight_bak_dir` (`${PREFLIGHT_BAK_RETAIN_COUNT:-5}`) consistent with
+  the value m136 declares — both must agree on `5`.
+
+- **M137 — V3.2 Migration Script.** The migration script injects gitignore entries
+  into pre-arc projects. It uses `.tekhton/BUILD_FIX_REPORT.md` and
+  `.claude/preflight_bak/` as the exact patterns to add (matching what
+  `_ensure_gitignore_entries` inserts). Keep these strings stable — m137's
+  `migration_apply` assertions match them verbatim.
+
+- **`--diagnose` stale-context fix is now live.** Once `_clear_arc_artifacts_on_success`
+  is in place, `--diagnose` on a succeeding project will no longer surface the prior
+  failure. Any future milestone that reads `LAST_FAILURE_CONTEXT.json` must account
+  for the file being absent on clean-run projects.
+
+---
+
+## Archived: 2026-04-27 — Unknown Initiative
+
+# M136 - Resilience Arc Config Defaults & Validation Hardening
+
+<!-- milestone-meta
+id: "136"
+status: "done"
+-->
+
+## Overview
+
+Resilience arc milestones m126, m128-m131, and m135 introduced thirteen
+operator-facing config variables that control arc behaviour. None of these variables
+are declared in `lib/config_defaults.sh` today, which means:
+
+1. They cannot be overridden via `pipeline.conf` the normal way — a
+   developer who adds `BUILD_FIX_MAX_ATTEMPTS=4` to their config file
+   will find the line silently ignored because `config_defaults.sh` never
+   reads it and the arc functions use hard-coded or inline fallbacks.
+
+2. They are invisible to `tekhton --validate-config` — a mis-typed
+   `BUILD_FIX_MAX_ATTEMPTS=abc` passes through without warning.
+
+3. They are not documented in `templates/pipeline.conf.example` — a
+   developer reading the example config has no idea these levers exist.
+
+The missing variables are:
+
+| Variable | Introduced by | Default | Description |
+|----------|---------------|---------|-------------|
+| `BUILD_FIX_ENABLED` | m128 | `true` | Toggle build-fix continuation loop entirely |
+| `BUILD_FIX_MAX_ATTEMPTS` | m128 | `3` | Max build-fix continuation attempts per pipeline cycle |
+| `BUILD_FIX_BASE_TURN_DIVISOR` | m128 | `3` | Baseline divisor used to derive attempt-1 build-fix budget |
+| `BUILD_FIX_MAX_TURN_MULTIPLIER` | m128 | `1.0` | Cap multiplier applied against `EFFECTIVE_CODER_MAX_TURNS` |
+| `BUILD_FIX_REQUIRE_PROGRESS` | m128 | `true` | Stop continuation when repeated attempts show no measurable progress |
+| `BUILD_FIX_TOTAL_TURN_CAP` | m128 | `120` | Cumulative turn cap across the whole build-fix loop |
+| `UI_GATE_ENV_RETRY_ENABLED` | m126 | `true` | Enable non-interactive env retry on gate timeout |
+| `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` | m126 | `0.5` | Fraction of original `UI_TEST_TIMEOUT` for retry run |
+| `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` | m126 | `0` | Override: force non-interactive env on every gate run |
+| `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED` | m131 | `true` | Enable UI config file scan (m131 preflight check) |
+| `PREFLIGHT_BAK_RETAIN_COUNT` | m131 / m135 | `5` | Max backup files to keep in `preflight_bak/` |
+| `PREFLIGHT_UI_CONFIG_AUTO_FIX` | m131 | `true` | Auto-patch interactive reporter config on detection |
+| `BUILD_FIX_CLASSIFICATION_REQUIRED` | m130 | `true` | Require code_dominant classification before build-fix |
+
+> **Note — `LAST_FAILURE_CONTEXT_SCHEMA_VERSION` is intentionally excluded.**
+> Schema version is an implementation contract between the writer
+> (`lib/diagnose_output.sh`) and the readers (m130, m132, m133). Giving
+> operators a `pipeline.conf` knob to downgrade it to `1` would silently
+> disable m129–m133's causal fidelity features. The writer always emits
+> v2 and retains the v1 flat fields (`category`, `subcategory`) at the
+> top level for backward compatibility with any external tooling.
+
+M136 registers all thirteen variables in `config_defaults.sh`,
+adds six new `--validate-config` checks in `validate_config.sh`,
+and documents them in a new subsection of `pipeline.conf.example`.
+
+No changes to arc runtime logic. Config-layer only.
+
+## Design
+
+### Goal 1 — Declare all thirteen vars in `lib/config_defaults.sh`
+
+Add a new section block immediately after the `# --- Pre-flight environment
+validation defaults (Milestone 55) ---` block. Follow
+the exact `:=` idiom and comment format used throughout the file.
+
+```bash
+# --- Resilience arc defaults (m126–m131: UI gate, build-fix, failure context) ---
+
+# UI gate deterministic execution (m126)
+: "${UI_GATE_ENV_RETRY_ENABLED:=true}"         # Retry gate with non-interactive env on timeout
+: "${UI_GATE_ENV_RETRY_TIMEOUT_FACTOR:=0.5}"   # Retry timeout = original * this factor (0.1–1.0)
+: "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}" # 0=auto 1=always force non-interactive gate env
+
+# Build-fix continuation loop (m128)
+: "${BUILD_FIX_ENABLED:=true}"                 # Enable build-fix continuation loop
+: "${BUILD_FIX_MAX_ATTEMPTS:=3}"               # Max fix attempts per pipeline cycle
+: "${BUILD_FIX_BASE_TURN_DIVISOR:=3}"          # Attempt-1 budget = EFFECTIVE_CODER_MAX_TURNS / divisor
+: "${BUILD_FIX_MAX_TURN_MULTIPLIER:=1.0}"      # Upper cap multiplier against EFFECTIVE_CODER_MAX_TURNS
+: "${BUILD_FIX_REQUIRE_PROGRESS:=true}"        # Require measurable progress for continuation
+: "${BUILD_FIX_TOTAL_TURN_CAP:=120}"           # Cumulative turn cap across all attempts
+
+# Causal recovery routing (m130)
+: "${BUILD_FIX_CLASSIFICATION_REQUIRED:=true}" # Require code_dominant classification for build-fix loop
+
+# Preflight UI config audit (m131)
+: "${PREFLIGHT_UI_CONFIG_AUDIT_ENABLED:=true}" # Scan test framework configs for interactive-mode settings
+: "${PREFLIGHT_UI_CONFIG_AUTO_FIX:=true}"      # Auto-patch detected interactive config (e.g. reporter: 'html')
+: "${PREFLIGHT_BAK_RETAIN_COUNT:=5}"           # Max backups to keep in .claude/preflight_bak/
+```
+
+**Build-fix default-shape note:** These defaults deliberately mirror the
+M128 runtime contract rather than introducing a second operator-facing
+surface. `BUILD_FIX_BASE_TURN_DIVISOR`, `BUILD_FIX_MAX_TURN_MULTIPLIER`,
+`BUILD_FIX_REQUIRE_PROGRESS`, and `BUILD_FIX_TOTAL_TURN_CAP` are the
+same names M128 uses in its loop design, so later milestones and
+operator docs do not drift.
+
+**Why `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` defaults to `0` not `false`:**
+The m126 implementation reads it with `[[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-0}" == "1" ]]`
+— treating it as a binary flag (0/1 not true/false). The default matches
+that convention for consistency.
+
+### Goal 2 — Add validation checks in `lib/validate_config.sh`
+
+Add a new helper function `_vc_check_resilience_arc` called at the end
+of `validate_config()`, between Check 12 and the summary line. The
+function runs six checks and increments `passes`/`warnings`/`errors`
+via the standard `_vc_pass`/`_vc_warn`/`_vc_fail` helpers.
+
+The integration in `validate_config()`:
+
+```bash
+    # Check 12: No stale PIPELINE_STATE.md
+    ...
+
+    # Check 13: Resilience arc config sanity (m136)
+    _vc_check_resilience_arc
+
+    echo ""
+    echo "${passes} passed, ${warnings} warnings, ${errors} errors"
+```
+
+Follow the existing helper pattern in this file (`_vc_check_role_files`,
+`_vc_check_manifest`, `_vc_check_models`): mutate `passes`/`warnings`/
+`errors` directly via shell dynamic scope. Do not introduce namerefs or
+`declare -g` here; the current file does not need them.
+
+```bash
+# _vc_check_resilience_arc
+# Validates resilience arc config values. Mutates validate_config()
+# counters directly (same style as existing helper checks).
+_vc_check_resilience_arc() {
+    echo ""
+    echo "  [Resilience Arc]"
+
+    # Check A: BUILD_FIX_MAX_ATTEMPTS must be a positive integer (1–20)
+    local bfa="${BUILD_FIX_MAX_ATTEMPTS:-3}"
+    if [[ "$bfa" =~ ^[0-9]+$ ]] && (( bfa >= 1 && bfa <= 20 )); then
+        _vc_pass "BUILD_FIX_MAX_ATTEMPTS=${bfa} (valid)"
+        passes=$((passes + 1))
+    else
+        _vc_fail "BUILD_FIX_MAX_ATTEMPTS=${bfa} — must be integer 1–20"
+        errors=$((errors + 1))
+    fi
+
+    # Check B: BUILD_FIX_BASE_TURN_DIVISOR must be a positive integer
+    local bfd="${BUILD_FIX_BASE_TURN_DIVISOR:-3}"
+    if [[ "$bfd" =~ ^[0-9]+$ ]] && (( bfd >= 1 && bfd <= 20 )); then
+        _vc_pass "BUILD_FIX_BASE_TURN_DIVISOR=${bfd} (valid)"
+        passes=$((passes + 1))
+    else
+        _vc_fail "BUILD_FIX_BASE_TURN_DIVISOR=${bfd} — must be integer 1–20"
+        errors=$((errors + 1))
+    fi
+
+    # Check C: UI_GATE_ENV_RETRY_TIMEOUT_FACTOR must be a decimal 0.1–1.0
+    local rtf="${UI_GATE_ENV_RETRY_TIMEOUT_FACTOR:-0.5}"
+    # bash can't do float comparison directly — use awk for this one check
+    local rtf_ok
+    rtf_ok=$(awk -v v="$rtf" 'BEGIN { print (v+0 >= 0.1 && v+0 <= 1.0) ? "ok" : "fail" }')
+    if [[ "$rtf_ok" == "ok" ]]; then
+        _vc_pass "UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=${rtf} (valid, 0.1–1.0)"
+        passes=$((passes + 1))
+    else
+        _vc_warn "UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=${rtf} — expected decimal 0.1–1.0; using 0.5"
+        warnings=$((warnings + 1))
+    fi
+
+    # Check D: TEKHTON_UI_GATE_FORCE_NONINTERACTIVE must be 0 or 1
+    local fni="${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-0}"
+    if [[ "$fni" == "0" || "$fni" == "1" ]]; then
+        _vc_pass "TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=${fni} (valid)"
+        passes=$((passes + 1))
+    else
+        _vc_warn "TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=${fni} — expected 0 or 1"
+        warnings=$((warnings + 1))
+    fi
+
+    # Check E: PREFLIGHT_BAK_RETAIN_COUNT must be non-negative integer
+    local pbr="${PREFLIGHT_BAK_RETAIN_COUNT:-5}"
+    if [[ "$pbr" =~ ^[0-9]+$ ]]; then
+        _vc_pass "PREFLIGHT_BAK_RETAIN_COUNT=${pbr} (valid)"
+        passes=$((passes + 1))
+    else
+        _vc_fail "PREFLIGHT_BAK_RETAIN_COUNT=${pbr} — must be non-negative integer (0 = keep all)"
+        errors=$((errors + 1))
+    fi
+
+    # Check F: Warn when UI_TEST_CMD is set but UI_GATE_ENV_RETRY_ENABLED is false
+    if [[ -n "${UI_TEST_CMD:-}" ]] && [[ "${UI_GATE_ENV_RETRY_ENABLED:-true}" == "false" ]]; then
+        _vc_warn "UI_GATE_ENV_RETRY_ENABLED=false with UI_TEST_CMD set — interactive reporter timeouts will not be auto-retried"
+        warnings=$((warnings + 1))
+    else
+        _vc_pass "UI gate retry configuration consistent"
+        passes=$((passes + 1))
+    fi
+}
+```
+
+**Why `awk` for float comparison in Check C:** Bash cannot compare
+floating-point natively. `awk` is universally available (POSIX), is
+already used elsewhere in the codebase (e.g. `gates_ui.sh`), and avoids
+the `bc` dependency which is not guaranteed on all CI images.
+
+**Why Check F is `warn` not `fail`:** Turning off the retry is a valid
+project choice (e.g., for performance test suites that always take the
+full `UI_TEST_TIMEOUT`). The warning is informational.
+
+### Goal 3 — Document arc vars in `templates/pipeline.conf.example`
+
+Add a new commented section immediately after the existing `# UI_TEST_TIMEOUT=120`
+line inside the `# --- UI Testing (Milestone 28) ---` block. In today's template,
+that block lives in Section 5 (Features), so use the `UI_TEST_TIMEOUT` line as
+the stable insertion anchor instead of section-number headings.
+
+```conf
+# ─── Resilience arc (m126–m131): UI gate robustness & build-fix recovery ─────
+
+# UI gate non-interactive enforcement
+# Enable auto-retry with non-interactive env when gate times out (interactive reporter detection).
+# UI_GATE_ENV_RETRY_ENABLED=true
+
+# Fraction of UI_TEST_TIMEOUT to allow for the non-interactive retry run (0.1–1.0).
+# Lower values fail faster when the fix didn't work; higher values allow longer retry.
+# UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=0.5
+
+# Force non-interactive env on every UI gate run (0=auto, 1=always).
+# Set to 1 in CI environments that never want the interactive reporter.
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0
+
+# Build-fix continuation loop
+# Enable the build-fix continuation loop (attempts to fix build errors automatically).
+# BUILD_FIX_ENABLED=true
+
+# Maximum number of build-fix attempts per pipeline cycle.
+# BUILD_FIX_MAX_ATTEMPTS=3
+
+# Attempt-1 budget divisor. M128 computes the base budget as
+# EFFECTIVE_CODER_MAX_TURNS / BUILD_FIX_BASE_TURN_DIVISOR.
+# BUILD_FIX_BASE_TURN_DIVISOR=3
+
+# Cap the adaptive schedule at EFFECTIVE_CODER_MAX_TURNS * multiplier.
+# BUILD_FIX_MAX_TURN_MULTIPLIER=1.0
+
+# Require measurable progress before continuing to later build-fix attempts.
+# BUILD_FIX_REQUIRE_PROGRESS=true
+
+# Cumulative cap across the whole build-fix loop.
+# BUILD_FIX_TOTAL_TURN_CAP=120
+
+# Require log classification to be code_dominant before allowing build-fix loop.
+# Set to false to attempt build-fix even on mixed/uncertain logs (not recommended).
+# BUILD_FIX_CLASSIFICATION_REQUIRED=true
+
+# Preflight UI config audit
+# Scan test framework config files (playwright.config.ts, etc.) for interactive-mode settings.
+# PREFLIGHT_UI_CONFIG_AUDIT_ENABLED=true
+
+# Auto-patch detected interactive reporter config (e.g. reporter: 'html' → CI-guarded form).
+# PREFLIGHT_UI_CONFIG_AUTO_FIX=true
+
+# Maximum number of backup files to keep in .claude/preflight_bak/ (0 = keep all).
+# PREFLIGHT_BAK_RETAIN_COUNT=5
+```
+
+Placement: find `# UI_TEST_TIMEOUT=120` in `pipeline.conf.example` and
+insert the new block immediately after it.
+
+### Goal 4 — Reuse existing clamp infrastructure for numeric arc vars
+
+`config_defaults.sh` already applies hard upper bounds at the bottom of
+the file via `_clamp_config_value` and `_clamp_config_float`. Extend that
+existing clamp table for resilience-arc numeric knobs; do not add a new
+special-purpose clamp function.
+
+```bash
+# near the existing "# --- Clamp values to hard upper bounds ---" section
+_clamp_config_value BUILD_FIX_MAX_ATTEMPTS 20
+_clamp_config_value BUILD_FIX_BASE_TURN_DIVISOR 20
+_clamp_config_float BUILD_FIX_MAX_TURN_MULTIPLIER 1.0 5.0
+_clamp_config_value BUILD_FIX_TOTAL_TURN_CAP 1000
+_clamp_config_float UI_GATE_ENV_RETRY_TIMEOUT_FACTOR 0.1 1.0
+_clamp_config_value PREFLIGHT_BAK_RETAIN_COUNT 1000
+```
+
+**Why this change:** the project already has a single clamp mechanism and
+centralized clamp block. Reusing it keeps behavior consistent and avoids
+introducing new side-effect ordering concerns in `config_defaults.sh`.
+
+### Goal 5 — Extend test coverage in `tests/test_validate_config.sh`
+
+Add six new tests covering the new `_vc_check_resilience_arc` checks.
+Keep tests in `tests/test_validate_config.sh` focused on validator output
+and return codes; clamp behavior belongs to config-defaults/unit coverage.
+
+```bash
+# Test: BUILD_FIX_MAX_ATTEMPTS=abc → error
+echo "Test: BUILD_FIX_MAX_ATTEMPTS non-integer → validate error"
+BUILD_FIX_MAX_ATTEMPTS="abc"
+output=$(validate_config 2>&1)
+if echo "$output" | grep -q "BUILD_FIX_MAX_ATTEMPTS=abc — must be integer"; then
+    pass "Non-integer BUILD_FIX_MAX_ATTEMPTS triggers error"
+else
+    fail "Expected validation error for BUILD_FIX_MAX_ATTEMPTS=abc: $output"
+fi
+unset BUILD_FIX_MAX_ATTEMPTS
+
+# Test: BUILD_FIX_BASE_TURN_DIVISOR=0 → error
+echo "Test: BUILD_FIX_BASE_TURN_DIVISOR=0 → validate error"
+BUILD_FIX_BASE_TURN_DIVISOR="0"
+output=$(validate_config 2>&1)
+if echo "$output" | grep -q "BUILD_FIX_BASE_TURN_DIVISOR=0"; then
+    pass "Invalid BUILD_FIX_BASE_TURN_DIVISOR triggers error"
+else
+    fail "Expected validation error for BUILD_FIX_BASE_TURN_DIVISOR=0: $output"
+fi
+unset BUILD_FIX_BASE_TURN_DIVISOR
+
+# Test: UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=2.5 → warning
+echo "Test: UI_GATE_ENV_RETRY_TIMEOUT_FACTOR out of range → warning"
+UI_GATE_ENV_RETRY_TIMEOUT_FACTOR="2.5"
+output=$(validate_config 2>&1)
+if echo "$output" | grep -qi "UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=2.5"; then
+    pass "Out-of-range timeout factor triggers warning"
+else
+    fail "Expected warning for factor=2.5: $output"
+fi
+unset UI_GATE_ENV_RETRY_TIMEOUT_FACTOR
+
+# Test: TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=yes → warning
+echo "Test: TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=yes → warning"
+TEKHTON_UI_GATE_FORCE_NONINTERACTIVE="yes"
+output=$(validate_config 2>&1)
+if echo "$output" | grep -qi "TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=yes"; then
+    pass "Invalid value triggers warning"
+else
+    fail "Expected warning for FORCE_NONINTERACTIVE=yes: $output"
+fi
+unset TEKHTON_UI_GATE_FORCE_NONINTERACTIVE
+
+# Test: UI_TEST_CMD set + UI_GATE_ENV_RETRY_ENABLED=false → warning
+echo "Test: UI_TEST_CMD set + retry disabled → warning"
+UI_TEST_CMD="npx playwright test"
+UI_GATE_ENV_RETRY_ENABLED="false"
+output=$(validate_config 2>&1)
+if echo "$output" | grep -qi "interactive reporter timeouts will not be auto-retried"; then
+    pass "Disabled retry with UI_TEST_CMD triggers warning"
+else
+    fail "Expected retry-disabled warning: $output"
+fi
+unset UI_TEST_CMD UI_GATE_ENV_RETRY_ENABLED
+
+# Test: PREFLIGHT_BAK_RETAIN_COUNT=abc → error
+echo "Test: PREFLIGHT_BAK_RETAIN_COUNT non-integer → validate error"
+PREFLIGHT_BAK_RETAIN_COUNT="abc"
+output=$(validate_config 2>&1)
+if echo "$output" | grep -q "PREFLIGHT_BAK_RETAIN_COUNT=abc"; then
+    pass "Non-integer PREFLIGHT_BAK_RETAIN_COUNT triggers error"
+else
+    fail "Expected validation error for PREFLIGHT_BAK_RETAIN_COUNT=abc: $output"
+fi
+unset PREFLIGHT_BAK_RETAIN_COUNT
+
+# Test: all defaults → arc checks pass
+echo "Test: All arc defaults → arc checks pass"
+unset BUILD_FIX_MAX_ATTEMPTS BUILD_FIX_BASE_TURN_DIVISOR \
+      UI_GATE_ENV_RETRY_TIMEOUT_FACTOR TEKHTON_UI_GATE_FORCE_NONINTERACTIVE \
+      PREFLIGHT_BAK_RETAIN_COUNT UI_GATE_ENV_RETRY_ENABLED UI_TEST_CMD
+source "${TEKHTON_HOME}/lib/config_defaults.sh"  # re-apply defaults
+output=$(validate_config 2>&1)
+if echo "$output" | grep -q "\[Resilience Arc\]" && \
+   echo "$output" | grep -q "0 errors"; then
+    pass "Arc defaults produce passing checks"
+else
+    fail "Expected arc default checks to pass cleanly: $output"
+fi
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `lib/config_defaults.sh` | New section block with 13 `:=` declarations; add arc numeric keys to existing hard-clamp table. |
+| `lib/validate_config.sh` | New `_vc_check_resilience_arc` function; call it as "Check 13" in `validate_config()`. |
+| `templates/pipeline.conf.example` | New commented arc section after `UI_TEST_TIMEOUT=120` line (13 commented keys with descriptions). |
+| `tests/test_validate_config.sh` | Six new test cases for arc config validation behavior. |
+
+No changes to runtime arc logic (m126–m135 code paths unchanged).
+
+## Watch For
+
+- Keep `LAST_FAILURE_CONTEXT_SCHEMA_VERSION` out of `config_defaults.sh` even though migration docs may show it as a commented key for visibility. It is a schema contract, not a user tuning knob.
+- In `lib/validate_config.sh`, do not pass counters as parameters or use namerefs; follow the current helper style that mutates `passes`/`warnings`/`errors` from function scope.
+- `templates/pipeline.conf.example` layout evolves over time; anchor insertion by the literal `# UI_TEST_TIMEOUT=120` line, not by section-number comments.
+- Avoid introducing new clamp helper functions unless absolutely required. Extending the existing clamp table is lower risk and easier to review.
+- Keep check severity stable: invalid integers should fail; compatibility and operator-intent mismatches (like retry disabled with `UI_TEST_CMD`) should warn.
+
+## Seeds Forward
+
+- **m137 (V3.2 migration)**: migration script should append the same 13 user-facing arc keys in `pipeline.conf` comments/active defaults so pre-arc projects become discoverable and consistent after migration.
+- **m138 (runtime CI env auto-detect)**: relies on `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` being formally declared and validated here.
+- **Future arc observability milestone**: the new `[Resilience Arc]` validation output block can be reused for dashboard/health summarization without additional parsing formats.
+- **Future config-doc sync automation**: this milestone establishes a single canonical list of arc knobs across defaults, validator, and template, which is a prerequisite for drift-check tooling.
+
+## Acceptance Criteria
+
+- [ ] All 13 arc variables declared in `config_defaults.sh` with `:=` and sensible defaults.
+- [ ] `BUILD_FIX_BASE_TURN_DIVISOR`, `BUILD_FIX_MAX_TURN_MULTIPLIER`, `BUILD_FIX_REQUIRE_PROGRESS`, and `BUILD_FIX_TOTAL_TURN_CAP` are declared with the same names M128 uses in its runtime loop design.
+- [ ] `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` defaults to `0` (not `false`) to match its binary flag convention.
+- [ ] Arc numeric keys are added to the existing hard-clamp table (`_clamp_config_value` / `_clamp_config_float`) with no new clamp helper function.
+- [ ] `validate_config` runs Check 13 (`_vc_check_resilience_arc`) and its results appear in the pass/warn/error summary totals.
+- [ ] `BUILD_FIX_MAX_ATTEMPTS=abc` produces a `fail` line in `validate_config` output.
+- [ ] `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=2.5` produces a `warn` line in `validate_config` output.
+- [ ] `UI_TEST_CMD` set + `UI_GATE_ENV_RETRY_ENABLED=false` produces a `warn` line.
+- [ ] All arc vars appear in the `pipeline.conf.example` commented section with descriptions.
+- [ ] Milestone includes explicit `Watch For` and `Seeds Forward` sections that call out m137/m138 integration points.
+- [ ] `shellcheck` clean for all modified files.
+- [ ] Six new test cases in `tests/test_validate_config.sh` pass.
+- [ ] Sourcing `config_defaults.sh` twice (idempotent source) does not change any arc var value.
+
+---
+
+## Archived: 2026-04-27 — Unknown Initiative
+
+# M137 - Resilience Arc V3.2 Migration Script
+
+<!-- milestone-meta
+id: "137"
+status: "done"
+-->
+
+## Overview
+
+| Migration context | Value |
+|------------------|-------|
+| Current latest migration | `3.1` (`003_to_031.sh`) |
+| New migration | `3.2` (`031_to_032.sh`) |
+| Trigger condition | `TEKHTON_CONFIG_VERSION` < `3.2` in project's `pipeline.conf` |
+| Files produced | `migrations/031_to_032.sh` |
+
+The resilience arc (m126–m136) introduced thirteen new config variables,
+two new runtime artifact paths, new gitignore entries, and a new
+`pipeline.conf` section. A project that was initialized before the arc
+landed — the common case for all existing bifl-tracker-style projects —
+gets none of this automatically. The `--migrate` command is the standard
+Tekhton upgrade path for such projects.
+
+Without m137, an operator upgrading their Tekhton installation must:
+1. Manually identify which of the thirteen new vars their project needs.
+2. Manually add gitignore entries for the two new artifact paths.
+3. Know that `PREFLIGHT_UI_CONFIG_AUTO_FIX` exists (it is not in their
+   config file and not visible in `--validate-config` output on pre-arc
+   configs because the vars are absent, not wrong).
+
+M137 creates `migrations/031_to_032.sh` — the V3.1 → V3.2 migration
+script that automates all of the above safely and idempotently.
+
+## Design
+
+### Migration script convention (follow existing pattern exactly)
+
+Every migration script exposes four functions (three mandatory; `migration_description` has a runner fallback but should always be implemented):
+
+| Function | Signature | Contract |
+|----------|-----------|---------|
+| `migration_version` | `() → string` | Returns the target version as `MAJOR.MINOR` (e.g. `"3.2"`). |
+| `migration_description` | `() → string` | One-line human-readable description shown during `--migrate`. |
+| `migration_check` | `(project_dir) → 0/1` | Returns `0` if migration is needed, `1` if already applied. Idempotency guard. |
+| `migration_apply` | `(project_dir) → 0/nonzero` | Applies the migration. Returns `0` on success. |
+
+The script lives in `${TEKHTON_HOME}/migrations/031_to_032.sh`.
+
+The migration runner (`lib/migrate.sh` → `run_migrations`) calls
+`migration_check` first and skips the script if it returns `1`. This
+makes `migration_apply` safe to implement without defensive guards —
+the check handles idempotency.
+
+### Step 1 — `migration_check`: detect whether the migration is needed
+
+The migration is already applied if any of the following is true:
+- `pipeline.conf` does not exist (express mode, bare init — nothing to
+  migrate).
+- `pipeline.conf` already contains `BUILD_FIX_ENABLED` (the unique V3.2
+  sentinel key; a project that already has this line was migrated or
+  initialized post-arc).
+
+```bash
+migration_check() {
+    local project_dir="$1"
+    local conf_file="${project_dir}/.claude/pipeline.conf"
+
+    # No conf: express mode or uninitialized — skip
+    [[ -f "$conf_file" ]] || return 1
+
+    # Sentinel key present → already migrated
+    if grep -q '^BUILD_FIX_ENABLED=' "$conf_file" 2>/dev/null; then
+        return 1
+    fi
+    return 0
+}
+```
+
+**Why `BUILD_FIX_ENABLED` as sentinel:** It is the first line emitted
+by `migration_apply` and is always present after migration. It is a
+boolean enabled/disabled flag (not a numeric or path), so it cannot
+appear in a pre-arc config by accident. Using the first-written key as
+the sentinel is the same pattern as `002_to_003.sh` using
+`SECURITY_AGENT_ENABLED` and `003_to_031.sh` using `TEKHTON_DIR`.
+
+### Step 2 — `migration_apply`: three ordered sub-tasks
+
+```bash
+migration_apply() {
+    local project_dir="$1"
+    local conf_file="${project_dir}/.claude/pipeline.conf"
+    local gitignore_file="${project_dir}/.gitignore"
+
+    [[ -f "$conf_file" ]] || return 1
+
+    _032_append_arc_config_section "$conf_file"
+    _032_update_gitignore "$gitignore_file"
+    _032_create_preflight_bak_dir "$project_dir"
+
+    return 0
+}
+```
+
+#### Sub-task A — `_032_append_arc_config_section`
+
+Appends the resilience arc commented section to `pipeline.conf`.
+Uses `>>` (append), never overwrites. The sentinel key
+`BUILD_FIX_ENABLED=true` is the first line so `migration_check`
+will detect it on the next call.
+
+```bash
+_032_append_arc_config_section() {
+    local conf_file="$1"
+
+    cat >> "$conf_file" << 'EOF'
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# V3.2 Resilience Arc (added by migration: m126–m136)
+# UI gate robustness, build-fix continuation, and causal failure context
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# === Build-Fix Continuation Loop (m128) ===
+BUILD_FIX_ENABLED=true
+# BUILD_FIX_MAX_ATTEMPTS=3          # Max fix attempts per pipeline cycle
+# BUILD_FIX_BASE_TURN_DIVISOR=3     # Attempt-1 budget divisor
+# BUILD_FIX_MAX_TURN_MULTIPLIER=1.0  # Upper cap multiplier against EFFECTIVE_CODER_MAX_TURNS
+# BUILD_FIX_REQUIRE_PROGRESS=true   # Stop continuation when attempts show no progress
+# BUILD_FIX_TOTAL_TURN_CAP=120      # Cumulative turn cap across the build-fix loop
+# BUILD_FIX_CLASSIFICATION_REQUIRED=true  # Require code_dominant classification
+
+# === UI Gate Non-Interactive Enforcement (m126) ===
+# UI_GATE_ENV_RETRY_ENABLED=true    # Retry with non-interactive env on timeout
+# UI_GATE_ENV_RETRY_TIMEOUT_FACTOR=0.5  # Retry timeout as fraction of UI_TEST_TIMEOUT
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0  # 0=auto 1=always force non-interactive
+
+# === Preflight UI Config Audit (m131) ===
+# PREFLIGHT_UI_CONFIG_AUDIT_ENABLED=true  # Scan test framework configs for interactive-mode
+# PREFLIGHT_UI_CONFIG_AUTO_FIX=true  # Auto-patch reporter: 'html' to CI-guarded form
+# PREFLIGHT_BAK_RETAIN_COUNT=5       # Backup files to keep in .claude/preflight_bak/
+EOF
+}
+```
+
+**Why all keys below `BUILD_FIX_ENABLED=true` are commented:** The
+defaults registered in `config_defaults.sh` (m136) are sensible for
+all projects. The migration only needs to make the keys discoverable —
+a developer reading their `pipeline.conf` can now see them. The one
+exception is `BUILD_FIX_ENABLED=true` which is active because: (a) it
+is the sentinel for idempotency, and (b) the loop is safe to enable
+by default — it only fires on code_dominant errors and is bounded by
+`BUILD_FIX_MAX_ATTEMPTS`.
+
+#### Sub-task B — `_032_update_gitignore`
+
+Adds the two new arc artifact paths to `.gitignore` if not already present.
+Follows the same idempotent grep-then-append pattern already used by
+`_ensure_gitignore_entries` in `lib/common.sh`.
+
+```bash
+_032_update_gitignore() {
+    local gi_file="$1"
+
+    # Create .gitignore if it doesn't exist yet
+    [[ -f "$gi_file" ]] || touch "$gi_file"
+
+    local _added=0
+    local -a _new_entries=(
+        ".tekhton/BUILD_FIX_REPORT.md"
+        ".claude/preflight_bak/"
+    )
+    local entry
+    for entry in "${_new_entries[@]}"; do
+        if ! grep -qF "$entry" "$gi_file" 2>/dev/null; then
+            if (( _added == 0 )) && ! grep -qF "# Tekhton runtime artifacts" "$gi_file" 2>/dev/null; then
+                # Ensure newline before new block
+                if [[ -s "$gi_file" ]] && [[ "$(tail -c1 "$gi_file" | wc -l)" -eq 0 ]]; then
+                    printf '\n' >> "$gi_file"
+                fi
+                printf '\n# Tekhton runtime artifacts (added by V3.2 migration)\n' >> "$gi_file"
+            fi
+            printf '%s\n' "$entry" >> "$gi_file"
+            _added=$(( _added + 1 ))
+        fi
+    done
+
+    (( _added > 0 )) && log "Added ${_added} gitignore entry/entries for resilience arc artifacts."
+    return 0
+}
+```
+
+**Edge case — `.gitignore` section header already exists:** The inner
+`grep -qF "# Tekhton runtime artifacts"` guard prevents adding a second
+block header on projects that had `_ensure_gitignore_entries` run
+previously (e.g., via `--plan`). Each new entry gets its own
+idempotency guard.
+
+#### Sub-task C — `_032_create_preflight_bak_dir`
+
+Creates `.claude/preflight_bak/` so the backup path exists in the
+working tree before the first preflight auto-fix. This is a local
+convenience only — the backup directory is intentionally ignored by
+`.gitignore` and is not treated as a tracked asset.
+
+```bash
+_032_create_preflight_bak_dir() {
+    local project_dir="$1"
+    local bak_dir="${project_dir}/.claude/preflight_bak"
+
+    [[ -d "$bak_dir" ]] && return 0  # Already exists
+
+    mkdir -p "$bak_dir"
+    log "Created .claude/preflight_bak/ for preflight auto-fix backups."
+    return 0
+}
+```
+
+**Why no `.gitkeep`:** The entry added to `.gitignore` is
+`.claude/preflight_bak/`, which intentionally ignores the backup tree.
+Because the directory is operational state rather than a repository
+asset, the migration must not rely on a tracked sentinel file inside it.
+
+### Complete migration script
+
+```bash
+#!/usr/bin/env bash
+# =============================================================================
+# 031_to_032.sh — V3.1 → V3.2 migration
+#
+# Adds resilience arc config section to pipeline.conf (m126–m136):
+#   - Build-fix continuation loop keys
+#   - UI gate non-interactive enforcement keys
+#   - Preflight UI config audit keys
+# Updates .gitignore with new arc artifact paths.
+# Creates .claude/preflight_bak/ directory.
+#
+# Part of Tekhton migration framework — sourced by lib/migrate.sh
+# =============================================================================
+set -euo pipefail
+
+migration_version() { echo "3.2"; }
+
+migration_description() {
+    echo "Add resilience arc config (m126–m136): build-fix, UI gate, preflight audit"
+}
+
+migration_check() {
+    local project_dir="$1"
+    local conf_file="${project_dir}/.claude/pipeline.conf"
+    [[ -f "$conf_file" ]] || return 1
+    grep -q '^BUILD_FIX_ENABLED=' "$conf_file" 2>/dev/null && return 1
+    return 0
+}
+
+migration_apply() {
+    local project_dir="$1"
+    local conf_file="${project_dir}/.claude/pipeline.conf"
+    local gitignore_file="${project_dir}/.gitignore"
+    [[ -f "$conf_file" ]] || return 1
+    _032_append_arc_config_section "$conf_file"
+    _032_update_gitignore "$gitignore_file"
+    _032_create_preflight_bak_dir "$project_dir"
+    return 0
+}
+
+_032_append_arc_config_section() { ... }
+_032_update_gitignore() { ... }
+_032_create_preflight_bak_dir() { ... }
+```
+
+(Full function bodies from the design sections above.)
+
+### Migration runner integration
+
+No changes to `lib/migrate.sh` are needed. The runner auto-discovers
+scripts via `_list_migration_scripts` → `bash -c "source '$script' &&
+migration_version"`. Placing `031_to_032.sh` in `${TEKHTON_HOME}/migrations/`
+is sufficient.
+
+`detect_config_version` in `lib/migrate.sh` infers version from
+`TEKHTON_CONFIG_VERSION=` in `pipeline.conf`. After migration runs, the
+watermark is bumped by `_write_config_version` — no changes needed there
+either.
+
+**Existing V3.0 projects** (no `TEKHTON_DIR`): The `003_to_031.sh`
+migration runs first (3.0 → 3.1), then `031_to_032.sh` runs (3.1 → 3.2).
+Both are idempotent; the runner chains them automatically.
+
+**Projects with V3.1 already** (have `.tekhton/`): Only `031_to_032.sh`
+runs. `003_to_031.sh` is skipped (already applied — `_version_lt`
+filter).
+
+### Tests
+
+Add to `tests/test_migrate.sh` (or create `tests/test_migrate_032.sh`
+if the existing test file is already long):
+
+```
+T1: migration_check on a V3.1 conf without BUILD_FIX_ENABLED → returns 0 (needs migration)
+T2: migration_check on a conf with BUILD_FIX_ENABLED= → returns 1 (already migrated)
+T3: migration_check with no pipeline.conf → returns 1 (skip — express mode)
+T4: migration_apply on V3.1 conf → conf now contains BUILD_FIX_ENABLED=true
+T5: migration_apply on V3.1 conf → conf contains # BUILD_FIX_MAX_ATTEMPTS (commented)
+T6: migration_apply on V3.1 conf → .gitignore gains .tekhton/BUILD_FIX_REPORT.md
+T7: migration_apply on V3.1 conf → .gitignore gains .claude/preflight_bak/
+T8: migration_apply called twice (idempotency) → second call returns 1 (migration_check),
+    conf does not contain duplicate BUILD_FIX_ENABLED entries
+T9: migration_apply on conf with existing "# Tekhton runtime artifacts" section →
+    new gitignore entries appear after it, not in a second header block
+T10: .claude/preflight_bak/ directory created on fresh project
+T11: .claude/preflight_bak/ already exists → migration_apply does not fail,
+    no duplicate sentinel or failure
+T12: migration_apply on project with no .gitignore → creates .gitignore with entries
+```
+
+Fixture pattern:
+
+```bash
+# Create a minimal V3.1 pipeline.conf fixture
+cat > "${TMPDIR}/.claude/pipeline.conf" << 'EOF'
+PROJECT_NAME="test-project"
+TEKHTON_CONFIG_VERSION=3.1
+TEKHTON_DIR=".tekhton"
+BUILD_CHECK_CMD="npm run build"
+TEST_CMD="npm test"
+SECURITY_AGENT_ENABLED=true
+MILESTONE_DAG_ENABLED=true
+EOF
+```
+
+## Files Modified
+
+| File | Change |
+|------|--------|
+| `migrations/031_to_032.sh` | **New file.** Complete migration script with all four functions and three sub-tasks. |
+| `tests/test_migrate_032.sh` (or `tests/test_migrate.sh`) | 12 new test cases. |
+| `tekhton.sh` | Bump `TEKHTON_VERSION` to `3.137.0`. |
+| `.claude/milestones/MANIFEST.cfg` | Add M137 row (`depends_on=m135,m136`, group `resilience`). |
+
+No changes to any `lib/` files. Migration scripts are self-contained.
+
+## Acceptance Criteria
+
+- [ ] `migrations/031_to_032.sh` exists with correct `migration_version` → `"3.2"`.
+- [ ] `migration_check` returns `0` on a V3.1 pipeline.conf without `BUILD_FIX_ENABLED`.
+- [ ] `migration_check` returns `1` on a conf already containing `BUILD_FIX_ENABLED=`.
+- [ ] `migration_check` returns `1` when `pipeline.conf` does not exist.
+- [ ] `migration_apply` appends the V3.2 section with `BUILD_FIX_ENABLED=true` as the first line.
+- [ ] All thirteen arc vars are present in the appended section (1 active: `BUILD_FIX_ENABLED=true`; 12 commented).
+- [ ] `.gitignore` gains `.tekhton/BUILD_FIX_REPORT.md` after migration.
+- [ ] `.gitignore` gains `.claude/preflight_bak/` after migration.
+- [ ] Calling `migration_apply` twice does not produce duplicate `BUILD_FIX_ENABLED` lines.
+- [ ] `.claude/preflight_bak/` exists after migration on a fresh project.
+- [ ] `migration_apply` is a no-op (returns `0`) when `preflight_bak/` already exists.
+- [ ] The migration chains correctly after `003_to_031.sh` (V3.0 → V3.1 → V3.2) on a V3.0 project.
+- [ ] `shellcheck` clean for `migrations/031_to_032.sh`.
+- [ ] All 12 test cases pass.
+- [ ] `tekhton.sh` `TEKHTON_VERSION` is `3.137.0`.
+- [ ] `.claude/milestones/MANIFEST.cfg` contains the M137 row (`depends_on=m135,m136`, group `resilience`).
+
+## Watch For
+
+- **`migration_check` return codes are counter-intuitive.** `return 0` means the migration *is needed* and the runner will proceed. `return 1` means already applied or not applicable — the runner skips. This is the inverse of typical "success = 0" bash convention. The `run_migrations` loop reads `if ! migration_check "$project_dir"; then log "Already applied"` — the `!` inverts as expected. Do not swap the codes.
+- **`set -euo pipefail` propagates to the caller.** The script is `source`d (not run in a subshell) by `lib/migrate.sh`. `set -euo pipefail` at the top of the sourced script modifies the calling shell's options. This is the established pattern (`002_to_003.sh` and `003_to_031.sh` do the same) — follow it exactly, and do not add a balancing `set +euo pipefail` at the end.
+- **Private helper prefix `_032_` is load-order critical.** During a V3.0 → V3.1 → V3.2 chain, `002_to_003.sh` and `003_to_031.sh` are also sourced into the same shell session. All helper functions must carry the `_032_` prefix to prevent name collision with `_031_*` or `_003_*` helpers from those scripts.
+- **Sentinel key must be the first line emitted.** `BUILD_FIX_ENABLED=true` must appear as the first line in `_032_append_arc_config_section`'s heredoc. If the order is rearranged and the sentinel moves after another key, `migration_check` still works (grep matches anywhere in the file), but the stated design rationale breaks and future readers will be confused.
+- **Heredoc boundary blank lines.** The `cat >> "$conf_file" << 'EOF'` block begins with a blank line and ends with a blank line before `EOF`. This ensures exactly one blank line between the last existing content and the new section header, and one trailing blank line after the block. Do not remove either boundary line.
+- **`.gitignore` trailing-slash semantics.** The entry `.claude/preflight_bak/` (with trailing slash) intentionally ignores the backup directory tree. Preserve the trailing slash so the ignored path stays the directory itself rather than an over-broad filename pattern, and do not rely on a tracked sentinel file inside that tree.
+- **No changes to `lib/migrate.sh`.** The migration runner auto-discovers scripts by version; placing `031_to_032.sh` in the `migrations/` directory is all that is required. Do not modify the runner, `detect_config_version`, or `_write_config_version`.
+
+## Seeds Forward
+
+- **m138 — Runtime CI environment auto-detection.** The next arc milestone adds `_detect_runtime_ci_environment` and `_get_ci_platform_name` to `lib/config_defaults.sh`, executed before the `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` `:=` default. When a CI environment is detected and the variable is unset, m138 sets it to `1` automatically. m137's migration leaves `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` as a commented key in `pipeline.conf`; operators who uncomment and set it explicitly will have their value honoured by m138's logic. No file conflict.
+- **Future migration scripts (V3.3+).** The naming convention (`NNN_to_NNN.sh`), the `_NNN_*` private helper prefix, the sentinel-key idempotency pattern, and the four-function contract established here are the canonical template for subsequent migration scripts. Follow them.
+
+---
+
+## Archived: 2026-04-28 — Unknown Initiative
+
+<!-- milestone-meta
+id: "138"
+status: "done"
+-->
+
+# m138 — Resilience Arc: Runtime CI Environment Auto-Detection
+
+## Overview
+
+| Item | Detail |
+|------|--------|
+| **Arc motivation** | The m126–m137 resilience arc adds `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` to prevent interactive-reporter hangs in non-TTY environments. m136 declares the variable with a default of `0`. But a developer running Tekhton inside GitHub Actions who forgets to export `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1` in their workflow YAML will silently get the wrong behaviour — the gate will try to launch the interactive Playwright HTML reporter and time out. |
+| **Gap** | `detect_ci.sh` (m12) parses CI *config files* to discover build/test commands. No code anywhere detects whether the current Tekhton *process* is running inside a CI environment at runtime (i.e. by inspecting well-known CI environment variables such as `$GITHUB_ACTIONS`, `$CI`, `$JENKINS_URL`, etc.). |
+| **m138 fills** | When Tekhton starts inside a recognised CI environment and `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` has not been explicitly set in `pipeline.conf`, automatically set it to `1`. This makes the arc's non-interactive path the default for CI without any per-project configuration change. Explicit `pipeline.conf` values — including `=0` — are always honoured first. |
+| **Depends on** | m126 (gate reads the variable), m136 (formal variable declaration) |
+| **Files changed** | `lib/config_defaults.sh`, the file that owns `_normalize_ui_gate_env` after m126 lands (expected to be `lib/gates_ui.sh`), `tests/test_ci_environment_detection.sh`, `templates/pipeline.conf.example` |
+
+### Prior arc context
+
+| Milestone | Concern addressed |
+|-----------|------------------|
+| m126 | Deterministic UI gate execution; `_normalize_ui_gate_env` reads `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` |
+| m127 | Mixed-log classification |
+| m128 | Build-fix continuation loop |
+| m129 | Failure context schema hardening |
+| m130 | Causal-context-aware recovery routing |
+| m131 | Preflight UI config audit |
+| m132 | RUN_SUMMARY causal fidelity |
+| m133 | Diagnose rule enrichment |
+| m134 | Integration test suite |
+| m135 | Artifact lifecycle management |
+| m136 | Config defaults & validation — declares all 13 arc vars including `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0` |
+| m137 | V3.2 migration script |
+| **m138** | **Runtime CI auto-detection — zero-config non-interactive mode in CI** |
+
+---
+
+## Design
+
+### Sequencing note
+
+This milestone is specified against the **post-m126/post-m136** code shape, not the current live tree. Two consequences matter for the implementer:
+
+1. If `_normalize_ui_gate_env` lives somewhere other than `lib/gates_ui.sh` on the branch being implemented, patch the file that actually defines the function rather than forcing a move.
+2. If the m136 arc subsection has not landed yet in `templates/pipeline.conf.example`, m138 must either land after m136 or co-edit that subsection in the same change. Do not add a second parallel comment block elsewhere in the template.
+
+### Goal 1 — `_detect_runtime_ci_environment` in `lib/config_defaults.sh`
+
+Add a function that returns `0` (detected) or `1` (not CI) by inspecting well-known CI environment variables. No file I/O, no subshells, no external commands — pure bash variable tests.
+
+**Supported platforms and their detection signals:**
+
+| Platform | Environment variable | Test |
+|----------|---------------------|------|
+| GitHub Actions | `GITHUB_ACTIONS` | `== "true"` |
+| GitLab CI | `GITLAB_CI` | `== "true"` |
+| CircleCI | `CIRCLECI` | `== "true"` |
+| Travis CI | `TRAVIS` | `== "true"` |
+| Buildkite | `BUILDKITE` | `== "true"` |
+| Generic CI (most platforms set this) | `CI` | `== "true"` |
+| Jenkins | `JENKINS_URL` | non-empty |
+| Azure DevOps | `TF_BUILD` | non-empty |
+| TeamCity | `TEAMCITY_VERSION` | non-empty |
+| Bitbucket Pipelines | `BITBUCKET_BUILD_NUMBER` | non-empty |
+
+The `CI=true` check covers the generic case and is the last resort. It is checked only after the named-platform variables so that the verbose log can report the specific platform name when possible.
+
+**Placement in `lib/config_defaults.sh`:** add the function immediately before the arc config var block introduced by m136 (the block that starts with the `UI_GATE_ENV_RETRY_ENABLED` declaration). The CI detection must run before the `:=` defaults for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` so that it can set the variable to `1` before the `:=` no-op.
+
+```bash
+# _detect_runtime_ci_environment
+# Returns 0 if the current process is running inside a CI/CD system.
+# Returns 1 if no CI signals are found.
+# Detection is pure-bash (no subshells, no file I/O).
+_detect_runtime_ci_environment() {
+    # Named-platform fast-path (allows precise platform logging by callers)
+    [[ "${GITHUB_ACTIONS:-}"          == "true" ]] && return 0
+    [[ "${GITLAB_CI:-}"               == "true" ]] && return 0
+    [[ "${CIRCLECI:-}"                == "true" ]] && return 0
+    [[ "${TRAVIS:-}"                  == "true" ]] && return 0
+    [[ "${BUILDKITE:-}"               == "true" ]] && return 0
+    [[ -n "${JENKINS_URL:-}"                    ]] && return 0
+    [[ -n "${TF_BUILD:-}"                       ]] && return 0   # Azure DevOps
+    [[ -n "${TEAMCITY_VERSION:-}"               ]] && return 0
+    [[ -n "${BITBUCKET_BUILD_NUMBER:-}"         ]] && return 0
+    # Generic fallback: most platforms export CI=true
+    [[ "${CI:-}" == "true" ]] && return 0
+    return 1
+}
+
+# _get_ci_platform_name
+# Returns a human-readable CI platform name for log messages.
+# Caller must invoke _detect_runtime_ci_environment first.
+_get_ci_platform_name() {
+    [[ "${GITHUB_ACTIONS:-}"          == "true" ]] && echo "GitHub Actions"  && return
+    [[ "${GITLAB_CI:-}"               == "true" ]] && echo "GitLab CI"       && return
+    [[ "${CIRCLECI:-}"                == "true" ]] && echo "CircleCI"        && return
+    [[ "${TRAVIS:-}"                  == "true" ]] && echo "Travis CI"       && return
+    [[ "${BUILDKITE:-}"               == "true" ]] && echo "Buildkite"       && return
+    [[ -n "${JENKINS_URL:-}"                    ]] && echo "Jenkins"         && return
+    [[ -n "${TF_BUILD:-}"                       ]] && echo "Azure DevOps"    && return
+    [[ -n "${TEAMCITY_VERSION:-}"               ]] && echo "TeamCity"        && return
+    [[ -n "${BITBUCKET_BUILD_NUMBER:-}"         ]] && echo "Bitbucket Pipelines" && return
+    [[ "${CI:-}" == "true"                      ]] && echo "CI (generic)"    && return
+    echo "unknown"
+}
+```
+
+---
+
+### Goal 2 — `_apply_ci_ui_gate_defaults` in `lib/config_defaults.sh`
+
+m136 adds:
+
+```bash
+: "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}" # 0=auto 1=always force non-interactive gate env
+```
+
+m138 **replaces** that simple `:=` with a small helper function plus a one-line invocation at source time. The key invariant: **if the user set `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` explicitly in `pipeline.conf`, respect it unconditionally** — including if they set it to `0` to explicitly opt out of the auto-override.
+
+`_CONF_KEYS_SET` (populated by `_parse_config_file` before `config_defaults.sh` is sourced) is the authoritative list of keys the user has explicitly configured. Check membership in that set before applying the CI override.
+
+```bash
+# _apply_ci_ui_gate_defaults
+# Applies the m138 source-time defaulting rule for
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE.
+#
+# Invariant: explicit pipeline.conf values (including =0) always win.
+# _CONF_KEYS_SET is populated by _parse_config_file before config_defaults.sh
+# is sourced, so it contains exactly the keys the user wrote.
+_apply_ci_ui_gate_defaults() {
+    if [[ " ${_CONF_KEYS_SET:-} " != *" TEKHTON_UI_GATE_FORCE_NONINTERACTIVE "* ]] && \
+       _detect_runtime_ci_environment; then
+        TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1
+        TEKHTON_CI_ENVIRONMENT_DETECTED=1
+        if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
+            echo "[tekhton] CI environment detected ($(_get_ci_platform_name)) — TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1 (auto)" >&2
+        fi
+    else
+        : "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:=0}"
+        TEKHTON_CI_ENVIRONMENT_DETECTED=0
+    fi
+
+    export TEKHTON_UI_GATE_FORCE_NONINTERACTIVE
+    export TEKHTON_CI_ENVIRONMENT_DETECTED
+}
+
+_apply_ci_ui_gate_defaults
+```
+
+**Why use a helper instead of a raw source-time block:** it eliminates logic duplication in the tests, keeps the source-time behavior easy to re-run in isolation, and gives future arc milestones a single function to call if they need to recompute the default after config mutation in a harness.
+
+**Why no `local` variable for the platform name:** `config_defaults.sh` is sourced at top level, so top-level logic must stay declaration-safe. Keeping the platform lookup inside a helper avoids that constraint for future refactors, but there is still no need to add a local variable here because the name is used exactly once and only on the verbose path.
+
+**`TEKHTON_CI_ENVIRONMENT_DETECTED`** is exported as `1` or `0`. It is a diagnostic-only signal consumed by:
+- `_normalize_ui_gate_env` in `lib/gates_ui.sh` (Goal 3 below) for verbose logging
+- `tests/test_ci_environment_detection.sh` (Goal 4) for assertions
+- Future: health dimension or dashboard arc panel
+
+---
+
+### Goal 3 — Verbose log annotation in the `_normalize_ui_gate_env` owner file
+
+`_normalize_ui_gate_env` (introduced by m126) already logs the value of `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE`. m138 adds a one-liner to that function's verbose output section that includes the CI detection source, making it easy to see *why* the variable was set:
+
+**Location:** inside `_normalize_ui_gate_env`, immediately after the block that exports `PLAYWRIGHT_BROWSERS_PATH` / `CI` / etc. — in the verbose log block that already describes the normalised env. On the expected m126 landing shape this is `lib/gates_ui.sh`; if m126 landed elsewhere, patch the actual owner file and keep the change local.
+
+```bash
+# Within _normalize_ui_gate_env's verbose section (after the env-export block):
+if [[ "${TEKHTON_CI_ENVIRONMENT_DETECTED:-0}" == "1" ]]; then
+    log_verbose "[gate-env] TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1 was set automatically (CI auto-detect)"
+fi
+```
+
+This is additive — one conditional `log_verbose` call. No structural change to the gate logic.
+
+---
+
+### Goal 4 — `tests/test_ci_environment_detection.sh`
+
+New test file. 10 scenarios. Uses a minimal inline harness (same pattern as `test_validate_config.sh`).
+
+**Test setup pattern:**
+
+```bash
+#!/usr/bin/env bash
+# Test: Runtime CI environment auto-detection (m138)
+# Tests _detect_runtime_ci_environment(), _get_ci_platform_name(), and
+# _apply_ci_ui_gate_defaults() in config_defaults.sh.
+set -euo pipefail
+
+TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+PASS=0; FAIL=0
+pass() { echo "  PASS: $*"; PASS=$((PASS + 1)); }
+fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
+
+# Stub functions needed by config_defaults.sh that may not be available standalone
+log()          { :; }
+warn()         { :; }
+log_verbose()  { :; }
+_clamp_config_value() { :; }        # stub m136's existing clamp helper
+_clamp_config_float() { :; }        # stub m136's existing clamp helper
+
+# Source only config_defaults.sh — it defines _detect_runtime_ci_environment
+# shellcheck source=../lib/config_defaults.sh
+source "${TEKHTON_HOME}/lib/config_defaults.sh"
+```
+
+**Scenarios:**
+
+| # | Name | Setup | Expected outcome |
+|---|------|-------|-----------------|
+| T1 | No CI vars set | unset all known CI vars | `_detect_runtime_ci_environment` returns 1 |
+| T2 | `GITHUB_ACTIONS=true` | export `GITHUB_ACTIONS=true`, clear others | returns 0; platform name = "GitHub Actions" |
+| T3 | `GITLAB_CI=true` | export `GITLAB_CI=true` | returns 0; platform name = "GitLab CI" |
+| T4 | `CIRCLECI=true` | export `CIRCLECI=true` | returns 0; platform name = "CircleCI" |
+| T5 | `JENKINS_URL=http://...` | export non-empty `JENKINS_URL` | returns 0; platform name = "Jenkins" |
+| T6 | Generic `CI=true` | export `CI=true`, clear named-platform vars | returns 0; platform name = "CI (generic)" |
+| T7 | Auto-elevation: CI + no conf key | `GITHUB_ACTIONS=true`, `_CONF_KEYS_SET=""` | `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1`; `TEKHTON_CI_ENVIRONMENT_DETECTED=1` |
+| T8 | Explicit `=0` in pipeline.conf respected | `GITHUB_ACTIONS=true`, `_CONF_KEYS_SET="... TEKHTON_UI_GATE_FORCE_NONINTERACTIVE ..."`, set var to `0` | var stays `0`; auto-elevation suppressed |
+| T9 | Explicit `=1` in pipeline.conf preserved | `_CONF_KEYS_SET` includes key, var already `1` | var stays `1` (`:=` no-op) |
+| T10 | No CI + no conf key → defaults to `0` | no CI vars, `_CONF_KEYS_SET=""` | `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0`; `TEKHTON_CI_ENVIRONMENT_DETECTED=0` |
+
+**T7 fixture (auto-elevation):**
+
+```bash
+echo "=== T7: CI detected + no conf key → auto-elevation to 1 ==="
+# Reset state from previous tests
+unset TEKHTON_UI_GATE_FORCE_NONINTERACTIVE TEKHTON_CI_ENVIRONMENT_DETECTED
+export GITHUB_ACTIONS=true
+_CONF_KEYS_SET=""   # key not in user's pipeline.conf
+
+# Re-run the same helper that config_defaults.sh invokes at source time.
+_apply_ci_ui_gate_defaults
+
+[[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE}" == "1" ]] && \
+    pass "T7: TEKHTON_UI_GATE_FORCE_NONINTERACTIVE auto-elevated to 1" || \
+    fail "T7: expected 1, got ${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE:-<unset>}"
+
+[[ "${TEKHTON_CI_ENVIRONMENT_DETECTED}" == "1" ]] && \
+    pass "T7: TEKHTON_CI_ENVIRONMENT_DETECTED=1" || \
+    fail "T7: TEKHTON_CI_ENVIRONMENT_DETECTED expected 1, got ${TEKHTON_CI_ENVIRONMENT_DETECTED:-<unset>}"
+unset GITHUB_ACTIONS
+```
+
+**T8 fixture (explicit `=0` wins):**
+
+```bash
+echo "=== T8: Explicit pipeline.conf =0 wins over CI detection ==="
+unset TEKHTON_UI_GATE_FORCE_NONINTERACTIVE TEKHTON_CI_ENVIRONMENT_DETECTED
+export GITHUB_ACTIONS=true
+TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0    # user explicitly set this
+_CONF_KEYS_SET="PROJECT_NAME TEKHTON_UI_GATE_FORCE_NONINTERACTIVE TEST_CMD"
+_apply_ci_ui_gate_defaults
+
+[[ "${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE}" == "0" ]] && \
+    pass "T8: explicit =0 honoured (auto-elevation suppressed)" || \
+    fail "T8: expected 0, got ${TEKHTON_UI_GATE_FORCE_NONINTERACTIVE}"
+unset GITHUB_ACTIONS
+```
+
+**Standard summary block (same tail as every test file):**
+
+```bash
+echo ""
+echo "Results: ${PASS} passed, ${FAIL} failed"
+[[ "$FAIL" -eq 0 ]] || exit 1
+```
+
+---
+
+### Goal 5 — `templates/pipeline.conf.example` comment update
+
+In the arc subsection added by m136, the comment for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` currently reads:
+
+```
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0
+```
+
+m138 expands it to:
+
+```
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0
+# ^ Auto-set to 1 when running inside CI (GitHub Actions, GitLab CI, CircleCI,
+#   Jenkins, Azure DevOps, Buildkite, TeamCity, Bitbucket, Travis, CI=true).
+#   Uncomment and set to 0 to suppress the auto-override in CI.
+#   Uncomment and set to 1 to force non-interactive mode locally.
+```
+
+This change is made inside the arc subsection's comment block, keeping the example self-documenting for operators who read it.
+
+Because the current live template does not yet contain the m136 arc subsection, the implementation rule is: anchor this edit to the `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` line inside that subsection once m136 lands. If m136 has not landed on the branch, land the subsection first and then expand the comment in place.
+
+---
+
+## Files Modified
+
+| File | Change type | Description |
+|------|------------|-------------|
+| `lib/config_defaults.sh` | Add + modify | `_detect_runtime_ci_environment()`, `_get_ci_platform_name()`, `_apply_ci_ui_gate_defaults()`, and source-time invocation replacing the simple `:=0` default from m136 |
+| `_normalize_ui_gate_env` owner file | Add (2 lines) | Verbose log annotation when `TEKHTON_CI_ENVIRONMENT_DETECTED=1`; expected file is `lib/gates_ui.sh` after m126 lands |
+| `tests/test_ci_environment_detection.sh` | Create | 10-scenario test file for both helper functions and the auto-elevation logic via `_apply_ci_ui_gate_defaults()` |
+| `templates/pipeline.conf.example` | Modify | Expand 1-line comment to 4-line self-documenting block for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` |
+
+---
+
+## Acceptance Criteria
+
+- [ ] `_detect_runtime_ci_environment` returns `0` for each named CI signal plus the generic `CI=true` fallback, and returns `1` when none are set.
+- [ ] `_get_ci_platform_name` returns the correct human-readable string for each platform; returns `"unknown"` when none are set.
+- [ ] `_apply_ci_ui_gate_defaults` is the only place that implements the CI auto-elevation rule; the source-time code path invokes that helper directly rather than duplicating its logic inline.
+- [ ] When Tekhton starts with `GITHUB_ACTIONS=true` (or any other recognised CI signal) and `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` is **not** in `pipeline.conf`, the variable is set to `1` and `TEKHTON_CI_ENVIRONMENT_DETECTED=1` is exported.
+- [ ] When `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=0` is **explicitly present** in `pipeline.conf` (i.e. its key appears in `_CONF_KEYS_SET`), the value `0` is preserved even inside CI — no auto-elevation.
+- [ ] When `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1` is explicitly present in `pipeline.conf`, the value `1` is preserved (`:=` is a no-op).
+- [ ] When no CI signals are present and the key is absent from `pipeline.conf`, `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` defaults to `0` and `TEKHTON_CI_ENVIRONMENT_DETECTED=0`.
+- [ ] `_normalize_ui_gate_env` emits a `log_verbose` line mentioning "CI auto-detect" when `TEKHTON_CI_ENVIRONMENT_DETECTED=1`.
+- [ ] `VERBOSE_OUTPUT=true` with a CI env var set prints a diagnostic message to stderr during config loading; `VERBOSE_OUTPUT=false` (default) prints nothing.
+- [ ] All 10 tests in `tests/test_ci_environment_detection.sh` pass: T1–T6 (function unit tests), T7–T10 (integration conditional block tests).
+- [ ] `test_validate_config.sh` continues to pass unchanged (no regression in the Check D `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` validation path from m136, which validates `0` or `1`; auto-detected `1` is still valid).
+- [ ] The `templates/pipeline.conf.example` comment for `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` explains the CI auto-detection behaviour in four lines.
+- [ ] `_detect_runtime_ci_environment` and `_get_ci_platform_name` are pure bash: no subshells (`$()`), no external commands, no file reads. Verified by `declare -f` inspection showing only `[[` tests and `return`.
+
+## Watch For
+
+- `config_defaults.sh` is sourced after `_parse_config_file`, so `_CONF_KEYS_SET` is available here. Do not re-parse `pipeline.conf` or add file I/O to recompute explicit-key membership.
+- Keep the runtime-CI logic in one helper. Re-implementing the conditional block inline in tests or in adjacent milestones invites drift.
+- The current live repo does not yet contain the m136 arc subsection in `templates/pipeline.conf.example`. Land m136's subsection first or co-land it here; do not scatter CI override comments into unrelated template sections.
+- The current live repo also does not yet expose `_normalize_ui_gate_env` in `lib/gates_ui.sh`. Patch the file that actually owns the function on the implementation branch; the function definition is the anchor, not the filename.
+- `CI=true` is a fallback, not the preferred identity. Check named CI signals first so logs and future health surfaces can report a specific platform when available.
+- `tests/run_tests.sh` already auto-discovers `tests/test_*.sh`. Adding `tests/test_ci_environment_detection.sh` should not require editing the runner unless the naming convention changes.
+
+## Seeds Forward
+
+- **m134 integration suite extension:** m134 already calls out CI-runtime scenarios. Keep the helper names and env signal vocabulary stable so the integration suite can add CI cases without rediscovering m138 internals.
+- **m135 artifact lifecycle:** recovered CI auto-detect behavior should remain success-path quiet. Do not introduce new persisted artifacts for this milestone beyond normal gate diagnostics on terminal failure paths.
+- **m137 migration consistency:** if a follow-up amends m137's migrated arc block or a later migration re-renders that section, reuse the final `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` wording here rather than introducing a third variant.
+- **Future observability/health work:** `TEKHTON_CI_ENVIRONMENT_DETECTED` is intentionally diagnostic. Keep it binary and stable so later health or dashboard milestones can read it without parsing logs.
+- **Future CI-platform-specific tuning:** if a later milestone needs platform-specific behavior, extend `_get_ci_platform_name`/`_detect_runtime_ci_environment` rather than teaching downstream gate code to infer platforms independently.

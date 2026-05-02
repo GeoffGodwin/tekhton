@@ -5,7 +5,7 @@
 
   <p><strong>One intent. Many hands.</strong></p>
 
-  <p><em>v3.125.4 — Context-Aware Pipeline</em></p>
+  <p><em>v3.138.4 — Resilience Arc & Migration</em></p>
 </div>
 
 ## What is Tekhton?
@@ -136,6 +136,7 @@ path; these pages cover everything else.
 | Specialist reviews (security, UI/UX, perf, API) | [docs/specialists.md](./docs/specialists.md) |
 | Watchtower browser dashboard | [docs/watchtower.md](./docs/watchtower.md) |
 | Run metrics and adaptive calibration | [docs/metrics.md](./docs/metrics.md) |
+| RUN_SUMMARY.json schema reference | [docs/reference/run-summary-schema.md](./docs/reference/run-summary-schema.md) |
 | Context budgeting and clarification protocol | [docs/context.md](./docs/context.md) |
 | Project crawling and tech stack detection | [docs/crawling.md](./docs/crawling.md) |
 | Architecture drift prevention | [docs/drift.md](./docs/drift.md) |

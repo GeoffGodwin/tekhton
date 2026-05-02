@@ -342,6 +342,19 @@ auto-remediates safe issues via the M54 engine.
 | `PREFLIGHT_FIX_MODEL` | *(same as jr coder)* | Model for the pre-flight fix agent |
 | `PREFLIGHT_FIX_MAX_TURNS` | *(same as jr coder turns)* | Turn budget per fix attempt |
 
+### UI Test Framework Config Audit (M131)
+
+When `UI_TEST_CMD` is configured, pre-flight scans test framework configs for settings
+that produce interactive or non-terminating test runs. See
+[troubleshooting/preflight.md](../troubleshooting/preflight.md#ui-test-framework-config-audit)
+for detailed findings and fixes.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `PREFLIGHT_UI_CONFIG_AUDIT_ENABLED` | `true` | Master toggle for UI test framework config audit |
+| `PREFLIGHT_UI_CONFIG_AUTO_FIX` | `true` | Auto-patch Playwright html reporter (PW-1). Falls back to `PREFLIGHT_AUTO_FIX` when unset. |
+| `PREFLIGHT_BAK_DIR` | `.claude/preflight_bak` | Directory for backups of auto-patched config files |
+
 ### Auto-Remediation Engine
 
 The error pattern registry classifies build/test failures and runs `safe`-rated
@@ -365,6 +378,22 @@ defaults are conservative.
 | `TESTER_FIX_MAX_TURNS` | `CODER_MAX_TURNS / 3` | Turn budget per inline fix |
 | `TESTER_FIX_OUTPUT_LIMIT` | `4000` | Max chars of test output passed to the fix agent |
 | `COMPLETION_GATE_TEST_ENABLED` | `true` | Run `TEST_CMD` inside the completion gate (M63) instead of trusting the coder's "COMPLETE" claim |
+
+## Build-Fix Continuation Loop (M128)
+
+The post-coder build gate retries via a bounded loop in
+`stages/coder_buildfix.sh`. See [resilience.md](../resilience.md#build-fix-continuation-loop-m128)
+for the outcome vocabulary and progress-gate semantics.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `BUILD_FIX_ENABLED` | `true` | Master toggle for the build-fix continuation loop. `false` short-circuits to `build_failure` on first gate fail (legacy single-attempt behavior) |
+| `BUILD_FIX_MAX_ATTEMPTS` | `3` | Max attempts inside the loop. Set to `1` to reproduce pre-M128 behavior (rollback safety) |
+| `BUILD_FIX_BASE_TURN_DIVISOR` | `3` | Base turn budget = `EFFECTIVE_CODER_MAX_TURNS / DIVISOR`, floored at 8 |
+| `BUILD_FIX_MAX_TURN_MULTIPLIER` | `100` | Upper-bound multiplier × base, expressed as integer percent (`100` = 1.0×, `200` = 2.0×). Bash has no float math; values are integer-only |
+| `BUILD_FIX_REQUIRE_PROGRESS` | `true` | When `true`, the loop halts on attempt N≥2 if the progress signal is `unchanged` or `worsened` |
+| `BUILD_FIX_TOTAL_TURN_CAP` | `120` | Cumulative turn budget across all attempts. The next attempt's budget is clamped to `cap - used`; below the 8-turn floor the loop exits with `OUTCOME=exhausted` |
+| `BUILD_FIX_REPORT_FILE` | `${TEKHTON_DIR}/BUILD_FIX_REPORT.md` | Per-attempt postmortem artifact (turn budget, terminal class, gate result, progress signal, error-count delta, M127 routing token) |
 
 ## AI Artifact Detection
 

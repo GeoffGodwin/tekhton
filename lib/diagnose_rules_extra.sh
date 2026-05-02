@@ -10,12 +10,14 @@ set -euo pipefail
 #
 # Provides:
 #   _rule_stuck_loop          — MAX_PIPELINE_ATTEMPTS with no progress
+#   _rule_mixed_classification — Mixed-uncertain classification (M133, low conf)
 #   _rule_turn_exhaustion     — Agent max-turns without completion (fallback)
 #   _rule_split_depth         — MILESTONE_MAX_SPLIT_DEPTH exceeded
 #   _rule_transient_error     — Transient API errors
 #   _rule_test_audit_failure  — Test audit NEEDS_WORK after max rework cycles
-#   _rule_migration_crash     — Failed migration (LAST_FAILURE_CONTEXT or backups)
-#   _rule_version_mismatch    — Project config version behind running Tekhton
+#   _rule_quota_exhausted     — Pipeline paused waiting for quota refresh
+#   _rule_unknown             — Catch-all fallback
+# Migration & version-mismatch rules live in lib/diagnose_rules_migration.sh.
 # =============================================================================
 
 # _rule_stuck_loop
@@ -45,6 +47,55 @@ _rule_stuck_loop() {
         "  2. Break it into smaller milestones:"
         "     tekhton --add-milestone \"<smaller scope>\""
         "  3. Check the scout report for scope issues"
+    )
+    return 0
+}
+
+# _rule_mixed_classification
+# M133: cautious explanation for failures the resilience arc tagged
+# `mixed_uncertain` — the system itself was uncertain about a single cause,
+# so this rule deliberately stays low-confidence and biases toward inspection.
+#
+# Sources:
+#   1. LAST_FAILURE_CONTEXT.json classification = MIXED_UNCERTAIN
+#   2. LAST_FAILURE_CONTEXT.json primary_cause.signal = mixed_uncertain_classification
+#   3. RUN_SUMMARY.json causal_context.primary_signal = mixed_uncertain_classification
+_rule_mixed_classification() {
+    local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
+    local summary_file="${PROJECT_DIR:-.}/.claude/logs/RUN_SUMMARY.json"
+
+    local matched=false
+    if [[ "${_DIAG_LAST_CLASSIFICATION:-}" = "MIXED_UNCERTAIN" ]]; then
+        matched=true
+    fi
+    if [[ "$matched" != true ]] && [[ "${_DIAG_PRIMARY_SIGNAL:-}" = "mixed_uncertain_classification" ]]; then
+        matched=true
+    fi
+    if [[ "$matched" != true ]] && [[ -f "$failure_ctx" ]]; then
+        if grep -q '"signal"\s*:\s*"mixed_uncertain_classification"' "$failure_ctx" 2>/dev/null; then
+            matched=true
+        fi
+    fi
+    if [[ "$matched" != true ]] && [[ -f "$summary_file" ]]; then
+        if grep -q '"primary_signal"\s*:\s*"mixed_uncertain_classification"' "$summary_file" 2>/dev/null; then
+            matched=true
+        fi
+    fi
+
+    [[ "$matched" = true ]] || return 1
+
+    local raw_path="${BUILD_RAW_ERRORS_FILE:-${TEKHTON_DIR:-.tekhton}/BUILD_RAW_ERRORS.txt}"
+
+    DIAG_CLASSIFICATION="MIXED_UNCERTAIN_CLASSIFICATION"
+    DIAG_CONFIDENCE="low"
+    DIAG_SUGGESTIONS=(
+        "The build classifier could not confidently identify a single cause."
+        "Some signals looked like code errors; others looked environmental."
+        "Inspect the raw error stream first — root cause likely sits at the top:"
+        "  cat ${raw_path}"
+        "Look for the FIRST causal error, not the last cascade."
+        "If the first failure looks environmental, re-run preflight:"
+        "  tekhton --preflight"
     )
     return 0
 }
@@ -179,78 +230,39 @@ _rule_test_audit_failure() {
     return 0
 }
 
-# _rule_migration_crash
-# Detect failed migration via LAST_FAILURE_CONTEXT or backup dirs.
-_rule_migration_crash() {
-    local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
-    if [[ -f "$failure_ctx" ]]; then
-        local class
-        class=$(grep -oP '"classification"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
-        if [[ "$class" = "MIGRATION_FAILURE" ]]; then
-            local from_ver to_ver
-            from_ver=$(grep -oP '"migration_from"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
-            to_ver=$(grep -oP '"migration_to"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
-            DIAG_CLASSIFICATION="MIGRATION_FAILURE"
-            DIAG_CONFIDENCE="high"
-            DIAG_SUGGESTIONS=(
-                "Migration from V${from_ver:-?} to V${to_ver:-?} failed."
-                "This usually happens when running express mode (no pipeline.conf) against an older Tekhton version."
-                "Options:"
-                "  1. Rollback the failed migration: tekhton --migrate --rollback"
-                "  2. Initialize the project properly: tekhton --init"
-                "  3. If already rolled back, re-run your task — the fix should prevent recurrence"
-            )
-            return 0
-        fi
-    fi
+# Migration / version-mismatch rules live in a sibling file.
+# shellcheck source=lib/diagnose_rules_migration.sh
+source "${TEKHTON_HOME:?}/lib/diagnose_rules_migration.sh"
 
-    local backup_base="${PROJECT_DIR:-.}/${MIGRATION_BACKUP_DIR:-.claude/migration-backups}"
-    if compgen -G "${backup_base}/pre-*" >/dev/null 2>&1; then
-        local conf_file="${PROJECT_DIR:-.}/.claude/pipeline.conf"
-        if [[ ! -f "$conf_file" ]] || ! grep -q '^TEKHTON_CONFIG_VERSION=' "$conf_file" 2>/dev/null; then
-            DIAG_CLASSIFICATION="MIGRATION_FAILURE"
-            DIAG_CONFIDENCE="medium"
-            DIAG_SUGGESTIONS=(
-                "A migration backup exists but the migration did not complete."
-                "Options:"
-                "  1. Rollback: tekhton --migrate --rollback"
-                "  2. Retry migration: tekhton --migrate"
-                "  3. Initialize fresh: tekhton --init"
-            )
-            return 0
-        fi
-    fi
+# _rule_quota_exhausted
+# Detect rate limit pause. Moved from diagnose_rules.sh under M129 to keep
+# the primary file under the 300-line ceiling.
+_rule_quota_exhausted() {
+    local quota_marker="${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED"
+    [[ -f "$quota_marker" ]] || return 1
 
-    return 1
+    DIAG_CLASSIFICATION="QUOTA_EXHAUSTED"
+    DIAG_CONFIDENCE="high"
+    DIAG_SUGGESTIONS=(
+        "Pipeline paused waiting for quota refresh."
+        "It will resume automatically. No action needed."
+        "If you need it sooner, wait for your 5-hour window to refresh."
+    )
+    return 0
 }
 
-# _rule_version_mismatch
-# Detect project config version behind running Tekhton version.
-_rule_version_mismatch() {
-    local conf_file="${PROJECT_DIR:-.}/.claude/pipeline.conf"
-    [[ -f "$conf_file" ]] || return 1
-
-    command -v detect_config_version &>/dev/null || return 1
-
-    local config_ver
-    config_ver=$(detect_config_version "${PROJECT_DIR:-.}" 2>/dev/null || echo "")
-    [[ -n "$config_ver" ]] || return 1
-
-    local running_ver="${TEKHTON_VERSION%.*}"
-    running_ver="${running_ver:-0.0}"
-
-    command -v _version_lt &>/dev/null || return 1
-    _version_lt "$config_ver" "$running_ver" || return 1
-
-    # shellcheck disable=SC2034  # DIAG_* globals read by lib/diagnose.sh
-    DIAG_CLASSIFICATION="VERSION_MISMATCH"
+# _rule_unknown
+# Fallback catch-all — always matches. Moved from diagnose_rules.sh under M129.
+_rule_unknown() {
     # shellcheck disable=SC2034
-    DIAG_CONFIDENCE="medium"
+    DIAG_CLASSIFICATION="UNKNOWN"
+    # shellcheck disable=SC2034
+    DIAG_CONFIDENCE="low"
     # shellcheck disable=SC2034
     DIAG_SUGGESTIONS=(
-        "Project config is V${config_ver} but Tekhton is V${running_ver}."
-        "This may cause features to not work as expected."
-        "Run: tekhton --migrate"
+        "No specific failure pattern identified."
+        "Check the latest agent output in .claude/logs/"
+        "Re-run with DASHBOARD_VERBOSITY=verbose for more detail"
     )
     return 0
 }

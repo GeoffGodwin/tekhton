@@ -9,6 +9,9 @@
 # Source pre-coder clean sweep (M92)
 # shellcheck source=stages/coder_prerun.sh
 source "${TEKHTON_HOME}/stages/coder_prerun.sh"
+# Source confidence-based build-fix routing (M127)
+# shellcheck source=stages/coder_buildfix.sh
+source "${TEKHTON_HOME}/stages/coder_buildfix.sh"
 
 # _switch_to_sub_milestone — After a milestone split, update state to target
 # the first sub-milestone (N.1). Sets _CURRENT_MILESTONE, TASK, and milestone
@@ -98,6 +101,11 @@ run_stage_coder() {
     local _stage_count="${PIPELINE_STAGE_COUNT:-4}"
     local _stage_pos="${PIPELINE_STAGE_POS:-1}"
     stage_header "${_stage_pos}" "${_stage_count}" "Coder"
+
+    # M128: reset Goal-7 BUILD_FIX_* stats — must be set on every exit path
+    # so M132's _collect_build_fix_stats_json sees a stable shape.
+    export BUILD_FIX_ATTEMPTS=0 BUILD_FIX_TURN_BUDGET_USED=0 \
+        BUILD_FIX_PROGRESS_GATE_FAILURES=0 BUILD_FIX_OUTCOME="not_run"
 
     # --- Pre-coder clean sweep (M92) -----------------------------------------
     # If tests are failing before the coder runs, spawn a restricted fix agent
@@ -1098,75 +1106,14 @@ ${GIT_DIFF_STAT}
         fi
     fi
 
-    # --- Build gate (with one retry) -----------------------------------------
+    # --- Build gate (retry depth driven by BUILD_FIX_MAX_ATTEMPTS) -----------
 
-    BUILD_GATE_RETRY=0
     if ! run_build_gate "post-coder"; then
-        if [ "$BUILD_GATE_RETRY" -lt 1 ]; then
-            BUILD_GATE_RETRY=1
-
-            # --- M53: Classify errors and route appropriately ---
-            # Read raw error lines (not the annotated markdown) for classification
-            local _raw_errors=""
-            if [[ -f "${BUILD_RAW_ERRORS_FILE}" ]]; then
-                _raw_errors=$(_safe_read_file "${BUILD_RAW_ERRORS_FILE}" "BUILD_RAW_ERRORS")
-            else
-                _raw_errors=$(_safe_read_file "${BUILD_ERRORS_FILE}" "BUILD_ERRORS")
-            fi
-
-            # Check if ALL errors are non-code (env/service/toolchain/resource/test_infra)
-            if command -v has_only_noncode_errors &>/dev/null \
-                && has_only_noncode_errors "$_raw_errors"; then
-                warn "All build errors are non-code (environment/setup). Skipping build-fix agent."
-                warn "These errors require environment remediation, not code changes."
-                # Log non-code errors to "${HUMAN_ACTION_FILE}" if available
-                if command -v append_human_action &>/dev/null; then
-                    append_human_action "build_gate" \
-                        "Non-code build errors detected. See ${BUILD_ERRORS_FILE} for details."
-                fi
-                write_pipeline_state \
-                    "coder" \
-                    "env_failure" \
-                    "$(_build_resume_flag coder)" \
-                    "$TASK" \
-                    "Build failed with environment errors (not code bugs). See ${BUILD_ERRORS_FILE}."
-                error "State saved. Fix environment issues in ${BUILD_ERRORS_FILE} then re-run."
-                exit 1
-            fi
-
-            # Filter to code-only errors for the build-fix agent (M53)
-            warn "Invoking coder to fix build errors (1 retry allowed)..."
-            export BUILD_ERRORS_CONTENT
-            if command -v filter_code_errors &>/dev/null; then
-                BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" \
-                    "$(filter_code_errors "$_raw_errors")")
-            else
-                BUILD_ERRORS_CONTENT=$(_wrap_file_content "BUILD_ERRORS" "$_raw_errors")
-            fi
-            BUILD_FIX_PROMPT=$(render_prompt "build_fix")
-
-            local _bf_base="${EFFECTIVE_CODER_MAX_TURNS:-$CODER_MAX_TURNS}"
-            run_agent \
-                "Coder (build fix)" \
-                "$CLAUDE_CODER_MODEL" \
-                "$((_bf_base / 3))" \
-                "$BUILD_FIX_PROMPT" \
-                "$LOG_FILE" \
-                "$AGENT_TOOLS_BUILD_FIX"
-            log "Build fix coder finished."
-
-            if ! run_build_gate "post-coder-fix"; then
-                error "Build gate failed again after fix attempt."
-                write_pipeline_state \
-                    "coder" \
-                    "build_failure" \
-                    "$(_build_resume_flag coder)" \
-                    "$TASK" \
-                    "Build errors remain after auto-fix attempt. See ${BUILD_ERRORS_FILE}."
-                error "State saved. Review ${BUILD_ERRORS_FILE} manually then re-run."
-                exit 1
-            fi
-        fi
+        # M127 classifies routing (LAST_BUILD_CLASSIFICATION); M128 wraps
+        # dispatch in an attempt-bounded loop with adaptive budgets and
+        # progress gating. The loop exports the four Goal-7 BUILD_FIX_*
+        # stats vars on every exit path for M132 consumption.
+        run_build_fix_loop
     fi
 
     # --- Record task→file association for personalized ranking (M7) ----------

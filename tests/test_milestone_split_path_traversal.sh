@@ -52,7 +52,7 @@ test_guard_precedes_write() {
     guard_line=$(grep -n 'if.*sub_file.*\*\/\*' "$file" | cut -d: -f1)
 
     local write_line
-    write_line=$(grep -n 'echo.*sub_block.*>.*milestone_dir' "$file" | cut -d: -f1)
+    write_line=$(grep -nE '(echo|printf).*sub_block.*>.*milestone_dir' "$file" | cut -d: -f1)
 
     if [[ -z "$guard_line" ]] || [[ -z "$write_line" ]]; then
         fail "could not locate guard or write in source file"

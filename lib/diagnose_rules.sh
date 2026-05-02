@@ -5,21 +5,13 @@ set -euo pipefail
 #
 # Sourced by lib/diagnose.sh — do not run directly.
 # Expects: _DIAG_* module state populated by _read_diagnostic_context()
-# Expects: PROJECT_DIR (set by caller)
 #
-# Provides (primary rules):
-#   DIAGNOSE_RULES         — priority-ordered array of rule functions
-#   _rule_build_failure    — ${BUILD_ERRORS_FILE} non-empty
-#   _rule_max_turns        — Agent hit max_turns (fast-path from state files)
-#   _rule_review_loop      — 3+ review cycles with no approval
-#   _rule_security_halt    — Security HALT verdict
-#   _rule_intake_clarity   — Intake pause for clarification
-#   _rule_quota_exhausted  — Rate limit pause
-#   _rule_unknown          — Fallback catch-all
+# Provides (primary rules): _rule_build_failure, _rule_max_turns,
+#   _rule_review_loop, _rule_security_halt, _rule_intake_clarity,
+#   _rule_quota_exhausted, _rule_unknown, plus DIAGNOSE_RULES priority array.
 #
-# Secondary rules (stuck_loop, turn_exhaustion, split_depth, transient_error,
-# test_audit_failure, migration_crash, version_mismatch) live in
-# lib/diagnose_rules_extra.sh — sourced at the end of this file.
+# Secondary rules live in lib/diagnose_rules_extra.sh; M133 resilience-arc
+# rules live in lib/diagnose_rules_resilience.sh — both sourced below.
 # =============================================================================
 
 # --- Shared state for matched rule -----------------------------------------
@@ -80,8 +72,11 @@ _rule_max_turns() {
     local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
     local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.md}"
 
-    local _cat="" _sub=""
-    if [[ -f "$failure_ctx" ]]; then
+    # M129: prefer secondary cause from v2 schema, fall back to top-level
+    # alias category/subcategory (writer compat layer).
+    local _cat="${_DIAG_SECONDARY_CATEGORY:-}"
+    local _sub="${_DIAG_SECONDARY_SUBCATEGORY:-}"
+    if [[ -z "$_cat" ]] && [[ -f "$failure_ctx" ]]; then
         _cat=$(grep -oP '"category"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
         _sub=$(grep -oP '"subcategory"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
     fi
@@ -113,6 +108,29 @@ _rule_max_turns() {
     local _task="${_DIAG_PIPELINE_TASK:-${TASK:-<task not recorded>}}"
     local _limit="${CODER_MAX_TURNS:-80}"
     local _bumped=$(( _limit + 40 ))
+
+    # M133: when v2 primary is non-agent (typically ENVIRONMENT/test_infra),
+    # max_turns is the cascading symptom — emit MAX_TURNS_ENV_ROOT instead.
+    # v1 fixtures and AGENT_SCOPE primaries fall through to the legacy branch.
+    local _pcat="${_DIAG_PRIMARY_CATEGORY:-}"
+    local _schema="${_DIAG_SCHEMA_VERSION:-0}"
+    [[ "$_schema" =~ ^[0-9]+$ ]] || _schema=0
+    if [[ "$_schema" -ge 2 ]] && [[ -n "$_pcat" ]] && [[ "$_pcat" != "AGENT_SCOPE" ]]; then
+        DIAG_CLASSIFICATION="MAX_TURNS_ENV_ROOT"
+        DIAG_CONFIDENCE="high"
+        DIAG_SUGGESTIONS=(
+            "The ${_stage} agent hit its turn limit (${_limit} turns) — but max_turns was the secondary symptom."
+            "Primary cause: ${_pcat}/${_DIAG_PRIMARY_SUBCATEGORY:-?} (${_DIAG_PRIMARY_SIGNAL:-unknown signal})."
+            "Adding more turns or splitting scope is unlikely to help until the root cause is fixed."
+            "Read the root-cause artifact:"
+            "  cat .claude/LAST_FAILURE_CONTEXT.json"
+            "Re-run preflight if the failure looks environmental:"
+            "  tekhton --preflight"
+            "Then resume from coder once the root cause is resolved:"
+            "  tekhton --complete --milestone --start-at coder \"${_task}\""
+        )
+        return 0
+    fi
 
     DIAG_CLASSIFICATION="MAX_TURNS_EXHAUSTED"
     DIAG_CONFIDENCE="high"
@@ -239,61 +257,21 @@ _rule_intake_clarity() {
     return 0
 }
 
-# _rule_quota_exhausted
-# Detect rate limit pause.
-_rule_quota_exhausted() {
-    local quota_marker="${PROJECT_DIR:-.}/.claude/QUOTA_PAUSED"
-    [[ -f "$quota_marker" ]] || return 1
-
-    DIAG_CLASSIFICATION="QUOTA_EXHAUSTED"
-    DIAG_CONFIDENCE="high"
-    DIAG_SUGGESTIONS=(
-        "Pipeline paused waiting for quota refresh."
-        "It will resume automatically. No action needed."
-        "If you need it sooner, wait for your 5-hour window to refresh."
-    )
-    return 0
-}
-
-# _rule_unknown
-# Fallback catch-all — always matches.
-_rule_unknown() {
-    # shellcheck disable=SC2034
-    DIAG_CLASSIFICATION="UNKNOWN"
-    # shellcheck disable=SC2034
-    DIAG_CONFIDENCE="low"
-    DIAG_SUGGESTIONS=(
-        "No specific failure pattern identified."
-        "Check the latest agent output in .claude/logs/"
-        "Re-run with DASHBOARD_VERBOSITY=verbose for more detail"
-    )
-    return 0
-}
+# _rule_quota_exhausted and _rule_unknown moved to diagnose_rules_extra.sh
+# under M129 to keep this file under the 300-line ceiling.
 
 # --- Source secondary rules --------------------------------------------------
 # Extra rules live in a sibling file to keep this file under the 300-line ceiling.
 # shellcheck source=lib/diagnose_rules_extra.sh
 source "${TEKHTON_HOME:?}/lib/diagnose_rules_extra.sh"
 
-# --- Rule registry -----------------------------------------------------------
-# Priority-ordered array. classify_failure_diag() applies rules top-down,
-# stops at the first match. _rule_max_turns fires before _rule_review_loop
-# because max_turns is more specific.
+# M133 resilience-arc primary rules
+# (UI gate interactive reporter, build-fix exhausted, preflight interactive cfg).
+# shellcheck source=lib/diagnose_rules_resilience.sh
+source "${TEKHTON_HOME:?}/lib/diagnose_rules_resilience.sh"
 
-# shellcheck disable=SC2034  # Used by lib/diagnose.sh
-DIAGNOSE_RULES=(
-    "_rule_build_failure"
-    "_rule_max_turns"
-    "_rule_review_loop"
-    "_rule_security_halt"
-    "_rule_intake_clarity"
-    "_rule_quota_exhausted"
-    "_rule_stuck_loop"
-    "_rule_turn_exhaustion"
-    "_rule_split_depth"
-    "_rule_transient_error"
-    "_rule_test_audit_failure"
-    "_rule_migration_crash"
-    "_rule_version_mismatch"
-    "_rule_unknown"
-)
+# --- Rule registry -----------------------------------------------------------
+# DIAGNOSE_RULES priority-ordered array lives in a sibling file so adding new
+# rules here does not push the file over the 300-line ceiling.
+# shellcheck source=lib/diagnose_rules_registry.sh
+source "${TEKHTON_HOME:?}/lib/diagnose_rules_registry.sh"

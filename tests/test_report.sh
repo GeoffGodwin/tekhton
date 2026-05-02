@@ -1,118 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_report.sh — Tests for lib/report.sh print_run_report()
+# test_report.sh — Tests for lib/report.sh print_run_report() output content.
 #
-# Tests:
-# - Smoke test: runs without error when no files exist
-# - Header always present in output
-# - failure/stuck/timeout outcomes trigger --diagnose hint
-# - success outcome does NOT trigger --diagnose hint
-# - HUMAN_ACTION_REQUIRED.md unchecked items counted
-# - Reviewer verdict rendered when REVIEWER_REPORT.md present
-# - Tester section rendered when TESTER_REPORT.md present
-# - Missing summary file handled gracefully
+# Suites 1-8 cover smoke / outcome / milestone / human-action / per-stage
+# rendering. The colorize-helper + literal-escape regression suites live in
+# tests/test_report_color.sh. Both files share fixtures via
+# tests/report_fixtures.sh.
 # =============================================================================
 set -euo pipefail
 
-TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
-
-# --- Pipeline globals --------------------------------------------------------
-PROJECT_DIR="$TMPDIR"
-LOG_DIR="$TMPDIR/.claude/logs"
-PIPELINE_STATE_FILE="$TMPDIR/.claude/PIPELINE_STATE.md"
-
-export PROJECT_DIR LOG_DIR PIPELINE_STATE_FILE TEKHTON_HOME
-
-mkdir -p "$LOG_DIR/archive"
-mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR:-.tekhton}"
-
-HUMAN_ACTION_FILE="${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
-INTAKE_REPORT_FILE="${TEKHTON_DIR}/INTAKE_REPORT.md"
-CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
-SECURITY_REPORT_FILE="${TEKHTON_DIR}/SECURITY_REPORT.md"
-REVIEWER_REPORT_FILE="${TEKHTON_DIR}/REVIEWER_REPORT.md"
-TESTER_REPORT_FILE="${TEKHTON_DIR}/TESTER_REPORT.md"
-
-# --- Source dependencies -----------------------------------------------------
-source "${TEKHTON_HOME}/lib/common.sh"
-source "${TEKHTON_HOME}/lib/report.sh"
-
-# --- Test helpers ------------------------------------------------------------
-PASS=0
-FAIL=0
-
-assert_eq() {
-    local desc="$1" expected="$2" actual="$3"
-    if [ "$expected" = "$actual" ]; then
-        echo "  PASS: $desc"
-        PASS=$((PASS + 1))
-    else
-        echo "  FAIL: $desc — expected '$expected', got '$actual'"
-        FAIL=$((FAIL + 1))
-    fi
-}
-
-assert_contains() {
-    local desc="$1" needle="$2" haystack="$3"
-    if echo "$haystack" | grep -q "$needle" 2>/dev/null; then
-        echo "  PASS: $desc"
-        PASS=$((PASS + 1))
-    else
-        echo "  FAIL: $desc — expected to find '$needle' in output"
-        FAIL=$((FAIL + 1))
-    fi
-}
-
-assert_not_contains() {
-    local desc="$1" needle="$2" haystack="$3"
-    if echo "$haystack" | grep -q "$needle" 2>/dev/null; then
-        echo "  FAIL: $desc — did not expect to find '$needle' in output"
-        FAIL=$((FAIL + 1))
-    else
-        echo "  PASS: $desc"
-        PASS=$((PASS + 1))
-    fi
-}
-
-assert_exit0() {
-    local desc="$1"
-    if eval "$2" > /dev/null 2>&1; then
-        echo "  PASS: $desc"
-        PASS=$((PASS + 1))
-    else
-        echo "  FAIL: $desc — command exited non-zero"
-        FAIL=$((FAIL + 1))
-    fi
-}
-
-_reset_report_fixture() {
-    rm -f "$TMPDIR/.claude/logs/RUN_SUMMARY.json"
-    rm -f "$TMPDIR/${TEKHTON_DIR}/INTAKE_REPORT.md"
-    rm -f "$TMPDIR/${TEKHTON_DIR}/REVIEWER_REPORT.md"
-    rm -f "$TMPDIR/${TEKHTON_DIR}/TESTER_REPORT.md"
-    rm -f "$TMPDIR/${TEKHTON_DIR}/CODER_SUMMARY.md"
-    rm -f "$TMPDIR/${TEKHTON_DIR}/SECURITY_REPORT.md"
-    rm -f "$TMPDIR/${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md"
-}
-
-_create_run_summary() {
-    local outcome="$1"
-    local milestone="${2:-none}"
-    mkdir -p "$TMPDIR/.claude/logs"
-    cat > "$TMPDIR/.claude/logs/RUN_SUMMARY.json" << EOF
-{
-  "milestone": "${milestone}",
-  "outcome": "${outcome}",
-  "attempts": 1,
-  "total_agent_calls": 5,
-  "wall_clock_seconds": 300,
-  "files_changed": [],
-  "timestamp": "2026-03-23T10:45:00Z"
-}
-EOF
-}
+# shellcheck source=report_fixtures.sh
+source "$(dirname "${BASH_SOURCE[0]}")/report_fixtures.sh"
 
 # =============================================================================
 # Test Suite 1: Smoke test — runs without error when no files exist
@@ -127,7 +25,7 @@ assert_contains "1.2 header separator present in output" "════" "$output
 assert_contains "1.3 'Last run:' label present" "Last run:" "$output"
 
 # =============================================================================
-# Test Suite 2: Outcome coloring and --diagnose hint
+# Test Suite 2: Outcome-based --diagnose hint
 # =============================================================================
 echo "=== Test Suite 2: Outcome-based --diagnose hint ==="
 
@@ -170,7 +68,7 @@ output=$(print_run_report 2>/dev/null)
 assert_not_contains "3.3 milestone section hidden when none" "Milestone:" "$output"
 
 # =============================================================================
-# Test Suite 4: HUMAN_ACTION_REQUIRED.md action items
+# Test Suite 4: Human action items
 # =============================================================================
 echo "=== Test Suite 4: Human action items ==="
 
@@ -184,7 +82,6 @@ EOF
 output=$(print_run_report 2>/dev/null)
 assert_contains "4.1 action item count displayed" "Action items: 2" "$output"
 
-# No unchecked items
 _reset_report_fixture
 _create_run_summary "success"
 cat > "$TMPDIR/${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md" << 'EOF'
@@ -234,8 +131,6 @@ echo "=== Test Suite 6: Tester stage ==="
 
 _reset_report_fixture
 _create_run_summary "success"
-# Note: Tester section uses ## Tests Written heading for count (numbered list)
-# and ## Bugs Found for bug count - let's test with zero bugs
 cat > "$TMPDIR/${TEKHTON_DIR}/TESTER_REPORT.md" << 'EOF'
 ## Planned Tests
 - [x] `tests/test_foo.sh` — foo tests
@@ -279,49 +174,9 @@ assert_contains "7.3 confidence shown" "confidence 95" "$output"
 echo "=== Test Suite 8: Graceful missing files ==="
 
 _reset_report_fixture
-# No RUN_SUMMARY.json at all
 assert_exit0 "8.1 no error when RUN_SUMMARY.json missing" "print_run_report"
 output=$(print_run_report 2>/dev/null)
 assert_contains "8.2 header still rendered without summary" "════" "$output"
 assert_contains "8.3 unknown outcome shown when no summary" "unknown" "$output"
 
-# =============================================================================
-# Test Suite 9: _report_colorize helper
-# =============================================================================
-echo "=== Test Suite 9: _report_colorize ==="
-
-# _report_colorize now uses _out_color (printf '%s' passthrough), so compare
-# against the literal variable value — not the echo-e-expanded ANSI sequence.
-GREEN_E="${GREEN}"
-RED_E="${RED}"
-YELLOW_E="${YELLOW}"
-NC_E="${NC}"
-
-result=$(_report_colorize "PASS")
-assert_eq "9.1 PASS maps to GREEN" "$GREEN_E" "$result"
-
-result=$(_report_colorize "APPROVED")
-assert_eq "9.2 APPROVED maps to GREEN" "$GREEN_E" "$result"
-
-result=$(_report_colorize "FAIL")
-assert_eq "9.3 FAIL maps to RED" "$RED_E" "$result"
-
-result=$(_report_colorize "REJECTED")
-assert_eq "9.4 REJECTED maps to RED" "$RED_E" "$result"
-
-result=$(_report_colorize "CHANGES_REQUIRED")
-assert_eq "9.5 CHANGES_REQUIRED maps to YELLOW" "$YELLOW_E" "$result"
-
-result=$(_report_colorize "UNKNOWN_STATUS")
-assert_eq "9.6 unknown status maps to NC" "$NC_E" "$result"
-
-# =============================================================================
-# Summary
-# =============================================================================
-echo
-echo "════════════════════════════════════════"
-echo "  report tests: ${PASS} passed, ${FAIL} failed"
-echo "════════════════════════════════════════"
-
-[ "$FAIL" -eq 0 ] || exit 1
-echo "All report tests passed"
+summary_and_exit

@@ -6,6 +6,82 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+## [3.138.4] - 2026-04-30
+
+### Added
+- Addressed all 30 open non-blocking notes in `.tekhton/NON_BLOCKING_LOG.md`. Real
+
+## [3.138.3] - 2026-04-30
+
+### Added
+- Defensive observability fix for the TUI sidecar's silent-death failure mode in
+## [3.138.2] - 2026-04-30
+
+### Added
+- The polish note requested adding the immediate working-directory name to the
+
+## [3.138.1] - 2026-04-30
+
+### Added
+- Fixed the BUG where `tekhton --report` printed literal `\033[...]` strings on
+## [3.138.0] - 2026-04-28
+
+### Added
+- Milestone 138 — Resilience Arc: Runtime CI Environment Auto-Detection. When (M138)
+
+## [3.137.0] - 2026-04-27
+
+### Added
+- M137 — Resilience Arc V3.2 Migration Script. Created the V3.1 → V3.2 (M137)
+## [3.136.0] - 2026-04-27
+
+### Added
+- M136 — Resilience Arc Config Defaults & Validation Hardening. Config-layer (M136)
+
+## [3.135.0] - 2026-04-27
+
+### Added
+- M135 — Resilience Arc Artifact Lifecycle Management. Four hygiene fixes (M135)
+## [3.134.0] - 2026-04-27
+
+### Added
+- M134 — Resilience Arc Integration Test Suite & Cross-Cutting Regression Harness. (M134)
+
+## [3.133.0] - 2026-04-27
+
+### Added
+- All eight goals from the milestone spec, plus the mandatory doc surface and (M133)
+## [3.132.0] - 2026-04-27
+
+### Added
+- All ten goals from the milestone spec, plus the mandatory doc surface and (M132)
+
+## [3.131.0] - 2026-04-27
+
+### Added
+- All seven milestone goals plus mandatory extras: (M131)
+## [3.130.0] - 2026-04-27
+
+### Added
+- All six milestone goals plus mandatory extras: (M130)
+
+## [3.129.0] - 2026-04-26
+
+### Added
+- Milestone 129 — Failure Context Schema Hardening & Primary/Secondary Cause (M129)
+## [3.128.0] - 2026-04-26
+
+### Added
+- Milestone 128 — Build-Fix Continuation Loop & Adaptive Turn Budgeting. (M128)
+
+## [3.127.0] - 2026-04-26
+
+### Added
+- Milestone 127 — Mixed-Log Classification Hardening & Confidence-Based Routing. (M127)
+## [3.126.0] - 2026-04-26
+
+### Added
+- M126 — Deterministic UI Gate Execution & Non-Interactive Reporter Control. (M126)
 
 ## [3.125.4] - 2026-04-25
 

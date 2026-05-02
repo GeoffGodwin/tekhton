@@ -23,15 +23,23 @@ set -euo pipefail
 # shellcheck source=lib/diagnose_rules.sh
 source "${TEKHTON_HOME:?}/lib/diagnose_rules.sh"
 
+# Source M129 failure-context slot helpers (idempotent — also sourced from
+# tekhton.sh before diagnose_output.sh; safe to re-source).
+# shellcheck source=lib/failure_context.sh
+source "${TEKHTON_HOME:?}/lib/failure_context.sh"
+
 # Source helper functions (_collapse_cause_chain, _detect_recurring_failures,
 # _collect_agent_log_tails)
 # shellcheck source=lib/diagnose_helpers.sh
 source "${TEKHTON_HOME:?}/lib/diagnose_helpers.sh"
 
 # Source output/reporting functions (generate_diagnosis_report, print_diagnosis_summary,
-# write_last_failure_context, print_crash_first_aid, emit_dashboard_diagnosis)
+# write_last_failure_context). Crash first-aid + dashboard hooks live in the
+# extras companion file (extracted under M129 to honor the 300-line ceiling).
 # shellcheck source=lib/diagnose_output.sh
 source "${TEKHTON_HOME:?}/lib/diagnose_output.sh"
+# shellcheck source=lib/diagnose_output_extra.sh
+source "${TEKHTON_HOME:?}/lib/diagnose_output_extra.sh"
 
 # --- Module state -----------------------------------------------------------
 
@@ -50,6 +58,18 @@ _DIAG_PIPELINE_MILESTONE=""  # Active milestone
 _DIAG_AGENT_LOG_TAILS=""     # Last 20 lines of agent logs
 _DIAG_LAST_CLASSIFICATION="" # classification from LAST_FAILURE_CONTEXT.json
 _DIAG_EXIT_REASON=""         # Exit Reason from PIPELINE_STATE.md
+# M129: nested cause slots from LAST_FAILURE_CONTEXT.json schema v2.
+# Reader fallback order: v2 primary/secondary > top-level alias category/subcategory
+# > legacy AGENT_ERROR_* env vars. Document in _read_diagnostic_context below.
+_DIAG_PRIMARY_CATEGORY=""
+_DIAG_PRIMARY_SUBCATEGORY=""
+_DIAG_PRIMARY_SIGNAL=""
+_DIAG_PRIMARY_SOURCE=""
+_DIAG_SECONDARY_CATEGORY=""
+_DIAG_SECONDARY_SUBCATEGORY=""
+_DIAG_SECONDARY_SIGNAL=""
+_DIAG_SECONDARY_SOURCE=""
+_DIAG_SCHEMA_VERSION=""
 
 # --- Context reader ----------------------------------------------------------
 
@@ -77,6 +97,15 @@ _read_diagnostic_context() {
     _DIAG_AGENT_LOG_TAILS=""
     _DIAG_LAST_CLASSIFICATION=""
     _DIAG_EXIT_REASON=""
+    _DIAG_PRIMARY_CATEGORY=""
+    _DIAG_PRIMARY_SUBCATEGORY=""
+    _DIAG_PRIMARY_SIGNAL=""
+    _DIAG_PRIMARY_SOURCE=""
+    _DIAG_SECONDARY_CATEGORY=""
+    _DIAG_SECONDARY_SUBCATEGORY=""
+    _DIAG_SECONDARY_SIGNAL=""
+    _DIAG_SECONDARY_SOURCE=""
+    _DIAG_SCHEMA_VERSION=""
 
     # --- Pipeline state -------------------------------------------------------
     if [[ -f "$state_file" ]]; then
@@ -88,12 +117,25 @@ _read_diagnostic_context() {
     # --- LAST_FAILURE_CONTEXT.json (primary source on failure) ----------------
     # Always-written-on-failure file. Read before RUN_SUMMARY so classification
     # and stage/outcome populate even when the run hasn't emitted a summary.
+    #
+    # M129 reader fallback order (documented for future readers):
+    #   1. v2 primary_cause / secondary_cause nested objects (when present)
+    #   2. top-level alias category/subcategory keys (writer compat layer)
+    #   3. legacy AGENT_ERROR_CATEGORY / AGENT_ERROR_SUBCATEGORY env vars
+    #      (handled by individual rules, not this reader)
     if [[ -f "$failure_ctx" ]]; then
         _DIAG_LAST_CLASSIFICATION=$(grep -oP '"classification"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
         _DIAG_PIPELINE_OUTCOME=$(grep -oP '"outcome"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
         if [[ -z "$_DIAG_PIPELINE_STAGE" ]]; then
             _DIAG_PIPELINE_STAGE=$(grep -oP '"stage"\s*:\s*"\K[^"]+' "$failure_ctx" 2>/dev/null || true)
         fi
+        _DIAG_SCHEMA_VERSION=$(grep -oP '"schema_version"\s*:\s*\K[0-9]+' "$failure_ctx" 2>/dev/null || true)
+        _diag_parse_cause_block "$failure_ctx" "primary_cause" \
+            _DIAG_PRIMARY_CATEGORY _DIAG_PRIMARY_SUBCATEGORY \
+            _DIAG_PRIMARY_SIGNAL _DIAG_PRIMARY_SOURCE
+        _diag_parse_cause_block "$failure_ctx" "secondary_cause" \
+            _DIAG_SECONDARY_CATEGORY _DIAG_SECONDARY_SUBCATEGORY \
+            _DIAG_SECONDARY_SIGNAL _DIAG_SECONDARY_SOURCE
     fi
 
     # --- RUN_SUMMARY.json (enrichment) ----------------------------------------

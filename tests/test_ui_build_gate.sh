@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_ui_build_gate.sh — Unit tests for UI test gate in run_build_gate() (M28)
+# test_ui_build_gate.sh — Unit tests for UI test gate in run_build_gate()
+# (M28 baseline + M126 deterministic execution coverage)
 #
 # Tests:
 #   1.  Gate skipped when UI_TEST_CMD is empty
@@ -15,6 +16,14 @@
 #  10.  Gate does NOT check availability for npm commands (runtime resolution)
 #  11.  Gate passes and removes BUILD_ERRORS.md on overall success
 #  12.  UI_TEST_ERRORS.md is not written on gate pass
+#  13.  M126: _ui_timeout_signature truth table
+#  14.  M126: PLAYWRIGHT_HTML_OPEN=never reaches subprocess, parent unset
+#  15.  M126: framework detection requires word boundary for playwright
+#  16.  M126: hardened rerun executed exactly once on interactive_report
+#  17.  M126: generic_timeout preserves existing flakiness retry path
+#  18.  M126: ## UI Gate Diagnosis block written on terminal failure
+#  19.  M126: diagnosis suppressed and error files removed on recovered pass
+#  20.  M126: UI_GATE_ENV_RETRY_ENABLED=false skips hardened rerun, preserves diagnosis
 # =============================================================================
 set -euo pipefail
 
@@ -26,6 +35,11 @@ cd "$TMPDIR"
 mkdir -p "${TEKHTON_DIR:-.tekhton}"
 
 PROJECT_DIR="$TMPDIR"
+
+# Force log() output to stdout — tests must not depend on the caller's
+# inherited TUI state. Without this, _out_emit silently drops log lines
+# when the parent shell has _TUI_ACTIVE=true exported.
+unset _TUI_ACTIVE
 
 # --- Minimal pipeline environment ---
 source "${TEKHTON_HOME}/lib/common.sh"
@@ -50,6 +64,8 @@ source "${TEKHTON_HOME}/lib/error_patterns.sh"
 source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/gates_phases.sh"
+# shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/gates_ui_helpers.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
 
 FAIL=0
@@ -294,10 +310,225 @@ assert_eq "12 gate passes" "0" "$gate_exit"
 assert_file_not_exists "12 UI_TEST_ERRORS.md NOT written on pass" "${UI_TEST_ERRORS_FILE}"
 
 # =============================================================================
+# Test 13: M126 — _ui_timeout_signature truth table (pure function)
+# =============================================================================
+sig=$(_ui_timeout_signature 124 "Serving HTML report at http://localhost:9323. Press Ctrl+C to quit.")
+assert_eq "13a interactive_report on 124+Serving HTML report" "interactive_report" "$sig"
+
+sig=$(_ui_timeout_signature 124 "Press Ctrl+C to quit")
+assert_eq "13b interactive_report on 124+Ctrl+C banner" "interactive_report" "$sig"
+
+sig=$(_ui_timeout_signature 0 "Serving HTML report at http://localhost:9323")
+assert_eq "13c exit-0 with banner classifies as none (not interactive_report)" "none" "$sig"
+
+sig=$(_ui_timeout_signature 124 "Test timeout exceeded")
+assert_eq "13d generic_timeout on 124 without banner" "generic_timeout" "$sig"
+
+sig=$(_ui_timeout_signature 1 "AssertionError")
+assert_eq "13e none on plain non-zero failure" "none" "$sig"
+
+# =============================================================================
+# Test 14: M126 — Deterministic Playwright env reaches subprocess; parent unset
+# =============================================================================
+SEEN_ENV_FILE="$TMPDIR/seen_env.txt"
+cat > "$TMPDIR/playwright_env_probe.sh" << SCRIPT
+#!/usr/bin/env bash
+# Stub Playwright runner — records PLAYWRIGHT_HTML_OPEN, exits 0
+echo "\${PLAYWRIGHT_HTML_OPEN:-UNSET}" > "${SEEN_ENV_FILE}"
+exit 0
+SCRIPT
+chmod +x "$TMPDIR/playwright_env_probe.sh"
+
+unset PLAYWRIGHT_HTML_OPEN
+UI_FRAMEWORK="playwright"
+UI_TEST_CMD="$TMPDIR/playwright_env_probe.sh"
+rm -f "$SEEN_ENV_FILE" "${UI_TEST_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
+
+gate_exit=$(run_gate "test-pw-env")
+assert_eq "14 gate passes for playwright env probe" "0" "$gate_exit"
+seen=""
+[ -f "$SEEN_ENV_FILE" ] && seen=$(cat "$SEEN_ENV_FILE")
+assert_eq "14 PLAYWRIGHT_HTML_OPEN=never reached subprocess" "never" "$seen"
+assert_eq "14 PLAYWRIGHT_HTML_OPEN remains unset in parent shell" "" "${PLAYWRIGHT_HTML_OPEN:-}"
+
+UI_FRAMEWORK=""
+
+# =============================================================================
+# Test 15: M126 — framework detection requires word boundary
+# =============================================================================
+UI_FRAMEWORK=""
+UI_TEST_CMD="./test-playwright-helper.sh"
+detected=$(_ui_detect_framework)
+assert_eq "15 word-boundary regex rejects test-playwright-helper.sh" "none" "$detected"
+
+UI_TEST_CMD="npx playwright test"
+detected=$(_ui_detect_framework)
+assert_eq "15 word-boundary regex matches 'npx playwright test'" "playwright" "$detected"
+
+# =============================================================================
+# Test 16: M126 — hardened rerun executed exactly once on interactive_report
+# =============================================================================
+RETRY_STATE="$TMPDIR/m126_interactive_count.txt"
+echo "0" > "$RETRY_STATE"
+cat > "$TMPDIR/interactive_then_pass.sh" << SCRIPT
+#!/usr/bin/env bash
+COUNT=\$(cat "${RETRY_STATE}")
+NEW_COUNT=\$((COUNT + 1))
+echo "\$NEW_COUNT" > "${RETRY_STATE}"
+if [ "\$COUNT" -eq 0 ]; then
+    echo "Serving HTML report at http://localhost:9323. Press Ctrl+C to quit."
+    exit 124
+else
+    echo "ok"
+    exit 0
+fi
+SCRIPT
+chmod +x "$TMPDIR/interactive_then_pass.sh"
+
+UI_FRAMEWORK="playwright"
+UI_TEST_CMD="$TMPDIR/interactive_then_pass.sh"
+rm -f "${UI_TEST_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
+GATE_OUT_FILE="$TMPDIR/m126_int_log.txt"
+gate_exit_code=0
+run_build_gate "test-interactive-recover" > "$GATE_OUT_FILE" 2>&1 || gate_exit_code=$?
+assert_eq "16 gate passes after hardened rerun" "0" "$gate_exit_code"
+invoke_count=$(cat "$RETRY_STATE")
+assert_eq "16 stub invoked exactly 2 times (run #1 + hardened rerun)" "2" "$invoke_count"
+if grep -q "UI tests passed after deterministic reporter hardening." "$GATE_OUT_FILE"; then
+    echo "PASS: 16 hardened-success log line emitted"
+else
+    echo "FAIL: 16 hardened-success log line missing"
+    FAIL=1
+fi
+
+UI_FRAMEWORK=""
+
+# =============================================================================
+# Test 17: M126 — generic_timeout preserves existing retry path
+# =============================================================================
+RETRY_STATE="$TMPDIR/m126_generic_count.txt"
+echo "0" > "$RETRY_STATE"
+cat > "$TMPDIR/generic_timeout_always.sh" << SCRIPT
+#!/usr/bin/env bash
+COUNT=\$(cat "${RETRY_STATE}")
+NEW_COUNT=\$((COUNT + 1))
+echo "\$NEW_COUNT" > "${RETRY_STATE}"
+echo "Test timeout exceeded"
+exit 124
+SCRIPT
+chmod +x "$TMPDIR/generic_timeout_always.sh"
+
+UI_FRAMEWORK=""
+UI_TEST_CMD="$TMPDIR/generic_timeout_always.sh"
+rm -f "${UI_TEST_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
+gate_exit=$(run_gate "test-generic-timeout")
+assert_eq "17 gate fails on generic_timeout" "1" "$gate_exit"
+invoke_count=$(cat "$RETRY_STATE")
+assert_eq "17 stub invoked exactly 2 times (run #1 + generic flakiness retry)" "2" "$invoke_count"
+
+# =============================================================================
+# Test 18: M126 — diagnosis block written on terminal failure
+# =============================================================================
+cat > "$TMPDIR/interactive_always.sh" << 'SCRIPT'
+#!/usr/bin/env bash
+echo "Serving HTML report at http://localhost:9323. Press Ctrl+C to quit."
+exit 124
+SCRIPT
+chmod +x "$TMPDIR/interactive_always.sh"
+
+UI_FRAMEWORK="playwright"
+UI_TEST_CMD="$TMPDIR/interactive_always.sh"
+rm -f "${UI_TEST_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
+gate_exit=$(run_gate "test-interactive-fail")
+assert_eq "18 gate fails when hardened rerun also hangs" "1" "$gate_exit"
+assert_file_exists "18 UI_TEST_ERRORS.md exists on terminal failure" "${UI_TEST_ERRORS_FILE}"
+assert_file_exists "18 BUILD_ERRORS.md exists on terminal failure" "${BUILD_ERRORS_FILE}"
+assert_file_contains "18 UI_TEST_ERRORS.md has diagnosis heading" "${UI_TEST_ERRORS_FILE}" "## UI Gate Diagnosis"
+assert_file_contains "18 BUILD_ERRORS.md has diagnosis heading" "${BUILD_ERRORS_FILE}" "## UI Gate Diagnosis"
+assert_file_contains "18 diagnosis records timeout class" "${UI_TEST_ERRORS_FILE}" "Timeout class: interactive_report"
+assert_file_contains "18 diagnosis records hardened rerun yes" "${UI_TEST_ERRORS_FILE}" "Hardened rerun attempted: yes"
+assert_file_contains "18 diagnosis includes interactive_report suggested action" "${UI_TEST_ERRORS_FILE}" "PLAYWRIGHT_HTML_OPEN=never"
+
+UI_FRAMEWORK=""
+
+# =============================================================================
+# Test 19: M126 — diagnosis suppressed and error files removed on recovered pass
+# =============================================================================
+RETRY_STATE="$TMPDIR/m126_recover_count.txt"
+echo "0" > "$RETRY_STATE"
+cat > "$TMPDIR/interactive_then_pass2.sh" << SCRIPT
+#!/usr/bin/env bash
+COUNT=\$(cat "${RETRY_STATE}")
+NEW_COUNT=\$((COUNT + 1))
+echo "\$NEW_COUNT" > "${RETRY_STATE}"
+if [ "\$COUNT" -eq 0 ]; then
+    echo "Serving HTML report at http://localhost:9323. Press Ctrl+C to quit."
+    exit 124
+else
+    echo "ok"
+    exit 0
+fi
+SCRIPT
+chmod +x "$TMPDIR/interactive_then_pass2.sh"
+
+UI_FRAMEWORK="playwright"
+UI_TEST_CMD="$TMPDIR/interactive_then_pass2.sh"
+rm -f "${UI_TEST_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
+gate_exit=$(run_gate "test-recovered-pass")
+assert_eq "19 gate passes on recovered hardened rerun" "0" "$gate_exit"
+assert_file_not_exists "19 UI_TEST_ERRORS.md absent on recovered pass" "${UI_TEST_ERRORS_FILE}"
+assert_file_not_exists "19 BUILD_ERRORS.md absent on recovered pass" "${BUILD_ERRORS_FILE}"
+
+# =============================================================================
+# Test 20: M126 — UI_GATE_ENV_RETRY_ENABLED=false skips hardened rerun
+#          Acceptance criterion: "suppress the hardened rerun without changing
+#          classification or diagnosis content"
+# =============================================================================
+RETRY_STATE="$TMPDIR/m126_disabled_count.txt"
+echo "0" > "$RETRY_STATE"
+cat > "$TMPDIR/interactive_always2.sh" << SCRIPT
+#!/usr/bin/env bash
+COUNT=\$(cat "${RETRY_STATE}")
+NEW_COUNT=\$((COUNT + 1))
+echo "\$NEW_COUNT" > "${RETRY_STATE}"
+echo "Serving HTML report at http://localhost:9323. Press Ctrl+C to quit."
+exit 124
+SCRIPT
+chmod +x "$TMPDIR/interactive_always2.sh"
+
+UI_FRAMEWORK="playwright"
+UI_TEST_CMD="$TMPDIR/interactive_always2.sh"
+UI_GATE_ENV_RETRY_ENABLED="false"
+rm -f "${UI_TEST_ERRORS_FILE}" "${BUILD_ERRORS_FILE}"
+GATE_OUT_FILE="$TMPDIR/m126_disabled_log.txt"
+gate_exit_code=0
+run_build_gate "test-retry-disabled" > "$GATE_OUT_FILE" 2>&1 || gate_exit_code=$?
+
+assert_eq "20 gate fails when UI_GATE_ENV_RETRY_ENABLED=false" "1" "$gate_exit_code"
+
+invoke_count=$(cat "$RETRY_STATE")
+assert_eq "20 stub invoked exactly 1 time (no hardened rerun)" "1" "$invoke_count"
+
+if grep -q "UI_GATE_ENV_RETRY_ENABLED=false; skipping hardened rerun." "$GATE_OUT_FILE"; then
+    echo "PASS: 20 skip-log line emitted"
+else
+    echo "FAIL: 20 skip-log line missing"
+    FAIL=1
+fi
+
+assert_file_exists "20 UI_TEST_ERRORS.md written on terminal failure" "${UI_TEST_ERRORS_FILE}"
+assert_file_contains "20 diagnosis heading present" "${UI_TEST_ERRORS_FILE}" "## UI Gate Diagnosis"
+assert_file_contains "20 diagnosis records interactive_report class" "${UI_TEST_ERRORS_FILE}" "Timeout class: interactive_report"
+assert_file_contains "20 diagnosis records hardened rerun NOT attempted" "${UI_TEST_ERRORS_FILE}" "Hardened rerun attempted: no"
+
+UI_GATE_ENV_RETRY_ENABLED=""
+UI_FRAMEWORK=""
+
+# =============================================================================
 # Summary
 # =============================================================================
 if [ "$FAIL" -eq 0 ]; then
-    echo "All UI build gate tests passed (12/12)"
+    echo "All UI build gate tests passed (20/20)"
     exit 0
 else
     echo "Some UI build gate tests FAILED"

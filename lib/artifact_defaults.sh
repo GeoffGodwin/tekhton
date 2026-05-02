@@ -21,6 +21,8 @@ set -euo pipefail
 : "${JR_CODER_SUMMARY_FILE:=${TEKHTON_DIR}/JR_CODER_SUMMARY.md}"
 : "${BUILD_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_ERRORS.md}"
 : "${BUILD_RAW_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+: "${BUILD_ROUTING_DIAGNOSIS_FILE:=${TEKHTON_DIR}/BUILD_ROUTING_DIAGNOSIS.md}"
+: "${BUILD_FIX_REPORT_FILE:=${TEKHTON_DIR}/BUILD_FIX_REPORT.md}"
 : "${UI_TEST_ERRORS_FILE:=${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
 : "${PREFLIGHT_ERRORS_FILE:=${TEKHTON_DIR}/PREFLIGHT_ERRORS.md}"
 : "${DIAGNOSIS_FILE:=${TEKHTON_DIR}/DIAGNOSIS.md}"
@@ -48,3 +50,9 @@ set -euo pipefail
 : "${TEST_AUDIT_REPORT_FILE:=${TEKHTON_DIR}/TEST_AUDIT_REPORT.md}"
 : "${HEALTH_REPORT_FILE:=${TEKHTON_DIR}/HEALTH_REPORT.md}"
 : "${DOCS_AGENT_REPORT_FILE:=${TEKHTON_DIR}/DOCS_AGENT_REPORT.md}"
+
+# --- Resilience arc operational artifacts (m135) ----------------------------
+# Stays empty when PROJECT_DIR is unset at source time so m131's per-project
+# fallback `${PREFLIGHT_BAK_DIR:-${proj}/.claude/preflight_bak}` resolves
+# correctly. A re-source after load_config sets PROJECT_DIR bakes the value.
+: "${PREFLIGHT_BAK_DIR:=${PROJECT_DIR:+${PROJECT_DIR}/.claude/preflight_bak}}"

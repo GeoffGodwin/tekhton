@@ -222,3 +222,33 @@ _preflight_check_env_vars() {
             "All keys from ${example_file} are present in .env."
     fi
 }
+
+# =============================================================================
+# Check 5: Preflight backup retention (m135)
+# =============================================================================
+# _trim_preflight_bak_dir BAK_DIR [RETAIN_COUNT]
+#   Removes the oldest timestamped backups in BAK_DIR, keeping only the
+#   RETAIN_COUNT most recent. Backups are written by m131's auto-fix as
+#   <YYYYMMDD_HHMMSS>_<filename>; the timestamp prefix makes lexicographic sort
+#   == chronological sort, so no date parsing is needed.
+#   RETAIN_COUNT=0 disables trimming (keep all backups).
+_trim_preflight_bak_dir() {
+    local bak_dir="$1"
+    local retain="${2:-${PREFLIGHT_BAK_RETAIN_COUNT:-5}}"
+
+    [[ -d "$bak_dir" ]] || return 0
+    (( retain == 0 )) && return 0
+
+    local total
+    total=$(find "$bak_dir" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')
+    (( total <= retain )) && return 0
+
+    local to_delete=$(( total - retain ))
+    find "$bak_dir" -maxdepth 1 -type f -print0 \
+        | sort -z \
+        | head -z -n "$to_delete" \
+        | xargs -0 rm -f 2>/dev/null || true
+
+    log_verbose "[artifact lifecycle] Trimmed preflight_bak: removed ${to_delete} old backup(s), kept ${retain}"
+    return 0
+}

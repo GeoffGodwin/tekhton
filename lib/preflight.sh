@@ -147,9 +147,11 @@ run_preflight_checks() {
     _PF_LANGUAGES=""
     _PF_TEST_FWS=""
 
-    # Run all checks (implementations in preflight_checks.sh + preflight_checks_env.sh)
+    # Run all checks (implementations in preflight_checks.sh +
+    # preflight_checks_env.sh + preflight_checks_ui.sh)
     _preflight_check_dependencies
     _preflight_check_tools
+    _preflight_check_ui_test_config  # M131: interactive-mode config audit
     _preflight_check_generated_code
     _preflight_check_env_vars
     _preflight_check_runtime_version

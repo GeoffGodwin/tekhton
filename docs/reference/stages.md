@@ -109,6 +109,21 @@ test-infrastructure issues are auto-remediated by the M54 engine (e.g.,
 `npx playwright install`, `npm install`, port cleanup). Only true code errors
 escalate to a build-fix agent.
 
+**UI test phase (deterministic execution):** When `UI_TEST_CMD` is configured,
+the gate applies a deterministic env profile to every subprocess invocation. For
+Playwright projects (detected by `UI_FRAMEWORK=playwright`, a word-boundary match
+of `playwright` in `UI_TEST_CMD`, or a `playwright.config.{ts,js,mjs,cjs}` file),
+`PLAYWRIGHT_HTML_OPEN=never` is injected via `env(1)` so the parent shell
+environment is never mutated. If a run times out (exit 124) with the Playwright
+interactive-report banner (`Serving HTML report at ...` / `Press Ctrl+C to quit`),
+the gate skips M54 remediation and the generic flakiness retry, then performs a
+single hardened rerun with `CI=1` added at a reduced timeout
+(`UI_GATE_ENV_RETRY_TIMEOUT_FACTOR`, default `0.5`). Set
+`UI_GATE_ENV_RETRY_ENABLED=false` to suppress the hardened rerun. Terminal
+failures append a `## UI Gate Diagnosis` block to both `BUILD_ERRORS.md` and
+`UI_TEST_ERRORS.md` with the timeout class, env-profile applied, hardened-rerun
+status, and a single suggested action.
+
 **Configuration:**
 
 - `CODER_MAX_TURNS` — Turn budget (default: `50`)

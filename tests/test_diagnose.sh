@@ -170,11 +170,13 @@ EOF
 # =============================================================================
 echo "=== Test Suite 1: Rule priority ordering ==="
 
-assert_eq "1.1 DIAGNOSE_RULES has 14 entries" "14" "${#DIAGNOSE_RULES[@]}"
-assert_eq "1.2 first rule is _rule_build_failure" "_rule_build_failure" "${DIAGNOSE_RULES[0]}"
-assert_eq "1.3 second rule is _rule_max_turns" "_rule_max_turns" "${DIAGNOSE_RULES[1]}"
-assert_eq "1.4 third rule is _rule_review_loop" "_rule_review_loop" "${DIAGNOSE_RULES[2]}"
-assert_eq "1.5 last rule is _rule_unknown" "_rule_unknown" "${DIAGNOSE_RULES[13]}"
+assert_eq "1.1 DIAGNOSE_RULES has 18 entries" "18" "${#DIAGNOSE_RULES[@]}"
+assert_eq "1.2 first rule is _rule_ui_gate_interactive_reporter" "_rule_ui_gate_interactive_reporter" "${DIAGNOSE_RULES[0]}"
+assert_eq "1.3 second rule is _rule_preflight_interactive_config" "_rule_preflight_interactive_config" "${DIAGNOSE_RULES[1]}"
+assert_eq "1.4 third rule is _rule_build_fix_exhausted" "_rule_build_fix_exhausted" "${DIAGNOSE_RULES[2]}"
+assert_eq "1.5 fourth rule is _rule_build_failure" "_rule_build_failure" "${DIAGNOSE_RULES[3]}"
+assert_eq "1.6 fifth rule is _rule_max_turns" "_rule_max_turns" "${DIAGNOSE_RULES[4]}"
+assert_eq "1.7 last rule is _rule_unknown" "_rule_unknown" "${DIAGNOSE_RULES[17]}"
 
 # =============================================================================
 # Test Suite 2: _rule_build_failure

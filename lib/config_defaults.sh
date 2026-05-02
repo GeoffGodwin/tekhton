@@ -70,6 +70,8 @@ set -euo pipefail
 : "${JR_CODER_SUMMARY_FILE:=${TEKHTON_DIR}/JR_CODER_SUMMARY.md}"
 : "${BUILD_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_ERRORS.md}"
 : "${BUILD_RAW_ERRORS_FILE:=${TEKHTON_DIR}/BUILD_RAW_ERRORS.txt}"
+: "${BUILD_ROUTING_DIAGNOSIS_FILE:=${TEKHTON_DIR}/BUILD_ROUTING_DIAGNOSIS.md}"
+# BUILD_FIX_REPORT_FILE default lives in artifact_defaults.sh (sourced via common.sh).
 : "${UI_TEST_ERRORS_FILE:=${TEKHTON_DIR}/UI_TEST_ERRORS.md}"
 : "${PREFLIGHT_ERRORS_FILE:=${TEKHTON_DIR}/PREFLIGHT_ERRORS.md}"
 : "${DIAGNOSIS_FILE:=${TEKHTON_DIR}/DIAGNOSIS.md}"
@@ -95,6 +97,16 @@ set -euo pipefail
 : "${FINAL_FIX_ENABLED:=true}"              # Spawn fix agent when TEST_CMD fails in final checks
 : "${FINAL_FIX_MAX_ATTEMPTS:=2}"            # Max fix attempts before giving up
 : "${FINAL_FIX_MAX_TURNS:=$((CODER_MAX_TURNS / 3))}"  # Turn budget per fix attempt
+
+# --- Build-fix continuation loop defaults (M128) ---
+# Controls the in-loop budget and progress-gating behavior for the
+# coder-stage build-fix sub-loop driven by stages/coder_buildfix.sh.
+: "${BUILD_FIX_ENABLED:=true}"              # Master toggle for the build-fix loop
+: "${BUILD_FIX_MAX_ATTEMPTS:=3}"            # Max attempts inside the loop
+: "${BUILD_FIX_BASE_TURN_DIVISOR:=3}"       # base = max(8, EFFECTIVE_CODER_MAX_TURNS / DIVISOR)
+: "${BUILD_FIX_MAX_TURN_MULTIPLIER:=100}"   # Upper-bound multiplier × base, integer ×100 (100 = 1.0)
+: "${BUILD_FIX_REQUIRE_PROGRESS:=true}"     # Halt loop when no measurable progress
+: "${BUILD_FIX_TOTAL_TURN_CAP:=120}"        # Cumulative cap across all attempts
 
 # --- Drift detection defaults ---
 : "${ARCHITECTURE_LOG_FILE:=${TEKHTON_DIR}/ARCHITECTURE_LOG.md}"
@@ -370,6 +382,41 @@ set -euo pipefail
 : "${PREFLIGHT_AUTO_FIX:=true}"                 # Allow auto-remediation of safe issues
 : "${PREFLIGHT_FAIL_ON_WARN:=false}"            # Treat warnings as failures
 
+# --- Resilience arc defaults (m126/m130/m131/m135: UI gate, classification, preflight backups) ---
+# Note: M128 build-fix continuation loop vars (BUILD_FIX_ENABLED,
+# BUILD_FIX_MAX_ATTEMPTS, BUILD_FIX_BASE_TURN_DIVISOR,
+# BUILD_FIX_MAX_TURN_MULTIPLIER, BUILD_FIX_REQUIRE_PROGRESS,
+# BUILD_FIX_TOTAL_TURN_CAP) are declared in their own M128 block above.
+# LAST_FAILURE_CONTEXT_SCHEMA_VERSION is intentionally excluded — it is a
+# writer/reader contract, not an operator tuning knob.
+
+# M138: CI auto-detection helpers must be sourced BEFORE the
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE default is applied, so that
+# _apply_ci_ui_gate_defaults can elevate the value to 1 in CI environments
+# before any ":=" no-op fixes it at 0. Resolve the helper relative to this
+# file rather than via TEKHTON_HOME — config_defaults.sh is also sourced
+# standalone by tests that do not export TEKHTON_HOME.
+# shellcheck source=lib/config_defaults_ci.sh
+source "$(dirname "${BASH_SOURCE[0]}")/config_defaults_ci.sh"
+
+# UI gate deterministic execution (m126)
+: "${UI_GATE_ENV_RETRY_ENABLED:=true}"          # Retry gate with non-interactive env on timeout
+: "${UI_GATE_ENV_RETRY_TIMEOUT_FACTOR:=0.5}"    # Retry timeout = original * this factor (0.1–1.0)
+# TEKHTON_UI_GATE_FORCE_NONINTERACTIVE: m138 auto-elevates to 1 inside CI
+# unless explicitly set in pipeline.conf. _apply_ci_ui_gate_defaults owns
+# the rule; do not add a parallel ":=0" default here.
+_apply_ci_ui_gate_defaults
+
+# Causal recovery routing (m130)
+: "${BUILD_FIX_CLASSIFICATION_REQUIRED:=true}"  # Require code_dominant classification for build-fix loop
+
+# Preflight UI config audit (m131)
+: "${PREFLIGHT_UI_CONFIG_AUDIT_ENABLED:=true}"  # Scan test framework configs for interactive-mode settings
+: "${PREFLIGHT_UI_CONFIG_AUTO_FIX:=true}"       # Auto-patch detected interactive reporter config
+
+# Preflight backup retention (m131/m135)
+: "${PREFLIGHT_BAK_RETAIN_COUNT:=5}"            # Max backups to keep in .claude/preflight_bak/ (0=keep all)
+
 # --- Pre-finalization fix defaults (cheap Jr Coder fix before full retry) ---
 : "${PREFLIGHT_FIX_ENABLED:=true}"                          # Try Jr Coder fix before full pipeline retry
 : "${PREFLIGHT_FIX_MAX_ATTEMPTS:=2}"                        # Max fix attempts before falling through
@@ -591,6 +638,12 @@ _clamp_config_value PREFLIGHT_FIX_MAX_ATTEMPTS 10
 _clamp_config_value PREFLIGHT_FIX_MAX_TURNS 500
 _clamp_config_value FINAL_FIX_MAX_ATTEMPTS 10
 _clamp_config_value FINAL_FIX_MAX_TURNS 500
+_clamp_config_value BUILD_FIX_MAX_ATTEMPTS 20
+_clamp_config_value BUILD_FIX_BASE_TURN_DIVISOR 100
+_clamp_config_value BUILD_FIX_MAX_TURN_MULTIPLIER 500
+_clamp_config_value BUILD_FIX_TOTAL_TURN_CAP 1000
+_clamp_config_float UI_GATE_ENV_RETRY_TIMEOUT_FACTOR 0.1 1.0
+_clamp_config_value PREFLIGHT_BAK_RETAIN_COUNT 1000
 _clamp_config_value TESTER_FIX_MAX_DEPTH 5
 _clamp_config_value TESTER_FIX_MAX_TURNS 100
 _clamp_config_value TESTER_FIX_OUTPUT_LIMIT 16000
