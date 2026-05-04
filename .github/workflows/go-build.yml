@@ -1,0 +1,79 @@
+name: Go Build
+
+on:
+  push:
+    branches:
+      - main
+      - feature/GoWedges
+      - 'theseus/**'
+  pull_request:
+    branches:
+      - main
+      - feature/GoWedges
+      - 'theseus/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Cross-compile build matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build all targets
+        run: make build-all
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tekhton-binaries
+          path: bin/tekhton-*
+          if-no-files-found: error
+          retention-days: 14
+
+  vet-test:
+    name: Vet + Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: make vet
+
+      - name: go test
+        run: make test
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m

@@ -1,6 +1,6 @@
 <!-- milestone-meta
-id: "1"
-status: "todo"
+id: "01"
+status: "done"
 -->
 
 # m01 — Go Module Foundation

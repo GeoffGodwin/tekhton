@@ -134,15 +134,17 @@ fi
 
 # =============================================================================
 # Section 5: MANIFEST.cfg has M137 row with correct depends_on and group
+# (M137 is in the archived V3 manifest, since V4 started fresh)
 # =============================================================================
 
-manifest="${TEKHTON_HOME}/.claude/milestones/MANIFEST.cfg"
-if [[ -f "$manifest" ]]; then
-    m137_row=$(grep '^m137|' "$manifest" || true)
+# Check archived V3 MANIFEST first
+manifest_v3="${TEKHTON_HOME}/.claude/milestones-v3/v3-final/MANIFEST.cfg"
+if [[ -f "$manifest_v3" ]]; then
+    m137_row=$(grep '^m137|' "$manifest_v3" || true)
     if [[ -n "$m137_row" ]]; then
-        pass "MAN1: MANIFEST.cfg contains m137 row"
+        pass "MAN1: Archived V3 MANIFEST.cfg contains m137 row"
     else
-        fail "MAN1: MANIFEST.cfg missing m137 row"
+        fail "MAN1: Archived V3 MANIFEST.cfg missing m137 row"
         m137_row=""
     fi
 
@@ -158,7 +160,7 @@ if [[ -f "$manifest" ]]; then
         fail "MAN3: m137 row missing group=resilience (got: '${m137_row}')"
     fi
 else
-    fail "MAN1/2/3: MANIFEST.cfg does not exist at ${manifest}"
+    fail "MAN1/2/3: Archived V3 MANIFEST.cfg does not exist at ${manifest_v3}"
 fi
 
 # =============================================================================

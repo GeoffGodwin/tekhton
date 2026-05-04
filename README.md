@@ -190,6 +190,20 @@ sudo apt-get install -y shellcheck
 brew install shellcheck
 ```
 
+### V4 Development (Go Migration)
+
+Tekhton is migrating to Go via [Ship-of-Theseus wedges](docs/go-build.md). If you're contributing
+to V4 or building from the current `main` branch, you'll need **Go 1.23+**:
+
+```bash
+# See docs/go-build.md for full build instructions
+go version     # must report 1.23 or newer
+make build     # compile the Go binary
+```
+
+See [Go Build & Toolchain](docs/go-build.md) for details on cross-compiling, CI workflows,
+and version stamping.
+
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md).

@@ -89,3 +89,7 @@ MILESTONE_ARCHIVE.md
 
 # SDI cache (auto-generated, do not commit)
 .sdi/cache/
+
+# Go build artifacts (V4)
+bin/
+*.test

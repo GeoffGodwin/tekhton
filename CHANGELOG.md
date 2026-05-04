@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.01.0] - 2026-05-04
+
+### Added
+- m01 — Go Module Foundation. Bootstraps the Go module in-repo, stands up a (M01)
 ## [3.138.4] - 2026-04-30
 
 ### Added

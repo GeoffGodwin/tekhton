@@ -153,3 +153,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-04-03
 - **Rationale**: `preflight.sh` was already 607 lines; extraction follows the established module-splitting pattern used by `agent_monitor_helpers.sh`, `drift_artifacts.sh`, etc. Backward-compatible via `command -v` gu
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-31: ldflags injection instead of `//go:embed ../../VERSION` (Task: "M01")
+- **Date**: 2026-05-04
+- **Rationale**: The embed package's explicit prohibition of `..` in patterns makes the design-doc sketch uncompilable. ldflags injection is the canonical Go idiom for binary version stamping; the `var Version = "dev"
+- **Source**: Accepted ACP from pipeline run
