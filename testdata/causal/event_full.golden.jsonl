@@ -1,0 +1,1 @@
+{"proto":"tekhton.causal.v1","id":"review.001","ts":"__TS_PLACEHOLDER__","run_id":"run_20260101_000000","milestone":"m02","type":"verdict","stage":"review","detail":"APPROVED","caused_by":["coder.002","pipeline.001"],"verdict":{"result":"APPROVED"},"context":{"files":3}}

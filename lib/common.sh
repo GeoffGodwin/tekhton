@@ -211,6 +211,25 @@ report_orchestration_status() {
     echo
 }
 
+# --- JSON escape (shared helper) ---------------------------------------------
+# m02 wedge: lib/causality.sh's writer moved to Go (`tekhton causal emit`),
+# but `_json_escape` is still consumed by dashboard.sh, dashboard_parsers.sh,
+# health.sh, run_memory.sh, and ~20 other lib files that build JSON in bash.
+# Hosting the canonical definition here keeps every sourcing path correct,
+# including the early-exit `--diagnose` branch that loads dashboard_parsers.sh
+# without going through crawler.sh.
+#
+# Escapes backslash, double-quote, newline, tab, and carriage return for JSON.
+_json_escape() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
 # --- Gitignore management -----------------------------------------------------
 
 # _ensure_gitignore_entries — Appends Tekhton runtime artifact patterns to

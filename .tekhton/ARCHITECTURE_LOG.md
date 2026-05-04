@@ -158,3 +158,13 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-05-04
 - **Rationale**: The embed package's explicit prohibition of `..` in patterns makes the design-doc sketch uncompilable. ldflags injection is the canonical Go idiom for binary version stamping; the `var Version = "dev"
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-32: Bash fallback inside `lib/causality.sh` (Task: "Implement Milestone 2: Causal Log Wedge")
+- **Date**: 2026-05-04
+- **Rationale**: `_json_escape` serves 20+ callers that predate m02; moving it to `lib/common.sh` is the correct canonical home, and the transitional fallback is necessary until the Go binary is universally installed.
+- **Source**: Accepted ACP from pipeline run
+
+## ADL-33: `tekhton causal init` does not truncate (Task: "Implement Milestone 2: Causal Log Wedge")
+- **Date**: 2026-05-04
+- **Rationale**: Resume-friendly no-op semantics are the only correct choice; truncating on init would destroy resumed-run events. The milestone AC #1 wording is what is wrong, not the implementation. The design obser
+- **Source**: Accepted ACP from pipeline run

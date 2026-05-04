@@ -23,3 +23,15 @@ all items are resolved.
 - [ ] [2026-05-04 | Source: coder] default, and gating the full `--dry-run` behind
 - [ ] [2026-05-04 | Source: coder] `TEKHTON_SELF_HOST_DRY_RUN=1`. A human with auth can run the full
 - [ ] [2026-05-04 | Source: coder] smoke; CI runs the safe subset.
+- [ ] [2026-05-04 | Source: coder] **m02 milestone — `init` semantics.** The milestone's AC #1 prescribes
+- [ ] [2026-05-04 | Source: coder] `tekhton causal init` truncates the log and writes an `init-1` event.
+- [ ] [2026-05-04 | Source: coder] The bash test suite (which is the parity gate at AC #7) requires the
+- [ ] [2026-05-04 | Source: coder] opposite — `init_causal_log` must not truncate. I resolved this in
+- [ ] [2026-05-04 | Source: coder] the Architecture Change Proposal above; the doc itself should be
+- [ ] [2026-05-04 | Source: coder] updated by a future cleanup pass to reflect the resume-friendly
+- [ ] [2026-05-04 | Source: coder] semantics.
+- [ ] [2026-05-04 | Source: coder] **AC #6 grep.** `grep -r _json_escape lib/ stages/` cannot return
+- [ ] [2026-05-04 | Source: coder] nothing without breaking ~20 lib callers. Recorded above; the
+- [ ] [2026-05-04 | Source: coder] intent ("delete the bash JSON-escape duplication that was tied to
+- [ ] [2026-05-04 | Source: coder] causality.sh") is satisfied by relocating the helper to
+- [ ] [2026-05-04 | Source: coder] `lib/common.sh`.

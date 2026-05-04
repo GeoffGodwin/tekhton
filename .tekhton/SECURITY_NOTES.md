@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-05-04 15:06:47
+Generated: 2026-05-04 18:44:39
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [LOW] [category:A08] [.github/workflows/go-build.yml:76] fixable:yes — `golangci/golangci-lint-action@v6` passes `version: latest`, downloading an unpinned golangci-lint binary at CI run time. A future upstream version change can silently alter lint behavior; a compromised release could execute arbitrary code in the runner. Pin to a specific semver, e.g. `version: v1.64.5`.

@@ -43,9 +43,9 @@ assert_contains() {
     fi
 }
 
-# Source causality.sh first (provides _json_escape used by dashboard_parsers.sh)
-# then source dashboard.sh (which sources dashboard_parsers.sh internally)
-# We define stubs for functions that dashboard.sh may call at module level.
+# common.sh hosts _json_escape after m02; causality.sh delegates writer logic
+# to the Go binary. dashboard.sh and dashboard_parsers.sh need _json_escape
+# available, so common.sh must be sourced before dashboard.sh.
 
 # Minimal stubs so sourcing doesn't fail
 declare -A _STAGE_STATUS=()
@@ -53,7 +53,8 @@ declare -A _STAGE_TURNS=()
 declare -A _STAGE_BUDGET=()
 declare -A _STAGE_DURATION=()
 
-# Source _json_escape from causality.sh (only the function, no side effects)
+# shellcheck source=lib/common.sh
+source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=lib/causality.sh
 source "${TEKHTON_HOME}/lib/causality.sh"
 

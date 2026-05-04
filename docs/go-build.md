@@ -113,6 +113,35 @@ TEKHTON_SELF_HOST_DRY_RUN=1 bash scripts/self-host-check.sh  # full smoke
 The script must remain idempotent — running it twice in the same job is
 explicitly supported.
 
+## Subcommands
+
+The Go binary currently exposes one production subcommand and the
+top-level `--version` / `--help` flags. Subcommand list grows as wedges
+land (see DESIGN_v4 Phase 1+).
+
+### `tekhton causal …` (m02)
+
+The causal-event log writer. `lib/causality.sh` is a shim that exec's
+this subcommand when the Go binary is on `$PATH`; pipeline callers do
+not invoke it directly.
+
+```text
+tekhton causal init    --path PATH --cap N --run-id R     # ensure dirs exist
+tekhton causal emit    --path PATH --stage S --type T …   # append one event, prints ID
+tekhton causal archive --path PATH --run-id R --retention N
+tekhton causal status  --path PATH                        # print last event ID
+```
+
+The on-disk format is `causal.event.v1` — see
+[`internal/proto/causal_v1.go`](../internal/proto/causal_v1.go). Bash
+query callers (`lib/causality_query.sh`) read the same JSONL file the Go
+writer produces; the file is the seam, the writer is the wedge.
+
+When the Go binary is missing from `$PATH` (fresh clone, test sandbox
+with no `make build`), `lib/causality.sh` falls back to an inline bash
+writer that produces the same `causal.event.v1` lines. The fallback is
+transitional — m04 Phase-1 hardening removes it.
+
 ## Troubleshooting
 
 - **`go: command not found` in CI** — `actions/setup-go@v5` has not run yet

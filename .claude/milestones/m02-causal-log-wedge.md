@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "2"
-status: "todo"
+status: "done"
 -->
 
 # m02 — Causal Log Wedge

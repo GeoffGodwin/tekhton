@@ -1,25 +1,28 @@
-# Reviewer Report — M01 Go Module Foundation
+# Reviewer Report — m02 Causal Log Wedge
 
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- [.github/workflows/go-build.yml:76] `golangci/golangci-lint-action@v6` uses `version: latest` — downloads an unpinned binary at CI run time. Pin to a specific semver (e.g. `v1.64.5`) in a follow-up wedge.
-- [.github/workflows/go-build.yml] All four action refs (`actions/checkout@v4`, `actions/setup-go@v5`, `actions/upload-artifact@v4`, `golangci/golangci-lint-action@v6`) use mutable major-version tags rather than commit SHAs. Pin to SHAs in a future cleanup pass; bounded by the `permissions: contents: read` declaration.
-- [docs/go-build.md:68] The ldflags documentation example shows `$(cat VERSION)` but the Makefile correctly uses `tr -d '[:space:]' < VERSION`. Both produce the correct result (because `version.String()` calls `strings.TrimSpace`), but the doc example could mislead a future contributor who copies it into a script that bypasses `version.String()`.
-- [.tekhton/CODER_SUMMARY.md] `README.md` is mentioned in the "Docs Updated" section at the bottom of the summary but is absent from the primary "Files Modified" table. Minor summary incompleteness — no action needed.
+- `cmd/tekhton/causal.go:37` — `newCausalInitCmd` calls `causal.Open` (which scans and seeds the full log) just to ensure dirs exist, then does a separate `os.OpenFile` touch. A dedicated mkdir+touch path would be cheaper, though not incorrect. Consider a lightweight `causal.EnsureDirs(path)` helper in a future cleanup pass.
+- `internal/proto/causal_v1.go:127` — `Itoa` is exported but dead code. The comment says it is for `emit.go`, but `emit.go` uses `fmt.Sprintf` instead. Remove or use in a future cleanup pass.
+- `internal/causal/log.go:102` — `strings.Index(string(line), key)` allocates a string per seed scan line. `bytes.Index(line, []byte(key))` avoids this. At 2000 events the cost is negligible; clean-up candidate only.
+- `cmd/tekhton/causal.go` — `--stage` and `--type` on the emit subcommand are not marked `cobra.MarkFlagRequired`. Validation falls through to `causal.Emit`, which returns an internal error string rather than Cobra's standard usage output. Functional but inconsistent with Cobra conventions.
 
 ## Coverage Gaps
-- `internal/version` package has no unit tests. A `version_test.go` asserting `String()` trims surrounding whitespace would be trivial and a good habit to establish early in V4. Acceptable for M01 — no tests are expected yet.
+- `causal status` subcommand has no bash test in `tests/test_causal_log.sh`. The Go-side `lastEventID` helper is exercised indirectly through `_last_event_id`, but a direct `tekhton causal status` invocation test would be cleaner once the binary is always available.
+- `newCausalInitCmd` has no Go unit test. Its logic is thin (Open + touch), low risk, but a round-trip test in `cmd/tekhton/` would complete the CLI surface coverage.
 
 ## ACP Verdicts
-- ACP: ldflags injection instead of `//go:embed ../../VERSION` — ACCEPT — The embed package's explicit prohibition of `..` in patterns makes the design-doc sketch uncompilable. ldflags injection is the canonical Go idiom for binary version stamping; the `var Version = "dev"` sentinel for non-make builds is exactly right and the rationale is documented in `docs/go-build.md`.
+- ACP: Bash fallback inside `lib/causality.sh` — ACCEPT — `_json_escape` serves 20+ callers that predate m02; moving it to `lib/common.sh` is the correct canonical home, and the transitional fallback is necessary until the Go binary is universally installed. The parity gate (`scripts/causal-parity-check.sh`) proves byte-level format compatibility.
+- ACP: `tekhton causal init` does not truncate — ACCEPT — Resume-friendly no-op semantics are the only correct choice; truncating on init would destroy resumed-run events. The milestone AC #1 wording is what is wrong, not the implementation. The design observation is correctly logged for a future doc cleanup.
 
 ## Drift Observations
-- [docs/go-build.md:68 vs Makefile:11] Illustrative ldflags example in the doc uses raw `cat VERSION` while the Makefile correctly strips whitespace with `tr`. Cosmetic — `version.String()` saves both callers — but the discrepancy could confuse the next wedge author who reads the doc before the Makefile.
+- `lib/crawler.sh` — defines `_json_escape` with a body byte-identical to `lib/common.sh`. After m02 this is a shadowing duplicate: `common.sh` is always sourced first, so `crawler.sh`'s definition is dead. Coder already noted it as out of scope; cleanup candidate for the next drift-sweep pass.
+- `internal/proto/causal_v1.go:127` — `Itoa` is exported dead code (see Non-Blocking Notes above). Consolidate or remove in a future cleanup pass.
