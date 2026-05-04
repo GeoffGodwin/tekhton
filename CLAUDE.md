@@ -575,10 +575,36 @@ for individual milestone records.
 
 Milestones are managed as individual files in `.claude/milestones/`.
 See `MANIFEST.cfg` for ordering, dependencies, and status. Completed milestones
-are archived to `MILESTONE_ARCHIVE.md`.
+are archived to `.tekhton/MILESTONE_ARCHIVE.md`.
 
-## Next Initiative: Tekhton 4.0
+**Milestone authoring format.** All new milestone files MUST be created from
+the canonical template at `.tekhton/MILESTONE_TEMPLATE.md`. The template
+encodes the meta-block placement, title format, required sections, and the
+acceptance-criteria conventions the runtime expects (see m138 for an
+exemplar). Do not free-hand a milestone file — copy the template and fill
+it in. Format drift between milestones has cost us multiple times; the
+template exists so it never happens again.
 
-V4 is in design (`DESIGN_v4.md`). Milestone numbering will restart with V4 and
-the `.claude/milestones/` directory will be reset when V4 work begins.
+**Archived V3 milestones.** The V3 milestone set (m01–m138, all completed)
+is preserved at `.claude/milestones-v3/v3-final/` along with its frozen
+`MANIFEST.cfg`. The active `.claude/milestones/MANIFEST.cfg` is fresh for V4
+and starts empty.
+
+## Next Initiative: Tekhton 4.0 — Go Migration
+
+V4 is the Ship-of-Theseus migration of Tekhton from Bash to Go (`DESIGN_v4.md`).
+Milestone numbering restarts at M01 for V4 — `.claude/milestones/MANIFEST.cfg`
+is fresh and the V3 milestone set is archived (see Milestone Management above).
+The V4 milestone set has not yet been authored — design references to "M139+"
+inside `DESIGN_v4.md` are historical placeholders from when this work was
+scoped as a V3 continuation.
+
+Subsequent initiatives queued behind V4:
+- **V5 — Dev Shop in a Box** (`DESIGN_v5.md`): multi-provider abstraction,
+  parallel execution engine, project-owner experience, enterprise-grade
+  infrastructure (structured logging, integrations, NFR enforcement,
+  identity stubs). Layers on top of the V4 Go supervisor.
+- **V6 — Rewrite Considerations stub** (`DESIGN_v6.md`): largely superseded
+  by V4. Retained for residual observations (test-suite migration, Python
+  `tools/` absorption) that may inform a future cleanup initiative.
 
