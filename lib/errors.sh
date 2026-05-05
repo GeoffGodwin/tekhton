@@ -25,7 +25,14 @@ source "${TEKHTON_HOME:?}/lib/errors_helpers.sh"
 #                    env_setup (M53), service_dep (M53), toolchain (M53),
 #                    resource (M53), test_infra (M53)
 #   AGENT_SCOPE    — Expected agent failures (all permanent): null_run, max_turns,
-#                    activity_timeout, no_summary, scope_unknown
+#                    activity_timeout, null_activity_timeout, no_summary,
+#                    scope_unknown
+#                    null_activity_timeout = exit 124 with turns=0 (agent never
+#                    produced any output before the activity timer fired).
+#                    Distinguishable from activity_timeout (turns>0, agent went
+#                    silent mid-run) because the zero-turn case is almost
+#                    always upstream — quota exhaustion, auth lockout, or the
+#                    claude CLI hanging before its first event.
 #   PIPELINE       — Tekhton internal errors (all permanent): state_corrupt,
 #                    config_error, missing_file, template_error, internal
 
@@ -211,9 +218,17 @@ classify_error() {
 
     # --- AGENT_SCOPE: Expected agent-level failures --------------------------
 
-    # Activity timeout (exit 124 with activity timeout marker)
+    # Activity timeout (exit 124). When the agent produced zero turns before
+    # the timer fired, classify as null_activity_timeout — the strongest
+    # signal that the failure is upstream (quota/auth/CLI hang) rather than
+    # a stuck agent. Stray file_changes are unreliable here because they may
+    # come from sidecar/TUI/log writes outside the agent process.
     if [[ "$exit_code" -eq 124 ]]; then
-        echo "AGENT_SCOPE|activity_timeout|false|Agent activity timeout — no output or file changes"
+        if [[ "$turns" -eq 0 ]]; then
+            echo "AGENT_SCOPE|null_activity_timeout|false|Agent never produced output before activity timeout (likely upstream quota/auth)"
+            return 0
+        fi
+        echo "AGENT_SCOPE|activity_timeout|false|Agent activity timeout after ${turns} turn(s) — went silent mid-run"
         return 0
     fi
 

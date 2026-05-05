@@ -194,6 +194,7 @@ _state_bash_read_field() {
         return 0
     fi
 
+    # REMOVE IN m10
     # Legacy markdown: map field → "## Heading" then read the next line.
     local heading
     case "$field" in

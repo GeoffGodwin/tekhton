@@ -13,15 +13,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Sysexits-style codes for failures internal to `tekhton supervise` itself
-// (envelope invalid, internal panic, I/O on the request channel). Distinct
-// from agent-side exit codes so bash callers can distinguish "the supervisor
-// could not run" from "the agent ran and exited with N".
-const (
-	exitUsage    = 64 // EX_USAGE — request envelope rejected
-	exitSoftware = 70 // EX_SOFTWARE — internal supervisor failure
-)
-
 // newSuperviseCmd wires `tekhton supervise`. The subcommand reads an
 // agent.request.v1 JSON envelope (from --request-file or stdin), hands it
 // to internal/supervisor.Run, and prints an agent.response.v1 JSON envelope
@@ -32,17 +23,22 @@ const (
 //	exitUsage  — request envelope was malformed
 //	exitSoftware — internal supervisor failure (I/O, panic, etc.)
 //
-// In the m05 stub, Run never returns an agent-side failure — every valid
-// request emits a success response. m06 fills in the real subprocess path.
+// As of m06 the supervisor actually launches the agent CLI (default `claude`,
+// overridable via $TEKHTON_AGENT_BINARY) and propagates its exit code.
+// Bash callers wired into the agent supervision flow consume this binary
+// once m10 flips lib/agent.sh to the Go shim; until then the production
+// path is bash and this command is exercised primarily by tests + the
+// future internal pipeline driver.
 func newSuperviseCmd() *cobra.Command {
 	var requestFile string
 	c := &cobra.Command{
 		Use:   "supervise",
 		Short: "Run an agent under supervision (reads agent.request.v1 JSON, prints agent.response.v1 JSON).",
 		Long: "Reads an agent.request.v1 envelope on stdin (or from --request-file)\n" +
-			"and prints the agent.response.v1 envelope on stdout. The supervisor\n" +
-			"is currently a Phase 2 wedge — m05 ships the contract and the stub\n" +
-			"path; the real subprocess invocation lands in m06.",
+			"and prints the agent.response.v1 envelope on stdout. m06 lights up\n" +
+			"the real subprocess path; m07–m09 layer retry, quota pause, and\n" +
+			"Windows reaping; m10 publishes the parity test suite that gates\n" +
+			"the bash→Go shim flip in lib/agent.sh.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			req, err := readSuperviseRequest(requestFile, cmd.InOrStdin())
 			if err != nil {

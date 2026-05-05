@@ -176,6 +176,22 @@ else
     fail "Expected --diagnose for timeout: $output"
 fi
 
+# ── Test 7b: failure + null_activity_timeout → quota/auth advice ────
+# Zero-turn activity timeout points at upstream (quota/auth/CLI hang),
+# not stuck-agent retry loops, so the next-action message must steer
+# the user away from a generic --diagnose loop.
+echo "Test 7b: failure + null_activity_timeout"
+reset_state
+_PIPELINE_EXIT_CODE=1
+AGENT_ERROR_SUBCATEGORY="null_activity_timeout"
+
+output=$(_compute_next_action 2>/dev/null)
+if echo "$output" | grep -qE "quota|claude auth"; then
+    pass "null_activity_timeout → quota/auth advice"
+else
+    fail "Expected quota/auth advice for null_activity_timeout: $output"
+fi
+
 # ── Test 8: failure + other → generic --diagnose ────────────────────
 echo "Test 8: failure + generic"
 reset_state

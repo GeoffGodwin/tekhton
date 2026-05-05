@@ -201,11 +201,24 @@ check_field "permissions transient"   "false"        "$(get_field "$record" 3)"
 
 echo "=== classify_error: AGENT_SCOPE variants ==="
 
-# Activity timeout — exit 124
-record=$(classify_error 124 "" "" 0 0)
+# Activity timeout with output — exit 124, turns > 0 → activity_timeout
+record=$(classify_error 124 "" "" 3 7)
 check_field "activity_timeout category"    "AGENT_SCOPE"      "$(get_field "$record" 1)"
 check_field "activity_timeout subcategory" "activity_timeout" "$(get_field "$record" 2)"
 check_field "activity_timeout transient"   "false"            "$(get_field "$record" 3)"
+
+# Null activity timeout — exit 124, turns == 0 → null_activity_timeout
+# (agent never produced any output before activity timer fired — likely
+# upstream quota/auth, not a stuck agent)
+record=$(classify_error 124 "" "" 0 0)
+check_field "null_activity_timeout category"    "AGENT_SCOPE"            "$(get_field "$record" 1)"
+check_field "null_activity_timeout subcategory" "null_activity_timeout"  "$(get_field "$record" 2)"
+check_field "null_activity_timeout transient"   "false"                  "$(get_field "$record" 3)"
+
+# Null activity timeout — stray file_changes don't suppress the classification
+# because they may be sidecar/TUI artifacts, not agent output
+record=$(classify_error 124 "" "" 14 0)
+check_field "null_activity_timeout (with stray files) subcategory" "null_activity_timeout" "$(get_field "$record" 2)"
 
 # Null run — exit 1 + turns=1 (<=2) + no file changes
 record=$(classify_error 1 "" "" 0 1)
@@ -334,6 +347,7 @@ permanent_cases=(
     "AGENT_SCOPE null_run"
     "AGENT_SCOPE max_turns"
     "AGENT_SCOPE activity_timeout"
+    "AGENT_SCOPE null_activity_timeout"
     "AGENT_SCOPE no_summary"
     "AGENT_SCOPE scope_unknown"
     "PIPELINE state_corrupt"
@@ -382,6 +396,7 @@ all_cases=(
     "AGENT_SCOPE null_run"
     "AGENT_SCOPE max_turns"
     "AGENT_SCOPE activity_timeout"
+    "AGENT_SCOPE null_activity_timeout"
     "AGENT_SCOPE no_summary"
     "AGENT_SCOPE scope_unknown"
     "PIPELINE state_corrupt"

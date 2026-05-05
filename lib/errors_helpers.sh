@@ -89,7 +89,10 @@ suggest_recovery() {
             echo "Agent exhausted its turn budget. The task may be too large for the configured turn limit. Try splitting the milestone or increasing *_MAX_TURNS in pipeline.conf."
             ;;
         AGENT_SCOPE/activity_timeout)
-            echo "Agent went silent (no output or file changes). Increase AGENT_ACTIVITY_TIMEOUT in pipeline.conf, or check if the agent is stuck in a retry loop."
+            echo "Agent went silent after producing some output. Increase AGENT_ACTIVITY_TIMEOUT in pipeline.conf, or check if the agent is stuck in a tool-use retry loop."
+            ;;
+        AGENT_SCOPE/null_activity_timeout)
+            echo "Agent never produced any output before activity timeout — almost always upstream. Check: (1) Anthropic API quota for the model in use, (2) 'claude' CLI auth state ('claude auth status'), (3) network reachability to api.anthropic.com. Re-running immediately will hit the same wall — wait for quota refresh or fix auth first."
             ;;
         AGENT_SCOPE/no_summary)
             echo "Agent completed but didn't produce expected output files. Re-run to retry."

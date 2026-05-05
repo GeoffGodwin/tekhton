@@ -124,6 +124,13 @@ AGENT_ERROR_SUBCATEGORY="activity_timeout"
 result=$(_classify_failure)
 assert_eq "1.4 activity_timeout → save_exit" "save_exit" "$result"
 
+# AGENT_SCOPE/null_activity_timeout → save_exit
+# (zero-turn timeout — distinct sub-category but same recovery action,
+# since re-launching into the upstream wall is wasteful regardless)
+AGENT_ERROR_SUBCATEGORY="null_activity_timeout"
+result=$(_classify_failure)
+assert_eq "1.4b null_activity_timeout → save_exit" "save_exit" "$result"
+
 # ENVIRONMENT → save_exit
 AGENT_ERROR_CATEGORY="ENVIRONMENT"
 AGENT_ERROR_SUBCATEGORY="missing_tool"

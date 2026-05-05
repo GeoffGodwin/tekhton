@@ -1,0 +1,5 @@
+{"type":"turn_started","turn":1}
+{"type":"tool_use","turn":1,"detail":{"name":"Read","args":{"file_path":"/tmp/x"}}}
+{"type":"turn_ended","turn":1}
+{"type":"turn_started","turn":2}
+{"type":"turn_ended","turn":2}

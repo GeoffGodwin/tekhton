@@ -1,6 +1,6 @@
 <!-- milestone-meta
-id: "6"
-status: "todo"
+id: "06"
+status: "done"
 -->
 
 # m06 — Supervisor Core: exec.CommandContext + Line Decoder + Activity Timer

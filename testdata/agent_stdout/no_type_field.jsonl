@@ -1,0 +1,4 @@
+{"turn":1,"detail":"no type field — should be ignored"}
+{"type":"turn_started","turn":1}
+{"type":"","turn":1}
+{"type":"turn_ended","turn":1}

@@ -118,6 +118,13 @@ _compute_next_action() {
         return 0
     fi
 
+    # Upstream-suspected null run (zero turns + activity timeout) — point at
+    # quota/auth instead of generic diagnose, since rerunning won't help.
+    if [[ "$error_sub" == "null_activity_timeout" ]]; then
+        echo "What's next: check Anthropic quota / 'claude auth status' before re-running"
+        return 0
+    fi
+
     # Stuck / timeout
     if [[ "$error_sub" == "activity_timeout" ]] || [[ "$error_sub" == "null_run" ]]; then
         echo "What's next: tekhton --diagnose for root cause analysis"

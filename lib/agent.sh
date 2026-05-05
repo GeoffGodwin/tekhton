@@ -248,7 +248,23 @@ run_agent() {
         _changed_count=$(_count_changed_files_since "$_prerun_marker")
     fi
     if [ "$agent_exit" -eq 124 ]; then
-        if [ "$_has_file_changes" = true ] || [ "$_has_summary" = true ]; then
+        # When turns_used == 0, file_changes is an unreliable productivity
+        # signal — sidecar/TUI/log writes can land in the working tree even
+        # though the agent never produced a single JSON event. The summary
+        # file is a stronger signal because the agent itself writes it, but
+        # if the agent never ran there can be no summary either. Classify
+        # zero-turn timeouts as null runs regardless of file_changes.
+        if [ "$turns_used" -eq 0 ] && [ "$_has_summary" != true ]; then
+            LAST_AGENT_NULL_RUN=true
+            if [ "$_has_file_changes" = true ]; then
+                warn "[$label] NULL RUN DETECTED — agent activity-timed out at 0 turns. ${_changed_count} stray file(s) detected (sidecar/TUI artifacts, not agent output)."
+            elif [ "$_was_activity_timeout" = true ]; then
+                warn "[$label] NULL RUN DETECTED — agent activity-timed out after ${_activity_timeout}s of silence at 0 turns."
+            else
+                warn "[$label] NULL RUN DETECTED — agent timed out at 0 turns."
+            fi
+            warn "[$label] Likely upstream (quota / auth / CLI hang). Re-running will hit the same wall until that clears."
+        elif [ "$_has_file_changes" = true ] || [ "$_has_summary" = true ]; then
             # Agent timed out but produced file changes — NOT a null run.
             if [ "$_was_activity_timeout" = true ]; then
                 warn "[$label] Activity timeout fired but agent modified ${_changed_count} file(s) — classifying as productive run."

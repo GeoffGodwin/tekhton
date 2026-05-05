@@ -20,9 +20,9 @@ import (
 //
 // Exit codes (callers depend on this):
 //
-//	0  — success (stdout = JSON or field value)
-//	1  — file missing (state.ErrNotFound or generic failure)
-//	2  — file corrupt (state.ErrCorrupt) — caller should NOT silent-retry
+//	0                — success (stdout = JSON or field value)
+//	exitNotFound (1) — file missing (state.ErrNotFound or generic failure)
+//	exitCorrupt  (2) — file corrupt (state.ErrCorrupt) — caller MUST NOT silent-retry
 func newStateCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "state",
@@ -48,17 +48,17 @@ func newStateReadCmd() *cobra.Command {
 			snap, err := state.New(path).Read()
 			if err != nil {
 				if errors.Is(err, state.ErrNotFound) {
-					return errExitCode{code: 1, err: err}
+					return errExitCode{code: exitNotFound, err: err}
 				}
 				if errors.Is(err, state.ErrCorrupt) {
-					return errExitCode{code: 2, err: err}
+					return errExitCode{code: exitCorrupt, err: err}
 				}
 				return err
 			}
 			if field != "" {
 				val := lookupField(snap, field)
 				if val == "" {
-					return errExitCode{code: 1, err: fmt.Errorf("field %q empty or absent", field)}
+					return errExitCode{code: exitNotFound, err: fmt.Errorf("field %q empty or absent", field)}
 				}
 				fmt.Println(val)
 				return nil
@@ -143,17 +143,6 @@ func newStateClearCmd() *cobra.Command {
 	c.Flags().StringVar(&path, "path", "", "Override $PIPELINE_STATE_FILE.")
 	return c
 }
-
-// errExitCode lets RunE return a typed exit-code error so main.go can map
-// state.ErrNotFound → exit 1 and state.ErrCorrupt → exit 2 without globals.
-type errExitCode struct {
-	code int
-	err  error
-}
-
-func (e errExitCode) Error() string { return e.err.Error() }
-func (e errExitCode) Unwrap() error { return e.err }
-func (e errExitCode) ExitCode() int { return e.code }
 
 type fieldPair struct{ key, val string }
 

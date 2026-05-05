@@ -9,49 +9,11 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
-func validRequest() *proto.AgentRequestV1 {
-	return &proto.AgentRequestV1{
-		Proto:               proto.AgentRequestProtoV1,
-		RunID:               "run_test",
-		Label:               "coder",
-		Model:               "claude-opus-4-7",
-		MaxTurns:            10,
-		PromptFile:          "/tmp/coder.prompt",
-		WorkingDir:          "/tmp/proj",
-		TimeoutSecs:         30,
-		ActivityTimeoutSecs: 5,
-	}
-}
-
 // ---------------------------------------------------------------------------
-// Run (stub) — AC #3
+// Run — validation rejection paths only. The success path (real subprocess
+// + stdout decode + activity timer) lives in run_test.go where the
+// fake_agent.sh fixture is available.
 // ---------------------------------------------------------------------------
-
-func TestSupervisor_Run_StubReturnsSuccess(t *testing.T) {
-	sup := New(nil, nil)
-	res, err := sup.Run(context.Background(), validRequest())
-	if err != nil {
-		t.Fatalf("Run returned error: %v", err)
-	}
-	if res == nil {
-		t.Fatal("Run returned nil result")
-	}
-	if res.Proto != proto.AgentResultProtoV1 {
-		t.Errorf("Proto: got %q, want %q", res.Proto, proto.AgentResultProtoV1)
-	}
-	if res.Outcome != proto.OutcomeSuccess {
-		t.Errorf("Outcome: got %q, want %q", res.Outcome, proto.OutcomeSuccess)
-	}
-	if res.ExitCode != 0 {
-		t.Errorf("ExitCode: got %d, want 0", res.ExitCode)
-	}
-	if res.RunID != "run_test" {
-		t.Errorf("RunID echo: got %q, want run_test", res.RunID)
-	}
-	if res.Label != "coder" {
-		t.Errorf("Label echo: got %q, want coder", res.Label)
-	}
-}
 
 func TestSupervisor_Run_NilRequestRejected(t *testing.T) {
 	sup := New(nil, nil)
@@ -83,20 +45,6 @@ func TestSupervisor_Run_RejectsInvalidRequest(t *testing.T) {
 				t.Errorf("error not wrapped in ErrInvalidRequest: %v", err)
 			}
 		})
-	}
-}
-
-// TestSupervisor_Run_StdoutTailEmptyOnStub guards against a future change that
-// fills StdoutTail in the stub path — m05's contract is "no tail on success
-// stub" so the response stays minimal until m06 wires the real reader.
-func TestSupervisor_Run_StdoutTailEmptyOnStub(t *testing.T) {
-	sup := New(nil, nil)
-	res, err := sup.Run(context.Background(), validRequest())
-	if err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(res.StdoutTail) != 0 {
-		t.Errorf("StdoutTail should be empty in m05 stub, got %d lines", len(res.StdoutTail))
 	}
 }
 
@@ -210,7 +158,7 @@ func TestCategoryTransient_UnknownCategoryNotTransient(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// New / ErrNotImplemented sanity
+// New + binary configuration
 // ---------------------------------------------------------------------------
 
 func TestNew_AcceptsNilSeams(t *testing.T) {
@@ -220,8 +168,27 @@ func TestNew_AcceptsNilSeams(t *testing.T) {
 	}
 }
 
-func TestErrNotImplemented_HasMessage(t *testing.T) {
-	if ErrNotImplemented.Error() == "" {
-		t.Error("ErrNotImplemented must have a non-empty message")
+func TestNew_DefaultsToClaudeBinary(t *testing.T) {
+	t.Setenv(AgentBinaryEnv, "")
+	sup := New(nil, nil)
+	if sup.binary != defaultBinary {
+		t.Errorf("binary: got %q, want %q", sup.binary, defaultBinary)
 	}
 }
+
+func TestNew_HonorsEnvOverride(t *testing.T) {
+	t.Setenv(AgentBinaryEnv, "/path/to/fake_agent.sh")
+	sup := New(nil, nil)
+	if sup.binary != "/path/to/fake_agent.sh" {
+		t.Errorf("binary: got %q, want /path/to/fake_agent.sh", sup.binary)
+	}
+}
+
+func TestSetBinary_OverridesAfterConstruction(t *testing.T) {
+	sup := New(nil, nil)
+	sup.SetBinary("/tmp/fake")
+	if sup.binary != "/tmp/fake" {
+		t.Errorf("binary: got %q, want /tmp/fake", sup.binary)
+	}
+}
+

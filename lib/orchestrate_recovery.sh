@@ -164,7 +164,16 @@ _classify_failure() {
         return
     fi
 
-    # Activity timeout
+    # Null activity timeout — exit 124 with zero turns. Re-launching into
+    # the same upstream wall (quota/auth/CLI hang) wastes budget and burns
+    # cache. Save state with a distinct reason so the recovery block names
+    # the actual cause and the user can act on it before re-running.
+    if [[ "$error_cat" = "AGENT_SCOPE" ]] && [[ "$error_sub" = "null_activity_timeout" ]]; then
+        echo "save_exit"
+        return
+    fi
+
+    # Activity timeout (turns > 0 — agent went silent mid-run)
     if [[ "$error_cat" = "AGENT_SCOPE" ]] && [[ "$error_sub" = "activity_timeout" ]]; then
         echo "save_exit"
         return
