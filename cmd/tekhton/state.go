@@ -188,12 +188,17 @@ func applyField(snap *proto.StateSnapshotV1, key, val string) {
 			return
 		}
 	}
+	if val == "" {
+		// Empty value means delete. If Extra is nil, there is nothing to
+		// delete — leave it nil rather than materializing an empty map for
+		// a no-op write.
+		if snap.Extra != nil {
+			delete(snap.Extra, key)
+		}
+		return
+	}
 	if snap.Extra == nil {
 		snap.Extra = make(map[string]string)
-	}
-	if val == "" {
-		delete(snap.Extra, key)
-		return
 	}
 	snap.Extra[key] = val
 }

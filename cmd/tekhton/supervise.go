@@ -39,6 +39,12 @@ func newSuperviseCmd() *cobra.Command {
 			"the real subprocess path; m07–m09 layer retry, quota pause, and\n" +
 			"Windows reaping; m10 publishes the parity test suite that gates\n" +
 			"the bash→Go shim flip in lib/agent.sh.",
+		// The agent.response.v1 envelope already encodes the failure mode in
+		// its Outcome/ErrorMessage fields; cobra's "Error: ..." + usage block
+		// would just duplicate that on stderr and pollute parity-test parsing.
+		// Exit code is still set via errExitCode in main.go.
+		SilenceErrors: true,
+		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			req, err := readSuperviseRequest(requestFile, cmd.InOrStdin())
 			if err != nil {

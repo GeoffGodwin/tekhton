@@ -148,6 +148,31 @@ else
     echo -e "  ${YELLOW}SKIP${NC} Python tests (tools/tests/ not found)"
 fi
 
+# --- Go tests (conditional) ---------------------------------------------------
+GO_PASS=0
+GO_FAIL=0
+
+if [ -f "${TEKHTON_HOME}/go.mod" ]; then
+    if command -v go &>/dev/null; then
+        echo
+        echo "════════════════════════════════════════"
+        echo "  Go Package Tests"
+        echo "════════════════════════════════════════"
+        echo
+
+        if (cd "$TEKHTON_HOME" && go test ./... 2>&1); then
+            echo -e "  ${GREEN}Go tests passed${NC}"
+            GO_PASS=1
+        else
+            echo -e "  ${RED}Go tests failed${NC}"
+            GO_FAIL=1
+        fi
+    else
+        echo
+        echo -e "  ${YELLOW}SKIP${NC} Go tests (go not on PATH — required by go.mod)"
+    fi
+fi
+
 echo
 echo "════════════════════════════════════════"
 echo "  Final Summary"
@@ -166,7 +191,14 @@ if [ "$PYTHON_PASS" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
         echo -e "  Python: ${GREEN}PASSED${NC}"
     fi
 fi
+if [ "$GO_PASS" -gt 0 ] || [ "$GO_FAIL" -gt 0 ]; then
+    if [ "$GO_FAIL" -gt 0 ]; then
+        echo -e "  Go:     ${RED}FAILED${NC}"
+    else
+        echo -e "  Go:     ${GREEN}PASSED${NC}"
+    fi
+fi
 
-if [ "$FAIL" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ]; then
+if [ "$FAIL" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ] || [ "$GO_FAIL" -gt 0 ]; then
     exit 1
 fi
