@@ -103,9 +103,9 @@ run_complete_loop() {
     # Restore orchestration state from prior run (resume support)
     if [[ -f "${PIPELINE_STATE_FILE:-}" ]]; then
         local _saved_exit_reason _saved_attempt _saved_calls
-        _saved_exit_reason=$(awk '/^## Exit Reason/{getline; print; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
-        _saved_attempt=$(awk '/^Pipeline attempt:/{print $NF; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
-        _saved_calls=$(awk '/^Cumulative agent calls:/{print $NF; exit}' "$PIPELINE_STATE_FILE" 2>/dev/null || echo "")
+        _saved_exit_reason=$(read_pipeline_state_field exit_reason)
+        _saved_attempt=$(read_pipeline_state_field pipeline_attempt)
+        _saved_calls=$(read_pipeline_state_field agent_calls_total)
 
         # If prior run hit a safety bound, reset counters for fresh budget
         case "$_saved_exit_reason" in

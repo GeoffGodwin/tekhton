@@ -11,20 +11,6 @@ set -euo pipefail
 # Also sources: crawler_inventory.sh, crawler_content.sh, crawler_emit.sh
 # =============================================================================
 
-# --- Shared JSON/index utilities (used by all crawler_*.sh emitters) ----------
-
-# _json_escape — Escapes a string for safe embedding in JSON values.
-# Handles: backslash, double-quote, tab, newline, carriage return.
-_json_escape() {
-    local s="$1"
-    s="${s//\\/\\\\}"
-    s="${s//\"/\\\"}"
-    s="${s//$'\t'/\\t}"
-    s="${s//$'\n'/\\n}"
-    s="${s//$'\r'/\\r}"
-    printf '%s' "$s"
-}
-
 # _ensure_index_dir — Creates the structured index directory and samples subdir.
 _ensure_index_dir() {
     local index_dir="$1"

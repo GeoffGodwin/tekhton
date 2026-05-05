@@ -61,15 +61,20 @@ assert_not_contains() {
     fi
 }
 
-# Extract the value of a "## Section" from a pipeline state file.
-# Returns the first non-empty, non-comment line following the section header.
+# Extract the value of a "## Section" from a pipeline state file via the
+# m03 wedge shim. Section names are mapped to JSON keys.
 extract_state_field() {
-    local file="$1" section="$2"
-    awk -v hdr="## ${section}" '
-        $0 == hdr        { found=1; next }
-        found && /^## /  { exit }
-        found && NF > 0  { print; exit }
-    ' "$file"
+    local file="$1" section="$2" key
+    case "$section" in
+        "Resume Command") key="resume_flag" ;;
+        "Notes")          key="notes" ;;
+        "Exit Stage")     key="exit_stage" ;;
+        "Exit Reason")    key="exit_reason" ;;
+        "Task")           key="resume_task" ;;
+        "Milestone")      key="milestone_id" ;;
+        *)                key="${section,,}"; key="${key// /_}" ;;
+    esac
+    read_pipeline_state_field "$file" "$key"
 }
 
 # --- Shared environment -------------------------------------------------------

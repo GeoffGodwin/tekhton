@@ -122,6 +122,3 @@ func Quote(s string) string {
 	return b.String()
 }
 
-// Itoa is a small allocation-free wrapper around strconv.Itoa, kept here so
-// emit.go can format event IDs without importing strconv directly.
-func Itoa(n int) string { return strconv.Itoa(n) }

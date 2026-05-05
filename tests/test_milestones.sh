@@ -344,8 +344,8 @@ assert "State file removed after clear" "$([ ! -f "$MILESTONE_STATE_FILE" ] && e
 echo "=== state.sh milestone field ==="
 
 write_pipeline_state "coder" "interrupted" "--auto-advance" "Implement Milestone 3" "auto-advance" "3"
-assert "Pipeline state includes milestone field" "$(grep -q '## Milestone' "$PIPELINE_STATE_FILE" && echo 0 || echo 1)"
-saved_milestone=$(awk '/^## Milestone$/{getline; gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit}' "$PIPELINE_STATE_FILE")
+assert "Pipeline state includes milestone field" "$(grep -q '\"milestone_id\"' "$PIPELINE_STATE_FILE" && echo 0 || echo 1)"
+saved_milestone=$(read_pipeline_state_field milestone_id)
 assert "Pipeline state milestone is 3" "$([ "$saved_milestone" = "3" ] && echo 0 || echo 1)"
 
 # --- Test: parse varied heading formats ---------------------------------------

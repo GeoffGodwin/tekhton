@@ -2,14 +2,19 @@
 PASS
 
 ## Confidence
-82
+85
 
 ## Reasoning
-- **Scope Definition**: Clear. Writer side moves to Go; query layer explicitly stays bash. The on-disk seam contract is stated explicitly, so what changes and what doesn't is unambiguous.
-- **Testability**: Acceptance criteria are specific and mechanically verifiable — CLI invocations with expected outputs, goroutine/emit counts for the race test, diff rules for the parity test, ≥80% coverage threshold.
-- **Ambiguity**: Low. Go struct and function signatures are spelled out. Bash shim implementation is provided verbatim. CLI subcommand surface and flag names are enumerated.
-- **Implicit Assumptions**: `tekhton causal emit` reads log path from `$CAUSAL_LOG_FILE` env — explicitly called out in Watch For. `m01` binary existence is a declared dependency. AC #7 "V3 baseline" is understood to mean the self-hosted Tekhton project.
-- **Minor gap — Files Modified table**: `scripts/causal-parity-check.sh` is required by AC #9 but not listed in Files Modified. A developer will create it when implementing that criterion — not a blocker, but worth noting.
-- **Minor gap — `tekhton causal status`**: Mentioned in design prose as conditional ("if any caller still reads them") with no acceptance criterion and no Files Modified entry. Implementer should confirm whether any caller reads `_LAST_EVENT_ID` or `_CAUSAL_EVENT_COUNT` before deciding to build this subcommand.
-- **Migration Impact**: Not an explicit section, but the stability guarantee ("all emit_event call sites continue to work via the shim") and the verbatim shim design fully cover the concern. No action required.
-- **UI Testability**: Not applicable — no UI components.
+- Scope is precisely bounded: exact files listed with estimated line counts, clear in/out of scope (no JSON-to-markdown back-compat, no `Extra` field promotion, no `tekhton status` command)
+- JSON contract is fully specified (`StateSnapshotV1` struct with field names, types, and JSON tags)
+- Package API is spelled out (`Store.Read`, `Store.Write`, `Store.Update`, `Store.Clear`) with semantics for each
+- CLI surface is complete with subcommands, exit codes, and stdin/stdout contracts
+- Bash shim replacement is provided verbatim — no guessing required
+- Acceptance criteria are specific and machine-verifiable (grep pattern, line count threshold, coverage %, byte-identical round-trip)
+- Watch For section pre-empts the four most likely implementation mistakes (legacy reader scope creep, `updated_at` drift, WSL atomicity, quote-stripping callers)
+- Migration window is explicit: legacy reader survives m03→m04, deleted in m05, code annotated `// REMOVE IN m05`
+- Minor gap: `ErrorRecordV1` struct fields are not defined in the proto section — a developer must infer its shape from the existing bash error taxonomy. Low risk given the `Extra map[string]string` escape hatch.
+- Minor gap: `scripts/state-resume-parity-check.sh` and `scripts/test-sigint-resume.sh` appear in acceptance criteria (AC #6, #7) but are absent from the Files Modified table. A competent developer will create them; not a blocker.
+- Neither gap is blocking — both are resolvable by inference from milestone context.
+- Migration impact is covered implicitly via the legacy reader design and dogfooding stance; no dedicated section needed.
+- UI Testability: not applicable — no UI components.

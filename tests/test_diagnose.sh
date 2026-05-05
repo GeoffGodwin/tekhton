@@ -58,6 +58,7 @@ _json_escape() {
 }
 is_dashboard_enabled() { return 1; }
 
+source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 
 # --- Test helpers ------------------------------------------------------------

@@ -34,7 +34,10 @@ header()  { :; }
 : "${MERGE_CONTEXT_FILE:=${TEKHTON_DIR}/MERGE_CONTEXT.md}"
 : "${DESIGN_FILE:=${TEKHTON_DIR}/DESIGN.md}"
 
-# Source detect.sh first (provides _DETECT_EXCLUDE_DIRS + _extract_json_keys)
+# Source common.sh first (provides logging, _json_escape, etc.)
+# shellcheck source=../lib/common.sh
+source "${TEKHTON_HOME}/lib/common.sh"
+# Source detect.sh (provides _DETECT_EXCLUDE_DIRS + _extract_json_keys)
 # shellcheck source=../lib/detect.sh
 source "${TEKHTON_HOME}/lib/detect.sh"
 # shellcheck source=../lib/crawler.sh

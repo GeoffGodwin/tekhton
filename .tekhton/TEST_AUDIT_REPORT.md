@@ -1,41 +1,51 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, ~19 shell test sections + 4 Go test functions
-Verdict: PASS
+Tests audited: 2 files, 30 Go test functions (cmd/tekhton/state_test.go) + 6 bash test blocks (tests/test_state_cli_exit_codes.sh)
+Verdict: CONCERNS
 
 ### Findings
 
-#### COVERAGE: Archive retention assertion is one count too lenient
-- File: tests/test_causal_log.sh:148
-- Issue: Test seeds 5 stale archives, sets `CAUSAL_LOG_RETENTION_RUNS=2`, calls `archive_causal_log`, then asserts `remaining -le 3`. With retention=2 the implementation prunes to exactly 2 files, so the assertion passes — but an off-by-one bug that retained 3 archives would also pass silently. The bound should track the config variable.
-- Severity: MEDIUM
-- Action: Change `[[ "$remaining" -le 3 ]]` to `[[ "$remaining" -le "$CAUSAL_LOG_RETENTION_RUNS" ]]`.
+#### EXERCISE: Go test suite was not executed — TESTER_REPORT pass count is bash-only
+- File: cmd/tekhton/state_test.go
+- Issue: TESTER_REPORT records "Passed: 500 Failed: 0" without disclosing that none of the 30 Go test functions in this file were compiled or run. CODER_SUMMARY AC#12 explicitly states "Go toolchain not available in this sandbox to produce the exact coverage number." The 500 figure is entirely from bash tests. All assertions in state_test.go have received zero runtime validation.
+- Severity: HIGH
+- Action: Run `go test ./cmd/tekhton/ -v -race` before signing off on AC#12. If the toolchain cannot be made available, the TESTER_REPORT must explicitly state "Go tests not executed" rather than folding them into the overall pass total.
 
-#### COVERAGE: Go test file covers only the `init` subcommand
-- File: cmd/tekhton/causal_test.go
-- Issue: Four tests cover `newCausalInitCmd()` thoroughly (creates dirs, no-truncate, missing-path error, runs/ subdir). The `newCausalEmitCmd()`, `newCausalArchiveCmd()`, and `newCausalStatusCmd()` CLI wiring — and the `lastEventID()` helper — have no direct Go-level tests in this file. The `lastEventID()` scanner is exercised only indirectly through the bash fallback path in `tests/test_causal_log.sh`.
-- Severity: MEDIUM
-- Action: Add Go tests for `newCausalEmitCmd` (emits to a temp file, prints assigned ID on stdout), `newCausalArchiveCmd` (archive file created in runs/), and `lastEventID` (returns last id, returns empty for empty file, returns empty for missing file). These belong in `cmd/tekhton/causal_test.go`.
+#### INTEGRITY: TestApplyField_EmptyValOnAbsentExtraKey_NoOp describes a contract the implementation violates
+- File: cmd/tekhton/state_test.go:178
+- Issue: The test calls `applyField(snap, "nonexistent_key", "")` on a fresh snapshot where `Extra` is nil, then asserts that `snap.Extra` remains nil afterward ("Deleting a key that was never set must not panic or create the Extra map"). The implementation at state.go:202-204 initializes the Extra map unconditionally — `snap.Extra = make(map[string]string)` — before the `if val == ""` deletion guard fires. For an unknown key with an empty value this leaves `snap.Extra` as a non-nil empty map (`map[string]string{}`), failing the test assertion. The contract stated in the test comment is correct; the implementation does not satisfy it. The defect is undetected only because Go tests were not run.
+- Severity: HIGH
+- Action: Restructure the tail of `applyField` in cmd/tekhton/state.go so the empty-value guard fires before the map allocation:
+  ```go
+  if val == "" {
+      if snap.Extra != nil {
+          delete(snap.Extra, key)
+      }
+      return
+  }
+  if snap.Extra == nil {
+      snap.Extra = make(map[string]string)
+  }
+  snap.Extra[key] = val
+  ```
+  Do not change the test — it correctly specifies the desired behavior.
 
-#### COVERAGE: Bash fallback of `_last_event_id` not tested against an empty log file
-- File: tests/test_causal_log.sh:217-228
-- Issue: The bash-fallback branch of the `causal status` test covers a nonexistent file (lines 224-228) but not an empty one (file present, zero bytes). The two cases take different paths: nonexistent returns early via `[[ ! -f ]]`; empty exercises the `tail | grep | sed` pipeline. The Go binary-present branch does test the empty-file case (lines 213-216). The bash fallback's empty-file behavior is unconfirmed.
+#### COVERAGE: newStateUpdateCmd CLI layer has no direct test
+- File: cmd/tekhton/state_test.go
+- Issue: `newStateUpdateCmd` (state.go:101-128) has no test at the CLI command boundary. The `applyField` unit tests validate field mutation in isolation, and the bash test (test_state_cli_exit_codes.sh) uses `state update` only as a fixture-builder — it never asserts which fields were mutated and which were preserved. The read-modify-write round-trip (file absent → Update creates initial JSON; file present → Update preserves untouched fields) is unverified at the subcommand level. This is the Go-side coverage gap mentioned in the REVIEWER_REPORT under "AC#3 coverage."
 - Severity: LOW
-- Action: In the bash-fallback `else` block, add: create a zero-byte temp log, call `_last_event_id`, assert result is empty.
-
-### Notes on Shell Orphan Warnings
-
-All STALE-SYM entries in the audit context (`:`, `cd`, `dirname`, `echo`, `grep`, `head`, `ls`, `mkdir`, `mktemp`, `pwd`, `rm`, `seq`, `set`, `source`, `tail`, `trap`, `true`, `wc`) are standard shell builtins and system utilities, not missing codebase symbols. These are confirmed false positives from the orphan detector and require no action.
+- Action: Add a `TestStateUpdateCmd_RoundTrip` test that runs `newStateUpdateCmd` with `--field exit_stage=coder --field review_cycle=2` against a temp dir, reads back with `state.New(path).Read()`, and verifies ExitStage="coder", ReviewCycle=2, and an untouched field (ResumeTask) remains "". This provides CLI-level coverage for AC#3 from the Go layer.
 
 ### Notes on Assertion Honesty
 
-All assertions in both files test real behavior derived from actual function calls. No always-pass or hard-coded synthetic assertions were found:
-- ID format assertions (`pipeline.001`, `coder.001`, `coder.002`, `st.002`) match the `%s.%03d` format produced by both the bash fallback (`_causal_fallback_next_id`) and the Go writer (`FormatEventID` via `atomic.Int64.Add(1)`).
-- JSON structure assertions match the field order and escaping rules in `proto.CausalEventV1.MarshalLine()` and the bash `printf` fallback exactly.
-- The `no-truncate` test in `causal_test.go` pins file content byte-for-byte before and after init, directly validating the resume-semantics constraint from the Architecture Change Proposals.
-- The `events_for_milestone`, `events_by_type`, `trace_cause_chain`, `trace_effect_chain`, and `cause_chain_summary` assertions are exercised against logs built during the test run — not pre-seeded fixed files.
+With the exception of the implementation mismatch in finding 2, all other assertions in both files test real behavior derived from actual function calls:
+
+- `parseFieldPairs` tests verify exact key/val pairs against the `strings.IndexByte` split logic in state.go:163-168. The "K=V format" error string check at line 60-62 matches the literal in state.go:165.
+- `applyField` int-parse-fail test at line 139-150 correctly expects `Extra["review_cycle"]="not-a-number"` because the `break` in the switch exits to the loop body (not the function), the loop continues to its end, and execution falls through to the Extra map code — this chain is non-obvious and the test correctly captures it.
+- `lookupField` zero-int test at line 253-260 correctly expects "" because state.go:229-231 returns "" for `n == 0`, matching the `omitempty` JSON semantics.
+- Bash test exit-code assertions all derive from the `errExitCode` mapping in state.go:50-56 and the `main.go` dispatch at main.go:47-49.
 
 ### Notes on Test Isolation
 
-Both test files have clean isolation: `tests/test_causal_log.sh` uses `mktemp -d` with an EXIT trap; `cmd/tekhton/causal_test.go` uses `t.TempDir()` throughout. No mutable project files, pipeline logs, or run artifacts are read without a controlled copy. The `causal status` section explicitly writes its own two-event fixture rather than inheriting state from earlier in the script — good defensive practice.
+Both files are fully isolated: all file operations in state_test.go use `t.TempDir()`; the bash test creates `TMPDIR=$(mktemp -d)` with an `EXIT` trap. Neither file reads mutable project files, pipeline logs, or prior run artifacts.

@@ -1,178 +1,50 @@
 #!/usr/bin/env bash
-set -euo pipefail
-# =============================================================================
-# state.sh — Pipeline state persistence for resume support
-#
-# Sourced by tekhton.sh — do not run directly.
-# Expects: PIPELINE_STATE_FILE (set by caller)
-# Expects: log() from common.sh
-# =============================================================================
+# state.sh — m03 wedge shim for PIPELINE_STATE_FILE. Writer logic lives in
+# state_helpers.sh + `tekhton state` (on-disk: tekhton.state.v1). Valid
+# exit_stage values: intake, coder, review, tester, cleanup, architect, QUOTA_PAUSED.
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/state_helpers.sh"
 
-# Valid pipeline states for exit_stage:
-# intake, coder, review, tester, cleanup, architect, QUOTA_PAUSED
-
-# _build_resume_flag — Construct the correct resume flag string based on
-# the current execution mode (human, milestone, or standard).
-# Usage: _build_resume_flag [start_at]
-#   start_at: stage to resume at (default: "coder")
-# Returns: flag string on stdout (e.g. "--human BUG --start-at coder")
 _build_resume_flag() {
-    local start_at="${1:-coder}"
-    local flag=""
-    if [[ "${HUMAN_MODE:-false}" = "true" ]]; then
-        flag="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG}"
-    elif [[ "${MILESTONE_MODE:-false}" = "true" ]]; then
-        flag="--milestone"
-    fi
+    local start_at="${1:-coder}" flag=""
+    [[ "${HUMAN_MODE:-false}" = "true" ]] && flag="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG}"
+    [[ -z "$flag" && "${MILESTONE_MODE:-false}" = "true" ]] && flag="--milestone"
     echo "${flag:+$flag }--start-at $start_at"
 }
 
 write_pipeline_state() {
-    local exit_stage="$1"
-    local exit_reason="$2"
-    local resume_flag="$3"
-    local resume_task="$4"
-    local extra_notes="${5:-}"
-    local milestone_num="${6:-}"
+    _state_write_snapshot "$@" || return $?
+    log "Pipeline state saved → ${PIPELINE_STATE_FILE}"
+}
 
-    # Strip any surrounding quotes from task — they break heredoc and awk reads
-    resume_task="${resume_task#\"}"
-    resume_task="${resume_task%\"}"
-    # Also strip from resume_flag in case it has embedded quotes
-    resume_flag="${resume_flag//\"/}"
-
-    local _state_dir
-    _state_dir="$(dirname "$PIPELINE_STATE_FILE")"
-    if ! mkdir -p "$_state_dir" 2>/dev/null; then
-        warn "Could not create state directory: $_state_dir"
-        warn "Resume manually with: --start-at ${exit_stage} \"${resume_task}\""
-        return 1
-    fi
-
-    # Debug: show exactly what we're writing to and verify the path is clean
-    log "State file target: [${PIPELINE_STATE_FILE}]"
-    log "State dir: [${_state_dir}] exists=$([ -d "$_state_dir" ] && echo yes || echo no)"
-
-    # Write to a temp file first, then move — avoids partial writes and
-    # works around WSL/NTFS redirection quirks
-    local _tmp_state
-    _tmp_state="$(mktemp "${_state_dir}/pipeline_state.XXXXXX" 2>/dev/null || mktemp /tmp/pipeline_state.XXXXXX)"
-
-    cat > "$_tmp_state" << EOF
-# Pipeline State — $(date '+%Y-%m-%d %H:%M:%S')
-## Exit Stage
-${exit_stage}
-
-## Exit Reason
-${exit_reason}
-
-## Resume Command
-${resume_flag}
-
-## Task
-${resume_task}
-
-## Notes
-${extra_notes}
-
-## Milestone
-${milestone_num:-none}
-
-## Pipeline Order
-${PIPELINE_ORDER:-standard}
-
-## Tester Mode
-${TESTER_MODE:-verify_passing}
-
-## Files Present
-$(for f in ${CODER_SUMMARY_FILE} ${REVIEWER_REPORT_FILE} ${TESTER_REPORT_FILE} ${JR_CODER_SUMMARY_FILE} ${PREFLIGHT_ERRORS_FILE} ${TDD_PREFLIGHT_FILE}; do
-    [ -f "$f" ] && echo "- $f ($(count_lines < "$f") lines)" || echo "- $f (missing)"
-done)
-
-## Orchestration Context
-$(if [ -n "${_ORCH_ATTEMPT:-}" ]; then
-    echo "Pipeline attempt: ${_ORCH_ATTEMPT}"
-    echo "Cumulative agent calls: ${_ORCH_AGENT_CALLS:-0}"
-    echo "Cumulative turns: ${TOTAL_TURNS:-0}"
-    echo "Wall-clock elapsed: ${_ORCH_ELAPSED:-0}s"
-    if [ -n "${_ORCH_ATTEMPT_LOG:-}" ]; then
-        echo ""
-        echo "### Prior Attempt Outcomes"
-        echo "$_ORCH_ATTEMPT_LOG"
-    fi
-else
-    echo "(not in --complete mode)"
-fi)
-
-## Human Mode
-${HUMAN_MODE:-false}
-
-## Human Notes Tag
-${HUMAN_NOTES_TAG:-}
-
-## Current Note Line
-${CURRENT_NOTE_LINE:-}
-
-## Current Note ID
-${CURRENT_NOTE_ID:-}
-
-## Human Single Note
-${HUMAN_SINGLE_NOTE:-false}
-
-## Error Classification
-$(if [ -n "${AGENT_ERROR_CATEGORY:-}" ]; then
-    echo "Category: ${AGENT_ERROR_CATEGORY}"
-    echo "Subcategory: ${AGENT_ERROR_SUBCATEGORY:-unknown}"
-    echo "Transient: ${AGENT_ERROR_TRANSIENT:-false}"
-    _state_recovery=$(suggest_recovery "${AGENT_ERROR_CATEGORY}" "${AGENT_ERROR_SUBCATEGORY:-unknown}" 2>/dev/null || echo "Check run log.")
-    echo "Recovery: ${_state_recovery}"
-    echo ""
-    echo "### Last Agent Output (redacted)"
-    if [ -f "${TEKHTON_SESSION_DIR:-/tmp}/agent_last_output.txt" ]; then
-        tail -10 "${TEKHTON_SESSION_DIR}/agent_last_output.txt" 2>/dev/null | \
-            if command -v redact_sensitive &>/dev/null; then redact_sensitive; else cat; fi
+read_pipeline_state_field() {
+    local path field
+    if [[ $# -ge 2 ]]; then path="$1"; field="$2"
+    else                    path="$PIPELINE_STATE_FILE"; field="$1"; fi
+    [[ -f "$path" ]] || return 0
+    if command -v tekhton >/dev/null 2>&1; then
+        tekhton state read --path "$path" --field "$field" 2>/dev/null || true
     else
-        echo "(no output captured)"
-    fi
-else
-    echo "(no error classification — normal exit or pre-classification failure)"
-fi)
-EOF
-
-    if mv -f "$_tmp_state" "$PIPELINE_STATE_FILE" 2>/dev/null; then
-        log "Pipeline state saved → ${PIPELINE_STATE_FILE}"
-    else
-        warn "Could not write state file: ${PIPELINE_STATE_FILE}"
-        warn "Temp file preserved at: ${_tmp_state}"
-        warn "Resume manually with: --start-at ${exit_stage} \"${resume_task}\""
-        cat "$_tmp_state"  # dump contents so user can see the state
+        _state_bash_read_field "$path" "$field"
     fi
 }
 
 clear_pipeline_state() {
-    if [[ -f "$PIPELINE_STATE_FILE" ]]; then
-        rm "$PIPELINE_STATE_FILE"
+    if command -v tekhton >/dev/null 2>&1; then
+        tekhton state clear --path "$PIPELINE_STATE_FILE" 2>/dev/null || true
+    elif [[ -f "$PIPELINE_STATE_FILE" ]]; then
+        rm -f "$PIPELINE_STATE_FILE" 2>/dev/null || true
     fi
-    # Clear failure context on successful run (M17)
-    local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
-    if [[ -f "$failure_ctx" ]]; then
-        rm -f "$failure_ctx" 2>/dev/null || true
-    fi
+    local fctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
+    [[ -f "$fctx" ]] && rm -f "$fctx" 2>/dev/null
+    return 0
 }
 
-# load_intake_tweaked_task — On resume, load the tweaked task string from session dir.
-# Returns 0 and sets TASK if a tweaked task file exists, 1 otherwise.
 load_intake_tweaked_task() {
-    local tweaked_file="${TEKHTON_SESSION_DIR}/INTAKE_TWEAKED_TASK.md"
-    if [[ -f "$tweaked_file" ]]; then
-        local tweaked_task
-        tweaked_task=$(cat "$tweaked_file")
-        if [[ -n "$tweaked_task" ]]; then
-            TASK="$tweaked_task"
-            export TASK
-            log "Loaded tweaked task from prior intake evaluation."
-            return 0
-        fi
-    fi
-    return 1
+    local f="${TEKHTON_SESSION_DIR:-/tmp}/INTAKE_TWEAKED_TASK.md"
+    [[ -f "$f" ]] || return 1
+    local t; t=$(cat "$f")
+    [[ -n "$t" ]] || return 1
+    TASK="$t"; export TASK
+    log "Loaded tweaked task from prior intake evaluation."
 }

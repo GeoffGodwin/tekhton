@@ -481,9 +481,9 @@ $(_wrap_file_content "REVIEWER_REPORT" "$_reviewer_content")"
     # Prior progress context (partial git diff from turn-limit resume)
     export PRIOR_PROGRESS_CONTEXT=""
     if [ -f "$PIPELINE_STATE_FILE" ]; then
-        PRIOR_EXIT_REASON=$(grep "^## Exit Reason" -A1 "$PIPELINE_STATE_FILE" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+        PRIOR_EXIT_REASON=$(read_pipeline_state_field exit_reason)
         if [ "$PRIOR_EXIT_REASON" = "turn_limit" ]; then
-            PRIOR_GIT_DIFF=$(awk '/^## Partial Git Changes/{found=1; next} found && /^## /{exit} found{print}' "$PIPELINE_STATE_FILE")
+            PRIOR_GIT_DIFF=$(read_pipeline_state_field git_diff_stat)
             if [ -n "$PRIOR_GIT_DIFF" ]; then
                 PRIOR_PROGRESS_CONTEXT="
 ## Previous Run Partial Progress

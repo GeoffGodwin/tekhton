@@ -16,6 +16,8 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
+source "${TEKHTON_HOME}/lib/state.sh"
+# shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/diagnose_rules.sh"

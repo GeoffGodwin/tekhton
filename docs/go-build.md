@@ -64,8 +64,10 @@ wedge needs SQLite, default to `modernc.org/sqlite` (pure Go).
 The Makefile injects the value via `-ldflags`:
 
 ```
--ldflags "-X github.com/geoffgodwin/tekhton/internal/version.Version=$(cat VERSION)"
+-ldflags "-X github.com/geoffgodwin/tekhton/internal/version.Version=$(shell tr -d '[:space:]' < VERSION)"
 ```
+
+The `tr -d '[:space:]'` call strips trailing newlines and whitespace — see `Makefile` line 8–11 for the authoritative `VERSION_STRING` variable.
 
 A direct `go build ./cmd/tekhton` (without make) leaves `version.Version` at
 the `"dev"` sentinel — useful for spotting unintended raw builds, but not for
@@ -141,6 +143,37 @@ When the Go binary is missing from `$PATH` (fresh clone, test sandbox
 with no `make build`), `lib/causality.sh` falls back to an inline bash
 writer that produces the same `causal.event.v1` lines. The fallback is
 transitional — m04 Phase-1 hardening removes it.
+
+### `tekhton state …` (m03)
+
+The pipeline-state snapshot reader/writer. `lib/state.sh` is a 50-line
+shim that exec's this subcommand when the Go binary is on `$PATH`;
+pipeline callers (`tekhton.sh`, `lib/orchestrate.sh`, the `lib/diagnose_*`
+modules, `lib/milestone_progress.sh`, `stages/coder.sh`) talk to the
+shim, never the file directly.
+
+```text
+tekhton state read   --path PATH [--field KEY]    # JSON, or one value
+tekhton state write  --path PATH                  # read JSON from stdin, atomic write
+tekhton state update --path PATH --field K=V …    # read-modify-write a field set
+tekhton state clear  --path PATH                  # remove the snapshot file
+```
+
+`read` exit codes: `0` = success, `1` = file missing or field empty,
+`2` = file present but corrupt. Bash callers must distinguish 1 from 2 —
+corruption should trigger `--diagnose`, not silent retry.
+
+The on-disk format is `tekhton.state.v1` — see
+[`internal/proto/state_v1.go`](../internal/proto/state_v1.go). Atomic
+writes go through `os.Rename`; `legacy_reader.go` (REMOVE IN m05) parses
+V3-era markdown state files for one milestone cycle so resume works
+through the cutover. When a legacy file is parsed, the next Update
+rewrites it as JSON.
+
+When the Go binary is missing from `$PATH`, `lib/state_helpers.sh`
+provides a pure-bash JSON writer + reader that produces the same
+`tekhton.state.v1` shape. The fallback is transitional and tracks the
+same removal timeline as the m02 causal fallback.
 
 ## Troubleshooting
 

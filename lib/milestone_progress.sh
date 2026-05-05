@@ -138,9 +138,9 @@ _diagnose_recovery_command() {
     [[ -f "$state_file" ]] || return 0
 
     local stage
-    stage=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+    stage=$(read_pipeline_state_field "$state_file" exit_stage)
     local task
-    task=$(awk '/^## Task$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+    task=$(read_pipeline_state_field "$state_file" resume_task)
 
     [[ -z "$stage" ]] && return 0
 

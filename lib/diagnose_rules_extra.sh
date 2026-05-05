@@ -27,7 +27,7 @@ _rule_stuck_loop() {
     [[ -f "$state_file" ]] || return 1
 
     local attempts=""
-    attempts=$(awk '/^Pipeline attempt:/{print $3; exit}' "$state_file" 2>/dev/null || true)
+    attempts=$(read_pipeline_state_field "$state_file" pipeline_attempt)
     attempts="${attempts//[!0-9]/}"
     : "${attempts:=0}"
 
@@ -118,16 +118,16 @@ _rule_turn_exhaustion() {
     [[ -f "$state_file" ]] || return 1
 
     local error_cat=""
-    error_cat=$(awk '/^Category:/{print $2; exit}' "$state_file" 2>/dev/null || true)
+    error_cat=$(read_pipeline_state_field "$state_file" agent_error_category)
     local error_sub=""
-    error_sub=$(awk '/^Subcategory:/{print $2; exit}' "$state_file" 2>/dev/null || true)
+    error_sub=$(read_pipeline_state_field "$state_file" agent_error_subcategory)
 
     if [[ "$error_cat" != "AGENT_SCOPE" ]] || [[ "$error_sub" != "max_turns" ]]; then
         return 1
     fi
 
     local exit_stage=""
-    exit_stage=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+    exit_stage=$(read_pipeline_state_field "$state_file" exit_stage)
     local stage_upper
     stage_upper=$(echo "$exit_stage" | tr '[:lower:]' '[:upper:]')
 

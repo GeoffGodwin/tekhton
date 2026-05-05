@@ -33,12 +33,21 @@ func newRootCmd() *cobra.Command {
 	}
 	cmd.SetVersionTemplate("{{.Version}}\n")
 	cmd.AddCommand(newCausalCmd())
+	cmd.AddCommand(newStateCmd())
 	return cmd
 }
+
+// exitCoder is implemented by errors that carry a non-default exit code
+// (currently used by `state read` to distinguish missing vs corrupt files).
+type exitCoder interface{ ExitCode() int }
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "tekhton:", err)
+		var ec exitCoder
+		if errors.As(err, &ec) {
+			os.Exit(ec.ExitCode())
+		}
 		os.Exit(1)
 	}
 }

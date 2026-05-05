@@ -52,10 +52,25 @@ assert_file_contains() {
     fi
 }
 
-# Extract field from state file using the same awk pattern as tekhton.sh
+# Extract field from state file via the m03 shim. Tests below pass
+# human-readable section names (e.g. "Human Mode") so we map them to JSON
+# keys here.
 extract_state_field() {
-    local section="$1" file="$2"
-    awk "/^## ${section}\$/{getline; print; exit}" "$file"
+    local section="$1" file="$2" key
+    case "$section" in
+        "Human Mode")        key="human_mode" ;;
+        "Human Notes Tag")   key="human_notes_tag" ;;
+        "Current Note Line") key="current_note_line" ;;
+        "Current Note ID")   key="current_note_id" ;;
+        "Human Single Note") key="human_single_note" ;;
+        "Exit Stage")        key="exit_stage" ;;
+        "Exit Reason")       key="exit_reason" ;;
+        "Resume Command")    key="resume_flag" ;;
+        "Task")              key="resume_task" ;;
+        "Milestone")         key="milestone_id" ;;
+        *)                   key="${section,,}"; key="${key// /_}" ;;
+    esac
+    read_pipeline_state_field "$file" "$key"
 }
 
 # =============================================================================
@@ -70,10 +85,10 @@ unset AGENT_ERROR_CATEGORY MILESTONE_MODE 2>/dev/null || true
 
 write_pipeline_state "coder" "turn_limit" "--human BUG --start-at coder" "picked_from_notes" ""
 
-assert_file_contains "1.1 Human Mode section exists" "## Human Mode" "$PIPELINE_STATE_FILE"
-assert_file_contains "1.2 Human Notes Tag section exists" "## Human Notes Tag" "$PIPELINE_STATE_FILE"
-assert_file_contains "1.3 Current Note Line section exists" "## Current Note Line" "$PIPELINE_STATE_FILE"
-assert_file_contains "1.4 Human Single Note section exists" "## Human Single Note" "$PIPELINE_STATE_FILE"
+assert_file_contains "1.1 human_mode key exists"        '"human_mode"'        "$PIPELINE_STATE_FILE"
+assert_file_contains "1.2 human_notes_tag key exists"   '"human_notes_tag"'   "$PIPELINE_STATE_FILE"
+assert_file_contains "1.3 current_note_line key exists" '"current_note_line"' "$PIPELINE_STATE_FILE"
+assert_file_contains "1.4 human_single_note key exists" '"human_single_note"' "$PIPELINE_STATE_FILE"
 
 # =============================================================================
 # Phase 2: awk extraction round-trip (mirrors tekhton.sh resume detection block)

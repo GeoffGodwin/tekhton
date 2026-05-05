@@ -74,6 +74,7 @@ _arc_source() {
     fi
 }
 
+_arc_source "lib/state.sh"
 _arc_source "lib/preflight.sh"
 _arc_source "lib/preflight_checks_ui.sh"
 _arc_source "lib/error_patterns.sh"

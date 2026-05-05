@@ -34,6 +34,8 @@ header()  { :; }
 : "${DESIGN_FILE:=${TEKHTON_DIR}/DESIGN.md}"
 
 # Source libraries
+# shellcheck source=../lib/common.sh
+source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=../lib/detect.sh
 source "${TEKHTON_HOME}/lib/detect.sh"
 # shellcheck source=../lib/crawler.sh

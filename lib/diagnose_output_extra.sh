@@ -36,7 +36,7 @@ print_crash_first_aid() {
     local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.md}"
     if [[ -f "$state_file" ]]; then
         local stage
-        stage=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+        stage=$(read_pipeline_state_field "$state_file" exit_stage)
         warn "Crash during ${stage:-unknown} stage — your code is safe (checkpoint saved)."
         warn "Run 'tekhton' to resume from where it left off."
         return 0

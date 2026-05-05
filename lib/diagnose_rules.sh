@@ -88,9 +88,9 @@ _rule_max_turns() {
     local _state_notes=""
     if [[ -f "$state_file" ]]; then
         if [[ -z "$_exit_reason" ]]; then
-            _exit_reason=$(awk '/^## Exit Reason$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+            _exit_reason=$(read_pipeline_state_field "$state_file" exit_reason)
         fi
-        _state_notes=$(awk '/^## Notes$/{f=1;next} /^## /{f=0} f' "$state_file" 2>/dev/null || true)
+        _state_notes=$(read_pipeline_state_field "$state_file" notes)
     fi
 
     local matched=false
@@ -155,7 +155,7 @@ _rule_review_loop() {
     [[ -f "$state_file" ]] || return 1
 
     local exit_stage=""
-    exit_stage=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+    exit_stage=$(read_pipeline_state_field "$state_file" exit_stage)
 
     local review_rejections=0
     if [[ "$exit_stage" != "review" ]]; then
@@ -236,7 +236,7 @@ _rule_intake_clarity() {
     local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.md}"
     if [[ -f "$state_file" ]]; then
         local exit_stage=""
-        exit_stage=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+        exit_stage=$(read_pipeline_state_field "$state_file" exit_stage)
         if [[ "$exit_stage" != "intake" ]]; then
             return 1
         fi

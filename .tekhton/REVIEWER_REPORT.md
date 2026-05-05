@@ -1,4 +1,4 @@
-# Reviewer Report — m02 Causal Log Wedge
+# Reviewer Report — m03 Pipeline State Wedge (Cycle 2)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,19 +10,20 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `cmd/tekhton/causal.go:37` — `newCausalInitCmd` calls `causal.Open` (which scans and seeds the full log) just to ensure dirs exist, then does a separate `os.OpenFile` touch. A dedicated mkdir+touch path would be cheaper, though not incorrect. Consider a lightweight `causal.EnsureDirs(path)` helper in a future cleanup pass.
-- `internal/proto/causal_v1.go:127` — `Itoa` is exported but dead code. The comment says it is for `emit.go`, but `emit.go` uses `fmt.Sprintf` instead. Remove or use in a future cleanup pass.
-- `internal/causal/log.go:102` — `strings.Index(string(line), key)` allocates a string per seed scan line. `bytes.Index(line, []byte(key))` avoids this. At 2000 events the cost is negligible; clean-up candidate only.
-- `cmd/tekhton/causal.go` — `--stage` and `--type` on the emit subcommand are not marked `cobra.MarkFlagRequired`. Validation falls through to `causal.Emit`, which returns an internal error string rather than Cobra's standard usage output. Functional but inconsistent with Cobra conventions.
+- `lib/state_helpers.sh:118` — The int-field omit-on-zero logic (`[[ "$val" = "0" ]] && continue`) is correct but undocumented. A one-line comment ("zero omitted — matches omitempty on first-class int fields") would prevent a future maintainer from treating it as a bug.
+- `lib/state_helpers.sh:152` — The awk-based JSON reader does not handle embedded escaped double-quotes (`\"`). Values like `resume_task='key="val"'` would be truncated at the first inner quote. Acceptable since the fallback is transitional; a comment naming the limitation would clarify intent.
 
 ## Coverage Gaps
-- `causal status` subcommand has no bash test in `tests/test_causal_log.sh`. The Go-side `lastEventID` helper is exercised indirectly through `_last_event_id`, but a direct `tekhton causal status` invocation test would be cleaner once the binary is always available.
-- `newCausalInitCmd` has no Go unit test. Its logic is thin (Open + touch), low risk, but a round-trip test in `cmd/tekhton/` would complete the CLI surface coverage.
-
-## ACP Verdicts
-- ACP: Bash fallback inside `lib/causality.sh` — ACCEPT — `_json_escape` serves 20+ callers that predate m02; moving it to `lib/common.sh` is the correct canonical home, and the transitional fallback is necessary until the Go binary is universally installed. The parity gate (`scripts/causal-parity-check.sh`) proves byte-level format compatibility.
-- ACP: `tekhton causal init` does not truncate — ACCEPT — Resume-friendly no-op semantics are the only correct choice; truncating on init would destroy resumed-run events. The milestone AC #1 wording is what is wrong, not the implementation. The design observation is correctly logged for a future doc cleanup.
+- `cmd/tekhton/state.go` — No unit tests cover the CLI layer: `applyField` reflection, `lookupField`, `parseFieldPairs`, or `resolveStatePath`. A regression in field-tag matching falls through to `extra` silently.
+- `state write` subcommand (stdin JSON → file) has zero test coverage.
+- Exit-code distinction (`1` = missing, `2` = corrupt) from `tekhton state read` is only exercised via the Go unit test; no bash-layer test drives the CLI and asserts the process exit code.
 
 ## Drift Observations
-- `lib/crawler.sh` — defines `_json_escape` with a body byte-identical to `lib/common.sh`. After m02 this is a shadowing duplicate: `common.sh` is always sourced first, so `crawler.sh`'s definition is dead. Coder already noted it as out of scope; cleanup candidate for the next drift-sweep pass.
-- `internal/proto/causal_v1.go:127` — `Itoa` is exported dead code (see Non-Blocking Notes above). Consolidate or remove in a future cleanup pass.
+- `lib/state_helpers.sh:190-220` — No `# REMOVE IN m05` annotation on the legacy markdown branch in `_state_bash_read_field`. When `legacy_reader.go` is deleted in m05 this dead branch is likely to survive the cleanup pass. Adding the annotation now keeps the two removal targets in sync.
+
+---
+
+### Prior Blocker Disposition
+
+**FIXED — `internal/state/snapshot.go:193-194`.**
+`readLocked()` now reads `return New(s.path).Read()` — a fresh, unlocked `Store` bound to the same path. The struct copy (`tmp := *s`) that triggered `go vet -copylocks` has been removed. Fix is correct and minimal; the `Update()` flow continues to avoid a second mutex acquisition because `Read()` itself takes no lock.

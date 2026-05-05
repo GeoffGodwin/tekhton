@@ -109,9 +109,9 @@ _read_diagnostic_context() {
 
     # --- Pipeline state -------------------------------------------------------
     if [[ -f "$state_file" ]]; then
-        _DIAG_PIPELINE_STAGE=$(awk '/^## Exit Stage$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
-        _DIAG_PIPELINE_TASK=$(awk '/^## Task$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
-        _DIAG_EXIT_REASON=$(awk '/^## Exit Reason$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+        _DIAG_PIPELINE_STAGE=$(read_pipeline_state_field "$state_file" exit_stage)
+        _DIAG_PIPELINE_TASK=$(read_pipeline_state_field "$state_file" resume_task)
+        _DIAG_EXIT_REASON=$(read_pipeline_state_field "$state_file" exit_reason)
     fi
 
     # --- LAST_FAILURE_CONTEXT.json (primary source on failure) ----------------

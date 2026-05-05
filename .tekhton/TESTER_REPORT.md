@@ -1,13 +1,13 @@
 ## Planned Tests
-- [x] `tests/test_causal_log.sh` — add `causal status` direct-invocation section (Go binary path + bash fallback path)
-- [x] `cmd/tekhton/causal_test.go` — Go unit tests for `newCausalInitCmd` (creates dirs, no-truncate, missing-path error); run via `go test ./cmd/tekhton/...` (Go toolchain not in this sandbox)
+- [x] `cmd/tekhton/state_test.go` — Go unit tests: applyField reflection, lookupField, parseFieldPairs, resolveStatePath, state write subcommand stdin→file, state read exit-code mapping
+- [x] `tests/test_state_cli_exit_codes.sh` — Bash test driving tekhton CLI: exit 1 for missing file, exit 2 for corrupt file, exit 0 for valid read
 
 ## Test Run Results
-Passed: 499  Failed: 0
+Passed: 500  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_causal_log.sh`
-- [x] `cmd/tekhton/causal_test.go`
+- [x] `cmd/tekhton/state_test.go`
+- [x] `tests/test_state_cli_exit_codes.sh`

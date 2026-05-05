@@ -1152,19 +1152,19 @@ if [ $# -eq 0 ] && [ -z "${TASK:-}" ]; then
         usage 1
     fi
 
-    SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-    SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-    SAVED_REASON=$(awk '/^## Exit Reason$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-    SAVED_STAGE=$(awk '/^## Exit Stage$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-    SAVED_MILESTONE=$(awk '/^## Milestone$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_RESUME_FLAG=$(read_pipeline_state_field resume_flag)
+    SAVED_TASK=$(read_pipeline_state_field resume_task)
+    SAVED_REASON=$(read_pipeline_state_field exit_reason)
+    SAVED_STAGE=$(read_pipeline_state_field exit_stage)
+    SAVED_MILESTONE=$(read_pipeline_state_field milestone_id)
 
     # Restore human-mode metadata (Bug 2, M33)
-    SAVED_HUMAN_MODE=$(awk '/^## Human Mode$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-    SAVED_HUMAN_TAG=$(awk '/^## Human Notes Tag$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-    SAVED_NOTE_LINE=$(awk '/^## Current Note Line$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-    # M40: Also read CURRENT_NOTE_ID from state file
-    SAVED_NOTE_ID=$(awk '/^## Current Note ID$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-    SAVED_HUMAN_SINGLE=$(awk '/^## Human Single Note$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+    SAVED_HUMAN_MODE=$(read_pipeline_state_field human_mode)
+    SAVED_HUMAN_TAG=$(read_pipeline_state_field human_notes_tag)
+    SAVED_NOTE_LINE=$(read_pipeline_state_field current_note_line)
+    # M40: Also read CURRENT_NOTE_ID from state
+    SAVED_NOTE_ID=$(read_pipeline_state_field current_note_id)
+    SAVED_HUMAN_SINGLE=$(read_pipeline_state_field human_single_note)
 
     # Enhanced resume prompt (M17): show structured context
     echo
@@ -1270,8 +1270,8 @@ while [[ $# -gt 0 ]]; do
                 cat "$PIPELINE_STATE_FILE"
                 echo "════════════════════════════════════════"
                 echo
-                SAVED_RESUME_FLAG=$(awk '/^## Resume Command$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
-                SAVED_TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+                SAVED_RESUME_FLAG=$(read_pipeline_state_field resume_flag)
+                SAVED_TASK=$(read_pipeline_state_field resume_task)
                 echo "Resume with:"
                 echo "  $0 ${SAVED_RESUME_FLAG} \"${SAVED_TASK}\""
                 echo "  — or —"
@@ -1785,7 +1785,7 @@ elif [[ "$FIX_NONBLOCKERS_MODE" = true ]] || [[ "$FIX_DRIFT_MODE" = true ]]; the
 elif [ $# -eq 0 ]; then
     # No task argument — try to pull from saved pipeline state
     if [ "$START_AT" != "coder" ] && [ -f "$PIPELINE_STATE_FILE" ]; then
-        TASK=$(awk '/^## Task$/{getline; print; exit}' "$PIPELINE_STATE_FILE")
+        TASK=$(read_pipeline_state_field resume_task)
         if [ -n "$TASK" ]; then
             log "Task pulled from saved pipeline state: ${TASK}"
         else
