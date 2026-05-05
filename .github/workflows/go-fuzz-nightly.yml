@@ -1,0 +1,57 @@
+name: Go Fuzz Nightly
+
+# m04: longer fuzz runs against the m02/m03 parser surface. Per-target 5
+# minutes is the m04 budget; new corpus entries are uploaded as artifacts so a
+# subsequent failure can be reproduced locally.
+
+on:
+  schedule:
+    # 03:30 UTC daily — outside US/EU work hours, low contention.
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Fuzz (extended)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: FuzzParseStageAndSeq
+            pkg: ./internal/causal/...
+          - target: FuzzCausalEvent
+            pkg: ./internal/causal/...
+          - target: FuzzQuote_RoundTrip
+            pkg: ./internal/causal/...
+          - target: FuzzStateSnapshot
+            pkg: ./internal/state/...
+          - target: FuzzParseLegacyMarkdown
+            pkg: ./internal/state/...
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run fuzz target ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          go test -run=^$ -fuzz=^${{ matrix.target }}$ -fuzztime=5m ${{ matrix.pkg }}
+
+      - name: Upload corpus on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: |
+            **/testdata/fuzz/${{ matrix.target }}/
+          if-no-files-found: ignore
+          retention-days: 14

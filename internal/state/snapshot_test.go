@@ -304,6 +304,59 @@ func TestClear_AbsentIsNoError(t *testing.T) {
 	}
 }
 
+// TestPath_Getter covers the trivial accessor used by the diagnose layer.
+func TestPath_Getter(t *testing.T) {
+	s, path := newTestStore(t)
+	if got := s.Path(); got != path {
+		t.Errorf("Path() = %q; want %q", got, path)
+	}
+}
+
+// TestRead_EmptyFileIsCorrupt covers the zero-length file branch.
+func TestRead_EmptyFileIsCorrupt(t *testing.T) {
+	s, path := newTestStore(t)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := s.Read(); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("empty file: got %v, want ErrCorrupt", err)
+	}
+}
+
+// TestRead_EmptyPath covers the path-validation branch.
+func TestRead_EmptyPath(t *testing.T) {
+	if _, err := New("").Read(); err == nil {
+		t.Errorf("Read empty path: want error")
+	}
+}
+
+// TestWrite_NilAndEmptyPath covers the two top-of-Write guards.
+func TestWrite_NilAndEmptyPath(t *testing.T) {
+	s, _ := newTestStore(t)
+	if err := s.Write(nil); err == nil {
+		t.Errorf("Write(nil): want error")
+	}
+	if err := New("").Write(&proto.StateSnapshotV1{}); err == nil {
+		t.Errorf("Write empty path: want error")
+	}
+}
+
+// TestParseLegacyMarkdown_GarbageReturnsCorrupt covers the legacy-reader's
+// "no recognized headings" rejection branch.
+func TestParseLegacyMarkdown_GarbageReturnsCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "garbage.md")
+	if err := os.WriteFile(path, []byte("just a plain text file with no headings\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := New(path).Read(); !errors.Is(err, ErrCorrupt) {
+		t.Errorf("garbage markdown: got %v, want ErrCorrupt", err)
+	}
+}
+
 func equalBytes(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false

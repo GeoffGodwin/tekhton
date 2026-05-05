@@ -175,6 +175,36 @@ provides a pure-bash JSON writer + reader that produces the same
 `tekhton.state.v1` shape. The fallback is transitional and tracks the
 same removal timeline as the m02 causal fallback.
 
+## Migration retrospective
+
+Phase-by-phase notes on what landed, what worked, and what needed adjustment
+during the V4 bash → Go migration live in
+[`docs/go-migration.md`](go-migration.md). One section per phase. The
+"next-wedge entry checklist" in that document is the canonical procedure for
+porting a new subsystem.
+
+## Wedge invariants
+
+The bash↔Go seam is enforced at PR time by `scripts/wedge-audit.sh`. Only
+`lib/causality.sh`, `lib/state.sh`, and `lib/state_helpers.sh` may write to
+the wedge-owned paths (`CAUSAL_LOG.jsonl`, `PIPELINE_STATE_FILE`); the
+`lint` job in `.github/workflows/go-build.yml` runs the audit on every PR.
+A new shim file requires both an entry in the script's `ALLOWED_FILES`
+allowlist (with a justifying comment) and an updated retrospective entry
+in `docs/go-migration.md`.
+
+## Coverage and fuzz gates
+
+The `vet-test` job enforces a per-package coverage gate at 80% for
+`internal/causal` and `internal/state`. New `internal/*` packages are added
+to the gate uniformly at the same threshold — see the next-wedge entry
+checklist in `docs/go-migration.md`.
+
+The same job runs each `Fuzz*` target with `-fuzztime=20s` on every PR for a
+deterministic burst. The nightly `Go Fuzz Nightly` workflow runs each target
+for 5 minutes and uploads any new corpus entries as artifacts so a failure
+can be reproduced locally.
+
 ## Troubleshooting
 
 - **`go: command not found` in CI** — `actions/setup-go@v5` has not run yet

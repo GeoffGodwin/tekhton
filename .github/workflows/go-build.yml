@@ -59,8 +59,41 @@ jobs:
       - name: go test
         run: make test
 
+      # m04: per-package coverage gate. The two ported packages must each hit
+      # 80% — a global average would let one under-tested file hide behind a
+      # well-tested one. cmd/tekhton and internal/proto are excluded by design
+      # (CLI plumbing and pure types — coverage there is theatre).
+      - name: Coverage gate (per-package)
+        run: |
+          set -euo pipefail
+          fail=0
+          for pkg in internal/causal internal/state; do
+            echo "==> coverage: $pkg"
+            go test -coverprofile=cover.out "./$pkg/..."
+            go tool cover -func=cover.out
+            pct=$(go tool cover -func=cover.out | awk '/^total:/ { sub(/%/, "", $3); print $3 }')
+            echo "    $pkg total: ${pct}%"
+            if awk "BEGIN { exit !($pct < 80) }"; then
+              echo "::error::$pkg coverage ${pct}% < 80% threshold"
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+      # m04: fuzz harnesses run for a fixed-time deterministic burst on every
+      # PR. The 20s budget is enough to exercise the seed corpus + a few
+      # mutations without bloating CI wall-clock. The nightly job runs longer.
+      - name: Fuzz (deterministic burst)
+        run: |
+          set -euo pipefail
+          go test -run=^$ -fuzz=FuzzParseStageAndSeq -fuzztime=20s ./internal/causal/...
+          go test -run=^$ -fuzz=FuzzCausalEvent       -fuzztime=20s ./internal/causal/...
+          go test -run=^$ -fuzz=FuzzQuote_RoundTrip   -fuzztime=20s ./internal/causal/...
+          go test -run=^$ -fuzz=FuzzStateSnapshot     -fuzztime=20s ./internal/state/...
+          go test -run=^$ -fuzz=FuzzParseLegacyMarkdown -fuzztime=20s ./internal/state/...
+
   lint:
-    name: golangci-lint
+    name: golangci-lint + wedge audit
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -77,3 +110,9 @@ jobs:
         with:
           version: latest
           args: --timeout=5m
+
+      # m04: enforce the bash↔Go seam invariant. Only lib/causality.sh,
+      # lib/state.sh, and lib/state_helpers.sh may write to the wedge-owned
+      # paths. Bypasses get caught at PR time, not at runtime.
+      - name: Wedge audit
+        run: bash scripts/wedge-audit.sh

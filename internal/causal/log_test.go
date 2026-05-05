@@ -294,6 +294,83 @@ func TestParseStageAndSeq(t *testing.T) {
 	}
 }
 
+// TestOpen_RejectsEmptyPath covers the guard at the top of Open. Without this
+// case the error branch goes uncovered and the m04 80% gate would slip.
+func TestOpen_RejectsEmptyPath(t *testing.T) {
+	if _, err := Open("", 0, "rid"); err == nil {
+		t.Fatalf("Open(\"\") returned nil error; want non-nil")
+	}
+}
+
+// TestEmit_RejectsEmptyStageAndType exercises the two top-of-Emit guards so
+// the validation path is covered.
+func TestEmit_RejectsEmptyStageAndType(t *testing.T) {
+	l, _ := openTestLog(t, 0)
+	if _, err := l.Emit(EmitInput{Stage: "", Type: "x"}); err == nil {
+		t.Errorf("empty stage: want error")
+	}
+	if _, err := l.Emit(EmitInput{Stage: "coder", Type: ""}); err == nil {
+		t.Errorf("empty type: want error")
+	}
+}
+
+// TestPathAndCount_Getters covers two trivial accessors that the in-process
+// causal status reporter and the resume seeder both use.
+func TestPathAndCount_Getters(t *testing.T) {
+	l, path := openTestLog(t, 0)
+	if l.Path() != path {
+		t.Errorf("Path() = %q; want %q", l.Path(), path)
+	}
+	if l.Count() != 0 {
+		t.Errorf("fresh Count() = %d; want 0", l.Count())
+	}
+	_, _ = l.Emit(EmitInput{Stage: "x", Type: "y"})
+	if l.Count() != 1 {
+		t.Errorf("after-1-emit Count() = %d; want 1", l.Count())
+	}
+	if err := l.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
+// TestPruneArchives_RetentionZeroNoop covers the early-return branch when
+// retention is disabled.
+func TestPruneArchives_RetentionZeroNoop(t *testing.T) {
+	dir := t.TempDir()
+	runsDir := filepath.Join(dir, "runs")
+	if err := os.MkdirAll(runsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, name := range []string{"CAUSAL_LOG_a.jsonl", "CAUSAL_LOG_b.jsonl"} {
+		if err := os.WriteFile(filepath.Join(runsDir, name), []byte("{}\n"), 0o644); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	if err := pruneArchives(runsDir, 0); err != nil {
+		t.Errorf("pruneArchives(0): %v", err)
+	}
+	entries, _ := os.ReadDir(runsDir)
+	if len(entries) != 2 {
+		t.Errorf("retention=0 should not prune; got %d entries", len(entries))
+	}
+}
+
+// TestArchive_NoSourceFile covers the fast-path return when the live log
+// does not yet exist.
+func TestArchive_NoSourceFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "log.jsonl")
+	l, err := Open(path, 0, "rid")
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	// Open does not create the file — Emit does. Without an Emit, Archive
+	// must return nil rather than failing.
+	if err := l.Archive(2); err != nil {
+		t.Errorf("Archive on missing log: %v", err)
+	}
+}
+
 // BenchmarkEmit measures the per-event append cost. Captured here so the
 // SQLite-vs-flat-file decision (DESIGN_v6.md §3) has a baseline number.
 func BenchmarkEmit(b *testing.B) {

@@ -2,19 +2,14 @@
 PASS
 
 ## Confidence
-85
+88
 
 ## Reasoning
-- Scope is precisely bounded: exact files listed with estimated line counts, clear in/out of scope (no JSON-to-markdown back-compat, no `Extra` field promotion, no `tekhton status` command)
-- JSON contract is fully specified (`StateSnapshotV1` struct with field names, types, and JSON tags)
-- Package API is spelled out (`Store.Read`, `Store.Write`, `Store.Update`, `Store.Clear`) with semantics for each
-- CLI surface is complete with subcommands, exit codes, and stdin/stdout contracts
-- Bash shim replacement is provided verbatim — no guessing required
-- Acceptance criteria are specific and machine-verifiable (grep pattern, line count threshold, coverage %, byte-identical round-trip)
-- Watch For section pre-empts the four most likely implementation mistakes (legacy reader scope creep, `updated_at` drift, WSL atomicity, quote-stripping callers)
-- Migration window is explicit: legacy reader survives m03→m04, deleted in m05, code annotated `// REMOVE IN m05`
-- Minor gap: `ErrorRecordV1` struct fields are not defined in the proto section — a developer must infer its shape from the existing bash error taxonomy. Low risk given the `Extra map[string]string` escape hatch.
-- Minor gap: `scripts/state-resume-parity-check.sh` and `scripts/test-sigint-resume.sh` appear in acceptance criteria (AC #6, #7) but are absent from the Files Modified table. A competent developer will create them; not a blocker.
-- Neither gap is blocking — both are resolvable by inference from milestone context.
-- Migration impact is covered implicitly via the legacy reader design and dogfooding stance; no dedicated section needed.
-- UI Testability: not applicable — no UI components.
+- Scope is precisely bounded: five numbered goals, explicit file list with change types, and named exclusions (cmd/tekhton/, internal/proto/)
+- Acceptance criteria are specific and testable: exact commands, thresholds, exit codes, and required document sections are named
+- Code snippets for the coverage gate, fuzz harness skeleton, and wedge-audit grep patterns remove implementation ambiguity
+- Watch For section proactively covers the three highest-risk areas (per-package vs. global coverage, legacy markdown fuzz seeds, fragile grep patterns)
+- No new user-facing config keys or file formats introduced; "no behavior change" stance is explicit — Migration Impact section not required
+- No UI components; UI testability criterion is not applicable
+- Dependencies (m02, m03) are declared and assumed complete per milestone status
+- Historical pattern: similar milestone-scoped tasks in this project pass in a single cycle; scope here is appropriately contained

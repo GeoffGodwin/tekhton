@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "4"
-status: "todo"
+status: "done"
 -->
 
 # m04 — Phase 1 Hardening

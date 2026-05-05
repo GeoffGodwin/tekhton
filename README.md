@@ -144,6 +144,7 @@ path; these pages cover everything else.
 | Autonomous debt sweeps | [docs/debt-sweeps.md](./docs/debt-sweeps.md) |
 | Planning phase (`--plan`, `--replan`) | [docs/planning.md](./docs/planning.md) |
 | Security hardening | [docs/security.md](./docs/security.md) |
+| Go build & V4 migration (developers) | [docs/go-build.md](./docs/go-build.md) |
 
 <a id="watchtower-dashboard"></a>
 <a id="specialist-reviews"></a>
