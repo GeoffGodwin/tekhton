@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-05-04
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-05-05 | "Address all 14 open non-blocking notes in .tekhton/NON_BLOCKING_LOG.md. Fix each item and note what you changed."] `.tekhton/NON_BLOCKING_LOG.md item 2` — the current open note claims "I/O failures (file-not-found, unreadable stdin) are wrapped as `proto.ErrInvalidRequest`, causing `exitUsage`." This is factually incorrect against the current code: `os.ReadFile` and `io.ReadAll` failures are returned unwrapped and correctly map to `exitSoftware`. The test `TestSuperviseCmd_RejectsMissingRequestFile` already asserts `exitSoftware`. This note should be resolved/removed rather than carried forward, as it will mislead future coders into "fixing" code that is already correct.

@@ -1,38 +1,97 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 35 test functions
+Tests audited: 3 files, 16 test functions (freshness sample — not modified this run)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: RequestFile happy path missing field assertions
-- File: cmd/tekhton/supervise_test.go:69
-- Issue: `TestSuperviseCmd_HappyPath_RequestFile` verifies only that the response parses as valid JSON. It does not check `res.Proto`, `res.Outcome`, or `res.ExitCode`. Compare to `TestSuperviseCmd_HappyPath_Stdin` (line 49) which asserts all three. The gap means a regression that corrupts the Proto/Outcome in the --request-file path would not be caught by this test.
-- Severity: LOW
-- Action: Add three field assertions after the `json.Unmarshal` call, mirroring the checks in `TestSuperviseCmd_HappyPath_Stdin`.
+#### ISOLATION: TESTER_REPORT_FILE/CODER_SUMMARY_FILE env-var passthrough in test_audit_coverage_gaps.sh
+- File: tests/test_audit_coverage_gaps.sh:23-25
+- Issue: Both variables are initialized with `:-` defaults:
+  `TESTER_REPORT_FILE="${TESTER_REPORT_FILE:-${TEKHTON_DIR}/TESTER_REPORT.md}"`.
+  If either variable is already set in the calling shell (e.g., inherited from a
+  live pipeline run), the test uses that path instead of a temp-dir fixture.
+  The Gap 1 non-git branch creates fixture files at
+  `"$NON_GIT_DIR/${TESTER_REPORT_FILE}"` (line 130) and then calls
+  `_collect_audit_context` while `pushd`-ed into `$NON_GIT_DIR`. When
+  `TESTER_REPORT_FILE` is a relative path (the normal case), this resolves
+  correctly. If it is an absolute path inherited from the environment, the
+  fixture is written to the wrong location and the function silently reads the
+  live pipeline file instead of the test fixture. The test would then pass or
+  fail based on live pipeline state rather than controlled inputs.
+- Severity: MEDIUM
+- Action: Unconditionally assign both variables to temp-dir paths (do not use
+  `:-`):
+  ```bash
+  TESTER_REPORT_FILE="${TEKHTON_DIR}/TESTER_REPORT.md"
+  CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
+  ```
+  This eliminates the env-var passthrough risk without changing behavior in
+  clean environments.
 
-#### COVERAGE: Round-trip tests do not assert fixture-to-struct fidelity
-- File: internal/proto/agent_v1_test.go:32
-- Issue: `roundTripBytesIdentical` only asserts that `marshal(unmarshal(raw))` is idempotent — it does NOT verify that the fixture's content survives into the Go struct. A field name typo in a fixture (e.g., `"labek"` instead of `"label"`) would cause silently-ignored unknown JSON, and both marshal passes would agree on the corrupted struct. The structural field spot-checks in `TestAgentRequestV1_FixtureStructuralFields` and `TestAgentResultV1_FixtureStructuralFields` partially cover this for critical fields, but not for all fixture files.
+#### EXERCISE: Rolling-enabled gate (TEST_AUDIT_ROLLING_ENABLED) is not exercised through run_test_audit
+- File: tests/test_audit_sampler.sh:153-172
+- Issue: Test 5 verifies the disabled-sampler behavior by re-implementing the
+  gate logic inline (`if [[ "${TEST_AUDIT_ROLLING_ENABLED:-true}" == "true" ]]`)
+  rather than calling `run_test_audit` with the toggle set. The actual gate in
+  `lib/test_audit.sh:46-49` (which also checks `command -v
+  _sample_unaudited_test_files`) is not exercised. A regression that removes or
+  inverts the gate would not be caught by this test because the test bypasses
+  the gate and asserts only that `_AUDIT_SAMPLE_FILES` is still empty after a
+  skipped call — which it always will be.
 - Severity: LOW
-- Action: No urgent fix needed for m05 scope. When m10 expands the fixture corpus for the parity suite, consider adding a fixture-completeness validator that checks required field names are present before the round-trip assertion.
+- Action: Replace the inline gate simulation with a call to `run_test_audit`
+  under `TEST_AUDIT_ROLLING_ENABLED=false`, then assert `_AUDIT_SAMPLE_FILES`
+  is empty. This requires a TESTER_REPORT_FILE fixture and a stubbed `run_agent`
+  (both already present in `test_audit_standalone.sh`'s pattern). Alternatively,
+  keep the current test and add a second test that drives `run_test_audit`
+  directly with the toggle false.
 
-#### COVERAGE: Context cancellation path not exercised
-- File: internal/supervisor/supervisor_test.go (all Run tests)
-- Issue: No test passes a cancelled context to `supervisor.Run()`. The package doc (supervisor.go:55) explicitly states "Callers MUST treat ctx cancellation as authoritative even though the stub ignores it." The stub contract is correct, but there is no regression guard if a future developer adds ctx handling to `Run` that misbehaves on cancellation.
+#### SCOPE: Freshness-sample files are unrelated to this run's coder changes
+- File: tests/test_audit_coverage_gaps.sh, tests/test_audit_sampler.sh,
+  tests/test_audit_standalone.sh
+- Issue: All three files test `lib/test_audit*.sh` infrastructure. This run's
+  coder changes were documentation-only: a comment expansion in
+  `.github/workflows/go-build.yml` and annotation updates in
+  `.tekhton/NON_BLOCKING_LOG.md`. No `lib/` or `internal/` code was modified.
+  The sampled files have no scope relationship to this run's changes.
 - Severity: LOW
-- Action: Acceptable gap for m05 (stub deliberately ignores ctx). Add a `TestSupervisor_Run_CancelledContextReturnsError` test in m06 when `exec.CommandContext` is wired in.
+- Action: No action needed. The rolling freshness sampler is working as designed
+  — it surfaces least-recently-audited tests regardless of current-run scope.
+  This observation is informational only. The three sampled test files remain
+  correctly aligned with their respective implementations (`lib/test_audit*.sh`)
+  and contain no orphaned references.
 
 ### Additional Observations (no findings)
 
-- All 35 test functions call real implementation code — no mocked-only paths.
-- All assertions are grounded in fixture content or constants from the implementation; no magic numbers.
-- No test reads mutable project state (`.tekhton/`, `.claude/logs/`, pipeline run artifacts). All fixture access uses the committed `testdata/supervise/` directory or `t.TempDir()`.
-- No existing tests were modified; all tests are new. Weakening analysis: N/A.
-- All test names encode scenario and expected outcome.
-- The 8-case Validate rejection table is correctly split: 8 cases tested in `agent_v1_validate_test.go` (the proto layer that owns the contract), 5 of those cases also exercised in `supervisor_test.go` (verifying delegation), and 7 of those cases exercised end-to-end in `supervise_test.go` (verifying CLI routing). Subset coverage in the supervisor and CLI layers is intentional — not a gap.
-- Duration math in `TestAgentSpec_ToProto` (30min→1800s, 10min→600s) and `TestFromProto_DurationConversion` (65000ms→65s) verified against `spec.go:41-42` and `spec.go:76`.
-- `CategoryTransient` table tests (12 cases across UPSTREAM and ENVIRONMENT) verified against the switch block in `spec.go:130-148`. All expected values match.
-- Fixture structural field assertions verified against actual fixture files: `request_full.json` and `response_transient_error.json` carry the exact field values the tests assert.
-- Note: Go tests could not be executed (Go 1.23 toolchain unavailable). All assertions were verified by cross-referencing test code against implementation source and fixture content. This was also the case in the prior milestone's audit; no change in toolchain availability.
+- All 16 test functions call real implementation code with no mocked-only paths.
+  `run_agent` stubs are scoped to individual test blocks and appropriate for
+  avoiding live AI agent calls.
+- All assertions are grounded in real function outputs or strings that appear in
+  the implementation source. No hard-coded magic values were found.
+- `test_audit_sampler.sh` Tests 1–4 and 6–7 exercise `_sample_unaudited_test_files`,
+  `_record_audit_history`, and `_prune_audit_history` via real git repos in temp
+  dirs, verified against implementation logic in `lib/test_audit_sampler.sh`.
+- `test_audit_coverage_gaps.sh` Gap 2 correctly seeds git commits and modifies
+  tracked files to produce a real `git diff HEAD` that `_detect_test_weakening`
+  consumes. Assertions verified against the WEAKENING emission at
+  `lib/test_audit_detection.sh:116` and `145`.
+- `test_audit_standalone.sh` emit_event guard tests verify the
+  `command -v emit_event &>/dev/null` guard at `lib/test_audit.sh:109`. Verified
+  against implementation: guard is present and protects the pipeline when the
+  causal log module is absent.
+- The three EnsureDirs tests claimed by TESTER_REPORT.md
+  (`TestEnsureDirs`, `TestEnsureDirs_RejectsEmptyPath`,
+  `TestEnsureDirs_Idempotent`) were confirmed to exist in
+  `internal/causal/log_test.go:374-430` with correct assertions against the
+  real implementation.
+- State_helpers.sh comments at lines 118-120 and 156-159 confirmed present and
+  accurate (zero-omit explanation and awk-scanner limitation warning
+  respectively).
+- No existing tests were weakened. The tester made no modifications to any
+  test file this run — appropriate for a documentation-only task.
+- Test isolation is sound in normal environments: all three files use
+  `mktemp -d` temp dirs and `trap ... EXIT` cleanup. The MEDIUM isolation
+  finding above applies only when environment variables are inherited from a
+  live pipeline context.

@@ -226,15 +226,24 @@ tui_stage_begin() {
     _tui_alloc_lifecycle_id "$label"
     # Append to _TUI_STAGE_ORDER only when the stage's policy has pill=yes.
     # Sub-stages (scout, architect-remediation, rework) are invisible in the
-    # pill row by design; their begin calls still allocate a lifecycle id and
-    # drive the active-stage frame, but must not mutate the pill-row array
+    # pill row by design; their begin calls still allocate a lifecycle id but
+    # must not mutate the pill-row array or update the current stage label
     # that was seeded deterministically at bootstrap (M110).
     local _pill="yes"
+    local _class="pipeline"
     if declare -f get_stage_policy &>/dev/null; then
         local _pol
         _pol=$(get_stage_policy "$label")
+        _class="${_pol%%|*}"
         _pill="${_pol#*|}"
         _pill="${_pill%%|*}"
+    fi
+    # Sub-stages (class=sub) allocate a lifecycle id but do not update the
+    # stage label, pill row, or active stage frame — only tui_substage_begin
+    # should be called for these. If tui_stage_begin is mistakenly called with
+    # a substage label, return early to avoid corrupting the parent stage state.
+    if [[ "$_class" == "sub" ]]; then
+        return 0
     fi
     if [[ "$_pill" == "yes" ]]; then
         local _found=false
@@ -253,7 +262,7 @@ tui_stage_begin() {
     for _i in "${!_TUI_STAGE_ORDER[@]}"; do
         [[ "${_TUI_STAGE_ORDER[$_i]}" == "$label" ]] && { _idx=$((_i + 1)); break; }
     done
-    # When the stage is not in the pill row (sub), use the existing active
+    # When the stage is not in the pill row (conditional), use the existing active
     # index so the header stays anchored on the parent pipeline stage rather
     # than jumping to 0/N.
     if (( _idx == 0 )); then

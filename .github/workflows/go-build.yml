@@ -1,8 +1,11 @@
 # Action refs use major-version tags (@v4, @v5, @v6) rather than commit SHAs.
 # This is a deliberate tradeoff: SHAs are strictly more immutable but the blast
 # radius of a tag-mutation attack is bounded by `permissions: contents: read`
-# below — the workflow has no write access to the repo, secrets, or registries.
-# Revisit if this workflow ever needs broader permissions.
+# below — the workflow has no write access to the repo, secrets, or registries,
+# and no external PATs are referenced. Workflows that mint or use a PAT
+# (e.g. brew-bump.yml) pin to commit SHAs because their effective blast radius
+# extends beyond GITHUB_TOKEN. Revisit this workflow's pinning posture if it
+# ever needs broader permissions or starts referencing external secrets.
 name: Go Build
 
 on:
