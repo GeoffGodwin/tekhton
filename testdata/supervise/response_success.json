@@ -1,0 +1,10 @@
+{
+  "proto": "tekhton.agent.response.v1",
+  "run_id": "run_20260505_120000",
+  "label": "coder",
+  "exit_code": 0,
+  "turns_used": 42,
+  "duration_ms": 187432,
+  "outcome": "success",
+  "last_event_id": "coder.042"
+}

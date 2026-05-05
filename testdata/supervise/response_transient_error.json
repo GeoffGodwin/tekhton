@@ -1,0 +1,19 @@
+{
+  "proto": "tekhton.agent.response.v1",
+  "run_id": "run_20260505_120000",
+  "label": "coder",
+  "exit_code": 1,
+  "turns_used": 7,
+  "duration_ms": 14201,
+  "outcome": "transient_error",
+  "error_category": "UPSTREAM",
+  "error_subcategory": "api_rate_limit",
+  "error_transient": true,
+  "error_message": "API rate limit (HTTP 429)",
+  "last_event_id": "coder.007",
+  "stdout_tail": [
+    "[coder] writing internal/supervisor/supervisor.go",
+    "[coder] HTTP 429: rate limit exceeded",
+    "[coder] giving up — supervisor will retry"
+  ]
+}

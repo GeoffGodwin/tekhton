@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "5"
-status: "todo"
+status: "done"
 -->
 
 # m05 — Supervisor Scaffold + Agent JSON Contract

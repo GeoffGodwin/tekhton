@@ -1,0 +1,6 @@
+{
+  "proto": "tekhton.agent.request.v1",
+  "label": "scout",
+  "model": "claude-sonnet-4-6",
+  "prompt_file": "/tmp/scout.prompt"
+}

@@ -1,0 +1,15 @@
+{
+  "proto": "tekhton.agent.request.v1",
+  "run_id": "run_20260505_120000",
+  "label": "coder",
+  "model": "claude-opus-4-7",
+  "max_turns": 60,
+  "prompt_file": "/var/tekhton/run/coder.prompt",
+  "working_dir": "/home/dev/project",
+  "timeout_secs": 1800,
+  "activity_timeout_secs": 600,
+  "env": {
+    "TEKHTON_RUN_ID": "run_20260505_120000",
+    "CLAUDE_LOG_LEVEL": "info"
+  }
+}

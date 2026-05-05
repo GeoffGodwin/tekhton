@@ -80,7 +80,7 @@ _setup_tui_active() {
 
 _json_field() {
     local file="$1" field="$2"
-    python3 -c "import json; d=json.load(open('$file')); print(d.get('$field', ''))" 2>/dev/null
+    python3 -c "import json, sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2], ''))" "$file" "$field" 2>/dev/null || true
 }
 
 # =============================================================================
