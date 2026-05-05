@@ -9,7 +9,6 @@ package proto
 import (
 	"bytes"
 	"encoding/json"
-	"strconv"
 )
 
 // CausalProtoV1 is the proto envelope tag written into every event line.

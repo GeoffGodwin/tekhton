@@ -371,6 +371,64 @@ func TestArchive_NoSourceFile(t *testing.T) {
 	}
 }
 
+// TestEnsureDirs verifies that EnsureDirs creates both the log parent
+// directory and the sibling runs/ subdirectory without scanning the log.
+// This is the lightweight alternative to Open when only directory existence
+// is required (e.g., `tekhton causal init`).
+func TestEnsureDirs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".claude", "logs", "CAUSAL_LOG.jsonl")
+
+	// Pre-check: directories must not exist yet.
+	if _, err := os.Stat(filepath.Dir(path)); err == nil {
+		t.Fatalf("log dir already exists before EnsureDirs")
+	}
+	runsDir := filepath.Join(filepath.Dir(path), "runs")
+	if _, err := os.Stat(runsDir); err == nil {
+		t.Fatalf("runs dir already exists before EnsureDirs")
+	}
+
+	// EnsureDirs must create both directories without error.
+	if err := EnsureDirs(path); err != nil {
+		t.Fatalf("EnsureDirs: %v", err)
+	}
+
+	// Verify the parent directory exists.
+	if info, err := os.Stat(filepath.Dir(path)); err != nil {
+		t.Errorf("log dir not created: %v", err)
+	} else if !info.IsDir() {
+		t.Errorf("log path is not a directory")
+	}
+
+	// Verify the runs/ subdirectory exists.
+	if info, err := os.Stat(runsDir); err != nil {
+		t.Errorf("runs dir not created: %v", err)
+	} else if !info.IsDir() {
+		t.Errorf("runs path is not a directory")
+	}
+}
+
+// TestEnsureDirs_RejectsEmptyPath covers the guard at the top of EnsureDirs.
+func TestEnsureDirs_RejectsEmptyPath(t *testing.T) {
+	if err := EnsureDirs(""); err == nil {
+		t.Fatalf("EnsureDirs(\"\") returned nil error; want non-nil")
+	}
+}
+
+// TestEnsureDirs_Idempotent verifies that calling EnsureDirs twice on the
+// same path succeeds both times (no "already exists" errors).
+func TestEnsureDirs_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".claude", "logs", "CAUSAL_LOG.jsonl")
+
+	if err := EnsureDirs(path); err != nil {
+		t.Fatalf("first EnsureDirs: %v", err)
+	}
+	if err := EnsureDirs(path); err != nil {
+		t.Fatalf("second EnsureDirs: %v", err)
+	}
+}
+
 // BenchmarkEmit measures the per-event append cost. Captured here so the
 // SQLite-vs-flat-file decision (DESIGN_v6.md §3) has a baseline number.
 func BenchmarkEmit(b *testing.B) {

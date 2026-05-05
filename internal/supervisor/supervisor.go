@@ -59,6 +59,9 @@ func (s *Supervisor) Run(ctx context.Context, req *proto.AgentRequestV1) (*proto
 	if req == nil {
 		return nil, fmt.Errorf("supervisor: nil request")
 	}
+	// Defensive: any in-process caller that bypasses cmd/tekhton/supervise.go
+	// must still get contract enforcement. The CLI layer also validates;
+	// the duplication is intentional. m06 will grow more validation here.
 	if err := req.Validate(); err != nil {
 		return nil, err
 	}

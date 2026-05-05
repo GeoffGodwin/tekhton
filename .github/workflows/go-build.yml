@@ -1,3 +1,8 @@
+# Action refs use major-version tags (@v4, @v5, @v6) rather than commit SHAs.
+# This is a deliberate tradeoff: SHAs are strictly more immutable but the blast
+# radius of a tag-mutation attack is bounded by `permissions: contents: read`
+# below — the workflow has no write access to the repo, secrets, or registries.
+# Revisit if this workflow ever needs broader permissions.
 name: Go Build
 
 on:
@@ -108,7 +113,10 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pinned to a specific semver so CI runs the same linter version
+          # across PRs. `latest` would silently shift behavior any time
+          # golangci-lint cuts a release.
+          version: v1.64.5
           args: --timeout=5m
 
       # m04: enforce the bash↔Go seam invariant. Only lib/causality.sh,

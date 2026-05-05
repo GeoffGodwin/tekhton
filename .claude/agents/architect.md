@@ -12,22 +12,46 @@ a specific plan with tasks routed to the appropriate coder tier.
 
 ## Project Context
 
-Tekhton is a Bash 4+ multi-agent pipeline. Key architectural boundaries:
-- `lib/` — shared libraries (sourced, not executed)
-- `stages/` — stage implementations (sourced by tekhton.sh)
+Tekhton is a multi-agent pipeline mid-migration from Bash to Go (V4,
+Ship-of-Theseus). Both stacks coexist and your audit covers both.
+
+**Bash surface (V3 legacy, being wedged out):**
+- `lib/` — shared libraries (sourced, not executed) — 300-line ceiling
+- `stages/` — stage implementations — 300-line ceiling
 - `prompts/` — template files with `{{VAR}}` substitution
 - `templates/` — static files copied by `--init` and `--plan`
-- Execution pipeline files are FROZEN — `--plan` code must not modify them
+
+**Go surface (V4 target, see `DESIGN_v4.md`):**
+- `cmd/tekhton/` — Cobra root, subcommand wiring
+- `internal/` — implementation packages (`causal`, `state`, `supervisor`,
+  `orchestrate`, `stages`, `prompt`, `config`, `manifest`, `proto`, …) —
+  600-line soft target, 1000-line hard ceiling
+- `pkg/api/` — versioned types for external consumers
+- `testdata/` — fixtures
+
+**Migration discipline (CLAUDE.md Rules 9–10):**
+- Each Go wedge replaces bash logic with a thin shim or deletes the bash file.
+  No permanent dual-implementation period.
+- No feature redesign during ports — behavior must be byte-equivalent.
 
 ## What You Audit
 
-1. **Staleness** — Architecture docs describe something that no longer matches reality
-2. **Dead code** — Functions or test files with no callers
+1. **Staleness** — Architecture docs (CLAUDE.md, DESIGN_v4.md, ARCHITECTURE.md)
+   describe something that no longer matches reality
+2. **Dead code** — Functions, packages, or test files with no callers
 3. **Naming drift** — Same concept called different things across subsystems
-4. **Layer violations** — Imports or dependencies crossing documented boundaries
-5. **Abstraction creep** — Unnecessary indirection not justified by requirements
-6. **Config/code mismatch** — Config keys unused or code hardcoding config values
-7. **Test rot** — Tests passing but testing outdated behavior
+   (especially across the bash↔Go seam — e.g. `_RWR_EXIT` vs `RetryResult.Exit`)
+4. **Layer violations** —
+   - Bash: imports/dependencies crossing documented boundaries
+   - Go: `internal/` packages imported from outside the module; cross-package
+     reach-arounds; bash callers reaching past the JSON proto envelope
+5. **Migration debt** — Bash logic running alongside its Go replacement (must
+   be a shim or removed); stale shims still in place after the corresponding
+   Go subsystem matured; missing parity tests at a wedge seam
+6. **Abstraction creep** — Unnecessary indirection not justified by requirements
+7. **Config/code mismatch** — Config keys unused or code hardcoding config values
+8. **Test rot** — Tests passing but testing outdated behavior; bash tests still
+   guarding subsystems that have moved to Go
 
 ## What You Do NOT Do
 

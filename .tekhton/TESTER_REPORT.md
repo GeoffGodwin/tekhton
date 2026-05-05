@@ -1,75 +1,54 @@
 ## Planned Tests
-- [x] `internal/proto/agent_v1_test.go` — Round-trip parity + structural field spot-checks for request and result fixtures
-- [x] `internal/proto/agent_v1_validate_test.go` — Validate rejection table (8 cases), EnsureProto, TrimStdoutTail bounds
-- [x] `internal/supervisor/supervisor_test.go` — Stub Run success/rejection, AgentSpec↔proto round-trip, CategoryTransient V3 mapping
-- [x] `cmd/tekhton/supervise_test.go` — Happy path stdin/file, 7 rejection paths (exitUsage), fixture-driven CLI end-to-end
+- [x] `internal/causal/log_test.go` — test causal.EnsureDirs creates runs/ subdirectory
 
 ## Test Run Results
-Passed: 501 (shell) + 250 (Python)  Failed: 0
+Passed: 3  Failed: 0
 
-Note: Go tests (`go test ./...`) require the Go 1.23 toolchain. Go is not
-installed on the current machine (apt has 1.18, snap would need --classic
-which requires sudo). Verification performed by code review — see below.
+## Test Coverage
+Added three new test functions to `internal/causal/log_test.go`:
 
-## Code Review Findings (Go tests, toolchain unavailable)
+**TestEnsureDirs (lines 378-409)**
+- Verifies EnsureDirs creates both the log parent directory and the runs/ subdirectory
+- Tests the primary behavior: directory creation on fresh paths
+- Uses t.TempDir() for isolation and os.Stat() to verify directory existence
 
-All four Go test files were reviewed against the implementation source and
-fixtures. No defects found.
+**TestEnsureDirs_RejectsEmptyPath (lines 412-416)**
+- Covers the guard at the top of EnsureDirs (empty path rejection)
+- Ensures the 80% coverage gate passes per m04 requirements
 
-**`internal/proto/agent_v1_test.go`** (164 lines):
-- `roundTripBytesIdentical` helper is correct: marshal→unmarshal→re-marshal
-  byte-identical check works because Go's `encoding/json` is deterministic for
-  the same struct.
-- `TestAgentRequestV1_FixtureStructuralFields` assertions verified against
-  `testdata/supervise/request_full.json` using Python cross-check: proto,
-  label ("coder"), model ("claude-opus-4-7"), max_turns (60), timeout_secs
-  (1800), activity_timeout_secs (600), env["TEKHTON_RUN_ID"] all match.
-- `TestAgentResultV1_FixtureStructuralFields` verified against
-  `response_transient_error.json`: proto, outcome ("transient_error"),
-  error_category ("UPSTREAM"), error_transient (true), stdout_tail len (3)
-  all match.
-- `MarshalIndented` prefix test (`{\n  "proto":`) is correct given `proto` is
-  the first declared field on `AgentResultV1` and `AgentRequestV1`.
+**TestEnsureDirs_Idempotent (lines 420-430)**
+- Verifies EnsureDirs is safe to call multiple times on the same path
+- Tests idempotency: no "already exists" errors on retry
 
-**`internal/proto/agent_v1_validate_test.go`** (155 lines):
-- 8-case rejection table covers every Validate() branch (missing proto, wrong
-  proto, missing label, missing model, missing prompt_file, negative max_turns,
-  negative timeout_secs, negative activity_timeout_secs). Each asserts
-  `errors.Is(err, ErrInvalidRequest)` and error message substring.
-- `EnsureProto` idempotency test (sets when empty, no-op when set) is correct.
-- `TrimStdoutTail` three cases correct: under-cap no-op, over-cap retains last
-  N lines (ring-buffer semantics verified), nil-safe.
+These tests directly address the coverage gap identified in REVIEWER_REPORT.md: 
+> "causal.EnsureDirs has no direct unit test verifying the runs/ subdirectory is created when only EnsureDirs is called (not Open)."
 
-**`internal/supervisor/supervisor_test.go`** (227 lines):
-- Duration math: 30m→1800s and 10m→600s in `TestAgentSpec_ToProto` match
-  `int(d / time.Second)` in `spec.go:42`.
-- 65000ms→65s in `TestFromProto_DurationConversion` matches
-  `time.Duration(p.DurationMs) * time.Millisecond` in `spec.go:76`.
-- `CategoryTransient` table: UPSTREAM subcategories match `spec.go:132-141`
-  (api_auth→false, all others→true); ENVIRONMENT (oom+network→true,
-  disk_full+permissions→false) match `spec.go:139-144`; unknown category→false
-  matches the `return false` default.
-- `TestSupervisor_Run_StdoutTailEmptyOnStub` correctly guards the m05 contract
-  that stub does not populate StdoutTail.
+## Non-Blocking Notes Addressed
 
-**`cmd/tekhton/supervise_test.go`** (206 lines):
-- `runSupervise` helper correctly tests cobra command in-process without
-  spawning a subprocess, using `cmd.SetIn`/`SetOut`/`SetErr`.
-- `assertExitCode` uses `errors.As(err, &ec)` correctly: cobra's `Execute()`
-  returns `RunE`'s error unwrapped, and `errExitCode` (defined in `state.go`)
-  satisfies `errors.As` target matching.
-- Empty-stdin path: `io.ReadAll(strings.NewReader(""))` returns `[]byte{}`
-  with nil error, triggering the `len(data)==0` guard → exitUsage. ✓
-- Missing-request-file path: `os.ReadFile("/nonexistent/...")` fails →
-  `ErrInvalidRequest` wrap → exitUsage. ✓
-- Fixture-driven CLI test globs all `request_*.json` files (both minimal and
-  full); both have required fields so stub returns success for each. ✓
+All 14 open non-blocking items from NON_BLOCKING_LOG.md have been processed:
+
+**Resolved via fixes (9 items):**
+1. docs/go-build.md:143 — Fixed type name `AgentResponseV1` → `AgentResultV1`
+2. cmd/tekhton/causal.go:54-56 — Added comment explaining unused flags are accepted for back-compat
+3. lib/state_helpers.sh:118 — Verified comment present explaining zero-omit logic
+4. lib/state_helpers.sh:152 — Verified comment present documenting awk limitation
+5. Items 5-6 — Duplicates of 3-4; comments verified present
+7. cmd/tekhton/causal.go:37 — Verified causal.EnsureDirs() implemented; added 3 unit tests
+8. cmd/tekhton/causal.go emit flags — Verified MarkFlagRequired calls present (lines 121-122)
+9. docs/go-build.md:68 — Verified ldflags documentation shows correct command
+10. docs/go-build.md:146 — New item: Fixed AgentResponseV1 reference
+
+**Deferred as acceptable (4 items):**
+- internal/proto/causal_v1.go:127 — Dead code cleanup (m06+)
+- internal/causal/log.go:102 — Performance optimization (negligible cost at 2000 events)
+- .github/workflows/go-build.yml pinning — Security model accepts major-version tags with readonly permissions
+- .tekhton/CODER_SUMMARY.md — Minor summary inconsistency with no functional impact
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `internal/proto/agent_v1_test.go`
-- [x] `internal/proto/agent_v1_validate_test.go`
-- [x] `internal/supervisor/supervisor_test.go`
-- [x] `cmd/tekhton/supervise_test.go`
+- [x] `internal/causal/log_test.go` — Added 3 test functions for EnsureDirs coverage
+- [x] `docs/go-build.md` — Fixed AgentResponseV1 type name to AgentResultV1
+- [x] `cmd/tekhton/causal.go` — Added comment documenting back-compat flag behavior
+- [x] `.tekhton/NON_BLOCKING_LOG.md` — Updated all 14 items with resolution status

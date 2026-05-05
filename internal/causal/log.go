@@ -2,6 +2,7 @@ package causal
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +33,24 @@ type Log struct {
 
 	seqMu sync.Mutex
 	seq   map[string]*atomic.Int64
+}
+
+// EnsureDirs creates the parent directory of path and the sibling runs/
+// archive directory. Cheaper than Open() when the caller only needs
+// directory existence (e.g. `tekhton causal init`) and does not care about
+// loading the resume seed. Returns nil on success or any I/O error from
+// MkdirAll.
+func EnsureDirs(path string) error {
+	if path == "" {
+		return errors.New("causal: empty log path")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("causal: mkdir log dir: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(filepath.Dir(path), "runs"), 0o755); err != nil {
+		return fmt.Errorf("causal: mkdir runs dir: %w", err)
+	}
+	return nil
 }
 
 // Open prepares a Log writer at path. The directory is created if missing.
@@ -98,17 +117,17 @@ func (l *Log) seedFromExisting() error {
 // We do a single-pass byte scan rather than json.Unmarshal so resume seeding
 // is fast even for 2000-event logs.
 func parseStageAndSeq(line []byte) (string, int64) {
-	const key = `"id":"`
-	idx := strings.Index(string(line), key)
+	key := []byte(`"id":"`)
+	idx := bytes.Index(line, key)
 	if idx < 0 {
 		return "", 0
 	}
-	rest := string(line[idx+len(key):])
-	end := strings.IndexByte(rest, '"')
+	rest := line[idx+len(key):]
+	end := bytes.IndexByte(rest, '"')
 	if end <= 0 {
 		return "", 0
 	}
-	idStr := rest[:end]
+	idStr := string(rest[:end])
 	dot := strings.LastIndexByte(idStr, '.')
 	if dot <= 0 || dot == len(idStr)-1 {
 		return "", 0

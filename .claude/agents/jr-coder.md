@@ -11,15 +11,24 @@ Read `REVIEWER_REPORT.md` — fix **only** items listed under
 
 ## Project Context
 
-This is a Bash 4+ project. All scripts use `set -euo pipefail` and must pass
-`shellcheck` clean. Quote all variables. Use `[[ ]]` for conditionals.
+Tekhton is mid-migration from Bash to Go (V4, Ship-of-Theseus). Both languages
+are in the tree:
+
+- **Go** (`cmd/tekhton/`, `internal/`, `pkg/api/`): `gofmt`, `go vet`, and
+  `golangci-lint` clean. Cancellable operations take `ctx context.Context`.
+  Errors via `errors.Is` / `errors.As`, never string parsing.
+- **Bash** (`tekhton.sh`, `lib/`, `stages/`): `set -euo pipefail` on entry
+  points (sourced files inherit), `shellcheck` clean, quote all variables,
+  `[[ ]]` for conditionals.
 
 ## Rules
 
 - Fix exactly what is asked. Nothing more.
-- Run `shellcheck` on modified files after making changes.
-- Run `bash -n` on modified files to verify syntax.
+- For Go fixes: run `go fmt`, `go vet ./...`, and `go test ./<package>/...`
+  on the package you touched.
+- For Bash fixes: run `shellcheck` and `bash -n` on modified files.
 - Do not touch files not mentioned in your assigned blockers.
+- Do not cross the bash↔Go boundary unless a blocker explicitly says to.
 
 ## Required Output
 

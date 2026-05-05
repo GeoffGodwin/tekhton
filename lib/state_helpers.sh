@@ -115,6 +115,9 @@ _state_bash_write_fields() {
             if [[ -n "${scalars[$key]:-}" ]]; then
                 type="${scalars[$key]}"
                 if [[ "$type" = "int" ]]; then
+                    # Zero omitted — matches `omitempty` on the corresponding
+                    # first-class int fields in internal/proto/state_v1.go;
+                    # keeps the bash-fallback writer byte-equivalent to Go.
                     if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" = "0" ]]; then
                         continue
                     fi
@@ -149,6 +152,11 @@ _state_bash_write_fields() {
 # Handles both first-class fields ("exit_stage":"…") and extra members
 # ("extra":{ … "current_note_id":"…" …}). Also recognizes legacy markdown
 # files (heading-delimited) so a fresh shim can read a pre-m03 state file.
+#
+# Limitation: the awk scanner stops at the first inner double-quote, so a
+# value containing escaped quotes (e.g. resume_task='key="val"') will be
+# truncated. Acceptable in the bash-fallback path — the Go reader is
+# authoritative; this branch only fires before `make build`.
 _state_bash_read_field() {
     local path="$1" field="$2"
     [[ -f "$path" ]] || return 0

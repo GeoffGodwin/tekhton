@@ -46,8 +46,18 @@ func newSuperviseCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			req, err := readSuperviseRequest(requestFile, cmd.InOrStdin())
 			if err != nil {
-				return errExitCode{code: exitUsage, err: err}
+				// Parse / shape failures wrap proto.ErrInvalidRequest → exitUsage.
+				// I/O failures (file-not-found, unreadable stdin) do not — they
+				// surface as exitSoftware so bash callers can distinguish a bad
+				// envelope from a transient I/O error.
+				if errors.Is(err, proto.ErrInvalidRequest) {
+					return errExitCode{code: exitUsage, err: err}
+				}
+				return errExitCode{code: exitSoftware, err: err}
 			}
+			// Validation also runs inside sup.Run for any future in-process
+			// caller that bypasses this CLI layer; the redundancy is
+			// intentional and cheap. See internal/supervisor/supervisor.go.
 			if err := req.Validate(); err != nil {
 				return errExitCode{code: exitUsage, err: err}
 			}
@@ -79,20 +89,21 @@ func newSuperviseCmd() *cobra.Command {
 }
 
 // readSuperviseRequest consumes the request envelope from --request-file or
-// stdin. The error path returns a wrapped proto.ErrInvalidRequest so the
-// caller maps to exitUsage uniformly.
+// stdin. Parse / shape failures wrap proto.ErrInvalidRequest (caller maps to
+// exitUsage). OS-level I/O failures return unwrapped errors so the caller
+// can distinguish them and map to exitSoftware.
 func readSuperviseRequest(path string, stdin io.Reader) (*proto.AgentRequestV1, error) {
 	var data []byte
 	var err error
 	if path != "" {
 		data, err = os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("%w: read --request-file: %v", proto.ErrInvalidRequest, err)
+			return nil, fmt.Errorf("read --request-file: %w", err)
 		}
 	} else {
 		data, err = io.ReadAll(stdin)
 		if err != nil {
-			return nil, fmt.Errorf("%w: read stdin: %v", proto.ErrInvalidRequest, err)
+			return nil, fmt.Errorf("read stdin: %w", err)
 		}
 	}
 	if len(data) == 0 {

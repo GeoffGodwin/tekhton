@@ -11,6 +11,14 @@ persistence, and resume support.
 
 ## Repository Layout
 
+> **V4 migration in progress.** The bash tree below is the V3 surface
+> (`tekhton.sh`, `lib/`, `stages/`, `prompts/`). It is being wedged out
+> subsystem-by-subsystem into Go. See `DESIGN_v4.md` §Architecture Target
+> for the Go target layout (`cmd/tekhton/`, `internal/`, `pkg/api/`,
+> `testdata/`). Each Go wedge replaces the corresponding bash logic with
+> a thin shim or removes the bash file entirely — there is no permanent
+> dual-implementation period within a subsystem.
+
 ```
 tekhton/
 ├── tekhton.sh              # Main entry point
@@ -305,22 +313,47 @@ agent roles.
 
 1. **Project-agnostic.** Tekhton must never contain project-specific logic.
    All project configuration is in `pipeline.conf` and agent role files.
-2. **Bash 4.3+.** All scripts use `set -euo pipefail`. No bashisms beyond bash 4.3.
-3. **Shellcheck clean.** All `.sh` files pass `shellcheck` with zero warnings.
+2. **Bash 4.3+ and Go 1.22+ coexist during V4.** Bash files: `set -euo pipefail`,
+   no bashisms beyond bash 4.3. Go files: `gofmt`, no `init()` side effects beyond
+   Cobra wiring, `context.Context` as the first parameter for any cancellable
+   operation, typed errors via `errors.Is` / `errors.As` (not string parsing).
+   New code in V4 phases lands in Go (`cmd/`, `internal/`, `pkg/api/`); new bash
+   files are only acceptable as wedge shims for unmigrated subsystems.
+3. **Linter clean.** `.sh` files pass `shellcheck` with zero warnings. `.go` files
+   pass `golangci-lint` (advanced preset per `DESIGN_v4.md` Risk §9) with zero
+   warnings, and `go vet ./...` clean.
 4. **Deterministic.** Given the same config.conf and task, pipeline behavior is identical.
 5. **Resumable.** Pipeline state is saved on interruption. Re-running resumes.
 6. **Template engine.** Prompts use `{{VAR}}` substitution and `{{IF:VAR}}...{{ENDIF:VAR}}`
-   conditionals. No other templating system.
+   conditionals. No other templating system. The Go port preserves byte-for-byte
+   identical output for the same inputs (see `DESIGN_v4.md` §Prompt Engine).
 7. **Python is optional.** The `tools/` directory requires Python 3.8+ and tree-sitter
    for intelligent indexing (repo map, tag cache). Tekhton remains fully functional
    without Python — the pipeline gracefully falls back to v2 context injection.
-8. **300-line file ceiling.** Every `.sh` file you create or modify must be under 300
-   lines after your changes. If a file exceeds 300 lines, extract helpers into a new
-   `_helpers.sh` (or domain-split) file. **Exemption — data-only files:** files that
-   contain only assignments (e.g. `:=` defaults), constant declarations, and calls to
-   shared clamp/validation helpers (no function bodies of their own, no conditional
-   logic) are exempt. Such files exist to declare values, and splitting them buys no
-   readability. Example: `lib/config_defaults.sh`.
+8. **File length ceilings.**
+   - **Bash (`.sh`) — 300-line hard ceiling.** Every `.sh` file you create or modify
+     must be under 300 lines after your changes. If a file exceeds 300 lines, extract
+     helpers into a new `_helpers.sh` (or domain-split) file. **Exemption — data-only
+     files:** files that contain only assignments (e.g. `:=` defaults), constant
+     declarations, and calls to shared clamp/validation helpers (no function bodies of
+     their own, no conditional logic) are exempt. Example: `lib/config_defaults.sh`.
+   - **Go (`.go`) — 600-line soft target, 1000-line hard ceiling.** Go has packages,
+     types, and a module system; bash's reason for the 300-line rule (one global
+     namespace, no types) does not apply. Aim for 600 lines and use domain coherence
+     and `gocyclo` as the real signal — split when a file's purpose fragments, not
+     when it crosses an arbitrary line count. Files exceeding 1000 lines must be
+     split into a coherent sub-package or sibling file.
+9. **V4 wedges remove the bash they replace.** When a Go wedge lands, the
+   corresponding bash logic is either reduced to a thin shim that calls the Go
+   binary (during cross-stage migration windows) or deleted outright if no other
+   bash callers remain. Do **not** leave the original bash logic running alongside
+   the new Go implementation. The Phase 5 end state is `Repository contains no
+   .sh files in lib/ or stages/` (`DESIGN_v4.md` §Phase Plan).
+10. **No feature redesign during ports.** V4 is a Ship-of-Theseus migration, not a
+    rewrite. Behavior must be byte-for-byte equivalent across each wedge, asserted
+    by parity tests. New features wait for the Go subsystem to land first
+    (`DESIGN_v4.md` Risk §2). Any change beyond strict porting requires a separate
+    milestone.
 
 ## Versioning
 

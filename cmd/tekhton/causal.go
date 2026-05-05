@@ -38,7 +38,9 @@ func newCausalInitCmd() *cobra.Command {
 			if path == "" {
 				return fmt.Errorf("causal init: --path is required")
 			}
-			if _, err := causal.Open(path, cap, runID); err != nil {
+			// EnsureDirs is the lightweight mkdir+touch path; Open would
+			// scan and seed an existing log, which init does not need.
+			if err := causal.EnsureDirs(path); err != nil {
 				return err
 			}
 			// Touch the log file so subsequent shell tests for `[ -f ]` succeed.
@@ -50,8 +52,10 @@ func newCausalInitCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&path, "path", "", "Path to CAUSAL_LOG.jsonl.")
-	c.Flags().IntVar(&cap, "cap", 2000, "Max events per run before eviction.")
-	c.Flags().StringVar(&runID, "run-id", "", "Run identifier for archive naming.")
+	// --cap and --run-id are declared for back-compat with shell callers that may
+	// pass them, but init does not use them. The path is the only required argument.
+	c.Flags().IntVar(&cap, "cap", 2000, "Max events per run before eviction (accepted but unused by init).")
+	c.Flags().StringVar(&runID, "run-id", "", "Run identifier for archive naming (accepted but unused by init).")
 	return c
 }
 
@@ -114,6 +118,8 @@ func newCausalEmitCmd() *cobra.Command {
 	c.Flags().StringSliceVar(&causedBy, "caused-by", nil, "Upstream event ID (repeatable).")
 	c.Flags().StringVar(&verdict, "verdict", "", "Pre-formatted JSON verdict, or empty for null.")
 	c.Flags().StringVar(&context, "context", "", "Pre-formatted JSON context, or empty for null.")
+	_ = c.MarkFlagRequired("stage")
+	_ = c.MarkFlagRequired("type")
 	return c
 }
 

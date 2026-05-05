@@ -152,7 +152,9 @@ func TestSuperviseCmd_RejectsMissingRequestFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing request file")
 	}
-	assertExitCode(t, err, exitUsage)
+	// I/O failure (file-not-found) is exitSoftware, not exitUsage — the
+	// envelope itself was never read, so it cannot be a "bad request".
+	assertExitCode(t, err, exitSoftware)
 }
 
 // ---------------------------------------------------------------------------

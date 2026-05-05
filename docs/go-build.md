@@ -117,9 +117,31 @@ explicitly supported.
 
 ## Subcommands
 
-The Go binary currently exposes one production subcommand and the
+The Go binary currently exposes several internal subcommands and the
 top-level `--version` / `--help` flags. Subcommand list grows as wedges
 land (see DESIGN_v4 Phase 1+).
+
+### `tekhton supervise` (m05)
+
+The agent supervisor. Reads an `agent.request.v1` JSON envelope (from stdin
+or `--request-file`), invokes the agent, and prints an `agent.response.v1`
+JSON envelope on stdout. This is a Phase 2 stub — currently a contract
+definition with placeholder implementation; subprocess execution lands in m06.
+
+```text
+tekhton supervise [--request-file PATH]    # read request from file or stdin
+```
+
+Exit codes:
+- `0` — supervisor ran the agent and the agent exited 0
+- `N` — supervisor ran the agent and the agent exited N
+- `64` (EX_USAGE) — request envelope was malformed
+- `70` (EX_SOFTWARE) — internal supervisor failure (I/O, panic, etc.)
+
+The request/response JSON schemas are defined in
+[`internal/proto/agent_v1.go`](../internal/proto/agent_v1.go) as `AgentRequestV1`
+and `AgentResultV1`. Bash callers (`lib/agent.sh`) will use this subcommand
+to wrap agent execution and parse the response envelope.
 
 ### `tekhton causal …` (m02)
 
@@ -128,11 +150,15 @@ this subcommand when the Go binary is on `$PATH`; pipeline callers do
 not invoke it directly.
 
 ```text
-tekhton causal init    --path PATH --cap N --run-id R     # ensure dirs exist
-tekhton causal emit    --path PATH --stage S --type T …   # append one event, prints ID
+tekhton causal init    --path PATH                        # ensure dirs exist
+tekhton causal emit    --path PATH --stage S --type T …  # append one event, prints ID (--stage and --type required)
 tekhton causal archive --path PATH --run-id R --retention N
 tekhton causal status  --path PATH                        # print last event ID
 ```
+
+**Note:** As of m05, the `emit` subcommand requires both `--stage` and
+`--type` flags. The `init` subcommand no longer takes `--cap` or `--run-id`
+arguments — the initialization creates required directories only.
 
 The on-disk format is `causal.event.v1` — see
 [`internal/proto/causal_v1.go`](../internal/proto/causal_v1.go). Bash
