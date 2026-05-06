@@ -42,6 +42,13 @@ ALLOWED_FILES=(
 # 1. `>>` or `>` redirection into the wedge-owned path variables.
 # 2. `mv …` into the wedge-owned path variables (atomic-write completion).
 # 3. In-process counter assignments that Go now owns.
+# 4. m10 cutover: inline `python3 -c "...json..."` parses anywhere in lib/ —
+#    the supervisor wedge replaced these with structured agent.response.v1
+#    fields. Multi-line python3 invocations are caught by an additional
+#    pass below that scans for `python3 -c "$` followed by `import json`.
+# 5. m10 cutover: a regression here would be a re-introduction of one of
+#    the deleted bash supervisor files. We can't grep for the absence of
+#    a file, but we can flag any source line that names one.
 PATTERNS=(
     # Redirection (append or overwrite) into the variable.
     '>[[:space:]]*"?\$\{?CAUSAL_LOG_FILE\b'
@@ -52,6 +59,12 @@ PATTERNS=(
     # In-process counters owned by the Go side.
     '^[[:space:]]*_LAST_EVENT_ID='
     '^[[:space:]]*_CAUSAL_EVENT_COUNT='
+    # m10: single-line inline JSON parses via python.
+    'python3[[:space:]]+-c[[:space:]].*json'
+    # m10: re-source of any deleted bash supervisor module. Anchored on the
+    # `source`/`.` builtin so comments documenting the m10 cutover (which
+    # legitimately name the files) don't trip the audit.
+    '^[[:space:]]*(source|\.)[[:space:]]+.*/(agent_monitor[^"[:space:]]*|agent_retry[^"[:space:]]*)'
 )
 
 # --- Audit -------------------------------------------------------------------

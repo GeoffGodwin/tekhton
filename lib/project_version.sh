@@ -35,8 +35,12 @@ _detect_version_from_file() {
     local ver=""
     case "$accessor" in
         json)
-            ver=$(python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('version',''))" \
-                  < "$file" 2>/dev/null || echo "")
+            # m10 cutover: drop python3 dependency. We only need the
+            # top-level "version" string from package.json / composer.json
+            # and the like — pure grep + sed handles every shape we've
+            # seen in the wild (single-line, indented, mixed quoting).
+            ver=$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' -- "$file" 2>/dev/null \
+                  | head -1 | sed 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)
             ;;
         toml_version)
             ver=$(grep -E '^version\s*=\s*"[^"]+"' -- "$file" 2>/dev/null \

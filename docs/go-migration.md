@@ -182,3 +182,198 @@ against scope-creep into Phase 2 with Phase 1 debt.
 - [x] Self-host check passing (`scripts/self-host-check.sh`).
 
 When all five are checked: m05 may begin.
+
+---
+
+## Phase 2 — Supervisor wedge (m05–m10)
+
+### Phase 2 summary
+
+Phase 2 ported the agent supervisor — the loop that launches `claude`,
+streams its JSON output, bounds idle time, retries on transient failure,
+pauses for quota refresh, and reaps the process tree on cancellation.
+This was the largest single Phase 1→4 chunk: ~1300 lines of bash
+(`lib/agent_monitor*.sh` + `lib/agent_retry*.sh` + the original
+`lib/agent.sh`) collapsed into ~80 lines of shim plus
+`internal/supervisor/`.
+
+Milestones landed:
+
+- **m05 — Scaffold + agent.request.v1 / agent.response.v1 contract.**
+  `cmd/tekhton/supervise` reads the request envelope and (initially)
+  returned a stub response. The proto + CLI surface stayed stable for
+  every subsequent milestone.
+- **m06 — Real subprocess path.** `internal/supervisor/run.go` shells
+  out to the agent binary via `exec.CommandContext`, scans stdout for
+  streaming JSON via `bufio.Scanner` (with `scannerMaxBuf` matching V3's
+  ring-buffer width), tees stderr to the causal log. `decoder.go`
+  isolates the JSON-event loop so tests can drive it without spawning a
+  process.
+- **m07 — Retry envelope + typed errors.** `internal/supervisor/retry.go`
+  + `errors.go` introduced `AgentError` (typed, `errors.Is`-aware)
+  alongside the V3-equivalent `RetryPolicy` defaults. Subcategory floors
+  (`api_rate_limit` → 60s, `oom` → 15s) preserved exactly. ±10% jitter
+  is new — a deliberate addition to defeat thundering-herd retries
+  against shared rate limits.
+- **m08 — Quota pause + Retry-After parsing.** `quota.go` handles the
+  full pause loop with chunked sleep (defaults match
+  `QUOTA_SLEEP_CHUNK=5s` / `QUOTA_MAX_PAUSE_DURATION=5h15m`).
+  `ParseRetryAfter` accepts both integer-second and HTTP-date forms.
+  The retry loop's quota-pause path drains 429s without consuming a
+  retry attempt — same V3 semantic.
+- **m09 — Windows reaper + fsnotify activity override.** `reaper_*.go`
+  (build-tagged) use Windows JobObject for tree termination and POSIX
+  `Setpgid`/`syscall.Kill(-pgid)` on everything else. `fsnotify.go`
+  watches the working directory; when the activity timer would fire but
+  recent FS activity is observed, the timer resets up to
+  `activityOverrideCap=3` times before becoming permanent. Fallback to
+  mtime-walk when `fsnotify.NewWatcher()` fails (rare FUSE/WSL setups).
+- **m10 — Cutover + parity gate (this milestone).** `lib/agent.sh`
+  flipped to call `tekhton supervise`. Bash supervisor files
+  (`lib/agent_monitor*.sh`, `lib/agent_retry*.sh`) deleted.
+  `scripts/supervisor-parity-check.sh` is the gate.
+  `internal/state/legacy_reader.go` (the m03 "REMOVE IN m05" debt) also
+  deleted; pre-m03 markdown state files now return `ErrLegacyFormat`.
+
+### What worked
+
+- **Build-tagged platform files.** `reaper_unix.go` (`//go:build !windows`)
+  and `reaper_windows.go` (`//go:build windows`) gave us a single
+  `applyProcAttr(cmd)` call in `run.go` with no `runtime.GOOS` branching.
+  `GOOS=windows GOARCH=amd64 go build ./...` cross-compiles cleanly from
+  Linux as a CI gate; the actual JobObject reaper is exercised on the
+  `windows-latest` runner. The pattern transfers to Phase 3 if any
+  future subsystem grows a platform conditional.
+- **fsnotify with mtime fallback.** Production paths see fsnotify; rare
+  FUSE / WSL setups silently use the mtime walker. Both produce the same
+  `HadActivitySince(t)` signal, so `run.go` doesn't care which mode is
+  active — it just consults the watcher. The fallback was caught early
+  by the milestone "Watch For" line and added with one extra
+  branch-and-test.
+- **Typed errors with `errors.Is` instead of string matching.** The V3
+  bash supervisor classified errors by grepping stderr (`is_rate_limit_error`
+  was a giant case statement over text patterns). `internal/supervisor/errors.go`
+  declares `ErrUpstreamRateLimit`, `ErrUpstreamTransient`, etc., and
+  `classifyResult` returns them. The retry loop uses
+  `errors.Is(cls, ErrUpstreamRateLimit)` — refactor-safe in a way the
+  bash regex never was. Future provider abstractions in V5 will plug new
+  classification rules into this seam without touching the loop.
+- **Activity-timer override cap as a code-level constant, not an
+  envelope field.** `activityOverrideCap = 3` lives next to
+  `handleActivityTimeout` in `run.go`. Surfacing it on
+  `AgentRequestV1` would have invited tuning that defeats the whole
+  point of an activity timeout (pathological loops are exactly what
+  it's supposed to catch). The m09 milestone Watch For called this out
+  explicitly and the constant has stayed unconfigurable.
+- **CLI flag for the parity gate.** Adding `--no-retry` to
+  `tekhton supervise` let the m10 parity script exercise both the
+  retry-wrapped path (default, production) and single-attempt path
+  (parity assertions for fatal_error / activity_timeout) without two
+  separate CLI surfaces.
+
+### What needed adjustment
+
+- **`lib/agent.sh` 80-line ceiling required a second helper file.**
+  The first cut had ~106 lines: response parsing + null-run
+  classification + tool-profile exports + global initializers all
+  inline. Moved tool profiles, globals, and `_shim_apply_response` into
+  `lib/agent_shim.sh` to land at exactly 80 lines.
+- **`shellcheck` SC2034 on V3-contract globals.** Every
+  `LAST_AGENT_*`, `_RWR_*`, and `AGENT_ERROR_*` is assigned in
+  `agent_shim.sh` and read in `lib/orchestrate.sh` /
+  `lib/finalize_summary_collectors.sh` — across files shellcheck
+  considers them unused. Each assignment got a `# shellcheck
+  disable=SC2034` directive with a "consumed by" comment. The Phase 4
+  orchestrate port is the moment to delete the bulk of these.
+- **`python3 -c "import json"` audit found one straggler outside the
+  supervisor wedge.** `lib/project_version.sh::_detect_version_from_file`
+  parsed `package.json`'s top-level `version` via Python. Replaced with
+  a grep+sed pair scoped to the top-level `"version"` key. Three other
+  multi-line `python3 -c` blocks (`lib/dashboard_parsers_runs*.sh`,
+  `lib/project_version_bump.sh`) survived: they don't match the
+  single-line `python3 -c.*json` AC, do non-trivial JSON manipulation
+  for which a pure-bash replacement would be fragile, and fall back
+  cleanly when `python3` is absent. Those are tracked as Phase 3+
+  cleanup.
+- **Side-by-side bash↔Go diff is structurally impossible inside the
+  cutover commit.** The m10 design described running each scenario
+  twice — once against `git show HEAD~1:lib/agent_monitor.sh` and once
+  against HEAD's Go code. But m10 deletes the bash files, so HEAD~1
+  *during the m10 PR* would be m09 (which still has both stacks); after
+  m10 lands, "the bash baseline" no longer exists in the repo at all.
+  The actual gate became an assertion-based 12-scenario matrix against
+  the Go side, with the m07–m09 pairwise diffs serving as the
+  per-subsystem parity record. Documented in
+  `scripts/supervisor-parity-check.sh` so a future reader doesn't ask
+  the same question.
+- **Bash-internal tests had to be deleted, not rewritten.**
+  `tests/test_run_with_retry_loop.sh`,
+  `tests/test_should_retry_transient.sh`,
+  `tests/test_agent_fifo_invocation.sh`,
+  `tests/test_agent_monitor_ring_buffer.sh`,
+  `tests/test_agent_retry_pause.sh`,
+  `tests/test_agent_file_scan_depth.sh`,
+  `tests/test_agent_retry_config_defaults.sh`,
+  `tests/test_prompt_tempfile.sh`,
+  `tests/test_quota_retry_after_integration.sh`,
+  `tests/test_agent_counter.sh`, and
+  `tests/helpers/retry_after_extract.sh` all targeted internals
+  (`_invoke_and_monitor`, `_run_with_retry`, ring-buffer dump,
+  prompt-tempfile mechanic, `_extract_retry_after_seconds`) that no
+  longer exist. The contract they represented is now covered by
+  `internal/supervisor/{run,retry,quota,fsnotify}_test.go` (90%+
+  statement coverage). Tests of public bash API
+  (`tests/test_agent_exit_detection.sh`,
+  `tests/test_stage_summary_model_display.sh`) survive unchanged.
+- **`lib/state_helpers.sh` lost its legacy-markdown read branch.**
+  m03 left a "REMOVE IN m10" marker; m10 removed it (and the parallel
+  Go `legacy_reader.go`). Pre-m03 state files now surface
+  `ErrLegacyFormat` rather than auto-migrating — operators run the V4
+  migration tool explicitly.
+
+### Phase 3 plan deltas
+
+- **The supervisor seam is the natural plug-point for V5's multi-provider
+  work.** `internal/supervisor.AgentRunner`-shaped seams already exist
+  (the `runFunc` in `retry.go`); a future provider abstraction is just
+  alternative `runFunc` implementations dispatched by the CLI / config.
+  Phase 3 doesn't take this on, but the seam is sized for it.
+- **Phase 4 orchestrate port collapses two hops to one.** Today
+  `lib/orchestrate.sh` shells to `lib/agent.sh` which shells to
+  `tekhton supervise`. After Phase 4, `internal/orchestrate` calls
+  `supervisor.Retry` in-process — one Go binary, no subprocess hops.
+  The `_RWR_*` and `LAST_AGENT_*` globals carried over from V3 in m10
+  delete entirely at that point.
+- **Wedge-audit pattern surface grew.** New `PATTERNS` entries in m10:
+  `python3 -c.*json` (the Watch For audit) and an anchored
+  `^(source|.) .*/(agent_monitor|agent_retry)` (regression guard
+  against re-sourcing deleted files). The audit comment block in
+  `wedge-audit.sh` now documents both as m10 additions.
+- **Re-evaluation point at m11.** The DESIGN_v4 plan called for a
+  Phase 3 entry decision: Path (a) Ship-of-Theseus continues vs Path
+  (b) parallel `tekhton run` entry point. Phase 2 surfaced no
+  structural friction with Path (a); the supervisor wedge worked the
+  same way the writer wedges did. Recommendation entering m11: stay
+  on Path (a).
+
+---
+
+## Phase 3 entry checklist
+
+m11 cannot start until every item below is checked off.
+
+- [ ] Parity gate (`scripts/supervisor-parity-check.sh`) green for 5
+      consecutive CI runs.
+- [ ] No bash file under `lib/` matches `agent_monitor` or `agent_retry`
+      via the wedge-audit `^(source|.) ` pattern.
+- [ ] No bash file under `lib/` or `stages/` matches the single-line
+      `python3 -c.*json` regression pattern.
+- [ ] `tests/run_tests.sh` produces output identical to HEAD~1 modulo the
+      timestamp/run-id allowlist.
+- [ ] `m126`–`m138` resilience arc tests pass against the V4 codebase
+      (`tests/test_resilience_arc_*.sh`).
+- [ ] Self-host check passing (`scripts/self-host-check.sh`) on
+      `linux/amd64`, `darwin/amd64`, `windows/amd64`.
+- [ ] `docs/go-migration.md` Phase 2 section complete (this section).
+
+When all seven are checked: m11 may begin.

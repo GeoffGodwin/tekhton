@@ -177,15 +177,18 @@ _rule_split_depth() {
 }
 
 # _rule_transient_error
-# Detect transient API errors from error classification.
+# Detect transient API errors from error classification. m10: state file is
+# now JSON; read the agent_error_* fields via the shim instead of the legacy
+# "Category: …" / "Transient: …" markdown lines the bash supervisor used to
+# emit.
 _rule_transient_error() {
-    local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.md}"
+    local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.json}"
     [[ -f "$state_file" ]] || return 1
 
     local error_cat=""
-    error_cat=$(awk '/^Category:/{print $2; exit}' "$state_file" 2>/dev/null || true)
+    error_cat=$(read_pipeline_state_field "$state_file" agent_error_category)
     local is_transient=""
-    is_transient=$(awk '/^Transient:/{print $2; exit}' "$state_file" 2>/dev/null || true)
+    is_transient=$(read_pipeline_state_field "$state_file" agent_error_transient)
 
     if [[ "$error_cat" != "UPSTREAM" ]] && [[ "$is_transient" != "true" ]]; then
         return 1

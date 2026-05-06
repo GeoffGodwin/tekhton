@@ -38,8 +38,9 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 echo "=== Test 1: STAGE_SUMMARY format includes model name ==="
 
-# Simulate what happens in run_agent() after calling _invoke_and_monitor
-# Line 225 in lib/agent.sh: STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label} (${model}): ${turns_display} turns, ${mins}m${secs}s${_retry_suffix}"
+# Simulate the STAGE_SUMMARY append run_agent() emits after a supervise call.
+# Format must stay byte-compatible: lib/metrics.sh::_extract_stage_turns and
+# the Run Summary console output both depend on it.
 
 label="Coder"
 model="claude-sonnet-4-6"

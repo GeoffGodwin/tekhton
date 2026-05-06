@@ -56,6 +56,7 @@ service-account*.json
 .claude/settings.local.json
 .claude/HEALTH_BASELINE.json
 .tekhton/HEALTH_REPORT.md
+.tekhton/parity_report/
 
 # Test artifacts
 /tmp/

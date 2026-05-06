@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 
@@ -191,108 +190,35 @@ func TestUpdate_ConcurrentSerializes(t *testing.T) {
 	}
 }
 
-// TestRead_LegacyMarkdown is AC #2 — V3 markdown parses successfully and
-// the legacy sentinel surfaces in Extra so the bash shim can fire its
-// STATE_LEGACY_MIGRATED causal event.
-func TestRead_LegacyMarkdown(t *testing.T) {
+// TestRead_LegacyMarkdownReturnsErrLegacyFormat is the m10 cutover guard —
+// a pre-m03 markdown state file no longer auto-migrates. Read returns
+// ErrLegacyFormat so the bash shim can surface a migration prompt instead of
+// silently parsing.
+func TestRead_LegacyMarkdownReturnsErrLegacyFormat(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "PIPELINE_STATE.md")
-	body := `# Pipeline State — 2026-05-04 00:00:00
-## Exit Stage
-coder
-
-## Exit Reason
-blockers_remain
-
-## Resume Command
---milestone --start-at coder
-
-## Task
-Implement m03 wedge
-
-## Notes
-3 complex blockers
-
-## Milestone
-m03
-
-## Pipeline Order
-standard
-
-## Tester Mode
-verify_passing
-
-## Orchestration Context
-Pipeline attempt: 4
-Cumulative agent calls: 12
-Cumulative turns: 250
-Wall-clock elapsed: 3600s
-
-## Human Mode
-false
-
-## Error Classification
-Category: UPSTREAM
-Subcategory: api_500
-Transient: true
-Recovery: Retry
-
-### Last Agent Output (redacted)
-hello world
-`
+	body := "## Exit Stage\ncoder\n\n## Task\nx\n"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	snap, err := New(path).Read()
-	if err != nil {
-		t.Fatalf("Read legacy: %v", err)
-	}
-	if snap.ExitStage != "coder" || snap.ResumeTask != "Implement m03 wedge" {
-		t.Errorf("legacy basics not parsed: %+v", snap)
-	}
-	if snap.PipelineAttempt != 4 || snap.AgentCallsTotal != 12 {
-		t.Errorf("legacy orchestration block not parsed: %+v", snap)
-	}
-	if len(snap.Errors) != 1 || snap.Errors[0].Category != "UPSTREAM" {
-		t.Errorf("legacy error block not parsed: %+v", snap.Errors)
-	}
-	if snap.Errors[0].LastOutput == "" {
-		t.Errorf("legacy last_output missing: %+v", snap.Errors[0])
-	}
-	if snap.Extra[LegacyMigratedSentinel] != "true" {
-		t.Errorf("legacy sentinel not set: %+v", snap.Extra)
+	_, err := New(path).Read()
+	if !errors.Is(err, ErrLegacyFormat) {
+		t.Errorf("legacy markdown: got %v, want ErrLegacyFormat", err)
 	}
 }
 
-// TestUpdate_StripsLegacySentinel verifies the next Update after a legacy
-// read rewrites the file as JSON and removes the migration marker.
-func TestUpdate_StripsLegacySentinel(t *testing.T) {
+// TestUpdate_OnLegacyMarkdownErrors confirms Update propagates the legacy
+// error rather than auto-rewriting; the V4 migration tool is the only path.
+func TestUpdate_OnLegacyMarkdownErrors(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "PIPELINE_STATE.md")
-	body := "## Exit Stage\nintake\n\n## Task\nlegacy\n"
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("## Exit Stage\nintake\n"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	s := New(path)
-	if err := s.Update(func(snap *proto.StateSnapshotV1) { snap.ExitReason = "now_json" }); err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	if !strings.HasPrefix(strings.TrimSpace(string(raw)), "{") {
-		t.Errorf("file not rewritten as JSON: %q", raw)
-	}
-	snap, err := s.Read()
-	if err != nil {
-		t.Fatalf("read after update: %v", err)
-	}
-	if _, ok := snap.Extra[LegacyMigratedSentinel]; ok {
-		t.Errorf("sentinel survived update: %+v", snap.Extra)
-	}
-	if snap.ExitStage != "intake" {
-		t.Errorf("legacy ExitStage lost: %+v", snap)
+	err := s.Update(func(snap *proto.StateSnapshotV1) { snap.ExitReason = "x" })
+	if !errors.Is(err, ErrLegacyFormat) {
+		t.Errorf("legacy update: got %v, want ErrLegacyFormat", err)
 	}
 }
 
@@ -344,16 +270,81 @@ func TestWrite_NilAndEmptyPath(t *testing.T) {
 	}
 }
 
-// TestParseLegacyMarkdown_GarbageReturnsCorrupt covers the legacy-reader's
-// "no recognized headings" rejection branch.
-func TestParseLegacyMarkdown_GarbageReturnsCorrupt(t *testing.T) {
+// TestRead_GarbageNonMarkdownIsCorrupt — a non-JSON, non-legacy-markdown file
+// (no "## " headings) should still surface ErrCorrupt rather than the
+// legacy-format error so callers can route it to --diagnose.
+func TestRead_GarbageNonMarkdownIsCorrupt(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "garbage.md")
 	if err := os.WriteFile(path, []byte("just a plain text file with no headings\n"), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
 	if _, err := New(path).Read(); !errors.Is(err, ErrCorrupt) {
-		t.Errorf("garbage markdown: got %v, want ErrCorrupt", err)
+		t.Errorf("garbage: got %v, want ErrCorrupt", err)
+	}
+}
+
+// TestLooksLikeLegacyMarkdown covers the heuristic's branches: heading at
+// file start, heading mid-file, and heading-free input.
+func TestLooksLikeLegacyMarkdown(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"start_heading", "## Heading\nbody\n", true},
+		{"midline_heading", "preamble\n## Heading\n", true},
+		{"no_heading", "plain text\nno markers\n", false},
+		{"empty", "", false},
+		{"short_no_match", "##", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := looksLikeLegacyMarkdown([]byte(tc.in)); got != tc.want {
+				t.Errorf("got %v want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRead_OpenFailureWrapsError covers the non-IsNotExist branch of
+// os.Open's error path. EACCES on a 0o000-mode file gives a wrapped
+// "state: open" error rather than ErrNotFound.
+func TestRead_OpenFailureWrapsError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "PIPELINE_STATE.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Skipf("cannot chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o644) })
+	_, err := New(path).Read()
+	if err == nil {
+		t.Fatal("expected error on unreadable file")
+	}
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrCorrupt) || errors.Is(err, ErrLegacyFormat) {
+		t.Errorf("unexpected typed error: %v", err)
+	}
+}
+
+// TestFirstNonBlank covers the helper's whitespace-skip branches.
+func TestFirstNonBlank(t *testing.T) {
+	cases := []struct {
+		in   string
+		want byte
+	}{
+		{"", 0},
+		{"   \t\n\r", 0},
+		{"   {", '{'},
+		{"## ", '#'},
+		{"\nx", 'x'},
+	}
+	for _, tc := range cases {
+		if got := firstNonBlank([]byte(tc.in)); got != tc.want {
+			t.Errorf("firstNonBlank(%q) = %v, want %v", tc.in, got, tc.want)
+		}
 	}
 }
 

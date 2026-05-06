@@ -7,7 +7,9 @@
 # Expects: log(), success(), warn(), error() from common.sh
 # Expects: AGENT_ERROR_* globals from agent.sh
 #
-# Note: Transient retry envelope functions are in lib/agent_retry.sh
+# Note: Transient retry envelope lives in internal/supervisor (m10 cutover —
+# lib/agent_retry.sh deleted). The bash run_agent shim sets
+# AGENT_ERROR_*/LAST_AGENT_RETRY_COUNT directly from the response envelope.
 # =============================================================================
 set -euo pipefail
 

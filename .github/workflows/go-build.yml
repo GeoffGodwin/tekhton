@@ -98,7 +98,6 @@ jobs:
           go test -run=^$ -fuzz=FuzzCausalEvent       -fuzztime=20s ./internal/causal/...
           go test -run=^$ -fuzz=FuzzQuote_RoundTrip   -fuzztime=20s ./internal/causal/...
           go test -run=^$ -fuzz=FuzzStateSnapshot     -fuzztime=20s ./internal/state/...
-          go test -run=^$ -fuzz=FuzzParseLegacyMarkdown -fuzztime=20s ./internal/state/...
 
   lint:
     name: golangci-lint + wedge audit
@@ -127,3 +126,24 @@ jobs:
       # paths. Bypasses get caught at PR time, not at runtime.
       - name: Wedge audit
         run: bash scripts/wedge-audit.sh
+
+  parity-check:
+    name: Supervisor parity gate (m10)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # m10: gates the bash→Go shim cutover in lib/agent.sh. The script
+      # builds the tekhton binary and runs the 12-scenario matrix; any
+      # diff outside the timestamp/run-id allowlist fails the gate. The
+      # m10 milestone Watch For requires this job to be green for 5
+      # consecutive runs over 24h before m10 merges to main.
+      - name: Supervisor parity check
+        run: bash scripts/supervisor-parity-check.sh

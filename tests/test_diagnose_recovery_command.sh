@@ -11,8 +11,8 @@ export TEKHTON_HOME PROJECT_DIR
 
 source "${TEKHTON_HOME}/lib/common.sh"
 
-# Stubs for config values
-PIPELINE_STATE_FILE="${TMPDIR}/.claude/PIPELINE_STATE.md"
+# Stubs for config values. m10: state file is JSON.
+PIPELINE_STATE_FILE="${TMPDIR}/.claude/PIPELINE_STATE.json"
 TEST_CMD=""
 ANALYZE_CMD=""
 LOG_DIR="${TMPDIR}/.claude/logs"
@@ -45,17 +45,20 @@ FAIL=0
 pass() { echo "  PASS: $1"; PASS=$(( PASS + 1 )); }
 fail() { echo "  FAIL: $1"; FAIL=$(( FAIL + 1 )); }
 
-# Helper: write pipeline state file
+# Helper: write pipeline state file. m10: emit a tekhton.state.v1 JSON
+# envelope (exit_stage / resume_task / milestone_id) instead of the legacy
+# "## Heading" markdown — the bash legacy reader was retired with the rest
+# of the bash supervisor.
 write_state() {
     local stage="$1" task="$2" milestone="${3:-}"
     mkdir -p "${TMPDIR}/.claude"
     cat > "$PIPELINE_STATE_FILE" << EOF
-## Exit Stage
-${stage}
-## Task
-${task}
-## Milestone
-${milestone}
+{
+  "proto":"tekhton.state.v1",
+  "exit_stage":"${stage}",
+  "resume_task":"${task}",
+  "milestone_id":"${milestone}"
+}
 EOF
 }
 

@@ -12,8 +12,8 @@
 # - tui_update_pause refreshes pause_next_probe_at without appending a new
 #   recent_events entry (rate-limited update path).
 # - tui_exit_pause clears pause_* fields and reverts _TUI_AGENT_STATUS to
-#   "idle" (so the spinner restart in lib/agent_retry.sh can re-set it to
-#   "running") and appends one summary event.
+#   "idle" (so the next supervisor run can re-set it to "running") and
+#   appends one summary event.
 # =============================================================================
 set -euo pipefail
 

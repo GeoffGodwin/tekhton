@@ -150,8 +150,11 @@ _state_bash_write_fields() {
 
 # _state_bash_read_field path field — best-effort JSON field reader.
 # Handles both first-class fields ("exit_stage":"…") and extra members
-# ("extra":{ … "current_note_id":"…" …}). Also recognizes legacy markdown
-# files (heading-delimited) so a fresh shim can read a pre-m03 state file.
+# ("extra":{ … "current_note_id":"…" …}).
+#
+# m10 removed the legacy V3 markdown branch — Go's state.Read returns
+# ErrLegacyFormat for those files now, and bash callers should surface the
+# migration prompt rather than try to read individual fields.
 #
 # Limitation: the awk scanner stops at the first inner double-quote, so a
 # value containing escaped quotes (e.g. resume_task='key="val"') will be
@@ -162,69 +165,33 @@ _state_bash_read_field() {
     [[ -f "$path" ]] || return 0
     local first_char
     first_char=$(head -c 1 "$path" 2>/dev/null || true)
+    [[ "$first_char" = "{" ]] || return 0
 
-    if [[ "$first_char" = "{" ]]; then
-        # JSON: try first-class then extra. Use perl-free awk that stops at
-        # first match per file. Covers both string and integer values.
-        local val
-        val=$(awk -v key="$field" '
-            BEGIN { found=0 }
-            {
-                pat="\"" key "\":\""
-                if ((idx=index($0, pat))>0) {
-                    rest=substr($0, idx+length(pat))
-                    end=index(rest, "\"")
-                    if (end>0) { print substr(rest, 1, end-1); exit }
-                }
-                ipat="\"" key "\":"
-                if ((idx=index($0, ipat))>0) {
-                    rest=substr($0, idx+length(ipat))
-                    val=""
-                    for (i=1; i<=length(rest); i++) {
-                        c=substr(rest, i, 1)
-                        if (c~/[0-9-]/) { val=val c }
-                        else if (val!="") { print val; exit }
-                        else if (c!=" ") break
-                    }
-                    if (val!="") { print val; exit }
-                }
+    # JSON: try first-class then extra. Use perl-free awk that stops at
+    # first match per file. Covers both string and integer values.
+    local val
+    val=$(awk -v key="$field" '
+        BEGIN { found=0 }
+        {
+            pat="\"" key "\":\""
+            if ((idx=index($0, pat))>0) {
+                rest=substr($0, idx+length(pat))
+                end=index(rest, "\"")
+                if (end>0) { print substr(rest, 1, end-1); exit }
             }
-        ' "$path")
-        printf '%s' "$val"
-        return 0
-    fi
-
-    # REMOVE IN m10
-    # Legacy markdown: map field → "## Heading" then read the next line.
-    local heading
-    case "$field" in
-        exit_stage)         heading="## Exit Stage" ;;
-        exit_reason)        heading="## Exit Reason" ;;
-        resume_flag)        heading="## Resume Command" ;;
-        resume_task)        heading="## Task" ;;
-        notes)              heading="## Notes" ;;
-        milestone_id)       heading="## Milestone" ;;
-        human_mode)         heading="## Human Mode" ;;
-        human_notes_tag)    heading="## Human Notes Tag" ;;
-        current_note_line)  heading="## Current Note Line" ;;
-        current_note_id)    heading="## Current Note ID" ;;
-        human_single_note)  heading="## Human Single Note" ;;
-        pipeline_attempt)
-            awk '/^Pipeline attempt:/{print $NF; exit}' "$path" 2>/dev/null
-            return 0 ;;
-        agent_calls_total)
-            awk '/^Cumulative agent calls:/{print $NF; exit}' "$path" 2>/dev/null
-            return 0 ;;
-        agent_error_category)
-            awk '/^Category:/{sub(/^Category:[[:space:]]*/, ""); print; exit}' "$path" 2>/dev/null
-            return 0 ;;
-        agent_error_subcategory)
-            awk '/^Subcategory:/{sub(/^Subcategory:[[:space:]]*/, ""); print; exit}' "$path" 2>/dev/null
-            return 0 ;;
-        agent_error_transient)
-            awk '/^Transient:/{sub(/^Transient:[[:space:]]*/, ""); print; exit}' "$path" 2>/dev/null
-            return 0 ;;
-        *) return 0 ;;
-    esac
-    awk -v h="$heading" '$0==h{getline; print; exit}' "$path" 2>/dev/null
+            ipat="\"" key "\":"
+            if ((idx=index($0, ipat))>0) {
+                rest=substr($0, idx+length(ipat))
+                val=""
+                for (i=1; i<=length(rest); i++) {
+                    c=substr(rest, i, 1)
+                    if (c~/[0-9-]/) { val=val c }
+                    else if (val!="") { print val; exit }
+                    else if (c!=" ") break
+                }
+                if (val!="") { print val; exit }
+            }
+        }
+    ' "$path")
+    printf '%s' "$val"
 }

@@ -400,49 +400,13 @@ assert "QUOTA_MAX_PAUSE_DURATION matches canonical default (18900)" "$([ "${QUOT
 assert "MAX_AUTONOMOUS_AGENT_CALLS matches canonical default (200)" "$([ "${MAX_AUTONOMOUS_AGENT_CALLS:-}" = "200" ] && echo 0 || echo 1)"
 
 # =============================================================================
-echo "=== M125: _extract_retry_after_seconds ==="
-# =============================================================================
-
-# Source the shared test helper (canonical source: lib/agent_retry.sh).
-# This avoids duplicating the function across multiple test files.
-# shellcheck source=helpers/retry_after_extract.sh
-source "${TEKHTON_HOME}/tests/helpers/retry_after_extract.sh"
-
-_M125_SESS_DIR="$TMPDIR/m125_session"
-mkdir -p "$_M125_SESS_DIR"
-
-# Test: JSON form in agent_last_output.txt
-echo '{"error":{"type":"rate_limit_error","retry_after": 47}}' > "$_M125_SESS_DIR/agent_last_output.txt"
-: > "$_M125_SESS_DIR/agent_stderr.txt"
-result=$(_extract_retry_after_seconds "$_M125_SESS_DIR" || echo "MISS")
-assert "parses JSON form retry_after:47" "$([ "$result" = "47" ] && echo 0 || echo 1)"
-
-# Test: dash form "retry-after": "12"
-echo '{"retry-after": "12"}' > "$_M125_SESS_DIR/agent_last_output.txt"
-result=$(_extract_retry_after_seconds "$_M125_SESS_DIR" || echo "MISS")
-assert "parses JSON retry-after with string value" "$([ "$result" = "12" ] && echo 0 || echo 1)"
-
-# Test: stderr plain-text form
-: > "$_M125_SESS_DIR/agent_last_output.txt"
-echo "Rate limited. Retry after 180 seconds." > "$_M125_SESS_DIR/agent_stderr.txt"
-result=$(_extract_retry_after_seconds "$_M125_SESS_DIR" || echo "MISS")
-assert "parses stderr plain-text form 'Retry after 180'" "$([ "$result" = "180" ] && echo 0 || echo 1)"
-
-# Test: stderr Retry-After header form
-echo "HTTP/1.1 429 Too Many Requests\nRetry-After: 90" > "$_M125_SESS_DIR/agent_stderr.txt"
-result=$(_extract_retry_after_seconds "$_M125_SESS_DIR" || echo "MISS")
-assert "parses stderr 'Retry-After: 90' header" "$([ "$result" = "90" ] && echo 0 || echo 1)"
-
-# Test: no match → non-zero exit
-: > "$_M125_SESS_DIR/agent_last_output.txt"
-echo "some unrelated error message" > "$_M125_SESS_DIR/agent_stderr.txt"
-rc=0; result=$(_extract_retry_after_seconds "$_M125_SESS_DIR") || rc=$?
-assert "absent Retry-After returns non-zero" "$([ "$rc" -ne 0 ] && [ -z "$result" ] && echo 0 || echo 1)"
-
-# Test: missing session dir
-rc=0; _extract_retry_after_seconds "" >/dev/null || rc=$?
-assert "missing session dir returns non-zero" "$([ "$rc" -ne 0 ] && echo 0 || echo 1)"
-
+# M125: bash-side _extract_retry_after_seconds removed in m10 — Retry-After
+# parsing now lives in internal/supervisor/quota.go (ParseRetryAfter), and
+# the agent.response.v1 envelope carries the parsed value as a structured
+# "retry_after" field. The Go-side coverage is in
+# internal/supervisor/quota_test.go. The bash-side test fixture and helper
+# (tests/helpers/retry_after_extract.sh) were deleted alongside the bash
+# supervisor.
 # =============================================================================
 echo "=== M125: enter_quota_pause honours Retry-After ==="
 # =============================================================================

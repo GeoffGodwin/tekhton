@@ -15,30 +15,31 @@ import (
 
 // newSuperviseCmd wires `tekhton supervise`. The subcommand reads an
 // agent.request.v1 JSON envelope (from --request-file or stdin), hands it
-// to internal/supervisor.Run, and prints an agent.response.v1 JSON envelope
-// on stdout. Exit code semantics:
+// to internal/supervisor.Retry (m10 default) or .Run (with --no-retry), and
+// prints an agent.response.v1 JSON envelope on stdout. Exit code semantics:
 //
 //	0          — supervisor ran the agent and the agent exited 0
 //	N          — supervisor ran the agent and the agent exited N
 //	exitUsage  — request envelope was malformed
 //	exitSoftware — internal supervisor failure (I/O, panic, etc.)
 //
-// As of m06 the supervisor actually launches the agent CLI (default `claude`,
-// overridable via $TEKHTON_AGENT_BINARY) and propagates its exit code.
-// Bash callers wired into the agent supervision flow consume this binary
-// once m10 flips lib/agent.sh to the Go shim; until then the production
-// path is bash and this command is exercised primarily by tests + the
-// future internal pipeline driver.
+// As of m10 the production bash shim (lib/agent.sh) calls this binary, so the
+// retry envelope + quota pause logic that used to live in
+// lib/agent_retry*.sh now lives behind this CLI. --no-retry is the escape
+// hatch for the parity test fixtures that need to assert single-attempt
+// behavior.
 func newSuperviseCmd() *cobra.Command {
 	var requestFile string
+	var noRetry bool
 	c := &cobra.Command{
 		Use:   "supervise",
 		Short: "Run an agent under supervision (reads agent.request.v1 JSON, prints agent.response.v1 JSON).",
 		Long: "Reads an agent.request.v1 envelope on stdin (or from --request-file)\n" +
-			"and prints the agent.response.v1 envelope on stdout. m06 lights up\n" +
-			"the real subprocess path; m07–m09 layer retry, quota pause, and\n" +
-			"Windows reaping; m10 publishes the parity test suite that gates\n" +
-			"the bash→Go shim flip in lib/agent.sh.",
+			"and prints the agent.response.v1 envelope on stdout. m10 made this\n" +
+			"the production seam — lib/agent.sh shells to it; the bash supervisor\n" +
+			"(lib/agent_monitor*.sh, lib/agent_retry*.sh) is gone. The retry\n" +
+			"envelope + quota pause defaults match V3's TRANSIENT_RETRY_*\n" +
+			"config keys; pass --no-retry to bypass and call Run directly.",
 		// The agent.response.v1 envelope already encodes the failure mode in
 		// its Outcome/ErrorMessage fields; cobra's "Error: ..." + usage block
 		// would just duplicate that on stderr and pollute parity-test parsing.
@@ -64,12 +65,23 @@ func newSuperviseCmd() *cobra.Command {
 				return errExitCode{code: exitUsage, err: err}
 			}
 			sup := supervisor.New(nil, nil)
-			res, err := sup.Run(context.Background(), req)
+			var res *proto.AgentResultV1
+			if noRetry {
+				res, err = sup.Run(context.Background(), req)
+			} else {
+				res, err = sup.Retry(context.Background(), req, supervisor.DefaultPolicy())
+			}
 			if err != nil {
 				if errors.Is(err, proto.ErrInvalidRequest) {
 					return errExitCode{code: exitUsage, err: err}
 				}
-				return errExitCode{code: exitSoftware, err: err}
+				// Retry returns the classified upstream error alongside the
+				// final result; surface the result to stdout (so the bash
+				// shim can read the failure shape) rather than turning the
+				// classification into a CLI-level error.
+				if res == nil {
+					return errExitCode{code: exitSoftware, err: err}
+				}
 			}
 			res.EnsureProto()
 			res.TrimStdoutTail()
@@ -87,6 +99,7 @@ func newSuperviseCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&requestFile, "request-file", "", "Path to agent.request.v1 JSON. Reads stdin when omitted.")
+	c.Flags().BoolVar(&noRetry, "no-retry", false, "Bypass the retry+quota-pause envelope and call Run directly. Used by the parity tests.")
 	return c
 }
 

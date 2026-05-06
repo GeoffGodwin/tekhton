@@ -20,7 +20,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # --- Pipeline globals --------------------------------------------------------
 PROJECT_DIR="$TMPDIR"
 LOG_DIR="$TMPDIR/.claude/logs"
-PIPELINE_STATE_FILE="$TMPDIR/.claude/PIPELINE_STATE.md"
+PIPELINE_STATE_FILE="$TMPDIR/.claude/PIPELINE_STATE.json"
 CAUSAL_LOG_FILE="$TMPDIR/.claude/logs/CAUSAL_LOG.jsonl"
 DASHBOARD_DIR=".claude/dashboard"
 DASHBOARD_ENABLED=false
@@ -116,32 +116,25 @@ _create_pipeline_state() {
     local error_cat="${3:-}"
     local error_sub="${4:-}"
     mkdir -p "$(dirname "$PIPELINE_STATE_FILE")"
+    # m10: PIPELINE_STATE_FILE is now a JSON envelope (tekhton.state.v1).
+    # _state_bash_read_field in lib/state_helpers.sh reads first-class
+    # fields directly from the JSON; "notes" is the field the legacy
+    # fixture's markdown "## Notes" heading mapped to.
+    local _err_block=""
+    if [[ -n "$error_cat" ]]; then
+        _err_block=$(printf ',"agent_error_category":"%s","agent_error_subcategory":"%s","agent_error_transient":"false"' \
+            "$error_cat" "$error_sub")
+    fi
     cat > "$PIPELINE_STATE_FILE" << EOF
-# Pipeline State — 2026-03-23 10:45:00
-## Exit Stage
-${stage}
-
-## Exit Reason
-${reason}
-
-## Resume Command
---start-at ${stage}
-
-## Task
-Test task
-
-## Notes
-
-
-## Milestone
-17
-
-## Error Classification
-$(if [[ -n "$error_cat" ]]; then
-echo "Category: ${error_cat}"
-echo "Subcategory: ${error_sub}"
-echo "Transient: false"
-fi)
+{
+  "proto":"tekhton.state.v1",
+  "exit_stage":"${stage}",
+  "exit_reason":"${reason}",
+  "resume_flag":"--start-at ${stage}",
+  "resume_task":"Test task",
+  "notes":"",
+  "milestone_id":"17"${_err_block}
+}
 EOF
 }
 
@@ -232,13 +225,15 @@ assert_eq "2b.4 confidence is high" "high" "$DIAG_CONFIDENCE"
 assert "2b.5 suggestions include task in runnable command" \
     "$(printf '%s\n' "${DIAG_SUGGESTIONS[@]}" | grep -q 'tekhton .* "M88"' && echo 0 || echo 1)"
 
-# Fires from PIPELINE_STATE.md Notes containing 'max_turns'
+# Fires from PIPELINE_STATE.json notes field containing 'max_turns'
 _reset_fixture
 _create_pipeline_state "coder" "Pipeline halted"
-sed -i 's/## Notes/## Notes\nHit max_turns in coder/' "$PIPELINE_STATE_FILE"
+# m10: state file is JSON; rewrite the notes value rather than appending
+# under a markdown heading.
+sed -i 's/"notes":""/"notes":"Hit max_turns in coder"/' "$PIPELINE_STATE_FILE"
 _DIAG_PIPELINE_TASK="M88"
 _rule_max_turns 2>/dev/null && r=0 || r=1
-assert_eq "2b.6 matches from PIPELINE_STATE.md Notes max_turns" "0" "$r"
+assert_eq "2b.6 matches from PIPELINE_STATE.json notes max_turns" "0" "$r"
 assert_eq "2b.7 classification is MAX_TURNS_EXHAUSTED" "MAX_TURNS_EXHAUSTED" "$DIAG_CLASSIFICATION"
 
 # Fires from Exit Reason containing complete_loop_max_attempts
@@ -337,7 +332,8 @@ _reset_fixture
 # State with high attempt count
 _create_pipeline_state "coder" "Stuck loop"
 # Add orchestration context with high attempt count
-echo -e "\n## Orchestration Context\nPipeline attempt: 5" >> "$PIPELINE_STATE_FILE"
+# m10: state is JSON; rewrite the file with pipeline_attempt set.
+sed -i 's/"milestone_id":"17"/"milestone_id":"17","pipeline_attempt":5/' "$PIPELINE_STATE_FILE"
 MAX_PIPELINE_ATTEMPTS=5
 _rule_stuck_loop 2>/dev/null && r=0 || r=1
 assert_eq "7.1 matches when attempts >= max" "0" "$r"
@@ -346,7 +342,7 @@ assert_eq "7.2 classification is STUCK_LOOP" "STUCK_LOOP" "$DIAG_CLASSIFICATION"
 # Low attempt count — no match
 _reset_fixture
 _create_pipeline_state "coder" "Normal exit"
-echo -e "\n## Orchestration Context\nPipeline attempt: 2" >> "$PIPELINE_STATE_FILE"
+sed -i 's/"milestone_id":"17"/"milestone_id":"17","pipeline_attempt":2/' "$PIPELINE_STATE_FILE"
 _rule_stuck_loop 2>/dev/null && r=0 || r=1
 assert_eq "7.3 no match when attempts < max" "1" "$r"
 
@@ -396,10 +392,10 @@ echo "=== Test Suite 10: _rule_transient_error ==="
 
 _reset_fixture
 
-# State with upstream error
+# State with upstream error. _create_pipeline_state seeds
+# agent_error_transient="false"; flip it to "true" via JSON sed.
 _create_pipeline_state "coder" "API error" "UPSTREAM" "api_500"
-# Add Transient: true to the error classification section
-sed -i 's/Transient: false/Transient: true/' "$PIPELINE_STATE_FILE"
+sed -i 's/"agent_error_transient":"false"/"agent_error_transient":"true"/' "$PIPELINE_STATE_FILE"
 _rule_transient_error 2>/dev/null && r=0 || r=1
 assert_eq "10.1 matches on UPSTREAM error" "0" "$r"
 assert_eq "10.2 classification is TRANSIENT_ERROR" "TRANSIENT_ERROR" "$DIAG_CLASSIFICATION"
@@ -435,7 +431,8 @@ _reset_fixture
 _DIAG_PIPELINE_OUTCOME="failure"
 echo "error: compilation failed" > "${PROJECT_DIR}/${BUILD_ERRORS_FILE}"
 _create_pipeline_state "coder" "Stuck loop"
-echo -e "\n## Orchestration Context\nPipeline attempt: 5" >> "$PIPELINE_STATE_FILE"
+# m10: state is JSON; rewrite the file with pipeline_attempt set.
+sed -i 's/"milestone_id":"17"/"milestone_id":"17","pipeline_attempt":5/' "$PIPELINE_STATE_FILE"
 MAX_PIPELINE_ATTEMPTS=5
 classify_failure_diag
 assert_eq "13.1 BUILD_FAILURE takes priority over STUCK_LOOP" "BUILD_FAILURE" "$DIAG_CLASSIFICATION"

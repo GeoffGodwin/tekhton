@@ -1,14 +1,15 @@
-// Package state owns the on-disk PIPELINE_STATE.md (now JSON) snapshot.
+// Package state owns the on-disk PIPELINE_STATE.json snapshot.
 //
 // Pre-m03 the bash side wrote a markdown-with-headings file via heredoc and
 // read it back with awk regexes. Both halves leaked: header drift silently
 // truncated resume fields, quote-stripping workarounds existed inside the
 // writer, and WSL/NTFS atomicity required a temp-file dance per call.
 //
-// In m03 the file becomes a JSON envelope (tekhton.state.v1). Atomic writes
-// are tmpfile + os.Rename; resume reads are json.Unmarshal. The legacy
-// markdown reader (legacy_reader.go) handles V3-era state files for one
-// milestone cycle and is removed in m05.
+// In m03 the file became a JSON envelope (tekhton.state.v1). Atomic writes
+// are tmpfile + os.Rename; resume reads are json.Unmarshal. m10 removes the
+// legacy markdown reader: any pre-m03 state file now returns ErrLegacyFormat,
+// directing the user to migrate via the V4 migration tool rather than
+// silently parsing.
 package state
 
 import (
@@ -24,11 +25,6 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
-// LegacyMigratedSentinel is set on the returned snapshot's Extra map when a
-// legacy markdown file was parsed. The bash shim emits a STATE_LEGACY_MIGRATED
-// causal event on first sight of this key, then strips it on the next Update.
-const LegacyMigratedSentinel = "_legacy_migrated"
-
 // ErrNotFound is returned by Read when the state file does not exist.
 var ErrNotFound = errors.New("state: snapshot file not found")
 
@@ -36,6 +32,11 @@ var ErrNotFound = errors.New("state: snapshot file not found")
 // CLI exit 2 maps to this — bash callers must distinguish it from ErrNotFound
 // because corruption should trigger --diagnose, not silent retry.
 var ErrCorrupt = errors.New("state: snapshot file corrupt")
+
+// ErrLegacyFormat is returned by Read when the file is the pre-m03 V3
+// markdown layout (heading-delimited). The legacy reader was retired in m10.
+// Callers should surface a migration prompt rather than retrying.
+var ErrLegacyFormat = errors.New("state: legacy V3 markdown format; run the V4 migration tool to convert")
 
 // Store owns one PIPELINE_STATE file. Methods are safe for concurrent use
 // inside a single process (Update is read-modify-write under mu). Cross-
@@ -55,10 +56,10 @@ func New(path string) *Store {
 func (s *Store) Path() string { return s.path }
 
 // Read returns the parsed snapshot at s.path. If the file does not exist
-// ErrNotFound is returned. If the file is present but neither valid JSON nor
-// a recognizable V3 markdown layout, ErrCorrupt is returned. Successful
-// legacy-format reads carry the LegacyMigratedSentinel in Extra so the
-// caller can emit one migration event before the next Update strips it.
+// ErrNotFound is returned. If the file is present but unparseable, ErrCorrupt
+// is returned. If the file is the pre-m03 V3 markdown format, ErrLegacyFormat
+// is returned so the caller can prompt the user to run the migration tool —
+// the legacy reader was retired in m10.
 func (s *Store) Read() (*proto.StateSnapshotV1, error) {
 	if s.path == "" {
 		return nil, errors.New("state: empty snapshot path")
@@ -89,17 +90,30 @@ func (s *Store) Read() (*proto.StateSnapshotV1, error) {
 		return &snap, nil
 	}
 
-	// Legacy V3 markdown path. parseLegacyMarkdown lives in legacy_reader.go
-	// and is intentionally short-lived — REMOVE IN m05.
-	snap, ok := parseLegacyMarkdown(data)
-	if !ok {
-		return nil, ErrCorrupt
+	// Anything else: if it looks like the V3 markdown layout (at least one
+	// "## " heading) report ErrLegacyFormat so the bash side surfaces a
+	// migration prompt; otherwise it is corrupt.
+	if looksLikeLegacyMarkdown(data) {
+		return nil, ErrLegacyFormat
 	}
-	if snap.Extra == nil {
-		snap.Extra = make(map[string]string, 1)
+	return nil, ErrCorrupt
+}
+
+// looksLikeLegacyMarkdown is a single-shot heuristic: any "## " heading at
+// the start of a line indicates the pre-m03 markdown layout. We deliberately
+// don't try to parse — the goal is just to give a better error than
+// ErrCorrupt for a state file that used to be readable.
+func looksLikeLegacyMarkdown(data []byte) bool {
+	const marker = "\n## "
+	if len(data) >= 3 && string(data[:3]) == "## " {
+		return true
 	}
-	snap.Extra[LegacyMigratedSentinel] = "true"
-	return snap, nil
+	for i := 0; i+len(marker) <= len(data); i++ {
+		if string(data[i:i+len(marker)]) == marker {
+			return true
+		}
+	}
+	return false
 }
 
 // Write atomically replaces s.path with the JSON encoding of snap. Crash
@@ -138,9 +152,6 @@ func (s *Store) Write(snap *proto.StateSnapshotV1) error {
 // pointer to the parsed snapshot (or a fresh, proto-tagged zero value if the
 // file did not exist) and can freely mutate it. UpdatedAt is bumped on
 // every successful update.
-//
-// The legacy-migration sentinel is stripped here — once an Update runs, the
-// next Read sees a clean JSON file and the migration event has already fired.
 func (s *Store) Update(fn func(*proto.StateSnapshotV1)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,12 +165,6 @@ func (s *Store) Update(fn func(*proto.StateSnapshotV1)) error {
 		snap = &proto.StateSnapshotV1{Proto: proto.StateProtoV1, StartedAt: nowRFC3339()}
 	default:
 		return err
-	}
-	if snap.Extra != nil {
-		delete(snap.Extra, LegacyMigratedSentinel)
-		if len(snap.Extra) == 0 {
-			snap.Extra = nil
-		}
 	}
 	fn(snap)
 	snap.EnsureProto()

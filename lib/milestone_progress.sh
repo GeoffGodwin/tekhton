@@ -141,7 +141,7 @@ _compute_next_action() {
 #   _CURRENT_MILESTONE
 # Prints a tekhton command to stdout, or empty string if none derivable.
 _diagnose_recovery_command() {
-    local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.md}"
+    local state_file="${PIPELINE_STATE_FILE:-${PROJECT_DIR:-.}/.claude/PIPELINE_STATE.json}"
     [[ -f "$state_file" ]] || return 0
 
     local stage
@@ -161,9 +161,11 @@ _diagnose_recovery_command() {
 
     local cmd="tekhton --start-at ${start_at}"
 
-    # Add milestone context if available
+    # Add milestone context if available. m10: state file is JSON; read the
+    # milestone_id field via the shim instead of awk-grepping the legacy
+    # "## Milestone" markdown heading.
     local milestone=""
-    milestone=$(awk '/^## Milestone$/{getline; print; exit}' "$state_file" 2>/dev/null || true)
+    milestone=$(read_pipeline_state_field "$state_file" milestone_id)
     if [[ -n "$milestone" ]] && [[ "$milestone" != "none" ]]; then
         milestone="${milestone//\"/\\\"}"
         cmd="${cmd} --milestone \"${milestone}\""

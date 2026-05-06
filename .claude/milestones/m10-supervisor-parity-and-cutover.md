@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "10"
-status: "todo"
+status: "done"
 -->
 
 # m10 — Supervisor Parity Suite + Bash Cutover
