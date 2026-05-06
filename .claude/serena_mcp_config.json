@@ -5,7 +5,7 @@
       "args": ["-m", "serena", "--project-dir", "/home/geoff/workspace/geoffgodwin/tekhton"],
       "cwd": "/home/geoff/workspace/geoffgodwin/tekhton/.claude/serena",
       "env": {
-        "SERENA_LANGUAGE_SERVERS": "pylsp"
+        "SERENA_LANGUAGE_SERVERS": "pylsp,rust-analyzer"
       }
     }
   }

@@ -1,18 +1,34 @@
-# Docs Agent Report
+# Docs Agent Report — m07
 
 ## Files Updated
-None — docs agent found no updates needed.
+
+None.
 
 ## No Update Needed
-The coder's changes consist entirely of internal improvements:
-- `.github/workflows/go-build.yml` — Expanded action-pinning decision comment and golangci-lint version documentation (internal CI config, not user-facing)
-- `lib/tui_ops.sh` — Internal TUI stage handling logic and comments (no exported API changes)
-- `.tekhton/NON_BLOCKING_LOG.md` — Internal task log cleanup (per-run artifact)
-- Deleted per-run artifacts (REVIEWER_REPORT.md, TESTER_REPORT.md)
 
-**No public-surface changes:** No new CLI flags, configuration keys, exported functions, API signatures, or documented behavior changes. The workflow comment expansion documents an existing security decision already in place; it does not alter CI behavior.
+The m07 milestone implements typed error handling and exponential backoff retry
+logic entirely within the internal `internal/supervisor/` Go package:
 
-Documentation (`README.md`, `docs/`) remains accurate and requires no updates.
+- `internal/supervisor/errors.go` — AgentError struct, 24 sentinel error values, error classification
+- `internal/supervisor/retry.go` — RetryPolicy struct, Supervisor.Retry() method, retry envelope logic
+- `internal/supervisor/errors_test.go` — 15 unit tests for error handling
+- `internal/supervisor/retry_test.go` — 22 unit tests for retry logic
+
+**Why no docs update is needed:**
+
+1. **Internal package only** — All new APIs (`Supervisor.Retry`, `RetryPolicy`, `AgentError` sentinels)
+   are under `internal/supervisor/`, not exported from a public module boundary.
+
+2. **No public surface changes** — CLI flags, config keys, pipeline.conf schema, and templates
+   are unchanged. Users interact with Tekhton via the existing public interface.
+
+3. **Bash interface stable** — Bash callers continue using `lib/agent_retry.sh` until m10's
+   shim flip. The V3 wire format (`CATEGORY|SUBCATEGORY|TRANSIENT|MESSAGE`) is preserved
+   for backward compatibility.
+
+4. **No documentation files changed** — The git diff shows no changes to README.md or any
+   files in `docs/`. This confirms no user-facing content was affected.
 
 ## Open Questions
-None.
+
+None. The milestone is complete with 92.2% test coverage and all acceptance criteria met.

@@ -1,6 +1,6 @@
 <!-- milestone-meta
-id: "7"
-status: "todo"
+id: "07"
+status: "done"
 -->
 
 # m07 — Retry Envelope: Typed Errors + Exponential Backoff
