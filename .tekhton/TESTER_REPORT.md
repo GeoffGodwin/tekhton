@@ -1,13 +1,17 @@
 ## Planned Tests
-- [x] `tests/test_orchestrate_m12_acceptance.sh` — M12 structural acceptance: prohibited filenames gone, orchestrate.sh ≤60 lines and no recovery logic, _RWR_ absent, orchestrate_main.sh global defaults correct
+- [x] `cmd/tekhton/manifest_test.go` — add missing-path tests for get/set-status/frontier commands (3 uncovered branches)
 
 ## Test Run Results
-Passed: 34  Failed: 0
+Passed: 3  Failed: 0
 
-Full suite (bash tests/run_tests.sh): 495 shell passed, 0 failed; 250 Python passed; all Go packages ok.
+Full suite (bash tests/run_tests.sh): 495 shell passed, 0 failed; Python PASSED; all 8 Go packages ok.
+
+Coverage: `internal/manifest` 88.0% (target ≥80% ✓); `cmd/tekhton` manifest.go functions 88–100% per function.
+
+Parity check: `scripts/manifest-parity-check.sh` — all 6 fixtures + comment round-trip + atomicity gate PASS.
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_orchestrate_m12_acceptance.sh`
+- [x] `cmd/tekhton/manifest_test.go`

@@ -181,7 +181,8 @@ tekhton/
 │   ├── run_memory.sh       # Structured cross-run memory (JSONL)
 │   ├── timing.sh           # Stage timing and duration estimation
 │   ├── milestone_dag_helpers.sh # DAG helper functions
-│   ├── milestone_dag_io.sh # DAG I/O operations
+│   ├── milestone_dag_io.sh # m13 wedge shim — manifest I/O, prefers Go binary
+│   ├── milestone_dag_io_bash.sh # m13 pure-bash fallback for the manifest shim
 │   ├── milestone_dag_validate.sh # DAG validation
 │   ├── milestone_archival_helpers.sh # Archival helper functions
 │   ├── metrics_dashboard.sh # Metrics dashboard formatting

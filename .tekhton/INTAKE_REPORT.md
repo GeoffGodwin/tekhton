@@ -5,11 +5,10 @@ PASS
 88
 
 ## Reasoning
-- Scope is tightly defined: explicit "in scope / not in scope" boundary (loop only, DAG stays bash until m14), files-modified table lists every affected file with change type
-- Acceptance criteria are specific and mechanically testable: line-count check, `git ls-files` for deleted files, `grep` for `_RWR_` removal, parity script exit code, coverage ≥ 80%, cross-platform self-host check
-- The 10-scenario parity matrix is named in full — no ambiguity about what "passes"
-- Public Go API is spelled out in the Design section; implementer doesn't need to infer the shape
-- Watch For section explicitly guards the three highest-risk areas (recovery dispatch, DAG boundary, `_RWR_` finality)
-- Seeds Forward gives enough context that the implementer won't accidentally bleed m13/m14 scope into this milestone
-- No user-facing config keys are introduced, so no migration-impact section is needed
-- No UI components — UI testability criterion not applicable
+- Scope is precisely bounded: new package `internal/manifest`, proto file, CLI subcommand file, a shim rewrite of one bash file, and a parity script — all with explicit LOC targets
+- Acceptance criteria are concrete and machine-verifiable: line-count ceiling (≤60), coverage floor (≥80%), parity script exit code, round-trip invariants, and test suite green
+- On-disk format preservation is called out explicitly in Goal 2 and Watch For — eliminates the most common ambiguity in format-migration wedges
+- The "atomic write via tmpfile + rename" pattern has precedent in m03 (state wedge), so the implementation path is established
+- No UI components; UI testability dimension is N/A
+- Migration impact is explicitly nil: format unchanged, callers shimmed, no new config keys
+- Minor gap: `tekhton manifest frontier` subcommand appears in the cmd description and design struct but has no dedicated acceptance criterion — however the `Frontier()` function spec is sufficient for a developer to implement and test it correctly, so this does not block implementation

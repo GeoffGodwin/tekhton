@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-05-06
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
+- [2026-05-06 | "Implement Milestone 13: Manifest Parser Wedge"] Inconsistent `set -euo pipefail` usage across `lib/` files: `common.sh` and `agent.sh` omit it; `config.sh`, `gates.sh`, and the new `orchestrate_main.sh` include it. The project rule says sourced files should not carry the directive. None of the changed files violate this in a new or novel way — the pattern predates M12 — but as the lib tree grows through V4 wedges, a consistent convention would reduce future reviewer friction.
 - [2026-05-06 | "M12"] Inconsistent `set -euo pipefail` usage across `lib/` files: `common.sh` and `agent.sh` omit it; `config.sh`, `gates.sh`, and the new `orchestrate_main.sh` include it. The project rule says sourced files should not carry the directive. None of the changed files violate this in a new or novel way — the pattern predates M12 — but as the lib tree grows through V4 wedges, a consistent convention would reduce future reviewer friction.
 
 ## Resolved
