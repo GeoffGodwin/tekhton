@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "11"
-status: "todo"
+status: "done"
 -->
 
 # m11 — Phase 3 Re-evaluation Gate: Ship of Theseus vs Parallel Spine

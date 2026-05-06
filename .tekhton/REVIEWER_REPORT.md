@@ -1,4 +1,4 @@
-# Reviewer Report — m09 Windows/WSL Reaper + fsnotify Change Detection
+# Reviewer Report — m11 Phase 3 Re-evaluation Gate
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,27 +10,40 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `go.mod` marks `github.com/fsnotify/fsnotify v1.9.0` as `// indirect` but the package is directly imported by `internal/supervisor/fsnotify.go` (unconditionally). Similarly `golang.org/x/sys v0.13.0` is directly imported by `reaper_windows.go` (under `//go:build windows`). Running `go mod tidy` would promote both to direct requirements. No impact on compilation or behavior.
-- `run_test.go` at 684 lines exceeds the 600-line soft target. Domain-coherent (all `run()` integration and unit tests). Per CLAUDE.md Rule 8 the split signal is purpose fragmentation, not line count — a future `run_activity_test.go` is reasonable but not required by m09.
-- `fake_agent.sh` header mode table lists modes through `long_line` but omits `hang`, `silent_fs_writer`, and `silent_no_writes`. The new env vars (`FAKE_AGENT_WORKDIR`, `FAKE_AGENT_FS_INTERVAL`, `FAKE_AGENT_FS_COUNT`) are documented in the inline `silent_fs_writer` case comment but not the top-level table. Follows the same pre-existing pattern as the `hang` mode omission.
+- `docs/v4-phase-3-decision.md` is 366 lines vs the milestone's "~200 lines" estimate. The coder addresses this in Architecture Decisions: the required content (seven sections + trade-off matrix + spike findings + trigger table) earned every line, and the Watch For "≤30 lines" cap applied specifically to the `docs/go-migration.md` Phase 3 section (22 lines, within cap). Explanation is sound; no action needed.
+- §1.5 (cross-language debugging incidents) reinterprets the AC's specified metric: the milestone called for "causal log scan for `lang_origin: ambiguous`" but the codebase has no such field. The coder substitutes "count of bugs caused by bash↔Go shape mismatch" (= 0) and is transparent about the pivot. The substitute metric is arguably more accurate. No action needed, but the divergence from the AC's literal wording is worth surfacing.
+- `docs/v4-phase-3-decision.md` §6 ("Trigger to revisit") lists a "bash-side divergence" trigger (bash patches on un-wedged subsystems outpace wedge cadence 2:1 per quarter) but gives no guidance on how to measure it. A short note naming the command or CI metric would make this trigger actionable without re-reading the doc. Non-blocking; the trigger set is otherwise concrete and excellent.
 
 ## Coverage Gaps
-- Windows end-to-end reaper path (actual `TerminateJobObject` against a live process on Windows) is deferred to m10's CI `windows-latest` matrix. Acknowledged and acceptable per milestone design.
+- None — m11 is a decision milestone producing markdown only; no runtime code paths introduced.
+
+## ACP Verdicts
+None — CODER_SUMMARY.md contains no `## Architecture Change Proposals` section.
 
 ## Drift Observations
-- `run.go:makeCancelHook` — If `reaper.Kill()` returns nil without having killed anyone (because `Attach` never recorded a pid — only possible when `cmd.Process == nil` at attach time, which cannot happen after a successful `cmd.Start()`), the leader-only `cmd.Process.Kill()` fallback is silently skipped. The `WaitDelay` backstop ensures eventual reaping. Risk is negligible in practice; noting for future-reader clarity.
-- `fake_agent.sh` header mode table has been stale since `hang` mode was added (pre-m09); m09 adds two more modes without updating it. A one-time pass to synchronise the header with the `case` block would stop this from accumulating across milestones.
+- None — no runtime files changed in this milestone; spike changes live on the isolated `theseus/m11-pathb-spike` branch by design.
 
 ---
 
-### Review notes
+## Detailed Acceptance Criteria Walkthrough
 
-**Reaper (POSIX/Windows):** Both implementations are structurally correct. The two LOW security findings — the Windows `Kill()` TOCTOU (handle left open under the lock while `TerminateJobObject` runs outside it) and log-injection in `emitSupervisorEvent` — are already captured in the security report and not duplicated here. Both are marked `fixable:yes`.
+1. **All six decision-criteria inputs quantified in `docs/v4-phase-3-decision.md`.**
+   §1.1 Phase 1 friction (5-item severity table), §1.2 Phase 2 friction (6-item table), §1.3 wedge size variance (10-milestone stats table, mean=1799 LOC, σ≈525), §1.4 parity-test cost (wall-clock + 0% flake rate), §1.5 cross-language debugging (count=0, explained), §1.6 Path B spike (friction summary with dependency count). All six present and quantified. ✅
 
-**ActivityWatcher:** Dual fsnotify/fallback design is clean. Exclusion logic is segment-level, cross-platform (via `filepath.ToSlash`), and the `TestIsExcluded_Cases` table-driven test covers the false-positive edge case (`git_helper.sh` is not excluded). `sync.Once` makes `Close()` idempotent; nil-receiver guards on `HadActivitySince`, `IsFallback`, and `Close` match the documented contract. Dynamic directory add-on-CREATE is correctly gated behind the `isExcluded` filter so excluded roots like `node_modules/` don't sneak back in via CREATE events.
+2. **Path B spike branch exists, working prototype, referenced with friction summary.**
+   Branch `theseus/m11-pathb-spike` commit `612281a` documented in §1.6 and Appendix with specific friction data: 1-of-12 dependencies ported (state), 7 stubs listed by name, LOC estimates for unported pieces. CODER_SUMMARY provides corroborating evidence (build/vet/test/smoke output). ✅
 
-**run.go integration:** `activityOverrideCap` as a package-internal constant (not an `AgentRequestV1` field) is the right call given the milestone's explicit Watch For. The `activityTimeoutInputs` struct extraction keeps `handleActivityTimeout` independently unit-testable. `emitSupervisorEvent` nil-causal guard ensures tests using `New(nil, nil)` don't require a log setup.
+3. **Decision doc contains all seven required sections.**
+   §1 Inputs, §2 Path A, §3 Path B, §4 Trade-off matrix, §5 Decision, §6 Trigger to revisit, §7 Reversal window — all present. ✅
 
-**Test coverage:** 90.4% statement coverage exceeds the ≥80% AC. The fsnotify tests cover detection timing, all exclusion cases, dynamic subdir add, fallback mode (both directions), nil safety, and idempotent close. The run_test.go additions cover override, cap-exhaustion, and no-watcher branches via both integration and pure-unit paths.
+4. **Decision is unambiguous; mirrored in `docs/go-migration.md`.**
+   Decision doc §5: "Path A — Ship of Theseus continues. Phase 4 begins with `lib/orchestrate.sh` as the next wedge." Migration doc Phase 3 section opens with an identical sentence. ✅
 
-**V4 migration discipline:** Bash `lib/agent_monitor*.sh` correctly left untouched; Go implementation is feature-complete but production cut-over gated on m10's parity tests. Complies with CLAUDE.md Rule 9.
+5. **Phase 4 milestone drafts exist using `MILESTONE_TEMPLATE.md` format; not committed in m11.**
+   Six drafts under `.tekhton/m11-drafts/` (m12–m17) plus README. Each has the correct meta-block, H1 title, Overview table, Design section with numbered Goals, Files Modified table, Acceptance Criteria (checkbox format), Watch For, Seeds Forward. Dependency chain is correct (m13→m12, m14→m13, m15→m12, m16→m12, m17→m12–m16). Not committed to `.claude/milestones/`. ✅
+
+6. **No file under `internal/`, `cmd/`, `lib/`, or `stages/` modified.**
+   Modified files: `docs/`, `.tekhton/m11-drafts/`, `.claude/milestones/` only. Spike changes are isolated on the separate branch. ✅
+
+7. **m01–m10 criteria still pass; self-host check green; parity gate green.**
+   CODER_SUMMARY: 493 shell tests pass, 250 Python tests (+14 skipped), all Go packages pass, shellcheck clean, wedge-audit clean. ✅

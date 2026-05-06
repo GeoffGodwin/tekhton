@@ -5,12 +5,11 @@ PASS
 88
 
 ## Reasoning
-- Scope is precisely defined: 11 files listed with change type and description; deletions are explicit
-- Acceptance criteria are specific and testable — line count ceiling, git ls-files emptiness check, grep pattern, ≥80% coverage, 5-consecutive-green parity gate, self-host on 3 platforms
-- Twelve-scenario parity matrix is enumerated with setup, compared outputs, and comparison rules (allowlist for timestamps/run-IDs)
-- Pseudo-code for the rewritten `lib/agent.sh` shim is provided; the `_RWR_*` global preservation rationale is explicit
-- Files to delete are named; the m03 "REMOVE IN m05" debt is acknowledged and the deferral justified
-- Watch For section covers the highest-risk moments: no-flag rollback, python3 -c audit, Windows CI cost, cross-phase globals
-- Migration impact for V3 state files is documented in both Watch For and acceptance criteria (clear error + migration tool path)
-- No UI components involved; UI testability criterion is not applicable
-- Historical rework patterns (all PASS, similar TUI/migration milestones) support confidence in scope clarity
+- Scope is precisely bounded: explicit list of in-scope files (`docs/go-migration.md`, `docs/v4-phase-3-decision.md`, milestone drafts) and an equally explicit list of what is NOT in scope (no runtime files touched, no Phase 4 drafts committed in this milestone, no re-litigation of language choice)
+- Acceptance criteria are specific and testable: six named inputs must be quantified, the decision doc must contain seven named sections, a spike branch must exist with a working prototype, and a hard `git diff --name-only` check enforces zero runtime file modifications
+- The spike-as-data-point framing handles the "1-day time-box" constraint gracefully for an AI agent — the milestone explicitly states that failure to produce a working prototype within the time-box is itself a valid friction data point, so the spike cannot stall
+- Spike branch and main-branch acceptance criteria are logically consistent: the spike lives on a throwaway branch that is never merged, so `git diff HEAD~1 HEAD` can legitimately show only `docs/` on the main branch while the spike branch exists as a separate ref
+- Watch For section covers the two highest-risk failure modes (scope creep on the spike, preference-based rather than evidence-based decision) with concrete guard rails
+- No migration impact section needed — the milestone explicitly produces no code or config changes and no user-facing format changes
+- No UI testability concern — milestone is documentation-only
+- Historical pattern (all 10 prior comparable runs: PASS) and the purely documentary scope together indicate low rework risk

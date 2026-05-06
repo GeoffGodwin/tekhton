@@ -1,15 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_agent_shim.sh` — unit tests for all four lib/agent_shim.sh helpers (_shim_resolve_binary, _shim_write_request, _shim_field, _shim_apply_response) and V3 contract globals
-- [x] `tests/test_wedge_audit_m10.sh` — m10 wedge-audit patterns: python3 -c.*json and source.*agent_monitor/retry detection
+- [x] Full test suite regression — m11 is a documentation-only milestone (no runtime code); the only required test is that the existing suite still passes (AC #7: m01–m10 criteria still pass, self-host green, parity gate green)
 
 ## Test Run Results
-Passed: 69  Failed: 0
-
-Full suite: 493 shell PASS, 0 FAIL | 250 Python PASS (14 skipped) | All Go packages PASS
+Passed: 493 shell + 250 Python (14 skipped) + all Go packages  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_agent_shim.sh`
-- [x] `tests/test_wedge_audit_m10.sh`
+- None — no new test files authored; existing suite is the test

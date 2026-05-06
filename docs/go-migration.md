@@ -377,3 +377,42 @@ m11 cannot start until every item below is checked off.
 - [ ] `docs/go-migration.md` Phase 2 section complete (this section).
 
 When all seven are checked: m11 may begin.
+
+---
+
+## Phase 3 — Re-evaluation Decision (m11)
+
+m11 was the single-milestone decision retrospective: continue wedging
+bash subsystems into Go (Path A — Ship of Theseus) or start a parallel
+`tekhton run` Go entry point (Path B — parallel spine).
+
+**Decision: Path A — Ship of Theseus continues.** Phase 4 begins with
+`lib/orchestrate.sh` as the next wedge. Full inputs, trade-off matrix,
+trigger conditions, and 30-day reversal window are recorded in
+[`docs/v4-phase-3-decision.md`](v4-phase-3-decision.md).
+
+Path B spike branch: `theseus/m11-pathb-spike` (commit `612281a`,
+`cmd/tekhton/run.go` 272 lines). Preserved during the reversal window
+(until 2026-06-05); deleted in the m11 cleanup pass if Path A holds.
+
+m11 produces no runtime code change. Phase 4 milestone drafts authored
+under `.tekhton/m11-drafts/` (m12–m17 first batch) land in a separate
+milestone-authoring commit.
+
+---
+
+## Phase 4 entry checklist
+
+m12 cannot start until every item below is checked off.
+
+- [ ] m11 decision doc (`docs/v4-phase-3-decision.md`) committed and
+      referenced from this section.
+- [ ] Phase 4 milestone drafts (m12-m17 first batch) reviewed and
+      committed in their own milestone-authoring batch.
+- [ ] Phase 3 entry checklist items (above) all green for the prior 5
+      consecutive CI runs.
+- [ ] Self-host check passing (`scripts/self-host-check.sh`).
+- [ ] Wedge audit clean against the new Phase 4 PATTERNS additions
+      (orchestrate-related shapes — defined in m12's design).
+
+When all five are checked: m12 may begin.

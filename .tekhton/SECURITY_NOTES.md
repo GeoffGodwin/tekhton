@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-05-06 04:28:53
+Generated: 2026-05-06 06:27:17
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [LOW] [category:A04] [reaper_windows.go:108] fixable:yes — TOCTOU race between `Kill()` and `Detach()` on Windows Job Object handle. `Kill()` copies `r.job` under the mutex and sets `r.killed=true`, then releases the lock before calling `TerminateJobObject`. In the window between lock release and the syscall, a concurrent `Detach()` can acquire the lock (seeing `r.hasJob=true`, because Kill never clears it), close the handle via `CloseHandle`, and return. `Kill()` then calls `TerminateJobObject` on a closed—and potentially OS-reused—handle. The consequence is a silent failure to terminate the child process tree. Fix: set `r.hasJob = false` inside `Kill()`'s critical section before releasing the lock, mirroring the symmetric `Detach()` pattern.
