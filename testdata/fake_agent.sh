@@ -98,6 +98,36 @@ case "$mode" in
         sleep 600
         exit 0
         ;;
+    silent_fs_writer)
+        # Emits a single startup line on stdout (so the supervisor knows the
+        # agent is alive at all), then writes one file every FAKE_AGENT_FS_INTERVAL
+        # seconds for FAKE_AGENT_FS_COUNT iterations without any further stdout.
+        # Targets m09 fsnotify-driven activity-timer override: the supervisor
+        # should observe filesystem activity and reset the timer instead of
+        # killing the agent. The write happens BEFORE the sleep on each
+        # iteration so the watcher sees recent activity prior to each timer
+        # fire.
+        emit '{"type":"turn_started","turn":1}'
+        workdir="${FAKE_AGENT_WORKDIR:-.}"
+        interval="${FAKE_AGENT_FS_INTERVAL:-0.5}"
+        count="${FAKE_AGENT_FS_COUNT:-4}"
+        i=1
+        while [ "$i" -le "$count" ]; do
+            printf 'iter %d\n' "$i" > "${workdir}/silent_${i}.txt"
+            sleep "$interval"
+            i=$((i + 1))
+        done
+        emit '{"type":"turn_ended","turn":1}'
+        exit 0
+        ;;
+    silent_no_writes)
+        # Emits a single startup line then sleeps without any stdout or
+        # filesystem activity. The activity timer should fire normally
+        # (m09 override path checks fsnotify; no activity → kill).
+        emit '{"type":"turn_started","turn":1}'
+        sleep "${FAKE_AGENT_SLEEP:-30}"
+        exit 0
+        ;;
     *)
         printf 'fake_agent: unknown mode %q\n' "$mode" 1>&2
         exit 64

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -362,6 +363,324 @@ func TestMergeEnv_NoOverridesReturnsBase(t *testing.T) {
 // ---------------------------------------------------------------------------
 // outcomeFor — pure helper.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// m09 — activity timer override via fsnotify. Fixture writes files with no
+// stdout; supervisor must see fs activity and reset the timer instead of
+// killing the agent.
+// ---------------------------------------------------------------------------
+
+func TestRun_ActivityOverride_FsWritesPreventKill(t *testing.T) {
+	script := fakeAgentPath(t)
+	workdir := t.TempDir()
+	sup := New(nil, nil)
+	sup.SetBinary(script)
+	req := &proto.AgentRequestV1{
+		Proto:               proto.AgentRequestProtoV1,
+		RunID:               "rid-fs-override",
+		Label:               "tester",
+		Model:               "fake",
+		PromptFile:          script,
+		WorkingDir:          workdir,
+		ActivityTimeoutSecs: 1,
+		EnvOverrides: map[string]string{
+			"FAKE_AGENT_MODE":        "silent_fs_writer",
+			"FAKE_AGENT_WORKDIR":     workdir,
+			"FAKE_AGENT_FS_INTERVAL": "0.5",
+			// 4 writes × 0.5s = 2s of runtime, which spans past the 1s
+			// activity timeout and forces at least one override before the
+			// agent finishes. Stays well under the 3-shot cap.
+			"FAKE_AGENT_FS_COUNT": "4",
+		},
+	}
+
+	res, err := sup.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Outcome != proto.OutcomeSuccess {
+		t.Errorf("Outcome: got %q, want success — fsnotify override should have prevented activity_timeout", res.Outcome)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("ExitCode: got %d, want 0", res.ExitCode)
+	}
+}
+
+// TestRun_ActivityOverride_NoWritesStillTimesOut confirms the reverse — when
+// the agent emits no stdout AND no filesystem activity, the timer fires as
+// expected (the override path is gated on real activity, not on the watcher
+// being instantiated).
+func TestRun_ActivityOverride_NoWritesStillTimesOut(t *testing.T) {
+	script := fakeAgentPath(t)
+	workdir := t.TempDir()
+	sup := New(nil, nil)
+	sup.SetBinary(script)
+	req := &proto.AgentRequestV1{
+		Proto:               proto.AgentRequestProtoV1,
+		RunID:               "rid-no-fs",
+		Label:               "tester",
+		Model:               "fake",
+		PromptFile:          script,
+		WorkingDir:          workdir,
+		ActivityTimeoutSecs: 1,
+		EnvOverrides: map[string]string{
+			"FAKE_AGENT_MODE":  "silent_no_writes",
+			"FAKE_AGENT_SLEEP": "10",
+		},
+	}
+
+	start := time.Now()
+	res, err := sup.Run(context.Background(), req)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Outcome != proto.OutcomeActivityTimeout {
+		t.Errorf("Outcome: got %q, want activity_timeout (elapsed=%v)", res.Outcome, elapsed)
+	}
+	if elapsed > 12*time.Second {
+		t.Errorf("activity timeout took too long: %v", elapsed)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// m09 — handleActivityTimeout pure-helper coverage. Drives the override
+// counter, cap exhaustion, and no-watcher path without spawning a process.
+// ---------------------------------------------------------------------------
+
+// fakeWatcher implements just enough of the *ActivityWatcher contract to
+// exercise handleActivityTimeout. We can't substitute it directly because
+// the input type is a concrete *ActivityWatcher, but the helper code paths
+// that use the watcher are gated on nil. The non-fake branches build a
+// real watcher rooted at a temp dir and trigger writes.
+
+// timerStub captures Reset calls to assert the timer was rearmed.
+type timerStub struct {
+	resets atomic.Int32
+}
+
+func (s *timerStub) Reset(time.Duration) bool {
+	s.resets.Add(1)
+	return true
+}
+
+func TestHandleActivityTimeout_NoWatcherFiresTimeout(t *testing.T) {
+	sup := New(nil, nil)
+	var lastActivity atomic.Int64
+	lastActivity.Store(time.Now().UnixNano())
+	var overrideCount atomic.Int32
+	var cancelReason atomic.Value
+	cancelCalled := false
+
+	var dummyTimer *time.Timer
+	in := activityTimeoutInputs{
+		label:         "tester",
+		watcher:       nil,
+		timer:         &dummyTimer,
+		timeout:       time.Second,
+		lastActivity:  &lastActivity,
+		overrideCount: &overrideCount,
+		cancel:        func() { cancelCalled = true },
+		cancelReason:  &cancelReason,
+	}
+	sup.handleActivityTimeout(in)
+
+	if !cancelCalled {
+		t.Errorf("cancel not called — nil watcher should always fire timeout")
+	}
+	reason, _ := cancelReason.Load().(string)
+	if reason != "activity_timeout" {
+		t.Errorf("cancelReason: got %q, want activity_timeout", reason)
+	}
+	if got := overrideCount.Load(); got != 0 {
+		t.Errorf("overrideCount: got %d, want 0 (no watcher = no override)", got)
+	}
+}
+
+func TestHandleActivityTimeout_OverrideCapExhausted(t *testing.T) {
+	sup := New(nil, nil)
+	var lastActivity atomic.Int64
+	lastActivity.Store(time.Now().UnixNano())
+	var overrideCount atomic.Int32
+	overrideCount.Store(activityOverrideCap) // already at cap
+	var cancelReason atomic.Value
+	cancelCalled := false
+
+	// Real watcher, real activity. With cap exhausted, the helper must
+	// still fire the timeout — that is the safety valve.
+	dir := t.TempDir()
+	w, err := NewActivityWatcher(dir)
+	if err != nil {
+		t.Fatalf("watcher: %v", err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+	time.Sleep(50 * time.Millisecond)
+	touchFile(t, dir, "force.txt")
+	time.Sleep(100 * time.Millisecond)
+
+	var dummyTimer *time.Timer
+	in := activityTimeoutInputs{
+		label:         "tester",
+		watcher:       w,
+		timer:         &dummyTimer,
+		timeout:       time.Second,
+		lastActivity:  &lastActivity,
+		overrideCount: &overrideCount,
+		cancel:        func() { cancelCalled = true },
+		cancelReason:  &cancelReason,
+	}
+	sup.handleActivityTimeout(in)
+
+	if !cancelCalled {
+		t.Errorf("cancel not called — cap-exhausted override should fire timeout")
+	}
+}
+
+func TestHandleActivityTimeout_OverridesAndResetsTimer(t *testing.T) {
+	sup := New(nil, nil)
+	dir := t.TempDir()
+	w, err := NewActivityWatcher(dir)
+	if err != nil {
+		t.Fatalf("watcher: %v", err)
+	}
+	t.Cleanup(func() { _ = w.Close() })
+
+	// Allow watcher to register before we trigger activity.
+	time.Sleep(50 * time.Millisecond)
+
+	stamp := time.Now()
+	var lastActivity atomic.Int64
+	lastActivity.Store(stamp.UnixNano())
+
+	// Touch a file AFTER the lastActivity stamp so HadActivitySince fires.
+	touchFile(t, dir, "trigger.txt")
+	time.Sleep(150 * time.Millisecond)
+
+	var overrideCount atomic.Int32
+	var cancelReason atomic.Value
+	cancelCalled := false
+
+	// Use a real-ish timer we can observe via Reset. *time.Timer doesn't
+	// directly expose reset count, so we use a stopped one and check that
+	// the override path is taken (override count ticks up).
+	timer := time.NewTimer(time.Hour)
+	defer timer.Stop()
+
+	in := activityTimeoutInputs{
+		label:         "tester",
+		watcher:       w,
+		timer:         &timer,
+		timeout:       time.Second,
+		lastActivity:  &lastActivity,
+		overrideCount: &overrideCount,
+		cancel:        func() { cancelCalled = true },
+		cancelReason:  &cancelReason,
+	}
+	sup.handleActivityTimeout(in)
+
+	if cancelCalled {
+		t.Errorf("cancel was called — fresh activity should have triggered an override")
+	}
+	if got := overrideCount.Load(); got != 1 {
+		t.Errorf("overrideCount: got %d, want 1", got)
+	}
+	// lastActivity must be advanced past the original stamp.
+	if !time.Unix(0, lastActivity.Load()).After(stamp) {
+		t.Errorf("lastActivity not advanced past original stamp")
+	}
+}
+
+func TestMaybeStartWatcher_EmptyWorkingDirReturnsNil(t *testing.T) {
+	sup := New(nil, nil)
+	req := &proto.AgentRequestV1{Label: "tester"}
+	if w := sup.maybeStartWatcher(req); w != nil {
+		t.Errorf("got watcher for empty WorkingDir, want nil")
+	}
+}
+
+func TestMaybeStartWatcher_BogusWorkingDirReturnsNil(t *testing.T) {
+	sup := New(nil, nil)
+	req := &proto.AgentRequestV1{
+		Label:      "tester",
+		WorkingDir: "/nonexistent/path/that/should/not/exist",
+	}
+	if w := sup.maybeStartWatcher(req); w != nil {
+		_ = w.Close()
+		t.Errorf("got watcher for bogus WorkingDir, want nil")
+	}
+}
+
+func TestMaybeStartWatcher_ValidDirReturnsWatcher(t *testing.T) {
+	sup := New(nil, nil)
+	req := &proto.AgentRequestV1{Label: "tester", WorkingDir: t.TempDir()}
+	w := sup.maybeStartWatcher(req)
+	if w == nil {
+		t.Fatalf("got nil watcher for valid WorkingDir")
+	}
+	t.Cleanup(func() { _ = w.Close() })
+}
+
+// ---------------------------------------------------------------------------
+// m09 — reaper unit coverage. POSIX reaper kills the leader; group-level
+// reaping is exercised end-to-end via the Run integration tests above.
+// ---------------------------------------------------------------------------
+
+func TestReaper_KillBeforeAttachIsNoOp(t *testing.T) {
+	r := newReaper()
+	if err := r.Kill(); err != nil {
+		t.Errorf("Kill before Attach: %v", err)
+	}
+}
+
+func TestReaper_DetachBeforeAttachIsNoOp(t *testing.T) {
+	r := newReaper()
+	if err := r.Detach(); err != nil {
+		t.Errorf("Detach before Attach: %v", err)
+	}
+}
+
+func TestReaper_KillIsIdempotent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only — Windows JobObject path covered by integration test")
+	}
+	if _, err := exec.LookPath("sleep"); err != nil {
+		t.Skipf("sleep not on PATH: %v", err)
+	}
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	r := newReaper()
+	if err := r.Attach(cmd); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	if err := r.Kill(); err != nil {
+		t.Errorf("first Kill: %v", err)
+	}
+	if err := r.Kill(); err != nil {
+		t.Errorf("second Kill: %v", err)
+	}
+	_ = cmd.Wait()
+}
+
+// TestApplyProcAttr_SetsSetpgid verifies the m09 POSIX contract: applyProcAttr
+// must set Setpgid = true on cmd.SysProcAttr BEFORE Start. The build-tagged
+// Windows no-op is validated by cross-compile in the coder summary; this test
+// covers the POSIX path where the process-group signal (`kill -- -pgid`) relies
+// on the kernel having created a new group rooted at the child.
+func TestApplyProcAttr_SetsSetpgid(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("applyProcAttr is a no-op on Windows; JobObject substitutes process-group semantics")
+	}
+	cmd := exec.Command("true")
+	applyProcAttr(cmd)
+	if cmd.SysProcAttr == nil {
+		t.Fatal("SysProcAttr is nil after applyProcAttr — Setpgid cannot be set")
+	}
+	if !cmd.SysProcAttr.Setpgid {
+		t.Errorf("SysProcAttr.Setpgid = false, want true")
+	}
+}
 
 func TestOutcomeFor(t *testing.T) {
 	cases := []struct {

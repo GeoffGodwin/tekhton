@@ -5,11 +5,11 @@ PASS
 88
 
 ## Reasoning
-- Scope is tightly bounded: five files (three creates, one modify, one create) with estimated line counts; bash is explicitly untouched
-- Acceptance criteria are specific and mechanically testable: exact inputs/outputs for `ParseRetryAfter`, time-bounded assertions for `EnterQuotaPause`, probe exit-code semantics against a mock, retry-slot non-consumption guarantee, CLI output behavior, coverage floor (≥ 78%)
-- Design section supplies concrete Go type signatures and code sketches — no ambiguity about API shape or expected behavior
-- Watch For section surfaces the two highest-risk invariants (quota pauses don't burn retry slots; ChunkSize bounds Ctrl-C responsiveness) so the implementer cannot miss them
-- Depends-on chain (m07 → m06 → m02) is stated; causal log and retry envelope are assumed in-place, which is correct given current milestone status
-- No new user-facing config keys introduced (all config vars already exist in V3 bash); no migration impact section needed
-- No UI components; UI testability dimension is N/A
+- Scope is tightly bounded: two concerns (platform reaper + fsnotify watcher), each with explicit interface contracts, code sketches, and approximate line counts
+- Files to create/modify are enumerated with change type and description — no guessing what touches what
+- Acceptance criteria are concrete and measurable (fork-3-children-assert-gone-within-2s, 100ms activity latency, ≥80% coverage, override-cap exhaustion behavior)
+- Design section provides Go interface definitions and pseudocode for both the reaper dispatch and the activity-timer integration — two developers would arrive at the same implementation
+- Watch For section covers the meaningful platform gotchas (Setpgid-before-Start, JobObject inheritance, fsnotify backend differences, watcher FD cost, self-supervising liveness)
+- No user-facing pipeline.conf keys are introduced, so no Migration Impact section is needed
+- The one gap (watcher liveness check mentioned in Watch For but absent from AC) is self-contained: the Watch For text is prescriptive enough that a developer reading the milestone will implement it; no clarity blocker
 - Historical pattern: all 10 comparable milestone runs passed on first attempt — scope and specificity here are consistent with that track record

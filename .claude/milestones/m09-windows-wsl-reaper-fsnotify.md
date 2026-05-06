@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "9"
-status: "todo"
+status: "done"
 -->
 
 # m09 — Windows/WSL Reaper + fsnotify Change Detection

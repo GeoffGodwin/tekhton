@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/causal"
@@ -24,12 +23,19 @@ import (
 // SIGTERM enough room to flush its final JSON event.
 const killGrace = 5 * time.Second
 
-// run is the m06 production path. It launches the agent binary under
-// exec.CommandContext, scans stdout for JSON events, tees stderr to the
-// causal log, and bounds idle time with an activity timer. Cancellation —
-// caller-driven or activity-driven — flows through the context the command
-// was built with, so the kernel-level termination escalation is uniform
-// regardless of source.
+// activityOverrideCap is the m09 safety valve: when the activity timer fires
+// and the fsnotify watcher reports recent file activity, the timer is reset
+// up to this many times per Run before becoming permanent. Default 3 from
+// the milestone design — pathological "writes one file every N minutes"
+// loops are exactly what the timer is supposed to catch, so the cap exists
+// to bound the override.
+const activityOverrideCap = 3
+
+// run is the m06 production path, extended in m09 with cross-platform
+// process-tree reaping (Reaper) and fsnotify-driven activity-timer override
+// (ActivityWatcher). It launches the agent binary under exec.CommandContext,
+// scans stdout for JSON events, tees stderr to the causal log, and bounds
+// idle time with an activity timer.
 //
 // The result is always non-nil for any valid request, even on failure paths;
 // errors returned alongside it are reserved for envelope-level problems
@@ -48,7 +54,12 @@ func (s *Supervisor) run(ctx context.Context, req *proto.AgentRequestV1) (*proto
 
 	var cancelReason atomic.Value // string
 
+	reaper := newReaper()
+	defer func() { _ = reaper.Detach() }()
+
 	cmd := buildCommand(runCtx, s.binary, req)
+	cmd.Cancel = makeCancelHook(cmd, reaper)
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return startFailureResult(req, err), nil
@@ -63,16 +74,36 @@ func (s *Supervisor) run(ctx context.Context, req *proto.AgentRequestV1) (*proto
 		return startFailureResult(req, err), nil
 	}
 
+	if err := reaper.Attach(cmd); err != nil {
+		s.emitSupervisorEvent(req.Label, "reaper_attach_failed", err.Error())
+	}
+
+	watcher := s.maybeStartWatcher(req)
+	defer func() {
+		if watcher != nil {
+			_ = watcher.Close()
+		}
+	}()
+
 	rb := newRingBuf(proto.StdoutTailMaxLines)
 	activityTO := time.Duration(req.ActivityTimeoutSecs) * time.Second
 	var lastActivity atomic.Int64
 	lastActivity.Store(started.UnixNano())
 
 	var timer *time.Timer
+	var overrideCount atomic.Int32
 	if activityTO > 0 {
 		timer = time.AfterFunc(activityTO, func() {
-			cancelReason.Store("activity_timeout")
-			cancel()
+			s.handleActivityTimeout(activityTimeoutInputs{
+				label:         req.Label,
+				watcher:       watcher,
+				timer:         &timer,
+				timeout:       activityTO,
+				lastActivity:  &lastActivity,
+				overrideCount: &overrideCount,
+				cancel:        cancel,
+				cancelReason:  &cancelReason,
+			})
 		})
 		defer timer.Stop()
 	}
@@ -135,25 +166,107 @@ func (s *Supervisor) run(ctx context.Context, req *proto.AgentRequestV1) (*proto
 	return res, nil
 }
 
+// activityTimeoutInputs bundles the seven values the timer callback needs.
+// Splitting them out keeps the goroutine literal in run() short and makes
+// handleActivityTimeout independently unit-testable.
+type activityTimeoutInputs struct {
+	label         string
+	watcher       *ActivityWatcher
+	timer         **time.Timer
+	timeout       time.Duration
+	lastActivity  *atomic.Int64
+	overrideCount *atomic.Int32
+	cancel        context.CancelFunc
+	cancelReason  *atomic.Value
+}
+
+// handleActivityTimeout is the activity-timer callback. When fsnotify reports
+// fresh writes since the last activity stamp AND the override cap is not yet
+// exhausted, the timer is reset and the kill is suppressed. Otherwise the
+// activity timeout fires and the run is cancelled.
+func (s *Supervisor) handleActivityTimeout(in activityTimeoutInputs) {
+	if in.watcher != nil && in.overrideCount.Load() < activityOverrideCap {
+		lastResetTime := time.Unix(0, in.lastActivity.Load())
+		if in.watcher.HadActivitySince(lastResetTime) {
+			n := in.overrideCount.Add(1)
+			in.lastActivity.Store(time.Now().UnixNano())
+			if t := *in.timer; t != nil {
+				t.Reset(in.timeout)
+			}
+			s.emitSupervisorEvent(in.label, "activity_timer_overridden",
+				fmt.Sprintf("override=%d/%d", n, activityOverrideCap))
+			return
+		}
+	}
+	s.emitSupervisorEvent(in.label, "activity_timeout_fired",
+		"no stdout or fs activity within window")
+	in.cancelReason.Store("activity_timeout")
+	in.cancel()
+}
+
+// maybeStartWatcher constructs an ActivityWatcher rooted at req.WorkingDir.
+// Returns nil when WorkingDir is empty or initialization fails outright —
+// the watcher is best-effort, the run continues either way. A causal event
+// flags fallback (mtime-walk) mode so operators can investigate fsnotify
+// init failures.
+func (s *Supervisor) maybeStartWatcher(req *proto.AgentRequestV1) *ActivityWatcher {
+	if req.WorkingDir == "" {
+		return nil
+	}
+	w, err := NewActivityWatcher(req.WorkingDir)
+	if err != nil {
+		s.emitSupervisorEvent(req.Label, "activity_watcher_init_failed", err.Error())
+		return nil
+	}
+	if w.IsFallback() {
+		s.emitSupervisorEvent(req.Label, "activity_watcher_fallback",
+			"fsnotify init failed; using mtime walk")
+	}
+	return w
+}
+
+// emitSupervisorEvent writes a `<label>\t<detail>` causal event on the
+// `supervisor` stage. nil-causal-safe so tests using New(nil, nil) don't
+// have to set up a log just to exercise the timer override path.
+func (s *Supervisor) emitSupervisorEvent(label, evType, detail string) {
+	if s.causal == nil {
+		return
+	}
+	_, _ = s.causal.Emit(causal.EmitInput{
+		Stage:  "supervisor",
+		Type:   evType,
+		Detail: fmt.Sprintf("%s\t%s", label, detail),
+	})
+}
+
+// makeCancelHook returns the cmd.Cancel closure that drives reaper-based
+// process-tree termination. Falls back to leader-only kill if the reaper
+// can't terminate (e.g. Attach failed), so the cancel pathway always reaps
+// at least the parent process. exec.CommandContext escalates to SIGKILL
+// after WaitDelay regardless, which acts as a final backstop.
+func makeCancelHook(cmd *exec.Cmd, reaper Reaper) func() error {
+	return func() error {
+		if err := reaper.Kill(); err == nil {
+			return nil
+		}
+		if cmd.Process != nil {
+			return cmd.Process.Kill()
+		}
+		return nil
+	}
+}
+
 // buildCommand assembles the *exec.Cmd. Split out so tests can construct one
 // without spawning a process and so build args are reviewable in one place.
+// applyProcAttr is build-tagged: it sets Setpgid on POSIX (group reaping)
+// and is a no-op on Windows (JobObject substitutes).
 func buildCommand(ctx context.Context, bin string, req *proto.AgentRequestV1) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, bin, buildArgs(req)...)
 	if req.WorkingDir != "" {
 		cmd.Dir = req.WorkingDir
 	}
 	cmd.Env = mergeEnv(os.Environ(), req.EnvOverrides)
-	cmd.Cancel = func() error {
-		// POSIX: SIGTERM lets the agent shut down cleanly. On Windows
-		// Process.Signal returns ErrUnsupported and we fall through to
-		// Kill — m09 will install proper JobObject reaping there.
-		// os/exec only invokes Cancel after Start has set Process, so
-		// a nil-check would be redundant here.
-		if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-			return cmd.Process.Kill()
-		}
-		return nil
-	}
+	applyProcAttr(cmd)
 	cmd.WaitDelay = killGrace
 	return cmd
 }

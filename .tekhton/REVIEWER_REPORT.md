@@ -1,4 +1,4 @@
-# Reviewer Report — m07 Retry Envelope: Typed Errors + Exponential Backoff
+# Reviewer Report — m09 Windows/WSL Reaper + fsnotify Change Detection
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,27 +10,27 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `retry.go:195` — `return lastResult, nil` at the bottom of `retryLoop` is dead for any positive `MaxAttempts` (every loop iteration returns). The only reachable path is `MaxAttempts <= 0`, where the loop body never executes and the function returns `(nil, nil)`. A caller receiving `(nil, nil)` has no clean way to distinguish "succeeded with nil result" from "policy was degenerate". Consider an early guard: `if p.MaxAttempts <= 0 { return nil, fmt.Errorf("supervisor: MaxAttempts must be > 0") }`.
-- `retry.go:57-58` — `if p.BaseDelay <= 0 { return 0 }` silently converts a degenerate policy into a zero-delay retry loop. This is undocumented; a comment or the same guard pattern as MaxAttempts would make intent explicit to future readers.
+- `go.mod` marks `github.com/fsnotify/fsnotify v1.9.0` as `// indirect` but the package is directly imported by `internal/supervisor/fsnotify.go` (unconditionally). Similarly `golang.org/x/sys v0.13.0` is directly imported by `reaper_windows.go` (under `//go:build windows`). Running `go mod tidy` would promote both to direct requirements. No impact on compilation or behavior.
+- `run_test.go` at 684 lines exceeds the 600-line soft target. Domain-coherent (all `run()` integration and unit tests). Per CLAUDE.md Rule 8 the split signal is purpose fragmentation, not line count — a future `run_activity_test.go` is reasonable but not required by m09.
+- `fake_agent.sh` header mode table lists modes through `long_line` but omits `hang`, `silent_fs_writer`, and `silent_no_writes`. The new env vars (`FAKE_AGENT_WORKDIR`, `FAKE_AGENT_FS_INTERVAL`, `FAKE_AGENT_FS_COUNT`) are documented in the inline `silent_fs_writer` case comment but not the top-level table. Follows the same pre-existing pattern as the `hang` mode omission.
 
 ## Coverage Gaps
-- `classifyResult` — the `proto.OutcomeTransientError` fallback branch (`errors.go:127`) has no dedicated test. The tests exercise the ErrorCategory/ErrorSubcategory populated path and the `OutcomeActivityTimeout` / `OutcomeFatalError` fallbacks but not this specific outcome. Low risk (same structure as the activity_timeout path), but the branch could be dropped or mutated without a test catching it.
+- Windows end-to-end reaper path (actual `TerminateJobObject` against a live process on Windows) is deferred to m10's CI `windows-latest` matrix. Acknowledged and acceptable per milestone design.
 
 ## Drift Observations
-- None
+- `run.go:makeCancelHook` — If `reaper.Kill()` returns nil without having killed anyone (because `Attach` never recorded a pid — only possible when `cmd.Process == nil` at attach time, which cannot happen after a successful `cmd.Start()`), the leader-only `cmd.Process.Kill()` fallback is silently skipped. The `WaitDelay` backstop ensures eventual reaping. Risk is negligible in practice; noting for future-reader clarity.
+- `fake_agent.sh` header mode table has been stale since `hang` mode was added (pre-m09); m09 adds two more modes without updating it. A one-time pass to synchronise the header with the `case` block would stop this from accumulating across milestones.
 
 ---
 
-### Review notes (not parsed by pipeline)
+### Review notes
 
-All four files are clean on the architecture checklist. Highlights:
+**Reaper (POSIX/Windows):** Both implementations are structurally correct. The two LOW security findings — the Windows `Kill()` TOCTOU (handle left open under the lock while `TerminateJobObject` runs outside it) and log-injection in `emitSupervisorEvent` — are already captured in the security report and not duplicated here. Both are marked `fixable:yes`.
 
-**errors.go** — `Is()` correctly uses `errors.As` (not pointer equality) so sentinel matches work even when `target` is a newly allocated `*AgentError` with a different `Wrapped`. The `//nolint:gochecknoglobals` directive is appropriate and correctly scoped to the sentinel block. Wire format `CATEGORY|SUBCATEGORY|TRANSIENT|MESSAGE` matches V3 exactly; the test `TestAgentError_Error_FormatMatchesV3WireShape` validates field positions. `classifyResult` copies sentinels by value before adding `Wrapped` — correct approach since pointer identity is not used by `Is()`.
+**ActivityWatcher:** Dual fsnotify/fallback design is clean. Exclusion logic is segment-level, cross-platform (via `filepath.ToSlash`), and the `TestIsExcluded_Cases` table-driven test covers the false-positive edge case (`git_helper.sh` is not excluded). `sync.Once` makes `Close()` idempotent; nil-receiver guards on `HadActivitySince`, `IsFallback`, and `Close` match the documented contract. Dynamic directory add-on-CREATE is correctly gated behind the `isExcluded` filter so excluded roots like `node_modules/` don't sneak back in via CREATE events.
 
-**retry.go** — `Delay()` formula matches the coder's documented spec: exponential growth with cap, floor applied after cap, jitter added, then final re-cap unless floor exceeds MaxDelay. The floor-wins edge case (`floor > MaxDelay`) is correctly implemented at line 87 and covered by `TestRetryPolicy_Delay_FloorAboveMaxDelayWins`. The `after` / `rng` clock-and-jitter seams are the right pattern — no `time.Sleep` anywhere, so cancellation and time-mocking are uniform across tests. `turn_exhausted` non-trigger is correct (orchestrate owns continuation, per design).
+**run.go integration:** `activityOverrideCap` as a package-internal constant (not an `AgentRequestV1` field) is the right call given the milestone's explicit Watch For. The `activityTimeoutInputs` struct extraction keeps `handleActivityTimeout` independently unit-testable. `emitSupervisorEvent` nil-causal guard ensures tests using `New(nil, nil)` don't require a log setup.
 
-**V4 migration discipline** — intentional deferral of `lib/agent_retry.sh` shim flip to m10 is documented and consistent with CLAUDE.md Rule 9 phased approach. No bash dual-implementation concern here.
+**Test coverage:** 90.4% statement coverage exceeds the ≥80% AC. The fsnotify tests cover detection timing, all exclusion cases, dynamic subdir add, fallback mode (both directions), nil safety, and idempotent close. The run_test.go additions cover override, cap-exhaustion, and no-watcher branches via both integration and pure-unit paths.
 
-**Docs** — `## Docs Updated` section is present and correct; all new API surface is `internal/supervisor`, not callable outside the module.
-
-**Test suite** — 92.2% statement coverage (AC: ≥75%). Race detector clean over 3 runs. The `test_run_op_lifecycle.sh` flake is pre-existing and unrelated to m07 changes; coder correctly documented and did not touch `lib/tui_ops.sh`.
+**V4 migration discipline:** Bash `lib/agent_monitor*.sh` correctly left untouched; Go implementation is feature-complete but production cut-over gated on m10's parity tests. Complies with CLAUDE.md Rule 9.
