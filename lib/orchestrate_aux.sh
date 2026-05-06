@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# orchestrate_helpers.sh — Helper functions for the orchestration loop
+# orchestrate_aux.sh — Helper functions for the orchestration loop
 #
-# Extracted from orchestrate.sh to stay under the 300-line ceiling.
+# m12: renamed from orchestrate_helpers.sh as part of the bash relocation
+# cutover. Stays under the 300-line ceiling.
 # Sourced by orchestrate.sh — do not run directly.
 # =============================================================================
 
@@ -228,7 +229,7 @@ _choose_resume_start_at() {
 
 # --- State persistence helper -------------------------------------------------
 #
-# _save_orchestration_state lives in orchestrate_state_save.sh.
+# _save_orchestration_state lives in orchestrate_state.sh.
 
-# shellcheck source=lib/orchestrate_state_save.sh
-source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_state_save.sh"
+# shellcheck source=lib/orchestrate_state.sh
+source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_state.sh"

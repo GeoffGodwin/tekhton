@@ -96,8 +96,8 @@ source "${TEKHTON_HOME}/lib/common.sh"
 # Provide record_pipeline_attempt and emit_milestone_metadata
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 
-# Source orchestrate.sh (which sources orchestrate_recovery.sh and
-# orchestrate_helpers.sh internally)
+# Source orchestrate.sh (which sources orchestrate_classify.sh and
+# orchestrate_aux.sh internally)
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
 
 # --- Test helpers ------------------------------------------------------------

@@ -2,11 +2,13 @@
 # =============================================================================
 # agent.sh — m10 supervisor shim. Builds an agent.request.v1 envelope, calls
 # `tekhton supervise --request-file`, and shapes the agent.response.v1 reply
-# back into the V3 globals (LAST_AGENT_*, _RWR_*, AGENT_ERROR_*) the rest of
-# the bash tree still reads. The retry envelope, quota pause, fsnotify
-# override, Windows reaper, and process-tree cleanup all moved to
-# internal/supervisor in m05–m09; m10 deleted the bash supervisor outright
-# (lib/agent_monitor*.sh, lib/agent_retry*.sh).
+# back into the V3 globals (LAST_AGENT_*, AGENT_ERROR_*) the rest of the bash
+# tree still reads. m12 (Phase 4) deleted the round-trip orchestrate-globals
+# pair (formerly the {EXIT,TURNS,WAS_ACTIVITY_TIMEOUT} tuple) — the orchestrate
+# loop now reads the supervisor result through the LAST_AGENT_* names directly.
+# The retry envelope, quota pause, fsnotify override, Windows reaper, and
+# process-tree cleanup all moved to internal/supervisor in m05–m09; m10 deleted
+# the bash supervisor outright (lib/agent_monitor*.sh, lib/agent_retry*.sh).
 #
 # Sourced by tekhton.sh — do not run directly.
 # Expects: TOTAL_TURNS, TOTAL_TIME, STAGE_SUMMARY (set by caller), log/warn
@@ -35,9 +37,16 @@ run_agent() {
     local _bin
     if ! _bin=$(_shim_resolve_binary); then
         warn "[$label] tekhton binary not found on PATH or in TEKHTON_HOME/bin — agent cannot run."
-        LAST_AGENT_EXIT_CODE=127; LAST_AGENT_TURNS=0; LAST_AGENT_NULL_RUN=true
-        _RWR_EXIT=127; _RWR_TURNS=0
-        AGENT_ERROR_CATEGORY="PIPELINE"; AGENT_ERROR_MESSAGE="tekhton binary missing"
+        # shellcheck disable=SC2034  # consumed by orchestrate.sh + downstream stages
+        LAST_AGENT_EXIT_CODE=127
+        # shellcheck disable=SC2034
+        LAST_AGENT_TURNS=0
+        # shellcheck disable=SC2034
+        LAST_AGENT_NULL_RUN=true
+        # shellcheck disable=SC2034
+        AGENT_ERROR_CATEGORY="PIPELINE"
+        # shellcheck disable=SC2034
+        AGENT_ERROR_MESSAGE="tekhton binary missing"
         return
     fi
 
@@ -65,16 +74,16 @@ run_agent() {
     _stop_agent_spinner "$_spinner_pid" "$_tui_updater_pid"
 
     _shim_apply_response "$_zf" "$_exec_rc"
-    printf '%s' "$_RWR_TURNS" > "$_tf"
+    printf '%s' "$LAST_AGENT_TURNS" > "$_tf"
 
     local _end; _end=$(date +%s)
     LAST_AGENT_ELAPSED=$(( _end - _start ))
     local _m=$(( LAST_AGENT_ELAPSED / 60 )) _s=$(( LAST_AGENT_ELAPSED % 60 ))
-    TOTAL_TURNS=$(( TOTAL_TURNS + _RWR_TURNS ))
+    TOTAL_TURNS=$(( TOTAL_TURNS + LAST_AGENT_TURNS ))
     TOTAL_TIME=$(( TOTAL_TIME + LAST_AGENT_ELAPSED ))
-    log "[$label] Turns: ${_RWR_TURNS}/${max_turns} | Time: ${_m}m${_s}s"
-    STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label} (${model}): ${_RWR_TURNS}/${max_turns} turns, ${_m}m${_s}s"
-    _append_agent_summary "$label" "$model" "$_RWR_TURNS" "$max_turns" \
-        "$_m" "$_s" "$_RWR_EXIT" "0" "$log_file"
+    log "[$label] Turns: ${LAST_AGENT_TURNS}/${max_turns} | Time: ${_m}m${_s}s"
+    STAGE_SUMMARY="${STAGE_SUMMARY}\n  ${label} (${model}): ${LAST_AGENT_TURNS}/${max_turns} turns, ${_m}m${_s}s"
+    _append_agent_summary "$label" "$model" "$LAST_AGENT_TURNS" "$max_turns" \
+        "$_m" "$_s" "$LAST_AGENT_EXIT_CODE" "0" "$log_file"
     rm -f "$_pf" "$_rf" "$_zf"
 }

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# orchestrate_recovery.sh — Recovery decision tree for --complete mode (M16)
+# orchestrate_classify.sh — Recovery decision tree for --complete mode (M16)
 #
+# m12: renamed from orchestrate_recovery.sh as part of the bash relocation
+# cutover. The pure dispatch is also ported to internal/orchestrate/recovery.go;
+# this bash version remains for the parity gate and the run_complete_loop call
+# site.
 # Sourced by orchestrate.sh — do not run directly.
 # Expects: AGENT_ERROR_CATEGORY, AGENT_ERROR_SUBCATEGORY, VERDICT (from agent.sh)
 #
@@ -13,11 +17,11 @@ set -euo pipefail
 #   _compute_diff_hash  — content hash of working tree changes
 #   _print_recovery_block — terminal recovery block (M94, M130 cause_summary)
 #
-# (M130 causal-context state + loader live in orchestrate_recovery_causal.sh.)
+# (M130 causal-context state + loader live in orchestrate_cause.sh.)
 # =============================================================================
 
-# shellcheck source=lib/orchestrate_recovery_causal.sh
-source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_recovery_causal.sh"
+# shellcheck source=lib/orchestrate_cause.sh
+source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_cause.sh"
 
 # --- Progress detection --------------------------------------------------------
 
@@ -128,7 +132,7 @@ _classify_failure() {
     # the dispatcher (subshell). Any state mutations made here are LOST when the
     # function returns. Persistent guards (_ORCH_ENV_GATE_RETRIED,
     # _ORCH_MIXED_BUILD_RETRIED, _ORCH_RECOVERY_ROUTE_TAKEN) are written by the
-    # dispatcher case branches in orchestrate_loop.sh:_handle_pipeline_failure.
+    # dispatcher case branches in orchestrate_iteration.sh:_handle_pipeline_failure.
     # This function only READS them.
 
     # Transient upstream errors — already retried by M13. If still failing,
@@ -248,6 +252,6 @@ _classify_failure() {
     echo "save_exit"
 }
 
-# _print_recovery_block lives in orchestrate_recovery_print.sh — sourced below.
-# shellcheck source=lib/orchestrate_recovery_print.sh
-source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_recovery_print.sh"
+# _print_recovery_block lives in orchestrate_diagnose.sh — sourced below.
+# shellcheck source=lib/orchestrate_diagnose.sh
+source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_diagnose.sh"

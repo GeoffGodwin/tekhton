@@ -14,11 +14,12 @@
 set -euo pipefail
 
 # --- V3 contract globals -----------------------------------------------------
-# These survive the cutover because lib/orchestrate.sh and friends still read
-# them; Phase 4's orchestrate port deletes them. Kept as bare assignments so
-# tests that source agent.sh see deterministic defaults. shellcheck SC2034
-# disables: every name is read by an external consumer (orchestrate.sh,
-# metrics.sh, finalize_summary_collectors.sh, milestone_split_nullrun.sh, …).
+# m12 (Phase 4 wedge) deleted the round-trip orchestrate-globals pair — the
+# orchestrate loop now reads the supervisor result through the LAST_AGENT_*
+# names directly. The remaining names below are still read by external
+# consumers (orchestrate.sh, metrics.sh, finalize_summary_collectors.sh,
+# milestone_split_nullrun.sh, …). shellcheck SC2034 disables apply because
+# the read happens out-of-file.
 
 # shellcheck disable=SC2034
 LAST_AGENT_TURNS=0
@@ -31,6 +32,8 @@ LAST_AGENT_NULL_RUN=false
 # shellcheck disable=SC2034
 LAST_AGENT_RETRY_COUNT=0
 # shellcheck disable=SC2034
+LAST_AGENT_WAS_ACTIVITY_TIMEOUT=false
+# shellcheck disable=SC2034
 TOTAL_AGENT_INVOCATIONS=0
 # shellcheck disable=SC2034
 AGENT_ERROR_CATEGORY=""
@@ -40,12 +43,6 @@ AGENT_ERROR_SUBCATEGORY=""
 AGENT_ERROR_TRANSIENT=""
 # shellcheck disable=SC2034
 AGENT_ERROR_MESSAGE=""
-# shellcheck disable=SC2034
-_RWR_EXIT=0
-# shellcheck disable=SC2034
-_RWR_TURNS=0
-# shellcheck disable=SC2034
-_RWR_WAS_ACTIVITY_TIMEOUT=false
 
 : "${TOTAL_TURNS:=0}"
 : "${TOTAL_TIME:=0}"
@@ -109,11 +106,11 @@ _shim_write_request() {
 }
 
 # _shim_apply_response RESPONSE_FILE EXEC_RC — parse the agent.response.v1
-# envelope and set the V3 contract globals (LAST_AGENT_*, _RWR_*,
-# AGENT_ERROR_*) plus null-run classification. Pulled out so run_agent stays
-# under the lib/agent.sh 80-line ceiling. _RWR_WAS_ACTIVITY_TIMEOUT is
-# expressly set per call (not just for activity_timeout) so a happy-path run
-# clears any stale value the caller's locals might still hold.
+# envelope and set the V3 contract globals (LAST_AGENT_*, AGENT_ERROR_*) plus
+# null-run classification. Pulled out so run_agent stays under the
+# lib/agent.sh 80-line ceiling. LAST_AGENT_WAS_ACTIVITY_TIMEOUT is expressly
+# set per call (not just for activity_timeout) so a happy-path run clears any
+# stale value the caller's locals might still hold.
 _shim_apply_response() {
     local f="$1" exec_rc="$2"
     local _ec _tu _oc _msg _cat _sub _tr
@@ -126,14 +123,12 @@ _shim_apply_response() {
     _tr=$(_shim_field "$f" error_transient)
     [[ "$_ec" =~ ^-?[0-9]+$ ]] || _ec="$exec_rc"
     [[ "$_tu" =~ ^[0-9]+$ ]] || _tu=0
-    # shellcheck disable=SC2034  # consumed by callers
-    _RWR_EXIT="$_ec"; _RWR_TURNS="$_tu"
     if [[ "$_oc" = "activity_timeout" ]]; then
         # shellcheck disable=SC2034
-        _RWR_WAS_ACTIVITY_TIMEOUT=true
+        LAST_AGENT_WAS_ACTIVITY_TIMEOUT=true
     else
         # shellcheck disable=SC2034
-        _RWR_WAS_ACTIVITY_TIMEOUT=false
+        LAST_AGENT_WAS_ACTIVITY_TIMEOUT=false
     fi
     # shellcheck disable=SC2034  # consumed by run_agent + downstream stages
     AGENT_ERROR_CATEGORY="$_cat"

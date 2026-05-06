@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# orchestrate_recovery_print.sh — Inline recovery block printer (M94, M130)
+# orchestrate_diagnose.sh — Inline recovery block printer (M94, M130)
 #
-# Sourced by orchestrate_recovery.sh — do not run directly.
+# m12: renamed from orchestrate_recovery_print.sh as part of the bash
+# relocation cutover.
+# Sourced by orchestrate_classify.sh — do not run directly.
 #
 # Provides:
 #   _print_recovery_block OUTCOME DETAIL RESUME_CMD TASK [CAUSE_SUMMARY]

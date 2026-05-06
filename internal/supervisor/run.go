@@ -240,10 +240,12 @@ func (s *Supervisor) emitSupervisorEvent(label, evType, detail string) {
 }
 
 // makeCancelHook returns the cmd.Cancel closure that drives reaper-based
-// process-tree termination. Falls back to leader-only kill if the reaper
-// can't terminate (e.g. Attach failed), so the cancel pathway always reaps
-// at least the parent process. exec.CommandContext escalates to SIGKILL
-// after WaitDelay regardless, which acts as a final backstop.
+// process-tree termination. The leader-only fallback (cmd.Process.Kill) fires
+// only when reaper.Kill() returns a non-nil error. When Attach has failed,
+// Kill() returns nil (idempotent no-op per the Reaper interface contract —
+// see reaper.go), so the leader-only path is NOT taken in that case.
+// exec.CommandContext's WaitDelay escalation is the last-resort backstop for
+// the Attach-failed scenario.
 func makeCancelHook(cmd *exec.Cmd, reaper Reaper) func() error {
 	return func() error {
 		if err := reaper.Kill(); err == nil {

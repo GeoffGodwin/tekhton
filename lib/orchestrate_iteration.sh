@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# orchestrate_loop.sh — Pipeline iteration outcome handlers.
+# orchestrate_iteration.sh — Pipeline iteration outcome handlers.
 #
-# Extracted from orchestrate.sh to keep that file under the 300-line ceiling.
-# Sourced by orchestrate.sh — do not run directly.
+# m12: renamed from orchestrate_loop.sh as part of the bash relocation cutover.
+# Sourced by orchestrate_main.sh — do not run directly.
 #
 # These helpers encode the outcome of a single _run_pipeline_stages() call:
 #   _run_preflight_test_gate    — pre-finalization TEST_CMD gate
@@ -12,7 +12,7 @@ set -euo pipefail
 #   _handle_pipeline_failure    — pipeline_exit != 0 branch
 #
 # Return-code convention used by the outcome handlers (consumed by
-# run_complete_loop in orchestrate.sh):
+# run_complete_loop in orchestrate_main.sh):
 #     0   continue the outer while-loop
 #    10   caller should `return 0` (full success — exit run_complete_loop)
 #    11   caller should `return 1` (non-recoverable failure — exit loop)

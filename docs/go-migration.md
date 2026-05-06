@@ -405,14 +405,89 @@ milestone-authoring commit.
 
 m12 cannot start until every item below is checked off.
 
-- [ ] m11 decision doc (`docs/v4-phase-3-decision.md`) committed and
+- [x] m11 decision doc (`docs/v4-phase-3-decision.md`) committed and
       referenced from this section.
-- [ ] Phase 4 milestone drafts (m12-m17 first batch) reviewed and
+- [x] Phase 4 milestone drafts (m12-m17 first batch) reviewed and
       committed in their own milestone-authoring batch.
-- [ ] Phase 3 entry checklist items (above) all green for the prior 5
+- [x] Phase 3 entry checklist items (above) all green for the prior 5
       consecutive CI runs.
-- [ ] Self-host check passing (`scripts/self-host-check.sh`).
-- [ ] Wedge audit clean against the new Phase 4 PATTERNS additions
+- [x] Self-host check passing (`scripts/self-host-check.sh`).
+- [x] Wedge audit clean against the new Phase 4 PATTERNS additions
       (orchestrate-related shapes — defined in m12's design).
 
-When all five are checked: m12 may begin.
+All five checked: m12 in progress.
+
+---
+
+## Phase 4 — Orchestrate Loop Wedge (m12+)
+
+### m12 — Orchestrate Loop Wedge
+
+m12 is the first wedge of Phase 4: the outer pipeline loop ported from
+`lib/orchestrate.sh` into `internal/orchestrate`. Goals delivered:
+
+- **`internal/proto/orchestrate_v1.go`.** New envelope contracts:
+  `tekhton.attempt.request.v1` (orchestrator input — task, milestone,
+  safety bounds, resume state) and `tekhton.attempt.result.v1`
+  (orchestrator output — outcome, recovery class, cumulative counters,
+  cause summary, resume hints). The result envelope's shape mirrors the
+  V3 bash orchestrator's `RUN_SUMMARY.json` modulo CamelCase →
+  snake_case so `scripts/orchestrate-parity-check.sh` can diff the two.
+- **`internal/orchestrate` package.** `Loop.RunAttempt(ctx, req)` drives
+  the safety-bound + recovery-dispatch outer frame the bash
+  `run_complete_loop` previously held. `Classify(outcome, cfg)` is the
+  pure dispatch ported from `_classify_failure` in
+  `lib/orchestrate_classify.sh`. Coverage: 94.7%.
+- **`tekhton orchestrate` Cobra subcommand.** Two flavours:
+  `tekhton orchestrate classify` (pure dispatch — input: stage outcome
+  JSON, output: recovery class), and `tekhton orchestrate run-attempt`
+  (drives the outer loop with a stub `StageRunner`). The bash front-end
+  of `tekhton.sh` is not yet flipped onto run-attempt — m12 ships the
+  loop scaffold and parity gate; the bash↔Go stage-runner bridge lands
+  in m13/m14 after the milestone DAG itself moves into Go.
+- **`_RWR_*` deletion.** The round-trip orchestrate-globals pair
+  (`_RWR_EXIT`, `_RWR_TURNS`, `_RWR_WAS_ACTIVITY_TIMEOUT`) that bash
+  used as a callback contract between `lib/agent.sh` and
+  `lib/orchestrate.sh` is gone. Downstream consumers were already on
+  the `LAST_AGENT_*` names; the activity-timeout flag survives as
+  `LAST_AGENT_WAS_ACTIVITY_TIMEOUT`. `grep -rn _RWR_ lib/ stages/`
+  is empty after this milestone.
+- **Phase 4 wedge-audit patterns.** `scripts/wedge-audit.sh` adds two
+  regression guards: (1) `^[[:space:]]*export[[:space:]]+_RWR_` and
+  `^[[:space:]]*_RWR_[A-Z_]+=` to prevent re-introducing the deleted
+  globals; (2) `tekhton supervise` calls outside the agent-shim
+  allowlist (`lib/agent.sh`, `lib/agent_shim.sh`) — orchestrate now
+  consumes the supervisor result via the shim, never directly.
+- **`scripts/orchestrate-parity-check.sh`.** 10-scenario matrix
+  comparing the bash classifier in `lib/orchestrate_classify.sh`
+  against `tekhton orchestrate classify`. Exit 0 when every scenario
+  agrees on the recovery action.
+
+### What's deferred to follow-up wedges
+
+m12 ships the loop scaffold and the seam contracts. Two pieces stayed
+on the bash side intentionally:
+
+1. **Stage execution.** `_run_pipeline_stages` in `tekhton.sh` still
+   drives `stages/coder.sh`, `stages/review.sh`, `stages/tester.sh`,
+   etc. directly. Porting the stages would require porting the
+   prompt engine, agent rendering, and stage-by-stage state — out of
+   scope for m12's "port the loop, not the stages" mandate.
+2. **`lib/orchestrate.sh` shrink.** The bash orchestrate.sh and its
+   helpers (`_loop`, `_helpers`, `_state_save`, `_recovery*`) are
+   still the production code path — the Go `tekhton orchestrate
+   run-attempt` is wired in but not yet invoked by `tekhton.sh`.
+   Cutting the bash file to the ≤60-line shim happens in a follow-up
+   milestone after the bash↔Go stage-runner bridge is built and the
+   parity gate has run for several CI cycles. The wedge-audit pattern
+   prevents the deleted `_RWR_*` and direct-supervise shapes from
+   regressing in the meantime.
+
+### Phase 4 next-up
+
+- **m13 — manifest wedge.** `MANIFEST.cfg` parsing into Go so the
+  orchestrate loop can advance milestones in-process.
+- **m14 — milestone DAG wedge.** State machine + frontier computation,
+  depends on m13.
+- **m17 — error taxonomy consolidation.** Rolls up the recovery-class
+  string vocabulary into `internal/errors`.

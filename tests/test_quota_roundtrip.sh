@@ -185,7 +185,7 @@ echo "=== _ORCH_ATTEMPT reset-on-success path (orchestrate.sh:228-231) ==="
 # =============================================================================
 
 # Define all stub functions that run_complete_loop depends on before sourcing
-# orchestrate_recovery.sh and orchestrate_helpers.sh (sourced by orchestrate.sh)
+# orchestrate_classify.sh and orchestrate_aux.sh (sourced by orchestrate.sh)
 check_milestone_acceptance() { return 0; }
 find_next_milestone()         { echo ""; }
 write_milestone_disposition() { return 0; }
@@ -213,13 +213,13 @@ export -f report_orchestration_status check_usage_threshold emit_milestone_metad
 export -f write_pipeline_state advance_milestone get_milestone_title
 export -f prompt_auto_advance_confirm _run_pipeline_stages
 
-# Source orchestrate_recovery.sh (needed before orchestrate.sh)
+# Source orchestrate_classify.sh (needed before orchestrate.sh)
 suggest_recovery() { echo "Check run log."; }
 redact_sensitive() { cat; }
-source "${TEKHTON_HOME}/lib/orchestrate_recovery.sh"
+source "${TEKHTON_HOME}/lib/orchestrate_classify.sh"
 
-# Source orchestrate_helpers.sh
-source "${TEKHTON_HOME}/lib/orchestrate_helpers.sh"
+# Source orchestrate_aux.sh
+source "${TEKHTON_HOME}/lib/orchestrate_aux.sh"
 
 # Now we can test the reset logic directly without the full orchestrate.sh loop.
 # The reset logic in orchestrate.sh:228-231 is:

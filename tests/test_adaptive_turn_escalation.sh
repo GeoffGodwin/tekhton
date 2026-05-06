@@ -3,7 +3,7 @@
 # test_adaptive_turn_escalation.sh — Milestone 91
 #
 # Tests the adaptive rework turn escalation helpers in
-# lib/orchestrate_helpers.sh:
+# lib/orchestrate_aux.sh:
 #   - _update_escalation_counter increments on AGENT_SCOPE/max_turns
 #   - Counter resets to 0 on success / non-max_turns failure
 #   - Counter resets to 1 when the failing stage changes
@@ -39,7 +39,7 @@ _ORCH_MAX_TURNS_STAGE=""
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/orchestrate_helpers.sh"
+source "${TEKHTON_HOME}/lib/orchestrate_aux.sh"
 
 FAIL=0
 

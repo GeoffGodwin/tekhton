@@ -65,7 +65,7 @@ _extract_failure_lines() {
 
 # _hash_content
 # Returns md5 hash of stdin. Same pattern as _compute_diff_hash in
-# orchestrate_recovery.sh.
+# orchestrate_classify.sh.
 _hash_content() {
     md5sum 2>/dev/null | cut -d' ' -f1 || echo "no-hash"
 }

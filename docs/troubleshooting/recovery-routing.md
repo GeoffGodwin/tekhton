@@ -83,8 +83,8 @@ them in the case branches.
 
 ## See also
 
-- `lib/orchestrate_recovery.sh` — `_classify_failure` decision tree
-- `lib/orchestrate_recovery_causal.sh` — failure-context loader + state vars
-- `lib/orchestrate_loop.sh:_handle_pipeline_failure` — dispatcher case branches
+- `lib/orchestrate_classify.sh` — `_classify_failure` decision tree
+- `lib/orchestrate_cause.sh` — failure-context loader + state vars
+- `lib/orchestrate_iteration.sh:_handle_pipeline_failure` — dispatcher case branches
 - `lib/failure_context.sh` — primary/secondary cause slot helpers (M129)
 - `lib/error_patterns_classify.sh` — `LAST_BUILD_CLASSIFICATION` producer (M127)

@@ -107,7 +107,7 @@ _check_callsite() {
 
 _check_callsite "4.1 milestone_acceptance"  "lib/milestone_acceptance.sh"
 _check_callsite "4.2 gates_completion"      "lib/gates_completion.sh"
-_check_callsite "4.3 orchestrate_loop"      "lib/orchestrate_loop.sh"
+_check_callsite "4.3 orchestrate_iteration" "lib/orchestrate_iteration.sh"
 _check_callsite "4.4 orchestrate_preflight" "lib/orchestrate_preflight.sh"
 _check_callsite "4.5 hooks_final_checks"    "lib/hooks_final_checks.sh"
 # M112: new call sites — pre-coder initial check, pre-coder fix verification,
@@ -144,10 +144,10 @@ fi
 echo ""
 echo "=== Suite 5: test_dedup_reset at loop entry ==="
 
-if grep -q 'test_dedup_reset' "${TEKHTON_HOME}/lib/orchestrate.sh"; then
-    pass "5.1: test_dedup_reset called in lib/orchestrate.sh"
+if grep -q 'test_dedup_reset' "${TEKHTON_HOME}/lib/orchestrate_main.sh"; then
+    pass "5.1: test_dedup_reset called in lib/orchestrate_main.sh"
 else
-    fail "5.1: test_dedup_reset missing from lib/orchestrate.sh"
+    fail "5.1: test_dedup_reset missing from lib/orchestrate_main.sh"
 fi
 
 # =============================================================================

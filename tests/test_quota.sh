@@ -65,11 +65,11 @@ source "${TEKHTON_HOME}/lib/common.sh"
 # Source quota.sh under test
 source "${TEKHTON_HOME}/lib/quota.sh"
 
-# Source orchestrate_recovery.sh for _check_progress tests
+# Source orchestrate_classify.sh for _check_progress tests
 # Mock dependencies
 suggest_recovery() { echo "Check run log."; }
 redact_sensitive() { cat; }
-source "${TEKHTON_HOME}/lib/orchestrate_recovery.sh"
+source "${TEKHTON_HOME}/lib/orchestrate_classify.sh"
 
 # --- Test helpers ---
 PASS=0

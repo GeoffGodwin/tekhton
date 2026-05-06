@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# orchestrate_recovery_causal.sh — M130 causal-context state + loader
+# orchestrate_cause.sh — M130 causal-context state + loader
 #
-# Sourced by orchestrate_recovery.sh — do not run directly.
+# m12: renamed from orchestrate_recovery_causal.sh as part of the bash
+# relocation cutover.
+# Sourced by orchestrate_classify.sh — do not run directly.
 #
 # Provides:
 #   _load_failure_cause_context  — populate _ORCH_PRIMARY_*/SECONDARY_* from

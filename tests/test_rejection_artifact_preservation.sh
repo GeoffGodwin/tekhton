@@ -2,7 +2,7 @@
 # =============================================================================
 # test_rejection_artifact_preservation.sh — Milestone 93
 #
-# Tests _choose_resume_start_at() in lib/orchestrate_helpers.sh:
+# Tests _choose_resume_start_at() in lib/orchestrate_aux.sh:
 #   - REVIEWER_REPORT exists in run → resume "test"
 #   - REVIEWER_REPORT archived this run, no current → restored, resume "test"
 #   - TESTER_REPORT exists in run → resume "tester"
@@ -20,7 +20,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/orchestrate_helpers.sh"
+source "${TEKHTON_HOME}/lib/orchestrate_aux.sh"
 
 FAIL=0
 

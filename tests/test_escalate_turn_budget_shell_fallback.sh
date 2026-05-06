@@ -20,7 +20,7 @@ chmod +x "$FAKE_BIN_DIR/awk"
 
 # Source required libraries
 source "$TEKHTON_DIR/lib/common.sh"
-source "$TEKHTON_DIR/lib/orchestrate_helpers.sh"
+source "$TEKHTON_DIR/lib/orchestrate_aux.sh"
 
 # Test helper: run _escalate_turn_budget with awk disabled
 run_with_no_awk() {
@@ -28,7 +28,7 @@ run_with_no_awk() {
         # Remove standard awk from PATH, add our fake awk first
         export PATH="$FAKE_BIN_DIR:$(echo "$PATH" | sed 's|/usr/bin||g' | sed 's|/bin||g')"
         # Re-source the function in this subshell with the modified PATH
-        source "$TEKHTON_DIR/lib/orchestrate_helpers.sh"
+        source "$TEKHTON_DIR/lib/orchestrate_aux.sh"
         _escalate_turn_budget "$@"
     )
 }

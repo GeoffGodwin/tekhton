@@ -59,7 +59,7 @@ log_verbose() { :; }
 git() { return 1; }
 
 # Provide a minimal _load_failure_cause_context that re-reads the override file.
-# (Mirrors orchestrate_recovery_causal.sh's contract for this test fixture.)
+# (Mirrors orchestrate_cause.sh's contract for this test fixture.)
 _ORCH_PRIMARY_CAT=""
 _ORCH_PRIMARY_SUB=""
 _ORCH_PRIMARY_SIGNAL=""

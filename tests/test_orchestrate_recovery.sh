@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
 # =============================================================================
-# test_orchestrate_recovery.sh — M130 causal-context-aware recovery routing
+# test_orchestrate_classify.sh — M130 causal-context-aware recovery routing
 #
 # Covers _classify_failure routing decisions across primary/secondary cause
 # combinations, the TEKHTON_UI_GATE_FORCE_NONINTERACTIVE opt-out, build-gate
@@ -16,14 +16,14 @@ TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-# Stub `warn` etc. before sourcing — orchestrate_recovery.sh's transitive deps
+# Stub `warn` etc. before sourcing — orchestrate_classify.sh's transitive deps
 # pull in nothing that needs them at load time, but be defensive.
 warn() { :; }
 log()  { :; }
 error() { :; }
 
-# shellcheck source=lib/orchestrate_recovery.sh
-source "${TEKHTON_HOME}/lib/orchestrate_recovery.sh"
+# shellcheck source=lib/orchestrate_classify.sh
+source "${TEKHTON_HOME}/lib/orchestrate_classify.sh"
 
 PASS=0
 FAIL=0
@@ -126,7 +126,7 @@ _make_build_errors_present() {
 # Note: _classify_failure is invoked via `recovery=$(_classify_failure)` from
 # the dispatcher (subshell). Tests assert routing decisions only — the
 # persistent retry guards are written by the dispatcher case branches in
-# orchestrate_loop.sh, not by _classify_failure itself.
+# orchestrate_iteration.sh, not by _classify_failure itself.
 echo "=== T1: env/test_infra primary → retry_ui_gate_env ==="
 _reset_test_state
 _write_v2_env_primary

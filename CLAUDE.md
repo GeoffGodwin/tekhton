@@ -75,12 +75,14 @@ tekhton/
 │   ├── milestone_split.sh  # Pre-flight milestone splitting
 │   ├── milestone_split_dag.sh     # DAG-mode splitting: file read + array splice
 │   ├── milestone_split_nullrun.sh # Null-run auto-split handler
-│   ├── orchestrate.sh      # Outer orchestration loop (--complete)
-│   ├── orchestrate_helpers.sh  # Orchestration support functions
-│   ├── orchestrate_state_save.sh # _save_orchestration_state + recovery-block glue
-│   ├── orchestrate_recovery.sh # Failure classification + recovery
-│   ├── orchestrate_recovery_causal.sh # M130 causal-context loader + retry guards
-│   ├── orchestrate_recovery_print.sh  # M94/M130 inline recovery block printer
+│   ├── orchestrate.sh      # Outer orchestration loop wedge shim (m12)
+│   ├── orchestrate_main.sh # run_complete_loop body + orchestration globals (m12)
+│   ├── orchestrate_iteration.sh # Per-iteration outcome handlers (m12 rename of orchestrate_loop.sh)
+│   ├── orchestrate_aux.sh  # Auto-advance + escalation + smart resume (m12 rename of orchestrate_helpers.sh)
+│   ├── orchestrate_state.sh # _save_orchestration_state + recovery-block glue (m12 rename of orchestrate_state_save.sh)
+│   ├── orchestrate_classify.sh # Failure classification + recovery dispatch (m12 rename of orchestrate_recovery.sh)
+│   ├── orchestrate_cause.sh # M130 causal-context loader + retry guards (m12 rename of orchestrate_recovery_causal.sh)
+│   ├── orchestrate_diagnose.sh # M94/M130 inline recovery block printer (m12 rename of orchestrate_recovery_print.sh)
 │   ├── clarify.sh          # Clarification protocol + replan trigger
 │   ├── specialists.sh      # Specialist review framework
 │   ├── metrics.sh          # Run metrics collection + adaptive calibration

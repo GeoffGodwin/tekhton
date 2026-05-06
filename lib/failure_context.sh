@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Sourced by tekhton.sh BEFORE lib/diagnose_output.sh so the slot variables
 # exist by the time any stage tries to populate them. Other libs (writer,
-# orchestrate_recovery, finalize_dashboard_hooks) consume these slots via
+# orchestrate_classify, finalize_dashboard_hooks) consume these slots via
 # the helpers below; the variables themselves are exported so cross-stage
 # subshells observe the same values.
 #

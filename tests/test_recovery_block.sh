@@ -9,8 +9,8 @@ set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# shellcheck source=lib/orchestrate_recovery.sh
-source "${TEKHTON_HOME}/lib/orchestrate_recovery.sh"
+# shellcheck source=lib/orchestrate_classify.sh
+source "${TEKHTON_HOME}/lib/orchestrate_classify.sh"
 
 PASS=0
 FAIL=0

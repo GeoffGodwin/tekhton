@@ -16,10 +16,16 @@
 #                          mixed           emit one valid line, one malformed
 #                          stderr_chatter  emit N stderr lines then succeed
 #                          long_line       emit a single line of LARGE size
-#   FAKE_AGENT_LINES    — line count for mode=flood (default 100)
-#   FAKE_AGENT_SLEEP    — seconds between lines for mode=slow (default 1)
-#   FAKE_AGENT_EXIT     — exit code for mode=fail (default 1)
-#   FAKE_AGENT_LARGE    — bytes for mode=long_line (default 200000)
+#                          hang            emit one turn + sleep forever (tests caller-driven/timer-driven cancel)
+#                          silent_fs_writer  emit startup line, write files periodically, no further stdout
+#                          silent_no_writes  emit startup line then sleep without fs activity
+#   FAKE_AGENT_LINES         — line count for mode=flood (default 100)
+#   FAKE_AGENT_SLEEP         — seconds between lines for mode=slow (default 1)
+#   FAKE_AGENT_EXIT          — exit code for mode=fail (default 1)
+#   FAKE_AGENT_LARGE         — bytes for mode=long_line (default 200000)
+#   FAKE_AGENT_WORKDIR       — working dir for file writes in mode=silent_fs_writer (default .)
+#   FAKE_AGENT_FS_INTERVAL   — seconds between file writes (default 0.5)
+#   FAKE_AGENT_FS_COUNT      — number of file writes (default 4)
 #
 # All output is line-buffered so the supervisor's bufio.Scanner sees lines
 # as they are emitted; printf with explicit \n is enough on macOS/Linux.

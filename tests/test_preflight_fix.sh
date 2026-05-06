@@ -66,7 +66,7 @@ render_prompt() {
 }
 
 # Source the file under test
-source "${TEKHTON_HOME}/lib/orchestrate_helpers.sh"
+source "${TEKHTON_HOME}/lib/orchestrate_aux.sh"
 source "${TEKHTON_HOME}/lib/orchestrate_preflight.sh"
 
 # --- Test helpers -------------------------------------------------------------

@@ -57,7 +57,7 @@ git commit -q -m "init" --allow-empty 2>/dev/null
 # --- Source common.sh for log/warn/success -----------------------------------
 source "${TEKHTON_HOME}/lib/common.sh"
 
-# Mock dependencies that orchestrate_recovery.sh and milestone_metadata.sh need
+# Mock dependencies that orchestrate_classify.sh and milestone_metadata.sh need
 suggest_recovery() { echo "Check run log."; }
 redact_sensitive() { cat; }
 count_lines() { wc -l | tr -d '[:space:]'; }
@@ -66,7 +66,7 @@ BUILD_ERRORS_FILE="${TEKHTON_DIR}/BUILD_ERRORS.md"
 CODER_SUMMARY_FILE="${TEKHTON_DIR}/CODER_SUMMARY.md"
 
 # Source the files under test
-source "${TEKHTON_HOME}/lib/orchestrate_recovery.sh"
+source "${TEKHTON_HOME}/lib/orchestrate_classify.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 
 # --- Test helpers ------------------------------------------------------------

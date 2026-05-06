@@ -19,7 +19,7 @@ source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/state.sh"
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/orchestrate_helpers.sh"
+source "${TEKHTON_HOME}/lib/orchestrate_aux.sh"
 
 # Stub out finalize_run — not under test here, just a prerequisite call
 finalize_run() { return 0; }

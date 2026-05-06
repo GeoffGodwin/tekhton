@@ -65,8 +65,8 @@ _collect_build_fix_stats_json() {
 
 # _collect_recovery_routing_json
 # Reads m130 module-level recovery vars (declared in
-# orchestrate_recovery_causal.sh, captured per-iteration via the wrap added
-# by m132 in orchestrate_loop.sh:_handle_pipeline_failure).
+# orchestrate_cause.sh, captured per-iteration via the wrap added
+# by m132 in orchestrate_iteration.sh:_handle_pipeline_failure).
 _collect_recovery_routing_json() {
     local route="${_ORCH_RECOVERY_ROUTE_TAKEN:-save_exit}"
     [[ -n "$route" ]] || route="save_exit"

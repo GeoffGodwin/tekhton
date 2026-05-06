@@ -52,7 +52,7 @@ Build-fix continuation loop statistics from `stages/coder_buildfix.sh`.
 ### `recovery_routing`
 
 Final recovery decision returned by `_classify_failure` plus the
-persistent retry guards in `lib/orchestrate_recovery_causal.sh`.
+persistent retry guards in `lib/orchestrate_cause.sh`.
 
 | Field | Type | Description |
 |-------|------|-------------|

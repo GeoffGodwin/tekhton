@@ -3,8 +3,8 @@ set -euo pipefail
 # =============================================================================
 # orchestrate_preflight.sh — Pre-finalization preflight fix retry
 #
-# Extracted from orchestrate_helpers.sh to stay under the 300-line ceiling.
-# Sourced by orchestrate.sh after orchestrate_helpers.sh — do not run directly.
+# Extracted from the orchestrate aux helpers to stay under the 300-line ceiling.
+# Sourced by orchestrate.sh after orchestrate_aux.sh — do not run directly.
 # =============================================================================
 
 # --- Preflight fix helper (M44) -----------------------------------------------

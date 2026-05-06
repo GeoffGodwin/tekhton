@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# orchestrate_state_save.sh — _save_orchestration_state and recovery-block glue
+# orchestrate_state.sh — _save_orchestration_state and recovery-block glue
 #
-# Sourced by orchestrate_helpers.sh — do not run directly.
+# m12: renamed from orchestrate_state_save.sh as part of the bash relocation
+# cutover.
+# Sourced by orchestrate_aux.sh — do not run directly.
 #
 # Provides:
 #   _save_orchestration_state OUTCOME DETAIL

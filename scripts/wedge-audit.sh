@@ -32,6 +32,10 @@ ALLOWED_FILES=(
     "lib/causality.sh"
     "lib/state.sh"
     "lib/state_helpers.sh"
+    # m12 (Phase 4) — only the agent shim may shell to `tekhton supervise`.
+    # The orchestrate loop reads the supervisor result through the shim.
+    "lib/agent.sh"
+    "lib/agent_shim.sh"
 )
 
 # --- Patterns to detect ------------------------------------------------------
@@ -65,6 +69,23 @@ PATTERNS=(
     # `source`/`.` builtin so comments documenting the m10 cutover (which
     # legitimately name the files) don't trip the audit.
     '^[[:space:]]*(source|\.)[[:space:]]+.*/(agent_monitor[^"[:space:]]*|agent_retry[^"[:space:]]*)'
+    # m12 (Phase 4): regression guard against re-introducing the round-trip
+    # orchestrate-globals pair that lib/agent.sh used to populate. The
+    # orchestrate loop now reads supervisor results through LAST_AGENT_*
+    # directly; a re-introduction would silently re-instate the bash↔Go
+    # round-trip the m12 wedge eliminated.
+    '^[[:space:]]*export[[:space:]]+_RWR_'
+    '^[[:space:]]*_RWR_[A-Z_]+='
+    # m12 (Phase 4): direct `tekhton supervise` calls outside the agent shim
+    # bypass the orchestrate-loop recovery dispatch. Only lib/agent.sh and
+    # lib/agent_shim.sh (allowlisted above) may shell to it. lib/orchestrate.sh
+    # would be a regression — orchestrate now consumes the supervisor result
+    # via the shim, never directly. Patterns are literal regex strings so
+    # single-quotes are correct (no shell interpolation desired).
+    # shellcheck disable=SC2016
+    '"\$_bin"[[:space:]]+supervise'
+    # shellcheck disable=SC2016
+    "'tekhton'[[:space:]]+supervise"
 )
 
 # --- Audit -------------------------------------------------------------------

@@ -1,11 +1,13 @@
 ## Planned Tests
-- [x] Full test suite regression — m11 is a documentation-only milestone (no runtime code); the only required test is that the existing suite still passes (AC #7: m01–m10 criteria still pass, self-host green, parity gate green)
+- [x] `tests/test_orchestrate_m12_acceptance.sh` — M12 structural acceptance: prohibited filenames gone, orchestrate.sh ≤60 lines and no recovery logic, _RWR_ absent, orchestrate_main.sh global defaults correct
 
 ## Test Run Results
-Passed: 493 shell + 250 Python (14 skipped) + all Go packages  Failed: 0
+Passed: 34  Failed: 0
+
+Full suite (bash tests/run_tests.sh): 495 shell passed, 0 failed; 250 Python passed; all Go packages ok.
 
 ## Bugs Found
 None
 
 ## Files Modified
-- None — no new test files authored; existing suite is the test
+- [x] `tests/test_orchestrate_m12_acceptance.sh`
