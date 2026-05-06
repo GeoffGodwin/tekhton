@@ -2,12 +2,14 @@
 PASS
 
 ## Confidence
-83
+88
 
 ## Reasoning
-- **Scope Definition:** Excellent. The milestone explicitly lists four files to create with line-count estimates, names the exact dependency (m06), and has a dedicated "What this milestone explicitly does NOT do" section (no quota pause, no spinner bracket, no bash shim flip). No scope ambiguity.
-- **Testability:** Acceptance criteria are precise and executable — specific method signatures, concrete return value bounds (`≥ 60s`, `≤ MaxDelay`, `within 10ms`), a coverage floor (75%), and a golden-file causal-event comparison. A developer can write tests directly from the criteria.
-- **Ambiguity:** Very low. Go code skeletons for `AgentError`, `RetryPolicy`, `Retry`, `DefaultPolicy`, and `Delay` are provided inline. The `Is` matching semantics (Category+Subcategory only, no Wrapped/Transient) and the `turn_exhausted` non-retry rule are called out explicitly.
-- **Implicit Assumptions:** One minor gap: `scripts/error-taxonomy-diff.sh` is described in "Watch For" as something "m07 includes" and is expected to fail CI, but it is absent from the "Files Modified" table. A competent developer will create it from the description, but listing it in the table would close the loop cleanly.
-- **Migration Impact:** Not applicable — no user-facing config keys, CLI flags, or file-format changes introduced.
-- **UI Testability:** Not applicable — pure internal Go library code.
+- Scope is tightly bounded: five files (three creates, one modify, one create) with estimated line counts; bash is explicitly untouched
+- Acceptance criteria are specific and mechanically testable: exact inputs/outputs for `ParseRetryAfter`, time-bounded assertions for `EnterQuotaPause`, probe exit-code semantics against a mock, retry-slot non-consumption guarantee, CLI output behavior, coverage floor (≥ 78%)
+- Design section supplies concrete Go type signatures and code sketches — no ambiguity about API shape or expected behavior
+- Watch For section surfaces the two highest-risk invariants (quota pauses don't burn retry slots; ChunkSize bounds Ctrl-C responsiveness) so the implementer cannot miss them
+- Depends-on chain (m07 → m06 → m02) is stated; causal log and retry envelope are assumed in-place, which is correct given current milestone status
+- No new user-facing config keys introduced (all config vars already exist in V3 bash); no migration impact section needed
+- No UI components; UI testability dimension is N/A
+- Historical pattern: all 10 comparable milestone runs passed on first attempt — scope and specificity here are consistent with that track record

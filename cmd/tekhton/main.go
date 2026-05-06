@@ -35,6 +35,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newCausalCmd())
 	cmd.AddCommand(newStateCmd())
 	cmd.AddCommand(newSuperviseCmd())
+	cmd.AddCommand(newQuotaCmd())
 	return cmd
 }
 

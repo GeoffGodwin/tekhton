@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "8"
-status: "todo"
+status: "done"
 -->
 
 # m08 — Quota Pause/Resume + Retry-After Parsing

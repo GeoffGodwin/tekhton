@@ -53,6 +53,12 @@ type AgentRequestV1 struct {
 // underlying agent process's exit so bash callers can branch on $? exactly as
 // they do today; the supervisor itself uses sysexits-style codes (64/70) when
 // the failure is internal to the supervisor (envelope invalid, panic, etc.).
+//
+// RetryAfter is additive in m08 — when an api_rate_limit / quota_exhausted
+// classification is produced, the supervisor surfaces the upstream
+// Retry-After header value verbatim (raw string: integer seconds OR
+// HTTP-Date) so the retry envelope can drive a quota pause off it without
+// re-parsing claude stderr. Empty when no Retry-After was observed.
 type AgentResultV1 struct {
 	Proto            string   `json:"proto"`
 	RunID            string   `json:"run_id,omitempty"`
@@ -65,6 +71,7 @@ type AgentResultV1 struct {
 	ErrorSubcategory string   `json:"error_subcategory,omitempty"`
 	ErrorTransient   bool     `json:"error_transient,omitempty"`
 	ErrorMessage     string   `json:"error_message,omitempty"`
+	RetryAfter       string   `json:"retry_after,omitempty"`
 	LastEventID      string   `json:"last_event_id,omitempty"`
 	StdoutTail       []string `json:"stdout_tail,omitempty"`
 }

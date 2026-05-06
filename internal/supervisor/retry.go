@@ -105,24 +105,41 @@ func (p *RetryPolicy) jitter(n int64) int64 {
 // callers pass Supervisor.Run; tests pass a scripted fake.
 type runFunc func(ctx context.Context, req *proto.AgentRequestV1) (*proto.AgentResultV1, error)
 
+// pauseFunc is the EnterQuotaPause-shaped seam the retry loop calls when a
+// rate-limit classification is observed. Production callers pass
+// Supervisor.EnterQuotaPause; tests substitute a scripted fake so the
+// 429→pause→200 sequence can be exercised without real waits.
+type pauseFunc func(ctx context.Context, p QuotaPause) error
+
 // Retry wraps Supervisor.Run with the m07 retry envelope. Transient classified
 // failures retry with exponential backoff; fatal failures and runner errors
 // return immediately. ctx cancellation during backoff returns ctx.Err() —
 // no orphan sleep.
+//
+// m08 layers in a quota-pause path: when the result classifies as
+// ErrUpstreamRateLimit or ErrQuotaExhausted the loop reads the result's
+// RetryAfter field, calls EnterQuotaPause, and continues WITHOUT consuming
+// a retry attempt. This matches V3 behavior (a 5h pause followed by a
+// successful run is one attempt, not "MaxAttempts exhausted by waiting").
 func (s *Supervisor) Retry(ctx context.Context, req *proto.AgentRequestV1, p *RetryPolicy) (*proto.AgentResultV1, error) {
-	return retryLoop(ctx, req, p, s.causal, s.Run, time.After)
+	return retryLoop(ctx, req, p, s.causal, s.Run, s.EnterQuotaPause, time.After)
 }
 
 // retryLoop is the unit-testable retry implementation. The injected runner
-// (`run`) and clock (`after`) seams let tests stub agent behavior and skip
-// real sleeps — there is no time.Sleep anywhere on the path so cancellation
-// and time-mocking are uniform.
+// (`run`), pause helper (`pause`), and clock (`after`) seams let tests stub
+// agent behavior and skip real sleeps — there is no time.Sleep anywhere on
+// the path so cancellation and time-mocking are uniform.
+//
+// pause may be nil; in that case the loop falls through to normal exponential
+// backoff for rate-limit classifications. Production callers always wire
+// EnterQuotaPause via Supervisor.Retry.
 func retryLoop(
 	ctx context.Context,
 	req *proto.AgentRequestV1,
 	p *RetryPolicy,
 	log *causal.Log,
 	run runFunc,
+	pause pauseFunc,
 	after func(time.Duration) <-chan time.Time,
 ) (*proto.AgentResultV1, error) {
 	if req == nil {
@@ -144,20 +161,37 @@ func retryLoop(
 	for attempt := 1; attempt <= p.MaxAttempts; attempt++ {
 		emitRetryEvent(log, "retry_attempt", label, fmt.Sprintf("attempt %d/%d", attempt, p.MaxAttempts))
 
-		result, runErr := run(ctx, req)
-		lastResult = result
-		if runErr != nil {
-			return result, runErr
-		}
-		if result == nil {
-			return nil, fmt.Errorf("supervisor: runner returned nil result")
+		// Inner loop drains quota pauses without consuming retry budget.
+		// A 429 followed by a real result counts as one attempt from
+		// the policy's POV, so we keep spinning on rate-limit
+		// classifications (with a pause between each) until run()
+		// produces a non-quota result. This matches V3 lib/quota.sh.
+		var (
+			result *proto.AgentResultV1
+			runErr error
+			cls    error
+		)
+		for {
+			result, runErr = run(ctx, req)
+			lastResult = result
+			if runErr != nil {
+				return result, runErr
+			}
+			if result == nil {
+				return nil, fmt.Errorf("supervisor: runner returned nil result")
+			}
+			if result.Outcome == proto.OutcomeSuccess || result.Outcome == proto.OutcomeTurnExhausted {
+				return result, nil
+			}
+			cls = classifyResult(result)
+			if pause == nil || !shouldQuotaPause(cls) {
+				break
+			}
+			if err := handleQuotaPause(ctx, log, pause, result, label); err != nil {
+				return result, err
+			}
 		}
 
-		if result.Outcome == proto.OutcomeSuccess || result.Outcome == proto.OutcomeTurnExhausted {
-			return result, nil
-		}
-
-		cls := classifyResult(result)
 		var ae *AgentError
 		errors.As(cls, &ae)
 
@@ -193,6 +227,42 @@ func retryLoop(
 	}
 
 	return lastResult, nil
+}
+
+// shouldQuotaPause reports whether a classified error warrants the quota-
+// pause path rather than ordinary exponential backoff. Today this fires
+// for rate-limit and quota-exhausted; future provider abstractions can
+// extend the predicate without touching the retry loop's structure.
+func shouldQuotaPause(cls error) bool {
+	if cls == nil {
+		return false
+	}
+	return errors.Is(cls, ErrUpstreamRateLimit) || errors.Is(cls, ErrQuotaExhausted)
+}
+
+// handleQuotaPause derives the pause window from the result's RetryAfter
+// field, emits a pause-entry retry event, and dispatches to the pause
+// helper. A missing/unparseable RetryAfter falls back to a conservative
+// 15-minute wait (matches the m08 design's "conservative default").
+func handleQuotaPause(
+	ctx context.Context,
+	log *causal.Log,
+	pause pauseFunc,
+	result *proto.AgentResultV1,
+	label string,
+) error {
+	until, ok := ParseRetryAfter(result.RetryAfter)
+	source := "header"
+	if !ok {
+		until = time.Now().Add(15 * time.Minute)
+		source = "default"
+	}
+	emitRetryEvent(log, "retry_quota_pause", label,
+		fmt.Sprintf("until=%s source=%s", until.UTC().Format(time.RFC3339), source))
+	return pause(ctx, QuotaPause{
+		Until:  until,
+		Reason: "api_rate_limit",
+	})
 }
 
 func emitRetryEvent(log *causal.Log, eventType, label, detail string) {
