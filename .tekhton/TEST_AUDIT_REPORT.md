@@ -1,74 +1,125 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files — `cmd/tekhton/dag_test.go` (24 Go test functions) and
-`tests/test_dag_advance_parity.sh` (21 assertions in 9 logical groups).
+Tests audited: 2 primary files (tests/test_dag_advance_parity.sh — 20 assertions;
+cmd/tekhton/dag_test.go — 30 test functions), 3 freshness samples
+(internal/dag/dag_test.go — 7 functions; internal/dag/migrate_test.go — 8 functions;
+internal/dag/testhelpers_test.go — helper shim only).
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: validate CLI only exercises one of five validation-error kinds
-- File: cmd/tekhton/dag_test.go (no specific line — absence)
-- Issue: `TestDagValidateCmd_MissingDep` covers the missing-dep path and
-  `TestDagValidateCmd_Clean` covers the happy path, but there are no CLI-level
-  tests for cycle detection (`ErrCycle`), duplicate IDs (`ErrDuplicateID`), or
-  unknown statuses (`ErrUnknownStatus`) flowing through the validate command.
-  All five checks collapse to the same CLI outcome (`exitCorrupt`), so the
-  regression risk is low; the five checks are thoroughly exercised by the unit
-  tests in `internal/dag/validate_test.go` (out of scope for this audit).
-- Severity: LOW
-- Action: Optional — add one small cycle fixture test (two entries with a A→B→A
-  dep) to confirm the Go `checkCycles` result propagates to `exitCorrupt` at the
-  CLI layer. Not blocking.
+None
 
-#### NAMING: `TestDagFrontierCmd_NoPath` name understates the condition
+---
+
+## Detail Notes (informational, non-blocking)
+
+#### COVERAGE: TestDagFrontierCmd_NoPath only validates err != nil
 - File: cmd/tekhton/dag_test.go:41
-- Issue: The test clears `$MILESTONE_MANIFEST_FILE` AND omits `--path`, so
-  `resolveManifestPath("")` returns `""` and `loadDagState` errors with "dag:
-  --path or $MILESTONE_MANIFEST_FILE required". The name implies only the flag
-  is absent, which is accurate but incomplete — a reader might expect a separate
-  test covering the env-var-absent case alone (which is the same code path).
-  The paired `TestDagFrontierCmd_ViaEnv` makes the complementary success case
-  clear, so the pairing is readable; the name is slightly imprecise, not
-  misleading.
+- Issue: The no-path error path is returned as a plain fmt.Errorf (not an errExitCode),
+  so there is no exit-code to assert. Checking only err != nil is therefore the correct
+  and complete assertion for this branch. Noted here so a future maintainer does not
+  mistake the absence of exit-code checking for a gap.
 - Severity: LOW
-- Action: Optionally rename to `TestDagFrontierCmd_NeitherPathNorEnv` or add a
-  one-line comment. Not blocking.
+- Action: No change required. An inline comment explaining why no exit-code check is
+  needed would be optional documentation improvement only.
 
-#### NAMING: `TestDagValidateCmd_MissingDep` passes unexplained `--milestone-dir ""`
-- File: cmd/tekhton/dag_test.go:138-139
-- Issue: The test explicitly passes `--milestone-dir ""` without explanation.
-  This disables `checkFiles` inside `State.Validate` — the intent is to isolate
-  the missing-dep check. Without a comment, a reader cannot tell whether the
-  empty string is intentional or an oversight. If the flag is removed, the
-  default `filepath.Dir(path)` logic kicks in and adds a spurious `missing_file`
-  error alongside the intended `missing_dep` error, making the test harder to
-  understand and easier to misread.
+#### COVERAGE: test_dag_advance_parity.sh does not test pending → done (invalid transition)
+- File: tests/test_dag_advance_parity.sh
+- Issue: The shell parity test covers done→in_progress (invalid), unknown ID, and
+  unknown status string, but not the pending→done invalid transition (pending can only
+  advance to todo, in_progress, or skipped per validTransition). This specific path IS
+  covered by internal/dag/dag_test.go:TestAdvanceTransitions, so there is no gap in
+  total suite coverage; the omission is reasonable scope-splitting between unit and
+  cross-process parity tests.
 - Severity: LOW
-- Action: Add a one-line comment above the flag:
-  `// --milestone-dir "" skips file-existence checks to isolate the missing-dep path.`
+- Action: No change required. Acceptable delegation to the unit test.
 
-### HIGH and INTEGRITY findings: None
+---
 
-All assertions in both test files are derived from real implementation behavior
-and expected values are grounded in fixture data and the documented state-machine
-rules (transition table in `internal/dag/dag.go::validTransition`, exit codes in
-`cmd/tekhton/errors.go`, frontier semantics in `internal/manifest/manifest.go`).
+## Per-File Rubric Summary
 
-No test mocks the code under test. `writeFixture` / `captureStdout` are defined
-in the same test package (`manifest_test.go`) and write to `t.TempDir()`.
-`test_dag_advance_parity.sh` uses `mktemp -d` with a `trap … EXIT` cleanup.
-Neither file reads live pipeline artifacts, build reports, or project-state files.
-No orphaned references to the deleted files (`lib/milestone_dag_helpers.sh`,
-`lib/milestone_dag_validate.sh`, `lib/milestone_dag_migrate.sh`) appear in
-either audited file.
+### tests/test_dag_advance_parity.sh
 
-#### Rubric summary
+1. Assertion Honesty — PASS. Every assertion is derived from fixture-defined state
+   (m01=done, m02=in_progress, m03/m04=pending) and the known transition semantics.
+   No hard-coded magic values unconnected to implementation logic.
 
-| File | Honesty | Coverage | Exercise | Weakening | Naming | Alignment | Isolation |
-|---|---|---|---|---|---|---|---|
-| cmd/tekhton/dag_test.go | PASS | PASS† | PASS | N/A (new) | PASS‡ | PASS | PASS |
-| tests/test_dag_advance_parity.sh | PASS | PASS | PASS | N/A (new) | PASS | PASS | PASS |
+2. Edge Case Coverage — PASS. Happy path (in_progress→done), frontier update,
+   active-list draining, idempotent terminal (done→done), invalid terminal transition
+   (done→in_progress, exit 64), unknown ID (exit 1), unknown status string (exit 64),
+   subsequent advance of newly-unblocked milestone (pending→in_progress).
 
-† Validate CLI only exercises one of five error-kind paths (LOW, non-blocking).
-‡ Two naming nits noted above (LOW, non-blocking).
+3. Implementation Exercise — PASS. Invokes the real tekhton binary (`tekhton dag
+   advance`), then exercises the bash shim (load_manifest, dag_get_status,
+   dag_get_frontier, dag_get_active) to verify the on-disk mutation was readable
+   cross-process. No mocking.
+
+4. Test Weakening — N/A. New file; no existing tests modified.
+
+5. Naming — PASS. Section echo headers ("Test: advance m02 → done", "Test: frontier
+   after advance…", etc.) and per-assertion descriptions include the variable content
+   (e.g., "dag_get_status m02 == done after advance (got: $status_m02)").
+
+6. Scope Alignment — PASS. All referenced commands (tekhton dag advance, load_manifest,
+   dag_get_status, dag_get_frontier, dag_get_active) exist in the current codebase.
+   Binary-unavailability handled with graceful SKIP.
+
+7. Test Isolation — PASS. Full fixture in mktemp temp dir; trap on EXIT. No reads from
+   mutable project files (.tekhton/, .claude/logs/, pipeline state, etc.).
+
+### cmd/tekhton/dag_test.go
+
+1. Assertion Honesty — PASS. Frontier output "m02\nm04\n" is derived from the fixture
+   (m01 done, m02 in_progress with m01-done dep → frontier; m04 pending with m01-done
+   dep → frontier; m03 pending with m02-in_progress dep → blocked). Error-code
+   assertions (exitUsage=64, exitNotFound=1, exitCorrupt=2) match the constants in
+   cmd/tekhton/dag.go. MapDagError assertions enumerate each sentinel explicitly.
+
+2. Edge Case Coverage — PASS. Covers: frontier (happy + no-path + env-var fallback),
+   active, advance (success + invalid-transition + unknown-id + load-error), validate
+   (clean + missing-dep + load-error), migrate (happy + already-exists + rewrite-pointer
+   + env-dir fallback + custom-manifest-name), rewrite-pointer standalone, mapDagError
+   passthrough for unknown errors, loadDagState via $MILESTONE_MANIFEST_FILE env var.
+
+3. Implementation Exercise — PASS. Tests call real Cobra commands (newDagFrontierCmd,
+   newDagAdvanceCmd, etc.) with real temp-dir manifests. manifest.Load and dag.Migrate
+   are exercised against real files. No mocking of core logic.
+
+4. Test Weakening — N/A. New file; no existing tests modified.
+
+5. Naming — PASS. Convention TestDagXxxCmd_Scenario (e.g.,
+   TestDagAdvanceCmd_InvalidTransition, TestLoadDagState_ViaEnv) encodes both the
+   function under test and the scenario; intent is unambiguous.
+
+6. Scope Alignment — PASS. All functions referenced (newDagFrontierCmd, newDagActiveCmd,
+   newDagAdvanceCmd, newDagValidateCmd, newDagMigrateCmd, newDagRewritePointerCmd,
+   loadDagState, mapDagError, defaultManifestName, errExitCode, exitNotFound, exitUsage,
+   exitCorrupt) are defined in the cmd/tekhton package. writeFixture and captureStdout
+   are defined in manifest_test.go in the same package.
+
+7. Test Isolation — PASS. All file I/O uses t.TempDir(); all env-var manipulation uses
+   t.Setenv() (auto-restored after each test). No reads from mutable project or pipeline
+   state files.
+
+### internal/dag/dag_test.go (freshness sample)
+
+Assertions for Frontier, Active, DepsSatisfied, Advance, IsKnownStatus all derive from
+fixture state. Advance transition table test covers all canonical valid and invalid
+paths including unknown status and unknown ID. TestAdvancePersistsViaSave performs a
+full write-reload cycle verifying atomic save. PASS on all rubric points.
+
+### internal/dag/migrate_test.go (freshness sample)
+
+TestMigrateHappyPath verifies count, MANIFEST.cfg existence, per-entry file existence,
+status inference ([DONE] → done), and dependency inference. Multi-dep test verifies
+both deps present. Idempotency test checks ErrMigrateAlreadyDone sentinel. Error paths
+for missing CLAUDE.md and no-milestones case both verified. RewritePointer tests verify
+content removal, non-milestone content preservation, and idempotency (no pointer
+duplication). PASS on all rubric points.
+
+### internal/dag/testhelpers_test.go (freshness sample)
+
+Single function writeOSFile bridging os.WriteFile into the dag package's test helpers.
+Not a test itself; helper only. No findings.

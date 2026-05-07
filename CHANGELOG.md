@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [4.14.0] - 2026-05-06
+
+### Added
+- Ported the milestone-DAG state machine from four bash files (~600 LOC) into a (M14)
 ## [4.13.0] - 2026-05-06
 
 ### Added

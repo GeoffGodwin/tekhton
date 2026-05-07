@@ -1,13 +1,13 @@
 ## Planned Tests
-- [x] `cmd/tekhton/dag_test.go` — `loadDagState` via `$MILESTONE_MANIFEST_FILE` env fallback path
-- [x] `tests/test_dag_advance_parity.sh` — cross-process advance parity: Go binary writes, bash `_DAG_*` arrays read back
+- [x] `tests/test_dag_advance_parity.sh` — advance cross-process: Go CLI writes MANIFEST, bash _DAG_* arrays read it back correctly
+- [x] `cmd/tekhton/dag_test.go` — edge paths: loadDagState via $MILESTONE_MANIFEST_FILE env, defaultManifestName with non-empty override
 
 ## Test Run Results
-Passed: 2  Failed: 0
+Passed: 20  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `cmd/tekhton/dag_test.go`
 - [x] `tests/test_dag_advance_parity.sh`
+- [x] `cmd/tekhton/dag_test.go`
