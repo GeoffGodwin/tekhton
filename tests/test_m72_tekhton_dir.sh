@@ -99,12 +99,11 @@ source "${TEKHTON_HOME}/lib/common.sh"
 echo "--- Suite 1: config_defaults.sh TEKHTON_DIR and _FILE defaults ---"
 
 # Source config_defaults.sh in a clean subshell to test defaults from scratch.
-# Stub _clamp_config_value (defined in config.sh, called at end of config_defaults.sh).
-# Unset everything first so we read the actual fallback defaults.
-defaults_output=$(env -i bash --norc --noprofile -c "
+# m16: lib/config_defaults.sh is now a shim that execs `tekhton config
+# defaults --emit shell`, so the subshell needs PATH + TEKHTON_HOME to find
+# the binary. Pass them explicitly through `env -i`.
+defaults_output=$(env -i PATH="$PATH" TEKHTON_HOME="$TEKHTON_HOME" bash --norc --noprofile -c "
     set -euo pipefail
-    _clamp_config_value() { return 0; }
-    _clamp_config_float() { return 0; }
     source '${TEKHTON_HOME}/lib/config_defaults.sh'
     echo \"TEKHTON_DIR=\${TEKHTON_DIR}\"
     echo \"CODER_SUMMARY_FILE=\${CODER_SUMMARY_FILE}\"
@@ -198,26 +197,29 @@ assert_not_contains "1.28 PROJECT_RULES_FILE not under .tekhton/" \
     "PROJECT_RULES_FILE=.tekhton/" "$defaults_output"
 
 # =============================================================================
-# Suite 2: config_defaults.sh — TEKHTON_DIR declared before _FILE variables
+# Suite 2: defaults.go — TEKHTON_DIR declared before tdFile() entries
 # =============================================================================
-echo "--- Suite 2: TEKHTON_DIR declared before _FILE variables ---"
+# m16: the bash defaults table moved to internal/config/defaults.go. The same
+# ordering invariant — TEKHTON_DIR resolves before any tdFile()-derived key —
+# is now expressed in the Go baseDefaults slice and proved by Suite 1+3 (which
+# show the resolved values match TEKHTON_DIR). This suite asserts the source
+# ordering against defaults.go to keep the structural guard in place.
+echo "--- Suite 2: TEKHTON_DIR declared before tdFile() entries ---"
 
-# TEKHTON_DIR must appear before the first _FILE that references it.
-# Parse line numbers from the file and assert ordering.
-tekhton_dir_line=$(grep -n '^: "${TEKHTON_DIR' \
-    "${TEKHTON_HOME}/lib/config_defaults.sh" | head -1 | cut -d: -f1)
-
-# Find the first _FILE variable that uses TEKHTON_DIR
-first_file_line=$(grep -n 'TEKHTON_DIR}/' \
-    "${TEKHTON_HOME}/lib/config_defaults.sh" | head -1 | cut -d: -f1)
+defaults_go="${TEKHTON_HOME}/internal/config/defaults.go"
+tekhton_dir_line=$(grep -n '"TEKHTON_DIR", lit("\.tekhton")' "$defaults_go" \
+    | head -1 | cut -d: -f1)
+# Match call sites (`tdFile("X.md")`), not the function definition
+# (`func tdFile(name string)`).
+first_tdfile_line=$(grep -n 'tdFile("' "$defaults_go" | head -1 | cut -d: -f1)
 
 TOTAL=$((TOTAL + 1))
-if [[ -n "$tekhton_dir_line" ]] && [[ -n "$first_file_line" ]] && \
-   [[ "$tekhton_dir_line" -lt "$first_file_line" ]]; then
+if [[ -n "$tekhton_dir_line" ]] && [[ -n "$first_tdfile_line" ]] && \
+   [[ "$tekhton_dir_line" -lt "$first_tdfile_line" ]]; then
     PASS=$((PASS + 1))
 else
     FAIL=$((FAIL + 1))
-    echo "FAIL: 2.1 TEKHTON_DIR (line ${tekhton_dir_line}) must precede first _FILE var (line ${first_file_line})"
+    echo "FAIL: 2.1 TEKHTON_DIR (line ${tekhton_dir_line}) must precede first tdFile() use (line ${first_tdfile_line}) in defaults.go"
 fi
 
 # =============================================================================
@@ -225,10 +227,9 @@ fi
 # =============================================================================
 echo "--- Suite 3: custom TEKHTON_DIR is respected ---"
 
-custom_output=$(env -i TEKHTON_DIR="my-artifacts" bash --norc --noprofile -c "
+custom_output=$(env -i PATH="$PATH" TEKHTON_HOME="$TEKHTON_HOME" \
+    TEKHTON_DIR="my-artifacts" bash --norc --noprofile -c "
     set -euo pipefail
-    _clamp_config_value() { return 0; }
-    _clamp_config_float() { return 0; }
     source '${TEKHTON_HOME}/lib/config_defaults.sh'
     echo \"CODER_SUMMARY_FILE=\${CODER_SUMMARY_FILE}\"
     echo \"DRIFT_LOG_FILE=\${DRIFT_LOG_FILE}\"

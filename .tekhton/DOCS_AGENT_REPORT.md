@@ -1,18 +1,24 @@
-# Docs Agent Report
+# Docs Agent Report — M16 Config Loader Wedge
 
-## Files Updated
-None.
+## Status
+All documentation from M16 (Config Loader Wedge) has been verified as complete and accurate. No additional updates required.
+
+## Files Verified ✓
+- **CLAUDE.md** — Repository layout (lines 27–28) updated with m16 wedge shim descriptions
+- **ARCHITECTURE.md** — Public-surface entries (lines 122, 128–130) with full Go package and subcommand documentation
+- **docs/go-build.md** — Comprehensive subcommand reference (lines 296–342) with exit codes, flags, and behavior
+
+## Public-Surface Changes Documented
+✓ **Bash shims** — `lib/config.sh` and `lib/config_defaults.sh` both marked as m16 wedges with entry points
+✓ **Go subcommands** — `config load|show|validate|defaults` with all flags (`--emit`, `--path`, `--project-dir`, `--milestone-mode`, `--no-warn`, `--strict`, `--indent`) and exit codes documented
+✓ **Load pipeline** — 9-phase sequence fully described (parse → required-key → seed-from-env → defaults → CI gate → late defaults → validation → clamps → path resolution → milestone overrides)
+✓ **Go API** — `Load()`, `LoadDefaultsOnly()`, `EmitShell()`, `EmitJSON()`, `DetectCI()` all documented with signatures and behavior
+
+## Coverage Verification
+- Bash shim line counts match actual implementations (≤50 and ≤45 lines)
+- Go subcommand signatures match Cobra wiring in `cmd/tekhton/config.go`
+- Load pipeline phases match coder summary
+- Exit codes and semantics match Go implementation
 
 ## No Update Needed
-All changes in this run are internal implementation details with no public-surface changes:
-
-- **internal/supervisor/retry.go** — Added validation guard for degenerate `MaxAttempts <= 0` policy and defensive error return. Internal behavior only; no CLI or API surface changes.
-- **internal/supervisor/retry_test.go** — Added test coverage for the new guards. No docs impact.
-- **lib/milestone_query.sh** — Fixed exit-code handling for empty-but-valid manifests. Internal library function; no public interface change.
-- **lib/orchestrate_main.sh** — Removed inherited `set -euo pipefail`. Sourced file inherits caller's shell options per spec. No docs impact.
-- **scripts/dag-parity-check.sh** — Graceful skip-when-missing for Go toolchain, with `DAG_PARITY_REQUIRE=1` override. Requirements self-documented in script header.
-- **go.mod / go.sum** — Dependency tidy. Internal change.
-- **cmd/tekhton/state_cmd_test.go** — New test file for state command coverage. No public API changes.
-
-## Open Questions
-None. All changes are internal; no documentation updates required.
+All public-surface changes are adequately documented. No gaps identified.

@@ -54,21 +54,30 @@ else
 fi
 
 # =============================================================================
-# Suite 2: lib/config_defaults.sh — TEST_DEDUP_ENABLED default
+# Suite 2: TEST_DEDUP_ENABLED default — m16-adapted
+#
+# Pre-m16 the default lived in lib/config_defaults.sh as a `:=` line. m16
+# ports defaults to internal/config; verify the loader emits the default by
+# running `tekhton config defaults --emit shell` and asserting the value.
 # =============================================================================
 echo ""
-echo "=== Suite 2: config_defaults.sh — TEST_DEDUP_ENABLED ==="
+echo "=== Suite 2: TEST_DEDUP_ENABLED default (via Go loader) ==="
 
-if grep -q 'TEST_DEDUP_ENABLED' "${TEKHTON_HOME}/lib/config_defaults.sh"; then
-    pass "2.1: TEST_DEDUP_ENABLED present in config_defaults.sh"
+BIN="${TEKHTON_HOME}/bin/tekhton"
+if [[ -x "$BIN" ]]; then
+    out=$("$BIN" config defaults --emit shell 2>/dev/null | grep '^export TEST_DEDUP_ENABLED=' || true)
+    if [[ -n "$out" ]]; then
+        pass "2.1: TEST_DEDUP_ENABLED present in defaults emit"
+    else
+        fail "2.1: TEST_DEDUP_ENABLED missing from defaults emit"
+    fi
+    if [[ "$out" == "export TEST_DEDUP_ENABLED='true'" ]]; then
+        pass "2.2: TEST_DEDUP_ENABLED defaults to 'true'"
+    else
+        fail "2.2: TEST_DEDUP_ENABLED default is not 'true' (got: $out)"
+    fi
 else
-    fail "2.1: TEST_DEDUP_ENABLED missing from config_defaults.sh"
-fi
-
-if grep 'TEST_DEDUP_ENABLED' "${TEKHTON_HOME}/lib/config_defaults.sh" | grep -q 'true'; then
-    pass "2.2: TEST_DEDUP_ENABLED defaults to 'true'"
-else
-    fail "2.2: TEST_DEDUP_ENABLED does not default to 'true' in config_defaults.sh"
+    echo "  SKIP: tekhton binary not built — cannot verify default"
 fi
 
 # =============================================================================

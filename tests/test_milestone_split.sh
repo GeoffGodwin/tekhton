@@ -420,7 +420,8 @@ assert "MILESTONE_MAX_SPLIT_DEPTH defaults to 6"       "$(grep -q 'MILESTONE_MAX
     export TEKHTON_HOME
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/config.sh"
-    MILESTONE_SPLIT_MAX_TURNS=9999
+    # m16: loader runs in a Go subprocess, so values must be exported.
+    export MILESTONE_SPLIT_MAX_TURNS=9999
     load_config
     echo "MILESTONE_SPLIT_MAX_TURNS=${MILESTONE_SPLIT_MAX_TURNS}"
 ) > "${CONF_TMPDIR}/clamped.txt" 2>/dev/null
@@ -434,7 +435,7 @@ assert "MILESTONE_SPLIT_MAX_TURNS clamped to 50" \
     export TEKHTON_HOME
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/config.sh"
-    MILESTONE_MAX_SPLIT_DEPTH=999
+    export MILESTONE_MAX_SPLIT_DEPTH=999
     load_config
     echo "MILESTONE_MAX_SPLIT_DEPTH=${MILESTONE_MAX_SPLIT_DEPTH}"
 ) > "${CONF_TMPDIR}/clamped2.txt" 2>/dev/null
@@ -448,7 +449,7 @@ assert "MILESTONE_MAX_SPLIT_DEPTH clamped to 10" \
     export TEKHTON_HOME
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/config.sh"
-    MILESTONE_SPLIT_THRESHOLD_PCT=9999
+    export MILESTONE_SPLIT_THRESHOLD_PCT=9999
     load_config
     echo "MILESTONE_SPLIT_THRESHOLD_PCT=${MILESTONE_SPLIT_THRESHOLD_PCT}"
 ) > "${CONF_TMPDIR}/clamped3.txt" 2>/dev/null

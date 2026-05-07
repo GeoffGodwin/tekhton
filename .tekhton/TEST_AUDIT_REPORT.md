@@ -1,69 +1,121 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 modified file (internal/supervisor/retry_test.go — 5 new test functions,
-audited against retry.go); 2 freshness-sample files (internal/dag/validate_test.go —
-9 functions; tests/test_clarify_coder_nullrun.sh — shell unit suite).
-Verdict: CONCERNS
+Tests audited: 2 files, 36 test functions
+Verdict: PASS
 
 ### Findings
 
-#### SCOPE: Coder-authored tests lack independent tester review
-- File: internal/supervisor/retry_test.go:181-238
-- Issue: The tester report claims exactly 1 new test (`TestRetryPolicy_Delay_BaseDelayZeroOverridesConfiguredFloor`). The actual file contains 5 new tests. The other 4 — `TestRetry_MaxAttemptsZero_Errors`, `TestRetry_MaxAttemptsNegative_Errors`, `TestRetryPolicy_Delay_BaseDelayZeroReturnsZero`, `TestRetryPolicy_Delay_BaseDelayNegativeReturnsZero` — were authored by the coder alongside the implementation they exercise. The tester ran `go test ./...` but did not independently review those 4 tests for quality or correctness. Separately, `cmd/tekhton/state_cmd_test.go` (7 new tests covering state update/clear/read) was written entirely by the coder and is absent from the tester's scope. The tests are substantively correct on inspection (see rubric notes below), so this is a process gap, not a correctness failure.
+#### COVERAGE: Four CI platforms claimed as ported but absent from implementation and untested
+- File: internal/config/config_test.go:166 (`TestCI_AllPlatforms`)
+- Issue: The CODER_SUMMARY states `DetectCI()` ports all CI platforms including DRONE,
+  APPVEYOR, GITEA_ACTIONS, and CODEBUILD from the original `lib/config_defaults_ci.sh`.
+  These four are absent from `internal/config/ci.go` — `DetectCI()` ends at `CI=true`
+  (generic, line 59) and never checks those env vars. `TestCI_AllPlatforms` correctly
+  reflects the *actual* implementation (10 cases), but because the implementation is
+  incomplete relative to the CODER_SUMMARY claim, these platforms are silently undetected
+  in production and untested. `clearCIEnv` (line 459) also omits these keys, which is
+  correct for now but will need updating if the platforms are added.
 - Severity: MEDIUM
-- Action: On the next cycle touching these files, the tester should perform an independent integrity pass over the 4 coder-written retry tests and the 7 state-cmd tests. No code changes are needed now.
+- Action: Either add the four missing platforms to `internal/config/ci.go` and extend
+  `TestCI_AllPlatforms` and `clearCIEnv` to cover them, or update the CODER_SUMMARY to
+  accurately reflect that only 10 of the originally-supported platforms were ported. Do
+  not add tests for platforms not yet present in the implementation.
 
-#### SCOPE: cmd/tekhton/state_cmd_test.go absent from audit context
-- File: cmd/tekhton/state_cmd_test.go (new, untracked per git status)
-- Issue: This file (159 lines, 7 test functions) was listed by the coder as a deliverable but was not provided in the "Test Files Under Audit (modified this run)" list. Per audit rules, findings cannot be raised against unlisted files. Flagging as a coverage gap so the next cycle includes it in scope.
+#### COVERAGE: `resolvePaths` covers five path keys but tests exercise only one
+- File: internal/config/config_test.go:323 (`TestPaths_RelativeResolve`)
+- Issue: `resolvePaths` in `validate.go:391` resolves relative values for five keys:
+  `PIPELINE_STATE_FILE`, `LOG_DIR`, `MILESTONE_ARCHIVE_FILE`, `MILESTONE_DIR`, and
+  `CAUSAL_LOG_FILE`. The single test sets only `PIPELINE_STATE_FILE`. The other four
+  keys — each consumed by live pipeline stages — are not exercised by any test in the
+  audited files.
 - Severity: LOW
-- Action: Add cmd/tekhton/state_cmd_test.go to the test audit scope on the next cycle that modifies cmd/tekhton/.
-
-#### SCOPE: Shell-detected STALE-SYM entries are false positives
-- File: internal/supervisor/retry_test.go
-- Issue: The orphan detector flagged `append`, `len`, and `make` as symbols "not found in any source definition." These are Go built-ins; they have no source definition in the repo. `cancel` is a local variable returned from `context.WithCancel` at line 251 — it is not a package-level symbol. The shell scanner does not model Go's built-in namespace or local variable scoping.
-- Severity: LOW
-- Action: Dismiss all four STALE-SYM entries. No test changes needed.
+- Action: Extend `TestPaths_RelativeResolve` (or add a table-driven sibling) to set all
+  five relative-path keys in the fixture config and assert each resolves to
+  `projectDir + "/" + relPath` after `Load`.
 
 ---
 
-## Per-File Rubric Notes
+### Per-File Rubric Notes
 
-### internal/supervisor/retry_test.go
+#### internal/config/config_test.go (27 test functions)
 
 **1. Assertion Honesty — PASS**
-All five new test assertions are derived directly from implementation behavior:
-- `TestRetry_MaxAttemptsZero_Errors` checks `strings.Contains(err.Error(), "MaxAttempts must be > 0")`. Implementation (retry.go:161): `fmt.Errorf("supervisor: MaxAttempts must be > 0, got %d", p.MaxAttempts)`. Substring match is correct and non-trivial.
-- `TestRetry_MaxAttemptsNegative_Errors` uses `MaxAttempts: -3`; same guard fires.
-- `TestRetryPolicy_Delay_BaseDelayZeroReturnsZero` asserts `p.Delay(1,"") == 0` and `p.Delay(5,"api_rate_limit") == 0` when `BaseDelay: 0`. Implementation (retry.go:59-61): `if p.BaseDelay <= 0 { return 0 }`. The early return precedes all other computation; the second call with a floor subcategory tests the ordering explicitly.
-- `TestRetryPolicy_Delay_BaseDelayZeroOverridesConfiguredFloor` sets `Floors["api_rate_limit"]=60s` and `BaseDelay=0`, asserts result is 0. Implementation fires the early-return at retry.go:59 before the Floors map lookup at retry.go:76-81. Test correctly models execution order.
-- `TestRetryPolicy_Delay_BaseDelayNegativeReturnsZero` uses `BaseDelay: -1*time.Second`. Same guard fires. No hard-coded magic values unconnected to implementation logic anywhere in the suite.
+All assertions derive from real implementation logic:
+- Default values (`CODER_MAX_TURNS=80`, `REVIEWER_MAX_TURNS=20`, `CLAUDE_STANDARD_MODEL=claude-sonnet-4-6`)
+  trace to `defaults.go` literal entries.
+- Milestone arithmetic (`80×2=160`, `20+5=25`, `600×3=1800`) matches `applyMilestoneOverrides`
+  in `defaults.go:55–66`.
+- Clamp bounds (`CODER_MAX_TURNS` cap=500, `REWORK_TURN_ESCALATION_FACTOR` max=10.0,
+  `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` max=1.0) match `intClamps`/`floatClamps` slices in
+  `validate.go:267–378`.
+- Enum resets (`PIPELINE_ORDER` → `standard`, `SECURITY_BLOCK_SEVERITY` → `HIGH`,
+  `DASHBOARD_VERBOSITY` → `normal`) match `runInlineValidation` switch cases.
+- Health-weight reset (sum=250 ≠ 100 → all reset to defaults) matches `validate.go:169–185`.
+- Intake threshold ordering reset (`tweak=70 ≤ clarity=80` → both reset) matches
+  `validate.go:138–146`.
+- Shell quoting (`'x'\''s apostrophe'`, `''` for empty) matches `shellQuote` in `emit.go:79–82`.
 
 **2. Edge Case Coverage — PASS**
-New tests cover: MaxAttempts=0 (boundary), MaxAttempts=-3 (below boundary), BaseDelay=0 (zero), BaseDelay<0 (negative), floor interaction when BaseDelay=0. Ratio of error-path tests to happy-path tests across the full suite is approximately 3:1. Adequate.
+Suite covers: missing required key, non-existent file, command-substitution rejection
+(`$(...)`, backticks), shell-metachar rejection, metachar allowance in `_CMD` keys,
+single/double/bare quote variants, all 10 implemented CI platforms, CI auto-elevation,
+explicit CI override, integer clamp, float clamp (two separate keys), bad enum resets (4
+keys in one fixture), health-weight sum violation, threshold ordering violation, relative
+path resolution, milestone-mode override, shell-quoting edge cases (space, pipe, apostrophe,
+empty), JSON envelope presence. Ratio of error-path to happy-path tests is approximately 2:1.
 
 **3. Implementation Exercise — PASS**
-Tests call `retryLoop` and `p.Delay` directly (same package). `fakeRunner` stubs only the agent-invocation seam; all retry-loop control flow is real. `instantAfter` stubs only the clock seam; the select/cancel logic is real.
+Tests call `Load`, `LoadDefaultsOnly`, `parseFile`, `DetectCI`, `EmitShell`, `EmitJSON`,
+and `findInlineComment` directly. `clearCIEnv` iterates `baseDefaults` (the Go source of
+truth) rather than a static list, so it stays self-consistent as the defaults table grows.
+Mocking is limited to `t.Setenv` for CI env vars — no functions are stubbed.
 
-**4. Test Weakening Detection — PASS**
-No existing test bodies were modified. All changes are additive (new test functions appended after line 238).
+**4. Test Weakening Detection — N/A**
+File is new; no pre-existing tests existed to weaken.
 
 **5. Test Naming — PASS**
-All five new function names encode both the scenario and the expected outcome (`_Errors`, `_ReturnsZero`, `_OverridesConfiguredFloor`). Consistent with the pre-existing naming convention in the file.
+All 27 function names encode scenario and expected outcome (e.g.
+`TestParse_RejectsCommandSubstitution`, `TestCI_ExplicitOverride`,
+`TestValidate_HealthWeightsReset`, `TestEmitShell_Quoting`).
 
 **6. Scope Alignment — PASS**
-All references to `retryLoop`, `RetryPolicy`, `Delay`, `DefaultPolicy`, and sentinel errors (`ErrUpstreamRateLimit`, `ErrUpstreamAuth`, `ErrQuotaExhausted`, `ErrQuotaPauseCapped`, `ErrUpstreamUnknown`) are present in retry.go. No stale symbols. The deleted `.tekhton/INTAKE_REPORT.md` is not referenced by any audited test.
+No reference to the deleted `lib/config_defaults_ci.sh`. `clearCIEnv` correctly enumerates
+the CI keys that `DetectCI()` in `ci.go` actually checks (GITHUB_ACTIONS, GITLAB_CI,
+CIRCLECI, TRAVIS, BUILDKITE, JENKINS_URL, TF_BUILD, TEAMCITY_VERSION, BITBUCKET_BUILD_NUMBER,
+CI). See COVERAGE finding above for the four platforms the list is still missing.
 
 **7. Test Isolation — PASS**
-Causal log tests create a temp dir via `t.TempDir()` (line 378). Agent behavior is stubbed via `fakeRunner`. Clock is stubbed via `instantAfter`. No test reads from live pipeline state files, build reports, or mutable project artifacts.
+All fixtures created via `t.TempDir()`. `t.Cleanup` restores env vars. No test reads
+`.tekhton/`, `.claude/logs/`, or any mutable pipeline artifact.
 
 ---
 
-### internal/dag/validate_test.go (freshness sample)
+#### cmd/tekhton/config_test.go (9 test functions + 1 helper)
 
-Fixtures are inline string literals, not live manifest files. `loadFixture` and `writeFile` use isolated temp directories. Assertions check typed errors via `errors.Is` (`ErrMissingDep`, `ErrCycle`, `ErrDuplicateID`), not string parsing. File not modified this run; no scope drift. PASS on all rubric points.
+**Tester-added test: `TestConfigDefaults_MilestoneMode` (line 174)**
+Calls `tekhton config defaults --emit shell --milestone-mode` via the full Cobra command
+tree with a real `newRootCmd()`. Assertions for CODER_MAX_TURNS=160, REVIEWER_MAX_TURNS=25,
+AGENT_ACTIVITY_TIMEOUT=1800 all trace to `applyMilestoneOverrides` in `defaults.go:55–66`
+and verified against base defaults in the same file (lines 152, 154, 599). No hard-coded
+values. ✓
 
-### tests/test_clarify_coder_nullrun.sh (freshness sample)
+**1. Assertion Honesty — PASS**
+Error-code assertions (`exitNotFound`, `exitCorrupt`, `exitUsage`) verified against
+`loadConfigForCmd` in `config.go:199–208`. Shell output assertions checked against
+`EmitShell`/`EmitJSON` formats. `"ok —"` prefix matches `fmt.Fprintf` in
+`newConfigValidateCmd` at line 126.
 
-`TEKHTON_HOME` is derived from the script's own path (not a global). `TMPDIR` is isolated per-run with `mktemp -d` and cleaned up via `trap ... EXIT`. No reads from live `.tekhton/` state files, build reports, or pipeline logs. Not modified this run; no scope drift. PASS on all rubric points.
+**2. Edge Case Coverage — PASS**
+Covers: shell emission, JSON emission, missing file (exitNotFound), missing required key
+(exitCorrupt), strict-mode clamp promotion (exitUsage), healthy validate (ok line), defaults
+emission, show alias, milestone-mode defaults.
+
+**3. Implementation Exercise — PASS**
+All tests drive `newRootCmd()` with real args and real filesystem fixtures. No mocking
+beyond `bytes.Buffer` capturing stdout/stderr. `clearCIEnvTest` uses `config.DefaultKeys()`
+to enumerate env vars rather than a static list.
+
+**4–7. Weakening / Naming / Scope / Isolation — PASS**
+File is new. Fixtures use `t.TempDir()` via `writeConfigFixture`. Names are descriptive.
+No reference to deleted files.

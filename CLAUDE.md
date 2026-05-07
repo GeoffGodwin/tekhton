@@ -24,9 +24,8 @@ tekhton/
 ├── tekhton.sh              # Main entry point
 ├── lib/                    # Shared libraries (sourced by tekhton.sh)
 │   ├── common.sh           # Colors, logging, prerequisite checks
-│   ├── config.sh           # Config loader + validation
-│   ├── config_defaults.sh  # Default values for all config keys
-│   ├── config_defaults_ci.sh # M138 runtime CI environment auto-detection helpers
+│   ├── config.sh           # m16 wedge shim — execs `tekhton config load --emit shell`
+│   ├── config_defaults.sh  # m16 wedge shim — execs `tekhton config defaults --emit shell`
 │   ├── agent.sh            # Agent wrapper, metrics, run_agent()
 │   ├── agent_helpers.sh    # Agent invocation helpers
 │   ├── agent_monitor.sh    # Agent monitoring, activity detection, process management

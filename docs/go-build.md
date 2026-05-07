@@ -293,6 +293,54 @@ deterministic burst. The nightly `Go Fuzz Nightly` workflow runs each target
 for 5 minutes and uploads any new corpus entries as artifacts so a failure
 can be reproduced locally.
 
+### `tekhton config …` (m16)
+
+The pipeline configuration loader. `lib/config.sh` and `lib/config_defaults.sh`
+are shims that exec this subcommand when the Go binary is on `$PATH`; pipeline
+callers use the bash `load_config()` and `load_config_defaults()` functions.
+
+```text
+tekhton config load     --path PATH --project-dir DIR --emit shell|json [--milestone-mode] [--no-warn]
+tekhton config show     [--path PATH] [--project-dir DIR] [--indent]
+tekhton config validate [--path PATH] [--project-dir DIR] [--strict]
+tekhton config defaults --emit shell|json [--project-dir DIR] [--milestone-mode]
+```
+
+Exit codes:
+- `0` — success
+- `1` (`exitNotFound`) — config file not found, or defaults-only mode with missing requirements
+- `2` (`exitValidation`) — configuration validation failure (invalid enum value, out-of-range clamp, etc.)
+- `64` (`exitUsage`) — invalid flags or missing required arguments
+
+**`load`**: Reads `--path` (default: `pipeline.conf`), applies the 9-phase loader
+(parse → required-key check → seed-from-env → defaults → CI gate → late defaults
+→ inline validation → clamps → path resolution → milestone overrides), and emits
+the resolved environment. `--emit shell` (default) writes `export KEY='value'` lines;
+`--emit json` writes a `tekhton.config.v1` envelope with `values`, `keys_set`,
+`warnings`, `errors`, `ci_detected`, `ci_platform`. The `--milestone-mode` flag
+applies m16-specific overrides (e.g. `CODER_MAX_TURNS`) when `MILESTONE_*_OVERRIDE`
+keys are defined. `--no-warn` suppresses diagnostic output (used by `--milestone-mode`
+path in `lib/config.sh`).
+
+**`show`**: Alias for `load --emit json --indent`. Renders JSON with readable
+formatting for manual inspection or scripting.
+
+**`validate`**: Runs the loader's validation phases and exits non-zero on errors.
+With `--strict`, exits non-zero on warnings as well. Useful for pre-flight config
+audits without needing to emit the full environment.
+
+**`defaults`**: Emits defaults only — no `pipeline.conf` required. Returns a Config
+with `baseDefaults` resolved plus CI auto-detection, but no customization or
+path resolution. Used by `lib/config_defaults.sh` before the Go binary is available
+on `$PATH`.
+
+The on-disk format is `tekhton.pipeline.conf.v1` (legacy KEY=value with comment/
+blank-line support, dangerous-metachar rejection, single/double-quote stripping).
+The Go loader in `internal/config` is the canonical parser; the bash shims delegate
+to it. When the Go binary is missing (fresh clone, early build phases), callers
+fall back to the legacy bash `load_config` body — but the m16 wedge ensures
+the Go binary is built early in the CI pipeline.
+
 ## Troubleshooting
 
 - **`go: command not found` in CI** — `actions/setup-go@v5` has not run yet

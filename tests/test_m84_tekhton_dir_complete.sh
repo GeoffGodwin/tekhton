@@ -67,10 +67,11 @@ assert_file_not_exists() {
 # =============================================================================
 echo "--- Suite 1: M84 new _FILE variables default under .tekhton/ ---"
 
-defaults_output=$(env -i bash --norc --noprofile -c "
+# m16: lib/config_defaults.sh now execs `tekhton config defaults --emit
+# shell`, so the subshell needs PATH + TEKHTON_HOME to find the binary.
+defaults_output=$(env -i PATH="$PATH" TEKHTON_HOME="$TEKHTON_HOME" \
+    bash --norc --noprofile -c "
     set -euo pipefail
-    _clamp_config_value() { return 0; }
-    _clamp_config_float() { return 0; }
     source '${TEKHTON_HOME}/lib/config_defaults.sh'
     echo \"SCOUT_REPORT_FILE=\${SCOUT_REPORT_FILE}\"
     echo \"ARCHITECT_PLAN_FILE=\${ARCHITECT_PLAN_FILE}\"
@@ -101,10 +102,9 @@ assert_contains "1.7 MERGE_CONTEXT_FILE defaults under .tekhton/" \
 # =============================================================================
 echo "--- Suite 2: custom TEKHTON_DIR respected for M84 variables ---"
 
-custom_output=$(env -i TEKHTON_DIR="run-artifacts" bash --norc --noprofile -c "
+custom_output=$(env -i PATH="$PATH" TEKHTON_HOME="$TEKHTON_HOME" \
+    TEKHTON_DIR="run-artifacts" bash --norc --noprofile -c "
     set -euo pipefail
-    _clamp_config_value() { return 0; }
-    _clamp_config_float() { return 0; }
     source '${TEKHTON_HOME}/lib/config_defaults.sh'
     echo \"SCOUT_REPORT_FILE=\${SCOUT_REPORT_FILE}\"
     echo \"ARCHITECT_PLAN_FILE=\${ARCHITECT_PLAN_FILE}\"

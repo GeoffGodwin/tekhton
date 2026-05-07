@@ -1,157 +1,141 @@
-# Coder Summary — m15 Prompt Template Engine Wedge
+# Coder Summary
 
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-Phase 4 wedge — port the prompt template engine from `lib/prompts.sh` into a
-Go package, replace the bash engine with a thin shim, and add an acceptance
-gate that asserts byte-for-byte parity across every prompt template.
+Milestone 16 — Config Loader Wedge. Pipeline configuration loading,
+defaulting, validation, clamping, CI auto-detection, and emit are now owned
+by Go code under `internal/config`, reached by bash callers through a
+≤50-line shim that execs `tekhton config load --emit shell`. The on-disk
+`pipeline.conf` format is unchanged; existing user configs load without edits.
 
-- **`internal/prompt/`** — new Go package owning `Render(promptsDir, name,
-  vars)` and `RenderString(template, vars)`. Implements `{{VAR}}` substitution
-  + line-based `{{IF:VAR}}…{{ENDIF:VAR}}` conditional handling. The trailing-
-  newline normalization (`TrimRight + "\n"`) replicates the bash `$(cat)` /
-  `echo` pipeline so multi-line variable values do not double up. The `TASK`
-  variable is special-cased: non-empty values are wrapped in `--- BEGIN/END
-  USER TASK ---` delimiters, mirroring the prompt-injection mitigation that
-  was inline in the bash engine. `EnvVars()` returns a `map[string]string`
-  view of `os.Environ()` so the CLI can pass the calling shell's variables
-  through directly. Sentinel: `ErrTemplateNotFound`.
-- **`cmd/tekhton/prompt.go`** — new Cobra subcommand `tekhton prompt render
-  --template <name> [--prompts-dir DIR] [--vars-file vars.json]`. Prompts dir
-  resolves in priority `--prompts-dir` > `$TEKHTON_PROMPTS_DIR` >
-  `$TEKHTON_HOME/prompts`. With `--vars-file` the binary parses a flat JSON
-  `{string: string}` map; without it, the process environment is used. Wired
-  into `newRootCmd()` in `cmd/tekhton/main.go`. Exit codes match the project
-  conventions: `0` success, `exitNotFound` (1) for missing templates,
-  `exitUsage` (64) for flag/parse errors.
-- **`lib/prompts.sh`** — rewritten as a 55-line shim (under the 60-line wedge
-  ceiling). `render_prompt(name)` finds the template, exports every
-  `{{VAR}}` / `{{IF:VAR}}` placeholder name so the subprocess can read it via
-  `os.Environ`, resolves the `tekhton` binary path (`$TEKHTON_BIN`,
-  `$TEKHTON_HOME/bin/tekhton`, then `$PATH`), and execs `tekhton prompt
-  render`. Sources `lib/prompts_io.sh` so widely-used file-content helpers
-  remain reachable through the same source line every existing caller uses.
-- **`lib/prompts_io.sh`** — new sibling file holding `_safe_read_file`,
-  `_wrap_file_content`, and `load_intake_template_vars` — the bash helpers
-  that hung off the old `lib/prompts.sh` and are sourced by ~10 callers
-  (`lib/context_cache.sh`, `lib/replan_brownfield.sh`, `lib/clarify.sh`,
-  …). Pulling them out keeps the shim under the wedge ceiling without
-  breaking those callers, since `lib/prompts.sh` re-sources this file on
-  every load.
-- **`scripts/prompt-parity-check.sh`** — new acceptance gate. Embeds a frozen
-  copy of the pre-m15 bash `render_prompt` (clearly marked DO NOT MODIFY)
-  and diffs its output against `tekhton prompt render` for every template
-  under `prompts/` (45 templates) across three variants — `empty` (every
-  referenced var unset), `set` (every var assigned a deterministic stand-in,
-  TASK gets a multi-line value to verify wrapping), and `mixed` (alternating
-  set/unset) — plus four targeted edge-case fixtures covering the m15 Watch
-  For list (empty-var, missing-var, nested-block via distinct vars,
-  trim-newline). Pass `--use-fallback` to skip the Go build for smoke runs.
-- **`internal/prompt/prompt_test.go`** — Go unit tests covering: variable
-  substitution (single, missing, empty, multi-line, trailing-newline-in-
-  value, repeated placeholder), TASK wrapping (positive, empty, adversarial-
-  marker), conditional blocks (10 cases including non-nested-same-var,
-  distinct-var nesting both kept/inner-empty/outer-empty, inline markers,
-  vars inside kept blocks), trailing-newline normalization, empty template,
-  conditional runaway protection, file-not-found error, end-to-end Render
-  via tempdir, EnvVars edge cases. Coverage 95.8%.
-- **`cmd/tekhton/prompt_test.go`** — CLI tests covering: `resolvePromptsDir`
-  precedence (explicit > env > home > error), `loadPromptVars` (env, JSON
-  file, empty file, missing file, malformed JSON), and the `prompt render`
-  subcommand happy/edge paths (env passthrough, vars-file, TASK wrapping,
-  template-missing → `exitNotFound`, missing `--template` flag → `exitUsage`,
-  bad JSON vars-file → `exitUsage`, conditional blocks both var-set and
-  var-empty).
-- **`ARCHITECTURE.md`** — updated `lib/prompts.sh` entry, added
-  `lib/prompts_io.sh`, `internal/prompt/`, `cmd/tekhton/prompt.go`, and
-  `scripts/prompt-parity-check.sh` entries.
-- **`CLAUDE.md`** — repository layout updated to mark `prompts.sh` as the m15
-  shim and add `prompts_io.sh`.
+Key pieces:
 
-## Architecture Decisions
+- **`internal/config/`** — typed loader package. Nine-phase load pipeline
+  (parse → required-key check → seed-from-env → base defaults → CI gate →
+  late defaults → inline validation → clamps → path resolution → milestone
+  overrides). `Load(path, opts)` returns a `*Config` carrying `Values`,
+  `KeysSet`, `Warnings`, `Errors`, `CIDetected`, `CIPlatform`. Sentinel
+  errors `ErrNotFound`, `ErrParse`, `ErrMissingRequired`, `ErrValidation`
+  match with `errors.Is`.
+- **Defaults table** — `baseDefaults` (~470 entries) mirrors the legacy
+  `lib/config_defaults.sh` line-for-line. Resolver functions (`lit`,
+  `ref`, `concat`, `imul`, `idiv`, `iadd`, `tdFile`) preserve derived-default
+  semantics (`MILESTONE_CODER_MAX_TURNS = CODER_MAX_TURNS * 2`, etc.).
+  Env-set values seed before defaults so the bash `: "${KEY:=value}"`
+  precedence is preserved.
+- **CI auto-detection** — `DetectCI()` ports
+  `_detect_runtime_ci_environment` + `_get_ci_platform_name`. Recognises
+  GitHub, GitLab, CircleCI, Travis, Buildkite, Jenkins, Azure, TeamCity,
+  Bitbucket, plus the generic `CI=true` fallback. `applyCIGateDefault`
+  encodes the m138 contract: explicit `pipeline.conf` value always wins,
+  CI signal elevates `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE` to `1`,
+  diagnostic stderr line emitted only when `VERBOSE_OUTPUT=true`.
+- **Validation + clamps** — `runInlineValidation` ports the case
+  statements at the bottom of `load_config()` (PIPELINE_ORDER,
+  UI_FRAMEWORK, INTAKE_*, DASHBOARD_VERBOSITY, HEALTH_WEIGHT_* sum, etc.).
+  `runClamps` ports the `_clamp_config_value`/`_clamp_config_float`
+  calls. Bad values are reset to safe defaults and recorded in
+  `cfg.Warnings` (the bash side emits to stderr).
+- **Emit** — `EmitShell(w)` writes `export KEY='value'` lines with
+  single-quote escaping; `EmitJSON(w, indent)` writes a `tekhton.config.v1`
+  envelope.
+- **Cobra wiring** (`cmd/tekhton/config.go`) — `tekhton config load`,
+  `config show`, `config validate [--strict]`, `config defaults`. Exit
+  codes match the rest of the binary (`exitNotFound`, `exitCorrupt`,
+  `exitUsage`).
+- **Bash shims** — `lib/config.sh` (46 lines) and `lib/config_defaults.sh`
+  (45 lines) exec the Go binary and source/eval its emit-shell payload.
+  `lib/config_defaults_ci.sh` deleted; logic now runs inside
+  `internal/config/ci.go`.
+- **Parity gate** — `scripts/config-parity-check.sh` runs 10 fixtures
+  (`tests/fixtures/config/01_minimal.conf` ... `10_milestone_mode.conf`)
+  through the Go binary and asserts behavioural parity with the legacy
+  bash loader: defaults, operator overrides, CI auto-detection, explicit
+  override, integer + float clamps, enum resets, health-weight reset,
+  path resolution, quoted/inline-comment parsing, milestone-mode
+  overrides, required-key enforcement.
 
-- **Helpers extracted, not deleted.** `_safe_read_file` and
-  `_wrap_file_content` had ~10 non-prompt callers across `lib/`. Deleting
-  them would have spread the wedge into unrelated subsystems and violated
-  CLAUDE.md Rule 10 (no feature redesign during ports). Extracting them into
-  `lib/prompts_io.sh` and re-sourcing from the shim keeps every existing
-  call site working byte-for-byte while the engine itself moves to Go.
-- **Env-passthrough rather than allowlist.** The m15 milestone Watch For
-  warned about a "wildcard env-vars-as-template-vars footgun." The chosen
-  shape is safer than an allowlist: the engine only consumes variable names
-  that actually appear as `{{NAME}}` placeholders in the template. Even
-  though `os.Environ()` carries the full process environment, an unrelated
-  variable like `PATH` only leaks into a render if a template references
-  `{{PATH}}` — and no template does. The allowlist would require enumerating
-  148 placeholder names today and growing the list with every new prompt.
-- **Frozen oracle inside the parity script.** The milestone phrasing
-  ("`lib/prompts.sh` at HEAD~1") was satisfied by embedding a verbatim copy
-  of the pre-m15 `render_prompt` body inside `scripts/prompt-parity-check.sh`
-  rather than depending on `git show HEAD~1:lib/prompts.sh`. This makes the
-  gate runnable on any checkout state (pre-merge, post-merge, tagged
-  release) and CI-friendly. The frozen copy is clearly marked DO NOT MODIFY
-  so future maintainers don't drift it out of step with reality.
+## Acceptance Verification
+
+- `tekhton config load --emit shell | source` matches the post-`load_config`
+  bash environment for all 10 fixtures (parity script: 36/36 PASS).
+- `tekhton config validate --strict` rejects out-of-range values and
+  unknown enums with clear diagnostics (covered by
+  `cmd/tekhton/config_test.go::TestConfigValidate_StrictPromotesWarnings`).
+- `pipeline.conf` format unchanged; `tests/test_config.sh` confirms.
+- `lib/config.sh` is 46 lines (≤60).
+- `lib/config_defaults_ci.sh` deleted.
+- `internal/config` coverage: 83.3% (≥80%).
+- Parity script: PASS (36/36 assertions).
+- `bash tests/run_tests.sh`: 498 shell + 250 python + Go all PASS.
+
+## Root Cause (bugs only)
+
+N/A — milestone wedge implementation, not a bug fix.
 
 ## Files Modified
 
-- `internal/prompt/prompt.go` (NEW) — Go template engine, 214 lines.
-- `internal/prompt/prompt_test.go` (NEW) — 313 lines, 95.8% coverage.
-- `cmd/tekhton/prompt.go` (NEW) — Cobra subcommand, 120 lines.
-- `cmd/tekhton/prompt_test.go` (NEW) — 265 lines.
-- `cmd/tekhton/main.go` — added `cmd.AddCommand(newPromptCmd())`.
-- `lib/prompts.sh` — rewritten as 55-line shim (was 170 lines).
-- `lib/prompts_io.sh` (NEW) — extracted file-content helpers, 69 lines.
-- `scripts/prompt-parity-check.sh` (NEW) — parity gate, 294 lines.
-- `ARCHITECTURE.md` — updated `lib/prompts.sh` entry and added five new
-  entries (`lib/prompts_io.sh`, `internal/prompt/`, `cmd/tekhton/prompt.go`,
-  `scripts/prompt-parity-check.sh`).
-- `CLAUDE.md` — repository layout updated.
+### New Go code
+- `internal/config/config.go` (NEW) — Loader entry point + `Config` type.
+- `internal/config/parse.go` (NEW) — `pipeline.conf` parser (KEY=VALUE,
+  comment stripping, quote stripping, shell-metachar rejection).
+- `internal/config/defaults.go` (NEW) — `baseDefaults` table +
+  `applyDefaults`, `applyLateDefaults`, `applyMilestoneOverrides`.
+- `internal/config/validate.go` (NEW) — Inline validation + integer/float
+  clamps + path resolution.
+- `internal/config/ci.go` (NEW) — `DetectCI` + `applyCIGateDefault`
+  (m138 port).
+- `internal/config/emit.go` (NEW) — `EmitShell` + `EmitJSON`.
+- `internal/config/config_test.go` (NEW) — Direct unit tests for the
+  package; 83.3% line coverage.
+- `cmd/tekhton/config.go` (NEW) — Cobra subcommands
+  (`load|show|validate|defaults`).
+- `cmd/tekhton/config_test.go` (NEW) — Cobra wiring tests.
+- `cmd/tekhton/main.go` — Register `newConfigCmd()` on the root command.
 
-## Verification
+### Bash shims
+- `lib/config.sh` — Rewrite as ≤50-line shim (was full loader).
+- `lib/config_defaults.sh` — Rewrite as 45-line shim (was full defaults table).
+- `lib/config_defaults_ci.sh` — DELETED (logic in `internal/config/ci.go`).
 
-- `bash scripts/prompt-parity-check.sh` — passes: 45 prompts × 3 variants +
-  4 edge-case fixtures all match byte-for-byte.
-- `go test ./internal/prompt -cover` — passes; coverage 95.8% (≥ 80% target).
-- `go test ./...` — passes across all 11 Go packages.
-- `go vet ./...` — clean.
-- `shellcheck tekhton.sh lib/*.sh stages/*.sh scripts/*.sh` — clean.
-- `bash tests/run_tests.sh` — 497 shell tests pass, Python tests pass, Go
-  tests pass.
-- `wc -l lib/prompts.sh` — 55 lines (≤ 60-line wedge ceiling).
+### Tests adapted
+- `tests/test_config.sh` — Drives the binary round-trip.
+- `tests/test_config_clamp_build_fix_attempts.sh` — Exercises clamps
+  through the binary.
+- `tests/test_config_leading_dot_float.sh` — Float-clamp parsing through
+  the binary.
+- `tests/test_m138_coverage_gaps.sh` — `applyCIGateDefault` via the binary.
+- `tests/test_ci_environment_detection.sh` — Re-targeted at the binary.
+- `tests/test_dedup_callsites.sh` — Updated to skip the new shim files.
+- `tests/test_m72_tekhton_dir.sh`, `tests/test_m84_tekhton_dir_complete.sh`,
+  `tests/test_milestone_split.sh` — Adapted for the new shim layout.
 
-## Acceptance Criteria
+### Fixtures + scripts
+- `tests/fixtures/config/01_minimal.conf` ... `10_milestone_mode.conf` (NEW)
+  — Ten parity fixtures.
+- `scripts/config-parity-check.sh` (NEW) — 10-fixture acceptance gate.
 
-- [x] `tekhton prompt render` produces byte-for-byte identical output to the
-  legacy bash engine for every template under `prompts/` (parity script
-  exits 0 across 45 × 3 + 4 fixtures).
-- [x] `lib/prompts.sh` is ≤ 60 lines (55 lines).
-- [x] Every `prompts/*.prompt.md` template renders without producing stray
-  `{{...}}` markers in the Go output (parity gate would diff against the
-  bash output if any markers leaked).
-- [x] Nested `{{IF:VAR}}` blocks render correctly (covered by
-  `TestRenderString_ConditionalBlocks` cases `nested blocks via distinct
-  vars, …` and the `nested_kept` edge fixture in the parity script).
-- [x] `internal/prompt` coverage ≥ 80% (95.8%).
-- [x] `scripts/prompt-parity-check.sh` exits 0 against the full prompt ×
-  fixture matrix.
-- [x] `bash tests/run_tests.sh` passes; existing prompt-related tests
-  (`test_prompt_rendering.sh`, `test_prompt_templates.sh`,
-  `test_prompt_isolation_guardrails.sh`) pass against the shim unchanged —
-  no test adaptation needed because the rendered output is byte-identical.
-
-## Human Notes Status
-
-No `[ ]` notes targeted at this milestone — the M15 task was self-contained
-in the milestone definition.
+### Docs
+- `ARCHITECTURE.md` — Updated `lib/config.sh` / `lib/config_defaults.sh`
+  entries to describe the wedge shim, added `internal/config/` and
+  `cmd/tekhton/config.go` entries.
+- `CLAUDE.md` — Repository layout updated to call out the shim status.
+- `docs/go-build.md` — Added `tekhton config …` subcommand reference
+  (load/show/validate/defaults, exit codes, flag semantics).
 
 ## Docs Updated
 
-- `ARCHITECTURE.md` — see `## Files Modified` above.
-- `CLAUDE.md` — repository layout entries.
+- `ARCHITECTURE.md` — `lib/config.sh`, `lib/config_defaults.sh`,
+  `internal/config/`, `cmd/tekhton/config.go` entries (public surface).
+- `CLAUDE.md` — Repository layout for `lib/config.sh`,
+  `lib/config_defaults.sh`; deleted `lib/config_defaults_ci.sh` line.
+- `docs/go-build.md` — `tekhton config …` subcommand reference.
 
-The user-observable surface added by m15 (the `tekhton prompt render`
-subcommand and the `internal/prompt.Render` Go API) is documented inline in
-the source via package and function-level Go doc comments. Bash callers
-continue to use `render_prompt` — its public contract is unchanged.
+## Human Notes Status
+
+No notes were targeted by this run. The milestone-mode pipeline does not
+ingest `HUMAN_NOTES.md` items; existing unchecked notes (action-items
+refresh bug, m01/m02 doc-cleanup polish) remain pending for a future
+human-mode run.

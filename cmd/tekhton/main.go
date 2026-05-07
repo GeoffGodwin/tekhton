@@ -40,6 +40,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newManifestCmd())
 	cmd.AddCommand(newDagCmd())
 	cmd.AddCommand(newPromptCmd())
+	cmd.AddCommand(newConfigCmd())
 	return cmd
 }
 
