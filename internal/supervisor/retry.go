@@ -53,6 +53,9 @@ func (p *RetryPolicy) Delay(attempt int, subcategory string) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
+	// A non-positive BaseDelay degenerates to a zero-delay retry loop. This
+	// is intentional for tests that want to exercise the loop without real
+	// waits, but production callers should use DefaultPolicy() to avoid it.
 	if p.BaseDelay <= 0 {
 		return 0
 	}
@@ -151,6 +154,12 @@ func retryLoop(
 	if p == nil {
 		p = DefaultPolicy()
 	}
+	// A degenerate MaxAttempts would silently return (nil, nil), giving
+	// callers no way to distinguish "succeeded with nil result" from
+	// "policy was malformed". Surface it as a typed error instead.
+	if p.MaxAttempts <= 0 {
+		return nil, fmt.Errorf("supervisor: MaxAttempts must be > 0, got %d", p.MaxAttempts)
+	}
 	if after == nil {
 		after = time.After
 	}
@@ -226,7 +235,9 @@ func retryLoop(
 		}
 	}
 
-	return lastResult, nil
+	// Unreachable: the for loop returns on every iteration when
+	// MaxAttempts >= 1, and we guard against MaxAttempts <= 0 above.
+	return lastResult, fmt.Errorf("supervisor: retry loop exited without dispatching (MaxAttempts=%d)", p.MaxAttempts)
 }
 
 // shouldQuotaPause reports whether a classified error warrants the quota-

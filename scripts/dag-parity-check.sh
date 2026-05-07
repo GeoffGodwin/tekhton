@@ -16,12 +16,22 @@
 # Per-fixture checks: frontier and active output match; validate exits clean
 # when files exist; validate flags missing-dep / missing-file / cycle.
 #
+# Requirements:
+#   - Go toolchain (`go`) on PATH — required to build the `tekhton` binary
+#   - `make` on PATH — used to invoke `make build`
+# When either is missing, the script skips with exit 0 (analogous to how
+# `check_indexer_available` degrades when Python is absent), so this gate
+# does not block CI on machines without the Go toolchain. Set
+# DAG_PARITY_REQUIRE=1 to fail-fast instead of skipping.
+#
 # Usage:
 #   scripts/dag-parity-check.sh
 #
 # Exit codes:
-#   0 = parity holds across all fixtures + validate gates
-#   1 = parity diff or setup error
+#   0 = parity holds across all fixtures + validate gates, OR skipped because
+#       the required toolchain is unavailable and DAG_PARITY_REQUIRE is unset
+#   1 = parity diff, setup error, or required toolchain missing under
+#       DAG_PARITY_REQUIRE=1
 set -euo pipefail
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,11 +39,22 @@ cd -- "$REPO_ROOT"
 
 _log()  { printf '\033[0;36m[parity]\033[0m %s\n' "$*"; }
 _ok()   { printf '\033[0;32m[parity] PASS\033[0m %s\n' "$*"; }
+_skip() { printf '\033[0;33m[parity] SKIP\033[0m %s\n' "$*"; exit 0; }
 _fail() { printf '\033[0;31m[parity] FAIL\033[0m %s\n' "$*" >&2; exit 1; }
 
-if ! command -v go >/dev/null 2>&1; then
-    _fail "Go not installed — m14 parity check requires the binary"
-fi
+_require_or_skip() {
+    local tool="$1"
+    if command -v "$tool" >/dev/null 2>&1; then
+        return 0
+    fi
+    if [[ "${DAG_PARITY_REQUIRE:-0}" == "1" ]]; then
+        _fail "${tool} not installed — m14 parity check requires it (DAG_PARITY_REQUIRE=1)"
+    fi
+    _skip "${tool} not installed — skipping m14 parity check (set DAG_PARITY_REQUIRE=1 to fail instead)"
+}
+
+_require_or_skip go
+_require_or_skip make
 
 _log "Building Go binary via 'make build'..."
 make build >/dev/null

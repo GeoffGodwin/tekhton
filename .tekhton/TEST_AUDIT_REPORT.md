@@ -1,125 +1,69 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 primary files (tests/test_dag_advance_parity.sh — 20 assertions;
-cmd/tekhton/dag_test.go — 30 test functions), 3 freshness samples
-(internal/dag/dag_test.go — 7 functions; internal/dag/migrate_test.go — 8 functions;
-internal/dag/testhelpers_test.go — helper shim only).
-Verdict: PASS
+Tests audited: 1 modified file (internal/supervisor/retry_test.go — 5 new test functions,
+audited against retry.go); 2 freshness-sample files (internal/dag/validate_test.go —
+9 functions; tests/test_clarify_coder_nullrun.sh — shell unit suite).
+Verdict: CONCERNS
 
 ### Findings
 
-None
+#### SCOPE: Coder-authored tests lack independent tester review
+- File: internal/supervisor/retry_test.go:181-238
+- Issue: The tester report claims exactly 1 new test (`TestRetryPolicy_Delay_BaseDelayZeroOverridesConfiguredFloor`). The actual file contains 5 new tests. The other 4 — `TestRetry_MaxAttemptsZero_Errors`, `TestRetry_MaxAttemptsNegative_Errors`, `TestRetryPolicy_Delay_BaseDelayZeroReturnsZero`, `TestRetryPolicy_Delay_BaseDelayNegativeReturnsZero` — were authored by the coder alongside the implementation they exercise. The tester ran `go test ./...` but did not independently review those 4 tests for quality or correctness. Separately, `cmd/tekhton/state_cmd_test.go` (7 new tests covering state update/clear/read) was written entirely by the coder and is absent from the tester's scope. The tests are substantively correct on inspection (see rubric notes below), so this is a process gap, not a correctness failure.
+- Severity: MEDIUM
+- Action: On the next cycle touching these files, the tester should perform an independent integrity pass over the 4 coder-written retry tests and the 7 state-cmd tests. No code changes are needed now.
+
+#### SCOPE: cmd/tekhton/state_cmd_test.go absent from audit context
+- File: cmd/tekhton/state_cmd_test.go (new, untracked per git status)
+- Issue: This file (159 lines, 7 test functions) was listed by the coder as a deliverable but was not provided in the "Test Files Under Audit (modified this run)" list. Per audit rules, findings cannot be raised against unlisted files. Flagging as a coverage gap so the next cycle includes it in scope.
+- Severity: LOW
+- Action: Add cmd/tekhton/state_cmd_test.go to the test audit scope on the next cycle that modifies cmd/tekhton/.
+
+#### SCOPE: Shell-detected STALE-SYM entries are false positives
+- File: internal/supervisor/retry_test.go
+- Issue: The orphan detector flagged `append`, `len`, and `make` as symbols "not found in any source definition." These are Go built-ins; they have no source definition in the repo. `cancel` is a local variable returned from `context.WithCancel` at line 251 — it is not a package-level symbol. The shell scanner does not model Go's built-in namespace or local variable scoping.
+- Severity: LOW
+- Action: Dismiss all four STALE-SYM entries. No test changes needed.
 
 ---
 
-## Detail Notes (informational, non-blocking)
+## Per-File Rubric Notes
 
-#### COVERAGE: TestDagFrontierCmd_NoPath only validates err != nil
-- File: cmd/tekhton/dag_test.go:41
-- Issue: The no-path error path is returned as a plain fmt.Errorf (not an errExitCode),
-  so there is no exit-code to assert. Checking only err != nil is therefore the correct
-  and complete assertion for this branch. Noted here so a future maintainer does not
-  mistake the absence of exit-code checking for a gap.
-- Severity: LOW
-- Action: No change required. An inline comment explaining why no exit-code check is
-  needed would be optional documentation improvement only.
+### internal/supervisor/retry_test.go
 
-#### COVERAGE: test_dag_advance_parity.sh does not test pending → done (invalid transition)
-- File: tests/test_dag_advance_parity.sh
-- Issue: The shell parity test covers done→in_progress (invalid), unknown ID, and
-  unknown status string, but not the pending→done invalid transition (pending can only
-  advance to todo, in_progress, or skipped per validTransition). This specific path IS
-  covered by internal/dag/dag_test.go:TestAdvanceTransitions, so there is no gap in
-  total suite coverage; the omission is reasonable scope-splitting between unit and
-  cross-process parity tests.
-- Severity: LOW
-- Action: No change required. Acceptable delegation to the unit test.
+**1. Assertion Honesty — PASS**
+All five new test assertions are derived directly from implementation behavior:
+- `TestRetry_MaxAttemptsZero_Errors` checks `strings.Contains(err.Error(), "MaxAttempts must be > 0")`. Implementation (retry.go:161): `fmt.Errorf("supervisor: MaxAttempts must be > 0, got %d", p.MaxAttempts)`. Substring match is correct and non-trivial.
+- `TestRetry_MaxAttemptsNegative_Errors` uses `MaxAttempts: -3`; same guard fires.
+- `TestRetryPolicy_Delay_BaseDelayZeroReturnsZero` asserts `p.Delay(1,"") == 0` and `p.Delay(5,"api_rate_limit") == 0` when `BaseDelay: 0`. Implementation (retry.go:59-61): `if p.BaseDelay <= 0 { return 0 }`. The early return precedes all other computation; the second call with a floor subcategory tests the ordering explicitly.
+- `TestRetryPolicy_Delay_BaseDelayZeroOverridesConfiguredFloor` sets `Floors["api_rate_limit"]=60s` and `BaseDelay=0`, asserts result is 0. Implementation fires the early-return at retry.go:59 before the Floors map lookup at retry.go:76-81. Test correctly models execution order.
+- `TestRetryPolicy_Delay_BaseDelayNegativeReturnsZero` uses `BaseDelay: -1*time.Second`. Same guard fires. No hard-coded magic values unconnected to implementation logic anywhere in the suite.
+
+**2. Edge Case Coverage — PASS**
+New tests cover: MaxAttempts=0 (boundary), MaxAttempts=-3 (below boundary), BaseDelay=0 (zero), BaseDelay<0 (negative), floor interaction when BaseDelay=0. Ratio of error-path tests to happy-path tests across the full suite is approximately 3:1. Adequate.
+
+**3. Implementation Exercise — PASS**
+Tests call `retryLoop` and `p.Delay` directly (same package). `fakeRunner` stubs only the agent-invocation seam; all retry-loop control flow is real. `instantAfter` stubs only the clock seam; the select/cancel logic is real.
+
+**4. Test Weakening Detection — PASS**
+No existing test bodies were modified. All changes are additive (new test functions appended after line 238).
+
+**5. Test Naming — PASS**
+All five new function names encode both the scenario and the expected outcome (`_Errors`, `_ReturnsZero`, `_OverridesConfiguredFloor`). Consistent with the pre-existing naming convention in the file.
+
+**6. Scope Alignment — PASS**
+All references to `retryLoop`, `RetryPolicy`, `Delay`, `DefaultPolicy`, and sentinel errors (`ErrUpstreamRateLimit`, `ErrUpstreamAuth`, `ErrQuotaExhausted`, `ErrQuotaPauseCapped`, `ErrUpstreamUnknown`) are present in retry.go. No stale symbols. The deleted `.tekhton/INTAKE_REPORT.md` is not referenced by any audited test.
+
+**7. Test Isolation — PASS**
+Causal log tests create a temp dir via `t.TempDir()` (line 378). Agent behavior is stubbed via `fakeRunner`. Clock is stubbed via `instantAfter`. No test reads from live pipeline state files, build reports, or mutable project artifacts.
 
 ---
 
-## Per-File Rubric Summary
+### internal/dag/validate_test.go (freshness sample)
 
-### tests/test_dag_advance_parity.sh
+Fixtures are inline string literals, not live manifest files. `loadFixture` and `writeFile` use isolated temp directories. Assertions check typed errors via `errors.Is` (`ErrMissingDep`, `ErrCycle`, `ErrDuplicateID`), not string parsing. File not modified this run; no scope drift. PASS on all rubric points.
 
-1. Assertion Honesty — PASS. Every assertion is derived from fixture-defined state
-   (m01=done, m02=in_progress, m03/m04=pending) and the known transition semantics.
-   No hard-coded magic values unconnected to implementation logic.
+### tests/test_clarify_coder_nullrun.sh (freshness sample)
 
-2. Edge Case Coverage — PASS. Happy path (in_progress→done), frontier update,
-   active-list draining, idempotent terminal (done→done), invalid terminal transition
-   (done→in_progress, exit 64), unknown ID (exit 1), unknown status string (exit 64),
-   subsequent advance of newly-unblocked milestone (pending→in_progress).
-
-3. Implementation Exercise — PASS. Invokes the real tekhton binary (`tekhton dag
-   advance`), then exercises the bash shim (load_manifest, dag_get_status,
-   dag_get_frontier, dag_get_active) to verify the on-disk mutation was readable
-   cross-process. No mocking.
-
-4. Test Weakening — N/A. New file; no existing tests modified.
-
-5. Naming — PASS. Section echo headers ("Test: advance m02 → done", "Test: frontier
-   after advance…", etc.) and per-assertion descriptions include the variable content
-   (e.g., "dag_get_status m02 == done after advance (got: $status_m02)").
-
-6. Scope Alignment — PASS. All referenced commands (tekhton dag advance, load_manifest,
-   dag_get_status, dag_get_frontier, dag_get_active) exist in the current codebase.
-   Binary-unavailability handled with graceful SKIP.
-
-7. Test Isolation — PASS. Full fixture in mktemp temp dir; trap on EXIT. No reads from
-   mutable project files (.tekhton/, .claude/logs/, pipeline state, etc.).
-
-### cmd/tekhton/dag_test.go
-
-1. Assertion Honesty — PASS. Frontier output "m02\nm04\n" is derived from the fixture
-   (m01 done, m02 in_progress with m01-done dep → frontier; m04 pending with m01-done
-   dep → frontier; m03 pending with m02-in_progress dep → blocked). Error-code
-   assertions (exitUsage=64, exitNotFound=1, exitCorrupt=2) match the constants in
-   cmd/tekhton/dag.go. MapDagError assertions enumerate each sentinel explicitly.
-
-2. Edge Case Coverage — PASS. Covers: frontier (happy + no-path + env-var fallback),
-   active, advance (success + invalid-transition + unknown-id + load-error), validate
-   (clean + missing-dep + load-error), migrate (happy + already-exists + rewrite-pointer
-   + env-dir fallback + custom-manifest-name), rewrite-pointer standalone, mapDagError
-   passthrough for unknown errors, loadDagState via $MILESTONE_MANIFEST_FILE env var.
-
-3. Implementation Exercise — PASS. Tests call real Cobra commands (newDagFrontierCmd,
-   newDagAdvanceCmd, etc.) with real temp-dir manifests. manifest.Load and dag.Migrate
-   are exercised against real files. No mocking of core logic.
-
-4. Test Weakening — N/A. New file; no existing tests modified.
-
-5. Naming — PASS. Convention TestDagXxxCmd_Scenario (e.g.,
-   TestDagAdvanceCmd_InvalidTransition, TestLoadDagState_ViaEnv) encodes both the
-   function under test and the scenario; intent is unambiguous.
-
-6. Scope Alignment — PASS. All functions referenced (newDagFrontierCmd, newDagActiveCmd,
-   newDagAdvanceCmd, newDagValidateCmd, newDagMigrateCmd, newDagRewritePointerCmd,
-   loadDagState, mapDagError, defaultManifestName, errExitCode, exitNotFound, exitUsage,
-   exitCorrupt) are defined in the cmd/tekhton package. writeFixture and captureStdout
-   are defined in manifest_test.go in the same package.
-
-7. Test Isolation — PASS. All file I/O uses t.TempDir(); all env-var manipulation uses
-   t.Setenv() (auto-restored after each test). No reads from mutable project or pipeline
-   state files.
-
-### internal/dag/dag_test.go (freshness sample)
-
-Assertions for Frontier, Active, DepsSatisfied, Advance, IsKnownStatus all derive from
-fixture state. Advance transition table test covers all canonical valid and invalid
-paths including unknown status and unknown ID. TestAdvancePersistsViaSave performs a
-full write-reload cycle verifying atomic save. PASS on all rubric points.
-
-### internal/dag/migrate_test.go (freshness sample)
-
-TestMigrateHappyPath verifies count, MANIFEST.cfg existence, per-entry file existence,
-status inference ([DONE] → done), and dependency inference. Multi-dep test verifies
-both deps present. Idempotency test checks ErrMigrateAlreadyDone sentinel. Error paths
-for missing CLAUDE.md and no-milestones case both verified. RewritePointer tests verify
-content removal, non-milestone content preservation, and idempotency (no pointer
-duplication). PASS on all rubric points.
-
-### internal/dag/testhelpers_test.go (freshness sample)
-
-Single function writeOSFile bridging os.WriteFile into the dag package's test helpers.
-Not a test itself; helper only. No findings.
+`TEKHTON_HOME` is derived from the script's own path (not a global). `TMPDIR` is isolated per-run with `mktemp -d` and cleaned up via `trap ... EXIT`. No reads from live `.tekhton/` state files, build reports, or pipeline logs. Not modified this run; no scope drift. PASS on all rubric points.

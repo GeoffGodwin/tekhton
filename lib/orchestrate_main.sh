@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 # =============================================================================
 # orchestrate_main.sh — run_complete_loop implementation
 #

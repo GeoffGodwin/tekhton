@@ -175,6 +175,68 @@ func TestRetry_NilRunner_Errors(t *testing.T) {
 	}
 }
 
+// MaxAttempts <= 0 is a misconfigured policy. retryLoop must surface it as a
+// typed error rather than silently returning (nil, nil), which would be
+// indistinguishable from "succeeded with nil result" to a caller.
+func TestRetry_MaxAttemptsZero_Errors(t *testing.T) {
+	bad := &RetryPolicy{MaxAttempts: 0, BaseDelay: 1 * time.Millisecond}
+	fr := &fakeRunner{}
+	res, err := retryLoop(context.Background(), sampleRequest(), bad, nil, fr.run, nil, instantAfter)
+	if err == nil || !strings.Contains(err.Error(), "MaxAttempts must be > 0") {
+		t.Errorf("err: %v; want 'MaxAttempts must be > 0' substring", err)
+	}
+	if res != nil {
+		t.Errorf("result: %v; want nil", res)
+	}
+	if fr.calls != 0 {
+		t.Errorf("runner calls: %d; want 0 (degenerate policy must not invoke runner)", fr.calls)
+	}
+}
+
+func TestRetry_MaxAttemptsNegative_Errors(t *testing.T) {
+	bad := &RetryPolicy{MaxAttempts: -3, BaseDelay: 1 * time.Millisecond}
+	fr := &fakeRunner{}
+	_, err := retryLoop(context.Background(), sampleRequest(), bad, nil, fr.run, nil, instantAfter)
+	if err == nil || !strings.Contains(err.Error(), "MaxAttempts must be > 0") {
+		t.Errorf("err: %v; want 'MaxAttempts must be > 0' substring", err)
+	}
+}
+
+// BaseDelay <= 0 returns 0 by design so test policies can run instantly.
+// Verify the documented behavior so a future change can't silently drop it.
+func TestRetryPolicy_Delay_BaseDelayZeroReturnsZero(t *testing.T) {
+	p := &RetryPolicy{MaxAttempts: 3, BaseDelay: 0, MaxDelay: 10 * time.Second}
+	if got := p.Delay(1, ""); got != 0 {
+		t.Errorf("Delay with BaseDelay=0: got %v; want 0", got)
+	}
+	if got := p.Delay(5, "api_rate_limit"); got != 0 {
+		t.Errorf("Delay with BaseDelay=0 and floor: got %v; want 0", got)
+	}
+}
+
+// TestRetryPolicy_Delay_BaseDelayZeroOverridesConfiguredFloor verifies that the
+// BaseDelay <= 0 early-return in Delay() fires BEFORE the Floors map is
+// consulted. A policy with BaseDelay=0 but a 60s floor for "api_rate_limit"
+// must still return 0 — the floor is irrelevant when the base degenerates.
+func TestRetryPolicy_Delay_BaseDelayZeroOverridesConfiguredFloor(t *testing.T) {
+	p := &RetryPolicy{
+		MaxAttempts: 3,
+		BaseDelay:   0,
+		MaxDelay:    120 * time.Second,
+		Floors:      map[string]time.Duration{"api_rate_limit": 60 * time.Second},
+	}
+	if got := p.Delay(1, "api_rate_limit"); got != 0 {
+		t.Errorf("Delay with BaseDelay=0 and configured floor=60s: got %v; want 0", got)
+	}
+}
+
+func TestRetryPolicy_Delay_BaseDelayNegativeReturnsZero(t *testing.T) {
+	p := &RetryPolicy{MaxAttempts: 3, BaseDelay: -1 * time.Second, MaxDelay: 10 * time.Second}
+	if got := p.Delay(1, ""); got != 0 {
+		t.Errorf("Delay with BaseDelay<0: got %v; want 0", got)
+	}
+}
+
 // AC: ctx.Cancel during backoff returns context.Canceled within 10ms.
 func TestRetry_CtxCancelDuringBackoff_ReturnsCtxErr(t *testing.T) {
 	transient := &proto.AgentResultV1{

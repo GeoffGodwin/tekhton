@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-05-06
-- Runs since audit: 4
+- Runs since audit: 5
 
 ## Unresolved Observations
 - [2026-05-06 | "Implement Milestone 14: Milestone DAG State Machine Wedge"] `internal/dag` package: the cross-language contract for `frontier` and `active` is bare newline-separated IDs (matches m13's `tekhton manifest list` pattern). Both patterns diverge from the `internal/proto/` stamped-envelope principle stated in the reviewer checklist. The pattern is internally consistent, but the codebase now has two divergent cross-language seam styles (JSON for state/causal, plain text for manifest/dag). A future milestone that documents the seam taxonomy and picks one style would reduce this tension.

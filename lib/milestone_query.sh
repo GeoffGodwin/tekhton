@@ -37,8 +37,13 @@ parse_milestones_auto() {
             }
         fi
 
-        local found=0 milestone_dir i
+        local milestone_dir i
         milestone_dir=$(_dag_milestone_dir)
+        # An empty-but-valid manifest is a success case (zero rows). Returning
+        # non-zero here would mislead callers that read `||` chains as failure.
+        if [[ ${#_DAG_IDS[@]} -eq 0 ]]; then
+            return 0
+        fi
         for (( i = 0; i < ${#_DAG_IDS[@]}; i++ )); do
             local id="${_DAG_IDS[$i]}" title="${_DAG_TITLES[$i]}" num
             num=$(dag_id_to_number "$id")
@@ -67,11 +72,8 @@ parse_milestones_auto() {
             fi
 
             echo "${num}|${title}|${acceptance}"
-            found=1
         done
-
-        [[ "$found" -eq 1 ]]
-        return
+        return 0
     fi
 
     parse_milestones "$claude_md"

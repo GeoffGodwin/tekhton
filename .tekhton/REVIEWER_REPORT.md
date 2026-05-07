@@ -1,4 +1,4 @@
-# Reviewer Report — M14 Milestone DAG State Machine Wedge
+# Reviewer Report
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,18 +10,30 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `cmd/tekhton/...` package reports 78.5% test coverage (Go quality checklist target is ≥80%). `cmd/tekhton` is an existing package, not a new one introduced by m14, so the deficit is largely inherited. The new `dag.go` code is well-exercised by `dag_test.go` (412 lines). Acceptable as-is but the gap should close incrementally.
-- The `frontier` / `active` subcommands output bare newline-separated IDs to stdout, which is consistent with m13's `tekhton manifest list` precedent but diverges from the `internal/proto/` envelope principle in the reviewer checklist. Since m13 established this pattern and the parity tests lock down the contract, flagging as a drift observation rather than requiring rework (see Drift Observations).
-- `scripts/dag-parity-check.sh` invokes `make build` at the top, which means it fails on a machine without the Go toolchain or without `make`. The test suite already accounts for this, but the script could document the requirement more prominently (or skip gracefully when `go` is absent, analogous to how `check_indexer_available` degrades without Python).
-- `parse_milestones_auto` in `milestone_query.sh` returns non-zero when the manifest is loaded but contains zero entries (`[[ "$found" -eq 1 ]]` is false). An empty-but-valid manifest is unlikely in practice, but callers expecting 0 entries to be a success case would get a spurious failure. No current caller exercises this path, but it's worth documenting.
+- `cmd/tekhton/state_cmd_test.go:140-156` — `os.Stdout = w` redirect in `TestStateReadCmd_FullJSONOutput` is not parallel-safe. If `t.Parallel()` is ever added to this package, the shared `os.Stdout` swap will race. Prefer passing an `io.Writer` through a command option or a `captureOutput` helper so the test is self-contained.
+- `internal/supervisor/retry_test.go:207-215` — Second assertion in `TestRetryPolicy_Delay_BaseDelayZeroReturnsZero` calls `p.Delay(5, "api_rate_limit")` but the policy has no `Floors` map, so the assertion does not actually verify that the `BaseDelay <= 0` early-return overrides a configured floor. The test passes for a different reason than its comment implies ("and floor" is misleading). Not incorrect, but worth a follow-up assertion that includes a floor.
+- Security [LOW] finding flagged by the security agent for log injection via unsanitized `label` in `emitSupervisorEvent` (`internal/supervisor/run.go:237`, marked fixable:yes) was not addressed in this task. Defer is acceptable — noting for tracking.
 
 ## Coverage Gaps
-- The parity check script (`scripts/dag-parity-check.sh`) verifies `frontier`, `active`, `validate`, and `migrate` but does NOT parity-test `advance`. The Go unit test `TestAdvancePersistsViaSave` covers the atomicity of the write, but there is no fixture that runs `tekhton dag advance` from bash and then reads the result back with the bash `_DAG_*` array queries to confirm end-to-end correctness of the cross-process state mutation.
-- `cmd/tekhton/dag_test.go` at 78.5% combined package coverage: edge paths not covered include `loadDagState` when `$MILESTONE_MANIFEST_FILE` is set (env fallback path), and `defaultManifestName` when called with a non-empty override.
-
-## ACP Verdicts
-No Architecture Change Proposals in CODER_SUMMARY.md — section omitted.
+- None
 
 ## Drift Observations
-- `internal/dag` package: the cross-language contract for `frontier` and `active` is bare newline-separated IDs (matches m13's `tekhton manifest list` pattern). Both patterns diverge from the `internal/proto/` stamped-envelope principle stated in the reviewer checklist. The pattern is internally consistent, but the codebase now has two divergent cross-language seam styles (JSON for state/causal, plain text for manifest/dag). A future milestone that documents the seam taxonomy and picks one style would reduce this tension.
-- `lib/milestone_dag.sh` line 33: `<<< "${deps//,/$'\n'}"` is a bashism (here-string with parameter expansion). This is valid Bash 4.3+ and consistent with the project's shell policy; noting it for future portability awareness.
+- None
+
+---
+
+### Review notes
+
+**`internal/supervisor/retry.go`** — `MaxAttempts <= 0` guard (line 160) is correct: typed error, runner not invoked, consistent with the nil-request / nil-runner guards already present. The defensive trailing `return` at line 240 with its "unreachable" comment is the right pattern for exhausted loops and will protect against future refactors. The `BaseDelay <= 0 → return 0` early-exit (line 59) with the production-caller warning comment is appropriate.
+
+**`internal/supervisor/retry_test.go`** — Four new tests are well-targeted. `TestRetry_MaxAttemptsZero_Errors` correctly asserts (a) typed error returned, (b) nil result, (c) zero runner calls. `TestRetryPolicy_Delay_BaseDelayNegativeReturnsZero` mirrors the zero case cleanly.
+
+**`lib/milestone_query.sh`** — Empty-manifest early-return fix (line 44) is the correct fix. The previous `found` guard was a correctness bug; returning 0 for a valid-but-empty manifest is the right contract since callers distinguish success/failure by exit code, not output length.
+
+**`lib/orchestrate_main.sh`** — Removing `set -euo pipefail` from a sourced file is the correct fix per CLAUDE.md Rule 2 and the reviewer role spec ("sourced files in `lib/` and `stages/` do not [have set -euo pipefail] — they inherit"). The file's shebang line is informational-only and does not change behaviour when sourced.
+
+**`scripts/dag-parity-check.sh`** — `_require_or_skip` graceful-skip pattern mirrors the `check_indexer_available` Python-absent degradation correctly. `DAG_PARITY_REQUIRE=1` fail-fast escape hatch is well-documented in the header. `set -euo pipefail` is present because this file is a standalone entry point, not sourced — correct.
+
+**`cmd/tekhton/state_cmd_test.go`** — Seven tests cover the three Cobra `Execute()` paths that were below the 80 % threshold. `TestStateUpdateCmd_FirstClassFields` correctly does a read-modify-write round-trip to verify first-class fields and extra-map keys. `TestStateClearCmd_AbsentFileIsNotAnError` correctly asserts idempotency. All tests use `t.TempDir()` for isolation.
+
+**`go.mod`** — `go mod tidy` promoting `fsnotify v1.9.0` and `golang.org/x/sys v0.13.0` to direct dependencies is correct; both are used directly by supervisor package code.

@@ -1,23 +1,18 @@
-# Docs Agent Report — M14
-
-## Summary
-
-M14 ports the milestone-DAG state machine from bash to Go via the new `tekhton dag` subcommand. One developer-toolchain documentation update needed.
+# Docs Agent Report
 
 ## Files Updated
+None.
 
-- `docs/go-build.md` — Added `tekhton dag …` (m14) subcommand section documenting the milestone DAG state machine CLI: `frontier`, `active`, `advance`, `validate`, `migrate`, and `rewrite-pointer` subcommands with exit codes and behavior. This follows the pattern established by earlier wedges (`tekhton causal` m02, `tekhton state` m03) where internal Go subcommands are documented in the developer toolchain guide.
+## No Update Needed
+All changes in this run are internal implementation details with no public-surface changes:
 
-## Analysis
+- **internal/supervisor/retry.go** — Added validation guard for degenerate `MaxAttempts <= 0` policy and defensive error return. Internal behavior only; no CLI or API surface changes.
+- **internal/supervisor/retry_test.go** — Added test coverage for the new guards. No docs impact.
+- **lib/milestone_query.sh** — Fixed exit-code handling for empty-but-valid manifests. Internal library function; no public interface change.
+- **lib/orchestrate_main.sh** — Removed inherited `set -euo pipefail`. Sourced file inherits caller's shell options per spec. No docs impact.
+- **scripts/dag-parity-check.sh** — Graceful skip-when-missing for Go toolchain, with `DAG_PARITY_REQUIRE=1` override. Requirements self-documented in script header.
+- **go.mod / go.sum** — Dependency tidy. Internal change.
+- **cmd/tekhton/state_cmd_test.go** — New test file for state command coverage. No public API changes.
 
-- **User-facing CLI:** No new user-facing flags. The `tekhton dag *` subcommands are internal seams for bash code, not exposed to end-users — documented in `docs/go-build.md` alongside other internal Go subcommands.
-- **Configuration:** No new config keys in `pipeline.conf`.
-- **Milestone schema:** No changes to `MANIFEST.cfg` format or milestone file format. User-facing structure and workflows remain identical.
-- **User-facing documentation:** 
-  - `README.md` — no changes needed (does not reference internal implementation)
-  - `docs/cli-reference.md` — no changes needed (no new user flags)
-  - `docs/MILESTONES.md` — no changes needed (user workflow unchanged)
-
-## Conclusion
-
-The codebase already updated internal documentation (`ARCHITECTURE.md`, `CLAUDE.md`) for the Go package and deleted bash files. Added developer-toolchain documentation to `docs/go-build.md` for the new internal `tekhton dag` subcommand to maintain consistency with prior wedge documentation patterns. User-facing documentation requires no changes.
+## Open Questions
+None. All changes are internal; no documentation updates required.

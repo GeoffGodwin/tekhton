@@ -1,210 +1,89 @@
-# Coder Summary — M14 Milestone DAG State Machine Wedge
+# Coder Summary
 
 ## Status: COMPLETE
 
 ## What Was Implemented
+Addressed all 17 open non-blocking notes in `.tekhton/NON_BLOCKING_LOG.md`. The
+17 entries collapse to 10 distinct issues (several were duplicated across the
+m07/m08 and m13/M12 milestone entries). Each is now in the **Resolved**
+section of the log with a one-line resolution summary; details below by class.
 
-Ported the milestone-DAG state machine from four bash files (~600 LOC) into a
-Go package, exposing it to bash via the new `tekhton dag …` subcommand. The
-on-disk MANIFEST.cfg format is unchanged (m13 owns it). Bash callers continue
-to iterate the cached `_DAG_*` arrays for in-memory queries; cross-process
-operations (validate / migrate / pointer-rewrite) exec the Go binary.
+### Code/test changes
+- **`internal/supervisor/retry.go`** — Added a typed-error early guard in
+  `retryLoop` for `MaxAttempts <= 0` so a degenerate policy fails loudly
+  instead of silently returning `(nil, nil)`. Replaced the now-unreachable
+  trailing `return lastResult, nil` with a defensive error return so a
+  future refactor that re-introduces the silent-nil path is caught. Added
+  a comment in `Delay()` documenting the intentional zero-delay behavior
+  for `BaseDelay <= 0`.
+- **`internal/supervisor/retry_test.go`** — Added four new tests:
+  `TestRetry_MaxAttemptsZero_Errors`, `TestRetry_MaxAttemptsNegative_Errors`,
+  `TestRetryPolicy_Delay_BaseDelayZeroReturnsZero`,
+  `TestRetryPolicy_Delay_BaseDelayNegativeReturnsZero`.
+- **`lib/milestone_query.sh`** — `parse_milestones_auto` now returns 0 when
+  the manifest loaded successfully but contains zero rows. The previous
+  `[[ "$found" -eq 1 ]]` guard incorrectly reported failure for an
+  empty-but-valid manifest.
+- **`lib/orchestrate_main.sh`** — Removed the `set -euo pipefail` directive.
+  This file is sourced from `lib/orchestrate.sh` and inherits the caller's
+  shell options per the reviewer role spec.
+- **`scripts/dag-parity-check.sh`** — Now gracefully skips with exit 0 and a
+  yellow "SKIP" banner when `go` or `make` is missing (analogous to how
+  `check_indexer_available` degrades when Python is absent). Set
+  `DAG_PARITY_REQUIRE=1` to fail-fast instead. Added a Requirements section
+  to the script header.
+- **`go.mod`** — Ran `go mod tidy`. `github.com/fsnotify/fsnotify v1.9.0`
+  and `golang.org/x/sys v0.13.0` are now correctly listed as direct
+  dependencies.
+- **`cmd/tekhton/state_cmd_test.go` (NEW)** — Added 7 tests covering the
+  Cobra `Execute()` paths for `state update`, `state clear`, and the
+  full-snapshot read branch of `state read`. `cmd/tekhton` package
+  coverage rose 78.5% → 81.1%, clearing the ≥80% target.
 
-### Goal 1 — `internal/dag.State`
-
-```go
-type State struct { /* wraps *manifest.Manifest */ }
-
-func New(m *manifest.Manifest) *State
-func (s *State) Frontier() []*manifest.Entry
-func (s *State) Active() []*manifest.Entry
-func (s *State) DepsSatisfied(id string) bool
-func (s *State) Advance(id, newStatus string) error
-func (s *State) Validate(milestoneDir string) []*ValidationError
-```
-
-Status transitions encoded explicitly in `validTransition`:
-
-```
-pending|todo → pending | todo | in_progress | skipped
-in_progress  → done | skipped | split | todo | pending
-done | skipped | split → terminal (only same-status idempotent updates)
-```
-
-`Advance` returns `ErrInvalidTransition` for disallowed transitions (e.g.
-`done → in_progress`) and `ErrUnknownStatus` for status strings outside the
-canonical set. `ErrNotFound` is returned when the id is not in the manifest.
-
-`Validate` runs five structural checks: duplicate IDs, missing dependency
-targets, unknown statuses, missing milestone files (when `milestoneDir` is
-non-empty), and circular dependencies (DFS-based, mirroring bash
-`_dfs_cycle_check`). Each finding wraps a sentinel (`ErrCycle`,
-`ErrMissingDep`, etc.) so callers match with `errors.Is`.
-
-### Goal 2 — Migration as a one-shot subcommand
-
-`internal/dag.Migrate(MigrateOptions)` walks `CLAUDE.md`, extracts inline
-milestones via a streaming line scanner (`parseInlineMilestones`), and
-writes one milestone file per entry plus a fresh `MANIFEST.cfg`.
-**Idempotent**: returns `ErrMigrateAlreadyDone` when `MANIFEST.cfg` already
-exists. Replaces `lib/milestone_dag_migrate.sh::migrate_inline_milestones`.
-
-`internal/dag.RewritePointer(claudeMD)` replaces inline milestone blocks
-with a two-line pointer comment, matching the pre-m14 bash
-`_insert_milestone_pointer` output byte-for-byte.
-
-Helpers (`numberToID`, `slugify`, `inferDependencies`) port the bash
-equivalents and are unit-tested directly.
-
-### Goal 3 — Sliding-window consumption
-
-`lib/milestone_window.sh::build_milestone_window` continues to read the
-in-memory `_DAG_*` arrays — they're now the Go-backed cache (populated by
-m13's `load_manifest` shim, which itself execs `tekhton manifest list`).
-The window helper itself stays bash; the comment block at the top of the
-file documents that the same status / dep semantics live in
-`internal/dag.State.Frontier` / `Active` for future Phase-5 ports.
-
-### CLI subcommands (`cmd/tekhton/dag.go`)
-
-```
-tekhton dag frontier  --path PATH            # IDs ready to run
-tekhton dag active    --path PATH            # IDs with status=in_progress
-tekhton dag advance   --path PATH ID STATUS  # validated transition + atomic save
-tekhton dag validate  --path PATH [--milestone-dir DIR]
-tekhton dag migrate   --inline-claude-md PATH --milestone-dir DIR [--rewrite-pointer]
-tekhton dag rewrite-pointer --inline-claude-md PATH
-```
-
-Exit codes follow existing conventions:
-- 0 success
-- 1 (`exitNotFound`) — file missing or unknown ID
-- 2 (`exitCorrupt`) — manifest validation failures
-- 64 (`exitUsage`) — invalid status string or disallowed transition
-
-### Bash shim rewrite (`lib/milestone_dag.sh`)
-
-Reduced from ~600 LOC across four files to **92 lines** in a single shim
-file. The shim provides the public API the rest of the bash tree imports
-(`dag_get_count`, `dag_get_id_at_index`, `dag_get_status`, `dag_set_status`,
-`dag_get_file`, `dag_get_title`, `dag_get_active`, `dag_get_frontier`,
-`dag_deps_satisfied`, `dag_find_next`, `dag_id_to_number`, `dag_number_to_id`)
-operating on the cached `_DAG_*` arrays — these are pure-bash by design
-(in-process, called per-iteration, not worth fork-overhead). Cross-process
-shims (`validate_manifest`, `migrate_inline_milestones`,
-`_insert_milestone_pointer`) exec `tekhton dag <subcommand>`.
-
-The deleted files (`lib/milestone_dag_helpers.sh`, `_validate.sh`,
-`_migrate.sh`) move their public surface to either the shim, the Go
-package, or `lib/milestone_query.sh` (parse_milestones_auto et al.).
-
-### `lib/milestone_query.sh` (NEW)
-
-Holds the four DAG-aware milestone wrappers extracted from the deleted
-`milestone_dag_helpers.sh`: `parse_milestones_auto`, `get_milestone_count`,
-`get_milestone_title`, `is_milestone_done`. Each prefers the manifest
-path when DAG mode is enabled and falls back to inline `parse_milestones`
-otherwise. Sourced by `tekhton.sh` after `milestone_dag.sh`.
+### Resolved without code change (informational notes)
+- **m11 §1.5 cross-language metric divergence** — The substitute metric used
+  by the coder is more accurate than the AC's literal `lang_origin: ambiguous`
+  wording (no such field exists). Marked resolved as informational.
+- **m10 `run_test.go` length (684 lines)** — Per CLAUDE.md Rule 8, the Go
+  split signal is purpose fragmentation, not line count, and the file is
+  domain-coherent. No split required.
+- **m14 `frontier`/`active` stdout shape** — The bare-newline-separated ID
+  output is the locked m13 contract that `scripts/dag-parity-check.sh`
+  asserts. Deferring an envelope conversion to a future v2 dag subcommand
+  cycle so the parity gate isn't broken.
 
 ## Root Cause (bugs only)
-N/A — milestone implementation, not a bug fix.
+N/A — these are tech-debt items, not bug reports.
 
 ## Files Modified
-
-### NEW
-- `internal/dag/dag.go` (NEW, 162 lines) — State, transition table, sentinels
-- `internal/dag/validate.go` (NEW, 176 lines) — 5-check structural validator
-- `internal/dag/migrate.go` (NEW, 336 lines) — Inline→file migrator + pointer rewriter
-- `internal/dag/dag_test.go` (NEW, 206 lines) — State machine tests
-- `internal/dag/validate_test.go` (NEW, 152 lines) — validator tests
-- `internal/dag/migrate_test.go` (NEW, 254 lines) — migration tests
-- `internal/dag/testhelpers_test.go` (NEW, 7 lines)
-- `cmd/tekhton/dag.go` (NEW, 245 lines) — Cobra subcommands + error mapping
-- `cmd/tekhton/dag_test.go` (NEW, 412 lines) — CLI behavior tests
-- `lib/milestone_query.sh` (NEW, 142 lines) — DAG-aware milestone wrappers
-- `scripts/dag-parity-check.sh` (NEW, 262 lines) — 5-fixture parity matrix
-- `tests/test_milestone_query.sh` (NEW) — exercises `milestone_query.sh`
-
-### MODIFIED
-- `lib/milestone_dag.sh` — collapsed to 92 lines (≤100 ceiling); now a wedge shim
-- `lib/milestone_window.sh` — comment-only update flagging the in-memory `_DAG_*` arrays as the Go-backed cache; behavior unchanged (still bash; Phase-5 candidate)
-- `cmd/tekhton/main.go` — wired `newDagCmd()` into the root command
-- `ARCHITECTURE.md` — added entries for `internal/dag`, `cmd/tekhton/dag.go`, `lib/milestone_query.sh`; updated `lib/milestone_dag.sh` to reflect shim status
-- `CLAUDE.md` — repository layout updated for the m14 wedge
-- (Multiple test files) — adapted to the new shim + Go binary expectation; rebuild required (`make build`) before running DAG-related shell tests
-
-### DELETED
-- `lib/milestone_dag_helpers.sh` — logic moved to Go (queries) and `milestone_query.sh` (wrappers)
-- `lib/milestone_dag_validate.sh` — logic moved to `internal/dag.Validate`
-- `lib/milestone_dag_migrate.sh` — logic moved to `internal/dag.Migrate`
-
-## Test Results
-
-| Suite | Result |
-|---|---|
-| `tests/test_milestone_dag.sh` | 40 passed, 0 failed |
-| `tests/test_milestone_dag_migrate.sh` | 15 passed, 0 failed |
-| `tests/test_milestone_dag_coverage.sh` | 17 passed, 0 failed |
-| `tests/test_milestone_dag_archival_metadata.sh` | 15 passed, 0 failed |
-| `tests/test_dag_get_id_at_index.sh` | 13 passed, 0 failed |
-| `tests/test_find_next_milestone_dag.sh` | 9 passed, 0 failed |
-| `tests/test_m111_dag_split_bugs.sh` | 22 passed, 0 failed |
-| `tests/test_m111_downstream_dep_unblock.sh` | 11 passed, 0 failed |
-| `tests/test_milestone_query.sh` | 21 passed, 0 failed |
-| `tests/test_milestone_window.sh` | 29 passed, 0 failed |
-| `scripts/dag-parity-check.sh` | 5 fixtures × frontier/active + 4 validate gates + migrate idempotency — all PASS |
-| `go test ./internal/dag/...` | ok, **89.3%** coverage (target ≥ 80%) |
-| `go test ./cmd/tekhton/...` | ok, 78.5% coverage |
-| `go test ./...` | all packages ok |
-| `shellcheck tekhton.sh lib/*.sh stages/*.sh scripts/dag-parity-check.sh` | clean |
-
-Full `bash tests/run_tests.sh` run: **494 of 496 shell tests pass**, all 250
-Python tests pass, all Go packages pass.
-
-The 2 failing shell tests (`test_diagnose.sh`, `test_state_error_classification.sh`)
-are **pre-existing m03 wedge failures unrelated to m14** — verified by
-`git stash && PATH="${PWD}/bin:${PATH}" bash tests/test_state_error_classification.sh`
-against the m13 baseline (commit `0f337ff`), which produces identical
-failures. Both stem from a JSON formatting difference between the Go state
-writer (`encoding/json.MarshalIndent` emits `"key": "value"` with a space)
-and the bash fallback writer (`"key":"value"` no space) — the test's
-`grep -F` looks for the no-space form. The m13 CODER_SUMMARY also
-documented these as pre-existing.
-
-## Acceptance-criterion check
-
-| AC | Requirement | Status |
-|---|---|---|
-| 1 | `tekhton dag frontier` matches bash `dag_get_frontier` for every fixture | ✓ (parity script: 5 fixtures, frontier + active) |
-| 2 | `tekhton dag advance ID in_progress` transitions atomically | ✓ (writes via manifest's tmpfile + os.Rename) |
-| 3 | `tekhton dag validate` detects cycles, missing deps, unknown statuses, duplicate IDs | ✓ (parity gates + Go unit tests) |
-| 4 | `tekhton dag migrate` matches bash `migrate_inline_milestones` | ✓ (parity migrate_idempotent gate + Go tests + bash test_milestone_dag_migrate.sh) |
-| 5 | `lib/milestone_dag.sh` ≤ 100 lines | ✓ (92 lines) |
-| 6 | `git ls-files lib/milestone_dag_helpers.sh _validate.sh _migrate.sh` returns no files | ✓ (verified) |
-| 7 | `internal/dag` coverage ≥ 80% | ✓ (89.3%) |
-| 8 | `bash tests/run_tests.sh` passes; DAG-related tests adapted | ✓ for DAG tests; 2 pre-existing m03 failures unrelated to m14 |
-
-## Architecture Change Proposals
-
-None — the wedge follows the m03/m13 pattern: Go owns the new logic,
-bash shim execs the Go binary for cross-process operations, in-memory
-bash queries continue to operate on cached `_DAG_*` arrays (zero
-fork-overhead for hot paths like frontier iteration during auto-advance).
+- `internal/supervisor/retry.go` — MaxAttempts<=0 guard, BaseDelay comment, defensive trailing return
+- `internal/supervisor/retry_test.go` — 4 new tests for the guards
+- `lib/milestone_query.sh` — empty-manifest exit-code fix
+- `lib/orchestrate_main.sh` — removed `set -euo pipefail` from sourced file
+- `scripts/dag-parity-check.sh` — skip-when-missing toolchain handling
+- `go.mod` — `go mod tidy` (fsnotify and x/sys promoted to direct)
+- `cmd/tekhton/state_cmd_test.go` (NEW) — coverage tests for state update/clear/read full-JSON
+- `.tekhton/NON_BLOCKING_LOG.md` — moved 17 entries from Open to Resolved
 
 ## Docs Updated
-
-- `ARCHITECTURE.md` — added entries for `internal/dag`, `cmd/tekhton/dag.go`,
-  `lib/milestone_query.sh`; updated `lib/milestone_dag.sh` description to
-  reflect shim status and current public-function surface
-- `CLAUDE.md` — repository layout (lib/) updated for m14: removed deleted
-  helper/validate/migrate file lines; added `milestone_query.sh`; updated
-  `milestone_dag.sh` annotation
-- `.tekhton/DOCS_AGENT_REPORT.md` — updated for m14 (already present in
-  working tree at session start)
-
-No user-facing CLI flags, config keys, or schema changes; no other docs need
-updating.
+None — docs agent found no updates needed. No public-surface changes in this task. The CLI surface, exported function signatures, config keys, and prompt template variables are all unchanged. The `scripts/dag-parity-check.sh` requirements section is self-documenting in the script header. The `BaseDelay`/`MaxAttempts` behavior changes are internal supervisor implementation details surfaced only through typed errors.
 
 ## Human Notes Status
+There were no `## Human Notes` items injected into this run — only the
+17 non-blocking log entries above, all of which are addressed.
 
-No human notes provided in this run.
+## Self-Check
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — clean.
+- `go vet ./...` — clean.
+- `go build ./...` — clean.
+- `go test ./...` — all packages pass; `cmd/tekhton` coverage 81.1%.
+- `bash tests/run_tests.sh` — 496 shell tests pass; 1 unrelated flake
+  (`test_watchtower_parallel_groups_datalist.sh` — passes when re-run in
+  isolation; touches Watchtower JS only, unrelated to my changes).
+- File length check — all modified files under their respective ceilings:
+  - `lib/orchestrate_main.sh` 247 lines (≤300)
+  - `lib/milestone_query.sh` 144 lines (≤300)
+  - `scripts/dag-parity-check.sh` 283 lines (≤300)
+  - `internal/supervisor/retry.go` 288 lines (≤600 soft)
+  - `internal/supervisor/retry_test.go` 680 lines (≤1000 hard, domain-coherent)
+  - `cmd/tekhton/state_cmd_test.go` 159 lines (NEW, ≤600 soft)
