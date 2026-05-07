@@ -236,6 +236,33 @@ is idempotent — returns a success with no changes when `MANIFEST.cfg`
 already exists. `RewritePointer` replaces inline blocks with two-line
 pointer comments, matching pre-m14 bash output byte-for-byte.
 
+### `tekhton prompt …` (m15)
+
+The agent-prompt template engine. `lib/prompts.sh` is a thin shim that
+execs this subcommand when the Go binary is on `$PATH`; pipeline callers
+use the bash `render_prompt()` function which is unchanged.
+
+```text
+tekhton prompt render --template <name> [--prompts-dir DIR] [--vars-file FILE]
+```
+
+Reads `<name>.prompt.md` from `--prompts-dir` (or `$TEKHTON_PROMPTS_DIR`, or
+`$TEKHTON_HOME/prompts`) and writes the rendered template to stdout. Variable
+values come from `--vars-file` (a flat JSON `{string: string}` map) if supplied;
+otherwise from the process environment (allowing the bash shim to export every
+placeholder name before exec). Supports `{{VAR}}` substitution and `{{IF:VAR}}…{{ENDIF:VAR}}`
+conditional blocks.
+
+Exit codes:
+- `0` — success (stdout = rendered template)
+- `1` (`exitNotFound`) — template file not found in prompts directory
+- `64` (`exitUsage`) — missing `--template` flag, bad `--prompts-dir` resolution, or malformed JSON vars-file
+
+The `internal/prompt` package (214 lines) implements `Render(dir, name, vars)` and
+`RenderString(template, vars)` with 95.8% test coverage. Bash callers continue to
+use `render_prompt` — its public contract is unchanged, and the bash implementation
+now delegates to this Go engine.
+
 ## Migration retrospective
 
 Phase-by-phase notes on what landed, what worked, and what needed adjustment

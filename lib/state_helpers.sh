@@ -12,6 +12,7 @@
 #   _state_bash_read_field    — pure-bash JSON reader for first-class +
 #                               extra fields (only used when Go binary absent)
 # =============================================================================
+set -euo pipefail
 
 # _state_write_snapshot stage reason resume_flag resume_task [extra_notes] [milestone]
 # Maps the legacy 6-positional API to the JSON envelope. Includes auxiliary

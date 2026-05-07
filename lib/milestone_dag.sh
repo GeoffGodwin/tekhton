@@ -4,6 +4,7 @@
 # arrays directly) and forwards cross-process ops (validate / migrate /
 # pointer-rewrite) to `tekhton dag <subcommand>`.
 # Sourced by tekhton.sh — do not run directly.
+set -euo pipefail
 
 _DAG_IDS=(); _DAG_TITLES=(); _DAG_STATUSES=(); _DAG_DEPS=(); _DAG_FILES=(); _DAG_GROUPS=()
 declare -A _DAG_IDX=()

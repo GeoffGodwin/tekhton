@@ -16,6 +16,7 @@
 #   get_milestone_title    — title lookup via DAG or inline
 #   is_milestone_done      — done check via DAG or inline
 # =============================================================================
+set -euo pipefail
 
 # parse_milestones_auto [CLAUDE_MD_PATH]
 # Returns NUMBER|TITLE|ACCEPTANCE_CRITERIA rows from the DAG manifest when

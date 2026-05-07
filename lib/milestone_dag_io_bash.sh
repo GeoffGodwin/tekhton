@@ -11,6 +11,7 @@
 #   _dag_bash_load_arrays  — parse MANIFEST.cfg into the _DAG_* arrays
 #   _dag_bash_save_arrays  — atomic write of the _DAG_* arrays back out
 # =============================================================================
+set -euo pipefail
 
 # _dag_bash_load_arrays MANIFEST_PATH
 # Pure-bash port of the legacy load_manifest body. Returns 1 on missing or

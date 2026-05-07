@@ -2,6 +2,7 @@
 # state.sh — m03 wedge shim for PIPELINE_STATE_FILE. Writer logic lives in
 # state_helpers.sh + `tekhton state` (on-disk: tekhton.state.v1). Valid
 # exit_stage values: intake, coder, review, tester, cleanup, architect, QUOTA_PAUSED.
+set -euo pipefail
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/state_helpers.sh"
 

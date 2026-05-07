@@ -47,7 +47,8 @@ tekhton/
 │   ├── project_version.sh  # Target-project version file detection
 │   ├── project_version_bump.sh # Version bump logic + file writes
 │   ├── notes.sh            # Human notes management
-│   ├── prompts.sh          # Template engine for .prompt.md files
+│   ├── prompts.sh          # m15 wedge shim — execs `tekhton prompt render`
+│   ├── prompts_io.sh       # m15 — file-content helpers (_safe_read_file, _wrap_file_content)
 │   ├── state.sh            # Pipeline state persistence + resume
 │   ├── turns.sh            # Turn-exhaustion continuation logic
 │   ├── drift.sh            # Drift log, ADL, human action management

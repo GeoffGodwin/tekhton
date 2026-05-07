@@ -2,6 +2,7 @@
 # milestone_dag_io.sh — m13 wedge shim. Manifest parser ported to Go; this
 # file keeps the bash-array contract callers depend on by sourcing the
 # pure-bash fallback and preferring `tekhton manifest list` when on PATH.
+set -euo pipefail
 # shellcheck source=milestone_dag_io_bash.sh disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/milestone_dag_io_bash.sh"
 

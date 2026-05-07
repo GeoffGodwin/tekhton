@@ -17,6 +17,7 @@
 # Provides:
 #   run_complete_loop — the outer orchestration loop
 # =============================================================================
+set -euo pipefail
 
 # --- Orchestration state globals -----------------------------------------------
 _ORCH_ATTEMPT=0

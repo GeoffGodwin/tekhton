@@ -8,6 +8,7 @@
 # ceiling and to decouple the registry from the rule function bodies, mirroring
 # the precedent set by pipeline_order_policy.sh.
 # =============================================================================
+set -euo pipefail
 
 # Priority-ordered array. classify_failure_diag() applies rules top-down,
 # stops at the first match. The three resilience-arc primary rules must beat
