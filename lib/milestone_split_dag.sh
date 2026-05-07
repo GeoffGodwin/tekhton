@@ -7,13 +7,27 @@ set -euo pipefail
 # Expects: load_manifest, save_manifest, has_milestone_manifest,
 #          _dag_milestone_dir from milestone_dag_io.sh
 #          dag_number_to_id, dag_get_file, dag_set_status from milestone_dag.sh
-#          _slugify from milestone_dag_migrate.sh
 #          error() from common.sh
 #
 # Provides:
+#   _split_slugify             — local title-to-slug helper (m14 inline)
 #   _split_read_dag_milestone  — read milestone definition from DAG file
 #   _split_apply_dag           — parse sub-milestones, write files, splice manifest
 # =============================================================================
+
+# _split_slugify TEXT — lowercase, spaces→hyphens, strip non-alnum, truncate.
+# Pre-m14 this was _slugify in lib/milestone_dag_migrate.sh; that file was
+# deleted when migrate logic moved to internal/dag (Go), so split keeps its
+# own copy.
+_split_slugify() {
+    local text="$1"
+    text="${text,,}"
+    text="${text// /-}"
+    text="${text//[^a-z0-9-]/}"
+    while [[ "$text" == *--* ]]; do text="${text//--/-}"; done
+    text="${text#-}"; text="${text%-}"
+    printf '%s\n' "${text:0:40}"
+}
 
 # _split_read_dag_milestone MILESTONE_NUM
 # Echoes the contents of the milestone's DAG file.
@@ -73,11 +87,11 @@ _split_apply_dag() {
         local sub_id
         sub_id=$(printf "m%02d%s" "$sub_main" "$sub_suffix")
         local sub_slug
-        sub_slug=$(_slugify "$sub_title")
+        sub_slug=$(_split_slugify "$sub_title")
         local sub_file="${sub_id}-${sub_slug}.md"
         # Path-traversal guard: reject any filename that has survived slugging
         # with a path separator or that is the bare ".." traversal token.
-        # Keeps write safety independent of _slugify's current behaviour, and
+        # Keeps write safety independent of _split_slugify's current behaviour, and
         # makes the defensive intent self-documenting even though the OS would
         # reject a bare ".." write path anyway.
         if [[ "$sub_file" == */* ]] || [[ "$sub_file" == ".." ]]; then

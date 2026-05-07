@@ -1,17 +1,13 @@
 ## Planned Tests
-- [x] `cmd/tekhton/manifest_test.go` — add missing-path tests for get/set-status/frontier commands (3 uncovered branches)
+- [x] `cmd/tekhton/dag_test.go` — `loadDagState` via `$MILESTONE_MANIFEST_FILE` env fallback path
+- [x] `tests/test_dag_advance_parity.sh` — cross-process advance parity: Go binary writes, bash `_DAG_*` arrays read back
 
 ## Test Run Results
-Passed: 3  Failed: 0
-
-Full suite (bash tests/run_tests.sh): 495 shell passed, 0 failed; Python PASSED; all 8 Go packages ok.
-
-Coverage: `internal/manifest` 88.0% (target ≥80% ✓); `cmd/tekhton` manifest.go functions 88–100% per function.
-
-Parity check: `scripts/manifest-parity-check.sh` — all 6 fixtures + comment round-trip + atomicity gate PASS.
+Passed: 2  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `cmd/tekhton/manifest_test.go`
+- [x] `cmd/tekhton/dag_test.go`
+- [x] `tests/test_dag_advance_parity.sh`

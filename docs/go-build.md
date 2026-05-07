@@ -201,6 +201,41 @@ provides a pure-bash JSON writer + reader that produces the same
 `tekhton.state.v1` shape. The fallback is transitional and tracks the
 same removal timeline as the m02 causal fallback.
 
+### `tekhton dag …` (m14)
+
+The milestone DAG state machine. `lib/milestone_dag.sh` is a wedge shim
+that execs this subcommand for cross-process DAG operations; in-memory
+queries operate on the cached `_DAG_*` arrays (populated by m13's
+manifest loader, which execs `tekhton manifest list`).
+
+```text
+tekhton dag frontier  --path PATH [--milestone-dir DIR]              # ready-to-run milestone IDs
+tekhton dag active    --path PATH [--milestone-dir DIR]              # in_progress milestone IDs
+tekhton dag advance   --path PATH ID STATUS [--milestone-dir DIR]    # validated transition + atomic save
+tekhton dag validate  --path PATH [--milestone-dir DIR]              # structural validation
+tekhton dag migrate   --inline-claude-md PATH --milestone-dir DIR [--rewrite-pointer]
+tekhton dag rewrite-pointer --inline-claude-md PATH
+```
+
+Exit codes:
+- `0` — success
+- `1` (`exitNotFound`) — file missing or unknown ID
+- `2` (`exitCorrupt`) — manifest validation failures (duplicate IDs, cycles, missing deps, unknown statuses)
+- `64` (`exitUsage`) — invalid status string or disallowed transition
+
+The `--path` flag specifies `MANIFEST.cfg` location. The `--milestone-dir`
+flag (optional) triggers file-presence validation for each milestone entry.
+`Validate` runs five checks: duplicate IDs, missing dependency targets,
+unknown statuses, missing milestone files, and circular dependencies (DFS).
+Each finding wraps a sentinel error (`ErrCycle`, `ErrMissingDep`, etc.) so
+callers can match with `errors.Is`.
+
+`Migrate` converts inline milestone blocks in CLAUDE.md to individual
+`.claude/milestones/m*.md` files plus a fresh `MANIFEST.cfg`. The operation
+is idempotent — returns a success with no changes when `MANIFEST.cfg`
+already exists. `RewritePointer` replaces inline blocks with two-line
+pointer comments, matching pre-m14 bash output byte-for-byte.
+
 ## Migration retrospective
 
 Phase-by-phase notes on what landed, what worked, and what needed adjustment

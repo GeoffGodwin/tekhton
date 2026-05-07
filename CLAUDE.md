@@ -89,8 +89,8 @@ tekhton/
 │   ├── metrics_calibration.sh  # Adaptive turn calibration
 │   ├── errors.sh           # Error taxonomy, classification + reporting
 │   ├── errors_helpers.sh   # Error classification helpers
-│   ├── milestone_dag.sh    # Milestone DAG infrastructure + manifest parser
-│   ├── milestone_dag_migrate.sh # Inline→file milestone migration
+│   ├── milestone_dag.sh    # m14 wedge shim — _DAG_* array queries + cross-process tekhton dag shims
+│   ├── milestone_query.sh  # m14 — DAG-aware milestone wrappers (parse_milestones_auto, et al.)
 │   ├── milestone_window.sh # Character-budgeted milestone sliding window
 │   ├── draft_milestones.sh # Interactive milestone authoring flow (--draft-milestones)
 │   ├── draft_milestones_write.sh # Validation and manifest writing for draft milestones
@@ -180,10 +180,8 @@ tekhton/
 │   ├── safety_net.sh       # Run safety net + rollback
 │   ├── run_memory.sh       # Structured cross-run memory (JSONL)
 │   ├── timing.sh           # Stage timing and duration estimation
-│   ├── milestone_dag_helpers.sh # DAG helper functions
 │   ├── milestone_dag_io.sh # m13 wedge shim — manifest I/O, prefers Go binary
 │   ├── milestone_dag_io_bash.sh # m13 pure-bash fallback for the manifest shim
-│   ├── milestone_dag_validate.sh # DAG validation
 │   ├── milestone_archival_helpers.sh # Archival helper functions
 │   ├── metrics_dashboard.sh # Metrics dashboard formatting
 │   ├── drift_prune.sh      # Drift log pruning

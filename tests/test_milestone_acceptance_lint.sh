@@ -189,7 +189,7 @@ get_milestone_title() { echo "Test Move Files"; }
 
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+source "${TEKHTON_HOME}/lib/milestone_query.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 
 cd "$TMPDIR"

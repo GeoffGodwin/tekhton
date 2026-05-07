@@ -41,6 +41,18 @@ assert_file_contains() {
     fi
 }
 
+# JSON-shaped needle. Accepts both `"k":"v"` (bash fallback writer) and
+# `"k": "v"` (Go encoding/json.MarshalIndent). Tries the literal form first,
+# then the spaced form before failing.
+assert_file_contains_json() {
+    local name="$1" needle="$2" file="$3"
+    local spaced="${needle//\":\"/\": \"}"
+    if grep -qF "$needle" "$file" 2>/dev/null; then return 0; fi
+    if grep -qF "$spaced" "$file" 2>/dev/null; then return 0; fi
+    echo "FAIL: $name — neither '$needle' nor '$spaced' found in '$file'"
+    FAIL=1
+}
+
 assert_file_not_contains() {
     local name="$1" needle="$2" file="$3"
     if grep -qF "$needle" "$file" 2>/dev/null; then
@@ -77,9 +89,9 @@ export TEKHTON_SESSION_DIR="$SESSION_DIR"
 
 write_pipeline_state "coder" "upstream_error" "--start-at coder" "Phase 2 task" "" 2>/dev/null
 
-assert_file_contains "2.1 agent_error_category"    '"agent_error_category":"UPSTREAM"'   "$PIPELINE_STATE_FILE"
-assert_file_contains "2.2 agent_error_subcategory" '"agent_error_subcategory":"api_500"' "$PIPELINE_STATE_FILE"
-assert_file_contains "2.3 agent_error_transient"   '"agent_error_transient":"true"'      "$PIPELINE_STATE_FILE"
+assert_file_contains_json "2.1 agent_error_category"    '"agent_error_category":"UPSTREAM"'   "$PIPELINE_STATE_FILE"
+assert_file_contains_json "2.2 agent_error_subcategory" '"agent_error_subcategory":"api_500"' "$PIPELINE_STATE_FILE"
+assert_file_contains_json "2.3 agent_error_transient"   '"agent_error_transient":"true"'      "$PIPELINE_STATE_FILE"
 assert_file_contains "2.4 recovery suggestion"     'server error' "$PIPELINE_STATE_FILE"
 
 # =============================================================================
@@ -158,11 +170,11 @@ export AGENT_ERROR_TRANSIENT="true"
 
 write_pipeline_state "review" "oom_kill" "--start-at review" "Phase 6 task" "oom notes" "7" 2>/dev/null
 
-assert_file_contains "6.1 exit_stage in state"    '"exit_stage":"review"'      "$PIPELINE_STATE_FILE"
-assert_file_contains "6.2 exit_reason in state"   '"exit_reason":"oom_kill"'   "$PIPELINE_STATE_FILE"
-assert_file_contains "6.3 task in state"          "Phase 6 task"               "$PIPELINE_STATE_FILE"
-assert_file_contains "6.4 milestone in state"     '"milestone_id":"7"'         "$PIPELINE_STATE_FILE"
-assert_file_contains "6.5 error category in state" '"agent_error_category":"ENVIRONMENT"' "$PIPELINE_STATE_FILE"
+assert_file_contains_json "6.1 exit_stage in state"    '"exit_stage":"review"'      "$PIPELINE_STATE_FILE"
+assert_file_contains_json "6.2 exit_reason in state"   '"exit_reason":"oom_kill"'   "$PIPELINE_STATE_FILE"
+assert_file_contains      "6.3 task in state"          "Phase 6 task"               "$PIPELINE_STATE_FILE"
+assert_file_contains_json "6.4 milestone in state"     '"milestone_id":"7"'         "$PIPELINE_STATE_FILE"
+assert_file_contains_json "6.5 error category in state" '"agent_error_category":"ENVIRONMENT"' "$PIPELINE_STATE_FILE"
 
 # =============================================================================
 if [ "$FAIL" -ne 0 ]; then

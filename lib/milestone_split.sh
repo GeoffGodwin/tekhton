@@ -4,7 +4,7 @@ set -euo pipefail
 # milestone_split.sh — Pre-flight milestone sizing and null-run auto-split
 #
 # Sourced by tekhton.sh — do not run directly.
-# Expects: milestones.sh, milestone_archival.sh, milestone_dag_migrate.sh sourced first
+# Expects: milestones.sh, milestone_archival.sh sourced first
 #   (uses _extract_milestone_block() and _replace_milestone_block() from archival)
 # Expects: config.sh defaults: MILESTONE_SPLIT_*, MILESTONE_AUTO_RETRY,
 #          MILESTONE_MAX_SPLIT_DEPTH, CODER_MAX_TURNS_CAP, ADJUSTED_CODER_TURNS

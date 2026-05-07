@@ -38,6 +38,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newQuotaCmd())
 	cmd.AddCommand(newOrchestrateCmd())
 	cmd.AddCommand(newManifestCmd())
+	cmd.AddCommand(newDagCmd())
 	return cmd
 }
 

@@ -9,7 +9,7 @@ trap "rm -rf $PROJECT_DIR" EXIT
 # Source required libraries
 source "$TEKHTON_DIR/lib/common.sh"
 source "$TEKHTON_DIR/lib/milestones.sh"
-source "$TEKHTON_DIR/lib/milestone_dag_helpers.sh"
+source "$TEKHTON_DIR/lib/milestone_query.sh"
 
 # Test 1: get_milestone_count with default CLAUDE.md
 test_milestone_count_default() {

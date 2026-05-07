@@ -117,12 +117,13 @@ _create_pipeline_state() {
     local error_sub="${4:-}"
     mkdir -p "$(dirname "$PIPELINE_STATE_FILE")"
     # m10: PIPELINE_STATE_FILE is now a JSON envelope (tekhton.state.v1).
-    # _state_bash_read_field in lib/state_helpers.sh reads first-class
-    # fields directly from the JSON; "notes" is the field the legacy
-    # fixture's markdown "## Notes" heading mapped to.
+    # Custom error classification fields live under the "extra" map — that's
+    # the only location the Go reader (`tekhton state read`) consults for
+    # non-first-class fields. The bash fallback reader was lenient about
+    # top-level placement; the Go reader is not.
     local _err_block=""
     if [[ -n "$error_cat" ]]; then
-        _err_block=$(printf ',"agent_error_category":"%s","agent_error_subcategory":"%s","agent_error_transient":"false"' \
+        _err_block=$(printf ',"extra":{"agent_error_category":"%s","agent_error_subcategory":"%s","agent_error_transient":"false"}' \
             "$error_cat" "$error_sub")
     fi
     cat > "$PIPELINE_STATE_FILE" << EOF

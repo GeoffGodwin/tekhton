@@ -34,7 +34,7 @@ source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag_io.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+source "${TEKHTON_HOME}/lib/milestone_query.sh"
 
 setup
 

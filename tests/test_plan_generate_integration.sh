@@ -42,8 +42,7 @@ run_build_gate() { return 0; }
 # Source DAG libraries needed by plan_generate.sh's post-processing
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+source "${TEKHTON_HOME}/lib/milestone_query.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"

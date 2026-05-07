@@ -4,7 +4,7 @@ set -euo pipefail
 # milestone_progress.sh — Milestone progress rendering and next-action guidance
 #
 # Sourced by tekhton.sh — do not run directly.
-# Expects: common.sh, milestone_dag.sh, milestone_dag_helpers.sh,
+# Expects: common.sh, milestone_dag.sh, milestone_query.sh,
 #          milestone_progress_helpers.sh sourced first.
 # Expects: MILESTONE_DAG_ENABLED, MILESTONE_DIR, MILESTONE_MANIFEST from config.
 #

@@ -35,8 +35,7 @@ run_build_gate() { return 0; }
 
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+source "${TEKHTON_HOME}/lib/milestone_query.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
@@ -192,9 +191,9 @@ assert "migration fails gracefully with missing file" "$result"
 # =============================================================================
 echo "--- Test: _insert_milestone_pointer (plan_generate post-processing) ---"
 
-# _insert_milestone_pointer is already available from milestone_dag_migrate.sh
-# (sourced at top of file), but plan_generate.sh is sourced here for
-# completeness as it also provides the helper in production code paths.
+# _insert_milestone_pointer is provided by lib/milestone_dag.sh (m14 shim)
+# sourced at top of file; plan_generate.sh is sourced here for completeness
+# as it also references the helper in production code paths.
 source "${TEKHTON_HOME}/stages/plan_generate.sh"
 
 # Create a fresh CLAUDE.md with milestones

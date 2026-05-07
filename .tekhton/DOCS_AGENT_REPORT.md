@@ -1,26 +1,23 @@
-# Docs Agent Report — M12 Orchestrate Loop Wedge (continuation)
+# Docs Agent Report — M14
+
+## Summary
+
+M14 ports the milestone-DAG state machine from bash to Go via the new `tekhton dag` subcommand. One developer-toolchain documentation update needed.
 
 ## Files Updated
 
-None.
+- `docs/go-build.md` — Added `tekhton dag …` (m14) subcommand section documenting the milestone DAG state machine CLI: `frontier`, `active`, `advance`, `validate`, `migrate`, and `rewrite-pointer` subcommands with exit codes and behavior. This follows the pattern established by earlier wedges (`tekhton causal` m02, `tekhton state` m03) where internal Go subcommands are documented in the developer toolchain guide.
 
-## No Update Needed
+## Analysis
 
-This milestone is a pure internal refactoring with no new public APIs, CLI flags, config keys, or user-facing behavior changes. All documentation references to renamed internal bash files have already been correctly updated by the coder:
+- **User-facing CLI:** No new user-facing flags. The `tekhton dag *` subcommands are internal seams for bash code, not exposed to end-users — documented in `docs/go-build.md` alongside other internal Go subcommands.
+- **Configuration:** No new config keys in `pipeline.conf`.
+- **Milestone schema:** No changes to `MANIFEST.cfg` format or milestone file format. User-facing structure and workflows remain identical.
+- **User-facing documentation:** 
+  - `README.md` — no changes needed (does not reference internal implementation)
+  - `docs/cli-reference.md` — no changes needed (no new user flags)
+  - `docs/MILESTONES.md` — no changes needed (user workflow unchanged)
 
-- **ARCHITECTURE.md** (lines 187-193) — Documents new `lib/orchestrate_main.sh` and all renamed orchestrate files with m12 rename annotations
-- **CLAUDE.md** (lines 78-85) — Repository layout section correctly lists all seven renamed files with "(m12 rename of ...)" traceability notes
-- **docs/troubleshooting/recovery-routing.md** (lines 86-88) — File references updated from old names to new names (`orchestrate_classify.sh`, `orchestrate_cause.sh`, `orchestrate_iteration.sh`)
-- **docs/reference/run-summary-schema.md** — Maintains correct file path references to the recovery routing implementation
+## Conclusion
 
-## Why No Docs Update is Needed
-
-1. **Internal refactoring only** — The milestone relocates code within `lib/orchestrate.sh` (278→41 lines) to `lib/orchestrate_main.sh` (248 lines new) and renames six helper files via `git mv` to resolve 300-line ceiling violations. No public-facing behavior changes.
-
-2. **No new exports or CLI surface** — The orchestration APIs (classification, iteration, state management) remain unchanged. Call sites continue using the same function names and behaviors.
-
-3. **Documentation is complete** — All internal file paths referenced in project documentation (ARCHITECTURE.md, CLAUDE.md, troubleshooting guides, reference schemas) have been updated to reflect the new filenames. The coder's claim of "docs updated" in the CODER_SUMMARY has been verified.
-
-## Open Questions
-
-None — documentation review is complete and all claimed updates have been verified as in place.
+The codebase already updated internal documentation (`ARCHITECTURE.md`, `CLAUDE.md`) for the Go package and deleted bash files. Added developer-toolchain documentation to `docs/go-build.md` for the new internal `tekhton dag` subcommand to maintain consistency with prior wedge documentation patterns. User-facing documentation requires no changes.

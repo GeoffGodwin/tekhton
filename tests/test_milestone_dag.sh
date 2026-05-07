@@ -35,8 +35,7 @@ run_build_gate() { return 0; }
 
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
+source "${TEKHTON_HOME}/lib/milestone_query.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
@@ -224,20 +223,27 @@ assert "valid manifest passes validation" "$result"
 # =============================================================================
 echo "--- Test: validate_manifest (missing dep) ---"
 
-# Add a milestone with a nonexistent dependency
-_DAG_IDS+=("m99")
-_DAG_TITLES+=("Bad Dep")
-_DAG_STATUSES+=("pending")
-_DAG_DEPS+=("m_nonexistent")
-_DAG_FILES+=("")
-_DAG_GROUPS+=("")
-_DAG_IDX["m99"]=$(( ${#_DAG_IDS[@]} - 1 ))
+# m14: validate_manifest now defers to `tekhton dag validate` (Go), which
+# reads from disk. Write the manifest to disk first so the validator sees the
+# bad dep.
+cat >> "${MILESTONE_DIR_ABS}/MANIFEST.cfg" << 'EOF'
+m99|Bad Dep|pending|m_nonexistent||
+EOF
+load_manifest
 
 result=0
 validate_manifest 2>/dev/null && result=1 || result=0
 assert "manifest with missing dep fails validation" "$result"
 
-# Reload clean manifest
+# Restore clean manifest
+cat > "${MILESTONE_DIR_ABS}/MANIFEST.cfg" << 'EOF'
+# Tekhton Milestone Manifest v1
+# id|title|status|depends_on|file|parallel_group
+m01|DAG Infrastructure|pending||m01-dag-infra.md|foundation
+m02|Sliding Window|pending|m01|m02-sliding-window.md|foundation
+m03|Indexer Setup|done|m01|m03-indexer-setup.md|indexer
+m04|Repo Map Generator|pending|m03|m04-repo-map.md|indexer
+EOF
 load_manifest
 
 # =============================================================================

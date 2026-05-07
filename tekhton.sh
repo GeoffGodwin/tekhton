@@ -476,8 +476,7 @@ if [ "${1:-}" = "--plan" ] || [ "${1:-}" = "--plan-browser" ] || [ "${1:-}" = "-
     : "${MILESTONE_DIR:=.claude/milestones}"
     : "${MILESTONE_MANIFEST:=MANIFEST.cfg}"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
-    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_query.sh"
     source "${TEKHTON_HOME}/stages/plan_interview.sh"
     source "${TEKHTON_HOME}/stages/plan_followup_interview.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
@@ -503,8 +502,7 @@ if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/milestones.sh"
     source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
-    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_query.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
     # PROJECT_NAME is needed by run_agent() for temp file naming;
     # in --replan mode config is not loaded, so derive from directory name.
@@ -602,7 +600,7 @@ if [ "${1:-}" = "--draft-milestones" ]; then
     source "${TEKHTON_HOME}/lib/draft_milestones.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_query.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     load_config
@@ -675,8 +673,7 @@ if [ "${1:-}" = "--migrate" ]; then
     source "${TEKHTON_HOME}/lib/milestones.sh"
     source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-    source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
-    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+    source "${TEKHTON_HOME}/lib/milestone_query.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
 
@@ -880,8 +877,7 @@ source "${TEKHTON_HOME}/lib/context.sh"
 source "${TEKHTON_HOME}/lib/context_compiler.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_migrate.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"  # DAG-aware wrappers (extracted from milestones.sh)
+source "${TEKHTON_HOME}/lib/milestone_query.sh"  # DAG-aware milestone wrappers (m14: replaces milestone_dag_helpers.sh)
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_acceptance_lint.sh"
 source "${TEKHTON_HOME}/lib/milestone_archival.sh"

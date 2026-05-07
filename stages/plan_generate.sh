@@ -12,7 +12,7 @@
 #          TEKHTON_HOME
 # Expects: log(), success(), warn(), error(), header() from common.sh
 # Expects: render_prompt(), _call_planning_batch() from lib/plan.sh
-# Expects: _insert_milestone_pointer() from lib/milestone_dag_migrate.sh
+# Expects: _insert_milestone_pointer() from lib/milestone_dag.sh (m14 shim)
 # =============================================================================
 set -euo pipefail
 

@@ -3,11 +3,18 @@
 # milestone_window.sh — Character-budgeted milestone sliding window
 #
 # Sourced by tekhton.sh — do not run directly.
-# Expects: milestone_dag.sh sourced first (provides DAG queries)
+# Expects: milestone_dag.sh sourced first (provides DAG queries over the
+#          _DAG_* arrays populated by m13's load_manifest shim, which itself
+#          delegates to `tekhton manifest list`)
 # Expects: context.sh sourced first (provides _add_context_component,
 #          _get_model_window, check_context_budget)
 # Expects: MILESTONE_WINDOW_PCT, MILESTONE_WINDOW_MAX_CHARS from config
 # Expects: log(), warn() from common.sh
+#
+# m14 note: priority partitioning (active / frontier / on-deck) reads the
+# in-memory _DAG_* arrays — they're the Go-backed cache, not a re-parse of
+# MANIFEST.cfg. The same status / dep semantics also live in
+# `internal/dag.State.Frontier` / `Active`.
 #
 # Provides:
 #   build_milestone_window  — assembles budgeted milestone context block

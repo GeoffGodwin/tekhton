@@ -28,7 +28,7 @@ run_build_gate() { return 0; }
 
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
-source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh"
+source "${TEKHTON_HOME}/lib/milestone_query.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 
 # Prevent environment leakage from prior tekhton.sh --auto-advance runs
@@ -446,7 +446,7 @@ git -C "$GIT_REPO_DIR" commit -q -m "init"
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh" 2>/dev/null || true
     source "${TEKHTON_HOME}/lib/milestone_dag.sh" 2>/dev/null || true
-    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh" 2>/dev/null || true
+    source "${TEKHTON_HOME}/lib/milestone_query.sh" 2>/dev/null || true
     source "${TEKHTON_HOME}/lib/milestone_ops.sh" 2>/dev/null || true
     tag_milestone_complete 7
 )
@@ -460,7 +460,7 @@ assert "tag_milestone_complete creates tag when enabled" "$([ "$tag_exists" = "m
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh" 2>/dev/null || true
     source "${TEKHTON_HOME}/lib/milestone_dag.sh" 2>/dev/null || true
-    source "${TEKHTON_HOME}/lib/milestone_dag_helpers.sh" 2>/dev/null || true
+    source "${TEKHTON_HOME}/lib/milestone_query.sh" 2>/dev/null || true
     source "${TEKHTON_HOME}/lib/milestone_ops.sh" 2>/dev/null || true
     tag_milestone_complete 7
 ) 2>/dev/null

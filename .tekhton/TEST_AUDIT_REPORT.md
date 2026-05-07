@@ -1,125 +1,74 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files (freshness sample — not modified this run), 0 files modified this run, ~30 test functions
+Tests audited: 2 files — `cmd/tekhton/dag_test.go` (24 Go test functions) and
+`tests/test_dag_advance_parity.sh` (21 assertions in 9 logical groups).
 Verdict: PASS
-
-### Context: Documentation-Only Milestone
-
-M11 is a decision milestone that produced no runtime code changes. All modifications
-landed in `docs/`, `.tekhton/`, and `.claude/milestones/` — no file under `lib/`,
-`stages/`, `cmd/`, or `internal/` was touched. The tester's approach (run the existing
-suite, write no new tests) is correct: there is no new code path to exercise.
-
-Existing suite result per tester and coder reports: 493 shell tests pass, 250 Python
-tests pass (14 skipped), all Go packages pass.
-
-The three files below are the "freshness sample — may be stale" set. They were not
-modified by M11, so the weakening and exercise rubric items apply only to their
-standing quality, not to any M11 change.
 
 ### Findings
 
-None.
+#### COVERAGE: validate CLI only exercises one of five validation-error kinds
+- File: cmd/tekhton/dag_test.go (no specific line — absence)
+- Issue: `TestDagValidateCmd_MissingDep` covers the missing-dep path and
+  `TestDagValidateCmd_Clean` covers the happy path, but there are no CLI-level
+  tests for cycle detection (`ErrCycle`), duplicate IDs (`ErrDuplicateID`), or
+  unknown statuses (`ErrUnknownStatus`) flowing through the validate command.
+  All five checks collapse to the same CLI outcome (`exitCorrupt`), so the
+  regression risk is low; the five checks are thoroughly exercised by the unit
+  tests in `internal/dag/validate_test.go` (out of scope for this audit).
+- Severity: LOW
+- Action: Optional — add one small cycle fixture test (two entries with a A→B→A
+  dep) to confirm the Go `checkCycles` result propagates to `exitCorrupt` at the
+  CLI layer. Not blocking.
 
-#### Review: tests/test_build_gate_timeouts.sh
+#### NAMING: `TestDagFrontierCmd_NoPath` name understates the condition
+- File: cmd/tekhton/dag_test.go:41
+- Issue: The test clears `$MILESTONE_MANIFEST_FILE` AND omits `--path`, so
+  `resolveManifestPath("")` returns `""` and `loadDagState` errors with "dag:
+  --path or $MILESTONE_MANIFEST_FILE required". The name implies only the flag
+  is absent, which is accurate but incomplete — a reader might expect a separate
+  test covering the env-var-absent case alone (which is the same code path).
+  The paired `TestDagFrontierCmd_ViaEnv` makes the complementary success case
+  clear, so the pairing is readable; the name is slightly imprecise, not
+  misleading.
+- Severity: LOW
+- Action: Optionally rename to `TestDagFrontierCmd_NeitherPathNorEnv` or add a
+  one-line comment. Not blocking.
 
-1. **Assertion Honesty** — GOOD. Elapsed-time assertions (e.g., `elapsed < 35`)
-   test real wall-clock behavior of `_check_headless_browser` and `run_build_gate`.
-   Exit-code and file-existence checks derive from actual function calls, not
-   hard-coded constants.
+#### NAMING: `TestDagValidateCmd_MissingDep` passes unexplained `--milestone-dir ""`
+- File: cmd/tekhton/dag_test.go:138-139
+- Issue: The test explicitly passes `--milestone-dir ""` without explanation.
+  This disables `checkFiles` inside `State.Validate` — the intent is to isolate
+  the missing-dep check. Without a comment, a reader cannot tell whether the
+  empty string is intentional or an oversight. If the flag is removed, the
+  default `filepath.Dir(path)` logic kicks in and adds a spurious `missing_file`
+  error alongside the intended `missing_dep` error, making the test harder to
+  understand and easier to misread.
+- Severity: LOW
+- Action: Add a one-line comment above the flag:
+  `// --milestone-dir "" skips file-existence checks to isolate the missing-dep path.`
 
-2. **Edge Case Coverage** — GOOD. Tests nine scenarios: browser not installed,
-   browser cache hit, trivial pass, per-phase timeouts for analyze/compile/constraint,
-   overall gate timeout, real error detection, and npm package check. Covers the
-   failure paths that motivated M30.
+### HIGH and INTEGRITY findings: None
 
-3. **Implementation Exercise** — GOOD. Sources `lib/error_patterns.sh`,
-   `lib/error_patterns_remediation.sh`, `lib/gates.sh`, `lib/gates_phases.sh`,
-   `lib/gates_ui.sh`, and `lib/ui_validate.sh` — all confirmed present on disk. Calls
-   the real `run_build_gate`, `_check_headless_browser`, and `_check_npm_package`
-   implementations without mocking the functions under test.
+All assertions in both test files are derived from real implementation behavior
+and expected values are grounded in fixture data and the documented state-machine
+rules (transition table in `internal/dag/dag.go::validTransition`, exit codes in
+`cmd/tekhton/errors.go`, frontier semantics in `internal/manifest/manifest.go`).
 
-4. **Test Weakening** — N/A. File was not modified in M11.
+No test mocks the code under test. `writeFixture` / `captureStdout` are defined
+in the same test package (`manifest_test.go`) and write to `t.TempDir()`.
+`test_dag_advance_parity.sh` uses `mktemp -d` with a `trap … EXIT` cleanup.
+Neither file reads live pipeline artifacts, build reports, or project-state files.
+No orphaned references to the deleted files (`lib/milestone_dag_helpers.sh`,
+`lib/milestone_dag_validate.sh`, `lib/milestone_dag_migrate.sh`) appear in
+either audited file.
 
-5. **Scope Alignment** — GOOD. M11 touched none of these source files. All sourced
-   libraries exist. No orphaned references detected.
-
-6. **Naming** — GOOD. Inline test labels (e.g., "Browser detection completes when no
-   browsers available", "Overall gate timeout") describe both the scenario and the
-   expected outcome.
-
-7. **Isolation** — GOOD. `TMPDIR=$(mktemp -d)` with `trap 'rm -rf "$TMPDIR"' EXIT`.
-   Test `cd`s into `$TMPDIR` before running gates, so relative paths like
-   `.tekhton/BUILD_ERRORS.md` resolve inside the temp dir, not the live project tree.
-
-#### Review: tests/test_changelog_append.sh
-
-1. **Assertion Honesty** — GOOD. Asserts specific strings (`## [1.2.3]`, `New feature
-   (M77)`, `### Added`, etc.) in files produced by real `changelog_append` and
-   `changelog_assemble_entry` calls. No hard-coded return values that bypass the
-   implementation.
-
-2. **Edge Case Coverage** — GOOD. Tests commit-type mapping (9 types), first-entry
-   under `[Unreleased]`, insertion above a prior release, idempotent re-run, breaking
-   changes, new public surface, skip types (`docs`, `chore`, `test`), milestone title
-   fallback when no coder summary exists, auto-create on missing changelog, and the
-   `fix → Fixed` mapping. Ratio of error/edge-case tests to happy-path tests is
-   approximately 4:3.
-
-3. **Implementation Exercise** — GOOD. Sources `lib/changelog.sh` (confirmed present).
-   All assertions operate on file contents produced by actual function calls.
-
-4. **Test Weakening** — N/A. File was not modified in M11.
-
-5. **Scope Alignment** — GOOD. M11 did not touch `lib/changelog.sh`. No orphaned
-   references.
-
-6. **Naming** — GOOD. Section labels (`=== append: idempotent ===`,
-   `=== assemble: breaking ===`) encode the scenario; `pass`/`fail` messages within
-   each section name the specific property being checked.
-
-7. **Isolation** — GOOD. `TEST_TMPDIR=$(mktemp -d)` with `trap 'rm -rf
-   "$TEST_TMPDIR"' EXIT`. The milestone-fallback test constructs its own
-   `MANIFEST.cfg` fixture inside the temp dir rather than reading the live
-   `.claude/milestones/MANIFEST.cfg`. No live project state is read.
-
-#### Review: tests/test_changelog_helpers.sh
-
-1. **Assertion Honesty** — GOOD. Assertions check file content after real
-   `_changelog_insert_after_unreleased` calls: entry presence, blank-line
-   positioning, and consecutive-blank-line absence. All assertions derive from
-   function behavior, not constants.
-
-2. **Edge Case Coverage** — GOOD. Four test functions cover the four blank-line
-   variants: no pre-existing blank (separator must be added), pre-existing blank
-   (no duplicate separator), no `[Unreleased]` header (fallback append), and
-   double-blank prevention. This mirrors the M78 non-blocking note that motivated
-   the file.
-
-3. **Implementation Exercise** — GOOD. Sources `lib/changelog_helpers.sh` (confirmed
-   present). Calls the real `_changelog_insert_after_unreleased` function directly.
-
-4. **Test Weakening** — N/A. File was not modified in M11.
-
-5. **Scope Alignment** — GOOD. M11 did not touch `lib/changelog_helpers.sh`. No
-   orphaned references.
-
-6. **Naming** — GOOD. Function names (`test_no_preexisting_blank`,
-   `test_preexisting_blank`, `test_no_unreleased_header`,
-   `test_double_blank_prevention`) encode both the fixture condition and the variant
-   being tested.
-
-7. **Isolation** — GOOD. Each test function creates its own `mktemp -d` with
-   `trap 'rm -rf "$tmpdir"' RETURN`. Fixtures are self-contained; no live project
-   files are read.
-
----
-
-### Rubric Summary
+#### Rubric summary
 
 | File | Honesty | Coverage | Exercise | Weakening | Naming | Alignment | Isolation |
 |---|---|---|---|---|---|---|---|
-| test_build_gate_timeouts.sh | PASS | PASS | PASS | N/A | PASS | PASS | PASS |
-| test_changelog_append.sh | PASS | PASS | PASS | N/A | PASS | PASS | PASS |
-| test_changelog_helpers.sh | PASS | PASS | PASS | N/A | PASS | PASS | PASS |
+| cmd/tekhton/dag_test.go | PASS | PASS† | PASS | N/A (new) | PASS‡ | PASS | PASS |
+| tests/test_dag_advance_parity.sh | PASS | PASS | PASS | N/A (new) | PASS | PASS | PASS |
+
+† Validate CLI only exercises one of five error-kind paths (LOW, non-blocking).
+‡ Two naming nits noted above (LOW, non-blocking).

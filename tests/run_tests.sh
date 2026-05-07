@@ -105,6 +105,16 @@ echo "  Tekhton Self-Tests"
 echo "════════════════════════════════════════"
 echo
 
+# m14: bash shims in lib/milestone_dag.sh defer to `tekhton dag …` for
+# validate / migrate / pointer-rewrite. Build the binary up-front so the
+# subprocess shell tests can find it on PATH. Skip silently when go isn't
+# installed — those tests will warn and skip rather than fail.
+if [ -f "${TEKHTON_HOME}/go.mod" ] && command -v go &>/dev/null; then
+    if (cd "$TEKHTON_HOME" && make build >/dev/null 2>&1); then
+        export PATH="${TEKHTON_HOME}/bin:${PATH}"
+    fi
+fi
+
 # Discover and run all test files
 for test_file in "${TESTS_DIR}"/test_*.sh; do
     [ -f "$test_file" ] || continue

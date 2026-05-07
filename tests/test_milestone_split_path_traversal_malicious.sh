@@ -11,13 +11,6 @@ test_dir=$(mktemp -d)
 trap 'rm -rf "$test_dir"' EXIT </dev/null
 
 # Stub/minimal implementations of functions required by milestone_split_dag.sh
-_slugify() {
-    # INTENTIONALLY UNSAFE stub (for testing the guard):
-    # Just lowercase, no sanitization — this lets us test that
-    # the path-traversal guard at line 83 catches unsafe slugs.
-    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
-}
-
 error() {
     echo "ERROR: $*" >&2
     return 1
@@ -49,6 +42,13 @@ _DAG_GROUPS=("")
 
 # Source the function under test
 source "${TEKHTON_HOME}/lib/milestone_split_dag.sh" 2>/dev/null || true
+
+# m14: split_dag now bundles _split_slugify. Override AFTER sourcing with an
+# INTENTIONALLY UNSAFE stub that only lowercases — this exercises the path-
+# traversal guard rather than the slug sanitizer.
+_split_slugify() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
 
 test_path_separator_in_title() {
     # Create a split output with a malicious title containing path separators

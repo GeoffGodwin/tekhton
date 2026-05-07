@@ -106,9 +106,9 @@ parse_milestones() {
     [[ "$found" -eq 1 ]]
 }
 
-# --- DAG-aware wrappers (extracted to milestone_dag_helpers.sh) ---------------
+# --- DAG-aware wrappers (extracted to milestone_query.sh) -------------------
 # parse_milestones_auto, get_milestone_count, get_milestone_title,
-# is_milestone_done live in lib/milestone_dag_helpers.sh (sourced by tekhton.sh
+# is_milestone_done live in lib/milestone_query.sh (sourced by tekhton.sh
 # after this file).
 
 # --- Milestone state file management ----------------------------------------
