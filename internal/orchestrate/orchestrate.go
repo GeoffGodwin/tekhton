@@ -86,14 +86,14 @@ func DefaultConfig() Config {
 // Loop is the in-process replacement for run_complete_loop in
 // lib/orchestrate.sh. Construct via New, drive via RunAttempt.
 type Loop struct {
-	cfg     Config
-	stages  StageRunner
-	now     func() time.Time
+	cfg    Config
+	stages StageRunner
+	now    func() time.Time
 
 	// Per-invocation guards — match the persistent _ORCH_*_RETRIED globals
 	// in lib/orchestrate_cause.sh.
-	envGateRetried     bool
-	mixedBuildRetried  bool
+	envGateRetried    bool
+	mixedBuildRetried bool
 }
 
 // New constructs a Loop with the given runner and config.

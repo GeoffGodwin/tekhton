@@ -27,19 +27,19 @@ const AttemptResultProtoV1 = "tekhton.attempt.result.v1"
 // lib/orchestrate_classify.sh:121 — keep the string vocabulary in sync so
 // the bash shim and the Go owner agree byte-for-byte.
 const (
-	RecoverySaveExit         = "save_exit"
-	RecoverySplit            = "split"
-	RecoveryBumpReview       = "bump_review"
-	RecoveryRetryCoderBuild  = "retry_coder_build"
-	RecoveryRetryUIGateEnv   = "retry_ui_gate_env"
-	RecoveryEscalateTurns    = "escalate_turns"
-	RecoveryNone             = "" // success path — no recovery needed
+	RecoverySaveExit        = "save_exit"
+	RecoverySplit           = "split"
+	RecoveryBumpReview      = "bump_review"
+	RecoveryRetryCoderBuild = "retry_coder_build"
+	RecoveryRetryUIGateEnv  = "retry_ui_gate_env"
+	RecoveryEscalateTurns   = "escalate_turns"
+	RecoveryNone            = "" // success path — no recovery needed
 )
 
 // AttemptOutcome enumerates the high-level outcomes of a pipeline attempt.
 const (
 	AttemptOutcomeSuccess         = "success"
-	AttemptOutcomeFailureRetry    = "failure_retry"    // recoverable; loop will iterate
+	AttemptOutcomeFailureRetry    = "failure_retry"     // recoverable; loop will iterate
 	AttemptOutcomeFailureSaveExit = "failure_save_exit" // non-recoverable; state saved
 	AttemptOutcomeStuck           = "stuck"             // progress detector tripped
 	AttemptOutcomeSafetyBound     = "safety_bound"      // max_attempts/timeout/agent_cap
@@ -51,14 +51,14 @@ const (
 // hands this envelope to the Go orchestrator. The orchestrator drives one or
 // more iterations of the bash stage runner until success or recovery exit.
 type AttemptRequestV1 struct {
-	Proto              string `json:"proto"`
-	RunID              string `json:"run_id,omitempty"`
-	Task               string `json:"task"`
-	StartAt            string `json:"start_at,omitempty"`
-	Milestone          string `json:"milestone,omitempty"`
-	MilestoneMode      bool   `json:"milestone_mode,omitempty"`
-	ProjectDir         string `json:"project_dir"`
-	LogFile            string `json:"log_file,omitempty"`
+	Proto         string `json:"proto"`
+	RunID         string `json:"run_id,omitempty"`
+	Task          string `json:"task"`
+	StartAt       string `json:"start_at,omitempty"`
+	Milestone     string `json:"milestone,omitempty"`
+	MilestoneMode bool   `json:"milestone_mode,omitempty"`
+	ProjectDir    string `json:"project_dir"`
+	LogFile       string `json:"log_file,omitempty"`
 
 	// Safety bounds — config-driven per pipeline.conf.
 	MaxPipelineAttempts     int `json:"max_pipeline_attempts,omitempty"`
@@ -82,10 +82,10 @@ type AttemptResultV1 struct {
 	Outcome  string `json:"outcome"`
 	Recovery string `json:"recovery,omitempty"`
 
-	Attempts        int   `json:"attempts"`
-	AgentCalls      int   `json:"agent_calls"`
-	ElapsedSecs     int64 `json:"elapsed_secs"`
-	TotalTurns      int   `json:"total_turns,omitempty"`
+	Attempts    int   `json:"attempts"`
+	AgentCalls  int   `json:"agent_calls"`
+	ElapsedSecs int64 `json:"elapsed_secs"`
+	TotalTurns  int   `json:"total_turns,omitempty"`
 
 	// Failure detail — populated only when Outcome != success.
 	ErrorCategory    string `json:"error_category,omitempty"`
@@ -94,9 +94,9 @@ type AttemptResultV1 struct {
 	CauseSummary     string `json:"cause_summary,omitempty"` // M129 primary/secondary cause join
 
 	// Resume hints — populated on save_exit.
-	ResumeStartAt    string `json:"resume_start_at,omitempty"`
-	ResumeArtifact   string `json:"resume_artifact,omitempty"`
-	ResumeFlags      string `json:"resume_flags,omitempty"`
+	ResumeStartAt  string `json:"resume_start_at,omitempty"`
+	ResumeArtifact string `json:"resume_artifact,omitempty"`
+	ResumeFlags    string `json:"resume_flags,omitempty"`
 }
 
 // ErrInvalidAttemptRequest is returned by Validate when the envelope is

@@ -17,9 +17,9 @@ export TEKHTON_HOME
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/error_patterns.sh"
+source "${TEKHTON_HOME}/lib/errors.sh"
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
+source "${TEKHTON_HOME}/lib/remediation.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/gates_phases.sh"

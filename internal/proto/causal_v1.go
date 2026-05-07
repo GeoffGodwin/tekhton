@@ -120,4 +120,3 @@ func Quote(s string) string {
 	writeQuoted(&b, s)
 	return b.String()
 }
-

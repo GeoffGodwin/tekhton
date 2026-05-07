@@ -59,9 +59,9 @@ UI_TEST_ERRORS_FILE="${TEKHTON_DIR}/UI_TEST_ERRORS.md"
 UI_VALIDATION_REPORT_FILE="${TEKHTON_DIR}/UI_VALIDATION_REPORT.md"
 
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/error_patterns.sh"
+source "${TEKHTON_HOME}/lib/errors.sh"
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
+source "${TEKHTON_HOME}/lib/remediation.sh"
 source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/gates_phases.sh"
 # shellcheck source=/dev/null

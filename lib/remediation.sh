@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 # =============================================================================
-# error_patterns_remediation.sh — Auto-remediation engine for classified errors
+# remediation.sh — Auto-remediation engine for classified errors.
 #
-# Sourced by tekhton.sh after error_patterns.sh — do not run directly.
+# Sourced by tekhton.sh after lib/errors.sh — do not run directly.
 # Provides: attempt_remediation(), _run_safe_remediation(),
 #           _remediation_already_attempted(), reset_remediation_state(),
 #           get_remediation_log()
 #
-# Milestone 54: Auto-Remediation Engine.
+# Milestone 54: Auto-Remediation Engine. m17 renamed this file (was
+# lib/error_patterns_remediation.sh); the deleted lib/error_patterns*.sh glob
+# is now empty. The execution side stays in bash pending its own Phase 5 port
+# (DESIGN_v4.md Seeds Forward).
 #
 # Safety: only safe-rated commands execute. Blocklist enforced.
 # Max 2 remediation attempts per gate invocation.

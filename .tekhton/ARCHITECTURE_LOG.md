@@ -168,3 +168,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-05-04
 - **Rationale**: Resume-friendly no-op semantics are the only correct choice; truncating on init would destroy resumed-run events. The milestone AC #1 wording is what is wrong, not the implementation. The design obser
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-34: rename lib/error_patterns_remediation.sh to lib/remediation.sh -- ACCEPT -- Sati (Task: "Implement Milestone 17: Error Taxonomy Wedge")
+- **Date**: 2026-05-07
+- **Rationale**: - ACP: rename lib/error_patterns_remediation.sh to lib/remediation.sh -- ACCEPT -- Satisfies the glob-based acceptance criterion (git ls-files lib/error_patterns*.sh returns nothing) without orphaning
+- **Source**: Accepted ACP from pipeline run

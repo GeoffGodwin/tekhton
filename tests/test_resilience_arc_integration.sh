@@ -77,7 +77,7 @@ _arc_source() {
 _arc_source "lib/state.sh"
 _arc_source "lib/preflight.sh"
 _arc_source "lib/preflight_checks_ui.sh"
-_arc_source "lib/error_patterns.sh"
+_arc_source "lib/errors.sh"
 _arc_source "lib/gates_ui_helpers.sh"
 _arc_source "lib/failure_context.sh"
 _arc_source "lib/orchestrate_cause.sh"

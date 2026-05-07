@@ -191,4 +191,3 @@ func TestSetBinary_OverridesAfterConstruction(t *testing.T) {
 		t.Errorf("binary: got %q, want /tmp/fake", sup.binary)
 	}
 }
-

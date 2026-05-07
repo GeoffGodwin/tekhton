@@ -21,8 +21,8 @@ export TEKHTON_DIR BUILD_ERRORS_FILE BUILD_RAW_ERRORS_FILE UI_TEST_ERRORS_FILE U
 
 # Source required libraries
 source "${TEKHTON_HOME}/lib/common.sh"
-source "${TEKHTON_HOME}/lib/error_patterns.sh"
-source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
+source "${TEKHTON_HOME}/lib/errors.sh"
+source "${TEKHTON_HOME}/lib/remediation.sh"
 
 # Setup: Mock config and commands
 export ANALYZE_CMD="echo 'OK'"

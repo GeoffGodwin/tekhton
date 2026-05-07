@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	terr "github.com/geoffgodwin/tekhton/internal/errors"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
@@ -38,9 +39,22 @@ func (e *AgentError) Error() string {
 	return fmt.Sprintf("%s|%s|%s|%s", e.Category, e.Subcategory, transient, msg)
 }
 
-// Is reports whether target is the same (Category, Subcategory) class as e.
-// The Transient flag and Wrapped cause deliberately do not participate.
+// Is reports whether target matches e. Three cases match:
+//
+//  1. target is a sibling AgentError sentinel: match on (Category, Subcategory).
+//  2. target is terr.ErrTransient: match if e.Transient is true.
+//  3. target is terr.ErrFatal: match if e.Transient is false.
+//
+// The Transient flag and Wrapped cause do NOT participate in case (1) so the
+// V3 sentinel-class contract is preserved. m17 layered the cross-subsystem
+// transient/fatal axis on top via cases (2) and (3).
 func (e *AgentError) Is(target error) bool {
+	if target == terr.ErrTransient {
+		return e.Transient
+	}
+	if target == terr.ErrFatal {
+		return !e.Transient
+	}
 	var ae *AgentError
 	if !errors.As(target, &ae) {
 		return false

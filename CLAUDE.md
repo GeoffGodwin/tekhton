@@ -87,8 +87,8 @@ tekhton/
 │   ├── specialists.sh      # Specialist review framework
 │   ├── metrics.sh          # Run metrics collection + adaptive calibration
 │   ├── metrics_calibration.sh  # Adaptive turn calibration
-│   ├── errors.sh           # Error taxonomy, classification + reporting
-│   ├── errors_helpers.sh   # Error classification helpers
+│   ├── errors.sh           # m17 wedge shim — execs `tekhton diagnose ...`
+│   ├── remediation.sh      # m17 rename of error_patterns_remediation.sh
 │   ├── milestone_dag.sh    # m14 wedge shim — _DAG_* array queries + cross-process tekhton dag shims
 │   ├── milestone_query.sh  # m14 — DAG-aware milestone wrappers (parse_milestones_auto, et al.)
 │   ├── milestone_window.sh # Character-budgeted milestone sliding window
@@ -188,8 +188,6 @@ tekhton/
 │   ├── quota.sh            # API quota management
 │   ├── quota_sleep.sh      # M124 chunked-sleep helper for enter_quota_pause
 │   ├── quota_probe.sh      # M125 layered probe (version/zero_turn/fallback) + back-off/jitter helpers
-│   ├── error_patterns.sh   # Error pattern registry + classification engine
-│   ├── error_patterns_classify.sh # M127 confidence-based mixed-log classifier + routing decision
 │   ├── preflight.sh        # Pre-flight environment validation
 │   ├── preflight_checks_ui.sh # M131 UI test framework config audit (Playwright/Cypress/Jest/Vitest)
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)

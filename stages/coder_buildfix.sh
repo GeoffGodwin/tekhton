@@ -8,7 +8,7 @@ set -euo pipefail
 #
 # M127 (mixed-log routing) classifies build errors into one of four tokens
 # (code_dominant / noncode_dominant / mixed_uncertain / unknown_only) emitted
-# by lib/error_patterns_classify.sh. Token policy:
+# by lib/errors.sh (m17 wedge: classifier ported to internal/errors). Token policy:
 #
 #   noncode_dominant  → skip build-fix, route to human action, exit
 #   code_dominant     → run build-fix coder with code-filtered errors

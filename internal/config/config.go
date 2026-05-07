@@ -37,7 +37,22 @@ import (
 	"errors"
 	"fmt"
 	"os"
+
+	terr "github.com/geoffgodwin/tekhton/internal/errors"
 )
+
+// configInvalidSentinel marks an error as wrapping terr.ErrConfigInvalid via
+// errors.Is so cross-subsystem callers can match every config validation
+// failure with a single call (m17 common-sentinel contract).
+type configInvalidSentinel struct{ msg string }
+
+func (e *configInvalidSentinel) Error() string { return e.msg }
+func (e *configInvalidSentinel) Is(target error) bool {
+	if target == terr.ErrConfigInvalid {
+		return true
+	}
+	return e == target
+}
 
 // osLookupEnv is a tiny seam so tests can stub env access without touching
 // the real process environment. Production calls os.LookupEnv directly.
@@ -58,7 +73,9 @@ var (
 
 	// ErrValidation is returned by Validate when a config violates a rule that
 	// the loader cannot silently correct (e.g. unknown key in strict mode).
-	ErrValidation = errors.New("config: validation error")
+	// Wraps terr.ErrConfigInvalid so cross-subsystem callers can match with a
+	// single errors.Is call.
+	ErrValidation error = &configInvalidSentinel{msg: "config: validation error"}
 )
 
 // LoadOptions controls Load behaviour. ProjectDir is used for path resolution

@@ -22,21 +22,38 @@ import (
 	"sync"
 	"time"
 
+	terr "github.com/geoffgodwin/tekhton/internal/errors"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
-// ErrNotFound is returned by Read when the state file does not exist.
+// fatalSentinel carries one of the package's fatal sentinels. The Is method
+// reports true for terr.ErrFatal so cross-subsystem callers can match with a
+// single errors.Is call (m17 common-sentinel contract).
+type fatalSentinel struct{ msg string }
+
+func (e *fatalSentinel) Error() string { return e.msg }
+func (e *fatalSentinel) Is(target error) bool {
+	if target == terr.ErrFatal {
+		return true
+	}
+	return e == target
+}
+
+// ErrNotFound is returned by Read when the state file does not exist. Not
+// fatal — most callers retry from an earlier stage.
 var ErrNotFound = errors.New("state: snapshot file not found")
 
 // ErrCorrupt is returned by Read when the file is present but unparseable.
 // CLI exit 2 maps to this — bash callers must distinguish it from ErrNotFound
-// because corruption should trigger --diagnose, not silent retry.
-var ErrCorrupt = errors.New("state: snapshot file corrupt")
+// because corruption should trigger --diagnose, not silent retry. Wraps
+// terr.ErrFatal so `errors.Is(err, terr.ErrFatal)` matches.
+var ErrCorrupt error = &fatalSentinel{msg: "state: snapshot file corrupt"}
 
 // ErrLegacyFormat is returned by Read when the file is the pre-m03 V3
 // markdown layout (heading-delimited). The legacy reader was retired in m10.
-// Callers should surface a migration prompt rather than retrying.
-var ErrLegacyFormat = errors.New("state: legacy V3 markdown format; run the V4 migration tool to convert")
+// Callers should surface a migration prompt rather than retrying. Wraps
+// terr.ErrFatal.
+var ErrLegacyFormat error = &fatalSentinel{msg: "state: legacy V3 markdown format; run the V4 migration tool to convert"}
 
 // Store owns one PIPELINE_STATE file. Methods are safe for concurrent use
 // inside a single process (Update is read-modify-write under mu). Cross-

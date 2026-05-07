@@ -8,7 +8,7 @@ TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Source required libraries
 source "${TEKHTON_HOME}/lib/common.sh"
-source "${TEKHTON_HOME}/lib/error_patterns.sh"
+source "${TEKHTON_HOME}/lib/errors.sh"
 
 # Test 1: Multiple unmatched lines should deduplicate to single entry
 output=$(classify_build_errors_all "unknown error one

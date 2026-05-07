@@ -1,121 +1,172 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 36 test functions
+Tests audited: 4 files, 37 test functions
+(classify_test.go: 17, recovery_test.go: 4, agent_test.go: 11, diagnose_test.go: 11;
+table-driven cases within a single function counted as one function each)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Four CI platforms claimed as ported but absent from implementation and untested
-- File: internal/config/config_test.go:166 (`TestCI_AllPlatforms`)
-- Issue: The CODER_SUMMARY states `DetectCI()` ports all CI platforms including DRONE,
-  APPVEYOR, GITEA_ACTIONS, and CODEBUILD from the original `lib/config_defaults_ci.sh`.
-  These four are absent from `internal/config/ci.go` — `DetectCI()` ends at `CI=true`
-  (generic, line 59) and never checks those env vars. `TestCI_AllPlatforms` correctly
-  reflects the *actual* implementation (10 cases), but because the implementation is
-  incomplete relative to the CODER_SUMMARY claim, these platforms are silently undetected
-  in production and untested. `clearCIEnv` (line 459) also omits these keys, which is
-  correct for now but will need updating if the platforms are added.
-- Severity: MEDIUM
-- Action: Either add the four missing platforms to `internal/config/ci.go` and extend
-  `TestCI_AllPlatforms` and `clearCIEnv` to cover them, or update the CODER_SUMMARY to
-  accurately reflect that only 10 of the originally-supported platforms were ported. Do
-  not add tests for platforms not yet present in the implementation.
-
-#### COVERAGE: `resolvePaths` covers five path keys but tests exercise only one
-- File: internal/config/config_test.go:323 (`TestPaths_RelativeResolve`)
-- Issue: `resolvePaths` in `validate.go:391` resolves relative values for five keys:
-  `PIPELINE_STATE_FILE`, `LOG_DIR`, `MILESTONE_ARCHIVE_FILE`, `MILESTONE_DIR`, and
-  `CAUSAL_LOG_FILE`. The single test sets only `PIPELINE_STATE_FILE`. The other four
-  keys — each consumed by live pipeline stages — are not exercised by any test in the
-  audited files.
+#### COVERAGE: TestPatterns_Indexed is a minimal registry smoke test
+- File: internal/errors/classify_test.go:171
+- Issue: `TestPatterns_Indexed` only asserts `len(terr.Patterns()) != 0` (non-empty
+  registry). A registry accidentally reduced to a single garbage entry would still
+  pass. Pattern correctness is implicitly covered by the routing tests that exercise
+  specific patterns (TS2304, ECONNREFUSED, etc.), but there is no explicit spot-check
+  verifying that a known entry has the correct Category, Safety, or Regex.
 - Severity: LOW
-- Action: Extend `TestPaths_RelativeResolve` (or add a table-driven sibling) to set all
-  five relative-path keys in the fixture config and assert each resolves to
-  `projectDir + "/" + relPath` after `Load`.
+- Action: Optional — add an assertion that a well-known entry (e.g., `error TS[0-9]+:`
+  with Category=code) is present and compiled correctly. The existing routing tests
+  provide sufficient implicit coverage; this is not urgent.
+
+#### COVERAGE: TestDiagnoseClassify_AllMode asserts pipe count only
+- File: cmd/tekhton/diagnose_test.go:130
+- Issue: The `--mode all` integration test verifies each output line has exactly
+  3 pipes (4 fields) but does not assert field content. An implementation emitting
+  `x|y|z|w` for every line would pass. Field-level content is already validated at
+  the unit level in `classify_test.go::TestClassifyAll_FormatAllLegacy` and
+  `TestClassifyAll_UnmatchedSentinel`, so no functional coverage gap exists.
+- Severity: LOW
+- Action: Optional — assert at least one output line begins with a known category
+  token (e.g., `service_dep|`) to give the integration layer an independent signal
+  against regressions in `--mode all` output content.
+
+#### NAMING: TestClassifyAgent_AgentScope uses sequential assertions instead of sub-tests
+- File: internal/errors/agent_test.go:85
+- Issue: Six distinct agent-scope scenarios (null_activity_timeout, activity_timeout,
+  null_run, max_turns, no_summary, scope_unknown) are exercised with sequential
+  assertions and inline comments rather than `t.Run(…)` sub-tests. A single failure
+  halts all remaining checks in the function, and `go test -run` cannot target
+  individual scenarios.
+- Severity: LOW
+- Action: Refactor into table-driven `t.Run` sub-tests matching the pattern used
+  in `TestClassifyAgent_Upstream`. The assertions themselves are correct; only the
+  structure needs updating.
 
 ---
 
 ### Per-File Rubric Notes
 
-#### internal/config/config_test.go (27 test functions)
+#### internal/errors/classify_test.go (17 test functions)
 
 **1. Assertion Honesty — PASS**
-All assertions derive from real implementation logic:
-- Default values (`CODER_MAX_TURNS=80`, `REVIEWER_MAX_TURNS=20`, `CLAUDE_STANDARD_MODEL=claude-sonnet-4-6`)
-  trace to `defaults.go` literal entries.
-- Milestone arithmetic (`80×2=160`, `20+5=25`, `600×3=1800`) matches `applyMilestoneOverrides`
-  in `defaults.go:55–66`.
-- Clamp bounds (`CODER_MAX_TURNS` cap=500, `REWORK_TURN_ESCALATION_FACTOR` max=10.0,
-  `UI_GATE_ENV_RETRY_TIMEOUT_FACTOR` max=1.0) match `intClamps`/`floatClamps` slices in
-  `validate.go:267–378`.
-- Enum resets (`PIPELINE_ORDER` → `standard`, `SECURITY_BLOCK_SEVERITY` → `HIGH`,
-  `DASHBOARD_VERBOSITY` → `normal`) match `runInlineValidation` switch cases.
-- Health-weight reset (sum=250 ≠ 100 → all reset to defaults) matches `validate.go:169–185`.
-- Intake threshold ordering reset (`tweak=70 ≤ clarity=80` → both reset) matches
-  `validate.go:138–146`.
-- Shell quoting (`'x'\''s apostrophe'`, `''` for empty) matches `shellQuote` in `emit.go:79–82`.
+All assertions derive from actual function calls with meaningful inputs.
+- `IsNonDiagnosticLine` allow-list and deny-list cases trace directly to
+  `failureTermRE` and `noiseLineREs` in `classify.go:30–46`.
+- Routing tokens (`RouteCodeDominant`, `RouteNoncodeDominant`, `RouteMixedUncertain`,
+  `RouteUnknownOnly`) are the package constants, not string literals.
+- Threshold boundary tests (50% below, 60% at) exercise the
+  `NoncodeConfidenceThreshold = 60` constant and the integer division in
+  `ClassifyRoutingDecision:296–299`.
+- `FormatStatsLegacy` and `FormatAllLegacy` pipe counts (7 and 3 respectively)
+  match the `fmt.Sprintf` field counts in `classify.go:138,260`.
+- The unmatched sentinel values (`Category: "code"`, `Diagnosis: "Unclassified
+  build error"`) appear verbatim in `ClassifyAll:238–242`.
 
 **2. Edge Case Coverage — PASS**
-Suite covers: missing required key, non-existent file, command-substitution rejection
-(`$(...)`, backticks), shell-metachar rejection, metachar allowance in `_CMD` keys,
-single/double/bare quote variants, all 10 implemented CI platforms, CI auto-elevation,
-explicit CI override, integer clamp, float clamp (two separate keys), bad enum resets (4
-keys in one fixture), health-weight sum violation, threshold ordering violation, relative
-path resolution, milestone-mode override, shell-quoting edge cases (space, pipe, apostrophe,
-empty), JSON envelope presence. Ratio of error-path to happy-path tests is approximately 2:1.
+Empty inputs exercised for `HasExplicitCodeErrors`, `HasOnlyNoncodeErrors`,
+`ClassifyAll`, and `ClassifyRoutingDecision`. Code+noise mixes, unmatched sentinel
+records, BiflShape (env-only + unrecognised noise), and both sides of the 60%
+threshold are covered. M127 invariant (unmatched lines must not pollute `ClassifyWithStats`
+with a "code" record) is explicitly asserted.
 
 **3. Implementation Exercise — PASS**
-Tests call `Load`, `LoadDefaultsOnly`, `parseFile`, `DetectCI`, `EmitShell`, `EmitJSON`,
-and `findInlineComment` directly. `clearCIEnv` iterates `baseDefaults` (the Go source of
-truth) rather than a static list, so it stays self-consistent as the defaults table grows.
-Mocking is limited to `t.Setenv` for CI env vars — no functions are stubbed.
+All tests call the real Go functions. No mocking.
 
-**4. Test Weakening Detection — N/A**
-File is new; no pre-existing tests existed to weaken.
+**4. Weakening — N/A** (file is new)
 
 **5. Test Naming — PASS**
-All 27 function names encode scenario and expected outcome (e.g.
-`TestParse_RejectsCommandSubstitution`, `TestCI_ExplicitOverride`,
-`TestValidate_HealthWeightsReset`, `TestEmitShell_Quoting`).
+Names encode scenario and expected outcome throughout (e.g.,
+`TestClassifyRoutingDecision_NoncodeJustBelowThreshold`,
+`TestHasOnlyNoncodeErrors_BiflShape`, `TestClassifyAll_UnmatchedSentinel`).
 
 **6. Scope Alignment — PASS**
-No reference to the deleted `lib/config_defaults_ci.sh`. `clearCIEnv` correctly enumerates
-the CI keys that `DetectCI()` in `ci.go` actually checks (GITHUB_ACTIONS, GITLAB_CI,
-CIRCLECI, TRAVIS, BUILDKITE, JENKINS_URL, TF_BUILD, TEAMCITY_VERSION, BITBUCKET_BUILD_NUMBER,
-CI). See COVERAGE finding above for the four platforms the list is still missing.
+No reference to deleted bash files. All imports target `internal/errors` at the
+correct import path.
 
 **7. Test Isolation — PASS**
-All fixtures created via `t.TempDir()`. `t.Cleanup` restores env vars. No test reads
-`.tekhton/`, `.claude/logs/`, or any mutable pipeline artifact.
+All inputs are inline string literals. No reads from mutable project files.
 
 ---
 
-#### cmd/tekhton/config_test.go (9 test functions + 1 helper)
-
-**Tester-added test: `TestConfigDefaults_MilestoneMode` (line 174)**
-Calls `tekhton config defaults --emit shell --milestone-mode` via the full Cobra command
-tree with a real `newRootCmd()`. Assertions for CODER_MAX_TURNS=160, REVIEWER_MAX_TURNS=25,
-AGENT_ACTIVITY_TIMEOUT=1800 all trace to `applyMilestoneOverrides` in `defaults.go:55–66`
-and verified against base defaults in the same file (lines 152, 154, 599). No hard-coded
-values. ✓
+#### internal/errors/recovery_test.go (4 test functions)
 
 **1. Assertion Honesty — PASS**
-Error-code assertions (`exitNotFound`, `exitCorrupt`, `exitUsage`) verified against
-`loadConfigForCmd` in `config.go:199–208`. Shell output assertions checked against
-`EmitShell`/`EmitJSON` formats. `"ok —"` prefix matches `fmt.Fprintf` in
-`newConfigValidateCmd` at line 126.
+All 27 (category, subcategory) pairs in `SuggestRecovery` are exercised across
+`TestSuggestRecovery_KnownPairs` and `TestSuggestRecovery_RemainingPairs`. Each
+`contains` substring appears verbatim in the corresponding `case` return value in
+`recovery.go:11–77`. The context-interpolation test verifies both the filled path
+(`/tmp/PIPELINE_STATE.md`) and the default path (`.claude/PIPELINE_STATE.md`),
+both of which trace to the same `case "PIPELINE/state_corrupt"` block. No hard-coded
+constants unrelated to the implementation.
 
 **2. Edge Case Coverage — PASS**
-Covers: shell emission, JSON emission, missing file (exitNotFound), missing required key
-(exitCorrupt), strict-mode clamp promotion (exitUsage), healthy validate (ok line), defaults
-emission, show alias, milestone-mode defaults.
+Every known pair is covered; the unknown-pair fallback (`WHATEVER/unknown`) and the
+empty-subcategory path are exercised. State-corrupt context interpolation is tested
+with and without the optional argument.
+
+**3–7 — PASS** (new file, no mocking, no isolation issues, descriptive names, all
+package references correct)
+
+---
+
+#### internal/errors/agent_test.go (11 test functions)
+
+**1. Assertion Honesty — PASS**
+All expected subcategory strings (`api_rate_limit`, `oom`, `null_run`, etc.) are the
+values emitted by the corresponding `AgentClassification` struct literals in
+`agent.go:100–190`. The `FormatLegacy` pipe-field count (4) and `parts[2] == "true"`
+for OOM both trace to `FormatLegacy:31–36`. `IsKnownAgentSubcategory` assertions
+match `knownAgentSubcategories` map in `agent.go:251–256`. The `capHead` truncation
+test places the rate-limit JSON signal within the first 65536 bytes and verifies
+survival — consistent with `capHead(opts.Stderr, 65536)` at `agent.go:96`.
+
+**2. Edge Case Coverage — PASS**
+Both transient and non-transient UPSTREAM variants, all five ENVIRONMENT triggers,
+both exit-124 timeout branches (turns=0 vs turns>0), null_run vs max_turns vs
+no_summary vs scope_unknown, all four PIPELINE patterns, SIGSEGV (exit 139),
+Anthropic-hint fallback, and generic internal fallback are covered. `IsTransient`
+is tested for all meaningful combinations including false-positives (disk_full,
+service_dep not transient).
+
+**3–7 — PASS** (new file, real implementations, descriptive names, correct package
+references, no mutable file reads). See LOW naming finding above for
+`TestClassifyAgent_AgentScope`.
+
+---
+
+#### cmd/tekhton/diagnose_test.go (11 test functions)
+
+**1. Assertion Honesty — PASS**
+`runDiagnose` drives the real Cobra command tree via `newRootCmd()` with in-memory
+buffers. Exit codes are extracted via the concrete `errExitCode` type (same package).
+All routing token assertions, pipe counts, and substring checks trace directly to the
+implementation behavior verified in unit tests above. `TestDiagnoseRedact` verifies
+`sk-ant-test` is absent after redaction — consistent with `redactSKAntRE` replacing
+`sk-ant-[A-Za-z0-9_-]*` in `redact.go:24`.
+
+**2. Edge Case Coverage — PASS**
+All five `diagnose` subcommands exercised. Both exit-code paths for `--has-code`
+and `--has-only-noncode` tested. All five `--mode` values (routing, stats, all,
+filter-code, annotate) exercised. Unknown `--mode` error path tested. `is-transient`
+tested for both transient and non-transient cases.
 
 **3. Implementation Exercise — PASS**
-All tests drive `newRootCmd()` with real args and real filesystem fixtures. No mocking
-beyond `bytes.Buffer` capturing stdout/stderr. `clearCIEnvTest` uses `config.DefaultKeys()`
-to enumerate env vars rather than a static list.
+All tests use the real Cobra command dispatch path. No internal function is mocked.
 
-**4–7. Weakening / Naming / Scope / Isolation — PASS**
-File is new. Fixtures use `t.TempDir()` via `writeConfigFixture`. Names are descriptive.
-No reference to deleted files.
+**4. Weakening — N/A** (file is new)
+
+**5. Test Naming — PASS**
+All names encode the subcommand, flag, or mode under test and the expected outcome
+(e.g., `TestDiagnoseClassify_UnknownModeExits`, `TestDiagnoseClassify_HasOnlyNoncode`).
+
+**6. Scope Alignment — PASS**
+`diagnose_test.go` is in `package main`, giving it access to unexported types
+(`errExitCode`, `newRootCmd`) without any import of deleted bash files. The
+`classify-agent` subcommand is tested via `--exit 137` (not `--stderr-file`), which
+is correct: the file-path flags are optional and the test exercises the in-memory path.
+
+**7. Test Isolation — PASS**
+All inputs are inline strings passed via `strings.NewReader`. No reads from
+`.tekhton/`, `.claude/`, or any mutable pipeline artifact.

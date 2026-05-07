@@ -1,13 +1,21 @@
 package dag
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	terr "github.com/geoffgodwin/tekhton/internal/errors"
 )
 
 // ValidationError describes one problem found during State.Validate. The
 // Wrapped sentinel lets callers match with errors.Is(err, dag.ErrCycle) etc.
+//
+// Is also reports true for terr.ErrConfigInvalid so cross-subsystem callers
+// can match every dag validation failure with one call (m17 common-sentinel
+// contract). Subsystem-specific sentinels (ErrCycle, ErrMissingDep, …) keep
+// working through the Unwrap chain.
 type ValidationError struct {
 	ID      string
 	Kind    string
@@ -20,6 +28,15 @@ func (e *ValidationError) Error() string { return e.Msg }
 
 // Unwrap returns the sentinel for errors.Is matching.
 func (e *ValidationError) Unwrap() error { return e.Wrapped }
+
+// Is reports true for terr.ErrConfigInvalid (cross-subsystem match) and
+// defers to the Unwrap chain for the per-kind sentinels.
+func (e *ValidationError) Is(target error) bool {
+	if target == terr.ErrConfigInvalid {
+		return true
+	}
+	return errors.Is(e.Wrapped, target)
+}
 
 // Validate inspects the state for structural problems. Returns nil when the
 // manifest is valid. Checks performed:

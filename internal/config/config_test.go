@@ -576,10 +576,10 @@ func TestParse_FindInlineComment_ApostropheEdgeCases(t *testing.T) {
 		in   string
 		want int
 	}{
-		{"it's # comment", 5},   // apostrophe then space-hash: comment found
-		{"it's# literal", -1},   // hash immediately after apostrophe (no space): not a comment
+		{"it's # comment", 5},     // apostrophe then space-hash: comment found
+		{"it's# literal", -1},     // hash immediately after apostrophe (no space): not a comment
 		{"it's value # here", 11}, // apostrophe early, space-hash later: comment found
-		{"don't #stop", 6},      // apostrophe in word, space-hash: comment found
+		{"don't #stop", 6},        // apostrophe in word, space-hash: comment found
 	}
 	for _, c := range cases {
 		if got := findInlineComment(c.in); got != c.want {
@@ -591,7 +591,7 @@ func TestParse_FindInlineComment_ApostropheEdgeCases(t *testing.T) {
 // TestLoad_ApostropheAndInlineComment exercises the full parse path for a
 // value that contains an apostrophe and an inline comment. The comment must
 // be stripped, the apostrophe preserved, and EmitShell must correctly escape
-// it with the '\'' idiom.
+// it with the '\” idiom.
 func TestLoad_ApostropheAndInlineComment(t *testing.T) {
 	clearCIEnv(t)
 	// ANALYZE_CMD ends in _CMD so metacharacters are allowed. The apostrophe

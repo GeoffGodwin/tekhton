@@ -22,7 +22,7 @@ export TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/error_patterns.sh"
+source "${TEKHTON_HOME}/lib/errors.sh"
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/prompts.sh" 2>/dev/null || true
 # shellcheck source=/dev/null

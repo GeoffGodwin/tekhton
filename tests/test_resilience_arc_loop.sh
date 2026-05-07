@@ -21,7 +21,7 @@ export TMPDIR_TOP
 
 unset _TUI_ACTIVE 2>/dev/null || true
 
-# Source minimal dependencies. error_patterns.sh brings in classify_routing_decision.
+# Source minimal dependencies. errors.sh brings in classify_routing_decision.
 # shellcheck source=lib/common.sh
 source "${TEKHTON_HOME}/lib/common.sh"
 
@@ -36,7 +36,7 @@ _arc_source() {
 }
 
 _arc_source "lib/prompts.sh"
-_arc_source "lib/error_patterns.sh"
+_arc_source "lib/errors.sh"
 _arc_source "stages/coder_buildfix.sh"
 
 # shellcheck source=tests/resilience_arc_fixtures.sh

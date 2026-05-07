@@ -20,7 +20,7 @@ export TEKHTON_HOME
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/error_patterns.sh"
+source "${TEKHTON_HOME}/lib/errors.sh"
 
 PASS=0
 FAIL=0
@@ -527,7 +527,7 @@ fi
 
 # Source remediation engine
 # shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/error_patterns_remediation.sh"
+source "${TEKHTON_HOME}/lib/remediation.sh"
 
 # Stub log/warn for remediation output
 log() { :; }
