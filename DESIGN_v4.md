@@ -3,10 +3,10 @@
 > **Status: Design.** This is the V4 initiative. The previously-V4 "Dev Shop
 > in a Box" work is now V5 (`DESIGN_v5.md`); the V5 rewrite-considerations
 > stub is now V6 (`DESIGN_v6.md`) and is largely superseded by this
-> document. V4 milestones restart at M01 per the CLAUDE.md versioning rule
-> ("Milestone numbering restarts with each major version"); the M139+
-> numbering used throughout this design predates that decision and will be
-> renumbered when the V4 milestone set is authored.
+> document. V4 milestones restart at m01 per the CLAUDE.md versioning rule
+> ("Milestone numbering restarts with each major version") — m01–m20 are
+> authored in `.claude/milestones/MANIFEST.cfg` and Phase 4 batch 2 is the
+> active wedge as of m18.
 
 ## Vision
 
@@ -80,9 +80,9 @@ back; bash and Go coexist until each wedge is proven.
 
 ```
 cmd/tekhton/                # main entry point (Cobra root + subcommand wiring)
-internal/causal/            # causal event log (M139-M141)
-internal/state/             # pipeline state, resume parsing  (M142-M144)
-internal/supervisor/        # agent invocation, monitoring, retry (M145-M150)
+internal/causal/            # causal event log (m02)
+internal/state/             # pipeline state, resume parsing  (m03)
+internal/supervisor/        # agent invocation, monitoring, retry (m05–m10)
 internal/orchestrate/       # outer --complete loop, recovery routing
 internal/stages/            # one file per stage (intake, coder, review, …)
 internal/prompt/            # template engine ({{VAR}} + {{IF:}})
@@ -475,6 +475,37 @@ shaken out the stage-interface design.
 a one-line wrapper that exec's the binary. The 218 lib files are gone or
 shimmed.
 
+#### Phase 4 batch 2 (m18–m20) — pipeline runner + dogfooding cutover
+
+After m12 ports the recovery classifier and m13–m17 port the smaller
+spine subsystems, the per-attempt scheduler still lives in bash
+(`lib/orchestrate_iteration.sh::_run_pipeline_stages`) and so do the
+build / completion gates (`lib/gates.sh`). Phase 4 batch 2 inverts that:
+
+| Wedge | Concern | Disposition |
+|-------|---------|-------------|
+| **m18** | Per-attempt scheduler + build/completion gates port to Go (`internal/pipeline`). Stages remain bash subprocesses with explicit JSON envelopes (`tekhton.stage.request.v1` / `tekhton.stage.result.v1`). `internal/stagerunner.BashAdapter` is the seam. The build-fix continuation loop (M128) inside `stages/coder.sh` stays bash — m18 ports the *gate*, not the *fix loop*. | Stages keep their `run_stage_<name>` entry points; `lib/stage_envelope.sh` wraps them so the same scripts work whether driven by the Go runner or the legacy bash orchestrator. |
+| **m19** | `tekhton run` top-level command. Reuses `internal/pipeline.Runner` for single-attempt runs and wraps it with `RunCompleteLoop` for `--complete` mode. The stage-adapter envelope is the contract. | Bash deletions: `lib/gates.sh`, `lib/orchestrate_iteration.sh`. `lib/orchestrate_main.sh` calls `tekhton pipeline run-attempt` instead of `_run_pipeline_stages`. |
+| **m20** | Dogfooding cutover. Once `tekhton pipeline run-attempt` is the per-attempt scheduler, `tekhton.sh` becomes a thin dispatcher. The entry point flips. | The 218 lib-file count drops materially. |
+
+**m18 envelope contract (load-bearing for m19/m20).** Stages emit a
+`tekhton.stage.result.v1` envelope when `TEKHTON_STAGE_RESULT_FILE` is set.
+The schema is intentionally narrower than `agent.response.v1` — stages are
+coarse-grained (one stage = many agent calls + many bash actions), so the
+envelope captures *outcomes*, not the per-agent trace
+(`CAUSAL_LOG.jsonl` already owns that). Fields: `verdict` (pass | fail |
+rework | block | skip), `exit_reason`, `agent_calls`, `next_action`,
+`duration_sec`, `human_action_required`. The narrow envelope is the
+template m19 reuses for finalize and m20 reuses for the TUI bridge — get
+it right at m18.
+
+**m18 scope discipline.** Inside-the-coder build-fix loop (M128 in
+`stages/coder_buildfix.sh`) is a *sub-stage of coder*, not a gate.
+Conflating the two was the original sin of an earlier draft of this
+milestone. The m18 build gate decides "does the build pass? if not, route
+to coder rework." The fix loop decides "given a failed build inside the
+coder stage, attempt N fix passes before bubbling up to the gate."
+
 ### Phase 5 — Bash Deprecation
 
 **Scope.** Diagnose, health, init, plan, draft-milestones, migrate,
@@ -490,7 +521,7 @@ count drops by ~75%.
 
 ## Phase 1 Detail
 
-### M139 — Go Module Foundation
+### m01 — Go Module Foundation
 
 **Acceptance criteria.**
 - `go.mod` at repo root, module `github.com/geoffgodwin/tekhton`.
@@ -511,7 +542,7 @@ than code.
 artifacts, and is invoked by no production code path. Self-hosting
 unchanged.
 
-### M140 — Causal Log Wedge
+### m02 — Causal Log Wedge
 
 **Acceptance criteria.**
 - `internal/causal` package: `Log`, `Emit(event)`, `Evict()`, `Archive()`.
@@ -529,7 +560,7 @@ unchanged.
   no changes required.
 - All existing `emit_event` call sites work without modification.
 
-**Dependencies.** M139.
+**Dependencies.** m01.
 
 **Turn budget.** ~120 turns. The data structures are simple but every
 call site must still work.
@@ -539,7 +570,7 @@ exclusively by the Go binary. The diff against a V3.66 run shows only
 formatting differences, no semantic ones. The per-stage counter is
 correct in the presence of concurrent stages.
 
-### M141 — Pipeline State Wedge
+### m03 — Pipeline State Wedge
 
 **Acceptance criteria.**
 - `internal/state` package: `Snapshot` struct, `Write(path)`, `Read(path)`,
@@ -554,7 +585,7 @@ correct in the presence of concurrent stages.
 - Resume tests cover: human mode, milestone mode, error-classification
   preservation, missing-files cases, WSL/NTFS path quirks.
 
-**Dependencies.** M140.
+**Dependencies.** m02.
 
 **Turn budget.** ~100 turns. State is small but every resume path must
 work.
@@ -562,7 +593,7 @@ work.
 **Definition of done.** A pipeline interrupted with SIGINT in any stage
 resumes cleanly with the Go writer. Heredoc + awk parser is deleted.
 
-### M142 — Phase 1 Hardening
+### m04 — Phase 1 Hardening
 
 **Acceptance criteria.**
 - 80% line coverage in `internal/causal` and `internal/state`.
@@ -574,7 +605,7 @@ resumes cleanly with the Go writer. Heredoc + awk parser is deleted.
 - `docs/go-migration.md` records what changed in Phase 1, what's left,
   and what early lessons rolled into the Phase 2 plan.
 
-**Dependencies.** M140, M141.
+**Dependencies.** m02, m03.
 
 **Turn budget.** ~60 turns.
 
@@ -585,31 +616,30 @@ off (supervisor design doc finalized, no open Phase 1 bugs).
 
 ## Phases 2+ Milestone Outline
 
-**Phase 2 — Agent Supervisor (M143–M148).** M143 supervisor scaffold and
-JSON contract. M144 `exec.CommandContext` core, line-by-line stdout
-decoder, basic activity-timer. M145 retry envelope with typed errors,
-exponential backoff, subcategory-aware floors. M146 quota pause/resume
-bracket plus Retry-After header parsing. M147 Windows/WSL reaper,
-fsnotify-based change detection. M148 supervisor parity test suite +
+**Phase 2 — Agent Supervisor (m05–m10).** m05 supervisor scaffold and
+JSON contract. m06 `exec.CommandContext` core, line-by-line stdout
+decoder, basic activity-timer. m07 retry envelope with typed errors,
+exponential backoff, subcategory-aware floors. m08 quota pause/resume
+bracket plus Retry-After header parsing. m09 Windows/WSL reaper,
+fsnotify-based change detection. m10 supervisor parity test suite +
 removal of `python3 -c` JSON parsing from bash.
 
-**Phase 3 — Re-evaluation Decision (M149).** Single-milestone retro and
+**Phase 3 — Re-evaluation Decision (m11).** Single-milestone retro and
 formal go/no-go on Ship of Theseus vs parallel-spine. Outcome amends the
 remaining phase plan.
 
-**Phase 4 — Spine & Stages (M150–M165, indicative).** Orchestration loop,
-milestone DAG, sliding window, prompt engine (if deferred), config loader,
-error taxonomy unified, dashboard emitters, TUI status writer, intake
-stage, security stage, review stage, tester stage, build-fix loop, coder
-stage, post-success cleanup, finalize hooks.
+**Phase 4 — Spine & Stages (m12–m20).** Orchestration loop (m12), manifest
+parser (m13), milestone DAG (m14), prompt engine (m15), config loader (m16),
+error taxonomy (m17), pipeline runner + stage adapter (m18), `tekhton run`
+top-level command (m19), dogfooding cutover (m20).
 
-**Phase 5 — Bash Deprecation (M166+).** Diagnose, health, init, plan
+**Phase 5 — Bash Deprecation (m21+).** Diagnose, health, init, plan
 (interactive + browser + answers + generate), draft-milestones, migrate,
 notes-cli, rescan, rollback, status, report, metrics. Each wraps existing
 business logic; the work is mostly CLI plumbing.
 
-The exact M-numbers in Phases 4–5 are placeholders. They will be drafted
-after Phase 3's re-evaluation, per the user's instruction not to over-plan.
+The exact m-numbers in Phase 5 are placeholders pending the post-m20
+authoring pass.
 
 ---
 
@@ -644,15 +674,12 @@ needing per-stage type parameters, indicating smaller stages can't
 validate the design. Piecewise is the Ship of Theseus default.
 
 **§5 — V4 or v3-continuation milestone numbering.**
-**Resolved: V4.** The Go rewrite is now the V4 initiative, the prior
-"Dev Shop in a Box" work has shifted to V5 (`DESIGN_v5.md`), and the
+**Resolved: V4.** The Go rewrite is the V4 initiative; the prior "Dev
+Shop in a Box" work has shifted to V5 (`DESIGN_v5.md`), and the
 rewrite-considerations stub has shifted to V6 (`DESIGN_v6.md`). Per
-CLAUDE.md, V4 resets milestone numbering — V4 milestones will run
-M01–MNN. The M139+ numbering still used throughout this document is a
-historical artefact from when continuation was the default; it will be
-rewritten when the V4 milestone set is authored. References in this
-document to specific milestones (e.g. "M139 — Go Module Foundation")
-should be read as ordinal placeholders pending that authoring pass.
+CLAUDE.md, V4 resets milestone numbering — V4 milestones m01–m20 are
+authored in `.claude/milestones/MANIFEST.cfg` (Phases 1–4); Phase 5
+m-numbers remain placeholder until that batch is authored.
 
 **§6 — Python `tools/` boundary: preserve, absorb, or replace.**
 Default: **preserve indefinitely**. `tree-sitter` and `rich` (TUI) are
@@ -672,8 +699,8 @@ absorb Python; doing so is its own initiative.
 |---|------|-------|------------|
 | 1 | **Seam multiplication.** Each wedge adds a bash↔Go boundary; transient mid-migration we have N seams instead of 1. | High × Med | Cap concurrent active wedges at 2. Land each seam as a versioned proto in `internal/proto/` so seams are auditable. |
 | 2 | **Second-system effect.** "While we're rewriting, let's also redesign X." | High × High | Hard rule, restated in this doc and in every milestone: no feature redesign during the port. Behavior-equivalence tests gate every wedge. |
-| 3 | **Cross-language debugging tax.** A failure now spans bash, Go, and Python; a single stack trace doesn't tell the whole story. | Med × Med | Causal log already cross-language-aware (proto v1 from M140); errors carry the originating language explicitly. `tekhton diagnose` learns to reconstruct cross-language traces. |
-| 4 | **Self-hosting regression mid-wedge.** A wedge breaks Tekhton-on-Tekhton; M139+ work blocks. | Med × High | `scripts/self-host-check.sh` runs in CI on every PR. A wedge that breaks self-hosting is reverted, not patched-forward. |
+| 3 | **Cross-language debugging tax.** A failure now spans bash, Go, and Python; a single stack trace doesn't tell the whole story. | Med × Med | Causal log already cross-language-aware (proto v1 from m02); errors carry the originating language explicitly. `tekhton diagnose` learns to reconstruct cross-language traces. |
+| 4 | **Self-hosting regression mid-wedge.** A wedge breaks Tekhton-on-Tekhton; downstream V4 work blocks. | Med × High | `scripts/self-host-check.sh` runs in CI on every PR. A wedge that breaks self-hosting is reverted, not patched-forward. |
 | 5 | **Phase drift.** Phase 2 takes longer than planned; the unported bash surface area sits idle for an extended period and accumulates patch-level fixes that the Go side must catch up on. | High × Med | Phase 2 is sized at six milestones; if it crosses ten, the Phase 3 re-evaluation point fires early. The bash supervisor still works during drift — it's not a release blocker. Patch-level bash fixes during a phase are tracked and replayed against the next Go wedge in the affected subsystem. |
 | 6 | **Windows/WSL signal-handling differences.** `os/exec` doesn't kill the process tree on Windows; `claude.exe` orphans hide from the bash process group. | Med × Med | Phase 2 includes a Windows-specific reaper using `JobObjects`. CI runs `windows/amd64` integration tests against a mocked `claude` binary. |
 | 7 | **JSON protocol version skew.** A user on an old bash shim hits a new Go binary or vice versa. | Med × Med | The `proto` envelope makes skew loud, not silent. Shims and binaries refuse unknown majors. Distribution is single-binary so users can't easily mix versions inside a project. |

@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "18"
-status: "todo"
+status: "done"
 -->
 
 # m18 — Pipeline Runner + Stage Adapter

@@ -36,6 +36,10 @@ ALLOWED_FILES=(
     # The orchestrate loop reads the supervisor result through the shim.
     "lib/agent.sh"
     "lib/agent_shim.sh"
+    # m18 (Phase 4 batch 2) — only the stage-envelope shim writes
+    # tekhton.stage.result.v1 envelopes. Other lib/ or stages/ files MUST
+    # call emit_stage_envelope rather than printf the JSON inline.
+    "lib/stage_envelope.sh"
 )
 
 # --- Patterns to detect ------------------------------------------------------
@@ -86,6 +90,11 @@ PATTERNS=(
     '"\$_bin"[[:space:]]+supervise'
     # shellcheck disable=SC2016
     "'tekhton'[[:space:]]+supervise"
+    # m18 (Phase 4 batch 2): the per-attempt scheduler and build/completion
+    # gates moved to internal/pipeline. Hand-rolled bash JSON envelopes for
+    # tekhton.stage.result.v1 outside lib/stage_envelope.sh would fork the
+    # contract — emit_stage_envelope is the only authorized writer.
+    '"proto":[[:space:]]*"tekhton\.stage\.result\.v1"'
 )
 
 # --- Audit -------------------------------------------------------------------

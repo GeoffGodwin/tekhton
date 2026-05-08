@@ -966,6 +966,12 @@ source "${TEKHTON_HOME}/stages/tester.sh"
 # tester_timing.sh, tester_validation.sh) are sourced by tester.sh itself.
 source "${TEKHTON_HOME}/stages/cleanup.sh"
 
+# m18: stage envelope wrapper. Wraps every run_stage_<name> with a tail block
+# that emits a tekhton.stage.result.v1 envelope to TEKHTON_STAGE_RESULT_FILE
+# when the variable is set (no-op for the legacy bash orchestrator path).
+source "${TEKHTON_HOME}/lib/stage_envelope.sh"
+stage_envelope_install_all
+
 _phase_end "startup"
 
 # --- Express mode: auto-detect config when pipeline.conf is missing -----------

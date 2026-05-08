@@ -173,3 +173,8 @@ Each entry captures why a structural change was made, preventing future develope
 - **Date**: 2026-05-07
 - **Rationale**: - ACP: rename lib/error_patterns_remediation.sh to lib/remediation.sh -- ACCEPT -- Satisfies the glob-based acceptance criterion (git ls-files lib/error_patterns*.sh returns nothing) without orphaning
 - **Source**: Accepted ACP from pipeline run
+
+## ADL-35: - ACP-1: AC #3 / AC #4 (Task: "M18")
+- **Date**: 2026-05-08
+- **Rationale**: - ACP-1: AC #3 / AC #4 — bash deletions deferred to m19 + m20 — **ACCEPT** — The deferral argument is technically sound on all five dependency axes: (1) `lib/gates.sh::run_build_gate` is a 5-pha
+- **Source**: Accepted ACP from pipeline run

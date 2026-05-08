@@ -42,6 +42,9 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newPromptCmd())
 	cmd.AddCommand(newConfigCmd())
 	cmd.AddCommand(newDiagnoseCmd())
+	cmd.AddCommand(newStageCmd())
+	cmd.AddCommand(newRunStageCmd())
+	cmd.AddCommand(newPipelineCmd())
 	return cmd
 }
 

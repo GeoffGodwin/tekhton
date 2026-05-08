@@ -48,6 +48,7 @@ tekhton/
 │   ├── notes.sh            # Human notes management
 │   ├── prompts.sh          # m15 wedge shim — execs `tekhton prompt render`
 │   ├── prompts_io.sh       # m15 — file-content helpers (_safe_read_file, _wrap_file_content)
+│   ├── stage_envelope.sh   # m18 stage.result.v1 emission helpers
 │   ├── state.sh            # Pipeline state persistence + resume
 │   ├── turns.sh            # Turn-exhaustion continuation logic
 │   ├── drift.sh            # Drift log, ADL, human action management

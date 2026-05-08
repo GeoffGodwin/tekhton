@@ -149,6 +149,42 @@ The causal-event log writer. `lib/causality.sh` is a shim that exec's
 this subcommand when the Go binary is on `$PATH`; pipeline callers do
 not invoke it directly.
 
+### `tekhton stage` (m18)
+
+Stage envelope emission and orchestration. The stage runner reads requests from
+`TEKHTON_STAGE_REQUEST_FILE`, executes the bash stage, and emits a
+`tekhton.stage.result.v1` envelope to `TEKHTON_STAGE_RESULT_FILE`.
+
+Subcommands:
+
+- `tekhton stage emit [--stage NAME] [--verdict V] [--exit-reason TEXT] [--to-result-file]` —
+  Emit a stage result envelope. With `--to-result-file`, writes to
+  `$TEKHTON_STAGE_RESULT_FILE`; otherwise prints to stdout. Used by
+  `lib/stage_envelope.sh`.
+- `tekhton run-stage STAGE_NAME --request-file PATH` — Execute a single bash
+  stage via the `BashAdapter` and print the resulting `stage.result.v1`
+  envelope. Used for parity testing and one-off stage runs.
+
+Exit codes:
+- `0` — stage executed and passed
+- `N` (non-zero) — stage executed and failed with exit code N
+- `64` (EX_USAGE) — request envelope was malformed or stage unknown
+
+### `tekhton pipeline` (m18)
+
+Per-attempt scheduler. Reads a `tekhton.pipeline.attempt.request.v1` envelope
+(from `--request-file`), executes all stages in order with gates and rework
+routing, and prints a `tekhton.pipeline.attempt.result.v1` envelope on stdout.
+
+```text
+tekhton pipeline run-attempt --request-file PATH [--analyze-cmd CMD] [--compile-cmd CMD] [--test-cmd CMD]
+```
+
+This is the internal orchestration entry point for the Go-based pipeline
+scheduler. It is not meant for direct user invocation — `tekhton.sh` continues
+to drive the bash pipeline until m20 flips the entry point. Exit codes follow
+the same pattern as `stage` subcommands.
+
 ```text
 tekhton causal init    --path PATH                        # ensure dirs exist
 tekhton causal emit    --path PATH --stage S --type T …  # append one event, prints ID (--stage and --type required)
