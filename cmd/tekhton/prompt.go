@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/geoffgodwin/tekhton/internal/prompt"
 	"github.com/spf13/cobra"
@@ -91,7 +92,7 @@ func resolvePromptsDir(flagVal string) (string, error) {
 		return env, nil
 	}
 	if home := os.Getenv("TEKHTON_HOME"); home != "" {
-		return home + "/prompts", nil
+		return filepath.Join(home, "prompts"), nil
 	}
 	return "", errors.New("prompt render: --prompts-dir, $TEKHTON_PROMPTS_DIR, or $TEKHTON_HOME required")
 }

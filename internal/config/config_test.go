@@ -453,6 +453,58 @@ func TestParse_FindInlineComment(t *testing.T) {
 	}
 }
 
+// TestApplyLateDefaults_EmptyFastPath verifies that the empty-slice guard in
+// applyLateDefaults returns without touching cfg.Values when lateDefaults is
+// the currently-empty slice. This prevents a silent regression if the guard
+// is removed before the slice is populated.
+func TestApplyLateDefaults_EmptyFastPath(t *testing.T) {
+	// lateDefaults must be empty for this test to be meaningful.
+	if len(lateDefaults) != 0 {
+		t.Skip("lateDefaults is non-empty; fast-path test is no longer relevant")
+	}
+	cfg := &Config{
+		Values:  map[string]string{"EXISTING_KEY": "original_value"},
+		KeysSet: map[string]bool{},
+	}
+	applyLateDefaults(cfg)
+	// Values must be unchanged: no keys added, no existing key overwritten.
+	if len(cfg.Values) != 1 {
+		t.Errorf("expected 1 key after empty fast path, got %d: %v", len(cfg.Values), cfg.Values)
+	}
+	if cfg.Values["EXISTING_KEY"] != "original_value" {
+		t.Errorf("existing key modified: got %q, want %q", cfg.Values["EXISTING_KEY"], "original_value")
+	}
+}
+
+// TestApplyLateDefaults_NonEmptyPath exercises the non-fast-path branch by
+// temporarily populating lateDefaults with a sentinel rule. This confirms the
+// loop body is reachable and applies := semantics (absent key gets set, present
+// key is left alone) — the same contract applyDefaults has.
+func TestApplyLateDefaults_NonEmptyPath(t *testing.T) {
+	// Save and restore lateDefaults so other tests are unaffected.
+	saved := lateDefaults
+	t.Cleanup(func() { lateDefaults = saved })
+
+	lateDefaults = []defaultRule{
+		{"LATE_KEY_ABSENT", lit("late_value")},
+		{"LATE_KEY_PRESENT", lit("should_not_overwrite")},
+	}
+
+	cfg := &Config{
+		Values:  map[string]string{"LATE_KEY_PRESENT": "original"},
+		KeysSet: map[string]bool{},
+	}
+	applyLateDefaults(cfg)
+
+	if cfg.Values["LATE_KEY_ABSENT"] != "late_value" {
+		t.Errorf("absent key not set: got %q, want %q", cfg.Values["LATE_KEY_ABSENT"], "late_value")
+	}
+	if cfg.Values["LATE_KEY_PRESENT"] != "original" {
+		t.Errorf(":= semantics violated: got %q, want %q (existing value must not be overwritten)",
+			cfg.Values["LATE_KEY_PRESENT"], "original")
+	}
+}
+
 // clearCIEnv removes every CI env var DetectCI inspects, plus every key
 // with a default rule, so tests assert against bare defaults rather than
 // values leaked from the parent shell (Tekhton self-hosts and exports the

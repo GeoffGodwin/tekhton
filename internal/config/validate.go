@@ -163,7 +163,7 @@ func runInlineValidation(cfg *Config) {
 	rangeCheck(cfg, "DASHBOARD_MAX_TIMELINE_EVENTS", 1, 2000, "500")
 	rangeCheck(cfg, "QUOTA_RETRY_INTERVAL", 60, 3600, "300")
 	rangeCheck(cfg, "QUOTA_RESERVE_PCT", 1, 50, "10")
-	rangeCheck(cfg, "QUOTA_MAX_PAUSE_DURATION", 300, 86400, "14400")
+	rangeCheck(cfg, "QUOTA_MAX_PAUSE_DURATION", 300, 86400, "18900")
 
 	// HEALTH weights must sum to 100 when HEALTH_ENABLED=true.
 	if v["HEALTH_ENABLED"] == "true" {

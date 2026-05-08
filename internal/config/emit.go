@@ -6,6 +6,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
 // EmitShell writes a sourceable bash environment to w. Each known key is
@@ -40,20 +42,11 @@ func (c *Config) EmitJSON(w io.Writer, indent bool) error {
 	}
 	sort.Strings(keysSet)
 
-	// Use an ordered map encoded as a slice of {k,v} so JSON output is
-	// deterministic. encoding/json sorts map keys but only for map types,
-	// so a plain map is fine — keep it simple.
-	payload := struct {
-		Path        string            `json:"path"`
-		ProjectDir  string            `json:"project_dir,omitempty"`
-		Values      map[string]string `json:"values"`
-		KeysSet     []string          `json:"keys_set"`
-		Warnings    []string          `json:"warnings,omitempty"`
-		Errors      []string          `json:"errors,omitempty"`
-		CIDetected  bool              `json:"ci_detected"`
-		CIPlatform  string            `json:"ci_platform,omitempty"`
-		EnvelopeVer string            `json:"envelope_ver"`
-	}{
+	// The envelope shape and version tag live in internal/proto so any
+	// cross-language consumer (current or future) imports a single typed
+	// view. encoding/json sorts map keys deterministically, so emit order
+	// is stable across runs.
+	payload := proto.ConfigV1{
 		Path:        c.Path,
 		ProjectDir:  c.ProjectDir,
 		Values:      c.Values,
@@ -62,7 +55,7 @@ func (c *Config) EmitJSON(w io.Writer, indent bool) error {
 		Errors:      c.Errors,
 		CIDetected:  c.CIDetected,
 		CIPlatform:  c.CIPlatform,
-		EnvelopeVer: "tekhton.config.v1",
+		EnvelopeVer: proto.ConfigProtoV1,
 	}
 
 	enc := json.NewEncoder(w)

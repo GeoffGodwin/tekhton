@@ -1813,6 +1813,7 @@ fi
 
 # --- Validation --------------------------------------------------------------
 
+# shellcheck disable=SC2153  # REQUIRED_TOOLS is set by load_config/_parse_config_file
 for _tool in $REQUIRED_TOOLS; do
     require_cmd "$_tool"
 done

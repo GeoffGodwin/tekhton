@@ -256,3 +256,78 @@ func TestClassifyRoutingDecision_NoncodeAtThreshold(t *testing.T) {
 		t.Errorf("60%% noncode (at threshold) must route to noncode_dominant, got %q", got)
 	}
 }
+
+// TestIsNonDiagnosticLine_PnpmYarnNotice verifies that the pnpm notice and
+// yarn notice entries added in m17 are correctly treated as noise. These
+// entries mirror the existing npm notice/warn coverage and prevent silent
+// regression if the regex is accidentally removed from noiseLineREs.
+func TestIsNonDiagnosticLine_PnpmYarnNotice(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		line string
+		want bool // true = should be filtered (IsNonDiagnosticLine returns true)
+		desc string
+	}{
+		// Happy-path: pnpm notice lines are filtered.
+		{"pnpm notice: downloading some-package", true, "pnpm notice bare"},
+		{"pnpm notice cli v9.0.0", true, "pnpm notice no colon"},
+		{"  pnpm notice: resolving dependencies", true, "pnpm notice leading spaces"},
+		{"PNPM NOTICE: uppercase variant", true, "pnpm notice uppercase"},
+
+		// Happy-path: yarn notice lines are filtered.
+		{"yarn notice: xxx", true, "yarn notice with colon"},
+		{"yarn notice [1/4] Resolving packages", true, "yarn notice bracket format"},
+		{"  yarn notice: some metadata", true, "yarn notice leading spaces"},
+		{"YARN NOTICE: uppercase variant", true, "yarn notice uppercase"},
+
+		// Allow-list precedence: failure terms override the noise deny-list.
+		// A pnpm/yarn notice that also contains "error" must NOT be filtered.
+		{"pnpm notice: error: peer dep resolution failed", false, "pnpm notice + error term"},
+		{"yarn notice: TS2304: Cannot find name 'foo'", false, "yarn notice + TS error term"},
+		{"pnpm notice: ECONNREFUSED 127.0.0.1:4873", false, "pnpm notice + ECONNREFUSED"},
+
+		// Existing npm warn/notice still filtered (regression guard).
+		{"npm notice created a lockfile", true, "npm notice still filtered"},
+		{"npm warn deprecated lodash@3.0.0", true, "npm warn still filtered"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			got := terr.IsNonDiagnosticLine(tc.line)
+			if got != tc.want {
+				if tc.want {
+					t.Errorf("expected %q to be filtered (noise), but IsNonDiagnosticLine returned false", tc.line)
+				} else {
+					t.Errorf("expected %q NOT to be filtered (allow-list precedence), but IsNonDiagnosticLine returned true", tc.line)
+				}
+			}
+		})
+	}
+}
+
+// TestIsNonDiagnosticLine_PnpmYarnNotice_ClassifyWithStats verifies the
+// end-to-end effect: pnpm/yarn notice lines in a raw build log are excluded
+// from ClassifyWithStats totals so they don't inflate the line count or skew
+// routing decisions.
+func TestIsNonDiagnosticLine_PnpmYarnNotice_ClassifyWithStats(t *testing.T) {
+	t.Parallel()
+	// Mix: one real code error + several pnpm/yarn notice lines.
+	// The noise lines must not appear in stats.TotalLines.
+	raw := "error TS2304: Cannot find name 'foo'\n" +
+		"pnpm notice: downloading typescript@5.0.0\n" +
+		"yarn notice: some progress info\n" +
+		"pnpm notice: resolving peer deps\n"
+
+	stats := terr.ClassifyWithStats(raw)
+	if len(stats) == 0 {
+		t.Fatal("expected at least one record for the code error")
+	}
+	// Only the TS error line is diagnostic; the three notice lines are noise.
+	for _, r := range stats {
+		if r.TotalLines != 1 {
+			t.Errorf("TotalLines=%d, expected 1 (noise lines must be excluded from totals)", r.TotalLines)
+		}
+	}
+}

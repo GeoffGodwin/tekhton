@@ -39,8 +39,13 @@ func applyDefaults(cfg *Config) {
 
 // applyLateDefaults fills any values that depend on the post-CI state
 // (TEKHTON_UI_GATE_FORCE_NONINTERACTIVE residue) plus a few derived caps that
-// reference clamp-input values. Idempotent: re-running has no effect.
+// reference clamp-input values. Idempotent: re-running has no effect. The
+// empty-slice fast path keeps the call site cost-free while the hook is
+// reserved for future late-phase keys.
 func applyLateDefaults(cfg *Config) {
+	if len(lateDefaults) == 0 {
+		return
+	}
 	for _, r := range lateDefaults {
 		if _, ok := cfg.Values[r.Key]; ok {
 			continue
@@ -602,4 +607,7 @@ var baseDefaults = []defaultRule{
 // lateDefaults: keys whose default depends on values resolved in CI gate or
 // other late-stage operations. Currently empty — kept as a hook for future
 // arc milestones (m17+) without re-flowing the order of baseDefaults.
+//
+// TODO(m17+): populate when a late-phase key arrives or collapse into
+// applyDefaults if it becomes clear no late-phase keys are needed.
 var lateDefaults = []defaultRule{}

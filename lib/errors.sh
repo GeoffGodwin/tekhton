@@ -61,7 +61,7 @@ filter_code_errors()               { _ec_pipe filter-code "${1:-}"; }
 has_explicit_code_errors()         { _ec_probe --has-code         "${1:-}"; }
 has_only_noncode_errors()          { _ec_probe --has-only-noncode "${1:-}"; }
 load_error_patterns() { :; }
-get_pattern_count()   { echo 56; }
+get_pattern_count()   { echo 57; }
 classify_build_error() {
     local rec
     [[ -z "${1:-}" ]] && { echo "code|code||Empty error input"; return 0; }

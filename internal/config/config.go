@@ -105,6 +105,14 @@ type LoadOptions struct {
 // Warnings collects non-fatal diagnostics. Errors collects fatal ones. The
 // caller decides whether to treat warnings as fatal (Strict mode) or print
 // them to stderr.
+//
+// Design note: the m16 design described a nested typed struct
+// (Limits.MaxReviewCycles int `conf:"MAX_REVIEW_CYCLES"`, etc.). The port
+// landed on map[string]string instead — direct parity with bash env vars,
+// no field-name translation, and zero schema churn when a new key arrives.
+// Future in-process callers (m17+ orchestrate/prompt/dag) read Values as a
+// map; if a typed view becomes useful, add it as an accessor layer rather
+// than mutating this struct.
 type Config struct {
 	Path       string            // source pipeline.conf path
 	ProjectDir string            // for relative-path resolution

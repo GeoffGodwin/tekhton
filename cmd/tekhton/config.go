@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/geoffgodwin/tekhton/internal/config"
@@ -212,9 +213,7 @@ func loadConfigForCmd(f configCommonFlags) (*config.Config, error) {
 // printDiagnostics writes accumulated warnings to stderr — one per line,
 // matching the bash side's `warn()` formatting (no color codes — those would
 // corrupt the parity check).
-func printDiagnostics(w interface {
-	Write(p []byte) (int, error)
-}, cfg *config.Config) {
+func printDiagnostics(w io.Writer, cfg *config.Config) {
 	for _, line := range cfg.Warnings {
 		fmt.Fprintln(w, line)
 	}
