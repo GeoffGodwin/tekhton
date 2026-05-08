@@ -491,3 +491,63 @@ on the bash side intentionally:
   depends on m13.
 - **m17 — error taxonomy consolidation.** Rolls up the recovery-class
   string vocabulary into `internal/errors`.
+
+## Phase 4 batch 2 — m18 + m19 retro
+
+m18 (pipeline runner) and m19 (`tekhton run` command) form the second
+batch of Phase 4. m18 ports the per-attempt scheduler from
+`lib/orchestrate_iteration.sh::_run_pipeline_stages` into
+`internal/pipeline.Runner` plus the build/completion gates into
+`internal/pipeline.BuildGate` and `internal/pipeline.CompletionGate`.
+The bash `_run_pipeline_stages` body shrinks to a thin caller that
+unpacks the stage breakdown.
+
+m19 ports the *outer* retry loop and the run-level CLI surface:
+
+- **`cmd/tekhton/run.go`** wires the `tekhton run` Cobra subcommand
+  with the documented run-flag set (`--task`, `--complete`, `--resume`,
+  `--human`, `--human-tag`, `--milestone`, `--auto-advance`,
+  `--auto-advance-limit`, `--dry-run`, `--no-tui`).
+- **`internal/runner`** owns the run-level entry point. `RunSingle`
+  is the `--task` non-complete-mode path; `RunCompleteLoop` is the
+  outer retry loop port (safety bounds, milestone-acceptance dispatch,
+  failure persistence via `internal/state`); `Resume` reads the m03
+  JSON snapshot and continues.
+- **`internal/tui`** owns the Go-side spawn-and-monitor logic for
+  `tools/tui.py`. Mid-run status writers stay in bash
+  (`lib/tui_ops.sh`); the new package writes only the initial and
+  final tui_status.json envelopes.
+- **`internal/proto/run_v1.go`** defines `RunRequestV1` and
+  `RunResultV1`. The runner writes `RunResultV1` to
+  `<project>/.tekhton/RUN_RESULT.json` so the bash finalize bridge
+  can read it via `TEKHTON_RUN_RESULT_FILE`.
+
+### Bash deletions and renames in m19
+
+| Old name (deleted)                       | New owner                                |
+|------------------------------------------|------------------------------------------|
+| `lib/orchestrate_main.sh`                | `internal/runner.RunCompleteLoop`        |
+|                                          | (`lib/orchestrate_complete.sh` carries the legacy bash body until m20 flips the entry point) |
+| `lib/orchestrate_state.sh`               | `internal/runner.persistFailureState`    |
+|                                          | (`lib/orchestrate_save.sh` carries the legacy save-state writer) |
+| `run_complete_loop` (bash function)      | `_orch_complete_run`                     |
+| `_save_orchestration_state` (bash function) | `_orch_record_save_state`             |
+
+`scripts/wedge-audit.sh` adds four regression guards: `\brun_complete_loop\b`,
+`\b_save_orchestration_state\b`, `orchestrate_main\.sh`, `orchestrate_state\.sh`.
+The three new bash files (`lib/orchestrate.sh`, `lib/orchestrate_complete.sh`,
+`lib/orchestrate_save.sh`) are allowlisted because their docstrings mention
+the legacy names in rename-rationale comments.
+
+### What's deferred to m20 (dogfooding cutover)
+
+- `tekhton.sh` continues to call `_orch_complete_run` (the renamed bash
+  body) for `--complete` invocations. m20 flips this dispatch to
+  `tekhton run --complete` and deletes `lib/orchestrate_complete.sh` /
+  `lib/orchestrate_save.sh`.
+- `lib/preflight.sh`, `lib/finalize.sh`, and the 26-hook finalize chain
+  stay bash; the Go runner shells out via `runner.BashHookRunner`. Phase
+  5 ports the hook chain function-by-function.
+- Milestone-acceptance check (`check_milestone_acceptance`) stays bash —
+  the Go runner accepts an `AcceptanceChecker` interface so the future
+  port slots in cleanly.

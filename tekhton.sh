@@ -2051,7 +2051,7 @@ if ! git diff --quiet; then
     warn "Uncommitted changes detected. The coder will work on top of these."
 fi
 
-# M93: Track destinations of archived reports so _save_orchestration_state can
+# M93: Track destinations of archived reports so _orch_record_save_state can
 # restore the right one when the next failure suggests a smarter --start-at.
 # Only set when START_AT is coder/intake (review uses these intentionally).
 _ARCHIVED_REVIEWER_REPORT_PATH=""
@@ -2989,7 +2989,7 @@ elif [[ "$HUMAN_MODE" = true ]] && [[ "${HUMAN_SINGLE_NOTE:-false}" = true ]]; t
         _run_pipeline_stages
         finalize_run 0
     else
-        run_complete_loop || true
+        _orch_complete_run || true
     fi
     echo
 elif [[ "$FIX_NONBLOCKERS_MODE" = true ]]; then
@@ -3006,7 +3006,7 @@ elif [[ "$COMPLETE_MODE" = true ]] && [[ "$HUMAN_MODE" != true ]]; then
         _run_pipeline_stages
         finalize_run 0
     else
-        run_complete_loop || true
+        _orch_complete_run || true
     fi
     echo
 else

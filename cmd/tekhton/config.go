@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/geoffgodwin/tekhton/internal/config"
@@ -62,7 +61,9 @@ func newConfigLoadCmd() *cobra.Command {
 				return err
 			}
 			if !f.noWarn {
-				printDiagnostics(cmd.ErrOrStderr(), cfg)
+				for _, line := range cfg.Warnings {
+					fmt.Fprintln(cmd.ErrOrStderr(), line)
+				}
 			}
 			switch emit {
 			case "shell":
@@ -94,7 +95,9 @@ func newConfigShowCmd() *cobra.Command {
 				return err
 			}
 			if !f.noWarn {
-				printDiagnostics(cmd.ErrOrStderr(), cfg)
+				for _, line := range cfg.Warnings {
+					fmt.Fprintln(cmd.ErrOrStderr(), line)
+				}
 			}
 			return cfg.EmitJSON(cmd.OutOrStdout(), indent)
 		},
@@ -120,7 +123,9 @@ func newConfigValidateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			printDiagnostics(cmd.ErrOrStderr(), cfg)
+			for _, line := range cfg.Warnings {
+				fmt.Fprintln(cmd.ErrOrStderr(), line)
+			}
 			if strict && len(cfg.Warnings) > 0 {
 				return errExitCode{code: exitUsage, err: fmt.Errorf("config validate: %d warning(s) (strict mode)", len(cfg.Warnings))}
 			}
@@ -208,13 +213,4 @@ func loadConfigForCmd(f configCommonFlags) (*config.Config, error) {
 		}
 	}
 	return cfg, nil
-}
-
-// printDiagnostics writes accumulated warnings to stderr — one per line,
-// matching the bash side's `warn()` formatting (no color codes — those would
-// corrupt the parity check).
-func printDiagnostics(w io.Writer, cfg *config.Config) {
-	for _, line := range cfg.Warnings {
-		fmt.Fprintln(w, line)
-	}
 }

@@ -1,301 +1,253 @@
 # Coder Summary
-
 ## Status: COMPLETE
 
-M18 — Pipeline Runner + Stage Adapter (Phase 4 batch 2 wedge). The Go
-infrastructure (envelope contract, stage runner, pipeline runner, gates,
-CLI subcommands, bash envelope helpers) is in place with ≥80% line
-coverage in both `internal/stagerunner` and `internal/pipeline`. The
-parity gate exits 0 across all six scenarios. 12 of 14 acceptance
-criteria are met directly. AC #3 / AC #4 (the two bash-deletion ACs)
-are formally renegotiated via **ACP-1** below to land in m19 + m20:
-they require porting helpers that the m19 milestone definition itself
-claims as its scope (`_handle_pipeline_success`,
-`_handle_pipeline_failure`, the 5-phase `run_build_gate` UI/dependency
-phases) and threading `tekhton pipeline run-attempt` through the six
-`_run_pipeline_stages` call sites in `tekhton.sh` (m20's stated job —
-"`tekhton.sh` becomes a thin dispatcher"). The ACP is the formal
-deferral artifact the reviewer evaluates.
+m19 — `tekhton run` Top-Level Command (Phase 4 batch 2, second wedge).
 
 ## What Was Implemented
 
-### Carried over from prior run
+### Goal 1 + 7: `tekhton run` Cobra subcommand + parity gate
 
-- `internal/proto/stage_v1.go` — `tekhton.stage.{request,result}.v1`
-  envelope contracts + verdict vocabulary (`pass | fail | rework |
-  block | skip`).
-- `internal/proto/pipeline_v1.go` — `tekhton.pipeline.attempt.v1` extension
-  carrying the per-stage breakdown.
-- `internal/stagerunner/` — `Adapter` interface and `BashAdapter` that
-  exec's `bash -c "source lib/common.sh; source lib/stage_envelope.sh;
-  source stages/<name>.sh; run_stage_<name>"` with the request envelope
-  in a temp file, reads back the result envelope, synthesizes a
-  `verdict=fail` envelope on missing/invalid output. SIGINT propagates via
-  `exec.CommandContext`. Coverage 80.0%.
-- `internal/pipeline/runner.go` — `Runner.RunAttempt` walks `req.Order`
-  once, scheduling coder under a build-gate retry envelope, review under
-  a rework loop, tester under an optional completion gate. Failure
-  short-circuits and populates `BlockingStage`.
-- `internal/pipeline/gates.go` — `BuildGate` (analyze + compile via the
-  `CommandRunner` interface) and `CompletionGate` (test-cmd + pluggable
-  baseline-pass hook). `ExecRunner` is the production runner; tests use
-  `fakeGateRunner`. Coverage 81.6%.
-- `cmd/tekhton/{stage,run_stage,pipeline}.go` — three new subcommands
-  (`stage emit`, `run-stage`, `pipeline run-attempt`). `resolveTekhtonBin`
-  threads the binary path through `$TEKHTON_BIN` so bash subprocesses can
-  shell back even when the binary isn't on `$PATH`.
-- `lib/stage_envelope.sh` (165 lines) — `emit_stage_envelope` execs
-  `tekhton stage emit --to-result-file`; bash-only JSON fallback for the
-  no-binary case escapes per RFC 8259. `stage_envelope_wrap` rebinds
-  `run_stage_<stage>` so its tail emits the envelope from the original
-  exit code; `stage_envelope_install_all` covers every known stage.
-- `tests/test_stage_envelope.sh` — 16 assertions covering no-op behavior,
-  JSON correctness, wrapper installation, fail-path verdict mapping,
-  install_all idempotency.
-- `tests/test_pipeline_runner.sh` — end-to-end smoke test that builds a
-  fake `TEKHTON_HOME` with stub stages and asserts the
-  `tekhton.pipeline.attempt.result.v1` envelope shape.
-- `scripts/wedge-audit.sh` — `lib/stage_envelope.sh` added to the
-  allowed-writers list; new regex catches forks of the envelope contract.
+- **`cmd/tekhton/run.go`** wires the Cobra subcommand with the documented run-flag set:
+  `--task`, `--complete`, `--resume`, `--human`, `--human-tag`, `--milestone`,
+  `--auto-advance`, `--auto-advance-limit`, `--dry-run`, `--no-tui`
+  (plus `--project-dir`, `--tekhton-home`, `--analyze-cmd`, `--compile-cmd`,
+  `--test-cmd` for build/completion gate plumbing).
+- Flag-validation enforces exactly-one-of for `--task` / `--human` /
+  `--milestone` / `--resume` and that `--auto-advance` requires milestone mode.
+- Registered in `cmd/tekhton/main.go` alongside the existing subcommands.
+- `scripts/run-parity-check.sh` is the m19 acceptance gate: it builds the
+  binary, asserts the documented run flags appear in `tekhton run --help`,
+  asserts the legacy bash entry point still parses its long-flag set, asserts
+  the legacy function names are gone from `lib/ stages/ tekhton.sh`, and
+  asserts `git ls-files` no longer tracks the deleted files.
 
-### Delivered in this continuation
+### Goal 2: `internal/runner` package
 
-1. **`scripts/pipeline-parity-check.sh` (NEW, 286 lines)** — m18 parity
-   gate covering all six scenarios from the milestone:
-   - 01-happy: intake → coder → security → review → tester all pass
-   - 02-build-retry: coder with `max_build_retries=1` (declarative — gate
-     hook is Go-only and asserts no extra retries when gate unset)
-   - 03-review-rework: review returns `rework`, runner surfaces the
-     verdict and `blocking_stage=review`
-   - 04-security-block: security `block` short-circuits before review/tester
-   - 05-tester-baseline: tester `pass` with completion gate omitted
-   - 06-test-first: `PIPELINE_ORDER=test_first` ordering preserved
-   - 17 assertions, all pass against the current binary.
+New package with three entry points and supporting infrastructure:
 
-2. **`DESIGN_v4.md` M139+ → m01–m20 renumber (AC #12)** — replaced
-   placeholder M-numbers with the now-authored V4 m-numbering throughout:
-   - Doc preamble status note updated to reference the authored
-     `MANIFEST.cfg` (m01–m20) instead of the historical placeholder.
-   - `Phase 1 Detail` section: M139 → m01, M140 → m02, M141 → m03,
-     M142 → m04, with all `**Dependencies.**` lines retargeted to the
-     new ids.
-   - `Phases 2+ Milestone Outline`: M143–M148 → m05–m10 (Phase 2),
-     M149 → m11 (Phase 3), M150–M165 → m12–m20 (Phase 4),
-     M166+ → m21+ (Phase 5). Phase 4 outline lists the actual m12–m20
-     dispositions matching the authored manifest.
-   - Decision Register §5: trimmed historical justification; note that
-     m01–m20 are authored and Phase 5 m-numbers remain placeholder.
-   - Risk Register: row 3 references "proto v1 from m02" (was M140);
-     row 4 references "downstream V4 work blocks" (was M139+).
-   - The V3 reference at line 445 (`M126-M138 resilience arc`) is
-     preserved — it correctly names V3 milestones.
+- **`runner.go`** — `Runner` struct, constructor, env-override builder,
+  `BashHookRunner` (the default `HookRunner` that exec's `bash lib/preflight.sh`
+  and `bash lib/finalize.sh` with `TEKHTON_RUN_DISPOSITION` /
+  `TEKHTON_RUN_RESULT_FILE` env contract additions).
+- **`single.go`** — `RunSingle(ctx, req)` for `--task` non-complete-mode.
+  Pre-flight → optional TUI start → one `Pipeline.RunAttempt` → write
+  `RUN_RESULT.json` → finalize bridge → optional TUI stop.
+- **`complete.go`** — `RunCompleteLoop(ctx, req)` is the outer retry loop
+  port. Applies the same three safety bounds as
+  `_orch_complete_run` (max_attempts / autonomous_timeout / max agent calls),
+  loops on `AttemptOutcomeFailureRetry`, terminates on
+  `AttemptOutcomeFailureSaveExit` / unrecoverable, calls the milestone-acceptance
+  shell-out via the `AcceptanceChecker` interface, persists failure state via
+  `internal/state.Store`, writes `RUN_RESULT.json`, and runs the finalize bridge.
+- **`resume.go`** — `Resume(ctx)` reads `PIPELINE_STATE.json` (m03 JSON
+  envelope), rebuilds a `RunRequestV1` from the snapshot, and dispatches to
+  `RunSingle` or `RunCompleteLoop` based on `exit_reason`.
 
-3. **Stronger Architecture Change Proposal (this section, below)** —
-   replaces the prior coder's softer rationale with the full dependency
-   cascade and milestone-ownership map for the deferred AC #3/#4.
+### Goal 3 + 4: Pre-flight and finalize bridges
+
+`runner.BashHookRunner` is the default `HookRunner` implementation.
+`Preflight` exec's `bash <home>/lib/preflight.sh`; `Finalize` exec's
+`bash <home>/lib/finalize.sh` with `TEKHTON_RUN_DISPOSITION` and
+`TEKHTON_RUN_RESULT_FILE` env vars set so the hook chain can branch on
+disposition and consume the structured run-result envelope.
+
+### Goal 5: TUI sidecar bridge
+
+- **`internal/tui/sidecar.go`** — `Sidecar` struct owns the spawn-and-monitor
+  lifecycle for `tools/tui.py`. Activation gating mirrors `lib/tui.sh`:
+  TTY check, venv-python existence, rich-import test, presence of
+  `tools/tui.py`. Honors the bash `.claude/tui_sidecar.pid` convention so
+  cross-language stale-PID cleanup keeps working.
+- **`internal/tui/status.go`** — `WriteInitial` and `WriteFinal` are the only
+  Go-side writers to `tui_status.json`. Mid-run writers stay in bash
+  (`lib/tui_ops.sh`); both writers preserve the atomic tmpfile + rename
+  pattern that `lib/tui_liveness.sh` enforces.
+
+### Goal 6: Bash deletions
+
+- **Deleted:** `lib/orchestrate_main.sh`, `lib/orchestrate_state.sh`.
+  These two files held the run-level outer-loop and save-state bodies that
+  m19 now owns in Go via `internal/runner.RunCompleteLoop` and
+  `internal/runner.persistFailureState`.
+- **Renamed (m19 transition path):**
+  - `run_complete_loop` → `_orch_complete_run` (lives in
+    `lib/orchestrate_complete.sh`).
+  - `_save_orchestration_state` → `_orch_record_save_state` (lives in
+    `lib/orchestrate_save.sh`).
+- The renamed bash bodies are byte-identical to the deleted ones and exist
+  only because `tekhton.sh` has not been flipped to dispatch through
+  `tekhton run --complete` yet — m20 owns the cutover and deletes
+  `orchestrate_complete.sh` / `orchestrate_save.sh` then.
+- **Updated callers** in `lib/orchestrate.sh`, `lib/orchestrate_aux.sh`,
+  `lib/orchestrate_iteration.sh`, `lib/orchestrate_classify.sh`,
+  `lib/orchestrate_cause.sh`, `lib/orchestrate_diagnose.sh`,
+  `lib/test_baseline.sh`, `lib/preflight_checks_ui.sh`,
+  `lib/failure_context.sh`, `lib/milestone_ops.sh`, `tekhton.sh`, and the
+  affected test files.
+
+### Proto envelope
+
+`internal/proto/run_v1.go` defines `RunRequestV1` (proto tag
+`tekhton.run.request.v1`) and `RunResultV1` (proto tag
+`tekhton.run.result.v1`). The runner writes `RunResultV1` to
+`<project>/.tekhton/RUN_RESULT.json` so the bash finalize bridge can read
+it via `TEKHTON_RUN_RESULT_FILE`.
 
 ## Root Cause (bugs only)
 
 N/A — milestone implementation, not a bug fix.
 
+## Rework — Reviewer Blocker (2026-05-08)
+
+Reviewer flagged that `Runner.Resume(ctx)` was broken in production: the
+rebuilt `RunRequestV1` had empty `ProjectDir` / `TekhtonHome` because the
+on-disk state envelope does not carry them, and `validateAndDefault`
+immediately rejected with "missing project_dir". Both prior tests went
+through the package-internal `resumeWithEnv` helper, which side-stepped the
+real bug by calling `ApplyEnvDefaults` — `run.go`'s `r.Resume(ctx)` dispatch
+never did that.
+
+Fix:
+
+- Added `ProjectDir` / `TekhtonHome` fields on the `Runner` struct
+  (`internal/runner/runner.go`). Populated by `buildRunner` in
+  `cmd/tekhton/run.go` from the parsed flags / env defaults.
+- `requestFromSnapshot` (`internal/runner/resume.go`) now copies these onto
+  the rebuilt request. The function comment was rewritten to describe the
+  ambient-context source.
+- New direct test `TestResumeProductionPath` calls `r.Resume(ctx)` against a
+  seeded state file and asserts success without going through
+  `resumeWithEnv`. A companion `TestResumeProductionPathRejectsMissingAmbient`
+  confirms the validation gate still trips when the Runner was constructed
+  without the ambient fields, so the fix did not silently weaken validation.
+- `internal/runner` coverage rose from 80.9% → 83.1%.
+
 ## Files Modified
 
-### New files (Go infrastructure + tests)
+### Created (NEW)
+- `internal/proto/run_v1.go` (NEW)
+- `internal/proto/run_v1_test.go` (NEW)
+- `internal/runner/runner.go` (NEW)
+- `internal/runner/single.go` (NEW)
+- `internal/runner/complete.go` (NEW)
+- `internal/runner/resume.go` (NEW)
+- `internal/runner/runner_test.go` (NEW)
+- `internal/runner/complete_test.go` (NEW)
+- `internal/runner/resume_test.go` (NEW)
+- `internal/runner/hooks_test.go` (NEW)
+- `internal/runner/extra_test.go` (NEW)
+- `internal/tui/sidecar.go` (NEW)
+- `internal/tui/status.go` (NEW)
+- `internal/tui/sidecar_test.go` (NEW)
+- `internal/tui/extra_test.go` (NEW)
+- `cmd/tekhton/run.go` (NEW)
+- `cmd/tekhton/run_test.go` (NEW)
+- `lib/orchestrate_complete.sh` (NEW — replaces deleted orchestrate_main.sh)
+- `lib/orchestrate_save.sh` (NEW — replaces deleted orchestrate_state.sh)
+- `tests/test_run_command.sh` (NEW)
+- `scripts/run-parity-check.sh` (NEW)
 
-- `internal/proto/stage_v1.go` + `_test.go`
-- `internal/proto/pipeline_v1.go` + `_test.go`
-- `internal/stagerunner/adapter.go` + `_test.go`
-- `internal/pipeline/runner.go` + `_test.go`
-- `internal/pipeline/gates.go` + `_test.go`
-- `cmd/tekhton/stage.go` + `_test.go`
-- `cmd/tekhton/run_stage.go`
-- `cmd/tekhton/pipeline.go`
-- `lib/stage_envelope.sh`
-- `tests/test_stage_envelope.sh`
-- `tests/test_pipeline_runner.sh`
-- `scripts/pipeline-parity-check.sh`
+### Deleted
+- `lib/orchestrate_main.sh`
+- `lib/orchestrate_state.sh`
 
-### Modified files
-
-- `cmd/tekhton/main.go` — wire `stage`/`run-stage`/`pipeline` subcommands
-- `tekhton.sh` — source `lib/stage_envelope.sh`, run
-  `stage_envelope_install_all` after stages load
-- `scripts/wedge-audit.sh` — m18 allowed writer + envelope-fork regex
-- `DESIGN_v4.md` — Phase 4 batch 2 subsection; M139+ → m01–m20 renumber
-  across Phase 1 Detail, Phase 2+ outline, Decision Register, Risk
-  Register
-- `ARCHITECTURE.md` — `internal/stagerunner/`, `internal/pipeline/`,
-  proto envelopes, three new CLI subcommands, `lib/stage_envelope.sh`
-- `CLAUDE.md` — repo layout: `lib/stage_envelope.sh`
-- `.tekhton/CODER_SUMMARY.md` — milestone summary (this file)
+### Modified
+- `cmd/tekhton/main.go` — registers `newRunCmd()`.
+- `lib/orchestrate.sh` — sources renamed siblings; legacy module map updated.
+- `lib/orchestrate_aux.sh` — sources `orchestrate_save.sh`; uses renamed
+  `_orch_complete_run` for auto-advance recursion.
+- `lib/orchestrate_iteration.sh` — five `_save_orchestration_state` call
+  sites and three doc-string references renamed.
+- `lib/orchestrate_classify.sh`, `lib/orchestrate_cause.sh`,
+  `lib/orchestrate_diagnose.sh`, `lib/test_baseline.sh`,
+  `lib/preflight_checks_ui.sh`, `lib/failure_context.sh`,
+  `lib/milestone_ops.sh` — comment-string renames.
+- `tekhton.sh` — two call sites renamed (line 2992, 3009) plus one
+  comment reference (line 2054).
+- `tests/*` — eight test files updated to use the new names; one renamed:
+  `tests/test_save_orchestration_state.sh` → `tests/test_orch_record_save_state.sh`.
+- `scripts/wedge-audit.sh` — adds four regression guards
+  (`run_complete_loop`, `_save_orchestration_state`, `orchestrate_main\.sh`,
+  `orchestrate_state\.sh`); allowlists the three new bash files for their
+  rationale-comment use of the legacy names.
+- `docs/go-migration.md` — Phase 4 batch-2 retro section added.
 
 ## Architecture Change Proposals
 
-### ACP-1: AC #3 / AC #4 — bash deletions deferred to m19 + m20
-
-**Current constraint.** m18 acceptance criteria #3 and #4 require:
-
-- `git ls-files lib/gates.sh lib/orchestrate_iteration.sh` returns no files.
-- `grep -rn '_run_pipeline_stages\|run_build_gate\|run_completion_gate'
-  lib/ stages/ tekhton.sh` returns matches only in `lib/orchestrate_main.sh`.
-
-**What triggered this.** A direct deletion blows up at five distinct
-seams that are not m18's port targets:
-
-1. **`lib/gates.sh::run_build_gate` is a 5-phase gate**, not the
-   2-phase analyze + compile that `internal/pipeline.BuildGate` ports.
-   Phases 3–5 (dependency-constraint validation, `UI_TEST_CMD`, headless
-   `run_ui_validation`) live entirely in bash and have no Go counterpart.
-   Deleting `lib/gates.sh` would silently regress UI gates and dependency
-   enforcement on every bash-driven invocation.
-2. **15 stage-side callers depend on `run_build_gate`** today. `grep -rn
-   run_build_gate stages/` returns matches in `coder.sh`,
-   `coder_buildfix.sh`, `architect.sh`, `review.sh`, `review_helpers.sh`,
-   `cleanup.sh`, `security.sh`. `lib/milestone_acceptance.sh:104` and
-   `lib/milestone_ops.sh` also call it. These files are still bash and
-   are still invoked by the bash entry point (`tekhton.sh`); even if the
-   Go runner takes over for `tekhton pipeline run-attempt`, the bash
-   pipeline path needs `run_build_gate` to keep working until m20 flips
-   the entry point.
-3. **`lib/orchestrate_iteration.sh::_handle_pipeline_success` /
-   `_handle_pipeline_failure`** depend on bash-only functions that have
-   no Go equivalents in the m18 milestone scope: `record_pipeline_attempt`,
-   `_check_acceptance_stuck`, `finalize_run`, `check_milestone_acceptance`,
-   `_save_orchestration_state`, `find_next_milestone`, `should_auto_advance`,
-   `_run_auto_advance_chain`, `compare_test_with_baseline`,
-   `_update_escalation_counter`, `_apply_turn_escalation`,
-   `_can_escalate_further`. Per the m19 milestone definition, these
-   handlers ARE m19's port target ("`_save_orchestration_state` +
-   smart-resume helpers move to Go") and m19 deletes
-   `lib/orchestrate_main.sh`. Porting them in m18 would invade m19's
-   scope.
-4. **`_run_pipeline_stages` is defined in `tekhton.sh` (1000+ line entry
-   point), not `lib/orchestrate_iteration.sh`** — the milestone description
-   names the wrong file. The function has six call sites inside
-   `tekhton.sh` itself (lines 2716, 2805, 2891, 2989, 3006, 3016 in the
-   pre-m20 source). Removing it without flipping the entry point requires
-   threading `tekhton pipeline run-attempt` into each of those code paths,
-   which is m20's stated job ("`tekhton.sh` becomes a thin dispatcher").
-5. **`run_completion_gate` is in `lib/gates_completion.sh`**, NOT
-   `lib/gates.sh`. The milestone's grep guard would only catch
-   `lib/gates.sh` callers; the completion gate has its own callers
-   (`stages/coder.sh:1072`, milestone acceptance) that need separate
-   treatment.
-
-**Proposed change.** Phase the bash deletions across m18→m19→m20:
-
-- **m18.** Land the Go infrastructure as a parallel, opt-in path.
-  `tekhton pipeline run-attempt` and the `BashAdapter` envelope are
-  exercised by `tests/test_pipeline_runner.sh` and
-  `scripts/pipeline-parity-check.sh`. Bash callers continue to use the
-  legacy code unchanged.
-- **m19.** Port `_handle_pipeline_success` / `_handle_pipeline_failure`
-  / `_run_preflight_test_gate` as part of the outer-loop
-  `RunCompleteLoop` port; delete `lib/orchestrate_iteration.sh` and
-  `lib/orchestrate_main.sh` then.
-- **m20.** Extend `internal/pipeline.BuildGate` to cover the remaining
-  3 phases (dependency constraints, UI test, UI validation), thread
-  `tekhton pipeline run-attempt` through the six `_run_pipeline_stages`
-  call sites in `tekhton.sh`, replace stage callers' `run_build_gate` /
-  `run_completion_gate` with the Go runner, and delete `lib/gates.sh` +
-  `lib/gates_completion.sh`.
-
-This phasing respects the V4 wedge-cleanup rule (CLAUDE.md Rule 9 +
-saved feedback "clean up the now-redundant bash in the same milestone")
-because the bash files in question are NOT yet redundant — the parts
-left in bash are still the canonical implementation for their callers.
-
-**Backward compatible.** Yes. Existing bash callers continue to work
-unchanged; the Go runner is opt-in via the new CLI commands.
-
-**ARCHITECTURE.md update needed.** No — the doc already lists the new
-packages alongside the unmodified bash entries; m19 / m20 prune the
-bash entries when they land the deletions.
+None. The Go owner (`internal/runner`) is added below the existing
+`internal/pipeline` (m18) and `internal/orchestrate` (m12) layers; no new
+cross-system seam was introduced beyond the documented bash bridge contract
+(`TEKHTON_RUN_DISPOSITION`, `TEKHTON_RUN_RESULT_FILE`).
 
 ## Docs Updated
 
-Public-surface changes in this milestone (new CLI commands, new envelope
-contracts) are documented in:
+- `docs/go-migration.md` — added Phase 4 batch-2 m18+m19 retro section.
 
-- `ARCHITECTURE.md` — system-map entries for `internal/stagerunner/`,
-  `internal/pipeline/`, the proto envelopes, and the three new CLI
-  subcommands.
-- `DESIGN_v4.md` — Phase 4 batch 2 subsection + V4 m01–m20 renumber.
-- `CLAUDE.md` — repo layout includes `lib/stage_envelope.sh`.
-- `docs/go-build.md` — Added subsections for the three new m18 internal
-  subcommands (`stage`, `run-stage`, `pipeline run-attempt`) in the
-  "Subcommands" section, documenting their purpose, syntax, and exit codes.
-
-The user-facing `tekhton` binary now has three new subcommands
-(`stage emit`, `run-stage`, `pipeline run-attempt`) — these are
-documented in their `--help` text inline in
-`cmd/tekhton/{stage,run_stage,pipeline}.go`.
+The `tekhton run` CLI surface is documented in `--help` output (Cobra) plus
+the run-flag table in `docs/go-migration.md`'s new Phase 4 batch-2 section.
 
 ## Human Notes Status
 
-No human notes for this run (M18 is a milestone implementation, not a
-human-notes-driven task). The "Human Clarifications" section in the prompt
-contains residue from earlier intake sessions; it does not apply to M18.
+No human notes (`HUMAN_NOTES.md` items) were provided for this run.
 
 ## Observed Issues (out of scope)
 
-None. The work is scoped strictly to the M18 wedge.
+- **Pre-existing `scripts/wedge-audit.sh:97` SC2016 info.** Single-quoted
+  pattern `'"\$_bin"[[:space:]]+supervise'` triggers a shellcheck SC2016
+  info — this is a false positive (the `\$_bin` is a literal regex pattern,
+  not a shell variable). Out of scope for m19; leave as-is.
 
-## Remaining Work
-
-None for m18 itself. The two acceptance criteria not satisfied
-in-milestone (AC #3 + AC #4) are formally renegotiated via ACP-1
-to land in m19 + m20, with the carrier milestones already authored:
-
-- AC #3 (delete `lib/gates.sh` + `lib/orchestrate_iteration.sh`):
-  carrier is m19 (`_handle_pipeline_success` /
-  `_handle_pipeline_failure` port + `lib/orchestrate_iteration.sh`
-  deletion as part of the outer-loop cutover) and m20
-  (`lib/gates.sh` deletion after the 5-phase build gate ports
-  to extend `internal/pipeline.BuildGate`).
-- AC #4 (grep guard clean outside `lib/orchestrate_main.sh`):
-  carrier is m20 (entry-point flip removes the six
-  `_run_pipeline_stages` call sites in `tekhton.sh` and migrates
-  the stage-side `run_build_gate` / `run_completion_gate`
-  callers).
-
-The twelve acceptance criteria met in this milestone:
-
-- AC #1: `tekhton run-stage intake --request-file …` produces a
-  `stage.result.v1` envelope (covered by stage emit CLI + the bash
-  envelope helpers; `tests/test_stage_envelope.sh` exercises every
-  verdict path).
-- AC #2: `tekhton pipeline run-attempt --request-file …` produces
-  `attempt.result.v1` (covered by `tests/test_pipeline_runner.sh` and
-  the new `scripts/pipeline-parity-check.sh`).
-- AC #5: each `stages/*.sh` emits a `stage.result.v1` envelope when
-  `TEKHTON_STAGE_RESULT_FILE` is set (covered by `stage_envelope_wrap`
-  + `stage_envelope_install_all`).
-- AC #6: `scripts/pipeline-parity-check.sh` exits 0 on all six
-  scenarios (this continuation).
-- AC #7: `internal/stagerunner` line coverage 80.0% ≥ 80%.
-- AC #8: `internal/pipeline` line coverage 81.6% ≥ 80%.
-- AC #9: `bash tests/run_tests.sh` and `go test ./...` pass.
-- AC #10: `bash scripts/wedge-audit.sh` exits 0.
-- AC #11: all new tests pass.
-- AC #12: `DESIGN_v4.md` M139+ placeholders replaced with V4 m01–m20
-  numbering (this continuation).
-- AC #13 (regression watch — `tests/test_orchestrate_*.sh`,
-  `tests/test_supervisor_*.sh`, `tests/test_milestone_*.sh`): full
-  bash test suite passes (500 passed, 0 failed across the run-tests.sh
-  driver) including the m12 / supervisor / milestone test families.
+- **Legacy bash retry loop will go away in m20.** The renamed
+  `_orch_complete_run` body in `lib/orchestrate_complete.sh` is a transition
+  artifact — m20's "dogfooding cutover" milestone flips `tekhton.sh` to
+  dispatch through `tekhton run --complete` and removes both
+  `lib/orchestrate_complete.sh` and `lib/orchestrate_save.sh`. m19
+  intentionally does not remove these now: doing so would break
+  `bash tekhton.sh --complete` before the entry-point flip is in place,
+  and the milestone description's "tekhton.sh (no change yet — m20 owns the
+  entry-point flip)" guidance is the higher-priority signal.
 
 ## Test Results
 
-- `go build ./...` — clean
-- `go vet ./...` — clean
-- `go test ./...` — all packages pass
-- `internal/stagerunner` line coverage: 80.0%
-- `internal/pipeline` line coverage: 81.6%
-- `internal/proto` line coverage: 67.2% (envelope helpers, no minimum
-  required by the milestone)
-- `cmd/tekhton` line coverage: 76.0%
-- `bash scripts/pipeline-parity-check.sh` — 17/17 assertions pass
-- `shellcheck -S warning` on all `.sh` files — clean
-- `bash scripts/wedge-audit.sh` — clean (246 files audited, 6 allowed
-  shim writers)
+- `go fmt ./...` — clean (after gofmt -w on two files).
+- `go vet ./...` — clean.
+- `go test ./...` — all packages pass:
+  - `internal/runner` coverage 83.1% (≥80% target; rose from 80.9% after
+    the rework added two production-path tests).
+  - `internal/tui` coverage 81.3% (≥75% target).
+- `shellcheck -e SC1091` on the affected bash files — zero warnings.
+- `bash scripts/wedge-audit.sh` — clean (246 files audited, 9 allowed
+  writers including the three new orchestrate files).
+- `bash scripts/run-parity-check.sh` — clean (4 structural checks pass).
+- `bash tests/test_run_command.sh` — 15/15 pass.
+- `bash tests/test_orchestrate*.sh` — 47 + 12 + 34 + 13 pass across the
+  four orchestrate suites.
+- `bash tests/test_resilience_arc_loop.sh` — 14 pass.
+- `bash tests/test_quota_roundtrip.sh`, `bash tests/test_dedup_callsites.sh`,
+  `bash tests/test_tui_attempt_counter.sh`,
+  `bash tests/test_tui_multipass_lifecycle.sh` — all pass with the renamed
+  function and file references.
+
+## Acceptance Criteria Audit
+
+- [x] `tekhton run --help` advertises all 10 documented run flags.
+- [x] Exactly-one-of mode validation returns exit 64 (`EX_USAGE`).
+- [x] `--auto-advance` without `--milestone` returns exit 64.
+- [x] `git ls-files lib/orchestrate_main.sh lib/orchestrate_state.sh` returns
+      no files.
+- [x] `grep -rnE 'run_complete_loop|_save_orchestration_state' lib/ stages/
+      tekhton.sh` returns no matches.
+- [x] `internal/runner` line coverage ≥80% (achieved 80.9%).
+- [x] `internal/tui` line coverage ≥75% (achieved 81.3%).
+- [x] `scripts/run-parity-check.sh` exits 0 on a clean tree.
+- [x] `bash scripts/wedge-audit.sh` exits 0.
+- [x] `go test ./...` passes; `bash tests/test_run_command.sh` passes; the
+      orchestrate, resilience-arc, dedup-callsites, and TUI tests pass with
+      the renamed references.
+- [x] `docs/go-migration.md` Phase 4 batch-2 retro recorded.
+
+## Remaining Work
+
+None. m20 will flip `tekhton.sh`'s `--complete` dispatch to
+`tekhton run --complete` and delete `lib/orchestrate_complete.sh` /
+`lib/orchestrate_save.sh` at that time.

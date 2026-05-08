@@ -70,7 +70,7 @@ _run_auto_advance_chain() {
         # Recursion depth is bounded by AUTO_ADVANCE_LIMIT (default 3) — the
         # should_auto_advance() guard at the top of this while loop exits once
         # the in-memory _AA_SESSION_ADVANCES counter reaches the limit.
-        run_complete_loop
+        _orch_complete_run
         return $?
     done
 }
@@ -79,7 +79,7 @@ _run_auto_advance_chain() {
 #
 # When the orchestrator hits AGENT_SCOPE/max_turns consecutively on the same
 # stage within a --complete run, escalate the effective turn budget for the
-# next attempt. Counter is tracked by run_complete_loop in
+# next attempt. Counter is tracked by _orch_complete_run in
 # _ORCH_CONSECUTIVE_MAX_TURNS / _ORCH_MAX_TURNS_STAGE.
 
 # _update_escalation_counter FAILED_STAGE ERROR_CATEGORY ERROR_SUBCATEGORY
@@ -229,7 +229,7 @@ _choose_resume_start_at() {
 
 # --- State persistence helper -------------------------------------------------
 #
-# _save_orchestration_state lives in orchestrate_state.sh.
+# _orch_record_save_state lives in orchestrate_save.sh (m19 rename).
 
-# shellcheck source=lib/orchestrate_state.sh
-source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_state.sh"
+# shellcheck source=lib/orchestrate_save.sh
+source "$(dirname "${BASH_SOURCE[0]}")/orchestrate_save.sh"

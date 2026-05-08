@@ -192,7 +192,7 @@ fi
 
 # =============================================================================
 # Per-milestone state isolation — tui_reset_for_next_milestone is called by
-# _run_auto_advance_chain before re-entering run_complete_loop so milestone 2+
+# _run_auto_advance_chain before re-entering _orch_complete_run so milestone 2+
 # start with grey pills instead of inheriting the prior milestone's green row.
 # =============================================================================
 echo "=== Test 7: reset clears per-milestone completion + progress state ==="
@@ -269,7 +269,7 @@ _hook_tui_complete 0
 m1_count=${#_TUI_STAGES_COMPLETE[@]}
 
 # Transition: _run_auto_advance_chain calls this before re-entering
-# run_complete_loop for milestone 2.
+# _orch_complete_run for milestone 2.
 tui_reset_for_next_milestone
 
 # Milestone 2: intake starts — pills must be grey, not inherit M1's green row.

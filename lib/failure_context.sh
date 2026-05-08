@@ -39,7 +39,7 @@ export PRIMARY_ERROR_CATEGORY PRIMARY_ERROR_SUBCATEGORY \
 # --- Slot management ---------------------------------------------------------
 
 # reset_failure_cause_context
-# Zeros all eight slot vars. Called at run start, at each run_complete_loop
+# Zeros all eight slot vars. Called at run start, at each _orch_complete_run
 # iteration, and after a successful finalize. See M129 Goal 5.
 reset_failure_cause_context() {
     PRIMARY_ERROR_CATEGORY=""

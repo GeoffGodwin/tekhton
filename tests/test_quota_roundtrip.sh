@@ -184,7 +184,7 @@ chmod +x "$TMPDIR/bin/claude"
 echo "=== _ORCH_ATTEMPT reset-on-success path (orchestrate.sh:228-231) ==="
 # =============================================================================
 
-# Define all stub functions that run_complete_loop depends on before sourcing
+# Define all stub functions that _orch_complete_run depends on before sourcing
 # orchestrate_classify.sh and orchestrate_aux.sh (sourced by orchestrate.sh)
 check_milestone_acceptance() { return 0; }
 find_next_milestone()         { echo ""; }

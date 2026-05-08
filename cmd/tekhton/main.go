@@ -45,6 +45,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newStageCmd())
 	cmd.AddCommand(newRunStageCmd())
 	cmd.AddCommand(newPipelineCmd())
+	cmd.AddCommand(newRunCmd())
 	return cmd
 }
 

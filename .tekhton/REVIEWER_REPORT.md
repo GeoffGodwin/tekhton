@@ -1,4 +1,4 @@
-# Reviewer Report — M18 Pipeline Runner + Stage Adapter
+# Reviewer Report — m19: tekhton run Top-Level Command (cycle 2)
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,15 +10,30 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `cmd/tekhton/stage.go:86` — `_ = json.RawMessage(b)` is a no-op whose sole purpose is keeping the `encoding/json` import alive. The import is not otherwise needed in stage.go (json marshaling lives inside the proto methods). Remove the no-op and the import together; the file compiles and tests pass without them.
-- `internal/pipeline/runner.go:279` — `runReviewLoop`'s `for {}` loop always exits on the first iteration via one of three unconditional `return` statements (lines 285, 288, 296, 302). The loop construct suggests in-process iteration is possible but the comment on lines 298–302 explains it never happens. A plain function body without the `for {}` would match the actual semantics and avoid future confusion.
-- `cmd/tekhton/stage_test.go:14` — `TestStageEmitToStdout` discards captured output (`_ = out`) and only asserts no error is returned. The envelope content emitted to stdout is unverified. The `--to-result-file` path is well-covered by `TestStageEmitToResultFile`; consider extending this test to assert the stdout JSON shape.
+- `runner.go:251` (`BashHookRunner.Finalize`): `res.Disposition` is dereferenced at line 251 before the `if res != nil` guard at line 253, making the guard unreachable dead code. Both callers pass non-nil `res`, so no runtime risk, but the guard is misleading. Promote it above the env-append block or remove it. (Carried from cycle 1; rework did not touch this path.)
+- `resume.go:74` (`isCompleteLoopExit`): manual `len+slice` comparison still used instead of `strings.HasPrefix(exit, "complete_loop_")`. No correctness impact. (Carried from cycle 1.)
+- `run.go` switch: `--dry-run` flag is accepted and stored in `RunRequestV1.DryRun` but the RunE dispatch switch has no dry-run branch — `tekhton run --task "x" --dry-run` will invoke agents for real. A comment at the dispatch switch noting this as deferred scope (m20 / Phase 5) would prevent future confusion. (Carried from cycle 1.)
 
 ## Coverage Gaps
-- `internal/proto` package is at 67.2% (no milestone minimum). The `PipelineAttemptRequestV1.Validate` negative paths (missing `project_dir`, bad stage in `order`, negative counters) have no test coverage in `pipeline_v1_test.go`; add a table-driven validate test mirroring the `stage_v1_test.go` pattern.
+- None — `TestResumeProductionPath` and `TestResumeProductionPathRejectsMissingAmbient` were added in cycle 2, closing the cycle-1 coverage gap. Coverage is at 83.1%.
 
 ## ACP Verdicts
-- ACP-1: AC #3 / AC #4 — bash deletions deferred to m19 + m20 — **ACCEPT** — The deferral argument is technically sound on all five dependency axes: (1) `lib/gates.sh::run_build_gate` is a 5-phase gate with UI and dependency-constraint phases that have no Go counterpart yet; (2) 15 stage-side bash callers still depend on `run_build_gate` and remain the canonical implementation; (3) `_handle_pipeline_success/failure` depend on bash-only functions that are explicitly m19's port target; (4) `_run_pipeline_stages` lives in `tekhton.sh` not the milestone-named file; (5) `run_completion_gate` is in `lib/gates_completion.sh`, not `lib/gates.sh`. The bash files are not yet redundant — Rule 9 triggers when the Go side is complete and all callers migrated, not before. The carrier milestones (m19 for `lib/orchestrate_iteration.sh` deletion, m20 for `lib/gates.sh` deletion + entry-point flip) are authored.
+No ACPs were raised in CODER_SUMMARY.md.
 
 ## Drift Observations
-- `internal/pipeline/runner.go:279` — `runReviewLoop`'s dead loop body (see Non-Blocking Note above) may attract future developers who add a second iteration without realizing the outer loop owns coder reruns. A short doc comment on the function stating "returns after exactly one review run" would guard against this drift.
+- All `orchestrate_*.sh` sourced library files still carry `set -euo pipefail`. Per CLAUDE.md sourced lib files should not repeat this declaration (they inherit). The pattern predates m19; the new `orchestrate_complete.sh` and `orchestrate_save.sh` replicate it correctly. Worth a family-wide hygiene pass in a dedicated non-blocking milestone.
+- `scripts/run-parity-check.sh` header describes a 10-scenario comparison (lines 5–18) but the script body implements 4 structural checks. The gap is acknowledged inline but the headline may mislead future developers; either update the comment or stub the remaining 6 scenarios.
+
+---
+
+## Cycle 2 Blocker Verification
+
+**Prior blocker: `Runner.Resume(ctx)` broken — empty `ProjectDir`/`TekhtonHome` on rebuilt request.**
+
+FIXED. Evidence:
+
+1. `Runner` struct now carries `ProjectDir string` and `TekhtonHome string` fields (runner.go:95–96) with a clear comment explaining the Phase-5 migration path.
+2. `buildRunner` in `run.go` populates both fields from the parsed request (run.go:220–221), so every CLI dispatch has ambient context.
+3. `requestFromSnapshot` (resume.go:55–71) copies `r.ProjectDir` and `r.TekhtonHome` onto the rebuilt `RunRequestV1`, so `validateAndDefault` can pass.
+4. `TestResumeProductionPath` (resume_test.go:112–139) calls `r.Resume(ctx)` directly (not through `resumeWithEnv`) with `r.ProjectDir` and `r.TekhtonHome` set, and asserts success.
+5. `TestResumeProductionPathRejectsMissingAmbient` (resume_test.go:142–162) confirms validation still trips when both fields are left empty — the fix did not weaken the gate.

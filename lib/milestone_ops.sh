@@ -108,7 +108,7 @@ tag_milestone_complete() {
 # MILESTONE_STATE_FILE before _run_auto_advance_chain runs.
 #
 # The COMPLETE_AND_CONTINUE disposition check is only performed when the state
-# file still exists. The pre-finalize call site (run_complete_loop) reads the
+# file still exists. The pre-finalize call site (_orch_complete_run) reads the
 # disposition; the post-finalize call site (_run_auto_advance_chain) skips it
 # because the caller already owns the advance decision.
 should_auto_advance() {

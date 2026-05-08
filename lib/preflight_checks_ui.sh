@@ -31,7 +31,7 @@ _preflight_check_ui_test_config() {
     # PREFLIGHT_UI_* vars are public contract consumed by downstream consumers;
     # they must reflect this preflight run only, not stale values from a prior
     # run in the same shell. Preflight runs once per pipeline invocation — do NOT
-    # reset between iterations of run_complete_loop — only here at the top of
+    # reset between iterations of _orch_complete_run — only here at the top of
     # preflight.
     unset PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED \
           PREFLIGHT_UI_INTERACTIVE_CONFIG_RULE \

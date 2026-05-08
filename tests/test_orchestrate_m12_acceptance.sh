@@ -6,7 +6,7 @@
 #   AC#2  — orchestrate.sh is ≤ 60 lines and contains no recovery logic
 #   AC#3  — six prohibited helper filenames are absent from the repo
 #   AC#4  — _RWR_* globals are absent from lib/ and stages/
-#   (bonus) orchestrate_main.sh global defaults initialize correctly on source
+#   (bonus) orchestrate_complete.sh global defaults initialize correctly on source
 # =============================================================================
 set -euo pipefail
 
@@ -56,11 +56,11 @@ done
 EXPECTED_RENAMES=(
     lib/orchestrate_aux.sh
     lib/orchestrate_iteration.sh
-    lib/orchestrate_state.sh
+    lib/orchestrate_save.sh
     lib/orchestrate_classify.sh
     lib/orchestrate_cause.sh
     lib/orchestrate_diagnose.sh
-    lib/orchestrate_main.sh
+    lib/orchestrate_complete.sh
 )
 
 for f in "${EXPECTED_RENAMES[@]}"; do
@@ -100,11 +100,11 @@ else
     pass "2.3: orchestrate.sh has no _dispatch_recovery_class in executable code"
 fi
 
-# The shim must source orchestrate_main.sh (the loop body must live there)
+# The shim must source orchestrate_complete.sh (the loop body must live there)
 if grep -q 'orchestrate_main\.sh' "$ORCH_FILE"; then
-    pass "2.4: orchestrate.sh sources orchestrate_main.sh"
+    pass "2.4: orchestrate.sh sources orchestrate_complete.sh"
 else
-    fail "2.4: orchestrate.sh does not source orchestrate_main.sh"
+    fail "2.4: orchestrate.sh does not source orchestrate_complete.sh"
 fi
 
 # =============================================================================
@@ -130,11 +130,11 @@ else
 fi
 
 # =============================================================================
-# Suite 4: orchestrate_main.sh global defaults on source
+# Suite 4: orchestrate_complete.sh global defaults on source
 # =============================================================================
-echo "=== Suite 4: orchestrate_main.sh global initialization ==="
+echo "=== Suite 4: orchestrate_complete.sh global initialization ==="
 
-# Source just orchestrate_main.sh — it has no top-level source statements
+# Source just orchestrate_complete.sh — it has no top-level source statements
 # and guards all function calls with declare -f, so this is safe in isolation.
 # Provide a minimal log() stub because it's exported (though not called at
 # source time; guard is belt-and-suspenders).
@@ -142,7 +142,7 @@ log() { :; }
 warn() { :; }
 error() { :; }
 
-source "${TEKHTON_HOME}/lib/orchestrate_main.sh"
+source "${TEKHTON_HOME}/lib/orchestrate_complete.sh"
 
 assert_eq "4.1: _ORCH_ATTEMPT default is 0"                   "0"     "$_ORCH_ATTEMPT"
 assert_eq "4.2: _ORCH_AGENT_CALLS default is 0"               "0"     "$_ORCH_AGENT_CALLS"
@@ -160,11 +160,11 @@ assert_eq "4.13: _ORCH_IDENTICAL_ACCEPTANCE_COUNT default 0"  "0"     "$_ORCH_ID
 assert_eq "4.14: _ORCH_CONSECUTIVE_MAX_TURNS default is 0"    "0"     "$_ORCH_CONSECUTIVE_MAX_TURNS"
 assert_eq "4.15: _ORCH_MAX_TURNS_STAGE default is empty"      ""      "$_ORCH_MAX_TURNS_STAGE"
 
-# run_complete_loop must be defined after sourcing
-if declare -f run_complete_loop &>/dev/null; then
-    pass "4.16: run_complete_loop is defined after source"
+# _orch_complete_run must be defined after sourcing
+if declare -f _orch_complete_run &>/dev/null; then
+    pass "4.16: _orch_complete_run is defined after source"
 else
-    fail "4.16: run_complete_loop not defined after sourcing orchestrate_main.sh"
+    fail "4.16: _orch_complete_run not defined after sourcing orchestrate_complete.sh"
 fi
 
 # =============================================================================

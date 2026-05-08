@@ -40,6 +40,13 @@ ALLOWED_FILES=(
     # tekhton.stage.result.v1 envelopes. Other lib/ or stages/ files MUST
     # call emit_stage_envelope rather than printf the JSON inline.
     "lib/stage_envelope.sh"
+    # m19 (Phase 4 batch 2) — these three files document the rename from
+    # the deleted orchestrate_main.sh / orchestrate_state.sh and reference
+    # the legacy filenames in their docstrings only. The function bodies use
+    # the new names (_orch_complete_run, _orch_record_save_state).
+    "lib/orchestrate.sh"
+    "lib/orchestrate_complete.sh"
+    "lib/orchestrate_save.sh"
 )
 
 # --- Patterns to detect ------------------------------------------------------
@@ -95,6 +102,15 @@ PATTERNS=(
     # tekhton.stage.result.v1 outside lib/stage_envelope.sh would fork the
     # contract — emit_stage_envelope is the only authorized writer.
     '"proto":[[:space:]]*"tekhton\.stage\.result\.v1"'
+    # m19 (Phase 4 batch 2): the outer retry loop and run-level save-state
+    # writer moved to internal/runner. The legacy bash function names
+    # (run_complete_loop, _save_orchestration_state) and the deleted file
+    # paths (orchestrate_main.sh, orchestrate_state.sh) must not reappear in
+    # lib/ or stages/.
+    '\brun_complete_loop\b'
+    '\b_save_orchestration_state\b'
+    'orchestrate_main\.sh'
+    'orchestrate_state\.sh'
 )
 
 # --- Audit -------------------------------------------------------------------

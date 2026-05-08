@@ -1,11 +1,11 @@
 ## Planned Tests
-- [x] `internal/proto/pipeline_v1_test.go` — add missing Validate negative paths (missing proto, negative build_attempt, negative max_review_cycles, negative max_build_retries) + request MarshalIndented round-trip
+- [x] `internal/runner/tester_test.go` — RunSingle pipeline error, RunCompleteLoop context-canceled + nil-result, Resume legacy-format error, ApplyEnvDefaults nil-request, Finalize no-home
 
 ## Test Run Results
-Passed: 1  Failed: 0
+Passed: 46  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `internal/proto/pipeline_v1_test.go`
+- [x] `internal/runner/tester_test.go`

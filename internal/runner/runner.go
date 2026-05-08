@@ -1,0 +1,275 @@
+// Package runner owns `tekhton run` — the run-level entry point that drives
+// either a single pipeline attempt (--task non-complete mode) or the outer
+// retry loop (--complete mode), bridging to bash for pre-flight, finalize, and
+// the TUI sidecar.
+//
+// m19 ports the outer retry loop (run_complete_loop in
+// lib/orchestrate_main.sh) and the run-flag CLI surface from tekhton.sh into
+// this package. The per-attempt scheduler (m18 internal/pipeline.Runner) is
+// still the workhorse — runner glues it together with PIPELINE_STATE, the
+// finalize chain, and the TUI sidecar.
+//
+// What is NOT ported here (still bash, see DESIGN_v4.md Phase 5):
+//   - lib/preflight.sh (invoked via Preflight subprocess)
+//   - lib/finalize.sh hook chain (invoked via Finalize subprocess)
+//   - mid-run TUI status writers in lib/tui_ops.sh (sidecar reads them)
+//   - milestone-acceptance check (shell-out from RunCompleteLoop)
+//   - HUMAN_NOTES.md parsing (handled inside intake/coder stages)
+//   - auto-advance prompt + smart-resume escalation (lib/orchestrate_aux.sh)
+package runner
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
+
+	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/state"
+)
+
+// Sentinel errors callers match with errors.Is.
+var (
+	// ErrInvalidRequest is returned by RunSingle/RunCompleteLoop when the
+	// run request fails Validate.
+	ErrInvalidRequest = errors.New("runner: invalid run request")
+
+	// ErrPreflightBlocked is returned when the bash pre-flight script reports
+	// blocking issues that the runner cannot continue past.
+	ErrPreflightBlocked = errors.New("runner: preflight blocked")
+
+	// ErrSafetyBound is returned by RunCompleteLoop when one of the three
+	// safety bounds (max_attempts / timeout / agent_cap) trips.
+	ErrSafetyBound = errors.New("runner: safety bound reached")
+
+	// ErrStuck is returned by RunCompleteLoop when the no-progress detector
+	// trips two iterations in a row.
+	ErrStuck = errors.New("runner: pipeline stuck")
+)
+
+// Pipeline is the per-attempt scheduler interface RunSingle/RunCompleteLoop
+// use to drive one pass through the stage order. The default implementation
+// is *pipeline.Runner from m18; tests substitute a fake.
+type Pipeline interface {
+	RunAttempt(ctx context.Context, req *proto.PipelineAttemptRequestV1) (*proto.PipelineAttemptResultV1, error)
+}
+
+// HookRunner abstracts the bash bridge for pre-flight and finalize. The
+// default implementation execs `bash <script>` with the env passed through;
+// tests substitute a fake to assert what would have been invoked.
+type HookRunner interface {
+	Preflight(ctx context.Context, req *proto.RunRequestV1) error
+	Finalize(ctx context.Context, req *proto.RunRequestV1, res *proto.RunResultV1) error
+}
+
+// TUI is the optional Python sidecar lifecycle interface. Nil disables it.
+type TUI interface {
+	Start(ctx context.Context) error
+	Stop(ctx context.Context, holdEnter bool) error
+}
+
+// AcceptanceChecker abstracts the bash milestone-acceptance shell-out.
+// Returns true if acceptance passed; false otherwise. The default
+// implementation execs `bash -c "source lib/milestone_acceptance.sh; ..."`.
+type AcceptanceChecker interface {
+	Check(ctx context.Context, milestone string) (bool, error)
+}
+
+// Runner glues pipeline.Runner, the bash hook bridges, the optional TUI
+// sidecar, and PIPELINE_STATE persistence into the run-level entry point.
+type Runner struct {
+	Pipeline   Pipeline
+	State      *state.Store
+	Hooks      HookRunner
+	TUI        TUI
+	Acceptance AcceptanceChecker
+
+	// ProjectDir / TekhtonHome are the ambient context the CLI layer captures
+	// at flag-parse time. Resume() uses them to refill the rebuilt
+	// RunRequestV1 because the on-disk state envelope does not carry them
+	// (the bash state writer never put them in the snapshot — by Phase 5 they
+	// will live in snap.Extra and these fields become redundant).
+	ProjectDir  string
+	TekhtonHome string
+
+	// Stdout / Stderr the runner uses for status messages. Defaults to
+	// os.Stdout / os.Stderr.
+	Stdout *os.File
+	Stderr *os.File
+
+	// Now overrides time for tests. Defaults to time.Now.
+	Now func() time.Time
+
+	// Defaults applied when a RunRequestV1 leaves a bound at zero.
+	DefaultMaxPipelineAttempts     int
+	DefaultAutonomousTimeoutSecs   int
+	DefaultMaxAutonomousAgentCalls int
+
+	// Result file path the finalize bridge reads via TEKHTON_RUN_RESULT_FILE.
+	// Defaults to "<project_dir>/.tekhton/RUN_RESULT.json".
+	RunResultFile string
+}
+
+// New constructs a Runner with defaults filled in.
+func New(p Pipeline) *Runner {
+	return &Runner{
+		Pipeline:                       p,
+		Stdout:                         os.Stdout,
+		Stderr:                         os.Stderr,
+		Now:                            time.Now,
+		DefaultMaxPipelineAttempts:     5,
+		DefaultAutonomousTimeoutSecs:   7200,
+		DefaultMaxAutonomousAgentCalls: 200,
+	}
+}
+
+// effectiveBounds returns the loop bounds after request overrides + runner
+// defaults. Zero in the request means use the default.
+func (r *Runner) effectiveBounds(req *proto.RunRequestV1) (maxAttempts, timeoutSecs, maxCalls int) {
+	maxAttempts = req.MaxPipelineAttempts
+	if maxAttempts == 0 {
+		maxAttempts = r.DefaultMaxPipelineAttempts
+	}
+	timeoutSecs = req.AutonomousTimeoutSecs
+	if timeoutSecs == 0 {
+		timeoutSecs = r.DefaultAutonomousTimeoutSecs
+	}
+	maxCalls = req.MaxAutonomousAgentCalls
+	if maxCalls == 0 {
+		maxCalls = r.DefaultMaxAutonomousAgentCalls
+	}
+	return
+}
+
+// resultPath returns the configured RunResultFile or the default under the
+// project directory.
+func (r *Runner) resultPath(req *proto.RunRequestV1) string {
+	if r.RunResultFile != "" {
+		return r.RunResultFile
+	}
+	return filepath.Join(req.ProjectDir, ".tekhton", "RUN_RESULT.json")
+}
+
+// writeResult atomically writes the run result to disk so the finalize bridge
+// can pick it up via TEKHTON_RUN_RESULT_FILE. tmpfile + rename mirrors the
+// m03 state-write pattern.
+func (r *Runner) writeResult(path string, res *proto.RunResultV1) error {
+	if path == "" {
+		return nil
+	}
+	res.EnsureProto()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("runner: mkdir result dir: %w", err)
+	}
+	b, err := res.MarshalIndented()
+	if err != nil {
+		return fmt.Errorf("runner: marshal result: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return fmt.Errorf("runner: write result tmp: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("runner: rename result: %w", err)
+	}
+	return nil
+}
+
+// validateAndDefault stamps proto, validates the request, and is the gate
+// every entry point goes through.
+func (r *Runner) validateAndDefault(req *proto.RunRequestV1) error {
+	if req == nil {
+		return fmt.Errorf("%w: nil request", ErrInvalidRequest)
+	}
+	req.EnsureProto()
+	if err := req.Validate(); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
+	}
+	return nil
+}
+
+// BashHookRunner is the default HookRunner — execs `bash <script>` with the
+// disposition env vars threaded through.
+type BashHookRunner struct {
+	TekhtonHome string
+
+	// Stdout / Stderr inherited by the bash subprocess. Defaults to
+	// os.Stdout / os.Stderr when nil.
+	Stdout *os.File
+	Stderr *os.File
+}
+
+// Preflight execs `bash <home>/lib/preflight.sh`. The runner reads the report
+// file (PREFLIGHT_REPORT.md) when the script exits to decide whether to abort.
+func (b *BashHookRunner) Preflight(ctx context.Context, req *proto.RunRequestV1) error {
+	if b.TekhtonHome == "" {
+		return nil
+	}
+	script := filepath.Join(b.TekhtonHome, "lib", "preflight.sh")
+	if _, err := os.Stat(script); err != nil {
+		// Pre-flight is optional; absent means skip.
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, "bash", script)
+	cmd.Dir = req.ProjectDir
+	cmd.Stdout = stdoutOr(b.Stdout)
+	cmd.Stderr = stderrOr(b.Stderr)
+	cmd.Env = append(os.Environ(),
+		"TEKHTON_HOME="+b.TekhtonHome,
+		"PROJECT_DIR="+req.ProjectDir,
+	)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("preflight: %w", err)
+	}
+	return nil
+}
+
+// Finalize execs `bash <home>/lib/finalize.sh` with disposition + result-file
+// env vars set so existing hooks branch on disposition and future hooks can
+// read the structured result envelope.
+func (b *BashHookRunner) Finalize(ctx context.Context, req *proto.RunRequestV1, res *proto.RunResultV1) error {
+	if b.TekhtonHome == "" {
+		return nil
+	}
+	script := filepath.Join(b.TekhtonHome, "lib", "finalize.sh")
+	if _, err := os.Stat(script); err != nil {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, "bash", script)
+	cmd.Dir = req.ProjectDir
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = stdoutOr(b.Stdout)
+	cmd.Stderr = stderrOr(b.Stderr)
+
+	env := append(os.Environ(),
+		"TEKHTON_HOME="+b.TekhtonHome,
+		"PROJECT_DIR="+req.ProjectDir,
+		"TEKHTON_RUN_DISPOSITION="+res.Disposition,
+	)
+	if res != nil && req.ProjectDir != "" {
+		env = append(env, "TEKHTON_RUN_RESULT_FILE="+filepath.Join(req.ProjectDir, ".tekhton", "RUN_RESULT.json"))
+	}
+	cmd.Env = env
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("finalize: %w", err)
+	}
+	return nil
+}
+
+func stdoutOr(f *os.File) *os.File {
+	if f == nil {
+		return os.Stdout
+	}
+	return f
+}
+
+func stderrOr(f *os.File) *os.File {
+	if f == nil {
+		return os.Stderr
+	}
+	return f
+}

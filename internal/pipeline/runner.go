@@ -276,31 +276,21 @@ func (r *Runner) runReviewLoop(
 	maxReview int,
 ) (*proto.StageBreakdown, []proto.StageBreakdown, error) {
 	all := []proto.StageBreakdown{}
-	for {
-		bd, err := r.runStage(ctx, req, proto.StageReview, *reviewCycle, 0)
-		if bd != nil {
-			all = append(all, *bd)
-		}
-		if err != nil {
-			return bd, all, err
-		}
-		if bd.Verdict != proto.VerdictRework {
-			return bd, all, nil
-		}
-		// Rework requested. Increment cycle and re-run review.
-		// Coder rerun in response to rework is the outer loop's job; here
-		// we either hit the cap or wait for the outer loop to bring us back.
-		*reviewCycle++
-		if *reviewCycle > maxReview {
-			// Cap reached — final entry is still rework.
-			return bd, all, nil
-		}
-		// In-process loop continues — the outer loop owns coder reruns,
-		// not this method. To preserve original bash semantics the runner
-		// returns now, surfacing the rework breakdown so the outer
-		// pipeline scheduler can re-enter with reviewCycle bumped.
+	bd, err := r.runStage(ctx, req, proto.StageReview, *reviewCycle, 0)
+	if bd != nil {
+		all = append(all, *bd)
+	}
+	if err != nil {
+		return bd, all, err
+	}
+	if bd.Verdict != proto.VerdictRework {
 		return bd, all, nil
 	}
+	// Rework requested. Bump reviewCycle and return; the outer pipeline
+	// scheduler owns coder reruns and the maxReview cap, and re-enters this
+	// loop on the next iteration. Single-pass return preserves bash semantics.
+	*reviewCycle++
+	return bd, all, nil
 }
 
 // runStage is the leaf invocation of a stage adapter. Builds the

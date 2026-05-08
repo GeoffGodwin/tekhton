@@ -123,7 +123,7 @@ echo "=== Test 4: simulated orchestrate loop — attempt increments correctly ==
 _activate_tui_globals
 out_init
 
-# Simulate what run_complete_loop does: increment and call out_set_context
+# Simulate what _orch_complete_run does: increment and call out_set_context
 _ORCH_ATTEMPT=0
 for expected in 1 2 3; do
     _ORCH_ATTEMPT=$(( _ORCH_ATTEMPT + 1 ))

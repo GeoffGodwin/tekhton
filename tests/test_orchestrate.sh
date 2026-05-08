@@ -377,7 +377,7 @@ Cumulative turns: 85
 Wall-clock elapsed: 1200s
 STEOF
 
-# Source orchestrate.sh (requires mocking run_complete_loop dependencies)
+# Source orchestrate.sh (requires mocking _orch_complete_run dependencies)
 # We test the state parsing logic directly instead of the full loop
 _saved_attempt=$(awk '/^Pipeline attempt:/{print $NF; exit}' "$TMPDIR/.claude/PIPELINE_STATE.md" 2>/dev/null || echo "")
 assert_eq "8.1 parse attempt from state file" "3" "$_saved_attempt"

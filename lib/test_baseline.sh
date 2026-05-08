@@ -7,7 +7,7 @@ set -euo pipefail
 # failures unrelated to the current milestone. Two-tier protection:
 # 1. Baseline comparison in check_milestone_acceptance() — pre-existing
 #    failures don't block acceptance
-# 2. Stuck detection in run_complete_loop() — identical acceptance failures
+# 2. Stuck detection in _orch_complete_run() — identical acceptance failures
 #    across consecutive attempts trigger early exit
 #
 # Sourced by orchestrate.sh — do not run directly.
@@ -74,7 +74,7 @@ _hash_content() {
 
 # capture_test_baseline [MILESTONE]
 # Runs TEST_CMD and saves baseline output + metadata JSON.
-# Called once at the start of run_complete_loop(), before any pipeline attempt.
+# Called once at the start of _orch_complete_run(), before any pipeline attempt.
 capture_test_baseline() {
     local milestone="${1:-${_CURRENT_MILESTONE:-unknown}}"
 

@@ -2,13 +2,14 @@
 PASS
 
 ## Confidence
-88
+87
 
 ## Reasoning
-- **Scope Definition**: Excellent. Six numbered goals are clearly bounded. Explicit "don't port the build-fix continuation loop" carve-out prevents scope creep. The disposition table (delete / modify / create) for every bash file is unambiguous.
-- **Testability**: Acceptance criteria are concrete and machine-verifiable — `git ls-files` checks, `grep -rn` pattern checks, coverage thresholds (≥80%), named parity scenarios with fixture paths, and specific test file names. Nothing vague.
-- **Ambiguity**: Low. Go struct definitions are provided verbatim, the `BashAdapter` exec pattern is spelled out, and the review-rework cycle ownership transfer (bash counter → Go counter + ReviewCycle field) is explicitly called out in Watch For.
-- **Implicit Assumptions**: Dependencies (m12, m13, m14, m17) are declared. The `internal/supervisor`, `state.Store`, and `causal.Log` packages referenced in `Runner` are products of those declared dependencies — acceptable inference. `TEKHTON_BIN` env-var defaulting in the bash helper is self-documenting.
-- **Minor inconsistency (non-blocking)**: The design section defines `tekhton stage emit` as the bash-callable envelope writer (in `cmd/tekhton/stage.go`), while the Files Modified row for `cmd/tekhton/pipeline.go` mentions `tekhton pipeline emit-stage` as a second surface. A developer will follow the design section's definition and treat the pipeline.go description as a documentation slip. No clarification needed — the bash helper in Goal 1 is the authoritative call site.
-- **Migration Impact**: No user-facing config additions; `TEKHTON_STAGE_RESULT_FILE` / `TEKHTON_STAGE_REQUEST_FILE` are internal pipeline env vars, not project-level config keys. No migration section required.
-- **UI Testability**: N/A — no UI components.
+- Scope is exceptionally well-defined: all files to create, modify, and delete are enumerated; explicit "does NOT port" list (auto-advance prompts, smart-resume escalation, preflight, finalize, TUI status writers) prevents scope creep
+- Acceptance criteria are specific and machine-verifiable — grep patterns that must return empty, named test functions (`test_resume_after_sigint`), numeric coverage floors (≥80% runner, ≥75% tui), and ten named parity scenarios with JSON diff assertions against a baseline
+- "Watch For" section proactively covers the six highest-risk integration points: bash `_ORCH_*` read sites in finalize hooks, auto-advance stdin inheritance, `HUMAN_NOTES.md` ownership boundary, resume routing semantics (JSON vs legacy markdown), TUI status-file write race, and legacy bash resume path reachability
+- Prerequisites (m17 error sentinels, m18 per-attempt scheduler) are confirmed complete per git log
+- "Bridge mode" sequencing note plus m20 "Seeds Forward" entry makes the two-milestone cutover strategy unambiguous — no risk of developer conflating m19 and m20 scope
+- No user-facing config keys added; new env vars (`TEKHTON_RUN_DISPOSITION`, `TEKHTON_RUN_RESULT_FILE`) are internal contract additions to `lib/finalize.sh` — no Migration Impact section required
+- No UI components; UI testability criterion not applicable
+- The one mild gap — milestone references `internal/pipeline.Runner.RunAttempt` from m18 without a link to m18's interface contract — is non-blocking: m18 is complete and the developer has the existing code as the authoritative reference

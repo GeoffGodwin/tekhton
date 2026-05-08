@@ -17,7 +17,7 @@ set -euo pipefail
 #     _ORCH_PRIMARY_CAT, _ORCH_PRIMARY_SUB, _ORCH_PRIMARY_SIGNAL
 #     _ORCH_SECONDARY_CAT, _ORCH_SECONDARY_SUB, _ORCH_SECONDARY_SIGNAL
 #     _ORCH_SCHEMA_VERSION
-#   Lifetime B — persistent across iterations within one run_complete_loop:
+#   Lifetime B — persistent across iterations within one _orch_complete_run:
 #     _ORCH_ENV_GATE_RETRIED       (env-gate retry guard)
 #     _ORCH_MIXED_BUILD_RETRIED    (mixed_uncertain build-fix retry guard)
 #     _ORCH_RECOVERY_ROUTE_TAKEN   (last action returned — m132 read site)
@@ -40,7 +40,7 @@ _ORCH_RECOVERY_ROUTE_TAKEN=""
 
 # _reset_orch_recovery_state
 # Zeroes the persistent (Lifetime B) retry guards. Called once per
-# run_complete_loop invocation (see lib/orchestrate.sh), NOT per iteration —
+# _orch_complete_run invocation (see lib/orchestrate.sh), NOT per iteration —
 # resetting per-iteration breaks the retry-once semantic. The Lifetime A
 # cause vars are owned by _load_failure_cause_context and refreshed there.
 _reset_orch_recovery_state() {

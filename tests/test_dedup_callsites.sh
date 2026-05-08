@@ -153,10 +153,10 @@ fi
 echo ""
 echo "=== Suite 5: test_dedup_reset at loop entry ==="
 
-if grep -q 'test_dedup_reset' "${TEKHTON_HOME}/lib/orchestrate_main.sh"; then
-    pass "5.1: test_dedup_reset called in lib/orchestrate_main.sh"
+if grep -q 'test_dedup_reset' "${TEKHTON_HOME}/lib/orchestrate_complete.sh"; then
+    pass "5.1: test_dedup_reset called in lib/orchestrate_complete.sh"
 else
-    fail "5.1: test_dedup_reset missing from lib/orchestrate_main.sh"
+    fail "5.1: test_dedup_reset missing from lib/orchestrate_complete.sh"
 fi
 
 # =============================================================================

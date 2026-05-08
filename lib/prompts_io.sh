@@ -16,7 +16,7 @@
 _wrap_file_content() {
     local label="$1"
     local content="$2"
-    if [ -z "$content" ]; then
+    if [[ -z "$content" ]]; then
         echo "$content"
         return
     fi
@@ -37,7 +37,7 @@ _safe_read_file() {
     local label="${2:-file}"
     local max_bytes="${3:-1048576}"  # 1MB default
 
-    if [ ! -f "$file_path" ]; then
+    if [[ ! -f "$file_path" ]]; then
         return
     fi
 
@@ -48,7 +48,7 @@ _safe_read_file() {
                 wc -c < "$file_path" 2>/dev/null || echo "0")
     file_size=$(echo "$file_size" | tr -d '[:space:]')
 
-    if [ "$file_size" -gt "$max_bytes" ] 2>/dev/null; then
+    if [[ "$file_size" -gt "$max_bytes" ]]; then
         warn "[prompts] ${label} exceeds size limit (${file_size} > ${max_bytes} bytes). Skipping injection."
         return
     fi

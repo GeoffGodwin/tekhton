@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # m12: renamed from orchestrate_recovery.sh as part of the bash relocation
 # cutover. The pure dispatch is also ported to internal/orchestrate/recovery.go;
-# this bash version remains for the parity gate and the run_complete_loop call
+# this bash version remains for the parity gate and the _orch_complete_run call
 # site.
 # Sourced by orchestrate.sh — do not run directly.
 # Expects: AGENT_ERROR_CATEGORY, AGENT_ERROR_SUBCATEGORY, VERDICT (from agent.sh)
@@ -108,7 +108,7 @@ _check_progress_causal_log() {
 # --- Recovery decision tree ----------------------------------------------------
 #
 # After _run_pipeline_stages returns non-zero, classify the failure and return
-# a recovery action string. The caller (run_complete_loop) acts on the action.
+# a recovery action string. The caller (_orch_complete_run) acts on the action.
 #
 # Decision tree:
 #   UPSTREAM errors         → save_exit (sustained outage after M13 retries)

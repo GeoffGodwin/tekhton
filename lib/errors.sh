@@ -75,7 +75,9 @@ annotate_build_errors() {
     printf '%s' "${1:-}" | "$_bin" diagnose classify --mode annotate --stage "${2:-unknown}" -
 }
 
-# Pure-bash per-line filter — retained inline so per-line tests don't fork.
+# Pure-bash per-line filter — retained inline so per-line tests don't fork the
+# Go binary. Canonical implementation: internal/errors/classify.go IsNonDiagnosticLine.
+# When updating noise patterns here, mirror the change in patterns.go.
 _FAILURE_TERM_PATTERN='error|failed|timeout|ECONNREFUSED|TS[0-9]+'
 _NOISE_LINE_PATTERN='^[[:space:]]*(npm|pnpm|yarn)[[:space:]]+(warn|notice)|serving html report at|press[[:space:]]+ctrl[+-]?c[[:space:]]+to[[:space:]]+quit|audit[[:space:]]+hint|reporter:[[:space:]]+|progress:[[:space:]]*[0-9]+%'
 _NOISE_LINE_NUMERIC='^[[:space:]]*\[[0-9]+/[0-9]+\]|^[[:space:]]*\([0-9]+/[0-9]+\)|^[[:space:]]*[0-9]+%[[:space:]]'

@@ -12,7 +12,7 @@ set -euo pipefail
 #
 # Prints a "WHAT HAPPENED / WHAT TO DO NEXT" block to stdout so the user sees
 # exact runnable commands at the terminal exit path. Called by
-# _save_orchestration_state after write_pipeline_state. Colors use ${BOLD:-} /
+# _orch_record_save_state after write_pipeline_state. Colors use ${BOLD:-} /
 # ${NC:-} so the block prints cleanly in test contexts without terminal colors.
 #
 # M130: optional 5th arg cause_summary inserts a "Root cause: ..." line into

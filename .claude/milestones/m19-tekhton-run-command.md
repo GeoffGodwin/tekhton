@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "19"
-status: "todo"
+status: "done"
 -->
 
 # m19 — `tekhton run` Top-Level Command

@@ -4,7 +4,7 @@ set -euo pipefail
 # orchestrate_iteration.sh — Pipeline iteration outcome handlers.
 #
 # m12: renamed from orchestrate_loop.sh as part of the bash relocation cutover.
-# Sourced by orchestrate_main.sh — do not run directly.
+# Sourced by orchestrate_complete.sh — do not run directly.
 #
 # These helpers encode the outcome of a single _run_pipeline_stages() call:
 #   _run_preflight_test_gate    — pre-finalization TEST_CMD gate
@@ -12,9 +12,9 @@ set -euo pipefail
 #   _handle_pipeline_failure    — pipeline_exit != 0 branch
 #
 # Return-code convention used by the outcome handlers (consumed by
-# run_complete_loop in orchestrate_main.sh):
+# _orch_complete_run in orchestrate_complete.sh):
 #     0   continue the outer while-loop
-#    10   caller should `return 0` (full success — exit run_complete_loop)
+#    10   caller should `return 0` (full success — exit _orch_complete_run)
 #    11   caller should `return 1` (non-recoverable failure — exit loop)
 # =============================================================================
 
@@ -97,7 +97,7 @@ _run_preflight_test_gate() {
 # _handle_pipeline_success ITER_TURNS FILES_CHANGED
 # Branch taken when _run_pipeline_stages() exited 0. Checks acceptance, runs
 # stuck detection, runs the preflight test gate, and finalizes on success.
-# Returns 0 (re-loop), 10 (run_complete_loop should return 0), or 11 (return 1).
+# Returns 0 (re-loop), 10 (_orch_complete_run should return 0), or 11 (return 1).
 _handle_pipeline_success() {
     local _iter_turns="$1"
     local _files_changed="$2"
@@ -128,7 +128,7 @@ _handle_pipeline_success() {
             0)  acceptance_pass=true
                 warn "Acceptance overridden by stuck detection (auto-pass)."
                 ;;
-            2)  _save_orchestration_state "pre_existing_failure" \
+            2)  _orch_record_save_state "pre_existing_failure" \
                     "Acceptance stuck on identical pre-existing test failures (${_ORCH_IDENTICAL_ACCEPTANCE_COUNT} attempts)"
                 return 11
                 ;;
@@ -183,7 +183,7 @@ _handle_pipeline_success() {
 # Branch taken when _run_pipeline_stages() exited non-zero. Classifies the
 # failure and routes to one of the recovery strategies. Reads/writes
 # _ORCH_BUILD_RETRIED to enforce the one-shot build-fix retry policy.
-# Returns 0 (re-loop) or 11 (run_complete_loop should return 1).
+# Returns 0 (re-loop) or 11 (_orch_complete_run should return 1).
 _handle_pipeline_failure() {
     local _iter_turns="$1"
     local _files_changed="$2"
@@ -208,7 +208,7 @@ _handle_pipeline_failure() {
         bump_review)
             if [[ "$_ORCH_REVIEW_BUMPED" = true ]]; then
                 warn "Review cycles already bumped once. Saving state and exiting."
-                _save_orchestration_state "review_exhausted" "Review cycle max even after bump"
+                _orch_record_save_state "review_exhausted" "Review cycle max even after bump"
                 return 11
             fi
             MAX_REVIEW_CYCLES=$(( MAX_REVIEW_CYCLES + 2 ))
@@ -238,7 +238,7 @@ _handle_pipeline_failure() {
         retry_coder_build)
             if [[ "${_ORCH_BUILD_RETRIED:-false}" = true ]]; then
                 warn "Build fix already retried. Saving state and exiting."
-                _save_orchestration_state "build_exhausted" "Build failure persists after retry"
+                _orch_record_save_state "build_exhausted" "Build failure persists after retry"
                 return 11
             fi
             _ORCH_BUILD_RETRIED=true
@@ -268,7 +268,7 @@ _handle_pipeline_failure() {
             fi
             _ORCH_RECOVERY_ROUTE_TAKEN="split"
             warn "Split/continuation exhausted. Saving state."
-            _save_orchestration_state "split_exhausted" "Turn exhaustion or null run after recovery attempts"
+            _orch_record_save_state "split_exhausted" "Turn exhaustion or null run after recovery attempts"
             return 11
             ;;
         save_exit|*)
@@ -279,7 +279,7 @@ _handle_pipeline_failure() {
             if [[ "${VERDICT:-}" = "REPLAN_REQUIRED" ]]; then
                 reason="replan_required"
             fi
-            _save_orchestration_state "$reason" "Non-recoverable: ${reason}"
+            _orch_record_save_state "$reason" "Non-recoverable: ${reason}"
             return 11
             ;;
     esac

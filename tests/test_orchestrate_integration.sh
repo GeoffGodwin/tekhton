@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_orchestrate_integration.sh — Integration test for run_complete_loop
+# test_orchestrate_integration.sh — Integration test for _orch_complete_run
 #
 # Covers the reviewer-identified gap: a wiring-level test that verifies
 # finalize_run is called with exit 0 when the pipeline succeeds on attempt 2.
@@ -71,7 +71,7 @@ finalize_run() {
     _FINALIZE_RUN_EXIT="$1"
 }
 
-# write_pipeline_state — called by _save_orchestration_state on error paths
+# write_pipeline_state — called by _orch_record_save_state on error paths
 write_pipeline_state() { :; }
 
 # write_milestone_disposition — called on success/failure in milestone mode
@@ -128,9 +128,9 @@ assert_eq() {
 }
 
 # =============================================================================
-# Test Suite 1: run_complete_loop round trip — pipeline succeeds on attempt 2
+# Test Suite 1: _orch_complete_run round trip — pipeline succeeds on attempt 2
 # =============================================================================
-echo "=== Integration Test Suite 1: run_complete_loop round trip ==="
+echo "=== Integration Test Suite 1: _orch_complete_run round trip ==="
 
 # Controlled _run_pipeline_stages: fails first call, succeeds second
 _PIPELINE_CALL_COUNT=0
@@ -162,9 +162,9 @@ _FINALIZE_RUN_CALLED=false
 _FINALIZE_RUN_EXIT=-1
 
 loop_exit=0
-run_complete_loop || loop_exit=$?
+_orch_complete_run || loop_exit=$?
 
-assert_eq "1.1 run_complete_loop returns 0 on success" "0" "$loop_exit"
+assert_eq "1.1 _orch_complete_run returns 0 on success" "0" "$loop_exit"
 assert_eq "1.2 _run_pipeline_stages called twice (attempt 1 fail, attempt 2 succeed)" "2" "$_PIPELINE_CALL_COUNT"
 assert_eq "1.3 _ORCH_ATTEMPT is 2 at completion" "2" "$_ORCH_ATTEMPT"
 assert "1.4 finalize_run was called" "$([ "$_FINALIZE_RUN_CALLED" = true ] && echo 0 || echo 1)"
@@ -200,9 +200,9 @@ _ORCH_NO_PROGRESS_COUNT=0
 MAX_PIPELINE_ATTEMPTS=3
 
 loop_exit=0
-run_complete_loop || loop_exit=$?
+_orch_complete_run || loop_exit=$?
 
-assert_eq "2.1 run_complete_loop returns 1 when max attempts exhausted" "1" "$loop_exit"
+assert_eq "2.1 _orch_complete_run returns 1 when max attempts exhausted" "1" "$loop_exit"
 assert "2.2 finalize_run called on failure path" \
     "$([ "$_FINALIZE_RUN_CALLED" = true ] && echo 0 || echo 1)"
 assert_eq "2.3 finalize_run called with exit code 1 (failure)" "1" "$_FINALIZE_RUN_EXIT"
@@ -236,9 +236,9 @@ _ORCH_NO_PROGRESS_COUNT=0
 AUTONOMOUS_TIMEOUT=0
 
 loop_exit=0
-run_complete_loop || loop_exit=$?
+_orch_complete_run || loop_exit=$?
 
-assert_eq "3.1 run_complete_loop returns 1 on timeout" "1" "$loop_exit"
+assert_eq "3.1 _orch_complete_run returns 1 on timeout" "1" "$loop_exit"
 assert_eq "3.2 _run_pipeline_stages not called after timeout" "0" "$_PIPELINE_CALL_COUNT"
 assert "3.3 finalize_run called on timeout path" \
     "$([ "$_FINALIZE_RUN_CALLED" = true ] && echo 0 || echo 1)"
