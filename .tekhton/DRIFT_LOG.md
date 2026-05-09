@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-05-09
-- Runs since audit: 1
+- Runs since audit: 2
 
 ## Unresolved Observations
 - [2026-05-09 | "architect audit"] **Observation 3 — `orchestrate_*.sh` files with `set -euo pipefail`.** The observation claims CLAUDE.md says sourced lib files should not repeat the `set -euo pipefail` declaration. CLAUDE.md Rule 2 reads: "Bash files: `set -euo pipefail`" — no exception for sourced files. Removing the declaration from sourced lib files would create a CLAUDE.md violation, not fix one. The observation is also self-described as "non-blocking" and "worth a family-wide hygiene pass in a dedicated non-blocking milestone." Taking that action here would exceed this audit's scope. If the intent is to carve out sourced files from Rule 2, that requires a human amendment to CLAUDE.md before any code changes. No action in this pass.
