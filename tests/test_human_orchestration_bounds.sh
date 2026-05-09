@@ -181,8 +181,10 @@ assert_eq "3.2 0 notes remain after all processed" "0" "$remaining"
 # =============================================================================
 # Test 4: Flag validation via subprocess — --human --milestone exits 1
 #
-# Invokes tekhton.sh directly. The validation block at tekhton.sh:580-584
-# should fire and exit 1 before the pipeline runs.
+# m20: --human is a run-flag so the dispatcher exec's `tekhton run`. We
+# invoke tekhton-legacy.sh directly here to exercise the bash-side
+# validation that still runs for any path that doesn't go through the
+# dispatcher (e.g. tests, future Phase 5 wedge bridges).
 # =============================================================================
 
 proj_dir=$(mktemp -d)
@@ -190,10 +192,11 @@ proj_dir=$(mktemp -d)
 trap "rm -rf '$proj_dir'" EXIT
 setup_minimal_project "$proj_dir"
 
-# Run from the project dir so tekhton.sh resolves pipeline.conf via PROJECT_DIR=$(pwd)
+# Run from the project dir so tekhton-legacy.sh resolves pipeline.conf
+# via PROJECT_DIR=$(pwd).
 rc=0
 output=""
-output=$(cd "$proj_dir" && bash "${TEKHTON_HOME}/tekhton.sh" --human --milestone 2>&1) || rc=$?
+output=$(cd "$proj_dir" && bash "${TEKHTON_HOME}/tekhton-legacy.sh" --human --milestone 2>&1) || rc=$?
 
 assert_eq "4.1 --human --milestone exits with code 1" "1" "$rc"
 
@@ -207,13 +210,13 @@ fi
 # =============================================================================
 # Test 5: Flag validation via subprocess — --human "explicit task" exits 1
 #
-# Passes a positional task argument after --human. Validation at
-# tekhton.sh:595-599 should fire and exit 1.
+# Passes a positional task argument after --human. Validation in
+# tekhton-legacy.sh should fire and exit 1.
 # =============================================================================
 
 rc=0
 output=""
-output=$(cd "$proj_dir" && bash "${TEKHTON_HOME}/tekhton.sh" --human "explicit task string" 2>&1) || rc=$?
+output=$(cd "$proj_dir" && bash "${TEKHTON_HOME}/tekhton-legacy.sh" --human "explicit task string" 2>&1) || rc=$?
 
 assert_eq "5.1 --human 'task' exits with code 1" "1" "$rc"
 

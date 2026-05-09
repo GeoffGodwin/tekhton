@@ -5,7 +5,7 @@
 
   <p><strong>One intent. Many hands.</strong></p>
 
-  <p><em>v3.138.4 — Resilience Arc & Migration</em></p>
+  <p><em>v4.20.0 — Dogfooding Cutover (Go runtime)</em></p>
 </div>
 
 ## What is Tekhton?
@@ -15,6 +15,15 @@ on the [Claude CLI](https://docs.anthropic.com/en/docs/build-with-claude/claude-
 Give it a task description and it orchestrates an **Intake -> Scout -> Coder ->
 Security -> Reviewer -> Tester** cycle with automatic rework routing, build gates,
 architecture drift prevention, and resume support.
+
+> **v4.20.0 — Dogfooding cutover.** As of this release the Tekhton CLI is a
+> Go binary (`bin/tekhton`). `tekhton.sh` is a 75-line dispatcher that
+> routes run-flags (`--task` / `--complete` / `--milestone` / `--resume` /
+> `--human` / `--auto-advance` / `--dry-run` / `--no-tui`) to `tekhton run`
+> and forwards everything else to `tekhton-legacy.sh` for one more
+> migration cycle. Phase 5 is dismantling the remaining bash subsystems
+> one at a time — see [`docs/v4-phase5-stub.md`](docs/v4-phase5-stub.md).
+> The user-facing commands have not changed.
 
 It works on any project — web apps, CLI tools, APIs, mobile, games. You describe
 what you want built; Tekhton coordinates the agents, manages context, and iterates

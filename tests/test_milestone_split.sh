@@ -479,13 +479,15 @@ assert "milestone_split.prompt.md contains {{PRIOR_RUN_HISTORY}}" \
     "$(grep -q '{{PRIOR_RUN_HISTORY}}' "${TEKHTON_HOME}/prompts/milestone_split.prompt.md" && echo 0 || echo 1)"
 
 # ============================================================================
-# tekhton.sh sources milestone_split.sh
+# tekhton-legacy.sh sources milestone_split.sh
+# m20: legacy entry-point body lives in tekhton-legacy.sh; tekhton.sh is
+# the 75-line dispatcher.
 # ============================================================================
 
-echo "=== tekhton.sh integration ==="
+echo "=== tekhton-legacy.sh integration ==="
 
-assert "tekhton.sh sources lib/milestone_split.sh" \
-    "$(grep -q 'milestone_split.sh' "${TEKHTON_HOME}/tekhton.sh" && echo 0 || echo 1)"
+assert "tekhton-legacy.sh sources lib/milestone_split.sh" \
+    "$(grep -q 'milestone_split.sh' "${TEKHTON_HOME}/tekhton-legacy.sh" && echo 0 || echo 1)"
 
 # ============================================================================
 # Integration: coder stage milestone-split wiring

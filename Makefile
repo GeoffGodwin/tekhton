@@ -29,7 +29,7 @@ GOFLAGS_CROSS := CGO_ENABLED=0
 
 .DEFAULT_GOAL := build
 
-.PHONY: build test build-all clean tidy vet lint help
+.PHONY: build test build-all clean tidy vet lint help dogfood self-host
 
 build: ## Build local-host binary into bin/tekhton.
 	@mkdir -p $(BIN_DIR)
@@ -67,3 +67,14 @@ clean: ## Remove build artifacts.
 
 help: ## List targets.
 	@awk 'BEGIN{FS=":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+# m20 — Dogfooding cutover.
+# `make self-host` is the 15-scenario parity matrix. `make dogfood` is the
+# canonical "is the cutover live and working" command — runs the matrix and
+# verifies the version is in lockstep with VERSION.
+self-host: build ## Run the 15-scenario self-host parity matrix.
+	@bash scripts/self-host-check.sh
+
+dogfood: self-host ## Run the cutover gate: parity matrix + version lockstep.
+	@printf '\n[dogfood] cutover gate: tekhton.sh dispatcher routes run-flags to tekhton run.\n'
+	@printf '[dogfood] post-m20 milestones run via tekhton run --milestone <id>.\n'

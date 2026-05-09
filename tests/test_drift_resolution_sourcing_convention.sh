@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Test: Verify that tekhton.sh documents the tester sub-stage sourcing convention
+# Test: Verify that tekhton-legacy.sh documents the tester sub-stage sourcing convention
 # This test validates the first drift resolution from M65
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -21,17 +21,17 @@ fail() {
     exit 1
 }
 
-# Test 1: Verify the inline comment exists in tekhton.sh
-echo "Test 1: Checking for sourcing convention documentation in tekhton.sh..."
-if grep -q "Note: tester sub-stages" "${REPO_ROOT}/tekhton.sh"; then
+# Test 1: Verify the inline comment exists in tekhton-legacy.sh
+echo "Test 1: Checking for sourcing convention documentation in tekhton-legacy.sh..."
+if grep -q "Note: tester sub-stages" "${REPO_ROOT}/tekhton-legacy.sh"; then
     pass "Found documentation comment about tester sub-stages sourcing convention"
 else
-    fail "Missing documentation comment about tester sub-stages sourcing convention in tekhton.sh"
+    fail "Missing documentation comment about tester sub-stages sourcing convention in tekhton-legacy.sh"
 fi
 
 # Test 2: Verify the comment mentions all 5 sub-stages
 echo "Test 2: Checking that comment mentions all 5 tester sub-stages..."
-comment_line=$(grep -A 1 "tester sub-stages" "${REPO_ROOT}/tekhton.sh" | head -2)
+comment_line=$(grep -A 1 "tester sub-stages" "${REPO_ROOT}/tekhton-legacy.sh" | head -2)
 declare -a expected_substages=("tester_tdd.sh" "tester_continuation.sh" "tester_fix.sh" "tester_timing.sh" "tester_validation.sh")
 
 for substage in "${expected_substages[@]}"; do
@@ -45,10 +45,10 @@ done
 # Test 3: Verify that only tester.sh is directly sourced after the comment (no direct sourcing of sub-stages)
 echo "Test 3: Verifying sourcing pattern after the convention documentation..."
 # Extract the section around tester.sh sourcing dynamically to avoid line-number brittleness.
-tester_line=$(grep -n 'source.*stages/tester\.sh' "${REPO_ROOT}/tekhton.sh" | head -1 | cut -d: -f1)
+tester_line=$(grep -n 'source.*stages/tester\.sh' "${REPO_ROOT}/tekhton-legacy.sh" | head -1 | cut -d: -f1)
 start_line=$(( tester_line - 2 ))
 end_line=$(( tester_line + 6 ))
-section=$(sed -n "${start_line},${end_line}p" "${REPO_ROOT}/tekhton.sh")
+section=$(sed -n "${start_line},${end_line}p" "${REPO_ROOT}/tekhton-legacy.sh")
 
 # Check that tester.sh is sourced
 if echo "$section" | grep -q 'source.*stages/tester\.sh'; then

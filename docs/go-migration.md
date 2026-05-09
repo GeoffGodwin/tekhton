@@ -551,3 +551,87 @@ the legacy names in rename-rationale comments.
 - Milestone-acceptance check (`check_milestone_acceptance`) stays bash —
   the Go runner accepts an `AcceptanceChecker` interface so the future
   port slots in cleanly.
+
+## Phase 4 retro (m12–m20)
+
+Phase 4 closed with **m20 — Dogfooding Cutover**. `tekhton.sh` is now a
+75-line dispatcher; the Go binary owns every pipeline run; bash holds only
+the unmigrated subsystems (which Phase 5 will absorb one at a time).
+
+### What landed (m12 through m20)
+
+| m   | Wedge                               | Bash → Go boundary                            |
+|-----|-------------------------------------|-----------------------------------------------|
+| m12 | Orchestrate classifier + recovery    | `lib/orchestrate_classify.sh` ↔ `internal/orchestrate` (parity gate). |
+| m13 | MANIFEST.cfg parser                  | `lib/milestone_dag_io.sh` shim ↔ `internal/manifest`. |
+| m14 | DAG state machine                    | `lib/milestone_dag.sh` shim ↔ `internal/dag` + `tekhton dag` subcommand. |
+| m15 | Prompt template engine               | `lib/prompts.sh` shim ↔ `internal/prompt` + `tekhton prompt render`. |
+| m16 | Config loader / defaulter / validator| `lib/config.sh` + `lib/config_defaults.sh` shims ↔ `internal/config` + `tekhton config`. |
+| m17 | Error taxonomy + classifier          | `lib/errors.sh` shim ↔ `internal/errors` + `tekhton diagnose`. |
+| m18 | Per-attempt scheduler + gates        | Stage envelope (`lib/stage_envelope.sh`) ↔ `internal/pipeline` (`run-attempt`). |
+| m19 | Outer retry loop + `tekhton run`     | `internal/runner` owns the run lifecycle; bash bridges call out via `BashHookRunner`. |
+| m20 | Dogfooding cutover                   | `tekhton.sh` shrinks from ~3000 lines to a 75-line dispatcher; `tekhton-legacy.sh` holds the unmigrated bash body. |
+
+### What we learned
+
+- **Envelope schemas held.** `tekhton.run.request.v1`, `tekhton.run.result.v1`,
+  `tekhton.stage.result.v1`, `tekhton.manifest.v1`, `tekhton.state.v1`, and the
+  prompt + config emit shapes have not needed a v2 bump. Producer-stamped
+  proto tags + consumer reject-unknown-major proved out as a stable seam.
+- **Finalize bridge was the right deferral.** The 26-hook finalize chain in
+  `lib/finalize.sh` is internally complicated but externally narrow — it
+  needs `TEKHTON_RUN_DISPOSITION` and `TEKHTON_RUN_RESULT_FILE`, nothing
+  more. Holding it as a bash bridge through Phase 4 unblocked m18 and m19
+  without needing to port 26 hooks first.
+- **TUI status race needed atomic-write.** Mid-run bash writers and the Go
+  initial/final writers both touch `tui_status.json`. The atomic-write
+  pattern (`tmpfile + os.Rename`) plus the `_TUI_LIVENESS_INTERVAL`
+  sampler in `lib/tui_liveness.sh` is the only reason the cross-language
+  status seam doesn't tear during a run.
+- **Windows reaper had to land before m20.** WSL interop and the m09 reaper
+  path catch zombie agent processes the bash trap chain misses. m20's
+  self-host matrix runs the Windows row first because of this.
+
+### What didn't go as planned
+
+- **m12's parity gate became a tax.** Holding bash and Go orchestrate
+  classifiers in lockstep meant every classification change required two
+  edits + a parity rerun. Worth it for the milestone-by-milestone
+  confidence, but Phase 5 should retire the bash side as soon as Go is the
+  only caller.
+- **`cmd_<flag>` template pattern proved overkill for m20.** The original
+  m20 plan had `lib/init.sh` exporting `cmd_init`, `lib/rescan.sh`
+  exporting `cmd_rescan`, and so on. In practice, the legacy bash entry
+  point is monolithic — extracting per-flag wrappers without porting the
+  underlying logic creates churn for zero behavioral gain. m20 instead
+  moved the entire legacy body to `tekhton-legacy.sh` and dispatches
+  through a single fall-through `exec`. Phase 5 can re-introduce the
+  per-flag entry points one at a time as each subsystem is ported.
+- **`scripts/run-parity-check.sh` shipped slightly aspirational.** The
+  10-scenario header in m19 covered 4 structural checks; the gap surfaced
+  in the m19 reviewer report. m20's `scripts/self-host-check.sh` learned
+  from this — every documented scenario is a real assertion.
+
+### Code volume diff
+
+| Component                        | End of m11 | End of m20 | Δ        |
+|----------------------------------|-----------:|-----------:|---------:|
+| `tekhton.sh`                     |  ~3050 LOC |     75 LOC |  −2975   |
+| `lib/orchestrate*.sh`            |  ~1100 LOC |   ~600 LOC |   −500   |
+| `lib/error_patterns*.sh`         |   ~750 LOC |          0 |   −750   |
+| `lib/prompts.sh` + `prompts_io.sh`|  ~280 LOC |   ~180 LOC |   −100   |
+| `lib/config.sh` + `config_defaults.sh`| ~600 LOC |   ~80 LOC |   −520   |
+| `lib/state.sh`                   |   ~460 LOC |    ~50 LOC |   −410   |
+| **Net bash LOC reduction (Phase 4)** |        |            | **≈ −5300** |
+
+The `tekhton-legacy.sh` file holds ~3050 lines as a transition artifact.
+Phase 5 dismantles it subsystem-by-subsystem; the running bash LOC count
+is tracked in `docs/v4-phase5-stub.md`.
+
+## Phase 5 (in progress)
+
+Phase 5 dismantles the remaining bash. See `docs/v4-phase5-stub.md` for
+the inventory of unmigrated subsystems and the candidate ordering. The
+`make dogfood` target gates each Phase 5 milestone: every commit that
+changes pipeline behavior must keep the 15-scenario self-host parity
+matrix green.

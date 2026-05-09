@@ -47,6 +47,15 @@ ALLOWED_FILES=(
     "lib/orchestrate.sh"
     "lib/orchestrate_complete.sh"
     "lib/orchestrate_save.sh"
+    # m20 (Phase 4 batch 2) — the orchestrate-aux/-classify/-iteration trio
+    # is the legacy bash retry loop that tekhton-legacy.sh still uses for
+    # any bash-only paths that survived the dispatcher cutover. Comments
+    # reference _run_pipeline_stages by name; orchestrate_aux.sh sources
+    # orchestrate_save.sh. Phase 5 deletes all three when tekhton-legacy.sh
+    # is dismantled.
+    "lib/orchestrate_aux.sh"
+    "lib/orchestrate_classify.sh"
+    "lib/orchestrate_iteration.sh"
 )
 
 # --- Patterns to detect ------------------------------------------------------
@@ -111,6 +120,22 @@ PATTERNS=(
     '\b_save_orchestration_state\b'
     'orchestrate_main\.sh'
     'orchestrate_state\.sh'
+    # m20 (Phase 4 batch 2): the run-level pipeline-stages dispatcher moved
+    # to internal/pipeline + internal/runner. The bash entry point body
+    # (which used to live in tekhton.sh and called _run_pipeline_stages
+    # directly) is now reachable only via tekhton-legacy.sh, which is the
+    # transition file Phase 5 absorbs. Re-introducing _run_pipeline_stages
+    # in lib/ or stages/ would mean someone is rebuilding the bash
+    # orchestrator outside tekhton-legacy.sh — block at audit time.
+    '\b_run_pipeline_stages\b'
+    # m20: orchestrate_complete.sh and orchestrate_save.sh are bash
+    # transition artifacts retained only because tekhton-legacy.sh sources
+    # them. New `lib/` files should not source them — the canonical complete
+    # loop is internal/runner.RunCompleteLoop. (The wedge-audit allowlist
+    # below lets the existing lib/orchestrate*.sh files reference each
+    # other; this pattern blocks new sources.)
+    '^[[:space:]]*(source|\.)[[:space:]]+.*/orchestrate_complete\.sh'
+    '^[[:space:]]*(source|\.)[[:space:]]+.*/orchestrate_save\.sh'
 )
 
 # --- Audit -------------------------------------------------------------------

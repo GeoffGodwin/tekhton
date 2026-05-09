@@ -54,13 +54,13 @@ else
     FAIL=$((FAIL+1))
 fi
 
-# Test 5: tekhton.sh sources gates_ui.sh
-echo "Test 5: Verify tekhton.sh sources gates_ui.sh..."
-if grep -q 'source.*gates_ui.sh' tekhton.sh; then
-    echo "✓ PASS: tekhton.sh sources gates_ui.sh"
+# Test 5: tekhton-legacy.sh sources gates_ui.sh (m20: legacy entry-point body)
+echo "Test 5: Verify tekhton-legacy.sh sources gates_ui.sh..."
+if grep -q 'source.*gates_ui.sh' tekhton-legacy.sh; then
+    echo "✓ PASS: tekhton-legacy.sh sources gates_ui.sh"
     PASS=$((PASS+1))
 else
-    echo "✗ FAIL: tekhton.sh does not source gates_ui.sh"
+    echo "✗ FAIL: tekhton-legacy.sh does not source gates_ui.sh"
     FAIL=$((FAIL+1))
 fi
 

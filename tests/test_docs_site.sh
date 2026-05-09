@@ -233,34 +233,37 @@ fi
 
 # ---------------------------------------------------------------------------
 echo
-echo "=== tekhton.sh --docs flag ==="
+echo "=== tekhton-legacy.sh --docs flag ==="
+# m20: the --docs handler lives in the legacy entry-point body (tekhton-legacy.sh).
+# tekhton.sh itself is a 75-line dispatcher that forwards everything except
+# documented run-flags to the legacy script.
 
-TEKHTON="${TEKHTON_HOME}/tekhton.sh"
+TEKHTON="${TEKHTON_HOME}/tekhton-legacy.sh"
 
 if grep -q '"\-\-docs"' "$TEKHTON"; then
-    pass "tekhton.sh handles --docs flag"
+    pass "tekhton-legacy.sh handles --docs flag"
 else
-    fail "tekhton.sh missing --docs flag handler"
+    fail "tekhton-legacy.sh missing --docs flag handler"
 fi
 
 if grep -q 'xdg-open' "$TEKHTON"; then
-    pass "tekhton.sh uses xdg-open for --docs"
+    pass "tekhton-legacy.sh uses xdg-open for --docs"
 else
-    fail "tekhton.sh missing xdg-open for --docs"
+    fail "tekhton-legacy.sh missing xdg-open for --docs"
 fi
 
 # The --docs URL should point to the GitHub Pages site
 if grep -q 'geoffgodwin.github.io/tekhton' "$TEKHTON"; then
-    pass "tekhton.sh --docs URL points to GitHub Pages site"
+    pass "tekhton-legacy.sh --docs URL points to GitHub Pages site"
 else
-    fail "tekhton.sh --docs URL does not reference geoffgodwin.github.io/tekhton"
+    fail "tekhton-legacy.sh --docs URL does not reference geoffgodwin.github.io/tekhton"
 fi
 
 # --docs should appear in help text
 if grep '\-\-docs' "$TEKHTON" | grep -q 'documentation'; then
-    pass "tekhton.sh --docs appears in help text"
+    pass "tekhton-legacy.sh --docs appears in help text"
 else
-    fail "tekhton.sh --docs missing from help text"
+    fail "tekhton-legacy.sh --docs missing from help text"
 fi
 
 # ---------------------------------------------------------------------------

@@ -173,7 +173,7 @@ assert "emit_dashboard_inbox exists" grep -q 'emit_dashboard_inbox' "${TEKHTON_H
 # --- Test 21: inbox.sh exists and sources ---
 assert "inbox.sh exists" test -f "${TEKHTON_HOME}/lib/inbox.sh"
 assert "inbox.sh has process_watchtower_inbox" grep -q 'process_watchtower_inbox' "${TEKHTON_HOME}/lib/inbox.sh"
-assert "tekhton.sh sources inbox.sh" grep -q 'source.*inbox.sh' "${TEKHTON_HOME}/tekhton.sh"
+assert "tekhton-legacy.sh sources inbox.sh" grep -q 'source.*inbox.sh' "${TEKHTON_HOME}/tekhton-legacy.sh"
 
 # --- Test 22: Parallel teams support (M37) ---
 assert "dashboard.sh has parallel_mode" grep -q 'parallel_mode' "${TEKHTON_HOME}/lib/dashboard.sh"

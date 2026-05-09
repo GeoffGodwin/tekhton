@@ -152,20 +152,27 @@ PROJ_HELP="${TMPDIR}/proj_help"
 mkdir -p "$PROJ_HELP"
 make_proj "$PROJ_HELP"
 
+# m20: tekhton.sh --help routes to `tekhton run --help` (Go binary). The Go
+# Cobra formatter splits --auto-advance and --auto-advance-limit into
+# separate lines, so the V3 "[N]" combined notation no longer appears
+# verbatim. The behavior the test cares about — "auto-advance is
+# documented" — still holds, just in the new formatter's shape.
+# tekhton.sh --help --all still routes to tekhton-legacy.sh and uses the
+# legacy "[N]" notation.
 rc=0
 help_grouped=$(cd "$PROJ_HELP" && bash "${TEKHTON_HOME}/tekhton.sh" --help 2>/dev/null) || rc=$?
-if [[ "$rc" -eq 0 ]] && echo "$help_grouped" | grep -q -- "--auto-advance \[N\]"; then
-    pass "--help shows --auto-advance [N] in grouped output"
+if [[ "$rc" -eq 0 ]] && echo "$help_grouped" | grep -q -- "--auto-advance"; then
+    pass "--help shows --auto-advance in grouped output (Go formatter)"
 else
-    fail "--help missing '--auto-advance [N]' in grouped output"
+    fail "--help missing '--auto-advance' in grouped output"
 fi
 
 rc=0
 help_all=$(cd "$PROJ_HELP" && bash "${TEKHTON_HOME}/tekhton.sh" --help --all 2>/dev/null) || rc=$?
 if [[ "$rc" -eq 0 ]] && echo "$help_all" | grep -q -- "--auto-advance \[N\]"; then
-    pass "--help --all shows --auto-advance [N] in full flag list"
+    pass "--help --all shows --auto-advance [N] in legacy full flag list"
 else
-    fail "--help --all missing '--auto-advance [N]' in full flag list"
+    fail "--help --all missing '--auto-advance [N]' in legacy full flag list"
 fi
 
 # ── Test 7: --auto-advance accepts an optional integer without erroring ─────

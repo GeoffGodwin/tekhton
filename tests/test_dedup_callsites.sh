@@ -81,15 +81,17 @@ else
 fi
 
 # =============================================================================
-# Suite 3: tekhton.sh — sources lib/test_dedup.sh
+# Suite 3: legacy entry point — sources lib/test_dedup.sh
+# m20: the V3 entry-point body now lives in tekhton-legacy.sh; tekhton.sh is
+# a 75-line dispatcher that delegates to it.
 # =============================================================================
 echo ""
-echo "=== Suite 3: tekhton.sh sources lib/test_dedup.sh ==="
+echo "=== Suite 3: tekhton-legacy.sh sources lib/test_dedup.sh ==="
 
-if grep -q 'lib/test_dedup\.sh' "${TEKHTON_HOME}/tekhton.sh"; then
-    pass "3.1: tekhton.sh sources lib/test_dedup.sh"
+if grep -q 'lib/test_dedup\.sh' "${TEKHTON_HOME}/tekhton-legacy.sh"; then
+    pass "3.1: tekhton-legacy.sh sources lib/test_dedup.sh"
 else
-    fail "3.1: tekhton.sh does not source lib/test_dedup.sh"
+    fail "3.1: tekhton-legacy.sh does not source lib/test_dedup.sh"
 fi
 
 # =============================================================================

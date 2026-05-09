@@ -33,8 +33,10 @@ pass "Fix #2: sync_dashboard_static_files documented in Provides:"
 # === Fix #3: double _copy_static_files call ===
 # Check that sync_dashboard_static_files is only called in the else branch (not after init_dashboard)
 # The fix moves sync from always-executed to conditional (else branch)
-dashboard_flow=$(grep -B5 -A10 "if is_dashboard_enabled" "${TEKHTON_HOME}/tekhton.sh" | grep -c "else.*sync_dashboard_static_files" || echo "0")
-if grep -A10 "if \[\[ ! -d.*local_dash_dir" "${TEKHTON_HOME}/tekhton.sh" | grep -q "else"; then
+# m20: dashboard sync logic still lives in tekhton-legacy.sh until Phase 5
+# ports the dashboard subsystem to Go.
+dashboard_flow=$(grep -B5 -A10 "if is_dashboard_enabled" "${TEKHTON_HOME}/tekhton-legacy.sh" | grep -c "else.*sync_dashboard_static_files" || echo "0")
+if grep -A10 "if \[\[ ! -d.*local_dash_dir" "${TEKHTON_HOME}/tekhton-legacy.sh" | grep -q "else"; then
     pass "Fix #3: sync_dashboard_static_files moved to else branch (redundant copy fixed)"
 else
     fail "sync_dashboard_static_files not in else branch"
@@ -151,10 +153,10 @@ sourcing=$(grep "source.*dashboard_parsers\|source.*dashboard_emitters" "${TEKHT
 pass "Fix #20: dashboard.sh uses TEKHTON_HOME sourcing pattern"
 
 # === Fix #21: _STAGE_BUDGET[intake] assignment ===
-# Check that intake budget is assigned in tekhton.sh
-intake_budget=$(grep "_STAGE_BUDGET\[intake\]" "${TEKHTON_HOME}/tekhton.sh" || echo "")
-[[ -n "$intake_budget" ]] || fail "_STAGE_BUDGET[intake] not assigned in tekhton.sh"
-pass "Fix #21: _STAGE_BUDGET[intake] assigned in tekhton.sh"
+# m20: stage-budget assignment still lives in tekhton-legacy.sh.
+intake_budget=$(grep "_STAGE_BUDGET\[intake\]" "${TEKHTON_HOME}/tekhton-legacy.sh" || echo "")
+[[ -n "$intake_budget" ]] || fail "_STAGE_BUDGET[intake] not assigned in tekhton-legacy.sh"
+pass "Fix #21: _STAGE_BUDGET[intake] assigned in tekhton-legacy.sh"
 
 # === Fix #22: .claude/dashboard gitignore ===
 # Check that .claude/dashboard pattern is in pipeline.conf.example or gitignore handling
