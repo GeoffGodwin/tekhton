@@ -1,86 +1,62 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file, 45 test assertions (T1a–T11c across 11 groups)
+Tests audited: 1 file (internal/runner/hooks_test.go), 10 test functions; 2 freshness samples reviewed (internal/tui/extra_test.go, internal/tui/sidecar_test.go)
 Verdict: PASS
 
 ---
 
 ### Findings
 
-#### COVERAGE: m02 doc changes have zero test coverage
-- File: tests/test_m01_go_module_foundation.sh (no T12 group or equivalent)
-- Issue: The task patched four doc nits across two milestone files. Two of the four
-  are partially covered by existing assertions — T5n verifies `"internal/version.Version"`
-  appears in the Makefile (ldflags wiring, covering nit #1), and T7f/T7h verify
-  `TEKHTON_SELF_HOST_DRY_RUN` and `tekhton.sh --version` appear in
-  `scripts/self-host-check.sh` (covering nit #2). The two m02 changes (AC #1
-  init-semantics rewording to "does NOT truncate", AC #6 `_json_escape` location
-  rewording to "sole definition lives in `lib/common.sh`") are completely untested.
-  The TESTER_REPORT claims "coverage gaps: none" — that is inaccurate.
+#### SCOPE: Multiple modified test files absent from audit context
+- File: internal/runner/complete_test.go, internal/stagerunner/helpers_test.go, internal/stagerunner/adapter_test.go, cmd/tekhton/stage_test.go
+- Issue: Git status shows all four files as modified in this run, corresponding to non-blocking note items 1 (complete_test.go Fatalf message), 3 (helpers_test.go hardcoded stage names), 7 (adapter_test.go), and 9 (stage_test.go stdout assertion) respectively. The audit context lists only `internal/runner/hooks_test.go` as modified this run — the other four shipped without independent auditor review of their test modifications. Partial verification via direct file read confirms `helpers_test.go:144` now correctly ranges over `proto.KnownStages` (the fix for note item 3), but the remaining three files were not read and cannot be attested to.
 - Severity: MEDIUM
-- Action: Add a T12 group with two `assert_file_contains` calls against
-  `.claude/milestones/m02-causal-log-wedge.md`: one grepping for
-  `"does NOT truncate"` (AC #1 semantics fix) and one for `"lib/common.sh"`
-  (AC #6 location fix). Both strings are now in the doc; the assertions
-  are straightforward.
+- Action: Include all test files modified in a single tester session in the audit context. If the coder (not the tester) modified those four files, the audit context collector must distinguish coder-modified test files from tester-modified test files and include both sets. Re-audit the three unread files (complete_test.go, adapter_test.go, stage_test.go) in the next cycle if the gap cannot be explained by session boundary.
 
-#### COVERAGE: T10 comment describes a stronger check than the assertions perform
-- File: tests/test_m01_go_module_foundation.sh:195–201
-- Issue: The section header reads "No lib/, stages/, prompts/, tools/ modifications"
-  and the inline comment says "checking they don't contain any Go-specific content
-  that would signal unwanted cross-contamination." The three assertions (T10a, T10b,
-  T10c) only verify that those files exist — a spurious `import "fmt"` injected
-  into `lib/common.sh` would pass T10 silently. The mismatch between stated intent
-  and actual assertion makes T10 misleading to future readers.
+#### COVERAGE: FinalizeNilResult does not assert script exclusion
+- File: internal/runner/hooks_test.go:102-121
+- Issue: `TestBashHookRunnerFinalizeNilResult` verifies that `Finalize(ctx, req, nil)` returns nil and does not panic. It creates a real `finalize.sh` script (per the comment: "if the nil guard were absent the script would be reached and res.Disposition would dereference a nil pointer") but does not assert the script was NOT executed. The nil guard at runner.go:238 fires before the script lookup at line 241, so the script can never run today — but the test does not encode this invariant. A future refactor that moves `res.Disposition` into a guarded local variable could silence the panic while still running the script; that regression would not be caught by the current assertion.
 - Severity: LOW
-- Action: Either (a) rename the assertions to "T10a lib/common.sh exists (sanity)"
-  to match what they actually check, or (b) add `assert_file_does_not_contain`
-  for a Go sentinel (e.g. `^import "`) in the three files. Option (a) is safer
-  since a Go-contamination grep has a non-trivial false-positive risk.
+- Action: Extend the test optionally: write a finalize.sh that touches a marker file, then assert the marker does not exist after `Finalize(ctx, req, nil)`. This encodes two invariants — no error AND no script invocation — rather than one.
 
-#### SCOPE: CODER_SUMMARY.md absent — audit chain incomplete
-- File: .tekhton/CODER_SUMMARY.md (file does not exist)
-- Issue: The audit protocol requires reading CODER_SUMMARY.md to cross-reference
-  what the coder changed against what the tester covered. The file is missing,
-  so direct cross-referencing was not possible. The audit was completed by reading
-  the milestone docs, TESTER_REPORT, test file, and implementation files directly.
+#### NAMING: hooks_test.go listed twice in audit context
+- File: (audit context metadata, not the test file itself)
+- Issue: The "Test Files Under Audit (modified this run)" section lists `internal/runner/hooks_test.go` twice. This is a collection artifact that inflates the apparent file count and could mask a missing entry if the dedup logic drops a legitimately distinct filename.
 - Severity: LOW
-- Action: The coder stage should produce CODER_SUMMARY.md even for doc-only tasks.
-  A one-line entry ("doc-only: no implementation files changed") preserves the
-  audit chain without adding burden.
+- Action: Deduplicate the audit context emitter. No change to the test file needed.
 
 ---
 
-### Positive Observations (no action needed)
+### Per-Rubric Notes for internal/runner/hooks_test.go
 
-**Assertion honesty — GOOD.** All 45 assertions derive values from actual file reads
-via `grep`, `grep -E`, `grep -iE`, or `awk`. T11c reads the real package declaration
-and compares it to the literal "version". No assertion uses a hard-coded constant that
-appears nowhere in the implementation.
+**1. Assertion Honesty — PASS**
+`TestBashHookRunnerFinalizeNilResult` (lines 102–121) calls the real `BashHookRunner.Finalize` with `nil` as the result argument. Without the guard at runner.go:238, Go would panic on `res.Disposition` inside the env-append block (line ~251). The testing framework converts that panic to a test failure, so the `if err != nil` check is a genuinely discriminating assertion — it would catch a guard removal. No hard-coded magic values. All other pre-existing assertions in the file derive expected values from documented implementation behavior (disposition string `"stuck"`, marker file presence, os.Stdout/os.Stderr identity).
 
-**Implementation exercise — APPROPRIATE.** The suite deliberately avoids invoking the
-Go toolchain (header comment lines 6–8 explain this). Structural content checks are
-the correct shape for a no-toolchain structural harness. The Go unit tests live in
-`internal/version/version_test.go` as noted in the header. This is an intentional
-division of labor, not a gap.
+**2. Edge Case Coverage — PASS**
+The suite covers: empty TekhtonHome (returns nil early), missing script file (returns nil), successful preflight invocation (marker file side-effect verified), disposition env var threading (disposition.txt checked against literal `"stuck\n"`), stdoutOr/stderrOr nil fallback (identity check against os.Stdout/os.Stderr), nil result (new test), nil pipeline result (synthesized failure disposition), pipeline error propagation (error returned), and resume without state store (error required). Error-path test count matches happy-path count.
 
-**Isolation — CLEAN.** No test reads mutable pipeline run artifacts
-(`.tekhton/CODER_SUMMARY.md`, `.claude/logs/*`, build reports, pipeline state). All
-files read (`go.mod`, `internal/version/version.go`, `cmd/tekhton/main.go`, Makefile,
-`scripts/self-host-check.sh`, etc.) are stable checked-in source files.
+**3. Implementation Exercise — PASS**
+Every test calls real production types: `BashHookRunner` for hooks tests, `Runner` + `fakePipeline` for runner tests. `fakePipeline` is a thin queue drain with no mocked internal behavior. The nil-result test exercises the actual branch at runner.go:238 with a live finalize.sh script on disk.
 
-**Shell-detected orphans — ALL FALSE POSITIVES.** The seven flagged symbols (`awk`,
-`cd`, `dirname`, `echo`, `grep`, `pwd`, `set`) are POSIX built-ins and standard
-utilities that the orphan detector cannot resolve against bash source definitions.
-None represent stale references.
+**4. Test Weakening Detection — N/A**
+The tester added one new test (`TestBashHookRunnerFinalizeNilResult`). No existing assertions were removed or broadened.
 
-**No weakening detected.** The modified test file shows no broadened assertions,
-removed edge cases, or weakened expected values relative to the structural checks.
-T7f and T7h appear to be net-new additions that verify the self-host-check.sh
-structure matches the updated AC #2 description — a positive addition, not a
-weakening.
+**5. Test Naming and Intent — PASS**
+`TestBashHookRunnerFinalizeNilResult` encodes receiver type, method, and the distinguishing input. The function-level comment cites runner.go:238 explicitly and documents the production scenario where the path is reachable (`(nil, err)` pipeline return followed by Finalize for cleanup hooks). Pre-existing test names follow the same pattern consistently.
 
-**Naming — ACCEPTABLE.** ID-prefixed names ("T7f TEKHTON_SELF_HOST_DRY_RUN guard")
-are consistent with the suite's convention and encode the file under test plus the
-invariant being verified.
+**6. Scope Alignment — PASS**
+The nil guard referenced by the test exists at runner.go:238–240 in the current implementation. `strings.HasPrefix` at resume.go:74 (fix for non-blocking note #5) is present in the current source. No stale imports or references to removed symbols detected in the audited file.
+
+**7. Test Isolation — PASS**
+All filesystem operations in the file use `t.TempDir()`. No mutable project files (pipeline logs, state files, run artifacts, `.tekhton/*`) are read. The new test creates its own finalize.sh fixture from a string literal in a temp directory.
+
+---
+
+### Freshness Sample Notes (files not modified this run — no blocking findings)
+
+**internal/tui/sidecar_test.go:TestNewSetsDefaults (line 15)** — hardcodes `"/tmp"` as the expected `SessionDir` default. Consistent with the Sidecar implementation's field initializer. The `internal/tui` package was not modified this run; no drift detected.
+
+**internal/tui/extra_test.go** — all tests use `t.TempDir()` and `atomicWriteJSON`; no live project state read. Tests call real Sidecar methods (PID, StatusFile, writePIDFile, removePIDFile, atomicWriteJSON, resolvePython, shouldActivate). No issues observed.
+
+**tests/fixtures/config/06_invalid_enums.conf** — static data fixture with intentionally invalid enum values (`PIPELINE_ORDER="bogus"`, `SECURITY_BLOCK_SEVERITY="BANANA"`, etc.). Not a test file; checked for staleness only. Values are consistent with the config-loader contract (loader must reset invalid enums to safe defaults with a warning).

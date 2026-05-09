@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -83,7 +82,6 @@ func newStageEmitCmd() *cobra.Command {
 				return nil
 			}
 			fmt.Println(string(b))
-			_ = json.RawMessage(b) // silence unused import on minimal builds
 			return nil
 		},
 	}

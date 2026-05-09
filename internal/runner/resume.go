@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/state"
@@ -71,10 +72,7 @@ func (r *Runner) requestFromSnapshot(snap *proto.StateSnapshotV1) *proto.RunRequ
 }
 
 func isCompleteLoopExit(exit string) bool {
-	if len(exit) >= len("complete_loop_") && exit[:len("complete_loop_")] == "complete_loop_" {
-		return true
-	}
-	return false
+	return strings.HasPrefix(exit, "complete_loop_")
 }
 
 // ApplyEnvDefaults fills missing ProjectDir / TekhtonHome on a request from

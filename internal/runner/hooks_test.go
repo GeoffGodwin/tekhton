@@ -95,6 +95,31 @@ func TestStdoutOrStderrOrFallsBack(t *testing.T) {
 	}
 }
 
+// TestBashHookRunnerFinalizeNilResult verifies the nil-res guard at runner.go:238:
+// Finalize must return nil (not panic) when called with a nil result envelope.
+// The guard is reachable when a pipeline attempt returns (nil, err) and the
+// runner still calls Finalize to run cleanup hooks.
+func TestBashHookRunnerFinalizeNilResult(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "lib"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write a real finalize.sh — if the nil guard were absent the script would
+	// be reached and res.Disposition would dereference a nil pointer.
+	if err := os.WriteFile(
+		filepath.Join(home, "lib", "finalize.sh"),
+		[]byte("#!/usr/bin/env bash\necho finalize ran\n"),
+		0o755,
+	); err != nil {
+		t.Fatal(err)
+	}
+	h := &BashHookRunner{TekhtonHome: home}
+	req := &proto.RunRequestV1{ProjectDir: t.TempDir()}
+	if err := h.Finalize(context.Background(), req, nil); err != nil {
+		t.Fatalf("Finalize with nil result: want nil, got %v", err)
+	}
+}
+
 func TestRunSingleNilPipelineResult(t *testing.T) {
 	req := validReq(t)
 	fp := &fakePipeline{} // no results queued → returns nil, nil

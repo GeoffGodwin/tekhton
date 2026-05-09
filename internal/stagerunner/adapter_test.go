@@ -155,13 +155,8 @@ func TestBashAdapterSubprocessError(t *testing.T) {
 }
 
 func TestBashAdapterUnknownStage(t *testing.T) {
-	// scriptFor's fallback to DefaultStageDefs means we cannot reach
-	// ErrUnknownStage by passing a known stage name; the only way is via
-	// scriptFor returning false directly for an unknown stage. The Run path
-	// would reject that earlier in StageRequestV1.Validate (IsKnownStage).
-	// Cover scriptFor's negative branch here.
-	if _, ok := (&BashAdapter{}).scriptFor("does-not-exist"); ok {
-		t.Fatalf("scriptFor should reject unknown stage")
+	if _, ok := (&BashAdapter{}).stageDefFor("does-not-exist"); ok {
+		t.Fatalf("stageDefFor should reject unknown stage")
 	}
 }
 
@@ -278,17 +273,17 @@ func TestBashAdapterNilRequest(t *testing.T) {
 	}
 }
 
-func TestScriptForFallback(t *testing.T) {
+func TestStageDefForFallback(t *testing.T) {
 	a := &BashAdapter{}
-	if _, ok := a.scriptFor(proto.StageCoder); !ok {
+	if _, ok := a.stageDefFor(proto.StageCoder); !ok {
 		t.Fatalf("default fallback should resolve coder")
 	}
-	if _, ok := a.scriptFor("nope"); ok {
-		t.Fatalf("scriptFor should reject unknown")
+	if _, ok := a.stageDefFor("nope"); ok {
+		t.Fatalf("stageDefFor should reject unknown")
 	}
 	a.Stages = map[string]StageDef{proto.StageCoder: {Script: "stages/custom.sh"}}
-	p, ok := a.scriptFor(proto.StageCoder)
-	if !ok || p != "stages/custom.sh" {
-		t.Fatalf("override path lost: %q ok=%v", p, ok)
+	def, ok := a.stageDefFor(proto.StageCoder)
+	if !ok || def.Script != "stages/custom.sh" {
+		t.Fatalf("override path lost: %q ok=%v", def.Script, ok)
 	}
 }

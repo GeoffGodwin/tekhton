@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,17 @@ import (
 )
 
 func TestStageEmitToStdout(t *testing.T) {
+	// stage.go writes the envelope via fmt.Println, which goes to os.Stdout
+	// directly (not cobra's cmd.OutOrStdout()). Redirect os.Stdout through a
+	// pipe so the test can read what was printed.
+	origStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = origStdout }()
+
 	root := newRootCmd()
 	root.SetArgs([]string{
 		"stage", "emit",
@@ -22,17 +34,34 @@ func TestStageEmitToStdout(t *testing.T) {
 		"--duration", "12",
 		"--next-action", "accept",
 	})
-	var stdout bytes.Buffer
-	root.SetOut(&stdout)
+	root.SetOut(io.Discard)
 	root.SetErr(os.Stderr)
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
+	execErr := root.Execute()
+	_ = w.Close()
+	out, _ := io.ReadAll(r)
+	if execErr != nil {
+		t.Fatalf("Execute: %v", execErr)
 	}
-	out := stdout.String()
-	// Cobra writes via fmt.Println, not the cmd.OutOrStdout() — capture by
-	// re-routing to /dev/null is fragile. Easier: check the envelope shape.
-	// fall back to capturing process stdout.
-	_ = out
+
+	res := &proto.StageResultV1{}
+	if err := json.Unmarshal(bytes.TrimSpace(out), res); err != nil {
+		t.Fatalf("unmarshal stdout %q: %v", string(out), err)
+	}
+	if res.Proto != proto.StageResultProtoV1 {
+		t.Fatalf("proto: got %q want %q", res.Proto, proto.StageResultProtoV1)
+	}
+	if res.Stage != "intake" || res.Verdict != "pass" {
+		t.Fatalf("stage/verdict: got %q/%q want intake/pass", res.Stage, res.Verdict)
+	}
+	if res.ExitReason != "ok" || res.NextAction != "accept" {
+		t.Fatalf("reason/next: got %q/%q want ok/accept", res.ExitReason, res.NextAction)
+	}
+	if res.AgentCalls != 1 || res.DurationSec != 12 {
+		t.Fatalf("counts: agent_calls=%d duration_sec=%d (want 1/12)", res.AgentCalls, res.DurationSec)
+	}
+	if err := res.Validate(); err != nil {
+		t.Fatalf("validate: %v", err)
+	}
 }
 
 func TestStageEmitInvalidVerdict(t *testing.T) {

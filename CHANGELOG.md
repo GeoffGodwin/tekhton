@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [4.20.4] - 2026-05-09
+
+### Added
+- [POLISH] **m01/m02 milestone-doc cleanup pass.** Four small doc nits sur
 ## [4.20.3] - 2026-05-09
 
 ### Added

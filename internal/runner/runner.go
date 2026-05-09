@@ -235,6 +235,9 @@ func (b *BashHookRunner) Finalize(ctx context.Context, req *proto.RunRequestV1, 
 	if b.TekhtonHome == "" {
 		return nil
 	}
+	if res == nil {
+		return nil
+	}
 	script := filepath.Join(b.TekhtonHome, "lib", "finalize.sh")
 	if _, err := os.Stat(script); err != nil {
 		return nil
@@ -250,7 +253,7 @@ func (b *BashHookRunner) Finalize(ctx context.Context, req *proto.RunRequestV1, 
 		"PROJECT_DIR="+req.ProjectDir,
 		"TEKHTON_RUN_DISPOSITION="+res.Disposition,
 	)
-	if res != nil && req.ProjectDir != "" {
+	if req.ProjectDir != "" {
 		env = append(env, "TEKHTON_RUN_RESULT_FILE="+filepath.Join(req.ProjectDir, ".tekhton", "RUN_RESULT.json"))
 	}
 	cmd.Env = env

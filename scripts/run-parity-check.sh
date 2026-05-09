@@ -1,19 +1,13 @@
 #!/usr/bin/env bash
 # scripts/run-parity-check.sh — m19 run-level parity gate.
 #
-# Compares the Go `tekhton run` path against the legacy bash entry point
-# across the ten scenarios named in m19 §"Goal 7 — Parity gate":
+# Structural smoke test for the m19 Go/bash seam. Four checks:
 #
-#   1. --task happy path
-#   2. --task with build-gate retry
-#   3. --task with review rework
-#   4. --complete --task succeeding on attempt 1
-#   5. --complete --task succeeding on attempt 3 (transient retries)
-#   6. --complete --task hitting MAX_PIPELINE_ATTEMPTS (STUCK)
-#   7. --complete --task hitting AUTONOMOUS_TIMEOUT
-#   8. --milestone m99 --complete (auto-advance off)
-#   9. --resume after SIGINT mid-attempt
-#  10. --human driving a run from HUMAN_NOTES.md
+#   1. Go binary builds and `tekhton run --help` exposes all documented flags.
+#   2. `tekhton.sh --help` advertises the legacy bash flag set.
+#   3. Legacy orchestration function names are absent from lib/, stages/, tekhton.sh.
+#   4. Deleted bash files (orchestrate_main.sh, orchestrate_state.sh) are not in
+#      git's index.
 #
 # The check is a structural smoke test in this milestone — full byte-for-byte
 # comparison of RUN_SUMMARY.json / PIPELINE_STATE.json / CAUSAL_LOG.jsonl

@@ -207,7 +207,7 @@ func TestRunCompleteLoopExit127BoundedByMaxAttempts(t *testing.T) {
 		t.Fatalf("disposition: got %q want failure", res.Disposition)
 	}
 	if got := atomic.LoadInt32(&fp.calls); got != 1 {
-		t.Fatalf("pipeline invoked %d times; structural failure must not retry (want 1, much less than MAX_TRANSIENT_RETRIES+1=4)", got)
+		t.Fatalf("pipeline invoked %d times; structural failure must not retry (want 1)", got)
 	}
 	if res.ErrorClass != proto.StageIntake {
 		t.Fatalf("error_class: got %q want intake", res.ErrorClass)

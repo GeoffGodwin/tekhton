@@ -132,11 +132,12 @@ var DefaultLibHelpers = []string{
 }
 
 // DefaultStageDefs is the canonical name → definition mapping. Helpers lists
-// stage-specific lib/*.sh files beyond DefaultLibHelpers; in the legacy
-// tekhton.sh the same files were sourced globally (lines 962-978), so even
-// stages with empty Helpers run inside an environment that includes them via
-// DefaultLibHelpers — these lists call out the ones tied to a single stage
-// for documentation, not as gates.
+// stage-specific lib/*.sh files beyond DefaultLibHelpers. For stages with a
+// non-empty Helpers list (intake, security, tester, docs) those files are
+// functionally required: the stage scripts call functions defined in them
+// (e.g. _intake_get_milestone_content from lib/intake_helpers.sh) and the
+// subprocess will exit 127 if they are not sourced. Stages with empty
+// Helpers (coder, review, cleanup) run entirely off DefaultLibHelpers.
 var DefaultStageDefs = map[string]StageDef{
 	proto.StageIntake: {
 		Script: "stages/intake.sh",

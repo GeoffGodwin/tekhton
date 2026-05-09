@@ -70,6 +70,10 @@ func newRunCmd() *cobra.Command {
 				res    *proto.RunResultV1
 				runErr error
 			)
+			// NOTE: --dry-run is accepted by the flag set and stored in
+			// req.DryRun, but no dispatch branch consumes it yet — every path
+			// below invokes agents for real. Wiring the flag to a preview-only
+			// pipeline path is deferred to Phase 5 / a later milestone.
 			switch {
 			case resumeFlag:
 				res, runErr = r.Resume(ctx)

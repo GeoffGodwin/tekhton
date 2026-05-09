@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-05-09 04:21:36
+Generated: 2026-05-09 10:09:39
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [LOW] [category:A03] [adapter.go:369-380] fixable:yes — `buildBashScript` uses Go `%q` to double-quote `tekhtonHome`, `projectDir`, and `scriptPath` in the generated bash script. Go's `%q` does not escape bash metacharacters (`$`, backticks); a path such as `/tmp/$(id)` would trigger command substitution when bash evaluates the script. In production these values come from trusted CLI flags (`--tekhton-home`, `--project-dir`), but if either field is ever sourced from a config file or other partially-trusted input the exposure escalates. Fix: switch to single-quoted bash strings with `'` → `'\''` escaping (immune to `$` and backtick expansion).

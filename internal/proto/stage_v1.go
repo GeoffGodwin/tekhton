@@ -87,13 +87,29 @@ var ErrInvalidStageRequest = errors.New("stage request: invalid")
 // ErrInvalidStageResult is returned by Validate when the envelope is malformed.
 var ErrInvalidStageResult = errors.New("stage result: invalid")
 
+// KnownStages enumerates every stage constant declared above. Callers that
+// need to range over the canonical set (e.g. coverage assertions in the
+// stagerunner registry) should iterate over this slice rather than hardcoding
+// their own list — adding a new Stage* constant only requires updating this
+// slice and IsKnownStage stays in sync via the same source of truth.
+var KnownStages = []string{
+	StageIntake,
+	StageCoder,
+	StageSecurity,
+	StageReview,
+	StageTester,
+	StageCleanup,
+	StageDocs,
+}
+
 // IsKnownStage reports whether name matches one of the stage constants above.
 // The Go runner uses this to gate the stage definition lookup; bash callers
 // validate via the stage tail block.
 func IsKnownStage(name string) bool {
-	switch name {
-	case StageIntake, StageCoder, StageSecurity, StageReview, StageTester, StageCleanup, StageDocs:
-		return true
+	for _, s := range KnownStages {
+		if s == name {
+			return true
+		}
 	}
 	return false
 }

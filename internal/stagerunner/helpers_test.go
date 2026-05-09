@@ -134,20 +134,14 @@ JSON
 	}
 }
 
-// TestDefaultStageDefsCoverage asserts every stage in proto.IsKnownStage has a
+// TestDefaultStageDefsCoverage asserts every stage in proto.KnownStages has a
 // definition in DefaultStageDefs — keeps the registry in sync with the proto
 // vocabulary so a new StageX constant can't ship without a script mapping.
+// Ranges over proto.KnownStages (the canonical source) rather than a local
+// copy so adding a new constant fails this test until DefaultStageDefs grows
+// the corresponding entry.
 func TestDefaultStageDefsCoverage(t *testing.T) {
-	stages := []string{
-		proto.StageIntake,
-		proto.StageCoder,
-		proto.StageSecurity,
-		proto.StageReview,
-		proto.StageTester,
-		proto.StageCleanup,
-		proto.StageDocs,
-	}
-	for _, s := range stages {
+	for _, s := range proto.KnownStages {
 		def, ok := DefaultStageDefs[s]
 		if !ok {
 			t.Errorf("DefaultStageDefs missing stage %q", s)

@@ -114,16 +114,6 @@ func (a *BashAdapter) stageDefFor(stage string) (StageDef, bool) {
 	return StageDef{}, false
 }
 
-// scriptFor returns the script path for a stage. Retained for tests that
-// exercise the resolution path; new code should prefer stageDefFor.
-func (a *BashAdapter) scriptFor(stage string) (string, bool) {
-	d, ok := a.stageDefFor(stage)
-	if !ok {
-		return "", false
-	}
-	return d.Script, true
-}
-
 // libHelpers returns the common base helper list. nil means use
 // DefaultLibHelpers; explicit []string{} means source nothing.
 func (a *BashAdapter) libHelpers() []string {
