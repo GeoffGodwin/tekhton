@@ -2822,6 +2822,22 @@ _run_fix_nonblockers_loop() {
 
         log "Fix-nonblockers pass ${nb_attempt} complete."
     done
+
+    # Post-loop refresh of action-items state. Every loop exit path
+    # (break-on-zero, FIX_NONBLOCKERS_MAX_PASSES, AUTONOMOUS_TIMEOUT,
+    # usage threshold) skips a final finalize_run, so the dashboard's
+    # action_items.js and the terminal "Action Items" banner still
+    # reflect the count emitted/printed during the previous pass — which
+    # was taken before the last pass's resolution had fully settled. Re-emit
+    # and re-print here so both surfaces show the post-loop count. Each
+    # call is guarded with declare -f so this stays safe when the loop is
+    # exercised by tests that don't load the full finalize stack.
+    if declare -f emit_dashboard_action_items &>/dev/null; then
+        emit_dashboard_action_items 2>/dev/null || true
+    fi
+    if declare -f _print_action_items &>/dev/null; then
+        _print_action_items
+    fi
 }
 
 # _run_fix_drift_loop — Force architect audit to resolve drift observations.
