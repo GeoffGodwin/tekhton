@@ -88,8 +88,8 @@ MILESTONE_ARCHIVE.md
 .claude/dashboard/
 .claude/watchtower_inbox/
 
-# SDI cache (auto-generated, do not commit)
-.sdi/cache/
+# SDIVI cache (auto-generated, do not commit)
+.sdivi/cache/
 
 # Go build artifacts (V4)
 bin/

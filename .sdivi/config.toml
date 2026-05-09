@@ -1,0 +1,46 @@
+[core]
+languages = "auto"
+exclude = [
+  "**/vendor/**",
+  "**/node_modules/**",
+  "**/__pycache__/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/target/**",
+  "**/.git/**",
+]
+random_seed = 42
+
+[snapshots]
+dir = ".sdivi/snapshots"
+retention = 100
+
+[boundaries]
+spec_file = ".sdivi/boundaries.yaml"
+leiden_gamma = 1.0
+stability_threshold = 3
+weighted_edges = false
+
+[patterns]
+categories = "auto"
+min_pattern_nodes = 5
+scope_exclude = []
+
+[thresholds]
+pattern_entropy_rate = 2.0
+convention_drift_rate = 3.0
+coupling_delta_rate = 0.15
+boundary_violation_rate = 2.0
+
+[change_coupling]
+min_frequency = 0.6
+history_depth = 500
+
+[output]
+format = "text"
+color = "auto"
+
+[determinism]
+enforce_btree_order = true
+
+[bindings]
