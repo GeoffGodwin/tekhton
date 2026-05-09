@@ -47,18 +47,15 @@ FAKE_HOME=$(mktemp -d)
 FAKE_PROJ=$(mktemp -d)
 trap 'rm -rf "$FAKE_HOME" "$FAKE_PROJ"' EXIT
 
-mkdir -p "$FAKE_HOME/lib" "$FAKE_HOME/stages"
+mkdir -p "$FAKE_HOME/stages"
 
-# Real stage_envelope.sh + a no-op common.sh.
-cp "${TEKHTON_HOME_REAL}/lib/stage_envelope.sh" "$FAKE_HOME/lib/stage_envelope.sh"
-cat > "$FAKE_HOME/lib/common.sh" <<'COMMON'
-# stub common.sh
-log() { :; }
-warn() { :; }
-error() { echo "$@" >&2; }
-success() { :; }
-header() { :; }
-COMMON
+# Use the real lib/ directory so DefaultLibHelpers (and per-stage helpers
+# like lib/intake_helpers.sh) resolve. We override only stages/ with stubs;
+# lib/ is the production environment a stage script expects to run inside.
+cp -r "${TEKHTON_HOME_REAL}/lib" "$FAKE_HOME/lib"
+# Real platforms/_base.sh is sourced by DefaultLibHelpers.
+mkdir -p "$FAKE_HOME/platforms"
+cp "${TEKHTON_HOME_REAL}/platforms/_base.sh" "$FAKE_HOME/platforms/_base.sh"
 
 # Stub intake stage. Writes envelope manually so we don't need the wrapper.
 cat > "$FAKE_HOME/stages/intake.sh" <<'INTAKE'

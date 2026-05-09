@@ -88,7 +88,7 @@ var ErrInvalidStageRequest = errors.New("stage request: invalid")
 var ErrInvalidStageResult = errors.New("stage result: invalid")
 
 // IsKnownStage reports whether name matches one of the stage constants above.
-// The Go runner uses this to gate the StageScript map lookup; bash callers
+// The Go runner uses this to gate the stage definition lookup; bash callers
 // validate via the stage tail block.
 func IsKnownStage(name string) bool {
 	switch name {

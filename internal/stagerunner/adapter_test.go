@@ -12,6 +12,25 @@ import (
 	"github.com/geoffgodwin/tekhton/internal/proto"
 )
 
+// newAdapter builds an adapter rooted at home/proj with no extra lib helpers
+// sourced — the unit tests below stub only common.sh and stage_envelope.sh,
+// so we explicitly opt out of the production DefaultLibHelpers list and the
+// per-stage Helpers slices in DefaultStageDefs (both sets reference lib/*.sh
+// files the harness does not write). New tests that exercise helper sourcing
+// override Stages explicitly.
+func newAdapter(home, proj string) *BashAdapter {
+	stages := make(map[string]StageDef, len(DefaultStageDefs))
+	for k, v := range DefaultStageDefs {
+		stages[k] = StageDef{Script: v.Script}
+	}
+	return &BashAdapter{
+		TekhtonHome: home,
+		ProjectDir:  proj,
+		LibHelpers:  []string{},
+		Stages:      stages,
+	}
+}
+
 // stageHarness writes a fake TekhtonHome layout under t.TempDir() with:
 //   - lib/common.sh and lib/stage_envelope.sh (no-op stubs)
 //   - stages/<name>.sh defining run_stage_<name>
@@ -61,7 +80,7 @@ JSON
 	home, proj := stageHarness(t, "intake", body)
 	resultPath := filepath.Join(proj, "result.json")
 
-	a := &BashAdapter{TekhtonHome: home, ProjectDir: proj}
+	a := newAdapter(home, proj)
 	req := &proto.StageRequestV1{
 		Proto:      proto.StageRequestProtoV1,
 		Stage:      proto.StageIntake,
@@ -88,7 +107,7 @@ func TestBashAdapterMissingResultFile(t *testing.T) {
 	home, proj := stageHarness(t, "intake", body)
 	resultPath := filepath.Join(proj, "result.json")
 
-	a := &BashAdapter{TekhtonHome: home, ProjectDir: proj}
+	a := newAdapter(home, proj)
 	req := &proto.StageRequestV1{
 		Proto:      proto.StageRequestProtoV1,
 		Stage:      proto.StageIntake,
@@ -117,7 +136,7 @@ func TestBashAdapterSubprocessError(t *testing.T) {
 }
 `
 	home, proj := stageHarness(t, "intake", body)
-	a := &BashAdapter{TekhtonHome: home, ProjectDir: proj}
+	a := newAdapter(home, proj)
 	req := &proto.StageRequestV1{
 		Proto:      proto.StageRequestProtoV1,
 		Stage:      proto.StageIntake,
@@ -136,7 +155,7 @@ func TestBashAdapterSubprocessError(t *testing.T) {
 }
 
 func TestBashAdapterUnknownStage(t *testing.T) {
-	// scriptFor's fallback to DefaultStageScripts means we cannot reach
+	// scriptFor's fallback to DefaultStageDefs means we cannot reach
 	// ErrUnknownStage by passing a known stage name; the only way is via
 	// scriptFor returning false directly for an unknown stage. The Run path
 	// would reject that earlier in StageRequestV1.Validate (IsKnownStage).
@@ -155,7 +174,7 @@ JSON
 }
 `
 	home, proj := stageHarness(t, "intake", body)
-	a := &BashAdapter{TekhtonHome: home, ProjectDir: proj}
+	a := newAdapter(home, proj)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -178,7 +197,7 @@ JSON
 }
 `
 	home, proj := stageHarness(t, "intake", body)
-	a := &BashAdapter{TekhtonHome: home, ProjectDir: proj}
+	a := newAdapter(home, proj)
 	req := &proto.StageRequestV1{
 		Proto:        proto.StageRequestProtoV1,
 		Stage:        proto.StageIntake,
@@ -205,7 +224,8 @@ JSON
 	home, proj := stageHarness(t, "intake", body)
 	logFile := filepath.Join(proj, "stage.log")
 	var buf bytes.Buffer
-	a := &BashAdapter{TekhtonHome: home, ProjectDir: proj, LogWriter: &buf}
+	a := newAdapter(home, proj)
+	a.LogWriter = &buf
 	req := &proto.StageRequestV1{
 		Proto:      proto.StageRequestProtoV1,
 		Stage:      proto.StageIntake,
@@ -233,7 +253,7 @@ func TestBashAdapterInvalidResult(t *testing.T) {
 }
 `
 	home, proj := stageHarness(t, "intake", body)
-	a := &BashAdapter{TekhtonHome: home, ProjectDir: proj}
+	a := newAdapter(home, proj)
 	req := &proto.StageRequestV1{
 		Proto:      proto.StageRequestProtoV1,
 		Stage:      proto.StageIntake,
@@ -266,7 +286,7 @@ func TestScriptForFallback(t *testing.T) {
 	if _, ok := a.scriptFor("nope"); ok {
 		t.Fatalf("scriptFor should reject unknown")
 	}
-	a.StageScript = map[string]string{proto.StageCoder: "stages/custom.sh"}
+	a.Stages = map[string]StageDef{proto.StageCoder: {Script: "stages/custom.sh"}}
 	p, ok := a.scriptFor(proto.StageCoder)
 	if !ok || p != "stages/custom.sh" {
 		t.Fatalf("override path lost: %q ok=%v", p, ok)

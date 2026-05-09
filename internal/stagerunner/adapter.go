@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
@@ -52,9 +53,11 @@ type Adapter interface {
 	Run(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResultV1, error)
 }
 
-// BashAdapter exec's a bash subprocess that sources lib/common.sh and the
-// matching stage script, then calls run_stage_<name>. The stage tail block
-// (lib/stage_envelope.sh) writes the result envelope.
+// BashAdapter exec's a bash subprocess that recreates the legacy V3 shell
+// environment (lib/common.sh + DefaultLibHelpers + per-stage Helpers +
+// lib/stage_envelope.sh), sources the matching stage script, then calls
+// run_stage_<name>. The stage tail block (lib/stage_envelope.sh) writes the
+// result envelope.
 type BashAdapter struct {
 	// TekhtonHome is the Tekhton repo root (where lib/ and stages/ live).
 	TekhtonHome string
@@ -62,9 +65,15 @@ type BashAdapter struct {
 	// ProjectDir is the target project. Becomes the subprocess CWD.
 	ProjectDir string
 
-	// StageScript maps a stage name to the script path relative to
-	// TekhtonHome (e.g. "stages/coder.sh"). Defaults to DefaultStageScripts.
-	StageScript map[string]string
+	// Stages maps a stage name to its definition (script path + extra
+	// per-stage lib helpers). Defaults to DefaultStageDefs.
+	Stages map[string]StageDef
+
+	// LibHelpers overrides the common base set of lib/*.sh files sourced for
+	// every stage. nil (the zero value) means use DefaultLibHelpers; pass an
+	// empty slice ([]string{}) to source nothing — useful in tests with a
+	// stub harness that only contains common.sh and stage_envelope.sh.
+	LibHelpers []string
 
 	// TekhtonBin is the absolute path to the tekhton binary the bash side
 	// shells back into via `tekhton stage emit`. Defaults to "tekhton" on
@@ -84,19 +93,6 @@ type BashAdapter struct {
 	LogWriter io.Writer
 }
 
-// DefaultStageScripts is the canonical name → script mapping. Add new
-// stages here; do not let callers populate StageScript manually unless they
-// need to override one entry.
-var DefaultStageScripts = map[string]string{
-	proto.StageIntake:   "stages/intake.sh",
-	proto.StageCoder:    "stages/coder.sh",
-	proto.StageSecurity: "stages/security.sh",
-	proto.StageReview:   "stages/review.sh",
-	proto.StageTester:   "stages/tester.sh",
-	proto.StageCleanup:  "stages/cleanup.sh",
-	proto.StageDocs:     "stages/docs.sh",
-}
-
 // stageEntryFunc names the bash function each stage script defines for the
 // runner to call. Same identifier across stages (run_stage_<name>) so this
 // stays mechanical.
@@ -104,18 +100,37 @@ func stageEntryFunc(stage string) string {
 	return "run_stage_" + stage
 }
 
-// scriptFor returns the script path for a stage, falling back to
-// DefaultStageScripts when StageScript is nil or missing the entry.
-func (a *BashAdapter) scriptFor(stage string) (string, bool) {
-	if a.StageScript != nil {
-		if p, ok := a.StageScript[stage]; ok && p != "" {
-			return p, true
+// stageDefFor returns the definition for a stage, falling back to
+// DefaultStageDefs when Stages is nil or missing the entry.
+func (a *BashAdapter) stageDefFor(stage string) (StageDef, bool) {
+	if a.Stages != nil {
+		if d, ok := a.Stages[stage]; ok && d.Script != "" {
+			return d, true
 		}
 	}
-	if p, ok := DefaultStageScripts[stage]; ok {
-		return p, true
+	if d, ok := DefaultStageDefs[stage]; ok {
+		return d, true
 	}
-	return "", false
+	return StageDef{}, false
+}
+
+// scriptFor returns the script path for a stage. Retained for tests that
+// exercise the resolution path; new code should prefer stageDefFor.
+func (a *BashAdapter) scriptFor(stage string) (string, bool) {
+	d, ok := a.stageDefFor(stage)
+	if !ok {
+		return "", false
+	}
+	return d.Script, true
+}
+
+// libHelpers returns the common base helper list. nil means use
+// DefaultLibHelpers; explicit []string{} means source nothing.
+func (a *BashAdapter) libHelpers() []string {
+	if a.LibHelpers == nil {
+		return DefaultLibHelpers
+	}
+	return a.LibHelpers
 }
 
 // Run executes the stage and returns the parsed envelope. Lifecycle:
@@ -138,13 +153,13 @@ func (a *BashAdapter) Run(ctx context.Context, req *proto.StageRequestV1) (*prot
 		return nil, err
 	}
 
-	script, ok := a.scriptFor(req.Stage)
+	def, ok := a.stageDefFor(req.Stage)
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownStage, req.Stage)
 	}
-	scriptPath := script
+	scriptPath := def.Script
 	if !filepath.IsAbs(scriptPath) {
-		scriptPath = filepath.Join(a.TekhtonHome, script)
+		scriptPath = filepath.Join(a.TekhtonHome, def.Script)
 	}
 
 	requestFile, err := writeRequestFile(req)
@@ -166,20 +181,7 @@ func (a *BashAdapter) Run(ctx context.Context, req *proto.StageRequestV1) (*prot
 		bashBin = "/bin/bash"
 	}
 
-	bashScript := fmt.Sprintf(
-		`set -euo pipefail
-		export TEKHTON_HOME=%q
-		cd %q
-		source "$TEKHTON_HOME/lib/common.sh"
-		source "$TEKHTON_HOME/lib/stage_envelope.sh"
-		source %q
-		%s
-		`,
-		a.TekhtonHome,
-		a.ProjectDir,
-		scriptPath,
-		stageEntryFunc(req.Stage),
-	)
+	bashScript := buildBashScript(a.TekhtonHome, a.ProjectDir, scriptPath, req.Stage, a.libHelpers(), def.Helpers)
 
 	cmd := exec.CommandContext(ctx, bashBin, "-c", bashScript)
 	cmd.Dir = a.ProjectDir
@@ -346,6 +348,49 @@ func readResultFile(path string) (*proto.StageResultV1, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidResult, err)
 	}
 	return res, nil
+}
+
+// buildBashScript renders the bash wrapper that recreates the V3 environment
+// for a single stage call:
+//
+//  1. lib/common.sh — colors, log/warn/error/header/success.
+//  2. DefaultLibHelpers (or override) — the global lib/*.sh source list from
+//     legacy tekhton.sh; stage scripts call into many of these helpers.
+//  3. Per-stage Helpers — stage-specific lib/*.sh files (e.g. intake_helpers.sh).
+//  4. lib/stage_envelope.sh — emit_stage_envelope used by the stage tail.
+//  5. The stage script itself.
+//  6. run_stage_<name> — the stage entry point.
+//
+// Paths in libHelpers / stageHelpers are resolved relative to TEKHTON_HOME
+// when not absolute. Quoting via %q escapes any special characters safely.
+func buildBashScript(tekhtonHome, projectDir, scriptPath, stage string, libHelpers, stageHelpers []string) string {
+	var b strings.Builder
+	b.WriteString("set -euo pipefail\n")
+	fmt.Fprintf(&b, "export TEKHTON_HOME=%q\n", tekhtonHome)
+	fmt.Fprintf(&b, "cd %q\n", projectDir)
+	b.WriteString(`source "$TEKHTON_HOME/lib/common.sh"` + "\n")
+	for _, h := range libHelpers {
+		writeSourceLine(&b, tekhtonHome, h)
+	}
+	for _, h := range stageHelpers {
+		writeSourceLine(&b, tekhtonHome, h)
+	}
+	b.WriteString(`source "$TEKHTON_HOME/lib/stage_envelope.sh"` + "\n")
+	fmt.Fprintf(&b, "source %q\n", scriptPath)
+	fmt.Fprintf(&b, "%s\n", stageEntryFunc(stage))
+	return b.String()
+}
+
+// writeSourceLine appends a `source <path>` line to b. Relative paths are
+// resolved against tekhtonHome; absolute paths are sourced as-is.
+func writeSourceLine(b *strings.Builder, tekhtonHome, path string) {
+	if path == "" {
+		return
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(tekhtonHome, path)
+	}
+	fmt.Fprintf(b, "source %q\n", path)
 }
 
 // failResult builds a synthetic stage.result.v1 with verdict=fail when the
