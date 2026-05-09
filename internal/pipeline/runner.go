@@ -382,14 +382,20 @@ func shouldShortCircuit(verdict string) bool {
 
 // outcomeFor maps a terminal verdict to the corresponding attempt outcome
 // constant from the m12 envelope vocabulary.
+//
+// Only "rework" routes to FailureRetry — that is the sole verdict the outer
+// loop can recover from by re-running the pipeline. Every other failure
+// (including "fail", which covers structural subprocess crashes like exit
+// 127) routes to FailureSaveExit so RunCompleteLoop terminates instead of
+// burning the autonomous_timeout on an unrecoverable error.
 func outcomeFor(verdict string) string {
 	switch verdict {
 	case proto.VerdictPass, proto.VerdictSkip:
 		return proto.AttemptOutcomeSuccess
-	case proto.VerdictBlock:
-		return proto.AttemptOutcomeFailureSaveExit
+	case proto.VerdictRework:
+		return proto.AttemptOutcomeFailureRetry
 	}
-	return proto.AttemptOutcomeFailureRetry
+	return proto.AttemptOutcomeFailureSaveExit
 }
 
 // lastBreakdown returns a pointer to the last entry in s, or nil if empty.

@@ -170,6 +170,82 @@ func TestRunCompleteLoopAcceptancePassResetsCounter(t *testing.T) {
 	}
 }
 
+// TestRunCompleteLoopExit127BoundedByMaxAttempts is the regression test for
+// the 147-retry bug recorded in HUMAN_NOTES.md. A stage subprocess that
+// exits 127 ("command not found") is a deterministic structural failure —
+// the outer loop must not treat it as recoverable. The pipeline reports
+// AttemptOutcomeFailureSaveExit (per the outcomeFor("fail") mapping), so
+// RunCompleteLoop terminates after a single iteration and surfaces the
+// structural error class, instead of looping until the autonomous_timeout
+// burns through ~150 iterations.
+//
+// MAX_TRANSIENT_RETRIES is the supervisor-level agent-call retry budget
+// (default 3); for a structural stage failure the loop must give up well
+// before MAX_TRANSIENT_RETRIES + 1 invocations.
+func TestRunCompleteLoopExit127BoundedByMaxAttempts(t *testing.T) {
+	req := validReq(t)
+	// Defensive: even if maxAttempts somehow defaulted higher, the structural-
+	// failure routing in pipeline.outcomeFor must terminate the loop after
+	// the first failed attempt.
+	req.MaxPipelineAttempts = 100
+	fp := &fakePipeline{
+		results: []*proto.PipelineAttemptResultV1{
+			{
+				Outcome:       proto.AttemptOutcomeFailureSaveExit,
+				Verdict:       proto.VerdictFail,
+				BlockingStage: proto.StageIntake,
+				Error:         "stagerunner: subprocess failed\nexit status 127",
+			},
+		},
+	}
+	r := New(fp)
+	res, err := r.RunCompleteLoop(context.Background(), req)
+	if err != nil {
+		t.Fatalf("RunCompleteLoop: %v", err)
+	}
+	if res.Disposition != proto.RunDispositionFailure {
+		t.Fatalf("disposition: got %q want failure", res.Disposition)
+	}
+	if got := atomic.LoadInt32(&fp.calls); got != 1 {
+		t.Fatalf("pipeline invoked %d times; structural failure must not retry (want 1, much less than MAX_TRANSIENT_RETRIES+1=4)", got)
+	}
+	if res.ErrorClass != proto.StageIntake {
+		t.Fatalf("error_class: got %q want intake", res.ErrorClass)
+	}
+	if res.Recovery != "save_exit" {
+		t.Fatalf("recovery: got %q want save_exit", res.Recovery)
+	}
+}
+
+// TestRunCompleteLoopRepeatedSaveExitDoesNotIterate is the paranoid variant
+// of the above: even when the fake pipeline is willing to keep returning
+// FailureSaveExit, the outer loop must terminate after one attempt rather
+// than draining the result list.
+func TestRunCompleteLoopRepeatedSaveExitDoesNotIterate(t *testing.T) {
+	req := validReq(t)
+	req.MaxPipelineAttempts = 100
+	results := make([]*proto.PipelineAttemptResultV1, 100)
+	for i := range results {
+		results[i] = &proto.PipelineAttemptResultV1{
+			Outcome:       proto.AttemptOutcomeFailureSaveExit,
+			Verdict:       proto.VerdictFail,
+			BlockingStage: proto.StageIntake,
+		}
+	}
+	fp := &fakePipeline{results: results}
+	r := New(fp)
+	res, err := r.RunCompleteLoop(context.Background(), req)
+	if err != nil {
+		t.Fatalf("RunCompleteLoop: %v", err)
+	}
+	if got := atomic.LoadInt32(&fp.calls); got != 1 {
+		t.Fatalf("pipeline invoked %d times; save_exit must terminate immediately", got)
+	}
+	if res.Disposition != proto.RunDispositionFailure {
+		t.Fatalf("disposition: got %q want failure", res.Disposition)
+	}
+}
+
 func TestRunCompleteLoopWritesResult(t *testing.T) {
 	req := validReq(t)
 	fp := &fakePipeline{

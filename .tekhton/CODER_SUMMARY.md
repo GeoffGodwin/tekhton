@@ -1,140 +1,112 @@
 # Coder Summary
+
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-Fixed the bug described in the task — Go `BashAdapter.Run` was sourcing only
-`lib/common.sh` and `lib/stage_envelope.sh`, so any `run_stage_<name>` call
-that touched a helper from `lib/intake_helpers.sh`, `lib/security_helpers.sh`,
-`lib/docs_agent.sh`, etc. exited 127 (`command not found`).
+Bounded the unbounded retry loop reported in HUMAN_NOTES (`stages/intake.sh: line 73`
+repeated 147 times in `intake.log` after a single deterministic exit-127 crash).
 
-Implemented the recommended option (b) — per-stage helper allowlist — but
-extended it with a shared `DefaultLibHelpers` base set that mirrors the V3
-global source block in `tekhton-legacy.sh` (lines 846-959). Each `StageDef`
-adds stage-specific extras on top.
+The structural fix is one routing change in `internal/pipeline/runner.go`:
+`outcomeFor()` previously returned `AttemptOutcomeFailureRetry` for every verdict
+that wasn't pass/skip/block — including `verdict=fail`, which is what the
+`stagerunner.BashAdapter` synthesizes when a bash stage subprocess crashes
+without writing its result envelope (`internal/stagerunner/adapter.go:398-407`).
+That FailureRetry signal flowed up through `pipeline.RunAttempt` into
+`runner.RunCompleteLoop`, whose failure-path branch at
+`internal/runner/complete.go:155-158` continues looping on FailureRetry. With
+the synthesized fail being treated as recoverable, `RunCompleteLoop` would burn
+attempts in a tight loop until the autonomous-timeout bound finally tripped.
 
-- `internal/stagerunner/helpers.go` (NEW) — defines `StageDef{Script, Helpers}`,
-  `DefaultLibHelpers` (the shared base derived from legacy global sources), and
-  `DefaultStageDefs` (per-stage definitions with extras like `intake_helpers.sh`,
-  `security_helpers.sh`, `docs_agent.sh`, the `test_audit_*.sh` set).
-- `internal/stagerunner/adapter.go` — replaced `StageScript map[string]string`
-  with `Stages map[string]StageDef`; added `LibHelpers []string` for overriding
-  the base list (empty slice opts out, used in unit tests). Replaced the inline
-  bash heredoc with `buildBashScript()` that emits ordered `source` lines:
-  common.sh → DefaultLibHelpers → per-stage Helpers → stage_envelope.sh →
-  stage script → `run_stage_<name>`. Source order matters because some helpers
-  depend on others being present at source time (e.g. `failure_context.sh` →
-  `diagnose_output.sh`).
-- `internal/stagerunner/adapter_test.go` — updated existing tests to use a
-  new `newAdapter()` helper that strips both `LibHelpers` and per-stage
-  `Helpers` (the test fixture only stubs `common.sh` + `stage_envelope.sh`).
-  Updated `TestScriptForFallback` to use the new `Stages` field.
-- `internal/stagerunner/helpers_test.go` (NEW) — six new tests covering:
-  - `TestBashAdapterMissingHelperFailsOnce` — regression for the 147-retry
-    bug at the adapter layer: an exit-127 stage must produce a single
-    `ErrSubprocess` and the missing-function name must appear at most twice
-    in the log (one bash error, optional shell echo).
-  - `TestBashAdapterPerStageHelperSourced` — proves the fix: a stage that
-    calls into `lib/intake_helpers.sh` succeeds when the helper is listed
-    in `Stages[<name>].Helpers`.
-  - `TestBashAdapterLibHelpersSourced` — same proof at the common-base layer
-    (the `LibHelpers` field).
-  - `TestDefaultStageDefsCoverage` — every `proto.IsKnownStage` value has a
-    `DefaultStageDefs` entry with non-empty `Script`.
-  - `TestStageDefForOverridePreservesHelpers` — overriding `Stages` carries
-    `Helpers` through to `stageDefFor`.
-  - `TestBuildBashScriptOrdering` — strict source-order assertion for
-    common → libHelpers → stageHelpers → envelope → script.
-- `internal/proto/stage_v1.go` — updated stale doc comment that referenced
-  the old `StageScript` field name.
+The fix inverts the default: only `verdict=rework` routes to FailureRetry; every
+other terminal verdict (`fail`, `block`, and any unrecognized value) routes to
+FailureSaveExit. A structural subprocess crash is by definition not recoverable
+by re-running, so the outer loop now terminates after one attempt and surfaces
+the structural error class via `BlockingStage`.
+
+### Investigation findings (the bug listed three suspects to check)
+
+1. **`supervisor.classifyExit` mapping exit 127 to transient.** No such
+   function exists. `internal/supervisor/retry.go` is for AGENT calls (the
+   Claude CLI subprocess), not stage subprocesses. The supervisor classifies
+   `AgentResultV1.Outcome` strings, never raw bash exit codes. `errors.go`
+   sentinels carry an explicit `Transient` bool — none of the structural
+   subcategories (`null_run`, `max_turns`, `null_activity_timeout`,
+   `activity_timeout`, the entire ENVIRONMENT/PIPELINE families) are marked
+   transient. Exit 127 from a stage bash subprocess never enters this layer.
+
+2. **`MAX_TRANSIENT_RETRIES` (default 3) being respected.** The cap is honored
+   by `supervisor.retryLoop` for agent calls, but again — that loop is for
+   Claude CLI invocations, not stage subprocesses. The 147-iteration log was
+   coming from above this layer, not below.
+
+3. **`orchestrate/recovery.go` re-entering the same handler.** `Classify`
+   already correctly returns `proto.RecoverySaveExit` for the unclassified-error
+   tail (recovery.go:106) and for ENVIRONMENT/PIPELINE/UPSTREAM categories.
+   It is also a parallel code path: it runs under `tekhton orchestrate
+   run-attempt`, not under `tekhton run`, which uses `runner.RunCompleteLoop`.
+   The actual loop hosting the bug was the runner's, not the orchestrator's.
+
+### Regression test coverage added
+
+- `TestRunnerStageFailRoutesToSaveExit` (`internal/pipeline/runner_test.go`):
+  asserts that when a non-coder stage emits `verdict=fail`, the per-attempt
+  result carries `FailureSaveExit` and downstream stages do not run.
+- `TestOutcomeForVerdictMapping` (`internal/pipeline/runner_test.go`):
+  pins the verdict→outcome contract end-to-end so a future refactor cannot
+  silently re-introduce the unbounded-retry routing.
+- `TestRunCompleteLoopExit127BoundedByMaxAttempts` (`internal/runner/complete_test.go`):
+  the exact scenario from HUMAN_NOTES — a fake pipeline that returns
+  `FailureSaveExit` for an exit-127 simulation, with `MaxPipelineAttempts=100`
+  to prove the cap is irrelevant: structural failure terminates after one
+  invocation, not 100.
+- `TestRunCompleteLoopRepeatedSaveExitDoesNotIterate` (`internal/runner/complete_test.go`):
+  paranoid variant — even when the fake pipeline is willing to keep emitting
+  FailureSaveExit, the outer loop must terminate after one attempt.
 
 ## Root Cause (bugs only)
 
-The Go `BashAdapter.Run` in `internal/stagerunner/adapter.go:169-182` built a
-bash wrapper that sourced only `lib/common.sh` and `lib/stage_envelope.sh`.
-Stage scripts under `stages/` declare their helper dependencies in `Expects:`
-headers — e.g. `stages/intake.sh:18` says `Expects: _intake_* helpers from
-lib/intake_helpers.sh`. Those helpers were not sourced. The legacy
-`tekhton-legacy.sh` worked because lines 846-987 sourced all helpers globally
-before sourcing any stage script.
-
-The 147-retry tight loop (Bug 2) is a pipeline-level concern that lives above
-the adapter — the adapter itself only invokes the subprocess once per
-`Run()` call. The new regression test asserts that contract so any future
-retry cap must live above the adapter, not within it.
+`outcomeFor()` in `internal/pipeline/runner.go` defaulted to `FailureRetry` for
+any verdict that wasn't pass/skip/block. That made `verdict=fail` (including
+the synthetic envelope `BashAdapter` writes for a crashing subprocess) look
+recoverable to `RunCompleteLoop`, which then iterated until the autonomous
+timeout. The 147 `command not found` lines were one BashAdapter invocation per
+outer-loop iteration, each resourcing the broken intake stage. The right
+mapping is the inverse: only `verdict=rework` is recoverable; everything else
+that isn't pass/skip terminates the outer loop with `FailureSaveExit`.
 
 ## Files Modified
 
-- `internal/stagerunner/adapter.go` — refactored to use `StageDef` + per-stage
-  helper lists; new `buildBashScript()` helper.
-- `internal/stagerunner/adapter_test.go` — updated all tests to `newAdapter()`;
-  updated `TestScriptForFallback` to use the new `Stages` field; updated stale
-  doc comment.
-- `internal/stagerunner/helpers.go` (NEW) — `StageDef`, `DefaultLibHelpers`,
-  `DefaultStageDefs`.
-- `internal/stagerunner/helpers_test.go` (NEW) — six regression / parity tests.
-- `internal/proto/stage_v1.go` — comment-only update for the `IsKnownStage`
-  doc comment that referenced the renamed map.
-- `tests/test_pipeline_runner.sh` — replaced the minimal `FAKE_HOME` (only
-  `lib/common.sh` + `lib/stage_envelope.sh`) with a `cp -r lib/` and a
-  `cp platforms/_base.sh` so `DefaultLibHelpers` resolves. The test still
-  uses stub stages — only the lib environment is now realistic.
+- `internal/pipeline/runner.go` — rewrote `outcomeFor()` so structural failures
+  route to FailureSaveExit; added a doc comment explaining why this matters.
+- `internal/pipeline/runner_test.go` — added two regression tests
+  (`TestRunnerStageFailRoutesToSaveExit`, `TestOutcomeForVerdictMapping`).
+- `internal/runner/complete_test.go` — added two regression tests
+  (`TestRunCompleteLoopExit127BoundedByMaxAttempts`,
+  `TestRunCompleteLoopRepeatedSaveExitDoesNotIterate`) covering the exact
+  scenario from HUMAN_NOTES.
 
 ## Docs Updated
 
-None — no public-surface changes. `BashAdapter` is internal-only
-(`internal/stagerunner`), and the only external consumers are
-`cmd/tekhton/run.go`, `cmd/tekhton/run_stage.go`, and `cmd/tekhton/pipeline.go`,
-none of which touch the renamed fields. ARCHITECTURE.md's stagerunner entry
-still describes the m18 contract accurately at the level of detail it tracks
-(envelope I/O, sentinel errors, scope discipline) — the per-stage helper list
-is below that level.
-
-## Architecture Change Proposals
-
-### Proposal 1 — `BashAdapter` recreates the legacy global source environment
-
-- **Current constraint**: `ARCHITECTURE.md` describes `BashAdapter.Run` as
-  exec'ing bash to "source `lib/common.sh` and `lib/stage_envelope.sh`" before
-  the stage script. That's the m18-as-shipped behavior.
-- **What triggered this**: Stage scripts were authored to run inside the
-  legacy `tekhton.sh` environment, which sources ~80 lib files globally. Only
-  sourcing `common.sh` left every stage one helper call away from exit 127.
-- **Proposed change**: The adapter now sources `DefaultLibHelpers` (the
-  legacy global block, ordered) plus per-stage `Helpers` extras before the
-  stage script. The list is overridable via `BashAdapter.LibHelpers` /
-  `BashAdapter.Stages` for tests and future stage-by-stage Go ports.
-- **Backward compatible**: Yes for callers (`cmd/tekhton/*.go` use the zero
-  value, which now sources the comprehensive list). The renamed
-  `StageScript` → `Stages` field has no external consumers.
-- **ARCHITECTURE.md update needed**: Yes — the `internal/stagerunner/` bullet
-  should mention `DefaultLibHelpers` and `DefaultStageDefs` and the source
-  order. Recommend the next milestone owner amend the bullet; the adapter's
-  godoc comments already describe the new contract precisely.
+None — no public-surface changes (no new CLI flags, exported APIs, config
+keys, or schemas). The change is a behavioral correction to an internal
+routing helper, fully covered by the new tests.
 
 ## Human Notes Status
 
-- COMPLETED: [BUG] **Failed bash subprocess retried 147 times in a tight
-  loop.** — Partially addressed via the regression test
-  `TestBashAdapterMissingHelperFailsOnce` which asserts the adapter does NOT
-  contribute extra invocations (the documented contract). The supervisor /
-  pipeline / orchestrate retry caps that the note investigates live above the
-  adapter and are out of scope for this task. The new test is the
-  load-bearing piece: future regressions in the adapter's single-invocation
-  contract surface here.
+- COMPLETED: [BUG] **Failed bash subprocess retried 147 times in a tight loop.**
+  `.claude/logs/intake.log` shows the same `stages/intake.sh: line 73:
+  _intake_get_milestone_content: command not found` line 147 times — a single
+  bash subprocess that should exit 127 immediately is being retried by the
+  orchestrator at machine speed with no apparent bound. (Fixed in
+  `internal/pipeline/runner.go::outcomeFor`; four regression tests added across
+  `internal/pipeline/runner_test.go` and `internal/runner/complete_test.go`.
+  Investigation confirmed the supervisor and orchestrator paths called out in
+  the note as suspects do not host the bug — see "Investigation findings"
+  above for the full reasoning chain.)
 - NOT_ADDRESSED: [BUG] At the end of a `--fix-nonblockers` run, the
   action-items summary prints `${NON_BLOCKING_LOG_FILE} — N accumulated
-  observation(s)` using the pre-run count… (Bug 3) — Out of scope for the
-  task description, which is strictly Bug 1 (Go BashAdapter helper sourcing).
-  Recorded for a future cleanup pass.
-- NOT_ADDRESSED: [POLISH] **m01/m02 milestone-doc cleanup pass.** — Doc-only
-  cleanup, not in this task's scope.
-
-## Observed Issues (out of scope)
-
-- The legacy `tekhton-legacy.sh` global source block at lines 846-987 is the
-  source-of-truth for `DefaultLibHelpers`. If a future commit adds or
-  reorders helpers in legacy, `internal/stagerunner/helpers.go` must mirror
-  the change. Recommend a parity test (`bash` enumerates the legacy block,
-  Go test compares to `DefaultLibHelpers`) — not added here to keep scope
-  tight.
+  observation(s)` using the pre-run count (out of scope — task scoped to the
+  exit-127 retry-loop bug).
+- NOT_ADDRESSED: [POLISH] **m01/m02 milestone-doc cleanup pass.** (out of
+  scope — task scoped to the exit-127 retry-loop bug).

@@ -369,6 +369,62 @@ func TestRunnerCleanupAndDocsStages(t *testing.T) {
 	}
 }
 
+// TestRunnerStageFailRoutesToSaveExit reproduces the exit-127 regression
+// from HUMAN_NOTES.md. When a non-coder stage emits verdict="fail" (or the
+// adapter synthesizes one for a structural subprocess crash), the
+// per-attempt result must carry AttemptOutcomeFailureSaveExit — not
+// FailureRetry — so RunCompleteLoop terminates instead of looping until
+// autonomous_timeout. The 147-iteration log was symptomatic of this routing
+// mistake: structural failures were being treated as recoverable.
+func TestRunnerStageFailRoutesToSaveExit(t *testing.T) {
+	adapter := &fakeAdapter{
+		sequence: []fakeOutcome{
+			{stage: proto.StageIntake, verdict: proto.VerdictFail, exitReason: "exit=127"},
+		},
+	}
+	r, _ := New(adapter, Options{ResultDir: t.TempDir()})
+	res, err := r.RunAttempt(context.Background(), newReq(proto.StageIntake, proto.StageCoder))
+	if err != nil {
+		t.Fatalf("RunAttempt: %v", err)
+	}
+	if res.Outcome != proto.AttemptOutcomeFailureSaveExit {
+		t.Fatalf("outcome: got %q want failure_save_exit (structural failure must NOT loop)", res.Outcome)
+	}
+	if res.Verdict != proto.VerdictFail {
+		t.Fatalf("verdict: got %q want fail", res.Verdict)
+	}
+	if res.BlockingStage != proto.StageIntake {
+		t.Fatalf("blocking_stage: got %q want intake", res.BlockingStage)
+	}
+	// The runner must NOT have advanced past the failed stage.
+	if len(adapter.calls) != 1 {
+		t.Fatalf("downstream stage ran after intake fail: %d calls", len(adapter.calls))
+	}
+}
+
+// TestOutcomeForVerdictMapping locks the outcomeFor contract so a future
+// edit cannot silently re-introduce the unbounded-retry bug. Only "rework"
+// is recoverable; everything that isn't pass/skip/rework terminates the
+// outer loop.
+func TestOutcomeForVerdictMapping(t *testing.T) {
+	cases := []struct {
+		verdict string
+		want    string
+	}{
+		{proto.VerdictPass, proto.AttemptOutcomeSuccess},
+		{proto.VerdictSkip, proto.AttemptOutcomeSuccess},
+		{proto.VerdictBlock, proto.AttemptOutcomeFailureSaveExit},
+		{proto.VerdictFail, proto.AttemptOutcomeFailureSaveExit},
+		{proto.VerdictRework, proto.AttemptOutcomeFailureRetry},
+		{"unrecognized_verdict", proto.AttemptOutcomeFailureSaveExit},
+	}
+	for _, c := range cases {
+		if got := outcomeFor(c.verdict); got != c.want {
+			t.Errorf("outcomeFor(%q) = %q, want %q", c.verdict, got, c.want)
+		}
+	}
+}
+
 func TestRunnerStageEnvForwarded(t *testing.T) {
 	adapter := &fakeAdapter{
 		sequence: []fakeOutcome{

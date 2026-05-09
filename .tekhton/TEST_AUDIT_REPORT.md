@@ -1,49 +1,34 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 1 file (tester_test.go), 6 test functions
+Tests audited: 2 files, 4 new test functions
 Verdict: PASS
-
-Freshness samples reviewed: cmd/tekhton/stage_test.go,
-internal/pipeline/gates_test.go, internal/pipeline/runner_test.go — all aligned
-with current codebase, no deleted-file orphans found (out of audit scope).
 
 ### Findings
 
-#### NAMING: Inconsistent atomic read for shared counter fields
-- File: internal/runner/tester_test.go:43, internal/runner/tester_test.go:70
-- Issue: `fh.finalizeCalls` (line 43) and `fp.calls` (line 70) are read via
-  plain int32 comparisons (`== 0`, `!= 0`). The rest of the runner test suite
-  reads the same fields through `atomic.LoadInt32` (runner_test.go:95,
-  complete_test.go:45). No goroutines are running at the read sites so the
-  reads are safe today, but the inconsistency complicates future edits that
-  introduce concurrency and will trigger a race detector warning if any such
-  change lands.
+#### NAMING: Misleading MAX_TRANSIENT_RETRIES reference in failure message
+- File: internal/runner/complete_test.go:210
+- Issue: The assertion error message reads "want 1, much less than MAX_TRANSIENT_RETRIES+1=4". MAX_TRANSIENT_RETRIES is the supervisor-level retry budget for Claude CLI agent calls (internal/supervisor/retry.go), an entirely separate path from the stage-subprocess routing exercised by this test. The CODER_SUMMARY explicitly confirmed those are distinct layers. A future developer debugging a regression at this assertion will be sent to the wrong subsystem; the correct upper bound for this path is 1, not 4.
 - Severity: LOW
-- Action: Replace `fh.finalizeCalls == 0` with
-  `atomic.LoadInt32(&fh.finalizeCalls) == 0` (line 43) and `fp.calls != 0`
-  with `atomic.LoadInt32(&fp.calls) != 0` (line 70) to match the pattern
-  in runner_test.go and complete_test.go.
+- Action: Replace the message with something like "pipeline invoked %d times; structural FailureSaveExit must not iterate (want 1)" — drop the MAX_TRANSIENT_RETRIES reference entirely.
 
-#### COVERAGE: TestResumeLegacyFormatError sets ambient fields irrelevant to the error path
-- File: internal/runner/tester_test.go:108-109
-- Issue: The test sets `r.ProjectDir = tmp` and `r.TekhtonHome = t.TempDir()`.
-  When the state file triggers `state.ErrLegacyFormat`, `Resume` returns the
-  error at resume.go:33 before `requestFromSnapshot` or `validateAndDefault`
-  are reached — the ambient fields have no effect on the outcome. The test
-  passes either way, so these assignments are currently misleading rather than
-  wrong: a reader may infer (incorrectly) that they are required for the
-  legacy-format code path.
+#### SCOPE: Shell orphan detector false-positives for Go built-ins
+- File: internal/pipeline/runner_test.go (append, len); internal/runner/complete_test.go (len)
+- Issue: The pre-verified STALE-SYM entries flag Go built-in functions (append, len) as "not found in any source definition". These are language primitives, not project-defined symbols. Both files are in-scope new tests; neither has stale references. This is a tooling gap in the shell orphan detector, not a test integrity problem.
 - Severity: LOW
-- Action: Either remove the two assignments and add a comment confirming the
-  legacy-error path returns before validateAndDefault, or add a companion
-  assertion that confirms the fields were truly unnecessary (e.g., a second
-  subcase with an empty Runner that still gets the same error).
+- Action: Update the orphan detector (lib/test_audit_symbols.sh or equivalent) to exclude Go built-ins (append, cap, close, copy, delete, len, make, new, panic, print, println, recover) when scanning .go files.
 
-None of the six tests exhibit hard-coded magic values, trivially-true
-assertions, orphaned references to the deleted bash files
-(lib/orchestrate_main.sh / lib/orchestrate_state.sh), or weakening of prior
-tests. All assertions map directly to observable behavior in single.go,
-complete.go, resume.go, and runner.go. Test isolation is clean throughout
-(all file I/O uses t.TempDir()); no test reads live project state files or
-mutable pipeline artifacts.
+### Findings — None in these categories
+
+INTEGRITY: None. All assertions in the four new tests derive from real implementation behavior.
+`TestOutcomeForVerdictMapping` calls the unexported `outcomeFor()` directly (legal in same-package tests) and asserts the exact outputs of the switch statement at runner.go:393-398 — every expected value matches a case branch in the implementation.
+`TestRunnerStageFailRoutesToSaveExit` drives a full `RunAttempt` call through the default stage-handler branch (runner.go:197-212), which calls `shouldShortCircuit("fail") == true`, then `outcomeFor("fail") == FailureSaveExit`. The outcome, verdict, blocking_stage, and adapter call count are all computed by the implementation.
+`TestRunCompleteLoopExit127BoundedByMaxAttempts` and `TestRunCompleteLoopRepeatedSaveExitDoesNotIterate` assert the save_exit branch in complete.go:160-165 which sets `Disposition=failure`, `Recovery="save_exit"`, `ErrorClass=pipeRes.BlockingStage`, then breaks — `loopErr` stays nil so the returned error is nil, matching the test's `if err != nil` check. `fp.calls==1` is enforced by the break before the next loop iteration. No assertion is hard-coded or tautological.
+
+WEAKENING: None. No existing test was modified; all four functions are net-new additions.
+
+COVERAGE: None flagged. The four new tests collectively cover: the exact reported bug scenario (FailureSaveExit from a fake pipeline with MaxPipelineAttempts=100, asserting only one invocation); a paranoid variant (100 identical FailureSaveExit results queued, proving only one is consumed); the `outcomeFor` contract for all six verdict values including the unrecognized-verdict tail; and the downstream-stage-not-invoked invariant when an early stage fails structurally.
+
+EXERCISE: None. Fakes are appropriately thin — `fakeAdapter` returns canned `StageResultV1` values and lets `RunAttempt`/`outcomeFor` do the real routing work; `fakePipeline` is a counter and result queue with no logic of its own. No real behavior is mocked away.
+
+ISOLATION: None. All four new tests pass `t.TempDir()` as `ResultDir` or use `validReq(t)` which also creates isolated temp dirs. No test reads mutable project files, pipeline logs, or live run artifacts.
