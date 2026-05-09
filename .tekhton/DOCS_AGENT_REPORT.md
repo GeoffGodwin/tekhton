@@ -1,23 +1,18 @@
 # Docs Agent Report
 
-## Status: COMPLETE
-
 ## Files Updated
-None — docs agent found no updates needed.
+None — no public-surface changes detected.
 
-## Reasoning
-The coder fixed an unbounded retry loop in `internal/pipeline/runner.go` by correcting the verdict-to-outcome routing logic in the `outcomeFor()` function. This is a purely internal behavioral fix:
-- No new CLI flags or commands
-- No config key changes
-- No exported API surface changes
-- No schema modifications
-- Covered by regression tests with inline documentation
+## Analysis
+The coder made the following changes:
 
-The change affects only internal machinery that users never interact with directly. README.md and `docs/` files contain no references to verdict routing or the internal attempt-outcome envelope vocabulary.
+1. **tekhton-legacy.sh** — Bug fix to `_run_fix_nonblockers_loop()` function. Added a post-loop refresh mechanism that re-emits dashboard action items and re-prints terminal summaries after the loop exits. This ensures both surfaces reflect the final state instead of stale pre-run counts. The `--fix nb` flag behavior is already documented in `docs/cli-reference.md`.
 
-## Verification Checklist
-- [x] CLI surfaces checked (no new flags, same commands)
-- [x] Config keys reviewed (no changes)
-- [x] Public APIs verified (internal-only change)
-- [x] Documentation files reviewed (no references to internal routing logic)
-- [x] CODER_SUMMARY.md already contains accurate "Docs Updated" section
+2. **lib/_test_wedge_m10_violation_1880706.sh** — New minimal test helper file (internal use only).
+
+3. **tests/test_fix_nonblockers_post_loop_refresh.sh** — New regression test for the post-loop refresh fix (internal test suite only).
+
+## No Update Needed
+- No new CLI flags, configuration keys, or exported APIs were added.
+- The existing `--fix nb` documentation in `docs/cli-reference.md` remains accurate.
+- Changes are internal implementation improvements with no user-facing behavior changes.

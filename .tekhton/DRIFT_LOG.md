@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-05-08
-- Runs since audit: 3
+- Runs since audit: 4
 
 ## Unresolved Observations
 - [2026-05-09 | "[BUG] **Go BashAdapter does not source per-stage helper libraries.** The Go `BashAdapter.Run` in `internal/stagerunner/adapter.go:169-182` builds a bash wrapper that sources only `lib/common.sh` and `lib/stage_envelope.sh` before sourcing the stage script and calling `run_stage_<name>`. Every stage script under `stages/` declares its required helpers in an `Expects:` header — e.g. `stages/intake.sh:18` says `Expects: _intake_* helpers from lib/intake_helpers.sh`. Those helpers are not sourced, so the moment a stage call hits one (e.g. `stages/intake.sh:73` calling `_intake_get_milestone_content`) bash prints `command not found` and exits 127. Repro: `RUN_RESULT.json` from the m20 auto-advance run shows `"error_message": "stagerunner: subprocess failed
