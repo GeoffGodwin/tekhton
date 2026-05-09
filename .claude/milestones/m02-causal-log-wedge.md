@@ -72,7 +72,7 @@ Per-stage counter is `*atomic.Int64` — replaces the file-based counter dance. 
 
 | Command | Replaces | Behavior |
 |---------|----------|----------|
-| `tekhton causal init [--path P] [--cap N] [--run-id R]` | `init_causal_log` | Truncate path, write a header line, return event ID `init-1`. |
+| `tekhton causal init [--path P] [--cap N] [--run-id R]` | `init_causal_log` | Create-if-absent (resume-friendly — does NOT truncate an existing log; preserves prior-run events for cross-run analysis), append a header line, return event ID `init-1`. |
 | `tekhton causal emit --stage S --type T [--detail D] [--caused-by ID]... [--field K=V]...` | `emit_event` | Append one event to the log path (read from `${CAUSAL_LOG_FILE}` env). Print the assigned event ID on stdout. |
 | `tekhton causal archive --retention N` | archive logic in `causality.sh` | Rotate + prune to `N` archived runs. |
 
@@ -133,7 +133,7 @@ init_causal_log() {
 - [ ] Concurrent emits across stages assign monotonic per-stage IDs (verified by Go race-test running 10 goroutines × 100 emits and asserting no duplicate IDs per stage).
 - [ ] Eviction fires when `count > cap`: log is rewritten in place, retains the last `cap` events, runs in `O(cap)` not `O(file)`.
 - [ ] Archive rotation respects `CAUSAL_LOG_RETENTION_RUNS`; older archives deleted; current log truncated.
-- [ ] `lib/causality.sh::_json_escape` is deleted; no other bash file calls it (`grep -r _json_escape lib/ stages/` returns nothing).
+- [ ] No `_json_escape` definition in `lib/causality.sh` or any `stages/*.sh` file; the sole definition lives in `lib/common.sh`. (The helper is shared by ~20 bash callers — `lib/crawler_emit.sh`, `lib/run_memory.sh`, etc. — so deletion is not viable; the bash-JSON-escape duplication tied to causality.sh is removed by relocating the canonical implementation to `lib/common.sh`.)
 - [ ] All bash callers of `emit_event` work without modification — verified by running `bash tests/run_tests.sh` on a project that exercises every stage and asserting the same event count + types as the V3 baseline.
 - [ ] `lib/causality_query.sh` is unchanged and reads the new log files correctly (existing `tests/test_causality_query.sh` passes).
 - [ ] **Parity test (gating).** `scripts/causal-parity-check.sh` runs the same fixture pipeline twice — once with `lib/causality.sh` at HEAD~1 (bash writer), once at HEAD (Go writer) — and `diff`s the resulting `CAUSAL_LOG.jsonl` files. Differences allowed only on `ts` (timestamps) and the `proto` field; everything else byte-identical.

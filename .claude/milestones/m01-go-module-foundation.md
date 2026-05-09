@@ -27,19 +27,22 @@ status: "done"
 
 ### Goal 2 — Cobra root command
 
-`cmd/tekhton/main.go` defines a Cobra root command with no subcommands yet. `--version` reads the existing repo-root `VERSION` file via `internal/version/version.go` (`//go:embed VERSION`) and prints it. `--help` produces standard Cobra output. Any other invocation prints help and exits non-zero.
+`cmd/tekhton/main.go` defines a Cobra root command with no subcommands yet. `--version` reads the version string from `internal/version/version.go`, populated at link time from the repo-root `VERSION` file via `-ldflags "-X"` injection. `--help` produces standard Cobra output. Any other invocation prints help and exits non-zero.
 
 ```go
 // internal/version/version.go
 package version
 
-import _ "embed"
+import "strings"
 
-//go:embed ../../VERSION
-var Version string
+// Version is set at link time via -ldflags. Default keeps unconfigured
+// builds distinguishable from release builds.
+var Version = "dev"
+
+func String() string { return strings.TrimSpace(Version) }
 ```
 
-The version string is trimmed of trailing whitespace at print time. Subcommand wiring is the responsibility of m02+ as wedges arrive.
+The Makefile injects the value with `-ldflags "-X main.version=$(cat VERSION)"` (wired through `cmd/tekhton/main.go` to `internal/version`). `//go:embed` was rejected because `embed` paths cannot traverse out of the source file's directory (`../../VERSION` is not a legal embed path); ldflags injection is the idiomatic alternative for repo-root metadata. The version string is trimmed of trailing whitespace at print time. Subcommand wiring is the responsibility of m02+ as wedges arrive.
 
 ### Goal 3 — Cross-platform build
 
@@ -88,7 +91,7 @@ The bash pipeline runs the exact same way it did before — the Go binary's pres
 |------|------------|-------------|
 | `go.mod`, `go.sum` | Create | Module bootstrap, no third-party deps yet beyond `cobra`. |
 | `cmd/tekhton/main.go` | Create | Cobra root + `--version`. ~40 lines. |
-| `internal/version/version.go` | Create | `//go:embed VERSION` and exported `Version` string. |
+| `internal/version/version.go` | Create | `Version` string populated at link time via `-ldflags "-X"` (sourced from repo-root `VERSION`). |
 | `Makefile` | Create | `build`, `test`, `build-all`, `clean` targets. |
 | `.github/workflows/go-build.yml` | Create | CI matrix: build, vet, lint. |
 | `scripts/self-host-check.sh` | Create | V3 self-host smoke run with Go binary on `$PATH`. |
@@ -104,7 +107,7 @@ The bash pipeline runs the exact same way it did before — the Go binary's pres
 - [ ] `make test` exits 0 with no test files yet (Go's "no tests" output is acceptable).
 - [ ] `go vet ./...` clean; `golangci-lint run ./...` clean.
 - [ ] CI workflow `go-build.yml` passes on the V4 branch with all three jobs (build, vet+test, lint) green.
-- [ ] `scripts/self-host-check.sh` exits 0: builds the Go binary, runs `tekhton.sh --dry-run` on a fixture task with `bin/` on `$PATH`, asserts `tekhton --version` output matches `VERSION`.
+- [ ] `scripts/self-host-check.sh` exits 0 in its default (CI-safe) mode: builds the Go binary, prepends `bin/` to `$PATH`, exercises the dispatcher routing matrix, and asserts `tekhton --version` output matches `VERSION`. The full `tekhton.sh --dry-run` smoke (which calls live Claude CLI agents — intake, scout — that require auth CI cannot satisfy) is gated behind `TEKHTON_SELF_HOST_DRY_RUN=1`; humans with auth run that tier locally before landing.
 - [ ] No file under `lib/`, `stages/`, `prompts/`, or `tools/` is modified by this milestone.
 - [ ] `bash tests/run_tests.sh` produces identical output before and after this milestone (parity check, archived to artifact).
 - [ ] `docs/go-build.md` exists and covers: prerequisite install, `make` targets, cross-compile output layout, CI artifact location.
@@ -114,7 +117,7 @@ The bash pipeline runs the exact same way it did before — the Go binary's pres
 
 - **CGO must stay disabled.** Any dep that pulls in cgo (e.g. `mattn/go-sqlite3`) breaks the static-binary promise (Risk §8). If a future m needs SQLite, default to `modernc.org/sqlite` (pure Go).
 - **Go version pinning.** Pin `go 1.23` (or current stable at land time) in `go.mod`. Drift between local and CI Go versions is a real source of flake — set `actions/setup-go` to read `go-version-file: go.mod`.
-- **`//go:embed` path is relative to the source file.** The `..` traversal in `internal/version/version.go` is correct only because the repo layout is fixed. If `cmd/tekhton/` ever moves, the embed path changes.
+- **Version comes from ldflags, not `//go:embed`.** `embed` directives cannot reference paths outside the source file's directory, so `//go:embed ../../VERSION` is invalid Go. The Makefile injects the version with `-ldflags "-X main.version=$(cat VERSION)"`. Direct `go build` (without make) leaves `Version` at the `dev` sentinel — release builds must go through `make build`.
 - **Five-target build from one host.** `darwin/*` targets cross-compile cleanly only with CGO off. Verify locally on Linux before relying on CI.
 - **Self-host check must remain idempotent.** It's safe to run twice in the same CI job. Don't introduce lockfile or state-file writes that fail on re-run.
 - **Don't add subcommands here.** m01 ships a stub root only. `tekhton causal …`, `tekhton supervise …`, etc. are wired by their respective wedges.
