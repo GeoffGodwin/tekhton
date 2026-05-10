@@ -178,6 +178,57 @@ _rule_ui_gate_interactive_reporter 2>/dev/null && r=0 || r=1
 assert_eq "T3.1 _rule_ui_gate_interactive_reporter does not match" "1" "$r"
 
 # =============================================================================
+# T3b: Source 3 logs scan does not fire on agent-authored markdown that quotes
+# the marker (the M133 dogfooding self-trigger). CODER_SUMMARY/SCOUT_REPORT
+# files in .claude/logs/ describing the rule must not trip the rule.
+# =============================================================================
+echo "=== T3b: Interactive reporter ignores quoted marker in agent-authored .md ==="
+_reset_fixture
+cat > "${LOG_DIR}/20260426_230217_CODER_SUMMARY.md" << 'EOF'
+# Coder Summary
+2. Goal 2 — `_rule_ui_gate_interactive_reporter` (new, primary).
+   matching `Serving HTML report at` / `Press Ctrl+C to quit` → `medium`
+EOF
+cat > "${LOG_DIR}/20260426_230217_SCOUT_REPORT.md" << 'EOF'
+# Scout Report
+  2. Interactive reporter fires from raw log evidence only (`Serving HTML report at`)
+EOF
+_read_diagnostic_context 2>/dev/null || true
+_rule_ui_gate_interactive_reporter 2>/dev/null && r=0 || r=1
+assert_eq "T3b.1 rule does not self-trigger on documentation .md files" "1" "$r"
+
+# =============================================================================
+# T3c: Source 3 BUILD_RAW_ERRORS does not fire on bare marker without URL.
+# Anchored regex requires `Serving HTML report at https?://` — Playwright's
+# real stderr always emits the URL on the same line.
+# =============================================================================
+echo "=== T3c: Interactive reporter ignores bare marker without URL ==="
+_reset_fixture
+echo "agent quoted: Serving HTML report at (no URL here)" \
+    > "${PROJECT_DIR}/${BUILD_RAW_ERRORS_FILE}"
+echo "another line: Press Ctrl+C to quit" \
+    >> "${PROJECT_DIR}/${BUILD_RAW_ERRORS_FILE}"
+_read_diagnostic_context 2>/dev/null || true
+_rule_ui_gate_interactive_reporter 2>/dev/null && r=0 || r=1
+assert_eq "T3c.1 rule requires URL anchor in stderr evidence" "1" "$r"
+
+# =============================================================================
+# T3d: Source 3 logs scan still fires on real Playwright stderr captured to
+# a .log file (the legitimate detection path must keep working).
+# =============================================================================
+echo "=== T3d: Interactive reporter fires on real Playwright stderr in .log ==="
+_reset_fixture
+cat > "${LOG_DIR}/20260510_010203_playwright.log" << 'EOF'
+Running 12 tests using 4 workers
+  Serving HTML report at http://localhost:9323. Press Ctrl+C to quit.
+EOF
+_read_diagnostic_context 2>/dev/null || true
+classify_failure_diag
+assert_eq "T3d.1 classification UI_GATE_INTERACTIVE_REPORTER" \
+    "UI_GATE_INTERACTIVE_REPORTER" "$DIAG_CLASSIFICATION"
+assert_eq "T3d.2 confidence medium (logs_dir scan)" "medium" "$DIAG_CONFIDENCE"
+
+# =============================================================================
 # T4: Build-fix exhausted fires from BUILD_FIX_REPORT_FILE
 # =============================================================================
 echo "=== T4: Build-fix exhausted fires from BUILD_FIX_REPORT_FILE ==="

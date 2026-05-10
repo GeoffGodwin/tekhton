@@ -27,6 +27,14 @@ set -euo pipefail
 #   2. LAST_FAILURE_CONTEXT.json classification UI_INTERACTIVE_REPORTER → high
 #   3. Raw log evidence in BUILD_RAW_ERRORS_FILE or .claude/logs/       → medium
 #   4. RUN_SUMMARY.json primary_signal+route_taken correlation          → medium
+#
+# Source 3 evidence pattern is anchored: `Serving HTML report at https?://`.
+# Playwright's stderr always emits a URL on that line; agent-authored markdown
+# that *quotes* the bare marker (e.g. CODER_SUMMARY/SCOUT_REPORT documenting
+# this rule) does not. Combined with the .log/.jsonl include filter on the
+# logs_dir scan, this prevents the rule from self-triggering on its own
+# implementation summaries when tekhton dogfoods on its own codebase.
+_RULE_UI_GATE_INTERACTIVE_REGEX='Serving HTML report at https?://'
 _rule_ui_gate_interactive_reporter() {
     local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
     local raw_errors="${PROJECT_DIR:-.}/${BUILD_RAW_ERRORS_FILE:-${TEKHTON_DIR:-.tekhton}/BUILD_RAW_ERRORS.txt}"
@@ -48,18 +56,22 @@ _rule_ui_gate_interactive_reporter() {
         confidence="high"
     fi
 
-    # Source 3: raw log evidence — current run only
+    # Source 3: raw log evidence — current run only.
     if [[ "$matched" != true ]]; then
-        if [[ -s "$raw_errors" ]] && grep -qE 'Serving HTML report at|Press Ctrl\+C to quit' "$raw_errors" 2>/dev/null; then
+        if [[ -s "$raw_errors" ]] && grep -qE "$_RULE_UI_GATE_INTERACTIVE_REGEX" "$raw_errors" 2>/dev/null; then
             matched=true
             confidence="medium"
         fi
     fi
     if [[ "$matched" != true ]] && [[ -d "$logs_dir" ]]; then
-        # Recursive scan with no depth/file-count cap: acceptable because
-        # diagnose is a manually-invoked tool. Large log archives may incur
-        # a one-time cost; rotation is the operator's responsibility.
-        if grep -rqlE 'Serving HTML report at|Press Ctrl\+C to quit' "$logs_dir" 2>/dev/null; then
+        # Recursive scan restricted to machine-captured stderr (.log) and
+        # JSONL transcripts (.jsonl). Markdown summaries/reports are
+        # agent-authored prose and routinely quote diagnostic markers as
+        # documentation — including them here causes the rule to flag itself
+        # whenever tekhton runs on its own codebase. No depth/file-count cap:
+        # diagnose is a manually-invoked tool; rotation is the operator's job.
+        if grep -rqE --include='*.log' --include='*.jsonl' \
+            "$_RULE_UI_GATE_INTERACTIVE_REGEX" "$logs_dir" 2>/dev/null; then
             matched=true
             confidence="medium"
         fi
