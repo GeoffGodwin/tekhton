@@ -207,3 +207,34 @@ func TestBuildBashScriptOrdering(t *testing.T) {
 			common, libA, libB, stageA, envelope, script, out)
 	}
 }
+
+// TestBuildBashScriptExportsRequiredEnv asserts the wrapper exports both
+// TEKHTON_HOME and PROJECT_DIR before any source line. lib/config.sh:14
+// references ${PROJECT_DIR} without a default at file-scope, so under the
+// `set -u` enforced at the top of the wrapper, an unset PROJECT_DIR causes
+// the very first DefaultLibHelpers source to die — the entire stage subprocess
+// then exits before run_stage_<name> ever runs. Regression guard for the
+// post-a42c30b BashAdapter bug (test_pipeline_runner.sh started failing).
+func TestBuildBashScriptExportsRequiredEnv(t *testing.T) {
+	out := buildBashScript(
+		"/home", "/proj", "/home/stages/intake.sh", "intake",
+		[]string{"lib/config.sh"},
+		nil,
+	)
+	tekhtonExport := strings.Index(out, `export TEKHTON_HOME="/home"`)
+	projectExport := strings.Index(out, `export PROJECT_DIR="/proj"`)
+	firstSource := strings.Index(out, "source ")
+	if tekhtonExport < 0 {
+		t.Fatalf("TEKHTON_HOME export missing from wrapper:\n%s", out)
+	}
+	if projectExport < 0 {
+		t.Fatalf("PROJECT_DIR export missing from wrapper (lib/config.sh requires it under set -u):\n%s", out)
+	}
+	if firstSource < 0 {
+		t.Fatalf("no source line found in wrapper:\n%s", out)
+	}
+	if !(tekhtonExport < firstSource && projectExport < firstSource) {
+		t.Fatalf("env exports must precede first source line: tekhtonExport=%d projectExport=%d firstSource=%d\n%s",
+			tekhtonExport, projectExport, firstSource, out)
+	}
+}

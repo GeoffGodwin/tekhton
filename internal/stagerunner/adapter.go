@@ -357,6 +357,11 @@ func buildBashScript(tekhtonHome, projectDir, scriptPath, stage string, libHelpe
 	var b strings.Builder
 	b.WriteString("set -euo pipefail\n")
 	fmt.Fprintf(&b, "export TEKHTON_HOME=%q\n", tekhtonHome)
+	// PROJECT_DIR must be exported before sourcing lib/*.sh: lib/config.sh
+	// references ${PROJECT_DIR} without a default at file-scope (line 14),
+	// so under `set -u` it dies before the stage entry function runs.
+	// tekhton-legacy.sh exports both at startup; the wrapper mirrors that.
+	fmt.Fprintf(&b, "export PROJECT_DIR=%q\n", projectDir)
 	fmt.Fprintf(&b, "cd %q\n", projectDir)
 	b.WriteString(`source "$TEKHTON_HOME/lib/common.sh"` + "\n")
 	for _, h := range libHelpers {
