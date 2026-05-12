@@ -1,16 +1,10 @@
 # Docs Agent Report
 
 ## Files Updated
-None — all changes were internal infrastructure fixes (BashAdapter helper sourcing, proto refactoring, test updates).
+None.
 
 ## No Update Needed
-
-This commit addressed 10 non-blocking notes with internal fixes:
-- **Go BashAdapter** now sources per-stage helper libraries (fixes bash `command not found` errors)
-- **Proto refactoring** extracted `KnownStages` slice for single source of truth in `internal/proto/stage_v1.go`
-- **Test coverage** improved with updated assertions
-
-No public API changes, CLI flags, configuration keys, or user-visible behavior changes — documentation remains accurate.
+All changes in this commit are internal pipeline artifacts (`.tekhton/` diagnostic files) and test infrastructure (`tests/test_self_host_dry_run_gate.sh`). No public-surface changes detected (no new CLI flags, config keys, API endpoints, exported functions, or schema alterations).
 
 ## Open Questions
 None.

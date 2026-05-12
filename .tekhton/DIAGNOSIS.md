@@ -1,19 +1,20 @@
 # Diagnosis Report
 
-**Generated:** 2026-05-08 18:49:33
+**Generated:** 2026-05-10 09:19:49
 **Classification:** UI_GATE_INTERACTIVE_REPORTER
 **Confidence:** medium
 
 ## Pipeline State
 
-- **Milestone:** 19
-- **Outcome:** success
-not_run
+- **Task:** M20
+- **Milestone:** 20
+- **Failed at:** coder
+- **Outcome:** failure
 
 ## Cause Chain
 
 ```
-intake.001 <- pipeline.001.pipeline_start
+pipeline.005
 ```
 
 ## Recovery Suggestions
@@ -23,18 +24,18 @@ intake.001 <- pipeline.001.pipeline_start
 3. No playwright.config.{ts,js,mjs,cjs} found at the repo root.
 4. Search the test runner config and replace reporter: 'html' with a CI-guarded form.
 5. Workaround without source edits:
-  CI=1 tekhton --complete --milestone "<task not recorded>"
+  CI=1 tekhton --complete --milestone "M20"
 6. Then re-run normally:
-  tekhton --complete --milestone "<task not recorded>"
+  tekhton --complete --milestone "M20"
 
 ## Relevant Files
 
-- `.tekhton/CODER_SUMMARY.md` — 255 lines
-- `.tekhton/SECURITY_REPORT.md` — 12 lines
+- `.tekhton/SECURITY_REPORT.md` — 10 lines
 - `.tekhton/CLARIFICATIONS.md` — 92 lines
 - `.tekhton/HUMAN_ACTION_REQUIRED.md` — 12 lines
+- `.claude/PIPELINE_STATE.md` — 60 lines
 - `.claude/logs/RUN_SUMMARY.json` — 36 lines
-- `.claude/logs/CAUSAL_LOG.jsonl` — 2000 lines
+- `.claude/logs/CAUSAL_LOG.jsonl` — 2127 lines
 
 ## Agent Log Excerpts
 
