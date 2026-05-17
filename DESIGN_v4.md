@@ -143,6 +143,34 @@ The contracts to version on day one: `causal.event.v1` (one line of
 polls), `agent.request.v1` / `agent.response.v1` (supervisor → agent runner
 contract once Phase 2 lands).
 
+### Output Format Conventions
+
+Cross-language seams and human-facing CLI output use three formats, chosen
+by shape rather than channel:
+
+- **Structured objects** (multi-field records, envelopes, anything a consumer
+  must parse) — **JSON.** Always versioned via the `proto` field above.
+  Applies to stage envelopes, run results, causal events, state snapshots,
+  TUI status files, agent request/response.
+- **List outputs** (IDs, file paths, milestone slugs — one logical thing per
+  line) — **bare newline-delimited.** No JSON wrapping for plain enumerations
+  that bash callers already pipe into `while read`. Examples: `tekhton
+  milestone list`, `tekhton config keys`.
+- **Pipe-delimited tabular rows** (the legacy `MANIFEST.cfg` /
+  `errors.sh` shape) — **frozen at the seam where they exist today; new
+  callers don't add more.** Each subcommand that emits pipe-delimited rows
+  grows a `--json` flag that produces a versioned array of objects; tooling
+  migrates onto `--json` over time. The pipe form stays for bash
+  compatibility until its last consumer ports.
+
+Rationale: bash callers are first-class for the duration of Phase 4–5, so
+forcing JSON onto enumerations would mean every `for f in $(...)` site
+sprouts a `jq` call. Conversely, multi-field records have already bitten us
+with string-parsing brittleness (the `cut -d'|' -f1` pattern on
+`CATEGORY|SUBCATEGORY|TRANSIENT|MESSAGE`); those move to JSON as they're
+ported. The `--json` opt-in on tabular subcommands is the migration ramp:
+new tooling reads JSON, legacy `awk` pipelines keep working.
+
 ### Signal & Cancellation Discipline
 
 The bash supervisor today fans out kills via a hand-rolled trap chain:
