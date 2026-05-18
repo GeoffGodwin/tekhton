@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 16
+- Runs since audit: 17
 
 ## Unresolved Observations
 - [2026-05-18 | "m21 closeout"] **Non-blocking router misclassifies CI-failing tests.** During the m21 dogfooded run, `TestDefaultLibHelpersFilesExist` (a hard Go test failure) was placed into NON_BLOCKING_LOG with the reasoning "this is pre-existing relative to S-1 and not caused by these changes." A test that fails CI is by definition a blocker, regardless of who introduced it. The router (`lib/drift_artifacts.sh` or `lib/test_baseline.sh`) should not classify any item that maps to a failing test as non-blocking. Investigate the routing rule in m22+ and add a sentinel that promotes any `[fail|FAIL]` test reference inside a non-blocking entry to the blocker queue.

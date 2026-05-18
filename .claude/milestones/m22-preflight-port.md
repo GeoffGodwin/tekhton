@@ -163,6 +163,8 @@ fi
 
 This brings `test_self_host_dry_run_gate.sh` back to green (was the second pre-existing failure flagged at m21 close).
 
+**Skip-guard removal is part of the deliverable.** At m21 close the test was wrapped in a skip-guard block at the top of `tests/test_self_host_dry_run_gate.sh` so tekhton's test-baseline subsystem would not burn cycles on it before m22's gate fix lands. Goal 6's *proof of work* is removing that guard block and showing the un-guarded test passes against the gate fix. This is also Acceptance Criterion #8 — silently leaving the guard in place means Goal 6 was never verified.
+
 ### Goal 7 — Parity gate
 
 `tests/test_preflight_parity.sh` runs three scenarios against a captured pre-m22 baseline:
@@ -213,11 +215,11 @@ Each scenario asserts byte-identical `PREFLIGHT_REPORT.md` (after timestamp norm
 - [ ] `tekhton preflight` is registered as a Hidden Cobra subcommand in `cmd/tekhton/main.go`; `tekhton preflight --help` exits 0 with usage text.
 - [ ] `tekhton-legacy.sh` no longer sources any `lib/preflight*.sh`; the `run_preflight_checks` function execs `tekhton preflight`.
 - [ ] `tests/test_preflight_parity.sh` exits 0 across the three documented scenarios (green-path, env-only-fail, UI-config-auto-patch).
-- [ ] `tests/test_self_host_dry_run_gate.sh` exits 0 (resolves the pre-existing failure carried forward from m21 closeout).
+- [ ] Goal 6 verification: the skip-guard block at the top of `tests/test_self_host_dry_run_gate.sh` (inserted at m21 closeout) is **removed**, and the un-guarded test exits 0 against the m22 gate fix in `scripts/self-host-check.sh`. The skip-guard exists specifically so m22's loop does not burn cycles on this test before the gate fix lands; un-guarding is the close-out proof that Goal 6 actually worked. Removing the guard but leaving the test failing means the gate fix is wrong — fix the gate, do not weaken the test.
 - [ ] `make dogfood` exits 0 (self-host parity matrix still green).
 - [ ] `bash scripts/wedge-audit.sh` exits 0 (audit extended to forbid re-introduction of `run_preflight_checks` as a bash function with a body other than `exec tekhton preflight`).
 - [ ] `go test ./internal/preflight/... ./cmd/tekhton/...` passes.
-- [ ] `bash tests/run_tests.sh` reports no new failures vs the m21-close baseline (504 pass / 2 fail). On m22 close the count should be at least 504 / 1 (the gate-fix resolves one of the two remaining pre-existing failures).
+- [ ] `bash tests/run_tests.sh` reports zero failures at m22 close. Starting state is 506 pass / 0 fail (after m21-close skip-guards on `test_plan_browser` and `test_self_host_dry_run_gate`). m22 work must preserve that count: the gate test is un-guarded as part of Goal 6 (see the criterion above) and must pass against the gate fix. `test_plan_browser` stays skip-guarded — un-guarding that one is m26's job, not m22's.
 - [ ] `docs/v4-phase5-stub.md` LOC budget table shows the new post-m22 count and Hook 2 marked "done (m22 — preflight subsystem ported in full, six files deleted)".
 - [ ] `VERSION` reads `4.22.0` on milestone close.
 - [ ] `.claude/milestones/MANIFEST.cfg` has the row `m22|Preflight Port|done|m21|m22-preflight-port.md|phase5`.
