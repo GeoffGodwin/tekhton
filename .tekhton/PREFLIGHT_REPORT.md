@@ -1,7 +1,7 @@
-# Pre-flight Report — 2026-05-09 19:59:51
+# Pre-flight Report — 2026-05-17 22:14:10
 
 ## Summary
-✓ 5 passed  ⚠ 0 warned  ✗ 0 failed  🔧 0 auto-fixed
+✓ 4 passed  ⚠ 1 warned  ✗ 0 failed  🔧 0 auto-fixed
 
 ## Checks
 
@@ -17,6 +17,6 @@ go.sum exists.
 ### ✓ Tools (TEST_CMD)
 `bash` is available.
 
-### ✓ Runtime Version (Go)
-.go-version requires 1.23, running 1.23. ✓
+### ⚠ Runtime Version (Go)
+.go-version requires 1.23, but running 1.26.
 

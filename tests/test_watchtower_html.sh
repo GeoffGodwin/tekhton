@@ -188,9 +188,12 @@ assert "CSS has team-card styles" grep -q 'team-card' "${WATCHTOWER_DIR}/style.c
 assert "CSS has ms-view-toggle" grep -q 'ms-view-toggle' "${WATCHTOWER_DIR}/style.css"
 assert "CSS has cross-deps-summary" grep -q 'cross-deps-summary' "${WATCHTOWER_DIR}/style.css"
 assert "CSS has report-team-selector" grep -q 'report-team-selector' "${WATCHTOWER_DIR}/style.css"
-assert "finalize_summary.sh has team field" grep -q '"team"' "${TEKHTON_HOME}/lib/finalize_summary.sh"
-assert "finalize_summary.sh has parallel_group field" grep -q '"parallel_group"' "${TEKHTON_HOME}/lib/finalize_summary.sh"
-assert "finalize_summary.sh has concurrent_teams field" grep -q '"concurrent_teams"' "${TEKHTON_HOME}/lib/finalize_summary.sh"
+# m21: lib/finalize_summary.sh ported to internal/finalize/emit_run_summary.go;
+# the multi-team/parallel-group/concurrent-teams JSON fields now live on the
+# runSummary struct in the Go source. Retarget the grep accordingly.
+assert "emit_run_summary.go has team field" grep -q '"team"' "${TEKHTON_HOME}/internal/finalize/emit_run_summary.go"
+assert "emit_run_summary.go has parallel_group field" grep -q '"parallel_group"' "${TEKHTON_HOME}/internal/finalize/emit_run_summary.go"
+assert "emit_run_summary.go has concurrent_teams field" grep -q '"concurrent_teams"' "${TEKHTON_HOME}/internal/finalize/emit_run_summary.go"
 assert "emitters has per-team reports" grep -q 'teams_reports_json' "${TEKHTON_HOME}/lib/dashboard_emitters.sh"
 
 # --- Summary ---

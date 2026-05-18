@@ -15,14 +15,16 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 echo "=== test_m62_fixes_integration.sh ==="
 
-# Test 1: Verify all modified files exist and are readable
+# Test 1: Verify all modified files exist and are readable.
+# m21: lib/finalize_summary.sh ported to internal/finalize/emit_run_summary.go;
+# dropped from the file-readability check (4 of the M61/M62 surface
+# remains in bash; finalize_summary's bash body is gone).
 files_ok=0
 [[ -r "${TEKHTON_HOME}/lib/timing.sh" ]] && files_ok=$((files_ok + 1))
-[[ -r "${TEKHTON_HOME}/lib/finalize_summary.sh" ]] && files_ok=$((files_ok + 1))
 [[ -r "${TEKHTON_HOME}/lib/indexer.sh" ]] && files_ok=$((files_ok + 1))
 [[ -r "${TEKHTON_HOME}/stages/tester.sh" ]] && files_ok=$((files_ok + 1))
 [[ -r "${TEKHTON_HOME}/stages/review.sh" ]] && files_ok=$((files_ok + 1))
-if [[ $files_ok -eq 5 ]]; then
+if [[ $files_ok -eq 4 ]]; then
     pass "All modified files are readable"
 else
     fail "Some modified files are missing or unreadable"
@@ -42,12 +44,9 @@ else
     fail "lib/timing.sh has syntax errors"
 fi
 
-# Test 4: Verify finalize_summary.sh can be sourced (syntax check)
-if bash -n "${TEKHTON_HOME}/lib/finalize_summary.sh" 2>/dev/null; then
-    pass "lib/finalize_summary.sh passes syntax check"
-else
-    fail "lib/finalize_summary.sh has syntax errors"
-fi
+# Test 4: m21 — lib/finalize_summary.sh ported to Go. Syntax coverage now
+# comes from `go build ./internal/finalize/...`; skip the bash syntax check.
+pass "lib/finalize_summary.sh syntax check superseded by Go build (m21)"
 
 # Test 5: Verify indexer.sh can be sourced (syntax check)
 if bash -n "${TEKHTON_HOME}/lib/indexer.sh" 2>/dev/null; then
@@ -70,13 +69,10 @@ else
     fail "Tester timing initialization missing _TESTER_TIMING_WRITING_S"
 fi
 
-# Test 8: Verify finalize_summary.sh uses the tester guard correctly.
-# Locate dynamically — M132 enrichment shifted the file's line numbering.
-if grep -q 'if \[\[ "$_stg" == "tester" \]\]; then' "${TEKHTON_HOME}/lib/finalize_summary.sh"; then
-    pass "Finalize summary uses correct tester guard"
-else
-    fail "Finalize summary tester guard is incorrect"
-fi
+# Test 8: m21 — tester-guard logic ported to Go. The equivalent invariant
+# (per-stage tester-special-case branch) is asserted by the runSummary
+# `stages` collector and covered by emit_run_summary_test.go.
+pass "Finalize summary tester guard superseded by Go port (m21)"
 
 # Test 9: Verify timing.sh doesn't have double conditions on line 138
 if sed -n '138p' "${TEKHTON_HOME}/lib/timing.sh" | grep -q 'if \[\[ "$_spk" == "${_pfx}"\* \]\]; then'; then

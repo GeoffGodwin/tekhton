@@ -164,18 +164,25 @@ gitignore_pattern=$(grep -r "\.claude/dashboard" "${TEKHTON_HOME}/templates/" ||
 [[ -n "$gitignore_pattern" ]] || fail ".claude/dashboard not added to gitignore patterns"
 pass "Fix #22: .claude/dashboard gitignore pattern added"
 
-# === Fix #23: test comment count ===
-# Check that test_finalize_run.sh comment matches actual hook count (20)
-test_comment=$(grep "hooks in deterministic" "${TEKHTON_HOME}/tests/test_finalize_run.sh")
-echo "$test_comment" | grep -q "20 hooks" || fail "test_finalize_run.sh comment does not match actual hook count"
-pass "Fix #23: test_finalize_run.sh hook count comment matches actual count"
+# === Fix #23: post-m21 — orchestrator moved to Go ===
+# The historic bash hook registry + finalize_run loop is gone; the canonical
+# hook ordering test now lives at internal/finalize/orchestrator_test.go
+# (TestHookOrder_MatchesBashRegistration). Verify that test file exists.
+[[ -f "${TEKHTON_HOME}/internal/finalize/orchestrator_test.go" ]] \
+    || fail "post-m21: internal/finalize/orchestrator_test.go missing — Go orchestrator's hook-order guard is the canonical test"
+pass "Fix #23: post-m21 — internal/finalize/orchestrator_test.go is the canonical hook-order test"
 
-# === Fix #24: hook letter labeling ===
-# Check that hook letter labeling is corrected (no skip from j to l, order should be consistent)
-hook_labels=$(grep "^# [a-z]\." "${TEKHTON_HOME}/lib/finalize.sh" | awk '{print $2}' | tr -d '.' | tr '\n' ',')
-# Should not have missing letters or j followed by l
-echo "$hook_labels" | grep -q "k\|l" || fail "Hook letter labeling not fixed"
-pass "Fix #24: hook letter labeling corrected"
+# === Fix #24: post-m21 — hook letter labeling obsolete ===
+# Bash hook letter labels (# a. _hook_final_checks, # b. _hook_drift_artifacts,
+# ...) were a hook-registry convention in the pre-m21 lib/finalize.sh. The
+# registry moved to internal/finalize/orchestrator.go's hookOrder list; the
+# bash labels no longer exist or apply. Verify the Go canonical list is
+# present.
+go_order=$(grep -c '"_hook_' "${TEKHTON_HOME}/internal/finalize/orchestrator.go" || echo 0)
+if [[ "$go_order" -lt 26 ]]; then
+    fail "post-m21: internal/finalize/orchestrator.go hookOrder has ${go_order} entries (expected 26)"
+fi
+pass "Fix #24: post-m21 — Go hookOrder list defines all 26 hooks"
 
 # === Fix #25: _detect_dockerfile_langs nullglob ===
 # Check that nullglob is set before the Dockerfile iteration

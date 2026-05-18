@@ -239,11 +239,11 @@ _preflight_check_services() {
         IFS='|' read -r display port source _status _default_port <<< "$entry"
 
         if _probe_service_port "127.0.0.1" "$port" 2; then
-            _PF_SERVICES[$i]="${display}|${port}|${source}|running|${_default_port}"
+            _PF_SERVICES[i]="${display}|${port}|${source}|running|${_default_port}"
             _pf_record "pass" "Service (${display})" \
                 "${display} is running on port ${port}."
         else
-            _PF_SERVICES[$i]="${display}|${port}|${source}|not_running|${_default_port}"
+            _PF_SERVICES[i]="${display}|${port}|${source}|not_running|${_default_port}"
 
             local instructions
             instructions=$(_pf_build_startup_instructions "$display" "$port" "$source")

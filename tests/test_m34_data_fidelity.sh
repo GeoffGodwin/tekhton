@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# m21: M34's data-fidelity coverage tested the bash `_hook_emit_run_summary`
+# in lib/finalize_summary.sh. That body ported to Go in
+# internal/finalize/emit_run_summary.go; equivalent assertions on JSON shape,
+# run-type classification, and stage data live in
+# internal/finalize/emit_run_summary_test.go. This bash test is retired
+# wholesale to keep the suite green; restore from git if you want to compare
+# bash-vs-Go output during future regressions.
+if [[ ! -f "${TEKHTON_HOME:-..}/lib/finalize_summary.sh" ]]; then
+    echo "=== test_m34_data_fidelity.sh ==="
+    echo "  SKIPPED: superseded by internal/finalize/emit_run_summary_test.go (m21)"
+    exit 0
+fi
 # =============================================================================
 # test_m34_data_fidelity.sh — M34 Watchtower Data Fidelity
 #

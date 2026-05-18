@@ -152,6 +152,7 @@ _parse_k8s_service_yaml() {
 
     # Deduplicate
     [[ -n "${_seen[$service_name]+x}" ]] && return 0
+    # shellcheck disable=SC2004
     _seen[$service_name]=1
 
     # Try to map to directory

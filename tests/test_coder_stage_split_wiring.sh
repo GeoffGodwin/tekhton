@@ -102,7 +102,7 @@ run_build_gate() { return 0; }
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_query.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival.sh"
+# milestone_archival.sh deleted in m21 (archive_milestone hook ported to internal/finalize/archive_milestone.go).
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 
 # Stub _phase_start/_phase_end before sourcing context_cache.sh

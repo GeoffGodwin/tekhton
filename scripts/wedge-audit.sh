@@ -136,6 +136,15 @@ PATTERNS=(
     # other; this pattern blocks new sources.)
     '^[[:space:]]*(source|\.)[[:space:]]+.*/orchestrate_complete\.sh'
     '^[[:space:]]*(source|\.)[[:space:]]+.*/orchestrate_save\.sh'
+    # m21 (Phase 5): the finalize orchestrator + hook registry moved to
+    # internal/finalize.Orchestrator. lib/finalize.sh is the legacy
+    # compatibility shim that delegates to `tekhton finalize`; it must not
+    # re-introduce register_finalize_hook or the FINALIZE_HOOKS array, and
+    # no other lib/ or stages/ file may define them. Catching this at audit
+    # time keeps the Go orchestrator the single source of registration
+    # truth.
+    '\bregister_finalize_hook\b'
+    '\bFINALIZE_HOOKS\b'
 )
 
 # --- Audit -------------------------------------------------------------------

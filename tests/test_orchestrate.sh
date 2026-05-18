@@ -252,6 +252,19 @@ assert "5.3 log contains attempt 2" "$(echo "$_ORCH_ATTEMPT_LOG" | grep -q "Atte
 # =============================================================================
 # Test Suite 6: _hook_emit_run_summary produces valid JSON
 # =============================================================================
+# m21: _hook_emit_run_summary ported from lib/finalize_summary.sh to
+# internal/finalize/emit_run_summary.go. JSON-shape coverage now in
+# internal/finalize/emit_run_summary_test.go. Skip when the bash body is
+# gone.
+if [[ ! -f "${TEKHTON_HOME}/lib/finalize_summary.sh" ]]; then
+    echo "=== Test Suite 6: skipped — _hook_emit_run_summary ported to Go (m21) ==="
+    echo
+    echo "════════════════════════════════════════"
+    echo "  orchestrate tests: ${PASS} passed, ${FAIL} failed (Suite 6 skipped)"
+    echo "════════════════════════════════════════"
+    [ "$FAIL" -eq 0 ] || exit 1
+    exit 0
+fi
 echo "=== Test Suite 6: _hook_emit_run_summary ==="
 
 # Source finalize_summary.sh in isolation (mock its dependencies)

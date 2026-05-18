@@ -31,7 +31,7 @@ The disposition column is one of:
 
 | # | Subsystem (`lib/` unless noted)        | Disposition | Notes |
 |---|-----------------------------------------|-------------|-------|
-| 1 | `finalize.sh` + 26 finalize hooks       | port        | Highest dogfooding pain — every run touches it. Phase 5 m21 candidate. |
+| 1 | `finalize.sh` + 26 finalize hooks       | in progress (m21) | Orchestrator + 6 hooks in Go (`internal/finalize/`); 20 hooks routed through `lib/finalize_shim.sh`. Follow-up m22–m25 swap shim cases for Go bodies one subsystem at a time. |
 | 2 | `preflight.sh` + checks/services       | port        | UI config audit (m131) is the riskiest sub-piece. |
 | 3 | `tui_ops.sh` mid-run writers            | port        | Status writer needs atomic-rename per `lib/tui_liveness.sh`. |
 | 4 | `dashboard.sh` + emitters/parsers       | port        | Currently emits JSON envelopes the Go side already speaks. |
@@ -113,7 +113,42 @@ These need an answer before Phase 5 design freezes:
 |------------------------|---------------------------------------:|
 | Start of Phase 4 (m11) |                                ~14000 |
 | End of Phase 4 (m20)   |                                 ~9500 |
+| End of Phase 5 m21     |                                 ~9100 |
 | Phase 5 target         |                                     0 |
+
+m21 closing notes:
+
+- **8** pure-Go hooks landed in `internal/finalize/` (`clear_state`,
+  `archive_reports`, `mark_done`, `archive_milestone`, `emit_run_memory`,
+  `emit_run_summary`, `emit_timing_report`, `causal_log_finalize`). The
+  remaining **18** hooks dispatch through `lib/finalize_shim.sh` (one bash
+  process per hook).
+- `BashAdapter.Finalize` no longer execs `bash lib/finalize.sh`; it
+  constructs `finalize.Orchestrator` and runs the chain in-process.
+- `lib/finalize.sh` shrunk to 48 lines (was 280). A legacy compatibility
+  `finalize_run` shim remains so the V3 entry point (`tekhton-legacy.sh`)
+  still has a working `finalize_run` — it execs `tekhton finalize` so the
+  Go orchestrator drives the chain in both paths.
+- `tekhton finalize` Cobra subcommand (`cmd/tekhton/finalize.go`) is the
+  developer-facing entry point — flagged `Hidden` so it doesn't appear in
+  the standard help output.
+- Bash files **deleted**: `finalize_summary.sh`,
+  `finalize_summary_collectors.sh`, `run_memory.sh` (their Go ports —
+  `emit_run_summary` and `emit_run_memory` — fully cover the bodies).
+- Bash files **retained as transition**: `milestone_archival.sh` and
+  `milestone_archival_helpers.sh`. The m21 plan called for deletion, but
+  closeout audit found `lib/milestone_split.sh:138,226` still imports
+  `_extract_milestone_block` / `_replace_milestone_block`, and
+  `tekhton-legacy.sh:2208` still calls `archive_all_completed_milestones`
+  for the V2→V3 migration path. Files restored; retire when
+  `milestone_split.sh` ports (target m25-ish) and the legacy migration
+  path retires (target m28). Net: 3 files deleted, not 5.
+- Dogfooding artifacts: 17 patch bumps surfaced during the m21 cycling
+  run (`4.21.1` → `4.21.17`), none reverting earlier work — all forward
+  patches. Two findings recorded as drift observations: (a) non-blocking
+  router misclassified a CI-failing test as non-blocking; (b) architect
+  agent didn't discover the pre-existing `parity_test.go` before
+  proposing a near-duplicate parity test.
 
 Each Phase 5 milestone records the post-milestone LOC count in its CODER_SUMMARY.
 A milestone that does *not* reduce the bash count is a code smell — Phase 5

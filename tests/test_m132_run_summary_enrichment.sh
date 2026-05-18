@@ -4,6 +4,14 @@
 # emitted by _hook_emit_run_summary.
 set -euo pipefail
 
+# m21: lib/finalize_summary.sh was ported to Go in internal/finalize/.
+# Skip when the bash body is gone; coverage now lives in internal/finalize/emit_run_summary_test.go.
+if [[ ! -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/finalize_summary.sh" ]]; then
+    echo "=== test_m132_run_summary_enrichment.sh ==="
+    echo "  SKIPPED: superseded by internal/finalize/emit_run_summary_test.go (m21)"
+    exit 0
+fi
+
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PASS=0

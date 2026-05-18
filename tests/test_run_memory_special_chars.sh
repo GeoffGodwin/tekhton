@@ -5,6 +5,14 @@
 #   that reference shell variables are a specific concern for JSONL validity.
 set -euo pipefail
 
+# m21: lib/run_memory.sh was ported to Go in internal/finalize/.
+# Skip when the bash body is gone; coverage now lives in internal/finalize/emit_run_memory_test.go.
+if [[ ! -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/run_memory.sh" ]]; then
+    echo "=== test_run_memory_special_chars.sh ==="
+    echo "  SKIPPED: superseded by internal/finalize/emit_run_memory_test.go (m21)"
+    exit 0
+fi
+
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PASS=0

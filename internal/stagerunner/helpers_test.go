@@ -1,10 +1,13 @@
 package stagerunner
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -206,6 +209,110 @@ func TestBuildBashScriptOrdering(t *testing.T) {
 		t.Fatalf("source order violated:\ncommon=%d libA=%d libB=%d stageA=%d envelope=%d script=%d\n%s",
 			common, libA, libB, stageA, envelope, script, out)
 	}
+}
+
+// TestDefaultLibHelpersMatchesLegacySourceBlock asserts that DefaultLibHelpers
+// is an exact mirror of the global lib/ and platforms/ source block in
+// tekhton-legacy.sh (lines 848–959). Any lib/*.sh added to the legacy block but
+// missed in DefaultLibHelpers produces silent exit-127 failures in the Go adapter.
+func TestDefaultLibHelpersMatchesLegacySourceBlock(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
+	legacyPath := filepath.Join(repoRoot, "tekhton-legacy.sh")
+
+	f, err := os.Open(legacyPath)
+	if err != nil {
+		t.Fatalf("open tekhton-legacy.sh: %v", err)
+	}
+	defer f.Close()
+
+	const tekhtonHomePrefix = "${TEKHTON_HOME}/"
+	var extracted []string
+	inLibBlock := false
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Enter the global lib source block when we see its section header.
+		if !inLibBlock {
+			if strings.HasPrefix(line, "# --- Library sources") {
+				inLibBlock = true
+			}
+			continue
+		}
+		// Stop at the per-stage helper section (which immediately follows the
+		// lib block). The per-stage helpers are not in DefaultLibHelpers.
+		if strings.HasPrefix(line, "# Stage helpers") {
+			break
+		}
+		if !strings.HasPrefix(line, "source") {
+			continue
+		}
+		if !strings.Contains(line, "TEKHTON_HOME") {
+			continue
+		}
+		if !strings.Contains(line, "/lib/") && !strings.Contains(line, "/platforms/") {
+			continue
+		}
+		idx := strings.Index(line, tekhtonHomePrefix)
+		if idx < 0 {
+			continue
+		}
+		// Extract path: everything after ${TEKHTON_HOME}/ up to the first
+		// quote, space, or tab (handles inline comments such as # M129).
+		rest := line[idx+len(tekhtonHomePrefix):]
+		fields := strings.FieldsFunc(rest, func(r rune) bool {
+			return r == '"' || r == '\'' || r == ' ' || r == '\t'
+		})
+		if len(fields) == 0 {
+			continue
+		}
+		path := fields[0]
+		// common.sh is sourced by buildBashScript before the LibHelpers loop;
+		// it is intentionally absent from DefaultLibHelpers.
+		if path == "lib/common.sh" {
+			continue
+		}
+		extracted = append(extracted, path)
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan tekhton-legacy.sh: %v", err)
+	}
+
+	if len(extracted) != len(DefaultLibHelpers) {
+		t.Fatalf("tekhton-legacy.sh has %d entries, DefaultLibHelpers has %d\n%s",
+			len(extracted), len(DefaultLibHelpers), libHelpersDiff(extracted, DefaultLibHelpers))
+	}
+	for i := range extracted {
+		if extracted[i] != DefaultLibHelpers[i] {
+			t.Fatalf("entry[%d] mismatch:\n  legacy:  %q\n  default: %q\n%s",
+				i, extracted[i], DefaultLibHelpers[i], libHelpersDiff(extracted, DefaultLibHelpers))
+		}
+	}
+}
+
+// libHelpersDiff returns a line-by-line comparison of two string slices,
+// marking divergent entries with "!" for test failure messages.
+func libHelpersDiff(a, b []string) string {
+	n := len(a)
+	if len(b) > n {
+		n = len(b)
+	}
+	var sb strings.Builder
+	for i := 0; i < n; i++ {
+		av, bv := "<missing>", "<missing>"
+		if i < len(a) {
+			av = a[i]
+		}
+		if i < len(b) {
+			bv = b[i]
+		}
+		mark := " "
+		if av != bv {
+			mark = "!"
+		}
+		sb.WriteString(fmt.Sprintf("%s [%d] legacy=%-55s default=%s\n", mark, i, av, bv))
+	}
+	return sb.String()
 }
 
 // TestBuildBashScriptExportsRequiredEnv asserts the wrapper exports both

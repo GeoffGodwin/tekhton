@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/geoffgodwin/tekhton/internal/finalize"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/state"
 )
@@ -228,9 +229,17 @@ func (b *BashHookRunner) Preflight(ctx context.Context, req *proto.RunRequestV1)
 	return nil
 }
 
-// Finalize execs `bash <home>/lib/finalize.sh` with disposition + result-file
-// env vars set so existing hooks branch on disposition and future hooks can
-// read the structured result envelope.
+// Finalize builds the Go finalize orchestrator and runs it. m21 moved hook
+// registration, sequencing, and per-hook error handling from
+// lib/finalize.sh into internal/finalize. Pure-Go hooks (clear_state,
+// archive_reports, mark_done, archive_milestone, emit_run_memory,
+// emit_run_summary, emit_timing_report, causal_log_finalize) execute
+// directly; the remaining hooks are dispatched to bash one at a time via
+// lib/finalize_shim.sh.
+//
+// The chain is continue-on-error by contract — a failing hook is logged
+// but does not abort the rest of the finalize sequence (mirrors the bash
+// finalize_run loop).
 func (b *BashHookRunner) Finalize(ctx context.Context, req *proto.RunRequestV1, res *proto.RunResultV1) error {
 	if b.TekhtonHome == "" {
 		return nil
@@ -238,28 +247,41 @@ func (b *BashHookRunner) Finalize(ctx context.Context, req *proto.RunRequestV1, 
 	if res == nil {
 		return nil
 	}
-	script := filepath.Join(b.TekhtonHome, "lib", "finalize.sh")
-	if _, err := os.Stat(script); err != nil {
-		return nil
+	orch := finalize.NewOrchestrator(b.TekhtonHome, req.ProjectDir)
+	exitCode := 0
+	if res.Disposition != proto.RunDispositionSuccess {
+		exitCode = 1
 	}
-	cmd := exec.CommandContext(ctx, "bash", script)
-	cmd.Dir = req.ProjectDir
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = stdoutOr(b.Stdout)
-	cmd.Stderr = stderrOr(b.Stderr)
-
-	env := append(os.Environ(),
-		"TEKHTON_HOME="+b.TekhtonHome,
-		"PROJECT_DIR="+req.ProjectDir,
-		"TEKHTON_RUN_DISPOSITION="+res.Disposition,
-	)
-	if req.ProjectDir != "" {
-		env = append(env, "TEKHTON_RUN_RESULT_FILE="+filepath.Join(req.ProjectDir, ".tekhton", "RUN_RESULT.json"))
+	// Compute the milestone disposition the bash side used to cache in
+	// _CACHED_DISPOSITION. Three Go hooks (clear_state / mark_done /
+	// archive_milestone) gate on this — empty string makes them all
+	// no-ops, which would silently break milestone close-out for every
+	// Go-orchestrated run. RunCompleteLoop already gates success on
+	// acceptance passing, so a successful milestone run reliably maps to
+	// COMPLETE_AND_CONTINUE here. (COMPLETE_AND_WAIT is only meaningful
+	// for the bash auto-advance flow, which stays bash in Phase 5.)
+	var milestoneDisposition string
+	if req.Mode == proto.RunModeMilestone && res.Disposition == proto.RunDispositionSuccess {
+		milestoneDisposition = "COMPLETE_AND_CONTINUE"
 	}
-	cmd.Env = env
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("finalize: %w", err)
+	in := &finalize.Input{
+		ExitCode:             exitCode,
+		Disposition:          res.Disposition,
+		Result:               res,
+		ResultPath:           filepath.Join(req.ProjectDir, ".tekhton", "RUN_RESULT.json"),
+		TekhtonHome:          b.TekhtonHome,
+		ProjectDir:           req.ProjectDir,
+		Milestone:            req.Milestone,
+		MilestoneMode:        req.Mode == proto.RunModeMilestone,
+		MilestoneDisposition: milestoneDisposition,
+		Log:                  stderrOr(b.Stderr),
 	}
+	in.LogDir = filepath.Join(req.ProjectDir, ".claude", "logs")
+	in.Timestamp = time.Now().UTC().Format("20060102_150405")
+	sum := orch.Run(ctx, in)
+	// Failed hooks already logged inline by orchestrator; surface a summary
+	// counter for visibility but never fail the run.
+	_ = sum
 	return nil
 }
 
