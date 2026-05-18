@@ -442,20 +442,25 @@ else
     fail "9b" "intake_complete_label='$intake_complete_label' event_index=$intake_event_index"
 fi
 
-# Cross-check the deferred-emit globals consumed by the legacy entry point
-# exist as hand-off vehicles (_PREFLIGHT_SUMMARY, _INTAKE_PASS_EMIT). Their
-# consumer block in tekhton-legacy.sh runs AFTER tui_stage_end, so the
-# documented ordering is preserved at the source level, not just in this
-# synthetic harness. (m20: legacy entry-point body moved to tekhton-legacy.sh.)
-if grep -q "_PREFLIGHT_SUMMARY" "${TEKHTON_HOME}/lib/preflight.sh" \
-   && grep -q "_INTAKE_PASS_EMIT" "${TEKHTON_HOME}/stages/intake.sh"; then
-    pass "9c: deferred-emit globals declared in producing modules"
+# Cross-check the deferred-emit global consumed by the legacy entry point
+# exists as a hand-off vehicle (_INTAKE_PASS_EMIT). Its consumer block in
+# tekhton-legacy.sh runs AFTER tui_stage_end, so the documented ordering
+# is preserved at the source level, not just in this synthetic harness.
+# (m20: legacy entry-point body moved to tekhton-legacy.sh.)
+#
+# m22: _PREFLIGHT_SUMMARY is no longer part of this invariant — the Go
+# preflight orchestrator (internal/preflight.Orchestrator.SummaryLine)
+# prints the summary synchronously inside `tekhton preflight`, so the
+# producer/consumer hand-off the bash side used (set in lib/preflight.sh,
+# read in tekhton-legacy.sh after tui_stage_end) no longer exists.
+if grep -q "_INTAKE_PASS_EMIT" "${TEKHTON_HOME}/stages/intake.sh"; then
+    pass "9c: deferred-emit global declared in producing module (_INTAKE_PASS_EMIT)"
 else
-    fail "9c" "missing _PREFLIGHT_SUMMARY or _INTAKE_PASS_EMIT producer reference"
+    fail "9c" "missing _INTAKE_PASS_EMIT producer reference in stages/intake.sh"
 fi
 
-# Cross-check tekhton-legacy.sh consumes the globals AFTER tui_stage_end for
-# both stages — i.e. the success-emit lines appear after a tui_stage_end
+# Cross-check tekhton-legacy.sh consumes the global AFTER tui_stage_end for
+# the intake stage — i.e. the success-emit line appears after a tui_stage_end
 # call for the same stage. We verify by line ordering.
 _grep_after() {
     # _grep_after FILE STAGE_END_PATTERN GLOBAL_PATTERN
@@ -469,15 +474,12 @@ _grep_after() {
     (( global_line > stage_line ))
 }
 
-if _grep_after "${TEKHTON_HOME}/tekhton-legacy.sh" 'tui_stage_end "preflight"' '_PREFLIGHT_SUMMARY'; then
-    pass "9d: tekhton-legacy.sh consumes _PREFLIGHT_SUMMARY after tui_stage_end \"preflight\""
-else
-    fail "9d" "ordering: _PREFLIGHT_SUMMARY consumer is not after tui_stage_end \"preflight\""
-fi
+# m22: _PREFLIGHT_SUMMARY ordering check (was 9d) deleted — the deferred
+# emit pattern no longer exists for preflight after the Go port.
 if _grep_after "${TEKHTON_HOME}/tekhton-legacy.sh" 'tui_stage_end "intake"' '_INTAKE_PASS_EMIT'; then
-    pass "9e: tekhton-legacy.sh consumes _INTAKE_PASS_EMIT after tui_stage_end \"intake\""
+    pass "9d: tekhton-legacy.sh consumes _INTAKE_PASS_EMIT after tui_stage_end \"intake\""
 else
-    fail "9e" "ordering: _INTAKE_PASS_EMIT consumer is not after tui_stage_end \"intake\""
+    fail "9d" "ordering: _INTAKE_PASS_EMIT consumer is not after tui_stage_end \"intake\""
 fi
 
 # =============================================================================

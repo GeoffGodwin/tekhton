@@ -867,12 +867,22 @@ source "${TEKHTON_HOME}/lib/quota.sh"
 source "${TEKHTON_HOME}/lib/prompts.sh"
 source "${TEKHTON_HOME}/lib/errors.sh"
 source "${TEKHTON_HOME}/lib/remediation.sh"
-source "${TEKHTON_HOME}/lib/preflight.sh"
-source "${TEKHTON_HOME}/lib/preflight_checks.sh"
-source "${TEKHTON_HOME}/lib/preflight_checks_env.sh"
-source "${TEKHTON_HOME}/lib/preflight_checks_ui.sh"
-source "${TEKHTON_HOME}/lib/preflight_services.sh"
-source "${TEKHTON_HOME}/lib/preflight_services_infer.sh"
+# m22: preflight subsystem ported to internal/preflight (Go). The six
+# lib/preflight*.sh files were deleted; the legacy compatibility shim for
+# `run_preflight_checks` is defined inline below and execs `tekhton
+# preflight` so the Go orchestrator drives both the dispatcher's run path
+# and the V3 entry point.
+run_preflight_checks() {
+    local tekhton_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+    if [[ ! -x "$tekhton_bin" ]]; then
+        echo "run_preflight_checks: tekhton binary not found at ${tekhton_bin}" >&2
+        echo "run_preflight_checks: skipping preflight (post-m22 Go orchestrator required)" >&2
+        return 0
+    fi
+    "$tekhton_bin" preflight \
+        --project-dir "${PROJECT_DIR:-$(pwd)}" \
+        --home "${TEKHTON_HOME:-$(pwd)}"
+}
 source "${TEKHTON_HOME}/lib/gates.sh"
 source "${TEKHTON_HOME}/lib/gates_phases.sh"
 source "${TEKHTON_HOME}/lib/gates_ui_helpers.sh"
@@ -2969,13 +2979,11 @@ if run_preflight_checks; then
     if declare -f tui_stage_end &>/dev/null; then
         tui_stage_end "preflight" "${CLAUDE_STANDARD_MODEL:-}" "" "" "pass"
     fi
-    # M118: emit deferred success line AFTER pill flips green so Recent Events
-    # ordering matches pill state. _PREFLIGHT_SUMMARY is set inside
-    # run_preflight_checks only on the PASS path.
-    if [[ -n "${_PREFLIGHT_SUMMARY:-}" ]]; then
-        success "$_PREFLIGHT_SUMMARY"
-        unset _PREFLIGHT_SUMMARY
-    fi
+    # m22: the bash _PREFLIGHT_SUMMARY deferred-emit dance is gone — the Go
+    # orchestrator (internal/preflight.Orchestrator.SummaryLine) prints the
+    # summary line synchronously to stderr inside `tekhton preflight`, so
+    # Recent Events ordering already matches pill state without the
+    # producer/consumer hand-off the M118 pattern used.
 else
     if declare -f tui_stage_end &>/dev/null; then
         tui_stage_end "preflight" "${CLAUDE_STANDARD_MODEL:-}" "" "" "FAILED"

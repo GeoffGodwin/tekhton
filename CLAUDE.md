@@ -189,8 +189,7 @@ tekhton/
 │   ├── quota.sh            # API quota management
 │   ├── quota_sleep.sh      # M124 chunked-sleep helper for enter_quota_pause
 │   ├── quota_probe.sh      # M125 layered probe (version/zero_turn/fallback) + back-off/jitter helpers
-│   ├── preflight.sh        # Pre-flight environment validation
-│   ├── preflight_checks_ui.sh # M131 UI test framework config audit (Playwright/Cypress/Jest/Vitest)
+│   # preflight subsystem ported to internal/preflight/ in m22 — six bash files deleted
 │   ├── tui.sh              # M97 TUI sidecar manager (spawn/stop/update calls)
 │   ├── tui_helpers.sh      # M97 JSON builders for tui_status.json
 │   ├── tui_ops.sh          # M104 run_op wrapper + TUI update/event helpers; run_op uses M113 substage API (M115)

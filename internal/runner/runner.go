@@ -23,11 +23,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/finalize"
+	"github.com/geoffgodwin/tekhton/internal/preflight"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/state"
 )
@@ -204,27 +204,28 @@ type BashHookRunner struct {
 	Stderr *os.File
 }
 
-// Preflight execs `bash <home>/lib/preflight.sh`. The runner reads the report
-// file (PREFLIGHT_REPORT.md) when the script exits to decide whether to abort.
+// Preflight constructs the Go preflight orchestrator and runs the chain
+// in-process. m22 ports the bash subsystem (lib/preflight*.sh, deleted in
+// the same milestone) to internal/preflight, so there is no longer any
+// bash subprocess on the pre-run boundary — the Go orchestrator writes
+// PREFLIGHT_REPORT.md directly and surfaces blockers via HasBlockers.
+//
+// The receiver's Stdout/Stderr default to os.Stdout/os.Stderr when nil so
+// the in-process orchestrator and any future bash-shim hooks share the
+// same diagnostic stream the V3 entry point used.
 func (b *BashHookRunner) Preflight(ctx context.Context, req *proto.RunRequestV1) error {
 	if b.TekhtonHome == "" {
 		return nil
 	}
-	script := filepath.Join(b.TekhtonHome, "lib", "preflight.sh")
-	if _, err := os.Stat(script); err != nil {
-		// Pre-flight is optional; absent means skip.
-		return nil
-	}
-	cmd := exec.CommandContext(ctx, "bash", script)
-	cmd.Dir = req.ProjectDir
-	cmd.Stdout = stdoutOr(b.Stdout)
-	cmd.Stderr = stderrOr(b.Stderr)
-	cmd.Env = append(os.Environ(),
-		"TEKHTON_HOME="+b.TekhtonHome,
-		"PROJECT_DIR="+req.ProjectDir,
-	)
-	if err := cmd.Run(); err != nil {
+	o := preflight.NewOrchestrator(b.TekhtonHome, req.ProjectDir)
+	o.Log = stderrOr(b.Stderr)
+	if _, err := o.Run(ctx); err != nil {
 		return fmt.Errorf("preflight: %w", err)
+	}
+	fmt.Fprintln(stderrOr(b.Stderr), o.SummaryLine())
+	if o.HasBlockers() {
+		return fmt.Errorf("%w: see %s", ErrPreflightBlocked,
+			filepath.Join(req.ProjectDir, ".tekhton", "PREFLIGHT_REPORT.md"))
 	}
 	return nil
 }

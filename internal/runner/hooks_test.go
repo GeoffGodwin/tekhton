@@ -20,12 +20,18 @@ func TestBashHookRunnerPreflightSkipWhenNoHome(t *testing.T) {
 	}
 }
 
-func TestBashHookRunnerPreflightSkipsMissingScript(t *testing.T) {
-	tmp := t.TempDir() // no lib/preflight.sh present
+// TestBashHookRunnerPreflightNoApplicableChecks verifies the empty-project
+// path: an empty project has zero applicable checks, total==0, so the
+// orchestrator skips writing the report and Preflight returns nil. The
+// pre-m22 contract was "absent script means skip"; the post-m22 contract
+// is "no applicable checks means skip" — same observable outcome (no
+// error, no report file).
+func TestBashHookRunnerPreflightNoApplicableChecks(t *testing.T) {
+	tmp := t.TempDir() // no preflight subsystem on disk, no project files
 	h := &BashHookRunner{TekhtonHome: tmp}
 	req := &proto.RunRequestV1{ProjectDir: t.TempDir()}
 	if err := h.Preflight(context.Background(), req); err != nil {
-		t.Fatalf("want nil when script absent; got %v", err)
+		t.Fatalf("want nil when no applicable checks; got %v", err)
 	}
 }
 
@@ -44,26 +50,54 @@ func TestBashHookRunnerFinalizeSkipsMissingScript(t *testing.T) {
 	}
 }
 
-func TestBashHookRunnerPreflightInvokesScript(t *testing.T) {
+// TestBashHookRunnerPreflightWritesReport verifies the Go orchestrator
+// is wired in: a project with at least one applicable check (here, a
+// go.sum/go.mod pair triggers the Foundation deps check) produces a
+// PREFLIGHT_REPORT.md file under .tekhton/. Pre-m22 the assertion was on
+// a bash-script marker file; post-m22 the assertion is on the report the
+// in-process orchestrator writes directly.
+func TestBashHookRunnerPreflightWritesReport(t *testing.T) {
 	home := t.TempDir()
-	libDir := filepath.Join(home, "lib")
-	if err := os.MkdirAll(libDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	script := filepath.Join(libDir, "preflight.sh")
-	// Write a script that creates a marker file in the project dir.
-	body := "#!/usr/bin/env bash\ntouch \"$PROJECT_DIR/preflight.marker\"\n"
-	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	proj := t.TempDir()
+	if err := os.WriteFile(filepath.Join(proj, "go.mod"), []byte("module x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(proj, "go.sum"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h := &BashHookRunner{TekhtonHome: home}
 	req := &proto.RunRequestV1{ProjectDir: proj}
 	if err := h.Preflight(context.Background(), req); err != nil {
 		t.Fatalf("preflight: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(proj, "preflight.marker")); err != nil {
-		t.Fatalf("preflight script did not run: %v", err)
+	report := filepath.Join(proj, ".tekhton", "PREFLIGHT_REPORT.md")
+	if _, err := os.Stat(report); err != nil {
+		t.Fatalf("expected PREFLIGHT_REPORT.md written; got %v", err)
+	}
+	body, _ := os.ReadFile(report)
+	if !strings.Contains(string(body), "Dependencies (Go)") {
+		t.Errorf("report missing expected Go deps finding: %s", body)
+	}
+}
+
+// TestBashHookRunnerPreflightBlocksOnFail verifies the blockers path:
+// when a check returns a fail-status finding the runner surfaces
+// ErrPreflightBlocked so the outer loop can abort the run.
+func TestBashHookRunnerPreflightBlocksOnFail(t *testing.T) {
+	home := t.TempDir()
+	proj := t.TempDir()
+	// Vitest watch:true is a known FAIL rule (JV-1) that does not auto-fix.
+	cfg := "export default {\n  watch: true,\n}\n"
+	if err := os.WriteFile(filepath.Join(proj, "vitest.config.ts"),
+		[]byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("UI_TEST_CMD", "vitest")
+	h := &BashHookRunner{TekhtonHome: home}
+	req := &proto.RunRequestV1{ProjectDir: proj}
+	err := h.Preflight(context.Background(), req)
+	if !errors.Is(err, ErrPreflightBlocked) {
+		t.Fatalf("expected ErrPreflightBlocked; got %v", err)
 	}
 }
 

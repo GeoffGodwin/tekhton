@@ -47,6 +47,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newPipelineCmd())
 	cmd.AddCommand(newRunCmd())
 	cmd.AddCommand(newFinalizeCmd())
+	cmd.AddCommand(newPreflightCmd())
 	return cmd
 }
 

@@ -25,7 +25,30 @@ _fail() { printf '\033[0;31m[self-host] FAIL\033[0m %-3s %s\n' "$1" "$2" >&2; FA
 
 FAILURES=0
 
+# --- dry-run gate (m22 Goal 6) ---------------------------------------------
+# The script is a dry-run smoke gate; when TEKHTON_SELF_HOST_DRY_RUN is not
+# set the documented contract is "skip with exit 0". The skip MUST fire
+# before the toolchain pre-check so machines without a Go install can still
+# observe the skip semantics — the failure mode at m21 close was the
+# toolchain check killing the script before this gate could be evaluated.
+# tests/test_self_host_dry_run_gate.sh asserts both the exit 0 and the
+# "Skipping live --dry-run" message; both shape the wording below.
+if [[ "${TEKHTON_SELF_HOST_DRY_RUN:-0}" != "1" ]]; then
+    _log "Skipping live --dry-run (set TEKHTON_SELF_HOST_DRY_RUN=1 to enable)."
+    exit 0
+fi
+
 # --- prerequisites ---------------------------------------------------------
+# Claude CLI presence is the binding requirement of the live smoke section;
+# we check it BEFORE the Go toolchain so the test harness can construct a
+# claude-absent / go-absent environment and observe the correct error
+# message ("claude CLI not found"). The Go toolchain check still fires
+# afterward for the routing matrix + version comparisons below.
+
+if ! command -v claude >/dev/null 2>&1; then
+    printf 'TEKHTON_SELF_HOST_DRY_RUN=1 set but claude CLI not found.\n' >&2
+    exit 1
+fi
 
 if ! command -v go >/dev/null 2>&1; then
     printf 'ERROR: Go toolchain not found. Install per docs/go-build.md.\n' >&2
@@ -171,22 +194,16 @@ else
     _fail "V3" "tekhton resolves to '${actual_path}' (expected '${REPO_ROOT}/bin/tekhton')"
 fi
 
-# --- Optional live --dry-run smoke (gated) ---------------------------------
+# --- Live --dry-run smoke --------------------------------------------------
+# Reaching this point implies TEKHTON_SELF_HOST_DRY_RUN=1 and both `claude`
+# and `go` are on PATH — all three are verified at the prerequisites
+# section above so this block can focus on the actual smoke invocation.
 
-if [[ "${TEKHTON_SELF_HOST_DRY_RUN:-0}" == "1" ]]; then
-    if ! command -v claude >/dev/null 2>&1; then
-        printf 'TEKHTON_SELF_HOST_DRY_RUN=1 set but claude CLI not found.\n' >&2
-        FAILURES=$(( FAILURES + 1 ))
-    else
-        _log "Running live --dry-run smoke (TEKHTON_SELF_HOST_DRY_RUN=1)..."
-        if bash "${REPO_ROOT}/tekhton.sh" --dry-run --task "self-host smoke" >/dev/null 2>&1; then
-            _pass "DR" "tekhton.sh --dry-run --task exits 0"
-        else
-            _fail "DR" "tekhton.sh --dry-run --task exited non-zero"
-        fi
-    fi
+_log "Running live --dry-run smoke (TEKHTON_SELF_HOST_DRY_RUN=1)..."
+if bash "${REPO_ROOT}/tekhton.sh" --dry-run --task "self-host smoke" >/dev/null 2>&1; then
+    _pass "DR" "tekhton.sh --dry-run --task exits 0"
 else
-    _log "Skipping live --dry-run (set TEKHTON_SELF_HOST_DRY_RUN=1 to enable)."
+    _fail "DR" "tekhton.sh --dry-run --task exited non-zero"
 fi
 
 # --- Summary ---------------------------------------------------------------

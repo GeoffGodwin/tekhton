@@ -42,12 +42,9 @@ var DefaultLibHelpers = []string{
 	"lib/prompts.sh",
 	"lib/errors.sh",
 	"lib/remediation.sh",
-	"lib/preflight.sh",
-	"lib/preflight_checks.sh",
-	"lib/preflight_checks_env.sh",
-	"lib/preflight_checks_ui.sh",
-	"lib/preflight_services.sh",
-	"lib/preflight_services_infer.sh",
+	// m22: preflight subsystem ported to internal/preflight; six bash files
+	// deleted. The legacy `run_preflight_checks` function in
+	// tekhton-legacy.sh now execs `tekhton preflight` directly.
 	"lib/gates.sh",
 	"lib/gates_phases.sh",
 	"lib/gates_ui_helpers.sh",

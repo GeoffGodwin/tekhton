@@ -145,6 +145,30 @@ PATTERNS=(
     # truth.
     '\bregister_finalize_hook\b'
     '\bFINALIZE_HOOKS\b'
+    # m22 (Phase 5): the preflight subsystem ported to internal/preflight.
+    # The six lib/preflight*.sh files were deleted; only the legacy
+    # compatibility shim `run_preflight_checks` survives, defined inline
+    # in tekhton-legacy.sh and execing `tekhton preflight`. Re-defining
+    # any of the six deleted bash function families in lib/ or stages/
+    # would silently fork the preflight contract. The internal helper
+    # names below were the bash entry points exposed by the deleted
+    # files; any reappearance is a regression to be caught at audit.
+    '\b_preflight_check_dependencies\b'
+    '\b_preflight_check_tools\b'
+    '\b_preflight_check_generated_code\b'
+    '\b_preflight_check_env_vars\b'
+    '\b_preflight_check_runtime_version\b'
+    '\b_preflight_check_ports\b'
+    '\b_preflight_check_lock_freshness\b'
+    '\b_preflight_check_docker\b'
+    '\b_preflight_check_services\b'
+    '\b_preflight_check_dev_server\b'
+    '\b_preflight_check_ui_test_config\b'
+    '\b_pf_record\b'
+    '\b_pf_try_fix\b'
+    '\b_pf_uitest_playwright\b'
+    '\b_pf_infer_from_compose\b'
+    '\b_PF_REPORT_LINES\b'
 )
 
 # --- Audit -------------------------------------------------------------------

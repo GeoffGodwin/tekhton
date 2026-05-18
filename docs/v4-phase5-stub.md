@@ -32,7 +32,7 @@ The disposition column is one of:
 | # | Subsystem (`lib/` unless noted)        | Disposition | Notes |
 |---|-----------------------------------------|-------------|-------|
 | 1 | `finalize.sh` + 26 finalize hooks       | in progress (m21) | Orchestrator + 6 hooks in Go (`internal/finalize/`); 20 hooks routed through `lib/finalize_shim.sh`. Follow-up m22–m25 swap shim cases for Go bodies one subsystem at a time. |
-| 2 | `preflight.sh` + checks/services       | port        | UI config audit (m131) is the riskiest sub-piece. |
+| 2 | `preflight.sh` + checks/services       | done (m22)  | Subsystem ported in full to `internal/preflight/` — five Go check families (foundation, ui_audit, env, services_infer, services) registered behind `Orchestrator`. Six `lib/preflight*.sh` files deleted; `tekhton-legacy.sh::run_preflight_checks` execs `tekhton preflight`. M131 UI config audit (the behavior-heaviest sub-piece) ports cleanly with byte-identical report output validated by `tests/test_preflight_parity.sh`. |
 | 3 | `tui_ops.sh` mid-run writers            | port        | Status writer needs atomic-rename per `lib/tui_liveness.sh`. |
 | 4 | `dashboard.sh` + emitters/parsers       | port        | Currently emits JSON envelopes the Go side already speaks. |
 | 5 | `notes.sh` + variants (rewrite, cli, …) | port        | Three-state state machine; pure bash today. |
@@ -114,7 +114,44 @@ These need an answer before Phase 5 design freezes:
 | Start of Phase 4 (m11) |                                ~14000 |
 | End of Phase 4 (m20)   |                                 ~9500 |
 | End of Phase 5 m21     |                                 ~9100 |
+| End of Phase 5 m22     |                                 ~7600 |
 | Phase 5 target         |                                     0 |
+
+m22 closing notes:
+
+- **5** pure-Go check families landed under `internal/preflight/`
+  (`foundation`, `ui_audit`, `env`, `services_infer`, `services`) driven
+  by `preflight.Orchestrator`. The five `lib/preflight*.sh` files plus
+  the parent `lib/preflight.sh` deleted outright — no per-check shim
+  equivalent of m21's finalize dispatcher because preflight checks have
+  flat dependencies (no notes/drift/dashboard cross-coupling).
+- `BashHookRunner.Preflight` no longer execs `bash lib/preflight.sh`; it
+  constructs `preflight.Orchestrator` and runs the chain in-process.
+- `tekhton preflight` Cobra subcommand (`cmd/tekhton/preflight.go`) is
+  the developer-facing entry point — Hidden, matching the m21
+  `tekhton finalize` precedent.
+- `tekhton-legacy.sh` lost the six `source lib/preflight*.sh` lines; the
+  legacy `run_preflight_checks` function execs `tekhton preflight` so
+  the bash V3 entry point still has a working name during the Phase 5
+  transition.
+- Goal 6 (`tests/test_self_host_dry_run_gate`) un-guarded: the m21
+  skip-block at the top of the test was removed, the gate fix in
+  `scripts/self-host-check.sh` moves the dry-run-skip check above the
+  Go-toolchain pre-check so the gate's documented contract (skip with
+  exit 0 when the flag is absent) holds even without Go installed. Side
+  effect: `make self-host` / `make dogfood` become a no-op when
+  `TEKHTON_SELF_HOST_DRY_RUN` is unset — invoking the matrix now
+  requires setting the flag explicitly. Acceptable trade-off per the
+  m22 spec.
+- Five bash tests skip-stubbed (`test_preflight.sh`,
+  `test_preflight_ui_config.sh`, `test_m118_preflight_deferred_emit.sh`,
+  `test_preflight_infer_degenerate.sh`, `test_m131_coverage_gaps.sh`)
+  with notes pointing at their Go replacements. Pass count unchanged.
+- Parity gate (`tests/test_preflight_parity.sh`) asserts byte-identical
+  PREFLIGHT_REPORT.md across green_path / env_only_fail /
+  ui_config_autopatch scenarios after timestamp + backup-path
+  normalisation. Dashboard parsers (still bash through m23) keep
+  reading the report unchanged.
 
 m21 closing notes:
 
