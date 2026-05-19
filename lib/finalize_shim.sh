@@ -83,11 +83,19 @@ case "$HOOK_NAME" in
     _hook_final_checks)
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/hooks_final_checks.sh"
-        # hooks_final_checks.sh calls print_run_summary (lib/agent_helpers.sh)
-        # via run_final_checks; without this source the shim dispatch trips
-        # `command not found` on every final-checks pass.
+        # hooks_final_checks.sh's run_final_checks expects four externals
+        # that the V3 in-process pipeline always had loaded:
+        #   - print_run_summary  → lib/agent_helpers.sh
+        #   - render_prompt      → lib/prompts.sh (build-fix template)
+        #   - run_agent          → lib/agent.sh   (test-fix agent spawn)
+        #   - AGENT_TOOLS_BUILD_FIX → lib/agent_shim.sh exports it
+        # Sourcing lib/agent.sh transitively brings agent_shim + helpers;
+        # lib/prompts.sh stays explicit because nothing else in the chain
+        # would re-source it.
         # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/agent_helpers.sh"
+        source "${TEKHTON_HOME}/lib/agent.sh"
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/prompts.sh"
         _shim_load_finalize_bodies
         ;;
     _hook_drift_artifacts)
