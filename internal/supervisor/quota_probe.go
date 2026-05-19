@@ -31,9 +31,12 @@ type ProbeKind int
 const (
 	// ProbeVersion runs `claude --version` — zero tokens, zero auth.
 	ProbeVersion ProbeKind = iota
-	// ProbeZeroTurn runs `claude --max-turns 0` with an empty prompt.
-	// Slightly more expensive; catches the case where --version works
-	// but real invocations still 429.
+	// ProbeZeroTurn historically ran `claude --max-turns 0` with an empty
+	// prompt. Claude CLI 2.1 removed --max-turns AND rejects the empty
+	// prompt (`Input must be provided ...`), so the probe degrades to a
+	// `claude -p` call with a one-character prompt — still cheaper than
+	// Fallback because the model is told to respond minimally, and the
+	// kind is preserved so the V3 ↔ Go probe-ladder semantics line up.
 	ProbeZeroTurn
 	// ProbeFallback runs a tiny real invocation. Burns API quota; the
 	// caller MUST rate-limit it externally (back-off floor).
@@ -138,11 +141,17 @@ func runProbeCommand(ctx context.Context, kind ProbeKind, binary string) (int, s
 	case ProbeVersion:
 		cmd = exec.CommandContext(ctx, binary, "--version")
 	case ProbeZeroTurn:
+		// 2.1: --max-turns gone, empty prompt forbidden. A single "."
+		// prompt with --output-format text is the smallest viable probe.
 		cmd = exec.CommandContext(ctx, binary,
-			"--max-turns", "0", "--output-format", "text", "-p", "")
+			"--output-format", "text", "-p", ".")
 	case ProbeFallback:
+		// 2.1: --max-turns gone. The Fallback probe was already the
+		// "burns API quota" tier; the request "respond with OK" naturally
+		// terminates after one turn, so removing the flag is a no-op for
+		// cost in practice.
 		cmd = exec.CommandContext(ctx, binary,
-			"--max-turns", "1", "--output-format", "json", "-p", "respond with OK")
+			"--output-format", "json", "-p", "respond with OK")
 	default:
 		return -1, "", fmt.Errorf("supervisor: unknown probe kind %d", kind)
 	}

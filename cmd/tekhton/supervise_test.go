@@ -52,12 +52,22 @@ func runSupervise(t *testing.T, stdin string, args ...string) (stdout string, er
 
 func validRequestJSON(t *testing.T) string {
 	t.Helper()
+	// Claude CLI 2.1 reads the prompt from stdin (the supervisor opens
+	// req.PromptFile and pipes it). The fake agent ignores stdin, but the
+	// supervisor still os.Open's the path before launch — so the fixture
+	// must point at a real file or every happy-path test fails with
+	// "no such file or directory".
+	dir := t.TempDir()
+	path := filepath.Join(dir, "scout.prompt")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("write prompt fixture: %v", err)
+	}
 	r := &proto.AgentRequestV1{
 		Proto:      proto.AgentRequestProtoV1,
 		RunID:      "rid",
 		Label:      "scout",
 		Model:      "claude-sonnet-4-6",
-		PromptFile: "/tmp/scout.prompt",
+		PromptFile: path,
 	}
 	b, err := json.Marshal(r)
 	if err != nil {

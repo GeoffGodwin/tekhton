@@ -5,7 +5,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -300,13 +299,17 @@ func TestBuildArgs_MinimalRequest(t *testing.T) {
 		PromptFile: "/tmp/p.prompt",
 	}
 	got := buildArgs(req)
-	want := []string{"-p", "--model", "claude-opus-4-7", "--output-format", "stream-json", "--prompt-file", "/tmp/p.prompt"}
+	want := []string{"-p", "--model", "claude-opus-4-7", "--output-format", "stream-json"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("buildArgs: got %v, want %v", got, want)
 	}
 }
 
-func TestBuildArgs_WithMaxTurns(t *testing.T) {
+// Claude CLI 2.1 removed both --prompt-file and --max-turns. The argv must
+// no longer mention either, regardless of what the proto request carries —
+// PromptFile is now consumed via stdin (see run() setting cmd.Stdin), and
+// MaxTurns is enforced supervisor-side via the activity timer.
+func TestBuildArgs_OmitsRemovedCLIFlags(t *testing.T) {
 	req := &proto.AgentRequestV1{
 		Proto:      proto.AgentRequestProtoV1,
 		Label:      "coder",
@@ -314,10 +317,11 @@ func TestBuildArgs_WithMaxTurns(t *testing.T) {
 		PromptFile: "/p",
 		MaxTurns:   25,
 	}
-	got := buildArgs(req)
-	joined := strings.Join(got, " ")
-	if !strings.Contains(joined, "--max-turns "+strconv.Itoa(25)) {
-		t.Errorf("buildArgs missing --max-turns: %v", got)
+	joined := strings.Join(buildArgs(req), " ")
+	for _, banned := range []string{"--max-turns", "--prompt-file"} {
+		if strings.Contains(joined, banned) {
+			t.Errorf("buildArgs leaks removed CLI flag %q: %s", banned, joined)
+		}
 	}
 }
 

@@ -43,8 +43,9 @@ touch "$TEST_LOG"
 
 # We'll mock claude to check the actual command being called
 mock_claude() {
-    # Capture the arguments to verify --dangerously-skip-permissions is used
-    # The args are: --model, model, --max-turns, turns, --output-format, text, --dangerously-skip-permissions, -p
+    # Capture the arguments to verify --dangerously-skip-permissions is used.
+    # The args are: --model <m> --output-format text --dangerously-skip-permissions -p
+    # (--max-turns was removed in Claude CLI 2.1.)
     local args_found=0
     for arg in "$@"; do
         if [[ "$arg" == "--dangerously-skip-permissions" ]]; then

@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -59,6 +58,18 @@ func (s *Supervisor) run(ctx context.Context, req *proto.AgentRequestV1) (*proto
 
 	cmd := buildCommand(runCtx, s.binary, req)
 	cmd.Cancel = makeCancelHook(cmd, reaper)
+
+	// Claude CLI 2.1 removed --prompt-file; the prompt is delivered via stdin
+	// on the parent's behalf. Open the file and hand the *os.File directly to
+	// exec.Cmd so the child inherits the fd without an intermediate goroutine.
+	// Closing the parent's handle after Wait() returns is safe — the child has
+	// its own duplicated descriptor.
+	promptFD, err := os.Open(req.PromptFile)
+	if err != nil {
+		return startFailureResult(req, err), nil
+	}
+	defer func() { _ = promptFD.Close() }()
+	cmd.Stdin = promptFD
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -273,24 +284,19 @@ func buildCommand(ctx context.Context, bin string, req *proto.AgentRequestV1) *e
 	return cmd
 }
 
-// buildArgs renders an AgentRequestV1 into the agent CLI argv. The shape
-// mirrors the V3 bash invocation in lib/agent.sh — `claude -p --model M
-// --output-format stream-json` plus the optional knobs. The fake agent
-// fixture parses these positionally; if the order changes the fixture must
-// follow.
+// buildArgs renders an AgentRequestV1 into the agent CLI argv. Claude CLI
+// 2.1 removed both `--prompt-file` (the prompt is read from stdin instead;
+// see run() which sets cmd.Stdin) and `--max-turns` (the turn budget is no
+// longer expressible at the CLI; the supervisor's activity-timer is the
+// remaining bound). req.MaxTurns is still honored by the supervisor as the
+// turn-counter ceiling for AgentResultV1 reporting — it just no longer
+// reaches the CLI.
 func buildArgs(req *proto.AgentRequestV1) []string {
-	args := []string{
+	return []string{
 		"-p",
 		"--model", req.Model,
 		"--output-format", "stream-json",
 	}
-	if req.MaxTurns > 0 {
-		args = append(args, "--max-turns", strconv.Itoa(req.MaxTurns))
-	}
-	if req.PromptFile != "" {
-		args = append(args, "--prompt-file", req.PromptFile)
-	}
-	return args
 }
 
 // mergeEnv layers EnvOverrides onto the parent environment. Overrides take

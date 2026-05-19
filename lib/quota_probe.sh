@@ -38,12 +38,17 @@ _quota_detect_probe_mode() {
         return 0
     fi
 
-    # Zero-turn probe: requires --max-turns support in the installed CLI.
+    # Claude CLI 2.1 removed --max-turns. The historical zero_turn probe
+    # (which relied on --max-turns 0 with an empty prompt) is no longer
+    # available — both the flag and empty-prompt input were withdrawn in
+    # the 2.x line. We still detect older 1.x CLIs that retain --max-turns
+    # for back-compat; on 2.x callers fall through to fallback mode and
+    # the QUOTA_PROBE_MIN_INTERVAL floor keeps cost bounded.
     local _help
     _help=$(timeout 10 claude --help 2>/dev/null || true)
     if printf '%s' "$_help" | grep -q -- '--max-turns'; then
         _QUOTA_PROBE_MODE="zero_turn"
-        log "[quota] Probe mode: zero_turn (~zero tokens)"
+        log "[quota] Probe mode: zero_turn (~zero tokens, legacy CLI ≤1.x)"
         return 0
     fi
 
@@ -79,7 +84,9 @@ _quota_probe() {
                 return 1
             fi
             _QUOTA_PROBE_LAST_TS="$_now"
-            timeout 30 claude --max-turns 1 --output-format json \
+            # Claude CLI 2.1 removed --max-turns; the "respond with OK"
+            # prompt still terminates after a single turn server-side.
+            timeout 30 claude --output-format json \
                 -p "respond with OK" \
                 </dev/null >/dev/null 2>"$probe_stderr" || probe_exit=$?
             ;;

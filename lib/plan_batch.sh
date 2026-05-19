@@ -31,7 +31,11 @@ set -euo pipefail
 # Prints the full text response to stdout. Returns claude's exit code.
 _call_planning_batch() {
     local model="$1"
-    local max_turns="$2"
+    # max_turns is retained in the signature for caller compatibility but
+    # is no longer reachable: Claude CLI 2.1 removed --max-turns. The
+    # supervisor's activity timer is the remaining bound on runaway batch
+    # planning calls.
+    local max_turns="$2"; : "$max_turns"
     local prompt="$3"
     local log_file="$4"
 
@@ -83,7 +87,6 @@ _call_planning_batch() {
     set +o pipefail
     claude \
         --model "$model" \
-        --max-turns "$max_turns" \
         --output-format text \
         --dangerously-skip-permissions \
         -p \
