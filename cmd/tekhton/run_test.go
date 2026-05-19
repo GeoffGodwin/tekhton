@@ -144,3 +144,30 @@ func TestSuggestionsFromArgs(t *testing.T) {
 		})
 	}
 }
+
+// TestNormalizeMilestoneID guards the CLI ↔ bash milestone-id form bridge.
+// The bash side (lib/milestone_dag.sh:63 dag_number_to_id) keys files off
+// the canonical lowercase "m<NN>" shape; without this normalization,
+// `tekhton --milestone "M27"` silently passes intake because the lookup
+// can't match an uppercase prefix and finds no content.
+func TestNormalizeMilestoneID(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"M27", "27"},
+		{"m27", "27"},
+		{"27", "27"},
+		{"M27.1", "27.1"},
+		{"27.1", "27.1"},
+		{"", ""},
+		// Unknown shapes pass through (lowercased) so a future ID format
+		// doesn't silently get corrupted.
+		{"BAD", "bad"},
+	}
+	for _, tc := range cases {
+		got := normalizeMilestoneID(tc.in)
+		if got != tc.want {
+			t.Errorf("normalizeMilestoneID(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

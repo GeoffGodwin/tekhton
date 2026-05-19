@@ -193,6 +193,15 @@ _intake_get_milestone_content() {
         if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
            && declare -f has_milestone_manifest &>/dev/null \
            && has_milestone_manifest; then
+            # Lazy-load the manifest. Under the V4 stage dispatcher each
+            # subprocess starts with _DAG_IDS empty — without this, the
+            # dag_get_file fallback below returns nothing and intake
+            # silently passes with "no content to evaluate". Mirrors the
+            # pattern lib/milestone_query.sh:33 already uses.
+            if [[ "${_DAG_LOADED:-false}" != "true" ]] \
+               && declare -f load_manifest &>/dev/null; then
+                load_manifest 2>/dev/null || true
+            fi
             local ms_id
             ms_id=$(dag_number_to_id "$_CURRENT_MILESTONE" 2>/dev/null) || true
             local ms_file="${MILESTONE_DIR}/${ms_id}.md"

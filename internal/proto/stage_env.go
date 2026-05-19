@@ -62,6 +62,13 @@ type StageEnvV1 struct {
 	LogFile   string `json:"log_file,omitempty"`
 	Timestamp string `json:"timestamp,omitempty"`
 
+	// SessionDir is the per-run scratch directory (intake content hash,
+	// staged drift artifacts, etc.). The legacy bash dispatcher created
+	// this via mktemp at tekhton.sh:219; under V4 the Go runner owns the
+	// path so the bash subprocesses inherit a real directory rather than
+	// tripping on `set -u`.
+	SessionDir string `json:"session_dir,omitempty"`
+
 	// Pipeline.conf — emitted as KEY=value pairs onto exec.Cmd.Env. NOT
 	// shell-quoted: exec.Cmd.Env is a []string passed directly to execve,
 	// not interpreted by a shell. (config.EmitShell is the *separate*

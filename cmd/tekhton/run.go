@@ -165,6 +165,15 @@ func buildRunRequest(
 		return nil, fmt.Errorf("exactly one of --task / --human / --milestone / --resume required (saw %d)", chosen)
 	}
 
+	// Normalize the milestone arg to canonical lowercase-id form. The bash
+	// side (lib/milestone_dag.sh, lib/intake_helpers.sh, etc.) keys files
+	// off `m<NN>`; accepting "M27" / "m27" / "27" at the CLI and emitting a
+	// single canonical form keeps intake from silently passing through
+	// because dag_number_to_id couldn't match an uppercase prefix.
+	if milestone != "" {
+		milestone = normalizeMilestoneID(milestone)
+	}
+
 	if projectDir == "" {
 		projectDir = os.Getenv("PROJECT_DIR")
 	}
@@ -331,6 +340,30 @@ func isBareInt(s string) bool {
 	return err == nil
 }
 
+// normalizeMilestoneID maps "M27" / "m27" / "27" / "M27.1" / "27.1" onto
+// the canonical bare-number form ("27" / "27.1") the bash side expects in
+// _CURRENT_MILESTONE. lib/milestone_dag.sh:63 dag_number_to_id iterates
+// over _DAG_IDS comparing against dag_id_to_number, which strips the "m"
+// prefix — so passing "m27" produces an off-by-one match failure and
+// intake silently passes with no content. Anything that doesn't match a
+// recognized shape is returned unchanged (lowercased) so a future format
+// extension doesn't silently corrupt operator input.
+func normalizeMilestoneID(s string) string {
+	if s == "" {
+		return s
+	}
+	low := strings.ToLower(s)
+	// Strip the "m" / "M" prefix when present: "m27" → "27", "M27.1" → "27.1".
+	if len(low) > 1 && low[0] == 'm' && low[1] >= '0' && low[1] <= '9' {
+		return low[1:]
+	}
+	// Already bare-number form.
+	if low[0] >= '0' && low[0] <= '9' {
+		return low
+	}
+	return low
+}
+
 // buildEnvBuilder loads the project's pipeline.conf and wires it onto a
 // runner.EnvBuilder for the run. The builder is shared by the stage
 // dispatcher (every stage in defaultStageOrder sees the same env) and
@@ -362,9 +395,20 @@ func buildEnvBuilder(req *proto.RunRequestV1) *runner.EnvBuilder {
 			fmt.Fprintln(os.Stderr, "env: pipeline.conf load returned warnings:", err)
 		}
 	}
+	// Per-run scratch directory — the legacy dispatcher created this via
+	// mktemp (tekhton.sh:219). Bash files like lib/intake_helpers.sh:29
+	// read $TEKHTON_SESSION_DIR with no default under set -u; without
+	// this the intake stage subprocess trips immediately. Creation
+	// failures fall back to /tmp so the env still names a writable path.
+	sessionDir, err := os.MkdirTemp("", "tekhton_session_")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "env: failed to create session dir, using /tmp:", err)
+		sessionDir = "/tmp"
+	}
 	logCtx := runner.LogContext{
-		Dir:       filepath.Join(req.ProjectDir, ".claude", "logs"),
-		Timestamp: time.Now().UTC().Format("20060102_150405"),
+		Dir:        filepath.Join(req.ProjectDir, ".claude", "logs"),
+		Timestamp:  time.Now().UTC().Format("20060102_150405"),
+		SessionDir: sessionDir,
 	}
 	return runner.NewEnvBuilder(cfg, logCtx)
 }

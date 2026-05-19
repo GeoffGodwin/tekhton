@@ -33,9 +33,14 @@ type EnvBuilder struct {
 // Replaces the ad-hoc string-join in internal/finalize/shim.go so the
 // runner, finalize, and any future direct caller all see the same path
 // for the same (Timestamp, Task) tuple.
+//
+// SessionDir is the per-run scratch directory the legacy dispatcher
+// created via mktemp; we hand it through here so the env builder can
+// thread it onto every subprocess.
 type LogContext struct {
-	Dir       string
-	Timestamp string
+	Dir        string
+	Timestamp  string
+	SessionDir string
 }
 
 // taskSlug returns the bash-side ${TASK_SLUG} computed for a run request.
@@ -120,6 +125,7 @@ func (b *EnvBuilder) Compose(req *proto.RunRequestV1, overrides map[string]strin
 	env.LogDir = b.log.Dir
 	env.Timestamp = b.log.Timestamp
 	env.LogFile = b.log.LogFile(req)
+	env.SessionDir = b.log.SessionDir
 
 	// Layer 3: explicit caller overrides. Land in ConfigKeys so AsKV picks
 	// them up alongside the loader-emitted keys; this is the m26 contract
@@ -176,6 +182,9 @@ func (b *EnvBuilder) AsKV(env *proto.StageEnvV1) []string {
 	}
 	if env.LogFile != "" {
 		out = append(out, "LOG_FILE="+env.LogFile)
+	}
+	if env.SessionDir != "" {
+		out = append(out, "TEKHTON_SESSION_DIR="+env.SessionDir)
 	}
 
 	// Config keys — deterministic sort for parity-test stability.
