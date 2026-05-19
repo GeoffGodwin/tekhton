@@ -35,6 +35,19 @@ m26 must land before m23 / m24 / m25. Those Phase 5 ports each touch bash code p
 
 m26 must land *after* m22 because the env contract has to compose preflight env too, and m22 settled preflight's surface area (the `internal/preflight/` package now has stable inputs + a Cobra subcommand that may itself consume the env contract via `tekhton preflight --project-dir`). Landing the contract before m22 would have meant porting it twice.
 
+### Discovery from the m20–m22 dogfood retrospective
+
+During the m26 drafting pass we verified — by direct inspection of the repository at `1fb446e` (m22 close) — that **no V4 milestone-mode pipeline pass has ever actually completed end-to-end**. The relevant evidence:
+
+- `scripts/self-host-check.sh` at m22-close contains 15 scenarios, all of which call `_assert_routes_to_run` — a helper that asserts the bash dispatcher *forwards* an invocation to `tekhton run`, with a fake binary in `FAKE_BIN_DIR`. It does **not** execute the pipeline. Routing parity is verified; pipeline parity is not.
+- `internal/runner/single.go:buildPipelineRequest` at m22-close has no `StageEnv` population — every stage subprocess launched by the Go runner inherits parent env only, with no `MILESTONE_MODE`, no `_CURRENT_MILESTONE`, no `TASK`, and none of `pipeline.conf`'s globals.
+- `lib/intake_helpers.sh:191` at m22-close reads `"$MILESTONE_MODE"` with no default, under `set -euo pipefail`. Any milestone-mode run that reaches `_intake_get_milestone_content` crashes immediately on the unbound variable.
+- A real user invocation — `tekhton --milestone M26` from `/home/geoff/workspace/geoffgodwin/tekhton-stable` at `1fb446e` — reproduces the crash cascade (intake → `MILESTONE_MODE`; finalize → `LOG_FILE`; metrics hook → missing `_collect_extended_stage_vars` / `_sanitize_numeric`). The pipeline records `disposition=failure attempts=1 agent_calls=0 elapsed=0s recovery=save_exit` — no agent ever ran.
+
+**Implication for m26's scope.** The acceptance criteria below now require a *real* pipeline parity test that runs `tekhton run --milestone <fixture> --no-tui` against a fixture project and asserts intake/coder/security/review/tester subprocesses all execute without `unbound variable` or `command not found` stderr. The bar moves from "the env builder compiles and round-trips its struct" to "a milestone pipeline run reaches the finalize stage on a fixture project." This is the verification step m20/m21/m22 should have done and didn't.
+
+**Implication for prior-milestone status.** m20/m21/m22 remain `done` in the manifest — their narrow acceptance criteria (dispatcher routing, finalize hook orchestration, preflight check ports) were met. But the "implementation run is itself driven by `tekhton run --milestone mXX --complete`" criterion on those milestones was never honoured in practice; it was satisfied by routing verification rather than pipeline execution. m26 closes that gap retroactively. Future Phase 5 milestones must include the same pipeline parity test in their acceptance criteria — see m27's Watch For section for the codified rule.
+
 ### Goal 1 — `StageEnvV1` proto
 
 `internal/proto/stage_env.go` declares the versioned env contract:
@@ -242,7 +255,8 @@ No new flags exposed at the CLI surface — the env contract is internal plumbin
 - [ ] `internal/finalize/shim.go:buildEnv` no longer hand-rolls `MILESTONE_MODE` / `_CURRENT_MILESTONE` / `LOG_FILE` — grep for those literals returns zero matches in `shim.go`. They appear once each in `env.go`.
 - [ ] Every stage returned by `defaultStageOrder()` receives the same composed env: a new test `TestStageEnvUniformity` constructs a `PipelineAttemptRequestV1` via `buildPipelineRequest` and asserts the set of keys is identical across all stages.
 - [ ] Every finalize hook receives the same env: extend `internal/finalize/shim_test.go` with a `TestShimEnvHasContract` that asserts every key in `StageEnvV1.ConfigKeys` plus the runtime-flag set is present.
-- [ ] A `tekhton run --milestone <id> --no-tui` invocation against a fixture project with a valid `pipeline.conf` (fixture at `tests/testdata/env_contract/`) exits cleanly through intake → coder → finalize without any `unbound variable` lines on stderr. Verified by `tests/test_env_contract.sh`.
+- [ ] **End-to-end pipeline parity test.** `tests/test_v4_pipeline_e2e.sh` runs `tekhton run --milestone fixturems --no-tui --dry-run` against a fixture project (`tests/testdata/env_contract/`) and asserts: (a) every stage in `defaultStageOrder()` produces a `stage.result.v1` envelope on disk — verified by `find tests/testdata/env_contract/.tekhton/stage_results -name '*.json' | wc -l` ≥ 5; (b) stderr contains zero `unbound variable` lines (`grep -c 'unbound variable' stderr.log` returns 0); (c) stderr contains zero `command not found` lines for any function defined in `lib/*.sh`; (d) the run reaches finalize (verified by RUN_RESULT.json having `Disposition != "save_exit"` or the equivalent on the new path). This is the test m20/m21/m22 lacked. The fixture's `pipeline.conf` populates every key from `internal/config/defaults.go` so a `set -u` crash in any stage surfaces here.
+- [ ] **Pipeline parity, not just routing.** `scripts/self-host-check.sh` gains a sixteenth scenario that does **not** use `_assert_routes_to_run` — it execs the real `bin/tekhton` against the env-contract fixture and asserts pipeline completion. Routing-only verification was the m20–m22 gap; we close it here.
 - [ ] `make dogfood` exits 0 (self-host parity matrix still green).
 - [ ] `go test ./internal/runner/... ./internal/finalize/... ./internal/proto/... ./cmd/tekhton/...` passes.
 - [ ] `bash tests/run_tests.sh` reports zero new failures vs the m22-close baseline.
@@ -259,6 +273,8 @@ No new flags exposed at the CLI surface — the env contract is internal plumbin
 - **`finalize.Input.RunRequest` is a forward-leaning addition.** Today most hooks ignore it. m27 will lean on it for the parity test (replay a known request and assert env shape). Don't optimize it away as "unused" before m27 lands.
 - **`StageEnvV1` is not a serialization contract for inter-process communication.** It's the Go-side typed view of the env. The bash subprocess only sees flat `KEY=value` env vars. If a future milestone wants to JSON-serialise the env for, e.g., a remote sandbox, that's a separate `stage_env.v2` design conversation.
 - **Do not pre-port m23 / m24 / m25 work into m26.** Those milestones each have their own ports — m26's job is the contract, not the consumers. If during implementation you discover a TUI / notes / drift hook that needs a new field, add the field to `StageEnvV1` and stop; do not port the hook.
+- **"Dogfooded" must mean the pipeline executed, not that dispatch routed.** m20–m22 each claimed dogfooding via `tekhton run --milestone mXX --complete` while their self-host gates only verified routing. m26's parity test is the new floor: every Phase 5+ port milestone must include a fixture-based pipeline-completion test before close. Routing tests are still valuable (they catch dispatcher regressions cheaply) but they are no longer sufficient.
+- **The fixture project must populate `pipeline.conf` from `internal/config/defaults.go`, not from defaults baked into the test.** If the fixture's `pipeline.conf` drifts from the loader's known keys, a future config-key addition silently bypasses the parity test. Generate the fixture's `pipeline.conf` from `tekhton config defaults --emit shell` in a one-time bootstrap script (`tests/testdata/env_contract/bootstrap.sh`) so regenerating it is one command, and add an audit-time check that the fixture matches what the loader would emit today.
 
 ## Seeds Forward
 
