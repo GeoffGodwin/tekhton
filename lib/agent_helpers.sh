@@ -16,15 +16,23 @@ set -euo pipefail
 # --- Run summary -------------------------------------------------------------
 
 print_run_summary() {
-    local total_mins=$(( TOTAL_TIME / 60 ))
-    local total_secs=$(( TOTAL_TIME % 60 ))
+    # Defensive defaults — when invoked under the V4 finalize shim path
+    # (where bash globals from the in-process V3 pipeline are not
+    # available), the totals are not yet wired through StageEnv. Default
+    # to zero so the summary renders cleanly rather than crashing under
+    # `set -u`. A future milestone can plumb actual accumulated metrics
+    # from the Go runner into finalize.
+    local _tt="${TOTAL_TIME:-0}" _ttu="${TOTAL_TURNS:-0}"
+    local _ss="${STAGE_SUMMARY:-}"
+    local total_mins=$(( _tt / 60 ))
+    local total_secs=$(( _tt % 60 ))
     echo
     echo "══════════════════════════════════════"
     echo "  Run Summary"
     echo "══════════════════════════════════════"
-    echo -e "$STAGE_SUMMARY"
+    echo -e "$_ss"
     echo "  ──────────────────────────────────"
-    echo "  Total turns: ${TOTAL_TURNS}"
+    echo "  Total turns: ${_ttu}"
     echo "  Total time:  ${total_mins}m${total_secs}s"
     # LAST_CONTEXT_TOKENS reflects the most recently completed stage only (by design).
     # Each stage calls log_context_report() which resets and re-exports LAST_CONTEXT_TOKENS.

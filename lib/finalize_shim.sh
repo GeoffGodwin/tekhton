@@ -83,6 +83,11 @@ case "$HOOK_NAME" in
     _hook_final_checks)
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/hooks_final_checks.sh"
+        # hooks_final_checks.sh calls print_run_summary (lib/agent_helpers.sh)
+        # via run_final_checks; without this source the shim dispatch trips
+        # `command not found` on every final-checks pass.
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/agent_helpers.sh"
         _shim_load_finalize_bodies
         ;;
     _hook_drift_artifacts)
