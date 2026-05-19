@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/geoffgodwin/tekhton/internal/pipeline"
 	"github.com/geoffgodwin/tekhton/internal/proto"
@@ -48,14 +51,21 @@ func newRunCmd() *cobra.Command {
 			"--complete enables the autonomous outer retry loop. Run-level\n" +
 			"behavior bridges to bash for pre-flight, finalize, and the TUI sidecar\n" +
 			"during the V4 wedge — see DESIGN_v4.md Phase 5 for the planned cuts.",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			req, err := buildRunRequest(
 				taskFlag, completeFlag, resumeFlag, humanFlag, humanTagFlag,
 				milestoneFlag, autoAdvanceFlag, autoAdvanceLimit, dryRunFlag,
 				noTUIFlag, projectDirFlag, tekhtonHomeFlag,
 			)
 			if err != nil {
+				printRunUsageError(cmd.ErrOrStderr(), cmd, err, args, autoAdvanceFlag)
 				return errExitCode{code: exitUsage, err: err}
+			}
+			if len(args) > 0 {
+				printRunUsageError(cmd.ErrOrStderr(), cmd,
+					fmt.Errorf("unexpected positional argument(s): %s", strings.Join(args, " ")),
+					args, autoAdvanceFlag)
+				return errExitCode{code: exitUsage, err: fmt.Errorf("unexpected positional arguments")}
 			}
 
 			r, cleanup, err := buildRunner(req, analyzeCmd, compileCmd, testCmd)
@@ -249,4 +259,64 @@ func printRunSummary(out interface{ Write([]byte) (int, error) }, res *proto.Run
 		fmt.Fprintf(out, " recovery=%s", res.Recovery)
 	}
 	fmt.Fprintln(out)
+}
+
+var milestoneIDPattern = regexp.MustCompile(`^[Mm]\d+$`)
+
+// printRunUsageError emits a clear, actionable diagnostic for usage errors
+// against `tekhton run`. It surfaces silently-dropped positional args, calls
+// out the V3→V4 syntax change for --auto-advance, and prints the full flag
+// usage block. The root cmd has SilenceUsage=true; printing it here keeps the
+// usage block off non-usage failures while ensuring syntax errors are
+// debuggable.
+func printRunUsageError(w interface{ Write([]byte) (int, error) }, cmd *cobra.Command, cause error, args []string, autoAdvance bool) {
+	fmt.Fprintf(w, "tekhton run: %s\n\n", cause.Error())
+
+	if len(args) > 0 {
+		fmt.Fprintf(w, "Unused positional argument(s): %s\n", strings.Join(args, " "))
+		hints := suggestionsFromArgs(args, autoAdvance)
+		for _, h := range hints {
+			fmt.Fprintf(w, "  hint: %s\n", h)
+		}
+		fmt.Fprintln(w)
+	}
+
+	if autoAdvance {
+		fmt.Fprintln(w, "Note: in V4 --auto-advance is a boolean flag. The V3 form")
+		fmt.Fprintln(w, "  `--auto-advance N \"task\"` is no longer supported. Use:")
+		fmt.Fprintln(w, "    --auto-advance --auto-advance-limit N --milestone <id>")
+		fmt.Fprintln(w)
+	}
+
+	fmt.Fprintln(w, "Examples:")
+	fmt.Fprintln(w, "  tekhton --task \"Add OAuth login\"")
+	fmt.Fprintln(w, "  tekhton --milestone m23")
+	fmt.Fprintln(w, "  tekhton --milestone m23 --auto-advance --auto-advance-limit 3")
+	fmt.Fprintln(w, "  tekhton --resume")
+	fmt.Fprintln(w)
+
+	fmt.Fprintln(w, cmd.UsageString())
+}
+
+// suggestionsFromArgs maps stray positionals to likely intended flags. Bare
+// integers next to --auto-advance map to --auto-advance-limit; milestone-id-
+// looking tokens map to --milestone; everything else suggests --task.
+func suggestionsFromArgs(args []string, autoAdvance bool) []string {
+	var out []string
+	for _, a := range args {
+		switch {
+		case autoAdvance && isBareInt(a):
+			out = append(out, fmt.Sprintf("did you mean `--auto-advance-limit %s`?", a))
+		case milestoneIDPattern.MatchString(a):
+			out = append(out, fmt.Sprintf("did you mean `--milestone %s`?", a))
+		default:
+			out = append(out, fmt.Sprintf("did you mean `--task %q`?", a))
+		}
+	}
+	return out
+}
+
+func isBareInt(s string) bool {
+	_, err := strconv.Atoi(s)
+	return err == nil
 }

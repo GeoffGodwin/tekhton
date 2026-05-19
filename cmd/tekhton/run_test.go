@@ -94,3 +94,53 @@ func TestRunCommandHasFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestSuggestionsFromArgs(t *testing.T) {
+	cases := []struct {
+		name        string
+		args        []string
+		autoAdvance bool
+		want        []string
+	}{
+		{
+			name:        "v3_auto_advance_syntax",
+			args:        []string{"3", "M23"},
+			autoAdvance: true,
+			want: []string{
+				"did you mean `--auto-advance-limit 3`?",
+				"did you mean `--milestone M23`?",
+			},
+		},
+		{
+			name:        "bare_int_without_auto_advance_is_task",
+			args:        []string{"3"},
+			autoAdvance: false,
+			want:        []string{"did you mean `--task \"3\"`?"},
+		},
+		{
+			name:        "lowercase_milestone_id",
+			args:        []string{"m9"},
+			autoAdvance: false,
+			want:        []string{"did you mean `--milestone m9`?"},
+		},
+		{
+			name:        "free_form_task",
+			args:        []string{"Add OAuth login"},
+			autoAdvance: false,
+			want:        []string{"did you mean `--task \"Add OAuth login\"`?"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := suggestionsFromArgs(tc.args, tc.autoAdvance)
+			if len(got) != len(tc.want) {
+				t.Fatalf("len got=%d want=%d (%v)", len(got), len(tc.want), got)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("[%d] got=%q want=%q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
