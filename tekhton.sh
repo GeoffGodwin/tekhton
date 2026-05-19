@@ -41,7 +41,12 @@ _tekhton_argv_has_run_flag() {
     local a
     for a in "$@"; do
         case "$a" in
-            --task|--complete|--resume|--human|--milestone|--auto-advance|--dry-run|--no-tui)
+            --task|--complete|--resume|--human|--human-tag|--milestone|\
+            --auto-advance|--auto-advance-limit|--dry-run|--no-tui|\
+            --project-dir|--tekhton-home|--analyze-cmd|--compile-cmd|--test-cmd)
+                return 0 ;;
+            --task=*|--human-tag=*|--milestone=*|--auto-advance-limit=*|\
+            --project-dir=*|--tekhton-home=*|--analyze-cmd=*|--compile-cmd=*|--test-cmd=*)
                 return 0 ;;
         esac
     done
