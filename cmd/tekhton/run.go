@@ -9,7 +9,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/geoffgodwin/tekhton/internal/config"
 	"github.com/geoffgodwin/tekhton/internal/pipeline"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/runner"
@@ -233,7 +235,15 @@ func buildRunner(req *proto.RunRequestV1, analyzeCmd, compileCmd, testCmd string
 	r.State = state.New(statePath)
 	r.ProjectDir = req.ProjectDir
 	r.TekhtonHome = req.TekhtonHome
-	r.Hooks = &runner.BashHookRunner{TekhtonHome: req.TekhtonHome}
+
+	// m26: load pipeline.conf once and build the EnvBuilder that feeds
+	// every stage subprocess + every finalize hook the same composed env.
+	// Missing pipeline.conf surfaces as a stderr warning and the builder
+	// runs in defaults-only mode — preflight is supposed to flag the bare
+	// directory case; we don't crash here.
+	envBuilder := buildEnvBuilder(req)
+	r.Env = envBuilder
+	r.Hooks = &runner.BashHookRunner{TekhtonHome: req.TekhtonHome, Env: envBuilder}
 
 	var sidecar *tui.Sidecar
 	if !req.NoTUI {
@@ -319,4 +329,42 @@ func suggestionsFromArgs(args []string, autoAdvance bool) []string {
 func isBareInt(s string) bool {
 	_, err := strconv.Atoi(s)
 	return err == nil
+}
+
+// buildEnvBuilder loads the project's pipeline.conf and wires it onto a
+// runner.EnvBuilder for the run. The builder is shared by the stage
+// dispatcher (every stage in defaultStageOrder sees the same env) and
+// the finalize chain (every hook sees the same env).
+//
+// Defaults-only path. config.Load failure does NOT panic; we warn on
+// stderr and return a builder with a nil *config.Config. Compose then
+// produces only the runtime-flag fields + an empty ConfigKeys map, which
+// is enough for bash stages whose only requirement is "set -u doesn't
+// trip on MILESTONE_MODE / TASK". Preflight is the layer responsible for
+// flagging the missing config as a Fail; the runner should not silently
+// mask its diagnostic by refusing to start.
+func buildEnvBuilder(req *proto.RunRequestV1) *runner.EnvBuilder {
+	confPath := filepath.Join(req.ProjectDir, ".claude", "pipeline.conf")
+	cfg, err := config.Load(confPath, config.LoadOptions{
+		ProjectDir:    req.ProjectDir,
+		MilestoneMode: req.Mode == proto.RunModeMilestone,
+	})
+	if err != nil {
+		// Note: config.Load returns *Config alongside an error for some
+		// recoverable cases (missing required key, validation warnings).
+		// We only blank the builder out on outright not-found / parse;
+		// other errors leave the partial Config so resolved keys can
+		// still feed the env.
+		if errors.Is(err, config.ErrNotFound) || errors.Is(err, config.ErrParse) {
+			fmt.Fprintln(os.Stderr, "env: pipeline.conf not loadable, running with defaults — preflight should fail:", err)
+			cfg = nil
+		} else {
+			fmt.Fprintln(os.Stderr, "env: pipeline.conf load returned warnings:", err)
+		}
+	}
+	logCtx := runner.LogContext{
+		Dir:       filepath.Join(req.ProjectDir, ".claude", "logs"),
+		Timestamp: time.Now().UTC().Format("20060102_150405"),
+	}
+	return runner.NewEnvBuilder(cfg, logCtx)
 }

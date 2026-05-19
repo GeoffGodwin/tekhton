@@ -98,6 +98,23 @@ type Input struct {
 	// Disposition for the milestone (e.g. COMPLETE_AND_CONTINUE,
 	// COMPLETE_AND_WAIT, IN_PROGRESS). The bash _CACHED_DISPOSITION mirror.
 	MilestoneDisposition string
+
+	// RunRequest is the run-level request envelope the runner built before
+	// dispatching to finalize. m26 adds this so the finalize shim can hand
+	// it to the EnvBuilder (the producer of the bash-subprocess env) and
+	// every finalize hook sees the same composed env as the stages did.
+	// Nil during the `tekhton finalize` debug subcommand; production
+	// always supplies a non-nil request.
+	RunRequest *proto.RunRequestV1
+
+	// EnvKV is the env contract for finalize hooks, pre-composed by the
+	// runner via runner.EnvBuilder.AsKV and handed in here. The shim
+	// appends per-hook disposition keys (PIPELINE_EXIT_CODE etc.) before
+	// exec; pure-Go hooks ignore the field. When nil, the shim falls back
+	// to the legacy hand-rolled env (compatibility shim for callers that
+	// haven't been wired through the new builder yet — drops out once
+	// every caller assigns this field).
+	EnvKV []string
 }
 
 // HookResult records one hook's per-run outcome — the orchestrator returns

@@ -1,6 +1,6 @@
 <!-- milestone-meta
 id: "26"
-status: "todo"
+status: "done"
 -->
 
 # m26 — Stage and Finalize Env Contract

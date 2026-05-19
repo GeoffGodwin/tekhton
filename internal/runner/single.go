@@ -85,6 +85,12 @@ func (r *Runner) RunSingle(ctx context.Context, req *proto.RunRequestV1) (*proto
 // buildPipelineRequest derives the per-attempt envelope from the run request.
 // The Order list is fixed for now (standard pipeline) — a future port of
 // PIPELINE_ORDER resolution lives in lib/pipeline_order.sh, which stays bash.
+//
+// m26: every stage in defaultStageOrder() receives the SAME composed env
+// (built once via r.envBuilder()). The legacy per-stage curation that
+// shipped in 85b00ac is folded into EnvBuilder.Compose — a new bash file
+// that reads MILESTONE_MODE/_CURRENT_MILESTONE/TASK/etc. now inherits
+// them automatically, without a hand edit to single.go.
 func (r *Runner) buildPipelineRequest(req *proto.RunRequestV1) *proto.PipelineAttemptRequestV1 {
 	pr := &proto.PipelineAttemptRequestV1{
 		Proto:      proto.PipelineAttemptRequestProtoV1,
@@ -92,52 +98,52 @@ func (r *Runner) buildPipelineRequest(req *proto.RunRequestV1) *proto.PipelineAt
 		Milestone:  req.Milestone,
 		Order:      defaultStageOrder(),
 		ProjectDir: req.ProjectDir,
-		StageEnv:   buildStageEnv(req),
+		StageEnv:   r.buildStageEnv(req),
 	}
 	pr.EnsureProto()
 	return pr
 }
 
-// buildStageEnv synthesizes the per-stage env overrides expected by the bash
-// stage scripts. The legacy pipeline set MILESTONE_MODE / _CURRENT_MILESTONE
-// as bash globals at flag-parse time; under V4 the Go binary owns flag
-// parsing, so we must propagate these into every stage subprocess or the
-// bash stages crash under `set -u` (e.g. intake_helpers.sh:191).
-//
-// Applied uniformly to every stage in defaultStageOrder so a stage added
-// later that touches the same globals automatically inherits the env.
-func buildStageEnv(req *proto.RunRequestV1) map[string]map[string]string {
+// envBuilder returns the runner's EnvBuilder, lazily constructing a
+// defaults-only one if the caller never assigned r.Env. Production
+// (cmd/tekhton/run.go:buildRunner) always assigns Env up-front; this
+// fallback keeps direct-construction tests working.
+func (r *Runner) envBuilder() *EnvBuilder {
+	if r.Env != nil {
+		return r.Env
+	}
+	r.Env = NewEnvBuilder(nil, LogContext{})
+	return r.Env
+}
+
+// buildStageEnv composes the env contract once and applies it uniformly to
+// every stage in defaultStageOrder. The KV slice from AsKV is folded into
+// the StageRequestV1.EnvOverrides map shape stagerunner/adapter.go
+// expects (KEY → value); a stage added later that needs a different
+// override layers on top via a separate per-stage map (not used today).
+func (r *Runner) buildStageEnv(req *proto.RunRequestV1) map[string]map[string]string {
 	if req == nil {
 		return nil
 	}
-	common := map[string]string{}
-	if req.Milestone != "" {
-		common["MILESTONE_MODE"] = "true"
-		common["_CURRENT_MILESTONE"] = req.Milestone
-	} else {
-		common["MILESTONE_MODE"] = "false"
-	}
-	// TASK is read directly by several bash stage helpers
-	// (e.g. intake_helpers.sh:224 — fallback to the task string in
-	// non-milestone mode). Always export it (empty if absent) so
-	// `set -u` doesn't crash the stage subprocess.
-	common["TASK"] = req.Task
-	if req.AutoAdvance {
-		common["AUTO_ADVANCE"] = "true"
-	}
-	if req.HumanTag != "" {
-		common["HUMAN_NOTES_TAG"] = req.HumanTag
-	}
-	if req.Mode == proto.RunModeHuman {
-		common["HUMAN_MODE"] = "true"
-	}
-	if len(common) == 0 {
+	b := r.envBuilder()
+	composed := b.Compose(req, nil)
+	kv := b.AsKV(composed)
+	if len(kv) == 0 {
 		return nil
+	}
+	flat := make(map[string]string, len(kv))
+	for _, line := range kv {
+		for i := 0; i < len(line); i++ {
+			if line[i] == '=' {
+				flat[line[:i]] = line[i+1:]
+				break
+			}
+		}
 	}
 	out := make(map[string]map[string]string, len(defaultStageOrder()))
 	for _, stage := range defaultStageOrder() {
-		stageCopy := make(map[string]string, len(common))
-		for k, v := range common {
+		stageCopy := make(map[string]string, len(flat))
+		for k, v := range flat {
 			stageCopy[k] = v
 		}
 		out[stage] = stageCopy

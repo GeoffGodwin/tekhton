@@ -88,6 +88,13 @@ type Runner struct {
 	TUI        TUI
 	Acceptance AcceptanceChecker
 
+	// Env composes the bash subprocess env (m26 StageEnvV1 contract) from
+	// pipeline.conf + run-request flags + per-stage overrides. Nil falls
+	// back to a defaults-only builder built lazily at first use, which
+	// keeps existing tests that wire the Runner directly working — the
+	// production path in cmd/tekhton/run.go always assigns this field.
+	Env *EnvBuilder
+
 	// ProjectDir / TekhtonHome are the ambient context the CLI layer captures
 	// at flag-parse time. Resume() uses them to refill the rebuilt
 	// RunRequestV1 because the on-disk state envelope does not carry them
@@ -202,6 +209,12 @@ type BashHookRunner struct {
 	// os.Stdout / os.Stderr when nil.
 	Stdout *os.File
 	Stderr *os.File
+
+	// Env is the m26 builder that produces the bash subprocess env for
+	// finalize hooks. Populated by cmd/tekhton/run.go alongside the
+	// runner's Env. Nil ⇒ finalize falls back to the legacy hand-rolled
+	// env (compatibility path; logs a one-line warning).
+	Env *EnvBuilder
 }
 
 // Preflight constructs the Go preflight orchestrator and runs the chain
@@ -275,10 +288,26 @@ func (b *BashHookRunner) Finalize(ctx context.Context, req *proto.RunRequestV1, 
 		Milestone:            req.Milestone,
 		MilestoneMode:        req.Mode == proto.RunModeMilestone,
 		MilestoneDisposition: milestoneDisposition,
+		RunRequest:           req,
 		Log:                  stderrOr(b.Stderr),
 	}
 	in.LogDir = filepath.Join(req.ProjectDir, ".claude", "logs")
 	in.Timestamp = time.Now().UTC().Format("20060102_150405")
+	// m26: compose the finalize-hook env from the same builder that fed
+	// the stage subprocesses. EnvKV is consumed by BashShimHook.buildEnv
+	// in place of the legacy hand-rolled env. Pure-Go hooks ignore it.
+	if b.Env != nil {
+		envProto := b.Env.Compose(req, nil)
+		// Force the LOG_FILE the finalize chain sees to match the runner's
+		// log timestamp (the builder picks up b.Env.log which was wired at
+		// construction time; we override here for the finalize-scoped
+		// timestamp, which is fresh per chain).
+		if envProto.LogDir != "" {
+			envProto.Timestamp = in.Timestamp
+			envProto.LogFile = (LogContext{Dir: in.LogDir, Timestamp: in.Timestamp}).LogFile(req)
+		}
+		in.EnvKV = b.Env.AsKV(envProto)
+	}
 	sum := orch.Run(ctx, in)
 	// Failed hooks already logged inline by orchestrator; surface a summary
 	// counter for visibility but never fail the run.

@@ -71,12 +71,25 @@ func (b *BashShimHook) Run(ctx context.Context, in *Input) error {
 	return nil
 }
 
-// buildEnv composes the environment passed to the bash subprocess. It layers
-// in.Env over the current process env so callers can override specific keys
-// without losing PATH, HOME, etc. The PIPELINE_EXIT_CODE / TEKHTON_RUN_*
-// variables are stamped last so in.Env cannot accidentally shadow them.
+// buildEnv composes the environment passed to the bash subprocess.
+//
+// m26 split: the runtime-flag + ConfigKeys layers come from
+// runner.EnvBuilder via in.EnvKV (pre-composed and uniform across stages
+// and finalize hooks). buildEnv layers the finalize-only keys
+// (PIPELINE_EXIT_CODE, TEKHTON_RUN_*, _CACHED_DISPOSITION) on top.
+//
+// Compatibility path: when in.EnvKV is nil (e.g. tests that build an
+// Input directly, or the `tekhton finalize` debug subcommand without a
+// run request), buildEnv synthesizes the runtime-flag minimum the way
+// it did pre-m26. This keeps existing shim tests green during the
+// migration window.
 func (b *BashShimHook) buildEnv(in *Input) []string {
 	env := os.Environ()
+	if len(in.EnvKV) > 0 {
+		env = append(env, in.EnvKV...)
+	} else {
+		env = append(env, legacyEnvFallback(in)...)
+	}
 	if len(in.Env) > 0 {
 		env = append(env, in.Env...)
 	}
@@ -97,35 +110,40 @@ func (b *BashShimHook) buildEnv(in *Input) []string {
 	if in.ResultPath != "" {
 		env = append(env, "TEKHTON_RUN_RESULT_FILE="+in.ResultPath)
 	}
+	if in.MilestoneDisposition != "" {
+		env = append(env, "_CACHED_DISPOSITION="+in.MilestoneDisposition)
+	}
+	return env
+}
+
+// legacyEnvFallback emits the bash-runtime-flag set the pre-m26 buildEnv
+// synthesized inline. Kept available for callers that haven't migrated to
+// the EnvBuilder yet (orchestrator tests, the `tekhton finalize` debug
+// subcommand). New callers should populate Input.EnvKV instead.
+func legacyEnvFallback(in *Input) []string {
+	var out []string
 	if in.LogDir != "" {
-		env = append(env, "LOG_DIR="+in.LogDir)
+		out = append(out, "LOG_DIR="+in.LogDir)
 	}
 	if in.Timestamp != "" {
-		env = append(env, "TIMESTAMP="+in.Timestamp)
+		out = append(out, "TIMESTAMP="+in.Timestamp)
 	}
-	// LOG_FILE is constructed by tekhton-legacy.sh as
-	// "${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log". The Go orchestrator owns
-	// neither variable name nor a task slug, so we synthesize a finalize-
-	// scoped log file from LogDir + Timestamp. Hooks like _hook_final_checks
-	// (lib/finalize_core_hooks.sh:26 → run_final_checks "$LOG_FILE") rely on
-	// LOG_FILE being a writable path; without it `set -u` trips immediately.
 	if in.LogDir != "" {
 		ts := in.Timestamp
 		if ts == "" {
 			ts = "run"
 		}
-		env = append(env, "LOG_FILE="+filepath.Join(in.LogDir, ts+"_finalize.log"))
+		out = append(out, "LOG_FILE="+filepath.Join(in.LogDir, ts+"_finalize.log"))
 	}
 	if in.Milestone != "" {
-		env = append(env, "_CURRENT_MILESTONE="+in.Milestone)
+		out = append(out, "_CURRENT_MILESTONE="+in.Milestone)
 	}
 	if in.MilestoneMode {
-		env = append(env, "MILESTONE_MODE=true")
+		out = append(out, "MILESTONE_MODE=true")
+	} else {
+		out = append(out, "MILESTONE_MODE=false")
 	}
-	if in.MilestoneDisposition != "" {
-		env = append(env, "_CACHED_DISPOSITION="+in.MilestoneDisposition)
-	}
-	return env
+	return out
 }
 
 func orWriter(w io.Writer, fallback io.Writer) io.Writer {
