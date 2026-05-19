@@ -41,6 +41,12 @@ FAILED_TESTS=()
 # shellcheck disable=SC2034
 TESTS_DIR="$tmpdir"
 
+# Stub sibling helpers run_test() now calls (see test_run_tests_single_invocation.sh
+# for the rationale — stubs keep the isolated harness independent of helpers
+# added elsewhere in run_tests.sh).
+_resolve_test_timeout() { echo 60; }
+_log_progress() { :; }
+
 eval "$fn_src"
 
 # Test 1: Multiline output is captured correctly

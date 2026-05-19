@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TIMEOUT_SECS=180
 # =============================================================================
 # test_tui_stop_orphan_recovery.sh — bug-fix coverage for the build-gate-
 # failure orphan sidecar. Verifies that tui_stop reaps a sidecar even when

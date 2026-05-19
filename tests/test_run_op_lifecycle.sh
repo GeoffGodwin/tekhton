@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TIMEOUT_SECS=120
 # =============================================================================
 # test_run_op_lifecycle.sh — M104 (lifecycle) + M115 (substage migration).
 #

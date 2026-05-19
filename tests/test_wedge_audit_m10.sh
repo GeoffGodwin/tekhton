@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TIMEOUT_SECS=300
 # =============================================================================
 # test_wedge_audit_m10.sh — Tests for the m10-specific patterns added to
 # scripts/wedge-audit.sh:

@@ -51,6 +51,43 @@ PASS=0
 FAIL=0
 FAILED_TESTS=()
 
+# Per-test heartbeat — written outside the captured stdout pipe so a hang
+# inside a single test is visible from another terminal:
+#   tail -f /tmp/tekhton_test_progress.log
+# The last `START <test>` line with no matching `END` identifies the culprit.
+TEST_PROGRESS_LOG="${TEST_PROGRESS_LOG:-/tmp/tekhton_test_progress.log}"
+: > "$TEST_PROGRESS_LOG" 2>/dev/null || true
+_log_progress() {
+    printf '[%s pid=%d] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$$" "$*" \
+        >> "$TEST_PROGRESS_LOG" 2>/dev/null || true
+}
+_log_progress "run_tests.sh BEGIN (TEKHTON_HOME=${TEKHTON_HOME})"
+
+# Per-test timeout — bounds each shell test individually so a single hung test
+# can't lock up the suite (and by extension, the tekhton baseline-capture flow
+# that runs this script as TEST_CMD). Default 60s; tests that legitimately need
+# longer declare it with a `# TIMEOUT_SECS=N` magic comment at the top of the
+# file. The whole-suite env knob TEKHTON_TEST_TIMEOUT_SECS overrides the default
+# for slow-CI scenarios.
+TEKHTON_TEST_TIMEOUT_SECS="${TEKHTON_TEST_TIMEOUT_SECS:-60}"
+
+_resolve_test_timeout() {
+    local file="$1"
+    # Match a leading-comment directive within the first 20 lines. Anchored on
+    # `# TIMEOUT_SECS=N` (allowing whitespace) so a literal mention inside a
+    # test body doesn't accidentally extend the cap.
+    local v
+    v=$(head -20 "$file" 2>/dev/null \
+        | grep -oE '^[[:space:]]*#[[:space:]]*TIMEOUT_SECS[[:space:]]*=[[:space:]]*[0-9]+' \
+        | head -1 \
+        | grep -oE '[0-9]+$' || true)
+    if [[ -n "$v" ]]; then
+        echo "$v"
+    else
+        echo "$TEKHTON_TEST_TIMEOUT_SECS"
+    fi
+}
+
 # Disable commit signing for all test subprocesses — tests create temporary
 # git repos that inherit the global signing config, causing failures in
 # environments with broken or unavailable signing keys.
@@ -85,9 +122,31 @@ run_test() {
     # Re-running the test for debug output can yield divergent results when
     # `set -euo pipefail` aborts the first run early (SIGPIPE inside `$()`,
     # bare grep with no match, etc.) but the second run starts clean.
-    output=$(bash "$test_file" < /dev/null 2>&1) || rc=$?
+    #
+    # Wrapped in `timeout` so a single hung test can't stall the whole suite.
+    # --kill-after=5s escalates to SIGKILL if the test ignores SIGTERM (e.g.
+    # backgrounded subprocesses still holding the stdout pipe).
+    local timeout_secs
+    timeout_secs=$(_resolve_test_timeout "$test_file")
+    _log_progress "START ${test_name} (timeout=${timeout_secs}s)"
+    local _t0 _t1
+    _t0=$(date +%s)
+    output=$(timeout --kill-after=5s "${timeout_secs}s" \
+        bash "$test_file" < /dev/null 2>&1) || rc=$?
+    _t1=$(date +%s)
+    _log_progress "END   ${test_name} rc=${rc} elapsed=$((_t1 - _t0))s"
 
-    if [ "$rc" -eq 0 ]; then
+    # timeout exits 124 (SIGTERM fired) or 137 (SIGKILL fired after grace
+    # period). Surface either as a clear timeout failure so the log names the
+    # culprit instead of a generic non-zero exit.
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+        echo -e "${RED}FAIL${NC} ${test_name} — TIMED OUT after ${timeout_secs}s"
+        FAILED_TESTS+=("$test_name (timeout ${timeout_secs}s)")
+        echo "  --- partial output ---"
+        printf '%s\n' "$output" | sed 's/^/  /'
+        echo "  --- end ---"
+        FAIL=$((FAIL + 1))
+    elif [ "$rc" -eq 0 ]; then
         echo -e "${GREEN}PASS${NC} ${test_name}"
         PASS=$((PASS + 1))
     else
@@ -109,17 +168,21 @@ echo
 # validate / migrate / pointer-rewrite. Build the binary up-front so the
 # subprocess shell tests can find it on PATH. Skip silently when go isn't
 # installed — those tests will warn and skip rather than fail.
+_log_progress "PHASE make-build BEGIN"
 if [ -f "${TEKHTON_HOME}/go.mod" ] && command -v go &>/dev/null; then
     if (cd "$TEKHTON_HOME" && make build >/dev/null 2>&1); then
         export PATH="${TEKHTON_HOME}/bin:${PATH}"
     fi
 fi
+_log_progress "PHASE make-build END"
 
 # Discover and run all test files
+_log_progress "PHASE shell-tests BEGIN"
 for test_file in "${TESTS_DIR}"/test_*.sh; do
     [ -f "$test_file" ] || continue
     run_test "$(basename "$test_file")"
 done
+_log_progress "PHASE shell-tests END"
 
 echo
 echo "────────────────────────────────────────"
@@ -131,6 +194,7 @@ PYTHON_PASS=0
 PYTHON_FAIL=0
 PYTHON_TESTS_DIR="${TEKHTON_HOME}/tools/tests"
 
+_log_progress "PHASE python-tests BEGIN"
 if [ -d "$PYTHON_TESTS_DIR" ]; then
     if command -v python3 &>/dev/null && python3 -c "import pytest" &>/dev/null; then
         echo
@@ -157,11 +221,13 @@ else
     echo
     echo -e "  ${YELLOW}SKIP${NC} Python tests (tools/tests/ not found)"
 fi
+_log_progress "PHASE python-tests END"
 
 # --- Go tests (conditional) ---------------------------------------------------
 GO_PASS=0
 GO_FAIL=0
 
+_log_progress "PHASE go-tests BEGIN"
 if [ -f "${TEKHTON_HOME}/go.mod" ]; then
     if command -v go &>/dev/null; then
         echo
@@ -208,6 +274,9 @@ if [ "$GO_PASS" -gt 0 ] || [ "$GO_FAIL" -gt 0 ]; then
         echo -e "  Go:     ${GREEN}PASSED${NC}"
     fi
 fi
+
+_log_progress "PHASE go-tests END"
+_log_progress "run_tests.sh DONE shell_pass=${PASS} shell_fail=${FAIL} python_fail=${PYTHON_FAIL} go_fail=${GO_FAIL}"
 
 if [ "$FAIL" -gt 0 ] || [ "$PYTHON_FAIL" -gt 0 ] || [ "$GO_FAIL" -gt 0 ]; then
     exit 1

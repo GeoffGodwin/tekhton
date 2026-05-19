@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# TIMEOUT_SECS=300
 # =============================================================================
 # test_wedge_audit.sh — Unit tests for scripts/wedge-audit.sh (m04 invariant gate)
 #

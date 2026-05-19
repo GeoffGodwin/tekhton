@@ -67,6 +67,13 @@ FAILED_TESTS=()
 # shellcheck disable=SC2034
 TESTS_DIR="$tmpdir"
 
+# Stub the sibling helpers that run_test() now calls. The fixtures isolate
+# run_test() from the rest of run_tests.sh, so each helper added there must
+# either be extracted alongside or stubbed here. Stubs keep the contract
+# minimal: a fixed-value timeout and a no-op heartbeat.
+_resolve_test_timeout() { echo 60; }
+_log_progress() { :; }
+
 eval "$fn_src"
 
 output=$(run_test "test_stateful_failure.sh" 2>&1)

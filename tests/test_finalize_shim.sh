@@ -58,7 +58,14 @@ for hook in "${HOOKS[@]}"; do
     # hook function is not loaded by its case branch; we substitute a
     # no-op hook before calling so the dispatcher sees a defined function
     # regardless of whether the subsystem files actually defined it.
+    #
+    # ANALYZE_CMD / TEST_CMD are scrubbed: when this test runs under the
+    # tekhton dispatcher (e.g. `tekhton` invoking TEST_CMD="bash tests/run_tests.sh"
+    # for baseline capture), inherited TEST_CMD causes _hook_final_checks
+    # to re-execute the suite, looping infinitely. Unset them so the hook
+    # bodies short-circuit on the "nothing configured" branch.
     output=$(
+        env -u ANALYZE_CMD -u TEST_CMD \
         TEKHTON_HOME="$TEKHTON_HOME" \
         PROJECT_DIR="$PROJECT_DIR" \
         PIPELINE_EXIT_CODE=0 \
