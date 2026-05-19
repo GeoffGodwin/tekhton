@@ -103,6 +103,19 @@ func (b *BashShimHook) buildEnv(in *Input) []string {
 	if in.Timestamp != "" {
 		env = append(env, "TIMESTAMP="+in.Timestamp)
 	}
+	// LOG_FILE is constructed by tekhton-legacy.sh as
+	// "${LOG_DIR}/${TIMESTAMP}_${TASK_SLUG}.log". The Go orchestrator owns
+	// neither variable name nor a task slug, so we synthesize a finalize-
+	// scoped log file from LogDir + Timestamp. Hooks like _hook_final_checks
+	// (lib/finalize_core_hooks.sh:26 → run_final_checks "$LOG_FILE") rely on
+	// LOG_FILE being a writable path; without it `set -u` trips immediately.
+	if in.LogDir != "" {
+		ts := in.Timestamp
+		if ts == "" {
+			ts = "run"
+		}
+		env = append(env, "LOG_FILE="+filepath.Join(in.LogDir, ts+"_finalize.log"))
+	}
 	if in.Milestone != "" {
 		env = append(env, "_CURRENT_MILESTONE="+in.Milestone)
 	}

@@ -92,9 +92,57 @@ func (r *Runner) buildPipelineRequest(req *proto.RunRequestV1) *proto.PipelineAt
 		Milestone:  req.Milestone,
 		Order:      defaultStageOrder(),
 		ProjectDir: req.ProjectDir,
+		StageEnv:   buildStageEnv(req),
 	}
 	pr.EnsureProto()
 	return pr
+}
+
+// buildStageEnv synthesizes the per-stage env overrides expected by the bash
+// stage scripts. The legacy pipeline set MILESTONE_MODE / _CURRENT_MILESTONE
+// as bash globals at flag-parse time; under V4 the Go binary owns flag
+// parsing, so we must propagate these into every stage subprocess or the
+// bash stages crash under `set -u` (e.g. intake_helpers.sh:191).
+//
+// Applied uniformly to every stage in defaultStageOrder so a stage added
+// later that touches the same globals automatically inherits the env.
+func buildStageEnv(req *proto.RunRequestV1) map[string]map[string]string {
+	if req == nil {
+		return nil
+	}
+	common := map[string]string{}
+	if req.Milestone != "" {
+		common["MILESTONE_MODE"] = "true"
+		common["_CURRENT_MILESTONE"] = req.Milestone
+	} else {
+		common["MILESTONE_MODE"] = "false"
+	}
+	// TASK is read directly by several bash stage helpers
+	// (e.g. intake_helpers.sh:224 — fallback to the task string in
+	// non-milestone mode). Always export it (empty if absent) so
+	// `set -u` doesn't crash the stage subprocess.
+	common["TASK"] = req.Task
+	if req.AutoAdvance {
+		common["AUTO_ADVANCE"] = "true"
+	}
+	if req.HumanTag != "" {
+		common["HUMAN_NOTES_TAG"] = req.HumanTag
+	}
+	if req.Mode == proto.RunModeHuman {
+		common["HUMAN_MODE"] = "true"
+	}
+	if len(common) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]string, len(defaultStageOrder()))
+	for _, stage := range defaultStageOrder() {
+		stageCopy := make(map[string]string, len(common))
+		for k, v := range common {
+			stageCopy[k] = v
+		}
+		out[stage] = stageCopy
+	}
+	return out
 }
 
 // defaultStageOrder is the standard pipeline order. The bash side resolves

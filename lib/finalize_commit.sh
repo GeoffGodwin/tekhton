@@ -44,7 +44,7 @@ _do_git_commit() {
 # _CACHED_DISPOSITION so it behaves correctly even after _hook_clear_state
 # has removed MILESTONE_STATE.md.
 _tag_milestone_if_complete() {
-    [[ "$MILESTONE_MODE" != true ]] && return 0
+    [[ "${MILESTONE_MODE:-false}" != true ]] && return 0
     [[ -z "${_CURRENT_MILESTONE:-}" ]] && return 0
     local disposition="${_CACHED_DISPOSITION:-}"
     if [[ "$disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$disposition" == COMPLETE_AND_WAIT ]]; then

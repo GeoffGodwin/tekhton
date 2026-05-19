@@ -28,7 +28,7 @@ _orch_record_save_state() {
     _choose_resume_start_at
 
     local resume_flags="--complete"
-    if [[ "$MILESTONE_MODE" = true ]]; then
+    if [[ "${MILESTONE_MODE:-false}" = true ]]; then
         resume_flags="--complete --milestone"
     fi
     resume_flags="${resume_flags} --start-at ${_RESUME_NEW_START_AT}"

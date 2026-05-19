@@ -447,7 +447,7 @@ $(cat "${GLOSSARY_FILE}")"
     fi
 
     export MILESTONE_BLOCK=""
-    if [ "$MILESTONE_MODE" = true ]; then
+    if [ "${MILESTONE_MODE:-false}" = true ]; then
         # DAG path: use cached milestone window (M47) or compute fresh
         _get_cached_milestone_block "$CLAUDE_CODER_MODEL" 2>/dev/null || true
 

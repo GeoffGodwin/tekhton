@@ -188,7 +188,7 @@ _intake_apply_tweak_task() {
 
 # _intake_get_milestone_content — Returns the milestone file content or task string.
 _intake_get_milestone_content() {
-    if [[ "$MILESTONE_MODE" == true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+    if [[ "${MILESTONE_MODE:-false}" == true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
         # DAG mode: read milestone file
         if [[ "${MILESTONE_DAG_ENABLED:-true}" == "true" ]] \
            && declare -f has_milestone_manifest &>/dev/null \
@@ -221,7 +221,7 @@ _intake_get_milestone_content() {
         fi
     fi
     # Non-milestone mode: use task string
-    echo "$TASK"
+    echo "${TASK:-}"
 }
 
 # --- PM metadata annotation ---------------------------------------------------

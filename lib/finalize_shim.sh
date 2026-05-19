@@ -97,6 +97,11 @@ case "$HOOK_NAME" in
     _hook_record_metrics)
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/metrics.sh"
+        # metrics.sh:record_run_metrics → _collect_extended_stage_vars,
+        # _sanitize_numeric (defined in lib/metrics_extended.sh). Without
+        # this the hook prints "command not found" to stderr on every run.
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/metrics_extended.sh"
         _shim_load_finalize_bodies
         ;;
     _hook_cleanup_resolved|_hook_resolve_notes)

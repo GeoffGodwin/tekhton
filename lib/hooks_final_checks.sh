@@ -20,6 +20,18 @@ run_final_checks() {
 
     header "Final Checks"
 
+    # ANALYZE_CMD / TEST_CMD live in the target project's pipeline.conf. When
+    # the Go bridge runs hooks without loading that config (e.g. on bare
+    # directories or partial setups), skip rather than crash on unbound vars.
+    if [[ -z "${ANALYZE_CMD:-}" && -z "${TEST_CMD:-}" ]]; then
+        warn "Final checks: no ANALYZE_CMD or TEST_CMD configured — skipping."
+        return 0
+    fi
+    if [[ -z "${ANALYZE_CMD:-}" ]]; then
+        log "Final checks: no ANALYZE_CMD configured — skipping analyze pass."
+        ANALYZE_EXIT=0
+        ANALYZE_OUTPUT=""
+    else
     log "Running ${ANALYZE_CMD}..."
     set +e
     ANALYZE_OUTPUT=$(run_op "Running final static analysis" bash -c "${ANALYZE_CMD}" 2>&1)
@@ -84,6 +96,12 @@ run_final_checks() {
             print_run_summary
             success "${ANALYZE_CMD}: clean after cleanup pass."
         fi
+    fi
+    fi  # /ANALYZE_CMD configured
+
+    if [[ -z "${TEST_CMD:-}" ]]; then
+        log "Final checks: no TEST_CMD configured — skipping test pass."
+        return "$final_result"
     fi
 
     echo

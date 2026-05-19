@@ -70,7 +70,7 @@ _intake_handle_split_recommended() {
     log "Intake: split recommended."
 
     if [[ "${INTAKE_AUTO_SPLIT:-false}" == "true" ]] \
-       && [[ "$MILESTONE_MODE" == true ]] \
+       && [[ "${MILESTONE_MODE:-false}" == true ]] \
        && [[ -n "${_CURRENT_MILESTONE:-}" ]] \
        && declare -f split_milestone &>/dev/null; then
         log "Intake: auto-splitting milestone ${_CURRENT_MILESTONE}..."
@@ -104,7 +104,7 @@ _intake_handle_split_recommended() {
     fi
     case "$choice" in
         s|S)
-            if declare -f split_milestone &>/dev/null && [[ "$MILESTONE_MODE" == true ]]; then
+            if declare -f split_milestone &>/dev/null && [[ "${MILESTONE_MODE:-false}" == true ]]; then
                 split_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}" || true
                 if declare -f _switch_to_sub_milestone &>/dev/null; then
                     _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"

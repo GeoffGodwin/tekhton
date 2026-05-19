@@ -64,7 +64,7 @@ run_stage_architect() {
 
     local architect_model="${CLAUDE_ARCHITECT_MODEL:-${CLAUDE_STANDARD_MODEL}}"
     local architect_turns="${ARCHITECT_MAX_TURNS}"
-    if [ "$MILESTONE_MODE" = true ]; then
+    if [ "${MILESTONE_MODE:-false}" = true ]; then
         architect_turns="${MILESTONE_ARCHITECT_MAX_TURNS}"
     fi
 

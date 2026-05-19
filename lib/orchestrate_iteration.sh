@@ -158,7 +158,7 @@ _handle_pipeline_success() {
 
         # M16: Milestone success resets attempt counter — productive work
         # should not be penalized by prior failures.
-        if [[ "$MILESTONE_MODE" = true ]]; then
+        if [[ "${MILESTONE_MODE:-false}" = true ]]; then
             _ORCH_ATTEMPT=0
             _ORCH_NO_PROGRESS_COUNT=0
             log "Milestone complete. Resetting attempt counter."

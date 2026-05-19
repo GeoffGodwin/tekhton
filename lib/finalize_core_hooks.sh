@@ -23,7 +23,11 @@ _hook_final_checks() {
         return 0
     fi
     FINAL_CHECK_RESULT=0
-    run_final_checks "$LOG_FILE" || FINAL_CHECK_RESULT=$?
+    # LOG_FILE is expected to come from the Go finalize shim (LOG_DIR +
+    # TIMESTAMP). Synthesize a fallback if missing so `set -u` does not crash
+    # the hook before run_final_checks even runs.
+    local _final_log="${LOG_FILE:-${LOG_DIR:-${TEKHTON_DIR:-.tekhton}}/${TIMESTAMP:-run}_finalize.log}"
+    run_final_checks "$_final_log" || FINAL_CHECK_RESULT=$?
     if [[ "$FINAL_CHECK_RESULT" -ne 0 ]]; then
         warn "Final checks had failures (exit ${FINAL_CHECK_RESULT}). Pipeline will continue to archiving and commit prompt."
     fi
