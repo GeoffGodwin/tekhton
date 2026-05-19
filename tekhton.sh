@@ -53,10 +53,35 @@ _tekhton_argv_has_run_flag() {
     return 1
 }
 
+_tekhton_find_go() {
+    if command -v go >/dev/null 2>&1; then
+        command -v go
+        return 0
+    fi
+    local p
+    for p in \
+        "${HOME}/.local/go/bin/go" \
+        "${HOME}/go/bin/go" \
+        "/usr/local/go/bin/go" \
+        "/usr/lib/go/bin/go" \
+        "/opt/homebrew/bin/go" \
+        "/opt/go/bin/go"; do
+        [[ -x "$p" ]] && { echo "$p"; return 0; }
+    done
+    return 1
+}
+
 _tekhton_ensure_bin() {
     [[ -x "$TEKHTON_BIN" ]] && return 0
     echo "[tekhton] Building Go binary (first run)..." >&2
-    (cd "$TEKHTON_HOME" && make build) >&2 || {
+    local go_bin
+    if ! go_bin="$(_tekhton_find_go)"; then
+        echo "[tekhton] ERROR: cannot find 'go' on PATH or in common install locations." >&2
+        echo "[tekhton] Install Go 1.22+ (https://go.dev/dl/) and ensure 'go' is on PATH," >&2
+        echo "[tekhton] or set GO=/path/to/go and re-run." >&2
+        exit 1
+    fi
+    (cd "$TEKHTON_HOME" && GO="$go_bin" make build) >&2 || {
         echo "[tekhton] make build failed; cannot dispatch run-flag." >&2; exit 1
     }
 }

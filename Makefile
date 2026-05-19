@@ -25,6 +25,11 @@ CROSS_TARGETS := \
 	darwin/arm64 \
 	windows/amd64
 
+# Allow callers to override the go binary (useful when go isn't on PATH for
+# the invoking shell — e.g., ~/.local/go/bin in some user setups). Falls
+# through to plain `go`, which resolves via PATH as usual.
+GO ?= go
+
 GOFLAGS_CROSS := CGO_ENABLED=0
 
 .DEFAULT_GOAL := build
@@ -33,13 +38,13 @@ GOFLAGS_CROSS := CGO_ENABLED=0
 
 build: ## Build local-host binary into bin/tekhton.
 	@mkdir -p $(BIN_DIR)
-	go build $(BUILD_FLAGS) -o $(BIN_DIR)/$(BIN_NAME) $(PKG_MAIN)
+	$(GO) build $(BUILD_FLAGS) -o $(BIN_DIR)/$(BIN_NAME) $(PKG_MAIN)
 
 test: ## Run go test across all packages. Acceptable for "no test files" output.
-	go test ./...
+	$(GO) test ./...
 
 vet: ## Run go vet across all packages.
-	go vet ./...
+	$(GO) vet ./...
 
 lint: ## Run golangci-lint if installed; otherwise warn and continue.
 	@if command -v golangci-lint >/dev/null 2>&1; then \
@@ -49,7 +54,7 @@ lint: ## Run golangci-lint if installed; otherwise warn and continue.
 	fi
 
 tidy: ## Refresh go.sum hashes (run after editing go.mod requires).
-	go mod tidy
+	$(GO) mod tidy
 
 build-all: ## Cross-compile to all CROSS_TARGETS.
 	@mkdir -p $(BIN_DIR)
@@ -59,7 +64,7 @@ build-all: ## Cross-compile to all CROSS_TARGETS.
 		out="$(BIN_DIR)/$(BIN_NAME)-$$os-$$arch"; \
 		if [ "$$os" = "windows" ]; then out="$$out.exe"; fi; \
 		echo "==> $$os/$$arch -> $$out"; \
-		$(GOFLAGS_CROSS) GOOS=$$os GOARCH=$$arch go build $(BUILD_FLAGS) -o "$$out" $(PKG_MAIN) || exit 1; \
+		$(GOFLAGS_CROSS) GOOS=$$os GOARCH=$$arch $(GO) build $(BUILD_FLAGS) -o "$$out" $(PKG_MAIN) || exit 1; \
 	done
 
 clean: ## Remove build artifacts.
