@@ -3,7 +3,7 @@
   "disposition": "failure",
   "attempts": 1,
   "agent_calls": 0,
-  "elapsed_secs": 1,
+  "elapsed_secs": 10,
   "recovery": "save_exit",
   "error_message": "stagerunner: subprocess failed\nexit status 1",
   "error_class": "intake"
