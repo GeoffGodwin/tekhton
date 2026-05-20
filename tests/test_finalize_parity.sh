@@ -13,7 +13,8 @@
 #   2. Invoke `tekhton finalize` against the fixture with exit-code=0 and
 #      a COMPLETE_AND_CONTINUE disposition.
 #   3. Verify the Go-emitted artifacts:
-#        - MILESTONE_ARCHIVE.md exists and contains the milestone body
+#        - Milestone body file removed from .claude/milestones/ (cleanup hook)
+#        - .tekhton/MILESTONE_ARCHIVE.md NOT created (archival was retired)
 #        - MANIFEST.cfg entry status flipped to "done"
 #        - RUN_MEMORY.jsonl has one PASS record
 #        - CAUSAL_LOG.jsonl has a pipeline_end event
@@ -53,7 +54,7 @@ cat > "${FIXTURE}/.claude/milestones/MANIFEST.cfg" <<'EOF'
 m21|Finalize Orchestrator Port|done||m21-body.md|
 EOF
 
-# Milestone body that archive_milestone should copy into the archive.
+# Milestone body that cleanup_milestone should remove on completion.
 cat > "${FIXTURE}/.claude/milestones/m21-body.md" <<'EOF'
 # m21 — body
 This is the m21 milestone body used by the parity test.
@@ -83,12 +84,13 @@ export TEKHTON_HOME PROJECT_DIR="$FIXTURE"
 # --- Assertions -------------------------------------------------------------
 FAIL=0
 
-# 1. MILESTONE_ARCHIVE.md created with milestone body.
-if [[ ! -f "${FIXTURE}/.tekhton/MILESTONE_ARCHIVE.md" ]]; then
-    echo "FAIL: MILESTONE_ARCHIVE.md not created"
+# 1. cleanup_milestone removed the milestone body file; no archive created.
+if [[ -f "${FIXTURE}/.claude/milestones/m21-body.md" ]]; then
+    echo "FAIL: cleanup_milestone did not remove m21-body.md"
     FAIL=$((FAIL + 1))
-elif ! grep -q "m21 — body" "${FIXTURE}/.tekhton/MILESTONE_ARCHIVE.md"; then
-    echo "FAIL: MILESTONE_ARCHIVE.md missing milestone body"
+fi
+if [[ -f "${FIXTURE}/.tekhton/MILESTONE_ARCHIVE.md" ]]; then
+    echo "FAIL: archival pipeline was retired but MILESTONE_ARCHIVE.md was created"
     FAIL=$((FAIL + 1))
 fi
 

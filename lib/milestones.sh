@@ -3,7 +3,9 @@ set -euo pipefail
 # milestones.sh — Milestone state machine and acceptance checking
 # Sourced by tekhton.sh — expects: PROJECT_DIR, PIPELINE_STATE_FILE, TEST_CMD, ANALYZE_CMD, log(), warn(), success(), header(), run_build_gate()
 # Provides: parse_milestones, get_current_milestone, advance_milestone, write_milestone_disposition, init_milestone_state
-# Acceptance checking, commit signatures, auto-advance in milestone_ops.sh; archival in milestone_archival.sh
+# Acceptance checking, commit signatures, auto-advance in milestone_ops.sh.
+# Cleanup-on-complete is now handled by the Go finalize orchestrator
+# (internal/finalize/cleanup_milestone.go); bash no longer owns archival.
 # =============================================================================
 
 # --- Constants ---------------------------------------------------------------

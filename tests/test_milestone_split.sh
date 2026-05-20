@@ -20,17 +20,15 @@ LOG_DIR="${TMPDIR}/.claude/logs"
 mkdir -p "${TMPDIR}/.claude" "${LOG_DIR}" "${TMPDIR}/${TEKHTON_DIR}"
 
 MILESTONE_STATE_FILE="${TMPDIR}/.claude/MILESTONE_STATE.md"
-MILESTONE_ARCHIVE_FILE="${MILESTONE_ARCHIVE_FILE:-${TEKHTON_DIR}/MILESTONE_ARCHIVE.md}"
 SCOUT_REPORT_FILE="${SCOUT_REPORT_FILE:-${TEKHTON_DIR}/SCOUT_REPORT.md}"
 CODER_SUMMARY_FILE="${CODER_SUMMARY_FILE:-${TEKHTON_DIR}/CODER_SUMMARY.md}"
-export MILESTONE_ARCHIVE_FILE SCOUT_REPORT_FILE CODER_SUMMARY_FILE
+export SCOUT_REPORT_FILE CODER_SUMMARY_FILE
 
 source "${TEKHTON_HOME}/lib/state.sh"
 run_build_gate() { return 0; }
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_query.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 
 cd "$TMPDIR"
@@ -272,7 +270,8 @@ Acceptance criteria:
 - Also works
 CLAUDE_EOF
 
-# Only 1 sub-milestone → fails validation
+# Only 1 sub-milestone → fails validation (this gate fires before the
+# inline-mode deprecation branch, so we can still exercise it).
 _call_planning_batch() {
     echo "#### Milestone 5.1: Only Sub-task"
     echo "Just one."
@@ -285,7 +284,9 @@ _call_planning_batch() {
 r=0; rc split_milestone "5" "${TMPDIR}/CLAUDE.md" || r=$?
 assert "Only 1 sub-milestone: returns 1" "$([ "$r" -ne 0 ] && echo 0 || echo 1)"
 
-# 2 sub-milestones → succeeds and updates CLAUDE.md
+# Inline-mode splitting (operating on a CLAUDE.md path rather than a DAG
+# manifest) was retired when milestone archival was removed. The valid
+# 2-sub / 3-sub paths now exit with the deprecation error.
 _call_planning_batch() {
     cat << 'SPLIT_EOF'
 #### Milestone 5.1: First Sub-task
@@ -304,53 +305,6 @@ SPLIT_EOF
 }
 render_prompt() { echo "mock prompt"; }
 
-# Fresh CLAUDE.md
-cat > "${TMPDIR}/CLAUDE.md" << 'CLAUDE_EOF'
-# Project
-
-#### Milestone 5: Big Task
-Lots of work.
-
-Acceptance criteria:
-- Everything works
-
-#### Milestone 6: Next Task
-More work.
-
-Acceptance criteria:
-- Also works
-CLAUDE_EOF
-
-r=0; rc split_milestone "5" "${TMPDIR}/CLAUDE.md" || r=$?
-assert "2 sub-milestones: split_milestone returns 0"      "$([ "$r" -eq 0 ] && echo 0 || echo 1)"
-assert "CLAUDE.md contains Milestone 5.1 after split"     "$(grep -q 'Milestone 5.1' "${TMPDIR}/CLAUDE.md" && echo 0 || echo 1)"
-assert "CLAUDE.md contains Milestone 5.2 after split"     "$(grep -q 'Milestone 5.2' "${TMPDIR}/CLAUDE.md" && echo 0 || echo 1)"
-assert "Original Milestone 6 preserved"                    "$(grep -q 'Milestone 6' "${TMPDIR}/CLAUDE.md" && echo 0 || echo 1)"
-
-# 3 sub-milestones → also succeeds
-_call_planning_batch() {
-    cat << 'SPLIT_EOF'
-#### Milestone 5.1: Sub 1
-Part 1.
-
-Acceptance criteria:
-- Done 1
-
-#### Milestone 5.2: Sub 2
-Part 2.
-
-Acceptance criteria:
-- Done 2
-
-#### Milestone 5.3: Sub 3
-Part 3.
-
-Acceptance criteria:
-- Done 3
-SPLIT_EOF
-    return 0
-}
-
 cat > "${TMPDIR}/CLAUDE.md" << 'CLAUDE_EOF'
 # Project
 
@@ -365,8 +319,8 @@ More work.
 CLAUDE_EOF
 
 r=0; rc split_milestone "5" "${TMPDIR}/CLAUDE.md" || r=$?
-assert "3 sub-milestones: split_milestone returns 0"      "$([ "$r" -eq 0 ] && echo 0 || echo 1)"
-assert "CLAUDE.md contains Milestone 5.3 after 3-way split" "$(grep -q 'Milestone 5.3' "${TMPDIR}/CLAUDE.md" && echo 0 || echo 1)"
+assert "Inline-mode split (no DAG manifest) returns 1 — deprecated path" "$([ "$r" -ne 0 ] && echo 0 || echo 1)"
+assert "CLAUDE.md untouched after deprecated inline split" "$(grep -q 'Milestone 5: Big Task' "${TMPDIR}/CLAUDE.md" && echo 0 || echo 1)"
 
 # ============================================================================
 # Config defaults — MILESTONE_SPLIT_* values

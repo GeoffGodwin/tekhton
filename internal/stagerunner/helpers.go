@@ -67,7 +67,6 @@ var DefaultLibHelpers = []string{
 	"lib/milestone_query.sh",
 	"lib/milestone_ops.sh",
 	"lib/milestone_acceptance_lint.sh",
-	"lib/milestone_archival.sh",
 	"lib/milestone_split.sh",
 	"lib/milestone_window.sh",
 	"lib/draft_milestones.sh",

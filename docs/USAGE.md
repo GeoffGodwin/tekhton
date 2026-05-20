@@ -118,8 +118,9 @@ it into sub-milestones (3.1, 3.2, ...) and retries with narrower scope. If a cod
 run produces no output (null run), the milestone is split and retried without human
 intervention.
 
-Completed milestones are automatically archived from CLAUDE.md to
-`MILESTONE_ARCHIVE.md`, keeping CLAUDE.md under context window limits.
+When a milestone completes, the finalize orchestrator removes its file from
+`.claude/milestones/`. The MANIFEST entry stays with `status=done`; git
+history is the source of truth for completed milestone content.
 
 ### Auto-Advance (`--auto-advance`)
 

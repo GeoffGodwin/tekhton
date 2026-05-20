@@ -127,9 +127,6 @@ generate_express_config() {
     if [[ "$LOG_DIR" != /* ]]; then
         LOG_DIR="${PROJECT_DIR}/${LOG_DIR}"
     fi
-    if [[ "$MILESTONE_ARCHIVE_FILE" != /* ]]; then
-        MILESTONE_ARCHIVE_FILE="${PROJECT_DIR}/${MILESTONE_ARCHIVE_FILE}"
-    fi
     if [[ "${MILESTONE_DIR:-}" != /* ]] && [[ -n "${MILESTONE_DIR:-}" ]]; then
         MILESTONE_DIR="${PROJECT_DIR}/${MILESTONE_DIR}"
     fi

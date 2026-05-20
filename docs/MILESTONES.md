@@ -105,7 +105,7 @@ status: "pending"
 
 1. **pending** — Not yet started
 2. **in_progress** — Currently being implemented
-3. **done** — Completed and archived to `MILESTONE_ARCHIVE.md`
+3. **done** — Completed; the milestone file is removed from `.claude/milestones/` and git history holds the content
 
 Milestones are tracked in `MANIFEST.cfg` with dependency ordering.
 The pipeline runs them in dependency order via `--auto-advance`.

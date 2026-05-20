@@ -4,7 +4,7 @@
 // run loop into Go, ports eight hooks to pure-Go bodies, and routes the
 // remaining 18 bash-implemented hooks through lib/finalize_shim.sh
 // (one bash process per hook). The eight pure-Go bodies are
-// clear_state, archive_reports, mark_done, archive_milestone,
+// clear_state, archive_reports, mark_done, cleanup_milestone,
 // emit_run_memory, emit_run_summary, emit_timing_report,
 // causal_log_finalize. Follow-up milestones (m22..m25) replace the bash
 // shim cases one subsystem at a time without changing this orchestrator.

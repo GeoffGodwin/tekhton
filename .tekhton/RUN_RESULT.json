@@ -3,8 +3,8 @@
   "disposition": "failure",
   "attempts": 1,
   "agent_calls": 0,
-  "elapsed_secs": 10,
+  "elapsed_secs": 41,
   "recovery": "save_exit",
-  "error_message": "stagerunner: subprocess failed\nexit status 1",
+  "error_message": "stagerunner: missing result file: /home/geoff/workspace/geoffgodwin/tekhton/.tekhton/stage_results/stage_intake_r1_b0.json",
   "error_class": "intake"
 }

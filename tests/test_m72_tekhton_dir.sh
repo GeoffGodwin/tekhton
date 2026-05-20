@@ -124,7 +124,6 @@ defaults_output=$(env -i PATH="$PATH" TEKHTON_HOME="$TEKHTON_HOME" bash --norc -
     echo \"DRIFT_LOG_FILE=\${DRIFT_LOG_FILE}\"
     echo \"HUMAN_ACTION_FILE=\${HUMAN_ACTION_FILE}\"
     echo \"NON_BLOCKING_LOG_FILE=\${NON_BLOCKING_LOG_FILE}\"
-    echo \"MILESTONE_ARCHIVE_FILE=\${MILESTONE_ARCHIVE_FILE}\"
     echo \"SECURITY_NOTES_FILE=\${SECURITY_NOTES_FILE}\"
     echo \"SECURITY_REPORT_FILE=\${SECURITY_REPORT_FILE}\"
     echo \"INTAKE_REPORT_FILE=\${INTAKE_REPORT_FILE}\"
@@ -175,8 +174,6 @@ assert_contains "1.18 HUMAN_ACTION_FILE under .tekhton/" \
     "HUMAN_ACTION_FILE=.tekhton/HUMAN_ACTION_REQUIRED.md" "$defaults_output"
 assert_contains "1.19 NON_BLOCKING_LOG_FILE under .tekhton/" \
     "NON_BLOCKING_LOG_FILE=.tekhton/NON_BLOCKING_LOG.md" "$defaults_output"
-assert_contains "1.20 MILESTONE_ARCHIVE_FILE under .tekhton/" \
-    "MILESTONE_ARCHIVE_FILE=.tekhton/MILESTONE_ARCHIVE.md" "$defaults_output"
 assert_contains "1.21 SECURITY_NOTES_FILE under .tekhton/" \
     "SECURITY_NOTES_FILE=.tekhton/SECURITY_NOTES.md" "$defaults_output"
 assert_contains "1.22 SECURITY_REPORT_FILE under .tekhton/" \

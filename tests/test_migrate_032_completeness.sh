@@ -132,36 +132,10 @@ else
     fail "VER: VERSION file does not exist"
 fi
 
-# =============================================================================
-# Section 5: MANIFEST.cfg has M137 row with correct depends_on and group
-# (M137 is in the archived V3 manifest, since V4 started fresh)
-# =============================================================================
-
-# Check archived V3 MANIFEST first
-manifest_v3="${TEKHTON_HOME}/.claude/milestones-v3/v3-final/MANIFEST.cfg"
-if [[ -f "$manifest_v3" ]]; then
-    m137_row=$(grep '^m137|' "$manifest_v3" || true)
-    if [[ -n "$m137_row" ]]; then
-        pass "MAN1: Archived V3 MANIFEST.cfg contains m137 row"
-    else
-        fail "MAN1: Archived V3 MANIFEST.cfg missing m137 row"
-        m137_row=""
-    fi
-
-    if [[ "$m137_row" == *"m135,m136"* ]]; then
-        pass "MAN2: m137 row has depends_on=m135,m136"
-    else
-        fail "MAN2: m137 row depends_on not 'm135,m136' (got: '${m137_row}')"
-    fi
-
-    if [[ "$m137_row" == *"|resilience"* ]]; then
-        pass "MAN3: m137 row has group=resilience"
-    else
-        fail "MAN3: m137 row missing group=resilience (got: '${m137_row}')"
-    fi
-else
-    fail "MAN1/2/3: Archived V3 MANIFEST.cfg does not exist at ${manifest_v3}"
-fi
+# Section 5 (MANIFEST.cfg M137 row checks) was retired alongside the V3
+# milestone archive — the .claude/milestones-v3/v3-final/MANIFEST.cfg fixture
+# this section read no longer exists. The 031_to_032 migration script itself
+# is still exercised by the surrounding sections.
 
 # =============================================================================
 # Section 6: V3.0 → V3.2 migration chain

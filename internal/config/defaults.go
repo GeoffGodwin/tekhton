@@ -271,7 +271,6 @@ var baseDefaults = []defaultRule{
 	{"AUTO_ADVANCE_CONFIRM", lit("true")},
 
 	{"MILESTONE_TAG_ON_COMPLETE", lit("false")},
-	{"MILESTONE_ARCHIVE_FILE", tdFile("MILESTONE_ARCHIVE.md")},
 
 	{"MILESTONE_DAG_ENABLED", lit("true")},
 	{"MILESTONE_DIR", lit(".claude/milestones")},

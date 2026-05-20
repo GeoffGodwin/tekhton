@@ -22,7 +22,6 @@ mkdir -p "${TMPDIR}/.claude" "${LOG_DIR}"
 
 MILESTONE_STATE_FILE="${TMPDIR}/.claude/MILESTONE_STATE.md"
 MILESTONE_MANIFEST="MANIFEST.cfg"
-MILESTONE_ARCHIVE_FILE="${TMPDIR}/MILESTONE_ARCHIVE.md"
 export MILESTONE_MANIFEST
 
 source "${TEKHTON_HOME}/lib/state.sh"
@@ -32,8 +31,6 @@ run_build_gate() { return 0; }
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_query.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 
 cd "$TMPDIR"

@@ -156,10 +156,11 @@ m22 closing notes:
 m21 closing notes:
 
 - **8** pure-Go hooks landed in `internal/finalize/` (`clear_state`,
-  `archive_reports`, `mark_done`, `archive_milestone`, `emit_run_memory`,
-  `emit_run_summary`, `emit_timing_report`, `causal_log_finalize`). The
-  remaining **18** hooks dispatch through `lib/finalize_shim.sh` (one bash
-  process per hook).
+  `archive_reports`, `mark_done`, `cleanup_milestone` (formerly
+  `archive_milestone`; retired the archive output, now removes the
+  milestone file on completion), `emit_run_memory`, `emit_run_summary`,
+  `emit_timing_report`, `causal_log_finalize`). The remaining **18** hooks
+  dispatch through `lib/finalize_shim.sh` (one bash process per hook).
 - `BashAdapter.Finalize` no longer execs `bash lib/finalize.sh`; it
   constructs `finalize.Orchestrator` and runs the chain in-process.
 - `lib/finalize.sh` shrunk to 48 lines (was 280). A legacy compatibility
@@ -172,14 +173,11 @@ m21 closing notes:
 - Bash files **deleted**: `finalize_summary.sh`,
   `finalize_summary_collectors.sh`, `run_memory.sh` (their Go ports —
   `emit_run_summary` and `emit_run_memory` — fully cover the bodies).
-- Bash files **retained as transition**: `milestone_archival.sh` and
-  `milestone_archival_helpers.sh`. The m21 plan called for deletion, but
-  closeout audit found `lib/milestone_split.sh:138,226` still imports
-  `_extract_milestone_block` / `_replace_milestone_block`, and
-  `tekhton-legacy.sh:2208` still calls `archive_all_completed_milestones`
-  for the V2→V3 migration path. Files restored; retire when
-  `milestone_split.sh` ports (target m25-ish) and the legacy migration
-  path retires (target m28). Net: 3 files deleted, not 5.
+- Post-audit cleanup: `milestone_archival.sh`,
+  `milestone_archival_helpers.sh`, and the entire archive pipeline were
+  removed. Completed milestones now have their source files deleted on
+  finalize (`cleanup_milestone` hook); git history is the canonical
+  record. Inline-mode milestone splitting was retired alongside.
 - Dogfooding artifacts: 17 patch bumps surfaced during the m21 cycling
   run (`4.21.1` → `4.21.17`), none reverting earlier work — all forward
   patches. Two findings recorded as drift observations: (a) non-blocking

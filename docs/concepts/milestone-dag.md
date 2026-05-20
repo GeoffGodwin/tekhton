@@ -84,7 +84,7 @@ The manifest is validated at load time:
 When a milestone completes:
 
 1. Status is set to `done` in `MANIFEST.cfg`
-2. The milestone is archived to `MILESTONE_ARCHIVE.md`
+2. The milestone file is removed from `.claude/milestones/` — git history is the canonical record of completed content
 3. If `MILESTONE_TAG_ON_COMPLETE` is `true`, a git tag is created
 
 ## Sliding Window

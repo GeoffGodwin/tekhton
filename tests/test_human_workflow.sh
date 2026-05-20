@@ -743,7 +743,6 @@ archive_reports() { return 0; }
 mark_milestone_done() { return 0; }
 get_milestone_disposition() { echo "PARTIAL"; }
 generate_commit_message() { echo "feat: test"; }
-archive_completed_milestone() { return 0; }
 tag_milestone_complete() { return 0; }
 clear_milestone_state() { return 0; }
 print_run_summary() { return 0; }

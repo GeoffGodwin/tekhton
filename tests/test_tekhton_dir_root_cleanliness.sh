@@ -71,6 +71,9 @@ declare -A EXCLUDED=(
     # Runtime variable set by indexer_history.sh — lives in .claude/index/ by design,
     # not a config default from config_defaults.sh.
     [TEST_SYMBOL_MAP_FILE]=1
+    # Runtime variable exported by the Go finalize shim (internal/finalize/shim.go)
+    # to the bash bridge — always an absolute path, never a config default.
+    [TEKHTON_RUN_RESULT_FILE]=1
 )
 
 # Patterns that are not file paths

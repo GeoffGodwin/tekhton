@@ -23,7 +23,6 @@ MILESTONE_STATE_FILE="${TMPDIR}/.claude/MILESTONE_STATE.md"
 MILESTONE_DAG_ENABLED=true
 MILESTONE_DIR=".claude/milestones"
 MILESTONE_MANIFEST="MANIFEST.cfg"
-MILESTONE_ARCHIVE_FILE="${TMPDIR}/MILESTONE_ARCHIVE.md"
 CONTEXT_BUDGET_ENABLED=true
 CONTEXT_BUDGET_PCT=50
 CHARS_PER_TOKEN=4
@@ -43,8 +42,6 @@ source "${TEKHTON_HOME}/lib/context.sh"
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_query.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"
 

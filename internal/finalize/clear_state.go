@@ -42,7 +42,7 @@ func (h *ClearState) Run(_ context.Context, in *Input) error {
 }
 
 // shouldRunOnCompletion is the success+milestone-complete gate shared by
-// clear_state / mark_done / archive_milestone. Centralized here so the
+// clear_state / mark_done / cleanup_milestone. Centralized here so the
 // three hooks branch identically — the bash side replicated the same gate
 // in each function body and a single edit propagates to all three.
 func shouldRunOnCompletion(in *Input) bool {

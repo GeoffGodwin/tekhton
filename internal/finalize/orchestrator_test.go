@@ -44,7 +44,7 @@ func TestHookOrder_MatchesBashRegistration(t *testing.T) {
 		"_hook_resolve_notes",
 		"_hook_archive_reports",
 		"_hook_mark_done",
-		"_hook_archive_milestone",
+		"_hook_cleanup_milestone",
 		"_hook_clear_state",
 		"_hook_health_reassess",
 		"_hook_emit_run_summary",

@@ -46,7 +46,6 @@ mkdir -p "$TEKHTON_SESSION_DIR"
 
 export PIPELINE_STATE_FILE="${TMPDIR_BASE}/.claude/PIPELINE_STATE.md"
 export MILESTONE_STATE_FILE="${TMPDIR_BASE}/.claude/MILESTONE_STATE.md"
-export MILESTONE_ARCHIVE_FILE="${MILESTONE_ARCHIVE_FILE:-${TEKHTON_DIR}/MILESTONE_ARCHIVE.md}"
 export CODER_SUMMARY_FILE="${CODER_SUMMARY_FILE:-${TEKHTON_DIR}/CODER_SUMMARY.md}"
 export REVIEWER_REPORT_FILE="${REVIEWER_REPORT_FILE:-${TEKHTON_DIR}/REVIEWER_REPORT.md}"
 export TESTER_REPORT_FILE="${TESTER_REPORT_FILE:-${TEKHTON_DIR}/TESTER_REPORT.md}"
@@ -102,7 +101,6 @@ run_build_gate() { return 0; }
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_query.sh"
-# milestone_archival.sh deleted in m21 (archive_milestone hook ported to internal/finalize/archive_milestone.go).
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 
 # Stub _phase_start/_phase_end before sourcing context_cache.sh

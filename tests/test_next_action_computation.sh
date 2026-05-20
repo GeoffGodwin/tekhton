@@ -23,7 +23,6 @@ MILESTONE_DAG_ENABLED=true
 MILESTONE_DIR=".claude/milestones"
 MILESTONE_MANIFEST="MANIFEST.cfg"
 MILESTONE_AUTO_MIGRATE=true
-MILESTONE_ARCHIVE_FILE="${TMPDIR}/MILESTONE_ARCHIVE.md"
 BUILD_ERRORS_FILE="${TMPDIR}/BUILD_ERRORS.md"
 
 export MILESTONE_DAG_ENABLED MILESTONE_DIR MILESTONE_MANIFEST
@@ -33,8 +32,6 @@ run_build_gate() { return 0; }
 source "${TEKHTON_HOME}/lib/milestones.sh"
 source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_query.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_progress.sh"
 

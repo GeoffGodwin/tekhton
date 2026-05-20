@@ -388,7 +388,7 @@ func resolvePaths(cfg *Config) {
 	if pd == "" {
 		return
 	}
-	for _, k := range []string{"PIPELINE_STATE_FILE", "LOG_DIR", "MILESTONE_ARCHIVE_FILE", "MILESTONE_DIR", "CAUSAL_LOG_FILE"} {
+	for _, k := range []string{"PIPELINE_STATE_FILE", "LOG_DIR", "MILESTONE_DIR", "CAUSAL_LOG_FILE"} {
 		v := cfg.Values[k]
 		if v == "" || filepath.IsAbs(v) {
 			continue

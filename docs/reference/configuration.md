@@ -148,7 +148,6 @@ When running in `--milestone` mode, these values override the base turn limits:
 | `MILESTONE_WINDOW_PCT` | `30` | % of context budget allocated to milestone content |
 | `MILESTONE_WINDOW_MAX_CHARS` | `20000` | Hard cap on milestone content in prompts |
 | `MILESTONE_TAG_ON_COMPLETE` | `false` | Create a git tag on milestone completion |
-| `MILESTONE_ARCHIVE_FILE` | `MILESTONE_ARCHIVE.md` | Where completed milestones are archived |
 
 ### Milestone Splitting
 

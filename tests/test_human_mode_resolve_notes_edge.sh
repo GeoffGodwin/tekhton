@@ -82,7 +82,6 @@ record_run_metrics()             { return 0; }
 clear_resolved_nonblocking_notes() { return 0; }
 get_milestone_disposition()      { echo ""; }
 mark_milestone_done()            { return 0; }
-archive_completed_milestone()    { return 0; }
 clear_milestone_state()          { return 0; }
 persist_express_config()         { return 0; }
 persist_express_roles()          { return 0; }

@@ -29,7 +29,7 @@ func (h *MarkDone) Name() string { return "_hook_mark_done" }
 
 // Run marks the active milestone as done in the manifest, persisting via
 // manifest.Save (which is atomic — tmpfile + os.Rename). Gated by the same
-// triple gate as clear_state and archive_milestone.
+// triple gate as clear_state and cleanup_milestone.
 func (h *MarkDone) Run(_ context.Context, in *Input) error {
 	if !shouldRunOnCompletion(in) {
 		return nil

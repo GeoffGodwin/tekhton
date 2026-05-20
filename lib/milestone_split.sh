@@ -4,8 +4,9 @@ set -euo pipefail
 # milestone_split.sh — Pre-flight milestone sizing and null-run auto-split
 #
 # Sourced by tekhton.sh — do not run directly.
-# Expects: milestones.sh, milestone_archival.sh sourced first
-#   (uses _extract_milestone_block() and _replace_milestone_block() from archival)
+# Expects: milestones.sh sourced first.
+# V4 is DAG-only — inline-mode CLAUDE.md milestones are no longer supported;
+# the inline branches in this file return an explicit deprecation error.
 # Expects: config.sh defaults: MILESTONE_SPLIT_*, MILESTONE_AUTO_RETRY,
 #          MILESTONE_MAX_SPLIT_DEPTH, CODER_MAX_TURNS_CAP, ADJUSTED_CODER_TURNS
 # Expects: _call_planning_batch() from plan.sh (lazy-sourced if needed)
@@ -130,15 +131,14 @@ split_milestone() {
         fi
     fi
 
-    # Extract the full milestone definition (DAG file or CLAUDE.md).
+    # Extract the full milestone definition. V4 is DAG-only; inline-mode
+    # CLAUDE.md splitting was retired when the archival pipeline was removed.
     local milestone_def
     if [[ "$in_dag" == "true" ]]; then
         milestone_def=$(_split_read_dag_milestone "$milestone_num") || return 1
     else
-        milestone_def=$(_extract_milestone_block "$milestone_num" "$claude_md") || {
-            error "Could not extract milestone ${milestone_num} from ${claude_md}"
-            return 1
-        }
+        error "Inline-mode milestone splitting is no longer supported. Initialize a DAG manifest (.claude/milestones/MANIFEST.cfg) and re-run."
+        return 1
     fi
 
     # Get prior attempts for context
@@ -214,21 +214,17 @@ split_milestone() {
 
     log "Split produced ${sub_count} sub-milestones for milestone ${milestone_num}"
 
-    # Apply split — DAG path writes sub-files + splices manifest; inline path
-    # replaces the milestone block in CLAUDE.md.
-    if [[ "$in_dag" == "true" ]]; then
-        if ! _split_apply_dag "$milestone_num" "$split_output"; then
-            error "Failed to apply DAG split for milestone ${milestone_num}."
-            return 1
-        fi
-        success "Milestone ${milestone_num} split into ${sub_count} sub-milestones (DAG mode)"
-    else
-        if ! _replace_milestone_block "$milestone_num" "$claude_md" "$split_output"; then
-            error "Failed to update ${claude_md} with sub-milestones."
-            return 1
-        fi
-        success "Milestone ${milestone_num} split into ${sub_count} sub-milestones in ${claude_md}"
+    # Apply split — DAG path writes sub-files + splices manifest. The inline
+    # CLAUDE.md mutation path was removed alongside milestone archival.
+    if [[ "$in_dag" != "true" ]]; then
+        error "Inline-mode milestone splitting is no longer supported."
+        return 1
     fi
+    if ! _split_apply_dag "$milestone_num" "$split_output"; then
+        error "Failed to apply DAG split for milestone ${milestone_num}."
+        return 1
+    fi
+    success "Milestone ${milestone_num} split into ${sub_count} sub-milestones (DAG mode)"
 
     # Emit milestone_split event (Milestone 13)
     if command -v emit_event &>/dev/null; then

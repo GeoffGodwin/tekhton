@@ -91,43 +91,10 @@ else
     fail "Config with pipeline.conf should pass: ${w}"
 fi
 
-# ============= Integration: lint_acceptance_criteria on real M72 =============
-echo "--- lint_acceptance_criteria on real M72 ---"
-
-# M72 is in the archived V3 milestone directory, since V4 started fresh
-m72_file="${TEKHTON_HOME}/.claude/milestones-v3/v3-final/m72-tidy-project-root-tekhton-dir.md"
-if [[ -f "$m72_file" ]]; then
-    warnings=$(lint_acceptance_criteria "$m72_file")
-    wcount=$(echo "$warnings" | grep -c 'Lint:' || true)
-    if [[ "$wcount" -ge 2 ]]; then
-        pass "Real M72 triggers ${wcount} warnings (>=2)"
-    else
-        fail "Real M72 should trigger >=2 warnings, got ${wcount}: ${warnings}"
-    fi
-else
-    fail "M72 file not found at ${m72_file}"
-fi
-
-# ============= False positive check: M73-M83 =============
-echo "--- False positive check (M73-M83) ---"
-
-ms_dir="${TEKHTON_HOME}/.claude/milestones-v3/v3-final"
-for mnum in 73 74 75 76 77 78 79 80 81 82 83; do
-    mfile=""
-    for f in "${ms_dir}/m${mnum}"-*.md; do
-        [[ -f "$f" ]] && mfile="$f" && break
-    done
-    if [[ -z "$mfile" ]]; then
-        fail "M${mnum}: milestone file not found"
-        continue
-    fi
-    mw=$(lint_acceptance_criteria "$mfile")
-    if [[ -n "$mw" ]]; then
-        fail "M${mnum}: false positive — ${mw}"
-    else
-        pass "M${mnum}: zero warnings"
-    fi
-done
+# Note: the historical M72-M83 V3 milestone files this test used to lint
+# against were removed when the milestone archival pipeline was retired.
+# Lint coverage now lives entirely in the unit tests above; reintroduce a
+# real-milestone fixture if a regression demands it.
 
 # ============= Integration: check_milestone_acceptance does NOT lint =============
 # Lint was moved from end-of-run acceptance (where warnings are non-actionable)

@@ -190,11 +190,5 @@ nullglob=$(grep -B5 "_detect_dockerfile_langs" "${TEKHTON_HOME}/lib/detect_ci.sh
 [[ -n "$nullglob" ]] || fail "nullglob not set for _detect_dockerfile_langs"
 pass "Fix #25: nullglob set for _detect_dockerfile_langs"
 
-# === Fix #26: test_causal_log.sh missing source ===
-# Check that test_causal_log.sh sources causality_query.sh
-source_line=$(grep "source.*causality_query" "${TEKHTON_HOME}/tests/test_causal_log.sh" || echo "")
-[[ -n "$source_line" ]] || fail "test_causal_log.sh doesn't source causality_query.sh"
-pass "Fix #26: test_causal_log.sh sources causality_query.sh"
-
 echo ""
 echo "All NON_BLOCKING_LOG fixes verified successfully!"

@@ -484,7 +484,6 @@ if [ "${1:-}" = "--plan" ] || [ "${1:-}" = "--plan-browser" ] || [ "${1:-}" = "-
     source "${TEKHTON_HOME}/lib/plan_server.sh"
     source "${TEKHTON_HOME}/lib/plan_browser.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh"
-    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
     # DAG defaults needed by milestone_dag.sh (config_defaults.sh is not
     # sourced in --plan mode because it depends on _clamp_config_value)
     : "${MILESTONE_DAG_ENABLED:=true}"
@@ -515,7 +514,6 @@ if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
     source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # _extract_scan_metadata for replan_brownfield
     source "${TEKHTON_HOME}/lib/milestones.sh"
-    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
     source "${TEKHTON_HOME}/lib/milestone_query.sh"
     source "${TEKHTON_HOME}/stages/plan_generate.sh"
@@ -686,7 +684,6 @@ if [ "${1:-}" = "--migrate" ]; then
     source "${TEKHTON_HOME}/lib/migrate_cli.sh"
     # Milestone DAG functions needed for V2→V3 inline milestone migration
     source "${TEKHTON_HOME}/lib/milestones.sh"
-    source "${TEKHTON_HOME}/lib/milestone_archival_helpers.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
     source "${TEKHTON_HOME}/lib/milestone_query.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
@@ -905,7 +902,6 @@ source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 source "${TEKHTON_HOME}/lib/milestone_query.sh"  # DAG-aware milestone wrappers (m14: replaces milestone_dag_helpers.sh)
 source "${TEKHTON_HOME}/lib/milestone_ops.sh"
 source "${TEKHTON_HOME}/lib/milestone_acceptance_lint.sh"
-source "${TEKHTON_HOME}/lib/milestone_archival.sh"
 source "${TEKHTON_HOME}/lib/milestone_split.sh"
 source "${TEKHTON_HOME}/lib/milestone_window.sh"
 source "${TEKHTON_HOME}/lib/draft_milestones.sh"
@@ -2210,13 +2206,9 @@ if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
     fi
 fi
 
-# --- Startup archival: clean up completed milestones from previous runs ------
-# Archive [DONE] milestones that still have full definitions in CLAUDE.md.
-# This handles cases where the previous run completed a milestone but crashed
-# before archival, or where milestones were manually marked [DONE].
-if [ "$MILESTONE_MODE" = true ] && [ -f "CLAUDE.md" ]; then
-    archive_all_completed_milestones "CLAUDE.md"
-fi
+# Inline-mode milestone archival was retired: the Go finalize orchestrator
+# now removes completed milestone files (cleanup_milestone hook), and the
+# CLAUDE.md inline-startup-archival sweep has nothing to do.
 
 # --- Run checkpoint (Milestone 24) ------------------------------------------
 # Create a git checkpoint before any agent runs so users can rollback.

@@ -16,15 +16,14 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 echo "=== test_m62_fixes_integration.sh ==="
 
 # Test 1: Verify all modified files exist and are readable.
-# m21: lib/finalize_summary.sh ported to internal/finalize/emit_run_summary.go;
-# dropped from the file-readability check (4 of the M61/M62 surface
-# remains in bash; finalize_summary's bash body is gone).
+# m21: lib/finalize_summary.sh ported to internal/finalize/emit_run_summary.go.
+# Post-audit: lib/timing.sh deleted (orphan; canonical owner is
+# internal/finalize/emit_timing_report.go).
 files_ok=0
-[[ -r "${TEKHTON_HOME}/lib/timing.sh" ]] && files_ok=$((files_ok + 1))
 [[ -r "${TEKHTON_HOME}/lib/indexer.sh" ]] && files_ok=$((files_ok + 1))
 [[ -r "${TEKHTON_HOME}/stages/tester.sh" ]] && files_ok=$((files_ok + 1))
 [[ -r "${TEKHTON_HOME}/stages/review.sh" ]] && files_ok=$((files_ok + 1))
-if [[ $files_ok -eq 4 ]]; then
+if [[ $files_ok -eq 3 ]]; then
     pass "All modified files are readable"
 else
     fail "Some modified files are missing or unreadable"
@@ -37,12 +36,9 @@ else
     fail "stages/tester.sh has syntax errors"
 fi
 
-# Test 3: Verify timing.sh can be sourced (syntax check)
-if bash -n "${TEKHTON_HOME}/lib/timing.sh" 2>/dev/null; then
-    pass "lib/timing.sh passes syntax check"
-else
-    fail "lib/timing.sh has syntax errors"
-fi
+# Test 3: lib/timing.sh deleted post-audit (orphan dead code);
+# canonical owner is internal/finalize/emit_timing_report.go.
+pass "lib/timing.sh syntax check superseded by Go port"
 
 # Test 4: m21 — lib/finalize_summary.sh ported to Go. Syntax coverage now
 # comes from `go build ./internal/finalize/...`; skip the bash syntax check.
@@ -74,12 +70,9 @@ fi
 # `stages` collector and covered by emit_run_summary_test.go.
 pass "Finalize summary tester guard superseded by Go port (m21)"
 
-# Test 9: Verify timing.sh doesn't have double conditions on line 138
-if sed -n '138p' "${TEKHTON_HOME}/lib/timing.sh" | grep -q 'if \[\[ "$_spk" == "${_pfx}"\* \]\]; then'; then
-    pass "Timing.sh line 138 has correct simplified condition"
-else
-    fail "Timing.sh line 138 has unexpected condition format"
-fi
+# Test 9: lib/timing.sh deleted post-audit; the M62 phase-prefix logic
+# moved to internal/finalize (covered by emit_timing_report_test.go).
+pass "lib/timing.sh phase-prefix logic superseded by Go port"
 
 # Test 10: Verify review.sh has the global comment for _REVIEW_MAP_FILES
 if sed -n '41p' "${TEKHTON_HOME}/stages/review.sh" | grep -q 'global.*tested externally'; then

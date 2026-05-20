@@ -71,7 +71,6 @@ tekhton/
 │   ├── milestone_ops.sh    # Milestone marking + disposition
 │   ├── milestone_acceptance.sh # Milestone acceptance criteria checking
 │   ├── milestone_acceptance_lint.sh # Acceptance criteria quality linter
-│   ├── milestone_archival.sh   # Milestone archival to MILESTONE_ARCHIVE.md
 │   ├── milestone_metadata.sh   # Milestone metadata HTML comments
 │   ├── milestone_split.sh  # Pre-flight milestone splitting
 │   ├── milestone_split_dag.sh     # DAG-mode splitting: file read + array splice
@@ -179,11 +178,8 @@ tekhton/
 │   ├── plan_browser.sh     # Browser-based planning
 │   ├── plan_review.sh      # Planning review UI
 │   ├── safety_net.sh       # Run safety net + rollback
-│   ├── run_memory.sh       # Structured cross-run memory (JSONL)
-│   ├── timing.sh           # Stage timing and duration estimation
 │   ├── milestone_dag_io.sh # m13 wedge shim — manifest I/O, prefers Go binary
 │   ├── milestone_dag_io_bash.sh # m13 pure-bash fallback for the manifest shim
-│   ├── milestone_archival_helpers.sh # Archival helper functions
 │   ├── metrics_dashboard.sh # Metrics dashboard formatting
 │   ├── drift_prune.sh      # Drift log pruning
 │   ├── quota.sh            # API quota management
@@ -445,7 +441,6 @@ Available variables in prompt templates — set by the pipeline before rendering
 | `METRICS_ADAPTIVE_TURNS` | Use history for turn calibration (default: true) |
 | `MILESTONE_ACTIVITY_TIMEOUT_MULTIPLIER` | Multiplier for AGENT_ACTIVITY_TIMEOUT in milestone mode (default: 3) |
 | `MILESTONE_TAG_ON_COMPLETE` | Create git tag on milestone completion (default: false) |
-| `MILESTONE_ARCHIVE_FILE` | Path to milestone archive (default: MILESTONE_ARCHIVE.md) |
 | `MILESTONE_SPLIT_ENABLED` | Enable pre-flight milestone splitting (default: true) |
 | `MILESTONE_SPLIT_MODEL` | Model for splitting agent (default: CLAUDE_CODER_MODEL) |
 | `MILESTONE_SPLIT_MAX_TURNS` | Turn limit for splitting agent (default: 15) |
@@ -577,6 +572,45 @@ cd tekhton && bash tests/run_tests.sh
 shellcheck tekhton.sh lib/*.sh stages/*.sh
 ```
 
+### Test categories
+
+Tests fall into three categories. New tests should land in the right one
+deliberately — mixing categories produces brittle tests that fail for the
+wrong reasons.
+
+1. **Go unit tests** (`internal/**/*_test.go`, `cmd/**/*_test.go`) — exercise
+   pure Go logic with no external processes. Where the canonical implementation
+   lives in Go (post-wedge subsystems), Go unit tests are the primary
+   correctness gate. Use seam-based fakes; avoid `t.Skip` for anything but
+   environment guards (POSIX vs Windows, tool-on-PATH).
+2. **Bash unit tests** (`tests/test_*.sh`) — exercise bash that still owns its
+   logic (stages, planning, notes, dashboard, drift, detect, indexer, TUI bash
+   glue). When a subsystem ports to Go, its bash unit tests retire alongside
+   the bash they tested.
+3. **Shim-boundary integration tests** (subset of `tests/test_*.sh`) — exercise
+   the bash → shim → Go binary call chain end-to-end. These are the *only*
+   tests that catch shim glue breakage (missing env vars, wrong argv ordering,
+   stale exit-code translation) which neither pure-Go nor pure-bash unit tests
+   see. They are an intentional category, not a leftover.
+
+### Shim-boundary integration test pattern
+
+When you add a test that crosses a V4 wedge boundary, follow the model in
+`tests/test_pin_version_validation.sh`:
+
+- Source the bash shim under test (e.g. `lib/config.sh`, `lib/state.sh`).
+- Drive a user-visible operation that exec's the Go binary through the shim.
+- Assert on *user-visible behavior* (warning emitted, exit code, file state).
+- Self-skip cleanly when the Go binary isn't built — the test must not block
+  contributors who haven't run `make build`.
+- Do **not** assert Go-internal state directly; that's `internal/<pkg>/*_test.go`'s
+  job. Likewise do not re-test bash logic the shim does not touch.
+
+Each shim-boundary test should source as few shims as practical. Tests that
+source three or four shims at once are usually testing a debt artifact rather
+than a contract — when that happens, prefer porting the underlying concern
+into a Go regression test in the appropriate `internal/` package.
+
 ## Adding Tekhton to a New Project
 
 ```bash
@@ -590,8 +624,8 @@ cd /path/to/your/project
 ## Completed Initiatives
 
 All prior initiatives are complete. V3 is feature complete as of v3.66.0
-(M01–M66 all done). See design docs for full details and `MILESTONE_ARCHIVE.md`
-for individual milestone records.
+(M01–M66 all done). See design docs for full details and git history for
+individual milestone records.
 
 | Initiative | Version | Milestones | Design Doc |
 |-----------|---------|-----------|------------|
@@ -605,28 +639,27 @@ for individual milestone records.
 
 ### Milestone Management
 
-Milestones are managed as individual files in `.claude/milestones/`.
-See `MANIFEST.cfg` for ordering, dependencies, and status. Completed milestones
-are archived to `.tekhton/MILESTONE_ARCHIVE.md`.
+Milestones are managed as individual files in `.claude/milestones/`. See
+`MANIFEST.cfg` for ordering, dependencies, and status. When a milestone
+completes successfully, the finalize orchestrator deletes its file from
+the working tree (`internal/finalize/cleanup_milestone.go`). The MANIFEST
+entry stays with `status=done`. Git history is the source of truth for
+completed milestone content — `git log --all -- .claude/milestones/m05*.md`
+or equivalent surfaces what shipped.
 
 **Milestone authoring format.** All new milestone files MUST be created from
 the canonical template at `.tekhton/MILESTONE_TEMPLATE.md`. The template
 encodes the meta-block placement, title format, required sections, and the
-acceptance-criteria conventions the runtime expects (see m138 for an
-exemplar). Do not free-hand a milestone file — copy the template and fill
-it in. Format drift between milestones has cost us multiple times; the
-template exists so it never happens again.
-
-**Archived V3 milestones.** The V3 milestone set (m01–m138, all completed)
-is preserved at `.claude/milestones-v3/v3-final/` along with its frozen
-`MANIFEST.cfg`. The active `.claude/milestones/MANIFEST.cfg` is fresh for V4
-and starts empty.
+acceptance-criteria conventions the runtime expects. Do not free-hand a
+milestone file — copy the template and fill it in. Format drift between
+milestones has cost us multiple times; the template exists so it never
+happens again.
 
 ## Next Initiative: Tekhton 4.0 — Go Migration
 
 V4 is the Ship-of-Theseus migration of Tekhton from Bash to Go (`DESIGN_v4.md`).
 Milestone numbering restarts at M01 for V4 — `.claude/milestones/MANIFEST.cfg`
-is fresh and the V3 milestone set is archived (see Milestone Management above).
+is fresh and the V3 milestone set lives only in git history.
 The V4 milestone set has not yet been authored — design references to "M139+"
 inside `DESIGN_v4.md` are historical placeholders from when this work was
 scoped as a V3 continuation.
