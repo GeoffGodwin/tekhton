@@ -151,6 +151,12 @@ case "$HOOK_NAME" in
     _hook_commit)
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/hooks.sh"
+        # hooks.sh:117/185 calls get_milestone_commit_prefix /
+        # get_milestone_commit_body; both live in milestone_ops.sh.
+        # Without this source the commit hook trips "command not found"
+        # whenever MILESTONE_MODE=true.
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/milestone_ops.sh"
         _shim_load_finalize_bodies
         ;;
     _hook_update_check)

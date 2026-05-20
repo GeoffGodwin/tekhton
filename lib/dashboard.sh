@@ -140,10 +140,15 @@ emit_dashboard_run_state() {
     local started_at="${START_AT_TS:-}"
     local waiting="${WAITING_FOR:-}"
 
-    # Defensive guard: _STAGE_START_TS may not exist in older callers or tests
-    if ! declare -p _STAGE_START_TS &>/dev/null; then
-        declare -gA _STAGE_START_TS=()
-    fi
+    # Defensive guard: stage tracking arrays may not exist in finalize shim
+    # subprocesses (V4 env contract only forwards scalars). Without these
+    # declares, the `${_STAGE_STATUS[$stg]:-pending}` reads below trip
+    # `set -u` on the missing-array case.
+    declare -p _STAGE_START_TS &>/dev/null || declare -gA _STAGE_START_TS=()
+    declare -p _STAGE_STATUS   &>/dev/null || declare -gA _STAGE_STATUS=()
+    declare -p _STAGE_TURNS    &>/dev/null || declare -gA _STAGE_TURNS=()
+    declare -p _STAGE_BUDGET   &>/dev/null || declare -gA _STAGE_BUDGET=()
+    declare -p _STAGE_DURATION &>/dev/null || declare -gA _STAGE_DURATION=()
 
     # Build stages JSON
     local stages_json="{"

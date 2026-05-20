@@ -11,6 +11,37 @@ set -euo pipefail
 export TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TESTS_DIR="${TEKHTON_HOME}/tests"
 
+# --- Env contract hygiene ----------------------------------------------------
+# When tekhton itself runs `bash tests/run_tests.sh` as TEST_CMD, the M26 env
+# contract has already exported the parent project's pipeline.conf values
+# (CODER_MAX_TURNS, MILESTONE_DIR, MILESTONE_DAG_ENABLED, …) into our env.
+# Tests build their own fixtures and call `load_config` against them — but
+# `internal/config.seedFromEnv` adopts any pre-existing env value over the
+# derived defaults, so e.g. TESTER_FIX_MAX_TURNS (= CODER_MAX_TURNS/3) freezes
+# at the parent's value instead of the fixture's. Tests like
+# test_auto_fix_on_test_failure.sh / test_milestones.sh / test_milestone_*.sh
+# fail under that pollution but pass from a clean shell.
+#
+# The fix: unset every contract key before any test runs. Derive the list
+# from `tekhton config defaults --emit shell` so it never goes stale — adding
+# a new default key in internal/config/defaults.go automatically extends the
+# wipe. PROJECT_DIR / MILESTONE_DIR / MILESTONE_MANIFEST are wiped explicitly
+# because they're absolute-path-resolved and not in the defaults list.
+_tekhton_bin="${TEKHTON_HOME}/bin/tekhton"
+if [[ -x "$_tekhton_bin" ]]; then
+    while IFS= read -r _key; do
+        [[ -z "$_key" ]] && continue
+        unset "$_key" 2>/dev/null || true
+    done < <(
+        "$_tekhton_bin" config defaults --emit shell 2>/dev/null \
+            | sed -nE 's/^export ([A-Z_][A-Z0-9_]*)=.*/\1/p'
+    )
+fi
+unset PROJECT_DIR MILESTONE_DIR MILESTONE_MANIFEST \
+      _CURRENT_MILESTONE TASK MILESTONE_MODE AUTO_ADVANCE AUTO_ADVANCE_LIMIT \
+      HUMAN_MODE HUMAN_NOTES_TAG LOG_DIR LOG_FILE TIMESTAMP TEKHTON_SESSION_DIR \
+      _DAG_LOADED 2>/dev/null || true
+
 # Export _FILE config variables for test subprocesses — matching production
 # defaults from config_defaults.sh (all under TEKHTON_DIR).
 export TEKHTON_DIR="${TEKHTON_DIR:-.tekhton}"

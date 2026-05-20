@@ -82,10 +82,10 @@ _hook_commit() {
     # the TUI hold view renders them in a dedicated summary block rather than
     # interleaved with runtime chronology events (M110).
     out_banner "Tekhton — Pipeline Complete"
-    out_summary_kv "Task"      "$TASK"
-    out_summary_kv "Started"   "$START_AT"
+    out_summary_kv "Task"      "${TASK:-}"
+    out_summary_kv "Started"   "${START_AT:-intake}"
     out_summary_kv "Verdict"   "${VERDICT:-APPROVED}"
-    out_summary_kv "Log"       "$LOG_FILE"
+    out_summary_kv "Log"       "${LOG_FILE:-}"
     if [[ -n "$ms_num" ]]; then
         if [[ "$ms_disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$ms_disposition" == COMPLETE_AND_WAIT ]]; then
             out_summary_kv "Milestone" "${ms_num} — COMPLETE"
