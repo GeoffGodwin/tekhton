@@ -291,11 +291,18 @@ func buildCommand(ctx context.Context, bin string, req *proto.AgentRequestV1) *e
 // remaining bound). req.MaxTurns is still honored by the supervisor as the
 // turn-counter ceiling for AgentResultV1 reporting — it just no longer
 // reaches the CLI.
+//
+// `--verbose` is required when `--output-format=stream-json` is set in print
+// mode (Claude CLI 2.1 hard-rejects the combination otherwise with
+// "When using --print, --output-format=stream-json requires --verbose").
+// Without it every supervise call exits rc=1 before the decoder sees a
+// single event.
 func buildArgs(req *proto.AgentRequestV1) []string {
 	return []string{
 		"-p",
 		"--model", req.Model,
 		"--output-format", "stream-json",
+		"--verbose",
 	}
 }
 

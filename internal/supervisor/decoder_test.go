@@ -67,6 +67,20 @@ func runDecode(t *testing.T, input string, timer activityTimer) ([]event, *ringB
 	return <-collected, rb
 }
 
+// Claude CLI 2.1 reports the final turn count via num_turns on the terminal
+// `type:"result"` event. The decoder must surface that as event.NumTurns so
+// finalTurn() can populate AgentResultV1.TurnsUsed for the bash shim — the
+// older per-line `turn` field is no longer emitted by 2.1.
+func TestFinalTurn_PrefersNumTurnsFromResultEvent(t *testing.T) {
+	input := `{"type":"system","subtype":"init"}` + "\n" +
+		`{"type":"assistant"}` + "\n" +
+		`{"type":"result","subtype":"success","num_turns":3}` + "\n"
+	events, _ := runDecode(t, input, nil)
+	if got := finalTurn(events); got != 3 {
+		t.Errorf("finalTurn: got %d, want 3 (from num_turns on result event)", got)
+	}
+}
+
 func TestDecode_ValidStream_EmitsAllEventsInOrder(t *testing.T) {
 	input := readFixture(t, "valid_two_turns.jsonl")
 	events, rb := runDecode(t, input, nil)

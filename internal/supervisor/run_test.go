@@ -299,9 +299,24 @@ func TestBuildArgs_MinimalRequest(t *testing.T) {
 		PromptFile: "/tmp/p.prompt",
 	}
 	got := buildArgs(req)
-	want := []string{"-p", "--model", "claude-opus-4-7", "--output-format", "stream-json"}
+	want := []string{"-p", "--model", "claude-opus-4-7", "--output-format", "stream-json", "--verbose"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("buildArgs: got %v, want %v", got, want)
+	}
+}
+
+// Claude CLI 2.1 rejects `-p --output-format stream-json` without `--verbose`.
+// Pin the flag in the argv so a future refactor can't drop it silently.
+func TestBuildArgs_RequiresVerboseForStreamJSON(t *testing.T) {
+	req := &proto.AgentRequestV1{
+		Proto:      proto.AgentRequestProtoV1,
+		Label:      "coder",
+		Model:      "M",
+		PromptFile: "/p",
+	}
+	joined := strings.Join(buildArgs(req), " ")
+	if !strings.Contains(joined, "--verbose") {
+		t.Errorf("buildArgs missing --verbose for stream-json: %s", joined)
 	}
 }
 

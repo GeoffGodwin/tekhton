@@ -30,11 +30,17 @@ type activityTimer interface {
 // lines whose `type` parses; non-JSON lines (or JSON missing a type) are
 // captured in the ring buffer but no event is emitted. Raw is the original
 // line so downstream consumers can re-marshal or log verbatim.
+//
+// NumTurns mirrors the `num_turns` field claude CLI 2.1 emits on its terminal
+// `type:"result"` event. The V3 supervisor counted turns by watching for an
+// internal `turn` field claude no longer emits; mapping the 2.1 result event
+// here is what feeds AgentResultV1.TurnsUsed.
 type event struct {
-	Type   string          `json:"type"`
-	Turn   int             `json:"turn,omitempty"`
-	Detail json.RawMessage `json:"detail,omitempty"`
-	Raw    string          `json:"-"`
+	Type     string          `json:"type"`
+	Turn     int             `json:"turn,omitempty"`
+	NumTurns int             `json:"num_turns,omitempty"`
+	Detail   json.RawMessage `json:"detail,omitempty"`
+	Raw      string          `json:"-"`
 }
 
 // decoderConfig wires the decoder's collaborators. Splitting it from decode()
@@ -96,9 +102,18 @@ func decode(ctx context.Context, r io.Reader, cfg decoderConfig) error {
 // finalTurn extracts the highest turn number observed across emitted events.
 // Used by Run to populate AgentResultV1.TurnsUsed without bookkeeping inside
 // the hot decode loop.
+//
+// Claude CLI 2.1's terminal event is `type:"result"` with `num_turns:N`. The
+// pre-2.1 stream emitted intermediate events with a per-line `turn` field;
+// we keep that path for backward compatibility (and for fake-agent fixtures
+// in tests) but prefer NumTurns when it is set, since it represents the
+// authoritative count at end-of-run.
 func finalTurn(events []event) int {
 	highest := 0
 	for _, ev := range events {
+		if ev.NumTurns > highest {
+			highest = ev.NumTurns
+		}
 		if ev.Turn > highest {
 			highest = ev.Turn
 		}
