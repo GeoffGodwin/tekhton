@@ -9,7 +9,8 @@ toolchain expects to consume:
 
   - `lib/milestone_dag.sh`          reads the meta block for id + status
   - `lib/milestone_acceptance*.sh`  parses `## Acceptance Criteria` checkboxes
-  - `lib/milestone_archival.sh`     copies completed bodies to MILESTONE_ARCHIVE.md
+  - `internal/finalize/cleanup_milestone.go`  deletes the file once the
+    manifest entry is `done` (git history is the canonical record)
   - `lib/milestone_progress*.sh`    renders `## Overview` + `## Acceptance Criteria`
   - `tools/release_notes/*`         pulls the H1 title and `m<NN> fills` row
 
