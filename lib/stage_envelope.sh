@@ -184,7 +184,13 @@ run_stage_${stage}() {
     local _se_next=\"\${_STAGE_ENVELOPE_NEXT_ACTION:-}\"
     local _se_reason=\"\${_STAGE_ENVELOPE_EXIT_REASON:-exit=\$_se_ec}\"
     local _se_calls=\"\${_STAGE_ENVELOPE_AGENT_CALLS:-0}\"
-    if declare -f emit_stage_envelope &>/dev/null; then
+    # Only fill in an envelope when the stage didn't write one itself.
+    # Stages that hand-roll their envelope (e.g. with a sha256 exit_reason
+    # for parity tests, or a richer verdict than pass/fail) populate
+    # TEKHTON_STAGE_RESULT_FILE directly; overwriting their work would
+    # silently destroy data the runner is about to consume.
+    if declare -f emit_stage_envelope &>/dev/null \
+       && { [[ -z \"\${TEKHTON_STAGE_RESULT_FILE:-}\" ]] || [[ ! -s \"\$TEKHTON_STAGE_RESULT_FILE\" ]]; }; then
         emit_stage_envelope \"${stage}\" \"\$_se_verdict\" \"\$_se_reason\" \"\$_se_calls\" \"\$_se_dur\" \"\$_se_next\"
     fi
     unset _STAGE_ENVELOPE_${stage^^}_VERDICT _STAGE_ENVELOPE_NEXT_ACTION _STAGE_ENVELOPE_EXIT_REASON _STAGE_ENVELOPE_AGENT_CALLS

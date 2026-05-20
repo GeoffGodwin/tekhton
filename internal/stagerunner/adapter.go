@@ -372,6 +372,13 @@ func buildBashScript(tekhtonHome, projectDir, scriptPath, stage string, libHelpe
 	}
 	b.WriteString(`source "$TEKHTON_HOME/lib/stage_envelope.sh"` + "\n")
 	fmt.Fprintf(&b, "source %q\n", scriptPath)
+	// Install the envelope wrapper *after* the stage script defines
+	// run_stage_<name>. Without this the wrapper never gets attached and the
+	// stage exits without writing TEKHTON_STAGE_RESULT_FILE — the Go runner
+	// then crashes with "stagerunner: missing result file" even on a clean
+	// stage run. Guarded so test harnesses with stub envelope.sh files (or
+	// stages that write the envelope themselves) keep working.
+	b.WriteString("if declare -f stage_envelope_install_all &>/dev/null; then stage_envelope_install_all; fi\n")
 	fmt.Fprintf(&b, "%s\n", stageEntryFunc(stage))
 	return b.String()
 }
