@@ -120,7 +120,7 @@ run_stage_coder() {
     _scout_archive_name="${TIMESTAMP}_$(basename "${SCOUT_REPORT_FILE}")"
 
     # Tag-specific scout behavior (M42): configurable per tag
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes; then
         case "$NOTES_FILTER" in
             BUG)
                 case "${SCOUT_ON_BUG:-always}" in
@@ -406,7 +406,7 @@ $(cat "${SCOUT_REPORT_FILE}")
     # The human notes block is still built for injection into the template.
     HUMAN_NOTES_BLOCK=""
     NOTE_TEMPLATE_NAME=""   # Set when a tag-specific template should be used
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes; then
         # Select tag-specific template if available
         case "$NOTES_FILTER" in
             BUG)    NOTE_TEMPLATE_NAME="coder_note_bug" ;;
@@ -577,11 +577,11 @@ ${nb_notes}"
     # Mark human notes as in-progress before coder runs (only when task is about notes)
     # In --human (single-note) mode, claim_single_note already ran in tekhton.sh —
     # skip bulk claiming to avoid marking unrelated notes as [~].
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         # Triage bulk notes and warn about oversized ones (M41)
         triage_bulk_warn "${NOTES_FILTER:-}" || true
         claim_human_notes
-    elif [ "$HUMAN_NOTE_COUNT" -gt 0 ] && ! should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
+    elif [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && ! should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — injection skipped."
         # Defensive hint: detect tasks that appear to originate from ${HUMAN_NOTES_FILE}
         if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then
@@ -609,7 +609,7 @@ ${nb_notes}"
     # --- Invoke coder agent --------------------------------------------------
 
     # Tag-specific turn budget adjustment (M42)
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ -n "$NOTES_FILTER" ]]; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes && [[ -n "$NOTES_FILTER" ]]; then
         local _tag_base="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
         local _tag_multiplier="1.0"
         case "$NOTES_FILTER" in
@@ -704,7 +704,7 @@ ${nb_notes}"
         error "or the prompt was too complex for initial discovery."
 
         # Reset claimed notes — coder didn't produce any work
-        if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
+        if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ]; then
             resolve_human_notes
         fi
 
@@ -812,7 +812,7 @@ ${nb_notes}"
     # In --human (single-note) mode, _hook_resolve_notes in finalize.sh handles
     # resolution via resolve_single_note — skip bulk resolution to avoid resetting
     # the single claimed note before finalization can process it.
-    if [ "$HUMAN_NOTE_COUNT" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
         resolve_human_notes
     fi
 
