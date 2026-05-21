@@ -52,9 +52,21 @@ _test_dedup_fingerprint() {
         # Including TEST_CMD ensures a config change invalidates the cache.
         # Including HEAD ensures a clean tree at a different commit does not
         # match a prior pass fingerprint.
+        #
+        # The grep -v filters out auto-managed runtime artifacts that every
+        # pipeline run touches (VERSION bump, DRIFT_LOG/PREFLIGHT_REPORT/
+        # RUN_RESULT writes, stage_results/* envelopes, project_version.cfg,
+        # the dedup fingerprint file itself). Without this filter the dedup
+        # cache never matches across runs — by the time pipeline N+1 starts
+        # checking, run N has already bumped VERSION and rewritten artifact
+        # files, so the fingerprint differs and tests re-run unnecessarily.
+        # These paths don't affect test outcomes; filtering them keeps the
+        # fingerprint stable for the source-code state that actually matters.
         {
             echo "head:${head_sha}"
-            git status --porcelain 2>/dev/null
+            git status --porcelain 2>/dev/null | grep -Ev \
+                "^.. (VERSION|\\.claude/project_version\\.cfg|\\.tekhton/(DRIFT_LOG\\.md|PREFLIGHT_REPORT\\.md|RUN_RESULT\\.json|SECURITY_NOTES\\.md|NON_BLOCKING_LOG\\.md|test_dedup\\.fingerprint|stage_results/)|\\.claude/logs/)" \
+                || true
             echo "cmd:${TEST_CMD:-}"
         } | _test_dedup_hash
     else

@@ -220,6 +220,64 @@ popd >/dev/null
 rm -rf "$NON_GIT_TMP"
 
 # =============================================================================
+# Suite 6: runtime artifacts do NOT invalidate the fingerprint
+# Auto-managed files (VERSION, .claude/project_version.cfg, .tekhton/RUN_RESULT.json,
+# .tekhton/DRIFT_LOG.md, stage_results/*.json, etc.) get touched on every
+# pipeline run. Including them in the fingerprint meant the cache never
+# matched across runs. The filter in _test_dedup_fingerprint must exclude
+# them so source-state-only fingerprints stabilize.
+# =============================================================================
+echo ""
+echo "=== Suite 6: runtime artifact filter ==="
+
+cd "$TEST_TMP"
+
+# Seed a .tekhton/ runtime artifact tree mirroring real pipeline output.
+mkdir -p "${TEST_TMP}/.tekhton/stage_results"
+mkdir -p "${TEST_TMP}/.claude/logs"
+echo "old" > "${TEST_TMP}/VERSION"
+echo "old" > "${TEST_TMP}/.claude/project_version.cfg"
+echo "old" > "${TEST_TMP}/.tekhton/DRIFT_LOG.md"
+echo "old" > "${TEST_TMP}/.tekhton/RUN_RESULT.json"
+echo "old" > "${TEST_TMP}/.tekhton/stage_results/stage_coder.json"
+git add VERSION .claude/project_version.cfg .tekhton/DRIFT_LOG.md \
+    .tekhton/RUN_RESULT.json .tekhton/stage_results/stage_coder.json
+git commit -q -m "seed runtime artifacts"
+
+test_dedup_reset
+test_dedup_record_pass
+
+# Touch every auto-managed artifact like a real run would.
+echo "new" > "${TEST_TMP}/VERSION"
+echo "new" > "${TEST_TMP}/.claude/project_version.cfg"
+echo "new" > "${TEST_TMP}/.tekhton/DRIFT_LOG.md"
+echo "new" > "${TEST_TMP}/.tekhton/RUN_RESULT.json"
+echo "new" > "${TEST_TMP}/.tekhton/stage_results/stage_coder.json"
+# Also a log file (path-prefix match)
+echo "log" > "${TEST_TMP}/.claude/logs/run.log"
+
+if test_dedup_can_skip; then
+    pass "6.1: Runtime artifact churn does NOT invalidate fingerprint"
+else
+    fail "6.1: Runtime artifacts incorrectly invalidated fingerprint"
+fi
+
+# Sanity: a REAL source file change should still invalidate.
+echo "src change" >> initial.txt
+if test_dedup_can_skip; then
+    fail "6.2: Real source change should invalidate fingerprint"
+else
+    pass "6.2: Real source change correctly invalidates fingerprint"
+fi
+git checkout -q -- initial.txt
+
+# Restore artifact files for any subsequent suites.
+git checkout -q -- VERSION .claude/project_version.cfg \
+    .tekhton/DRIFT_LOG.md .tekhton/RUN_RESULT.json \
+    .tekhton/stage_results/stage_coder.json
+rm -f "${TEST_TMP}/.claude/logs/run.log"
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo ""
