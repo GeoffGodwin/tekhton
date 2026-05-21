@@ -183,7 +183,13 @@ run_stage_${stage}() {
     fi
     local _se_next=\"\${_STAGE_ENVELOPE_NEXT_ACTION:-}\"
     local _se_reason=\"\${_STAGE_ENVELOPE_EXIT_REASON:-exit=\$_se_ec}\"
-    local _se_calls=\"\${_STAGE_ENVELOPE_AGENT_CALLS:-0}\"
+    # Default to TOTAL_AGENT_INVOCATIONS (incremented by lib/agent.sh:35 on
+    # every run_agent call) so stages that don't explicitly set
+    # _STAGE_ENVELOPE_AGENT_CALLS still report the real count. The Go runner
+    # sums these per-stage values into RUN_RESULT.json's agent_calls field;
+    # without this default every run reported agent_calls=0 regardless of
+    # actual agent work done.
+    local _se_calls=\"\${_STAGE_ENVELOPE_AGENT_CALLS:-\${TOTAL_AGENT_INVOCATIONS:-0}}\"
     # Only fill in an envelope when the stage didn't write one itself.
     # Stages that hand-roll their envelope (e.g. with a sha256 exit_reason
     # for parity tests, or a richer verdict than pass/fail) populate
