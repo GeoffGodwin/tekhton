@@ -91,6 +91,35 @@ func TestValidateMilestoneExistsSkipsWithoutManifest(t *testing.T) {
 	}
 }
 
+// TestValidateMilestoneExistsAcceptsBareNumber covers the CLI normalization
+// boundary: `--milestone M23` is stripped to "23" by normalizeMilestoneID
+// (for the bash _CURRENT_MILESTONE wire format), but MANIFEST.cfg keys
+// entries as "m23". The validator must try both shapes.
+func TestValidateMilestoneExistsAcceptsBareNumber(t *testing.T) {
+	proj := t.TempDir()
+	mDir := filepath.Join(proj, ".claude", "milestones")
+	if err := os.MkdirAll(mDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifestContent := "# Tekhton Milestone Manifest v1\n" +
+		"# id|title|status|depends_on|file|parallel_group\n" +
+		"m23|TUI Ops Port|todo||m23-tui-ops-port.md|phase5\n"
+	if err := os.WriteFile(filepath.Join(mDir, "MANIFEST.cfg"), []byte(manifestContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := New(&fakePipeline{})
+	req := &proto.RunRequestV1{
+		ProjectDir:  proj,
+		TekhtonHome: t.TempDir(),
+		Mode:        proto.RunModeMilestone,
+		Milestone:   "23", // post-normalization (CLI got --milestone M23)
+	}
+	if err := r.validateAndDefault(req); err != nil {
+		t.Fatalf("want nil for bare-number milestone 23 → m23; got %v", err)
+	}
+}
+
 // TestValidateMilestoneExistsSkipsNonMilestoneMode confirms task / human runs
 // never trip the check even when --milestone is empty.
 func TestValidateMilestoneExistsSkipsNonMilestoneMode(t *testing.T) {

@@ -236,8 +236,26 @@ func (r *Runner) validateMilestoneExists(req *proto.RunRequestV1) error {
 	if err != nil {
 		return nil
 	}
+	// cmd/tekhton/run.go's normalizeMilestoneID strips the "m" prefix to
+	// pass a bare number through the bash _CURRENT_MILESTONE wire format.
+	// MANIFEST.cfg keys entries by full ID ("m23"). Try both shapes so a
+	// CLI invocation of `--milestone M23` (→ "23") finds the "m23" entry.
 	if _, ok := m.Get(req.Milestone); ok {
 		return nil
+	}
+	if !strings.HasPrefix(req.Milestone, "m") {
+		// Also try zero-padded form for sub-milestones authored as "m05.1"
+		// when the CLI passed "5.1"; the m23-style top-level case is just
+		// the first variant.
+		candidates := []string{"m" + req.Milestone}
+		if len(req.Milestone) == 1 || (len(req.Milestone) >= 2 && req.Milestone[1] == '.') {
+			candidates = append(candidates, "m0"+req.Milestone)
+		}
+		for _, c := range candidates {
+			if _, ok := m.Get(c); ok {
+				return nil
+			}
+		}
 	}
 	suggestion := frontierSuggestion(m)
 	return fmt.Errorf("%w: %q not in %s%s", ErrMilestoneNotFound,
