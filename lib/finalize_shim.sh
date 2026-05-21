@@ -160,6 +160,13 @@ case "$HOOK_NAME" in
         # hooks.sh:generate_commit_message also calls get_milestone_title
         # (lib/milestone_query.sh) when TASK is empty, so the commit subject
         # falls back to the milestone title instead of just "feat:".
+        # get_milestone_title delegates to dag_get_title when has_milestone_manifest
+        # is defined; otherwise it falls through to inline CLAUDE.md mode, which
+        # has been deprecated since the V3→V4 manifest port and returns empty.
+        # Sourcing milestone_dag.sh (transitively brings milestone_dag_io.sh)
+        # gives the function the DAG accessors it needs.
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/milestone_dag.sh"
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/milestone_query.sh"
         # finalize_commit.sh calls print_run_summary after a successful
