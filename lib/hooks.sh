@@ -105,6 +105,17 @@ generate_commit_message() {
         file_count=$(awk '/^## Files ([Cc]reated|[Mm]odified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "0")
     fi
 
+    # If TASK arrived empty (e.g. finalize subprocess didn't inherit it from
+    # the legacy bash orchestrator) but we know the milestone number, derive
+    # task from the milestone title so the commit subject isn't just "feat:".
+    if [ -z "$task" ] && [ -n "$milestone_num" ] && declare -f get_milestone_title &>/dev/null; then
+        local ms_title
+        ms_title=$(get_milestone_title "$milestone_num" 2>/dev/null | head -1)
+        if [ -n "$ms_title" ]; then
+            task="$ms_title"
+        fi
+    fi
+
     local prefix
     prefix=$(_infer_commit_type "$task")
 

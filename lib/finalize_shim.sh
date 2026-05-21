@@ -157,6 +157,11 @@ case "$HOOK_NAME" in
         # whenever MILESTONE_MODE=true.
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/milestone_ops.sh"
+        # hooks.sh:generate_commit_message also calls get_milestone_title
+        # (lib/milestone_query.sh) when TASK is empty, so the commit subject
+        # falls back to the milestone title instead of just "feat:".
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/milestone_query.sh"
         # finalize_commit.sh calls print_run_summary after a successful
         # commit (lines 148 + 166). Sourcing agent.sh transitively brings
         # agent_helpers.sh where that function is defined; without it the
