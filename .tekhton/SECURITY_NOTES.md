@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-05-18 16:29:58
+Generated: 2026-05-20 23:23:19
 
 ## Non-Blocking Findings (MEDIUM/LOW)
 - [LOW] [category:A03] [internal/preflight/helpers.go:174] fixable:yes — `tryFix` passes `command` directly to `exec.Command("bash", "-c", command)`. All current call sites supply hardcoded literals ("npm install", "npx playwright install", etc.), so there is no injection in the current code. However, the unexported function signature gives no indication that `command` must be a literal; a future caller that interpolates config-derived input (e.g. a user-supplied package name) would silently introduce command injection. Consider adding a comment asserting the invariant or changing the signature to accept `[]string` args.

@@ -5,6 +5,8 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-05-20 | "unknown"] Reviewer agent did not produce a report — extra tester scrutiny recommended.
+- [ ] [2026-05-20 | "unknown"] Reviewer agent did not produce a report — extra tester scrutiny recommended.
 - [ ] [2026-05-18 | "unknown"] `ui_audit.go:255` — `strings.Join(files, "") // satisfy import; sort below` is dead code with a misleading comment. The `strings` package is already used by `strings.ToLower`, `strings.ReplaceAll`, and `strings.Contains` elsewhere in the file, so no import-satisfaction trick is needed. The line computes and discards a string and should be removed.
 - [ ] [2026-05-18 | "unknown"] `ui_audit.go:263-268` — `sortStrings` re-implements stdlib insertion sort. `sort.Strings` from the `sort` package would do the same with one import line. Minor; functionally correct.
 - [ ] [2026-05-18 | "unknown"] m22 close drops the shell-test count from ~506 to ~502 (five bash preflight tests skip-guarded: `test_preflight.sh`, `test_preflight_ui_config.sh`, `test_m118_preflight_deferred_emit.sh`, `test_preflight_infer_degenerate.sh`, `test_m131_coverage_gaps.sh`; one gate test un-guarded: `test_self_host_dry_run_gate.sh`). Acceptance criterion AC#12 says "preserve that count" but `docs/v4-phase5-stub.md` documents the reduction as deliberate (tests drove the deleted bash API). Flagging so the next milestone's AC can be written with the new baseline rather than the stale 506 figure.
