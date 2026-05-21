@@ -24,9 +24,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/finalize"
+	"github.com/geoffgodwin/tekhton/internal/manifest"
 	"github.com/geoffgodwin/tekhton/internal/preflight"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/state"
@@ -49,6 +51,11 @@ var (
 	// ErrStuck is returned by RunCompleteLoop when the no-progress detector
 	// trips two iterations in a row.
 	ErrStuck = errors.New("runner: pipeline stuck")
+
+	// ErrMilestoneNotFound is returned by validateAndDefault when --milestone
+	// names an ID that does not exist in MANIFEST.cfg. Caught early so the
+	// pipeline never spends compute on a phantom milestone (see task #43).
+	ErrMilestoneNotFound = errors.New("runner: milestone not found")
 )
 
 // Pipeline is the per-attempt scheduler interface RunSingle/RunCompleteLoop
@@ -197,7 +204,85 @@ func (r *Runner) validateAndDefault(req *proto.RunRequestV1) error {
 	if err := req.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidRequest, err)
 	}
+	if err := r.validateMilestoneExists(req); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateMilestoneExists fails fast when the operator names a milestone that
+// is not in MANIFEST.cfg. Without this check the pipeline happily runs for
+// hours on a phantom ID, ending with an empty "[MILESTONE N ✓] feat:" commit
+// that touches only artifact files (see git history around the M27→M28
+// dogfood transition).
+//
+// Skips validation gracefully when the request isn't a milestone run, when
+// PROJECT_DIR is unset, or when MANIFEST.cfg can't be loaded — leaving
+// downstream code to surface those problems with their own diagnostics. The
+// failure case is the narrow one: PROJECT_DIR is set, MANIFEST.cfg loads,
+// and the milestone ID is absent.
+func (r *Runner) validateMilestoneExists(req *proto.RunRequestV1) error {
+	if req.Mode != proto.RunModeMilestone || req.Milestone == "" {
+		return nil
+	}
+	path := manifestPathFromReq(req)
+	if path == "" {
+		return nil
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil
+	}
+	m, err := manifest.Load(path)
+	if err != nil {
+		return nil
+	}
+	if _, ok := m.Get(req.Milestone); ok {
+		return nil
+	}
+	suggestion := frontierSuggestion(m)
+	return fmt.Errorf("%w: %q not in %s%s", ErrMilestoneNotFound,
+		req.Milestone, path, suggestion)
+}
+
+// manifestPathFromReq resolves MANIFEST.cfg location, preferring the explicit
+// $MILESTONE_MANIFEST_FILE env var (used by tests and operator overrides) and
+// falling back to the conventional $PROJECT_DIR/.claude/milestones/MANIFEST.cfg.
+func manifestPathFromReq(req *proto.RunRequestV1) string {
+	if env := os.Getenv("MILESTONE_MANIFEST_FILE"); env != "" {
+		return env
+	}
+	if req.ProjectDir == "" {
+		return ""
+	}
+	dir := os.Getenv("MILESTONE_DIR")
+	if dir == "" {
+		dir = filepath.Join(req.ProjectDir, ".claude", "milestones")
+	} else if !filepath.IsAbs(dir) {
+		dir = filepath.Join(req.ProjectDir, dir)
+	}
+	name := os.Getenv("MILESTONE_MANIFEST")
+	if name == "" {
+		name = "MANIFEST.cfg"
+	}
+	return filepath.Join(dir, name)
+}
+
+// frontierSuggestion returns a ". Pending frontier: m23, m24, ..." tail
+// to append to the not-found error, or "" when no frontier exists. Limited
+// to 5 IDs so the message stays readable when the manifest is large.
+func frontierSuggestion(m *manifest.Manifest) string {
+	frontier := m.Frontier()
+	if len(frontier) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, 5)
+	for i, e := range frontier {
+		if i >= 5 {
+			break
+		}
+		ids = append(ids, e.ID)
+	}
+	return ". Pending frontier: " + strings.Join(ids, ", ")
 }
 
 // BashHookRunner is the default HookRunner — execs `bash <script>` with the
