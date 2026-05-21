@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -177,6 +178,15 @@ func (a *BashAdapter) Run(ctx context.Context, req *proto.StageRequestV1) (*prot
 	cmd.Dir = a.ProjectDir
 	cmd.Env = a.buildEnv(req, requestFile)
 
+	// Diagnostic env capture for #41 (coder/prerun false-positive). The
+	// failure trigger reproducibly burns 15+ min of fix-agent work per
+	// pipeline run but won't repro from an outside-the-runner shell, so
+	// the gap must be in the env stagerunner composes vs what a developer
+	// sees. Dumping pre-exec env per stage lets us replay byte-for-byte
+	// after the next milestone run. Best-effort — never fail a stage over
+	// diagnostics.
+	dumpStageEnvPreExec(req.Stage, cmd.Env)
+
 	// Stream output to LogFile + LogWriter.
 	logSinks, closeLog, err := a.openLogSinks(req.LogFile)
 	if err != nil {
@@ -260,6 +270,23 @@ func (a *BashAdapter) buildEnv(req *proto.StageRequestV1, requestFile string) []
 		out = append(out, k+"="+v)
 	}
 	return out
+}
+
+// dumpStageEnvPreExec writes the composed cmd.Env to a per-stage diagnostic
+// file. Overwrites on each spawn so a subsequent run's env doesn't accumulate.
+// Failures are silent — the file is for offline debugging, not load-bearing.
+//
+// Path: /tmp/tekhton_stage_env_<stage>_pre.txt
+// Format: one KEY=VALUE per line, sorted for stable diffs across runs.
+func dumpStageEnvPreExec(stage string, env []string) {
+	if stage == "" {
+		return
+	}
+	path := fmt.Sprintf("/tmp/tekhton_stage_env_%s_pre.txt", stage)
+	sorted := append([]string(nil), env...)
+	sort.Strings(sorted)
+	data := strings.Join(sorted, "\n") + "\n"
+	_ = os.WriteFile(path, []byte(data), 0o644)
 }
 
 // envKey returns the key portion of a "K=V" environment string.
@@ -379,6 +406,11 @@ func buildBashScript(tekhtonHome, projectDir, scriptPath, stage string, libHelpe
 	// stage run. Guarded so test harnesses with stub envelope.sh files (or
 	// stages that write the envelope themselves) keep working.
 	b.WriteString("if declare -f stage_envelope_install_all &>/dev/null; then stage_envelope_install_all; fi\n")
+	// Diagnostic env capture for #41 — dumps the post-sourcing env (which
+	// includes every variable lib/*.sh exported on top of the Go-side env)
+	// so we can replay what the stage actually sees vs what stagerunner
+	// handed over. Best-effort; failure never aborts the stage.
+	fmt.Fprintf(&b, "env | sort > /tmp/tekhton_stage_env_%s_post.txt 2>/dev/null || true\n", stage)
 	fmt.Fprintf(&b, "%s\n", stageEntryFunc(stage))
 	return b.String()
 }
