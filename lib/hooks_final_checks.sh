@@ -135,6 +135,25 @@ run_final_checks() {
         local max_fix_attempts="${FINAL_FIX_MAX_ATTEMPTS:-2}"
         local fix_attempt=0
 
+        # Capture failing test names from the initial run so the fix-loop
+        # re-runs ONLY them instead of the full suite (task #40). Matches the
+        # ANSI-colored output run_test() emits: "\033[0;31mFAIL\033[0m test_X.sh".
+        # Strips trailing notes like "— TIMED OUT after 60s" so just the
+        # filename survives.
+        local failing_tests=""
+        if [[ "${TEST_FIX_FOCUS_ENABLED:-true}" = "true" ]]; then
+            failing_tests=$(printf '%s\n' "$test_output" \
+                | sed 's/\x1b\[[0-9;]*m//g' \
+                | grep -oE '^FAIL[[:space:]]+test_[A-Za-z0-9_]+\.sh' \
+                | awk '{print $2}' \
+                | sort -u \
+                | tr '\n' ' ')
+            failing_tests="${failing_tests% }"
+            if [[ -n "$failing_tests" ]]; then
+                log "[test-fix-focus] Captured failing tests: ${failing_tests}"
+            fi
+        fi
+
         while [ $test_exit -ne 0 ] && [ "$fix_attempt" -lt "$max_fix_attempts" ]; do
             fix_attempt=$((fix_attempt + 1))
             warn "${TEST_CMD}: failures detected. Spawning test fix agent (attempt ${fix_attempt}/${max_fix_attempts})..."
@@ -156,14 +175,58 @@ run_final_checks() {
                 "$AGENT_TOOLS_BUILD_FIX"
             log "Test fix agent finished (attempt ${fix_attempt})."
 
-            # Re-run tests to check if fixes worked
-            log "Re-running ${TEST_CMD} after test fix..."
+            # Re-run tests to check if fixes worked. When we know the failing
+            # set, run only those (TEST_FILES is consumed by run_tests.sh:212).
+            # If they all pass, do one full-suite verification below to catch
+            # regressions the fix agent might have introduced elsewhere.
+            local rerun_label="Re-running final test check"
+            if [[ -n "$failing_tests" ]]; then
+                rerun_label="Re-running ${failing_tests} (focused)"
+                log "Re-running focused tests after test fix: ${failing_tests}"
+            else
+                log "Re-running ${TEST_CMD} after test fix..."
+            fi
             set +e
-            test_output=$(run_op "Re-running final test check" bash -c "${TEST_CMD}" 2>&1)
+            test_output=$(TEST_FILES="$failing_tests" run_op "$rerun_label" \
+                bash -c "${TEST_CMD}" 2>&1)
             test_exit=$?
             set -e
             printf '%s\n' "$test_output" | tee -a "$log_file"
+
+            # Per #40 step 4: if a focused re-run surfaces new failure names,
+            # fold them into the focused set so the next iteration covers
+            # everything still red.
+            if [[ -n "$failing_tests" ]] && [[ "$test_exit" -ne 0 ]]; then
+                local new_failures
+                new_failures=$(printf '%s\n' "$test_output" \
+                    | grep -oE 'FAIL[^A-Za-z]+test_[A-Za-z0-9_]+\.sh' \
+                    | grep -oE 'test_[A-Za-z0-9_]+\.sh' \
+                    | sort -u \
+                    | tr '\n' ' ')
+                new_failures="${new_failures% }"
+                if [[ -n "$new_failures" ]] && [[ "$new_failures" != "$failing_tests" ]]; then
+                    log "[test-fix-focus] Focused set updated: ${new_failures}"
+                    failing_tests="$new_failures"
+                fi
+            fi
         done
+
+        # Per #40 step 3: when the focused set finally passes, run the full
+        # suite ONCE more to catch regressions the fix agent introduced in
+        # tests we weren't watching. If that full-suite run fails, the
+        # operator sees the new breakage but we don't re-enter the fix loop
+        # — that's a deliberate stopping point.
+        if [ $test_exit -eq 0 ] && [[ -n "$failing_tests" ]]; then
+            log "[test-fix-focus] Focused tests pass — verifying full suite once."
+            set +e
+            test_output=$(run_op "Full-suite regression check" bash -c "${TEST_CMD}" 2>&1)
+            test_exit=$?
+            set -e
+            printf '%s\n' "$test_output" | tee -a "$log_file"
+            if [[ "$test_exit" -ne 0 ]]; then
+                warn "[test-fix-focus] Full suite surfaced new failures after focused fixes; stopping."
+            fi
+        fi
 
         if [ $test_exit -eq 0 ]; then
             print_run_summary

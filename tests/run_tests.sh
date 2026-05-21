@@ -206,12 +206,33 @@ if [ -f "${TEKHTON_HOME}/go.mod" ] && command -v go &>/dev/null; then
 fi
 _log_progress "PHASE make-build END"
 
-# Discover and run all test files
+# Discover and run all test files.
+#
+# TEST_FILES override (M28-arc / task #40): when set to a space-separated
+# list of test filenames, run only those instead of the full suite. Used by
+# lib/hooks_final_checks.sh's auto-fix loop to re-test only the failures
+# from the previous run instead of re-executing all 478 tests. Names may be
+# bare ("test_foo.sh") or absolute paths; basename is taken either way.
+# When TEST_FILES is empty or unset, the default glob runs (no behavior
+# change for normal callers).
 _log_progress "PHASE shell-tests BEGIN"
-for test_file in "${TESTS_DIR}"/test_*.sh; do
-    [ -f "$test_file" ] || continue
-    run_test "$(basename "$test_file")"
-done
+if [[ -n "${TEST_FILES:-}" ]]; then
+    _log_progress "TEST_FILES override active: ${TEST_FILES}"
+    for raw in $TEST_FILES; do
+        name=$(basename "$raw")
+        if [ -f "${TESTS_DIR}/${name}" ]; then
+            run_test "$name"
+        else
+            echo -e "${RED}MISSING${NC} ${name} (not found in ${TESTS_DIR})"
+            FAIL=$((FAIL + 1))
+        fi
+    done
+else
+    for test_file in "${TESTS_DIR}"/test_*.sh; do
+        [ -f "$test_file" ] || continue
+        run_test "$(basename "$test_file")"
+    done
+fi
 _log_progress "PHASE shell-tests END"
 
 echo

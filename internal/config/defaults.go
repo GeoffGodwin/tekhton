@@ -211,6 +211,7 @@ var baseDefaults = []defaultRule{
 	{"FINAL_FIX_ENABLED", lit("true")},
 	{"FINAL_FIX_MAX_ATTEMPTS", lit("2")},
 	{"FINAL_FIX_MAX_TURNS", idiv("CODER_MAX_TURNS", 3)},
+	{"TEST_FIX_FOCUS_ENABLED", lit("true")},
 
 	{"BUILD_FIX_ENABLED", lit("true")},
 	{"BUILD_FIX_MAX_ATTEMPTS", lit("3")},
