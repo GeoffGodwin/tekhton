@@ -157,6 +157,12 @@ case "$HOOK_NAME" in
         # whenever MILESTONE_MODE=true.
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/milestone_ops.sh"
+        # finalize_commit.sh calls print_run_summary after a successful
+        # commit (lines 148 + 166). Sourcing agent.sh transitively brings
+        # agent_helpers.sh where that function is defined; without it the
+        # hook exits 127 and the run-summary line never prints.
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/agent.sh"
         _shim_load_finalize_bodies
         ;;
     _hook_update_check)
