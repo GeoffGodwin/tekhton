@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 49
+- Runs since audit: 65
 
 ## Unresolved Observations
 - [2026-05-18 | "unknown"] [internal/preflight/ui_audit.go:255] — Dead `strings.Join` call with incorrect "satisfy import" comment; should be deleted in the next cleanup pass.

@@ -466,7 +466,7 @@ This is a milestone-sized task. Before writing any code:
 
     # Prior reviewer context (unresolved blockers from a previous run)
     export PRIOR_REVIEWER_CONTEXT=""
-    if [ -f "${REVIEWER_REPORT_FILE}" ] && [ "$START_AT" = "coder" ]; then
+    if [ -f "${REVIEWER_REPORT_FILE}" ] && [ "${START_AT:-coder}" = "coder" ]; then
         local _reviewer_content
         _reviewer_content=$(_safe_read_file "${REVIEWER_REPORT_FILE}" "REVIEWER_REPORT")
         PRIOR_REVIEWER_CONTEXT="
@@ -511,7 +511,7 @@ $(_wrap_file_content "TESTER_REPORT" "$_tester_content")"
 
     # Pre-finalization test gate failures (from orchestrate.sh retry loop)
     export PREFLIGHT_TEST_CONTEXT=""
-    if [[ -f "${PREFLIGHT_ERRORS_FILE}" ]] && [[ "$START_AT" = "coder" ]]; then
+    if [[ -f "${PREFLIGHT_ERRORS_FILE}" ]] && [[ "${START_AT:-coder}" = "coder" ]]; then
         local _preflight_content
         _preflight_content=$(_safe_read_file "${PREFLIGHT_ERRORS_FILE}" "PREFLIGHT_ERRORS")
         PREFLIGHT_TEST_CONTEXT="

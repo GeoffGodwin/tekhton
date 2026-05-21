@@ -1,0 +1,9 @@
+{
+  "proto": "tekhton.stage.result.v1",
+  "stage": "intake",
+  "verdict": "pass",
+  "exit_reason": "exit=0",
+  "agent_calls": 0,
+  "duration_sec": 66,
+  "human_action_required": false
+}

@@ -53,7 +53,7 @@ run_stage_tester() {
     fi
 
     # Build the tester prompt based on whether we are starting fresh or resuming
-    if [ "$START_AT" = "tester" ]; then
+    if [ "${START_AT:-coder}" = "tester" ]; then
         TESTER_PROMPT=$(render_prompt "tester_resume")
     else
         # M47: use cached architecture content
@@ -151,7 +151,7 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     local _tester_turn_budget="${EFFECTIVE_TESTER_MAX_TURNS:-${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}}"
     log_verbose "[tester-diag] Prompt: ${_tester_prompt_chars} chars (~${_tester_prompt_tokens} tokens)"
     log_verbose "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL}"
-    if [[ "$START_AT" = "tester" ]]; then
+    if [[ "${START_AT:-coder}" = "tester" ]]; then
         log_verbose "[tester-diag] Mode: RESUME (tester_resume prompt)"
     else
         log_verbose "[tester-diag] Mode: FRESH (full tester prompt)"
