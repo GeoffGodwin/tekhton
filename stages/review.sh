@@ -174,8 +174,13 @@ run_stage_review() {
                 VERDICT="CHANGES_REQUIRED"
                 continue
             fi
-            # Last cycle — synthesize a minimal report so pipeline can proceed
+            # Last cycle — synthesize a minimal report so the pipeline can
+            # proceed (tester needs a file to read), but trip the #46 commit
+            # gate so we don't rubber-stamp a milestone the reviewer never
+            # actually approved. Operator sees the synthesized file (for
+            # forensic review) AND a blocked commit.
             warn "Synthesizing minimal ${REVIEWER_REPORT_FILE} — tester will validate."
+            trip_commit_gate "reviewer_did_not_produce_report"
             cat > "${REVIEWER_REPORT_FILE}" <<REVIEW_EOF
 ## Verdict
 APPROVED_WITH_NOTES

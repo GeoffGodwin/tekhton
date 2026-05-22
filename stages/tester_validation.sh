@@ -26,6 +26,11 @@ _validate_tester_output() {
         fi
         if [[ "$_test_file_count" -gt 0 ]]; then
             warn "Tester created ${_test_file_count} test file(s) but no report — synthesizing minimal ${TESTER_REPORT_FILE}."
+            # Trip the #46 commit gate. Test files exist (so the pipeline
+            # can finish) but the tester agent never confirmed what it
+            # tested or what it found — rubber-stamping that as a
+            # milestone-complete commit is exactly what M23 + M28 did.
+            trip_commit_gate "tester_did_not_produce_report"
             local _test_files
             _test_files=$(git diff --name-only HEAD 2>/dev/null | grep -iE 'test|spec' | head -20 || true)
             cat > "${TESTER_REPORT_FILE}" <<TESTER_EOF

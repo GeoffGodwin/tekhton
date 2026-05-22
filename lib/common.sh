@@ -97,6 +97,24 @@ header()    { _out_emit header  "$*"; }
 # common.sh (e.g. test harnesses) able to call run_op without guards.
 run_op() { local _l="$1"; shift; "$@"; }
 
+# trip_commit_gate REASON
+# Writes the .final_check_result sentinel so _hook_commit refuses to commit
+# (see lib/finalize_commit.sh:_final_check_result_read). Used by stages
+# that hit a synthesize-fallback path — the milestone runs to completion
+# so downstream stages have files to consume, but the commit gate blocks
+# the rubber-stamp behavior that previously turned synthesized fallbacks
+# into "[MILESTONE N ✓]" commits with no real agent output. Closes #49's
+# commit-side fallout from #46. Idempotent; subsequent failures don't
+# overwrite the first reason (the file's existence is what matters).
+trip_commit_gate() {
+    local reason="${1:-synthesize_fallback}"
+    local sentinel="${TEKHTON_DIR:-.tekhton}/.final_check_result"
+    mkdir -p "$(dirname "$sentinel")" 2>/dev/null || true
+    if [[ ! -s "$sentinel" ]]; then
+        printf '1\n# %s\n' "$reason" > "$sentinel" 2>/dev/null || true
+    fi
+}
+
 # log_verbose — write an informational diagnostic line that stays off stdout
 # unless VERBOSE_OUTPUT=true. The message is always appended to ${LOG_FILE}
 # when set, preserving post-mortem visibility. Use for internal diagnostics

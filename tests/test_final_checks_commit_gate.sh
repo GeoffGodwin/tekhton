@@ -168,6 +168,45 @@ else
     fail "11.1: git was called for non-zero exit_code"
 fi
 
+echo "=== trip_commit_gate writes sentinel + commit hook reads as failure ==="
+# trip_commit_gate is defined in lib/common.sh; the synthesize-fallback paths
+# (stages/review.sh, stages/coder.sh, stages/tester_validation.sh) call it
+# when an agent didn't produce its expected report. Sentinel makes
+# _hook_commit refuse — closes the rubber-stamp loophole for #49.
+rm -f "$TEKHTON_DIR/.final_check_result"
+trip_commit_gate "reviewer_did_not_produce_report"
+if [[ -f "$TEKHTON_DIR/.final_check_result" ]]; then
+    val=$(head -1 "$TEKHTON_DIR/.final_check_result" | tr -d '[:space:]')
+    if [[ "$val" == "1" ]]; then
+        pass "12.1: trip_commit_gate writes sentinel with exit code 1"
+    else
+        fail "12.1: sentinel first line is '$val' (want 1)"
+    fi
+    if grep -q "reviewer_did_not_produce_report" "$TEKHTON_DIR/.final_check_result"; then
+        pass "12.2: trip_commit_gate records the reason"
+    else
+        fail "12.2: sentinel missing reason"
+    fi
+else
+    fail "12.1: trip_commit_gate did not create the sentinel"
+fi
+# Now confirm _hook_commit reads it correctly via the read helper.
+result=$(_final_check_result_read)
+if [[ "$result" == "1" ]]; then
+    pass "12.3: _final_check_result_read parses trip_commit_gate output as 1"
+else
+    fail "12.3: read returned '$result' instead of 1"
+fi
+
+echo "=== trip_commit_gate is idempotent (preserves first reason) ==="
+trip_commit_gate "second_reason_should_not_overwrite"
+if grep -q "reviewer_did_not_produce_report" "$TEKHTON_DIR/.final_check_result" \
+   && ! grep -q "second_reason_should_not_overwrite" "$TEKHTON_DIR/.final_check_result"; then
+    pass "13.1: subsequent trip calls preserve first reason"
+else
+    fail "13.1: second trip overwrote the first reason"
+fi
+
 echo ""
 echo "=== Summary ==="
 echo "Passed: $PASS, Failed: $FAIL"

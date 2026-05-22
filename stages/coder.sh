@@ -742,10 +742,15 @@ ${nb_notes}"
     # --- Post-coder validation -----------------------------------------------
 
     if [ ! -f "${CODER_SUMMARY_FILE}" ]; then
-        # If substantive work was done, reconstruct summary and continue
+        # If substantive work was done, reconstruct summary and continue.
+        # Trip the #46 commit gate so the pipeline doesn't rubber-stamp a
+        # milestone the coder agent never actually summarized — git-state
+        # reconstruction is a forensic record, not a substitute for the
+        # agent's own description of what shipped.
         if is_substantive_work; then
             warn "Coder did not produce ${CODER_SUMMARY_FILE} but substantive work detected."
             _reconstruct_coder_summary
+            trip_commit_gate "coder_did_not_produce_summary"
         elif [[ "${LAST_AGENT_TURNS:-0}" -ge "${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-50}}}" ]]; then
             # Coder exhausted its turn budget without producing a summary and
             # without substantive tracked/untracked changes. This is a scope
