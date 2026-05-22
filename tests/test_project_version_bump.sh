@@ -356,6 +356,27 @@ cached=$(grep 'CURRENT_VERSION=' "$PROJ/.claude/project_version.cfg" | sed 's/CU
 if [[ "$cached" == "2.1.1" ]]; then pass "cache updated to 2.1.1"; else fail "cache not updated: $cached"; fi
 
 # =============================================================================
+# compute_next_version — MINOR regression guard (post-M23 fix)
+# Guards against completing a lower-numbered milestone rewinding VERSION MINOR.
+# e.g. completing M23 when M27 was already done must NOT produce 4.23.0.
+# =============================================================================
+echo "=== compute_next_version: MINOR regression guard ==="
+
+# target_milestone < current_minor → PATCH bump, never rewind MINOR
+result=$(compute_next_version "4.27.3" "milestone" "milestone:23")
+if [[ "$result" == "4.27.4" ]]; then pass "minor guard: lower milestone produces PATCH not MINOR rewind"; else fail "minor guard lower: got $result (want 4.27.4)"; fi
+
+# target_milestone == current_minor → PATCH bump, not reset-to-zero
+result=$(compute_next_version "4.23.0" "milestone" "milestone:23")
+if [[ "$result" == "4.23.1" ]]; then pass "minor guard: same milestone number produces PATCH not 0-reset"; else fail "minor guard equal: got $result (want 4.23.1)"; fi
+
+# Non-numeric milestone suffix → version unchanged (guard also covers this)
+result=$(compute_next_version "4.23.1" "milestone" "milestone:foo")
+if [[ "$result" == "4.23.1" ]]; then pass "minor guard: non-numeric milestone ID leaves version unchanged"; else fail "minor guard non-numeric: got $result (want 4.23.1)"; fi
+
+
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo
