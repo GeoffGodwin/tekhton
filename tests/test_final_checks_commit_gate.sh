@@ -119,6 +119,55 @@ else
     fail "8.1: SKIP_FINAL_CHECKS should still write a failure sentinel"
 fi
 
+# Integration: _hook_commit reads the sentinel and blocks when non-zero.
+# Use a flag FILE (not a variable) to detect git invocations from the
+# subshell created by $() — variable writes in a subshell don't propagate
+# back to the parent, but file-system changes do.
+_GIT_FLAG="$TEKHTON_DIR/.git_called_flag"
+git() { touch "$_GIT_FLAG"; return 0; }
+
+echo "=== _hook_commit: persisted sentinel blocks commit ==="
+rm -f "$_GIT_FLAG"
+echo "1" > "$TEKHTON_DIR/.final_check_result"
+unset FINAL_CHECK_RESULT
+output=$(_hook_commit 0 2>&1) || true
+if [[ ! -f "$_GIT_FLAG" ]]; then
+    pass "9.1: git not called when persisted sentinel records failure"
+else
+    fail "9.1: git was called despite persisted failure sentinel"
+fi
+if echo "$output" | grep -q "Commit blocked"; then
+    pass "9.2: 'Commit blocked' warning emitted"
+else
+    fail "9.2: expected 'Commit blocked' in output, got: $output"
+fi
+
+echo "=== _hook_commit: in-memory FINAL_CHECK_RESULT blocks commit ==="
+rm -f "$_GIT_FLAG"
+rm -f "$TEKHTON_DIR/.final_check_result"
+output=$(FINAL_CHECK_RESULT=1 _hook_commit 0 2>&1) || true
+if [[ ! -f "$_GIT_FLAG" ]]; then
+    pass "10.1: git not called when in-memory FINAL_CHECK_RESULT is non-zero"
+else
+    fail "10.1: git was called despite FINAL_CHECK_RESULT=1"
+fi
+if echo "$output" | grep -q "Commit blocked"; then
+    pass "10.2: 'Commit blocked' warning emitted for in-memory path"
+else
+    fail "10.2: expected 'Commit blocked' in output, got: $output"
+fi
+
+echo "=== _hook_commit: non-zero exit_code bypasses commit silently ==="
+rm -f "$_GIT_FLAG"
+rm -f "$TEKHTON_DIR/.final_check_result"
+unset FINAL_CHECK_RESULT
+_hook_commit 1 >/dev/null 2>&1 || true
+if [[ ! -f "$_GIT_FLAG" ]]; then
+    pass "11.1: git not called when exit_code is non-zero (expected early return)"
+else
+    fail "11.1: git was called for non-zero exit_code"
+fi
+
 echo ""
 echo "=== Summary ==="
 echo "Passed: $PASS, Failed: $FAIL"
