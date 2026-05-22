@@ -12,9 +12,20 @@
 
 _hook_final_checks() {
     local exit_code="$1"
+    # Persist FINAL_CHECK_RESULT to a file because each finalize hook runs
+    # in its own bash subprocess under the Go orchestrator's shim — locals
+    # and exported variables don't propagate between hooks. _hook_commit
+    # later reads this file (via _final_check_result_read in
+    # finalize_commit.sh) and refuses to commit when failures are recorded.
+    # Stale sentinel from a prior run is cleared at hook entry so a clean
+    # run never inherits a previous run's failure.
+    local _fcr_file="${TEKHTON_DIR:-.tekhton}/.final_check_result"
+    rm -f "$_fcr_file" 2>/dev/null || true
+
     if [[ "${SKIP_FINAL_CHECKS:-false}" = true ]]; then
         warn "Skipping final checks — a stage had a null run."
         FINAL_CHECK_RESULT=1
+        printf '%s\n' "$FINAL_CHECK_RESULT" > "$_fcr_file" 2>/dev/null || true
         return 0
     fi
     if [[ "${_PREFLIGHT_TESTS_PASSED:-false}" = true ]]; then
@@ -29,7 +40,8 @@ _hook_final_checks() {
     local _final_log="${LOG_FILE:-${LOG_DIR:-${TEKHTON_DIR:-.tekhton}}/${TIMESTAMP:-run}_finalize.log}"
     run_final_checks "$_final_log" || FINAL_CHECK_RESULT=$?
     if [[ "$FINAL_CHECK_RESULT" -ne 0 ]]; then
-        warn "Final checks had failures (exit ${FINAL_CHECK_RESULT}). Pipeline will continue to archiving and commit prompt."
+        printf '%s\n' "$FINAL_CHECK_RESULT" > "$_fcr_file" 2>/dev/null || true
+        error "Final checks failed (exit ${FINAL_CHECK_RESULT}). Commit will be blocked; downstream hooks (archive/metrics) still run."
     fi
 }
 
