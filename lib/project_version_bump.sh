@@ -62,7 +62,19 @@ compute_next_version() {
                 milestone:*)
                     target_milestone="${bump_type#milestone:}"
                     if [[ "$target_milestone" =~ ^[0-9]+$ ]]; then
-                        echo "${major}.${target_milestone}.0"
+                        # Never regress the MINOR — VERSION is supposed to
+                        # be monotonic. If a higher-numbered milestone
+                        # already completed (e.g. M27 done before M23 in
+                        # dependency-aware order), keep the higher MINOR
+                        # and treat this completion as a PATCH instead.
+                        # Without this guard, completing M23 after M27
+                        # rewinds 4.27.x → 4.23.0, which looks like a
+                        # release regression and confuses tag tooling.
+                        if [[ "$target_milestone" -gt "$minor" ]]; then
+                            echo "${major}.${target_milestone}.0"
+                        else
+                            echo "${major}.${minor}.$((patch + 1))"
+                        fi
                     else
                         echo "$current"
                     fi

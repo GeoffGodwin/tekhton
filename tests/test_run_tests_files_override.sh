@@ -34,15 +34,16 @@ else
     fail "2.2: expected non-zero exit for unknown file"
 fi
 
-echo "=== Test 3: empty TEST_FILES runs full suite ==="
-_out3=$(TEST_FILES="" bash "$RUNNER" 2>&1) || true
-_fd=0; _fm=0
-if echo "$_out3" | grep -qE "(PASS|FAIL).*test_dedup\.sh"; then _fd=1; fi
-if echo "$_out3" | grep -qE "(PASS|FAIL).*test_milestone_dag\.sh"; then _fm=1; fi
-if [ "$_fd" -eq 1 ] && [ "$_fm" -eq 1 ]; then
-    pass "3.1: full suite runs with empty TEST_FILES"
+echo "=== Test 3: empty TEST_FILES falls through to default glob ==="
+# DO NOT exec run_tests.sh with TEST_FILES="" here — the inner suite would
+# include this very test file, which would exec another full suite, which
+# would include this test again, and so on until the 90s timeout fires.
+# Static-check the conditional branch instead.
+# shellcheck disable=SC2016
+if grep -q 'if \[\[ -n "${TEST_FILES:-}" \]\]' "$TEKHTON_HOME/tests/run_tests.sh"; then
+    pass "3.1: run_tests.sh gates TEST_FILES override behind non-empty check"
 else
-    fail "3.1: expected multiple tests; dedup=$_fd milestone=$_fm"
+    fail "3.1: TEST_FILES override branch not found in run_tests.sh"
 fi
 
 echo "=== Test 4: TEST_FILES with multiple tests ==="
