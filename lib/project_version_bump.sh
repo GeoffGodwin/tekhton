@@ -9,7 +9,39 @@ set -euo pipefail
 #   compute_next_version  — pure function: current + strategy + bump → next
 #   get_version_bump_hint — read CODER_SUMMARY.md for disposition hints
 #   bump_version_files    — write bumped version to all detected files
+#   _max_done_milestone_in_manifest — highest numeric milestone with
+#                                     status=done in MANIFEST.cfg (#45)
 # =============================================================================
+
+# _max_done_milestone_in_manifest [PROJECT_DIR]
+# Returns the highest numeric milestone ID with status=done in
+# .claude/milestones/MANIFEST.cfg (without the leading "m"). Used by
+# compute_next_version's milestone branch to anchor MINOR to the true
+# high-water-mark in the manifest rather than the value currently in
+# VERSION (which can drift due to PATCH bumps from non-milestone runs or
+# from being reset by an earlier milestone completing after a later one).
+#
+# Echoes 0 when no done milestones are found, the manifest is missing,
+# or anything goes wrong — caller treats 0 as "no floor", which is the
+# safe degradation for greenfield repos.
+_max_done_milestone_in_manifest() {
+    local proj="${1:-${PROJECT_DIR:-.}}"
+    local manifest="${proj}/.claude/milestones/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    if [[ -n "${MILESTONE_DIR:-}" ]]; then
+        manifest="${MILESTONE_DIR}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    fi
+    [[ -f "$manifest" ]] || { echo 0; return 0; }
+    # Format: id|title|status|depends_on|file|parallel_group
+    # We only want top-level integer IDs (m23, not m05.1) with status=done.
+    awk -F'|' '
+        /^m[0-9]+\|/ && $3 == "done" {
+            id = $1
+            sub(/^m/, "", id)
+            if (id ~ /^[0-9]+$/ && (id+0) > max) max = id+0
+        }
+        END { print (max+0) }
+    ' "$manifest" 2>/dev/null || echo 0
+}
 
 # compute_next_version CURRENT STRATEGY BUMP_TYPE
 #   Pure function — no I/O. Computes the next version string.
@@ -62,17 +94,34 @@ compute_next_version() {
                 milestone:*)
                     target_milestone="${bump_type#milestone:}"
                     if [[ "$target_milestone" =~ ^[0-9]+$ ]]; then
-                        # Never regress the MINOR — VERSION is supposed to
-                        # be monotonic. If a higher-numbered milestone
-                        # already completed (e.g. M27 done before M23 in
-                        # dependency-aware order), keep the higher MINOR
-                        # and treat this completion as a PATCH instead.
-                        # Without this guard, completing M23 after M27
-                        # rewinds 4.27.x → 4.23.0, which looks like a
-                        # release regression and confuses tag tooling.
-                        if [[ "$target_milestone" -gt "$minor" ]]; then
-                            echo "${major}.${target_milestone}.0"
+                        # MINOR must reflect the highest completed milestone
+                        # in MANIFEST.cfg, NOT just the value currently in
+                        # VERSION (#45). The earlier half-fix guarded
+                        # against MINOR regression using current-minor as
+                        # the floor — but VERSION can DRIFT below ground
+                        # truth if PATCH bumps happened while a real
+                        # higher milestone sat done in the manifest. The
+                        # high-water-mark check restores ground truth.
+                        local _hwm
+                        _hwm=$(_max_done_milestone_in_manifest)
+                        # new_minor = max(target, hwm, current_minor).
+                        # All three are floors; the highest wins.
+                        local _new_minor="$target_milestone"
+                        if [[ "$_hwm" -gt "$_new_minor" ]]; then
+                            _new_minor="$_hwm"
+                        fi
+                        if [[ "$minor" -gt "$_new_minor" ]]; then
+                            _new_minor="$minor"
+                        fi
+                        if [[ "$_new_minor" -gt "$minor" ]]; then
+                            # MINOR advanced — clean bump, reset PATCH.
+                            # Covers both "target>floor" (new milestone)
+                            # and "self-heal" (target<=hwm but VERSION
+                            # drifted below) cases.
+                            echo "${major}.${_new_minor}.0"
                         else
+                            # MINOR stays put — PATCH bump. Reached when
+                            # target<=current_minor AND hwm<=current_minor.
                             echo "${major}.${minor}.$((patch + 1))"
                         fi
                     else

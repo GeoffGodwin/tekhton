@@ -362,19 +362,77 @@ if [[ "$cached" == "2.1.1" ]]; then pass "cache updated to 2.1.1"; else fail "ca
 # =============================================================================
 echo "=== compute_next_version: MINOR regression guard ==="
 
+# Use a temp dir without MANIFEST.cfg so these tests exercise the
+# current-minor-only floor path (pre-#45 behavior). The HWM-aware path
+# is exercised in the next block.
+_GUARD_TMP=$(mktemp -d)
+
 # target_milestone < current_minor → PATCH bump, never rewind MINOR
-result=$(compute_next_version "4.27.3" "milestone" "milestone:23")
+result=$(PROJECT_DIR="$_GUARD_TMP" compute_next_version "4.27.3" "milestone" "milestone:23")
 if [[ "$result" == "4.27.4" ]]; then pass "minor guard: lower milestone produces PATCH not MINOR rewind"; else fail "minor guard lower: got $result (want 4.27.4)"; fi
 
 # target_milestone == current_minor → PATCH bump, not reset-to-zero
-result=$(compute_next_version "4.23.0" "milestone" "milestone:23")
+result=$(PROJECT_DIR="$_GUARD_TMP" compute_next_version "4.23.0" "milestone" "milestone:23")
 if [[ "$result" == "4.23.1" ]]; then pass "minor guard: same milestone number produces PATCH not 0-reset"; else fail "minor guard equal: got $result (want 4.23.1)"; fi
 
 # Non-numeric milestone suffix → version unchanged (guard also covers this)
-result=$(compute_next_version "4.23.1" "milestone" "milestone:foo")
+result=$(PROJECT_DIR="$_GUARD_TMP" compute_next_version "4.23.1" "milestone" "milestone:foo")
 if [[ "$result" == "4.23.1" ]]; then pass "minor guard: non-numeric milestone ID leaves version unchanged"; else fail "minor guard non-numeric: got $result (want 4.23.1)"; fi
 
+rm -rf "$_GUARD_TMP"
 
+# =============================================================================
+# compute_next_version — MANIFEST high-water-mark (#45)
+# When MANIFEST.cfg shows a higher completed milestone than what's in VERSION,
+# bumps anchor MINOR to the manifest, not the drifted VERSION value.
+# =============================================================================
+echo "=== compute_next_version: MANIFEST high-water-mark ==="
+
+_HWM_TMP=$(mktemp -d)
+mkdir -p "$_HWM_TMP/.claude/milestones"
+cat > "$_HWM_TMP/.claude/milestones/MANIFEST.cfg" <<'MANIFEST_EOF'
+# id|title|status|depends_on|file|parallel_group
+m23|TUI Ops Port|done||m23.md|phase5
+m24|Notes Port|todo|m23|m24.md|phase5
+m26|Stage Env|done|m22|m26.md|phase5
+m27|Bash Hardening|done|m26|m27.md|phase5
+MANIFEST_EOF
+
+# Completing M24 with VERSION=4.23.0 and manifest HWM=27 → 4.27.0
+# (self-heal MINOR to HWM, reset PATCH because MINOR moved).
+result=$(PROJECT_DIR="$_HWM_TMP" compute_next_version "4.23.0" "milestone" "milestone:24")
+if [[ "$result" == "4.27.0" ]]; then
+    pass "hwm: target<HWM, VERSION-minor<HWM → MINOR self-heals to HWM (4.23.0 + M24 + HWM27 → 4.27.0)"
+else
+    fail "hwm: VERSION=4.23.0 HWM=27 target=24: got $result (want 4.27.0)"
+fi
+
+# Completing M27 with VERSION=4.23.0 → 4.27.0 (self-heal: target==floor, floor>minor).
+result=$(PROJECT_DIR="$_HWM_TMP" compute_next_version "4.23.0" "milestone" "milestone:27")
+if [[ "$result" == "4.27.0" ]]; then
+    pass "hwm: target==HWM, VERSION-minor<HWM → self-heal to HWM.0"
+else
+    fail "hwm: VERSION=4.23.0 HWM=27 target=27: got $result (want 4.27.0)"
+fi
+
+# Completing a new M28 with HWM=27 → 4.28.0 (clean bump above floor).
+result=$(PROJECT_DIR="$_HWM_TMP" compute_next_version "4.27.5" "milestone" "milestone:28")
+if [[ "$result" == "4.28.0" ]]; then
+    pass "hwm: target>HWM → clean bump (M28 with HWM=27 → 4.28.0)"
+else
+    fail "hwm: VERSION=4.27.5 HWM=27 target=28: got $result (want 4.28.0)"
+fi
+
+# No manifest → falls back to current-minor PATCH (pre-#45 behavior).
+_NO_MAN_TMP=$(mktemp -d)
+result=$(PROJECT_DIR="$_NO_MAN_TMP" compute_next_version "4.27.5" "milestone" "milestone:23")
+if [[ "$result" == "4.27.6" ]]; then
+    pass "hwm: no manifest → fall back to current-minor PATCH"
+else
+    fail "hwm: no manifest target=23: got $result (want 4.27.6)"
+fi
+
+rm -rf "$_HWM_TMP" "$_NO_MAN_TMP"
 
 # =============================================================================
 # Summary
