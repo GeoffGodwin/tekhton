@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-05-21 | "unknown"] Reviewer agent did not produce a report — extra tester scrutiny recommended.
 - [ ] [2026-05-20 | "unknown"] Reviewer agent did not produce a report — extra tester scrutiny recommended.
 - [ ] [2026-05-20 | "unknown"] Reviewer agent did not produce a report — extra tester scrutiny recommended.
 - [ ] [2026-05-18 | "unknown"] `ui_audit.go:255` — `strings.Join(files, "") // satisfy import; sort below` is dead code with a misleading comment. The `strings` package is already used by `strings.ToLower`, `strings.ReplaceAll`, and `strings.Contains` elsewhere in the file, so no import-satisfaction trick is needed. The line computes and discards a string and should be removed.
