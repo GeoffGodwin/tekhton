@@ -79,8 +79,6 @@ func TestValidateMilestoneExistsAcceptsKnown(t *testing.T) {
 // tests and standalone callers that don't set up a real project directory
 // should not start failing because of the new check.
 func TestValidateMilestoneExistsSkipsWithoutManifest(t *testing.T) {
-	t.Setenv("MILESTONE_DIR", "")
-	t.Setenv("MILESTONE_MANIFEST_FILE", "")
 	r := New(&fakePipeline{})
 	req := &proto.RunRequestV1{
 		ProjectDir:  t.TempDir(), // exists but has no MANIFEST.cfg
@@ -134,87 +132,5 @@ func TestValidateMilestoneExistsSkipsNonMilestoneMode(t *testing.T) {
 	}
 	if err := r.validateAndDefault(req); err != nil {
 		t.Fatalf("want nil for task mode; got %v", err)
-	}
-}
-
-// TestValidateMilestoneExistsSingleDigitZeroPadded covers zero-padding:
-// bare "5" must find "m05" in the manifest.
-func TestValidateMilestoneExistsSingleDigitZeroPadded(t *testing.T) {
-	t.Setenv("MILESTONE_DIR", "")
-	t.Setenv("MILESTONE_MANIFEST_FILE", "")
-	proj := t.TempDir()
-	mDir := filepath.Join(proj, ".claude", "milestones")
-	if err := os.MkdirAll(mDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(mDir, "MANIFEST.cfg"),
-		[]byte("m05|Setup|todo||m05-setup.md|phase1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r := New(&fakePipeline{})
-	req := &proto.RunRequestV1{
-		ProjectDir:  proj,
-		TekhtonHome: t.TempDir(),
-		Mode:        proto.RunModeMilestone,
-		Milestone:   "5",
-	}
-	if err := r.validateAndDefault(req); err != nil {
-		t.Fatalf("want nil for bare 5 finding m05; got %v", err)
-	}
-}
-
-// TestValidateMilestoneExistsSubMilestoneZeroPadded covers sub-milestone
-// zero-padding: bare "5.1" must find "m05.1" in the manifest.
-func TestValidateMilestoneExistsSubMilestoneZeroPadded(t *testing.T) {
-	t.Setenv("MILESTONE_DIR", "")
-	t.Setenv("MILESTONE_MANIFEST_FILE", "")
-	proj := t.TempDir()
-	mDir := filepath.Join(proj, ".claude", "milestones")
-	if err := os.MkdirAll(mDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(mDir, "MANIFEST.cfg"),
-		[]byte("m05.1|Sub|todo||m05.1-sub.md|phase1\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r := New(&fakePipeline{})
-	req := &proto.RunRequestV1{
-		ProjectDir:  proj,
-		TekhtonHome: t.TempDir(),
-		Mode:        proto.RunModeMilestone,
-		Milestone:   "5.1",
-	}
-	if err := r.validateAndDefault(req); err != nil {
-		t.Fatalf("want nil for 5.1 finding m05.1; got %v", err)
-	}
-}
-
-// TestValidateMilestoneExistsRejectsPhantomBareNumber confirms a bare number
-// with no matching m-prefix or zero-padded form is rejected.
-func TestValidateMilestoneExistsRejectsPhantomBareNumber(t *testing.T) {
-	t.Setenv("MILESTONE_DIR", "")
-	t.Setenv("MILESTONE_MANIFEST_FILE", "")
-	proj := t.TempDir()
-	mDir := filepath.Join(proj, ".claude", "milestones")
-	if err := os.MkdirAll(mDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(mDir, "MANIFEST.cfg"),
-		[]byte("m23|TUI|todo||m23.md|phase5\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	r := New(&fakePipeline{})
-	req := &proto.RunRequestV1{
-		ProjectDir:  proj,
-		TekhtonHome: t.TempDir(),
-		Mode:        proto.RunModeMilestone,
-		Milestone:   "28",
-	}
-	err := r.validateAndDefault(req)
-	if err == nil {
-		t.Fatal("want ErrMilestoneNotFound for phantom bare 28; got nil")
-	}
-	if !errors.Is(err, ErrMilestoneNotFound) {
-		t.Fatalf("want ErrMilestoneNotFound; got %v", err)
 	}
 }

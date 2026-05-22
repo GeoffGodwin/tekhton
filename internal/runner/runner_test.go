@@ -58,7 +58,6 @@ func (h *fakeHooks) Finalize(_ context.Context, _ *proto.RunRequestV1, res *prot
 
 func validReq(t *testing.T) *proto.RunRequestV1 {
 	t.Helper()
-	t.Setenv("MILESTONE_DIR", "")
 	dir := t.TempDir()
 	return &proto.RunRequestV1{
 		Proto:       proto.RunRequestProtoV1,
