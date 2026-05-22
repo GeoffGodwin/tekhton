@@ -84,13 +84,20 @@ _shim_resolve_binary() {
 
 # --- Envelope I/O -----------------------------------------------------------
 
-# _shim_write_request OUT_PATH RUN_ID LABEL MODEL MAX_TURNS PROMPT_FILE WORKING_DIR TIMEOUT ACTIVITY_TIMEOUT
+# _shim_write_request OUT_PATH RUN_ID LABEL MODEL MAX_TURNS PROMPT_FILE WORKING_DIR TIMEOUT ACTIVITY_TIMEOUT [ALLOWED_TOOLS]
 # Emits a tekhton.agent.request.v1 envelope. Strings are escaped via
 # _json_escape; ints are printed bare. No jq dependency.
+#
+# ALLOWED_TOOLS (10th arg, optional) carries the AGENT_TOOLS_<ROLE> list to
+# the Go supervisor for --allowedTools wiring (#47). Empty string ⇒ no
+# --allowedTools flag, which means claude CLI 2.1 falls back to its default
+# tool set (Read+Edit but NOT Write — agents can't create new files like
+# REVIEWER_REPORT.md or CODER_SUMMARY.md).
 _shim_write_request() {
     local out="$1" run_id="$2" label="$3" model="$4"
     local max_turns="$5" prompt_file="$6" working_dir="$7"
     local timeout_secs="$8" activity_timeout_secs="$9"
+    local allowed_tools="${10:-}"
     {
         printf '{"proto":"tekhton.agent.request.v1"'
         printf ',"run_id":"%s"' "$(_json_escape "$run_id")"
@@ -101,6 +108,9 @@ _shim_write_request() {
         printf ',"working_dir":"%s"' "$(_json_escape "$working_dir")"
         printf ',"timeout_secs":%d' "$timeout_secs"
         printf ',"activity_timeout_secs":%d' "$activity_timeout_secs"
+        if [[ -n "$allowed_tools" ]]; then
+            printf ',"allowed_tools":"%s"' "$(_json_escape "$allowed_tools")"
+        fi
         printf '}\n'
     } > "$out"
 }

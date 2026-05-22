@@ -26,7 +26,6 @@ source "${TEKHTON_HOME}/lib/agent_spinner.sh"
 run_agent() {
     local label="$1" model="$2" max_turns="$3" prompt="$4" log_file="$5"
     local _allowed_tools="${6:-$AGENT_TOOLS_CODER}"  # V3 contract
-    : "$_allowed_tools"
 
     if ! [[ "$max_turns" =~ ^[0-9]+$ ]]; then
         warn "[$label] max_turns not numeric ('${max_turns:0:40}'); using ${CODER_MAX_TURNS:-100}"
@@ -60,7 +59,8 @@ run_agent() {
     printf '%s' "$prompt" > "$_pf"
     _shim_write_request "$_rf" "${RUN_ID:-}" "$label" "$model" "$max_turns" \
         "$_pf" "${PROJECT_DIR:-$PWD}" \
-        "${AGENT_TIMEOUT:-7200}" "${AGENT_ACTIVITY_TIMEOUT:-600}"
+        "${AGENT_TIMEOUT:-7200}" "${AGENT_ACTIVITY_TIMEOUT:-600}" \
+        "$_allowed_tools"
 
     local _start; _start=$(date +%s)
     local _spinner_pid="" _tui_updater_pid=""

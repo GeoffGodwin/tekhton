@@ -47,6 +47,14 @@ type AgentRequestV1 struct {
 	TimeoutSecs         int               `json:"timeout_secs,omitempty"`
 	ActivityTimeoutSecs int               `json:"activity_timeout_secs,omitempty"`
 	EnvOverrides        map[string]string `json:"env,omitempty"`
+	// AllowedTools is the space-separated tool list passed to claude CLI
+	// via --allowedTools. Empty value means "use the CLI default", which in
+	// claude 2.1's -p (print) mode excludes the Write tool. Stages whose
+	// agent prompt expects to CREATE a new file (REVIEWER_REPORT.md,
+	// CODER_SUMMARY.md, …) must populate this with their AGENT_TOOLS_<ROLE>
+	// list or the file silently never gets written and the pipeline falls
+	// back to a synthesized "approved" stamp.
+	AllowedTools string `json:"allowed_tools,omitempty"`
 }
 
 // AgentResultV1 is the supervise output envelope. ExitCode mirrors the

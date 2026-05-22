@@ -320,6 +320,40 @@ func TestBuildArgs_RequiresVerboseForStreamJSON(t *testing.T) {
 	}
 }
 
+// AllowedTools threaded into --allowedTools so agents can Write new files
+// (REVIEWER_REPORT.md, CODER_SUMMARY.md, …). Without this flag claude CLI
+// 2.1's -p mode default tool set excludes Write, and stages silently fail
+// to produce their reports — fixed in #47.
+func TestBuildArgs_PassesAllowedTools(t *testing.T) {
+	req := &proto.AgentRequestV1{
+		Proto:        proto.AgentRequestProtoV1,
+		Label:        "reviewer",
+		Model:        "claude-sonnet-4-6",
+		PromptFile:   "/tmp/p",
+		AllowedTools: "Read Glob Grep Write",
+	}
+	got := buildArgs(req)
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "--allowedTools Read Glob Grep Write") {
+		t.Errorf("buildArgs should include --allowedTools verbatim; got: %s", joined)
+	}
+}
+
+// Empty AllowedTools must omit the flag entirely so parity tests and any
+// caller that doesn't care about tooling keep working.
+func TestBuildArgs_OmitsAllowedToolsWhenEmpty(t *testing.T) {
+	req := &proto.AgentRequestV1{
+		Proto:      proto.AgentRequestProtoV1,
+		Label:      "coder",
+		Model:      "M",
+		PromptFile: "/p",
+	}
+	joined := strings.Join(buildArgs(req), " ")
+	if strings.Contains(joined, "--allowedTools") {
+		t.Errorf("buildArgs should omit --allowedTools when AllowedTools is empty; got: %s", joined)
+	}
+}
+
 // Claude CLI 2.1 removed both --prompt-file and --max-turns. The argv must
 // no longer mention either, regardless of what the proto request carries —
 // PromptFile is now consumed via stdin (see run() setting cmd.Stdin), and
