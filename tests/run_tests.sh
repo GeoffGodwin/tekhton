@@ -40,7 +40,23 @@ fi
 unset PROJECT_DIR MILESTONE_DIR MILESTONE_MANIFEST \
       _CURRENT_MILESTONE TASK MILESTONE_MODE AUTO_ADVANCE AUTO_ADVANCE_LIMIT \
       HUMAN_MODE HUMAN_NOTES_TAG LOG_DIR LOG_FILE TIMESTAMP TEKHTON_SESSION_DIR \
-      _DAG_LOADED 2>/dev/null || true
+      _DAG_LOADED _CACHED_DISPOSITION 2>/dev/null || true
+
+# Wipe stagerunner-injected runtime infrastructure vars. When the test suite
+# runs as a TEST_CMD inside a pipeline stage's subprocess (e.g. coder's
+# pre-run-clean-sweep at stages/coder_prerun.sh:139), the stagerunner adapter
+# has exported TEKHTON_STAGE_LOG_FILE / _REQUEST_FILE / _RESULT_FILE /
+# _NAME pointing at /tmp paths. Tests that enumerate `compgen -v` looking
+# for `_FILE` config defaults (e.g. test_tekhton_dir_root_cleanliness.sh)
+# pick these up, fail the "resolves under TEKHTON_DIR" check, and trigger
+# the pre-run-fix agent on a phantom failure. Closes #41 — task gives a
+# 15+ min fix-loop on every milestone run.
+#
+# Iterates so future TEKHTON_STAGE_* additions stay decoupled from the
+# test contract.
+while IFS= read -r _ks; do
+    unset "$_ks" 2>/dev/null || true
+done < <(compgen -v | grep -E '^TEKHTON_STAGE_' || true)
 
 # Export _FILE config variables for test subprocesses — matching production
 # defaults from config_defaults.sh (all under TEKHTON_DIR).
