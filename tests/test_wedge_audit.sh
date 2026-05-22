@@ -26,14 +26,6 @@ FAIL=0
 pass() { echo "PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $*"; FAIL=$((FAIL + 1)); }
 
-# Remove stale artifacts from previous runs killed with SIGKILL (which
-# bypasses the EXIT trap). Must run before Test 1 so leftover files don't
-# cause the "clean HEAD" check to fail.
-# shellcheck disable=SC2086
-rm -f "${TEKHTON_HOME}/lib/_test_wedge_violation_"*.sh \
-      "${TEKHTON_HOME}/lib/_test_wedge_report_"*.sh \
-      "${TEKHTON_HOME}/lib/_test_wedge_m10_violation_"*.sh 2>/dev/null || true
-
 # ---------------------------------------------------------------------------
 # Test 1 (happy path): HEAD is clean — no violations
 # ---------------------------------------------------------------------------

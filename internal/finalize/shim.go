@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 )
 
 // BashShimHook implements Hook by execing lib/finalize_shim.sh once with the
@@ -85,19 +84,7 @@ func (b *BashShimHook) Run(ctx context.Context, in *Input) error {
 // it did pre-m26. This keeps existing shim tests green during the
 // migration window.
 func (b *BashShimHook) buildEnv(in *Input) []string {
-	// Filter _CACHED_DISPOSITION from inherited env so a leaked value from
-	// the caller's shell (or a previous bash invocation) cannot mask the
-	// authoritative disposition the runner computed for this hook chain.
-	// Only the explicit setter below — gated on MilestoneDisposition — is
-	// allowed to put _CACHED_DISPOSITION into the subprocess env.
-	parentEnv := os.Environ()
-	env := make([]string, 0, len(parentEnv)+8)
-	for _, kv := range parentEnv {
-		if strings.HasPrefix(kv, "_CACHED_DISPOSITION=") {
-			continue
-		}
-		env = append(env, kv)
-	}
+	env := os.Environ()
 	if len(in.EnvKV) > 0 {
 		env = append(env, in.EnvKV...)
 	} else {

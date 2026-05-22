@@ -74,13 +74,6 @@ declare -A EXCLUDED=(
     # Runtime variable exported by the Go finalize shim (internal/finalize/shim.go)
     # to the bash bridge — always an absolute path, never a config default.
     [TEKHTON_RUN_RESULT_FILE]=1
-    # Runtime infrastructure variables injected by the Go stagerunner adapter
-    # (internal/stagerunner/adapter.go) into each stage's environment. Always
-    # absolute paths; never config defaults. They appear in compgen -v when
-    # tests run as part of a pipeline stage (TEST_CMD).
-    [TEKHTON_STAGE_LOG_FILE]=1
-    [TEKHTON_STAGE_REQUEST_FILE]=1
-    [TEKHTON_STAGE_RESULT_FILE]=1
 )
 
 # Patterns that are not file paths

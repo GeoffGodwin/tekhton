@@ -30,13 +30,6 @@ fail() { echo "FAIL: $*"; FAIL=$(( FAIL + 1 )); }
 _VFILE="${TEKHTON_HOME}/lib/_test_wedge_m10_violation_$$.sh"
 trap 'rm -f "$_VFILE"' EXIT INT TERM
 
-# Remove stale artifacts from previous runs killed with SIGKILL (which
-# bypasses the EXIT trap). Run before Test 1 so a leftover file doesn't
-# cause the "clean HEAD" check to fail. Safe to run at startup because
-# the current run's file ($$ PID) hasn't been created yet.
-# shellcheck disable=SC2086
-rm -f "${TEKHTON_HOME}/lib/_test_wedge_m10_violation_"*.sh 2>/dev/null || true
-
 _audit_output=""
 _audit_rc=0
 

@@ -106,6 +106,7 @@ get_milestone_attempts() {
 # Returns 0 on success, 1 on failure or CANNOT_SPLIT.
 split_milestone() {
     local milestone_num="$1"
+    local claude_md="${2:-CLAUDE.md}"
 
     # Check split depth
     local depth
