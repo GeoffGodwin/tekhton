@@ -95,6 +95,16 @@ run_stage_review() {
         _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
         log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_REVIEWER_MODEL"
 
+        # Populate MILESTONE_BLOCK with the FOCUSED active milestone content
+        # before rendering. Without this, reviewer prompts referencing
+        # {{MILESTONE_BLOCK}} expand to empty and the agent has no idea what
+        # the milestone is actually about — same root cause as M23
+        # coder-does-nothing pattern. The helper is a no-op outside milestone
+        # mode, so non-milestone runs are unaffected.
+        if declare -f set_focused_milestone_block &>/dev/null; then
+            set_focused_milestone_block 2>/dev/null || true
+        fi
+
         _phase_start "reviewer_prompt"
         REVIEWER_PROMPT=$(render_prompt "reviewer")
         _phase_end "reviewer_prompt"

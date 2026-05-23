@@ -233,6 +233,14 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             _scout_tools="Read Glob Grep Write"
         fi
 
+        # Populate MILESTONE_BLOCK before rendering scout. Otherwise scout
+        # has TASK="m23" with no description and can't identify relevant
+        # files (the M23 pattern where scout returned "Files to modify: 0").
+        # Scout runs before the coder-stage MILESTONE_BLOCK population below.
+        if declare -f set_focused_milestone_block &>/dev/null; then
+            set_focused_milestone_block 2>/dev/null || true
+        fi
+
         SCOUT_PROMPT=$(render_prompt "scout")
 
         # M114: scout runs as a *substage* inside the open coder pipeline
@@ -448,8 +456,16 @@ $(cat "${GLOSSARY_FILE}")"
 
     export MILESTONE_BLOCK=""
     if [ "${MILESTONE_MODE:-false}" = true ]; then
-        # DAG path: use cached milestone window (M47) or compute fresh
-        _get_cached_milestone_block "$CLAUDE_CODER_MODEL" 2>/dev/null || true
+        # Prefer the FOCUSED milestone block — the full active milestone
+        # content, not the budget-truncated multi-milestone window. The
+        # window path was diluting M23-style coder runs to first-paragraph-
+        # only context and producing 1-turn no-op agents (the
+        # M23-does-nothing pattern documented in lib/milestone_window.sh:
+        # set_focused_milestone_block).
+        if ! set_focused_milestone_block 2>/dev/null; then
+            # DAG path: use cached milestone window (M47) or compute fresh
+            _get_cached_milestone_block "$CLAUDE_CODER_MODEL" 2>/dev/null || true
+        fi
 
         # Fallback: static block when no DAG or window build failed
         if [[ -z "$MILESTONE_BLOCK" ]]; then

@@ -87,6 +87,64 @@ _milestone_priority_list() {
     printf '%s' "${active_ids}${frontier_ids}${ondeck_ids}"
 }
 
+# set_focused_milestone_block
+# Populates MILESTONE_BLOCK with the FULL content of the active milestone
+# (resolved via _CURRENT_MILESTONE → dag_number_to_id → dag_get_file).
+# Used by stages whose agent needs to actually DO the milestone work and
+# therefore needs the full Design + Files Modified + Acceptance Criteria
+# sections, not the budget-truncated multi-milestone view from
+# build_milestone_window.
+#
+# Why a separate helper from build_milestone_window: the multi-milestone
+# window is appropriate for THE OPERATOR'S situational awareness (active +
+# frontier + on-deck), but a CODER agent told to port TUI ops needs the
+# full m23 design, not a paragraph summary diluted across m23/m24/m25.
+# This was the root cause of the M23-coder-does-nothing pattern (#49 v2
+# diagnosis): coder saw 500 bytes of fragmented context and gave up in
+# one turn.
+#
+# Returns 0 on success, 1 when no active milestone can be resolved
+# (caller falls back to whatever it had before — typically a generic
+# "Milestone Mode" block).
+set_focused_milestone_block() {
+    [[ "${MILESTONE_MODE:-false}" = "true" ]] || return 1
+    [[ -n "${_CURRENT_MILESTONE:-}" ]] || return 1
+
+    # Resolve numeric ID → "m<NN>" → filename via the DAG.
+    local id="$_CURRENT_MILESTONE"
+    if declare -f dag_number_to_id &>/dev/null; then
+        id=$(dag_number_to_id "$_CURRENT_MILESTONE" 2>/dev/null || echo "$_CURRENT_MILESTONE")
+    fi
+    # Fall back to literal m-prefix when dag_number_to_id is unavailable
+    # or returned an unprefixed value.
+    if [[ -n "$id" ]] && [[ "$id" != m* ]] && [[ "$id" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+        id="m${id}"
+    fi
+    [[ -n "$id" ]] || return 1
+
+    local content
+    if declare -f _read_milestone_file &>/dev/null; then
+        content=$(_read_milestone_file "$id" 2>/dev/null || true)
+    fi
+    [[ -n "$content" ]] || return 1
+
+    export MILESTONE_BLOCK="
+## Active Milestone — ${id}
+
+The block below is the COMPLETE milestone definition for ${id}. Read it
+fully. This is the work you are doing — do not stop after one turn or
+ask for clarification you can resolve by reading the design sections
+below. The Design section names the files to create/modify; the
+Acceptance Criteria are the predicates your work will be evaluated
+against.
+
+--- BEGIN MILESTONE CONTENT ---
+${content}
+--- END MILESTONE CONTENT ---
+"
+    return 0
+}
+
 # _read_milestone_file ID
 # Reads the full content of a milestone file. Returns empty if not found.
 _read_milestone_file() {

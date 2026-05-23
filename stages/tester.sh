@@ -52,6 +52,15 @@ run_stage_tester() {
         return
     fi
 
+    # Populate MILESTONE_BLOCK with the FOCUSED active milestone content
+    # before rendering. Without this, tester prompts referencing
+    # {{MILESTONE_BLOCK}} expand to empty and the agent has no idea what
+    # acceptance criteria to verify. Same root cause as M23
+    # coder/reviewer-does-nothing pattern. No-op outside milestone mode.
+    if declare -f set_focused_milestone_block &>/dev/null; then
+        set_focused_milestone_block 2>/dev/null || true
+    fi
+
     # Build the tester prompt based on whether we are starting fresh or resuming
     if [ "${START_AT:-coder}" = "tester" ]; then
         TESTER_PROMPT=$(render_prompt "tester_resume")
