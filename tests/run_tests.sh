@@ -40,7 +40,7 @@ fi
 unset PROJECT_DIR MILESTONE_DIR MILESTONE_MANIFEST \
       _CURRENT_MILESTONE TASK MILESTONE_MODE AUTO_ADVANCE AUTO_ADVANCE_LIMIT \
       HUMAN_MODE HUMAN_NOTES_TAG LOG_DIR LOG_FILE TIMESTAMP TEKHTON_SESSION_DIR \
-      _DAG_LOADED _CACHED_DISPOSITION 2>/dev/null || true
+      _DAG_LOADED _CACHED_DISPOSITION TEST_FILES 2>/dev/null || true
 
 # Wipe stagerunner-injected runtime infrastructure vars. When the test suite
 # runs as a TEST_CMD inside a pipeline stage's subprocess (e.g. coder's
@@ -224,17 +224,23 @@ _log_progress "PHASE make-build END"
 
 # Discover and run all test files.
 #
-# TEST_FILES override (M28-arc / task #40): when set to a space-separated
-# list of test filenames, run only those instead of the full suite. Used by
-# lib/hooks_final_checks.sh's auto-fix loop to re-test only the failures
-# from the previous run instead of re-executing all 478 tests. Names may be
-# bare ("test_foo.sh") or absolute paths; basename is taken either way.
-# When TEST_FILES is empty or unset, the default glob runs (no behavior
-# change for normal callers).
+# Test scoping override (M28-arc / task #40): when test names are passed as
+# positional args, run only those. Used by lib/hooks_final_checks.sh's
+# auto-fix loop to re-test only the failures from the previous run instead
+# of re-executing all 478 tests. Names may be bare ("test_foo.sh") or
+# absolute paths; basename is taken either way.
+#
+# Why argv not env: the prior TEST_FILES env-var design leaked across
+# pipeline stages — a test-fix loop set TEST_FILES="test_foo.sh", and the
+# stagerunner-spawned coder subprocess inherited it via env, causing the
+# pre-run check to run only one test and triggering false-positive
+# pre-run-fix loops (#41 v2). Positional args don't cross subprocess
+# boundaries unless explicitly passed. TEST_FILES is now in the parent-env
+# wipe list above; this branch is the ONLY override path.
 _log_progress "PHASE shell-tests BEGIN"
-if [[ -n "${TEST_FILES:-}" ]]; then
-    _log_progress "TEST_FILES override active: ${TEST_FILES}"
-    for raw in $TEST_FILES; do
+if [[ "$#" -gt 0 ]]; then
+    _log_progress "Positional override active: $*"
+    for raw in "$@"; do
         name=$(basename "$raw")
         if [ -f "${TESTS_DIR}/${name}" ]; then
             run_test "$name"

@@ -176,19 +176,24 @@ run_final_checks() {
             log "Test fix agent finished (attempt ${fix_attempt})."
 
             # Re-run tests to check if fixes worked. When we know the failing
-            # set, run only those (TEST_FILES is consumed by run_tests.sh:212).
-            # If they all pass, do one full-suite verification below to catch
-            # regressions the fix agent might have introduced elsewhere.
+            # set, run only those — pass test names as POSITIONAL ARGS to
+            # ${TEST_CMD} (not as TEST_FILES env). The env-var design leaked
+            # across the supervisor → stagerunner → coder-prerun-check chain,
+            # causing coder's pre-run check to inherit TEST_FILES="test_foo.sh"
+            # and run only one test — see #41 v2 diagnosis. Positional args
+            # don't cross subprocess boundaries unless explicitly passed.
             local rerun_label="Re-running final test check"
+            local rerun_cmd="${TEST_CMD}"
             if [[ -n "$failing_tests" ]]; then
                 rerun_label="Re-running ${failing_tests} (focused)"
+                rerun_cmd="${TEST_CMD} ${failing_tests}"
                 log "Re-running focused tests after test fix: ${failing_tests}"
             else
                 log "Re-running ${TEST_CMD} after test fix..."
             fi
             set +e
-            test_output=$(TEST_FILES="$failing_tests" run_op "$rerun_label" \
-                bash -c "${TEST_CMD}" 2>&1)
+            test_output=$(run_op "$rerun_label" \
+                bash -c "${rerun_cmd}" 2>&1)
             test_exit=$?
             set -e
             printf '%s\n' "$test_output" | tee -a "$log_file"
