@@ -25,7 +25,7 @@ set -euo pipefail
 # or anything goes wrong — caller treats 0 as "no floor", which is the
 # safe degradation for greenfield repos.
 _max_done_milestone_in_manifest() {
-    local proj="${1:-${PROJECT_DIR:-.}}"
+    local proj="${PROJECT_DIR:-.}"
     local manifest="${proj}/.claude/milestones/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
     if [[ -n "${MILESTONE_DIR:-}" ]]; then
         manifest="${MILESTONE_DIR}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"

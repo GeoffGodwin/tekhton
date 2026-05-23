@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 95
+- Runs since audit: 108
 
 ## Unresolved Observations
+- [2026-05-22 | "unknown"] `lib/project_version_bump.sh:9` — `set -euo pipefail` in a sourced lib file (pre-existing). All other lib files omit this because sourced files inherit the caller's error settings; having it here is inconsistent with the rest of `lib/`.
 - [2026-05-18 | "unknown"] [internal/preflight/ui_audit.go:255] — Dead `strings.Join` call with incorrect "satisfy import" comment; should be deleted in the next cleanup pass.
 - [2026-05-18 | "unknown"] [tests/] — V4 migration is accumulating skip-guarded bash tests faster than Go-native replacements are being written. Five more at m22 close; `test_plan_browser` still pending from m21. Drift observation to trigger a dedicated test-migration sweep before the accumulation becomes untrackable.
 - [2026-05-18 | "unknown"] [tests/testdata/preflight_parity/green_path/expected/] — The `green_path` fixture has an empty `expected/` directory (the `no_report` mode asserts absence rather than a baseline file). This is correct behavior, but the pattern is inconsistent with `env_only_fail` and `ui_config_autopatch` which both have explicit baseline files. A README note in `green_path/` explaining why there is no baseline file would reduce future confusion.
