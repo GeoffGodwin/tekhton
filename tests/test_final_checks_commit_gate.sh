@@ -198,9 +198,41 @@ else
     fail "12.3: read returned '$result' instead of 1"
 fi
 
+echo "=== _hook_final_checks does NOT erase a stage-side trip ==="
+# Regression for the M23 hollow-commit bug: stages call trip_commit_gate
+# during the pipeline (e.g. coder's missing-CODER_SUMMARY synthesize path),
+# then much later _hook_final_checks runs in the finalize chain. Previously
+# _hook_final_checks rm -f'd the sentinel at entry, wiping the stage's
+# trip and letting the commit gate proceed. Pipeline-start cleanup now
+# lives in stages/intake.sh; _hook_final_checks must NOT clear.
+rm -f "$TEKHTON_DIR/.final_check_result"
+trip_commit_gate "coder_did_not_produce_summary"  # simulate stage trip
+run_final_checks() { return 0; }  # simulate final tests passing
+SKIP_FINAL_CHECKS=false _PREFLIGHT_TESTS_PASSED=false \
+    _hook_final_checks 0 >/dev/null 2>&1 || true
+if [[ -f "$TEKHTON_DIR/.final_check_result" ]]; then
+    val=$(tr -d '[:space:]' < "$TEKHTON_DIR/.final_check_result" 2>/dev/null | head -c 1)
+    if [[ "$val" == "1" ]]; then
+        pass "14.1: stage-side sentinel survives _hook_final_checks when final tests pass"
+    else
+        fail "14.1: sentinel present but value=$val (want 1)"
+    fi
+    if grep -q "coder_did_not_produce_summary" "$TEKHTON_DIR/.final_check_result"; then
+        pass "14.2: original stage reason preserved"
+    else
+        fail "14.2: stage reason was lost"
+    fi
+else
+    fail "14.1: stage-side sentinel was erased by _hook_final_checks (M23 regression)"
+fi
+
 echo "=== trip_commit_gate is idempotent (preserves first reason) ==="
+# Start from a known state — previous test cases may have written
+# different reasons via trip_commit_gate or its wrappers.
+rm -f "$TEKHTON_DIR/.final_check_result"
+trip_commit_gate "first_reason_set"
 trip_commit_gate "second_reason_should_not_overwrite"
-if grep -q "reviewer_did_not_produce_report" "$TEKHTON_DIR/.final_check_result" \
+if grep -q "first_reason_set" "$TEKHTON_DIR/.final_check_result" \
    && ! grep -q "second_reason_should_not_overwrite" "$TEKHTON_DIR/.final_check_result"; then
     pass "13.1: subsequent trip calls preserve first reason"
 else

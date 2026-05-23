@@ -17,10 +17,16 @@ _hook_final_checks() {
     # and exported variables don't propagate between hooks. _hook_commit
     # later reads this file (via _final_check_result_read in
     # finalize_commit.sh) and refuses to commit when failures are recorded.
-    # Stale sentinel from a prior run is cleared at hook entry so a clean
-    # run never inherits a previous run's failure.
+    #
+    # DO NOT clear the sentinel at hook entry. The synthesize-fallback paths
+    # in stages/{coder,review,tester_validation}.sh call trip_commit_gate
+    # DURING stages (well before this hook runs in the finalize chain), and
+    # erasing those trips here would let hollow milestones commit again
+    # (see git history: M23 ran and committed despite missing
+    # CODER_SUMMARY.md because this hook wiped the stage trip). Cleanup of
+    # stale sentinels from prior crashed runs happens at pipeline-start via
+    # _hook_baseline_cleanup, not here.
     local _fcr_file="${TEKHTON_DIR:-.tekhton}/.final_check_result"
-    rm -f "$_fcr_file" 2>/dev/null || true
 
     if [[ "${SKIP_FINAL_CHECKS:-false}" = true ]]; then
         warn "Skipping final checks — a stage had a null run."
