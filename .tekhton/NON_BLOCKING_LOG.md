@@ -5,10 +5,6 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
-- [ ] [2026-05-22 | "unknown"] `lib/project_version_bump.sh` is 301 lines (1 over the 300-line hard ceiling per CLAUDE.md Rule 8). Moving `_max_done_milestone_in_manifest` to `lib/project_version.sh` (the detection/discovery half) would naturally bring both files within ceiling and improve separation of concerns.
-- [ ] [2026-05-22 | "unknown"] `compute_next_version` header still says "Pure function — no I/O" but it now calls `_max_done_milestone_in_manifest`, which reads `MANIFEST.cfg` from the filesystem. The comment should drop the "no I/O" claim.
-- [ ] [2026-05-22 | "unknown"] `tests/test_project_version_bump.sh` is 445 lines (pre-existing overrun; coder added ~83 lines). Consider splitting into `test_compute_next_version.sh` + `test_bump_version_files.sh` in a follow-up cleanup milestone.
-- [ ] [2026-05-22 | "unknown"] `lib/project_version_bump.sh:9` has `set -euo pipefail` — a pre-existing issue. Per reviewer.md and CLAUDE.md, sourced files in `lib/` must NOT set this (they inherit it). Not introduced by this PR, flagged for awareness.
 - [ ] [2026-05-20 | "unknown"] Reviewer agent did not produce a report — extra tester scrutiny recommended.
 - [ ] [2026-05-20 | "unknown"] Reviewer agent did not produce a report — extra tester scrutiny recommended.
 - [ ] [2026-05-18 | "unknown"] `ui_audit.go:255` — `strings.Join(files, "") // satisfy import; sort below` is dead code with a misleading comment. The `strings` package is already used by `strings.ToLower`, `strings.ReplaceAll`, and `strings.Contains` elsewhere in the file, so no import-satisfaction trick is needed. The line computes and discards a string and should be removed.

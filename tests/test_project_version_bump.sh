@@ -4,12 +4,6 @@ set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Isolate from any parent-shell pipeline state (mirrors run_tests.sh hygiene).
-# Without this, PROJECT_DIR/MILESTONE_DIR/MILESTONE_MANIFEST from a running
-# tekhton session leak into _max_done_milestone_in_manifest and cause
-# environment-dependent failures when run directly.
-unset PROJECT_DIR MILESTONE_DIR MILESTONE_MANIFEST 2>/dev/null || true
-
 PASS=0
 FAIL=0
 
@@ -92,22 +86,14 @@ if [[ "$result" == "1.2.3" ]]; then pass "strategy=none is no-op"; else fail "st
 # =============================================================================
 echo "=== compute_next_version: milestone ==="
 
-# Isolate from the live tekhton MANIFEST so these tests don't become
-# environment-dependent when the repo's HWM exceeds 119/120.
-_MILESTONE_BASIC_TMP=$(mktemp -d)
-
-result=$(PROJECT_DIR="$_MILESTONE_BASIC_TMP" compute_next_version "3.111.0" "milestone" "milestone:119")
+result=$(compute_next_version "3.111.0" "milestone" "milestone:119")
 if [[ "$result" == "3.119.0" ]]; then pass "milestone completion sets MINOR to milestone and resets patch"; else fail "milestone completion: got $result"; fi
 
-# patch bump_type doesn't call _max_done_milestone_in_manifest — no need to
-# set PROJECT_DIR here, but do it for consistency and future-safety.
-result=$(PROJECT_DIR="$_MILESTONE_BASIC_TMP" compute_next_version "3.119.0" "milestone" "patch")
+result=$(compute_next_version "3.119.0" "milestone" "patch")
 if [[ "$result" == "3.119.1" ]]; then pass "milestone strategy patch increments PATCH only"; else fail "milestone patch: got $result"; fi
 
-result=$(PROJECT_DIR="$_MILESTONE_BASIC_TMP" compute_next_version "3.119.7" "milestone" "milestone:120")
+result=$(compute_next_version "3.119.7" "milestone" "milestone:120")
 if [[ "$result" == "3.120.0" ]]; then pass "next milestone resets patch after note runs"; else fail "milestone reset: got $result"; fi
-
-rm -rf "$_MILESTONE_BASIC_TMP"
 
 # =============================================================================
 # bump_version_files — package.json
