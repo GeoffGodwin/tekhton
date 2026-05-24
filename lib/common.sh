@@ -108,11 +108,32 @@ run_op() { local _l="$1"; shift; "$@"; }
 # overwrite the first reason (the file's existence is what matters).
 trip_commit_gate() {
     local reason="${1:-synthesize_fallback}"
+    # Resolve the sentinel to an ABSOLUTE path. Stages call trip_commit_gate
+    # from working directories that vary across the pipeline (PROJECT_DIR
+    # mostly, but tests / subshells may chdir elsewhere). Relative path
+    # `.tekhton/...` resolved against an unexpected CWD created sentinels
+    # in places _hook_commit never reads — explaining why M23 ran through
+    # the gate cleanly after synthesizing CODER_SUMMARY.md.
     local sentinel="${TEKHTON_DIR:-.tekhton}/.final_check_result"
-    mkdir -p "$(dirname "$sentinel")" 2>/dev/null || true
-    if [[ ! -s "$sentinel" ]]; then
-        printf '1\n# %s\n' "$reason" > "$sentinel" 2>/dev/null || true
+    if [[ "$sentinel" != /* ]] && [[ -n "${PROJECT_DIR:-}" ]]; then
+        sentinel="${PROJECT_DIR}/${sentinel}"
     fi
+    local sentinel_dir
+    sentinel_dir=$(dirname "$sentinel")
+    if ! mkdir -p "$sentinel_dir" 2>/dev/null; then
+        warn "trip_commit_gate: cannot create ${sentinel_dir} — commit gate WILL NOT trip for reason: ${reason}"
+        return 1
+    fi
+    if [[ ! -s "$sentinel" ]]; then
+        if ! printf '1\n# %s\n' "$reason" > "$sentinel" 2>/dev/null; then
+            warn "trip_commit_gate: failed to write ${sentinel} — commit gate WILL NOT trip for reason: ${reason}"
+            return 1
+        fi
+        log_verbose "trip_commit_gate: wrote sentinel ${sentinel} (reason=${reason})"
+    else
+        log_verbose "trip_commit_gate: sentinel already present at ${sentinel} (preserving first reason)"
+    fi
+    return 0
 }
 
 # log_verbose — write an informational diagnostic line that stays off stdout
