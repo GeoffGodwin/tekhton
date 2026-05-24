@@ -147,6 +147,47 @@ else
     fail "10.5 AGENT_DISALLOWED_TOOLS missing git push guard: ${AGENT_DISALLOWED_TOOLS}"
 fi
 
+# =============================================================================
+# Suite 11: V4 diagnostic surface (Claude 2.1 permission_denials + subtype)
+# =============================================================================
+# These guard the V4 #1/#2 hardening: AgentResultV1 now carries
+# permission_denied_count, result_subtype, terminal_reason, api_error_status.
+# If a future shim refactor drops any of these field reads, "agent did
+# nothing" runs go back to silent failure with no diagnostic surface.
+echo "=== Suite 11: V4 diagnostic surface ==="
+
+_resp_diag="${TMPDIR}/resp_diagnostics.json"
+cat > "$_resp_diag" <<'EOF'
+{
+  "outcome": "fatal_error",
+  "exit_code": 0,
+  "turns_used": 4,
+  "permission_denied_count": 3,
+  "result_subtype": "error_during_execution",
+  "terminal_reason": "error",
+  "api_error_status": "529"
+}
+EOF
+_shim_apply_response "$_resp_diag" 0
+assert_eq "11.1 LAST_AGENT_PERMISSION_DENIED_COUNT=3" "3"                         "$LAST_AGENT_PERMISSION_DENIED_COUNT"
+assert_eq "11.2 LAST_AGENT_RESULT_SUBTYPE"            "error_during_execution"    "$LAST_AGENT_RESULT_SUBTYPE"
+assert_eq "11.3 LAST_AGENT_TERMINAL_REASON"           "error"                     "$LAST_AGENT_TERMINAL_REASON"
+assert_eq "11.4 LAST_AGENT_API_ERROR_STATUS"          "529"                       "$LAST_AGENT_API_ERROR_STATUS"
+
+# Absent fields → empty / zero, never spurious values.
+_resp_clean="${TMPDIR}/resp_no_diagnostics.json"
+cat > "$_resp_clean" <<'EOF'
+{
+  "outcome": "success",
+  "exit_code": 0,
+  "turns_used": 5
+}
+EOF
+_shim_apply_response "$_resp_clean" 0
+assert_eq "11.5 missing denied_count defaults to 0" "0"  "$LAST_AGENT_PERMISSION_DENIED_COUNT"
+assert_eq "11.6 missing subtype is empty"           ""   "$LAST_AGENT_RESULT_SUBTYPE"
+assert_eq "11.7 missing terminal_reason is empty"   ""   "$LAST_AGENT_TERMINAL_REASON"
+
 echo
 echo "Results: ${PASS} passed, ${FAIL} failed"
 if [[ "$FAIL" -gt 0 ]]; then

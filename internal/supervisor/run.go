@@ -168,10 +168,29 @@ func (s *Supervisor) run(ctx context.Context, req *proto.AgentRequestV1) (*proto
 		DurationMs: duration.Milliseconds(),
 		StdoutTail: rb.snapshot(),
 	}
+	subtype, terminalReason, apiErrStatus, denials := resultDiagnostics(events)
+	res.ResultSubtype = subtype
+	res.TerminalReason = terminalReason
+	res.APIErrorStatus = apiErrStatus
+	res.PermissionDeniedCount = denials
 	reason, _ := cancelReason.Load().(string)
 	res.Outcome = outcomeFor(waitErr, reason)
+	// Claude 2.1's result event distinguishes "ran out of turns"
+	// (subtype=error_max_turns, exit=0) from "actually failed"
+	// (subtype=error_during_execution). Treating max-turns as success
+	// (which the rc=0 path used to do) hid real exhaustion from the
+	// build-fix and review loops. Reclassify based on the terminal
+	// subtype before persisting.
+	if waitErr == nil && res.ResultSubtype == "error_max_turns" {
+		res.Outcome = proto.OutcomeFatalError
+		res.ErrorMessage = "agent terminated at max turns without completing"
+	}
 	if waitErr != nil && res.Outcome != proto.OutcomeSuccess {
 		res.ErrorMessage = waitErr.Error()
+	}
+	if denials > 0 {
+		s.emitSupervisorEvent(req.Label, "permission_denials_observed",
+			fmt.Sprintf("count=%d subtype=%s terminal=%s", denials, subtype, terminalReason))
 	}
 	res.TrimStdoutTail()
 	return res, nil

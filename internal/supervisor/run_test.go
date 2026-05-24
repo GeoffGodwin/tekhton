@@ -773,3 +773,51 @@ func TestOutcomeFor(t *testing.T) {
 		})
 	}
 }
+
+// TestRun_MaxTurnsExit_ReclassifiedAsFatal locks in the V4 #2 fix: claude
+// CLI 2.1 reports "ran out of turns" as rc=0 + subtype=error_max_turns. The
+// pre-V4 path treated rc=0 as success, hiding exhaustion from the build-fix
+// loop and review routing — the agent had "succeeded" while producing no
+// diff. Run() must now flip these runs to OutcomeFatalError so the outer
+// loop knows it needs another pass.
+func TestRun_MaxTurnsExit_ReclassifiedAsFatal(t *testing.T) {
+	res, err := runWithBashFixture(t, happyRequest(t, "max_turns_exit"))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.ExitCode != 0 {
+		t.Errorf("ExitCode: got %d, want 0 (fake claude exits 0 on max-turns)", res.ExitCode)
+	}
+	if res.Outcome != proto.OutcomeFatalError {
+		t.Errorf("Outcome: got %q, want fatal_error (max-turns must not be silently treated as success)", res.Outcome)
+	}
+	if res.ResultSubtype != "error_max_turns" {
+		t.Errorf("ResultSubtype: got %q, want error_max_turns", res.ResultSubtype)
+	}
+	if res.TerminalReason != "max_turns" {
+		t.Errorf("TerminalReason: got %q, want max_turns", res.TerminalReason)
+	}
+	if res.ErrorMessage == "" {
+		t.Error("ErrorMessage: want non-empty so bash callers can route by reason")
+	}
+}
+
+// TestRun_PermissionDenials_SurfacedToResult locks in the V4 #1 diagnostic
+// surface: permission_denials[] on the terminal result event must reach
+// AgentResultV1.PermissionDeniedCount. This is THE first field operators
+// check when an "agent did nothing" run lands in the inbox.
+func TestRun_PermissionDenials_SurfacedToResult(t *testing.T) {
+	res, err := runWithBashFixture(t, happyRequest(t, "denials"))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.PermissionDeniedCount != 2 {
+		t.Errorf("PermissionDeniedCount: got %d, want 2", res.PermissionDeniedCount)
+	}
+	if res.ResultSubtype != "success" {
+		t.Errorf("ResultSubtype: got %q, want success", res.ResultSubtype)
+	}
+	if res.TerminalReason != "completed" {
+		t.Errorf("TerminalReason: got %q, want completed", res.TerminalReason)
+	}
+}

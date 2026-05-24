@@ -124,6 +124,7 @@ _shim_write_request() {
 _shim_apply_response() {
     local f="$1" exec_rc="$2"
     local _ec _tu _oc _msg _cat _sub _tr
+    local _pd _rs _tre _aes
     _ec=$(_shim_field "$f" exit_code)
     _tu=$(_shim_field "$f" turns_used)
     _oc=$(_shim_field "$f" outcome)
@@ -131,6 +132,28 @@ _shim_apply_response() {
     _cat=$(_shim_field "$f" error_category)
     _sub=$(_shim_field "$f" error_subcategory)
     _tr=$(_shim_field "$f" error_transient)
+    # Claude CLI 2.1 diagnostic surface (added in V4 #1). When
+    # permission_denied_count > 0, the agent burned turns on tool
+    # calls that the permission system blocked — almost always the
+    # root cause of "agent did nothing" reports. Surface to the
+    # pipeline log so post-mortem doesn't require re-running with
+    # stream-json instrumentation.
+    _pd=$(_shim_field "$f" permission_denied_count)
+    _rs=$(_shim_field "$f" result_subtype)
+    _tre=$(_shim_field "$f" terminal_reason)
+    _aes=$(_shim_field "$f" api_error_status)
+    [[ "$_pd" =~ ^[0-9]+$ ]] || _pd=0
+    # shellcheck disable=SC2034  # consumed by stages for diagnostic logging
+    LAST_AGENT_PERMISSION_DENIED_COUNT="$_pd"
+    # shellcheck disable=SC2034
+    LAST_AGENT_RESULT_SUBTYPE="$_rs"
+    # shellcheck disable=SC2034
+    LAST_AGENT_TERMINAL_REASON="$_tre"
+    # shellcheck disable=SC2034
+    LAST_AGENT_API_ERROR_STATUS="$_aes"
+    if [[ "$_pd" -gt 0 ]] && declare -f warn >/dev/null 2>&1; then
+        warn "agent permission system blocked ${_pd} tool call(s); check --dangerously-skip-permissions + --allowedTools config"
+    fi
     [[ "$_ec" =~ ^-?[0-9]+$ ]] || _ec="$exec_rc"
     [[ "$_tu" =~ ^[0-9]+$ ]] || _tu=0
     if [[ "$_oc" = "activity_timeout" ]]; then

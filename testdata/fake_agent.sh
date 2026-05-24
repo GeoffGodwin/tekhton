@@ -19,6 +19,8 @@
 #                          hang            emit one turn + sleep forever (tests caller-driven/timer-driven cancel)
 #                          silent_fs_writer  emit startup line, write files periodically, no further stdout
 #                          silent_no_writes  emit startup line then sleep without fs activity
+#                          max_turns_exit  emit result event with subtype=error_max_turns + rc=0
+#                          denials         emit result event with permission_denials[] + rc=0
 #   FAKE_AGENT_LINES         — line count for mode=flood (default 100)
 #   FAKE_AGENT_SLEEP         — seconds between lines for mode=slow (default 1)
 #   FAKE_AGENT_EXIT          — exit code for mode=fail (default 1)
@@ -132,6 +134,26 @@ case "$mode" in
         # (m09 override path checks fsnotify; no activity → kill).
         emit '{"type":"turn_started","turn":1}'
         sleep "${FAKE_AGENT_SLEEP:-30}"
+        exit 0
+        ;;
+    max_turns_exit)
+        # Mimics claude CLI 2.1 hitting --max-turns and emitting its
+        # terminal `result` event with subtype=error_max_turns + rc=0.
+        # The supervisor's V4 #2 reclassification must turn this into
+        # OutcomeFatalError instead of letting rc=0 mask exhaustion.
+        emit '{"type":"turn_started","turn":1}'
+        emit '{"type":"turn_ended","turn":1}'
+        emit '{"type":"result","subtype":"error_max_turns","terminal_reason":"max_turns","num_turns":1}'
+        exit 0
+        ;;
+    denials)
+        # Claude CLI 2.1 packs permission_denials[] onto the result
+        # event when the permission system blocks tool calls. Exit 0
+        # because claude itself "succeeded" — every tool call was just
+        # silently denied. Drives the V4 #1 diagnostic surface.
+        emit '{"type":"turn_started","turn":1}'
+        emit '{"type":"turn_ended","turn":1}'
+        emit '{"type":"result","subtype":"success","terminal_reason":"completed","permission_denials":[{"tool":"Write"},{"tool":"Edit"}],"num_turns":1}'
         exit 0
         ;;
     *)

@@ -82,6 +82,18 @@ type AgentResultV1 struct {
 	RetryAfter       string   `json:"retry_after,omitempty"`
 	LastEventID      string   `json:"last_event_id,omitempty"`
 	StdoutTail       []string `json:"stdout_tail,omitempty"`
+	// Claude CLI 2.1 result-event diagnostics threaded up from the
+	// decoder. PermissionDeniedCount > 0 means tool calls were silently
+	// blocked — this is THE first diagnostic to check when an agent
+	// "did nothing." Subtype and TerminalReason classify why the run
+	// ended (success | error_max_turns | error_during_execution and
+	// completed | error | interrupted | max_turns respectively).
+	// Surfaced into RUN_RESULT.json so post-mortem doesn't require
+	// re-running with stream-json instrumentation.
+	PermissionDeniedCount int    `json:"permission_denied_count,omitempty"`
+	ResultSubtype         string `json:"result_subtype,omitempty"`
+	TerminalReason        string `json:"terminal_reason,omitempty"`
+	APIErrorStatus        string `json:"api_error_status,omitempty"`
 }
 
 // StdoutTailMaxLines bounds StdoutTail at the V3 ring-buffer width. Callers

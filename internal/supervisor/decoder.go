@@ -37,10 +37,26 @@ type activityTimer interface {
 // here is what feeds AgentResultV1.TurnsUsed.
 type event struct {
 	Type     string          `json:"type"`
+	Subtype  string          `json:"subtype,omitempty"`
 	Turn     int             `json:"turn,omitempty"`
 	NumTurns int             `json:"num_turns,omitempty"`
 	Detail   json.RawMessage `json:"detail,omitempty"`
-	Raw      string          `json:"-"`
+	// Claude CLI 2.1 result-event fields we used to drop on the floor:
+	// PermissionDenials lists every tool call the permission system
+	// blocked. Critical diagnostic — explains "agent did nothing" runs
+	// where the prompt asked for Write/Edit but the tool got silently
+	// denied. TerminalReason is the canonical "why did the run end"
+	// signal (completed | error | interrupted | max_turns), more
+	// informative than IsError alone. APIErrorStatus distinguishes
+	// "API returned 5xx" from "agent decided to error out."
+	PermissionDenials json.RawMessage `json:"permission_denials,omitempty"`
+	TerminalReason    string          `json:"terminal_reason,omitempty"`
+	APIErrorStatus    string          `json:"api_error_status,omitempty"`
+	// RetryDelayMs comes from system/api_retry events (added in 2.1.x).
+	// When non-zero, claude is in an internal retry loop and we should
+	// NOT trip the activity timer for that window.
+	RetryDelayMs int `json:"retry_delay_ms,omitempty"`
+	Raw          string `json:"-"`
 }
 
 // decoderConfig wires the decoder's collaborators. Splitting it from decode()
@@ -90,6 +106,17 @@ func decode(ctx context.Context, r io.Reader, cfg decoderConfig) error {
 			continue
 		}
 		ev.Raw = line
+		// Claude CLI 2.1 emits system/api_retry events when it hits an
+		// upstream 429/5xx and back-pedals. The retry window is silent —
+		// no further stdout for RetryDelayMs ms — which would otherwise
+		// look like a stuck agent and trip the activity timeout, killing
+		// a run that was about to recover on its own. Extend the timer
+		// past the announced retry deadline (with the normal idle window
+		// stacked on top) so the supervisor stays out of the way.
+		if cfg.timer != nil && cfg.timeout > 0 && ev.RetryDelayMs > 0 &&
+			(ev.Type == "api_retry" || (ev.Type == "system" && ev.Subtype == "api_retry")) {
+			cfg.timer.Reset(cfg.timeout + time.Duration(ev.RetryDelayMs)*time.Millisecond)
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -97,6 +124,35 @@ func decode(ctx context.Context, r io.Reader, cfg decoderConfig) error {
 		}
 	}
 	return sc.Err()
+}
+
+// resultDiagnostics scans the event stream for the terminal `result` event
+// and returns the diagnostic fields claude CLI 2.1 packs into it. These feed
+// AgentResultV1's diagnostic surface so post-mortem of a "did nothing" run
+// doesn't require re-running with stream-json instrumentation.
+//
+// permissionDenials is the count of entries in the result's
+// permission_denials[] array. Non-zero values are the FIRST thing to check
+// when an agent burned turns without producing diffs — every denied tool
+// call costs context but produces nothing.
+func resultDiagnostics(events []event) (subtype, terminalReason, apiErrorStatus string, permissionDenials int) {
+	for i := len(events) - 1; i >= 0; i-- {
+		ev := events[i]
+		if ev.Type != "result" {
+			continue
+		}
+		subtype = ev.Subtype
+		terminalReason = ev.TerminalReason
+		apiErrorStatus = ev.APIErrorStatus
+		if len(ev.PermissionDenials) > 0 {
+			var arr []json.RawMessage
+			if err := json.Unmarshal(ev.PermissionDenials, &arr); err == nil {
+				permissionDenials = len(arr)
+			}
+		}
+		return
+	}
+	return
 }
 
 // finalTurn extracts the highest turn number observed across emitted events.

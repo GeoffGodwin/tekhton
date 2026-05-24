@@ -204,6 +204,76 @@ func TestDecode_LineUpdatesLastActivity(t *testing.T) {
 	}
 }
 
+// Claude CLI 2.1 packs the diagnostic surface onto its terminal `result`
+// event — permission_denials[], subtype, terminal_reason, api_error_status.
+// resultDiagnostics is the boundary between "raw event soup" and the typed
+// fields AgentResultV1 surfaces to bash; if the JSON tag/field mapping
+// regresses, post-mortem of a "did nothing" run silently loses the most
+// useful signal we have (permission_denials count).
+func TestResultDiagnostics_ExtractsAllFieldsFromTerminalResultEvent(t *testing.T) {
+	input := `{"type":"system","subtype":"init"}` + "\n" +
+		`{"type":"assistant"}` + "\n" +
+		`{"type":"result","subtype":"error_during_execution","terminal_reason":"error","api_error_status":"529","permission_denials":[{"tool":"Write"},{"tool":"Edit"},{"tool":"Bash"}],"num_turns":4}` + "\n"
+	events, _ := runDecode(t, input, nil)
+	subtype, terminal, apiErr, denials := resultDiagnostics(events)
+	if subtype != "error_during_execution" {
+		t.Errorf("subtype: got %q, want error_during_execution", subtype)
+	}
+	if terminal != "error" {
+		t.Errorf("terminal_reason: got %q, want error", terminal)
+	}
+	if apiErr != "529" {
+		t.Errorf("api_error_status: got %q, want 529", apiErr)
+	}
+	if denials != 3 {
+		t.Errorf("permission_denials count: got %d, want 3", denials)
+	}
+}
+
+func TestResultDiagnostics_NoResultEvent_ReturnsZeroValues(t *testing.T) {
+	input := `{"type":"system","subtype":"init"}` + "\n" +
+		`{"type":"assistant"}` + "\n"
+	events, _ := runDecode(t, input, nil)
+	subtype, terminal, apiErr, denials := resultDiagnostics(events)
+	if subtype != "" || terminal != "" || apiErr != "" || denials != 0 {
+		t.Errorf("expected all zero values when no result event present, got %q/%q/%q/%d",
+			subtype, terminal, apiErr, denials)
+	}
+}
+
+// Claude 2.1's system/api_retry event reports retry_delay_ms — the upcoming
+// silent window while the CLI back-pedals from a 429/5xx. The decoder must
+// extend the activity timer past that window; without this, a retry that
+// would have recovered on its own gets killed by the activity timeout and
+// the supervisor reports "activity_timeout" instead of letting the run
+// finish.
+func TestDecode_APIRetryEvent_ExtendsActivityTimer(t *testing.T) {
+	input := `{"type":"system","subtype":"api_retry","retry_delay_ms":5000,"attempt":1,"max_retries":3}` + "\n"
+	timer := &fakeTimer{}
+	events, _ := runDecode(t, input, timer)
+	if len(events) != 1 {
+		t.Fatalf("event count: got %d, want 1", len(events))
+	}
+	// One reset from the generic per-line reset, one from the api_retry
+	// extension — total 2. Plain bare-bones reset (no extension) would
+	// give 1.
+	if got := timer.resets.Load(); got != 2 {
+		t.Errorf("timer reset count: got %d, want 2 (per-line + api_retry extension)", got)
+	}
+}
+
+func TestDecode_APIRetryEventTopLevel_AlsoExtendsTimer(t *testing.T) {
+	// Some 2.1.x point releases emit `type:"api_retry"` directly instead of
+	// `type:"system",subtype:"api_retry"`. The decoder accepts both shapes
+	// to avoid being broken by a CLI patch release.
+	input := `{"type":"api_retry","retry_delay_ms":3000}` + "\n"
+	timer := &fakeTimer{}
+	runDecode(t, input, timer)
+	if got := timer.resets.Load(); got != 2 {
+		t.Errorf("timer reset count: got %d, want 2 (per-line + api_retry extension)", got)
+	}
+}
+
 func TestDecode_ContextCancel_StopsForwarding(t *testing.T) {
 	// out is intentionally unbuffered so the decoder blocks once it has
 	// produced its first event; cancelling ctx must release it via the
