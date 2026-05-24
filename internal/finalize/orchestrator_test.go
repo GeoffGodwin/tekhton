@@ -43,9 +43,6 @@ func TestHookOrder_MatchesBashRegistration(t *testing.T) {
 		"_hook_cleanup_resolved",
 		"_hook_resolve_notes",
 		"_hook_archive_reports",
-		"_hook_mark_done",
-		"_hook_cleanup_milestone",
-		"_hook_clear_state",
 		"_hook_health_reassess",
 		"_hook_emit_run_summary",
 		"_hook_emit_run_memory",
@@ -55,6 +52,13 @@ func TestHookOrder_MatchesBashRegistration(t *testing.T) {
 		"_hook_project_version_bump",
 		"_hook_changelog_append",
 		"_hook_commit",
+		// Completion bookkeeping hooks — moved AFTER _hook_commit so
+		// they only fire when the commit-decision sentinel says
+		// "committed." See lib/finalize_commit.sh comment and
+		// shouldRunOnCompletion in clear_state.go.
+		"_hook_mark_done",
+		"_hook_cleanup_milestone",
+		"_hook_clear_state",
 		"_hook_project_version_tag",
 		"_hook_update_check",
 		"_hook_final_dashboard_status",

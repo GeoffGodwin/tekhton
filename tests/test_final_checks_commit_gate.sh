@@ -239,6 +239,46 @@ else
     fail "13.1: second trip overwrote the first reason"
 fi
 
+echo "=== _write_commit_decision writes the sentinel ==="
+# Covers the 2026-05 finalize reordering fix: _hook_commit must
+# persist its decision so downstream completion hooks (mark_done,
+# cleanup_milestone, clear_state) know whether the user actually
+# committed. Without this sentinel a declined prompt looks identical
+# to a successful run from the manifest's perspective.
+rm -f "$TEKHTON_DIR/.commit_decision"
+_write_commit_decision "committed"
+if [[ -f "$TEKHTON_DIR/.commit_decision" ]]; then
+    val=$(tr -d '[:space:]' < "$TEKHTON_DIR/.commit_decision")
+    if [[ "$val" == "committed" ]]; then
+        pass "15.1: _write_commit_decision committed wrote sentinel"
+    else
+        fail "15.1: sentinel content is '$val' (want committed)"
+    fi
+else
+    fail "15.1: _write_commit_decision did not create sentinel"
+fi
+
+# Overwrite semantics: writing "declined" must replace, not append.
+_write_commit_decision "declined"
+val=$(tr -d '[:space:]' < "$TEKHTON_DIR/.commit_decision")
+if [[ "$val" == "declined" ]]; then
+    pass "15.2: _write_commit_decision overwrites previous value"
+else
+    fail "15.2: expected 'declined', got '$val'"
+fi
+
+# Pipeline-start cleanup (stages/intake.sh) wipes the sentinel — verify
+# the path matches the directory _write_commit_decision wrote into.
+expected_path="${TEKHTON_DIR:-.tekhton}/.commit_decision"
+if [[ "$expected_path" != /* ]] && [[ -n "${PROJECT_DIR:-}" ]]; then
+    expected_path="${PROJECT_DIR}/${expected_path}"
+fi
+if [[ -f "$expected_path" ]]; then
+    pass "15.3: sentinel path matches stages/intake.sh cleanup target"
+else
+    fail "15.3: sentinel path mismatch — wrote elsewhere than ${expected_path}"
+fi
+
 echo ""
 echo "=== Summary ==="
 echo "Passed: $PASS, Failed: $FAIL"

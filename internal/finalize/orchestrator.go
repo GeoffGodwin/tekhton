@@ -32,9 +32,6 @@ var hookOrder = []string{
 	"_hook_cleanup_resolved",
 	"_hook_resolve_notes",
 	"_hook_archive_reports",
-	"_hook_mark_done",
-	"_hook_cleanup_milestone",
-	"_hook_clear_state",
 	"_hook_health_reassess",
 	"_hook_emit_run_summary",
 	"_hook_emit_run_memory",
@@ -44,6 +41,19 @@ var hookOrder = []string{
 	"_hook_project_version_bump",
 	"_hook_changelog_append",
 	"_hook_commit",
+	// "Completion bookkeeping" hooks — mark_done / cleanup_milestone /
+	// clear_state — run AFTER _hook_commit and are gated by the
+	// `.tekhton/.commit_decision` sentinel that _hook_commit writes.
+	// Pre-2026-05 these ran before _hook_commit, which meant declining
+	// the interactive commit prompt (or a crash between mark_done and
+	// commit) left the manifest in a "done" state with no commit to
+	// back it up — the next `tekhton --milestone m23` then produced a
+	// no-op coder run because m23 was already "done." Moving them
+	// after commit + sentinel-gating them ensures milestone state
+	// changes only persist when the user actually committed the work.
+	"_hook_mark_done",
+	"_hook_cleanup_milestone",
+	"_hook_clear_state",
 	"_hook_project_version_tag",
 	"_hook_update_check",
 	"_hook_final_dashboard_status",

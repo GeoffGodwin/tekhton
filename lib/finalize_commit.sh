@@ -39,6 +39,30 @@ _do_git_commit() {
     log "$summary"
 }
 
+# _write_commit_decision DECISION
+# Writes the commit decision sentinel that downstream completion hooks
+# (mark_done, cleanup_milestone, clear_state) read to decide whether to
+# fire. Values: "committed" (user said y/e), "declined" (user said n or
+# anything else), "skipped" (commit was bypassed by an earlier gate).
+# Each finalize hook runs in its own bash subprocess under the Go shim,
+# so an in-memory variable will not survive — the sentinel file is the
+# only reliable carrier.
+_write_commit_decision() {
+    local decision="$1"
+    local dir="${TEKHTON_DIR:-.tekhton}"
+    if [[ "$dir" != /* ]] && [[ -n "${PROJECT_DIR:-}" ]]; then
+        dir="${PROJECT_DIR}/${dir}"
+    fi
+    mkdir -p "$dir" 2>/dev/null || {
+        warn "_write_commit_decision: could not create ${dir}"
+        return 1
+    }
+    printf '%s\n' "$decision" > "${dir}/.commit_decision" || {
+        warn "_write_commit_decision: could not write ${dir}/.commit_decision"
+        return 1
+    }
+}
+
 # _tag_milestone_if_complete
 # Creates the milestone tag once the commit has landed. Reads
 # _CACHED_DISPOSITION so it behaves correctly even after _hook_clear_state
@@ -73,7 +97,14 @@ _final_check_result_read() {
 # and either commits/edits/skips based on user input.
 _hook_commit() {
     local exit_code="$1"
-    [[ "$exit_code" -ne 0 ]] && return 0
+    if [[ "$exit_code" -ne 0 ]]; then
+        # Pipeline failed before reaching the commit gate; gate the
+        # downstream completion hooks (mark_done / cleanup_milestone /
+        # clear_state) on the same "skipped" sentinel so the manifest
+        # is not mutated on failure paths either.
+        _write_commit_decision "skipped"
+        return 0
+    fi
     # FINAL_CHECK_RESULT is set in-process when this hook happens to share a
     # shell with _hook_final_checks (legacy / test paths). Under the Go
     # orchestrator each hook is its own subprocess so we ALSO read the
@@ -85,6 +116,7 @@ _hook_commit() {
         warn "Commit blocked: final checks failed (FINAL_CHECK_RESULT=${FINAL_CHECK_RESULT:-0}, persisted=${_fcr_persisted})."
         warn "Resolve the failures shown above, then commit manually with: git add -A && git commit"
         warn "To skip the gate intentionally, run: tekhton finalize --commit-on-test-failure (TBD)."
+        _write_commit_decision "skipped"
         return 0
     fi
 
@@ -168,6 +200,7 @@ _hook_commit() {
         y|Y)
             _do_git_commit "$COMMIT_MSG"
             _COMMIT_SUCCEEDED=true
+            _write_commit_decision "committed"
             if command -v update_checkpoint_commit &>/dev/null; then
                 update_checkpoint_commit "$(git rev-parse HEAD 2>/dev/null || echo "")"
             fi
@@ -186,6 +219,7 @@ _hook_commit() {
             rm "$tmpfile"
             _do_git_commit "$edited_msg"
             _COMMIT_SUCCEEDED=true
+            _write_commit_decision "committed"
             if command -v update_checkpoint_commit &>/dev/null; then
                 update_checkpoint_commit "$(git rev-parse HEAD 2>/dev/null || echo "")"
             fi
@@ -198,6 +232,7 @@ _hook_commit() {
             log "Skipped commit. When ready:"
             echo "  git add -A && git commit -m '${COMMIT_MSG%%$'\n'*}'"
             _COMMIT_SUCCEEDED=false
+            _write_commit_decision "declined"
             _print_next_action
             ;;
     esac

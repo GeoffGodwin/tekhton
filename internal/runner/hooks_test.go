@@ -162,6 +162,16 @@ echo "${_CACHED_DISPOSITION}" >> "$PROJECT_DIR/disposition.txt"
 	if err := os.WriteFile(statePath, []byte("pending"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Simulate a committed run — the post-2026-05 gate requires
+	// .tekhton/.commit_decision = "committed" for clear_state /
+	// mark_done / cleanup_milestone to fire.
+	tekhtonDir := filepath.Join(proj, ".tekhton")
+	if err := os.MkdirAll(tekhtonDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tekhtonDir, ".commit_decision"), []byte("committed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	h := &BashHookRunner{TekhtonHome: home}
 	req := &proto.RunRequestV1{
 		ProjectDir: proj,
@@ -178,8 +188,8 @@ echo "${_CACHED_DISPOSITION}" >> "$PROJECT_DIR/disposition.txt"
 	if !strings.Contains(string(got), "COMPLETE_AND_CONTINUE") {
 		t.Fatalf("expected COMPLETE_AND_CONTINUE in shim env; got %q", got)
 	}
-	// _hook_clear_state is Go-native and runs first among the completion
-	// gates — it should have removed MILESTONE_STATE.md.
+	// _hook_clear_state is Go-native — it should have removed
+	// MILESTONE_STATE.md (gated by the committed sentinel above).
 	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
 		t.Errorf("expected MILESTONE_STATE.md removed by clear_state; got err=%v", err)
 	}
@@ -318,6 +328,17 @@ func TestBashHookRunnerFinalizeMarkDoneFlipsManifestStatus(t *testing.T) {
 		"# id|title|status|depends_on|file|parallel_group\n" +
 		"m21|Finalize Orchestrator Port|todo||m21-finalize-orchestrator-port.md|\n"
 	if err := os.WriteFile(manifestPath, []byte(manifestContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate a committed run — post-2026-05 the mark_done gate
+	// requires .tekhton/.commit_decision = "committed" so a declined
+	// commit prompt does not silently flip the manifest.
+	tekhtonDir := filepath.Join(proj, ".tekhton")
+	if err := os.MkdirAll(tekhtonDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tekhtonDir, ".commit_decision"), []byte("committed\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

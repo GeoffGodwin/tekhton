@@ -26,6 +26,7 @@ func TestCleanupMilestone_RemovesFileOnCompleteContinue(t *testing.T) {
 	if err := os.WriteFile(bodyPath, []byte("# m21 — body\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	writeCommitDecision(t, dir, "committed")
 	h := &CleanupMilestone{}
 	in := &Input{
 		ExitCode:             0,
@@ -43,6 +44,51 @@ func TestCleanupMilestone_RemovesFileOnCompleteContinue(t *testing.T) {
 	// Manifest itself should not be touched.
 	if _, err := os.Stat(manifestPath); err != nil {
 		t.Errorf("manifest should be preserved; got %v", err)
+	}
+}
+
+// TestCleanupMilestone_GatedByCommitDecisionSentinel locks in the 2026-05
+// fix: declined commit must NOT delete the milestone file (otherwise
+// `tekhton --milestone m23` after a declined prompt sees no file and
+// reports the milestone as missing). Regression that ate 5+ hollow M23
+// runs before the root cause was identified.
+func TestCleanupMilestone_GatedByCommitDecisionSentinel(t *testing.T) {
+	for _, decision := range []string{"declined", "skipped", ""} {
+		t.Run("decision="+decision, func(t *testing.T) {
+			dir := t.TempDir()
+			milestoneDir := filepath.Join(dir, ".claude", "milestones")
+			if err := os.MkdirAll(milestoneDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			manifestPath := filepath.Join(milestoneDir, "MANIFEST.cfg")
+			content := "# Tekhton Milestone Manifest v1\n" +
+				"# id|title|status|depends_on|file|parallel_group\n" +
+				"m21|t|done||m21-body.md|\n"
+			if err := os.WriteFile(manifestPath, []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			bodyPath := filepath.Join(milestoneDir, "m21-body.md")
+			if err := os.WriteFile(bodyPath, []byte("body"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if decision != "" {
+				writeCommitDecision(t, dir, decision)
+			}
+			h := &CleanupMilestone{}
+			in := &Input{
+				ExitCode:             0,
+				ProjectDir:           dir,
+				Milestone:            "m21",
+				MilestoneMode:        true,
+				MilestoneDisposition: "COMPLETE_AND_CONTINUE",
+			}
+			if err := h.Run(context.Background(), in); err != nil {
+				t.Fatalf("CleanupMilestone.Run: %v", err)
+			}
+			if _, err := os.Stat(bodyPath); err != nil {
+				t.Errorf("decision=%q: milestone body should survive; stat err=%v", decision, err)
+			}
+		})
 	}
 }
 

@@ -67,6 +67,15 @@ echo "reviewer report stub" > "${FIXTURE}/.tekhton/REVIEWER_REPORT.md"
 # MILESTONE_STATE.md so clear_state has something to remove.
 echo "stale state" > "${FIXTURE}/.claude/MILESTONE_STATE.md"
 
+# Pre-seed .commit_decision = "committed". Post-2026-05 the completion
+# hooks (mark_done, cleanup_milestone, clear_state) gate on this
+# sentinel so a declined or absent commit prompt does not silently
+# mutate manifest/file state. The parity test simulates a clean,
+# successful run that the user would commit, so write "committed"
+# directly (we don't drive `_hook_commit` here because TASK et al.
+# aren't populated through the bare `tekhton finalize` CLI path).
+printf 'committed\n' > "${FIXTURE}/.tekhton/.commit_decision"
+
 # Run the orchestrator directly via the CLI.
 export TEKHTON_HOME PROJECT_DIR="$FIXTURE"
 "$TEKHTON_BIN" finalize \

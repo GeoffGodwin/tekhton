@@ -31,15 +31,18 @@ set -euo pipefail
 # Pre-stage gate that evaluates task/milestone clarity.
 # Produces ${INTAKE_REPORT_FILE} with verdict and confidence score.
 run_stage_intake() {
-    # Pipeline-start cleanup: clear any stale .final_check_result sentinel
-    # from a prior crashed/interrupted run. This is the single owner of
-    # sentinel lifecycle — stages may WRITE it (via trip_commit_gate) and
-    # _hook_commit READS it, but nothing else CLEARS it. Putting the clear
-    # here (first stage, runs once) means stage-trips written during the
-    # current run always persist through finalize into the commit gate.
-    # Intake always runs first per the default stage order; skipping intake
-    # via INTAKE_AGENT_ENABLED=false still falls through to the clear.
-    rm -f "${TEKHTON_DIR:-.tekhton}/.final_check_result" 2>/dev/null || true
+    # Pipeline-start cleanup: clear any stale sentinels from a prior
+    # crashed/interrupted run. This is the single owner of sentinel
+    # lifecycle for the per-run state files in TEKHTON_DIR:
+    #   - .final_check_result   : stages write (trip_commit_gate); _hook_commit reads
+    #   - .commit_decision      : _hook_commit writes ("committed"|"declined"|"skipped");
+    #                             completion hooks (mark_done, cleanup_milestone,
+    #                             clear_state) read to gate manifest mutations
+    # Stages may WRITE either; nothing else CLEARS them. Putting the
+    # clear here (first stage, runs once) ensures fresh state every run.
+    rm -f "${TEKHTON_DIR:-.tekhton}/.final_check_result" \
+          "${TEKHTON_DIR:-.tekhton}/.commit_decision" \
+          2>/dev/null || true
 
     # Skip if disabled
     if [[ "${INTAKE_AGENT_ENABLED:-true}" != "true" ]]; then
