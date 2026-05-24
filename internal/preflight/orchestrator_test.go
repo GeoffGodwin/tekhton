@@ -18,6 +18,7 @@ func TestCheckOrder_MatchesRegistration(t *testing.T) {
 		"foundation",
 		"ui_audit",
 		"env",
+		"claude_env",
 		"services_infer",
 		"services",
 	}
@@ -36,8 +37,8 @@ func TestCheckOrder_MatchesRegistration(t *testing.T) {
 // constructor registers exactly five checks in checkOrder.
 func TestNewOrchestrator_BuildsAllFiveChecks(t *testing.T) {
 	o := NewOrchestrator("/tmp/tekhton", "/tmp/project")
-	if len(o.Checks) != 5 {
-		t.Errorf("NewOrchestrator must register 5 checks; got %d", len(o.Checks))
+	if len(o.Checks) != 6 {
+		t.Errorf("NewOrchestrator must register 6 checks; got %d", len(o.Checks))
 	}
 	for i, name := range CheckOrder() {
 		if o.Checks[i].Name() != name {
