@@ -339,6 +339,20 @@ func buildArgs(req *proto.AgentRequestV1) []string {
 		// flag since the original 2.1 cutover; the Go supervisor's
 		// buildArgs missed it during the m18 stagerunner port.
 		"--dangerously-skip-permissions",
+		// Claude CLI 2.1 persists every -p invocation to disk so the
+		// user can `claude --resume` it later. The supervisor never
+		// resumes (each agent call is one-shot) so this just pollutes
+		// ~/.claude/sessions/ and leaks role+task content. Disabling
+		// is supported only with --print, which we always use.
+		"--no-session-persistence",
+		// Lock the MCP server set to empty. Without --strict-mcp-config
+		// claude reads project .mcp.json, user-level settings, and any
+		// project config — making "what tools did this run have" depend
+		// on the user's shell state instead of the request. The inline
+		// `{"mcpServers":{}}` form sidesteps needing a temp file (the
+		// flag accepts JSON strings as well as file paths in 2.1.x).
+		"--strict-mcp-config",
+		"--mcp-config", `{"mcpServers":{}}`,
 	}
 	if req.AllowedTools != "" {
 		args = append(args, "--allowedTools", req.AllowedTools)

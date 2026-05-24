@@ -299,10 +299,65 @@ func TestBuildArgs_MinimalRequest(t *testing.T) {
 		PromptFile: "/tmp/p.prompt",
 	}
 	got := buildArgs(req)
-	want := []string{"-p", "--model", "claude-opus-4-7", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"}
-	if strings.Join(got, " ") != strings.Join(want, " ") {
-		t.Errorf("buildArgs: got %v, want %v", got, want)
+	want := []string{
+		"-p", "--model", "claude-opus-4-7",
+		"--output-format", "stream-json", "--verbose",
+		"--dangerously-skip-permissions",
+		"--no-session-persistence",
+		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`,
 	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("buildArgs:\n got %v\nwant %v", got, want)
+	}
+}
+
+// V4 #10: --no-session-persistence must be in argv unconditionally. Without
+// it claude CLI 2.1 writes every -p invocation to ~/.claude/sessions/ —
+// leaking role + task content to disk and growing without bound across the
+// hundreds of supervised agent calls a single pipeline run produces.
+func TestBuildArgs_AlwaysIncludesNoSessionPersistence(t *testing.T) {
+	req := &proto.AgentRequestV1{
+		Proto:      proto.AgentRequestProtoV1,
+		Label:      "coder",
+		Model:      "M",
+		PromptFile: "/p",
+	}
+	joined := strings.Join(buildArgs(req), " ")
+	if !strings.Contains(joined, "--no-session-persistence") {
+		t.Errorf("buildArgs missing --no-session-persistence: %s", joined)
+	}
+}
+
+// V4 commit 2: --strict-mcp-config + an empty inline --mcp-config must be in
+// argv. Without --strict-mcp-config, claude CLI 2.1 picks up MCP servers
+// from project .mcp.json, user-level settings, and any project config —
+// making "what tools did this run have" depend on the user's shell state
+// instead of the request. The inline `{"mcpServers":{}}` form (the flag
+// accepts JSON strings as well as file paths) avoids needing a temp file.
+func TestBuildArgs_LocksMCPServersToEmpty(t *testing.T) {
+	req := &proto.AgentRequestV1{
+		Proto:      proto.AgentRequestProtoV1,
+		Label:      "coder",
+		Model:      "M",
+		PromptFile: "/p",
+	}
+	args := buildArgs(req)
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--strict-mcp-config") {
+		t.Errorf("buildArgs missing --strict-mcp-config: %s", joined)
+	}
+	// Inline JSON must be the EXACT next arg after --mcp-config; if a
+	// future refactor reorders this and drops the JSON payload, claude
+	// would fall back to reading project config.
+	for i, a := range args {
+		if a == "--mcp-config" {
+			if i+1 >= len(args) || args[i+1] != `{"mcpServers":{}}` {
+				t.Errorf("buildArgs --mcp-config payload wrong: got %q", args[i+1:])
+			}
+			return
+		}
+	}
+	t.Errorf("buildArgs missing --mcp-config: %s", joined)
 }
 
 // Claude CLI 2.1 rejects `-p --output-format stream-json` without `--verbose`.
