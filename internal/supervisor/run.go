@@ -303,14 +303,24 @@ func buildArgs(req *proto.AgentRequestV1) []string {
 		"--model", req.Model,
 		"--output-format", "stream-json",
 		"--verbose",
+		// Claude CLI 2.1 has TWO permission systems and we need both:
+		//   - --allowedTools whitelists tool NAMES (#47 wired this up)
+		//   - --dangerously-skip-permissions bypasses the per-invocation
+		//     approval prompts that block tool USE in non-interactive
+		//     -p mode (this fix)
+		// Without this flag, agents in -p mode could SEE the Write/Edit/
+		// Bash tools in their allowed list but every actual invocation
+		// silently failed when claude tried to ask "approve this?" and
+		// got no stdin response. M23 #5 surfaced this: scout saw 37 files
+		// to modify but coder ran 8 turns and produced nothing — every
+		// tool call after a few attempts was being denied with no error
+		// visible to the supervisor's stream-json decoder.
+		//
+		// The legacy plan agent (lib/plan_batch.sh:91) has used this
+		// flag since the original 2.1 cutover; the Go supervisor's
+		// buildArgs missed it during the m18 stagerunner port.
+		"--dangerously-skip-permissions",
 	}
-	// Claude CLI 2.1's -p mode does NOT include Write in the default tool
-	// set, so agents whose prompt tells them to create a new file (e.g.
-	// REVIEWER_REPORT.md, CODER_SUMMARY.md) silently no-op. Without this
-	// flag, every stage that synthesized a report-not-written fallback
-	// was hiding a real bug (#47). Pass --allowedTools verbatim when the
-	// bash side supplied a tool list; omit entirely when empty so that
-	// the parity-test fixtures that don't care about tooling stay green.
 	if req.AllowedTools != "" {
 		args = append(args, "--allowedTools", req.AllowedTools)
 	}

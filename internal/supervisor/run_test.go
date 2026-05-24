@@ -299,7 +299,7 @@ func TestBuildArgs_MinimalRequest(t *testing.T) {
 		PromptFile: "/tmp/p.prompt",
 	}
 	got := buildArgs(req)
-	want := []string{"-p", "--model", "claude-opus-4-7", "--output-format", "stream-json", "--verbose"}
+	want := []string{"-p", "--model", "claude-opus-4-7", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("buildArgs: got %v, want %v", got, want)
 	}
@@ -317,6 +317,25 @@ func TestBuildArgs_RequiresVerboseForStreamJSON(t *testing.T) {
 	joined := strings.Join(buildArgs(req), " ")
 	if !strings.Contains(joined, "--verbose") {
 		t.Errorf("buildArgs missing --verbose for stream-json: %s", joined)
+	}
+}
+
+// --dangerously-skip-permissions must always be in argv. Claude CLI 2.1's
+// -p mode otherwise blocks tool USE even when tool NAMES are allowed via
+// --allowedTools — agent sees Write/Edit/Bash in its allowed list but
+// every actual invocation silently fails when claude tries to ask
+// "approve this?" and gets no stdin response. M23 #5 ran 8 turns of
+// coder doing nothing because of this.
+func TestBuildArgs_AlwaysIncludesSkipPermissions(t *testing.T) {
+	req := &proto.AgentRequestV1{
+		Proto:      proto.AgentRequestProtoV1,
+		Label:      "coder",
+		Model:      "M",
+		PromptFile: "/p",
+	}
+	joined := strings.Join(buildArgs(req), " ")
+	if !strings.Contains(joined, "--dangerously-skip-permissions") {
+		t.Errorf("buildArgs missing --dangerously-skip-permissions: %s", joined)
 	}
 }
 
