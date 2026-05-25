@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 133
+- Runs since audit: 134
 
 ## Unresolved Observations
 - [2026-05-25 | "unknown"] `internal/tui/status.go:14-28` (pre-m19 file, unmodified by m23) uses `schema` as the JSON discriminator field (`schema: "tekhton.tui.status.v1"`) while the m23 proto envelope uses `proto`. The Python sidecar's `_read_status` checks `doc.get("proto")`, so files written by `WriteInitial` fall through to the bare-payload path — functionally acceptable, but the mismatched discriminator key is invisible to proto-skew detection and could confuse future work when the two writers are expected to be interchangeable.
