@@ -277,9 +277,7 @@ REVIEW_EOF
                     _phase_start "rework_agent"
                     # M116: rework is a substage of review — it records as a
                     # breadcrumb without opening a new pipeline-stage pill.
-                    if declare -f tui_substage_begin &>/dev/null; then
-                        tui_substage_begin "rework" "${CLAUDE_CODER_MODEL:-}"
-                    fi
+                    _tui_call substage-begin --label "rework"
                     run_agent \
                         "Coder (rework cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_CODER_MODEL" \
@@ -287,9 +285,7 @@ REVIEW_EOF
                         "$REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_CODER"
-                    if declare -f tui_substage_end &>/dev/null; then
-                        tui_substage_end "rework" ""
-                    fi
+                    _tui_call substage-end --label "rework"
                     _phase_end "rework_agent"
                     # M96 (IA1): suppress print_run_summary after sub-agent
                     # completions; the next Reviewer pass will print the
@@ -323,9 +319,7 @@ REVIEW_EOF
 
                     # M116: rework is a substage of review — it records as a
                     # breadcrumb without opening a new pipeline-stage pill.
-                    if declare -f tui_substage_begin &>/dev/null; then
-                        tui_substage_begin "rework" "${CLAUDE_JR_CODER_MODEL:-}"
-                    fi
+                    _tui_call substage-begin --label "rework"
                     run_agent \
                         "Jr Coder (cycle ${REVIEW_CYCLE})" \
                         "$CLAUDE_JR_CODER_MODEL" \
@@ -333,9 +327,7 @@ REVIEW_EOF
                         "$JR_REWORK_PROMPT" \
                         "$LOG_FILE" \
                         "$AGENT_TOOLS_JR_CODER"
-                    if declare -f tui_substage_end &>/dev/null; then
-                        tui_substage_end "rework" ""
-                    fi
+                    _tui_call substage-end --label "rework"
                     # M96 (IA1): suppress print_run_summary after sub-agent
                     # completions (jr coder); next Reviewer pass covers it.
                     success "Jr coder cleanup finished."

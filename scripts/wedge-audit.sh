@@ -169,14 +169,13 @@ PATTERNS=(
     '\b_pf_uitest_playwright\b'
     '\b_pf_infer_from_compose\b'
     '\b_PF_REPORT_LINES\b'
-    # m23 (Phase 5): the TUI writer subsystem ported to internal/tui/. The
-    # five satellite bash files (tui_helpers.sh, tui_liveness.sh, tui_ops.sh,
-    # tui_ops_pause.sh, tui_ops_substage.sh) were deleted; lib/tui.sh remains
-    # as a thin shim whose every function body just execs `tekhton tui ...`.
+    # m23 (Phase 5): the TUI writer subsystem ported to internal/tui/. All
+    # six bash files (tui.sh, tui_helpers.sh, tui_liveness.sh, tui_ops.sh,
+    # tui_ops_pause.sh, tui_ops_substage.sh) were deleted; the small
+    # remaining bash residue (Python sidecar spawn/kill + the `_tui_call`
+    # helper that execs `tekhton tui ...`) lives in lib/sidecar_lifecycle.sh.
     # The names below were the bash internal entry points exposed by the
-    # deleted files; any reappearance is a regression. The public tui_*
-    # functions (tui_start, tui_stage_begin, etc.) are intentionally _not_
-    # listed here — they are the shim seam in lib/tui.sh.
+    # deleted files; any reappearance is a regression.
     '\b_tui_json_build_status\b'
     '\b_tui_json_stage\b'
     '\b_tui_recent_events_json\b'

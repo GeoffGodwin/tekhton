@@ -16,6 +16,11 @@ set -euo pipefail
 #   out_log/warn/error/success/header — convenience wrappers for new callers
 # =============================================================================
 
+# m23: TUI sidecar lifecycle + _tui_call helper. Defines _TUI_ACTIVE,
+# _TUI_PID, _TUI_STATUS_FILE globals used by the _out_emit gating below.
+# shellcheck source=sidecar_lifecycle.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/sidecar_lifecycle.sh"
+
 # shellcheck disable=SC2034  # _OUT_CTX is read by callers via out_ctx
 declare -gA _OUT_CTX=()
 
@@ -121,14 +126,14 @@ out_success() { _out_emit success "$*"; }
 out_header()  { _out_emit header  "$*"; }
 
 # out_complete VERDICT — signal end-of-run to the display layer.
-# In TUI mode, delegates to tui_complete which flips complete=true in the
-# JSON status (triggering the sidecar's hold-on-complete screen), then waits
-# for Enter + tears the sidecar down. In CLI mode this is a no-op — the
-# finalize banner already prints via out_ primitives.
+# In TUI mode, delegates to _sidecar_complete_hold which flips complete=true
+# in the JSON status (triggering the sidecar's hold-on-complete screen), then
+# waits for Enter + tears the sidecar down. In CLI mode this is a no-op —
+# the finalize banner already prints via out_ primitives.
 out_complete() {
     local verdict="${1:-}"
-    if declare -f tui_complete &>/dev/null; then
-        tui_complete "$verdict"
+    if declare -f _sidecar_complete_hold &>/dev/null; then
+        _sidecar_complete_hold "$verdict"
     fi
 }
 

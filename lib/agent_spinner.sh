@@ -60,7 +60,7 @@ _start_agent_spinner() {
         ) &
         spinner_pid=$!
     elif [[ -z "${TEKHTON_TEST_MODE:-}" ]] && [[ "${_TUI_ACTIVE:-false}" == "true" ]] \
-         && declare -f tui_update_agent &>/dev/null; then
+         && declare -f _tui_call &>/dev/null; then
         # TUI active: lightweight updater pushes turn count to the sidecar.
         # No terminal writes of any kind in this path.
         (
@@ -75,7 +75,8 @@ _start_agent_spinner() {
                     [[ "$_cur_turns" =~ ^[0-9]+$ ]] && _turns_display="$_cur_turns"
                 fi
                 [[ "$_turns_display" =~ ^[0-9]+$ ]] && _tui_turns="$_turns_display"
-                tui_update_agent "$_tui_turns" "$max_turns" "$elapsed" 2>/dev/null || true
+                _tui_call update-agent --turns-used "$_tui_turns" \
+                    --turns-max "$max_turns" --elapsed-secs "$elapsed"
                 sleep 0.2
             done
         ) &

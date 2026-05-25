@@ -22,9 +22,11 @@ PASS=0; FAIL=0
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1 — $2"; FAIL=$((FAIL+1)); }
 
-# Define tui_update_agent stub BEFORE sourcing agent_spinner.sh so
-# `declare -f tui_update_agent` succeeds inside the TUI-path condition.
-tui_update_agent() { :; }
+# m23: define the _tui_call stub BEFORE sourcing agent_spinner.sh so
+# `declare -f _tui_call` succeeds inside the TUI-path condition. The TUI
+# updater subshell now invokes `_tui_call update-agent ...` instead of the
+# deleted `tui_update_agent` shim.
+_tui_call() { :; }
 
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/agent_spinner.sh"

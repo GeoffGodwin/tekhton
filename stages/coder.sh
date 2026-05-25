@@ -258,15 +258,13 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         SCOUT_PROMPT=$(render_prompt "scout")
 
         # M114: scout runs as a *substage* inside the open coder pipeline
-        # stage. tui_substage_begin/end record current_substage_label without
-        # mutating the parent coder lifecycle id, stage_order, or the
-        # completed-stages list (post-m23 owned by internal/tui/) — so the
-        # pill row stays "coder" and the completed-stages list never grows
-        # a "scout" entry. The renderer turns this into a "coder » scout"
-        # breadcrumb in the live timings row.
-        if declare -f tui_substage_begin &>/dev/null; then
-            tui_substage_begin "scout" "${CLAUDE_SCOUT_MODEL:-}"
-        fi
+        # stage. `tekhton tui substage-begin/end` record current_substage
+        # without mutating the parent coder lifecycle id, stage_order, or
+        # the completed-stages list — so the pill row stays "coder" and
+        # the completed-stages list never grows a "scout" entry. The
+        # renderer turns this into a "coder » scout" breadcrumb in the
+        # live timings row.
+        _tui_call substage-begin --label "scout"
         run_agent \
             "Scout" \
             "$CLAUDE_SCOUT_MODEL" \
@@ -274,9 +272,7 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
             "$SCOUT_PROMPT" \
             "$LOG_FILE" \
             "$_scout_tools"
-        if declare -f tui_substage_end &>/dev/null; then
-            tui_substage_end "scout" "PASS"
-        fi
+        _tui_call substage-end --label "scout" --verdict "PASS"
 
         if [ -f "${SCOUT_REPORT_FILE}" ]; then
             # M96 (IA1): scout one-liner status below is sufficient — skip

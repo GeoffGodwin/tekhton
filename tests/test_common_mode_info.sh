@@ -12,13 +12,17 @@ _TUI_ACTIVE=false
 LOG_FILE=""
 TUI_APPEND_EVENT_CALLS=0
 
-# Stub tui_append_event to track calls without requiring TUI sidecar
-tui_append_event() {
-    ((TUI_APPEND_EVENT_CALLS++)) || true
-}
-
-# Source common.sh
+# Source common.sh (transitively pulls in sidecar_lifecycle.sh's _tui_call).
 source "$TEKHTON_HOME/lib/common.sh"
+
+# m23: stub _tui_call AFTER sourcing so we override the lifecycle helper
+# rather than racing it. Increment on append-event subcommand only — the
+# subcommand router is what the post-m23 _tui_notify drives.
+_tui_call() {
+    local sub="${1:-}"
+    [[ "$sub" == "append-event" ]] && { ((TUI_APPEND_EVENT_CALLS++)) || true; }
+    return 0
+}
 
 # Test 1: Default behavior (TUI inactive, no log file)
 # Should echo to stdout with CYAN color and [~] prefix

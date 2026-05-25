@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_quota_sleep_chunked.sh — _quota_sleep_chunked chunk-math (M124)
+# test_quota_sleep_chunked.sh — _quota_sleep_chunked chunk-math (M124, m23)
 #
 # Verifies lib/quota_sleep.sh:_quota_sleep_chunked:
 #   - Iterates in QUOTA_SLEEP_CHUNK-sized steps (not one big sleep)
-#   - Calls tui_update_pause exactly once per chunk with correct remaining
+#   - Calls `_tui_call pause-update --next-in <remaining>` once per chunk
 #   - Handles partial final chunk (remainder < chunk)
 #   - Handles total=0 (no sleep, no update call)
 #   - Falls back to chunk=5 when QUOTA_SLEEP_CHUNK is unset
 #   - Falls back to chunk=5 when QUOTA_SLEEP_CHUNK is non-numeric
-#   - Silently skips tui_update_pause when the function is not defined
-#   - Silently skips tui_update_pause when _pause_start is 0
+#   - Silently skips pause-update when _tui_call is not defined
+#
+# m23 update: pause-update used to go through the bash `tui_update_pause`
+# shim. The shim was deleted; lib/sidecar_lifecycle.sh::_tui_call is the
+# single bash → Go seam now. The test stubs _tui_call and counts pause-update
+# invocations.
 # =============================================================================
 set -euo pipefail
 
@@ -27,12 +31,27 @@ fail() { echo "  FAIL: $1 — $2"; FAIL=$((FAIL+1)); }
 # Mock sleep so tests don't actually wait.
 sleep() { : ; }
 
-# =============================================================================
-echo "=== chunk-math: total=6, chunk=2 → 3 calls ==="
+# _tui_call mock — records every `pause-update --next-in N` invocation.
+# Ignores other subcommands so callers in production can route many flows
+# through the same helper.
 _CALLS=0
 _REMAINING_LOG=""
-tui_update_pause() { _CALLS=$((_CALLS+1)); _REMAINING_LOG="${_REMAINING_LOG}${1} "; }
+_tui_call() {
+    local sub="${1:-}"; shift || true
+    [[ "$sub" == "pause-update" ]] || return 0
+    local next_in=""
+    while (( $# > 0 )); do
+        case "$1" in
+            --next-in) next_in="${2:-}"; shift 2 ;;
+            *)         shift ;;
+        esac
+    done
+    _CALLS=$((_CALLS+1))
+    _REMAINING_LOG="${_REMAINING_LOG}${next_in} "
+}
 
+# =============================================================================
+echo "=== chunk-math: total=6, chunk=2 → 3 calls ==="
 QUOTA_SLEEP_CHUNK=2
 _CALLS=0; _REMAINING_LOG=""
 _quota_sleep_chunked 6 0
@@ -62,7 +81,7 @@ _quota_sleep_chunked 1 0
     || fail "remaining log" "got '$_REMAINING_LOG'"
 
 # =============================================================================
-echo "=== total=0 → no sleep, no tui_update_pause call ==="
+echo "=== total=0 → no sleep, no pause-update call ==="
 _CALLS=0
 QUOTA_SLEEP_CHUNK=5
 _quota_sleep_chunked 0 0
@@ -87,12 +106,12 @@ _quota_sleep_chunked 10 0
     || fail "call count" "expected 2, got $_CALLS"
 
 # =============================================================================
-echo "=== absent tui_update_pause → no error, loop still completes ==="
-unset -f tui_update_pause
+echo "=== absent _tui_call → no error, loop still completes ==="
+unset -f _tui_call
 # shellcheck disable=SC2034  # Read by _quota_sleep_chunked (sourced function)
 QUOTA_SLEEP_CHUNK=1
 rc=0; _quota_sleep_chunked 3 0 || rc=$?
-[[ "$rc" -eq 0 ]] && pass "absent tui_update_pause: clean exit" \
+[[ "$rc" -eq 0 ]] && pass "absent _tui_call: clean exit" \
     || fail "exit code" "expected 0, got $rc"
 
 # =============================================================================

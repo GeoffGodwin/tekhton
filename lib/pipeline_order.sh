@@ -193,7 +193,7 @@ get_display_stage_order() {
                 ;;
         esac
         # Single canonical label mapping — keeps pill labels in lockstep with
-        # tui_stage_begin/end call sites, which also route through
+        # `tekhton tui stage-begin/end` call sites, which also route through
         # get_stage_display_label. A new stage added to the pipeline order is
         # labeled consistently in both paths via the shared registry.
         label=$(get_stage_display_label "$s")
@@ -209,7 +209,7 @@ get_display_stage_order() {
 # get_stage_display_label NAME
 # Returns the display label used in the TUI pill bar for a given internal stage name.
 # This is the single extension point: add new stage mappings HERE ONLY.
-# Both get_display_stage_order() and all tui_stage_begin/end call sites depend on
+# Both get_display_stage_order() and all `tekhton tui stage-begin/end` call sites depend on
 # this function. When a new stage is added to the pipeline, add its mapping here
 # first; the pill bar, timings column, and stage-complete records all update automatically.
 get_stage_display_label() {
@@ -227,7 +227,7 @@ get_stage_display_label() {
         # Fallback: replace underscores with hyphens. New stages MUST be added
         # above; this catch-all prevents hard failures during development.
         # get_display_stage_order() routes its labels through this function,
-        # so pill-row output and tui_stage_begin/end call sites stay aligned
+        # so pill-row output and `tekhton tui stage-begin/end` call sites stay aligned
         # even if a new stage only hits the fallback.
         *)               echo "${1//_/-}" ;;
     esac

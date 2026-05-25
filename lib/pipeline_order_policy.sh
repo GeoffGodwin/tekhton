@@ -60,7 +60,8 @@ get_stage_array_key() {
 # active  ∈ yes|no
 # parent  ∈ stage display label or "-"
 # NAME may be an internal name or a display label; callers should not rely
-# on raw field access — use tui_stage_begin/end / planner helpers instead.
+# on raw field access — use `tekhton tui stage-begin/end` or the planner
+# helpers instead.
 get_stage_policy() {
     local key
     key=$(get_stage_metrics_key "${1:-}")

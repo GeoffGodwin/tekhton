@@ -113,11 +113,13 @@ enter_quota_pause() {
     fi
 
     # M124/M125: surface the pause to the TUI sidecar. first_probe_delay is
-    # passed as the 4th argument so the countdown starts at the Retry-After-
-    # informed value rather than the default interval.
-    if command -v tui_enter_pause &>/dev/null; then
-        tui_enter_pause "${pause_reason}" "$base_interval" "$max_dur" "$first_delay" \
-            2>/dev/null || true
+    # passed so the countdown starts at the Retry-After-informed value rather
+    # than the default interval. The declare -f guard keeps standalone tests
+    # green (lib/quota.sh sourced without the full output.sh chain).
+    if declare -f _tui_call &>/dev/null; then
+        _tui_call pause-enter --reason "${pause_reason}" \
+            --retry-interval "$base_interval" --max-duration "$max_dur" \
+            --first-probe-delay "$first_delay"
     fi
 
     warn "Pipeline paused — ${pause_reason}. Waiting up to $(_quota_fmt_duration "$max_dur") for quota refresh (probing every $(_quota_fmt_duration "$base_interval"))."
@@ -132,15 +134,15 @@ enter_quota_pause() {
             _finalize_quota_pause "$pause_start"
             _QUOTA_PAUSED=false
             rm -f "$marker_file" 2>/dev/null || true
-            if command -v tui_exit_pause &>/dev/null; then
-                tui_exit_pause "timeout" 2>/dev/null || true
+            if declare -f _tui_call &>/dev/null; then
+                _tui_call pause-exit --result "timeout"
             fi
             return 1
         fi
 
         log "Quota probe attempt $((retry_count + 1)) — sleeping $(_quota_fmt_duration "$probe_delay")..."
-        if command -v tui_update_pause &>/dev/null; then
-            tui_update_pause "$probe_delay" "$elapsed" 2>/dev/null || true
+        if declare -f _tui_call &>/dev/null; then
+            _tui_call pause-update --next-in "$probe_delay"
         fi
         _quota_sleep_chunked "$probe_delay" "$pause_start"
         retry_count=$(( retry_count + 1 ))
@@ -150,8 +152,8 @@ enter_quota_pause() {
             log "Quota refreshed after $(_quota_fmt_duration "$elapsed") (${retry_count} probes)."
             _finalize_quota_pause "$pause_start"
             exit_quota_pause "$marker_file"
-            if command -v tui_exit_pause &>/dev/null; then
-                tui_exit_pause "refreshed" 2>/dev/null || true
+            if declare -f _tui_call &>/dev/null; then
+                _tui_call pause-exit --result "refreshed"
             fi
             return 0
         fi

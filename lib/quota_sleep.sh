@@ -10,9 +10,10 @@ set -euo pipefail
 
 # _quota_sleep_chunked TOTAL_SECS PAUSE_START
 # Sleep TOTAL_SECS in QUOTA_SLEEP_CHUNK-second steps so SIGINT/SIGTERM is
-# responsive within ~chunk seconds and so tui_update_pause can refresh
-# the countdown on a sub-minute cadence. PAUSE_START is forwarded as the
-# total-elapsed value passed into each tui_update_pause tick.
+# responsive within ~chunk seconds and so the pause countdown can refresh
+# on a sub-minute cadence. PAUSE_START is the original wall-clock start of
+# the pause; passed for completeness but the Go side computes elapsed
+# itself from the JSON state.
 _quota_sleep_chunked() {
     local total="${1:-0}"
     local pause_start="${2:-0}"
@@ -29,11 +30,10 @@ _quota_sleep_chunked() {
         fi
         sleep "$step"
         remaining=$(( remaining - step ))
-        if command -v tui_update_pause &>/dev/null; then
-            local _now _el=0
-            _now=$(date +%s)
-            [[ "$pause_start" -gt 0 ]] && _el=$(( _now - pause_start ))
-            tui_update_pause "$remaining" "$_el" 2>/dev/null || true
+        if declare -f _tui_call &>/dev/null; then
+            _tui_call pause-update --next-in "$remaining"
         fi
     done
+    # pause_start is accepted for caller compatibility; intentionally unused.
+    : "$pause_start"
 }

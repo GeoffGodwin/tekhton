@@ -16,6 +16,14 @@ import (
 // failing fast. validateAndDefault must return ErrMilestoneNotFound before
 // any expensive setup begins.
 func TestValidateMilestoneExistsRejectsPhantom(t *testing.T) {
+	// Isolate from the parent shell's MILESTONE_DIR / MILESTONE_MANIFEST_FILE,
+	// which point at the real repo manifest under TEKHTON_HOME and shadow the
+	// per-test tempdir manifest below. Without these unsets the test exercises
+	// the repo's MANIFEST.cfg state, not the fixture's, and the "frontier
+	// suggestion m23" assertion silently tracks whichever milestone happens
+	// to be the live frontier at the time the suite runs.
+	t.Setenv("MILESTONE_DIR", "")
+	t.Setenv("MILESTONE_MANIFEST_FILE", "")
 	proj := t.TempDir()
 	mDir := filepath.Join(proj, ".claude", "milestones")
 	if err := os.MkdirAll(mDir, 0o755); err != nil {

@@ -105,7 +105,11 @@ var DefaultLibHelpers = []string{
 	"lib/causality.sh",
 	"lib/causality_query.sh",
 	"lib/dashboard.sh",
-	"lib/tui.sh",
+	// m23: lib/tui.sh deleted (TUI writer subsystem ported to internal/tui/).
+	// The remaining bash residue (Python sidecar lifecycle + _tui_call) lives
+	// in lib/sidecar_lifecycle.sh, sourced transitively from lib/output.sh —
+	// which is itself sourced from lib/common.sh by the BashAdapter entry
+	// point, so it is not listed here.
 	"lib/inbox.sh",
 	"lib/report.sh",
 	"lib/failure_context.sh",

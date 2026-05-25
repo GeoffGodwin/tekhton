@@ -316,17 +316,32 @@ CAUSAL_LOG_ENABLED=true
 echo "=== M124: enter_quota_pause calls TUI helpers ==="
 # =============================================================================
 
-# Stub TUI helpers as counting shell functions and a stub _quota_probe that
-# always reports rate-limited so the loop runs to the max-duration timeout.
+# Stub the _tui_call helper (m23) as a counting subcommand router, and a
+# stub _quota_probe that always reports rate-limited so the loop runs to
+# the max-duration timeout.
 _TUI_ENTER_CALLS=0
 _TUI_UPDATE_CALLS=0
 _TUI_EXIT_CALLS=0
 _TUI_EXIT_RESULT=""
-tui_enter_pause()  { _TUI_ENTER_CALLS=$(( _TUI_ENTER_CALLS + 1 )); }
-tui_update_pause() { _TUI_UPDATE_CALLS=$(( _TUI_UPDATE_CALLS + 1 )); }
-tui_exit_pause()   {
-    _TUI_EXIT_CALLS=$(( _TUI_EXIT_CALLS + 1 ))
-    _TUI_EXIT_RESULT="${1:-}"
+_tui_call() {
+    local sub="${1:-}"; shift || true
+    case "$sub" in
+        pause-enter)
+            _TUI_ENTER_CALLS=$(( _TUI_ENTER_CALLS + 1 ))
+            ;;
+        pause-update)
+            _TUI_UPDATE_CALLS=$(( _TUI_UPDATE_CALLS + 1 ))
+            ;;
+        pause-exit)
+            _TUI_EXIT_CALLS=$(( _TUI_EXIT_CALLS + 1 ))
+            while (( $# > 0 )); do
+                case "$1" in
+                    --result) _TUI_EXIT_RESULT="${2:-}"; shift 2 ;;
+                    *)        shift ;;
+                esac
+            done
+            ;;
+    esac
 }
 _quota_probe() { return 1; }
 
@@ -344,18 +359,18 @@ rc=0; enter_quota_pause "test rate limit" || rc=$?
 
 assert "enter_quota_pause returns 1 on timeout" \
     "$([ "$rc" -eq 1 ] && echo 0 || echo 1)"
-assert "tui_enter_pause called exactly once" \
+assert "pause-enter called exactly once" \
     "$([ "$_TUI_ENTER_CALLS" -eq 1 ] && echo 0 || echo 1)"
-assert "tui_update_pause called >= 1 time" \
+assert "pause-update called >= 1 time" \
     "$([ "$_TUI_UPDATE_CALLS" -ge 1 ] && echo 0 || echo 1)"
-assert "tui_exit_pause called exactly once" \
+assert "pause-exit called exactly once" \
     "$([ "$_TUI_EXIT_CALLS" -eq 1 ] && echo 0 || echo 1)"
-assert "tui_exit_pause result is 'timeout'" \
+assert "pause-exit result is 'timeout'" \
     "$([ "$_TUI_EXIT_RESULT" = "timeout" ] && echo 0 || echo 1)"
 
 # Restore probe behaviour so subsequent tests aren't affected.
 unset -f _quota_probe
-unset -f tui_enter_pause tui_update_pause tui_exit_pause
+unset -f _tui_call
 QUOTA_RETRY_INTERVAL=300
 QUOTA_MAX_PAUSE_DURATION=18900
 _QUOTA_PAUSE_COUNT=0
@@ -411,10 +426,19 @@ assert "MAX_AUTONOMOUS_AGENT_CALLS matches canonical default (200)" "$([ "${MAX_
 echo "=== M125: enter_quota_pause honours Retry-After ==="
 # =============================================================================
 
-# Stub TUI helpers (reset from earlier section) and a controllable probe.
-tui_enter_pause()  { _TUI_FIRST_PROBE_DELAY="${4:-}"; }
-tui_update_pause() { :; }
-tui_exit_pause()   { :; }
+# Stub _tui_call (reset from earlier section) and a controllable probe.
+# Captures the --first-probe-delay flag value off `pause-enter` for the
+# Retry-After assertions below.
+_tui_call() {
+    local sub="${1:-}"; shift || true
+    [[ "$sub" == "pause-enter" ]] || return 0
+    while (( $# > 0 )); do
+        case "$1" in
+            --first-probe-delay) _TUI_FIRST_PROBE_DELAY="${2:-}"; shift 2 ;;
+            *)                   shift ;;
+        esac
+    done
+}
 
 # Probe stub: record wall-clock of each call and succeed on the first one.
 _PROBE_CALL_TIMES=()
@@ -445,7 +469,7 @@ assert "retry_after=8 triggers first probe ~8s later" \
        [ "$(( _PROBE_CALL_TIMES[0] - _PROBE_START_TS ))" -ge 7 ] && \
        [ "$(( _PROBE_CALL_TIMES[0] - _PROBE_START_TS ))" -le 10 ] && echo 0 || echo 1)"
 
-assert "tui_enter_pause received first_probe_delay=8" \
+assert "pause-enter received first-probe-delay=8" \
     "$([ "$_TUI_FIRST_PROBE_DELAY" = "8" ] && echo 0 || echo 1)"
 
 # Test: clamp retry_after below floor
@@ -476,7 +500,7 @@ enter_quota_pause "No retry-after" "" >/dev/null 2>&1
 assert "absent retry_after uses QUOTA_RETRY_INTERVAL=4" \
     "$([ "$_TUI_FIRST_PROBE_DELAY" = "4" ] && echo 0 || echo 1)"
 
-unset -f _quota_probe tui_enter_pause tui_update_pause tui_exit_pause
+unset -f _quota_probe _tui_call
 
 # =============================================================================
 echo "=== M125: probe mode detection + back-off ==="

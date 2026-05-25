@@ -3,21 +3,26 @@
 # test_out_complete.sh — M111 — out_complete() and _hook_tui_complete() tests
 #
 # Covers:
-#   1. out_complete() is a no-op when tui_complete is not defined
-#   2. out_complete() delegates to tui_complete when it IS defined
-#   3. out_complete "SUCCESS" passes "SUCCESS" to tui_complete
-#   4. out_complete "FAIL" passes "FAIL" to tui_complete
-#   5. out_complete silently no-ops when tui_complete is unset (no error)
+#   1. out_complete() is a no-op when _sidecar_complete_hold is not defined
+#   2. out_complete() delegates to _sidecar_complete_hold when it IS defined
+#   3. out_complete "SUCCESS" passes "SUCCESS" through
+#   4. out_complete "FAIL" passes "FAIL" through
+#   5. out_complete silently no-ops when _sidecar_complete_hold is unset
 #   6. _hook_tui_complete 0  → emits summary event, does NOT call out_complete
 #   7. _hook_tui_complete 1  → emits summary event, does NOT call out_complete
 #   8. _hook_tui_complete 42 → emits summary event, does NOT call out_complete
-#   9. _hook_tui_complete 0  → calls tui_stage_end "wrap-up" with SUCCESS
-#  10. _hook_tui_complete 1  → calls tui_stage_end "wrap-up" with FAIL
+#   9. _hook_tui_complete 0  → calls stage-end wrap-up SUCCESS via _tui_call
+#  10. _hook_tui_complete 1  → calls stage-end wrap-up FAIL via _tui_call
 #
-# M111 change: _hook_tui_complete no longer triggers out_complete (which would
-# kill the sidecar mid-run). Per-pass finalize_run() only closes the wrap-up
-# pill and emits a pass-complete summary event; the outer tekhton.sh dispatch
-# site calls out_complete once at true teardown.
+# m23 update: the bash `tui_*` shim functions are deleted. out_complete now
+# delegates to lib/sidecar_lifecycle.sh::_sidecar_complete_hold, and the
+# _hook_tui_complete hook body invokes `tekhton tui stage-end / append-event`
+# through the shared _tui_call helper instead of bash function calls.
+#
+# M111 invariant preserved: _hook_tui_complete still does NOT trigger
+# out_complete (which would kill the sidecar mid-run). Per-pass finalize_run()
+# only closes the wrap-up pill and emits a pass-complete summary event; the
+# outer tekhton.sh dispatch site calls out_complete once at true teardown.
 # =============================================================================
 set -euo pipefail
 
@@ -31,7 +36,6 @@ fail() { echo "  FAIL: $1 — $2"; FAIL=$((FAIL+1)); }
 
 # ── Stubs required before sourcing output.sh ──────────────────────────────────
 _tui_strip_ansi() { printf '%s' "$*"; }
-_tui_notify()     { :; }
 CYAN="" RED="" GREEN="" YELLOW="" BOLD="" NC=""
 
 # shellcheck source=../lib/output.sh
@@ -43,45 +47,43 @@ source "${TEKHTON_HOME}/lib/output_format.sh"
 echo "=== Part 1: out_complete() behaviour ==="
 # =============================================================================
 
-# --- Test 1: no-op when tui_complete is not defined --------------------------
-echo "--- Test 1: no-op when tui_complete absent ---"
+# --- Test 1: no-op when _sidecar_complete_hold is not defined ----------------
+echo "--- Test 1: no-op when _sidecar_complete_hold absent ---"
 
-# Ensure tui_complete is NOT defined
-if declare -f tui_complete &>/dev/null; then unset -f tui_complete; fi
+# Ensure _sidecar_complete_hold is NOT defined.
+if declare -f _sidecar_complete_hold &>/dev/null; then unset -f _sidecar_complete_hold; fi
 
 _GOT_ERROR=0
 out_complete "SUCCESS" 2>/dev/null || _GOT_ERROR=1
 
 if [[ "$_GOT_ERROR" -eq 0 ]]; then
-    pass "out_complete exits 0 when tui_complete is not defined"
+    pass "out_complete exits 0 when _sidecar_complete_hold is not defined"
 else
-    fail "out_complete no-op" "unexpected non-zero exit when tui_complete is absent"
+    fail "out_complete no-op" "unexpected non-zero exit when _sidecar_complete_hold absent"
 fi
 
-# --- Test 2: delegates to tui_complete when defined --------------------------
-echo "--- Test 2: delegates to tui_complete ---"
+# --- Test 2: delegates to _sidecar_complete_hold when defined ----------------
+echo "--- Test 2: delegates to _sidecar_complete_hold ---"
 
 _CALLED_VERDICT=""
-tui_complete() { _CALLED_VERDICT="$1"; }
+_sidecar_complete_hold() { _CALLED_VERDICT="$1"; }
 
-# shellcheck disable=SC2218  # out_complete sourced from output.sh above; shellcheck can't follow.
 out_complete "SUCCESS"
 
 if [[ -n "$_CALLED_VERDICT" ]]; then
-    pass "out_complete calls tui_complete when it is defined"
+    pass "out_complete calls _sidecar_complete_hold when defined"
 else
-    fail "out_complete delegate" "tui_complete was not called"
+    fail "out_complete delegate" "_sidecar_complete_hold was not called"
 fi
 
 # --- Test 3: passes "SUCCESS" verdict ----------------------------------------
 echo "--- Test 3: passes SUCCESS verdict ---"
 
 _CALLED_VERDICT=""
-# shellcheck disable=SC2218  # out_complete sourced from output.sh; shellcheck can't follow.
 out_complete "SUCCESS"
 
 if [[ "$_CALLED_VERDICT" == "SUCCESS" ]]; then
-    pass "out_complete passes 'SUCCESS' verdict to tui_complete"
+    pass "out_complete passes 'SUCCESS' verdict to _sidecar_complete_hold"
 else
     fail "out_complete SUCCESS" "expected 'SUCCESS', got '${_CALLED_VERDICT}'"
 fi
@@ -90,27 +92,26 @@ fi
 echo "--- Test 4: passes FAIL verdict ---"
 
 _CALLED_VERDICT=""
-# shellcheck disable=SC2218  # out_complete sourced from output.sh; shellcheck can't follow.
 out_complete "FAIL"
 
 if [[ "$_CALLED_VERDICT" == "FAIL" ]]; then
-    pass "out_complete passes 'FAIL' verdict to tui_complete"
+    pass "out_complete passes 'FAIL' verdict to _sidecar_complete_hold"
 else
     fail "out_complete FAIL" "expected 'FAIL', got '${_CALLED_VERDICT}'"
 fi
 
-# --- Test 5: no-op silently after tui_complete unset again -------------------
-echo "--- Test 5: silent no-op after tui_complete unset ---"
+# --- Test 5: no-op silently after _sidecar_complete_hold unset ---------------
+echo "--- Test 5: silent no-op after _sidecar_complete_hold unset ---"
 
-unset -f tui_complete
+unset -f _sidecar_complete_hold
 
 _GOT_ERROR=0
 out_complete "DONE" 2>/dev/null || _GOT_ERROR=1
 
 if [[ "$_GOT_ERROR" -eq 0 ]]; then
-    pass "out_complete silently no-ops when tui_complete is unset"
+    pass "out_complete silently no-ops when _sidecar_complete_hold unset"
 else
-    fail "out_complete silent no-op" "error when tui_complete not defined"
+    fail "out_complete silent no-op" "error when _sidecar_complete_hold not defined"
 fi
 
 # =============================================================================
@@ -147,25 +148,51 @@ if ! declare -f _hook_tui_complete &>/dev/null; then
     exit 1
 fi
 
-# Mock collaborators. _hook_tui_complete should:
-#   - call tui_stage_end "wrap-up" ... <verdict>
-#   - call tui_append_summary_event <level> "Pass complete: <verdict>"
+# Mock collaborators. _hook_tui_complete (post-m23) should:
+#   - call `_tui_call stage-end --label wrap-up ... --verdict <verdict>`
+#   - call `_tui_call append-event --level <level> --message "Pass complete: <verdict>" --type summary`
 #   - NOT call out_complete (that would tear down the sidecar mid-run)
 _COMPLETE_CALLED_WITH=""
 out_complete() { _COMPLETE_CALLED_WITH="${1:-}"; }
 
 _STAGE_END_LABEL=""; _STAGE_END_VERDICT=""
-tui_stage_end() {
-    _STAGE_END_LABEL="${1:-}"
-    # args: label model turns time_str verdict
-    _STAGE_END_VERDICT="${5:-}"
+_SUMMARY_EVENT_LEVEL=""; _SUMMARY_EVENT_MSG=""
+
+# _tui_call parses subcommand + flag args; we record what each invocation
+# attempted. Mirrors the real helper's flag layout: --label LBL --verdict V
+# for stage-end, --level L --message M --type summary for append-event.
+_tui_call() {
+    local sub="${1:-}"; shift || true
+    local label="" verdict="" level="" message="" event_type=""
+    while (( $# > 0 )); do
+        case "$1" in
+            --label)       label="${2:-}";      shift 2 ;;
+            --verdict)     verdict="${2:-}";    shift 2 ;;
+            --level)       level="${2:-}";      shift 2 ;;
+            --message)     message="${2:-}";    shift 2 ;;
+            --type)        event_type="${2:-}"; shift 2 ;;
+            --status-file) shift 2 ;;
+            *)             shift ;;
+        esac
+    done
+    case "$sub" in
+        stage-end)
+            _STAGE_END_LABEL="$label"
+            _STAGE_END_VERDICT="$verdict"
+            ;;
+        append-event)
+            if [[ "$event_type" == "summary" ]]; then
+                _SUMMARY_EVENT_LEVEL="$level"
+                _SUMMARY_EVENT_MSG="$message"
+            fi
+            ;;
+    esac
 }
 
-_SUMMARY_EVENT_LEVEL=""; _SUMMARY_EVENT_MSG=""
-tui_append_summary_event() {
-    _SUMMARY_EVENT_LEVEL="${1:-}"
-    _SUMMARY_EVENT_MSG="${2:-}"
-}
+# _hook_tui_complete only emits when TUI is active in the live runtime; in
+# this test we drive the body directly, so force the gate open.
+_TUI_ACTIVE=true
+export _TUI_ACTIVE
 
 # --- Test 6: exit 0 → summary event, no out_complete -------------------------
 echo "--- Test 6: exit 0 → summary event, no out_complete ---"
@@ -213,7 +240,7 @@ else
 fi
 
 # --- Test 9: closes wrap-up pill with SUCCESS verdict on exit 0 --------------
-echo "--- Test 9: exit 0 → tui_stage_end wrap-up SUCCESS ---"
+echo "--- Test 9: exit 0 → stage-end wrap-up SUCCESS ---"
 
 _STAGE_END_LABEL=""; _STAGE_END_VERDICT=""
 _hook_tui_complete 0
@@ -226,7 +253,7 @@ else
 fi
 
 # --- Test 10: closes wrap-up pill with FAIL verdict on exit 1 ----------------
-echo "--- Test 10: exit 1 → tui_stage_end wrap-up FAIL ---"
+echo "--- Test 10: exit 1 → stage-end wrap-up FAIL ---"
 
 _STAGE_END_LABEL=""; _STAGE_END_VERDICT=""
 _hook_tui_complete 1

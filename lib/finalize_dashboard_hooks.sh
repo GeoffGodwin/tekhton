@@ -167,12 +167,9 @@ _hook_tui_complete() {
     local exit_code="${1:-0}"
     local verdict="SUCCESS"
     [[ "$exit_code" -ne 0 ]] && verdict="FAIL"
-    if declare -f tui_stage_end &>/dev/null; then
-        tui_stage_end "wrap-up" "" "" "" "$verdict" 2>/dev/null || true
-    fi
-    if declare -f tui_append_summary_event &>/dev/null; then
-        local level="success"
-        [[ "$verdict" != "SUCCESS" ]] && level="error"
-        tui_append_summary_event "$level" "Pass complete: ${verdict}" 2>/dev/null || true
-    fi
+    _tui_call stage-end --label "wrap-up" --verdict "$verdict"
+    local level="success"
+    [[ "$verdict" != "SUCCESS" ]] && level="error"
+    _tui_call append-event --level "$level" \
+        --message "Pass complete: ${verdict}" --type summary
 }

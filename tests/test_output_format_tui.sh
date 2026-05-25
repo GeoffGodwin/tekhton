@@ -41,6 +41,14 @@ source "${TEKHTON_HOME}/lib/output.sh"
 # shellcheck source=../lib/output_format.sh
 source "${TEKHTON_HOME}/lib/output_format.sh"
 
+# m23: re-stub _tui_notify after sourcing because lib/sidecar_lifecycle.sh
+# (sourced transitively by output.sh) defines its own _tui_notify that goes
+# to `_tui_call append-event ...`. The stub before sourcing would be
+# overwritten otherwise.
+_tui_notify() {
+    printf '%s %s\n' "${1:-}" "${2:-}" >> "${_TUI_NOTIFY_LOG:-/dev/null}" 2>/dev/null || true
+}
+
 # ── Test infrastructure ──────────────────────────────────────────────────────
 PASS=0
 FAIL=0

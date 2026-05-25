@@ -159,13 +159,13 @@ _tekhton_cleanup() {
         fi
     fi
 
-    # --- TUI sidecar cleanup (M97) --------------------------------------------
-    if command -v tui_stop &>/dev/null; then
-        tui_stop 2>/dev/null || true
+    # --- TUI sidecar cleanup (M97; m23 ported to lib/sidecar_lifecycle.sh) ----
+    if command -v _sidecar_kill &>/dev/null; then
+        _sidecar_kill 2>/dev/null || true
     fi
-    # Restore terminal state only on real interactive exit. Kept out of
-    # tui_stop so tests that source lib/tui.sh do not leak escape sequences
-    # to the parent shell's TTY.
+    # Restore terminal state only on real interactive exit. Kept separate from
+    # _sidecar_kill so tests that source lib/sidecar_lifecycle.sh do not leak
+    # escape sequences to the parent shell's TTY.
     if command -v _tui_restore_terminal &>/dev/null; then
         _tui_restore_terminal 2>/dev/null || true
     fi
@@ -941,7 +941,9 @@ source "${TEKHTON_HOME}/lib/progress.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/causality_query.sh"
 source "${TEKHTON_HOME}/lib/dashboard.sh"
-source "${TEKHTON_HOME}/lib/tui.sh"           # m23 — thin shim over `tekhton tui ...` Go CLI
+# m23: lib/tui*.sh fully ported to internal/tui/ + cmd/tekhton/tui.go. The
+# small remaining bash residue (sidecar spawn/kill, _tui_call helper) lives
+# in lib/sidecar_lifecycle.sh, sourced transitively from lib/output.sh.
 source "${TEKHTON_HOME}/lib/inbox.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
 # M129: failure-context slot helpers must load before diagnose_output.sh so
@@ -1932,7 +1934,8 @@ if declare -f flush_role_template_warnings &>/dev/null; then
     flush_role_template_warnings
 fi
 # M97: start the rich.live TUI sidecar (no-op unless enabled + TTY + venv).
-if declare -f tui_start &>/dev/null; then
+# m23: sidecar spawn ported to lib/sidecar_lifecycle.sh::_sidecar_spawn.
+if declare -f _sidecar_spawn &>/dev/null; then
     # M98: surface run context to the sidecar header.
     _tui_run_mode="task"
     [[ "$COMPLETE_MODE"          = true ]] && [[ "$MILESTONE_MODE" != true ]] \
@@ -1966,7 +1969,7 @@ if declare -f tui_start &>/dev/null; then
     # architect promotion (FORCE_AUDIT / drift thresholds), SKIP_SECURITY,
     # DOCS_AGENT_ENABLED, and PIPELINE_ORDER. Pills are seeded once from this
     # authoritative plan so stage_order never shifts mid-run from ad-hoc
-    # tui_stage_begin call sites.
+    # `tekhton tui stage-begin` call sites.
     if declare -f get_run_stage_plan &>/dev/null; then
         _display_order=$(get_run_stage_plan)
     else
@@ -1974,12 +1977,9 @@ if declare -f tui_start &>/dev/null; then
     fi
     out_set_context stage_order "$_display_order"
 
-    if declare -f tui_set_context &>/dev/null; then
-        # shellcheck disable=SC2206
-        _stage_arr=($_display_order)
-        tui_set_context "$_tui_run_mode" "$_tui_cli_flags" "${_stage_arr[@]}"
-    fi
-    tui_start
+    # shellcheck disable=SC2206
+    _stage_arr=($_display_order)
+    _sidecar_spawn "$_tui_run_mode" "$_tui_cli_flags" "${_stage_arr[@]}"
 fi
 log "Task: ${BOLD}${TASK}${NC}"
 log "Log:  ${LOG_FILE}"
@@ -2308,12 +2308,15 @@ _run_pipeline_stages() {
         fi
         if [[ -n "$_pl_display_order" ]]; then
             out_set_context stage_order "$_pl_display_order"
-            if declare -f tui_set_context &>/dev/null; then
-                # shellcheck disable=SC2206
-                local -a _pl_stage_arr=($_pl_display_order)
-                tui_set_context "${_TUI_RUN_MODE:-task}" "${_TUI_CLI_FLAGS:-}" \
-                    "${_pl_stage_arr[@]}"
+            # shellcheck disable=SC2206
+            local -a _pl_stage_arr=($_pl_display_order)
+            local _pl_stages_csv=""
+            if (( ${#_pl_stage_arr[@]} > 0 )); then
+                printf -v _pl_stages_csv '%s,' "${_pl_stage_arr[@]}"
+                _pl_stages_csv="${_pl_stages_csv%,}"
             fi
+            _tui_call set-context --run-mode "${_TUI_RUN_MODE:-task}" \
+                --cli-flags "${_TUI_CLI_FLAGS:-}" --stages "$_pl_stages_csv"
         fi
     fi
 
@@ -2331,12 +2334,12 @@ _run_pipeline_stages() {
         _intake_start_evt=$(emit_event "stage_start" "intake" "" "$_LAST_STAGE_EVT" "" "")
         # M107/M110: notify TUI sidecar that the intake pre-stage is active.
         # Guard matches get_run_stage_plan's condition so intake is only in
-        # _TUI_STAGE_ORDER when it was included in the seeded pill plan.
-        # Without the guard, tui_stage_begin would append "intake" to the end
-        # of the pill row in --fix-nonblockers / --fix-drift modes where
+        # stage_order when it was included in the seeded pill plan. Without
+        # the guard, stage-begin would append "intake" to the end of the
+        # pill row in --fix-nonblockers / --fix-drift modes where
         # INTAKE_AGENT_ENABLED=false and intake is absent from the plan.
-        if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]] && declare -f tui_stage_begin &>/dev/null; then
-            tui_stage_begin "intake" "${CLAUDE_STANDARD_MODEL:-}"
+        if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]]; then
+            _tui_call stage-begin --label "intake" --model "${CLAUDE_STANDARD_MODEL:-}"
         fi
         run_stage_intake
         _LAST_STAGE_EVT=$(emit_event "stage_end" "intake" "${INTAKE_VERDICT:-pass}" "$_intake_start_evt" "" \
@@ -2345,10 +2348,11 @@ _run_pipeline_stages() {
         _STAGE_TURNS[intake]="${LAST_AGENT_TURNS:-0}"
         _STAGE_DURATION[intake]="$(( SECONDS - ${_STAGE_START_TS[intake]:-$SECONDS} ))"
         # M107: mark intake complete in the TUI sidecar.
-        if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
-            tui_stage_end "intake" "${CLAUDE_STANDARD_MODEL:-}" \
-                "${_STAGE_TURNS[intake]:-0}/${_STAGE_BUDGET[intake]:-0}" \
-                "${_STAGE_DURATION[intake]:-0}s" "${INTAKE_VERDICT:-}"
+        if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]]; then
+            _tui_call stage-end --label "intake" --model "${CLAUDE_STANDARD_MODEL:-}" \
+                --turns "${_STAGE_TURNS[intake]:-0}/${_STAGE_BUDGET[intake]:-0}" \
+                --time "${_STAGE_DURATION[intake]:-0}s" \
+                --verdict "${INTAKE_VERDICT:-}"
         fi
         # M118: emit deferred PASS success line AFTER pill flips green so
         # Recent Events ordering matches pill state. Flag is set only on the
@@ -2421,10 +2425,11 @@ _run_pipeline_stages() {
         if should_run_stage "$_stage_name" "$START_AT"; then
             _tui_will_run_stage="true"
         fi
-        if [[ "$_tui_will_run_stage" == "true" ]] && declare -f tui_stage_begin &>/dev/null; then
+        if [[ "$_tui_will_run_stage" == "true" ]]; then
             local _tui_display_label
             _tui_display_label=$(get_stage_display_label "$_stage_name")
-            tui_stage_begin "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}"
+            _tui_call stage-begin --label "$_tui_display_label" \
+                --model "${CLAUDE_STANDARD_MODEL:-}"
         fi
 
         case "$_stage_name" in
@@ -2593,14 +2598,15 @@ _run_pipeline_stages() {
         # $_stage_name here is review|test_verify|test_write — get_stage_array_key
         # (in lib/pipeline_order_policy.sh) is the single translation layer
         # between internal pipeline names and the _STAGE_* associative-array keys.
-        if [[ "$_tui_will_run_stage" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
+        if [[ "$_tui_will_run_stage" == "true" ]]; then
             local _tui_display_label _tui_finish_dur _tui_metrics_key
             _tui_display_label=$(get_stage_display_label "$_stage_name")
             _tui_metrics_key=$(get_stage_array_key "$_stage_name")
             _tui_finish_dur="${_STAGE_DURATION[$_tui_metrics_key]:-0}s"
-            tui_stage_end "$_tui_display_label" "${CLAUDE_STANDARD_MODEL:-}" \
-                "${_STAGE_TURNS[$_tui_metrics_key]:-0}/${_STAGE_BUDGET[$_tui_metrics_key]:-0}" \
-                "$_tui_finish_dur" ""
+            _tui_call stage-end --label "$_tui_display_label" \
+                --model "${CLAUDE_STANDARD_MODEL:-}" \
+                --turns "${_STAGE_TURNS[$_tui_metrics_key]:-0}/${_STAGE_BUDGET[$_tui_metrics_key]:-0}" \
+                --time "$_tui_finish_dur"
         fi
     done
 
@@ -2658,9 +2664,7 @@ _run_human_complete_loop() {
         # Python watchdog's idle-and-stale preconditions cannot accumulate
         # across the inter-note quiet window (inbox drain, triage, archive
         # moves, log rotation, threshold checks, quota-probe sleeps).
-        if declare -f tui_reset_for_next_milestone &>/dev/null; then
-            tui_reset_for_next_milestone
-        fi
+        _tui_call reset
 
         # Drain any watchtower inbox notes that arrived since the last iteration
         # so they're available to pick_next_note (e.g. notes submitted mid-run).
@@ -2766,9 +2770,8 @@ _run_fix_nonblockers_loop() {
             success "All non-blocking notes resolved."
             # M110 §9: terminal boundary event so the runtime chronology
             # shows a clean loop-exit marker when no work remains.
-            if declare -f tui_append_event &>/dev/null; then
-                tui_append_event "info" "No remaining work — exiting" "runtime" 2>/dev/null || true
-            fi
+            _tui_call append-event --level "info" \
+                --message "No remaining work — exiting" --type runtime
             break
         fi
 
@@ -2815,8 +2818,9 @@ _run_fix_nonblockers_loop() {
 
         # M110 §9: pass-boundary event for passes ≥2 so the runtime chronology
         # in the hold view shows a clear "Starting pass N" marker between passes.
-        if [[ "$nb_attempt" -ge 2 ]] && declare -f tui_append_event &>/dev/null; then
-            tui_append_event "info" "Starting pass ${nb_attempt}" "runtime" 2>/dev/null || true
+        if [[ "$nb_attempt" -ge 2 ]]; then
+            _tui_call append-event --level "info" \
+                --message "Starting pass ${nb_attempt}" --type runtime
         fi
 
         _run_pipeline_stages
@@ -2868,9 +2872,8 @@ _run_fix_drift_loop() {
             success "All drift observations resolved."
             # M110 §9: terminal boundary event so the runtime chronology
             # shows a clean loop-exit marker when no work remains.
-            if declare -f tui_append_event &>/dev/null; then
-                tui_append_event "info" "No remaining work — exiting" "runtime" 2>/dev/null || true
-            fi
+            _tui_call append-event --level "info" \
+                --message "No remaining work — exiting" --type runtime
             break
         fi
 
@@ -2917,8 +2920,9 @@ _run_fix_drift_loop() {
 
         # M110 §9: pass-boundary event for passes ≥2 so the runtime chronology
         # in the hold view shows a clear "Starting pass N" marker between passes.
-        if [[ "$drift_attempt" -ge 2 ]] && declare -f tui_append_event &>/dev/null; then
-            tui_append_event "info" "Starting pass ${drift_attempt}" "runtime" 2>/dev/null || true
+        if [[ "$drift_attempt" -ge 2 ]]; then
+            _tui_call append-event --level "info" \
+                --message "Starting pass ${drift_attempt}" --type runtime
         fi
 
         _run_pipeline_stages
@@ -2964,22 +2968,18 @@ fi
 # deps, missing tools, env var gaps, version mismatches. Only during task runs.
 # M110: represent pre-flight as a distinct pre-stage lifecycle owner so the
 # pill row never shows preflight stuck at pending.
-if declare -f tui_stage_begin &>/dev/null; then
-    tui_stage_begin "preflight" "${CLAUDE_STANDARD_MODEL:-}"
-fi
+_tui_call stage-begin --label "preflight" --model "${CLAUDE_STANDARD_MODEL:-}"
 if run_preflight_checks; then
-    if declare -f tui_stage_end &>/dev/null; then
-        tui_stage_end "preflight" "${CLAUDE_STANDARD_MODEL:-}" "" "" "pass"
-    fi
+    _tui_call stage-end --label "preflight" --model "${CLAUDE_STANDARD_MODEL:-}" \
+        --verdict "pass"
     # m22: the bash _PREFLIGHT_SUMMARY deferred-emit dance is gone — the Go
     # orchestrator (internal/preflight.Orchestrator.SummaryLine) prints the
     # summary line synchronously to stderr inside `tekhton preflight`, so
     # Recent Events ordering already matches pill state without the
     # producer/consumer hand-off the M118 pattern used.
 else
-    if declare -f tui_stage_end &>/dev/null; then
-        tui_stage_end "preflight" "${CLAUDE_STANDARD_MODEL:-}" "" "" "FAILED"
-    fi
+    _tui_call stage-end --label "preflight" --model "${CLAUDE_STANDARD_MODEL:-}" \
+        --verdict "FAILED"
     write_pipeline_state "preflight" "env_failure" "" "$TASK" \
         "Pre-flight environment validation failed. See ${PREFLIGHT_REPORT_FILE}."
     exit 1
@@ -3074,9 +3074,10 @@ fi
 # --- TUI final hold-on-complete + teardown -----------------------------------
 # Single top-level out_complete: the sidecar lifecycle matches the outer
 # tekhton.sh invocation, not per-pass finalize_run() calls. Per-pass
-# _hook_tui_complete only closes the wrap-up pill and emits a summary event;
-# only this site triggers hold-on-complete + tui_stop. The cleanup trap at
-# the top of the file still calls tui_stop as a safety net for crashes.
+# wrap-up hooks (lib/finalize_dashboard_hooks.sh) only close the wrap-up
+# pill and emit a summary event; only this site triggers the hold-on-
+# complete wait + sidecar teardown. The cleanup trap at the top of the
+# file still calls _sidecar_kill as a safety net for crashes.
 if declare -f out_complete &>/dev/null; then
     out_complete "SUCCESS" 2>/dev/null || true
 fi

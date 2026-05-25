@@ -58,6 +58,13 @@ func (h *fakeHooks) Finalize(_ context.Context, _ *proto.RunRequestV1, res *prot
 
 func validReq(t *testing.T) *proto.RunRequestV1 {
 	t.Helper()
+	// Isolate from the parent shell's MILESTONE_DIR / MILESTONE_MANIFEST_FILE
+	// (set by Tekhton's own m26 env contract when this suite runs under
+	// `tekhton --milestone …`). Without these unsets the runner reads the
+	// repo's live manifest and milestone-mode tests fail spuriously when
+	// the parent run's frontier changes underneath the suite.
+	t.Setenv("MILESTONE_DIR", "")
+	t.Setenv("MILESTONE_MANIFEST_FILE", "")
 	dir := t.TempDir()
 	return &proto.RunRequestV1{
 		Proto:       proto.RunRequestProtoV1,

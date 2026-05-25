@@ -77,8 +77,8 @@ run_stage_architect() {
     # (FORCE_AUDIT or drift thresholds); the lifecycle id allows late spinner
     # ticks to be rejected after the stage ends.
     local _architect_started=false
-    if declare -f tui_stage_begin &>/dev/null; then
-        tui_stage_begin "architect" "$architect_model"
+    if [[ "${_TUI_ACTIVE:-false}" == "true" ]]; then
+        _tui_call stage-begin --label "architect" --model "$architect_model"
         _architect_started=true
     fi
 
@@ -97,8 +97,9 @@ run_stage_architect() {
     if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
         warn "Architect hit an API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}"
         warn "Drift observations remain unresolved — will retry next audit cycle."
-        if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
-            tui_stage_end "architect" "$architect_model" "" "" "UPSTREAM_ERROR"
+        if [[ "$_architect_started" == "true" ]]; then
+            _tui_call stage-end --label "architect" --model "$architect_model" \
+                --verdict "UPSTREAM_ERROR"
         fi
         return 0
     fi
@@ -108,8 +109,9 @@ run_stage_architect() {
     if [ ! -f "${ARCHITECT_PLAN_FILE}" ]; then
         warn "Architect did not produce ${ARCHITECT_PLAN_FILE}. Skipping remediation."
         warn "Drift observations remain unresolved — will retry next audit cycle."
-        if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
-            tui_stage_end "architect" "$architect_model" "" "" "NO_PLAN"
+        if [[ "$_architect_started" == "true" ]]; then
+            _tui_call stage-end --label "architect" --model "$architect_model" \
+                --verdict "NO_PLAN"
         fi
         return 0
     fi
@@ -148,8 +150,8 @@ run_stage_architect() {
     # work will actually run so the timings row does not log an empty entry.
     local _remediation_started=false
     if [ "$has_simplification" -eq 1 ] || [ "$has_jr_work" -eq 1 ]; then
-        if declare -f tui_substage_begin &>/dev/null; then
-            tui_substage_begin "architect-remediation" "$architect_model"
+        if [[ "${_TUI_ACTIVE:-false}" == "true" ]]; then
+            _tui_call substage-begin --label "architect-remediation"
             _remediation_started=true
         fi
     fi
@@ -210,11 +212,13 @@ run_stage_architect() {
                 warn "Build still broken after architect remediation. Skipping review."
                 warn "Drift observations NOT resolved — will retry next audit cycle."
                 reset_runs_since_audit
-                if [[ "$_remediation_started" == "true" ]] && declare -f tui_substage_end &>/dev/null; then
-                    tui_substage_end "architect-remediation" "BUILD_BROKEN"
+                if [[ "$_remediation_started" == "true" ]]; then
+                    _tui_call substage-end --label "architect-remediation" \
+                        --verdict "BUILD_BROKEN"
                 fi
-                if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
-                    tui_stage_end "architect" "$architect_model" "" "" "BUILD_BROKEN"
+                if [[ "$_architect_started" == "true" ]]; then
+                    _tui_call stage-end --label "architect" \
+                        --model "$architect_model" --verdict "BUILD_BROKEN"
                 fi
                 return 0
             fi
@@ -387,11 +391,11 @@ run_stage_architect() {
 
     # M116: close architect-remediation substage (if it ran) then architect
     # stage. architect is the sole pipeline-stage owner for this audit.
-    if [[ "$_remediation_started" == "true" ]] && declare -f tui_substage_end &>/dev/null; then
-        tui_substage_end "architect-remediation" ""
+    if [[ "$_remediation_started" == "true" ]]; then
+        _tui_call substage-end --label "architect-remediation"
     fi
-    if [[ "$_architect_started" == "true" ]] && declare -f tui_stage_end &>/dev/null; then
-        tui_stage_end "architect" "$architect_model" "" "" ""
+    if [[ "$_architect_started" == "true" ]]; then
+        _tui_call stage-end --label "architect" --model "$architect_model"
     fi
 
     success "Architect audit complete."

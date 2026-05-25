@@ -210,7 +210,7 @@ run_stage_intake() {
         PASS)
             # M118: PASS success line is deferred to the caller in tekhton.sh
             # so the TUI pill flips green BEFORE the success line lands in
-            # Recent Events. The caller emits after tui_stage_end. We use a
+            # Recent Events. The caller emits after the stage-end call. We use a
             # dedicated flag (not INTAKE_VERDICT) because the early-exit paths
             # at the top of this function also set INTAKE_VERDICT="PASS"
             # without running intake (HUMAN_MODE, disabled, no content) and
