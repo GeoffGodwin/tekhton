@@ -55,9 +55,29 @@ def _read_status(path: Path) -> dict[str, Any] | None:
     if not raw.strip():
         return None
     try:
-        return json.loads(raw)
+        doc = json.loads(raw)
     except json.JSONDecodeError:
         return None
+    if not isinstance(doc, dict):
+        return None
+    # m23: accept both the legacy bare-payload shape (root keys: milestone,
+    # stage_label, …) and the new proto-envelope shape
+    # ({"proto": "tekhton.tui.status.v1", "run_id": "...", "payload": {...}}).
+    # When the proto envelope is present and its tag matches v1, promote
+    # the payload to the top level so the renderer code path is unchanged.
+    # An unknown proto major is treated as a render skip — the sidecar
+    # keeps the last valid status visible until the writer comes back into
+    # spec, matching the skew-loud-not-silent invariant from DESIGN_v4.md
+    # Risk §7.
+    proto_tag = doc.get("proto")
+    if proto_tag:
+        if proto_tag != "tekhton.tui.status.v1":
+            return None
+        payload = doc.get("payload")
+        if not isinstance(payload, dict):
+            return None
+        return payload
+    return doc
 
 
 def _empty_status() -> dict[str, Any]:

@@ -85,6 +85,8 @@ var goNativeHooks = map[string]func() Hook{
 	"_hook_emit_run_summary":    func() Hook { return &EmitRunSummary{} },
 	"_hook_emit_timing_report":  func() Hook { return &EmitTimingReport{} },
 	"_hook_causal_log_finalize": func() Hook { return &CausalLogFinalize{} },
+	// m23: TUI complete hook ported to Go alongside the TUI writer subsystem.
+	"_hook_tui_complete": func() Hook { return &TUIComplete{} },
 }
 
 // Orchestrator owns the hook registry and the run loop. Constructed by

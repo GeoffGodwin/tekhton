@@ -46,7 +46,8 @@ HOOKS=(
     "_hook_project_version_tag"
     "_hook_update_check"
     "_hook_final_dashboard_status"
-    "_hook_tui_complete"
+    # m23: _hook_tui_complete ported to Go (internal/finalize/tui_complete.go)
+    # and removed from lib/finalize_shim.sh. Not dispatched through bash.
     "_hook_failure_context_reset"
 )
 

@@ -941,7 +941,7 @@ source "${TEKHTON_HOME}/lib/progress.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/causality_query.sh"
 source "${TEKHTON_HOME}/lib/dashboard.sh"
-source "${TEKHTON_HOME}/lib/tui.sh"           # M97 — rich.live sidecar manager (also sources tui_helpers.sh)
+source "${TEKHTON_HOME}/lib/tui.sh"           # m23 — thin shim over `tekhton tui ...` Go CLI
 source "${TEKHTON_HOME}/lib/inbox.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
 # M129: failure-context slot helpers must load before diagnose_output.sh so

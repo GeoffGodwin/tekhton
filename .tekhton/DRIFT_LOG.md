@@ -2,9 +2,12 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 95
+- Runs since audit: 123
 
 ## Unresolved Observations
+- [2026-05-25 | "unknown"] `finalize_commit.sh:86-92` (`_final_check_result_read`) uses `${TEKHTON_DIR:-.tekhton}` to resolve the sentinel path (relative to CWD), while `_write_commit_decision` at lines 51-55 adds `${PROJECT_DIR}/` when the path is relative. Both produce the same absolute path when CWD = PROJECT_DIR (which is always true at pipeline runtime), but the two path-resolution patterns are inconsistent. Not a bug in the current call graph, but a latent footgun if either function is reused in a context where CWD ≠ PROJECT_DIR.
+- [2026-05-23 | "unknown"] `lib/milestone_window.sh` file header comment (lines 19–21) still says "Provides: `build_milestone_window` — assembles budgeted milestone context block." `set_focused_milestone_block` is now a second public function exported from this file and is not listed. Minor staleness.
+- [2026-05-23 | "unknown"] `stages/coder.sh:465` calls `set_focused_milestone_block 2>/dev/null` inline in an `if !` condition, while the scout path at `coder.sh:240` and all other call sites use the `declare -f` guard idiom. Both work; pick one convention.
 - [2026-05-18 | "unknown"] [internal/preflight/ui_audit.go:255] — Dead `strings.Join` call with incorrect "satisfy import" comment; should be deleted in the next cleanup pass.
 - [2026-05-18 | "unknown"] [tests/] — V4 migration is accumulating skip-guarded bash tests faster than Go-native replacements are being written. Five more at m22 close; `test_plan_browser` still pending from m21. Drift observation to trigger a dedicated test-migration sweep before the accumulation becomes untrackable.
 - [2026-05-18 | "unknown"] [tests/testdata/preflight_parity/green_path/expected/] — The `green_path` fixture has an empty `expected/` directory (the `no_report` mode asserts absence rather than a baseline file). This is correct behavior, but the pattern is inconsistent with `env_only_fail` and `ui_config_autopatch` which both have explicit baseline files. A README note in `green_path/` explaining why there is no baseline file would reduce future confusion.

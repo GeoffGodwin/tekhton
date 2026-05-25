@@ -1,177 +1,83 @@
 #!/usr/bin/env bash
 # =============================================================================
-# tui.sh — TUI Mode (rich live display) sidecar manager
+# tui.sh — m23 thin shim. The TUI writer subsystem (status JSON construction,
+# atomic writes, sampled liveness probe, stage/agent/event mutators, pause
+# state machine, substage breadcrumbs) is owned by Go under
+# internal/tui/ and exposed through `tekhton tui ...` subcommands.
 #
-# Sourced by tekhton.sh — do not run directly.
+# This file is the bash-caller seam. Each bash function below is a thin
+# wrapper that execs the Go binary; no business logic lives here. The five
+# previously-satellite files (tui_helpers.sh, tui_liveness.sh, tui_ops.sh,
+# tui_ops_pause.sh, tui_ops_substage.sh) are deleted at m23 close — their
+# logic moved to internal/tui/.
 #
-# Spawns tools/tui.py as a background sidecar and writes JSON status snapshots
-# to TUI_STATUS_FILE. The sidecar reads the file on a tick and re-renders with
-# rich.live. All functions are no-ops unless _TUI_ACTIVE=true, so hook sites
-# can call them unconditionally.
+# Why this single shim file survives the m23 deletion sweep:
+# 28+ bash callsites across lib/agent.sh, lib/agent_spinner.sh, lib/quota.sh,
+# lib/quota_sleep.sh, stages/coder.sh, stages/architect.sh, stages/review.sh,
+# tekhton.sh, tekhton-legacy.sh — each one uses the `declare -f tui_X` /
+# `command -v tui_X` guard pattern to no-op when TUI is inactive. Mechanically
+# substituting every callsite for `${tekhton_bin} tui X` is a 1000-line patch
+# whose blast radius dwarfs the rest of the milestone. The shim keeps the
+# function-name seam stable while the *writer logic* fully ports. A follow-up
+# milestone (or patch series) can migrate callsites once the Go implementation
+# proves itself in dogfood.
+#
+# Activation: `tui_start` sets _TUI_ACTIVE=true and exports
+# TEKHTON_TUI_STATUS_FILE so the shim's other wrappers know where to write.
 # =============================================================================
-
 set -euo pipefail
 
 # shellcheck source=lib/output_format.sh
 source "${TEKHTON_HOME}/lib/output_format.sh"
 
-# shellcheck source=lib/tui_helpers.sh
-source "${TEKHTON_HOME}/lib/tui_helpers.sh"
+# Resolve the Go binary that owns the writer logic. TEKHTON_BIN overrides;
+# falls back to bin/tekhton under TEKHTON_HOME.
+_tui_bin() {
+    if [[ -n "${TEKHTON_BIN:-}" ]] && [[ -x "${TEKHTON_BIN}" ]]; then
+        printf '%s' "${TEKHTON_BIN}"
+        return 0
+    fi
+    local default="${TEKHTON_HOME}/bin/tekhton"
+    if [[ -x "$default" ]]; then
+        printf '%s' "$default"
+        return 0
+    fi
+    return 1
+}
 
-# shellcheck source=lib/tui_ops.sh
-source "${TEKHTON_HOME}/lib/tui_ops.sh"
-
-# shellcheck source=lib/tui_ops_substage.sh
-source "${TEKHTON_HOME}/lib/tui_ops_substage.sh"
-# shellcheck source=lib/tui_liveness.sh
-source "${TEKHTON_HOME}/lib/tui_liveness.sh"
-
-# --- Activation state --------------------------------------------------------
-
-# Exported so child processes (e.g. tests spawned via `bash tests/...`) see the
-# sidecar-active signal and can suppress their own direct-to-/dev/tty writes.
+# Activation globals. Preserved for the small number of callsites that still
+# branch on _TUI_ACTIVE (e.g. lib/agent_spinner.sh, lib/output.sh).
 export _TUI_ACTIVE=false
 _TUI_PID=""
 _TUI_STATUS_FILE=""
-_TUI_STATUS_TMP=""
-_TUI_DISABLED_REASON=""
 
-# Status snapshot fields (exported for hooks)
-declare -a _TUI_RECENT_EVENTS=()      # "ts|level|msg" entries (ring buffer)
-declare -a _TUI_STAGES_COMPLETE=()    # JSON objects for completed stages
-_TUI_CURRENT_STAGE_LABEL=""
-_TUI_CURRENT_STAGE_MODEL=""
-_TUI_CURRENT_STAGE_NUM=0
-_TUI_CURRENT_STAGE_TOTAL=0
-_TUI_AGENT_TURNS_USED=0
-_TUI_AGENT_TURNS_MAX=0
-_TUI_AGENT_ELAPSED_SECS=0
-_TUI_AGENT_STATUS="idle"
-_TUI_STAGE_START_TS=0
-_TUI_PIPELINE_START_TS=0
-_TUI_COMPLETE=false
-_TUI_VERDICT=""
-
-# Run context (set by tui_set_context before tui_start). These are surfaced
-# in the JSON status so the Python sidecar can render run_mode, non-default
-# CLI flags, and the stage-pills row in the header.
-_TUI_RUN_MODE="task"
-_TUI_CLI_FLAGS=""
-declare -a _TUI_STAGE_ORDER=()
-
-# M110 lifecycle identity: per-label monotonic cycle counter + current owner id.
-# Keys are canonical display labels (from get_stage_display_label). Values are
-# the last allocated cycle number. Every tui_stage_begin increments the counter
-# for its label and records "<label>#<cycle>" as the current owner.
-declare -gA _TUI_STAGE_CYCLE=()
-_TUI_CURRENT_LIFECYCLE_ID=""
-declare -gA _TUI_CLOSED_LIFECYCLE_IDS=()
-
-# M113 hierarchical substage API. A substage is a transient phase (scout,
-# rework, architect-remediation) that runs inside an already-open pipeline
-# stage. Its begin/end calls never mutate the parent stage's label, start
-# timestamp, lifecycle id, or the stages_complete record array.
-_TUI_CURRENT_SUBSTAGE_LABEL=""
-_TUI_CURRENT_SUBSTAGE_START_TS=0
-
-# M124 quota-pause awareness. Populated by tui_enter_pause / tui_update_pause
-# while enter_quota_pause is blocking on a Claude usage-limit refresh.
-# All five fields are emitted in every status snapshot (empty/0 when not
-# paused) so the JSON shape stays stable for the sidecar consumer.
-# _TUI_AGENT_STATUS reverts to "paused" while a pause is active; the
-# spinner subshell is stopped before the pause and respawned on resume,
-# so no other writer is racing for that field.
-_TUI_PAUSE_REASON=""
-_TUI_PAUSE_RETRY_INTERVAL=0
-_TUI_PAUSE_MAX_DURATION=0
-_TUI_PAUSE_STARTED_AT=0
-_TUI_PAUSE_NEXT_PROBE_AT=0
-
-# Batched-write semaphore: bump to coalesce multiple mutations into one
-# status-file write. _tui_write_status returns early when > 0.
-_TUI_SUPPRESS_WRITE=0
-
-# --- Activation check --------------------------------------------------------
-
-# _tui_should_activate — returns 0 when TUI should spawn, 1 otherwise.
-# Reason is set in _TUI_DISABLED_REASON when returning 1.
-_tui_should_activate() {
+# tui_start — spawn the Python sidecar and seed tui_status.json. Mirrors the
+# pre-m23 activation gating (TTY check, venv presence, rich import).
+tui_start() {
+    [[ "$_TUI_ACTIVE" == "true" ]] && return 0
     local mode="${TUI_ENABLED:-auto}"
-    if [[ "$mode" == "false" ]]; then
-        _TUI_DISABLED_REASON="TUI_ENABLED=false"
-        return 1
-    fi
-    # Conservative: gate on stdout being a TTY even though the sidecar
-    # writes directly to /dev/tty. Keeps `tekhton.sh | tee log` predictable
-    # (plain output to the log, no TUI) rather than leaking escape sequences
-    # through /dev/tty while stdout captures log text.
-    if [[ ! -t 1 ]]; then
-        _TUI_DISABLED_REASON="non-interactive TTY"
-        return 1
-    fi
+    [[ "$mode" == "false" ]] && return 0
+    [[ -t 1 ]] || return 0
     local venv="${TUI_VENV_DIR:-${REPO_MAP_VENV_DIR:-.claude/indexer-venv}}"
     local py="${PROJECT_DIR:-.}/${venv}/bin/python"
     [[ -x "$py" ]] || py="${PROJECT_DIR:-.}/${venv}/Scripts/python.exe"
-    if [[ ! -x "$py" ]]; then
-        _TUI_DISABLED_REASON="Python venv not found at ${venv}"
-        return 1
-    fi
-    if ! "$py" -c "import rich" 2>/dev/null; then
-        _TUI_DISABLED_REASON="rich library not installed in ${venv}"
-        return 1
-    fi
-    if [[ ! -f "${TEKHTON_HOME}/tools/tui.py" ]]; then
-        _TUI_DISABLED_REASON="tools/tui.py missing from TEKHTON_HOME"
-        return 1
-    fi
-    _TUI_PYTHON="$py"
-    return 0
-}
-
-# --- Lifecycle ---------------------------------------------------------------
-
-# _tui_kill_stale — kill any leftover sidecar from a prior crashed run.
-# Uses a project-level PID file so orphans don't accumulate across runs.
-_tui_kill_stale() {
-    local pidfile="${PROJECT_DIR:-.}/.claude/tui_sidecar.pid"
-    [[ -f "$pidfile" ]] || return 0
-    local stale_pid
-    stale_pid=$(cat "$pidfile" 2>/dev/null) || return 0
-    [[ -n "$stale_pid" ]] || return 0
-    [[ "$stale_pid" =~ ^[1-9][0-9]*$ ]] || return 0
-    if kill -0 "$stale_pid" 2>/dev/null; then
-        kill "$stale_pid" 2>/dev/null || true
-        for _ in 1 2 3 4 5; do
-            kill -0 "$stale_pid" 2>/dev/null || break
-            sleep 0.1
-        done
-        kill -9 "$stale_pid" 2>/dev/null || true
-        wait "$stale_pid" 2>/dev/null || true
-    fi
-    rm -f "$pidfile" 2>/dev/null || true
-}
-
-# tui_start — check activation, create status file, spawn sidecar.
-# Idempotent: safe to call multiple times; only first call spawns.
-tui_start() {
-    [[ "$_TUI_ACTIVE" == "true" ]] && return 0
-
-    if ! _tui_should_activate; then
-        if [[ "${TUI_ENABLED:-auto}" == "true" ]]; then
-            warn "[tui] Disabled: ${_TUI_DISABLED_REASON}"
-        fi
-        return 0
-    fi
-
-    # Kill any orphan sidecar from a prior crashed run
-    _tui_kill_stale
+    [[ -x "$py" ]] || return 0
+    "$py" -c "import rich" 2>/dev/null || return 0
+    [[ -f "${TEKHTON_HOME}/tools/tui.py" ]] || return 0
 
     local session_dir="${TEKHTON_SESSION_DIR:-/tmp}"
     _TUI_STATUS_FILE="${session_dir}/tui_status.json"
-    _TUI_STATUS_TMP="${session_dir}/tui_status.json.tmp"
-    _TUI_PIPELINE_START_TS=$(date +%s)
+    export TEKHTON_TUI_STATUS_FILE="$_TUI_STATUS_FILE"
 
-    _tui_write_status
+    # Seed the status file (proto envelope) so the sidecar reads something
+    # on its first tick.
+    local bin
+    if bin="$(_tui_bin)"; then
+        "$bin" tui start \
+            --status-file "$_TUI_STATUS_FILE" \
+            --run-mode "${_TUI_RUN_MODE:-task}" \
+            --cli-flags "${_TUI_CLI_FLAGS:-}" 2>/dev/null || return 0
+    fi
 
     local tick_ms="${TUI_TICK_MS:-500}"
     local -a _tui_args=(
@@ -184,25 +90,16 @@ tui_start() {
     if [[ "${TUI_SIMPLE_LOGO:-false}" == "true" ]]; then
         _tui_args+=(--simple-logo)
     fi
-    # Redirect only stderr to the sidecar log so Python tracebacks are
-    # captured for debugging.  tui.py opens /dev/tty directly for rendering
-    # and does not depend on fd 1, but we leave stdout unredirected anyway
-    # to avoid silently swallowing any output it cannot write to /dev/tty.
-    "$_TUI_PYTHON" "${_tui_args[@]}" \
-        2>"${session_dir}/tui_sidecar.log" &
+    "$py" "${_tui_args[@]}" 2>"${session_dir}/tui_sidecar.log" &
     _TUI_PID=$!
     _TUI_ACTIVE=true
+    export TEKHTON_TUI_PID="$_TUI_PID"
 
-    # Write PID file for stale-sidecar cleanup on next run
     local pidfile="${PROJECT_DIR:-.}/.claude/tui_sidecar.pid"
     echo "$_TUI_PID" > "$pidfile" 2>/dev/null || true
-
-    log_verbose "[tui] Sidecar started (pid ${_TUI_PID}, status=${_TUI_STATUS_FILE})"
 }
 
-# tui_stop — unconditional sidecar teardown. Pidfile fallback reaps the
-# orphan when _TUI_ACTIVE has been flipped false before the EXIT trap fires
-# (e.g. on build-gate-failure exit), leaving _TUI_PID empty in this shell.
+# tui_stop — terminate the sidecar. Tolerant of stale pidfiles.
 tui_stop() {
     local pidfile="${PROJECT_DIR:-.}/.claude/tui_sidecar.pid"
     local target_pid="${_TUI_PID:-}"
@@ -210,6 +107,7 @@ tui_stop() {
         target_pid=$(cat "$pidfile" 2>/dev/null) || target_pid=""
     fi
     _TUI_ACTIVE=false
+    unset TEKHTON_TUI_PID
     [[ "$target_pid" =~ ^[1-9][0-9]*$ ]] || target_pid=""
     if [[ -n "$target_pid" ]] && kill -0 "$target_pid" 2>/dev/null; then
         kill "$target_pid" 2>/dev/null || true
@@ -224,31 +122,22 @@ tui_stop() {
     rm -f "$pidfile" 2>/dev/null || true
 }
 
-# _tui_restore_terminal — Recover terminal state if rich crashed before
-# clean-up. Owned by tekhton.sh's EXIT trap; kept out of tui_stop so tests
-# that source this file can't leak escape sequences to the parent's TTY.
 _tui_restore_terminal() {
     tput rmcup 2>/dev/null || true
     tput cnorm 2>/dev/null || true
     stty icrnl 2>/dev/null || true
 }
 
-# tui_complete VERDICT — mark complete, wait for the sidecar to finish its
-# hold-on-complete prompt (user presses Enter), then force-stop after
-# TUI_COMPLETE_HOLD_TIMEOUT seconds. Set the timeout to 0 for the pre-M98
-# behaviour (brief pause + kill, suitable for CI / non-interactive wrappers).
+# tui_complete VERDICT — mark complete, wait for sidecar exit (or timeout),
+# then force-stop. Drives the sidecar's hold-on-complete prompt.
 tui_complete() {
-    # Happy-path only: EXIT trap calls tui_stop directly, which is unconditional.
     [[ "$_TUI_ACTIVE" == "true" ]] || return 0
-    _TUI_VERDICT="${1:-}"
-    _TUI_COMPLETE=true
-    _TUI_AGENT_STATUS="complete"
-    _tui_write_status
-
+    local bin
+    if bin="$(_tui_bin)" && [[ -n "${_TUI_STATUS_FILE:-}" ]]; then
+        "$bin" tui complete --status-file "$_TUI_STATUS_FILE" --verdict "${1:-}" 2>/dev/null || true
+    fi
     local hold_timeout="${TUI_COMPLETE_HOLD_TIMEOUT:-120}"
     if [[ "$hold_timeout" =~ ^[0-9]+$ ]] && (( hold_timeout > 0 )) && [[ -n "$_TUI_PID" ]]; then
-        # Counter-based wait avoids forking `date +%s` on every 100ms tick
-        # (up to ~1200 forks over the default 120s hold).
         local ticks=0
         local max_ticks=$(( hold_timeout * 10 ))
         while kill -0 "$_TUI_PID" 2>/dev/null; do
@@ -263,19 +152,114 @@ tui_complete() {
 }
 
 # tui_set_context RUN_MODE FLAGS_STRING STAGE1 [STAGE2 ...]
-#
-# Populate the run-context globals that flow into the JSON status file.  Must
-# be called before tui_start (if called afterward the first header render
-# will use defaults).  The stage list is the ordered set of pipeline stages
-# for this run (e.g. intake scout coder security review tester), used by the
-# sidecar to render the stage-pills row.
 tui_set_context() {
     _TUI_RUN_MODE="${1:-task}"
     _TUI_CLI_FLAGS="${2:-}"
-    if (( $# >= 2 )); then
-        shift 2
-    else
-        shift "$#"
+    if (( $# >= 2 )); then shift 2; else shift "$#"; fi
+    local stages_csv=""
+    if (( $# > 0 )); then
+        printf -v stages_csv '%s,' "$@"
+        stages_csv="${stages_csv%,}"
     fi
-    _TUI_STAGE_ORDER=("$@")
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin
+    bin="$(_tui_bin)" || return 0
+    "$bin" tui set-context \
+        --status-file "${_TUI_STATUS_FILE}" \
+        --run-mode "$_TUI_RUN_MODE" \
+        --cli-flags "$_TUI_CLI_FLAGS" \
+        --stages "$stages_csv" 2>/dev/null || true
 }
+
+# Stage / agent / event mutators. Each is a thin wrapper around the Go CLI.
+tui_stage_begin() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui stage-begin --status-file "$_TUI_STATUS_FILE" \
+        --label "${1:-}" --model "${2:-}" 2>/dev/null || true
+}
+
+tui_stage_end() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui stage-end --status-file "$_TUI_STATUS_FILE" \
+        --label "${1:-}" --model "${2:-}" --turns "${3:-}" --time "${4:-}" --verdict "${5:-}" 2>/dev/null || true
+}
+
+tui_update_stage() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui update-stage --status-file "$_TUI_STATUS_FILE" \
+        --num "${1:-0}" --total "${2:-0}" --label "${3:-}" --model "${4:-}" 2>/dev/null || true
+}
+
+tui_finish_stage() {
+    # Maps to stage-end without auto-close (close-but-skip-substage-auto-close
+    # is not yet a CLI verb; in practice every caller uses stage_end now).
+    tui_stage_end "$@"
+}
+
+tui_update_agent() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui update-agent --status-file "$_TUI_STATUS_FILE" \
+        --turns-used "${1:-0}" --turns-max "${2:-0}" --elapsed-secs "${3:-0}" \
+        --lifecycle-id "${4:-}" 2>/dev/null || true
+}
+
+tui_append_event() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui append-event --status-file "$_TUI_STATUS_FILE" \
+        --level "${1:-info}" --message "${2:-}" --type "${3:-runtime}" --source "${4:-}" 2>/dev/null || true
+}
+
+tui_append_summary_event() {
+    tui_append_event "${1:-info}" "${2:-}" "summary"
+}
+
+tui_substage_begin() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    [[ "${TUI_LIFECYCLE_V2:-true}" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui substage-begin --status-file "$_TUI_STATUS_FILE" --label "${1:-}" 2>/dev/null || true
+}
+
+tui_substage_end() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    [[ "${TUI_LIFECYCLE_V2:-true}" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui substage-end --status-file "$_TUI_STATUS_FILE" --label "${1:-}" --verdict "${2:-}" 2>/dev/null || true
+}
+
+tui_enter_pause() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui pause-enter --status-file "$_TUI_STATUS_FILE" \
+        --reason "${1:-Rate limited}" --retry-interval "${2:-0}" --max-duration "${3:-0}" \
+        --first-probe-delay "${4:-0}" 2>/dev/null || true
+}
+
+tui_update_pause() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui pause-update --status-file "$_TUI_STATUS_FILE" --next-in "${1:-0}" 2>/dev/null || true
+}
+
+tui_exit_pause() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui pause-exit --status-file "$_TUI_STATUS_FILE" --result "${1:-refreshed}" 2>/dev/null || true
+}
+
+tui_reset_for_next_milestone() {
+    [[ "$_TUI_ACTIVE" == "true" ]] || return 0
+    local bin; bin="$(_tui_bin)" || return 0
+    "$bin" tui reset --status-file "$_TUI_STATUS_FILE" 2>/dev/null || true
+}
+
+# Legacy lifecycle-id accessor; the Go side computes ids server-side, so we
+# return an empty string here. Callers that captured a lifecycle id before
+# sleeping still pass it back via tui_update_agent; the Go side drops late
+# updates whose id no longer matches the current owner.
+tui_current_lifecycle_id() { printf '%s' ""; }

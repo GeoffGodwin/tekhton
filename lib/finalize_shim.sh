@@ -182,11 +182,12 @@ case "$HOOK_NAME" in
         source "${TEKHTON_HOME}/lib/update_check.sh"
         _shim_load_finalize_bodies
         ;;
-    _hook_final_dashboard_status|_hook_tui_complete)
+    _hook_final_dashboard_status)
+        # m23: _hook_tui_complete removed from this arm — ported to Go
+        # (internal/finalize/tui_complete.go). Dashboard arm stays; it
+        # ports in m26 alongside the dashboard subsystem.
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/dashboard.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/tui.sh"
         _shim_load_finalize_bodies
         ;;
     *)

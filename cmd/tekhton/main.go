@@ -48,6 +48,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newRunCmd())
 	cmd.AddCommand(newFinalizeCmd())
 	cmd.AddCommand(newPreflightCmd())
+	cmd.AddCommand(newTUICmd())
 	return cmd
 }
 

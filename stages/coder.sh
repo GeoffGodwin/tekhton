@@ -259,10 +259,11 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
 
         # M114: scout runs as a *substage* inside the open coder pipeline
         # stage. tui_substage_begin/end record current_substage_label without
-        # mutating the parent coder lifecycle id, _TUI_STAGE_ORDER, or
-        # _TUI_STAGES_COMPLETE — so the pill row stays "coder" and the
-        # completed-stages list never grows a "scout" entry. The renderer
-        # turns this into a "coder » scout" breadcrumb in the live timings row.
+        # mutating the parent coder lifecycle id, stage_order, or the
+        # completed-stages list (post-m23 owned by internal/tui/) — so the
+        # pill row stays "coder" and the completed-stages list never grows
+        # a "scout" entry. The renderer turns this into a "coder » scout"
+        # breadcrumb in the live timings row.
         if declare -f tui_substage_begin &>/dev/null; then
             tui_substage_begin "scout" "${CLAUDE_SCOUT_MODEL:-}"
         fi

@@ -33,7 +33,7 @@ The disposition column is one of:
 |---|-----------------------------------------|-------------|-------|
 | 1 | `finalize.sh` + 26 finalize hooks       | in progress (m21) | Orchestrator + 6 hooks in Go (`internal/finalize/`); 20 hooks routed through `lib/finalize_shim.sh`. Follow-up m22–m25 swap shim cases for Go bodies one subsystem at a time. |
 | 2 | `preflight.sh` + checks/services       | done (m22)  | Subsystem ported in full to `internal/preflight/` — five Go check families (foundation, ui_audit, env, services_infer, services) registered behind `Orchestrator`. Six `lib/preflight*.sh` files deleted; `tekhton-legacy.sh::run_preflight_checks` execs `tekhton preflight`. M131 UI config audit (the behavior-heaviest sub-piece) ports cleanly with byte-identical report output validated by `tests/test_preflight_parity.sh`. |
-| 3 | `tui_ops.sh` mid-run writers            | port        | Status writer needs atomic-rename per `lib/tui_liveness.sh`. |
+| 3 | `tui_ops.sh` mid-run writers            | done (m23 — writers ported, six files deleted, finalize_shim arm removed) | Subsystem ported to `internal/tui/` — state.go + ops.go + pause.go + substage.go + builder.go + liveness.go all behind `tekhton tui …` Cobra subcommand. `tui.status.v1` proto formalised. Five satellite files (tui_helpers, tui_liveness, tui_ops, tui_ops_pause, tui_ops_substage) deleted; `lib/tui.sh` retained as a ~250-line thin shim (each `tui_*` function execs `tekhton tui …` so the 28+ existing bash callsites in agent.sh / quota.sh / stages/*.sh / tekhton-legacy.sh stay coherent). `_hook_tui_complete` ported to `internal/finalize/tui_complete.go` and removed from `lib/finalize_shim.sh`. Strategy A taken on Python: `tools/tui.py:_read_status` accepts both bare-payload (legacy) and envelope (m23) shapes. |
 | 4 | `dashboard.sh` + emitters/parsers       | port        | Currently emits JSON envelopes the Go side already speaks. |
 | 5 | `notes.sh` + variants (rewrite, cli, …) | port        | Three-state state machine; pure bash today. |
 | 6 | `drift.sh` + drift_artifacts/cleanup    | port        | Pairs with notes; depends on causal log already in Go. |
@@ -115,6 +115,7 @@ These need an answer before Phase 5 design freezes:
 | End of Phase 4 (m20)   |                                 ~9500 |
 | End of Phase 5 m21     |                                 ~9100 |
 | End of Phase 5 m22     |                                 ~7600 |
+| End of Phase 5 m23     |                                 ~6800 |
 | Phase 5 target         |                                     0 |
 
 m22 closing notes:
