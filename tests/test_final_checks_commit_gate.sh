@@ -279,6 +279,66 @@ else
     fail "15.3: sentinel path mismatch — wrote elsewhere than ${expected_path}"
 fi
 
+echo "=== _run_commit_bookkeeping invocation contract ==="
+# Locks the bash → Go bridge added to fix the "post-commit working tree
+# not clean" gap (2026-05). _hook_commit's y/e branches must call
+# `tekhton commit-bookkeeping` BEFORE _do_git_commit so the manifest +
+# milestone-file mutations are captured in the same commit.
+_TB_LOG="$TEKHTON_DIR/.tekhton_bin_calls"
+rm -f "$_TB_LOG"
+
+# Stub the tekhton binary to record its argv instead of executing.
+TEKHTON_BIN="$TMP/tekhton-stub"
+cat > "$TEKHTON_BIN" <<'STUB'
+#!/usr/bin/env bash
+# Append all args to the capture log. Best-effort: silent on success.
+printf '%s\n' "$*" >> "${_TB_LOG_PATH}"
+exit 0
+STUB
+chmod +x "$TEKHTON_BIN"
+export TEKHTON_BIN _TB_LOG_PATH="$_TB_LOG"
+
+PROJECT_DIR_BAK="${PROJECT_DIR:-}"
+PROJECT_DIR="$TMP" MILESTONE_MODE=true _CURRENT_MILESTONE="m23" \
+    _CACHED_DISPOSITION="COMPLETE_AND_CONTINUE" _run_commit_bookkeeping
+PROJECT_DIR="$PROJECT_DIR_BAK"
+
+if [[ -f "$_TB_LOG" ]]; then
+    pass "16.1: _run_commit_bookkeeping invoked TEKHTON_BIN"
+else
+    fail "16.1: stub binary was not invoked"
+fi
+
+if grep -q "commit-bookkeeping" "$_TB_LOG"; then
+    pass "16.2: argv contains 'commit-bookkeeping' subcommand"
+else
+    fail "16.2: subcommand name missing from argv: $(cat "$_TB_LOG" 2>/dev/null)"
+fi
+
+if grep -q -- "--milestone m23" "$_TB_LOG"; then
+    pass "16.3: argv threads milestone id"
+else
+    fail "16.3: milestone id missing: $(cat "$_TB_LOG" 2>/dev/null)"
+fi
+
+if grep -q -- "--milestone-disposition COMPLETE_AND_CONTINUE" "$_TB_LOG"; then
+    pass "16.4: argv threads disposition for shouldRunOnCompletion gate"
+else
+    fail "16.4: disposition missing: $(cat "$_TB_LOG" 2>/dev/null)"
+fi
+
+# Non-milestone runs (--task, --human) must short-circuit. Without this
+# guard the bookkeeping subcommand would fire on every successful
+# commit, even when no milestone is in scope — confusing operators and
+# wasting a fork+exec.
+rm -f "$_TB_LOG"
+MILESTONE_MODE=false _CURRENT_MILESTONE="" _run_commit_bookkeeping
+if [[ ! -s "$_TB_LOG" ]]; then
+    pass "16.5: non-milestone run skips bookkeeping invocation"
+else
+    fail "16.5: stub was invoked despite MILESTONE_MODE=false: $(cat "$_TB_LOG")"
+fi
+
 echo ""
 echo "=== Summary ==="
 echo "Passed: $PASS, Failed: $FAIL"
