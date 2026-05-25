@@ -237,8 +237,22 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         # has TASK="m23" with no description and can't identify relevant
         # files (the M23 pattern where scout returned "Files to modify: 0").
         # Scout runs before the coder-stage MILESTONE_BLOCK population below.
+        #
+        # If MILESTONE_MODE is true but the block can't be populated, that
+        # is a fatal-class issue — every downstream stage will see the
+        # same empty prompt and produce hollow work. Trip the commit gate
+        # loudly rather than letting the synthesize-fallback rubber-stamp
+        # a fake COMPLETE later. This guards against the M23 hollow-run
+        # cascade we hit five times before finding the load_manifest gap.
         if declare -f set_focused_milestone_block &>/dev/null; then
-            set_focused_milestone_block 2>/dev/null || true
+            if ! set_focused_milestone_block 2>/dev/null \
+               && [[ "${MILESTONE_MODE:-false}" = "true" ]]; then
+                warn "[coder] MILESTONE_BLOCK could not be populated for ${_CURRENT_MILESTONE:-?}."
+                warn "[coder] Scout/coder will receive an empty milestone prompt and likely produce nothing."
+                if declare -f trip_commit_gate &>/dev/null; then
+                    trip_commit_gate "milestone_block_unavailable_${_CURRENT_MILESTONE:-unknown}"
+                fi
+            fi
         fi
 
         SCOUT_PROMPT=$(render_prompt "scout")
@@ -1101,6 +1115,18 @@ ${GIT_DIFF_STAT}
             # Ensure ${CODER_SUMMARY_FILE} exists for downstream stages
             if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
                 _reconstruct_coder_summary
+            fi
+            # Trip the commit gate. Without this, the synthesize-fallback
+            # path created a COMPLETE-looking SUMMARY (line 1117 above
+            # via _reconstruct_coder_summary), the review/tester stages
+            # rubber-stamped it, and _hook_commit reached the prompt
+            # with no failure recorded — the M23 hollow-commit cascade
+            # (2026-05). The first synthesize path at line 783 trips
+            # this gate; this path must do the same so a TEST_CMD
+            # failure cannot be silently absorbed by "substantive work
+            # detected" without operator awareness.
+            if declare -f trip_commit_gate &>/dev/null; then
+                trip_commit_gate "completion_gate_failed_substantive_work_only"
             fi
         else
             warn "Coder did not complete — blocking reviewer and tester."

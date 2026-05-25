@@ -70,6 +70,11 @@ _activate() {
     TUI_LIFECYCLE_V2=true
     LOG_FILE="$TMPDIR/pipeline.log"
     : > "$LOG_FILE"
+    # Reset write-suppression semaphore and liveness probe state so inherited
+    # or leftover values from the pipeline environment cannot corrupt TUI state.
+    _TUI_SUPPRESS_WRITE=0
+    _TUI_PID=""
+    _TUI_WRITE_COUNT_SINCE_LIVENESS=0
 }
 
 _event_field() {

@@ -110,6 +110,20 @@ set_focused_milestone_block() {
     [[ "${MILESTONE_MODE:-false}" = "true" ]] || return 1
     [[ -n "${_CURRENT_MILESTONE:-}" ]] || return 1
 
+    # Ensure the in-memory DAG arrays are populated before calling
+    # dag_*. The Go runner does NOT pre-load the manifest in stage
+    # subprocesses — DefaultLibHelpers sources milestone_dag.sh (which
+    # only initializes empty arrays) and milestone_dag_io.sh (which
+    # defines load_manifest), but nothing in the stage start-up path
+    # actually calls load_manifest. Without this load, dag_get_file
+    # below returns empty, _read_milestone_file falls through, and
+    # MILESTONE_BLOCK stays unset — the symptom that triggered the
+    # M23 hollow-coder cascade (scout saw no task, coder ran 1 turn).
+    if declare -f load_manifest &>/dev/null \
+       && [[ "${_DAG_LOADED:-false}" != "true" ]]; then
+        load_manifest 2>/dev/null || true
+    fi
+
     # Resolve numeric ID → "m<NN>" → filename via the DAG.
     local id="$_CURRENT_MILESTONE"
     if declare -f dag_number_to_id &>/dev/null; then

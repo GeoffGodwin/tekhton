@@ -168,6 +168,29 @@ func TestClearState_GatedByCommitDecisionSentinel(t *testing.T) {
 	}
 }
 
+// TestClearState_NoopWhenFileIsMissing_SentinelPresent directly exercises the
+// os.IsNotExist branch at clear_state.go:37-39. The sentinel must say
+// "committed" so shouldRunOnCompletion returns true and execution actually
+// reaches the os.Remove call — without the sentinel the early-return at the
+// commitWasApproved gate shadows the missing-file branch entirely.
+func TestClearState_NoopWhenFileIsMissing_SentinelPresent(t *testing.T) {
+	dir := t.TempDir()
+	// Write sentinel so all gates in shouldRunOnCompletion pass.
+	writeCommitDecision(t, dir, "committed")
+	// Deliberately do NOT create .claude/MILESTONE_STATE.md.
+	h := &ClearState{}
+	in := &Input{
+		ExitCode:             0,
+		ProjectDir:           dir,
+		Milestone:            "m21",
+		MilestoneMode:        true,
+		MilestoneDisposition: "COMPLETE_AND_CONTINUE",
+	}
+	if err := h.Run(context.Background(), in); err != nil {
+		t.Errorf("expected nil when state file missing; got %v", err)
+	}
+}
+
 func TestClearState_SkipsWhenNotMilestoneMode(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, ".claude", "MILESTONE_STATE.md")
