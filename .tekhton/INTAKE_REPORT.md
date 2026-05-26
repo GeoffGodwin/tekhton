@@ -5,12 +5,12 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely defined: five Go packages to create (`internal/drift/`, `internal/clarify/`, `internal/failure_context/`), three finalize hooks, two Cobra subcommand trees, seven bash file deletions — all enumerated in a Files Modified table with change types.
-- Acceptance criteria are highly specific and machine-verifiable: named test functions (`TestRouter_CIFailingTest_IsBlocking`), exact `grep` commands to confirm deletions, explicit exit codes for `tekhton clarify detect`, a VERSION string check, and a MANIFEST.cfg row format.
-- The m21 router-misclassification fix is fully specified: the Go snippet, the fixture path (`internal/drift/testdata/m21_router_misclassification/`), and both the positive and negative regression tests are named. No ambiguity about what "correct" behavior means.
-- Out-of-scope boundaries are explicit: dashboard emitters stay in m26, no new configurable knobs for clarify polling cadence, no new behavior beyond the one justified `clarify_finalize` hook addition.
-- The dependency chain (m24 → m25 → m26) is articulated with concrete reasoning: `lib/failure_context.sh` cannot delete until m25 covers the drift-side; the dashboard can unblock against the Go drift package after m25.
-- `fsnotify` (required by `internal/clarify/handle.go`) is already in `go.mod` per the project index. No new dependencies needed.
-- `tests/lib/parity.sh` is assumed from m23 — this is a tracked arc dependency, not an implicit assumption.
-- No user-facing config keys are introduced; no migration impact section is needed.
-- No UI components; UI testability criterion is not applicable.
+- Scope is tightly bounded to three deliverables: audit script, unit tests, inventory snapshot — no ambiguity about what's in vs out of m27.1
+- Files changed section explicitly enumerates every file to create, with no implied "and related files"
+- Acceptance criteria are mechanically testable: exact exit codes per fixture, stdout substring match, executable bit check, shellcheck clean, performance bound, minimum inventory entry count
+- Design section provides concrete regex patterns, output format (`<file>:<line>:<varname>`), and an exhaustive false-positive exclusion list — two developers would produce substantially similar implementations
+- Portability concern (`pcregrep` vs `grep -P` vs awk fallback) is explicitly called out in Watch For with required behavior documented
+- Allowlist drift risk is called out with named source-of-truth files (`internal/runner/env.go:AsKV`, `internal/config/defaults.go`)
+- No user-facing config keys or format changes introduced, so no Migration Impact section is needed
+- No UI components, so UI testability criterion is not applicable
+- Dependency on m26 is declared; fallback behavior when `tekhton config defaults --emit shell` is unavailable is specified

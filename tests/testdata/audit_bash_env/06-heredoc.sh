@@ -1,0 +1,3 @@
+cat <<'EOF'
+${MILESTONE_MODE}
+EOF

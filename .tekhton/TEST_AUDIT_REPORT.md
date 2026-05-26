@@ -1,27 +1,35 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 23 test functions/assertions
-(14 Go functions in internal/runner/env_test.go, 6 Go functions in internal/proto/stage_env_test.go,
-3 bash assertions in tests/test_v4_env_contract.sh, tests/run_tests.sh is a runner — no test functions)
+Tests audited: 2 files (tests/test_audit_bash_env_coverage.sh, tests/testdata/audit_bash_env/07-single-quoted.sh), 3 test cases
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: test_v4_env_contract.sh Test 1 comment overstates its coverage
-- File: tests/test_v4_env_contract.sh:52-101
-- Issue: The comment at lines 55-57 claims "We exercise `tekhton config defaults --emit shell` to capture the config-key half of the contract" and the file header (line 8) says "verified through the actual binary's emit path." Neither is true. The TEKHTON binary is built at lines 42-44 and `$TEKHTON_BIN` is assigned at line 45, but the variable is never invoked during Test 1's assertion block. The runtime-flag probe uses a hand-coded heredoc (`TEST_ENV`). The test is checking "can bash read these statically-defined env vars under set -u" — trivially true regardless of what `EnvBuilder.AsKV` actually emits. A regression that renamed `MILESTONE_MODE` to `MS_MODE` in internal/runner/env.go:163 would not be caught here; the real producer-side guard is `TestAsKV_RuntimeFlagsAlwaysExported` in internal/runner/env_test.go:128. The bash test provides only consumer-side smoke coverage (bash tolerates the vars) but its comments imply binary-parity.
+#### ISOLATION: PATH stripping may not cover all tekhton installation locations
+- File: tests/test_audit_bash_env_coverage.sh:31-32
+- Issue: The binary-absent simulation uses three defenses: (1) `TEKHTON_BIN=/nonexistent` neutralizes the env-var path, (2) copying the script to a tmpdir neutralizes the `${REPO_ROOT}/tekhton` and `${REPO_ROOT}/bin/tekhton` repo-relative paths, and (3) `_NO_BIN_PATH` strips `${TEKHTON_HOME}/bin` from PATH to defeat `command -v tekhton`. Defense (3) only filters one directory. If `tekhton` is installed anywhere else on PATH — `~/go/bin`, `/usr/local/bin`, or a developer's custom `bin/` — `command -v tekhton` inside the audit subprocess will still succeed, the fallback code path will not execute, no `# WARNING:` will be emitted, and both `fallback-guarded-warning` and `fallback-unguarded-warning` assertions will fail unexpectedly. CI environments that install the binary via `go install` are the likeliest failure surface.
 - Severity: MEDIUM
-- Action: Either (a) replace the `TEST_ENV` heredoc with output from `$TEKHTON_BIN run --env-emit` or a dedicated subcommand, making this a true end-to-end parity test, or (b) rewrite the comment to accurately describe the test as a static bash consumer-side smoke check; remove the mention of `tekhton config defaults --emit shell` since that command is never called in Test 1.
+- Action: Replace the selective grep-and-strip approach with a minimal PATH override. One-line fix: `_NO_BIN_PATH="/usr/bin:/bin"`. This makes the subprocess's PATH contain only POSIX core directories, which is strictly more reliable than trying to enumerate and strip known installation directories.
 
-#### COVERAGE: test_v4_env_contract.sh Test 3 has an unconditional pass branch
-- File: tests/test_v4_env_contract.sh:152-183
-- Issue: The `|| true` on line 172 (`bash "${TEKHTON_HOME}/lib/finalize_shim.sh" _hook_does_not_exist 2>&1 || true`) absorbs all non-zero exits, making `probe_rc` always 0. Pass/fail is delegated entirely to string-grep branches. The else branch (lines 181-183) passes unconditionally when neither "unbound variable" nor "unknown hook" appears in the output. An empty output, a silent crash, or a refactored diagnostic message all produce a pass. If the shim is updated to emit a different message for unknown hooks, the test silently degrades to the always-pass else branch.
-- Severity: LOW
-- Action: Add a non-empty output guard before the else-pass: `[[ -z "$probe_out" ]] && fail "finalize_shim.sh produced no output"`. Alternatively, assert that `finalize_shim.sh` exits with a specific non-zero code for an unknown hook rather than relying solely on grep.
+#### NAMING: False-positive assertion labels are ambiguous on failure
+- File: tests/test_audit_bash_env_coverage.sh:136-137
+- Issue: Case 3 uses assertion labels `"single-quoted-exit"` and `"single-quoted-finding"`. The test intentionally asserts that a known false positive IS flagged by the scanner. If someone later extends the scanner to correctly exclude intra-line single-quoted content, these assertions will fail — but the failure message `FAIL: single-quoted-exit — expected exit 1, got 0` reads as a detection regression, not as evidence of a fix. A maintainer unfamiliar with the intent would debug in the wrong direction before noticing the test comment.
+- Severity: MEDIUM
+- Action: Rename the labels to encode the known-false-positive intent, e.g., `"known-fp-single-quoted-exit"` and `"known-fp-single-quoted-finding"`. The resulting failure message `FAIL: known-fp-single-quoted-exit — expected exit 1, got 0` immediately signals that a documented limitation was fixed and the test requires a deliberate update.
 
-#### ISOLATION: test_v4_env_contract.sh Test 2 reads the real milestone directory
-- File: tests/test_v4_env_contract.sh:121-122
-- Issue: `MILESTONE_DIR` is set to `"${TEKHTON_HOME}/.claude/milestones"` — the live checked-in directory, not a temp fixture. `_intake_get_milestone_content` (called at line 130) reads files from that path. The test only asserts on exit code (rc=0), not on content, which limits blast radius. However, if the milestone directory is absent (bare checkout) or enters a transitional state (milestone file deleted by finalize after completion), `_intake_get_milestone_content` may exit non-zero for a reason unrelated to the env contract being tested, producing a false failure that is hard to diagnose.
+#### COVERAGE: Binary-absent fallback exercised with only 2 of 6 detection cases
+- File: tests/test_audit_bash_env_coverage.sh:99-118
+- Issue: The fallback path (hardcoded minimal allowlist + `# WARNING:` on stderr) is exercised only against the guarded (01) and unguarded (02) fixtures. Comment-suppression (03), `${VAR+x}` conditional guard (04), out-of-allowlist (05), and single-quoted heredoc (06) behavior under the fallback allowlist are untested. The awk skip paths for comments and heredocs are allowlist-independent, but an independent reader cannot confirm this from the tests alone.
 - Severity: LOW
-- Action: Create a minimal temp fixture directory with a stub milestone file via `$(mktemp -d)`, point `MILESTONE_DIR` at it, and clean up in an `EXIT` trap. This makes the test hermetic and independent of the pipeline's own milestone lifecycle.
+- Action: Not a blocking gap — the six primary detection behaviors are fully exercised with the binary-derived allowlist in `test_audit_bash_env.sh`, and the awk skip paths are structurally independent of allowlist content. Acceptable as-is. If depth is desired, adding one extra fallback case (e.g., 06-heredoc) would close the category.
+
+### Notes
+
+No weakening detected. All changes are net-new test functions and fixture files. No existing assertions were removed or relaxed.
+
+No scope alignment issues. All fixture references (`01-guarded.sh`, `02-unguarded.sh`, `07-single-quoted.sh`) correspond to files present in the current working tree. No stale imports or deleted-module references.
+
+Assertion honesty is sound for all three cases. Cases 1 and 2 derive their expected values from the implementation's `_pipeline_conf_keys()` fallback path and `_scan_files()` awk matcher — both reachable code paths. Case 3's "known false positive" pattern explicitly tests a documented limitation. The test is honest: it asserts current behavior (the scanner flags single-quoted inline content), documents why, and explicitly invites future breakage when the limitation is fixed. This is a valid regression-guard pattern, not an integrity violation.
+
+Test isolation is clean. A temp directory is created per run via `mktemp -d` with an `EXIT` trap cleanup. All fixture files read are checked-in static data, not mutable pipeline artifacts. No `.tekhton/*.md`, `.claude/logs/*`, or run-state files are read.

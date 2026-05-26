@@ -1,23 +1,23 @@
-# Reviewer Report — m26 Stage and Finalize Env Contract (Cycle 1)
+# Reviewer Report — m27.1 Env Audit Script + Initial Inventory (Cycle 1)
 
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- `internal/finalize/shim.go:legacyEnvFallback` (lines 136–160) still contains the hand-rolled literals `MILESTONE_MODE=`, `_CURRENT_MILESTONE=`, and `LOG_FILE=`. The m26 acceptance criterion states "grep for those literals returns zero matches in `shim.go`." The production path (`in.EnvKV` populated) is correct; `legacyEnvFallback` is a documented migration-window compatibility layer for tests and the `tekhton finalize` debug subcommand. Should be removed once m27's callers all supply `EnvKV`.
-- `tests/test_v4_pipeline_e2e.sh` (the fixture-based pipeline parity test) was not created. The m26 design explicitly identified this as "the new floor" to avoid repeating the m20–m22 gap. The coder's rationale is valid: the fixture test requires `--dry-run` to actually short-circuit agent invocation, and that dispatch branch doesn't exist yet (`cmd/tekhton/run.go:88`). The substitute `tests/test_v4_env_contract.sh` covers the env contract claim. The full pipeline stage-results test should be recorded as a prerequisite for m28+ once `--dry-run` lands.
-- `internal/runner/single.go` still contains the `buildStageEnv` method (lines 124–152). The m26 AC states the helper "no longer" exists there. The method now purely delegates to `r.envBuilder().Compose()` with no inline `MILESTONE_MODE`/`TASK` assignments — correct behavior — but the name remains in the file.
-- `m25`'s `depends_on` column in MANIFEST.cfg is `m24`, not `m24,m26`. The AC requires all three of m23/m24/m25 to explicitly include `m26`. The dependency is satisfied transitively (m25→m24→m26) but not by the manifest column value.
+- `tests/test_audit_bash_env.sh:9` — `set -euo pipefail` combined with bare `return 1` in `_assert_exit` / `_assert_empty_stdout` / `_assert_contains` means the script aborts on the first failing assertion. The `FAILED_CASES` array and the end-of-test summary ("FAIL: N cases failed") are unreachable when any case fails. The test still exits non-zero (CI catches it), but subsequent fixtures do not run and the failure list is never printed. Consider wrapping each assertion call site with `|| true` and relying solely on `FAILED_CASES` for reporting, or remove `set -e` and gate the final exit on `${#FAILED_CASES[@]}`.
+- `tests/test_audit_bash_env.sh:23` — `_run_audit` captures stderr via `2>&1`, so any stderr output from the audit script ends up in `AUDIT_OUTPUT`. In practice harmless because `tekhton` is committed at `${REPO_ROOT}/tekhton` and `_resolve_tekhton_bin` finds it before inspecting PATH. But if the binary were absent, the `# WARNING:` fallback message would contaminate `AUDIT_OUTPUT` and cause false failures in every `_assert_empty_stdout` call. Consider discarding stderr (`2>/dev/null`) since no current test case asserts on stderr content.
+- `scripts/audit-bash-env.sh:136` — `find "${t}" -type f -name '*.sh'` has no `--` option terminator before the variable-derived path. Shellcheck passes; paths in `lib/`/`stages/` never start with `-`, so this is harmless in practice. Noted against the reviewer checklist.
+- `scripts/audit-bash-env.sh` (general) — intra-line single-quoted strings are not excluded from scanning. `echo '${MILESTONE_MODE}'` would be flagged as a finding even though bash does not expand single-quoted content. The ACs only require heredoc exclusion, so this is within scope, but m27.2 triage should be aware that any flagged line where the reference sits inside `'…'` inline quotes is a known false positive.
 
 ## Coverage Gaps
-- `tests/test_v4_pipeline_e2e.sh` — fixture-based pipeline-completion test (every stage emits `stage.result.v1`; finalize reaches completion; zero `unbound variable` in stderr). `test_v4_env_contract.sh` verifies the env shape; it does not exercise the full stage dispatch loop. Gate for m28+ once `--dry-run` short-circuits agents.
+- No test exercises the binary-absent fallback path (hardcoded allowlist + `# WARNING:` stderr line). A test case that stubs out `TEKHTON_BIN` and restricts PATH would confirm the fallback exits correctly and produces no stdout findings on negative fixtures.
+- No test documents the inline single-quoted string false-positive scenario (`echo '${MILESTONE_MODE}'`), which would serve as a regression guard if the scanner is later extended to handle that case.
 
 ## Drift Observations
-- `internal/finalize/shim.go:legacyEnvFallback` duplicates the bash-name-to-value mapping that `internal/runner/env.go:EnvBuilder.AsKV` now owns canonically. Two surfaces must be kept in sync when a global is added or renamed. The comment says "drops out once every caller assigns EnvKV" — m27's hardening pass is the right place to do this.
-- `internal/runner/single.go:buildStageEnv` (lines 124–152) allocates `len(defaultStageOrder())` independent copies of the same flat map. For a five-stage pipeline this is negligible; if the order list grows significantly a shared read-only map (copy-on-write per stage for overrides only) would be more memory-efficient. Flag for future cleanup pass.
+- None

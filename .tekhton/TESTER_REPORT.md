@@ -1,18 +1,13 @@
 ## Planned Tests
-- [x] `internal/runner/env_test.go` — taskSlug unit tests, AsKV SessionDir/AutoAdvanceLimit, HumanMode and MilestoneMode flag derivation
-- [x] `internal/proto/stage_env_test.go` — StageEnvV1.SessionDir round-trip coverage
-- [x] `tests/run_tests.sh` — resolve merge conflicts so bash suite executes
-- [x] `tests/test_v4_env_contract.sh` — verify env contract bash test passes (deferred e2e noted)
-
-Note: `tests/test_v4_pipeline_e2e.sh` (full fixture pipeline-completion test) is deferred to m28+ per reviewer approval — requires `--dry-run` to actually short-circuit agent invocation, which `cmd/tekhton/run.go:83-89` accepts but does not dispatch.
+- [x] `tests/test_audit_bash_env_coverage.sh` — binary-absent fallback path + inline single-quoted false-positive regression guard
+- [x] `tests/testdata/audit_bash_env/07-single-quoted.sh` — fixture: inline `'${MILESTONE_MODE}'` (known false positive)
 
 ## Test Run Results
-Passed: 22 Go packages (all green) + 3 bash (env contract)  Failed: 0
+Passed: 2  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `internal/runner/env_test.go`
-- [x] `internal/proto/stage_env_test.go`
-- [x] `tests/run_tests.sh`
+- [x] `tests/test_audit_bash_env_coverage.sh`
+- [x] `tests/testdata/audit_bash_env/07-single-quoted.sh`
