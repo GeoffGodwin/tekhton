@@ -2,7 +2,7 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 146
+- Runs since audit: 148
 
 ## Unresolved Observations
 - [2026-05-25 | "unknown"] (carried from cycle 1) `internal/finalize/hook_bash_delegate.go:32` — `fnName` is injected into a `fmt.Sprintf`-composed bash one-liner via `%s` (no quoting). All callers pass hardcoded function names so this is not exploitable today, but the pattern is one refactor away from a shell-injection vector. Worth replacing with a form that passes the function name as a shell argument rather than as inline script text.
