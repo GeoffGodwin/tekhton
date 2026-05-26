@@ -47,8 +47,9 @@ _shim_load_finalize_bodies() {
     source "${TEKHTON_HOME}/lib/finalize_display.sh"
     # shellcheck source=/dev/null
     source "${TEKHTON_HOME}/lib/finalize.sh"
-    # shellcheck source=/dev/null
-    source "${TEKHTON_HOME}/lib/finalize_aux.sh"
+    # m24: lib/finalize_aux.sh deleted — its four hooks
+    # (express_persist / note_acceptance / baseline_cleanup /
+    # failure_context_reset) all ported to internal/finalize/.
     # shellcheck source=/dev/null
     source "${TEKHTON_HOME}/lib/finalize_commit.sh"
     # shellcheck source=/dev/null
@@ -67,19 +68,13 @@ _shim_load_finalize_bodies() {
 _shim_load_common
 
 case "$HOOK_NAME" in
-    _hook_baseline_cleanup|_hook_express_persist|_hook_note_acceptance|_hook_failure_context_reset)
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/express_persist.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/express.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/notes.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/notes_acceptance.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/failure_context.sh"
-        _shim_load_finalize_bodies
-        ;;
+    # m24: baseline_cleanup / express_persist / note_acceptance /
+    # failure_context_reset ported to Go. internal/finalize/{baseline_cleanup,
+    # express_persist,note_acceptance,failure_context_reset}.go own the
+    # hook bodies; the notes-side logic is pure Go and the residual
+    # cross-subsystem work (express_persist, test_baseline, failure_context)
+    # is delegated by the Go hook to a narrow `bash -c "source X.sh; FN"`
+    # so this shim case arm is no longer reachable.
     _hook_final_checks)
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/hooks_final_checks.sh"
@@ -100,6 +95,8 @@ case "$HOOK_NAME" in
         ;;
     _hook_drift_artifacts)
         # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/markdown_helpers.sh"
+        # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/drift.sh"
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
@@ -117,13 +114,8 @@ case "$HOOK_NAME" in
         source "${TEKHTON_HOME}/lib/metrics_extended.sh"
         _shim_load_finalize_bodies
         ;;
-    _hook_cleanup_resolved|_hook_resolve_notes)
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/notes.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
-        _shim_load_finalize_bodies
-        ;;
+    # m24: cleanup_resolved + resolve_notes ported to Go. See
+    # internal/finalize/{cleanup_resolved,resolve_notes}.go.
     _hook_health_reassess)
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/health.sh"

@@ -66,35 +66,10 @@ _hook_record_metrics() {
     record_run_metrics
 }
 
-_hook_cleanup_resolved() {
-    local exit_code="$1"
-    [[ "$exit_code" -ne 0 ]] && return 0
-    if command -v clear_resolved_nonblocking_notes >/dev/null 2>&1; then
-        clear_resolved_nonblocking_notes
-    fi
-}
-
-_hook_resolve_notes() {
-    local exit_code="$1"
-    if [[ ! -f "${HUMAN_NOTES_FILE}" ]]; then
-        return 0
-    fi
-    if [[ -n "${CLAIMED_NOTE_IDS:-}" ]]; then
-        log "Resolving claimed notes (exit_code=$exit_code): ${CLAIMED_NOTE_IDS}"
-        _PIPELINE_EXIT_CODE="$exit_code"
-        export _PIPELINE_EXIT_CODE
-        resolve_notes_batch "$CLAIMED_NOTE_IDS" "$exit_code"
-    fi
-    local orphan_count
-    orphan_count=$(grep -c '^- \[~\]' "${HUMAN_NOTES_FILE}" 2>/dev/null || echo "0")
-    orphan_count=$(echo "$orphan_count" | tr -d '[:space:]')
-    if [[ "$orphan_count" -gt 0 ]]; then
-        if [[ "$exit_code" -eq 0 ]]; then
-            warn "Found ${orphan_count} orphaned in-progress note(s) — resolving as complete."
-            sed -i 's/^- \[~\]/- [x]/' "${HUMAN_NOTES_FILE}"
-        else
-            warn "Found ${orphan_count} orphaned in-progress note(s) — resetting for next run."
-            sed -i 's/^- \[~\]/- [ ]/' "${HUMAN_NOTES_FILE}"
-        fi
-    fi
-}
+# m24: _hook_cleanup_resolved and _hook_resolve_notes ported to Go.
+# Bodies live at internal/finalize/{cleanup_resolved,resolve_notes}.go.
+# The Go orchestrator's goNativeHooks map dispatches both names
+# directly; finalize_shim.sh no longer matches those case arms; the
+# bash function definitions were removed in m24 to stop the deleted
+# notes-core bulk-resolve caller from re-introducing dead bash code
+# via this file.

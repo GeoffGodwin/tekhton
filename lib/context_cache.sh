@@ -7,7 +7,7 @@ set -euo pipefail
 # Expects: _safe_read_file(), _wrap_file_content() from prompts.sh
 #          log(), warn() from common.sh
 #          load_clarifications_content() from clarify.sh
-#          extract_human_notes(), should_claim_notes() from notes.sh
+#          `tekhton note extract` + should-claim CLI (post-m24)
 #          build_milestone_window() from milestone_window.sh
 #          _phase_start(), _phase_end() from common.sh
 #
@@ -23,7 +23,7 @@ set -euo pipefail
 # called once per stage. Caching the filtered block would require either:
 #   (a) Pre-computing with unknown filters (stage-specific claiming patterns vary)
 #   (b) Invalidating after each stage (defeats the purpose of persistent cache)
-# Instead, stages call extract_human_notes() directly with explicit arguments,
+# Instead, stages call `tekhton note extract` directly with explicit arguments,
 # making the data flow transparent and avoiding implicit cache coupling.
 #
 # Spec §2 proposes modifying render_prompt() to check for _CACHED_* before disk

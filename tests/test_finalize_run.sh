@@ -95,7 +95,9 @@ SHIM_PRESENT=1
 [[ -r "${TEKHTON_HOME}/lib/finalize_shim.sh" ]] && SHIM_PRESENT=0
 assert "lib/finalize_shim.sh present" "0" "$SHIM_PRESENT"
 
-# Smoke 6: lib/finalize_core_hooks.sh defines the five remaining bash bodies.
+# Smoke 6: lib/finalize_core_hooks.sh defines the three remaining bash
+# bodies after m24. _hook_cleanup_resolved and _hook_resolve_notes
+# ported to internal/finalize/{cleanup_resolved,resolve_notes}.go.
 HOOK_BODIES_OK=1
 (
     cd "$TEKHTON_HOME"
@@ -106,10 +108,8 @@ HOOK_BODIES_OK=1
     declare -f _hook_final_checks > /dev/null
     declare -f _hook_drift_artifacts > /dev/null
     declare -f _hook_record_metrics > /dev/null
-    declare -f _hook_cleanup_resolved > /dev/null
-    declare -f _hook_resolve_notes > /dev/null
 ) && HOOK_BODIES_OK=0
-assert "lib/finalize_core_hooks.sh defines five remaining bash hooks" "0" "$HOOK_BODIES_OK"
+assert "lib/finalize_core_hooks.sh defines three remaining bash hooks (m24 dropped two)" "0" "$HOOK_BODIES_OK"
 
 echo
 echo "=== test_finalize_run.sh: ${PASS} passed, ${FAIL} failed ==="

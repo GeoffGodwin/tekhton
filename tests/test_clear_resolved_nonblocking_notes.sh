@@ -23,7 +23,8 @@ NON_BLOCKING_LOG_FILE="${TEKHTON_DIR}/NON_BLOCKING_LOG.md"
 TEKHTON_SESSION_DIR="$TMPDIR"
 
 source "${TEKHTON_HOME}/lib/common.sh"
-source "${TEKHTON_HOME}/lib/notes_core_normalize.sh"
+# m24: notes_core_normalize.sh deleted; helper moved to markdown_helpers.sh.
+source "${TEKHTON_HOME}/lib/markdown_helpers.sh"
 source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
 
 FAIL=0

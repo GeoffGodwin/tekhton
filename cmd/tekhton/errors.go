@@ -15,6 +15,11 @@ type errExitCode struct {
 	err  error
 }
 
-func (e errExitCode) Error() string { return e.err.Error() }
+func (e errExitCode) Error() string {
+	if e.err == nil {
+		return ""
+	}
+	return e.err.Error()
+}
 func (e errExitCode) Unwrap() error { return e.err }
 func (e errExitCode) ExitCode() int { return e.code }

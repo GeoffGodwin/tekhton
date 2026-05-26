@@ -186,6 +186,30 @@ PATTERNS=(
     '\b_TUI_STAGES_COMPLETE\b'
     '\b_TUI_STAGE_CYCLE\b'
     '\b_TUI_CLOSED_LIFECYCLE_IDS\b'
+    # m24 (Phase 5): the notes subsystem ported to internal/notes/. All
+    # 14 lib/notes*.sh files were deleted; the small remaining bash
+    # residue (line-based helpers for the --human mode loop) lives in
+    # lib/human_mode_notes.sh and exec's `tekhton note <subcommand>`.
+    # The names below were the bash entry points exposed by the
+    # deleted files; any reappearance is a regression — both as a
+    # function definition or as a call site.
+    '\badd_human_note\b'
+    '\bextract_human_notes\b'
+    '\bmark_note_done\b'
+    '\bclaim_note\b'
+    '\bresolve_note\b'
+    '\brun_notes_triage\b'
+    '\bmigrate_notes_v2\b'
+    '\bclaim_human_notes\b'
+    '\bresolve_human_notes\b'
+    '\bclear_completed_human_notes\b'
+    '\bclear_completed_notes\b'
+    '\bshould_claim_notes\b'
+    '\bcount_human_notes\b'
+    '\blist_human_notes_cli\b'
+    '\bcomplete_human_note\b'
+    '\bclaim_notes_batch\b'
+    '\bresolve_notes_batch\b'
 )
 
 # --- Audit -------------------------------------------------------------------

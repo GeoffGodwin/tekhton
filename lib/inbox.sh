@@ -8,11 +8,11 @@ set -euo pipefail
 # Expects: PROJECT_DIR, MILESTONE_DIR, MILESTONE_MANIFEST from config.
 #
 # M40: _process_note now extracts description, priority, and source from inbox
-# files and passes them to add_human_note. Duplicate detection is built in.
+# files and passes them to `tekhton note add`. Duplicate detection is built in.
 # drain_pending_inbox added for pre-commit inbox processing.
 #
 # Processes files from .claude/watchtower_inbox/ at pipeline startup:
-#   - note_*.md   → appended to ${HUMAN_NOTES_FILE} via add_human_note()
+#   - note_*.md   → appended to ${HUMAN_NOTES_FILE} via `tekhton note add`()
 #   - manifest_append_*.cfg → validated and appended to MANIFEST.cfg
 #   - milestone_*.md → moved to MILESTONE_DIR
 #   - task_*.txt  → surfaced to user (not auto-executed)
@@ -89,7 +89,7 @@ _processed_dir() {
 # _process_note FILE [INBOX_BASENAME]
 # Reads a note file from the inbox and appends it to ${HUMAN_NOTES_FILE}.
 # M40: Extracts full watchtower note structure (title, description, priority,
-# timestamp, source) and passes them to add_human_note with metadata.
+# timestamp, source) and passes them to `tekhton note add` with metadata.
 _process_note() {
     local file="$1"
     local inbox_basename="${2:-}"
@@ -132,16 +132,29 @@ _process_note() {
         return 1
     fi
 
-    # Validate tag via registry
-    if ! _validate_tag_registry "$tag" 2>/dev/null; then
+    # Default tag if no validator is available (m24: registry lives in
+    # Go now). Empty/unknown tags fall back to FEAT.
+    if [[ -z "$tag" ]]; then
         tag="FEAT"
     fi
 
-    # add_human_note handles duplicate detection internally (M40)
-    if command -v add_human_note &>/dev/null; then
-        add_human_note "$title" "$tag" "$priority" "$source" "$description" "$inbox_basename"
+    # m24: delegate to `tekhton note add` — handles duplicate detection
+    # and metadata stamping (priority, source, inbox_file) in Go.
+    local _ibx_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+    if [[ ! -x "$_ibx_bin" ]]; then
+        _ibx_bin="${TEKHTON_HOME:-.}/tekhton"
+    fi
+    if [[ -x "$_ibx_bin" ]]; then
+        local _args=(note add --project-dir "${PROJECT_DIR:-.}" --tag "$tag")
+        if [[ -n "${priority:-}" ]]; then _args+=(--priority "$priority"); fi
+        if [[ -n "${source:-}" ]]; then _args+=(--source "$source"); fi
+        if [[ -n "${description:-}" ]]; then _args+=(--description "$description"); fi
+        if [[ -n "${inbox_basename:-}" ]]; then _args+=(--inbox-file "$inbox_basename"); fi
+        _args+=("$title")
+        "$_ibx_bin" "${_args[@]}" >/dev/null 2>&1 || \
+            warn "Inbox: tekhton note add failed for ${title}"
     else
-        warn "Inbox: add_human_note not available, appending raw note"
+        warn "Inbox: tekhton binary not available, appending raw note"
         echo "- [ ] [${tag}] ${title}" >> "${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE}"
     fi
 }

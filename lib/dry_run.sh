@@ -328,9 +328,21 @@ run_dry_run() {
     # --- Run scout agent ------------------------------------------------------
     log "Running scout agent for file discovery and complexity estimation..."
 
+    # m24: notes extract via `tekhton note extract` (replaces the
+    # deleted bash extract-block + should-claim helpers).
     export HUMAN_NOTES_CONTENT=""
-    if command -v extract_human_notes &>/dev/null && should_claim_notes; then
-        HUMAN_NOTES_CONTENT=$(extract_human_notes 2>/dev/null || true)
+    local _dr_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+    if [[ ! -x "$_dr_bin" ]]; then
+        _dr_bin="${TEKHTON_HOME:-.}/tekhton"
+    fi
+    if [[ -x "$_dr_bin" ]] && \
+       WITH_NOTES="${WITH_NOTES:-false}" HUMAN_MODE="${HUMAN_MODE:-false}" \
+       NOTES_FILTER="${NOTES_FILTER:-}" "$_dr_bin" note should-claim >/dev/null 2>&1; then
+        if [[ -n "${NOTES_FILTER:-}" ]]; then
+            HUMAN_NOTES_CONTENT=$("$_dr_bin" note extract --project-dir "${PROJECT_DIR:-.}" --tag "$NOTES_FILTER" 2>/dev/null || true)
+        else
+            HUMAN_NOTES_CONTENT=$("$_dr_bin" note extract --project-dir "${PROJECT_DIR:-.}" 2>/dev/null || true)
+        fi
     fi
 
     # Build architecture block for scout if available

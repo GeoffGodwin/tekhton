@@ -2,9 +2,10 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 134
+- Runs since audit: 146
 
 ## Unresolved Observations
+- [2026-05-25 | "unknown"] (carried from cycle 1) `internal/finalize/hook_bash_delegate.go:32` — `fnName` is injected into a `fmt.Sprintf`-composed bash one-liner via `%s` (no quoting). All callers pass hardcoded function names so this is not exploitable today, but the pattern is one refactor away from a shell-injection vector. Worth replacing with a form that passes the function name as a shell argument rather than as inline script text.
 - [2026-05-25 | "unknown"] `internal/tui/status.go:14-28` (pre-m19 file, unmodified by m23) uses `schema` as the JSON discriminator field (`schema: "tekhton.tui.status.v1"`) while the m23 proto envelope uses `proto`. The Python sidecar's `_read_status` checks `doc.get("proto")`, so files written by `WriteInitial` fall through to the bare-payload path — functionally acceptable, but the mismatched discriminator key is invisible to proto-skew detection and could confuse future work when the two writers are expected to be interchangeable.
 - [2026-05-25 | "unknown"] `lib/finalize_dashboard_hooks.sh:166` defines `_hook_tui_complete()` alongside `_hook_final_dashboard_status()` in the same file. When the `_hook_final_dashboard_status` shim arm sources this file, the dead bash function is loaded into the shell even though it can never be dispatched by the Go orchestrator. Future developers tracing the finalize chain may believe the bash hook is still active; a removal note or a `# DEAD CODE — Go-owned since m23` comment would prevent misread.
 - [2026-05-25 | "unknown"] internal/tui/pause.go defines `itoa` (line 86) and internal/tui/liveness.go depends on it at line 48 without any local definition or import. This is legal within a package but makes liveness.go look self-contained when it isn't; a future split of the package would silently break. Minor — flag for m24/m25 when the atomic-file pattern extraction happens.

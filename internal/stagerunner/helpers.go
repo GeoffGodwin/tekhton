@@ -21,20 +21,10 @@ type StageDef struct {
 // must precede diagnose_output.sh).
 var DefaultLibHelpers = []string{
 	"lib/config.sh",
-	"lib/notes_core_normalize.sh",
-	"lib/notes_core.sh",
-	"lib/notes_rollback.sh",
-	"lib/notes.sh",
-	"lib/notes_single.sh",
-	"lib/notes_triage.sh",
-	"lib/notes_triage_flow.sh",
-	"lib/notes_triage_report.sh",
-	"lib/notes_cleanup.sh",
-	"lib/notes_cli.sh",
-	"lib/notes_cli_write.sh",
-	"lib/notes_migrate.sh",
-	"lib/notes_acceptance.sh",
-	"lib/notes_acceptance_helpers.sh",
+	// m24: lib/notes*.sh family (14 files) deleted — notes subsystem
+	// ported to internal/notes/. The bash residue (helpers used by the
+	// --human mode loop) lives in lib/human_mode_notes.sh.
+	"lib/human_mode_notes.sh",
 	"lib/agent.sh",
 	"lib/state.sh",
 	"lib/dry_run.sh",
@@ -55,6 +45,9 @@ var DefaultLibHelpers = []string{
 	"lib/ui_validate_report.sh",
 	"lib/hooks.sh",
 	"lib/hooks_final_checks.sh",
+	// m24: markdown_helpers.sh holds the previously notes-prefixed
+	// _normalize_markdown_blank_runs (used by drift_cleanup.sh).
+	"lib/markdown_helpers.sh",
 	"lib/drift.sh",
 	"lib/drift_cleanup.sh",
 	"lib/drift_prune.sh",

@@ -741,21 +741,30 @@ fi
 
 if [ "${1:-}" = "note" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
-    source "${TEKHTON_HOME}/lib/notes_core.sh"
-    source "${TEKHTON_HOME}/lib/notes_cli.sh"
-    source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
     shift  # consume "note"
 
-    # Parse note subcommand arguments
+    # Resolve the tekhton Go binary so subcommands route through it.
+    _tk_bin="${TEKHTON_BIN:-${TEKHTON_HOME}/tekhton}"
+    if ! [ -x "$_tk_bin" ]; then
+        _tk_bin="$(command -v tekhton 2>/dev/null || true)"
+    fi
+    if ! [ -x "${_tk_bin:-}" ]; then
+        error "tekhton binary not found; build with: (cd \"${TEKHTON_HOME}\" && make build)"
+        _TEKHTON_CLEAN_EXIT=true
+        exit 1
+    fi
+
+    # Map legacy flag-style args to the Cobra subcommand surface that
+    # supersedes lib/notes_cli.sh + lib/notes_cli_write.sh (m24).
     if [[ "${1:-}" = "--list" ]]; then
         shift
-        _note_filter=""
         if [[ "${1:-}" = "--tag" ]] && [[ -n "${2:-}" ]]; then
-            _note_filter="$2"
+            "$_tk_bin" note list --project-dir "$PROJECT_DIR" --tag "$2"
+        else
+            "$_tk_bin" note list --project-dir "$PROJECT_DIR"
         fi
-        list_human_notes_cli "$_note_filter"
     elif [[ "${1:-}" = "--done" ]]; then
         shift
         if [[ -z "${1:-}" ]]; then
@@ -765,18 +774,20 @@ if [ "${1:-}" = "note" ]; then
             _TEKHTON_CLEAN_EXIT=true
             exit 1
         fi
-        complete_human_note "$1"
+        # done-fuzzy accepts ordinal (1-based on Pending notes) or
+        # substring match — mirrors complete_human_note semantics.
+        "$_tk_bin" note done-fuzzy --project-dir "$PROJECT_DIR" "$@"
     elif [[ "${1:-}" = "--clear" ]]; then
-        clear_completed_notes
+        "$_tk_bin" note clear-completed --project-dir "$PROJECT_DIR"
     elif [[ -n "${1:-}" ]] && [[ "${1:-}" != -* ]]; then
-        # Positional text argument — add a note
+        # Positional text argument — add a note (default FEAT tag).
         _note_text="$1"
         shift
         _note_tag="FEAT"
         if [[ "${1:-}" = "--tag" ]] && [[ -n "${2:-}" ]]; then
             _note_tag="$2"
         fi
-        add_human_note "$_note_text" "$_note_tag"
+        "$_tk_bin" note add --project-dir "$PROJECT_DIR" --tag "$_note_tag" "$_note_text"
     else
         echo "Usage: tekhton note \"description\" [--tag BUG|FEAT|POLISH]"
         echo "       tekhton note --list [--tag BUG|FEAT|POLISH]"
@@ -843,20 +854,11 @@ _check_pipeline_lock
 source "${TEKHTON_HOME}/lib/common.sh"
 _phase_start "startup"
 source "${TEKHTON_HOME}/lib/config.sh"
-source "${TEKHTON_HOME}/lib/notes_core_normalize.sh"
-source "${TEKHTON_HOME}/lib/notes_core.sh"
-source "${TEKHTON_HOME}/lib/notes_rollback.sh"
-source "${TEKHTON_HOME}/lib/notes.sh"
-source "${TEKHTON_HOME}/lib/notes_single.sh"
-source "${TEKHTON_HOME}/lib/notes_triage.sh"
-source "${TEKHTON_HOME}/lib/notes_triage_flow.sh"
-source "${TEKHTON_HOME}/lib/notes_triage_report.sh"
-source "${TEKHTON_HOME}/lib/notes_cleanup.sh"
-source "${TEKHTON_HOME}/lib/notes_cli.sh"
-source "${TEKHTON_HOME}/lib/notes_cli_write.sh"
-source "${TEKHTON_HOME}/lib/notes_migrate.sh"
-source "${TEKHTON_HOME}/lib/notes_acceptance.sh"
-source "${TEKHTON_HOME}/lib/notes_acceptance_helpers.sh"
+# m24: notes subsystem ported to internal/notes (Go). The 14
+# lib/notes*.sh files were deleted; the small bash residue (line-based
+# helpers for the --human mode loop) lives in human_mode_notes.sh and
+# exec's `tekhton note <subcommand>` for state changes.
+source "${TEKHTON_HOME}/lib/human_mode_notes.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/dry_run.sh"
@@ -890,6 +892,7 @@ source "${TEKHTON_HOME}/lib/ui_validate.sh"
 source "${TEKHTON_HOME}/lib/ui_validate_report.sh"
 source "${TEKHTON_HOME}/lib/hooks.sh"
 source "${TEKHTON_HOME}/lib/hooks_final_checks.sh"
+source "${TEKHTON_HOME}/lib/markdown_helpers.sh"
 source "${TEKHTON_HOME}/lib/drift.sh"
 source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
 source "${TEKHTON_HOME}/lib/drift_prune.sh"
@@ -1783,7 +1786,7 @@ if [[ "$HUMAN_MODE" = true ]]; then
             CURRENT_NOTE_LINE=$(_find_note_by_id "$CURRENT_NOTE_ID")
         fi
         # Capture count BEFORE claiming so pre-flight display is accurate (M33 Bug 5)
-        _PRE_CLAIM_NOTE_COUNT=$(count_human_notes)
+        _PRE_CLAIM_NOTE_COUNT=$(count_unchecked_notes)
         if [[ "$_note_restored" = true ]]; then
             # Resume path: note may be [~] (prior run exited cleanly, cleanup
             # didn't reset) or [ ] (prior run crashed, cleanup did reset).
@@ -1998,7 +2001,7 @@ fi
 
 # Pre-flight: show only the notes that will actually be injected.
 # Use pre-claim count if available (M33 Bug 5: count before claim_single_note).
-HUMAN_NOTE_COUNT="${_PRE_CLAIM_NOTE_COUNT:-$(count_human_notes)}"
+HUMAN_NOTE_COUNT="${_PRE_CLAIM_NOTE_COUNT:-$(count_unchecked_notes)}"
 if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
     echo
     if [ -n "$NOTES_FILTER" ]; then
@@ -2006,7 +2009,16 @@ if [ "$HUMAN_NOTE_COUNT" -gt 0 ]; then
     else
         warn "${HUMAN_NOTES_FILE} has ${HUMAN_NOTE_COUNT} unchecked item(s) — will be injected into coder prompt."
     fi
-    extract_human_notes | sed 's/^/  /'
+    # m24: extract block via `tekhton note extract` (replaces the deleted bash helper).
+    _ext_bin="$(_notes_bin)"
+    if [[ -n "$_ext_bin" ]]; then
+        if [[ -n "$NOTES_FILTER" ]]; then
+            "$_ext_bin" note extract --project-dir "$PROJECT_DIR" --tag "$NOTES_FILTER" 2>/dev/null | sed 's/^/  /' || true
+        else
+            "$_ext_bin" note extract --project-dir "$PROJECT_DIR" 2>/dev/null | sed 's/^/  /' || true
+        fi
+    fi
+    unset _ext_bin
     REMAINING_UNFILTERED=$(grep -c "^- \[ \]" "${HUMAN_NOTES_FILE}" || true)
     REMAINING_UNFILTERED=$(echo "$REMAINING_UNFILTERED" | tr -d '[:space:]')
     if [ -n "$NOTES_FILTER" ] && [ "$REMAINING_UNFILTERED" -gt "$HUMAN_NOTE_COUNT" ]; then
@@ -2227,11 +2239,31 @@ create_run_checkpoint
 consolidate_legacy_human_action
 clear_completed_nonblocking_notes
 clear_resolved_drift_observations
-clear_completed_human_notes
+# m24: clear-completed notes via the CLI (replaces the deleted
+# clear_completed_human_notes bash helper from lib/notes.sh).
+_tk_clear_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+if [[ ! -x "$_tk_clear_bin" ]]; then
+    _tk_clear_bin="${TEKHTON_HOME:-.}/tekhton"
+fi
+if [[ -x "$_tk_clear_bin" ]]; then
+    "$_tk_clear_bin" note clear-completed --project-dir "${PROJECT_DIR}" >/dev/null 2>&1 || true
+fi
+unset _tk_clear_bin
 clear_resolved_nonblocking_notes > /dev/null
 
 # --- M40: Migrate legacy notes and ensure gitignore for inbox ----------------
-migrate_legacy_notes
+# m24: V1→V2 migration is now `tekhton note migrate`; the legacy bash
+# migrator was deleted with lib/notes_migrate.sh. The Go side runs as
+# part of `tekhton note add` (the writer always emits v2 metadata) but
+# we still want an idempotent upgrade for existing v1 files.
+_tk_mig_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+if [[ ! -x "$_tk_mig_bin" ]]; then
+    _tk_mig_bin="${TEKHTON_HOME:-.}/tekhton"
+fi
+if [[ -x "$_tk_mig_bin" ]] && [[ -f "${PROJECT_DIR}/${HUMAN_NOTES_FILE:-HUMAN_NOTES.md}" ]]; then
+    "$_tk_mig_bin" note migrate --project-dir "${PROJECT_DIR}" >/dev/null 2>&1 || true
+fi
+unset _tk_mig_bin
 _ensure_gitignore_inbox
 
 # --- UI framework detection (Milestone 28) -----------------------------------

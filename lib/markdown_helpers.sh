@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
+# shellcheck shell=bash
 # =============================================================================
-# notes_core_normalize.sh — Markdown blank-line normalization helper
+# markdown_helpers.sh — m24. Generic markdown post-processing helpers.
 #
-# Sourced by tekhton.sh before notes_core.sh, drift_cleanup.sh, and
-# notes_cleanup.sh so the helper is defined when those files' functions
-# execute. Do not run directly.
+# Sourced by lib/drift_cleanup.sh — do not run directly. Holds the
+# previously-named `_normalize_markdown_blank_runs` helper that used to
+# live in lib/notes_core_normalize.sh (deleted in m24 along with the
+# rest of the lib/notes*.sh family). The helper itself is not
+# notes-specific — it post-processes any markdown file by collapsing
+# blank-line runs.
 # =============================================================================
-
-set -euo pipefail
 
 # _normalize_markdown_blank_runs FILE
 #

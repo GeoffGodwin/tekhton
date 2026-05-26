@@ -13,6 +13,10 @@ source "${TEKHTON_HOME}/stages/coder_prerun.sh"
 # shellcheck source=stages/coder_buildfix.sh
 source "${TEKHTON_HOME}/stages/coder_buildfix.sh"
 
+# m24: notes subsystem ported to internal/notes (Go). The bulk
+# claim/resolve/extract/should-claim wrappers live in
+# lib/human_mode_notes.sh so this file stays under the size ceiling.
+
 # _switch_to_sub_milestone — After a milestone split, update state to target
 # the first sub-milestone (N.1). Sets _CURRENT_MILESTONE, TASK, and milestone
 # state. Must be called in the same scope (not a subshell) so variable
@@ -120,7 +124,7 @@ run_stage_coder() {
     _scout_archive_name="${TIMESTAMP}_$(basename "${SCOUT_REPORT_FILE}")"
 
     # Tag-specific scout behavior (M42): configurable per tag
-    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && _m24_notes_should_claim; then
         case "$NOTES_FILTER" in
             BUG)
                 case "${SCOUT_ON_BUG:-always}" in
@@ -138,7 +142,7 @@ run_stage_coder() {
                         _est_turns_val=$(grep -oP 'est_turns:\K[0-9]+' "${HUMAN_NOTES_FILE}" 2>/dev/null | head -1 || true)
                         if [[ -n "$_est_turns_val" ]] && [[ "$_est_turns_val" -gt 10 ]]; then
                             SHOULD_SCOUT=true
-                        elif echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
+                        elif echo "$TASK$(_m24_notes_extract)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
                             SHOULD_SCOUT=true
                         fi
                         ;;
@@ -149,7 +153,7 @@ run_stage_coder() {
                 case "${SCOUT_ON_POLISH:-never}" in
                     always) SHOULD_SCOUT=true ;;
                     auto)
-                        if echo "$TASK$(extract_human_notes)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
+                        if echo "$TASK$(_m24_notes_extract)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
                             SHOULD_SCOUT=true
                         fi
                         ;;
@@ -194,8 +198,8 @@ $(cat "${SCOUT_REPORT_FILE}")
         fi
 
         export HUMAN_NOTES_CONTENT=""
-        if should_claim_notes; then
-            HUMAN_NOTES_CONTENT=$(extract_human_notes)
+        if _m24_notes_should_claim; then
+            HUMAN_NOTES_CONTENT=$(_m24_notes_extract)
         fi
 
         # Build architecture block for scout if available (M47: use cache)
@@ -425,7 +429,7 @@ $(cat "${SCOUT_REPORT_FILE}")
     # The human notes block is still built for injection into the template.
     HUMAN_NOTES_BLOCK=""
     NOTE_TEMPLATE_NAME=""   # Set when a tag-specific template should be used
-    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && _m24_notes_should_claim; then
         # Select tag-specific template if available
         case "$NOTES_FILTER" in
             BUG)    NOTE_TEMPLATE_NAME="coder_note_bug" ;;
@@ -441,10 +445,20 @@ $(cat "${SCOUT_REPORT_FILE}")
         fi
 
         export HUMAN_NOTES_BLOCK
+        # m24: _m24_notes_extract ported to `tekhton note extract`.
+        # The CLI honors NOTES_FILTER via --tag and strips trailing
+        # `<!-- note:nNN ... -->` metadata exactly like the bash
+        # function did.
+        local _notes_body=""
+        if [[ -x "${TEKHTON_BIN:-${TEKHTON_HOME}/bin/tekhton}" ]]; then
+            _notes_body=$("${TEKHTON_BIN:-${TEKHTON_HOME}/bin/tekhton}" \
+                note extract --project-dir "${PROJECT_DIR}" \
+                ${NOTES_FILTER:+--tag "$NOTES_FILTER"} 2>/dev/null || true)
+        fi
         HUMAN_NOTES_BLOCK="
 ## Human Notes [${NOTES_FILTER:-ALL}]
 
-$(extract_human_notes)
+${_notes_body}
 ${BUG_SCOUT_CONTEXT}"
     fi
 
@@ -593,7 +607,7 @@ ${nb_notes}"
     fi
 
     # --- Context compiler (task-scoped filtering) ----------------------------
-    # NOTE: build_context_packet is called before should_claim_notes intentionally.
+    # NOTE: build_context_packet is called before _m24_notes_should_claim intentionally.
     # It takes explicit args (not HUMAN_NOTES_BLOCK global), so the ordering is safe.
 
     _phase_start "context_assembly"
@@ -604,11 +618,11 @@ ${nb_notes}"
     # Mark human notes as in-progress before coder runs (only when task is about notes)
     # In --human (single-note) mode, claim_single_note already ran in tekhton.sh —
     # skip bulk claiming to avoid marking unrelated notes as [~].
-    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && _m24_notes_should_claim && [[ "${HUMAN_MODE:-false}" != true ]]; then
         # Triage bulk notes and warn about oversized ones (M41)
         triage_bulk_warn "${NOTES_FILTER:-}" || true
-        claim_human_notes
-    elif [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && ! should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
+        _m24_notes_claim_bulk
+    elif [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && ! _m24_notes_should_claim && [[ "${HUMAN_MODE:-false}" != true ]]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — injection skipped."
         # Defensive hint: detect tasks that appear to originate from ${HUMAN_NOTES_FILE}
         if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then
@@ -636,7 +650,7 @@ ${nb_notes}"
     # --- Invoke coder agent --------------------------------------------------
 
     # Tag-specific turn budget adjustment (M42)
-    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes && [[ -n "$NOTES_FILTER" ]]; then
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && _m24_notes_should_claim && [[ -n "$NOTES_FILTER" ]]; then
         local _tag_base="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
         local _tag_multiplier="1.0"
         case "$NOTES_FILTER" in
@@ -732,7 +746,7 @@ ${nb_notes}"
 
         # Reset claimed notes — coder didn't produce any work
         if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ]; then
-            resolve_human_notes
+            _m24_notes_resolve_bulk
         fi
 
         # --- Null-run auto-split for milestone mode ---
@@ -808,7 +822,7 @@ ${nb_notes}"
             # Reconstruct for audit trail even on failure
             _reconstruct_coder_summary "FAILED"
             # Reset claimed notes — coder didn't produce any work
-            resolve_human_notes
+            _m24_notes_resolve_bulk
 
             write_pipeline_state \
                 "coder" \
@@ -824,7 +838,7 @@ ${nb_notes}"
             # Reconstruct for audit trail even on failure
             _reconstruct_coder_summary "FAILED"
             # Reset claimed notes — coder didn't produce any work
-            resolve_human_notes
+            _m24_notes_resolve_bulk
             exit 1
         fi
     fi
@@ -844,8 +858,8 @@ ${nb_notes}"
     # In --human (single-note) mode, _hook_resolve_notes in finalize.sh handles
     # resolution via resolve_single_note — skip bulk resolution to avoid resetting
     # the single claimed note before finalization can process it.
-    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && should_claim_notes && [[ "${HUMAN_MODE:-false}" != true ]]; then
-        resolve_human_notes
+    if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && _m24_notes_should_claim && [[ "${HUMAN_MODE:-false}" != true ]]; then
+        _m24_notes_resolve_bulk
     fi
 
     # --- Post-coder clarification detection ------------------------------------

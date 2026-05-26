@@ -50,6 +50,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newCommitBookkeepingCmd())
 	cmd.AddCommand(newPreflightCmd())
 	cmd.AddCommand(newTUICmd())
+	cmd.AddCommand(newNoteCmd())
 	return cmd
 }
 
@@ -59,7 +60,9 @@ type exitCoder interface{ ExitCode() int }
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "tekhton:", err)
+		if msg := err.Error(); msg != "" {
+			fmt.Fprintln(os.Stderr, "tekhton:", msg)
+		}
 		var ec exitCoder
 		if errors.As(err, &ec) {
 			os.Exit(ec.ExitCode())

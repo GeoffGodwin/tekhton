@@ -25,30 +25,25 @@ if [[ ! -f "$SHIM" ]]; then
     exit 1
 fi
 
-# Every bash-shim hook name. These are the 18 hooks the Go orchestrator
-# routes through lib/finalize_shim.sh (26 total minus 8 pure-Go bodies:
-# clear_state, archive_reports, mark_done, archive_milestone,
-# emit_run_memory, emit_run_summary, emit_timing_report, causal_log_finalize).
+# Every bash-shim hook name still routed through lib/finalize_shim.sh.
+# m24 ported six more hooks to Go (internal/finalize/{baseline_cleanup,
+# express_persist, note_acceptance, failure_context_reset, cleanup_resolved,
+# resolve_notes}.go) and removed their case arms from the dispatcher —
+# they are intentionally not listed here. The remaining bash-shim hooks
+# (10 total) are the ones whose underlying subsystems have not yet
+# ported to Go.
 HOOKS=(
-    "_hook_baseline_cleanup"
-    "_hook_note_acceptance"
     "_hook_final_checks"
     "_hook_drift_artifacts"
     "_hook_record_metrics"
-    "_hook_cleanup_resolved"
-    "_hook_resolve_notes"
     "_hook_health_reassess"
     "_hook_failure_context"
-    "_hook_express_persist"
     "_hook_project_version_bump"
     "_hook_changelog_append"
     "_hook_commit"
     "_hook_project_version_tag"
     "_hook_update_check"
     "_hook_final_dashboard_status"
-    # m23: _hook_tui_complete ported to Go (internal/finalize/tui_complete.go)
-    # and removed from lib/finalize_shim.sh. Not dispatched through bash.
-    "_hook_failure_context_reset"
 )
 
 FAIL=0

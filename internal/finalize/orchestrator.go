@@ -74,8 +74,8 @@ func HookOrder() []string {
 // internal/finalize/. Every other hook in hookOrder is invoked through the
 // bash shim dispatcher. Follow-up milestones (m22..m25) move names out of
 // the shim dispatcher and onto this list as their underlying bash
-// subsystems port. m21 lands eight pure-Go bodies; eighteen hooks remain
-// in bash behind the shim.
+// subsystems port. m21 landed eight pure-Go bodies; m23 added TUI
+// complete; m24 added the six notes-touching bodies.
 var goNativeHooks = map[string]func() Hook{
 	"_hook_clear_state":         func() Hook { return &ClearState{} },
 	"_hook_archive_reports":     func() Hook { return &ArchiveReports{} },
@@ -87,6 +87,17 @@ var goNativeHooks = map[string]func() Hook{
 	"_hook_causal_log_finalize": func() Hook { return &CausalLogFinalize{} },
 	// m23: TUI complete hook ported to Go alongside the TUI writer subsystem.
 	"_hook_tui_complete": func() Hook { return &TUIComplete{} },
+	// m24: notes subsystem ported to Go. Three pure-Go bodies (notes-only
+	// work) and three Go bodies that delegate the cross-subsystem work
+	// (test_baseline, express, failure_context) to narrow bash invocations
+	// until those subsystems port in their own milestones. The bash case
+	// arm in lib/finalize_shim.sh for these six hooks is removed.
+	"_hook_baseline_cleanup":       func() Hook { return &BaselineCleanup{} },
+	"_hook_express_persist":        func() Hook { return &ExpressPersist{} },
+	"_hook_note_acceptance":        func() Hook { return &NoteAcceptance{} },
+	"_hook_failure_context_reset":  func() Hook { return &FailureContextReset{} },
+	"_hook_cleanup_resolved":       func() Hook { return &CleanupResolved{} },
+	"_hook_resolve_notes":          func() Hook { return &ResolveNotes{} },
 }
 
 // Orchestrator owns the hook registry and the run loop. Constructed by

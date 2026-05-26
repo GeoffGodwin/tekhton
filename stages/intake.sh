@@ -143,10 +143,16 @@ run_stage_intake() {
     fi
 
     # Inject related human notes context (M25)
+    # m24: extract via `tekhton note extract` rather than the deleted
+    # bash extract-block function.
     export NOTES_CONTEXT_BLOCK=""
-    if [[ -f "${HUMAN_NOTES_FILE}" ]] && command -v extract_human_notes &>/dev/null; then
+    local _intake_tk_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+    if [[ ! -x "$_intake_tk_bin" ]]; then
+        _intake_tk_bin="${TEKHTON_HOME:-.}/tekhton"
+    fi
+    if [[ -f "${HUMAN_NOTES_FILE}" ]] && [[ -x "$_intake_tk_bin" ]]; then
         local all_notes
-        all_notes=$(NOTES_FILTER="" extract_human_notes 2>/dev/null || true)
+        all_notes=$(NOTES_FILTER="" "$_intake_tk_bin" note extract --project-dir "${PROJECT_DIR:-.}" 2>/dev/null || true)
         if [[ -n "$all_notes" ]]; then
             # Simple keyword overlap: include notes if any word from the task
             # appears in the notes (case-insensitive, 4+ char words only)
