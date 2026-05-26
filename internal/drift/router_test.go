@@ -92,3 +92,33 @@ func TestRouter_BodyOnlyFailToken_NoMatch(t *testing.T) {
 		t.Errorf("Route = %s, want %s (body-only [FAIL] should not flip)", got, DispositionNonBlocking)
 	}
 }
+
+// TestDisposition_String verifies the human-readable names used in logs.
+// String() was at 0% coverage.
+func TestDisposition_String(t *testing.T) {
+	cases := []struct {
+		d    Disposition
+		want string
+	}{
+		{DispositionBlocking, "blocking"},
+		{DispositionNonBlocking, "non_blocking"},
+		{Disposition(99), "unknown"},
+	}
+	for _, tc := range cases {
+		if got := tc.d.String(); got != tc.want {
+			t.Errorf("Disposition(%d).String() = %q, want %q", int(tc.d), got, tc.want)
+		}
+	}
+}
+
+// TestRouter_NitPattern_IsNonBlocking tests the standalone `\bnit\b`
+// pattern (not "nitpick") to ensure word-boundary anchoring works.
+func TestRouter_NitPattern_IsNonBlocking(t *testing.T) {
+	a := &Artifact{
+		Header: "Code review",
+		Body:   "This is a nit about variable naming.",
+	}
+	if got := Route(a); got != DispositionNonBlocking {
+		t.Errorf("Route with 'nit' token = %s, want %s", got, DispositionNonBlocking)
+	}
+}

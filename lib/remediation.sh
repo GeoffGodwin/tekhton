@@ -183,8 +183,10 @@ _route_to_human_action() {
         oneline="${oneline} — Fix: \`${remediation}\`"
     fi
     # m25: drift bash functions ported to internal/drift; use the CLI.
+    # PROJECT_DIR may be unset in unit-test contexts that don't run the
+    # full pipeline preamble — fall back to cwd defensively.
     "${TEKHTON_BIN:-tekhton}" drift human-action append \
-        --project-dir "$PROJECT_DIR" \
+        --project-dir "${PROJECT_DIR:-$PWD}" \
         --source "build_gate" \
         --description "$oneline" 2>/dev/null || true
 }

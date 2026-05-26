@@ -63,6 +63,62 @@ func TestPrune_AboveThreshold_ArchivesExcess(t *testing.T) {
 	}
 }
 
+// TestAppendArchive_AppendsToExistingFile verifies that appendArchive
+// adds entries to a pre-existing archive file rather than overwriting
+// it. This covers the os.Stat(archivePath) == nil branch.
+func TestAppendArchive_AppendsToExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	archive := filepath.Join(dir, "DRIFT_ARCHIVE.md")
+	// Create an existing archive.
+	existing := driftArchivePreamble + "\n- [RESOLVED 2026-01-01] old entry\n"
+	_ = os.WriteFile(archive, []byte(existing), 0o644)
+
+	excess := []string{"- [RESOLVED 2026-05-26] new entry"}
+	if err := appendArchive(archive, excess); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(archive)
+	s := string(body)
+	if !strings.Contains(s, "old entry") {
+		t.Error("existing entry should be preserved")
+	}
+	if !strings.Contains(s, "new entry") {
+		t.Error("new entry should be appended")
+	}
+}
+
+// TestPrune_NoArchivePath verifies that excess entries are dropped
+// (not written) when PruneOptions.ArchivePath is empty. The kept
+// entries must still be written back to the active log.
+func TestPrune_NoArchivePath(t *testing.T) {
+	l := tempLog(t)
+	_ = l.EnsureLog()
+	// Synthesize 25 resolved entries.
+	for i := 0; i < 25; i++ {
+		body, _ := os.ReadFile(l.Path)
+		s := string(body)
+		marker := "## Resolved"
+		idx := strings.Index(s, marker)
+		if idx == -1 {
+			t.Fatal("Resolved marker missing")
+		}
+		end := idx + len(marker) + 1
+		entry := "- [RESOLVED 2026-05-26] entry-" + itoa(i) + "\n"
+		_ = os.WriteFile(l.Path, []byte(s[:end]+entry+s[end:]), 0o644)
+	}
+	pruned, err := l.Prune(PruneOptions{KeepCount: 10}) // no ArchivePath
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pruned != 15 {
+		t.Errorf("pruned = %d, want 15", pruned)
+	}
+	kept, _ := l.GetResolved()
+	if len(kept) != 10 {
+		t.Errorf("remaining resolved = %d, want 10", len(kept))
+	}
+}
+
 // itoa avoids importing strconv just for the prune fixture loop.
 func itoa(n int) string {
 	if n == 0 {

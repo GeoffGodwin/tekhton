@@ -125,10 +125,11 @@ run_build_fix_loop() {
     if [[ "$decision" == "noncode_dominant" ]]; then
         warn "Build errors classified as noncode_dominant: skipping build-fix loop."
         warn "These errors require environment remediation, not code changes."
-        if command -v append_human_action &>/dev/null; then
-            append_human_action "build_gate" \
-                "Non-code build errors detected (routing=noncode_dominant). See ${BUILD_ERRORS_FILE} for details."
-        fi
+        # m25: drift bash functions ported to internal/drift; use the CLI.
+        "${TEKHTON_BIN:-tekhton}" drift human-action append \
+            --project-dir "${PROJECT_DIR:-$PWD}" \
+            --source "build_gate" \
+            --description "Non-code build errors detected (routing=noncode_dominant). See ${BUILD_ERRORS_FILE} for details." 2>/dev/null || true
         # not_run stats already exported above.
         write_pipeline_state \
             "coder" \

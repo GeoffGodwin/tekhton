@@ -2,9 +2,12 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 151
+- Runs since audit: 152
 
 ## Unresolved Observations
+- [2026-05-26 | "unknown"] `internal/clarify/detect.go:93` — `parseClarifications` still takes `interface{ Read(p []byte) (int, error) }` (anonymous interface) instead of the idiomatic `io.Reader`. They are identical at the interface level; the stdlib type is self-documenting.
+- [2026-05-26 | "unknown"] `internal/drift/artifacts.go:110-124` — `AppendDecision` calls `NextNumber()` inside the per-ACP loop (re-reading the file from disk after each flush). Correct for the single-writer case; fragile if a future caller passes multiple ACPs simultaneously. Compute the counter once before the loop in a follow-up.
+- [2026-05-26 | "unknown"] The m21 router fix is correctly anchored to the `Header` field. `matchesNonBlockingPattern` scans both Header and Body, which is a slight widening vs the design's stated "Header-only heuristic chain" — in practice harmless since the sentinel takes precedence.
 - [2026-05-25 | "unknown"] (carried from cycle 1) `internal/finalize/hook_bash_delegate.go:32` — `fnName` is injected into a `fmt.Sprintf`-composed bash one-liner via `%s` (no quoting). All callers pass hardcoded function names so this is not exploitable today, but the pattern is one refactor away from a shell-injection vector. Worth replacing with a form that passes the function name as a shell argument rather than as inline script text.
 - [2026-05-25 | "unknown"] `internal/tui/status.go:14-28` (pre-m19 file, unmodified by m23) uses `schema` as the JSON discriminator field (`schema: "tekhton.tui.status.v1"`) while the m23 proto envelope uses `proto`. The Python sidecar's `_read_status` checks `doc.get("proto")`, so files written by `WriteInitial` fall through to the bare-payload path — functionally acceptable, but the mismatched discriminator key is invisible to proto-skew detection and could confuse future work when the two writers are expected to be interchangeable.
 - [2026-05-25 | "unknown"] `lib/finalize_dashboard_hooks.sh:166` defines `_hook_tui_complete()` alongside `_hook_final_dashboard_status()` in the same file. When the `_hook_final_dashboard_status` shim arm sources this file, the dead bash function is loaded into the shell even though it can never be dispatched by the Go orchestrator. Future developers tracing the finalize chain may believe the bash hook is still active; a removal note or a `# DEAD CODE — Go-owned since m23` comment would prevent misread.
@@ -21,3 +24,4 @@
 - [2026-05-18 | "unknown"] The senior coder's no-op pass is correct — the Simplification section of the architect plan is empty, and the deferred item (drift_cleanup.sh non-blocking router sentinel) is properly documented as m24 work.
 
 ## Resolved
+- [RESOLVED 2026-05-26] m25 router fix — The non-blocking router that misclassified a CI-failing test as non-blocking (flagged in the m21 closeout) is fixed in `internal/drift/router.go::Route`. The Go router rules an explicit `[FAIL]` header sentinel ahead of the heuristic chain, so CI-failure artifacts now classify as `DispositionBlocking` regardless of any reviewer-vocabulary tokens that happen to appear in the body. Regression test: `internal/drift/router_test.go::TestRouter_CIFailingTest_IsBlocking` against the captured fixture in `internal/drift/testdata/m21_router_misclassification/`. See `docs/go-migration.md` § "m25 router fix" for the full postmortem.

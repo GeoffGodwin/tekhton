@@ -6,7 +6,7 @@ set -euo pipefail
 # Sourced by tekhton.sh — do not run directly.
 # Expects: _safe_read_file(), _wrap_file_content() from prompts.sh
 #          log(), warn() from common.sh
-#          load_clarifications_content() from clarify.sh
+#          CLARIFICATIONS.md is read inline via _safe_read_file (m25 — clarify ported to internal/clarify)
 #          `tekhton note extract` + should-claim CLI (post-m24)
 #          build_milestone_window() from milestone_window.sh
 #          _phase_start(), _phase_end() from common.sh

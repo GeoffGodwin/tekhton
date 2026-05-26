@@ -16,6 +16,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 )
@@ -171,7 +172,7 @@ func LoadFileContent(path string) (string, error) {
 	defer f.Close()
 	buf := make([]byte, size)
 	n, err := f.Read(buf)
-	if err != nil && err.Error() != "EOF" {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return "", err
 	}
 	body := string(buf[:n])

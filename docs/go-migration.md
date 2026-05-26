@@ -635,3 +635,40 @@ the inventory of unmigrated subsystems and the candidate ordering. The
 `make dogfood` target gates each Phase 5 milestone: every commit that
 changes pipeline behavior must keep the 15-scenario self-host parity
 matrix green.
+
+## m25 router fix
+
+The m21 closeout drift entry flagged a CI-test-failure artifact that the
+bash `process_drift_artifacts` heuristic regex misclassified as a
+non-blocking observation. The entry was deferred — the rationale was
+that hotfixing the dying bash subsystem made less sense than fixing
+the issue in the Go port that was already scoped for m25.
+
+**Root cause.** The bash router scanned an artifact's full text against
+a single regex chain (`(?i)\bnon[-_ ]blocking\b|\bobservation\b|\bdrift\b`).
+The flagged artifact's body legitimately contained the word "observation"
+in passing while its header carried an explicit `[FAIL]` token from a CI
+runner. The header sentinel was load-bearing — it carried the *only*
+signal that the underlying test failed — but the bash heuristic was
+body-anchored and dragged the artifact into the non-blocking bucket
+because of the reviewer-vocabulary substring it happened to contain.
+
+**The Go fix.** `internal/drift/router.go::Route` evaluates a header-
+anchored `[FAIL]` sentinel ahead of the heuristic chain. Any artifact
+whose header carries the explicit failure signal classifies as
+`DispositionBlocking`, full stop. The heuristic chain is preserved for
+artifacts that lack the sentinel — observation/drift/nit/nitpick tokens
+still route to `DispositionNonBlocking`. The safe default for artifacts
+matching neither path is `DispositionBlocking` (escalate to human review
+rather than bury under the cleanup sweep).
+
+**Regression test.**
+`internal/drift/router_test.go::TestRouter_CIFailingTest_IsBlocking`
+exercises the captured fixture in
+`internal/drift/testdata/m21_router_misclassification/`. A second test,
+`TestRouter_PureReviewerObservation_IsNonBlocking`, guards against
+over-correction (artifacts without the `[FAIL]` sentinel whose body
+matches a heuristic token still classify as non-blocking).
+
+The m21 closeout drift log entry is marked **resolved** with reference
+to this milestone (`m25 router fix`).

@@ -3,7 +3,7 @@
   "stage": "security",
   "verdict": "pass",
   "exit_reason": "exit=0",
-  "agent_calls": 1,
-  "duration_sec": 170,
+  "agent_calls": 0,
+  "duration_sec": 0,
   "human_action_required": false
 }

@@ -183,3 +183,51 @@ func TestClearStaleEntries_NoFile(t *testing.T) {
 		t.Error("missing file should not report removed")
 	}
 }
+
+// TestClearStaleEntries_EmptyFile verifies that a zero-size
+// CLARIFICATIONS.md is removed — it carries no valid state.
+func TestClearStaleEntries_EmptyFile(t *testing.T) {
+	path := tempPath(t)
+	// Create a zero-byte file.
+	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := ClearStaleEntries(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !removed {
+		t.Error("empty file should be removed by ClearStaleEntries")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("file should be gone after clearing empty file")
+	}
+}
+
+// TestHandleInteractive_MissingClarificationsPath_Errors verifies that
+// HandleInteractive returns an error when blocking items exist but
+// ClarificationsPath is empty (missing required field).
+func TestHandleInteractive_MissingClarificationsPath_Errors(t *testing.T) {
+	input := strings.NewReader("my answer\n")
+	items := &Items{
+		Blocking: []Item{{Question: "[BLOCKING] which library?", Blocking: true}},
+	}
+	err := HandleInteractive(items, HandleOptions{
+		Input:  input,
+		Output: &bytes.Buffer{},
+		// ClarificationsPath intentionally empty.
+	})
+	if err == nil {
+		t.Error("expected an error when ClarificationsPath is empty, got nil")
+	}
+}
+
+// TestPollUntilAnswered_NilItems_ReturnsImmediately verifies that
+// passing nil items is a no-op that returns nil immediately (no poll).
+func TestPollUntilAnswered_NilItems_ReturnsImmediately(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := PollUntilAnswered(ctx, nil, "/nonexistent", 10*time.Millisecond); err != nil {
+		t.Errorf("nil items should return nil immediately, got %v", err)
+	}
+}

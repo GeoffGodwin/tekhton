@@ -176,3 +176,75 @@ func TestParseACPLine(t *testing.T) {
 		t.Errorf("rationale = %q, want solid reason", rationale)
 	}
 }
+
+// TestParseACPLine_NoACPMarker covers the else-branch where the input
+// line doesn't contain the "ACP: " prefix. The whole line should become
+// the name.
+func TestParseACPLine_NoACPMarker(t *testing.T) {
+	name, rationale := parseACPLine("plain description without prefix")
+	if name == "" {
+		t.Error("name should be non-empty for a line without ACP: prefix")
+	}
+	if rationale != "" {
+		t.Errorf("rationale should be empty, got %q", rationale)
+	}
+}
+
+// TestADR_EnsureFile_Idempotent ensures calling EnsureFile twice does
+// not corrupt the file or change its content.
+func TestADR_EnsureFile_Idempotent(t *testing.T) {
+	a := tempADR(t)
+	if err := a.EnsureFile(); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := os.ReadFile(a.Path)
+	if err := a.EnsureFile(); err != nil {
+		t.Fatal(err)
+	}
+	second, _ := os.ReadFile(a.Path)
+	if string(first) != string(second) {
+		t.Errorf("EnsureFile not idempotent: first=%q second=%q", first, second)
+	}
+}
+
+// TestHumanAction_CountUnchecked_MissingFile verifies the missing-file
+// path returns 0 without error (file may not exist yet).
+func TestHumanAction_CountUnchecked_MissingFile(t *testing.T) {
+	h := tempHA(t)
+	// Do not call EnsureFile — the file must not exist.
+	n, err := h.CountUnchecked()
+	if err != nil {
+		t.Fatalf("CountUnchecked on missing file: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("CountUnchecked missing = %d, want 0", n)
+	}
+}
+
+// TestHumanAction_ConsolidateLegacy_NoCanonical verifies that when the
+// canonical file does not yet exist, the legacy file is simply moved
+// into place (os.Rename path).
+func TestHumanAction_ConsolidateLegacy_NoCanonical(t *testing.T) {
+	dir := t.TempDir()
+	canonical := filepath.Join(dir, "sub", "HUMAN_ACTION_REQUIRED.md")
+	legacy := filepath.Join(dir, "HUMAN_ACTION_REQUIRED.md")
+
+	// Write only the legacy file; canonical does not exist.
+	_ = os.WriteFile(legacy, []byte("- [ ] [2026-01-01] only item\n"), 0o644)
+
+	h := NewHumanAction(canonical)
+	merged, err := h.ConsolidateLegacy(legacy)
+	if err != nil {
+		t.Fatalf("ConsolidateLegacy: %v", err)
+	}
+	// Rename path returns 0 merged (just moved, not merged line-by-line).
+	if merged != 0 {
+		t.Errorf("merged = %d, want 0 for a pure move", merged)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Error("legacy file should have been moved (not exist at old path)")
+	}
+	if _, err := os.Stat(canonical); err != nil {
+		t.Errorf("canonical file should now exist: %v", err)
+	}
+}

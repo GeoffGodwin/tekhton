@@ -172,8 +172,8 @@ _intake_handle_needs_clarity() {
         fi
 
         # m25: clarify functions ported to Go — invoke the CLI. The bash
-        # ``handle_clarifications`` previously read its question list from
-        # the per-session temp files; we synthesise a tiny intake report
+        # handler previously read its question list from the per-session
+        # temp files; we synthesise a tiny intake report
         # under TEKHTON_SESSION_DIR so `tekhton clarify handle` can parse
         # it the same way it parses a coder/reviewer report.
         local _intake_report="${TEKHTON_SESSION_DIR}/intake_clarify_report.md"

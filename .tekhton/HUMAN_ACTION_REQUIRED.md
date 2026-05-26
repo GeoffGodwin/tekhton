@@ -10,3 +10,4 @@ all items are resolved.
 - [x] [2026-05-07 | Source: architect] Structured objects (multi-field records, envelopes) → JSON. Resolved 2026-05-17 in `DESIGN_v4.md §Architecture Target → Output Format Conventions`.
 - [x] [2026-05-07 | Source: architect] List outputs (IDs, file paths, one-thing-per-line) → bare newline. Resolved 2026-05-17 in `DESIGN_v4.md §Architecture Target → Output Format Conventions`.
 - [x] [2026-05-07 | Source: architect] Pipe-delimited rows → migrate toward `--json` flag on the corresponding subcommand over time. Resolved 2026-05-17 in `DESIGN_v4.md §Architecture Target → Output Format Conventions` — pipe form frozen at existing seams; new tooling reads `--json`.
+- [ ] [2026-05-26 | Source: build_gate] Non-code build errors detected (routing=noncode_dominant). See /tmp/tmp.nL5GCvmIDJ/BUILD_ERRORS.md for details.

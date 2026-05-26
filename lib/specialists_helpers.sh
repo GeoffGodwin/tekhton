@@ -43,9 +43,23 @@ _append_specialist_notes() {
         return
     fi
 
-    _ensure_nonblocking_log
-
+    # m25: _ensure_nonblocking_log ported to internal/drift.NonBlocking.EnsureFile.
+    # Touch the file with the preamble structure when missing — the same shape
+    # the Go side writes, so future Go-side reads parse identically.
     local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    if [[ ! -f "$nb_file" ]]; then
+        mkdir -p -- "$(dirname -- "$nb_file")"
+        cat > "$nb_file" <<'NBEOF'
+# Non-Blocking Notes Log
+
+Accumulated reviewer notes that were not blocking but should be addressed.
+
+## Open
+<!-- Items added here by the pipeline. Mark [x] when addressed. -->
+
+## Resolved
+NBEOF
+    fi
     local date_tag
     date_tag=$(date +%Y-%m-%d)
 

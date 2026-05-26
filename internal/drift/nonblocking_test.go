@@ -132,3 +132,30 @@ func TestNonBlocking_ClearResolved(t *testing.T) {
 		t.Errorf("Resolved heading lost:\n%s", body)
 	}
 }
+
+// TestNonBlocking_EnsureFile_RepairsMissingResolved covers the branch
+// where the file exists with ## Open but is missing ## Resolved.
+func TestNonBlocking_EnsureFile_RepairsMissingResolved(t *testing.T) {
+	nb := tempNB(t)
+	// File with ## Open but no ## Resolved.
+	_ = os.WriteFile(nb.Path, []byte("# log\n\n## Open\n\n"), 0o644)
+	if err := nb.EnsureFile(); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := os.ReadFile(nb.Path)
+	if !strings.Contains(string(body), "## Resolved") {
+		t.Errorf("Resolved not added:\n%s", body)
+	}
+}
+
+// TestNonBlocking_AppendNotes_EmptyInput verifies that an empty raw
+// string is a no-op that does NOT create the log file.
+func TestNonBlocking_AppendNotes_EmptyInput(t *testing.T) {
+	nb := tempNB(t)
+	if err := nb.AppendNotes("task", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(nb.Path); !os.IsNotExist(err) {
+		t.Error("empty AppendNotes should not create the log file")
+	}
+}

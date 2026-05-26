@@ -210,6 +210,41 @@ PATTERNS=(
     '\bcomplete_human_note\b'
     '\bclaim_notes_batch\b'
     '\bresolve_notes_batch\b'
+    # m25 (Phase 5): the drift, clarify, and failure_context bash
+    # subsystems ported to internal/drift/, internal/clarify/, and
+    # internal/failure_context/. All seven bash files deleted
+    # (lib/drift.sh, lib/drift_artifacts.sh, lib/drift_cleanup.sh,
+    # lib/drift_prune.sh, lib/clarify.sh, lib/failure_context.sh, plus
+    # the _hook_drift_artifacts body in lib/finalize_core_hooks.sh).
+    # The names below were the *load-bearing* bash entry points whose
+    # reintroduction in lib/ or stages/ would silently fork the
+    # contract — they are detected as either function definitions
+    # (`fn_name()`) or direct call sites. Defensive `command -v` /
+    # `declare -f` guards for these names are still acceptable
+    # transitional state (the bodies they target are gone, so the
+    # guards safely no-op). Cobra subcommand files
+    # (cmd/tekhton/drift.go, cmd/tekhton/clarify.go) are not scanned —
+    # this audit covers lib/ and stages/ only.
+    '\bappend_drift_observations\s*\(\)'
+    '\bprocess_drift_artifacts\s*\(\)'
+    '\bappend_architecture_decision\s*\(\)'
+    '\bappend_human_action\s*\(\)'
+    '\bdetect_clarifications\s*\(\)'
+    '\bhandle_clarifications\s*\(\)'
+    '\breset_failure_cause_context\s*\(\)'
+    '\bset_primary_cause\s*\(\)'
+    '\bset_secondary_cause\s*\(\)'
+    '\bemit_cause_objects_json\s*\(\)'
+    '\bload_clarifications_content\s*\(\)'
+    '\b_ensure_drift_log\s*\(\)'
+    '\b_ensure_adl\s*\(\)'
+    '\b_ensure_human_action\s*\(\)'
+    '\b_ensure_nonblocking_log\s*\(\)'
+    '\b_fc_emit_cause_object\s*\(\)'
+    '\b_fc_json_escape\s*\(\)'
+    '\bresolve_alias_category\s*\(\)'
+    '\bresolve_alias_subcategory\s*\(\)'
+    '\bformat_failure_cause_summary\s*\(\)'
 )
 
 # --- Audit -------------------------------------------------------------------

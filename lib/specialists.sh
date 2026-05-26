@@ -6,7 +6,7 @@ set -euo pipefail
 # Sourced by tekhton.sh — do not run directly.
 # Expects all pipeline globals to be set (TASK, LOG_FILE, etc.)
 # Expects: run_agent(), render_prompt(), log(), warn(), success() from libs
-# Expects: _ensure_nonblocking_log() from drift.sh; _append_specialist_notes() defined locally
+# Expects: _append_specialist_notes() defined locally (m25 — non-blocking log creation now inline)
 #
 # Runs opt-in specialist review passes (security, performance, API contract)
 # AFTER the main reviewer approves. Findings tagged [BLOCKER] re-enter the
