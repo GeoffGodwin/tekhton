@@ -860,6 +860,13 @@ source "${TEKHTON_HOME}/lib/config.sh"
 # exec's `tekhton note <subcommand>` for state changes.
 source "${TEKHTON_HOME}/lib/human_mode_notes.sh"
 source "${TEKHTON_HOME}/lib/agent.sh"
+# Provides _reconstruct_run_summary_from_stage_results, used by
+# print_run_summary (lib/agent_helpers.sh) when in-process accumulators
+# are zero — the V4 finalize-subprocess case where TOTAL_TURNS /
+# TOTAL_TIME / STAGE_SUMMARY do not propagate across the stagerunner
+# subprocess boundary. Without this source the final Run Summary shows
+# "Total turns: 0, Total time: 0m0s" after a successful pipeline run.
+source "${TEKHTON_HOME}/lib/run_summary_reconstruct.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/dry_run.sh"
 source "${TEKHTON_HOME}/lib/quota.sh"

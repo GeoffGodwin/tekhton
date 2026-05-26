@@ -167,6 +167,15 @@ case "$HOOK_NAME" in
         # hook exits 127 and the run-summary line never prints.
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/agent.sh"
+        # run_summary_reconstruct.sh provides the reconstruct helper that
+        # print_run_summary calls when TOTAL_TURNS/TOTAL_TIME are zero
+        # (the finalize-subprocess case — bash globals from the V3
+        # in-process pipeline don't propagate across the stagerunner
+        # subprocess boundary). Without this source the final Run Summary
+        # prints "Total turns: 0, Total time: 0m0s" instead of cumulative
+        # totals reconstructed from .tekhton/stage_results/.
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/run_summary_reconstruct.sh"
         _shim_load_finalize_bodies
         ;;
     _hook_update_check)

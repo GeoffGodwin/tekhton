@@ -26,6 +26,13 @@ var DefaultLibHelpers = []string{
 	// --human mode loop) lives in lib/human_mode_notes.sh.
 	"lib/human_mode_notes.sh",
 	"lib/agent.sh",
+	// run_summary_reconstruct.sh provides
+	// _reconstruct_run_summary_from_stage_results, called by
+	// print_run_summary (in lib/agent_helpers.sh, sourced by agent.sh)
+	// when in-process accumulators are zero — the V4 finalize-subprocess
+	// case. Sourced after agent.sh so the helper is visible when
+	// print_run_summary is invoked at any later point.
+	"lib/run_summary_reconstruct.sh",
 	"lib/state.sh",
 	"lib/dry_run.sh",
 	"lib/quota.sh",

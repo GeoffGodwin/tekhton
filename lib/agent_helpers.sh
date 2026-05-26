@@ -16,12 +16,23 @@ set -euo pipefail
 # --- Run summary -------------------------------------------------------------
 
 print_run_summary() {
-    # Defensive defaults — when invoked under the V4 finalize shim path
-    # (where bash globals from the in-process V3 pipeline are not
-    # available), the totals are not yet wired through StageEnv. Default
-    # to zero so the summary renders cleanly rather than crashing under
-    # `set -u`. A future milestone can plumb actual accumulated metrics
-    # from the Go runner into finalize.
+    # In-process accumulators (TOTAL_TURNS / TOTAL_TIME / STAGE_SUMMARY)
+    # are maintained by lib/agent.sh:run_agent. They survive within a
+    # single stage's bash subprocess but DO NOT cross subprocess
+    # boundaries — the m18 stagerunner spawns each stage in its own
+    # bash, and the finalize chain runs each hook in its own subprocess
+    # too. So the FINAL print_run_summary (called from _hook_commit)
+    # starts with zero accumulators and would render "Total turns: 0,
+    # Total time: 0m0s" without this reconstruct.
+    #
+    # The .tekhton/stage_results/*.json envelopes carry the per-stage
+    # agent_calls + duration_sec the Go runner already collected. We
+    # aggregate them when the in-process values are zero — covering the
+    # finalize subprocess case without breaking the per-stage summary
+    # calls (each stage's subprocess has non-zero accumulators).
+    if [[ "${TOTAL_TURNS:-0}" -eq 0 ]] && [[ "${TOTAL_TIME:-0}" -eq 0 ]]; then
+        _reconstruct_run_summary_from_stage_results
+    fi
     local _tt="${TOTAL_TIME:-0}" _ttu="${TOTAL_TURNS:-0}"
     local _ss="${STAGE_SUMMARY:-}"
     local total_mins=$(( _tt / 60 ))
