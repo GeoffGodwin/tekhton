@@ -171,24 +171,27 @@ _intake_handle_needs_clarity() {
             exit 1
         fi
 
-        # Interactive mode: use existing clarification handler if available
-        if declare -f handle_clarifications &>/dev/null; then
-            # Write questions to temp file for the handler
-            echo "$questions" | sed 's/^- //' | sed '/^$/d' \
-                > "${TEKHTON_SESSION_DIR}/clarify_blocking.txt"
-            : > "${TEKHTON_SESSION_DIR}/clarify_nonblocking.txt"
-            if ! handle_clarifications; then
-                warn "Clarification aborted. Saving state."
-                write_pipeline_state "intake" "needs_clarity" \
-                    "--milestone --start-at coder" "$TASK" \
-                    "Intake needs human clarification" \
-                    "${_CURRENT_MILESTONE:-}"
-                exit 1
-            fi
+        # m25: clarify functions ported to Go — invoke the CLI. The bash
+        # ``handle_clarifications`` previously read its question list from
+        # the per-session temp files; we synthesise a tiny intake report
+        # under TEKHTON_SESSION_DIR so `tekhton clarify handle` can parse
+        # it the same way it parses a coder/reviewer report.
+        local _intake_report="${TEKHTON_SESSION_DIR}/intake_clarify_report.md"
+        {
+            echo "# Intake Clarifications"
+            echo ""
+            echo "## Clarification Required"
+            while IFS= read -r _q; do
+                _q=${_q#- }
+                [[ -z "$_q" ]] && continue
+                printf -- "- [BLOCKING] %s\n" "$_q"
+            done <<< "$questions"
+        } > "$_intake_report"
+        if "${TEKHTON_BIN:-tekhton}" clarify handle \
+                --report "$_intake_report" --project-dir "$PROJECT_DIR"; then
             success "Clarifications recorded. Proceeding."
         else
-            warn "Intake: questions written to ${CLARIFICATIONS_FILE}."
-            warn "Answer the questions and re-run the pipeline."
+            warn "Clarification aborted. Saving state."
             write_pipeline_state "intake" "needs_clarity" \
                 "--milestone --start-at coder" "$TASK" \
                 "Intake needs human clarification" \

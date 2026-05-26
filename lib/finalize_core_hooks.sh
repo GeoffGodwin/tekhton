@@ -51,14 +51,9 @@ _hook_final_checks() {
     fi
 }
 
-_hook_drift_artifacts() {
-    # shellcheck disable=SC2034
-    local exit_code="$1"
-    process_drift_artifacts
-    if declare -f invalidate_drift_cache &>/dev/null; then
-        invalidate_drift_cache
-    fi
-}
+# m25: _hook_drift_artifacts ported to Go
+# (internal/finalize/drift_artifacts.go). The bash body is gone; the
+# Go orchestrator's goNativeHooks dispatches the hook directly.
 
 _hook_record_metrics() {
     # shellcheck disable=SC2034

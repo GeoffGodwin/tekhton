@@ -8,7 +8,7 @@ set -euo pipefail
 # Depends on: common.sh (log, warn, error, success)
 #             agent_helpers.sh (extract_files_from_coder_summary)
 #             state.sh (write_pipeline_state)
-#             drift.sh (append_human_action)
+#             tekhton drift human-action append CLI (m25 — was drift.sh::append_human_action)
 # Provides: _security_is_docs_only(), _parse_security_findings(),
 #           _has_blocking_findings(), _severity_meets_threshold(),
 #           _build_fixable_block(), _build_unfixable_block(),
@@ -184,10 +184,11 @@ _handle_unfixable_findings() {
     case "$policy" in
         escalate)
             log "[security] Escalating unfixable findings to ${HUMAN_ACTION_FILE}"
-            if command -v append_human_action &>/dev/null; then
-                append_human_action "security" "Unfixable security findings require human review:
-${unfixable_block}"
-            fi
+            "${TEKHTON_BIN:-tekhton}" drift human-action append \
+                --project-dir "$PROJECT_DIR" \
+                --source "security" \
+                --description "Unfixable security findings require human review:
+${unfixable_block}" 2>/dev/null || warn "[security] Failed to record human-action escalation"
             return 0
             ;;
         halt)
@@ -205,10 +206,11 @@ ${unfixable_block}"
             ;;
         *)
             warn "[security] Unknown SECURITY_UNFIXABLE_POLICY: ${policy}. Defaulting to escalate."
-            if command -v append_human_action &>/dev/null; then
-                append_human_action "security" "Unfixable security findings:
-${unfixable_block}"
-            fi
+            "${TEKHTON_BIN:-tekhton}" drift human-action append \
+                --project-dir "$PROJECT_DIR" \
+                --source "security" \
+                --description "Unfixable security findings:
+${unfixable_block}" 2>/dev/null || warn "[security] Failed to record human-action escalation"
             return 0
             ;;
     esac

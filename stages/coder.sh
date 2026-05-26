@@ -600,10 +600,12 @@ ${nb_notes}"
     # --- Clarification context (from prior pause) ----------------------------
 
     # M47: use cached clarifications when available
+    # m25: load_clarifications_content moved out of lib/clarify.sh; inline
+    # the equivalent _safe_read_file path here.
     export CLARIFICATIONS_CONTENT
     CLARIFICATIONS_CONTENT=$(_get_cached_clarifications_content)
-    if [[ -z "$CLARIFICATIONS_CONTENT" ]]; then
-        load_clarifications_content
+    if [[ -z "$CLARIFICATIONS_CONTENT" ]] && [[ -f "${CLARIFICATIONS_FILE}" ]] && [[ -s "${CLARIFICATIONS_FILE}" ]]; then
+        CLARIFICATIONS_CONTENT=$(_safe_read_file "${CLARIFICATIONS_FILE}" "CLARIFICATIONS")
     fi
 
     # --- Context compiler (task-scoped filtering) ----------------------------
@@ -864,8 +866,12 @@ ${nb_notes}"
 
     # --- Post-coder clarification detection ------------------------------------
 
-    if detect_clarifications "${CODER_SUMMARY_FILE}"; then
-        if ! handle_clarifications; then
+    # m25: clarify functions ported to Go — invoke the CLI.
+    if "${TEKHTON_BIN:-tekhton}" clarify detect --report "${CODER_SUMMARY_FILE}" 2>/dev/null; then
+        : # exit 0 — no blocking items
+    else
+        # exit 1 — blocking items present; handle interactively.
+        if ! "${TEKHTON_BIN:-tekhton}" clarify handle --report "${CODER_SUMMARY_FILE}" --project-dir "$PROJECT_DIR"; then
             # User aborted — save state for resume
             write_pipeline_state \
                 "coder" \
@@ -879,12 +885,14 @@ ${nb_notes}"
 
         # Re-run coder with clarification answers if blocking items were answered
         local blocking_file="${TEKHTON_SESSION_DIR}/clarify_blocking.txt"
-        if [[ -s "$blocking_file" ]]; then
+        if [[ -s "$blocking_file" ]] || [[ -f "${CLARIFICATIONS_FILE}" ]]; then
             log "Re-running coder with clarification answers..."
 
-            # Reload clarifications into context
-            load_clarifications_content
+            # Reload clarifications into context (m25: read directly via _safe_read_file)
             export CLARIFICATIONS_CONTENT
+            if [[ -f "${CLARIFICATIONS_FILE}" ]] && [[ -s "${CLARIFICATIONS_FILE}" ]]; then
+                CLARIFICATIONS_CONTENT=$(_safe_read_file "${CLARIFICATIONS_FILE}" "CLARIFICATIONS")
+            fi
 
             CODER_PROMPT=$(render_prompt "coder")
 

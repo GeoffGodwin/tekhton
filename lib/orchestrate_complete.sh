@@ -112,9 +112,11 @@ _orch_complete_run() {
         out_set_context max_attempts "${MAX_PIPELINE_ATTEMPTS:-5}"
         _ORCH_ELAPSED=$(( $(date +%s) - _ORCH_START_TIME ))
 
-        if declare -f reset_failure_cause_context &>/dev/null; then
-            reset_failure_cause_context
-        fi
+        # m25: failure_context slot management ported to internal/failure_context;
+        # the Go runner resets via FailureContext.Reset between iterations. The
+        # bash-only legacy path here is a no-op now — bash-only callers (legacy
+        # diagnose output) degrade gracefully when the slots are absent.
+        : # reset slot vars: handled in Go (internal/failure_context.Context.Reset)
 
         if [[ "${CAUSAL_LOG_ENABLED:-true}" = "true" ]] && [[ -f "${CAUSAL_LOG_FILE:-}" ]]; then
             _ORCH_CAUSAL_LOG_BASELINE=$(wc -l < "$CAUSAL_LOG_FILE" 2>/dev/null || echo 0)

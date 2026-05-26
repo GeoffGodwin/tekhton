@@ -52,7 +52,8 @@ run_stage_architect() {
         fi
     fi
 
-    DRIFT_OBSERVATION_COUNT=$(count_drift_observations)
+    # m25: drift counting ported to Go — invoke `tekhton drift count`.
+    DRIFT_OBSERVATION_COUNT=$("${TEKHTON_BIN:-tekhton}" drift count --project-dir "$PROJECT_DIR" 2>/dev/null || echo 0)
 
     # Dependency constraints (P5 — optional, may not exist yet)
     export DEPENDENCY_CONSTRAINTS_CONTENT=""
@@ -211,7 +212,8 @@ run_stage_architect() {
             if ! run_build_gate "post-architect-remediation-retry"; then
                 warn "Build still broken after architect remediation. Skipping review."
                 warn "Drift observations NOT resolved — will retry next audit cycle."
-                reset_runs_since_audit
+                # m25: drift functions ported to Go — invoke the CLI.
+                "${TEKHTON_BIN:-tekhton}" drift reset-audit --project-dir "$PROJECT_DIR" 2>/dev/null || true
                 if [[ "$_remediation_started" == "true" ]]; then
                     _tui_call substage-end --label "architect-remediation" \
                         --verdict "BUILD_BROKEN"
@@ -251,7 +253,8 @@ run_stage_architect() {
     # --- Resolve drift observations ------------------------------------------
 
     local pre_resolve_count
-    pre_resolve_count=$(count_drift_observations)
+    # m25: drift functions ported to Go.
+    pre_resolve_count=$("${TEKHTON_BIN:-tekhton}" drift count --project-dir "$PROJECT_DIR" 2>/dev/null || echo 0)
 
     if [ "$pre_resolve_count" -gt 0 ]; then
         # Extract Out of Scope items — these stay unresolved for next audit cycle
@@ -304,16 +307,20 @@ run_stage_architect() {
         # This replaces fragile pattern-matching that silently failed when the
         # architect paraphrased observations instead of copying them verbatim.
         log "Resolving all ${pre_resolve_count} drift observations..."
-        resolve_all_drift_observations
+        "${TEKHTON_BIN:-tekhton}" drift resolve-all --project-dir "$PROJECT_DIR" 2>/dev/null || true
 
         # Re-add Out of Scope items as new unresolved entries
         if [ ${#oos_items[@]} -gt 0 ]; then
             log "Re-adding ${#oos_items[@]} out-of-scope item(s) to drift log..."
-            append_drift_entries "${oos_items[@]}"
+            local _entries_args=()
+            for entry in "${oos_items[@]}"; do
+                _entries_args+=(--entry "$entry")
+            done
+            "${TEKHTON_BIN:-tekhton}" drift entries --project-dir "$PROJECT_DIR" "${_entries_args[@]}" 2>/dev/null || true
         fi
 
         local post_resolve_count
-        post_resolve_count=$(count_drift_observations)
+        post_resolve_count=$("${TEKHTON_BIN:-tekhton}" drift count --project-dir "$PROJECT_DIR" 2>/dev/null || echo 0)
         log "Drift resolution: ${pre_resolve_count} → ${post_resolve_count} unresolved."
     fi
 
@@ -372,14 +379,19 @@ run_stage_architect() {
         if [ ${#_filtered_design[@]} -gt 0 ]; then
             log "Adding design doc observations to human action file..."
             for entry in "${_filtered_design[@]}"; do
-                append_human_action "architect" "$entry"
+                # m25: drift functions ported to Go.
+                "${TEKHTON_BIN:-tekhton}" drift human-action append \
+                    --project-dir "$PROJECT_DIR" \
+                    --source "architect" \
+                    --description "$entry" 2>/dev/null || true
             done
         fi
     fi
 
     # --- Reset audit counter -------------------------------------------------
 
-    reset_runs_since_audit
+    # m25: drift functions ported to Go.
+    "${TEKHTON_BIN:-tekhton}" drift reset-audit --project-dir "$PROJECT_DIR" 2>/dev/null || true
     log "Runs-since-audit counter reset."
 
     # --- Archive and clean up plan -------------------------------------------

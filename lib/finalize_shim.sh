@@ -93,17 +93,9 @@ case "$HOOK_NAME" in
         source "${TEKHTON_HOME}/lib/prompts.sh"
         _shim_load_finalize_bodies
         ;;
-    _hook_drift_artifacts)
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/markdown_helpers.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/drift.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
-        _shim_load_finalize_bodies
-        ;;
+    # m25: _hook_drift_artifacts ported to Go
+    # (internal/finalize/drift_artifacts.go). The drift bash files
+    # delete in m25; the shim no longer matches the hook name.
     _hook_record_metrics)
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/metrics.sh"
@@ -122,8 +114,9 @@ case "$HOOK_NAME" in
         _shim_load_finalize_bodies
         ;;
     _hook_failure_context)
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/failure_context.sh"
+        # m25: lib/failure_context.sh ported to internal/failure_context;
+        # bash diagnose writer degrades gracefully when slot helpers are
+        # absent.
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/diagnose.sh"
         _shim_load_finalize_bodies

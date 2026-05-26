@@ -661,8 +661,9 @@ if [ "${1:-}" = "--diagnose" ]; then
     source "${TEKHTON_HOME}/lib/causality.sh"
     source "${TEKHTON_HOME}/lib/causality_query.sh"
     source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
-    # M129: load slot helpers before diagnose_output.sh (writer needs them).
-    source "${TEKHTON_HOME}/lib/failure_context.sh"
+    # m25: failure_context slot helpers ported to internal/failure_context;
+    # bash diagnose writer defensively skips slot output when helpers are
+    # absent.
     source "${TEKHTON_HOME}/lib/diagnose.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
@@ -900,10 +901,8 @@ source "${TEKHTON_HOME}/lib/ui_validate_report.sh"
 source "${TEKHTON_HOME}/lib/hooks.sh"
 source "${TEKHTON_HOME}/lib/hooks_final_checks.sh"
 source "${TEKHTON_HOME}/lib/markdown_helpers.sh"
-source "${TEKHTON_HOME}/lib/drift.sh"
-source "${TEKHTON_HOME}/lib/drift_cleanup.sh"
-source "${TEKHTON_HOME}/lib/drift_prune.sh"
-source "${TEKHTON_HOME}/lib/drift_artifacts.sh"
+# m25: drift bash subsystem ported to internal/drift; bash callers invoke
+# `tekhton drift <subcommand>` via the CLI.
 source "${TEKHTON_HOME}/lib/turns.sh"
 source "${TEKHTON_HOME}/lib/context.sh"
 source "${TEKHTON_HOME}/lib/context_compiler.sh"
@@ -924,7 +923,8 @@ source "${TEKHTON_HOME}/lib/indexer_helpers.sh"
 source "${TEKHTON_HOME}/lib/indexer_cache.sh"
 source "${TEKHTON_HOME}/lib/indexer_history.sh"
 source "${TEKHTON_HOME}/lib/mcp.sh"
-source "${TEKHTON_HOME}/lib/clarify.sh"
+# m25: clarify bash subsystem ported to internal/clarify; bash stages
+# invoke `tekhton clarify <subcommand>` via the CLI.
 source "${TEKHTON_HOME}/lib/replan.sh"
 source "${TEKHTON_HOME}/lib/detect.sh"
 source "${TEKHTON_HOME}/lib/detect_commands.sh"
@@ -956,9 +956,10 @@ source "${TEKHTON_HOME}/lib/dashboard.sh"
 # in lib/sidecar_lifecycle.sh, sourced transitively from lib/output.sh.
 source "${TEKHTON_HOME}/lib/inbox.sh"
 source "${TEKHTON_HOME}/lib/report.sh"
-# M129: failure-context slot helpers must load before diagnose_output.sh so
-# the writer's emit_cause_objects_json / resolve_alias_* helpers exist.
-source "${TEKHTON_HOME}/lib/failure_context.sh"
+# m25: failure_context bash subsystem ported to internal/failure_context.
+# The bash slot helpers (emit_cause_objects_json / resolve_alias_*) are
+# gone; the diagnose writer's defensive `command -v` guards already
+# handle their absence (slots simply don't appear in the JSON output).
 source "${TEKHTON_HOME}/lib/diagnose.sh"
 source "${TEKHTON_HOME}/lib/health.sh"
 source "${TEKHTON_HOME}/lib/validate_config.sh"
@@ -1031,12 +1032,12 @@ fi
 # --- Ensure Tekhton artifact directory exists --------------------------------
 mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR}" 2>/dev/null || true
 
-# M129: clear any stale failure-context slots inherited from a prior same-shell
-# run. The writer/reader rely on these vars being either empty or set by the
-# current run — never on whatever the previous invocation left behind.
-if declare -f reset_failure_cause_context &>/dev/null; then
-    reset_failure_cause_context
-fi
+# m25: failure-context slot management ported to internal/failure_context.
+# The bash slot helpers are gone; the Go runner owns slot lifecycle (Reset
+# between iterations + at finalize success). Bash legacy paths that still
+# read PRIMARY_ERROR_* / SECONDARY_ERROR_* env vars degrade gracefully when
+# the slots are absent (they were already defensively guarded).
+: # M129 slot reset now owned by internal/failure_context.Context.Reset
 
 usage() {
     local exit_code="${1:-0}"

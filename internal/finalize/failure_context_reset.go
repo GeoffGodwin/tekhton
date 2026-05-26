@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 
+	"github.com/geoffgodwin/tekhton/internal/failure_context"
 	"github.com/geoffgodwin/tekhton/internal/notes"
 )
 
@@ -14,14 +14,13 @@ import (
 //
 //  1. Notes-side: any stale Active markers from a failed prior run
 //     get reset to Pending so the next pipeline starts clean. m24
-//     ports this branch to pure Go via notes.ClearActive.
+//     ported this branch via notes.ClearActive.
 //
-//  2. Drift-side: failure-cause slot state lives in
-//     lib/failure_context.sh and is shared between notes and drift.
-//     The drift port lands in m25, which is where
-//     lib/failure_context.sh is removed; until then this hook
-//     delegates to the existing bash `reset_failure_cause_context`
-//     via runBashHookFn.
+//  2. Drift-side: the failure-cause primary/secondary slot state
+//     that lives across stages must reset between runs so the next
+//     invocation does not inherit stale cause context. m25 ports
+//     this to internal/failure_context — the lib/failure_context.sh
+//     delegation that m24 carried is gone now.
 //
 // Gates: only runs on pipeline success (matches bash semantics — the
 // reset prevents leaking primary/secondary cause slot values into a
@@ -32,11 +31,11 @@ type FailureContextReset struct{}
 func (h *FailureContextReset) Name() string { return "_hook_failure_context_reset" }
 
 // Run executes both branches. Returns nil — chain semantics.
-func (h *FailureContextReset) Run(ctx context.Context, in *Input) error {
+func (h *FailureContextReset) Run(_ context.Context, in *Input) error {
 	if in.ExitCode != 0 {
 		return nil
 	}
-	// Notes branch (pure Go).
+	// 1. Notes branch (pure Go).
 	path := notesFilePath(in)
 	if d, err := notes.Load(path); err == nil {
 		if reset := notes.ClearActive(d); reset > 0 {
@@ -51,15 +50,37 @@ func (h *FailureContextReset) Run(ctx context.Context, in *Input) error {
 		fmt.Fprintf(logWriter(in), "failure_context_reset: load notes: %v\n", err)
 	}
 
-	// Drift branch — delegate to bash. lib/failure_context.sh is
-	// owned by m25; m24 does not touch it.
-	if in.TekhtonHome == "" {
-		return nil
+	// 2. Drift-side: zero the failure-cause slots (m25 port — no
+	//    bash delegation). The in-process Context is constructed
+	//    fresh; Reset() is called for symmetry with the bash
+	//    function name even though a fresh Context starts zeroed.
+	//
+	//    The slots themselves are owned by the diagnose/orchestrate
+	//    writer subsystem; this hook is the bookkeeping reset that
+	//    finalize runs at run-end so any same-shell next invocation
+	//    does not inherit stale state. The Context lives in the
+	//    runner across the run — its Reset call must mutate the
+	//    shared instance, not a local one. m25 wires the runner's
+	//    instance into Input.FailureContext (added by this milestone)
+	//    when available; for callers that didn't supply one (legacy
+	//    `tekhton finalize` debug, isolated tests), the hook is a
+	//    no-op — there's no shared state to reset.
+	if in.FailureContext != nil {
+		in.FailureContext.Reset()
 	}
-	script := filepath.Join(in.TekhtonHome, "lib", "failure_context.sh")
-	if !fileExists(script) {
-		return nil
-	}
-	runBashHookFn(ctx, in, script, "reset_failure_cause_context")
 	return nil
+}
+
+// Compile-time assertion that *failure_context.Context still
+// satisfies the field type — keeps test failures next to the API
+// drift rather than at runtime.
+var _ failureContextResetter = (*failure_context.Context)(nil)
+
+// failureContextResetter is the interface FailureContextReset needs
+// from the runner-owned context. Defined here (not in
+// internal/failure_context) so the package depends on a typed value
+// rather than a circular interface — the lone Reset method is the
+// stable surface the m25 hook calls.
+type failureContextResetter interface {
+	Reset()
 }

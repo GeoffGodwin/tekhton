@@ -53,12 +53,10 @@ var DefaultLibHelpers = []string{
 	"lib/hooks.sh",
 	"lib/hooks_final_checks.sh",
 	// m24: markdown_helpers.sh holds the previously notes-prefixed
-	// _normalize_markdown_blank_runs (used by drift_cleanup.sh).
+	// _normalize_markdown_blank_runs.
 	"lib/markdown_helpers.sh",
-	"lib/drift.sh",
-	"lib/drift_cleanup.sh",
-	"lib/drift_prune.sh",
-	"lib/drift_artifacts.sh",
+	// m25: lib/drift*.sh (4 files) deleted; ported to internal/drift/.
+	// Bash callers reach the Go subsystem via `tekhton drift <sub>`.
 	"lib/turns.sh",
 	"lib/context.sh",
 	"lib/context_compiler.sh",
@@ -79,7 +77,8 @@ var DefaultLibHelpers = []string{
 	"lib/indexer_cache.sh",
 	"lib/indexer_history.sh",
 	"lib/mcp.sh",
-	"lib/clarify.sh",
+	// m25: lib/clarify.sh deleted; ported to internal/clarify/.
+	// Bash stages reach the Go subsystem via `tekhton clarify <sub>`.
 	"lib/replan.sh",
 	"lib/detect.sh",
 	"lib/detect_commands.sh",
@@ -112,7 +111,9 @@ var DefaultLibHelpers = []string{
 	// point, so it is not listed here.
 	"lib/inbox.sh",
 	"lib/report.sh",
-	"lib/failure_context.sh",
+	// m25: lib/failure_context.sh deleted; slot helpers ported to
+	// internal/failure_context/. Bash diagnose writer falls back to
+	// defensive `command -v` checks when the helpers are absent.
 	"lib/diagnose.sh",
 	"lib/health.sh",
 	"lib/validate_config.sh",

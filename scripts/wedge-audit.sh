@@ -225,21 +225,23 @@ is_allowed() {
     return 1
 }
 
+# Write all patterns to a temp file so each source file needs only one grep
+# pass — O(N) subprocess calls instead of O(N×M), critical for WSL2 performance.
+_pat_file=$(mktemp)
+trap 'rm -f "$_pat_file"' EXIT
+printf '%s\n' "${PATTERNS[@]}" > "$_pat_file"
+
 violations=0
 report=""
 
 for file in "${TARGET_FILES[@]}"; do
     is_allowed "$file" && continue
-    file_violations=""
-    for pattern in "${PATTERNS[@]}"; do
-        # grep -E for ERE; -n for line numbers; -H for filename. Suppress
-        # exit code 1 (no match) so set -e doesn't abort the loop.
-        matches="$(grep -nHE "$pattern" "$file" 2>/dev/null || true)"
-        [[ -n "$matches" ]] && file_violations+="${matches}"$'\n'
-    done
+    # grep -E for ERE; -n for line numbers; -H for filename; -f for pattern
+    # file. Suppress exit code 1 (no match) so set -e doesn't abort the loop.
+    file_violations="$(grep -nHEf "$_pat_file" "$file" 2>/dev/null || true)"
     if [[ -n "$file_violations" ]]; then
         violations=$(( violations + 1 ))
-        report+="--- $file ---"$'\n'"$file_violations"
+        report+="--- $file ---"$'\n'"${file_violations}"$'\n'
     fi
 done
 

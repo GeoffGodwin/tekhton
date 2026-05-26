@@ -31,6 +31,11 @@ var hookOrder = []string{
 	"_hook_causal_log_finalize",
 	"_hook_cleanup_resolved",
 	"_hook_resolve_notes",
+	// m25: clarify cleanup runs just before archive_reports so the
+	// stale CLARIFICATIONS.md file is gone before the archive sweep
+	// captures it. The hook is gated on pipeline success; failure
+	// preserves the file so the next run can resume.
+	"_hook_clarify_finalize",
 	"_hook_archive_reports",
 	"_hook_health_reassess",
 	"_hook_emit_run_summary",
@@ -98,6 +103,13 @@ var goNativeHooks = map[string]func() Hook{
 	"_hook_failure_context_reset":  func() Hook { return &FailureContextReset{} },
 	"_hook_cleanup_resolved":       func() Hook { return &CleanupResolved{} },
 	"_hook_resolve_notes":          func() Hook { return &ResolveNotes{} },
+	// m25: drift subsystem ported to Go. The drift_artifacts hook
+	// runs pure-Go now; the new clarify_finalize hook clears stale
+	// CLARIFICATIONS.md on success. failure_context_reset already
+	// existed (m24) but now uses the in-process Context.Reset
+	// rather than shelling out to lib/failure_context.sh.
+	"_hook_drift_artifacts":   func() Hook { return &DriftArtifacts{} },
+	"_hook_clarify_finalize":  func() Hook { return &ClarifyFinalize{} },
 }
 
 // Orchestrator owns the hook registry and the run loop. Constructed by

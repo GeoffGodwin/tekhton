@@ -115,6 +115,14 @@ type Input struct {
 	// haven't been wired through the new builder yet — drops out once
 	// every caller assigns this field).
 	EnvKV []string
+
+	// FailureContext is the shared primary/secondary cause slot
+	// holder for the current run. m25 added this so
+	// _hook_failure_context_reset can zero the slots without
+	// shelling to lib/failure_context.sh — the bash file is gone in
+	// m25. When nil (legacy callers, debug subcommand, tests with no
+	// orchestrator-owned context), the reset hook is a no-op.
+	FailureContext interface{ Reset() }
 }
 
 // HookResult records one hook's per-run outcome — the orchestrator returns

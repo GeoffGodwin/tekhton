@@ -177,16 +177,16 @@ _route_to_human_action() {
     local diagnosis="$3"
     local remediation="$4"
 
-    if ! command -v append_human_action &>/dev/null; then
-        return 0
-    fi
-
     local oneline
     oneline="Environment issue (${category}): ${diagnosis}"
     if [[ -n "$remediation" ]]; then
         oneline="${oneline} — Fix: \`${remediation}\`"
     fi
-    append_human_action "build_gate" "$oneline"
+    # m25: drift bash functions ported to internal/drift; use the CLI.
+    "${TEKHTON_BIN:-tekhton}" drift human-action append \
+        --project-dir "$PROJECT_DIR" \
+        --source "build_gate" \
+        --description "$oneline" 2>/dev/null || true
 }
 
 # --- attempt_remediation -----------------------------------------------------

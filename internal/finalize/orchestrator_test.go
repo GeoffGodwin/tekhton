@@ -30,9 +30,13 @@ func (f *fakeHook) Run(_ context.Context, _ *Input) error {
 // slice plus the corresponding case in lib/finalize_shim.sh; this test
 // fails red if those drift.
 func TestHookOrder_MatchesBashRegistration(t *testing.T) {
-	// Canonical registration order as of m21. Update this list whenever
+	// Canonical registration order as of m25. Update this list whenever
 	// hookOrder in orchestrator.go changes — the test exists to catch
 	// silent reorderings, not to mirror an external source.
+	//
+	// m25 added _hook_clarify_finalize between _hook_resolve_notes and
+	// _hook_archive_reports so the stale CLARIFICATIONS.md is gone
+	// before the archive sweep runs.
 	expected := []string{
 		"_hook_baseline_cleanup",
 		"_hook_note_acceptance",
@@ -42,6 +46,7 @@ func TestHookOrder_MatchesBashRegistration(t *testing.T) {
 		"_hook_causal_log_finalize",
 		"_hook_cleanup_resolved",
 		"_hook_resolve_notes",
+		"_hook_clarify_finalize",
 		"_hook_archive_reports",
 		"_hook_health_reassess",
 		"_hook_emit_run_summary",
@@ -66,8 +71,8 @@ func TestHookOrder_MatchesBashRegistration(t *testing.T) {
 		"_hook_failure_context_reset",
 	}
 	got := HookOrder()
-	if len(got) != 26 {
-		t.Fatalf("expected 26 hooks in registry, got %d", len(got))
+	if len(got) != 27 {
+		t.Fatalf("expected 27 hooks in registry, got %d", len(got))
 	}
 	if len(got) != len(expected) {
 		t.Fatalf("expected %d hooks, got %d", len(expected), len(got))
@@ -132,13 +137,13 @@ func TestOrchestratorRun_ContinueOnError(t *testing.T) {
 	}
 }
 
-// TestNewOrchestrator_BuildsAll26Hooks asserts the production constructor
-// registers exactly 26 hooks — the count that drives the acceptance
-// criterion in the m21 milestone.
-func TestNewOrchestrator_BuildsAll26Hooks(t *testing.T) {
+// TestNewOrchestrator_BuildsAll27Hooks asserts the production constructor
+// registers the canonical hook count — 26 in m21, bumped to 27 in m25
+// when _hook_clarify_finalize landed.
+func TestNewOrchestrator_BuildsAll27Hooks(t *testing.T) {
 	o := NewOrchestrator("/tmp/tekhton", "/tmp/project")
-	if len(o.Hooks()) != 26 {
-		t.Errorf("NewOrchestrator must register 26 hooks; got %d", len(o.Hooks()))
+	if len(o.Hooks()) != 27 {
+		t.Errorf("NewOrchestrator must register 27 hooks; got %d", len(o.Hooks()))
 	}
 	gotNames := make([]string, 0, len(o.Hooks()))
 	for _, h := range o.Hooks() {

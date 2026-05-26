@@ -1,0 +1,11 @@
+A reviewer observation captured during the run mentions drift in the
+nonblocking router. The bash heuristic regex previously routed this to
+the non-blocking sweep because the body contains the words "observation"
+and "drift" — words that are reviewer vocabulary, not CI vocabulary.
+
+The CI signal that the test failed lives only in the artifact header:
+the bash heuristic never scanned Header in isolation.
+
+This fixture is the exact case the m21 closeout drift entry described.
+The Go router routes it as Blocking because the explicit [FAIL]
+sentinel in the header takes precedence over the heuristic chain.
