@@ -126,10 +126,26 @@ run_build_fix_loop() {
         warn "Build errors classified as noncode_dominant: skipping build-fix loop."
         warn "These errors require environment remediation, not code changes."
         # m25: drift bash functions ported to internal/drift; use the CLI.
+        # Bake a snapshot of the actual error content into the description
+        # rather than just embedding ${BUILD_ERRORS_FILE}: the file path
+        # may resolve to a per-stage tmp directory that the stagerunner
+        # cleans up when the subprocess exits, leaving operators staring
+        # at a vanished path with no way to triage. ~25 lines of head is
+        # enough to identify the failure class (ECONNREFUSED, missing
+        # binary, etc.) without bloating HUMAN_ACTION_REQUIRED.md.
+        local _hae_snapshot=""
+        if [[ -r "${BUILD_ERRORS_FILE:-/dev/null}" ]]; then
+            _hae_snapshot=$(head -25 "${BUILD_ERRORS_FILE}" 2>/dev/null \
+                | sed 's/^/    /')
+        fi
+        local _hae_desc="Non-code build errors detected (routing=noncode_dominant); environment remediation required, not code changes."
+        if [[ -n "$_hae_snapshot" ]]; then
+            _hae_desc="${_hae_desc}"$'\n\n  Error snapshot (first 25 lines):\n'"${_hae_snapshot}"
+        fi
         "${TEKHTON_BIN:-tekhton}" drift human-action append \
             --project-dir "${PROJECT_DIR:-$PWD}" \
             --source "build_gate" \
-            --description "Non-code build errors detected (routing=noncode_dominant). See ${BUILD_ERRORS_FILE} for details." 2>/dev/null || true
+            --description "$_hae_desc" 2>/dev/null || true
         # not_run stats already exported above.
         write_pipeline_state \
             "coder" \

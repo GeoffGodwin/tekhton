@@ -80,6 +80,14 @@ help: ## List targets.
 self-host: build ## Run the 15-scenario self-host parity matrix.
 	@bash scripts/self-host-check.sh
 
-dogfood: self-host ## Run the cutover gate: parity matrix + version lockstep.
+dogfood: self-host ## Run the cutover gate: parity matrix + version lockstep + state-leak gate.
 	@printf '\n[dogfood] cutover gate: tekhton.sh dispatcher routes run-flags to tekhton run.\n'
 	@printf '[dogfood] post-m20 milestones run via tekhton run --milestone <id>.\n'
+	@# State-leak gate: snapshot project state, run the test suite, diff.
+	@# Catches tests that pollute persistent project files by calling the
+	@# real tekhton binary without overriding TEKHTON_BIN/PROJECT_DIR.
+	@_leak_before=$$(mktemp) ; \
+	bash tests/no_state_leak.sh --snapshot-only > $$_leak_before ; \
+	bash tests/run_tests.sh >/dev/null 2>&1 || true ; \
+	bash tests/no_state_leak.sh "$$_leak_before" ; \
+	rm -f "$$_leak_before"

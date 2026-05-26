@@ -34,6 +34,56 @@ fail() { echo "  FAIL: $*"; FAIL=$((FAIL + 1)); }
 _TMP=$(mktemp -d)
 trap 'rm -rf "$_TMP"' EXIT
 
+# Isolate the test from the real project. The production code at
+# stages/coder_buildfix.sh:132 calls `${TEKHTON_BIN:-tekhton} drift
+# human-action append --project-dir "${PROJECT_DIR:-$PWD}"`. If neither
+# TEKHTON_BIN nor PROJECT_DIR is overridden, the test ends up shelling
+# out to the REAL tekhton binary with --project-dir set to the user's
+# real working directory — silently appending to
+# .tekhton/HUMAN_ACTION_REQUIRED.md every test run. Confirmed in
+# practice: this test was the sole source of 5 leaked "noncode_dominant"
+# entries on the user's project tree (one per dogfooded test-suite run).
+#
+# Two-layer isolation: (a) TEKHTON_BIN points at a no-op stub so even if
+# the call site changes its --project-dir handling, no real binary
+# runs; (b) PROJECT_DIR points at the tmp dir so any code path that
+# does invoke tekhton via the no-op stub writes its byproducts into
+# the doomed tmp tree.
+cat > "${_TMP}/tekhton-stub" <<STUB
+#!/usr/bin/env bash
+# Test stub — intercepts the two Go subcommands run_build_fix_loop
+# reaches:
+#   - drift human-action append → no-op (the leak we are guarding
+#     against)
+#   - diagnose classify --mode routing → must still classify so the
+#     test's noncode_dominant path exercises end-to-end. Delegate to
+#     the REAL binary at the captured location, mirroring whatever the
+#     production classifier would have returned.
+set -euo pipefail
+REAL_BIN="${TEKHTON_HOME}/bin/tekhton"
+case "\$1" in
+    drift)
+        # Eat the args, exit clean. (\$2 == "human-action", \$3 == "append")
+        exit 0
+        ;;
+    diagnose)
+        # Pass through to the real binary so classify_routing_decision
+        # still returns a meaningful token. The stub-vs-real split here
+        # is what keeps the noncode_dominant arm reachable while still
+        # blocking the leak.
+        exec "\$REAL_BIN" "\$@"
+        ;;
+    *)
+        # Default: pass through. Errs on the side of letting the test
+        # exercise real code rather than silently misroute.
+        exec "\$REAL_BIN" "\$@"
+        ;;
+esac
+STUB
+chmod +x "${_TMP}/tekhton-stub"
+export TEKHTON_BIN="${_TMP}/tekhton-stub"
+export PROJECT_DIR="${_TMP}"
+
 # =============================================================================
 # _bf_read_raw_errors — primary path: BUILD_RAW_ERRORS_FILE exists
 # Reviewer gap: "annotated-file skew risk is documented in comments but
