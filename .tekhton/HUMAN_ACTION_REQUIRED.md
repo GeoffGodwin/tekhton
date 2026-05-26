@@ -13,3 +13,4 @@ all items are resolved.
 - [ ] [2026-05-26 | Source: build_gate] Non-code build errors detected (routing=noncode_dominant). See /tmp/tmp.nL5GCvmIDJ/BUILD_ERRORS.md for details.
 - [ ] [2026-05-26 | Source: build_gate] Non-code build errors detected (routing=noncode_dominant). See /tmp/tmp.YBh965I5yU/BUILD_ERRORS.md for details.
 - [ ] [2026-05-26 | Source: build_gate] Non-code build errors detected (routing=noncode_dominant). See /tmp/tmp.IudYPcPuD9/BUILD_ERRORS.md for details.
+- [ ] [2026-05-26 | Source: build_gate] Non-code build errors detected (routing=noncode_dominant). See /tmp/tmp.lYCGIDFHQY/BUILD_ERRORS.md for details.
