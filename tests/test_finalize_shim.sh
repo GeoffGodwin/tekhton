@@ -28,13 +28,13 @@ fi
 # Every bash-shim hook name still routed through lib/finalize_shim.sh.
 # m24 ported six more hooks to Go (internal/finalize/{baseline_cleanup,
 # express_persist, note_acceptance, failure_context_reset, cleanup_resolved,
-# resolve_notes}.go) and removed their case arms from the dispatcher —
-# they are intentionally not listed here. The remaining bash-shim hooks
-# (10 total) are the ones whose underlying subsystems have not yet
-# ported to Go.
+# resolve_notes}.go) and removed their case arms from the dispatcher.
+# m25 ported _hook_drift_artifacts and added _hook_clarify_finalize as
+# pure-Go bodies — both are intentionally absent from this list. The
+# remaining bash-shim hooks are the ones whose underlying subsystems have
+# not yet ported to Go.
 HOOKS=(
     "_hook_final_checks"
-    "_hook_drift_artifacts"
     "_hook_record_metrics"
     "_hook_health_reassess"
     "_hook_failure_context"
