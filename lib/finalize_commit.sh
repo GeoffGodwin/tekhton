@@ -20,6 +20,15 @@
 # =============================================================================
 set -euo pipefail
 
+# The interactive y/e/n prompt lives in a sibling file to keep this file
+# under the 300-line bash ceiling. _prompt_commit_choice retries on empty
+# input — the M25 autoskip regression fix.
+# shellcheck source=finalize_commit_prompt.sh
+if [[ -f "${TEKHTON_HOME:-$(dirname "${BASH_SOURCE[0]}")/..}/lib/finalize_commit_prompt.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "${TEKHTON_HOME:-$(dirname "${BASH_SOURCE[0]}")/..}/lib/finalize_commit_prompt.sh"
+fi
+
 # _do_git_commit MSG
 # Stages all changes, runs gitignore safety check, commits with MSG.
 # M40: Drains pending inbox before commit so mid-run notes are persisted.
@@ -216,16 +225,7 @@ _hook_commit() {
         log "AUTO_COMMIT enabled — committing automatically."
         commit_choice="y"
     else
-        log "Commit with suggested message? [y/e/n]"
-        echo "  y = commit now with this message"
-        echo "  e = open message in \$EDITOR first"
-        echo "  n = skip (commit manually later)"
-        if [[ -t 0 ]]; then
-            read -r commit_choice
-        else
-            read -r commit_choice < /dev/tty 2>/dev/null || commit_choice="y"
-            log "(read from /dev/tty — stdin was piped)"
-        fi
+        commit_choice=$(_prompt_commit_choice)
     fi
 
     case "$commit_choice" in

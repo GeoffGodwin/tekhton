@@ -976,6 +976,8 @@ source "${TEKHTON_HOME}/lib/project_version_bump.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
+# Provides _prompt_commit_choice with retry-on-empty — M25 regression fix.
+source "${TEKHTON_HOME}/lib/finalize_commit_prompt.sh"
 
 # Stage helpers and implementations
 source "${TEKHTON_HOME}/lib/intake_helpers.sh"

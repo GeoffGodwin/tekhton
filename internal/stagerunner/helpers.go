@@ -130,6 +130,11 @@ var DefaultLibHelpers = []string{
 	"lib/finalize.sh",
 	"lib/milestone_metadata.sh",
 	"lib/orchestrate.sh",
+	// finalize_commit_prompt.sh provides _prompt_commit_choice (retry
+	// on empty input). Sourced here so any stage that pre-loads the
+	// finalize helpers (typical for tests) has the prompt helper
+	// visible alongside finalize_commit.sh.
+	"lib/finalize_commit_prompt.sh",
 }
 
 // DefaultStageDefs is the canonical name → definition mapping. Helpers lists
