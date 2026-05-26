@@ -69,20 +69,20 @@ run_stage_tester() {
         export ARCHITECTURE_CONTENT
         ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
         if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
-            ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
+            ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE:-} not found)"
         fi
 
         # Repo map slice: changed files + test counterparts
         export REPO_MAP_CONTENT=""
         if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
             local _tester_files
-            _tester_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}")
+            _tester_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}")
             if [[ -n "$_tester_files" ]]; then
                 # Augment with inferred test file counterparts
                 _tester_files=$(infer_test_counterparts "$_tester_files")
                 # Ensure we have a map to slice from
                 if [[ -z "${REPO_MAP_CONTENT:-}" ]]; then
-                    run_repo_map "$TASK" || true
+                    run_repo_map "${TASK:-}" || true
                 fi
                 if [[ -n "$REPO_MAP_CONTENT" ]]; then
                     local _tester_slice
@@ -95,7 +95,7 @@ run_stage_tester() {
         fi
 
         # --- Context compiler (task-scoped filtering) ------------------------
-        build_context_packet "tester" "$TASK" "$CLAUDE_TESTER_MODEL"
+        build_context_packet "tester" "${TASK:-}" "${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}"
 
         # --- UI test guidance (Milestone 28, M58 platform adapter override) ---
         export TESTER_UI_GUIDANCE=""
@@ -145,7 +145,7 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
         # --- Context budget reporting ----------------------------------------
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
         _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
-        log_context_report "tester" "$CLAUDE_TESTER_MODEL"
+        log_context_report "tester" "${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}"
 
         _phase_start "tester_prompt"
         TESTER_PROMPT=$(render_prompt "tester")
@@ -157,9 +157,9 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     _tester_stage_start=$(date +%s)
     local _tester_prompt_chars=${#TESTER_PROMPT}
     local _tester_prompt_tokens=$(( (_tester_prompt_chars + 3) / 4 ))
-    local _tester_turn_budget="${EFFECTIVE_TESTER_MAX_TURNS:-${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}}"
+    local _tester_turn_budget="${EFFECTIVE_TESTER_MAX_TURNS:-${ADJUSTED_TESTER_TURNS:-${TESTER_MAX_TURNS:-50}}}"
     log_verbose "[tester-diag] Prompt: ${_tester_prompt_chars} chars (~${_tester_prompt_tokens} tokens)"
-    log_verbose "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL}"
+    log_verbose "[tester-diag] Turn budget: ${_tester_turn_budget} | Model: ${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}"
     if [[ "${START_AT:-coder}" = "tester" ]]; then
         log_verbose "[tester-diag] Mode: RESUME (tester_resume prompt)"
     else
@@ -170,10 +170,10 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     _phase_start "tester_agent"
     run_agent \
         "Tester" \
-        "$CLAUDE_TESTER_MODEL" \
+        "${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}" \
         "$_tester_turn_budget" \
         "$TESTER_PROMPT" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$AGENT_TOOLS_TESTER"
     _phase_end "tester_agent"
     export TESTER_EXIT=$?
@@ -187,7 +187,7 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     log "[tester-diag] Primary invocation: ${LAST_AGENT_TURNS}/${_tester_turn_budget} turns, ${_tester_agent_mins}m${_tester_agent_secs}s, exit=${LAST_AGENT_EXIT_CODE}"
 
     # --- M62: Extract tester self-reported timing --------------------------------
-    _parse_tester_timing "${TESTER_REPORT_FILE}" "replace"
+    _parse_tester_timing "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" "replace"
     if [[ "$_TESTER_TIMING_EXEC_APPROX_S" -gt -1 ]]; then
         log "[tester-diag] Agent self-reported: ${_TESTER_TIMING_EXEC_COUNT} test executions, ~${_TESTER_TIMING_EXEC_APPROX_S}s execution time, ${_TESTER_TIMING_FILES_WRITTEN} files written"
     fi
@@ -203,7 +203,7 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
             "tester" \
             "upstream_error" \
             "$resume_flag" \
-            "${TASK}" \
+            "${TASK:-}" \
             "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. Re-run the same command."
         warn "State saved — this was an API failure, not a scope issue. Re-run."
         export SKIP_FINAL_CHECKS=true
@@ -219,9 +219,9 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
             "tester" \
             "null_run" \
             "$resume_flag" \
-            "${TASK}" \
-            "Tester agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during discovery. Check logs: ${LOG_FILE}"
-        warn "State saved — re-run with: $0 ${resume_flag} \"${TASK}\""
+            "${TASK:-}" \
+            "Tester agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during discovery. Check logs: ${LOG_FILE:-}"
+        warn "State saved — re-run with: $0 ${resume_flag} \"${TASK:-}\""
         # Signal to pipeline to skip final checks — no point running cleanup
         # agents or test suites when the tester itself couldn't even start.
         export SKIP_FINAL_CHECKS=true
@@ -238,8 +238,8 @@ ${_bl_failures} failure line(s) at baseline (exit code ${_bl_exit}). These are N
     local _tester_total_mins=$(( _tester_total_elapsed / 60 ))
     local _tester_total_secs=$(( _tester_total_elapsed % 60 ))
     local _tester_test_count=0
-    if [[ -f "${TESTER_REPORT_FILE}" ]]; then
-        _tester_test_count=$(grep -c '^- \[' "${TESTER_REPORT_FILE}" || true)
+    if [[ -f "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" ]]; then
+        _tester_test_count=$(grep -c '^- \[' "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" || true)
     fi
     log "[tester-diag] === Stage Complete ==="
     log "[tester-diag] Total wall-clock: ${_tester_total_mins}m${_tester_total_secs}s"

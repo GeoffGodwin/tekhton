@@ -59,7 +59,7 @@ _check_test_health() {
 
     # Sub-score: test command detected (0-20)
     local cmd_score=0
-    if [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]]; then
+    if [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD:-true}" != "true" ]]; then
         cmd_score=20
     elif command -v detect_test_frameworks &>/dev/null 2>&1; then
         local fw_output
@@ -115,9 +115,9 @@ _check_test_health() {
     # Sub-score: test execution (0-15) — only if HEALTH_RUN_TESTS=true
     local exec_score=0
     if [[ "${HEALTH_RUN_TESTS:-false}" == "true" ]] && \
-       [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]]; then
+       [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD:-true}" != "true" ]]; then
         local test_exit=0
-        (cd "$proj_dir" && eval "$TEST_CMD" >/dev/null 2>&1) || test_exit=$?
+        (cd "$proj_dir" && eval "${TEST_CMD:-true}" >/dev/null 2>&1) || test_exit=$?
         if [[ "$test_exit" -eq 0 ]]; then
             exec_score=15
         else

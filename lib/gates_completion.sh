@@ -13,7 +13,7 @@ set -euo pipefail
 # Cross-checks "${CODER_SUMMARY_FILE}" "Files Modified" section against actual git diff.
 # Logs a warning when the summary underreports changes. Non-blocking — informational only.
 _warn_summary_drift() {
-    [[ -f "${CODER_SUMMARY_FILE}" ]] || return 0
+    [[ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]] || return 0
 
     # Count files actually changed (tracked modifications + staged)
     local actual_count=0
@@ -25,11 +25,11 @@ _warn_summary_drift() {
 
     # Check if summary mentions files or claims none modified
     local files_section=""
-    files_section=$(sed -n '/^## Files Modified/,/^## /p' "${CODER_SUMMARY_FILE}" 2>/dev/null \
+    files_section=$(sed -n '/^## Files Modified/,/^## /p' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null \
         | head -20 || true)
 
     if [[ -z "$files_section" ]] || echo "$files_section" | grep -qi "no files\|none\|N/A"; then
-        warn "${CODER_SUMMARY_FILE} reports no files modified but git shows ${actual_count} changed file(s)."
+        warn "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} reports no files modified but git shows ${actual_count} changed file(s)."
         warn "Summary accuracy drift detected — auto-appending actual file list."
         # Auto-append the actual git diff file list to "${CODER_SUMMARY_FILE}"
         local _actual_files
@@ -39,7 +39,7 @@ _warn_summary_drift() {
                 echo ""
                 echo "## Files Modified (auto-detected)"
                 echo "$_actual_files" | while IFS= read -r f; do echo "- \`${f}\`"; done
-            } >> "${CODER_SUMMARY_FILE}"
+            } >> "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"
         fi
     fi
 }
@@ -55,9 +55,9 @@ run_completion_gate() {
         sub(/^## Status:?[[:space:]]*/, "")
         if (length($0) > 0) { print; exit }
         getline; gsub(/^[[:space:]]+|[[:space:]]+$/, ""); print; exit
-    }' "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "")
+    }' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null || echo "")
     export CODER_REMAINING
-    CODER_REMAINING=$(grep "^## Remaining Work" -A5 "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "")
+    CODER_REMAINING=$(grep "^## Remaining Work" -A5 "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null || echo "")
 
     if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
         warn "Completion gate FAILED — coder self-reported IN PROGRESS."
@@ -71,7 +71,7 @@ run_completion_gate() {
         # --- Test enforcement (M63) ---
         # Run TEST_CMD to verify tests still pass after coder changes.
         if [[ "${COMPLETION_GATE_TEST_ENABLED:-true}" == "true" ]] \
-           && [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]]; then
+           && [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD:-true}" != "true" ]]; then
             log "Completion gate: running TEST_CMD for test integrity check..."
             local _cg_output="" _cg_exit=0
             if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
@@ -83,7 +83,7 @@ run_completion_gate() {
                 _cg_output="[dedup] Cached pass — no files changed since last successful test run"
                 _cg_exit=0
             else
-                _cg_output=$(run_op "Running completion tests" bash -c "${TEST_CMD}" 2>&1) || _cg_exit=$?
+                _cg_output=$(run_op "Running completion tests" bash -c "${TEST_CMD:-true}" 2>&1) || _cg_exit=$?
                 if [[ "$_cg_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
                     test_dedup_record_pass
                 fi
@@ -128,7 +128,7 @@ run_completion_gate() {
         return 1
     fi
 
-    warn "Completion gate FAILED — ${CODER_SUMMARY_FILE} has no clear Status field."
+    warn "Completion gate FAILED — ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} has no clear Status field."
     warn "Expected '## Status' line with COMPLETE or IN PROGRESS."
     return 1
 }

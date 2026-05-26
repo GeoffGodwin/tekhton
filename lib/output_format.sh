@@ -60,7 +60,7 @@ out_msg() {
     local msg="$*"
     if [[ "${_TUI_ACTIVE:-false}" == "true" ]]; then
         if [[ -n "${LOG_FILE:-}" ]]; then
-            printf '%s\n' "$(_tui_strip_ansi "$msg")" >> "$LOG_FILE" 2>/dev/null || true
+            printf '%s\n' "$(_tui_strip_ansi "$msg")" >> "${LOG_FILE:-}" 2>/dev/null || true
         fi
         _tui_notify "info" "$msg"
     else

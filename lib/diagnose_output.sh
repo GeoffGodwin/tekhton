@@ -22,7 +22,7 @@ set -euo pipefail
 # generate_diagnosis_report
 # Produces ${DIAGNOSIS_FILE} with causal chain, classification, suggestions.
 generate_diagnosis_report() {
-    local report_file="${PROJECT_DIR:-.}/${DIAGNOSIS_FILE}"
+    local report_file="${PROJECT_DIR:-.}/${DIAGNOSIS_FILE:-.tekhton/DIAGNOSIS.md}"
     local tmpfile="${report_file}.tmp.$$"
 
     {
@@ -119,13 +119,13 @@ generate_diagnosis_report() {
 # Lists files relevant to the diagnosis.
 _list_relevant_files() {
     local files=(
-        "${BUILD_ERRORS_FILE}"
-        "${REVIEWER_REPORT_FILE}"
-        "${CODER_SUMMARY_FILE}"
-        "${TESTER_REPORT_FILE}"
-        "${SECURITY_REPORT_FILE}"
-        "${CLARIFICATIONS_FILE}"
-        "${HUMAN_ACTION_FILE}"
+        "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
+        "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}"
+        "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"
+        "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}"
+        "${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}"
+        "${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}"
+        "${HUMAN_ACTION_FILE:-.tekhton/HUMAN_ACTION_REQUIRED.md}"
         ".claude/PIPELINE_STATE.md"
         ".claude/logs/RUN_SUMMARY.json"
         ".claude/logs/CAUSAL_LOG.jsonl"
@@ -192,7 +192,7 @@ print_diagnosis_summary() {
     fi
 
     out_msg ""
-    out_msg "  Full report: ${DIAGNOSIS_FILE}"
+    out_msg "  Full report: ${DIAGNOSIS_FILE:-.tekhton/DIAGNOSIS.md}"
     out_msg ""
 }
 
@@ -235,7 +235,7 @@ write_last_failure_context() {
 
     local safe_task=""
     if [[ -n "${TASK:-}" ]]; then
-        safe_task=$(printf '%s' "$TASK" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        safe_task=$(printf '%s' "${TASK:-}" | sed 's/\\/\\\\/g; s/"/\\"/g')
     fi
 
     local alias_cat="" alias_sub=""

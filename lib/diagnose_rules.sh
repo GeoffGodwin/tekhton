@@ -27,7 +27,7 @@ DIAG_SUGGESTIONS=()      # Array of suggestion strings
 # _rule_build_failure
 # Detect ${BUILD_ERRORS_FILE} non-empty.
 _rule_build_failure() {
-    local errors_file="${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}"
+    local errors_file="${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
     [[ -f "$errors_file" ]] || return 1
     [[ -s "$errors_file" ]] || return 1
 
@@ -44,10 +44,10 @@ _rule_build_failure() {
         fi
     fi
 
-    DIAG_SUGGESTIONS+=("Build failed. Errors in ${BUILD_ERRORS_FILE}.")
+    DIAG_SUGGESTIONS+=("Build failed. Errors in ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}.")
     if [[ "$build_fix_attempted" = true ]]; then
         DIAG_SUGGESTIONS+=("Automatic build fix was attempted and failed.")
-        DIAG_SUGGESTIONS+=("The errors may require manual intervention. See ${BUILD_ERRORS_FILE}.")
+        DIAG_SUGGESTIONS+=("The errors may require manual intervention. See ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}.")
     else
         DIAG_SUGGESTIONS+=(
             "Options:"
@@ -57,7 +57,7 @@ _rule_build_failure() {
             "     tekhton --complete --milestone \"${_task}\""
         )
     fi
-    DIAG_SUGGESTIONS+=("See details: cat ${BUILD_ERRORS_FILE}")
+    DIAG_SUGGESTIONS+=("See details: cat ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}")
     return 0
 }
 
@@ -169,7 +169,7 @@ _rule_review_loop() {
         fi
     fi
 
-    local reviewer_file="${PROJECT_DIR:-.}/${REVIEWER_REPORT_FILE}"
+    local reviewer_file="${PROJECT_DIR:-.}/${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}"
     if [[ -f "$reviewer_file" ]]; then
         if ! grep -q 'CHANGES_REQUIRED\|REJECTED' "$reviewer_file" 2>/dev/null; then
             return 1
@@ -188,7 +188,7 @@ _rule_review_loop() {
         "Options:"
         "  1. Increase MAX_REVIEW_CYCLES in pipeline.conf, then:"
         "     tekhton --complete --milestone \"${_task}\""
-        "  2. Read ${REVIEWER_REPORT_FILE} and fix the issues manually, then:"
+        "  2. Read ${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md} and fix the issues manually, then:"
         "     tekhton --complete --milestone --start-at review \"${_task}\""
         "  3. Retry review only:"
         "     tekhton --complete --milestone --start-at review \"${_task}\""
@@ -199,7 +199,7 @@ _rule_review_loop() {
 # _rule_security_halt
 # Detect security stage HALT verdict.
 _rule_security_halt() {
-    local security_file="${PROJECT_DIR:-.}/${SECURITY_REPORT_FILE}"
+    local security_file="${PROJECT_DIR:-.}/${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}"
     [[ -f "$security_file" ]] || return 1
 
     if ! grep -q 'HALT\|halt' "$security_file" 2>/dev/null; then
@@ -225,7 +225,7 @@ _rule_security_halt() {
 # _rule_intake_clarity
 # Detect intake pause for clarification.
 _rule_intake_clarity() {
-    local clarify_file="${PROJECT_DIR:-.}/${CLARIFICATIONS_FILE}"
+    local clarify_file="${PROJECT_DIR:-.}/${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}"
     [[ -f "$clarify_file" ]] || return 1
     [[ -s "$clarify_file" ]] || return 1
 
@@ -248,9 +248,9 @@ _rule_intake_clarity() {
     DIAG_CONFIDENCE="high"
     DIAG_SUGGESTIONS=(
         "The PM agent needs clarification on this milestone."
-        "Questions are in ${CLARIFICATIONS_FILE}."
+        "Questions are in ${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}."
         "Options:"
-        "  1. Answer the questions in ${CLARIFICATIONS_FILE}, then:"
+        "  1. Answer the questions in ${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}, then:"
         "     tekhton --complete --milestone \"${_task}\""
         "  2. Lower INTAKE_CLARITY_THRESHOLD in pipeline.conf if the gate is too aggressive"
     )

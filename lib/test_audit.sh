@@ -94,10 +94,10 @@ run_test_audit() {
     log "Invoking test audit agent (max ${TEST_AUDIT_MAX_TURNS:-8} turns)..."
     run_agent \
         "Test Audit" \
-        "${CLAUDE_REVIEWER_MODEL}" \
+        "${CLAUDE_REVIEWER_MODEL:-claude-sonnet-4-6}" \
         "${TEST_AUDIT_MAX_TURNS:-8}" \
         "$audit_prompt" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "${AGENT_TOOLS_REVIEWER:-Read Glob Grep}"
 
     # Step 5: Parse verdict and route
@@ -140,10 +140,10 @@ ${_AUDIT_SAMPLE_FILES:-}"
 
             run_agent \
                 "Tester (audit rework ${rework_cycles})" \
-                "${CLAUDE_TESTER_MODEL}" \
-                "${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}" \
+                "${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}" \
+                "${ADJUSTED_TESTER_TURNS:-${TESTER_MAX_TURNS:-50}}" \
                 "$rework_prompt" \
-                "$LOG_FILE" \
+                "${LOG_FILE:-}" \
                 "${AGENT_TOOLS_TESTER:-Read Glob Grep Write Edit Bash}"
 
             # Re-run audit after rework
@@ -164,10 +164,10 @@ ${_AUDIT_SAMPLE_FILES:-}"
             audit_prompt=$(render_prompt "test_audit")
             run_agent \
                 "Test Audit (re-check ${rework_cycles})" \
-                "${CLAUDE_REVIEWER_MODEL}" \
+                "${CLAUDE_REVIEWER_MODEL:-claude-sonnet-4-6}" \
                 "${TEST_AUDIT_MAX_TURNS:-8}" \
                 "$audit_prompt" \
-                "$LOG_FILE" \
+                "${LOG_FILE:-}" \
                 "${AGENT_TOOLS_REVIEWER:-Read Glob Grep}"
 
             verdict=$(_parse_audit_verdict)
@@ -185,7 +185,7 @@ ${_AUDIT_SAMPLE_FILES:-}"
 
         # Exhausted rework cycles
         warn "Test audit NEEDS_WORK after ${max_rework} rework cycle(s). Escalating to human."
-        warn "Review ${TEST_AUDIT_REPORT_FILE} and fix tests manually."
+        warn "Review ${TEST_AUDIT_REPORT_FILE:-.tekhton/TEST_AUDIT_REPORT.md} and fix tests manually."
         return 0  # Don't block pipeline — log and proceed
     fi
 
@@ -238,7 +238,7 @@ All test files are included regardless of current diff.
     log "Invoking test audit agent (max ${TEST_AUDIT_MAX_TURNS:-8} turns)..."
     run_agent \
         "Test Audit (standalone)" \
-        "${CLAUDE_REVIEWER_MODEL}" \
+        "${CLAUDE_REVIEWER_MODEL:-claude-sonnet-4-6}" \
         "${TEST_AUDIT_MAX_TURNS:-8}" \
         "$audit_prompt" \
         "${LOG_DIR:-/tmp}/$(date +%Y%m%d_%H%M%S)_test-audit.log" \

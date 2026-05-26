@@ -30,10 +30,10 @@ _MIN_SUBSTANTIVE_LINES=20
 run_plan_generate() {
     _assert_design_file_usable || return $?
     # shellcheck disable=SC2153
-    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE:-.tekhton/DESIGN.md}"
 
     if [[ ! -f "$design_file" ]]; then
-        error "${DESIGN_FILE} not found at ${design_file} — cannot generate CLAUDE.md."
+        error "${DESIGN_FILE:-.tekhton/DESIGN.md} not found at ${design_file} — cannot generate CLAUDE.md."
         return 1
     fi
 
@@ -57,7 +57,7 @@ run_plan_generate() {
     log "Max turns: ${PLAN_GENERATION_MAX_TURNS}"
     log "Log: ${log_file}"
     echo
-    log "Generating CLAUDE.md from ${DESIGN_FILE}..."
+    log "Generating CLAUDE.md from ${DESIGN_FILE:-.tekhton/DESIGN.md}..."
 
     # Write session metadata to log
     {

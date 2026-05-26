@@ -78,7 +78,7 @@ _hash_content() {
 capture_test_baseline() {
     local milestone="${1:-${_CURRENT_MILESTONE:-unknown}}"
 
-    if [[ -z "${TEST_CMD:-}" ]] || [[ "${TEST_CMD}" = "true" ]]; then
+    if [[ -z "${TEST_CMD:-}" ]] || [[ "${TEST_CMD:-true}" = "true" ]]; then
         log "[baseline] No TEST_CMD configured — skipping baseline capture"
         return 0
     fi
@@ -87,7 +87,7 @@ capture_test_baseline() {
 
     local test_output=""
     local test_exit=0
-    test_output=$(run_op "Capturing test baseline" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+    test_output=$(run_op "Capturing test baseline" bash -c "${TEST_CMD:-true}" 2>&1) || test_exit=$?
 
     # Save raw output (atomic write via tmpfile+mv)
     local baseline_output
@@ -172,7 +172,7 @@ has_test_baseline() {
 # Checks run_id to distinguish same-run resume from new-run stale baseline.
 _should_capture_test_baseline() {
     [[ "${TEST_BASELINE_ENABLED:-true}" = "true" ]] || return 1
-    [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD}" != "true" ]] || return 1
+    [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD:-true}" != "true" ]] || return 1
 
     # No baseline file at all → capture
     # shellcheck disable=SC2119  # Uses default arg (milestone from global)

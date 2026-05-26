@@ -50,7 +50,7 @@ _CRAWL_EXCLUDE_DIRS="${_DETECT_EXCLUDE_DIRS:-node_modules|.git|__pycache__|.dart
 crawl_project() {
     local project_dir="${1:-.}"
     local budget_chars="${2:-${PROJECT_INDEX_BUDGET:-120000}}"
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     local index_dir="${project_dir}/.claude/index"
 
     log "Crawling project: ${project_dir} (budget: ${budget_chars} chars)"
@@ -84,7 +84,7 @@ crawl_project() {
 
     local final_size
     final_size=$(wc -c < "$index_file" | tr -d '[:space:]')
-    success "${PROJECT_INDEX_FILE} written (${final_size} chars, budget: ${budget_chars})"
+    success "${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md} written (${final_size} chars, budget: ${budget_chars})"
     return 0
 }
 

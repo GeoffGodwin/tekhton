@@ -318,7 +318,7 @@ run_migrations() {
         timestamp_iso=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         local safe_task=""
         if [[ -n "${TASK:-}" ]]; then
-            safe_task=$(printf '%s' "$TASK" | sed 's/\\/\\\\/g; s/"/\\"/g')
+            safe_task=$(printf '%s' "${TASK:-}" | sed 's/\\/\\\\/g; s/"/\\"/g')
         fi
         printf '{\n  "classification": "MIGRATION_FAILURE",\n  "stage": "migration",\n  "outcome": "failure",\n  "task": "%s",\n  "migration_from": "%s",\n  "migration_to": "%s",\n  "consecutive_count": 1,\n  "timestamp": "%s"\n}\n' \
             "$safe_task" "$from_ver" "$to_ver" "$timestamp_iso" \

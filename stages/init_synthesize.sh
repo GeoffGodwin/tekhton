@@ -63,7 +63,7 @@ _synthesize_design() {
 
     # Write session metadata to log
     {
-        echo "=== Tekhton Project Synthesis (${DESIGN_FILE}) ==="
+        echo "=== Tekhton Project Synthesis (${DESIGN_FILE:-.tekhton/DESIGN.md}) ==="
         echo "Date: $(date)"
         echo "Model: ${SYNTHESIS_MODEL}"
         echo "Max Turns: ${SYNTHESIS_MAX_TURNS}"
@@ -92,14 +92,14 @@ _synthesize_design() {
     fi
 
     if [[ -n "$design_content" ]]; then
-        local design_file="${project_dir}/${DESIGN_FILE}"
+        local design_file="${project_dir}/${DESIGN_FILE:-.tekhton/DESIGN.md}"
         printf '%s\n' "$design_content" > "$design_file"
         local line_count
         line_count=$(wc -l < "$design_file" | tr -d '[:space:]')
-        success "${DESIGN_FILE} synthesized (${line_count} lines)."
+        success "${DESIGN_FILE:-.tekhton/DESIGN.md} synthesized (${line_count} lines)."
         return 0
     else
-        warn "Synthesis produced no output — ${DESIGN_FILE} was not created."
+        warn "Synthesis produced no output — ${DESIGN_FILE:-.tekhton/DESIGN.md} was not created."
         [[ "$batch_exit" -ne 0 ]] && warn "Claude exited with code ${batch_exit}."
         return 1
     fi
@@ -113,10 +113,10 @@ _synthesize_design() {
 # Returns: 0 if CLAUDE.md was produced, 1 otherwise
 _synthesize_claude() {
     local project_dir="$1"
-    local design_file="${project_dir}/${DESIGN_FILE}"
+    local design_file="${project_dir}/${DESIGN_FILE:-.tekhton/DESIGN.md}"
 
     if [[ ! -f "$design_file" ]]; then
-        error "${DESIGN_FILE} not found at ${design_file} — cannot generate CLAUDE.md."
+        error "${DESIGN_FILE:-.tekhton/DESIGN.md} not found at ${design_file} — cannot generate CLAUDE.md."
         return 1
     fi
 
@@ -140,7 +140,7 @@ _synthesize_claude() {
     log "Max turns: ${SYNTHESIS_MAX_TURNS}"
     log "Log: ${log_file}"
     echo
-    log "Generating CLAUDE.md from ${DESIGN_FILE} + project index..."
+    log "Generating CLAUDE.md from ${DESIGN_FILE:-.tekhton/DESIGN.md} + project index..."
 
     {
         echo "=== Tekhton Project Synthesis (CLAUDE.md) ==="
@@ -206,7 +206,7 @@ run_project_synthesis() {
     local project_dir="${1:-${PROJECT_DIR:-.}}"
 
     header "Tekhton — Project Synthesis"
-    log "Synthesizing ${DESIGN_FILE} and CLAUDE.md from project index."
+    log "Synthesizing ${DESIGN_FILE:-.tekhton/DESIGN.md} and CLAUDE.md from project index."
     log "Model: ${SYNTHESIS_MODEL} | Max turns: ${SYNTHESIS_MAX_TURNS}"
     echo
 
@@ -216,12 +216,12 @@ run_project_synthesis() {
 
     # Phase 2: ${DESIGN_FILE} generation
     echo
-    log "Phase 2: Generating ${DESIGN_FILE}..."
+    log "Phase 2: Generating ${DESIGN_FILE:-.tekhton/DESIGN.md}..."
     _synthesize_design "$project_dir" || return 1
 
     # Phase 3: Completeness check
     echo
-    log "Phase 3: Checking ${DESIGN_FILE} completeness..."
+    log "Phase 3: Checking ${DESIGN_FILE:-.tekhton/DESIGN.md} completeness..."
     _check_synthesis_completeness "$project_dir"
 
     # Phase 4: CLAUDE.md generation

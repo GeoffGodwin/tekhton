@@ -104,8 +104,8 @@ _resolve_serena_paths() {
 # Returns: 0 if config found/generated, 1 otherwise
 _resolve_mcp_config() {
     # Check explicit config path first
-    if [[ -n "${SERENA_CONFIG_PATH:-}" ]] && [[ -f "$SERENA_CONFIG_PATH" ]]; then
-        _MCP_CONFIG_PATH="$SERENA_CONFIG_PATH"
+    if [[ -n "${SERENA_CONFIG_PATH:-}" ]] && [[ -f "${SERENA_CONFIG_PATH:-}" ]]; then
+        _MCP_CONFIG_PATH="${SERENA_CONFIG_PATH:-}"
         return 0
     fi
 

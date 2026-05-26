@@ -5,12 +5,11 @@ PASS
 92
 
 ## Reasoning
-- Scope is tightly bounded to three deliverables: audit script, unit tests, inventory snapshot — no ambiguity about what's in vs out of m27.1
-- Files changed section explicitly enumerates every file to create, with no implied "and related files"
-- Acceptance criteria are mechanically testable: exact exit codes per fixture, stdout substring match, executable bit check, shellcheck clean, performance bound, minimum inventory entry count
-- Design section provides concrete regex patterns, output format (`<file>:<line>:<varname>`), and an exhaustive false-positive exclusion list — two developers would produce substantially similar implementations
-- Portability concern (`pcregrep` vs `grep -P` vs awk fallback) is explicitly called out in Watch For with required behavior documented
-- Allowlist drift risk is called out with named source-of-truth files (`internal/runner/env.go:AsKV`, `internal/config/defaults.go`)
-- No user-facing config keys or format changes introduced, so no Migration Impact section is needed
-- No UI components, so UI testability criterion is not applicable
-- Dependency on m26 is declared; fallback behavior when `tekhton config defaults --emit shell` is unavailable is specified
+- Scope is tightly defined: work list is the m27.1 inventory file, affected files are `lib/*.sh` and `stages/*.sh`, exclusions are explicitly listed
+- Canonical default sources are identified precisely (`internal/config/defaults.go`, `internal/proto/agent_v1.go`, `internal/runner/env.go:AsKV`) and a runtime verification method is given (`tekhton config defaults --emit shell | grep VARNAME`)
+- All eight acceptance criteria are machine-verifiable commands with expected exit codes and output
+- The ≥ 20 files criterion guards against a trivially small sweep; the dry-run check on m27.3 catches runtime regressions the static audit would miss
+- Watch For section addresses the three main failure modes: wrong defaults, partial sweeps, and exempted files slipping into the inventory
+- No new user-facing config, files, or format changes — no Migration Impact section required
+- No UI components — UI testability criterion not applicable
+- Hard dependency on m27.1 is explicit and the recovery path (re-run `scripts/audit-bash-env.sh`) is documented

@@ -285,7 +285,7 @@ _run_cli_interview() {
 
         if [[ "$answer" == "skip" || "$answer" == "s" ]]; then
             if [[ "$req" == "true" ]]; then
-                warn "  Required section skipped — will be marked TBD in ${DESIGN_FILE}."
+                warn "  Required section skipped — will be marked TBD in ${DESIGN_FILE:-.tekhton/DESIGN.md}."
                 save_answer "$sid" "TBD"
             else
                 log "  Skipped."

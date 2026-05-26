@@ -125,9 +125,9 @@ set_focused_milestone_block() {
     fi
 
     # Resolve numeric ID → "m<NN>" → filename via the DAG.
-    local id="$_CURRENT_MILESTONE"
+    local id="${_CURRENT_MILESTONE:-}"
     if declare -f dag_number_to_id &>/dev/null; then
-        id=$(dag_number_to_id "$_CURRENT_MILESTONE" 2>/dev/null || echo "$_CURRENT_MILESTONE")
+        id=$(dag_number_to_id "${_CURRENT_MILESTONE:-}" 2>/dev/null || echo "${_CURRENT_MILESTONE:-}")
     fi
     # Fall back to literal m-prefix when dag_number_to_id is unavailable
     # or returned an unprefixed value.

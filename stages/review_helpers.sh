@@ -13,26 +13,26 @@ _route_specialist_rework() {
             echo ""
             echo "## Specialist Blockers"
             echo "$SPECIALIST_BLOCKERS"
-        } >> "${REVIEWER_REPORT_FILE}"
+        } >> "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}"
     fi
 
     VERDICT="CHANGES_REQUIRED"
 
-    if [[ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]]; then
+    if [[ "$REVIEW_CYCLE" -ge "${MAX_REVIEW_CYCLES:-3}" ]]; then
         error "Specialist blockers found but no review cycles remain."
         write_pipeline_state "review" "specialist_blockers" \
             "$(_build_resume_flag review)" \
-            "$TASK" "Specialist reviewers found blockers. See ${SPECIALIST_REPORT_FILE}."
+            "${TASK:-}" "Specialist reviewers found blockers. See ${SPECIALIST_REPORT_FILE:-.tekhton/SPECIALIST_REPORT.md}."
         exit 1
     fi
 
     REWORK_PROMPT=$(render_prompt "coder_rework")
     run_agent \
         "Coder (specialist rework)" \
-        "$CLAUDE_CODER_MODEL" \
-        "$CODER_MAX_TURNS" \
+        "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
+        "${CODER_MAX_TURNS:-80}" \
         "$REWORK_PROMPT" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$AGENT_TOOLS_CODER"
     success "Specialist rework finished."
 
@@ -41,16 +41,16 @@ _route_specialist_rework() {
         BUILD_FIX_PROMPT=$(render_prompt "build_fix_minimal")
         run_agent \
             "Coder (post-specialist build fix)" \
-            "$CLAUDE_CODER_MODEL" \
+            "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
             "$((CODER_MAX_TURNS / 3))" \
             "$BUILD_FIX_PROMPT" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_BUILD_FIX"
         if ! run_build_gate "post-specialist-retry"; then
             error "Build gate failed again after specialist rework."
             write_pipeline_state "review" "specialist_build_failure" \
                 "$(_build_resume_flag review)" \
-                "$TASK" "Build broken after specialist rework. See ${BUILD_ERRORS_FILE}."
+                "${TASK:-}" "Build broken after specialist rework. See ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}."
             exit 1
         fi
     fi
@@ -61,17 +61,17 @@ _route_specialist_rework() {
     REVIEWER_PROMPT=$(render_prompt "reviewer")
     run_agent \
         "Reviewer (post-specialist cycle ${REVIEW_CYCLE})" \
-        "$CLAUDE_REVIEWER_MODEL" \
-        "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
+        "${CLAUDE_REVIEWER_MODEL:-claude-sonnet-4-6}" \
+        "${ADJUSTED_REVIEWER_TURNS:-${REVIEWER_MAX_TURNS:-20}}" \
         "$REVIEWER_PROMPT" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$AGENT_TOOLS_REVIEWER"
     print_run_summary
 
-    if [[ -f "${REVIEWER_REPORT_FILE}" ]]; then
-        VERDICT=$(grep -m1 "^## Verdict" -A1 "${REVIEWER_REPORT_FILE}" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+    if [[ -f "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" ]]; then
+        VERDICT=$(grep -m1 "^## Verdict" -A1 "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         if [[ -z "$VERDICT" || "$VERDICT" = "##Verdict" ]]; then
-            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" "${REVIEWER_REPORT_FILE}" 2>/dev/null | head -1 || true)
+            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" 2>/dev/null | head -1 || true)
         fi
         log "Post-specialist reviewer verdict: ${BOLD}${VERDICT}${NC}"
     fi

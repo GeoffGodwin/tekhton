@@ -48,7 +48,7 @@ source "${TEKHTON_HOME}/stages/plan_interview_helpers.sh"
 # Returns 0 if ${DESIGN_FILE} was produced, 1 otherwise.
 run_plan_interview() {
     _assert_design_file_usable || return $?
-    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE:-.tekhton/DESIGN.md}"
     local log_dir="${PROJECT_DIR}/.claude/logs"
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
@@ -132,7 +132,7 @@ run_plan_interview() {
     fi
 
     echo
-    log "Interview complete. Synthesizing ${DESIGN_FILE}..."
+    log "Interview complete. Synthesizing ${DESIGN_FILE:-.tekhton/DESIGN.md}..."
     echo
 
     # Build the answers block from the YAML file
@@ -177,7 +177,7 @@ run_plan_interview() {
             _disk_first=$(head -1 "$design_file")
             _disk_lines=$(count_lines < "$design_file")
             if [[ "$_disk_first" == "#"* ]] && [[ "$_disk_lines" -gt "$_MIN_SUBSTANTIVE_LINES" ]]; then
-                log "Detected tool-written ${DESIGN_FILE} (${_disk_lines} lines on disk) — using on-disk version."
+                log "Detected tool-written ${DESIGN_FILE:-.tekhton/DESIGN.md} (${_disk_lines} lines on disk) — using on-disk version."
                 design_content=$(cat "$design_file")
                 _disk_rescued=true
             fi
@@ -194,14 +194,14 @@ run_plan_interview() {
     if [[ -n "$design_content" ]]; then
         if [[ "$_disk_rescued" == "false" ]]; then
             if ! printf '%s\n' "$design_content" > "$design_file" 2>/dev/null; then
-                error "Failed to write ${DESIGN_FILE} to ${design_file}."
+                error "Failed to write ${DESIGN_FILE:-.tekhton/DESIGN.md} to ${design_file}."
                 error "Check that the path is a file (not a directory) and the parent directory is writable."
                 exec 3<&- 2>/dev/null || true
                 return 1
             fi
         fi
         if [[ ! -s "$design_file" ]]; then
-            error "${DESIGN_FILE} write appeared to succeed but the file is empty or missing at ${design_file}."
+            error "${DESIGN_FILE:-.tekhton/DESIGN.md} write appeared to succeed but the file is empty or missing at ${design_file}."
             exec 3<&- 2>/dev/null || true
             return 1
         fi
@@ -213,7 +213,7 @@ run_plan_interview() {
     {
         echo "=== Session End ==="
         echo "Exit code: ${batch_exit}"
-        echo "${DESIGN_FILE}: ${design_status}"
+        echo "${DESIGN_FILE:-.tekhton/DESIGN.md}: ${design_status}"
         echo "Date: $(date)"
     } >> "$log_file"
 
@@ -221,15 +221,15 @@ run_plan_interview() {
 
     if [[ -n "$design_content" ]]; then
         if [[ "$_disk_rescued" == "true" ]]; then
-            success "${DESIGN_FILE} preserved from tool-written version (${design_status})."
+            success "${DESIGN_FILE:-.tekhton/DESIGN.md} preserved from tool-written version (${design_status})."
         else
-            success "${DESIGN_FILE} written (${design_status})."
+            success "${DESIGN_FILE:-.tekhton/DESIGN.md} written (${design_status})."
         fi
         log "Log saved: ${log_file}"
         exec 3<&-
         return 0
     else
-        warn "Synthesis produced no output — ${DESIGN_FILE} was not created."
+        warn "Synthesis produced no output — ${DESIGN_FILE:-.tekhton/DESIGN.md} was not created."
         [[ "$batch_exit" -ne 0 ]] && warn "Claude exited with code ${batch_exit}."
         log "Log saved: ${log_file}"
         exec 3<&-

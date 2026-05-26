@@ -68,10 +68,10 @@ run_stage_security() {
         local _sec_scan_start="$SECONDS"
         run_agent \
             "Security (scan)" \
-            "${CLAUDE_SECURITY_MODEL:-${CLAUDE_STANDARD_MODEL}}" \
+            "${CLAUDE_SECURITY_MODEL:-${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}" \
             "$security_turns" \
             "$SECURITY_SCAN_PROMPT" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "${AGENT_TOOLS_REVIEWER:-}"
         # Record security scan sub-step (M66)
         if declare -p _STAGE_DURATION &>/dev/null; then
@@ -85,7 +85,7 @@ run_stage_security() {
         # Parse findings
         local report_file="${SECURITY_REPORT_FILE:-}"
         if ! _parse_security_findings "$report_file"; then
-            log "[security] No structured findings in ${SECURITY_REPORT_FILE}. Proceeding."
+            log "[security] No structured findings in ${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}. Proceeding."
             return 0
         fi
 
@@ -121,10 +121,10 @@ run_stage_security() {
             local _sec_rework_start="$SECONDS"
             run_agent \
                 "Security Rework (cycle ${security_rework_cycle})" \
-                "${CLAUDE_CODER_MODEL}" \
-                "${CODER_MAX_TURNS}" \
+                "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
+                "${CODER_MAX_TURNS:-80}" \
                 "$rework_prompt" \
-                "$LOG_FILE" \
+                "${LOG_FILE:-}" \
                 "${AGENT_TOOLS_CODER:-}"
             # Record security rework sub-step (M66)
             if declare -p _STAGE_DURATION &>/dev/null; then
@@ -158,7 +158,7 @@ run_stage_security() {
 
     if [[ "$security_rework_cycle" -gt 0 ]]; then
         SECURITY_FIXES_BLOCK="Security rework applied ${security_rework_cycle} cycle(s). "
-        SECURITY_FIXES_BLOCK+="Review ${SECURITY_REPORT_FILE} for details of findings and fixes."
+        SECURITY_FIXES_BLOCK+="Review ${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md} for details of findings and fixes."
     fi
 
     export SECURITY_REWORK_CYCLES_DONE="$security_rework_cycle"

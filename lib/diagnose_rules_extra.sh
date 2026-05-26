@@ -223,7 +223,7 @@ _rule_test_audit_failure() {
     DIAG_CONFIDENCE="high"
     DIAG_SUGGESTIONS=(
         "Test audit found integrity issues the tester couldn't fix."
-        "Review ${TEST_AUDIT_REPORT_FILE} for specific findings."
+        "Review ${TEST_AUDIT_REPORT_FILE:-.tekhton/TEST_AUDIT_REPORT.md} for specific findings."
         "Options:"
         "  1. Fix flagged tests manually (see HIGH severity findings), then:"
         "     tekhton --complete --milestone \"${_task}\""

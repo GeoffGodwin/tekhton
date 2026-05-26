@@ -116,7 +116,7 @@ log_verbose() {
     if [[ "${VERBOSE_OUTPUT:-false}" == "true" ]]; then
         echo -e "${CYAN}[tekhton]${NC} $*"
     elif [[ -n "${LOG_FILE:-}" ]]; then
-        printf '[tekhton] %s\n' "$*" >> "$LOG_FILE" 2>/dev/null || true
+        printf '[tekhton] %s\n' "$*" >> "${LOG_FILE:-}" 2>/dev/null || true
     fi
 }
 

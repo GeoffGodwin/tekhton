@@ -13,7 +13,7 @@ set -euo pipefail
 # instead of the ad-hoc tree+git-log generation for higher-quality replan context.
 # Output capped at ~200 lines of tree + 20 git log entries (fallback path).
 _generate_codebase_summary() {
-    local index_file="${PROJECT_DIR}/${PROJECT_INDEX_FILE}"
+    local index_file="${PROJECT_DIR}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     local meta_file="${PROJECT_DIR}/.claude/index/meta.json"
 
     # Prefer structured index when available and reasonably current (M68)
@@ -94,7 +94,7 @@ run_replan() {
     header "Tekhton — Brownfield Replan"
 
     if [[ ! -f "$design_file" ]] && [[ ! -f "$claude_file" ]]; then
-        error "Neither ${DESIGN_FILE} nor CLAUDE.md found at ${PROJECT_DIR}."
+        error "Neither ${DESIGN_FILE:-.tekhton/DESIGN.md} nor CLAUDE.md found at ${PROJECT_DIR}."
         error "The --replan command requires an existing project created with --plan."
         error "Run 'tekhton --plan' first to create these files."
         return 1
@@ -114,7 +114,7 @@ run_replan() {
         DESIGN_CONTENT=$(_safe_read_file "$design_file" "DESIGN")
     else
         NO_DESIGN="true"
-        warn "No ${DESIGN_FILE} found — replan will focus on CLAUDE.md only."
+        warn "No ${DESIGN_FILE:-.tekhton/DESIGN.md} found — replan will focus on CLAUDE.md only."
     fi
 
     export CLAUDE_CONTENT=""
@@ -160,8 +160,8 @@ run_replan() {
     local log_file="${log_dir}/${timestamp}_replan.log"
     mkdir -p "$log_dir"
 
-    log "Model: ${REPLAN_MODEL}"
-    log "Max turns: ${REPLAN_MAX_TURNS}"
+    log "Model: ${REPLAN_MODEL:-opus}"
+    log "Max turns: ${REPLAN_MAX_TURNS:-50}"
     log "Log: ${log_file}"
     echo
     log "Running replan agent..."
@@ -169,16 +169,16 @@ run_replan() {
     {
         echo "=== Tekhton Brownfield Replan ==="
         echo "Date: $(date)"
-        echo "Model: ${REPLAN_MODEL}"
-        echo "Max Turns: ${REPLAN_MAX_TURNS}"
+        echo "Model: ${REPLAN_MODEL:-opus}"
+        echo "Max Turns: ${REPLAN_MAX_TURNS:-50}"
         echo "=== Session Start ==="
     } > "$log_file"
 
     local replan_output=""
     local batch_exit=0
     replan_output=$(_call_planning_batch \
-        "$REPLAN_MODEL" \
-        "$REPLAN_MAX_TURNS" \
+        "${REPLAN_MODEL:-opus}" \
+        "${REPLAN_MAX_TURNS:-50}" \
         "$replan_prompt" \
         "$log_file") || batch_exit=$?
 
@@ -197,11 +197,11 @@ run_replan() {
         return 1
     fi
 
-    local delta_file="${PROJECT_DIR}/${REPLAN_DELTA_FILE}"
+    local delta_file="${PROJECT_DIR}/${REPLAN_DELTA_FILE:-.tekhton/REPLAN_DELTA.md}"
     printf '%s\n' "$replan_output" > "$delta_file"
     local delta_lines
     delta_lines=$(wc -l < "$delta_file")
-    success "Replan delta written to ${REPLAN_DELTA_FILE} (${delta_lines} lines)."
+    success "Replan delta written to ${REPLAN_DELTA_FILE:-.tekhton/REPLAN_DELTA.md} (${delta_lines} lines)."
     log "Log saved: ${log_file}"
 
     echo

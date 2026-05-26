@@ -81,7 +81,7 @@ _check_progress_causal_log() {
     # _ORCH_CAUSAL_LOG_BASELINE is captured at the start of each iteration.
     local baseline="${_ORCH_CAUSAL_LOG_BASELINE:-0}"
     local attempt_lines
-    attempt_lines=$(tail -n "+$(( baseline + 1 ))" "$CAUSAL_LOG_FILE" 2>/dev/null) || attempt_lines=""
+    attempt_lines=$(tail -n "+$(( baseline + 1 ))" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null) || attempt_lines=""
 
     if [[ -z "$attempt_lines" ]]; then
         return 1  # No new events this attempt

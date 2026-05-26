@@ -49,9 +49,9 @@ run_stage_cleanup() {
     # Extract modified files from the primary pipeline's ${CODER_SUMMARY_FILE} (if available)
     # so that select_cleanup_batch can prioritize notes overlapping with this run's work.
     local modified_files=""
-    if [ -f "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" ]; then
+    if [ -f "${PROJECT_DIR}/${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]; then
         modified_files=$(awk '/^## Files (Created|Modified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{print}' \
-            "${PROJECT_DIR}/${CODER_SUMMARY_FILE}" 2>/dev/null \
+            "${PROJECT_DIR}/${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null \
             | sed 's/^[-*][[:space:]]*//' | sed 's/ .*//' | sort -u || true)
     fi
 
@@ -95,10 +95,10 @@ run_stage_cleanup() {
 
     run_agent \
         "Cleanup" \
-        "$CLAUDE_JR_CODER_MODEL" \
+        "${CLAUDE_JR_CODER_MODEL:-claude-sonnet-4-6}" \
         "${CLEANUP_MAX_TURNS:-15}" \
         "$cleanup_prompt" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$_cleanup_tools"
 
     log "Cleanup agent finished."
@@ -113,7 +113,7 @@ run_stage_cleanup() {
     local build_pass=true
     if ! run_build_gate "post-cleanup"; then
         warn "Build gate FAILED after cleanup sweep — reverting cleanup changes."
-        warn "Cleanup changes may have introduced issues. Review ${BUILD_ERRORS_FILE}."
+        warn "Cleanup changes may have introduced issues. Review ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}."
         build_pass=false
 
         # Revert ONLY files that cleanup touched, preserving primary pipeline work.
@@ -165,11 +165,11 @@ _process_cleanup_results() {
     fi
 
     # Check if the agent produced a cleanup report with structured output
-    if [ -f "${CLEANUP_REPORT_FILE}" ]; then
+    if [ -f "${CLEANUP_REPORT_FILE:-.tekhton/CLEANUP_REPORT.md}" ]; then
         _parse_cleanup_report "$batch"
         # Archive the cleanup report
         if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ]; then
-            mv "${CLEANUP_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_$(basename "${CLEANUP_REPORT_FILE}")" 2>/dev/null || true
+            mv "${CLEANUP_REPORT_FILE:-.tekhton/CLEANUP_REPORT.md}" "${LOG_DIR:-.claude/logs}/${TIMESTAMP:-}_$(basename "${CLEANUP_REPORT_FILE:-.tekhton/CLEANUP_REPORT.md}")" 2>/dev/null || true
         fi
         return 0
     fi
@@ -194,7 +194,7 @@ _process_cleanup_results() {
 # re-selected in future cleanup sweeps.
 _parse_cleanup_report() {
     local batch="$1"
-    local report="${CLEANUP_REPORT_FILE}"
+    local report="${CLEANUP_REPORT_FILE:-.tekhton/CLEANUP_REPORT.md}"
 
     # Extract resolved items
     local resolved_section

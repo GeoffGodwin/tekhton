@@ -127,7 +127,7 @@ run_smart_init() {
     tracked_file_count=$(_count_tracked_files "$project_dir")
     log "Crawling project (${tracked_file_count} files)..."
     crawl_project "$project_dir" "${PROJECT_INDEX_BUDGET:-120000}"
-    _INIT_FILES_WRITTEN+=("$(basename "${PROJECT_INDEX_FILE}")|structured project index")
+    _INIT_FILES_WRITTEN+=("$(basename "${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}")|structured project index")
 
     # Phase 3.5: Feature wizard (M109) — runs after detection so guidance is
     # informed by tech stack, before config generation so answers flow into
@@ -172,7 +172,7 @@ run_smart_init() {
         local detection_report
         detection_report=$(format_detection_report "$project_dir")
         local merge_context=""
-        local _mcf="${project_dir}/${MERGE_CONTEXT_FILE}"
+        local _mcf="${project_dir}/${MERGE_CONTEXT_FILE:-.tekhton/MERGE_CONTEXT.md}"
         if [[ -f "${_mcf}" ]]; then
             merge_context=$(cat "${_mcf}")
         fi

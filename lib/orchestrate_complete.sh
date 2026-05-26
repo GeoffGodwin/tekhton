@@ -99,8 +99,8 @@ _orch_complete_run() {
         test_dedup_reset
     fi
 
-    if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-        emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
+    if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+        emit_milestone_metadata "${_CURRENT_MILESTONE:-}" "in_progress" || true
         if command -v emit_dashboard_milestones &>/dev/null; then
             emit_dashboard_milestones 2>/dev/null || true
         fi
@@ -119,7 +119,7 @@ _orch_complete_run() {
         : # reset slot vars: handled in Go (internal/failure_context.Context.Reset)
 
         if [[ "${CAUSAL_LOG_ENABLED:-true}" = "true" ]] && [[ -f "${CAUSAL_LOG_FILE:-}" ]]; then
-            _ORCH_CAUSAL_LOG_BASELINE=$(wc -l < "$CAUSAL_LOG_FILE" 2>/dev/null || echo 0)
+            _ORCH_CAUSAL_LOG_BASELINE=$(wc -l < "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null || echo 0)
         else
             _ORCH_CAUSAL_LOG_BASELINE=0
         fi
@@ -161,18 +161,18 @@ _orch_complete_run() {
         local _pre_iter_turns="$TOTAL_TURNS"
 
         if [[ "$_ORCH_ATTEMPT" -gt 1 ]]; then
-            for f in "${CODER_SUMMARY_FILE}" "${REVIEWER_REPORT_FILE}" "${JR_CODER_SUMMARY_FILE}" "${TESTER_REPORT_FILE}" "${INTAKE_REPORT_FILE}" "${PREFLIGHT_ERRORS_FILE}"; do
+            for f in "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" "${JR_CODER_SUMMARY_FILE:-.tekhton/JR_CODER_SUMMARY.md}" "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}" "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}"; do
                 if [[ -f "$f" ]]; then
-                    mkdir -p "${LOG_DIR}/archive"
-                    mv "$f" "${LOG_DIR}/archive/$(date +%Y%m%d_%H%M%S)_attempt${_ORCH_ATTEMPT}_$(basename "$f")"
+                    mkdir -p "${LOG_DIR:-.claude/logs}/archive"
+                    mv "$f" "${LOG_DIR:-.claude/logs}/archive/$(date +%Y%m%d_%H%M%S)_attempt${_ORCH_ATTEMPT}_$(basename "$f")"
                 fi
             done
 
             TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
             local task_slug
-            task_slug=$(echo "$TASK" | head -1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
+            task_slug=$(echo "${TASK:-}" | head -1 | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | cut -c1-50)
             # shellcheck disable=SC2034  # global used by run_agent/finalize
-            LOG_FILE="${LOG_DIR}/${TIMESTAMP}_${task_slug}.log"
+            LOG_FILE="${LOG_DIR:-.claude/logs}/${TIMESTAMP:-}_${task_slug}.log"
         fi
 
         if ! check_usage_threshold; then

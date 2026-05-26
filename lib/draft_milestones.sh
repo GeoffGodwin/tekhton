@@ -29,8 +29,8 @@ source "${TEKHTON_HOME}/lib/draft_milestones_write.sh"
 # max+1. If COUNT is given, prints COUNT consecutive IDs (one per line).
 draft_milestones_next_id() {
     local count="${1:-1}"
-    local manifest_path="${PROJECT_DIR}/${MILESTONE_DIR}/${MILESTONE_MANIFEST}"
-    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR}"
+    local manifest_path="${PROJECT_DIR}/${MILESTONE_DIR:-.claude/milestones}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR:-.claude/milestones}"
 
     local max_id=0
 
@@ -79,7 +79,7 @@ draft_milestones_build_exemplars() {
     # the value is an integer. A non-integer would pass through to head as a
     # malformed flag — fall back to the documented default.
     [[ "$count" =~ ^[0-9]+$ ]] || count=3
-    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR}"
+    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR:-.claude/milestones}"
     local exemplars=""
 
     if [[ ! -d "$milestone_dir" ]]; then
@@ -119,7 +119,7 @@ $(head -100 "$f")
 # 5. Writes MANIFEST.cfg rows
 run_draft_milestones() {
     local seed="${1:-}"
-    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR}"
+    local milestone_dir="${PROJECT_DIR}/${MILESTONE_DIR:-.claude/milestones}"
     local log_dir="${PROJECT_DIR}/.claude/logs"
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
@@ -128,7 +128,7 @@ run_draft_milestones() {
     mkdir -p "$log_dir" "$milestone_dir"
 
     header "Draft Milestones — Interactive Authoring"
-    log "Model: ${DRAFT_MILESTONES_MODEL}"
+    log "Model: ${DRAFT_MILESTONES_MODEL:-claude-sonnet-4-6}"
     [[ -n "$seed" ]] && log "Seed: ${seed}"
 
     # Compute next ID and exemplars for the prompt
@@ -155,8 +155,8 @@ run_draft_milestones() {
 
     # Invoke agent
     run_agent "Draft Milestones" \
-        "${DRAFT_MILESTONES_MODEL}" \
-        "${DRAFT_MILESTONES_MAX_TURNS}" \
+        "${DRAFT_MILESTONES_MODEL:-claude-sonnet-4-6}" \
+        "${DRAFT_MILESTONES_MAX_TURNS:-40}" \
         "$prompt" \
         "$log_file" \
         "$AGENT_TOOLS_CODER"
@@ -205,7 +205,7 @@ run_draft_milestones() {
     fi
 
     # Confirmation gate
-    if [[ "${DRAFT_MILESTONES_AUTO_WRITE}" != "true" ]]; then
+    if [[ "${DRAFT_MILESTONES_AUTO_WRITE:-false}" != "true" ]]; then
         echo
         echo "Generated milestone files:"
         for f in "${generated_files[@]}"; do

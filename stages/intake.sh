@@ -66,17 +66,17 @@ run_stage_intake() {
         header "Pre-stage 1 — Task Intake (cached)"
         log "Intake: using cached results from dry-run."
         local _cached_verdict
-        _cached_verdict=$(_intake_parse_verdict "${INTAKE_REPORT_FILE}")
+        _cached_verdict=$(_intake_parse_verdict "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}")
         local _cached_confidence
-        _cached_confidence=$(_intake_parse_confidence "${INTAKE_REPORT_FILE}")
+        _cached_confidence=$(_intake_parse_confidence "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}")
         export INTAKE_VERDICT="$_cached_verdict"
         export INTAKE_CONFIDENCE="$_cached_confidence"
         log "Intake verdict: ${_cached_verdict} (confidence: ${_cached_confidence})"
         # NEEDS_CLARITY still pauses even from cache — user may have answered since dry-run
         if [[ "$_cached_verdict" == "NEEDS_CLARITY" ]]; then
-            _intake_handle_needs_clarity "${INTAKE_REPORT_FILE}"
+            _intake_handle_needs_clarity "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}"
         elif [[ "$_cached_verdict" == "TWEAKED" ]]; then
-            _intake_handle_tweaked "${INTAKE_REPORT_FILE}"
+            _intake_handle_tweaked "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}"
         fi
         return 0
     fi
@@ -108,7 +108,7 @@ run_stage_intake() {
     # file listings. Uses structured .claude/index/ data when available, falls
     # back to legacy $PROJECT_INDEX_FILE for pre-M67 projects.
     export INTAKE_PROJECT_INDEX=""
-    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/${PROJECT_INDEX_FILE}" ]]; then
+    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}" ]]; then
         INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
     fi
 
@@ -136,7 +136,7 @@ run_stage_intake() {
     fi
 
     # Load role file content
-    local role_file="${PROJECT_DIR}/${INTAKE_ROLE_FILE}"
+    local role_file="${PROJECT_DIR}/${INTAKE_ROLE_FILE:-.claude/agents/intake.md}"
     export INTAKE_ROLE_CONTENT=""
     if [[ -f "$role_file" ]]; then
         INTAKE_ROLE_CONTENT=$(_safe_read_file "$role_file" "INTAKE_ROLE")
@@ -150,7 +150,7 @@ run_stage_intake() {
     if [[ ! -x "$_intake_tk_bin" ]]; then
         _intake_tk_bin="${TEKHTON_HOME:-.}/tekhton"
     fi
-    if [[ -f "${HUMAN_NOTES_FILE}" ]] && [[ -x "$_intake_tk_bin" ]]; then
+    if [[ -f "${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}" ]] && [[ -x "$_intake_tk_bin" ]]; then
         local all_notes
         all_notes=$(NOTES_FILTER="" "$_intake_tk_bin" note extract --project-dir "${PROJECT_DIR:-.}" 2>/dev/null || true)
         if [[ -n "$all_notes" ]]; then
@@ -186,17 +186,17 @@ run_stage_intake() {
     local intake_prompt
     intake_prompt=$(render_prompt "intake_scan")
 
-    log "Running intake evaluation (model: ${CLAUDE_INTAKE_MODEL}, turns: ${INTAKE_MAX_TURNS})..."
+    log "Running intake evaluation (model: ${CLAUDE_INTAKE_MODEL:-claude-sonnet-4-6}, turns: ${INTAKE_MAX_TURNS:-10})..."
 
     run_agent \
         "Intake" \
-        "$CLAUDE_INTAKE_MODEL" \
-        "$INTAKE_MAX_TURNS" \
+        "${CLAUDE_INTAKE_MODEL:-claude-sonnet-4-6}" \
+        "${INTAKE_MAX_TURNS:-10}" \
         "$intake_prompt" \
-        "$LOG_FILE"
+        "${LOG_FILE:-}"
 
     # Parse the report
-    local report_file="${INTAKE_REPORT_FILE}"
+    local report_file="${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}"
     local verdict
     verdict=$(_intake_parse_verdict "$report_file")
     local confidence
@@ -262,11 +262,11 @@ run_intake_create() {
     export INTAKE_ROLE_CONTENT=""
     export INTAKE_CREATE_MODE="true"
 
-    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/${PROJECT_INDEX_FILE}" ]]; then
+    if [[ -d "${PROJECT_DIR}/.claude/index" ]] || [[ -f "${PROJECT_DIR}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}" ]]; then
         INTAKE_PROJECT_INDEX=$(read_index_summary "$PROJECT_DIR" 8000)
     fi
 
-    local role_file="${PROJECT_DIR}/${INTAKE_ROLE_FILE}"
+    local role_file="${PROJECT_DIR}/${INTAKE_ROLE_FILE:-.claude/agents/intake.md}"
     if [[ -f "$role_file" ]]; then
         INTAKE_ROLE_CONTENT=$(_safe_read_file "$role_file" "INTAKE_ROLE")
     fi
@@ -276,16 +276,16 @@ run_intake_create() {
     local intake_prompt
     intake_prompt=$(render_prompt "intake_scan")
 
-    log "Evaluating milestone description (model: ${CLAUDE_INTAKE_MODEL})..."
+    log "Evaluating milestone description (model: ${CLAUDE_INTAKE_MODEL:-claude-sonnet-4-6})..."
 
     run_agent \
         "Intake Create" \
-        "$CLAUDE_INTAKE_MODEL" \
-        "$INTAKE_MAX_TURNS" \
+        "${CLAUDE_INTAKE_MODEL:-claude-sonnet-4-6}" \
+        "${INTAKE_MAX_TURNS:-10}" \
         "$intake_prompt" \
         "${LOG_DIR:-/tmp}/intake_create.log"
 
-    local report_file="${INTAKE_REPORT_FILE}"
+    local report_file="${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}"
     if [[ ! -f "$report_file" ]]; then
         error "Intake agent did not produce ${report_file}."
         exit 1
@@ -319,7 +319,7 @@ Acceptance criteria:
     fi
 
     # Determine next milestone ID
-    local manifest_file="${MILESTONE_DIR}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+    local manifest_file="${MILESTONE_DIR:-.claude/milestones}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
     local next_id="m01"
     if [[ -f "$manifest_file" ]]; then
         local max_num=0
@@ -337,14 +337,14 @@ Acceptance criteria:
     fi
 
     # Create milestone file
-    mkdir -p "$MILESTONE_DIR"
-    local ms_file="${MILESTONE_DIR}/${next_id}.md"
+    mkdir -p "${MILESTONE_DIR:-.claude/milestones}"
+    local ms_file="${MILESTONE_DIR:-.claude/milestones}/${next_id}.md"
     # Extract a short title from the first line of content or description
     local short_title
     short_title=$(echo "$description" | head -1 | cut -c1-60)
 
     local tmpfile
-    tmpfile=$(mktemp "${MILESTONE_DIR}/create.XXXXXX")
+    tmpfile=$(mktemp "${MILESTONE_DIR:-.claude/milestones}/create.XXXXXX")
     cat > "$tmpfile" << MSEOF
 #### Milestone ${next_id#m0}: ${short_title}
 <!-- milestone-meta

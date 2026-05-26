@@ -55,7 +55,7 @@ _tester_run_continuations() {
         _tcont_start=$(date +%s)
         log_decision "Continuing tester" "turn limit hit, ${REMAINING} tests remaining (attempt ${_tcont_attempt}/${_tcont_max})" "CONTINUATION_ENABLED=true"
 
-        local _tnext_budget="${ADJUSTED_TESTER_TURNS:-$TESTER_MAX_TURNS}"
+        local _tnext_budget="${ADJUSTED_TESTER_TURNS:-${TESTER_MAX_TURNS:-50}}"
         export CONTINUATION_CONTEXT
         CONTINUATION_CONTEXT=$(build_continuation_context "tester" "$_tcont_attempt" "$_tcont_max" "$_tcumulative_turns" "$_tnext_budget")
 
@@ -63,16 +63,16 @@ _tester_run_continuations() {
 
         run_agent \
             "Tester (continuation ${_tcont_attempt})" \
-            "$CLAUDE_TESTER_MODEL" \
+            "${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}" \
             "$_tnext_budget" \
             "$TESTER_PROMPT" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_TESTER"
 
         _tcumulative_turns=$((_tcumulative_turns + ${LAST_AGENT_TURNS:-0}))
 
         # --- M62: Accumulate tester self-reported timing from continuation ---
-        _parse_tester_timing "${TESTER_REPORT_FILE}" "accumulate"
+        _parse_tester_timing "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" "accumulate"
 
         # --- Tester diagnostics: continuation timing ----------------
         local _tcont_end
@@ -91,15 +91,15 @@ _tester_run_continuations() {
                 "tester" \
                 "upstream_error" \
                 "$resume_flag" \
-                "${TASK}" \
+                "${TASK:-}" \
                 "API error during tester continuation ${_tcont_attempt}."
             export SKIP_FINAL_CHECKS=true
             return
         fi
 
         # Re-check remaining tests
-        if [[ -f "${TESTER_REPORT_FILE}" ]]; then
-            REMAINING=$(grep -c "^- \[ \]" "${TESTER_REPORT_FILE}" || true)
+        if [[ -f "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" ]]; then
+            REMAINING=$(grep -c "^- \[ \]" "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" || true)
             REMAINING=$(echo "$REMAINING" | tr -d '[:space:]')
         fi
     done

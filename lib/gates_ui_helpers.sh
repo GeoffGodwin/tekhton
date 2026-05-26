@@ -33,7 +33,7 @@ _ui_detect_framework() {
     fi
 
     if [[ -n "${UI_TEST_CMD:-}" ]] \
-       && [[ "$UI_TEST_CMD" =~ (^|[[:space:]/])playwright([[:space:]]|$) ]]; then
+       && [[ "${UI_TEST_CMD:-}" =~ (^|[[:space:]/])playwright([[:space:]]|$) ]]; then
         echo "playwright"
         return 0
     fi
@@ -181,10 +181,10 @@ _ui_write_gate_diagnosis() {
 DIAGEOF
 )
 
-    if [[ -n "${UI_TEST_ERRORS_FILE:-}" ]] && [[ -f "${UI_TEST_ERRORS_FILE}" ]]; then
-        printf '%s\n' "$block" >> "${UI_TEST_ERRORS_FILE}"
+    if [[ -n "${UI_TEST_ERRORS_FILE:-}" ]] && [[ -f "${UI_TEST_ERRORS_FILE:-.tekhton/UI_TEST_ERRORS.md}" ]]; then
+        printf '%s\n' "$block" >> "${UI_TEST_ERRORS_FILE:-.tekhton/UI_TEST_ERRORS.md}"
     fi
-    if [[ -n "${BUILD_ERRORS_FILE:-}" ]] && [[ -f "${BUILD_ERRORS_FILE}" ]]; then
-        printf '%s\n' "$block" >> "${BUILD_ERRORS_FILE}"
+    if [[ -n "${BUILD_ERRORS_FILE:-}" ]] && [[ -f "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" ]]; then
+        printf '%s\n' "$block" >> "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
     fi
 }

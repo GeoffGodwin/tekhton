@@ -21,7 +21,7 @@ set -euo pipefail
 # _security_is_docs_only — Check if all changed files are non-code (docs, config,
 # assets). Returns 0 if security scan can be skipped, 1 otherwise.
 _security_is_docs_only() {
-    local summary_file="${CODER_SUMMARY_FILE}"
+    local summary_file="${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"
 
     if [[ ! -f "$summary_file" ]]; then
         return 1  # No summary = can't determine, scan anyway
@@ -57,7 +57,7 @@ _security_is_docs_only() {
 # Sets arrays: _SEC_SEVERITIES, _SEC_FIXABLES, _SEC_DESCRIPTIONS
 # Returns: 0 if findings parsed, 1 if no report or no findings
 _parse_security_findings() {
-    local report_file="${1:-${SECURITY_REPORT_FILE}}"
+    local report_file="${1:-${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}}"
     _SEC_SEVERITIES=()
     _SEC_FIXABLES=()
     _SEC_DESCRIPTIONS=()
@@ -183,7 +183,7 @@ _handle_unfixable_findings() {
 
     case "$policy" in
         escalate)
-            log "[security] Escalating unfixable findings to ${HUMAN_ACTION_FILE}"
+            log "[security] Escalating unfixable findings to ${HUMAN_ACTION_FILE:-.tekhton/HUMAN_ACTION_REQUIRED.md}"
             "${TEKHTON_BIN:-tekhton}" drift human-action append \
                 --project-dir "${PROJECT_DIR:-$PWD}" \
                 --source "security" \
@@ -193,11 +193,11 @@ ${unfixable_block}" 2>/dev/null || warn "[security] Failed to record human-actio
             ;;
         halt)
             error "[security] Pipeline halted — unfixable CRITICAL/HIGH security findings detected."
-            error "[security] Review ${SECURITY_REPORT_FILE} and resolve manually."
+            error "[security] Review ${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md} and resolve manually."
             write_pipeline_state "security" "security_halt" \
                 "${MILESTONE_MODE:+--milestone }--start-at security" \
-                "$TASK" \
-                "Unfixable security findings with halt policy. Review ${SECURITY_REPORT_FILE}."
+                "${TASK:-}" \
+                "Unfixable security findings with halt policy. Review ${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}."
             return 1
             ;;
         waiver)

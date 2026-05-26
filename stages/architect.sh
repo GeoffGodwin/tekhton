@@ -57,16 +57,16 @@ run_stage_architect() {
 
     # Dependency constraints (P5 — optional, may not exist yet)
     export DEPENDENCY_CONSTRAINTS_CONTENT=""
-    if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE}" ]; then
-        DEPENDENCY_CONSTRAINTS_CONTENT=$(_wrap_file_content "DEPENDENCY_CONSTRAINTS" "$(_safe_read_file "${DEPENDENCY_CONSTRAINTS_FILE}" "DEPENDENCY_CONSTRAINTS")")
+    if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE:-}" ]; then
+        DEPENDENCY_CONSTRAINTS_CONTENT=$(_wrap_file_content "DEPENDENCY_CONSTRAINTS" "$(_safe_read_file "${DEPENDENCY_CONSTRAINTS_FILE:-}" "DEPENDENCY_CONSTRAINTS")")
     fi
 
     # --- Invoke architect agent ----------------------------------------------
 
-    local architect_model="${CLAUDE_ARCHITECT_MODEL:-${CLAUDE_STANDARD_MODEL}}"
-    local architect_turns="${ARCHITECT_MAX_TURNS}"
+    local architect_model="${CLAUDE_ARCHITECT_MODEL:-${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
+    local architect_turns="${ARCHITECT_MAX_TURNS:-25}"
     if [ "${MILESTONE_MODE:-false}" = true ]; then
-        architect_turns="${MILESTONE_ARCHITECT_MAX_TURNS}"
+        architect_turns="${MILESTONE_ARCHITECT_MAX_TURNS:-50}"
     fi
 
     ARCHITECT_PROMPT=$(render_prompt "architect")
@@ -88,7 +88,7 @@ run_stage_architect() {
         "$architect_model" \
         "$architect_turns" \
         "$ARCHITECT_PROMPT" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$AGENT_TOOLS_ARCHITECT"
     print_run_summary
     success "Architect agent finished."
@@ -107,8 +107,8 @@ run_stage_architect() {
 
     # --- Validate output -----------------------------------------------------
 
-    if [ ! -f "${ARCHITECT_PLAN_FILE}" ]; then
-        warn "Architect did not produce ${ARCHITECT_PLAN_FILE}. Skipping remediation."
+    if [ ! -f "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}" ]; then
+        warn "Architect did not produce ${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}. Skipping remediation."
         warn "Drift observations remain unresolved — will retry next audit cycle."
         if [[ "$_architect_started" == "true" ]]; then
             _tui_call stage-end --label "architect" --model "$architect_model" \
@@ -117,7 +117,7 @@ run_stage_architect() {
         return 0
     fi
 
-    log "${ARCHITECT_PLAN_FILE} produced. Parsing sections..."
+    log "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md} produced. Parsing sections..."
 
     # --- Parse plan sections -------------------------------------------------
 
@@ -127,7 +127,7 @@ run_stage_architect() {
     # Check for non-empty Simplification section
     local simplification_content
     simplification_content=$(awk '/^## Simplification/{found=1; next} found && /^##/{exit} found{print}' \
-        "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
+        "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}" 2>/dev/null || true)
     if [ -n "$simplification_content" ] && ! echo "$simplification_content" | grep -qiE '^\s*-?\s*None\s*$'; then
         has_simplification=1
     fi
@@ -136,7 +136,7 @@ run_stage_architect() {
     for section in "Staleness Fixes" "Dead Code Removal" "Naming Normalization"; do
         local section_content
         section_content=$(awk -v sect="$section" '/^## /{if($0 ~ sect){found=1; next}else if(found){exit}} found{print}' \
-            "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
+            "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}" 2>/dev/null || true)
         if [ -n "$section_content" ] && ! echo "$section_content" | grep -qiE '^\s*-?\s*None\s*$'; then
             has_jr_work=1
             break
@@ -164,10 +164,10 @@ run_stage_architect() {
 
         run_agent \
             "Coder (architect remediation)" \
-            "$CLAUDE_CODER_MODEL" \
-            "$CODER_MAX_TURNS" \
+            "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
+            "${CODER_MAX_TURNS:-80}" \
             "$ARCHITECT_SR_PROMPT" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_CODER"
         print_run_summary
         success "Senior coder remediation finished."
@@ -182,10 +182,10 @@ run_stage_architect() {
 
         run_agent \
             "Jr Coder (architect remediation)" \
-            "$CLAUDE_JR_CODER_MODEL" \
-            "$JR_CODER_MAX_TURNS" \
+            "${CLAUDE_JR_CODER_MODEL:-claude-sonnet-4-6}" \
+            "${JR_CODER_MAX_TURNS:-40}" \
             "$ARCHITECT_JR_PROMPT" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_JR_CODER"
         print_run_summary
         success "Jr coder remediation finished."
@@ -203,10 +203,10 @@ run_stage_architect() {
             BUILD_FIX_PROMPT=$(render_prompt "build_fix_minimal")
             run_agent \
                 "Coder (architect build fix)" \
-                "$CLAUDE_CODER_MODEL" \
+                "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
                 "$((CODER_MAX_TURNS / 3))" \
                 "$BUILD_FIX_PROMPT" \
-                "$LOG_FILE" \
+                "${LOG_FILE:-}" \
                 "$AGENT_TOOLS_BUILD_FIX"
 
             if ! run_build_gate "post-architect-remediation-retry"; then
@@ -241,10 +241,10 @@ run_stage_architect() {
 
         run_agent \
             "Reviewer (architect expedited)" \
-            "$CLAUDE_STANDARD_MODEL" \
-            "$REVIEWER_MAX_TURNS" \
+            "${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}" \
+            "${REVIEWER_MAX_TURNS:-20}" \
             "$ARCHITECT_REVIEW_PROMPT" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_REVIEWER"
         print_run_summary
         success "Expedited review finished."
@@ -260,7 +260,7 @@ run_stage_architect() {
         # Extract Out of Scope items — these stay unresolved for next audit cycle
         local oos_section
         oos_section=$(awk '/^## Out of Scope/{found=1; next} found && /^##/{exit} found{print}' \
-            "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
+            "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}" 2>/dev/null || true)
 
         local oos_items=()
         if [ -n "$oos_section" ]; then
@@ -328,7 +328,7 @@ run_stage_architect() {
 
     local design_section
     design_section=$(awk '/^## Design Doc Observations/{found=1; next} found && /^##/{exit} found{print}' \
-        "${ARCHITECT_PLAN_FILE}" 2>/dev/null || true)
+        "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}" 2>/dev/null || true)
 
     if [ -n "$design_section" ]; then
         # Join multi-line bullets, then filter out non-actionable entries.
@@ -396,9 +396,9 @@ run_stage_architect() {
 
     # --- Archive and clean up plan -------------------------------------------
 
-    if [ -f "${ARCHITECT_PLAN_FILE}" ]; then
-        mv "${ARCHITECT_PLAN_FILE}" "${LOG_DIR}/${TIMESTAMP}_$(basename "${ARCHITECT_PLAN_FILE}")"
-        log "${ARCHITECT_PLAN_FILE} archived and removed from working directory."
+    if [ -f "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}" ]; then
+        mv "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}" "${LOG_DIR:-.claude/logs}/${TIMESTAMP:-}_$(basename "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md}")"
+        log "${ARCHITECT_PLAN_FILE:-.tekhton/ARCHITECT_PLAN.md} archived and removed from working directory."
     fi
 
     # M116: close architect-remediation substage (if it ran) then architect

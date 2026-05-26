@@ -118,18 +118,18 @@ consume_dry_run_cache() {
 
     # Copy cached scout report
     local _scout_cache_name
-    _scout_cache_name=$(basename "${SCOUT_REPORT_FILE}")
+    _scout_cache_name=$(basename "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}")
     if [[ -f "${cache_dir}/${_scout_cache_name}" ]]; then
-        cp "${cache_dir}/${_scout_cache_name}" "${SCOUT_REPORT_FILE}"
+        cp "${cache_dir}/${_scout_cache_name}" "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
         SCOUT_CACHED=true
         export SCOUT_CACHED
     fi
 
     # Copy cached intake report
     local _intake_cache_name
-    _intake_cache_name=$(basename "${INTAKE_REPORT_FILE}")
+    _intake_cache_name=$(basename "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}")
     if [[ -f "${cache_dir}/${_intake_cache_name}" ]]; then
-        cp "${cache_dir}/${_intake_cache_name}" "${INTAKE_REPORT_FILE}"
+        cp "${cache_dir}/${_intake_cache_name}" "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}"
         INTAKE_CACHED=true
         export INTAKE_CACHED
     fi
@@ -161,11 +161,11 @@ _write_dry_run_cache() {
     mkdir -p "$cache_dir"
 
     # Copy reports if they exist
-    if [[ -f "${SCOUT_REPORT_FILE}" ]]; then
-        cp "${SCOUT_REPORT_FILE}" "${cache_dir}/$(basename "${SCOUT_REPORT_FILE}")"
+    if [[ -f "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" ]]; then
+        cp "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" "${cache_dir}/$(basename "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}")"
     fi
-    if [[ -f "${INTAKE_REPORT_FILE}" ]]; then
-        cp "${INTAKE_REPORT_FILE}" "${cache_dir}/$(basename "${INTAKE_REPORT_FILE}")"
+    if [[ -f "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}" ]]; then
+        cp "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}" "${cache_dir}/$(basename "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}")"
     fi
 
     # Write metadata
@@ -318,7 +318,7 @@ run_dry_run() {
     if [[ "${INTAKE_AGENT_ENABLED:-true}" == "true" ]]; then
         log "Running intake evaluation..."
         run_stage_intake || true
-        if [[ -f "${INTAKE_REPORT_FILE}" ]]; then
+        if [[ -f "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}" ]]; then
             has_intake=true
         fi
     else
@@ -348,9 +348,9 @@ run_dry_run() {
     # Build architecture block for scout if available
     # shellcheck disable=SC2034  # ARCHITECTURE_BLOCK used by render_prompt("scout")
     ARCHITECTURE_BLOCK=""
-    if [[ -n "${ARCHITECTURE_FILE:-}" ]] && [[ -f "${ARCHITECTURE_FILE}" ]]; then
+    if [[ -n "${ARCHITECTURE_FILE:-}" ]] && [[ -f "${ARCHITECTURE_FILE:-}" ]]; then
         local _arch_content
-        _arch_content=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
+        _arch_content=$(_safe_read_file "${ARCHITECTURE_FILE:-}" "ARCHITECTURE_FILE")
         # shellcheck disable=SC2034  # ARCHITECTURE_BLOCK used by render_prompt("scout")
         ARCHITECTURE_BLOCK="
 ## Architecture Map (use this to find files — do NOT explore blindly)
@@ -382,14 +382,14 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         "${CLAUDE_SCOUT_MODEL:-${CLAUDE_JR_CODER_MODEL:-sonnet}}" \
         "${SCOUT_MAX_TURNS:-20}" \
         "$SCOUT_PROMPT" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$_scout_tools"
 
-    if [[ -f "${SCOUT_REPORT_FILE}" ]]; then
+    if [[ -f "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" ]]; then
         has_scout=true
         success "Scout completed."
     else
-        warn "Scout did not produce ${SCOUT_REPORT_FILE}."
+        warn "Scout did not produce ${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}."
     fi
 
     # --- Validate results --------------------------------------------------
@@ -403,12 +403,12 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
     # --- Parse and display preview ------------------------------------------
     local _intake_verdict="N/A" _intake_confidence=0
     if [[ "$has_intake" == true ]]; then
-        _parse_intake_preview "${INTAKE_REPORT_FILE}"
+        _parse_intake_preview "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}"
     fi
 
     local _scout_file_count=0 _scout_summary="" _estimated_turns="unknown" _security_flag="NO"
     if [[ "$has_scout" == true ]]; then
-        _parse_scout_preview "${SCOUT_REPORT_FILE}"
+        _parse_scout_preview "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
     fi
 
     _format_dry_run_preview \

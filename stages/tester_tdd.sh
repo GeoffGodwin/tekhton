@@ -27,7 +27,7 @@ _run_tester_write_failing() {
     export REPO_MAP_CONTENT="${REPO_MAP_CONTENT:-}"
     if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
         if [[ -z "$REPO_MAP_CONTENT" ]]; then
-            run_repo_map "$TASK" || true
+            run_repo_map "${TASK:-}" || true
         fi
     fi
 
@@ -35,11 +35,11 @@ _run_tester_write_failing() {
     export MILESTONE_BLOCK="${MILESTONE_BLOCK:-}"
 
     # Context budget reporting
-    build_context_packet "tester_write_failing" "$TASK" "$CLAUDE_TESTER_MODEL"
+    build_context_packet "tester_write_failing" "${TASK:-}" "${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}"
     _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
     _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
     _add_context_component "Milestone" "${MILESTONE_BLOCK:-}"
-    log_context_report "tester_write_failing" "$CLAUDE_TESTER_MODEL"
+    log_context_report "tester_write_failing" "${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}"
 
     local _tdd_prompt
     _tdd_prompt=$(render_prompt "tester_write_failing")
@@ -50,15 +50,15 @@ _run_tester_write_failing() {
     local _tdd_prompt_chars=${#_tdd_prompt}
     local _tdd_prompt_tokens=$(( (_tdd_prompt_chars + 3) / 4 ))
     log "[tester-diag] Prompt: ${_tdd_prompt_chars} chars (~${_tdd_prompt_tokens} tokens)"
-    log "[tester-diag] Turn budget: ${_max_turns} | Model: ${CLAUDE_TESTER_MODEL}"
+    log "[tester-diag] Turn budget: ${_max_turns} | Model: ${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}"
 
     log "Invoking TDD tester agent (write failing tests, max ${_max_turns} turns)..."
     run_agent \
         "Tester (TDD pre-flight)" \
-        "$CLAUDE_TESTER_MODEL" \
+        "${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}" \
         "$_max_turns" \
         "$_tdd_prompt" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$AGENT_TOOLS_TESTER"
     print_run_summary
 
@@ -79,7 +79,7 @@ _run_tester_write_failing() {
             "tester" \
             "TDD pre-flight API error: ${AGENT_ERROR_SUBCATEGORY:-unknown}" \
             "$_tdd_resume_flag" \
-            "$TASK" \
+            "${TASK:-}" \
             "UPSTREAM error during TDD write-failing phase"
         export SKIP_FINAL_CHECKS=true
         return
@@ -95,7 +95,7 @@ _run_tester_write_failing() {
     if [[ -f "$_preflight_file" ]]; then
         success "TDD pre-flight complete — ${_preflight_file} written."
         # Archive for the run log
-        cp "$_preflight_file" "${LOG_DIR}/${TIMESTAMP}_$(basename "${TDD_PREFLIGHT_FILE}")"
+        cp "$_preflight_file" "${LOG_DIR:-.claude/logs}/${TIMESTAMP:-}_$(basename "${TDD_PREFLIGHT_FILE:-.tekhton/TESTER_PREFLIGHT.md}")"
     else
         warn "TDD tester did not produce ${_preflight_file}. Coder will proceed without pre-written tests."
     fi
@@ -106,5 +106,5 @@ _run_tester_write_failing() {
     local _tdd_total_elapsed=$(( _tdd_stage_end - _tdd_stage_start ))
     local _tdd_total_mins=$(( _tdd_total_elapsed / 60 ))
     local _tdd_total_secs=$(( _tdd_total_elapsed % 60 ))
-    log "[tester-diag] TDD write-failing stage complete: ${_tdd_total_mins}m${_tdd_total_secs}s, model=${CLAUDE_TESTER_MODEL}, turns=${LAST_AGENT_TURNS}"
+    log "[tester-diag] TDD write-failing stage complete: ${_tdd_total_mins}m${_tdd_total_secs}s, model=${CLAUDE_TESTER_MODEL:-claude-sonnet-4-6}, turns=${LAST_AGENT_TURNS}"
 }

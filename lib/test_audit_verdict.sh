@@ -47,7 +47,7 @@ _route_audit_verdict() {
             return 0
             ;;
         CONCERNS)
-            warn "Test audit raised concerns — logging to ${NON_BLOCKING_LOG_FILE}."
+            warn "Test audit raised concerns — logging to ${NON_BLOCKING_LOG_FILE:-.tekhton/NON_BLOCKING_LOG.md}."
             if [[ -f "$report_file" ]]; then
                 local findings
                 findings=$(grep -E '^\s*####\s+(INTEGRITY|SCOPE|COVERAGE|WEAKENING|NAMING)' "$report_file" 2>/dev/null || true)

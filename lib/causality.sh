@@ -46,10 +46,10 @@ init_causal_log() {
     rm -rf "$_CAUSAL_SEQ_DIR" 2>/dev/null || true
     mkdir -p "$_CAUSAL_SEQ_DIR" 2>/dev/null || true
 
-    [[ "${CAUSAL_LOG_ENABLED}" != "true" ]] && return 0
+    [[ "${CAUSAL_LOG_ENABLED:-true}" != "true" ]] && return 0
 
     local log_dir
-    log_dir="$(dirname "$CAUSAL_LOG_FILE")"
+    log_dir="$(dirname "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}")"
     mkdir -p "$log_dir" "${log_dir}/runs" 2>/dev/null || true
 }
 
@@ -77,14 +77,14 @@ emit_event() {
     if command -v tekhton >/dev/null 2>&1; then
         local -a args=(
             causal emit
-            --path "$CAUSAL_LOG_FILE"
-            --cap "$CAUSAL_LOG_MAX_EVENTS"
+            --path "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}"
+            --cap "${CAUSAL_LOG_MAX_EVENTS:-2000}"
             --run-id "${_CURRENT_RUN_ID:-}"
             --stage "$stage"
             --type "$type"
         )
         [[ -n "$detail" ]] && args+=(--detail "$detail")
-        [[ -n "${_CURRENT_MILESTONE:-}" ]] && args+=(--milestone "$_CURRENT_MILESTONE")
+        [[ -n "${_CURRENT_MILESTONE:-}" ]] && args+=(--milestone "${_CURRENT_MILESTONE:-}")
         [[ -n "$verdict" ]] && args+=(--verdict "$verdict")
         [[ -n "$context" ]] && args+=(--context "$context")
         if [[ -n "$caused_by" ]]; then
@@ -107,13 +107,13 @@ emit_event() {
 # Returns the most-recent event ID seen in the on-disk log.
 _last_event_id() {
     : "${CAUSAL_LOG_FILE:=${PROJECT_DIR:-.}/.claude/logs/CAUSAL_LOG.jsonl}"
-    [[ ! -f "$CAUSAL_LOG_FILE" ]] && return 0
+    [[ ! -f "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" ]] && return 0
     if command -v tekhton >/dev/null 2>&1; then
-        tekhton causal status --path "$CAUSAL_LOG_FILE" 2>/dev/null || true
+        tekhton causal status --path "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null || true
         return 0
     fi
     # Fallback: parse the last id field directly.
-    tail -n 1 "$CAUSAL_LOG_FILE" 2>/dev/null | grep -oE '"id":"[^"]+"' | head -1 | sed 's/"id":"//; s/"$//'
+    tail -n 1 "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null | grep -oE '"id":"[^"]+"' | head -1 | sed 's/"id":"//; s/"$//'
 }
 
 # --- Log lifecycle ------------------------------------------------------------
@@ -123,23 +123,23 @@ _last_event_id() {
 archive_causal_log() {
     [[ "${CAUSAL_LOG_ENABLED:-true}" != "true" ]] && return 0
     : "${CAUSAL_LOG_FILE:=${PROJECT_DIR:-.}/.claude/logs/CAUSAL_LOG.jsonl}"
-    [[ ! -f "$CAUSAL_LOG_FILE" ]] && return 0
+    [[ ! -f "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" ]] && return 0
     : "${CAUSAL_LOG_RETENTION_RUNS:=50}"
 
     if command -v tekhton >/dev/null 2>&1; then
         tekhton causal archive \
-            --path "$CAUSAL_LOG_FILE" \
+            --path "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" \
             --run-id "${_CURRENT_RUN_ID:-}" \
-            --retention "$CAUSAL_LOG_RETENTION_RUNS" \
+            --retention "${CAUSAL_LOG_RETENTION_RUNS:-50}" \
             2>/dev/null || true
         return 0
     fi
 
     local runs_dir
-    runs_dir="$(dirname "$CAUSAL_LOG_FILE")/runs"
+    runs_dir="$(dirname "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}")/runs"
     mkdir -p "$runs_dir" 2>/dev/null || true
-    cp "$CAUSAL_LOG_FILE" "${runs_dir}/CAUSAL_LOG_${_CURRENT_RUN_ID}.jsonl"
-    _causal_fallback_prune_archives "$runs_dir" "$CAUSAL_LOG_RETENTION_RUNS"
+    cp "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" "${runs_dir}/CAUSAL_LOG_${_CURRENT_RUN_ID}.jsonl"
+    _causal_fallback_prune_archives "$runs_dir" "${CAUSAL_LOG_RETENTION_RUNS:-50}"
 }
 
 # =============================================================================
@@ -183,22 +183,22 @@ _causal_bash_fallback_emit() {
         "$(_json_escape "${_CURRENT_MILESTONE:-}")" \
         "$(_json_escape "$type")" "$(_json_escape "$stage")" \
         "$(_json_escape "$detail")" "$cb_json" "$v_json" "$ctx_json" \
-        >> "$CAUSAL_LOG_FILE"
+        >> "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}"
 
     _causal_fallback_evict
     printf '%s' "$event_id"
 }
 
 _causal_fallback_evict() {
-    [[ ! -f "$CAUSAL_LOG_FILE" ]] && return 0
+    [[ ! -f "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" ]] && return 0
     local total
-    total=$(wc -l < "$CAUSAL_LOG_FILE" 2>/dev/null || echo 0)
+    total=$(wc -l < "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null || echo 0)
     total="${total##* }"
-    [[ "$total" -le "$CAUSAL_LOG_MAX_EVENTS" ]] && return 0
+    [[ "$total" -le "${CAUSAL_LOG_MAX_EVENTS:-2000}" ]] && return 0
     local to_remove=$(( total - CAUSAL_LOG_MAX_EVENTS ))
-    local tmp="${CAUSAL_LOG_FILE}.tmp.$$"
-    tail -n +"$(( to_remove + 1 ))" "$CAUSAL_LOG_FILE" > "$tmp"
-    mv "$tmp" "$CAUSAL_LOG_FILE"
+    local tmp="${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}.tmp.$$"
+    tail -n +"$(( to_remove + 1 ))" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" > "$tmp"
+    mv "$tmp" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}"
 }
 
 _causal_fallback_prune_archives() {

@@ -21,7 +21,7 @@ _TESTER_TIMING_WRITING_S=-1
 # Args: $1 = path to ${TESTER_REPORT_FILE} (default: ${TESTER_REPORT_FILE})
 #       $2 = "accumulate" to add to existing values (for continuations)
 _parse_tester_timing() {
-    local report="${1:-${TESTER_REPORT_FILE}}"
+    local report="${1:-${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}}"
     local mode="${2:-replace}"
 
     [[ -f "$report" ]] || return 0

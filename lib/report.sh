@@ -103,13 +103,13 @@ print_run_report() {
 
     # Action items
     local action_count=0
-    if [[ -f "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE}" ]] && [[ -s "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE}" ]]; then
+    if [[ -f "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE:-.tekhton/HUMAN_ACTION_REQUIRED.md}" ]] && [[ -s "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE:-.tekhton/HUMAN_ACTION_REQUIRED.md}" ]]; then
         local ha_count
-        ha_count=$(grep -c '^- \[ \]' "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE}" 2>/dev/null || echo "0")
+        ha_count=$(grep -c '^- \[ \]' "${PROJECT_DIR:-.}/${HUMAN_ACTION_FILE:-.tekhton/HUMAN_ACTION_REQUIRED.md}" 2>/dev/null || echo "0")
         ha_count="${ha_count//[!0-9]/}"
         : "${ha_count:=0}"
         if [[ "$ha_count" -gt 0 ]]; then
-            out_action_item "Action items: ${ha_count} in ${HUMAN_ACTION_FILE}" warning
+            out_action_item "Action items: ${ha_count} in ${HUMAN_ACTION_FILE:-.tekhton/HUMAN_ACTION_REQUIRED.md}" warning
             action_count=$(( action_count + ha_count ))
         fi
     fi
@@ -132,7 +132,7 @@ print_run_report() {
 # --- Per-stage report helpers -----------------------------------------------
 
 _report_stage_intake() {
-    local intake_file="${PROJECT_DIR:-.}/${INTAKE_REPORT_FILE}"
+    local intake_file="${PROJECT_DIR:-.}/${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}"
     [[ -f "$intake_file" ]] || return 0
 
     local verdict
@@ -165,7 +165,7 @@ _report_stage_scout() {
 
 _report_stage_coder() {
     local summary_file="$1"
-    local coder_file="${PROJECT_DIR:-.}/${CODER_SUMMARY_FILE}"
+    local coder_file="${PROJECT_DIR:-.}/${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"
     [[ -f "$coder_file" ]] || return 0
 
     local status
@@ -195,7 +195,7 @@ _report_stage_coder() {
 
 _report_stage_security() {
     local summary_file="$1"
-    local security_file="${PROJECT_DIR:-.}/${SECURITY_REPORT_FILE}"
+    local security_file="${PROJECT_DIR:-.}/${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}"
     [[ -f "$security_file" ]] || return 0
 
     local findings_count=0
@@ -216,12 +216,12 @@ _report_stage_security() {
     if [[ "$findings_count" -eq 0 ]]; then
         out_msg "  Security:  ${color}PASS (no findings)${nc}"
     else
-        out_msg "  Security:  ${color}${findings_count} finding(s) (see ${SECURITY_REPORT_FILE})${nc}"
+        out_msg "  Security:  ${color}${findings_count} finding(s) (see ${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md})${nc}"
     fi
 }
 
 _report_stage_reviewer() {
-    local reviewer_file="${PROJECT_DIR:-.}/${REVIEWER_REPORT_FILE}"
+    local reviewer_file="${PROJECT_DIR:-.}/${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}"
     [[ -f "$reviewer_file" ]] || return 0
 
     local verdict
@@ -236,7 +236,7 @@ _report_stage_reviewer() {
 }
 
 _report_stage_tester() {
-    local tester_file="${PROJECT_DIR:-.}/${TESTER_REPORT_FILE}"
+    local tester_file="${PROJECT_DIR:-.}/${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}"
     [[ -f "$tester_file" ]] || return 0
 
     local test_count

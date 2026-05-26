@@ -28,7 +28,7 @@ _ui_run_cmd() {
     _ui_exit=0
     _ui_output=$(run_op "$op_label" \
         env "${_env_list[@]}" timeout "$_t" \
-        bash -c "$UI_TEST_CMD" 2>&1) || _ui_exit=$?
+        bash -c "${UI_TEST_CMD:-}" 2>&1) || _ui_exit=$?
 }
 
 # _run_ui_test_phase STAGE_LABEL
@@ -46,7 +46,7 @@ _run_ui_test_phase() {
 
     _phase_start "build_gate_ui_test"
     local _ui_cmd_bin
-    _ui_cmd_bin=$(echo "$UI_TEST_CMD" | awk '{print $1}')
+    _ui_cmd_bin=$(echo "${UI_TEST_CMD:-}" | awk '{print $1}')
 
     # Check if command is available (npx/npm resolve at runtime)
     local _ui_cmd_available=true
@@ -63,7 +63,7 @@ _run_ui_test_phase() {
         return 0
     fi
 
-    log "Running UI tests: ${UI_TEST_CMD}"
+    log "Running UI tests: ${UI_TEST_CMD:-}"
     local _ui_output="" _ui_exit=0
     local _ui_timeout="${UI_TEST_TIMEOUT:-120}"
 
@@ -126,15 +126,15 @@ _run_ui_test_phase() {
     echo "$_ui_output" | tail -30
 
     # Write raw output so coder.sh bypass logic reads unadorned text
-    printf '%s\n' "$_ui_output" > "${BUILD_RAW_ERRORS_FILE}"
+    printf '%s\n' "$_ui_output" > "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}"
 
-    cat > "${UI_TEST_ERRORS_FILE}" << UIEOF
+    cat > "${UI_TEST_ERRORS_FILE:-.tekhton/UI_TEST_ERRORS.md}" << UIEOF
 # UI Test Errors — $(date '+%Y-%m-%d %H:%M:%S')
 ## Stage
 ${stage_label}
 
 ## UI Test Command
-\`${UI_TEST_CMD}\`
+\`${UI_TEST_CMD:-}\`
 
 ## Exit Code
 ${_ui_exit}
@@ -144,28 +144,28 @@ ${_ui_exit}
 $(echo "$_ui_output" | tail -100)
 \`\`\`
 UIEOF
-    log "UI test errors written to ${UI_TEST_ERRORS_FILE}"
+    log "UI test errors written to ${UI_TEST_ERRORS_FILE:-.tekhton/UI_TEST_ERRORS.md}"
 
     # Append UI test errors to "${BUILD_ERRORS_FILE}" so the build-fix agent
     # has full visibility (it only reads "${BUILD_ERRORS_FILE}").
-    if [[ ! -f "${BUILD_ERRORS_FILE}" ]]; then
+    if [[ ! -f "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" ]]; then
         {
             echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
             echo "## Stage"
             echo "${stage_label}"
             echo ""
-        } > "${BUILD_ERRORS_FILE}"
+        } > "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
     fi
     {
         echo "## UI Test Failures"
-        echo "Command: \`${UI_TEST_CMD}\`"
+        echo "Command: \`${UI_TEST_CMD:-}\`"
         echo "Exit code: ${_ui_exit}"
         echo ""
         echo "\`\`\`"
         echo "$_ui_output" | tail -100
         echo "\`\`\`"
-    } >> "${BUILD_ERRORS_FILE}"
-    log "UI test errors also appended to ${BUILD_ERRORS_FILE}"
+    } >> "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
+    log "UI test errors also appended to ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
 
     # M126: structured gate diagnosis (after raw output blocks).
     local _normal_applied="no" _hardened_applied="no"

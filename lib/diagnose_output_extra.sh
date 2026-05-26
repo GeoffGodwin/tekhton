@@ -26,9 +26,9 @@ print_crash_first_aid() {
     fi
 
     # Build failure
-    if [[ -f "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}" ]] && [[ -s "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE}" ]]; then
+    if [[ -f "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" ]] && [[ -s "${PROJECT_DIR:-.}/${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" ]]; then
         warn "Build failure detected — run 'tekhton --diagnose' for detailed"
-        warn "analysis, or fix ${BUILD_ERRORS_FILE} manually."
+        warn "analysis, or fix ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md} manually."
         return 0
     fi
 

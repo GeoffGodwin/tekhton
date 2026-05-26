@@ -69,7 +69,7 @@ _compute_next_action() {
             # Find next milestone
             local current_id=""
             if [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-                current_id=$(dag_number_to_id "$_CURRENT_MILESTONE" 2>/dev/null) || current_id=""
+                current_id=$(dag_number_to_id "${_CURRENT_MILESTONE:-}" 2>/dev/null) || current_id=""
             fi
             local next_id
             next_id=$(dag_find_next "$current_id" 2>/dev/null) || next_id=""

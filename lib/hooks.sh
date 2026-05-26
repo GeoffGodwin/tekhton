@@ -17,7 +17,7 @@ archive_reports() {
 
     # Note: .claude/dashboard/data/ files are NOT archived — they are regenerated
     # each run from the causal log. CAUSAL_LOG.jsonl IS archived via archive_causal_log().
-    for f in "${CODER_SUMMARY_FILE}" "${REVIEWER_REPORT_FILE}" "${TESTER_REPORT_FILE}" "${JR_CODER_SUMMARY_FILE}" "${SECURITY_REPORT_FILE}" "${SECURITY_NOTES_FILE}" "${INTAKE_REPORT_FILE}" "${PREFLIGHT_ERRORS_FILE}" "${TEST_AUDIT_REPORT_FILE}" "${UI_VALIDATION_REPORT_FILE}"; do
+    for f in "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" "${JR_CODER_SUMMARY_FILE:-.tekhton/JR_CODER_SUMMARY.md}" "${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}" "${SECURITY_NOTES_FILE:-.tekhton/SECURITY_NOTES.md}" "${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}" "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}" "${TEST_AUDIT_REPORT_FILE:-.tekhton/TEST_AUDIT_REPORT.md}" "${UI_VALIDATION_REPORT_FILE:-.tekhton/UI_VALIDATION_REPORT.md}"; do
         if [ -f "$f" ]; then
             cp "$f" "${log_dir}/${timestamp}_$(basename "$f")"
         fi
@@ -95,14 +95,14 @@ generate_commit_message() {
     # All commands in this function must be guarded against pipefail — awk | head
     # can cause SIGPIPE, and grep -q returns non-zero on no match.
     local what=""
-    if [ -f "${CODER_SUMMARY_FILE}" ]; then
-        what=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found && NF{print; exit}' "${CODER_SUMMARY_FILE}" 2>/dev/null || true)
+    if [ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]; then
+        what=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found && NF{print; exit}' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null || true)
         what=$(echo "$what" | head -c 120)
     fi
 
     local file_count=0
-    if [ -f "${CODER_SUMMARY_FILE}" ]; then
-        file_count=$(awk '/^## Files ([Cc]reated|[Mm]odified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "0")
+    if [ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]; then
+        file_count=$(awk '/^## Files ([Cc]reated|[Mm]odified)/{found=1; next} found && /^##/{exit} found && /^[-*]/{count++} END{print count+0}' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null || echo "0")
     fi
 
     # If TASK arrived empty (e.g. finalize subprocess didn't inherit it from
@@ -133,13 +133,13 @@ generate_commit_message() {
 
     local body=""
     if [ -n "$what" ]; then
-        body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' "${CODER_SUMMARY_FILE}" 2>/dev/null | sed '/^$/d' | head -15 | sed 's/^[-*] /- /' || true)
+        body=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found{print}' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null | sed '/^$/d' | head -15 | sed 's/^[-*] /- /' || true)
     fi
 
     # Include root cause for bug fixes
-    if [ -f "${CODER_SUMMARY_FILE}" ] && echo "$task" | grep -Eqi "fix|bug"; then
+    if [ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ] && echo "$task" | grep -Eqi "fix|bug"; then
         local root_cause
-        root_cause=$(awk '/^## Root [Cc]ause/{found=1; next} found && /^##/{exit} found && NF{print}' "${CODER_SUMMARY_FILE}" 2>/dev/null | sed '/^$/d' | head -5 || true)
+        root_cause=$(awk '/^## Root [Cc]ause/{found=1; next} found && /^##/{exit} found && NF{print}' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null | sed '/^$/d' | head -5 || true)
         if [ -n "$root_cause" ] && ! echo "$root_cause" | grep -Eqi "^n/a|^none|^\(fill"; then
             body="${body:+${body}
 }

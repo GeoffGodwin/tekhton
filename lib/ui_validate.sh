@@ -234,10 +234,10 @@ _stop_ui_server() {
 _detect_ui_targets() {
     local targets=()
 
-    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
+    if [[ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]]; then
         local files_section
         files_section=$(awk '/^## Files (Created|Modified|Created or Modified)/{f=1;next} /^## /{f=0} f{print}' \
-            "${CODER_SUMMARY_FILE}" 2>/dev/null || true)
+            "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null || true)
 
         while IFS= read -r line; do
             [[ -z "$line" ]] && continue
@@ -286,7 +286,7 @@ _should_self_test_watchtower() {
     if echo "$changed" | grep -q "dashboard/"; then
         return 0
     fi
-    if [[ -f "${CODER_SUMMARY_FILE}" ]] && grep -qi "dashboard" "${CODER_SUMMARY_FILE}" 2>/dev/null; then
+    if [[ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]] && grep -qi "dashboard" "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null; then
         return 0
     fi
     return 1
@@ -442,8 +442,8 @@ run_ui_validation() {
         _emit_ui_validation_event "failed" ""
         # Set template variables for rework prompt
         export UI_VALIDATION_FAILURES_BLOCK=""
-        if [[ -f "${UI_VALIDATION_REPORT_FILE}" ]]; then
-            UI_VALIDATION_FAILURES_BLOCK=$(cat "${UI_VALIDATION_REPORT_FILE}")
+        if [[ -f "${UI_VALIDATION_REPORT_FILE:-.tekhton/UI_VALIDATION_REPORT.md}" ]]; then
+            UI_VALIDATION_FAILURES_BLOCK=$(cat "${UI_VALIDATION_REPORT_FILE:-.tekhton/UI_VALIDATION_REPORT.md}")
         fi
         return 1
     fi

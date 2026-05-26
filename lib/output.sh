@@ -108,9 +108,9 @@ _out_emit() {
         fi
     elif [[ -n "${LOG_FILE:-}" ]]; then
         if [[ "$level" == "header" ]]; then
-            printf '\n=== %s ===\n' "$(_tui_strip_ansi "$msg")" >> "$LOG_FILE" 2>/dev/null || true
+            printf '\n=== %s ===\n' "$(_tui_strip_ansi "$msg")" >> "${LOG_FILE:-}" 2>/dev/null || true
         else
-            printf '%s %s\n' "$prefix" "$(_tui_strip_ansi "$msg")" >> "$LOG_FILE" 2>/dev/null || true
+            printf '%s %s\n' "$prefix" "$(_tui_strip_ansi "$msg")" >> "${LOG_FILE:-}" 2>/dev/null || true
         fi
     fi
     _tui_notify "$notify_level" "$notify_msg"

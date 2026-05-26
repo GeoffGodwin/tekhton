@@ -96,7 +96,7 @@ validate_config() {
         _vc_warn "TEST_CMD is no-op or empty — set a real test command"
         warnings=$((warnings + 1))
     else
-        _vc_pass "TEST_CMD configured (${TEST_CMD})"
+        _vc_pass "TEST_CMD configured (${TEST_CMD:-true})"
         passes=$((passes + 1))
     fi
 
@@ -111,11 +111,11 @@ validate_config() {
 
     # Check 5: ARCHITECTURE_FILE exists on disk (if set)
     if [[ -n "${ARCHITECTURE_FILE:-}" ]]; then
-        if [[ -f "${PROJECT_DIR}/${ARCHITECTURE_FILE}" ]]; then
-            _vc_pass "ARCHITECTURE_FILE exists (${ARCHITECTURE_FILE})"
+        if [[ -f "${PROJECT_DIR}/${ARCHITECTURE_FILE:-}" ]]; then
+            _vc_pass "ARCHITECTURE_FILE exists (${ARCHITECTURE_FILE:-})"
             passes=$((passes + 1))
         else
-            _vc_warn "ARCHITECTURE_FILE=\"${ARCHITECTURE_FILE}\" — file not found on disk"
+            _vc_warn "ARCHITECTURE_FILE=\"${ARCHITECTURE_FILE:-}\" — file not found on disk"
             warnings=$((warnings + 1))
         fi
     else
@@ -136,18 +136,18 @@ validate_config() {
 
     # Check 6b (M121): DESIGN_FILE ends in '/' (directory path, not a file).
     # Survives config_defaults.sh because `:=` does not override non-empty values.
-    if [[ -n "${DESIGN_FILE:-}" ]] && [[ "${DESIGN_FILE}" == */ ]]; then
-        _vc_warn "DESIGN_FILE ends in '/' (directory path, not a file): ${DESIGN_FILE}. This will cause planning-mode writes to fail. Fix: remove the trailing slash or point the key at a markdown file."
+    if [[ -n "${DESIGN_FILE:-}" ]] && [[ "${DESIGN_FILE:-.tekhton/DESIGN.md}" == */ ]]; then
+        _vc_warn "DESIGN_FILE ends in '/' (directory path, not a file): ${DESIGN_FILE:-.tekhton/DESIGN.md}. This will cause planning-mode writes to fail. Fix: remove the trailing slash or point the key at a markdown file."
         warnings=$((warnings + 1))
     fi
 
     # Check 7: DESIGN_FILE exists on disk (if set)
     if [[ -n "${DESIGN_FILE:-}" ]]; then
-        if [[ -f "${PROJECT_DIR}/${DESIGN_FILE}" ]]; then
-            _vc_pass "DESIGN_FILE exists (${DESIGN_FILE})"
+        if [[ -f "${PROJECT_DIR}/${DESIGN_FILE:-.tekhton/DESIGN.md}" ]]; then
+            _vc_pass "DESIGN_FILE exists (${DESIGN_FILE:-.tekhton/DESIGN.md})"
             passes=$((passes + 1))
         else
-            _vc_warn "DESIGN_FILE=\"${DESIGN_FILE}\" — file not found on disk"
+            _vc_warn "DESIGN_FILE=\"${DESIGN_FILE:-.tekhton/DESIGN.md}\" — file not found on disk"
             warnings=$((warnings + 1))
         fi
     else
@@ -166,7 +166,7 @@ validate_config() {
 
     # Check 11: TEKHTON_CONFIG_VERSION present
     if [[ -n "${TEKHTON_CONFIG_VERSION:-}" ]]; then
-        _vc_pass "TEKHTON_CONFIG_VERSION set (${TEKHTON_CONFIG_VERSION})"
+        _vc_pass "TEKHTON_CONFIG_VERSION set (${TEKHTON_CONFIG_VERSION:-})"
         passes=$((passes + 1))
     else
         _vc_warn "TEKHTON_CONFIG_VERSION absent — run tekhton --migrate --status"

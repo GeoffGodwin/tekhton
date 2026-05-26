@@ -20,7 +20,7 @@ generate_project_index_view() {
     local project_dir="${1:-.}"
     local budget_chars="${2:-${PROJECT_INDEX_BUDGET:-120000}}"
     local index_dir="${project_dir}/.claude/index"
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
 
     if [[ ! -d "$index_dir" ]]; then
         warn "No structured index at ${index_dir} — cannot generate view"

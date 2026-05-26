@@ -38,10 +38,10 @@ persist_express_config() {
 
     # Substitute template variables
     content="${content//\{\{PROJECT_NAME\}\}/${PROJECT_NAME}}"
-    content="${content//\{\{TEST_CMD\}\}/${TEST_CMD}}"
+    content="${content//\{\{TEST_CMD\}\}/${TEST_CMD:-true}}"
     content="${content//\{\{ANALYZE_CMD\}\}/${ANALYZE_CMD}}"
     content="${content//\{\{BUILD_CHECK_CMD\}\}/${BUILD_CHECK_CMD:-}}"
-    content="${content//\{\{CLAUDE_STANDARD_MODEL\}\}/${CLAUDE_STANDARD_MODEL}}"
+    content="${content//\{\{CLAUDE_STANDARD_MODEL\}\}/${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
 
     # Inject source annotations from detection tuples (M83)
     content=$(_inject_express_source_annotations "$content")
@@ -110,9 +110,9 @@ _write_inline_express_config() {
         echo "# Run 'tekhton --init' for full configuration with planning interview."
         echo ""
         echo "PROJECT_NAME=\"${PROJECT_NAME}\""
-        echo "CLAUDE_STANDARD_MODEL=\"${CLAUDE_STANDARD_MODEL}\""
+        echo "CLAUDE_STANDARD_MODEL=\"${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}\""
         [[ -n "$test_ann" ]] && echo "$test_ann"
-        echo "TEST_CMD=\"${TEST_CMD}\""
+        echo "TEST_CMD=\"${TEST_CMD:-true}\""
         [[ -n "$analyze_ann" ]] && echo "$analyze_ann"
         echo "ANALYZE_CMD=\"${ANALYZE_CMD}\""
         [[ -n "$build_ann" ]] && echo "$build_ann"

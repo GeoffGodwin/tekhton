@@ -30,7 +30,7 @@ check_milestone_acceptance() {
 
     # --- Automatable check 1: Test command passes ---
     if [[ -n "${TEST_CMD:-}" ]]; then
-        log "Running test command: ${TEST_CMD}"
+        log "Running test command: ${TEST_CMD:-true}"
         local test_output=""
         local test_exit=0
         if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
@@ -42,7 +42,7 @@ check_milestone_acceptance() {
             test_output="[dedup] Cached pass — no files changed since last successful test run"
             test_exit=0
         else
-            test_output=$(run_op "Running acceptance tests" bash -c "${TEST_CMD}" 2>&1) || test_exit=$?
+            test_output=$(run_op "Running acceptance tests" bash -c "${TEST_CMD:-true}" 2>&1) || test_exit=$?
             if [[ "$test_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
                 test_dedup_record_pass
             fi
@@ -170,7 +170,7 @@ check_milestone_acceptance() {
         #   "Docs Updated: missing", "documentation not updated", "docs absent", etc.
         local docs_block
         docs_block=$(grep -ciE 'docs? (updated?|change|section).*missing|doc(umentation)? (not |un)updated?|doc(umentation|s)? absent|missing doc(umentation|s)? update' \
-            "${REVIEWER_REPORT_FILE}" 2>/dev/null || true)
+            "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" 2>/dev/null || true)
         if [[ "$docs_block" -gt 0 ]]; then
             warn "DOCS_STRICT_MODE: reviewer flagged missing doc updates (${docs_block} finding(s))"
             all_pass=false

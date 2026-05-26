@@ -218,9 +218,9 @@ _m24_notes_claim_bulk() {
         CLAIMED_NOTE_IDS="${CLAIMED_NOTE_IDS:+${CLAIMED_NOTE_IDS} }${out}"
         local n; n=$(echo "$out" | wc -w | tr -d '[:space:]')
         if [[ -n "${NOTES_FILTER:-}" ]]; then
-            log "${HUMAN_NOTES_FILE} — ${n} [${NOTES_FILTER}] item(s) marked in-progress [~]."
+            log "${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md} — ${n} [${NOTES_FILTER}] item(s) marked in-progress [~]."
         else
-            log "${HUMAN_NOTES_FILE} — ${n} item(s) marked in-progress [~]."
+            log "${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md} — ${n} item(s) marked in-progress [~]."
         fi
     fi
 }

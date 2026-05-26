@@ -164,7 +164,7 @@ check_design_completeness() {
     PLAN_INCOMPLETE_SECTIONS=""
 
     if [[ ! -f "$design_file" ]]; then
-        error "${DESIGN_FILE} not found at ${design_file}"
+        error "${DESIGN_FILE:-.tekhton/DESIGN.md} not found at ${design_file}"
         return 1
     fi
 
@@ -215,10 +215,10 @@ check_design_completeness() {
 # run_plan_completeness_loop — Check completeness and run follow-up interviews.
 run_plan_completeness_loop() {
     _assert_design_file_usable || return $?
-    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE:-.tekhton/DESIGN.md}"
 
     if [[ ! -f "$design_file" ]]; then
-        warn "No ${DESIGN_FILE} found — skipping completeness check."
+        warn "No ${DESIGN_FILE:-.tekhton/DESIGN.md} found — skipping completeness check."
         return 1
     fi
 
@@ -245,7 +245,7 @@ run_plan_completeness_loop() {
 
         if [[ "$pass_num" -ge "$max_followups" ]]; then
             warn "Maximum follow-up passes (${max_followups}) reached."
-            warn "Continuing with incomplete sections. You can edit ${DESIGN_FILE} manually."
+            warn "Continuing with incomplete sections. You can edit ${DESIGN_FILE:-.tekhton/DESIGN.md} manually."
             return 0
         fi
 
@@ -259,7 +259,7 @@ run_plan_completeness_loop() {
         local choice
         while true; do
             printf "  [f] Follow-up interview on incomplete sections\n"
-            printf "  [s] Skip — continue with current %s\n" "${DESIGN_FILE}"
+            printf "  [s] Skip — continue with current %s\n" "${DESIGN_FILE:-.tekhton/DESIGN.md}"
             printf "  Select [f/s]: "
             read -r choice < "$input_fd" || { log "End of input — skipping follow-up."; return 0; }
             choice="${choice//$'\r'/}"
@@ -271,7 +271,7 @@ run_plan_completeness_loop() {
                     break
                     ;;
                 s|S)
-                    log "Skipping follow-up. Continuing with current ${DESIGN_FILE}."
+                    log "Skipping follow-up. Continuing with current ${DESIGN_FILE:-.tekhton/DESIGN.md}."
                     return 0
                     ;;
                 *)

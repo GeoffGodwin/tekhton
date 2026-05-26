@@ -22,7 +22,7 @@ set -euo pipefail
 # Walk caused_by edges backward, printing ancestor events as JSON lines.
 trace_cause_chain() {
     local target_id="$1"
-    [[ ! -f "$CAUSAL_LOG_FILE" ]] && return 0
+    [[ ! -f "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" ]] && return 0
 
     # Build an associative array of id → line for fast lookup
     local -A id_map=()
@@ -35,7 +35,7 @@ trace_cause_chain() {
         local cbs
         cbs=$(printf '%s' "$line" | grep -oP '"caused_by"\s*:\s*\[\K[^\]]*' 2>/dev/null || true)
         caused_by_map[$eid]="$cbs"
-    done < "$CAUSAL_LOG_FILE"
+    done < "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}"
 
     # Walk backward from target
     local -A visited=()
@@ -76,7 +76,7 @@ trace_cause_chain() {
 # for the primary use case (diagnostic exploration) but not for precise queries.
 trace_effect_chain() {
     local target_id="$1"
-    [[ ! -f "$CAUSAL_LOG_FILE" ]] && return 0
+    [[ ! -f "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" ]] && return 0
 
     local -A visited=()
     local queue="$target_id"
@@ -99,7 +99,7 @@ trace_effect_chain() {
                 echo "$line"
             fi
             queue="${queue:+${queue}$'\n'}${eid}"
-        done < <(grep -F "\"$current\"" "$CAUSAL_LOG_FILE" 2>/dev/null || true)
+        done < <(grep -F "\"$current\"" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null || true)
     done
 }
 
@@ -109,8 +109,8 @@ events_for_milestone() {
     local milestone_id="$1"
     local run_id="${2:-$_CURRENT_RUN_ID}"
 
-    [[ ! -f "$CAUSAL_LOG_FILE" ]] && return 0
-    grep "\"milestone\":\"${milestone_id}\"" "$CAUSAL_LOG_FILE" 2>/dev/null \
+    [[ ! -f "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" ]] && return 0
+    grep "\"milestone\":\"${milestone_id}\"" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null \
         | grep "\"run_id\":\"${run_id}\"" 2>/dev/null || true
 }
 
@@ -121,11 +121,11 @@ events_by_type() {
     local lookback="${2:-10}"
 
     local runs_dir
-    runs_dir="$(dirname "$CAUSAL_LOG_FILE")/runs"
+    runs_dir="$(dirname "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}")/runs"
 
     # Current run first
-    if [[ -f "$CAUSAL_LOG_FILE" ]]; then
-        grep "\"type\":\"${event_type}\"" "$CAUSAL_LOG_FILE" 2>/dev/null || true
+    if [[ -f "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" ]]; then
+        grep "\"type\":\"${event_type}\"" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null || true
     fi
 
     # Archived runs (most recent first)
@@ -149,7 +149,7 @@ recurring_pattern() {
     local total=0
     local run_ids=""
     local runs_dir
-    runs_dir="$(dirname "$CAUSAL_LOG_FILE")/runs"
+    runs_dir="$(dirname "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}")/runs"
 
     if [[ -d "$runs_dir" ]]; then
         local count=0
@@ -187,7 +187,7 @@ verdict_history() {
 # Example: "build_gate.FAIL ← coder.stage_end ← scout.stage_end"
 cause_chain_summary() {
     local event_id="$1"
-    [[ ! -f "$CAUSAL_LOG_FILE" ]] && { echo "$event_id"; return 0; }
+    [[ ! -f "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" ]] && { echo "$event_id"; return 0; }
 
     local chain="$event_id"
     local current="$event_id"
@@ -196,7 +196,7 @@ cause_chain_summary() {
 
     while [[ "$depth" -lt "$max_depth" ]]; do
         local line
-        line=$(grep "\"id\":\"${current}\"" "$CAUSAL_LOG_FILE" 2>/dev/null | head -1 || true)
+        line=$(grep "\"id\":\"${current}\"" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null | head -1 || true)
         [[ -z "$line" ]] && break
 
         local cbs
@@ -210,7 +210,7 @@ cause_chain_summary() {
 
         # Get type of the cause event for readable summary
         local cause_line
-        cause_line=$(grep "\"id\":\"${first_cause}\"" "$CAUSAL_LOG_FILE" 2>/dev/null | head -1 || true)
+        cause_line=$(grep "\"id\":\"${first_cause}\"" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null | head -1 || true)
         local cause_type=""
         if [[ -n "$cause_line" ]]; then
             cause_type=$(printf '%s' "$cause_line" | grep -oP '"type"\s*:\s*"\K[^"]+' 2>/dev/null || true)

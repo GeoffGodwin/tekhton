@@ -33,7 +33,7 @@ _run_preflight_test_gate() {
     [[ "${SKIP_FINAL_CHECKS:-false}" != true ]] || return 0
     [[ -n "${TEST_CMD:-}" ]] || return 0
 
-    log "Pre-finalization test gate: running ${TEST_CMD}..."
+    log "Pre-finalization test gate: running ${TEST_CMD:-true}..."
     local _preflight_exit=0
     local _preflight_output=""
     if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
@@ -45,12 +45,12 @@ _run_preflight_test_gate() {
         _preflight_output="[dedup] Cached pass — no files changed since last successful test run"
         _preflight_exit=0
     else
-        _preflight_output=$(run_op "Verifying tests before finalizing" bash -c "${TEST_CMD}" 2>&1) || _preflight_exit=$?
+        _preflight_output=$(run_op "Verifying tests before finalizing" bash -c "${TEST_CMD:-true}" 2>&1) || _preflight_exit=$?
         if [[ "$_preflight_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
             test_dedup_record_pass
         fi
     fi
-    printf '%s\n' "$_preflight_output" >> "$LOG_FILE"
+    printf '%s\n' "$_preflight_output" >> "${LOG_FILE:-}"
 
     if [[ "$_preflight_exit" -ne 0 ]]; then
         local _preflight_baseline="none"
@@ -68,20 +68,20 @@ _run_preflight_test_gate() {
             log_decision "Trying preflight fix" "${_preflight_exit} test failures detected" "FINAL_FIX_ENABLED=${FINAL_FIX_ENABLED:-true}"
             if _try_preflight_fix "$_preflight_output" "$_preflight_exit"; then
                 _PREFLIGHT_TESTS_PASSED=true
-                [[ -f "${PREFLIGHT_ERRORS_FILE}" ]] && rm -f "${PREFLIGHT_ERRORS_FILE}"
+                [[ -f "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}" ]] && rm -f "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}"
                 log "Pre-finalization fix succeeded — proceeding to finalization."
             else
                 warn "Pre-finalization test gate failed (exit ${_preflight_exit}). Routing back to coder for fix."
                 {
                     echo "# Pre-Finalization Test Failures"
-                    echo "Command: \`${TEST_CMD}\` exited with code ${_preflight_exit}"
+                    echo "Command: \`${TEST_CMD:-true}\` exited with code ${_preflight_exit}"
                     echo ""
                     echo "## Output (last 80 lines)"
                     echo '```'
                     printf '%s\n' "$_preflight_output" | tail -80
                     echo '```'
-                } > "${PREFLIGHT_ERRORS_FILE}"
-                log "Wrote preflight test errors to ${PREFLIGHT_ERRORS_FILE}"
+                } > "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}"
+                log "Wrote preflight test errors to ${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}"
                 record_pipeline_attempt "${_CURRENT_MILESTONE:-none}" "$_ORCH_ATTEMPT" \
                     "failed:final_check/test_failure" "$_iter_turns" "$_files_changed"
                 START_AT="coder"
@@ -90,7 +90,7 @@ _run_preflight_test_gate() {
         fi
     fi
     _PREFLIGHT_TESTS_PASSED=true
-    [[ -f "${PREFLIGHT_ERRORS_FILE}" ]] && rm -f "${PREFLIGHT_ERRORS_FILE}"
+    [[ -f "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}" ]] && rm -f "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}"
     return 0
 }
 
@@ -106,8 +106,8 @@ _handle_pipeline_success() {
     _update_escalation_counter "${START_AT:-}" "" "" || true
 
     local acceptance_pass=true
-    if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-        check_milestone_acceptance "$_CURRENT_MILESTONE" "CLAUDE.md" || acceptance_pass=false
+    if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+        check_milestone_acceptance "${_CURRENT_MILESTONE:-}" "CLAUDE.md" || acceptance_pass=false
     else
         # Non-milestone: invariant means this is unreachable on exit 0 from any
         # well-behaved stage; SKIP_FINAL_CHECKS is the safety net for tester.sh
@@ -140,9 +140,9 @@ _handle_pipeline_success() {
         _run_preflight_test_gate "$_iter_turns" "$_files_changed" || return 0
 
         local _should_advance=false
-        if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+        if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
             local _next_ms
-            _next_ms=$(find_next_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}")
+            _next_ms=$(find_next_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}")
             if [[ -n "$_next_ms" ]]; then
                 write_milestone_disposition "COMPLETE_AND_CONTINUE"
             else
@@ -172,7 +172,7 @@ _handle_pipeline_success() {
     fi
 
     warn "Acceptance criteria not met. Re-running pipeline (attempt ${_ORCH_ATTEMPT}/${MAX_PIPELINE_ATTEMPTS:-5})..."
-    if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+    if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
         write_milestone_disposition "INCOMPLETE_REWORK"
     fi
     START_AT="coder"
@@ -214,7 +214,7 @@ _handle_pipeline_failure() {
             MAX_REVIEW_CYCLES=$(( MAX_REVIEW_CYCLES + 2 ))
             _ORCH_REVIEW_BUMPED=true
             _ORCH_RECOVERY_ROUTE_TAKEN="bump_review"
-            warn "Bumping MAX_REVIEW_CYCLES to ${MAX_REVIEW_CYCLES} (one-time)"
+            warn "Bumping MAX_REVIEW_CYCLES to ${MAX_REVIEW_CYCLES:-3} (one-time)"
             START_AT="review"
             return 0
             ;;

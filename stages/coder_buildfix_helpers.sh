@@ -197,7 +197,7 @@ _bf_emit_routing_diagnosis() {
         else
             echo "- (no recognized signatures)"
         fi
-    } > "${BUILD_ROUTING_DIAGNOSIS_FILE}"
+    } > "${BUILD_ROUTING_DIAGNOSIS_FILE:-.tekhton/BUILD_ROUTING_DIAGNOSIS.md}"
 }
 
 # _bf_extra_context_for_decision DECISION — return the route-specific
@@ -209,7 +209,7 @@ _bf_extra_context_for_decision() {
         mixed_uncertain)
             printf '%s\n%s' \
                 "## Routing Context (mixed_uncertain)" \
-                "Both code and non-code error signals were detected in this run. See ${BUILD_ROUTING_DIAGNOSIS_FILE} for category counts and top diagnoses. Fix code errors first; if the build still fails, the remaining issues may be environmental and should be flagged for human action rather than retried."
+                "Both code and non-code error signals were detected in this run. See ${BUILD_ROUTING_DIAGNOSIS_FILE:-.tekhton/BUILD_ROUTING_DIAGNOSIS.md} for category counts and top diagnoses. Fix code errors first; if the build still fails, the remaining issues may be environmental and should be flagged for human action rather than retried."
             ;;
         unknown_only)
             printf '%s\n%s' \

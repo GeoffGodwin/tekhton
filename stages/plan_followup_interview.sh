@@ -33,7 +33,7 @@ set -euo pipefail
 # Returns 0 if ${DESIGN_FILE} was updated, 1 otherwise.
 run_plan_followup_interview() {
     # shellcheck disable=SC2153
-    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE:-.tekhton/DESIGN.md}"
     local log_dir="${PROJECT_DIR}/.claude/logs"
     local timestamp
     timestamp=$(date +"%Y%m%d_%H%M%S")
@@ -153,7 +153,7 @@ run_plan_followup_interview() {
         echo
     done
 
-    log "Updating ${DESIGN_FILE} with follow-up answers..."
+    log "Updating ${DESIGN_FILE:-.tekhton/DESIGN.md} with follow-up answers..."
     echo
 
     # Set template variables for prompt rendering
@@ -197,19 +197,19 @@ run_plan_followup_interview() {
     {
         echo "=== Session End ==="
         echo "Exit code: ${batch_exit}"
-        echo "${DESIGN_FILE}: ${design_status}"
+        echo "${DESIGN_FILE:-.tekhton/DESIGN.md}: ${design_status}"
         echo "Date: $(date)"
     } >> "$log_file"
 
     echo
 
     if [[ -n "$updated_content" ]]; then
-        success "${DESIGN_FILE} updated (${design_status})."
+        success "${DESIGN_FILE:-.tekhton/DESIGN.md} updated (${design_status})."
         log "Log saved: ${log_file}"
         exec 3<&-
         return 0
     else
-        warn "Update produced no output — ${DESIGN_FILE} was not changed."
+        warn "Update produced no output — ${DESIGN_FILE:-.tekhton/DESIGN.md} was not changed."
         [[ "$batch_exit" -ne 0 ]] && warn "Claude exited with code ${batch_exit}."
         log "Log saved: ${log_file}"
         exec 3<&-

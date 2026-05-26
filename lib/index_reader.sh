@@ -39,7 +39,7 @@ read_index_meta() {
     fi
 
     # Legacy fallback: parse HTML comments from project index
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     [[ ! -f "$index_file" ]] && return 0
 
     local scan_date scan_commit file_count total_lines project_name
@@ -78,7 +78,7 @@ read_index_tree() {
     fi
 
     # Legacy fallback: extract from project index
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     [[ ! -f "$index_file" ]] && return 0
 
     _index_extract_section "$index_file" "Directory Tree" "$max_lines"
@@ -135,7 +135,7 @@ read_index_inventory() {
     fi
 
     # Legacy fallback: extract from project index
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     [[ ! -f "$index_file" ]] && return
 
     local section
@@ -202,7 +202,7 @@ read_index_dependencies() {
     fi
 
     # Legacy fallback
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     [[ ! -f "$index_file" ]] && return 0
     _index_extract_section "$index_file" "Key Dependencies" 0
 }
@@ -228,7 +228,7 @@ read_index_configs() {
     fi
 
     # Legacy fallback
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     [[ ! -f "$index_file" ]] && return 0
     _index_extract_section "$index_file" "Configuration Files" 0
 }
@@ -275,7 +275,7 @@ read_index_tests() {
     fi
 
     # Legacy fallback
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     [[ ! -f "$index_file" ]] && return 0
     _index_extract_section "$index_file" "Test Infrastructure" 0
 }
@@ -324,7 +324,7 @@ read_index_samples() {
     fi
 
     # Legacy fallback
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
     [[ ! -f "$index_file" ]] && return 0
     _index_extract_section "$index_file" "Sampled File Content" 0
 }

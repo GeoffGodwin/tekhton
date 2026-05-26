@@ -40,15 +40,15 @@ run_stage_review() {
     VERDICT="CHANGES_REQUIRED"
     _REVIEW_MAP_FILES=""  # M61: track cycle-1 file list for cache comparison (global — tested externally)
 
-    while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; do
+    while [ "$VERDICT" = "CHANGES_REQUIRED" ] && [ "$REVIEW_CYCLE" -lt "${MAX_REVIEW_CYCLES:-3}" ]; do
         REVIEW_CYCLE=$((REVIEW_CYCLE + 1))
-        progress_status "${PIPELINE_STAGE_POS:-3}" "${PIPELINE_STAGE_COUNT:-4}" "Reviewer" "cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES}"
+        progress_status "${PIPELINE_STAGE_POS:-3}" "${PIPELINE_STAGE_COUNT:-4}" "Reviewer" "cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES:-3}"
 
         # M47: use cached architecture content
         export ARCHITECTURE_CONTENT
         ARCHITECTURE_CONTENT=$(_get_cached_architecture_content)
         if [[ -z "$ARCHITECTURE_CONTENT" ]]; then
-            ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE} not found)"
+            ARCHITECTURE_CONTENT="(${ARCHITECTURE_FILE:-} not found)"
         fi
 
         # Repo map slice: changed files + their callers/callees
@@ -56,7 +56,7 @@ run_stage_review() {
         REPO_MAP_CONTENT=""
         if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]] && [[ "${REPO_MAP_ENABLED:-false}" == "true" ]]; then
             local _review_files
-            _review_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}")
+            _review_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}")
             if [[ -n "$_review_files" ]]; then
                 # On cycle 2+, check if new files appeared since cycle 1
                 if [[ "$REVIEW_CYCLE" -gt 1 ]] && [[ -n "${_REVIEW_MAP_FILES:-}" ]]; then
@@ -69,7 +69,7 @@ run_stage_review() {
                     fi
                 fi
 
-                run_repo_map "$TASK" || true
+                run_repo_map "${TASK:-}" || true
                 if [[ -n "$REPO_MAP_CONTENT" ]]; then
                     local _review_slice
                     if _review_slice=$(get_repo_map_slice "$_review_files"); then
@@ -90,10 +90,10 @@ run_stage_review() {
             PRIOR_BLOCKERS_BLOCK="yes"
         fi
 
-        build_context_packet "review" "$TASK" "$CLAUDE_REVIEWER_MODEL"
+        build_context_packet "review" "${TASK:-}" "${CLAUDE_REVIEWER_MODEL:-claude-sonnet-4-6}"
         _add_context_component "Architecture" "$ARCHITECTURE_CONTENT"
         _add_context_component "Repo Map" "${REPO_MAP_CONTENT:-}"
-        log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "$CLAUDE_REVIEWER_MODEL"
+        log_context_report "reviewer (cycle ${REVIEW_CYCLE})" "${CLAUDE_REVIEWER_MODEL:-claude-sonnet-4-6}"
 
         # Populate MILESTONE_BLOCK with the FOCUSED active milestone content
         # before rendering. Without this, reviewer prompts referencing
@@ -113,10 +113,10 @@ run_stage_review() {
         _phase_start "reviewer_agent"
         run_agent \
             "Reviewer (cycle ${REVIEW_CYCLE})" \
-            "$CLAUDE_REVIEWER_MODEL" \
-            "${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}" \
+            "${CLAUDE_REVIEWER_MODEL:-claude-sonnet-4-6}" \
+            "${ADJUSTED_REVIEWER_TURNS:-${REVIEWER_MAX_TURNS:-20}}" \
             "$REVIEWER_PROMPT" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_REVIEWER"
         _phase_end "reviewer_agent"
         # Record per-cycle sub-step (M66)
@@ -130,15 +130,15 @@ run_stage_review() {
         # In-loop recalibration: if the reviewer used >= 85% of its allocated
         # turns, bump the limit for the next cycle so repeated overshoots
         # don't keep hitting the same ceiling.
-        local _rev_limit="${ADJUSTED_REVIEWER_TURNS:-$REVIEWER_MAX_TURNS}"
+        local _rev_limit="${ADJUSTED_REVIEWER_TURNS:-${REVIEWER_MAX_TURNS:-20}}"
         local _rev_used="${LAST_AGENT_TURNS:-0}"
         if [[ "$_rev_limit" -gt 0 ]] && [[ "$_rev_used" -gt 0 ]]; then
             local _rev_usage_pct=$(( _rev_used * 100 / _rev_limit ))
             if [[ "$_rev_usage_pct" -ge 85 ]]; then
                 # Bump by 25%, clamped to REVIEWER_MAX_TURNS_CAP
                 local _bumped=$(( _rev_limit * 125 / 100 ))
-                if [[ "$_bumped" -gt "${REVIEWER_MAX_TURNS_CAP}" ]]; then
-                    _bumped="${REVIEWER_MAX_TURNS_CAP}"
+                if [[ "$_bumped" -gt "${REVIEWER_MAX_TURNS_CAP:-60}" ]]; then
+                    _bumped="${REVIEWER_MAX_TURNS_CAP:-60}"
                 fi
                 if [[ "$_bumped" -gt "$_rev_limit" ]]; then
                     log "[turns] Reviewer used ${_rev_used}/${_rev_limit} turns (${_rev_usage_pct}%) — bumping limit to ${_bumped} for next cycle."
@@ -151,11 +151,11 @@ run_stage_review() {
         if [[ "${AGENT_ERROR_CATEGORY:-}" = "UPSTREAM" ]]; then
             warn "Reviewer hit an API error (${AGENT_ERROR_SUBCATEGORY}). Will retry on next cycle."
             VERDICT="CHANGES_REQUIRED"
-            if [ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]; then
+            if [ "$REVIEW_CYCLE" -ge "${MAX_REVIEW_CYCLES:-3}" ]; then
                 error "Reviewer API error at max review cycles — cannot proceed."
                 write_pipeline_state "review" "upstream_error" \
                     "$(_build_resume_flag review)" \
-                    "$TASK" \
+                    "${TASK:-}" \
                     "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. Re-run the same command."
                 exit 1
             fi
@@ -166,20 +166,20 @@ run_stage_review() {
             warn "Reviewer was a null run (${LAST_AGENT_TURNS} turns, exit ${LAST_AGENT_EXIT_CODE})."
             warn "Skipping review parse — will retry on next cycle or fail at max cycles."
             VERDICT="CHANGES_REQUIRED"
-            if [ "$REVIEW_CYCLE" -ge "$MAX_REVIEW_CYCLES" ]; then
+            if [ "$REVIEW_CYCLE" -ge "${MAX_REVIEW_CYCLES:-3}" ]; then
                 error "Reviewer null run at max review cycles — cannot proceed."
                 write_pipeline_state "review" "null_run" \
                     "$(_build_resume_flag review)" \
-                    "$TASK" \
+                    "${TASK:-}" \
                     "Reviewer agent died without producing output (${LAST_AGENT_TURNS} turns). Check logs."
                 exit 1
             fi
             continue
         fi
 
-        if [ ! -f "${REVIEWER_REPORT_FILE}" ]; then
-            warn "Reviewer did not produce ${REVIEWER_REPORT_FILE}."
-            if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
+        if [ ! -f "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" ]; then
+            warn "Reviewer did not produce ${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}."
+            if [ "$REVIEW_CYCLE" -lt "${MAX_REVIEW_CYCLES:-3}" ]; then
                 warn "Will retry on next review cycle."
                 VERDICT="CHANGES_REQUIRED"
                 continue
@@ -189,14 +189,14 @@ run_stage_review() {
             # gate so we don't rubber-stamp a milestone the reviewer never
             # actually approved. Operator sees the synthesized file (for
             # forensic review) AND a blocked commit.
-            warn "Synthesizing minimal ${REVIEWER_REPORT_FILE} — tester will validate."
+            warn "Synthesizing minimal ${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md} — tester will validate."
             trip_commit_gate "reviewer_did_not_produce_report"
-            cat > "${REVIEWER_REPORT_FILE}" <<REVIEW_EOF
+            cat > "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" <<REVIEW_EOF
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Summary
-${REVIEWER_REPORT_FILE} was synthesized by the pipeline after the reviewer agent
+${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md} was synthesized by the pipeline after the reviewer agent
 failed to produce it. The reviewer may have encountered issues reading or
 writing the report file. The tester should validate all changes thoroughly.
 
@@ -210,13 +210,13 @@ writing the report file. The tester should validate all changes thoroughly.
 - Reviewer agent did not produce a report — extra tester scrutiny recommended.
 REVIEW_EOF
             VERDICT="APPROVED_WITH_NOTES"
-            log "Synthesized ${REVIEWER_REPORT_FILE} with APPROVED_WITH_NOTES verdict."
+            log "Synthesized ${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md} with APPROVED_WITH_NOTES verdict."
         fi
 
-        VERDICT=$(grep -m1 "^## Verdict" -A1 "${REVIEWER_REPORT_FILE}" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
+        VERDICT=$(grep -m1 "^## Verdict" -A1 "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" 2>/dev/null | tail -1 | tr -d '[:space:]' || true)
         # Also catch inline verdict formats like "Verdict: APPROVED" or "**Verdict: CHANGES_REQUIRED**"
         if [ -z "$VERDICT" ] || [ "$VERDICT" = "##Verdict" ]; then
-            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" "${REVIEWER_REPORT_FILE}" 2>/dev/null | head -1 || true)
+            VERDICT=$(grep -oi "REPLAN_REQUIRED\|APPROVED_WITH_NOTES\|CHANGES_REQUIRED\|APPROVED" "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" 2>/dev/null | head -1 || true)
         fi
         log "Reviewer verdict: ${BOLD}${VERDICT}${NC}"
 
@@ -225,9 +225,9 @@ REVIEW_EOF
             log_decision "Reviewer approved" "verdict ${VERDICT}" ""
         fi
 
-        if detect_replan_required "${REVIEWER_REPORT_FILE}"; then
+        if detect_replan_required "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}"; then
             warn "Reviewer recommends REPLAN_REQUIRED."
-            if ! trigger_replan "${REVIEWER_REPORT_FILE}"; then
+            if ! trigger_replan "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}"; then
                 # User aborted or chose split — exit saved by trigger_replan
                 exit 1
             fi
@@ -237,9 +237,9 @@ REVIEW_EOF
         fi
 
         ACCEPTED_ACPS=""
-        if grep -q "^## ACP Verdicts" "${REVIEWER_REPORT_FILE}" 2>/dev/null; then
+        if grep -q "^## ACP Verdicts" "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" 2>/dev/null; then
             ACCEPTED_ACPS=$(awk '/^## ACP Verdicts/{found=1; next} found && /^##/{exit} found && /ACCEPT/{print}' \
-                "${REVIEWER_REPORT_FILE}" 2>/dev/null || true)
+                "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" 2>/dev/null || true)
             if [ -n "$ACCEPTED_ACPS" ]; then
                 log "Accepted ACPs found:"
                 # shellcheck disable=SC2001
@@ -250,9 +250,9 @@ REVIEW_EOF
         if [ "$VERDICT" = "CHANGES_REQUIRED" ]; then
             TMPDIR_BLOCKS=$(mktemp -d "${TEKHTON_SESSION_DIR:-/tmp}/blocks_XXXXXXXX")
             awk '/^## Complex Blockers/{found=1; next} found && /^##/{exit} found{print}' \
-                "${REVIEWER_REPORT_FILE}" > "${TMPDIR_BLOCKS}/complex.txt" 2>/dev/null || true
+                "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" > "${TMPDIR_BLOCKS}/complex.txt" 2>/dev/null || true
             awk '/^## Simple Blockers/{found=1; next} found && /^##/{exit} found{print}' \
-                "${REVIEWER_REPORT_FILE}" > "${TMPDIR_BLOCKS}/simple.txt" 2>/dev/null || true
+                "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" > "${TMPDIR_BLOCKS}/simple.txt" 2>/dev/null || true
 
             HAS_COMPLEX=0
             HAS_SIMPLE=0
@@ -266,9 +266,9 @@ REVIEW_EOF
             HAS_SIMPLE=$(echo "$HAS_SIMPLE" | tr -d '[:space:]')
             rm -rf "$TMPDIR_BLOCKS"
 
-            log_decision "Reviewer requires changes" "${HAS_COMPLEX} complex, ${HAS_SIMPLE} simple blockers (cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES})" ""
+            log_decision "Reviewer requires changes" "${HAS_COMPLEX} complex, ${HAS_SIMPLE} simple blockers (cycle ${REVIEW_CYCLE}/${MAX_REVIEW_CYCLES:-3})" ""
             log "Complex blockers: ${HAS_COMPLEX}, Simple blockers: ${HAS_SIMPLE}"
-            if [ "$REVIEW_CYCLE" -lt "$MAX_REVIEW_CYCLES" ]; then
+            if [ "$REVIEW_CYCLE" -lt "${MAX_REVIEW_CYCLES:-3}" ]; then
                 if [ "$HAS_COMPLEX" -gt 0 ]; then
                     log_decision "Routing to senior coder rework" "${HAS_COMPLEX} complex blocker(s) found" ""
 
@@ -280,10 +280,10 @@ REVIEW_EOF
                     _tui_call substage-begin --label "rework"
                     run_agent \
                         "Coder (rework cycle ${REVIEW_CYCLE})" \
-                        "$CLAUDE_CODER_MODEL" \
-                        "${EFFECTIVE_CODER_MAX_TURNS:-$CODER_MAX_TURNS}" \
+                        "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
+                        "${EFFECTIVE_CODER_MAX_TURNS:-${CODER_MAX_TURNS:-80}}" \
                         "$REWORK_PROMPT" \
-                        "$LOG_FILE" \
+                        "${LOG_FILE:-}" \
                         "$AGENT_TOOLS_CODER"
                     _tui_call substage-end --label "rework"
                     _phase_end "rework_agent"
@@ -300,10 +300,10 @@ REVIEW_EOF
 
                         run_agent \
                             "Jr Coder (cycle ${REVIEW_CYCLE})" \
-                            "$CLAUDE_JR_CODER_MODEL" \
-                            "${EFFECTIVE_JR_CODER_MAX_TURNS:-$JR_CODER_MAX_TURNS}" \
+                            "${CLAUDE_JR_CODER_MODEL:-claude-sonnet-4-6}" \
+                            "${EFFECTIVE_JR_CODER_MAX_TURNS:-${JR_CODER_MAX_TURNS:-40}}" \
                             "$JR_REWORK_PROMPT" \
-                            "$LOG_FILE" \
+                            "${LOG_FILE:-}" \
                             "$AGENT_TOOLS_JR_CODER"
                         # M96 (IA1): suppress print_run_summary after sub-agent
                         # completions (jr coder after senior); next Reviewer
@@ -322,10 +322,10 @@ REVIEW_EOF
                     _tui_call substage-begin --label "rework"
                     run_agent \
                         "Jr Coder (cycle ${REVIEW_CYCLE})" \
-                        "$CLAUDE_JR_CODER_MODEL" \
-                        "${EFFECTIVE_JR_CODER_MAX_TURNS:-$JR_CODER_MAX_TURNS}" \
+                        "${CLAUDE_JR_CODER_MODEL:-claude-sonnet-4-6}" \
+                        "${EFFECTIVE_JR_CODER_MAX_TURNS:-${JR_CODER_MAX_TURNS:-40}}" \
                         "$JR_REWORK_PROMPT" \
-                        "$LOG_FILE" \
+                        "${LOG_FILE:-}" \
                         "$AGENT_TOOLS_JR_CODER"
                     _tui_call substage-end --label "rework"
                     # M96 (IA1): suppress print_run_summary after sub-agent
@@ -337,31 +337,31 @@ REVIEW_EOF
                     BUILD_FIX_PROMPT=$(render_prompt "build_fix_minimal")
                     run_agent \
                         "Coder (post-fix-pass build fix)" \
-                        "$CLAUDE_CODER_MODEL" \
+                        "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
                         "$((CODER_MAX_TURNS / 3))" \
                         "$BUILD_FIX_PROMPT" \
-                        "$LOG_FILE" \
+                        "${LOG_FILE:-}" \
                         "$AGENT_TOOLS_BUILD_FIX"
                     if ! run_build_gate "post-fix-pass-retry"; then
-                        error "Build gate failed again. See ${BUILD_ERRORS_FILE}."
+                        error "Build gate failed again. See ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}."
                         write_pipeline_state "review" "build_failure" \
                             "$(_build_resume_flag review)" \
-                            "$TASK" "Build broken after fix pass. See ${BUILD_ERRORS_FILE}."
+                            "${TASK:-}" "Build broken after fix pass. See ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}."
                         exit 1
                     fi
                 fi
 
             else
-                error "Max review cycles (${MAX_REVIEW_CYCLES}) reached with unresolved blockers."
+                error "Max review cycles (${MAX_REVIEW_CYCLES:-3}) reached with unresolved blockers."
 
-                BLOCKER_SUMMARY="Complex: ${HAS_COMPLEX}, Simple: ${HAS_SIMPLE} — see ${REVIEWER_REPORT_FILE}"
+                BLOCKER_SUMMARY="Complex: ${HAS_COMPLEX}, Simple: ${HAS_SIMPLE} — see ${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}"
                 RESUME_FLAG="$(_build_resume_flag review)"
 
                 write_pipeline_state \
                     "review" \
                     "blockers_remain" \
                     "$RESUME_FLAG" \
-                    "$TASK" \
+                    "${TASK:-}" \
                     "$BLOCKER_SUMMARY"
 
                 error "State saved — fix blockers manually then re-run with no arguments to resume."

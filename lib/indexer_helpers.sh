@@ -105,25 +105,25 @@ validate_indexer_config() {
 
     # Token budget must be a positive integer
     if [[ -n "${REPO_MAP_TOKEN_BUDGET:-}" ]]; then
-        if ! [[ "$REPO_MAP_TOKEN_BUDGET" =~ ^[1-9][0-9]*$ ]]; then
-            echo "[✗] REPO_MAP_TOKEN_BUDGET must be a positive integer (got: ${REPO_MAP_TOKEN_BUDGET})" >&2
+        if ! [[ "${REPO_MAP_TOKEN_BUDGET:-2048}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "[✗] REPO_MAP_TOKEN_BUDGET must be a positive integer (got: ${REPO_MAP_TOKEN_BUDGET:-2048})" >&2
             valid=false
         fi
     fi
 
     # History max records must be a positive integer
     if [[ -n "${REPO_MAP_HISTORY_MAX_RECORDS:-}" ]]; then
-        if ! [[ "$REPO_MAP_HISTORY_MAX_RECORDS" =~ ^[1-9][0-9]*$ ]]; then
-            echo "[✗] REPO_MAP_HISTORY_MAX_RECORDS must be a positive integer (got: ${REPO_MAP_HISTORY_MAX_RECORDS})" >&2
+        if ! [[ "${REPO_MAP_HISTORY_MAX_RECORDS:-200}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "[✗] REPO_MAP_HISTORY_MAX_RECORDS must be a positive integer (got: ${REPO_MAP_HISTORY_MAX_RECORDS:-200})" >&2
             valid=false
         fi
     fi
 
     # Languages must be "auto" or a comma-separated list of known language names
-    if [[ -n "${REPO_MAP_LANGUAGES:-}" ]] && [[ "$REPO_MAP_LANGUAGES" != "auto" ]]; then
+    if [[ -n "${REPO_MAP_LANGUAGES:-}" ]] && [[ "${REPO_MAP_LANGUAGES:-auto}" != "auto" ]]; then
         local lang
         local known_langs="python javascript typescript go rust java c cpp ruby bash"
-        IFS=',' read -ra lang_list <<< "$REPO_MAP_LANGUAGES"
+        IFS=',' read -ra lang_list <<< "${REPO_MAP_LANGUAGES:-auto}"
         for lang in "${lang_list[@]}"; do
             lang="${lang// /}"  # strip whitespace
             if [[ " $known_langs " != *" $lang "* ]]; then
@@ -146,7 +146,7 @@ validate_indexer_config() {
 # Output: space-separated file paths on stdout
 # Returns: 0 always (empty output if no files found)
 extract_files_from_coder_summary() {
-    local summary_file="${1:-${CODER_SUMMARY_FILE}}"
+    local summary_file="${1:-${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}}"
 
     if [[ ! -f "$summary_file" ]]; then
         return 0

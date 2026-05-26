@@ -57,14 +57,14 @@ _orch_record_save_state() {
         "${START_AT}" \
         "complete_loop_${outcome}" \
         "$resume_flags" \
-        "$TASK" \
+        "${TASK:-}" \
         "$_state_notes" \
         "${_CURRENT_MILESTONE:-}"
 
     _ORCH_ATTEMPT="$_saved_attempt"
     _ORCH_AGENT_CALLS="$_saved_calls"
 
-    warn "State saved. Resume with: tekhton ${resume_flags} \"${TASK}\""
+    warn "State saved. Resume with: tekhton ${resume_flags} \"${TASK:-}\""
 
     if command -v _print_recovery_block &>/dev/null; then
         local _block_cause_summary=""
@@ -82,6 +82,6 @@ _orch_record_save_state() {
             fi
         fi
         _print_recovery_block "$outcome" "$detail" \
-            "tekhton ${resume_flags} \"${TASK}\"" "$TASK" "$_block_cause_summary"
+            "tekhton ${resume_flags} \"${TASK:-}\"" "${TASK:-}" "$_block_cause_summary"
     fi
 }

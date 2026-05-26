@@ -27,7 +27,7 @@ _state_write_snapshot() {
     resume_task="${resume_task#\"}"; resume_task="${resume_task%\"}"
     resume_flag="${resume_flag//\"/}"
 
-    local _state_dir; _state_dir="$(dirname "$PIPELINE_STATE_FILE")"
+    local _state_dir; _state_dir="$(dirname "${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}")"
     if ! mkdir -p "$_state_dir" 2>/dev/null; then
         warn "Could not create state directory: $_state_dir"
         return 1
@@ -80,7 +80,7 @@ _state_write_snapshot() {
     )
 
     if command -v tekhton >/dev/null 2>&1; then
-        tekhton state update --path "$PIPELINE_STATE_FILE" "${fields[@]}"
+        tekhton state update --path "${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}" "${fields[@]}"
         return $?
     fi
     _state_bash_write_fields fields
@@ -95,7 +95,7 @@ _state_bash_write_fields() {
     local arr_name="$1"
     local -a pairs=()
     eval "pairs=( \"\${${arr_name}[@]}\" )"
-    local tmp; tmp="$(mktemp "${PIPELINE_STATE_FILE}.tmp.XXXXXX" 2>/dev/null \
+    local tmp; tmp="$(mktemp "${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}.tmp.XXXXXX" 2>/dev/null \
         || mktemp /tmp/pipeline_state.XXXXXX)"
 
     {
@@ -146,7 +146,7 @@ _state_bash_write_fields() {
         printf '\n}\n'
     } > "$tmp"
 
-    mv -f "$tmp" "$PIPELINE_STATE_FILE"
+    mv -f "$tmp" "${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}"
 }
 
 # _state_bash_read_field path field — best-effort JSON field reader.

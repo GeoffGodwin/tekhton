@@ -16,7 +16,7 @@ set -euo pipefail
 # ${UI_VALIDATION_REPORT_FILE} with structured results.
 generate_ui_validation_report() {
     local results=("$@")
-    local report_file="${UI_VALIDATION_REPORT_FILE}"
+    local report_file="${UI_VALIDATION_REPORT_FILE:-.tekhton/UI_VALIDATION_REPORT.md}"
     local pass_count=0
     local fail_count=0
     local warn_count=0

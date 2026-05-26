@@ -28,7 +28,7 @@ _max_done_milestone_in_manifest() {
     local proj="${PROJECT_DIR:-.}"
     local manifest="${proj}/.claude/milestones/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
     if [[ -n "${MILESTONE_DIR:-}" ]]; then
-        manifest="${MILESTONE_DIR}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
+        manifest="${MILESTONE_DIR:-.claude/milestones}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
     fi
     [[ -f "$manifest" ]] || { echo 0; return 0; }
     # Format: id|title|status|depends_on|file|parallel_group

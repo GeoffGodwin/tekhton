@@ -41,7 +41,7 @@ _regenerate_timeline_js() {
         local first=true
         # Apply verbosity filter
         local filter_pattern=""
-        case "$DASHBOARD_VERBOSITY" in
+        case "${DASHBOARD_VERBOSITY:-normal}" in
             minimal) filter_pattern='"type":"stage_end"\|"type":"verdict"' ;;
             normal)  filter_pattern='"type":"stage_\|"type":"verdict"\|"type":"finding"\|"type":"build_gate"\|"type":"pipeline_\|"type":"milestone_"' ;;
             verbose) filter_pattern="" ;;  # no filter — include everything
@@ -51,9 +51,9 @@ _regenerate_timeline_js() {
         # Use tail to get most recent events if log exceeds cap
         local lines
         if [[ -n "$filter_pattern" ]]; then
-            lines=$(grep "$filter_pattern" "$CAUSAL_LOG_FILE" 2>/dev/null | tail -n "$DASHBOARD_MAX_TIMELINE_EVENTS" || true)
+            lines=$(grep "$filter_pattern" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null | tail -n "${DASHBOARD_MAX_TIMELINE_EVENTS:-500}" || true)
         else
-            lines=$(tail -n "$DASHBOARD_MAX_TIMELINE_EVENTS" "$CAUSAL_LOG_FILE" 2>/dev/null || true)
+            lines=$(tail -n "${DASHBOARD_MAX_TIMELINE_EVENTS:-500}" "${CAUSAL_LOG_FILE:-.claude/logs/CAUSAL_LOG.jsonl}" 2>/dev/null || true)
         fi
 
         while IFS= read -r line; do
@@ -207,7 +207,7 @@ emit_dashboard_security() {
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
     local findings
-    findings=$(_parse_security_report "${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE}}")
+    findings=$(_parse_security_report "${SECURITY_REPORT_FILE:-${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}}")
 
     local json="{\"findings\":${findings}}"
     _write_js_file "${dash_dir}/data/security.js" "TK_SECURITY" "$json"
@@ -224,15 +224,15 @@ emit_dashboard_reports() {
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
     local intake
-    intake=$(_parse_intake_report "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}")
+    intake=$(_parse_intake_report "${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}}")
     local coder
-    coder=$(_parse_coder_summary "${CODER_SUMMARY_FILE}")
+    coder=$(_parse_coder_summary "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}")
     local reviewer
-    reviewer=$(_parse_reviewer_report "${REVIEWER_REPORT_FILE}")
+    reviewer=$(_parse_reviewer_report "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}")
 
     # Test audit verdict (M20)
     local audit_verdict="skipped"
-    local audit_file="${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE}}"
+    local audit_file="${TEST_AUDIT_REPORT_FILE:-${TEST_AUDIT_REPORT_FILE:-.tekhton/TEST_AUDIT_REPORT.md}}"
     if [[ -f "$audit_file" ]]; then
         audit_verdict=$(grep -oiE 'Verdict:\s*(NEEDS_WORK|PASS|CONCERNS)' "$audit_file" 2>/dev/null \
             | head -1 | sed 's/.*:\s*//' | tr '[:lower:]' '[:upper:]' || echo "skipped")
@@ -252,7 +252,7 @@ emit_dashboard_reports() {
     # Notes backlog (M25)
     local backlog='{"total":0,"bug":0,"feat":0,"polish":0,"checked":0,"unchecked":0}'
     # Defensive: notes_cli.sh is unconditionally sourced, but we guard against sourcing-order edge cases or future refactors
-    if command -v get_notes_summary &>/dev/null && [[ -f "${HUMAN_NOTES_FILE}" ]]; then
+    if command -v get_notes_summary &>/dev/null && [[ -f "${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}" ]]; then
         local ns
         ns=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         local n_total n_bug n_feat n_polish n_checked n_unchecked
@@ -270,9 +270,9 @@ emit_dashboard_reports() {
             [[ -z "$_tr_team" ]] && continue
             # Parse team-prefixed report files if they exist
             local _tr_intake _tr_coder _tr_reviewer
-            local _tr_intake_file="${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE}}"
-            local _tr_coder_file="${CODER_SUMMARY_FILE}"
-            local _tr_reviewer_file="${REVIEWER_REPORT_FILE}"
+            local _tr_intake_file="${INTAKE_REPORT_FILE:-${INTAKE_REPORT_FILE:-.tekhton/INTAKE_REPORT.md}}"
+            local _tr_coder_file="${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"
+            local _tr_reviewer_file="${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}"
             # In parallel mode, team reports use _<team> suffix
             local _tr_suffix="_${_tr_team}"
             if [[ -f "${_tr_intake_file%.md}${_tr_suffix}.md" ]]; then
@@ -481,7 +481,7 @@ emit_dashboard_action_items() {
     fi
 
     local hn_count=0 hn_severity="normal"
-    if command -v get_notes_summary &>/dev/null && [[ -f "${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE}" ]]; then
+    if command -v get_notes_summary &>/dev/null && [[ -f "${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}" ]]; then
         local notes_summary
         notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         IFS='|' read -r _ _ _ _ _ hn_count <<< "$notes_summary"
@@ -526,7 +526,7 @@ emit_dashboard_notes() {
     local dash_dir="${PROJECT_DIR:-.}/${DASHBOARD_DIR:-.claude/dashboard}"
     [[ ! -d "${dash_dir}/data" ]] && return 0
 
-    local nf="${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE}"
+    local nf="${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}"
     if [[ ! -f "$nf" ]]; then
         _write_js_file "${dash_dir}/data/notes.js" "TK_NOTES" '[]'
         return 0

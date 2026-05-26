@@ -58,10 +58,10 @@ _run_prerun_fix_agent() {
             "$_pr_model" \
             "$_pr_turns" \
             "$_pr_prompt" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_BUILD_FIX"
 
-        log "[coder/prerun] Shell verifying with ${TEST_CMD}..."
+        log "[coder/prerun] Shell verifying with ${TEST_CMD:-true}..."
         local _pr_verify_exit=0
         local _pr_verify_output=""
         if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
@@ -73,12 +73,12 @@ _run_prerun_fix_agent() {
             _pr_verify_output="[dedup] Cached pass — no files changed since last successful test run"
             _pr_verify_exit=0
         else
-            _pr_verify_output=$(bash -c "${TEST_CMD}" 2>&1) || _pr_verify_exit=$?
+            _pr_verify_output=$(bash -c "${TEST_CMD:-true}" 2>&1) || _pr_verify_exit=$?
             if [[ "$_pr_verify_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
                 test_dedup_record_pass
             fi
         fi
-        printf '%s\n' "$_pr_verify_output" >> "$LOG_FILE"
+        printf '%s\n' "$_pr_verify_output" >> "${LOG_FILE:-}"
 
         if [[ "$_pr_verify_exit" -eq 0 ]]; then
             success "[coder/prerun] Tests pass after attempt ${_pr_attempt}."
@@ -120,7 +120,7 @@ run_prerun_clean_sweep() {
     if [[ "${PRE_RUN_CLEAN_ENABLED:-true}" != "true" ]]; then
         return 0
     fi
-    if [[ -z "${TEST_CMD:-}" ]] || [[ "${TEST_CMD}" = "true" ]]; then
+    if [[ -z "${TEST_CMD:-}" ]] || [[ "${TEST_CMD:-true}" = "true" ]]; then
         return 0
     fi
 
@@ -136,7 +136,7 @@ run_prerun_clean_sweep() {
         log "[coder/prerun] Tests pass (cached) — coder will work from a clean state."
         return 0
     fi
-    _prerun_output=$(bash -c "${TEST_CMD}" 2>&1) || _prerun_exit=$?
+    _prerun_output=$(bash -c "${TEST_CMD:-true}" 2>&1) || _prerun_exit=$?
 
     if [[ "$_prerun_exit" -eq 0 ]]; then
         if declare -f test_dedup_record_pass &>/dev/null; then

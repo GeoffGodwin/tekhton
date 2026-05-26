@@ -75,7 +75,7 @@ _display_milestone_summary() {
     echo
     echo "  [y] Accept and write files"
     echo "  [e] Edit CLAUDE.md in \${EDITOR:-nano}"
-    echo "  [r] Re-generate with same ${DESIGN_FILE}"
+    echo "  [r] Re-generate with same ${DESIGN_FILE:-.tekhton/DESIGN.md}"
     echo "  [n] Abort without writing files"
     echo
 }
@@ -86,7 +86,7 @@ _print_next_steps() {
     success "Planning phase complete!"
     echo
     log "Your files:"
-    log "  ${DESIGN_FILE}  — project design document"
+    log "  ${DESIGN_FILE:-.tekhton/DESIGN.md}  — project design document"
     log "  CLAUDE.md  — project rules and milestone plan"
     echo
     log "Next steps:"
@@ -108,7 +108,7 @@ _print_next_steps() {
 # Returns 0 on accept, 1 on abort.
 run_plan_review() {
     local claude_file="${PROJECT_DIR}/CLAUDE.md"
-    local design_file="${PROJECT_DIR}/${DESIGN_FILE}"
+    local design_file="${PROJECT_DIR}/${DESIGN_FILE:-.tekhton/DESIGN.md}"
 
     if [[ ! -f "$claude_file" ]]; then
         error "CLAUDE.md not found — nothing to review."
@@ -132,7 +132,7 @@ run_plan_review() {
         case "$choice" in
             y|Y)
                 success "Files confirmed at ${PROJECT_DIR}:"
-                log "  ${DESIGN_FILE}"
+                log "  ${DESIGN_FILE:-.tekhton/DESIGN.md}"
                 log "  CLAUDE.md"
                 _print_next_steps
                 return 0
@@ -143,12 +143,12 @@ run_plan_review() {
                 log "Editor closed. Refreshing milestone summary..."
                 ;;
             r|R)
-                log "Re-generating CLAUDE.md from ${DESIGN_FILE}..."
+                log "Re-generating CLAUDE.md from ${DESIGN_FILE:-.tekhton/DESIGN.md}..."
                 echo
                 run_plan_generate || return 1
                 ;;
             n|N)
-                warn "Aborted. ${DESIGN_FILE} is preserved at: ${design_file}"
+                warn "Aborted. ${DESIGN_FILE:-.tekhton/DESIGN.md} is preserved at: ${design_file}"
                 warn "CLAUDE.md is preserved at: ${claude_file}"
                 log "Re-run 'tekhton --plan' to try again."
                 return 1

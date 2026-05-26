@@ -30,10 +30,10 @@ source "${TEKHTON_HOME}/stages/coder_buildfix_helpers.sh"
 # classification headers (e.g. "## Classified as Code Error") whose own text
 # matches code patterns and would skew routing toward code_dominant.
 _bf_read_raw_errors() {
-    if [[ -f "${BUILD_RAW_ERRORS_FILE}" ]]; then
-        _safe_read_file "${BUILD_RAW_ERRORS_FILE}" "BUILD_RAW_ERRORS"
+    if [[ -f "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}" ]]; then
+        _safe_read_file "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}" "BUILD_RAW_ERRORS"
     else
-        _safe_read_file "${BUILD_ERRORS_FILE}" "BUILD_ERRORS"
+        _safe_read_file "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" "BUILD_ERRORS"
     fi
 }
 
@@ -71,10 +71,10 @@ _bf_invoke_build_fix() {
 
     run_agent \
         "Coder (build fix${label:+ — $label})" \
-        "$CLAUDE_CODER_MODEL" \
+        "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
         "$turns" \
         "$prompt" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$AGENT_TOOLS_BUILD_FIX"
     log "Build fix coder finished."
 }
@@ -104,9 +104,9 @@ run_build_fix_loop() {
             "coder" \
             "build_failure" \
             "$(_build_resume_flag coder)" \
-            "$TASK" \
-            "Build errors remain; build-fix loop disabled (BUILD_FIX_ENABLED=false). See ${BUILD_ERRORS_FILE}."
-        error "State saved. Review ${BUILD_ERRORS_FILE} manually then re-run."
+            "${TASK:-}" \
+            "Build errors remain; build-fix loop disabled (BUILD_FIX_ENABLED=false). See ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}."
+        error "State saved. Review ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md} manually then re-run."
         exit 1
     fi
 
@@ -135,7 +135,7 @@ run_build_fix_loop() {
         # binary, etc.) without bloating HUMAN_ACTION_REQUIRED.md.
         local _hae_snapshot=""
         if [[ -r "${BUILD_ERRORS_FILE:-/dev/null}" ]]; then
-            _hae_snapshot=$(head -25 "${BUILD_ERRORS_FILE}" 2>/dev/null \
+            _hae_snapshot=$(head -25 "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" 2>/dev/null \
                 | sed 's/^/    /')
         fi
         local _hae_desc="Non-code build errors detected (routing=noncode_dominant); environment remediation required, not code changes."
@@ -151,9 +151,9 @@ run_build_fix_loop() {
             "coder" \
             "env_failure" \
             "$(_build_resume_flag coder)" \
-            "$TASK" \
-            "Build failed with environment errors (not code bugs). See ${BUILD_ERRORS_FILE}."
-        error "State saved. Fix environment issues in ${BUILD_ERRORS_FILE} then re-run."
+            "${TASK:-}" \
+            "Build failed with environment errors (not code bugs). See ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}."
+        error "State saved. Fix environment issues in ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md} then re-run."
         exit 1
     fi
 
@@ -181,8 +181,8 @@ run_build_fix_loop() {
     if (( base_turns < 8 )); then base_turns=8; fi
 
     local prev_count new_count prev_tail new_tail
-    prev_count=$(_bf_count_errors "${BUILD_RAW_ERRORS_FILE}")
-    prev_tail=$(_bf_get_error_tail "${BUILD_RAW_ERRORS_FILE}")
+    prev_count=$(_bf_count_errors "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}")
+    prev_tail=$(_bf_get_error_tail "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}")
 
     local attempt=0
     local outcome="exhausted"
@@ -215,7 +215,7 @@ run_build_fix_loop() {
         local gate_result="fail"
         if run_build_gate "post-coder-fix-${attempt}"; then
             gate_result="pass"
-            new_count=$(_bf_count_errors "${BUILD_RAW_ERRORS_FILE}")
+            new_count=$(_bf_count_errors "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}")
             final_delta="${prev_count}→${new_count}"
             _append_build_fix_report "$attempt" "$budget" "$terminal_class" \
                 "$gate_result" "n/a" "$final_delta" "$decision"
@@ -223,8 +223,8 @@ run_build_fix_loop() {
             break
         fi
 
-        new_count=$(_bf_count_errors "${BUILD_RAW_ERRORS_FILE}")
-        new_tail=$(_bf_get_error_tail "${BUILD_RAW_ERRORS_FILE}")
+        new_count=$(_bf_count_errors "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}")
+        new_tail=$(_bf_get_error_tail "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}")
         local progress
         progress=$(_build_fix_progress_signal "$prev_count" "$new_count" \
             "$prev_tail" "$new_tail")
@@ -264,9 +264,9 @@ run_build_fix_loop() {
                 "coder" \
                 "build_failure" \
                 "$(_build_resume_flag coder)" \
-                "$TASK" \
-                "Build-fix loop halted after ${attempt} attempt(s) with no measurable progress. terminated_early_no_progress=true. Final progress=${final_progress}, delta=${final_delta}, classification=${decision}. See ${BUILD_FIX_REPORT_FILE} and ${BUILD_ERRORS_FILE}."
-            error "State saved. Review ${BUILD_FIX_REPORT_FILE} and ${BUILD_ERRORS_FILE} then re-run."
+                "${TASK:-}" \
+                "Build-fix loop halted after ${attempt} attempt(s) with no measurable progress. terminated_early_no_progress=true. Final progress=${final_progress}, delta=${final_delta}, classification=${decision}. See ${BUILD_FIX_REPORT_FILE:-.tekhton/BUILD_FIX_REPORT.md} and ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}."
+            error "State saved. Review ${BUILD_FIX_REPORT_FILE:-.tekhton/BUILD_FIX_REPORT.md} and ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md} then re-run."
             exit 1
             ;;
         *)
@@ -277,9 +277,9 @@ run_build_fix_loop() {
                 "coder" \
                 "build_failure" \
                 "$(_build_resume_flag coder)" \
-                "$TASK" \
-                "Build-fix loop exhausted ${attempt}/${max_attempts} attempt(s). Final progress=${final_progress}, delta=${final_delta}, classification=${decision}. See ${BUILD_FIX_REPORT_FILE} and ${BUILD_ERRORS_FILE}."
-            error "State saved. Review ${BUILD_FIX_REPORT_FILE} and ${BUILD_ERRORS_FILE} then re-run."
+                "${TASK:-}" \
+                "Build-fix loop exhausted ${attempt}/${max_attempts} attempt(s). Final progress=${final_progress}, delta=${final_delta}, classification=${decision}. See ${BUILD_FIX_REPORT_FILE:-.tekhton/BUILD_FIX_REPORT.md} and ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}."
+            error "State saved. Review ${BUILD_FIX_REPORT_FILE:-.tekhton/BUILD_FIX_REPORT.md} and ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md} then re-run."
             exit 1
             ;;
     esac

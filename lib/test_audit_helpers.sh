@@ -24,15 +24,15 @@ _collect_audit_context() {
     _AUDIT_DELETED_FILES=""
 
     # Extract test files from "${TESTER_REPORT_FILE}" (checked items = written/modified)
-    if [[ -f "${TESTER_REPORT_FILE}" ]]; then
+    if [[ -f "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" ]]; then
         # shellcheck disable=SC2016  # Backtick is literal in grep pattern
-        _AUDIT_TEST_FILES=$(grep -oP '^\- \[x\] `\K[^`]+' "${TESTER_REPORT_FILE}" 2>/dev/null || true)
+        _AUDIT_TEST_FILES=$(grep -oP '^\- \[x\] `\K[^`]+' "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" 2>/dev/null || true)
     fi
 
     # Extract implementation files from "${CODER_SUMMARY_FILE}"
-    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
+    if [[ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]]; then
         # shellcheck disable=SC2016  # Backtick is literal in grep pattern
-        _AUDIT_IMPL_FILES=$(grep -oP '`\K[^`]+(?=`)' "${CODER_SUMMARY_FILE}" 2>/dev/null \
+        _AUDIT_IMPL_FILES=$(grep -oP '`\K[^`]+(?=`)' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null \
             | grep -vE 'test|spec|Test|Spec' || true)
     fi
 

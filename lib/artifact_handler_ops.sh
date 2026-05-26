@@ -104,7 +104,7 @@ _run_merge_batch() {
         [[ -f "$merge_context_file" ]] && printf '\n\n---\n\n' >> "$merge_context_file"
         printf '%s\n' "$merge_output" >> "$merge_context_file"
         # shellcheck disable=SC2153  # MERGE_CONTEXT_FILE is set by common.sh / config_defaults.sh
-        success "Merged ${tool_name} config → ${MERGE_CONTEXT_FILE}"
+        success "Merged ${tool_name} config → ${MERGE_CONTEXT_FILE:-.tekhton/MERGE_CONTEXT.md}"
     else
         warn "Merge agent produced no output for ${tool_name}."
     fi
@@ -117,7 +117,7 @@ _merge_artifact_group() {
     local project_dir="$1"
     local tool_name="$2"
     local group_artifacts="$3"
-    local merge_context_file="${project_dir}/${MERGE_CONTEXT_FILE}"
+    local merge_context_file="${project_dir}/${MERGE_CONTEXT_FILE:-.tekhton/MERGE_CONTEXT.md}"
 
     log "Extracting useful content from ${tool_name} configuration..."
 

@@ -26,7 +26,7 @@ _intake_content_hash() {
 # _intake_should_skip — Returns 0 if intake already evaluated this content.
 _intake_should_skip() {
     local hash="$1"
-    local hash_file="${TEKHTON_SESSION_DIR}/intake_content_hash"
+    local hash_file="${TEKHTON_SESSION_DIR:-}/intake_content_hash"
     if [[ -f "$hash_file" ]] && [[ "$(cat "$hash_file")" == "$hash" ]]; then
         return 0
     fi
@@ -36,7 +36,7 @@ _intake_should_skip() {
 # _intake_save_hash — Record the content hash after evaluation.
 _intake_save_hash() {
     local hash="$1"
-    echo "$hash" > "${TEKHTON_SESSION_DIR}/intake_content_hash"
+    echo "$hash" > "${TEKHTON_SESSION_DIR:-}/intake_content_hash"
 }
 
 # --- Report parsing ----------------------------------------------------------
@@ -113,11 +113,11 @@ _intake_apply_tweak_milestone() {
        && has_milestone_manifest; then
         local ms_id
         ms_id=$(dag_number_to_id "$ms_num" 2>/dev/null) || true
-        local ms_file="${MILESTONE_DIR}/${ms_id}.md"
+        local ms_file="${MILESTONE_DIR:-.claude/milestones}/${ms_id}.md"
         if [[ ! -f "$ms_file" ]]; then
             local ms_file_name
             ms_file_name=$(dag_get_file "$ms_id" 2>/dev/null) || true
-            [[ -n "$ms_file_name" ]] && ms_file="${MILESTONE_DIR}/${ms_file_name}"
+            [[ -n "$ms_file_name" ]] && ms_file="${MILESTONE_DIR:-.claude/milestones}/${ms_file_name}"
         fi
         if [[ -f "$ms_file" ]]; then
             # --- Guard: reject tweaked content that is dramatically shorter ---
@@ -132,8 +132,8 @@ _intake_apply_tweak_milestone() {
                 if [[ "$pct" -lt "$min_pct" ]]; then
                     warn "Intake: tweaked content is ${pct}% of original (${tweaked_lines}/${orig_lines} lines). Minimum: ${min_pct}%."
                     warn "Intake: rejecting tweak to prevent data loss. Original milestone preserved."
-                    log "Intake: PM tweaks saved to ${TEKHTON_SESSION_DIR}/REJECTED_TWEAK.md for review."
-                    printf '%s\n' "$tweaked_content" > "${TEKHTON_SESSION_DIR}/REJECTED_TWEAK.md"
+                    log "Intake: PM tweaks saved to ${TEKHTON_SESSION_DIR:-}/REJECTED_TWEAK.md for review."
+                    printf '%s\n' "$tweaked_content" > "${TEKHTON_SESSION_DIR:-}/REJECTED_TWEAK.md"
                     return 1
                 fi
             fi
@@ -144,7 +144,7 @@ _intake_apply_tweak_milestone() {
             log "Intake: backed up original to ${backup_file}"
 
             local tmpfile
-            tmpfile=$(mktemp "${MILESTONE_DIR}/intake_tweak.XXXXXX")
+            tmpfile=$(mktemp "${MILESTONE_DIR:-.claude/milestones}/intake_tweak.XXXXXX")
             printf '%s\n' "$tweaked_content" > "$tmpfile"
             mv -f "$tmpfile" "$ms_file"
             log "Intake: updated milestone file ${ms_file}"
@@ -164,7 +164,7 @@ _intake_apply_tweak_milestone() {
 # _intake_apply_tweak_task — Update TASK variable and persist for resume.
 _intake_apply_tweak_task() {
     local tweaked_content="$1"
-    local original_task="$TASK"
+    local original_task="${TASK:-}"
 
     if [[ -z "$tweaked_content" ]]; then
         return 1
@@ -177,10 +177,10 @@ _intake_apply_tweak_task() {
         log "Intake: original task: ${original_task}"
         TASK="$new_task"
         export TASK
-        log "Intake: tweaked task: ${TASK}"
+        log "Intake: tweaked task: ${TASK:-}"
 
         # Persist tweaked task for resume
-        echo "$TASK" > "${TEKHTON_SESSION_DIR}/INTAKE_TWEAKED_TASK.md"
+        echo "${TASK:-}" > "${TEKHTON_SESSION_DIR:-}/INTAKE_TWEAKED_TASK.md"
     fi
 }
 
@@ -203,12 +203,12 @@ _intake_get_milestone_content() {
                 load_manifest 2>/dev/null || true
             fi
             local ms_id
-            ms_id=$(dag_number_to_id "$_CURRENT_MILESTONE" 2>/dev/null) || true
-            local ms_file="${MILESTONE_DIR}/${ms_id}.md"
+            ms_id=$(dag_number_to_id "${_CURRENT_MILESTONE:-}" 2>/dev/null) || true
+            local ms_file="${MILESTONE_DIR:-.claude/milestones}/${ms_id}.md"
             # Fallback: try with milestone file from manifest
             if [[ ! -f "$ms_file" ]]; then
                 ms_file=$(dag_get_file "$ms_id" 2>/dev/null) || true
-                [[ -n "$ms_file" ]] && ms_file="${MILESTONE_DIR}/${ms_file}"
+                [[ -n "$ms_file" ]] && ms_file="${MILESTONE_DIR:-.claude/milestones}/${ms_file}"
             fi
             if [[ -f "$ms_file" ]]; then
                 cat "$ms_file"
@@ -218,7 +218,7 @@ _intake_get_milestone_content() {
         # Inline mode: extract from CLAUDE.md
         local claude_md="${PROJECT_RULES_FILE:-CLAUDE.md}"
         if [[ -f "$claude_md" ]]; then
-            awk -v num="$_CURRENT_MILESTONE" '
+            awk -v num="${_CURRENT_MILESTONE:-}" '
                 /^#{1,5}[[:space:]]+(M|m)ilestone[[:space:]]+/ {
                     match($0, /[0-9]+([.][0-9]+)*/)
                     if (substr($0, RSTART, RLENGTH) == num) { found=1; print; next }

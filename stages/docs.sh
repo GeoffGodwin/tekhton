@@ -52,7 +52,7 @@ run_stage_docs() {
         "${DOCS_AGENT_MODEL:-claude-haiku-4-5-20251001}" \
         "$docs_turns" \
         "$prompt" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "${AGENT_TOOLS_CODER:-Read Write Edit Glob Grep Bash}" || {
         warn "[docs] Docs agent run failed — continuing pipeline without docs updates."
         return 0
@@ -69,7 +69,7 @@ _docs_prepare_template_vars() {
     # Coder summary content for the prompt
     export CODER_SUMMARY_CONTENT=""
     if [[ -f "${CODER_SUMMARY_FILE:-}" ]]; then
-        CODER_SUMMARY_CONTENT=$(_safe_read_file "${CODER_SUMMARY_FILE}" "CODER_SUMMARY")
+        CODER_SUMMARY_CONTENT=$(_safe_read_file "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" "CODER_SUMMARY")
     fi
 
     # Git diff stat for changed files overview

@@ -36,7 +36,7 @@ _switch_to_sub_milestone() {
 
     _CURRENT_MILESTONE="$_first_sub"
     TASK="Implement Milestone ${_first_sub}: ${_first_title}"
-    log "Task updated: ${TASK}"
+    log "Task updated: ${TASK:-}"
 
     init_milestone_state "$_first_sub" "$(get_milestone_count "$_claude_md")"
 }
@@ -65,11 +65,11 @@ _reconstruct_coder_summary() {
         | grep -v "^$(basename "${TEKHTON_SESSION_DIR:-__nosession__}")/" \
         | head -30 || true)
 
-    cat > "${CODER_SUMMARY_FILE}" <<RECON_EOF
+    cat > "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" <<RECON_EOF
 ## Status: ${_status}
 
 ## Summary
-${CODER_SUMMARY_FILE} was reconstructed by the pipeline after the coder agent
+${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} was reconstructed by the pipeline after the coder agent
 failed to produce or maintain it. The following files were modified based
 on git state. The reviewer should assess actual changes directly.
 
@@ -88,7 +88,7 @@ ${_diff_stat}
 Unable to determine — coder did not report remaining items.
 Review the task description against actual changes to identify gaps.
 RECON_EOF
-    warn "Reconstructed ${CODER_SUMMARY_FILE} (status=${_status}, $(wc -l < "${CODER_SUMMARY_FILE}") lines) from git state."
+    warn "Reconstructed ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} (status=${_status}, $(wc -l < "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}") lines) from git state."
 }
 
 # run_stage_coder — Runs the full coder stage including:
@@ -121,7 +121,7 @@ run_stage_coder() {
     BUG_SCOUT_CONTEXT=""
     SHOULD_SCOUT=false
     local _scout_archive_name
-    _scout_archive_name="${TIMESTAMP}_$(basename "${SCOUT_REPORT_FILE}")"
+    _scout_archive_name="${TIMESTAMP:-}_$(basename "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}")"
 
     # Tag-specific scout behavior (M42): configurable per tag
     if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && _m24_notes_should_claim; then
@@ -139,10 +139,10 @@ run_stage_coder() {
                     auto)
                         # Scout if est. turns > 10 or brownfield indicators present
                         local _est_turns_val=""
-                        _est_turns_val=$(grep -oP 'est_turns:\K[0-9]+' "${HUMAN_NOTES_FILE}" 2>/dev/null | head -1 || true)
+                        _est_turns_val=$(grep -oP 'est_turns:\K[0-9]+' "${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}" 2>/dev/null | head -1 || true)
                         if [[ -n "$_est_turns_val" ]] && [[ "$_est_turns_val" -gt 10 ]]; then
                             SHOULD_SCOUT=true
-                        elif echo "$TASK$(_m24_notes_extract)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
+                        elif echo "${TASK:-}$(_m24_notes_extract)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
                             SHOULD_SCOUT=true
                         fi
                         ;;
@@ -153,7 +153,7 @@ run_stage_coder() {
                 case "${SCOUT_ON_POLISH:-never}" in
                     always) SHOULD_SCOUT=true ;;
                     auto)
-                        if echo "$TASK$(_m24_notes_extract)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
+                        if echo "${TASK:-}$(_m24_notes_extract)" | grep -qiE "extend|add to|modify|integrate|update|change|existing"; then
                             SHOULD_SCOUT=true
                         fi
                         ;;
@@ -162,28 +162,28 @@ run_stage_coder() {
                 ;;
             *)
                 # No tag filter — use dynamic turns heuristic
-                if [ "${DYNAMIC_TURNS_ENABLED}" = "true" ]; then
+                if [ "${DYNAMIC_TURNS_ENABLED:-true}" = "true" ]; then
                     SHOULD_SCOUT=true
                 fi
                 ;;
         esac
-    elif [ "${DYNAMIC_TURNS_ENABLED}" = "true" ]; then
+    elif [ "${DYNAMIC_TURNS_ENABLED:-true}" = "true" ]; then
         # Scout for complexity estimation even without human notes
         SHOULD_SCOUT=true
     fi
 
     # Use cached scout results from dry-run if available (Milestone 23)
-    if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "${SCOUT_REPORT_FILE}" ]]; then
+    if [[ "${SCOUT_CACHED:-false}" == "true" ]] && [[ -f "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" ]]; then
         SHOULD_SCOUT=false
         log_decision "Scout using cached results" "dry-run cache available" "SCOUT_CACHED=true"
-        apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
+        apply_scout_turn_limits "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
         BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat "${SCOUT_REPORT_FILE}")
+$(cat "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}")
 "
         # Archive the cached report same as a live one
-        cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
-        rm "${SCOUT_REPORT_FILE}"
+        cp "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" "${LOG_DIR:-.claude/logs}/${_scout_archive_name}"
+        rm "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
     fi
 
     if [ "$SHOULD_SCOUT" = true ]; then
@@ -216,7 +216,7 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         export REPO_MAP_CONTENT=""
         if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
             log "[indexer] Generating repo map for scout..."
-            if run_repo_map "$TASK"; then
+            if run_repo_map "${TASK:-}"; then
                 log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
             fi
         fi
@@ -271,65 +271,65 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         _tui_call substage-begin --label "scout"
         run_agent \
             "Scout" \
-            "$CLAUDE_SCOUT_MODEL" \
-            "${SCOUT_MAX_TURNS}" \
+            "${CLAUDE_SCOUT_MODEL:-claude-sonnet-4-6}" \
+            "${SCOUT_MAX_TURNS:-20}" \
             "$SCOUT_PROMPT" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$_scout_tools"
         _tui_call substage-end --label "scout" --verdict "PASS"
 
-        if [ -f "${SCOUT_REPORT_FILE}" ]; then
+        if [ -f "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" ]; then
             # M96 (IA1): scout one-liner status below is sufficient — skip
             # the cumulative run summary after a normal scout run.
             success "Scout agent finished. Relevant files located."
 
             # Parse complexity estimate before archiving the report
-            apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
+            apply_scout_turn_limits "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
 
             BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat "${SCOUT_REPORT_FILE}")
+$(cat "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}")
 "
             # --- Pre-flight milestone sizing gate ---------------------------------
             # After scout estimates complexity, check if the milestone is oversized.
             # If so, split it into sub-milestones and re-scout the first one.
-            if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
-                if ! check_milestone_size "$_CURRENT_MILESTONE" "${SCOUT_REC_CODER_TURNS:-0}"; then
-                    log "Milestone ${_CURRENT_MILESTONE} exceeds sizing threshold. Splitting..."
+            if [ "${MILESTONE_MODE:-false}" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
+                if ! check_milestone_size "${_CURRENT_MILESTONE:-}" "${SCOUT_REC_CODER_TURNS:-0}"; then
+                    log "Milestone ${_CURRENT_MILESTONE:-} exceeds sizing threshold. Splitting..."
 
-                    if split_milestone "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+                    if split_milestone "${_CURRENT_MILESTONE:-}" "CLAUDE.md"; then
                         # Update to target the first sub-milestone
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
+                        _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                         # Archive original scout report and re-scout narrower scope
-                        cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_SCOUT_REPORT_presplit.md"
-                        rm "${SCOUT_REPORT_FILE}"
+                        cp "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" "${LOG_DIR:-.claude/logs}/${TIMESTAMP:-}_SCOUT_REPORT_presplit.md"
+                        rm "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
 
-                        log "Re-running scout for narrower sub-milestone ${_CURRENT_MILESTONE}..."
+                        log "Re-running scout for narrower sub-milestone ${_CURRENT_MILESTONE:-}..."
 
                         SCOUT_PROMPT=$(render_prompt "scout")
                         run_agent \
                             "Scout (post-split)" \
-                            "$CLAUDE_SCOUT_MODEL" \
-                            "${SCOUT_MAX_TURNS}" \
+                            "${CLAUDE_SCOUT_MODEL:-claude-sonnet-4-6}" \
+                            "${SCOUT_MAX_TURNS:-20}" \
                             "$SCOUT_PROMPT" \
-                            "$LOG_FILE" \
+                            "${LOG_FILE:-}" \
                             "$_scout_tools"
 
-                        if [ -f "${SCOUT_REPORT_FILE}" ]; then
+                        if [ -f "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" ]; then
                             # M96 (IA1): post-split scout is still a scout
                             # sub-agent; skip the cumulative summary.
                             success "Post-split scout finished."
-                            apply_scout_turn_limits "${SCOUT_REPORT_FILE}"
+                            apply_scout_turn_limits "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
                             BUG_SCOUT_CONTEXT="
 ## Scout Report (pre-located relevant files — read THESE files, not the whole project)
-$(cat "${SCOUT_REPORT_FILE}")
+$(cat "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}")
 "
-                            cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
-                            rm "${SCOUT_REPORT_FILE}"
+                            cp "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" "${LOG_DIR:-.claude/logs}/${_scout_archive_name}"
+                            rm "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
                         else
-                            warn "Post-split scout did not produce ${SCOUT_REPORT_FILE} — coder will explore independently."
+                            warn "Post-split scout did not produce ${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md} — coder will explore independently."
                         fi
                     else
                         warn "Milestone split failed — proceeding with original scope."
@@ -338,15 +338,15 @@ $(cat "${SCOUT_REPORT_FILE}")
             fi
 
             # Archive scout report with the run
-            if [ -f "${SCOUT_REPORT_FILE}" ]; then
-                cp "${SCOUT_REPORT_FILE}" "${LOG_DIR}/${_scout_archive_name}"
-                rm "${SCOUT_REPORT_FILE}"
+            if [ -f "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" ]; then
+                cp "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}" "${LOG_DIR:-.claude/logs}/${_scout_archive_name}"
+                rm "${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md}"
             fi
         elif was_null_run; then
             # M96 (IA1): scout null-run — skip cumulative summary; warn is sufficient.
             warn "Scout was a null run (${LAST_AGENT_TURNS} turns) — coder will explore independently."
         else
-            warn "Scout agent did not produce ${SCOUT_REPORT_FILE} — coder will explore independently."
+            warn "Scout agent did not produce ${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md} — coder will explore independently."
         fi
         if declare -p _STAGE_STATUS &>/dev/null; then
             _STAGE_STATUS[scout]="complete"
@@ -365,8 +365,8 @@ $(cat "${SCOUT_REPORT_FILE}")
         if [[ -n "$REPO_MAP_CONTENT" ]] && [[ -n "$BUG_SCOUT_CONTEXT" ]]; then
             # Extract file paths from the scout report context
             local _scout_files=""
-            if [[ -f "${LOG_DIR}/${_scout_archive_name}" ]]; then
-                _scout_files=$(extract_files_from_coder_summary "${LOG_DIR}/${_scout_archive_name}")
+            if [[ -f "${LOG_DIR:-.claude/logs}/${_scout_archive_name}" ]]; then
+                _scout_files=$(extract_files_from_coder_summary "${LOG_DIR:-.claude/logs}/${_scout_archive_name}")
             fi
             if [[ -n "$_scout_files" ]]; then
                 local _slice
@@ -378,7 +378,7 @@ $(cat "${SCOUT_REPORT_FILE}")
         elif [[ -z "$REPO_MAP_CONTENT" ]]; then
             # No map from scout phase — generate a fresh task-biased map
             log "[indexer] Generating repo map for coder..."
-            if run_repo_map "$TASK"; then
+            if run_repo_map "${TASK:-}"; then
                 log "[indexer] Repo map generated (${#REPO_MAP_CONTENT} chars)."
             fi
         fi
@@ -386,7 +386,7 @@ $(cat "${SCOUT_REPORT_FILE}")
 
     # --- Extract affected test files from scout report (M43) -----------------
     export AFFECTED_TEST_FILES=""
-    local _scout_archive="${LOG_DIR}/${_scout_archive_name}"
+    local _scout_archive="${LOG_DIR:-.claude/logs}/${_scout_archive_name}"
     if [[ -f "$_scout_archive" ]]; then
         # Extract the "## Affected Test Files" section from the archived scout report
         AFFECTED_TEST_FILES=$(awk '
@@ -473,10 +473,10 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_main")"
     fi
 
     export GLOSSARY_BLOCK=""
-    if [ -n "${GLOSSARY_FILE}" ] && [ -f "${GLOSSARY_FILE}" ]; then
+    if [ -n "${GLOSSARY_FILE:-}" ] && [ -f "${GLOSSARY_FILE:-}" ]; then
         GLOSSARY_BLOCK="
 ## Glossary (use these terms precisely — do not invent synonyms)
-$(cat "${GLOSSARY_FILE}")"
+$(cat "${GLOSSARY_FILE:-}")"
     fi
 
     export MILESTONE_BLOCK=""
@@ -489,7 +489,7 @@ $(cat "${GLOSSARY_FILE}")"
         # set_focused_milestone_block).
         if ! set_focused_milestone_block 2>/dev/null; then
             # DAG path: use cached milestone window (M47) or compute fresh
-            _get_cached_milestone_block "$CLAUDE_CODER_MODEL" 2>/dev/null || true
+            _get_cached_milestone_block "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" 2>/dev/null || true
         fi
 
         # Fallback: static block when no DAG or window build failed
@@ -497,19 +497,19 @@ $(cat "${GLOSSARY_FILE}")"
             MILESTONE_BLOCK="
 ## Milestone Mode
 This is a milestone-sized task. Before writing any code:
-1. Read the relevant Milestone section in ${PROJECT_RULES_FILE} in full
+1. Read the relevant Milestone section in ${PROJECT_RULES_FILE:-CLAUDE.md} in full
 2. Check the 'Seeds forward' annotations on this milestone for architectural decisions
    that must be made now to avoid rework later
 3. Note any 'Watch for' annotations and design those extension points into your implementation
-4. Document your architectural decisions in ${CODER_SUMMARY_FILE} under '## Architecture Decisions'"
+4. Document your architectural decisions in ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} under '## Architecture Decisions'"
         fi
     fi
 
     # Prior reviewer context (unresolved blockers from a previous run)
     export PRIOR_REVIEWER_CONTEXT=""
-    if [ -f "${REVIEWER_REPORT_FILE}" ] && [ "${START_AT:-coder}" = "coder" ]; then
+    if [ -f "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" ] && [ "${START_AT:-coder}" = "coder" ]; then
         local _reviewer_content
-        _reviewer_content=$(_safe_read_file "${REVIEWER_REPORT_FILE}" "REVIEWER_REPORT")
+        _reviewer_content=$(_safe_read_file "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" "REVIEWER_REPORT")
         PRIOR_REVIEWER_CONTEXT="
 ## Prior Reviewer Report (unresolved blockers from last run)
 The previous pipeline run ended with these unresolved items.
@@ -521,7 +521,7 @@ $(_wrap_file_content "REVIEWER_REPORT" "$_reviewer_content")"
 
     # Prior progress context (partial git diff from turn-limit resume)
     export PRIOR_PROGRESS_CONTEXT=""
-    if [ -f "$PIPELINE_STATE_FILE" ]; then
+    if [ -f "${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}" ]; then
         PRIOR_EXIT_REASON=$(read_pipeline_state_field exit_reason)
         if [ "$PRIOR_EXIT_REASON" = "turn_limit" ]; then
             PRIOR_GIT_DIFF=$(read_pipeline_state_field git_diff_stat)
@@ -531,7 +531,7 @@ $(_wrap_file_content "REVIEWER_REPORT" "$_reviewer_content")"
 The last coder run hit the turn limit mid-implementation. These files were already modified:
 ${PRIOR_GIT_DIFF}
 
-Check ${CODER_SUMMARY_FILE} for what was completed. Do NOT redo work already done.
+Check ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} for what was completed. Do NOT redo work already done.
 Pick up from where the previous run left off — read the modified files first to understand current state."
             fi
         fi
@@ -539,9 +539,9 @@ Pick up from where the previous run left off — read the modified files first t
 
     # Prior tester bugs
     export PRIOR_TESTER_CONTEXT=""
-    if [ -f "${TESTER_REPORT_FILE}" ] && grep -q "^### Bugs Found\|^## Bugs\|BUG-" "${TESTER_REPORT_FILE}" 2>/dev/null; then
+    if [ -f "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" ] && grep -q "^### Bugs Found\|^## Bugs\|BUG-" "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" 2>/dev/null; then
         local _tester_content
-        _tester_content=$(_safe_read_file "${TESTER_REPORT_FILE}" "TESTER_REPORT")
+        _tester_content=$(_safe_read_file "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" "TESTER_REPORT")
         PRIOR_TESTER_CONTEXT="
 ## Bugs Found by Tester (must fix)
 The tester identified these bugs in the last run. Fix all BUG-* items before
@@ -552,9 +552,9 @@ $(_wrap_file_content "TESTER_REPORT" "$_tester_content")"
 
     # Pre-finalization test gate failures (from orchestrate.sh retry loop)
     export PREFLIGHT_TEST_CONTEXT=""
-    if [[ -f "${PREFLIGHT_ERRORS_FILE}" ]] && [[ "${START_AT:-coder}" = "coder" ]]; then
+    if [[ -f "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}" ]] && [[ "${START_AT:-coder}" = "coder" ]]; then
         local _preflight_content
-        _preflight_content=$(_safe_read_file "${PREFLIGHT_ERRORS_FILE}" "PREFLIGHT_ERRORS")
+        _preflight_content=$(_safe_read_file "${PREFLIGHT_ERRORS_FILE:-.tekhton/PREFLIGHT_ERRORS.md}" "PREFLIGHT_ERRORS")
         PREFLIGHT_TEST_CONTEXT="
 ## Pre-Finalization Test Failures (must fix)
 The pipeline completed all stages successfully, but the final test gate failed.
@@ -604,8 +604,8 @@ ${nb_notes}"
     # the equivalent _safe_read_file path here.
     export CLARIFICATIONS_CONTENT
     CLARIFICATIONS_CONTENT=$(_get_cached_clarifications_content)
-    if [[ -z "$CLARIFICATIONS_CONTENT" ]] && [[ -f "${CLARIFICATIONS_FILE}" ]] && [[ -s "${CLARIFICATIONS_FILE}" ]]; then
-        CLARIFICATIONS_CONTENT=$(_safe_read_file "${CLARIFICATIONS_FILE}" "CLARIFICATIONS")
+    if [[ -z "$CLARIFICATIONS_CONTENT" ]] && [[ -f "${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}" ]] && [[ -s "${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}" ]]; then
+        CLARIFICATIONS_CONTENT=$(_safe_read_file "${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}" "CLARIFICATIONS")
     fi
 
     # --- Context compiler (task-scoped filtering) ----------------------------
@@ -613,7 +613,7 @@ ${nb_notes}"
     # It takes explicit args (not HUMAN_NOTES_BLOCK global), so the ordering is safe.
 
     _phase_start "context_assembly"
-    build_context_packet "coder" "$TASK" "$CLAUDE_CODER_MODEL"
+    build_context_packet "coder" "${TASK:-}" "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}"
 
     # --- Context budget reporting --------------------------------------------
 
@@ -627,8 +627,8 @@ ${nb_notes}"
     elif [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && ! _m24_notes_should_claim && [[ "${HUMAN_MODE:-false}" != true ]]; then
         log "Human notes exist but no notes flag set (--human, --with-notes, or --notes-filter) — injection skipped."
         # Defensive hint: detect tasks that appear to originate from ${HUMAN_NOTES_FILE}
-        if [[ "$TASK" =~ \[(BUG|FEAT|POLISH)\] ]]; then
-            warn "Tip: This task appears to come from ${HUMAN_NOTES_FILE}. Did you mean to use --human?"
+        if [[ "${TASK:-}" =~ \[(BUG|FEAT|POLISH)\] ]]; then
+            warn "Tip: This task appears to come from ${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}. Did you mean to use --human?"
         fi
     fi
 
@@ -647,13 +647,13 @@ ${nb_notes}"
     _add_context_component "Test Baseline" "${TEST_BASELINE_SUMMARY:-}"
     _add_context_component "Clarifications" "$CLARIFICATIONS_CONTENT"
     _add_context_component "TDD Preflight" "${TESTER_PREFLIGHT_CONTENT:-}"
-    log_context_report "coder" "$CLAUDE_CODER_MODEL"
+    log_context_report "coder" "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}"
 
     # --- Invoke coder agent --------------------------------------------------
 
     # Tag-specific turn budget adjustment (M42)
     if [ "${HUMAN_NOTE_COUNT:-0}" -gt 0 ] && _m24_notes_should_claim && [[ -n "$NOTES_FILTER" ]]; then
-        local _tag_base="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+        local _tag_base="${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-80}}"
         local _tag_multiplier="1.0"
         case "$NOTES_FILTER" in
             BUG)    _tag_multiplier="${BUG_TURN_MULTIPLIER:-1.0}" ;;
@@ -663,7 +663,7 @@ ${nb_notes}"
 
         # If triage estimated turns are available, use them with a 1.5x buffer
         local _triage_est=""
-        _triage_est=$(grep -oP 'est_turns:\K[0-9]+' "${HUMAN_NOTES_FILE}" 2>/dev/null | head -1 || true)
+        _triage_est=$(grep -oP 'est_turns:\K[0-9]+' "${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}" 2>/dev/null | head -1 || true)
         if [[ -n "$_triage_est" ]] && [[ "$_triage_est" -gt 0 ]]; then
             local _max_from_multiplier
             _max_from_multiplier=$(awk "BEGIN { printf \"%.0f\", ${_tag_base} * ${_tag_multiplier} }")
@@ -690,7 +690,7 @@ ${nb_notes}"
     # TDD turn multiplier: give the coder slightly more budget when working
     # against pre-written tests (Milestone 27)
     if [[ "${PIPELINE_ORDER:-standard}" == "test_first" ]] && [[ -n "${TESTER_PREFLIGHT_CONTENT:-}" ]]; then
-        local _base_turns="${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}"
+        local _base_turns="${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-80}}"
         local _multiplier="${CODER_TDD_TURN_MULTIPLIER:-1.2}"
         # bash doesn't do float math — use awk
         local _boosted_turns
@@ -706,15 +706,15 @@ ${nb_notes}"
     _phase_end "coder_prompt"
     _phase_end "context_assembly"
 
-    local _coder_turns="${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}"
+    local _coder_turns="${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-80}}}"
     log "Invoking coder agent (max ${_coder_turns} turns)..."
     _phase_start "coder_agent"
     run_agent \
         "Coder" \
-        "$CLAUDE_CODER_MODEL" \
+        "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
         "$_coder_turns" \
         "$CODER_PROMPT" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$AGENT_TOOLS_CODER"
     _phase_end "coder_agent"
     print_run_summary
@@ -730,7 +730,7 @@ ${nb_notes}"
             "coder" \
             "upstream_error" \
             "$(_build_resume_flag coder)" \
-            "$TASK" \
+            "${TASK:-}" \
             "API error (${AGENT_ERROR_SUBCATEGORY}): ${AGENT_ERROR_MESSAGE}. This is transient — re-run the same command."
 
         error "State saved. This was an API failure, not a scope issue. Re-run the same command."
@@ -754,17 +754,17 @@ ${nb_notes}"
         # --- Null-run auto-split for milestone mode ---
         # Instead of saving state and exiting, try to split the milestone
         # and re-run from scout stage with the narrower sub-milestone.
-        if [ "$MILESTONE_MODE" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
-            if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
+        if [ "${MILESTONE_MODE:-false}" = true ] && [ -n "${_CURRENT_MILESTONE:-}" ]; then
+            if handle_null_run_split "${_CURRENT_MILESTONE:-}" "CLAUDE.md"; then
                 # Split succeeded — update state and re-run from scout
-                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
+                _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                 invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
 
                 # Recursive call to run_stage_coder creates nested call frames up to
                 # MILESTONE_MAX_SPLIT_DEPTH deep. With default of 3, this is safe.
                 local _depth
-                _depth=$(get_split_depth "$_CURRENT_MILESTONE")
-                warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                _depth=$(get_split_depth "${_CURRENT_MILESTONE:-}")
+                warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE:-} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
                 run_stage_coder
                 return
             fi
@@ -774,24 +774,24 @@ ${nb_notes}"
             "coder" \
             "null_run" \
             "$(_build_resume_flag coder)" \
-            "$TASK" \
-            "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a ${SCOUT_REPORT_FILE} manually, or checking agent logs."
+            "${TASK:-}" \
+            "Agent used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Likely died during initial file discovery. Consider: narrower task description, adding a ${SCOUT_REPORT_FILE:-.tekhton/SCOUT_REPORT.md} manually, or checking agent logs."
 
-        error "State saved with exit reason 'null_run'. Check the log: ${LOG_FILE}"
+        error "State saved with exit reason 'null_run'. Check the log: ${LOG_FILE:-}"
         error "Re-run with a more specific task description or add context files."
         exit 1
     fi
 
     # --- Post-coder validation -----------------------------------------------
 
-    if [ ! -f "${CODER_SUMMARY_FILE}" ]; then
+    if [ ! -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]; then
         # If substantive work was done, reconstruct summary and continue.
         # Trip the #46 commit gate so the pipeline doesn't rubber-stamp a
         # milestone the coder agent never actually summarized — git-state
         # reconstruction is a forensic record, not a substitute for the
         # agent's own description of what shipped.
         if is_substantive_work; then
-            warn "Coder did not produce ${CODER_SUMMARY_FILE} but substantive work detected."
+            warn "Coder did not produce ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} but substantive work detected."
             _reconstruct_coder_summary
             trip_commit_gate "coder_did_not_produce_summary"
         elif [[ "${LAST_AGENT_TURNS:-0}" -ge "${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-50}}}" ]]; then
@@ -800,27 +800,27 @@ ${nb_notes}"
             # problem (too much exploration, not enough implementation), not a
             # hard crash. Classify explicitly so the orchestration loop can
             # attempt recovery (split or retry).
-            warn "Coder exhausted turn budget (${LAST_AGENT_TURNS} turns) without ${CODER_SUMMARY_FILE} or substantive work."
+            warn "Coder exhausted turn budget (${LAST_AGENT_TURNS} turns) without ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} or substantive work."
             AGENT_ERROR_CATEGORY="AGENT_SCOPE"
             AGENT_ERROR_SUBCATEGORY="turn_exhaustion_no_output"
-            AGENT_ERROR_MESSAGE="Coder used all ${LAST_AGENT_TURNS} turns but produced no ${CODER_SUMMARY_FILE} and no substantive file changes."
+            AGENT_ERROR_MESSAGE="Coder used all ${LAST_AGENT_TURNS} turns but produced no ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} and no substantive file changes."
 
             # Attempt milestone split before giving up
-            if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-                if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
+            if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                if handle_null_run_split "${_CURRENT_MILESTONE:-}" "CLAUDE.md"; then
+                    _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                     invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                     local _depth
-                    _depth=$(get_split_depth "$_CURRENT_MILESTONE")
-                    warn "Auto-split after turn exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                    _depth=$(get_split_depth "${_CURRENT_MILESTONE:-}")
+                    warn "Auto-split after turn exhaustion — re-running for milestone ${_CURRENT_MILESTONE:-} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
                     run_stage_coder
                     return
                 fi
             fi
 
-            error "Coder did not produce ${CODER_SUMMARY_FILE} and no substantive work detected."
-            error "Check the log: ${LOG_FILE}"
-            error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
+            error "Coder did not produce ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} and no substantive work detected."
+            error "Check the log: ${LOG_FILE:-}"
+            error "To resume at review stage once resolved: $0 --start-at review \"${TASK:-}\""
             # Reconstruct for audit trail even on failure
             _reconstruct_coder_summary "FAILED"
             # Reset claimed notes — coder didn't produce any work
@@ -830,13 +830,13 @@ ${nb_notes}"
                 "coder" \
                 "turn_exhaustion_no_output" \
                 "$(_build_resume_flag coder)" \
-                "$TASK" \
+                "${TASK:-}" \
                 "Coder used ${LAST_AGENT_TURNS} turns but produced no output. Likely spent turns exploring without implementing. Consider: narrower task, manual scout report, or milestone split."
             exit 1
         else
-            error "Coder did not produce ${CODER_SUMMARY_FILE} and no substantive work detected."
-            error "Check the log: ${LOG_FILE}"
-            error "To resume at review stage once resolved: $0 --start-at review \"${TASK}\""
+            error "Coder did not produce ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} and no substantive work detected."
+            error "Check the log: ${LOG_FILE:-}"
+            error "To resume at review stage once resolved: $0 --start-at review \"${TASK:-}\""
             # Reconstruct for audit trail even on failure
             _reconstruct_coder_summary "FAILED"
             # Reset claimed notes — coder didn't produce any work
@@ -848,9 +848,9 @@ ${nb_notes}"
     # Detect un-updated skeleton: coder wrote the IN PROGRESS skeleton at Step 1
     # but never filled it in (placeholders still present). Treat the same as a
     # missing file — reconstruct from git state so the pipeline can proceed.
-    if [[ -f "${CODER_SUMMARY_FILE}" ]] && grep -q 'fill in as you go\|update as you go' "${CODER_SUMMARY_FILE}" 2>/dev/null; then
+    if [[ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]] && grep -q 'fill in as you go\|update as you go' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null; then
         if is_substantive_work; then
-            warn "${CODER_SUMMARY_FILE} contains unfilled placeholders — reconstructing from git state."
+            warn "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} contains unfilled placeholders — reconstructing from git state."
             _reconstruct_coder_summary
         fi
     fi
@@ -867,41 +867,41 @@ ${nb_notes}"
     # --- Post-coder clarification detection ------------------------------------
 
     # m25: clarify functions ported to Go — invoke the CLI.
-    if "${TEKHTON_BIN:-tekhton}" clarify detect --report "${CODER_SUMMARY_FILE}" 2>/dev/null; then
+    if "${TEKHTON_BIN:-tekhton}" clarify detect --report "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null; then
         : # exit 0 — no blocking items
     else
         # exit 1 — blocking items present; handle interactively.
-        if ! "${TEKHTON_BIN:-tekhton}" clarify handle --report "${CODER_SUMMARY_FILE}" --project-dir "$PROJECT_DIR"; then
+        if ! "${TEKHTON_BIN:-tekhton}" clarify handle --report "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" --project-dir "$PROJECT_DIR"; then
             # User aborted — save state for resume
             write_pipeline_state \
                 "coder" \
                 "clarification_abort" \
                 "$(_build_resume_flag coder)" \
-                "$TASK" \
-                "Clarification collection aborted by user. Partial answers in ${CLARIFICATIONS_FILE}."
+                "${TASK:-}" \
+                "Clarification collection aborted by user. Partial answers in ${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}."
             error "Pipeline paused for clarification. Re-run to resume."
             exit 1
         fi
 
         # Re-run coder with clarification answers if blocking items were answered
-        local blocking_file="${TEKHTON_SESSION_DIR}/clarify_blocking.txt"
-        if [[ -s "$blocking_file" ]] || [[ -f "${CLARIFICATIONS_FILE}" ]]; then
+        local blocking_file="${TEKHTON_SESSION_DIR:-}/clarify_blocking.txt"
+        if [[ -s "$blocking_file" ]] || [[ -f "${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}" ]]; then
             log "Re-running coder with clarification answers..."
 
             # Reload clarifications into context (m25: read directly via _safe_read_file)
             export CLARIFICATIONS_CONTENT
-            if [[ -f "${CLARIFICATIONS_FILE}" ]] && [[ -s "${CLARIFICATIONS_FILE}" ]]; then
-                CLARIFICATIONS_CONTENT=$(_safe_read_file "${CLARIFICATIONS_FILE}" "CLARIFICATIONS")
+            if [[ -f "${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}" ]] && [[ -s "${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}" ]]; then
+                CLARIFICATIONS_CONTENT=$(_safe_read_file "${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}" "CLARIFICATIONS")
             fi
 
             CODER_PROMPT=$(render_prompt "coder")
 
             run_agent \
                 "Coder (post-clarification)" \
-                "$CLAUDE_CODER_MODEL" \
-                "${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}" \
+                "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
+                "${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-80}}}" \
                 "$CODER_PROMPT" \
-                "$LOG_FILE" \
+                "${LOG_FILE:-}" \
                 "$AGENT_TOOLS_CODER"
             print_run_summary
             success "Post-clarification coder finished."
@@ -917,7 +917,7 @@ ${nb_notes}"
                     "coder" \
                     "null_run_post_clarification" \
                     "$(_build_resume_flag coder)" \
-                    "$TASK" \
+                    "${TASK:-}" \
                     "Post-clarification coder used ${LAST_AGENT_TURNS} turn(s) and exited ${LAST_AGENT_EXIT_CODE}. Consider: clarification answers may be incomplete, or agent couldn't translate them into code changes."
 
                 error "State saved with exit reason 'null_run_post_clarification'. Re-run to retry."
@@ -925,15 +925,15 @@ ${nb_notes}"
             fi
 
             # Re-check for ${CODER_SUMMARY_FILE}
-            if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
-                error "Post-clarification coder did not produce ${CODER_SUMMARY_FILE}."
+            if [[ ! -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]]; then
+                error "Post-clarification coder did not produce ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}."
                 exit 1
             fi
         fi
     fi
 
     # Check if coder left status as IN PROGRESS (hit turn limit mid-work)
-    CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE}" 2>/dev/null | head -1 || echo "")
+    CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null | head -1 || echo "")
     if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
         warn "Coder summary shows IN PROGRESS — coder hit turn limit before finishing."
 
@@ -948,7 +948,7 @@ ${nb_notes}"
                 log_decision "Continuing coder" "turn limit hit, progress detected (attempt ${_cont_attempt}/${_cont_max})" "CONTINUATION_ENABLED=true"
 
                 # Build continuation context and inject into prompt
-                local _next_budget="${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-$CODER_MAX_TURNS}}"
+                local _next_budget="${EFFECTIVE_CODER_MAX_TURNS:-${ADJUSTED_CODER_TURNS:-${CODER_MAX_TURNS:-80}}}"
                 export CONTINUATION_CONTEXT
                 CONTINUATION_CONTEXT=$(build_continuation_context "coder" "$_cont_attempt" "$_cont_max" "$_cumulative_turns" "$_next_budget")
 
@@ -956,10 +956,10 @@ ${nb_notes}"
 
                 run_agent \
                     "Coder (continuation ${_cont_attempt})" \
-                    "$CLAUDE_CODER_MODEL" \
+                    "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
                     "$_next_budget" \
                     "$CODER_PROMPT" \
-                    "$LOG_FILE" \
+                    "${LOG_FILE:-}" \
                     "$AGENT_TOOLS_CODER"
                 print_run_summary
 
@@ -973,26 +973,26 @@ ${nb_notes}"
                         "coder" \
                         "upstream_error" \
                         "$(_build_resume_flag coder)" \
-                        "$TASK" \
+                        "${TASK:-}" \
                         "API error during continuation attempt ${_cont_attempt}: ${AGENT_ERROR_MESSAGE}."
                     error "State saved. Re-run the same command."
                     exit 1
                 fi
 
                 # Check if continuation completed
-                if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
-                    warn "Continuation ${_cont_attempt} did not produce ${CODER_SUMMARY_FILE}."
+                if [[ ! -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]]; then
+                    warn "Continuation ${_cont_attempt} did not produce ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}."
                     # Recover: if substantive work exists, synthesize a minimal summary
                     # so the pipeline can proceed to review instead of crashing.
                     if is_substantive_work; then
-                        warn "Substantive work detected — reconstructing ${CODER_SUMMARY_FILE} from git state."
+                        warn "Substantive work detected — reconstructing ${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md} from git state."
                         _reconstruct_coder_summary
                     else
                         break
                     fi
                 fi
 
-                CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE}" 2>/dev/null | head -1 || echo "")
+                CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null | head -1 || echo "")
                 if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
                     success "Coder completed after ${_cont_attempt} continuation(s) (${_cumulative_turns} total turns)."
                     # Export for metrics
@@ -1015,20 +1015,20 @@ ${nb_notes}"
             export CONTINUATION_CONTEXT=""
 
             # Re-check status after continuation loop
-            CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE}" 2>/dev/null | head -1 || echo "")
+            CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null | head -1 || echo "")
             if [[ "$CODER_STATUS" == *"COMPLETE"* ]]; then
                 # Continuation succeeded — fall through to completion gate
                 :
             elif [[ "$_cont_attempt" -ge "$_cont_max" ]]; then
                 warn "Coder exhausted all ${_cont_max} continuation attempts."
                 # Escalate: milestone mode -> try auto-split, otherwise save state
-                if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-                    if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
+                if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                    if handle_null_run_split "${_CURRENT_MILESTONE:-}" "CLAUDE.md"; then
+                        _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
-                        _depth=$(get_split_depth "$_CURRENT_MILESTONE")
-                        warn "Auto-split after continuation exhaustion — re-running for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                        _depth=$(get_split_depth "${_CURRENT_MILESTONE:-}")
+                        warn "Auto-split after continuation exhaustion — re-running for milestone ${_CURRENT_MILESTONE:-} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
                         run_stage_coder
                         return
                     fi
@@ -1039,9 +1039,9 @@ ${nb_notes}"
 
         # If we reach here and status is still IN PROGRESS, check if we have
         # enough work to proceed to review instead of halting.
-        CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE}" 2>/dev/null | head -1 || echo "")
+        CODER_STATUS=$(grep "^## Status" "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null | head -1 || echo "")
         if [[ "$CODER_STATUS" == *"IN PROGRESS"* ]]; then
-            IMPLEMENTED_LINES=$(grep -c "^- " "${CODER_SUMMARY_FILE}" 2>/dev/null || echo "0")
+            IMPLEMENTED_LINES=$(grep -c "^- " "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null || echo "0")
             IMPLEMENTED_LINES=$(echo "$IMPLEMENTED_LINES" | tr -d '[:space:]')
 
             GIT_DIFF_STAT=""
@@ -1074,21 +1074,21 @@ ${GIT_DIFF_STAT}
                     "coder" \
                     "turn_limit" \
                     "$RESUME_FLAG" \
-                    "$TASK" \
+                    "${TASK:-}" \
                     "$_state_notes"
 
-                warn "Check the log: ${LOG_FILE}"
+                warn "Check the log: ${LOG_FILE:-}"
                 warn "State saved — re-run with no arguments to resume."
                 exit 1
             else
                 # Minimal output — try auto-split in milestone mode
-                if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-                    if handle_null_run_split "$_CURRENT_MILESTONE" "CLAUDE.md"; then
-                        _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
+                if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+                    if handle_null_run_split "${_CURRENT_MILESTONE:-}" "CLAUDE.md"; then
+                        _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                         invalidate_repo_map_run_cache  # M61: PageRank needs fresh bias
                         local _depth
-                        _depth=$(get_split_depth "$_CURRENT_MILESTONE")
-                        warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
+                        _depth=$(get_split_depth "${_CURRENT_MILESTONE:-}")
+                        warn "Auto-split complete — re-running coder stage for milestone ${_CURRENT_MILESTONE:-} (depth ${_depth}/${MILESTONE_MAX_SPLIT_DEPTH:-3})..."
                         run_stage_coder
                         return
                     fi
@@ -1111,10 +1111,10 @@ ${GIT_DIFF_STAT}
                     "coder" \
                     "turn_limit" \
                     "$RESUME_FLAG" \
-                    "$TASK" \
+                    "${TASK:-}" \
                     "$_state_notes"
 
-                warn "Check the log: ${LOG_FILE}"
+                warn "Check the log: ${LOG_FILE:-}"
                 warn "State saved — re-run with no arguments to resume."
                 exit 1
             fi
@@ -1132,7 +1132,7 @@ ${GIT_DIFF_STAT}
             warn "Completion gate failed but substantive work detected."
             warn "Proceeding to review — reviewer will assess actual changes."
             # Ensure ${CODER_SUMMARY_FILE} exists for downstream stages
-            if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
+            if [[ ! -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]]; then
                 _reconstruct_coder_summary
             fi
             # Trip the commit gate. Without this, the synthesize-fallback
@@ -1151,7 +1151,7 @@ ${GIT_DIFF_STAT}
             warn "Coder did not complete — blocking reviewer and tester."
 
             # Ensure ${CODER_SUMMARY_FILE} exists for post-run auditing
-            if [[ ! -f "${CODER_SUMMARY_FILE}" ]]; then
+            if [[ ! -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]]; then
                 _reconstruct_coder_summary "INCOMPLETE"
             fi
 
@@ -1163,7 +1163,7 @@ ${GIT_DIFF_STAT}
                 "coder" \
                 "incomplete" \
                 "$RESUME_FLAG" \
-                "$TASK" \
+                "${TASK:-}" \
                 "Coder hit turn limit mid-implementation. Reviewer and tester were NOT run. Resume will continue coder work before proceeding."
 
             error "Pipeline halted at completion gate."
@@ -1185,9 +1185,9 @@ ${GIT_DIFF_STAT}
     # --- Record task→file association for personalized ranking (M7) ----------
     if [[ "${INDEXER_AVAILABLE:-false}" == "true" ]]; then
         local _modified_files
-        _modified_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}")
+        _modified_files=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}")
         if [[ -n "$_modified_files" ]]; then
-            record_task_file_association "$TASK" "$_modified_files" || true
+            record_task_file_association "${TASK:-}" "$_modified_files" || true
         fi
     fi
 }

@@ -155,7 +155,7 @@ _process_note() {
             warn "Inbox: tekhton note add failed for ${title}"
     else
         warn "Inbox: tekhton binary not available, appending raw note"
-        echo "- [ ] [${tag}] ${title}" >> "${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE}"
+        echo "- [ ] [${tag}] ${title}" >> "${PROJECT_DIR:-.}/${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}"
     fi
 }
 

@@ -17,7 +17,7 @@ _gate_write_analyze_errors() {
     local analyze_output="$2"
     local stage_label="$3"
 
-    printf '%s\n' "$analyze_errors" > "${BUILD_RAW_ERRORS_FILE}"
+    printf '%s\n' "$analyze_errors" > "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}"
 
     {
         if command -v annotate_build_errors &>/dev/null; then
@@ -37,8 +37,8 @@ _gate_write_analyze_errors() {
         echo '```'
         echo "${analyze_output}"
         echo '```'
-    } > "${BUILD_ERRORS_FILE}"
-    log "Build errors written to ${BUILD_ERRORS_FILE}"
+    } > "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
+    log "Build errors written to ${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
 }
 
 # --- _gate_run_analyze --------------------------------------------------------
@@ -56,7 +56,7 @@ _gate_run_analyze() {
         ANALYZE_OUTPUT=""
     fi
 
-    ANALYZE_ERRORS=$(echo "$ANALYZE_OUTPUT" | grep -E "${ANALYZE_ERROR_PATTERN}" || true)
+    ANALYZE_ERRORS=$(echo "$ANALYZE_OUTPUT" | grep -E "${ANALYZE_ERROR_PATTERN:-error}" || true)
 
     if [[ -n "$ANALYZE_ERRORS" ]]; then
         return 1
@@ -113,15 +113,15 @@ _gate_write_compile_errors() {
     local compile_errors="$1"
     local stage_label="$2"
 
-    printf '%s\n' "$compile_errors" >> "${BUILD_RAW_ERRORS_FILE}"
+    printf '%s\n' "$compile_errors" >> "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}"
 
-    if [[ ! -f "${BUILD_ERRORS_FILE}" ]]; then
+    if [[ ! -f "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" ]]; then
         {
             echo "# Build Errors — $(date '+%Y-%m-%d %H:%M:%S')"
             echo "## Stage"
             echo "${stage_label}"
             echo ""
-        } >> "${BUILD_ERRORS_FILE}"
+        } >> "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
     fi
     {
         if command -v classify_build_errors_all &>/dev/null; then
@@ -137,7 +137,7 @@ _gate_write_compile_errors() {
         echo '```'
         echo "${compile_errors}"
         echo '```'
-    } >> "${BUILD_ERRORS_FILE}"
+    } >> "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
 }
 
 # --- _gate_run_compile --------------------------------------------------------
@@ -147,15 +147,15 @@ _gate_run_compile() {
     local effective_timeout="$1"
 
     local compile_exit=0
-    COMPILE_OUTPUT=$(run_op "Running build check" timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD}" 2>&1) || compile_exit=$?
+    COMPILE_OUTPUT=$(run_op "Running build check" timeout "$effective_timeout" bash -c "${BUILD_CHECK_CMD:-}" 2>&1) || compile_exit=$?
 
     if [[ "$compile_exit" -eq 124 ]]; then
         warn "BUILD_CHECK_CMD timed out after ${effective_timeout}s. Treating as pass."
         COMPILE_OUTPUT=""
     fi
 
-    if echo "$COMPILE_OUTPUT" | grep -q "${BUILD_ERROR_PATTERN}"; then
-        COMPILE_ERRORS=$(echo "$COMPILE_OUTPUT" | grep "${BUILD_ERROR_PATTERN}" | head -20)
+    if echo "$COMPILE_OUTPUT" | grep -q "${BUILD_ERROR_PATTERN:-ERROR}"; then
+        COMPILE_ERRORS=$(echo "$COMPILE_OUTPUT" | grep "${BUILD_ERROR_PATTERN:-ERROR}" | head -20)
         return 1
     fi
     return 0

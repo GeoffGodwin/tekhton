@@ -87,7 +87,7 @@ _run_tester_inline_fix() {
     local _output_limit="${TESTER_FIX_OUTPUT_LIMIT:-4000}"
 
     log_decision "Inline tester fix" \
-        "${TEST_CMD} failures detected" \
+        "${TEST_CMD:-true} failures detected" \
         "TESTER_FIX_ENABLED=true, max_attempts=${_max_attempts}"
 
     while [[ "$_fix_attempt" -lt "$_max_attempts" ]]; do
@@ -96,9 +96,9 @@ _run_tester_inline_fix() {
         # Extract failure output with smart truncation
         local _raw_output
         _raw_output=$(grep -E '(FAIL|ERROR|error|failure|assert|expected|unexpected)' \
-            "$LOG_FILE" 2>/dev/null | tail -c "$((_output_limit * 2))" || true)
+            "${LOG_FILE:-}" 2>/dev/null | tail -c "$((_output_limit * 2))" || true)
         if [[ -z "$_raw_output" ]]; then
-            _raw_output=$(tail -100 "$LOG_FILE" | tail -c "$((_output_limit * 2))")
+            _raw_output=$(tail -100 "${LOG_FILE:-}" | tail -c "$((_output_limit * 2))")
         fi
 
         local _failure_output
@@ -131,21 +131,21 @@ _run_tester_inline_fix() {
 
         # Extract source files from ${CODER_SUMMARY_FILE}
         export TESTER_FIX_SOURCE_FILES=""
-        if [[ -f "${CODER_SUMMARY_FILE}" ]] \
+        if [[ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]] \
            && declare -f extract_files_from_coder_summary &>/dev/null; then
-            TESTER_FIX_SOURCE_FILES=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE}" 2>/dev/null || true)
+            TESTER_FIX_SOURCE_FILES=$(extract_files_from_coder_summary "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null || true)
         fi
 
         # Render scoped prompt and run inline agent
         _phase_start "tester_fix"
         local _fix_prompt
         _fix_prompt=$(render_prompt "tester_fix")
-        log "[tester-fix] Attempt ${_fix_attempt}/${_max_attempts} (max ${TESTER_FIX_MAX_TURNS} turns)..."
+        log "[tester-fix] Attempt ${_fix_attempt}/${_max_attempts} (max ${TESTER_FIX_MAX_TURNS:-26} turns)..."
         run_agent "Tester (fix ${_fix_attempt})" \
-            "$CLAUDE_CODER_MODEL" \
-            "${TESTER_FIX_MAX_TURNS}" \
+            "${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}" \
+            "${TESTER_FIX_MAX_TURNS:-26}" \
             "$_fix_prompt" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_BUILD_FIX"
         _phase_end "tester_fix"
 
@@ -165,11 +165,11 @@ _run_tester_inline_fix() {
                     emit_event "test_dedup_skip" "${_CURRENT_STAGE:-tester_fix}" \
                         "fingerprint_match=true" "" "" "" >/dev/null 2>&1 || true
                 fi
-                echo "[dedup] Cached pass — no files changed since last successful test run" >> "$LOG_FILE"
+                echo "[dedup] Cached pass — no files changed since last successful test run" >> "${LOG_FILE:-}"
                 _retest_exit=0
             else
-                log "[tester-fix] Re-running ${TEST_CMD} to verify fix..."
-                eval "${TEST_CMD}" >> "$LOG_FILE" 2>&1 || _retest_exit=$?
+                log "[tester-fix] Re-running ${TEST_CMD:-true} to verify fix..."
+                eval "${TEST_CMD:-true}" >> "${LOG_FILE:-}" 2>&1 || _retest_exit=$?
                 if [[ "$_retest_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
                     test_dedup_record_pass
                 fi
@@ -188,5 +188,5 @@ _run_tester_inline_fix() {
     if [[ "$_fix_attempt" -ge "$_max_attempts" ]]; then
         error "Tester fix exhausted ${_max_attempts} attempt(s). Test failures remain."
     fi
-    warn "Resume with: $0 --start-at tester \"${TASK}\""
+    warn "Resume with: $0 --start-at tester \"${TASK:-}\""
 }

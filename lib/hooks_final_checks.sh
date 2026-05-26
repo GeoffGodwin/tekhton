@@ -54,12 +54,12 @@ run_final_checks() {
         warn "${ANALYZE_CMD}: ${ERROR_COUNT} error(s), ${WARN_COUNT} warning(s), ${INFO_COUNT} info(s)"
 
         # Run a jr coder cleanup pass for warnings/infos — senior coder for errors
-        CLEANUP_MODEL="$CLAUDE_JR_CODER_MODEL"
-        CLEANUP_TURNS="$JR_CODER_MAX_TURNS"
+        CLEANUP_MODEL="${CLAUDE_JR_CODER_MODEL:-claude-sonnet-4-6}"
+        CLEANUP_TURNS="${JR_CODER_MAX_TURNS:-40}"
         if [ "$ERROR_COUNT" -gt 0 ]; then
             warn "Errors found — escalating cleanup to senior coder."
-            CLEANUP_MODEL="$CLAUDE_CODER_MODEL"
-            CLEANUP_TURNS="$CODER_MAX_TURNS"
+            CLEANUP_MODEL="${CLAUDE_CODER_MODEL:-claude-sonnet-4-6}"
+            CLEANUP_TURNS="${CODER_MAX_TURNS:-80}"
         fi
 
         warn "Running analyze cleanup pass (${CLEANUP_MODEL})..."
@@ -105,7 +105,7 @@ run_final_checks() {
     fi
 
     echo
-    log "Running ${TEST_CMD}..."
+    log "Running ${TEST_CMD:-true}..."
     local test_output=""
     local test_exit=0
     if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
@@ -118,7 +118,7 @@ run_final_checks() {
         test_exit=0
     else
         set +e
-        test_output=$(run_op "Running final test check" bash -c "${TEST_CMD}" 2>&1)
+        test_output=$(run_op "Running final test check" bash -c "${TEST_CMD:-true}" 2>&1)
         test_exit=$?
         set -e
         if [[ "$test_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
@@ -129,7 +129,7 @@ run_final_checks() {
 
     if [ $test_exit -eq 0 ]; then
         print_run_summary
-        success "${TEST_CMD}: all passing"
+        success "${TEST_CMD:-true}: all passing"
     elif [[ "${FINAL_FIX_ENABLED:-true}" = "true" ]]; then
         # --- Auto-fix loop for test failures ---
         local max_fix_attempts="${FINAL_FIX_MAX_ATTEMPTS:-2}"
@@ -156,7 +156,7 @@ run_final_checks() {
 
         while [ $test_exit -ne 0 ] && [ "$fix_attempt" -lt "$max_fix_attempts" ]; do
             fix_attempt=$((fix_attempt + 1))
-            warn "${TEST_CMD}: failures detected. Spawning test fix agent (attempt ${fix_attempt}/${max_fix_attempts})..."
+            warn "${TEST_CMD:-true}: failures detected. Spawning test fix agent (attempt ${fix_attempt}/${max_fix_attempts})..."
 
             export TEST_FAILURES_CONTENT
             TEST_FAILURES_CONTENT=$(printf '%s' "$test_output" | tail -n 120)
@@ -183,13 +183,13 @@ run_final_checks() {
             # and run only one test — see #41 v2 diagnosis. Positional args
             # don't cross subprocess boundaries unless explicitly passed.
             local rerun_label="Re-running final test check"
-            local rerun_cmd="${TEST_CMD}"
+            local rerun_cmd="${TEST_CMD:-true}"
             if [[ -n "$failing_tests" ]]; then
                 rerun_label="Re-running ${failing_tests} (focused)"
-                rerun_cmd="${TEST_CMD} ${failing_tests}"
+                rerun_cmd="${TEST_CMD:-true} ${failing_tests}"
                 log "Re-running focused tests after test fix: ${failing_tests}"
             else
-                log "Re-running ${TEST_CMD} after test fix..."
+                log "Re-running ${TEST_CMD:-true} after test fix..."
             fi
             set +e
             test_output=$(run_op "$rerun_label" \
@@ -224,7 +224,7 @@ run_final_checks() {
         if [ $test_exit -eq 0 ] && [[ -n "$failing_tests" ]]; then
             log "[test-fix-focus] Focused tests pass — verifying full suite once."
             set +e
-            test_output=$(run_op "Full-suite regression check" bash -c "${TEST_CMD}" 2>&1)
+            test_output=$(run_op "Full-suite regression check" bash -c "${TEST_CMD:-true}" 2>&1)
             test_exit=$?
             set -e
             printf '%s\n' "$test_output" | tee -a "$log_file"
@@ -235,15 +235,15 @@ run_final_checks() {
 
         if [ $test_exit -eq 0 ]; then
             print_run_summary
-            success "${TEST_CMD}: all passing after ${fix_attempt} fix attempt(s)."
+            success "${TEST_CMD:-true}: all passing after ${fix_attempt} fix attempt(s)."
         else
             print_run_summary
-            error "${TEST_CMD}: failures remain after ${fix_attempt} fix attempt(s)."
+            error "${TEST_CMD:-true}: failures remain after ${fix_attempt} fix attempt(s)."
             final_result=1
         fi
     else
         print_run_summary
-        error "${TEST_CMD}: failures detected (see output above)."
+        error "${TEST_CMD:-true}: failures detected (see output above)."
         final_result=1
     fi
 

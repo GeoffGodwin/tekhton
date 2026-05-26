@@ -13,7 +13,7 @@ set -euo pipefail
 _run_auto_advance_chain() {
     while should_auto_advance 2>/dev/null; do
         local next_ms
-        next_ms=$(find_next_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}")
+        next_ms=$(find_next_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}")
         if [[ -z "$next_ms" ]]; then
             log "No more milestones to advance to."
             break
@@ -40,9 +40,9 @@ _run_auto_advance_chain() {
         _total=$(get_milestone_count "${PROJECT_RULES_FILE:-CLAUDE.md}")
         init_milestone_state "$next_ms" "$_total"
 
-        advance_milestone "$_CURRENT_MILESTONE" "$next_ms"
+        advance_milestone "${_CURRENT_MILESTONE:-}" "$next_ms"
         _CURRENT_MILESTONE="$next_ms"
-        TASK="Implement Milestone ${_CURRENT_MILESTONE}: ${next_title}"
+        TASK="Implement Milestone ${_CURRENT_MILESTONE:-}: ${next_title}"
         START_AT="coder"
 
         # M16: Reset per-milestone tracking — successful milestone is forward progress
@@ -52,7 +52,7 @@ _run_auto_advance_chain() {
         _ORCH_LAST_ACCEPTANCE_HASH=""
         _ORCH_IDENTICAL_ACCEPTANCE_COUNT=0
 
-        emit_milestone_metadata "$_CURRENT_MILESTONE" "in_progress" || true
+        emit_milestone_metadata "${_CURRENT_MILESTONE:-}" "in_progress" || true
         # Refresh dashboard milestones so the "in_progress" status is visible.
         # Guard: always true under tekhton.sh (dashboard_emitters.sh is sourced),
         # but kept for safety if this function is ever sourced standalone.
@@ -201,7 +201,7 @@ _choose_resume_start_at() {
     if [[ -n "${_ARCHIVED_REVIEWER_REPORT_PATH:-}" ]] && \
        [[ -f "${_ARCHIVED_REVIEWER_REPORT_PATH}" ]] && \
        [[ -n "${REVIEWER_REPORT_FILE:-}" ]]; then
-        if cp "${_ARCHIVED_REVIEWER_REPORT_PATH}" "${REVIEWER_REPORT_FILE}" 2>/dev/null; then
+        if cp "${_ARCHIVED_REVIEWER_REPORT_PATH}" "${REVIEWER_REPORT_FILE:-.tekhton/REVIEWER_REPORT.md}" 2>/dev/null; then
             log "[orchestrate] Restored archived REVIEWER_REPORT.md — resume with --start-at test."
             _RESUME_RESTORED_ARTIFACT="REVIEWER_REPORT.md from ${_ARCHIVED_REVIEWER_REPORT_PATH}"
             _RESUME_NEW_START_AT="test"
@@ -215,7 +215,7 @@ _choose_resume_start_at() {
     if [[ -n "${_ARCHIVED_TESTER_REPORT_PATH:-}" ]] && \
        [[ -f "${_ARCHIVED_TESTER_REPORT_PATH}" ]] && \
        [[ -n "${TESTER_REPORT_FILE:-}" ]]; then
-        if cp "${_ARCHIVED_TESTER_REPORT_PATH}" "${TESTER_REPORT_FILE}" 2>/dev/null; then
+        if cp "${_ARCHIVED_TESTER_REPORT_PATH}" "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" 2>/dev/null; then
             log "[orchestrate] Restored archived TESTER_REPORT.md — resume with --start-at tester."
             _RESUME_RESTORED_ARTIFACT="TESTER_REPORT.md from ${_ARCHIVED_TESTER_REPORT_PATH}"
             _RESUME_NEW_START_AT="tester"

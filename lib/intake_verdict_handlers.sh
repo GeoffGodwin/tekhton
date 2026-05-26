@@ -29,8 +29,8 @@ _intake_handle_tweaked() {
     tweaks=$(_intake_parse_tweaks "$report_file")
     export INTAKE_TWEAKS_BLOCK="$tweaks"
 
-    if [[ "$MILESTONE_MODE" == true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-        _intake_apply_tweak_milestone "$tweaks" "$_CURRENT_MILESTONE" || true
+    if [[ "${MILESTONE_MODE:-false}" == true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+        _intake_apply_tweak_milestone "$tweaks" "${_CURRENT_MILESTONE:-}" || true
     else
         _intake_apply_tweak_task "$tweaks" || true
     fi
@@ -53,7 +53,7 @@ _intake_handle_tweaked() {
         if [[ ! "$choice" =~ ^[Yy]$ ]]; then
             warn "Tweaks rejected by user. Saving state."
             write_pipeline_state "intake" "tweaks_rejected" \
-                "--milestone --start-at coder" "$TASK" \
+                "--milestone --start-at coder" "${TASK:-}" \
                 "Intake tweaks rejected — edit milestone and re-run" \
                 "${_CURRENT_MILESTONE:-}"
             exit 1
@@ -73,12 +73,12 @@ _intake_handle_split_recommended() {
        && [[ "${MILESTONE_MODE:-false}" == true ]] \
        && [[ -n "${_CURRENT_MILESTONE:-}" ]] \
        && declare -f split_milestone &>/dev/null; then
-        log "Intake: auto-splitting milestone ${_CURRENT_MILESTONE}..."
-        if split_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"; then
+        log "Intake: auto-splitting milestone ${_CURRENT_MILESTONE:-}..."
+        if split_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"; then
             success "Intake: milestone split successfully."
             # Switch to first sub-milestone
             if declare -f _switch_to_sub_milestone &>/dev/null; then
-                _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
+                _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
             fi
             return 0
         else
@@ -105,9 +105,9 @@ _intake_handle_split_recommended() {
     case "$choice" in
         s|S)
             if declare -f split_milestone &>/dev/null && [[ "${MILESTONE_MODE:-false}" == true ]]; then
-                split_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}" || true
+                split_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}" || true
                 if declare -f _switch_to_sub_milestone &>/dev/null; then
-                    _switch_to_sub_milestone "$_CURRENT_MILESTONE" "${PROJECT_RULES_FILE:-CLAUDE.md}"
+                    _switch_to_sub_milestone "${_CURRENT_MILESTONE:-}" "${PROJECT_RULES_FILE:-CLAUDE.md}"
                 fi
             else
                 warn "Split not available (not in milestone mode or split_milestone not loaded)."
@@ -116,7 +116,7 @@ _intake_handle_split_recommended() {
         q|Q)
             warn "Pipeline paused by user."
             write_pipeline_state "intake" "split_declined" \
-                "--milestone --start-at coder" "$TASK" \
+                "--milestone --start-at coder" "${TASK:-}" \
                 "Intake recommended split — user chose to quit" \
                 "${_CURRENT_MILESTONE:-}"
             exit 1
@@ -142,7 +142,7 @@ _intake_handle_needs_clarity() {
 
     if [[ -n "$questions" ]]; then
         # Write questions to ${CLARIFICATIONS_FILE} in structured ## Q: format
-        local clarify_file="${PROJECT_DIR}/${CLARIFICATIONS_FILE}"
+        local clarify_file="${PROJECT_DIR}/${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}"
         {
             echo ""
             echo "# Intake Clarifications — $(date '+%Y-%m-%d %H:%M:%S')"
@@ -162,11 +162,11 @@ _intake_handle_needs_clarity() {
         # In --complete (autonomous) mode, never attempt interactive
         # clarification — save state so the human can answer offline.
         if [[ "${COMPLETE_MODE:-false}" == "true" ]]; then
-            warn "Intake: questions written to ${CLARIFICATIONS_FILE}."
+            warn "Intake: questions written to ${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md}."
             warn "Cannot collect answers in --complete mode (autonomous). Saving state."
             write_pipeline_state "intake" "needs_clarity" \
-                "--milestone --start-at coder" "$TASK" \
-                "Intake needs human clarification — answer ${CLARIFICATIONS_FILE} and re-run" \
+                "--milestone --start-at coder" "${TASK:-}" \
+                "Intake needs human clarification — answer ${CLARIFICATIONS_FILE:-.tekhton/CLARIFICATIONS.md} and re-run" \
                 "${_CURRENT_MILESTONE:-}"
             exit 1
         fi
@@ -176,7 +176,7 @@ _intake_handle_needs_clarity() {
         # temp files; we synthesise a tiny intake report
         # under TEKHTON_SESSION_DIR so `tekhton clarify handle` can parse
         # it the same way it parses a coder/reviewer report.
-        local _intake_report="${TEKHTON_SESSION_DIR}/intake_clarify_report.md"
+        local _intake_report="${TEKHTON_SESSION_DIR:-}/intake_clarify_report.md"
         {
             echo "# Intake Clarifications"
             echo ""
@@ -193,7 +193,7 @@ _intake_handle_needs_clarity() {
         else
             warn "Clarification aborted. Saving state."
             write_pipeline_state "intake" "needs_clarity" \
-                "--milestone --start-at coder" "$TASK" \
+                "--milestone --start-at coder" "${TASK:-}" \
                 "Intake needs human clarification" \
                 "${_CURRENT_MILESTONE:-}"
             exit 1

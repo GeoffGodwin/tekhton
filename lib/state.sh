@@ -8,20 +8,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/state_helpers.sh"
 
 _build_resume_flag() {
     local start_at="${1:-coder}" flag=""
-    [[ "${HUMAN_MODE:-false}" = "true" ]] && flag="--human${HUMAN_NOTES_TAG:+ $HUMAN_NOTES_TAG}"
+    [[ "${HUMAN_MODE:-false}" = "true" ]] && flag="--human${HUMAN_NOTES_TAG:+ ${HUMAN_NOTES_TAG:-}}"
     [[ -z "$flag" && "${MILESTONE_MODE:-false}" = "true" ]] && flag="--milestone"
     echo "${flag:+$flag }--start-at $start_at"
 }
 
 write_pipeline_state() {
     _state_write_snapshot "$@" || return $?
-    log "Pipeline state saved → ${PIPELINE_STATE_FILE}"
+    log "Pipeline state saved → ${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}"
 }
 
 read_pipeline_state_field() {
     local path field
     if [[ $# -ge 2 ]]; then path="$1"; field="$2"
-    else                    path="$PIPELINE_STATE_FILE"; field="$1"; fi
+    else                    path="${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}"; field="$1"; fi
     [[ -f "$path" ]] || return 0
     if command -v tekhton >/dev/null 2>&1; then
         tekhton state read --path "$path" --field "$field" 2>/dev/null || true
@@ -32,9 +32,9 @@ read_pipeline_state_field() {
 
 clear_pipeline_state() {
     if command -v tekhton >/dev/null 2>&1; then
-        tekhton state clear --path "$PIPELINE_STATE_FILE" 2>/dev/null || true
-    elif [[ -f "$PIPELINE_STATE_FILE" ]]; then
-        rm -f "$PIPELINE_STATE_FILE" 2>/dev/null || true
+        tekhton state clear --path "${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}" 2>/dev/null || true
+    elif [[ -f "${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}" ]]; then
+        rm -f "${PIPELINE_STATE_FILE:-.claude/PIPELINE_STATE.md}" 2>/dev/null || true
     fi
     local fctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
     [[ -f "$fctx" ]] && rm -f "$fctx" 2>/dev/null

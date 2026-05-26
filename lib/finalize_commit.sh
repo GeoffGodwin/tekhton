@@ -95,7 +95,7 @@ _run_commit_bookkeeping() {
     "$bin" commit-bookkeeping \
         --project-dir "${PROJECT_DIR:-$(pwd)}" \
         --home "${TEKHTON_HOME:-}" \
-        --milestone "${_CURRENT_MILESTONE}" \
+        --milestone "${_CURRENT_MILESTONE:-}" \
         --milestone-mode "true" \
         --milestone-disposition "${_CACHED_DISPOSITION:-COMPLETE_AND_CONTINUE}" \
         --exit-code 0 \
@@ -113,7 +113,7 @@ _tag_milestone_if_complete() {
     [[ -z "${_CURRENT_MILESTONE:-}" ]] && return 0
     local disposition="${_CACHED_DISPOSITION:-}"
     if [[ "$disposition" == COMPLETE_AND_CONTINUE ]] || [[ "$disposition" == COMPLETE_AND_WAIT ]]; then
-        tag_milestone_complete "$_CURRENT_MILESTONE"
+        tag_milestone_complete "${_CURRENT_MILESTONE:-}"
     fi
 }
 
@@ -165,8 +165,8 @@ _hook_commit() {
     # _hook_clear_state may have already deleted MILESTONE_STATE.md)
     local ms_num=""
     local ms_disposition=""
-    if [[ "$MILESTONE_MODE" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
-        ms_num="$_CURRENT_MILESTONE"
+    if [[ "${MILESTONE_MODE:-false}" = true ]] && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
+        ms_num="${_CURRENT_MILESTONE:-}"
         ms_disposition="${_CACHED_DISPOSITION:-}"
     fi
 
@@ -176,7 +176,7 @@ _hook_commit() {
     fi
 
     # Generate commit message
-    COMMIT_MSG=$(generate_commit_message "$TASK" "$ms_num" "$ms_disposition" || echo "feat: ${TASK}")
+    COMMIT_MSG=$(generate_commit_message "${TASK:-}" "$ms_num" "$ms_disposition" || echo "feat: ${TASK:-}")
 
     # Print completion banner. Recap fields route through out_summary_kv so
     # the TUI hold view renders them in a dedicated summary block rather than

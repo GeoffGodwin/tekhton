@@ -38,7 +38,7 @@ _hook_project_version_bump() {
         && [[ -n "${_CURRENT_MILESTONE:-}" ]]; then
         case "${_CACHED_DISPOSITION:-}" in
             COMPLETE_AND_CONTINUE|COMPLETE_AND_WAIT)
-                hint="milestone:${_CURRENT_MILESTONE}"
+                hint="milestone:${_CURRENT_MILESTONE:-}"
                 ;;
             *)
                 hint="patch"

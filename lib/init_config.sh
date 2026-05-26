@@ -62,8 +62,8 @@ _generate_smart_config() {
 
     # Auto-detect DESIGN_FILE
     local design_file=""
-    if [[ -n "${DESIGN_FILE:-}" ]] && [[ -f "${project_dir}/${DESIGN_FILE}" ]]; then
-        design_file="${DESIGN_FILE}"
+    if [[ -n "${DESIGN_FILE:-}" ]] && [[ -f "${project_dir}/${DESIGN_FILE:-.tekhton/DESIGN.md}" ]]; then
+        design_file="${DESIGN_FILE:-.tekhton/DESIGN.md}"
     elif [[ -f "${project_dir}/.tekhton/DESIGN.md" ]]; then
         design_file=".tekhton/DESIGN.md"
     elif [[ -f "${project_dir}/DESIGN.md" ]]; then

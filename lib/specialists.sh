@@ -77,16 +77,16 @@ run_specialist_reviews() {
     log "Running ${#specialists[@]} specialist review(s)..."
 
     # Archive any previous specialist report
-    if [ -f "${SPECIALIST_REPORT_FILE}" ]; then
+    if [ -f "${SPECIALIST_REPORT_FILE:-.tekhton/SPECIALIST_REPORT.md}" ]; then
         if [ -n "${LOG_DIR:-}" ] && [ -n "${TIMESTAMP:-}" ]; then
-            mv "${SPECIALIST_REPORT_FILE}" "${LOG_DIR}/${TIMESTAMP}_prev_$(basename "${SPECIALIST_REPORT_FILE}")" 2>/dev/null || true
+            mv "${SPECIALIST_REPORT_FILE:-.tekhton/SPECIALIST_REPORT.md}" "${LOG_DIR:-.claude/logs}/${TIMESTAMP:-}_prev_$(basename "${SPECIALIST_REPORT_FILE:-.tekhton/SPECIALIST_REPORT.md}")" 2>/dev/null || true
         else
-            rm -f "${SPECIALIST_REPORT_FILE}"
+            rm -f "${SPECIALIST_REPORT_FILE:-.tekhton/SPECIALIST_REPORT.md}"
         fi
     fi
 
     # Initialize combined report
-    cat > "${SPECIALIST_REPORT_FILE}" << 'EOF'
+    cat > "${SPECIALIST_REPORT_FILE:-.tekhton/SPECIALIST_REPORT.md}" << 'EOF'
 # Specialist Review Report
 
 EOF
@@ -108,8 +108,8 @@ EOF
 
     # Populate UI_FINDINGS_BLOCK for downstream reviewer prompt injection
     export UI_FINDINGS_BLOCK=""
-    if [[ -f "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md" ]]; then
-        UI_FINDINGS_BLOCK=$(cat "${TEKHTON_DIR}/SPECIALIST_UI_FINDINGS.md")
+    if [[ -f "${TEKHTON_DIR:-.tekhton}/SPECIALIST_UI_FINDINGS.md" ]]; then
+        UI_FINDINGS_BLOCK=$(cat "${TEKHTON_DIR:-.tekhton}/SPECIALIST_UI_FINDINGS.md")
     fi
 
     if [ "$has_blockers" = true ]; then
@@ -133,7 +133,7 @@ _run_single_specialist() {
 
     # Export specialist name and findings file path for prompt rendering
     export SPECIALIST_NAME="$spec_name"
-    export SPECIALIST_FINDINGS_FILE="${TEKHTON_DIR}/SPECIALIST_${spec_name^^}_FINDINGS.md"
+    export SPECIALIST_FINDINGS_FILE="${TEKHTON_DIR:-.tekhton}/SPECIALIST_${spec_name^^}_FINDINGS.md"
 
     local spec_prompt
     spec_prompt=$(render_prompt "$prompt_template")
@@ -144,7 +144,7 @@ _run_single_specialist() {
         "$model" \
         "$max_turns" \
         "$spec_prompt" \
-        "$LOG_FILE" \
+        "${LOG_FILE:-}" \
         "$AGENT_TOOLS_SPECIALIST"
     # Record specialist sub-step (M66)
     if declare -p _STAGE_DURATION &>/dev/null; then
@@ -158,18 +158,18 @@ _run_single_specialist() {
     fi
 
     # Append to combined report
-    if [ -f "${SPECIALIST_REPORT_FILE}" ]; then
+    if [ -f "${SPECIALIST_REPORT_FILE:-.tekhton/SPECIALIST_REPORT.md}" ]; then
         {
             echo "## ${spec_name} Review"
             echo ""
             # Extract findings from the specialist's output file
-            if [ -f "${TEKHTON_DIR}/SPECIALIST_${spec_name^^}_FINDINGS.md" ]; then
-                cat "${TEKHTON_DIR}/SPECIALIST_${spec_name^^}_FINDINGS.md"
+            if [ -f "${TEKHTON_DIR:-.tekhton}/SPECIALIST_${spec_name^^}_FINDINGS.md" ]; then
+                cat "${TEKHTON_DIR:-.tekhton}/SPECIALIST_${spec_name^^}_FINDINGS.md"
             else
                 echo "(No structured findings file produced)"
             fi
             echo ""
-        } >> "${SPECIALIST_REPORT_FILE}"
+        } >> "${SPECIALIST_REPORT_FILE:-.tekhton/SPECIALIST_REPORT.md}"
     fi
 
     log "[Specialist ${spec_name}] Review complete."
@@ -193,7 +193,7 @@ _resolve_specialist_config() {
 
     if [ -n "${!custom_prompt_var:-}" ]; then
         # Custom specialist
-        _out_model="${!custom_model_var:-${CLAUDE_STANDARD_MODEL}}"
+        _out_model="${!custom_model_var:-${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
         _out_turns="${!custom_turns_var:-8}"
         _out_prompt="${!custom_prompt_var}"
         return 0
@@ -203,7 +203,7 @@ _resolve_specialist_config() {
     local model_var="SPECIALIST_${upper_name}_MODEL"
     local turns_var="SPECIALIST_${upper_name}_MAX_TURNS"
 
-    _out_model="${!model_var:-${CLAUDE_STANDARD_MODEL}}"
+    _out_model="${!model_var:-${CLAUDE_STANDARD_MODEL:-claude-sonnet-4-6}}"
     _out_turns="${!turns_var:-8}"
     _out_prompt="specialist_${spec_name}"
 }

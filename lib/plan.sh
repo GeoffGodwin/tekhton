@@ -84,8 +84,8 @@ _assert_design_file_usable() {
         error "DESIGN_FILE is empty. Check pipeline.conf — the value should point to a markdown file (default: .tekhton/DESIGN.md)."
         return 1
     fi
-    if [[ "${DESIGN_FILE}" == */ ]]; then
-        error "DESIGN_FILE ends in '/' (directory path, not a file): ${DESIGN_FILE}"
+    if [[ "${DESIGN_FILE:-.tekhton/DESIGN.md}" == */ ]]; then
+        error "DESIGN_FILE ends in '/' (directory path, not a file): ${DESIGN_FILE:-.tekhton/DESIGN.md}"
         return 1
     fi
     return 0
@@ -199,7 +199,7 @@ run_plan() {
     fi
 
     header "Tekhton — Planning Phase"
-    log "This will guide you through creating ${DESIGN_FILE} and CLAUDE.md for your project."
+    log "This will guide you through creating ${DESIGN_FILE:-.tekhton/DESIGN.md} and CLAUDE.md for your project."
     echo
 
     # Handle --answers: import file mode

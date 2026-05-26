@@ -203,9 +203,9 @@ perform_update() {
 
     # Check version pin
     if [[ -n "${TEKHTON_PIN_VERSION:-}" ]]; then
-        if _is_valid_semver "$TEKHTON_PIN_VERSION"; then
-            if _semver_lt "$TEKHTON_PIN_VERSION" "$_LATEST_VERSION"; then
-                echo "Version ${_LATEST_VERSION} available, but pinned to ${TEKHTON_PIN_VERSION}."
+        if _is_valid_semver "${TEKHTON_PIN_VERSION:-}"; then
+            if _semver_lt "${TEKHTON_PIN_VERSION:-}" "$_LATEST_VERSION"; then
+                echo "Version ${_LATEST_VERSION} available, but pinned to ${TEKHTON_PIN_VERSION:-}."
                 echo "Remove TEKHTON_PIN_VERSION from pipeline.conf to allow upgrade."
                 return 0
             fi

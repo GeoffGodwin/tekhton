@@ -71,7 +71,7 @@ _run_plan_with_answers_file() {
 
     # Synthesize ${DESIGN_FILE}
     echo
-    log "Synthesizing ${DESIGN_FILE} from imported answers..."
+    log "Synthesizing ${DESIGN_FILE:-.tekhton/DESIGN.md} from imported answers..."
     echo
     run_plan_interview || return 1
 

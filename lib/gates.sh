@@ -47,7 +47,7 @@ _gate_check_timeout() {
     if [[ "$elapsed" -ge "$gate_timeout" ]]; then
         warn "Build gate TIMED OUT after ${gate_timeout}s (${stage_label})."
         warn "This is a safety timeout — the build gate took too long."
-        cat > "${BUILD_ERRORS_FILE}" << EOF
+        cat > "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" << EOF
 # Build Errors — $(date '+%Y-%m-%d %H:%M:%S')
 ## Stage
 ${stage_label}
@@ -91,8 +91,8 @@ run_build_gate() {
     gate_start=$(date +%s)
 
     # Guarantee a clean slate — remove stale artifacts from previous runs
-    rm -f "${BUILD_RAW_ERRORS_FILE}"
-    rm -f "${BUILD_ERRORS_FILE}"
+    rm -f "${BUILD_RAW_ERRORS_FILE:-.tekhton/BUILD_RAW_ERRORS.txt}"
+    rm -f "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
 
     # Reset remediation state for this gate invocation (M54)
     if command -v reset_remediation_state &>/dev/null; then
@@ -112,7 +112,7 @@ run_build_gate() {
     _gate_check_timeout "$stage_label" "$gate_start" "$gate_timeout" || { _phase_end "build_gate"; return 1; }
 
     # --- Phase 2: Compile check (BUILD_CHECK_CMD) ---
-    if [ -n "${BUILD_CHECK_CMD}" ]; then
+    if [ -n "${BUILD_CHECK_CMD:-}" ]; then
         if ! _gate_phase_compile "$stage_label" "$gate_start" "$gate_timeout"; then
             _phase_end "build_gate"
             return 1
@@ -125,9 +125,9 @@ run_build_gate() {
     # --- Phase 3: Dependency constraint validation (P5) ---
     # Runs the validation_command from the constraint manifest, if configured.
     # This is deterministic enforcement — no LLM judgment needed.
-    if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE}" ]; then
+    if [ -n "${DEPENDENCY_CONSTRAINTS_FILE:-}" ] && [ -f "${DEPENDENCY_CONSTRAINTS_FILE:-}" ]; then
         local validation_cmd
-        validation_cmd=$(grep "^validation_command:" "${DEPENDENCY_CONSTRAINTS_FILE}" \
+        validation_cmd=$(grep "^validation_command:" "${DEPENDENCY_CONSTRAINTS_FILE:-}" \
             | sed 's/^validation_command: *//' | tr -d '"'"'" 2>/dev/null || true)
 
         if [ -n "$validation_cmd" ]; then
@@ -156,7 +156,7 @@ run_build_gate() {
                 echo "$constraint_output"
 
                 # Append or create "${BUILD_ERRORS_FILE}"
-                cat >> "${BUILD_ERRORS_FILE}" << EOF
+                cat >> "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" << EOF
 
 ## Dependency Constraint Violations
 \`\`\`
@@ -192,15 +192,15 @@ EOF
             warn "Build gate FAILED (${stage_label}) — UI validation detected rendering issues."
             # Append UI validation report to "${BUILD_ERRORS_FILE}" so the build-fix
             # agent has full context about rendering failures.
-            if [[ -f "${UI_VALIDATION_REPORT_FILE}" ]]; then
+            if [[ -f "${UI_VALIDATION_REPORT_FILE:-.tekhton/UI_VALIDATION_REPORT.md}" ]]; then
                 {
                     echo ""
                     echo "## UI Validation Failures"
                     echo "The UI validation gate detected rendering issues."
                     echo "Fix these before the build gate can pass."
                     echo ""
-                    cat "${UI_VALIDATION_REPORT_FILE}"
-                } >> "${BUILD_ERRORS_FILE}"
+                    cat "${UI_VALIDATION_REPORT_FILE:-.tekhton/UI_VALIDATION_REPORT.md}"
+                } >> "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
             fi
             _phase_end "build_gate"
             return 1
@@ -209,8 +209,8 @@ EOF
 
     _phase_end "build_gate"
     log "Build gate PASSED (${stage_label})"
-    [ -f "${BUILD_ERRORS_FILE}" ] && rm "${BUILD_ERRORS_FILE}"
-    [ -f "${UI_TEST_ERRORS_FILE}" ] && rm "${UI_TEST_ERRORS_FILE}"
+    [ -f "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}" ] && rm "${BUILD_ERRORS_FILE:-.tekhton/BUILD_ERRORS.md}"
+    [ -f "${UI_TEST_ERRORS_FILE:-.tekhton/UI_TEST_ERRORS.md}" ] && rm "${UI_TEST_ERRORS_FILE:-.tekhton/UI_TEST_ERRORS.md}"
     return 0
 }
 

@@ -40,11 +40,11 @@ _print_action_items() {
     local item_msgs=() item_sevs=()
 
     # Check for tester bugs
-    if [[ -f "${TESTER_REPORT_FILE}" ]] && \
-       awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' "${TESTER_REPORT_FILE}" 2>/dev/null; then
+    if [[ -f "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" ]] && \
+       awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{exit 1} f && /^- /{found=1} END{exit !found}' "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}" 2>/dev/null; then
         local bug_count
-        bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' "${TESTER_REPORT_FILE}")
-        item_msgs+=("${TESTER_REPORT_FILE} — ${bug_count} bug(s) found (see ## Bugs Found)")
+        bug_count=$(awk '/^## Bugs Found/{f=1;next} /^## /{f=0} f && /^-?[[:space:]]*[Nn]one/{print 0; exit} f && /^- /{c++} END{print c+0}' "${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md}")
+        item_msgs+=("${TESTER_REPORT_FILE:-.tekhton/TESTER_REPORT.md} — ${bug_count} bug(s) found (see ## Bugs Found)")
         item_sevs+=("warning")
     fi
 
@@ -58,7 +58,7 @@ _print_action_items() {
     if has_human_actions 2>/dev/null; then
         local ha_count
         ha_count=$(count_human_actions)
-        item_msgs+=("${HUMAN_ACTION_FILE} — ${ha_count} item(s) needing manual work")
+        item_msgs+=("${HUMAN_ACTION_FILE:-.tekhton/HUMAN_ACTION_REQUIRED.md} — ${ha_count} item(s) needing manual work")
         item_sevs+=("warning")
     fi
 
@@ -73,17 +73,17 @@ _print_action_items() {
                 "${ACTION_ITEMS_CRITICAL_THRESHOLD:-10}")
             case "$nb_severity" in
                 critical)
-                    item_msgs+=("${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)")
+                    item_msgs+=("${NON_BLOCKING_LOG_FILE:-.tekhton/NON_BLOCKING_LOG.md} — ${nb_count} accumulated observation(s)")
                     item_sevs+=("critical")
                     item_msgs+=("  → Suggested: tekhton --fix-nonblockers --complete")
                     item_sevs+=("critical")
                     ;;
                 warning)
-                    item_msgs+=("${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)")
+                    item_msgs+=("${NON_BLOCKING_LOG_FILE:-.tekhton/NON_BLOCKING_LOG.md} — ${nb_count} accumulated observation(s)")
                     item_sevs+=("warning")
                     ;;
                 *)
-                    item_msgs+=("${NON_BLOCKING_LOG_FILE} — ${nb_count} accumulated observation(s)")
+                    item_msgs+=("${NON_BLOCKING_LOG_FILE:-.tekhton/NON_BLOCKING_LOG.md} — ${nb_count} accumulated observation(s)")
                     item_sevs+=("normal")
                     ;;
             esac
@@ -95,13 +95,13 @@ _print_action_items() {
         local drift_count
         drift_count=$(count_drift_observations 2>/dev/null || echo 0)
         if [[ "$drift_count" -gt 0 ]]; then
-            item_msgs+=("${DRIFT_LOG_FILE} — ${drift_count} unresolved drift observation(s)")
+            item_msgs+=("${DRIFT_LOG_FILE:-.tekhton/DRIFT_LOG.md} — ${drift_count} unresolved drift observation(s)")
             item_sevs+=("normal")
         fi
     fi
 
     # Check for unchecked human notes (M25) with progressive severity
-    if command -v get_notes_summary &>/dev/null && [[ -f "${HUMAN_NOTES_FILE}" ]]; then
+    if command -v get_notes_summary &>/dev/null && [[ -f "${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md}" ]]; then
         local notes_summary
         notes_summary=$(get_notes_summary 2>/dev/null || echo "0|0|0|0|0|0")
         local notes_unchecked
@@ -115,17 +115,17 @@ _print_action_items() {
                 "${HUMAN_NOTES_CRITICAL_THRESHOLD:-20}")
             case "$notes_severity" in
                 critical)
-                    item_msgs+=("${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining")
+                    item_msgs+=("${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md} — ${notes_unchecked} item(s) remaining")
                     item_sevs+=("critical")
                     item_msgs+=("  → Suggested: tekhton --human --complete")
                     item_sevs+=("critical")
                     ;;
                 warning)
-                    item_msgs+=("${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining")
+                    item_msgs+=("${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md} — ${notes_unchecked} item(s) remaining")
                     item_sevs+=("warning")
                     ;;
                 *)
-                    item_msgs+=("${HUMAN_NOTES_FILE} — ${notes_unchecked} item(s) remaining")
+                    item_msgs+=("${HUMAN_NOTES_FILE:-.tekhton/HUMAN_NOTES.md} — ${notes_unchecked} item(s) remaining")
                     item_sevs+=("normal")
                     ;;
             esac

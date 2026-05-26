@@ -38,10 +38,10 @@ source "${TEKHTON_HOME:-.}/lib/init_synthesize_ui.sh"
 # Returns: 0 on success, 1 if $PROJECT_INDEX_FILE is missing
 _assemble_synthesis_context() {
     local project_dir="$1"
-    local index_file="${project_dir}/${PROJECT_INDEX_FILE}"
+    local index_file="${project_dir}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
 
     if [[ ! -f "$index_file" ]] && [[ ! -f "${project_dir}/.claude/index/meta.json" ]]; then
-        error "${PROJECT_INDEX_FILE} not found at ${index_file}"
+        error "${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md} not found at ${index_file}"
         error "Run 'tekhton --init' first to generate the project index."
         return 1
     fi
@@ -90,10 +90,10 @@ _assemble_synthesis_context() {
 
     # Load $MERGE_CONTEXT_FILE if present (from artifact merge — Milestone 11)
     export MERGE_CONTEXT=""
-    local _mcf="${project_dir}/${MERGE_CONTEXT_FILE}"
+    local _mcf="${project_dir}/${MERGE_CONTEXT_FILE:-.tekhton/MERGE_CONTEXT.md}"
     if [[ -f "${_mcf}" ]]; then
         MERGE_CONTEXT=$(cat "${_mcf}")
-        log "Loaded ${MERGE_CONTEXT_FILE} ($(echo "$MERGE_CONTEXT" | wc -c | tr -d '[:space:]') chars)"
+        log "Loaded ${MERGE_CONTEXT_FILE:-.tekhton/MERGE_CONTEXT.md} ($(echo "$MERGE_CONTEXT" | wc -c | tr -d '[:space:]') chars)"
     fi
 
     # Milestone 12: Doc quality score for synthesis calibration
@@ -196,7 +196,7 @@ _check_synthesis_completeness() {
     section_count=$(grep -c '^## ' "$design_file" || true)
 
     if [[ "$section_count" -lt 5 ]]; then
-        warn "${DESIGN_FILE} has only ${section_count} sections — running re-synthesis pass"
+        warn "${DESIGN_FILE:-.tekhton/DESIGN.md} has only ${section_count} sections — running re-synthesis pass"
     fi
 
     # Check individual section depth regardless of total section count
@@ -228,7 +228,7 @@ _check_synthesis_completeness() {
         # Clear after use
         unset PLAN_INCOMPLETE_SECTIONS
     else
-        success "${DESIGN_FILE} has ${section_count} sections — completeness OK."
+        success "${DESIGN_FILE:-.tekhton/DESIGN.md} has ${section_count} sections — completeness OK."
     fi
 
     return 0

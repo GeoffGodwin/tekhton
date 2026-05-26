@@ -15,7 +15,7 @@ _extract_specialist_blockers() {
     local spec_name="$1"
     local upper_name
     upper_name=$(echo "$spec_name" | tr '[:lower:]' '[:upper:]')
-    local findings_file="${TEKHTON_DIR}/SPECIALIST_${upper_name}_FINDINGS.md"
+    local findings_file="${TEKHTON_DIR:-.tekhton}/SPECIALIST_${upper_name}_FINDINGS.md"
 
     if [ ! -f "$findings_file" ]; then
         return
@@ -30,7 +30,7 @@ _append_specialist_notes() {
     local spec_name="$1"
     local upper_name
     upper_name=$(echo "$spec_name" | tr '[:lower:]' '[:upper:]')
-    local findings_file="${TEKHTON_DIR}/SPECIALIST_${upper_name}_FINDINGS.md"
+    local findings_file="${TEKHTON_DIR:-.tekhton}/SPECIALIST_${upper_name}_FINDINGS.md"
 
     if [ ! -f "$findings_file" ]; then
         return
@@ -46,7 +46,7 @@ _append_specialist_notes() {
     # m25: _ensure_nonblocking_log ported to internal/drift.NonBlocking.EnsureFile.
     # Touch the file with the preamble structure when missing — the same shape
     # the Go side writes, so future Go-side reads parse identically.
-    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE}"
+    local nb_file="${PROJECT_DIR}/${NON_BLOCKING_LOG_FILE:-.tekhton/NON_BLOCKING_LOG.md}"
     if [[ ! -f "$nb_file" ]]; then
         mkdir -p -- "$(dirname -- "$nb_file")"
         cat > "$nb_file" <<'NBEOF'
@@ -91,7 +91,7 @@ NBEOF
     mv "$tmpfile" "$nb_file"
     local note_count
     note_count=$(echo "$notes" | grep -c "\[NOTE\]")
-    log "[Specialist ${spec_name}] ${note_count} note(s) appended to ${NON_BLOCKING_LOG_FILE}."
+    log "[Specialist ${spec_name}] ${note_count} note(s) appended to ${NON_BLOCKING_LOG_FILE:-.tekhton/NON_BLOCKING_LOG.md}."
 }
 
 # =============================================================================

@@ -29,8 +29,8 @@ _try_preflight_fix() {
 
     # Gather changed files for context
     local _pf_changed_files=""
-    if [[ -f "${CODER_SUMMARY_FILE}" ]]; then
-        _pf_changed_files=$(sed -n '/^## Files/,/^## /p' "${CODER_SUMMARY_FILE}" | grep -E '^\s*[-*]' | head -30 || true)
+    if [[ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]]; then
+        _pf_changed_files=$(sed -n '/^## Files/,/^## /p' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" | grep -E '^\s*[-*]' | head -30 || true)
     fi
     if [[ -z "$_pf_changed_files" ]]; then
         _pf_changed_files=$(git diff --name-only HEAD 2>/dev/null | head -30 || true)
@@ -68,11 +68,11 @@ _try_preflight_fix() {
             "$_pf_model" \
             "$_pf_turns" \
             "$_pf_prompt" \
-            "$LOG_FILE" \
+            "${LOG_FILE:-}" \
             "$AGENT_TOOLS_BUILD_FIX"
 
         # Shell independently runs TEST_CMD — agent never sees this output
-        log "Pre-finalization fix: shell verifying with ${TEST_CMD}..."
+        log "Pre-finalization fix: shell verifying with ${TEST_CMD:-true}..."
         local _pf_verify_exit=0
         local _pf_verify_output=""
         if declare -f test_dedup_can_skip &>/dev/null && test_dedup_can_skip; then
@@ -84,12 +84,12 @@ _try_preflight_fix() {
             _pf_verify_output="[dedup] Cached pass — no files changed since last successful test run"
             _pf_verify_exit=0
         else
-            _pf_verify_output=$(run_op "Running pre-run test check" bash -c "${TEST_CMD}" 2>&1) || _pf_verify_exit=$?
+            _pf_verify_output=$(run_op "Running pre-run test check" bash -c "${TEST_CMD:-true}" 2>&1) || _pf_verify_exit=$?
             if [[ "$_pf_verify_exit" -eq 0 ]] && declare -f test_dedup_record_pass &>/dev/null; then
                 test_dedup_record_pass
             fi
         fi
-        printf '%s\n' "$_pf_verify_output" >> "$LOG_FILE"
+        printf '%s\n' "$_pf_verify_output" >> "${LOG_FILE:-}"
 
         if [[ "$_pf_verify_exit" -eq 0 ]]; then
             success "Pre-finalization fix: tests pass after attempt ${_pf_attempt}."

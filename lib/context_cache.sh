@@ -63,7 +63,7 @@ preload_context_cache() {
     export _CACHED_ARCHITECTURE_RAW=""
     if [[ -f "${ARCHITECTURE_FILE:-}" ]]; then
         local _raw
-        _raw=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
+        _raw=$(_safe_read_file "${ARCHITECTURE_FILE:-}" "ARCHITECTURE_FILE")
         if [[ -n "$_raw" ]]; then
             _CACHED_ARCHITECTURE_RAW="$_raw"
             _CACHED_ARCHITECTURE_CONTENT=$(_wrap_file_content "ARCHITECTURE" "$_raw")
@@ -143,7 +143,7 @@ _get_cached_architecture_content() {
         echo "$_CACHED_ARCHITECTURE_CONTENT"
     elif [[ -f "${ARCHITECTURE_FILE:-}" ]]; then
         local _raw
-        _raw=$(_safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE")
+        _raw=$(_safe_read_file "${ARCHITECTURE_FILE:-}" "ARCHITECTURE_FILE")
         if [[ -n "$_raw" ]]; then
             _wrap_file_content "ARCHITECTURE" "$_raw"
         fi
@@ -156,7 +156,7 @@ _get_cached_architecture_raw() {
     if [[ "${_CONTEXT_CACHE_LOADED:-false}" == "true" ]]; then
         echo "$_CACHED_ARCHITECTURE_RAW"
     elif [[ -f "${ARCHITECTURE_FILE:-}" ]]; then
-        _safe_read_file "${ARCHITECTURE_FILE}" "ARCHITECTURE_FILE"
+        _safe_read_file "${ARCHITECTURE_FILE:-}" "ARCHITECTURE_FILE"
     fi
 }
 

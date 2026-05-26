@@ -105,7 +105,7 @@ draft_milestones_validate_output() {
 draft_milestones_write_manifest() {
     local id_list="$1"
     local group="${2:-devx}"
-    local manifest_path="${PROJECT_DIR}/${MILESTONE_DIR}/${MILESTONE_MANIFEST}"
+    local manifest_path="${PROJECT_DIR}/${MILESTONE_DIR:-.claude/milestones}/${MILESTONE_MANIFEST:-MANIFEST.cfg}"
 
     if [[ ! -f "$manifest_path" ]]; then
         error "MANIFEST.cfg not found at ${manifest_path}"
@@ -137,7 +137,7 @@ draft_milestones_write_manifest() {
 
         # Find the milestone file to extract title
         local ms_file
-        ms_file=$(find "${PROJECT_DIR}/${MILESTONE_DIR}" -name "m${id}-*.md" -print -quit 2>/dev/null || true)
+        ms_file=$(find "${PROJECT_DIR}/${MILESTONE_DIR:-.claude/milestones}" -name "m${id}-*.md" -print -quit 2>/dev/null || true)
         if [[ -z "$ms_file" ]]; then
             warn "No milestone file found for m${id}, skipping manifest entry"
             continue
