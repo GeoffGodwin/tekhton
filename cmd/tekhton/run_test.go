@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/runner"
 )
 
 func TestBuildRunRequestExactlyOne(t *testing.T) {
@@ -169,5 +170,43 @@ func TestNormalizeMilestoneID(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("normalizeMilestoneID(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+// TestBuildRunner_EnvBuilderWired is the m26 smoke test specified in the
+// milestone Files Modified table: every Runner constructed via the CLI
+// path must carry a non-nil EnvBuilder so stage subprocesses and the
+// finalize chain see the m26 composed env. Pre-m26 this field was
+// unpopulated and the runner relied on the per-stage curation in
+// buildStageEnv (commit 85b00ac); a regression that nil's out
+// r.Env here would silently re-create the unbound-variable cascade.
+func TestBuildRunner_EnvBuilderWired(t *testing.T) {
+	projectDir := t.TempDir()
+	tekhtonHome := t.TempDir()
+	req := &proto.RunRequestV1{
+		Proto:       proto.RunRequestProtoV1,
+		Mode:        proto.RunModeMilestone,
+		Milestone:   "m26",
+		ProjectDir:  projectDir,
+		TekhtonHome: tekhtonHome,
+		NoTUI:       true,
+	}
+	r, cleanup, err := buildRunner(req, "", "", "")
+	if err != nil {
+		t.Fatalf("buildRunner: %v", err)
+	}
+	defer cleanup()
+	if r.Env == nil {
+		t.Fatal("buildRunner: r.Env is nil; m26 contract requires a non-nil EnvBuilder")
+	}
+	hooks, ok := r.Hooks.(*runner.BashHookRunner)
+	if !ok {
+		t.Fatalf("buildRunner: r.Hooks is %T, want *runner.BashHookRunner", r.Hooks)
+	}
+	if hooks.Env == nil {
+		t.Fatal("buildRunner: BashHookRunner.Env is nil; finalize chain would fall back to legacy env")
+	}
+	if hooks.Env != r.Env {
+		t.Error("buildRunner: BashHookRunner.Env and Runner.Env should share the same builder")
 	}
 }

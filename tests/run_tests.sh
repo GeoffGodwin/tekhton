@@ -134,6 +134,7 @@ _resolve_test_timeout() {
     fi
 }
 
+
 # Disable commit signing for all test subprocesses — tests create temporary
 # git repos that inherit the global signing config, causing failures in
 # environments with broken or unavailable signing keys.

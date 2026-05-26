@@ -103,3 +103,32 @@ func TestStageEnvV1_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// TestStageEnvV1_RoundTrip_SessionDir guards the SessionDir field added in
+// m26. The field carries the per-run scratch directory the legacy bash
+// dispatcher created via mktemp; it must survive JSON round-trip so the
+// env contract replay path (m27+) sees the same path the live pipeline did.
+func TestStageEnvV1_RoundTrip_SessionDir(t *testing.T) {
+	in := &StageEnvV1{
+		Proto:      StageEnvProtoV1,
+		SessionDir: "/tmp/tekhton-run-abc123",
+	}
+	b, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out StageEnvV1
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.SessionDir != in.SessionDir {
+		t.Errorf("SessionDir: got %q, want %q", out.SessionDir, in.SessionDir)
+	}
+}
+
+// TestStageEnvV1_EnsureProto_NilReceiverNoOp guards the nil-receiver guard
+// in EnsureProto — calling it on a nil pointer must not panic.
+func TestStageEnvV1_EnsureProto_NilReceiverNoOp(t *testing.T) {
+	var s *StageEnvV1
+	s.EnsureProto() // must not panic
+}

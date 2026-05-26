@@ -211,3 +211,111 @@ func TestLogContext_LogFile_EmptyDirReturnsEmpty(t *testing.T) {
 		t.Errorf("LogFile with empty Dir: got %q, want empty", got)
 	}
 }
+
+// TestTaskSlug directly exercises the unexported slug function used for
+// log-file path synthesis. The bash-side slugifier lives in lib/common.sh;
+// these cases establish the byte-level contract so a future bash→Go
+// divergence fails in this test before reaching a scraper.
+func TestTaskSlug(t *testing.T) {
+	cases := []struct {
+		name      string
+		task      string
+		milestone string
+		want      string
+	}{
+		{"task_preferred_over_milestone", "Add OAuth", "m99", "add_oauth"},
+		{"milestone_fallback_when_task_empty", "", "m26", "m26"},
+		{"both_empty_returns_run", "", "", "run"},
+		{"nil_req_returns_run", "", "", "run"}, // exercised via nil below
+		{"uppercase_lowercased", "FIX TYPO", "", "fix_typo"},
+		{"special_chars_collapsed", "fix: auth/session-bug", "", "fix_auth_session_bug"},
+		{"leading_trailing_stripped", "  hello world  ", "", "hello_world"},
+		{"numbers_preserved", "fix 3 bugs", "", "fix_3_bugs"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &proto.RunRequestV1{Task: tc.task, Milestone: tc.milestone}
+			got := taskSlug(req)
+			if got != tc.want {
+				t.Errorf("taskSlug(%q, %q) = %q, want %q", tc.task, tc.milestone, got, tc.want)
+			}
+		})
+	}
+	// nil request
+	if got := taskSlug(nil); got != "run" {
+		t.Errorf("taskSlug(nil) = %q, want run", got)
+	}
+}
+
+// TestAsKV_SessionDir guards the TEKHTON_SESSION_DIR export rule: present
+// when non-empty (so bash consumers don't trip on set -u), absent when empty
+// (so defaults-only paths don't emit an empty env var that confuses callers
+// expecting a real path).
+func TestAsKV_SessionDir(t *testing.T) {
+	b := NewEnvBuilder(nil, LogContext{SessionDir: "/tmp/run-abc"})
+	kv := b.AsKV(b.Compose(&proto.RunRequestV1{}, nil))
+	m := kvLookup(kv)
+	if m["TEKHTON_SESSION_DIR"] != "/tmp/run-abc" {
+		t.Errorf("TEKHTON_SESSION_DIR not exported with non-empty SessionDir: %v", m["TEKHTON_SESSION_DIR"])
+	}
+
+	b2 := NewEnvBuilder(nil, LogContext{})
+	kv2 := b2.AsKV(b2.Compose(&proto.RunRequestV1{}, nil))
+	m2 := kvLookup(kv2)
+	if _, ok := m2["TEKHTON_SESSION_DIR"]; ok {
+		t.Error("TEKHTON_SESSION_DIR should be absent when SessionDir is empty")
+	}
+}
+
+// TestAsKV_AutoAdvanceLimitConditionalExport guards the rule that
+// AUTO_ADVANCE_LIMIT is emitted only when > 0. The six always-exported
+// runtime flags (MILESTONE_MODE etc.) must be present regardless; this
+// test confirms the conditional-emit path for the limit field.
+func TestAsKV_AutoAdvanceLimitConditionalExport(t *testing.T) {
+	b := NewEnvBuilder(nil, LogContext{})
+
+	// Zero limit → key must be absent.
+	kvZero := b.AsKV(b.Compose(&proto.RunRequestV1{AutoAdvanceLimit: 0}, nil))
+	mZero := kvLookup(kvZero)
+	if _, ok := mZero["AUTO_ADVANCE_LIMIT"]; ok {
+		t.Error("AUTO_ADVANCE_LIMIT should not be emitted when AutoAdvanceLimit=0")
+	}
+
+	// Positive limit → key must be present with correct value.
+	kvPos := b.AsKV(b.Compose(&proto.RunRequestV1{AutoAdvanceLimit: 5}, nil))
+	mPos := kvLookup(kvPos)
+	if mPos["AUTO_ADVANCE_LIMIT"] != "5" {
+		t.Errorf("AUTO_ADVANCE_LIMIT: got %q, want 5", mPos["AUTO_ADVANCE_LIMIT"])
+	}
+}
+
+// TestCompose_HumanMode verifies that HUMAN_MODE is set to true exactly
+// when the run-request mode is RunModeHuman, and false for all other modes.
+// This mirrors the bash-side `$HUMAN_MODE` check in lib/orchestrate_main.sh.
+func TestCompose_HumanMode(t *testing.T) {
+	b := NewEnvBuilder(nil, LogContext{})
+	cases := []struct {
+		mode      string
+		milestone string
+		wantHuman bool
+		wantMS    bool
+	}{
+		{proto.RunModeHuman, "", true, false},
+		{proto.RunModeMilestone, "m26", false, true},
+		{proto.RunModeTask, "", false, false},
+		{proto.RunModeResume, "", false, false},
+		// Milestone set but mode is task → MilestoneMode still true (|| check)
+		{proto.RunModeTask, "m26", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.mode+"/"+tc.milestone, func(t *testing.T) {
+			got := b.Compose(&proto.RunRequestV1{Mode: tc.mode, Milestone: tc.milestone}, nil)
+			if got.HumanMode != tc.wantHuman {
+				t.Errorf("HumanMode: got %v, want %v", got.HumanMode, tc.wantHuman)
+			}
+			if got.MilestoneMode != tc.wantMS {
+				t.Errorf("MilestoneMode: got %v, want %v", got.MilestoneMode, tc.wantMS)
+			}
+		})
+	}
+}

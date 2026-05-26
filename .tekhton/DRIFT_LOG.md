@@ -2,9 +2,15 @@
 
 ## Metadata
 - Last audit: 2026-05-18
-- Runs since audit: 152
+<<<<<<< Updated upstream
+- Runs since audit: 153
+=======
+- Runs since audit: 153
+>>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-26 | "unknown"] `internal/finalize/shim.go:legacyEnvFallback` duplicates the bash-name-to-value mapping that `internal/runner/env.go:EnvBuilder.AsKV` now owns canonically. Two surfaces must be kept in sync when a global is added or renamed. The comment says "drops out once every caller assigns EnvKV" â m27's hardening pass is the right place to do this.
+- [2026-05-26 | "unknown"] `internal/runner/single.go:buildStageEnv` (lines 124â152) allocates `len(defaultStageOrder())` independent copies of the same flat map. For a five-stage pipeline this is negligible; if the order list grows significantly a shared read-only map (copy-on-write per stage for overrides only) would be more memory-efficient. Flag for future cleanup pass.
 - [2026-05-26 | "unknown"] `internal/clarify/detect.go:93` — `parseClarifications` still takes `interface{ Read(p []byte) (int, error) }` (anonymous interface) instead of the idiomatic `io.Reader`. They are identical at the interface level; the stdlib type is self-documenting.
 - [2026-05-26 | "unknown"] `internal/drift/artifacts.go:110-124` — `AppendDecision` calls `NextNumber()` inside the per-ACP loop (re-reading the file from disk after each flush). Correct for the single-writer case; fragile if a future caller passes multiple ACPs simultaneously. Compute the counter once before the loop in a follow-up.
 - [2026-05-26 | "unknown"] The m21 router fix is correctly anchored to the `Header` field. `matchesNonBlockingPattern` scans both Header and Body, which is a slight widening vs the design's stated "Header-only heuristic chain" — in practice harmless since the sentinel takes precedence.
@@ -24,4 +30,7 @@
 - [2026-05-18 | "unknown"] The senior coder's no-op pass is correct — the Simplification section of the architect plan is empty, and the deferred item (drift_cleanup.sh non-blocking router sentinel) is properly documented as m24 work.
 
 ## Resolved
+<<<<<<< Updated upstream
 - [RESOLVED 2026-05-26] m25 router fix — The non-blocking router that misclassified a CI-failing test as non-blocking (flagged in the m21 closeout) is fixed in `internal/drift/router.go::Route`. The Go router rules an explicit `[FAIL]` header sentinel ahead of the heuristic chain, so CI-failure artifacts now classify as `DispositionBlocking` regardless of any reviewer-vocabulary tokens that happen to appear in the body. Regression test: `internal/drift/router_test.go::TestRouter_CIFailingTest_IsBlocking` against the captured fixture in `internal/drift/testdata/m21_router_misclassification/`. See `docs/go-migration.md` § "m25 router fix" for the full postmortem.
+=======
+>>>>>>> Stashed changes

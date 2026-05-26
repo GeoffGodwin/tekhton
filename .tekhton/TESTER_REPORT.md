@@ -1,21 +1,18 @@
 ## Planned Tests
-- [x] `internal/drift/observe_test.go` — add AppendEntries (0% coverage), ShouldTriggerAudit runs-threshold path, ResolveObservations dedup guard, ResetRunsSinceAudit missing-file, ClearResolved empty section, GetResolved missing-file
-- [x] `internal/drift/router_test.go` — add Disposition.String() coverage (was 0%), standalone nit-pattern test
-- [x] `internal/drift/prune_test.go` — add appendArchive with existing archive, Prune without archive path
-- [x] `internal/drift/artifacts_test.go` — add ADR.EnsureFile idempotent, parseACPLine no-ACP-prefix branch, ConsolidateLegacy when canonical missing, HumanAction.CountUnchecked on missing file
-- [x] `internal/drift/nonblocking_test.go` — add EnsureFile repairs missing Resolved, AppendNotes empty-input no-create
-- [x] `internal/clarify/handle_test.go` — add HandleInteractive missing-path error, ClearStaleEntries empty-file, PollUntilAnswered nil-items
+- [x] `internal/runner/env_test.go` — taskSlug unit tests, AsKV SessionDir/AutoAdvanceLimit, HumanMode and MilestoneMode flag derivation
+- [x] `internal/proto/stage_env_test.go` — StageEnvV1.SessionDir round-trip coverage
+- [x] `tests/run_tests.sh` — resolve merge conflicts so bash suite executes
+- [x] `tests/test_v4_env_contract.sh` — verify env contract bash test passes (deferred e2e noted)
+
+Note: `tests/test_v4_pipeline_e2e.sh` (full fixture pipeline-completion test) is deferred to m28+ per reviewer approval — requires `--dry-run` to actually short-circuit agent invocation, which `cmd/tekhton/run.go:83-89` accepts but does not dispatch.
 
 ## Test Run Results
-Passed: 386 (Go) + 486 (Shell)  Failed: 0
+Passed: 22 Go packages (all green) + 3 bash (env contract)  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `internal/drift/observe_test.go`
-- [x] `internal/drift/router_test.go`
-- [x] `internal/drift/prune_test.go`
-- [x] `internal/drift/artifacts_test.go`
-- [x] `internal/drift/nonblocking_test.go`
-- [x] `internal/clarify/handle_test.go`
+- [x] `internal/runner/env_test.go`
+- [x] `internal/proto/stage_env_test.go`
+- [x] `tests/run_tests.sh`

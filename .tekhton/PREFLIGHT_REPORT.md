@@ -1,4 +1,8 @@
+<<<<<<< Updated upstream
 # Pre-flight Report — 2026-05-26 08:26:45
+=======
+# Pre-flight Report — 2026-05-19 08:35:57
+>>>>>>> Stashed changes
 
 ## Summary
 ✓ 2 passed  ⚠ 1 warned  ✗ 0 failed  🔧 0 auto-fixed
