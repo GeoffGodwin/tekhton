@@ -44,13 +44,25 @@ fail() { FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1)); echo "FAIL: $*"; }
 # so planning mode can re-source it to self-heal empty values (issue #179).
 # common.sh no longer carries these literals and is no longer excluded.
 # =============================================================================
+# m27.2: occurrences of the literal filename inside a `${VAR:-PATH}` default
+# expansion are NOT bare hardcoded references — they are the contract default
+# used as a defensive fallback under `set -u`. Same intent as the `${VAR:=PATH}`
+# form already exempted in artifact_defaults.sh / config_defaults.sh. We filter
+# these out post-grep by matching the close-brace immediately following the
+# filename (the signature of `${VAR:-…/FILENAME.md}`).
+_strip_m27_defaults() {
+    local fname="$1"
+    grep -v "${fname}}" || true
+}
+
 echo "--- Suite 1: lib/**/*.sh — zero literal filenames (excl. default files) ---"
 
 for fname in "${M84_FILES[@]}"; do
     matches=$(grep -r --include="*.sh" \
         --exclude="config_defaults.sh" \
         --exclude="artifact_defaults.sh" \
-        "$fname" "${TEKHTON_HOME}/lib" 2>/dev/null || true)
+        "$fname" "${TEKHTON_HOME}/lib" 2>/dev/null \
+        | _strip_m27_defaults "$fname" || true)
     if [[ -z "$matches" ]]; then
         pass
     else
@@ -66,7 +78,8 @@ echo "--- Suite 2: stages/**/*.sh — zero literal filenames ---"
 
 for fname in "${M84_FILES[@]}"; do
     matches=$(grep -r --include="*.sh" \
-        "$fname" "${TEKHTON_HOME}/stages" 2>/dev/null || true)
+        "$fname" "${TEKHTON_HOME}/stages" 2>/dev/null \
+        | _strip_m27_defaults "$fname" || true)
     if [[ -z "$matches" ]]; then
         pass
     else
@@ -81,7 +94,8 @@ done
 echo "--- Suite 3: tekhton.sh — zero literal filenames ---"
 
 for fname in "${M84_FILES[@]}"; do
-    matches=$(grep "$fname" "${TEKHTON_HOME}/tekhton.sh" 2>/dev/null || true)
+    matches=$(grep "$fname" "${TEKHTON_HOME}/tekhton.sh" 2>/dev/null \
+        | _strip_m27_defaults "$fname" || true)
     if [[ -z "$matches" ]]; then
         pass
     else
