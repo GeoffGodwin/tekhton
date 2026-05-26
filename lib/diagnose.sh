@@ -23,10 +23,11 @@ set -euo pipefail
 # shellcheck source=lib/diagnose_rules.sh
 source "${TEKHTON_HOME:?}/lib/diagnose_rules.sh"
 
-# Source M129 failure-context slot helpers (idempotent — also sourced from
-# tekhton.sh before diagnose_output.sh; safe to re-source).
-# shellcheck source=lib/failure_context.sh
-source "${TEKHTON_HOME:?}/lib/failure_context.sh"
+# m25: lib/failure_context.sh ported to internal/failure_context/.
+# The diagnose output writer below defensively guards on `command -v`
+# for the slot helpers (set_secondary_cause / resolve_alias_category /
+# emit_cause_objects_json) so it degrades gracefully when the bash
+# functions are absent.
 
 # Source helper functions (_collapse_cause_chain, _detect_recurring_failures,
 # _collect_agent_log_tails)
