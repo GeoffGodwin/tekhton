@@ -38,6 +38,17 @@ set -euo pipefail
 _prompt_commit_choice() {
     local _choice _attempt
     local _max=3
+    # Per-read timeout. Without this, `read < /dev/tty` blocks forever in
+    # contexts where /dev/tty is connected but no human is at the
+    # keyboard — most notoriously the test_finalize_parity.sh case where
+    # the test runs `tekhton finalize` with stdin=/dev/null but inherits
+    # the user's controlling terminal through the process tree. The 60s
+    # outer bash `timeout` doesn't propagate SIGTERM through the Go
+    # finalize subprocess back to the bash hook, so the only escape is
+    # in-process. 300s = 5 minutes — generous for an interactive user
+    # to glance at the suggested message and respond, brief enough that
+    # an unattended/CI run doesn't hang for hours.
+    local _read_timeout="${TEKHTON_PROMPT_TIMEOUT_SECS:-300}"
     for ((_attempt=1; _attempt<=_max; _attempt++)); do
         # All prompt output goes to stderr so callers can capture the
         # final choice via $(_prompt_commit_choice) without the prompt
@@ -52,13 +63,31 @@ _prompt_commit_choice() {
         # retry-on-empty branches with `printf '\n\ny\n' | …`. In
         # production stdin is /dev/null (Go-orchestrator subprocess) so
         # the /dev/tty fallback is the only way to reach the human.
+        local _read_rc=0
         if [[ "${TEKHTON_TEST_FORCE_STDIN:-0}" = "1" ]]; then
-            read -r _choice || _choice=""
+            read -r -t "$_read_timeout" _choice || _read_rc=$?
         elif [[ -t 0 ]]; then
-            read -r _choice
+            read -r -t "$_read_timeout" _choice || _read_rc=$?
         else
-            read -r _choice < /dev/tty 2>/dev/null || _choice="y"
+            read -r -t "$_read_timeout" _choice < /dev/tty 2>/dev/null || _read_rc=$?
             log "(read from /dev/tty — stdin was piped)" >&2
+        fi
+        # `read -t` exits >128 on timeout, 1 on EOF, 0 on success. EOF
+        # (stdin closed entirely) and timeout are both treated as
+        # "user not available" — break out of the retry loop and
+        # default to SKIP. The retry-on-empty path only fires for a
+        # successful read with whitespace-only input.
+        if (( _read_rc > 128 )); then
+            warn "Prompt timeout after ${_read_timeout}s with no input — defaulting to SKIP." >&2
+            warn "If you meant to commit, run: git add -A && git commit" >&2
+            printf 'n\n'
+            return 0
+        fi
+        if (( _read_rc == 1 )); then
+            warn "Stdin closed (EOF) before any input — defaulting to SKIP." >&2
+            warn "If you meant to commit, run: git add -A && git commit" >&2
+            printf 'n\n'
+            return 0
         fi
         # Trim all whitespace — "  y  " becomes "y", trailing CR from
         # Windows-style line endings also evaporates.

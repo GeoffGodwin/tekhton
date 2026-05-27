@@ -90,6 +90,33 @@ else
     pass "5.2 stderr has prompt text (${#stderr} chars)"
 fi
 
+echo "=== Suite 6: read timeout returns SKIP without hanging ==="
+# Regression for M27.2 hang: when stdin is connected but no input is
+# arriving (test contexts where /dev/tty is inherited from the user's
+# terminal but no human is typing), `read` would block forever.
+# Now bounded by TEKHTON_PROMPT_TIMEOUT_SECS. Cap to 2s for the test so
+# the suite stays fast.
+#
+# Use a FIFO opened in rw mode (3<>$_fifo). Read sees an open file with
+# no data but also no EOF — exactly mimicking the M27.2 scenario where
+# /dev/tty was connected but no human was typing. `read -t 2` times out
+# instead of blocking.
+_t6_fifo=$(mktemp -u "$TMP/prompt_fifo.XXXXXX")
+mkfifo "$_t6_fifo"
+exec 6<>"$_t6_fifo"
+_t6_start=$(date +%s)
+result=$(TEKHTON_TEST_FORCE_STDIN=1 TEKHTON_PROMPT_TIMEOUT_SECS=2 \
+    _prompt_commit_choice <&6 2>/dev/null)
+_t6_elapsed=$(( $(date +%s) - _t6_start ))
+exec 6<&-
+rm -f "$_t6_fifo"
+assert_eq "6.1 timeout returns 'n' (default SKIP)" "n" "$result"
+if (( _t6_elapsed < 5 )); then
+    pass "6.2 returned within ${_t6_elapsed}s (timeout fired, did not block on the FIFO)"
+else
+    fail "6.2 timeout took too long: ${_t6_elapsed}s — should be ~2s, suggests timeout did not fire"
+fi
+
 echo
 echo "Results: ${PASS} passed, ${FAIL} failed"
 if [[ "$FAIL" -gt 0 ]]; then

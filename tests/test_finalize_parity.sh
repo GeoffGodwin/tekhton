@@ -76,8 +76,23 @@ echo "stale state" > "${FIXTURE}/.claude/MILESTONE_STATE.md"
 # aren't populated through the bare `tekhton finalize` CLI path).
 printf 'committed\n' > "${FIXTURE}/.tekhton/.commit_decision"
 
+# AUTO_COMMIT=true skips _hook_commit's interactive y/e/n prompt.
+# Without this the bash hook spawned by `tekhton finalize` would call
+# _prompt_commit_choice which does `read < /dev/tty` and blocks
+# forever — the test's bash gets stdin=/dev/null from run_tests.sh
+# but /dev/tty is still inherited from the user's terminal through
+# the process tree, so the read isn't EOF and isn't an error, just
+# silently waiting. The in-process timeout in
+# lib/finalize_commit_prompt.sh now catches this, but explicit
+# AUTO_COMMIT removes the 300s tax and makes the test intent
+# unambiguous: this is a parity check, not an interactive flow.
+# TEKHTON_PROMPT_TIMEOUT_SECS=5 is the belt to AUTO_COMMIT's
+# suspenders — if AUTO_COMMIT is ever accidentally cleared, the
+# prompt times out fast instead of approaching the per-test cap.
 # Run the orchestrator directly via the CLI.
 export TEKHTON_HOME PROJECT_DIR="$FIXTURE"
+export AUTO_COMMIT=true
+export TEKHTON_PROMPT_TIMEOUT_SECS=5
 "$TEKHTON_BIN" finalize \
     --exit-code 0 \
     --project-dir "$FIXTURE" \
