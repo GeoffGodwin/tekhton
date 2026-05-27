@@ -100,11 +100,10 @@ PATTERNS=(
     # bypass the orchestrate-loop recovery dispatch. Only lib/agent.sh and
     # lib/agent_shim.sh (allowlisted above) may shell to it. lib/orchestrate.sh
     # would be a regression — orchestrate now consumes the supervisor result
-    # via the shim, never directly. Patterns are literal regex strings so
-    # single-quotes are correct (no shell interpolation desired).
-    # shellcheck disable=SC2016
-    '"\$_bin"[[:space:]]+supervise'
-    # shellcheck disable=SC2016
+    # via the shim, never directly. Patterns are literal regex strings; the
+    # `[$]` character class matches a literal `$` without tripping shellcheck
+    # SC2016 (the equivalent `\$` form in single-quotes would).
+    '"[$]_bin"[[:space:]]+supervise'
     "'tekhton'[[:space:]]+supervise"
     # m18 (Phase 4 batch 2): the per-attempt scheduler and build/completion
     # gates moved to internal/pipeline. Hand-rolled bash JSON envelopes for
@@ -290,3 +289,8 @@ fi
 
 printf 'wedge-audit: clean (%d files audited, %d allowed shim writers).\n' \
     "${#TARGET_FILES[@]}" "${#ALLOWED_FILES[@]}"
+
+# m27.3 companion-tool presence checks. Extracted to a sibling file so the
+# main audit stays under the 300-line bash ceiling.
+# shellcheck source=scripts/wedge-audit-companions.sh
+source "${REPO_ROOT}/scripts/wedge-audit-companions.sh"

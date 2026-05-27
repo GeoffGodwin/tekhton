@@ -1,9 +1,9 @@
-# JR Coder Summary — m25 Drift + Clarify Port
+# Jr Coder Summary — m27.3 Simple Blockers
 
 ## What Was Fixed
-
-- `internal/clarify/detect.go:174` — replaced `err.Error() != "EOF"` with `!errors.Is(err, io.EOF)`. Added `"io"` to the import block. This eliminates the string-based error comparison that violates the Go quality rule and would have been caught by `golangci-lint`'s `errorlint` check.
+- Reset `VERSION` from `4.27.1` to `4.27.0` — project-version bump hook fired as a side effect of the `make dogfood` verification run, advancing the version past the required milestone value.
+- Reset `CURRENT_VERSION` in `.claude/project_version.cfg` from `4.27.1` to `4.27.0` to match.
 
 ## Files Modified
-
-- `internal/clarify/detect.go`
+- `VERSION`
+- `.claude/project_version.cfg`

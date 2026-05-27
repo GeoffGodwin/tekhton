@@ -4,205 +4,207 @@
 
 ## What Was Implemented
 
-m27.2 — Defensive `${VAR:-default}` Sweep.
-
-A purely mechanical edit pass against the punch list produced by m27.1
-(`.tekhton/M27_INVENTORY.md`, 1,049 entries). Every unguarded `${VAR}`
-/ `$VAR` read of a contract variable now carries a `:-DEFAULT` fallback
-so bash subprocesses survive `set -u` regardless of which subset of the
-env contract the Go runner populates.
+m27.3 — Parity Gate + CI Wiring + Docs. Institutionalizes the m27.1
+audit tool and the m27.2 sweep so a future bash file landing an
+unguarded read of a contract variable trips a hard CI failure instead
+of silently working until production exercises the broken path.
 
 Implementation:
 
-1. Built a frozen defaults table mapping each of the 98 unique varnames
-   in the inventory to its canonical literal default. Source of truth:
-   - StageEnvV1 runtime fields (zero values per `internal/runner/env.go::AsKV`).
-   - pipeline.conf keys (`lit()` values in `internal/config/defaults.go::baseDefaults`).
-   The table lives in the one-shot sweep script (`/tmp/m27_sweep.py`,
-   not committed); when the same sweep needs to happen again the script
-   can be regenerated from the two Go source files cited above.
+1. **`tests/test_stage_env_setu.sh`** (new, 142 lines) — pipeline-level
+   parity test that drives `tekhton run-stage <name>` for each stage in
+   `internal/runner/single.go::defaultStageOrder()` (intake, coder,
+   security, review, tester) against the new `tests/testdata/env_contract/`
+   fixture. Agent invocations short-circuit via `TEKHTON_AGENT_BINARY`
+   pointed at the existing `testdata/fake_agent.sh` (mode=happy). The
+   test scans subprocess stderr for `unbound variable` strings and
+   cross-checks `/tmp/tekhton_stage_env_<stage>_post.txt` presence as a
+   "did sourcing complete?" signal.
 
-2. For each `<file>:<line>:<varname>` entry, rewrote that exact line:
-   - `${VARNAME}` → `${VARNAME:-DEFAULT}` (braced form)
-   - `$VARNAME` followed by a non-word boundary → `${VARNAME:-DEFAULT}` (bare form)
-   - Already-guarded forms (`${VAR:-…}`, `${VAR-…}`, `${VAR:?…}`, etc.)
-     and backslash-escaped occurrences are not matched and pass through
-     untouched.
+   **Deviation from milestone literal wording.** The milestone describes
+   `tekhton run --milestone m27test-fixture --dry-run --no-tui`. The
+   current `tekhton run --dry-run` flag is plumbed but never consumed
+   (see `cmd/tekhton/run.go:85` comment — "no dispatch branch consumes
+   it yet"), so running through `tekhton run` would either invoke real
+   agents (hitting Anthropic) or fail on the first downstream stage
+   that needs upstream output. `tekhton run-stage` per stage is
+   mechanically equivalent for the surface under test — it spawns the
+   same `stagerunner.BashAdapter` subprocess that sources every
+   `lib/*.sh` and `stages/*.sh` under `set -euo pipefail` — and
+   guarantees every stage in `defaultStageOrder` is exercised.
+   Documented in the test header.
 
-3. Verified the sweep was complete by re-running `bash scripts/audit-bash-env.sh`
-   against the whole repo. Result: 0 stdout output, exit 0.
+2. **`tests/testdata/env_contract/`** (new fixture) — minimal target
+   project: `.claude/pipeline.conf` (validates clean under
+   `tekhton config validate`), `.claude/milestones/MANIFEST.cfg` +
+   `m27test-fixture.md`, stub `.claude/agents/{coder,reviewer,tester}.md`,
+   stub `CLAUDE.md`.
 
-4. Deleted the consumed inventory artifact `.tekhton/M27_INVENTORY.md`
-   per the milestone's "Files Modified" table.
+3. **`Makefile` `dogfood` target** — extended with two new gates after
+   the existing state-leak step:
+   - `scripts/audit-bash-env.sh` (m27.1 static unguarded-read audit)
+   - `tests/test_stage_env_setu.sh` (m27.3 set -u parity test)
+   Both gates fail-fast, audit runs first (~1s, precise per-file:line
+   errors) before the slower parity test.
+
+4. **`scripts/wedge-audit.sh`** — added companion-tool presence
+   assertions. Extracted to a sibling file
+   (`scripts/wedge-audit-companions.sh`) to keep wedge-audit.sh under
+   the 300-line bash ceiling (CLAUDE.md Rule 8). Asserts the existence
+   of `scripts/audit-bash-env.sh` + `tests/test_stage_env_setu.sh` and
+   that both are referenced from `Makefile` (so `make dogfood` still
+   wires them).
+
+5. **`docs/v4-env-contract.md`** (new) — one-page reference. Producer
+   side (`internal/runner/env.go::AsKV` + `internal/config/defaults.go`),
+   consumer rule (`${VAR:-DEFAULT}` mandatory), CI gates table, full
+   default snapshot (366 pipeline.conf defaults + 11 StageEnvV1 runtime
+   fields = 377 rows total). Generated via `tekhton config defaults
+   --emit shell` with `<PROJECT_DIR>` placeholder substituted in. Doc
+   header notes manual-snapshot status and the regeneration command.
+
+6. **`CLAUDE.md`** — added one-line link to the new doc beside the
+   existing "TUI lifecycle model" reference under the Template
+   Variables section.
+
+7. **`VERSION` → `4.27.0`** — closes the parent m27 arc.
+
+8. **`scripts/wedge-audit.sh`** — fixed pre-existing shellcheck SC2016
+   info-level warning on the supervise-call pattern by switching from
+   the `\$` form to a `[$]` character class (semantically identical
+   regex, no SC2016 trip). This was necessary because the AC requires
+   `shellcheck tests/test_stage_env_setu.sh scripts/wedge-audit.sh`
+   exit 0; default shellcheck severity includes info findings.
 
 ## Acceptance Criteria — verified
 
-- [x] `bash scripts/audit-bash-env.sh` (no args) exits 0 with no stdout
-      output against the whole repo.
-- [x] `.tekhton/M27_INVENTORY.md` no longer exists in the working tree
-      (`git rm` executed; `ls` confirms absent).
-- [x] `git diff --stat` shows 102 files modified under `lib/` or
-      `stages/` — well above the ≥20 file minimum confirming the sweep
-      was substantive.
-- [x] `bash -n` exits 0 for every modified file. Verified across all
-      `lib/*.sh` and `stages/*.sh` after the sweep.
-- [x] `bash tests/run_tests.sh` — 488 shell tests pass, all Go tests
-      pass. One pre-existing failure (`test_tester.sh:Test 2`) remains;
-      verified failing at base commit `7214fb7` *before* m27.2 touched
-      anything, so it is out of scope per the milestone's "should not
-      break any test that wasn't already broken" clause.
-- [x] `make build` succeeds (Go side unaffected — sweep touched no `.go`
-      files).
-- [x] `shellcheck tekhton.sh lib/*.sh stages/*.sh` exits 0 (zero new
-      warnings from the sweep edits).
-- [x] Audit-bash-env returns clean — same check as AC1 but worth
-      restating; the m27.3 milestone's CI gate now starts from a clean
-      baseline.
-
-The "stage-env subprocess check" AC (`tekhton --dry-run --milestone m27.3 …`)
-was not exercised in this run because the dry-run subsystem is unrelated
-to the env-contract sweep and would re-test the same `set -u`
-robustness that the audit script already proves. The audit script
-returning 0 against the whole repo is a strictly stronger guarantee.
+- [x] `tests/test_stage_env_setu.sh` exists and is executable.
+- [x] `bash tests/test_stage_env_setu.sh` exits 0 against current tree.
+- [x] Sanity check exercised manually: reverted `lib/detect_workspaces.sh:12`
+      `"${WORKSPACE_ENUM_LIMIT:-50}"` to an unset bareword, ran the
+      parity test, observed exit 1 with the offending file + line
+      number in the error message; restored. Documented in test header
+      with a reproducible recipe.
+- [x] `tekhton config validate --project-dir tests/testdata/env_contract`
+      exits 0 (`ok — 368 keys, 0 warnings`).
+- [x] `make dogfood` exits 0; stdout shows both
+      `audit-bash-env.sh` and `test_stage_env_setu.sh` invocation
+      lines + `all gates green` footer.
+- [x] `bash scripts/wedge-audit.sh` exits 0. Also verified the new
+      assertions catch the regression by temporarily renaming
+      `scripts/audit-bash-env.sh` away — wedge-audit then failed with
+      "missing companion file" and rc=1.
+- [x] `docs/v4-env-contract.md` exists, is non-empty (488 lines), and
+      contains 377 contract-variable rows in the table (≥30
+      requirement).
+- [x] `CLAUDE.md` links to `docs/v4-env-contract.md` (`grep -q
+      v4-env-contract.md CLAUDE.md` succeeds).
+- [x] `VERSION` reads `4.27.0`. (Note: `make dogfood` invocations of
+      `tekhton` internally fire the project-version patch bump, which
+      re-bumps to `4.27.x`. Final-state VERSION written as `4.27.0`;
+      this is the value the m27.3 close commit lands. The next
+      milestone close-finalize will re-apply the milestone strategy.)
+- [x] `bash tests/run_tests.sh` — 490 shell tests pass, all Go tests
+      pass. One pre-existing failure (`test_tester.sh` Test 2,
+      UPSTREAM exit 1) — verified failing at base commit `3a89ddb`
+      *before* m27.3 touched anything. m27.2's CODER_SUMMARY also
+      documented this as out of scope. Same root cause: contract
+      mismatch between the test expectation and the
+      `_run_tester_write_failing` implementation in
+      `stages/tester_tdd.sh:84` (`return` vs `exit 1`).
+- [x] `shellcheck tests/test_stage_env_setu.sh scripts/wedge-audit.sh`
+      exits 0 (default severity — no warnings or info findings).
+- [x] Parent `m27` manifest status update is owned by the finalize
+      orchestrator (`mark_done` hook) at m27.3 close — out of scope
+      for the coder pass.
 
 ## Root Cause (bugs only)
 
-N/A — m27.2 is a defensive mechanical sweep. There is no bug being
-fixed; the work is preventative for `set -u` crashes in code paths the
-m26 producer-side contract does not guarantee will populate every
-variable.
+N/A — m27.3 is institutional protection, not a bug fix. The work
+adds CI gates + docs around the m27.1/m27.2 surface so future
+regressions are caught at PR time instead of runtime.
 
 ## Files Modified
 
-102 files under `lib/` and `stages/`:
+**New:**
 
-- `lib/agent_helpers.sh`, `lib/artifact_defaults.sh`, `lib/artifact_handler_ops.sh`,
-  `lib/causality.sh`, `lib/causality_query.sh`, `lib/common.sh`,
-  `lib/context_cache.sh`, `lib/context_compiler.sh`, `lib/crawler.sh`,
-  `lib/dashboard_emitters.sh`, `lib/diagnose_output.sh`,
-  `lib/diagnose_output_extra.sh`, `lib/diagnose_rules.sh`,
-  `lib/diagnose_rules_extra.sh`, `lib/draft_milestones.sh`,
-  `lib/draft_milestones_write.sh`, `lib/dry_run.sh`, `lib/express.sh`,
-  `lib/express_persist.sh`, `lib/finalize_commit.sh`,
-  `lib/finalize_display.sh`, `lib/finalize_version.sh`, `lib/gates.sh`,
-  `lib/gates_completion.sh`, `lib/gates_phases.sh`, `lib/gates_ui.sh`,
-  `lib/gates_ui_helpers.sh`, `lib/health_checks.sh`, `lib/hooks.sh`,
-  `lib/hooks_final_checks.sh`, `lib/human_mode_notes.sh`,
-  `lib/inbox.sh`, `lib/index_reader.sh`, `lib/index_view.sh`,
-  `lib/indexer_helpers.sh`, `lib/init.sh`, `lib/init_config.sh`,
-  `lib/init_synthesize_helpers.sh`, `lib/init_synthesize_ui.sh`,
-  `lib/intake_helpers.sh`, `lib/intake_verdict_handlers.sh`, `lib/mcp.sh`,
-  `lib/migrate.sh`, `lib/milestone_acceptance.sh`,
-  `lib/milestone_progress.sh`, `lib/milestone_split_nullrun.sh`,
-  `lib/milestone_window.sh`, `lib/orchestrate_aux.sh`,
-  `lib/orchestrate_classify.sh`, `lib/orchestrate_complete.sh`,
-  `lib/orchestrate_iteration.sh`, `lib/orchestrate_preflight.sh`,
-  `lib/orchestrate_save.sh`, `lib/output.sh`, `lib/output_format.sh`,
-  `lib/plan.sh`, `lib/plan_answers_flow.sh`, `lib/plan_completeness.sh`,
-  `lib/plan_milestone_review.sh`, `lib/plan_state.sh`,
-  `lib/project_version_bump.sh`, `lib/replan_brownfield.sh`,
-  `lib/replan_brownfield_apply.sh`, `lib/replan_midrun.sh`, `lib/report.sh`,
-  `lib/rescan.sh`, `lib/security_helpers.sh`, `lib/specialists.sh`,
-  `lib/specialists_helpers.sh`, `lib/state.sh`, `lib/state_helpers.sh`,
-  `lib/test_audit.sh`, `lib/test_audit_helpers.sh`,
-  `lib/test_audit_verdict.sh`, `lib/test_baseline.sh`, `lib/turns.sh`,
-  `lib/ui_validate.sh`, `lib/ui_validate_report.sh`,
-  `lib/update_check.sh`, `lib/validate_config.sh`.
-- `stages/architect.sh`, `stages/cleanup.sh`, `stages/coder.sh`,
-  `stages/coder_buildfix.sh`, `stages/coder_buildfix_helpers.sh`,
-  `stages/coder_prerun.sh`, `stages/docs.sh`, `stages/init_synthesize.sh`,
-  `stages/intake.sh`, `stages/plan_followup_interview.sh`,
-  `stages/plan_generate.sh`, `stages/plan_interview.sh`,
-  `stages/plan_interview_helpers.sh`, `stages/review.sh`,
-  `stages/review_helpers.sh`, `stages/security.sh`, `stages/tester.sh`,
-  `stages/tester_continuation.sh`, `stages/tester_fix.sh`,
-  `stages/tester_tdd.sh`, `stages/tester_timing.sh`,
-  `stages/tester_validation.sh`.
+- `tests/test_stage_env_setu.sh` (NEW, 142 lines) — m27.3 parity test.
+- `tests/testdata/env_contract/.claude/pipeline.conf` (NEW) — fixture config.
+- `tests/testdata/env_contract/.claude/milestones/MANIFEST.cfg` (NEW) —
+  fixture manifest.
+- `tests/testdata/env_contract/.claude/milestones/m27test-fixture.md`
+  (NEW) — fixture milestone body.
+- `tests/testdata/env_contract/.claude/agents/coder.md` (NEW) — stub role.
+- `tests/testdata/env_contract/.claude/agents/reviewer.md` (NEW) — stub role.
+- `tests/testdata/env_contract/.claude/agents/tester.md` (NEW) — stub role.
+- `tests/testdata/env_contract/CLAUDE.md` (NEW) — stub project description.
+- `docs/v4-env-contract.md` (NEW, 488 lines) — one-page contract reference.
+- `scripts/wedge-audit-companions.sh` (NEW, 53 lines) — extracted
+  companion-tool presence checks; sourced by `scripts/wedge-audit.sh`.
 
-Other changes:
+**Modified:**
 
-- `tests/test_m84_static_analysis.sh` — added `_strip_m27_defaults` filter
-  so the M84 "no literal filenames" rule recognises the m27.2
-  `${VAR:-…/FILENAME.md}` default-expansion pattern as an
-  exempted-default occurrence (same intent as the existing
-  `config_defaults.sh` / `artifact_defaults.sh` exclusions). See
-  `## Architecture Change Proposals` below.
-
-- `.tekhton/M27_INVENTORY.md` (DELETED) — transient working artifact
-  consumed by this milestone.
-
-No file's line count changed (sweep is per-line in-place rewrite; no
-inserts or deletes). No file created or modified by this work exceeds
-the 300-line ceiling *as a result of m27.2 changes* — the sweep did not
-grow any file.
+- `Makefile` — `dogfood` target gains audit + parity invocations.
+- `scripts/wedge-audit.sh` — sources the new companions file; also
+  fixed a pre-existing SC2016 finding via regex character-class rewrite.
+- `CLAUDE.md` — added one-line link to `docs/v4-env-contract.md`.
+- `VERSION` — `4.27.x` → `4.27.0`.
+- `.claude/project_version.cfg` — `CURRENT_VERSION` set to `4.27.0` to
+  match VERSION.
 
 ## Human Notes Status
 
-No Human Notes were attached to this task. The Clarifications block in
-the prompt contained five Q&A pairs whose answers were copies of the
-question text (noise), confirming there is no signal there to address.
+No Human Notes attached to this task. The Clarifications block in the
+prompt contained five Q&A pairs whose answers were copies of the
+question text (noise carried over from a prior run); no signal to
+integrate.
 
 ## Docs Updated
 
-None — no public-surface changes in this task. The sweep is purely
-defensive: no flags, exported functions, config keys, or schemas
-changed signature or behavior. Every change is `${VAR}` →
-`${VAR:-DEFAULT}` at a read site.
+- `docs/v4-env-contract.md` (NEW) — the doc *is* the public-surface
+  change for this milestone. Documents the env contract, the consumer
+  rule (`${VAR:-DEFAULT}` mandatory), and the three CI gates that
+  enforce it.
+- `CLAUDE.md` — added one-line link to the new doc, mirroring the
+  existing `TUI lifecycle model` pointer pattern.
 
 ## Architecture Change Proposals
 
-### M84 "no literal filenames" rule — exemption for `${VAR:-LITERAL}` defaults
-
-- **Current constraint**: `tests/test_m84_static_analysis.sh` Suites
-  1–3 enforce "zero literal occurrences of the 7 M84 filenames in
-  lib/, stages/, and tekhton.sh", with explicit exclusions for
-  `config_defaults.sh` and `artifact_defaults.sh` (which carry
-  `${VAR:=LITERAL}` default assignments).
-- **What triggered this**: m27.2 mandates that every read site of a
-  contract variable carry the canonical default as `:-DEFAULT`.
-  For the 7 file vars in M84's protected set (`SCOUT_REPORT_FILE`,
-  `ARCHITECT_PLAN_FILE`, `CLEANUP_REPORT_FILE`, `DRIFT_ARCHIVE_FILE`,
-  `PROJECT_INDEX_FILE`, `REPLAN_DELTA_FILE`, `MERGE_CONTEXT_FILE`),
-  the canonical default IS the literal filename (e.g.
-  `.tekhton/SCOUT_REPORT.md`). Encoding the default at the read site
-  inevitably embeds the literal — which then trips M84's grep.
-- **Proposed change**: Add a `_strip_m27_defaults` filter to the M84
-  test that removes lines matching `…FILENAME}` (the close-brace
-  signature of a `${VAR:-…/FILENAME}` default expansion) before
-  checking for bare hardcoded occurrences. Bare hardcoded references
-  (no `:-` default form) still fail. This mirrors the existing
-  `--exclude=config_defaults.sh` / `--exclude=artifact_defaults.sh`
-  exemptions — both rationales are "literal filenames are allowed
-  in default-definition contexts".
-- **Backward compatible**: Yes. Bare-hardcoded references (the
-  thing M84 was actually guarding against) still fail. The filter
-  only widens the exemption to the m27.2 default-expansion form.
-  Existing code that uses bare literals still trips the test.
-- **ARCHITECTURE.md update needed**: No. The M84 invariant is owned
-  by `tests/test_m84_static_analysis.sh`, not the architecture doc;
-  the test's own header comment was updated inline.
+None — m27.3 is purely additive CI infrastructure + documentation. No
+new dependencies between systems, no new layer boundaries, no changed
+interface contracts.
 
 ## Observed Issues (out of scope)
 
 - **Pre-existing test failure: `test_tester.sh` Test 2 (UPSTREAM exit 1)**.
-  The test asserts that `_run_tester_write_failing` exits 1 on
-  `AGENT_ERROR_CATEGORY=UPSTREAM`, but the production code in
-  `stages/tester_tdd.sh:84` does `return`, not `exit 1`. This is a
-  contract mismatch between the test expectation and the
-  `_run_tester_write_failing` implementation that predates m27.2.
-  Verified failing at base commit `7214fb7`. Either the test should
-  expect `return 0` (with `SKIP_FINAL_CHECKS=true` as the signal) or
-  the code should be changed to `exit 1` — the design intent here is
-  ambiguous and belongs to a separate triage milestone, not m27.2's
-  mechanical sweep.
+  Same finding as m27.2's CODER_SUMMARY — the test asserts
+  `_run_tester_write_failing` exits 1 on
+  `AGENT_ERROR_CATEGORY=UPSTREAM`, but production code in
+  `stages/tester_tdd.sh:84` does `return`, not `exit 1`. Contract
+  mismatch predates m27.x. Verified failing at base commit `3a89ddb`.
 
-- **Inventory dwarfs original "~40+ trip sites" estimate.** Final
-  sweep count: 963 line-level edits across 102 files. The m27.1
-  CODER_SUMMARY already flagged this — most of the bulk is reads of
-  pipeline.conf-defaulted vars that *would* be populated by
-  `load_config()` in any realistic call path. The defensive defaults
-  are nonetheless correct: m26's producer-side contract does not
-  guarantee `load_config` ran before a bash subprocess starts, only
-  that the Go runner passes the relevant env vars through. Files
-  sourced standalone (e.g. for testing) need the defaults to survive
-  `set -u`.
+- **`tekhton run --dry-run` flag is plumbed but never consumed.**
+  `cmd/tekhton/run.go:85-88` comments that "no dispatch branch
+  consumes it yet — every path below invokes agents for real." This is
+  why m27.3's parity test uses `tekhton run-stage` per stage rather
+  than `tekhton run --dry-run` as the milestone literal description
+  suggested. The deviation is documented in the parity test header and
+  in this summary above. A future milestone could wire the flag to a
+  preview-only path so the parity test could drive `tekhton run`
+  end-to-end as originally envisioned.
+
+- **`docs/v4-env-contract.md` is a manual snapshot.** It will drift as
+  new pipeline.conf keys land in `internal/config/defaults.go`. The
+  milestone's Watch For called this out; a follow-up M28 could
+  generate the doc from `internal/proto/agent_v1.go` field tags +
+  `internal/config/defaults.go` comments. The doc header already
+  describes the regeneration command.
+
+- **`make dogfood` patch-bumps VERSION as a side effect.** Each
+  `make dogfood` invocation runs the test suite, which internally
+  calls `tekhton` (which fires the project-version bump hook), patch-
+  bumping VERSION from 4.27.0 to 4.27.x. This is independent of m27.3
+  and is the existing behavior of the milestone-strategy project-
+  version system on non-milestone runs. The final-state VERSION
+  written by this coder pass is `4.27.0`; the next finalize hook will
+  reset to whatever the milestone strategy resolves at that time.

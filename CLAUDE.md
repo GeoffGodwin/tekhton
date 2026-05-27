@@ -562,6 +562,8 @@ Available variables in prompt templates — set by the pipeline before rendering
 
 **TUI lifecycle model.** See [`docs/tui-lifecycle-model.md`](docs/tui-lifecycle-model.md) for the authoritative description of stage classes, pill / timings / events ownership, the substage API, the auto-close-and-warn rule, and checklists for adding new stages, sub-stages, or `run_op` call sites. Invariants are enforced by `tests/test_tui_lifecycle_invariants.sh`.
 
+**V4 env contract.** See [`docs/v4-env-contract.md`](docs/v4-env-contract.md) for the authoritative reference on the bash ↔ Go env seam: producer (`internal/runner/env.go::AsKV` + `internal/config/defaults.go`), the consumer rule (every bash read of a contract variable MUST use the `${VAR:-DEFAULT}` form), the full default table, and the CI gates that enforce it (`scripts/audit-bash-env.sh`, `tests/test_stage_env_setu.sh`, `scripts/wedge-audit.sh`).
+
 ## Testing
 
 ```bash

@@ -80,7 +80,7 @@ help: ## List targets.
 self-host: build ## Run the 15-scenario self-host parity matrix.
 	@bash scripts/self-host-check.sh
 
-dogfood: self-host ## Run the cutover gate: parity matrix + version lockstep + state-leak gate.
+dogfood: self-host ## Run the cutover gate: parity matrix + version lockstep + state-leak gate + env-contract gates.
 	@printf '\n[dogfood] cutover gate: tekhton.sh dispatcher routes run-flags to tekhton run.\n'
 	@printf '[dogfood] post-m20 milestones run via tekhton run --milestone <id>.\n'
 	@# State-leak gate: snapshot project state, run the test suite, diff.
@@ -91,3 +91,12 @@ dogfood: self-host ## Run the cutover gate: parity matrix + version lockstep + s
 	bash tests/run_tests.sh >/dev/null 2>&1 || true ; \
 	bash tests/no_state_leak.sh "$$_leak_before" ; \
 	rm -f "$$_leak_before"
+	@# m27.3 env-contract gates. Audit runs first (~1s, precise error
+	@# locations) so contributors get the cheap signal before the slower
+	@# parity test. The parity test catches what the static audit can't
+	@# resolve — dynamically-named reads, runtime sourcing, eval sites.
+	@printf '\n[dogfood] scripts/audit-bash-env.sh (m27.1 static unguarded-read audit)\n'
+	@bash scripts/audit-bash-env.sh
+	@printf '[dogfood] tests/test_stage_env_setu.sh (m27.3 set -u parity test)\n'
+	@bash tests/test_stage_env_setu.sh
+	@printf '[dogfood] all gates green\n'
