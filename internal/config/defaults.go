@@ -351,7 +351,15 @@ var baseDefaults = []defaultRule{
 	{"REWORK_TURN_MAX_CAP", ref("CODER_MAX_TURNS_CAP")},
 
 	{"USAGE_THRESHOLD_PCT", lit("0")},
-	{"AUTO_COMMIT", lit("false")},
+	// AUTO_COMMIT default flipped to true on 2026-05-27. Historically
+	// Tekhton always auto-committed (no push) and only the interactive
+	// dispatcher prompted; we'd added an explicit y/e/n prompt that
+	// burned operator attention and occasionally hung the pipeline
+	// (M27.2 cascade — bash hook blocked on read < /dev/tty). Operators
+	// who want to review before committing set AUTO_COMMIT=false in
+	// pipeline.conf or pass --no-commit; the pipeline then prints the
+	// suggested commit message + manual command and exits clean.
+	{"AUTO_COMMIT", lit("true")},
 
 	{"COMPLETE_MODE_ENABLED", lit("true")},
 	{"MAX_PIPELINE_ATTEMPTS", lit("5")},

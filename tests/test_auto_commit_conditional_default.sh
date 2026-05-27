@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # =============================================================================
-# test_auto_commit_conditional_default.sh — AUTO_COMMIT conditional default
+# test_auto_commit_conditional_default.sh — AUTO_COMMIT default + opt-out
 #
-# Tests that AUTO_COMMIT defaults to true in milestone mode and false otherwise.
-# Explicit user overrides (pipeline.conf or --no-commit) take precedence.
+# 2026-05-27: AUTO_COMMIT now defaults to TRUE for every mode (was: false
+# for non-milestone, true for milestone via a conditional override). The
+# interactive y/e/n prompt was removed entirely. Operators who want to
+# review before committing pass --no-commit or set AUTO_COMMIT=false in
+# pipeline.conf.
 #
-# The conditional default works in two phases:
-#   1. config_defaults.sh sets AUTO_COMMIT=false (non-milestone default)
-#   2. Post-flag-parsing block in tekhton.sh overrides to true for milestone
-#      mode, unless the user explicitly set AUTO_COMMIT.
+# This test enforces:
+#   1. The Go-emitted default is true (sourced via config_defaults.sh's
+#      `tekhton config defaults --emit shell` shim).
+#   2. Explicit user override (pipeline.conf AUTO_COMMIT=false) wins.
+#   3. --no-commit flag (tracked via _AUTO_COMMIT_EXPLICIT) wins.
 # =============================================================================
 set -euo pipefail
 
@@ -33,19 +37,8 @@ assert_eq() {
 
 cd "$PROJECT_DIR"
 
-# Source dependencies once at the top
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/config.sh"
-
-# Simulate the post-flag-parsing conditional from tekhton.sh
-apply_milestone_auto_commit() {
-    # This mirrors the logic in tekhton.sh after flag parsing
-    if [ "${MILESTONE_MODE:-false}" = true ] \
-       && [[ " ${_CONF_KEYS_SET:-} " != *" AUTO_COMMIT "* ]] \
-       && [ "${_AUTO_COMMIT_EXPLICIT:-false}" != true ]; then
-        AUTO_COMMIT=true
-    fi
-}
 
 reload_defaults() {
     unset AUTO_COMMIT 2>/dev/null || true
@@ -55,93 +48,61 @@ reload_defaults() {
 }
 
 # =============================================================================
-# Test 1: Non-milestone mode defaults to false
+# Test 1: Default is true (regardless of milestone mode)
 # =============================================================================
 
 MILESTONE_MODE=false
-_CONF_KEYS_SET=""
-_AUTO_COMMIT_EXPLICIT=false
 reload_defaults
-apply_milestone_auto_commit
-assert_eq "1.1 non-milestone mode defaults to false" "false" "$AUTO_COMMIT"
-
-# =============================================================================
-# Test 2: Milestone mode defaults to true
-# =============================================================================
+assert_eq "1.1 non-milestone mode default is true" "true" "$AUTO_COMMIT"
 
 MILESTONE_MODE=true
-_CONF_KEYS_SET=""
-_AUTO_COMMIT_EXPLICIT=false
 reload_defaults
-apply_milestone_auto_commit
-assert_eq "2.1 milestone mode defaults to true" "true" "$AUTO_COMMIT"
-
-# =============================================================================
-# Test 3: Explicit AUTO_COMMIT=false in pipeline.conf overrides milestone default
-# =============================================================================
-
-MILESTONE_MODE=true
-_CONF_KEYS_SET=" AUTO_COMMIT "
-_AUTO_COMMIT_EXPLICIT=false
-AUTO_COMMIT=false
-source "${TEKHTON_HOME}/lib/config_defaults.sh"
-apply_milestone_auto_commit
-assert_eq "3.1 explicit false in pipeline.conf overrides milestone" "false" "$AUTO_COMMIT"
-
-# =============================================================================
-# Test 4: Explicit AUTO_COMMIT=true in pipeline.conf works in non-milestone mode
-# =============================================================================
-
-MILESTONE_MODE=false
-_CONF_KEYS_SET=" AUTO_COMMIT "
-_AUTO_COMMIT_EXPLICIT=false
-AUTO_COMMIT=true
-source "${TEKHTON_HOME}/lib/config_defaults.sh"
-apply_milestone_auto_commit
-assert_eq "4.1 explicit true in pipeline.conf works in non-milestone" "true" "$AUTO_COMMIT"
-
-# =============================================================================
-# Test 5: --no-commit flag overrides milestone default
-# =============================================================================
-
-MILESTONE_MODE=true
-_CONF_KEYS_SET=""
-_AUTO_COMMIT_EXPLICIT=true
-# Reset AUTO_COMMIT so config_defaults.sh can set it fresh
-unset AUTO_COMMIT
-source "${TEKHTON_HOME}/lib/config_defaults.sh"
-# Simulate --no-commit: sets AUTO_COMMIT=false after defaults are loaded
-AUTO_COMMIT=false
-apply_milestone_auto_commit
-assert_eq "5.1 --no-commit overrides milestone default" "false" "$AUTO_COMMIT"
-
-# =============================================================================
-# Test 6: Unset MILESTONE_MODE → AUTO_COMMIT defaults to false
-# =============================================================================
+assert_eq "1.2 milestone mode default is true" "true" "$AUTO_COMMIT"
 
 unset MILESTONE_MODE 2>/dev/null || true
-_CONF_KEYS_SET=""
-_AUTO_COMMIT_EXPLICIT=false
 reload_defaults
-apply_milestone_auto_commit
-assert_eq "6.1 unset MILESTONE_MODE defaults to false" "false" "$AUTO_COMMIT"
+assert_eq "1.3 unset MILESTONE_MODE default is true" "true" "$AUTO_COMMIT"
 
 # =============================================================================
-# Test 7: config_defaults.sh alone (no milestone override) sets false
+# Test 2: Explicit AUTO_COMMIT=false in pipeline.conf wins over the default
+#
+# Sourcing order in tekhton-legacy.sh: config_defaults.sh first
+# (defaults from Go via `tekhton config defaults --emit shell`), then
+# load_config reads pipeline.conf and applies user values on top. So an
+# explicit setting comes AFTER the default and the value the test
+# fixes is what wins.
 # =============================================================================
+
+MILESTONE_MODE=true
+reload_defaults                # baseline: AUTO_COMMIT=true
+AUTO_COMMIT=false              # simulate pipeline.conf override
+assert_eq "2.1 explicit AUTO_COMMIT=false (set post-default) wins" "false" "$AUTO_COMMIT"
 
 MILESTONE_MODE=false
 reload_defaults
-assert_eq "7.1 config_defaults.sh alone sets false" "false" "$AUTO_COMMIT"
+AUTO_COMMIT=false
+assert_eq "2.2 explicit AUTO_COMMIT=false (non-milestone, post-default) wins" "false" "$AUTO_COMMIT"
 
 # =============================================================================
-# Test 8: config_defaults.sh :=false does not override explicit true
+# Test 3: Explicit AUTO_COMMIT=true post-default is a no-op (already true)
 # =============================================================================
 
+reload_defaults
 AUTO_COMMIT=true
-MILESTONE_MODE=false
-source "${TEKHTON_HOME}/lib/config_defaults.sh"
-assert_eq "8.1 config_defaults.sh does not override explicit true" "true" "$AUTO_COMMIT"
+assert_eq "3.1 explicit AUTO_COMMIT=true post-default still true" "true" "$AUTO_COMMIT"
+
+# =============================================================================
+# Test 4: --no-commit flag sets AUTO_COMMIT=false after defaults
+# =============================================================================
+# tekhton-legacy.sh handles `--no-commit` by setting AUTO_COMMIT=false +
+# _AUTO_COMMIT_EXPLICIT=true. The pre-2026-05-27 conditional override
+# logic was deleted (the default is now true; nothing to override).
+# Simulate the post-defaults assignment:
+
+reload_defaults
+AUTO_COMMIT=false          # simulate --no-commit
+_AUTO_COMMIT_EXPLICIT=true
+assert_eq "4.1 --no-commit sets AUTO_COMMIT=false" "false" "$AUTO_COMMIT"
 
 # =============================================================================
 

@@ -976,8 +976,6 @@ source "${TEKHTON_HOME}/lib/project_version_bump.sh"
 source "${TEKHTON_HOME}/lib/finalize.sh"
 source "${TEKHTON_HOME}/lib/milestone_metadata.sh"
 source "${TEKHTON_HOME}/lib/orchestrate.sh"
-# Provides _prompt_commit_choice with retry-on-empty — M25 regression fix.
-source "${TEKHTON_HOME}/lib/finalize_commit_prompt.sh"
 
 # Stage helpers and implementations
 source "${TEKHTON_HOME}/lib/intake_helpers.sh"
@@ -1624,15 +1622,12 @@ if [ "$SETUP_INDEXER" = true ]; then
     exit $?
 fi
 
-# AUTO_COMMIT conditional default: true in milestone mode, false otherwise.
-# config_defaults.sh sets the non-milestone default (false). Here we override
-# to true for milestone mode, but only if the user didn't explicitly set it
-# in pipeline.conf (tracked by _CONF_KEYS_SET) or via --no-commit flag.
-if [ "$MILESTONE_MODE" = true ] \
-   && [[ " ${_CONF_KEYS_SET:-} " != *" AUTO_COMMIT "* ]] \
-   && [ "${_AUTO_COMMIT_EXPLICIT:-false}" != true ]; then
-    AUTO_COMMIT=true
-fi
+# AUTO_COMMIT default (config_defaults.sh) is true for every mode since
+# 2026-05-27. The previous conditional override (milestone mode flips to
+# true) is now redundant — the default IS true, no mode-specific logic
+# needed. _AUTO_COMMIT_EXPLICIT is still tracked so --no-commit wins
+# against any future override paths; the flag is consumed at the
+# argument-parse site, not here.
 
 # Milestone mode implies --complete: retry on acceptance failure instead of
 # exiting with "Fix issues and re-run". COMPLETE_MODE_ENABLED in pipeline.conf

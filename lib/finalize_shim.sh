@@ -134,13 +134,6 @@ case "$HOOK_NAME" in
         _shim_load_finalize_bodies
         ;;
     _hook_commit)
-        # finalize_commit_prompt.sh provides _prompt_commit_choice. Sourced
-        # before hooks.sh so the helper is defined when _hook_commit's
-        # body (in lib/finalize_commit.sh, loaded by _shim_load_finalize_bodies
-        # below) calls it. Without this source the prompt falls back to
-        # the inline read which has the M25 autoskip-on-empty regression.
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/finalize_commit_prompt.sh"
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/hooks.sh"
         # hooks.sh:117/185 calls get_milestone_commit_prefix /

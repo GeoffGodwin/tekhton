@@ -20,15 +20,6 @@
 # =============================================================================
 set -euo pipefail
 
-# The interactive y/e/n prompt lives in a sibling file to keep this file
-# under the 300-line bash ceiling. _prompt_commit_choice retries on empty
-# input — the M25 autoskip regression fix.
-# shellcheck source=finalize_commit_prompt.sh
-if [[ -f "${TEKHTON_HOME:-$(dirname "${BASH_SOURCE[0]}")/..}/lib/finalize_commit_prompt.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "${TEKHTON_HOME:-$(dirname "${BASH_SOURCE[0]}")/..}/lib/finalize_commit_prompt.sh"
-fi
-
 # _do_git_commit MSG
 # Stages all changes, runs gitignore safety check, commits with MSG.
 # M40: Drains pending inbox before commit so mid-run notes are persisted.
@@ -133,9 +124,18 @@ _final_check_result_read() {
 }
 
 # _hook_commit EXIT_CODE
-# Interactive (or AUTO_COMMIT) commit flow. Runs only on success + clean
-# final checks. Prints the completion banner, suggests a commit message,
-# and either commits/edits/skips based on user input.
+# Auto-commit flow. Runs only on success + clean final checks. Prints the
+# completion banner, the commit message, and commits. No push (operator
+# reviews + pushes manually).
+#
+# 2026-05-27: the y/e/n prompt was removed entirely. The historical
+# Tekhton behavior was always-commit-no-push, and the interactive prompt
+# we'd added was burning operator attention (be at terminal when run
+# finishes) AND occasionally hanging the whole pipeline when stdin was
+# unreachable (M27.2 cascade). Operators who want to review before
+# committing can set AUTO_COMMIT=false in pipeline.conf or pass
+# --no-commit; the pipeline then skips the commit and prints the
+# suggested message + manual command.
 _hook_commit() {
     local exit_code="$1"
     if [[ "$exit_code" -ne 0 ]]; then
@@ -214,67 +214,38 @@ _hook_commit() {
     # Print action items summary
     _print_action_items
 
-    log "Suggested commit message:"
+    log "Commit message:"
     echo "────────────────────────────────────────"
     echo "$COMMIT_MSG"
     echo "────────────────────────────────────────"
     echo
 
-    local commit_choice
-    if [[ "${AUTO_COMMIT:-false}" = "true" ]]; then
-        log "AUTO_COMMIT enabled — committing automatically."
-        commit_choice="y"
-    else
-        commit_choice=$(_prompt_commit_choice)
+    # Explicit opt-out: AUTO_COMMIT=false (set in pipeline.conf or via
+    # --no-commit) skips the commit entirely. Default is to commit.
+    if [[ "${AUTO_COMMIT:-true}" = "false" ]]; then
+        log "AUTO_COMMIT=false — skipping commit. When ready:"
+        echo "  git add -A && git commit -m '${COMMIT_MSG%%$'\n'*}'"
+        _COMMIT_SUCCEEDED=false
+        _write_commit_decision "declined"
+        _print_next_action
+        return 0
     fi
 
-    case "$commit_choice" in
-        y|Y)
-            # Order matters: write the decision sentinel FIRST (so the
-            # bookkeeping hooks' shouldRunOnCompletion gate sees
-            # "committed"), then run bookkeeping (mutates manifest +
-            # deletes milestone file), THEN _do_git_commit (captures
-            # both the agent's work AND the bookkeeping mutations in a
-            # single commit, leaving the working tree clean).
-            _write_commit_decision "committed"
-            _run_commit_bookkeeping
-            _do_git_commit "$COMMIT_MSG"
-            _COMMIT_SUCCEEDED=true
-            if command -v update_checkpoint_commit &>/dev/null; then
-                update_checkpoint_commit "$(git rev-parse HEAD 2>/dev/null || echo "")"
-            fi
-            _tag_milestone_if_complete
-            print_run_summary
-            success "Committed. Open a PR and squash-merge to main when ready."
-            _print_next_action
-            ;;
-        e|E)
-            local tmpfile
-            tmpfile=$(mktemp "${TEKHTON_SESSION_DIR:-/tmp}/tekhton-commit-XXXXXX.txt")
-            echo "$COMMIT_MSG" > "$tmpfile"
-            ${EDITOR:-nano} "$tmpfile"
-            local edited_msg
-            edited_msg=$(cat "$tmpfile")
-            rm "$tmpfile"
-            # See y-branch comment — same ordering rationale.
-            _write_commit_decision "committed"
-            _run_commit_bookkeeping
-            _do_git_commit "$edited_msg"
-            _COMMIT_SUCCEEDED=true
-            if command -v update_checkpoint_commit &>/dev/null; then
-                update_checkpoint_commit "$(git rev-parse HEAD 2>/dev/null || echo "")"
-            fi
-            _tag_milestone_if_complete
-            print_run_summary
-            success "Committed. Open a PR and squash-merge to main when ready."
-            _print_next_action
-            ;;
-        *)
-            log "Skipped commit. When ready:"
-            echo "  git add -A && git commit -m '${COMMIT_MSG%%$'\n'*}'"
-            _COMMIT_SUCCEEDED=false
-            _write_commit_decision "declined"
-            _print_next_action
-            ;;
-    esac
+    # Auto-commit path. Order matters: write the decision sentinel FIRST
+    # (so the bookkeeping hooks' shouldRunOnCompletion gate sees
+    # "committed"), then run bookkeeping (mutates manifest + deletes
+    # milestone file), THEN _do_git_commit (captures both the agent's
+    # work AND the bookkeeping mutations in a single commit, leaving the
+    # working tree clean post-success).
+    _write_commit_decision "committed"
+    _run_commit_bookkeeping
+    _do_git_commit "$COMMIT_MSG"
+    _COMMIT_SUCCEEDED=true
+    if command -v update_checkpoint_commit &>/dev/null; then
+        update_checkpoint_commit "$(git rev-parse HEAD 2>/dev/null || echo "")"
+    fi
+    _tag_milestone_if_complete
+    print_run_summary
+    success "Committed. Review with \`git show HEAD\` and push when ready."
+    _print_next_action
 }
