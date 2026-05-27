@@ -1,6 +1,6 @@
 # Security Notes
 
-Generated: 2026-05-26 15:10:26
+Generated: 2026-05-26 23:22:58
 
 ## Non-Blocking Findings (MEDIUM/LOW)
-- [LOW] [category:A05] [scripts/audit-bash-env.sh:43] fixable:no — `TEKHTON_BIN` env var is accepted as an executable path. The `-x` check is present, and this is a documented override mechanism for CI and monorepo layouts. In a shared CI environment where an attacker can inject env vars, this enables arbitrary-binary execution. Acceptable by design for a developer tool; no change recommended unless the script is ever run with elevated privileges.
+- [LOW] [category:A03] [tests/test_m84_static_analysis.sh:55] fixable:yes — `_strip_m27_defaults` passes `fname` directly to `grep -v "${fname}}"` without escaping regex metacharacters. The `.` in filenames like `SCOUT_REPORT.md}` is treated as "any character" by grep rather than a literal dot. Since `M84_FILES` is hardcoded and never user-supplied this is not exploitable, but the pattern could over-exclude lines like `SCOUT_REPORTXmd}`. Fix: use `grep -vF "${fname}}"` (fixed-string mode) or escape the dot.

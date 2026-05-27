@@ -2,6 +2,6 @@
   "proto": "tekhton.run.result.v1",
   "disposition": "success",
   "attempts": 1,
-  "agent_calls": 7,
-  "elapsed_secs": 2827
+  "agent_calls": 8,
+  "elapsed_secs": 3412
 }

@@ -65,6 +65,8 @@ for hook in "${HOOKS[@]}"; do
         TEKHTON_HOME="$TEKHTON_HOME" \
         PROJECT_DIR="$PROJECT_DIR" \
         PIPELINE_EXIT_CODE=0 \
+        TEKHTON_PROMPT_TIMEOUT_SECS=2 \
+        TEKHTON_UPDATE_CHECK=false \
         bash -c '
             "'"$SHIM"'" '"$hook"' 2>&1 || true
         ' </dev/null

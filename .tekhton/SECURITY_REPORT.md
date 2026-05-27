@@ -1,8 +1,10 @@
 ## Summary
-m27.1 delivers internal developer tooling: a grep/awk-based audit script (`scripts/audit-bash-env.sh`), its unit test (`tests/test_audit_bash_env.sh`), six fixture files, and a one-time inventory snapshot. None of these files handle credentials, network I/O, user-supplied web input, authentication, or cryptography. The attack surface is strictly local developer execution. The implementation is well-crafted: file paths flow through quoted arrays, `find` output is consumed via `while IFS= read -r`, the allowlist is used as an awk associative-array key (not a regex), and `sed` filters dynamic key extraction to `[A-Z_][A-Z0-9_]*` identifiers only. No findings of MEDIUM severity or above.
+
+m27.2 is a purely mechanical `${VAR}` → `${VAR:-DEFAULT}` sweep across 102 shell files (963 line-level edits). No new logic, authentication paths, network calls, or cryptographic operations were introduced. Security-critical defaults (`SECURITY_AGENT_ENABLED:-true`, `SECURITY_BLOCK_SEVERITY:-HIGH`, `SECURITY_UNFIXABLE_POLICY:-escalate`) all retain restrictive, fail-safe values. The sole structural change is the `_strip_m27_defaults` helper added to `tests/test_m84_static_analysis.sh`, which is discussed below.
 
 ## Findings
-- [LOW] [category:A05] [scripts/audit-bash-env.sh:43] fixable:no — `TEKHTON_BIN` env var is accepted as an executable path. The `-x` check is present, and this is a documented override mechanism for CI and monorepo layouts. In a shared CI environment where an attacker can inject env vars, this enables arbitrary-binary execution. Acceptable by design for a developer tool; no change recommended unless the script is ever run with elevated privileges.
+
+- [LOW] [category:A03] [tests/test_m84_static_analysis.sh:55] fixable:yes — `_strip_m27_defaults` passes `fname` directly to `grep -v "${fname}}"` without escaping regex metacharacters. The `.` in filenames like `SCOUT_REPORT.md}` is treated as "any character" by grep rather than a literal dot. Since `M84_FILES` is hardcoded and never user-supplied this is not exploitable, but the pattern could over-exclude lines like `SCOUT_REPORTXmd}`. Fix: use `grep -vF "${fname}}"` (fixed-string mode) or escape the dot.
 
 ## Verdict
-CLEAN
+FINDINGS_PRESENT

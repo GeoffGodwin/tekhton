@@ -2,14 +2,14 @@
 PASS
 
 ## Confidence
-92
+88
 
 ## Reasoning
-- Scope is tightly defined: work list is the m27.1 inventory file, affected files are `lib/*.sh` and `stages/*.sh`, exclusions are explicitly listed
-- Canonical default sources are identified precisely (`internal/config/defaults.go`, `internal/proto/agent_v1.go`, `internal/runner/env.go:AsKV`) and a runtime verification method is given (`tekhton config defaults --emit shell | grep VARNAME`)
-- All eight acceptance criteria are machine-verifiable commands with expected exit codes and output
-- The ≥ 20 files criterion guards against a trivially small sweep; the dry-run check on m27.3 catches runtime regressions the static audit would miss
-- Watch For section addresses the three main failure modes: wrong defaults, partial sweeps, and exempted files slipping into the inventory
-- No new user-facing config, files, or format changes — no Migration Impact section required
-- No UI components — UI testability criterion not applicable
-- Hard dependency on m27.1 is explicit and the recovery path (re-run `scripts/audit-bash-env.sh`) is documented
+- Scope is tightly defined: read `.tekhton/M27_INVENTORY.md`, apply `${VAR:-default}` guards, delete the inventory, verify clean. No ambiguity about what is in or out.
+- Acceptance criteria are fully mechanical and automatable: `audit-bash-env.sh` exits 0, file count ≥ 20, `bash -n` syntax checks, test suite green, `make build` passes, shellcheck clean, dry-run produces no unbound-variable errors.
+- Canonical default sources are named explicitly (`internal/config/defaults.go`, `internal/proto/agent_v1.go`, `internal/runner/env.go`) and a runtime verification method is provided (`tekhton config defaults --emit shell | grep VARNAME`).
+- Exclusion list is explicit (`lib/_archive/`, `lib/*_test.sh`, `tools/`, `tests/testdata/`), matching the audit script's own exclusions.
+- Dependency on m27.1 is stated clearly; the milestone cannot start without the inventory file, and a regeneration path is documented.
+- Watch For section addresses the one real risk (wrong default values) and notes the acceptable alternative guard form (`${VAR:?...}`).
+- No user-facing config keys, file formats, or protocol changes — no migration impact section required.
+- Not a UI milestone; UI testability criterion is not applicable.
