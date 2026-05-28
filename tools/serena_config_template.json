@@ -1,8 +1,13 @@
 {
   "mcpServers": {
     "serena": {
-      "command": "{{SERENA_PYTHON}}",
-      "args": ["-m", "serena", "--project-dir", "{{PROJECT_DIR}}"],
+      "command": "{{SERENA_BIN}}",
+      "args": [
+        "start-mcp-server",
+        "--project", "{{PROJECT_DIR}}",
+        "--transport", "stdio",
+        "--log-level", "ERROR"
+      ],
       "cwd": "{{SERENA_PATH}}",
       "env": {
         "SERENA_LANGUAGE_SERVERS": "{{LANGUAGE_SERVERS}}"

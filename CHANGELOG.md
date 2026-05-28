@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Serena MCP config template emits `serena start-mcp-server` (the
+  console script) instead of `python -m serena` (which fails with
+  `No module named serena.__main__`). Affects fresh configs generated
+  by `tekhton --setup-indexer --with-lsp` or any project missing
+  `.claude/serena_mcp_config.json`. Stale broken configs from earlier
+  versions are migrated in m28.3. (m28.1)
+
 ## [4.22.0] - 2026-05-18
 
 ### Added

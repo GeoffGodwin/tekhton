@@ -228,9 +228,22 @@ fi
 _log "Generating MCP config at ${CONFIG_OUTPUT}..."
 mkdir -p "$(dirname "$CONFIG_OUTPUT")"
 
+# Locate venv Serena console-script. Resolved here, after pip install has
+# landed the entrypoint, so `[ -x ]` is both a platform detector (POSIX
+# bin/ vs Windows Scripts/) and a presence check. Serena's package has no
+# __main__, so the binary is the only supported invocation surface.
+SERENA_BIN="${SERENA_VENV}/bin/serena"
+if [ ! -x "$SERENA_BIN" ]; then
+    SERENA_BIN="${SERENA_VENV}/Scripts/serena.exe"
+fi
+if [ ! -e "$SERENA_BIN" ]; then
+    _warn "Serena console script not found at ${SERENA_VENV}/{bin,Scripts}/serena[.exe]."
+    _warn "MCP config will reference a missing binary; re-run after a successful install."
+fi
+
 # Perform template substitution
 sed \
-    -e "s|{{SERENA_PYTHON}}|${SERENA_PYTHON}|g" \
+    -e "s|{{SERENA_BIN}}|${SERENA_BIN}|g" \
     -e "s|{{PROJECT_DIR}}|${PROJECT_DIR}|g" \
     -e "s|{{SERENA_PATH}}|${SERENA_DIR}|g" \
     -e "s|{{LANGUAGE_SERVERS}}|${detected_servers}|g" \

@@ -89,6 +89,7 @@ echo "=== Test: start_mcp_server with everything set up ==="
 mkdir -p "${TMPDIR}/.claude/serena/.venv/bin"
 mkdir -p "${TMPDIR}/.claude"
 touch "${TMPDIR}/.claude/serena/.venv/bin/python"
+touch "${TMPDIR}/.claude/serena/.venv/bin/serena"
 
 SERENA_ENABLED=true
 SERENA_PATH=".claude/serena"
@@ -96,6 +97,7 @@ _MCP_SERVER_RUNNING=false
 _CLI_MCP_CONFIG_SUPPORTED="1"
 _SERENA_DIR=""
 _SERENA_PYTHON=""
+_SERENA_BIN=""
 _MCP_CONFIG_PATH=""
 
 start_mcp_server
@@ -232,6 +234,7 @@ echo "=== Test: resolve_mcp_config generates config from template ==="
 _MCP_CONFIG_PATH=""
 _SERENA_DIR="${TMPDIR}/.claude/serena"
 _SERENA_PYTHON="${TMPDIR}/.claude/serena/.venv/bin/python"
+_SERENA_BIN="${TMPDIR}/.claude/serena/.venv/bin/serena"
 # shellcheck disable=SC2034  # consumed by _resolve_mcp_config
 SERENA_CONFIG_PATH=""
 # shellcheck disable=SC2034  # consumed by _resolve_mcp_config

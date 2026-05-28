@@ -22,6 +22,7 @@ _MCP_CONFIG_PATH=""
 _CLI_MCP_CONFIG_SUPPORTED=""
 _SERENA_DIR=""
 _SERENA_PYTHON=""
+_SERENA_BIN=""
 
 # Exported for agent.sh to check
 SERENA_MCP_AVAILABLE=false
@@ -94,6 +95,17 @@ _resolve_serena_paths() {
         return 1
     fi
 
+    # Resolve the console-script entrypoint. Serena's package ships no
+    # __main__, so `python -m serena` fails at import time; the binary is
+    # the only supported invocation surface.
+    if [[ -f "${venv_dir}/bin/serena" ]]; then
+        _SERENA_BIN="${venv_dir}/bin/serena"
+    elif [[ -f "${venv_dir}/Scripts/serena.exe" ]]; then
+        _SERENA_BIN="${venv_dir}/Scripts/serena.exe"
+    else
+        return 1
+    fi
+
     _SERENA_DIR="$serena_path"
     return 0
 }
@@ -122,7 +134,7 @@ _resolve_mcp_config() {
         return 1
     fi
 
-    if [[ -z "${_SERENA_DIR:-}" ]] || [[ -z "${_SERENA_PYTHON:-}" ]]; then
+    if [[ -z "${_SERENA_DIR:-}" ]] || [[ -z "${_SERENA_BIN:-}" ]]; then
         return 1
     fi
 
@@ -130,7 +142,7 @@ _resolve_mcp_config() {
     mkdir -p "$(dirname "$default_config")"
 
     sed \
-        -e "s|{{SERENA_PYTHON}}|${_SERENA_PYTHON}|g" \
+        -e "s|{{SERENA_BIN}}|${_SERENA_BIN}|g" \
         -e "s|{{PROJECT_DIR}}|${PROJECT_DIR}|g" \
         -e "s|{{SERENA_PATH}}|${_SERENA_DIR}|g" \
         -e "s|{{LANGUAGE_SERVERS}}|${lang_servers}|g" \

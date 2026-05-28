@@ -69,6 +69,7 @@ assert_exit_code "start_mcp_server returns 1 when disabled (even with stale stat
 mkdir -p "${TMPDIR}/.claude/serena/.venv/bin"
 mkdir -p "${TMPDIR}/.claude"
 touch "${TMPDIR}/.claude/serena/.venv/bin/python"
+touch "${TMPDIR}/.claude/serena/.venv/bin/serena"
 
 SERENA_ENABLED=true
 # shellcheck disable=SC2034  # consumed by start_mcp_server via sourced mcp.sh
@@ -76,6 +77,7 @@ SERENA_PATH=".claude/serena"
 _CLI_MCP_CONFIG_SUPPORTED="1"
 _SERENA_DIR=""
 _SERENA_PYTHON=""
+_SERENA_BIN=""
 _MCP_CONFIG_PATH=""
 _MCP_SERVER_PID=""
 _MCP_SERVER_RUNNING=false
