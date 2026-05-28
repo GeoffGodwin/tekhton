@@ -868,6 +868,8 @@ source "${TEKHTON_HOME}/lib/agent.sh"
 # subprocess boundary. Without this source the final Run Summary shows
 # "Total turns: 0, Total time: 0m0s" after a successful pipeline run.
 source "${TEKHTON_HOME}/lib/run_summary_reconstruct.sh"
+# Provides count_open_nonblocking_notes shim for m25-orphan callers.
+source "${TEKHTON_HOME}/lib/drift_compat.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/dry_run.sh"
 source "${TEKHTON_HOME}/lib/quota.sh"

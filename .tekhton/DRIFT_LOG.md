@@ -3,12 +3,14 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 156
+- Runs since audit: 157
 =======
-- Runs since audit: 156
+- Runs since audit: 157
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-28 | "unknown"] `scripts/wedge-audit.sh` now stands at 297 lines after the m27.3 addition â 3 lines below the 300-line hard ceiling. The extraction of companion checks into `scripts/wedge-audit-companions.sh` was the right call; one more assertion block in a future milestone could push the main file over. Worth noting so the next author reaches for the companion pattern rather than inlining.
+- [2026-05-28 | "unknown"] `tests/test_stage_env_setu.sh` Signal 2 check (lines 131â139) depends on `/tmp/tekhton_stage_env_${stage}_post.txt` being written by `internal/stagerunner/adapter.go::buildBashScript`. If that dump path changes in a future stagerunner refactor, the Signal 2 check degrades silently rather than failing loudly. A comment near the `STAGES` array pointing to the Go source that writes the dump file would make the implicit dependency explicit.
 - [2026-05-27 | "unknown"] `scripts/wedge-audit.sh` now stands at 297 lines after the m27.3 addition â 3 lines below the 300-line hard ceiling. The extraction of companion checks into `scripts/wedge-audit-companions.sh` was the right call; one more assertion block in a future milestone could push the main file over. Worth noting so the next author reaches for the companion pattern rather than inlining.
 - [2026-05-27 | "unknown"] `tests/test_stage_env_setu.sh` Signal 2 check (lines 131â139) depends on `/tmp/tekhton_stage_env_${stage}_post.txt` being written by `internal/stagerunner/adapter.go::buildBashScript`. If that dump path changes in a future stagerunner refactor, the Signal 2 check degrades silently rather than failing loudly. A comment near the `STAGES` array pointing to the Go source that writes the dump file would make the implicit dependency explicit.
 - [2026-05-26 | "unknown"] `internal/finalize/shim.go:legacyEnvFallback` duplicates the bash-name-to-value mapping that `internal/runner/env.go:EnvBuilder.AsKV` now owns canonically. Two surfaces must be kept in sync when a global is added or renamed. The comment says "drops out once every caller assigns EnvKV" â m27's hardening pass is the right place to do this.

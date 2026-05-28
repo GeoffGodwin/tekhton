@@ -31,6 +31,59 @@ func newDriftCmd() *cobra.Command {
 	c.AddCommand(newDriftResolveAllCmd())
 	c.AddCommand(newDriftResetAuditCmd())
 	c.AddCommand(newDriftHumanActionCmd())
+	c.AddCommand(newDriftNonblockingCmd())
+	return c
+}
+
+// nonBlockingPath resolves NON_BLOCKING_LOG.md the same way driftLogPath
+// resolves DRIFT_LOG.md: --project-dir or cwd, optional NON_BLOCKING_LOG_FILE
+// override. Matches the bash artifact_defaults.sh:25 convention so callers
+// see identical resolution regardless of which side answers.
+func nonBlockingPath(projectDir string) string {
+	if projectDir == "" {
+		projectDir, _ = os.Getwd()
+	}
+	override := os.Getenv("NON_BLOCKING_LOG_FILE")
+	if override == "" {
+		override = filepath.Join(".tekhton", "NON_BLOCKING_LOG.md")
+	}
+	if filepath.IsAbs(override) {
+		return override
+	}
+	return filepath.Join(projectDir, override)
+}
+
+// newDriftNonblockingCmd groups subcommands that drive the
+// internal/drift/nonblocking.go file. Today only `count` is exposed
+// (it's the load-bearing callsite the bash port lost track of when m25
+// deleted lib/drift_cleanup.sh); other operations on NON_BLOCKING_LOG.md
+// happen through the in-process Go callers (finalize hooks, reviewer
+// stage) and don't need a CLI shim.
+func newDriftNonblockingCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "nonblocking",
+		Short: "Manage NON_BLOCKING_LOG.md (count)",
+	}
+	c.AddCommand(newDriftNonblockingCountCmd())
+	return c
+}
+
+func newDriftNonblockingCountCmd() *cobra.Command {
+	var projectDir string
+	c := &cobra.Command{
+		Use:   "count",
+		Short: "Print the count of open `- [ ]` non-blocking notes",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			n := drift.NewNonBlocking(nonBlockingPath(projectDir))
+			c, err := n.CountOpen()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%d\n", c)
+			return nil
+		},
+	}
+	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
 	return c
 }
 

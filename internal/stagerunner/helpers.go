@@ -33,6 +33,15 @@ var DefaultLibHelpers = []string{
 	// case. Sourced after agent.sh so the helper is visible when
 	// print_run_summary is invoked at any later point.
 	"lib/run_summary_reconstruct.sh",
+	// drift_compat.sh restores `count_open_nonblocking_notes` —
+	// m25 deleted lib/drift_cleanup.sh which owned that function but
+	// left six bash callers (stages/coder.sh, tekhton-legacy.sh,
+	// finalize_display.sh, dashboard_emitters.sh) referencing it. The
+	// shim delegates to `tekhton drift nonblocking count`. Sourced
+	// here so every stage subprocess (including coder, which hit the
+	// "command not found" on the M28.1 run) has the function visible
+	// before the stage script runs.
+	"lib/drift_compat.sh",
 	"lib/state.sh",
 	"lib/dry_run.sh",
 	"lib/quota.sh",

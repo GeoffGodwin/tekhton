@@ -91,6 +91,21 @@ case "$HOOK_NAME" in
         source "${TEKHTON_HOME}/lib/agent.sh"
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/prompts.sh"
+        # run_summary_reconstruct.sh provides
+        # _reconstruct_run_summary_from_stage_results which
+        # agent_helpers.sh:print_run_summary calls when in-process
+        # accumulators are zero. The _hook_commit arm sources this; the
+        # final-checks arm did not, which caused
+        # "_reconstruct_run_summary_from_stage_results: command not
+        # found" on the M28.1 dogfood run after the gate failure
+        # triggered print_run_summary in the final-checks subprocess.
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/run_summary_reconstruct.sh"
+        # drift_compat.sh restores count_open_nonblocking_notes for any
+        # caller reached by the build-fix re-source chain (the M28.1
+        # crash trip lived inside the eval'd run_stage_coder wrapper).
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/drift_compat.sh"
         _shim_load_finalize_bodies
         ;;
     # m25: _hook_drift_artifacts ported to Go
