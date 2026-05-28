@@ -48,11 +48,12 @@ Implementation:
      deviation from milestone literal wording).
 
 4. **`VERSION`** — `4.27.5` (patch bump per milestone spec). Note:
-   the file read `4.27.6` at the start of this run because previous
-   `make dogfood`/non-milestone invocations patch-bumped past 4.27.5
-   (documented behavior, see m27.3 CODER_SUMMARY Observed Issues).
-   Set to `4.27.5` per AC; the next finalize hook on m28.1 close will
-   resolve to whatever the milestone strategy dictates at that time.
+   the file read `4.27.9` at the start of this re-review cycle
+   because intermediate non-milestone invocations patch-bumped past
+   `4.27.5` (documented behavior, see m27.3 CODER_SUMMARY Observed
+   Issues). Reset to `4.27.5` per AC; the next finalize hook on
+   m28.1 close will resolve to whatever the milestone strategy
+   dictates at that time.
 
 5. **`CHANGELOG.md`** — One `### Fixed` entry under `[Unreleased]`,
    verbatim per milestone spec (m28.1 tag included).
@@ -82,11 +83,11 @@ Implementation:
       same sed pipeline `setup_serena.sh` runs) passes
       `python -m json.tool` validation.
 - [x] `bash -n tools/setup_serena.sh lib/mcp.sh` exits 0.
-- [x] `bash tests/run_tests.sh` — 489 shell tests pass + all Go
-      packages pass. One pre-existing failure (`test_tester.sh`,
-      UPSTREAM exit 1 in `stages/tester_tdd.sh:84`) was documented
-      in m27.3's reviewer report as predating m27.x and is out of
-      scope. Zero regressions introduced by m28.1.
+- [x] `bash tests/run_tests.sh` — 490 shell tests pass + all Go
+      packages pass. One pre-existing failure (`test_tester.sh`
+      Test 2, UPSTREAM exit 1 in `stages/tester_tdd.sh:84`) was
+      documented in m27.3's reviewer report as predating m27.x and
+      is out of scope. Zero regressions introduced by m28.1.
 - [x] `VERSION` reads `4.27.5`.
 - [x] `CHANGELOG.md` has the m28.1 `### Fixed` entry under
       `[Unreleased]`, verbatim per milestone spec.
