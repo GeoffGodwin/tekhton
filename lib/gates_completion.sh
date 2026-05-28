@@ -110,7 +110,8 @@ run_completion_gate() {
                     printf '# CWD: %s\n\n' "$(pwd 2>/dev/null || echo '(unknown)')"
                     printf '%s\n' "$_cg_output"
                 } > "$_cg_dump" 2>/dev/null || true
-                warn "Captured TEST_CMD output → ${_cg_dump#${PROJECT_DIR}/}"
+                # shellcheck disable=SC2295  # PROJECT_DIR is a literal-style path, not a glob
+                warn "Captured TEST_CMD output → ${_cg_dump#"${PROJECT_DIR}"/}"
                 # Compare against baseline — pre-existing failures should not block
                 if declare -f compare_test_with_baseline &>/dev/null \
                    && declare -f has_test_baseline &>/dev/null \
