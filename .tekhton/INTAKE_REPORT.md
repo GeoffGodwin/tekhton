@@ -2,12 +2,13 @@
 PASS
 
 ## Confidence
-87
+92
 
 ## Reasoning
-- Scope is tightly defined: six numbered goals, a complete file manifest table, and pseudocode/layouts for every artifact. Two competent developers would arrive at the same implementation.
-- Acceptance criteria are concrete and executable — every criterion is a shell command with an expected exit code or a `grep`-verifiable fact. No vague aspirations like "works correctly."
-- Watch For section addresses the three real brittleness points (stale /tmp files, fixture coverage, doc drift) with actionable mitigation in each case.
-- No new user-facing config keys are introduced, so a Migration Impact section is not needed.
-- No UI components involved; UI testability criterion is N/A.
-- One minor implicit dependency worth noting: Goal 5 describes generating the doc table via `scripts/audit-bash-env.sh --emit-table`. Whether `--emit-table` was shipped as part of m27.1 or needs to be added here is not stated. A developer should verify against m27.1's delivery — if the flag is absent, they can add it within m27.3's scope or produce the table manually; the doc acceptance criterion (≥30 rows, non-empty file) is achievable either way and does not block clarity.
+- Scope is precisely bounded: 5 named files, explicit "not in scope" callouts for 28.2 (probe) and 28.3 (stale-config migration), and a "Watch For" section that reinforces each boundary
+- Design section provides exact code — full JSON template, bash variable declaration, if/elif/else resolver block, and the sed substitution block — leaving no room for developer interpretation
+- Acceptance criteria are mechanically testable: grep for string presence/absence, `python -m json.tool` validation, `bash -n` syntax check, test suite regression, VERSION file content, CHANGELOG entry, MANIFEST row status
+- POSIX/Windows dual-path concern is called out explicitly and mirrored against the existing `_SERENA_PYTHON` pattern, making the implementation shape unambiguous
+- VERSION bump target (`4.27.4` → `4.27.5`) and CHANGELOG entry are fully specified
+- Seeds Forward section ensures `_SERENA_BIN` contract is clear for m28.2 consumers
+- Minor: CLAUDE.md requires `shellcheck lib/*.sh` with zero warnings, but acceptance criteria only lists `bash -n`. This is a project-wide standing rule every developer knows, so it does not block PASS — but shellcheck should be run on `lib/mcp.sh` and `tools/setup_serena.sh` after changes
