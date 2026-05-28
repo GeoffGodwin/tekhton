@@ -2,12 +2,13 @@
 PASS
 
 ## Confidence
-91
+92
 
 ## Reasoning
-- Scope is tightly defined with explicit in/out-of-scope callouts: template rewrite, `_SERENA_BIN` resolver, substitution paths, and VERSION/CHANGELOG are in; stale-config migration (28.3) and runtime probing (28.2) are explicitly excluded
-- Every code change is specified to the line: exact JSON template body, exact bash declarations, exact sed block replacement — two developers would produce identical implementations
-- Acceptance criteria are all mechanically testable: grep checks, `bash -n` syntax validation, `python -m json.tool` JSON parse, test suite regression gate, VERSION/CHANGELOG/MANIFEST spot checks
-- "Watch For" section covers the two real risks (POSIX vs Windows dual-path and scope creep into 28.2/28.3) with enough precision to prevent accidental over-reach
-- No user-facing config keys are added, so no Migration impact section is required; the short-circuit on existing configs is intentionally preserved and explained
-- No UI components; UI testability criterion is not applicable
+- Scope is precisely bounded: four explicit goals, five named files, and a "Watch For" section that draws hard lines between this subtask and m28.2/m28.3
+- Acceptance criteria are fully mechanical and verifiable: `grep` membership checks, `bash -n` syntax validation, `python -m json.tool` round-trip, exact VERSION string, test suite regression gate, MANIFEST status row
+- Design section provides exact code for every change (module-scope declaration, dual POSIX/Windows lookup block, complete sed command with old placeholder removed, setup_serena.sh post-venv assignment) — two competent developers would produce identical diffs
+- Out-of-scope boundaries are explicit and reinforced: existing-config migration is m28.3, runtime probing is m28.2, `--context` flag omission is justified and noted
+- "Seeds Forward" section documents the contract `_SERENA_BIN` must satisfy for m28.2, preventing a silent abstraction leak
+- No UI components introduced; UI testability criterion not applicable
+- No new user-facing config keys requiring a migration impact section; the change is purely to the generation path for fresh installs

@@ -1,4 +1,4 @@
-# Pre-flight Report — 2026-05-28 08:42:06
+# Pre-flight Report — 2026-05-28 19:25:11
 
 ## Summary
 ✓ 2 passed  ⚠ 1 warned  ✗ 0 failed  🔧 0 auto-fixed
@@ -12,5 +12,5 @@ go.sum exists.
 .go-version requires 1.23, but running 1.26.
 
 ### ✓ Claude CLI version
-claude 2.1.146 is within the tested compatibility band (>= 2.1.140).
+claude 2.1.156 is within the tested compatibility band (>= 2.1.140).
 
