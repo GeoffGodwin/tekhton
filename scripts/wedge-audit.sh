@@ -303,4 +303,5 @@ printf 'wedge-audit: clean (%d files audited, %d allowed shim writers).\n' \
 # m27.3 companion-tool presence checks. Extracted to a sibling file so the
 # main audit stays under the 300-line bash ceiling.
 # shellcheck source=scripts/wedge-audit-companions.sh
+# shellcheck disable=SC1091
 source "${REPO_ROOT}/scripts/wedge-audit-companions.sh"
