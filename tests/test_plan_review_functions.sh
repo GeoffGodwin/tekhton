@@ -4,7 +4,7 @@ set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export TEKHTON_HOME
-export PROJECT_DIR="/tmp/tekhton_review_test"
+export PROJECT_DIR="$(mktemp -d -t tekhton_review_test_XXXXXX)"
 
 PASS=0
 FAIL=0

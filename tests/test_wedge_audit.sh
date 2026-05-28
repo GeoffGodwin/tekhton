@@ -27,12 +27,15 @@ pass() { echo "PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $*"; FAIL=$((FAIL + 1)); }
 
 # Remove stale artifacts from previous runs killed with SIGKILL (which
-# bypasses the EXIT trap). Must run before Test 1 so leftover files don't
-# cause the "clean HEAD" check to fail.
-# shellcheck disable=SC2086
-rm -f "${TEKHTON_HOME}/lib/_test_wedge_violation_"*.sh \
-      "${TEKHTON_HOME}/lib/_test_wedge_report_"*.sh \
-      "${TEKHTON_HOME}/lib/_test_wedge_m10_violation_"*.sh 2>/dev/null || true
+# bypasses the EXIT trap). Use -mmin +1 so a concurrent run's in-flight
+# files (created within the last minute) are preserved — a bare glob
+# `rm -f *PID*.sh` here would race with parallel test suites and delete
+# the other instance's deliberate violation files mid-test.
+find "${TEKHTON_HOME}/lib" -maxdepth 1 -mmin +1 \
+    \( -name '_test_wedge_violation_*.sh' \
+       -o -name '_test_wedge_report_*.sh' \
+       -o -name '_test_wedge_m10_violation_*.sh' \) \
+    -delete 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Test 1 (happy path): HEAD is clean — no violations

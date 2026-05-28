@@ -90,12 +90,12 @@ test_mode_info_tui_no_logfile() {
     TUI_APPEND_EVENT_CALLS=0
 
     # Redirect stdout to verify nothing is written to stdout
-    mode_info "tui-only message" > /tmp/mode_info_stdout.txt 2>&1 || true
+    mode_info "tui-only message" > ${TMPDIR}/mode_info_stdout.txt 2>&1 || true
 
     # Verify output is NOT echoed to stdout
-    if [[ -s /tmp/mode_info_stdout.txt ]]; then
+    if [[ -s ${TMPDIR}/mode_info_stdout.txt ]]; then
         echo "FAIL: test_mode_info_tui_no_logfile — should not echo to stdout"
-        cat /tmp/mode_info_stdout.txt
+        cat ${TMPDIR}/mode_info_stdout.txt
         return 1
     fi
 

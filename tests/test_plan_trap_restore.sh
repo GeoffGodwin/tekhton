@@ -42,9 +42,11 @@ _cleanup_test_dir() {
 
 echo "=== Previous trap handlers are captured and restored ==="
 
-# Create a mock claude command that succeeds and outputs text
-mkdir -p /tmp/tekhton_test_bin
-cat > /tmp/tekhton_test_bin/claude << 'EOF'
+# Create a mock claude command that succeeds and outputs text.
+# Per-process bin dir keeps the mock isolated from concurrent test runs.
+MOCK_BIN_DIR="$(mktemp -d -t tekhton_test_bin_XXXXXX)"
+trap '[[ -n "${MOCK_BIN_DIR:-}" ]] && rm -rf "$MOCK_BIN_DIR"' EXIT
+cat > "$MOCK_BIN_DIR/claude" << 'EOF'
 #!/bin/bash
 # Mock claude: accept arguments and output placeholder text
 cat <<'ENDOUT'
@@ -52,10 +54,10 @@ This is a test design document output from the planning agent.
 ENDOUT
 exit 0
 EOF
-chmod +x /tmp/tekhton_test_bin/claude
+chmod +x "$MOCK_BIN_DIR/claude"
 
 # Add to PATH so the mock is found
-export PATH="/tmp/tekhton_test_bin:$PATH"
+export PATH="$MOCK_BIN_DIR:$PATH"
 
 TEST_DIR=$(_make_test_dir)
 export PROJECT_DIR="$TEST_DIR"
@@ -213,7 +215,7 @@ _cleanup_test_dir "$TEST_DIR"
 # Cleanup
 # =============================================================================
 
-rm -rf /tmp/tekhton_test_bin
+# Mock-bin cleanup handled by EXIT trap above.
 
 # =============================================================================
 # Summary

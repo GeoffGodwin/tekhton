@@ -32,7 +32,8 @@ FINAL_FIX_MAX_TURNS=$((CODER_MAX_TURNS / 3))
 
 # Setup config for defaults
 ANALYZE_CMD="true"
-TEST_CMD="bash /tmp/test_cmd.sh"
+TEST_CMD_FILE="$TMPDIR/test_cmd.sh"
+TEST_CMD="bash $TEST_CMD_FILE"
 
 export PROJECT_DIR LOG_DIR TIMESTAMP LOG_FILE TASK
 export FINAL_FIX_ENABLED FINAL_FIX_MAX_ATTEMPTS FINAL_FIX_MAX_TURNS
@@ -69,11 +70,11 @@ run_agent() {
 
     # If configured to succeed on this attempt, set the test to pass
     if [ "$_RUN_AGENT_SUCCESS_ON_ATTEMPT" -eq "$_RUN_AGENT_CALL_COUNT" ]; then
-        cat > /tmp/test_cmd.sh <<'EOFTEST'
+        cat > $TEST_CMD_FILE <<'EOFTEST'
 #!/usr/bin/env bash
 exit 0
 EOFTEST
-        chmod +x /tmp/test_cmd.sh
+        chmod +x $TEST_CMD_FILE
     fi
     return 0
 }
@@ -83,11 +84,11 @@ test_no_fix_needed() {
     _RUN_AGENT_CALL_COUNT=0
 
     # Create a test command that passes
-    cat > /tmp/test_cmd.sh <<'EOF'
+    cat > $TEST_CMD_FILE <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-    chmod +x /tmp/test_cmd.sh
+    chmod +x $TEST_CMD_FILE
 
     > "$LOG_FILE"
 
@@ -115,11 +116,11 @@ test_fix_succeeds_on_first_attempt() {
     _RUN_AGENT_SUCCESS_ON_ATTEMPT=1  # Succeed on 1st fix agent attempt
 
     # Create a test command that initially fails
-    cat > /tmp/test_cmd.sh <<'EOF'
+    cat > $TEST_CMD_FILE <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
-    chmod +x /tmp/test_cmd.sh
+    chmod +x $TEST_CMD_FILE
 
     > "$LOG_FILE"
     FINAL_FIX_ENABLED=true
@@ -149,11 +150,11 @@ test_fix_exhausts_attempts() {
     _RUN_AGENT_SUCCESS_ON_ATTEMPT=-1  # Never succeed
 
     # Create a test command that always fails
-    cat > /tmp/test_cmd.sh <<'EOF'
+    cat > $TEST_CMD_FILE <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
-    chmod +x /tmp/test_cmd.sh
+    chmod +x $TEST_CMD_FILE
 
     > "$LOG_FILE"
     FINAL_FIX_ENABLED=true
@@ -183,11 +184,11 @@ test_fix_disabled() {
     _RUN_AGENT_SUCCESS_ON_ATTEMPT=-1
 
     # Create a test command that fails
-    cat > /tmp/test_cmd.sh <<'EOF'
+    cat > $TEST_CMD_FILE <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
-    chmod +x /tmp/test_cmd.sh
+    chmod +x $TEST_CMD_FILE
 
     > "$LOG_FILE"
     FINAL_FIX_ENABLED=false
@@ -216,11 +217,11 @@ test_fix_succeeds_on_second_attempt() {
     _RUN_AGENT_SUCCESS_ON_ATTEMPT=2  # Succeed on 2nd fix agent attempt
 
     # Create a test command that initially fails
-    cat > /tmp/test_cmd.sh <<'EOF'
+    cat > $TEST_CMD_FILE <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
-    chmod +x /tmp/test_cmd.sh
+    chmod +x $TEST_CMD_FILE
 
     > "$LOG_FILE"
     FINAL_FIX_ENABLED=true
