@@ -92,6 +92,25 @@ run_completion_gate() {
             if [[ "$_cg_exit" -eq 0 ]]; then
                 log "Completion gate: TEST_CMD passed."
             else
+                # Persist captured TEST_CMD output so future investigations can
+                # see WHICH tests failed without trying to re-run from a
+                # corrupted state. The M28.1 cascade (2026-05-28) burned an
+                # afternoon of dogfood diagnosis because the gate reported
+                # "TEST_CMD exited 1" with no record of the actual failures —
+                # the test suite passed on every standalone re-run.
+                local _cg_dump="${TEKHTON_DIR:-.tekhton}/COMPLETION_GATE_LAST_FAILURE.log"
+                if [[ -n "${PROJECT_DIR:-}" ]] && [[ "$_cg_dump" != /* ]]; then
+                    _cg_dump="${PROJECT_DIR}/${_cg_dump}"
+                fi
+                {
+                    printf '# Completion gate TEST_CMD failure — %s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+                    printf '# Exit code: %s\n' "$_cg_exit"
+                    printf '# TEST_CMD: %s\n' "${TEST_CMD:-(unset)}"
+                    printf '# Milestone: %s\n' "${_CURRENT_MILESTONE:-(none)}"
+                    printf '# CWD: %s\n\n' "$(pwd 2>/dev/null || echo '(unknown)')"
+                    printf '%s\n' "$_cg_output"
+                } > "$_cg_dump" 2>/dev/null || true
+                warn "Captured TEST_CMD output → ${_cg_dump#${PROJECT_DIR}/}"
                 # Compare against baseline — pre-existing failures should not block
                 if declare -f compare_test_with_baseline &>/dev/null \
                    && declare -f has_test_baseline &>/dev/null \
