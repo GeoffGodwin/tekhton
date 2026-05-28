@@ -45,9 +45,12 @@ source "${TEKHTON_HOME}/lib/ui_validate.sh" 2>/dev/null
 # Tests: _is_port_in_use
 # ---------------------------------------------------------------------------
 
+# Randomize base port per-process so concurrent test suites don't fight over
+# the same high ports. Spread across a 1000-port window starting at 50000.
+PORT_BASE=$(( 50000 + (RANDOM % 10) * 100 + $$ % 100 ))
+
 # A port with no listener should report as free
-# Use a high ephemeral port unlikely to be occupied
-FREE_PORT=59998
+FREE_PORT=$(( PORT_BASE + 8 ))
 result=0
 _is_port_in_use "$FREE_PORT" && result=1 || result=0
 if [[ "$result" -eq 0 ]]; then
@@ -58,7 +61,7 @@ fi
 
 # Start a listener and verify the port is detected as in use
 if command -v python3 &>/dev/null; then
-    LISTEN_PORT=59997
+    LISTEN_PORT=$(( PORT_BASE + 7 ))
     python3 -m http.server "$LISTEN_PORT" --directory "$TMPDIR" &>/dev/null &
     SRV_PID=$!
     sleep 1
@@ -92,7 +95,7 @@ fi
 # ---------------------------------------------------------------------------
 
 # With no listeners, the base port itself should be returned
-BASE_PORT=59990
+BASE_PORT=$(( PORT_BASE + 0 ))
 result=$(_find_available_port "$BASE_PORT")
 if [[ "$result" -eq "$BASE_PORT" ]]; then
     pass "_find_available_port: returns base port when it is free"
@@ -110,7 +113,7 @@ fi
 
 # When the base port is occupied, it should advance to the next free one
 if command -v python3 &>/dev/null; then
-    OCCUPIED_PORT=59985
+    OCCUPIED_PORT=$(( PORT_BASE + 5 ))
     python3 -m http.server "$OCCUPIED_PORT" --directory "$TMPDIR" &>/dev/null &
     SRV2_PID=$!
     sleep 1

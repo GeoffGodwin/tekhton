@@ -26,16 +26,12 @@ FAIL=0
 pass() { echo "PASS: $*"; PASS=$((PASS + 1)); }
 fail() { echo "FAIL: $*"; FAIL=$((FAIL + 1)); }
 
-# Remove stale artifacts from previous runs killed with SIGKILL (which
-# bypasses the EXIT trap). Use -mmin +1 so a concurrent run's in-flight
-# files (created within the last minute) are preserved — a bare glob
-# `rm -f *PID*.sh` here would race with parallel test suites and delete
-# the other instance's deliberate violation files mid-test.
-find "${TEKHTON_HOME}/lib" -maxdepth 1 -mmin +1 \
-    \( -name '_test_wedge_violation_*.sh' \
-       -o -name '_test_wedge_report_*.sh' \
-       -o -name '_test_wedge_m10_violation_*.sh' \) \
-    -delete 2>/dev/null || true
+# Per-process scratch dir for deliberate violation files. Earlier versions
+# of this test wrote violations directly into ${TEKHTON_HOME}/lib/, which
+# polluted concurrent test suites scanning the same directory. The audit
+# now accepts WEDGE_AUDIT_EXTRA_FILES so the violations stay isolated here.
+SCRATCH_DIR="$(mktemp -d -t wedge_audit_test_XXXXXX)"
+trap 'rm -rf "$SCRATCH_DIR"' EXIT INT TERM
 
 # ---------------------------------------------------------------------------
 # Test 1 (happy path): HEAD is clean — no violations
@@ -48,19 +44,18 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Helpers for injecting temporary violation files into lib/
+# Helpers for injecting temporary violation files via WEDGE_AUDIT_EXTRA_FILES
 #
 # Each test below:
-#   1. Writes a temp .sh file into lib/ with a distinctive name (PID-scoped)
-#   2. Runs the audit and asserts the expected exit code / output
-#   3. Removes the temp file immediately (trap ensures cleanup on signal/error)
+#   1. Writes a temp .sh file into SCRATCH_DIR with a distinctive name
+#   2. Runs the audit with WEDGE_AUDIT_EXTRA_FILES pointing at it
+#   3. Asserts the expected exit code / output
 #
-# Using lib/ rather than stages/ avoids any risk of collision with the
-# two-level glob in the audit script (lib/**/*.sh stages/**/*.sh).
+# Violations live in SCRATCH_DIR (not lib/) so concurrent test suites
+# don't see each other's files when their own audit scans REPO_ROOT/lib.
 # ---------------------------------------------------------------------------
 
-_VFILE="${TEKHTON_HOME}/lib/_test_wedge_violation_$$.sh"
-trap 'rm -f "$_VFILE"' EXIT INT TERM
+_VFILE="${SCRATCH_DIR}/_test_wedge_violation_$$.sh"
 
 _audit_output=""
 _audit_rc=0
@@ -68,7 +63,7 @@ _audit_rc=0
 _inject_and_audit() {
     local content="$1"
     printf '%s\n' "$content" > "$_VFILE"
-    _audit_output=$(bash "$AUDIT_SCRIPT" 2>&1) || _audit_rc=$?
+    _audit_output=$(WEDGE_AUDIT_EXTRA_FILES="$_VFILE" bash "$AUDIT_SCRIPT" 2>&1) || _audit_rc=$?
     _audit_rc=${_audit_rc:-0}
 }
 
@@ -192,11 +187,10 @@ fi
 # Test 10: Report output names the offending file
 # ---------------------------------------------------------------------------
 
-_REPORT_VFILE="${TEKHTON_HOME}/lib/_test_wedge_report_$$.sh"
-trap 'rm -f "$_VFILE" "$_REPORT_VFILE"' EXIT INT TERM
+_REPORT_VFILE="${SCRATCH_DIR}/_test_wedge_report_$$.sh"
 
 printf '%s\n' '_LAST_EVENT_ID=bypass_test' > "$_REPORT_VFILE"
-_report_out=$(bash "$AUDIT_SCRIPT" 2>&1) || true
+_report_out=$(WEDGE_AUDIT_EXTRA_FILES="$_REPORT_VFILE" bash "$AUDIT_SCRIPT" 2>&1) || true
 
 if echo "$_report_out" | grep -qF "_test_wedge_report_$$"; then
     pass "report names the offending file path"
@@ -204,7 +198,6 @@ else
     fail "report does not name the offending file; got: $_report_out"
 fi
 rm -f "$_REPORT_VFILE"
-trap 'rm -f "$_VFILE"' EXIT INT TERM
 
 # ---------------------------------------------------------------------------
 # Summary

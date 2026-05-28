@@ -26,18 +26,12 @@ FAIL=0
 pass() { echo "PASS: $*"; PASS=$(( PASS + 1 )); }
 fail() { echo "FAIL: $*"; FAIL=$(( FAIL + 1 )); }
 
-# PID-scoped temp file so parallel runs don't collide.
-_VFILE="${TEKHTON_HOME}/lib/_test_wedge_m10_violation_$$.sh"
-trap 'rm -f "$_VFILE"' EXIT INT TERM
-
-# Remove stale artifacts from previous runs killed with SIGKILL (which
-# bypasses the EXIT trap). Use -mmin +1 so a concurrent run's in-flight
-# files (created within the last minute) are preserved — a bare glob
-# would race with parallel test suites and delete the other instance's
-# deliberate violation files mid-test.
-find "${TEKHTON_HOME}/lib" -maxdepth 1 -mmin +1 \
-    -name '_test_wedge_m10_violation_*.sh' \
-    -delete 2>/dev/null || true
+# Per-process scratch dir for deliberate violation files. The audit accepts
+# WEDGE_AUDIT_EXTRA_FILES so the violations stay isolated here and concurrent
+# test suites can't see each other's files when scanning lib/.
+SCRATCH_DIR="$(mktemp -d -t wedge_audit_m10_test_XXXXXX)"
+_VFILE="${SCRATCH_DIR}/_test_wedge_m10_violation_$$.sh"
+trap 'rm -rf "$SCRATCH_DIR"' EXIT INT TERM
 
 _audit_output=""
 _audit_rc=0
@@ -46,7 +40,7 @@ _inject_and_audit() {
     local content="$1"
     printf '%s\n' "#!/usr/bin/env bash" "$content" > "$_VFILE"
     _audit_rc=0
-    _audit_output=$(bash "$AUDIT_SCRIPT" 2>&1) || _audit_rc=$?
+    _audit_output=$(WEDGE_AUDIT_EXTRA_FILES="$_VFILE" bash "$AUDIT_SCRIPT" 2>&1) || _audit_rc=$?
 }
 
 _reset() {
@@ -184,7 +178,7 @@ _reset
 # ---------------------------------------------------------------------------
 
 printf '%s\n' '#!/usr/bin/env bash' 'v=$(python3 -c "import json; print(1)")' > "$_VFILE"
-_report_out=$(bash "$AUDIT_SCRIPT" 2>&1) || true
+_report_out=$(WEDGE_AUDIT_EXTRA_FILES="$_VFILE" bash "$AUDIT_SCRIPT" 2>&1) || true
 base=$(basename "$_VFILE")
 if echo "$_report_out" | grep -qF "$base"; then
     pass "11 audit report names the violating file for Pattern A"
@@ -198,7 +192,7 @@ _reset
 # ---------------------------------------------------------------------------
 
 printf '%s\n' '#!/usr/bin/env bash' 'source "${TEKHTON_HOME}/lib/agent_monitor.sh"' > "$_VFILE"
-_report_out=$(bash "$AUDIT_SCRIPT" 2>&1) || true
+_report_out=$(WEDGE_AUDIT_EXTRA_FILES="$_VFILE" bash "$AUDIT_SCRIPT" 2>&1) || true
 base=$(basename "$_VFILE")
 if echo "$_report_out" | grep -qF "$base"; then
     pass "12 audit report names the violating file for Pattern B"

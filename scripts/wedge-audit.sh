@@ -250,6 +250,16 @@ PATTERNS=(
 shopt -s globstar nullglob
 mapfile -t TARGET_FILES < <(printf '%s\n' lib/**/*.sh stages/**/*.sh | sort -u)
 
+# WEDGE_AUDIT_EXTRA_FILES lets the test harness add files outside lib/+stages
+# to the scan list — the wedge tests use this to drop deliberate violation
+# files into a per-process mktemp dir instead of polluting the real lib/,
+# which would race with concurrent test suites scanning the same directory.
+if [[ -n "${WEDGE_AUDIT_EXTRA_FILES:-}" ]]; then
+    # shellcheck disable=SC2206  # intentional word-splitting on whitespace
+    _extra=( ${WEDGE_AUDIT_EXTRA_FILES} )
+    TARGET_FILES+=( "${_extra[@]}" )
+fi
+
 # is_allowed FILE — true if FILE is in ALLOWED_FILES.
 is_allowed() {
     local f="$1" allowed
