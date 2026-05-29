@@ -2,16 +2,15 @@
 PASS
 
 ## Confidence
-92
+90
 
 ## Reasoning
-- Scope is precisely defined: six files to create/modify are listed with change types, and out-of-scope items (`--repair-mcp-config` subcommand, nanosecond backup precision) are explicitly called out in Watch For.
-- Acceptance criteria are specific and mechanically testable — each criterion names an exact function, asserts a return code or file-system outcome, and names the edge case being covered (stale, correct, missing, malformed JSON, foreign server name).
-- Implementation is unambiguous: working code stubs are supplied for `_is_stale_serena_config`, the resolver rewire, and all three new `_probe_serena_startup` test scenarios, leaving no interpretive gap between two developers.
-- Fixture content is hand-written and included verbatim — the exact JSON shapes pin the detection contract so the test cannot silently drift from the matcher.
-- The `python3`-only constraint (no `jq`) is explicitly documented and consistent with existing `lib/` patterns.
-- VERSION bump rationale (rolling up `4.27.5` + `4.27.6` into `4.28.0`) and MANIFEST transition to `done` for all four m28 rows are unambiguous.
-- CHANGELOG consolidation instruction is clear and follows the existing project convention cited from m22.
-- No UI components are introduced; UI testability dimension is not applicable.
-- No new user-facing config keys are added; the migration is automatic on next pipeline run, so no separate Migration Impact section is needed beyond the mechanism already described.
-- One informational note: the line reference `lib/mcp.sh:113-117` is approximate and may have drifted since authoring. This is context for orientation, not a spec, and will not block implementation.
+- Scope is precisely defined: this is a manifest-anchor milestone with exactly three deliverables (two child milestone files + one MANIFEST.cfg update); zero code changes
+- Acceptance criteria are fully testable — each criterion is a file-existence or file-content check (conformance to template, presence of specific named sections, specific VERSION string, specific fixture project names)
+- The split shape is well-established precedent (mirrors m27 parent); no ambiguity about what "status=split" means in this project context
+- Watch For section is concrete and developer-actionable: it names exact bash entry points, names the highest-risk file (ai_artifacts.go), and calls out the atomic-switchover invariant for m29.2
+- MANIFEST.cfg row format is given verbatim (`m29|Detect Port|split|m27|m29-detect-port.md|phase5`), removing format ambiguity
+- Sequencing dependency is explicit: m29.1 closes before m29.2 starts; m28 is explicitly non-blocking
+- Migration impact: not applicable — this milestone produces only milestone files and a MANIFEST entry; no user-facing config, format, or API surface changes land here (those are in m29.1 and m29.2)
+- UI testability: not applicable — no UI components involved
+- The one potential concern (MILESTONE_TEMPLATE.md conformance as an acceptance criterion) is standard project practice and the template path is well-known to this codebase
