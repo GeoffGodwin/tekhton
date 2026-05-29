@@ -1,159 +1,107 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 4 files, 35 test functions (22 in test_mcp_serena_bin.sh,
-8 in test_mcp_probe.sh, 10 in test_serena_template_substitution.sh, 25 in
-test_mcp.sh). Freshness sample: 3 Go files reviewed (not modified this run).
-Verdict: PASS
+Tests audited: 1 file, 27 test assertions (tests/test_m29_milestone_conformance.sh)
+Freshness sample: 3 files reviewed (internal/finalize/mark_done_test.go,
+notes_hooks_test.go, orchestrator_test.go — not modified this run)
+Verdict: CONCERNS
 
 ---
 
 ### Findings
 
-#### NAMING: Stale file-header AC8 description in test_mcp_serena_bin.sh
-- File: tests/test_mcp_serena_bin.sh:12
-- Issue: The file-header comment reads `AC8  — VERSION reads 4.27.5` (implying an
-  exact-value check) but the code at lines 225–229 now accepts any version in the
-  range 4.27.x (x>=5) or 4.>=28.x. The test's own echo label at line 217 is
-  accurate; only the header entry is stale. The current VERSION on disk is 4.28.4,
-  confirming the broader range was required.
-- Severity: LOW
-- Action: Update header line 12 to:
-  `# AC8  — VERSION at or above 4.27.5 floor (4.27.x x>=5, or 4.>=28.x after arc close)`
-
-#### NAMING: Stale file-header AC8 description in test_mcp_probe.sh
-- File: tests/test_mcp_probe.sh:8
-- Issue: The file-header comment reads `AC8 — VERSION is 4.27.x (x >= 6, m28.2
-  floor)` but the code at lines 115–118 also accepts 4.>=28.x. The test's own
-  echo at line 102 is already correct.
-- Severity: LOW
-- Action: Update header line 8 to:
-  `# AC8  — VERSION at or above 4.27.6 floor (4.27.x x>=6, or 4.>=28.x after arc close)`
-
-#### WEAKENING: AC8 VERSION floor broadened from specific floor to open-ended range
-- File: tests/test_mcp_serena_bin.sh:225–229, tests/test_mcp_probe.sh:115–118
-- Issue: Prior tests asserted an exact floor (4.27.5 or 4.27.6). Both are now range
-  checks accepting any 4.>=28.x as well. The precision reduction means the tests
-  can no longer distinguish between the intended milestone floor and an arbitrary
-  future version that happens to be higher. A regression that accidentally bumps
-  to 4.30.0 would still pass AC8.
-- Severity: LOW
-- Action: Acceptable as-is. The coder's justification is sound: pipeline finalize
-  hooks legally patch-bump VERSION between stages (current value is 4.28.4, already
-  past any single milestone floor), and m28.3 closes the arc at 4.28.0. The broader
-  range was required for the tests to remain green across the finalize lifecycle.
-  CODER_SUMMARY documents this explicitly. No change recommended, but note that
-  AC8-style milestone-floor checks may offer diminishing value once an arc promotes.
-
-#### COVERAGE: Skip-as-PASS inflates counter in test_mcp.sh
-- File: tests/test_mcp.sh:258–262
-- Issue: The `resolve_mcp_config generates config from template` test registers a
-  PASS and increments the PASS counter when `tools/serena_config_template.json` is
-  absent (line 261: `PASS=$((PASS + 1))`). This makes the test appear to have
-  passed without exercising any code, inflating the PASS total in the summary line
-  (reported as 25/25 in TESTER_REPORT). The template file does exist in this repo,
-  so the skip path is only reachable in stripped CI environments, but it masks
-  whether the test ran.
-- Severity: LOW
-- Action: Replace the skip-PASS pattern with a neutral emit that leaves counters
-  unchanged:
+#### ISOLATION: Test reads live mutable pipeline state files without fixture copies
+- File: tests/test_m29_milestone_conformance.sh:16-57
+- Issue: MILESTONE_DIR is resolved from the live working tree
+  (`TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"`), and all four
+  files tested — `m29-detect-port.md`, `m29.1-detect-core-and-report.md`,
+  `m29.2-detect-domain-detectors.md`, and `MANIFEST.cfg` — are live pipeline state
+  files managed by the runtime. `MANIFEST.cfg` has its `status` column updated by
+  the finalize hooks as milestones transition. Milestone `.md` files are deleted on
+  close by `internal/finalize/cleanup_milestone.go`. The test creates no fixture copies
+  in a temp directory; it reads the live working tree unconditionally, so its outcome
+  depends on the current pipeline run state.
+- Severity: HIGH
+- Action: Add a lifecycle guard at the top of the script. If MANIFEST shows m29.1 or
+  m29.2 already at status=done (or either milestone file is absent), print a SKIP
+  message and exit 0 — the conformance was verified during authoring and the arc has
+  since closed. Example guard after line 57:
   ```bash
-  else
-      echo "  SKIP: _resolve_mcp_config test (tools/serena_config_template.json absent)"
+  # Skip gracefully once the milestone arc has progressed past the authoring window.
+  if ! grep -qE '^m29\.1\|[^|]+\|todo\|' "$MANIFEST" 2>/dev/null || \
+     ! grep -qE '^m29\.2\|[^|]+\|todo\|' "$MANIFEST" 2>/dev/null; then
+      echo "  SKIP: m29 arc has progressed; conformance tests no longer applicable"
+      exit 0
   fi
   ```
+  This makes the test self-expiring rather than permanently failing after m29.1 closes.
 
-#### COVERAGE: _resolve_case helper omits _SERENA_PYTHON and _SERENA_DIR assertions
-- File: tests/test_mcp_serena_bin.sh:93–115
-- Issue: The consolidated `_resolve_case` helper asserts return code and `_SERENA_BIN`
-  after `_resolve_serena_paths` but does not assert `_SERENA_PYTHON` or `_SERENA_DIR`.
-  The implementation sets all three on success. A regression in the Python-path or
-  dir-path assignment would be invisible to this helper.
-- Severity: LOW
-- Action: Add assertions for `_SERENA_PYTHON` and `_SERENA_DIR` in the success-path
-  calls (POSIX and Windows layout). For `Binary absent`, both should remain empty
-  and can also be asserted. Suggested addition after the `_SERENA_BIN` assertion:
-  ```bash
-  if [[ "$_SERENA_DIR" == "$dir" ]]; then
-      _pass "${label}: _SERENA_DIR matches expected"
-  else
-      _fail "${label}: _SERENA_DIR='${_SERENA_DIR}', expected '${dir}'"
-  fi
-  ```
+#### SCOPE: Transient `status: "todo"` assertions will permanently break CI after m29.1 closes
+- File: tests/test_m29_milestone_conformance.sh:76-79, 105-108, 219-228
+- Issue: Suite 1 asserts `status: "todo"` in m29.1's meta block (line 77); Suite 2
+  asserts the same for m29.2 (line 105); Suite 7 checks MANIFEST regex patterns
+  `^m29\.1\|[^|]+\|todo\|` (line 219) and `^m29\.2\|[^|]+\|todo\|` (line 225). When
+  the pipeline closes m29.1 these assertions flip to `done` in both the file and
+  MANIFEST, causing four permanent failures on every subsequent `bash tests/run_tests.sh`
+  invocation. The milestone file itself is deleted on close, so the existence checks and
+  content assertions in Suite 1 (lines 64-85) also fail permanently thereafter.
+- Severity: HIGH
+- Action: The lifecycle guard recommended in the ISOLATION finding above resolves this
+  as a side effect — once the guard fires, the suite exits 0 before reaching the
+  status assertions. Alternatively, if the test is meant to remain active for the full
+  arc lifetime, convert the status assertions to check only the immutable properties
+  (`id:` value, Depends On row, Watch For content, fixture names) and remove the
+  `status: "todo"` checks entirely.
 
 ---
 
-### Assertion Honesty Assessment
+### Positive Findings (No Issues)
 
-All assertions in all four bash test files derive from real function behavior:
+**Assertion Honesty — PASS.** All 27 assertions grep against real file content using
+patterns derived from the actual milestone spec and MANIFEST format. The `_section_has`
+helper correctly scopes to the named markdown section. The `_ac_has "$M29_1" "4\.29\.0"`
+negative assertion (line 149) tests a genuine behavioral invariant, not a tautology.
+No assertion always passes or compares a value against a constant not derived from the
+implementation.
 
-- **test_mcp_serena_bin.sh**: Template checks grep the actual file on disk. Resolver
-  tests create fixture venvs in `$TMPDIR`, call the real `_resolve_serena_paths`, and
-  assert against paths the function computed — no mocking. Config generation calls the
-  real `_resolve_mcp_config` against a fixture venv and validates the output file with
-  `python3 -m json.tool`. CHANGELOG checks extract the promoted block via `awk`.
-  No assertion always-passes or compares against a value hard-coded independently
-  of implementation logic.
+**Edge Case Coverage — PASS.** The suite covers the expected negative: AC4 explicitly
+asserts that m29.1's Acceptance Criteria section does NOT contain the 4.29.0 VERSION
+reference (line 149). Missing-file paths are handled: every `grep` call uses `2>/dev/null`
+and the `if [[ -f ... ]]` blocks at lines 64 and 93 gate subsequent checks behind
+existence. The MANIFEST assertions use exact regex patterns rather than loose substring
+matches.
 
-- **test_mcp_probe.sh**: Calls `_probe_serena_startup` with `_SERENA_BIN=""` and
-  asserts return 1 — matches the `[[ -z "${_SERENA_BIN:-}" ]]` guard in
-  `lib/mcp_resolve.sh:62`. Calls `start_mcp_server` with a real executable stub that
-  exits 1; the three post-call state assertions match the probe-failure branch at
-  `lib/mcp.sh:119–124`. No trivially-true assertions.
+**Implementation Exercise — PASS.** All 27 tests read the actual deliverable files
+(the milestone markdown and MANIFEST.cfg). No mocking. The `_section_has` helper uses
+real awk + grep against the real files.
 
-- **test_serena_template_substitution.sh**: All three scenarios call the real
-  `_resolve_mcp_config` with state pre-set from fixture files. The Python inline
-  script validates the generated JSON command/args structure against the actual
-  `_SERENA_BIN` value, not a hard-coded string. The stale-detection fixture
-  (`stale.json`) has `args: ["-m", "serena", ...]`, which exactly matches the
-  `_is_stale_serena_config` detection predicate (`args[0]=="-m" && args[1]=="serena"`).
-  The correct fixture has `args: ["start-mcp-server", ...]`, which returns 1 (not
-  stale) as expected. md5 comparisons before/after correctly distinguish overwrite
-  vs. no-overwrite behavior.
+**Test Weakening — N/A.** This is a new file; no prior tests existed to weaken.
 
-- **test_mcp.sh** (new probe scenarios, lines 275–289): Three `_probe_case`
-  invocations match implementation branches: empty bin hits the `[[ -z ]]` guard;
-  `/usr/bin/false` exits 1 causing the `timeout` call to fail; `$(command -v echo)`
-  exits 0, returning 0 from the probe. All expected return codes match the
-  implementation.
+**Naming and Intent — PASS.** Suite headers (`Suite 1: m29.1 file existence and meta`,
+etc.) and individual pass/fail messages encode the scenario and expected outcome clearly.
+The file-header comment maps each suite to its parent AC number.
 
-### Implementation Exercise Assessment
-
-All four files source `lib/common.sh` and `lib/mcp.sh` (which transitively sources
-`lib/mcp_resolve.sh`) and call production functions directly. `test_mcp_probe.sh`
-sets `_CLI_MCP_CONFIG_SUPPORTED="1"` to bypass the `claude --help` CLI check — a
-targeted, appropriate seam that isolates the probe behavior under test without
-over-mocking. No test mocks its own subject function.
-
-### Test Weakening Assessment
-
-`test_serena_template_substitution.sh` is new — no prior version exists to weaken.
-`test_mcp.sh` additions are purely additive (three new probe scenarios).
-`test_mcp_serena_bin.sh` and `test_mcp_probe.sh` broadened AC8 VERSION assertions —
-the broadening is documented and necessary (current VERSION 4.28.4 is already
-above any single milestone floor). The test count in both files is unchanged.
-No coverage was removed.
+**Scope Alignment — PASS.** The seven suites map 1:1 to the seven acceptance criteria in
+`m29-detect-port.md`. The coder's single actual change — adding a read-only contract
+bullet to m29.2's `## Watch For` section — is directly exercised by Suite 5, line 172.
+No tests reference deleted or renamed symbols.
 
 ---
 
-### Freshness Sample — Go Test Files (not modified this run)
+### Freshness Sample — No Issues Found
 
-The three Go freshness-sample files are unaffected by m28.3 changes and contain
-no stale references.
+None of the three Go finalize files were modified this run, and none are affected by
+the m29 coder change (which touched only `.claude/milestones/m29.2-detect-domain-
+detectors.md`).
 
-- **internal/finalize/cleanup_milestone_test.go**: Tests use `t.TempDir()` for full
-  isolation. Covers the COMPLETE_AND_CONTINUE happy path, the commit-decision gate
-  regression (declined/skipped/empty sentinel must not delete milestone file), the
-  status-not-done no-op, missing-manifest no-op, and idempotent-when-file-already-gone
-  cases. The sentinel regression test (TestCleanupMilestone_GatedByCommitDecisionSentinel)
-  is well-motivated and named. No scope drift against m28.3.
+- **internal/finalize/mark_done_test.go**: Uses `t.TempDir()` + `os.WriteFile` to build
+  isolated MANIFEST fixtures. Asserts against real `manifest.Load` + `MarkDone.Run`
+  output. No live project files read. Properly isolated.
+- **internal/finalize/notes_hooks_test.go**: Uses `t.TempDir()` + copies from the
+  committed `internal/notes/testdata/golden/` fixture. Uses `t.Setenv` to neutralize
+  any pipeline env leak. Properly isolated.
+- **internal/finalize/orchestrator_test.go**: Uses in-memory `fakeHook` doubles and
+  `HookOrder()` introspection. No filesystem reads of live state. Properly isolated.
 
-- **internal/finalize/emit_run_memory_test.go**: Tests use `t.TempDir()`. Covers
-  PASS verdict on exit 0, FAIL verdict on non-zero exit, and pruning above MaxEntries.
-  `EmitRunMemory.Git` is injected via the struct field — appropriate seam-based
-  fake, not a global mock. No scope drift.
-
-- **internal/finalize/emit_timing_report_test.go**: Tests use `t.TempDir()`. Covers
-  no-sidecar skip, full report from sidecar JSON, empty-phases skip, and table-driven
-  tests for `formatDurationHuman` and `phaseDisplayName`. Assertions on column
-  content and descending sort order are meaningful and specific. No scope drift.
+All three freshness-sample files are in scope alignment with the current codebase.
+No orphaned references, stale assertions, or weakened checks detected.
