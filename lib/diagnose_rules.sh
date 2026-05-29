@@ -244,7 +244,9 @@ _rule_intake_clarity() {
 
     local _task="${_DIAG_PIPELINE_TASK:-${TASK:-<task not recorded>}}"
 
+    # shellcheck disable=SC2034
     DIAG_CLASSIFICATION="INTAKE_NEEDS_CLARITY"
+    # shellcheck disable=SC2034
     DIAG_CONFIDENCE="high"
     DIAG_SUGGESTIONS=(
         "The PM agent needs clarification on this milestone."

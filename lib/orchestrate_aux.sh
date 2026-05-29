@@ -42,6 +42,7 @@ _run_auto_advance_chain() {
 
         advance_milestone "${_CURRENT_MILESTONE:-}" "$next_ms"
         _CURRENT_MILESTONE="$next_ms"
+        # shellcheck disable=SC2034
         TASK="Implement Milestone ${_CURRENT_MILESTONE:-}: ${next_title}"
         START_AT="coder"
 

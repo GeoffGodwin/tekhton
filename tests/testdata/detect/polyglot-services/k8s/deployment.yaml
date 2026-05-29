@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: polyglot-services
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: polyglot }
+  template:
+    metadata:
+      labels: { app: polyglot }
+    spec:
+      containers:
+        - name: svc
+          image: polyglot:latest

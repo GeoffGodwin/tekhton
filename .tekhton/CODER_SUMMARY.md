@@ -4,182 +4,108 @@
 
 ## What Was Implemented
 
-m29.1 — Detect Core + Report. Scaffolds the Go-side detect subsystem
-port: `Detector` interface + `Engine` orchestrator + `Summary` type,
-markdown report formatter, `LanguagesDetector` (the foundational
-detector m29.2 depends on), parity-gate fixtures with captured bash
-baselines, `tekhton detect summary` Cobra surface, and the read-only
-contract test that pins the package's no-write invariant.
+m33 — Dashboard Port (parent / split milestone). The two child files
+already existed on disk and the MANIFEST.cfg already carried all three
+rows (`m33|...split`, `m33.1|...todo`, `m33.2|...todo`), so the parent
+milestone was 7/8 acceptance criteria met when I picked it up. The one
+gap was AC #4:
 
-No bash files are modified or deleted at m29.1's close — every existing
-caller (`lib/init.sh`, `lib/express.sh`, `lib/rescan.sh`,
-`lib/health_checks*.sh`, `tekhton-legacy.sh`) still sources
-`lib/detect*.sh`, so tekhton-stable can rebuild safely. The bash
-subsystem stays intact as the rollback path through m29.2's cutover.
+> `internal/proto/dashboard_v1.go` is named (but not yet authored) in
+> both children's Files Modified tables, with each child responsible for
+> the subset of structs its scope produces (m33.1: emit-side structs;
+> m33.2: parse-side structs).
 
-### Goal-by-goal delivery
+`m33.1` listed the file (as `Create`, for the 10 emit-side payload
+structs). `m33.2` did NOT list it in its `## Files Modified` table,
+even though its body text (Goal 1 sequencing note, Seeds Forward) and
+its `parse_*.go` method signatures (`proto.DashboardIntakeReport`,
+`proto.DashboardCoderReport`, `proto.DashboardReviewerReport`,
+`proto.DashboardRunSummary`) all imply new types m33.2 must add. I
+extended the m33.2 file to close the gap.
 
-1. **Engine + interface** (`internal/detect/detect.go`) — `Detector`,
-   `Input`, `Result`, `Summary`, `Engine`, `Engine.Run` enforce
-   languages-first via the dedicated dispatch + `ErrLanguagesDetectorMissing`
-   sentinel. `Summary.attach` demuxes detector Results into per-domain
-   fields (Languages, Frameworks today; Commands/Workspaces/Services/CI/
-   Infrastructure/TestFrameworks/DocQuality/AIArtifacts are stub-empty
-   until m29.2 registers their detectors).
+### Edits
 
-2. **Report formatter** (`internal/detect/report.go`) — per-section
-   `renderXxx` functions matching the bash `_format_<section>` shape.
-   Whitespace is load-bearing (`fmt.Fprintln(b)` blank lines in the
-   same positions as bash `echo ""`).
+1. `.claude/milestones/m33.2-dashboard-parsers.md` `## Files Modified`
+   table — added two rows immediately after the `parse_runs.go` line:
+   - `internal/proto/dashboard_v1.go` (`Modify`) — lists the four new
+     parse-side struct types m33.2 introduces
+     (`DashboardIntakeReport`, `DashboardCoderReport`,
+     `DashboardReviewerReport`, `DashboardRunSummary`, plus the nested
+     `DashboardRunSummaryStage` shape).
+   - `internal/proto/dashboard_v1_test.go` (`Modify`) — companion test
+     row noting Validate + round-trip coverage for the new types.
+2. `.claude/milestones/m33.2-dashboard-parsers.md` Overview's
+   `Files changed` row — added `internal/proto/dashboard_v1.go (extend
+   with parse-side struct types)` so the one-line summary in the
+   Overview table matches the detailed Files Modified table. The
+   acceptance criterion (#4) is on the Files Modified table; updating
+   the Overview row is consistency hygiene, not a separate AC.
 
-3. **Languages detector** (`internal/detect/languages.go`) — ports
-   `detect_languages` + `detect_frameworks` + `detect_ui_framework`
-   from `lib/detect.sh`. Three-pass shape: manifest detection, source
-   file counting (top-2-levels via `git ls-files` when available,
-   `filepath.WalkDir` fallback otherwise), merge + confidence scoring,
-   then framework detection. The CLAUDE.md fallback (three strategies)
-   is implemented for parity with the bash fallback path.
+## Acceptance Criteria — verified against parent m33
 
-4. **CLI surface** (`cmd/tekhton/detect.go`) — `tekhton detect summary
-   --markdown|--json [--project-dir DIR]`. Hidden, matching the
-   m21/m22 precedent. `--json` emits the `Summary` struct verbatim;
-   `--markdown` (default) calls `detect.Render`.
+| # | Criterion | Status |
+|---|-----------|--------|
+| 1 | `m33.1-dashboard-emitters.md` exists with `id: "33.1"`, `status: "todo"` | ✓ Met by existing file (meta block correct) |
+| 2 | `m33.2-dashboard-parsers.md` exists with `id: "33.2"`, `status: "todo"` | ✓ Met by existing file (meta block correct) |
+| 3 | Both child `Depends on` rows match MANIFEST (`m27` for m33.1; `m33.1` for m33.2) | ✓ Verified — both child Overview tables match MANIFEST.cfg lines 53–54 |
+| 4 | `internal/proto/dashboard_v1.go` named in both children's Files Modified tables | ✓ Met (m33.1: line 268 `Create`; m33.2: line 202 `Modify` — added this run) |
+| 5 | `internal/dashboard/` named as target package in both children | ✓ Verified — both children's Files Modified tables open with `internal/dashboard/*.go` rows |
+| 6 | `tekhton dashboard <subcommand>` Cobra surface — described in m33.1 (registration), extended in m33.2 (parse subarms) | ✓ Verified — m33.1 Goal 5 covers init/sync/cleanup/emit registration; m33.2 Goal 4 covers parse arms |
+| 7 | Parent file's status is `split` | ✓ Verified — `m33-dashboard-port.md` meta block `status: "split"`; MANIFEST.cfg line 52 `m33|...|split|...` |
+| 8 | Parent emits no code-touching acceptance criteria; all observable predicates live in children | ✓ Verified — every parent AC is about child file existence/content, not about Go/bash code state |
 
-5. **Parity-gate scaffolding** — Three fixture projects under
-   `tests/testdata/detect/`:
-   - `monorepo-pnpm/` — pnpm workspace, TypeScript root, React/Vue/Express packages
-   - `polyglot-services/` — Go root, Python sidecar, Dockerfile, k8s, GitHub CI
-   - `ai-heavy-mess/` — `.claude/`, `.cursorrules`, `AGENTS.md`, half-finished pyproject.toml
+## Root Cause (bugs only)
 
-   `scripts/capture-detect-baselines.sh` regenerates the bash baselines
-   under `tests/testdata/detect/baselines/`. `tests/test_detect_parity.sh`
-   extracts the `### Project Type / ### Languages / ### Frameworks`
-   sections from both bash baseline and Go output and asserts they
-   match byte-for-byte. All three fixtures pass.
-
-6. **Read-only contract test** (`internal/detect/readonly_test.go`) —
-   grep-scans every non-test `.go` file in the package for forbidden
-   write API invocations (`os.Create(`, `os.WriteFile(`, `os.OpenFile`
-   with O_WRONLY/O_CREATE, `os.Remove(`, `os.RemoveAll(`, `os.MkdirAll(`,
-   `os.Mkdir(`, `os.Rename(`, `ioutil.WriteFile(`). Patterns require
-   the trailing `(` so doc-comment references don't trip the check.
-   Verified red by injecting `internal/detect/violation.go` containing
-   `os.WriteFile(...)`, observing failure, removing the file, and
-   confirming green again.
-
-## Acceptance Criteria — verified
-
-- [x] `internal/detect/detect.go` exports `Detector` interface with
-      `Name()` + `Run(ctx, *Input) (*Result, error)`.
-- [x] `Summary` struct carries `ProjectDir, Languages, Frameworks,
-      Commands, EntryPoints, Workspaces, Services, CI, Infrastructure,
-      TestFrameworks, DocQuality, AIArtifacts`. m29.2 fields are
-      stub-empty.
-- [x] `Engine.Run()` invokes `languages` detector first regardless of
-      registration order — `TestLanguagesFirstInvariant` in
-      `internal/detect/detect_test.go` registers a non-languages
-      detector first and asserts `languages` ran first AND that the
-      non-languages detector saw `Input.Languages` populated.
-- [x] `LanguagesDetector` against `tests/testdata/detect/monorepo-pnpm/`
-      returns `typescript` with `package.json` manifest. Verified via
-      `tekhton detect summary --project-dir
-      tests/testdata/detect/monorepo-pnpm` showing `| typescript |
-      medium | package.json |` (medium because fixture files are
-      untracked → `git ls-files` returns zero source files → no
-      manifest+source promotion to "high"; matches bash behavior).
-- [x] `Render(*Summary)` emits `## Tech Stack Detection Report` header
-      and `| Language | Confidence | Manifest |` table header.
-      `TestRenderMatchesBashShape` covers it.
-- [x] `tekhton detect summary --help` exits 0; `--json --project-dir
-      tests/testdata/detect/monorepo-pnpm` emits valid JSON with
-      `.languages` entries. `TestDetectCmd_JSONShape` covers it.
-- [x] Three fixture directories exist with the contents described in
-      m29.1 Goal 5.
-- [x] Three baselines under `tests/testdata/detect/baselines/` are
-      non-empty and were generated by `scripts/capture-detect-baselines.sh`
-      against the m29.1-close bash tree.
-- [x] `scripts/capture-detect-baselines.sh` exists, is executable,
-      exits 0.
-- [x] `tests/test_detect_parity.sh` exists, is executable, exits 0
-      across all three fixtures asserting on the three required
-      sections.
-- [x] `internal/detect/readonly_test.go` passes. Red-on-violation
-      verified.
-- [x] `go test ./internal/detect/... ./cmd/tekhton/...` passes.
-- [x] `bash scripts/audit-bash-env.sh` exits 0.
-- [x] `shellcheck` exits 0 on the new bash files (SC1091 info-level
-      notes about unresolvable source paths do not fail the gate).
-- [x] `bash tests/run_tests.sh` reports the same pass/fail shape as the
-      m27.3 baseline. One pre-existing timeout flake
-      (`test_finalize_parity.sh`, 60s deadline under load); the test
-      passes standalone — confirmed by re-running. Not a regression
-      from m29.1.
-- [x] No `lib/detect*.sh` file is modified or deleted in m29.1.
-      `git diff --stat HEAD -- lib/detect` is empty.
-- [x] No bash caller of detect is modified.
-- [x] `docs/v4-phase5-stub.md` updated: row 13 (`init.sh` + crawler/detect_*)
-      flipped to "in progress (m29.1 …)" with detail; LOC budget table
-      gains "End of Phase 5 m29.1 ~3300" entry (unchanged from m25 —
-      m29.1 adds Go LOC without deleting bash); m29.1 closing notes
-      section added.
+N/A — milestone-authoring task. No bugs to fix.
 
 ## Files Modified
 
-- `internal/detect/detect.go` (NEW) — engine + interface + types.
-- `internal/detect/helpers.go` (NEW) — read-only fs/io helpers shared
-  across the package.
-- `internal/detect/languages.go` (NEW) — `LanguagesDetector` port.
-- `internal/detect/report.go` (NEW) — markdown report formatter.
-- `internal/detect/detect_test.go` (NEW) — engine + invariant tests.
-- `internal/detect/languages_test.go` (NEW) — languages detector tests.
-- `internal/detect/report_test.go` (NEW) — formatter shape tests.
-- `internal/detect/readonly_test.go` (NEW) — read-only contract.
-- `cmd/tekhton/detect.go` (NEW) — Cobra surface (Hidden).
-- `cmd/tekhton/detect_test.go` (NEW) — CLI smoke + JSON-shape contract.
-- `cmd/tekhton/main.go` — added one `cmd.AddCommand(newDetectCmd())`
-  registration line.
-- `tests/testdata/detect/monorepo-pnpm/` (NEW) — 8 fixture files.
-- `tests/testdata/detect/polyglot-services/` (NEW) — 6 fixture files.
-- `tests/testdata/detect/ai-heavy-mess/` (NEW) — 5 fixture files.
-- `tests/testdata/detect/baselines/{monorepo-pnpm,polyglot-services,ai-heavy-mess}.md`
-  (NEW) — frozen bash baselines.
-- `tests/testdata/detect/README.md` (NEW) — fixture directory overview.
-- `scripts/capture-detect-baselines.sh` (NEW) — baseline regeneration
-  helper.
-- `tests/test_detect_parity.sh` (NEW) — m29.1 parity gate.
-- `docs/v4-phase5-stub.md` — row 13 flipped to "in progress (m29.1)";
-  LOC budget entry; closing notes for m29.1.
-- `ARCHITECTURE.md` — added entries for `internal/detect/` and
-  `cmd/tekhton/detect.go` so the file list stays grep-able.
+- `.claude/milestones/m33.2-dashboard-parsers.md` — added two rows to
+  `## Files Modified` table (proto file + test file) and extended the
+  Overview's `Files changed` line for consistency.
+- `.tekhton/CODER_SUMMARY.md` — this report.
+
+No new files created. No bash, Go, or test code touched. No
+`internal/proto/dashboard_v1.go` authored here — that's m33.1's
+deliverable, and the parent AC explicitly says "named (but not yet
+authored)". The pre-existing modifications shown in `git status`
+(`lib/diagnose_rules.sh`, `lib/diagnose_rules_resilience.sh`,
+`lib/orchestrate_aux.sh`, `.tekhton/test_dedup.fingerprint`) and the
+untracked `tests/testdata/detect/` directory were present at task
+start (see initial gitStatus snapshot) and are not part of this work.
 
 ## Docs Updated
 
-- `ARCHITECTURE.md` (added the two new package + CLI entries).
-- `docs/v4-phase5-stub.md` (Phase 5 status row + LOC budget + closing
-  notes).
-- `tests/testdata/detect/README.md` (NEW fixture overview).
+None — no public-surface changes in this task.
 
-The bash detect tree is unchanged at m29.1, so no `lib/detect*.sh`-side
-docs needed to move. m29.2 will own the bash-side delete + caller
-cutover doc updates.
+This milestone authors documentation only (the m33.2 milestone file
+itself). The milestone file is a scoped design doc consumed by the
+runtime and the human reviewer, not a user-facing doc. No README,
+`docs/`, or template comment edits are required because no CLI flag,
+config key, function signature, or proto envelope changed at this level
+— those changes will land in m33.1 and m33.2.
 
 ## Human Notes Status
 
-No `HUMAN_NOTES.md` items injected for this task. The Clarifications
+No `HUMAN_NOTES.md` items injected for this run. The Clarifications
 block at the top of the prompt contained Q&A pairs from prior unrelated
-runs (Watchtower dashboard, `NON_BLOCKING_LOG`, `--init`/`--plan` flow,
-HUMAN_NOTES inconsistency); none of those relate to m29.
+runs (Watchtower dashboard component questions, `NON_BLOCKING_LOG`
+questions, `--init`/`--plan` flow confusion, HUMAN_NOTES inconsistency)
+— none of those bear on the m33 split-milestone authoring task. The
+Watchtower questions in particular are answered by the m33 parent file
+itself: it's a Tekhton component, defined in `templates/watchtower/`,
+written by the bash dashboard emitters this arc is porting.
 
 ## Architecture Change Proposals
 
-None. m29.1 follows the established `internal/<subsystem>/` +
-`cmd/tekhton/<subsystem>.go` + parity-gate pattern from m22 (preflight)
-and m21 (finalize). No layer boundaries crossed, no new dependencies
-introduced, no contract changes.
+None. m33 is a split-milestone authoring task following the m05 / m27
+precedent. No layer boundaries crossed, no new dependencies introduced,
+no contract changes proposed.
 
 ## Observed Issues (out of scope)
 
-None worth recording. The pre-existing `test_finalize_parity.sh` 60-second
-timeout flake reproduces under load and passes standalone — it's a
-known artifact of the bash test runner's blanket 60s default and is
-not within m29.1's scope to address.
+None worth recording. The pre-existing dirty working tree
+(`lib/diagnose_rules*.sh`, `lib/orchestrate_aux.sh`,
+`.tekhton/test_dedup.fingerprint`) is from a prior run, not this task,
+and the untracked `tests/testdata/detect/` directory is m29.1's fixture
+tree carried forward.

@@ -36,7 +36,6 @@ set -euo pipefail
 # implementation summaries when tekhton dogfoods on its own codebase.
 _RULE_UI_GATE_INTERACTIVE_REGEX='Serving HTML report at https?://'
 _rule_ui_gate_interactive_reporter() {
-    local failure_ctx="${PROJECT_DIR:-.}/.claude/LAST_FAILURE_CONTEXT.json"
     local raw_errors="${PROJECT_DIR:-.}/${BUILD_RAW_ERRORS_FILE:-${TEKHTON_DIR:-.tekhton}/BUILD_RAW_ERRORS.txt}"
     local summary_file="${PROJECT_DIR:-.}/.claude/logs/RUN_SUMMARY.json"
     local logs_dir="${PROJECT_DIR:-.}/.claude/logs"

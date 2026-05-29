@@ -1,0 +1,3 @@
+// Cursor directives for the ai-heavy-mess fixture.
+ALWAYS prefer pure functions over stateful helpers.
+NEVER introduce new external dependencies without justification.

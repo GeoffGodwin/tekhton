@@ -1,0 +1,9 @@
+{
+  "name": "monorepo-pnpm-fixture",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0"
+  }
+}

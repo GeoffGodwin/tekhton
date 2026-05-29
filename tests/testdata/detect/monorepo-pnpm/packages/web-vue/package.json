@@ -1,0 +1,7 @@
+{
+  "name": "web-vue",
+  "version": "0.0.1",
+  "dependencies": {
+    "vue": "^3.4.0"
+  }
+}
