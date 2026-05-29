@@ -86,90 +86,45 @@ else
 fi
 
 # =============================================================================
-echo "=== AC2: _resolve_serena_paths resolves POSIX .venv/bin/serena ==="
+echo "=== AC2: _resolve_serena_paths — POSIX, Windows, absent-binary scenarios ==="
+
+# Reusable per-scenario runner. Args: label, dir, bin-relpath ("" if absent),
+# python-relpath, expected-rc, expected-_SERENA_BIN.
+_resolve_case() {
+    local label="$1" dir="$2" bin_rel="$3" py_rel="$4" expect_rc="$5" expect_bin="$6"
+    mkdir -p "${dir}/$(dirname "$py_rel")"
+    touch "${dir}/${py_rel}"
+    if [[ -n "$bin_rel" ]]; then
+        mkdir -p "${dir}/$(dirname "$bin_rel")"
+        touch "${dir}/${bin_rel}"
+    fi
+    _SERENA_BIN=""; _SERENA_PYTHON=""; _SERENA_DIR=""
+    SERENA_PATH="$dir"
+    local rc=0
+    _resolve_serena_paths || rc=$?
+    if [[ "$rc" -eq "$expect_rc" ]]; then
+        _pass "${label}: _resolve_serena_paths returns $expect_rc"
+    else
+        _fail "${label}: _resolve_serena_paths returned $rc, expected $expect_rc"
+    fi
+    if [[ "$_SERENA_BIN" == "$expect_bin" ]]; then
+        _pass "${label}: _SERENA_BIN matches expected"
+    else
+        _fail "${label}: _SERENA_BIN='${_SERENA_BIN}', expected '${expect_bin}'"
+    fi
+}
 
 POSIX_DIR="${TMPDIR}/posix_serena"
-mkdir -p "${POSIX_DIR}/.venv/bin"
-touch "${POSIX_DIR}/.venv/bin/python"
-touch "${POSIX_DIR}/.venv/bin/serena"
-
-_SERENA_BIN=""
-_SERENA_PYTHON=""
-_SERENA_DIR=""
-SERENA_PATH="${POSIX_DIR}"
-
-result=0
-_resolve_serena_paths || result=$?
-
-if [[ "$result" -eq 0 ]]; then
-    _pass "_resolve_serena_paths returns 0 for POSIX layout"
-else
-    _fail "_resolve_serena_paths returned $result for POSIX layout (expected 0)"
-fi
-
-expected="${POSIX_DIR}/.venv/bin/serena"
-if [[ "$_SERENA_BIN" == "$expected" ]]; then
-    _pass "_SERENA_BIN set to POSIX bin/serena path"
-else
-    _fail "_SERENA_BIN='${_SERENA_BIN}', expected '${expected}'"
-fi
-
-# =============================================================================
-echo "=== AC2: _resolve_serena_paths resolves Windows .venv/Scripts/serena.exe ==="
+_resolve_case "POSIX layout" \
+    "$POSIX_DIR" ".venv/bin/serena" ".venv/bin/python" 0 "${POSIX_DIR}/.venv/bin/serena"
 
 WIN_DIR="${TMPDIR}/win_serena"
-mkdir -p "${WIN_DIR}/.venv/Scripts"
-touch "${WIN_DIR}/.venv/Scripts/python.exe"
-touch "${WIN_DIR}/.venv/Scripts/serena.exe"
-
-_SERENA_BIN=""
-_SERENA_PYTHON=""
-_SERENA_DIR=""
-SERENA_PATH="${WIN_DIR}"
-
-result=0
-_resolve_serena_paths || result=$?
-
-if [[ "$result" -eq 0 ]]; then
-    _pass "_resolve_serena_paths returns 0 for Windows layout"
-else
-    _fail "_resolve_serena_paths returned $result for Windows layout (expected 0)"
-fi
-
-expected="${WIN_DIR}/.venv/Scripts/serena.exe"
-if [[ "$_SERENA_BIN" == "$expected" ]]; then
-    _pass "_SERENA_BIN set to Windows Scripts/serena.exe path"
-else
-    _fail "_SERENA_BIN='${_SERENA_BIN}', expected '${expected}'"
-fi
-
-# =============================================================================
-echo "=== AC2: _resolve_serena_paths returns 1 when serena binary absent ==="
+_resolve_case "Windows layout" \
+    "$WIN_DIR" ".venv/Scripts/serena.exe" ".venv/Scripts/python.exe" 0 "${WIN_DIR}/.venv/Scripts/serena.exe"
 
 NO_BIN_DIR="${TMPDIR}/no_bin_serena"
-mkdir -p "${NO_BIN_DIR}/.venv/bin"
-touch "${NO_BIN_DIR}/.venv/bin/python"
-# No serena binary in bin/ or Scripts/
-
-_SERENA_BIN=""
-_SERENA_PYTHON=""
-_SERENA_DIR=""
-SERENA_PATH="${NO_BIN_DIR}"
-
-result=0
-_resolve_serena_paths || result=$?
-
-if [[ "$result" -eq 1 ]]; then
-    _pass "_resolve_serena_paths returns 1 when serena binary absent"
-else
-    _fail "_resolve_serena_paths returned $result, expected 1 when serena binary absent"
-fi
-
-if [[ -z "$_SERENA_BIN" ]]; then
-    _pass "_SERENA_BIN remains empty when binary absent"
-else
-    _fail "_SERENA_BIN='${_SERENA_BIN}' despite missing binary"
-fi
+_resolve_case "Binary absent" \
+    "$NO_BIN_DIR" "" ".venv/bin/python" 1 ""
 
 # =============================================================================
 echo "=== AC3+AC5: _resolve_mcp_config substitutes {{SERENA_BIN}}, valid JSON ==="
@@ -259,42 +214,42 @@ if [[ -f "$GENERATED" ]]; then
 fi
 
 # =============================================================================
-echo "=== AC8: VERSION is 4.27.x (x >= 5; milestone set floor at 4.27.5) ==="
+echo "=== AC8: VERSION floor — m28 arc opened at 4.27.5; closes at 4.28.0+ ==="
 
-# Pipeline finalize hooks patch-bump VERSION between stages, so we assert
-# the milestone's floor (major.minor=4.27, patch>=5) rather than the exact
-# value 4.27.5, which may have incremented by the time the tester runs.
-actual_version=$(tr -d '[:space:]' < "${TEKHTON_HOME}/VERSION" 2>/dev/null || echo "MISSING")
-version_major_minor="${actual_version%.*}"
-version_patch="${actual_version##*.}"
+# Pipeline finalize hooks may patch-bump VERSION between stages, and m28.3
+# closes the arc by promoting [Unreleased] entries to 4.28.0. Either the
+# in-flight 4.27.x (x>=5) floor or any 4.MM.* >= 4.28 satisfies this AC.
+ver=$(tr -d '[:space:]' < "${TEKHTON_HOME}/VERSION" 2>/dev/null || echo "MISSING")
+vmaj="${ver%%.*}"; vrest="${ver#*.}"; vmin="${vrest%%.*}"; vpat="${ver##*.}"
 
-if [[ "$version_major_minor" == "4.27" ]] && [[ "$version_patch" -ge 5 ]]; then
-    _pass "VERSION is 4.27.x (x >= 5) — current: ${actual_version}"
+if { [[ "$vmaj" == "4" ]] && [[ "$vmin" == "27" ]] && [[ "$vpat" -ge 5 ]]; } \
+   || { [[ "$vmaj" == "4" ]] && [[ "$vmin" -ge 28 ]]; }; then
+    _pass "VERSION at or above m28.1 floor — current: ${ver}"
 else
-    _fail "VERSION reads '${actual_version}', expected 4.27.x where x >= 5"
+    _fail "VERSION reads '${ver}', expected 4.27.x (x>=5) or 4.>=28.x"
 fi
 
 # =============================================================================
-echo "=== AC9: CHANGELOG has m28.1 Fixed entry under [Unreleased] ==="
+echo "=== AC9: CHANGELOG has m28.1 Fixed entry (Unreleased or promoted block) ==="
 
+# m28.3 close promotes m28.x entries from [Unreleased] to [4.28.0]. Accept
+# either: still under [Unreleased] (mid-arc) or any ## [N.NN.N] block.
 CHANGELOG="${TEKHTON_HOME}/CHANGELOG.md"
 if [[ ! -f "$CHANGELOG" ]]; then
     _fail "CHANGELOG.md not found at ${CHANGELOG}"
 else
-    # Extract content between ## [Unreleased] and the next versioned ## [...] heading
-    unreleased_block=$(awk '/^## \[Unreleased\]/{found=1; next} found && /^## \[[0-9]/{exit} found{print}' "$CHANGELOG")
+    ub=$(awk '/^## \[Unreleased\]/{f=1;next} f && /^## \[[0-9]/{exit} f' "$CHANGELOG")
+    pb=$(awk '/^## \[4\.[0-9]+\.[0-9]+\]/{f=1;next} f && /^## \[/{exit} f' "$CHANGELOG")
+    both="${ub}
+${pb}"
 
-    if echo "$unreleased_block" | grep -q "m28\.1"; then
-        _pass "CHANGELOG.md has m28.1 entry under [Unreleased]"
-    else
-        _fail "CHANGELOG.md does not have m28.1 entry under [Unreleased]"
-    fi
+    echo "$both" | grep -q "m28\.1" \
+        && _pass "CHANGELOG.md has m28.1 entry (Unreleased or promoted)" \
+        || _fail "CHANGELOG.md does not have m28.1 entry in either block"
 
-    if echo "$unreleased_block" | grep -q "start-mcp-server"; then
-        _pass "CHANGELOG.md m28.1 entry mentions start-mcp-server"
-    else
-        _fail "CHANGELOG.md m28.1 entry does not mention start-mcp-server"
-    fi
+    echo "$both" | grep -q "start-mcp-server" \
+        && _pass "CHANGELOG.md m28.1 entry mentions start-mcp-server" \
+        || _fail "CHANGELOG.md m28.1 entry does not mention start-mcp-server"
 fi
 
 # =============================================================================

@@ -99,45 +99,63 @@ assert_eq "SERENA_MCP_AVAILABLE is false after probe failure" "false" "$SERENA_M
 assert_eq "_MCP_SERVER_RUNNING is false after probe failure" "false" "$_MCP_SERVER_RUNNING"
 
 # =============================================================================
-echo "=== AC8: VERSION is 4.27.x (x >= 6, m28.2 floor) ==="
+echo "=== AC8: VERSION floor — m28.2 opened at 4.27.6; m28 closes at 4.28.0+ ==="
 
-# Pipeline finalize hooks may patch-bump VERSION beyond 4.27.6 (e.g. to 4.27.7
-# as observed post-m28.2). Assert the m28.2 floor: major.minor=4.27, patch>=6.
+# Pipeline finalize hooks may patch-bump VERSION between stages, and m28.3
+# closes the arc by promoting the [Unreleased] entries to a clean minor at
+# 4.28.0. Either the in-flight 4.27.x floor (>= 6) OR any 4.MM.* >= 4.28
+# satisfies this AC.
 actual_version=$(tr -d '[:space:]' < "${TEKHTON_HOME}/VERSION" 2>/dev/null || echo "MISSING")
-version_major_minor="${actual_version%.*}"
+version_major="${actual_version%%.*}"
+version_rest="${actual_version#*.}"
+version_minor="${version_rest%%.*}"
 version_patch="${actual_version##*.}"
 
-if [[ "$version_major_minor" == "4.27" ]] && [[ "$version_patch" -ge 6 ]]; then
-    _pass "VERSION is 4.27.x (x >= 6) — current: ${actual_version}"
+ok=false
+if [[ "$version_major" == "4" ]] && [[ "$version_minor" == "27" ]] && [[ "$version_patch" -ge 6 ]]; then
+    ok=true
+elif [[ "$version_major" == "4" ]] && [[ "$version_minor" -ge 28 ]]; then
+    ok=true
+fi
+
+if [[ "$ok" == "true" ]]; then
+    _pass "VERSION at or above m28.2 floor — current: ${actual_version}"
 else
-    _fail "VERSION reads '${actual_version}', expected 4.27.x where x >= 6"
+    _fail "VERSION reads '${actual_version}', expected 4.27.x (x>=6) or 4.>=28.x"
 fi
 
 # =============================================================================
-echo "=== AC9: CHANGELOG has m28.2 ### Changed entry under [Unreleased] ==="
+echo "=== AC9: CHANGELOG has m28.2 ### Changed entry (Unreleased or promoted) ==="
 
 CHANGELOG="${TEKHTON_HOME}/CHANGELOG.md"
 if [[ ! -f "$CHANGELOG" ]]; then
     _fail "CHANGELOG.md not found at ${CHANGELOG}"
 else
+    # m28.3 close promotes the m28.x entries from [Unreleased] to [4.28.0].
+    # Accept either: (a) entry still under [Unreleased] (mid-arc), or
+    # (b) entry under any versioned ## [N.NN.N] block (post-promotion).
     unreleased_block=$(awk '/^## \[Unreleased\]/{found=1; next} found && /^## \[[0-9]/{exit} found{print}' "$CHANGELOG")
+    promoted_block=$(awk '/^## \[4\.[0-9]+\.[0-9]+\]/{found=1; next} found && /^## \[/{exit} found{print}' "$CHANGELOG")
 
-    if echo "$unreleased_block" | grep -q "m28\.2"; then
-        _pass "CHANGELOG [Unreleased] block contains m28.2 tag"
+    if echo "$unreleased_block" | grep -q "m28\.2" \
+        || echo "$promoted_block" | grep -q "m28\.2"; then
+        _pass "CHANGELOG has m28.2 entry (Unreleased or promoted)"
     else
-        _fail "CHANGELOG [Unreleased] block does not contain m28.2 tag"
+        _fail "CHANGELOG does not have m28.2 entry in either block"
     fi
 
-    if echo "$unreleased_block" | grep -qi "probe"; then
+    if echo "$unreleased_block" | grep -qi "probe" \
+        || echo "$promoted_block" | grep -qi "probe"; then
         _pass "CHANGELOG m28.2 entry mentions probe"
     else
         _fail "CHANGELOG m28.2 entry does not mention probe"
     fi
 
-    if echo "$unreleased_block" | grep -q "^### Changed"; then
-        _pass "CHANGELOG [Unreleased] block has ### Changed section"
+    if echo "$unreleased_block" | grep -q "^### Changed" \
+        || echo "$promoted_block" | grep -q "^### Changed"; then
+        _pass "CHANGELOG has ### Changed section (Unreleased or promoted)"
     else
-        _fail "CHANGELOG [Unreleased] block is missing ### Changed section"
+        _fail "CHANGELOG is missing ### Changed section in both blocks"
     fi
 fi
 

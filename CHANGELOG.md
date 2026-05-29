@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.28.0] - 2026-05-29
+
+### Added
+- `_is_stale_serena_config` detects and replaces pre-m28.1 Serena MCP
+  configs that invoke `python -m serena`, preserving a timestamped
+  backup at `<config>.bak.<ts>`. Stale projects pick up the fix on
+  next pipeline run with no manual intervention. (m28.3)
+- `tests/test_serena_template_substitution.sh` plus three new
+  `_probe_serena_startup` scenarios in `tests/test_mcp.sh` cover the
+  m28 arc end-to-end. New fixtures under `tests/fixtures/serena_configs/`
+  pin the stale vs. correct shape diff. (m28.3)
+
 ### Changed
 - `start_mcp_server` now smoke-tests the resolved Serena binary with a
   2-second `serena start-mcp-server --help` probe before declaring

@@ -272,6 +272,22 @@ result=${result:-0}
 assert_exit_code "check_serena_available returns 1 when disabled" 1 "$result"
 
 # =============================================================================
+echo "=== Test: _probe_serena_startup — three scenarios ==="
+
+# m28.3 adds the three direct probe scenarios deferred from m28.2's Seeds
+# Forward: empty bin (guard), failing bin (exit 1), passing bin (exit 0 via
+# `echo`, which ignores args and exits 0 without a real Serena install).
+_probe_case() {
+    local desc="$1" bin="$2" expected="$3" rc=0
+    _SERENA_BIN="$bin"
+    _probe_serena_startup || rc=$?
+    assert_exit_code "$desc" "$expected" "$rc"
+}
+_probe_case "_probe_serena_startup returns 1 when _SERENA_BIN empty"   ""               1
+_probe_case "_probe_serena_startup returns 1 when binary fails"        "/usr/bin/false" 1
+_probe_case "_probe_serena_startup returns 0 when binary exits 0"      "$(command -v echo)" 0
+
+# =============================================================================
 echo
 echo "────────────────────────────────────────"
 echo "  Passed: ${PASS}  Failed: ${FAIL}"

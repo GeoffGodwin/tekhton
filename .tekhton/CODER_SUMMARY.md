@@ -4,161 +4,242 @@
 
 ## What Was Implemented
 
-m28.2 — Serena Startup Probe + Truthful Status. Second subtask in the
-m28 arc. m28.1 fixed config *generation*; m28.2 fixes *truth-telling* —
-`start_mcp_server` no longer logs `Serena MCP integration enabled` for a
-binary that won't actually launch.
+m28.3 — Stale-Config Migration + Tests. Final subtask of the m28 arc.
+m28.1 made fresh configs correct; m28.2 made startup truth-telling;
+m28.3 makes existing broken configs self-heal on next run and ships
+the regression coverage for the whole arc.
 
-### Goal 1 — `_probe_serena_startup`
+### Goal 1 — `_is_stale_serena_config`
 
-Added to `lib/mcp.sh` immediately after `_resolve_serena_paths` /
-`_SERENA_BIN` resolution, before `_resolve_mcp_config`. Body matches the
-milestone spec verbatim: empty-`_SERENA_BIN` → return 1; otherwise
-`timeout 2 "$_SERENA_BIN" start-mcp-server --help >/dev/null 2>&1`,
-returning the timeout's exit translation. No retries, no debug capture,
-no `--mcp-debug`. The probe is the cheapest possible argv-parser
-exerciser — `--help` is the right shape per the milestone rationale.
+Added to `lib/mcp_resolve.sh` (see "File-ceiling extraction" below) between
+`_probe_serena_startup` and `_resolve_mcp_config`. Body matches the
+milestone spec — `python3` heredoc, narrow match on
+`args[0]=="-m" && args[1]=="serena"`. Returns 0 for stale shape, 1 for
+anything else (correct, malformed, missing, foreign server keyed as
+"serena" with a different layout). `python3` chosen over `jq` because
+`jq` is not guaranteed on the CI matrix; the project already shells to
+`python3` from `lib/test_audit_helpers.sh` and elsewhere.
 
-### Goal 2 — `start_mcp_server` flow change
+The detection regex is intentionally narrow: a user with a custom MCP
+config that names a server "serena" but uses a different command/args
+layout is not affected (e.g. `{"command":"/usr/local/bin/my-wrapper.sh"}`
+with arbitrary args is preserved).
 
-Inserted the probe gate between `log_verbose "[mcp] MCP config: …"` and
-the state-set block (the line previously at 210). On probe failure:
-two `warn` lines (`Serena startup probe failed (binary: …)` and
-`Continuing without LSP-backed tools.`), clear `SERENA_MCP_AVAILABLE`
-and `SERENA_ACTIVE` to the existing empty-string shape, return 1. The
-return-1 contract is unchanged from the three other failure branches
-(`Serena not found`, CLI lacks `--mcp-config`, config not generated);
-the existing caller in `tekhton-legacy.sh` already swallows non-zero
-returns and continues without LSP. On success: appended `(probe passed)`
-to the existing log line so the difference is visible in `--verbose`
-logs.
+### Goal 2 — `_resolve_mcp_config` rewire
 
-### Goal 3 — VERSION + CHANGELOG
+The `default_config` branch now calls `_is_stale_serena_config`:
+- stale → `cp` to `<config>.bak.$(date +%Y%m%d%H%M%S)`, `log_verbose`,
+  `rm`, fall through to the existing template-substitution block
+- not-stale → set `_MCP_CONFIG_PATH` and return 0 (unchanged path)
 
-`VERSION` bumped `4.27.5` → `4.27.6`. `CHANGELOG.md` gained a `### Changed`
-entry under `[Unreleased]` above the existing m28.1 `### Fixed` entry,
-copied verbatim from the milestone spec.
+The fall-through reuses the existing generation block — no duplication.
+Backup filename uses second-resolution timestamp per the milestone's
+Watch For note ("two pipeline runs within the same second is acceptable
+collision risk for a one-shot migration; don't add nanosecond precision").
 
-### Test maintenance (broken by my changes — required updates)
+### Goal 3 — `tests/test_serena_template_substitution.sh` (NEW)
 
-Two existing tests (`test_mcp.sh` "start_mcp_server with everything set
-up" and `test_mcp_lifecycle.sh` "start_mcp_server succeeds after state
-reset") stubbed the Serena binary with `touch`, which creates an empty
-non-executable file. The new probe correctly rejects that, breaking
-both tests. Both updated to use a minimal executable shell stub:
-`printf '#!/bin/sh\nexit 0\n' > .../serena && chmod +x .../serena`. This
-matches the Seeds Forward note ("`_SERENA_BIN=/usr/bin/echo` returning
-0 should make the probe pass") — any zero-exit binary is fine; the
-probe deliberately does not depend on Serena-specific output. m28.3
-will add the dedicated probe-stub tests against `/usr/bin/false`,
-`/usr/bin/echo`, and a hanging script.
+End-to-end black-box coverage of `_resolve_mcp_config` across three
+scenarios:
+1. **Fresh-generation** — no pre-existing config → asserts the file
+   parses as JSON, `command == _SERENA_BIN`, `args[0] == "start-mcp-server"`,
+   `args` contains `--project` pointing at `PROJECT_DIR`.
+2. **No-overwrite-when-correct** — pre-place `fixtures/correct.json` →
+   asserts md5 unchanged and zero `.bak.*` files created.
+3. **Regenerate-when-stale** — pre-place `fixtures/stale.json` → asserts
+   md5 differs, exactly one `.bak.*` exists, backup contains the original
+   stale bytes.
+
+Shape matches `tests/test_mcp.sh`: `assert_exit_code` helper, top-level
+`PASS`/`FAIL` counters, trap-based cleanup. 10 / 10 PASS in isolation.
+
+### Goal 4 — `tests/test_mcp.sh` extension
+
+Appended the three `_probe_serena_startup` scenarios (empty bin,
+`/usr/bin/false`, `command -v echo`) using a compact `_probe_case`
+helper that wraps each invocation. Three new test cases, all PASS.
+File at 298 lines after compaction (was 282 pre-edit).
+
+### Goal 5 — Fixtures
+
+`tests/fixtures/serena_configs/{stale,correct}.json` — hand-written
+to the exact pre-/post-m28.1 shapes per the milestone Watch For
+("don't programmatically derive correct.json from setup_serena.sh —
+divergence is exactly what this test exists to catch"). Both validate
+under `python3 -m json.tool`.
+
+### Goal 6 — VERSION + manifest + CHANGELOG
+
+- `VERSION`: `4.27.7` → `4.28.0` (pipeline subsequently patch-bumped to
+  `4.28.1` mid-run; both tests are tolerant of any `4.>=28.x`).
+- `CHANGELOG.md`: promoted the m28.1 `### Fixed` and m28.2 `### Changed`
+  entries from `[Unreleased]` into a new dated `## [4.28.0] - 2026-05-29`
+  block, and added the m28.3 `### Added` entries inside the same block,
+  per the milestone consolidation convention.
+- `MANIFEST.cfg`: m28 (parent), m28.1, m28.2, m28.3 all flipped to
+  `done`. Parent's `split` status replaced with `done` per AC.
+
+### File-ceiling extraction — `lib/mcp_resolve.sh` (NEW)
+
+Adding `_is_stale_serena_config` (~16 lines) to `lib/mcp.sh` pushed the
+file to 327 lines, over the CLAUDE.md Rule 8 300-line bash ceiling.
+Extracted the five internal resolver/probe helpers
+(`_resolve_serena_paths`, `_probe_serena_startup`,
+`_is_stale_serena_config`, `_resolve_mcp_config`, `_cli_supports_mcp_config`)
+into a sibling file `lib/mcp_resolve.sh` sourced by `lib/mcp.sh`.
+
+The split is conceptually clean: `mcp_resolve.sh` owns "find/probe/
+regenerate config", `mcp.sh` owns "server lifecycle (start/stop/health)".
+All callers (5 sourcing sites — `tekhton-legacy.sh` plus 4 tests) get
+the helpers transitively via the source line in `mcp.sh`. Final counts:
+`lib/mcp.sh` 186, `lib/mcp_resolve.sh` 164 — both well under 300.
+
+Architecture map (`ARCHITECTURE.md`) updated to reflect the new file
+under the Layer 3 listing.
+
+### Test maintenance (broken by promoting [Unreleased] → [4.28.0])
+
+`tests/test_mcp_probe.sh` and `tests/test_mcp_serena_bin.sh` were
+written against the in-flight m28.2/m28.1 floor states — AC8 asserted
+`VERSION == 4.27.x` and AC9 asserted entries under `[Unreleased]`.
+m28.3's milestone-spec'd consolidation breaks both assertions.
+
+Both updated to accept either the in-flight `4.27.x` floor OR the
+post-promotion `4.>=28.x` shape, and to scan both `[Unreleased]` and
+the most recent `[4.NN.N]` block. Pre-existing AC structure preserved —
+this is the minimal fix the m28-arc-close requires.
+
+`tests/test_mcp_serena_bin.sh` was at 308 lines pre-edit (already over
+the 300 ceiling at m28.1 close — pre-existing violation noted but not
+introduced by me). My AC8/AC9 expansion plus consolidating three
+repetitive `_resolve_serena_paths` setup blocks into a parameterized
+`_resolve_case` helper brought it to 263 lines — pulling it back under
+the ceiling. Same 22-test count, same coverage, smaller surface.
 
 ## Acceptance Criteria — verified
 
-- [x] `_probe_serena_startup` runs `timeout 2 "$_SERENA_BIN" start-mcp-server --help`
-      and returns 0 only when the spawned process exits 0 within the timeout.
-      (Verified ad-hoc: `_SERENA_BIN=/usr/bin/echo _probe_serena_startup; echo $?`
-      → 0; `_SERENA_BIN=/usr/bin/false _probe_serena_startup; echo $?` → 1.)
-- [x] Returns 1 when `_SERENA_BIN` is empty. (Verified ad-hoc: `_SERENA_BIN=""
-      _probe_serena_startup; echo $?` → 1.)
-- [x] `start_mcp_server` calls `_probe_serena_startup` after `_resolve_mcp_config`
-      and before the `SERENA_ACTIVE="true"` assignment (`lib/mcp.sh:223-231`).
-- [x] On probe failure: `start_mcp_server` returns 1 and `SERENA_ACTIVE=""`
-      (matches the three existing failure branches).
-- [x] 2-second cap enforced — `timeout 2 .../hang.sh start-mcp-server --help`
-      exits 124 in ≤ 2.1 s wall-clock (within the 3 s AC tolerance).
-- [x] Pipeline continues after probe failure (`return 1` contract preserved;
-      the existing caller in `tekhton-legacy.sh` already swallows non-zero).
-- [x] `bash tests/run_tests.sh` — 492 shell PASS / 0 FAIL, all Go packages
-      pass. Zero regressions vs. the m28.1-close baseline.
-- [x] `VERSION` reads `4.27.6`.
-- [x] `CHANGELOG.md` has the m28.2 `### Changed` entry under `[Unreleased]`.
-- [ ] `.claude/milestones/MANIFEST.cfg` row for `m28.2` reads `done` —
-      the finalize orchestrator's `mark_done` hook flips this on milestone
-      close, not the coder pass.
+- [x] `_is_stale_serena_config` returns 0 on stale shape, 1 on correct/
+      malformed/missing/foreign-args layouts. Confirmed by the three
+      fixture-driven cases in `test_serena_template_substitution.sh`
+      plus the milestone's narrow-match property.
+- [x] `_resolve_mcp_config` against a stale config: creates exactly one
+      `<config>.bak.<timestamp>` with original contents, deletes the
+      original, falls through to template generation, returns 0 with
+      `_MCP_CONFIG_PATH` set. Verified by
+      `test_serena_template_substitution.sh` "Regenerate-when-stale".
+- [x] `_resolve_mcp_config` against a correct config: returns 0
+      unchanged, no backup created, file byte-identical. Verified by
+      `test_serena_template_substitution.sh` "No-overwrite-when-correct"
+      (md5 match before/after).
+- [x] `tests/test_serena_template_substitution.sh` exits 0; covers
+      fresh-generation, no-overwrite-correct, regenerate-when-stale.
+      10 / 10 PASS.
+- [x] `tests/test_mcp.sh` adds and passes the three
+      `_probe_serena_startup` scenarios. 25 / 25 PASS.
+- [x] Fixtures `tests/fixtures/serena_configs/{stale,correct}.json`
+      parse with `python -m json.tool`.
+- [x] `bash tests/run_tests.sh` shows zero regressions — 494 shell PASS
+      / 0 FAIL (up from 492 at m28.2 close — the two new test cases).
+      All Go packages pass.
+- [x] `.claude/milestones/MANIFEST.cfg`: m28 parent + m28.1 + m28.2 +
+      m28.3 all `done`. Parent's `split` field replaced with `done`.
+- [x] `VERSION` reads `4.28.0` (pipeline subsequently patch-bumped to
+      `4.28.1`; both are 4.>=28.x and satisfy the floor).
+- [x] `CHANGELOG.md` `[Unreleased]` is empty; entries promoted to
+      `[4.28.0] - 2026-05-29` block per project convention.
 
 Additional gates verified:
 
-- [x] `shellcheck lib/mcp.sh` exits 0.
-- [x] `shellcheck tekhton.sh lib/*.sh stages/*.sh` exits 0 (full tree
-      pass; the pre-existing SC1091/SC2034 warnings in `tests/test_mcp.sh`
-      and `tests/test_mcp_lifecycle.sh` were present at the m28.1-close
-      baseline — verified by `git stash && shellcheck …`).
-- [x] `bash tests/test_mcp.sh` — 22 PASS / 0 FAIL.
-- [x] `bash tests/test_mcp_lifecycle.sh` — 3 PASS / 0 FAIL.
-- [x] `bash tests/test_mcp_serena_bin.sh` — 22 PASS / 0 FAIL (m28.1
-      surface still green; AC8 grep accepts `4.27.x` where x ≥ 5, so
-      `4.27.6` passes that check).
-- [x] File ceilings: `lib/mcp.sh` = 295 lines (was 270 at m28.1 close;
-      net +25 lines for the probe function + gate block, still under
-      the 300-line bash ceiling). Test files unchanged in length terms.
+- [x] `shellcheck tekhton.sh lib/*.sh stages/*.sh` exits 0 (full tree).
+- [x] `shellcheck` on the four modified test files: only pre-existing
+      SC1091 (info) and SC2034 (warning on pipeline-consumed vars) —
+      same shape as the m28.2-close baseline.
+- [x] File ceilings: every modified `.sh` file under 300 lines —
+      `lib/mcp.sh` 186, `lib/mcp_resolve.sh` 164, `tests/test_mcp.sh`
+      298, `tests/test_mcp_probe.sh` 170, `tests/test_mcp_serena_bin.sh`
+      263, `tests/test_serena_template_substitution.sh` 189.
 
 ## Root Cause (bugs only)
 
-N/A — m28.2 is a defensive feature, not a bug fix. The behavior change
-is "tell the truth about MCP status", not "stop a panic". The motivating
-incident (sdivi-rust M29: silent MCP failure ran two pipeline runs
-without any operator-visible signal) is the rationale for the probe,
-but there is no code defect being repaired in m28.2 itself — m28.1
-fixed the underlying config template that produced the broken state.
+N/A — m28.3 is a migration feature. The bug class it addresses (silent
+acceptance of pre-m28.1 broken configs by `_resolve_mcp_config`'s
+unconditional file-exists short-circuit) was fixed structurally by
+adding the stale-detect branch. No prior runtime regression to root-cause.
 
 ## Files Modified
 
-- `lib/mcp.sh` — Added `_probe_serena_startup()` function (16 lines
-  including header); inserted probe gate (10 lines) into
-  `start_mcp_server` between MCP-config log and state-set block;
-  appended `(probe passed)` to success log line.
-- `VERSION` — `4.27.5` → `4.27.6`.
-- `CHANGELOG.md` — Added `### Changed` entry under `[Unreleased]` for
-  m28.2 (above the existing m28.1 `### Fixed` entry).
-- `tests/test_mcp.sh` — Updated "start_mcp_server with everything set
-  up" stub: `touch` → executable `printf '#!/bin/sh\nexit 0\n' …` +
-  `chmod +x …` so the probe passes (1-line comment + replacing 1
-  `touch` line with 2 lines).
-- `tests/test_mcp_lifecycle.sh` — Same test-stub update as above for
-  "start_mcp_server succeeds after state reset".
+- `lib/mcp.sh` — Sliced down to 186 lines: kept public API
+  (`get_mcp_config_path`, `check_mcp_health`, `is_mcp_running`,
+  `start_mcp_server`, `stop_mcp_server`, `check_serena_available`) plus
+  module-state vars; added `source lib/mcp_resolve.sh` line.
+- `lib/mcp_resolve.sh` (NEW) — 164 lines. Owns
+  `_resolve_serena_paths`, `_probe_serena_startup`,
+  `_is_stale_serena_config` (new in m28.3), `_resolve_mcp_config`
+  (with new stale-detect branch in m28.3), `_cli_supports_mcp_config`.
+- `tests/test_mcp.sh` — Appended three `_probe_serena_startup`
+  scenarios via a `_probe_case` helper. 298 lines.
+- `tests/test_mcp_probe.sh` — Updated AC8 (VERSION floor) and AC9
+  (CHANGELOG block) to accept both in-flight and promoted shapes.
+  170 lines.
+- `tests/test_mcp_serena_bin.sh` — Same AC8/AC9 update; consolidated
+  three repetitive AC2 `_resolve_serena_paths` blocks into a single
+  `_resolve_case` helper. Down from 308 to 263 lines.
+- `tests/test_serena_template_substitution.sh` (NEW) — 189 lines.
+  End-to-end coverage of `_resolve_mcp_config` template substitution +
+  stale-config migration.
+- `tests/fixtures/serena_configs/stale.json` (NEW) — Pre-m28.1
+  broken-shape fixture.
+- `tests/fixtures/serena_configs/correct.json` (NEW) — Post-m28.1
+  correct-shape fixture.
+- `VERSION` — `4.27.7` → `4.28.0` (pipeline finalize hook may bump
+  further to `4.28.1` between stages; both pass the AC8 floor).
+- `CHANGELOG.md` — `[Unreleased]` cleared; entries promoted to
+  `[4.28.0] - 2026-05-29` block; added m28.3 `### Added` entries for
+  `_is_stale_serena_config` and the new tests/fixtures.
+- `.claude/milestones/MANIFEST.cfg` — Flipped m28 (parent),
+  m28.1, m28.2, m28.3 all to `done`.
+- `ARCHITECTURE.md` — Added `lib/mcp_resolve.sh` entry under Layer 3.
 
 ## Human Notes Status
 
 No HUMAN_NOTES.md items present in this task. The Clarifications block
-in the prompt contained Q&A pairs from prior runs whose answers were
-copies of the question text — noise, not signal. None of the prior
-clarifications are relevant to m28.2 (they covered the Watchtower
-dashboard, the `NON_BLOCKING_LOG`, the `--init`/`--plan` flow, and
-notes-inconsistency reports — all in different subsystems).
+contained Q&A pairs from prior runs (Watchtower dashboard,
+NON_BLOCKING_LOG, --init/--plan flow, notes inconsistency) — all in
+different subsystems, none relevant to m28.3.
 
 ## Docs Updated
 
-None — no public-surface changes in this task. `_probe_serena_startup`
-is underscore-prefixed (internal API). The user-visible effect is a
-warning log line where there used to be a silent success, plus the
-verbose log line now appends `(probe passed)`; neither warrants a doc
-update. CHANGELOG.md gained the standard `Changed` entry that documents
-the behavior change for downstream consumers.
+- `ARCHITECTURE.md` — Added an entry for the new `lib/mcp_resolve.sh`
+  file under Layer 3, mirroring the existing `mcp.sh` entry's style.
+  No CHANGELOG bullet for the architecture-map update (internal
+  navigation aid, not a user-visible change).
+
+`_is_stale_serena_config` is underscore-prefixed (internal API) and
+the auto-repair-on-next-run behavior is documented in the CHANGELOG
+`[4.28.0]` block. The milestone Watch For explicitly forbids a
+`tekhton --repair-mcp-config` CLI subcommand, so no docs/completion
+surface to add.
 
 ## Observed Issues (out of scope)
 
+- **`lib/mcp.sh` and `lib/mcp_resolve.sh` both carry
+  `set -euo pipefail` despite being sourced libs.** Pre-existing
+  pattern in this file (m28.1 review noted it as out of scope for
+  m28.1); inherited into `mcp_resolve.sh` to match the convention
+  used by the rest of `lib/*_helpers.sh`. Cleanup belongs to a future
+  shell-hygiene milestone that sweeps all sourced libs.
 - **`tests/test_mcp.sh` and `tests/test_mcp_lifecycle.sh` carry
-  pre-existing SC1091 and SC2034 warnings on `source` lines and
-  unused-variable assignments.** Confirmed pre-existing by
-  `git stash && shellcheck tests/test_mcp.sh tests/test_mcp_lifecycle.sh`
-  reporting the same warnings on the m28.1-close baseline. My m28.2
-  edits added no new shellcheck warnings. Out of scope; cleanup
-  belongs to a test-hygiene milestone.
+  pre-existing SC1091/SC2034 warnings.** Same observation as the m28.2
+  reviewer. Not introduced by me; not in scope.
 - **`scripts/wedge-audit.sh` at 307 lines** — still 7 over the 300-line
-  ceiling from the m27.3/m28.1 chain. No net changes here in m28.2. The
-  extraction path (`scripts/wedge-audit-companions.sh`) is established;
-  a follow-up milestone owns the lift.
-- **`test_tester.sh` Test 2** — pre-existing UPSTREAM exit 1 failure
-  (`stages/tester_tdd.sh:84`, `return` vs `exit 1`). Predates the m27
-  and m28 series. Out of scope; not in the m28.2 surface.
+  ceiling, carrying from prior milestones. No changes from m28.3.
 
 ## Architecture Change Proposals
 
-None. The probe is a textbook resolver-time guard at the existing
-`start_mcp_server` boundary, with no new dependency, no new interface
-contract, and no layer-boundary change. The function naming
-(`_probe_*` underscore-prefixed internal helper) and call site (within
-`start_mcp_server` after resolution, before state-set) match the
-existing pattern in this file (`_resolve_serena_paths`,
-`_resolve_mcp_config`, `_cli_supports_mcp_config`).
+None. The extraction of `lib/mcp_resolve.sh` from `lib/mcp.sh` is a
+file-ceiling compliance split, not an architectural change. Same
+public interface, same dependency direction (sourced by `mcp.sh` so
+all callers of `mcp.sh` pick up the helpers transitively without
+edits), same `lib/*.sh` layer. Documented in `ARCHITECTURE.md` per
+the standard layer-3 entry pattern, matching `agent_helpers.sh` /
+`indexer_helpers.sh` precedent.
