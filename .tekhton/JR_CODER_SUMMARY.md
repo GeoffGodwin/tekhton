@@ -1,9 +1,9 @@
-# Jr Coder Summary — m27.3 Simple Blockers
+# JR Coder Summary — m33.1 Dashboard Emitters
 
 ## What Was Fixed
-- Reset `VERSION` from `4.27.1` to `4.27.0` — project-version bump hook fired as a side effect of the `make dogfood` verification run, advancing the version past the required milestone value.
-- Reset `CURRENT_VERSION` in `.claude/project_version.cfg` from `4.27.1` to `4.27.0` to match.
+
+- `internal/dashboard/emit_timeline.go:106`: Removed spurious closing quote from the milestone verbosity filter substring. Changed `"type":"milestone_"` to `"type":"milestone_` so that real causal-log events like `{"type":"milestone_start",...}` are no longer silently dropped in normal verbosity mode. This restores milestone start/completion events in the Watchtower timeline.
 
 ## Files Modified
-- `VERSION`
-- `.claude/project_version.cfg`
+
+- `internal/dashboard/emit_timeline.go`
