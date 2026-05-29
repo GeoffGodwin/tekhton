@@ -2,13 +2,14 @@
 PASS
 
 ## Confidence
-92
+95
 
 ## Reasoning
-- Scope is precisely bounded: four explicit goals, five named files, and a "Watch For" section that draws hard lines between this subtask and m28.2/m28.3
-- Acceptance criteria are fully mechanical and verifiable: `grep` membership checks, `bash -n` syntax validation, `python -m json.tool` round-trip, exact VERSION string, test suite regression gate, MANIFEST status row
-- Design section provides exact code for every change (module-scope declaration, dual POSIX/Windows lookup block, complete sed command with old placeholder removed, setup_serena.sh post-venv assignment) — two competent developers would produce identical diffs
-- Out-of-scope boundaries are explicit and reinforced: existing-config migration is m28.3, runtime probing is m28.2, `--context` flag omission is justified and noted
-- "Seeds Forward" section documents the contract `_SERENA_BIN` must satisfy for m28.2, preventing a silent abstraction leak
-- No UI components introduced; UI testability criterion not applicable
-- No new user-facing config keys requiring a migration impact section; the change is purely to the generation path for fresh installs
+- Scope is precisely defined: four numbered goals with explicit in/out-of-scope boundaries; "Watch For" reinforces what is deferred (probe logic to m28.2, stale-config migration to m28.3)
+- All five modified files are named and described; no ambiguity about what changes
+- Design section provides verbatim bash snippets and the exact sed block, leaving no implementation decisions to the developer
+- Acceptance criteria are fully mechanical: string-grep checks, JSON validation via `python -m json.tool`, bash syntax check, test-suite invocation, VERSION and CHANGELOG content checks — none are aspirational
+- POSIX/Windows dual-path requirement is called out explicitly in the design and in "Watch For," matching the existing `_SERENA_PYTHON` pattern
+- Migration impact is intentionally deferred to m28.3 and clearly documented as such; no new user-facing config keys are introduced
+- "Seeds Forward" section makes cross-subtask contracts explicit (`_SERENA_BIN` must be set on every successful exit; detector substring for m28.3)
+- No UI components involved; UI testability criterion not applicable
