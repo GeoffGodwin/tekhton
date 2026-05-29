@@ -3,12 +3,14 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 159
+- Runs since audit: 160
 =======
-- Runs since audit: 159
+- Runs since audit: 160
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-28 | "unknown"] `lib/mcp.sh:15`: `set -euo pipefail` appears in a sourced library file. Reviewer checklist calls for sourced `lib/` files to inherit rather than declare. Pre-existing condition; not introduced by m28.1, but worth scheduling for a cleanup pass.
+- [2026-05-28 | "unknown"] Pre-existing: `test_tester.sh` Test 2 fails with UPSTREAM exit 1 (`stages/tester_tdd.sh:84`, `return` vs `exit 1`). Predates m27.x; out of scope for m28.1.
 - [2026-05-28 | "unknown"] `scripts/wedge-audit.sh` now stands at 297 lines after the m27.3 addition â 3 lines below the 300-line hard ceiling. The extraction of companion checks into `scripts/wedge-audit-companions.sh` was the right call; one more assertion block in a future milestone could push the main file over. Worth noting so the next author reaches for the companion pattern rather than inlining.
 - [2026-05-28 | "unknown"] `tests/test_stage_env_setu.sh` Signal 2 check (lines 131â139) depends on `/tmp/tekhton_stage_env_${stage}_post.txt` being written by `internal/stagerunner/adapter.go::buildBashScript`. If that dump path changes in a future stagerunner refactor, the Signal 2 check degrades silently rather than failing loudly. A comment near the `STAGES` array pointing to the Go source that writes the dump file would make the implicit dependency explicit.
 - [2026-05-28 | "unknown"] `scripts/wedge-audit.sh` now stands at 297 lines after the m27.3 addition â 3 lines below the 300-line hard ceiling. The extraction of companion checks into `scripts/wedge-audit-companions.sh` was the right call; one more assertion block in a future milestone could push the main file over. Worth noting so the next author reaches for the companion pattern rather than inlining.
