@@ -82,7 +82,7 @@ _run_tester_write_failing() {
             "${TASK:-}" \
             "UPSTREAM error during TDD write-failing phase"
         export SKIP_FINAL_CHECKS=true
-        return
+        exit 1
     fi
 
     # --- Null run detection ---
