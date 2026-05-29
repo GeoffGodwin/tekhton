@@ -1,114 +1,159 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 5 files (2 modified bash files, 3 freshness-sample Go files), ~50 test assertions/functions
+Tests audited: 4 files, 35 test functions (22 in test_mcp_serena_bin.sh,
+8 in test_mcp_probe.sh, 10 in test_serena_template_substitution.sh, 25 in
+test_mcp.sh). Freshness sample: 3 Go files reviewed (not modified this run).
 Verdict: PASS
 
 ---
 
 ### Findings
 
-#### COVERAGE: No automated success-path test for `_probe_serena_startup`
-- File: `tests/test_mcp_probe.sh` (overall file; header comment lines 13–15)
-- Issue: `test_mcp_probe.sh` exercises only failure modes of `_probe_serena_startup`
-  (empty `_SERENA_BIN` → return 1; binary exits 1 → `start_mcp_server` returns 1).
-  There is no automated test that verifies a zero-exit binary causes the probe to
-  return 0. The `start_mcp_server` success path (probe passes → `SERENA_ACTIVE="true"`,
-  `_MCP_SERVER_RUNNING=true`, return 0) is partially covered by `tests/test_mcp.sh`
-  and `tests/test_mcp_lifecycle.sh` (not under audit for this run), but direct
-  `_probe_serena_startup` success-path coverage is absent. The file header explicitly
-  defers `/usr/bin/echo`, `/usr/bin/false`, and hanging-binary tests to m28.3,
-  which is the documented rationale.
-- Severity: MEDIUM
-- Action: In m28.3, add a direct `_probe_serena_startup` test with a zero-exit stub
-  (e.g., `_SERENA_BIN=/usr/bin/echo _probe_serena_startup` → 0). Also add a
-  `start_mcp_server` success-path test with an executable stub so the probe passes
-  and `SERENA_ACTIVE="true"` / `_MCP_SERVER_RUNNING=true` are asserted directly.
-  No action required to block the current milestone given the explicit m28.3 deferral.
-
-#### COVERAGE: Probe-failure state assertions cannot distinguish explicit clear from unchanged initial value
-- File: `tests/test_mcp_probe.sh:83–99`
-- Issue: The test initializes `SERENA_MCP_AVAILABLE=false` and `SERENA_ACTIVE=""`
-  immediately before calling `start_mcp_server`. After the probe-failure path runs,
-  it asserts those variables are still `false` and `""`. Because the initial values
-  already match the asserted values, the assertions cannot distinguish between
-  (a) "the implementation explicitly cleared the flags" and (b) "the implementation
-  never touched them." If lines 231–232 of `lib/mcp.sh` (`SERENA_MCP_AVAILABLE=false`
-  / `SERENA_ACTIVE=""`) were removed, these assertions would still pass. The
-  implementation does correctly clear both flags, so there is no current bug; however,
-  a future regression that removes the explicit clears would go undetected.
-- Severity: MEDIUM
-- Action: Pre-set `SERENA_MCP_AVAILABLE=true` and `SERENA_ACTIVE="true"` before
-  calling `start_mcp_server` in the probe-failure scenario, then assert they are
-  cleared to `false` and `""`. This makes the assertions sensitive to the clearing
-  action specifically rather than the initial state.
-
-#### NAMING: Stale header comment in `test_mcp_serena_bin.sh`
-- File: `tests/test_mcp_serena_bin.sh:11`
-- Issue: The file header reads `# AC8  — VERSION reads 4.27.5` but the assertion
-  at lines 271–274 checks `version_patch -ge 5`, not `== "4.27.5"`. The broadened
-  floor assertion is correct (VERSION is now 4.27.8 and the floor remains valid
-  across subsequent patch bumps), but the comment is stale and misleads a reader
-  auditing the file header who would expect an exact-value check.
+#### NAMING: Stale file-header AC8 description in test_mcp_serena_bin.sh
+- File: tests/test_mcp_serena_bin.sh:12
+- Issue: The file-header comment reads `AC8  — VERSION reads 4.27.5` (implying an
+  exact-value check) but the code at lines 225–229 now accepts any version in the
+  range 4.27.x (x>=5) or 4.>=28.x. The test's own echo label at line 217 is
+  accurate; only the header entry is stale. The current VERSION on disk is 4.28.4,
+  confirming the broader range was required.
 - Severity: LOW
-- Action: Update line 11 to: `# AC8  — VERSION is 4.27.x (x >= 5; m28.1 floor)`
-  to match the actual assertion semantics.
+- Action: Update header line 12 to:
+  `# AC8  — VERSION at or above 4.27.5 floor (4.27.x x>=5, or 4.>=28.x after arc close)`
+
+#### NAMING: Stale file-header AC8 description in test_mcp_probe.sh
+- File: tests/test_mcp_probe.sh:8
+- Issue: The file-header comment reads `AC8 — VERSION is 4.27.x (x >= 6, m28.2
+  floor)` but the code at lines 115–118 also accepts 4.>=28.x. The test's own
+  echo at line 102 is already correct.
+- Severity: LOW
+- Action: Update header line 8 to:
+  `# AC8  — VERSION at or above 4.27.6 floor (4.27.x x>=6, or 4.>=28.x after arc close)`
+
+#### WEAKENING: AC8 VERSION floor broadened from specific floor to open-ended range
+- File: tests/test_mcp_serena_bin.sh:225–229, tests/test_mcp_probe.sh:115–118
+- Issue: Prior tests asserted an exact floor (4.27.5 or 4.27.6). Both are now range
+  checks accepting any 4.>=28.x as well. The precision reduction means the tests
+  can no longer distinguish between the intended milestone floor and an arbitrary
+  future version that happens to be higher. A regression that accidentally bumps
+  to 4.30.0 would still pass AC8.
+- Severity: LOW
+- Action: Acceptable as-is. The coder's justification is sound: pipeline finalize
+  hooks legally patch-bump VERSION between stages (current value is 4.28.4, already
+  past any single milestone floor), and m28.3 closes the arc at 4.28.0. The broader
+  range was required for the tests to remain green across the finalize lifecycle.
+  CODER_SUMMARY documents this explicitly. No change recommended, but note that
+  AC8-style milestone-floor checks may offer diminishing value once an arc promotes.
+
+#### COVERAGE: Skip-as-PASS inflates counter in test_mcp.sh
+- File: tests/test_mcp.sh:258–262
+- Issue: The `resolve_mcp_config generates config from template` test registers a
+  PASS and increments the PASS counter when `tools/serena_config_template.json` is
+  absent (line 261: `PASS=$((PASS + 1))`). This makes the test appear to have
+  passed without exercising any code, inflating the PASS total in the summary line
+  (reported as 25/25 in TESTER_REPORT). The template file does exist in this repo,
+  so the skip path is only reachable in stripped CI environments, but it masks
+  whether the test ran.
+- Severity: LOW
+- Action: Replace the skip-PASS pattern with a neutral emit that leaves counters
+  unchanged:
+  ```bash
+  else
+      echo "  SKIP: _resolve_mcp_config test (tools/serena_config_template.json absent)"
+  fi
+  ```
+
+#### COVERAGE: _resolve_case helper omits _SERENA_PYTHON and _SERENA_DIR assertions
+- File: tests/test_mcp_serena_bin.sh:93–115
+- Issue: The consolidated `_resolve_case` helper asserts return code and `_SERENA_BIN`
+  after `_resolve_serena_paths` but does not assert `_SERENA_PYTHON` or `_SERENA_DIR`.
+  The implementation sets all three on success. A regression in the Python-path or
+  dir-path assignment would be invisible to this helper.
+- Severity: LOW
+- Action: Add assertions for `_SERENA_PYTHON` and `_SERENA_DIR` in the success-path
+  calls (POSIX and Windows layout). For `Binary absent`, both should remain empty
+  and can also be asserted. Suggested addition after the `_SERENA_BIN` assertion:
+  ```bash
+  if [[ "$_SERENA_DIR" == "$dir" ]]; then
+      _pass "${label}: _SERENA_DIR matches expected"
+  else
+      _fail "${label}: _SERENA_DIR='${_SERENA_DIR}', expected '${dir}'"
+  fi
+  ```
 
 ---
 
 ### Assertion Honesty Assessment
 
-All assertions in both bash test files derive from real implementation behavior:
+All assertions in all four bash test files derive from real function behavior:
 
-- `test_mcp_serena_bin.sh`: Template grep checks read the actual file on disk.
-  Resolver tests construct fixture directories in `$TMPDIR`, call the real
-  `_resolve_serena_paths`, and assert against paths the function computed — no
-  mocking. Config generation tests call the real `_resolve_mcp_config` against a
-  fixture venv and validate the output file with `python3 -m json.tool`. CHANGELOG
-  check extracts the `[Unreleased]` block via `awk` and greps for `"m28.1"` and
-  `"start-mcp-server"`. No assertion always-passes or compares against a value
-  hard-coded independently of the implementation.
+- **test_mcp_serena_bin.sh**: Template checks grep the actual file on disk. Resolver
+  tests create fixture venvs in `$TMPDIR`, call the real `_resolve_serena_paths`, and
+  assert against paths the function computed — no mocking. Config generation calls the
+  real `_resolve_mcp_config` against a fixture venv and validates the output file with
+  `python3 -m json.tool`. CHANGELOG checks extract the promoted block via `awk`.
+  No assertion always-passes or compares against a value hard-coded independently
+  of implementation logic.
 
-- `test_mcp_probe.sh`: Calls `_probe_serena_startup` with `_SERENA_BIN=""` and
-  asserts return code 1 — matches `lib/mcp.sh:119–121`. Calls `start_mcp_server`
-  with a real executable stub that exits 1; asserts return code 1 — matches the
-  probe failure branch at `lib/mcp.sh:228–234`. No trivially-true assertions found.
+- **test_mcp_probe.sh**: Calls `_probe_serena_startup` with `_SERENA_BIN=""` and
+  asserts return 1 — matches the `[[ -z "${_SERENA_BIN:-}" ]]` guard in
+  `lib/mcp_resolve.sh:62`. Calls `start_mcp_server` with a real executable stub that
+  exits 1; the three post-call state assertions match the probe-failure branch at
+  `lib/mcp.sh:119–124`. No trivially-true assertions.
+
+- **test_serena_template_substitution.sh**: All three scenarios call the real
+  `_resolve_mcp_config` with state pre-set from fixture files. The Python inline
+  script validates the generated JSON command/args structure against the actual
+  `_SERENA_BIN` value, not a hard-coded string. The stale-detection fixture
+  (`stale.json`) has `args: ["-m", "serena", ...]`, which exactly matches the
+  `_is_stale_serena_config` detection predicate (`args[0]=="-m" && args[1]=="serena"`).
+  The correct fixture has `args: ["start-mcp-server", ...]`, which returns 1 (not
+  stale) as expected. md5 comparisons before/after correctly distinguish overwrite
+  vs. no-overwrite behavior.
+
+- **test_mcp.sh** (new probe scenarios, lines 275–289): Three `_probe_case`
+  invocations match implementation branches: empty bin hits the `[[ -z ]]` guard;
+  `/usr/bin/false` exits 1 causing the `timeout` call to fail; `$(command -v echo)`
+  exits 0, returning 0 from the probe. All expected return codes match the
+  implementation.
 
 ### Implementation Exercise Assessment
 
-Both files source `lib/common.sh` and `lib/mcp.sh` directly and call production
-functions (`_resolve_serena_paths`, `_resolve_mcp_config`, `_probe_serena_startup`,
-`start_mcp_server`) without mocking. `test_mcp_probe.sh` sets
-`_CLI_MCP_CONFIG_SUPPORTED="1"` to bypass the `claude --help` CLI probe — a
-targeted, appropriate bypass that isolates the probe behavior under test.
-State is reset between test sections to prevent cross-section leakage.
+All four files source `lib/common.sh` and `lib/mcp.sh` (which transitively sources
+`lib/mcp_resolve.sh`) and call production functions directly. `test_mcp_probe.sh`
+sets `_CLI_MCP_CONFIG_SUPPORTED="1"` to bypass the `claude --help` CLI check — a
+targeted, appropriate seam that isolates the probe behavior under test without
+over-mocking. No test mocks its own subject function.
 
 ### Test Weakening Assessment
 
-`test_mcp_probe.sh` is a new file this run — no prior version exists to weaken.
-`test_mcp_serena_bin.sh` was modified to broaden the VERSION assertion from
-`== "4.27.5"` to `patch >= 5`. Given that VERSION is now at 4.27.8, the
-original exact-match assertion would already be failing. The broadening is a
-necessary and justified adaptation to the finalize-hook version drift documented
-in the CODER_SUMMARY, not a weakening of test intent.
+`test_serena_template_substitution.sh` is new — no prior version exists to weaken.
+`test_mcp.sh` additions are purely additive (three new probe scenarios).
+`test_mcp_serena_bin.sh` and `test_mcp_probe.sh` broadened AC8 VERSION assertions —
+the broadening is documented and necessary (current VERSION 4.28.4 is already
+above any single milestone floor). The test count in both files is unchanged.
+No coverage was removed.
 
 ---
 
 ### Freshness Sample — Go Test Files (not modified this run)
 
-All three freshness-sample files are healthy. No issues flagged.
+The three Go freshness-sample files are unaffected by m28.3 changes and contain
+no stale references.
 
-- `internal/failure_context/context_test.go` — In-process unit tests using
-  `New()` instances; no mocking. Covers empty context, primary-only, secondary-only,
-  both slots, question-mark defaults, JSON escaping, and alias fallback. Fully
-  isolated. Aligned with the current `failure_context` package.
+- **internal/finalize/cleanup_milestone_test.go**: Tests use `t.TempDir()` for full
+  isolation. Covers the COMPLETE_AND_CONTINUE happy path, the commit-decision gate
+  regression (declined/skipped/empty sentinel must not delete milestone file), the
+  status-not-done no-op, missing-manifest no-op, and idempotent-when-file-already-gone
+  cases. The sentinel regression test (TestCleanupMilestone_GatedByCommitDecisionSentinel)
+  is well-motivated and named. No scope drift against m28.3.
 
-- `internal/finalize/archive_reports_test.go` — All tests use `t.TempDir()` for
-  complete fixture isolation. Covers the happy path, missing-source skip, and
-  missing-config error guards. The `Lookup` env-var fallback test exercises the
-  seam correctly. No scope drift.
+- **internal/finalize/emit_run_memory_test.go**: Tests use `t.TempDir()`. Covers
+  PASS verdict on exit 0, FAIL verdict on non-zero exit, and pruning above MaxEntries.
+  `EmitRunMemory.Git` is injected via the struct field — appropriate seam-based
+  fake, not a global mock. No scope drift.
 
-- `internal/finalize/causal_log_finalize_test.go` — Uses `t.TempDir()` and
-  `t.Setenv()` for isolation. Covers emit, disable-flag guard, and failure
-  exit-code reporting. `proto.RunDispositionSuccess/Failure` constants align with
-  the current package. No scope drift.
+- **internal/finalize/emit_timing_report_test.go**: Tests use `t.TempDir()`. Covers
+  no-sidecar skip, full report from sidecar JSON, empty-phases skip, and table-driven
+  tests for `formatDurationHuman` and `phaseDisplayName`. Assertions on column
+  content and descending sort order are meaningful and specific. No scope drift.
