@@ -140,11 +140,11 @@ for file in index.html style.css app.js; do
 done
 assert "total static size under 110KB" test "$total_size" -lt 112640
 
-# --- Test 14: _copy_static_files function exists in dashboard.sh ---
-assert "_copy_static_files in dashboard.sh" grep -q '_copy_static_files' "${TEKHTON_HOME}/lib/dashboard.sh"
+# --- Test 14: copyStaticFiles function exists in internal/dashboard (m33.1 port) ---
+assert "copyStaticFiles in internal/dashboard" grep -q 'copyStaticFiles' "${TEKHTON_HOME}/internal/dashboard/dashboard.go"
 
-# --- Test 15: refresh_interval_ms in dashboard.sh ---
-assert "refresh_interval_ms in dashboard.sh" grep -q 'refresh_interval_ms' "${TEKHTON_HOME}/lib/dashboard.sh"
+# --- Test 15: RefreshIntervalMs in internal/dashboard (m33.1 port) ---
+assert "RefreshIntervalMs in internal/dashboard" grep -q 'RefreshIntervalMs\|refresh_interval_ms' "${TEKHTON_HOME}/internal/dashboard/emit_runstate.go" "${TEKHTON_HOME}/internal/proto/dashboard_v1.go"
 
 # --- Test 16: CSS has dark theme variables ---
 assert "CSS has dark theme vars" grep -q '\-\-bg-primary' "${WATCHTOWER_DIR}/style.css"
@@ -164,11 +164,11 @@ assert "app.js has server probe" grep -q 'probeServer\|/api/ping' "${WATCHTOWER_
 assert "CSS has action-card styles" grep -q 'action-card' "${WATCHTOWER_DIR}/style.css"
 assert "CSS has form-group styles" grep -q 'form-group' "${WATCHTOWER_DIR}/style.css"
 
-# --- Test 19: inbox.js seed in dashboard.sh ---
-assert "dashboard.sh seeds inbox.js" grep -q 'inbox.js' "${TEKHTON_HOME}/lib/dashboard.sh"
+# --- Test 19: inbox.js seed in internal/dashboard (m33.1 port) ---
+assert "internal/dashboard seeds inbox.js" grep -q 'inbox.js' "${TEKHTON_HOME}/internal/dashboard/dashboard.go"
 
 # --- Test 20: emit_dashboard_inbox in emitters ---
-assert "emit_dashboard_inbox exists" grep -q 'emit_dashboard_inbox' "${TEKHTON_HOME}/lib/dashboard_emitters.sh"
+assert "EmitInbox exists in internal/dashboard (m33.1 port)" grep -q 'EmitInbox' "${TEKHTON_HOME}/internal/dashboard/emit_inbox.go"
 
 # --- Test 21: inbox.sh exists and sources ---
 assert "inbox.sh exists" test -f "${TEKHTON_HOME}/lib/inbox.sh"
@@ -176,8 +176,8 @@ assert "inbox.sh has process_watchtower_inbox" grep -q 'process_watchtower_inbox
 assert "tekhton-legacy.sh sources inbox.sh" grep -q 'source.*inbox.sh' "${TEKHTON_HOME}/tekhton-legacy.sh"
 
 # --- Test 22: Parallel teams support (M37) ---
-assert "dashboard.sh has parallel_mode" grep -q 'parallel_mode' "${TEKHTON_HOME}/lib/dashboard.sh"
-assert "dashboard.sh has emit_dashboard_team_state" grep -q 'emit_dashboard_team_state' "${TEKHTON_HOME}/lib/dashboard.sh"
+assert "internal/dashboard has parallel_mode (m33.1 port)" grep -q 'parallel_mode\|ParallelMode' "${TEKHTON_HOME}/internal/dashboard/emit_runstate.go" "${TEKHTON_HOME}/internal/proto/dashboard_v1.go"
+assert "internal/dashboard has EmitTeamState (m33.1 port)" grep -q 'EmitTeamState' "${TEKHTON_HOME}/internal/dashboard/emit_runstate.go"
 assert "app.js has renderLiveRunBanner with teams" grep -q 'teams active' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has parallel_mode detection" grep -q 'parallel_mode' "${WATCHTOWER_DIR}/app.js"
 assert "app.js has renderMilestonesByGroup" grep -q 'renderMilestonesByGroup' "${WATCHTOWER_DIR}/app.js"
@@ -194,7 +194,7 @@ assert "CSS has report-team-selector" grep -q 'report-team-selector' "${WATCHTOW
 assert "emit_run_summary.go has team field" grep -q '"team"' "${TEKHTON_HOME}/internal/finalize/emit_run_summary.go"
 assert "emit_run_summary.go has parallel_group field" grep -q '"parallel_group"' "${TEKHTON_HOME}/internal/finalize/emit_run_summary.go"
 assert "emit_run_summary.go has concurrent_teams field" grep -q '"concurrent_teams"' "${TEKHTON_HOME}/internal/finalize/emit_run_summary.go"
-assert "emitters has per-team reports" grep -q 'teams_reports_json' "${TEKHTON_HOME}/lib/dashboard_emitters.sh"
+assert "emitters has per-team reports (m33.1 port)" grep -q 'buildTeamsReports\|TeamReports' "${TEKHTON_HOME}/internal/dashboard/emit_reports.go" "${TEKHTON_HOME}/internal/proto/dashboard_v1.go"
 
 # --- Summary ---
 echo "watchtower_html: ${PASS} passed, ${FAIL} failed"

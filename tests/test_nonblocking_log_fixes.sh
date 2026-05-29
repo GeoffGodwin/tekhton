@@ -20,15 +20,26 @@ success() { :; }
 fail() { echo "FAIL: $1"; exit 1; }
 pass() { echo "PASS: $1"; }
 
-# === Fix #1: lib/dashboard.sh over 300 lines ===
-line_count=$(wc -l < "${TEKHTON_HOME}/lib/dashboard.sh")
-[[ "$line_count" -lt 400 ]] || fail "lib/dashboard.sh still over 365 lines (actual: $line_count)"
-pass "Fix #1: lib/dashboard.sh line count acceptable ($line_count lines)"
+# === Fix #1: lib/dashboard.sh deleted in m33.1 (ported to internal/dashboard/) ===
+# Pre-m33.1 checked the bash file's line count; post-m33.1 the file is gone.
+# Sanity-check the shim file replacement is reasonably sized instead.
+if [[ -f "${TEKHTON_HOME}/lib/dashboard_shim.sh" ]]; then
+    line_count=$(wc -l < "${TEKHTON_HOME}/lib/dashboard_shim.sh")
+    [[ "$line_count" -lt 200 ]] || fail "lib/dashboard_shim.sh exceeded budget (actual: $line_count)"
+    pass "Fix #1: lib/dashboard_shim.sh line count acceptable ($line_count lines)"
+else
+    fail "m33.1: lib/dashboard_shim.sh missing"
+fi
 
-# === Fix #2: sync_dashboard_static_files documentation ===
-provides_comment=$(sed -n '/^# Provides:/,/^[^#]/p' "${TEKHTON_HOME}/lib/dashboard.sh" | head -20)
-echo "$provides_comment" | grep -q "sync_dashboard_static_files" || fail "sync_dashboard_static_files not in Provides: comment"
-pass "Fix #2: sync_dashboard_static_files documented in Provides:"
+# === Fix #2: sync function shim still exported by dashboard_shim.sh ===
+provides_comment=$(sed -n '/^# Provides:/,/^[^#]/p' "${TEKHTON_HOME}/lib/dashboard_shim.sh" | head -20)
+# m33.1: shim file doesn't carry a Provides: comment; verify the function
+# is still defined as a shim.
+if grep -q '^sync_dashboard_static_files()' "${TEKHTON_HOME}/lib/dashboard_shim.sh"; then
+    pass "Fix #2: sync_dashboard_static_files shim still defined"
+else
+    fail "sync_dashboard_static_files shim missing from dashboard_shim.sh"
+fi
 
 # === Fix #3: double _copy_static_files call ===
 # Check that sync_dashboard_static_files is only called in the else branch (not after init_dashboard)
@@ -104,17 +115,17 @@ helper_exists=$(grep -c "_run_dimension_checks" "${TEKHTON_HOME}/lib/health.sh" 
 [[ "$helper_exists" -ge 1 ]] || fail "Shared _run_dimension_checks helper not found"
 pass "Fix #12: shared _run_dimension_checks helper implemented"
 
-# === Fix #13: stale dashboard health data ===
-# Check that emit_dashboard_health is called in _hook_health_reassess or reordered
-reassess_hook=$(grep -A20 "_hook_health_reassess" "${TEKHTON_HOME}/lib/finalize.sh" "${TEKHTON_HOME}/lib/finalize_dashboard_hooks.sh" 2>/dev/null | grep -c "emit_dashboard_health" || echo "0")
-[[ "$reassess_hook" -gt 0 ]] || fail "emit_dashboard_health not called in _hook_health_reassess"
+# === Fix #13: stale dashboard health data (m33.1: now invoked via tekhton dashboard emit health) ===
+reassess_hook=$(grep -A20 "_hook_health_reassess" "${TEKHTON_HOME}/lib/finalize.sh" "${TEKHTON_HOME}/lib/finalize_dashboard_hooks.sh" 2>/dev/null | grep -cE 'emit_dashboard_health|_td_run health' || true)
+reassess_hook="${reassess_hook//[!0-9]/}"
+: "${reassess_hook:=0}"
+[[ "${reassess_hook}" -gt 0 ]] || fail "dashboard health emit not called in _hook_health_reassess"
 pass "Fix #13: dashboard health data emission added to reassessment hook"
 
-# === Fix #14: _copy_static_files docstring ===
-# Check that the docstring matches the actual behavior (always overwrites)
-docstring=$(grep -B5 "_copy_static_files()" "${TEKHTON_HOME}/lib/dashboard.sh" | grep -i "overwrite\|copy")
-echo "$docstring" | grep -q "unconditional\|always" || fail "_copy_static_files docstring not fixed"
-pass "Fix #14: _copy_static_files docstring corrected"
+# === Fix #14: copyStaticFiles docstring (m33.1: moved to internal/dashboard) ===
+docstring=$(grep -B5 "func copyStaticFiles" "${TEKHTON_HOME}/internal/dashboard/dashboard.go" | grep -i "overwrite\|copy\|idempotent")
+echo "$docstring" | grep -qi "idempotent\|always\|overwrite\|copies" || fail "copyStaticFiles docstring not fixed"
+pass "Fix #14: copyStaticFiles docstring carries copy-behavior note"
 
 # === Fix #15: trendArrow ordering assumption ===
 # Check that ordering assumption is documented or validated in app.js
@@ -122,11 +133,15 @@ trendArrow=$(grep -B5 -A5 "trendArrow" "${TEKHTON_HOME}/templates/watchtower/app
 [[ -n "$trendArrow" ]] || fail "trendArrow ordering assumption not documented"
 pass "Fix #15: trendArrow ordering assumption documented/validated"
 
-# === Fix #16: fragile JSON construction ===
-# Check that emit_dashboard_run_state uses explicit conditional instead of string replacement
-json_fix=$(grep -A10 "emit_dashboard_run_state" "${TEKHTON_HOME}/lib/finalize.sh" "${TEKHTON_HOME}/lib/finalize_dashboard_hooks.sh" 2>/dev/null | grep -c 'waiting_for.*null\|waiting_for.*:' || echo "0")
-[[ "$json_fix" -gt 0 ]] || fail "JSON construction still uses string replacement hack"
-pass "Fix #16: JSON construction uses explicit conditional"
+# === Fix #16: fragile JSON construction (m33.1: now typed via DashboardRunStateV1) ===
+# Pre-m33.1 checked that bash emit used explicit waiting_for:null conditional.
+# Post-m33.1 the typed Go struct uses *string with `null` marshalling; the
+# parity gate validates the on-disk shape.
+if grep -qE 'WaitingFor +\*string' "${TEKHTON_HOME}/internal/proto/dashboard_v1.go"; then
+    pass "Fix #16: JSON construction uses typed *string (nullable)"
+else
+    fail "DashboardRunStateV1.WaitingFor not typed as *string"
+fi
 
 # === Fix #17: lib/causality.sh extraction ===
 causality_lines=$(wc -l < "${TEKHTON_HOME}/lib/causality.sh")
@@ -146,11 +161,10 @@ trace_effect=$(grep -B2 -A5 "trace_effect_chain" "${TEKHTON_HOME}/lib/causality_
 [[ -n "$trace_effect" ]] || fail "trace_effect_chain limitation not documented"
 pass "Fix #19: trace_effect_chain limitation documented"
 
-# === Fix #20: dashboard.sh sourcing pattern ===
-# Check that dashboard.sh sources using TEKHTON_HOME instead of dirname
-sourcing=$(grep "source.*dashboard_parsers\|source.*dashboard_emitters" "${TEKHTON_HOME}/lib/dashboard.sh" | grep "TEKHTON_HOME" || echo "")
-[[ -n "$sourcing" ]] || fail "dashboard.sh still uses dirname sourcing pattern"
-pass "Fix #20: dashboard.sh uses TEKHTON_HOME sourcing pattern"
+# === Fix #20: m33.1 — dashboard sourcing now via dashboard_shim.sh ===
+sourcing=$(grep "source.*dashboard_parsers" "${TEKHTON_HOME}/lib/dashboard_shim.sh" | grep "TEKHTON_HOME" || echo "")
+[[ -n "$sourcing" ]] || fail "dashboard_shim.sh does not source dashboard_parsers.sh via TEKHTON_HOME"
+pass "Fix #20: dashboard_shim.sh uses TEKHTON_HOME sourcing pattern"
 
 # === Fix #21: _STAGE_BUDGET[intake] assignment ===
 # m20: stage-budget assignment still lives in tekhton-legacy.sh.

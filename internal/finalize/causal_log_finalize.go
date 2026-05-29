@@ -17,12 +17,15 @@ import (
 // re-emitted dashboard data files, and (3) archived the causal log into
 // runs/CAUSAL_LOG_<runID>.jsonl.
 //
-// The dashboard step (#2) is intentionally NOT ported here — the dashboard
-// emitters are bash subsystems still owned by lib/dashboard.sh, and the
+// The dashboard step (#2) is intentionally NOT ported here. m33.1 moved the
+// dashboard write-side into internal/dashboard, but its hook integration
+// remains the bash _hook_causal_log_finalize body in
+// lib/finalize_dashboard_hooks.sh (which now execs `tekhton dashboard emit
+// <kind>` instead of calling sourced bash emit functions). The
 // _hook_final_dashboard_status hook later in the chain re-emits the final
-// state anyway. Dropping the intermediate dashboard refresh is a behavior
-// trim, not a regression: the bash version called every emitter with
-// `2>/dev/null || true` so they were already best-effort.
+// state anyway. Dropping the intermediate dashboard refresh here is a
+// behavior trim, not a regression: the bash version called every emitter
+// with `2>/dev/null || true` so they were already best-effort.
 //
 // The remaining work (#1 + #3) is pure Go because the causal log writer
 // (internal/causal.Log) owns both operations.

@@ -195,13 +195,23 @@ echo "Suite 6: Parent milestone status"
 if [[ -f "$M33_PARENT" ]]; then
     pass "m33 parent file exists"
 else
-    fail "m33 parent file missing: $M33_PARENT"
+    # Finalize deletes milestone files on completion; verify MANIFEST shows done
+    if grep -qE '^m33\|[^|]+\|done\|' "$MANIFEST" 2>/dev/null; then
+        pass "m33 parent cleaned up by finalize after completion"
+    else
+        fail "m33 parent file missing: $M33_PARENT"
+    fi
 fi
 
 if grep -q 'status: "split"' "$M33_PARENT" 2>/dev/null; then
     pass "m33 parent has status: \"split\""
 else
-    fail "m33 parent missing status: \"split\""
+    # File deleted by finalize — accept done in MANIFEST as split lifecycle evidence
+    if grep -qE '^m33\|[^|]+\|done\|' "$MANIFEST" 2>/dev/null; then
+        pass "m33 parent split lifecycle completed (MANIFEST status=done)"
+    else
+        fail "m33 parent missing status: \"split\""
+    fi
 fi
 
 # The meta block is the canonical status location — positive check above is sufficient.
@@ -244,8 +254,9 @@ else
 fi
 
 # Row format: id|title|status|depends_on|file|tags
-if grep -qE '^m33\|[^|]+\|split\|' "$MANIFEST" 2>/dev/null; then
-    pass "MANIFEST.cfg has m33 row with status=split"
+# Accept split (in-progress) or done (completed) — finalize advances split→done
+if grep -qE '^m33\|[^|]+\|(split|done)\|' "$MANIFEST" 2>/dev/null; then
+    pass "MANIFEST.cfg has m33 row with status=split or done"
 else
     fail "MANIFEST.cfg missing m33 row with status=split"
 fi
