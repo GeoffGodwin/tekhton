@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "/example/.venv/bin/python",
+      "args": ["-m", "serena", "--project-dir", "/example/project"],
+      "cwd": "/example/serena",
+      "env": { "SERENA_LANGUAGE_SERVERS": "auto" }
+    }
+  }
+}

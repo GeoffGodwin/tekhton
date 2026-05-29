@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "/example/.venv/bin/serena",
+      "args": [
+        "start-mcp-server",
+        "--project", "/example/project",
+        "--transport", "stdio",
+        "--log-level", "ERROR"
+      ],
+      "cwd": "/example/serena",
+      "env": { "SERENA_LANGUAGE_SERVERS": "auto" }
+    }
+  }
+}

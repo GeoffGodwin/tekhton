@@ -3,12 +3,13 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 161
+- Runs since audit: 162
 =======
-- Runs since audit: 161
+- Runs since audit: 162
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-29 | "unknown"] `lib/mcp_resolve.sh:14` â new sourced lib file carries `set -euo pipefail`, same pre-existing pattern as `lib/mcp.sh:18`. Convention reserves this for standalone entry points. Two instances now in the same module family; a hygiene sweep should clear both.
 - [2026-05-28 | "unknown"] `lib/mcp.sh:15` â pre-existing `set -euo pipefail` in a sourced lib file (same note carried from m28.1 review). Convention reserves this for standalone entry points; sourced files in `lib/` inherit. Cleanup belongs to a future hygiene milestone.
 - [2026-05-28 | "unknown"] `lib/mcp.sh:15`: `set -euo pipefail` appears in a sourced library file. Reviewer checklist calls for sourced `lib/` files to inherit rather than declare. Pre-existing condition; not introduced by m28.1, but worth scheduling for a cleanup pass.
 - [2026-05-28 | "unknown"] Pre-existing: `test_tester.sh` Test 2 fails with UPSTREAM exit 1 (`stages/tester_tdd.sh:84`, `return` vs `exit 1`). Predates m27.x; out of scope for m28.1.
