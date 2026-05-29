@@ -98,6 +98,10 @@ generate_commit_message() {
     if [ -f "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" ]; then
         what=$(awk '/^## What [Ww]as [Ii]mplemented/{found=1; next} found && /^##/{exit} found && NF{print; exit}' "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}" 2>/dev/null || true)
         what=$(echo "$what" | head -c 120)
+        # Skip skeleton placeholders so downstream falls back to diff stat.
+        case "$what" in
+            '(fill in as you go)'|'(fill in after diagnosis)'|'(fill in)') what="" ;;
+        esac
     fi
 
     local file_count=0
@@ -108,11 +112,17 @@ generate_commit_message() {
     # If TASK arrived empty (e.g. finalize subprocess didn't inherit it from
     # the legacy bash orchestrator) but we know the milestone number, derive
     # task from the milestone title so the commit subject isn't just "feat:".
-    if [ -z "$task" ] && [ -n "$milestone_num" ] && declare -f get_milestone_title &>/dev/null; then
-        local ms_title
-        ms_title=$(get_milestone_title "$milestone_num" 2>/dev/null | head -1)
-        if [ -n "$ms_title" ]; then
-            task="$ms_title"
+    if [ -z "$task" ] && [ -n "$milestone_num" ]; then
+        # Source milestone_ops if get_milestone_title isn't loaded — finalize
+        # subprocesses don't inherit it from the legacy orchestrator.
+        if ! declare -f get_milestone_title &>/dev/null && [ -f "${TEKHTON_HOME:-}/lib/milestone_ops.sh" ]; then
+            # shellcheck source=/dev/null
+            source "${TEKHTON_HOME}/lib/milestone_ops.sh" 2>/dev/null || true
+        fi
+        if declare -f get_milestone_title &>/dev/null; then
+            local ms_title
+            ms_title=$(get_milestone_title "$milestone_num" 2>/dev/null | head -1)
+            [ -n "$ms_title" ] && task="$ms_title"
         fi
     fi
 
@@ -120,7 +130,15 @@ generate_commit_message() {
     prefix=$(_infer_commit_type "$task")
 
     local subject
-    subject="${prefix}: $(echo "$task" | sed "s/^[Ff]ix: //;s/^[Ff]eat: //;s/^[Rr]efactor: //" | cut -c1-72)"
+    if [ -n "$task" ]; then
+        subject="${prefix}: $(echo "$task" | sed "s/^[Ff]ix: //;s/^[Ff]eat: //;s/^[Rr]efactor: //" | cut -c1-72)"
+    else
+        # Final fallback: derive a stub subject from the most-changed file in
+        # the diff. Better than "feat:" alone — at least the operator can tell
+        # which area was touched. Refined further when diff_stat is computed
+        # below; placeholder here keeps the message valid even if diff is empty.
+        subject="${prefix}: changes pending"
+    fi
 
     # Prepend milestone prefix if in milestone mode
     if [ -n "$milestone_num" ]; then
@@ -163,6 +181,19 @@ ${root_cause}"
         # Last line of diff --stat is the summary (e.g., "7 files changed, 73 insertions(+), 54 deletions(-)")
         local diff_summary
         diff_summary=$(echo "$diff_stat" | tail -1 | sed 's/^ *//')
+
+        # Refine the "changes pending" placeholder subject with the top file
+        # from the diff. Only fires when TASK was empty AND we had no
+        # milestone title — gives reviewers something to grep for instead of
+        # bare "feat:".
+        if [[ "$subject" == "${prefix}: changes pending" ]]; then
+            local top_changed_file
+            top_changed_file=$(echo "$diff_stat" | awk -F'|' 'NR>0 && NF>=2{print $1}' \
+                | sed 's/^ *//;s/ *$//' | head -1)
+            if [ -n "$top_changed_file" ]; then
+                subject="${prefix}: changes in ${top_changed_file}"
+            fi
+        fi
         # File lines are everything except the summary.
         # M96 IA5: show only the top 5 by lines changed + a "... N more files" tail.
         local diff_files

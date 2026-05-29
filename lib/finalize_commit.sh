@@ -20,9 +20,15 @@
 # =============================================================================
 set -euo pipefail
 
+# shellcheck source=lib/finalize_commit_staging.sh
+source "${TEKHTON_HOME:-}/lib/finalize_commit_staging.sh"
+
 # _do_git_commit MSG
-# Stages all changes, runs gitignore safety check, commits with MSG.
-# M40: Drains pending inbox before commit so mid-run notes are persisted.
+# Stages pipeline-declared files only (coder-declared ∪ bookkeeping
+# allowlist), runs gitignore safety check, commits. Anything outside that
+# union is left in the working tree with a warning — the old `git add -A`
+# swept up unrelated edits and made commit messages misleading.
+# M40: Drains pending inbox before commit.
 _do_git_commit() {
     local msg="$1"
     # Drain any pending watchtower inbox notes before committing
@@ -30,7 +36,50 @@ _do_git_commit() {
         drain_pending_inbox 2>/dev/null || true
     fi
     _check_gitignore_safety
-    git add -A > /dev/null 2>&1
+
+    # Inventory dirty files. Use porcelain v1 — first two columns are status,
+    # then a space, then the path (or "rename -> newpath").
+    local dirty_files=() unexpected=()
+    local line path
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        path="${line:3}"
+        # Rename entries: "R  old -> new" — track the destination.
+        if [[ "$path" == *' -> '* ]]; then
+            path="${path##* -> }"
+        fi
+        dirty_files+=( "$path" )
+    done < <(git status --porcelain 2>/dev/null)
+
+    if [ ${#dirty_files[@]} -eq 0 ]; then
+        log "[commit] No working-tree changes to commit."
+        return 0
+    fi
+
+    local expected=()
+    for path in "${dirty_files[@]}"; do
+        if _is_path_allowed "$path"; then
+            expected+=( "$path" )
+        else
+            unexpected+=( "$path" )
+        fi
+    done
+
+    if [ ${#unexpected[@]} -gt 0 ]; then
+        warn "[commit] Skipping ${#unexpected[@]} file(s) not declared by the coder or pipeline bookkeeping:"
+        local u
+        for u in "${unexpected[@]}"; do
+            warn "  - $u"
+        done
+        warn "[commit] Review with \`git status\` and commit manually if intended."
+    fi
+
+    if [ ${#expected[@]} -eq 0 ]; then
+        warn "[commit] No pipeline-declared files in working tree — nothing to auto-commit."
+        return 0
+    fi
+
+    git add -- "${expected[@]}" > /dev/null 2>&1
     local git_output
     git_output=$(git commit -m "$msg" 2>&1) || true
     # Show only the summary line (e.g. "[branch abc1234] feat: message")
