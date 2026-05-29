@@ -5,11 +5,10 @@ PASS
 95
 
 ## Reasoning
-- Scope is precisely defined: four numbered goals with explicit in/out-of-scope boundaries; "Watch For" reinforces what is deferred (probe logic to m28.2, stale-config migration to m28.3)
-- All five modified files are named and described; no ambiguity about what changes
-- Design section provides verbatim bash snippets and the exact sed block, leaving no implementation decisions to the developer
-- Acceptance criteria are fully mechanical: string-grep checks, JSON validation via `python -m json.tool`, bash syntax check, test-suite invocation, VERSION and CHANGELOG content checks — none are aspirational
-- POSIX/Windows dual-path requirement is called out explicitly in the design and in "Watch For," matching the existing `_SERENA_PYTHON` pattern
-- Migration impact is intentionally deferred to m28.3 and clearly documented as such; no new user-facing config keys are introduced
-- "Seeds Forward" section makes cross-subtask contracts explicit (`_SERENA_BIN` must be set on every successful exit; detector substring for m28.3)
+- Scope is precisely defined: three files (`lib/mcp.sh`, `VERSION`, `CHANGELOG.md`), no more
+- Design section provides exact before/after code for both `_probe_serena_startup` and the `start_mcp_server` flow change — two developers would produce near-identical implementations
+- Acceptance criteria are specific and testable, including an ad-hoc timing test (`_SERENA_BIN=/usr/bin/sleep`) and exact string checks (`SERENA_ACTIVE` must be `""` not `"false"` or unset)
+- Watch For section preemptively addresses the key risk areas (macOS `timeout`, pipeline exit semantics, probe shape choice)
+- Seeds Forward explicitly constrains what NOT to generalize — prevents over-engineering
+- No new user-facing config keys or format changes; no migration impact section needed
 - No UI components involved; UI testability criterion not applicable
