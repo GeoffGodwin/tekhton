@@ -3,12 +3,13 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 162
+- Runs since audit: 163
 =======
-- Runs since audit: 162
+- Runs since audit: 163
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-29 | "unknown"] `.claude/milestones/m29.2-detect-domain-detectors.md:308` â The new Watch For bullet lists seven forbidden write APIs (`os.Create`, `os.WriteFile`, `os.OpenFile.*O_WRONLY`, `os.Remove`, `os.MkdirAll`, `os.Rename`, `ioutil.WriteFile`) sourced from the parent m29 design's Goal 4 description. The actual `readonly_test.go` implementation described in m29.1 (lines 289â298) includes two additional patterns: `os.OpenFile.*O_CREATE` and `os.RemoveAll`. The bullet is guidance-level and `readonly_test.go` is the ground truth â but a future m29.2 implementer reading only this bullet may undercount the forbidden APIs. Minor precision gap; no action required for m29.
 - [2026-05-29 | "unknown"] `lib/mcp_resolve.sh:14` â new sourced lib file carries `set -euo pipefail`, same pre-existing pattern as `lib/mcp.sh:18`. Convention reserves this for standalone entry points. Two instances now in the same module family; a hygiene sweep should clear both.
 - [2026-05-28 | "unknown"] `lib/mcp.sh:15` â pre-existing `set -euo pipefail` in a sourced lib file (same note carried from m28.1 review). Convention reserves this for standalone entry points; sourced files in `lib/` inherit. Cleanup belongs to a future hygiene milestone.
 - [2026-05-28 | "unknown"] `lib/mcp.sh:15`: `set -euo pipefail` appears in a sourced library file. Reviewer checklist calls for sourced `lib/` files to inherit rather than declare. Pre-existing condition; not introduced by m28.1, but worth scheduling for a cleanup pass.
