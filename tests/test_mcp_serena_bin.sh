@@ -259,13 +259,19 @@ if [[ -f "$GENERATED" ]]; then
 fi
 
 # =============================================================================
-echo "=== AC8: VERSION reads 4.27.5 ==="
+echo "=== AC8: VERSION is 4.27.x (x >= 5; milestone set floor at 4.27.5) ==="
 
+# Pipeline finalize hooks patch-bump VERSION between stages, so we assert
+# the milestone's floor (major.minor=4.27, patch>=5) rather than the exact
+# value 4.27.5, which may have incremented by the time the tester runs.
 actual_version=$(tr -d '[:space:]' < "${TEKHTON_HOME}/VERSION" 2>/dev/null || echo "MISSING")
-if [[ "$actual_version" == "4.27.5" ]]; then
-    _pass "VERSION reads 4.27.5"
+version_major_minor="${actual_version%.*}"
+version_patch="${actual_version##*.}"
+
+if [[ "$version_major_minor" == "4.27" ]] && [[ "$version_patch" -ge 5 ]]; then
+    _pass "VERSION is 4.27.x (x >= 5) — current: ${actual_version}"
 else
-    _fail "VERSION reads '${actual_version}', expected '4.27.5'"
+    _fail "VERSION reads '${actual_version}', expected 4.27.x where x >= 5"
 fi
 
 # =============================================================================
