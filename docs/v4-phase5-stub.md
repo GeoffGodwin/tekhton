@@ -43,7 +43,7 @@ The disposition column is one of:
 | 10| `diagnose.sh` + diagnose_*              | port        | Largely dead code post-m17 since `tekhton diagnose` exists. |
 | 11| `indexer.sh` + tools/repo_map.py        | port        | Python tool stays; bash glue ports. |
 | 12| `mcp.sh`                                | port        | Lifecycle wrapper for Claude CLI MCP config. |
-| 13| `init.sh` + crawler/detect_*            | port        | Big surface; lowest dogfooding priority (run-once). |
+| 13| `init.sh` + crawler/detect_*            | in progress (m29.1 — detect engine + report + languages detector ported) | `internal/detect/` ships the `Detector` interface, `Engine`, languages-first invariant, `LanguagesDetector` (port of `detect_languages` + `detect_frameworks` + `detect_ui_framework` from `lib/detect.sh`), the markdown report formatter (port of `lib/detect_report.sh::format_detection_report`), and `internal/detect/readonly_test.go` enforcing the package-level no-write contract. `tekhton detect summary --json/--markdown/--project-dir` Cobra subcommand (Hidden). Parity-gate fixtures + frozen bash baselines under `tests/testdata/detect/{monorepo-pnpm,polyglot-services,ai-heavy-mess}/` + `baselines/`; `tests/test_detect_parity.sh` asserts byte-identical `### Project Type / ### Languages / ### Frameworks` sections. No bash files modified or deleted at m29.1; every caller still sources `lib/detect*.sh` so tekhton-stable can rebuild safely. m29.2 ports the remaining eight detectors, extends the parity gate to every section, cuts every bash caller over, and deletes the bash detect tree. |
 | 14| `plan*.sh` (interview, browser, …)      | port        | Conversational mode wrapper around Claude CLI. |
 | 15| `replan*.sh`                            | port        | Sister to plan; ports together. |
 | 16| `rescan.sh`                             | port        | Companion to crawler; ports together. |
@@ -118,7 +118,34 @@ These need an answer before Phase 5 design freezes:
 | End of Phase 5 m23     |                                 ~6800 |
 | End of Phase 5 m24     |                                 ~4700 |
 | End of Phase 5 m25     |                                 ~3300 |
+| End of Phase 5 m29.1   |                                 ~3300 |
 | Phase 5 target         |                                     0 |
+
+m29.1 closing notes:
+
+- **1** Go detector landed (`LanguagesDetector`) backing the engine's
+  languages-first invariant. The `Detector` interface, `Engine`,
+  `Input`/`Result`/`Summary` types, markdown report formatter, read-only
+  contract test, and `tekhton detect summary` Cobra subcommand (Hidden)
+  ship together — m29.1 lands the scaffolding m29.2 will implement
+  against.
+- **0** bash files modified or deleted at m29.1. Every existing caller
+  (`lib/init.sh`, `lib/express.sh`, `lib/rescan.sh`,
+  `lib/health_checks*.sh`, `tekhton-legacy.sh`) still sources the bash
+  detect tree; tekhton-stable can rebuild safely after m29.1 with the
+  bash subsystem intact as the rollback path. The bash LOC budget does
+  not move until m29.2.
+- Parity gate scaffolded under `tests/test_detect_parity.sh` plus three
+  frozen fixtures (`monorepo-pnpm`, `polyglot-services`, `ai-heavy-mess`)
+  + bash baselines captured by `scripts/capture-detect-baselines.sh`.
+  m29.1 asserts only the `### Project Type / ### Languages / ###
+  Frameworks` sections (the parts the Go engine populates); m29.2
+  extends to every section once the remaining detectors land.
+- The `Summary` struct carries fields for every m29.2 detector domain
+  (`Commands`, `Workspaces`, `Services`, `CI`, `Infrastructure`,
+  `TestFrameworks`, `DocQuality`, `AIArtifacts`); they are stub-empty
+  through m29.1's close. m29.2 fills them by registering the eight
+  remaining detectors in `cmd/tekhton/detect.go::runDetectSummary`.
 
 m22 closing notes:
 
