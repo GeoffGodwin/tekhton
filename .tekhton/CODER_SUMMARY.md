@@ -1,6 +1,8 @@
 # Coder Summary
 
 ## Status: COMPLETE
+<!-- m28.1 surface fully landed; this cycle reset VERSION drift only -->
+
 
 ## What Was Implemented
 
@@ -12,27 +14,23 @@ probe is added (m28.2 handles that).
 
 ### Re-run delta (this cycle)
 
-The previous coder pass already landed the full m28.1 surface (template,
-resolver, sed substitution, VERSION, CHANGELOG, test updates) in commit
-`e3cc604`. This cycle re-verified the prior work and addressed two
-follow-up issues flagged by the prior-cycle reviewer/tester reports:
+The full m28.1 surface (template rewrite, resolver, sed substitution,
+CHANGELOG, test updates, SC1091 disable on `scripts/wedge-audit.sh`)
+is already at HEAD from prior coder commits. This cycle re-verified
+each acceptance criterion against the working tree and addressed one
+drift item:
 
-1. **SC1091 blocker on `scripts/wedge-audit.sh`.** Reviewer report flagged
-   that `shellcheck tests/test_stage_env_setu.sh scripts/wedge-audit.sh`
-   exited 1 because the source-directive comment did not suppress SC1091.
-   Verified the fix (`# shellcheck disable=SC1091` immediately above the
-   `source` line) was already committed at HEAD by the prior coder pass.
-   Re-ran the exact shellcheck invocation from the reviewer's repro to
-   confirm exit 0 — blocker is closed. (My in-tree Edits to this file
-   transitively produced identical content to HEAD; `git diff` is empty
-   for this path, so there is no net change from this coder pass.)
+1. **SC1091 blocker on `scripts/wedge-audit.sh`** — verified at HEAD.
+   `scripts/wedge-audit.sh:305-307` has `# shellcheck disable=SC1091`
+   immediately above `source`. `shellcheck tests/test_stage_env_setu.sh
+   scripts/wedge-audit.sh` exits 0 — the prior-cycle reviewer's blocker
+   repro is closed.
 
-2. **`VERSION` drift.** The acceptance criterion says `VERSION` reads
-   `4.27.5`. Intermediate non-milestone pipeline runs between coder
-   passes patch-bumped the file (observed at `4.27.15` on read; this is
-   the same documented behavior the previous CODER_SUMMARY flagged for
-   `4.27.14`). Reset to `4.27.5` per AC; the finalize hook on m28.1
-   close will resolve the final number per the milestone strategy.
+2. **`VERSION` drift** — observed at `4.27.8` on entry (intermediate
+   non-milestone pipeline runs patch-bumped between coder passes; the
+   prior CODER_SUMMARY documented the same pattern at `4.27.15`). Reset
+   to `4.27.5` per AC. The finalize hook on m28.1 close will reset to
+   the canonical number per the milestone strategy.
 
 ### Original m28.1 implementation (unchanged, verified in place this cycle)
 
@@ -112,13 +110,12 @@ landed in `e3cc604`.
 
 ## Files Modified (this cycle)
 
-- `VERSION` — `4.27.15` → `4.27.5` (AC reset; finalize will rebump).
+- `VERSION` — `4.27.8` → `4.27.5` (AC reset; finalize will rebump).
 
 No other files were net-modified this cycle. The full m28.1 surface
 (template, resolver, sed substitution, CHANGELOG, test updates, SC1091
-disable directive) is present at HEAD from the previous coder commit
-`e3cc604`. Edits attempted on `scripts/wedge-audit.sh` during this run
-ended up matching the committed content exactly (`git diff` empty).
+disable directive) is present at HEAD from prior coder commits in
+the m28.1 chain. `git diff` is empty for all other m28.1 paths.
 
 ## Human Notes Status
 
