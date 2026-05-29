@@ -112,7 +112,11 @@ var DefaultLibHelpers = []string{
 	"lib/progress.sh",
 	"lib/causality.sh",
 	"lib/causality_query.sh",
-	"lib/dashboard.sh",
+	// m33.1: lib/dashboard.sh + lib/dashboard_emitters.sh deleted (dashboard
+	// emitter subsystem ported to internal/dashboard/). The compatibility shim
+	// at lib/dashboard_shim.sh provides the legacy function names (init_dashboard,
+	// emit_dashboard_*) that exec `tekhton dashboard <subcommand>`.
+	"lib/dashboard_shim.sh",
 	// m23: lib/tui.sh deleted (TUI writer subsystem ported to internal/tui/).
 	// The remaining bash residue (Python sidecar lifecycle + _tui_call) lives
 	// in lib/sidecar_lifecycle.sh, sourced transitively from lib/output.sh —

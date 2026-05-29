@@ -3,9 +3,13 @@
 # finalize_dashboard_hooks.sh — Dashboard, causal-log, diagnosis, TUI, and
 # update-check finalize hooks.
 #
-# Sourced by lib/finalize.sh — do not run directly. Hooks are small,
-# idempotent wrappers around optional subsystems (causal log, dashboard,
-# health, TUI) that may or may not be loaded depending on config.
+# m33.1 rewire: dashboard emit calls now exec `tekhton dashboard emit <kind>`
+# instead of sourcing bash emit functions. The hook ordering inside
+# _hook_causal_log_finalize is preserved (run_state → metrics → milestones →
+# health → action_items → notes) — each emitter depends on state earlier
+# hooks may have updated.
+#
+# Sourced by lib/finalize.sh — do not run directly.
 #
 # Provides:
 #   _hook_causal_log_finalize      — pipeline_end event + dashboard refresh
@@ -17,7 +21,25 @@
 # =============================================================================
 set -euo pipefail
 
-# d. Emit pipeline_end event and archive causal log (Milestone 13)
+# _td_bin resolves the tekhton binary path. Centralized so each hook
+# avoids re-resolving on every call. Echoes empty string + nonzero exit
+# when the binary is absent; callers silently no-op in that case.
+_td_bin() {
+    local bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+    [[ -x "$bin" ]] || return 1
+    printf '%s' "$bin"
+}
+
+# _td_run KIND — invokes `tekhton dashboard emit KIND` for the current
+# PROJECT_DIR. Silently no-ops when the binary is unavailable to preserve
+# the bash form's fail-closed semantics.
+_td_run() {
+    local bin
+    bin=$(_td_bin) || return 0
+    "$bin" dashboard emit "$1" --project-dir "${PROJECT_DIR:-.}" 2>/dev/null || true
+}
+
+# d. Emit pipeline_end event and refresh dashboard data (Milestone 13)
 _hook_causal_log_finalize() {
     local exit_code="$1"
     local status="success"
@@ -32,32 +54,21 @@ _hook_causal_log_finalize() {
             >/dev/null 2>&1 || true
     fi
 
-    # Update dashboard with final state
-    if command -v emit_dashboard_run_state &>/dev/null; then
-        # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
-        PIPELINE_STATUS="$status"
-        # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
-        CURRENT_STAGE="complete"
-        # shellcheck disable=SC2034  # Explicit: waiting_for: null in final state
-        WAITING_FOR=""
-        emit_dashboard_run_state 2>/dev/null || true
-    fi
-    if command -v emit_dashboard_metrics &>/dev/null; then
-        emit_dashboard_metrics 2>/dev/null || true
-    fi
-    if command -v emit_dashboard_milestones &>/dev/null; then
-        emit_dashboard_milestones 2>/dev/null || true
-    fi
-    if command -v emit_dashboard_health &>/dev/null; then
-        emit_dashboard_health 2>/dev/null || true
-    fi
-    if command -v emit_dashboard_action_items &>/dev/null; then
-        emit_dashboard_action_items 2>/dev/null || true
-    fi
-    # M40: Emit notes data for dashboard Notes tab
-    if command -v emit_dashboard_notes &>/dev/null; then
-        emit_dashboard_notes 2>/dev/null || true
-    fi
+    # Update dashboard with final state — order preserved from bash form.
+    # shellcheck disable=SC2034  # exported to Go subprocess
+    export PIPELINE_STATUS="$status"
+    # shellcheck disable=SC2034
+    export CURRENT_STAGE="complete"
+    # shellcheck disable=SC2034
+    export WAITING_FOR=""
+
+    _td_run run-state
+    _td_run metrics
+    _td_run milestones
+    _td_run health
+    _td_run action-items
+    # M40: Notes data for dashboard Notes tab
+    _td_run notes
 
     # Archive causal log
     if command -v archive_causal_log &>/dev/null; then
@@ -84,9 +95,7 @@ _hook_health_reassess() {
     export HEALTH_SCORE="$new_score"
     export HEALTH_PREV_SCORE="$prev_score"
     # Re-emit dashboard health data (causal_log_finalize emitted stale data)
-    if command -v emit_dashboard_health &>/dev/null; then
-        emit_dashboard_health 2>/dev/null || true
-    fi
+    _td_run health
 }
 
 # m. Write LAST_FAILURE_CONTEXT.json and emit diagnose hint (M17, failure only)
@@ -100,9 +109,6 @@ _hook_failure_context() {
     # M129: opportunistically populate the SECONDARY_* slots from the
     # symptom-level AGENT_ERROR_* env vars when no stage has set them
     # explicitly. Goal-2 writer precedence: slot vars > AGENT_ERROR_* > none.
-    # Doing it here means downstream consumers (orchestrate state-file Notes,
-    # writer's alias resolution) all see populated slots even when the failing
-    # stage didn't call set_secondary_cause directly.
     if declare -f set_secondary_cause &>/dev/null; then
         if [[ -z "${SECONDARY_ERROR_CATEGORY:-}" ]] && [[ -n "${AGENT_ERROR_CATEGORY:-}" ]]; then
             set_secondary_cause \
@@ -124,9 +130,7 @@ _hook_failure_context() {
         write_last_failure_context "$classification" "$stage" "failure" 2>/dev/null || true
     fi
 
-    if command -v emit_dashboard_diagnosis &>/dev/null; then
-        emit_dashboard_diagnosis 2>/dev/null || true
-    fi
+    _td_run diagnosis
 }
 
 # n. Update check — non-intrusive, runs at the very end of output
@@ -142,27 +146,19 @@ _hook_update_check() {
 # Guarantees run_state.js reflects completion even if earlier hooks failed.
 _hook_final_dashboard_status() {
     local exit_code="$1"
-    if ! command -v emit_dashboard_run_state &>/dev/null; then
-        return 0
-    fi
     local status="success"
     [[ "$exit_code" -ne 0 ]] && status="failed"
-    # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
-    PIPELINE_STATUS="$status"
-    # shellcheck disable=SC2034  # Used by emit_dashboard_run_state
-    CURRENT_STAGE="complete"
-    # shellcheck disable=SC2034  # Explicit: waiting_for: null in final state
-    WAITING_FOR=""
-    emit_dashboard_run_state 2>/dev/null || true
+    # shellcheck disable=SC2034
+    export PIPELINE_STATUS="$status"
+    # shellcheck disable=SC2034
+    export CURRENT_STAGE="complete"
+    # shellcheck disable=SC2034
+    export WAITING_FOR=""
+    _td_run run-state
 }
 
 # Must run last: closes the wrap-up pill and emits a pass-complete summary
-# event AFTER _hook_commit has populated action_items. The sidecar itself is
-# not torn down here — its lifecycle matches the outer tekhton.sh invocation,
-# not a single finalize_run pass, so multi-pass modes (--complete, --fix-nb,
-# --fix-drift, --human --complete) keep the same sidecar across iterations.
-# Final hold-on-complete + teardown happens once at the top-level dispatch
-# site in tekhton.sh via out_complete.
+# event AFTER _hook_commit has populated action_items.
 _hook_tui_complete() {
     local exit_code="${1:-0}"
     local verdict="SUCCESS"

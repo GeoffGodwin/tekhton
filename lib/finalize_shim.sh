@@ -193,10 +193,11 @@ case "$HOOK_NAME" in
         ;;
     _hook_final_dashboard_status)
         # m23: _hook_tui_complete removed from this arm — ported to Go
-        # (internal/finalize/tui_complete.go). Dashboard arm stays; it
-        # ports in m26 alongside the dashboard subsystem.
-        # shellcheck source=/dev/null
-        source "${TEKHTON_HOME}/lib/dashboard.sh"
+        # (internal/finalize/tui_complete.go). m33.1: dashboard.sh ported
+        # to internal/dashboard/ — sourcing the m33.1 bash shim provides
+        # the legacy function names for any remaining transitive callers.
+        # shellcheck source=lib/dashboard_shim.sh
+        source "${TEKHTON_HOME}/lib/dashboard_shim.sh"
         _shim_load_finalize_bodies
         ;;
     *)

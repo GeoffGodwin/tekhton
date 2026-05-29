@@ -952,7 +952,7 @@ source "${TEKHTON_HOME}/lib/metrics_dashboard.sh"
 source "${TEKHTON_HOME}/lib/progress.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
 source "${TEKHTON_HOME}/lib/causality_query.sh"
-source "${TEKHTON_HOME}/lib/dashboard.sh"
+source "${TEKHTON_HOME}/lib/dashboard_shim.sh"
 # m23: lib/tui*.sh fully ported to internal/tui/ + cmd/tekhton/tui.go. The
 # small remaining bash residue (sidecar spawn/kill, _tui_call helper) lives
 # in lib/sidecar_lifecycle.sh, sourced transitively from lib/output.sh.
@@ -1910,22 +1910,29 @@ START_AT_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M
 # shellcheck disable=SC2034  # used by dashboard and finalization hooks
 WAITING_FOR=""
 
-# Dashboard lifecycle: create if enabled + missing, cleanup if disabled + exists
+# Dashboard lifecycle (m33.1): execs `tekhton dashboard <subcommand>` via
+# the Go binary. The shims in lib/dashboard_shim.sh are kept for the other
+# bash callers (agent_spinner / dry_run / etc.) but this block invokes the
+# binary directly so the rewire is explicit and shellcheck-free.
+local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
+_td_dashboard_bin="${TEKHTON_BIN:-${TEKHTON_HOME}/bin/tekhton}"
 if is_dashboard_enabled; then
-    local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
-    if [[ ! -d "$local_dash_dir" ]]; then
-        init_dashboard "$PROJECT_DIR"
-    else
-        # Sync static UI files only when dashboard already existed (init_dashboard
-        # already copies files on creation, so this avoids a redundant second copy).
-        sync_dashboard_static_files "$PROJECT_DIR"
+    if [[ -x "$_td_dashboard_bin" ]]; then
+        if [[ ! -d "$local_dash_dir" ]]; then
+            "$_td_dashboard_bin" dashboard init --project-dir "$PROJECT_DIR" 2>/dev/null || true
+        else
+            # Sync static UI files only when dashboard already existed (init
+            # already copies files on creation, so this avoids a redundant
+            # second copy).
+            "$_td_dashboard_bin" dashboard sync --project-dir "$PROJECT_DIR" 2>/dev/null || true
+        fi
     fi
 else
-    local_dash_dir="${PROJECT_DIR}/${DASHBOARD_DIR:-.claude/dashboard}"
-    if [[ -d "$local_dash_dir" ]]; then
-        cleanup_dashboard "$PROJECT_DIR"
+    if [[ -x "$_td_dashboard_bin" ]] && [[ -d "$local_dash_dir" ]]; then
+        "$_td_dashboard_bin" dashboard cleanup --project-dir "$PROJECT_DIR" 2>/dev/null || true
     fi
 fi
+unset _td_dashboard_bin
 
 # --- Version migration check (after config load, before pipeline) ------------
 check_project_version

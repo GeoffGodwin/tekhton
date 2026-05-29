@@ -28,6 +28,13 @@ TESTS_DIR="${TEKHTON_HOME}/tests"
 # wipe. PROJECT_DIR / MILESTONE_DIR / MILESTONE_MANIFEST are wiped explicitly
 # because they're absolute-path-resolved and not in the defaults list.
 _tekhton_bin="${TEKHTON_HOME}/bin/tekhton"
+# m33.1: tests that exec the Go binary (via bash shims or directly) need
+# TEKHTON_BIN pointed at the local repo's build, not whatever the parent
+# shell's TEKHTON_BIN env var carries (e.g. tekhton-stable/bin/tekhton in
+# self-hosted runs). Exporting it here keeps the shim resolution stable.
+if [[ -x "$_tekhton_bin" ]]; then
+    export TEKHTON_BIN="$_tekhton_bin"
+fi
 if [[ -x "$_tekhton_bin" ]]; then
     while IFS= read -r _key; do
         [[ -z "$_key" ]] && continue
