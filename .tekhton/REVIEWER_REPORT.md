@@ -1,7 +1,5 @@
-# Reviewer Report — m28.3 (Stale-Config Migration + Tests)
-
 ## Verdict
-APPROVED_WITH_NOTES
+APPROVED
 
 ## Complex Blockers (senior coder)
 - None
@@ -10,11 +8,10 @@ APPROVED_WITH_NOTES
 - None
 
 ## Non-Blocking Notes
-- `lib/mcp_resolve.sh` (new file, line 14) carries `set -euo pipefail` despite being a sourced `lib/` file. The shell quality rule is explicit: sourced files in `lib/` do not include `set -euo pipefail` — they inherit from the caller. The line is functionally redundant here (already set by the time `mcp.sh` sources this file) but is technically a rule violation for a new file. Pre-existing in `mcp.sh` too; a future hygiene pass should sweep both files.
-- `tests/test_serena_template_substitution.sh::count_backups` (lines 71–74): the `# shellcheck disable=SC2010` comment refers to `ls | grep` but the implementation uses `find | wc -l`. SC2010 would never trigger here; the disable comment is stale. Harmless but misleading to a future reader.
+- None
 
 ## Coverage Gaps
 - None
 
 ## Drift Observations
-- `lib/mcp_resolve.sh:14` — new sourced lib file carries `set -euo pipefail`, same pre-existing pattern as `lib/mcp.sh:18`. Convention reserves this for standalone entry points. Two instances now in the same module family; a hygiene sweep should clear both.
+- `.claude/milestones/m29.2-detect-domain-detectors.md:308` — The new Watch For bullet lists seven forbidden write APIs (`os.Create`, `os.WriteFile`, `os.OpenFile.*O_WRONLY`, `os.Remove`, `os.MkdirAll`, `os.Rename`, `ioutil.WriteFile`) sourced from the parent m29 design's Goal 4 description. The actual `readonly_test.go` implementation described in m29.1 (lines 289–298) includes two additional patterns: `os.OpenFile.*O_CREATE` and `os.RemoveAll`. The bullet is guidance-level and `readonly_test.go` is the ground truth — but a future m29.2 implementer reading only this bullet may undercount the forbidden APIs. Minor precision gap; no action required for m29.
