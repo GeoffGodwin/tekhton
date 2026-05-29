@@ -1,20 +1,20 @@
-# Reviewer Report — m28.2 Serena Startup Probe + Truthful Status
+# Reviewer Report — m28.3 (Stale-Config Migration + Tests)
 
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- `VERSION` reads `4.27.7` but the milestone AC specified `4.27.6`. The coder summary claims the bump was `4.27.5 → 4.27.6`, and the security stage ran successfully before this review — most likely the pipeline's patch-increment finalization hook advanced it one more step. Not a defect in `mcp.sh`. The pre-existing `test_mcp_serena_bin.sh` AC8 grep (`4.27.x where x ≥ 5`) already tolerates this.
-- `lib/mcp.sh:15`: `set -euo pipefail` in a sourced library file is a pre-existing violation of the convention (sourced files should inherit from the entry point, not set their own pipefail). Not introduced by m28.2; no new violations were added. Cleanup belongs to a future hygiene pass.
+- `lib/mcp_resolve.sh` (new file, line 14) carries `set -euo pipefail` despite being a sourced `lib/` file. The shell quality rule is explicit: sourced files in `lib/` do not include `set -euo pipefail` — they inherit from the caller. The line is functionally redundant here (already set by the time `mcp.sh` sources this file) but is technically a rule violation for a new file. Pre-existing in `mcp.sh` too; a future hygiene pass should sweep both files.
+- `tests/test_serena_template_substitution.sh::count_backups` (lines 71–74): the `# shellcheck disable=SC2010` comment refers to `ls | grep` but the implementation uses `find | wc -l`. SC2010 would never trigger here; the disable comment is stale. Harmless but misleading to a future reader.
 
 ## Coverage Gaps
-- Dedicated probe-stub tests exercising `_probe_serena_startup` directly against `/usr/bin/false`, `/usr/bin/echo`, and a hanging script are deferred by design to m28.3 (Seeds Forward). Not a gap for this milestone.
+- None
 
 ## Drift Observations
-- `lib/mcp.sh:15` — pre-existing `set -euo pipefail` in a sourced lib file (same note carried from m28.1 review). Convention reserves this for standalone entry points; sourced files in `lib/` inherit. Cleanup belongs to a future hygiene milestone.
+- `lib/mcp_resolve.sh:14` — new sourced lib file carries `set -euo pipefail`, same pre-existing pattern as `lib/mcp.sh:18`. Convention reserves this for standalone entry points. Two instances now in the same module family; a hygiene sweep should clear both.
