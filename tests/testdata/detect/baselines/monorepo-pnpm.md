@@ -5,7 +5,7 @@
 ### Languages
 | Language | Confidence | Manifest |
 |----------|------------|----------|
-| typescript | medium | package.json |
+| typescript | high | package.json |
 
 ### Frameworks
 (none detected)

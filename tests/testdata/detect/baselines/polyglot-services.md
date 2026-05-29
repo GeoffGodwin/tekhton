@@ -5,7 +5,7 @@
 ### Languages
 | Language | Confidence | Manifest |
 |----------|------------|----------|
-| go | medium | go.mod |
+| go | high | go.mod |
 
 ### Frameworks
 (none detected)
