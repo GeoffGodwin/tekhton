@@ -1,39 +1,46 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 8 test cases (6 in test_audit_bash_env_coverage.sh + 1 fixture + 6 in test_m27_sweep_regression.sh)
+Tests audited: 1 file (tests/test_mcp_serena_bin.sh), 22 assertions across 8 logical test sections
+Freshness sample reviewed: internal/errors/recovery_test.go, internal/errors/redact_test.go, internal/errors/sentinels_test.go (not modified this run — no issues flagged)
 Verdict: PASS
 
 ### Findings
 
-#### EXERCISE: _strip_m27_defaults tested via inline copy, not actual function
-- File: tests/test_m27_sweep_regression.sh:80-83
-- Issue: The `_strip_m27_defaults` function is redefined inline in the regression test rather than sourced or imported from `test_m84_static_analysis.sh` where the actual production function lives. If the implementation in `test_m84_static_analysis.sh` is later modified, this regression test continues to pass on the stale inline copy and will not catch the divergence. The inline copy is a one-liner (`grep -v "${fname}}" || true`) so the risk is low, but the test is exercising a copy, not the real thing.
+#### SCOPE: Reported pass count does not include the 22 new assertions
+- File: tests/test_mcp_serena_bin.sh (all assertions)
+- Issue: TESTER_REPORT.md claims "Passed: 492 Failed: 0". The CODER_SUMMARY reported 490 passing before this file existed. The delta is 2, matching only the "surgical" additions to tests/test_mcp.sh and tests/test_mcp_lifecycle.sh described in the CODER_SUMMARY. The 22 assertions in test_mcp_serena_bin.sh are absent from the delta, indicating run_tests.sh was executed before this file was present in tests/ (or was called with positional args that excluded it). run_tests.sh auto-discovers all tests/test_*.sh files via glob when invoked without positional args (run_tests.sh:254), so the file will run in all future unrestricted invocations. However, the tester's reported count does not reflect a full-suite run that includes the new assertions — the 22 AC checks were not verified to pass under the runner.
 - Severity: MEDIUM
-- Action: Either (a) source the relevant section of `test_m84_static_analysis.sh` in a subshell and call through, or (b) add a cross-check assertion that the function body in `test_m84_static_analysis.sh` still matches the expected one-liner so any divergence trips this test explicitly. Since `test_m84_static_analysis.sh` is a test file rather than a library, approach (b) is cleaner.
+- Action: Re-run `bash tests/run_tests.sh` with no positional args after test_mcp_serena_bin.sh is confirmed present in tests/, and update TESTER_REPORT.md with the actual count (expected ~512 if all 22 assertions pass). Confirm the file is in tests/ before the run.
 
-#### COVERAGE: Case 3 in test_audit_bash_env_coverage.sh intentionally asserts false-positive behavior
-- File: tests/test_audit_bash_env_coverage.sh:121-137
-- Issue: The test asserts exit 1 and a finding for `echo '${MILESTONE_MODE}'` — a known false positive the scanner produces because it does not track intra-line single-quote boundaries. This is not a test defect: the test file comment at lines 122-127 explicitly documents this as a regression guard so any future fix to the scanner surfaces automatically. Flagged here for visibility, not for remediation.
+#### COVERAGE: _resolve_mcp_config early-exit paths not exercised
+- File: tests/test_mcp_serena_bin.sh (AC3+AC5 section, lines 175-258)
+- Issue: lib/mcp.sh:_resolve_mcp_config has two early-exit paths with no test coverage. (1) lines 119-121 — when SERENA_CONFIG_PATH points to an existing file, the function returns immediately with _MCP_CONFIG_PATH set to that path and no template generation occurs; this path goes entirely untested. (2) lines 137-139 — when _SERENA_DIR or _SERENA_BIN is empty, the function returns 1 before reaching the sed block; the guard is relevant for ensuring the AC2 failure mode (missing binary) propagates correctly to the config step. The AC3 test exercises only the generation path (no pre-existing config, fully-resolved paths).
 - Severity: LOW
-- Action: No action needed. The intent is correctly documented in the test header and the assertion is faithful to current scanner behavior.
+- Action: Add a test case that calls _resolve_mcp_config with an existing config file at the default path and verifies it returns 0 and sets _MCP_CONFIG_PATH without regenerating. Add a test case that calls _resolve_mcp_config with _SERENA_BIN="" and verifies it returns 1. Neither is a blocker for the milestone.
 
-#### ISOLATION: test_m27_sweep_regression.sh Case 1 reads live source tree
-- File: tests/test_m27_sweep_regression.sh:36-48
-- Issue: Case 1 invokes `scripts/audit-bash-env.sh` with no target argument, causing it to scan the live `lib/` and `stages/` directories. Pass/fail depends on the current state of source files in the working tree. This is distinct from reading run artifacts (the rubric's primary concern), but any future commit that introduces an unguarded `${VAR}` anywhere in `lib/` or `stages/` will flip this test red including work completely unrelated to m27.
+#### ISOLATION: VERSION is read from the live source tree and has already drifted
+- File: tests/test_mcp_serena_bin.sh:267-275
+- Issue: AC8 reads VERSION directly from ${TEKHTON_HOME}/VERSION (a live source-tree file). The CODER_SUMMARY documents resetting VERSION to 4.27.5 and warns that pipeline finalize hooks will patch-bump it. The file currently reads 4.27.7, confirming the drift. The test uses a floor assertion (`version_major_minor == "4.27" && version_patch -ge 5`) specifically to survive patch drift. This is adequate for the current milestone, but if major.minor advances before this test is retired (e.g., after m28.3 triggers a minor bump to 4.28), the test will fail despite no m28.1 regression existing.
 - Severity: LOW
-- Action: This is intentional by design (described in the test header as "the primary acceptance criterion for m27.2: the sweep covered every unguarded read site"). No remediation needed. Future contributors should understand this test catches any unguarded-read regression across the entire bash surface.
+- Action: The floor assertion is a reasonable pragmatic choice for milestone acceptance. A follow-up milestone could either (a) drop the VERSION assertion from this file and leave AC8 verification to the milestone finalize gate, or (b) widen the band to `version_major_minor =~ ^4\.2[789]$` as a bounded future-proof alternative.
 
-#### ISOLATION: test_m27_sweep_regression.sh Case 2 depends on working-tree file absence
-- File: tests/test_m27_sweep_regression.sh:58-63
-- Issue: Case 2 checks that `.tekhton/M27_INVENTORY.md` is absent from the working tree. The assertion is sensitive to any process (pipeline run, manual step) that recreates that file path. The `.tekhton/` directory is the mutable pipeline artifact directory.
-- Severity: LOW
-- Action: Consider adding a comment noting that this check should be retired once M27 is fully closed and there is no process path that recreates the file, to prevent it from becoming a noise source in future pipelines.
+### Assertion Honesty Assessment
+All 22 assertions derive from real implementation behavior:
+- Template file grep checks read the actual file on disk — no inline constant to compare against.
+- Resolver tests (_resolve_serena_paths) construct fixture directories in $TMPDIR, call the real function, and assert against the paths the function computed. No mocking.
+- Config generation tests (_resolve_mcp_config) call the real function against a fixture venv and validate output file content with `python3 -m json.tool`. No mocking.
+- CHANGELOG check extracts the [Unreleased] block via awk and greps for "m28.1" and "start-mcp-server" — both strings are present in the live CHANGELOG at those positions.
+No assertion always-passes or uses a value hard-coded independently of the implementation.
 
-### Notes on Files With No Findings
+### Implementation Exercise Assessment
+The test sources lib/common.sh and lib/mcp.sh and calls `_resolve_serena_paths` and `_resolve_mcp_config` directly — these are the production functions, not stubs. Fixture directories in $TMPDIR use `touch` to simulate POSIX (.venv/bin/serena) and Windows (.venv/Scripts/serena.exe) layouts; the function's `-f` checks succeed on zero-byte files, which is correct for path-detection logic. State is reset between test sections (_SERENA_BIN="", _SERENA_PYTHON="", _SERENA_DIR="", SERENA_PATH=...) to prevent cross-section leakage. The AC3+AC5 section resets _MCP_CONFIG_PATH="" and SERENA_CONFIG_PATH="" to bypass the early-exit paths and exercise the generation branch — correctly targets the code path under test.
 
-**tests/test_audit_bash_env_coverage.sh** — Assertions in Cases 1 and 2 are derived from real fixture content (`01-guarded.sh` contains `${MILESTONE_MODE:-false}`, `02-unguarded.sh` contains `${MILESTONE_MODE}`) and the scanner's documented `file:line:varname` output format. The binary-absent fallback path is correctly isolated using a tmpdir copy of the script with a filtered PATH and a `TEKHTON_BIN=/nonexistent` override. Tmpdir is cleaned up on EXIT via trap. No honesty, isolation, or scope issues.
+### Test Naming and Intent Assessment
+Section headers (`=== AC1: Template contains 'start-mcp-server' ===`) and individual assertion messages (`"_SERENA_BIN set to POSIX bin/serena path"`) are clear and encode both the scenario and expected outcome. No naming issues found.
 
-**tests/testdata/audit_bash_env/07-single-quoted.sh** — Single-line fixture `echo '${MILESTONE_MODE}'` is the correct content for documenting the known scanner false positive. No issues.
+### Test Weakening Assessment
+test_mcp_serena_bin.sh is a new file — no prior version exists to weaken. The audit context references "surgical" additions to tests/test_mcp.sh and tests/test_mcp_lifecycle.sh, but those files are not in the modified-this-run list and are out of scope per the audit rules. No weakening findings.
 
-**tests/test_m27_sweep_regression.sh Case 3 sub-cases** — The three sub-cases (3a default-expansion, 3b bare literal, 3c grep-r format) provide good boundary coverage of the filter: one line that should be stripped, one that should be preserved, and one in the actual grep output format. The use of `|| true` in the inline function is correct for `set -e` safety. Assertions check actual output from the real grep invocations, not hard-coded strings.
+### Freshness Sample (not modified this run — informational only)
+internal/errors/recovery_test.go, redact_test.go, and sentinels_test.go are in good condition: test function names encode scenario and expected outcome, all assertions call real package functions with no mocking, and coverage spans both happy paths and error/unknown inputs (unknown category, empty context, preserved request IDs vs redacted bearer tokens). No issues flagged; none of these files were modified this run.
