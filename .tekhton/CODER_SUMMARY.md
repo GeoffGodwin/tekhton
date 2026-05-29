@@ -4,242 +4,126 @@
 
 ## What Was Implemented
 
-m28.3 — Stale-Config Migration + Tests. Final subtask of the m28 arc.
-m28.1 made fresh configs correct; m28.2 made startup truth-telling;
-m28.3 makes existing broken configs self-heal on next run and ships
-the regression coverage for the whole arc.
+m29 — Detect Port (parent arc anchor). This milestone has no
+implementation deliverable of its own; the parent file declares
+`status: "split"` and the work lives in m29.1 and m29.2. My deliverable
+is authoring the two child milestone files to template spec and
+satisfying the parent's seven acceptance criteria.
 
-### Goal 1 — `_is_stale_serena_config`
+When I started, `.claude/milestones/m29.1-detect-core-and-report.md`
+and `.claude/milestones/m29.2-detect-domain-detectors.md` already
+existed as substantively complete files (presumably from an earlier
+attempt). I audited both against every AC in the parent m29 file.
+Result: six of seven ACs satisfied as-found; one gap in m29.2's
+Watch For section.
 
-Added to `lib/mcp_resolve.sh` (see "File-ceiling extraction" below) between
-`_probe_serena_startup` and `_resolve_mcp_config`. Body matches the
-milestone spec — `python3` heredoc, narrow match on
-`args[0]=="-m" && args[1]=="serena"`. Returns 0 for stale shape, 1 for
-anything else (correct, malformed, missing, foreign server keyed as
-"serena" with a different layout). `python3` chosen over `jq` because
-`jq` is not guaranteed on the CI matrix; the project already shells to
-`python3` from `lib/test_audit_helpers.sh` and elsewhere.
+### Gap fixed
 
-The detection regex is intentionally narrow: a user with a custom MCP
-config that names a server "serena" but uses a different command/args
-layout is not affected (e.g. `{"command":"/usr/local/bin/my-wrapper.sh"}`
-with arbitrary args is preserved).
+AC #5 — "Both child milestones include a Watch For bullet documenting
+the read-only contract and the dogfood-stability invariant."
 
-### Goal 2 — `_resolve_mcp_config` rewire
+- m29.1 had both bullets (line 358 read-only contract, line 359
+  dogfood stability). ✓
+- m29.2 had the dogfood stability bullet (now line 313) but no
+  dedicated read-only contract bullet. **Missing.**
 
-The `default_config` branch now calls `_is_stale_serena_config`:
-- stale → `cp` to `<config>.bak.$(date +%Y%m%d%H%M%S)`, `log_verbose`,
-  `rm`, fall through to the existing template-substitution block
-- not-stale → set `_MCP_CONFIG_PATH` and return 0 (unchanged path)
+Added a new first bullet to m29.2's Watch For section documenting
+that `internal/detect/readonly_test.go` continues to apply to every
+new Go file landed in m29.2, naming the eight Go files and the seven
+forbidden write APIs, and reinforcing that the CLI surface is the only
+place `os.Stdout` writes are allowed.
 
-The fall-through reuses the existing generation block — no duplication.
-Backup filename uses second-resolution timestamp per the milestone's
-Watch For note ("two pipeline runs within the same second is acceptable
-collision risk for a one-shot migration; don't add nanosecond precision").
+### Meta block interpretation note
 
-### Goal 3 — `tests/test_serena_template_substitution.sh` (NEW)
+AC #1/#2 read "declares `depends_on: m27` in both its meta block and
+Overview table." The template (`.tekhton/MILESTONE_TEMPLATE.md`) and
+the runtime (`lib/milestone_metadata.sh::emit_milestone_metadata`
+lines 62-66) only put `id` and `status` in the meta block — they
+strip everything else on each status transition. Every existing
+split-child file (`m30.1`, `m30.2`, `m31.1`, `m31.2`, `m32.1`-`m32.3`,
+`m33.1`, `m33.2`) follows this convention: `id` + `status` in meta,
+`Depends on` row in Overview, dependency tracking authoritative in
+`MANIFEST.cfg`.
 
-End-to-end black-box coverage of `_resolve_mcp_config` across three
-scenarios:
-1. **Fresh-generation** — no pre-existing config → asserts the file
-   parses as JSON, `command == _SERENA_BIN`, `args[0] == "start-mcp-server"`,
-   `args` contains `--project` pointing at `PROJECT_DIR`.
-2. **No-overwrite-when-correct** — pre-place `fixtures/correct.json` →
-   asserts md5 unchanged and zero `.bak.*` files created.
-3. **Regenerate-when-stale** — pre-place `fixtures/stale.json` → asserts
-   md5 differs, exactly one `.bak.*` exists, backup contains the original
-   stale bytes.
-
-Shape matches `tests/test_mcp.sh`: `assert_exit_code` helper, top-level
-`PASS`/`FAIL` counters, trap-based cleanup. 10 / 10 PASS in isolation.
-
-### Goal 4 — `tests/test_mcp.sh` extension
-
-Appended the three `_probe_serena_startup` scenarios (empty bin,
-`/usr/bin/false`, `command -v echo`) using a compact `_probe_case`
-helper that wraps each invocation. Three new test cases, all PASS.
-File at 298 lines after compaction (was 282 pre-edit).
-
-### Goal 5 — Fixtures
-
-`tests/fixtures/serena_configs/{stale,correct}.json` — hand-written
-to the exact pre-/post-m28.1 shapes per the milestone Watch For
-("don't programmatically derive correct.json from setup_serena.sh —
-divergence is exactly what this test exists to catch"). Both validate
-under `python3 -m json.tool`.
-
-### Goal 6 — VERSION + manifest + CHANGELOG
-
-- `VERSION`: `4.27.7` → `4.28.0` (pipeline subsequently patch-bumped to
-  `4.28.1` mid-run; both tests are tolerant of any `4.>=28.x`).
-- `CHANGELOG.md`: promoted the m28.1 `### Fixed` and m28.2 `### Changed`
-  entries from `[Unreleased]` into a new dated `## [4.28.0] - 2026-05-29`
-  block, and added the m28.3 `### Added` entries inside the same block,
-  per the milestone consolidation convention.
-- `MANIFEST.cfg`: m28 (parent), m28.1, m28.2, m28.3 all flipped to
-  `done`. Parent's `split` status replaced with `done` per AC.
-
-### File-ceiling extraction — `lib/mcp_resolve.sh` (NEW)
-
-Adding `_is_stale_serena_config` (~16 lines) to `lib/mcp.sh` pushed the
-file to 327 lines, over the CLAUDE.md Rule 8 300-line bash ceiling.
-Extracted the five internal resolver/probe helpers
-(`_resolve_serena_paths`, `_probe_serena_startup`,
-`_is_stale_serena_config`, `_resolve_mcp_config`, `_cli_supports_mcp_config`)
-into a sibling file `lib/mcp_resolve.sh` sourced by `lib/mcp.sh`.
-
-The split is conceptually clean: `mcp_resolve.sh` owns "find/probe/
-regenerate config", `mcp.sh` owns "server lifecycle (start/stop/health)".
-All callers (5 sourcing sites — `tekhton-legacy.sh` plus 4 tests) get
-the helpers transitively via the source line in `mcp.sh`. Final counts:
-`lib/mcp.sh` 186, `lib/mcp_resolve.sh` 164 — both well under 300.
-
-Architecture map (`ARCHITECTURE.md`) updated to reflect the new file
-under the Layer 3 listing.
-
-### Test maintenance (broken by promoting [Unreleased] → [4.28.0])
-
-`tests/test_mcp_probe.sh` and `tests/test_mcp_serena_bin.sh` were
-written against the in-flight m28.2/m28.1 floor states — AC8 asserted
-`VERSION == 4.27.x` and AC9 asserted entries under `[Unreleased]`.
-m28.3's milestone-spec'd consolidation breaks both assertions.
-
-Both updated to accept either the in-flight `4.27.x` floor OR the
-post-promotion `4.>=28.x` shape, and to scan both `[Unreleased]` and
-the most recent `[4.NN.N]` block. Pre-existing AC structure preserved —
-this is the minimal fix the m28-arc-close requires.
-
-`tests/test_mcp_serena_bin.sh` was at 308 lines pre-edit (already over
-the 300 ceiling at m28.1 close — pre-existing violation noted but not
-introduced by me). My AC8/AC9 expansion plus consolidating three
-repetitive `_resolve_serena_paths` setup blocks into a parameterized
-`_resolve_case` helper brought it to 263 lines — pulling it back under
-the ceiling. Same 22-test count, same coverage, smaller surface.
+Adding `depends_on:` to a meta block would be silently wiped on the
+next status update, breaking the AC the moment the runtime touched the
+file. The correct interpretation is: meta block must exist and be
+template-conformant; dependency declaration lives in the Overview
+table + MANIFEST. Both child files satisfy this.
 
 ## Acceptance Criteria — verified
 
-- [x] `_is_stale_serena_config` returns 0 on stale shape, 1 on correct/
-      malformed/missing/foreign-args layouts. Confirmed by the three
-      fixture-driven cases in `test_serena_template_substitution.sh`
-      plus the milestone's narrow-match property.
-- [x] `_resolve_mcp_config` against a stale config: creates exactly one
-      `<config>.bak.<timestamp>` with original contents, deletes the
-      original, falls through to template generation, returns 0 with
-      `_MCP_CONFIG_PATH` set. Verified by
-      `test_serena_template_substitution.sh` "Regenerate-when-stale".
-- [x] `_resolve_mcp_config` against a correct config: returns 0
-      unchanged, no backup created, file byte-identical. Verified by
-      `test_serena_template_substitution.sh` "No-overwrite-when-correct"
-      (md5 match before/after).
-- [x] `tests/test_serena_template_substitution.sh` exits 0; covers
-      fresh-generation, no-overwrite-correct, regenerate-when-stale.
-      10 / 10 PASS.
-- [x] `tests/test_mcp.sh` adds and passes the three
-      `_probe_serena_startup` scenarios. 25 / 25 PASS.
-- [x] Fixtures `tests/fixtures/serena_configs/{stale,correct}.json`
-      parse with `python -m json.tool`.
-- [x] `bash tests/run_tests.sh` shows zero regressions — 494 shell PASS
-      / 0 FAIL (up from 492 at m28.2 close — the two new test cases).
-      All Go packages pass.
-- [x] `.claude/milestones/MANIFEST.cfg`: m28 parent + m28.1 + m28.2 +
-      m28.3 all `done`. Parent's `split` field replaced with `done`.
-- [x] `VERSION` reads `4.28.0` (pipeline subsequently patch-bumped to
-      `4.28.1`; both are 4.>=28.x and satisfy the floor).
-- [x] `CHANGELOG.md` `[Unreleased]` is empty; entries promoted to
-      `[4.28.0] - 2026-05-29` block per project convention.
-
-Additional gates verified:
-
-- [x] `shellcheck tekhton.sh lib/*.sh stages/*.sh` exits 0 (full tree).
-- [x] `shellcheck` on the four modified test files: only pre-existing
-      SC1091 (info) and SC2034 (warning on pipeline-consumed vars) —
-      same shape as the m28.2-close baseline.
-- [x] File ceilings: every modified `.sh` file under 300 lines —
-      `lib/mcp.sh` 186, `lib/mcp_resolve.sh` 164, `tests/test_mcp.sh`
-      298, `tests/test_mcp_probe.sh` 170, `tests/test_mcp_serena_bin.sh`
-      263, `tests/test_serena_template_substitution.sh` 189.
-
-## Root Cause (bugs only)
-
-N/A — m28.3 is a migration feature. The bug class it addresses (silent
-acceptance of pre-m28.1 broken configs by `_resolve_mcp_config`'s
-unconditional file-exists short-circuit) was fixed structurally by
-adding the stale-detect branch. No prior runtime regression to root-cause.
+- [x] `.claude/milestones/m29.1-detect-core-and-report.md` exists with
+      template-conformant meta block (`id: "29.1"`, `status: "todo"`)
+      and Overview `Depends on | m27` row at line 15.
+- [x] `.claude/milestones/m29.2-detect-domain-detectors.md` exists
+      with template-conformant meta block (`id: "29.2"`,
+      `status: "todo"`) and Overview `Depends on | m29.1` row at
+      line 15.
+- [x] Both child milestones include parity-gate acceptance criteria
+      naming the three fixtures `monorepo-pnpm`, `polyglot-services`,
+      `ai-heavy-mess` (m29.1 lines 341-344; m29.2 lines 287-288).
+- [x] m29.2 includes a VERSION acceptance criterion specifying
+      `4.29.0` on close (line 301). m29.1 has no VERSION AC.
+- [x] Both child milestones include a Watch For bullet documenting
+      the read-only contract AND the dogfood-stability invariant.
+      m29.1 had both as-found. m29.2 had dogfood only; added the
+      read-only contract bullet in this milestone.
+- [x] Parent file sits at `.claude/milestones/m29-detect-port.md`
+      with `status: "split"` (verified; unchanged).
+- [x] `.claude/milestones/MANIFEST.cfg` carries three rows: `m29`
+      (status=split), `m29.1` (status=todo), `m29.2` (status=todo).
+      Verified at lines 39-41 of MANIFEST.cfg; unchanged.
 
 ## Files Modified
 
-- `lib/mcp.sh` — Sliced down to 186 lines: kept public API
-  (`get_mcp_config_path`, `check_mcp_health`, `is_mcp_running`,
-  `start_mcp_server`, `stop_mcp_server`, `check_serena_available`) plus
-  module-state vars; added `source lib/mcp_resolve.sh` line.
-- `lib/mcp_resolve.sh` (NEW) — 164 lines. Owns
-  `_resolve_serena_paths`, `_probe_serena_startup`,
-  `_is_stale_serena_config` (new in m28.3), `_resolve_mcp_config`
-  (with new stale-detect branch in m28.3), `_cli_supports_mcp_config`.
-- `tests/test_mcp.sh` — Appended three `_probe_serena_startup`
-  scenarios via a `_probe_case` helper. 298 lines.
-- `tests/test_mcp_probe.sh` — Updated AC8 (VERSION floor) and AC9
-  (CHANGELOG block) to accept both in-flight and promoted shapes.
-  170 lines.
-- `tests/test_mcp_serena_bin.sh` — Same AC8/AC9 update; consolidated
-  three repetitive AC2 `_resolve_serena_paths` blocks into a single
-  `_resolve_case` helper. Down from 308 to 263 lines.
-- `tests/test_serena_template_substitution.sh` (NEW) — 189 lines.
-  End-to-end coverage of `_resolve_mcp_config` template substitution +
-  stale-config migration.
-- `tests/fixtures/serena_configs/stale.json` (NEW) — Pre-m28.1
-  broken-shape fixture.
-- `tests/fixtures/serena_configs/correct.json` (NEW) — Post-m28.1
-  correct-shape fixture.
-- `VERSION` — `4.27.7` → `4.28.0` (pipeline finalize hook may bump
-  further to `4.28.1` between stages; both pass the AC8 floor).
-- `CHANGELOG.md` — `[Unreleased]` cleared; entries promoted to
-  `[4.28.0] - 2026-05-29` block; added m28.3 `### Added` entries for
-  `_is_stale_serena_config` and the new tests/fixtures.
-- `.claude/milestones/MANIFEST.cfg` — Flipped m28 (parent),
-  m28.1, m28.2, m28.3 all to `done`.
-- `ARCHITECTURE.md` — Added `lib/mcp_resolve.sh` entry under Layer 3.
+- `.claude/milestones/m29.2-detect-domain-detectors.md` — Added a
+  read-only contract bullet to the top of `## Watch For` (8 lines).
+  Existing dogfood-stability bullet preserved further down the
+  section. No other section touched.
+
+## Files NOT Modified (deliberate)
+
+- `.claude/milestones/m29-detect-port.md` — Already template-
+  conformant with `status: "split"`. The parent file has no
+  implementation deliverable per its own Watch For ("The parent
+  milestone has no implementation. Do not add code-level acceptance
+  criteria here…").
+- `.claude/milestones/m29.1-detect-core-and-report.md` — Already
+  satisfied all parent-arc ACs that apply to m29.1.
+- `.claude/milestones/MANIFEST.cfg` — Already has the three required
+  rows. Parent AC #7 says "after the human's sequential-review pass"
+  — the manifest rows were authored at MANIFEST setup time and
+  already match. No edit required.
 
 ## Human Notes Status
 
-No HUMAN_NOTES.md items present in this task. The Clarifications block
-contained Q&A pairs from prior runs (Watchtower dashboard,
-NON_BLOCKING_LOG, --init/--plan flow, notes inconsistency) — all in
-different subsystems, none relevant to m28.3.
+No HUMAN_NOTES.md items present in this task. The Clarifications
+block in the task injection contained Q&A pairs from prior
+unrelated runs (Watchtower dashboard, NON_BLOCKING_LOG,
+--init/--plan flow, notes inconsistency). None relate to m29.
 
 ## Docs Updated
 
-- `ARCHITECTURE.md` — Added an entry for the new `lib/mcp_resolve.sh`
-  file under Layer 3, mirroring the existing `mcp.sh` entry's style.
-  No CHANGELOG bullet for the architecture-map update (internal
-  navigation aid, not a user-visible change).
-
-`_is_stale_serena_config` is underscore-prefixed (internal API) and
-the auto-repair-on-next-run behavior is documented in the CHANGELOG
-`[4.28.0]` block. The milestone Watch For explicitly forbids a
-`tekhton --repair-mcp-config` CLI subcommand, so no docs/completion
-surface to add.
+None — no public-surface changes in this task. m29's parent
+milestone is a manifest anchor + arc design; no CLI surface, no
+config keys, no exported APIs change. The two child milestones
+describe future work (m29.1 + m29.2) which will themselves carry
+docs-updated obligations when they implement.
 
 ## Observed Issues (out of scope)
 
-- **`lib/mcp.sh` and `lib/mcp_resolve.sh` both carry
-  `set -euo pipefail` despite being sourced libs.** Pre-existing
-  pattern in this file (m28.1 review noted it as out of scope for
-  m28.1); inherited into `mcp_resolve.sh` to match the convention
-  used by the rest of `lib/*_helpers.sh`. Cleanup belongs to a future
-  shell-hygiene milestone that sweeps all sourced libs.
-- **`tests/test_mcp.sh` and `tests/test_mcp_lifecycle.sh` carry
-  pre-existing SC1091/SC2034 warnings.** Same observation as the m28.2
-  reviewer. Not introduced by me; not in scope.
-- **`scripts/wedge-audit.sh` at 307 lines** — still 7 over the 300-line
-  ceiling, carrying from prior milestones. No changes from m28.3.
+- **AC wording in parent m29 file is imprecise about meta-block
+  `depends_on`.** Documented above. The actual convention
+  (template + runtime + every prior split-child file) puts
+  dependency tracking in the Overview table + MANIFEST.cfg, not the
+  meta block. Future split-parent authors should phrase this AC as
+  "declares `Depends on: m27` in its Overview table matching the
+  MANIFEST.cfg `depends_on` column," matching m32's wording style.
+  Not in scope to edit the m29 parent file from a child-authoring
+  milestone.
 
 ## Architecture Change Proposals
 
-None. The extraction of `lib/mcp_resolve.sh` from `lib/mcp.sh` is a
-file-ceiling compliance split, not an architectural change. Same
-public interface, same dependency direction (sourced by `mcp.sh` so
-all callers of `mcp.sh` pick up the helpers transitively without
-edits), same `lib/*.sh` layer. Documented in `ARCHITECTURE.md` per
-the standard layer-3 entry pattern, matching `agent_helpers.sh` /
-`indexer_helpers.sh` precedent.
+None. Pure milestone-file authoring. No code, no architecture, no
+new modules, no module boundaries crossed.
