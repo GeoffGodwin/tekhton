@@ -110,6 +110,21 @@ _resolve_serena_paths() {
     return 0
 }
 
+# --- Probe Serena startup -----------------------------------------------------
+
+# Verify the resolved Serena binary can launch its MCP server.
+# Runs `serena start-mcp-server --help` with a 2-second timeout.
+# Returns: 0 on success (exit 0 within budget), 1 on any failure.
+_probe_serena_startup() {
+    if [[ -z "${_SERENA_BIN:-}" ]]; then
+        return 1
+    fi
+    if ! timeout 2 "$_SERENA_BIN" start-mcp-server --help >/dev/null 2>&1; then
+        return 1
+    fi
+    return 0
+}
+
 # --- Resolve MCP config path -------------------------------------------------
 
 # Find or generate the MCP config file.
@@ -207,6 +222,17 @@ start_mcp_server() {
 
     log_verbose "[mcp] MCP config: ${_MCP_CONFIG_PATH}"
 
+    # Probe that the resolved binary actually launches before declaring success.
+    # A pass here doesn't guarantee runtime MCP behavior, but a fail here
+    # guarantees runtime MCP failure — cheap pre-flight catch.
+    if ! _probe_serena_startup; then
+        warn "[mcp] Serena startup probe failed (binary: ${_SERENA_BIN:-unresolved})."
+        warn "[mcp] Continuing without LSP-backed tools."
+        SERENA_MCP_AVAILABLE=false
+        SERENA_ACTIVE=""
+        return 1
+    fi
+
     # Claude CLI manages the MCP server lifecycle based on the config file.
     # We don't need to start Serena ourselves — Claude starts it when it sees
     # --mcp-config and stops it when the agent session ends. We just verify
@@ -215,7 +241,7 @@ start_mcp_server() {
     SERENA_MCP_AVAILABLE=true
     SERENA_ACTIVE="true"
 
-    log_verbose "[mcp] Serena MCP integration enabled."
+    log_verbose "[mcp] Serena MCP integration enabled (probe passed)."
     log_verbose "[mcp] Serena path: ${_SERENA_DIR}"
     log_verbose "[mcp] Language servers: ${SERENA_LANGUAGE_SERVERS:-auto}"
 

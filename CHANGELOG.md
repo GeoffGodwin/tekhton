@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `start_mcp_server` now smoke-tests the resolved Serena binary with a
+  2-second `serena start-mcp-server --help` probe before declaring
+  success. On probe failure: warns and continues without LSP-backed
+  tools, instead of silently logging `Serena MCP integration enabled`
+  for a dead server. The pipeline-level `[✓] Indexer + Serena MCP
+  ready` checkpoint now reflects actual probe state. (m28.2)
+
 ### Fixed
 - Serena MCP config template emits `serena start-mcp-server` (the
   console script) instead of `python -m serena` (which fails with

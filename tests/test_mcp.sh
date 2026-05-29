@@ -89,7 +89,9 @@ echo "=== Test: start_mcp_server with everything set up ==="
 mkdir -p "${TMPDIR}/.claude/serena/.venv/bin"
 mkdir -p "${TMPDIR}/.claude"
 touch "${TMPDIR}/.claude/serena/.venv/bin/python"
-touch "${TMPDIR}/.claude/serena/.venv/bin/serena"
+# Executable stub — exits 0 on `start-mcp-server --help` so the m28.2 probe passes.
+printf '#!/bin/sh\nexit 0\n' > "${TMPDIR}/.claude/serena/.venv/bin/serena"
+chmod +x "${TMPDIR}/.claude/serena/.venv/bin/serena"
 
 SERENA_ENABLED=true
 SERENA_PATH=".claude/serena"

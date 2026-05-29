@@ -69,7 +69,9 @@ assert_exit_code "start_mcp_server returns 1 when disabled (even with stale stat
 mkdir -p "${TMPDIR}/.claude/serena/.venv/bin"
 mkdir -p "${TMPDIR}/.claude"
 touch "${TMPDIR}/.claude/serena/.venv/bin/python"
-touch "${TMPDIR}/.claude/serena/.venv/bin/serena"
+# Executable stub — exits 0 on `start-mcp-server --help` so the m28.2 probe passes.
+printf '#!/bin/sh\nexit 0\n' > "${TMPDIR}/.claude/serena/.venv/bin/serena"
+chmod +x "${TMPDIR}/.claude/serena/.venv/bin/serena"
 
 SERENA_ENABLED=true
 # shellcheck disable=SC2034  # consumed by start_mcp_server via sourced mcp.sh
