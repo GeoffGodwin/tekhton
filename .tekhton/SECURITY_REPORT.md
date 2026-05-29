@@ -1,8 +1,23 @@
 ## Summary
-m27.3 is a purely additive CI infrastructure and documentation change: one new bash test script, fixture files with no credentials, a documentation file, and minor modifications to the Makefile and wedge-audit scripts. None of the changed files involve authentication, cryptography, network communication, or user-supplied input reaching a shell interpreter. All variable expansions in the new scripts are properly quoted; temp files use `mktemp` with trap cleanup; grep invocations use `--` separators. The only finding is a low-severity TOCTOU in the shared `/tmp` path used for stage env-dump files.
+
+The m28.1 change set replaces a broken `python -m serena` invocation with the
+`start-mcp-server` console-script form, adding `_SERENA_BIN` resolution in
+`lib/mcp.sh` and matching sed substitution in `tools/setup_serena.sh`. This
+cycle's net diff is a `VERSION` reset only; the substantive surface was landed
+in prior commits. The code operates entirely in the developer's local
+environment (no network-exposed services, no user authentication paths). No
+critical or high-severity issues found. Three low/medium observations are noted
+below, all pre-existing patterns in the codebase rather than regressions
+introduced by m28.1.
 
 ## Findings
-- [LOW] [category:A01] [tests/test_stage_env_setu.sh:76,133] fixable:yes — The script wipes `/tmp/tekhton_stage_env_*_post.txt` at startup then later checks for their presence as a "stage completed sourcing" signal. On a shared machine a local user could pre-create these files between the `rm -f` and the stage subprocess run, causing the second signal check (lines 132–139) to produce a false pass that masks a real `set -u` abort. Low impact because (a) this is a test script with no production effect, and (b) the attacker would need local access and the outcome is only test-integrity degradation, not a security breach. Fix: write the env-dump files to `$WORKDIR` (the mktemp-isolated temp dir already created at line 70) rather than a fixed `/tmp` prefix, and pass the expected path to the stagerunner via the request JSON or an env var, so no shared-directory race is possible.
+
+- [MEDIUM] [category:A08] [tools/setup_serena.sh:107] fixable:no — Serena is cloned from `https://github.com/oraios/serena.git` with `--depth 1` and no commit SHA pin or signature verification. A compromised upstream or DNS spoofing attack would install malicious code into the developer's environment. Mitigation options require either pinning a specific commit hash (breaks auto-update) or verifying a release checksum — both require a design decision that is out of scope for m28.1.
+
+- [LOW] [category:A03] [lib/mcp.sh:144-149] [tools/setup_serena.sh:245-250] fixable:yes — The sed substitution uses `|` as the delimiter across both files. If any substituted value (`PROJECT_DIR`, `_SERENA_BIN`, `SERENA_LANGUAGE_SERVERS`) contains a literal `|`, the sed expression becomes syntactically malformed, producing a corrupt JSON config file. Paths cannot normally contain `|` on POSIX/Windows filesystems, but `SERENA_LANGUAGE_SERVERS` (from pipeline.conf) is user-controlled text. Impact is config corruption, not code execution. Fix: validate that `SERENA_LANGUAGE_SERVERS` contains only safe characters before substitution, or use `python -c 'import json, sys; ...'` for JSON generation instead of sed.
+
+- [LOW] [category:A03] [tools/setup_serena.sh:245-250] [lib/mcp.sh:144-149] fixable:yes — Path values injected into the JSON template via sed are not JSON-escaped. A `PROJECT_DIR` or `SERENA_DIR` containing `"` or `\` produces malformed JSON. Impact is config parse failure by Claude CLI (not exploitable). Fix: use `jq` or a Python one-liner for JSON-safe output rather than raw sed substitution.
 
 ## Verdict
+
 FINDINGS_PRESENT
