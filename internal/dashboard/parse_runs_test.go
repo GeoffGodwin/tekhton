@@ -155,3 +155,78 @@ func TestEstimateMissingDurations_NoOpWhenAnyDurationPresent(t *testing.T) {
 		t.Errorf("estimation should be a no-op when ANY stage has a duration; got %+v", stages)
 	}
 }
+
+// TestParseMetricsJSONL_EmptyFile verifies that an existing but zero-byte
+// metrics.jsonl causes parseMetricsJSONL to return an empty (not nil) slice,
+// which makes ParseRunSummaries fall through to the RUN_SUMMARY_*.json fallback.
+// The reviewer gap noted: "os.Open succeeds, the scanner produces no lines,
+// and the function returns nil, correctly triggering the RUN_SUMMARY_*.json
+// fallback" — this test asserts the full round-trip.
+func TestParseMetricsJSONL_EmptyFile(t *testing.T) {
+	tmp := t.TempDir()
+	metricsPath := tmp + "/metrics.jsonl"
+
+	// Write a zero-byte file — os.Open succeeds but scanner yields nothing.
+	if err := os.WriteFile(metricsPath, []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := parseMetricsJSONL(metricsPath, 50)
+	if len(rows) != 0 {
+		t.Errorf("zero-byte metrics.jsonl: want empty slice, got %d records", len(rows))
+	}
+
+	// Place a RUN_SUMMARY_*.json alongside to confirm the fallback fires.
+	summaryJSON := `{"outcome":"success","total_agent_calls":7,"wall_clock_seconds":60,"task_label":"Fallback from empty jsonl"}`
+	if err := os.WriteFile(tmp+"/RUN_SUMMARY_20260501_100000.json", []byte(summaryJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &StatusReader{}
+	got, err := r.ParseRunSummaries(metricsPath, tmp, 50)
+	if err != nil {
+		t.Fatalf("ParseRunSummaries with empty metrics.jsonl: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("fallback after zero-byte metrics.jsonl: want 1 record, got %d", len(got))
+	}
+	if got[0].TaskLabel != "Fallback from empty jsonl" {
+		t.Errorf("fallback record task_label: want 'Fallback from empty jsonl', got %q", got[0].TaskLabel)
+	}
+}
+
+// TestParseMetricsJSONL_BlankLinesOnly verifies that a metrics.jsonl containing
+// only blank lines (no JSON) is treated identically to a zero-byte file: all
+// lines are skipped by the TrimSpace+empty guard, the result is empty, and
+// ParseRunSummaries falls through to the RUN_SUMMARY_*.json fallback.
+func TestParseMetricsJSONL_BlankLinesOnly(t *testing.T) {
+	tmp := t.TempDir()
+	metricsPath := tmp + "/metrics.jsonl"
+
+	if err := os.WriteFile(metricsPath, []byte("\n\n   \n\t\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := parseMetricsJSONL(metricsPath, 50)
+	if len(rows) != 0 {
+		t.Errorf("blank-lines metrics.jsonl: want empty slice, got %d records", len(rows))
+	}
+
+	// Confirm the fallback fires when a RUN_SUMMARY file is present.
+	summaryJSON := `{"outcome":"partial","total_turns":3,"total_time_s":20,"task_label":"Fallback from blank jsonl"}`
+	if err := os.WriteFile(tmp+"/RUN_SUMMARY_20260501_110000.json", []byte(summaryJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r := &StatusReader{}
+	got, err := r.ParseRunSummaries(metricsPath, tmp, 50)
+	if err != nil {
+		t.Fatalf("ParseRunSummaries with blank-lines metrics.jsonl: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("fallback after blank-lines metrics.jsonl: want 1 record, got %d", len(got))
+	}
+	if got[0].TaskLabel != "Fallback from blank jsonl" {
+		t.Errorf("fallback record task_label: want 'Fallback from blank jsonl', got %q", got[0].TaskLabel)
+	}
+}

@@ -1,60 +1,43 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 5 files, 23 test functions
-(2 modified-this-run: `tests/test_m33_milestone_structure.sh`, `internal/dashboard/coverage_test.go`;
-3 freshness-sample: `cmd/tekhton/dashboard_test.go`, `internal/detect/readonly_test.go`, `internal/detect/report_test.go`)
-
+Tests audited: 3 files, 14 test functions (5 in coverage_test.go, 9 in parse_runs_test.go, 28 bash assertions in test_m33_milestone_structure.sh)
 Verdict: CONCERNS
 
 ---
 
 ### Findings
 
-#### ISOLATION: test_m33_milestone_structure.sh reads live mutable milestone files
-- File: `tests/test_m33_milestone_structure.sh:54-57`
-- Issue: The test binds directly to `$MILESTONE_DIR/m33-dashboard-port.md`, `m33.1-dashboard-emitters.md`, `m33.2-dashboard-parsers.md`, and `MANIFEST.cfg` — all live, writable project files managed by the finalize orchestrator. `MANIFEST.cfg` is updated on every milestone completion; milestone `.md` files are deleted when a milestone closes. The test's pass/fail outcome is therefore coupled to current pipeline state, not a stable fixture. Running this test after m33.1 closes (finalize advances its status to `done`) will cause the `status: "todo"` checks in AC1 and AC2 to fail with no code change whatsoever. By the rubric this is a Severity HIGH isolation violation.
+#### ISOLATION: Milestone structure test reads live project state files
+- File: tests/test_m33_milestone_structure.sh:54-57
+- Issue: The test reads `.claude/milestones/m33-dashboard-port.md`, `.claude/milestones/m33.1-dashboard-emitters.md`, `.claude/milestones/m33.2-dashboard-parsers.md`, and `.claude/milestones/MANIFEST.cfg` directly without creating fixture copies in a temp directory. Test pass/fail depends on the live pipeline state: AC1 (all four assertions) and AC3/AC4/AC5 for m33.1 all route through the `_m33_1_finalized()` guard because m33.1 is already `done` and its file was cleaned up by finalize. AC6 similarly passes via the MANIFEST `done` check. This means the test partially validates against the MANIFEST status column rather than the actual file content for the bulk of AC1–AC5. If run in a CI environment or after a state-resetting operation the test's behavior changes based on pipeline run history, not the committed source artifacts.
 - Severity: HIGH
-- Action: Copy the milestone files and the relevant MANIFEST rows into a controlled fixture directory under `tests/fixtures/m33_structure/` at test setup. Drive all grep/awk calls against the fixture copies. When both milestone children are absent from the working tree (arc closed), emit a SKIP line and exit 0 instead of failing.
+- Action: Extract the three milestone `.md` files and `MANIFEST.cfg` as committed fixture copies under `tests/fixtures/m33_milestone_structure/` and point the test's `MILESTONE_DIR` and `MANIFEST` variables at those copies. The milestone files are design-time authored artifacts checked into source; a fixture copy captures the intended state at audit time. Use `MANIFEST` fixture content to control exactly what the `_m33_X_finalized()` helpers see. This decouples the test from pipeline run state while still testing the structural properties.
 
-#### INTEGRITY: Unconditional pass() on line 220 always fires regardless of prior check outcome
-- File: `tests/test_m33_milestone_structure.sh:220`
-- Issue: `pass "m33 parent status verified via meta block (split)"` is called unconditionally — there is no enclosing `if`. If both prior conditional blocks in Suite 6 (lines 195–215) produce `fail` (parent file absent AND MANIFEST has no `done` row), this line still increments `PASS` and emits a message claiming verification succeeded. The result is an inflated pass count and a misleading audit trail without flipping the suite exit code (since `FAIL > 0` still triggers `exit 1`). This is structurally identical to `assertTrue(True)` — it cannot fail regardless of real state. The comment above ("positive check above is sufficient") describes the intent to remove a redundant negative check, but the implementation is an always-true stub.
+#### INTEGRITY: Unconditional pass at line 240 inflates the pass count
+- File: tests/test_m33_milestone_structure.sh:240
+- Issue: After the real conditional check at lines 226–235 (which already calls `pass` or `fail` for the m33 parent's `status: "split"` claim), line 240 issues an additional unconditional `pass "m33 parent status verified via meta block (split)"` with no preceding condition. This always increments `PASS` regardless of what the actual check found. The comment above it says "positive check above is sufficient" — which implicitly acknowledges no real assertion is being made here. With m33 showing `done` in MANIFEST, the conditional block calls `pass "m33 parent split lifecycle completed..."` on line 232, and then line 240 fires another unconditional `pass`, inflating the reported PASS count by 1 for this suite. The inflated count obscures true coverage and could mask a future real failure in this area.
 - Severity: MEDIUM
-- Action: Delete line 220. The two guarded blocks in Suite 6 are the real assertions. If a third confirmation pass is desired, move it inside the successful branch of one of the two conditional blocks rather than calling it unconditionally.
-
-#### COVERAGE: cmd/tekhton/dashboard_test.go behavioral tests cover only init and run-state
-- File: `cmd/tekhton/dashboard_test.go:27-93`
-- Issue: Two of the four tests exercise only `--help` output (Cobra string matching, no I/O or filesystem state). Only `TestDashboardInit_CreatesDataDir` and `TestDashboardEmitRunState_WritesValidJSON` exercise real behavior. `cleanup`, `sync`, and all emit kinds beyond `run-state` have no behavioral test at the `cmd` layer. The gap is specifically flag-wiring and the subprocess path for the other subcommands.
-- Severity: LOW
-- Action: Add one behavioral test each for `dashboard cleanup` (verifies data dir removal) and `dashboard sync` (verifies data dir is re-created). No need to add per-emit-kind behavioral tests at the `cmd` layer since `internal/dashboard/*_test.go` already exercises those paths directly.
+- Action: Remove line 240 entirely. The conditional check on lines 226–235 is the authoritative assertion. The explanatory comment (lines 237–239) is sufficient context; it does not need a redundant tautological pass statement to accompany it.
 
 ---
 
-### Files with No Findings
+### Findings — coverage_test.go: None
 
-**`internal/dashboard/coverage_test.go`** — All five test functions call real implementations
-with proper `t.TempDir()` isolation. Assertions are honest: values checked in JSON output
-(`"code_dominant"`, `"security"`, `"auth module"`) are all derived from fixture data passed
-into real function calls, not hardcoded against implementation internals. `TestWriteJSFile_ConcurrentAtomicity`
-correctly verifies the tempfile+rename atomicity guarantee by checking that every non-empty
-read starts with the generated header before attempting JSON parsing. `TestEmitTeamState_DelegatesToEmitRunState`
-accurately documents the nil-map safety assumption for stage-level team maps and verifies both
-`parallel_mode:true` and the team key in JSON output. No issues.
+All five test functions call real implementations with no excessive mocking:
+- `TestWriteJSFile_ConcurrentAtomicity` exercises the tempfile+rename atomicity guarantee with 100 concurrent readers and 100 writers; the header prefix assertion is derived from the literal format string in `jsfile.go:51`.
+- `TestEmitDiagnosis_WithFailureContext` plants a fixture JSON, calls the real `EmitDiagnosis`, parses the output file, and verifies fields (`available`, `classification`, `stage`, `summary`) derived directly from the planted fixture through `emit_diagnosis.go:38–43`.
+- `TestEmitDiagnosis_MissingContext` and `TestEmitTeamState_ErrorOnEmptyTeamID` cover the fallback and error paths.
+- `TestEmitTeamState_DelegatesToEmitRunState` verifies `parallel_mode:true` (correct given `ParallelTeams: []string{"t1"}` sets a non-empty team list) and team presence in the JSON output. All assertions are honest and derived from implementation logic.
+All tests use `t.TempDir()` for isolation. No mutable project files read.
 
-**`cmd/tekhton/dashboard_test.go`** — Four tests; the two `--help` smoke tests and the two
-behavioral tests all use `t.TempDir()` and real command execution. Assertions against seed file
-names match the `seedFiles` slice in `dashboard.go` exactly. The `"pipeline_status":"running"`
-assertion in `TestDashboardEmitRunState_WritesValidJSON` is derived from the real implementation
-path (`envOr("PIPELINE_STATUS", "running")` with no env var set in test). Low behavioral
-coverage noted above but no integrity issues.
+---
 
-**`internal/detect/readonly_test.go`** — Policy enforcement test that reads package source files
-(stable between test runs; not mutable run artifacts). The trailing-`(` anchoring of forbidden
-patterns is correct: it prevents doc-comment references to the APIs from tripping the check.
-Excluding `_test.go` files from the scan is appropriate. No issues.
+### Findings — parse_runs_test.go: None
 
-**`internal/detect/report_test.go`** — Three honest tests against `Render()` with in-memory
-`Summary` structs. `TestRender_FrameworkNoneDetected` traverses output lines to verify the
-`(none detected)` line is immediately after the `### Frameworks` header — a precise structural
-assertion. Perfect isolation, no file I/O. No issues.
+All nine test functions are honest and well-isolated:
+- `TestParseRunSummaries_FromMetricsJSONL`: the 3-record post-filter count, `got[0].RunType == "milestone"`, `got[1].Stages["reviewer"].Cycles == 2`, and `got[2].Stages["coder"].DurationS > 0` all derive directly from the four-line `testdata/parsers/runs/metrics.jsonl` fixture (verified against file) and the `recordToSummary`/`estimateMissingDurations` logic in `parse_runs.go`.
+- `TestParseRunSummaries_FromRunSummaryFiles`: copies fixture files into `t.TempDir()` (correct; does not pollute testdata); assertions for `BuildFixOutcome`, `RecoveryRoute`, and the `total_agent_calls` fallback field all match the committed fixture JSON content (verified against `RUN_SUMMARY_20260402_12*.json` files).
+- `TestEstimateMissingDurations`: the expected values 60 and 40 are computed from the formula `(totalTimeS*turns + totalTurns/2) / totalTurns` applied to the test inputs (100s total, turns 6 and 4, sum 10) — not hardcoded magic numbers.
+- `TestParseMetricsJSONL_EmptyFile` and `TestParseMetricsJSONL_BlankLinesOnly`: correctly exercise the `TrimSpace`+empty-guard path and verify that `ParseRunSummaries` falls through to `parseRunSummaryFiles` when `len(rows) == 0`.
+All tests use `t.TempDir()` or committed `testdata/` fixtures. No live project files accessed.
