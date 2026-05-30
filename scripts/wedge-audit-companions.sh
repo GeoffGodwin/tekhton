@@ -47,6 +47,22 @@ _assert_file_exists "tests/test_stage_env_setu.sh" \
 _assert_grep_in_file "tests/test_stage_env_setu.sh" "Makefile" \
     "make dogfood wires the parity test"
 
+# m29.2 (Phase 5): the detect subsystem ported to internal/detect/. All
+# ten lib/detect*.sh files were deleted; the bash surface is now provided
+# by lib/common_detect.sh (per-domain `_tk_detect_*` wrappers around
+# `tekhton detect summary --json`). Re-introducing any lib/detect*.sh
+# file would silently fork the detection contract. The `common_detect.sh`
+# name does not match the `lib/detect*.sh` pattern (no leading `detect`).
+_detect_re=$(find lib -maxdepth 1 -name 'detect*.sh' -print 2>/dev/null)
+if [[ -n "$_detect_re" ]]; then
+    printf 'wedge-audit: m29.2 violation — lib/detect*.sh file(s) re-introduced:\n' >&2
+    printf '%s\n' "$_detect_re" >&2
+    printf 'The detect subsystem lives in internal/detect/. Bash callers use\n' >&2
+    printf '_tk_detect_* wrappers from lib/common_detect.sh (sourced via common.sh).\n' >&2
+    companion_failures=$(( companion_failures + 1 ))
+fi
+unset _detect_re
+
 if (( companion_failures > 0 )); then
     printf 'wedge-audit: %d companion-tool assertion(s) failed.\n' "$companion_failures" >&2
     exit 1

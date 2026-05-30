@@ -3,12 +3,15 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 167
+- Runs since audit: 168
 =======
-- Runs since audit: 167
+- Runs since audit: 168
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-30 | "unknown"] `internal/detect/detect.go` â `attach("languages", r)` case branch is unreachable dead code; `Engine.Run` populates Languages/Frameworks directly before the second pass. Future maintainers may mistake it for an active code path.
+- [2026-05-30 | "unknown"] `lib/init_synthesize_helpers.sh:12` â Header comment references deleted `lib/detect_report.sh`. Not a runtime issue but will mislead anyone following the source trail.
+- [2026-05-30 | "unknown"] Three milestone ACs (heuristic order names, `(none detected)` count, VERSION) were authored against facts that were incorrect or assumed linear milestone execution. Milestone authoring should cross-check AC grep commands against actual bash output before locking a baseline â the parity-gate baselines are the ground truth, not the intuitive description in an AC.
 - [2026-05-30 | "unknown"] `scripts/capture-detect-baselines.sh:67-70` disables `set -euo pipefail` before calling the detect functions. The `_capture_one` helper's `return 1` on a missing fixture (line 79) is silently swallowed because `set +e` is active at call-site scope (lines 86-88). If a fixture directory is absent the script prints an error to stderr but exits 0, giving a false-success signal. Pre-existing design decision with an explanatory comment; not introduced by this run. Low-priority hardening candidate for a future cleanup pass.
 - [2026-05-30 | "unknown"] `internal/dashboard/emit_reports.go:84-101` â `parseTestAudit` stays inline in the emitter rather than behind a `StatusReader` method. Reasonable for now (simpler than the other parsers), but `EmitReports` is the only emit function that doesn't follow the `e.statusReader().Parse<Kind>(...)` pattern. If a `ParseTestAudit` method is ever needed for a Cobra arm or isolation testing, the pattern will need retrofitting.
 - [2026-05-30 | "unknown"] `lib/diagnose_output_extra.sh::emit_dashboard_diagnosis` + `internal/dashboard` â Two write paths remain for `data/diagnosis.js`: bash `emit_dashboard_diagnosis` (via the inlined `_diagnose_write_js_file` helper) and Go `EmitDiagnosis`. Coder correctly marks this out-of-scope; surfacing here so it reaches the drift audit cycle.
