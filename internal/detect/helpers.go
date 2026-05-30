@@ -188,3 +188,77 @@ func reqHasLinePrefix(body, prefix string) bool {
 	}
 	return false
 }
+
+// dirExists returns true when path refers to a directory.
+func dirExists(path string) bool {
+	st, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return st.IsDir()
+}
+
+// statSafe wraps os.Stat to ignore errors at call sites that only need
+// IsDir-style checks.
+func statSafe(path string) (os.FileInfo, error) {
+	return os.Stat(path)
+}
+
+// readDirNames returns the names of entries in dir, sorted. Read-only.
+func readDirNames(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// listFilesDepth walks dir up to maxDepth (relative depth from dir) and
+// returns regular file paths, excluding detectExcludeDirs. Read-only.
+func listFilesDepth(dir string, maxDepth int) []string {
+	var out []string
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		if rel == "." {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if pathHasExcludedSegment(rel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if depth(rel) > maxDepth {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		out = append(out, rel)
+		return nil
+	})
+	sort.Strings(out)
+	return out
+}
+
+// globMany returns matches of pattern under dir (one level deep).
+func globMany(dir, pattern string) []string {
+	matches, err := filepath.Glob(filepath.Join(dir, pattern))
+	if err != nil {
+		return nil
+	}
+	sort.Strings(matches)
+	return matches
+}

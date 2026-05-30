@@ -108,3 +108,29 @@ func mustWrite(t *testing.T, dir, name, body string) {
 		t.Fatalf("write %s: %v", name, err)
 	}
 }
+
+// TestRegistrationOrder enforces the exact m29.2 detector registration
+// sequence. Reordering changes attach() demux, baselines, and bash-caller
+// JSON consumers; this test fails red on any drift.
+func TestRegistrationOrder(t *testing.T) {
+	want := []string{
+		"languages",
+		"commands",
+		"workspaces",
+		"services",
+		"ci",
+		"infrastructure",
+		"test_frameworks",
+		"doc_quality",
+		"ai_artifacts",
+	}
+	dets := registeredDetectors()
+	if len(dets) != len(want) {
+		t.Fatalf("registered detector count: got %d, want %d", len(dets), len(want))
+	}
+	for i, d := range dets {
+		if d.Name() != want[i] {
+			t.Errorf("registration order drift at index %d: got %q, want %q", i, d.Name(), want[i])
+		}
+	}
+}

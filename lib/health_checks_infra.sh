@@ -12,7 +12,7 @@ set -euo pipefail
 #   _health_sample_files       — Deterministic source file sampler (shared helper)
 #   _health_json_escape        — JSON string escaper (shared helper)
 #   _check_dependency_health   — Lock files, dep counts, vulnerability scanner
-#   _check_doc_quality         — Delegates to M12 assess_doc_quality()
+#   _check_doc_quality         — Delegates to _tk_detect_doc_quality (Go engine)
 # =============================================================================
 
 # --- Shared helpers -----------------------------------------------------------
@@ -144,20 +144,18 @@ _check_dependency_health() {
 # --- Documentation Quality (weight: 15%) -------------------------------------
 
 # _check_doc_quality PROJECT_DIR
-# Delegates to M12 assess_doc_quality() when available.
+# Delegates to the m29.2 Go detect engine via _tk_detect_doc_quality.
 _check_doc_quality() {
     local proj_dir="$1"
     local score=0
 
-    if command -v assess_doc_quality &>/dev/null 2>&1; then
-        local dq_output
-        dq_output=$(assess_doc_quality "$proj_dir" 2>/dev/null || true)
-        if [[ -n "$dq_output" ]]; then
-            score="${dq_output%%|*}"
-            local details="${dq_output#*|}"
-            echo "doc_quality|${score}|{\"source\":\"m12\",\"details\":\"$(_health_json_escape "$details")\"}"
-            return 0
-        fi
+    local dq_output
+    dq_output=$(_tk_detect_doc_quality "$proj_dir" 2>/dev/null || true)
+    if [[ -n "$dq_output" ]]; then
+        score="${dq_output%%|*}"
+        local details="${dq_output#*|}"
+        echo "doc_quality|${score}|{\"source\":\"m12\",\"details\":\"$(_health_json_escape "$details")\"}"
+        return 0
     fi
 
     # Fallback: lightweight doc checks

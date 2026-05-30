@@ -55,7 +55,7 @@ _assemble_synthesis_context() {
 
     # Generate detection report
     export DETECTION_REPORT_CONTENT
-    DETECTION_REPORT_CONTENT=$(format_detection_report "$project_dir")
+    DETECTION_REPORT_CONTENT=$(_tk_format_detection_report "$project_dir")
     log "Generated detection report ($(echo "$DETECTION_REPORT_CONTENT" | wc -c | tr -d '[:space:]') chars)"
 
     # Load README if present
@@ -99,9 +99,9 @@ _assemble_synthesis_context() {
     # Milestone 12: Doc quality score for synthesis calibration
     export DOC_QUALITY_SCORE="0"
     export DOC_QUALITY_GUIDANCE=""
-    if type -t assess_doc_quality &>/dev/null; then
+    if command -v _tk_detect_doc_quality &>/dev/null; then
         local dq_output
-        dq_output=$(assess_doc_quality "$project_dir" 2>/dev/null || true)
+        dq_output=$(_tk_detect_doc_quality "$project_dir" 2>/dev/null || true)
         if [[ -n "$dq_output" ]]; then
             DOC_QUALITY_SCORE=$(echo "$dq_output" | cut -d'|' -f1)
             if [[ "${DOC_QUALITY_SCORE:-0}" -gt 70 ]]; then

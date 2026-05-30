@@ -1,20 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# tests/test_detect_parity.sh — m29.1 parity gate.
+# tests/test_detect_parity.sh — m29 parity gate (extended for m29.2).
 #
 # Scope: asserts byte-identical output between the captured bash baselines
 # (tests/testdata/detect/baselines/<fixture>.md) and the Go engine's
-# `tekhton detect summary --markdown` output for the three sections m29.1
-# ports:
+# `tekhton detect summary --markdown` output across the ENTIRE rendered
+# markdown — no per-section extraction, no normalization beyond timestamps.
+# Every detector ported in m29.1 + m29.2 contributes to the diff.
 #
-#   ### Project Type
-#   ### Languages
-#   ### Frameworks
-#
-# Every other section of the bash baseline is rendered from the bash
-# detectors still in lib/detect*.sh — m29.1 does NOT port those, so the Go
-# engine emits stub rows for them. m29.2 extends this gate to assert every
-# section once those detectors land.
+# The baselines were captured once via scripts/capture-detect-baselines.sh
+# at m29.1 close (the three production fixtures) and during m29.2 (the
+# empty fixture). They are FROZEN — drift here means the Go port diverged,
+# not that the baseline is stale.
 #
 # Skips cleanly when the Go toolchain or built binary is unavailable so the
 # test never blocks contributors who haven't run `make build`.
@@ -42,24 +39,6 @@ if ! [[ -x "$TEKHTON_BIN" ]]; then
     fi
 fi
 
-# _extract_sections FILE — keep only the Project Type line, the Languages
-# table block, and the Frameworks block. Stop at the next "###" header that
-# is not one of these three. Empty leading/trailing whitespace is trimmed.
-# shellcheck disable=SC2317  # invoked via parity_assert_equal callback
-_extract_sections() {
-    local f="$1"
-    local tmp
-    tmp=$(mktemp)
-    awk '
-        /^### Project Type:/  { keep=1 }
-        /^### Languages/      { keep=1 }
-        /^### Frameworks/     { keep=1 }
-        /^### / && $0 !~ /^### (Project Type|Languages|Frameworks)/ { keep=0 }
-        keep { print }
-    ' "$f" > "$tmp"
-    mv -- "$tmp" "$f"
-}
-
 _scenario() {
     local fixture="$1"
     local baseline="${BASELINE_DIR}/${fixture}.md"
@@ -74,18 +53,13 @@ _scenario() {
             return
         }
 
-    local expected_extracted
-    expected_extracted=$(mktemp)
-    cp -- "$baseline" "$expected_extracted"
-    _extract_sections "$expected_extracted"
-
-    parity_assert_equal "${fixture}" "$expected_extracted" "$actual" _extract_sections
-    rm -f -- "$expected_extracted"
+    parity_assert_equal "${fixture}" "$baseline" "$actual"
 }
 
 _scenario "monorepo-pnpm"
 _scenario "polyglot-services"
 _scenario "ai-heavy-mess"
+_scenario "empty"
 
 parity_summary "test_detect_parity" || exit 1
 exit 0

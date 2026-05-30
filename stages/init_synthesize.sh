@@ -13,7 +13,7 @@ set -euo pipefail
 # Expects: render_prompt(), _call_planning_batch() from lib/plan.sh
 # Expects: check_context_budget(), measure_context_size() from lib/context.sh
 # Expects: compress_context() from lib/context_compiler.sh
-# Expects: format_detection_report() from lib/detect_report.sh
+# Expects: _tk_format_detection_report() from lib/common_detect.sh (via common.sh)
 # Expects: check_design_completeness() from lib/plan_completeness.sh
 #
 # Helpers extracted to lib/init_synthesize_helpers.sh:

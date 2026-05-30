@@ -57,6 +57,14 @@ func (LanguagesDetector) Run(_ context.Context, in *Input) (*Result, error) {
 			"evidence": f.Evidence,
 		})
 	}
+	if ui := detectUIFramework(dir); ui != nil {
+		r.Findings = append(r.Findings, map[string]string{
+			"kind":     "ui_framework",
+			"name":     ui.Name,
+			"language": ui.Language,
+			"evidence": ui.Evidence,
+		})
+	}
 	return r, nil
 }
 

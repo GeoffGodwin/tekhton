@@ -44,20 +44,10 @@ _check_project_hygiene() {
 
     # Sub-score: CI/CD configured (0-20)
     local ci_score=0
-    if command -v detect_ci_config &>/dev/null 2>&1; then
-        local ci_out
-        ci_out=$(detect_ci_config "$proj_dir" 2>/dev/null || true)
-        if [[ -n "$ci_out" ]]; then
-            ci_score=20
-        fi
-    else
-        for f in .github/workflows .gitlab-ci.yml .circleci/config.yml \
-                 Jenkinsfile .travis.yml bitbucket-pipelines.yml; do
-            if [[ -e "$proj_dir/$f" ]]; then
-                ci_score=20
-                break
-            fi
-        done
+    local ci_out
+    ci_out=$(_tk_detect_ci "$proj_dir" 2>/dev/null || true)
+    if [[ -n "$ci_out" ]]; then
+        ci_score=20
     fi
 
     # Sub-score: README has setup/install instructions (0-20)

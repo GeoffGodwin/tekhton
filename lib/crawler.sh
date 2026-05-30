@@ -64,11 +64,9 @@ crawl_project() {
 
     # Doc quality (computed once, passed to meta emitter)
     local doc_quality_score=0
-    if type -t assess_doc_quality &>/dev/null; then
-        local dq_output
-        dq_output=$(assess_doc_quality "$project_dir" 2>/dev/null || true)
-        [[ -n "$dq_output" ]] && doc_quality_score=$(echo "$dq_output" | cut -d'|' -f1)
-    fi
+    local dq_output
+    dq_output=$(_tk_detect_doc_quality "$project_dir" 2>/dev/null || true)
+    [[ -n "$dq_output" ]] && doc_quality_score=$(echo "$dq_output" | cut -d'|' -f1)
 
     # Phase 1: Emit structured data files to .claude/index/
     _emit_tree_txt "$project_dir" "$index_dir"

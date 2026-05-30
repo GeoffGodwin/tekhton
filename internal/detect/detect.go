@@ -25,6 +25,8 @@ package detect
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 )
 
 // Detector is the contract every domain detector implements.
@@ -54,11 +56,15 @@ type Language struct {
 	Manifest   string `json:"manifest"`
 }
 
-// Framework is one row in the detect_frameworks output.
+// Framework is one row in the detect_frameworks output. Kind is empty
+// for build/runtime frameworks (next.js, react, etc.) and "ui" for the
+// row emitted by the UI framework detector (playwright/cypress/etc.) —
+// the bash detect_ui_framework counterpart.
 type Framework struct {
 	Name     string `json:"name"`
 	Language string `json:"language"`
 	Evidence string `json:"evidence"`
+	Kind     string `json:"kind,omitempty"`
 }
 
 // Command is one row in the detect_commands output. m29.2 populates.
@@ -121,11 +127,15 @@ type DocQuality struct {
 	Details []string `json:"details"`
 }
 
-// AIArtifact is one row in the detect_ai_artifacts output. m29.2 populates.
+// AIArtifact is one row in the detect_ai_artifacts output. Field order
+// mirrors the bash pipe shape `TOOL|PATH|TYPE|CONFIDENCE` from
+// lib/detect_ai_artifacts.sh — Kind is the JSON `type` key (Go keyword
+// collision avoided in the Go identifier name only).
 type AIArtifact struct {
-	Kind     string `json:"kind"`
-	Path     string `json:"path"`
-	Evidence string `json:"evidence"`
+	Tool       string `json:"tool"`
+	Path       string `json:"path"`
+	Kind       string `json:"type"`
+	Confidence string `json:"confidence"`
 }
 
 // Result is what a Detector returns from Run — flat per-row findings
@@ -168,9 +178,9 @@ func (s *Summary) ProjectType() string {
 }
 
 // attach demuxes a detector Result into the appropriate Summary field.
-// m29.1 wires Languages + Frameworks via the languages detector path
-// (handled directly in Engine.Run); m29.2 extends this switch for every
-// remaining detector.
+// The commands detector emits three row kinds (command, entry_point,
+// project_type); each is unpacked here so CommandsDetector remains a
+// single registration site.
 func (s *Summary) attach(name string, r *Result) {
 	if r == nil {
 		return
@@ -180,22 +190,29 @@ func (s *Summary) attach(name string, r *Result) {
 		// Handled in Engine.Run prior to attach to populate Input.
 	case "commands":
 		for _, row := range r.Findings {
-			s.Commands = append(s.Commands, Command{
-				Type:       row["type"],
-				Command:    row["command"],
-				Source:     row["source"],
-				Confidence: row["confidence"],
-			})
-		}
-	case "entry_points":
-		for _, row := range r.Findings {
-			s.EntryPoints = append(s.EntryPoints, EntryPoint{Path: row["path"]})
+			switch row["kind"] {
+			case "command":
+				s.Commands = append(s.Commands, Command{
+					Type:       row["type"],
+					Command:    row["command"],
+					Source:     row["source"],
+					Confidence: row["confidence"],
+				})
+			case "entry_point":
+				s.EntryPoints = append(s.EntryPoints, EntryPoint{Path: row["path"]})
+			case "project_type":
+				if s.ProjectTypeStr == "" {
+					s.ProjectTypeStr = row["value"]
+				}
+			}
 		}
 	case "workspaces":
 		for _, row := range r.Findings {
+			subs := splitCSV(row["subprojects"])
 			s.Workspaces = append(s.Workspaces, Workspace{
-				Type:     row["type"],
-				Manifest: row["manifest"],
+				Type:        row["type"],
+				Manifest:    row["manifest"],
+				Subprojects: subs,
 			})
 		}
 	case "services":
@@ -236,15 +253,54 @@ func (s *Summary) attach(name string, r *Result) {
 				Confidence: row["confidence"],
 			})
 		}
+	case "doc_quality":
+		for _, row := range r.Findings {
+			score, _ := strconv.Atoi(row["score"])
+			s.DocQuality = &DocQuality{
+				Score:   score,
+				Details: splitSemicolon(row["details"]),
+			}
+		}
 	case "ai_artifacts":
 		for _, row := range r.Findings {
 			s.AIArtifacts = append(s.AIArtifacts, AIArtifact{
-				Kind:     row["kind"],
-				Path:     row["path"],
-				Evidence: row["evidence"],
+				Tool:       row["tool"],
+				Path:       row["path"],
+				Kind:       row["type"],
+				Confidence: row["confidence"],
 			})
 		}
 	}
+}
+
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := parts[:0]
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+func splitSemicolon(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ";")
+	out := parts[:0]
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // ErrLanguagesDetectorMissing is returned by Engine.Run when no detector
@@ -368,20 +424,29 @@ func languagesFromResult(r *Result) []Language {
 // []Framework slice that downstream consumers (Input.Frameworks) read.
 // The languages detector emits both language and framework rows because
 // the bash detect_frameworks call is logically inside the same family.
+// Rows tagged kind=ui_framework become Framework{Kind: "ui"} — the JSON
+// shape m29.2's bash wrappers (`_tk_detect_ui_framework`) filter on.
 func frameworksFromResult(r *Result) []Framework {
 	if r == nil {
 		return nil
 	}
 	out := make([]Framework, 0, len(r.Findings))
 	for _, row := range r.Findings {
-		if row["kind"] != "framework" {
-			continue
+		switch row["kind"] {
+		case "framework":
+			out = append(out, Framework{
+				Name:     row["name"],
+				Language: row["language"],
+				Evidence: row["evidence"],
+			})
+		case "ui_framework":
+			out = append(out, Framework{
+				Name:     row["name"],
+				Language: row["language"],
+				Evidence: row["evidence"],
+				Kind:     "ui",
+			})
 		}
-		out = append(out, Framework{
-			Name:     row["name"],
-			Language: row["language"],
-			Evidence: row["evidence"],
-		})
 	}
 	return out
 }

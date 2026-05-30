@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Sourced by tekhton.sh — do not run directly.
 # Depends on: common.sh, health_checks.sh
-# Optional: detect_test_frameworks.sh, detect_ci.sh, detect_doc_quality.sh
+# Optional: _tk_detect_test_frameworks / _tk_detect_ci / _tk_detect_doc_quality via common_detect.sh
 #
 # Provides:
 #   assess_project_health     — Full health assessment, writes ${HEALTH_REPORT_FILE}

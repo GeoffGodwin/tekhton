@@ -9,7 +9,7 @@ set -euo pipefail
 # user to the appropriate next step (--plan or --replan).
 #
 # Sourced by tekhton.sh — do not run directly.
-# Depends on: common.sh, detect.sh, detect_commands.sh, detect_report.sh,
+# Depends on: common.sh (provides _tk_detect_* via common_detect.sh),
 #             crawler.sh, init_config.sh, init_helpers.sh
 # =============================================================================
 
@@ -32,8 +32,6 @@ source "${_INIT_DIR}/init_config_sections.sh"
 source "${_INIT_DIR}/prompts_interactive.sh"
 # shellcheck source=lib/init_wizard.sh
 source "${_INIT_DIR}/init_wizard.sh"
-# shellcheck source=lib/detect_ai_artifacts.sh
-source "${_INIT_DIR}/detect_ai_artifacts.sh"
 # shellcheck source=lib/artifact_handler.sh
 source "${_INIT_DIR}/artifact_handler.sh"
 
@@ -78,35 +76,27 @@ run_smart_init() {
     # Phase 1.5: AI artifact detection
     if [[ "${ARTIFACT_DETECTION_ENABLED:-true}" == "true" ]]; then
         local ai_artifacts=""
-        ai_artifacts=$(detect_ai_artifacts "$project_dir")
+        ai_artifacts=$(_tk_detect_ai_artifacts "$project_dir")
         if [[ -n "$ai_artifacts" ]]; then
             handle_ai_artifacts "$project_dir" "$ai_artifacts"
         fi
     fi
 
-    # Phase 2: Detection
+    # Phase 2: Detection (single JSON fetch, multiple jq extractions)
     log "Detecting tech stack..."
     local languages frameworks commands entry_points project_type
-    languages=$(detect_languages "$project_dir")
-    frameworks=$(detect_frameworks "$project_dir")
-    commands=$(detect_commands "$project_dir")
-    entry_points=$(detect_entry_points "$project_dir")
-    project_type=$(detect_project_type "$project_dir" "$languages" "$frameworks" "$entry_points")
+    languages=$(_tk_detect_languages "$project_dir")
+    frameworks=$(_tk_detect_frameworks "$project_dir")
+    commands=$(_tk_detect_commands "$project_dir")
+    entry_points=$(_tk_detect_entry_points "$project_dir")
+    project_type=$(_tk_detect_project_type "$project_dir")
 
     # Milestone 12: Extended detection
-    local workspaces="" services="" ci_config="" doc_quality=""
-    if type -t detect_workspaces &>/dev/null; then
-        workspaces=$(detect_workspaces "$project_dir" 2>/dev/null || true)
-    fi
-    if type -t detect_services &>/dev/null; then
-        services=$(detect_services "$project_dir" 2>/dev/null || true)
-    fi
-    if type -t detect_ci_config &>/dev/null; then
-        ci_config=$(detect_ci_config "$project_dir" 2>/dev/null || true)
-    fi
-    if type -t assess_doc_quality &>/dev/null; then
-        doc_quality=$(assess_doc_quality "$project_dir" 2>/dev/null || true)
-    fi
+    local workspaces services ci_config doc_quality
+    workspaces=$(_tk_detect_workspaces "$project_dir" 2>/dev/null || true)
+    services=$(_tk_detect_services "$project_dir" 2>/dev/null || true)
+    ci_config=$(_tk_detect_ci "$project_dir" 2>/dev/null || true)
+    doc_quality=$(_tk_detect_doc_quality "$project_dir" 2>/dev/null || true)
 
     # Display detection results
     _display_detection_results "$languages" "$frameworks" "$commands" "$entry_points" "$project_type"
@@ -170,7 +160,7 @@ run_smart_init() {
     # Phase 6: Stub CLAUDE.md
     if [[ ! -f "${project_dir}/CLAUDE.md" ]]; then
         local detection_report
-        detection_report=$(format_detection_report "$project_dir")
+        detection_report=$(_tk_format_detection_report "$project_dir")
         local merge_context=""
         local _mcf="${project_dir}/${MERGE_CONTEXT_FILE:-.tekhton/MERGE_CONTEXT.md}"
         if [[ -f "${_mcf}" ]]; then

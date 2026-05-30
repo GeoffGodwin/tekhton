@@ -16,6 +16,12 @@ set -euo pipefail
 # shellcheck source=artifact_defaults.sh disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/artifact_defaults.sh"
 
+# m29.2: detect subsystem ported to internal/detect/. Bash callers
+# reach the Go engine through _tk_detect_* wrappers defined in
+# common_detect.sh.
+# shellcheck source=common_detect.sh disable=SC1091
+source "$(dirname "${BASH_SOURCE[0]}")/common_detect.sh"
+
 # --- Terminal colors ---------------------------------------------------------
 
 RED='\033[0;31m'

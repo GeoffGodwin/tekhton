@@ -9,9 +9,9 @@ set -euo pipefail
 # Sourced by tekhton.sh — do not run directly.
 # Depends on: common.sh (log, warn, error, success, header),
 #             crawler.sh (crawl_project, _list_tracked_files, _crawl_*),
-#             detect.sh (detect_languages, detect_frameworks),
-#             detect_commands.sh (detect_commands),
-#             detect_report.sh (format_detection_report)
+#             common_detect.sh (_tk_detect_summary + _tk_detect_languages/_frameworks),
+#             (detect commands accessed via _tk_detect_commands),
+#             (report rendered via _tk_format_detection_report)
 # Also sources: rescan_helpers.sh
 # =============================================================================
 

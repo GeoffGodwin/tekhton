@@ -388,16 +388,8 @@ fi
 
 if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
-    source "${TEKHTON_HOME}/lib/detect.sh"
-    source "${TEKHTON_HOME}/lib/detect_commands.sh"
-    source "${TEKHTON_HOME}/lib/detect_report.sh"
-    # Milestone 12: Extended detection modules
-    source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
-    source "${TEKHTON_HOME}/lib/detect_services.sh"
-    source "${TEKHTON_HOME}/lib/detect_ci.sh"
-    source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
-    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
-    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+    # m29.2: detect subsystem lives in internal/detect/ — wrappers are
+    # provided by common_detect.sh (sourced from common.sh).
     source "${TEKHTON_HOME}/lib/crawler.sh"
     source "${TEKHTON_HOME}/lib/index_reader.sh"
     source "${TEKHTON_HOME}/lib/index_view.sh"
@@ -529,15 +521,7 @@ fi
 
 if [ "${1:-}" = "--rescan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
-    source "${TEKHTON_HOME}/lib/detect.sh"
-    source "${TEKHTON_HOME}/lib/detect_commands.sh"
-    source "${TEKHTON_HOME}/lib/detect_report.sh"
-    source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
-    source "${TEKHTON_HOME}/lib/detect_services.sh"
-    source "${TEKHTON_HOME}/lib/detect_ci.sh"
-    source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
-    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
-    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+    # m29.2: detect wrappers come from common_detect.sh via common.sh.
     source "${TEKHTON_HOME}/lib/crawler.sh"
     source "${TEKHTON_HOME}/lib/rescan.sh"
     source "${TEKHTON_HOME}/lib/index_view.sh"
@@ -555,15 +539,7 @@ fi
 
 if [ "${1:-}" = "--plan-from-index" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
-    source "${TEKHTON_HOME}/lib/detect.sh"
-    source "${TEKHTON_HOME}/lib/detect_commands.sh"
-    source "${TEKHTON_HOME}/lib/detect_report.sh"
-    source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
-    source "${TEKHTON_HOME}/lib/detect_services.sh"
-    source "${TEKHTON_HOME}/lib/detect_ci.sh"
-    source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
-    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
-    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+    # m29.2: detect wrappers come from common_detect.sh via common.sh.
     source "${TEKHTON_HOME}/lib/prompts.sh"
     source "${TEKHTON_HOME}/lib/agent.sh"
     source "${TEKHTON_HOME}/lib/plan.sh"
@@ -634,11 +610,7 @@ if [ "${1:-}" = "--health" ]; then
     : "${HEALTH_BASELINE_FILE:=.claude/HEALTH_BASELINE.json}"
     mkdir -p "${PROJECT_DIR}/${TEKHTON_DIR}" 2>/dev/null || true
     source "${TEKHTON_HOME}/lib/common.sh"
-    source "${TEKHTON_HOME}/lib/detect.sh"
-    source "${TEKHTON_HOME}/lib/detect_commands.sh"
-    source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
-    source "${TEKHTON_HOME}/lib/detect_ci.sh"
-    source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+    # m29.2: detect wrappers come from common_detect.sh via common.sh.
     source "${TEKHTON_HOME}/lib/health.sh"
     : "${PROJECT_NAME:=$(basename "$PROJECT_DIR")}"
     export PROJECT_NAME
@@ -930,15 +902,8 @@ source "${TEKHTON_HOME}/lib/mcp.sh"
 # m25: clarify bash subsystem ported to internal/clarify; bash stages
 # invoke `tekhton clarify <subcommand>` via the CLI.
 source "${TEKHTON_HOME}/lib/replan.sh"
-source "${TEKHTON_HOME}/lib/detect.sh"
-source "${TEKHTON_HOME}/lib/detect_commands.sh"
-source "${TEKHTON_HOME}/lib/detect_report.sh"
-source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
-source "${TEKHTON_HOME}/lib/detect_services.sh"
-source "${TEKHTON_HOME}/lib/detect_ci.sh"
-source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
-source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
-source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
+# m29.2: detect subsystem ported to internal/detect/. Bash callers use
+# the _tk_detect_* wrappers from common_detect.sh (sourced via common.sh).
 # shellcheck disable=SC1091
 source "${TEKHTON_HOME}/platforms/_base.sh"    # UI platform adapter framework (Milestone 57)
 source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_emit.sh
@@ -2286,11 +2251,11 @@ _ensure_gitignore_inbox
 # Runs at startup to populate UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD.
 # Uses explicit user config when set; falls back to auto-detection otherwise.
 if [[ "${UI_FRAMEWORK:-}" == "auto" ]] || [[ -z "${UI_FRAMEWORK:-}" ]]; then
-    detect_ui_framework "$PROJECT_DIR" >/dev/null 2>&1 || true
+    _tk_detect_ui_framework "$PROJECT_DIR" >/dev/null 2>&1 || true
 fi
 # Auto-detect UI_TEST_CMD when not explicitly configured
 if [[ "${UI_PROJECT_DETECTED:-false}" == "true" ]] && [[ -z "${UI_TEST_CMD:-}" ]]; then
-    UI_TEST_CMD=$(detect_ui_test_cmd "$PROJECT_DIR" "${UI_FRAMEWORK:-}" 2>/dev/null || true)
+    UI_TEST_CMD=$(_tk_detect_ui_test_cmd "$PROJECT_DIR" "${UI_FRAMEWORK:-}" 2>/dev/null || true)
     export UI_TEST_CMD
 fi
 

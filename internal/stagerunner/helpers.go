@@ -89,15 +89,9 @@ var DefaultLibHelpers = []string{
 	// m25: lib/clarify.sh deleted; ported to internal/clarify/.
 	// Bash stages reach the Go subsystem via `tekhton clarify <sub>`.
 	"lib/replan.sh",
-	"lib/detect.sh",
-	"lib/detect_commands.sh",
-	"lib/detect_report.sh",
-	"lib/detect_workspaces.sh",
-	"lib/detect_services.sh",
-	"lib/detect_ci.sh",
-	"lib/detect_infrastructure.sh",
-	"lib/detect_test_frameworks.sh",
-	"lib/detect_doc_quality.sh",
+	// m29.2: lib/detect*.sh (ten files) deleted; ported to internal/detect/.
+	// Bash stages reach the Go subsystem via `_tk_detect_*` wrappers from
+	// lib/common_detect.sh (sourced from common.sh).
 	"platforms/_base.sh",
 	"lib/crawler.sh",
 	"lib/index_reader.sh",

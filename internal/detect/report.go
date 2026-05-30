@@ -98,8 +98,15 @@ func renderWorkspaces(b *strings.Builder, ws []Workspace) {
 	fmt.Fprintln(b, "| Type | Manifest | Subprojects |")
 	fmt.Fprintln(b, "|------|----------|-------------|")
 	for _, w := range ws {
+		// Bash: count excludes any "...(N more)" overflow marker.
+		count := 0
+		for _, s := range w.Subprojects {
+			if !strings.Contains(s, "...") {
+				count++
+			}
+		}
 		fmt.Fprintf(b, "| %s | %s | %d (%s) |\n", w.Type, w.Manifest,
-			len(w.Subprojects), strings.Join(w.Subprojects, ","))
+			count, strings.Join(w.Subprojects, ","))
 	}
 	fmt.Fprintln(b)
 }

@@ -43,7 +43,7 @@ The disposition column is one of:
 | 10| `diagnose.sh` + diagnose_*              | port        | Largely dead code post-m17 since `tekhton diagnose` exists. |
 | 11| `indexer.sh` + tools/repo_map.py        | port        | Python tool stays; bash glue ports. |
 | 12| `mcp.sh`                                | port        | Lifecycle wrapper for Claude CLI MCP config. |
-| 13| `init.sh` + crawler/detect_*            | in progress (m29.1 — detect engine + report + languages detector ported) | `internal/detect/` ships the `Detector` interface, `Engine`, languages-first invariant, `LanguagesDetector` (port of `detect_languages` + `detect_frameworks` + `detect_ui_framework` from `lib/detect.sh`), the markdown report formatter (port of `lib/detect_report.sh::format_detection_report`), and `internal/detect/readonly_test.go` enforcing the package-level no-write contract. `tekhton detect summary --json/--markdown/--project-dir` Cobra subcommand (Hidden). Parity-gate fixtures + frozen bash baselines under `tests/testdata/detect/{monorepo-pnpm,polyglot-services,ai-heavy-mess}/` + `baselines/`; `tests/test_detect_parity.sh` asserts byte-identical `### Project Type / ### Languages / ### Frameworks` sections. No bash files modified or deleted at m29.1; every caller still sources `lib/detect*.sh` so tekhton-stable can rebuild safely. m29.2 ports the remaining eight detectors, extends the parity gate to every section, cuts every bash caller over, and deletes the bash detect tree. |
+| 13| `init.sh` + crawler/detect_*            | done (m29.2 — full port across m29.1 + m29.2, ten bash files deleted) | `internal/detect/` ships the `Detector` interface, `Engine`, languages-first invariant, and nine detectors: `LanguagesDetector` (m29.1) plus `CommandsDetector`, `WorkspacesDetector`, `ServicesDetector`, `CIDetector`, `InfrastructureDetector`, `TestFrameworksDetector`, `DocQualityDetector`, `AIArtifactsDetector` (m29.2). `detect_ui_framework` ported alongside as a UI-framework helper consumed via `Framework.Kind = "ui"`. `tekhton detect summary --json/--markdown/--project-dir` Cobra subcommand (Hidden); `cmd/tekhton/detect.go::registeredDetectors` is the load-bearing registration order asserted by `TestRegistrationOrder`. Parity gate (`tests/test_detect_parity.sh`) asserts byte-identical FULL markdown across four fixtures (`monorepo-pnpm`, `polyglot-services`, `ai-heavy-mess`, `empty`). Bash callers in `lib/init.sh`, `lib/init_synthesize_helpers.sh`, `lib/express.sh`, `lib/health_checks.sh`, `lib/health_checks_hygiene.sh`, `lib/health_checks_infra.sh`, `lib/crawler.sh`, and `tekhton-legacy.sh` rewritten to use `_tk_detect_*` wrappers from `lib/common_detect.sh`. Ten `lib/detect*.sh` files deleted; `scripts/wedge-audit.sh` guards against re-introduction. `internal/detect/readonly_test.go` enforces the package no-write contract; `internal/detect/ai_artifacts_test.go::TestHeuristicOrder` enforces the load-bearing AI-artifact heuristic order. |
 | 14| `plan*.sh` (interview, browser, …)      | port        | Conversational mode wrapper around Claude CLI. |
 | 15| `replan*.sh`                            | port        | Sister to plan; ports together. |
 | 16| `rescan.sh`                             | port        | Companion to crawler; ports together. |
@@ -119,7 +119,52 @@ These need an answer before Phase 5 design freezes:
 | End of Phase 5 m24     |                                 ~4700 |
 | End of Phase 5 m25     |                                 ~3300 |
 | End of Phase 5 m29.1   |                                 ~3300 |
+| End of Phase 5 m29.2   |                                 ~640 |
 | Phase 5 target         |                                     0 |
+
+m29.2 closing notes:
+
+- **8** new Go detectors landed under `internal/detect/`: `commands.go`,
+  `workspaces.go`, `services.go`, `ci.go`, `infrastructure.go`,
+  `test_frameworks.go`, `doc_quality.go`, `ai_artifacts.go`. Plus
+  `ui_framework.go` carrying the `detect_ui_framework` port. The
+  registered detector order in `cmd/tekhton/detect.go::registeredDetectors`
+  is load-bearing — `TestRegistrationOrder` and the parity gate both fail
+  red on drift.
+- **Ten** `lib/detect*.sh` files deleted in one atomic step alongside the
+  bash caller migration: `detect.sh`, `detect_report.sh`,
+  `detect_commands.sh`, `detect_workspaces.sh`, `detect_services.sh`,
+  `detect_ci.sh`, `detect_infrastructure.sh`, `detect_test_frameworks.sh`,
+  `detect_doc_quality.sh`, `detect_ai_artifacts.sh`. ~2,660 bash LOC out;
+  ~2,700 Go LOC + ~190 bash LOC in `lib/common_detect.sh` in.
+- Bash wrappers live in `lib/common_detect.sh` (sourced by `lib/common.sh`).
+  Per-domain accessors (`_tk_detect_languages`, `_tk_detect_commands`,
+  `_tk_detect_workspaces`, …) preserve the pipe-delimited shape the
+  historical callers consumed; `_tk_format_detection_report` and
+  `_tk_format_detection_summary` cover the report formatter surface.
+  `_tk_detect_ui_framework` carries the env-var side effects
+  (`UI_PROJECT_DETECTED`, `UI_FRAMEWORK`) the deleted bash function had,
+  via `select(.kind == "ui")` over the Go engine's JSON output.
+- Parity gate extended in `tests/test_detect_parity.sh`: no per-section
+  extraction, byte-identical FULL markdown comparison across all four
+  fixtures including the new `empty/` (m29.2-added) fixture. Baselines
+  remain frozen — drift means the Go port diverged, not that the
+  baseline is stale.
+- `scripts/wedge-audit.sh` guards against any `lib/detect*.sh`
+  re-introduction. `internal/stagerunner/helpers.go::DefaultLibHelpers`
+  drops the ten detect entries to match the deleted files.
+- One acceptance criterion (`empty/` fixture produces ≥ 8 `(none
+  detected)` markers) cannot be literally met without modifying the
+  bash report formatter, which would violate the no-feature-redesign
+  rule. Captured behaviour: the bash formatter skips empty
+  workspace/services/CI/infrastructure/test-frameworks sections, so
+  the empty baseline contains 4 markers. The Go port matches this
+  exactly. Documented in CODER_SUMMARY.md for reviewer awareness.
+- VERSION bump: the milestone directive specifies `4.29.0`. The
+  project's current `VERSION` is `4.33.28`, well past the milestone
+  number — milestones have been merging out of order. Setting VERSION
+  backward to `4.29.0` would regress; left at `4.33.28` and documented
+  as a deliberate departure from the milestone's literal text.
 
 m29.1 closing notes:
 

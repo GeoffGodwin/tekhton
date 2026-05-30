@@ -61,9 +61,9 @@ _check_test_health() {
     local cmd_score=0
     if [[ -n "${TEST_CMD:-}" ]] && [[ "${TEST_CMD:-true}" != "true" ]]; then
         cmd_score=20
-    elif command -v detect_test_frameworks &>/dev/null 2>&1; then
+    else
         local fw_output
-        fw_output=$(detect_test_frameworks "$proj_dir" 2>/dev/null || true)
+        fw_output=$(_tk_detect_test_frameworks "$proj_dir" 2>/dev/null || true)
         if [[ -n "$fw_output" ]]; then
             cmd_score=10
         fi
@@ -95,21 +95,10 @@ _check_test_health() {
 
     # Sub-score: test framework detected (0-15)
     local framework_score=0
-    if command -v detect_test_frameworks &>/dev/null 2>&1; then
-        local fw_out
-        fw_out=$(detect_test_frameworks "$proj_dir" 2>/dev/null || true)
-        if [[ -n "$fw_out" ]]; then
-            framework_score=15
-        fi
-    else
-        # Heuristic: check for common test framework config files
-        for f in jest.config.js jest.config.ts vitest.config.ts pytest.ini \
-                 setup.cfg pyproject.toml .rspec Cargo.toml go.mod; do
-            if [[ -f "$proj_dir/$f" ]]; then
-                framework_score=10
-                break
-            fi
-        done
+    local fw_out
+    fw_out=$(_tk_detect_test_frameworks "$proj_dir" 2>/dev/null || true)
+    if [[ -n "$fw_out" ]]; then
+        framework_score=15
     fi
 
     # Sub-score: test execution (0-15) — only if HEALTH_RUN_TESTS=true

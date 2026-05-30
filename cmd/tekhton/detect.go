@@ -65,8 +65,9 @@ func newDetectSummaryCmd() *cobra.Command {
 			}
 
 			e := detect.New()
-			e.Register(detect.LanguagesDetector{})
-			// m29.2 will register the remaining eight detectors here.
+			for _, d := range registeredDetectors() {
+				e.Register(d)
+			}
 
 			s, err := e.Run(context.Background(), projectDir)
 			if err != nil {
@@ -86,4 +87,22 @@ func newDetectSummaryCmd() *cobra.Command {
 	c.Flags().BoolVar(&asJSON, "json", false, "emit JSON instead of markdown")
 	c.Flags().BoolVar(&asMD, "markdown", false, "emit markdown (default)")
 	return c
+}
+
+// registeredDetectors returns the canonical detector registration list in
+// the order Engine.Run consumes them. Registration order is load-bearing
+// (mirrors the bash report formatter's section sequence); the
+// TestRegistrationOrder test in detect_test.go fails red on drift.
+func registeredDetectors() []detect.Detector {
+	return []detect.Detector{
+		detect.LanguagesDetector{},
+		detect.CommandsDetector{},
+		detect.WorkspacesDetector{},
+		detect.ServicesDetector{},
+		detect.CIDetector{},
+		detect.InfrastructureDetector{},
+		detect.TestFrameworksDetector{},
+		detect.DocQualityDetector{},
+		detect.AIArtifactsDetector{},
+	}
 }

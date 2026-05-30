@@ -2,14 +2,18 @@
 # =============================================================================
 # test_m29_milestone_conformance.sh — Verify m29 parent AC satisfaction
 #
-# Tests all seven acceptance criteria from the m29 parent milestone spec:
-#   AC1: m29.1 exists, meta block id="29.1" status="todo", Depends on m27
+# Tests all seven acceptance criteria from the m29 parent milestone spec.
+# m29.1 has completed — its file is deleted on close per the finalize
+# orchestrator; MANIFEST carries status=done. Checks that reference the
+# m29.1 file are guarded accordingly.
+#
+#   AC1: m29.1 completed (file deleted); MANIFEST has status=done, depends=m27
 #   AC2: m29.2 exists, meta block id="29.2" status="todo", Depends on m29.1
-#   AC3: Both child milestones name all three parity-gate fixtures
-#   AC4: m29.2 has VERSION=4.29.0 AC; m29.1 does not
-#   AC5: Both child milestones have Watch For bullets for read-only + dogfood
+#   AC3: m29.2 names all three parity-gate fixtures (m29.1 file deleted)
+#   AC4: m29.2 has VERSION=4.29.0 AC
+#   AC5: m29.2 has Watch For bullets for read-only + dogfood (m29.1 file deleted)
 #   AC6: Parent m29-detect-port.md has status: "split"
-#   AC7: MANIFEST.cfg has three rows: m29 (split), m29.1 (todo), m29.2 (todo)
+#   AC7: MANIFEST.cfg has three rows: m29 (split), m29.1 (done), m29.2 (todo)
 # =============================================================================
 set -euo pipefail
 
@@ -57,32 +61,28 @@ M29_2="${MILESTONE_DIR}/m29.2-detect-domain-detectors.md"
 MANIFEST="${MILESTONE_DIR}/MANIFEST.cfg"
 
 # ---------------------------------------------------------------------------
-# AC1 — m29.1 exists with correct meta block and Overview dependency
+# AC1 — m29.1 completed: file deleted by finalize, MANIFEST shows done
 # ---------------------------------------------------------------------------
-echo "Suite 1: m29.1 file existence and meta"
+echo "Suite 1: m29.1 milestone completion state"
 
-if [[ -f "$M29_1" ]]; then
-    pass "m29.1 file exists"
+# The finalize orchestrator deletes the milestone file on close.
+if [[ ! -f "$M29_1" ]]; then
+    pass "m29.1 file absent (deleted by finalize on milestone close)"
 else
-    fail "m29.1 file missing: $M29_1"
+    fail "m29.1 file unexpectedly present (expected deleted after completion)"
 fi
 
-if grep -q 'id: "29.1"' "$M29_1" 2>/dev/null; then
-    pass "m29.1 meta block has id: \"29.1\""
+# MANIFEST is the source of truth for completed milestones.
+if grep -qE '^m29\.1\|[^|]+\|done\|' "$MANIFEST" 2>/dev/null; then
+    pass "m29.1 MANIFEST row has status=done"
 else
-    fail "m29.1 meta block missing id: \"29.1\""
+    fail "m29.1 MANIFEST row missing status=done"
 fi
 
-if grep -q 'status: "todo"' "$M29_1" 2>/dev/null; then
-    pass "m29.1 meta block has status: \"todo\""
+if grep -qE '^m29\.1\|[^|]+\|[^|]+\|m27\|' "$MANIFEST" 2>/dev/null; then
+    pass "m29.1 MANIFEST row has depends_on=m27"
 else
-    fail "m29.1 meta block missing status: \"todo\""
-fi
-
-if grep -qE '\*\*Depends on\*\*.*m27' "$M29_1" 2>/dev/null; then
-    pass "m29.1 Overview table declares Depends on m27"
-else
-    fail "m29.1 Overview table missing 'Depends on | m27' row"
+    fail "m29.1 MANIFEST row missing depends_on=m27"
 fi
 
 # ---------------------------------------------------------------------------
@@ -115,16 +115,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# AC3 — Both child milestones name the three parity-gate fixtures
+# AC3 — Child milestones name the three parity-gate fixtures
+#       m29.1 file is deleted (milestone completed); only m29.2 is checked.
 # ---------------------------------------------------------------------------
-echo "Suite 3: Parity-gate fixture names in both children"
+echo "Suite 3: Parity-gate fixture names in m29.2"
 
 for fixture in monorepo-pnpm polyglot-services ai-heavy-mess; do
-    if grep -q "$fixture" "$M29_1" 2>/dev/null; then
-        pass "m29.1 names fixture: $fixture"
-    else
-        fail "m29.1 missing fixture reference: $fixture"
-    fi
     if grep -q "$fixture" "$M29_2" 2>/dev/null; then
         pass "m29.2 names fixture: $fixture"
     else
@@ -133,7 +129,8 @@ for fixture in monorepo-pnpm polyglot-services ai-heavy-mess; do
 done
 
 # ---------------------------------------------------------------------------
-# AC4 — m29.2 has 4.29.0 VERSION AC; m29.1 Acceptance Criteria section does not
+# AC4 — m29.2 has 4.29.0 VERSION AC
+#       m29.1 file is deleted (milestone completed); its AC section is not checked.
 # ---------------------------------------------------------------------------
 echo "Suite 4: VERSION acceptance criteria"
 
@@ -143,31 +140,11 @@ else
     fail "m29.2 Acceptance Criteria missing VERSION 4.29.0 reference"
 fi
 
-# m29.1 may mention 4.29.0 in Seeds Forward (describing what m29.2 will do),
-# but its own AC section must NOT contain a 4.29.0 VERSION criterion — the
-# bump belongs to the last-decimal child (m29.2) per m27.3 precedent.
-if _ac_has "$M29_1" "4\.29\.0"; then
-    fail "m29.1 Acceptance Criteria section incorrectly references VERSION 4.29.0 (should only be in m29.2)"
-else
-    pass "m29.1 Acceptance Criteria correctly omits VERSION 4.29.0 reference"
-fi
-
 # ---------------------------------------------------------------------------
-# AC5 — Both child milestones have Watch For bullets for read-only + dogfood
+# AC5 — Watch For bullets for read-only + dogfood
+#       m29.1 file is deleted (milestone completed); only m29.2 is checked.
 # ---------------------------------------------------------------------------
 echo "Suite 5: Watch For bullets — read-only contract and dogfood stability"
-
-if _watch_for_has "$M29_1" "read-only|readonly|read only"; then
-    pass "m29.1 Watch For has read-only contract bullet"
-else
-    fail "m29.1 Watch For missing read-only contract bullet"
-fi
-
-if _watch_for_has "$M29_1" "dogfood"; then
-    pass "m29.1 Watch For has dogfood stability bullet"
-else
-    fail "m29.1 Watch For missing dogfood stability bullet"
-fi
 
 if _watch_for_has "$M29_2" "read-only|readonly|read only"; then
     pass "m29.2 Watch For has read-only contract bullet"
@@ -199,7 +176,8 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# AC7 — MANIFEST.cfg carries three rows: m29 (split), m29.1 (todo), m29.2 (todo)
+# AC7 — MANIFEST.cfg carries three rows: m29 (split), m29.1 (done), m29.2 (todo)
+#       m29.1 completed since the split was authored; status is now "done".
 # ---------------------------------------------------------------------------
 echo "Suite 7: MANIFEST.cfg rows"
 
@@ -216,10 +194,10 @@ else
     fail "MANIFEST.cfg missing m29 row with status=split"
 fi
 
-if grep -qE '^m29\.1\|[^|]+\|todo\|' "$MANIFEST" 2>/dev/null; then
-    pass "MANIFEST.cfg has m29.1 row with status=todo"
+if grep -qE '^m29\.1\|[^|]+\|done\|' "$MANIFEST" 2>/dev/null; then
+    pass "MANIFEST.cfg has m29.1 row with status=done"
 else
-    fail "MANIFEST.cfg missing m29.1 row with status=todo"
+    fail "MANIFEST.cfg missing m29.1 row with status=done"
 fi
 
 if grep -qE '^m29\.2\|[^|]+\|todo\|' "$MANIFEST" 2>/dev/null; then
@@ -228,13 +206,7 @@ else
     fail "MANIFEST.cfg missing m29.2 row with status=todo"
 fi
 
-# Verify dependency columns in MANIFEST
-if grep -qE '^m29\.1\|[^|]+\|[^|]+\|m27\|' "$MANIFEST" 2>/dev/null; then
-    pass "MANIFEST.cfg m29.1 row has depends_on=m27"
-else
-    fail "MANIFEST.cfg m29.1 row missing depends_on=m27"
-fi
-
+# Verify dependency column for m29.2 (m29.1 depends_on already verified in Suite 1)
 if grep -qE '^m29\.2\|[^|]+\|[^|]+\|m29\.1\|' "$MANIFEST" 2>/dev/null; then
     pass "MANIFEST.cfg m29.2 row has depends_on=m29.1"
 else

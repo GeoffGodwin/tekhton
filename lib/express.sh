@@ -4,9 +4,9 @@ set -euo pipefail
 # express.sh — Express mode: zero-config pipeline execution
 #
 # Sourced by tekhton.sh — do not run directly.
-# Depends on: common.sh (log, warn, success), detect.sh, detect_commands.sh,
-#             config.sh (_parse_config_file, _clamp_config_value),
-#             config_defaults.sh
+# Depends on: common.sh (log, warn, success; provides _tk_detect_* wrappers
+#             over the Go detect engine), config.sh (_parse_config_file,
+#             _clamp_config_value), config_defaults.sh
 # Provides: enter_express_mode(), persist_express_config()
 # =============================================================================
 
@@ -25,14 +25,13 @@ detect_express_config() {
     # Project name: from package manifest or directory basename
     _EXPRESS_PROJECT_NAME=$(_detect_express_project_name "$proj_dir")
 
-    # Language detection (reuses M12 detect.sh — already fast)
-    _EXPRESS_LANGUAGES=$(detect_languages "$proj_dir" 2>/dev/null || true)
+    # Language detection (via the Go engine — single JSON fetch then jq).
+    _EXPRESS_LANGUAGES=$(_tk_detect_languages "$proj_dir" 2>/dev/null || true)
 
-    # Command detection (fast subset — no CI/CD, no workspace analysis)
-    # detect_commands already handles modular detection; the heavy CI/CD
-    # parts only run if detect_ci_config is loaded (which it is, but
-    # the function is fast when no CI files exist)
-    _EXPRESS_COMMANDS=$(detect_commands "$proj_dir" 2>/dev/null || true)
+    # Command detection — the Go engine runs the full pipeline (CI/CD
+    # injection, package managers, pre-commit) but skips work when no
+    # corresponding manifest exists, so this stays fast.
+    _EXPRESS_COMMANDS=$(_tk_detect_commands "$proj_dir" 2>/dev/null || true)
 }
 
 # _detect_express_project_name — Infer project name from manifest or dirname.
