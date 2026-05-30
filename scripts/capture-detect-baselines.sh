@@ -43,23 +43,23 @@ error()   { :; }
 success() { :; }
 header()  { :; }
 
-# shellcheck source=../lib/detect.sh
+# shellcheck disable=SC1091  # sourced at runtime from TEKHTON_HOME — paths resolved per invocation
 source "${TEKHTON_HOME}/lib/detect.sh"
-# shellcheck source=../lib/detect_commands.sh
+# shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/detect_commands.sh"
-# shellcheck source=../lib/detect_workspaces.sh
+# shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/detect_workspaces.sh"
-# shellcheck source=../lib/detect_services.sh
+# shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/detect_services.sh"
-# shellcheck source=../lib/detect_ci.sh
+# shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/detect_ci.sh"
-# shellcheck source=../lib/detect_infrastructure.sh
+# shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/detect_infrastructure.sh"
-# shellcheck source=../lib/detect_test_frameworks.sh
+# shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/detect_test_frameworks.sh"
-# shellcheck source=../lib/detect_doc_quality.sh
+# shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/detect_doc_quality.sh"
-# shellcheck source=../lib/detect_report.sh
+# shellcheck disable=SC1091
 source "${TEKHTON_HOME}/lib/detect_report.sh"
 
 # Detector bodies short-circuit via `&&`-chained tests; the trailing test

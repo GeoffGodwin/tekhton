@@ -28,6 +28,7 @@ BASELINE_DIR="${FIXTURE_ROOT}/baselines"
 TEKHTON_BIN="${REPO_ROOT}/bin/tekhton"
 
 # shellcheck source=tests/lib/parity.sh
+# shellcheck disable=SC1091
 source "${REPO_ROOT}/tests/lib/parity.sh"
 
 if ! command -v go >/dev/null 2>&1; then
