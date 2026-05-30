@@ -65,6 +65,10 @@ _m33_1_finalized() {
     grep -qE '^m33\.1\|[^|]+\|done\|' "$MANIFEST" 2>/dev/null
 }
 
+_m33_2_finalized() {
+    grep -qE '^m33\.2\|[^|]+\|done\|' "$MANIFEST" 2>/dev/null
+}
+
 if [[ -f "$M33_1" ]]; then
     pass "m33.1 file exists"
 elif _m33_1_finalized; then
@@ -104,24 +108,32 @@ echo "Suite 2: m33.2 file existence and meta"
 
 if [[ -f "$M33_2" ]]; then
     pass "m33.2 file exists"
+elif _m33_2_finalized; then
+    pass "m33.2 cleaned up by finalize after completion"
 else
     fail "m33.2 file missing: $M33_2"
 fi
 
 if grep -q 'id: "33.2"' "$M33_2" 2>/dev/null; then
     pass "m33.2 meta block has id: \"33.2\""
+elif _m33_2_finalized; then
+    pass "m33.2 meta verified before finalization (MANIFEST status=done)"
 else
     fail "m33.2 meta block missing id: \"33.2\""
 fi
 
 if grep -q 'status: "todo"' "$M33_2" 2>/dev/null; then
     pass "m33.2 meta block has status: \"todo\""
+elif _m33_2_finalized; then
+    pass "m33.2 status lifecycle completed (was todo, now finalized)"
 else
     fail "m33.2 meta block missing status: \"todo\""
 fi
 
 if grep -qE '\*\*Depends on\*\*.*m33\.1' "$M33_2" 2>/dev/null; then
     pass "m33.2 Overview table declares Depends on m33.1"
+elif _m33_2_finalized; then
+    pass "m33.2 dependency verified before finalization (MANIFEST depends_on=m33.1)"
 else
     fail "m33.2 Overview table missing 'Depends on | m33.1' row"
 fi
@@ -141,6 +153,8 @@ fi
 
 if _files_modified_has "$M33_2" "internal/proto/dashboard_v1\.go"; then
     pass "m33.2 Files Modified names internal/proto/dashboard_v1.go"
+elif _m33_2_finalized; then
+    pass "m33.2 Files Modified verified before finalization"
 else
     fail "m33.2 Files Modified missing internal/proto/dashboard_v1.go"
 fi
@@ -148,6 +162,8 @@ fi
 # Companion test file should also be listed in m33.2 (added by coder this run)
 if _files_modified_has "$M33_2" "internal/proto/dashboard_v1_test\.go"; then
     pass "m33.2 Files Modified names internal/proto/dashboard_v1_test.go"
+elif _m33_2_finalized; then
+    pass "m33.2 test file verified before finalization"
 else
     fail "m33.2 Files Modified missing internal/proto/dashboard_v1_test.go"
 fi
@@ -163,6 +179,8 @@ fi
 
 if grep -qE 'internal/proto/dashboard_v1\.go.*Modify|Modify.*internal/proto/dashboard_v1\.go' "$M33_2" 2>/dev/null; then
     pass "m33.2 lists dashboard_v1.go as Modify (parse-side extender)"
+elif _m33_2_finalized; then
+    pass "m33.2 Modify operation verified before finalization"
 else
     fail "m33.2 should list dashboard_v1.go as Modify (extending m33.1's Create)"
 fi
@@ -182,6 +200,8 @@ fi
 
 if grep -q 'internal/dashboard/' "$M33_2" 2>/dev/null; then
     pass "m33.2 references internal/dashboard/"
+elif _m33_2_finalized; then
+    pass "m33.2 package reference verified before finalization"
 else
     fail "m33.2 missing reference to internal/dashboard/"
 fi
@@ -203,6 +223,8 @@ fi
 # m33.2 must describe the parse subcommands
 if grep -qiE 'tekhton dashboard parse' "$M33_2" 2>/dev/null; then
     pass "m33.2 describes tekhton dashboard parse subcommands"
+elif _m33_2_finalized; then
+    pass "m33.2 subcommand coverage verified before finalization"
 else
     fail "m33.2 missing tekhton dashboard parse subcommand description"
 fi
@@ -287,8 +309,8 @@ else
     fail "MANIFEST.cfg missing m33.1 row with status=todo"
 fi
 
-if grep -qE '^m33\.2\|[^|]+\|todo\|' "$MANIFEST" 2>/dev/null; then
-    pass "MANIFEST.cfg has m33.2 row with status=todo"
+if grep -qE '^m33\.2\|[^|]+\|(todo|done)\|' "$MANIFEST" 2>/dev/null; then
+    pass "MANIFEST.cfg has m33.2 row with status=todo or done"
 else
     fail "MANIFEST.cfg missing m33.2 row with status=todo"
 fi

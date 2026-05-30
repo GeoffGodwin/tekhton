@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-05-30 | "unknown"] `tests/test_m33_milestone_structure.sh` appears staged in git alongside the m29.1 shellcheck fixes but is not described in the coder's primary Files Modified section and has no stated rationale in the summary. The file content (m33 milestone structure verification) looks internally coherent, but its presence in this commit is unexplained. Worth confirming the staging is intentional before finalizing the milestone.
 - [ ] [2026-05-30 | "unknown"] `parse_reviewer.go:19` â `mustCompileAnchored` is a misleading name. The function is `regexp.MustCompile` verbatim; the anchors come from the caller's pattern string, not from this helper. Rename to `mustCompile` or drop the helper and inline `regexp.MustCompile` directly.
 - [ ] [2026-05-30 | "unknown"] `parse_intake.go:25` â `statusInlineRE` is declared in the intake parser's var block but consumed only by `parse_coder.go:28`. Cross-file sharing within a package is valid Go, but the variable should live next to its only caller. Move to `parse_coder.go`.
 - [ ] [2026-05-30 | "unknown"] `parse_intake.go:109` â `atoiSafe` manually re-implements digit-by-digit parsing instead of `strconv.Atoi`. Input is already constrained to pure-digit strings by the calling regex, so `strconv.Atoi` is equivalent and more idiomatic. Harmless, but nonstandard.
