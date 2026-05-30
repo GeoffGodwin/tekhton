@@ -5,11 +5,12 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely bounded: six explicit goals, explicit in/out split between m29.1 and m29.2, and the sequencing note explains why the split was made (2,666-line subsystem vs m22's 1,500-line preflight; m23 partial cascade cited as the counter-example)
-- Go interface signatures, struct field lists, and function shapes are fully sketched in pseudo-code — two competent developers reading this would land the same design
-- Acceptance criteria are specific and mechanical: named test functions (TestLanguagesFirstInvariant, TestReadOnlyContract, TestRenderMatchesBashShape), exact CLI invocations with expected exit codes and JSON field checks, git diff --stat invariant for zero bash changes, and explicit go test + shellcheck commands
-- The no-bash-change invariant is doubly enforced: an acceptance criterion (git diff --stat HEAD~1 -- lib/detect shows zero output) and a Watch For item — no ambiguity about whether bash files may be touched
-- Watch For items are load-bearing, not decorative: the read-only contract test, dogfood stability invariant, languages-first invariant, and one-time baseline capture are all operationally actionable
-- Migration impact: no new user-facing config keys, no format changes to existing outputs, tekhton detect summary is Hidden — no migration section required and the acceptance criteria cover the stability invariant explicitly
-- Dependency on m27 is declared; prior arc context table maps every design decision back to a completed milestone
-- Seeds Forward section is scoped and deferred cleanly — nothing bleeds into m29.1's acceptance criteria
+- Scope is precisely defined: eight Go files to create, ten bash files to delete, six bash caller files to migrate — all with file:line references and exact function names
+- Acceptance criteria are exhaustive and machine-verifiable: every criterion includes the exact shell command to validate it (`find lib -name 'detect*.sh'`, `grep -rE ...`, `grep -c '(none detected)' ...`, etc.)
+- Sequencing constraint is unambiguous: the seven-step atomic migration order is explicit and the rationale (prevent mixed-path inconsistency) is spelled out
+- Ambiguities are proactively surfaced in Watch For rather than left implicit: heuristic ordering risk in `ai_artifacts.go`, no-op uncertainty for `detect_ui_framework`, frozen baselines contract, `command -v` guard collapse hazard — each with a resolution path
+- The one acceptance criterion/Watch-For inconsistency (`detect_ui_framework`: criterion says always rewrite, Watch For says consider deleting if no-op) is minor and self-resolving — the acceptance criterion is the binding gate
+- `jq` is an implicit runtime dependency for the `_tk_detect_*` wrappers; this is almost certainly already a Tekhton system dependency given its use elsewhere, and no acceptance criterion tests for its availability — low risk but worth noting
+- No UI components modified; UI testability dimension is not applicable
+- No "Migration impact" section, but this is internal tooling: the caller migration table in Goal 5 is functionally equivalent and fully covers the concern
+- Two competent developers would produce essentially the same implementation from this spec
