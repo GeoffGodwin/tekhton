@@ -16,11 +16,12 @@
 #
 # Sourced by tekhton.sh (via tekhton-legacy.sh) — do not run directly.
 # Expects: PROJECT_DIR, TEKHTON_HOME (set by caller/config)
+#
+# m33.2: the bash parsers (lib/dashboard_parsers*.sh) are gone; the Go
+# StatusReader behind `tekhton dashboard parse <kind>` is the canonical
+# read side. This shim retains only the enable check + emit-side delegators.
 # =============================================================================
 set -euo pipefail
-
-# shellcheck source=lib/dashboard_parsers.sh
-source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
 
 # --- Enable check (still bash for `set -u` safety in legacy callers) ---------
 

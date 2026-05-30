@@ -11,33 +11,55 @@ import (
 
 // --- Metrics -----------------------------------------------------------------
 
-// DashboardRunSummaryStage is one stage entry inside a per-run summary.
-// Field shape mirrors lib/dashboard_parsers_runs.sh.
+// DashboardRunSummaryStage is one stage entry inside a per-run summary. The
+// bash output emits stages as a string-keyed map (`{"coder":{...}}`), so the
+// per-entry shape has no `name` field — the stage name is the map key. Field
+// order matches lib/dashboard_parsers_runs.sh:255 (cycles/rework_cycles
+// emitted before turns when populated).
 type DashboardRunSummaryStage struct {
-	Name      string `json:"name"`
-	Status    string `json:"status,omitempty"`
-	Turns     int    `json:"turns"`
-	Budget    int    `json:"budget,omitempty"`
-	DurationS int    `json:"duration_s"`
+	Cycles       int `json:"cycles,omitempty"`
+	ReworkCycles int `json:"rework_cycles,omitempty"`
+	Turns        int `json:"turns"`
+	DurationS    int `json:"duration_s"`
+	Budget       int `json:"budget"`
 }
 
-// DashboardRunSummary is one entry of the metrics.js runs array. The bash
-// parser reads either metrics.jsonl (M21+ canonical) or per-run
-// RUN_SUMMARY_*.json files (fallback). Field grouping matches the JSONL
-// record shape.
+// DashboardRunSummary is one entry of the metrics.js runs array. Field shape
+// mirrors the bash output of lib/dashboard_parsers_runs.sh — the JSON the JS
+// reader consumes, NOT the raw metrics.jsonl input. The parser reads either
+// metrics.jsonl (M21+ canonical) or per-run RUN_SUMMARY_*.json files
+// (fallback) and emits this shape.
 type DashboardRunSummary struct {
-	Timestamp string                     `json:"timestamp"`
-	Task      string                     `json:"task"`
-	Milestone string                     `json:"milestone,omitempty"`
-	Status    string                     `json:"status"`
-	Stages    []DashboardRunSummaryStage `json:"stages,omitempty"`
-	Turns     int                        `json:"turns"`
-	DurationS int                        `json:"duration_s"`
+	Outcome    string                              `json:"outcome"`
+	TotalTurns int                                 `json:"total_turns"`
+	TotalTimeS int                                 `json:"total_time_s"`
+	Milestone  string                              `json:"milestone"`
+	RunType    string                              `json:"run_type"`
+	TaskLabel  string                              `json:"task_label"`
+	Timestamp  string                              `json:"timestamp"`
+	Team       string                              `json:"team,omitempty"`
+	Stages     map[string]DashboardRunSummaryStage `json:"stages"`
+
+	// Legacy RUN_SUMMARY_*.json fallback enrichment (M132). These fields are
+	// emitted only when the parser reads from a RUN_SUMMARY file rather than
+	// metrics.jsonl. The JS reader treats them defensively.
+	RecoveryRoute   string `json:"recovery_route,omitempty"`
+	BuildFixOutcome string `json:"build_fix_outcome,omitempty"`
 }
 
 // DashboardMetricsV1 is the metrics.js payload.
 type DashboardMetricsV1 struct {
 	Runs []DashboardRunSummary `json:"runs"`
+}
+
+// MarshalJSON emits `"runs":[]` for a nil slice (matching bash behavior).
+// json.Marshal would otherwise emit `"runs":null`.
+func (p DashboardMetricsV1) MarshalJSON() ([]byte, error) {
+	type alias DashboardMetricsV1
+	if p.Runs == nil {
+		p.Runs = []DashboardRunSummary{}
+	}
+	return json.Marshal(alias(p))
 }
 
 func (p *DashboardMetricsV1) Validate() error { return nil }

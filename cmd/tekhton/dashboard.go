@@ -23,6 +23,7 @@ func newDashboardCmd() *cobra.Command {
 	c.AddCommand(newDashboardSyncCmd())
 	c.AddCommand(newDashboardCleanupCmd())
 	c.AddCommand(newDashboardEmitCmd())
+	c.AddCommand(newDashboardParseCmd())
 	return c
 }
 

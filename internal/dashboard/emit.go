@@ -92,6 +92,12 @@ type Emitter struct {
 
 	// Time source. Injected for tests; defaults to time.Now.
 	Now func() time.Time
+
+	// reader is the parser dispatcher (m33.2). NewEmitter constructs one;
+	// tests that construct an Emitter directly may leave it nil — the
+	// parsers use the no-arg StatusReader form, which works because the
+	// readers themselves are pure on input.
+	reader *StatusReader
 }
 
 // NewEmitter reads the bash-flattened environment and returns a populated
@@ -148,7 +154,18 @@ func NewEmitter(projectDir string) *Emitter {
 	}
 	e.ManifestPath = filepath.Join(e.MilestoneDir, envOr("MILESTONE_MANIFEST", "MANIFEST.cfg"))
 	e.populateParallelMode()
+	e.reader = NewStatusReader(e)
 	return e
+}
+
+// statusReader returns the Emitter's StatusReader, lazily constructing one
+// when nil (the test fixtures construct Emitters directly without going
+// through NewEmitter). Pure dispatcher; no I/O.
+func (e *Emitter) statusReader() *StatusReader {
+	if e.reader == nil {
+		e.reader = NewStatusReader(e)
+	}
+	return e.reader
 }
 
 // populateParallelMode parses the _PARALLEL_TEAMS env var (space- or

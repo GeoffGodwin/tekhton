@@ -660,7 +660,9 @@ if [ "${1:-}" = "--diagnose" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     source "${TEKHTON_HOME}/lib/causality.sh"
     source "${TEKHTON_HOME}/lib/causality_query.sh"
-    source "${TEKHTON_HOME}/lib/dashboard_parsers.sh"
+    # m33.2: dashboard_parsers.sh deleted; the diagnose writer that used to
+    # pull in `_to_js_*` helpers from there now relies on the Go dashboard
+    # subsystem (or on its own inline writes).
     # m25: failure_context slot helpers ported to internal/failure_context;
     # bash diagnose writer defensively skips slot output when helpers are
     # absent.

@@ -157,6 +157,86 @@ func TestDashboardActionItemsV1_RejectInvalidSeverity(t *testing.T) {
 	}
 }
 
+func TestDashboardRunSummary_RoundTrip(t *testing.T) {
+	p := DashboardRunSummary{
+		Outcome:    "success",
+		TotalTurns: 18,
+		TotalTimeS: 420,
+		Milestone:  "m33.2",
+		RunType:    "milestone",
+		TaskLabel:  "dashboard parsers",
+		Timestamp:  "2026-05-29T17:00:00Z",
+		Stages: map[string]DashboardRunSummaryStage{
+			"coder":    {Turns: 12, DurationS: 240, Budget: 50},
+			"reviewer": {Cycles: 2, Turns: 4, DurationS: 60, Budget: 10},
+		},
+	}
+	b, err := json.Marshal(&p)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got DashboardRunSummary
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Outcome != "success" || got.TotalTurns != 18 {
+		t.Fatalf("round-trip lost top-level fields: %+v", got)
+	}
+	if got.Stages["coder"].Turns != 12 {
+		t.Fatalf("round-trip lost stages map: %+v", got.Stages)
+	}
+	if got.Stages["reviewer"].Cycles != 2 {
+		t.Fatalf("round-trip lost cycles: %+v", got.Stages["reviewer"])
+	}
+}
+
+func TestDashboardMetricsV1_EmptyRuns(t *testing.T) {
+	p := DashboardMetricsV1{}
+	b, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(b) != `{"runs":[]}` {
+		t.Fatalf("empty metrics must marshal as {\"runs\":[]}; got %s", b)
+	}
+}
+
+func TestDashboardIntakeReport_RoundTrip(t *testing.T) {
+	p := DashboardIntakeReport{Verdict: "PASS", Confidence: 80, TaskText: "do the thing"}
+	b, _ := json.Marshal(p)
+	var got DashboardIntakeReport
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Verdict != "PASS" || got.Confidence != 80 || got.TaskText != "do the thing" {
+		t.Fatalf("round-trip lost fields: %+v", got)
+	}
+}
+
+func TestDashboardCoderReport_RoundTrip(t *testing.T) {
+	p := DashboardCoderReport{Status: "COMPLETE", FilesModified: 7}
+	b, _ := json.Marshal(p)
+	var got DashboardCoderReport
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Status != "COMPLETE" || got.FilesModified != 7 {
+		t.Fatalf("round-trip lost fields: %+v", got)
+	}
+}
+
+func TestDashboardReviewerReport_RoundTrip(t *testing.T) {
+	p := DashboardReviewerReport{Verdict: "CHANGES_REQUIRED"}
+	b, _ := json.Marshal(p)
+	var got DashboardReviewerReport
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got.Verdict != "CHANGES_REQUIRED" {
+		t.Fatalf("round-trip lost fields: %+v", got)
+	}
+}
+
 func TestDashboardConstants(t *testing.T) {
 	// Spot-check the JS var name constants — these are part of the contract
 	// because the browser reader addresses them.
