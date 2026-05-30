@@ -161,10 +161,13 @@ trace_effect=$(grep -B2 -A5 "trace_effect_chain" "${TEKHTON_HOME}/lib/causality_
 [[ -n "$trace_effect" ]] || fail "trace_effect_chain limitation not documented"
 pass "Fix #19: trace_effect_chain limitation documented"
 
-# === Fix #20: m33.1 — dashboard sourcing now via dashboard_shim.sh ===
-sourcing=$(grep "source.*dashboard_parsers" "${TEKHTON_HOME}/lib/dashboard_shim.sh" | grep "TEKHTON_HOME" || echo "")
-[[ -n "$sourcing" ]] || fail "dashboard_shim.sh does not source dashboard_parsers.sh via TEKHTON_HOME"
-pass "Fix #20: dashboard_shim.sh uses TEKHTON_HOME sourcing pattern"
+# === Fix #20: m33.1 — dashboard delegated to Go binary ===
+# m33.2: lib/dashboard_parsers*.sh deleted. The shim no longer sources any
+# parser file; the read side lives in internal/dashboard/parse_*.go behind
+# the StatusReader. Confirm the shim still execs the Go binary instead.
+shim_bin=$(grep "tekhton dashboard" "${TEKHTON_HOME}/lib/dashboard_shim.sh" || echo "")
+[[ -n "$shim_bin" ]] || fail "dashboard_shim.sh does not exec tekhton dashboard binary"
+pass "Fix #20: dashboard_shim.sh delegates to tekhton dashboard binary"
 
 # === Fix #21: _STAGE_BUDGET[intake] assignment ===
 # m20: stage-budget assignment still lives in tekhton-legacy.sh.

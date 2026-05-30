@@ -44,9 +44,10 @@ mkdir -p "$LOG_DIR/runs" "$TMPDIR/.claude/dashboard/data" "$TMPDIR/.claude/miles
 # --- Source dependencies -----------------------------------------------------
 source "${TEKHTON_HOME}/lib/common.sh"
 source "${TEKHTON_HOME}/lib/causality.sh"
-# Mock _write_js_file since dashboard_parsers.sh is needed
-_write_js_file() { return 0; }
-_to_js_timestamp() { echo "2026-03-23T00:00:00Z"; }
+# m33.2: dashboard_parsers.sh deleted; the diagnose writer now uses
+# _diagnose_write_js_file from lib/diagnose_output_extra.sh. Mock it for
+# tests that exercise the dashboard-disabled short-circuit.
+_diagnose_write_js_file() { return 0; }
 _json_escape() {
     local s="$1"
     s="${s//\\/\\\\}"
@@ -568,10 +569,12 @@ _reset_fixture
 # Override is_dashboard_enabled to return true for this suite
 is_dashboard_enabled() { return 0; }
 
-# Capture what _write_js_file is called with
+# Capture what _diagnose_write_js_file is called with. m33.2: the writer
+# moved out of the deleted dashboard_parsers.sh into lib/diagnose_output_extra.sh
+# under the new name to make the dependency direction explicit.
 _CAPTURED_JS_KEY=""
 _CAPTURED_JS_JSON=""
-_write_js_file() {
+_diagnose_write_js_file() {
     # $1 = output path, $2 = key, $3 = json
     _CAPTURED_JS_KEY="$2"
     _CAPTURED_JS_JSON="$3"

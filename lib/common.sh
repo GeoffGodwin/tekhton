@@ -223,11 +223,11 @@ report_orchestration_status() {
 
 # --- JSON escape (shared helper) ---------------------------------------------
 # m02 wedge: lib/causality.sh's writer moved to Go (`tekhton causal emit`),
-# but `_json_escape` is still consumed by dashboard.sh, dashboard_parsers.sh,
-# health.sh, run_memory.sh, and ~20 other lib files that build JSON in bash.
-# Hosting the canonical definition here keeps every sourcing path correct,
-# including the early-exit `--diagnose` branch that loads dashboard_parsers.sh
-# without going through crawler.sh.
+# but `_json_escape` is still consumed by health.sh, run_memory.sh, and
+# ~20 other lib files that build JSON in bash. m33 deleted dashboard.sh and
+# dashboard_parsers*.sh from the consumer list (the dashboard data layer is
+# now Go-owned), so the hot callers are diagnose.sh / health.sh / notes.sh
+# and the legacy intake/test-audit writers.
 #
 # Escapes backslash, double-quote, newline, tab, and carriage return for JSON.
 _json_escape() {
