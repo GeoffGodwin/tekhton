@@ -1,15 +1,21 @@
 ## Planned Tests
-- [x] `tests/test_m33_milestone_structure.sh` — verify m33 parent AC: child files exist with correct meta, depends-on rows, proto file references, package references, split status, and MANIFEST rows
-- [x] `internal/dashboard/coverage_test.go` — concurrent atomicity of WriteJSFile; EmitDiagnosis available=true path; EmitTeamState errEmptyTeamID sentinel and delegation path
-- [x] `internal/dashboard/parse_runs_test.go` — add zero-byte and blank-lines-only metrics.jsonl cases: os.Open succeeds, scanner yields nothing, returns nil triggering RUN_SUMMARY fallback
+- [x] `internal/detect/detect_test.go` — engine invariants (languages-first, error propagation, cache reset, Summary.ProjectType fallback)
+- [x] `internal/detect/languages_test.go` — LanguagesDetector happy paths, confidence scoring, framework detection, CLAUDE.md fallback
+- [x] `internal/detect/report_test.go` — Render() markdown shape matches bash baseline format
+- [x] `internal/detect/readonly_test.go` — package read-only contract (no forbidden write APIs)
+- [x] `cmd/tekhton/detect_test.go` — CLI smoke tests (help, --json shape, --markdown default, mutual-exclusion guard)
+- [x] `tests/test_detect_parity.sh` — byte-identical parity gate across three fixtures
 
 ## Test Run Results
-Passed: 35  Failed: 0
+Passed: 25  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_m33_milestone_structure.sh`
-- [x] `internal/dashboard/coverage_test.go`
-- [x] `internal/dashboard/parse_runs_test.go`
+- [x] `internal/detect/detect_test.go`
+- [x] `internal/detect/languages_test.go`
+- [x] `internal/detect/report_test.go`
+- [x] `internal/detect/readonly_test.go`
+- [x] `cmd/tekhton/detect_test.go`
+- [x] `tests/test_detect_parity.sh`
