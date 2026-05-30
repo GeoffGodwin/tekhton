@@ -1,0 +1,10 @@
+{
+  "outcome": "success",
+  "total_turns": 18,
+  "total_time_s": 150,
+  "milestone": "m06_test",
+  "task_label": "Legacy fallback test 2",
+  "timestamp": "2026-04-02T13:00:00Z",
+  "build_fix_stats": {"outcome": "passed", "attempts": 1},
+  "recovery_routing": {"route_taken": "retry"}
+}

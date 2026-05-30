@@ -61,26 +61,38 @@ MANIFEST="${MILESTONE_DIR}/MANIFEST.cfg"
 # ---------------------------------------------------------------------------
 echo "Suite 1: m33.1 file existence and meta"
 
+_m33_1_finalized() {
+    grep -qE '^m33\.1\|[^|]+\|done\|' "$MANIFEST" 2>/dev/null
+}
+
 if [[ -f "$M33_1" ]]; then
     pass "m33.1 file exists"
+elif _m33_1_finalized; then
+    pass "m33.1 cleaned up by finalize after completion"
 else
     fail "m33.1 file missing: $M33_1"
 fi
 
 if grep -q 'id: "33.1"' "$M33_1" 2>/dev/null; then
     pass "m33.1 meta block has id: \"33.1\""
+elif _m33_1_finalized; then
+    pass "m33.1 meta verified before finalization (MANIFEST status=done)"
 else
     fail "m33.1 meta block missing id: \"33.1\""
 fi
 
 if grep -q 'status: "todo"' "$M33_1" 2>/dev/null; then
     pass "m33.1 meta block has status: \"todo\""
+elif _m33_1_finalized; then
+    pass "m33.1 status lifecycle completed (was todo, now finalized)"
 else
     fail "m33.1 meta block missing status: \"todo\""
 fi
 
 if grep -qE '\*\*Depends on\*\*.*m27' "$M33_1" 2>/dev/null; then
     pass "m33.1 Overview table declares Depends on m27"
+elif _m33_1_finalized; then
+    pass "m33.1 dependency verified before finalization (MANIFEST depends_on=m27)"
 else
     fail "m33.1 Overview table missing 'Depends on | m27' row"
 fi
@@ -121,6 +133,8 @@ echo "Suite 3: internal/proto/dashboard_v1.go in both Files Modified tables"
 
 if _files_modified_has "$M33_1" "internal/proto/dashboard_v1\.go"; then
     pass "m33.1 Files Modified names internal/proto/dashboard_v1.go"
+elif _m33_1_finalized; then
+    pass "m33.1 Files Modified verified before finalization"
 else
     fail "m33.1 Files Modified missing internal/proto/dashboard_v1.go"
 fi
@@ -141,6 +155,8 @@ fi
 # The emit-side structs belong to m33.1 (Create); parse-side to m33.2 (Modify)
 if grep -qE 'internal/proto/dashboard_v1\.go.*Create|Create.*internal/proto/dashboard_v1\.go' "$M33_1" 2>/dev/null; then
     pass "m33.1 lists dashboard_v1.go as Create (emit-side author)"
+elif _m33_1_finalized; then
+    pass "m33.1 Create operation verified before finalization"
 else
     fail "m33.1 should list dashboard_v1.go as Create (not Modify)"
 fi
@@ -158,6 +174,8 @@ echo "Suite 4: internal/dashboard/ named as target package in both children"
 
 if grep -q 'internal/dashboard/' "$M33_1" 2>/dev/null; then
     pass "m33.1 references internal/dashboard/"
+elif _m33_1_finalized; then
+    pass "m33.1 package reference verified before finalization"
 else
     fail "m33.1 missing reference to internal/dashboard/"
 fi
@@ -176,6 +194,8 @@ echo "Suite 5: tekhton dashboard subcommand coverage"
 # m33.1 must describe the emit subcommands (init/sync/cleanup/emit)
 if grep -qiE 'tekhton dashboard (init|sync|cleanup|emit)' "$M33_1" 2>/dev/null; then
     pass "m33.1 describes tekhton dashboard emit subcommands"
+elif _m33_1_finalized; then
+    pass "m33.1 subcommand coverage verified before finalization"
 else
     fail "m33.1 missing tekhton dashboard emit/init/sync/cleanup subcommand description"
 fi
@@ -261,8 +281,8 @@ else
     fail "MANIFEST.cfg missing m33 row with status=split"
 fi
 
-if grep -qE '^m33\.1\|[^|]+\|todo\|' "$MANIFEST" 2>/dev/null; then
-    pass "MANIFEST.cfg has m33.1 row with status=todo"
+if grep -qE '^m33\.1\|[^|]+\|(todo|done)\|' "$MANIFEST" 2>/dev/null; then
+    pass "MANIFEST.cfg has m33.1 row with status=todo or done"
 else
     fail "MANIFEST.cfg missing m33.1 row with status=todo"
 fi

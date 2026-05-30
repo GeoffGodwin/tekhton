@@ -12,6 +12,13 @@
 # =============================================================================
 set -euo pipefail
 
+# m33.2: dashboard parsers ported to Go (internal/dashboard/parse_*.go behind
+# the StatusReader). This test sourced lib/dashboard_parsers.sh, now deleted.
+# The new contract gate is tests/test_dashboard_parse_parity.sh plus the
+# parse_*_test.go unit tests under internal/dashboard.
+echo "SKIP: tests/test_dashboard_parsers_delegation.sh — m33.2. See tests/test_dashboard_parse_parity.sh + internal/dashboard parse_*_test.go."
+exit 0
+
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT

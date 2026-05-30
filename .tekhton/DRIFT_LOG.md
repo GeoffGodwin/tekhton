@@ -3,12 +3,15 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 165
+- Runs since audit: 166
 =======
-- Runs since audit: 165
+- Runs since audit: 166
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-30 | "unknown"] `internal/dashboard/emit_reports.go:84-101` â `parseTestAudit` stays inline in the emitter rather than behind a `StatusReader` method. Reasonable for now (simpler than the other parsers), but `EmitReports` is the only emit function that doesn't follow the `e.statusReader().Parse<Kind>(...)` pattern. If a `ParseTestAudit` method is ever needed for a Cobra arm or isolation testing, the pattern will need retrofitting.
+- [2026-05-30 | "unknown"] `lib/diagnose_output_extra.sh::emit_dashboard_diagnosis` + `internal/dashboard` â Two write paths remain for `data/diagnosis.js`: bash `emit_dashboard_diagnosis` (via the inlined `_diagnose_write_js_file` helper) and Go `EmitDiagnosis`. Coder correctly marks this out-of-scope; surfacing here so it reaches the drift audit cycle.
+- [2026-05-30 | "unknown"] The three m33.1 non-blocking notes carried forward (from the prior review cycle) that were in-scope for m33.2: (1) `dashboard_shim.sh` stale source line â RESOLVED (removed). (2) `dashboard_v1_extra.go:154` camelCase init fields â still present but unchanged by m33.2 scope; remains a pending concern for the JS reader alignment check.
 - [2026-05-29 | "unknown"] `internal/dashboard/emit_timeline.go:108`: `default` arm of `timelinePassFn` behaves identically to the `verbose` arm â an unrecognized `DASHBOARD_VERBOSITY` value silently shows everything rather than warning. Misconfigured values are invisible to operators.
 - [2026-05-29 | "unknown"] `internal/dashboard/emit_reports.go:156â179`: `parseReviewerReport` uses a hand-rolled line scanner while `parseIntakeReport` uses `verdictInlineRE`. Two subtly different parsers for the same heading-followed-by-verdict pattern; one reader for both would reduce drift.
 - [2026-05-29 | "unknown"] `internal/dashboard/dashboard.go:154â168`: `jsonEscape` is defined but never called in the package. Dead code from an earlier draft; actual escaping is handled by `json.Marshal` in `jsfile.go`.

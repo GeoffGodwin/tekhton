@@ -1,0 +1,8 @@
+{
+  "outcome": "success",
+  "total_agent_calls": 25,
+  "wall_clock_seconds": 200,
+  "milestone": "m05_test",
+  "task_label": "Legacy fallback test 1",
+  "timestamp": "2026-04-02T12:00:00Z"
+}
