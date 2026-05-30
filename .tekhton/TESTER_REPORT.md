@@ -7,7 +7,7 @@
 - [x] `tests/test_detect_parity.sh` — byte-identical parity gate across three fixtures
 
 ## Test Run Results
-Passed: 25  Failed: 0
+Passed: 25 Go + 499 Shell  Failed: 0
 
 ## Bugs Found
 None
