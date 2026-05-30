@@ -5,12 +5,13 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely defined: eight Go files to create, ten bash files to delete, six bash caller files to migrate — all with file:line references and exact function names
-- Acceptance criteria are exhaustive and machine-verifiable: every criterion includes the exact shell command to validate it (`find lib -name 'detect*.sh'`, `grep -rE ...`, `grep -c '(none detected)' ...`, etc.)
-- Sequencing constraint is unambiguous: the seven-step atomic migration order is explicit and the rationale (prevent mixed-path inconsistency) is spelled out
-- Ambiguities are proactively surfaced in Watch For rather than left implicit: heuristic ordering risk in `ai_artifacts.go`, no-op uncertainty for `detect_ui_framework`, frozen baselines contract, `command -v` guard collapse hazard — each with a resolution path
-- The one acceptance criterion/Watch-For inconsistency (`detect_ui_framework`: criterion says always rewrite, Watch For says consider deleting if no-op) is minor and self-resolving — the acceptance criterion is the binding gate
-- `jq` is an implicit runtime dependency for the `_tk_detect_*` wrappers; this is almost certainly already a Tekhton system dependency given its use elsewhere, and no acceptance criterion tests for its availability — low risk but worth noting
-- No UI components modified; UI testability dimension is not applicable
-- No "Migration impact" section, but this is internal tooling: the caller migration table in Goal 5 is functionally equivalent and fully covers the concern
-- Two competent developers would produce essentially the same implementation from this spec
+- **Scope is precisely bounded**: Six bash files named explicitly, seven Go files named with per-file responsibilities, Cobra surface defined down to subcommand names, and out-of-scope work (rescan, m30.2) explicitly excluded with a placeholder-error contract.
+- **Acceptance criteria are highly specific and testable**: Every criterion is a runnable command (`go build`, `grep -n`, `find lib`, `test -f`) or an exact return-value assertion (`annotatePackage("react")` → `"Frontend framework"`). No vague aspirations.
+- **Seven manifest-parser invariants are documented individually**: Rule-ordering, state-machine transitions, and the "simple form before table form" Cargo invariant are each called out. A developer cannot inadvertently swap condition order — the parity gate would catch it, and the Watch For section explains why.
+- **Emit-phase ordering invariant is explicit**: `emitMetaJSON` MUST run after `emitInventoryJSONL`; a test case for out-of-order invocation is required. The orchestrator is designed to enforce this via typed dependencies rather than convention.
+- **Atomic-write contract is preserved and verified**: Temp-file-in-IndexDir + rename pattern is specified, and a unit test asserting the temp path prefix is required — the constraint is not just stated but gated.
+- **Baseline generation workflow is described**: "Capture baseline BEFORE the port (one-time, committed under testdata/baselines/)" is explicit. The developer knows to run the bash crawler first.
+- **m29 hard dependency is acknowledged**: The design notes that `detect.ExtractJSONKeys` must be imported from `internal/detect` and gives adapter guidance if the API surface differs. No re-implementation inside `internal/crawler/` is the stated rule.
+- **Watch For section covers the subtle traps**: JSON key-order divergence between Go's struct marshaller and bash `printf`, rule-order drift in Cargo parsing, and the read-only/write-only boundary are all flagged proactively.
+- **No formal "Migration impact" section** — but the artifact schema contract is thoroughly documented (schema_version: 1 preserved, byte-identical parity gate, field-order preservation guidance). For a port milestone where the output schema is unchanged, this is acceptable coverage. Not flagging as a blocker.
+- **No UI components involved**: UI testability criterion is N/A.
