@@ -18,6 +18,12 @@ RUNNER="$TEKHTON_HOME/tests/run_tests.sh"
 PASS_COUNT=0
 FAIL_COUNT=0
 
+# The contract being verified is purely shell-level (positional-args override
+# of the default test glob). Inner invocations of run_tests.sh below don't
+# need Python or Go tests; running them would add ~40s of cold-cache `go test`
+# per invocation × 4 invocations, blowing the test's 90s timeout. Skip them.
+export TEKHTON_RUN_TESTS_SHELL_ONLY=1
+
 pass() { echo "  PASS: $1"; PASS_COUNT=$((PASS_COUNT + 1)); }
 fail() { echo "  FAIL: $1"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
 

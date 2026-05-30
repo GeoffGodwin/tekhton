@@ -270,13 +270,24 @@ echo "────────────────────────�
 echo -e "  Shell:  Passed: ${GREEN}${PASS}${NC}  Failed: ${RED}${FAIL}${NC}"
 echo "────────────────────────────────────────"
 
+# Shell-only escape hatch — tests that exec `bash $RUNNER ...` in nested
+# subshells (e.g. test_run_tests_files_override.sh verifying the positional-
+# args contract) don't need Python or Go tests in the inner invocations and
+# pay a ~40s `go test ./...` cold-cache cost otherwise, pushing the outer
+# test past its 90s timeout. The flag is opt-in; the default suite still
+# runs everything.
+TEKHTON_RUN_TESTS_SHELL_ONLY="${TEKHTON_RUN_TESTS_SHELL_ONLY:-0}"
+
 # --- Python tests (conditional) -----------------------------------------------
 PYTHON_PASS=0
 PYTHON_FAIL=0
 PYTHON_TESTS_DIR="${TEKHTON_HOME}/tools/tests"
 
 _log_progress "PHASE python-tests BEGIN"
-if [ -d "$PYTHON_TESTS_DIR" ]; then
+if [ "$TEKHTON_RUN_TESTS_SHELL_ONLY" = "1" ]; then
+    echo
+    echo -e "  ${YELLOW}SKIP${NC} Python tests (TEKHTON_RUN_TESTS_SHELL_ONLY=1)"
+elif [ -d "$PYTHON_TESTS_DIR" ]; then
     if command -v python3 &>/dev/null && python3 -c "import pytest" &>/dev/null; then
         echo
         echo "════════════════════════════════════════"
@@ -309,7 +320,10 @@ GO_PASS=0
 GO_FAIL=0
 
 _log_progress "PHASE go-tests BEGIN"
-if [ -f "${TEKHTON_HOME}/go.mod" ]; then
+if [ "$TEKHTON_RUN_TESTS_SHELL_ONLY" = "1" ]; then
+    echo
+    echo -e "  ${YELLOW}SKIP${NC} Go tests (TEKHTON_RUN_TESTS_SHELL_ONLY=1)"
+elif [ -f "${TEKHTON_HOME}/go.mod" ]; then
     if command -v go &>/dev/null; then
         echo
         echo "════════════════════════════════════════"
