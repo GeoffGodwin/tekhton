@@ -2,16 +2,14 @@
 PASS
 
 ## Confidence
-93
+92
 
 ## Reasoning
-- Scope is precisely defined: 3 bash files to delete, 6 Go files to create, 7 Go files to modify, 1 bash test to create — all listed in the Files Modified table with change-type annotations
-- Out-of-scope items are explicitly called out: `lib/metrics_dashboard.sh`, `templates/watchtower/app.js`, the static site
-- Acceptance criteria are specific and machine-verifiable: every criterion has a concrete shell command or file-state assertion (grep exit codes, find output, go test invocation)
-- Design section provides Go type signatures, before/after code snippets for seam deletion, and references bash source line numbers for parity — two developers reading this will produce structurally identical implementations
-- Watch For section covers the highest-risk edge cases with precision: Python-heredoc collapse semantics, depth-counting divergence between bash paths, `_parse_intake_report` 5-line cap, `_parse_security_report` multi-Findings-section aggregation, `tekhton-legacy.sh:663` stale source line
-- Dependency ordering is explicit and unambiguous: blocked on m33.1 proto struct stability; cannot start before that
-- No migration impact section needed — this is a pure internal refactor; the parity gate enforces JSON shape identity for the JS consumer
-- No UI testability criteria needed — `templates/watchtower/app.js` is explicitly out of scope
-- VERSION bump strategy includes the coordination edge case (m28 closing before m33.2) with a safe default rule
-- The one soft external dependency ("coordinate with human reviewer at manifest sync time" for MANIFEST.cfg) is already identified and bounded
+- Scope is precisely bounded: six explicit goals, explicit in/out split between m29.1 and m29.2, and the sequencing note explains why the split was made (2,666-line subsystem vs m22's 1,500-line preflight; m23 partial cascade cited as the counter-example)
+- Go interface signatures, struct field lists, and function shapes are fully sketched in pseudo-code — two competent developers reading this would land the same design
+- Acceptance criteria are specific and mechanical: named test functions (TestLanguagesFirstInvariant, TestReadOnlyContract, TestRenderMatchesBashShape), exact CLI invocations with expected exit codes and JSON field checks, git diff --stat invariant for zero bash changes, and explicit go test + shellcheck commands
+- The no-bash-change invariant is doubly enforced: an acceptance criterion (git diff --stat HEAD~1 -- lib/detect shows zero output) and a Watch For item — no ambiguity about whether bash files may be touched
+- Watch For items are load-bearing, not decorative: the read-only contract test, dogfood stability invariant, languages-first invariant, and one-time baseline capture are all operationally actionable
+- Migration impact: no new user-facing config keys, no format changes to existing outputs, tekhton detect summary is Hidden — no migration section required and the acceptance criteria cover the stability invariant explicitly
+- Dependency on m27 is declared; prior arc context table maps every design decision back to a completed milestone
+- Seeds Forward section is scoped and deferred cleanly — nothing bleeds into m29.1's acceptance criteria
