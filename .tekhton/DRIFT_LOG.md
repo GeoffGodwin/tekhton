@@ -3,12 +3,15 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 168
+- Runs since audit: 169
 =======
-- Runs since audit: 168
+- Runs since audit: 169
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-30 | "unknown"] `internal/crawler/deps.go` â `parseCargoDeps` hardcodes `"Cargo.toml"` as the `Manifest` field on `KeyDependency` entries (line ~268), while `parseNodeDeps` correctly uses the `label` variable (which incorporates the `prefix` for sub-project calls). The inconsistency is latent today (prefix is always `""` from `parseDependencies`) but would produce incorrect `manifest` fields in Cargo key dependencies if sub-project recursion were added in m30.2. Recommend aligning to use `label` in `parseCargoDeps` before m30.2 adds sub-project support.
+- [2026-05-30 | "unknown"] `internal/crawler/deps.go:extractWithHeader` â re-implements section-extraction logic that intentionally diverges from `detect.ExtractJSONKeys` to preserve a bash quirk (spurious header line). Well-documented in source comments. When the parity requirement is lifted (e.g., intentional artifact schema update), replace the wrapper with a direct `detect.ExtractJSONKeys` call to eliminate the duplication.
+- [2026-05-30 | "unknown"] `lib/index_view.sh` â 496-line bash file, significantly over the 300-line ceiling. Pre-existing condition predating m30.1. Phase-5 index-view port should address this.
 - [2026-05-30 | "unknown"] `internal/detect/detect.go` â `attach("languages", r)` case branch is unreachable dead code; `Engine.Run` populates Languages/Frameworks directly before the second pass. Future maintainers may mistake it for an active code path.
 - [2026-05-30 | "unknown"] `lib/init_synthesize_helpers.sh:12` â Header comment references deleted `lib/detect_report.sh`. Not a runtime issue but will mislead anyone following the source trail.
 - [2026-05-30 | "unknown"] Three milestone ACs (heuristic order names, `(none detected)` count, VERSION) were authored against facts that were incorrect or assumed linear milestone execution. Milestone authoring should cross-check AC grep commands against actual bash output before locking a baseline â the parity-gate baselines are the ground truth, not the intuitive description in an AC.
