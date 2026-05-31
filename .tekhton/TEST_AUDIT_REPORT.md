@@ -1,102 +1,107 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 10 files (8 `internal/crawler/*_test.go`, 1 `cmd/tekhton/crawler_test.go`,
-1 `tests/test_crawler_parity.sh`), 51 Go test functions + 21 shell parity assertions.
+Tests audited: 8 files, 56 test functions
+- `internal/crawler/rescan_test.go` — 16 functions (primary — modified this run)
+- `internal/crawler/changes_test.go` — 7 functions (freshness sample)
+- `internal/crawler/significance_test.go` — 2 functions (freshness sample)
+- `internal/crawler/emit_test.go` — 8 functions (freshness sample)
+- `internal/crawler/deps_test.go` — 10 functions (freshness sample)
+- `internal/crawler/metadata_test.go` — 9 functions (freshness sample)
+- `cmd/tekhton/crawler_test.go` — 4 functions
+- `tests/test_crawler_parity.sh` — 1 bash parity gate (3 fixture × 7 artifact runs)
+
 Verdict: PASS
 
 ---
 
 ### Findings
 
-#### COVERAGE: `extractWithHeader` single-line collapsed-section edge case untested
-- File: `internal/crawler/deps_test.go` (no specific line — gap in test matrix)
-- Issue: `extractWithHeader` in `deps.go:38-45` has an explicit branch for a section
-  whose opening brace appears on the same line as the key (`"dependencies": {}`). When
-  that condition fires, the function emits the header line and immediately resets
-  `inSection = false`. No test in `deps_test.go` exercises this path — all fixtures use
-  multi-line sections where the closing `}` is on its own line. The coder explicitly
-  called out `extractWithHeader` as a bash-parity quirk; the collapsed-section variant
-  is the branch most likely to be "fixed" by a well-meaning future editor who doesn't
-  know it needs to be preserved.
-- Severity: MEDIUM
-- Action: Add a `TestExtractWithHeaderCollapsedSection` test that calls
-  `extractWithHeader` directly on a mini package.json string like
-  `{"dependencies":{}}` (collapsed brace) and asserts (a) the header line is emitted
-  once and (b) `countDepLines` returns 1, not 0 or more.
-
-#### COVERAGE: `inventory` and `content` CLI subcommands have no functional smoke test
-- File: `cmd/tekhton/crawler_test.go` (gap — no test for `inventory` or `content` subcommands)
-- Issue: `TestCrawlerHelpListsSubcommands` confirms `inventory` and `content` appear in
-  `--help` output, but no test actually invokes either subcommand with `--project-dir`
-  and `--json` to validate its output. The `crawl` and `deps` subcommands each have a
-  dedicated functional test (`TestCrawlerCrawlJSONOutput`, `TestCrawlerDepsJSON`). If
-  the Cobra wiring, flag parsing, or JSON serialisation for `inventory` or `content`
-  regresses, no test catches it.
-- Severity: MEDIUM
-- Action: Add `TestCrawlerInventoryJSON` and `TestCrawlerContentJSON` in
-  `cmd/tekhton/crawler_test.go`, mirroring the pattern in `TestCrawlerDepsJSON` — create
-  a temp dir with a minimal project, invoke the subcommand with `--project-dir ... --json`,
-  assert the output parses as valid JSON and contains the expected top-level key(s).
-
-#### NAMING: `min` helper in tree_test.go shadows Go 1.21+ built-in
-- File: `internal/crawler/tree_test.go:69`
-- Issue: `func min(a, b int) int` is defined at package scope in a test file. Go 1.21
-  added `min` as a built-in; since this package targets Go 1.22+ (CLAUDE.md), the
-  definition shadows the built-in across the entire `package crawler` test scope.
-  `golangci-lint` will flag this. The only use is at `tree_test.go:56`:
-  `got[:min(40, len(out))]`.
+#### NAMING: Dead helper never invoked
+- File: `internal/crawler/rescan_test.go:435`
+- Issue: `ensureGitAvailable(t *testing.T)` is defined at package scope but called by
+  no test function in the file. The git-availability guard is already embedded in
+  `gitInit` (called transitively by `setupRescanRepo`), so this helper is unreachable
+  dead code. It misleads future contributors into thinking an explicit skip guard is
+  active somewhere it is not.
 - Severity: LOW
-- Action: Rename the helper to `minInt` or inline the ternary directly at its single
-  call site.
+- Action: Remove `ensureGitAvailable` (lines 435–440). The guard path is covered by
+  `gitInit` in `changes_test.go:94-97`.
 
-#### EXERCISE: `TestCrawlerCrawlJSONOutput` merges stdout and stderr into one buffer
-- File: `cmd/tekhton/crawler_test.go:57-58`
-- Issue: `root.SetOut(&out)` and `root.SetErr(&out)` both point at the same buffer.
-  If any diagnostic or Cobra error text appears on stderr, `json.Unmarshal(out.Bytes(), &got)`
-  fails with a confusing JSON-parse error instead of a clear failure pointing at the root
-  cause. The tests pass today because no such output is produced, but the fragility is
-  latent (e.g., a future warning on stderr from the binary would cause a misleading
-  failure).
+#### COVERAGE: Non-git sentinel branch assertion underspecified
+- File: `internal/crawler/rescan_test.go:176` (`TestRescanBranchScanCommitNonGit`)
+- Issue: The test only asserts `r.Mode == "full"`. It does not assert `FallbackReason`
+  content. The implementation groups the `"non-git"` sentinel with the empty-scan-commit
+  path at `rescan.go:154`, emitting FallbackReason `"no scan commit recorded"`. Because
+  `TestRescanBranchNoScanCommit` (line 162) also expects mode="full" with the same reason,
+  the two tests are indistinguishable by their assertions — neither proves the
+  `lastScanCommit == "non-git"` arm specifically fires. An accidental reordering of the
+  sentinel check would not be caught.
 - Severity: LOW
-- Action: Use separate buffers (`var stdout, stderr bytes.Buffer`). Unmarshal only
-  `stdout.Bytes()`. Optionally assert `stderr.String() == ""` to make unexpected stderr
-  output an explicit failure.
+- Action: Add `if !strings.Contains(r.FallbackReason, "no scan commit") { t.Errorf(...) }`
+  to `TestRescanBranchScanCommitNonGit`, mirroring the pattern in
+  `TestRescanBranchNoScanCommit`.
+
+#### COVERAGE: rescan_scenarios fixture directories untested by any gate
+- File: `tests/test_crawler_parity.sh` (gap)
+- Issue: `internal/crawler/testdata/rescan_scenarios/{no_changes,trivial,moderate_manifest,
+  major_manifest}/` exist as versioned fixture directories but are referenced by no test
+  in the audited file set. The parity gate only exercises `tekhton crawler crawl` (not
+  `rescan`) against three fixtures. The Go rescan unit tests build ad-hoc git repos via
+  `setupRescanRepo` rather than using these fixtures, so the scenario directories are
+  currently dead test data.
+- Severity: LOW
+- Action: Either (a) add a `test_rescan_parity.sh` gate that runs `tekhton crawler rescan
+  --json` against each scenario and asserts expected `mode`/`significance` in the JSON
+  output, or (b) remove the scenario directories if the Go unit tests are considered
+  sufficient. Current Go coverage of the rescan branches is adequate — this is
+  documentation/fixture debt, not a correctness gap.
 
 ---
 
-### Absence of findings in other categories
+### No Issues Found In
 
-**INTEGRITY — none.** Every expected value in the suite is derived from the implementation:
-- `annotatePackage` expected strings cross-checked against `packagePurposes` /
-  `packagePurposeGlobs` in `annotations.go` — all correct.
-- `TestParseNodeDepsSimple` expects `Deps == 3` for a 2-dependency `package.json`. This
-  is not a hard-coded magic number: `extractWithHeader` emits the section-header line
-  (`"dependencies": {`) which `countDepLines` counts because it contains `:`. The test
-  comment explains this explicitly. It is an honest assertion of intentional bash-parity
-  behavior, not an integrity violation.
-- `emitMetaJSON` / `emitInventoryJSONL` exact byte-shape assertions in `emit_test.go`
-  were traced against the hand-rolled string-builders in `emit.go` and are correct.
+**INTEGRITY — none.** All assertions test real behavior derived from implementation
+logic. The `"major structural changes detected"` string checked in
+`TestRescanBranchMajorTriggersFullCrawl` (`rescan_test.go:231`) matches the literal
+passed to `rescanFallToFull` at `rescan.go:177`. The dep-count `Deps == 3` assertion in
+`deps_test.go:47` is explicitly explained by the `extractWithHeader` bash-parity
+counting quirk documented in the test comment. The `emitMetaJSON` byte-shape assertion
+in `emit_test.go:165-178` was verified against the hand-rolled template in `emit.go`
+and is correct.
 
-**WEAKENING — none.** `tests/test_rescan.sh` was skip-stubbed at m30.1. This is correct:
-the underlying bash rescan helpers were deleted as part of this milestone. Removing tests
-for deleted code is the right action.
+**WEAKENING — none.** The two cycle-2 tester additions both strengthen existing tests:
+- `TestRescanBranchTrivialIncremental` (lines 279-281): added `manifest.json` in the
+  `wrote` map assertion. Previously the test verified inventory/meta but not samples.
+  Now it verifies samples regenerate when a sampled file is modified — matches the
+  `regen.samples = true` path at `rescan.go:285-291`.
+- `TestRescanBranchMajorTriggersFullCrawl` (lines 232-234): added FallbackReason
+  assertion. This is a new positive assertion, not a relaxation of an existing one.
+  No prior assertions were removed or broadened anywhere in the file.
 
-**SCOPE — none.** All function references (`annotatePackage`, `isBinary`, `readSampled`,
-`sampleFiles`, `Crawl`, `ErrMissingProjectDir`, `parseDependencies` family, all `emit*`
-functions, `buildFileInventory`, `buildConfigInventory`, `isTestFile`, `isTestDirName`,
-`configPurpose`, `sizeCategory`, `annotateLine`, etc.) verified against current
-implementation files — all present and aligned.
+**SCOPE — none.** All function references cross-checked against current implementation
+files. `Rescan`, `ErrMissingProjectDir`, `ClassifyChanges`, `DetectChangedFiles`,
+`ExtractScanMetadata`, `ExtractSampledFiles`, `IsManifestFile`, `IsConfigFile`,
+`sampledFileTouched`, `highPriorityAdded`, `fileExists`, `gitCommitExists`, `isGitRepo`,
+`parseDiffNameStatus`, `parsePorcelain`, `newRegenSetWithIndexDir`, `recordingWriter`,
+all `emit*` functions — all present in the current package with matching signatures.
+No test references `rescan_stub.go` (replaced) or any deleted bash function.
 
-**ISOLATION — none.** All Go tests use `t.TempDir()` for project fixtures. The
-`recordingWriter` fake in `emit_test.go` never touches the real filesystem. `readonly_test.go`
-reads the package's own source files at test time; these are version-controlled sources,
-not mutable pipeline artifacts, and this pattern is correct for a static-contract
-enforcement test.
+**EXERCISE — none.** All Go tests call real package functions. The `recordingWriter` in
+`emit_test.go` is a purposeful test double for the `Writer` interface that enforces the
+write-only-to-IndexDir safety invariant by returning an error on out-of-prefix writes
+(`emit_test.go:38-43`). Tests for `Rescan` that take the full-crawl path (e.g.,
+`TestRescanBranchMajorTriggersFullCrawl`) use the default `fsWriter{}` and run the real
+`Crawl` implementation against the temp project.
 
-**Parity gate (`tests/test_crawler_parity.sh`) — properly structured.** Self-skips
-cleanly when the Go binary is not built (exits 0). Uses `mktemp` for all actual output.
-Reads only from version-controlled fixture directories and frozen baselines. Normalises
-volatile `scan_date` / `scan_commit` fields before diffing. 21 assertions = 3 fixtures
-× 7 artifacts, byte-level equality — the strongest parity test appropriate for a
-port milestone. Registered in `run_tests.sh` via the `tests/test_*.sh` glob.
+**ISOLATION — none.** All Go tests create fixtures with `t.TempDir()`. The parity shell
+test writes to `mktemp -d` with `trap 'rm -rf "${WORK}"' EXIT` and reads only from
+version-controlled fixture and baseline directories. No test reads mutable pipeline
+artifacts (`.tekhton/CODER_SUMMARY.md`, `.tekhton/BUILD_ERRORS.md`, `.claude/logs/*`,
+or similar run-state files).
+
+**PARITY GATE — properly structured.** `tests/test_crawler_parity.sh` self-skips when
+the Go binary is not built (exits 0 with a SKIP message). Normalises volatile fields
+(`scan_date`, `scan_commit`) before byte-diffing. Asserts 21 artifact pairs (3 fixtures
+× 7 artifacts). Uses the `parity_assert_equal` / `parity_summary` harness from
+`tests/lib/parity.sh`. Both `parity.sh` and `normalize_index.sh` confirmed present.
