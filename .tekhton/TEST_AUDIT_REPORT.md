@@ -1,100 +1,43 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 2 files, 14 test functions (cmd/tekhton/gate_test.go) + 11 scenarios (tests/test_gates_parity.sh)
+Tests audited: 3 files, 25 test functions (5 new in gate_test.go, 3 new scenarios in test_gates_parity.sh, 1 new in ui_test.go)
 Verdict: PASS
 
 ### Findings
 
-#### COVERAGE: Build-gate parity scenarios do not directly assert exit code
-- File: tests/test_gates_parity.sh:69-99 (_run_build_scenario)
-- Issue: `result_exit` is captured but never directly asserted. The comment at line 93 says
-  exit code is verified "indirectly" via file existence. This creates a blind spot: if the
-  gate binary panics or exits non-zero without writing BUILD_ERRORS.md (e.g., an
-  infrastructure error from `runner.Run` wrapping a non-sentinel error, per
-  internal/gates/completion.go:186-188 comments), a clean-run scenario (analyze_clean,
-  compile_clean) would record a spurious parity_pass. The "fail" scenarios are
-  self-checking (missing report file would trigger parity_fail), but the clean-run path
-  is not guarded. By contrast, the completion scenarios do directly assert exit code
-  (lines 122-136), so the gap is specific to `_run_build_scenario`.
-- Severity: MEDIUM
-- Action: Add a direct exit-code assertion inside `_run_build_scenario`. When
-  `expect_report` is `no_report`, assert `[[ "$result_exit" -eq 0 ]]` and call
-  `parity_pass` / `parity_fail` accordingly. When `expect_report` is `report`, assert
-  `[[ "$result_exit" -ne 0 ]]`. One assertion call per scenario suffices.
-
-#### COVERAGE: IN PROGRESS completion branch not exercised in parity scenarios
-- File: tests/test_gates_parity.sh (no scenario covers this branch)
-- Issue: `CompletionGate.Run` (internal/gates/completion.go:145-147) has five documented
-  branches. Scenarios 5-11 cover: COMPLETE+pass, COMPLETE+fail-tests, no-status, timeout,
-  M92-nil, M105-nil, and M86-nil. The first branch — coder self-reporting "IN PROGRESS"
-  (returns `ErrCompletionInProgress`) — has no scenario. A CODER_SUMMARY.md containing
-  `## Status: IN PROGRESS` exercises distinct gate logic and a distinct sentinel error.
+#### COVERAGE: Gap-documentation tests don't exercise the feature they name
+- File: cmd/tekhton/gate_test.go:230, :243, :257
+- Issue: `TestCompletionGateFromEnv_NilBaselinePreventsM92Accept`, `TestCompletionGateFromEnv_DedupNilDocumentsM105Gap`, and `TestCompletionGateFromEnv_SubstantiveNilDocumentsM86Gap` each assert a struct field is `nil`. They pass trivially until the feature is wired and cannot catch a behavioral regression in M92/M105/M86 logic. The tests are clearly labeled "this test will fail once wired" and the gap is honestly disclosed. The pattern is legitimate but adds no behavioral signal until the concrete implementations land.
 - Severity: LOW
-- Action: Add scenario 12 using `_run_completion_scenario` with
-  `summary="## Status: IN PROGRESS"` and `exit_check="nonzero"`. No fixtures needed.
+- Action: No action required now. When M92/M105/M86 are wired in `completionGateFromEnv`, replace these nil-guard tests with end-to-end behavioral assertions (e.g., seed a baseline file, run with `TEST_BASELINE_PASS_ON_PREEXISTING=true`, assert the gate accepts the failure). The test comments already prescribe this.
 
-#### COVERAGE: resolveUnder edge cases not unit-tested
-- File: cmd/tekhton/gate_test.go (no test for resolveUnder)
-- Issue: `resolveUnder` (gate.go:205-210) has three behavioral branches — absolute path
-  returned unchanged, empty projectDir returns path unchanged, relative path joined under
-  projectDir. All three are load-bearing: the env contract relies on them for
-  BUILD_ERRORS.md and BUILD_RAW_ERRORS.txt landing in the correct project directory.
-  The function is implicitly exercised by `TestBuildGateFromEnv_AssemblesAllPhases`, but
-  none of its edge cases are directly asserted.
+#### COVERAGE: M86 parity scenario (scenario 11) is behaviorally indistinguishable from scenario 7
+- File: tests/test_gates_parity.sh:233
+- Issue: `completion_substantive_m86` asserts `"nonzero"` exit for a no-Status summary — the same observable behavior as the pre-existing `completion_no_status` (scenario 7). The comment correctly notes that `ErrCompletionNoStatus` and `ErrCompletionSubstantiveNoStatus` produce the same exit code at CLI granularity. The test adds documentation value (gap is honestly disclosed) but zero new behavioral coverage.
 - Severity: LOW
-- Action: Add a table-driven `TestResolveUnder` covering the three branches. This is a
-  pure function with no subprocess dependency, so the test is trivial and deterministic.
-
-#### COVERAGE: Gap-documentation tests — informational, no action required
-- File: cmd/tekhton/gate_test.go:216-252
-- Issue: (Non-finding, noted for completeness.) Three tests document known m31.1 gaps:
-  `TestCompletionGateFromEnv_NilBaselinePreventsM92Accept`,
-  `TestCompletionGateFromEnv_DedupNilDocumentsM105Gap`,
-  `TestCompletionGateFromEnv_SubstantiveNilDocumentsM86Gap`. All three assert that the
-  respective `CompletionGate` fields are nil and include explicit comment blocks saying
-  "this test will fail once wired." The pattern is correctly applied — each gap-doc test
-  creates a regression guard that goes red when m31.2 wires the concrete implementation,
-  prompting the author to update parity scenarios.
-- Severity: LOW (informational only)
-- Action: None now. When m31.2 wires Baseline/Dedup/Substantive in
-  `completionGateFromEnv()`, delete or update these three tests as the comments instruct,
-  and add the corresponding parity scenarios for the newly active branches.
-
----
+- Action: No action required now. When the `Substantive` probe is wired in `completionGateFromEnv`, upgrade this scenario to assert a distinguishing behavioral difference (e.g., different stderr text, or split into exit-code + stderr-grep assertions).
 
 ### No Issues Found In
 
-**INTEGRITY — none.** All assertions test real behavior derived from implementation
-logic. The `len(g.Phases) != 5` assertion in `TestBuildGateFromEnv_AssemblesAllPhases`
-(gate_test.go:172) is derived from the five factory keys registered in
-`buildGateFromEnv` (gate.go:132-174). The `exitUsage` constant checked in
-`TestGateUI_StubReturnsNonZero` (gate_test.go:69) is the same constant the stub
-returns at gate.go:99. The `envBool("anything")` → false table case follows the exact
-switch statement in gate.go:238-244. No hard-coded magic values appear anywhere in
-the audited tests.
+**INTEGRITY — none.** All assertions in all three files trace to real function calls and real struct fields. No hard-coded magic values, no `assertTrue(true)`, no always-pass patterns found:
+- `gate_test.go` assertions (`g.PassOnPreexisting`, `g.Baseline`, `g.Dedup`, `g.Substantive`) are all real fields on `CompletionGate` (verified against `internal/gates/completion.go:24-79`).
+- `ui_test.go:TestUIPhase_RemediationRetryAllFail` — the `runner.calls == 3` assertion correctly traces to the 3-run implementation path: run #1 (exit 1) → Remediator.TryRemediate returns true → run #2 (exit 1) → generic-retry guard (`if exit != 0`) → run #3 (exit 1) → terminal failure (`ui.go:155-173`). All artifact assertions (`uiFailureExit==1`, `uiDiagnosisBlock` contains `"Timeout class: none"` and `"Hardened rerun attempted: no"`) derive from the implementation logic at `ui.go:188-208`.
+- `test_gates_parity.sh` scenario 9 (`completion_preexisting_m92`) correctly expects `nonzero` — `completionGateFromEnv()` leaves `Baseline==nil`, so `TEST_BASELINE_PASS_ON_PREEXISTING=true` has no effect and `TEST_CMD=false` causes `ErrCompletionTestFailed` (gate.go:264, completion.go:145-187).
 
-**WEAKENING — none.** All 14 functions in gate_test.go and all 11 scenarios in
-test_gates_parity.sh are new (confirmed by TESTER_REPORT and CODER_SUMMARY). No
-prior assertions were removed or broadened.
+**WEAKENING — none.** The tester's changes are exclusively additive:
+- 5 new functions added to `gate_test.go` (no existing functions touched).
+- 3 new scenarios added to `test_gates_parity.sh` (scenarios 9-11; scenarios 1-8 unchanged).
+- 1 new function added to `internal/gates/ui_test.go` (no existing functions touched).
+The coder's replacement of `TestGateUI_StubReturnsNonZero` (m31.1 stub) with `TestGateUI_SkipWhenCmdUnset` + `TestGateUI_DisabledReturnsSkip` is an upgrade (stub → real behavior), not a weakening, and was performed by the coder not the tester.
 
-**SCOPE — none.** All function references verified against the current implementation.
-`newGateCmd`, `newGateUICmd`, `buildGateFromEnv`, `completionGateFromEnv`, `envOr`,
-`envBool`, `envSeconds`, `readValidationCmd` — all present in cmd/tekhton/gate.go with
-matching signatures. `errExitCode` and `exitUsage` are used package-wide (confirmed
-present in cmd/tekhton/finalize_test.go:103 and gate.go:99 respectively). The deleted
-file `.tekhton/stage_results/stage_tester_r1_b0.json` is not referenced by any audited
-test.
+**SCOPE — none.** All referenced symbols exist in the current implementation. `UIPhase`, `ErrUITestFailed`, `FrameworkPlaywright`, `FrameworkNone`, `completionGateFromEnv`, `newGateUICmd`, `envBool`, `envOr`, `envSeconds` are all present with matching signatures. The deleted `.tekhton/stage_results/stage_tester_r1_b0.json` is not referenced by any audited test. The deleted `UIBashShim` / `BashShimRunner` types are confirmed absent from all audited files.
 
-**EXERCISE — none.** All Go tests call real implementation functions. No test mocks
-the primary function under test. `TestBuildGateFromEnv_AssemblesAllPhases` calls the
-real `BuildGate.Run` end-to-end with all-skip phases (gate.go:174). The parity shell
-tests invoke the compiled `tekhton` binary via `env -i` with a clean environment and
-real command arguments.
+**EXERCISE — none.** All Go tests call real implementation code:
+- `gate_test.go` calls `completionGateFromEnv()`, `newGateUICmd()`, and the env helpers directly on the real functions.
+- `ui_test.go` calls `UIPhase.Run()` with a deterministic `uiFakeRunner` that records call count and injected env slices — the runner is a thin record/playback shim, not a mock that replaces the function under test.
+- `test_gates_parity.sh` drives the compiled `tekhton` binary via `env -i`.
 
-**ISOLATION — none.** All Go tests use `t.TempDir()` and `t.Setenv()`. The parity
-shell tests write to `mktemp -d` directories and clean up via `rm -rf "$tmp"` at the
-end of each scenario. `env -i` isolates each binary invocation from the host
-environment. No test reads mutable pipeline state files
-(.tekhton/CODER_SUMMARY.md, .tekhton/BUILD_ERRORS.md, .claude/logs/*, etc.) without
-first creating a controlled copy in a temp directory.
+**ISOLATION — none.** All Go tests use `t.Setenv` / `t.TempDir()` and construct all fixtures in memory or in temp directories. The bash parity scenarios use `mktemp -d` + `env -i` per invocation with `rm -rf "$tmp"` cleanup. Scenario 10 (`_completion_dedup_always_runs`) constructs the sentinel path from a fresh `mktemp -d` directory — no host filesystem state is read. No audited test reads mutable project-level files (`.tekhton/`, `.claude/logs/`, `BUILD_ERRORS.md`, `CODER_SUMMARY.md`) without first creating a controlled copy.
+
+**NAMING — none.** All new test names encode both scenario and expected outcome: `TestCompletionGateFromEnv_PassOnPreexistingTrue`, `TestCompletionGateFromEnv_NilBaselinePreventsM92Accept`, `TestUIPhase_RemediationRetryAllFail`, `completion_preexisting_m92`, `completion_dedup_always_runs`, `completion_substantive_m86`.

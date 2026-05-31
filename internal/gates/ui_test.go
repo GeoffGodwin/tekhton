@@ -274,6 +274,61 @@ func TestUIPhase_RemediationRetry(t *testing.T) {
 	}
 }
 
+// TestUIPhase_RemediationRetryAllFail — the 3-run scenario: M54 remediation
+// fires AND its rerun fails AND the generic flakiness retry also fails.
+// Regression pin for the full non-interactive failure path:
+//   run #1 (exit 1) → Remediator returns true → run #2 (exit 1) →
+//   generic retry → run #3 (exit 1) → terminal failure.
+//
+// Distinct from TestUIPhase_RemediationRetry (which only covers the 2-run
+// pass path) and TestUIPhase_AssertionFailWritesFailure (which covers the
+// 2-run no-Remediator path).
+func TestUIPhase_RemediationRetryAllFail(t *testing.T) {
+	runner := &uiFakeRunner{
+		outs:  []string{"some env_setup error", "env_setup error again", "env_setup error final"},
+		exits: []int{1, 1, 1},
+	}
+	rem := remediatorFunc(func(_ context.Context, _, _ string) bool { return true })
+	w := &captureWriter{}
+	p := &UIPhase{
+		Cmd:          "playwright test",
+		Enabled:      true,
+		Framework:    FrameworkPlaywright,
+		Runner:       runner,
+		Remediator:   rem,
+		Errors:       w,
+		CmdAvailable: alwaysAvailable,
+	}
+	r := p.Run(context.Background(), &PhaseInput{StageLabel: "post-coder", Now: time.Now})
+	if r.Status != StatusFail {
+		t.Fatalf("Status = %v, want StatusFail", r.Status)
+	}
+	if !errors.Is(r.Err, ErrUITestFailed) {
+		t.Errorf("Err = %v, want ErrUITestFailed", r.Err)
+	}
+	// All three runs must fire: run #1, remediation rerun, generic retry.
+	if runner.calls != 3 {
+		t.Errorf("runner.calls = %d, want 3 (run + remediation rerun + generic retry)", runner.calls)
+	}
+	// Failure artifacts must be written.
+	if w.uiFailureExit != 1 {
+		t.Errorf("uiFailureExit = %d, want 1", w.uiFailureExit)
+	}
+	if w.uiFailureCmd != "playwright test" {
+		t.Errorf("uiFailureCmd = %q, want %q", w.uiFailureCmd, "playwright test")
+	}
+	if !strings.Contains(w.uiFailureOutput, "env_setup error") {
+		t.Errorf("uiFailureOutput missing expected text: %q", w.uiFailureOutput)
+	}
+	// Diagnosis block: signature is "none", hardened rerun not attempted.
+	if !strings.Contains(w.uiDiagnosisBlock, "Timeout class: none") {
+		t.Errorf("diagnosis missing 'Timeout class: none': %q", w.uiDiagnosisBlock)
+	}
+	if !strings.Contains(w.uiDiagnosisBlock, "Hardened rerun attempted: no") {
+		t.Errorf("diagnosis missing 'Hardened rerun attempted: no': %q", w.uiDiagnosisBlock)
+	}
+}
+
 // TestUIPhase_NonPlaywrightFrameworkSkipsEnv — when Framework == None the
 // runner receives no env injection (the bash side short-circuited to no
 // KEY=VALUE lines).
