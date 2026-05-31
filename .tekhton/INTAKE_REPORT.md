@@ -2,13 +2,16 @@
 PASS
 
 ## Confidence
-92
+90
 
 ## Reasoning
-- Scope is precisely bounded: 7 numbered goals, explicit "not in m32.1" callouts throughout (no rule ports, no bash deletes, no VERSION bump), and the sequencing note makes the seam-introduction role unambiguous
-- Files to create/modify are enumerated with LOC estimates; the exact Go type signatures, method signatures, and struct fields are specified in the Design section — two developers reading this would produce near-identical skeletons
-- Acceptance criteria are machine-verifiable commands (`grep -nE`, `git tag --list`, `find lib`, `tekhton diagnose run --help` exit 0, `go test`, `bash tests/run_tests.sh`) rather than vague aspirations
-- Watch For section covers the three highest-risk subtleties: baseline capture ordering, `_DIAG_*` global coverage vs `Context` struct fields, and `_DIAG_CAUSAL_EVENTS` length limits with the tempfile workaround already specified
-- The rule-count is self-consistent: "18 rule names" in the acceptance criterion matches the adapter code block (2 shown + "16 more entries")
-- No user-facing config changes or operator-visible format changes land in m32.1 (Hidden subcommand, envelope consumed by M32.3) — Migration Impact section is not required
-- No UI components; UI testability dimension is N/A
+- Scope is precisely defined: 7 files to create, 2 to delete, 4 to modify — all named explicitly
+- Rule-to-file mapping is enumerated (8+5+2+2+1 = 18), with all 18 rule types listed by name in the acceptance criteria
+- Acceptance criteria are machine-verifiable: grep commands, test function name patterns, and fixture replay with byte-for-byte diff
+- Priority ordering is specified (registry.go slice matches bash DIAGNOSE_RULES), and an order-mismatch test is prescribed
+- Watch For section resolves the one count ambiguity (extra.sh has 6 functions but 1 is a shared helper → 5 rules, not 6 — the Overview section says "6 rules" but Files Modified and Watch For are authoritative)
+- The inline "wait no" deliberation artifact in the resilience.go design sketch is self-resolving: the canonical decision is stated immediately after, and Watch For reinforces it
+- Design code sketches for registry wiring, the rule impl pattern, the resilience rule, and the wedge-audit extension are concrete enough that two developers would converge on the same implementation
+- Depends-on (m32.1) is declared; the Go types it needs (Context, Confidence constants, NewEngine, RuleProvider, BashRuleAdapter) are established prior art
+- No user-facing config changes, no migration impact section needed
+- No UI components; UI testability criterion not applicable
