@@ -73,7 +73,8 @@ files total retired across m30.1 + m30.2.
   PROJECT_INDEX.md view (view generation stays bash until m31+
   ports the index-view subsystem).
 
-- **`scripts/wedge-audit.sh`** PATTERNS extended:
+- **`scripts/wedge-audit.sh`** PATTERNS extended (now living in the
+  sibling data-only file `scripts/wedge-audit-patterns.sh` — see below):
   - `(source|.) … /(crawler*|rescan|rescan_helpers).sh` now blocks
     the `rescan` shim (added) and `rescan_helpers` (already blocked).
   - Eight new function-definition forbidden patterns: `rescan_project`,
@@ -82,6 +83,13 @@ files total retired across m30.1 + m30.2.
     `_is_config_file`, `_extract_sampled_files`,
     `_record_scan_metadata`. Wedge-audit reports clean (197 files
     audited).
+
+- **`scripts/wedge-audit-patterns.sh`** (NEW) — extracted from
+  `wedge-audit.sh` per CLAUDE.md Rule 8 data-only exemption. Contains
+  the PATTERNS array assignment only: no function bodies, no
+  conditional logic. `wedge-audit.sh` now sources it and drops from
+  340 → 129 lines (well under the 300-line bash ceiling). The
+  regression guards themselves are unchanged.
 
 - **`VERSION`** bumps to **4.30.0** (matching m27.3's arc-close
   pattern — minor bump at the closing child, not the opening one).
@@ -136,6 +144,7 @@ N/A — feature port milestone.
 - `internal/crawler/testdata/rescan_scenarios/trivial/{README.md,src/main.go}` (NEW)
 - `internal/crawler/testdata/rescan_scenarios/moderate_manifest/{README.md,package.json,src/index.js}` (NEW)
 - `internal/crawler/testdata/rescan_scenarios/major_manifest/{README.md,package.json,Cargo.toml}` (NEW)
+- `scripts/wedge-audit-patterns.sh` (NEW — rework; data-only PATTERNS file extracted from `wedge-audit.sh`)
 
 ### Modified
 - `cmd/tekhton/crawler.go` — replaced placeholder rescan subcommand
@@ -144,7 +153,15 @@ N/A — feature port milestone.
   help + fresh-project rescan tests
 - `tekhton-legacy.sh` — `--rescan` block exec's `tekhton crawler rescan`
 - `scripts/wedge-audit.sh` — added m30.2 regression guards (8 new
-  forbidden patterns, `rescan.sh` added to the source-blocked list)
+  forbidden patterns, `rescan.sh` added to the source-blocked list);
+  rework: PATTERNS array extracted to `wedge-audit-patterns.sh`,
+  file now 129 lines (was 340).
+- `internal/crawler/rescan.go` — rework: `rescanFallToFull` now
+  returns `(*RescanResult, error)` and propagates errors when
+  `Crawl` returns `(nil, err)` (e.g. context cancellation); five
+  branch call sites + the Major-changes site updated to propagate.
+  Replaces the previous swallowed-error path that silently reported
+  "Full crawl: wrote .claude/index/" when nothing was written.
 - `ARCHITECTURE.md` — updated `internal/crawler/` and
   `cmd/tekhton/crawler.go` entries for m30.2
 - `CLAUDE.md` — removed `lib/rescan.sh` line from repo-layout section
@@ -213,26 +230,25 @@ No human notes listed for this run.
 - **ARCHITECTURE.md update needed**: No — the helper split is local
   to `internal/crawler/` and documented in source comments.
 
-### `scripts/wedge-audit.sh` left at 340 lines (pre-existing condition)
+### `scripts/wedge-audit.sh` PATTERNS extracted to data-only sibling file
 
+- **Status**: Rework-applied. The originally-proposed defer ACP was
+  **REJECTED** by review; the reviewer correctly noted the file was
+  already over the 300-line ceiling pre-m30.2 (compounding the
+  violation was not acceptable) and that PATTERNS extraction is a
+  small mechanical refactor that satisfies both constraints.
 - **Current constraint**: CLAUDE.md Rule 8 — every modified `.sh` file
   must be under 300 lines after the change.
-- **What triggered this**: `scripts/wedge-audit.sh` was at 331 lines
-  pre-m30.2 (already over the ceiling). The milestone's acceptance
-  criterion requires extending PATTERNS with eight new regression
-  guards for the deleted bash functions (`rescan_project`,
-  `_update_index_sections`, etc.) — these are mandatory to prevent
-  someone from re-introducing the bash rescan surface. Adding the
-  patterns pushed the file from 331 → 340 lines.
-- **Proposed change**: PATTERNS additions kept in place; file split
-  deferred. The bulk of `wedge-audit.sh` (lines 200-272) is the
-  PATTERNS array — essentially data with sparse comment context.
-  Extracting PATTERNS to a separate file would be a non-trivial
-  refactor of the audit tool's structure and is out of scope for a
-  Crawler-port milestone. Same shape as m30.1's
-  `lib/index_view.sh`-at-496-lines decision (reviewer accepted).
+- **Resolution**: Extracted the PATTERNS array (the bulk of the file)
+  into `scripts/wedge-audit-patterns.sh`. The new file is data-only
+  (single array assignment, no function bodies, no conditional logic)
+  and therefore exempt from the 300-line ceiling per the CLAUDE.md
+  Rule 8 data-only exemption. `wedge-audit.sh` now sources it
+  immediately after declaring `ALLOWED_FILES`, dropping from 340 to
+  129 lines. The eight m30.2 regression guards remain in place.
 - **Backward compatible**: Yes — wedge-audit invocations and outputs
-  unchanged.
+  unchanged (still reports "clean (197 files audited, 12 allowed
+  shim writers)"). Both files shellcheck-clean.
 - **ARCHITECTURE.md update needed**: No.
 
 ## Docs Updated

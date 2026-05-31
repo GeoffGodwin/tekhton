@@ -228,6 +228,9 @@ func TestRescanBranchMajorTriggersFullCrawl(t *testing.T) {
 	if r.Mode != "full" || r.Significance != Major {
 		t.Errorf("expected major→full, got mode=%s sig=%v", r.Mode, r.Significance)
 	}
+	if !strings.Contains(r.FallbackReason, "major structural changes") {
+		t.Errorf("expected FallbackReason to mention 'major structural changes', got %q", r.FallbackReason)
+	}
 }
 
 func TestRescanBranchTrivialIncremental(t *testing.T) {
@@ -270,6 +273,11 @@ func TestRescanBranchTrivialIncremental(t *testing.T) {
 	}
 	if wrote["configs.json"] {
 		t.Errorf("trivial change should NOT regen configs.json")
+	}
+	// README.md is in samples/manifest.json — a sampled-file touch MUST
+	// trigger samples regeneration.
+	if !wrote["manifest.json"] {
+		t.Errorf("README.md is sampled; trivial edit should regen samples/manifest.json; writes: %v", wrote)
 	}
 }
 

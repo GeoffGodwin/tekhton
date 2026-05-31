@@ -121,23 +121,23 @@ func Rescan(ctx context.Context, opts RescanOptions) (*RescanResult, error) {
 
 	// Branch 1: --full forces full crawl.
 	if opts.ForceFull {
-		return rescanFallToFull(ctx, opts, "forced"), nil
+		return rescanFallToFull(ctx, opts, "forced")
 	}
 
 	// Branch 2: no existing index file.
 	if !fileExists(opts.IndexFile) {
-		return rescanFallToFull(ctx, opts, "no existing index"), nil
+		return rescanFallToFull(ctx, opts, "no existing index")
 	}
 
 	// Branch 3: no structured meta.json — migration full crawl.
 	metaFile := filepath.Join(opts.IndexDir, "meta.json")
 	if !fileExists(metaFile) {
-		return rescanFallToFull(ctx, opts, "no structured index (meta.json missing)"), nil
+		return rescanFallToFull(ctx, opts, "no structured index (meta.json missing)")
 	}
 
 	// Branch 4: not a git repo.
 	if !isGitRepo(ctx, opts.ProjectDir) {
-		return rescanFallToFull(ctx, opts, "not a git repository"), nil
+		return rescanFallToFull(ctx, opts, "not a git repository")
 	}
 
 	// Branch 5: no recorded scan commit. Read meta.json directly from the
@@ -152,13 +152,13 @@ func Rescan(ctx context.Context, opts RescanOptions) (*RescanResult, error) {
 		lastScanCommit = strings.TrimSpace(extractHTMLCommentField(opts.IndexFile, "Scan-Commit"))
 	}
 	if lastScanCommit == "" || lastScanCommit == "non-git" {
-		return rescanFallToFull(ctx, opts, "no scan commit recorded"), nil
+		return rescanFallToFull(ctx, opts, "no scan commit recorded")
 	}
 
 	// Branch 6: recorded commit no longer exists (rebased away).
 	if !gitCommitExists(ctx, opts.ProjectDir, lastScanCommit) {
 		return rescanFallToFull(ctx, opts,
-			fmt.Sprintf("recorded scan commit %s no longer exists", lastScanCommit)), nil
+			fmt.Sprintf("recorded scan commit %s no longer exists", lastScanCommit))
 	}
 
 	// Branch 7: no changes since last scan.
@@ -173,7 +173,10 @@ func Rescan(ctx context.Context, opts RescanOptions) (*RescanResult, error) {
 	// Branch 8: major changes → full crawl for accuracy.
 	sig := ClassifyChanges(changes)
 	if sig == Major {
-		res := rescanFallToFull(ctx, opts, "major structural changes detected")
+		res, err := rescanFallToFull(ctx, opts, "major structural changes detected")
+		if err != nil {
+			return nil, err
+		}
 		res.Changes = changes
 		res.Significance = Major
 		return res, nil
@@ -186,19 +189,24 @@ func Rescan(ctx context.Context, opts RescanOptions) (*RescanResult, error) {
 // rescanFallToFull runs the full Crawl and wraps the result as a
 // RescanResult with Mode="full". Used by every fallback branch — the
 // reason argument is recorded so the CLI can surface why.
-func rescanFallToFull(ctx context.Context, opts RescanOptions, reason string) *RescanResult {
+//
+// Crawl can return (nil, err) on context cancellation or a missing
+// project dir — those errors propagate to the caller so the CLI does
+// not silently announce a successful full crawl when nothing was
+// written. When Crawl returns (non-nil, err) the partial Result is
+// surfaced as FullCrawl and the error is swallowed: the rescan layer
+// has no Errors field to attach it to, and callers that need
+// per-section failure detail can introspect FullCrawl.
+func rescanFallToFull(ctx context.Context, opts RescanOptions, reason string) (*RescanResult, error) {
 	cr, err := Crawl(ctx, opts.asCrawlOptions())
-	if cr != nil && err != nil {
-		// Partial-failure paths still return a non-nil Result; preserve
-		// the error in the underlying Result.Errors so callers can see
-		// it without us replacing the Mode.
-		_ = err
+	if cr == nil && err != nil {
+		return nil, err
 	}
 	r := &RescanResult{Mode: "full", FullCrawl: cr}
 	if !opts.ForceFull {
 		r.FallbackReason = reason
 	}
-	return r
+	return r, nil
 }
 
 // updateIndexSections runs the selective regeneration path — the only
