@@ -1,0 +1,7 @@
+{
+  "configs": [
+    {"path":"Cargo.toml","purpose":"Rust crate manifest"},
+    {"path":"go.mod","purpose":"Go module definition"},
+    {"path":"pyproject.toml","purpose":"Python project configuration"}
+  ]
+}

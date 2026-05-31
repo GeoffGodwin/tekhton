@@ -1,0 +1,16 @@
+{
+  "manifests": [
+    {"file":"Cargo.toml","manager":"cargo","deps":2,"dev_deps":1},
+    {"file":"pyproject.toml","manager":"pip","deps":2,"dev_deps":0},
+    {"file":"go.mod","manager":"go","deps":2,"dev_deps":0}
+  ],
+  "key_dependencies": [
+    {"name":"serde","version":"1.0","manifest":"Cargo.toml"},
+    {"name":"tokio","version":"1.0","manifest":"Cargo.toml"},
+    {"name":"mockall","version":"0.11","manifest":"Cargo.toml"},
+    {"name":"numpy","version":"any","manifest":"pyproject.toml"},
+    {"name":"fastapi","version":"any","manifest":"pyproject.toml"},
+    {"name":"github.com/spf13/cobra","version":"v1.8.1","manifest":"go.mod"},
+    {"name":"github.com/stretchr/testify","version":"v1.8.0","manifest":"go.mod"}
+  ]
+}

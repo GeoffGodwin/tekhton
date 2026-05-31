@@ -113,10 +113,16 @@ run_smart_init() {
     fi
 
     # Phase 3: Crawl (with progress indicator)
+    # m30.1: crawler ported to Go. The Go binary writes the structured
+    # .claude/index/ artifact set; the bash view generator then assembles
+    # the project-index view from those artifacts (view port deferred to m31+).
     local tracked_file_count
     tracked_file_count=$(_count_tracked_files "$project_dir")
     log "Crawling project (${tracked_file_count} files)..."
-    crawl_project "$project_dir" "${PROJECT_INDEX_BUDGET:-120000}"
+    "${TEKHTON_BIN:-tekhton}" crawler crawl \
+        --project-dir "$project_dir" \
+        --budget "${PROJECT_INDEX_BUDGET:-120000}" >/dev/null
+    generate_project_index_view "$project_dir" "${PROJECT_INDEX_BUDGET:-120000}"
     _INIT_FILES_WRITTEN+=("$(basename "${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}")|structured project index")
 
     # Phase 3.5: Feature wizard (M109) — runs after detection so guidance is

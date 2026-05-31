@@ -1,0 +1,12 @@
+[project]
+name = "small-repo"
+version = "0.1.0"
+description = "Crawler parity fixture"
+dependencies = [
+    "requests>=2.0",
+    "pydantic",
+    "click",
+]
+
+[build-system]
+requires = ["setuptools"]

@@ -1,0 +1,7 @@
+{
+  "test_dirs": [
+  ],
+  "test_file_count": 0,
+  "frameworks": ["cargo-test"],
+  "coverage": []
+}

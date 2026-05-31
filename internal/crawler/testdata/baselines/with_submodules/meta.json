@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "project_name": "with_submodules",
+  "scan_date": "FROZEN",
+  "scan_commit": "FROZEN",
+  "file_count": 7,
+  "total_lines": 43,
+  "tree_lines": 3,
+  "doc_quality_score": 5
+}

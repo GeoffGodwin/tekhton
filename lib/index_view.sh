@@ -7,9 +7,14 @@ set -euo pipefail
 # project index file. Uses record selection (not truncation) when sections exceed
 # their budget allocation.
 #
-# Sourced by tekhton.sh AFTER crawler.sh and index_reader.sh — do not run directly.
-# Depends on: common.sh (log), crawler.sh (_json_escape, _budget_allocator)
+# Sourced by tekhton.sh — do not run directly.
+# Depends on: common.sh (log, _json_escape), index_view_budget.sh
+# (_budget_allocator — extracted at m30.1 from the deleted lib/crawler.sh).
+# View regeneration moves to Go in m31+ (see DESIGN_v4.md Phase 5).
 # =============================================================================
+
+# shellcheck source=lib/index_view_budget.sh
+source "${BASH_SOURCE[0]%/*}/index_view_budget.sh"
 
 # --- Main entry point ---------------------------------------------------------
 

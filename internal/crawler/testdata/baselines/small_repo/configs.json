@@ -1,0 +1,6 @@
+{
+  "configs": [
+    {"path":".gitignore","purpose":"Git ignore rules"},
+    {"path":"pyproject.toml","purpose":"Python project configuration"}
+  ]
+}

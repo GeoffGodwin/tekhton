@@ -1,0 +1,3 @@
+[submodule "vendor/lib"]
+	path = vendor/lib
+	url = https://example.com/lib.git

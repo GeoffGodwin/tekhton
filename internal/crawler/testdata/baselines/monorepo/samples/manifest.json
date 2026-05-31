@@ -1,0 +1,8 @@
+{
+  "samples": [
+    {"original":"README.md","stored":"README.md.txt","chars":122},
+    {"original":"package.json","stored":"package.json.txt","chars":250}
+  ],
+  "total_chars": 372,
+  "budget_chars": 16500
+}

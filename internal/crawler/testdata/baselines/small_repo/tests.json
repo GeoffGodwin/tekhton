@@ -1,0 +1,8 @@
+{
+  "test_dirs": [
+    {"path":"tests/","file_count":1}
+  ],
+  "test_file_count": 1,
+  "frameworks": [],
+  "coverage": []
+}

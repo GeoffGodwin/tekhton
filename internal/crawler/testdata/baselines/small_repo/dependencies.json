@@ -1,0 +1,10 @@
+{
+  "manifests": [
+    {"file":"pyproject.toml","manager":"pip","deps":3,"dev_deps":0}
+  ],
+  "key_dependencies": [
+    {"name":"requests","version":">=2.0","manifest":"pyproject.toml"},
+    {"name":"pydantic","version":"any","manifest":"pyproject.toml"},
+    {"name":"click","version":"any","manifest":"pyproject.toml"}
+  ]
+}

@@ -158,12 +158,8 @@ tekhton/
 │   ├── context_cache.sh    # Intra-run context cache
 │   ├── checkpoint.sh       # Progress checkpoint management
 │   ├── checkpoint_display.sh # Checkpoint display formatting
-│   ├── crawler.sh          # Project crawler orchestration
-│   ├── crawler_content.sh  # Crawler content sampling
-│   ├── crawler_inventory.sh # Crawler file inventory
-│   ├── crawler_deps.sh     # Crawler dependency analysis
-│   ├── rescan.sh           # Incremental rescan
-│   ├── rescan_helpers.sh   # Rescan helper functions
+│   # crawler subsystem ported to internal/crawler/ in m30.1 — six bash files deleted
+│   ├── rescan.sh           # Project rescan shim (m30.1 — execs `tekhton crawler crawl`; incremental returns in m30.2)
 │   ├── artifact_handler.sh # AI artifact detection handler
 │   ├── artifact_handler_ops.sh # Artifact handler operations
 │   ├── detect_services.sh  # Service detection

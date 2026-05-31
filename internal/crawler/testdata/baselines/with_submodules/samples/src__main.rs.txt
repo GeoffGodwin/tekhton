@@ -1,0 +1,3 @@
+fn main() {
+    println!("with_submodules: rust entry");
+}

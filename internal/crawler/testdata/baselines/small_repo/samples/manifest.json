@@ -1,0 +1,10 @@
+{
+  "samples": [
+    {"original":"README.md","stored":"README.md.txt","chars":193},
+    {"original":"src/main.py","stored":"src__main.py.txt","chars":154},
+    {"original":"pyproject.toml","stored":"pyproject.toml.txt","chars":197},
+    {"original":"src/lib.py","stored":"src__lib.py.txt","chars":107}
+  ],
+  "total_chars": 651,
+  "budget_chars": 16500
+}

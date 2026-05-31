@@ -390,7 +390,9 @@ if [ "${1:-}" = "--init" ] || [ "${1:-}" = "--reinit" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     # m29.2: detect subsystem lives in internal/detect/ — wrappers are
     # provided by common_detect.sh (sourced from common.sh).
-    source "${TEKHTON_HOME}/lib/crawler.sh"
+    # m30.1: crawler subsystem lives in internal/crawler/. lib/init.sh
+    # execs `tekhton crawler crawl` directly; no bash crawler files to
+    # source.
     source "${TEKHTON_HOME}/lib/index_reader.sh"
     source "${TEKHTON_HOME}/lib/index_view.sh"
     source "${TEKHTON_HOME}/lib/init.sh"
@@ -504,7 +506,9 @@ if [ "${1:-}" = "--replan" ]; then
     source "${TEKHTON_HOME}/lib/agent.sh"      # also sources agent_monitor.sh, agent_helpers.sh
     source "${TEKHTON_HOME}/lib/plan.sh"
     source "${TEKHTON_HOME}/lib/replan.sh"     # brownfield replan functions
-    source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # _extract_scan_metadata for replan_brownfield
+    # m30.1: _extract_scan_metadata for replan_brownfield (extracted into a
+    # standalone helper when the bash rescan helpers retired).
+    source "${TEKHTON_HOME}/lib/scan_metadata.sh"
     source "${TEKHTON_HOME}/lib/milestones.sh"
     source "${TEKHTON_HOME}/lib/milestone_dag.sh"
     source "${TEKHTON_HOME}/lib/milestone_query.sh"
@@ -522,7 +526,8 @@ fi
 if [ "${1:-}" = "--rescan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     # m29.2: detect wrappers come from common_detect.sh via common.sh.
-    source "${TEKHTON_HOME}/lib/crawler.sh"
+    # m30.1: rescan delegates to `tekhton crawler crawl` until m30.2
+    # restores incremental updates; no bash crawler files to source.
     source "${TEKHTON_HOME}/lib/rescan.sh"
     source "${TEKHTON_HOME}/lib/index_view.sh"
 
@@ -906,10 +911,12 @@ source "${TEKHTON_HOME}/lib/replan.sh"
 # the _tk_detect_* wrappers from common_detect.sh (sourced via common.sh).
 # shellcheck disable=SC1091
 source "${TEKHTON_HOME}/platforms/_base.sh"    # UI platform adapter framework (Milestone 57)
-source "${TEKHTON_HOME}/lib/crawler.sh"       # also sources crawler_inventory.sh, crawler_content.sh, crawler_emit.sh
+# m30.1: crawler ported to internal/crawler/; lib/crawler*.sh deleted.
+# Callers exec `tekhton crawler crawl` directly.
 source "${TEKHTON_HOME}/lib/index_reader.sh"  # structured index reader API (M68)
 source "${TEKHTON_HOME}/lib/index_view.sh"   # markdown view generator (M69)
-source "${TEKHTON_HOME}/lib/rescan_helpers.sh"  # helpers only; full rescan.sh sourced in --rescan block
+# m30.1: rescan_helpers.sh deleted alongside the bash crawler files;
+# rescan.sh now delegates to the Go binary until m30.2.
 source "${TEKHTON_HOME}/lib/specialists.sh"
 source "${TEKHTON_HOME}/lib/specialists_helpers.sh"
 source "${TEKHTON_HOME}/lib/metrics.sh"

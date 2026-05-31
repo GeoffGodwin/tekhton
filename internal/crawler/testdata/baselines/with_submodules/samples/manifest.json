@@ -1,0 +1,13 @@
+{
+  "samples": [
+    {"original":"README.md","stored":"README.md.txt","chars":160},
+    {"original":"src/main.rs","stored":"src__main.rs.txt","chars":58},
+    {"original":"cmd/main.go","stored":"cmd__main.go.txt","chars":85},
+    {"original":"Cargo.toml","stored":"Cargo.toml.txt","chars":185},
+    {"original":"pyproject.toml","stored":"pyproject.toml.txt","chars":99},
+    {"original":"go.mod","stored":"go.mod.txt","chars":122},
+    {"original":"src/main.rs","stored":"src__main.rs.txt","chars":58}
+  ],
+  "total_chars": 767,
+  "budget_chars": 16500
+}

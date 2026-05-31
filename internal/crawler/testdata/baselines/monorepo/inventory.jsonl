@@ -1,0 +1,8 @@
+{"path":"README.md","dir":".","lines":5,"size":"tiny"}
+{"path":"apps/baz/index.ts","dir":"apps/baz","lines":1,"size":"tiny"}
+{"path":"apps/baz/package.json","dir":"apps/baz","lines":8,"size":"tiny"}
+{"path":"package.json","dir":".","lines":16,"size":"tiny"}
+{"path":"packages/bar/index.js","dir":"packages/bar","lines":1,"size":"tiny"}
+{"path":"packages/bar/package.json","dir":"packages/bar","lines":7,"size":"tiny"}
+{"path":"packages/foo/index.js","dir":"packages/foo","lines":1,"size":"tiny"}
+{"path":"packages/foo/package.json","dir":"packages/foo","lines":7,"size":"tiny"}

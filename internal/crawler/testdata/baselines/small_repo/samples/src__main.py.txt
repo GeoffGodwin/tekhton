@@ -1,0 +1,11 @@
+"""Entry point for the small_repo demo."""
+
+from .lib import greet
+
+
+def main() -> None:
+    print(greet("World"))
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,5 @@
+"""Helper functions for the small_repo demo."""
+
+
+def greet(name: str) -> str:
+    return f"Hello, {name}!"

@@ -1,0 +1,8 @@
+{
+  "configs": [
+    {"path":"apps/baz/package.json","purpose":"Node.js package manifest"},
+    {"path":"package.json","purpose":"Node.js package manifest"},
+    {"path":"packages/bar/package.json","purpose":"Node.js package manifest"},
+    {"path":"packages/foo/package.json","purpose":"Node.js package manifest"}
+  ]
+}

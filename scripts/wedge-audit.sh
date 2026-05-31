@@ -244,6 +244,30 @@ PATTERNS=(
     '\bresolve_alias_category\s*\(\)'
     '\bresolve_alias_subcategory\s*\(\)'
     '\bformat_failure_cause_summary\s*\(\)'
+    # m30.1 (Phase 5): the crawler core ported to internal/crawler/. All
+    # six lib/crawler*.sh files were deleted, plus lib/rescan_helpers.sh
+    # (which only existed to back the bash crawler's incremental rescan).
+    # Sourcing any of them from lib/, stages/, or tekhton-legacy.sh would
+    # silently fork the contract. lib/init.sh and lib/rescan.sh now exec
+    # `tekhton crawler crawl` directly; no bash crawler library files
+    # should appear in the source tree.
+    '^[[:space:]]*(source|\.)[[:space:]]+.*/(crawler|crawler_inventory|crawler_inventory_emitters|crawler_content|crawler_deps|crawler_emit|rescan_helpers)\.sh'
+    # The bash crawler function names whose reintroduction in lib/ or
+    # stages/ would mean someone is rebuilding the bash crawler outside
+    # the Go boundary. Function-definition shape only (`fn_name()`).
+    '\bcrawl_project\s*\(\)'
+    '\b_list_tracked_files\s*\(\)'
+    '\b_crawl_directory_tree\s*\(\)'
+    '\b_emit_tree_txt\s*\(\)'
+    '\b_emit_inventory_jsonl\s*\(\)'
+    '\b_emit_dependencies_json\s*\(\)'
+    '\b_emit_configs_json\s*\(\)'
+    '\b_emit_tests_json\s*\(\)'
+    '\b_emit_sampled_files\s*\(\)'
+    '\b_emit_meta_json\s*\(\)'
+    '\b_annotate_package\s*\(\)'
+    '\b_is_binary_file\s*\(\)'
+    '\b_read_sampled_file\s*\(\)'
 )
 
 # --- Audit -------------------------------------------------------------------

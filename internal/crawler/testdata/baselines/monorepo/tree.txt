@@ -1,0 +1,6 @@
+.
+./apps
+./apps/baz
+./packages
+./packages/bar
+./packages/foo

@@ -1,0 +1,7 @@
+{"path":".gitignore","dir":".","lines":3,"size":"tiny"}
+{"path":"LICENSE","dir":".","lines":1,"size":"tiny"}
+{"path":"README.md","dir":".","lines":16,"size":"tiny"}
+{"path":"pyproject.toml","dir":".","lines":12,"size":"tiny"}
+{"path":"src/lib.py","dir":"src","lines":5,"size":"tiny"}
+{"path":"src/main.py","dir":"src","lines":11,"size":"tiny"}
+{"path":"tests/test_main.py","dir":"tests","lines":5,"size":"tiny"}

@@ -1,0 +1,7 @@
+{"path":".gitmodules","dir":".","lines":3,"size":"tiny"}
+{"path":"Cargo.toml","dir":".","lines":11,"size":"tiny"}
+{"path":"README.md","dir":".","lines":4,"size":"tiny"}
+{"path":"cmd/main.go","dir":"cmd","lines":7,"size":"tiny"}
+{"path":"go.mod","dir":".","lines":8,"size":"tiny"}
+{"path":"pyproject.toml","dir":".","lines":7,"size":"tiny"}
+{"path":"src/main.rs","dir":"src","lines":3,"size":"tiny"}

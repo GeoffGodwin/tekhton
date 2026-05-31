@@ -1,0 +1,7 @@
+[project]
+name = "with-submodules"
+version = "0.1.0"
+dependencies = [
+    "numpy",
+    "fastapi",
+]

@@ -93,10 +93,12 @@ var DefaultLibHelpers = []string{
 	// Bash stages reach the Go subsystem via `_tk_detect_*` wrappers from
 	// lib/common_detect.sh (sourced from common.sh).
 	"platforms/_base.sh",
-	"lib/crawler.sh",
+	// m30.1: lib/crawler*.sh (six files) deleted; ported to internal/crawler/.
+	// Bash callers reach the Go crawler via `tekhton crawler crawl`.
+	// lib/rescan_helpers.sh deleted alongside — rescan.sh now delegates
+	// to the Go binary until m30.2 ports the incremental path.
 	"lib/index_reader.sh",
 	"lib/index_view.sh",
-	"lib/rescan_helpers.sh",
 	"lib/specialists.sh",
 	"lib/specialists_helpers.sh",
 	"lib/metrics.sh",

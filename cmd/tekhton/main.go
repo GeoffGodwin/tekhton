@@ -50,6 +50,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newCommitBookkeepingCmd())
 	cmd.AddCommand(newPreflightCmd())
 	cmd.AddCommand(newDetectCmd())
+	cmd.AddCommand(newCrawlerCmd())
 	cmd.AddCommand(newDashboardCmd())
 	cmd.AddCommand(newTUICmd())
 	cmd.AddCommand(newNoteCmd())
