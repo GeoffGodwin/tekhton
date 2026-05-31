@@ -179,3 +179,74 @@ func TestBuildGateFromEnv_AssemblesAllPhases(t *testing.T) {
 func writeFileTest(path, body string) error {
 	return os.WriteFile(path, []byte(body), 0o644)
 }
+
+// TestCompletionGateFromEnv_PassOnPreexistingTrue verifies that the
+// TEST_BASELINE_PASS_ON_PREEXISTING env var is read and propagated to
+// CompletionGate.PassOnPreexisting. The field is a prerequisite for M92
+// pre-existing-failure acceptance; if it's not read the feature cannot work
+// regardless of whether a BaselineComparator is wired.
+func TestCompletionGateFromEnv_PassOnPreexistingTrue(t *testing.T) {
+	t.Setenv("TEST_BASELINE_PASS_ON_PREEXISTING", "true")
+	t.Setenv("TEKHTON_DIR", t.TempDir())
+	g := completionGateFromEnv()
+	if !g.PassOnPreexisting {
+		t.Error("PassOnPreexisting = false, want true (TEST_BASELINE_PASS_ON_PREEXISTING=true not propagated)")
+	}
+}
+
+// TestCompletionGateFromEnv_PassOnPreexistingDefaultFalse verifies the M92
+// default: TEST_BASELINE_PASS_ON_PREEXISTING defaults to false so
+// pre-existing failures are rejected until explicitly opted out.
+func TestCompletionGateFromEnv_PassOnPreexistingDefaultFalse(t *testing.T) {
+	t.Setenv("TEST_BASELINE_PASS_ON_PREEXISTING", "")
+	t.Setenv("TEKHTON_DIR", t.TempDir())
+	g := completionGateFromEnv()
+	if g.PassOnPreexisting {
+		t.Error("PassOnPreexisting = true, want false (M92 default is reject pre-existing failures)")
+	}
+}
+
+// TestCompletionGateFromEnv_NilBaselinePreventsM92Accept documents that
+// completionGateFromEnv() leaves Baseline nil (Reviewer non-blocking note,
+// m31.1 known gap). With Baseline == nil, TEST_BASELINE_PASS_ON_PREEXISTING=true
+// has no effect — the M92 accept-pre-existing path in CompletionGate.runTestCmd
+// is guarded by `g.Baseline != nil`, so the flag is silently inert. This test
+// will fail (and should be updated) once a concrete BaselineComparator is wired
+// in completionGateFromEnv.
+func TestCompletionGateFromEnv_NilBaselinePreventsM92Accept(t *testing.T) {
+	t.Setenv("TEKHTON_DIR", t.TempDir())
+	g := completionGateFromEnv()
+	if g.Baseline != nil {
+		t.Error("Baseline is now wired in completionGateFromEnv — update this test and the M92 parity scenario")
+	}
+}
+
+// TestCompletionGateFromEnv_DedupNilDocumentsM105Gap documents that
+// completionGateFromEnv() leaves Dedup nil. With Dedup == nil, the M105
+// working-tree fingerprint fast-path (CanSkip → skip TEST_CMD invocation)
+// never fires: TEST_CMD always runs even on an unchanged working tree.
+// This test will fail (and should be updated) once a concrete TestDedup
+// implementation is wired in completionGateFromEnv.
+func TestCompletionGateFromEnv_DedupNilDocumentsM105Gap(t *testing.T) {
+	t.Setenv("TEKHTON_DIR", t.TempDir())
+	g := completionGateFromEnv()
+	if g.Dedup != nil {
+		t.Error("Dedup is now wired in completionGateFromEnv — update this test and add an M105 parity scenario")
+	}
+}
+
+// TestCompletionGateFromEnv_SubstantiveNilDocumentsM86Gap documents that
+// completionGateFromEnv() leaves Substantive nil. With Substantive == nil,
+// the M86 substantive-work probe never fires — a CODER_SUMMARY.md with no
+// Status field always routes to ErrCompletionNoStatus rather than the more
+// informative ErrCompletionSubstantiveNoStatus, regardless of whether the
+// working tree has real changes.
+// This test will fail (and should be updated) once a concrete SubstantiveProbe
+// is wired in completionGateFromEnv.
+func TestCompletionGateFromEnv_SubstantiveNilDocumentsM86Gap(t *testing.T) {
+	t.Setenv("TEKHTON_DIR", t.TempDir())
+	g := completionGateFromEnv()
+	if g.Substantive != nil {
+		t.Error("Substantive is now wired in completionGateFromEnv — update this test and the M86 parity scenario")
+	}
+}

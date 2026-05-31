@@ -180,5 +180,61 @@ _run_build_scenario "gate_timeout" "report" "no_raw" \
     BUILD_GATE_TIMEOUT=1 \
     BUILD_GATE_ANALYZE_TIMEOUT=10
 
+# --- Scenario 9: M92 — TEST_BASELINE_PASS_ON_PREEXISTING=true, TEST_CMD fails ---
+# Baseline is nil in completionGateFromEnv(), so the flag has no effect: the
+# gate returns ErrCompletionTestFailed (exit 1) even though the flag is set.
+# This scenario documents the CURRENT CLI behavior. Once a concrete
+# BaselineComparator is wired in completionGateFromEnv(), this scenario should
+# be split: pre-existing failures should exit 0 when the flag is true.
+_run_completion_scenario "completion_preexisting_m92" "nonzero" "## Status: COMPLETE" \
+    COMPLETION_GATE_TEST_ENABLED=true \
+    TEST_CMD=false \
+    TEST_BASELINE_PASS_ON_PREEXISTING=true
+
+# --- Scenario 10: M105 — Dedup nil, TEST_CMD always runs ---------------------
+# Documents that the M105 test-dedup fast-path is not wired at the CLI level.
+# A side-effecting TEST_CMD (creates a sentinel file) is used to prove
+# TEST_CMD was actually invoked. With Dedup == nil, no cached fingerprint can
+# suppress the run; the sentinel file MUST be present after gate completion.
+_completion_dedup_always_runs() {
+    local tmp
+    tmp=$(mktemp -d)
+    mkdir -p "${tmp}/.tekhton"
+    local sentinel="${tmp}/test_ran_sentinel"
+    printf '## Status: COMPLETE\n' > "${tmp}/.tekhton/CODER_SUMMARY.md"
+
+    # Use sh-escaped path — ExecRunner forks `bash -c "$TEST_CMD"` so the
+    # path is safe as long as TMPDIR has no spaces (mktemp guarantees this).
+    local test_cmd="touch '${sentinel}'"
+
+    env -i \
+        PATH="$PATH" \
+        HOME="$HOME" \
+        TMPDIR="$tmp" \
+        TEKHTON_DIR=".tekhton" \
+        PROJECT_DIR="$tmp" \
+        COMPLETION_GATE_TEST_ENABLED=true \
+        TEST_CMD="$test_cmd" \
+        "$TEKHTON_BIN" gate completion \
+        >/dev/null 2>&1 || true  # exit code not checked here — we verify side-effect
+
+    if [[ -f "$sentinel" ]]; then
+        parity_pass "completion_dedup_m105: TEST_CMD ran (Dedup nil — expected)"
+    else
+        parity_fail "completion_dedup_m105: TEST_CMD did not run (dedup unexpectedly suppressed it)"
+    fi
+    rm -rf "$tmp"
+}
+_completion_dedup_always_runs
+
+# --- Scenario 11: M86 — no Status field, Substantive probe not wired --------
+# With Substantive == nil in completionGateFromEnv(), a summary with no Status
+# field always routes to ErrCompletionNoStatus (not ErrCompletionSubstantiveNoStatus).
+# The exit code is non-zero for both errors, so this scenario tests that the
+# gate correctly rejects a no-status summary even when there is no Substantive
+# probe wired. The stderr message is "no clear Status field" (not "substantive
+# work without status") — the distinction is unobservable at exit-code granularity.
+_run_completion_scenario "completion_substantive_m86" "nonzero" "# Summary\nNo status header."
+
 parity_summary "test_gates_parity" || exit 1
 exit 0

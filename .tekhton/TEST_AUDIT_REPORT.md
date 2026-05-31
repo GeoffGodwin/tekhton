@@ -1,107 +1,100 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 8 files, 56 test functions
-- `internal/crawler/rescan_test.go` — 16 functions (primary — modified this run)
-- `internal/crawler/changes_test.go` — 7 functions (freshness sample)
-- `internal/crawler/significance_test.go` — 2 functions (freshness sample)
-- `internal/crawler/emit_test.go` — 8 functions (freshness sample)
-- `internal/crawler/deps_test.go` — 10 functions (freshness sample)
-- `internal/crawler/metadata_test.go` — 9 functions (freshness sample)
-- `cmd/tekhton/crawler_test.go` — 4 functions
-- `tests/test_crawler_parity.sh` — 1 bash parity gate (3 fixture × 7 artifact runs)
-
+Tests audited: 2 files, 14 test functions (cmd/tekhton/gate_test.go) + 11 scenarios (tests/test_gates_parity.sh)
 Verdict: PASS
-
----
 
 ### Findings
 
-#### NAMING: Dead helper never invoked
-- File: `internal/crawler/rescan_test.go:435`
-- Issue: `ensureGitAvailable(t *testing.T)` is defined at package scope but called by
-  no test function in the file. The git-availability guard is already embedded in
-  `gitInit` (called transitively by `setupRescanRepo`), so this helper is unreachable
-  dead code. It misleads future contributors into thinking an explicit skip guard is
-  active somewhere it is not.
-- Severity: LOW
-- Action: Remove `ensureGitAvailable` (lines 435–440). The guard path is covered by
-  `gitInit` in `changes_test.go:94-97`.
+#### COVERAGE: Build-gate parity scenarios do not directly assert exit code
+- File: tests/test_gates_parity.sh:69-99 (_run_build_scenario)
+- Issue: `result_exit` is captured but never directly asserted. The comment at line 93 says
+  exit code is verified "indirectly" via file existence. This creates a blind spot: if the
+  gate binary panics or exits non-zero without writing BUILD_ERRORS.md (e.g., an
+  infrastructure error from `runner.Run` wrapping a non-sentinel error, per
+  internal/gates/completion.go:186-188 comments), a clean-run scenario (analyze_clean,
+  compile_clean) would record a spurious parity_pass. The "fail" scenarios are
+  self-checking (missing report file would trigger parity_fail), but the clean-run path
+  is not guarded. By contrast, the completion scenarios do directly assert exit code
+  (lines 122-136), so the gap is specific to `_run_build_scenario`.
+- Severity: MEDIUM
+- Action: Add a direct exit-code assertion inside `_run_build_scenario`. When
+  `expect_report` is `no_report`, assert `[[ "$result_exit" -eq 0 ]]` and call
+  `parity_pass` / `parity_fail` accordingly. When `expect_report` is `report`, assert
+  `[[ "$result_exit" -ne 0 ]]`. One assertion call per scenario suffices.
 
-#### COVERAGE: Non-git sentinel branch assertion underspecified
-- File: `internal/crawler/rescan_test.go:176` (`TestRescanBranchScanCommitNonGit`)
-- Issue: The test only asserts `r.Mode == "full"`. It does not assert `FallbackReason`
-  content. The implementation groups the `"non-git"` sentinel with the empty-scan-commit
-  path at `rescan.go:154`, emitting FallbackReason `"no scan commit recorded"`. Because
-  `TestRescanBranchNoScanCommit` (line 162) also expects mode="full" with the same reason,
-  the two tests are indistinguishable by their assertions — neither proves the
-  `lastScanCommit == "non-git"` arm specifically fires. An accidental reordering of the
-  sentinel check would not be caught.
+#### COVERAGE: IN PROGRESS completion branch not exercised in parity scenarios
+- File: tests/test_gates_parity.sh (no scenario covers this branch)
+- Issue: `CompletionGate.Run` (internal/gates/completion.go:145-147) has five documented
+  branches. Scenarios 5-11 cover: COMPLETE+pass, COMPLETE+fail-tests, no-status, timeout,
+  M92-nil, M105-nil, and M86-nil. The first branch — coder self-reporting "IN PROGRESS"
+  (returns `ErrCompletionInProgress`) — has no scenario. A CODER_SUMMARY.md containing
+  `## Status: IN PROGRESS` exercises distinct gate logic and a distinct sentinel error.
 - Severity: LOW
-- Action: Add `if !strings.Contains(r.FallbackReason, "no scan commit") { t.Errorf(...) }`
-  to `TestRescanBranchScanCommitNonGit`, mirroring the pattern in
-  `TestRescanBranchNoScanCommit`.
+- Action: Add scenario 12 using `_run_completion_scenario` with
+  `summary="## Status: IN PROGRESS"` and `exit_check="nonzero"`. No fixtures needed.
 
-#### COVERAGE: rescan_scenarios fixture directories untested by any gate
-- File: `tests/test_crawler_parity.sh` (gap)
-- Issue: `internal/crawler/testdata/rescan_scenarios/{no_changes,trivial,moderate_manifest,
-  major_manifest}/` exist as versioned fixture directories but are referenced by no test
-  in the audited file set. The parity gate only exercises `tekhton crawler crawl` (not
-  `rescan`) against three fixtures. The Go rescan unit tests build ad-hoc git repos via
-  `setupRescanRepo` rather than using these fixtures, so the scenario directories are
-  currently dead test data.
+#### COVERAGE: resolveUnder edge cases not unit-tested
+- File: cmd/tekhton/gate_test.go (no test for resolveUnder)
+- Issue: `resolveUnder` (gate.go:205-210) has three behavioral branches — absolute path
+  returned unchanged, empty projectDir returns path unchanged, relative path joined under
+  projectDir. All three are load-bearing: the env contract relies on them for
+  BUILD_ERRORS.md and BUILD_RAW_ERRORS.txt landing in the correct project directory.
+  The function is implicitly exercised by `TestBuildGateFromEnv_AssemblesAllPhases`, but
+  none of its edge cases are directly asserted.
 - Severity: LOW
-- Action: Either (a) add a `test_rescan_parity.sh` gate that runs `tekhton crawler rescan
-  --json` against each scenario and asserts expected `mode`/`significance` in the JSON
-  output, or (b) remove the scenario directories if the Go unit tests are considered
-  sufficient. Current Go coverage of the rescan branches is adequate — this is
-  documentation/fixture debt, not a correctness gap.
+- Action: Add a table-driven `TestResolveUnder` covering the three branches. This is a
+  pure function with no subprocess dependency, so the test is trivial and deterministic.
+
+#### COVERAGE: Gap-documentation tests — informational, no action required
+- File: cmd/tekhton/gate_test.go:216-252
+- Issue: (Non-finding, noted for completeness.) Three tests document known m31.1 gaps:
+  `TestCompletionGateFromEnv_NilBaselinePreventsM92Accept`,
+  `TestCompletionGateFromEnv_DedupNilDocumentsM105Gap`,
+  `TestCompletionGateFromEnv_SubstantiveNilDocumentsM86Gap`. All three assert that the
+  respective `CompletionGate` fields are nil and include explicit comment blocks saying
+  "this test will fail once wired." The pattern is correctly applied — each gap-doc test
+  creates a regression guard that goes red when m31.2 wires the concrete implementation,
+  prompting the author to update parity scenarios.
+- Severity: LOW (informational only)
+- Action: None now. When m31.2 wires Baseline/Dedup/Substantive in
+  `completionGateFromEnv()`, delete or update these three tests as the comments instruct,
+  and add the corresponding parity scenarios for the newly active branches.
 
 ---
 
 ### No Issues Found In
 
 **INTEGRITY — none.** All assertions test real behavior derived from implementation
-logic. The `"major structural changes detected"` string checked in
-`TestRescanBranchMajorTriggersFullCrawl` (`rescan_test.go:231`) matches the literal
-passed to `rescanFallToFull` at `rescan.go:177`. The dep-count `Deps == 3` assertion in
-`deps_test.go:47` is explicitly explained by the `extractWithHeader` bash-parity
-counting quirk documented in the test comment. The `emitMetaJSON` byte-shape assertion
-in `emit_test.go:165-178` was verified against the hand-rolled template in `emit.go`
-and is correct.
+logic. The `len(g.Phases) != 5` assertion in `TestBuildGateFromEnv_AssemblesAllPhases`
+(gate_test.go:172) is derived from the five factory keys registered in
+`buildGateFromEnv` (gate.go:132-174). The `exitUsage` constant checked in
+`TestGateUI_StubReturnsNonZero` (gate_test.go:69) is the same constant the stub
+returns at gate.go:99. The `envBool("anything")` → false table case follows the exact
+switch statement in gate.go:238-244. No hard-coded magic values appear anywhere in
+the audited tests.
 
-**WEAKENING — none.** The two cycle-2 tester additions both strengthen existing tests:
-- `TestRescanBranchTrivialIncremental` (lines 279-281): added `manifest.json` in the
-  `wrote` map assertion. Previously the test verified inventory/meta but not samples.
-  Now it verifies samples regenerate when a sampled file is modified — matches the
-  `regen.samples = true` path at `rescan.go:285-291`.
-- `TestRescanBranchMajorTriggersFullCrawl` (lines 232-234): added FallbackReason
-  assertion. This is a new positive assertion, not a relaxation of an existing one.
-  No prior assertions were removed or broadened anywhere in the file.
+**WEAKENING — none.** All 14 functions in gate_test.go and all 11 scenarios in
+test_gates_parity.sh are new (confirmed by TESTER_REPORT and CODER_SUMMARY). No
+prior assertions were removed or broadened.
 
-**SCOPE — none.** All function references cross-checked against current implementation
-files. `Rescan`, `ErrMissingProjectDir`, `ClassifyChanges`, `DetectChangedFiles`,
-`ExtractScanMetadata`, `ExtractSampledFiles`, `IsManifestFile`, `IsConfigFile`,
-`sampledFileTouched`, `highPriorityAdded`, `fileExists`, `gitCommitExists`, `isGitRepo`,
-`parseDiffNameStatus`, `parsePorcelain`, `newRegenSetWithIndexDir`, `recordingWriter`,
-all `emit*` functions — all present in the current package with matching signatures.
-No test references `rescan_stub.go` (replaced) or any deleted bash function.
+**SCOPE — none.** All function references verified against the current implementation.
+`newGateCmd`, `newGateUICmd`, `buildGateFromEnv`, `completionGateFromEnv`, `envOr`,
+`envBool`, `envSeconds`, `readValidationCmd` — all present in cmd/tekhton/gate.go with
+matching signatures. `errExitCode` and `exitUsage` are used package-wide (confirmed
+present in cmd/tekhton/finalize_test.go:103 and gate.go:99 respectively). The deleted
+file `.tekhton/stage_results/stage_tester_r1_b0.json` is not referenced by any audited
+test.
 
-**EXERCISE — none.** All Go tests call real package functions. The `recordingWriter` in
-`emit_test.go` is a purposeful test double for the `Writer` interface that enforces the
-write-only-to-IndexDir safety invariant by returning an error on out-of-prefix writes
-(`emit_test.go:38-43`). Tests for `Rescan` that take the full-crawl path (e.g.,
-`TestRescanBranchMajorTriggersFullCrawl`) use the default `fsWriter{}` and run the real
-`Crawl` implementation against the temp project.
+**EXERCISE — none.** All Go tests call real implementation functions. No test mocks
+the primary function under test. `TestBuildGateFromEnv_AssemblesAllPhases` calls the
+real `BuildGate.Run` end-to-end with all-skip phases (gate.go:174). The parity shell
+tests invoke the compiled `tekhton` binary via `env -i` with a clean environment and
+real command arguments.
 
-**ISOLATION — none.** All Go tests create fixtures with `t.TempDir()`. The parity shell
-test writes to `mktemp -d` with `trap 'rm -rf "${WORK}"' EXIT` and reads only from
-version-controlled fixture and baseline directories. No test reads mutable pipeline
-artifacts (`.tekhton/CODER_SUMMARY.md`, `.tekhton/BUILD_ERRORS.md`, `.claude/logs/*`,
-or similar run-state files).
-
-**PARITY GATE — properly structured.** `tests/test_crawler_parity.sh` self-skips when
-the Go binary is not built (exits 0 with a SKIP message). Normalises volatile fields
-(`scan_date`, `scan_commit`) before byte-diffing. Asserts 21 artifact pairs (3 fixtures
-× 7 artifacts). Uses the `parity_assert_equal` / `parity_summary` harness from
-`tests/lib/parity.sh`. Both `parity.sh` and `normalize_index.sh` confirmed present.
+**ISOLATION — none.** All Go tests use `t.TempDir()` and `t.Setenv()`. The parity
+shell tests write to `mktemp -d` directories and clean up via `rm -rf "$tmp"` at the
+end of each scenario. `env -i` isolates each binary invocation from the host
+environment. No test reads mutable pipeline state files
+(.tekhton/CODER_SUMMARY.md, .tekhton/BUILD_ERRORS.md, .claude/logs/*, etc.) without
+first creating a controlled copy in a temp directory.
