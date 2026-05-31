@@ -225,9 +225,9 @@ func TestDiagnoseRun_EmptyProjectDirReportsNoState(t *testing.T) {
 // the reviewer gap between the engine integration test (which calls the engine
 // directly) and the CLI smoke test (which only exercises the no-state path).
 //
-// The test does not assert a specific classification because the BashRuleAdapter
-// requires a resolvable TEKHTON_HOME to match bash rules — when it is absent the
-// engine falls through to UNKNOWN. What matters here is that:
+// The test does not assert a specific classification beyond non-empty: the
+// rule that fires depends on which fields the m32.2 Go registry's rules look
+// for. What matters here is that:
 //  1. ReadContext successfully parses the fixture and does NOT report "no runs found".
 //  2. The CLI prints "Classification:" on stdout (the engine ran to completion).
 //  3. Exit code is 0 (the CLI path is fully wired).

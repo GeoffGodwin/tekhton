@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/geoffgodwin/tekhton/internal/diagnose"
+	"github.com/geoffgodwin/tekhton/internal/diagnose/rules"
 	terr "github.com/geoffgodwin/tekhton/internal/errors"
 	"github.com/spf13/cobra"
 )
@@ -17,11 +18,12 @@ import (
 // thin shim over the internal/errors package; bash callers reach this
 // through lib/errors.sh's shell shims.
 //
-// m32.1 adds `tekhton diagnose run`, a Hidden developer subcommand that
-// drives the new internal/diagnose Engine end-to-end against the still-bash
-// rule registry (via BashRuleAdapter). The m17 leaves below are NOT touched
-// by m32.1 — operator behavior continues to flow through bash until m32.3
-// rewires `tekhton --diagnose` at lib/tekhton-legacy.sh:657-659.
+// `tekhton diagnose run` is a Hidden developer subcommand that drives the
+// internal/diagnose Engine end-to-end. m32.1 added it against a transition
+// BashRuleAdapter; m32.2 wired it to the Go-native rules.Registry. The m17
+// leaves below are NOT touched — operator behavior continues to flow
+// through bash until m32.3 rewires `tekhton --diagnose` at
+// lib/tekhton-legacy.sh:657-659.
 func newDiagnoseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diagnose",
@@ -36,14 +38,19 @@ func newDiagnoseCmd() *cobra.Command {
 	return cmd
 }
 
-// newDiagnoseRunCmd wires `tekhton diagnose run` — the m32.1 entry point
-// for the Go-native diagnose Engine. Hidden because:
+// newDiagnoseRunCmd wires `tekhton diagnose run` — the entry point for the
+// Go-native diagnose Engine. Hidden because:
 //
-//  1. m32.1 ships a minimal verdict-only report — the full
-//     generate_diagnosis_report port lands in m32.3.
+//  1. The minimal verdict-only report shipped here is a developer aid; the
+//     full generate_diagnosis_report port lands in m32.3.
 //  2. Operator behavior continues to flow through bash via
 //     `tekhton --diagnose` until m32.3 rewires the legacy shim.
 //  3. The subcommand is primarily a parity-gate replay tool.
+//
+// m32.2 swapped the rule provider from the m32.1 BashRuleAdapter to the
+// Go-native rules.Registry. The Engine itself is unchanged — the seam is
+// the diagnose.RuleProvider interface, which is exactly the cut-line the
+// rule-registry port was designed around.
 func newDiagnoseRunCmd() *cobra.Command {
 	var (
 		projectDir string
@@ -60,7 +67,7 @@ func newDiagnoseRunCmd() *cobra.Command {
 			if home == "" {
 				home = os.Getenv("TEKHTON_HOME")
 			}
-			eng := diagnose.NewEngine(&diagnose.BashRuleAdapter{TekhtonHome: home})
+			eng := diagnose.NewEngine(rules.New())
 			eng.Logger = c.ErrOrStderr()
 			ctx := context.Background()
 			ctxCtx, err := eng.ReadContext(ctx, &diagnose.Input{ProjectDir: projectDir, TekhtonHome: home})

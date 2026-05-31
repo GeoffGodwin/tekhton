@@ -1,21 +1,7 @@
-# Reviewer Report — m32.1 Diagnose Engine (Cycle 2)
+# Reviewer Report — m32.2 Diagnose Rules
 
 ## Verdict
 APPROVED_WITH_NOTES
-
-Both cycle-1 blockers are confirmed fixed. The rework introduced no regressions.
-
-**Blocker 1 — `doubleQuotedRe` (engine.go:229-231):** FIXED.
-`grep doubleQuotedRe internal/diagnose/` returns no matches. The package-level
-dead variable is gone.
-
-**Blocker 2 — `jsonString()` method (engine.go:389-397):** FIXED.
-`grep jsonString internal/diagnose/` returns no matches. The unexported dead
-method is gone, and `encoding/json` is absent from the import block (lines
-15–26) — the orphaned import was cleaned up correctly.
-
-`engine.go` is now 381 lines, imports are all consumed, and `go test ./...`
-was reported passing by the coder.
 
 ## Complex Blockers (senior coder)
 - None
@@ -24,20 +10,17 @@ was reported passing by the coder.
 - None
 
 ## Non-Blocking Notes
-- `engine.go:306-308`: `extractKVLine` compiles two regexes via `regexp.MustCompile` on every call; `parseCauseBlock` calls it per line of each cause block. Carry forward from cycle 1 — promote to package-level variables (matching the style of `classificationRe`/`consecutiveCountRe` in `helpers.go`) to avoid repeated compilation on the per-line path.
-- `engine.go:213`: `c.CauseChain = ""` stub has no comment tying it to the missing `cause_chain_summary` port. Carry forward from cycle 1 — a `// TODO(m32.2): extract cause chain from c.CausalEvents via causality port` comment would make the gap self-documenting for the next milestone author.
-- `bash_rule_adapter.go`: `flattenLogTails` iterates over a `map[string]string` with non-deterministic key order. Carry forward from cycle 1 — sort keys (mirroring `CollectAgentLogTails`'s `sort.Strings`) for deterministic output.
-- Fixture `expected/` directories contain `verdict.txt` stubs rather than the milestone-specified `DIAGNOSIS.md` + `diagnosis.js` shapes. Appropriate m32.1 scope reduction; m32.3 authors must add those files to complete the parity gates.
-- `make dogfood` pre-existing failure (`tests/test_stage_env_setu.sh` — `lib/gates.sh` deleted in m31.1) is correctly identified as out of scope. Should be resolved as a m31-arc follow-up before m32.3 bumps VERSION.
+- `helpers.go:83` — `pathFromEnvOr` is defined but never called from any rule file; every rule calls `envOr` directly. Dead code; can be deleted.
+- `resilience.go:309` — `projectFilePath` is defined but never called; the comment says "used by the preflight rule below" but `resilience_preflight.go` uses `projectPath` instead. Dead code; can be deleted.
+- `engine_test.go` — After the BashRuleAdapter test was removed, four helpers remain orphaned: `materializeFixture`, `mapFixturePath`, `readExpected`, and `findTekhtonHome`. Go does not error on unused test-file functions, but they confuse the next reader who sees fixture infrastructure with no test that uses it.
+- `resilience_preflight.go` — `splitLines`, `containsExact`, and `indexOfExact` are thin wrappers around `strings.Split`, `strings.Contains`, and `strings.Index`. The "self-containedness at review time" rationale is reasonable, but the functions add ~20 lines with no semantic value beyond what the stdlib calls provide.
+- `engine.go:317-319` — `extractKVLine` still compiles two regexes per call via inline `regexp.Compile`. Carried forward from m32.1 review — promote to package-level compiled variables to avoid repeated compilation on the per-line path.
 
 ## Coverage Gaps
-- `parseCauseBlock`, `extractJSONString`, `extractJSONInt` (private readers in `engine.go`) are exercised only transitively through `TestReadContext_FailureContextPopulatesClassification`. Direct table-driven tests covering malformed JSON, missing cause blocks, and multi-value nested objects would guard correctness without a full ReadContext round-trip.
-- No test drives `tekhton diagnose run` CLI with a populated fixture; existing CLI tests only cover the no-state path and `--help`. A test materializing `max-turns-coder` through `cmd.Execute()` would close the gap between the engine integration test and the CLI smoke test.
+- `TestPreflightInteractiveConfig_Match` covers source 1 (RUN_SUMMARY preflight_ui section) and source 3b (LAST_FAILURE_CONTEXT classification) but omits source 2 (PREFLIGHT_REPORT.md with UI Config header + fail word) and source 3a (PrimarySignal == "ui_interactive_config_preflight"). The baseline parity test gates correctness end-to-end, but per-source unit coverage for the two untested paths would make the test suite more informative on future regressions.
 
 ## ACP Verdicts
-
 None — no Architecture Change Proposals in CODER_SUMMARY.md.
 
 ## Drift Observations
-- `internal/diagnose/types.go`: `CausalEvents` and `ErrorEvents` fields are `string` (newline-joined) while the milestone design spec shows `[]string`. Works correctly with the bash adapter and the `grepLines`/`countLinesMatchingBoth` helpers, but m32.2 Go-native rules will need `strings.Split`. A field comment noting "newline-joined; split on \\n to iterate events" would prevent m32.2 confusion. Carry forward from cycle 1.
-- `engine.go` `ReadContext`: the `c.CauseChain = ""` stub has no inline comment tying it to the missing `cause_chain_summary` port. Carry forward from cycle 1.
+- `engine_test.go:264` — `mapFixturePath` in package `diagnose` is now a strict subset of the copy in `rules_test.go` (lacks `pipeline.conf` and `QUOTA_PAUSED` cases added for the version-mismatch and quota-exhausted fixtures). The two copies are diverged. If a future fixture requires a new file mapping, there are two places to update.

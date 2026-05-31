@@ -1,13 +1,14 @@
 // Package diagnose owns the m32 Go-native port of the Tekhton diagnostic
-// engine. m32.1 lands the engine framework + helpers + Rule/Diagnosis
-// contracts; m32.2 will land a Go-native rule registry; m32.3 will land the
+// engine. m32.1 landed the engine framework + helpers + Rule/Diagnosis
+// contracts. m32.2 replaced the BashRuleAdapter transition shim with a
+// Go-native rule registry (internal/diagnose/rules). m32.3 will land the
 // output writers + dashboard emitter + crash first-aid and delete the bash
 // surface entirely.
 //
-// During the m32.1 transition window, the engine drives the legacy bash rule
-// registry through BashRuleAdapter so observable behavior matches v4.31.x
-// byte-for-byte. The seam is the Rule interface — m32.2 swaps the adapter
-// for a native rule registry without touching Engine.Run.
+// The Rule interface is the long-lived seam: Engine.Run walks a
+// RuleProvider's rules top-down and stops at the first Match. The
+// production provider lives in internal/diagnose/rules and exposes
+// rules.New().
 package diagnose
 
 // Confidence is the qualitative certainty band a rule attaches to its match.
@@ -102,13 +103,26 @@ type Context struct {
 	BuildRawErrorsFile string
 	BuildFixReportFile string
 
+	// Pipeline state fields the rules read beyond the load-bearing
+	// stage/exit_reason — populated by Engine.ReadContext from the
+	// PIPELINE_STATE.md snapshot (first-class fields + Extra map).
+	Notes                 string
+	PipelineAttempt       int
+	AgentErrorCategory    string
+	AgentErrorSubcategory string
+	AgentErrorTransient   string // "true" | "false" | ""
+
+	// Split-depth signal — read from RUN_SUMMARY.json by Engine.ReadContext.
+	SplitDepth int
+
 	// Agent log tails — map of basename -> last 20 lines.
 	AgentLogTails map[string]string
 }
 
-// Rule is the m32.1 seam between the engine and the rule registry. m32.1 ships
-// a BashRuleAdapter that wraps each legacy bash rule function in this
-// interface; m32.2 replaces the adapter with native Go implementations.
+// Rule is the seam between the engine and the rule registry. The production
+// implementations live in internal/diagnose/rules (one struct per rule,
+// one source file per bash sibling). Tests inject fakes through the same
+// interface.
 //
 // Match is expected to be side-effect free with respect to *Context: rules
 // read but must not mutate. A return of (Diagnosis{}, false) means "no
@@ -121,8 +135,7 @@ type Rule interface {
 
 // RuleProvider exposes the priority-ordered rule list to the engine. The
 // engine walks Rules() top-down and stops at the first Match returning true.
-// During m32.1 the only implementation is BashRuleAdapter; m32.2 lands the
-// native Registry.
+// The canonical implementation is *rules.Registry (internal/diagnose/rules).
 type RuleProvider interface {
 	Rules() []Rule
 }

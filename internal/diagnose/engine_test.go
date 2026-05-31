@@ -208,52 +208,11 @@ func TestReadContext_CausalLogPopulatesAggregates(t *testing.T) {
 	}
 }
 
-// --- 15-baseline integration through BashRuleAdapter ------------------------
-
-// TestBashAdapterIntegration_MaxTurnsCoder is the m32.1 acceptance test:
-// load the captured max-turns-coder fixture, drive ReadContext + Run through
-// the production BashRuleAdapter (which exec's the bash rule registry), and
-// assert the verdict matches the v3 baseline.
-//
-// Skips when bash is unavailable, TEKHTON_HOME is unset, or the bash rule
-// libraries are missing — the test is meant to fire on dev / CI hosts that
-// have a checkout, not block contributors on minimal images.
-func TestBashAdapterIntegration_MaxTurnsCoder(t *testing.T) {
-	home := findTekhtonHome(t)
-	if home == "" {
-		t.Skip("TEKHTON_HOME not resolvable; skipping bash integration")
-	}
-	if _, err := os.Stat(filepath.Join(home, "lib", "diagnose_rules.sh")); err != nil {
-		t.Skipf("bash diagnose libraries unavailable at %s: %v", home, err)
-	}
-
-	fx := filepath.Join("testdata", "fixtures_v3", "max-turns-coder")
-	projectDir := materializeFixture(t, fx)
-
-	adapter := &BashRuleAdapter{TekhtonHome: home}
-	eng := NewEngine(adapter)
-	var stderr bytes.Buffer
-	eng.Logger = &stderr
-
-	c, err := eng.ReadContext(context.Background(), &Input{ProjectDir: projectDir, TekhtonHome: home})
-	if err != nil {
-		t.Fatalf("ReadContext: %v", err)
-	}
-	if c == nil {
-		t.Fatal("ReadContext returned nil; fixture inputs missing")
-	}
-	d := eng.Run(context.Background(), c)
-	want := readExpected(t, fx, "verdict.txt")
-	gotClass := want["classification"]
-	if d.Classification != gotClass {
-		t.Fatalf("classification: baseline=%q got=%q", gotClass, d.Classification)
-	}
-	if string(d.Confidence) != want["confidence"] {
-		t.Errorf("confidence: baseline=%q got=%q", want["confidence"], string(d.Confidence))
-	}
-}
-
 // --- helpers ----------------------------------------------------------------
+
+// Note: the m32.1 BashRuleAdapter integration test was deleted in m32.2.
+// The 15-baseline parity test now lives in internal/diagnose/rules/rules_test.go,
+// which drives the Go-native registry — no bash subprocess required.
 
 type recordingRule struct {
 	inner Rule

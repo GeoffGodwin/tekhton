@@ -1,4 +1,4 @@
 classification=VERSION_MISMATCH
-confidence=high
+confidence=medium
 stage=intake
 rule=_rule_version_mismatch

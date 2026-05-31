@@ -6,7 +6,7 @@
   "primary_cause": {
     "category": "ENVIRONMENT",
     "subcategory": "ui_test_config",
-    "signal": "playwright_html_reporter_hang",
+    "signal": "ui_timeout_interactive_report",
     "source": "ui_gate"
   }
 }

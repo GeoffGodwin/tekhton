@@ -6,9 +6,9 @@
 // priority-ordered rules top-down and stops at the first Match, emitting
 // the bash-parity `[diag] rule=...` one-liner to the configured Logger.
 //
-// m32.1 ships with a BashRuleAdapter as the default RuleProvider so the
-// observable verdict stays identical to v4.31.x; m32.2 will replace the
-// adapter with a Go-native registry.
+// The production provider is *rules.Registry (internal/diagnose/rules).
+// m32.1 shipped a transition BashRuleAdapter that m32.2 deleted in favor
+// of the Go-native registry.
 
 package diagnose
 
@@ -167,6 +167,13 @@ func (e *Engine) ReadContext(_ context.Context, in *Input) (*Context, error) {
 			c.Stage = snap.ExitStage
 			c.Task = snap.ResumeTask
 			c.ExitReason = snap.ExitReason
+			c.Notes = snap.Notes
+			c.PipelineAttempt = snap.PipelineAttempt
+			if snap.Extra != nil {
+				c.AgentErrorCategory = snap.Extra["agent_error_category"]
+				c.AgentErrorSubcategory = snap.Extra["agent_error_subcategory"]
+				c.AgentErrorTransient = snap.Extra["agent_error_transient"]
+			}
 		}
 	}
 
@@ -198,6 +205,9 @@ func (e *Engine) ReadContext(_ context.Context, in *Input) (*Context, error) {
 		c.Milestone = extractJSONString(text, "milestone")
 		if rc := extractJSONInt(text, "rework_cycles"); rc > 0 {
 			c.ReviewCycles = rc
+		}
+		if sd := extractJSONInt(text, "split_depth"); sd >= 0 {
+			c.SplitDepth = sd
 		}
 	}
 

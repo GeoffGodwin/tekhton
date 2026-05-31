@@ -63,6 +63,25 @@ if [[ -n "$_detect_re" ]]; then
 fi
 unset _detect_re
 
+# m32.2 (Phase 5): the diagnose rule registry ported to
+# internal/diagnose/rules/. Rules must NOT import "regexp" directly —
+# match-evidence regexes belong in internal/errors/patterns.go (or
+# evidence.go), and rules call typed helpers from internal/errors. This
+# keeps the m17 classification boundary intact and prevents per-rule
+# regex sprawl. The regression test in tests/test_wedge_audit_rules.sh
+# plants a violation to verify this gate fires.
+if [[ -d internal/diagnose/rules ]]; then
+    _rules_regex_violations=$(grep -rl '"regexp"' internal/diagnose/rules 2>/dev/null || true)
+    if [[ -n "$_rules_regex_violations" ]]; then
+        printf 'wedge-audit: m32.2 violation — internal/diagnose/rules/ must not import regexp:\n' >&2
+        printf '%s\n' "$_rules_regex_violations" >&2
+        printf 'Move the regex to internal/errors/evidence.go (or patterns.go) and call\n' >&2
+        printf 'the typed helper from the rule instead.\n' >&2
+        companion_failures=$(( companion_failures + 1 ))
+    fi
+    unset _rules_regex_violations
+fi
+
 if (( companion_failures > 0 )); then
     printf 'wedge-audit: %d companion-tool assertion(s) failed.\n' "$companion_failures" >&2
     exit 1
