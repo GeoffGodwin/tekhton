@@ -145,8 +145,9 @@ func hasAnyManifest(dir string) bool {
 
 // rxNodeDepLine extracts `"name": "version"` JSON-ish lines from
 // package.json. Mirrors the bash sed regex:
-//   sed -n 's/.*"\([^"]*\)"\s*:.*/\1/p' for the name
-//   sed -n 's/.*:\s*"\([^"]*\)".*/\1/p' for the version
+//
+//	sed -n 's/.*"\([^"]*\)"\s*:.*/\1/p' for the name
+//	sed -n 's/.*:\s*"\([^"]*\)".*/\1/p' for the version
 var rxNodeDepName = regexp.MustCompile(`"([^"]*)"\s*:`)
 var rxNodeDepVer = regexp.MustCompile(`:\s*"([^"]*)"`)
 
@@ -377,7 +378,8 @@ func parseGoDeps(dir, prefix string, g *DependencyGraph) {
 
 // rxGemLine matches `gem 'name'` or `gem "name"` (with optional version
 // as second quoted argument). Bash sed equivalent:
-//   gem[[:space:]]*['"]([^'"]*)['"]
+//
+//	gem[[:space:]]*['"]([^'"]*)['"]
 var rxGemName = regexp.MustCompile(`gem[ \t]+['"]([^'"]+)['"]`)
 var rxGemVer = regexp.MustCompile(`gem[ \t]+['"][^'"]+['"][ \t]*,[ \t]*['"]([^'"]+)['"]`)
 

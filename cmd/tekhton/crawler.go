@@ -15,12 +15,13 @@ import (
 // the two lib/rescan*.sh files (m30.2).
 //
 // Subcommands:
-//   crawl      — full crawl; writes .claude/index/* artifacts.
-//   inventory  — print inventory shape (--json for inventory.jsonl).
-//   deps       — print dependency graph (--json for dependencies.json).
-//   content    — print sampled file content (--json for samples manifest).
-//   rescan     — incremental rescan (git-diff-driven); --full forces a
-//                full crawl regardless of change detection.
+//
+//	crawl      — full crawl; writes .claude/index/* artifacts.
+//	inventory  — print inventory shape (--json for inventory.jsonl).
+//	deps       — print dependency graph (--json for dependencies.json).
+//	content    — print sampled file content (--json for samples manifest).
+//	rescan     — incremental rescan (git-diff-driven); --full forces a
+//	             full crawl regardless of change detection.
 //
 // Hidden until the bash callers (init.sh, tekhton-legacy.sh) are fully
 // migrated; users still go through tekhton.sh today.
@@ -235,13 +236,13 @@ func newCrawlerRescanCmd() *cobra.Command {
 // from the package-internal RescanResult so the wire shape stays stable
 // across rescan refactors.
 type rescanCLISummary struct {
-	Mode            string   `json:"mode"`
-	FallbackReason  string   `json:"fallback_reason,omitempty"`
-	Significance    string   `json:"significance,omitempty"`
-	ChangeCount     int      `json:"change_count"`
-	Regenerated     []string `json:"regenerated_sections,omitempty"`
-	FullCrawlFiles  int      `json:"full_crawl_files,omitempty"`
-	FullCrawlLines  int      `json:"full_crawl_total_lines,omitempty"`
+	Mode           string   `json:"mode"`
+	FallbackReason string   `json:"fallback_reason,omitempty"`
+	Significance   string   `json:"significance,omitempty"`
+	ChangeCount    int      `json:"change_count"`
+	Regenerated    []string `json:"regenerated_sections,omitempty"`
+	FullCrawlFiles int      `json:"full_crawl_files,omitempty"`
+	FullCrawlLines int      `json:"full_crawl_total_lines,omitempty"`
 }
 
 // emitRescanSummary writes the human-readable or --json output for a

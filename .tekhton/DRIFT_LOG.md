@@ -3,12 +3,15 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 170
+- Runs since audit: 171
 =======
-- Runs since audit: 170
+- Runs since audit: 171
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-31 | "unknown"] `completion.go:299-319` â `FailingExitCoder` and `errExitCode` (defined elsewhere in `cmd/tekhton/`) both implement an exit-code wrapper pattern. Two types for the same purpose in the same package tree is fragile; when `FailingExitCoder` is removed the duplication is gone, but if it's wired in the future it should replace (not supplement) `errExitCode` at the CLI seam.
+- [2026-05-31 | "unknown"] `gate_ui_shim.go:44` â `Run(ctx, stageLabel, _ map[string]string)` ignores the `env map[string]string` argument. `UIBashShim.ShellEnv` carries env overrides (`UI_TEST_CMD`, `UI_GATE_ENV_RETRY_ENABLED`, etc.) populated at construction time but the shim discards them and builds the subprocess env entirely from `os.Environ()`. Document the drop as intentional for m31.1 or thread `ShellEnv` through to `c.Env` to avoid silent override loss when the assembler later populates those fields.
+- [2026-05-31 | "unknown"] `remediation.go:68` â `envPlus` appends `TEKHTON_HOME`, `ERRORS_STREAM`, and `PHASE_LABEL` to `os.Environ()` without deduplication. On Linux, `getenv()` returns the first match, so if `TEKHTON_HOME` is already exported by the caller (the common case), the appended value is harmlessly redundant rather than an override. A comment clarifying this would prevent future confusion about intent.
 - [2026-05-31 | "unknown"] `rescan.go:398-415` (`readSamplesManifestFromIndexDir`): the function has a three-way structure (fileExists-branch using `decodeSamplesManifest` directly, dead `synthIndex` variable, then legacy `ExtractSampledFiles` fallback) that will confuse the next reader. Once the dead variable is removed (Non-Blocking Note above), a single explanatory comment on the why of the direct-read vs. the legacy fallback path would be worth adding.
 - [2026-05-30 | "unknown"] `internal/crawler/deps.go` â `parseCargoDeps` hardcodes `"Cargo.toml"` as the `Manifest` field on `KeyDependency` entries (line ~268), while `parseNodeDeps` correctly uses the `label` variable (which incorporates the `prefix` for sub-project calls). The inconsistency is latent today (prefix is always `""` from `parseDependencies`) but would produce incorrect `manifest` fields in Cargo key dependencies if sub-project recursion were added in m30.2. Recommend aligning to use `label` in `parseCargoDeps` before m30.2 adds sub-project support.
 - [2026-05-30 | "unknown"] `internal/crawler/deps.go:extractWithHeader` â re-implements section-extraction logic that intentionally diverges from `detect.ExtractJSONKeys` to preserve a bash quirk (spurious header line). Well-documented in source comments. When the parity requirement is lifted (e.g., intentional artifact schema update), replace the wrapper with a direct `detect.ExtractJSONKeys` call to eliminate the duplication.

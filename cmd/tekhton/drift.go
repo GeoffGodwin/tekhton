@@ -259,9 +259,9 @@ func splitLines(s string) []string {
 
 func newDriftPruneCmd() *cobra.Command {
 	var (
-		projectDir   string
-		maxResolved  int
-		archivePath  string
+		projectDir  string
+		maxResolved int
+		archivePath string
 	)
 	c := &cobra.Command{
 		Use:   "prune",

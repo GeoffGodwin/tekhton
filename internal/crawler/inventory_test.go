@@ -42,15 +42,15 @@ func TestPathDir(t *testing.T) {
 
 func TestIsTestFile(t *testing.T) {
 	cases := map[string]bool{
-		"foo.test.js":                       true,
-		"foo.spec.ts":                       true,
-		"helpers_test.go":                   true,
-		"test_module.py":                    true,
+		"foo.test.js":                          true,
+		"foo.spec.ts":                          true,
+		"helpers_test.go":                      true,
+		"test_module.py":                       true,
 		"tests/fixtures/plan_test_template.md": true, // matches `test_…\.[^.]+$`
-		"src/main.go":                       false,
-		"README.md":                         false,
-		".testrc":                           false,
-		"testfile.go":                       false,
+		"src/main.go":                          false,
+		"README.md":                            false,
+		".testrc":                              false,
+		"testfile.go":                          false,
 	}
 	for in, want := range cases {
 		if got := isTestFile(in); got != want {
@@ -90,15 +90,15 @@ func TestConfigPurposeLiterals(t *testing.T) {
 
 func TestConfigPurposeGlobs(t *testing.T) {
 	cases := map[string]string{
-		".eslintrc.json":  "ESLint configuration",
-		"tsconfig.json":   "TypeScript configuration",
-		"jest.config.js":  "Test framework configuration",
-		"vite.config.ts":  "Vite build configuration",
+		".eslintrc.json":   "ESLint configuration",
+		"tsconfig.json":    "TypeScript configuration",
+		"jest.config.js":   "Test framework configuration",
+		"vite.config.ts":   "Vite build configuration",
 		"build.gradle.kts": "Gradle build configuration",
-		"Foo.csproj":      ".NET project file",
-		"Solution.sln":    ".NET solution file",
-		"Dockerfile":      "Docker container definition",
-		"Dockerfile.dev":  "Docker container definition",
+		"Foo.csproj":       ".NET project file",
+		"Solution.sln":     ".NET solution file",
+		"Dockerfile":       "Docker container definition",
+		"Dockerfile.dev":   "Docker container definition",
 	}
 	for in, want := range cases {
 		if got := configPurpose(in); got != want {

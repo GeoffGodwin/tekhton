@@ -319,8 +319,9 @@ func jsonEscape(b *strings.Builder, s string) {
 // --- scan_commit helpers -----------------------------------------------
 
 // computeScanCommit ports bash:
-//   if git -C dir rev-parse --git-dir; then git rev-parse --short HEAD
-//   else "non-git"
+//
+//	if git -C dir rev-parse --git-dir; then git rev-parse --short HEAD
+//	else "non-git"
 func computeScanCommit(projectDir string) string {
 	if err := exec.Command("git", "-C", projectDir, "rev-parse", "--git-dir").Run(); err != nil {
 		return "non-git"

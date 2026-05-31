@@ -200,12 +200,12 @@ func TestEmitDependenciesJSONShape(t *testing.T) {
 
 func TestJSONEscape(t *testing.T) {
 	cases := map[string]string{
-		"plain":           "plain",
-		`with"quote`:      `with\"quote`,
-		"back\\slash":     "back\\\\slash",
-		"line1\nline2":    "line1\\nline2",
-		"a\tb":            "a\\tb",
-		"\r":              "\\r",
+		"plain":        "plain",
+		`with"quote`:   `with\"quote`,
+		"back\\slash":  "back\\\\slash",
+		"line1\nline2": "line1\\nline2",
+		"a\tb":         "a\\tb",
+		"\r":           "\\r",
 	}
 	for in, want := range cases {
 		var b strings.Builder

@@ -17,10 +17,10 @@ import (
 // IndexDir defaults to ProjectDir + "/.claude/index".
 // BudgetChars defaults to 120000 to match PROJECT_INDEX_BUDGET.
 type Options struct {
-	ProjectDir   string
-	BudgetChars  int
-	IndexDir     string
-	Writer       Writer
+	ProjectDir  string
+	BudgetChars int
+	IndexDir    string
+	Writer      Writer
 	// DesignFile maps to $DESIGN_FILE — the architecture-doc sample
 	// candidate. Empty when unset.
 	DesignFile string
@@ -33,14 +33,14 @@ type Options struct {
 // Result is the post-crawl summary surfaced to the caller (and to the
 // CLI's --json output).
 type Result struct {
-	IndexDir       string
-	FileCount      int
-	TotalLines     int
-	TreeLines      int
-	Manifests      []Manifest
-	KeyDeps        []Dependency
-	DocQuality     int
-	Errors         []error
+	IndexDir   string
+	FileCount  int
+	TotalLines int
+	TreeLines  int
+	Manifests  []Manifest
+	KeyDeps    []Dependency
+	DocQuality int
+	Errors     []error
 	// SamplesUsed is the total characters across emitted samples; tests
 	// use it to assert the budget allocator behaved.
 	SamplesUsed int

@@ -122,4 +122,3 @@ func TestFinalizeCmd_FailureExitCode_StillRunsChain(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 }
-

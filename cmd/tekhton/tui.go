@@ -126,10 +126,10 @@ func addStatusFileFlag(c *cobra.Command, dest *string) {
 
 func newTUIStartCmd() *cobra.Command {
 	var (
-		statusFile  string
-		runMode     string
-		cliFlags    string
-		stageOrder  []string
+		statusFile string
+		runMode    string
+		cliFlags   string
+		stageOrder []string
 	)
 	c := &cobra.Command{
 		Use:   "start",

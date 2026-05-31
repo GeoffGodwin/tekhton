@@ -11,7 +11,9 @@ import (
 )
 
 // rxTestFileFull mirrors the bash regex
-//   \.(test|spec)\.[^.]+$|_test\.[^.]+$|test_[^/]+\.[^.]+$
+//
+//	\.(test|spec)\.[^.]+$|_test\.[^.]+$|test_[^/]+\.[^.]+$
+//
 // — applied against the *full* repo-relative path (not just the basename).
 // That detail matters: a fixture file named plan_test_template.md is a
 // test file by the bash rule and must remain one under Go.
@@ -410,7 +412,9 @@ func topLevelDirs(files []string) []string {
 }
 
 // isTestDirName mirrors the bash regex
-//   ^(tests?|spec|__tests__|e2e|integration|cypress)/
+//
+//	^(tests?|spec|__tests__|e2e|integration|cypress)/
+//
 // (without the trailing slash since topLevelDirs strips it).
 func isTestDirName(name string) bool {
 	switch strings.ToLower(name) {
@@ -438,4 +442,3 @@ func countFilesIn(files []string, prefix string) int {
 	}
 	return n
 }
-
