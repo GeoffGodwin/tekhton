@@ -1,35 +1,19 @@
 ## Planned Tests
-- [x] `internal/detect/detect_test.go` — engine invariants (languages-first, error propagation, cache reset, Summary.ProjectType fallback)
-- [x] `internal/detect/languages_test.go` — LanguagesDetector happy paths, confidence scoring, framework detection, CLAUDE.md fallback
-- [x] `internal/detect/report_test.go` — Render() markdown shape matches bash baseline format
-- [x] `internal/detect/readonly_test.go` — package read-only contract (no forbidden write APIs)
-- [x] `cmd/tekhton/detect_test.go` — CLI smoke tests (help, --json shape, --markdown default, mutual-exclusion guard)
-- [x] `tests/test_detect_parity.sh` — byte-identical parity gate across three fixtures
-- [x] `internal/detect/workspaces_test.go` — add Lerna, Nx, Cargo, Gradle, Maven workspace coverage
-- [x] `internal/detect/ci_test.go` — add GitLab CI, CircleCI, Jenkins, Bitbucket Pipelines coverage
-- [x] `internal/detect/infrastructure_test.go` — add CDK, CloudFormation/SAM, Ansible coverage
-- [x] `internal/detect/test_frameworks_test.go` — add Go, Rust, Ruby, Java, C#, Dart, Shell coverage
-- [x] `internal/detect/doc_quality_test.go` — add API-docs scoring, architecture scoring, individual subscore bounds
-- [x] `internal/detect/services_test.go` — add Kubernetes service detection coverage
-- [x] `internal/detect/ai_artifacts_test.go` — add known_dirs, known_files, known_globs heuristic coverage
+- [x] `internal/crawler/*_test.go` — verify Go unit tests pass and coverage ≥80%
+- [x] `cmd/tekhton/crawler_test.go` — verify CLI smoke tests pass
+- [x] `tests/test_crawler_parity.sh` — verify 3-fixture parity gate exits 0
+- [x] AC: annotatePackage spot-checks — react/echo/unknown assertions
+- [x] AC: isBinary spot-checks — binary/text extension detection
+- [x] AC: emit ordering invariant — meta.json write-only-to-IndexDir safety contract
+- [x] AC: bash structural checks — no crawler*.sh in lib/, no crawl_project in init.sh, wedge-audit clean
+- [x] AC: tekhton crawler CLI — help exits 0, rescan exits non-zero with m30.2, crawl produces 7 artifacts
+- [x] `bash tests/run_tests.sh` — full suite regression check (500 shell + all Go packages)
 
 ## Test Run Results
-Passed: 95 Go (detect pkg) + full Go suite (0 failures) + 199 Shell  Failed: 0
+Passed: 500 Shell + all 26 Go packages (0 failures)  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `internal/detect/detect_test.go`
-- [x] `internal/detect/languages_test.go`
-- [x] `internal/detect/report_test.go`
-- [x] `internal/detect/readonly_test.go`
-- [x] `cmd/tekhton/detect_test.go`
-- [x] `tests/test_detect_parity.sh`
-- [x] `internal/detect/workspaces_test.go`
-- [x] `internal/detect/ci_test.go`
-- [x] `internal/detect/infrastructure_test.go`
-- [x] `internal/detect/test_frameworks_test.go`
-- [x] `internal/detect/doc_quality_test.go`
-- [x] `internal/detect/services_test.go`
-- [x] `internal/detect/ai_artifacts_test.go`
+- [x] `.tekhton/TESTER_REPORT.md`

@@ -1,146 +1,102 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 13 files — `internal/detect/detect_test.go`, `internal/detect/languages_test.go`,
-`internal/detect/report_test.go`, `internal/detect/readonly_test.go`,
-`cmd/tekhton/detect_test.go`, `tests/test_detect_parity.sh`,
-`internal/detect/workspaces_test.go`, `internal/detect/ci_test.go`,
-`internal/detect/infrastructure_test.go`, `internal/detect/test_frameworks_test.go`,
-`internal/detect/doc_quality_test.go`, `internal/detect/services_test.go`,
-`internal/detect/ai_artifacts_test.go`; approximately 95 test functions across Go
-and 1 bash parity gate covering 4 fixtures.
+Tests audited: 10 files (8 `internal/crawler/*_test.go`, 1 `cmd/tekhton/crawler_test.go`,
+1 `tests/test_crawler_parity.sh`), 51 Go test functions + 21 shell parity assertions.
 Verdict: PASS
-
-### Findings
-
-#### COVERAGE: Most m29.2 detector tests discard error returns from Run()
-- File: `internal/detect/workspaces_test.go:37`, `ci_test.go:18`,
-  `infrastructure_test.go:12`, `test_frameworks_test.go:12`, `services_test.go:43`,
-  `ai_artifacts_test.go:33`, `doc_quality_test.go:13` (and most other sub-tests in
-  these files)
-- Issue: The pattern `r, _ := SomeDetector{}.Run(context.Background(), ...)` silently
-  discards the error return. All eight m29.2 detectors return `nil` error
-  unconditionally today, so no test is wrong. However, if any detector adds a
-  non-nil error path in the future, these tests will proceed with a nil `r` and
-  panic rather than failing with a useful message. `TestServicesDetector_DockerCompose`
-  (services_test.go:19) correctly handles the error and should be the model for the
-  others.
-- Severity: LOW
-- Action: Add `if err != nil { t.Fatalf("Run: %v", err) }` after each discarded
-  error return, matching the pattern already used in `TestServicesDetector_DockerCompose`.
-  No implementation changes needed.
-
-#### COVERAGE: TestDocQualityDetector_RichReadme uses a weak aggregate score bound
-- File: `internal/detect/doc_quality_test.go:21-35`
-- Issue: The test creates a rich README (> 100 lines, ≥ 3 sections, code block,
-  "install" keyword → readme subscore ≈ 25) plus a 40-line CONTRIBUTING.md (contrib
-  subscore = 10), yielding a total expected score ≈ 35. The assertion is
-  `score < 15`, meaning the test passes as long as the aggregate is ≥ 15. A README
-  scorer that returned 0 would still let the test pass if contributing alone scores
-  ≥ 15. The sister test `TestDocQualityDetector_ReadmeScoreCapAt30` uses
-  `parseSubscore(details, "readme")` directly; that pattern is more precise.
-- Severity: LOW
-- Action: Replace (or supplement) the aggregate check with
-  `parseSubscore(r.Findings[0]["details"], "readme")` and assert `readmeScore >= 20`
-  to exercise the README scorer directly.
-
-#### ISOLATION: doc_quality.go reads os.Getenv("DESIGN_FILE") during test execution
-- File: `internal/detect/doc_quality.go:161` (affects
-  `internal/detect/doc_quality_test.go:82-102`, `doc_quality_test.go:141-158`)
-- Issue: `scoreArchitecture` appends `os.Getenv("DESIGN_FILE")` to its candidate-path
-  list. If a CI environment has `DESIGN_FILE` set to a real file path (common in
-  Tekhton self-hosted runs), the architecture detector evaluates that file in addition
-  to the fixture. The tests use lower-bound assertions (`>= 15`, `>= 5`), so they
-  remain green even with an extra score contribution, but the pass is
-  environment-dependent and the dependency is invisible to the test reader. Note: this
-  is NOT a filesystem isolation violation — no mutable pipeline state file is read —
-  but it is an implicit environmental coupling.
-- Severity: LOW
-- Action: Add `t.Setenv("DESIGN_FILE", "")` at the top of
-  `TestDocQualityDetector_ArchitectureDoc` and `TestDocQualityDetector_ADRDir` to
-  neutralise any ambient value. No implementation changes needed.
-
-None: INTEGRITY, SCOPE, WEAKENING, NAMING, EXERCISE violations — none found.
 
 ---
 
-### Per-file notes
+### Findings
 
-**`internal/detect/detect_test.go`** — Engine orchestration tests call the real
-Engine via Register/Run/CachedResult/Summary.ProjectType with a minimal `stubDetector`
-test double. `ErrLanguagesDetectorMissing` and error propagation are verified via
-`errors.Is`. Cache-reset across consecutive `Run()` calls is verified by counting
-actual detector invocations (not by inspecting cache internals). No hard-coded magic
-values. PASS.
+#### COVERAGE: `extractWithHeader` single-line collapsed-section edge case untested
+- File: `internal/crawler/deps_test.go` (no specific line — gap in test matrix)
+- Issue: `extractWithHeader` in `deps.go:38-45` has an explicit branch for a section
+  whose opening brace appears on the same line as the key (`"dependencies": {}`). When
+  that condition fires, the function emits the header line and immediately resets
+  `inSection = false`. No test in `deps_test.go` exercises this path — all fixtures use
+  multi-line sections where the closing `}` is on its own line. The coder explicitly
+  called out `extractWithHeader` as a bash-parity quirk; the collapsed-section variant
+  is the branch most likely to be "fixed" by a well-meaning future editor who doesn't
+  know it needs to be preserved.
+- Severity: MEDIUM
+- Action: Add a `TestExtractWithHeaderCollapsedSection` test that calls
+  `extractWithHeader` directly on a mini package.json string like
+  `{"dependencies":{}}` (collapsed brace) and asserts (a) the header line is emitted
+  once and (b) `countDepLines` returns 1, not 0 or more.
 
-**`internal/detect/languages_test.go`** — All fixture-driven tests use `t.TempDir()`
-and the `writeFile` helper; no live project files read. Confidence levels and manifest
-names are grounded in `mergeAndScore` and `detectManifests` logic cross-checked against
-`languages.go:199-248`. The vendored-noise skip guard (`no manifest && count < 3`) is
-verified by `TestMergeAndScore_LowVendoredSkipped`. The CLAUDE.md fallback exercises
-the Strategy-1 `**Languages:**` path; strategies 2 and 3 (lower-priority fallbacks)
-were already reported as uncovered in the m29.1 audit — no regression introduced here.
-PASS.
+#### COVERAGE: `inventory` and `content` CLI subcommands have no functional smoke test
+- File: `cmd/tekhton/crawler_test.go` (gap — no test for `inventory` or `content` subcommands)
+- Issue: `TestCrawlerHelpListsSubcommands` confirms `inventory` and `content` appear in
+  `--help` output, but no test actually invokes either subcommand with `--project-dir`
+  and `--json` to validate its output. The `crawl` and `deps` subcommands each have a
+  dedicated functional test (`TestCrawlerCrawlJSONOutput`, `TestCrawlerDepsJSON`). If
+  the Cobra wiring, flag parsing, or JSON serialisation for `inventory` or `content`
+  regresses, no test catches it.
+- Severity: MEDIUM
+- Action: Add `TestCrawlerInventoryJSON` and `TestCrawlerContentJSON` in
+  `cmd/tekhton/crawler_test.go`, mirroring the pattern in `TestCrawlerDepsJSON` — create
+  a temp dir with a minimal project, invoke the subcommand with `--project-dir ... --json`,
+  assert the output parses as valid JSON and contains the expected top-level key(s).
 
-**`internal/detect/report_test.go`** — `Render()` called with constructed `Summary`
-values and asserted against literal strings matching `report.go`'s output format.
-`TestRender_FrameworkNoneDetected` correctly checks `"(none detected)"` immediately
-after the `### Frameworks` header (no blank line between them), matching
-`renderFrameworks`. PASS.
+#### NAMING: `min` helper in tree_test.go shadows Go 1.21+ built-in
+- File: `internal/crawler/tree_test.go:69`
+- Issue: `func min(a, b int) int` is defined at package scope in a test file. Go 1.21
+  added `min` as a built-in; since this package targets Go 1.22+ (CLAUDE.md), the
+  definition shadows the built-in across the entire `package crawler` test scope.
+  `golangci-lint` will flag this. The only use is at `tree_test.go:56`:
+  `got[:min(40, len(out))]`.
+- Severity: LOW
+- Action: Rename the helper to `minInt` or inline the ternary directly at its single
+  call site.
 
-**`internal/detect/readonly_test.go`** — Scans all new m29.2 source files
-(`ci.go`, `ai_artifacts.go`, `doc_quality.go`, `workspaces.go`, etc.) in addition to
-the m29.1 files. Correctly excludes `_test.go` files, so `writeFixture`'s
-`os.WriteFile`/`os.MkdirAll` calls do not false-positive. The empty-Glob guard
-(`t.Fatalf` at line 48) prevents a silent miss if the working directory is wrong.
-Note: `doc_quality.go` imports `"os"` and uses `os.Getenv` — this is an environment
-read (not a write), not in the forbidden-API list, and is correctly not flagged. PASS.
+#### EXERCISE: `TestCrawlerCrawlJSONOutput` merges stdout and stderr into one buffer
+- File: `cmd/tekhton/crawler_test.go:57-58`
+- Issue: `root.SetOut(&out)` and `root.SetErr(&out)` both point at the same buffer.
+  If any diagnostic or Cobra error text appears on stderr, `json.Unmarshal(out.Bytes(), &got)`
+  fails with a confusing JSON-parse error instead of a clear failure pointing at the root
+  cause. The tests pass today because no such output is produced, but the fragility is
+  latent (e.g., a future warning on stderr from the binary would cause a misleading
+  failure).
+- Severity: LOW
+- Action: Use separate buffers (`var stdout, stderr bytes.Buffer`). Unmarshal only
+  `stdout.Bytes()`. Optionally assert `stderr.String() == ""` to make unexpected stderr
+  output an explicit failure.
 
-**`cmd/tekhton/detect_test.go`** — All five tests drive the real Cobra command tree
-via `newRootCmd()` with `t.TempDir()` fixtures. `TestRegistrationOrder` asserts the
-exact 9-detector slice from `registeredDetectors()`, fails red on any reorder.
-`TestDetectCmd_BothFlagsRejected`'s `"mutually exclusive"` string check is grounded
-in the implementation's error message. PASS.
+---
 
-**`tests/test_detect_parity.sh`** — Drives the real `bin/tekhton` binary against all
-four committed fixture directories (`monorepo-pnpm`, `polyglot-services`,
-`ai-heavy-mess`, `empty`) using byte-identical diff against frozen baselines.
-Self-skips cleanly when the Go toolchain or binary are unavailable. The `actual`
-output is written to `mktemp` — no mutable project state is read or written. PASS.
+### Absence of findings in other categories
 
-**`internal/detect/workspaces_test.go`** — 8 tests covering pnpm, npm lerna, nx,
-Cargo workspace, Gradle multi-project, Maven multi-module, and 2 negative cases.
-`TestWorkspacesDetector_CargoTomlWithoutWorkspace` correctly guards against
-single-crate Cargo.toml producing a workspace finding. PASS (LOW error-handling note
-above applies).
+**INTEGRITY — none.** Every expected value in the suite is derived from the implementation:
+- `annotatePackage` expected strings cross-checked against `packagePurposes` /
+  `packagePurposeGlobs` in `annotations.go` — all correct.
+- `TestParseNodeDepsSimple` expects `Deps == 3` for a 2-dependency `package.json`. This
+  is not a hard-coded magic number: `extractWithHeader` emits the section-header line
+  (`"dependencies": {`) which `countDepLines` counts because it contains `:`. The test
+  comment explains this explicitly. It is an honest assertion of intentional bash-parity
+  behavior, not an integrity violation.
+- `emitMetaJSON` / `emitInventoryJSONL` exact byte-shape assertions in `emit_test.go`
+  were traced against the hand-rolled string-builders in `emit.go` and are correct.
 
-**`internal/detect/ci_test.go`** — 8 tests covering all 6 CI systems plus a
-secrets-skipping guard and a second Dockerfile language variant. The secrets-skip test
-(`TestCIDetector_SecretsLinesSkipped`) verifies both that the secrets line is absent
-AND that the non-secrets command still survives. PASS (LOW error-handling note above).
+**WEAKENING — none.** `tests/test_rescan.sh` was skip-stubbed at m30.1. This is correct:
+the underlying bash rescan helpers were deleted as part of this milestone. Removing tests
+for deleted code is the right action.
 
-**`internal/detect/infrastructure_test.go`** — 7 tests covering Terraform (AWS and
-GCP provider detection), Pulumi, CDK, CloudFormation, SAM, and Ansible (both
-`ansible.cfg` and `playbooks/` detection paths). PASS (LOW error-handling note above).
+**SCOPE — none.** All function references (`annotatePackage`, `isBinary`, `readSampled`,
+`sampleFiles`, `Crawl`, `ErrMissingProjectDir`, `parseDependencies` family, all `emit*`
+functions, `buildFileInventory`, `buildConfigInventory`, `isTestFile`, `isTestDirName`,
+`configPurpose`, `sizeCategory`, `annotateLine`, etc.) verified against current
+implementation files — all present and aligned.
 
-**`internal/detect/test_frameworks_test.go`** — 10 tests covering pytest, Jest+Vitest
-coexistence, go-test (high confidence from source files), cargo-test, rspec, JUnit,
-xunit, flutter-test, shell-tests, and bats. PASS (LOW error-handling note above).
+**ISOLATION — none.** All Go tests use `t.TempDir()` for project fixtures. The
+`recordingWriter` fake in `emit_test.go` never touches the real filesystem. `readonly_test.go`
+reads the package's own source files at test time; these are version-controlled sources,
+not mutable pipeline artifacts, and this pattern is correct for a static-contract
+enforcement test.
 
-**`internal/detect/doc_quality_test.go`** — 8 tests covering missing README (score
-0), rich README + CONTRIBUTING, empty dir, OpenAPI API-docs scoring, ARCHITECTURE.md
-line-based scoring, ADR dir bonus, CONTRIBUTING subscore cap at 15, all-five-subscores
-always-present shape, and README subscore cap at 30. LOW findings above apply. PASS.
-
-**`internal/detect/services_test.go`** — 7 tests covering docker-compose with
-tech-stack detection, Procfile parsing, Kubernetes Deployment + Service in `k8s/` and
-`deploy/` dirs, k8s deduplication, ConfigMap exclusion, and source-field correctness.
-PASS (LOW error-handling note above).
-
-**`internal/detect/ai_artifacts_test.go`** — 16 tests covering all 6 heuristics in
-the exact bash order, including known-dirs (Cursor, Windsurf, `.ai/` with and without
-config files), known-files (.cursorrules, .windsurfrules, .roomodes), known-globs
-(aider, aider history), claude-dir, claude-md, directive markdowns (with and without
-sufficient markers), and the ordering invariant via `TestHeuristicOrder` + the
-cross-heuristic ordering test. `TestClassifyAITool` verifies 8 path patterns against
-the `ClassifyAITool` function directly. PASS (LOW error-handling note above).
+**Parity gate (`tests/test_crawler_parity.sh`) — properly structured.** Self-skips
+cleanly when the Go binary is not built (exits 0). Uses `mktemp` for all actual output.
+Reads only from version-controlled fixture directories and frozen baselines. Normalises
+volatile `scan_date` / `scan_commit` fields before diffing. 21 assertions = 3 fixtures
+× 7 artifacts, byte-level equality — the strongest parity test appropriate for a
+port milestone. Registered in `run_tests.sh` via the `tests/test_*.sh` glob.
