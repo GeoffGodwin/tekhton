@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "classification": "VERSION_MISMATCH",
+  "stage": "intake",
+  "outcome": "failure",
+  "primary_cause": {
+    "category": "ENVIRONMENT",
+    "subcategory": "version_mismatch",
+    "signal": "tekhton_version_pinned_below_actual",
+    "source": "version_check"
+  }
+}

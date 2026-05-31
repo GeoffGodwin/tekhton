@@ -182,3 +182,37 @@ func TestDiagnoseClassify_UnknownModeExits(t *testing.T) {
 		t.Fatal("unknown --mode must produce non-zero exit code")
 	}
 }
+
+// TestDiagnoseRun_HelpExits0 — m32.1 smoke check that `tekhton diagnose run
+// --help` is wired through the Cobra tree.
+func TestDiagnoseRun_HelpExits0(t *testing.T) {
+	t.Parallel()
+	out, _, code := runDiagnose(t, "", "run", "--help")
+	if code != 0 {
+		t.Fatalf("run --help exit=%d", code)
+	}
+	if !strings.Contains(out, "Run the diagnose engine") {
+		t.Errorf("help text missing usage: %q", out)
+	}
+}
+
+// TestDiagnoseRun_EmptyProjectDirReportsNoState — `tekhton diagnose run
+// --project-dir <empty>` must NOT crash and must report the "no pipeline
+// runs found" path on a fresh directory.
+//
+// Cannot t.Parallel() because we t.Setenv to neutralize PIPELINE_STATE_FILE /
+// CAUSAL_LOG_FILE / MIGRATION_BACKUP_DIR — these may be set by the parent
+// shell when the suite is run inside a pipeline.
+func TestDiagnoseRun_EmptyProjectDirReportsNoState(t *testing.T) {
+	t.Setenv("PIPELINE_STATE_FILE", "")
+	t.Setenv("CAUSAL_LOG_FILE", "")
+	t.Setenv("MIGRATION_BACKUP_DIR", "")
+	dir := t.TempDir()
+	_, errOut, code := runDiagnose(t, "", "run", "--project-dir", dir)
+	if code != 0 {
+		t.Fatalf("expected exit 0 on empty project, got %d", code)
+	}
+	if !strings.Contains(errOut, "No pipeline runs found") {
+		t.Errorf("empty-project path should report no runs; got stderr=%q", errOut)
+	}
+}

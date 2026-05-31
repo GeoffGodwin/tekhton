@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "classification": "PREFLIGHT_INTERACTIVE_CONFIG",
+  "stage": "preflight",
+  "outcome": "failure",
+  "primary_cause": {
+    "category": "ENVIRONMENT",
+    "subcategory": "preflight_config",
+    "signal": "preflight_interactive_reporter_detected",
+    "source": "preflight"
+  }
+}

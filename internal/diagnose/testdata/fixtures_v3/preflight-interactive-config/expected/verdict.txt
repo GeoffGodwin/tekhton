@@ -1,0 +1,4 @@
+classification=PREFLIGHT_INTERACTIVE_CONFIG
+confidence=high
+stage=preflight
+rule=_rule_preflight_interactive_config

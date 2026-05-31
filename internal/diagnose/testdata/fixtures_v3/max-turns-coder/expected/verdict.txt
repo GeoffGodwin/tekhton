@@ -1,0 +1,4 @@
+classification=MAX_TURNS_EXHAUSTED
+confidence=high
+stage=coder
+rule=_rule_max_turns

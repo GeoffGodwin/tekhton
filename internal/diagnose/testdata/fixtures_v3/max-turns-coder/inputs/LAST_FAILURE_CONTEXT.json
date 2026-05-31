@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "classification": "MAX_TURNS_EXHAUSTED",
+  "stage": "coder",
+  "outcome": "failure",
+  "task": "Port the diagnose engine to Go",
+  "consecutive_count": 1,
+  "timestamp": "2026-05-30T12:34:56Z",
+  "category": "AGENT_SCOPE",
+  "subcategory": "max_turns",
+  "secondary_cause": {
+    "category": "AGENT_SCOPE",
+    "subcategory": "max_turns",
+    "signal": "turn_limit_hit",
+    "source": "agent_monitor"
+  }
+}

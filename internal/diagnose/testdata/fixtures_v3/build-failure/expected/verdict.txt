@@ -1,0 +1,4 @@
+classification=BUILD_FAILURE
+confidence=high
+stage=coder
+rule=_rule_build_failure

@@ -1,0 +1,4 @@
+classification=UI_GATE_INTERACTIVE_REPORTER
+confidence=high
+stage=coder
+rule=_rule_ui_gate_interactive_reporter

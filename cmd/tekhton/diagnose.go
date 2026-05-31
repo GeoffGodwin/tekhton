@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	stderrs "errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
+	"github.com/geoffgodwin/tekhton/internal/diagnose"
 	terr "github.com/geoffgodwin/tekhton/internal/errors"
 	"github.com/spf13/cobra"
 )
@@ -14,6 +16,12 @@ import (
 // newDiagnoseCmd wires the m17 diagnose subcommand tree. Each leaf is a
 // thin shim over the internal/errors package; bash callers reach this
 // through lib/errors.sh's shell shims.
+//
+// m32.1 adds `tekhton diagnose run`, a Hidden developer subcommand that
+// drives the new internal/diagnose Engine end-to-end against the still-bash
+// rule registry (via BashRuleAdapter). The m17 leaves below are NOT touched
+// by m32.1 — operator behavior continues to flow through bash until m32.3
+// rewires `tekhton --diagnose` at lib/tekhton-legacy.sh:657-659.
 func newDiagnoseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diagnose",
@@ -24,6 +32,58 @@ func newDiagnoseCmd() *cobra.Command {
 	cmd.AddCommand(newDiagnoseRecoveryCmd())
 	cmd.AddCommand(newDiagnoseRedactCmd())
 	cmd.AddCommand(newDiagnoseIsTransientCmd())
+	cmd.AddCommand(newDiagnoseRunCmd())
+	return cmd
+}
+
+// newDiagnoseRunCmd wires `tekhton diagnose run` — the m32.1 entry point
+// for the Go-native diagnose Engine. Hidden because:
+//
+//  1. m32.1 ships a minimal verdict-only report — the full
+//     generate_diagnosis_report port lands in m32.3.
+//  2. Operator behavior continues to flow through bash via
+//     `tekhton --diagnose` until m32.3 rewires the legacy shim.
+//  3. The subcommand is primarily a parity-gate replay tool.
+func newDiagnoseRunCmd() *cobra.Command {
+	var (
+		projectDir string
+		home       string
+	)
+	cmd := &cobra.Command{
+		Use:    "run",
+		Short:  "Run the diagnose engine and print the diagnosis verdict (internal — developer tool)",
+		Hidden: true,
+		RunE: func(c *cobra.Command, _ []string) error {
+			if projectDir == "" {
+				projectDir, _ = os.Getwd()
+			}
+			if home == "" {
+				home = os.Getenv("TEKHTON_HOME")
+			}
+			eng := diagnose.NewEngine(&diagnose.BashRuleAdapter{TekhtonHome: home})
+			eng.Logger = c.ErrOrStderr()
+			ctx := context.Background()
+			ctxCtx, err := eng.ReadContext(ctx, &diagnose.Input{ProjectDir: projectDir, TekhtonHome: home})
+			if err != nil {
+				return fmt.Errorf("diagnose: read context: %w", err)
+			}
+			if ctxCtx == nil {
+				fmt.Fprintln(c.ErrOrStderr(), "No pipeline runs found. Nothing to diagnose.")
+				return nil
+			}
+			d := eng.Run(ctx, ctxCtx)
+			out := c.OutOrStdout()
+			fmt.Fprintf(out, "Classification: %s\n", d.Classification)
+			fmt.Fprintf(out, "Confidence: %s\n", string(d.Confidence))
+			fmt.Fprintf(out, "Stage: %s\n", d.Stage)
+			if d.Recurring.Count > 0 {
+				fmt.Fprintf(out, "Recurring: %d\n", d.Recurring.Count)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
+	cmd.Flags().StringVar(&home, "home", "", "TEKHTON_HOME (defaults to $TEKHTON_HOME)")
 	return cmd
 }
 

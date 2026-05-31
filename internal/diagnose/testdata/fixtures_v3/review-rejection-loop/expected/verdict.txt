@@ -1,0 +1,4 @@
+classification=REVIEW_REJECTION_LOOP
+confidence=high
+stage=review
+rule=_rule_review_loop

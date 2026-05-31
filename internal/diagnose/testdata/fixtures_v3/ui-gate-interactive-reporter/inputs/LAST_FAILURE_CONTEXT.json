@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "classification": "UI_GATE_INTERACTIVE_REPORTER",
+  "stage": "coder",
+  "outcome": "failure",
+  "primary_cause": {
+    "category": "ENVIRONMENT",
+    "subcategory": "ui_test_config",
+    "signal": "playwright_html_reporter_hang",
+    "source": "ui_gate"
+  }
+}

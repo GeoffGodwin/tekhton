@@ -1,0 +1,4 @@
+classification=TRANSIENT_ERROR
+confidence=medium
+stage=coder
+rule=_rule_transient_error

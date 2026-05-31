@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "classification": "BUILD_FIX_EXHAUSTED",
+  "stage": "coder",
+  "outcome": "failure",
+  "primary_cause": {
+    "category": "CODE",
+    "subcategory": "build_fix_loop",
+    "signal": "build_fix_exhausted",
+    "source": "build_fix"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 2,
+  "classification": "SUCCESS",
+  "outcome": "success",
+  "stage": "tester",
+  "task": "Run all tests",
+  "consecutive_count": 0
+}

@@ -1,0 +1,4 @@
+classification=SECURITY_HALT
+confidence=high
+stage=security
+rule=_rule_security_halt
