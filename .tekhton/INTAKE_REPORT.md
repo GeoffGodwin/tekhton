@@ -5,13 +5,10 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely defined: two bash files deleted, five Go files created, two modified, one Cobra stub filled, one parity harness added, VERSION bumped — no ambiguity about what is in vs. out
-- Acceptance criteria are concrete and machine-verifiable: specific `grep` commands, specific env-list return values, exact function signatures, byte-identical format assertions with timestamp-normalization called out
-- Five parity-test scenarios are named with exact fixture directories, expected exit codes, and expected output markers — a developer cannot misinterpret what "passing" means
-- The M126 hardened-rerun branch semantics (skip M54 + skip generic retry when `interactive_report`) are explicit in both the design pseudo-code and the Watch For section, preventing the most likely implementation mistake
-- M131 cross-arc interaction (`PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED` forcing hardened on run #1) is called out with the specific helper line reference — no implicit coupling
-- The `UI_VALIDATION_ENABLED` default-true vs. Go struct zero-value trap is explicitly flagged in Watch For with the fix direction
-- `HardenedTimeout` clamping edge cases (`factor=0` → 1, `factor>1` → base) are named and a specific test name (`TestHardenedTimeout_Clamping`) is given
-- Prior-arc dependency on m31.1 artifacts (Phase interface, ErrorsWriter interface, bashShimUIPhase struct location) is fully documented so no archaeological work is needed
-- No user-facing config keys are added; all keys consumed already exist in the env contract (m26). No migration impact section required.
-- Not a UI component milestone; UI testability criterion not applicable.
+- Scope is precisely bounded: 7 numbered goals, explicit "not in m32.1" callouts throughout (no rule ports, no bash deletes, no VERSION bump), and the sequencing note makes the seam-introduction role unambiguous
+- Files to create/modify are enumerated with LOC estimates; the exact Go type signatures, method signatures, and struct fields are specified in the Design section — two developers reading this would produce near-identical skeletons
+- Acceptance criteria are machine-verifiable commands (`grep -nE`, `git tag --list`, `find lib`, `tekhton diagnose run --help` exit 0, `go test`, `bash tests/run_tests.sh`) rather than vague aspirations
+- Watch For section covers the three highest-risk subtleties: baseline capture ordering, `_DIAG_*` global coverage vs `Context` struct fields, and `_DIAG_CAUSAL_EVENTS` length limits with the tempfile workaround already specified
+- The rule-count is self-consistent: "18 rule names" in the acceptance criterion matches the adapter code block (2 shown + "16 more entries")
+- No user-facing config changes or operator-visible format changes land in m32.1 (Hidden subcommand, envelope consumed by M32.3) — Migration Impact section is not required
+- No UI components; UI testability dimension is N/A
