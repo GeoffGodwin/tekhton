@@ -185,3 +185,151 @@ func TestFSErrorsWriter_ResetIsIdempotent_OnMissingFiles(t *testing.T) {
 	}
 	w.Reset() // must not panic
 }
+
+// TestFSErrorsWriter_WriteUIFailure_FreshFile asserts the m31.2 failure-path
+// shape when BUILD_ERRORS.md does not yet exist (no analyze/compile section
+// before it).
+func TestFSErrorsWriter_WriteUIFailure_FreshFile(t *testing.T) {
+	w := newWriter(t)
+	w.WriteUIFailure("post-coder", "npx playwright test", "Test timed out\n", 124, fixedTime())
+
+	// BUILD_RAW_ERRORS.txt — truncate-mode, single trailing newline.
+	raw, err := os.ReadFile(w.RawErrorsFile)
+	if err != nil {
+		t.Fatalf("read raw: %v", err)
+	}
+	if string(raw) != "Test timed out\n\n" {
+		t.Errorf("raw stream = %q, want %q", string(raw), "Test timed out\n\n")
+	}
+
+	// UI_TEST_ERRORS.md — fixed-shape heredoc.
+	uiBody, err := os.ReadFile(w.UITestErrorsFile)
+	if err != nil {
+		t.Fatalf("read ui errors: %v", err)
+	}
+	for _, want := range []string{
+		"# UI Test Errors — 2026-05-31 12:00:00\n",
+		"## Stage\npost-coder\n\n",
+		"## UI Test Command\n`npx playwright test`\n\n",
+		"## Exit Code\n124\n\n",
+		"## Output (last 100 lines)\n",
+		"```\nTest timed out\n\n```\n",
+	} {
+		if !strings.Contains(string(uiBody), want) {
+			t.Errorf("UI_TEST_ERRORS.md missing %q\nbody:\n%s", want, string(uiBody))
+		}
+	}
+
+	// BUILD_ERRORS.md — H1 created since file didn't exist, plus ## UI Test Failures.
+	be, err := os.ReadFile(w.ErrorsFile)
+	if err != nil {
+		t.Fatalf("read build errors: %v", err)
+	}
+	for _, want := range []string{
+		"# Build Errors — 2026-05-31 12:00:00\n",
+		"## Stage\npost-coder\n\n",
+		"## UI Test Failures\n",
+		"Command: `npx playwright test`\n",
+		"Exit code: 124\n\n",
+	} {
+		if !strings.Contains(string(be), want) {
+			t.Errorf("BUILD_ERRORS.md missing %q\nbody:\n%s", want, string(be))
+		}
+	}
+}
+
+// TestFSErrorsWriter_WriteUIFailure_AppendsToExistingBuildErrors asserts the
+// case where BUILD_ERRORS.md already exists (analyze or compile wrote it
+// earlier in the same gate run): the new ## UI Test Failures section
+// appends without re-emitting the H1 header.
+func TestFSErrorsWriter_WriteUIFailure_AppendsToExistingBuildErrors(t *testing.T) {
+	w := newWriter(t)
+	existing := "# Build Errors — 2026-05-31 12:00:00\n## Stage\npost-coder\n\n## Compile Errors\n```\nfoo\n```\n"
+	if err := os.WriteFile(w.ErrorsFile, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.WriteUIFailure("post-coder", "playwright test", "AssertionError", 1, fixedTime())
+
+	be, err := os.ReadFile(w.ErrorsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(be)
+	if !strings.HasPrefix(body, existing) {
+		t.Errorf("existing content not preserved; body:\n%s", body)
+	}
+	if !strings.Contains(body, "## UI Test Failures\n") {
+		t.Errorf("missing ## UI Test Failures append; body:\n%s", body)
+	}
+	// H1 must appear exactly once (not duplicated by the append).
+	if strings.Count(body, "# Build Errors —") != 1 {
+		t.Errorf("H1 appears %d times, want 1", strings.Count(body, "# Build Errors —"))
+	}
+}
+
+// TestFSErrorsWriter_WriteUIDiagnosis_OnlyAppendsWhenFilesExist asserts the
+// bash _ui_write_gate_diagnosis tail behavior — the diagnosis block is only
+// appended to files that already exist; missing files are not auto-created.
+func TestFSErrorsWriter_WriteUIDiagnosis_OnlyAppendsWhenFilesExist(t *testing.T) {
+	w := newWriter(t)
+	block := "\n## UI Gate Diagnosis\n- Timeout class: none\n"
+
+	// Neither file exists → diagnosis is a no-op.
+	w.WriteUIDiagnosis(block)
+	if _, err := os.Stat(w.ErrorsFile); !os.IsNotExist(err) {
+		t.Error("BUILD_ERRORS.md auto-created by WriteUIDiagnosis; want no-op")
+	}
+	if _, err := os.Stat(w.UITestErrorsFile); !os.IsNotExist(err) {
+		t.Error("UI_TEST_ERRORS.md auto-created by WriteUIDiagnosis; want no-op")
+	}
+
+	// Create the files, then call again — diagnosis should append to both.
+	if err := os.WriteFile(w.ErrorsFile, []byte("existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(w.UITestErrorsFile, []byte("existing"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.WriteUIDiagnosis(block)
+	be, _ := os.ReadFile(w.ErrorsFile)
+	if !strings.Contains(string(be), block) {
+		t.Errorf("BUILD_ERRORS.md missing diagnosis after append; body:\n%s", string(be))
+	}
+	ui, _ := os.ReadFile(w.UITestErrorsFile)
+	if !strings.Contains(string(ui), block) {
+		t.Errorf("UI_TEST_ERRORS.md missing diagnosis after append; body:\n%s", string(ui))
+	}
+}
+
+// TestFSErrorsWriter_WriteUIDiagnosis_EmptyBlockIsNoop.
+func TestFSErrorsWriter_WriteUIDiagnosis_EmptyBlockIsNoop(t *testing.T) {
+	w := newWriter(t)
+	if err := os.WriteFile(w.UITestErrorsFile, []byte("baseline"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.WriteUIDiagnosis("")
+	got, _ := os.ReadFile(w.UITestErrorsFile)
+	if string(got) != "baseline" {
+		t.Errorf("empty diagnosis modified file; got %q, want %q", string(got), "baseline")
+	}
+}
+
+// TestTailLines exercises the head/tail helper used by WriteUIFailure.
+func TestTailLines(t *testing.T) {
+	if got := tailLines("a\nb\nc", 2); got != "b\nc" {
+		t.Errorf("tailLines(2) = %q, want %q", got, "b\nc")
+	}
+	if got := tailLines("a\nb\nc", 100); got != "a\nb\nc" {
+		t.Errorf("tailLines(100) = %q, want unchanged", got)
+	}
+	if got := tailLines("", 5); got != "" {
+		t.Errorf("tailLines(empty) = %q, want empty", got)
+	}
+}
+
+// TestFSErrorsWriter_NilReceiverIsSafe covers the nil-guard branches.
+func TestFSErrorsWriter_NilReceiverIsSafe(t *testing.T) {
+	var w *FSErrorsWriter
+	w.WriteUIFailure("x", "cmd", "out", 1, fixedTime()) // must not panic
+	w.WriteUIDiagnosis("block")                         // must not panic
+}

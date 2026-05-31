@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,21 +52,40 @@ func TestGateCmd_HelpListsAllSubcommands(t *testing.T) {
 	}
 }
 
-// TestGateUI_StubReturnsNonZero asserts the m31.1 stub.
-func TestGateUI_StubReturnsNonZero(t *testing.T) {
+// TestGateUI_SkipWhenCmdUnset asserts that without UI_TEST_CMD the gate
+// returns nil (Skip), not an errExitCode. This is the m31.2 native gate
+// replacing the m31.1 stub.
+func TestGateUI_SkipWhenCmdUnset(t *testing.T) {
+	// Hermetic env — clear everything the assembler reads.
+	for _, k := range []string{
+		"UI_TEST_CMD", "UI_FRAMEWORK", "UI_VALIDATION_ENABLED",
+		"TEKHTON_UI_GATE_FORCE_NONINTERACTIVE",
+		"PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED",
+	} {
+		t.Setenv(k, "")
+	}
+	t.Setenv("TEKHTON_DIR", t.TempDir())
+	t.Setenv("PROJECT_DIR", t.TempDir())
 	c := newGateUICmd()
 	c.SetOut(new(bytes.Buffer))
 	c.SetErr(new(bytes.Buffer))
-	err := c.RunE(c, nil)
-	if err == nil {
-		t.Fatal("gate ui should return non-nil error in m31.1")
+	if err := c.RunE(c, nil); err != nil {
+		t.Fatalf("gate ui with UI_TEST_CMD unset = %v, want nil (Skip)", err)
 	}
-	var ec errExitCode
-	if !errors.As(err, &ec) {
-		t.Fatalf("error = %v, want errExitCode", err)
-	}
-	if ec.ExitCode() != exitUsage {
-		t.Errorf("gate ui exit code = %d, want %d", ec.ExitCode(), exitUsage)
+}
+
+// TestGateUI_DisabledReturnsSkip asserts that UI_VALIDATION_ENABLED=false
+// short-circuits to Skip even when UI_TEST_CMD is set.
+func TestGateUI_DisabledReturnsSkip(t *testing.T) {
+	t.Setenv("UI_TEST_CMD", "echo would-have-run")
+	t.Setenv("UI_VALIDATION_ENABLED", "false")
+	t.Setenv("TEKHTON_DIR", t.TempDir())
+	t.Setenv("PROJECT_DIR", t.TempDir())
+	c := newGateUICmd()
+	c.SetOut(new(bytes.Buffer))
+	c.SetErr(new(bytes.Buffer))
+	if err := c.RunE(c, nil); err != nil {
+		t.Fatalf("gate ui with UI_VALIDATION_ENABLED=false = %v, want nil", err)
 	}
 }
 

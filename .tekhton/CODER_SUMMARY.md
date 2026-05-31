@@ -1,175 +1,195 @@
 # Coder Summary
-
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-Milestone **m31.1 — Build + Completion Gates** (first of two sub-milestones
-in the m31 Gates Port arc). Ported `lib/gates.sh`, `lib/gates_phases.sh`,
-and `lib/gates_completion.sh` (~576 LOC total) to the new
-`internal/gates/` Go package. The UI gate (`lib/gates_ui*.sh`) stays bash
-through m31.2 and is reached via a thin bash-shim placeholder in the new
-package.
+Milestone **m31.2 — UI Gates** (second of two sub-milestones in the m31
+Gates Port arc). Closes the m31 arc: ports `lib/gates_ui.sh` (183 lines)
+and `lib/gates_ui_helpers.sh` (190 lines) to native Go, deletes both bash
+files, and replaces the m31.1 bash-shim `UIBashShim` with a native
+`UIPhase` Go implementation. All five `gates*.sh` files are now zero.
 
-### `internal/gates/` package (NEW, 7 production files)
+### `internal/gates/` additions
 
-- **`build.go`** — `BuildGate` orchestrator + `Phase` interface +
-  `PhaseError`. `BuildGate.Run(ctx, stageLabel)` walks five registered
-  phases under an omnibus `BUILD_GATE_TIMEOUT` budget. Failure short-
-  circuits with a `*PhaseError` wrapping `ErrPhaseFailed`; deadline
-  expiry returns `ErrGateTimeout`. `PhaseOrder()` is the canonical
-  `[analyze, compile, constraints, ui_test, ui_validation]` slice; the
-  `TestBuildGate_PhaseOrder` invariant test fails red on any reorder.
+- **`ui_helpers.go`** (NEW, 170 lines) — Pure helpers ported from
+  `lib/gates_ui_helpers.sh`:
+  - `DetectFramework(in FrameworkDetectInput) Framework` — priority order
+    matches the bash cascade: P0 `TEKHTON_UI_GATE_FORCE_NONINTERACTIVE=1`
+    (M130) → P1 `UI_FRAMEWORK==playwright` → P2 `UI_TEST_CMD` word-boundary
+    regex → P3 `playwright.config.{ts,js,mjs,cjs}` in `PROJECT_DIR` → P4
+    `none`.
+  - `DeterministicEnvList(fw, hardened, preflightInteractive) []string` —
+    M131 `PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED=1` escalates to
+    hardened on the FIRST run, not just retry. Returns nil for
+    non-playwright frameworks.
+  - `TimeoutSignature(exitCode, output) string` — pure classifier:
+    `interactive_report` | `generic_timeout` | `none`.
+  - `HardenedTimeout(base, factor) time.Duration` — clamped to
+    `[1, base]`; factor==0 clamps to 1s, factor>=1 clamps to base.
+  - `RenderDiagnosis(in DiagnosisInput) string` — byte-identical port of
+    the bash `_ui_write_gate_diagnosis` heredoc; the four-line block is
+    appended to UI_TEST_ERRORS.md and BUILD_ERRORS.md by the caller.
 
-- **`phases.go`** — `AnalyzePhase`, `CompilePhase`, `ConstraintsPhase`,
-  `UIBashShim`, `UIValidationPhase`. M54 remediation re-runs are
-  preserved (one retry per phase via the `Remediator` interface). The
-  bash `timeout 124 → pass` semantics are mirrored (`timedOut==true` ⇒
-  `StatusPass`). Compile errors are `head -20`-limited like the bash
-  side.
+- **`ui.go`** (NEW, 245 lines) — Native `UIPhase` Go implementation.
+  - Skip when `UI_TEST_CMD` unset or `UI_VALIDATION_ENABLED=false`.
+  - Skip when the command's first token is not on PATH (npx/npm
+    always pass; everything else uses `exec.LookPath`).
+  - Run #1 with the deterministic non-interactive env profile.
+  - On exit 0 → Pass.
+  - On `interactive_report` timeout signature (M126): skip M54
+    remediation AND generic retry; attempt the hardened rerun once
+    (timeout = `UI_TEST_TIMEOUT * UI_GATE_ENV_RETRY_TIMEOUT_FACTOR`,
+    clamped to [1, base]).
+  - Otherwise: one M54 remediation re-run, then one generic flakiness
+    retry.
+  - On terminal failure: `WriteUIFailure` truncates BUILD_RAW_ERRORS.txt,
+    writes a fresh UI_TEST_ERRORS.md, and appends `## UI Test Failures`
+    to BUILD_ERRORS.md (creating its `# Build Errors — TS` header only
+    if the file does not yet exist — preserves the bash `>` vs `>>`
+    parity from when analyze/compile may have written it earlier in the
+    same gate run).
+  - Then `WriteUIDiagnosis` appends the structured `## UI Gate
+    Diagnosis` block to both files.
 
-- **`completion.go`** — `CompletionGate.Run(ctx)` ports
-  `run_completion_gate`. Five preserved branches: IN PROGRESS, COMPLETE
-  + TEST_CMD pass, COMPLETE + new failures, COMPLETE + pre-existing
-  failures (M92), and no-status (with M86 substantive-work probe).
-  Dependency injection: `BaselineComparator`, `SubstantiveProbe`,
-  `TestDedup`, `SummaryDriftHook`. M27.2 hang guard:
-  `cmd.Stdin = nil` in `ExecRunner` so `read < /dev/tty` cannot block.
-  Failure dump → `COMPLETION_GATE_LAST_FAILURE.log`.
+- **`UICommandRunner` interface + `UIEnvRunner` production impl**
+  (`runner.go`) — UI-aware command runner that injects the deterministic
+  env list at `exec.Cmd.Env` boundary. `runBashCmd` helper shared with
+  `ExecRunner` so the M27.2 stdin-nil guard and `timeout 124` mapping
+  stay byte-equivalent across both runners.
 
-- **`errors_writer.go`** — `ErrorsWriter` interface + `FSErrorsWriter`
-  implementation + `NoopErrorsWriter` for tests. Byte-identity points
-  preserved from the bash side: analyze writes raw stream in
-  truncate mode (`>`), compile appends (`>>`); the H1 + `## Stage` block
-  is written once per round (compile only writes H1 if BUILD_ERRORS.md
-  doesn't yet exist); annotated headers via `terr.AnnotateBuildErrors`.
+- **`ErrorsWriter` interface extended**
+  (`errors_writer.go`) — added `WriteUIFailure(stageLabel, cmd, output,
+  exitCode, now)` and `WriteUIDiagnosis(block)`. Implemented on
+  `FSErrorsWriter` (byte-identical bash heredoc format with `tail -100`)
+  and `NoopErrorsWriter`. The bash `## UI Test Failures` section is
+  appended to BUILD_ERRORS.md only if the file already exists; otherwise
+  the H1 header is created first.
 
-- **`runner.go`** — `CommandRunner` interface + `ExecRunner`
-  implementation (production: `bash -c` with `cmd.Stdin = nil` for the
-  M27.2 guard, `exec.CommandContext` deadline-cancellation,
-  `timeout 124` exit-code mapping).
+### `cmd/tekhton/` updates
 
-- **`remediation.go`** — `Remediator` interface + `BashRemediator` shim.
-  m31.1 keeps the remediation registry in bash (`lib/remediation.sh`);
-  the Go gate shells out via `bash -c 'source common.sh; source
-  errors.sh; source remediation.sh; attempt_remediation ...'`. The
-  ERRORS_STREAM is passed via env so newlines/quotes/`$` survive.
+- **`gate.go`** — Replaced the m31.1 stub `gateUICmd` body with the real
+  implementation. `tekhton gate ui [--stage-label LABEL]` drives the
+  native `UIPhase` via `uiPhaseFromEnv`. New `--print-framework` flag
+  prints the detected framework (`playwright | none`) and exits 0; used
+  by the parity test. `uiPhaseFromEnv()` reads the m26 env contract
+  (UI_TEST_CMD, UI_TEST_TIMEOUT, UI_VALIDATION_ENABLED, UI_FRAMEWORK,
+  UI_GATE_ENV_RETRY_*, TEKHTON_UI_GATE_FORCE_NONINTERACTIVE,
+  PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED) and assembles a complete
+  `UIPhase`. The build gate's `ui_test` factory now also calls
+  `uiPhaseFromEnv()` — `UIBashShim` is fully retired.
+- **`gate_ui_shim.go`** — Deleted. The m31.1 bash-shim entry point.
+- **`gate_test.go`** — Replaced the `TestGateUI_StubReturnsNonZero`
+  m31.1 stub assertion with `TestGateUI_SkipWhenCmdUnset` and
+  `TestGateUI_DisabledReturnsSkip` (m31.2 native gate behaviour).
 
-- **`helpers.go`** — Tiny package-level shim for `os.Environ()` so tests
-  can stub the environment without monkey-patching globally.
+### `internal/gates/` test updates
 
-### `cmd/tekhton/` additions
-
-- **`gate.go`** (NEW) — `newGateCmd()` registers the parent `gate`
-  command (Hidden so it stays out of `tekhton --help`) with three
-  visible children: `build`, `completion`, `ui` (m31.2 stub returning
-  exit 64). `buildGateFromEnv(stageLabel)` and `completionGateFromEnv()`
-  assemble the gate types from the m26 env contract; `resolveUnder`
-  joins relative paths under `PROJECT_DIR` so artifacts land at the
-  target-project root rather than the binary's CWD.
-
-- **`gate_ui_shim.go`** (NEW) — `uiBashRunner` exec's
-  `bash -c "source lib/gates_ui_helpers.sh; source lib/gates_ui.sh;
-  _run_ui_test_phase '$stage_label'"` when `UI_TEST_CMD` is set. m31.2
-  deletes this file and replaces with a native `internal/gates/ui.go`.
-
-- **`main.go`** — `newGateCmd()` added to the root command's
-  `AddCommand` list.
+- **`build_test.go::captureWriter`** — Extended to implement the new
+  `WriteUIFailure` / `WriteUIDiagnosis` methods.
+- **`coverage_test.go`** — Removed three `TestUIBashShim_*` tests (the
+  type is deleted), replaced the `{&UIBashShim{}, "ui_test"}` entry in
+  the phase-name coverage table with `{&UIPhase{}, "ui_test"}`, removed
+  the `bashRunnerFunc` adapter. Added `WriteUIFailure` /
+  `WriteUIDiagnosis` calls to `TestNoopErrorsWriter_Methods` for
+  coverage.
+- **`phases_test.go`** — Removed `TestUIBashShim_SkipsWhenCmdUnset`.
+- **`phases.go`** — Removed `UIBashShim` struct + `BashShimRunner`
+  interface (35 lines). `UIValidationPhase` retained as the m31.1 stub.
+- **`errors_writer_test.go`** — Added 5 new tests covering
+  `WriteUIFailure` (fresh + append-to-existing-build-errors paths),
+  `WriteUIDiagnosis` (only-appends-when-file-exists, empty-block-noop),
+  the `tailLines` helper, and the nil-receiver safety guards.
+- **`ui_helpers_test.go`** (NEW, 224 lines) — Table-driven coverage of
+  all five exported helpers, including the M130 priority-0 force hook,
+  the four-priority cascade for `DetectFramework`, the env-list matrix
+  across (framework × hardened × preflight-interactive), the timeout
+  signature truth table, the `HardenedTimeout` clamping edge cases
+  (factor==0 → 1s; factor>=1 → base), and the byte-identical RenderDiagnosis
+  block.
+- **`ui_test.go`** (NEW, 364 lines) — UIPhase branch coverage:
+  pass-first-run, assertion-fail (terminal), interactive-timeout
+  triggers hardened-rerun, hardened-retry-disabled fails immediately,
+  generic-timeout diagnosis, remediation-then-pass, non-playwright
+  framework skips env injection, runner-error propagation, nil-receiver
+  guard, `checkUITestCmdAvailable` (npx/npm/PATH).
 
 ### Bash compatibility shims (`tekhton-legacy.sh`)
 
-- Replaced the three `source lib/gates{,_phases,_completion}.sh` lines
-  with inline `run_build_gate()` and `run_completion_gate()` shim
-  functions that exec `tekhton gate build --stage-label "$1"` and
-  `tekhton gate completion` respectively. The shims emit a clear error
-  and return 0 when the binary is missing (matching the
-  `run_preflight_checks` post-m22 fallback shape). `lib/gates_ui.sh` +
-  `lib/gates_ui_helpers.sh` remain sourced for the bash UI phase
-  through m31.2.
+- Removed the two `source lib/gates_ui*.sh` lines (m31.1 left them in
+  place; m31.2 deletes them). The five gates*.sh files are now zero in
+  the lib/ tree; the only remaining bash entry points are the inline
+  `run_build_gate` / `run_completion_gate` exec-shims (still needed for
+  callers in stages/coder.sh + lib/milestone_acceptance.sh).
 
 ### Bash test retirement / updates
 
-- **`tests/test_gates_extraction.sh`** — deleted. Tested the m28 bash
-  extraction of `gates_ui.sh` from `gates.sh`; superseded by the full
-  port.
-- **`tests/test_gates_stale_raw_errors.sh`**,
-  **`tests/test_build_errors_phase2_header.sh`**,
-  **`tests/test_build_gate_timeouts.sh`**,
-  **`tests/test_gates_bypass_flow.sh`**,
-  **`tests/test_ui_build_gate.sh`**,
-  **`tests/test_dependency_constraints.sh`** — self-skip with a
-  forward-pointer comment when `lib/gates.sh` is absent (the m31.1
-  state). Behavioural coverage moved to the new Go tests.
-- **`tests/test_pristine_state_enforcement.sh`** Suite 6 — stubbed
-  with a pointer to `internal/gates/completion_test.go::TestCompletionGate_PreExistingFailure*`.
-- **`tests/test_dedup_callsites.sh`** Suite 4.2 — removed (the bash
-  callsite is gone; the M105 dedup hook is now `CompletionGate.Dedup`
-  exercised by `TestCompletionGate_DedupSkipsTestCmd`).
-- **`tests/test_file_size_ceilings.sh`** — flipped from "gates.sh
-  must exist + under ceiling" to "gates*.sh must NOT exist" invariant
-  (the m31.1 deletion guard).
-
-### Tests (NEW)
-
-- **`internal/gates/build_test.go`** — phase-order invariant, pass/fail/
-  timeout/skip/cancel paths.
-- **`internal/gates/phases_test.go`** — table-driven analyze + compile +
-  constraints + UI-shim coverage; M54 remediation one-retry-cap
-  enforcement; `timeout 124 → pass` parity.
-- **`internal/gates/completion_test.go`** — all five branches; the
-  critical `TestCompletionGate_StdinDevNull` proves the M27.2 hang
-  guard works against a real `bash -c "read -t 1 ..."` TEST_CMD with a
-  10-second wall-clock timeout.
-- **`internal/gates/errors_writer_test.go`** — structural equivalence
-  for analyze, compile (append mode!), constraints, timeout, and
-  clear-on-pass paths.
-- **`internal/gates/coverage_test.go`** — `Phase.Name()` + `ExecRunner`
-  exec paths + sentinel error coverage so package coverage stays above
-  the 80% target.
-- **`cmd/tekhton/gate_test.go`** — Cobra subcommand registration, help
-  listing, UI-stub exit code, env-helper unit tests.
+- **`tests/test_file_size_ceilings.sh`** — Extended the file-deletion
+  invariant from three files (m31.1: gates.sh + gates_phases.sh +
+  gates_completion.sh) to five (m31.2 adds gates_ui.sh +
+  gates_ui_helpers.sh).
+- **`tests/test_ui_gate_force_noninteractive.sh`** — Added a
+  `lib/gates_ui_helpers.sh` self-skip guard (the bash file is gone, M130
+  P0 coverage moved to `ui_helpers_test.go::TestDetectFramework_ForceNonInteractive`).
+- **`tests/test_m138_coverage_gaps.sh`** — Wrapped the GAP-2 block
+  (depends on `_normalize_ui_gate_env` which no longer exists) in a
+  conditional skip; GAP-1 still runs.
+- **`tests/test_gates_parity.sh`** — Bound `TEKHTON_BIN` to the in-repo
+  binary path (`${REPO_ROOT}/bin/tekhton`) so a stale env var pointing
+  at a different checkout doesn't poison the parity gate. (Found via
+  test failure during m31.2; the m31.1 gate had the same bug latent.)
 
 ### Bash integration tests (NEW)
 
-- **`tests/test_gates_parity.sh`** — eight-scenario parity gate driving
-  `tekhton gate build` and `tekhton gate completion` against captured
-  baselines under `tests/testdata/gates/`. 13 assertions, all passing.
-  Reuses `tests/lib/parity.sh`.
-- **`tests/test_buildfix_against_go_gate.sh`** — cross-seam coverage:
-  drives the Go gate to produce `BUILD_RAW_ERRORS.txt`, then exercises
-  `stages/coder_buildfix.sh::_bf_read_raw_errors` against the Go-written
-  stream AND drives `tekhton diagnose classify --mode routing` to
-  assert the m17 classifier reports `code_dominant` for a TS2304
-  failure. 5 assertions, all passing.
+- **`tests/test_gates_ui_parity.sh`** (NEW, 212 lines) — Five-scenario
+  parity gate driving `tekhton gate ui` against captured baselines.
+  21 assertions, all passing. Reuses `tests/lib/parity.sh`. Scenarios:
+  - `ui_clean` — UI_TEST_CMD exits 0; no error files emitted.
+  - `ui_assertion_fail` — exit 1 with assertion text; generic retry
+    attempted; failure-path artifacts written (byte-identical).
+  - `ui_interactive_report` — exit 124 + HTML-report marker → hardened
+    rerun attempted; diagnosis block reports
+    `Timeout class: interactive_report` and
+    `Hardened rerun attempted: yes`.
+  - `ui_generic_timeout` — exit 124 without marker;
+    `UI_GATE_ENV_RETRY_ENABLED=false` so no hardened rerun;
+    `Timeout class: generic_timeout` / `Hardened rerun attempted: no`.
+  - `ui_framework_detect` — 5 sub-assertions covering the P0-P4 priority
+    cascade via `tekhton gate ui --print-framework`.
 
 ### Test fixtures (NEW)
 
-- `tests/testdata/gates/{analyze_dirty,compile_dirty,gate_timeout}/expected/BUILD_ERRORS.md`
-  and matching `BUILD_RAW_ERRORS.txt` files. Timestamp normalisation via
-  `_gates_normalise` (sed) collapses the `# Build Errors — YYYY-MM-DD ...`
-  line to `TIMESTAMP` before diffing.
+- `tests/testdata/gates/ui_assertion_fail/expected/{UI_TEST_ERRORS.md,BUILD_ERRORS.md,BUILD_RAW_ERRORS.txt}`
+- `tests/testdata/gates/ui_interactive_report/expected/{UI_TEST_ERRORS.md,BUILD_ERRORS.md,BUILD_RAW_ERRORS.txt}`
+- `tests/testdata/gates/ui_generic_timeout/expected/{UI_TEST_ERRORS.md,BUILD_ERRORS.md,BUILD_RAW_ERRORS.txt}`
+- Timestamp normalisation via the parity gate's `_ui_normalise` sed
+  callback collapses the `# UI Test Errors — YYYY-MM-DD HH:MM:SS` and
+  `# Build Errors — YYYY-MM-DD HH:MM:SS` headers to `TIMESTAMP` before
+  diffing.
 
 ### Other updates
 
-- **`internal/stagerunner/helpers.go`** — `DefaultLibHelpers` no longer
-  includes the three deleted bash files. Parity test
-  (`TestDefaultLibHelpersParityWithLegacy`) re-passes.
-- **`scripts/wedge-audit-patterns.sh`** — gained 11 new forbidden
-  patterns: the three deleted `lib/gates*.sh` source-line patterns plus
-  10 bash function names (`_gate_check_timeout`, `_gate_effective_timeout`,
-  `_gate_phase_analyze`, `_gate_phase_compile`, `_gate_try_remediation`,
-  `_gate_run_analyze`, `_gate_run_compile`, `_gate_write_analyze_errors`,
-  `_gate_write_compile_errors`, `_warn_summary_drift`). Wedge-audit
-  reports clean (194 files audited).
-- **`.claude/milestones/MANIFEST.cfg`** — m31.1 row title updated from
-  "Build and Completion Gates" to "Build + Completion Gates" per the
-  acceptance criterion. Status flip to `done` is handled by the
-  finalize hook.
-- **`ARCHITECTURE.md`** — added `internal/gates/`, `cmd/tekhton/gate.go`,
-  and `tekhton-legacy.sh::run_build_gate / ::run_completion_gate` entries;
-  removed the `lib/gates.sh` and `lib/gates_phases.sh` entries; updated
-  the `lib/gates_ui_helpers.sh` and `lib/test_dedup.sh` entries' sourcing
-  notes.
+- **`internal/stagerunner/helpers.go`** — `DefaultLibHelpers` dropped
+  `lib/gates_ui_helpers.sh` and `lib/gates_ui.sh`. Parity test still
+  passes.
+- **`scripts/wedge-audit-patterns.sh`** — Added m31.2 forbidden patterns:
+  the source-line patterns for the two deleted bash files plus the eight
+  bash function names (`_run_ui_test_phase`, `_ui_run_cmd`,
+  `_ui_detect_framework`, `_ui_deterministic_env_list`,
+  `_normalize_ui_gate_env`, `_ui_timeout_signature`,
+  `_ui_hardened_timeout`, `_ui_write_gate_diagnosis`). Wedge audit
+  reports clean (192 files audited).
+- **`ARCHITECTURE.md`** — Updated the `internal/gates/` entry to cover
+  the m31.2 UI gate addition + the `WriteUIFailure` / `WriteUIDiagnosis`
+  errors writer additions. Updated `cmd/tekhton/gate.go` entry to cover
+  the new `--print-framework` flag and `uiPhaseFromEnv`. Updated
+  `tekhton-legacy.sh` entry to note all five gates*.sh are now gone.
+  Replaced the `lib/gates_ui_helpers.sh` entry with an HTML comment
+  marking the m31.2 deletion. Updated the `lib/test_dedup.sh` sourcing
+  note (no longer sourced after the deleted gates_ui*.sh block).
+- **`docs/v4-phase5-stub.md`** — Added a new row 13a for the m31 arc
+  (`gates*.sh`, done m31 — five files deleted). Added an `End of Phase
+  5 m31.2` row to the LOC table.
+- **`VERSION`** — Bumped to `4.31.0` (parent-arc bump on m31.2 close).
 
 ## Root Cause (bugs only)
 N/A — feature port milestone.
@@ -177,105 +197,88 @@ N/A — feature port milestone.
 ## Files Modified
 
 ### Created (NEW)
-- `internal/gates/build.go` (NEW)
-- `internal/gates/build_test.go` (NEW)
-- `internal/gates/phases.go` (NEW)
-- `internal/gates/phases_test.go` (NEW)
-- `internal/gates/completion.go` (NEW)
-- `internal/gates/completion_test.go` (NEW)
-- `internal/gates/errors_writer.go` (NEW)
-- `internal/gates/errors_writer_test.go` (NEW)
-- `internal/gates/coverage_test.go` (NEW)
-- `internal/gates/runner.go` (NEW)
-- `internal/gates/remediation.go` (NEW)
-- `internal/gates/helpers.go` (NEW)
-- `cmd/tekhton/gate.go` (NEW)
-- `cmd/tekhton/gate_test.go` (NEW)
-- `cmd/tekhton/gate_ui_shim.go` (NEW)
-- `tests/test_gates_parity.sh` (NEW)
-- `tests/test_buildfix_against_go_gate.sh` (NEW)
-- `tests/testdata/gates/analyze_dirty/expected/BUILD_ERRORS.md` (NEW)
-- `tests/testdata/gates/analyze_dirty/expected/BUILD_RAW_ERRORS.txt` (NEW)
-- `tests/testdata/gates/compile_dirty/expected/BUILD_ERRORS.md` (NEW)
-- `tests/testdata/gates/compile_dirty/expected/BUILD_RAW_ERRORS.txt` (NEW)
-- `tests/testdata/gates/gate_timeout/expected/BUILD_ERRORS.md` (NEW)
+- `internal/gates/ui.go` (NEW) — Native `UIPhase` implementation
+- `internal/gates/ui_helpers.go` (NEW) — Pure helpers
+- `internal/gates/ui_test.go` (NEW) — `UIPhase` test coverage
+- `internal/gates/ui_helpers_test.go` (NEW) — Helper test coverage
+- `tests/test_gates_ui_parity.sh` (NEW) — Parity gate
+- `tests/testdata/gates/ui_assertion_fail/expected/UI_TEST_ERRORS.md` (NEW)
+- `tests/testdata/gates/ui_assertion_fail/expected/BUILD_ERRORS.md` (NEW)
+- `tests/testdata/gates/ui_assertion_fail/expected/BUILD_RAW_ERRORS.txt` (NEW)
+- `tests/testdata/gates/ui_interactive_report/expected/UI_TEST_ERRORS.md` (NEW)
+- `tests/testdata/gates/ui_interactive_report/expected/BUILD_ERRORS.md` (NEW)
+- `tests/testdata/gates/ui_interactive_report/expected/BUILD_RAW_ERRORS.txt` (NEW)
+- `tests/testdata/gates/ui_generic_timeout/expected/UI_TEST_ERRORS.md` (NEW)
+- `tests/testdata/gates/ui_generic_timeout/expected/BUILD_ERRORS.md` (NEW)
+- `tests/testdata/gates/ui_generic_timeout/expected/BUILD_RAW_ERRORS.txt` (NEW)
 
 ### Modified
-- `cmd/tekhton/main.go` — `newGateCmd()` registered
-- `tekhton-legacy.sh` — three source lines replaced with inline
-  `run_build_gate` / `run_completion_gate` exec-shim functions
-- `internal/stagerunner/helpers.go` — `DefaultLibHelpers` dropped
-  `lib/gates.sh`, `lib/gates_phases.sh`, `lib/gates_completion.sh`
-- `scripts/wedge-audit-patterns.sh` — 11 new m31.1 regression guards
-- `.claude/milestones/MANIFEST.cfg` — m31.1 title hyphenation fix
-- `ARCHITECTURE.md` — gates entries updated
-- `tests/test_pristine_state_enforcement.sh` — Suite 6 stubbed
-- `tests/test_dedup_callsites.sh` — Suite 4.2 removed
-- `tests/test_file_size_ceilings.sh` — flipped to deletion invariant
-- `tests/test_gates_stale_raw_errors.sh`,
-  `tests/test_build_errors_phase2_header.sh`,
-  `tests/test_build_gate_timeouts.sh`,
-  `tests/test_gates_bypass_flow.sh`,
-  `tests/test_ui_build_gate.sh`,
-  `tests/test_dependency_constraints.sh` — self-skip when
-  `lib/gates.sh` is absent
+- `cmd/tekhton/gate.go` — Replaced gate ui stub with real RunE; added
+  `--print-framework` flag; added `uiPhaseFromEnv` + `envFloat`; swapped
+  the `ui_test` factory in `buildGateFromEnv` to use `uiPhaseFromEnv`
+- `cmd/tekhton/gate_test.go` — Replaced the stub-returns-error assertion
+  with two `TestGateUI_*` skip-path tests
+- `internal/gates/phases.go` — Removed `UIBashShim` + `BashShimRunner`
+- `internal/gates/phases_test.go` — Removed `TestUIBashShim_SkipsWhenCmdUnset`
+- `internal/gates/coverage_test.go` — Swapped `UIBashShim` for `UIPhase`,
+  removed three `TestUIBashShim_*` tests + the `bashRunnerFunc` adapter,
+  added UI methods to `TestNoopErrorsWriter_Methods`
+- `internal/gates/errors_writer.go` — Added `WriteUIFailure` +
+  `WriteUIDiagnosis` to the interface, implemented on `FSErrorsWriter`
+  and `NoopErrorsWriter`; added the `tailLines` helper
+- `internal/gates/errors_writer_test.go` — Added 5 new tests for the UI
+  failure-path writers
+- `internal/gates/build_test.go` — Extended `captureWriter` with UI
+  fields and methods
+- `internal/gates/runner.go` — Added `UIEnvRunner` + `runBashCmd` helper
+  shared with `ExecRunner`
+- `internal/gates/completion_test.go` — gofmt-driven whitespace fix
+  only (incidental)
+- `internal/gates/remediation.go` — gofmt-driven whitespace fix only
+  (incidental)
+- `internal/stagerunner/helpers.go` — Dropped the two `lib/gates_ui*.sh`
+  entries from `DefaultLibHelpers`
+- `tekhton-legacy.sh` — Removed the two `source lib/gates_ui*.sh` lines
+- `scripts/wedge-audit-patterns.sh` — Added m31.2 forbidden patterns
+- `tests/test_file_size_ceilings.sh` — Extended the deletion invariant
+  to all five gates*.sh files
+- `tests/test_ui_gate_force_noninteractive.sh` — Added skip guard
+- `tests/test_m138_coverage_gaps.sh` — Skip GAP-2 when gates_ui_helpers.sh missing
+- `tests/test_gates_parity.sh` — Bound `TEKHTON_BIN` to in-repo path
+- `ARCHITECTURE.md` — Gates entries updated for m31.2
+- `docs/v4-phase5-stub.md` — Added m31 arc row + LOC table entry
+- `VERSION` — `4.30.8` → `4.31.0`
 
 ### Deleted
-- `lib/gates.sh` (217 lines, ported to `internal/gates/build.go` +
-  `phases.go` + `errors_writer.go`)
-- `lib/gates_phases.sh` (205 lines, ported to `internal/gates/phases.go`)
-- `lib/gates_completion.sh` (154 lines, ported to
-  `internal/gates/completion.go`)
-- `tests/test_gates_extraction.sh` (the m28 bash-extraction structural
-  test — superseded)
+- `lib/gates_ui.sh` (183 lines, ported to `internal/gates/ui.go`)
+- `lib/gates_ui_helpers.sh` (190 lines, ported to
+  `internal/gates/ui_helpers.go`)
+- `cmd/tekhton/gate_ui_shim.go` (m31.1's bash-shim entry point)
 
 ## Test Results
 - **Go**: `go test ./internal/gates/ ./cmd/tekhton/` PASS;
-  `internal/gates/` coverage 82.9% of statements (above the 80%
+  `internal/gates/` coverage 85.8% of statements (above the 80%
   acceptance target).
 - **`go vet ./...`**: clean.
-- **Bash**: `bash tests/run_tests.sh` reports 501 shell + all 26 Go
-  packages PASS (was 500 before m31.1; the two new bash tests added a
-  count of one each).
+- **`gofmt`**: clean.
 - **`shellcheck -S warning`** on all touched bash files: clean.
-- **Wedge audit**: clean (194 files audited).
-- **`test_gates_parity.sh`**: 13/13 PASS across 8 scenarios
-  (analyze_clean, analyze_dirty, compile_clean, compile_dirty,
-  completion_pass, completion_test_fail, completion_no_status,
-  gate_timeout). Build-error fixtures byte-identical after timestamp
-  normalisation; raw-error fixtures byte-identical without normalisation.
-- **`test_buildfix_against_go_gate.sh`**: 5/5 PASS — confirms
-  `_bf_read_raw_errors` consumes the Go-written stream and the m17
-  classifier emits `code_dominant` for the captured failure.
+- **Bash**: `bash tests/run_tests.sh` reports 502 shell PASS + all 26 Go
+  packages PASS (was 501 before m31.2; the new `test_gates_ui_parity.sh`
+  adds one count).
+- **Wedge audit**: clean (192 files audited).
+- **`test_gates_parity.sh`**: 16/16 PASS across 11 scenarios (no
+  regression from the m31.1 baseline).
+- **`test_gates_ui_parity.sh`**: 21/21 PASS across 5 scenarios.
 
 ## Human Notes Status
-No human notes referenced for m31.1.
+No human notes referenced for m31.2.
 
 ## Docs Updated
-- `ARCHITECTURE.md` — `internal/gates/` and `cmd/tekhton/gate.go` entries
-  added; `lib/gates.sh` and `lib/gates_phases.sh` entries removed;
-  `lib/gates_ui_helpers.sh` and `lib/test_dedup.sh` sourcing notes
-  updated.
-
-## Architecture Change Proposals
-
-### `internal/gates/` is a sibling package to `internal/pipeline/`, not a replacement
-
-- **Current constraint**: ARCHITECTURE.md previously had a single
-  `lib/gates.sh` row; the m18 `internal/pipeline.BuildGate` /
-  `CompletionGate` types exist as a SIMPLER scheduling-level gate used
-  by the per-attempt scheduler, distinct from the bash gate that ran
-  inside the coder subprocess.
-- **What triggered this**: m31.1's Goal 1 was to port the bash gate
-  (the one with phase boundaries, M54 remediation, raw-stream output
-  files) — not to replace the m18 simpler gate that the in-process
-  scheduler uses. Two different abstractions, two different call paths.
-- **Proposed change**: m31.1 ships `internal/gates/` as a NEW package.
-  The m18 `internal/pipeline/gates.go` stays for the per-attempt
-  scheduler (the call site at `internal/pipeline/runner.go:247`). The
-  bash-equivalent gate is reached via the CLI seam (`tekhton gate`).
-  ARCHITECTURE.md now documents both.
-- **Backward compatible**: Yes. m18 in-process gates unchanged.
-- **ARCHITECTURE.md update needed**: Already applied — the `internal/gates/`
-  + `cmd/tekhton/gate.go` rows replace the deleted bash entries and
-  carry a m31.2 forward-pointer for the UI phase.
+- `ARCHITECTURE.md` — `internal/gates/` entry expanded for UIPhase +
+  helpers + errors-writer additions; `cmd/tekhton/gate.go` entry expanded
+  for `--print-framework` + `uiPhaseFromEnv`; `tekhton-legacy.sh` entry
+  notes the m31 arc closes with five files deleted; `lib/test_dedup.sh`
+  sourcing note updated; the deleted `lib/gates_ui_helpers.sh` entry
+  replaced with an HTML deletion-marker comment.
+- `docs/v4-phase5-stub.md` — Added row 13a (`gates*.sh`, done m31) and
+  an `End of Phase 5 m31.2` LOC entry.

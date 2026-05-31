@@ -203,9 +203,14 @@ type captureWriter struct {
 	timeoutWritten    bool
 	lastTimeoutLabel  string
 	lastTimeoutBudget time.Duration
+	uiFailureLabel    string
+	uiFailureCmd      string
+	uiFailureOutput   string
+	uiFailureExit     int
+	uiDiagnosisBlock  string
 }
 
-func (w *captureWriter) Reset()                                  { w.resetCalls++ }
+func (w *captureWriter) Reset() { w.resetCalls++ }
 func (w *captureWriter) WriteAnalyze(s, e, o string, _ time.Time) {
 	w.analyzeLabel = s
 	w.analyzeStream = e
@@ -221,7 +226,14 @@ func (w *captureWriter) WriteTimeout(s string, b time.Duration, _ time.Time) {
 	w.lastTimeoutLabel = s
 	w.lastTimeoutBudget = b
 }
-func (w *captureWriter) ClearOnPass() { w.clearedOnPass = true }
+func (w *captureWriter) WriteUIFailure(label, cmd, output string, exit int, _ time.Time) {
+	w.uiFailureLabel = label
+	w.uiFailureCmd = cmd
+	w.uiFailureOutput = output
+	w.uiFailureExit = exit
+}
+func (w *captureWriter) WriteUIDiagnosis(block string) { w.uiDiagnosisBlock = block }
+func (w *captureWriter) ClearOnPass()                  { w.clearedOnPass = true }
 
 // fixedClock returns a clock pinned to t.
 func fixedClock(rfc3339 string) func() time.Time {

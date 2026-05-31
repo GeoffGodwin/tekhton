@@ -231,9 +231,11 @@ PATTERNS=(
     # canonical Go gate. The bash compatibility shims `run_build_gate` and
     # `run_completion_gate` live in tekhton-legacy.sh as `tekhton gate …`
     # execs; they are intentionally NOT matched here so the shim stays
-    # valid. The UI gate (`_run_ui_test_phase`, gates_ui*.sh) is still bash
-    # through m31.2 and is also not matched.
-    '^[[:space:]]*(source|\.)[[:space:]]+.*/(gates|gates_phases|gates_completion)\.sh'
+    # valid.
+    # m31.2: UI gate ported to internal/gates/ui.go + ui_helpers.go. The
+    # five gates*.sh files are now zero. The UI helper function names
+    # (`_run_ui_test_phase`, `_ui_*`) are guarded below.
+    '^[[:space:]]*(source|\.)[[:space:]]+.*/(gates|gates_phases|gates_completion|gates_ui|gates_ui_helpers)\.sh'
     '\b_gate_check_timeout\s*\(\)'
     '\b_gate_effective_timeout\s*\(\)'
     '\b_gate_phase_analyze\s*\(\)'
@@ -244,4 +246,12 @@ PATTERNS=(
     '\b_gate_write_analyze_errors\s*\(\)'
     '\b_gate_write_compile_errors\s*\(\)'
     '\b_warn_summary_drift\s*\(\)'
+    '\b_run_ui_test_phase\s*\(\)'
+    '\b_ui_run_cmd\s*\(\)'
+    '\b_ui_detect_framework\s*\(\)'
+    '\b_ui_deterministic_env_list\s*\(\)'
+    '\b_normalize_ui_gate_env\s*\(\)'
+    '\b_ui_timeout_signature\s*\(\)'
+    '\b_ui_hardened_timeout\s*\(\)'
+    '\b_ui_write_gate_diagnosis\s*\(\)'
 )

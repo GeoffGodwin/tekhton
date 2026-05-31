@@ -186,46 +186,6 @@ func (p *ConstraintsPhase) Run(ctx context.Context, in *PhaseInput) PhaseResult 
 	return PhaseResult{Status: StatusFail, Err: errConstraintsFailed}
 }
 
-// UIBashShim is the m31.1 placeholder for UIPhase. When UI_TEST_CMD is
-// set, it execs `bash -c "source lib/gates_ui_helpers.sh; source
-// lib/gates_ui.sh; _run_ui_test_phase '$stage_label'"` so the existing
-// bash UI gate still fires through the Go orchestrator. m31.2 replaces
-// this with internal/gates/ui.go.
-//
-// When UI_TEST_CMD is empty (the common case in fixtures and built-in
-// dogfood runs), Run returns StatusSkip and the shim never spawns.
-type UIBashShim struct {
-	UITestCmd  string
-	ShellEnv   map[string]string // UI_TEST_CMD, UI_GATE_ENV_RETRY_ENABLED, etc.
-	BashRunner BashShimRunner    // pluggable for tests
-}
-
-// BashShimRunner abstracts the bash subprocess that m31.1 delegates the
-// UI phase to. m31.2 replaces this with the native UIPhase.
-type BashShimRunner interface {
-	Run(ctx context.Context, stageLabel string, env map[string]string) (PhaseResult, error)
-}
-
-// Name implements Phase.
-func (p *UIBashShim) Name() string { return "ui_test" }
-
-// Run implements Phase. Skip when UI_TEST_CMD is empty (the m31.1 default).
-// When UI_TEST_CMD is set, defer to the bash shim — m31.2 replaces this
-// with a native implementation.
-func (p *UIBashShim) Run(ctx context.Context, in *PhaseInput) PhaseResult {
-	if p.UITestCmd == "" {
-		return PhaseResult{Status: StatusSkip}
-	}
-	if p.BashRunner == nil {
-		return PhaseResult{Status: StatusSkip}
-	}
-	res, err := p.BashRunner.Run(ctx, in.StageLabel, p.ShellEnv)
-	if err != nil {
-		return PhaseResult{Status: StatusFail, Err: err}
-	}
-	return res
-}
-
 // UIValidationPhase ports the run_ui_validation invocation at the tail of
 // run_build_gate. When the command name is empty (the m31.1 default), the
 // phase skips. m31.2 will fill in the native validation surface.

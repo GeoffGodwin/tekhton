@@ -291,8 +291,8 @@ type fakeBaseline struct {
 	preexisting bool
 }
 
-func (b fakeBaseline) HasBaseline() bool                    { return b.has }
-func (b fakeBaseline) Compare([]byte, int) bool             { return b.preexisting }
+func (b fakeBaseline) HasBaseline() bool        { return b.has }
+func (b fakeBaseline) Compare([]byte, int) bool { return b.preexisting }
 
 type fakeSubstantive struct{ on bool }
 

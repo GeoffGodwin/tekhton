@@ -10,15 +10,15 @@ TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CEILING=300
 ERRORS_CEILING=100   # m17 acceptance: lib/errors.sh ≤ 100 lines.
 
-# m31.1: build + completion gates ported to internal/gates/. The three
-# bash files (gates.sh, gates_phases.sh, gates_completion.sh) must NOT
-# exist anymore — their reintroduction would mean someone forked the
-# canonical Go gate.
+# m31.1+m31.2: all five gates*.sh bash files ported to internal/gates/.
+# Their reintroduction would mean someone forked the canonical Go gate.
 for f in "${TEKHTON_HOME}/lib/gates.sh" \
          "${TEKHTON_HOME}/lib/gates_phases.sh" \
-         "${TEKHTON_HOME}/lib/gates_completion.sh"; do
+         "${TEKHTON_HOME}/lib/gates_completion.sh" \
+         "${TEKHTON_HOME}/lib/gates_ui.sh" \
+         "${TEKHTON_HOME}/lib/gates_ui_helpers.sh"; do
     if [[ -f "$f" ]]; then
-        echo "FAIL: $f must not exist after m31.1 (ported to internal/gates/)"
+        echo "FAIL: $f must not exist after m31 (ported to internal/gates/)"
         exit 1
     fi
 done

@@ -10,6 +10,12 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [[ ! -f "${TEKHTON_HOME}/lib/gates_ui_helpers.sh" ]]; then
+    printf 'SKIP test_ui_gate_force_noninteractive: gates_ui_helpers.sh ported to internal/gates/ at m31.2; M130 priority-0 coverage lives in internal/gates/ui_helpers_test.go::TestDetectFramework_ForceNonInteractive\n'
+    exit 0
+fi
+
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 

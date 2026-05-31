@@ -34,10 +34,45 @@ type ExecRunner struct {
 // Run implements CommandRunner. Empty cmd returns (nil, 0, false, nil) so
 // gates can pass zero-config phases through (e.g. BUILD_CHECK_CMD unset).
 func (r ExecRunner) Run(ctx context.Context, cmd string, timeout time.Duration) ([]byte, int, bool, error) {
+	out, exit, timedOut, err := runBashCmd(ctx, r.Bash, cmd, nil, timeout)
+	return out, exit, timedOut, err
+}
+
+// UIEnvRunner implements UICommandRunner for production. Mirrors
+// ExecRunner's bash semantics (M27.2 stdin guard, timeout 124 mapping)
+// while injecting the supplied env list at the exec(1) boundary so it
+// never leaks into the parent shell.
+type UIEnvRunner struct {
+	// Bash is the bash binary path. Defaults to "bash" (PATH lookup).
+	Bash string
+}
+
+// Run implements UICommandRunner. The env slice is appended to os.Environ()
+// so PATH/HOME survive; UI-gate-specific keys (PLAYWRIGHT_HTML_OPEN=never,
+// CI=1) take precedence because Go's exec uses the LAST occurrence of a
+// duplicate key.
+func (r UIEnvRunner) Run(ctx context.Context, cmd string, env []string, timeout time.Duration) ([]byte, int, error) {
+	out, exit, _, err := runBashCmd(ctx, r.Bash, cmd, env, timeout)
+	return out, exit, err
+}
+
+// runBashCmd is the shared bash-c subprocess driver for ExecRunner and
+// UIEnvRunner. Empty cmd returns immediately. timeout==0 disables the
+// deadline; non-zero wraps ctx in WithTimeout.
+//
+// Output streams (stdout + stderr) are captured into a single buffer so
+// the gate's grep + sed pipeline sees the same byte stream the bash side
+// produced via `2>&1`.
+//
+// Exit code mapping:
+//   - subprocess exits 0 → (out, 0, false, nil)
+//   - subprocess exits N → (out, N, false, nil)
+//   - context deadline    → (out, 124, true, nil)  (parity with bash timeout 124)
+//   - unexpected runtime  → (out, -1, false, err)
+func runBashCmd(ctx context.Context, bash, cmd string, env []string, timeout time.Duration) ([]byte, int, bool, error) {
 	if cmd == "" {
 		return nil, 0, false, nil
 	}
-	bash := r.Bash
 	if bash == "" {
 		bash = "bash"
 	}
@@ -48,6 +83,9 @@ func (r ExecRunner) Run(ctx context.Context, cmd string, timeout time.Duration) 
 	}
 	c := exec.CommandContext(ctx, bash, "-c", cmd)
 	c.Stdin = nil // M27.2: prevent read < /dev/tty from blocking the gate
+	if len(env) > 0 {
+		c.Env = append(defaultEnviron(), env...)
+	}
 	var buf bytes.Buffer
 	c.Stdout = &buf
 	c.Stderr = &buf

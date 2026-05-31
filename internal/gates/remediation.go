@@ -96,7 +96,9 @@ var osEnviron = func() []string {
 // writerAdapter lets us pass an interface{ Write([]byte) (int, error) }
 // to os/exec.Cmd.Stderr (which wants io.Writer). Tests pin Stderr to a
 // bytes.Buffer; production wires os.Stderr.
-type writerAdapter struct{ w interface{ Write([]byte) (int, error) } }
+type writerAdapter struct {
+	w interface{ Write([]byte) (int, error) }
+}
 
 // Write implements io.Writer.
 func (a writerAdapter) Write(b []byte) (int, error) { return a.w.Write(b) }

@@ -113,10 +113,24 @@ assert_contains "GAP-1.5 stderr contains 'CircleCI'" "CircleCI" "$out"
 # =============================================================================
 # GAP-2: log_verbose annotation in _normalize_ui_gate_env
 #
-# This block is unchanged from pre-m16 — gates_ui_helpers.sh is still bash.
-# Stub log_verbose to emit unconditionally so the assertion can detect the
-# call independent of production VERBOSE_OUTPUT semantics.
+# m31.2: gates_ui_helpers.sh was deleted; _normalize_ui_gate_env no longer
+# exists. The diagnostic-on-CI-auto-detect coverage moves to the Go side
+# in internal/gates/ui_helpers_test.go (the helper is now pure — no logging
+# side effect — and CI-detect-driven diagnostics are emitted at the env
+# contract seam in cmd/tekhton/gate.go). Skip GAP-2 when the bash helper
+# file is gone; everything else in this file (GAP-1) is independent of it.
 # =============================================================================
+if [[ ! -f "${TEKHTON_HOME}/lib/gates_ui_helpers.sh" ]]; then
+    echo ""
+    echo "=== GAP-2: SKIPPED — gates_ui_helpers.sh ported to internal/gates/ at m31.2 ==="
+    echo ""
+    echo "════════════════════════════════════════"
+    echo "  M138 coverage gaps: ${PASS} passed, ${FAIL} failed (GAP-2 skipped)"
+    echo "════════════════════════════════════════"
+    [[ "$FAIL" -eq 0 ]] || exit 1
+    exit 0
+fi
+
 echo "=== GAP-2: log_verbose annotation in _normalize_ui_gate_env ==="
 
 log_verbose() { echo "LOG_VERBOSE: $*"; }

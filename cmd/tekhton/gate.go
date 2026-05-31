@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -89,19 +88,99 @@ func newGateCompletionCmd() *cobra.Command {
 	return c
 }
 
-// newGateUICmd registers `tekhton gate ui` — m31.2 stub.
+// newGateUICmd registers `tekhton gate ui`. m31.2 fills in the body.
 func newGateUICmd() *cobra.Command {
+	var stageLabel string
+	var printFramework bool
 	c := &cobra.Command{
 		Use:   "ui",
-		Short: "Run the UI test gate (stub — implemented in m31.2)",
+		Short: "Run the UI test gate (UI_TEST_CMD with M126 hardened-rerun semantics)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return errExitCode{
-				code: exitUsage,
-				err:  errors.New("gate ui: implemented in m31.2"),
+			if printFramework {
+				fw := gates.DetectFramework(gates.FrameworkDetectInput{
+					ForceNonInteractive: os.Getenv("TEKHTON_UI_GATE_FORCE_NONINTERACTIVE") == "1",
+					UIFramework:         os.Getenv("UI_FRAMEWORK"),
+					UITestCmd:           os.Getenv("UI_TEST_CMD"),
+					ProjectDir:          os.Getenv("PROJECT_DIR"),
+				})
+				fmt.Fprintln(cmd.OutOrStdout(), fw)
+				return nil
+			}
+			if stageLabel == "" {
+				stageLabel = "unknown"
+			}
+			ctx := context.Background()
+			p, writer := uiPhaseFromEnv()
+			// Reset BUILD_ERRORS.md / BUILD_RAW_ERRORS.txt so a fresh gate
+			// run doesn't see prior-stage artifacts.
+			writer.Reset()
+			in := &gates.PhaseInput{
+				StageLabel: stageLabel,
+				Remaining:  p.Timeout,
+				Now:        time.Now,
+			}
+			result := p.Run(ctx, in)
+			switch result.Status {
+			case gates.StatusPass, gates.StatusSkip:
+				return nil
+			default:
+				fmt.Fprintln(cmd.ErrOrStderr(), "tekhton gate ui:", result.Err)
+				return errExitCode{code: 1, err: result.Err}
 			}
 		},
 	}
+	c.Flags().StringVar(&stageLabel, "stage-label", "", "human-readable stage label written into UI_TEST_ERRORS.md")
+	c.Flags().BoolVar(&printFramework, "print-framework", false, "print the detected UI framework and exit 0 (diagnostic)")
 	return c
+}
+
+// uiPhaseFromEnv assembles a UIPhase from the env contract. Returns both
+// the phase and its writer so the CLI can drive Reset() in the same scope.
+func uiPhaseFromEnv() (*gates.UIPhase, *gates.FSErrorsWriter) {
+	tekhtonDir := envOr("TEKHTON_DIR", ".tekhton")
+	projectDir := os.Getenv("PROJECT_DIR")
+	errsFile := resolveUnder(projectDir, envOr("BUILD_ERRORS_FILE", filepath.Join(tekhtonDir, "BUILD_ERRORS.md")))
+	rawFile := resolveUnder(projectDir, envOr("BUILD_RAW_ERRORS_FILE", filepath.Join(tekhtonDir, "BUILD_RAW_ERRORS.txt")))
+	uiTestErrs := resolveUnder(projectDir, envOr("UI_TEST_ERRORS_FILE", filepath.Join(tekhtonDir, "UI_TEST_ERRORS.md")))
+	writer := &gates.FSErrorsWriter{
+		ErrorsFile:       errsFile,
+		RawErrorsFile:    rawFile,
+		UITestErrorsFile: uiTestErrs,
+	}
+	rem := &gates.BashRemediator{TekhtonHome: os.Getenv("TEKHTON_HOME")}
+	fw := gates.DetectFramework(gates.FrameworkDetectInput{
+		ForceNonInteractive: os.Getenv("TEKHTON_UI_GATE_FORCE_NONINTERACTIVE") == "1",
+		UIFramework:         os.Getenv("UI_FRAMEWORK"),
+		UITestCmd:           os.Getenv("UI_TEST_CMD"),
+		ProjectDir:          projectDir,
+	})
+	p := &gates.UIPhase{
+		Cmd:                  os.Getenv("UI_TEST_CMD"),
+		Timeout:              envSeconds("UI_TEST_TIMEOUT", 120),
+		Enabled:              envBool("UI_VALIDATION_ENABLED", true),
+		HardenedRetryEnabled: envBool("UI_GATE_ENV_RETRY_ENABLED", true),
+		HardenedRetryFactor:  envFloat("UI_GATE_ENV_RETRY_TIMEOUT_FACTOR", 0.5),
+		PreflightInteractive: os.Getenv("PREFLIGHT_UI_INTERACTIVE_CONFIG_DETECTED") == "1",
+		Framework:            fw,
+		Runner:               gates.UIEnvRunner{},
+		Remediator:           rem,
+		Errors:               writer,
+		Now:                  time.Now,
+	}
+	return p, writer
+}
+
+// envFloat parses a float env value, returning fallback on error or empty.
+func envFloat(key string, fallback float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil {
+		return fallback
+	}
+	return f
 }
 
 // buildGateFromEnv assembles a BuildGate using the env contract m26
@@ -158,14 +237,8 @@ func buildGateFromEnv(stageLabel string) *gates.BuildGate {
 			}
 		},
 		"ui_test": func() gates.Phase {
-			uiCmd := os.Getenv("UI_TEST_CMD")
-			if uiCmd == "" {
-				return &gates.UIBashShim{} // Skip
-			}
-			return &gates.UIBashShim{
-				UITestCmd:  uiCmd,
-				BashRunner: newUIBashRunner(stageLabel),
-			}
+			p, _ := uiPhaseFromEnv()
+			return p
 		},
 		"ui_validation": func() gates.Phase {
 			// m31.2: native validation. m31.1 always skips.

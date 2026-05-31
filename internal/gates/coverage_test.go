@@ -18,7 +18,7 @@ func TestPhaseNames(t *testing.T) {
 		{&AnalyzePhase{}, "analyze"},
 		{&CompilePhase{}, "compile"},
 		{&ConstraintsPhase{}, "constraints"},
-		{&UIBashShim{}, "ui_test"},
+		{&UIPhase{}, "ui_test"},
 		{&UIValidationPhase{}, "ui_validation"},
 	}
 	for _, tc := range tests {
@@ -72,6 +72,8 @@ func TestNoopErrorsWriter_Methods(t *testing.T) {
 	w.WriteCompile("x", "y", time.Now())
 	w.WriteConstraints("body")
 	w.WriteTimeout("x", time.Second, time.Now())
+	w.WriteUIFailure("x", "cmd", "out", 1, time.Now())
+	w.WriteUIDiagnosis("block")
 	w.ClearOnPass()
 }
 
@@ -176,51 +178,6 @@ func TestBashRemediator_EmptyErrorsReturnsFalse(t *testing.T) {
 	}
 }
 
-// TestUIBashShim_FallsBackToSkipWithoutBashRunner: when UI_TEST_CMD is
-// set but BashRunner is nil, the phase still returns Skip (graceful
-// degradation).
-func TestUIBashShim_FallsBackToSkipWithoutBashRunner(t *testing.T) {
-	p := &UIBashShim{UITestCmd: "playwright test"}
-	r := p.Run(context.Background(), &PhaseInput{StageLabel: "x", Now: time.Now})
-	if r.Status != StatusSkip {
-		t.Errorf("Status = %v, want StatusSkip (nil BashRunner)", r.Status)
-	}
-}
-
-// TestUIBashShim_DelegatesToBashRunner: a fake BashRunner returns Fail,
-// the shim propagates.
-func TestUIBashShim_DelegatesToBashRunner(t *testing.T) {
-	called := false
-	p := &UIBashShim{
-		UITestCmd: "playwright test",
-		BashRunner: bashRunnerFunc(func(_ context.Context, _ string, _ map[string]string) (PhaseResult, error) {
-			called = true
-			return PhaseResult{Status: StatusFail, Err: errors.New("ui broke")}, nil
-		}),
-	}
-	r := p.Run(context.Background(), &PhaseInput{StageLabel: "x", Now: time.Now})
-	if !called {
-		t.Error("BashRunner.Run was not invoked")
-	}
-	if r.Status != StatusFail {
-		t.Errorf("Status = %v, want StatusFail", r.Status)
-	}
-}
-
-// TestUIBashShim_BashRunnerErrorPropagates.
-func TestUIBashShim_BashRunnerErrorPropagates(t *testing.T) {
-	p := &UIBashShim{
-		UITestCmd: "playwright test",
-		BashRunner: bashRunnerFunc(func(_ context.Context, _ string, _ map[string]string) (PhaseResult, error) {
-			return PhaseResult{}, errors.New("subprocess crash")
-		}),
-	}
-	r := p.Run(context.Background(), &PhaseInput{StageLabel: "x", Now: time.Now})
-	if r.Status != StatusFail {
-		t.Errorf("Status = %v, want StatusFail", r.Status)
-	}
-}
-
 // TestUIValidationPhase_PassExit0.
 func TestUIValidationPhase_PassExit0(t *testing.T) {
 	p := &UIValidationPhase{Cmd: "any", Runner: fakeRunner{exit: 0}}
@@ -253,11 +210,4 @@ func TestStringError_Error(t *testing.T) {
 	if got := errAnalyzeFailed.Error(); got != "analyze errors found" {
 		t.Errorf("Error() = %q, want 'analyze errors found'", got)
 	}
-}
-
-// bashRunnerFunc adapts a function to the BashShimRunner interface.
-type bashRunnerFunc func(ctx context.Context, label string, env map[string]string) (PhaseResult, error)
-
-func (f bashRunnerFunc) Run(ctx context.Context, label string, env map[string]string) (PhaseResult, error) {
-	return f(ctx, label, env)
 }

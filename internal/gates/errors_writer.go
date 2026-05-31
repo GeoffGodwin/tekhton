@@ -43,6 +43,17 @@ type ErrorsWriter interface {
 	// when the omnibus budget expires.
 	WriteTimeout(stageLabel string, budget time.Duration, now time.Time)
 
+	// WriteUIFailure is called by UIPhase on failure. Truncates
+	// BUILD_RAW_ERRORS.txt with the UI output, writes a fresh
+	// UI_TEST_ERRORS.md, and appends a ## UI Test Failures section to
+	// BUILD_ERRORS.md (creating the file header if it does not yet exist).
+	WriteUIFailure(stageLabel, uiTestCmd, output string, exitCode int, now time.Time)
+
+	// WriteUIDiagnosis appends a ## UI Gate Diagnosis block to
+	// UI_TEST_ERRORS.md AND BUILD_ERRORS.md. Called by UIPhase after
+	// WriteUIFailure so the diagnosis block lands at the end of both files.
+	WriteUIDiagnosis(block string)
+
 	// ClearOnPass removes BUILD_ERRORS.md and UI_TEST_ERRORS.md after a
 	// fully-passing gate run. Called by BuildGate.Run on success.
 	ClearOnPass()
@@ -186,6 +197,93 @@ func (w *FSErrorsWriter) WriteTimeout(stageLabel string, budget time.Duration, n
 	_ = writeFile(w.ErrorsFile, []byte(b.String()), false)
 }
 
+// WriteUIFailure writes the failure-path artifacts for the UI gate:
+//   - BUILD_RAW_ERRORS.txt truncated to the captured output (single
+//     trailing newline, matches `printf '%s\n' "$out" > ...` from bash).
+//   - UI_TEST_ERRORS.md is rewritten from scratch with the fixed-shape
+//     bash heredoc (H1 + Stage + UI Test Command + Exit Code + Output).
+//   - BUILD_ERRORS.md gets a ## UI Test Failures section appended; the
+//     `# Build Errors — TS` header is created only when the file does
+//     not yet exist (analyze/compile may have written it already).
+//
+// Byte-identical to the bash gates_ui.sh failure path.
+func (w *FSErrorsWriter) WriteUIFailure(stageLabel, uiTestCmd, output string, exitCode int, now time.Time) {
+	if w == nil {
+		return
+	}
+	if w.RawErrorsFile != "" {
+		_ = writeFile(w.RawErrorsFile, []byte(output+"\n"), false)
+	}
+	ts := now.Format("2006-01-02 15:04:05")
+	tailed := tailLines(output, 100)
+
+	if w.UITestErrorsFile != "" {
+		var b strings.Builder
+		fmt.Fprintf(&b, "# UI Test Errors — %s\n", ts)
+		b.WriteString("## Stage\n")
+		b.WriteString(stageLabel + "\n\n")
+		b.WriteString("## UI Test Command\n")
+		fmt.Fprintf(&b, "`%s`\n\n", uiTestCmd)
+		b.WriteString("## Exit Code\n")
+		fmt.Fprintf(&b, "%d\n\n", exitCode)
+		b.WriteString("## Output (last 100 lines)\n")
+		b.WriteString("```\n")
+		b.WriteString(tailed)
+		b.WriteString("\n```\n")
+		_ = writeFile(w.UITestErrorsFile, []byte(b.String()), false)
+	}
+
+	if w.ErrorsFile != "" {
+		var b strings.Builder
+		if _, err := os.Stat(w.ErrorsFile); err != nil {
+			fmt.Fprintf(&b, "# Build Errors — %s\n", ts)
+			b.WriteString("## Stage\n")
+			b.WriteString(stageLabel + "\n\n")
+		}
+		b.WriteString("## UI Test Failures\n")
+		fmt.Fprintf(&b, "Command: `%s`\n", uiTestCmd)
+		fmt.Fprintf(&b, "Exit code: %d\n\n", exitCode)
+		b.WriteString("```\n")
+		b.WriteString(tailed)
+		b.WriteString("\n```\n")
+		_ = writeFile(w.ErrorsFile, []byte(b.String()), true)
+	}
+}
+
+// WriteUIDiagnosis appends a ## UI Gate Diagnosis block to UI_TEST_ERRORS.md
+// AND BUILD_ERRORS.md when those files exist. Mirrors the bash
+// _ui_write_gate_diagnosis tail behavior — the block is only appended when
+// the target file is already present, so a missing UI_TEST_ERRORS.md does
+// not get auto-created here.
+func (w *FSErrorsWriter) WriteUIDiagnosis(block string) {
+	if w == nil || block == "" {
+		return
+	}
+	if w.UITestErrorsFile != "" {
+		if _, err := os.Stat(w.UITestErrorsFile); err == nil {
+			_ = writeFile(w.UITestErrorsFile, []byte(block), true)
+		}
+	}
+	if w.ErrorsFile != "" {
+		if _, err := os.Stat(w.ErrorsFile); err == nil {
+			_ = writeFile(w.ErrorsFile, []byte(block), true)
+		}
+	}
+}
+
+// tailLines returns the last n newline-separated lines of s. Mirrors the
+// bash `echo "$out" | tail -100` invocation in the UI gate failure path.
+func tailLines(s string, n int) string {
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) <= n {
+		return s
+	}
+	return strings.Join(lines[len(lines)-n:], "\n")
+}
+
 // ClearOnPass removes BUILD_ERRORS.md and UI_TEST_ERRORS.md on a fully
 // passing gate. Mirrors the tail rm calls in run_build_gate.
 func (w *FSErrorsWriter) ClearOnPass() {
@@ -241,6 +339,12 @@ func (NoopErrorsWriter) WriteConstraints(string) {}
 
 // WriteTimeout implements ErrorsWriter.
 func (NoopErrorsWriter) WriteTimeout(string, time.Duration, time.Time) {}
+
+// WriteUIFailure implements ErrorsWriter.
+func (NoopErrorsWriter) WriteUIFailure(string, string, string, int, time.Time) {}
+
+// WriteUIDiagnosis implements ErrorsWriter.
+func (NoopErrorsWriter) WriteUIDiagnosis(string) {}
 
 // ClearOnPass implements ErrorsWriter.
 func (NoopErrorsWriter) ClearOnPass() {}

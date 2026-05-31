@@ -54,10 +54,9 @@ var DefaultLibHelpers = []string{
 	// m31.1: lib/gates.sh + lib/gates_phases.sh + lib/gates_completion.sh
 	// ported to internal/gates/. The shims that replace `run_build_gate`
 	// and `run_completion_gate` live inline in tekhton-legacy.sh and exec
-	// `tekhton gate {build,completion}`. The UI gate (gates_ui*.sh) stays
-	// bash through m31.2.
-	"lib/gates_ui_helpers.sh",
-	"lib/gates_ui.sh",
+	// `tekhton gate {build,completion}`.
+	// m31.2: lib/gates_ui.sh + lib/gates_ui_helpers.sh ported to
+	// internal/gates/ui.go + ui_helpers.go. Five gates*.sh files now zero.
 	"lib/test_dedup.sh",
 	"lib/ui_validate.sh",
 	"lib/ui_validate_report.sh",

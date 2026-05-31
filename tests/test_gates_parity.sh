@@ -26,7 +26,9 @@ set -euo pipefail
 # =============================================================================
 
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-TEKHTON_BIN="${TEKHTON_BIN:-${REPO_ROOT}/bin/tekhton}"
+# Always bind to this repo's binary — a stale TEKHTON_BIN env var in the
+# caller's shell would point at an older checkout (pre-m31.1).
+TEKHTON_BIN="${REPO_ROOT}/bin/tekhton"
 
 # shellcheck source=tests/lib/parity.sh
 source "${REPO_ROOT}/tests/lib/parity.sh"

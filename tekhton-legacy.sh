@@ -896,9 +896,12 @@ run_preflight_checks() {
 # were deleted. The build gate and completion gate are ported to
 # internal/gates/; the bash function names are recreated below as exec-
 # the-Go-binary shims so stages/coder.sh + lib/milestone_acceptance.sh and
-# the other call sites stay wired. lib/gates_ui*.sh stays sourced until
-# m31.2 lands the native UI gate; internal/gates dispatches to it via
-# cmd/tekhton/gate_ui_shim.go when UI_TEST_CMD is set.
+# the other call sites stay wired.
+# m31.2: lib/gates_ui.sh and lib/gates_ui_helpers.sh were also deleted —
+# the UI gate is now native Go in internal/gates/ui.go and reachable via
+# `tekhton gate ui` (or in-process through the build gate orchestrator).
+# The bash call sites that previously needed the UI phase are gone too;
+# the only remaining bash entry points are run_build_gate / run_completion_gate.
 run_build_gate() {
     local tekhton_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
     if [[ ! -x "$tekhton_bin" ]]; then
@@ -917,8 +920,6 @@ run_completion_gate() {
     fi
     "$tekhton_bin" gate completion
 }
-source "${TEKHTON_HOME}/lib/gates_ui_helpers.sh"
-source "${TEKHTON_HOME}/lib/gates_ui.sh"
 source "${TEKHTON_HOME}/lib/test_dedup.sh"
 source "${TEKHTON_HOME}/lib/ui_validate.sh"
 source "${TEKHTON_HOME}/lib/ui_validate_report.sh"

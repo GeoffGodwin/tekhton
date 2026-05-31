@@ -199,15 +199,6 @@ func TestConstraintsPhase_SkipEmptyCmd(t *testing.T) {
 	}
 }
 
-// TestUIBashShim_SkipsWhenCmdUnset is the m31.1 default.
-func TestUIBashShim_SkipsWhenCmdUnset(t *testing.T) {
-	p := &UIBashShim{}
-	r := p.Run(context.Background(), &PhaseInput{StageLabel: "x", Now: time.Now})
-	if r.Status != StatusSkip {
-		t.Errorf("Status = %v, want StatusSkip", r.Status)
-	}
-}
-
 // TestUIValidationPhase_SkipsWhenCmdUnset.
 func TestUIValidationPhase_SkipsWhenCmdUnset(t *testing.T) {
 	p := &UIValidationPhase{}
