@@ -12,7 +12,7 @@
 - [x] `internal/crawler/rescan_test.go` — add FallbackReason "major structural changes" check to TestRescanBranchMajorTriggersFullCrawl (reviewer gap, cycle 2)
 
 ## Test Run Results
-Passed: all internal/crawler tests (1.067s)  Failed: 0
+Passed: all 26 Go packages + bash suite pending  Failed: 0
 
 ## Bugs Found
 None
