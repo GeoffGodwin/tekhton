@@ -26,18 +26,42 @@ func TestCrawlerHelpListsSubcommands(t *testing.T) {
 	}
 }
 
-func TestCrawlerRescanReportsPlaceholder(t *testing.T) {
+func TestCrawlerRescanHelpListsFlags(t *testing.T) {
 	root := newRootCmd()
-	root.SetArgs([]string{"crawler", "rescan"})
-	var out, errOut bytes.Buffer
-	root.SetOut(&out)
-	root.SetErr(&errOut)
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected rescan to error with m30.2 placeholder")
+	root.SetArgs([]string{"crawler", "rescan", "--help"})
+	var buf bytes.Buffer
+	root.SetOut(&buf)
+	root.SetErr(&buf)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("crawler rescan --help: %v", err)
 	}
-	if !strings.Contains(err.Error(), "m30.2") {
-		t.Errorf("rescan error should reference m30.2, got: %v", err)
+	out := buf.String()
+	for _, flag := range []string{"--full", "--project-dir", "--budget"} {
+		if !strings.Contains(out, flag) {
+			t.Errorf("crawler rescan --help missing %q in output:\n%s", flag, out)
+		}
+	}
+}
+
+func TestCrawlerRescanFullCrawlOnFreshProject(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := newRootCmd()
+	root.SetArgs([]string{"crawler", "rescan", "--project-dir", dir, "--json"})
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	if err := root.Execute(); err != nil {
+		t.Fatalf("crawler rescan: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("--json output not valid JSON: %v\n%s", err, out.String())
+	}
+	if got["mode"] != "full" {
+		t.Errorf("expected mode=full on fresh project, got %v", got["mode"])
 	}
 }
 

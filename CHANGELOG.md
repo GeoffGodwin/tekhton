@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.30.0] - 2026-05-30
+
+### Added
+- `internal/crawler/rescan.go` — `Rescan(ctx, opts)` ports the eight-
+  branch decision tree from `rescan.sh::rescan_project`. Falls back to
+  full crawl on every legacy branch (missing index, no meta.json, not a
+  git repo, no scan commit, rebased-away commit, major change set);
+  drives selective regen on the incremental path. (m30.2)
+- `internal/crawler/significance.go` — `ClassifyChanges` returns
+  Trivial / Moderate / Major using the load-bearing thresholds from
+  `_detect_significant_changes` (2+ manifests OR 5+ new dirs OR 10+
+  deletions → Major). (m30.2)
+- `internal/crawler/changes.go` — `DetectChangedFiles` runs git diff +
+  git status porcelain, deduplicates by path (working-tree wins),
+  preserves bash's R-status rename pair handling. (m30.2)
+- `internal/crawler/metadata.go` — `ExtractScanMetadata`,
+  `IsManifestFile`, `IsConfigFile`, `ExtractSampledFiles`. Structured
+  meta.json read with legacy HTML-comment header fallback for pre-M68
+  projects. (m30.2)
+- `tekhton crawler rescan` Cobra subcommand replaces the m30.1
+  placeholder. `--full` forces a full crawl regardless of change
+  detection; `--json` emits a summary envelope with mode, significance,
+  change count, and regenerated section list. (m30.2)
+- `tests/test_rescan_parity.sh` — four-scenario parity gate
+  (no_changes, trivial, moderate_manifest, major_manifest) drives
+  `--json` against fixtures under
+  `internal/crawler/testdata/rescan_scenarios/` and asserts the exact
+  (mode, significance, regenerated_sections) verdict per scenario. (m30.2)
+
+### Changed
+- `tekhton-legacy.sh` `--rescan` block exec's `tekhton crawler rescan`
+  directly; the bash `rescan_project` function no longer exists. View
+  generation (`generate_project_index_view`) still runs in bash until
+  m31+ ports the index-view subsystem. (m30.2)
+- `scripts/wedge-audit.sh` PATTERNS extended: now blocks
+  `source lib/rescan*.sh`, `rescan_project()`, `_update_index_sections()`,
+  `_get_changed_files_since_scan()`, `_detect_significant_changes()`,
+  `_is_manifest_file()`, `_is_config_file()`, `_extract_sampled_files()`,
+  `_record_scan_metadata()` from being reintroduced anywhere in
+  `lib/` or `stages/`. (m30.2)
+
+### Removed
+- `lib/rescan.sh` (50-line m30.1 shim) and `lib/rescan_helpers.sh`
+  (deleted earlier) — the entire rescan bash surface retires with
+  m30.2. (m30.2)
+- `tests/test_rescan.sh` — m30.1 skip stub superseded by
+  `tests/test_rescan_parity.sh`. (m30.2)
+- `internal/crawler/rescan_stub.go` — m30.1 placeholder sentinel; real
+  rescan landed. (m30.2)
+
+### Notes
+- Closes the m30 Crawler Port arc — 8 bash files retired across m30.1
+  (six `crawler*.sh`) and m30.2 (two `rescan*.sh`), ~1.7k LOC ported
+  to Go. `VERSION` bumps to 4.30.0 marking arc close (matches m27.3
+  pattern: minor bump at the closing child, not at the opening one).
+
 ## [4.28.0] - 2026-05-29
 
 ### Added

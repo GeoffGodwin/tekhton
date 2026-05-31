@@ -526,17 +526,38 @@ fi
 if [ "${1:-}" = "--rescan" ]; then
     source "${TEKHTON_HOME}/lib/common.sh"
     # m29.2: detect wrappers come from common_detect.sh via common.sh.
-    # m30.1: rescan delegates to `tekhton crawler crawl` until m30.2
-    # restores incremental updates; no bash crawler files to source.
-    source "${TEKHTON_HOME}/lib/rescan.sh"
+    # m30.2: rescan is the Go incremental decision tree
+    # (internal/crawler/rescan.go); the bash rescan files retired with
+    # the milestone. View regeneration stays bash until m31+.
     source "${TEKHTON_HOME}/lib/index_view.sh"
 
-    local_full=""
-    if [ "${2:-}" = "--full" ]; then
-        local_full="full"
+    bin="${TEKHTON_BIN:-tekhton}"
+    if ! command -v "$bin" >/dev/null 2>&1 && [ ! -x "$bin" ]; then
+        error "rescan: tekhton binary not found (set TEKHTON_BIN or build via 'make build')"
+        exit 1
     fi
 
-    rescan_project "$PROJECT_DIR" "${PROJECT_INDEX_BUDGET:-120000}" "$local_full"
+    full_flag=""
+    if [ "${2:-}" = "--full" ]; then
+        full_flag="--full"
+    fi
+
+    header "Tekhton — Project Rescan"
+    # shellcheck disable=SC2086 # $full_flag is intentionally unquoted to omit when empty
+    "$bin" crawler rescan \
+        --project-dir "$PROJECT_DIR" \
+        --budget "${PROJECT_INDEX_BUDGET:-120000}" \
+        $full_flag
+
+    # Regenerate the human-readable PROJECT_INDEX.md view from the
+    # structured artifacts the Go rescan just (possibly) refreshed.
+    generate_project_index_view "$PROJECT_DIR" "${PROJECT_INDEX_BUDGET:-120000}"
+
+    index_file="${PROJECT_DIR}/${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md}"
+    if [ -f "$index_file" ]; then
+        final_size=$(wc -c < "$index_file" | tr -d '[:space:]')
+        success "${PROJECT_INDEX_FILE:-.tekhton/PROJECT_INDEX.md} rewritten (${final_size} chars)"
+    fi
     exit 0
 fi
 
