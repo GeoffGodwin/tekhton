@@ -3,12 +3,14 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 172
+- Runs since audit: 173
 =======
-- Runs since audit: 172
+- Runs since audit: 173
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [2026-05-31 | "unknown"] `internal/diagnose/types.go`: `CausalEvents` and `ErrorEvents` fields are `string` (newline-joined) while the milestone design spec shows `[]string`. Works correctly with the bash adapter and the `grepLines`/`countLinesMatchingBoth` helpers, but m32.2 Go-native rules will need `strings.Split`. A field comment noting "newline-joined; split on \\n to iterate events" would prevent m32.2 confusion. Carry forward from cycle 1.
+- [2026-05-31 | "unknown"] `engine.go` `ReadContext`: the `c.CauseChain = ""` stub has no inline comment tying it to the missing `cause_chain_summary` port. Carry forward from cycle 1.
 - [2026-05-31 | "unknown"] `ui.go`: `UIPhase.CmdAvailable func(cmd string) bool` is a public field used as a testability seam for `checkUITestCmdAvailable`. `AnalyzePhase` and `CompilePhase` handle their equivalent availability checks differently (empty-cmd short-circuit, no injectable hook). The asymmetry will be visible to any m57 contributor adding a new Phase â document or normalize the pattern in a future cleanup pass.
 - [2026-05-31 | "unknown"] `completion.go:299-319` â `FailingExitCoder` and `errExitCode` (defined elsewhere in `cmd/tekhton/`) both implement an exit-code wrapper pattern. Two types for the same purpose in the same package tree is fragile; when `FailingExitCoder` is removed the duplication is gone, but if it's wired in the future it should replace (not supplement) `errExitCode` at the CLI seam.
 - [2026-05-31 | "unknown"] `gate_ui_shim.go:44` â `Run(ctx, stageLabel, _ map[string]string)` ignores the `env map[string]string` argument. `UIBashShim.ShellEnv` carries env overrides (`UI_TEST_CMD`, `UI_GATE_ENV_RETRY_ENABLED`, etc.) populated at construction time but the shim discards them and builds the subprocess env entirely from `os.Environ()`. Document the drop as intentional for m31.1 or thread `ShellEnv` through to `c.Env` to avoid silent override loss when the assembler later populates those fields.
