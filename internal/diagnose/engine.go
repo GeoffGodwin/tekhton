@@ -14,7 +14,6 @@ package diagnose
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -226,10 +225,6 @@ func (e *Engine) ReadContext(_ context.Context, in *Input) (*Context, error) {
 
 // --- JSON field readers (line-based grep -oP equivalents) ------------------
 
-var (
-	doubleQuotedRe = regexp.MustCompile(`[a-z_]+`)
-)
-
 // extractJSONString returns the value of the first `"key":"<value>"` pair
 // found in text. Mirrors the bash `grep -oP '"<key>"\s*:\s*"\K[^"]+'` reads
 // in _read_diagnostic_context — sufficient for the flat, pretty-printed
@@ -382,16 +377,4 @@ func countLinesMatchingBoth(body, a, b string) int {
 		}
 	}
 	return count
-}
-
-// --- Marshal helper for tests ----------------------------------------------
-
-// jsonString is used by tests that want to introspect a Context. It is not
-// part of the public engine API.
-func (c *Context) jsonString() (string, error) {
-	b, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
 }

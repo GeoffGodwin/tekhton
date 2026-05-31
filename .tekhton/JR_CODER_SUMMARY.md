@@ -1,9 +1,9 @@
-# JR Coder Summary — m33.1 Dashboard Emitters
-
 ## What Was Fixed
 
-- `internal/dashboard/emit_timeline.go:106`: Removed spurious closing quote from the milestone verbosity filter substring. Changed `"type":"milestone_"` to `"type":"milestone_` so that real causal-log events like `{"type":"milestone_start",...}` are no longer silently dropped in normal verbosity mode. This restores milestone start/completion events in the Watchtower timeline.
+- **`engine.go:229-231` — removed `doubleQuotedRe`**: Package-level `var` declared but never referenced anywhere in the package or tests. Removed to resolve staticcheck U1000.
+- **`engine.go:389-397` — removed `jsonString()`**: Unexported method on `*Context` that was never called from production code or any test file. Removed to resolve staticcheck U1000.
+- **`engine.go` import — removed `"encoding/json"`**: Became unused after `jsonString()` was deleted.
 
 ## Files Modified
 
-- `internal/dashboard/emit_timeline.go`
+- `internal/diagnose/engine.go`

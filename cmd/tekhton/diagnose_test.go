@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	stderrs "errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -214,5 +216,67 @@ func TestDiagnoseRun_EmptyProjectDirReportsNoState(t *testing.T) {
 	}
 	if !strings.Contains(errOut, "No pipeline runs found") {
 		t.Errorf("empty-project path should report no runs; got stderr=%q", errOut)
+	}
+}
+
+// TestDiagnoseRun_PopulatedFixtureOutputsClassification materialises a minimal
+// project directory containing LAST_FAILURE_CONTEXT.json and drives
+// `tekhton diagnose run --project-dir <dir>` through cmd.Execute(). It closes
+// the reviewer gap between the engine integration test (which calls the engine
+// directly) and the CLI smoke test (which only exercises the no-state path).
+//
+// The test does not assert a specific classification because the BashRuleAdapter
+// requires a resolvable TEKHTON_HOME to match bash rules — when it is absent the
+// engine falls through to UNKNOWN. What matters here is that:
+//  1. ReadContext successfully parses the fixture and does NOT report "no runs found".
+//  2. The CLI prints "Classification:" on stdout (the engine ran to completion).
+//  3. Exit code is 0 (the CLI path is fully wired).
+//
+// Cannot t.Parallel() — t.Setenv neutralises env vars that may be set by the
+// parent pipeline shell.
+func TestDiagnoseRun_PopulatedFixtureOutputsClassification(t *testing.T) {
+	t.Setenv("PIPELINE_STATE_FILE", "")
+	t.Setenv("CAUSAL_LOG_FILE", "")
+	t.Setenv("MIGRATION_BACKUP_DIR", "")
+
+	dir := t.TempDir()
+
+	// Materialise a minimal LAST_FAILURE_CONTEXT.json so ReadContext finds state.
+	claudeDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	failureCtx := filepath.Join(claudeDir, "LAST_FAILURE_CONTEXT.json")
+	body := `{
+  "schema_version": 2,
+  "classification": "MAX_TURNS_EXHAUSTED",
+  "stage": "coder",
+  "outcome": "failure",
+  "task": "Port the diagnose engine to Go",
+  "consecutive_count": 1
+}`
+	if err := os.WriteFile(failureCtx, []byte(body), 0o644); err != nil {
+		t.Fatalf("write LAST_FAILURE_CONTEXT.json: %v", err)
+	}
+
+	out, errOut, code := runDiagnose(t, "", "run", "--project-dir", dir)
+
+	if code != 0 {
+		t.Fatalf("run with populated fixture: want exit 0, got %d (stderr=%q)", code, errOut)
+	}
+	// ReadContext found state — the "no pipeline runs" branch must NOT be taken.
+	if strings.Contains(errOut, "No pipeline runs found") {
+		t.Errorf("fixture has LAST_FAILURE_CONTEXT.json; engine must not report no-state (stderr=%q)", errOut)
+	}
+	// Engine ran to completion — stdout must start with the Classification line.
+	if !strings.Contains(out, "Classification:") {
+		t.Errorf("CLI output must contain 'Classification:' line; got stdout=%q", out)
+	}
+	// Confidence and Stage lines are always emitted by the cmd.
+	if !strings.Contains(out, "Confidence:") {
+		t.Errorf("CLI output must contain 'Confidence:' line; got stdout=%q", out)
+	}
+	if !strings.Contains(out, "Stage:") {
+		t.Errorf("CLI output must contain 'Stage:' line; got stdout=%q", out)
 	}
 }

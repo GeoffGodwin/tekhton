@@ -1,43 +1,78 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 25 test functions (5 new in gate_test.go, 3 new scenarios in test_gates_parity.sh, 1 new in ui_test.go)
+Tests audited: 2 files, 17 test functions (4 new top-level tests with 37 subtests in engine_readers_test.go; 3 new functions in diagnose_test.go)
 Verdict: PASS
+
+---
 
 ### Findings
 
-#### COVERAGE: Gap-documentation tests don't exercise the feature they name
-- File: cmd/tekhton/gate_test.go:230, :243, :257
-- Issue: `TestCompletionGateFromEnv_NilBaselinePreventsM92Accept`, `TestCompletionGateFromEnv_DedupNilDocumentsM105Gap`, and `TestCompletionGateFromEnv_SubstantiveNilDocumentsM86Gap` each assert a struct field is `nil`. They pass trivially until the feature is wired and cannot catch a behavioral regression in M92/M105/M86 logic. The tests are clearly labeled "this test will fail once wired" and the gap is honestly disclosed. The pattern is legitimate but adds no behavioral signal until the concrete implementations land.
+#### COVERAGE: CLI test asserts wiring only, not classification correctness
+- File: cmd/tekhton/diagnose_test.go:237 (`TestDiagnoseRun_PopulatedFixtureOutputsClassification`)
+- Issue: The test materializes a real `LAST_FAILURE_CONTEXT.json` fixture and verifies the CLI
+  emits `Classification:`, `Confidence:`, and `Stage:` header lines — but intentionally does not
+  assert specific values. When `TEKHTON_HOME` is absent the engine falls through to `UNKNOWN`;
+  when it is present the bash rules fire and the result is silently accepted regardless of value.
+  This exercises CLI plumbing but not diagnostic accuracy on the populated-fixture path.
+  The scope boundary is correctly documented in the test comment ("The test does not assert a
+  specific classification because the BashRuleAdapter requires a resolvable TEKHTON_HOME…").
+  Diagnostic accuracy on a real populated fixture is covered by
+  `TestBashAdapterIntegration_MaxTurnsCoder` in `engine_test.go` (outside the audit boundary).
 - Severity: LOW
-- Action: No action required now. When M92/M105/M86 are wired in `completionGateFromEnv`, replace these nil-guard tests with end-to-end behavioral assertions (e.g., seed a baseline file, run with `TEST_BASELINE_PASS_ON_PREEXISTING=true`, assert the gate accepts the failure). The test comments already prescribe this.
+- Action: No change required now. If `TestBashAdapterIntegration_MaxTurnsCoder` is ever removed,
+  strengthen this test to assert a specific `Classification: UNKNOWN` when `TEKHTON_HOME` is
+  unset so the CLI-accuracy signal is not lost.
 
-#### COVERAGE: M86 parity scenario (scenario 11) is behaviorally indistinguishable from scenario 7
-- File: tests/test_gates_parity.sh:233
-- Issue: `completion_substantive_m86` asserts `"nonzero"` exit for a no-Status summary — the same observable behavior as the pre-existing `completion_no_status` (scenario 7). The comment correctly notes that `ErrCompletionNoStatus` and `ErrCompletionSubstantiveNoStatus` produce the same exit code at CLI granularity. The test adds documentation value (gap is honestly disclosed) but zero new behavioral coverage.
+#### COVERAGE: `extractKVLine` block-delimiter line not tested directly
+- File: internal/diagnose/engine_readers_test.go:302 (`TestExtractKVLine`)
+- Issue: `parseCauseBlock` splits its extracted block on `\n` and feeds each resulting line —
+  including the opening `{` character — to `extractKVLine`. The behaviour for bare `{` and `}`
+  inputs is implicitly exercised by every `TestParseCauseBlock` case, but `TestExtractKVLine`
+  has no explicit row for these inputs. The implementation's `"([a-z_]+)"\s*:` key regex
+  correctly returns `false` for them, making this a documentation gap rather than a correctness risk.
 - Severity: LOW
-- Action: No action required now. When the `Substantive` probe is wired in `completionGateFromEnv`, upgrade this scenario to assert a distinguishing behavioral difference (e.g., different stderr text, or split into exit-code + stderr-grep assertions).
+- Action: Optional. Add two rows to the `TestExtractKVLine` table to document the contract:
+  `{name: "opening brace", line: "{", wantOK: false}` and
+  `{name: "closing brace", line: "  }", wantOK: false}`. Not blocking.
+
+---
 
 ### No Issues Found In
 
-**INTEGRITY — none.** All assertions in all three files trace to real function calls and real struct fields. No hard-coded magic values, no `assertTrue(true)`, no always-pass patterns found:
-- `gate_test.go` assertions (`g.PassOnPreexisting`, `g.Baseline`, `g.Dedup`, `g.Substantive`) are all real fields on `CompletionGate` (verified against `internal/gates/completion.go:24-79`).
-- `ui_test.go:TestUIPhase_RemediationRetryAllFail` — the `runner.calls == 3` assertion correctly traces to the 3-run implementation path: run #1 (exit 1) → Remediator.TryRemediate returns true → run #2 (exit 1) → generic-retry guard (`if exit != 0`) → run #3 (exit 1) → terminal failure (`ui.go:155-173`). All artifact assertions (`uiFailureExit==1`, `uiDiagnosisBlock` contains `"Timeout class: none"` and `"Hardened rerun attempted: no"`) derive from the implementation logic at `ui.go:188-208`.
-- `test_gates_parity.sh` scenario 9 (`completion_preexisting_m92`) correctly expects `nonzero` — `completionGateFromEnv()` leaves `Baseline==nil`, so `TEST_BASELINE_PASS_ON_PREEXISTING=true` has no effect and `TEST_CMD=false` causes `ErrCompletionTestFailed` (gate.go:264, completion.go:145-187).
+**INTEGRITY — none.** All expected values in `engine_readers_test.go` are derived from the
+documented regex semantics of the implementation: `extractJSONString` uses `[^"]*` capture so an
+unclosed-quote value returns `""`; `extractJSONInt` uses `\d+` and returns the -1 sentinel on
+absent or string-valued keys; `parseCauseBlock` scans to the first `{`…`}` block so a missing
+closing brace returns zero values; `extractKVLine` key regex is `[a-z_]+` so a bare `{` line
+returns `false`. No hard-coded magic numbers, no `assertTrue(true)` patterns.
 
-**WEAKENING — none.** The tester's changes are exclusively additive:
-- 5 new functions added to `gate_test.go` (no existing functions touched).
-- 3 new scenarios added to `test_gates_parity.sh` (scenarios 9-11; scenarios 1-8 unchanged).
-- 1 new function added to `internal/gates/ui_test.go` (no existing functions touched).
-The coder's replacement of `TestGateUI_StubReturnsNonZero` (m31.1 stub) with `TestGateUI_SkipWhenCmdUnset` + `TestGateUI_DisabledReturnsSkip` is an upgrade (stub → real behavior), not a weakening, and was performed by the coder not the tester.
+**WEAKENING — none.** The 10 pre-existing test functions in `diagnose_test.go` (lines 33–186,
+covering the m17 `classify` / `classify-agent` / `recovery` / `redact` / `is-transient`
+subcommands) were not touched. The tester added 3 new functions only (`TestDiagnoseRun_HelpExits0`,
+`TestDiagnoseRun_EmptyProjectDirReportsNoState`, `TestDiagnoseRun_PopulatedFixtureOutputsClassification`).
+`engine_readers_test.go` is an entirely new file.
 
-**SCOPE — none.** All referenced symbols exist in the current implementation. `UIPhase`, `ErrUITestFailed`, `FrameworkPlaywright`, `FrameworkNone`, `completionGateFromEnv`, `newGateUICmd`, `envBool`, `envOr`, `envSeconds` are all present with matching signatures. The deleted `.tekhton/stage_results/stage_tester_r1_b0.json` is not referenced by any audited test. The deleted `UIBashShim` / `BashShimRunner` types are confirmed absent from all audited files.
+**SCOPE — none.** All four private functions under test exist in the current implementation:
+`extractJSONString` (engine.go:232), `extractJSONInt` (engine.go:247),
+`parseCauseBlock` (engine.go:269), `extractKVLine` (engine.go:306). The deleted file
+`.tekhton/stage_results/stage_tester_r1_b0.json` is not referenced by any audited test.
+No orphaned imports or stale symbol references detected.
 
-**EXERCISE — none.** All Go tests call real implementation code:
-- `gate_test.go` calls `completionGateFromEnv()`, `newGateUICmd()`, and the env helpers directly on the real functions.
-- `ui_test.go` calls `UIPhase.Run()` with a deterministic `uiFakeRunner` that records call count and injected env slices — the runner is a thin record/playback shim, not a mock that replaces the function under test.
-- `test_gates_parity.sh` drives the compiled `tekhton` binary via `env -i`.
+**EXERCISE — none.** All four functions in `engine_readers_test.go` are called directly with
+non-trivial inputs. The three new `diagnose_test.go` functions drive the real CLI through
+`cmd.Execute()` against a real temp directory; no dependency is mocked.
 
-**ISOLATION — none.** All Go tests use `t.Setenv` / `t.TempDir()` and construct all fixtures in memory or in temp directories. The bash parity scenarios use `mktemp -d` + `env -i` per invocation with `rm -rf "$tmp"` cleanup. Scenario 10 (`_completion_dedup_always_runs`) constructs the sentinel path from a fresh `mktemp -d` directory — no host filesystem state is read. No audited test reads mutable project-level files (`.tekhton/`, `.claude/logs/`, `BUILD_ERRORS.md`, `CODER_SUMMARY.md`) without first creating a controlled copy.
+**ISOLATION — none.** All `engine_readers_test.go` tests use inline string literals — zero file I/O,
+zero environment dependencies, all subtests declared `t.Parallel()`. The two new
+`diagnose_test.go` tests that call `t.Setenv` correctly omit `t.Parallel()` to prevent
+process-level env-var races; `TestDiagnoseRun_HelpExits0` calls `t.Parallel()` safely because it
+touches no environment variables. `TestDiagnoseRun_EmptyProjectDirReportsNoState` and
+`TestDiagnoseRun_PopulatedFixtureOutputsClassification` both use `t.TempDir()` for fixture
+materialization — no mutable project files are read without a controlled copy.
 
-**NAMING — none.** All new test names encode both scenario and expected outcome: `TestCompletionGateFromEnv_PassOnPreexistingTrue`, `TestCompletionGateFromEnv_NilBaselinePreventsM92Accept`, `TestUIPhase_RemediationRetryAllFail`, `completion_preexisting_m92`, `completion_dedup_always_runs`, `completion_substantive_m86`.
+**NAMING — none.** All subtest names encode both scenario and expected outcome. Examples:
+`"key absent returns negative one"`, `"malformed — no closing quote on value"`,
+`"block key absent"`, `"multi-value nested — second cause block does not pollute first"`,
+`TestDiagnoseRun_EmptyProjectDirReportsNoState`, `TestDiagnoseRun_PopulatedFixtureOutputsClassification`.
+Top-level names follow the `TestSubject_Scenario` convention throughout.
