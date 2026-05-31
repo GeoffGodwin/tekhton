@@ -226,4 +226,22 @@ PATTERNS=(
     '\b_is_config_file\s*\(\)'
     '\b_extract_sampled_files\s*\(\)'
     '\b_record_scan_metadata\s*\(\)'
+    # m31.1: build + completion gate functions ported to internal/gates/.
+    # Their reintroduction in lib/ or stages/ would mean someone forked the
+    # canonical Go gate. The bash compatibility shims `run_build_gate` and
+    # `run_completion_gate` live in tekhton-legacy.sh as `tekhton gate …`
+    # execs; they are intentionally NOT matched here so the shim stays
+    # valid. The UI gate (`_run_ui_test_phase`, gates_ui*.sh) is still bash
+    # through m31.2 and is also not matched.
+    '^[[:space:]]*(source|\.)[[:space:]]+.*/(gates|gates_phases|gates_completion)\.sh'
+    '\b_gate_check_timeout\s*\(\)'
+    '\b_gate_effective_timeout\s*\(\)'
+    '\b_gate_phase_analyze\s*\(\)'
+    '\b_gate_phase_compile\s*\(\)'
+    '\b_gate_try_remediation\s*\(\)'
+    '\b_gate_run_analyze\s*\(\)'
+    '\b_gate_run_compile\s*\(\)'
+    '\b_gate_write_analyze_errors\s*\(\)'
+    '\b_gate_write_compile_errors\s*\(\)'
+    '\b_warn_summary_drift\s*\(\)'
 )

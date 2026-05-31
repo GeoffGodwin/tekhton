@@ -892,11 +892,33 @@ run_preflight_checks() {
         --project-dir "${PROJECT_DIR:-$(pwd)}" \
         --home "${TEKHTON_HOME:-$(pwd)}"
 }
-source "${TEKHTON_HOME}/lib/gates.sh"
-source "${TEKHTON_HOME}/lib/gates_phases.sh"
+# m31.1: lib/gates.sh, lib/gates_phases.sh, and lib/gates_completion.sh
+# were deleted. The build gate and completion gate are ported to
+# internal/gates/; the bash function names are recreated below as exec-
+# the-Go-binary shims so stages/coder.sh + lib/milestone_acceptance.sh and
+# the other call sites stay wired. lib/gates_ui*.sh stays sourced until
+# m31.2 lands the native UI gate; internal/gates dispatches to it via
+# cmd/tekhton/gate_ui_shim.go when UI_TEST_CMD is set.
+run_build_gate() {
+    local tekhton_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+    if [[ ! -x "$tekhton_bin" ]]; then
+        echo "run_build_gate: tekhton binary not found at ${tekhton_bin}" >&2
+        echo "run_build_gate: skipping build gate (post-m31.1 Go gate required)" >&2
+        return 0
+    fi
+    "$tekhton_bin" gate build --stage-label "${1:-unknown}"
+}
+run_completion_gate() {
+    local tekhton_bin="${TEKHTON_BIN:-${TEKHTON_HOME:-.}/bin/tekhton}"
+    if [[ ! -x "$tekhton_bin" ]]; then
+        echo "run_completion_gate: tekhton binary not found at ${tekhton_bin}" >&2
+        echo "run_completion_gate: skipping completion gate (post-m31.1 Go gate required)" >&2
+        return 0
+    fi
+    "$tekhton_bin" gate completion
+}
 source "${TEKHTON_HOME}/lib/gates_ui_helpers.sh"
 source "${TEKHTON_HOME}/lib/gates_ui.sh"
-source "${TEKHTON_HOME}/lib/gates_completion.sh"
 source "${TEKHTON_HOME}/lib/test_dedup.sh"
 source "${TEKHTON_HOME}/lib/ui_validate.sh"
 source "${TEKHTON_HOME}/lib/ui_validate_report.sh"

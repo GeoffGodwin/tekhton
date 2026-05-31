@@ -117,7 +117,11 @@ _check_callsite() {
 }
 
 _check_callsite "4.1 milestone_acceptance"  "lib/milestone_acceptance.sh"
-_check_callsite "4.2 gates_completion"      "lib/gates_completion.sh"
+# m31.1: gates_completion.sh ported to internal/gates/completion.go. The
+# M105 dedup hook now lives on CompletionGate.Dedup (a TestDedup
+# interface) — exercised by
+# internal/gates/completion_test.go::TestCompletionGate_DedupSkipsTestCmd.
+# Skipping the bash assertion preserves the rest of Suite 4 coverage.
 _check_callsite "4.3 orchestrate_iteration" "lib/orchestrate_iteration.sh"
 _check_callsite "4.4 orchestrate_preflight" "lib/orchestrate_preflight.sh"
 _check_callsite "4.5 hooks_final_checks"    "lib/hooks_final_checks.sh"

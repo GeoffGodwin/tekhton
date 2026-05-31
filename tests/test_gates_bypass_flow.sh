@@ -19,6 +19,15 @@ set -euo pipefail
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export TEKHTON_HOME
 
+# m31.1: lib/gates.sh + lib/gates_phases.sh ported to internal/gates/.
+# The bypass-flow + has_only_noncode_errors precedence test lives in
+# internal/errors/classify_test.go::TestHasOnlyNoncodeErrors* — the
+# classifier itself was already Go-owned post-m17. This bash integration
+# test was exercising the bash gate's wiring, which is gone.
+if [[ ! -f "${TEKHTON_HOME}/lib/gates.sh" ]]; then
+    printf 'SKIP test_gates_bypass_flow: gates.sh ported to internal/gates/ at m31.1\n'
+    exit 0
+fi
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null

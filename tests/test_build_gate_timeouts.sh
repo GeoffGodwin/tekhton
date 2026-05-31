@@ -10,6 +10,16 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# m31.1: lib/gates.sh + lib/gates_phases.sh ported to internal/gates/.
+# Omnibus timeout + synthetic ## Gate Timeout coverage moved to
+# internal/gates/build_test.go::TestBuildGate_Run_TimeoutWritesSyntheticReport
+# and internal/gates/errors_writer_test.go::TestFSErrorsWriter_Timeout.
+if [[ ! -f "${TEKHTON_HOME}/lib/gates.sh" ]]; then
+    printf 'SKIP test_build_gate_timeouts: gates.sh ported to internal/gates/ at m31.1\n'
+    exit 0
+fi
+
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 

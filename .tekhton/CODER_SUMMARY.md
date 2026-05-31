@@ -1,129 +1,175 @@
 # Coder Summary
+
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-Milestone **m30.2 — Rescan**. Ported the bash rescan subsystem
-(`lib/rescan.sh` + `lib/rescan_helpers.sh`, ~270 LOC) to
-`internal/crawler/`, completing the m30 Crawler Port arc. Eight bash
-files total retired across m30.1 + m30.2.
+Milestone **m31.1 — Build + Completion Gates** (first of two sub-milestones
+in the m31 Gates Port arc). Ported `lib/gates.sh`, `lib/gates_phases.sh`,
+and `lib/gates_completion.sh` (~576 LOC total) to the new
+`internal/gates/` Go package. The UI gate (`lib/gates_ui*.sh`) stays bash
+through m31.2 and is reached via a thin bash-shim placeholder in the new
+package.
 
-- **`internal/crawler/rescan.go`** — `Rescan(ctx, opts)` implements
-  the eight-branch decision tree from `rescan.sh::rescan_project`
-  verbatim by line order (force-full → no index → no meta.json →
-  not a git repo → no scan commit → rebased-away commit → no changes
-  → major → incremental). Falls back to a full `Crawl` on every legacy
-  branch. The incremental path runs `updateIndexSections` with a
-  per-section regen flag set (`newRegenSetWithIndexDir`): any change
-  forces inventory + meta regen; A/D/R under non-root dirs flips tree;
-  manifest edits flip deps; config edits flip configs; sampled-file or
-  high-priority-add flips samples. Bash's quirky `dirname(indexFile)`
-  meta-lookup is preserved in the public `ExtractScanMetadata` (for
-  `lib/replan_brownfield.sh` parity) but bypassed internally via
-  `readMetaJSONFieldByPublicName` so Rescan reads from the canonical
-  IndexDir.
+### `internal/gates/` package (NEW, 7 production files)
 
-- **`internal/crawler/significance.go`** — `ClassifyChanges` returns
-  `Trivial | Moderate | Major` from the load-bearing thresholds
-  ported byte-for-byte: `manifestChanges >= 2 || newDirs >= 5 ||
-  deletedFiles >= 10` → Major; `manifestChanges >= 1 || newDirs >= 1`
-  → Moderate; else Trivial. R-status renames only count when
-  `RenameTo` is populated and the parent dir changes. Threshold tests
-  cover boundary cases (1/2 manifests, 4/5 dirs, 9/10 deletions).
+- **`build.go`** — `BuildGate` orchestrator + `Phase` interface +
+  `PhaseError`. `BuildGate.Run(ctx, stageLabel)` walks five registered
+  phases under an omnibus `BUILD_GATE_TIMEOUT` budget. Failure short-
+  circuits with a `*PhaseError` wrapping `ErrPhaseFailed`; deadline
+  expiry returns `ErrGateTimeout`. `PhaseOrder()` is the canonical
+  `[analyze, compile, constraints, ui_test, ui_validation]` slice; the
+  `TestBuildGate_PhaseOrder` invariant test fails red on any reorder.
 
-- **`internal/crawler/changes.go`** — `DetectChangedFiles` runs
-  `git diff --name-status sinceCommit..HEAD` AND
-  `git status --porcelain`, parses each into Change records,
-  deduplicates by path with working-tree wins (committed entries
-  loaded first, working-tree entries overwrite in the map). Status
-  mapping mirrors the bash awk pipeline: `??` → A; `D?`/`?D`/`D ` → D;
-  `M?`/`?M`/`M ` → M; `A?` → A; `R?` → R. Rename porcelain
-  (`R  old -> new`) splits into Path+RenameTo. Plus `gitCommitExists`
-  and `isGitRepo` for the rescan-tree precondition checks.
+- **`phases.go`** — `AnalyzePhase`, `CompilePhase`, `ConstraintsPhase`,
+  `UIBashShim`, `UIValidationPhase`. M54 remediation re-runs are
+  preserved (one retry per phase via the `Remediator` interface). The
+  bash `timeout 124 → pass` semantics are mirrored (`timedOut==true` ⇒
+  `StatusPass`). Compile errors are `head -20`-limited like the bash
+  side.
 
-- **`internal/crawler/metadata.go`** — `ExtractScanMetadata` reads
-  `meta.json` first, falls back to legacy HTML-comment header parsing
-  (`<!-- Scan-Commit: sha -->`) for pre-M68 projects. `IsManifestFile`
-  matches the 17 manifest basenames + `.csproj` / `.sln` suffixes from
-  the bash case. `IsConfigFile` matches the 5-extension set + 5
-  literal basenames + 8 glob arms + `.env.*` prefix from the bash case.
-  `ExtractSampledFiles` reads `samples/manifest.json` `original`
-  fields; falls back to legacy `### path` markdown headings.
+- **`completion.go`** — `CompletionGate.Run(ctx)` ports
+  `run_completion_gate`. Five preserved branches: IN PROGRESS, COMPLETE
+  + TEST_CMD pass, COMPLETE + new failures, COMPLETE + pre-existing
+  failures (M92), and no-status (with M86 substantive-work probe).
+  Dependency injection: `BaselineComparator`, `SubstantiveProbe`,
+  `TestDedup`, `SummaryDriftHook`. M27.2 hang guard:
+  `cmd.Stdin = nil` in `ExecRunner` so `read < /dev/tty` cannot block.
+  Failure dump → `COMPLETION_GATE_LAST_FAILURE.log`.
 
-- **`tekhton crawler rescan` Cobra subcommand** replaces the m30.1
-  placeholder. Flags: `--project-dir`, `--budget`, `--full`,
-  `--index-dir`, `--index-file`, `--json`. JSON output is the
-  `rescanCLISummary` shape — `{mode, fallback_reason, significance,
-  change_count, regenerated_sections, full_crawl_files,
-  full_crawl_total_lines}`. Human-readable output prints
-  "Index is up to date", "Full crawl (REASON): wrote .claude/index/",
-  or "Incremental rescan (SIG): N changed file(s); regenerated K
-  section(s)" depending on mode.
+- **`errors_writer.go`** — `ErrorsWriter` interface + `FSErrorsWriter`
+  implementation + `NoopErrorsWriter` for tests. Byte-identity points
+  preserved from the bash side: analyze writes raw stream in
+  truncate mode (`>`), compile appends (`>>`); the H1 + `## Stage` block
+  is written once per round (compile only writes H1 if BUILD_ERRORS.md
+  doesn't yet exist); annotated headers via `terr.AnnotateBuildErrors`.
 
-- **`tests/test_rescan_parity.sh`** — four-scenario parity gate
-  driving `tekhton crawler rescan --json` against fixtures under
-  `internal/crawler/testdata/rescan_scenarios/`. Asserts (mode,
-  significance, regenerated_sections include / exclude) per scenario.
-  17 assertions across all four scenarios, all passing. Self-skips
-  when the Go binary isn't built. Reuses `tests/lib/parity.sh`.
+- **`runner.go`** — `CommandRunner` interface + `ExecRunner`
+  implementation (production: `bash -c` with `cmd.Stdin = nil` for the
+  M27.2 guard, `exec.CommandContext` deadline-cancellation,
+  `timeout 124` exit-code mapping).
 
-- **`tekhton-legacy.sh --rescan` block** rewired: now exec's
-  `tekhton crawler rescan --project-dir DIR --budget N [--full]` then
-  runs `generate_project_index_view` for the human-readable
-  PROJECT_INDEX.md view (view generation stays bash until m31+
-  ports the index-view subsystem).
+- **`remediation.go`** — `Remediator` interface + `BashRemediator` shim.
+  m31.1 keeps the remediation registry in bash (`lib/remediation.sh`);
+  the Go gate shells out via `bash -c 'source common.sh; source
+  errors.sh; source remediation.sh; attempt_remediation ...'`. The
+  ERRORS_STREAM is passed via env so newlines/quotes/`$` survive.
 
-- **`scripts/wedge-audit.sh`** PATTERNS extended (now living in the
-  sibling data-only file `scripts/wedge-audit-patterns.sh` — see below):
-  - `(source|.) … /(crawler*|rescan|rescan_helpers).sh` now blocks
-    the `rescan` shim (added) and `rescan_helpers` (already blocked).
-  - Eight new function-definition forbidden patterns: `rescan_project`,
-    `_update_index_sections`, `_get_changed_files_since_scan`,
-    `_detect_significant_changes`, `_is_manifest_file`,
-    `_is_config_file`, `_extract_sampled_files`,
-    `_record_scan_metadata`. Wedge-audit reports clean (197 files
-    audited).
+- **`helpers.go`** — Tiny package-level shim for `os.Environ()` so tests
+  can stub the environment without monkey-patching globally.
 
-- **`scripts/wedge-audit-patterns.sh`** (NEW) — extracted from
-  `wedge-audit.sh` per CLAUDE.md Rule 8 data-only exemption. Contains
-  the PATTERNS array assignment only: no function bodies, no
-  conditional logic. `wedge-audit.sh` now sources it and drops from
-  340 → 129 lines (well under the 300-line bash ceiling). The
-  regression guards themselves are unchanged.
+### `cmd/tekhton/` additions
 
-- **`VERSION`** bumps to **4.30.0** (matching m27.3's arc-close
-  pattern — minor bump at the closing child, not the opening one).
+- **`gate.go`** (NEW) — `newGateCmd()` registers the parent `gate`
+  command (Hidden so it stays out of `tekhton --help`) with three
+  visible children: `build`, `completion`, `ui` (m31.2 stub returning
+  exit 64). `buildGateFromEnv(stageLabel)` and `completionGateFromEnv()`
+  assemble the gate types from the m26 env contract; `resolveUnder`
+  joins relative paths under `PROJECT_DIR` so artifacts land at the
+  target-project root rather than the binary's CWD.
 
-- **Parent `m30-crawler-port.md` meta block** flipped from
-  `status: "split"` to `status: "done"`. `MANIFEST.cfg` row for m30
-  flipped to `done` (m30.2's row is flipped by the pipeline's
-  `mark_done` step at finalize).
+- **`gate_ui_shim.go`** (NEW) — `uiBashRunner` exec's
+  `bash -c "source lib/gates_ui_helpers.sh; source lib/gates_ui.sh;
+  _run_ui_test_phase '$stage_label'"` when `UI_TEST_CMD` is set. m31.2
+  deletes this file and replaces with a native `internal/gates/ui.go`.
 
-- **CHANGELOG.md** gains a `[4.30.0] - 2026-05-30` section
-  consolidating the m30 arc (m30.1 + m30.2) into one release block.
+- **`main.go`** — `newGateCmd()` added to the root command's
+  `AddCommand` list.
 
-- **Documentation updates:**
-  - `ARCHITECTURE.md` — `internal/crawler/` entry now describes both
-    `Crawl` and `Rescan`; lists all 11 production files in the
-    package; cites `tests/test_rescan_parity.sh`.
-  - `cmd/tekhton/crawler.go` entry updated to reflect the real
-    `rescan` subcommand (no more "m30.2 placeholder" wording) and the
-    `tekhton-legacy.sh --rescan` exec path.
-  - `CLAUDE.md` repo-layout pointer removed for `lib/rescan.sh`
-    (whole rescan port now annotated as a single line under the
-    crawler comment).
-  - `docs/v4-phase5-stub.md` row 13 (init+crawler) updated to mark
-    the Crawler arc as done — 8 bash files retired, ~1.7k LOC
-    ported; row 16 (`rescan.sh`) marked done.
+### Bash compatibility shims (`tekhton-legacy.sh`)
 
-- **Test cleanup:**
-  - `tests/test_rescan.sh` deleted (m30.1 skip-stub superseded by
-    `tests/test_rescan_parity.sh`).
-  - `internal/crawler/rescan_stub.go` deleted (m30.1 placeholder
-    sentinel; real rescan in `rescan.go`).
-  - `cmd/tekhton/crawler_test.go` — replaced the placeholder test
-    with `TestCrawlerRescanHelpListsFlags` and
-    `TestCrawlerRescanFullCrawlOnFreshProject`.
+- Replaced the three `source lib/gates{,_phases,_completion}.sh` lines
+  with inline `run_build_gate()` and `run_completion_gate()` shim
+  functions that exec `tekhton gate build --stage-label "$1"` and
+  `tekhton gate completion` respectively. The shims emit a clear error
+  and return 0 when the binary is missing (matching the
+  `run_preflight_checks` post-m22 fallback shape). `lib/gates_ui.sh` +
+  `lib/gates_ui_helpers.sh` remain sourced for the bash UI phase
+  through m31.2.
+
+### Bash test retirement / updates
+
+- **`tests/test_gates_extraction.sh`** — deleted. Tested the m28 bash
+  extraction of `gates_ui.sh` from `gates.sh`; superseded by the full
+  port.
+- **`tests/test_gates_stale_raw_errors.sh`**,
+  **`tests/test_build_errors_phase2_header.sh`**,
+  **`tests/test_build_gate_timeouts.sh`**,
+  **`tests/test_gates_bypass_flow.sh`**,
+  **`tests/test_ui_build_gate.sh`**,
+  **`tests/test_dependency_constraints.sh`** — self-skip with a
+  forward-pointer comment when `lib/gates.sh` is absent (the m31.1
+  state). Behavioural coverage moved to the new Go tests.
+- **`tests/test_pristine_state_enforcement.sh`** Suite 6 — stubbed
+  with a pointer to `internal/gates/completion_test.go::TestCompletionGate_PreExistingFailure*`.
+- **`tests/test_dedup_callsites.sh`** Suite 4.2 — removed (the bash
+  callsite is gone; the M105 dedup hook is now `CompletionGate.Dedup`
+  exercised by `TestCompletionGate_DedupSkipsTestCmd`).
+- **`tests/test_file_size_ceilings.sh`** — flipped from "gates.sh
+  must exist + under ceiling" to "gates*.sh must NOT exist" invariant
+  (the m31.1 deletion guard).
+
+### Tests (NEW)
+
+- **`internal/gates/build_test.go`** — phase-order invariant, pass/fail/
+  timeout/skip/cancel paths.
+- **`internal/gates/phases_test.go`** — table-driven analyze + compile +
+  constraints + UI-shim coverage; M54 remediation one-retry-cap
+  enforcement; `timeout 124 → pass` parity.
+- **`internal/gates/completion_test.go`** — all five branches; the
+  critical `TestCompletionGate_StdinDevNull` proves the M27.2 hang
+  guard works against a real `bash -c "read -t 1 ..."` TEST_CMD with a
+  10-second wall-clock timeout.
+- **`internal/gates/errors_writer_test.go`** — structural equivalence
+  for analyze, compile (append mode!), constraints, timeout, and
+  clear-on-pass paths.
+- **`internal/gates/coverage_test.go`** — `Phase.Name()` + `ExecRunner`
+  exec paths + sentinel error coverage so package coverage stays above
+  the 80% target.
+- **`cmd/tekhton/gate_test.go`** — Cobra subcommand registration, help
+  listing, UI-stub exit code, env-helper unit tests.
+
+### Bash integration tests (NEW)
+
+- **`tests/test_gates_parity.sh`** — eight-scenario parity gate driving
+  `tekhton gate build` and `tekhton gate completion` against captured
+  baselines under `tests/testdata/gates/`. 13 assertions, all passing.
+  Reuses `tests/lib/parity.sh`.
+- **`tests/test_buildfix_against_go_gate.sh`** — cross-seam coverage:
+  drives the Go gate to produce `BUILD_RAW_ERRORS.txt`, then exercises
+  `stages/coder_buildfix.sh::_bf_read_raw_errors` against the Go-written
+  stream AND drives `tekhton diagnose classify --mode routing` to
+  assert the m17 classifier reports `code_dominant` for a TS2304
+  failure. 5 assertions, all passing.
+
+### Test fixtures (NEW)
+
+- `tests/testdata/gates/{analyze_dirty,compile_dirty,gate_timeout}/expected/BUILD_ERRORS.md`
+  and matching `BUILD_RAW_ERRORS.txt` files. Timestamp normalisation via
+  `_gates_normalise` (sed) collapses the `# Build Errors — YYYY-MM-DD ...`
+  line to `TIMESTAMP` before diffing.
+
+### Other updates
+
+- **`internal/stagerunner/helpers.go`** — `DefaultLibHelpers` no longer
+  includes the three deleted bash files. Parity test
+  (`TestDefaultLibHelpersParityWithLegacy`) re-passes.
+- **`scripts/wedge-audit-patterns.sh`** — gained 11 new forbidden
+  patterns: the three deleted `lib/gates*.sh` source-line patterns plus
+  10 bash function names (`_gate_check_timeout`, `_gate_effective_timeout`,
+  `_gate_phase_analyze`, `_gate_phase_compile`, `_gate_try_remediation`,
+  `_gate_run_analyze`, `_gate_run_compile`, `_gate_write_analyze_errors`,
+  `_gate_write_compile_errors`, `_warn_summary_drift`). Wedge-audit
+  reports clean (194 files audited).
+- **`.claude/milestones/MANIFEST.cfg`** — m31.1 row title updated from
+  "Build and Completion Gates" to "Build + Completion Gates" per the
+  acceptance criterion. Status flip to `done` is handled by the
+  finalize hook.
+- **`ARCHITECTURE.md`** — added `internal/gates/`, `cmd/tekhton/gate.go`,
+  and `tekhton-legacy.sh::run_build_gate / ::run_completion_gate` entries;
+  removed the `lib/gates.sh` and `lib/gates_phases.sh` entries; updated
+  the `lib/gates_ui_helpers.sh` and `lib/test_dedup.sh` entries' sourcing
+  notes.
 
 ## Root Cause (bugs only)
 N/A — feature port milestone.
@@ -131,132 +177,105 @@ N/A — feature port milestone.
 ## Files Modified
 
 ### Created (NEW)
-- `internal/crawler/rescan.go` (NEW)
-- `internal/crawler/rescan_test.go` (NEW)
-- `internal/crawler/significance.go` (NEW)
-- `internal/crawler/significance_test.go` (NEW)
-- `internal/crawler/changes.go` (NEW)
-- `internal/crawler/changes_test.go` (NEW)
-- `internal/crawler/metadata.go` (NEW)
-- `internal/crawler/metadata_test.go` (NEW)
-- `tests/test_rescan_parity.sh` (NEW)
-- `internal/crawler/testdata/rescan_scenarios/no_changes/{README.md,src/main.go}` (NEW)
-- `internal/crawler/testdata/rescan_scenarios/trivial/{README.md,src/main.go}` (NEW)
-- `internal/crawler/testdata/rescan_scenarios/moderate_manifest/{README.md,package.json,src/index.js}` (NEW)
-- `internal/crawler/testdata/rescan_scenarios/major_manifest/{README.md,package.json,Cargo.toml}` (NEW)
-- `scripts/wedge-audit-patterns.sh` (NEW — rework; data-only PATTERNS file extracted from `wedge-audit.sh`)
+- `internal/gates/build.go` (NEW)
+- `internal/gates/build_test.go` (NEW)
+- `internal/gates/phases.go` (NEW)
+- `internal/gates/phases_test.go` (NEW)
+- `internal/gates/completion.go` (NEW)
+- `internal/gates/completion_test.go` (NEW)
+- `internal/gates/errors_writer.go` (NEW)
+- `internal/gates/errors_writer_test.go` (NEW)
+- `internal/gates/coverage_test.go` (NEW)
+- `internal/gates/runner.go` (NEW)
+- `internal/gates/remediation.go` (NEW)
+- `internal/gates/helpers.go` (NEW)
+- `cmd/tekhton/gate.go` (NEW)
+- `cmd/tekhton/gate_test.go` (NEW)
+- `cmd/tekhton/gate_ui_shim.go` (NEW)
+- `tests/test_gates_parity.sh` (NEW)
+- `tests/test_buildfix_against_go_gate.sh` (NEW)
+- `tests/testdata/gates/analyze_dirty/expected/BUILD_ERRORS.md` (NEW)
+- `tests/testdata/gates/analyze_dirty/expected/BUILD_RAW_ERRORS.txt` (NEW)
+- `tests/testdata/gates/compile_dirty/expected/BUILD_ERRORS.md` (NEW)
+- `tests/testdata/gates/compile_dirty/expected/BUILD_RAW_ERRORS.txt` (NEW)
+- `tests/testdata/gates/gate_timeout/expected/BUILD_ERRORS.md` (NEW)
 
 ### Modified
-- `cmd/tekhton/crawler.go` — replaced placeholder rescan subcommand
-  with real Cobra command; added `rescanCLISummary` + `emitRescanSummary`
-- `cmd/tekhton/crawler_test.go` — replaced placeholder test with
-  help + fresh-project rescan tests
-- `tekhton-legacy.sh` — `--rescan` block exec's `tekhton crawler rescan`
-- `scripts/wedge-audit.sh` — added m30.2 regression guards (8 new
-  forbidden patterns, `rescan.sh` added to the source-blocked list);
-  rework: PATTERNS array extracted to `wedge-audit-patterns.sh`,
-  file now 129 lines (was 340).
-- `internal/crawler/rescan.go` — rework: `rescanFallToFull` now
-  returns `(*RescanResult, error)` and propagates errors when
-  `Crawl` returns `(nil, err)` (e.g. context cancellation); five
-  branch call sites + the Major-changes site updated to propagate.
-  Replaces the previous swallowed-error path that silently reported
-  "Full crawl: wrote .claude/index/" when nothing was written.
-- `ARCHITECTURE.md` — updated `internal/crawler/` and
-  `cmd/tekhton/crawler.go` entries for m30.2
-- `CLAUDE.md` — removed `lib/rescan.sh` line from repo-layout section
-- `CHANGELOG.md` — new `[4.30.0] - 2026-05-30` section
-- `docs/v4-phase5-stub.md` — rows 13 and 16 updated for arc close
-- `VERSION` → `4.30.0`
-- `.claude/milestones/m30-crawler-port.md` — meta `status: split` → `done`
-- `.claude/milestones/MANIFEST.cfg` — m30 row `split` → `done`
+- `cmd/tekhton/main.go` — `newGateCmd()` registered
+- `tekhton-legacy.sh` — three source lines replaced with inline
+  `run_build_gate` / `run_completion_gate` exec-shim functions
+- `internal/stagerunner/helpers.go` — `DefaultLibHelpers` dropped
+  `lib/gates.sh`, `lib/gates_phases.sh`, `lib/gates_completion.sh`
+- `scripts/wedge-audit-patterns.sh` — 11 new m31.1 regression guards
+- `.claude/milestones/MANIFEST.cfg` — m31.1 title hyphenation fix
+- `ARCHITECTURE.md` — gates entries updated
+- `tests/test_pristine_state_enforcement.sh` — Suite 6 stubbed
+- `tests/test_dedup_callsites.sh` — Suite 4.2 removed
+- `tests/test_file_size_ceilings.sh` — flipped to deletion invariant
+- `tests/test_gates_stale_raw_errors.sh`,
+  `tests/test_build_errors_phase2_header.sh`,
+  `tests/test_build_gate_timeouts.sh`,
+  `tests/test_gates_bypass_flow.sh`,
+  `tests/test_ui_build_gate.sh`,
+  `tests/test_dependency_constraints.sh` — self-skip when
+  `lib/gates.sh` is absent
 
 ### Deleted
-- `lib/rescan.sh` (50-line m30.1 shim — rescan is now Go)
-- `tests/test_rescan.sh` (m30.1 skip-stub superseded by parity gate)
-- `internal/crawler/rescan_stub.go` (m30.1 placeholder; real rescan landed)
+- `lib/gates.sh` (217 lines, ported to `internal/gates/build.go` +
+  `phases.go` + `errors_writer.go`)
+- `lib/gates_phases.sh` (205 lines, ported to `internal/gates/phases.go`)
+- `lib/gates_completion.sh` (154 lines, ported to
+  `internal/gates/completion.go`)
+- `tests/test_gates_extraction.sh` (the m28 bash-extraction structural
+  test — superseded)
 
 ## Test Results
-- **Go**: all 26 packages PASS; `internal/crawler/` coverage 87.2% of
-  statements (exceeds the 80% acceptance criterion).
-- **Bash**: 500/500 PASS (no regressions vs. m30.1 baseline).
-- **Wedge audit**: clean (197 files audited, 12 allowed shim writers).
-- **rescan parity gate** (`tests/test_rescan_parity.sh`): 17/17 PASS
-  across all four scenarios (`no_changes`, `trivial`,
-  `moderate_manifest`, `major_manifest`).
-- **crawler parity gate** (`tests/test_crawler_parity.sh`): 21/21
-  PASS (m30.1 didn't regress).
+- **Go**: `go test ./internal/gates/ ./cmd/tekhton/` PASS;
+  `internal/gates/` coverage 82.9% of statements (above the 80%
+  acceptance target).
 - **`go vet ./...`**: clean.
-- **`shellcheck`** on `tekhton-legacy.sh`, `scripts/wedge-audit.sh`,
-  `tests/test_rescan_parity.sh`: clean (only info-level SC1091
-  "can't follow source" notices on lines I didn't touch).
-- **No `rescan_project` references** in `lib/`, `tekhton-legacy.sh`,
-  or `stages/` (verified by the required grep).
-- **No `lib/rescan*.sh` files** remain (verified by the required
-  glob).
+- **Bash**: `bash tests/run_tests.sh` reports 501 shell + all 26 Go
+  packages PASS (was 500 before m31.1; the two new bash tests added a
+  count of one each).
+- **`shellcheck -S warning`** on all touched bash files: clean.
+- **Wedge audit**: clean (194 files audited).
+- **`test_gates_parity.sh`**: 13/13 PASS across 8 scenarios
+  (analyze_clean, analyze_dirty, compile_clean, compile_dirty,
+  completion_pass, completion_test_fail, completion_no_status,
+  gate_timeout). Build-error fixtures byte-identical after timestamp
+  normalisation; raw-error fixtures byte-identical without normalisation.
+- **`test_buildfix_against_go_gate.sh`**: 5/5 PASS — confirms
+  `_bf_read_raw_errors` consumes the Go-written stream and the m17
+  classifier emits `code_dominant` for the captured failure.
 
 ## Human Notes Status
-No human notes listed for this run.
+No human notes referenced for m31.1.
+
+## Docs Updated
+- `ARCHITECTURE.md` — `internal/gates/` and `cmd/tekhton/gate.go` entries
+  added; `lib/gates.sh` and `lib/gates_phases.sh` entries removed;
+  `lib/gates_ui_helpers.sh` and `lib/test_dedup.sh` sourcing notes
+  updated.
 
 ## Architecture Change Proposals
 
-### `ExtractScanMetadata` preserves bash dirname-quirk; Rescan bypasses it internally
+### `internal/gates/` is a sibling package to `internal/pipeline/`, not a replacement
 
-- **Current constraint**: The milestone Goal 5 says to port
-  `_extract_scan_metadata` and preserve the legacy HTML-comment
-  fallback. The bash version has a load-bearing quirk: it computes
-  `meta_file = dirname(indexFile) + /.claude/index/meta.json`, which
-  for the production `indexFile = <proj>/.tekhton/PROJECT_INDEX.md`
-  resolves to `<proj>/.tekhton/.claude/index/meta.json` — a path that
-  doesn't exist. The structured lookup always silently misses; the
-  HTML-comment fallback is what actually fires. `lib/replan_brownfield.sh`
-  depends on this (via `lib/scan_metadata.sh`).
-- **What triggered this**: Rescan needs to read `scan_commit` from
-  `meta.json` to gate branches 5/6 — and the bash quirk would always
-  force fallback, which would break the rebased-away detection branch
-  for projects without the legacy HTML header.
-- **Proposed change**: Split the function into two paths.
-  `ExtractScanMetadata(indexFile, field)` is the bash-bug-compatible
-  public function (preserves the dirname quirk for `lib/scan_metadata.sh`
-  parity). `readMetaJSONFieldByPublicName(metaFilePath, field)` is a
-  new internal helper that reads the supplied `metaFile` path
-  directly — Rescan uses this with the known `IndexDir/meta.json` path
-  and falls back to `extractHTMLCommentField` only when meta.json is
-  truly absent. Same for `ExtractSampledFiles` ↔
-  `readSamplesManifestFromIndexDir`.
-- **Backward compatible**: Yes — `ExtractScanMetadata` /
-  `ExtractSampledFiles` public APIs unchanged; bash callers via
-  `lib/scan_metadata.sh` see identical behavior.
-- **ARCHITECTURE.md update needed**: No — the helper split is local
-  to `internal/crawler/` and documented in source comments.
-
-### `scripts/wedge-audit.sh` PATTERNS extracted to data-only sibling file
-
-- **Status**: Rework-applied. The originally-proposed defer ACP was
-  **REJECTED** by review; the reviewer correctly noted the file was
-  already over the 300-line ceiling pre-m30.2 (compounding the
-  violation was not acceptable) and that PATTERNS extraction is a
-  small mechanical refactor that satisfies both constraints.
-- **Current constraint**: CLAUDE.md Rule 8 — every modified `.sh` file
-  must be under 300 lines after the change.
-- **Resolution**: Extracted the PATTERNS array (the bulk of the file)
-  into `scripts/wedge-audit-patterns.sh`. The new file is data-only
-  (single array assignment, no function bodies, no conditional logic)
-  and therefore exempt from the 300-line ceiling per the CLAUDE.md
-  Rule 8 data-only exemption. `wedge-audit.sh` now sources it
-  immediately after declaring `ALLOWED_FILES`, dropping from 340 to
-  129 lines. The eight m30.2 regression guards remain in place.
-- **Backward compatible**: Yes — wedge-audit invocations and outputs
-  unchanged (still reports "clean (197 files audited, 12 allowed
-  shim writers)"). Both files shellcheck-clean.
-- **ARCHITECTURE.md update needed**: No.
-
-## Docs Updated
-- `ARCHITECTURE.md` — `internal/crawler/` entry rewritten to cover both
-  `Crawl` and `Rescan`, lists all 11 production files in the package,
-  cites the new parity gate.
-- `CLAUDE.md` — repository-layout: dropped the `lib/rescan.sh` line.
-- `CHANGELOG.md` — new `[4.30.0] - 2026-05-30` block consolidating the
-  m30 arc.
-- `docs/v4-phase5-stub.md` — Phase 5 inventory rows 13 (init+crawler)
-  and 16 (rescan.sh) marked done.
+- **Current constraint**: ARCHITECTURE.md previously had a single
+  `lib/gates.sh` row; the m18 `internal/pipeline.BuildGate` /
+  `CompletionGate` types exist as a SIMPLER scheduling-level gate used
+  by the per-attempt scheduler, distinct from the bash gate that ran
+  inside the coder subprocess.
+- **What triggered this**: m31.1's Goal 1 was to port the bash gate
+  (the one with phase boundaries, M54 remediation, raw-stream output
+  files) — not to replace the m18 simpler gate that the in-process
+  scheduler uses. Two different abstractions, two different call paths.
+- **Proposed change**: m31.1 ships `internal/gates/` as a NEW package.
+  The m18 `internal/pipeline/gates.go` stays for the per-attempt
+  scheduler (the call site at `internal/pipeline/runner.go:247`). The
+  bash-equivalent gate is reached via the CLI seam (`tekhton gate`).
+  ARCHITECTURE.md now documents both.
+- **Backward compatible**: Yes. m18 in-process gates unchanged.
+- **ARCHITECTURE.md update needed**: Already applied — the `internal/gates/`
+  + `cmd/tekhton/gate.go` rows replace the deleted bash entries and
+  carry a m31.2 forward-pointer for the UI phase.

@@ -14,6 +14,13 @@ set -euo pipefail
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export TEKHTON_HOME
 
+# m31.1: lib/gates.sh + lib/gates_phases.sh ported to internal/gates/.
+# Behavioural coverage moved to internal/gates/errors_writer_test.go
+# (BUILD_ERRORS.md + BUILD_RAW_ERRORS.txt write/reset/append parity).
+if [[ ! -f "${TEKHTON_HOME}/lib/gates.sh" ]]; then
+    printf 'SKIP test_gates_stale_raw_errors: gates.sh ported to internal/gates/ at m31.1\n'
+    exit 0
+fi
 # shellcheck source=/dev/null
 source "${TEKHTON_HOME}/lib/common.sh"
 # shellcheck source=/dev/null

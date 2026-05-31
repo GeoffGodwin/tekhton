@@ -150,47 +150,15 @@ eq '"$_MOCK_CAPTURE_CALLS" -ge 1' "5.1 capture_test_baseline called after succes
 eq '"$_MOCK_RUN_AGENT_CALLS" -ge 1' "5.2 fix agent invoked when tests fail pre-coder"
 
 # --- Suite 6: run_completion_gate respects PASS_ON_PREEXISTING --------------
-echo "=== Suite 6: run_completion_gate pre_existing+PASS_ON_PREEXISTING=false ==="
-CODER_SUMMARY_FILE="$TEST_TMP/coder_summary_s6.md"
-cat > "$CODER_SUMMARY_FILE" <<'EOF'
-## Status: COMPLETE
-
-## Summary
-Done.
-
-## Files Modified
-- `some/file.sh`
-EOF
-export CODER_SUMMARY_FILE
-
-cat > "$TEST_TMP/failing_s6.sh" <<'SCRIPT'
-#!/usr/bin/env bash
-echo "FAIL: pre_existing_test"
-exit 1
-SCRIPT
-chmod +x "$TEST_TMP/failing_s6.sh"
-TEST_CMD="bash $TEST_TMP/failing_s6.sh"
-COMPLETION_GATE_TEST_ENABLED=true
-export TEST_CMD COMPLETION_GATE_TEST_ENABLED
-
-has_test_baseline() { return 0; }
-compare_test_with_baseline() { echo "pre_existing"; }
-
-# shellcheck source=/dev/null
-source "${TEKHTON_HOME}/lib/gates_completion.sh"
-_warn_summary_drift() { :; }
-
-TEST_BASELINE_PASS_ON_PREEXISTING=false
-export TEST_BASELINE_PASS_ON_PREEXISTING
-_result=0
-run_completion_gate >/dev/null 2>&1 || _result=$?
-eq '"$_result" -ne 0' "6.1 run_completion_gate returns non-zero for pre_existing+PASS=false"
-
-TEST_BASELINE_PASS_ON_PREEXISTING=true
-export TEST_BASELINE_PASS_ON_PREEXISTING
-_result=0
-run_completion_gate >/dev/null 2>&1 || _result=$?
-eq '"$_result" -eq 0' "6.2 run_completion_gate returns 0 for pre_existing+PASS=true"
+# m31.1: ported to Go. The bash `run_completion_gate` is now a shim that
+# execs `tekhton gate completion`, and the baseline-comparison logic lives
+# in internal/gates/completion.go behind the BaselineComparator interface
+# (no longer mockable via bash function overrides). Behavioural coverage
+# moved to internal/gates/completion_test.go:
+#   - TestCompletionGate_PreExistingFailureRejectedByDefault (was 6.1)
+#   - TestCompletionGate_PreExistingFailureAccepted          (was 6.2)
+# This stub keeps the suite header for log continuity.
+echo "=== Suite 6: run_completion_gate baseline behaviour (ported to Go @ m31.1) ==="
 
 # --- Suite 7: pre-run fix fails → run_prerun_clean_sweep returns 0 ----------
 echo "=== Suite 7: pre-run fix fails → pipeline proceeds gracefully ==="

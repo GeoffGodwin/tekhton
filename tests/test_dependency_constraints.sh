@@ -4,6 +4,16 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# m31.1: lib/gates.sh + lib/gates_phases.sh ported to internal/gates/.
+# ConstraintsPhase + validation_command extraction covered by
+# internal/gates/phases_test.go::TestConstraintsPhase_* and
+# cmd/tekhton/gate_test.go::TestReadValidationCmd_StripsQuotes.
+if [[ ! -f "${TEKHTON_HOME}/lib/gates.sh" ]]; then
+    printf 'SKIP test_dependency_constraints: gates.sh ported to internal/gates/ at m31.1\n'
+    exit 0
+fi
+
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 

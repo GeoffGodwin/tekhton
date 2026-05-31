@@ -28,6 +28,19 @@
 set -euo pipefail
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# m31.1: lib/gates.sh + lib/gates_phases.sh ported to internal/gates/.
+# This integration test drives `run_build_gate` through the bash gate, but
+# `run_build_gate` is now a shim that execs `tekhton gate build`. The UI
+# gate (gates_ui.sh) itself is still bash through m31.2 — the m31.2
+# milestone will revive a port-aware version of this test, ideally
+# rewritten as an in-process internal/gates/ui_test.go suite. For now,
+# self-skip when lib/gates.sh is gone.
+if [[ ! -f "${TEKHTON_HOME}/lib/gates.sh" ]]; then
+    printf 'SKIP test_ui_build_gate: gates.sh ported to internal/gates/ at m31.1; UI gate parity moves with m31.2\n'
+    exit 0
+fi
+
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 

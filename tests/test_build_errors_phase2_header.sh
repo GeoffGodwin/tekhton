@@ -8,6 +8,16 @@ set -euo pipefail
 # the block executes, so the condition always finds the file exists.
 
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# m31.1: lib/gates.sh + lib/gates_phases.sh ported to internal/gates/.
+# The Phase 1-pass / Phase 2-fail H1 placement invariant this test
+# enforces is covered by internal/gates/errors_writer_test.go::
+#   TestFSErrorsWriter_CompileWritesH1WhenAnalyzePassed
+if [[ ! -f "${TEKHTON_HOME}/lib/gates.sh" ]]; then
+    printf 'SKIP test_build_errors_phase2_header: gates.sh ported to internal/gates/ at m31.1\n'
+    exit 0
+fi
+
 PROJECT_DIR="$(mktemp -d)"
 trap 'rm -rf "$PROJECT_DIR"' EXIT
 
