@@ -32,6 +32,7 @@ func newDriftCmd() *cobra.Command {
 	c.AddCommand(newDriftResetAuditCmd())
 	c.AddCommand(newDriftHumanActionCmd())
 	c.AddCommand(newDriftNonblockingCmd())
+	c.AddCommand(newDriftClearResolvedObservationsCmd())
 	return c
 }
 
@@ -62,9 +63,81 @@ func nonBlockingPath(projectDir string) string {
 func newDriftNonblockingCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "nonblocking",
-		Short: "Manage NON_BLOCKING_LOG.md (count)",
+		Short: "Manage NON_BLOCKING_LOG.md (count, clear-completed, clear-resolved)",
 	}
 	c.AddCommand(newDriftNonblockingCountCmd())
+	c.AddCommand(newDriftNonblockingClearCompletedCmd())
+	c.AddCommand(newDriftNonblockingClearResolvedCmd())
+	return c
+}
+
+// newDriftNonblockingClearCompletedCmd exposes NonBlocking.ClearCompleted
+// via the CLI. m25 deleted lib/drift_cleanup.sh which owned the bash
+// `clear_completed_nonblocking_notes` helper but left
+// tekhton-legacy.sh:2272 calling it during startup cleanup. Prints the
+// count of `- [x]` entries moved from ## Open into ## Resolved.
+func newDriftNonblockingClearCompletedCmd() *cobra.Command {
+	var projectDir string
+	c := &cobra.Command{
+		Use:   "clear-completed",
+		Short: "Move every `- [x]` open item into the Resolved section",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			n := drift.NewNonBlocking(nonBlockingPath(projectDir))
+			moved, err := n.ClearCompleted()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%d\n", moved)
+			return nil
+		},
+	}
+	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
+	return c
+}
+
+// newDriftNonblockingClearResolvedCmd exposes NonBlocking.ClearResolved
+// via the CLI. Bash entry point `clear_resolved_nonblocking_notes` (also
+// in the deleted lib/drift_cleanup.sh) is still called by
+// tekhton-legacy.sh:2284. Prints the count of cleared entries.
+func newDriftNonblockingClearResolvedCmd() *cobra.Command {
+	var projectDir string
+	c := &cobra.Command{
+		Use:   "clear-resolved",
+		Short: "Empty the Resolved section of NON_BLOCKING_LOG.md",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			n := drift.NewNonBlocking(nonBlockingPath(projectDir))
+			cleared, err := n.ClearResolved()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%d\n", len(cleared))
+			return nil
+		},
+	}
+	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
+	return c
+}
+
+// newDriftClearResolvedObservationsCmd exposes Log.ClearResolved via the
+// CLI. Bash entry point `clear_resolved_drift_observations` (deleted
+// with lib/drift_cleanup.sh) is still called by tekhton-legacy.sh:2273.
+// Prints the count of cleared observations.
+func newDriftClearResolvedObservationsCmd() *cobra.Command {
+	var projectDir string
+	c := &cobra.Command{
+		Use:   "clear-resolved-observations",
+		Short: "Empty the Resolved section of DRIFT_LOG.md",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			l := drift.NewLog(driftLogPath(projectDir))
+			n, err := l.ClearResolved()
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%d\n", n)
+			return nil
+		},
+	}
+	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
 	return c
 }
 

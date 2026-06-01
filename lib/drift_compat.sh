@@ -92,3 +92,79 @@ consolidate_legacy_human_action() {
     "$_bin" drift human-action consolidate-legacy \
         --project-dir "$_proj" >/dev/null 2>&1 || true
 }
+
+# _drift_compat_resolve_bin — common binary lookup for the cleanup shims.
+# Echoes the resolved path or empty on failure; callers should `return 0`
+# silently when empty (the cleanup ops are best-effort startup tidying).
+_drift_compat_resolve_bin() {
+    local b="${TEKHTON_BIN:-}"
+    if [[ -z "$b" ]] && command -v tekhton >/dev/null 2>&1; then
+        b=$(command -v tekhton)
+    fi
+    [[ -x "$b" ]] && echo "$b"
+}
+
+# clear_completed_nonblocking_notes — move `- [x]` items from the Open
+# section into the Resolved section of NON_BLOCKING_LOG.md. Pre-m25 lived
+# in lib/drift_cleanup.sh; post-m25 the logic is in
+# internal/drift/nonblocking.go::(*NonBlocking).ClearCompleted.
+# Called by tekhton-legacy.sh:2272 during startup cleanup. Best-effort
+# (silently no-ops if the binary is unavailable).
+clear_completed_nonblocking_notes() {
+    local _bin
+    _bin=$(_drift_compat_resolve_bin) || true
+    [[ -z "$_bin" ]] && return 0
+    "$_bin" drift nonblocking clear-completed \
+        --project-dir "${PROJECT_DIR:-$PWD}" >/dev/null 2>&1 || true
+}
+
+# clear_resolved_nonblocking_notes — empty the ## Resolved section of
+# NON_BLOCKING_LOG.md. Post-m25 logic lives in
+# internal/drift/nonblocking.go::(*NonBlocking).ClearResolved.
+# Called by tekhton-legacy.sh:2284. Best-effort.
+clear_resolved_nonblocking_notes() {
+    local _bin
+    _bin=$(_drift_compat_resolve_bin) || true
+    [[ -z "$_bin" ]] && return 0
+    "$_bin" drift nonblocking clear-resolved \
+        --project-dir "${PROJECT_DIR:-$PWD}" >/dev/null 2>&1 || true
+}
+
+# clear_resolved_drift_observations — empty the ## Resolved section of
+# DRIFT_LOG.md. Post-m25 logic lives in
+# internal/drift/observe.go::(*Log).ClearResolved.
+# Called by tekhton-legacy.sh:2273. Best-effort.
+clear_resolved_drift_observations() {
+    local _bin
+    _bin=$(_drift_compat_resolve_bin) || true
+    [[ -z "$_bin" ]] && return 0
+    "$_bin" drift clear-resolved-observations \
+        --project-dir "${PROJECT_DIR:-$PWD}" >/dev/null 2>&1 || true
+}
+
+# count_drift_observations — count unresolved entries in DRIFT_LOG.md's
+# ## Observations section. Post-m25 the logic is in
+# internal/drift/observe.go::(*Log).CountUnresolved and is exposed as
+# `tekhton drift count` (which already existed; only the bash shim is new).
+# Called by tekhton-legacy.sh:1721, :2101, :2934 and lib/finalize_display.sh:96.
+# Echoes a numeric count; defensive fallback to 0 when the binary is missing
+# or returns garbage, matching the pre-m25 behavior on an empty/absent file.
+count_drift_observations() {
+    local _bin
+    _bin=$(_drift_compat_resolve_bin) || true
+    if [[ -z "$_bin" ]]; then
+        echo "0"
+        return 0
+    fi
+    local _count
+    if ! _count=$("$_bin" drift count --project-dir "${PROJECT_DIR:-$PWD}" 2>/dev/null); then
+        echo "0"
+        return 0
+    fi
+    _count="${_count//[[:space:]]/}"
+    if [[ -z "$_count" ]] || ! [[ "$_count" =~ ^[0-9]+$ ]]; then
+        echo "0"
+        return 0
+    fi
+    echo "$_count"
+}
