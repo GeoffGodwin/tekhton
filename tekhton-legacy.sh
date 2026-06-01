@@ -2296,7 +2296,12 @@ if [[ -x "$_tk_mig_bin" ]] && [[ -f "${PROJECT_DIR}/${HUMAN_NOTES_FILE:-HUMAN_NO
     "$_tk_mig_bin" note migrate --project-dir "${PROJECT_DIR}" >/dev/null 2>&1 || true
 fi
 unset _tk_mig_bin
-_ensure_gitignore_inbox
+# m24 deleted the standalone _ensure_gitignore_inbox helper from
+# lib/notes.sh. Its single responsibility — adding .claude/watchtower_inbox/
+# to .gitignore — is now part of the _ensure_gitignore_entries entry list
+# in lib/common.sh. Call the survivor directly with PROJECT_DIR so the
+# startup cleanup keeps the same idempotent behavior.
+_ensure_gitignore_entries "${PROJECT_DIR}"
 
 # --- UI framework detection (Milestone 28) -----------------------------------
 # Runs at startup to populate UI_PROJECT_DETECTED, UI_FRAMEWORK, UI_TEST_CMD.
