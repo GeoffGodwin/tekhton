@@ -10,20 +10,33 @@ CSS_LIVE="$TEKHTON_HOME/.claude/dashboard/style.css"
 
 pass() { echo "✓ $1"; }
 fail() { echo "✗ $1"; }
+skip() { echo "↷ $1"; }
 
-# Test 1: Both CSS files exist
+# The live dashboard directory (.claude/dashboard/) is gitignored and only
+# exists after a tekhton run populates it via _copy_static_files (lib/dashboard.sh).
+# Live-comparison checks are skipped in fresh checkouts where it isn't present.
+LIVE_AVAILABLE=0
+if [[ -f "$CSS_LIVE" ]]; then
+  LIVE_AVAILABLE=1
+fi
+
+# Test 1: Template CSS exists (live is optional — auto-copied at runtime)
 test_css_files_exist() {
-  if [[ -f "$CSS_TEMPLATE" && -f "$CSS_LIVE" ]]; then
-    pass "Both CSS files exist"
+  if [[ -f "$CSS_TEMPLATE" ]]; then
+    pass "Template CSS exists"
     return 0
   else
-    fail "CSS files missing (template: $([[ -f "$CSS_TEMPLATE" ]] && echo exist || echo missing), live: $([[ -f "$CSS_LIVE" ]] && echo exist || echo missing))"
+    fail "Template CSS missing: $CSS_TEMPLATE"
     return 1
   fi
 }
 
-# Test 2: CSS files are identical
+# Test 2: CSS files are identical (skipped when live not generated yet)
 test_css_files_identical() {
+  if [[ "$LIVE_AVAILABLE" -eq 0 ]]; then
+    skip "CSS sync check (live dashboard not generated)"
+    return 0
+  fi
   if diff -q "$CSS_TEMPLATE" "$CSS_LIVE" > /dev/null 2>&1; then
     pass "CSS files are identical"
     return 0
@@ -44,8 +57,12 @@ test_template_has_base_font_size() {
   fi
 }
 
-# Test 4: Live CSS has updated base font-size
+# Test 4: Live CSS has updated base font-size (skipped when live not generated yet)
 test_live_has_base_font_size() {
+  if [[ "$LIVE_AVAILABLE" -eq 0 ]]; then
+    skip "Live CSS font-size check (live dashboard not generated)"
+    return 0
+  fi
   if grep -q '^html\s*{\s*font-size:\s*15px' "$CSS_LIVE"; then
     pass "Live CSS has 15px base font-size"
     return 0
@@ -55,8 +72,12 @@ test_live_has_base_font_size() {
   fi
 }
 
-# Test 5: Both CSS files have same line count
+# Test 5: Both CSS files have same line count (skipped when live not generated yet)
 test_css_same_line_count() {
+  if [[ "$LIVE_AVAILABLE" -eq 0 ]]; then
+    skip "Line count comparison (live dashboard not generated)"
+    return 0
+  fi
   local template_lines
   local live_lines
 
@@ -74,7 +95,15 @@ test_css_same_line_count() {
 
 # Test 6: CSS files have no binary content
 test_css_text_files() {
-  if file "$CSS_TEMPLATE" | grep -q "text" && file "$CSS_LIVE" | grep -q "text"; then
+  local template_ok=0
+  local live_ok=1
+  file "$CSS_TEMPLATE" | grep -q "text" && template_ok=1
+  if [[ "$LIVE_AVAILABLE" -eq 1 ]]; then
+    live_ok=0
+    file "$CSS_LIVE" | grep -q "text" && live_ok=1
+  fi
+
+  if [[ "$template_ok" -eq 1 && "$live_ok" -eq 1 ]]; then
     pass "CSS files are valid text files"
     return 0
   else
