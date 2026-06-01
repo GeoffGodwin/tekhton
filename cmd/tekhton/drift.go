@@ -380,10 +380,57 @@ func humanActionPath(projectDir string) string {
 func newDriftHumanActionCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "human-action",
-		Short: "Manage HUMAN_ACTION_REQUIRED.md (append/count)",
+		Short: "Manage HUMAN_ACTION_REQUIRED.md (append/count/consolidate-legacy)",
 	}
 	c.AddCommand(newDriftHumanActionAppendCmd())
 	c.AddCommand(newDriftHumanActionCountCmd())
+	c.AddCommand(newDriftHumanActionConsolidateLegacyCmd())
+	return c
+}
+
+// newDriftHumanActionConsolidateLegacyCmd exposes
+// HumanAction.ConsolidateLegacy via the CLI. The bash entry point
+// `consolidate_legacy_human_action` lived in lib/drift_artifacts.sh
+// and was deleted by m25; tekhton-legacy.sh:2271 still calls it during
+// startup cleanup to fold a stale root-level HUMAN_ACTION_REQUIRED.md
+// into the canonical .tekhton/ path. Without this shim the legacy
+// startup path fails with "command not found" on any project where
+// the legacy file exists or m25 ran without a clean rebuild.
+//
+// Default --legacy-path is the workspace root sibling of the
+// canonical path, matching the pre-m25 behavior. Prints the merged
+// item count to stdout (0 on no-op).
+func newDriftHumanActionConsolidateLegacyCmd() *cobra.Command {
+	var (
+		projectDir string
+		legacyPath string
+	)
+	c := &cobra.Command{
+		Use:   "consolidate-legacy",
+		Short: "Merge a legacy HUMAN_ACTION_REQUIRED.md into the canonical path",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			canonical := humanActionPath(projectDir)
+			if legacyPath == "" {
+				// Default: the root-of-project sibling, used pre-m25
+				// when HUMAN_ACTION_FILE lived at PROJECT_DIR root
+				// rather than under .tekhton/.
+				pd := projectDir
+				if pd == "" {
+					pd, _ = os.Getwd()
+				}
+				legacyPath = filepath.Join(pd, "HUMAN_ACTION_REQUIRED.md")
+			}
+			h := drift.NewHumanAction(canonical)
+			merged, err := h.ConsolidateLegacy(legacyPath)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%d\n", merged)
+			return nil
+		},
+	}
+	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
+	c.Flags().StringVar(&legacyPath, "legacy-path", "", "legacy file path (defaults to PROJECT_DIR/HUMAN_ACTION_REQUIRED.md)")
 	return c
 }
 

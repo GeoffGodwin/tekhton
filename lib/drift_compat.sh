@@ -65,3 +65,30 @@ count_open_nonblocking_notes() {
     fi
     echo "$_count"
 }
+
+# consolidate_legacy_human_action — fold a stale root-level
+# HUMAN_ACTION_REQUIRED.md into the canonical .tekhton/ location.
+# Pre-m25 this was a multi-step awk/sed routine in lib/drift_artifacts.sh;
+# post-m25 the same logic lives in internal/drift/artifacts.go::
+# (*HumanAction).ConsolidateLegacy and is exposed as
+# `tekhton drift human-action consolidate-legacy`.
+#
+# Called by tekhton-legacy.sh:2271 during startup cleanup BEFORE any
+# agent runs. The legacy file may not exist (most projects), in which
+# case the Go side returns 0 with no error — we just swallow stdout
+# and continue. Defensive on missing binary so a `--fix nb` invocation
+# on a brownfield project without the binary on PATH still proceeds
+# (the legacy file merge is best-effort, not load-bearing).
+consolidate_legacy_human_action() {
+    local _bin="${TEKHTON_BIN:-}"
+    if [[ -z "$_bin" ]]; then
+        if command -v tekhton >/dev/null 2>&1; then
+            _bin=$(command -v tekhton)
+        else
+            return 0
+        fi
+    fi
+    local _proj="${PROJECT_DIR:-$PWD}"
+    "$_bin" drift human-action consolidate-legacy \
+        --project-dir "$_proj" >/dev/null 2>&1 || true
+}
