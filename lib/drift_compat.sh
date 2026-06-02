@@ -149,6 +149,23 @@ clear_resolved_drift_observations() {
 # Called by tekhton-legacy.sh:1721, :2101, :2934 and lib/finalize_display.sh:96.
 # Echoes a numeric count; defensive fallback to 0 when the binary is missing
 # or returns garbage, matching the pre-m25 behavior on an empty/absent file.
+# get_open_nonblocking_notes — echo the full body of every unchecked
+# (- [ ]) item under the ## Open section of NON_BLOCKING_LOG.md, one
+# entry per line. Pre-m25 this was a bash awk pipeline in
+# lib/drift_cleanup.sh; post-m25 the logic lives in
+# internal/drift/nonblocking.go::(*NonBlocking).GetOpen and is exposed
+# as `tekhton drift nonblocking list`. Called by stages/coder.sh:572
+# during --fix-nonblockers runs to build the agent's note-context block.
+# Defensive: missing binary or unparseable output → empty (the caller
+# treats empty as "no notes" which is the safe fallback).
+get_open_nonblocking_notes() {
+    local _bin
+    _bin=$(_drift_compat_resolve_bin) || true
+    [[ -z "$_bin" ]] && return 0
+    "$_bin" drift nonblocking list \
+        --project-dir "${PROJECT_DIR:-$PWD}" 2>/dev/null || true
+}
+
 count_drift_observations() {
     local _bin
     _bin=$(_drift_compat_resolve_bin) || true

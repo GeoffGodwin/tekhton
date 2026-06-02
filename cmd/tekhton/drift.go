@@ -63,11 +63,40 @@ func nonBlockingPath(projectDir string) string {
 func newDriftNonblockingCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "nonblocking",
-		Short: "Manage NON_BLOCKING_LOG.md (count, clear-completed, clear-resolved)",
+		Short: "Manage NON_BLOCKING_LOG.md (count, list, clear-completed, clear-resolved)",
 	}
 	c.AddCommand(newDriftNonblockingCountCmd())
+	c.AddCommand(newDriftNonblockingListCmd())
 	c.AddCommand(newDriftNonblockingClearCompletedCmd())
 	c.AddCommand(newDriftNonblockingClearResolvedCmd())
+	return c
+}
+
+// newDriftNonblockingListCmd prints the body of every `- [ ]` entry
+// under the ## Open section, one entry per line. The bash entry point
+// `get_open_nonblocking_notes` (deleted with lib/drift_cleanup.sh in
+// m25) is still called by stages/coder.sh:572 during --fix-nonblockers
+// runs; without this shim that path silently injected an empty
+// note-list into the coder prompt, so the agent had no idea what
+// items to address. See the m25-orphan cascade in lib/drift_compat.sh.
+func newDriftNonblockingListCmd() *cobra.Command {
+	var projectDir string
+	c := &cobra.Command{
+		Use:   "list",
+		Short: "Print every `- [ ]` open entry from NON_BLOCKING_LOG.md",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			n := drift.NewNonBlocking(nonBlockingPath(projectDir))
+			entries, err := n.GetOpen()
+			if err != nil {
+				return err
+			}
+			for _, e := range entries {
+				fmt.Fprintln(cmd.OutOrStdout(), e)
+			}
+			return nil
+		},
+	}
+	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
 	return c
 }
 

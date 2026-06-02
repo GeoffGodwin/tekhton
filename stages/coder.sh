@@ -577,6 +577,13 @@ If your task specifies which items to address, follow the task scope exactly.
 Otherwise, address as many as your remaining turns allow. For each item you
 address, note the file and what you changed. Items you cannot reach are fine to skip.
 
+**When you address an item, edit ${NON_BLOCKING_LOG_FILE:-.tekhton/NON_BLOCKING_LOG.md}
+and change that item's marker from \`- [ ]\` to \`- [x]\` — leave the rest of
+the entry text alone. The pipeline's finalize hook moves ticked items into the
+Resolved section. A heuristic also marks items whose body names a file you
+modified, so missing a few ticks is recoverable — but explicit self-ticks are
+more reliable.**
+
 ${nb_notes}"
         log "Non-blocking notes (${nb_count}) injected into coder prompt (--fix-nonblockers mode)."
     elif [[ "$nb_count" -gt 0 ]]; then

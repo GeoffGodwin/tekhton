@@ -29,6 +29,13 @@ var hookOrder = []string{
 	"_hook_drift_artifacts",
 	"_hook_record_metrics",
 	"_hook_causal_log_finalize",
+	// m25 follow-up: re-instates the bash _resolve_addressed_nonblocking_notes
+	// pass that lib/drift_cleanup.sh used to own. Without it,
+	// `tekhton --fix nb` never transitions [ ] → [x] post-coder, so each
+	// pass net-adds notes (reviewer adds new ones; nothing resolves the
+	// addressed ones). MUST run before _hook_cleanup_resolved, which
+	// sweeps the [x] entries this hook produces.
+	"_hook_resolve_addressed_nonblocking",
 	"_hook_cleanup_resolved",
 	"_hook_resolve_notes",
 	// m25: clarify cleanup runs just before archive_reports so the
@@ -101,8 +108,9 @@ var goNativeHooks = map[string]func() Hook{
 	"_hook_express_persist":        func() Hook { return &ExpressPersist{} },
 	"_hook_note_acceptance":        func() Hook { return &NoteAcceptance{} },
 	"_hook_failure_context_reset":  func() Hook { return &FailureContextReset{} },
-	"_hook_cleanup_resolved":       func() Hook { return &CleanupResolved{} },
-	"_hook_resolve_notes":          func() Hook { return &ResolveNotes{} },
+	"_hook_resolve_addressed_nonblocking": func() Hook { return &ResolveAddressedNonblocking{} },
+	"_hook_cleanup_resolved":              func() Hook { return &CleanupResolved{} },
+	"_hook_resolve_notes":                 func() Hook { return &ResolveNotes{} },
 	// m25: drift subsystem ported to Go. The drift_artifacts hook
 	// runs pure-Go now; the new clarify_finalize hook clears stale
 	// CLARIFICATIONS.md on success. failure_context_reset already

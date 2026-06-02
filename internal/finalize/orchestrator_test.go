@@ -44,6 +44,7 @@ func TestHookOrder_MatchesBashRegistration(t *testing.T) {
 		"_hook_drift_artifacts",
 		"_hook_record_metrics",
 		"_hook_causal_log_finalize",
+		"_hook_resolve_addressed_nonblocking",
 		"_hook_cleanup_resolved",
 		"_hook_resolve_notes",
 		"_hook_clarify_finalize",
@@ -71,8 +72,8 @@ func TestHookOrder_MatchesBashRegistration(t *testing.T) {
 		"_hook_failure_context_reset",
 	}
 	got := HookOrder()
-	if len(got) != 27 {
-		t.Fatalf("expected 27 hooks in registry, got %d", len(got))
+	if len(got) != 28 {
+		t.Fatalf("expected 28 hooks in registry, got %d", len(got))
 	}
 	if len(got) != len(expected) {
 		t.Fatalf("expected %d hooks, got %d", len(expected), len(got))
@@ -138,12 +139,15 @@ func TestOrchestratorRun_ContinueOnError(t *testing.T) {
 }
 
 // TestNewOrchestrator_BuildsAll27Hooks asserts the production constructor
-// registers the canonical hook count — 26 in m21, bumped to 27 in m25
-// when _hook_clarify_finalize landed.
-func TestNewOrchestrator_BuildsAll27Hooks(t *testing.T) {
+// registers the canonical hook count — 26 in m21, 27 in m25 when
+// _hook_clarify_finalize landed, 28 after the m25-followup added
+// _hook_resolve_addressed_nonblocking (re-instates the bash
+// _resolve_addressed_nonblocking_notes pass that lib/drift_cleanup.sh
+// used to own; without it `tekhton --fix nb` is counterproductive).
+func TestNewOrchestrator_BuildsAll28Hooks(t *testing.T) {
 	o := NewOrchestrator("/tmp/tekhton", "/tmp/project")
-	if len(o.Hooks()) != 27 {
-		t.Errorf("NewOrchestrator must register 27 hooks; got %d", len(o.Hooks()))
+	if len(o.Hooks()) != 28 {
+		t.Errorf("NewOrchestrator must register 28 hooks; got %d", len(o.Hooks()))
 	}
 	gotNames := make([]string, 0, len(o.Hooks()))
 	for _, h := range o.Hooks() {
