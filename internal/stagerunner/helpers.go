@@ -1,15 +1,32 @@
 package stagerunner
 
-import "github.com/geoffgodwin/tekhton/internal/proto"
+import (
+	"context"
+
+	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/stages/docs"
+)
+
+// StageImpl is the entry-point signature every Go-native stage exports. The
+// dispatcher in BashAdapter.Run prefers a non-nil StageDef.GoImpl over the
+// bash Script path. Introduced in m34.1 alongside the docs-stage port; m35-m39
+// stage ports reuse the same signature.
+type StageImpl func(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResultV1, error)
 
 // StageDef describes how to invoke a single Tekhton stage. Helpers names the
 // lib/*.sh files (relative to TekhtonHome) the stage's run_stage_<name>
 // implementation calls into beyond DefaultLibHelpers. The BashAdapter sources
 // DefaultLibHelpers first, then any per-stage Helpers, then lib/stage_envelope.sh,
 // and finally Script before invoking run_stage_<name>.
+//
+// When GoImpl is non-nil (m34.1+), the dispatcher routes to it and skips the
+// bash sourcing chain entirely. Script remains set on ported stages as an
+// audit-trail signal — a missing-file delta from a Script that never resolves
+// is how future audit tooling sees "stage ported" at a glance.
 type StageDef struct {
 	Script  string
 	Helpers []string
+	GoImpl  StageImpl
 }
 
 // DefaultLibHelpers mirrors the global lib/*.sh source block in
@@ -42,6 +59,16 @@ var DefaultLibHelpers = []string{
 	// "command not found" on the M28.1 run) has the function visible
 	// before the stage script runs.
 	"lib/drift_compat.sh",
+	// gates_compat.sh restores `run_build_gate` + `run_completion_gate`
+	// — m31 ported lib/gates*.sh to internal/gates + internal/pipeline
+	// and exposed `tekhton gate build|completion`, but left six bash
+	// callsites (stages/coder_buildfix.sh, stages/architect.sh,
+	// stages/cleanup.sh, stages/review.sh, lib/milestone_acceptance.sh,
+	// lib/stage_envelope.sh) referencing the deleted functions. The
+	// orphan surfaced as a build-fix loop halting after 2 no-progress
+	// attempts on the m34.1 auto-advance run when the underlying code
+	// change was actually fine.
+	"lib/gates_compat.sh",
 	"lib/state.sh",
 	"lib/dry_run.sh",
 	"lib/quota.sh",
@@ -182,8 +209,12 @@ var DefaultStageDefs = map[string]StageDef{
 	proto.StageCleanup: {
 		Script: "stages/cleanup.sh",
 	},
+	// m34.1: docs is the first Go-native stage. Script stays set as an
+	// audit-trail signal (m34 parent Goal 5) — the dispatcher prefers
+	// GoImpl and never resolves the script path. Helpers is intentionally
+	// empty: lib/docs_agent.sh was deleted alongside the port.
 	proto.StageDocs: {
-		Script:  "stages/docs.sh",
-		Helpers: []string{"lib/docs_agent.sh"},
+		Script: "stages/docs.sh",
+		GoImpl: docs.RunStage,
 	},
 }

@@ -150,8 +150,48 @@ func TestDefaultStageDefsCoverage(t *testing.T) {
 			t.Errorf("DefaultStageDefs missing stage %q", s)
 			continue
 		}
-		if def.Script == "" {
-			t.Errorf("DefaultStageDefs[%q].Script is empty", s)
+		if def.Script == "" && def.GoImpl == nil {
+			t.Errorf("DefaultStageDefs[%q] has neither Script nor GoImpl set", s)
+		}
+	}
+}
+
+// TestDefaultStageDefs_NoDoubleWiredEntry asserts every entry carries at
+// least one wiring path. The dispatcher prefers GoImpl when both are set;
+// having both set is allowed (the Script field is kept on ported stages as
+// an audit-trail signal per m34.1's pattern doc), but having neither is a
+// misconfiguration that will trip ErrUnknownStage at runtime.
+func TestDefaultStageDefs_NoDoubleWiredEntry(t *testing.T) {
+	for name, def := range DefaultStageDefs {
+		if def.GoImpl == nil && def.Script == "" {
+			t.Fatalf("stage %q has neither GoImpl nor Script set", name)
+		}
+	}
+}
+
+// TestDefaultStageDefs_DocsHasGoImpl asserts the m34.1 wiring: the docs
+// stage is the first port and its DefaultStageDefs entry MUST carry a
+// non-nil GoImpl. Regressions here mean the dispatcher would fall through
+// to the (deleted) bash script.
+func TestDefaultStageDefs_DocsHasGoImpl(t *testing.T) {
+	def, ok := DefaultStageDefs[proto.StageDocs]
+	if !ok {
+		t.Fatalf("DefaultStageDefs missing docs entry")
+	}
+	if def.GoImpl == nil {
+		t.Fatalf("DefaultStageDefs[docs].GoImpl is nil — docs stage was ported in m34.1")
+	}
+}
+
+// TestDefaultStageDefs_DocsDropsBashHelper asserts the m34.1 cleanup: the
+// docs entry must not list lib/docs_agent.sh in Helpers (the file was
+// deleted in m34.1). Leaving a stale helper here would crash the adapter
+// the moment a future test forced the bash path.
+func TestDefaultStageDefs_DocsDropsBashHelper(t *testing.T) {
+	def := DefaultStageDefs[proto.StageDocs]
+	for _, h := range def.Helpers {
+		if h == "lib/docs_agent.sh" {
+			t.Fatalf("DefaultStageDefs[docs].Helpers still references lib/docs_agent.sh (deleted in m34.1)")
 		}
 	}
 }

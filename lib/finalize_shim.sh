@@ -106,6 +106,12 @@ case "$HOOK_NAME" in
         # crash trip lived inside the eval'd run_stage_coder wrapper).
         # shellcheck source=/dev/null
         source "${TEKHTON_HOME}/lib/drift_compat.sh"
+        # gates_compat.sh restores run_build_gate / run_completion_gate
+        # for milestone_acceptance.sh's post-finalize gate check (m31
+        # orphan caller — surfaced as a halt on the m34.1 auto-advance
+        # run because the build-fix loop couldn't tell pass from fail).
+        # shellcheck source=/dev/null
+        source "${TEKHTON_HOME}/lib/gates_compat.sh"
         _shim_load_finalize_bodies
         ;;
     # m25: _hook_drift_artifacts ported to Go

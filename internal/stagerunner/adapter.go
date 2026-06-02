@@ -102,10 +102,12 @@ func stageEntryFunc(stage string) string {
 }
 
 // stageDefFor returns the definition for a stage, falling back to
-// DefaultStageDefs when Stages is nil or missing the entry.
+// DefaultStageDefs when Stages is nil or missing the entry. An override is
+// considered valid when it carries either a Script path or a GoImpl entry
+// point (m34.1) — anything else is ignored so the default registry wins.
 func (a *BashAdapter) stageDefFor(stage string) (StageDef, bool) {
 	if a.Stages != nil {
-		if d, ok := a.Stages[stage]; ok && d.Script != "" {
+		if d, ok := a.Stages[stage]; ok && (d.Script != "" || d.GoImpl != nil) {
 			return d, true
 		}
 	}
@@ -113,6 +115,29 @@ func (a *BashAdapter) stageDefFor(stage string) (StageDef, bool) {
 		return d, true
 	}
 	return StageDef{}, false
+}
+
+// runGo dispatches to a Go-native stage. It honors the BashAdapter.Now hook so
+// tests can pin DurationSec; otherwise the stage's own duration (if set) is
+// preserved. Stamps the result envelope's proto tag and stage name so callers
+// of in-process stages see the same envelope shape as bash callers.
+func (a *BashAdapter) runGo(ctx context.Context, req *proto.StageRequestV1, def StageDef) (*proto.StageResultV1, error) {
+	now := a.Now
+	if now == nil {
+		now = time.Now
+	}
+	start := now()
+	res, err := def.GoImpl(ctx, req)
+	if res != nil {
+		if res.DurationSec == 0 {
+			res.DurationSec = int(now().Sub(start).Seconds())
+		}
+		if res.Stage == "" {
+			res.Stage = req.Stage
+		}
+		res.EnsureProto()
+	}
+	return res, err
 }
 
 // libHelpers returns the common base helper list. nil means use
@@ -148,6 +173,15 @@ func (a *BashAdapter) Run(ctx context.Context, req *proto.StageRequestV1) (*prot
 	if !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnknownStage, req.Stage)
 	}
+
+	// m34.1: Go-native dispatch wedge. When the stage has a Go entry point,
+	// skip the bash sourcing chain entirely. Behavior-preserving for every
+	// stage whose StageDef.GoImpl is nil (still every stage except docs as
+	// of m34.1).
+	if def.GoImpl != nil {
+		return a.runGo(ctx, req, def)
+	}
+
 	scriptPath := def.Script
 	if !filepath.IsAbs(scriptPath) {
 		scriptPath = filepath.Join(a.TekhtonHome, def.Script)

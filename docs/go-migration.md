@@ -672,3 +672,89 @@ matches a heuristic token still classify as non-blocking).
 
 The m21 closeout drift log entry is marked **resolved** with reference
 to this milestone (`m25 router fix`).
+
+## Stage-Port Pattern (m34)
+
+m34.1 ships the Go-native stage pattern that subsequent stage-port milestones
+(m34.2, m35-m39) inherit. This section is the implementer reference for
+those follow-ups.
+
+### `StageDef.GoImpl` dispatch precedence
+
+`internal/stagerunner.StageDef` carries two wiring fields:
+
+```go
+type StageDef struct {
+    Script  string     // bash entry point (stages/<name>.sh)
+    Helpers []string   // per-stage lib/*.sh sources
+    GoImpl  StageImpl  // m34.1: Go entry point — preferred when non-nil
+}
+```
+
+When `BashAdapter.Run` resolves a stage definition with `GoImpl != nil`, it
+short-circuits to `runGo(ctx, req, def)` and never sources a bash script.
+The bash sourcing chain (lib/common.sh → DefaultLibHelpers → per-stage
+Helpers → lib/stage_envelope.sh → Script) runs only when `GoImpl` is nil.
+
+The wedge is behavior-preserving: every existing stage's `GoImpl` is nil
+until that stage's port milestone lands, so the bash path keeps working
+for un-ported stages.
+
+### Per-stage package layout
+
+A ported stage lives in `internal/stages/<name>/`:
+
+```
+internal/stages/<name>/
+    stage.go         // RunStage entry point matching StageImpl signature
+    prepare.go       // Template variable preparation (port of _<name>_prepare_template_vars)
+    skip.go          // Gate/skip logic (port of the bash early-return checks)
+    stage_test.go    // Table tests for each gate
+    prepare_test.go  // Var-population tests against a fixture project
+    skip_test.go     // Gate decision tests
+    testdata/        // Fixture projects + golden envelopes
+```
+
+The shared colored-output helper `internal/stages/staglog` provides
+`Logger` (Header / Info / Warn / Success), matching the bash
+`log`/`warn`/`success`/`stage_header` API at parity-level granularity.
+The package is intentionally minimal — follow-up stages extend it when
+the need is concrete.
+
+### Bash-coexistence guarantees
+
+Even after a stage's `GoImpl` is wired, the entry's `Script` field stays
+set as an audit-trail signal. The dispatcher never resolves the path
+because `GoImpl` short-circuits first; the missing-file delta is how
+future tooling sees "stage ported" at a glance. A future m40-class
+cleanup milestone can null the `Script` fields once every stage has
+ported.
+
+Concretely for m34.1: `DefaultStageDefs[StageDocs]` carries
+`Script: "stages/docs.sh"` even though `stages/docs.sh` was deleted in
+the same commit that wired `GoImpl: docs.RunStage`. The `Helpers` slice
+IS dropped — leaving a stale `lib/docs_agent.sh` entry would crash any
+test that forced the bash path.
+
+### Parity-baseline-capture protocol
+
+Each stage-port milestone follows the same sequencing inside the
+milestone:
+
+1. **Land `StageDef.GoImpl` field + dispatch wedge first** (m34.1 only).
+2. **Land `internal/stages/<name>/` with `GoImpl` still nil.** Compile,
+   test, then wire.
+3. **Flip the dispatch** (`GoImpl: <name>.RunStage`). From this commit
+   the stage runs in Go.
+4. **Capture the v4-stage-port baseline tag** against a tree that still
+   has the bash files checked in. Used by the parity harness as the
+   bash reference.
+5. **Delete the bash files** in one commit; drop `Helpers` in the same
+   commit.
+6. **Wire the parity harness + wedge-audit + docs.** Bump VERSION last.
+
+`tests/test_stage_port_parity.sh` is the shared parity gate. Adding a
+new scenario in m34.2 / m35-m39 is a matter of dropping a fixture and a
+`(verdict, exit_reason)` expectation — the harness's normalization
+rules (duration zeroed, paths normalized, timestamps stripped) are
+stage-agnostic by design.

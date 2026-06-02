@@ -82,6 +82,19 @@ if [[ -d internal/diagnose/rules ]]; then
     unset _rules_regex_violations
 fi
 
+# m34.1 (Phase 5, stage-port arc): stages/docs.sh + lib/docs_agent.sh ported
+# to internal/stages/docs/. Re-introducing either file silently forks the
+# docs-stage contract and breaks the StageDef.GoImpl dispatch precedence the
+# m34 arc inherits.
+if [[ -f stages/docs.sh ]] || [[ -f lib/docs_agent.sh ]]; then
+    printf 'wedge-audit: m34.1 violation — docs stage was ported in m34.1:\n' >&2
+    [[ -f stages/docs.sh ]] && printf '  stages/docs.sh re-introduced\n' >&2
+    [[ -f lib/docs_agent.sh ]] && printf '  lib/docs_agent.sh re-introduced\n' >&2
+    printf 'The docs stage lives in internal/stages/docs/. Bash callers reach\n' >&2
+    printf 'it via the StageDef.GoImpl dispatch wedge in internal/stagerunner/.\n' >&2
+    companion_failures=$(( companion_failures + 1 ))
+fi
+
 if (( companion_failures > 0 )); then
     printf 'wedge-audit: %d companion-tool assertion(s) failed.\n' "$companion_failures" >&2
     exit 1

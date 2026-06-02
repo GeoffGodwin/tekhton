@@ -180,7 +180,10 @@ func TestDefaultStageDefsHelpersMatchLegacy(t *testing.T) {
 			"lib/test_audit_sampler.sh",
 		},
 		proto.StageCleanup: {},
-		proto.StageDocs:    {"lib/docs_agent.sh"},
+		// m34.1: docs stage ported to internal/stages/docs/; lib/docs_agent.sh
+		// deleted alongside it. The DefaultStageDefs entry no longer lists any
+		// bash helper because the Go path doesn't source one.
+		proto.StageDocs: {},
 	}
 
 	for stage, want := range wantHelpers {

@@ -273,6 +273,124 @@ func TestBashAdapterNilRequest(t *testing.T) {
 	}
 }
 
+// TestBashAdapter_Run_GoDispatch asserts the m34.1 dispatch wedge: when a
+// stage's StageDef carries a non-nil GoImpl, BashAdapter.Run invokes it and
+// never reaches the bash subprocess path. The recording GoImpl flips a flag
+// and the BashBin is a sentinel that would fail with ENOENT if the bash path
+// ran — so a successful pass result proves the wedge short-circuited.
+func TestBashAdapter_Run_GoDispatch(t *testing.T) {
+	called := false
+	gotStage := ""
+	a := &BashAdapter{
+		BashBin: "/nonexistent/bash",
+		Stages: map[string]StageDef{
+			proto.StageIntake: {
+				GoImpl: func(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResultV1, error) {
+					called = true
+					gotStage = req.Stage
+					return &proto.StageResultV1{
+						Proto:      proto.StageResultProtoV1,
+						Stage:      req.Stage,
+						Verdict:    proto.VerdictPass,
+						ExitReason: "ok",
+					}, nil
+				},
+			},
+		},
+	}
+	req := &proto.StageRequestV1{
+		Proto:      proto.StageRequestProtoV1,
+		Stage:      proto.StageIntake,
+		ResultFile: "/tmp/x",
+	}
+	res, err := a.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !called {
+		t.Fatal("GoImpl not invoked")
+	}
+	if gotStage != proto.StageIntake {
+		t.Fatalf("GoImpl saw stage=%q want %q", gotStage, proto.StageIntake)
+	}
+	if res.Verdict != proto.VerdictPass {
+		t.Fatalf("verdict=%q want pass", res.Verdict)
+	}
+	if res.Proto != proto.StageResultProtoV1 {
+		t.Fatalf("proto not stamped: %q", res.Proto)
+	}
+}
+
+// TestBashAdapter_Run_GoDispatch_NilResult asserts the wedge gracefully
+// handles a Go stage that returns (nil, err). The adapter must propagate the
+// error rather than dereferencing nil.
+func TestBashAdapter_Run_GoDispatch_NilResult(t *testing.T) {
+	wantErr := errors.New("go-stage-error")
+	a := &BashAdapter{
+		BashBin: "/nonexistent/bash",
+		Stages: map[string]StageDef{
+			proto.StageIntake: {
+				GoImpl: func(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResultV1, error) {
+					return nil, wantErr
+				},
+			},
+		},
+	}
+	req := &proto.StageRequestV1{
+		Proto:      proto.StageRequestProtoV1,
+		Stage:      proto.StageIntake,
+		ResultFile: "/tmp/x",
+	}
+	res, err := a.Run(context.Background(), req)
+	if err == nil || err.Error() != wantErr.Error() {
+		t.Fatalf("err=%v want %v", err, wantErr)
+	}
+	if res != nil {
+		t.Fatalf("expected nil result, got %+v", res)
+	}
+}
+
+// TestBashAdapter_Run_GoDispatch_StampsDuration asserts the wedge fills in
+// DurationSec when the Go stage left it zero, using the BashAdapter.Now hook
+// so the timing math is deterministic.
+func TestBashAdapter_Run_GoDispatch_StampsDuration(t *testing.T) {
+	t0 := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	calls := 0
+	a := &BashAdapter{
+		BashBin: "/nonexistent/bash",
+		Now: func() time.Time {
+			calls++
+			// First call (start) → t0; subsequent calls (end) → t0 + 7s.
+			if calls == 1 {
+				return t0
+			}
+			return t0.Add(7 * time.Second)
+		},
+		Stages: map[string]StageDef{
+			proto.StageIntake: {
+				GoImpl: func(ctx context.Context, req *proto.StageRequestV1) (*proto.StageResultV1, error) {
+					return &proto.StageResultV1{
+						Stage:   req.Stage,
+						Verdict: proto.VerdictPass,
+					}, nil
+				},
+			},
+		},
+	}
+	req := &proto.StageRequestV1{
+		Proto:      proto.StageRequestProtoV1,
+		Stage:      proto.StageIntake,
+		ResultFile: "/tmp/x",
+	}
+	res, err := a.Run(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.DurationSec != 7 {
+		t.Fatalf("DurationSec=%d want 7", res.DurationSec)
+	}
+}
+
 func TestStageDefForFallback(t *testing.T) {
 	a := &BashAdapter{}
 	if _, ok := a.stageDefFor(proto.StageCoder); !ok {

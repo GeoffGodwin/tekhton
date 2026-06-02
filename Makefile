@@ -99,4 +99,6 @@ dogfood: self-host ## Run the cutover gate: parity matrix + version lockstep + s
 	@bash scripts/audit-bash-env.sh
 	@printf '[dogfood] tests/test_stage_env_setu.sh (m27.3 set -u parity test)\n'
 	@bash tests/test_stage_env_setu.sh
+	@printf '[dogfood] tests/test_stage_port_parity.sh (m34.1 stage-port parity gate)\n'
+	@bash tests/test_stage_port_parity.sh
 	@printf '[dogfood] all gates green\n'

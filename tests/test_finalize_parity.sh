@@ -79,6 +79,15 @@ printf 'committed\n' > "${FIXTURE}/.tekhton/.commit_decision"
 # Run the orchestrator directly via the CLI. The 2026-05-27 prompt
 # removal means _hook_commit auto-commits by default — no env override
 # needed to escape the previous prompt-hang.
+#
+# Unset ANALYZE_CMD and TEST_CMD so the bash-shim _hook_final_checks skips
+# gracefully (it has an explicit guard: "no ANALYZE_CMD or TEST_CMD —
+# skipping"). Without this, a parent-pipeline env that has ANALYZE_CMD set
+# (e.g. "shellcheck tekhton.sh lib/*.sh stages/*.sh") causes the hook to
+# invoke shellcheck against the fixture dir, get a non-zero exit because
+# those files are absent, and then unconditionally spawn a Claude cleanup
+# agent — which blows the 60-second test timeout.
+unset ANALYZE_CMD TEST_CMD 2>/dev/null || true
 export TEKHTON_HOME PROJECT_DIR="$FIXTURE"
 "$TEKHTON_BIN" finalize \
     --exit-code 0 \

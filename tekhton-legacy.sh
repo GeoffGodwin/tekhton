@@ -870,6 +870,8 @@ source "${TEKHTON_HOME}/lib/agent.sh"
 source "${TEKHTON_HOME}/lib/run_summary_reconstruct.sh"
 # Provides count_open_nonblocking_notes shim for m25-orphan callers.
 source "${TEKHTON_HOME}/lib/drift_compat.sh"
+# Provides run_build_gate / run_completion_gate shims for m31-orphan callers.
+source "${TEKHTON_HOME}/lib/gates_compat.sh"
 source "${TEKHTON_HOME}/lib/state.sh"
 source "${TEKHTON_HOME}/lib/dry_run.sh"
 source "${TEKHTON_HOME}/lib/quota.sh"
@@ -1003,8 +1005,9 @@ source "${TEKHTON_HOME}/lib/intake_verdict_handlers.sh"
 source "${TEKHTON_HOME}/stages/intake.sh"
 source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
-source "${TEKHTON_HOME}/lib/docs_agent.sh"
-source "${TEKHTON_HOME}/stages/docs.sh"
+# m34.1: stages/docs.sh + lib/docs_agent.sh ported to internal/stages/docs/.
+# The Go-native docs stage runs via the GoImpl dispatch in stagerunner; there
+# are no bash residues to source here.
 source "${TEKHTON_HOME}/lib/security_helpers.sh"
 source "${TEKHTON_HOME}/stages/security.sh"
 source "${TEKHTON_HOME}/stages/review.sh"
