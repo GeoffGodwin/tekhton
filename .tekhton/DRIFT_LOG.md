@@ -3,12 +3,13 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 174
+- Runs since audit: 175
 =======
-- Runs since audit: 174
+- Runs since audit: 175
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-02 | "unknown"] `engine_test.go:264` â `mapFixturePath` in package `diagnose` is now a strict subset of the copy in `rules_test.go` (lacks `pipeline.conf` and `QUOTA_PAUSED` cases added for the version-mismatch and quota-exhausted fixtures). The two copies are diverged. If a future fixture requires a new file mapping, there are two places to update.
 - [2026-05-31 | "unknown"] `engine_test.go:264` â `mapFixturePath` in package `diagnose` is now a strict subset of the copy in `rules_test.go` (lacks `pipeline.conf` and `QUOTA_PAUSED` cases added for the version-mismatch and quota-exhausted fixtures). The two copies are diverged. If a future fixture requires a new file mapping, there are two places to update.
 - [2026-05-31 | "unknown"] `internal/diagnose/types.go`: `CausalEvents` and `ErrorEvents` fields are `string` (newline-joined) while the milestone design spec shows `[]string`. Works correctly with the bash adapter and the `grepLines`/`countLinesMatchingBoth` helpers, but m32.2 Go-native rules will need `strings.Split`. A field comment noting "newline-joined; split on \\n to iterate events" would prevent m32.2 confusion. Carry forward from cycle 1.
 - [2026-05-31 | "unknown"] `engine.go` `ReadContext`: the `c.CauseChain = ""` stub has no inline comment tying it to the missing `cause_chain_summary` port. Carry forward from cycle 1.

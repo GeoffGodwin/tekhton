@@ -1,281 +1,207 @@
 # Coder Summary
-
 ## Status: COMPLETE
 
 ## What Was Implemented
 
-Milestone **m32.2 — Diagnose Rules** (second of three children porting the
-diagnose subsystem). Replaces the m32.1-shipped `BashRuleAdapter` with a
-Go-native rule registry under `internal/diagnose/rules/`. Every rule that
-matches against pipeline failure context now runs in-process — no more
-bash exec-per-rule. The seam is unchanged (the `diagnose.Rule` /
-`diagnose.RuleProvider` interface m32.1 designed), so `Engine.Run` and
-`Engine.ReadContext` are untouched except for the read-side enrichment
-the rules need (see below).
+m34.1 — the docs stage port and the Go-native stage-port pattern that m34.2 +
+m35-m39 will inherit.
 
-### `internal/diagnose/rules/` additions (NEW package)
+1. **`StageImpl` type + `StageDef.GoImpl` dispatch wedge.** `internal/stagerunner/helpers.go`
+   gains a `StageImpl` type alias for the Go-native stage entry-point signature
+   (`func(context.Context, *proto.StageRequestV1) (*proto.StageResultV1, error)`)
+   and a `GoImpl StageImpl` field on `StageDef`. `internal/stagerunner/adapter.go::BashAdapter.Run`
+   short-circuits to a new `runGo` helper when `def.GoImpl != nil`; otherwise the
+   existing bash sourcing chain runs unchanged. `stageDefFor` was relaxed so
+   overrides with only `GoImpl` set (no `Script`) are accepted. Behavior-preserving
+   for every un-ported stage.
 
-- **`registry.go`** (74 lines) — `Registry` implements `diagnose.RuleProvider`;
-  the package-level `registry` slice is the priority-ordered list of 18 rule
-  structs mirroring `lib/diagnose_rules_registry.sh:DIAGNOSE_RULES`
-  byte-for-byte. `Rules()` returns a defensive copy so callers cannot mutate
-  the canonical priority order.
+2. **`internal/stages/staglog` helper.** ~100 LOC `Logger` interface +
+   `New(req) Logger` constructor providing `Header / Info / Warn / Success`.
+   Header emits the `[pos/count] StageName` format mandated by the m34.1
+   acceptance regex. m35-m39 reuse this; expansions stay minimal-first.
 
-- **`core.go`** (419 lines) — 8 rules ported from `lib/diagnose_rules.sh`:
-  `BuildFailure`, `MaxTurns` (both `MAX_TURNS_EXHAUSTED` and the M133
-  `MAX_TURNS_ENV_ROOT` cascading-symptom branch), `ReviewLoop`,
-  `SecurityHalt`, `IntakeClarity`, `QuotaExhausted`, `StuckLoop`, `Unknown`.
-  Plus the `containsUnchecked`, `bumpTurnLimit`, `atoiOr`, `tryAtoi`
-  helpers used by multiple rules.
+3. **`internal/stages/docs/` package.** First Go-native stage, ported from
+   `stages/docs.sh` (93 LOC bash) + `lib/docs_agent.sh` (153 LOC bash).
+   - `stage.go::RunStage` — entry point matching `StageImpl`. Walks the
+     three gates (disabled / skip-flag / no-public-surface-change) and
+     dispatches to a stubbable `AgentRunner` for the agent call. Never
+     returns `verdict=fail` (matches bash semantics where every branch
+     ends with `return 0`).
+   - `prepare.go::prepareTemplateVars` — port of `_docs_prepare_template_vars`.
+     Returns a map (no env-pollution) with `CODER_SUMMARY_CONTENT`,
+     `DOCS_GIT_DIFF_STAT`, `DOCS_SURFACE_SECTION`, plus the always-seeded
+     `DOCS_README_FILE / DOCS_DIRS / DOCS_AGENT_REPORT_FILE` defaults.
+   - `skip.go::shouldSkip` + helpers — port of `docs_agent_should_skip`
+     + `_docs_extract_doc_responsibilities` + `_docs_extract_public_surface`
+     + `_docs_changed_files_match_surface`. Glob `*` → Go `regexp` (bash
+     sed transform `s/\./\\./g; s/\*/.*/g` ported verbatim). Always seeds
+     `README.md`, `DOCS_README_FILE`, and `DOCS_DIRS` as default surface
+     patterns even when the CLAUDE.md section is empty.
 
-- **`extra.go`** (220 lines) — 5 rules from `lib/diagnose_rules_extra.sh`:
-  `MixedClassification` (intentionally low-confidence — the only LOW-conf
-  rule in the registry), `TurnExhaustion`, `SplitDepth`, `TransientError`,
-  `TestAuditFailure`. `lineMatchesVerdictNeedsWork` ports the
-  `grep -qi 'Verdict:.*NEEDS_WORK'` predicate.
+4. **Wired `docs.RunStage` into `DefaultStageDefs[StageDocs]`.** `Script: "stages/docs.sh"`
+   stays set as the audit-trail signal documented in m34's parent goal;
+   `Helpers` slice was dropped (lib/docs_agent.sh no longer exists).
+   `parity_test.go::TestDefaultStageDefsHelpersMatchLegacy` updated to expect
+   an empty Helpers slice for docs.
 
-- **`migration.go`** (135 lines) — 2 rules from
-  `lib/diagnose_rules_migration.sh`: `MigrationCrash` (LFC primary →
-  high; backup-dir + missing version pin → medium) and
-  `VersionMismatch` (medium confidence).
+5. **Deleted bash docs stage + helpers.** `stages/docs.sh`, `lib/docs_agent.sh`,
+   `tests/test_docs_agent_helpers.sh`, `tests/test_docs_agent_skip_path.sh`,
+   `tests/test_docs_agent_stage_smoke.sh` — all `git rm`'d. The two source
+   lines in `tekhton-legacy.sh` were replaced with a comment block explaining
+   the port. `tests/test_docs_agent_pipeline_order.sh` is preserved (it tests
+   `lib/pipeline_order.sh`, not the deleted files).
 
-- **`resilience.go`** (315 lines) — 2 rules from
-  `lib/diagnose_rules_resilience.sh`: `UIGateInteractiveReporter` (all
-  4 source paths preserved — `primary_signal` → high, `classification`
-  → high, raw-log evidence → medium, RUN_SUMMARY correlation → medium;
-  CI-guard detection branches the suggestion text exactly as the bash
-  rule does), `BuildFixExhausted` (RUN_SUMMARY build_fix_stats → infer
-  `## Attempt` count → secondary signal fallback; required-guard on
-  build-error artifact presence preserved). `extractJSONSection` ports
-  the bash awk `{f=1} f{print; if(/\}/){exit}}` snippet.
+6. **Wedge-audit hardening.** `scripts/wedge-audit-companions.sh` extended
+   to fail when either deleted file is re-introduced.
 
-- **`resilience_preflight.go`** (150 lines) — 1 rule from
-  `lib/diagnose_rules_resilience_preflight.sh`:
-  `PreflightInteractiveConfig`. All 3 source paths preserved (RUN_SUMMARY
-  preflight_ui section → PREFLIGHT_REPORT.md fail entry → LFC explicit
-  signal/classification).
+7. **Parity harness.** `tests/test_stage_port_parity.sh` (140 LOC) drives
+   `tekhton run-stage docs` against two scenarios — `docs-disabled` (env
+   gate fires) and `docs-no-surface` (public-surface check fires) — and
+   asserts `(verdict, exit_reason)` matches the bash baseline. Wired into
+   `make dogfood`. Designed to be extended by m34.2 + m35-m39 (drop a
+   fixture + an expectation, no harness change required).
 
-- **`helpers.go`** (132 lines) — Shared `taskOrFallback`,
-  `projectFileExists`, `projectFileNonEmpty`, `readProjectFile`,
-  `projectPath`, `envOr`, `containsLineMatching`, `countLinesMatching`,
-  `quoteTask` — pure helpers used by all rule files so per-rule code
-  reads as direct ports of the bash function bodies.
+8. **`docs/go-migration.md` pattern ADR.** New `## Stage-Port Pattern (m34)`
+   section documents the dispatch precedence, per-stage package layout,
+   bash-coexistence guarantees, and parity-baseline-capture protocol.
+   m35-m39 link to this instead of re-deriving.
 
-- **`version.go`** (81 lines) — `extractPipelineConfigVersion` (Go port
-  of bash `detect_config_version`'s slice we need), `majorMinor` (bash
-  `${TEKHTON_VERSION%.*}`), `versionLT` + `splitVersion` (component-wise
-  integer comparison, Go port of bash `_version_lt`).
-
-- **Test files** (~900 lines total):
-  - `registry_test.go` — order-mismatch parity test (hard-coded want
-    slice), 18-rule count assertion, defensive-copy test.
-  - `core_test.go` — per-rule match/no-match tables for the 7
-    deterministic core rules (Unknown gets a separate always-matches
-    test).
-  - `extra_test.go` — per-rule tables for the 5 extra rules
-    (`TestSplitDepth_Match` + `TestTestAuditFailure_Match` use
-    `t.Setenv` so they cannot `t.Parallel()`).
-  - `migration_test.go` — both branches of `MigrationCrash` (high /
-    medium / no-match) + `VersionMismatch` table.
-  - `resilience_test.go` — all 4 sources of UI-gate rule individually,
-    `.md`-self-trigger guard, all 3 sources of build-fix-exhausted +
-    the required artifact guard, 2 sources of preflight-config rule.
-  - `rules_test.go` — cross-rule priority assertions
-    (build-fix-exhausted beats build-failure; unknown is always last)
-    + the load-bearing 15-baseline parity test
-    `TestParity_AllFixtures` that replays every
-    `internal/diagnose/testdata/fixtures_v3/<scenario>/inputs/`
-    through `diagnose.NewEngine(rules.New())` and asserts
-    `Classification` / `Confidence` / `Stage` / `RuleName` match the
-    captured baseline.
-
-### `internal/diagnose/` modifications
-
-- **`types.go`** — Added 6 fields to `Context` so the rules can read what
-  bash reads from PIPELINE_STATE.md + RUN_SUMMARY.json: `Notes`,
-  `PipelineAttempt`, `AgentErrorCategory`, `AgentErrorSubcategory`,
-  `AgentErrorTransient`, `SplitDepth`. Updated the package doc comment
-  and `Rule` / `RuleProvider` interface doc comments to reflect the m32.2
-  cut-over (BashRuleAdapter is gone; `*rules.Registry` is the canonical
-  provider).
-
-- **`engine.go`** — Extended `ReadContext` to populate the 6 new Context
-  fields from `state.Read()` (first-class + `Extra` map) and
-  `RUN_SUMMARY.json` (`split_depth`). Updated the package doc comment.
-
-- **`engine_test.go`** — Removed the m32.1 `TestBashAdapterIntegration_MaxTurnsCoder`
-  (its coverage moved to `rules_test.go::TestParity_AllFixtures`, which
-  is broader: 15 fixtures, no bash subprocess).
-
-### `internal/errors/` additions
-
-- **`evidence.go`** (189 lines, NEW) — Match-evidence regexes + typed
-  helpers the diagnose rules consume. Distinct from `patterns.go`
-  (build-error classifier registry). Exposes: `MatchUIGateInteractiveHTML`,
-  `MatchHTMLReporterCIGuard`, `MatchPreflightReportFailWord`,
-  `ExtractRunSummary{PrimarySignal,RouteTaken,InteractiveDetected,
-  ReporterPatched,InteractiveConfigFile}`, `ExtractBuildFix{Outcome,Attempts}`,
-  `ExtractFailureCtx{Classification,MigrationFrom,MigrationTo}`,
-  `Match{FailureCtxMixedSignal,SummaryMixedPrimarySignal,
-  FailureCtxPreflightConfig,PipelineConfigVersionPin}`,
-  `CountBuildFixReportAttempts`, `LastBuildFixProgressLineNoProgress`,
-  `ScanFiles`. Lives in `internal/errors` per the m32.2 boundary so the
-  rule files stay free of `import "regexp"`.
-
-- **`scan.go`** (39 lines, NEW) — `scanFilesImpl` — regex-free recursive
-  walker (`filepath.WalkDir`) for the UI-gate rule's `.claude/logs/*.{log,jsonl}`
-  scan. Split from `evidence.go` so the evidence module stays a
-  regex-only file.
-
-### `cmd/tekhton/diagnose.go` modifications
-
-- **`newDiagnoseRunCmd`** — Wires `diagnose.NewEngine(rules.New())` in
-  place of the m32.1 `&diagnose.BashRuleAdapter{...}`. Updated doc
-  comment to reflect the cut-over.
-
-### Deletions
-
-- **`internal/diagnose/bash_rule_adapter.go`** — Replaced by
-  `*rules.Registry`.
-- **`internal/diagnose/bash_rule_adapter_test.go`** — Coverage moved to
-  `rules/rules_test.go` (broader: drives the full 15-fixture parity).
-
-### Acceptance gate additions
-
-- **`scripts/wedge-audit-companions.sh`** — Appended the m32.2
-  no-regexp-in-rules companion check: `grep -rl '"regexp"'
-  internal/diagnose/rules` must return empty. Fails the audit with a
-  remediation hint pointing at `internal/errors/evidence.go`.
-
-- **`tests/test_wedge_audit_rules.sh`** (NEW, 79 lines) — Regression
-  test that plants a `//go:build ignore`-tagged file with
-  `import "regexp"` inside `internal/diagnose/rules/`, runs
-  `wedge-audit.sh`, asserts non-zero exit + that the offending file
-  path appears in stderr, then cleans up and verifies the audit goes
-  green again. 3 assertions, all passing.
-
-### Fixture corrections (the m32.1 stubs needed alignment with bash logic)
-
-- **`build-fix-exhausted/inputs/BUILD_FIX_REPORT.md`** — Replaced the
-  free-form `Attempt 1: failed` text with the canonical `## Attempt`
-  heading shape the bash rule's source-2 path counts. Three attempts +
-  `- Progress signal: unchanged` so the rule infers `no_progress`.
-- **`ui-gate-interactive-reporter/inputs/LAST_FAILURE_CONTEXT.json`** —
-  Changed `primary_cause.signal` from the stub value
-  `playwright_html_reporter_hang` to the bash rule's source-1 value
-  `ui_timeout_interactive_report` so the rule fires at the high-confidence
-  source.
-- **`version-mismatch/inputs/pipeline.conf`** (NEW) — Added the
-  `TEKHTON_CONFIG_VERSION=3.0` pin the bash rule reads.
-- **`version-mismatch/expected/verdict.txt`** — Corrected `confidence=high`
-  → `confidence=medium` (the bash rule always emits medium — the original
-  stub was aspirational).
-- **`quota-exhausted/inputs/QUOTA_PAUSED`** (NEW, empty file) — Added
-  the marker file the bash rule's `[[ -f QUOTA_PAUSED ]]` predicate
-  requires.
-
-### Documentation
-
-- **`ARCHITECTURE.md`** — Replaced the m32.1 `BashRuleAdapter`
-  description in the `cmd/tekhton/diagnose.go` and `internal/diagnose/`
-  entries with the m32.2 `rules.New()` wiring + new Context fields.
-  Added a fresh entry for `internal/diagnose/rules/` (one paragraph
-  enumerating every rule file + the parity test) and
-  `internal/errors/evidence.go` (typed helpers + scan.go).
+9. **VERSION bumped to `4.34.0`.**
 
 ## Root Cause (bugs only)
-
-N/A — feature-port milestone.
+N/A — feature milestone, not a bug fix.
 
 ## Files Modified
 
-### Created (NEW)
-- `internal/diagnose/rules/registry.go` (NEW)
-- `internal/diagnose/rules/registry_test.go` (NEW)
-- `internal/diagnose/rules/core.go` (NEW)
-- `internal/diagnose/rules/core_test.go` (NEW)
-- `internal/diagnose/rules/extra.go` (NEW)
-- `internal/diagnose/rules/extra_test.go` (NEW)
-- `internal/diagnose/rules/migration.go` (NEW)
-- `internal/diagnose/rules/migration_test.go` (NEW)
-- `internal/diagnose/rules/resilience.go` (NEW)
-- `internal/diagnose/rules/resilience_preflight.go` (NEW)
-- `internal/diagnose/rules/resilience_test.go` (NEW)
-- `internal/diagnose/rules/helpers.go` (NEW)
-- `internal/diagnose/rules/version.go` (NEW)
-- `internal/diagnose/rules/rules_test.go` (NEW)
-- `internal/errors/evidence.go` (NEW)
-- `internal/errors/scan.go` (NEW)
-- `tests/test_wedge_audit_rules.sh` (NEW)
-- `internal/diagnose/testdata/fixtures_v3/version-mismatch/inputs/pipeline.conf` (NEW)
-- `internal/diagnose/testdata/fixtures_v3/quota-exhausted/inputs/QUOTA_PAUSED` (NEW)
+### Created
+- `internal/stages/docs/stage.go` (NEW) — RunStage entry point + agent-runner seam
+- `internal/stages/docs/stage_test.go` (NEW) — per-gate table tests + property "never fail" test
+- `internal/stages/docs/prepare.go` (NEW) — template variable preparation
+- `internal/stages/docs/prepare_test.go` (NEW) — var-population tests
+- `internal/stages/docs/skip.go` (NEW) — should-skip logic + helpers
+- `internal/stages/docs/skip_test.go` (NEW) — gate-decision tests
+- `internal/stages/staglog/staglog.go` (NEW) — shared colored-output Logger
+- `internal/stages/staglog/staglog_test.go` (NEW) — Header format + level prefix tests
+- `tests/test_stage_port_parity.sh` (NEW) — m34.1 parity gate (2 scenarios; extends in m34.2+)
 
 ### Modified
-- `internal/diagnose/types.go` — added 6 Context fields + updated package
-  & interface doc comments
-- `internal/diagnose/engine.go` — populate new Context fields in
-  ReadContext; updated package doc
-- `internal/diagnose/engine_test.go` — removed obsolete BashRuleAdapter
-  integration test
-- `cmd/tekhton/diagnose.go` — wire `rules.New()`; updated doc comment
-- `cmd/tekhton/diagnose_test.go` — updated obsolete comment
-- `scripts/wedge-audit-companions.sh` — appended m32.2 no-regexp-in-rules check
-- `internal/diagnose/testdata/fixtures_v3/build-fix-exhausted/inputs/BUILD_FIX_REPORT.md` — `## Attempt` headers
-- `internal/diagnose/testdata/fixtures_v3/ui-gate-interactive-reporter/inputs/LAST_FAILURE_CONTEXT.json` — canonical primary signal
-- `internal/diagnose/testdata/fixtures_v3/version-mismatch/expected/verdict.txt` — `confidence=medium`
-- `ARCHITECTURE.md` — updated diagnose entries + new rules/evidence entries
+- `internal/stagerunner/helpers.go` — added `StageImpl` type, `StageDef.GoImpl` field, wired `docs.RunStage`
+- `internal/stagerunner/helpers_test.go` — added `NoDoubleWiredEntry / DocsHasGoImpl / DocsDropsBashHelper` assertions
+- `internal/stagerunner/adapter.go` — added dispatch wedge + `runGo` helper, relaxed `stageDefFor`
+- `internal/stagerunner/adapter_test.go` — added `GoDispatch / NilResult / StampsDuration` cases
+- `internal/stagerunner/parity_test.go` — `wantHelpers[StageDocs]` is now empty
+- `tekhton-legacy.sh` — replaced docs source lines with port-explanation comment
+- `scripts/wedge-audit-companions.sh` — added m34.1 deleted-file regression gate
+- `Makefile` — wired `test_stage_port_parity.sh` into `dogfood`
+- `docs/go-migration.md` — appended `## Stage-Port Pattern (m34)` ADR section
+- `VERSION` — bumped to `4.34.0`
 
 ### Deleted
-- `internal/diagnose/bash_rule_adapter.go`
-- `internal/diagnose/bash_rule_adapter_test.go`
-
-## Test Results
-
-- `go test ./internal/diagnose/... ./internal/errors/... ./cmd/tekhton/...` PASS
-- `go test ./...` PASS (all 29 Go packages)
-- `go vet ./...` clean
-- `gofmt -l` clean for every file I created or modified
-- `shellcheck` clean on `tekhton.sh lib/*.sh stages/*.sh scripts/wedge-audit*.sh tests/test_wedge_audit_rules.sh`
-- `bash tests/run_tests.sh` — 503 shell PASS + Go PASS (was 502; +1 for
-  `test_wedge_audit_rules.sh`)
-- `bash scripts/wedge-audit.sh` — clean (192 files audited)
-- `bash scripts/audit-bash-env.sh` — clean
-- `bash tests/test_wedge_audit_rules.sh` — 3/3 PASS
-- 15-baseline parity test (`TestParity_AllFixtures`) — all 15 scenarios
-  match their `verdict.txt` baseline byte-for-byte
-- `grep -rln '"regexp"' internal/diagnose/rules/` — empty (m17 boundary
-  preserved)
-- `find internal/diagnose -name 'bash_rule_adapter*'` — empty
-  (BashRuleAdapter fully removed)
-- `find lib -name 'diagnose*.sh' -o -name 'remediation.sh' | wc -l` —
-  11 (no bash deletes — m32.3 owns those)
-
-### Note: pre-existing `make dogfood` failure
-
-`make dogfood` fails on `tests/test_stage_env_setu.sh` because stages
-source `lib/gates.sh`, which was deleted in m31.1. This failure
-pre-exists m32.2 — same failure reported by m32.1 and verifiable by
-checking out m32.1's tip. Out of scope for this milestone; recorded
-under `## Observed Issues (out of scope)` below.
-
-## Human Notes Status
-
-No human notes referenced for m32.2.
+- `stages/docs.sh` — ported to `internal/stages/docs/stage.go` + `prepare.go`
+- `lib/docs_agent.sh` — ported to `internal/stages/docs/skip.go`
+- `tests/test_docs_agent_helpers.sh` — superseded by `internal/stages/docs/skip_test.go`
+- `tests/test_docs_agent_skip_path.sh` — superseded by `internal/stages/docs/skip_test.go`
+- `tests/test_docs_agent_stage_smoke.sh` — superseded by `internal/stages/docs/stage_test.go`
 
 ## Docs Updated
 
-- `ARCHITECTURE.md` — updated `cmd/tekhton/diagnose.go` + `internal/diagnose/`
-  entries; added `internal/diagnose/rules/` + `internal/errors/evidence.go`
-  entries.
+- `docs/go-migration.md` — new `## Stage-Port Pattern (m34)` section
+  documenting the dispatch precedence + package layout for m35-m39.
 
-## Observed Issues (out of scope)
+`ARCHITECTURE.md` was not updated in this milestone; the architecture entries
+for `internal/stages/docs/`, `internal/stages/staglog/`, and the dispatch
+wedge will land alongside m34.2's closeout when the pattern is exercised by
+a second stage (avoids documenting a one-stage "pattern" that may evolve
+when the cleanup stage's port reveals new constraints). The Stage-Port
+Pattern ADR in `docs/go-migration.md` is the implementer reference for the
+interim.
 
-- `tests/test_stage_env_setu.sh` (driven by `make dogfood`) — every
-  stage (intake, coder, security, review, tester) fails its env-dump
-  step because it sources `lib/gates.sh`, which was deleted in m31.1.
-  Confirmed pre-existing — same failure shape as m32.1. Should be
-  resolved as a m31-arc follow-up before m32.3 bumps VERSION. The
-  source line is in the env-dump bash snippet inside
-  `tests/test_stage_env_setu.sh`; replacing the `source lib/gates.sh`
-  line with `source tekhton-legacy.sh` (which now owns the
-  `run_build_gate` shim) should fix it.
+## Human Notes Status
+
+No unchecked human notes for this run.
+
+## Test Results
+
+- **Go unit tests** — `go test ./...` all packages green; `internal/stages/docs`
+  reaches 90% statement coverage (acceptance gate is 75%).
+- **Shellcheck** — `shellcheck tekhton.sh lib/*.sh stages/*.sh` clean.
+- **`tests/test_stage_port_parity.sh`** — 2/2 scenarios pass.
+- **`tests/test_docs_agent_pipeline_order.sh`** — 19/19 pass (preserved test
+  on `lib/pipeline_order.sh`).
+- **Bash test suite** — see `tests/run_tests.sh` output; no new failures
+  introduced by m34.1 (the deleted docs tests are intentional retirements).
+
+## Build Fixes
+
+Build-fix re-entry on the `unknown_only` routing path (no recognized error
+signatures, no `BUILD_ERRORS.md` on disk). Reproduced every gate the
+build-fix loop would have run; all clean. No code changes were required.
+
+Second re-entry on the same `unknown_only` path (still no `BUILD_ERRORS.md`
+on disk, routing prompt embedded only the diagnostic stub). All gates
+re-run against the unchanged working tree — `go build ./...`, `go vet ./...`,
+`shellcheck tekhton.sh lib/*.sh stages/*.sh`, `go test ./...` (every package
+green including `internal/stages/docs`, `internal/stages/staglog`,
+`internal/stagerunner`, and the 36s `internal/supervisor` suite),
+`tests/test_stage_port_parity.sh` (2/2: `docs-disabled`, `docs-no-surface`),
+and `tests/test_finalize_parity.sh`. No changes made; m34.1 still ships as
+originally summarized.
+
+Gates re-run against the current working tree:
+
+- `go build ./...` — exit 0.
+- `go vet ./...` — exit 0.
+- `shellcheck tekhton.sh lib/*.sh stages/*.sh` — exit 0.
+- `go test ./...` — every package green, including the m34.1 additions
+  (`internal/stages/docs`, `internal/stages/staglog`) and the
+  `internal/stagerunner` dispatch wedge tests (`GoDispatch`, `NilResult`,
+  `StampsDuration`, `NoDoubleWiredEntry`, `DocsHasGoImpl`,
+  `DocsDropsBashHelper`).
+- `bash tests/test_stage_port_parity.sh` — 2/2 scenarios
+  (`docs-disabled`, `docs-no-surface`).
+- `bash tests/test_finalize_parity.sh` — green.
+- `bash tests/run_tests.sh` — full suite passes 501/0 shell + all Go.
+
+Routing observations:
+
+- `.tekhton/BUILD_ERRORS.md` does not exist on disk; the routing prompt's
+  embedded `BEGIN FILE CONTENT: BUILD_ERRORS` block carried only the
+  `unknown_only` diagnostic, not an error payload.
+- The stale `.tekhton/COMPLETION_GATE_LAST_FAILURE.log` artifact present
+  in `.tekhton/` is from 2026-05-31 (milestone 32.2,
+  `test_drift_prompts.sh` failure) and pre-dates the m34.1 work
+  reflected in this summary — it is not the failure that triggered this
+  re-entry.
+- `test_m29_milestone_conformance.sh` flaked once during reproduction
+  (failed in a full-suite run, then passed every subsequent run —
+  standalone, positional-override through `run_tests.sh`, and a second
+  full-suite run). It is a read-only conformance assertion against
+  `.claude/milestones/MANIFEST.cfg` + git history; the production
+  milestone directory state is correct (m29.1/m29.2 absent, MANIFEST
+  rows `done`), so any flake is upstream pollution from an earlier
+  test, not a code defect. Out of scope for this build-fix pass.
+
+m34.1 ships as previously summarized; no scope changes.
+
+## Verification Against m34.1 Acceptance Criteria
+
+Every acceptance criterion in the milestone definition is met:
+- `StageImpl` type declared ✓
+- `StageDef.GoImpl` field of type `StageImpl` ✓
+- `DefaultStageDefs[StageDocs].GoImpl` non-nil ✓
+- `Helpers` no longer contains `lib/docs_agent.sh` ✓
+- `BashAdapter.Run` dispatches to `def.GoImpl` and skips bash chain ✓
+- `internal/stages/docs/` compiles + vets clean ✓
+- All four skip/disabled/skip-flag/agent-failed paths return correct verdicts ✓
+- `RunStage` never returns `verdict=fail` ✓
+- `shouldSkip` returns false (run) when CLAUDE.md or section absent ✓
+- `extractPublicSurface` always seeds defaults ✓
+- `Logger.Header` matches `^\[\d+/\d+\] [A-Z][a-zA-Z]+$` ✓
+- `stages/docs.sh` and `lib/docs_agent.sh` do not exist on disk ✓
+- `tests/test_stage_port_parity.sh` passes both scenarios ✓
+- `make dogfood` includes `test_stage_port_parity` ✓
+- `scripts/wedge-audit.sh` exits 0 ✓
+- Go test coverage ≥ 75% on `internal/stages/docs/` (90% achieved) ✓
+- No remaining bash callers reference deleted helpers ✓
+- `docs/go-migration.md` has `## Stage-Port Pattern (m34)` section ✓
+- `VERSION` reads `4.34.0` ✓
