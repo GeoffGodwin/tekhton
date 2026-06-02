@@ -33,6 +33,34 @@ func newDriftCmd() *cobra.Command {
 	c.AddCommand(newDriftHumanActionCmd())
 	c.AddCommand(newDriftNonblockingCmd())
 	c.AddCommand(newDriftClearResolvedObservationsCmd())
+	c.AddCommand(newDriftResolvedEntriesCmd())
+	return c
+}
+
+// newDriftResolvedEntriesCmd exposes Log.GetResolved via the CLI. Bash
+// entry point `get_resolved_drift_observations` (deleted with
+// lib/drift_cleanup.sh in m25) is still referenced by lib/hooks.sh:248
+// when building the finalize commit-message banner. Without this shim
+// the banner silently drops the "drift items resolved (N)" line for
+// every run that resolved observations.
+func newDriftResolvedEntriesCmd() *cobra.Command {
+	var projectDir string
+	c := &cobra.Command{
+		Use:   "resolved-entries",
+		Short: "Print every entry under the ## Resolved section of DRIFT_LOG.md",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			l := drift.NewLog(driftLogPath(projectDir))
+			entries, err := l.GetResolved()
+			if err != nil {
+				return err
+			}
+			for _, e := range entries {
+				fmt.Fprintln(cmd.OutOrStdout(), e)
+			}
+			return nil
+		},
+	}
+	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
 	return c
 }
 

@@ -185,3 +185,77 @@ count_drift_observations() {
     fi
     echo "$_count"
 }
+
+# _drift_compat_audit_status_field FIELD
+# Internal helper: runs `tekhton drift audit-status` with the current
+# DRIFT_OBSERVATION_THRESHOLD / DRIFT_RUNS_SINCE_AUDIT_THRESHOLD, then
+# extracts the requested JSON field by line-matching (no jq dependency).
+# The Go encoder emits one indented key:value per line, so a simple
+# grep + sed is sufficient. Echoes the field value verbatim; empty on
+# any failure path.
+_drift_compat_audit_status_field() {
+    local field="$1"
+    local _bin
+    _bin=$(_drift_compat_resolve_bin) || true
+    [[ -z "$_bin" ]] && return 0
+    local _obs_thr="${DRIFT_OBSERVATION_THRESHOLD:-8}"
+    local _runs_thr="${DRIFT_RUNS_SINCE_AUDIT_THRESHOLD:-5}"
+    local _out
+    _out=$("$_bin" drift audit-status \
+        --project-dir "${PROJECT_DIR:-$PWD}" \
+        --obs-threshold "$_obs_thr" \
+        --runs-threshold "$_runs_thr" 2>/dev/null) || return 0
+    # Lines look like:    "should_trigger_audit": true,
+    # or                  "runs_since_audit": 3,
+    printf '%s\n' "$_out" \
+        | grep -F "\"${field}\":" \
+        | head -1 \
+        | sed -E 's/.*:\s*//;s/,\s*$//;s/^"//;s/"$//' \
+        | tr -d '[:space:]'
+}
+
+# should_trigger_audit — Returns 0 (true) when either the unresolved
+# observation count or the runs-since-audit counter is at/above its
+# configured threshold. Pre-m25 this was a bash function in
+# lib/drift_artifacts.sh; post-m25 the logic lives in
+# internal/drift/observe.go::(*Log).ShouldTriggerAudit and is exposed
+# as the boolean field on `tekhton drift audit-status`.
+#
+# Called by tekhton-legacy.sh:2446 in the pre-coder architect-trigger
+# block: `if [ "$FORCE_AUDIT" = true ] || should_trigger_audit; then`.
+# Without this shim the architect never auto-triggers from drift
+# thresholds in normal runs — only forced runs (--force-audit, --fix
+# drift) reach the architect, so observations accumulate untouched.
+should_trigger_audit() {
+    local _v
+    _v=$(_drift_compat_audit_status_field should_trigger_audit)
+    [[ "$_v" == "true" ]]
+}
+
+# get_runs_since_audit — Echoes the integer runs-since-audit counter
+# stored in DRIFT_LOG.md's HTML metadata comment. Pre-m25 lived in
+# lib/drift_artifacts.sh; post-m25 the logic is in
+# internal/drift/observe.go::(*Log).GetRunsSinceAudit. Defensive
+# fallback to 0 when the binary or counter is unavailable.
+get_runs_since_audit() {
+    local _v
+    _v=$(_drift_compat_audit_status_field runs_since_audit)
+    [[ "$_v" =~ ^[0-9]+$ ]] || _v=0
+    echo "$_v"
+}
+
+# get_resolved_drift_observations — Prints every entry under DRIFT_LOG.md's
+# ## Resolved section, one entry per line. Pre-m25 was an awk pipeline
+# in lib/drift_artifacts.sh; post-m25 ports to
+# internal/drift/observe.go::(*Log).GetResolved and is exposed as
+# `tekhton drift resolved-entries`. Used by lib/hooks.sh:248 when
+# building the finalize commit-message banner. Best-effort: missing
+# binary → empty output, the caller treats empty as "no resolved
+# items to mention."
+get_resolved_drift_observations() {
+    local _bin
+    _bin=$(_drift_compat_resolve_bin) || true
+    [[ -z "$_bin" ]] && return 0
+    "$_bin" drift resolved-entries \
+        --project-dir "${PROJECT_DIR:-$PWD}" 2>/dev/null || true
+}
