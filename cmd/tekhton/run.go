@@ -113,7 +113,7 @@ func newRunCmd() *cobra.Command {
 
 	c.Flags().StringVar(&taskFlag, "task", "", "free-form task description")
 	c.Flags().BoolVar(&completeFlag, "complete", false, "run in autonomous --complete mode")
-	c.Flags().BoolVar(&resumeFlag, "resume", false, "resume from PIPELINE_STATE.json")
+	c.Flags().BoolVar(&resumeFlag, "resume", false, "resume from $PIPELINE_STATE_FILE (default .claude/PIPELINE_STATE.md)")
 	c.Flags().BoolVar(&humanFlag, "human", false, "run in --human mode (HUMAN_NOTES.md driven)")
 	c.Flags().StringVar(&humanTagFlag, "human-tag", "", "optional tag filter for --human")
 	c.Flags().StringVar(&milestoneFlag, "milestone", "", "specific milestone id to run")
@@ -239,7 +239,24 @@ func buildRunner(req *proto.RunRequestV1, analyzeCmd, compileCmd, testCmd string
 		return nil, func() {}, err
 	}
 
-	statePath := filepath.Join(req.ProjectDir, ".claude", "PIPELINE_STATE.json")
+	// Resolve PIPELINE_STATE_FILE the same way every other config file
+	// resolves: env override → canonical default. The canonical default
+	// in internal/config/defaults.go is `.claude/PIPELINE_STATE.md` (the
+	// bash-era extension; the file content is JSON but bash writes .md).
+	// Earlier this path hardcoded `.json` which silently mismatched the
+	// bash writer — `tekhton --resume` then failed with "no state file"
+	// because the saved file was under .md but the runner looked for
+	// .json. Honoring the env contract closes the gap.
+	stateOverride := os.Getenv("PIPELINE_STATE_FILE")
+	if stateOverride == "" {
+		stateOverride = filepath.Join(".claude", "PIPELINE_STATE.md")
+	}
+	var statePath string
+	if filepath.IsAbs(stateOverride) {
+		statePath = stateOverride
+	} else {
+		statePath = filepath.Join(req.ProjectDir, stateOverride)
+	}
 	r := runner.New(pipe)
 	r.State = state.New(statePath)
 	r.ProjectDir = req.ProjectDir
