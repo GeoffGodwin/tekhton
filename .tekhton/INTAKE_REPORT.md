@@ -2,16 +2,15 @@
 PASS
 
 ## Confidence
-90
+95
 
 ## Reasoning
-- Scope is precisely defined: 7 files to create, 2 to delete, 4 to modify — all named explicitly
-- Rule-to-file mapping is enumerated (8+5+2+2+1 = 18), with all 18 rule types listed by name in the acceptance criteria
-- Acceptance criteria are machine-verifiable: grep commands, test function name patterns, and fixture replay with byte-for-byte diff
-- Priority ordering is specified (registry.go slice matches bash DIAGNOSE_RULES), and an order-mismatch test is prescribed
-- Watch For section resolves the one count ambiguity (extra.sh has 6 functions but 1 is a shared helper → 5 rules, not 6 — the Overview section says "6 rules" but Files Modified and Watch For are authoritative)
-- The inline "wait no" deliberation artifact in the resilience.go design sketch is self-resolving: the canonical decision is stated immediately after, and Watch For reinforces it
-- Design code sketches for registry wiring, the rule impl pattern, the resilience rule, and the wedge-audit extension are concrete enough that two developers would converge on the same implementation
-- Depends-on (m32.1) is declared; the Go types it needs (Context, Confidence constants, NewEngine, RuleProvider, BashRuleAdapter) are established prior art
-- No user-facing config changes, no migration impact section needed
-- No UI components; UI testability criterion not applicable
+- Scope is precisely bounded: every file to create, modify, or delete is listed in the "Files Modified" table with change type and description
+- Acceptance criteria are highly specific and self-verifying — each has an explicit grep command, test function name, or shell invocation that confirms the criterion
+- The six-step sequencing plan (land field → compile package → flip dispatch → tag baseline → delete bash → wire harness) eliminates ambiguity about work order and commit boundaries
+- Translation table maps every bash function to its Go port location with line references, so two developers independently implementing this would produce structurally equivalent results
+- The "Watch For" section covers every non-obvious risk: double-wired StageDef misconfiguration, best-effort semantics preservation, Helpers slice cleanup timing, Script field retention rationale, promptsDir resolution via env fallback
+- Dependencies are explicit (m18 for StageDef/BashAdapter, m22 for internal/<subsystem>/ pattern, m33 as baseline) and the assumptions about existing packages (supervisor, prompt, env) are reasonable given the stated dependency chain
+- No UI components involved — UI testability criterion not applicable
+- The "best-effort" semantics constraint (never VerdictFail) is both documented and asserted by a dedicated property-style test, which is the right level of rigor for a behavioral invariant that must survive future refactors
+- Minor observation only (not blocking): there is no explicit "Migration Impact" section for operators who directly source stages/docs.sh or lib/docs_agent.sh outside the pipeline. The wedge-audit extension mitigates re-introduction risk, and the default DOCS_AGENT_ENABLED=false means zero production traffic on day one, making the practical blast radius negligible. The Watch For section covers the deletion mechanics sufficiently for implementers.
