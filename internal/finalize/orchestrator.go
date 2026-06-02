@@ -36,6 +36,12 @@ var hookOrder = []string{
 	// addressed ones). MUST run before _hook_cleanup_resolved, which
 	// sweeps the [x] entries this hook produces.
 	"_hook_resolve_addressed_nonblocking",
+	// Drift parallel to the nonblocking hook above: ticks `[ ]` → `[x]`
+	// on drift observations whose body names a coder-modified file, then
+	// sweeps every `- [x]` entry into the Resolved section. Lets the
+	// drift log carry the same checkbox semantics as NON_BLOCKING_LOG.md
+	// (architect or coder can self-tick; this hook catches misses).
+	"_hook_resolve_addressed_drift",
 	"_hook_cleanup_resolved",
 	"_hook_resolve_notes",
 	// m25: clarify cleanup runs just before archive_reports so the
@@ -109,6 +115,7 @@ var goNativeHooks = map[string]func() Hook{
 	"_hook_note_acceptance":        func() Hook { return &NoteAcceptance{} },
 	"_hook_failure_context_reset":  func() Hook { return &FailureContextReset{} },
 	"_hook_resolve_addressed_nonblocking": func() Hook { return &ResolveAddressedNonblocking{} },
+	"_hook_resolve_addressed_drift":       func() Hook { return &ResolveAddressedDrift{} },
 	"_hook_cleanup_resolved":              func() Hook { return &CleanupResolved{} },
 	"_hook_resolve_notes":                 func() Hook { return &ResolveNotes{} },
 	// m25: drift subsystem ported to Go. The drift_artifacts hook

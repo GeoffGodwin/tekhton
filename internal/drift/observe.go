@@ -100,7 +100,7 @@ func (l *Log) AppendObservations(task string, raw string) error {
 	date := l.dateTag()
 	lines := make([]string, 0, len(entries))
 	for _, e := range entries {
-		lines = append(lines, fmt.Sprintf(`- [%s | "%s"] %s`, date, task, e))
+		lines = append(lines, fmt.Sprintf(`- [ ] [%s | "%s"] %s`, date, task, e))
 	}
 	return l.insertAfter("## Unresolved Observations", lines)
 }
@@ -119,13 +119,18 @@ func (l *Log) AppendEntries(entries []string) error {
 	date := l.dateTag()
 	lines := make([]string, 0, len(entries))
 	for _, e := range entries {
-		lines = append(lines, fmt.Sprintf(`- [%s | "architect audit"] %s`, date, e))
+		lines = append(lines, fmt.Sprintf(`- [ ] [%s | "architect audit"] %s`, date, e))
 	}
 	return l.insertAfter("## Unresolved Observations", lines)
 }
 
-// CountUnresolved returns the number of unresolved observation
-// entries. Used by the audit threshold check.
+// CountUnresolved returns the number of unresolved observation entries.
+// Counts both new-format `- [ ] [date | "task"] body` entries and the
+// legacy pre-checkbox `- [date | "task"] body` form (entries that pre-
+// date the checkbox parity change land as "unresolved" until the next
+// agent-or-heuristic resolution pass ticks them). Explicitly excludes
+// `- [x]` (ticked, not yet swept) and `- [RESOLVED ...]` (legacy resolved
+// markers) so a half-resolved file doesn't double-count.
 func (l *Log) CountUnresolved() (int, error) {
 	content, err := os.ReadFile(l.Path)
 	if os.IsNotExist(err) {
@@ -144,67 +149,150 @@ func (l *Log) CountUnresolved() (int, error) {
 		if inSection && strings.HasPrefix(line, "## ") && !strings.HasPrefix(line, "### ") {
 			break
 		}
-		if inSection && strings.HasPrefix(line, "- [") {
+		if inSection && isUnresolvedEntry(line) {
 			count++
 		}
 	}
 	return count, nil
 }
 
-// ResolveObservations marks every unresolved entry whose body matches
-// any of the supplied substring patterns as resolved. Deduplicates
-// against the existing Resolved section so re-resolution of the same
-// observation doesn't accumulate duplicates.
-func (l *Log) ResolveObservations(patterns []string) error {
+// isUnresolvedEntry returns true when line is a markdown bullet that
+// represents an unresolved drift observation. Recognizes both the new
+// `- [ ]` checkbox form and the legacy `- [date | "task"]` form, while
+// excluding `- [x]` (ticked) and `- [RESOLVED ...]` (legacy resolved).
+func isUnresolvedEntry(line string) bool {
+	if !strings.HasPrefix(line, "- [") {
+		return false
+	}
+	// New-format unresolved: "- [ ] ..."
+	if strings.HasPrefix(line, "- [ ]") {
+		return true
+	}
+	// Ticked-but-not-yet-swept: skip ("- [x] ...")
+	if strings.HasPrefix(line, "- [x]") {
+		return false
+	}
+	// Legacy resolved marker: skip ("- [RESOLVED ...]")
+	if strings.HasPrefix(line, "- [RESOLVED") {
+		return false
+	}
+	// Anything else with `- [` prefix is legacy unresolved
+	// (e.g. "- [2026-06-01 | \"task\"] body").
+	return true
+}
+
+// isTickedEntry returns true when line is a markdown bullet with the
+// `[x]` ticked marker. Used by MoveTickedToResolved to find entries
+// to sweep.
+func isTickedEntry(line string) bool {
+	return strings.HasPrefix(line, "- [x]")
+}
+
+// ResolveObservations ticks every unresolved entry whose body matches
+// any of the supplied substring patterns by flipping its `[ ]` marker
+// to `[x]` in place. The sweep into the Resolved section happens
+// separately via MoveTickedToResolved (called by the finalize hook).
+// Legacy entries without a `[ ]` prefix get one inserted at tick time
+// so the new-format invariant holds for everything from this point
+// forward.
+func (l *Log) ResolveObservations(patterns []string) (int, error) {
 	if len(patterns) == 0 {
-		return nil
+		return 0, nil
 	}
 	if _, err := os.Stat(l.Path); os.IsNotExist(err) {
-		return nil
+		return 0, nil
 	} else if err != nil {
-		return err
+		return 0, err
 	}
-	matcher := func(line string) bool {
+	matcher := func(body string) bool {
 		for _, p := range patterns {
 			if p == "" {
 				continue
 			}
-			if matched, _ := regexp.MatchString(p, line); matched {
+			if matched, _ := regexp.MatchString(p, body); matched {
 				return true
 			}
 		}
 		return false
 	}
-	return l.moveResolved(matcher)
+	return l.tickObservations(matcher)
 }
 
-// ResolveAllObservations moves every unresolved entry to Resolved.
+// ResolveAllObservations ticks every unresolved entry to `[x]`.
 // Used by the architect audit when every observation has been
-// reviewed.
+// reviewed. The subsequent finalize sweep moves the ticked entries
+// into the Resolved section — the architect doesn't need to do that
+// work itself.
 func (l *Log) ResolveAllObservations() error {
 	if _, err := os.Stat(l.Path); os.IsNotExist(err) {
 		return nil
 	} else if err != nil {
 		return err
 	}
-	return l.moveResolved(func(string) bool { return true })
+	_, err := l.tickObservations(func(string) bool { return true })
+	return err
 }
 
-// moveResolved is the shared implementation. Walks the file once,
-// moves matching unresolved lines to the Resolved section, dedups
-// against existing resolved bodies, and writes the result atomically.
-func (l *Log) moveResolved(match func(string) bool) error {
+// ResolveByModifiedFiles is the heuristic that ticks `[x]` on any open
+// drift observation whose body mentions a file in modifiedFiles.
+// Mirrors NonBlocking.ResolveByModifiedFiles. Returns the count of
+// observations transitioned.
+func (l *Log) ResolveByModifiedFiles(modifiedFiles []string) (int, error) {
+	if len(modifiedFiles) == 0 {
+		return 0, nil
+	}
+	if _, err := os.Stat(l.Path); os.IsNotExist(err) {
+		return 0, nil
+	} else if err != nil {
+		return 0, err
+	}
+	// Build basenames for substring matching. The bash convention
+	// looks for full path mentions but the observation bodies often
+	// only reference the basename or short relative path; matching
+	// on basename is the most forgiving heuristic.
+	basenames := make([]string, 0, len(modifiedFiles))
+	for _, f := range modifiedFiles {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		basenames = append(basenames, f)
+		if b := lastSegment(f); b != "" && b != f {
+			basenames = append(basenames, b)
+		}
+	}
+	matcher := func(body string) bool {
+		for _, name := range basenames {
+			if strings.Contains(body, name) {
+				return true
+			}
+		}
+		return false
+	}
+	return l.tickObservations(matcher)
+}
+
+// MoveTickedToResolved moves every `- [x] ...` entry out of the
+// Unresolved Observations section and into the Resolved section,
+// preserving the body verbatim. Dedups against existing resolved
+// bodies. Returns the count of entries moved.
+func (l *Log) MoveTickedToResolved() (int, error) {
+	if _, err := os.Stat(l.Path); os.IsNotExist(err) {
+		return 0, nil
+	} else if err != nil {
+		return 0, err
+	}
 	content, err := os.ReadFile(l.Path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	lines := strings.Split(string(content), "\n")
 	existing := collectResolvedBodies(lines)
-	date := l.dateTag()
 
 	var out []string
 	var newlyResolved []string
 	inUnresolved := false
+	moved := 0
 	for _, line := range lines {
 		switch {
 		case strings.HasPrefix(line, "## Unresolved Observations"):
@@ -217,17 +305,100 @@ func (l *Log) moveResolved(match func(string) bool) error {
 				out = append(out, newlyResolved...)
 				newlyResolved = nil
 			}
-		case inUnresolved && strings.HasPrefix(line, "- [") && match(line):
-			stripped := stripBracketTag(line)
-			if !containsBody(existing, stripped) {
-				newlyResolved = append(newlyResolved, fmt.Sprintf("- [RESOLVED %s] %s", date, stripped))
-				existing = append(existing, stripped)
+		case inUnresolved && isTickedEntry(line):
+			body := strings.TrimSpace(strings.TrimPrefix(line, "- [x]"))
+			if !containsBody(existing, body) {
+				newlyResolved = append(newlyResolved, line)
+				existing = append(existing, body)
 			}
+			moved++
 		default:
 			out = append(out, line)
 		}
 	}
-	return writeFileAtomic(l.Path, strings.Join(out, "\n"))
+	if moved == 0 {
+		return 0, nil
+	}
+	return moved, writeFileAtomic(l.Path, strings.Join(out, "\n"))
+}
+
+// tickObservations is the shared implementation for the three
+// resolution entry points (ResolveObservations, ResolveAllObservations,
+// ResolveByModifiedFiles). For every unresolved entry where match(body)
+// returns true, the line gets a `[x]` marker. Legacy entries without
+// any checkbox marker get `[x]` inserted; new-format `[ ]` entries get
+// the `[ ]` flipped to `[x]`. Returns the count of entries ticked.
+func (l *Log) tickObservations(match func(body string) bool) (int, error) {
+	content, err := os.ReadFile(l.Path)
+	if err != nil {
+		return 0, err
+	}
+	lines := strings.Split(string(content), "\n")
+	inUnresolved := false
+	ticked := 0
+	for i, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "## Unresolved Observations"):
+			inUnresolved = true
+		case strings.HasPrefix(line, "## ") && !strings.HasPrefix(line, "### "):
+			inUnresolved = false
+		case inUnresolved && isUnresolvedEntry(line):
+			// Body for matching purposes: strip the leading `- [ ] `
+			// or `- [date | "task"] ` so the heuristic is matching
+			// the human text, not the metadata.
+			body := unresolvedBody(line)
+			if !match(body) {
+				continue
+			}
+			lines[i] = tickLine(line)
+			ticked++
+		}
+	}
+	if ticked == 0 {
+		return 0, nil
+	}
+	return ticked, writeFileAtomic(l.Path, strings.Join(lines, "\n"))
+}
+
+// unresolvedBody extracts the human-text body from an unresolved
+// drift-log line for matching purposes. Strips the leading bullet,
+// the `[ ]` (or legacy `[date | "task"]`) tag, and surrounding
+// whitespace.
+func unresolvedBody(line string) string {
+	if strings.HasPrefix(line, "- [ ]") {
+		rest := strings.TrimSpace(strings.TrimPrefix(line, "- [ ]"))
+		// New format may still carry a legacy-style `[date | "task"]`
+		// tag after the checkbox. Strip it so the body for matching
+		// is just the human text.
+		return stripBracketTag(rest)
+	}
+	// Legacy form: "- [date | \"task\"] body" — stripBracketTag drops
+	// the leading `- [...] ` tag and returns the body.
+	return stripBracketTag(line)
+}
+
+// tickLine produces the `[x]` form of an unresolved drift-log line.
+// `- [ ] foo`        → `- [x] foo`
+// `- [date|...] foo` → `- [x] [date|...] foo`
+func tickLine(line string) string {
+	if strings.HasPrefix(line, "- [ ]") {
+		return "- [x]" + strings.TrimPrefix(line, "- [ ]")
+	}
+	// Legacy entry: prepend `- [x] ` before the existing `[date|...]`
+	// tag. The tag-and-body remain intact so the entry is still
+	// machine-parseable.
+	rest := strings.TrimPrefix(line, "- ")
+	return "- [x] " + rest
+}
+
+// lastSegment returns the last `/`-delimited segment of path, or
+// path itself when there's no separator. Used to derive a basename
+// when the caller passes a full relative path.
+func lastSegment(path string) string {
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[i+1:]
+	}
+	return path
 }
 
 // GetRunsSinceAudit reads the metadata counter. Returns 0 when the

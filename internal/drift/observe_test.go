@@ -86,22 +86,36 @@ func TestLog_CountUnresolved(t *testing.T) {
 func TestLog_ResolveObservations(t *testing.T) {
 	l := tempLog(t)
 	_ = l.AppendObservations("t", "- alpha drift\n- beta concern\n- gamma issue")
-	// Resolve any entry mentioning "beta".
-	if err := l.ResolveObservations([]string{"beta"}); err != nil {
+	// Resolve any entry mentioning "beta". With the checkbox-parity
+	// change, ResolveObservations ticks `[ ]` → `[x]` in place; the
+	// physical sweep into Resolved happens via MoveTickedToResolved
+	// (called by the finalize hook in production).
+	if _, err := l.ResolveObservations([]string{"beta"}); err != nil {
 		t.Fatal(err)
 	}
 	body, _ := os.ReadFile(l.Path)
 	s := string(body)
-	// beta should have moved to Resolved section.
+	if !strings.Contains(s, "- [x] [2026-05-26 | \"t\"] beta concern") {
+		t.Errorf("beta not ticked in place:\n%s", s)
+	}
+	if !strings.Contains(s, "- [ ] [2026-05-26 | \"t\"] alpha drift") {
+		t.Errorf("alpha incorrectly ticked:\n%s", s)
+	}
+	// Now sweep — beta should land in Resolved.
+	if _, err := l.MoveTickedToResolved(); err != nil {
+		t.Fatal(err)
+	}
+	body, _ = os.ReadFile(l.Path)
+	s = string(body)
 	resolvedIdx := strings.Index(s, "## Resolved")
 	if resolvedIdx == -1 {
 		t.Fatal("Resolved section missing")
 	}
 	if !strings.Contains(s[resolvedIdx:], "beta concern") {
-		t.Errorf("beta not in Resolved:\n%s", s)
+		t.Errorf("beta not in Resolved after sweep:\n%s", s)
 	}
 	if strings.Contains(s[:resolvedIdx], "beta concern") {
-		t.Errorf("beta still in Unresolved:\n%s", s)
+		t.Errorf("beta still in Unresolved after sweep:\n%s", s)
 	}
 }
 
@@ -168,6 +182,10 @@ func TestLog_ClearResolved(t *testing.T) {
 	l := tempLog(t)
 	_ = l.AppendObservations("t", "- alpha\n- beta")
 	_ = l.ResolveAllObservations()
+	// Sweep ticked entries into Resolved (the finalize-hook flow).
+	if _, err := l.MoveTickedToResolved(); err != nil {
+		t.Fatal(err)
+	}
 	n, err := l.ClearResolved()
 	if err != nil {
 		t.Fatal(err)
@@ -184,7 +202,10 @@ func TestLog_ClearResolved(t *testing.T) {
 func TestLog_GetResolved(t *testing.T) {
 	l := tempLog(t)
 	_ = l.AppendObservations("t", "- alpha")
-	_ = l.ResolveObservations([]string{"alpha"})
+	_, _ = l.ResolveObservations([]string{"alpha"})
+	if _, err := l.MoveTickedToResolved(); err != nil {
+		t.Fatal(err)
+	}
 	got, err := l.GetResolved()
 	if err != nil {
 		t.Fatal(err)
@@ -344,14 +365,21 @@ func TestLog_ShouldTriggerAudit_ViaRunsThreshold(t *testing.T) {
 func TestLog_ResolveObservations_NoDuplicates(t *testing.T) {
 	l := tempLog(t)
 	_ = l.AppendObservations("t", "- alpha drift concern")
-	// First resolve: should move to Resolved.
-	if err := l.ResolveObservations([]string{"alpha"}); err != nil {
+	// First cycle: tick + sweep into Resolved.
+	if _, err := l.ResolveObservations([]string{"alpha"}); err != nil {
 		t.Fatal(err)
 	}
-	// Second resolve of same content: already resolved, should dedup.
-	// Re-append the same text so there is something in Unresolved again.
+	if _, err := l.MoveTickedToResolved(); err != nil {
+		t.Fatal(err)
+	}
+	// Second cycle: re-append the same text into Unresolved, tick again,
+	// sweep again. The dedup guard in MoveTickedToResolved must prevent
+	// a second copy from landing in Resolved.
 	_ = l.AppendObservations("t", "- alpha drift concern")
-	if err := l.ResolveObservations([]string{"alpha"}); err != nil {
+	if _, err := l.ResolveObservations([]string{"alpha"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.MoveTickedToResolved(); err != nil {
 		t.Fatal(err)
 	}
 	got, err := l.GetResolved()

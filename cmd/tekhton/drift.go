@@ -272,12 +272,23 @@ func newDriftResolveCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			l := drift.NewLog(driftLogPath(projectDir))
 			if all {
-				return l.ResolveAllObservations()
+				if err := l.ResolveAllObservations(); err != nil {
+					return err
+				}
+			} else {
+				if len(args) == 0 {
+					return errExitCode{code: exitUsage, err: fmt.Errorf("at least one PATTERN required (or --all)")}
+				}
+				if _, err := l.ResolveObservations(args); err != nil {
+					return err
+				}
 			}
-			if len(args) == 0 {
-				return errExitCode{code: exitUsage, err: fmt.Errorf("at least one PATTERN required (or --all)")}
-			}
-			return l.ResolveObservations(args)
+			// Atomic CLI semantics: tick + sweep in one call. The
+			// finalize hook is idempotent so doing the sweep here
+			// doesn't conflict — it just means a `drift resolve` from
+			// a script lands entries in `## Resolved` immediately.
+			_, err := l.MoveTickedToResolved()
+			return err
 		},
 	}
 	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")
@@ -363,7 +374,13 @@ func collectUnresolved(body string) []string {
 		if in && hasPrefix(line, "## ") && !hasPrefix(line, "### ") {
 			break
 		}
-		if in && hasPrefix(line, "- [") {
+		// Skip ticked-but-not-yet-swept entries — they're conceptually
+		// resolved (just waiting on the finalize sweep) so they don't
+		// belong in the "open" list. Also skip legacy `[RESOLVED ...]`
+		// markers that might survive in older logs.
+		if in && hasPrefix(line, "- [") &&
+			!hasPrefix(line, "- [x]") &&
+			!hasPrefix(line, "- [RESOLVED") {
 			out = append(out, line)
 		}
 	}
@@ -462,10 +479,14 @@ func newDriftResolveAllCmd() *cobra.Command {
 	var projectDir string
 	c := &cobra.Command{
 		Use:   "resolve-all",
-		Short: "Move every unresolved observation to ## Resolved",
+		Short: "Tick every unresolved observation `[ ]`→`[x]` then sweep into ## Resolved",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			l := drift.NewLog(driftLogPath(projectDir))
-			return l.ResolveAllObservations()
+			if err := l.ResolveAllObservations(); err != nil {
+				return err
+			}
+			_, err := l.MoveTickedToResolved()
+			return err
 		},
 	}
 	c.Flags().StringVar(&projectDir, "project-dir", "", "project directory (defaults to cwd)")

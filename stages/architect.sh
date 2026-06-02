@@ -303,10 +303,13 @@ run_stage_architect() {
             oos_items=("${_filtered_oos[@]+"${_filtered_oos[@]}"}")
         fi
 
-        # Resolve ALL unresolved observations — the architect reviewed them all.
-        # This replaces fragile pattern-matching that silently failed when the
-        # architect paraphrased observations instead of copying them verbatim.
-        log "Resolving all ${pre_resolve_count} drift observations..."
+        # Tick all remaining unresolved observations to `[x]` — the architect
+        # reviewed them all. Post-checkbox-parity (2026-06) ResolveAllObservations
+        # ticks `[ ]` → `[x]` in place rather than wholesale-moving with a
+        # RESOLVED prefix; the finalize hook sweeps `[x]` into the Resolved
+        # section uniformly. This is the safety net for observations the agent
+        # didn't self-tick during its review.
+        log "Ticking all ${pre_resolve_count} drift observations..."
         "${TEKHTON_BIN:-tekhton}" drift resolve-all --project-dir "$PROJECT_DIR" 2>/dev/null || true
 
         # Re-add Out of Scope items as new unresolved entries

@@ -52,6 +52,15 @@ For each observation, either:
 Do NOT invent new issues beyond what the drift log reports. Your job is to
 diagnose and plan remediation for known observations, not to audit the whole
 codebase speculatively.
+
+**When you address an observation, edit {{DRIFT_LOG_FILE}} and change that
+observation's marker from `- [ ]` to `- [x]` — leave the rest of the entry
+text alone. The pipeline's finalize hook moves ticked observations into the
+Resolved section, and an automated heuristic also ticks observations whose
+body names a file you (or the coder) modifies. Explicit self-ticks are
+more reliable than the heuristic, so prefer to tick as you go. Do NOT use
+`tekhton drift resolve-all` — that wholesale path bypasses the per-item
+review and will mark unaddressed items resolved.**
 {{IF:DEPENDENCY_CONSTRAINTS_CONTENT}}
 
 ## Dependency Constraints
