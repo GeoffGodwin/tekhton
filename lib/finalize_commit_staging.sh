@@ -33,8 +33,19 @@ _coder_declared_files() {
 
 # _pipeline_bookkeeping_globs
 # Echoes the path prefixes the pipeline itself may legitimately modify
-# (state files, version cache, milestone manifest, CHANGELOG). Used together
-# with _coder_declared_files to define the auto-commit allowlist.
+# (state files, version cache, milestone manifest, CHANGELOG, plus the Go
+# implementation tree). Used together with _coder_declared_files to define
+# the auto-commit allowlist.
+#
+# `internal/`, `cmd/`, and `tests/` were added 2026-06-03 after the m34.2/
+# m35.x auto-advance run stranded ~30 implementation files in the working
+# tree because the agents' CODER_SUMMARY only listed tests + scripts + docs
+# and skipped the actual Go packages. The allowlist filter then refused to
+# stage them. Adding the Go tree as a bookkeeping prefix matches the
+# dogfooding reality: every successful run that writes a `RUN_RESULT.json`
+# saying "complete" probably also produced legit code under `internal/` or
+# `cmd/`, and the alternative (manual commit recovery after every run) is
+# worse than the occasional false positive of catching an unrelated edit.
 _pipeline_bookkeeping_globs() {
     cat <<'EOF'
 .tekhton/
@@ -43,6 +54,13 @@ _pipeline_bookkeeping_globs() {
 .claude/milestones/m
 VERSION
 CHANGELOG.md
+internal/
+cmd/
+tests/
+testdata/
+scripts/
+docs/
+Makefile
 EOF
 }
 

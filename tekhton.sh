@@ -25,6 +25,17 @@ fi
 # --- Path resolution ---------------------------------------------------------
 TEKHTON_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEKHTON_BIN="${TEKHTON_BIN:-${TEKHTON_HOME}/bin/tekhton}"
+
+# If TEKHTON_LEGACY_BIN was inherited from a different installation (i.e. it
+# doesn't live under the current TEKHTON_HOME), reset it so this invocation
+# uses its own tekhton-legacy.sh.  Tests that intentionally point
+# TEKHTON_LEGACY_BIN at a stub set TEKHTON_LEGACY_STUB=1 to bypass this check.
+if [[ "${TEKHTON_LEGACY_STUB:-0}" != "1" ]] \
+   && [[ -n "${TEKHTON_LEGACY_BIN:-}" ]] \
+   && [[ "${TEKHTON_LEGACY_BIN}" != "${TEKHTON_HOME}/"* ]]; then
+    unset TEKHTON_LEGACY_BIN
+fi
+
 TEKHTON_LEGACY_BIN="${TEKHTON_LEGACY_BIN:-${TEKHTON_HOME}/tekhton-legacy.sh}"
 export TEKHTON_HOME TEKHTON_BIN TEKHTON_LEGACY_BIN
 
