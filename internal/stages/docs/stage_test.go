@@ -249,3 +249,91 @@ func TestEnvBoolEnvInt(t *testing.T) {
 		t.Fatal("envInt: invalid should fall back")
 	}
 }
+
+// TestEnvBool_UnknownValue verifies the fallback branch: an unrecognised value
+// (not "yes/no/true/false/1/0") returns the fallback, not a hard-coded bool.
+func TestEnvBool_UnknownValue(t *testing.T) {
+	t.Setenv("DOCS_TEST_BOOL2", "maybe")
+	if envBool("DOCS_TEST_BOOL2", true) != true {
+		t.Fatal("envBool: unrecognised value with fallback=true should return true")
+	}
+	if envBool("DOCS_TEST_BOOL2", false) != false {
+		t.Fatal("envBool: unrecognised value with fallback=false should return false")
+	}
+}
+
+// TestEnvInt_ZeroInput verifies that "0" hits the n <= 0 guard and returns the
+// fallback (turn counts of zero are invalid in the pipeline).
+func TestEnvInt_ZeroInput(t *testing.T) {
+	t.Setenv("DOCS_TEST_INT2", "0")
+	if got := envInt("DOCS_TEST_INT2", 7); got != 7 {
+		t.Fatalf("envInt(\"0\") = %d want 7 (fallback, n<=0 guard)", got)
+	}
+}
+
+// TestEnvInt_EmptyOrUnset verifies the early-exit branch: key not set (!ok)
+// and key set to empty string (v=="") both return the fallback.
+func TestEnvInt_EmptyOrUnset(t *testing.T) {
+	os.Unsetenv("DOCS_TEST_INT3")
+	if got := envInt("DOCS_TEST_INT3", 5); got != 5 {
+		t.Fatalf("envInt unset: got %d want 5", got)
+	}
+	t.Setenv("DOCS_TEST_INT3", "")
+	if got := envInt("DOCS_TEST_INT3", 5); got != 5 {
+		t.Fatalf("envInt empty: got %d want 5", got)
+	}
+}
+
+// TestResolveProjectDir_EnvFallback verifies the second fallback path:
+// PROJECT_DIR in the process environment when EnvOverrides is absent.
+func TestResolveProjectDir_EnvFallback(t *testing.T) {
+	want := t.TempDir()
+	t.Setenv("PROJECT_DIR", want)
+	got := resolveProjectDir(&proto.StageRequestV1{
+		Proto: proto.StageRequestProtoV1,
+		Stage: proto.StageDocs,
+	})
+	if got != want {
+		t.Fatalf("resolveProjectDir from env: got %q want %q", got, want)
+	}
+}
+
+// TestResolveProjectDir_GetWdFallback verifies the last-ditch os.Getwd() path
+// fires when neither EnvOverrides nor PROJECT_DIR env are set.
+func TestResolveProjectDir_GetWdFallback(t *testing.T) {
+	os.Unsetenv("PROJECT_DIR")
+	// A nil request with no EnvOverrides should fall through to Getwd().
+	got := resolveProjectDir(nil)
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd: %v", err)
+	}
+	if got != wd {
+		t.Fatalf("resolveProjectDir Getwd: got %q want %q", got, wd)
+	}
+}
+
+// TestResolvePromptsDir_EnvFallback verifies the second path: TEKHTON_HOME in
+// the process environment when EnvOverrides is absent.
+func TestResolvePromptsDir_EnvFallback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("TEKHTON_HOME", home)
+	got := resolvePromptsDir(&proto.StageRequestV1{
+		Proto: proto.StageRequestProtoV1,
+		Stage: proto.StageDocs,
+	})
+	want := filepath.Join(home, "prompts")
+	if got != want {
+		t.Fatalf("resolvePromptsDir from env: got %q want %q", got, want)
+	}
+}
+
+// TestResolvePromptsDir_LastDitch verifies that the literal "prompts" fallback
+// is returned when neither EnvOverrides nor TEKHTON_HOME env are set.
+func TestResolvePromptsDir_LastDitch(t *testing.T) {
+	os.Unsetenv("TEKHTON_HOME")
+	got := resolvePromptsDir(nil)
+	if got != "prompts" {
+		t.Fatalf("resolvePromptsDir last-ditch: got %q want %q", got, "prompts")
+	}
+}

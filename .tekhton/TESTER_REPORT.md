@@ -1,15 +1,13 @@
 ## Planned Tests
-- [x] `internal/diagnose/engine_readers_test.go` — table-driven coverage of private JSON readers (extractJSONString, extractJSONInt, parseCauseBlock, extractKVLine) for malformed input, missing keys, and multi-value nested objects
-- [x] `cmd/tekhton/diagnose_test.go` — CLI test materializing a populated LAST_FAILURE_CONTEXT.json fixture and driving `tekhton diagnose run --project-dir` through cmd.Execute()
-- [x] `internal/diagnose/rules/resilience_test.go` — add source 2 (PREFLIGHT_REPORT.md header + fail word) and source 3a (PrimarySignal match) to TestPreflightInteractiveConfig_Match
+- [ ] `internal/stages/staglog/staglog_test.go` — New() constructor: env-based pos/count, req.EnvOverrides priority, nil req defaults, nil writer
+- [ ] `internal/stages/docs/stage_test.go` — resolveProjectDir/resolvePromptsDir env fallbacks; envBool unknown-value branch; envInt zero branch
 
 ## Test Run Results
-Passed: all 29 Go packages PASS  Failed: 0
+Passed: 0  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `internal/diagnose/engine_readers_test.go`
-- [x] `cmd/tekhton/diagnose_test.go`
-- [x] `internal/diagnose/rules/resilience_test.go`
+- [ ] `internal/stages/staglog/staglog_test.go`
+- [ ] `internal/stages/docs/stage_test.go`

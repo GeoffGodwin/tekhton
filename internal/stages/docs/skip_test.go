@@ -239,3 +239,37 @@ func TestGlobToRegexp(t *testing.T) {
 		t.Fatal("unexpected match")
 	}
 }
+
+// TestChangedFiles_GitError verifies changedFiles returns an error when invoked
+// in a directory that is not a git repository. Covers the err!=nil early-return
+// in changedFiles that is unreachable inside a valid repo fixture.
+func TestChangedFiles_GitError(t *testing.T) {
+	dir := t.TempDir() // plain temp dir — not a git repo
+	_, err := changedFiles(dir)
+	if err == nil {
+		t.Fatal("expected error from changedFiles in non-git directory, got nil")
+	}
+}
+
+// TestExtractPublicSurface_EmptyRulesFile verifies that passing an empty
+// rulesFile triggers the `rulesFile = "CLAUDE.md"` default, then falls through
+// to nil when CLAUDE.md is absent from the project directory.
+func TestExtractPublicSurface_EmptyRulesFile(t *testing.T) {
+	proj := t.TempDir() // no CLAUDE.md in this dir
+	patterns := extractPublicSurface(proj, "")
+	if patterns != nil {
+		t.Fatalf("expected nil patterns when rulesFile is empty and CLAUDE.md is absent, got %v", patterns)
+	}
+}
+
+// TestFilesMatchSurface_GlobCompileError verifies the defensive continue when
+// a glob pattern translates to an invalid regexp. The pattern "[*" becomes
+// "[.*" which is a regexp compile error (unclosed character class).
+func TestFilesMatchSurface_GlobCompileError(t *testing.T) {
+	// "[*" → globToRegexp → "[.*" → regexp.Compile error (missing "]")
+	// filesMatchSurface must not panic and must return false (pattern skipped).
+	got := filesMatchSurface([]string{"README.md"}, []string{"[*"})
+	if got {
+		t.Fatal("expected false when glob produces an invalid regexp, got true")
+	}
+}
