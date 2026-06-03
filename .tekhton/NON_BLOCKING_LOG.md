@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-06-03 | "unknown"] `CLARIFICATIONS.md` corruption noted in the coder summary (every answer echoes the question verbatim) is worth investigating at the pipeline level before the next invocation so future coders receive usable context.
 - [ ] [2026-06-03 | "unknown"] `ARCHITECTURE.md` not updated for `internal/stages/cleanup/` â acknowledged and deferred to m35 per Rule 10. Reminder for m35 coder to include both cleanup and docs entries in a single pass.
 - [ ] [2026-06-03 | "unknown"] `ARCHITECTURE.md` not updated for `internal/stages/cleanup/` â acknowledged in the ACP and deferred to m35 per Rule 10. Reminder to the m35 coder to include both stages' entries in one shot.
 - [ ] [2026-06-03 | "unknown"] `cleanup-batch-resolved` parity scenario â Acceptance criterion specified: "asserts the on-disk notes document mutates with exactly the expected `[x]` and `[DEFERRED]` markers â verified by a diff against the golden file." The scenario instead asserts `skip/no-eligible-notes` (CLEANUP_BATCH_SIZE=0 short-circuits before the agent). Mutation behavior is covered by unit tests; the retro documents the gap honestly. Not a functional regression, but the AC is literally unmet. Log for the m40 cleanup pass or a future parity-harness hardening milestone.

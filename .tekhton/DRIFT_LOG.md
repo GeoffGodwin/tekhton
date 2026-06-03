@@ -3,12 +3,14 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 179
+- Runs since audit: 180
 =======
-- Runs since audit: 179
+- Runs since audit: 180
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
+- [ ] [2026-06-03 | "unknown"] Pipeline continuation logic: `orchestrate_aux.sh` (or its Go equivalent) could short-circuit the coder re-invocation when the prior summary's `Files Modified` list contains only pipeline-internal artifacts (`.tekhton/`, `.claude/`) and no source files. The current substantive-work threshold (git diff + summary line count) did not catch this loop because the prior coder wrote a substantive summary while touching zero source files. Candidate for a future hardening milestone.
+- [ ] [2026-06-03 | "unknown"] `CLARIFICATIONS.md` echo corruption: the injected clarifications block echoed question text as answers, removing all task signal. This is a data-plumbing issue in how the pipeline populates `CLARIFICATIONS.md` before render â worth a targeted investigation to prevent future null runs caused by missing task signal.
 - [ ] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go::CountOpen`, `ResolveByModifiedFiles`, `ClearCompleted` now partially overlap with `notes.UnresolvedCount`, `notes.MarkResolved`, and `notes.SelectCleanupBatch`. The coder's retro flags this for m40 consolidation; accumulating here so it appears in the drift log across milestones.
 - [ ] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go::CountOpen`, `ResolveByModifiedFiles`, `ClearCompleted` now partially overlap with `notes.UnresolvedCount`, `notes.MarkResolved`, and `notes.SelectCleanupBatch`. Flagged for future consolidation (probably m40) in the coder's retro; tracking here so the drift log accumulates across milestones.
 - [ ] [2026-06-03 | "unknown"] `internal/drift/nonblocking.go` now partially overlaps with the new `internal/notes` mutation helpers (`CountOpen` vs. `UnresolvedCount`, `ResolveByModifiedFiles` vs. `SelectCleanupBatch+MarkResolved`). Noted in CODER_SUMMARY as an m40 candidate; included here so the drift log counts it.
