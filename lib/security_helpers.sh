@@ -1,240 +1,60 @@
 #!/usr/bin/env bash
-set -euo pipefail
-# =============================================================================
-# security_helpers.sh — Security stage helper functions
-#
-# Extracted from stages/security.sh to stay under the 300-line ceiling.
-# Sourced by tekhton.sh — do not run directly.
-# Depends on: common.sh (log, warn, error, success)
-#             agent_helpers.sh (extract_files_from_coder_summary)
-#             state.sh (write_pipeline_state)
-#             tekhton drift human-action append CLI (m25 — was a bash helper in drift.sh)
-# Provides: _security_is_docs_only(), _parse_security_findings(),
-#           _has_blocking_findings(), _severity_meets_threshold(),
-#           _build_fixable_block(), _build_unfixable_block(),
-#           _build_notes_block(), _handle_unfixable_findings(),
-#           _write_security_notes()
-# =============================================================================
-
-# --- Fast-path skip detection ------------------------------------------------
-
-# _security_is_docs_only — Check if all changed files are non-code (docs, config,
-# assets). Returns 0 if security scan can be skipped, 1 otherwise.
+# security_helpers.sh — m35.1 shim. Logic in internal/security/ (Go).
+# m35.2 ports stages/security.sh and deletes this file.
 _security_is_docs_only() {
-    local summary_file="${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"
-
-    if [[ ! -f "$summary_file" ]]; then
-        return 1  # No summary = can't determine, scan anyway
-    fi
-
-    local files
-    files=$(extract_files_from_coder_summary "$summary_file")
-
-    if [[ -z "$files" ]]; then
-        return 0  # No files changed = nothing to scan
-    fi
-
-    local f ext
-    local -a file_array=()
-    read -ra file_array <<< "$files"
-
-    for f in "${file_array[@]}"; do
-        ext="${f##*.}"
-        case "$ext" in
-            md|txt|rst|csv)          continue ;;  # docs
-            json|yaml|yml|toml|cfg)  continue ;;  # config
-            png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot) continue ;;  # assets
-            *)                       return 1 ;;   # code file found
-        esac
-    done
-
-    return 0  # All files are docs/config/assets
+    "${TEKHTON_BIN:-tekhton}" security is-docs-only \
+        --summary "${CODER_SUMMARY_FILE:-.tekhton/CODER_SUMMARY.md}"
 }
-
-# --- Finding parser ----------------------------------------------------------
-
-# _parse_security_findings — Parse ${SECURITY_REPORT_FILE} and extract findings.
-# Sets arrays: _SEC_SEVERITIES, _SEC_FIXABLES, _SEC_DESCRIPTIONS
-# Returns: 0 if findings parsed, 1 if no report or no findings
 _parse_security_findings() {
-    local report_file="${1:-${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}}"
-    _SEC_SEVERITIES=()
-    _SEC_FIXABLES=()
-    _SEC_DESCRIPTIONS=()
-
-    if [[ ! -f "$report_file" ]]; then
-        return 1
-    fi
-
-    local in_findings=false
-    local line
-    while IFS= read -r line; do
-        if [[ "$line" == "## Findings"* ]]; then
-            in_findings=true
-            continue
-        fi
-        if [[ "$in_findings" == "true" ]] && [[ "$line" == "## "* ]]; then
-            break
-        fi
-        if [[ "$in_findings" == "true" ]] && [[ "$line" == "- "* ]]; then
-            # Parse: - [SEVERITY] [fixable:yes|no|unknown] description
-            local severity fixable desc
-            severity=$(echo "$line" | grep -oE '\[(CRITICAL|HIGH|MEDIUM|LOW)\]' | tr -d '[]' || true)
-            fixable=$(echo "$line" | grep -oE 'fixable:(yes|no|unknown)' | cut -d: -f2 || true)
-            desc="${line#*] }"
-
-            if [[ -n "$severity" ]]; then
-                _SEC_SEVERITIES+=("$severity")
-                _SEC_FIXABLES+=("${fixable:-unknown}")
-                _SEC_DESCRIPTIONS+=("$desc")
-            fi
-        fi
-    done < "$report_file"
-
+    local report_file="${1:-${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}}" sev fix desc
+    _SEC_SEVERITIES=(); _SEC_FIXABLES=(); _SEC_DESCRIPTIONS=()
+    while IFS=$'\t' read -r sev fix desc; do
+        [[ -z "$sev" ]] && continue
+        _SEC_SEVERITIES+=("$sev"); _SEC_FIXABLES+=("$fix"); _SEC_DESCRIPTIONS+=("$desc")
+    done < <("${TEKHTON_BIN:-tekhton}" security parse-findings --report "$report_file" --format tsv 2>/dev/null)
     [[ ${#_SEC_SEVERITIES[@]} -gt 0 ]]
 }
-
-# --- Finding classification --------------------------------------------------
-
-# _has_blocking_findings — Check if any findings meet the blocking severity.
-# Returns: 0 if blocking findings exist, 1 otherwise
+_severity_meets_threshold() {
+    "${TEKHTON_BIN:-tekhton}" security meets-threshold --severity "$1" --threshold "$2"
+}
 _has_blocking_findings() {
-    local block_severity="${SECURITY_BLOCK_SEVERITY:-HIGH}"
-    local i severity
-
+    local block_severity="${SECURITY_BLOCK_SEVERITY:-HIGH}" i
     for i in "${!_SEC_SEVERITIES[@]}"; do
-        severity="${_SEC_SEVERITIES[$i]}"
-        if _severity_meets_threshold "$severity" "$block_severity"; then
-            return 0
-        fi
+        _severity_meets_threshold "${_SEC_SEVERITIES[$i]}" "$block_severity" && return 0
     done
     return 1
 }
-
-# _severity_meets_threshold — Check if a severity meets or exceeds a threshold.
-# Severity order: CRITICAL > HIGH > MEDIUM > LOW
-_severity_meets_threshold() {
-    local severity="$1" threshold="$2"
-    local -A severity_rank=([CRITICAL]=4 [HIGH]=3 [MEDIUM]=2 [LOW]=1)
-    local sev_val="${severity_rank[$severity]:-0}"
-    local thr_val="${severity_rank[$threshold]:-0}"
-    [[ "$sev_val" -ge "$thr_val" ]]
+_build_fixable_block()   { _build_block_via_go fixable; }
+_build_unfixable_block() { _build_block_via_go unfixable; }
+_build_notes_block()     { _build_block_via_go notes; }
+_build_block_via_go() {
+    "${TEKHTON_BIN:-tekhton}" security build-block --kind "$1" \
+        --report "${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}" \
+        --threshold "${SECURITY_BLOCK_SEVERITY:-HIGH}"
 }
-
-# --- Finding routing ---------------------------------------------------------
-
-# _build_fixable_block — Build a block of fixable findings for the rework prompt.
-_build_fixable_block() {
-    local block_severity="${SECURITY_BLOCK_SEVERITY:-HIGH}"
-    local result=""
-    local i
-
-    for i in "${!_SEC_SEVERITIES[@]}"; do
-        if _severity_meets_threshold "${_SEC_SEVERITIES[$i]}" "$block_severity"; then
-            if [[ "${_SEC_FIXABLES[$i]}" == "yes" ]]; then
-                result+="- [${_SEC_SEVERITIES[$i]}] ${_SEC_DESCRIPTIONS[$i]}"$'\n'
-            fi
-        fi
-    done
-    echo "$result"
-}
-
-# _build_unfixable_block — Build a block of unfixable blocking findings.
-_build_unfixable_block() {
-    local block_severity="${SECURITY_BLOCK_SEVERITY:-HIGH}"
-    local result=""
-    local i
-
-    for i in "${!_SEC_SEVERITIES[@]}"; do
-        if _severity_meets_threshold "${_SEC_SEVERITIES[$i]}" "$block_severity"; then
-            if [[ "${_SEC_FIXABLES[$i]}" != "yes" ]]; then
-                result+="- [${_SEC_SEVERITIES[$i]}] ${_SEC_DESCRIPTIONS[$i]}"$'\n'
-            fi
-        fi
-    done
-    echo "$result"
-}
-
-# _build_notes_block — Build a block of non-blocking findings for ${SECURITY_NOTES_FILE}.
-_build_notes_block() {
-    local block_severity="${SECURITY_BLOCK_SEVERITY:-HIGH}"
-    local result=""
-    local i
-
-    for i in "${!_SEC_SEVERITIES[@]}"; do
-        if ! _severity_meets_threshold "${_SEC_SEVERITIES[$i]}" "$block_severity"; then
-            result+="- [${_SEC_SEVERITIES[$i]}] ${_SEC_DESCRIPTIONS[$i]}"$'\n'
-        fi
-    done
-    echo "$result"
-}
-
-# --- Unfixable policy handling -----------------------------------------------
-
-# _handle_unfixable_findings — Apply SECURITY_UNFIXABLE_POLICY to unfixable findings.
-# Returns: 0 to continue, 1 to halt pipeline
-_handle_unfixable_findings() {
-    local unfixable_block="$1"
-    local policy="${SECURITY_UNFIXABLE_POLICY:-escalate}"
-
-    if [[ -z "$unfixable_block" ]]; then
-        return 0
+_handle_unfixable_findings() { # halt branch keeps state-write inline; m35.2 lifts it.
+    local block="$1" policy="${SECURITY_UNFIXABLE_POLICY:-escalate}" ha
+    [[ -z "$block" ]] && return 0
+    if [[ "$policy" == "halt" ]]; then
+        error "[security] Pipeline halted — unfixable CRITICAL/HIGH security findings detected."
+        write_pipeline_state "security" "security_halt" \
+            "${MILESTONE_MODE:+--milestone }--start-at security" \
+            "${TASK:-}" "Unfixable security findings with halt policy."
+        return 1
     fi
-
-    case "$policy" in
-        escalate)
-            log "[security] Escalating unfixable findings to ${HUMAN_ACTION_FILE:-.tekhton/HUMAN_ACTION_REQUIRED.md}"
-            "${TEKHTON_BIN:-tekhton}" drift human-action append \
-                --project-dir "${PROJECT_DIR:-$PWD}" \
-                --source "security" \
-                --description "Unfixable security findings require human review:
-${unfixable_block}" 2>/dev/null || warn "[security] Failed to record human-action escalation"
-            return 0
-            ;;
-        halt)
-            error "[security] Pipeline halted — unfixable CRITICAL/HIGH security findings detected."
-            error "[security] Review ${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md} and resolve manually."
-            write_pipeline_state "security" "security_halt" \
-                "${MILESTONE_MODE:+--milestone }--start-at security" \
-                "${TASK:-}" \
-                "Unfixable security findings with halt policy. Review ${SECURITY_REPORT_FILE:-.tekhton/SECURITY_REPORT.md}."
-            return 1
-            ;;
-        waiver)
-            log "[security] Waiver policy: logging unfixable findings and continuing."
-            return 0
-            ;;
-        *)
-            warn "[security] Unknown SECURITY_UNFIXABLE_POLICY: ${policy}. Defaulting to escalate."
-            "${TEKHTON_BIN:-tekhton}" drift human-action append \
-                --project-dir "${PROJECT_DIR:-$PWD}" \
-                --source "security" \
-                --description "Unfixable security findings:
-${unfixable_block}" 2>/dev/null || warn "[security] Failed to record human-action escalation"
-            return 0
-            ;;
-    esac
+    ha="${HUMAN_ACTION_FILE:-}"; local -a ha_args=()
+    [[ -n "$ha" ]] && ha_args=(--human-action-file "$ha")
+    "${TEKHTON_BIN:-tekhton}" security handle-unfixable --policy "$policy" \
+        --block "$block" --task "${TASK:-}" --project-dir "${PROJECT_DIR:-$PWD}" "${ha_args[@]}"
 }
-
-# --- Write ${SECURITY_NOTES_FILE} ------------------------------------------------
-
+# _write_security_notes stays bash for m35.1; m35.2 ports and deletes.
 _write_security_notes() {
-    local notes_block="$1"
-    local unfixable_block="$2"
-    local notes_file="${SECURITY_NOTES_FILE:-}"
-
+    local notes="$1" unfix="$2" out="${SECURITY_NOTES_FILE:-}"
+    [[ -z "$out" ]] && return 0
     {
-        echo "# Security Notes"
-        echo ""
-        echo "Generated: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo ""
-        if [[ -n "$notes_block" ]]; then
-            echo "## Non-Blocking Findings (MEDIUM/LOW)"
-            echo "$notes_block"
-        fi
-        if [[ -n "$unfixable_block" ]] && [[ "${SECURITY_UNFIXABLE_POLICY:-escalate}" == "waiver" ]]; then
-            echo "## Waivered Findings"
-            echo "$unfixable_block"
-        fi
-    } > "$notes_file"
+        printf '# Security Notes\n\nGenerated: %s\n\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+        [[ -n "$notes" ]] && printf '## Non-Blocking Findings (MEDIUM/LOW)\n%s\n' "$notes"
+        [[ -n "$unfix" && "${SECURITY_UNFIXABLE_POLICY:-escalate}" == "waiver" ]] && \
+            printf '## Waivered Findings\n%s\n' "$unfix"
+    } > "$out"
 }

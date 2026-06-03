@@ -758,3 +758,100 @@ new scenario in m34.2 / m35-m39 is a matter of dropping a fixture and a
 `(verdict, exit_reason)` expectation — the harness's normalization
 rules (duration zeroed, paths normalized, timestamps stripped) are
 stage-agnostic by design.
+
+### m34.2 dogfood retro
+
+The cleanup stage was the second port to exercise the m34.1 pattern.
+The point of m34.2 was to validate the pattern by dogfooding — would
+porting a second stage flow cleanly, or would it surface gaps in the
+shared infrastructure (`staglog`, `prompt`, `supervisor`)?
+
+Friction surfaced:
+
+- **`envInt` had a zero-rejecting branch** that was correct for the
+  docs stage's `DOCS_AGENT_MAX_TURNS` (zero is invalid) but wrong for
+  cleanup's `CLEANUP_TRIGGER_THRESHOLD` (zero is a legitimate "trigger
+  on any item" configuration). m34.2 ships a local `envInt` in
+  `internal/stages/cleanup/env.go` that allows zero; m35 should decide
+  whether to promote the cleanup variant or keep both. The signature
+  is identical so a future consolidation milestone could collapse them
+  into a `staglog.EnvInt` or similar.
+- **`NON_BLOCKING_LOG.md` and `HUMAN_NOTES.md` both went through
+  `internal/notes/Document`.** This required adding a `Deferred` state
+  to the State enum and a `[DEFERRED]` arm to `notePattern`. The
+  unification is a positive — both notes formats now share a parser —
+  but it stretched the "Notes Document" abstraction to cover a wider
+  set of formats than its original m24 charter. m35+ should think
+  twice before adding more file types under the same model; a future
+  cleanup might split them into separate parsers.
+- **`internal/gates.Build` lives behind a constructor whose env
+  wiring is in `package main`.** The cleanup stage couldn't trivially
+  call the gate in-process — the env-to-config translation in
+  `cmd/tekhton/gate.go::buildGateFromEnv` would have had to be
+  duplicated or extracted. m34.2 takes the pragmatic shortcut: a
+  `BuildGateRunner` interface defaults to a subprocess exec of
+  `tekhton gate build`. This matches the bash semantics exactly and
+  keeps the stage seam minimal. A future milestone (probably part of
+  m35 when coder's build-fix loop ports) should extract a reusable
+  `gates.FromEnv()` constructor into `internal/gates` so cleanup,
+  coder, and any other in-process caller can drop the subprocess hop.
+- **Null-run detection was bash-only.** The bash `was_null_run` lived
+  in `lib/agent_helpers.sh` and read shell globals (`LAST_AGENT_*`).
+  m34.2 ports it to `supervisor.AgentResult.IsNullRun()` —
+  threshold-parametric via `IsNullRunAt`. m35-m39 inherit this. The
+  bash `was_null_run` deletes when the last stage that uses it
+  (probably coder, m35-ish) ports.
+- **Stage parity-harness scenarios that mutate disk state require
+  fixture write-back.** The `cleanup-batch-resolved` scenario stops at
+  `skip / no-eligible-notes` rather than asserting on-disk notes
+  mutations. The bash impl was broken pre-m34.2 (missing helpers), so
+  there's no bash baseline to compare against. The Go unit tests cover
+  the agent-success path; the parity test asserts envelope shape only.
+  m35+ stages that mutate disk state should consider whether their
+  parity scenarios need a write-back assertion harness.
+
+Verdict on the pattern: **dogfood passes**. The bones of the m34.1
+pattern survive m34.2 unchanged — `StageImpl`, `DefaultStageDefs[...]
+.GoImpl`, the parity harness, the wedge-audit guard. The friction
+above is all in the *shared infrastructure layer* (`envInt`, gates
+env wiring, null-run detection) rather than the per-stage pattern.
+m35 proceeds unblocked; the m40 cleanup milestone is a good home for
+the infrastructure-layer cleanups listed above.
+
+## M35.1 — Security helpers ported; bash stage still active
+
+m35.1 ports the security helpers (severity classifier, finding parser,
+block builders, escalation writer) into `internal/security/` and rewrites
+`lib/security_helpers.sh` as a 60-LOC shim. The bash stage
+(`stages/security.sh`) is unchanged and continues to drive the run.
+
+**Transition tax (M35.1 → M35.2 window).** Every non-docs-only pipeline
+cycle now pays a 5-subprocess-spawn cost where the pre-m35.1 build paid
+zero: each helper invocation execs `tekhton security <sub>` rather than
+running inline bash. Specifically, per cycle the bash stage spawns:
+
+1. `tekhton security is-docs-only` once (fast-path skip check).
+2. `tekhton security parse-findings` once (TSV read into bash arrays).
+3. `tekhton security build-block` three times (fixable/unfixable/notes).
+
+Plus N×`tekhton security meets-threshold` calls inside
+`_has_blocking_findings` where N is the number of findings (typically
+0–5). At a measured ~30ms per Go binary cold-start on the m35.1 author's
+WSL host, the total per-cycle cost is ~150ms + ~30ms×N. M35.2 collapses
+this to zero by running the helpers in-process from the Go stage. We
+accept the transition tax because it (a) keeps the bash stage operationally
+green so m35.1 can be dogfooded against the new Go path without M35.2
+shipping first, and (b) closes within a single follow-up milestone.
+
+**`_write_security_notes` deliberately stays bash.** Only the bash stage
+calls it. M35.2's Go RunStage absorbs it as `WriteNotesFile(...)`. Porting
+preemptively in m35.1 would be scope creep, and the M35.2 stage needs to
+own the file-write path because it's stage-level state.
+
+**Halt branch's `write_pipeline_state` stays in the shim, not in
+`Escalator.HandleUnfixable`.** The bash version's halt branch wrote
+pipeline state directly from the helper. The Go `HandleUnfixable` returns
+`(false, nil)` for halt and the caller (m35.1 = bash shim; m35.2 = Go
+RunStage) writes state with the correct stage-level context. Pipeline
+state is stage-owned; pushing the write into the security helper would
+tangle layering across the m35.1 → m35.2 cutover.

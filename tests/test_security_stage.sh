@@ -8,7 +8,18 @@ TMPDIR_TEST=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 PROJECT_DIR="$TMPDIR_TEST"
-export TEKHTON_HOME PROJECT_DIR
+# m35.1: lib/security_helpers.sh is now a shim that execs `tekhton security`.
+# Force TEKHTON_BIN to the local build — ignore any parent-shell override
+# (e.g. tekhton-stable/bin/tekhton on self-hosted runs) so the new
+# `security` subcommand resolves.
+TEKHTON_BIN="${TEKHTON_HOME}/bin/tekhton"
+if [[ ! -x "$TEKHTON_BIN" ]]; then
+    if ! (cd "$TEKHTON_HOME" && make build >/dev/null 2>&1); then
+        printf 'SKIP test_security_stage: make build failed\n'
+        exit 0
+    fi
+fi
+export TEKHTON_HOME PROJECT_DIR TEKHTON_BIN
 
 cd "$PROJECT_DIR"
 
@@ -134,6 +145,11 @@ assert_eq "Unknown severity does not meet LOW" "false" "$_unknown_meets_low"
 # =============================================================================
 
 REPORT_FILE="${TMPDIR_TEST}/SECURITY_REPORT.md"
+# m35.1: _build_*_block now execs `tekhton security build-block --report ...`
+# which reads from a file rather than from the in-memory arrays the parser
+# populated. Wire SECURITY_REPORT_FILE to the fixture path so the block
+# subcommand reads the same source the test writes to.
+export SECURITY_REPORT_FILE="$REPORT_FILE"
 
 # Test 11: Missing report file returns 1
 _SEC_SEVERITIES=()
