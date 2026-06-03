@@ -1,114 +1,105 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 5 files, 35 test functions
+Tests audited: 6 files, 68 test functions
 Verdict: PASS
 
 ### Findings
 
-#### INTEGRITY: TestMeetsThreshold_AllKnownPairs uses circular expected-value derivation
-- File: internal/security/severity_test.go:37
-- Issue: Expected values are computed as `want := Rank(sev) >= Rank(thr)` — the same
-  expression `MeetsThreshold` delegates to internally. A systematic bug affecting both
-  `Rank` and `MeetsThreshold` identically (e.g., both use a wrong map key consistently)
-  would not be caught. The risk is mitigated in practice by `TestRank_KnownSeverities`
-  (lines 5–19), which independently asserts the absolute integer values (CRITICAL=4,
-  HIGH=3, MEDIUM=2, LOW=1). The combination of both tests provides full coverage, but
-  if `TestRank_KnownSeverities` is ever removed, `TestMeetsThreshold_AllKnownPairs`
-  becomes a tautology.
-- Severity: LOW
-- Action: Add a comment on `TestMeetsThreshold_AllKnownPairs` noting its dependency on
-  `TestRank_KnownSeverities` as the anchor. Optionally express the two most critical
-  pairs (CRITICAL≥HIGH=true, HIGH≥CRITICAL=false) with hardcoded booleans alongside
-  the loop so the test remains meaningful if the rank test is ever split or removed.
-
-#### COVERAGE: NewEscalator and CLI handle-unfixable write to different default paths
-- File: internal/security/escalation_test.go:189 and cmd/tekhton/security_test.go:267
-- Issue: `NewEscalator(dir)` writes to `dir/.tekhton/HUMAN_ACTION_REQUIRED.md`
-  (escalation.go:29). The CLI `handle-unfixable --project-dir dir` calls
-  `humanActionPath(dir)` (drift.go:517) which defaults to `dir/HUMAN_ACTION_REQUIRED.md`
-  (no `.tekhton/` prefix). Both code paths are individually tested against their
-  respective correct paths, but no test asserts they agree. In m35.1 the bash shim is
-  the only caller, so the CLI path is operative. When m35.2 ports the stage to Go and
-  calls `NewEscalator` directly, it will silently write to a different file than the
-  bash shim did. The test comment at security_test.go:268 documents the difference but
-  does not flag it as a pre-m35.2 resolution requirement.
+#### ISOLATION: `TestExportEnvBlocks` leaves process env dirty after the test
+- File: internal/stages/security/run_test.go:551-585
+- Issue: The test calls `os.Unsetenv` to clear three env vars at the top, then calls
+  `exportEnvBlocks` which sets them via `os.Setenv`. Neither call registers a cleanup
+  with the testing framework, so `SECURITY_REWORK_CYCLES_DONE=2`,
+  `SECURITY_FINDINGS_BLOCK=…`, and `SECURITY_FIXES_BLOCK=…` persist in process env
+  after the test exits. Any subsequent test that reads these vars without first
+  resetting them can observe stale values. Practical impact is low today because all
+  RunStage tests call `setupProject`, which resets all three via `t.Setenv`
+  (auto-restored). However, any new test that calls `exportEnvBlocks` directly and
+  omits `setupProject` will read stale state.
 - Severity: MEDIUM
-- Action: Record this path divergence as an explicit TODO comment on `NewEscalator`
-  and in the m35.2 milestone acceptance criteria. Alternatively, unify by having
-  `NewEscalator` call `humanActionPath` so both code paths share a single resolver
-  — this eliminates the divergence class entirely.
+- Action: Replace the manual `os.Unsetenv` preamble and the sub-test's reliance on
+  `os.Setenv` side-effects with `t.Setenv` calls (or register `t.Cleanup(func() {
+  os.Unsetenv("SECURITY_REWORK_CYCLES_DONE") })` etc.). `exportEnvBlocks` must keep
+  using `os.Setenv` in production to reach downstream bash stages, but the test can
+  protect itself with explicit cleanups.
 
-#### COVERAGE: BuildUnfixableBlock threshold filtering has no dedicated unit test
-- File: internal/security/blocks_test.go:72
-- Issue: `TestBuildUnfixableBlock_ExcludesYes` (line 72) verifies that `fixable:yes`
-  rows are excluded from the unfixable block but does not verify that below-threshold
-  rows are excluded. For `BuildFixableBlock` the same scenario is directly tested by
-  `TestBuildFixableBlock_Threshold` (line 48). For `BuildNotesBlock` threshold behavior
-  is directly tested by `TestBuildNotesBlock_OnlyBelowThreshold` (line 89).
-  `BuildUnfixableBlock` threshold enforcement is covered only indirectly through
-  `TestBlocks_Goldens` — if `BuildUnfixableBlock` accidentally included below-threshold
-  unfixable rows, the golden-file test would catch it, but the failure message would be
-  harder to diagnose without a focused test.
+#### COVERAGE: `TestSecurityCmd_AllSubcommandsHelp` makes a vacuous assertion
+- File: cmd/tekhton/security_test.go:105-116
+- Issue: `sub.Execute()` with `--help` always returns `nil` in Cobra by design — it
+  prints help and exits cleanly. The assertion `if err := sub.Execute(); err != nil`
+  is structurally equivalent to `assert(True)` for any properly-registered command.
+  The test adds no correctness signal beyond "the command tree doesn't panic during
+  registration," which is already implied by `TestSecurityCmd_RegisterAndVisibility`
+  traversing the same command slice.
 - Severity: LOW
-- Action: Add `TestBuildUnfixableBlock_Threshold` passing a CRITICAL threshold and
-  asserting that HIGH unfixable rows are absent from the result, mirroring the
-  `TestBuildFixableBlock_Threshold` pattern.
+- Action: Either remove the test (its smoke-test value is fully covered by
+  `TestSecurityCmd_RegisterAndVisibility`) or strengthen it by capturing stdout and
+  asserting the help output contains the subcommand's name string — this would at
+  least catch a command registered with an empty `Use:` field.
 
-#### COVERAGE: CLI is-docs-only missing-file exit code not covered at subprocess level
-- File: cmd/tekhton/security_test.go:221
-- Issue: `TestSecurityIsDocsOnly_ExitCodes` exercises two cases (docs-only → exit 0,
-  code-present → exit 1) but not the missing-file case. `IsDocsOnly` returns `(false, nil)`
-  for a missing file, which the CLI handler converts to `os.Exit(1)`. The Go unit test
-  `TestIsDocsOnly_MissingSummary` (findings_test.go:70) confirms the library behavior, but
-  the subprocess exit-code contract for this path is not exercised. A future refactor that
-  changes how the CLI handles `IsDocsOnly` returning false could break the bash shim without
-  a failing test.
+#### ISOLATION: RunStage tests leave env vars set via `os.Setenv` in process state
+- File: internal/stages/security/run_test.go:294 (TestRunStage_FixableReworkPass), and
+  indirectly from any RunStage call that reaches `exportEnvBlocks`
+- Issue: `RunStage` calls `exportEnvBlocks` → `os.Setenv(…)` for the three SECURITY_*
+  vars. These are not cleaned up by the test framework. `TestRunStage_FixableReworkPass`
+  reads `os.Getenv("SECURITY_REWORK_CYCLES_DONE")` directly (line 294) rather than from
+  the returned result struct. If test execution order changes or parallelism is
+  introduced, this could produce a false positive from a prior test's stale value.
+  Current mitigation: `setupProject` resets all three via `t.Setenv`, protecting every
+  test that calls it.
 - Severity: LOW
-- Action: Add a third subprocess case to `TestSecurityIsDocsOnly_ExitCodes` using a
-  non-existent path and assert exit code 1.
+- Action: Where `os.Getenv` post-RunStage is intentional (asserting the downstream bash
+  env-export contract), add `t.Cleanup(func() { os.Unsetenv("SECURITY_REWORK_CYCLES_DONE")
+  })` etc. at the start of the affected sub-tests. For the assertion itself, prefer reading
+  `res.AgentCalls` and related result-struct fields over re-reading process env where the
+  information is available from both sources — the result struct is never stale.
 
-#### COVERAGE: 06-truncated-section fixture does not test true mid-stream truncation
-- File: internal/security/testdata/reports/06-truncated-section.md
-- Issue: The fixture is named "truncated-section" but the content is an empty
-  `## Findings` section (header immediately followed by `## Summary` with no rows).
-  This exercises the same "findings present but empty body" path covered differently by
-  `02-no-findings-header.md`. A true truncation scenario — a `## Findings` section that
-  ends at EOF without a closing `## ` header — is not represented. `bufio.Scanner`
-  handles EOF cleanly so this is not a defect risk, but the fixture name is misleading
-  and the EOF path is not demonstrated by any named test case.
-- Severity: LOW
-- Action: Either rename `06-truncated-section.md` to `06-empty-findings-body.md` to
-  match its actual content, or replace it with a fixture that has one or more rows
-  followed by EOF (no closing `## ` header) to test actual mid-stream truncation, and
-  add a corresponding expectation row in `TestParseReport_Fixtures`.
+### No Issues Found in the Following Areas
 
-### No Issues Found in the following areas
+**Assertion Honesty (all six files)** — Every assertion derives from an actual function
+call with controlled inputs. `TestParseReport_Fixtures` expected values match the fixture
+file content verbatim (verified against testdata/reports/). `TestBlocks_Goldens` diffs
+against 18 bash-captured baseline files (all present in testdata/baselines/); the baseline
+approach is sound for a port-parity test. `TestHandleUnfixable_*` expected description
+prefixes match the `switch` branch string literals in escalation.go:57–67 exactly.
+`TestClampTurns_MilestoneModeDoubles` expected values are derivable from the doubling/
+clamping rules in scan.go. No `assertTrue(True)`, tautological comparisons, or hard-coded
+"magic" values that bypass implementation logic were found (the rank integers 4/3/2/1 in
+`TestRank_KnownSeverities` are anchored against the `severityRank` map in severity.go).
 
-**Assertion Honesty (all five files)** — Assertions derive from real function calls
-against controlled inputs. `TestParseReport_Fixtures` expected values match the fixture
-file content verbatim (verified against the fixture files). `TestBlocks_Goldens` diffs
-against pre-captured bash baselines, not hard-coded strings. `TestHandleUnfixable_*`
-expected prefixes match the `switch` branch literals in escalation.go:57–67.
+**Test Weakening** — The only existing test file that was modified is
+`cmd/tekhton/security_test.go`. The changes are: `TestSecurityCmd_Hidden` renamed to
+`TestSecurityCmd_RegisterAndVisibility` with updated assertions reflecting the m35.2
+visibility split; `TestSecurityHandleUnfixable_Escalate*` and `_Halt*` deleted alongside
+the bash shim they exercised; `filterEnv` helper removed (only the deleted tests used it);
+`TestSecurityHandleUnfixable_Removed` added. None of these weaken coverage — the deleted
+shim tests are replaced by `TestRunStage_UnfixableHalt` and `TestRunStage_UnfixableEscalate`
+in `run_test.go` which exercise the in-process path the Go stage actually uses. The rename
+expands rather than narrows the assertion surface.
 
-**Test Weakening** — All five files are new. No existing tests were modified. No
-weakening possible.
+**Test Naming** — All 68 test function names clearly encode the scenario and expected
+outcome. No opaque or ambiguous names found.
 
-**Test Naming** — All 35 test function names encode the scenario and the expected
-outcome clearly. No opaque names (`test_1`, `test_it_works`) found.
+**Scope Alignment** — All imports and symbol references resolve correctly against the
+current codebase. `stages/security.sh` and `lib/security_helpers.sh` are deleted;
+`tests/test_security_stage.sh` is also deleted per CODER_SUMMARY.md; no orphaned test
+file imports the deleted symbols. `handle-unfixable` subcommand removal is positively
+asserted by `TestSecurityHandleUnfixable_Removed`. `DefaultStageDefs[proto.StageSecurity]`
+routing is asserted by `TestDefaultStageDefs_SecurityHasGoImpl` (in
+`internal/stagerunner/helpers_test.go`, not listed in this audit but referenced as
+in-scope by the coder summary). All six audited files reference only live symbols.
 
-**Scope Alignment** — All imports and symbol references (`SeverityCritical`,
-`ParseReport`, `BuildFixableBlock`, `Escalator`, `newSecurityCmd`) correspond to code
-present in the current implementation files. No orphaned or stale references.
+**Implementation Exercise** — Tests call real functions. Mocking is targeted: `fakeAgent`
+and `fakeBuildGate` in `run_test.go` substitute the seams defined in `run.go` without
+mocking the function under test (`RunStage`). `fakeHumanAction` in `escalation_test.go`
+tests policy-routing logic while `TestNewEscalator_WiresRealHumanAction` exercises the
+real `drift.HumanAction` write path end-to-end in a temp dir. `buildTekhtonBinary` in
+`security_test.go` compiles and runs the real binary for exit-code contracts that
+cannot be intercepted in-process. No test mocks every dependency and then asserts
+only on the mock setup.
 
-**Test Isolation** — All tests that write files use `t.TempDir()`. Fixture files in
-`testdata/` are static committed data, not mutable project state. `filterEnv` in
-security_test.go:53 correctly strips `HUMAN_ACTION_FILE` from the subprocess
-environment to prevent developer-session contamination. The `buildTekhtonBinary`
-helper (security_test.go:23) builds into a temp dir and is guarded by `sync.Once`.
-
-**Implementation Exercise** — Tests call real implementation functions directly.
-Mocking is targeted: `fakeHumanAction` in escalation_test.go exercises the
-`HumanActionAppender` seam for policy-routing tests while real `drift.HumanAction`
-writes are tested separately in `TestNewEscalator_WiresRealHumanAction` and
-`TestSecurityHandleUnfixable_EscalateWritesHumanAction`.
+**Fixture Integrity** — All 6 report fixtures (testdata/reports/01–06.md) and all 18
+baseline files (testdata/baselines/01–06 × fixable/unfixable/notes) are present on
+disk (verified via glob). `TestParseReport_Fixtures` will fail with a descriptive error
+rather than silently pass if a fixture file goes missing.

@@ -3,9 +3,9 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 181
+- Runs since audit: 182
 =======
-- Runs since audit: 181
+- Runs since audit: 182
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -22,7 +22,6 @@
 - [2026-05-31 | "unknown"] `completion.go:299-319` â `FailingExitCoder` and `errExitCode` (defined elsewhere in `cmd/tekhton/`) both implement an exit-code wrapper pattern. Two types for the same purpose in the same package tree is fragile; when `FailingExitCoder` is removed the duplication is gone, but if it's wired in the future it should replace (not supplement) `errExitCode` at the CLI seam.
 - [2026-05-31 | "unknown"] `gate_ui_shim.go:44` â `Run(ctx, stageLabel, _ map[string]string)` ignores the `env map[string]string` argument. `UIBashShim.ShellEnv` carries env overrides (`UI_TEST_CMD`, `UI_GATE_ENV_RETRY_ENABLED`, etc.) populated at construction time but the shim discards them and builds the subprocess env entirely from `os.Environ()`. Document the drop as intentional for m31.1 or thread `ShellEnv` through to `c.Env` to avoid silent override loss when the assembler later populates those fields.
 - [2026-05-31 | "unknown"] `remediation.go:68` â `envPlus` appends `TEKHTON_HOME`, `ERRORS_STREAM`, and `PHASE_LABEL` to `os.Environ()` without deduplication. On Linux, `getenv()` returns the first match, so if `TEKHTON_HOME` is already exported by the caller (the common case), the appended value is harmlessly redundant rather than an override. A comment clarifying this would prevent future confusion about intent.
-- [2026-05-31 | "unknown"] `rescan.go:398-415` (`readSamplesManifestFromIndexDir`): the function has a three-way structure (fileExists-branch using `decodeSamplesManifest` directly, dead `synthIndex` variable, then legacy `ExtractSampledFiles` fallback) that will confuse the next reader. Once the dead variable is removed (Non-Blocking Note above), a single explanatory comment on the why of the direct-read vs. the legacy fallback path would be worth adding.
 - [2026-05-30 | "unknown"] `internal/crawler/deps.go` â `parseCargoDeps` hardcodes `"Cargo.toml"` as the `Manifest` field on `KeyDependency` entries (line ~268), while `parseNodeDeps` correctly uses the `label` variable (which incorporates the `prefix` for sub-project calls). The inconsistency is latent today (prefix is always `""` from `parseDependencies`) but would produce incorrect `manifest` fields in Cargo key dependencies if sub-project recursion were added in m30.2. Recommend aligning to use `label` in `parseCargoDeps` before m30.2 adds sub-project support.
 - [2026-05-30 | "unknown"] `internal/crawler/deps.go:extractWithHeader` â re-implements section-extraction logic that intentionally diverges from `detect.ExtractJSONKeys` to preserve a bash quirk (spurious header line). Well-documented in source comments. When the parity requirement is lifted (e.g., intentional artifact schema update), replace the wrapper with a direct `detect.ExtractJSONKeys` call to eliminate the duplication.
 - [2026-05-30 | "unknown"] `lib/index_view.sh` â 496-line bash file, significantly over the 300-line ceiling. Pre-existing condition predating m30.1. Phase-5 index-view port should address this.
@@ -59,6 +58,8 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-03 | "unknown"] `tekhton-legacy.sh:2585` â `run_stage_security` is called in the legacy bash pipeline dispatch block, but the function no longer exists (source line removed, `stages/security.sh` deleted). This is dead code in the normal V4 flow (the Go `internal/pipeline.Runner` routes security through `GoImpl`), but if the legacy bash dispatch path were ever reached for security it would fail with `command not found`. The same dead-code pattern exists for docs (m34.1) and cleanup (m34.2). Recommend removing all three legacy case blocks when the orchestrate loop completes its Go migration.
+- [x] [2026-05-31 | "unknown"] `rescan.go:398-415` (`readSamplesManifestFromIndexDir`): the function has a three-way structure (fileExists-branch using `decodeSamplesManifest` directly, dead `synthIndex` variable, then legacy `ExtractSampledFiles` fallback) that will confuse the next reader. Once the dead variable is removed (Non-Blocking Note above), a single explanatory comment on the why of the direct-read vs. the legacy fallback path would be worth adding.
 - [x] [2026-06-03 | "unknown"] `cmd/tekhton/security_test.go` introduces `buildTekhtonBinary`, `filterEnv`, `readFileTrimNothing`, and `writeFile` as file-local helpers within `package main`. These patterns will be needed by any future `cmd/tekhton` test that must assert on OS-level exit codes via a real subprocess (meets-threshold, is-docs-only, handle-unfixable all use `os.Exit`). When m36.1 or a later milestone adds similar CLI smoke tests, these helpers will be duplicated or will need extraction to a shared `cmd/tekhton/testhelpers_test.go`. Worth extracting before there are two copies.
 - [x] [2026-06-03 | "unknown"] `stage.go:213` â `cmd.Stdout = os.Stderr` routes the subprocess build-gate's stdout to the process's stderr. Intentional (avoids polluting the Go stage's stdout), but unconventional enough to warrant a one-line comment explaining the redirect so the next reader does not mistake it for a copy-paste error.
 - [x] [2026-06-03 | "unknown"] `stage.go:213`: `cmd.Stdout = os.Stderr` (subprocess build-gate stdout piped to the process's stderr) is intentional but unconventional. A one-line comment explaining why would spare the next reader from a double-take.
