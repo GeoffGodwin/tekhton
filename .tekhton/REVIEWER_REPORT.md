@@ -1,21 +1,20 @@
-# Reviewer Report — m35.3 Integration Cleanup
+# Reviewer Report — m41
 
 ## Verdict
 APPROVED_WITH_NOTES
 
 ## Complex Blockers (senior coder)
-None
+- None
 
 ## Simple Blockers (jr coder)
-None
+- None
 
 ## Non-Blocking Notes
-- `tests/test_wedge_audit_m35.sh:52,67,87` — audit output is captured to the fixed path `/tmp/wedge_audit_m35.out`. Concurrent test runs could collide. No correctness impact for serial CI; align with `mktemp` pattern on a future pass.
-- `tests/audit/K3.md:3` — header count line reads "DELETE-STALE=1" while the verdict table column uses "DELETED-STALE" (one has a hyphen before "STALE", the other does not). Minor terminology mismatch; fix on the next pass touching this file.
-- `docs/v4-phase5-stub.md` "Candidate ordering" section still references the original planned m21–m28 pairings. Actual Phase 5 execution diverged (m23=TUI, m24=notes, m25=drift, m33=dashboard, m34=docs+cleanup, m35=security). The "not commitments" disclaimer covers it, but readers comparing the list against git history will find the numbers misaligned. Housekeep when Phase 5 is further along.
+- `stages/coder.sh` is 1202 lines, well above the 300-line bash ceiling. m41 added 2 net lines to pre-existing debt. Coder correctly flagged this; extraction is queued behind the coder-port milestone (m39.4).
+- `set -euo pipefail` appears at the top of both new sourced lib files (`milestone_window_build.sh:25`, `finalize_commit_sentinel.sh:16`). This is consistent with the pre-existing project convention (`milestone_window.sh:23`, `finalize_commit.sh:21`) but inconsistent with the reviewer checklist. Pre-existing drift — not introduced by m41; harmonisation would require touching ~20+ files and is its own cleanup ticket.
 
 ## Coverage Gaps
-None
+- None
 
 ## Drift Observations
-None
+- `milestone_window_build.sh:263` — the WINDOW_HEADER heredoc uses a single-quoted form (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` is a literal string in the coder prompt rather than the resolved path. Pre-existing behavior moved verbatim from `milestone_window.sh`; the coder notes it in Design Observations. Worth a follow-up comment or fix if it causes agent confusion in practice.
