@@ -47,25 +47,6 @@ func writeFile(path, body string) error {
 	return os.WriteFile(path, []byte(body), 0o644)
 }
 
-// filterEnv returns env with every NAME=... entry whose NAME is in the drop
-// list removed. Used by handle-unfixable tests to isolate the subprocess
-// from the developer's $HUMAN_ACTION_FILE override.
-func filterEnv(env []string, drop ...string) []string {
-	dropSet := make(map[string]bool, len(drop))
-	for _, k := range drop {
-		dropSet[k] = true
-	}
-	out := env[:0:0]
-	for _, e := range env {
-		eq := strings.IndexByte(e, '=')
-		if eq > 0 && dropSet[e[:eq]] {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
-}
-
 func readFileTrimNothing(path string) (string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -74,27 +55,49 @@ func readFileTrimNothing(path string) (string, error) {
 	return string(b), nil
 }
 
-func TestSecurityCmd_Hidden(t *testing.T) {
+// TestSecurityCmd_RegisterAndVisibility asserts the m35.2 visibility
+// rewire: parent is visible (operator tools), `parse-findings` +
+// `meets-threshold` are visible, `build-block` + `is-docs-only` stay
+// Hidden as debug helpers, and `handle-unfixable` is gone entirely.
+func TestSecurityCmd_RegisterAndVisibility(t *testing.T) {
 	c := newSecurityCmd()
-	if !c.Hidden {
-		t.Error("security command should be Hidden")
+	if c.Hidden {
+		t.Error("security parent command should be visible after m35.2")
 	}
-	want := map[string]bool{
-		"parse-findings":   false,
-		"meets-threshold":  false,
-		"build-block":      false,
-		"is-docs-only":     false,
-		"handle-unfixable": false,
+	wantVisible := map[string]bool{
+		"parse-findings":  false,
+		"meets-threshold": false,
+	}
+	wantHidden := map[string]bool{
+		"build-block":  false,
+		"is-docs-only": false,
 	}
 	for _, x := range c.Commands() {
 		name := strings.SplitN(x.Use, " ", 2)[0]
-		if _, ok := want[name]; ok {
-			want[name] = true
+		if _, ok := wantVisible[name]; ok {
+			wantVisible[name] = true
+			if x.Hidden {
+				t.Errorf("subcommand %q must be visible after m35.2", name)
+			}
+		}
+		if _, ok := wantHidden[name]; ok {
+			wantHidden[name] = true
+			if !x.Hidden {
+				t.Errorf("subcommand %q must stay Hidden as a debug-only tool", name)
+			}
+		}
+		if name == "handle-unfixable" {
+			t.Error("handle-unfixable subcommand must be deleted after m35.2 (was shim-only)")
 		}
 	}
-	for sub, found := range want {
+	for sub, found := range wantVisible {
 		if !found {
-			t.Errorf("security subcommand %q missing", sub)
+			t.Errorf("operator subcommand %q missing", sub)
+		}
+	}
+	for sub, found := range wantHidden {
+		if !found {
+			t.Errorf("debug subcommand %q missing", sub)
 		}
 	}
 }
@@ -253,46 +256,24 @@ func TestSecurityIsDocsOnly_ExitCodes(t *testing.T) {
 	}
 }
 
-func TestSecurityHandleUnfixable_EscalateWritesHumanAction(t *testing.T) {
-	bin := buildTekhtonBinary(t)
-	dir := t.TempDir()
-	cmd := exec.Command(bin, "security", "handle-unfixable",
-		"--policy", "escalate",
-		"--block", "- [HIGH] cli escalation\n",
-		"--project-dir", dir,
-	)
-	cmd.Env = filterEnv(os.Environ(), "HUMAN_ACTION_FILE")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("run err: %v", err)
-	}
-	// drift.go's humanActionPath defaults to ${projectDir}/HUMAN_ACTION_REQUIRED.md
-	// (no .tekhton/ prefix) — matches the drift human-action append CLI path.
-	body, err := readFileTrimNothing(filepath.Join(dir, "HUMAN_ACTION_REQUIRED.md"))
-	if err != nil {
-		t.Fatalf("read human-action: %v", err)
-	}
-	if !strings.Contains(body, "cli escalation") {
-		t.Errorf("human-action file missing block content:\n%s", body)
-	}
-	if !strings.Contains(body, "Source: security") {
-		t.Errorf("human-action file missing security source label:\n%s", body)
-	}
-}
+// m35.2: TestSecurityHandleUnfixable_* tests are deleted alongside the
+// handle-unfixable subcommand. The shim's escalate/halt branches are now
+// covered by internal/stages/security/run_test.go::TestRunStage_UnfixableHalt
+// and TestRunStage_UnfixableEscalate, which exercise the in-process path
+// the Go stage actually uses. The Escalator routing logic itself stays
+// covered by internal/security/escalation_test.go (unchanged from m35.1).
 
-func TestSecurityHandleUnfixable_HaltExits1(t *testing.T) {
-	bin := buildTekhtonBinary(t)
-	dir := t.TempDir()
-	cmd := exec.Command(bin, "security", "handle-unfixable",
-		"--policy", "halt",
-		"--block", "- [HIGH] x\n",
-		"--project-dir", dir,
-	)
-	err := cmd.Run()
-	exit, ok := err.(*exec.ExitError)
-	if !ok {
-		t.Fatalf("expected non-nil exit error, got %v", err)
-	}
-	if exit.ExitCode() != 1 {
-		t.Errorf("exit = %d, want 1", exit.ExitCode())
+// TestSecurityHandleUnfixable_Removed asserts the contract change is
+// permanent: the deleted subcommand is not registered under the security
+// parent. Cobra's default behavior on an unknown subcommand is to print
+// help and exit 0, so this test asserts on the registered subcommand
+// list directly rather than on subprocess exit codes.
+func TestSecurityHandleUnfixable_Removed(t *testing.T) {
+	c := newSecurityCmd()
+	for _, sub := range c.Commands() {
+		name := strings.SplitN(sub.Use, " ", 2)[0]
+		if name == "handle-unfixable" {
+			t.Fatal("handle-unfixable subcommand must be deleted after m35.2 (was shim-only)")
+		}
 	}
 }

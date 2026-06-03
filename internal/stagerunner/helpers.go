@@ -4,7 +4,9 @@ import (
 	"context"
 
 	"github.com/geoffgodwin/tekhton/internal/proto"
+	"github.com/geoffgodwin/tekhton/internal/stages/cleanup"
 	"github.com/geoffgodwin/tekhton/internal/stages/docs"
+	securitystage "github.com/geoffgodwin/tekhton/internal/stages/security"
 )
 
 // StageImpl is the entry-point signature every Go-native stage exports. The
@@ -187,9 +189,12 @@ var DefaultStageDefs = map[string]StageDef{
 	proto.StageCoder: {
 		Script: "stages/coder.sh",
 	},
+	// m35.2: security is the third Go-native stage (after docs in m34.1 and
+	// cleanup in m34.2). GoImpl takes the dispatch; Script and Helpers are
+	// dropped because the bash files (stages/security.sh +
+	// lib/security_helpers.sh) are deleted in the same milestone.
 	proto.StageSecurity: {
-		Script:  "stages/security.sh",
-		Helpers: []string{"lib/security_helpers.sh"},
+		GoImpl: securitystage.RunStage,
 	},
 	proto.StageReview: {
 		Script:  "stages/review.sh",
@@ -206,8 +211,13 @@ var DefaultStageDefs = map[string]StageDef{
 			"lib/test_audit_sampler.sh",
 		},
 	},
+	// m34.2: cleanup is the second Go-native stage (after docs in m34.1).
+	// Script stays set as the audit-trail signal — the dispatcher prefers
+	// GoImpl and never resolves the script path. Helpers is empty because
+	// cleanup never had per-stage bash helpers.
 	proto.StageCleanup: {
 		Script: "stages/cleanup.sh",
+		GoImpl: cleanup.RunStage,
 	},
 	// m34.1: docs is the first Go-native stage. Script stays set as an
 	// audit-trail signal (m34 parent Goal 5) — the dispatcher prefers

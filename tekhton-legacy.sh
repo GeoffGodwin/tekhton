@@ -1008,8 +1008,9 @@ source "${TEKHTON_HOME}/stages/coder.sh"
 # m34.1: stages/docs.sh + lib/docs_agent.sh ported to internal/stages/docs/.
 # The Go-native docs stage runs via the GoImpl dispatch in stagerunner; there
 # are no bash residues to source here.
-source "${TEKHTON_HOME}/lib/security_helpers.sh"
-source "${TEKHTON_HOME}/stages/security.sh"
+# m35.2: stages/security.sh + lib/security_helpers.sh ported to
+# internal/stages/security/. The Go-native security stage runs via the
+# GoImpl dispatch in stagerunner; there are no bash residues to source here.
 source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/review_helpers.sh"
 source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"
@@ -1021,7 +1022,18 @@ source "${TEKHTON_HOME}/lib/test_audit_sampler.sh"
 source "${TEKHTON_HOME}/stages/tester.sh"
 # Note: tester sub-stages (tester_tdd.sh, tester_continuation.sh, tester_fix.sh,
 # tester_timing.sh, tester_validation.sh) are sourced by tester.sh itself.
-source "${TEKHTON_HOME}/stages/cleanup.sh"
+# m34.2: stages/cleanup.sh ported to internal/stages/cleanup/. The
+# Go-native cleanup stage runs via the GoImpl dispatch in stagerunner.
+# The shim functions below cover legacy bash callers that still invoke
+# should_run_cleanup / run_stage_cleanup directly from this file
+# (post-pipeline debt sweep at line 3125 below). Both shims defer to
+# the Go side: should_run_cleanup returns 1 (no-trigger) so the bash
+# control flow falls through and the Go runner dispatches cleanup via
+# its own pipeline ordering. run_stage_cleanup is a no-op for the same
+# reason — the legacy bash path is no longer the authoritative cleanup
+# entry point.
+should_run_cleanup() { return 1; }
+run_stage_cleanup() { return 0; }
 
 # m18: stage envelope wrapper. Wraps every run_stage_<name> with a tail block
 # that emits a tekhton.stage.result.v1 envelope to TEKHTON_STAGE_RESULT_FILE

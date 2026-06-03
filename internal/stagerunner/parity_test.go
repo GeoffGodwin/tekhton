@@ -163,9 +163,11 @@ func TestDefaultStageDefsHelpersMatchLegacy(t *testing.T) {
 	// lines 961-983.  Each entry is the relative path as it would appear in
 	// StageDef.Helpers.  Stage script lines (stages/X.sh) are excluded.
 	wantHelpers := map[string][]string{
-		proto.StageIntake:   {"lib/intake_helpers.sh", "lib/intake_verdict_handlers.sh"},
-		proto.StageCoder:    {},
-		proto.StageSecurity: {"lib/security_helpers.sh"},
+		proto.StageIntake: {"lib/intake_helpers.sh", "lib/intake_verdict_handlers.sh"},
+		proto.StageCoder:  {},
+		// m35.2: security stage ported to internal/stages/security/;
+		// lib/security_helpers.sh deleted alongside it. No bash helper sourced.
+		proto.StageSecurity: {},
 		// stages/review_helpers.sh is sourced globally in tekhton-legacy.sh
 		// (line 972) after stages/review.sh; stages/review.sh calls
 		// _route_specialist_rework() (line 368), which is defined in

@@ -83,10 +83,14 @@ rm -f /tmp/tekhton_stage_env_*_post.txt /tmp/tekhton_stage_env_*_pre.txt
 export TEKHTON_AGENT_BINARY="$FAKE_AGENT"
 export FAKE_AGENT_MODE=happy
 
-# defaultStageOrder() in internal/runner/single.go. Keep in sync — the
-# milestone Watch For warns about silent coverage gaps if a stage isn't
-# exercised.
-STAGES=(intake coder security review tester)
+# defaultStageOrder() in internal/runner/single.go, restricted to the
+# stages whose adapter is still the BashAdapter. Go-native stages (docs
+# m34.1, cleanup m34.2, security m35.2) bypass the bash source chain so
+# the env-dump signal would never fire for them — they belong in the Go
+# stage-port test suites, not here. Keep in sync — the milestone Watch
+# For warns about silent coverage gaps if a stage isn't exercised here
+# but still has a bash adapter.
+STAGES=(intake coder review tester)
 RUN_STDERR="${WORKDIR}/all_stderr.log"
 : > "$RUN_STDERR"
 

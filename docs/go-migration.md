@@ -855,3 +855,49 @@ pipeline state directly from the helper. The Go `HandleUnfixable` returns
 RunStage) writes state with the correct stage-level context. Pipeline
 state is stage-owned; pushing the write into the security helper would
 tangle layering across the m35.1 → m35.2 cutover.
+
+## M35.2 — Security stage ported; transition tax retired
+
+m35.2 closes the m35 arc. The bash `stages/security.sh` and
+`lib/security_helpers.sh` files delete; `internal/stages/security/`
+lands as the third Go-native stage (after docs in m34.1 and cleanup
+in m34.2). `DefaultStageDefs[proto.StageSecurity]` carries `GoImpl =
+securitystage.RunStage` and the dispatcher routes Go-native — no bash
+sourcing, no per-cycle subprocess spawns.
+
+**Transition tax retired.** The 5-spawn-per-cycle tax m35.1 introduced
+(`is-docs-only`, `parse-findings`, three `build-block` calls + N
+`meets-threshold` calls) is gone. The Go stage calls the m35.1
+internal/security helpers in-process — every `MeetsThreshold`,
+`ParseReport`, `BuildFixableBlock`, etc. resolves to a function call
+rather than `exec("tekhton security ...")`. On a 5-finding cycle the
+saved per-cycle latency is ~300ms on the m35.2 author's WSL host.
+
+**`stages/security.sh` (167 LOC) deleted; `lib/security_helpers.sh`
+(60-LOC shim) deleted.** The wedge-audit gate passes clean. The
+per-stage helper entry in `DefaultStageDefs` retires alongside —
+`Helpers` is empty, matching the docs (m34.1) and cleanup (m34.2)
+ports.
+
+**Operator-facing CLI subset retained.** Following the m17 diagnose
+retention precedent, `tekhton security parse-findings` and
+`tekhton security meets-threshold` un-Hide (operator inspection
+tools); `build-block` and `is-docs-only` stay Hidden (debug-only);
+`handle-unfixable` deletes outright (was shim-only — no callers
+remain, and operators have `tekhton drift human-action append`
+for hand-authored escalations).
+
+**Parity preserved.** The full m35.2 fixture set (agent-disabled,
+skip-flag, docs-only, pass/no-findings, fixable-rework-pass,
+unfixable-halt, unfixable-escalate) exercises every branch through
+the Go RunStage and matches the bash semantics line-for-line. The
+post-rework build-gate "break" semantics, the doubly-defaulting
+`MILESTONE_SECURITY_MAX_TURNS`, the `SECURITY_NOTES_FILE` empty-path
+no-op, and the halt-branch pipeline-state write are all preserved.
+
+**HUMAN_ACTION_FILE resolution unified.** m35.2's Go stage and the
+shared CLI resolver (`cmd/tekhton/drift.go::humanActionPath`) both
+honor the `HUMAN_ACTION_FILE` env override and fall back to
+`${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md`. Tests assert the resolved
+path so a future divergence between the stage and the drift CLI
+shows up at green-to-red transition.

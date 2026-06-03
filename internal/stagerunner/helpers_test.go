@@ -196,6 +196,40 @@ func TestDefaultStageDefs_DocsDropsBashHelper(t *testing.T) {
 	}
 }
 
+// TestDefaultStageDefs_CleanupHasGoImpl asserts the m34.2 wiring: the
+// cleanup stage is the second port and its DefaultStageDefs entry MUST
+// carry a non-nil GoImpl. Regressions here mean the dispatcher would
+// fall through to the (deleted) bash script.
+func TestDefaultStageDefs_CleanupHasGoImpl(t *testing.T) {
+	def, ok := DefaultStageDefs[proto.StageCleanup]
+	if !ok {
+		t.Fatalf("DefaultStageDefs missing cleanup entry")
+	}
+	if def.GoImpl == nil {
+		t.Fatalf("DefaultStageDefs[cleanup].GoImpl is nil — cleanup stage was ported in m34.2")
+	}
+}
+
+// TestDefaultStageDefs_SecurityHasGoImpl asserts the m35.2 wiring: the
+// security stage is the third port and its DefaultStageDefs entry MUST
+// carry a non-nil GoImpl. Regressions here mean the dispatcher would
+// fall through to the (deleted) bash script.
+func TestDefaultStageDefs_SecurityHasGoImpl(t *testing.T) {
+	def, ok := DefaultStageDefs[proto.StageSecurity]
+	if !ok {
+		t.Fatalf("DefaultStageDefs missing security entry")
+	}
+	if def.GoImpl == nil {
+		t.Fatalf("DefaultStageDefs[security].GoImpl is nil — security stage was ported in m35.2")
+	}
+	if def.Script != "" {
+		t.Errorf("DefaultStageDefs[security].Script = %q, want empty (bash file deleted in m35.2)", def.Script)
+	}
+	if len(def.Helpers) != 0 {
+		t.Errorf("DefaultStageDefs[security].Helpers = %v, want nil (lib/security_helpers.sh deleted in m35.2)", def.Helpers)
+	}
+}
+
 // TestStageDefForOverridePreservesHelpers asserts that overriding Stages with
 // a definition that includes Helpers carries those helpers through to
 // stageDefFor (and thus to the bash wrapper). The legacy adapter only stored
