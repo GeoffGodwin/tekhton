@@ -3,9 +3,9 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 187
+- Runs since audit: 188
 =======
-- Runs since audit: 187
+- Runs since audit: 188
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -54,6 +54,8 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-03 | "unknown"] `milestone_window_build.sh:263` â the WINDOW_HEADER heredoc uses a single-quoted delimiter (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` on the last instruction line is a literal string in the rendered prompt rather than the resolved filename. Pre-existing behavior moved verbatim from `milestone_window.sh`; agents that read the instruction literally will look for a file named `${CODER_SUMMARY_FILE}`. Worth a follow-up fix (change delimiter to unquoted, or replace with the literal `CODER_SUMMARY.md`).
+- [x] [2026-06-03 | "unknown"] `set -euo pipefail` appears at the top of both new sourced lib files (`milestone_window_build.sh:25`, `finalize_commit_sentinel.sh:16`), consistent with pre-existing convention in `milestone_window.sh:23` and `finalize_commit.sh:21` but inconsistent with the reviewer-checklist rule that sourced lib files should inherit rather than re-declare pipefail. ~20+ existing files carry this â drift pre-dates m41 and harmonisation is its own cleanup ticket.
 - [x] [2026-06-03 | "unknown"] `milestone_window_build.sh:263` â the WINDOW_HEADER heredoc uses single-quoted form (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` inside it is a literal string rather than the resolved path. Pre-existing behavior moved verbatim from `milestone_window.sh`; worth a follow-up fix or comment if agents are confused by the unexpanded variable in the prompt.
 - [x] [2026-06-03 | "unknown"] `set -euo pipefail` appears at the top of both new sourced lib files (`milestone_window_build.sh:25`, `finalize_commit_sentinel.sh:16`). Consistent with pre-existing project convention in `milestone_window.sh:23` and `finalize_commit.sh:21`, but inconsistent with the reviewer checklist rule that sourced lib files should not set pipefail. Pre-existing drift across ~20+ files â not introduced by m41; harmonisation is its own cleanup ticket.
 - [x] [2026-06-03 | "unknown"] `milestone_window_build.sh:263` â the WINDOW_HEADER heredoc uses a single-quoted form (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` is a literal string in the coder prompt rather than the resolved path. Pre-existing behavior moved verbatim from `milestone_window.sh`; the coder notes it in Design Observations. Worth a follow-up comment or fix if it causes agent confusion in practice.
