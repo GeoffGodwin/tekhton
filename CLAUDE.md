@@ -37,6 +37,7 @@ tekhton/
 │   ├── hooks.sh            # Archive, commit message, final checks
 │   ├── finalize.sh         # Hook-based finalization sequence
 │   ├── finalize_commit.sh  # Commit hook + _do_git_commit helpers
+│   ├── finalize_commit_sentinel.sh # m41 sentinel readers (_final_check_result_read / _final_check_reason_read)
 │   ├── finalize_aux.sh     # Aux finalize hooks (express, baseline, M129 reset)
 │   ├── finalize_dashboard_hooks.sh # Dashboard/causal-log/TUI finalize hooks
 │   ├── finalize_display.sh # Completion banner + action items
@@ -91,7 +92,8 @@ tekhton/
 │   ├── remediation.sh      # m17 rename of error_patterns_remediation.sh
 │   ├── milestone_dag.sh    # m14 wedge shim — _DAG_* array queries + cross-process tekhton dag shims
 │   ├── milestone_query.sh  # m14 — DAG-aware milestone wrappers (parse_milestones_auto, et al.)
-│   ├── milestone_window.sh # Character-budgeted milestone sliding window
+│   ├── milestone_window.sh # m41 focused-block resolver + dotted-id glob fallback
+│   ├── milestone_window_build.sh # m41 budgeted multi-milestone window (extracted from milestone_window.sh)
 │   ├── draft_milestones.sh # Interactive milestone authoring flow (--draft-milestones)
 │   ├── draft_milestones_write.sh # Validation and manifest writing for draft milestones
 │   ├── milestone_progress.sh # Milestone progress CLI + next-action guidance

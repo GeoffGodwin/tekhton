@@ -22,6 +22,8 @@ set -euo pipefail
 
 # shellcheck source=lib/finalize_commit_staging.sh
 source "${TEKHTON_HOME:-}/lib/finalize_commit_staging.sh"
+# shellcheck source=lib/finalize_commit_sentinel.sh
+source "${TEKHTON_HOME:-}/lib/finalize_commit_sentinel.sh"
 
 # _do_git_commit MSG
 # Stages pipeline-declared files only (coder-declared ∪ bookkeeping
@@ -157,34 +159,11 @@ _tag_milestone_if_complete() {
     fi
 }
 
-# _final_check_result_read
-# Returns the persisted FINAL_CHECK_RESULT (0 when no failure was recorded).
-# Each finalize hook runs in its own bash subprocess under the Go shim, so
-# the in-memory FINAL_CHECK_RESULT set by _hook_final_checks does not
-# survive to _hook_commit — the sentinel file (.tekhton/.final_check_result)
-# is what carries the verdict between hooks.
-_final_check_result_read() {
-    local f="${TEKHTON_DIR:-.tekhton}/.final_check_result"
-    [[ -f "$f" ]] || { echo 0; return 0; }
-    local v
-    v=$(head -1 "$f" 2>/dev/null | tr -d '[:space:]')
-    [[ -z "$v" ]] && { echo 0; return 0; }
-    echo "$v"
-}
-
-# _hook_commit EXIT_CODE
-# Auto-commit flow. Runs only on success + clean final checks. Prints the
-# completion banner, the commit message, and commits. No push (operator
-# reviews + pushes manually).
-#
-# 2026-05-27: the y/e/n prompt was removed entirely. The historical
-# Tekhton behavior was always-commit-no-push, and the interactive prompt
-# we'd added was burning operator attention (be at terminal when run
-# finishes) AND occasionally hanging the whole pipeline when stdin was
-# unreachable (M27.2 cascade). Operators who want to review before
-# committing can set AUTO_COMMIT=false in pipeline.conf or pass
-# --no-commit; the pipeline then skips the commit and prints the
-# suggested message + manual command.
+# _hook_commit EXIT_CODE — auto-commit on success + clean final checks.
+# No push (operator reviews + pushes manually). 2026-05-27 removed the
+# y/e/n prompt — it burned operator attention and hung the pipeline when
+# stdin was unreachable (M27.2). AUTO_COMMIT=false / --no-commit skips
+# the commit and prints the suggested message + manual command.
 _hook_commit() {
     local exit_code="$1"
     if [[ "$exit_code" -ne 0 ]]; then
@@ -195,15 +174,23 @@ _hook_commit() {
         _write_commit_decision "skipped"
         return 0
     fi
-    # FINAL_CHECK_RESULT is set in-process when this hook happens to share a
-    # shell with _hook_final_checks (legacy / test paths). Under the Go
-    # orchestrator each hook is its own subprocess so we ALSO read the
-    # sentinel file _hook_final_checks writes. Either source non-zero ⇒
-    # block the commit and tell the operator why.
-    local _fcr_persisted
+    # FINAL_CHECK_RESULT may be set in-process (legacy) or only in the sentinel
+    # (Go-shim per-hook subprocess). Either source non-zero ⇒ block.
+    # m41: print the sentinel's `# <reason>` (coder_did_not_produce_summary,
+    # completion_gate_failed_substantive_work_only, …) instead of the
+    # FINAL_CHECK_RESULT=0 / persisted=1 contradiction. Numerics go to
+    # log_verbose for postmortem.
+    local _fcr_persisted _fcr_reason _sentinel_path
     _fcr_persisted=$(_final_check_result_read)
+    _sentinel_path="${TEKHTON_DIR:-.tekhton}/.final_check_result"
     if [[ "${FINAL_CHECK_RESULT:-0}" -ne 0 ]] || [[ "$_fcr_persisted" -ne 0 ]]; then
-        warn "Commit blocked: final checks failed (FINAL_CHECK_RESULT=${FINAL_CHECK_RESULT:-0}, persisted=${_fcr_persisted})."
+        _fcr_reason=$(_final_check_reason_read)
+        if [[ -n "$_fcr_reason" ]]; then
+            warn "Commit blocked: ${_fcr_reason} (see ${_sentinel_path})"
+        else
+            warn "Commit blocked: final checks failed (see ${_sentinel_path})"
+        fi
+        log_verbose "[_hook_commit] FINAL_CHECK_RESULT=${FINAL_CHECK_RESULT:-0} persisted=${_fcr_persisted} reason=${_fcr_reason:-<none>}"
         warn "Resolve the failures shown above, then commit manually with: git add -A && git commit"
         warn "To skip the gate intentionally, run: tekhton finalize --commit-on-test-failure (TBD)."
         _write_commit_decision "skipped"

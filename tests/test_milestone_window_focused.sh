@@ -338,6 +338,134 @@ source "${TEKHTON_HOME}/lib/milestone_dag.sh"
 load_manifest
 
 # =============================================================================
+echo "--- m41 Test: dotted-id resolves via glob fallback (no manifest row) ---"
+# Regression for the sdivi-rust dogfood run: a downstream project ships a
+# milestone file `m49.2-*.md` whose dotted id ("49.2") has no row in
+# MANIFEST.cfg. set_focused_milestone_block must still resolve the file
+# via the MILESTONE_DIR glob fallback (m41 Goal 1) — otherwise the coder
+# stage's old trip_commit_gate path would have hard-blocked the commit
+# even though all downstream stages succeeded.
+
+cat > "${MILESTONE_DIR_ABS}/m49.2-bold-label-fixture.md" << 'DOTTED_EOF'
+# m49.2 — Downstream Bold-Label Fixture
+
+This fixture mirrors the sdivi-rust milestone file shape: dotted id with
+no manifest row, **Watch For:** bold-label sections (no H2 markers), and
+a `**Seeds Forward:**` block at the end.
+
+## Overview
+
+A two-paragraph overview block. Authoring style varies across downstream
+projects and `set_focused_milestone_block` must tolerate the shape.
+
+## Acceptance Criteria
+
+- Dotted-id resolves via glob when DAG has no matching row
+- The block carries the full file body verbatim
+
+**Watch For:**
+
+- Do not weaken the genuine anti-rubber-stamp gates.
+- The fix narrows ONE false-positive trip, not the hollow-run protections.
+
+**Seeds Forward:**
+
+- A `tekhton finalize --recover` subcommand for blocked-but-green runs.
+DOTTED_EOF
+
+MILESTONE_MODE=true
+_CURRENT_MILESTONE=49.2
+MILESTONE_BLOCK=""
+result=0
+set_focused_milestone_block && result=0 || result=1
+assert "[m41] returns 0 for dotted id 49.2 (file on disk, no manifest row)" "$result"
+
+result=0
+[[ -n "$MILESTONE_BLOCK" ]] && result=0 || result=1
+assert "[m41] MILESTONE_BLOCK is non-empty for dotted id" "$result"
+
+result=0
+echo "$MILESTONE_BLOCK" | grep -q "Downstream Bold-Label Fixture" && result=0 || result=1
+assert "[m41] MILESTONE_BLOCK carries the file body" "$result"
+
+# The bold-label sections are part of the FULL content dump from
+# set_focused_milestone_block, so they must appear verbatim regardless of
+# whether the file uses ## or **...:** markup.
+result=0
+echo "$MILESTONE_BLOCK" | grep -q "\*\*Watch For:\*\*" && result=0 || result=1
+assert "[m41] MILESTONE_BLOCK includes **Watch For:** bold-label section" "$result"
+
+result=0
+echo "$MILESTONE_BLOCK" | grep -q "\*\*Seeds Forward:\*\*" && result=0 || result=1
+assert "[m41] MILESTONE_BLOCK includes **Seeds Forward:** bold-label section" "$result"
+
+# Header banner names the resolved id with the m-prefix.
+result=0
+echo "$MILESTONE_BLOCK" | grep -q "m49\\.2" && result=0 || result=1
+assert "[m41] MILESTONE_BLOCK header names the resolved dotted id" "$result"
+
+# =============================================================================
+echo "--- m41 Test: _extract_first_paragraph_and_acceptance tolerates markup ---"
+# The truncation-path extractor (used by build_milestone_window when the
+# active milestone overflows the budget) must match both `## Acceptance
+# Criteria` (H2) and `**Acceptance Criteria:**` (bold-label), AND keep
+# Watch For / Seeds Forward H2 sections rolled into the result so they
+# survive the truncation hop.
+
+# H2 markup fixture
+H2_FIXTURE="# Top-line title
+
+Intro paragraph.
+
+## Acceptance Criteria
+
+- crit one
+- crit two
+
+## Watch For
+
+- watch one
+
+## Seeds Forward
+
+- seed one"
+
+result=0
+output=$(_extract_first_paragraph_and_acceptance "$H2_FIXTURE")
+echo "$output" | grep -q "crit one" && result=0 || result=1
+assert "[m41] extractor matches ## Acceptance Criteria H2 marker" "$result"
+
+result=0
+echo "$output" | grep -q "watch one" && result=0 || result=1
+assert "[m41] extractor keeps ## Watch For section through truncation" "$result"
+
+result=0
+echo "$output" | grep -q "seed one" && result=0 || result=1
+assert "[m41] extractor keeps ## Seeds Forward section through truncation" "$result"
+
+# Bold-label markup fixture
+BOLD_FIXTURE="# Top-line title
+
+Intro paragraph.
+
+**Acceptance Criteria:**
+
+- crit alpha
+- crit beta
+
+**Watch For:**
+
+- watch alpha"
+
+result=0
+output=$(_extract_first_paragraph_and_acceptance "$BOLD_FIXTURE")
+echo "$output" | grep -q "crit alpha" && result=0 || result=1
+assert "[m41] extractor matches **Acceptance Criteria:** bold-label" "$result"
+
+# Cleanup the dotted fixture so subsequent test runs are reproducible.
+rm -f "${MILESTONE_DIR_ABS}/m49.2-bold-label-fixture.md"
+
+# =============================================================================
 echo
 echo "────────────────────────────────────────"
 echo "  Passed: ${PASS}  Failed: ${FAIL}"

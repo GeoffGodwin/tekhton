@@ -242,20 +242,22 @@ $(_wrap_file_content "ARCHITECTURE" "$_arch_content")"
         # files (the M23 pattern where scout returned "Files to modify: 0").
         # Scout runs before the coder-stage MILESTONE_BLOCK population below.
         #
-        # If MILESTONE_MODE is true but the block can't be populated, that
-        # is a fatal-class issue — every downstream stage will see the
-        # same empty prompt and produce hollow work. Trip the commit gate
-        # loudly rather than letting the synthesize-fallback rubber-stamp
-        # a fake COMPLETE later. This guards against the M23 hollow-run
-        # cascade we hit five times before finding the load_manifest gap.
+        # m41: block population is an INPUT safeguard, not a result check.
+        # If set_focused_milestone_block fails (dotted id without a manifest
+        # row + glob miss, transient I/O, etc.), warn and proceed — the
+        # downstream stages may still produce valid work, and the existing
+        # hollow-run gates (coder_did_not_produce_summary,
+        # completion_gate_failed_substantive_work_only,
+        # reviewer_did_not_produce_report, tester_did_not_produce_report)
+        # already block rubber-stamped fallbacks. Tripping the commit gate
+        # here override green downstream stages and forced operator-side
+        # recovery on a sdivi-rust dogfood run (milestone 49.2) where the
+        # produced code was correct and complete.
         if declare -f set_focused_milestone_block &>/dev/null; then
             if ! set_focused_milestone_block 2>/dev/null \
                && [[ "${MILESTONE_MODE:-false}" = "true" ]]; then
                 warn "[coder] MILESTONE_BLOCK could not be populated for ${_CURRENT_MILESTONE:-?}."
-                warn "[coder] Scout/coder will receive an empty milestone prompt and likely produce nothing."
-                if declare -f trip_commit_gate &>/dev/null; then
-                    trip_commit_gate "milestone_block_unavailable_${_CURRENT_MILESTONE:-unknown}"
-                fi
+                warn "[coder] Scout/coder will receive a generic milestone prompt; downstream hollow-run gates remain in effect."
             fi
         fi
 
