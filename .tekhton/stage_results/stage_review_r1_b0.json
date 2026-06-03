@@ -4,6 +4,6 @@
   "verdict": "pass",
   "exit_reason": "exit=0",
   "agent_calls": 1,
-  "duration_sec": 178,
+  "duration_sec": 232,
   "human_action_required": false
 }
