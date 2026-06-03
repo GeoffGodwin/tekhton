@@ -5,6 +5,7 @@ Items are auto-collected from `## Non-Blocking Notes` in REVIEWER_REPORT.md.
 The coder is prompted to address these when the count exceeds the threshold.
 
 ## Open
+- [ ] [2026-06-03 | "unknown"] Null runs are normal when the pipeline is invoked with no milestone queued; the operator should confirm the next milestone is authored and added to MANIFEST.cfg before the next run.
 - [ ] [2026-06-03 | "unknown"] `CLARIFICATIONS.md` corruption noted in the coder summary (every answer echoes the question verbatim) is worth investigating at the pipeline level before the next invocation so future coders receive usable context.
 - [ ] [2026-06-03 | "unknown"] `cleanup-batch-resolved` parity scenario â Acceptance criterion specified: "asserts the on-disk notes document mutates with exactly the expected `[x]` and `[DEFERRED]` markers â verified by a diff against the golden file." The scenario instead asserts `skip/no-eligible-notes` (CLEANUP_BATCH_SIZE=0 short-circuits before the agent). Mutation behavior is covered by unit tests; the retro documents the gap honestly. Not a functional regression, but the AC is literally unmet. Log for the m40 cleanup pass or a future parity-harness hardening milestone.
 - [ ] [2026-06-02 | "unknown"] `resilience.go:309` â `projectFilePath` is defined but never called; the comment says "used by the preflight rule below" but `resilience_preflight.go` uses `projectPath` instead. Dead code; can be deleted.
