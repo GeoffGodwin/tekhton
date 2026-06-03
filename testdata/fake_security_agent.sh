@@ -28,7 +28,7 @@
 #
 # All output is line-buffered for the supervisor's bufio.Scanner.
 # =============================================================================
-set -u
+set -euo pipefail
 
 scenario="${FAKE_SECURITY_SCENARIO:-pass-no-findings}"
 report="${FAKE_SECURITY_REPORT:-$PWD/.tekhton/SECURITY_REPORT.md}"

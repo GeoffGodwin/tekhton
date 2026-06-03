@@ -1,9 +1,9 @@
+# JR Coder Summary — m35.3 Simple Blockers
+
 ## What Was Fixed
 
-- **`engine.go:229-231` — removed `doubleQuotedRe`**: Package-level `var` declared but never referenced anywhere in the package or tests. Removed to resolve staticcheck U1000.
-- **`engine.go:389-397` — removed `jsonString()`**: Unexported method on `*Context` that was never called from production code or any test file. Removed to resolve staticcheck U1000.
-- **`engine.go` import — removed `"encoding/json"`**: Became unused after `jsonString()` was deleted.
+- `testdata/fake_security_agent.sh:31` — changed `set -u` to `set -euo pipefail` so the standalone entry point declares all three required flags per project rules.
 
 ## Files Modified
 
-- `internal/diagnose/engine.go`
+- `testdata/fake_security_agent.sh`

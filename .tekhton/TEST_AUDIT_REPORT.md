@@ -1,105 +1,108 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 6 files, 68 test functions
+Tests audited: 8 files, ~75 test functions (6 Go files × ~10 functions each, 2 bash files × ~6 scenarios each)
 Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: `TestExportEnvBlocks` leaves process env dirty after the test
-- File: internal/stages/security/run_test.go:551-585
-- Issue: The test calls `os.Unsetenv` to clear three env vars at the top, then calls
-  `exportEnvBlocks` which sets them via `os.Setenv`. Neither call registers a cleanup
-  with the testing framework, so `SECURITY_REWORK_CYCLES_DONE=2`,
-  `SECURITY_FINDINGS_BLOCK=…`, and `SECURITY_FIXES_BLOCK=…` persist in process env
-  after the test exits. Any subsequent test that reads these vars without first
-  resetting them can observe stale values. Practical impact is low today because all
-  RunStage tests call `setupProject`, which resets all three via `t.Setenv`
-  (auto-restored). However, any new test that calls `exportEnvBlocks` directly and
-  omits `setupProject` will read stale state.
+#### COVERAGE: Parity baselines were self-captured from the Go implementation, not from pre-M35 bash
+- File: tests/test_security_parity.sh:26-35 (header comment, bootstrap note)
+- Issue: The nine baseline files under `tests/baselines/m35-security/` were captured
+  from the current Go stage output, not from pre-M35 bash behavior (tag
+  `v4.34.99-security-baseline` was never created — acknowledged meta-failure). The gate
+  therefore detects Go-vs-Go regressions from the capture point forward but cannot detect
+  behavioral differences that were introduced during the port. The partial mitigation —
+  m35.1's 18 golden-file baselines in `internal/security/testdata/baselines/` establish
+  byte-for-byte parity for ParseReport, BuildFixableBlock, BuildUnfixableBlock, and
+  BuildNotesBlock — covers leaf functions but not stage-level orchestration (skip-check
+  order, rework cycle accounting, HumanAction flag setting, exit-reason selection).
 - Severity: MEDIUM
-- Action: Replace the manual `os.Unsetenv` preamble and the sub-test's reliance on
-  `os.Setenv` side-effects with `t.Setenv` calls (or register `t.Cleanup(func() {
-  os.Unsetenv("SECURITY_REWORK_CYCLES_DONE") })` etc.). `exportEnvBlocks` must keep
-  using `os.Setenv` in production to reach downstream bash stages, but the test can
-  protect itself with explicit cleanups.
+- Action: For m36+, create a `v4.<minor>.99-<stage>-baseline` capture tag before the Go
+  port lands and diff against it in the parity gate. For m35 specifically, accept the
+  transitive-baseline approach as the mitigation (already documented in the script header
+  and `docs/go-migration.md`). No code change required unless a behavioral discrepancy
+  surfaces during dogfood.
 
-#### COVERAGE: `TestSecurityCmd_AllSubcommandsHelp` makes a vacuous assertion
-- File: cmd/tekhton/security_test.go:105-116
-- Issue: `sub.Execute()` with `--help` always returns `nil` in Cobra by design — it
-  prints help and exits cleanly. The assertion `if err := sub.Execute(); err != nil`
-  is structurally equivalent to `assert(True)` for any properly-registered command.
-  The test adds no correctness signal beyond "the command tree doesn't panic during
-  registration," which is already implied by `TestSecurityCmd_RegisterAndVisibility`
-  traversing the same command slice.
+#### EXERCISE: TestResolveTekhtonBin_LookPath asserts suffix rather than exact path
+- File: internal/stages/security/coverage_test.go:121-123
+- Issue: After constraining `PATH` to only `binDir` (a temp dir containing one binary),
+  the test asserts `strings.HasSuffix(got, "tekhton")` instead of `got == fakeBin`. If
+  `exec.LookPath` were to return a symlink-resolved or otherwise canonicalized path
+  different from `fakeBin`, the suffix check passes while the stronger invariant fails
+  silently. In practice the controlled PATH prevents false passes today, but the assertion
+  does not express the test's actual intent.
 - Severity: LOW
-- Action: Either remove the test (its smoke-test value is fully covered by
-  `TestSecurityCmd_RegisterAndVisibility`) or strengthen it by capturing stdout and
-  asserting the help output contains the subcommand's name string — this would at
-  least catch a command registered with an empty `Use:` field.
+- Action: Replace the two weak assertions (non-empty + suffix) with a single
+  `if got != fakeBin { t.Errorf(...) }`. The equality check is both more precise and
+  shorter.
 
-#### ISOLATION: RunStage tests leave env vars set via `os.Setenv` in process state
-- File: internal/stages/security/run_test.go:294 (TestRunStage_FixableReworkPass), and
-  indirectly from any RunStage call that reaches `exportEnvBlocks`
-- Issue: `RunStage` calls `exportEnvBlocks` → `os.Setenv(…)` for the three SECURITY_*
-  vars. These are not cleaned up by the test framework. `TestRunStage_FixableReworkPass`
-  reads `os.Getenv("SECURITY_REWORK_CYCLES_DONE")` directly (line 294) rather than from
-  the returned result struct. If test execution order changes or parallelism is
-  introduced, this could produce a false positive from a prior test's stale value.
-  Current mitigation: `setupProject` resets all three via `t.Setenv`, protecting every
-  test that calls it.
+#### SCOPE: TestSecurityHandleUnfixable_Removed duplicates a check inside TestSecurityCmd_RegisterAndVisibility
+- File: cmd/tekhton/security_test.go:271-278
+- Issue: `TestSecurityHandleUnfixable_Removed` iterates `c.Commands()` and fatals if
+  `handle-unfixable` is registered. `TestSecurityCmd_RegisterAndVisibility` (lines 89-91)
+  performs the identical check inside its broader visibility audit. The standalone test
+  adds no new assertion surface.
 - Severity: LOW
-- Action: Where `os.Getenv` post-RunStage is intentional (asserting the downstream bash
-  env-export contract), add `t.Cleanup(func() { os.Unsetenv("SECURITY_REWORK_CYCLES_DONE")
-  })` etc. at the start of the affected sub-tests. For the assertion itself, prefer reading
-  `res.AgentCalls` and related result-struct fields over re-reading process env where the
-  information is available from both sources — the result struct is never stale.
+- Action: Remove `TestSecurityHandleUnfixable_Removed`. The deletion contract is fully
+  preserved by `TestSecurityCmd_RegisterAndVisibility`.
+
+#### ISOLATION: test_wedge_audit_m35.sh writes audit output to a fixed /tmp path
+- File: tests/test_wedge_audit_m35.sh:52, 67, 87
+- Issue: Tests 2, 3, and 4 redirect `bash "$AUDIT_SCRIPT"` output to
+  `/tmp/wedge_audit_m35.out` — a path shared across any concurrent invocations on
+  the same host (two CI workers, parallel `make test` shards). A race between a write
+  and the subsequent `grep -qF` could produce a spurious pass or fail. The file is also
+  not removed by the `cleanup` trap, leaving it on disk after the test exits.
+- Severity: LOW
+- Action: Add `AUDIT_OUT=$(mktemp)` near the top of the script (after the `cleanup`
+  function but before test 1); add `"$AUDIT_OUT"` to the `rm -f` list in `cleanup`;
+  replace the three `/tmp/wedge_audit_m35.out` references with `"$AUDIT_OUT"`.
 
 ### No Issues Found in the Following Areas
 
-**Assertion Honesty (all six files)** — Every assertion derives from an actual function
-call with controlled inputs. `TestParseReport_Fixtures` expected values match the fixture
-file content verbatim (verified against testdata/reports/). `TestBlocks_Goldens` diffs
-against 18 bash-captured baseline files (all present in testdata/baselines/); the baseline
-approach is sound for a port-parity test. `TestHandleUnfixable_*` expected description
-prefixes match the `switch` branch string literals in escalation.go:57–67 exactly.
-`TestClampTurns_MilestoneModeDoubles` expected values are derivable from the doubling/
-clamping rules in scan.go. No `assertTrue(True)`, tautological comparisons, or hard-coded
-"magic" values that bypass implementation logic were found (the rank integers 4/3/2/1 in
-`TestRank_KnownSeverities` are anchored against the `severityRank` map in severity.go).
+**Assertion Honesty (all 8 files)** — Every assertion derives from an actual function
+call against controlled input. `TestRank_KnownSeverities` rank integers (4/3/2/1) are
+anchored against `severityRank` in `severity.go:22-27`. `TestParseReport_Fixtures`
+expected `Finding` structs were verified to match the fixture content in
+`testdata/reports/`. `TestBlocks_Goldens` diffs against 18 golden files all present on
+disk under `internal/security/testdata/baselines/`. Escalation description prefixes in
+`TestHandleUnfixable_*` match the switch-branch string literals in `escalation.go:57-67`
+exactly. `TestSecurityMeetsThreshold_ExitCodes` exit codes derive from `MeetsThreshold`
+semantics verified in `severity_test.go`. No `assertEqual(x, x)`, no tautological
+comparisons, no hard-coded magic values that bypass implementation logic.
 
-**Test Weakening** — The only existing test file that was modified is
-`cmd/tekhton/security_test.go`. The changes are: `TestSecurityCmd_Hidden` renamed to
-`TestSecurityCmd_RegisterAndVisibility` with updated assertions reflecting the m35.2
-visibility split; `TestSecurityHandleUnfixable_Escalate*` and `_Halt*` deleted alongside
-the bash shim they exercised; `filterEnv` helper removed (only the deleted tests used it);
-`TestSecurityHandleUnfixable_Removed` added. None of these weaken coverage — the deleted
-shim tests are replaced by `TestRunStage_UnfixableHalt` and `TestRunStage_UnfixableEscalate`
-in `run_test.go` which exercise the in-process path the Go stage actually uses. The rename
-expands rather than narrows the assertion surface.
+**Test Weakening** — `cmd/tekhton/security_test.go` is the only file modified from a
+prior run. Deleted tests (`TestSecurityHandleUnfixable_Escalate*`, `_Halt*`) exercised
+the removed bash shim; they are replaced by `TestRunStage_UnfixableHalt` and
+`TestRunStage_UnfixableEscalate` in `run_test.go` which exercise the in-process Go path.
+`TestSecurityCmd_Hidden` was renamed to `TestSecurityCmd_RegisterAndVisibility` with
+assertions expanded (not narrowed) to cover the m35.2 visibility split. No assertion
+surface was removed without a documented replacement.
 
-**Test Naming** — All 68 test function names clearly encode the scenario and expected
-outcome. No opaque or ambiguous names found.
+**Test Naming** — All test function names encode both the scenario and the expected
+outcome. No opaque names (`test_1`, `test_thing`) found across any of the 8 files.
 
-**Scope Alignment** — All imports and symbol references resolve correctly against the
-current codebase. `stages/security.sh` and `lib/security_helpers.sh` are deleted;
-`tests/test_security_stage.sh` is also deleted per CODER_SUMMARY.md; no orphaned test
-file imports the deleted symbols. `handle-unfixable` subcommand removal is positively
-asserted by `TestSecurityHandleUnfixable_Removed`. `DefaultStageDefs[proto.StageSecurity]`
-routing is asserted by `TestDefaultStageDefs_SecurityHasGoImpl` (in
-`internal/stagerunner/helpers_test.go`, not listed in this audit but referenced as
-in-scope by the coder summary). All six audited files reference only live symbols.
+**Scope Alignment** — All imports and symbol references resolve against the current
+codebase. `stages/security.sh` and `lib/security_helpers.sh` are deleted; no audited
+test file imports or sources them. `handle-unfixable` subcommand removal is asserted in
+`security_test.go`. `test_wedge_audit_m35.sh` references only `scripts/wedge-audit.sh`
+and planted files that are created and removed within the test. No orphaned tests: the
+deleted file (`.tekhton/stage_results/stage_tester_r1_b0.json`) is not imported by any
+file under audit.
 
-**Implementation Exercise** — Tests call real functions. Mocking is targeted: `fakeAgent`
-and `fakeBuildGate` in `run_test.go` substitute the seams defined in `run.go` without
-mocking the function under test (`RunStage`). `fakeHumanAction` in `escalation_test.go`
-tests policy-routing logic while `TestNewEscalator_WiresRealHumanAction` exercises the
-real `drift.HumanAction` write path end-to-end in a temp dir. `buildTekhtonBinary` in
-`security_test.go` compiles and runs the real binary for exit-code contracts that
-cannot be intercepted in-process. No test mocks every dependency and then asserts
-only on the mock setup.
+**Implementation Exercise** — Tests call real code. `fakeAgent` and `fakeBuildGate` in
+`coverage_test.go` (shared from `run_test.go`) substitute only the I/O seams; `RunStage`
+itself is the function under test. `fakeHumanAction` in `escalation_test.go` tests
+policy-routing logic; `TestNewEscalator_WiresRealHumanAction` exercises the real
+`drift.HumanAction` write path end-to-end in a temp dir. `buildTekhtonBinary` compiles
+and executes the real binary for exit-code contracts. No test mocks every dependency and
+then asserts only on the mock setup.
 
-**Fixture Integrity** — All 6 report fixtures (testdata/reports/01–06.md) and all 18
-baseline files (testdata/baselines/01–06 × fixable/unfixable/notes) are present on
-disk (verified via glob). `TestParseReport_Fixtures` will fail with a descriptive error
-rather than silently pass if a fixture file goes missing.
+**Test Isolation (all 8 files)** — All Go tests use `t.TempDir()` for file I/O and
+`t.Setenv()` for env changes. `test_security_parity.sh` uses `mktemp -d` with an EXIT
+trap. `test_wedge_audit_m35.sh` plants files only in well-named locations inside the
+repo tree (`lib/_m35_test_planted_security_fn.sh`) and removes them via an EXIT trap.
+No test reads mutable pipeline artifacts (`.tekhton/CODER_SUMMARY.md`,
+`.tekhton/REVIEWER_REPORT.md`, `.tekhton/BUILD_ERRORS.md`, `.claude/logs/*`) from the
+live project directory without first writing controlled fixture content to a temp dir.
