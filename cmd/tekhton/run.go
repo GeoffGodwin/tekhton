@@ -472,7 +472,20 @@ func runAutoAdvanceLoop(
 		limit = 3 // bash default — AUTO_ADVANCE_LIMIT in config_defaults.sh
 	}
 
+	// IMPORTANT: the manifest stores entries keyed by their `m`-prefixed
+	// id ("m34.2"), but `normalizeMilestoneID` strips the prefix so
+	// `req.Milestone` is the bare-number form ("34.2"). All manifest
+	// operations below — `m.Get(currentID)`, frontier comparisons —
+	// need the `m`-prefixed form, or `Get` returns ok=false (silently
+	// skipping the safety check) AND the lex comparison gets the wrong
+	// ordering (bare "34.2" < any `m*` byte-wise, so every frontier
+	// entry passes the "strictly greater" filter and the loop picks
+	// `m05.1` instead of `m35.1`). The overnight m34.2 → m05.1 → m05.2
+	// → m32.3 advance was exactly this bug. Re-apply the prefix here.
 	currentID := initialReq.Milestone
+	if currentID != "" && !strings.HasPrefix(currentID, "m") {
+		currentID = "m" + currentID
+	}
 	advances := 0
 
 	for advances < limit {
