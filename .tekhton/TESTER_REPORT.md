@@ -4,7 +4,7 @@
 - [x] `tests/test_coder_block_unavailable_gate.sh` — structural: verify false-positive `trip_commit_gate` removed from coder.sh (AC2) and genuine hollow-run gates still present (AC3)
 
 ## Test Run Results
-Passed: 0  Failed: 0
+Passed: 504 shell + all Go packages  Failed: 0
 
 ## Bugs Found
 None

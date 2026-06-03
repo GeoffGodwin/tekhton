@@ -1,49 +1,103 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 8 files, ~95 test functions/cases
+Tests audited: 5 files (3 bash test files modified this run + 2 Go freshness-sample
+files), 12 assertions in test_finalize_commit_block_reason.sh, 34 total assertions
+in test_milestone_window_focused.sh (25 pre-existing + 9 m41 new), 6 assertions in
+test_coder_block_unavailable_gate.sh, ~20 test functions across the two Go proto
+test files.
 Verdict: PASS
 
 ### Findings
 
-#### ISOLATION: Wedge-audit test plants files in the live repo working tree
-- File: tests/test_wedge_audit_m35.sh:27-28, 51, 66
-- Issue: `PLANT_STAGE` and `PLANT_HELPERS` resolve to `${TEKHTON_HOME}/stages/security.sh` and `${TEKHTON_HOME}/lib/security_helpers.sh` — the actual Tekhton working tree, not a temp copy. A concurrent invocation or SIGKILL before the EXIT trap fires leaves planted files on disk, dirtying the working tree and causing Test 1 ("clean HEAD exits 0") to fail spuriously for any process running simultaneously. The per-test `rm -f` after Tests 2 and 3 mitigates this within a single sequential run but does not eliminate the race window between the `printf` write and the `rm`.
-- Severity: MEDIUM
-- Action: Run the audit against a `git worktree add --detach <tmpdir>` copy (set TEKHTON_HOME to the copy for the duration of the test), or document the single-invocation assumption near the PLANT_ variable declarations. The existing EXIT trap is otherwise correct and should be preserved.
-
-#### ISOLATION: Hardcoded /tmp scratch path shared across concurrent invocations
-- File: tests/test_wedge_audit_m35.sh:52, 67, 87, 111
-- Issue: Tests 2, 3, and 4 redirect audit output to the fixed path `/tmp/wedge_audit_m35.out`. Two concurrent invocations (parallel CI shards, or a manual run alongside `make dogfood`) can clobber each other's capture; the subsequent `grep -qF` may then read the wrong run's output, producing a spurious pass or fail. The file is not added to the `cleanup` trap's `rm -f` list, so it persists on disk after the test exits.
+#### COVERAGE: Truncation-path bold-label Watch-For not explicitly asserted
+- File: tests/test_milestone_window_focused.sh:447-462
+- Issue: `_extract_first_paragraph_and_acceptance` is exercised with two fixtures:
+  an H2 fixture (lines 416-431) and a bold-label fixture (lines 447-457). The H2
+  fixture correctly asserts that `## Watch For` and `## Seeds Forward` survive
+  (lines 438-444). The bold-label fixture contains both `**Acceptance Criteria:**`
+  and `**Watch For:**` but the only assertion on bold-label output (line 462) checks
+  for `crit alpha` — acceptance content — and does not verify `**Watch For:**`
+  bold-label text survives. The implementation handles this correctly because the
+  heading-end guard fires only on `^#{1,5}[[:space:]]` patterns; `**Watch For:**`
+  is not a Markdown heading and therefore never triggers the guard. No behavior bug
+  exists. The gap is coverage asymmetry between the H2 and bold-label fixtures.
 - Severity: LOW
-- Action: Replace all three `/tmp/wedge_audit_m35.out` references with a per-invocation temp file created near the top of the script (after the `cleanup` function): `AUDIT_OUT=$(mktemp)`. Add `"$AUDIT_OUT"` to the `rm -f` list inside `cleanup`. Replace the hardcoded references with `"$AUDIT_OUT"`.
+- Action: Add one assertion immediately after line 462:
+  `echo "$output" | grep -q "watch alpha" && result=0 || result=1`
+  `assert "[m41] extractor keeps **Watch For:** bold-label through truncation" "$result"`
+  This makes the bold-label fixture exercise symmetric with the H2 fixture.
 
-#### INTEGRITY: Parity baselines lock current Go output, not original bash captures
-- File: tests/test_security_parity.sh:25-34
-- Issue: The nine baselines under `tests/baselines/m35-security/` were captured from the current Go stage output via `M35_PARITY_CAPTURE=1`, not from the pre-M35 bash stage (the tag `v4.34.99-security-baseline` was never created — the acknowledged meta-failure documented in the script header and `docs/go-migration.md`). The gate detects Go-vs-Go regressions from the capture point forward but cannot detect behavioral differences introduced during the port itself. Leaf-function parity is covered transitively by m35.1's 18 golden-file baselines in `internal/security/testdata/baselines/`, so stage-level orchestration behaviors are not independently validated against bash output.
-- Severity: MEDIUM
-- Action: For m36+, create a `v4.<minor>.99-<stage>-baseline` capture tag before the Go port lands. For m35, accept the transitive-baseline approach already honestly documented. No code change required unless a behavioral discrepancy surfaces during dogfood.
-
-#### EXERCISE: TestRunStage_ScanFailedOnCreateTempError — code path ambiguity
-- File: internal/stages/security/coverage_test.go:260-290
-- Issue: The test sets TMPDIR to a non-existent path to force `writePromptTmpFile` to fail inside `invokeScanAgent`. However, if `invokeScanAgent` calls `prompt.Render` before `writePromptTmpFile` and the prompts directory cannot be resolved, Render may fail first — exercising a different code path while producing the same observable outcome (err != nil, VerdictFail, "scan_failed", AgentCalls=0). The test outcome is never incorrect, but the specific branch being covered is ambiguous. `setupProject` in `run_test.go` does wire `TEKHTON_HOME` to `repoRoot(t)`, which confirms the real prompts directory is available, so the intended `writePromptTmpFile` arm is the one actually exercised — but this is non-obvious without reading across files.
+#### EXERCISE: test_coder_block_unavailable_gate.sh tests structure, not runtime
+- File: tests/test_coder_block_unavailable_gate.sh:1-104
+- Issue: All six assertions use `grep` on `stages/coder.sh` source text. The test
+  verifies that the removed `trip_commit_gate "milestone_block_unavailable_..."` call
+  is absent and the replacement warn messages are present, but it cannot verify that
+  the warn-and-continue path executes correctly at runtime. The test header explicitly
+  acknowledges this limitation and cites the established structural-grep pattern in
+  this codebase (`scripts/wedge-audit.sh`,
+  `tests/test_tekhton_dir_root_cleanliness.sh`). No integrity violation is present.
+  The test is an appropriate regression guard for source-level invariants that would
+  be prohibitively expensive to cover with a full pipeline integration test.
 - Severity: LOW
-- Action: Add a brief inline comment in the test body: `// TEKHTON_HOME is wired to repoRoot(t) by setupProject, so prompt.Render succeeds; TMPDIR override then forces the CreateTemp arm of writePromptTmpFile.`
-
----
+- Action: No action required for this run. Note for future: if a coder-stage harness
+  that sources the stage without the full pipeline is ever introduced, a behavioral
+  assertion that `trip_commit_gate` is not called when `set_focused_milestone_block`
+  returns 1 would upgrade this to a runtime-verified invariant.
 
 ### No Issues Found in the Following Areas
 
-**Assertion Honesty (all 8 files)** — Every assertion derives from a real function call against controlled input. The rank integers (4/3/2/1) in `TestRank_KnownSeverities` are anchored directly against `severityRank` in severity.go:22-27. Expected `Finding` structs in `TestParseReport_Fixtures` match the fixture content in `testdata/reports/` and the `strings.Index(line, "] ")` Description-extraction logic in findings.go:69. `TestBlocks_Goldens` diffs against 18 golden baseline files confirmed present on disk. Escalation description prefixes in `TestHandleUnfixable_*` match the switch-branch string literals in escalation.go:57-67 exactly. No `assertEqual(x, x)`, no magic constants that bypass implementation logic, no always-passing assertions.
+**Assertion Honesty (all 5 files)** — All assertions derive their expected values
+from real function calls against controlled inputs. test_finalize_commit_block_reason.sh
+derives expected strings from `trip_commit_gate`'s documented write format
+(`printf '1\n# %s\n' "$reason"` confirmed at lib/common.sh:105) and the strip logic
+documented in `_final_check_reason_read`. test_milestone_window_focused.sh fixture
+assertions check text from milestone files constructed within the test's own temp
+directory — no hard-coded values appear outside implementation logic. No
+`assertTrue(True)`, `assertEqual(x, x)`, or always-passing assertion patterns
+detected across any of the audited files.
 
-**Edge Case Coverage** — Covered: nil/empty findings slices; missing files for ParseReport, IsDocsOnly, and the escalator human-action path; the full 4×4 MeetsThreshold matrix; case-sensitive fallthrough to rank=0; the complete `docsExt` allowlist via loop; malformed and truncated report fixtures; error propagation for both EnsureFile and Append failures; writeHaltState store-failure silent-discard; subprocessBuildGate no-binary noop; and three end-to-end scenarios (no-findings, fixable-rework-resolved, unfixable-escalate). The ratio of error-path to happy-path tests is healthy across all six Go files.
+**Isolation (all 3 bash test files)** — test_finalize_commit_block_reason.sh creates
+`TMP=$(mktemp -d)`, sets `TEKHTON_DIR="$TMP/.tekhton"`, installs an EXIT trap, and
+stubs `git` as a shell function so no real git operations can land on disk. All
+sentinel file reads and writes are redirected to the temp tree. test_milestone_window_focused.sh
+creates `TMPDIR=$(mktemp -d)`, redirects `PROJECT_DIR`, and `cd`s into the temp
+directory. Milestone files, MANIFEST.cfg, and pipeline state are all created inside
+the temp tree. test_coder_block_unavailable_gate.sh reads only source files, not
+run artifacts — inherently isolated. No audited test reads `.tekhton/CODER_SUMMARY.md`,
+`.tekhton/REVIEWER_REPORT.md`, `.claude/logs/*`, or any other mutable pipeline
+artifact from the live repository.
 
-**Test Weakening** — `cmd/tekhton/security_test.go` is the only file that modified existing tests. The deleted `TestSecurityHandleUnfixable_*` tests covered a shim-only subcommand that no longer exists; they are replaced by `TestRunStage_UnfixableHalt` and `TestRunStage_UnfixableEscalate` in `run_test.go` which exercise the equivalent in-process Go path. The visibility test was expanded (more subcommands covered), not narrowed. No assertion surface was removed without a documented replacement.
+**Scope Alignment** — All three bash test files reference functions and files that
+exist in the current codebase: `_final_check_reason_read` and `_hook_commit` in
+lib/finalize_commit_sentinel.sh + lib/finalize_commit.sh; `set_focused_milestone_block`
+and `_extract_first_paragraph_and_acceptance` in lib/milestone_window.sh +
+lib/milestone_window_build.sh (transitively sourced); the `coder.sh` grep patterns
+match the actual m41 text at lines 256-261. The two Go freshness-sample test files
+(`internal/proto/diagnosis_v1_test.go`, `internal/proto/orchestrate_v1_test.go`)
+exercise DiagnosisV1 marshaling and AttemptRequest/Result proto validation — neither
+intersects with the m41 bash changes, and both remain aligned to their production
+types with no stale imports or deleted-symbol references.
 
-**Test Naming** — All 50 Go test function names encode both the scenario and the expected outcome (`TestMeetsThreshold_CaseSensitive`, `TestHandleUnfixable_HaltBranch`, `TestWriteHaltState_StoreFails`, etc.). No opaque names found in any of the 8 files.
+**Test Weakening** — test_milestone_window_focused.sh was extended with 9 new m41
+assertions (lines 341-465). Read-through confirms all 25 pre-existing assertions are
+structurally intact — no assertion was removed, broadened (e.g., `assertEqual(x, 5)`
+→ `assertTrue(x > 0)`), or made conditional. The new assertions are additive only.
+No modifications were made to the Go freshness-sample tests.
 
-**Scope Alignment** — All imports and symbol references resolve against the current codebase. `stages/security.sh` and `lib/security_helpers.sh` are deleted; no audited test file imports or sources them. `handle-unfixable` subcommand removal is asserted in security_test.go. The `docsExt` variable in `TestIsDocsOnly_CoversSecondaryExtensions` is the real package-level map (same package). No orphaned tests detected.
+**Test Naming** — All test cases carry descriptive labels: "1.1: empty reason when
+sentinel absent", "[m41] returns 0 for dotted id 49.2 (file on disk, no manifest
+row)", "AC2: false-positive trip_commit_gate removed from coder.sh", etc. Each name
+encodes both the scenario and the expected outcome. No opaque names (`test_1`,
+`test_thing`) found.
 
-**Implementation Exercise** — Tests call real code. `fakeAgent` and `fakeBuildGate` substitute only external I/O seams; `RunStage` is the real function under test. `fakeHumanAction` tests policy routing in the real `HandleUnfixable`; `TestNewEscalator_WiresRealHumanAction` exercises the real `drift.HumanAction` write path and confirms via `CountUnchecked` that a disk write occurred. `buildTekhtonBinary` compiles and executes the real binary for all exit-code contract tests. No test mocks every dependency and then asserts only on the mock setup.
-
-**Test Isolation** — All Go tests create fixtures via `t.TempDir()` and override env via `t.Setenv()`. No test reads mutable project files directly (no `.tekhton/CODER_SUMMARY.md`, no `.tekhton/REVIEWER_REPORT.md`, no live pipeline logs). `test_security_parity.sh` operates entirely within `mktemp -d` with a `trap 'rm -rf "$WORK"' EXIT`. The working-tree mutation in `test_wedge_audit_m35.sh` is flagged above (MEDIUM) but does not constitute an unmitigated isolation failure for sequential invocations.
+**Implementation Exercise** — test_finalize_commit_block_reason.sh calls the real
+`trip_commit_gate` (from common.sh), `_final_check_reason_read` (from
+finalize_commit_sentinel.sh), and `_hook_commit` (from finalize_commit.sh). Only
+`git` is stubbed — appropriately, since git side-effects are not under test.
+test_milestone_window_focused.sh sources all milestone DAG infrastructure and calls
+`set_focused_milestone_block` and `_extract_first_paragraph_and_acceptance`
+directly with real temp-tree fixture files. `run_build_gate()` is stubbed with a
+noop return — appropriate because build gate behavior is orthogonal to milestone
+window resolution. test_coder_block_unavailable_gate.sh reads the real implementation
+file; the structural grep pattern is well-established in this codebase.
