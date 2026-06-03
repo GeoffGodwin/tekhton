@@ -3,9 +3,9 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 180
+- Runs since audit: 181
 =======
-- Runs since audit: 180
+- Runs since audit: 181
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -59,6 +59,7 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-03 | "unknown"] `cmd/tekhton/security_test.go` introduces `buildTekhtonBinary`, `filterEnv`, `readFileTrimNothing`, and `writeFile` as file-local helpers within `package main`. These patterns will be needed by any future `cmd/tekhton` test that must assert on OS-level exit codes via a real subprocess (meets-threshold, is-docs-only, handle-unfixable all use `os.Exit`). When m36.1 or a later milestone adds similar CLI smoke tests, these helpers will be duplicated or will need extraction to a shared `cmd/tekhton/testhelpers_test.go`. Worth extracting before there are two copies.
 - [x] [2026-06-03 | "unknown"] `stage.go:213` â `cmd.Stdout = os.Stderr` routes the subprocess build-gate's stdout to the process's stderr. Intentional (avoids polluting the Go stage's stdout), but unconventional enough to warrant a one-line comment explaining the redirect so the next reader does not mistake it for a copy-paste error.
 - [x] [2026-06-03 | "unknown"] `stage.go:213`: `cmd.Stdout = os.Stderr` (subprocess build-gate stdout piped to the process's stderr) is intentional but unconventional. A one-line comment explaining why would spare the next reader from a double-take.
 - [x] [2026-06-03 | "unknown"] `internal/stages/cleanup/env.go` duplicates `envBool`/`envInt`/`envOr` that also exist in the docs stage package. The zero-rejecting vs. zero-allowing `envInt` difference is deliberate and documented in the retro. Candidate for `staglog.EnvInt` consolidation in m40.
