@@ -1,88 +1,77 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 28 test functions
+Tests audited: 1 file, 4 test functions
 Verdict: CONCERNS
 
 ### Findings
 
-#### INTEGRITY: No-op test makes zero assertions
-- File: internal/stages/staglog/staglog_test.go:51
-- Issue: `TestStaglogNew_FallsBackToOnePerOne` performs no assertions and
-  exercises no observable behavior. It calls `NewWithWriter(&buf, 0, 0)` — not
-  `New()`, the function it claims to cover — assigns the result to `_`, and
-  returns. The comment "not exercising New() — its env path is below" implies
-  behavior is tested later in the same function, but the function ends there
-  with no assertions. This test always passes regardless of how `New()` or
-  `NewWithWriter()` behave. The behavior it nominally covers (nil-req defaults
-  to pos=1, count=1) is correctly asserted by `TestStaglogNew_NilReq_DefaultsToOneOne`
-  (line 82); the env-read path is covered by `TestStaglogNew_FromEnv` (line 103).
+#### ISOLATION: TestRunStage_FullSuccess_ReportParsedAndSaved fails in a clean environment due to path mismatch
+- File: internal/stages/cleanup/full_flow_test.go:36
+- Issue: `setupProject` (stage_test.go:85) writes the NON_BLOCKING_LOG fixture to
+  `dir/.tekhton/NON_BLOCKING_LOG.md`. The stage comment at stage_test.go:80 explains
+  this is intended to honor the config default. However, `nonBlockingLogPath` in
+  stage.go:252 uses a hardcoded fallback of `"NON_BLOCKING_LOG.md"` — not
+  `.tekhton/NON_BLOCKING_LOG.md`. Unlike `cleanupReportPath` (stage.go:259-267), which
+  correctly derives its default via `envOr("TEKHTON_DIR", ".tekhton")`, `nonBlockingLogPath`
+  ignores `TEKHTON_DIR`. The config default in `internal/config/defaults.go:229` is
+  `tdFile("NON_BLOCKING_LOG.md")` = `.tekhton/NON_BLOCKING_LOG.md`.
+
+  In a clean `go test` run where `NON_BLOCKING_LOG_FILE` is not exported by the parent
+  process:
+  1. `nonBlockingLogPath(dir, req)` resolves to `dir/NON_BLOCKING_LOG.md` (file absent)
+  2. `loadNonBlockingDoc` returns an empty Document (ErrNotFound path)
+  3. `shouldRun(emptyDoc)`: UnresolvedCount=0, CLEANUP_TRIGGER_THRESHOLD=0 → `0 > 0` = false
+  4. `RunStage` returns `verdict=skip, exit_reason="no-trigger"`
+  5. Assertion at line 89 (`res.Verdict != proto.VerdictPass`) fires → test fails
+
+  The primary assertions (verdict=pass, ExitReason counts, marker counts in the saved file)
+  are unreachable. The test only passes in environments where `NON_BLOCKING_LOG_FILE` is
+  already set — e.g. a terminal that sourced `lib/config_defaults.sh`. This is environment
+  pollution. The tester's claim of "Passed: 505 (501 shell + 4 new Go) Failed: 0" is
+  inconsistent with a clean `go test ./internal/stages/cleanup/...` run.
 - Severity: HIGH
-- Action: Remove `TestStaglogNew_FallsBackToOnePerOne` entirely. Its intended
-  coverage is already provided by the two tests above. Do not add assertions to
-  salvage it — that would create exact duplicates of existing tests.
+- Action: Either (a) fix `nonBlockingLogPath` in stage.go:251-257 to honour TEKHTON_DIR
+  consistently with cleanupReportPath (preferred — closes a production defect too):
 
-#### NAMING: Test name encodes neither scenario nor expected outcome
-- File: internal/stages/docs/stage_test.go:225
-- Issue: `TestEnvBoolEnvInt` exercises two unrelated utility functions
-  (`envBool` and `envInt`) in one function. The name gives no signal about
-  what failure modes are under test, which makes it harder to diagnose from
-  test output alone. The tests that immediately follow it
-  (`TestEnvBool_UnknownValue`, `TestEnvInt_ZeroInput`, `TestEnvInt_EmptyOrUnset`)
-  correctly use the scenario-and-outcome naming convention this one lacks.
-- Severity: LOW
-- Action: Split into `TestEnvBool_KnownValues` and `TestEnvInt_ParseAndFallback`,
-  aligning with the surrounding naming convention.
+  ```go
+  func nonBlockingLogPath(projectDir string, req *proto.StageRequestV1) string {
+      tekhtonDir := envOr("TEKHTON_DIR", ".tekhton")
+      name := envOrFromReq(req, "NON_BLOCKING_LOG_FILE",
+          filepath.Join(tekhtonDir, "NON_BLOCKING_LOG.md"))
+      if filepath.IsAbs(name) {
+          return name
+      }
+      return filepath.Join(projectDir, name)
+  }
+  ```
 
-#### NAMING: Test comment contradicts fixture
-- File: internal/stages/docs/skip_test.go:172
-- Issue: `TestExtractPublicSurface_AlwaysIncludesDefaults` opens with the comment
-  "Section present but empty body" yet the CLAUDE.md fixture contains the word
-  `stub` in the section body, making it non-empty. The implementation returns
-  `nil` for a trimmed-empty section (skip.go:133), so the comment implies a
-  different code path than is actually exercised. The test is logically correct —
-  defaults are seeded whenever the section is present and non-empty — but the
-  misleading comment risks a future maintainer assuming the empty-body path is
-  covered when it is not.
-- Severity: LOW
-- Action: Update the comment to "Section present with minimal body — defaults
-  should still seed the slice." If empty-body behavior needs verification, add a
-  separate `TestExtractPublicSurface_EmptyBody` fixture with a section whose
-  trimmed content is blank and assert `nil` is returned.
+  Or (b) set `NON_BLOCKING_LOG_FILE` in the test:
+  - In `setupProject`, add `"NON_BLOCKING_LOG_FILE": ".tekhton/NON_BLOCKING_LOG.md"` to
+    `req.EnvOverrides`, or add `t.Setenv("NON_BLOCKING_LOG_FILE", ".tekhton/NON_BLOCKING_LOG.md")`
+    in `TestRunStage_FullSuccess_ReportParsedAndSaved` before `setupProject` is called.
 
-### Non-Findings (all rubric points examined, no additional issues)
+  Fix (a) also benefits the pre-existing `TestRunStage_NoEligible` and `TestRunStage_NullRun`
+  tests in stage_test.go (out of scope for this audit), which call `setupProject` and share
+  the same implicit dependency.
 
-**ASSERTION HONESTY:** All expected values are derived from implementation
-logic. `atoiOr` returns fallback for n≤0 so `TestStaglogAtoiOr`'s assertion of
-7 for input "0" is correct (skip.go is not involved). `envBool` returns `false`
-for `""` regardless of fallback (stage.go:185), so `TestEnvBoolEnvInt`'s
-assertion `if envBool("", true)` is a genuine correctness check. `globToRegexp`
-translates `[*` to `[.*` (unclosed character class), so
-`TestFilesMatchSurface_GlobCompileError`'s expectation of `false` matches the
-`continue` in `filesMatchSurface` (skip.go:186). No hard-coded magic numbers or
-`assertTrue(True)` patterns found.
+---
 
-**WEAKENING:** The tester added new tests only; no pre-existing assertions in
-any of the three files were removed or broadened.
+#### No Issues Found
 
-**EXERCISE:** All test functions call real implementation code. `stage_test.go`
-drives `RunStage` through every gate using a real temp-dir git repo plus a
-recording `fakeAgentRunner` seam. `skip_test.go` calls `shouldSkip`,
-`extractDocResponsibilities`, `extractPublicSurface`, `filesMatchSurface`, and
-`changedFiles` directly. `staglog_test.go` calls `New`, `NewWithWriter`,
-`atoiOr`, and `envOrInt` with non-trivial inputs.
+The three `subprocessBuildGate` tests are well-constructed:
 
-**SCOPE:** All symbols referenced in the audit files exist in the current
-codebase. No imports reference deleted files (`stages/docs.sh`,
-`lib/docs_agent.sh`). The `fakeAgentRunner` type correctly implements the
-`AgentRunner` interface (stage.go:29).
+- **TestSubprocessBuildGate_BinaryNotFound_ReturnsNil** (line 151): Clears TEKHTON_BIN,
+  TEKHTON_HOME, and PATH via `t.Setenv`; drives the real `subprocessBuildGate{}.Run`;
+  asserts nil error. Self-contained. Assertion is honest — `resolveTekhtonBin` returns ""
+  when all three resolution paths are blocked; the implementation short-circuits with `return nil`.
+- **TestSubprocessBuildGate_BinaryFoundExitsZero** (line 163): Creates a real `exit 0`
+  shell stub via `fakeBinScript`; points `TEKHTON_BIN` at it; asserts nil error. Self-contained.
+  Assertion is honest — `cmd.Run()` returns nil on exit 0.
+- **TestSubprocessBuildGate_BinaryFoundExitsOne** (line 175): Same pattern with `exit 1`;
+  asserts non-nil error. Self-contained. Assertion is honest — `cmd.Run()` returns
+  `*exec.ExitError` on non-zero exit.
 
-**ISOLATION:** Every test creates its own fixture state in `t.TempDir()`.
-No test reads live pipeline artifacts, run logs, or mutable project-state
-files from `.tekhton/` or `.claude/`.
-
-**COVERAGE (informational):** `internal/stages/docs/prepare.go`
-(`prepareTemplateVars`, `safeReadFile`, `collectGitDiffStat`) is exercised by
-`prepare_test.go`, which the coder summary lists as created but which was not in
-the tester's modified-file set and falls outside this audit's scope. It should
-appear in the next audit cycle if modified.
+All three test names encode the scenario and expected outcome. The file adds new tests only
+(no modification of existing tests; no weakening). No live project files are read — each
+test uses `t.TempDir()` for fixtures and `t.Setenv` for env isolation.

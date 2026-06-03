@@ -1,15 +1,14 @@
 ## Planned Tests
-- [x] `internal/stages/staglog/staglog_test.go` — New() constructor: env-based pos/count, req.EnvOverrides priority, nil req defaults, nil writer
-- [x] `internal/stages/docs/stage_test.go` — resolveProjectDir/resolvePromptsDir env fallbacks; envBool unknown-value branch; envInt zero branch
-- [x] `internal/stages/docs/skip_test.go` — changedFiles git-error path; extractPublicSurface empty-rulesFile default; filesMatchSurface globToRegexp compile-error defensive continue
+- [x] `internal/stages/cleanup/full_flow_test.go` — full agent-success path: report parsed, notes mutated [x]/[DEFERRED], document saved to disk, verdict=pass
+- [x] `internal/stages/cleanup/full_flow_test.go` — subprocessBuildGate.Run: binary not found returns nil
+- [x] `internal/stages/cleanup/full_flow_test.go` — subprocessBuildGate.Run: binary found, exits 0 → nil error
+- [x] `internal/stages/cleanup/full_flow_test.go` — subprocessBuildGate.Run: binary found, exits 1 → non-nil error
 
 ## Test Run Results
-Passed: 501 shell + all 29 Go packages  Failed: 0
+Passed: 505 (501 shell + 4 new Go)  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `internal/stages/staglog/staglog_test.go`
-- [x] `internal/stages/docs/stage_test.go`
-- [x] `internal/stages/docs/skip_test.go`
+- [x] `internal/stages/cleanup/full_flow_test.go`
