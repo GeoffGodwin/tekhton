@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.35.0] - 2026-06-03
+
+### Changed
+- **Security stage ported to Go (m35).** `stages/security.sh` (167 LOC) and
+  `lib/security_helpers.sh` (240 LOC across the m35.1 shim arc) deleted —
+  407 LOC of bash retired. The security stage now dispatches through
+  `internal/stages/security/RunStage` via the M34 stage-port pattern.
+  Severity classification, finding parsing, and `HUMAN_ACTION_REQUIRED.md`
+  escalation are Go-native (`internal/security/`). Routing through
+  `internal/drift.HumanAction.Append` centralizes the escalation surface
+  across stages.
+
+### Added
+- `scripts/wedge-audit-companions.sh` m35.3 ban block — forbids
+  re-introduction of `stages/security.sh`, `lib/security_helpers.sh`, and
+  the nine deleted helper function names (`_parse_security_findings`,
+  `_severity_meets_threshold`, `_build_fixable_block`,
+  `_build_unfixable_block`, `_build_notes_block`,
+  `_handle_unfixable_findings`, `_write_security_notes`,
+  `_security_is_docs_only`, `_has_blocking_findings`). Files needing
+  the names in comments may opt out with `# --m35-allowlist`.
+- `tests/test_wedge_audit_m35.sh` regression test (6 scenarios) for the
+  m35.3 ban block — plants file/function/allowlist variants and asserts
+  the audit's pass/fail behavior.
+- `tests/test_security_parity.sh` end-to-end parity gate driving
+  `tekhton run-stage security` through three scenarios
+  (`pass-no-findings`, `fixable-cycle-1-resolved`, `unfixable-escalate`)
+  via the `testdata/fake_security_agent.sh` fixture. Baselines under
+  `tests/baselines/m35-security/`. Wired into `make dogfood`.
+- `testdata/fake_security_agent.sh` — purpose-built fake supervisor binary
+  for the parity gate. Emits two turn events and conditionally writes
+  pre-canned `SECURITY_REPORT.md` content per scenario + cycle.
+
+### Operator notes
+- `tekhton security parse-findings --report PATH [--format tsv|json]` is
+  available as an inspection tool for `SECURITY_REPORT.md` files.
+- `tekhton security meets-threshold --severity SEV --threshold THR`
+  exposes the classification predicate for debugging.
+- `SECURITY_AGENT_ENABLED=false` continues to skip the stage entirely;
+  no behavior change.
+- The prompt templates (`prompts/security_scan.prompt.md`,
+  `prompts/security_rework.prompt.md`,
+  `prompts/specialist_security.prompt.md`) are unchanged — only the
+  rendering caller moved.
+
 ## [4.30.0] - 2026-05-30
 
 ### Added

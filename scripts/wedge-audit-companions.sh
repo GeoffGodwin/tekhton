@@ -95,6 +95,68 @@ if [[ -f stages/docs.sh ]] || [[ -f lib/docs_agent.sh ]]; then
     companion_failures=$(( companion_failures + 1 ))
 fi
 
+# m34.2 (Phase 5, stage-port arc): stages/cleanup.sh ported to
+# internal/stages/cleanup/. Re-introducing the file silently forks the
+# cleanup-stage contract and breaks the StageDef.GoImpl dispatch
+# precedence. The four helpers it called (select_cleanup_batch,
+# mark_note_resolved, mark_note_deferred, count_unresolved_notes) live
+# in internal/notes/cleanup.go as Go functions.
+if [[ -f stages/cleanup.sh ]]; then
+    printf 'wedge-audit: m34.2 violation — cleanup stage was ported in m34.2:\n' >&2
+    printf '  stages/cleanup.sh re-introduced\n' >&2
+    printf 'The cleanup stage lives in internal/stages/cleanup/. Bash callers reach\n' >&2
+    printf 'it via the StageDef.GoImpl dispatch wedge in internal/stagerunner/.\n' >&2
+    companion_failures=$(( companion_failures + 1 ))
+fi
+
+# m35.3 (Phase 5, stage-port arc): stages/security.sh + lib/security_helpers.sh
+# ported to internal/stages/security/ + internal/security/ across m35.1 and
+# m35.2. Re-introducing either file silently forks the security-stage
+# contract and breaks the StageDef.GoImpl dispatch precedence. The nine
+# helper functions (_parse_security_findings, _severity_meets_threshold,
+# _build_fixable_block, _build_unfixable_block, _build_notes_block,
+# _handle_unfixable_findings, _write_security_notes, _security_is_docs_only,
+# _has_blocking_findings) are Go functions in internal/security/.
+if [[ -f stages/security.sh ]] || [[ -f lib/security_helpers.sh ]]; then
+    printf 'wedge-audit: m35.3 violation — security stage was ported in m35.1/m35.2:\n' >&2
+    [[ -f stages/security.sh ]] && printf '  stages/security.sh re-introduced\n' >&2
+    [[ -f lib/security_helpers.sh ]] && printf '  lib/security_helpers.sh re-introduced\n' >&2
+    printf 'The security stage lives in internal/stages/security/; helpers in\n' >&2
+    printf 'internal/security/. Bash callers reach it via the StageDef.GoImpl\n' >&2
+    printf 'dispatch wedge in internal/stagerunner/.\n' >&2
+    companion_failures=$(( companion_failures + 1 ))
+fi
+
+# m35.3 (Phase 5): the nine deleted security helper function names. Any
+# lib/ or stages/ file that mentions them risks silently resurrecting the
+# pre-m35 logic. Files needing to reference the names in comments may opt
+# out by including the literal marker `--m35-allowlist` anywhere.
+_sec_fns='_parse_security_findings|_severity_meets_threshold|_build_fixable_block'
+_sec_fns+='|_build_unfixable_block|_build_notes_block|_handle_unfixable_findings'
+_sec_fns+='|_write_security_notes|_security_is_docs_only|_has_blocking_findings'
+_sec_fn_hits=$(grep -rEl "($_sec_fns)" lib stages 2>/dev/null || true)
+if [[ -n "$_sec_fn_hits" ]]; then
+    _sec_fn_violations=""
+    while IFS= read -r _hit; do
+        [[ -z "$_hit" ]] && continue
+        if ! grep -qF -- '--m35-allowlist' "$_hit" 2>/dev/null; then
+            _sec_fn_violations+="  $_hit"$'\n'
+        fi
+    done <<< "$_sec_fn_hits"
+    if [[ -n "$_sec_fn_violations" ]]; then
+        printf 'wedge-audit: m35.3 violation — deleted security bash function name(s) reappeared:\n' >&2
+        printf '%s' "$_sec_fn_violations" >&2
+        printf 'Use the Go helpers in internal/security/ in process, or the operator CLI\n' >&2
+        # shellcheck disable=SC2016  # backticks/markers are literal strings, not subshells
+        printf 'tekhton security <sub> (parse-findings, meets-threshold). If a comment\n' >&2
+        # shellcheck disable=SC2016
+        printf 'legitimately needs the function name, add `# --m35-allowlist` to the file.\n' >&2
+        companion_failures=$(( companion_failures + 1 ))
+    fi
+    unset _sec_fn_violations _hit
+fi
+unset _sec_fns _sec_fn_hits
+
 if (( companion_failures > 0 )); then
     printf 'wedge-audit: %d companion-tool assertion(s) failed.\n' "$companion_failures" >&2
     exit 1

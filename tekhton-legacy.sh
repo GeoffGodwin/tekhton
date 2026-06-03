@@ -1005,12 +1005,9 @@ source "${TEKHTON_HOME}/lib/intake_verdict_handlers.sh"
 source "${TEKHTON_HOME}/stages/intake.sh"
 source "${TEKHTON_HOME}/stages/architect.sh"
 source "${TEKHTON_HOME}/stages/coder.sh"
-# m34.1: stages/docs.sh + lib/docs_agent.sh ported to internal/stages/docs/.
-# The Go-native docs stage runs via the GoImpl dispatch in stagerunner; there
-# are no bash residues to source here.
-# m35.2: stages/security.sh + lib/security_helpers.sh ported to
-# internal/stages/security/. The Go-native security stage runs via the
-# GoImpl dispatch in stagerunner; there are no bash residues to source here.
+# m34.1 + m35.2: the docs and security stages ported to Go (internal/stages/
+# docs/ and internal/stages/security/). Both run via the GoImpl dispatch in
+# stagerunner; there are no bash residues to source here.
 source "${TEKHTON_HOME}/stages/review.sh"
 source "${TEKHTON_HOME}/stages/review_helpers.sh"
 source "${TEKHTON_HOME}/lib/test_audit_helpers.sh"

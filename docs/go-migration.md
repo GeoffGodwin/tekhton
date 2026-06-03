@@ -901,3 +901,100 @@ honor the `HUMAN_ACTION_FILE` env override and fall back to
 `${TEKHTON_DIR}/HUMAN_ACTION_REQUIRED.md`. Tests assert the resolved
 path so a future divergence between the stage and the drift CLI
 shows up at green-to-red transition.
+
+## Phase 5 Security Stage Closeout (m35, v4.35.0)
+
+The security stage ported to Go across three child milestones (m35.1
+helpers, m35.2 stage, m35.3 cleanup). 407 LOC of bash retired:
+
+- `stages/security.sh` — 167 LOC (deleted m35.2)
+- `lib/security_helpers.sh` — 240 LOC at peak (deleted m35.2; m35.1
+  had reduced it to a 60-LOC shim layered over the Go helpers)
+
+**Cumulative patch-bump count during dogfood:**
+
+- m35.1: 0 (helpers port stayed clean — golden-file parity caught
+  every divergence inside the Go test suite before merge)
+- m35.2: 0 (the stage port leaned on the m34 pattern hard enough
+  that the unit + fixture coverage caught what the parity gate
+  would have caught)
+- m35.3: 0 (this is a safety-net-only milestone with no behavioral
+  surface — the runs that built it produced no patch bumps)
+- **Total: 0**
+
+The zero-patch close is partially load-bearing on the m34 sequencing —
+docs (m34.1) and cleanup (m34.2) had paid the pattern-discovery cost
+before security entered. The m36+ stage ports inherit the same pattern
+and should expect similar quiet bumps, but each subsequent milestone
+also adds one more degree of cross-stage env / contract surface —
+the bump count is not guaranteed to stay zero.
+
+**Notable items surfaced during the m35 arc:**
+
+- The m35.1 reviewer flagged `cmd/tekhton/security_test.go::buildTekhtonBinary`
+  for duplication. The m35.2 closeout left it on the in-flight list; m35.3
+  records it again here — the next `cmd/tekhton/*_test.go` test that needs
+  the helper should extract it to `testhelpers_test.go`.
+- `tests/test_drift_prompts.sh` failed on the m35.2 branch but ALSO failed
+  on the parent commit before any m35.2 changes (verified via stash). It is
+  a pre-existing failure unrelated to the m35 arc, in the coder prompt's
+  "Architecture Change Proposals" section rendering. Tracked as a separate
+  defect.
+
+**Transition tax retired.** The 5-subprocess-spawns-per-cycle tax that
+m35.1 introduced (bash shim execing `tekhton security <sub>`) retired
+in m35.2 when the Go stage replaced the bash stage entirely. Per-cycle
+latency for a 5-finding scan dropped ~300ms on the dogfood host.
+
+**Meta-failure: pre-M35 baseline-capture gate was never specified by
+the m35 parent.** The m35.3 parity gate (`tests/test_security_parity.sh`)
+was authored to diff three scenarios against pre-M35 bash captures
+under tag `v4.34.99-security-baseline`, but the tag was never created.
+Recovery via `git checkout` + ad-hoc fake-agent infrastructure was
+explicitly out of scope for a "lightweight cleanup tail" milestone.
+The captured baselines under `tests/baselines/m35-security/` are the
+current Go stage outputs, locked forward as the regression baseline.
+The contract preservation rests on transitive coverage: m35.1 captured
+18 golden-file baselines against the pre-M35 bash helpers
+(`internal/security/testdata/baselines/`), and m35.2 ported the stage
+behavior with byte-for-byte unit-test coverage of every branch. The
+m35.3 gate prevents future Go drift but is not itself a bash-vs-Go
+parity check.
+
+**m35.3 deliverables:**
+
+- `scripts/wedge-audit-companions.sh` — m35.3 ban block: file-presence
+  ban (`stages/security.sh`, `lib/security_helpers.sh`) + nine-function
+  name ban under `lib/`/`stages/`, with `# --m35-allowlist` escape
+  hatch for documentation comments.
+- `tests/test_wedge_audit_m35.sh` — 6-scenario regression test for the
+  ban block (clean tree, file plants, function-name plant, allowlist
+  honor, post-cleanup).
+- `tests/test_security_parity.sh` — three-scenario end-to-end gate
+  (`pass-no-findings`, `fixable-cycle-1-resolved`, `unfixable-escalate`).
+- `testdata/fake_security_agent.sh` — purpose-built fake supervisor
+  binary wired via `TEKHTON_AGENT_BINARY`. Emits valid streaming JSON
+  events and writes pre-canned `SECURITY_REPORT.md` content per
+  scenario + cycle counter.
+- `tests/baselines/m35-security/` — three scenario × three artifact
+  directories of normalized baselines.
+- `Makefile` — `tests/test_security_parity.sh` joined the `dogfood` chain
+  alongside `tests/test_stage_port_parity.sh`.
+- `tekhton-legacy.sh` — m35.2 deletion comment block removed (the
+  comment violated the m35.3 residual-scan AC; the dispatcher line was
+  already gone).
+- `tests/audit/K3.md` — stale `test_security_stage.sh` row flipped
+  from KEEP to DELETED-STALE.
+- `CHANGELOG.md` — `## [4.35.0]` entry with the security-stage-port
+  summary + operator notes.
+- `docs/v4-phase5-stub.md` — new Stage-Port Matrix section with the
+  security row marked done (LOC delta 407).
+- `VERSION` — bumped from 4.34.x to 4.35.0.
+
+**Inheritance for m36 (architect + intake stage port):** the same
+three-child decimal pattern (helpers first, then stage, then cleanup)
+applies. The `internal/<subsystem>/` + `internal/stages/<name>/`
+package layout is the template. `drift.HumanAction.Append` is the
+universal escalation surface — m36 architect drift writes route
+through it. The m36 parent SHOULD specify a baseline-capture gate up
+front to avoid repeating the m35 meta-failure.

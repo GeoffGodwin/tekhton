@@ -73,6 +73,27 @@ The disposition column is one of:
 | 39| `tools/setup_*.sh`                      | leave       | Same — installer scripts. |
 | 40| `completions/*.{bash,zsh,fish}`         | leave       | Shell completion files; not bash logic. |
 
+## Stage-Port Matrix
+
+Per-stage status under the m34 stage-port pattern (`DefaultStageDefs[Stage].GoImpl`).
+Each row's milestone closure flips the dispatcher from bash sourcing to Go-native
+in-process dispatch. LOC delta counts bash deleted (stage + helpers + shim).
+
+| Stage     | Status                                                | Milestone | LOC deleted |
+|-----------|-------------------------------------------------------|-----------|-------------|
+| docs      | done — Go-native via `internal/stages/docs/RunStage`  | m34.1     | (see m34.1) |
+| cleanup   | done — Go-native via `internal/stages/cleanup/RunStage` | m34.2   | (see m34.2) |
+| **security** | **done — Go-native via `internal/stages/security/RunStage`; helpers in `internal/security/`; m35.3 ban + parity gate live** | **m35**   | **407** |
+| architect | in flight                                             | m36.1     | TBD         |
+| intake    | in flight                                             | m36.3     | TBD         |
+| review    | in flight                                             | m37       | TBD         |
+| tester    | in flight                                             | m38       | TBD         |
+| coder     | in flight                                             | m39       | TBD         |
+
+The security row flipped to **done** at m35.3 close (v4.35.0). The Phase 5
+closeout retros and patch-bump tallies per milestone live in
+`docs/go-migration.md`.
+
 ## Candidate ordering
 
 Phase 5 should attack in this rough order (subject to the m21 author):
