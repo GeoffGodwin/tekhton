@@ -1,0 +1,1 @@
+- [CRITICAL] [fixable:yes] Hardcoded API token in config loader

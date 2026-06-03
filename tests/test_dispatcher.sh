@@ -45,6 +45,7 @@ export TEKHTON_BIN="$FAKE_BIN_DIR/tekhton"
 printf '#!/bin/sh\necho FAKE_LEGACY "$@"\nexit 0\n' > "$FAKE_BIN_DIR/tekhton-legacy.sh"
 chmod +x "$FAKE_BIN_DIR/tekhton-legacy.sh"
 export TEKHTON_LEGACY_BIN="$FAKE_BIN_DIR/tekhton-legacy.sh"
+export TEKHTON_LEGACY_STUB=1
 
 # Capture the dispatcher's routing trace line. The dispatcher prints
 # `[tekhton-dispatcher] exec ...` to stderr immediately before exec.

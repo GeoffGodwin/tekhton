@@ -13,6 +13,7 @@ func TestStateCheckboxRoundTrip(t *testing.T) {
 		{Pending, "[ ]"},
 		{Active, "[~]"},
 		{Done, "[x]"},
+		{Deferred, "[DEFERRED]"},
 	}
 	for _, tc := range tests {
 		if got := tc.state.Checkbox(); got != tc.box {
@@ -103,6 +104,7 @@ func TestStateString(t *testing.T) {
 		{Pending, "Pending"},
 		{Active, "Active"},
 		{Done, "Done"},
+		{Deferred, "Deferred"},
 	}
 	for _, tc := range tests {
 		if tc.s.String() != tc.want {

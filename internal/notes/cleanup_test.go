@@ -2,6 +2,7 @@ package notes
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -108,4 +109,164 @@ func TestResolveByTag(t *testing.T) {
 	if got != 2 {
 		t.Errorf("ResolveByTag = %d, want 2", got)
 	}
+}
+
+func TestUnresolvedCount_EmptyDoc(t *testing.T) {
+	d := &Document{}
+	if got := UnresolvedCount(d); got != 0 {
+		t.Errorf("UnresolvedCount(empty) = %d, want 0", got)
+	}
+	if got := UnresolvedCount(nil); got != 0 {
+		t.Errorf("UnresolvedCount(nil) = %d, want 0", got)
+	}
+}
+
+func TestUnresolvedCount_MixedStates(t *testing.T) {
+	d := loadGolden(t)
+	// Golden: n01(P), n02(A), n03(D), n04(P), n05(P), n06(P) → 4 Pending.
+	if got := UnresolvedCount(d); got != 4 {
+		t.Errorf("UnresolvedCount = %d, want 4", got)
+	}
+}
+
+func TestSelectCleanupBatch_PrioritizesFileOverlap(t *testing.T) {
+	// Build a doc with five pending notes, two of which mention "foo.go".
+	d := mustParseLines(t,
+		"## Bugs",
+		"- [ ] [BUG] fix foo.go null deref",
+		"- [ ] [BUG] bar.go validation missing",
+		"- [ ] [BUG] tweak foo.go logging",
+		"- [ ] [BUG] baz.go style cleanup",
+		"- [ ] [BUG] unrelated polish",
+	)
+	got := SelectCleanupBatch(d, 5, []string{"foo.go"})
+	if len(got) != 5 {
+		t.Fatalf("len = %d, want 5", len(got))
+	}
+	if !strings.Contains(got[0].Title, "foo.go") {
+		t.Errorf("got[0].Title = %q, want foo.go-mentioning note first", got[0].Title)
+	}
+	if !strings.Contains(got[1].Title, "foo.go") {
+		t.Errorf("got[1].Title = %q, want second foo.go-mentioning note", got[1].Title)
+	}
+}
+
+func TestSelectCleanupBatch_RespectsSize(t *testing.T) {
+	d := mustParseLines(t,
+		"## Bugs",
+		"- [ ] [BUG] one",
+		"- [ ] [BUG] two",
+		"- [ ] [BUG] three",
+		"- [ ] [BUG] four",
+		"- [ ] [BUG] five",
+	)
+	got := SelectCleanupBatch(d, 3, nil)
+	if len(got) != 3 {
+		t.Errorf("len = %d, want 3", len(got))
+	}
+	got = SelectCleanupBatch(d, 0, nil)
+	if got != nil {
+		t.Errorf("size=0 should return nil, got %v", got)
+	}
+	got = SelectCleanupBatch(nil, 5, nil)
+	if got != nil {
+		t.Errorf("nil doc should return nil, got %v", got)
+	}
+}
+
+func TestMarkResolved_HitsFirstMatch(t *testing.T) {
+	d := mustParseLines(t,
+		"## Bugs",
+		"- [ ] [BUG] alpha needs work",
+		"- [ ] [BUG] beta needs cleanup",
+		"- [ ] [BUG] gamma needs review",
+	)
+	if !MarkResolved(d, "beta") {
+		t.Fatal("MarkResolved(beta) returned false")
+	}
+	if got := UnresolvedCount(d); got != 2 {
+		t.Errorf("UnresolvedCount = %d, want 2 after MarkResolved", got)
+	}
+	// Find the beta note; it should now be Done.
+	var beta *Note
+	for _, n := range d.Notes {
+		if strings.Contains(n.Title, "beta") {
+			beta = n
+			break
+		}
+	}
+	if beta == nil || beta.State != Done {
+		t.Errorf("beta state = %v, want Done", beta)
+	}
+}
+
+func TestMarkResolved_NoMatch(t *testing.T) {
+	d := mustParseLines(t,
+		"## Bugs",
+		"- [ ] [BUG] alpha",
+	)
+	if MarkResolved(d, "nonexistent") {
+		t.Error("MarkResolved(nonexistent) returned true, want false")
+	}
+	if MarkResolved(nil, "alpha") {
+		t.Error("MarkResolved(nil, ...) returned true, want false")
+	}
+	if MarkResolved(d, "") {
+		t.Error("MarkResolved(d, '') returned true, want false")
+	}
+}
+
+func TestMarkDeferred_HitsFirstMatch(t *testing.T) {
+	d := mustParseLines(t,
+		"## Bugs",
+		"- [ ] [BUG] alpha",
+		"- [ ] [BUG] beta",
+	)
+	if !MarkDeferred(d, "alpha") {
+		t.Fatal("MarkDeferred(alpha) returned false")
+	}
+	var alpha *Note
+	for _, n := range d.Notes {
+		if strings.Contains(n.Title, "alpha") {
+			alpha = n
+			break
+		}
+	}
+	if alpha == nil || alpha.State != Deferred {
+		t.Errorf("alpha state = %v, want Deferred", alpha)
+	}
+	// And the line text should now carry `[DEFERRED]`.
+	if !strings.Contains(d.Lines[alpha.LineIdx].Raw, "[DEFERRED]") {
+		t.Errorf("line raw = %q, want [DEFERRED] marker", d.Lines[alpha.LineIdx].Raw)
+	}
+	// UnresolvedCount should now exclude the deferred item.
+	if got := UnresolvedCount(d); got != 1 {
+		t.Errorf("UnresolvedCount = %d, want 1 after MarkDeferred", got)
+	}
+}
+
+func TestMarkDeferred_NoMatch(t *testing.T) {
+	d := mustParseLines(t,
+		"## Bugs",
+		"- [ ] [BUG] alpha",
+	)
+	if MarkDeferred(d, "nonexistent") {
+		t.Error("MarkDeferred(nonexistent) returned true, want false")
+	}
+	if MarkDeferred(nil, "alpha") {
+		t.Error("MarkDeferred(nil, ...) returned true, want false")
+	}
+}
+
+// mustParseLines is a test helper that parses a few raw lines into a
+// fresh Document. Local to cleanup_test.go because the broader package
+// already has fixture loaders; we want a minimal parse-from-strings
+// path for the m34.2 batch + mark tests.
+func mustParseLines(t *testing.T, lines ...string) *Document {
+	t.Helper()
+	d, err := Parse(strings.NewReader(strings.Join(lines, "\n") + "\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	return d
 }

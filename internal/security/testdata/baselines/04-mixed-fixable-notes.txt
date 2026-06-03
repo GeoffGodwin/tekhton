@@ -1,0 +1,2 @@
+- [MEDIUM] [fixable:yes] Input validation missing on /api/users
+- [LOW] [fixable:unknown] Verbose error response includes stack trace

@@ -1,0 +1,10 @@
+# Human Action Required
+
+The pipeline identified items that need your attention. Review each item
+and check it off when addressed. The pipeline will display a banner until
+all items are resolved.
+
+## Action Items
+- [ ] [<DATE> | Source: security] Unfixable security findings require human review:
+- [HIGH] [fixable:no] hardcoded credential in src/auth/keys.go:42
+

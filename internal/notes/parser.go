@@ -142,11 +142,12 @@ type Note struct {
 
 // notePattern matches a note line and captures: leading list marker +
 // checkbox state, optional bracketed tag, and the body after the tag
-// bracket. Tag bracket is matched greedily so titles that themselves
-// contain bracketed words (e.g. "[BUG] [WIP] add ...") parse with the
-// first bracket as the tag — matches bash's `[[ $line =~ \[BUG\] ]]`
-// scanning behavior.
-var notePattern = regexp.MustCompile(`^- \[([ x~])\] (.*)$`)
+// bracket. The checkbox is one of " " / "x" / "~" / "DEFERRED" — the
+// last for NON_BLOCKING_LOG.md's deferred marker (m34.2). Tag bracket
+// is matched greedily so titles that themselves contain bracketed
+// words (e.g. "[BUG] [WIP] add ...") parse with the first bracket as
+// the tag — matches bash's `[[ $line =~ \[BUG\] ]]` scanning behavior.
+var notePattern = regexp.MustCompile(`^- \[( |x|~|DEFERRED)\] (.*)$`)
 
 // tagPattern matches the leading `[TAG]` of a note body. Used after
 // notePattern matches the line.

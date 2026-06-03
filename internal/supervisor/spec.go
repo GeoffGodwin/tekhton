@@ -61,6 +61,45 @@ type AgentResult struct {
 	StdoutTail       []string
 }
 
+// DefaultNullRunThreshold is the turn cap below which a non-zero-exit
+// agent result is treated as "died before doing real work". Mirrors
+// AGENT_NULL_RUN_THRESHOLD in lib/agent_shim.sh (default 2).
+const DefaultNullRunThreshold = 2
+
+// IsNullRun reports whether the agent died before accomplishing
+// meaningful work. Ports the LAST_AGENT_NULL_RUN computation in
+// lib/agent_shim.sh:174-184 verbatim:
+//
+//	false by default
+//	→ true when exit code != 0 AND turns used <= DefaultNullRunThreshold
+//	→ true when turns used == 0
+//
+// Callers that want a custom threshold (the bash side reads
+// AGENT_NULL_RUN_THRESHOLD from the environment) should call
+// IsNullRunAt instead; this convenience uses DefaultNullRunThreshold.
+//
+// Returns true for a nil result so paths that hit a supervisor failure
+// before populating the struct don't get classified as "real work".
+func (r *AgentResult) IsNullRun() bool {
+	return r.IsNullRunAt(DefaultNullRunThreshold)
+}
+
+// IsNullRunAt is IsNullRun with an explicit threshold. Useful in tests
+// and in any future caller that wants to honour the
+// AGENT_NULL_RUN_THRESHOLD env var the bash side reads.
+func (r *AgentResult) IsNullRunAt(threshold int) bool {
+	if r == nil {
+		return true
+	}
+	if r.TurnsUsed == 0 {
+		return true
+	}
+	if r.ExitCode != 0 && r.TurnsUsed <= threshold {
+		return true
+	}
+	return false
+}
+
 // FromProto converts the wire envelope to AgentResult. Callers reading off
 // the supervisor result use this to escape from raw int milliseconds into
 // time.Duration.

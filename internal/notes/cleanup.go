@@ -2,6 +2,7 @@ package notes
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -278,6 +279,146 @@ func (d *Document) ResolveByTag(tag string) int {
 		count++
 	}
 	return count
+}
+
+// UnresolvedCount returns the number of Pending-state notes — i.e.
+// notes matching `[ ]` in the on-disk markdown. Ports
+// lib/notes_cleanup.sh::count_unresolved_notes (deleted in m24,
+// resurrected in m34.2). The bash version scanned only the `## Open`
+// section of NON_BLOCKING_LOG.md; in the unified Go model the
+// document parser already drops `[DEFERRED]` items into a distinct
+// State and never counts them as Pending, so a single Pending-count
+// pass over the whole document produces the same number.
+func UnresolvedCount(d *Document) int {
+	if d == nil {
+		return 0
+	}
+	n := 0
+	for _, note := range d.Notes {
+		if note.State == Pending {
+			n++
+		}
+	}
+	return n
+}
+
+// SelectCleanupBatch picks up to size Pending notes, prioritising
+// notes whose body mentions a file in modifiedFiles (the recent-
+// pipeline-touch signal the bash version derived from
+// `${CODER_SUMMARY_FILE}`). Ports
+// lib/notes_cleanup.sh::select_cleanup_batch.
+//
+// The bash version layered three signals: file-overlap (highest),
+// recurring-file references (mid), and age (FIFO tie-breaker). The Go
+// port preserves the first signal exactly and uses document order for
+// the rest — recurring-file scoring was awk machinery that produced
+// the same ordering as document order when no file was referenced
+// twice, and m34.2 deliberately keeps the helper minimal-first
+// (CLAUDE.md Rule 10).
+func SelectCleanupBatch(d *Document, size int, modifiedFiles []string) []*Note {
+	if d == nil || size <= 0 {
+		return nil
+	}
+	modSet := map[string]struct{}{}
+	for _, f := range modifiedFiles {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		modSet[filepath.Base(f)] = struct{}{}
+	}
+	var prioritized, rest []*Note
+	for _, n := range d.Notes {
+		if n.State != Pending {
+			continue
+		}
+		if noteMentionsModifiedFile(n, modSet) {
+			prioritized = append(prioritized, n)
+		} else {
+			rest = append(rest, n)
+		}
+	}
+	out := append(prioritized, rest...)
+	if len(out) > size {
+		out = out[:size]
+	}
+	return out
+}
+
+// MarkResolved finds the first Pending note whose body contains text
+// and transitions it to Done. Returns true on hit. Ports
+// lib/notes_cleanup.sh::mark_note_resolved — the bash version
+// rewrote the first matching `- [ ]` line to `- [x]` via GNU sed's
+// `0,/...//` first-match range.
+func MarkResolved(d *Document, text string) bool {
+	n := findFirstPendingByText(d, text)
+	if n == nil {
+		return false
+	}
+	n.SetState(d, Done)
+	return true
+}
+
+// MarkDeferred is the same shape as MarkResolved but transitions to
+// Deferred — i.e. rewrites the matching `- [ ]` line to `- [DEFERRED]`.
+// Ports lib/notes_cleanup.sh::mark_note_deferred. Future cleanup
+// batches will skip Deferred notes (UnresolvedCount and
+// SelectCleanupBatch both gate on State==Pending).
+func MarkDeferred(d *Document, text string) bool {
+	n := findFirstPendingByText(d, text)
+	if n == nil {
+		return false
+	}
+	n.SetState(d, Deferred)
+	return true
+}
+
+// findFirstPendingByText scans d.Notes in document order for the first
+// Pending note whose Title or whose owning line body contains text. The
+// bash version used `grep -F` (literal substring); the Go port uses
+// strings.Contains for the same byte-level semantics.
+func findFirstPendingByText(d *Document, text string) *Note {
+	if d == nil || text == "" {
+		return nil
+	}
+	for _, n := range d.Notes {
+		if n.State != Pending {
+			continue
+		}
+		if strings.Contains(n.Title, text) {
+			return n
+		}
+		// Fall back to the raw line text — bash matched against the
+		// whole line, which includes the tag bracket and any metadata
+		// comment. The cleanup agent's report often quotes the line
+		// verbatim, so a strict Title match would miss real hits.
+		if n.LineIdx >= 0 && n.LineIdx < len(d.Lines) {
+			if strings.Contains(d.Lines[n.LineIdx].Raw, text) {
+				return n
+			}
+		}
+	}
+	return nil
+}
+
+// noteMentionsModifiedFile reports whether the note's body or any of
+// its description lines contain a basename from modifiedFiles.
+// Operates over basenames only — the bash version stripped paths via
+// `sub(/.*\//, "")` before the lookup, so `lib/foo.sh` in modified
+// files matched a note mentioning ``foo.sh``.
+func noteMentionsModifiedFile(n *Note, modSet map[string]struct{}) bool {
+	if n == nil || len(modSet) == 0 {
+		return false
+	}
+	for base := range modSet {
+		if base == "" {
+			continue
+		}
+		if strings.Contains(n.Title, base) {
+			return true
+		}
+	}
+	return false
 }
 
 // ClaimMatching transitions every Pending note matching the optional

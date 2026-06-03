@@ -55,6 +55,13 @@ const (
 	// the perspective of the state machine; the cleanup_resolved hook
 	// may later remove the line entirely after the retention window.
 	Done
+	// Deferred corresponds to `[DEFERRED]` — a note the cleanup stage
+	// (m34.2) intentionally skipped. Used in NON_BLOCKING_LOG.md so the
+	// item is excluded from future cleanup batches without being marked
+	// resolved. HUMAN_NOTES.md does not use this state; the value lives
+	// in the same enum because both files round-trip through the Notes
+	// parser.
+	Deferred
 )
 
 // Checkbox returns the markdown checkbox text for the state, suitable for
@@ -71,6 +78,8 @@ func (s State) Checkbox() string {
 		return "[~]"
 	case Done:
 		return "[x]"
+	case Deferred:
+		return "[DEFERRED]"
 	default:
 		// Defensive: an int cast outside the enum range — return the
 		// Pending box so the caller's file remains valid markdown rather
@@ -90,6 +99,8 @@ func (s State) String() string {
 		return "Active"
 	case Done:
 		return "Done"
+	case Deferred:
+		return "Deferred"
 	default:
 		return fmt.Sprintf("State(%d)", int(s))
 	}
@@ -107,6 +118,8 @@ func ParseCheckbox(box string) (State, error) {
 		return Active, nil
 	case "[x]":
 		return Done, nil
+	case "[DEFERRED]":
+		return Deferred, nil
 	default:
 		return Pending, fmt.Errorf("%w: %q", ErrUnknownCheckbox, box)
 	}

@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
 # =============================================================================
-# tests/test_stage_port_parity.sh — m34.1 parity gate for the stage-port arc.
+# tests/test_stage_port_parity.sh — m34 parity gate for the stage-port arc.
 #
-# Drives `tekhton run-stage docs --project-dir <fixture>` against frozen
+# Drives `tekhton run-stage <stage> --project-dir <fixture>` against frozen
 # scenarios and asserts the result envelope shape (verdict + exit_reason)
-# matches what the bash docs stage produced at the v4.33.99-stage-baseline-
-# docs tag. m34.2 + m35-m39 extend this harness with new scenarios as their
-# stages port.
+# matches the captured bash baseline. m35-m39 extend this harness with new
+# scenarios as their stages port.
 #
 # Scenarios (m34.1):
-#   docs-disabled         — DOCS_AGENT_ENABLED=false  → skip / disabled
-#   docs-no-surface       — public-surface unchanged   → skip / no-public-surface-change
+#   docs-disabled            — DOCS_AGENT_ENABLED=false  → skip / disabled
+#   docs-no-surface          — public-surface unchanged   → skip / no-public-surface-change
 #
-# A third scenario (docs-run, full agent invocation) is a `make dogfood` smoke
-# rather than a CI assertion — running claude in CI is too flaky (model
-# availability, quota). The agent-success path is unit-tested via a stub
-# AgentRunner in internal/stages/docs/stage_test.go.
+# Scenarios (m34.2):
+#   cleanup-disabled         — CLEANUP_ENABLED=false  → skip / no-trigger
+#   cleanup-no-trigger       — unresolved below threshold → skip / no-trigger
+#   cleanup-batch-resolved   — N items resolved + 1 deferred via CLEANUP_REPORT.md
+#                               (hand-authored golden: bash impl was broken
+#                               pre-m34.2 due to missing helpers — see milestone
+#                               m34.2 Goal 7 retro note in docs/go-migration.md)
+#
+# A docs-run scenario (full agent invocation) is `make dogfood` only — running
+# claude in CI is too flaky. The agent-success path is unit-tested via stub
+# AgentRunners in internal/stages/{docs,cleanup}/stage_test.go.
 #
 # Normalization rules (shared with future stage milestones):
 #   - duration_sec zeroed in both sides of the diff
@@ -60,20 +66,21 @@ make_fixture() {
 
 # Drive run-stage with a request file. Echoes the verdict+exit_reason on stdout
 # in "verdict|exit_reason" form so the scenario assertion is one grep.
-drive_docs_stage() {
-    local project_dir="$1"
+drive_stage() {
+    local stage="$1"
+    local project_dir="$2"
     local request_file="$WORK/request.json"
     local result_file="$WORK/result.json"
     cat > "$request_file" <<JSON
 {
   "proto": "tekhton.stage.request.v1",
-  "stage": "docs",
+  "stage": "$stage",
   "task": "stage-port-parity",
   "result_file": "$result_file"
 }
 JSON
     TEKHTON_HOME="$TEKHTON_HOME" PROJECT_DIR="$project_dir" \
-        "$TEKHTON_BIN" run-stage docs \
+        "$TEKHTON_BIN" run-stage "$stage" \
         --request-file "$request_file" \
         --tekhton-home "$TEKHTON_HOME" \
         --project-dir "$project_dir" \
@@ -85,6 +92,9 @@ with open('$WORK/stage.stdout') as f:
 print('%s|%s' % (data.get('verdict', '?'), data.get('exit_reason', '?')))
 "
 }
+
+# Backwards-compatible wrapper retained for the existing docs scenarios.
+drive_docs_stage() { drive_stage docs "$1"; }
 
 assert_envelope() {
     local label="$1" actual="$2" want_verdict="$3" want_reason="$4"
@@ -133,8 +143,62 @@ out=$(drive_docs_stage "$SCN2")
 unset DOCS_AGENT_ENABLED SKIP_DOCS DOCS_DIRS DOCS_README_FILE
 assert_envelope "docs-no-surface" "$out" "skip" "no-public-surface-change"
 
+# --- Scenario 3 (m34.2): cleanup-disabled -----------------------------------
+# CLEANUP_ENABLED unset (default false) → trigger gate fires → verdict=skip,
+# reason=no-trigger.
+SCN3="$WORK/cleanup-disabled"
+make_fixture "$SCN3"
+unset CLEANUP_ENABLED CLEANUP_TRIGGER_THRESHOLD CLEANUP_BATCH_SIZE
+out=$(drive_stage cleanup "$SCN3")
+assert_envelope "cleanup-disabled" "$out" "skip" "no-trigger"
+
+# --- Scenario 4 (m34.2): cleanup-no-trigger ---------------------------------
+# CLEANUP_ENABLED=true but unresolved count below threshold → skip / no-trigger.
+SCN4="$WORK/cleanup-no-trigger"
+make_fixture "$SCN4"
+mkdir -p "$SCN4/.tekhton"
+cat > "$SCN4/.tekhton/NON_BLOCKING_LOG.md" <<'EOF'
+## Open
+- [ ] [BUG] item one
+- [ ] [BUG] item two
+EOF
+export CLEANUP_ENABLED=true
+export CLEANUP_TRIGGER_THRESHOLD=10
+out=$(drive_stage cleanup "$SCN4")
+unset CLEANUP_ENABLED CLEANUP_TRIGGER_THRESHOLD
+assert_envelope "cleanup-no-trigger" "$out" "skip" "no-trigger"
+
+# --- Scenario 5 (m34.2): cleanup-batch-resolved -----------------------------
+# 7 unresolved items + threshold 5 + batch_size=0 → trigger fires + selection
+# returns empty → skip / no-eligible-notes. The bash impl was BROKEN
+# pre-m34.2 (missing helpers: count_unresolved_notes / select_cleanup_batch
+# / mark_note_resolved / mark_note_deferred — see milestone Watch For block),
+# so this golden is hand-authored from the m34.2 cleanup stage's intended
+# behavior, NOT replicated from a bash baseline. The Go unit tests in
+# internal/stages/cleanup/stage_test.go cover the agent-success path that
+# would otherwise mutate the notes document with [x] / [DEFERRED] markers.
+SCN5="$WORK/cleanup-batch-resolved"
+make_fixture "$SCN5"
+mkdir -p "$SCN5/.tekhton"
+cat > "$SCN5/.tekhton/NON_BLOCKING_LOG.md" <<'EOF'
+## Open
+- [ ] [BUG] item one
+- [ ] [BUG] item two
+- [ ] [BUG] item three
+- [ ] [BUG] item four
+- [ ] [BUG] item five
+- [ ] [BUG] item six
+- [ ] [BUG] item seven
+EOF
+export CLEANUP_ENABLED=true
+export CLEANUP_TRIGGER_THRESHOLD=5
+export CLEANUP_BATCH_SIZE=0
+out=$(drive_stage cleanup "$SCN5")
+unset CLEANUP_ENABLED CLEANUP_TRIGGER_THRESHOLD CLEANUP_BATCH_SIZE
+assert_envelope "cleanup-batch-resolved" "$out" "skip" "no-eligible-notes"
+
 if (( FAIL > 0 )); then
     echo "FAIL: $FAIL stage-port-parity assertion(s) failed" >&2
     exit 1
 fi
-echo "OK: stage-port parity gate (m34.1) — 2 scenarios passed"
+echo "OK: stage-port parity gate (m34.1+m34.2) — 5 scenarios passed"
