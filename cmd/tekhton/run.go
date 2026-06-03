@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/geoffgodwin/tekhton/internal/config"
+	"github.com/geoffgodwin/tekhton/internal/manifest"
 	"github.com/geoffgodwin/tekhton/internal/pipeline"
 	"github.com/geoffgodwin/tekhton/internal/proto"
 	"github.com/geoffgodwin/tekhton/internal/runner"
@@ -106,6 +107,26 @@ func newRunCmd() *cobra.Command {
 			}
 			if res != nil && res.Disposition != proto.RunDispositionSuccess {
 				return errExitCode{code: 1, err: fmt.Errorf("disposition=%s", res.Disposition)}
+			}
+
+			// Auto-advance loop. Only fires for milestone-mode runs (the only
+			// concept "next milestone" applies to) AND when --auto-advance is
+			// set AND the just-finished run succeeded. Stops at the configured
+			// limit, when the manifest frontier is empty, or as soon as a
+			// single advance fails or is declined.
+			//
+			// This logic used to live in lib/orchestrate_aux.sh:
+			// _run_auto_advance_chain. The m20 dogfooding cutover moved the
+			// top-level entry point to Go but left this loop behind in bash,
+			// which only runs when tekhton-legacy.sh is the entry point.
+			// Result on the user's side: `tekhton --milestone m34.1
+			// --auto-advance --auto-advance-limit 4` only ran m34.1 then
+			// exited cleanly without ever advancing.
+			if autoAdvanceFlag && req.Mode == proto.RunModeMilestone {
+				if err := runAutoAdvanceLoop(ctx, cmd, req, autoAdvanceLimit,
+					analyzeCmd, compileCmd, testCmd); err != nil {
+					return err
+				}
 			}
 			return nil
 		},
@@ -428,4 +449,135 @@ func buildEnvBuilder(req *proto.RunRequestV1) *runner.EnvBuilder {
 		SessionDir: sessionDir,
 	}
 	return runner.NewEnvBuilder(cfg, logCtx)
+}
+
+// runAutoAdvanceLoop continues running milestones in sequence after a
+// successful initial run. Mirrors the bash _run_auto_advance_chain logic
+// from lib/orchestrate_aux.sh.
+//
+// Stop conditions:
+//   - limit reached (default 3 when limit == 0, matching the bash default)
+//   - manifest frontier empty (no more milestones ready to run)
+//   - just-finished milestone is not actually marked done (finalize failed
+//     to update the manifest — re-running would loop forever)
+//   - any iteration fails or completes with non-success disposition
+func runAutoAdvanceLoop(
+	ctx context.Context,
+	cmd *cobra.Command,
+	initialReq *proto.RunRequestV1,
+	limit int,
+	analyzeCmd, compileCmd, testCmd string,
+) error {
+	if limit <= 0 {
+		limit = 3 // bash default — AUTO_ADVANCE_LIMIT in config_defaults.sh
+	}
+
+	currentID := initialReq.Milestone
+	advances := 0
+
+	for advances < limit {
+		// Re-load the manifest each iteration — the prior run's finalize
+		// chain just wrote it. Path resolution mirrors the bash side:
+		// $MILESTONE_MANIFEST_FILE override → .claude/milestones/MANIFEST.cfg
+		// under PROJECT_DIR.
+		manifestPath := os.Getenv("MILESTONE_MANIFEST_FILE")
+		if manifestPath == "" {
+			manifestPath = filepath.Join(initialReq.ProjectDir, ".claude", "milestones", "MANIFEST.cfg")
+		}
+		m, err := manifest.Load(manifestPath)
+		if err != nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "auto-advance: load manifest: %v\n", err)
+			return nil // best-effort, don't fail the whole run
+		}
+
+		// Sanity check: the milestone we just ran must be marked done.
+		// If finalize_hook_mark_done didn't flip it (the resume-mode bug
+		// where MILESTONE_MODE was false), bail rather than loop on the
+		// same id forever.
+		if cur, ok := m.Get(currentID); ok && cur.Status != "done" && cur.Status != "skipped" {
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"auto-advance: %s is %q in manifest, not done — finalize hook may have skipped. Stopping.\n",
+				currentID, cur.Status)
+			return nil
+		}
+
+		// Pick the next milestone from the frontier. Frontier already
+		// filters out split parents and entries whose deps aren't met,
+		// but it includes ANY ready milestone (including ancient
+		// pendings like m05.1 from a previous arc). Prefer the
+		// lexicographically-smallest id that's strictly greater than
+		// currentID — that gets us m34.2 after m34.1, m35.1 after
+		// m34.2, etc. Fall back to the lowest frontier id when nothing
+		// is "after" current (covers the case where the user starts
+		// from an out-of-order milestone).
+		frontier := m.Frontier()
+		if len(frontier) == 0 {
+			fmt.Fprintln(cmd.OutOrStdout(), "auto-advance: manifest frontier is empty — nothing more to run.")
+			return nil
+		}
+		var next *manifest.Entry
+		for _, e := range frontier {
+			if e.ID <= currentID {
+				continue
+			}
+			if next == nil || e.ID < next.ID {
+				next = e
+			}
+		}
+		if next == nil {
+			for _, e := range frontier {
+				if next == nil || e.ID < next.ID {
+					next = e
+				}
+			}
+		}
+		advances++
+
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"\n══════════════════════════════════════\n"+
+				"  auto-advance %d/%d → %s — %s\n"+
+				"══════════════════════════════════════\n\n",
+			advances, limit, next.ID, next.Title)
+
+		// Build a fresh request for the next milestone. Reuse the original
+		// request's project + tekhton-home + flags so the new run sees the
+		// same environment as the first.
+		nextReq := &proto.RunRequestV1{
+			Proto:            proto.RunRequestProtoV1,
+			Mode:             proto.RunModeMilestone,
+			Milestone:        next.ID,
+			ProjectDir:       initialReq.ProjectDir,
+			TekhtonHome:      initialReq.TekhtonHome,
+			NoTUI:            initialReq.NoTUI,
+			DryRun:           initialReq.DryRun,
+			AutoAdvance:      true,
+			AutoAdvanceLimit: limit,
+		}
+		r, cleanup, err := buildRunner(nextReq, analyzeCmd, compileCmd, testCmd)
+		if err != nil {
+			return fmt.Errorf("auto-advance: build runner for %s: %w", next.ID, err)
+		}
+		res, runErr := r.RunSingle(ctx, nextReq)
+		cleanup()
+
+		if res != nil {
+			printRunSummary(cmd.OutOrStdout(), res)
+		}
+		if runErr != nil {
+			if errors.Is(runErr, runner.ErrSafetyBound) || errors.Is(runErr, runner.ErrStuck) {
+				return errExitCode{code: 2, err: runErr}
+			}
+			return runErr
+		}
+		if res != nil && res.Disposition != proto.RunDispositionSuccess {
+			return errExitCode{code: 1,
+				err: fmt.Errorf("auto-advance: %s disposition=%s", next.ID, res.Disposition)}
+		}
+
+		currentID = next.ID
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"auto-advance: reached limit %d, stopping.\n", limit)
+	return nil
 }
