@@ -1,104 +1,88 @@
 ## Test Audit Report
 
 ### Audit Summary
-Tests audited: 3 files, 9 test functions (37 sub-test cases across 4 tables in engine_readers_test.go; 1 new function in diagnose_test.go; 4 new sub-tests added to TestPreflightInteractiveConfig_Match in resilience_test.go)
-Verdict: PASS
-
----
+Tests audited: 3 files, 28 test functions
+Verdict: CONCERNS
 
 ### Findings
 
-#### COVERAGE: CLI smoke test asserts wiring, not classification value
-- File: `cmd/tekhton/diagnose_test.go:270` (`TestDiagnoseRun_PopulatedFixtureOutputsClassification`)
-- Issue: The fixture writes `"classification":"MAX_TURNS_EXHAUSTED"` into
-  `LAST_FAILURE_CONTEXT.json`, but the test only asserts that `"Classification:"`
-  appears in stdout — not the specific value. The engine would return
-  `Classification: MAX_TURNS_EXHAUSTED` when the `MaxTurns` rule fires correctly,
-  or `Classification: UNKNOWN` when no rule matches. Both outputs satisfy the
-  current assertion, so a rule-registry regression on the `MAX_TURNS_EXHAUSTED`
-  path would not be caught here. Prior test coverage for this accuracy gap was
-  `TestBashAdapterIntegration_MaxTurnsCoder` in `engine_test.go`, which was
-  deleted in m32.2. That test's coverage moved to `TestParity_AllFixtures` in
-  `internal/diagnose/rules/rules_test.go`, which does exercise the full
-  15-fixture baseline — so accuracy IS covered, just not at the CLI layer.
-- Severity: MEDIUM
-- Action: Strengthen to assert the expected classification:
-  `strings.Contains(out, "Classification: MAX_TURNS_EXHAUSTED")`. This gives
-  the CLI smoke test meaningful regression signal independent of the parity gate.
-  If the intentional-weakness argument is retained (the test is meant as a
-  plumbing check only), add an inline comment cross-referencing
-  `TestParity_AllFixtures` as the accuracy gate.
+#### INTEGRITY: No-op test makes zero assertions
+- File: internal/stages/staglog/staglog_test.go:51
+- Issue: `TestStaglogNew_FallsBackToOnePerOne` performs no assertions and
+  exercises no observable behavior. It calls `NewWithWriter(&buf, 0, 0)` — not
+  `New()`, the function it claims to cover — assigns the result to `_`, and
+  returns. The comment "not exercising New() — its env path is below" implies
+  behavior is tested later in the same function, but the function ends there
+  with no assertions. This test always passes regardless of how `New()` or
+  `NewWithWriter()` behave. The behavior it nominally covers (nil-req defaults
+  to pos=1, count=1) is correctly asserted by `TestStaglogNew_NilReq_DefaultsToOneOne`
+  (line 82); the env-read path is covered by `TestStaglogNew_FromEnv` (line 103).
+- Severity: HIGH
+- Action: Remove `TestStaglogNew_FallsBackToOnePerOne` entirely. Its intended
+  coverage is already provided by the two tests above. Do not add assertions to
+  salvage it — that would create exact duplicates of existing tests.
 
-#### COVERAGE: `TestPreflightInteractiveConfig_Match` source-1 negative paths absent
-- File: `internal/diagnose/rules/resilience_test.go:126` (`TestPreflightInteractiveConfig_Match`)
-- Issue: Source 1 (RUN_SUMMARY `preflight_ui` section) is tested with one
-  positive case (`interactive_config_detected:true, reporter_auto_patched:false`).
-  Two negative branches of the `detected == "true" && patched == "false"` guard
-  are not exercised: (a) `interactive_config_detected:false` (not detected →
-  should not match), and (b) `reporter_auto_patched:true` (already patched →
-  should not match). A logic inversion in either comparison would not be caught
-  at this layer. The "no signal → no match" sub-test at line 177 uses an
-  entirely empty context (no files at all) and therefore does not substitute
-  for these.
-- Severity: MEDIUM
-- Action: Add two sub-tests under source 1:
-  - `"source 1: detected=false → no match"`: write `interactive_config_detected:false`
-    in the preflight_ui block and assert `!ok`.
-  - `"source 1: patched=true → no match"`: write `reporter_auto_patched:true`
-    and assert `!ok`.
+#### NAMING: Test name encodes neither scenario nor expected outcome
+- File: internal/stages/docs/stage_test.go:225
+- Issue: `TestEnvBoolEnvInt` exercises two unrelated utility functions
+  (`envBool` and `envInt`) in one function. The name gives no signal about
+  what failure modes are under test, which makes it harder to diagnose from
+  test output alone. The tests that immediately follow it
+  (`TestEnvBool_UnknownValue`, `TestEnvInt_ZeroInput`, `TestEnvInt_EmptyOrUnset`)
+  correctly use the scenario-and-outcome naming convention this one lacks.
+- Severity: LOW
+- Action: Split into `TestEnvBool_KnownValues` and `TestEnvInt_ParseAndFallback`,
+  aligning with the surrounding naming convention.
 
----
+#### NAMING: Test comment contradicts fixture
+- File: internal/stages/docs/skip_test.go:172
+- Issue: `TestExtractPublicSurface_AlwaysIncludesDefaults` opens with the comment
+  "Section present but empty body" yet the CLAUDE.md fixture contains the word
+  `stub` in the section body, making it non-empty. The implementation returns
+  `nil` for a trimmed-empty section (skip.go:133), so the comment implies a
+  different code path than is actually exercised. The test is logically correct —
+  defaults are seeded whenever the section is present and non-empty — but the
+  misleading comment risks a future maintainer assuming the empty-body path is
+  covered when it is not.
+- Severity: LOW
+- Action: Update the comment to "Section present with minimal body — defaults
+  should still seed the slice." If empty-body behavior needs verification, add a
+  separate `TestExtractPublicSurface_EmptyBody` fixture with a section whose
+  trimmed content is blank and assert `nil` is returned.
 
-### Non-Findings (all rubric points examined, no issues)
+### Non-Findings (all rubric points examined, no additional issues)
 
-**INTEGRITY:** All expected values in the audit files derive from documented
-implementation behavior. `extractJSONString` captures `[^"]*` so an unclosed
-quote value returns `""` (`engine.go:249`). `extractJSONInt` returns the -1
-sentinel on missing or string-valued keys (`engine.go:267`). `parseCauseBlock`
-scans to the first `{`…`}` so a missing closing brace returns zero values
-(`engine.go:291`). `extractKVLine` returns `(key, "", true)` for integer-valued
-fields because `valRe` requires quoted values and falls back to the key-only path
-(`engine.go:324`). No hard-coded magic numbers, no `assertTrue(true)` patterns.
-The `parseCauseBlock` "first cause block does not pollute second" invariant is
-correctly tested against the implementation's `strings.Index(tail[braceIdx:], "}")` 
-first-match semantics.
+**ASSERTION HONESTY:** All expected values are derived from implementation
+logic. `atoiOr` returns fallback for n≤0 so `TestStaglogAtoiOr`'s assertion of
+7 for input "0" is correct (skip.go is not involved). `envBool` returns `false`
+for `""` regardless of fallback (stage.go:185), so `TestEnvBoolEnvInt`'s
+assertion `if envBool("", true)` is a genuine correctness check. `globToRegexp`
+translates `[*` to `[.*` (unclosed character class), so
+`TestFilesMatchSurface_GlobCompileError`'s expectation of `false` matches the
+`continue` in `filesMatchSurface` (skip.go:186). No hard-coded magic numbers or
+`assertTrue(True)` patterns found.
 
-**WEAKENING:** No pre-existing test assertions were broadened or removed.
-`engine_readers_test.go` is entirely new. The tester added four new sub-tests to
-`TestPreflightInteractiveConfig_Match` (sources 2, 2-negative, 3a, 3b) without
-touching any existing assertion. The `diagnose_test.go` modification added one
-new test function only; the 10 pre-existing `classify`/`classify-agent`/`recovery`/
-`redact`/`is-transient` tests (lines 33–186) are untouched. The source-2 negative
-sub-test ("header present but no fail word → no match") was not claimed in the
-TESTER_REPORT but is a legitimate addition that correctly exercises the
-`hasHeader && MatchPreflightReportFailWord` conjunction.
+**WEAKENING:** The tester added new tests only; no pre-existing assertions in
+any of the three files were removed or broadened.
 
-**SCOPE:** All symbols referenced in the audit files exist in the current codebase.
-`extractJSONString`, `extractJSONInt`, `parseCauseBlock`, `extractKVLine` are
-present in `engine.go:242–327`. `UIGateInteractiveReporter`, `BuildFixExhausted`,
-`PreflightInteractiveConfig` are present in `resilience.go` and
-`resilience_preflight.go`. The deleted files (`bash_rule_adapter.go`,
-`bash_rule_adapter_test.go`, `.tekhton/stage_results/stage_tester_r1_b0.json`)
-are not imported or referenced in any audit file.
+**EXERCISE:** All test functions call real implementation code. `stage_test.go`
+drives `RunStage` through every gate using a real temp-dir git repo plus a
+recording `fakeAgentRunner` seam. `skip_test.go` calls `shouldSkip`,
+`extractDocResponsibilities`, `extractPublicSurface`, `filesMatchSurface`, and
+`changedFiles` directly. `staglog_test.go` calls `New`, `NewWithWriter`,
+`atoiOr`, and `envOrInt` with non-trivial inputs.
 
-**EXERCISE:** All test functions call real implementation code with non-trivial
-inputs. `engine_readers_test.go` calls four unexported functions directly via
-`package diagnose` (white-box). `resilience_test.go` invokes rule `Match()`
-methods with real file I/O through `writeFile` + `t.TempDir()`. The new
-`diagnose_test.go` test exercises the full CLI stack via `cmd.Execute()` against a
-materialised temp-dir project — no dependencies mocked.
+**SCOPE:** All symbols referenced in the audit files exist in the current
+codebase. No imports reference deleted files (`stages/docs.sh`,
+`lib/docs_agent.sh`). The `fakeAgentRunner` type correctly implements the
+`AgentRunner` interface (stage.go:29).
 
-**ISOLATION:** `engine_readers_test.go` uses only inline string literals — zero
-file I/O, zero environment dependencies, all tests and sub-tests declared
-`t.Parallel()`. The new `diagnose_test.go` test omits `t.Parallel()` correctly
-(uses `t.Setenv`) and creates a fresh `t.TempDir()` project root, writing its
-own `LAST_FAILURE_CONTEXT.json`. `resilience_test.go` additions all use
-`t.TempDir()` + `writeFile` for fixture setup; no test reads from live pipeline
-artifacts, run logs, or mutable project state.
+**ISOLATION:** Every test creates its own fixture state in `t.TempDir()`.
+No test reads live pipeline artifacts, run logs, or mutable project-state
+files from `.tekhton/` or `.claude/`.
 
-**NAMING:** All test and sub-test names encode both scenario and expected outcome.
-Examples: `"malformed — no closing quote on value"`, `"block key absent"`,
-`"multi-value nested — second cause block does not pollute first"`,
-`"source 2: header present but no fail word → no match"`,
-`TestDiagnoseRun_PopulatedFixtureOutputsClassification`. The `TestExtract*` and
-`TestParse*` top-level names follow the `TestSubject` convention throughout.
+**COVERAGE (informational):** `internal/stages/docs/prepare.go`
+(`prepareTemplateVars`, `safeReadFile`, `collectGitDiffStat`) is exercised by
+`prepare_test.go`, which the coder summary lists as created but which was not in
+the tester's modified-file set and falls outside this audit's scope. It should
+appear in the next audit cycle if modified.
