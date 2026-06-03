@@ -5,11 +5,13 @@ PASS
 92
 
 ## Reasoning
-- Scope is precisely defined: 14 files listed with create/modify disposition, LOC budgets, and explicit out-of-scope items (`_write_security_notes`, stage port, prompt templates, `SECURITY_AGENT_ENABLED` flag all deferred to M35.2)
-- Acceptance criteria are specific and mechanical: exact grep commands, rank integer values, exit-code semantics, byte-identical golden-file diff, per-file coverage floors, and wc -l verification
-- Watch For section calls out the three highest-risk ambiguity traps (unknown-severity zero-value fallback, halt-branch does NOT write pipeline state, differing description prefixes between escalate and unknown-policy branches) — these are exactly the cases where a developer would otherwise guess wrong
-- `readChangedFiles` is the only under-specified seam: "reuse M34's shared helper if available; otherwise M35.1 adds a thin wrapper." This is workable — the milestone describes the semantics (awk-ish scan of `## Files created or modified`), so the developer has enough to implement it either way
-- Golden-file baseline capture process ("run the still-bash helpers against fixtures to capture baselines before writing Go") is implicit but standard for port milestones of this type; no clarification needed
-- No new user-facing config keys introduced — migration impact section omission is acceptable since all new CLI subcommands are Hidden and the only user-visible change is the internal shim rewrite
+- Scope is tightly defined: three discrete goals with clear boundaries, all in service of one root-cause bug
+- Root cause is fully documented with exact file paths, line numbers, and a concrete reproducer (sdivi-rust, milestone 49.2)
+- Files to modify are explicitly enumerated, including a new test file
+- Acceptance criteria are specific and machine-testable: resolver returns 0, run commits vs blocks based on CODER_SUMMARY presence, diagnostic message format named explicitly
+- Implementation guidance is concrete: line numbers in `stages/coder.sh` (251-259, 803, 1154), the bold-label form (`**Watch For:**`) explicitly called out, the fix location pinned to `lib/milestone_window.sh` rather than per-caller
+- Watch For section explicitly protects the one important invariant (do not weaken anti-rubber-stamp gates), which is the main risk vector for this change
+- No user-facing config changes, no new keys, no format changes — no Migration Impact section needed
+- Existing regression test (`tests/test_milestone_window_focused.sh`) named as a must-not-break target; new test file (`tests/test_finalize_commit_block_reason.sh`) explicitly scoped
+- Seeds Forward note scopes the recovery subcommand OUT of this milestone cleanly
 - UI testability: N/A (no UI components)
-- Dependency on m34.2 is declared; `drift.HumanAction` API contract is established by m25 — both are valid prior-milestone anchors
