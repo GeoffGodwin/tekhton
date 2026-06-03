@@ -1,4 +1,4 @@
-# Reviewer Report
+# Reviewer Report — m35.1 Security Helpers Port
 
 ## Verdict
 APPROVED_WITH_NOTES
@@ -10,27 +10,13 @@ None
 None
 
 ## Non-Blocking Notes
-- The coder correctly diagnosed the empty-task continuation loop and broke it by
-  setting `Status: COMPLETE`. The latent-improvement observation (continuation gate
-  should refuse to fire when "Files Modified" contains only `.tekhton/CODER_SUMMARY.md`
-  and no source files) is well-reasoned and worth capturing as a drift observation
-  for a future hardening milestone.
-- `CLARIFICATIONS.md` corruption noted in the coder summary (every answer echoes
-  the question verbatim) is worth investigating at the pipeline level before the
-  next invocation so future coders receive usable context.
+- `internal/security/escalation.go::NewEscalator` constructs the HUMAN_ACTION_REQUIRED.md path as `projectDir/.tekhton/HUMAN_ACTION_REQUIRED.md`, but the production CLI in `cmd/tekhton/security.go` uses `humanActionPath(projectDir)` which resolves to `projectDir/HUMAN_ACTION_REQUIRED.md` (no `.tekhton/` prefix, per the drift CLI convention). In m35.1 this is harmless — only the CLI path is exercised by the bash shim — but in m35.2 a Go RunStage that calls `NewEscalator` would write to the wrong file and silently diverge from where bash writes today. Recommend either updating `NewEscalator` to use `humanActionPath` (or a shared equivalent), or adding a prominent comment that this constructor is test-only and m35.2 must use `NewEscalatorWithPath(humanActionPath(projectDir))`.
 
 ## Coverage Gaps
 None
 
+## ACP Verdicts
+No Architecture Change Proposals section in CODER_SUMMARY.md.
+
 ## Drift Observations
-- Pipeline continuation logic: `orchestrate_aux.sh` (or its Go equivalent) could
-  short-circuit the coder re-invocation when the prior summary's `Files Modified`
-  list contains only pipeline-internal artifacts (`.tekhton/`, `.claude/`) and no
-  source files. The current substantive-work threshold (git diff + summary line
-  count) did not catch this loop because the prior coder wrote a substantive
-  summary while touching zero source files. Candidate for a future hardening
-  milestone.
-- `CLARIFICATIONS.md` echo corruption: the injected clarifications block echoed
-  question text as answers, removing all task signal. This is a data-plumbing issue
-  in how the pipeline populates `CLARIFICATIONS.md` before render — worth a targeted
-  investigation to prevent future null runs caused by missing task signal.
+- `cmd/tekhton/security_test.go` introduces `buildTekhtonBinary`, `filterEnv`, `readFileTrimNothing`, and `writeFile` as file-local helpers within `package main`. These patterns will be needed by any future `cmd/tekhton` test that must assert on OS-level exit codes via a real subprocess (meets-threshold, is-docs-only, handle-unfixable all use `os.Exit`). When m36.1 or a later milestone adds similar CLI smoke tests, these helpers will be duplicated or will need extraction to a shared `cmd/tekhton/testhelpers_test.go`. Worth extracting before there are two copies.
