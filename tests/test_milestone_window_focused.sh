@@ -466,6 +466,100 @@ assert "[m41] extractor matches **Acceptance Criteria:** bold-label" "$result"
 rm -f "${MILESTONE_DIR_ABS}/m49.2-bold-label-fixture.md"
 
 # =============================================================================
+echo "--- m41 Coverage Gap: stale DAG file entry falls through to glob ---"
+# Reviewer gap: no test covered the path where the DAG manifest has a
+# non-empty `file` entry for an ID but the file doesn't exist on disk —
+# causing `_read_milestone_file` to skip the DAG-known path and fall through
+# to the glob fallback.
+#
+# Setup: m10 is in the manifest with file=m10-stale.md (a name that does
+# NOT exist on disk). A file named m10-current.md DOES exist. The function
+# must fall through past the missing DAG-known path and find the file via
+# the `${id}-*.md` glob.
+
+STALE_DAG_ID="m10"
+STALE_FILE="m10-stale.md"           # referenced by manifest, NOT on disk
+CURRENT_FILE="m10-current.md"       # on disk, matches glob m10-*.md
+
+# Create the on-disk file with unique content.
+cat > "${MILESTONE_DIR_ABS}/${CURRENT_FILE}" << 'STALE_EOF'
+# m10 — Stale DAG Path Test Fixture
+
+This file exists on disk under a different name than the manifest records.
+The manifest says `m10-stale.md`; that file is absent. The glob fallback
+inside `_read_milestone_file` must find this file instead.
+
+## Acceptance Criteria
+
+- Stale DAG entry causes fallback to glob without error
+- Glob-discovered content is returned verbatim
+STALE_EOF
+
+# Register m10 in the _DAG_* in-memory arrays with the stale file reference.
+# We manipulate the arrays directly rather than rewriting the manifest to
+# keep the test surgical (only the new ID is added; the rest is unchanged).
+_stale_idx=${#_DAG_IDS[@]}
+_DAG_IDS+=("$STALE_DAG_ID")
+_DAG_TITLES+=("Stale File Path Test")
+_DAG_STATUSES+=("pending")
+_DAG_DEPS+=("")
+_DAG_FILES+=("$STALE_FILE")
+_DAG_GROUPS+=("test")
+_DAG_IDX["$STALE_DAG_ID"]=$_stale_idx
+
+# Verify setup: dag_get_file returns the stale (absent) filename.
+result=0
+got_file=$(dag_get_file "$STALE_DAG_ID" 2>/dev/null || true)
+[[ "$got_file" == "$STALE_FILE" ]] && result=0 || result=1
+assert "[m41-stale] setup: dag_get_file returns the stale filename" "$result"
+
+# The stale file must NOT be on disk for the test to be meaningful.
+result=0
+[[ ! -f "${MILESTONE_DIR_ABS}/${STALE_FILE}" ]] && result=0 || result=1
+assert "[m41-stale] setup: stale file is absent from disk" "$result"
+
+# The glob-target file MUST be on disk.
+result=0
+[[ -f "${MILESTONE_DIR_ABS}/${CURRENT_FILE}" ]] && result=0 || result=1
+assert "[m41-stale] setup: on-disk glob-target file exists" "$result"
+
+# Primary test: _read_milestone_file must return non-empty content
+# even though the DAG-known path is absent on disk.
+result=0
+content=$(_read_milestone_file "$STALE_DAG_ID" 2>/dev/null)
+[[ -n "$content" ]] && result=0 || result=1
+assert "[m41-stale] _read_milestone_file returns content when DAG path is stale" "$result"
+
+# The content must come from the on-disk glob file, not the absent stale path.
+result=0
+echo "$content" | grep -q "Stale DAG Path Test Fixture" && result=0 || result=1
+assert "[m41-stale] returned content is from the glob-discovered file" "$result"
+
+result=0
+echo "$content" | grep -q "Glob-discovered content is returned verbatim" && result=0 || result=1
+assert "[m41-stale] full acceptance-criteria prose appears in returned content" "$result"
+
+# set_focused_milestone_block must also succeed when the DAG path is stale.
+MILESTONE_MODE=true
+_CURRENT_MILESTONE=10    # numeric; dag_number_to_id resolves to m10
+MILESTONE_BLOCK=""
+result=0
+set_focused_milestone_block && result=0 || result=1
+assert "[m41-stale] set_focused_milestone_block succeeds with stale DAG file entry" "$result"
+
+result=0
+[[ -n "$MILESTONE_BLOCK" ]] && result=0 || result=1
+assert "[m41-stale] MILESTONE_BLOCK is non-empty via stale-DAG → glob path" "$result"
+
+result=0
+echo "$MILESTONE_BLOCK" | grep -q "Stale DAG Path Test Fixture" && result=0 || result=1
+assert "[m41-stale] MILESTONE_BLOCK carries the glob-found content" "$result"
+
+# Cleanup fixture.
+rm -f "${MILESTONE_DIR_ABS}/${CURRENT_FILE}"
+unset _stale_idx STALE_DAG_ID STALE_FILE CURRENT_FILE got_file content
+
+# =============================================================================
 echo
 echo "────────────────────────────────────────"
 echo "  Passed: ${PASS}  Failed: ${FAIL}"

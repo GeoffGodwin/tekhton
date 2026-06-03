@@ -3,9 +3,9 @@
 ## Metadata
 - Last audit: 2026-05-18
 <<<<<<< Updated upstream
-- Runs since audit: 186
+- Runs since audit: 187
 =======
-- Runs since audit: 186
+- Runs since audit: 187
 >>>>>>> Stashed changes
 
 ## Unresolved Observations
@@ -54,6 +54,8 @@
 - [2026-05-18 | "unknown"] Scope was cleanly bounded. Only `.tekhton/DRIFT_LOG.md` was modified; no code files were touched. No scope creep.
 
 ## Resolved
+- [x] [2026-06-03 | "unknown"] `milestone_window_build.sh:263` â the WINDOW_HEADER heredoc uses single-quoted form (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` inside it is a literal string rather than the resolved path. Pre-existing behavior moved verbatim from `milestone_window.sh`; worth a follow-up fix or comment if agents are confused by the unexpanded variable in the prompt.
+- [x] [2026-06-03 | "unknown"] `set -euo pipefail` appears at the top of both new sourced lib files (`milestone_window_build.sh:25`, `finalize_commit_sentinel.sh:16`). Consistent with pre-existing project convention in `milestone_window.sh:23` and `finalize_commit.sh:21`, but inconsistent with the reviewer checklist rule that sourced lib files should not set pipefail. Pre-existing drift across ~20+ files â not introduced by m41; harmonisation is its own cleanup ticket.
 - [x] [2026-06-03 | "unknown"] `milestone_window_build.sh:263` â the WINDOW_HEADER heredoc uses a single-quoted form (`<< 'WINDOW_HEADER'`), so `${CODER_SUMMARY_FILE}` is a literal string in the coder prompt rather than the resolved path. Pre-existing behavior moved verbatim from `milestone_window.sh`; the coder notes it in Design Observations. Worth a follow-up comment or fix if it causes agent confusion in practice.
 - [x] [2026-05-25 | "unknown"] `finalize_commit.sh:86-92` (`_final_check_result_read`) uses `${TEKHTON_DIR:-.tekhton}` to resolve the sentinel path (relative to CWD), while `_write_commit_decision` at lines 51-55 adds `${PROJECT_DIR}/` when the path is relative. Both produce the same absolute path when CWD = PROJECT_DIR (which is always true at pipeline runtime), but the two path-resolution patterns are inconsistent. Not a bug in the current call graph, but a latent footgun if either function is reused in a context where CWD ≠ PROJECT_DIR.
 - [x] [2026-05-23 | "unknown"] `lib/milestone_window.sh` file header comment (lines 19–21) still says "Provides: `build_milestone_window` — assembles budgeted milestone context block." `set_focused_milestone_block` is now a second public function exported from this file and is not listed. Minor staleness.
