@@ -9,7 +9,7 @@
 - [x] `tests/test_security_parity.sh` — 3-scenario end-to-end parity gate (pass-no-findings, fixable-cycle-1-resolved, unfixable-escalate) diffing stdout.json + SECURITY_NOTES.md + HUMAN_ACTION_REQUIRED.md against baselines after timestamp/path normalization
 
 ## Test Run Results
-Passed: 516 (all internal/... packages + 2 new bash tests; security stage: 88.9% coverage)  Failed: 0
+Passed: 502 shell + all Go packages (m35.3 verification run)  Failed: 0
 
 ## Bugs Found
 None
