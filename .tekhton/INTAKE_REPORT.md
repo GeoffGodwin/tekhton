@@ -2,14 +2,14 @@
 PASS
 
 ## Confidence
-95
+92
 
 ## Reasoning
-- Scope is precisely defined: every file is listed with create/modify/delete disposition, approximate LOC, and the 5-step landing order is sequenced with rationale
-- Acceptance criteria are machine-verifiable — each uses a grep command, test function name, or shell assertion (`! test -e stages/cleanup.sh`, coverage ≥ 75%, `bash tests/run_tests.sh` exit 0)
-- The gap analysis (four missing helpers, broken bash baseline) is fully documented with the exact git commands needed to recover source semantics from history
-- Design decisions are explicit and justified: in-process `gates.Build` call over subprocess, `IsNullRun` on supervisor not inlined, hand-authored golden for the broken bash baseline
-- Implicit assumptions are surfaced inline rather than buried: `Deferred` state constant may need adding (watch for), `gates.Build` API needs verification at impl time (watch for), `m34.1` must be closed first (depends-on)
-- No user-facing config keys are introduced; migration impact section is not required
-- No UI components; UI testability criterion is not applicable
-- The Watch For section explicitly covers the three highest-risk subtleties: null-run semantics, selective git-revert preservation, and the broken bash baseline requiring hand-authored parity golden
+- Scope is precisely defined: 14 files listed with create/modify disposition, LOC budgets, and explicit out-of-scope items (`_write_security_notes`, stage port, prompt templates, `SECURITY_AGENT_ENABLED` flag all deferred to M35.2)
+- Acceptance criteria are specific and mechanical: exact grep commands, rank integer values, exit-code semantics, byte-identical golden-file diff, per-file coverage floors, and wc -l verification
+- Watch For section calls out the three highest-risk ambiguity traps (unknown-severity zero-value fallback, halt-branch does NOT write pipeline state, differing description prefixes between escalate and unknown-policy branches) — these are exactly the cases where a developer would otherwise guess wrong
+- `readChangedFiles` is the only under-specified seam: "reuse M34's shared helper if available; otherwise M35.1 adds a thin wrapper." This is workable — the milestone describes the semantics (awk-ish scan of `## Files created or modified`), so the developer has enough to implement it either way
+- Golden-file baseline capture process ("run the still-bash helpers against fixtures to capture baselines before writing Go") is implicit but standard for port milestones of this type; no clarification needed
+- No new user-facing config keys introduced — migration impact section omission is acceptable since all new CLI subcommands are Hidden and the only user-visible change is the internal shim rewrite
+- UI testability: N/A (no UI components)
+- Dependency on m34.2 is declared; `drift.HumanAction` API contract is established by m25 — both are valid prior-milestone anchors
