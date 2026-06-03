@@ -1,16 +1,13 @@
 ## Planned Tests
-- [x] `tests/test_finalize_commit_block_reason.sh` — verify `_hook_commit` prints the actual block reason (AC4, pre-written by coder, verified passing)
-- [x] `tests/test_milestone_window_focused.sh` — verify dotted-id + bold-label resolution populates MILESTONE_BLOCK (AC1, extended by coder, verified passing)
-- [x] `tests/test_coder_block_unavailable_gate.sh` — structural: verify false-positive `trip_commit_gate` removed from coder.sh (AC2) and genuine hollow-run gates still present (AC3)
-- [x] `tests/test_milestone_window_focused.sh` — stale DAG file entry: DAG manifest has non-empty `file` for an ID whose on-disk file is absent; `_read_milestone_file` must fall through to glob fallback and return the alternate on-disk file's content
+- [x] `tests/test_milestone_window_focused.sh` — verify stale DAG file entry falls through to glob, ## Seeds Forward H2 survival in extractor
+- [x] `tests/test_finalize_commit_block_reason.sh` — verify _hook_commit surfaces actual reason, generic fallback, in-memory path
 
 ## Test Run Results
-Passed: 513 shell + all Go packages  Failed: 0
+Passed: 504 shell + all Go packages  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_finalize_commit_block_reason.sh`
 - [x] `tests/test_milestone_window_focused.sh`
-- [x] `tests/test_coder_block_unavailable_gate.sh`
+- [x] `tests/test_finalize_commit_block_reason.sh`
