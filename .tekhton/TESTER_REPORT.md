@@ -1,12 +1,11 @@
 ## Planned Tests
-- [x] `tests/test_version_bump_coverage.sh` — confirm the non-conventional JSON catch-all bug fix passes (regression guard for `_accessor_for_file` *.json arm at lib/project_version.sh:82)
+- [ ] `internal/stages/architect/drift_integration_test.go` — full audit path: drift count delta + HA count + audit-counter reset for three parity scenarios + build_broken invariants
 
 ## Test Run Results
-Passed: 510  Failed: 0
-Full suite: Shell 510 passed, 0 failed; Go all packages passed
+Passed: 0  Failed: 0
 
 ## Bugs Found
 None
 
 ## Files Modified
-- [x] `tests/test_version_bump_coverage.sh`
+- [ ] `internal/stages/architect/drift_integration_test.go`

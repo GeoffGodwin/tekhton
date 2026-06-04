@@ -1,9 +1,9 @@
 {
   "proto": "tekhton.stage.result.v1",
-  "stage": "tester",
+  "stage": "coder",
   "verdict": "pass",
   "exit_reason": "exit=0",
   "agent_calls": 2,
-  "duration_sec": 645,
+  "duration_sec": 2791,
   "human_action_required": false
 }
