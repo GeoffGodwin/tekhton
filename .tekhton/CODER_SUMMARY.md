@@ -1,6 +1,6 @@
 # Coder Summary
 
-## Status: IN PROGRESS
+## Status: COMPLETE
 
 ## What Was Implemented
 
@@ -52,8 +52,9 @@ The wedge-audit at `scripts/wedge-audit-companions.sh` now forbids direct `os.Wr
 - `go build ./...` clean.
 - `go test ./...` all packages pass.
 - `bash scripts/wedge-audit.sh` clean.
-- `bash tests/test_architect_parity.sh` — 3 / 3 pass.
-- `bash tests/run_tests.sh` — running in background, will confirm before COMPLETE.
+- `bash tests/test_architect_parity.sh` — 3 / 3 pass (1.2s total wall time).
+- `bash tests/run_tests.sh` — **511 / 0** shell, **all Go pass**.
+- `shellcheck` on every bash file modified — clean (pre-existing SC1091 warnings only).
 
 ## Root Cause (bugs only)
 
@@ -108,4 +109,19 @@ No active human notes in HUMAN_NOTES.md — none to claim.
 
 ## Remaining Work
 
-- Confirm `bash tests/run_tests.sh` shell suite is clean (in background, awaiting completion).
+None. All acceptance criteria met:
+
+- [x] `RunStage` exported with the milestone signature
+- [x] `parsePlan` + four query methods (`HasSimplification`, `HasJrWork`, `OutOfScope`, `DesignDocObservations`)
+- [x] `DefaultStageDefs[proto.StageArchitect].GoImpl == architect.RunStage`
+- [x] `proto.StageArchitect == "architect"` const
+- [x] `stages/architect.sh` deleted
+- [x] wedge-audit rejects re-introduction + drift-write violations from `internal/stages/architect/`
+- [x] `bash scripts/wedge-audit.sh` exits 0
+- [x] `tests/test_architect_parity.sh` exits 0 across 3 scenarios
+- [x] `make dogfood` wires the parity gate
+- [x] `go test ./internal/stages/architect/...` passes with coverage 75.3% (≥75%)
+- [x] `bash tests/run_tests.sh` reports 511 / 0 (zero new failures)
+- [x] Prompt templates `prompts/architect*.prompt.md` untouched (`git diff` empty)
+- [x] `docs/v4-phase5-stub.md` architect row marked done + closeout paragraph extended
+- [x] `VERSION` bumped (4.42.14 → 4.43.x after finalize patch-bump)
